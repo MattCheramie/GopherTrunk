@@ -386,6 +386,12 @@ type Daemon struct {
 	affiliations *trunking.AffiliationTracker
 	siteTracker  *trunking.SiteTracker
 	recorder     *voice.Recorder
+	// voiceDecoder is the recorder the composer decodes digital voice through
+	// and taps PCM from for the live web/gRPC stream. It equals `recorder` when
+	// a recordings directory is configured; otherwise it is a decode-only
+	// recorder (writes no files) so live audio works without recording. Nil
+	// only when there is no SDR pool to source voice from.
+	voiceDecoder *voice.Recorder
 	broadcast    *broadcast.Manager
 	composer     *composer.Composer
 	player       *player.Player
@@ -1218,6 +1224,38 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.recorder = rec
 	}
 
+	// Voice decoder for live audio. When recording is configured the file
+	// recorder above doubles as the decoder; otherwise — as long as there's a
+	// pool to source voice from — build a decode-only recorder (empty OutDir,
+	// writes no files) so digital calls are still decoded and fanned to the web
+	// stream. Without this, live audio silently required recordings.dir: no
+	// recorder meant no composer and no decoded PCM ever reached the browser.
+	d.voiceDecoder = d.recorder
+	if d.voiceDecoder == nil && d.pool != nil {
+		var vocoderMap map[string]string
+		if cfg.Recordings.WarmDMRAudio {
+			vocoderMap = voice.DefaultVocoderForProtocol()
+			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
+				vocoderMap[proto] = ambe2.DMRWarmVocoderName
+			}
+		}
+		dec, err := voice.NewRecorder(voice.RecorderOptions{
+			Bus:                d.bus,
+			Log:                log,
+			OutDir:             "", // decode-only: decode + live tap, no files
+			SampleRate:         cfg.Recordings.SampleRate,
+			VocoderForProtocol: vocoderMap,
+			DisplayLoc:         cfg.Display.Location(),
+			// Voice enhancement operates on decoded PCM, so it applies to the
+			// live stream too; loudness/normalize are file-only and omitted.
+			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: voice decoder: %w", err)
+		}
+		d.voiceDecoder = dec
+	}
+
 	// Displayed-timestamp timezone for human-facing output — the logs, the TUI,
 	// and (per the operator's display.timezone opt-in) the API/webhook/rdioscanner
 	// payloads. Local by default; "UTC" or any IANA name. A bad name degrades to
@@ -1373,11 +1411,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	d.audioPub = audioPub
 
 	// Composer is wired when we have a Voice device pool to source IQ
-	// from + a recorder to feed PCM into. Without an SDR pool there's
-	// nothing to demod, and without a recorder PCM has no destination.
-	if d.pool != nil && d.recorder != nil {
-		// Fan PCM to recorder + tone-out (if configured) + live player + gRPC publisher.
-		sinks := []composer.PCMSink{d.recorder}
+	// from + a voice decoder to feed PCM into. Without an SDR pool there's
+	// nothing to demod. The decoder is the file recorder when recording is
+	// configured, otherwise a decode-only recorder — either way it decodes
+	// digital voice and taps PCM to the live stream.
+	if d.pool != nil && d.voiceDecoder != nil {
+		// Fan PCM to the decoder + tone-out (if configured) + live player + gRPC publisher.
+		sinks := []composer.PCMSink{d.voiceDecoder}
 		if d.toneout != nil {
 			sinks = append(sinks, d.toneout)
 		}
@@ -1418,14 +1458,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			log.Info("audio: live-loudness AGC enabled for digital stream")
 		}
 		liveSinks = append(liveSinks, liveStreamSink)
-		d.recorder.SetDecodedPCMSink(fanoutSink(liveSinks))
+		d.voiceDecoder.SetDecodedPCMSink(fanoutSink(liveSinks))
 		// Raw vocoder frames fan straight to the publisher (the only raw
 		// consumer): include_raw subscribers get the un-decoded IMBE / AMBE
 		// bytes. This path bypasses live-loudness — that AGC only makes sense
 		// on decoded PCM, not on un-decoded codec frames.
-		d.recorder.SetRawFrameSink(d.audioPub)
+		d.voiceDecoder.SetRawFrameSink(d.audioPub)
 
-		var sink composer.PCMSink = d.recorder
+		var sink composer.PCMSink = d.voiceDecoder
 		if len(sinks) > 1 {
 			sink = fanoutSink(sinks)
 			// Surface the fanout wiring at startup so operators can
@@ -2639,9 +2679,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.retention.Run(ctx)
 		})
 	}
-	if d.recorder != nil {
+	// voiceDecoder equals recorder when recording, else the decode-only
+	// recorder; running it covers both (they are never distinct non-nil
+	// recorders) so the voice decode/tap loop is always driven.
+	if d.voiceDecoder != nil {
 		d.spawn(runCtx, "recorder", false, func(ctx context.Context) error {
-			return d.recorder.Run(ctx)
+			return d.voiceDecoder.Run(ctx)
 		})
 	}
 	if d.broadcast != nil {
@@ -3263,8 +3306,10 @@ func (d *Daemon) Close() {
 		if d.broadcast != nil {
 			_ = d.broadcast.Close()
 		}
-		if d.recorder != nil {
-			_ = d.recorder.Close()
+		// Closes the file recorder or the decode-only recorder (same object
+		// when recording; voiceDecoder is a superset of recorder).
+		if d.voiceDecoder != nil {
+			_ = d.voiceDecoder.Close()
 		}
 		if d.callLog != nil {
 			_ = d.callLog.Close()

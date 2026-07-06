@@ -75,6 +75,14 @@ type Recorder struct {
 	normalize          NormalizeConfig
 	vocoderForProtocol map[string]string
 
+	// decodeOnly runs the recorder as a live decoder that writes NO files:
+	// every call still builds its per-protocol vocoder and fans decoded PCM
+	// to decodedTap (the web/gRPC stream), but no WAV or .raw is opened. Set
+	// when OutDir is empty, so live browser audio works even when the operator
+	// has not configured a recordings directory. When false the recorder
+	// behaves exactly as before (decode + persist).
+	decodeOnly bool
+
 	// enhance is the current voice enhancement config, read when a new
 	// call's vocoder is built (buildSession). Guarded by enhanceMu so the
 	// settings endpoint can swap it at runtime via SetVoiceEnhance — the
@@ -276,17 +284,20 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 	if opts.Bus == nil {
 		return nil, errors.New("voice/recorder: events.Bus is required")
 	}
-	if opts.OutDir == "" {
-		return nil, errors.New("voice/recorder: OutDir is required")
-	}
+	// An empty OutDir runs the recorder in decode-only mode: it still decodes
+	// each call and feeds the live-audio tap, it just never writes files. This
+	// is how live browser audio works without a configured recordings dir.
+	decodeOnly := opts.OutDir == ""
 	if opts.SampleRate == 0 {
 		opts.SampleRate = pcmHzDefault
 	}
 	if opts.Log == nil {
 		opts.Log = slog.Default()
 	}
-	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
-		return nil, fmt.Errorf("voice/recorder: mkdir: %w", err)
+	if !decodeOnly {
+		if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
+			return nil, fmt.Errorf("voice/recorder: mkdir: %w", err)
+		}
 	}
 	vocoderMap := opts.VocoderForProtocol
 	if vocoderMap == nil {
@@ -313,6 +324,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		enhance:            opts.Enhance,
 		vocoderForProtocol: vocoderMap,
 		displayLoc:         loc,
+		decodeOnly:         decodeOnly,
 		sessions:           make(map[string]*recordingSession),
 		runDone:            make(chan struct{}),
 	}
@@ -448,6 +460,12 @@ func (r *Recorder) WritePCM(deviceSerial string, samples []int16) error {
 	if s == nil {
 		return nil
 	}
+	// Decode-only sessions never open a WAV. Analog PCM still reaches the live
+	// stream via the composer's direct audioPub fanout, so there is nothing to
+	// do here but drop it.
+	if s.wav == nil {
+		return nil
+	}
 	return s.wav.WriteSamples(samples)
 }
 
@@ -471,6 +489,14 @@ func (r *Recorder) sessionForWrite(serial string, callID uint64) *recordingSessi
 	}
 	if callID != 0 && s.callID != 0 && callID != s.callID {
 		return nil
+	}
+	// Decode-only: no files are ever opened. The session already carries its
+	// per-protocol vocoder (buildSession), so WriteRawFrame can decode and fan
+	// PCM to the live tap; hand it back with wav == nil. Segment rolls never
+	// park a decode-only session (handleSegment bails on wav == nil), so the
+	// dormant-rebuild path below is unreachable here.
+	if r.decodeOnly {
+		return s
 	}
 	if s.wav == nil {
 		// A dormant post-segment park carries only cs+callID with no paths
@@ -573,8 +599,13 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 		if n := len(samples); n > 0 {
 			s.lastSample = samples[n-1]
 		}
-		if err := s.wav.WriteSamples(samples); err != nil {
-			return err
+		// Decode-only sessions have no WAV — skip the file write but still fan
+		// the decoded PCM to the live tap below so browser audio works without
+		// a recordings directory.
+		if s.wav != nil {
+			if err := s.wav.WriteSamples(samples); err != nil {
+				return err
+			}
 		}
 		// Fan the freshly-decoded PCM to the live consumers (web
 		// stream, host player, tone-out). For digital protocols this
@@ -606,9 +637,11 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		// completion via handleEnd.
 		return
 	}
-	if cs.Talkgroup != nil && !cs.Talkgroup.Record {
+	if !r.decodeOnly && cs.Talkgroup != nil && !cs.Talkgroup.Record {
 		// Talkgroup is flagged record=false — follow and play the
-		// call live, but write no WAV/raw files for it.
+		// call live, but write no WAV/raw files for it. A decode-only
+		// recorder writes nothing regardless, so it must NOT drop the
+		// call here or the talkgroup would be silent live too.
 		return
 	}
 	if r.skipEncrypted && cs.Grant.Encrypted {
@@ -838,6 +871,13 @@ func (r *Recorder) normalizeIfEnabled(wavPath string) {
 // publish when audio was written; an empty file (no PCM) is removed and
 // nil returned. Caller holds r.mu and publishes after releasing it.
 func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt time.Time, reason trunking.EndReason) *trunking.CallComplete {
+	// Callers only reach here with an open WAV (handleEnd/handleSegment guard on
+	// s.wav != nil); a decode-only session has no file to finalize. Guard anyway
+	// so a future caller can't panic on the nil writer.
+	if s.wav == nil {
+		_ = s.close()
+		return nil
+	}
 	dataBytes := s.wav.DataBytes()
 	vs, haveStats := r.voiceStatsFor(s)
 	r.logVoiceStats(serial, s)
@@ -996,9 +1036,17 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 	if ok {
 		delete(r.sessions, ce.DeviceSerial)
 	}
-	if !ok || s.wav == nil {
-		// No session, or a dormant post-segment session whose next over
-		// never arrived — nothing to finalize.
+	if !ok {
+		r.mu.Unlock()
+		return
+	}
+	if s.wav == nil {
+		// No open WAV: a decode-only session (never writes files), a dormant
+		// post-segment park whose next over never arrived, or a dead-key call
+		// that built a vocoder but decoded no frame. finalizeLocked assumes an
+		// open WAV and there's nothing to publish, but the session may still
+		// hold a live vocoder — close it so it isn't leaked.
+		_ = s.close()
 		r.mu.Unlock()
 		return
 	}
