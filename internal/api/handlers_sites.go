@@ -64,6 +64,27 @@ func (s *Server) handleListSites(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
+	// Overlay each system's advertised neighbour sites onto its camped-site row.
+	// The topology snapshot is keyed per system and describes the site that
+	// broadcast the adjacent-site list (snap.RFSS/snap.Site), so the neighbours
+	// belong on exactly that row — not on every site of the system (issue #864).
+	if tp, ok := s.sites.(NetworkTopologyProvider); ok {
+		seen := make(map[string]struct{})
+		for k := range byKey {
+			if _, done := seen[k.system]; done {
+				continue
+			}
+			seen[k.system] = struct{}{}
+			snap, ok := tp.Topology(k.system)
+			if !ok {
+				continue
+			}
+			if dto, ok := byKey[key{k.system, snap.RFSS, snap.Site}]; ok {
+				dto.Neighbors = neighborsFromTopology(snap)
+			}
+		}
+	}
+
 	out := make([]SiteDTO, 0, len(byKey))
 	for _, dto := range byKey {
 		dto.fillIdentityHex()
