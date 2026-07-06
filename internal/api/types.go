@@ -527,6 +527,15 @@ type SiteDTO struct {
 	SystemIDHex string `json:"system_id_hex,omitempty"`
 	RFSSIDHex   string `json:"rfss_id_hex,omitempty"`
 	SiteIDHex   string `json:"site_id_hex,omitempty"`
+	// Neighbors are the adjacent sites this site advertised over the air (P25
+	// Adjacent Site Status Broadcast, opcode 0x3C), overlaid from the live
+	// topology snapshot. Each carries the neighbour's RFSS/Site and its
+	// band-plan-resolved control-channel downlink (and uplink) frequency, so a
+	// consumer can backfill the wider network's control-channel map from a
+	// single camped site without decoding every site directly. Only the camped
+	// site of a system carries them (that is the site that broadcast the list);
+	// other rows leave it empty (issue #864).
+	Neighbors []NeighborDTO `json:"neighbors,omitempty"`
 }
 
 // TSBK frame-error-rate thresholds (percent) that bucket a control channel's

@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Neighbour sites on `GET /api/v1/sites`.** Each `SiteDTO` now carries a
+  `neighbors` array — the adjacent sites the site advertised over the air (P25
+  Adjacent Site Status Broadcast, opcode `0x3C`), each with the neighbour's
+  RFSS/Site and its band-plan-resolved control-channel `downlink_hz` (and
+  `uplink_hz`). This is the same decoded data already surfaced on
+  `GET /api/v1/systems`, now attached to the camped site of each system on the
+  per-site endpoint, so a consumer can backfill the wider network's
+  control-channel map from a single camped site without directly decoding every
+  site. Empty on sites that did not broadcast a neighbour list (issue #864).
 - **Per-site P25 decode quality on `GET /api/v1/sites`.** Each `SiteDTO` now
   carries `control_channel_tsbk_error_rate` (cumulative % of TSBK blocks failing
   Viterbi/CRC on that site's control channel), `control_channel_tsbk_count` (the
