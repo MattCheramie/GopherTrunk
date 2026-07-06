@@ -156,12 +156,18 @@ const MAX_RING_SECONDS = 2;
 type AudioContextCtor = typeof AudioContext;
 
 // The daemon streams 8 kHz PCM (vocoder-native for digital; the analog
-// default). Creating the AudioContext at this rate makes Web Audio do ZERO
-// per-chunk resampling — every scheduled buffer matches the context rate and
-// plays back-to-back seamlessly, and the OS does one continuous resample to the
-// output device, exactly like a recorded .wav. Without it, every small chunk is
-// resampled 8k->48k independently with no interpolation state across chunk
-// boundaries, the artifacts that make live sound worse than the file (#598).
+// default). This is the wire rate, NOT the AudioContext rate: the WAV header
+// carries it, PcmFramer reports it, and it seeds LegacySink before the header
+// arrives. The playback context runs at the hardware-native rate instead (see
+// createAudioContext) and WorkletSink's continuous SincResampler bridges
+// 8k->native band-limited, like a recorded .wav.
+//
+// We used to pin the context to 8 kHz to skip resampling, but on Windows/WASAPI
+// an 8 kHz AudioContext is often accepted without error yet renders no output —
+// silent playback in every browser (#598 follow-up). Running at the native rate
+// and letting the SincResampler (#629) do the 8k->48k upconversion is reliable
+// across platforms and keeps the "as good as the file" quality the resampler
+// was built for.
 export const STREAM_SAMPLE_RATE = 8000;
 
 function resolveAudioContext(): AudioContextCtor | null {
@@ -172,18 +178,13 @@ function resolveAudioContext(): AudioContextCtor | null {
   return w.AudioContext ?? w.webkitAudioContext ?? null;
 }
 
-// createAudioContext pins the context to the stream rate, falling back to the
-// hardware-default context if the browser rejects an explicit sampleRate (older
-// Safari throws). Pure except for the Ctor it is handed, so it is unit-testable.
-export function createAudioContext(
-  Ctor: AudioContextCtor,
-  rate: number,
-): AudioContext {
-  try {
-    return new Ctor({ sampleRate: rate });
-  } catch {
-    return new Ctor();
-  }
+// createAudioContext builds the context at the hardware-native sample rate — no
+// explicit sampleRate is requested. Forcing the stream's 8 kHz here made
+// Windows/WASAPI silently render nothing (#598 follow-up); WorkletSink's
+// SincResampler upconverts 8k->native instead. Pure except for the Ctor it is
+// handed, so it is unit-testable.
+export function createAudioContext(Ctor: AudioContextCtor): AudioContext {
+  return new Ctor();
 }
 
 // A PcmSink consumes the decoded Float32 stream and renders it. configure() is
@@ -197,13 +198,13 @@ interface PcmSink {
 }
 
 // WorkletSink feeds the ring-buffer AudioWorklet (issue #629). It resamples the
-// stream to the context rate with one continuous SincResampler (so chunk
-// boundaries don't glitch and the 8k->48k fallback path is band-limited like a
-// recorded .wav, not the harsh linear interpolation of the old resampler) and
-// hands the samples to the audio thread via a transferred buffer. The worklet
+// 8 kHz stream up to the native context rate with one continuous SincResampler
+// (so chunk boundaries don't glitch and the 8k->48k conversion is band-limited
+// like a recorded .wav, not the harsh linear interpolation of the old resampler)
+// and hands the samples to the audio thread via a transferred buffer. The worklet
 // emits silence on underrun, so network jitter no longer skips/realigns the
 // playback cursor the way the legacy scheduler did.
-class WorkletSink implements PcmSink {
+export class WorkletSink implements PcmSink {
   private resampler: SincResampler | null = null;
 
   constructor(
@@ -232,8 +233,10 @@ class WorkletSink implements PcmSink {
 
 // LegacySink is the original per-chunk AudioBufferSource scheduler, kept as a
 // fallback for browsers without AudioWorklet (or when the worklet module can't
-// load). The context resamples each buffer to the device rate; the 8 kHz
-// context pin keeps that a no-op for the common case.
+// load). It hands each buffer to the context at the stream rate and lets the
+// context resample per-chunk to the native device rate — lower quality than the
+// WorkletSink's continuous SincResampler, but audible (and far better than the
+// silence the old 8 kHz context pin produced on Windows).
 class LegacySink implements PcmSink {
   private nextStartTime = 0;
   private streamRate = STREAM_SAMPLE_RATE;
@@ -306,7 +309,7 @@ export function createStreamPlayer(
         opts.onStateChange("error");
         return false;
       }
-      ctx = createAudioContext(Ctor, STREAM_SAMPLE_RATE);
+      ctx = createAudioContext(Ctor);
     }
     if (gain === null) {
       gain = ctx.createGain();

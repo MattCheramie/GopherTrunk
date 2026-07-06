@@ -1,13 +1,13 @@
 // High-quality band-limited resampler for the live-audio worklet path.
 //
 // The daemon streams PCM at the call's sample rate (8 kHz for digital and the
-// analog default). The AudioWorklet that plays it runs at the AudioContext
-// rate — normally the 8 kHz we pin, but the hardware rate (~44.1/48 kHz) when a
-// browser rejects the explicit rate (older Safari throws). When those differ we
-// must resample 8k -> 48k, and the cheap LinearResampler does it with linear
-// interpolation: weak anti-imaging that leaks audible aliases above the 4 kHz
-// input Nyquist, the "harsh / tinny" character that makes live sound worse than
-// the recorded .wav (the file is resampled by the browser's native sinc path).
+// analog default). The AudioWorklet that plays it runs at the AudioContext rate,
+// which is the hardware-native rate (~44.1/48 kHz) — we no longer pin the context
+// to 8 kHz because that silently rendered nothing on Windows/WASAPI. So the
+// common path now resamples 8k -> 48k, and the cheap LinearResampler does it with
+// linear interpolation: weak anti-imaging that leaks audible aliases above the
+// 4 kHz input Nyquist, the "harsh / tinny" character that makes live sound worse
+// than the recorded .wav (the file is resampled by the browser's native sinc path).
 //
 // SincResampler closes that gap with a windowed-sinc polyphase kernel — the
 // same class of filter the browser uses for a recorded buffer — while keeping
@@ -15,8 +15,8 @@
 //   1. Continuous state across network chunks: one instance spans the whole
 //      stream, carrying a history tail and a fractional read cursor so feeding
 //      [a,b] then [c,d] yields exactly what feeding [a,b,c,d] at once would.
-//   2. Zero-work passthrough when input and output rates match (the common
-//      8 kHz-context case), returning the input buffer unchanged.
+//   2. Zero-work passthrough when input and output rates match (e.g. a device
+//      whose native rate happens to be 8 kHz), returning the input unchanged.
 //
 // It is a drop-in for LinearResampler: same constructor, `passthrough` getter,
 // and process() contract.

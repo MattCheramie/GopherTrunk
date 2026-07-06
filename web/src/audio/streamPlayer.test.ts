@@ -6,6 +6,7 @@ import {
   WAV_HEADER_SIZE,
   createAudioContext,
   STREAM_SAMPLE_RATE,
+  WorkletSink,
 } from "./streamPlayer";
 
 // Build a canonical 44-byte RIFF/WAVE header byte-for-byte the way the
@@ -170,38 +171,70 @@ describe("PcmFramer", () => {
 });
 
 describe("createAudioContext", () => {
-  // Pinning the context to the stream's 8 kHz rate is what lets Web Audio skip
-  // per-chunk resampling (#598); assert the rate is actually requested.
-  it("builds the context at the requested sample rate", () => {
+  // Regression (#598 follow-up): the context must run at the hardware-native
+  // rate. Forcing the stream's 8 kHz here made Windows/WASAPI accept the context
+  // yet render silence in every browser. Assert we request NO explicit
+  // sampleRate so the OS picks a rate its audio engine can actually play.
+  it("builds the context at the hardware-native rate (no forced sampleRate)", () => {
     const seen: (AudioContextOptions | undefined)[] = [];
     class FakeCtx {
       constructor(opts?: AudioContextOptions) {
         seen.push(opts);
       }
     }
-    const ctx = createAudioContext(
-      FakeCtx as unknown as typeof AudioContext,
-      STREAM_SAMPLE_RATE,
-    );
+    const ctx = createAudioContext(FakeCtx as unknown as typeof AudioContext);
     expect(ctx).toBeInstanceOf(FakeCtx);
-    expect(seen).toEqual([{ sampleRate: 8000 }]);
+    expect(seen).toEqual([undefined]); // constructed with no sampleRate option
+  });
+});
+
+describe("WorkletSink", () => {
+  // A minimal AudioWorkletNode stand-in capturing what push() posts to the
+  // audio thread.
+  function fakeNode() {
+    const posts: { type: string; samples?: Float32Array }[] = [];
+    const node = {
+      port: {
+        postMessage: (msg: { type: string; samples?: Float32Array }) => {
+          posts.push(msg);
+        },
+      },
+    };
+    return { node: node as unknown as AudioWorkletNode, posts };
+  }
+
+  // With the context at the native 48 kHz and the stream at 8 kHz, the sink must
+  // upsample so audio actually reaches the ring buffer — this is the path that
+  // replaced the silent 8 kHz-pinned context.
+  it("resamples an 8 kHz stream up to a 48 kHz context", () => {
+    const { node, posts } = fakeNode();
+    const sink = new WorkletSink(node, 48000);
+    sink.configure(STREAM_SAMPLE_RATE); // 8000
+
+    const input = new Float32Array(64).fill(0.5);
+    sink.push(input);
+
+    const pushed = posts.filter((p) => p.type === "push");
+    expect(pushed.length).toBe(1);
+    const out = pushed[0].samples!;
+    // ~6x the input length (48000/8000), minus the resampler's kernel-warmup
+    // tail it defers to the next chunk — so well above the input count and
+    // clearly non-empty (audio is flowing at the native rate).
+    expect(out.length).toBeGreaterThan(input.length * 4);
   });
 
-  // Older Safari throws when handed an explicit sampleRate; we must still get a
-  // usable (hardware-default) context rather than failing playback outright.
-  it("falls back to a default context when the rate is rejected", () => {
-    let calls = 0;
-    class PickyCtx {
-      constructor(opts?: AudioContextOptions) {
-        calls++;
-        if (opts) throw new Error("sampleRate not supported");
-      }
-    }
-    const ctx = createAudioContext(
-      PickyCtx as unknown as typeof AudioContext,
-      STREAM_SAMPLE_RATE,
-    );
-    expect(ctx).toBeInstanceOf(PickyCtx);
-    expect(calls).toBe(2); // first (with opts) throws, second (no opts) succeeds
+  // A device whose native rate is already 8 kHz needs no resampling: the sink
+  // passes samples straight through unchanged.
+  it("passes through when context and stream rates match", () => {
+    const { node, posts } = fakeNode();
+    const sink = new WorkletSink(node, STREAM_SAMPLE_RATE);
+    sink.configure(STREAM_SAMPLE_RATE);
+
+    const input = new Float32Array([0.1, -0.2, 0.3, -0.4]);
+    sink.push(input);
+
+    const pushed = posts.filter((p) => p.type === "push");
+    expect(pushed.length).toBe(1);
+    expect(Array.from(pushed[0].samples!)).toEqual(Array.from(input));
   });
 });
