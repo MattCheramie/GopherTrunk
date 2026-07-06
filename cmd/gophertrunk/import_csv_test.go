@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -431,6 +432,48 @@ func TestParseRRNativeCSVStream_BOM(t *testing.T) {
 	}
 	if len(sys.Talkgroups) != 1 {
 		t.Fatalf("Talkgroups = %d, want 1", len(sys.Talkgroups))
+	}
+}
+
+// TestParseCSVFile_RRSitesCSVUnsupported reproduces the file reported in
+// issue #849: a RadioReference native *sites* CSV (trs_sites_<id>.csv),
+// which has no importer. Before this change it misrouted to the bundle
+// parser and failed with the opaque "before any # Section" error; now it
+// returns an actionable message naming the sites-CSV format.
+func TestParseCSVFile_RRSitesCSVUnsupported(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/trs_sites_2951HQ.csv"
+	body := "RFSS,Site Dec,Site Hex,Site NAC,Description,County Name,Lat,Lon,Range,Frequencies\n" +
+		"1,1,001,293,Downtown,Maricopa,33.4,-112.0,20,851.0125c 851.2625 852.0125\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := parseCSVFile(path, csvImportOpts{})
+	if err == nil {
+		t.Fatal("parseCSVFile: expected an error for a native RR sites CSV, got nil")
+	}
+	if !errors.Is(err, errRRSitesCSVUnsupported) {
+		t.Fatalf("error = %v, want errRRSitesCSVUnsupported", err)
+	}
+	if strings.Contains(err.Error(), "# Section") {
+		t.Errorf("error still surfaces the opaque bundle message: %v", err)
+	}
+}
+
+// TestLooksLikeRRSitesCSV pins the sites-CSV sniffer: a sites-shaped
+// header matches, while a talkgroup CSV and a multi-section bundle do not.
+func TestLooksLikeRRSitesCSV(t *testing.T) {
+	sites := []byte("RFSS,Site Dec,Site NAC,Description,Frequencies\n1,1,293,Downtown,851.0125c\n")
+	if !looksLikeRRSitesCSV(sites) {
+		t.Error("sites CSV should match looksLikeRRSitesCSV")
+	}
+	tg := []byte("DEC,HEX,Mode,Alpha Tag,Description,Tag,Group\n1000,3e8,D,OPS,Ops,Law,Police\n")
+	if looksLikeRRSitesCSV(tg) {
+		t.Error("talkgroup CSV should not match looksLikeRRSitesCSV")
+	}
+	bundle := []byte("# Section: sites\nrfss,site_id,site_name,county,frequencies\n1,1,Alpha,X,851.0125c\n")
+	if looksLikeRRSitesCSV(bundle) {
+		t.Error("multi-section bundle should not match looksLikeRRSitesCSV")
 	}
 }
 

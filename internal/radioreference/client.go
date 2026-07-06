@@ -155,6 +155,13 @@ func (c *Client) call(ctx context.Context, methodBody string) ([]byte, error) {
 		return nil, fmt.Errorf("radioreference: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		// RadioReference answers an unknown/mismatched operation with an
+		// HTTP 500 whose body is a SOAP fault; surface the concise
+		// <faultstring> rather than dumping the raw XML envelope at the
+		// user. See issue #849.
+		if fault := firstLeaves(raw, "faultstring")["faultstring"]; fault != "" {
+			return nil, fmt.Errorf("radioreference: HTTP %d: %s", resp.StatusCode, fault)
+		}
 		return nil, fmt.Errorf("radioreference: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	if fault := firstLeaves(raw, "faultstring")["faultstring"]; fault != "" {

@@ -121,6 +121,37 @@ func TestCall_SurfacesSOAPFault(t *testing.T) {
 	}
 }
 
+// TestCall_SurfacesFaultOnHTTP500 covers issue #849: RadioReference can
+// answer an unknown/mismatched operation with HTTP 500 whose body is a
+// SOAP fault. The error must surface the concise <faultstring>, not the
+// raw XML envelope.
+func TestCall_SurfacesFaultOnHTTP500(t *testing.T) {
+	const fault = `<?xml version="1.0"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+ <SOAP-ENV:Body><SOAP-ENV:Fault>
+  <faultcode>SOAP-ENV:Client</faultcode>
+  <faultstring>Operation 'getStateList' is not defined in the WSDL for this service</faultstring>
+ </SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(fault))
+	}))
+	defer srv.Close()
+	c, _ := NewClient(Auth{AppKey: "K", Username: "u", Password: "p"})
+	c.SetEndpoint(srv.URL)
+	_, err := c.GetStateList(context.Background())
+	if err == nil {
+		t.Fatal("expected an error for an HTTP 500 SOAP fault, got nil")
+	}
+	msg := err.Error()
+	if !contains(msg, "getStateList' is not defined") {
+		t.Errorf("error should surface the faultstring, got: %s", msg)
+	}
+	if contains(msg, "SOAP-ENV:Envelope") {
+		t.Errorf("error should not dump the raw XML envelope, got: %s", msg)
+	}
+}
+
 func TestGetCountyInfo_ParsesList(t *testing.T) {
 	const resp = `<?xml version="1.0"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
