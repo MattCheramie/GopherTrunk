@@ -62,13 +62,21 @@ func parseCSVFile(path string, opts csvImportOpts) (parsedSystem, error) {
 	// first header cell. See issue #849.
 	data = stripUTF8BOM(data)
 	var sys parsedSystem
-	if looksLikeRRNativeCSV(data) {
+	switch {
+	case looksLikeRRNativeCSV(data):
 		fillOpts := opts
 		if fillOpts.Name == "" {
 			fillOpts.Name = filenameStem(path)
 		}
 		sys, err = parseRRNativeCSVStream(bytes.NewReader(data), fillOpts)
-	} else {
+	case looksLikeRRSitesCSV(data):
+		// A RadioReference native *sites* CSV (trs_sites_<id>.csv) is
+		// neither a talkgroup CSV nor a multi-section bundle. Without a
+		// dedicated importer it would misroute to the bundle parser and
+		// fail with the opaque "before any # Section" error; report an
+		// actionable message instead. See issue #849.
+		err = errRRSitesCSVUnsupported
+	default:
 		sys, err = parseCSVStream(bytes.NewReader(data))
 	}
 	if err != nil {
@@ -583,6 +591,71 @@ func looksLikeRRNativeCSV(data []byte) bool {
 		}
 	}
 	return hits >= 3
+}
+
+// errRRSitesCSVUnsupported is returned when an uploaded CSV looks like a
+// RadioReference native *sites* export (the trs_sites_<id>.csv site /
+// frequency table) rather than a talkgroup CSV or a multi-section bundle.
+// GopherTrunk has no importer for that shape yet (see issue #849), so we
+// surface an actionable message instead of letting it misroute to the
+// bundle parser and fail with the opaque "before any # Section" error.
+var errRRSitesCSVUnsupported = errors.New(
+	"this looks like a RadioReference sites CSV (a site/frequency table, e.g. " +
+		"trs_sites_<id>.csv), which GopherTrunk can't import directly yet — import " +
+		"the system's PDF (Download → PDF) or its Talkgroups CSV, or wrap the data in " +
+		"a multi-section bundle (see docs/import.md)")
+
+// looksLikeRRSitesCSV reports whether data looks like a RadioReference
+// native sites CSV: no `# Section:` markers anywhere AND a header row that
+// carries a frequency column together with a site / RFSS / NAC column. The
+// exact column names in RR's sites export vary, so the match is
+// deliberately loose (case-insensitive substring) — it only needs to tell
+// a sites table apart from a talkgroup table or a hand-authored bundle, not
+// to validate the schema. Kept cheap by scanning only the first 8 KiB.
+func looksLikeRRSitesCSV(data []byte) bool {
+	head := data
+	const peek = 8 * 1024
+	if len(head) > peek {
+		head = head[:peek]
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(head))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var headerLine string
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		// A section marker means it's a bundle, not a bare sites CSV.
+		if _, ok := matchSectionMarker(trimmed); ok {
+			return false
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if headerLine == "" {
+			headerLine = line
+		}
+	}
+	if headerLine == "" {
+		return false
+	}
+	fields, err := splitCSVLine(headerLine)
+	if err != nil {
+		return false
+	}
+	hasFreq, hasSite := false, false
+	for _, f := range fields {
+		norm := strings.ToLower(strings.TrimSpace(f))
+		if strings.Contains(norm, "freq") {
+			hasFreq = true
+		}
+		if strings.Contains(norm, "site") || strings.Contains(norm, "rfss") || strings.Contains(norm, "nac") {
+			hasSite = true
+		}
+	}
+	return hasFreq && hasSite
 }
 
 // parseRRNativeCSVStream parses RadioReference's flat talkgroup CSV
