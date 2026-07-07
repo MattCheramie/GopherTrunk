@@ -110,7 +110,7 @@ var fieldMetas = map[string]FieldMeta{
 	"DeviceConfig.CenterFreqHz":   {Label: "Center frequency", Hz: true, Help: "Centre of the IQ band a wideband dongle covers. Every channel must fall within ± sample_rate/2 (5 % guard). Wideband only."},
 	"DeviceConfig.TunerStrategy":  {Help: "DSP layout that extracts each narrow channel from the wide IQ. auto picks by channel count. Wideband only.", Options: opts("", "(auto)", "ddc", "ddc", "polyphase", "polyphase")},
 	"DeviceConfig.Channels":       {Help: "Repeater carriers a wideband dongle monitors; each binds a frequency to a trunking system name."},
-	"DeviceConfig.VoiceTaps":      {Help: "Per-grant DDC voice tuners carved from a wideband dongle so one SDR covers CC + voice. 0 = use the physical voice pool. Capped at 8."},
+	"DeviceConfig.VoiceTaps":      {Help: "Per-grant DDC voice tuners carved from a wideband dongle so one SDR covers CC + voice. 0 = auto: a couple of taps are enabled automatically when this wideband dongle serves a trunking system and no role: voice SDR is present; set a value to control concurrency. No hard cap (CPU scales per tap)."},
 	"DeviceConfig.SignallingTaps": {Help: "P25 Phase 2 talker-alias harvesters: signalling-only DDC taps that decode FACCH-S aliases off granted traffic channels independent of the voice pool. 0 disables; 2-4 suits a busy Phase 2 system."},
 	"DeviceConfig.IQCorrect":      {Label: "I/Q correct", Help: "Blind I/Q-imbalance correction before decimation. Validate with `gophertrunk replay -iq-correct -diag` before enabling."},
 	"DeviceConfig.IQInvert":       {Label: "I/Q invert", Help: "Conjugate raw IQ (negate Q) to undo a spectrum-inverted front end (needed by some Soapy/USRP chains; critical for π/4-DQPSK like TETRA)."},

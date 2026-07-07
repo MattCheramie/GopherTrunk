@@ -26,6 +26,11 @@ sdr:
       center_freq_hz: 453_500_000
       tuner_strategy: auto        # auto | ddc | polyphase
       gain: "auto"
+      # Per-grant voice tuners carved from this dongle so voice decodes (audio +
+      # recordings) with no separate role: voice SDR. One per carrier lets every
+      # repeater be followed at once. Omit it and the daemon auto-enables a
+      # couple; set it here to control concurrency.
+      voice_taps: 4
       channels:
         - frequency_hz: 453_125_000
           system: "regional-dmr-t2"
