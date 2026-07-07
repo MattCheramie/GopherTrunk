@@ -66,6 +66,12 @@ sdr:
       # the cause. Measure your dongle's error (e.g. kalibrate-rtl, or a
       # known reference signal) and set it here.
       ppm: 0
+      # voice_taps carves per-grant voice tuners from this dongle's IQ so voice
+      # decodes (audio + recordings) without a separate role: voice SDR. One is
+      # enough for a single simplex carrier. If you omit this on a wideband
+      # dongle serving a trunking system, the daemon now auto-enables a couple;
+      # set it explicitly to control concurrency.
+      voice_taps: 1
       channels:
         - frequency_hz: 446_500_000
           system: "dmr-simplex"

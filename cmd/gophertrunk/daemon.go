@@ -2579,7 +2579,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// HandleGrant. Warn once at startup so the operator sees it before
 	// the first grant. Issue #379.
 	if len(d.systems) > 0 && len(d.voicePool.Devices()) == 0 {
-		d.log.Warn("no voice SDR configured but trunking systems are defined; voice grants will be dropped — add a role: voice device (see docs/hardware.md)",
+		d.log.Warn("no voice source configured but trunking systems are defined; voice grants will be dropped — no audio and no recordings — add a role: voice SDR, or a role: wideband dongle (voice taps auto-enable) (see docs/hardware.md)",
 			"systems", len(d.systems))
 	}
 
@@ -3785,6 +3785,13 @@ func cchuntSystems(systems []trunking.System, devices []config.DeviceConfig) []t
 	return out
 }
 
+// autoVoiceTaps is how many virtual voice taps buildVirtualVoiceTuners
+// enables on a wideband dongle that has no explicit voice_taps and no
+// physical role: voice SDR to fall back on. Two lets a typical single-dongle
+// setup follow a couple of concurrent calls without pegging a core; operators
+// who want more (or none) set voice_taps explicitly.
+const autoVoiceTaps = 2
+
 // buildVirtualVoiceTuners spins up one wbvoice.VirtualTuner per voice tap
 // on every `role: wideband` dongle. The taps subscribe to the dongle's
 // iqtap broker on each StreamIQ call, run a single-tap DDC, and emit
@@ -3800,6 +3807,15 @@ func (d *Daemon) buildVirtualVoiceTuners(cfg config.Config, log *slog.Logger) er
 	if d.pool == nil {
 		return nil
 	}
+	// A wideband dongle decodes control metadata (grants → TG/RID) fine with no
+	// voice taps, but every voice grant is then dropped for lack of a voice
+	// device — no audio and no recordings, while calls still appear "active".
+	// When trunking is configured and there's no physical role: voice SDR to
+	// carry those grants, auto-enable a couple of virtual voice taps on each
+	// wideband dongle so voice decodes out of the box. An explicit voice_taps
+	// (including 0 alongside a physical voice SDR) is always honoured.
+	autoEnableVoiceTaps := len(cfg.Trunking.Systems) > 0 &&
+		len(d.pool.AllByRole(sdr.RoleVoice)) == 0
 	for _, devCfg := range cfg.SDR.Devices {
 		if devCfg.Role != "wideband" {
 			continue
@@ -3813,6 +3829,11 @@ func (d *Daemon) buildVirtualVoiceTuners(cfg config.Config, log *slog.Logger) er
 		taps := devCfg.VoiceTaps
 		if taps < 0 {
 			taps = 0
+		}
+		if taps == 0 && autoEnableVoiceTaps {
+			taps = autoVoiceTaps
+			log.Info("daemon: wideband: no role: voice SDR and voice_taps unset; auto-enabling virtual voice taps so trunked voice decodes on this dongle — set voice_taps to change concurrency",
+				"serial", devCfg.Serial, "voice_taps", taps)
 		}
 		br := d.iqBrokers[entry.Info.Serial]
 		if br == nil && taps > 0 {

@@ -27,6 +27,26 @@ for tagged releases.
   from carrier offset alone. Fields are omitted until a TSBK is decoded and on
   non-TSBK Phase 2 paths (issue #858).
 
+### Fixed
+- **DMR (and single-dongle P25) voice now decodes with no extra config.** A
+  `role: wideband` dongle produced talkgroups/RIDs but no audio and no
+  recordings, because voice grants were dropped for lack of a voice device: the
+  voice pool is fed only by physical `role: voice` SDRs or virtual `voice_taps`,
+  and `voice_taps` defaulted to 0. When trunking is configured and no physical
+  `role: voice` SDR is present, the daemon now auto-enables a couple of virtual
+  voice taps on each wideband dongle so voice decodes out of the box; set
+  `voice_taps` explicitly to control concurrency. The shipped DMR samples now set
+  `voice_taps`, the "no voice source" startup warning names the fix, and the
+  config-builder's stale "voice taps (0–8) / capped at 8" hint is corrected.
+- **Live browser audio no longer requires a recordings directory.** The voice
+  composer and its decoded-PCM tap were gated on the file recorder, which needed
+  `recordings.dir`; a listen-only setup got silence. The recorder now supports a
+  decode-only mode (decodes and streams live audio without writing files).
+- **Live audio was silent in the browser on Windows.** The Web Audio player
+  pinned its `AudioContext` to 8 kHz, which Windows/WASAPI often accepts yet
+  renders as silence in every browser. It now runs at the device-native rate and
+  upconverts the 8 kHz stream with the existing band-limited resampler.
+
 ## [v0.5.9] — 2026-07-01
 
 ### Added

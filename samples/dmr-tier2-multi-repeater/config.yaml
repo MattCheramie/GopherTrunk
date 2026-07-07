@@ -65,6 +65,12 @@ sdr:
       center_freq_hz: 453_500_000        # keep every channel below within ±1.08 MHz
       tuner_strategy: auto               # auto: DDC for ≤6 channels, polyphase above 6
       gain: "auto"
+      # Per-grant voice tuners carved from this dongle so voice decodes (audio +
+      # recordings) with no separate role: voice SDR — one per concurrent call.
+      # 4 covers several simultaneous calls in this cluster; raise toward the
+      # channel count for full coverage (each tap is an independent DDC, so CPU
+      # scales per tap). Omit it and the daemon auto-enables a couple.
+      voice_taps: 4
       channels:
         - { frequency_hz: 453_137_500, system: "regional-dmr" }
         - { frequency_hz: 453_262_500, system: "regional-dmr" }
@@ -81,6 +87,7 @@ sdr:
       center_freq_hz: 460_500_000
       tuner_strategy: auto
       gain: "auto"
+      voice_taps: 4                      # per-grant voice tuners on this dongle (see dongle 1)
       channels:
         - { frequency_hz: 460_137_500, system: "regional-dmr" }
         - { frequency_hz: 460_262_500, system: "regional-dmr" }
@@ -97,6 +104,7 @@ sdr:
       center_freq_hz: 465_500_000
       tuner_strategy: auto
       gain: "auto"
+      voice_taps: 4                      # per-grant voice tuners on this dongle (see dongle 1)
       channels:
         - { frequency_hz: 465_137_500, system: "regional-dmr" }
         - { frequency_hz: 465_262_500, system: "regional-dmr" }

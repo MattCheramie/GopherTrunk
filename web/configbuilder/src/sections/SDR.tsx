@@ -192,7 +192,7 @@ function DeviceEditor(props: {
                 { value: "polyphase", label: "polyphase" },
               ]}
             />
-            <NumberField label="Voice taps (0–8)" value={d.VoiceTaps ?? 0} onChange={(x) => onChange({ ...d, VoiceTaps: x })} />
+            <NumberField label="Voice taps" value={d.VoiceTaps ?? 0} onChange={(x) => onChange({ ...d, VoiceTaps: x })} />
             <NumberField label="Signalling taps (P25 P2 alias)" value={d.SignallingTaps ?? 0} onChange={(x) => onChange({ ...d, SignallingTaps: x })} />
           </>
         ) : null}
