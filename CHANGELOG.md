@@ -7,25 +7,7 @@ for tagged releases.
 
 ## [Unreleased]
 
-### Added
-- **Neighbour sites on `GET /api/v1/sites`.** Each `SiteDTO` now carries a
-  `neighbors` array — the adjacent sites the site advertised over the air (P25
-  Adjacent Site Status Broadcast, opcode `0x3C`), each with the neighbour's
-  RFSS/Site and its band-plan-resolved control-channel `downlink_hz` (and
-  `uplink_hz`). This is the same decoded data already surfaced on
-  `GET /api/v1/systems`, now attached to the camped site of each system on the
-  per-site endpoint, so a consumer can backfill the wider network's
-  control-channel map from a single camped site without directly decoding every
-  site. Empty on sites that did not broadcast a neighbour list (issue #864).
-- **Per-site P25 decode quality on `GET /api/v1/sites`.** Each `SiteDTO` now
-  carries `control_channel_tsbk_error_rate` (cumulative % of TSBK blocks failing
-  Viterbi/CRC on that site's control channel), `control_channel_tsbk_count` (the
-  attempts behind it, a confidence weight), and `control_channel_decode_quality`
-  (`clean` / `marginal` / `poor`). This exposes decode health independently of
-  carrier lock — a well-locked carrier at range can still error heavily — so
-  consumers can categorise sites as clean vs marginal rather than approximating
-  from carrier offset alone. Fields are omitted until a TSBK is decoded and on
-  non-TSBK Phase 2 paths (issue #858).
+## [v0.6.4] — 2026-07-08
 
 ### Fixed
 - **DMR (and single-dongle P25) voice now decodes with no extra config.** A
@@ -38,6 +20,21 @@ for tagged releases.
   `voice_taps` explicitly to control concurrency. The shipped DMR samples now set
   `voice_taps`, the "no voice source" startup warning names the fix, and the
   config-builder's stale "voice taps (0–8) / capped at 8" hint is corrected.
+
+## [v0.6.3] — 2026-07-07
+
+### Added
+- **Neighbour sites on `GET /api/v1/sites`.** Each `SiteDTO` now carries a
+  `neighbors` array — the adjacent sites the site advertised over the air (P25
+  Adjacent Site Status Broadcast, opcode `0x3C`), each with the neighbour's
+  RFSS/Site and its band-plan-resolved control-channel `downlink_hz` (and
+  `uplink_hz`). This is the same decoded data already surfaced on
+  `GET /api/v1/systems`, now attached to the camped site of each system on the
+  per-site endpoint, so a consumer can backfill the wider network's
+  control-channel map from a single camped site without directly decoding every
+  site. Empty on sites that did not broadcast a neighbour list (issue #864).
+
+### Fixed
 - **Live browser audio no longer requires a recordings directory.** The voice
   composer and its decoded-PCM tap were gated on the file recorder, which needed
   `recordings.dir`; a listen-only setup got silence. The recorder now supports a
@@ -46,6 +43,95 @@ for tagged releases.
   pinned its `AudioContext` to 8 kHz, which Windows/WASAPI often accepts yet
   renders as silence in every browser. It now runs at the device-native rate and
   upconverts the 8 kHz stream with the existing band-limited resampler.
+- **RadioReference *sites* CSVs now fail with an actionable error, and SOAP
+  faults surface their fault string.** The importer only recognises RadioReference's
+  native *talkgroups* CSV and the multi-section bundle, so a native *sites* table
+  export fell through to the bundle parser and failed with the opaque "data at
+  line 1 before any # Section marker". A sites-shaped CSV (no `# Section` markers,
+  a header with a frequency column plus a site/RFSS/NAC column) is now detected and
+  rejected with a message pointing at the formats that work today (system PDF,
+  Talkgroups CSV, or a bundle). Separately, when RadioReference answers a browse
+  call with an HTTP 500 SOAP fault, the client now surfaces the concise
+  `<faultstring>` instead of dumping the raw XML envelope (issue #849).
+
+## [v0.6.2] — 2026-07-04
+
+### Fixed
+- **P25 Phase 2 superframes now lock on real off-air traffic.** The outbound sync
+  constant was a garbled 48-bit value (`0x575F7DFF77FF`) used where a 40-bit
+  (20-dibit) sync word is expected, so the top byte was silently dropped and the
+  detector matched a pattern that never appears on air — `superframes=0` on every
+  call, so `algorithm_id`/`key_id` never populated. Differentially decoding the
+  spec-conformant outbound sync (`0x575D57F7FF`, TIA-102.BBAC) yields the 20-dibit
+  stream the detector must match; setting it (plus a width guard) lets superframes
+  lock. Verified against a spec-conformant synthetic; issue #813 stays open pending
+  the reporter's real capture (issue #813).
+- **`control_channel_carrier_offset_hz` now reports the *total* control-channel
+  offset, matching the WARN log.** The field on `GET /api/v1/sites` was wired to
+  the receiver's residual AFC only, so with `sdr.autotune` on — once a correction
+  folds into the DDC and the receiver re-centres — it under-reported the offset the
+  "carrier offset" WARN was still flagging: the log and the API disagreed. The
+  published value now adds the applied DDC correction to the residual, so the two
+  agree by construction. With autotune off (the default) the applied correction is
+  0 and the value is unchanged (issue #815).
+
+## [v0.6.1] — 2026-07-03
+
+### Docs
+- **Lab Bench tutorial blog series.** Three concurrent hands-on series — **Signal
+  Lab**, **RF Scope**, and **Crypto Lab** — launch on the docs blog, built on a
+  shared no-CDN, theme-aware, high-DPI canvas charting module (constellation, eye,
+  heatmap, line, bars, timeline) that renders inline figures from post JSON, with
+  per-series hub pages, trilogy cross-links, and Blog-group navigation.
+
+## [v0.6.0] — 2026-07-02
+
+### Added
+- **Every browser console is reachable from the daemon, and they share one design
+  system.** The daemon previously mounted only the operator console (`/`), Config
+  Builder (`/config/`), and Crypto Lab (`/cryptolab/`); Signal Lab and RF Scope
+  were reachable only via their standalone `serve` commands, absent from the nav,
+  and Crypto Lab's header linked to a `/siglab/` path the daemon 404'd. Signal Lab
+  now mounts at `/siglab/` and RF Scope at `/rfscope/`, both advertised via
+  `RuntimeDTO` so the nav only links to what is actually reachable, and every
+  sub-app gains a shared nav back to the operator console and its siblings. RF
+  Scope also joins the shared `--gt-*` design tokens (dark/mono/light themes +
+  reduced-motion), so all consoles look and behave alike.
+- **Per-site P25 decode quality on `GET /api/v1/sites`.** Each `SiteDTO` now
+  carries `control_channel_tsbk_error_rate` (cumulative % of TSBK blocks failing
+  Viterbi/CRC on that site's control channel), `control_channel_tsbk_count` (the
+  attempts behind it, a confidence weight), and `control_channel_decode_quality`
+  (`clean` / `marginal` / `poor`). This exposes decode health independently of
+  carrier lock — a well-locked carrier at range can still error heavily — so
+  consumers can categorise sites as clean vs marginal rather than approximating
+  from carrier offset alone. Fields are omitted until a TSBK is decoded and on
+  non-TSBK Phase 2 paths (issue #858).
+
+### Fixed
+- **Airspy overrun no longer silently freezes the whole decode.** Under high load
+  the wideband DSP consumer could stall, the driver's IQ channel filled, and the
+  blocking send stopped the USB reaper from posting new reads — the endpoint FIFO
+  overflowed and the stream halted with no error or log, which also froze the
+  control-channel decode (field-reported on an Airspy R2 at 2.5 and 10 MS/s when a
+  voice grant spun up a second IQ consumer). The Airspy deliver path is now
+  non-blocking and drops on overrun — matching the RTL-SDR and SoapyRemote paths —
+  counting the drop via `iq_underruns_total` and emitting a rate-limited "host
+  can't keep up — lower `sdr.sample_rate`" WARN, so the reaper always cycles back
+  and the device never underflows.
+- **Strong in-channel signal with no sync now warns and points at `sdr.ppm`.** A
+  narrowband C4FM carrier that is present but off-frequency (an uncorrected RTL-SDR
+  tuner offset beyond the demod's ~±75 Hz tolerance) decoded nothing with no
+  indication why. The wideband engine now emits a per-channel "strong signal but no
+  sync" WARN when a channel holds strong power with zero sync/FEC across several
+  diagnostics windows, naming `sdr.ppm` as the likely fix; the dmr-simplex sample
+  config's ppm note is strengthened accordingly (issue #836).
+- **RadioReference CSVs exported through Excel on Windows now import.** Such files
+  carry a UTF-8 BOM (`EF BB BF`); the raw bytes reached the format sniffer, mangling
+  the first header cell so the native-CSV detector failed and import errored with
+  "native RR CSV header missing decimal/dec column" or "data at line 1 before any
+  # Section marker". A leading BOM is now stripped at the file-read site (covering
+  both the CLI import and the web-UI upload) and, defensively, in the reader-based
+  entry points (issue #849).
 
 ## [v0.5.9] — 2026-07-01
 
