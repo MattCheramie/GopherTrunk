@@ -86,6 +86,17 @@ var (
 		0x73, 0xC9, 0x7A, 0xE8, 0x9E, 0xF3, 0x11, 0xD4,
 		0xB1, 0xD0, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61,
 	}
+	// kIOUSBInterfaceInterfaceID182 (6C0D38C3-B093-11D4-95C1-000A27052861)
+	// from IOKit/usb/IOUSBLib.h. A superset of the base
+	// IOUSBInterfaceInterface vtable — every base index is unchanged — that
+	// additionally exposes the *TO (timeout) transfer variants, including
+	// ReadPipeTO (index 39). Queried only when the ReadPipeTO opt-in
+	// (GT_USB_READPIPE_TIMEOUT_MS) is set; the default path stays on the
+	// base interface untouched.
+	uuidIOUSBInterfaceInterface182 = cfUUIDBytes{
+		0x6C, 0x0D, 0x38, 0xC3, 0xB0, 0x93, 0x11, 0xD4,
+		0x95, 0xC1, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61,
+	}
 )
 
 // cfUUIDBytes mirrors Apple's CFUUIDBytes — 16 raw bytes of a UUID.
@@ -122,6 +133,14 @@ const (
 	ifaceAbortPipe         = 28
 	ifaceResetPipe         = 29
 	ifaceReadPipe          = 31
+	// ifaceReadPipeTO is ReadPipeTO, present only in the v182+ interface
+	// (kIOUSBInterfaceInterfaceID182). Signature adds noDataTimeout and
+	// completionTimeout (ms) after the base ReadPipe args:
+	//   IOReturn ReadPipeTO(self, UInt8 pipeRef, void *buf, UInt32 *size,
+	//                       UInt32 noDataTimeout, UInt32 completionTimeout)
+	// Only invoked when ClaimInterface obtained the v182 interface (see
+	// darwinTransport.readPipeTimeoutMs).
+	ifaceReadPipeTO = 39
 )
 
 // iousbDevRequest mirrors IOUSBDevRequest from IOUSBLib.h. Layout:

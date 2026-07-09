@@ -452,6 +452,14 @@ type darwinTransport struct {
 	desc       Descriptor
 	closed     atomic.Bool
 
+	// readPipeTimeoutMs, when non-zero, makes bulkLoop use ReadPipeTO
+	// (the v182 timeout variant) with this no-data timeout instead of the
+	// blocking ReadPipe, so a halted endpoint returns kIOReturnTimeout
+	// rather than wedging. Set by ClaimInterface only when the
+	// GT_USB_READPIPE_TIMEOUT_MS opt-in is present AND the v182 interface
+	// was obtained; 0 keeps the default (blocking) read path.
+	readPipeTimeoutMs uint32
+
 	bulkMu       sync.Mutex
 	bulkActive   bool
 	bulkPipeRef  uint8
@@ -470,6 +478,18 @@ type darwinTransport struct {
 	bulkErrMu    sync.Mutex
 	bulkDeadErr  error // first non-stop slot error wins
 	bulkDeadOnce sync.Once
+
+	// Stall watchdog. The darwin reaper blocks in a no-timeout ReadPipe,
+	// so a device that silently halts its bulk-IN endpoint (the macOS
+	// Airspy freeze) never errors, never fires bulkOnDead, and wedges
+	// forever. bulkWatch tracks last-delivery time; when the stream goes
+	// idle past the stall window it aborts the pipe, which unblocks every
+	// reaper and routes through the ordinary reaper-death path with
+	// ErrStreamStalled. See bulk_stall.go and StartBulkIn.
+	bulkWatch     *bulkStallWatch
+	bulkWatchStop chan struct{}
+	bulkWatchDone chan struct{}
+	bulkWatchOnce sync.Once
 }
 
 // recordBulkErr stashes err as the first-failing-slot reason if no
@@ -483,6 +503,7 @@ func (t *darwinTransport) recordBulkErr(err error) {
 }
 
 type darwinBulkSlot struct {
+	idx int
 	buf []byte
 }
 
@@ -592,7 +613,17 @@ func (t *darwinTransport) ClaimInterface(num int) error {
 	}
 	defer release(uintptr(unsafe.Pointer(plugin)))
 
-	ifaceIface, err := queryInterface(uintptr(unsafe.Pointer(plugin)), uuidIOUSBInterfaceInterface)
+	// Default to the base interface. When the ReadPipeTO opt-in is set,
+	// query the v182 superset instead so bulkLoop can call ReadPipeTO
+	// (index 39); fall back to the base interface if the v182 query fails
+	// so an unusual host still streams (on the blocking read path).
+	timeoutMs, wantTO := readPipeTimeoutMs()
+	ifaceIface, err := queryInterface(uintptr(unsafe.Pointer(plugin)), interfaceUUIDFor(wantTO))
+	if err != nil && wantTO {
+		debugLogf("bulk", "%s v182 interface unavailable (%v); falling back to blocking ReadPipe", t.bulkLabel(), err)
+		wantTO = false
+		ifaceIface, err = queryInterface(uintptr(unsafe.Pointer(plugin)), uuidIOUSBInterfaceInterface)
+	}
 	if err != nil {
 		return fmt.Errorf("usb: QueryInterface(IOUSBInterfaceInterface): %w", err)
 	}
@@ -601,7 +632,21 @@ func (t *darwinTransport) ClaimInterface(num int) error {
 		return fmt.Errorf("usb: USBInterfaceOpen: %w", translateIOReturn(uintptr(rc)))
 	}
 	t.ifaceIface = ifaceIface
+	if wantTO {
+		t.readPipeTimeoutMs = timeoutMs
+		debugLogf("bulk", "%s ReadPipeTO enabled: no-data timeout %dms", t.bulkLabel(), timeoutMs)
+	}
 	return nil
+}
+
+// interfaceUUIDFor picks the IOUSBInterfaceInterface UUID to query: the
+// v182 superset when the ReadPipeTO timeout path is requested, otherwise
+// the base interface.
+func interfaceUUIDFor(wantTimeout bool) cfUUIDBytes {
+	if wantTimeout {
+		return uuidIOUSBInterfaceInterface182
+	}
+	return uuidIOUSBInterfaceInterface
 }
 
 func (t *darwinTransport) ReleaseInterface(int) error {
@@ -653,7 +698,7 @@ func (t *darwinTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacke
 	}
 	slots := make([]*darwinBulkSlot, ringBufs)
 	for i := range slots {
-		slots[i] = &darwinBulkSlot{buf: make([]byte, bufLen)}
+		slots[i] = &darwinBulkSlot{idx: i, buf: make([]byte, bufLen)}
 	}
 	t.bulkPipeRef = pipeRef
 	t.bulkSlots = slots
@@ -666,10 +711,109 @@ func (t *darwinTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacke
 	t.bulkErrMu.Unlock()
 	t.bulkDeadOnce = sync.Once{}
 	t.bulkAlive.Store(int32(len(slots)))
+	t.startBulkWatch(pipeRef, len(slots))
 	for _, s := range slots {
 		go t.bulkLoop(pipeRef, s, onPacket)
 	}
 	return nil
+}
+
+// startBulkWatch arms the stall watchdog for a freshly-started stream.
+// Called under bulkMu from StartBulkIn. When the stall window is disabled
+// (GT_USB_BULK_STALL_MS=0) it installs no watch and markBulkActivity
+// becomes a no-op. See bulk_stall.go for the portable core.
+func (t *darwinTransport) startBulkWatch(pipeRef uint8, slots int) {
+	stall := bulkStallTimeout()
+	t.bulkWatch = nil
+	t.bulkWatchStop = nil
+	t.bulkWatchDone = nil
+	t.bulkWatchOnce = sync.Once{}
+	if stall <= 0 {
+		return
+	}
+	w := newBulkStallWatch(slots)
+	w.start(time.Now().UnixNano())
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	t.bulkWatch = w
+	t.bulkWatchStop = stop
+	t.bulkWatchDone = done
+
+	interval := bulkWatchTickInterval(stall)
+	stallNanos := int64(stall)
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		onTick := func() {
+			if debugUSBEnabled() {
+				debugLogf("bulk", "%s telemetry %s", t.bulkLabel(), w.stats(time.Now().UnixNano()).telemetryLine())
+			}
+		}
+		onStall := func() { t.onBulkStall(pipeRef, w, stall) }
+		w.run(func() int64 { return time.Now().UnixNano() }, ticker.C, stop, stallNanos, onTick, onStall)
+	}()
+}
+
+// onBulkStall fires (at most once) when the watchdog detects the stream
+// has gone idle past the stall window. It records ErrStreamStalled as the
+// stream-death reason (first error wins, so it survives the aborted-read
+// errors the reapers then report) and aborts the pipe. AbortPipe unblocks
+// every reaper's ReadPipe with kIOReturnAborted; because bulkStopFlag is
+// still unset (no StopBulkIn), the last reaper to exit fires bulkOnDead —
+// the ordinary #345 reaper-death path — surfacing a real EOF instead of a
+// silent hang. It does NOT call StopBulkIn itself (the driver's onDead
+// callback does that); it only breaks the wedge.
+func (t *darwinTransport) onBulkStall(pipeRef uint8, w *bulkStallWatch, stall time.Duration) {
+	// Re-check under the lock: a concurrent StopBulkIn may have won the
+	// race and already torn the pipe down, in which case the iface handle
+	// is about to be released and must not be touched.
+	t.bulkMu.Lock()
+	active := t.bulkActive && t.bulkStopFlag.Load() == 0
+	iface := t.ifaceIface
+	t.bulkMu.Unlock()
+	if !active || iface == 0 {
+		return
+	}
+	debugLogf("bulk", "%s bulk-IN stalled: %s", t.bulkLabel(), w.stats(time.Now().UnixNano()).stalledLine(stall))
+	t.recordBulkErr(ErrStreamStalled)
+	vtableCall(iface, ifaceAbortPipe, uintptr(pipeRef))
+}
+
+// markBulkActivity records a delivered URB with the stall watchdog. Safe
+// to call when the watch is disabled (nil).
+func (t *darwinTransport) markBulkActivity(slot, n int) {
+	if w := t.bulkWatch; w != nil {
+		w.markActivity(slot, n)
+	}
+}
+
+// stopBulkWatch disarms the watchdog and waits for its goroutine to exit,
+// so a teardown (StopBulkIn/Close) can safely release the interface handle
+// without racing an in-flight AbortPipe from the watch. Idempotent.
+func (t *darwinTransport) stopBulkWatch() {
+	t.bulkWatchOnce.Do(func() {
+		if t.bulkWatch != nil {
+			t.bulkWatch.stop()
+		}
+		if t.bulkWatchStop != nil {
+			close(t.bulkWatchStop)
+		}
+		if t.bulkWatchDone != nil {
+			select {
+			case <-t.bulkWatchDone:
+			case <-time.After(2 * time.Second):
+			}
+		}
+	})
+}
+
+// bulkLabel is a short identifier for the transport's debug traces.
+func (t *darwinTransport) bulkLabel() string {
+	if t.desc.Serial != "" {
+		return "serial=" + t.desc.Serial
+	}
+	return "path=" + t.desc.Path
 }
 
 // findPipeRef walks the interface's pipe list to find the pipeRef
@@ -742,22 +886,45 @@ func (t *darwinTransport) bulkLoop(pipeRef uint8, slot *darwinBulkSlot, onPacket
 			return
 		}
 		size := uint32(len(slot.buf))
-		rc := vtableCall(t.ifaceIface, ifaceReadPipe,
-			uintptr(pipeRef),
-			uintptr(unsafe.Pointer(&slot.buf[0])),
-			uintptr(unsafe.Pointer(&size)),
-		)
+		var rc uintptr
+		if to := t.readPipeTimeoutMs; to > 0 {
+			// ReadPipeTO with a no-data timeout: a halted endpoint
+			// returns kIOReturnTimeout after `to` ms of dead air
+			// instead of blocking forever. completionTimeout=0 leaves
+			// the overall transfer uncapped so a normally-filling URB
+			// is never cut short.
+			rc = vtableCall(t.ifaceIface, ifaceReadPipeTO,
+				uintptr(pipeRef),
+				uintptr(unsafe.Pointer(&slot.buf[0])),
+				uintptr(unsafe.Pointer(&size)),
+				uintptr(to),
+				0,
+			)
+		} else {
+			rc = vtableCall(t.ifaceIface, ifaceReadPipe,
+				uintptr(pipeRef),
+				uintptr(unsafe.Pointer(&slot.buf[0])),
+				uintptr(unsafe.Pointer(&size)),
+			)
+		}
 		if t.bulkStopFlag.Load() != 0 {
 			return
 		}
 		if rc != kIOReturnSuccess {
 			// kIOReturnAborted (cancellation) and any other
 			// transport error both exit the loop. ResetPipe
-			// below would be needed before re-Start.
-			t.recordBulkErr(fmt.Errorf("usb: ReadPipe: 0x%08x", uint32(rc)))
+			// below would be needed before re-Start. A ReadPipeTO
+			// no-data timeout means the endpoint halted — surface it
+			// as ErrStreamStalled so the death reason names the freeze.
+			if uint32(rc) == kIOReturnTimeout {
+				t.recordBulkErr(ErrStreamStalled)
+			} else {
+				t.recordBulkErr(fmt.Errorf("usb: ReadPipe: 0x%08x", uint32(rc)))
+			}
 			return
 		}
 		if size > 0 {
+			t.markBulkActivity(slot.idx, int(size))
 			onPacket(slot.buf[:size])
 		}
 	}
@@ -774,6 +941,11 @@ func (t *darwinTransport) StopBulkIn() error {
 	slotCount := len(t.bulkSlots)
 	t.bulkActive = false
 	t.bulkMu.Unlock()
+
+	// Disarm the stall watchdog and wait for its goroutine to exit before
+	// we touch the pipe, so a normal teardown never trips a stall abort
+	// and no watch AbortPipe can race the interface release in Close.
+	t.stopBulkWatch()
 
 	// AbortPipe makes every blocked ReadPipe return with
 	// kIOReturnAborted; goroutines see it and exit.

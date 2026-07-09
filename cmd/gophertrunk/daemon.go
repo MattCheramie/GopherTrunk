@@ -2729,7 +2729,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		eng := eng
 		name := fmt.Sprintf("widebandt2-%d", i)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			return eng.Run(ctx)
+			return d.runWidebandWithRetry(ctx, eng)
 		})
 	}
 	// DMR Tier III autoconfig learners — one per wideband DMR control
@@ -3585,6 +3585,72 @@ func (d *Daemon) runCCDecoderWithRetry(ctx context.Context) error {
 		d.mu.Lock()
 		d.ccDecoder = dec
 		d.mu.Unlock()
+	}
+}
+
+// runWidebandWithRetry drives one widebandt2 engine under the same
+// restart loop the ccdecoder uses (runCCDecoderWithRetry). The wideband
+// engine has no in-stream retry of its own, so a dead IQ stream — a USB
+// disconnect, or the macOS stall watchdog aborting a silently-frozen
+// Airspy endpoint (usb.ErrStreamStalled → widebandt2.ErrIQStreamClosed) —
+// would otherwise stop decoding for that dongle with no recovery until a
+// process restart. On the sentinel it backs off, reacquires the dongle by
+// serial, re-points the engine's iqtap broker at the fresh handle, and
+// restarts Run. Backoff exhaustion escalates to a fatal so an external
+// supervisor restarts a clean process. ctx cancel and any other Run error
+// end the loop without escalation. See issue #345.
+func (d *Daemon) runWidebandWithRetry(ctx context.Context, eng *widebandt2.Engine) error {
+	serial := eng.Serial()
+	var attempt int
+	for {
+		started := time.Now()
+		err := eng.Run(ctx)
+		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		if !errors.Is(err, widebandt2.ErrIQStreamClosed) {
+			return err
+		}
+		// A Run that survived a healthy window means the previous
+		// recovery succeeded; reset the retry budget for a fresh
+		// failure stretch.
+		if time.Since(started) >= ccDecoderHealthyRunDuration {
+			attempt = 0
+		}
+		if attempt >= len(ccDecoderRetryBackoffs) {
+			d.log.Error("daemon: widebandt2: IQ stream died and retries exhausted; escalating to fatal",
+				"serial", serial, "attempts", attempt, "err", err)
+			fatal := fmt.Errorf("widebandt2: %w", err)
+			d.recordFatal(fatal)
+			return fatal
+		}
+		wait := ccDecoderRetryBackoffs[attempt]
+		attempt++
+		d.log.Warn("daemon: widebandt2: IQ stream died; retrying",
+			"serial", serial, "attempt", attempt, "max_attempts", len(ccDecoderRetryBackoffs),
+			"backoff", wait, "err", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+		// Reacquire the dongle by serial and re-point the broker the
+		// engine streams through, so the restarted Run subscribes to a
+		// live handle instead of the dead one. When no broker exists for
+		// this serial the engine still holds the stale device; the
+		// escalate-to-fatal path then restarts a clean process. Mirrors
+		// the ccdecoder reacquire above.
+		if d.pool != nil && serial != "" {
+			if newEntry, rerr := d.pool.Reacquire(serial, d.cfg.SDR.SampleRate); rerr != nil {
+				d.log.Warn("daemon: widebandt2: SDR reacquire failed; will retry",
+					"serial", serial, "err", rerr)
+			} else {
+				d.log.Info("daemon: widebandt2: SDR reacquired", "serial", serial)
+				if br := d.iqBrokers[serial]; br != nil {
+					br.SetInner(newEntry.Device)
+				}
+			}
+		}
 	}
 }
 
