@@ -2,6 +2,7 @@ package widebandt2
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -148,7 +149,7 @@ func TestEngineDiagnosticsLowPowerWarns(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := e.Run(ctx); err != nil {
+	if err := e.Run(ctx); err != nil && !errors.Is(err, ErrIQStreamClosed) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
@@ -220,7 +221,7 @@ func TestEngineDiagnosticsCountersOnDecode(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	if err := e.Run(ctx); err != nil {
+	if err := e.Run(ctx); err != nil && !errors.Is(err, ErrIQStreamClosed) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
@@ -281,7 +282,7 @@ func TestEngineDiagnosticsMetricsGauge(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := e.Run(ctx); err != nil {
+	if err := e.Run(ctx); err != nil && !errors.Is(err, ErrIQStreamClosed) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
@@ -350,7 +351,7 @@ func TestEngineDiagnosticsOverloadWarns(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := e.Run(ctx); err != nil {
+	if err := e.Run(ctx); err != nil && !errors.Is(err, ErrIQStreamClosed) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 

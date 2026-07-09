@@ -7,6 +7,30 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **Airspy on macOS no longer freezes silently.** After locking a control
+  channel and decoding for a few seconds, an Airspy on macOS could go
+  completely silent — the process stayed alive (heartbeats kept logging) but no
+  IQ arrived and nothing decoded, with no error, EOF, or drop warning. The
+  cause is a device-side USB endpoint halt that the darwin backend's blocking,
+  no-timeout bulk read never noticed, so none of the existing safety nets (the
+  overrun drop, the reaper-death `onStreamDead`, the enumerate-based pool
+  watchdog) fired. A new **bulk-IN stall watchdog** now aborts a stream that
+  delivers no data for `GT_USB_BULK_STALL_MS` (default 2 s) while the device is
+  still present, converting the silent hang into a real end-of-stream; the
+  wideband decoder is now supervised by a retry loop that reacquires the dongle
+  and restarts (mirroring the control-channel decoder), so the daemon
+  self-heals instead of quietly stopping.
+
+### Added
+- **More USB debugging for the Airspy freeze.** With `RTLSDR_DEBUG_USB=1` the
+  macOS backend now emits periodic bulk-stream telemetry (URBs, bytes,
+  throughput, per-slot completion spread, idle gap) and a one-shot `bulk-IN
+  stalled` line when the watchdog trips — enough to pin when and how a freeze
+  happens. An opt-in `GT_USB_READPIPE_TIMEOUT_MS` switches the reaper to IOKit
+  `ReadPipeTO` with a per-read no-data timeout as a candidate root fix. See
+  `docs/reference/airspy.md` → Troubleshooting.
+
 ## [v0.6.4] — 2026-07-08
 
 ### Fixed

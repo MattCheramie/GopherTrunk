@@ -778,6 +778,16 @@ func (e *Engine) DMRTier3ControlChannel(freqHz uint32) *tier3.ControlChannel {
 // barriers before returning, so successive chunks — and the post-Process
 // diagnostics below — never overlap a running tap and each receiver still
 // sees its chunks in order.
+// ErrIQStreamClosed is returned by Run when the SDR's IQ channel closed
+// unexpectedly — the USB reaper died (a physical disconnect, or the macOS
+// stall watchdog aborting a silently-frozen Airspy endpoint; see
+// internal/sdr/rtlsdr/usb.ErrStreamStalled) — rather than the engine being
+// asked to stop via ctx cancellation. The daemon's runWidebandWithRetry
+// supervisor treats it as a signal to reacquire the dongle and restart,
+// mirroring the control-channel decoder's retry loop (issue #345). A clean
+// ctx-cancel shutdown still returns nil.
+var ErrIQStreamClosed = errors.New("widebandt2: IQ stream closed unexpectedly")
+
 func (e *Engine) Run(ctx context.Context) error {
 	if err := e.device.SetCenterFreq(e.centerHz); err != nil {
 		return fmt.Errorf("widebandt2: SetCenterFreq %d Hz: %w", e.centerHz, err)
@@ -808,7 +818,15 @@ func (e *Engine) Run(ctx context.Context) error {
 			return nil
 		case chunk, ok := <-stream:
 			if !ok {
-				return nil
+				// The driver closed the IQ channel. A concurrent
+				// ctx-cancel means a clean shutdown; otherwise the
+				// stream died under us (USB reaper death or the stall
+				// watchdog aborting a frozen endpoint) and the daemon
+				// supervisor should reacquire the dongle and restart.
+				if ctx.Err() != nil {
+					return nil
+				}
+				return ErrIQStreamClosed
 			}
 			if e.suspended.Load() {
 				// SDR borrowed by a hunt and retuned: drop the off-frequency

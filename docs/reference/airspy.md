@@ -73,6 +73,32 @@ Diagnostics: each tap's level is on `gophertrunk_sdr_iq_power_dbfs` labelled
 whole-capture power to tell a weak site apart from a decode problem, and watch
 the clip ratio for overload.
 
+## Troubleshooting
+
+### Stream goes silent after a few seconds (macOS)
+
+On macOS the pure-Go USB backend reaps the Airspy's bulk-IN endpoint with
+blocking reads. If the device silently halts its endpoint — no USB error, no
+disconnect — those reads never return, and older builds wedged with the process
+alive but decoding nothing (only the periodic `runtime: heartbeat` kept
+logging). A **stall watchdog** now guards this: if the stream delivers no data
+for a couple of seconds while the device is still enumerated, GopherTrunk aborts
+the pipe, surfaces the death as a real end-of-stream, and the daemon reacquires
+the dongle and restarts the wideband decoder automatically.
+
+Knobs for diagnosing and tuning it:
+
+- `RTLSDR_DEBUG_USB=1` — emits a periodic bulk-stream telemetry line (URBs,
+  bytes, throughput, per-slot spread, idle gap) plus a one-shot **`bulk-IN
+  stalled`** line at the moment the stream freezes. Capture this to pin down
+  *when* and *how* a freeze happens.
+- `GT_USB_BULK_STALL_MS` — the stall window in milliseconds (default `2000`).
+  Set `0` to disable the watchdog.
+- `GT_USB_READPIPE_TIMEOUT_MS` — opt-in: switch the reaper to IOKit's
+  `ReadPipeTO` with this per-read no-data timeout so a halted endpoint returns a
+  timeout directly instead of relying on the watchdog. Off by default; try e.g.
+  `200` if the watchdog alone doesn't recover cleanly.
+
 ## Sources
 
 [^wiki]: [Software-defined radio](https://en.wikipedia.org/wiki/Software-defined_radio) — Wikipedia, for background on Airspy-class high-performance VHF/UHF SDR receivers.

@@ -150,6 +150,16 @@ var (
 	// within the supplied timeoutMs window.
 	ErrTimeout = errors.New("usb: transfer timed out")
 
+	// ErrStreamStalled is surfaced via a bulk-IN stream's onStreamDead
+	// when the reaper stopped delivering packets for the stall-watch
+	// window while the device is still enumerated — the macOS Airspy
+	// "silent freeze", where a blocking ReadPipe never returns so no
+	// per-URB error is ever raised. The stall watchdog aborts the pipe
+	// to unblock the reaper, which then dies like any other reaper death
+	// (issue #345), converting a silent hang into a real EOF the driver
+	// and daemon can act on. See bulk_stall.go.
+	ErrStreamStalled = errors.New("usb: bulk-IN stream stalled (no data within watchdog window)")
+
 	// ErrPipeStalled is returned when the device stalled the USB pipe
 	// (CLEAR_FEATURE(ENDPOINT_HALT) recoverable). Maps to ERROR_GEN_FAILURE
 	// on Windows/WinUSB — the clone-dongle cold-boot symptom where the

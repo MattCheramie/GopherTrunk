@@ -46,6 +46,7 @@ type mockDevice struct {
 	chunks       [][]complex64
 	chunkCh      chan []complex64
 	streamErr    error
+	holdOpen     bool // keep the stream open until ctx cancels (models a live stream)
 	centerFreqHz atomic.Uint32
 	sampleRateHz atomic.Uint32
 	startOnce    sync.Once
@@ -76,6 +77,12 @@ func (m *mockDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 					return
 				case m.chunkCh <- c:
 				}
+			}
+			// holdOpen models a live SDR whose stream only ends on
+			// ctx-cancel (a clean stop) rather than closing on its own —
+			// the case Run must report as nil, not a stream death.
+			if m.holdOpen {
+				<-ctx.Done()
 			}
 		}()
 	})
@@ -527,7 +534,7 @@ func TestEngineRunSetsCenterFreqAndDrainsStream(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := e.Run(ctx); err != nil {
+	if err := e.Run(ctx); err != nil && !errors.Is(err, ErrIQStreamClosed) {
 		t.Errorf("Run: %v", err)
 	}
 	if got := dev.centerFreqHz.Load(); got != 453_500_000 {
@@ -723,6 +730,48 @@ func engineWithChunks(t *testing.T, obs IQPowerObserver, serial string, n int) (
 	return e, dev
 }
 
+// TestEngineRunReturnsStreamClosedOnUnexpectedClose is the self-heal
+// regression: when the SDR's IQ channel closes while the engine was NOT
+// asked to stop (a USB reaper death or the macOS stall watchdog aborting a
+// frozen endpoint), Run must return ErrIQStreamClosed so the daemon's
+// runWidebandWithRetry supervisor reacquires and restarts. A plain nil
+// (the pre-fix behaviour) would silently stop decoding with no recovery.
+func TestEngineRunReturnsStreamClosedOnUnexpectedClose(t *testing.T) {
+	e, _ := engineWithChunks(t, &countingIQObserver{}, "WB-DEAD", 3)
+	// A long-lived ctx: the mock closes the stream after its 3 chunks
+	// while the ctx is still active, modelling a stream death.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := e.Run(ctx)
+	if !errors.Is(err, ErrIQStreamClosed) {
+		t.Fatalf("Run on unexpected stream close = %v, want ErrIQStreamClosed", err)
+	}
+}
+
+// TestEngineRunReturnsNilOnContextCancel is the paired control: a clean
+// shutdown (ctx cancelled) must NOT be reported as a stream death, so the
+// supervisor lets the engine stop instead of thrashing on reacquire.
+func TestEngineRunReturnsNilOnContextCancel(t *testing.T) {
+	// A stream that stays open (no chunks queued, channel never closed by
+	// the mock until ctx cancels its producer) so Run blocks until cancel.
+	e, dev := engineWithChunks(t, &countingIQObserver{}, "WB-STOP", 0)
+	dev.holdOpen = true
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- e.Run(ctx) }()
+	// Give Run a moment to enter its pump loop, then cancel.
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("Run on ctx-cancel = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after ctx cancel")
+	}
+}
+
 // TestEngineSuspendDrainsWithoutDecoding: a suspended engine consumes its IQ
 // stream (so the SDR/broker never blocks) but processes nothing — no per-window
 // diagnostics are recorded. Resume restores the dongle's centre frequency.
@@ -743,7 +792,7 @@ func TestEngineSuspendDrainsWithoutDecoding(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := e.Run(ctx); err != nil {
+	if err := e.Run(ctx); err != nil && !errors.Is(err, ErrIQStreamClosed) {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := obs.wbPower.Load(); got != 0 {
@@ -766,7 +815,7 @@ func TestEngineProcessesWhenNotSuspended(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := e.Run(ctx); err != nil {
+	if err := e.Run(ctx); err != nil && !errors.Is(err, ErrIQStreamClosed) {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := obs.wbPower.Load(); got == 0 {
