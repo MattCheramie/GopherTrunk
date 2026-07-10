@@ -147,8 +147,8 @@ func xingInfoFrame(h frameHeader, headerBytes []byte, totalFrames, totalBytes in
 	copy(frame[:4], headerBytes[:4])
 	frame[2] &^= 0x02
 	off := 4 + h.sideInfoLen()
-	copy(frame[off:], "Info")                                     // CBR tag ("Xing" would signal VBR)
-	binary.BigEndian.PutUint32(frame[off+4:], 0x0003)             // flags: frames + bytes present
+	copy(frame[off:], "Info")                                      // CBR tag ("Xing" would signal VBR)
+	binary.BigEndian.PutUint32(frame[off+4:], 0x0003)              // flags: frames + bytes present
 	binary.BigEndian.PutUint32(frame[off+8:], uint32(totalFrames)) //nolint:gosec // small non-negative counts
 	binary.BigEndian.PutUint32(frame[off+12:], uint32(totalBytes)) //nolint:gosec
 	return frame
