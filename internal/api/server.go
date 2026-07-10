@@ -549,6 +549,9 @@ type CallRow struct {
 	DurationMs     int64     `json:"duration_ms,omitempty"`
 	EndReason      string    `json:"end_reason,omitempty"`
 	TalkgroupAlpha string    `json:"talkgroup_alpha,omitempty"`
+	// SignalDbFS is the call's mean received channel power in dBFS
+	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
+	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`
 }
 
 // ServerOptions configure a new Server.

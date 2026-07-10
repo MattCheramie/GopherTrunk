@@ -654,6 +654,73 @@ Each entry becomes a pool device alongside any local USB dongles and
 `rtl_tcp` endpoints, roled through the same hint matcher, with the same
 broker / fan-out path.
 
+### USRP B210 (UHD) — local setup
+
+There is no native/local UHD backend — USRP support goes through the
+`soapyremote` driver above, because UHD needs vendor C libraries that
+are out of scope for the zero-CGO build. That path works fine on a
+**single machine**: run `SoapySDRServer` locally and point GopherTrunk
+at `127.0.0.1`, so the daemon still talks pure-Go SoapyRemote over a
+loopback socket while UHD drives the B210.
+
+On Ubuntu 24.04:
+
+```sh
+# 1. Install SoapySDR + the UHD module + UHD itself.
+sudo apt install soapysdr-tools soapysdr-module-uhd uhd-host
+sudo uhd_images_downloader           # one-time FPGA/firmware images for the B210
+
+# 2. Confirm UHD sees the B210 through SoapySDR.
+SoapySDRUtil --find="driver=uhd"     # should list your B210 by serial
+
+# 3. Serve it on loopback (leave running; default port 55132).
+SoapySDRServer --bind=127.0.0.1:55132
+```
+
+Then in `config.yaml`:
+
+```yaml
+sdr:
+  sample_rate: 6_144_000            # exact ÷10 of the 61.44 MHz master clock below
+  soapy_remote:
+    - addr: "127.0.0.1:55132"
+      driver: "uhd"
+      master_clock_rate: 61_440_000 # B210: makes sample_rate an exact divisor
+      role: control                 # control | voice | auto
+      format: "CS16"                # 16-bit IQ (keeps the B210's dynamic range)
+      gain: "auto"                  # or TENTHS of a dB — "300" = 30.0 dB, not "30"
+      # args: "antenna=RX2"         # non-default port / subdev via make() kwargs
+```
+
+B210 specifics worth knowing before the first run:
+
+- **Master clock / sample rate.** A USRP only delivers rates that are
+  integer decimations of its master clock; UHD silently *coerces* a
+  non-divisor request to the nearest achievable rate. GopherTrunk reads
+  the delivered rate back over the RPC and clocks every down-converter
+  and symbol loop from it, so a coerced rate stays decode-correct — but
+  for a clean exact-divisor stream, set `master_clock_rate: 61_440_000`
+  and pick a `sample_rate` that divides it (e.g. `6_144_000` = ÷10,
+  `2_048_000` = ÷30). Issues #402 / #550.
+- **Gain is in TENTHS of a dB** (like every device here) — `"300"` is
+  30 dB, a bare `"30"` is parsed as 3.0 dB. Use `"auto"` for AGC where
+  the front end supports it.
+- **Antenna / subdev** on a multi-port B210 go through the free-form
+  `args` string as SoapySDR `make()` kwargs (e.g.
+  `args: "rx_subdev_spec=A:0,antenna=RX2"`), since there is no dedicated
+  `antenna:` key.
+- The SoapyRemote path is wire-protocol-complete and unit-tested against
+  a mock server; **on-air validation against a live `SoapySDRServer` is
+  the documented follow-up** (see the support matrix). Field reports from
+  a real B210 are welcome.
+
+Once it is streaming, the whole toolset works against it — trunked
+decode, plus the user-defined frequency-range survey in
+[`hunt.md`]({{ '/hunt.html' | relative_url }}): `gophertrunk hunt
+-survey -band 144:148 -band 420:470 …` sweeps the bands you name,
+classifies every carrier, and streams the inventory to
+`-survey-ndjson`. See that page for the SDR-selection and sweep flags.
+
 **Limitations:**
 
 - Receive only, single channel (channel 0).

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -456,6 +457,61 @@ func TestCallLogRecordsEncryptedCallRID(t *testing.T) {
 	}
 }
 
+// TestCallLogPersistsSignalDbFS verifies the composer-measured received
+// channel power (dBFS) survives the CallEnd → call_log round-trip, and that
+// a call ended with no measurement reads back nil — "unset" must be distinct
+// from a legitimate 0 dBFS reading.
+func TestCallLogPersistsSignalDbFS(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	f64 := func(v float64) *float64 { return &v }
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+
+	// Call 1 carries a measured signal level on CallEnd.
+	g1 := trunking.Grant{System: "Alpha", Protocol: "p25", GroupID: 1, SourceID: 10, FrequencyHz: 851_000_000}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: g1, DeviceSerial: "VOICE-1", StartedAt: startedAt,
+	}})
+	waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool { return len(r) == 1 })
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: g1, DeviceSerial: "VOICE-1", StartedAt: startedAt,
+		EndedAt: startedAt.Add(time.Second), Reason: trunking.EndReasonNormal,
+		SignalDbFS: f64(-42.5),
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{System: "Alpha", GroupID: 1, OnlyEnded: true}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].SignalDbFS != nil
+	})
+	if len(rows) != 1 || rows[0].SignalDbFS == nil {
+		t.Fatalf("call-1 row = %+v, want SignalDbFS populated", rows)
+	}
+	if got := *rows[0].SignalDbFS; math.Abs(got+42.5) > 0.01 {
+		t.Errorf("SignalDbFS = %v, want -42.5", got)
+	}
+
+	// Call 2 ends with no measurement → column stays NULL → reads nil.
+	started2 := startedAt.Add(time.Minute)
+	g2 := trunking.Grant{System: "Alpha", Protocol: "p25", GroupID: 2, SourceID: 20, FrequencyHz: 851_000_000}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: g2, DeviceSerial: "VOICE-2", StartedAt: started2,
+	}})
+	waitHistory(t, db, HistoryFilter{System: "Alpha", GroupID: 2}, func(r []CallRow) bool { return len(r) == 1 })
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: g2, DeviceSerial: "VOICE-2", StartedAt: started2,
+		EndedAt: started2.Add(time.Second), Reason: trunking.EndReasonTimeout,
+		// SignalDbFS deliberately nil (watchdog/preemption-style end).
+	}})
+	rows = waitHistory(t, db, HistoryFilter{System: "Alpha", GroupID: 2, OnlyEnded: true}, func(r []CallRow) bool {
+		return len(r) == 1
+	})
+	if len(rows) != 1 {
+		t.Fatalf("call-2 rows = %d, want 1", len(rows))
+	}
+	if rows[0].SignalDbFS != nil {
+		t.Errorf("unmeasured call SignalDbFS = %v, want nil (unset ≠ 0)", *rows[0].SignalDbFS)
+	}
+}
+
 func TestOpenRejectsEmpty(t *testing.T) {
 	if _, err := Open(""); err == nil {
 		t.Error("expected error for empty path")
@@ -540,6 +596,9 @@ CREATE TABLE call_log (
 	}
 	if rows[0].Timeslot != 0 {
 		t.Errorf("migrated row: timeslot=%d, want 0 (column added with default)", rows[0].Timeslot)
+	}
+	if rows[0].SignalDbFS != nil {
+		t.Errorf("migrated row: signal_dbfs=%v, want nil (nullable column added, old row NULL)", *rows[0].SignalDbFS)
 	}
 
 	// Reopening must be idempotent — the columns now exist.

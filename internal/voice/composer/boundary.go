@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -56,6 +57,15 @@ type boundaryTracker struct {
 	voiceSinceRoll bool   // wrote audio since the last segment roll / start
 	lastTouchNano  int64
 	endOnce        sync.Once
+
+	// Signal-level meter. sumSq / nSamp accumulate the call's received
+	// channel power and are touched only by the single chain goroutine
+	// (observe). meanDbFSBits / haveSignal are the cross-goroutine
+	// snapshot end() reads, so they are atomics. See observe / signalDbFS.
+	sumSq        float64
+	nSamp        uint64
+	meanDbFSBits atomic.Uint64
+	haveSignal   atomic.Bool
 }
 
 // foreignRunToEnd is how many consecutive frames carrying the SAME known
@@ -210,12 +220,59 @@ func (bt *boundaryTracker) run(ctx context.Context) {
 	}
 }
 
+// observe accumulates the received channel power of one IQ chunk into the
+// call's running signal-level meter. Called from the single chain goroutine
+// on every IQ chunk (before decode), so it must stay cheap. The running sum
+// stays chain-goroutine-local; only the per-chunk dBFS snapshot is published
+// to the atomics end() reads.
+//
+// SignalDbFS = 10*log10(mean(|iq|²) + eps) is a channel-power / RSSI-style
+// figure in dBFS (0 = digital full scale; real signals negative). It is NOT
+// calibrated absolute RSSI (no front-end gain / antenna correction) and NOT
+// SNR/EVM (no noise-floor reference). Being a mean of |iq|² it is
+// sample-rate-invariant, so it is comparable across the ~48 kHz wideband
+// virtual voice tap and a physical-SDR voice tuner alike.
+func (bt *boundaryTracker) observe(iq []complex64) {
+	if len(iq) == 0 {
+		return
+	}
+	for _, s := range iq {
+		re := float64(real(s))
+		im := float64(imag(s))
+		bt.sumSq += re*re + im*im
+	}
+	bt.nSamp += uint64(len(iq))
+	if bt.nSamp == 0 {
+		return
+	}
+	dbfs := 10 * math.Log10(bt.sumSq/float64(bt.nSamp)+1e-12)
+	bt.meanDbFSBits.Store(math.Float64bits(dbfs))
+	bt.haveSignal.Store(true)
+}
+
+// signalDbFS returns the call's mean received channel power in dBFS and
+// whether any IQ was measured. Safe to call from any goroutine.
+func (bt *boundaryTracker) signalDbFS() (float64, bool) {
+	if !bt.haveSignal.Load() {
+		return 0, false
+	}
+	return math.Float64frombits(bt.meanDbFSBits.Load()), true
+}
+
 // end ends the call exactly once via the engine, which publishes
 // CallEnd; the composer then cancels this chain's context.
 func (bt *boundaryTracker) end(reason trunking.EndReason) {
 	bt.endOnce.Do(func() {
-		if bt.c.engine != nil {
-			bt.c.engine.EndCall(bt.serial, reason)
+		if bt.c.engine == nil {
+			return
 		}
+		// Stamp the measured signal level onto the bound call before the
+		// engine publishes CallEnd. Same-goroutine ordering guarantees the
+		// stamp lands first; calls ended by non-composer paths (watchdog,
+		// preemption, shutdown) carry no measurement and read back NULL.
+		if d, ok := bt.signalDbFS(); ok {
+			bt.c.engine.UpdateSignal(bt.serial, d)
+		}
+		bt.c.engine.EndCall(bt.serial, reason)
 	})
 }

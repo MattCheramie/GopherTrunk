@@ -94,6 +94,7 @@ func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRo
 			DurationMs:     r.DurationMs,
 			EndReason:      r.EndReason,
 			TalkgroupAlpha: r.TalkgroupAlpha,
+			SignalDbFS:     r.SignalDbFS,
 		}
 	}
 	return out, nil

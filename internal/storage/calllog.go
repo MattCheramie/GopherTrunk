@@ -129,6 +129,14 @@ func (c *CallLog) recordEnd(ce trunking.CallEnd) error {
 	// legitimate start-time value when the end grant is still zero, and the
 	// CASE only ever upgrades encrypted (the spec defines no mid-call
 	// decryption).
+	// signal_dbfs uses COALESCE(?, signal_dbfs) with a NULL-valued bind
+	// when the call carried no measurement, so a non-composer end (watchdog
+	// timeout, preemption, shutdown) never clobbers a value an earlier
+	// composer stamp may have written. nil → NULL → keeps the existing cell.
+	var sig sql.NullFloat64
+	if ce.SignalDbFS != nil {
+		sig = sql.NullFloat64{Float64: *ce.SignalDbFS, Valid: true}
+	}
 	const q = `
 UPDATE call_log
    SET ended_at = ?,
@@ -137,7 +145,8 @@ UPDATE call_log
        source_id    = COALESCE(NULLIF(?, 0), source_id),
        encrypted    = CASE WHEN ? != 0 THEN 1 ELSE encrypted END,
        algorithm_id = COALESCE(NULLIF(?, 0), algorithm_id),
-       key_id       = COALESCE(NULLIF(?, 0), key_id)
+       key_id       = COALESCE(NULLIF(?, 0), key_id),
+       signal_dbfs  = COALESCE(?, signal_dbfs)
  WHERE device_serial = ? AND started_at = ?`
 	_, err := c.db.sql.Exec(q,
 		ce.EndedAt.UnixNano(),
@@ -147,6 +156,7 @@ UPDATE call_log
 		boolToInt(ce.Grant.Encrypted),
 		ce.Grant.AlgorithmID,
 		ce.Grant.KeyID,
+		sig,
 		ce.DeviceSerial, ce.StartedAt.UnixNano(),
 	)
 	return err
@@ -184,6 +194,9 @@ type CallRow struct {
 	DurationMs     int64     `json:"duration_ms,omitempty"`
 	EndReason      string    `json:"end_reason,omitempty"`
 	TalkgroupAlpha string    `json:"talkgroup_alpha,omitempty"`
+	// SignalDbFS is the call's mean received channel power in dBFS
+	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
+	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`
 }
 
 // History queries the call_log with the supplied filter, newest-first.
@@ -191,7 +204,7 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	q := `SELECT id, system, protocol, group_id, source_id, frequency_hz,
 	             encrypted, algorithm_id, key_id, emergency, data_call, timeslot,
 	             device_serial, started_at, ended_at, duration_ms,
-	             end_reason, talkgroup_alpha
+	             end_reason, talkgroup_alpha, signal_dbfs
 	      FROM call_log WHERE 1=1`
 	args := []any{}
 	if f.System != "" {
@@ -235,11 +248,12 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		var durMs sql.NullInt64
 		var reason sql.NullString
 		var alpha sql.NullString
+		var sig sql.NullFloat64
 		var enc, emer, data, algID, keyID, slot int
 		if err := rows.Scan(
 			&r.ID, &r.System, &r.Protocol, &r.GroupID, &r.SourceID, &r.FrequencyHz,
 			&enc, &algID, &keyID, &emer, &data, &slot, &r.DeviceSerial,
-			&startNs, &endNs, &durMs, &reason, &alpha,
+			&startNs, &endNs, &durMs, &reason, &alpha, &sig,
 		); err != nil {
 			return nil, err
 		}
@@ -261,6 +275,10 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		}
 		if alpha.Valid {
 			r.TalkgroupAlpha = alpha.String
+		}
+		if sig.Valid {
+			v := sig.Float64
+			r.SignalDbFS = &v
 		}
 		out = append(out, r)
 	}
