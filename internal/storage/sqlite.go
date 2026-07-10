@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS call_log (
     ended_at        INTEGER,
     duration_ms     INTEGER,
     end_reason      TEXT,
-    talkgroup_alpha TEXT
+    talkgroup_alpha TEXT,
+    signal_dbfs     REAL   -- mean received channel power, dBFS; NULL = unmeasured
 );
 
 CREATE INDEX IF NOT EXISTS idx_call_log_started ON call_log(started_at);
@@ -375,6 +376,9 @@ func (d *DB) ensureCallLogColumns() error {
 		{"algorithm_id", `ALTER TABLE call_log ADD COLUMN algorithm_id INTEGER NOT NULL DEFAULT 0`},
 		{"key_id", `ALTER TABLE call_log ADD COLUMN key_id INTEGER NOT NULL DEFAULT 0`},
 		{"timeslot", `ALTER TABLE call_log ADD COLUMN timeslot INTEGER NOT NULL DEFAULT 0`},
+		// Nullable (no DEFAULT) so a row with no measurement reads NULL —
+		// "unset" is distinct from a legitimate 0 dBFS reading.
+		{"signal_dbfs", `ALTER TABLE call_log ADD COLUMN signal_dbfs REAL`},
 	}
 	for _, a := range adds {
 		if have[a.name] {

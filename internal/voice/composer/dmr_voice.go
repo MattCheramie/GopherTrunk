@@ -284,6 +284,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 				logDecodeQuality(true)
 				return
 			}
+			bt.observe(iq)
 			rx.Process(fe.Process(nil, iq))
 		}
 	}

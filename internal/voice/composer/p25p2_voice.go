@@ -267,6 +267,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				logCallCensus()
 				return
 			}
+			bt.observe(iq)
 			rx.Process(fe.Process(nil, iq))
 		}
 	}

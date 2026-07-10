@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -87,6 +88,40 @@ func TestBoundaryPatchedTalkgroupMatches(t *testing.T) {
 	}
 	if eng.endedCount() != 0 {
 		t.Error("patched member must not end the call")
+	}
+}
+
+// TestBoundaryMeasuresSignalDbFS: the tracker measures the mean received
+// channel power of the IQ it observes and stamps it onto the engine (via
+// UpdateSignal) at end-of-call, before EndCall. Constant-magnitude IQ of
+// |0.1|² = 0.01 mean power ⇒ 10·log10(0.01) = −20 dBFS.
+func TestBoundaryMeasuresSignalDbFS(t *testing.T) {
+	c, _, eng := mkBoundaryComposer(t, false, 150*time.Millisecond)
+	bt := c.newBoundaryTracker("VOICE-1", 0, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go bt.run(ctx)
+
+	chunk := make([]complex64, 2048)
+	for i := range chunk {
+		chunk[i] = complex(0.1, 0)
+	}
+	bt.observe(chunk)
+	bt.onVoice(0) // one voice frame, then silence → hangtime ends the call
+
+	waitFor(t, time.Second, func() bool {
+		_, ok := eng.signal("VOICE-1")
+		return ok
+	})
+	got, ok := eng.signal("VOICE-1")
+	if !ok {
+		t.Fatal("UpdateSignal was never called at end-of-call")
+	}
+	if got >= 0 {
+		t.Errorf("SignalDbFS = %v, want negative (below digital full scale)", got)
+	}
+	if math.Abs(got+20) > 1 {
+		t.Errorf("SignalDbFS = %v dBFS, want ~-20 (mean|iq|² = 0.01)", got)
 	}
 }
 

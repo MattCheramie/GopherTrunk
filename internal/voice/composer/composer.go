@@ -102,12 +102,16 @@ type PCMSink interface {
 	WritePCM(deviceSerial string, samples []int16) error
 }
 
-// EngineHooks exposes the Touch / EndCall calls the chain uses to
-// keep the engine in sync with what the chain hears. Stubbing this
+// EngineHooks exposes the Touch / EndCall / UpdateSignal calls the chain
+// uses to keep the engine in sync with what the chain hears. Stubbing this
 // interface lets tests assert Touch fires on a real cadence.
 type EngineHooks interface {
 	Touch(deviceSerial string)
 	EndCall(deviceSerial string, reason trunking.EndReason) bool
+	// UpdateSignal stamps the call's measured received channel power
+	// (dBFS) onto the bound ActiveCall so the engine carries it into
+	// CallEnd. Called once at end-of-call, before EndCall.
+	UpdateSignal(deviceSerial string, dbfs float64)
 }
 
 // Options configure a Composer.
@@ -680,6 +684,7 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 				emitTail()
 				return
 			}
+			bt.observe(iq)
 			decimated := fe.Process(nil, iq)
 			if eq != nil {
 				if cap(eqScratch) < len(decimated) {

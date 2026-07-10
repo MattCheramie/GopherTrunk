@@ -60,6 +60,13 @@ type ActiveCall struct {
 	// and reaped by the engine watchdog via EncryptedReleasesDue. Issue
 	// #711.
 	EncReleaseAt time.Time
+	// SignalDbFS is the call's mean received channel power in dBFS,
+	// measured by the voice composer over the call's baseband IQ and
+	// stamped in via UpdateSignal shortly before end-of-call. nil until
+	// measured — calls ended by non-composer paths (watchdog timeout,
+	// preemption, shutdown) leave it nil. See composer.boundaryTracker
+	// for the semantics (channel power, not calibrated RSSI or SNR).
+	SignalDbFS *float64
 }
 
 // NewVoicePool returns a pool over the supplied devices. The order of
@@ -323,6 +330,18 @@ func (p *VoicePool) Touch(serial string, now time.Time) {
 	defer p.mu.Unlock()
 	if ac, ok := p.active[serial]; ok {
 		ac.LastHeardAt = now
+	}
+}
+
+// UpdateSignal stamps the call's measured received channel power (dBFS)
+// onto the ActiveCall bound to serial. No-op when no call is bound. A
+// fresh pointer is stored per update so the value is stable once released.
+func (p *VoicePool) UpdateSignal(serial string, dbfs float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ac, ok := p.active[serial]; ok {
+		v := dbfs
+		ac.SignalDbFS = &v
 	}
 }
 

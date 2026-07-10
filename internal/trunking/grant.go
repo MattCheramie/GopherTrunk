@@ -249,6 +249,12 @@ type CallEnd struct {
 	StartedAt    time.Time
 	EndedAt      time.Time
 	Reason       EndReason
+	// SignalDbFS is the call's mean received channel power in dBFS,
+	// measured by the voice composer over the call's baseband IQ. nil when
+	// no measurement was taken (calls ended by the watchdog, preemption, or
+	// shutdown, or decoded outside the composer). It is a channel-power /
+	// RSSI-style figure — NOT calibrated absolute RSSI and NOT SNR/EVM.
+	SignalDbFS *float64
 }
 
 // Duration returns how long the call ran.

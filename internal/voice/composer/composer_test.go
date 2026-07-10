@@ -3,6 +3,7 @@ package composer
 import (
 	"context"
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -109,6 +110,7 @@ type fakeEngine struct {
 	mu      sync.Mutex
 	ended   []string
 	reasons map[string]trunking.EndReason
+	signals map[string]float64
 }
 
 func (e *fakeEngine) Touch(string) { e.touched.Add(1) }
@@ -121,6 +123,24 @@ func (e *fakeEngine) EndCall(serial string, reason trunking.EndReason) bool {
 	}
 	e.reasons[serial] = reason
 	return true
+}
+
+func (e *fakeEngine) UpdateSignal(serial string, dbfs float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.signals == nil {
+		e.signals = make(map[string]float64)
+	}
+	e.signals[serial] = dbfs
+}
+
+// signal returns the last dBFS UpdateSignal(serial) carried and whether
+// it was ever called for serial.
+func (e *fakeEngine) signal(serial string) (float64, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	v, ok := e.signals[serial]
+	return v, ok
 }
 
 // endReason returns the reason the most recent EndCall(serial) carried.
@@ -237,6 +257,67 @@ func TestComposerWritesPCMFromIQ(t *testing.T) {
 	src.SendIQ(chunk)
 
 	waitFor(t, time.Second, func() bool { return sink.total("VOICE-1") > 0 })
+}
+
+// TestComposerMeasuresSignalDbFSFromIQ drives constant-magnitude IQ through
+// the real FM voice chain and asserts the chain's bt.observe wiring measures
+// the received channel power and stamps it onto the engine at end-of-call.
+// |0.1|² = 0.01 mean power ⇒ ~-20 dBFS.
+func TestComposerMeasuresSignalDbFSFromIQ(t *testing.T) {
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	eng := &fakeEngine{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          &recordingSink{},
+		Engine:        eng,
+		IQSampleRate:  2_400_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 20 * time.Millisecond,
+		VoiceHangtime: 120 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+
+	publishStartFM(bus, "VOICE-1")
+	waitFor(t, time.Second, func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return len(src.chs) > 0
+	})
+
+	chunk := make([]complex64, 4096)
+	for i := range chunk {
+		chunk[i] = complex(0.1, 0)
+	}
+	for range 3 {
+		src.SendIQ(chunk)
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The chain ends via the hangtime / no-voice window; UpdateSignal is
+	// stamped just before EndCall.
+	waitFor(t, 2*time.Second, func() bool {
+		_, ok := eng.signal("VOICE-1")
+		return ok
+	})
+	got, ok := eng.signal("VOICE-1")
+	if !ok {
+		t.Fatal("UpdateSignal never called for the FM chain")
+	}
+	if got >= 0 {
+		t.Errorf("SignalDbFS = %v, want negative (below full scale)", got)
+	}
+	if math.Abs(got+20) > 3 {
+		t.Errorf("SignalDbFS = %v dBFS, want ~-20 (mean|iq|² = 0.01)", got)
+	}
 }
 
 func TestComposerTouchesEngineWhileChainRuns(t *testing.T) {

@@ -608,6 +608,21 @@ func (e *Engine) Touch(deviceSerial string) {
 	e.pool.Touch(deviceSerial, e.now())
 }
 
+// UpdateSignal stamps the call's measured received channel power (dBFS)
+// onto the active call bound to deviceSerial. The voice composer calls it
+// once at end-of-call, just before EndCall, so endCall carries the value
+// into the published CallEnd. Covers both pool-bound trunked calls and
+// synthetic (conventional-FM) calls.
+func (e *Engine) UpdateSignal(deviceSerial string, dbfs float64) {
+	e.pool.UpdateSignal(deviceSerial, dbfs)
+	e.mu.Lock()
+	if ac, ok := e.synthetic[deviceSerial]; ok {
+		v := dbfs
+		ac.SignalDbFS = &v
+	}
+	e.mu.Unlock()
+}
+
 // ActiveCalls returns a snapshot of every active call — trunked
 // calls allocated through the voice pool plus synthetic calls owned
 // by external scanners (the conventional FM scanner publishes these
@@ -769,6 +784,7 @@ func (e *Engine) endCall(ac *ActiveCall, reason EndReason) {
 			StartedAt:    released.StartedAt,
 			EndedAt:      e.now(),
 			Reason:       reason,
+			SignalDbFS:   released.SignalDbFS,
 		},
 	})
 	e.log.Info("call ended",
@@ -900,6 +916,7 @@ func (e *Engine) EndSyntheticCall(deviceSerial string, reason EndReason) bool {
 			StartedAt:    ac.StartedAt,
 			EndedAt:      e.now(),
 			Reason:       reason,
+			SignalDbFS:   ac.SignalDbFS,
 		},
 	})
 	e.log.Info("synthetic call ended",

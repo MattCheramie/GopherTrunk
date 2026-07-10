@@ -442,6 +442,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 				logDecodeQuality(true)
 				return
 			}
+			bt.observe(iq)
 			samples := fe.Process(nil, iq)
 			if atNCO != nil {
 				// Shift the estimated carrier (at +atApplied Hz) down to DC.

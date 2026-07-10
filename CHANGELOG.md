@@ -7,6 +7,13 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Security
+- **Go toolchain bumped to 1.25.12** to close `GO-2026-5856` — an Encrypted
+  Client Hello privacy leak in the standard library's `crypto/tls`, which
+  govulncheck flagged as call-reachable through the API TLS/gRPC servers and
+  the rtl_tcp / import-client TLS paths. No source changes; the pin moves in
+  `go.mod` and every CI/build workflow.
+
 ### Fixed
 - **A flapping Airspy no longer kills the whole daemon.** After the silent-freeze
   fix, a macOS Airspy that keeps *recovering* — the IQ stream dies, the daemon
@@ -39,6 +46,18 @@ for tagged releases.
   self-heals instead of quietly stopping.
 
 ### Added
+- **Per-call received signal level in the call log.** Each recorded voice call
+  now carries a `signal_dbfs` figure — the mean received channel power in dBFS,
+  measured by the voice composer over the call's baseband IQ. It surfaces in the
+  persisted `call_log` table and in `GET /api/v1/calls/history`. It is a
+  channel-power / RSSI-style reading (0 = digital full scale; real signals
+  negative), **not** calibrated absolute RSSI and **not** SNR/EVM. Calls ended
+  without a measurement (watchdog timeout, preemption, shutdown) read `null`.
+  Existing databases gain the column automatically on next open.
+- **USRP B210 (UHD) local-setup recipe.** `docs/hardware.md` now documents
+  running `SoapySDRServer` on the same host and pointing the `soapyremote`
+  driver at `127.0.0.1`, with the B210 master-clock / exact-rate,
+  gain-in-tenths-of-dB, and antenna-via-`args` specifics.
 - **More USB debugging for the Airspy freeze.** With `RTLSDR_DEBUG_USB=1` the
   macOS backend now emits periodic bulk-stream telemetry (URBs, bytes,
   throughput, per-slot completion spread, idle gap) and a one-shot `bulk-IN
