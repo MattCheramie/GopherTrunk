@@ -7,6 +7,13 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Security
+- **Go toolchain bumped to 1.25.12** to close `GO-2026-5856` — an Encrypted
+  Client Hello privacy leak in the standard library's `crypto/tls`, which
+  govulncheck flagged as call-reachable through the API TLS/gRPC servers and
+  the rtl_tcp / import-client TLS paths. No source changes; the pin moves in
+  `go.mod` and every CI/build workflow.
+
 ### Fixed
 - **Airspy on macOS no longer freezes silently.** After locking a control
   channel and decoding for a few seconds, an Airspy on macOS could go
