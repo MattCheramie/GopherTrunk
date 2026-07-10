@@ -240,6 +240,23 @@ func (b *Broker) Close() error {
 	return b.inner.Close()
 }
 
+// StreamDeadCause forwards the wrapped device's stream-death cause when it
+// exposes the optional interface{ StreamDeadCause() error } extension
+// (airspy / rtlsdr-purego), otherwise nil. The wideband engine streams the
+// dongle through the broker, so without this pass-through the concrete USB
+// error that killed the reaper would never reach the daemon's "IQ stream died"
+// log — the same gap the broker had for ActualSampleRate. It reads the
+// currently-wrapped inner: the engine queries it on stream-close before the
+// daemon swaps in a reacquired handle, so it observes the dead device's cause.
+func (b *Broker) StreamDeadCause() error {
+	b.innerMu.RLock()
+	defer b.innerMu.RUnlock()
+	if c, ok := b.inner.(interface{ StreamDeadCause() error }); ok {
+		return c.StreamDeadCause()
+	}
+	return nil
+}
+
 // StreamIQ opens a stream against the currently-wrapped inner, starts
 // a fan-out goroutine that copies each chunk to every active
 // Subscriber, and returns the primary's channel. Multiple sequential

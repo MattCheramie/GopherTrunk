@@ -111,6 +111,25 @@ type FECObserver interface {
 // cause. See issue #345.
 var ErrIQStreamClosed = errors.New("ccdecoder: IQ stream closed unexpectedly")
 
+// streamDeadCauser is the optional extension a driver (airspy, rtlsdr-purego,
+// or the iqtap broker wrapping them) implements to report the concrete USB
+// error that killed its last bulk-IN stream.
+type streamDeadCauser interface{ StreamDeadCause() error }
+
+// streamClosedErr returns ErrIQStreamClosed, wrapping the IQ source's concrete
+// stream-death cause when it exposes one, so the daemon's "IQ stream died" log
+// names the real USB error (usb.ErrStreamStalled / usb.ErrDeviceGone / ...)
+// instead of a bare message. Still satisfies errors.Is(err, ErrIQStreamClosed),
+// so the retry loop's classification is unchanged.
+func streamClosedErr(iq IQSource) error {
+	if c, ok := iq.(streamDeadCauser); ok {
+		if cause := c.StreamDeadCause(); cause != nil {
+			return fmt.Errorf("%w: %w", ErrIQStreamClosed, cause)
+		}
+	}
+	return ErrIQStreamClosed
+}
+
 // iqPowerWindow is how long the pump aggregates samples before
 // recomputing the mean dBFS and updating the gauge / debug log.
 const iqPowerWindow = time.Second
@@ -523,7 +542,7 @@ func (d *Decoder) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				return ErrIQStreamClosed
+				return streamClosedErr(d.iq)
 			}
 			d.pump(iq)
 			d.putIQBuf(iq) // decode done — recycle the queue buffer

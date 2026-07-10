@@ -86,18 +86,39 @@ for a couple of seconds while the device is still enumerated, GopherTrunk aborts
 the pipe, surfaces the death as a real end-of-stream, and the daemon reacquires
 the dongle and restarts the wideband decoder automatically.
 
+When a reaper dies, the daemon's `IQ stream died; retrying` log line now names
+the **concrete USB cause** — e.g. `... closed unexpectedly: usb: bulk-IN stream
+stalled ...` (the stall watchdog fired) versus `usb: device disconnected` (an
+unplug) versus a wrapped per-URB error. That distinction tells a genuinely
+stalling endpoint apart from a disconnect or an overrun without needing any env
+var. The wideband/control retry loops also **self-heal indefinitely** across a
+dongle that keeps recovering — a stream that dies, reacquires, streams for a few
+seconds and dies again no longer accumulates to a process-killing fatal; only a
+device that re-dies immediately on every reopen (truly gone) still escalates.
+
 Knobs for diagnosing and tuning it:
 
 - `RTLSDR_DEBUG_USB=1` — emits a periodic bulk-stream telemetry line (URBs,
   bytes, throughput, per-slot spread, idle gap) plus a one-shot **`bulk-IN
-  stalled`** line at the moment the stream freezes. Capture this to pin down
-  *when* and *how* a freeze happens.
+  stalled`** line at the moment the stream freezes. It now **also traces the
+  Airspy's vendor control transfers** (`SET_SAMPLERATE` / `SET_FREQ` /
+  `RECEIVER_MODE` / gain) — previously only the RTL-SDR driver wrapped its
+  transport for this, so Airspy control setup was invisible. Capture this to pin
+  down *when* and *how* a freeze happens.
 - `GT_USB_BULK_STALL_MS` — the stall window in milliseconds (default `2000`).
   Set `0` to disable the watchdog.
 - `GT_USB_READPIPE_TIMEOUT_MS` — opt-in: switch the reaper to IOKit's
   `ReadPipeTO` with this per-read no-data timeout so a halted endpoint returns a
   timeout directly instead of relying on the watchdog. Off by default; try e.g.
   `200` if the watchdog alone doesn't recover cleanly.
+
+> **10 MS/s note.** If the daemon warns that the capture is *oversampled for the
+> channel plan* (`sdr.sample_rate` far wider than the carriers span), a lower
+> rate cuts DSP + USB load and overrun pressure for no loss of coverage. A run
+> at 10 MS/s that logs `dropping live IQ chunks; consumer can't keep up` is
+> shedding samples on the host — that is an overrun (degraded decode), *not* the
+> reaper death above, which the `IQ stream died` cause line identifies
+> separately.
 
 ## Sources
 

@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.11"
+          go-version: "1.25.12"
 
       - uses: actions/setup-node@v4
         with:
@@ -204,7 +204,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.11"
+          go-version: "1.25.12"
 
       - uses: actions/setup-node@v4
         with:
@@ -284,7 +284,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.11"
+          go-version: "1.25.12"
 
       - uses: actions/setup-node@v4
         with:

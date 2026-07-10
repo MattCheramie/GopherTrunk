@@ -8,6 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **A flapping Airspy no longer kills the whole daemon.** After the silent-freeze
+  fix, a macOS Airspy that keeps *recovering* — the IQ stream dies, the daemon
+  reacquires and streams for a few seconds, then it dies again — still took the
+  process down: the self-heal retry counter only reset after a single 60 s
+  uninterrupted run, so those repeated ~seconds-long recoveries accumulated and
+  the daemon escalated to a fatal shutdown after a handful of deaths (~30 s in).
+  The wideband and control-channel retry loops now **decay** the counter after a
+  run that streamed real data, so a recovering dongle self-heals indefinitely;
+  only a device that re-dies immediately on every reopen (truly gone) escalates.
+- **The exact USB stream-death cause is now surfaced.** The error that killed
+  the bulk-IN reaper (the stall watchdog's `usb: bulk-IN stream stalled`, a
+  `usb: device disconnected`, or a wrapped per-URB error) was discarded, so the
+  daemon only ever logged a generic “IQ stream closed unexpectedly.” The airspy
+  and RTL-SDR drivers now record it and the `IQ stream died; retrying` log line
+  names the concrete cause — the diagnostic needed to tell a stall from a
+  disconnect from an overrun without guessing.
 - **Airspy on macOS no longer freezes silently.** After locking a control
   channel and decoding for a few seconds, an Airspy on macOS could go
   completely silent — the process stayed alive (heartbeats kept logging) but no
@@ -30,6 +46,10 @@ for tagged releases.
   happens. An opt-in `GT_USB_READPIPE_TIMEOUT_MS` switches the reaper to IOKit
   `ReadPipeTO` with a per-read no-data timeout as a candidate root fix. See
   `docs/reference/airspy.md` → Troubleshooting.
+- **Airspy vendor control transfers are now traced under `RTLSDR_DEBUG_USB=1`.**
+  The Airspy shares the RTL-SDR USB transport but never wrapped it for debug, so
+  its control setup (`SET_SAMPLERATE` / `SET_FREQ` / `RECEIVER_MODE` / gain) was
+  invisible even with USB debugging on; it is now wrapped like the RTL-SDR path.
 
 ## [v0.6.4] — 2026-07-08
 

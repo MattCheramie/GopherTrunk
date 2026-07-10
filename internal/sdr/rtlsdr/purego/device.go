@@ -57,6 +57,14 @@ type Device struct {
 	// and as the per-drop signal behind the dropObserver hook.
 	dropped atomic.Uint64
 
+	// streamDeadErr holds the USB error the transport handed to onStreamDead
+	// when the most recent bulk-IN reaper died (usb.ErrStreamStalled,
+	// usb.ErrDeviceGone, or a wrapped per-URB error). Previously discarded, so
+	// the ccdecoder retry loop only ever logged the generic "IQ stream closed
+	// unexpectedly"; StreamDeadCause exposes it so the daemon names the concrete
+	// cause. Cleared at the start of each StreamIQ.
+	streamDeadErr atomic.Pointer[error]
+
 	closed atomic.Bool
 }
 
@@ -65,6 +73,17 @@ type Device struct {
 // device-level signal behind the iq_underruns_total metric — deliver
 // also reports each drop via [sdr.NotifyIQDrop].
 func (d *Device) DroppedChunks() uint64 { return d.dropped.Load() }
+
+// StreamDeadCause reports the USB error that terminated the most recent bulk-IN
+// stream, or nil if it ended cleanly or has not died. The ccdecoder retry loop
+// wraps it into ErrIQStreamClosed so the daemon's "IQ stream died" log names the
+// concrete cause. Satisfies the optional interface{ StreamDeadCause() error }.
+func (d *Device) StreamDeadCause() error {
+	if p := d.streamDeadErr.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
 
 // Info returns the descriptor populated by [Driver.Open] — driver
 // name, USB index, serial / manufacturer / product strings, tuner

@@ -788,6 +788,25 @@ func (e *Engine) DMRTier3ControlChannel(freqHz uint32) *tier3.ControlChannel {
 // ctx-cancel shutdown still returns nil.
 var ErrIQStreamClosed = errors.New("widebandt2: IQ stream closed unexpectedly")
 
+// streamDeadCauser is the optional extension a driver (airspy, rtlsdr-purego,
+// or the iqtap broker that wraps them) implements to report the concrete USB
+// error that killed its last bulk-IN stream.
+type streamDeadCauser interface{ StreamDeadCause() error }
+
+// streamClosedErr returns ErrIQStreamClosed, wrapping the device's concrete
+// stream-death cause when it exposes one, so the daemon's "IQ stream died" log
+// names e.g. "usb: bulk-IN stream stalled ..." instead of a bare message. The
+// result still satisfies errors.Is(err, ErrIQStreamClosed), so the retry loop's
+// classification is unchanged.
+func streamClosedErr(dev sdr.Device) error {
+	if c, ok := dev.(streamDeadCauser); ok {
+		if cause := c.StreamDeadCause(); cause != nil {
+			return fmt.Errorf("%w: %w", ErrIQStreamClosed, cause)
+		}
+	}
+	return ErrIQStreamClosed
+}
+
 func (e *Engine) Run(ctx context.Context) error {
 	if err := e.device.SetCenterFreq(e.centerHz); err != nil {
 		return fmt.Errorf("widebandt2: SetCenterFreq %d Hz: %w", e.centerHz, err)
@@ -826,7 +845,7 @@ func (e *Engine) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return nil
 				}
-				return ErrIQStreamClosed
+				return streamClosedErr(e.device)
 			}
 			if e.suspended.Load() {
 				// SDR borrowed by a hunt and retuned: drop the off-frequency

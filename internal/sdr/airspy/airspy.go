@@ -188,6 +188,13 @@ func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Devic
 	if err != nil {
 		return nil, fmt.Errorf("airspy: open %s: %w", desc.Path, err)
 	}
+	// When RTLSDR_DEBUG_USB is set, trace every vendor control transfer
+	// (SET_SAMPLERATE / SET_FREQ / RECEIVER_MODE / gain). The RTL-SDR driver
+	// already wraps its transport this way; the Airspy shares the same USB
+	// transport but never wrapped it, so its control setup was invisible even
+	// with debugging on. No-op when the env var is unset. (Bulk-IN is left
+	// untouched — the stall watchdog + telemetry live inside the transport.)
+	t = usb.MaybeWrapDebug(t, desc)
 	if err := t.ClaimInterface(0); err != nil {
 		_ = t.Close()
 		return nil, fmt.Errorf("airspy: claim interface 0: %w", err)
@@ -274,6 +281,28 @@ type Device struct {
 	// purego driver's Device.dropped so a live overrun is visible rather
 	// than silently wedging the USB reaper.
 	dropped atomic.Uint64
+	// streamDeadErr holds the USB error that killed the most recent bulk-IN
+	// stream — the error the transport hands to onStreamDead (usb.ErrStreamStalled
+	// when the stall watchdog aborted a frozen endpoint, usb.ErrDeviceGone on a
+	// disconnect, or a wrapped per-URB error). It was previously discarded, so an
+	// operator only ever saw the generic "IQ stream closed unexpectedly" with no
+	// cause; StreamDeadCause surfaces it so widebandt2/ccdecoder can name the real
+	// reason in the daemon's "IQ stream died" log. Reset to nil at the start of
+	// each StreamIQ so a prior death never leaks into a later clean shutdown.
+	streamDeadErr atomic.Pointer[error]
+}
+
+// StreamDeadCause reports the USB error that terminated the most recent bulk-IN
+// stream, or nil if the stream ended cleanly (ctx cancel / Close) or has not
+// died. The daemon's IQ-stream retry loop (via widebandt2 / ccdecoder) wraps it
+// into ErrIQStreamClosed so the "IQ stream died" log line names the concrete
+// cause instead of a generic message. Satisfies the optional
+// interface{ StreamDeadCause() error } those consumers probe for.
+func (d *Device) StreamDeadCause() error {
+	if p := d.streamDeadErr.Load(); p != nil {
+		return *p
+	}
+	return nil
 }
 
 // Info implements sdr.Device.
@@ -547,6 +576,10 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.streamDone = done
 	d.mu.Unlock()
 
+	// Clear any cause recorded by a previous stream's death so it can't be
+	// misattributed to this session (e.g. a later clean ctx-cancel shutdown).
+	d.streamDeadErr.Store(nil)
+
 	// Fresh real-to-IQ converter per stream so filter memory never carries
 	// over from a previous session. The device streams bare real samples;
 	// the converter turns them into complex baseband (see iqconverter.go).
@@ -587,8 +620,17 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	// (issue #345).
 	streamDead := make(chan struct{})
 	var streamDeadOnce sync.Once
-	onStreamDead := func(error) {
-		streamDeadOnce.Do(func() { close(streamDead) })
+	onStreamDead := func(cause error) {
+		streamDeadOnce.Do(func() {
+			// Record the killing error (before closing streamDead so it is
+			// visible by the time the cleanup goroutine closes `out` and the
+			// IQ consumer observes EOF). StreamDeadCause exposes it so the
+			// daemon log names the real cause instead of a generic message.
+			if cause != nil {
+				d.streamDeadErr.Store(&cause)
+			}
+			close(streamDead)
+		})
 	}
 	if err := d.t.StartBulkIn(bulkInEP, usb.DefaultRingBuffers, usb.DefaultBufferLen, onPacket, onStreamDead); err != nil {
 		_ = d.setReceiver(receiverModeOff)
