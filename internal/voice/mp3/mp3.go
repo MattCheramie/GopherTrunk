@@ -48,14 +48,83 @@ func Encode(samples []int16, sampleRate int) ([]byte, error) {
 	copy(backed, samples)
 
 	enc := shine.NewEncoder(sampleRate, 1)
+	configureBitrate(enc, sampleRate)
+	// Shine's Write advances its read cursor by two frames' worth of samples
+	// per iteration — correct for interleaved stereo, but for a mono stream it
+	// silently drops every other frame. Driving Write one frame at a time keeps
+	// the stride correct so no audio is lost; the encoder carries its reservoir
+	// and subband state across the successive calls. samplesPerFrame matches
+	// Shine's internal per-frame size: 1152 for the MPEG-1 rates (≥32 kHz),
+	// 576 for the MPEG-2 / MPEG-2.5 rates, and shineFrame is a whole multiple
+	// of both, so encodeLen always splits into whole frames.
+	samplesPerFrame := 576
+	if sampleRate >= 32000 {
+		samplesPerFrame = 1152
+	}
 	var buf bytes.Buffer
-	if err := enc.Write(&buf, backed[:encodeLen]); err != nil {
-		return nil, fmt.Errorf("mp3: encode: %w", err)
+	for off := 0; off < encodeLen; off += samplesPerFrame {
+		if err := enc.Write(&buf, backed[off:off+samplesPerFrame]); err != nil {
+			return nil, fmt.Errorf("mp3: encode: %w", err)
+		}
 	}
 	if buf.Len() == 0 {
 		return nil, errors.New("mp3: encoder produced no output")
 	}
-	return buf.Bytes(), nil
+	// Prepend a LAME-style Xing/Info header frame so ffmpeg and other demuxers
+	// parse short clips reliably (see xing.go).
+	return withInfoHeader(buf.Bytes()), nil
+}
+
+// BitrateFor returns the CBR bitrate, in bits per second, the encoder uses for
+// audio at sampleRate. Shine hard-codes 128 kbps, which is wrong on two counts
+// for the low sample rates GopherTrunk records at:
+//
+//   - 128 kbps is not even a legal Layer-III bitrate for the MPEG-2.5 family
+//     (8/11.025/12 kHz), so Shine writes an out-of-range bitrate index that
+//     corrupts every frame header.
+//   - More subtly, Shine's single-granule frames (every rate below 32 kHz)
+//     desync their bit-reservoir stuffing once the per-frame budget grows past
+//     roughly 3300 bits (~420 bytes/frame), emitting oversized frames that no
+//     demuxer can follow. This is why an 8 kHz call uploaded to Rdio Scanner
+//     transcodes to silence / "Invalid data found".
+//
+// So each single-granule family gets the highest standard bitrate that keeps a
+// frame comfortably under that limit — 32 kbps for MPEG-2.5, 64 kbps for
+// MPEG-2 — both well above transparent for 8 kHz mono voice. The MPEG-1 rates
+// (≥32 kHz) split each frame into two granules, halving the per-granule budget,
+// so they keep Shine's 128 kbps default. Callers that pace a stream by bitrate
+// (Icecast) use this so their timing tracks the real encoder output.
+func BitrateFor(sampleRate int) int {
+	switch {
+	case sampleRate >= 32000: // MPEG-1 (two granules per frame)
+		return 128000
+	case sampleRate >= 16000: // MPEG-2
+		return 64000
+	default: // MPEG-2.5
+		return 32000
+	}
+}
+
+// configureBitrate overrides Shine's fixed 128 kbps default with the bitrate
+// BitrateFor selects for sampleRate and recomputes the CBR frame-size
+// bookkeeping NewEncoder derives from it. It is a no-op for the MPEG-1 rates,
+// where 128 kbps is already correct.
+func configureBitrate(enc *shine.Encoder, sampleRate int) {
+	kbps := BitrateFor(sampleRate) / 1000
+	if int(enc.Mpeg.Bitrate) == kbps {
+		return
+	}
+	enc.Mpeg.Bitrate = int64(kbps)
+	enc.Mpeg.BitrateIndex = int64(bitrateIndex(kbps, sampleRate))
+	// Mirror shine.NewEncoder: slots-per-frame scales with the bitrate.
+	avg := float64(enc.Mpeg.GranulesPerFrame) * 576 / float64(sampleRate) *
+		(float64(kbps) * 1000 / float64(enc.Mpeg.BitsPerSlot))
+	enc.Mpeg.WholeSlotsPerFrame = int64(avg)
+	enc.Mpeg.FracSlotsPerFrame = avg - float64(enc.Mpeg.WholeSlotsPerFrame)
+	enc.Mpeg.Slot_lag = -enc.Mpeg.FracSlotsPerFrame
+	if enc.Mpeg.FracSlotsPerFrame == 0 {
+		enc.Mpeg.Padding = 0
+	}
 }
 
 // EncodeWAVFile reads a 16-bit PCM mono WAV file from path and returns

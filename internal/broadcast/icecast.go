@@ -16,17 +16,14 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/mp3"
 )
 
-// Icecast streaming constants. The shine encoder emits a 128 kbps CBR
-// MP3, so the live mountpoint is paced at 16000 bytes/second; between
-// calls the pacer tops the stream up with pre-encoded silence so the
-// source connection is never starved and the Icecast server does not
-// time it out.
+// Icecast streaming constants. The mountpoint is paced at the encoder's real
+// byte rate for the configured sample rate (mp3.BitrateFor); between calls the
+// pacer tops the stream up with pre-encoded silence so the source connection is
+// never starved and the Icecast server does not time it out.
 const (
-	icecastBitrateBps  = 128000
-	icecastBytesPerSec = icecastBitrateBps / 8
-	icecastTick        = 200 * time.Millisecond
-	icecastReconnect   = 5 * time.Second
-	icecastMaxQueue    = icecastBytesPerSec * 120 // ~2 min of audio
+	icecastTick      = 200 * time.Millisecond
+	icecastReconnect = 5 * time.Second
+	icecastQueueSecs = 120 // buffer at most ~2 min of audio
 )
 
 // IcecastConfig configures one live Icecast/ShoutCast feed.
@@ -62,6 +59,10 @@ type icecastBackend struct {
 	stream  string
 	log     *slog.Logger
 	silence []byte
+	// bytesPerSec is the encoded MP3 byte rate for the configured sample
+	// rate; the pacer and queue cap are sized from it.
+	bytesPerSec int
+	maxQueue    int
 
 	mu     sync.Mutex
 	queue  []byte
@@ -115,6 +116,7 @@ func NewIcecast(cfg IcecastConfig, log *slog.Logger) (Backend, error) {
 	if err != nil {
 		return nil, fmt.Errorf("broadcast/icecast: encode silence: %w", err)
 	}
+	bytesPerSec := mp3.BitrateFor(rate) / 8
 	b := &icecastBackend{
 		systemFilter: newSystemFilter(cfg.Systems),
 		name:         name,
@@ -124,6 +126,8 @@ func NewIcecast(cfg IcecastConfig, log *slog.Logger) (Backend, error) {
 		stream:       stream,
 		log:          log,
 		silence:      silence,
+		bytesPerSec:  bytesPerSec,
+		maxQueue:     bytesPerSec * icecastQueueSecs,
 		done:         make(chan struct{}),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,7 +151,7 @@ func (b *icecastBackend) Send(_ context.Context, c *Call) error {
 	if b.closed {
 		return nil
 	}
-	if len(b.queue)+len(audio) > icecastMaxQueue {
+	if len(b.queue)+len(audio) > b.maxQueue {
 		b.log.Warn("broadcast: icecast queue full, dropping call",
 			"system", c.System, "tg", c.Talkgroup)
 		return nil
@@ -209,7 +213,7 @@ func (b *icecastBackend) runStream(ctx context.Context) error {
 
 	ticker := time.NewTicker(icecastTick)
 	defer ticker.Stop()
-	chunk := icecastBytesPerSec * int(icecastTick) / int(time.Second)
+	chunk := b.bytesPerSec * int(icecastTick) / int(time.Second)
 	silenceOff := 0
 	for {
 		select {
@@ -237,7 +241,7 @@ func (b *icecastBackend) handshake(conn net.Conn) error {
 		"Content-Type: audio/mpeg",
 		"Ice-Name: " + b.stream,
 		"Ice-Public: 0",
-		"Ice-Audio-Info: bitrate=128",
+		"Ice-Audio-Info: bitrate=" + strconv.Itoa(b.bytesPerSec*8/1000),
 		"", "",
 	}, "\r\n")
 	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
