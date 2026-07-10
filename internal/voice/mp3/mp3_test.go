@@ -1,9 +1,11 @@
 package mp3
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -29,6 +31,130 @@ func TestEncodeProducesMP3FrameSync(t *testing.T) {
 		// Every MP3 frame opens with an 11-bit sync word.
 		if out[0] != 0xFF || out[1]&0xE0 != 0xE0 {
 			t.Fatalf("Encode(%d Hz): no MP3 frame sync: %02x %02x", rate, out[0], out[1])
+		}
+	}
+}
+
+// TestEncodeEncodesEveryFrame is the regression for root cause #1: Shine's
+// Write drops every other frame of a mono stream, so a call encoded to ~half
+// its true length (near-silence). Feeding a whole number of frames, the output
+// must contain exactly that many audio frames plus the one Info header frame.
+func TestEncodeEncodesEveryFrame(t *testing.T) {
+	for _, tc := range []struct {
+		rate int
+		spf  int // Shine per-frame samples for this rate family
+	}{
+		{8000, 576}, {22050, 576}, {44100, 1152},
+	} {
+		const wholeFrames = 20
+		n := wholeFrames * shineFrame // whole shineFrames → no padding rounding
+		out, err := Encode(tone(n, tc.rate, 440), tc.rate)
+		if err != nil {
+			t.Fatalf("Encode(%d Hz): %v", tc.rate, err)
+		}
+		wantAudio := n / tc.spf // every frame encoded, not every other
+		if got := countFrames(out); got != wantAudio+1 {
+			t.Fatalf("Encode(%d Hz): counted %d frames, want %d audio + 1 Info = %d",
+				tc.rate, got, wantAudio, wantAudio+1)
+		}
+	}
+}
+
+// supportedRates are the sample rates the Shine encoder accepts, spanning all
+// three MPEG sample-rate families.
+var supportedRates = []int{8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000}
+
+// TestEncodeFramesTileExactly is the regression for the core defect behind
+// issue #874: at Shine's fixed 128 kbps, every single-granule (sub-32 kHz)
+// frame is either header-corrupt (128 kbps is illegal below 16 kHz) or
+// oversized (Shine's reservoir stuffing desyncs on large frames), so the byte
+// stream cannot be walked frame-by-frame and ffmpeg rejects it. A correctly
+// encoded CBR stream must tile exactly into whole frames from the first byte to
+// the last with nothing left over.
+func TestEncodeFramesTileExactly(t *testing.T) {
+	for _, rate := range supportedRates {
+		out, err := Encode(tone(30*576, rate, 600), rate)
+		if err != nil {
+			t.Fatalf("Encode(%d Hz): %v", rate, err)
+		}
+		pos, n := 0, 0
+		for {
+			h, ok := parseFrameHeader(out[pos:])
+			if !ok {
+				t.Fatalf("Encode(%d Hz): frame %d at byte %d has an invalid header: % x",
+					rate, n, pos, out[pos:min(pos+4, len(out))])
+			}
+			n++
+			next := pos + h.frameLen()
+			if next >= len(out) {
+				// Final frame: Shine leaves the last partial 32-bit word
+				// unflushed, so its declared length can exceed the stream by a
+				// few bytes. A gross overrun means the reservoir-stuffing bug.
+				if next > len(out)+4 {
+					t.Fatalf("Encode(%d Hz): frame %d overruns the stream by %d bytes",
+						rate, n-1, next-len(out))
+				}
+				break
+			}
+			pos = next
+		}
+	}
+}
+
+// TestEncodeStartsWithXingInfoHeader is the regression for root cause #2: Shine
+// emits headerless frames that ffmpeg cannot reliably parse on short clips. The
+// stream must begin with a valid Xing/Info header frame carrying the stream's
+// frame count, exactly as LAME does.
+func TestEncodeStartsWithXingInfoHeader(t *testing.T) {
+	out, err := Encode(tone(10*shineFrame, 8000, 440), 8000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, ok := parseFrameHeader(out)
+	if !ok {
+		t.Fatalf("first frame is not a valid Layer-III header: % x", out[:4])
+	}
+	off := 4 + h.sideInfoLen()
+	if tag := string(out[off : off+4]); tag != "Info" && tag != "Xing" {
+		t.Fatalf("no Xing/Info tag at offset %d: %q", off, tag)
+	}
+	if flags := binary.BigEndian.Uint32(out[off+4:]); flags&0x0003 != 0x0003 {
+		t.Fatalf("Info flags %#x missing frames+bytes bits", flags)
+	}
+	frameCount := binary.BigEndian.Uint32(out[off+8:])
+	if int(frameCount) != countFrames(out) {
+		t.Fatalf("Info frame count = %d, but stream has %d frames", frameCount, countFrames(out))
+	}
+	byteCount := binary.BigEndian.Uint32(out[off+12:])
+	if int(byteCount) != len(out) {
+		t.Fatalf("Info byte count = %d, but stream is %d bytes", byteCount, len(out))
+	}
+}
+
+// TestEncodeFFmpegParses is the direct end-to-end reproduction from issue #874:
+// pipe the encoded bytes to ffmpeg over stdin, exactly as Rdio Scanner does
+// before transcoding an uploaded call. Every supported rate must parse, and a
+// short clip (few frames) is covered too since that is the case ffmpeg's mp3
+// demuxer handled worst. Skipped when ffmpeg is not installed.
+func TestEncodeFFmpegParses(t *testing.T) {
+	ff, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	for _, rate := range supportedRates {
+		for _, frames := range []int{30, 3} { // long and short clips
+			out, err := Encode(tone(frames*576, rate, 600), rate)
+			if err != nil {
+				t.Fatalf("Encode(%d Hz): %v", rate, err)
+			}
+			cmd := exec.Command(ff, "-hide_banner", "-i", "-", "-f", "null", "-")
+			cmd.Stdin = bytes.NewReader(out)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("ffmpeg rejected %d Hz / %d-frame MP3: %v\n%s",
+					rate, frames, err, stderr.String())
+			}
 		}
 	}
 }
