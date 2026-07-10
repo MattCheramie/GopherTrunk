@@ -136,7 +136,7 @@ type flappingWidebandDevice struct {
 	calls     atomic.Int64
 }
 
-func (*flappingWidebandDevice) Info() sdr.Info          { return sdr.Info{Driver: "mock", Serial: "WB-FLAP"} }
+func (*flappingWidebandDevice) Info() sdr.Info             { return sdr.Info{Driver: "mock", Serial: "WB-FLAP"} }
 func (*flappingWidebandDevice) SetCenterFreq(uint32) error { return nil }
 func (*flappingWidebandDevice) SetSampleRate(uint32) error { return nil }
 func (*flappingWidebandDevice) SetGain(int) error          { return nil }
