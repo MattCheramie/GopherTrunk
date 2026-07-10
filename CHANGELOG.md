@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.6.6] — 2026-07-10
+
 ### Security
 - **Go toolchain bumped to 1.25.12** to close `GO-2026-5856` — an Encrypted
   Client Hello privacy leak in the standard library's `crypto/tls`, which
@@ -31,6 +33,37 @@ for tagged releases.
   and RTL-SDR drivers now record it and the `IQ stream died; retrying` log line
   names the concrete cause — the diagnostic needed to tell a stall from a
   disconnect from an overrun without guessing.
+- **Corrupt / half-length MP3 uploads (Rdio Scanner no-audio).** Call audio
+  uploaded to Rdio Scanner was accepted but transcoded to silence, and ffmpeg
+  rejected the same bytes with "Invalid data found". Three independent defects
+  in how `internal/voice/mp3` drove the Shine encoder combined to cause it: the
+  hard-coded 128 kbps bitrate is illegal for the MPEG-2.5 family (the 8/11.025/12
+  kHz digital-voice rates), corrupting every frame header; mono calls advanced
+  the encoder cursor two frames at a time and dropped every other frame (~half
+  length); and headerless output made ffmpeg's demuxer probe past EOF. The
+  encoder now picks the highest standard bitrate that keeps frames legal per
+  MPEG family, drives mono one frame at a time, and prepends a LAME-style
+  Xing/Info header; Icecast derives its live-mount byte rate from the same table
+  so low-rate streams are paced correctly. Verified end-to-end with ffmpeg
+  across all supported rates; the encode path stays pure-Go / zero-CGO.
+
+### Added
+- **Per-call received signal level in the call log.** Each recorded voice call
+  now carries a `signal_dbfs` figure — the mean received channel power in dBFS,
+  measured by the voice composer over the call's baseband IQ. It surfaces in the
+  persisted `call_log` table and in `GET /api/v1/calls/history`. It is a
+  channel-power / RSSI-style reading (0 = digital full scale; real signals
+  negative), **not** calibrated absolute RSSI and **not** SNR/EVM. Calls ended
+  without a measurement (watchdog timeout, preemption, shutdown) read `null`.
+  Existing databases gain the column automatically on next open.
+- **USRP B210 (UHD) local-setup recipe.** `docs/hardware.md` now documents
+  running `SoapySDRServer` on the same host and pointing the `soapyremote`
+  driver at `127.0.0.1`, with the B210 master-clock / exact-rate,
+  gain-in-tenths-of-dB, and antenna-via-`args` specifics.
+
+## [v0.6.5] — 2026-07-09
+
+### Fixed
 - **Airspy on macOS no longer freezes silently.** After locking a control
   channel and decoding for a few seconds, an Airspy on macOS could go
   completely silent — the process stayed alive (heartbeats kept logging) but no
@@ -46,18 +79,6 @@ for tagged releases.
   self-heals instead of quietly stopping.
 
 ### Added
-- **Per-call received signal level in the call log.** Each recorded voice call
-  now carries a `signal_dbfs` figure — the mean received channel power in dBFS,
-  measured by the voice composer over the call's baseband IQ. It surfaces in the
-  persisted `call_log` table and in `GET /api/v1/calls/history`. It is a
-  channel-power / RSSI-style reading (0 = digital full scale; real signals
-  negative), **not** calibrated absolute RSSI and **not** SNR/EVM. Calls ended
-  without a measurement (watchdog timeout, preemption, shutdown) read `null`.
-  Existing databases gain the column automatically on next open.
-- **USRP B210 (UHD) local-setup recipe.** `docs/hardware.md` now documents
-  running `SoapySDRServer` on the same host and pointing the `soapyremote`
-  driver at `127.0.0.1`, with the B210 master-clock / exact-rate,
-  gain-in-tenths-of-dB, and antenna-via-`args` specifics.
 - **More USB debugging for the Airspy freeze.** With `RTLSDR_DEBUG_USB=1` the
   macOS backend now emits periodic bulk-stream telemetry (URBs, bytes,
   throughput, per-slot completion spread, idle gap) and a one-shot `bulk-IN
