@@ -3472,9 +3472,26 @@ var ccDecoderRetryBackoffs = []time.Duration{
 }
 
 // ccDecoderHealthyRunDuration is how long a successful Run must last
-// before the retry counter resets. Anything shorter is treated as a
-// repeated failure (e.g. the device immediately re-dies on reopen).
-const ccDecoderHealthyRunDuration = 60 * time.Second
+// before the retry counter resets in full. A run this long is treated as
+// "definitely recovered" — a fresh failure stretch gets the whole budget.
+var ccDecoderHealthyRunDuration = 60 * time.Second
+
+// ccDecoderHealthyProgressDuration is the shorter window that counts as
+// "made real progress": a Run that streamed live IQ for at least this long
+// before dying clearly reacquired and decoded, it did not immediately re-die
+// on reopen. Such a run *decays* the retry counter by one instead of only
+// resetting at the full 60 s mark.
+//
+// This exists because an Airspy that flaps — dies, self-heals, streams for a
+// handful of seconds, dies again — never sustains a single 60 s Run, so under
+// the reset-only rule `attempt` climbed monotonically and the daemon escalated
+// to a process-killing fatal after ~30 s even though every restart succeeded
+// (the 9-Jul captures). With the decay, a genuinely-recovering stream holds at
+// a low attempt count and self-heals indefinitely, while a device that re-dies
+// in under this window on every reopen (truly gone / unplugged) still climbs to
+// fatal for an external supervisor to restart. The per-death cause is logged on
+// every retry regardless, so a flapping device is loud, not silent.
+var ccDecoderHealthyProgressDuration = 10 * time.Second
 
 // runCCDecoderWithRetry drives the ccdecoder under a small restart
 // loop. On ErrIQStreamClosed (the USB reaper died, the consumer
@@ -3495,11 +3512,15 @@ func (d *Daemon) runCCDecoderWithRetry(ctx context.Context) error {
 		if !errors.Is(err, ccdecoder.ErrIQStreamClosed) {
 			return err
 		}
-		// A Run that survived a healthy window means the previous
-		// recovery succeeded; reset the attempt counter so a fresh
-		// failure stretch gets its own retry budget.
-		if time.Since(started) >= ccDecoderHealthyRunDuration {
+		// Credit the retry budget for how long the just-ended Run survived:
+		// a full-length healthy run resets it, and a run that at least made
+		// real progress (streamed for the shorter window) decays it by one so
+		// a stream that keeps recovering never accumulates to a fatal.
+		switch ran := time.Since(started); {
+		case ran >= ccDecoderHealthyRunDuration:
 			attempt = 0
+		case ran >= ccDecoderHealthyProgressDuration && attempt > 0:
+			attempt--
 		}
 		if attempt >= len(ccDecoderRetryBackoffs) {
 			d.log.Error("daemon: ccdecoder: IQ stream died and retries exhausted; escalating to fatal",
@@ -3611,11 +3632,16 @@ func (d *Daemon) runWidebandWithRetry(ctx context.Context, eng *widebandt2.Engin
 		if !errors.Is(err, widebandt2.ErrIQStreamClosed) {
 			return err
 		}
-		// A Run that survived a healthy window means the previous
-		// recovery succeeded; reset the retry budget for a fresh
-		// failure stretch.
-		if time.Since(started) >= ccDecoderHealthyRunDuration {
+		// Credit the retry budget for how long the just-ended Run survived
+		// (see runCCDecoderWithRetry): a full-length healthy run resets it, a
+		// run that made real progress decays it by one. A flapping-but-
+		// recovering Airspy therefore self-heals indefinitely instead of
+		// escalating the whole daemon to a fatal after a handful of deaths.
+		switch ran := time.Since(started); {
+		case ran >= ccDecoderHealthyRunDuration:
 			attempt = 0
+		case ran >= ccDecoderHealthyProgressDuration && attempt > 0:
+			attempt--
 		}
 		if attempt >= len(ccDecoderRetryBackoffs) {
 			d.log.Error("daemon: widebandt2: IQ stream died and retries exhausted; escalating to fatal",

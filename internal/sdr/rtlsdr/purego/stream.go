@@ -63,6 +63,9 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	out := make(chan []complex64, streamChanDepth)
 	d.out = out
 	d.stopOnce = sync.Once{}
+	// Drop any cause from a previous stream so it can't be misattributed to
+	// this session's eventual (possibly clean) end.
+	d.streamDeadErr.Store(nil)
 
 	// Provision the reuse ring for this stream (issue #489). Sized
 	// streamChanDepth+2: at most streamChanDepth buffers can sit queued
@@ -100,8 +103,12 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 // real EOF rather than hanging forever. Idempotent via d.stopOnce.
 // The underlying error surfaces upstream as ccdecoder.ErrIQStreamClosed;
 // the daemon logs it once and decides whether to retry / exit. See
-// issue #345.
-func (d *Device) onStreamDead(error) {
+// issue #345. The cause is recorded (StreamDeadCause) so that log line names
+// the concrete USB error instead of a generic message.
+func (d *Device) onStreamDead(cause error) {
+	if cause != nil {
+		d.streamDeadErr.Store(&cause)
+	}
 	d.cancelStream()
 }
 

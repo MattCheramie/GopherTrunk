@@ -13,6 +13,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/iqpower"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -745,6 +746,52 @@ func TestEngineRunReturnsStreamClosedOnUnexpectedClose(t *testing.T) {
 	err := e.Run(ctx)
 	if !errors.Is(err, ErrIQStreamClosed) {
 		t.Fatalf("Run on unexpected stream close = %v, want ErrIQStreamClosed", err)
+	}
+}
+
+// deadCauseDevice is a mockDevice that also reports a concrete stream-death
+// cause, modelling the airspy / rtlsdr-purego StreamDeadCause() extension (and
+// the iqtap broker that forwards it).
+type deadCauseDevice struct {
+	*mockDevice
+	cause error
+}
+
+func (d *deadCauseDevice) StreamDeadCause() error { return d.cause }
+
+// TestEngineRunWrapsStreamDeadCause pins the diagnostic fix: when the device
+// exposes the concrete USB error that killed the stream, Run must fold it into
+// ErrIQStreamClosed so the daemon's "IQ stream died" log names the real cause
+// (e.g. usb.ErrStreamStalled) instead of a bare message. The wrapped error must
+// still satisfy errors.Is(err, ErrIQStreamClosed) so the retry loop is
+// unchanged. Pre-fix Run returned the bare sentinel and the cause was lost.
+func TestEngineRunWrapsStreamDeadCause(t *testing.T) {
+	bus := events.NewBus(64)
+	defer bus.Close()
+	dev := &deadCauseDevice{mockDevice: newMockDevice(nil), cause: usb.ErrStreamStalled}
+	e, err := New(Options{
+		Log:          slog.Default(),
+		Device:       dev,
+		Bus:          bus,
+		Serial:       "WB-CAUSE",
+		SampleRateHz: 2_400_000,
+		CenterFreqHz: 453_500_000,
+		Channels:     []ChannelConfig{{FrequencyHz: 453_125_000, SystemName: "wbsys"}},
+		Systems:      []trunking.System{t2System("wbsys")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No chunks + no holdOpen: the mock closes the stream immediately with the
+	// ctx still live — a reaper death.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got := e.Run(ctx)
+	if !errors.Is(got, ErrIQStreamClosed) {
+		t.Fatalf("Run = %v, want wrapped ErrIQStreamClosed", got)
+	}
+	if !errors.Is(got, usb.ErrStreamStalled) {
+		t.Fatalf("Run = %v, want the concrete cause usb.ErrStreamStalled folded in", got)
 	}
 }
 
