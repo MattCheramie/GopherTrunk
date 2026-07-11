@@ -6,6 +6,7 @@
 //	  → naive decimation to one sample per symbol (offset by the
 //	    RRC group delay so the centre tap lands on the eye)
 //	  → π/8-rotated differential decode → 0..3 dibit
+//	  → canonicalise to TIA-102 dibit convention (issue #813)
 //	  → phase2.DibitSink
 //
 // P25 Phase 2 uses H-DQPSK at 6000 sym/s with α = 0.20 RRC pulse
@@ -338,9 +339,33 @@ func (r *Receiver) Process(iq []complex64) {
 		return
 	}
 	r.dibits = r.dq.Decode(r.dibits, r.symbols)
+	// Canonicalise the dibit convention (issue #813). demod.DQPSK.Decode
+	// assigns the two negative-phase symbols the dibit values 3 and 2 where
+	// the P25 standard (TIA-102.BBAC; SDRtrunk Dibit.java) uses 2 and 3 —
+	// i.e. its quadrant slicer emits 2 and 3 swapped for a real, standard
+	// π/4-DQPSK-family transmitter. Left uncorrected, every downstream stage
+	// (20-dibit outbound sync correlation, ISCH Golay, and the MAC
+	// trellis/RS FEC) sees a 2↔3-transposed stream and never decodes real
+	// air, so `algorithm_id`/`key_id` never populate. The swap is an
+	// involution, so remapping [0,1,3,2] converts DQPSK.Decode's output to
+	// the canonical TIA-102 dibits the whole superframe/MAC chain and the
+	// authoritative OutboundSyncHex (0x575D57F7FF) are written against. This
+	// mirrors the verified P25 Phase 1 CQPSK path, which applies the
+	// identical lsmDibitRemap (issue #492); Phase 2 was missing it.
+	for i, d := range r.dibits {
+		r.dibits[i] = canonicalDibitRemap[d&3]
+	}
 	r.dibitSink(r.dibits, r.dibitBase)
 	r.dibitBase += len(r.dibits)
 }
+
+// canonicalDibitRemap converts demod.DQPSK.Decode's π/4-DQPSK quadrant
+// output to the canonical TIA-102 dibit convention. The decoder lands the
+// four differential phases at dibits {+π/4→0, +3π/4→1, −π/4→3, −3π/4→2};
+// the P25 standard assigns −π/4→2 and −3π/4→3, so the last two are swapped.
+// Swapping 2↔3 is its own inverse. Identical to the Phase 1 CQPSK path's
+// lsmDibitRemap (issue #492); see the remap comment in Process (issue #813).
+var canonicalDibitRemap = [4]uint8{0, 1, 3, 2}
 
 // Reset returns the receiver to its initial state. Call on stream
 // re-sync (control-channel hunt success, IQ underrun recovery) so

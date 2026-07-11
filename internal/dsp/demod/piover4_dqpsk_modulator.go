@@ -145,6 +145,40 @@ func ModulatePiOver4DQPSK(dibits []uint8, sps, span int, alpha, rotation float64
 	return NewPiOver4DQPSKModulator(sps, span, alpha, rotation).Modulate(dibits)
 }
 
+// ModulateHDQPSKSpec synthesises a P25 Phase 2 H-DQPSK IQ stream from a dibit
+// sequence using the STANDARD π/4-DQPSK-family differential phase map
+// (TIA-102.BBAC / SDRtrunk Dibit.java: 00→+π/4, 01→+3π/4, 10→−π/4, 11→−3π/4) —
+// the mapping a real base station transmits. This differs from
+// ModulatePiOver4DQPSK, whose phase map is the inverse of DQPSK.Decode's own
+// (non-canonical) convention and so encodes the two negative-phase symbols with
+// the dibit values 2↔3 transposed relative to real air. Phase 2 fixtures must
+// use THIS modulator so the IQ round-trips through the production receiver's
+// canonicalising dibit remap (issue #813): spec-modulate → receiver → the
+// original canonical dibits.
+//
+// sps is samples per symbol; span is the RRC half-span in symbols; alpha is the
+// RRC roll-off. Single-shot: an impulse train × unit-energy RRC (matching the
+// receiver's RRC matched filter, Nyquist → zero ISI at symbol centres), with no
+// cross-call state, since fixtures modulate a whole stream at once.
+func ModulateHDQPSKSpec(dibits []uint8, sps, span int, alpha float64) []complex64 {
+	up := make([]complex64, len(dibits)*sps)
+	theta := 0.0
+	for i, d := range dibits {
+		switch d & 3 {
+		case 0b00:
+			theta += math.Pi / 4
+		case 0b01:
+			theta += 3 * math.Pi / 4
+		case 0b10:
+			theta += -math.Pi / 4
+		default: // 0b11
+			theta += -3 * math.Pi / 4
+		}
+		up[i*sps] = complex(float32(math.Cos(theta)), float32(math.Sin(theta)))
+	}
+	return filter.NewFIR(filter.RootRaisedCosine(sps, span, alpha)).Process(nil, up)
+}
+
 // dibitToDQPSKPhase returns the raw differential phase
 // increment encoded by a 0..3 dibit value. Inverse of the
 // quadrant decode in DQPSK.Decode (after the rotation offset is

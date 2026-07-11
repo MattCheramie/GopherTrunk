@@ -74,7 +74,7 @@ func makeP2HDQPSKIQ(dibits []uint8) ([]complex64, int) {
 	return iq, sps
 }
 
-// makeP2HDQPSKIQWithOffset is makeP2HDQPSKIQ plus a constant carrier
+// makeP2HDQPSKIQWithOffset is stdModulateHDQPSK plus a constant carrier
 // rotation of offsetHz: every emitted sample n is additionally rotated
 // by e^{+j·2π·offsetHz·n/fs}, modelling the residual frequency error a
 // real (non-TCXO) RTL-SDR tuner carries. A differential decoder removes
@@ -82,14 +82,13 @@ func makeP2HDQPSKIQ(dibits []uint8) ([]complex64, int) {
 // (2π·offsetHz/SymbolRate), so without carrier recovery the dibits land
 // a quadrant over and the 20-dibit outbound sync never correlates —
 // exactly the issue #813 field symptom (superframes=0). offsetHz=0 is
-// byte-identical to makeP2HDQPSKIQ.
+// byte-identical to stdModulateHDQPSK.
 func makeP2HDQPSKIQWithOffset(dibits []uint8, offsetHz, fs float64) ([]complex64, int) {
 	sps := int(fs/SymbolRate + 0.5)
-	// Use the proper RRC-pulse-shaping modulator (the inverse of the
-	// receiver's RRC matched filter, Nyquist → zero ISI at symbol
-	// centres). A rectangular symbol hold would not round-trip through the
-	// matched filter and would self-corrupt fast-varying data.
-	iq := demod.ModulatePiOver4DQPSK(dibits, sps, PulseSpanSymbols, RolloffAlpha, Rotation)
+	// STANDARD π/4-DQPSK-family modulation (what a real base station transmits),
+	// deliberately not GopherTrunk's own (2↔3-transposed) modulator, so the IQ
+	// round-trips through the receiver's canonicalising dibit remap (issue #813).
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, PulseSpanSymbols, RolloffAlpha)
 	if offsetHz != 0 {
 		w := 2 * math.Pi * offsetHz / fs
 		for n := range iq {
