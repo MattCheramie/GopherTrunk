@@ -14,16 +14,21 @@ import (
 // Airspy decode freeze: a stalled IQ consumer must never wedge the USB reaper.
 //
 // Each usb transport bulkLoop goroutine posts its next ReadPipe only after
-// onPacket returns, so a blocking send in onPacket stops the device from being
-// read. On macOS DefaultRingBuffers=32 reapers all block at once, no USB reads
-// stay outstanding, the endpoint FIFO overflows and the whole stream silently
-// wedges with no error/EOF/log. onPacket must instead shed the chunk (counted
-// via sdr.NotifyIQDrop) so the reaper keeps cycling and the device stays alive.
+// onPacket returns, so a blocking send anywhere in the deliver path stops the
+// device from being read. On macOS DefaultRingBuffers=32 reapers all block at
+// once, no USB reads stay outstanding, the endpoint FIFO overflows and the whole
+// stream silently wedges with no error/EOF/log. The deliver path is now two
+// stages — the reaper copies and hands off to rawCh, and a single converter
+// goroutine runs the FIR and sends to `out` — and BOTH sends must shed on
+// overflow (counted via sdr.NotifyIQDrop) rather than block, so the reaper keeps
+// cycling and the device stays alive.
 //
-// Here the consumer never drains the returned channel. With the blocking
-// implementation the mock's delivery goroutine wedges after the 8-deep channel
-// fills and no drops are ever observed → this test times out at zero drops. With
-// the drop-on-overrun fix every packet past the buffer is shed and counted.
+// Here the consumer never drains the returned channel. If either stage blocked,
+// the mock's single delivery goroutine would wedge once `out` (8-deep) fills and
+// no further drops would be observed → this test times out below its target. With
+// non-blocking sheds at both stages, every packet past the buffers is dropped and
+// counted. By conservation exactly packets-cap(out) chunks are shed regardless of
+// rawCh depth (out fills to 8 and stays there; the converter drains rawCh empty).
 func TestStreamIQDropsInsteadOfBlockingWhenConsumerStalls(t *testing.T) {
 	dev, mt := withDevice(t)
 	// StreamIQ flips the receiver on at start and off again on teardown.

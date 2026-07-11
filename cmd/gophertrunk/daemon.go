@@ -3525,9 +3525,11 @@ func (d *Daemon) runCCDecoderWithRetry(ctx context.Context) error {
 		if attempt >= len(ccDecoderRetryBackoffs) {
 			d.log.Error("daemon: ccdecoder: IQ stream died and retries exhausted; escalating to fatal",
 				"attempts", attempt, "err", err)
-			fatal := fmt.Errorf("ccdecoder: %w", err)
-			d.recordFatal(fatal)
-			return fatal
+			// err already carries the "ccdecoder:" prefix (ErrIQStreamClosed);
+			// re-wrapping it here printed "ccdecoder: ccdecoder: IQ stream closed
+			// unexpectedly: ...". Record it as-is.
+			d.recordFatal(err)
+			return err
 		}
 		wait := ccDecoderRetryBackoffs[attempt]
 		attempt++
@@ -3646,9 +3648,11 @@ func (d *Daemon) runWidebandWithRetry(ctx context.Context, eng *widebandt2.Engin
 		if attempt >= len(ccDecoderRetryBackoffs) {
 			d.log.Error("daemon: widebandt2: IQ stream died and retries exhausted; escalating to fatal",
 				"serial", serial, "attempts", attempt, "err", err)
-			fatal := fmt.Errorf("widebandt2: %w", err)
-			d.recordFatal(fatal)
-			return fatal
+			// err already carries the "widebandt2:" prefix (ErrIQStreamClosed);
+			// re-wrapping it here printed "widebandt2: widebandt2: IQ stream
+			// closed unexpectedly: ...". Record it as-is.
+			d.recordFatal(err)
+			return err
 		}
 		wait := ccDecoderRetryBackoffs[attempt]
 		attempt++

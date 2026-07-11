@@ -112,6 +112,24 @@ Knobs for diagnosing and tuning it:
   timeout directly instead of relying on the watchdog. Off by default; try e.g.
   `200` if the watchdog alone doesn't recover cleanly.
 
+### Stream aborts at 10 MS/s (macOS): `usb: ReadPipe: 0xe00002eb`
+
+A raw `usb: ReadPipe: 0xe00002eb` in the `IQ stream died` cause line is macOS's
+`kIOReturnAborted` — the host controller aborting the bulk-IN pipe. It is a
+distinct failure from the two above: the stall watchdog reports `bulk-IN stream
+stalled` and an overrun reports `dropping live IQ chunks`; this is neither. At
+10 MS/s the Airspy streams ~40 MB/s (the real ADC at 2× the IQ rate), near the
+USB 2.0 ceiling, and the host must keep bulk transfers continuously outstanding
+or the controller aborts.
+
+GopherTrunk now runs the real→IQ conversion on a dedicated goroutine rather than
+inline on the USB reapers, so a reaper re-posts its next read immediately and the
+outstanding-transfer queue no longer collapses under the conversion (the earlier
+cause of this abort on macOS). If you still hit `ReadPipe: 0xe00002eb` at 10 MS/s,
+the host genuinely can't sustain the rate on that machine/port — the surest fix is
+a lower `sdr.sample_rate` (2.5 MS/s on an R2), which usually covers the channel
+plan anyway (watch for the *oversampled for the channel plan* warning below).
+
 > **10 MS/s note.** If the daemon warns that the capture is *oversampled for the
 > channel plan* (`sdr.sample_rate` far wider than the carriers span), a lower
 > rate cuts DSP + USB load and overrun pressure for no loss of coverage. A run
