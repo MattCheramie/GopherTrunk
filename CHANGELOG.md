@@ -15,6 +15,21 @@ for tagged releases.
   `go.mod` and every CI/build workflow.
 
 ### Fixed
+- **Airspy on macOS aborted mid-stream with `usb: ReadPipe: 0xe00002eb`.** After
+  a second or two of healthy decoding the bulk-IN pipe was aborted by macOS
+  (`kIOReturnAborted`), the daemon retried, hit the same wall, and escalated to a
+  fatal. It was **not** bandwidth — it reproduced at 2.5 MS/s (~10 MB/s) exactly
+  as at 10 MS/s. The cause was the transport model: the darwin backend issued 32
+  *concurrent synchronous* `ReadPipe` calls on one pipe, which is not a supported
+  IOUSBLib usage and macOS aborts under sustained streaming. The macOS bulk-IN
+  path now defaults to **asynchronous** transfers (`ReadPipeAsync` serviced by one
+  CFRunLoop thread, re-arming each transfer on completion) — the model libusb (and
+  SDR#/SDRtrunk) use to stream the same hardware cleanly. `GT_USB_SYNC_BULK=1`
+  restores the legacy synchronous reapers. Additionally, the Airspy driver now
+  runs its real→IQ conversion on a dedicated goroutine instead of inline on the
+  USB reaper, keeping the transfer servicing responsive. The daemon's
+  retries-exhausted fatal also no longer double-prefixes the subsystem name
+  (`widebandt2: widebandt2: …`).
 - **A flapping Airspy no longer kills the whole daemon.** After the silent-freeze
   fix, a macOS Airspy that keeps *recovering* — the IQ stream dies, the daemon
   reacquires and streams for a few seconds, then it dies again — still took the
