@@ -593,39 +593,91 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		return nil, fmt.Errorf("airspy: receiver on: %w", err)
 	}
 
+	// Decouple USB reaping from the (heavy, sequential) real→IQ conversion. On
+	// macOS the transport delivers each bulk-IN payload from one of
+	// usb.DefaultRingBuffers (32) concurrent reaper goroutines, each of which
+	// re-posts its next ReadPipe only after onPacket returns. When onPacket ran
+	// the FIR conversion inline (as it used to), the reapers serialised on the
+	// converter's mutex and stopped re-posting reads; at 10 MS/s (~40 MB/s) the
+	// host controller's outstanding-transfer queue then collapsed and macOS
+	// aborted the pipe with kIOReturnAborted (surfaced as
+	// "usb: ReadPipe: 0xe00002eb"). So onPacket now only copies the raw payload
+	// and hands it to a single converter goroutine, returning immediately so the
+	// reaper re-posts at once and the queue stays full. Linux uses one in-order
+	// reaper so it never hit this, but the split is harmless there.
 	out := make(chan []complex64, 8)
+	// rawCh carries copied raw payloads to the converter. Depth = the in-flight
+	// URB count (DefaultRingBuffers) so a whole ring completing at once enqueues
+	// without shedding as long as the converter keeps up on average.
+	rawCh := make(chan *[]byte, usb.DefaultRingBuffers)
+	// Per-stream pool of raw byte buffers so a copied payload can outlive the
+	// reaper's slot buffer (reused on the next ReadPipe) without per-URB GC
+	// churn. Per-stream so it is collected with the stream and never aliases a
+	// previous session's buffers.
+	pool := &sync.Pool{New: func() any { b := make([]byte, usb.DefaultBufferLen); return &b }}
+	// Capture the fresh converter as a local so the converter goroutine never
+	// reads the d.cnv field: a fast retune (#686) may reassign d.cnv for the
+	// next stream while this one is still draining.
+	cnv := d.cnv
+	converterDone := make(chan struct{})
+
 	onPacket := func(buf []byte) {
-		samples := d.cnv.processRaw(buf)
+		// Runs on up to 32 concurrent reaper threads (macOS); it MUST NOT block —
+		// a blocked reaper stops re-posting ReadPipe (see above). Copy the payload
+		// (darwin overwrites the reaper's slot buffer on the next read) and hand
+		// it off; shed on a full rawCh rather than block.
+		bp := pool.Get().(*[]byte)
+		b := *bp
+		if cap(b) < len(buf) {
+			b = make([]byte, len(buf))
+		}
+		b = b[:len(buf)]
+		copy(b, buf)
+		*bp = b
 		select {
-		case out <- samples:
+		case rawCh <- bp:
 		default:
-			// Consumer fell behind. Drop the chunk rather than block the USB
-			// reaper: each bulkLoop goroutine posts its next ReadPipe only after
-			// onPacket returns, so a blocked send stops posting reads. Stall all
-			// of them (macOS runs DefaultRingBuffers=32 concurrent reapers) and
-			// no reads are outstanding — the device FIFO overflows and the whole
-			// stream silently wedges with no error, no EOF, no log (the Airspy
-			// freeze). Shed the chunk and surface it instead: the daemon's IQ-drop
-			// observer bumps iq_underruns_total and emits a rate-limited "host
-			// can't keep up — lower sdr.sample_rate" WARN.
+			// Converter fell behind. Return the buffer, drop the chunk, and
+			// surface it: the daemon's IQ-drop observer bumps iq_underruns_total
+			// and emits a rate-limited "host can't keep up — lower
+			// sdr.sample_rate" WARN.
+			pool.Put(bp)
 			d.dropped.Add(1)
 			sdr.NotifyIQDrop(d.info)
 		}
 	}
-	// streamDead fires (exactly once, via streamDeadOnce) when the USB
-	// reaper exits without StopBulkIn being called — every URB died of
-	// an unrecoverable error. The cleanup goroutine below treats it
-	// just like a ctx-cancel: tear the stream down and close `out`
-	// so the IQ consumer sees a real EOF instead of hanging forever
-	// (issue #345).
+
+	// Single converter goroutine: it owns processRaw (so conversion runs in
+	// packet order, uncontended) and is the sole sender to — and closer of —
+	// `out`, so there is no send-on-closed or double-close.
+	go func() {
+		defer close(converterDone)
+		defer close(out)
+		for bp := range rawCh {
+			samples := cnv.processRaw(*bp)
+			pool.Put(bp)
+			select {
+			case out <- samples:
+			default:
+				d.dropped.Add(1)
+				sdr.NotifyIQDrop(d.info)
+			}
+		}
+	}()
+
+	// streamDead fires (exactly once, via streamDeadOnce) when the USB reaper
+	// exits without StopBulkIn being called — every URB died of an unrecoverable
+	// error. The cleanup goroutine below treats it just like a ctx-cancel: tear
+	// the stream down so the IQ consumer sees a real EOF instead of hanging
+	// forever (issue #345).
 	streamDead := make(chan struct{})
 	var streamDeadOnce sync.Once
 	onStreamDead := func(cause error) {
 		streamDeadOnce.Do(func() {
-			// Record the killing error (before closing streamDead so it is
-			// visible by the time the cleanup goroutine closes `out` and the
-			// IQ consumer observes EOF). StreamDeadCause exposes it so the
-			// daemon log names the real cause instead of a generic message.
+			// Record the killing error before closing streamDead so it is visible
+			// by the time the converter closes `out` and the IQ consumer observes
+			// EOF. StreamDeadCause exposes it so the daemon log names the real
+			// cause instead of a generic message.
 			if cause != nil {
 				d.streamDeadErr.Store(&cause)
 			}
@@ -634,6 +686,9 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	}
 	if err := d.t.StartBulkIn(bulkInEP, usb.DefaultRingBuffers, usb.DefaultBufferLen, onPacket, onStreamDead); err != nil {
 		_ = d.setReceiver(receiverModeOff)
+		// Unwind the converter goroutine started above.
+		close(rawCh)
+		<-converterDone
 		d.mu.Lock()
 		d.streaming = false
 		d.mu.Unlock()
@@ -642,14 +697,17 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	}
 
 	go func() {
-		defer close(out)
 		defer close(done)
 		select {
 		case <-ctx.Done():
 		case <-streamDead:
 		}
+		// StopBulkIn is the barrier: after it returns, no reaper onPacket is
+		// running or will run again, so closing rawCh cannot race a send.
 		_ = d.t.StopBulkIn()
 		_ = d.setReceiver(receiverModeOff)
+		close(rawCh)
+		<-converterDone // converter drains rawCh, closes out, then exits
 		d.mu.Lock()
 		d.streaming = false
 		d.mu.Unlock()

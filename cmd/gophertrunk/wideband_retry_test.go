@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -79,8 +80,16 @@ func TestRunWidebandWithRetry_FatalsAfterRetriesExhausted(t *testing.T) {
 	if !errors.Is(got, widebandt2.ErrIQStreamClosed) {
 		t.Errorf("runWidebandWithRetry = %v, want wrapped ErrIQStreamClosed", got)
 	}
-	if d.takeFatal() == nil {
-		t.Error("expected recordFatal to fire after wideband retries exhausted")
+	fatal := d.takeFatal()
+	if fatal == nil {
+		t.Fatal("expected recordFatal to fire after wideband retries exhausted")
+	}
+	// The engine's ErrIQStreamClosed already carries a "widebandt2:" prefix, so
+	// the escalation must record it as-is, not re-wrap it into
+	// "widebandt2: widebandt2: IQ stream closed unexpectedly: ..." — the doubled
+	// prefix from the field report.
+	if n := strings.Count(fatal.Error(), "widebandt2:"); n != 1 {
+		t.Errorf("fatal = %q, has %d \"widebandt2:\" prefixes, want exactly 1", fatal.Error(), n)
 	}
 }
 
