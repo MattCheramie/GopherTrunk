@@ -6,7 +6,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,7 +53,7 @@ func TestDaemonCCDecodesP25Phase2(t *testing.T) {
 	)
 
 	dibits := buildP25Phase2MACPTTStream(superframeRepeats)
-	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	dir := t.TempDir()
 	iqPath := filepath.Join(dir, "p25p2-cc.cfile")

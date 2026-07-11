@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"math"
 	"strings"
 	"testing"
 	"time"
@@ -94,7 +93,7 @@ func TestComposerP25Phase2VoiceChainExtractsRawFrames(t *testing.T) {
 	framesPerSuperframe := p25p2.SubframesPerSuperframe * p25p2.Voice4VFrameCount
 
 	dibits, want := buildP25P2VoiceStream(superframes)
-	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	src := newFakeSource()
 	bus := events.NewBus(8)
@@ -218,7 +217,7 @@ func TestComposerP25Phase2TalkerAliasFires(t *testing.T) {
 	)
 
 	dibits, wantSrc, wantAlias := buildP25P2AliasStream(superframes)
-	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	src := newFakeSource()
 	bus := events.NewBus(64)
@@ -378,7 +377,7 @@ func TestComposerP25Phase2InCallMetadataFires(t *testing.T) {
 	)
 
 	dibits, wantSrc, wantAlias, wantAlgID, wantKeyID := buildP25P2MetadataStream(superframes)
-	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	src := newFakeSource()
 	bus := events.NewBus(128)
@@ -577,7 +576,7 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 		alpha      = 0.20
 	)
 	dibits, _, _, _, _ := buildP25P2MetadataStream(6)
-	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))

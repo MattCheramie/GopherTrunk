@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"math"
 	"testing"
 	"time"
 
@@ -104,7 +103,7 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 	)
 
 	dibits, wantSrc, wantAlias := aliasDibits(8, 8)
-	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	fake := newFakeDevice()

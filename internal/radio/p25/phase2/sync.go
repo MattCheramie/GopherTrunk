@@ -17,32 +17,35 @@ type DibitSink func(dibits []uint8, baseIdx int)
 // of each constant, so a correct value must be exactly 40 bits — the previous
 // OutboundSyncHex was 48 bits and its top byte was silently dropped (issue #813).
 //
-// OutboundSyncHex is expressed in GopherTrunk's *decoder* dibit convention, not
-// the P25 standard's. The authoritative P25 Phase 2 outbound frame sync is
+// OutboundSyncHex is the authoritative P25 Phase 2 outbound frame sync
 // 0x575D57F7FF (OP25 frame_sync_magics.h / SDRtrunk P25P2_FRAME_SYNC_MAGIC,
-// TIA-102.BBAC). On air that sync is a 20-symbol π/4-DQPSK-family sequence whose
-// differential phases are, per dibit, {00→+π/4, 01→+3π/4, 10→−π/4, 11→−3π/4}
-// (SDRtrunk Dibit.java). Running exactly that physical sequence through this
-// package's differential decoder (demod.DQPSK.Decode, the receiver's actual
-// output) yields the dibit sequence below — 0x565956A6AA — which is what the
-// SyncDetector must match on live traffic. (GopherTrunk's DQPSK.Decode assigns
-// the two negative-phase symbols the dibit values 2 and 3 swapped relative to
-// the P25 standard, so the standard 0x575D57F7FF becomes 0x565956A6AA in the
-// decoded stream. That same swap means the MAC/voice *payload* would also decode
-// with 2↔3 transposed — a likely remaining blocker for ALGID/KID that lives in
-// the shared demod.DQPSK map and must be confirmed against a real capture before
-// touching, since it is also used by the TETRA and P25 Phase 1 CQPSK paths.)
+// TIA-102.BBAC), expressed in the canonical TIA-102 dibit convention. On air
+// that sync is a 20-symbol π/4-DQPSK-family sequence whose differential phases
+// are, per dibit, {00→+π/4, 01→+3π/4, 10→−π/4, 11→−3π/4} (SDRtrunk Dibit.java).
 //
-// The old OutboundSyncHex (0x575F7DFF77FF) was neither the standard value nor
-// this decoded form — a garbled 48-bit constant that never matched real air, so
-// Phase 2 superframes never locked while every synthesized round-trip test (which
-// encodes with the same constant) passed. See TestSuperframeLocksOnSpecSync.
+// The receiver decodes those symbols with demod.DQPSK.Decode, whose quadrant
+// slicer assigns the two negative-phase symbols the dibit values 3 and 2 where
+// the standard uses 2 and 3 — so its raw output for real air is 2↔3 transposed
+// (the standard 0x575D57F7FF would read as 0x565956A6AA). The Phase 2 receiver
+// therefore canonicalises with a [0,1,3,2] remap (canonicalDibitRemap, mirroring
+// the verified Phase 1 CQPSK lsmDibitRemap, issue #492) BEFORE emitting dibits,
+// so this detector, the ISCH decode and the MAC FEC all match against the
+// canonical value here. An earlier fix instead set OutboundSyncHex to the
+// transposed 0x565956A6AA to match the un-remapped decoder; that locked sync but
+// left the MAC/voice payload 2↔3 transposed, so ALGID/KID never populated — the
+// remap fixes the whole chain and restores the authoritative constant here.
+//
+// The pre-#813 OutboundSyncHex (0x575F7DFF77FF) was neither the standard value
+// nor its transposed form — a garbled 48-bit constant that never matched real
+// air, so Phase 2 superframes never locked while every synthesized round-trip
+// test (which encodes with the same constant) passed. See
+// TestSuperframeLocksOnSpecSync.
 //
 // InboundSyncHex is the uplink (MS → BS) sync, used only by a diagnostic
 // detector (internal/siglab/detail.go); it is unverified against real air and
 // against this decoder's convention — do not rely on it until confirmed.
 const (
-	OutboundSyncHex uint64 = 0x565956A6AA
+	OutboundSyncHex uint64 = 0x575D57F7FF
 	InboundSyncHex  uint64 = 0xDFF57D75DF5D
 	SyncDibits             = 20
 )

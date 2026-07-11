@@ -68,7 +68,7 @@ var fixtures = map[trunking.Protocol]fixture{
 	},
 	trunking.ProtocolP25Phase2: {
 		build:       func() []uint8 { return buildP25Phase2MACPTTStream(8) },
-		modulate:    func(d []uint8, _ float64) []complex64 { return demod.ModulatePiOver4DQPSK(d, 8, 8, 0.20, math.Pi/8) },
+		modulate:    func(d []uint8, _ float64) []complex64 { return demod.ModulateHDQPSKSpec(d, 8, 8, 0.20) },
 		sampleRate:  48_000,
 		systemKnobs: map[string]string{"p25_phase2_trellis_mode": "on"},
 		expected:    Acceptance{Lock: boolPtr(true)},
