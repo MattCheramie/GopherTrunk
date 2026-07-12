@@ -1228,15 +1228,26 @@ broadcast:
   #     include_audio: false               # true embeds the base64 MP3 in each POST
   #     systems: ["Metro P25"]             # empty = every system
 
-# Wideband baseband (IQ) recording and offline replay. `record` taps a
-# live tuner and writes its raw IQ to a two-channel 16-bit WAV (the
-# same layout SDRtrunk uses). `replay` mounts recorded WAVs as virtual
-# tuners so a capture can be decoded with no radio attached — record at
-# the same rate as sdr.sample_rate for real-time-correct playback.
+# Baseband (IQ) recording and offline replay. `record` taps a tuner and
+# writes IQ to a two-channel 16-bit WAV (the same layout SDRtrunk/SDR++ use);
+# `replay` mounts recorded WAVs as virtual tuners so a capture can be decoded
+# with no radio attached.
+#
+# Each record entry chooses what it taps with `tap`:
+#   tap: wideband (default) — the full-rate raw SDR IQ. Large files; record at
+#     the same rate as sdr.sample_rate for real-time-correct playback.
+#   tap: ddc — the narrowband digital-down-converter output: the channelized
+#     stream the control-channel decoder actually sees, at the pipeline rate
+#     (144 kHz for TETRA, ~48 kHz for the C4FM family). Orders of magnitude
+#     smaller than wideband, and directly decodable offline with
+#     `gophertrunk replay -in rec.wav -format wav -protocol <p>`. Use this to
+#     capture a hard-to-decode control channel for sharing/analysis instead of
+#     a fat 2.5/10 MS/s capture.
 # baseband:
 #   record:
 #     - serial: "00000001"
 #       dir: "../iq/"
+#       tap: wideband            # or: ddc (small narrowband channel recording)
 #   replay:
 #     - file: "../iq/00000001_20260521T120000Z.wav"
 #       serial: "replay-01"

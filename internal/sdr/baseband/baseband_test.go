@@ -2,8 +2,11 @@ package baseband
 
 import (
 	"context"
+	"io"
 	"math"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +50,59 @@ func TestIQWriterRoundTrip(t *testing.T) {
 	}
 	if info.Samples != len(samples) {
 		t.Fatalf("samples = %d, want %d", info.Samples, len(samples))
+	}
+}
+
+func TestReadIQWavStreamHeaderRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nb.wav")
+	samples := iqTone(1500)
+	w, err := NewIQWriter(path, 144_000)
+	if err != nil {
+		t.Fatalf("NewIQWriter: %v", err)
+	}
+	if err := w.Write(samples); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+	info, err := ReadIQWavStreamHeader(f)
+	if err != nil {
+		t.Fatalf("ReadIQWavStreamHeader: %v", err)
+	}
+	if info.SampleRate != 144_000 || info.Channels != 2 {
+		t.Fatalf("header rate=%d ch=%d, want 144000/2", info.SampleRate, info.Channels)
+	}
+	// The reader must leave the file positioned at the first data byte, so
+	// the remaining payload decodes back to the samples we wrote (within the
+	// int16 quantization the WAV format applies).
+	rest, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	got := DecodeIQ16(rest)
+	if len(got) != len(samples) {
+		t.Fatalf("decoded %d samples, want %d", len(got), len(samples))
+	}
+	// A few LSB of tolerance: the writer scales by 32767 and the reader
+	// divides by 32768, so round-trip carries a small systematic error.
+	const tol = 1e-4
+	for i := range got {
+		if d := real(got[i]) - real(samples[i]); d > tol || d < -tol {
+			t.Fatalf("sample %d real mismatch: got %v want %v", i, got[i], samples[i])
+		}
+	}
+}
+
+func TestReadIQWavStreamHeaderRejectsNonRIFF(t *testing.T) {
+	if _, err := ReadIQWavStreamHeader(strings.NewReader("not a wav file at all")); err == nil {
+		t.Fatal("ReadIQWavStreamHeader should reject a non-RIFF stream")
 	}
 }
 

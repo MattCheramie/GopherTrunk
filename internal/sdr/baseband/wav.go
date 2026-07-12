@@ -197,6 +197,73 @@ func parseIQWavHeader(f *os.File) (dataBytes uint32, info IQWavInfo, err error) 
 	}
 }
 
+// ReadIQWavStreamHeader consumes the RIFF/WAVE header from a forward-only
+// reader, leaving r positioned at the first IQ data byte, and returns the
+// format info. Unlike parseIQWavHeader it never seeks — unknown chunks are
+// discarded by reading past them — so it works on a pipe, an HTTP body, or
+// any non-seekable capture source. info.Samples is left 0 (the data length
+// is not needed when the payload is streamed to EOF).
+func ReadIQWavStreamHeader(r io.Reader) (IQWavInfo, error) {
+	var info IQWavInfo
+	hdr := make([]byte, 12)
+	if _, err := io.ReadFull(r, hdr); err != nil {
+		return info, fmt.Errorf("baseband: read RIFF header: %w", err)
+	}
+	if string(hdr[0:4]) != "RIFF" || string(hdr[8:12]) != "WAVE" {
+		return info, errors.New("baseband: not a RIFF/WAVE file")
+	}
+	var (
+		bits   uint16
+		gotFmt bool
+	)
+	chunkHdr := make([]byte, 8)
+	for {
+		if _, err := io.ReadFull(r, chunkHdr); err != nil {
+			return info, errors.New("baseband: WAV ended before a data chunk")
+		}
+		id := string(chunkHdr[0:4])
+		size := binary.LittleEndian.Uint32(chunkHdr[4:8])
+		switch id {
+		case "fmt ":
+			fmtBuf := make([]byte, size)
+			if _, err := io.ReadFull(r, fmtBuf); err != nil {
+				return info, fmt.Errorf("baseband: read fmt chunk: %w", err)
+			}
+			if len(fmtBuf) < 16 {
+				return info, errors.New("baseband: short fmt chunk")
+			}
+			info.Channels = binary.LittleEndian.Uint16(fmtBuf[2:4])
+			info.SampleRate = binary.LittleEndian.Uint32(fmtBuf[4:8])
+			bits = binary.LittleEndian.Uint16(fmtBuf[14:16])
+			gotFmt = true
+		case "data":
+			if !gotFmt {
+				return info, errors.New("baseband: data chunk before fmt chunk")
+			}
+			if info.Channels != iqWavChannels {
+				return info, fmt.Errorf("baseband: WAV has %d channels, IQ recordings need 2", info.Channels)
+			}
+			if bits != iqWavBitsPerSample {
+				return info, fmt.Errorf("baseband: WAV is %d-bit, IQ recordings need 16-bit", bits)
+			}
+			return info, nil
+		default:
+			skip := int64(size)
+			if size%2 == 1 {
+				skip++
+			}
+			if _, err := io.CopyN(io.Discard, r, skip); err != nil {
+				return info, fmt.Errorf("baseband: skip %q chunk: %w", id, err)
+			}
+		}
+	}
+}
+
+// DecodeIQ16 converts one interleaved 16-bit I/Q PCM block into complex64,
+// matching the normalisation IQWriter uses. Exported so offline replay can
+// decode baseband WAV payloads through the same math the driver uses.
+func DecodeIQ16(buf []byte) []complex64 { return decodeIQ16(buf) }
+
 // floatToI16 clamps a normalised sample to [-1, 1] and scales it to a
 // signed 16-bit value.
 func floatToI16(v float32) int16 {

@@ -371,10 +371,11 @@ var fieldMetas = map[string]FieldMeta{
 	"WebhookFeedConfig.Systems":       {Help: "GopherTrunk system names to stream. Empty = every system."},
 
 	// ---- Baseband ----------------------------------------------------------
-	"BasebandConfig.Record":       {Help: "Tap live tuners and write their wideband IQ to WAV."},
+	"BasebandConfig.Record":       {Help: "Tap tuners and write their IQ to WAV (wideband or narrowband DDC output)."},
 	"BasebandConfig.Replay":       {Help: "Mount recorded WAVs as virtual tuners for offline decode."},
 	"BasebandRecordConfig.Serial": {Help: "SDR serial whose IQ stream is recorded."},
 	"BasebandRecordConfig.Dir":    {Label: "Directory", Help: "Directory the IQ recordings are written into."},
+	"BasebandRecordConfig.Tap":    {Help: "What to record: wideband (raw SDR IQ) or ddc (narrowband channel the decoder sees).", Options: opts("", "wideband (default)", "ddc", "ddc")},
 	"BasebandReplayConfig.File":   {Help: "Path to the baseband WAV recording to replay."},
 	"BasebandReplayConfig.Serial": {Help: "Virtual device serial the pool reports. Empty generates one."},
 	"BasebandReplayConfig.Role":   {Help: "Pool role: control / voice / auto.", Options: roleOpts()},

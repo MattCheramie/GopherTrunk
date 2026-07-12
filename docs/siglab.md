@@ -77,7 +77,7 @@ gophertrunk siglab -in capture.cfile -protocol p25p1 -format u8 -auto-tune
 |------|---------|---------|
 | `-in <path>` | *(required)* | raw IQ capture file |
 | `-protocol <p>` | *(pick in the TUI)* | protocol to decode — empty prompts a picker |
-| `-format u8\|f32` | `f32` | sample format of the capture |
+| `-format u8\|f32\|wav` | `f32` | sample format (`wav` = 2-ch 16-bit baseband; rate from header) |
 | `-sample-rate <Hz>` | `2400000` | IQ sample rate of the capture |
 | `-freq <Hz>` | `0` | informational nominal centre frequency |
 | `-auto-tune` | off | estimate the carrier offset and tune to 0 Hz before demod |
@@ -172,6 +172,19 @@ candidates for you.
   capture rate. A symptom that only appears at a higher capture rate but
   reproduces in offline replay points at the *captured samples* (front-end
   overload / intermod / gain staging), not GopherTrunk's DSP.
-- **`f32` vs `u8`.** GopherTrunk's own `capture` writes interleaved `f32`;
-  many SDR tools (and `.cu8`/`.cfile` from `rtl_sdr`) write `u8`. Set `-format`
-  to match.
+- **`f32` vs `u8` vs `wav`.** GopherTrunk's own `capture` writes interleaved
+  `f32`; many SDR tools (and `.cu8`/`.cfile` from `rtl_sdr`) write `u8`; SDRtrunk
+  and SDR++ baseband recordings (and GopherTrunk's own narrowband recordings)
+  are two-channel 16-bit `wav`. Set `-format` to match. For `wav` the sample rate
+  comes from the file header, so `-sample-rate` is ignored (and `-auto-tune` is
+  rejected — a baseband WAV is already channelized; use `-tune-hz` for a small
+  residual offset).
+- **Shrink a fat capture for sharing.** Add `-record-ddc <out.wav>` to any replay
+  run to tee the post-DDC narrowband stream (the exact channelized IQ the receiver
+  decodes, 144 kHz for TETRA / ~48 kHz for the C4FM family) to a small
+  two-channel 16-bit WAV. That file replays identically with `-format wav` and is
+  orders of magnitude smaller than the wideband capture — the offline counterpart
+  of the live `baseband.record` `tap: ddc` option. A rate that is not an integer
+  multiple of the symbol rate (e.g. a 39 kHz SDR++ decimation of a 2.5 MS/s
+  capture — only 2.17 samples/symbol for TETRA's 18 kbaud) will lock poorly;
+  record the DDC output (a clean 8 samples/symbol) instead.
