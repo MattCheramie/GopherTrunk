@@ -76,8 +76,8 @@ func TestDDCRecorderDisabled(t *testing.T) {
 func TestDDCRecorderIgnoresEmptyAndZeroRate(t *testing.T) {
 	dir := t.TempDir()
 	r := newDDCRecorder(dir, nil)
-	r.write("S", 144000, nil)      // empty samples → no file
-	r.write("S", 0, tone(10))      // zero rate → no file
+	r.write("S", 144000, nil) // empty samples → no file
+	r.write("S", 0, tone(10)) // zero rate → no file
 	r.close()
 	matches, _ := filepath.Glob(filepath.Join(dir, "*.wav"))
 	if len(matches) != 0 {
