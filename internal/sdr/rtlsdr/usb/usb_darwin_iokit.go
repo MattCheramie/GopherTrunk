@@ -126,13 +126,26 @@ const (
 
 // IOUSBInterfaceInterface vtable indices (post-IUnknown).
 const (
-	ifaceUSBInterfaceOpen  = 8
-	ifaceUSBInterfaceClose = 9
-	ifaceGetNumEndpoints   = 19
-	ifaceGetPipeProperties = 26
-	ifaceAbortPipe         = 28
-	ifaceResetPipe         = 29
-	ifaceReadPipe          = 31
+	// ifaceCreateInterfaceAsyncEventSource is CreateInterfaceAsyncEventSource
+	// (self, CFRunLoopSourceRef *source): creates the async I/O event source
+	// (and its mach port) that delivers ReadPipeAsync completion callbacks to a
+	// CFRunLoop. First entry after the IUnknown header (QueryInterface/AddRef/
+	// Release at 1/2/3).
+	ifaceCreateInterfaceAsyncEventSource = 4
+	ifaceUSBInterfaceOpen                = 8
+	ifaceUSBInterfaceClose               = 9
+	ifaceGetNumEndpoints                 = 19
+	ifaceGetPipeProperties               = 26
+	ifaceAbortPipe                       = 28
+	ifaceResetPipe                       = 29
+	ifaceReadPipe                        = 31
+	// ifaceReadPipeAsync is ReadPipeAsync in the base interface:
+	//   IOReturn ReadPipeAsync(self, UInt8 pipeRef, void *buf, UInt32 size,
+	//                          IOAsyncCallback1 callback, void *refcon)
+	// The callback (IOAsyncCallback1) is void(*)(void *refcon, IOReturn result,
+	// void *arg0), where arg0 is the byte count actually transferred. Completions
+	// are dispatched on whatever run loop the async event source was added to.
+	ifaceReadPipeAsync = 33
 	// ifaceReadPipeTO is ReadPipeTO, present only in the v182+ interface
 	// (kIOUSBInterfaceInterfaceID182). Signature adds noDataTimeout and
 	// completionTimeout (ms) after the base ReadPipe args:
@@ -187,6 +200,18 @@ var (
 	// can't marshal the 16-byte struct, so the two 8-byte halves are
 	// passed as separate register-sized args — see makeCFUUID.
 	cfUUIDCreateFromUUIDBytes func(alloc cfAllocatorRef, lo, hi uint64) cfTypeRef
+
+	// CoreFoundation run-loop entry points, used by the asynchronous bulk-IN
+	// path (usb_darwin_async.go). The async USB event source delivers
+	// ReadPipeAsync completions to whatever CFRunLoop it is added to, so one
+	// dedicated OS thread services them — the model libusb's darwin backend
+	// uses. We drive the loop with bounded CFRunLoopRunInMode slices and a stop
+	// flag rather than CFRunLoopRun + CFRunLoopStop, which avoids the documented
+	// race where a stop issued before the run loop starts is lost.
+	cfRunLoopGetCurrent   func() uintptr
+	cfRunLoopRunInMode    func(mode uintptr, seconds float64, returnAfterSourceHandled bool) int32
+	cfRunLoopAddSource    func(rl, source, mode uintptr)
+	cfRunLoopRemoveSource func(rl, source, mode uintptr)
 )
 
 // IOKit function pointers.
@@ -249,6 +274,10 @@ func loadIOKit() (err error) {
 	purego.RegisterLibFunc(&cfStringGetCString, cf, "CFStringGetCString")
 	purego.RegisterLibFunc(&cfNumberGetValue, cf, "CFNumberGetValue")
 	purego.RegisterLibFunc(&cfUUIDCreateFromUUIDBytes, cf, "CFUUIDCreateFromUUIDBytes")
+	purego.RegisterLibFunc(&cfRunLoopGetCurrent, cf, "CFRunLoopGetCurrent")
+	purego.RegisterLibFunc(&cfRunLoopRunInMode, cf, "CFRunLoopRunInMode")
+	purego.RegisterLibFunc(&cfRunLoopAddSource, cf, "CFRunLoopAddSource")
+	purego.RegisterLibFunc(&cfRunLoopRemoveSource, cf, "CFRunLoopRemoveSource")
 	purego.RegisterLibFunc(&ioServiceMatching, io, "IOServiceMatching")
 	purego.RegisterLibFunc(&ioServiceGetMatchingServices, io, "IOServiceGetMatchingServices")
 	purego.RegisterLibFunc(&ioIteratorNext, io, "IOIteratorNext")

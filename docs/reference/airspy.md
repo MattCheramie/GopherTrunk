@@ -112,23 +112,29 @@ Knobs for diagnosing and tuning it:
   timeout directly instead of relying on the watchdog. Off by default; try e.g.
   `200` if the watchdog alone doesn't recover cleanly.
 
-### Stream aborts at 10 MS/s (macOS): `usb: ReadPipe: 0xe00002eb`
+### Stream aborts with `usb: ReadPipe: 0xe00002eb` (macOS)
 
-A raw `usb: ReadPipe: 0xe00002eb` in the `IQ stream died` cause line is macOS's
-`kIOReturnAborted` — the host controller aborting the bulk-IN pipe. It is a
-distinct failure from the two above: the stall watchdog reports `bulk-IN stream
-stalled` and an overrun reports `dropping live IQ chunks`; this is neither. At
-10 MS/s the Airspy streams ~40 MB/s (the real ADC at 2× the IQ rate), near the
-USB 2.0 ceiling, and the host must keep bulk transfers continuously outstanding
-or the controller aborts.
+A raw `usb: ReadPipe: 0xe00002eb` (or `ReadPipeAsync: 0xe00002eb`) in the `IQ
+stream died` cause line is macOS's `kIOReturnAborted` — the host controller
+aborting the bulk-IN pipe mid-stream. It is distinct from the two failures above:
+the stall watchdog reports `bulk-IN stream stalled` and an overrun reports
+`dropping live IQ chunks`; this is neither. It is **not** a bandwidth problem — it
+reproduces at 2.5 MS/s (~10 MB/s, well under USB 2.0) just as at 10 MS/s, always
+after a second or two of healthy decoding.
 
-GopherTrunk now runs the real→IQ conversion on a dedicated goroutine rather than
-inline on the USB reapers, so a reaper re-posts its next read immediately and the
-outstanding-transfer queue no longer collapses under the conversion (the earlier
-cause of this abort on macOS). If you still hit `ReadPipe: 0xe00002eb` at 10 MS/s,
-the host genuinely can't sustain the rate on that machine/port — the surest fix is
-a lower `sdr.sample_rate` (2.5 MS/s on an R2), which usually covers the channel
-plan anyway (watch for the *oversampled for the channel plan* warning below).
+The cause was the transport model. The macOS backend used to issue 32 *concurrent
+synchronous* `ReadPipe` calls on a single pipe, which is not a supported IOUSBLib
+usage and macOS aborts intermittently under sustained streaming, at any rate.
+GopherTrunk now defaults to an **asynchronous** bulk-IN path (`ReadPipeAsync`
+serviced by one CFRunLoop thread, re-arming each transfer on completion) — the
+same model libusb (and hence SDR#/SDRtrunk) use, which stream this hardware
+cleanly.
+
+- `GT_USB_SYNC_BULK=1` forces the legacy synchronous reapers (the pre-async path)
+  if you need to compare behaviour.
+- If the abort persists on the async path, capture a run with `RTLSDR_DEBUG_USB=1`
+  and open an issue — that points at something host- or hardware-specific rather
+  than the transfer model.
 
 > **10 MS/s note.** If the daemon warns that the capture is *oversampled for the
 > channel plan* (`sdr.sample_rate` far wider than the carriers span), a lower

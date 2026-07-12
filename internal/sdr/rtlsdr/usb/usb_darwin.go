@@ -23,22 +23,23 @@
 //   - Control transfers go through IOUSBDeviceInterface::DeviceRequest
 //     with an IOUSBDevRequest struct that mirrors the USB 2.0 setup
 //     packet plus a data pointer.
-//   - Bulk-IN runs N goroutines, each pinned to its own OS thread
-//     via runtime.LockOSThread, doing synchronous ReadPipe calls in
-//     a loop. Cancellation is via AbortPipe — pending reads return
-//     with kIOReturnAborted, the goroutines see the closed-flag and
-//     exit. This sidesteps CFRunLoop callbacks entirely; trade-off
-//     is one OS thread per slot (32 by default) instead of one
-//     reaper-loop thread for the whole ring.
+//   - Bulk-IN defaults to the asynchronous path (usb_darwin_async.go):
+//     a ring of ReadPipeAsync transfers serviced by one CFRunLoop
+//     thread, each re-armed on completion — the model libusb uses. The
+//     legacy synchronous path (one OS-thread-pinned goroutine per slot,
+//     each blocking in ReadPipe) is retained behind GT_USB_SYNC_BULK=1.
+//     The switch exists because 32 *concurrent synchronous* ReadPipe
+//     calls on one pipe are not a supported IOUSBLib usage and macOS
+//     aborts them intermittently with kIOReturnAborted (0xe00002eb)
+//     under sustained streaming at any rate (Airspy R2, 2.5 and
+//     10 MS/s); the async ring avoids the concurrent-sync-read pattern.
 //
 // **Hardware validation status**: this code compiles cleanly under
 // `GOOS=darwin GOARCH={amd64,arm64} CGO_ENABLED=0` and the FFI
-// surface is structurally complete — but it has not been exercised
-// against real RTL-SDR hardware on macOS. Contributors with the
-// hardware should diff USB control-transfer captures (Wireshark +
-// usbmon-equivalent) against the Linux backend's output to verify
-// wire format. See the PR description for the manual-test
-// follow-up checklist.
+// surface is structurally complete. The synchronous path has field
+// history; the asynchronous ReadPipeAsync + CFRunLoop path is new and
+// needs confirmation against real hardware on macOS (see the async
+// file's notes and the reporter-verification checklist in the PR).
 
 package usb
 
@@ -467,6 +468,17 @@ type darwinTransport struct {
 	bulkStopFlag atomic.Int32
 	bulkDone     chan struct{}
 
+	// Async bulk-IN state (usb_darwin_async.go). When bulkAsync is set (the
+	// default; GT_USB_SYNC_BULK=1 selects the legacy synchronous reapers), the
+	// transport streams via ReadPipeAsync serviced by a single CFRunLoop thread
+	// — the model libusb uses. This replaces 32 concurrent synchronous ReadPipe
+	// calls on one pipe, which macOS aborts intermittently with kIOReturnAborted
+	// (0xe00002eb) under sustained streaming regardless of rate.
+	bulkAsync       bool
+	bulkOnPacket    func([]byte)
+	bulkRunLoopRef  atomic.Uintptr // CFRunLoopRef of the servicing thread; published by it
+	bulkAsyncSource uintptr        // CFRunLoopSourceRef from CreateInterfaceAsyncEventSource
+
 	// Stream-death aggregation. bulkAlive starts at len(bulkSlots) when
 	// StartBulkIn spawns the per-slot reapers; each goroutine decrements
 	// it on exit. When the count hits zero with bulkStopFlag still
@@ -505,6 +517,14 @@ func (t *darwinTransport) recordBulkErr(err error) {
 type darwinBulkSlot struct {
 	idx int
 	buf []byte
+
+	// Async-path fields (unused on the synchronous path). t back-references the
+	// owning transport so the single process-wide async completion callback can
+	// route a completion (keyed by refcon) to it; refcon is the registry key
+	// passed to ReadPipeAsync; pipeRef is the resolved bulk-IN pipe.
+	t       *darwinTransport
+	refcon  uintptr
+	pipeRef uint8
 }
 
 func (t *darwinTransport) ControlIn(bRequest uint8, wValue, wIndex uint16, n int, timeoutMs int) ([]byte, error) {
@@ -653,6 +673,7 @@ func (t *darwinTransport) ReleaseInterface(int) error {
 	if t.ifaceIface == 0 {
 		return nil
 	}
+	t.releaseAsyncSource()
 	vtableCall(t.ifaceIface, ifaceUSBInterfaceClose)
 	release(t.ifaceIface)
 	t.ifaceIface = 0
@@ -671,12 +692,16 @@ func (t *darwinTransport) Reset() error {
 }
 
 // StartBulkIn spawns one OS-thread-pinned goroutine per slot. Each
-// loops in ReadPipe; AbortPipe unblocks them all on Stop.
+// AbortPipe unblocks/cancels them all on Stop.
 //
-// Trade-off vs. CFRunLoop async: simpler, no callback marshalling
-// across the C/Go boundary, no run-loop thread to babysit. Cost is
-// ringBufs OS threads (32 default → ~32 MB stack). Acceptable for
-// a foreground SDR daemon.
+// By default (GT_USB_SYNC_BULK unset) the transport uses the asynchronous
+// ReadPipeAsync + CFRunLoop path in usb_darwin_async.go — many transfers queued
+// against the kernel, serviced by one run-loop thread, the model libusb uses.
+// The legacy synchronous path (one OS-thread-pinned goroutine per slot, each
+// looping in a blocking ReadPipe) is kept as a fallback because 32 *concurrent
+// synchronous* ReadPipe calls on a single pipe are not a supported IOUSBLib
+// usage and macOS aborts them intermittently with kIOReturnAborted (0xe00002eb)
+// under sustained streaming at any rate. Set GT_USB_SYNC_BULK=1 to force it.
 func (t *darwinTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte), onStreamDead func(error)) error {
 	if t.closed.Load() {
 		return ErrClosed
@@ -698,20 +723,35 @@ func (t *darwinTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacke
 	}
 	slots := make([]*darwinBulkSlot, ringBufs)
 	for i := range slots {
-		slots[i] = &darwinBulkSlot{idx: i, buf: make([]byte, bufLen)}
+		slots[i] = &darwinBulkSlot{idx: i, buf: make([]byte, bufLen), t: t, pipeRef: pipeRef}
 	}
 	t.bulkPipeRef = pipeRef
 	t.bulkSlots = slots
 	t.bulkActive = true
 	t.bulkStopFlag.Store(0)
-	t.bulkDone = make(chan struct{}, ringBufs)
 	t.bulkOnDead = onStreamDead
+	t.bulkOnPacket = onPacket
 	t.bulkErrMu.Lock()
 	t.bulkDeadErr = nil
 	t.bulkErrMu.Unlock()
 	t.bulkDeadOnce = sync.Once{}
 	t.bulkAlive.Store(int32(len(slots)))
+	t.bulkAsync = !syncBulkEnabled()
 	t.startBulkWatch(pipeRef, len(slots))
+
+	if t.bulkAsync {
+		if err := t.startBulkInAsyncLocked(); err != nil {
+			t.stopBulkWatch()
+			t.bulkActive = false
+			t.bulkSlots = nil
+			t.bulkOnPacket = nil
+			return err
+		}
+		return nil
+	}
+
+	// Legacy synchronous fallback: one reaper goroutine per slot.
+	t.bulkDone = make(chan struct{}, ringBufs)
 	for _, s := range slots {
 		go t.bulkLoop(pipeRef, s, onPacket)
 	}
@@ -939,6 +979,7 @@ func (t *darwinTransport) StopBulkIn() error {
 	t.bulkStopFlag.Store(1)
 	pipeRef := t.bulkPipeRef
 	slotCount := len(t.bulkSlots)
+	async := t.bulkAsync
 	t.bulkActive = false
 	t.bulkMu.Unlock()
 
@@ -946,6 +987,15 @@ func (t *darwinTransport) StopBulkIn() error {
 	// we touch the pipe, so a normal teardown never trips a stall abort
 	// and no watch AbortPipe can race the interface release in Close.
 	t.stopBulkWatch()
+
+	if async {
+		err := t.stopBulkInAsync(pipeRef)
+		t.bulkMu.Lock()
+		t.bulkSlots = nil
+		t.bulkOnPacket = nil
+		t.bulkMu.Unlock()
+		return err
+	}
 
 	// AbortPipe makes every blocked ReadPipe return with
 	// kIOReturnAborted; goroutines see it and exit.
@@ -986,6 +1036,7 @@ func (t *darwinTransport) Close() error {
 		t.closed.Store(true)
 	}
 	if t.ifaceIface != 0 {
+		t.releaseAsyncSource()
 		vtableCall(t.ifaceIface, ifaceUSBInterfaceClose)
 		release(t.ifaceIface)
 		t.ifaceIface = 0
