@@ -4,7 +4,7 @@ title: Known-plaintext attack
 entry_type: term
 category: cryptography
 description: A known-plaintext attack recovers a cipher's key or algorithm from matched plaintext–ciphertext pairs the attacker happens to possess but did not choose.
-keywords: known-plaintext attack, KPA, cryptanalysis, plaintext ciphertext pairs, crib, ground truth, reverse engineering
+keywords: known-plaintext attack, KPA, cryptanalysis, plaintext ciphertext pairs, crib, ground truth, reverse engineering, Enigma
 aka: [known-plaintext attack, KPA]
 autolink: true
 infobox:
@@ -12,9 +12,10 @@ infobox:
   - { label: Attacker has, value: Matched plaintext–ciphertext pairs }
   - { label: Pairs are, value: Observed, not chosen }
   - { label: Classic term, value: "Crib" }
-see_also: [ciphertext-only-attack, chosen-plaintext-attack, differential-cryptanalysis, algebraic-attack, rc4-cipher]
+see_also: [ciphertext-only-attack, chosen-plaintext-attack, differential-cryptanalysis, algebraic-attack, tetra-tea]
 cite_urls:
   - https://en.wikipedia.org/wiki/Known-plaintext_attack
+  - https://en.wikipedia.org/wiki/Cryptanalysis_of_the_Enigma
 ---
 
 **A known-plaintext attack (KPA)** gives the attacker a set of matched plaintext–ciphertext
@@ -42,7 +43,23 @@ A handful of pairs may under-determine the cipher, but many pairs at varied leng
 over-determine it — fitting any candidate model and rejecting those that fail to round-trip
 all pairs. The method underlies most practical reverse engineering of an undocumented
 encoder: collect pairs, hypothesize a structure, and keep only parameters consistent with
-every pair.
+every pair. It feeds directly into the stronger machinery — an
+[algebraic solve](/reference/algebraic-attack/) turns the pairs into a linear system, while
+[differential analysis](/reference/differential-cryptanalysis/) exploits pairs that happen to
+differ in just one position.
+
+## In practice
+
+Cribs are powerful because real plaintext is rarely random. Predictable fields — a fixed
+message header, a stereotyped greeting, a daily weather report, or a protocol's mandatory
+framing — hand the attacker plaintext for ciphertext they already hold. The most famous
+example is Bletchley Park's use of cribs against the Enigma: guessing that an intercept
+contained a routine phrase such as a weather station's call let the bombes test rotor settings
+against a known word.[^enigma] The modern echo is any system that *sometimes* sends a field in
+clear and sometimes protected: the clear instances become cribs for the protected ones. The
+attack's ceiling is coverage — a corpus only teaches the cipher about the inputs that actually
+occurred, so rare transitions stay unconstrained until a
+[chosen-plaintext](/reference/chosen-plaintext-attack/) sweep fills them in.
 
 ## Relevance to SDR
 
@@ -57,3 +74,4 @@ machine — without reading any third-party source. It pairs naturally with
 ## Sources
 
 [^wiki]: [Known-plaintext attack](https://en.wikipedia.org/wiki/Known-plaintext_attack) — Wikipedia, for the attack model and the term "crib."
+[^enigma]: [Cryptanalysis of the Enigma](https://en.wikipedia.org/wiki/Cryptanalysis_of_the_Enigma) — Wikipedia, for the historical use of cribs against a real cipher.

@@ -4,7 +4,7 @@ title: Chosen-plaintext attack
 entry_type: term
 category: cryptography
 description: A chosen-plaintext attack lets the attacker pick the plaintexts and observe the resulting ciphertexts, using controlled inputs to expose a cipher's internal structure one variable at a time.
-keywords: chosen-plaintext attack, CPA, cryptanalysis, controlled inputs, adaptive, differential, structure probing
+keywords: chosen-plaintext attack, CPA, cryptanalysis, controlled inputs, adaptive, IND-CPA, differential, structure probing
 aka: [chosen-plaintext attack, CPA]
 autolink: true
 infobox:
@@ -12,9 +12,10 @@ infobox:
   - { label: Attacker has, value: Plaintexts of their choosing + resulting ciphertexts }
   - { label: Power, value: Controlled / adaptive probing }
   - { label: Strength, value: Stronger than known-plaintext }
-see_also: [known-plaintext-attack, ciphertext-only-attack, differential-cryptanalysis, brute-force-attack, rc4-cipher]
+see_also: [known-plaintext-attack, ciphertext-only-attack, differential-cryptanalysis, brute-force-attack, tetra-tea]
 cite_urls:
   - https://en.wikipedia.org/wiki/Chosen-plaintext_attack
+  - https://en.wikipedia.org/wiki/Ciphertext_indistinguishability
 ---
 
 **A chosen-plaintext attack (CPA)** gives the attacker the power to *choose* the plaintexts
@@ -45,6 +46,26 @@ per-position transform; *single-bit differences* feed directly into
 chosen, the attacker can systematically cover the state×input combinations a passive corpus
 never reaches, often pinning an internal table outright.
 
+## Variants
+
+Two sub-flavours differ in when the choices are made. In a **batch** (non-adaptive) attack the
+attacker fixes all plaintexts up front. In an **adaptive** chosen-plaintext attack (CPA2) each
+new query depends on the answers so far, so the attacker can zoom in — probe, look at the
+ciphertext, then design the next probe to resolve the remaining ambiguity. Adaptivity is
+what makes CPA the natural setting for interactive reverse engineering. The model also sets
+the modern security bar: a cipher is called **IND-CPA secure** when an adversary who may
+encrypt any plaintexts of their choosing still cannot distinguish which of two messages was
+encrypted — a property that requires randomised or nonce-based encryption, since a
+deterministic cipher always leaks when two identical plaintexts recur.[^indcpa]
+
+## In practice
+
+Mounting a CPA requires the ability to *inject* plaintext into the target, which is often the
+practical obstacle. Against a stored-data cipher this may be trivial; against a live radio
+system it means transmitting chosen content — feasible only where you are licensed and
+authorized to key up. When available it is decisive, because it converts a statistics problem
+(hope the right pair appears) into an experiment (make the right pair appear).
+
 ## Relevance to SDR
 
 For an over-the-air obfuscation, a chosen-plaintext attack means programming a transmitter
@@ -58,3 +79,4 @@ dense coverage needed to finish it.
 ## Sources
 
 [^wiki]: [Chosen-plaintext attack](https://en.wikipedia.org/wiki/Chosen-plaintext_attack) — Wikipedia, for the attack model and its advantage over passively observed plaintext.
+[^indcpa]: [Ciphertext indistinguishability](https://en.wikipedia.org/wiki/Ciphertext_indistinguishability) — Wikipedia, for IND-CPA as the security notion defined against this attack model.

@@ -4,7 +4,7 @@ title: Ciphertext-only attack
 entry_type: term
 category: cryptography
 description: A ciphertext-only attack tries to recover a cipher's key, algorithm, or plaintext using only intercepted ciphertext — the weakest assumption available to an attacker, leaning on redundancy and known structure in the plaintext.
-keywords: ciphertext-only attack, COA, cryptanalysis, attack model, known structure, plaintext redundancy, intercepted ciphertext
+keywords: ciphertext-only attack, COA, cryptanalysis, attack model, known structure, plaintext redundancy, intercepted ciphertext, frequency analysis
 aka: [ciphertext-only attack, COA]
 autolink: true
 infobox:
@@ -12,9 +12,10 @@ infobox:
   - { label: Attacker has, value: Ciphertext only }
   - { label: Leans on, value: Known plaintext structure / redundancy }
   - { label: Strength, value: Weakest assumption (hardest for attacker) }
-see_also: [known-plaintext-attack, chosen-plaintext-attack, brute-force-attack, scrambling, rc4-cipher]
+see_also: [known-plaintext-attack, chosen-plaintext-attack, brute-force-attack, frequency-analysis, tetra-tea]
 cite_urls:
   - https://en.wikipedia.org/wiki/Ciphertext-only_attack
+  - https://en.wikipedia.org/wiki/Attack_model
 ---
 
 **A ciphertext-only attack (COA)** assumes the attacker has *only* intercepted ciphertext —
@@ -39,9 +40,26 @@ The attacker constrains the unknown plaintext using properties it is guaranteed 
 a restricted character set (e.g. printable ASCII), known field lengths or framing, language
 statistics, or a checksum that must validate. Each such constraint rules out candidate keys
 or algorithm parameters; with enough intercepted messages, the surviving candidates collapse
-to the true one. Classical frequency analysis of a substitution cipher is the textbook
-example — only ciphertext is needed because letter frequencies are a known property of the
-language.
+to the true one. Classical [frequency analysis](/reference/frequency-analysis/) of a
+substitution cipher is the textbook example — only ciphertext is needed because letter
+frequencies are a known property of the language.
+
+## Where it sits among attack models
+
+Cryptanalytic attack models form a ladder of increasing attacker power, and a cipher is
+expected to withstand all of them.[^model] Ciphertext-only is the bottom rung — the least the
+attacker can have, so the hardest position from which to work:
+
+- **Ciphertext-only** — intercepted ciphertext, nothing else.
+- **[Known-plaintext](/reference/known-plaintext-attack/)** — matched plaintext–ciphertext
+  pairs the attacker observed but did not choose.
+- **[Chosen-plaintext](/reference/chosen-plaintext-attack/)** — the attacker picks plaintexts
+  and sees the resulting ciphertexts.
+
+Because passive interception yields exactly the ciphertext-only condition, it is also the most
+*realistic* setting for an eavesdropper on a radio channel — which is why a scheme that leaks
+under it, like a system whose effective key is far shorter than advertised, is a serious
+practical failure rather than a theoretical curiosity.
 
 ## Relevance to SDR
 
@@ -56,3 +74,4 @@ printable — constraints derived purely from the captured bytes. It complements
 ## Sources
 
 [^wiki]: [Ciphertext-only attack](https://en.wikipedia.org/wiki/Ciphertext-only_attack) — Wikipedia, for the attack model and its reliance on known plaintext structure.
+[^model]: [Attack model](https://en.wikipedia.org/wiki/Attack_model) — Wikipedia, for the ladder of cryptanalytic attack models by attacker capability.

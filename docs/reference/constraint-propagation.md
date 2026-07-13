@@ -4,7 +4,7 @@ title: Constraint propagation
 entry_type: term
 category: cryptography
 description: Constraint propagation narrows the possible values of unknown variables by repeatedly applying the constraints that link them — assigning one value forces others — and is the engine inside constraint solvers and a fast hand-built alternative for table-recovery problems.
-keywords: constraint propagation, constraint satisfaction, CSP, forward checking, unit propagation, arc consistency, backtracking, table recovery
+keywords: constraint propagation, constraint satisfaction, CSP, forward checking, unit propagation, arc consistency, AC-3, backtracking, table recovery
 aka: [constraint propagation, forward checking]
 autolink: true
 infobox:
@@ -12,7 +12,7 @@ infobox:
   - { label: Idea, value: One assignment forces others }
   - { label: Pattern, value: "Propagate → branch → backtrack" }
   - { label: Strong when, value: Dense constraints cascade }
-see_also: [sat-smt-solving, algebraic-attack, brute-force-attack, known-plaintext-attack, scrambling]
+see_also: [sat-smt-solving, algebraic-attack, brute-force-attack, known-plaintext-attack, differential-cryptanalysis]
 cite_urls:
   - https://en.wikipedia.org/wiki/Constraint_satisfaction_problem
   - https://en.wikipedia.org/wiki/Local_consistency
@@ -48,6 +48,28 @@ almost immediately. This is exactly the regime where a purpose-built propagator 
 general [SMT solver](/reference/sat-smt-solving/) on chained-lookup problems that otherwise
 cause case-split blow-up.
 
+## Variants
+
+Propagators differ in how far they look ahead before committing. **Forward checking** only
+prunes the domains of variables directly adjacent to the one just assigned — cheap, but it
+misses conflicts a step or two away. **Arc consistency** (the AC-3 algorithm and its
+successors) enforces that *every* value of *every* variable still has a compatible partner
+across each binary constraint, pruning more but costing more per step. Stronger *k*-consistency
+notions look further still. The design trade-off is universal: more propagation means fewer
+branches explored but more work at each node, and the sweet spot depends on how tightly the
+constraints interlock. Solvers combine propagation with a branching heuristic (choose the most
+constrained variable next) and backtracking to form a complete search.
+
+## In practice
+
+The decisive question is problem structure, not raw size. When constraints are dense and
+interlocking, propagation alone can settle a problem with almost no branching — the value of a
+purpose-built propagator is that it encodes the *specific* implications of the problem shape
+directly, skipping the generic case-splitting a black-box solver would perform. When constraints
+are sparse, propagation cascades little and the search degenerates toward
+[brute force](/reference/brute-force-attack/); there an algebraic or enumerative method may win
+instead. Knowing which regime you are in is half the battle.
+
 ## Relevance to SDR
 
 Recovering a hidden byte table from observed transitions is a constraint-satisfaction problem:
@@ -59,4 +81,4 @@ the general solver could not reach because the chained lookups stalled it.
 ## Sources
 
 [^csp]: [Constraint satisfaction problem](https://en.wikipedia.org/wiki/Constraint_satisfaction_problem) — Wikipedia, for variables, constraints, and propagation/backtracking.
-[^lc]: [Local consistency](https://en.wikipedia.org/wiki/Local_consistency) — Wikipedia, for constraint propagation and forward checking.
+[^lc]: [Local consistency](https://en.wikipedia.org/wiki/Local_consistency) — Wikipedia, for constraint propagation, forward checking, and arc consistency.
