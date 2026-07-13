@@ -4,7 +4,7 @@ title: Brute-force attack (exhaustive key search)
 entry_type: term
 category: cryptography
 description: A brute-force attack tries every possible key or parameter until one reproduces the observed data — guaranteed to succeed eventually, but only feasible when the search space is small enough.
-keywords: brute-force attack, exhaustive key search, parameter search, key space, parallel search, cryptanalysis
+keywords: brute-force attack, exhaustive key search, parameter search, key space, parallel search, dictionary attack, rainbow table, cryptanalysis
 aka: [brute-force attack, exhaustive key search]
 autolink: true
 infobox:
@@ -12,9 +12,10 @@ infobox:
   - { label: Method, value: Enumerate every key / parameter }
   - { label: Guaranteed, value: "Yes — if the space is searchable" }
   - { label: Limited by, value: Size of the key / parameter space }
-see_also: [known-plaintext-attack, algebraic-attack, sat-smt-solving, differential-cryptanalysis, rc4-cipher]
+see_also: [known-plaintext-attack, algebraic-attack, sat-smt-solving, differential-cryptanalysis, tetra-tea]
 cite_urls:
   - https://en.wikipedia.org/wiki/Brute-force_attack
+  - https://en.wikipedia.org/wiki/EFF_DES_cracker
 ---
 
 **A brute-force attack** (exhaustive key search) simply tries every candidate key or
@@ -45,6 +46,26 @@ unknowns number in the millions it is feasible; when they number a full 256-entr
 not, and an [algebraic](/reference/algebraic-attack/) or
 [SAT/SMT](/reference/sat-smt-solving/) approach is needed instead.
 
+## Variants
+
+Pure enumeration is the baseline; several refinements cut the cost when the space is too large
+for a naive sweep. A **dictionary attack** tries only likely values (common passwords, default
+keys) instead of the whole space. A **rainbow table** trades memory for time by precomputing
+chains of hash outputs so a later lookup is cheap — devastating against unsalted password
+hashes. A **meet-in-the-middle** attack halves the exponent for constructions that apply a
+cipher twice (the reason 2-key Triple-DES gives far less than 112 bits of real strength). Each
+exploits some structure to shrink the effective 2ⁿ into something searchable.
+
+## In practice
+
+Feasibility is a moving target set by hardware and key length. The 56-bit key of DES was
+searchable in days by the EFF's purpose-built "Deep Crack" machine in 1998, demonstrating that
+a once-standard cipher had fallen to brute force outright.[^eff] A 32-bit effective key — the
+size the [TETRA TEA1](/reference/tetra-tea/) algorithm was reduced to — is trivially
+searchable on a laptop. This is exactly why key length matters: every added bit doubles the
+work, so 128-bit and larger keys keep the exhaustive search permanently out of reach while a
+short or deliberately weakened key collapses.
+
 ## Relevance to SDR
 
 Reverse-engineering an undocumented encoder often reduces to a few unknown constants — a
@@ -57,3 +78,4 @@ each with a fast early-exit on the longest messages.
 ## Sources
 
 [^wiki]: [Brute-force attack](https://en.wikipedia.org/wiki/Brute-force_attack) — Wikipedia, for exhaustive key search and its dependence on key-space size.
+[^eff]: [EFF DES cracker](https://en.wikipedia.org/wiki/EFF_DES_cracker) — Wikipedia, for a concrete demonstration that a 56-bit key is brute-forceable in practice.

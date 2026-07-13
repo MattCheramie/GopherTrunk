@@ -11,7 +11,7 @@ infobox:
   - { label: Type, value: Line code (biphase) }
   - { label: Property, value: Self-clocking, DC-balanced }
   - { label: Used by, value: POCSAG, 10BASE-T, RFID }
-see_also: [pocsag, nrzi, differential-decoding, clock-recovery, frequency-shift-keying]
+see_also: [pocsag, nrzi, differential-decoding, bit-rate-vs-baud, clock-recovery, frequency-shift-keying]
 cite_urls:
   - https://en.wikipedia.org/wiki/Manchester_code
   - https://en.wikipedia.org/wiki/Line_code
@@ -63,7 +63,24 @@ A receiver decodes by sampling the two half-bit levels (or detecting the directi
 central edge); ambiguity from an inverted signal is handled by a known preamble or by pairing
 Manchester with [differential decoding](/reference/differential-decoding/).
 
-## In practice
+Because every bit is squeezed into two half-bit signalling elements, the line's symbol rate is
+twice the data rate — the [bandwidth cost](/reference/bit-rate-vs-baud/) that pays for the
+embedded clock and DC balance.
+
+## Variants
+
+Several closely related biphase codes trade off the same properties differently:
+
+- **Differential Manchester (biphase-M/S).** Instead of an absolute rising-versus-falling
+  convention, the bit is encoded by whether there *is* a transition at the bit boundary, while the
+  mandatory mid-bit edge is used only for clocking. Like [NRZI](/reference/nrzi/) this makes the
+  code immune to a whole-signal inversion, at the cost of the simple "edge direction = value"
+  read-out. It is the physical coding of Token Ring and some fieldbus links.
+- **Thomas vs. IEEE 802.3 convention.** The two mainstream conventions assign the rising and
+  falling mid-bit edges to opposite bit values, so a decoder must know which one a transmitter
+  uses (or resolve it from a known preamble) to avoid inverting every bit.
+- **Biphase mark/space (FM0/FM1).** Related self-clocking codes used in RFID (EPC Gen2), audio
+  time-code (SMPTE/LTC), and aviation ARINC buses, chosen for the same AC-coupling robustness.
 
 Because Manchester needs no separate clock line and tolerates AC coupling, it appears wherever
 a simple, robust, self-synchronising bitstream is wanted: **POCSAG** and other paging bursts,

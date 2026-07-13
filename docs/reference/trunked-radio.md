@@ -4,7 +4,7 @@ title: Trunked radio
 entry_type: term
 category: trunked-radio
 description: Trunked radio is a system that shares a small pool of frequencies among many user groups by assigning a channel to each call on demand, coordinated by a control channel.
-keywords: trunked radio, trunking, control channel, talkgroup, channel pool, public safety
+keywords: trunked radio, trunking, control channel, talkgroup, channel pool, public safety, P25, DMR Tier III, TETRA, queuing theory
 aka: [trunked radio, trunking]
 autolink: true
 infobox:
@@ -12,19 +12,22 @@ infobox:
   - { label: Coordinated by, value: Control channel }
   - { label: User identity, value: Talkgroup }
   - { label: Examples, value: P25, DMR Tier III, TETRA }
-see_also: [conventional-radio, control-channel, voice-channel, talkgroup, channel-grant, fdma, tdma]
+see_also: [conventional-radio, control-channel, voice-channel, talkgroup, channel-grant, fdma, tdma, multisite-trunking, trunking-site, group-call, registration]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 related_reading:
   - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Trunked_radio_system
+  - https://en.wikipedia.org/wiki/Erlang_(unit)
 ---
 
 **Trunked radio** is a system architecture in which many user groups share a small pool
 of frequencies, with a computer assigning a free channel to each call for its duration
 and reclaiming it afterward.[^wiki] A [control channel](/reference/control-channel/)
-coordinates the whole system.
+coordinates the whole system, so a handful of radio channels can serve hundreds of
+[talkgroups](/reference/talkgroup/) that would each need a permanent frequency under
+[conventional radio](/reference/conventional-radio/).
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 170" role="img" aria-label="A control channel at the top issuing an assignment, and a pool of voice channels below with one assigned to a talkgroup." xmlns="http://www.w3.org/2000/svg">
@@ -46,17 +49,56 @@ coordinates the whole system.
 
 ## How it works
 
-When a user keys up, their radio requests a call on the control channel, which issues a
-[channel grant](/reference/channel-grant/) pointing the [talkgroup](/reference/talkgroup/)
-to a free [voice channel](/reference/voice-channel/). Because real traffic is bursty, a
-few channels can serve many groups.
+When a user keys up, their radio sends a call request on the control channel. The site
+controller picks a free [voice channel](/reference/voice-channel/) from the pool and
+broadcasts a [channel grant](/reference/channel-grant/) that points the target talkgroup
+to it; every radio [affiliated](/reference/affiliation/) to that group — plus any monitor
+following the system — retunes to the named channel and slot. When the talker unkeys and
+a hang-timer expires, the channel is released back to the pool, ready for the next call.
+
+The efficiency comes from statistics. Real voice traffic is bursty: any one group
+transmits only a small fraction of the time, and groups rarely all key up at once.
+Trunking exploits this by pooling demand, a form of the same [queuing
+theory](/reference/trunked-radio/) (measured in *erlangs* of offered load) that lets a
+telephone exchange serve many subscribers with fewer trunk lines than customers.[^erlang]
+A well-engineered system sizes its channel count so that the probability of a call
+finding every channel busy — the *grade of service* — stays low. When it is exceeded, the
+system either queues the request or returns a busy tone.
+
+## Variants
+
+- **FDMA vs. TDMA.** [FDMA](/reference/fdma/) systems (P25 Phase 1, NXDN) give each call
+  its own frequency; [TDMA](/reference/tdma/) systems (P25 Phase 2, DMR Tier III, TETRA)
+  divide each frequency into timeslots so one RF channel carries several calls at once.
+- **Dedicated vs. distributed control.** Most systems dedicate one frequency as the
+  control channel; lighter DMR modes rotate control around the pool using a
+  [rest channel](/reference/rest-channel/).
+- **Single- vs. multi-site.** A lone [trunking site](/reference/trunking-site/) covers one
+  cell; [multisite trunking](/reference/multisite-trunking/) links many sites into a
+  wide-area network, sometimes with [simulcast](/reference/simulcast/) transmitters and
+  automatic [roaming](/reference/roaming/) between [neighbor sites](/reference/neighbor-site/).
+
+## In practice
+
+Public-safety and commercial fleets are the dominant users: police, fire, transit,
+utilities, and campuses. The largest deployments — statewide P25 systems, TETRA networks
+in Europe — carry tens of thousands of subscribers across hundreds of sites, tied together
+by [registration](/reference/registration/) and [group-call](/reference/group-call/)
+signalling. When the network backbone fails, sites can drop into
+[failsoft](/reference/failsoft/), reverting affected channels to conventional repeater
+operation so local traffic survives.
 
 ## Relevance to SDR
 
-To monitor a trunked system you decode the control channel first, then follow grants —
-exactly what GopherTrunk does for [P25](/reference/project-25/),
-[DMR Tier III](/reference/dmr-tier-3/), and others.
+To monitor a trunked system you decode the control channel first, then follow the grants
+it issues — exactly what GopherTrunk does for [P25](/reference/project-25/),
+[DMR Tier III](/reference/dmr-tier-3/), and others. Because a monitor only has to keep up
+with one data channel plus whatever calls are active, a single wideband SDR capture can
+reconstruct dozens of concurrent conversations, tagged by talkgroup and
+[radio ID](/reference/radio-id/). This is the core reason trunk-following is worth the
+extra decoding complexity over simply scanning fixed frequencies.
 
 ## Sources
 
 [^wiki]: [Trunked radio system](https://en.wikipedia.org/wiki/Trunked_radio_system) — Wikipedia, on trunking architecture and control-channel coordination.
+[^erlang]: [Erlang (unit)](https://en.wikipedia.org/wiki/Erlang_(unit)) — Wikipedia, on the traffic-engineering measure that underlies channel-pool sizing.

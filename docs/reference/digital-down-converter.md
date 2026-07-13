@@ -4,26 +4,29 @@ title: Digital down-converter (DDC)
 entry_type: term
 category: sdr-dsp
 description: A digital down-converter shifts a channel within a wideband IQ stream to baseband using a numerically controlled oscillator, then filters and decimates it for processing.
-keywords: digital down converter, DDC, NCO, channelizer, mixing, decimation
+keywords: digital down converter, DDC, NCO, channelizer, mixing, decimation, polyphase
 aka: [digital down-converter, DDC]
 autolink: true
 infobox:
   - { label: Type, value: DSP block }
   - { label: Does, value: Shift channel to baseband, filter, decimate }
   - { label: Uses, value: Numerically controlled oscillator }
-see_also: [local-oscillator, decimation, digital-filter, iq-data, demodulation]
+see_also: [local-oscillator, numerically-controlled-oscillator, decimation, digital-filter, channelizer, cic-filter, iq-data, demodulation]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 related_reading:
   - { title: "SDR Internals, Part 5: Tuning & channelization", url: /blog/deep-dives/sdr-internals-05-tuning-channelization/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Digital_down_converter
+  - https://en.wikipedia.org/wiki/Numerically-controlled_oscillator
 ---
 
 A **digital down-converter** (**DDC**) shifts a chosen channel within a wideband
-[IQ](/reference/iq-data/) stream to baseband using a numerically controlled oscillator
-(a software [local oscillator](/reference/local-oscillator/)), then
-[filters](/reference/digital-filter/) and [decimates](/reference/decimation/) it.[^wiki]
+[IQ](/reference/iq-data/) stream to baseband using a
+[numerically controlled oscillator](/reference/numerically-controlled-oscillator/) (a
+software [local oscillator](/reference/local-oscillator/)), then
+[filters](/reference/digital-filter/) and [decimates](/reference/decimation/) it.[^wiki] It
+is the software realisation of a mixer, IF filter, and rate reduction, all in arithmetic.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 520 110" role="img" aria-label="Wideband IQ into a numerically controlled oscillator mixer, then a low-pass filter, then decimation, producing one narrow channel." xmlns="http://www.w3.org/2000/svg">
@@ -41,15 +44,47 @@ A **digital down-converter** (**DDC**) shifts a chosen channel within a wideband
 
 ## How it works
 
-Multiplying the IQ by a rotating tone centres the target channel at zero frequency; a
-low-pass filter isolates it and decimation lowers the rate. Many DDCs can run in parallel
-from one capture.
+Three stages run in sequence. First, **mix**: an
+[NCO](/reference/numerically-controlled-oscillator/) generates a complex tone rotating at
+the negative of the channel's offset from the capture centre, and multiplying the IQ stream
+by it slides that channel down to exactly 0 Hz. Because both operands are complex, the shift
+is one-sided — the wanted channel moves to baseband while everything else moves too, harmlessly.
+Second, **filter**: a low-pass [digital filter](/reference/digital-filter/) keeps only the
+band now sitting around zero and rejects the neighbouring channels. Third, **decimate**:
+with the bandwidth narrowed, [decimation](/reference/decimation/) drops the sample rate to
+just what the single channel needs — often a large factor, since one 12.5 kHz channel lives
+inside a multi-MHz capture. Filtering must precede decimation so the discarded neighbours
+cannot [alias](/reference/aliasing/) back in.
+
+## Variants
+
+- **Per-channel DDC** — one NCO/filter/decimate chain per channel of interest. Simple and
+  flexible; cost scales with the number of channels. This is the classic single-channel
+  down-converter.
+- **[Polyphase channelizer](/reference/channelizer/)** — when many equally spaced channels
+  are wanted at once, a [polyphase filter bank](/reference/polyphase-filter-bank/) plus an
+  FFT extracts them all far more cheaply than N independent DDCs.
+- **[CIC](/reference/cic-filter/)-based DDC** — hardware and FPGA designs favour a
+  multiplierless CIC filter for the bulk of the decimation, followed by a short FIR to
+  correct its droop; the ubiquitous "DDC" building block in radio ASICs.
+
+## In practice
+
+GopherTrunk runs more than one flavour. Its wideband path feeds a multi-tap DDC *bank* that
+pulls the control channel and several voice channels out of a single capture in parallel;
+its offline replay path uses a separate single-channel down-converter with its own tuning
+offset. The two are genuinely distinct code paths, so a fix to one does not touch the other —
+a subtlety that has caused a bug to look "fixed" on the wideband path while still live on
+replay. Both normalise their output to the per-protocol channel rate before demodulation.
 
 ## Relevance to SDR
 
 The DDC is how GopherTrunk extracts a control channel and multiple voice channels from a
-single wideband capture.
+single wideband capture, and how any SDR "tunes" without moving the analog LO. It is the
+last frequency-shifting stage before the [demodulator](/reference/demodulation/) sees a clean
+baseband channel.
 
 ## Sources
 
 [^wiki]: [Digital down converter](https://en.wikipedia.org/wiki/Digital_down_converter) — Wikipedia, for the NCO/filter/decimate channelization architecture.
+[^nco]: [Numerically-controlled oscillator](https://en.wikipedia.org/wiki/Numerically-controlled_oscillator) — Wikipedia, on the digital tone generator that performs the DDC's frequency shift.

@@ -4,16 +4,17 @@ title: Cryptographic key
 entry_type: term
 category: cryptography
 description: A cryptographic key is the secret parameter that controls a cipher's transformation; the security of a well-designed system rests on the secrecy and size of the key, not on the algorithm, which may be public.
-keywords: cryptographic key, secret key, key length, key space, key size, brute force, Kerckhoffs principle, symmetric key, private key, encryption
+keywords: cryptographic key, secret key, key length, key space, key size, brute force, Kerckhoffs principle, symmetric key, private key, key management, encryption
 aka: [key, secret key]
 autolink: true
 infobox:
   - { label: Role, value: Secret parameter of a cipher }
   - { label: Measured by, value: Key length / key space }
   - { label: Principle, value: Security rests in the key, not the algorithm }
-see_also: [keystream, symmetric-key-cryptography, public-key-cryptography, kerckhoffs-principle]
+see_also: [keystream, symmetric-key-cryptography, public-key-cryptography, kerckhoffs-principle, key-id-algid, key-loader-kfd, otar]
 cite_urls:
   - https://en.wikipedia.org/wiki/Key_(cryptography)
+  - https://en.wikipedia.org/wiki/Key_size
 ---
 
 **A cryptographic key** is the secret value that controls how a cipher transforms data; with
@@ -42,9 +43,14 @@ and the same algorithm produces a completely different result.
 
 The strength of a key is measured by its **key space** — the number of possible keys, set by
 the key length in bits. An *n*-bit key has 2ⁿ possibilities, so a 128-bit key has 2¹²⁸ of
-them, far beyond any feasible [brute-force search](/reference/symmetric-key-cryptography/).
+them, far beyond any feasible [brute-force search](/reference/brute-force-attack/).[^size]
 This is why key length matters: a longer key exponentially enlarges the search an attacker
-must perform.
+must perform. The bound is only an upper limit, though — it holds only if the *effective* key
+space really is that large. A cipher with a short key (DES's 56 bits), predictable key
+generation, or a mathematical weakness that lets an attacker rule out most keys at once has a
+much smaller effective space than its nominal length suggests.
+
+## Variants
 
 Keys take different forms in different systems:
 
@@ -52,20 +58,34 @@ Keys take different forms in different systems:
 - A public/private pair in [public-key cryptography](/reference/public-key-cryptography/).
 - A seed that is expanded into a [keystream](/reference/keystream/) in a stream cipher.
 
-By [Kerckhoffs's principle](/reference/kerckhoffs-principle/), a system should remain secure
-even if everything except the key is public — so all the secrecy is concentrated in the key,
-and protecting it is the heart of key management.
+Systems also distinguish a *traffic key* (the short-lived key that actually encrypts a call)
+from a *key-encryption key* (used only to wrap traffic keys for delivery), and they schedule
+periodic **rekeying** so that compromise of one key exposes only a limited window.
+
+## In practice
+
+Because all the secrecy is concentrated in the key, **key management** — generating,
+distributing, storing, and retiring keys — is the hard operational core of any deployed
+cryptosystem. In land-mobile radio, keys are typically loaded into radios with a physical
+[key loader / KFD](/reference/key-loader-kfd/) and can be refreshed remotely by
+[over-the-air rekeying](/reference/otar/); each key carries a
+[key ID and algorithm ID](/reference/key-id-algid/) so the receiver knows which key and cipher
+a given transmission used. By
+[Kerckhoffs's principle](/reference/kerckhoffs-principle/), a system should remain secure even
+if everything except the key is public — so protecting the key *is* the whole security
+argument.
 
 ## Relevance to SDR
 
 Whether GopherTrunk can recover encrypted voice comes down to one thing: the key. The decoder
 can identify an encrypted [P25](/reference/project-25/) or [DMR](/reference/dmr/) call, read
-its key-identifier and algorithm fields, and follow the traffic, but the audio stays opaque
-without the secret key. That is the intended behaviour of a correctly designed
-[symmetric](/reference/symmetric-key-cryptography/) cipher. It also clarifies the difference
-from reversible [scrambling](/reference/scrambling/), which has no secret key and so can be
-undone by anyone who knows the public method.
+its [key-identifier and algorithm fields](/reference/key-id-algid/), and follow the traffic,
+but the audio stays opaque without the secret key. That is the intended behaviour of a
+correctly designed [symmetric](/reference/symmetric-key-cryptography/) cipher. It also
+clarifies the difference from reversible [scrambling](/reference/scrambling/), which has no
+secret key and so can be undone by anyone who knows the public method.
 
 ## Sources
 
 [^wiki]: [Key (cryptography)](https://en.wikipedia.org/wiki/Key_(cryptography)) — Wikipedia, for the key as the secret parameter and the role of key length and key space.
+[^size]: [Key size](https://en.wikipedia.org/wiki/Key_size) — Wikipedia, for how key length bounds brute-force effort and the notion of effective vs nominal key strength.

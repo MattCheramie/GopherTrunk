@@ -60,24 +60,116 @@ domains:
           - { slug: attenuation, title: Attenuation, type: term }
           - { slug: path-loss, title: Path loss, type: term }
           - { slug: frequency-bands, title: Frequency bands (HF/VHF/UHF), type: term }
+          - { slug: impedance, title: Impedance, type: term }
+          - { slug: reflection-coefficient, title: Reflection coefficient, type: term }
+          - { slug: return-loss, title: Return loss, type: term }
+          - { slug: s-parameters, title: S-parameters, type: term }
+          - { slug: q-factor, title: Q factor, type: term }
+          - { slug: resonance, title: Resonance, type: term }
+          - { slug: intermodulation, title: Intermodulation distortion, type: term }
+          - { slug: harmonics, title: Harmonics, type: term }
+          - { slug: spurious-emissions, title: Spurious emissions, type: term }
+          - { slug: duty-cycle, title: Duty cycle, type: term }
+          - { slug: crest-factor-papr, title: Crest factor & PAPR, type: term }
+          - { slug: group-delay, title: Group delay, type: term }
+          - { slug: phase-noise, title: Phase noise, type: term }
+          - { slug: frequency-stability, title: Frequency stability, type: term }
+          - { slug: erp-eirp, title: ERP & EIRP, type: term }
+          - { slug: link-budget, title: Link budget, type: term }
+          - { slug: friis-transmission-equation, title: Friis transmission equation, type: term }
+          - { slug: field-strength, title: Field strength, type: term }
+          - { slug: guard-band, title: Guard band, type: term }
+          - { slug: occupied-bandwidth, title: Occupied bandwidth, type: term }
+          - { slug: shannon-capacity, title: Shannon capacity, type: term }
 
-      - id: antennas-propagation
-        label: Antennas & propagation
-        blurb: How energy radiates from an antenna and travels to your receiver.
+      - id: rf-metrics
+        label: Receiver performance & metrics
+        blurb: The figures of merit that quantify receiver performance and signal quality — noise, linearity, and error.
+        entries:
+          - { slug: thermal-noise, title: Thermal noise, type: term }
+          - { slug: noise-figure, title: Noise figure, type: term }
+          - { slug: noise-temperature, title: Noise temperature, type: term }
+          - { slug: dynamic-range, title: Dynamic range, type: term }
+          - { slug: spurious-free-dynamic-range, title: Spurious-free dynamic range (SFDR), type: term }
+          - { slug: third-order-intercept, title: Third-order intercept (IP3), type: term }
+          - { slug: 1-db-compression-point, title: 1 dB compression point, type: term }
+          - { slug: receiver-sensitivity, title: Receiver sensitivity (MDS), type: term }
+          - { slug: desensitization, title: Desensitization, type: term }
+          - { slug: blocking-dynamic-range, title: Blocking, type: term }
+          - { slug: bit-error-rate, title: Bit error rate (BER), type: term }
+          - { slug: eb-n0, title: Eb/N0, type: term }
+          - { slug: error-vector-magnitude, title: Error vector magnitude (EVM), type: term }
+          - { slug: modulation-error-ratio, title: Modulation error ratio (MER), type: term }
+          - { slug: sinad, title: SINAD, type: term }
+          - { slug: carrier-to-noise-ratio, title: Carrier-to-noise ratio (C/N), type: term }
+          - { slug: spectral-efficiency, title: Spectral efficiency, type: term }
+
+      - id: antennas
+        label: Antennas
+        blurb: The radiators that turn current into radio waves, and the parameters that describe how they do it.
         entries:
           - { slug: antenna, title: Antenna, type: term }
           - { slug: dipole-antenna, title: Dipole antenna, type: term }
+          - { slug: monopole-antenna, title: Monopole antenna, type: term }
+          - { slug: ground-plane-antenna, title: Ground-plane antenna, type: term }
+          - { slug: whip-antenna, title: Whip antenna, type: term }
+          - { slug: yagi-uda-antenna, title: Yagi-Uda antenna, type: term }
+          - { slug: log-periodic-antenna, title: Log-periodic antenna, type: term }
+          - { slug: discone-antenna, title: Discone antenna, type: term }
+          - { slug: collinear-antenna, title: Collinear antenna, type: term }
+          - { slug: j-pole-antenna, title: J-pole antenna, type: term }
+          - { slug: parabolic-antenna, title: Parabolic (dish) antenna, type: term }
+          - { slug: horn-antenna, title: Horn antenna, type: term }
+          - { slug: patch-antenna, title: Patch (microstrip) antenna, type: term }
+          - { slug: helical-antenna, title: Helical antenna, type: term }
+          - { slug: loop-antenna, title: Loop antenna, type: term }
+          - { slug: magnetic-loop-antenna, title: Magnetic loop antenna, type: term }
+          - { slug: biconical-antenna, title: Biconical antenna, type: term }
+          - { slug: phased-array-antenna, title: Phased-array antenna, type: term }
+          - { slug: mimo, title: MIMO, type: term }
           - { slug: antenna-gain, title: Antenna gain, type: term }
+          - { slug: radiation-pattern, title: Radiation pattern, type: term }
+          - { slug: beamwidth, title: Beamwidth, type: term }
+          - { slug: front-to-back-ratio, title: Front-to-back ratio, type: term }
           - { slug: polarization, title: Polarization, type: term }
+          - { slug: feedpoint-impedance, title: Feedpoint impedance, type: term }
           - { slug: standing-wave-ratio, title: Standing wave ratio (SWR), type: term }
+          - { slug: antenna-efficiency, title: Antenna efficiency, type: term }
+          - { slug: effective-aperture, title: Effective aperture, type: term }
+          - { slug: antenna-tuner, title: Antenna tuner (ATU), type: term }
+          - { slug: near-field-far-field, title: Near field & far field, type: term }
+          - { slug: radials-counterpoise, title: Radials & counterpoise, type: term }
+
+      - id: propagation
+        label: Propagation
+        blurb: How radio energy travels from transmitter to receiver — the paths, losses, and impairments.
+        entries:
           - { slug: radio-propagation, title: Radio propagation, type: term }
-          - { slug: multipath-propagation, title: Multipath propagation, type: term }
+          - { slug: free-space-path-loss, title: Free-space path loss, type: term }
           - { slug: radio-horizon, title: Radio horizon, type: term }
+          - { slug: ground-wave, title: Ground-wave propagation, type: term }
+          - { slug: sky-wave, title: Sky-wave propagation, type: term }
           - { slug: ionospheric-propagation, title: Ionospheric propagation, type: term }
+          - { slug: tropospheric-ducting, title: Tropospheric ducting, type: term }
+          - { slug: sporadic-e, title: Sporadic E, type: term }
+          - { slug: nvis, title: NVIS, type: term }
+          - { slug: meteor-scatter, title: Meteor scatter, type: term }
+          - { slug: moonbounce-eme, title: Moonbounce (EME), type: term }
+          - { slug: multipath-propagation, title: Multipath propagation, type: term }
+          - { slug: rayleigh-fading, title: Rayleigh fading, type: term }
+          - { slug: rician-fading, title: Rician fading, type: term }
+          - { slug: doppler-shift, title: Doppler shift, type: term }
+          - { slug: fresnel-zone, title: Fresnel zone, type: term }
+          - { slug: knife-edge-diffraction, title: Knife-edge diffraction, type: term }
+          - { slug: refraction, title: Refraction, type: term }
+          - { slug: scattering, title: Scattering, type: term }
+          - { slug: rain-fade, title: Rain fade, type: term }
+          - { slug: atmospheric-absorption, title: Atmospheric absorption, type: term }
+          - { slug: fade-margin, title: Fade margin, type: term }
 
       - id: modulation
         label: Modulation
-        blurb: The schemes that put information onto a carrier — analog and digital.
+        blurb: The schemes that put information onto a carrier — analog and digital — and the terms that describe them.
         entries:
           - { slug: amplitude-modulation, title: Amplitude modulation (AM), type: technology }
           - { slug: frequency-modulation, title: Frequency modulation (FM), type: technology }
@@ -100,6 +192,31 @@ domains:
           - { slug: pulse-shaping, title: Pulse shaping, type: term }
           - { slug: manchester-coding, title: Manchester coding, type: algorithm }
           - { slug: dtmf, title: DTMF, type: term }
+          - { slug: on-off-keying, title: On-off keying (OOK), type: technology }
+          - { slug: amplitude-shift-keying, title: Amplitude-shift keying (ASK), type: technology }
+          - { slug: continuous-wave, title: Continuous wave (CW), type: technology }
+          - { slug: minimum-shift-keying, title: Minimum-shift keying (MSK), type: technology }
+          - { slug: continuous-phase-modulation, title: Continuous-phase modulation (CPM), type: technology }
+          - { slug: four-fsk, title: 4FSK, type: technology }
+          - { slug: m-ary-fsk, title: M-ary FSK, type: technology }
+          - { slug: bpsk, title: BPSK, type: technology }
+          - { slug: qpsk, title: QPSK, type: technology }
+          - { slug: 8psk, title: 8PSK, type: technology }
+          - { slug: pulse-amplitude-modulation, title: Pulse-amplitude modulation (PAM), type: technology }
+          - { slug: pulse-position-modulation, title: Pulse-position modulation (PPM), type: technology }
+          - { slug: pulse-code-modulation, title: Pulse-code modulation (PCM), type: technology }
+          - { slug: double-sideband, title: Double sideband (DSB), type: technology }
+          - { slug: vestigial-sideband, title: Vestigial sideband (VSB), type: technology }
+          - { slug: iq-modulation, title: IQ modulation, type: term }
+          - { slug: modulation-index, title: Modulation index, type: term }
+          - { slug: fm-deviation, title: FM deviation, type: term }
+          - { slug: pre-emphasis-de-emphasis, title: Pre-emphasis & de-emphasis, type: term }
+          - { slug: subcarrier, title: Subcarrier, type: term }
+          - { slug: ctcss, title: CTCSS, type: technology }
+          - { slug: dcs, title: DCS, type: technology }
+          - { slug: intersymbol-interference, title: Intersymbol interference (ISI), type: term }
+          - { slug: roll-off-factor, title: Roll-off factor, type: term }
+          - { slug: bit-rate-vs-baud, title: Bit rate vs baud, type: term }
 
       - id: sdr-dsp
         label: SDR & DSP
@@ -126,6 +243,28 @@ domains:
           - { slug: baseband, title: Baseband, type: term }
           - { slug: automatic-frequency-control, title: Automatic frequency control (AFC), type: term }
           - { slug: dc-offset, title: DC offset (DC spike), type: term }
+          - { slug: direct-conversion-receiver, title: Direct-conversion receiver, type: term }
+          - { slug: direct-sampling, title: Direct sampling, type: term }
+          - { slug: zero-if, title: Zero-IF, type: term }
+          - { slug: low-if, title: Low-IF, type: term }
+          - { slug: bandpass-sampling, title: Bandpass (undersampling), type: term }
+          - { slug: quantization, title: Quantization, type: term }
+          - { slug: dither, title: Dither, type: term }
+          - { slug: enob, title: Effective number of bits (ENOB), type: term }
+          - { slug: oversampling, title: Oversampling, type: term }
+          - { slug: image-rejection, title: Image rejection, type: term }
+          - { slug: image-frequency, title: Image frequency, type: term }
+          - { slug: iq-imbalance, title: IQ imbalance, type: term }
+          - { slug: squelch, title: Squelch, type: term }
+          - { slug: noise-blanker, title: Noise blanker, type: term }
+          - { slug: antenna-diversity, title: Antenna diversity, type: term }
+          - { slug: frame-synchronization, title: Frame synchronization, type: term }
+          - { slug: preamble-correlation, title: Preamble correlation, type: term }
+          - { slug: soft-decision, title: Soft-decision demodulation, type: term }
+          - { slug: log-likelihood-ratio, title: Log-likelihood ratio (LLR), type: term }
+          - { slug: power-spectral-density, title: Power spectral density (PSD), type: term }
+          - { slug: spectrogram, title: Spectrogram, type: term }
+          - { slug: waterfall-display, title: Waterfall display, type: term }
 
       - id: filtering-multirate
         label: Filtering & multirate DSP
@@ -239,7 +378,7 @@ domains:
 
       - id: cryptography
         label: Cryptography & cryptanalysis
-        blurb: Ciphers, keys, and the techniques used to analyze and break them — including the obfuscation seen on trunked-radio metadata.
+        blurb: Ciphers, keys, and the techniques used to analyze and break them — including trunked-radio metadata obfuscation.
         entries:
           - { slug: cryptography, title: Cryptography, type: term }
           - { slug: cryptanalysis, title: Cryptanalysis, type: term }
@@ -271,6 +410,12 @@ domains:
           - { slug: algebraic-attack, title: Algebraic attack, type: term }
           - { slug: sat-smt-solving, title: SAT/SMT solving, type: term }
           - { slug: constraint-propagation, title: Constraint propagation, type: term }
+          - { slug: otar, title: OTAR, type: term }
+          - { slug: key-id-algid, title: Key ID & ALGID, type: term }
+          - { slug: key-loader-kfd, title: Key loader (KFD), type: term }
+          - { slug: rolling-code, title: Rolling code, type: algorithm }
+          - { slug: tetra-tea, title: TETRA TEA ciphers, type: algorithm }
+          - { slug: p25-des-xl, title: P25 DES-XL / ADP, type: algorithm }
 
       - id: trunked-radio
         label: Trunked radio
@@ -289,40 +434,196 @@ domains:
           - { slug: tsbk, title: TSBK, type: term }
           - { slug: csbk, title: CSBK, type: term }
           - { slug: rest-channel, title: Rest channel, type: term }
+          - { slug: trunking-site, title: Trunking site, type: term }
+          - { slug: simulcast, title: Simulcast, type: term }
+          - { slug: multisite-trunking, title: Multisite trunking, type: term }
+          - { slug: network-access-code, title: Network Access Code (NAC), type: term }
+          - { slug: color-code, title: Color code (DMR), type: term }
+          - { slug: ran-nxdn, title: Radio Access Number (RAN), type: term }
+          - { slug: wacn, title: WACN, type: term }
+          - { slug: system-id, title: System ID, type: term }
+          - { slug: rfss, title: RFSS, type: term }
+          - { slug: group-call, title: Group call, type: term }
+          - { slug: private-call, title: Private call, type: term }
+          - { slug: emergency-call, title: Emergency call, type: term }
+          - { slug: registration, title: Registration, type: term }
+          - { slug: late-entry, title: Late entry, type: term }
+          - { slug: busy-idle, title: Busy/idle status, type: term }
+          - { slug: patch-multigroup, title: Patch & multigroup, type: term }
+          - { slug: priority-scan, title: Priority scan, type: term }
+          - { slug: failsoft, title: Failsoft, type: term }
+          - { slug: roaming, title: Roaming, type: term }
+          - { slug: neighbor-site, title: Neighbor site, type: term }
 
-      - id: protocols
-        label: Protocols & standards
-        blurb: The digital and analog systems GopherTrunk decodes, in one uniform format.
+      - id: land-mobile-trunking
+        label: Land mobile & trunking
+        blurb: The professional and public-safety land-mobile and trunked-radio systems GopherTrunk targets.
         entries:
-          - { slug: project-25, title: "Project 25 (P25)", type: protocol }
+          - { slug: project-25, title: Project 25 (P25), type: protocol }
           - { slug: p25-phase-1, title: P25 Phase 1, type: protocol }
           - { slug: p25-phase-2, title: P25 Phase 2, type: protocol }
+          - { slug: p25-cai, title: P25 Common Air Interface, type: protocol }
           - { slug: dmr, title: Digital Mobile Radio (DMR), type: protocol }
           - { slug: dmr-tier-1, title: DMR Tier I, type: protocol }
           - { slug: dmr-tier-2, title: DMR Tier II, type: protocol }
           - { slug: dmr-tier-3, title: DMR Tier III, type: protocol }
+          - { slug: capacity-plus, title: Capacity Plus, type: protocol }
+          - { slug: connect-plus, title: Connect Plus, type: protocol }
           - { slug: nxdn, title: NXDN, type: protocol }
           - { slug: dpmr, title: dPMR, type: protocol }
           - { slug: tetra, title: TETRA, type: protocol }
+          - { slug: tetrapol, title: TETRAPOL, type: protocol }
           - { slug: motorola-type-ii, title: Motorola Type II, type: protocol }
+          - { slug: smartnet-smartzone, title: SmartNet / SmartZone, type: protocol }
           - { slug: edacs, title: EDACS, type: protocol }
           - { slug: ltr, title: LTR (Logic Trunked Radio), type: protocol }
           - { slug: mpt-1327, title: MPT 1327, type: protocol }
+          - { slug: iden, title: iDEN, type: protocol }
+          - { slug: provoice, title: ProVoice, type: protocol }
+
+      - id: cellular
+        label: Cellular
+        blurb: The mobile-phone air interfaces, from GSM to 5G NR.
+        entries:
+          - { slug: gsm, title: GSM, type: protocol }
+          - { slug: gprs, title: GPRS, type: protocol }
+          - { slug: edge-cellular, title: EDGE, type: protocol }
+          - { slug: umts-wcdma, title: UMTS / W-CDMA, type: protocol }
+          - { slug: hspa, title: HSPA, type: protocol }
+          - { slug: cdma2000, title: CDMA2000, type: protocol }
+          - { slug: ev-do, title: EV-DO, type: protocol }
+          - { slug: lte, title: LTE, type: protocol }
+          - { slug: lte-advanced, title: LTE-Advanced, type: protocol }
+          - { slug: 5g-nr, title: 5G NR, type: protocol }
+          - { slug: volte, title: VoLTE, type: technology }
+          - { slug: imsi-imei, title: IMSI & IMEI, type: term }
+          - { slug: cellular-handover, title: Handover, type: term }
+          - { slug: base-station-enodeb-gnodeb, title: Base station (eNodeB / gNodeB), type: term }
+
+      - id: wireless-data-iot
+        label: Wireless data & IoT
+        blurb: Short-range and low-power wireless data links — Wi-Fi, Bluetooth, and the IoT/LPWAN protocols.
+        entries:
+          - { slug: wifi-80211, title: Wi-Fi (802.11), type: protocol }
+          - { slug: bluetooth-rf, title: Bluetooth (RF layer), type: protocol }
+          - { slug: bluetooth-le, title: Bluetooth Low Energy (BLE), type: protocol }
+          - { slug: zigbee-802154, title: Zigbee / 802.15.4, type: protocol }
+          - { slug: z-wave, title: Z-Wave, type: protocol }
+          - { slug: thread-protocol, title: Thread, type: protocol }
+          - { slug: matter-protocol, title: Matter, type: technology }
+          - { slug: 6lowpan, title: 6LoWPAN, type: protocol }
+          - { slug: ant-plus, title: ANT+, type: protocol }
+          - { slug: lora, title: LoRa, type: protocol }
+          - { slug: lorawan, title: LoRaWAN, type: protocol }
+          - { slug: sigfox, title: Sigfox, type: protocol }
+          - { slug: nb-iot, title: NB-IoT, type: protocol }
+          - { slug: lte-m, title: LTE-M, type: protocol }
+          - { slug: meshtastic, title: Meshtastic, type: technology }
+          - { slug: wireless-mbus, title: Wireless M-Bus, type: protocol }
+          - { slug: nfc-rf, title: NFC (RF layer), type: protocol }
+          - { slug: rfid-rf, title: RFID (RF layer), type: protocol }
+          - { slug: tpms, title: TPMS, type: protocol }
+          - { slug: remote-keyless-entry, title: Remote keyless entry, type: protocol }
+
+      - id: satellite-gnss
+        label: Satellite & GNSS
+        blurb: Satellite communications and the global navigation systems that ride the same spectrum.
+        entries:
+          - { slug: gnss, title: GNSS, type: technology }
+          - { slug: gps-gnss, title: GPS, type: protocol }
+          - { slug: glonass, title: GLONASS, type: protocol }
+          - { slug: galileo, title: Galileo, type: protocol }
+          - { slug: beidou, title: BeiDou, type: protocol }
+          - { slug: iridium, title: Iridium, type: protocol }
+          - { slug: inmarsat, title: Inmarsat, type: protocol }
+          - { slug: globalstar, title: Globalstar, type: protocol }
+          - { slug: orbcomm, title: Orbcomm, type: protocol }
+          - { slug: starlink, title: Starlink, type: technology }
+          - { slug: noaa-apt, title: NOAA APT, type: protocol }
+          - { slug: meteor-lrpt, title: Meteor-M LRPT, type: protocol }
+          - { slug: goes-hrit, title: GOES HRIT, type: protocol }
+          - { slug: cospas-sarsat, title: COSPAS-SARSAT, type: protocol }
+
+      - id: broadcast
+        label: Broadcast
+        blurb: Digital and analog broadcasting — radio and television.
+        entries:
+          - { slug: broadcast-fm, title: Broadcast FM, type: technology }
+          - { slug: broadcast-am, title: Broadcast AM, type: technology }
+          - { slug: shortwave-broadcast, title: Shortwave broadcasting, type: technology }
+          - { slug: rds, title: RDS / RBDS, type: protocol }
+          - { slug: dab, title: DAB / DAB+, type: protocol }
+          - { slug: drm-broadcast, title: Digital Radio Mondiale (DRM), type: protocol }
+          - { slug: hd-radio, title: HD Radio (IBOC), type: protocol }
+          - { slug: dvb-t, title: DVB-T / T2, type: protocol }
+          - { slug: dvb-s, title: DVB-S / S2, type: protocol }
+          - { slug: dvb-c, title: DVB-C, type: protocol }
+          - { slug: atsc-1, title: ATSC 1.0, type: protocol }
+          - { slug: atsc-3, title: ATSC 3.0 (NextGen TV), type: protocol }
+          - { slug: isdb-t, title: ISDB-T, type: protocol }
+
+      - id: aviation-marine
+        label: Aviation & marine
+        blurb: The datalinks and navaids of aircraft and ships.
+        entries:
+          - { slug: ads-b, title: ADS-B, type: protocol }
+          - { slug: mode-s, title: Mode S, type: protocol }
+          - { slug: mode-ac, title: Mode A/C transponder, type: protocol }
+          - { slug: uat-978, title: UAT (978 MHz), type: protocol }
+          - { slug: tis-b, title: TIS-B, type: protocol }
+          - { slug: fis-b, title: FIS-B, type: protocol }
+          - { slug: tcas, title: TCAS, type: technology }
+          - { slug: ads-c, title: ADS-C, type: protocol }
+          - { slug: acars, title: ACARS, type: protocol }
+          - { slug: vdl-mode-2, title: VDL Mode 2, type: protocol }
+          - { slug: hfdl, title: HFDL, type: protocol }
+          - { slug: cpdlc, title: CPDLC, type: protocol }
+          - { slug: vor, title: VOR, type: technology }
+          - { slug: ils, title: ILS, type: technology }
+          - { slug: dme, title: DME, type: technology }
+          - { slug: tacan, title: TACAN, type: technology }
+          - { slug: ais, title: Automatic Identification System (AIS), type: protocol }
+          - { slug: dsc, title: Digital Selective Calling (DSC), type: protocol }
+          - { slug: navtex, title: NAVTEX, type: protocol }
+          - { slug: epirb-406, title: EPIRB (406 MHz), type: protocol }
+          - { slug: marine-vhf, title: Marine VHF, type: technology }
+
+      - id: paging-data
+        label: Paging & data
+        blurb: One-way paging and packet data links.
+        entries:
+          - { slug: pocsag, title: POCSAG, type: protocol }
+          - { slug: flex, title: FLEX, type: protocol }
+          - { slug: ermes, title: ERMES, type: protocol }
+          - { slug: aprs, title: APRS, type: protocol }
+          - { slug: ax25, title: AX.25, type: protocol }
+          - { slug: packet-radio, title: Packet radio, type: protocol }
+          - { slug: kiss-tnc, title: KISS TNC, type: technology }
+          - { slug: mdc1200, title: MDC-1200, type: protocol }
+
+      - id: amateur-digital
+        label: Amateur digital modes
+        blurb: The weak-signal and keyboard digital modes of amateur radio.
+        entries:
           - { slug: d-star, title: D-STAR, type: protocol }
           - { slug: system-fusion-ysf, title: System Fusion (YSF), type: protocol }
           - { slug: m17, title: M17, type: protocol }
-          - { slug: pocsag, title: POCSAG, type: protocol }
-          - { slug: flex, title: FLEX, type: protocol }
-          - { slug: ais, title: Automatic Identification System (AIS), type: protocol }
-          - { slug: ads-b, title: ADS-B, type: protocol }
-          - { slug: aprs, title: APRS, type: protocol }
-          - { slug: ax25, title: AX.25, type: protocol }
-          - { slug: dsc, title: Digital Selective Calling (DSC), type: protocol }
-          - { slug: mdc1200, title: MDC-1200, type: protocol }
-          - { slug: mode-s, title: Mode S, type: protocol }
-          - { slug: provoice, title: ProVoice, type: protocol }
-          - { slug: capacity-plus, title: Capacity Plus, type: protocol }
-          - { slug: lora, title: LoRa, type: protocol }
+          - { slug: ft8, title: FT8, type: protocol }
+          - { slug: ft4, title: FT4, type: protocol }
+          - { slug: wspr, title: WSPR, type: protocol }
+          - { slug: jt65, title: JT65, type: protocol }
+          - { slug: jt9, title: JT9, type: protocol }
+          - { slug: js8call, title: JS8Call, type: technology }
+          - { slug: rtty, title: RTTY, type: protocol }
+          - { slug: psk31, title: PSK31, type: protocol }
+          - { slug: sstv, title: SSTV, type: protocol }
+          - { slug: olivia, title: Olivia MFSK, type: protocol }
+          - { slug: contestia, title: Contestia, type: protocol }
+          - { slug: hellschreiber, title: Hellschreiber, type: protocol }
+          - { slug: morse-code, title: Morse code, type: technology }
+          - { slug: winlink, title: Winlink, type: technology }
+          - { slug: pactor, title: Pactor, type: protocol }
+          - { slug: vara, title: VARA, type: protocol }
 
       - id: voice-coding
         label: Voice coding
@@ -337,25 +638,111 @@ domains:
           - { slug: ambe, title: AMBE, type: technology }
           - { slug: ambe-plus-2, title: AMBE+2, type: technology }
           - { slug: codec2, title: Codec 2, type: technology }
+          - { slug: acelp, title: ACELP, type: algorithm }
+          - { slug: amr, title: AMR / AMR-WB, type: technology }
+          - { slug: evs-codec, title: Enhanced Voice Services (EVS), type: technology }
+          - { slug: opus-codec, title: Opus, type: technology }
+          - { slug: g711, title: G.711, type: technology }
+          - { slug: g722, title: G.722, type: technology }
+          - { slug: g729, title: G.729, type: technology }
+          - { slug: speex, title: Speex, type: technology }
+          - { slug: silk-codec, title: SILK, type: technology }
+          - { slug: twelp, title: TWELP, type: technology }
+          - { slug: ralcwi, title: RALCWI, type: technology }
+          - { slug: evrc, title: EVRC, type: technology }
+          - { slug: gsm-fr-hr-efr, title: GSM FR / HR / EFR, type: technology }
 
-      - id: hardware
-        label: Hardware
-        blurb: SDR dongles, tuner chips, and front-end components.
+      - id: sdr-devices
+        label: SDR devices
+        blurb: SDR dongles, transceivers, and the tuner chips inside them.
         entries:
           - { slug: rtl-sdr, title: RTL-SDR, type: hardware }
           - { slug: rtl2832u, title: RTL2832U, type: hardware }
           - { slug: r820t-tuner, title: R820T / R820T2 tuner, type: hardware }
+          - { slug: e4000-tuner, title: E4000 tuner, type: hardware }
+          - { slug: msi001-tuner, title: MSi001 tuner, type: hardware }
+          - { slug: nesdr, title: Nooelec NESDR, type: hardware }
           - { slug: hackrf, title: HackRF One, type: hardware }
           - { slug: airspy, title: Airspy, type: hardware }
           - { slug: airspy-hf-plus, title: Airspy HF+, type: hardware }
-          - { slug: upconverter, title: Upconverter, type: hardware }
+          - { slug: sdrplay-rsp1a, title: SDRplay RSP1A, type: hardware }
+          - { slug: sdrplay-rspdx, title: SDRplay RSPdx, type: hardware }
+          - { slug: sdrplay-rspduo, title: SDRplay RSPduo, type: hardware }
+          - { slug: limesdr, title: LimeSDR, type: hardware }
+          - { slug: usrp-ettus, title: USRP (Ettus), type: hardware }
+          - { slug: plutosdr, title: ADALM-Pluto (PlutoSDR), type: hardware }
+          - { slug: bladerf, title: BladeRF, type: hardware }
+          - { slug: krakensdr, title: KrakenSDR, type: hardware }
+          - { slug: funcube-dongle, title: FUNcube Dongle, type: hardware }
+
+      - id: rf-front-end
+        label: RF front-end & components
+        blurb: The components between the antenna and the receiver — amplifiers, filters, mixers, connectors, and references.
+        entries:
           - { slug: low-noise-amplifier, title: Low-noise amplifier (LNA), type: hardware }
+          - { slug: preamplifier, title: Preamplifier, type: hardware }
+          - { slug: power-amplifier, title: Power amplifier (PA), type: hardware }
+          - { slug: mixer-rf, title: Mixer, type: hardware }
+          - { slug: attenuator, title: Attenuator, type: hardware }
+          - { slug: circulator, title: Circulator, type: hardware }
+          - { slug: isolator, title: Isolator, type: hardware }
+          - { slug: directional-coupler, title: Directional coupler, type: hardware }
+          - { slug: splitter-combiner, title: Splitter / combiner, type: hardware }
+          - { slug: duplexer, title: Duplexer, type: hardware }
+          - { slug: diplexer, title: Diplexer, type: hardware }
+          - { slug: rf-filter, title: RF filter, type: hardware }
+          - { slug: saw-filter, title: SAW filter, type: hardware }
+          - { slug: cavity-filter, title: Cavity filter, type: hardware }
+          - { slug: helical-filter, title: Helical filter, type: hardware }
+          - { slug: crystal-filter, title: Crystal filter, type: hardware }
+          - { slug: rf-switch, title: RF switch, type: hardware }
           - { slug: bias-tee, title: Bias tee, type: hardware }
+          - { slug: upconverter, title: Upconverter, type: hardware }
+          - { slug: transverter, title: Transverter, type: hardware }
+          - { slug: ferrite-choke, title: Ferrite choke, type: hardware }
+          - { slug: balun, title: Balun, type: hardware }
+          - { slug: unun, title: Unun, type: hardware }
+          - { slug: dummy-load, title: Dummy load, type: hardware }
+          - { slug: coaxial-cable, title: Coaxial cable, type: hardware }
+          - { slug: sma-connector, title: SMA connector, type: hardware }
+          - { slug: bnc-connector, title: BNC connector, type: hardware }
+          - { slug: n-type-connector, title: N-type connector, type: hardware }
+          - { slug: uhf-connector-pl259, title: UHF connector (PL-259), type: hardware }
+          - { slug: tcxo, title: TCXO, type: hardware }
+          - { slug: ocxo, title: OCXO, type: hardware }
+          - { slug: gpsdo, title: GPSDO, type: hardware }
+          - { slug: dds-synthesizer, title: DDS synthesizer, type: hardware }
+
+      - id: test-equipment
+        label: Test & measurement
+        blurb: The instruments used to measure and characterize RF signals and hardware.
+        entries:
+          - { slug: spectrum-analyzer, title: Spectrum analyzer, type: hardware }
+          - { slug: signal-generator, title: Signal generator, type: hardware }
+          - { slug: vector-network-analyzer, title: Vector network analyzer (VNA), type: hardware }
+          - { slug: nanovna, title: NanoVNA, type: hardware }
+          - { slug: tinysa, title: TinySA, type: hardware }
+          - { slug: rf-power-meter, title: RF power meter, type: hardware }
+          - { slug: frequency-counter, title: Frequency counter, type: hardware }
+          - { slug: noise-source, title: Noise source, type: hardware }
+
+      - id: sdr-software
+        label: SDR software
+        blurb: The software that drives SDR hardware and decodes what it hears.
+        entries:
           - { slug: soapysdr, title: SoapySDR, type: technology }
           - { slug: rtl-tcp, title: rtl_tcp, type: technology }
           - { slug: zadig, title: Zadig, type: hardware }
-          - { slug: saw-filter, title: SAW filter, type: hardware }
-          - { slug: coaxial-cable, title: Coaxial cable, type: hardware }
+          - { slug: gnuradio, title: GNU Radio, type: technology }
+          - { slug: sdr-sharp, title: SDR#, type: technology }
+          - { slug: gqrx, title: Gqrx, type: technology }
+          - { slug: sdrangel, title: SDRangel, type: technology }
+          - { slug: cubicsdr, title: CubicSDR, type: technology }
+          - { slug: dump1090, title: dump1090, type: technology }
+          - { slug: dsd, title: DSD (Digital Speech Decoder), type: technology }
+          - { slug: op25, title: OP25, type: technology }
+          - { slug: multimon-ng, title: multimon-ng, type: technology }
+          - { slug: direwolf, title: Dire Wolf, type: technology }
 
       - id: people
         label: People
@@ -373,6 +760,27 @@ domains:
           - { slug: reginald-fessenden, title: Reginald Fessenden, type: person }
           - { slug: john-costas, title: John P. Costas, type: person }
           - { slug: fred-gardner, title: Floyd M. Gardner, type: person }
+          - { slug: nikola-tesla, title: Nikola Tesla, type: person }
+          - { slug: oliver-heaviside, title: Oliver Heaviside, type: person }
+          - { slug: karl-jansky, title: Karl Jansky, type: person }
+          - { slug: hedy-lamarr, title: Hedy Lamarr, type: person }
+          - { slug: robert-watson-watt, title: Robert Watson-Watt, type: person }
+          - { slug: irwin-jacobs, title: Irwin Jacobs, type: person }
+          - { slug: phil-karn, title: Phil Karn, type: person }
+          - { slug: joe-taylor, title: Joe Taylor (K1JT), type: person }
+          - { slug: gustav-kirchhoff, title: Gustav Kirchhoff, type: person }
+          - { slug: oliver-lodge, title: Oliver Lodge, type: person }
+          - { slug: jagadish-bose, title: Jagadish Chandra Bose, type: person }
+          - { slug: alexander-popov, title: Alexander Popov, type: person }
+          - { slug: hendrik-lorentz, title: Hendrik Lorentz, type: person }
+          - { slug: georg-ohm, title: Georg Ohm, type: person }
+          - { slug: norbert-wiener, title: Norbert Wiener, type: person }
+          - { slug: rudolf-kalman, title: Rudolf Kalman, type: person }
+          - { slug: robert-gallager, title: Robert Gallager, type: person }
+          - { slug: irving-reed, title: Irving S. Reed, type: person }
+          - { slug: gustave-solomon, title: Gustave Solomon, type: person }
+          - { slug: ralph-hartley, title: Ralph Hartley, type: person }
+          - { slug: dennis-gabor, title: Dennis Gabor, type: person }
 
       - id: organizations
         label: Organizations & standards bodies
@@ -390,7 +798,24 @@ domains:
           - { slug: ofcom, title: Ofcom, type: organization }
           - { slug: rtca, title: RTCA, type: organization }
           - { slug: eurocae, title: EUROCAE, type: organization }
-
+          - { slug: 3gpp, title: 3GPP, type: organization }
+          - { slug: wi-fi-alliance, title: Wi-Fi Alliance, type: organization }
+          - { slug: bluetooth-sig, title: Bluetooth SIG, type: organization }
+          - { slug: lora-alliance, title: LoRa Alliance, type: organization }
+          - { slug: arrl, title: ARRL, type: organization }
+          - { slug: darpa, title: DARPA, type: organization }
+          - { slug: nist, title: NIST, type: organization }
+          - { slug: nasa, title: NASA, type: organization }
+          - { slug: arib, title: ARIB, type: organization }
+          - { slug: cept, title: CEPT, type: organization }
+          - { slug: iaru, title: IARU, type: organization }
+          - { slug: itu-r, title: ITU-R, type: organization }
+          - { slug: ntia, title: NTIA, type: organization }
+          - { slug: wrc, title: World Radiocommunication Conference (WRC), type: organization }
+          - { slug: gsma, title: GSMA, type: organization }
+          - { slug: connectivity-standards-alliance, title: Connectivity Standards Alliance, type: organization }
+          - { slug: rsgb, title: RSGB, type: organization }
+          - { slug: dmr-association, title: DMR Association, type: organization }
   - id: software-dev
     label: "Software Development"
     blurb: Programming languages and the concepts, paradigms, and practices of building software — the craft behind GopherTrunk itself.

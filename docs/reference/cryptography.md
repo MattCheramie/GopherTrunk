@@ -4,22 +4,24 @@ title: Cryptography
 entry_type: term
 category: cryptography
 description: Cryptography is the science of securing information against adversaries — protecting confidentiality, integrity, authentication, and non-repudiation — using mathematical techniques such as encryption, hashing, and digital signatures.
-keywords: cryptography, confidentiality, integrity, authentication, non-repudiation, encryption, cipher, cryptographic key, keystream, cryptanalysis
+keywords: cryptography, confidentiality, integrity, authentication, non-repudiation, encryption, cipher, cryptographic key, keystream, cryptanalysis, symmetric, public-key, hashing
 aka: [crypto]
 autolink: true
 infobox:
   - { label: Field, value: "Information security" }
   - { label: Goals, value: "Confidentiality, integrity, authentication, non-repudiation" }
   - { label: Branches, value: "Symmetric, public-key, hashing" }
-see_also: [cryptanalysis, cipher, encryption, obfuscation]
+see_also: [cryptanalysis, cipher, encryption, obfuscation, symmetric-key-cryptography, public-key-cryptography, hash-function, kerckhoffs-principle, otar]
 cite_urls:
   - https://en.wikipedia.org/wiki/Cryptography
+  - https://en.wikipedia.org/wiki/Kerckhoffs%27s_principle
 ---
 
 **Cryptography** is the science of securing information against adversaries — protecting the
 confidentiality, integrity, authentication, and non-repudiation of data using mathematical
 techniques.[^wiki] It is the constructive counterpart to [cryptanalysis](/reference/cryptanalysis/),
-the study of breaking such systems.
+the study of breaking such systems, and it underlies everything from HTTPS to the encrypted
+voice traffic a scanner encounters on public-safety radio.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="Cryptography branches into confidentiality, integrity, and authentication goals." xmlns="http://www.w3.org/2000/svg">
@@ -41,23 +43,55 @@ Cryptography combines several goals, only one of which is secrecy:
 
 - **Confidentiality** — keeping data unreadable to anyone without the key, achieved by
   [encryption](/reference/encryption/) with a [cipher](/reference/cipher/).
-- **Integrity** — detecting whether data has been altered, typically with hash functions
-  or message authentication codes.
+- **Integrity** — detecting whether data has been altered, typically with
+  [hash functions](/reference/hash-function/) or message authentication codes.
 - **Authentication** — proving who produced a message.
 - **Non-repudiation** — preventing a sender from later denying they sent it, usually via
   digital signatures.
 
-Modern cryptography rests on Kerckhoffs's principle: the algorithm is assumed public and
-all the security lives in the secret key. That distinguishes it from
+Modern cryptography rests on [Kerckhoffs's principle](/reference/kerckhoffs-principle/): the
+algorithm is assumed public and all the security lives in the secret
+[key](/reference/cryptographic-key/). That distinguishes it from
 [obfuscation](/reference/obfuscation/), which merely hides a method that anyone who learns
 it can reverse.
+
+## Variants
+
+The field divides into three broad branches:
+
+- **[Symmetric-key cryptography](/reference/symmetric-key-cryptography/)** uses one shared
+  secret for both encryption and decryption. It is fast and is what protects bulk data —
+  the [AES](/reference/advanced-encryption-standard/) and
+  [DES](/reference/data-encryption-standard/) block ciphers, and stream ciphers like
+  [RC4](/reference/rc4-cipher/), all live here. This is the branch land-mobile radio uses.
+- **[Public-key cryptography](/reference/public-key-cryptography/)** uses a public/private
+  key pair, solving the key-distribution problem and enabling digital signatures; it is the
+  basis of TLS handshakes and PKI.
+- **Hashing** produces a fixed-size fingerprint of data with no key, underpinning integrity
+  checks and message authentication.
+
+Symmetric systems still need a way to distribute keys securely; on radio networks that job
+falls to key loaders and [over-the-air rekeying](/reference/otar/).
+
+## In practice
+
+A working cryptosystem is more than a cipher: it needs sound key management, correct modes
+of operation, fresh initialization vectors, and integrity protection, because attackers
+rarely break the math — they exploit reuse, weak keys, or protocol mistakes. On
+public-safety radio the practical stack is a symmetric cipher plus a key-management scheme
+([OTAR](/reference/otar/), [key-ID/algorithm-ID](/reference/key-id-algid/) signaling, and a
+[key loader](/reference/key-loader-kfd/)).
 
 ## Relevance to SDR
 
 A trunked-radio receiver constantly meets the products of cryptography. Voice traffic on
 [DMR](/reference/dmr/) and [P25](/reference/project-25/) systems may be encrypted (DMR
-Enhanced Privacy using [RC4](/reference/rc4-cipher/); P25 voice using DES-OFB or AES-256),
-in which case GopherTrunk can identify and follow the call but cannot recover the audio
+Enhanced Privacy using [RC4](/reference/rc4-cipher/); P25 voice using
+[DES](/reference/data-encryption-standard/)-OFB,
+[DES-XL](/reference/p25-des-xl/), or [AES](/reference/advanced-encryption-standard/)-256;
+[TETRA](/reference/tetra/) using the [TEA](/reference/tetra-tea/) algorithms), in which case
+GopherTrunk can identify and follow the call — reading its
+[key-ID/algorithm-ID](/reference/key-id-algid/) fields — but cannot recover the audio
 without the key. Other on-air transformations are *not* cryptography in the security sense:
 data-link CRCs provide integrity but no secrecy, and the Motorola P25 talker-alias scheme
 is [obfuscation](/reference/obfuscation/) rather than [encryption](/reference/encryption/)
@@ -67,3 +101,4 @@ these apart is the first step in deciding what a scanner can decode.
 ## Sources
 
 [^wiki]: [Cryptography](https://en.wikipedia.org/wiki/Cryptography) — Wikipedia, for the goals of cryptography and its distinction from cryptanalysis.
+[^kerck]: [Kerckhoffs's principle](https://en.wikipedia.org/wiki/Kerckhoffs%27s_principle) — Wikipedia, for the foundational rule that security must reside in the key, not the secrecy of the algorithm.

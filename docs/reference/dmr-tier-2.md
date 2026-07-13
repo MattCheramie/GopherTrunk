@@ -2,9 +2,9 @@
 slug: dmr-tier-2
 title: DMR Tier II
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: DMR Tier II is the licensed conventional tier of the ETSI DMR standard, using two-slot TDMA in 12.5 kHz channels — the most common commercial and amateur DMR mode.
-keywords: DMR Tier II, DMR Tier 2, conventional DMR, MOTOTRBO, two-slot TDMA, AMBE+2
+keywords: DMR Tier II, DMR Tier 2, conventional DMR, MOTOTRBO, two-slot TDMA, 4FSK, AMBE+2, color code
 aka: [DMR Tier II, DMR Tier 2]
 autolink: true
 infobox:
@@ -16,18 +16,19 @@ infobox:
   - { label: Modulation, value: 4FSK (9600 bps) }
   - { label: Vocoder, value: AMBE+2 }
   - { label: GopherTrunk support, value: Decoded (both slots) }
-see_also: [dmr, dmr-tier-1, dmr-tier-3, tdma, ambe-plus-2]
+see_also: [dmr, dmr-tier-1, dmr-tier-3, four-fsk, color-code, tdma, ambe-plus-2]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 related_reading:
   - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Digital_mobile_radio
+  - https://www.dmrassociation.org/
 ---
 
 **DMR Tier II** is the **licensed, conventional** tier of the [DMR](/reference/dmr/)
 standard. It is non-trunked — each repeater pair uses fixed frequencies — but carries
-**two voice timeslots** per 12.5 kHz channel via [TDMA](/reference/tdma/).[^wiki]
+**two voice timeslots** per 12.5 kHz channel via [TDMA](/reference/tdma/).[^wiki][^dmra]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 140" role="img" aria-label="Two TDMA slots in a conventional DMR Tier II channel." xmlns="http://www.w3.org/2000/svg">
@@ -44,7 +45,11 @@ standard. It is non-trunked — each repeater pair uses fixed frequencies — bu
 Tier II is the workhorse of commercial DMR and the basis of amateur DMR repeaters.
 Because it is conventional, you tune directly to a known frequency rather than
 following a [control channel](/reference/control-channel/); the two timeslots still
-allow two simultaneous conversations.
+allow two simultaneous conversations on that one carrier. Each slot is independently
+addressed by [color code](/reference/color-code/), talkgroup, and source
+[radio ID](/reference/radio-id/), all embedded in the burst so a receiver reads them
+off the air. A single repeater can therefore host, say, a dispatch talkgroup on
+slot 1 and a networked amateur talkgroup on slot 2 at the same time.
 
 ## Technical characteristics
 
@@ -52,26 +57,33 @@ allow two simultaneous conversations.
 |----------|-------|
 | Access | Two-slot TDMA |
 | Channel | 12.5 kHz |
-| Modulation | [4FSK](/reference/frequency-shift-keying/), 9600 bps |
+| Modulation | [4FSK](/reference/four-fsk/), 9600 bps |
 | Vocoder | [AMBE+2](/reference/ambe-plus-2/) |
+| Squelch / identity | [color code](/reference/color-code/), slot, talkgroup, source ID |
 
 ## History
 
 Tier II was the first widely commercialised DMR tier, popularised by Motorola's
-MOTOTRBO line from the late 2000s.[^wiki]
+MOTOTRBO line from the late 2000s and quickly matched by other
+[DMR Association](/reference/dmr-association/) members.[^wiki][^dmra] Its two-slot
+efficiency and open standard let it displace both analog repeaters and older
+proprietary digital systems.
 
 ## Deployment
 
-Extremely common in business, utility, and amateur radio. Amateur networks bridge
-Tier II repeaters and hotspots over the internet.
+Extremely common in business, utility, security, and amateur radio. Amateur networks
+(such as the large worldwide DMR talkgroup systems) bridge Tier II repeaters and
+personal hotspots over the internet, so a low-power handheld can reach global
+talkgroups through a nearby repeater.
 
 ## Decoding it with GopherTrunk
 
-GopherTrunk decodes both timeslots of a Tier II channel and renders AMBE+2 audio.
-Color Code, time slot, and talkgroup are read off the air per call — you only
-configure each repeater's frequency. A single dongle channelizes a cluster of
-repeaters at once; to cover many repeaters spread across a wide band, add one
-`role: wideband` dongle per ~2 MHz cluster, all pointed at the same system. The
+GopherTrunk decodes both timeslots of a Tier II channel and renders
+[AMBE+2](/reference/ambe-plus-2/) audio. [Color code](/reference/color-code/), time
+slot, and talkgroup are read off the air per call — you only configure each
+repeater's frequency. A single dongle channelizes a cluster of repeaters at once; to
+cover many repeaters spread across a wide band, add one `role: wideband` dongle per
+~2 MHz cluster, all pointed at the same system. The
 [`dmr-tier2-multi-repeater`](https://github.com/MattCheramie/GopherTrunk/tree/main/samples/dmr-tier2-multi-repeater)
 sample is a worked "a bunch of repeaters, different CCs and slots" config; for a
 single carrier see
@@ -81,3 +93,4 @@ For trunked DMR, see [Tier III](/reference/dmr-tier-3/). See [Status](/status.ht
 ## Sources
 
 [^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the ETSI DMR tiers, including the licensed conventional Tier II and its two-slot TDMA.
+[^dmra]: [DMR Association](https://www.dmrassociation.org/) — the DMR manufacturer association, for the TS 102 361 basis and Tier II conventional interoperability.

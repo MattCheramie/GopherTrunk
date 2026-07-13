@@ -11,9 +11,10 @@ infobox:
   - { label: Claim, value: Only the key need be secret }
   - { label: Targets, value: Security through obscurity }
   - { label: Restated by, value: "Shannon's maxim: the enemy knows the system" }
-see_also: [cryptographic-key, symmetric-key-cryptography, public-key-cryptography]
+see_also: [cryptographic-key, symmetric-key-cryptography, public-key-cryptography, tetra-tea, key-id-algid]
 cite_urls:
   - https://en.wikipedia.org/wiki/Kerckhoffs%27s_principle
+  - https://en.wikipedia.org/wiki/Security_through_obscurity
 ---
 
 **Kerckhoffs's principle** states that a cryptosystem should stay secure even if everything
@@ -35,8 +36,8 @@ words, the secrecy must live entirely in the key, never in the design of the alg
 
 The principle was articulated by Auguste Kerckhoffs in the nineteenth century as one of
 several design requirements for military ciphers, and later restated by Claude Shannon as the
-maxim "the enemy knows the system." Its practical force is simple: assume your adversary has a
-full description of the algorithm, and design so that this knowledge alone gives them no
+maxim "the enemy knows the system."[^obs] Its practical force is simple: assume your adversary
+has a full description of the algorithm, and design so that this knowledge alone gives them no
 advantage — the only thing they still lack is the [key](/reference/cryptographic-key/).
 
 This is the direct rebuttal to **security through obscurity**, the idea that a secret
@@ -47,6 +48,19 @@ collapses. Open, publicly reviewed algorithms — such as those used in
 [public-key](/reference/public-key-cryptography/) cryptography — are scrutinised by many
 analysts and gain confidence precisely because their internals are known yet they remain
 unbroken.
+
+## In practice
+
+The distinction between a *secret method* and a *secret key* is not merely academic; systems
+that violate the principle tend to fail once the method escapes. The clearest cautionary tale
+in radio is [TETRA's TEA](/reference/tetra-tea/) algorithm family, kept confidential under
+non-disclosure for decades. When researchers reverse-engineered it in 2023 they found a
+deliberate weakness (the "TETRA:BURST" flaw) that reduced the effective key of TEA1 to 32
+bits — a defect that peer review would very likely have caught, and that obscurity had merely
+hidden. Well-designed systems instead keep the algorithm open and identify only *which* key
+and cipher a transmission uses, in the clear, through a
+[key ID / algorithm ID](/reference/key-id-algid/); knowing those fields tells an attacker
+nothing useful without the key itself.
 
 ## Relevance to SDR
 
@@ -63,3 +77,4 @@ studied in issue #773 is an obfuscation of this kind rather than true encryption
 ## Sources
 
 [^wiki]: [Kerckhoffs's principle](https://en.wikipedia.org/wiki/Kerckhoffs%27s_principle) — Wikipedia, for the requirement that only the key be secret and Shannon's restatement.
+[^obs]: [Security through obscurity](https://en.wikipedia.org/wiki/Security_through_obscurity) — Wikipedia, for why hidden designs fail once disclosed and the open-design counter-argument.

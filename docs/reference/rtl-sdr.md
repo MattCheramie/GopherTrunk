@@ -2,7 +2,7 @@
 slug: rtl-sdr
 title: RTL-SDR
 entry_type: hardware
-category: hardware
+category: sdr-devices
 description: RTL-SDR is a family of low-cost USB software-defined radio receivers built on the RTL2832U chip — repurposed from DVB-T TV tuners — covering roughly 24 MHz to 1.7 GHz. A full history, the hardware explained, every major tuner and dongle variant compared, and where to buy the ones still in production.
 keywords: RTL-SDR, RTL2832U, cheap SDR, DVB-T dongle, R820T2, R828D, R828S, E4000, RTL-SDR Blog V3, RTL-SDR Blog V4, V4 Lite, NooElec NESDR, FlightAware Pro Stick, 24 MHz 1.7 GHz, receive only, which RTL-SDR to buy
 aka: [RTL-SDR, RTL SDR, RTL2832U dongle]
@@ -16,7 +16,7 @@ infobox:
   - { label: Bandwidth, value: ~2.4 MHz usable (3.2 max) }
   - { label: TX, value: No (receive only) }
   - { label: Typical price, value: $15 – $40 }
-see_also: [rtl2832u, r820t-tuner, hackrf, airspy, airspy-hf-plus, upconverter, bias-tee, zadig, software-defined-radio]
+see_also: [rtl2832u, r820t-tuner, nesdr, e4000-tuner, hackrf, airspy, airspy-hf-plus, sdrplay-rsp1a, sdr-sharp, upconverter, bias-tee, zadig, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
   - { title: "What is software-defined radio?", url: /learn/rf-sdr/what-is-sdr/ }
@@ -116,7 +116,7 @@ account for almost every RTL-SDR ever sold:
 
 | Tuner | Range | Notes | Status |
 |-------|-------|-------|--------|
-| Elonics **E4000** | ~54–2200 MHz (gap ~1100–1250) | Widest reach; higher noise; premium/used only | Discontinued |
+| Elonics **[E4000](/reference/e4000-tuner/)** | ~54–2200 MHz (gap ~1100–1250) | Widest reach; higher noise; premium/used only | Discontinued |
 | Rafael **R820T** | ~24–1766 MHz | The original SDR-era workhorse | Superseded by R820T2 |
 | Rafael **R820T2** | ~24–1766 MHz | Best all-round sensitivity; the de-facto standard | Now sold as R860 |
 | Rafael **R860** | ~24–1766 MHz | Current-production R820T2 equivalent | In production |
@@ -140,7 +140,7 @@ temperature-compensated oscillator, so they drift tens of kHz as they warm up; w
 shielding and ESD protection; and front ends that overload easily near strong
 transmitters. Quality is a lottery.
 
-### NooElec NESDR family
+### NooElec [NESDR](/reference/nesdr/) family
 
 Purpose-built SDRs with a **0.5 ppm TCXO**, aluminium enclosures and proper connectors:
 

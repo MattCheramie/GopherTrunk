@@ -2,7 +2,7 @@
 slug: hackrf
 title: HackRF One
 entry_type: hardware
-category: hardware
+category: sdr-devices
 description: HackRF One is an open-source wideband half-duplex software-defined radio transceiver covering 1 MHz to 6 GHz with up to 20 MHz of bandwidth and transmit capability.
 keywords: HackRF One, Great Scott Gadgets, wideband SDR, transceiver, 1 MHz 6 GHz, transmit
 aka: [HackRF, HackRF One]
@@ -13,7 +13,7 @@ infobox:
   - { label: Range, value: 1 MHz – 6 GHz }
   - { label: Bandwidth, value: up to ~20 MHz }
   - { label: TX, value: Yes (half-duplex) }
-see_also: [rtl-sdr, airspy, software-defined-radio]
+see_also: [rtl-sdr, airspy, airspy-hf-plus, bladerf, limesdr, plutosdr, sdrplay-rsp1a, zadig, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 related_reading:
@@ -46,7 +46,10 @@ irrelevant to receive-only scanning.
 ## Relevance to SDR
 
 For decoding trunked voice, HackRF is overkill; an [RTL-SDR](/reference/rtl-sdr/) or
-Airspy is usually the better fit, but GopherTrunk can use it as a receiver.
+[Airspy](/reference/airspy/) is usually the better fit, but GopherTrunk can use it as a
+receiver. Among transmit-capable peers the [bladeRF](/reference/bladerf/),
+[LimeSDR](/reference/limesdr/) and [PlutoSDR](/reference/plutosdr/) trade the HackRF's
+6 GHz reach for higher-bit ADCs and, in some cases, full-duplex operation.
 
 ## Setup (Linux)
 

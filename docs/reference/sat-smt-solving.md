@@ -4,7 +4,7 @@ title: SAT/SMT solving
 entry_type: term
 category: cryptography
 description: SAT and SMT solvers decide whether a set of logical or bit-vector constraints can be satisfied, and return a satisfying assignment; in cryptanalysis they recover unknown keys or tables as the unique solution to the constraints a corpus imposes.
-keywords: SAT solver, SMT solver, Z3, bit-vector, constraint satisfaction, CDCL, cryptanalysis, automated reasoning
+keywords: SAT solver, SMT solver, Z3, bit-vector, constraint satisfaction, CDCL, unsat core, cryptanalysis, automated reasoning
 aka: [SAT solving, SMT solving, Z3]
 autolink: true
 infobox:
@@ -12,7 +12,7 @@ infobox:
   - { label: SAT, value: Boolean satisfiability }
   - { label: SMT, value: "SAT + theories (e.g. bit-vectors)" }
   - { label: Engine, value: "CDCL search with clause learning" }
-see_also: [algebraic-attack, constraint-propagation, brute-force-attack, known-plaintext-attack, rc4-cipher]
+see_also: [algebraic-attack, constraint-propagation, brute-force-attack, known-plaintext-attack, differential-cryptanalysis]
 cite_urls:
   - https://en.wikipedia.org/wiki/Satisfiability_modulo_theories
   - https://en.wikipedia.org/wiki/Boolean_satisfiability_problem
@@ -47,6 +47,27 @@ problems — they can recover a 256-entry table that is hopeless to enumerate. T
 explodes; there a hand-written [constraint propagator](/reference/constraint-propagation/) can
 be faster. An `unsat` result is also informative: it proves the assumed structure cannot fit
 the data.
+
+## Variants
+
+The choice between SAT and SMT is really a choice of *encoding level*. A pure SAT solver wants
+everything reduced to Boolean clauses (CNF); a cipher's arithmetic must be "bit-blasted" into
+individual gates, which is expressive but verbose. An SMT solver keeps higher-level theories —
+bit-vectors for word arithmetic, arrays for lookup tables, linear arithmetic — so the same
+S-box lookup is one array constraint instead of thousands of clauses, and the solver's internal
+theory reasoners handle it more efficiently than raw bit-blasting. Practical tools such as Z3,
+CVC5, and CryptoMiniSat also support **incremental solving** (add constraints and re-solve
+without restarting) and **unsat cores** (a minimal subset of constraints that already conflict),
+both valuable when narrowing down which structural assumption is wrong.
+
+## In practice
+
+The solver is only as good as the model handed to it. A faithful encoding of the assumed cipher
+structure is essential — an over-constrained or subtly wrong model can return `unsat` for the
+wrong reason, appearing to rule out a structure that is actually correct. Analysts therefore
+validate the encoding on a known toy instance before trusting a `sat`/`unsat` verdict on the
+real problem, and treat `unsat` as "no solution *of this assumed form*," not "no solution at
+all."
 
 ## Relevance to SDR
 

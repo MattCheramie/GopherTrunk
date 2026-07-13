@@ -4,16 +4,17 @@ title: Obfuscation
 entry_type: term
 category: cryptography
 description: Obfuscation hides the meaning of data without a secret key, so anyone who learns the method can reverse it — security by obscurity, distinct from true encryption.
-keywords: obfuscation, security by obscurity, no key, reversible, scrambling, talker alias, encryption, cipher, Kerckhoffs
+keywords: obfuscation, security by obscurity, no key, reversible, scrambling, talker alias, encryption, cipher, Kerckhoffs, substitution table
 aka: [security by obscurity]
 autolink: true
 infobox:
   - { label: Goal, value: "Hide meaning, not keep a secret" }
   - { label: Key, value: "None" }
   - { label: Reversible by, value: "Anyone who knows the method" }
-see_also: [encryption, cryptography, cipher, cryptanalysis]
+see_also: [encryption, cryptography, cipher, cryptanalysis, kerckhoffs-principle, scrambling, s-box, linear-feedback-shift-register]
 cite_urls:
   - https://en.wikipedia.org/wiki/Obfuscation
+  - https://en.wikipedia.org/wiki/Security_through_obscurity
 ---
 
 **Obfuscation** hides the meaning of data without a secret key, so anyone who learns the
@@ -36,16 +37,37 @@ data safe.
 
 ## How it works
 
-Obfuscation transforms data by a fixed procedure — a permutation, a substitution table, a
-shift-register update — with no secret parameter. Because the only thing protecting it is
-that the method is undocumented, it fails the moment the method is recovered. This is the
-exact situation Kerckhoffs's principle warns against: a system whose security collapses once
-the algorithm is known offers no real confidentiality.
+Obfuscation transforms data by a fixed procedure — a permutation, a
+[substitution table](/reference/s-box/), a
+[shift-register](/reference/linear-feedback-shift-register/) update — with no secret
+parameter. Because the only thing protecting it is that the method is undocumented, it fails
+the moment the method is recovered. This is the exact situation
+[Kerckhoffs's principle](/reference/kerckhoffs-principle/) warns against: a system whose
+security collapses once the algorithm is known offers no real confidentiality.
 
 Working out an obfuscation scheme is a [cryptanalysis](/reference/cryptanalysis/) exercise,
 but a tractable one: with enough observed input/output, the transformation can be
 reconstructed because there is no key to search for. Once reconstructed, it is reversible
 forever by anyone.
+
+## Variants
+
+Obfuscation is not one technique but a spirit shared by many. It overlaps with, but is
+distinct from, related concepts: **[scrambling](/reference/scrambling/)/whitening** applies
+a known sequence to condition a signal (balance DC, aid clock recovery) with no intent to
+hide meaning; **encoding** (Base64, framing) makes data transportable, not secret; and
+**software obfuscation** deliberately tangles code to slow reverse engineering. What unites
+them is the absence of a secret key — the security, such as it is, lives entirely in the
+adversary's ignorance of the method, which is a temporary and brittle condition.
+
+## In practice
+
+Obfuscation has legitimate uses when it is *not* relied on for confidentiality: deterring
+casual inspection, discouraging tampering, or slowing an attacker who must still do real
+work. The failure mode is treating it as encryption — a design that "encrypts" by a fixed
+keyless transform provides no protection against a determined analyst, and history is full
+of proprietary schemes that fell the day they were published. The professional rule is
+blunt: if there is no key, assume the contents are public.
 
 ## Relevance to SDR
 
@@ -57,11 +79,12 @@ handling of it was developed clean-room in issue #773 — the transformation was
 solely from publicly observable over-the-air data, never from any third-party source, by
 hypothesizing candidate update rules (shift-register and round-function shaped models) and
 testing them until a 256-entry substitution table was recovered. Because there is no key,
-the alias can be displayed; truly encrypted voice ([RC4](/reference/rc4-cipher/) or AES) is
-a different matter entirely and stays opaque. Related keyless transforms include
-[scrambling](/reference/scrambling/) whitening, which balances a signal rather than hiding
-its meaning.
+the alias can be displayed; truly encrypted voice ([RC4](/reference/rc4-cipher/) or
+[AES](/reference/advanced-encryption-standard/)) is a different matter entirely and stays
+opaque. Related keyless transforms include [scrambling](/reference/scrambling/) whitening,
+which balances a signal rather than hiding its meaning.
 
 ## Sources
 
 [^wiki]: [Obfuscation](https://en.wikipedia.org/wiki/Obfuscation) — Wikipedia, for obfuscation as hiding meaning without a key and its relation to security by obscurity.
+[^sbo]: [Security through obscurity](https://en.wikipedia.org/wiki/Security_through_obscurity) — Wikipedia, on why a scheme whose security depends on a hidden method fails once the method is known.

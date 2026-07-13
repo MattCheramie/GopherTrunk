@@ -2,53 +2,112 @@
 slug: r820t-tuner
 title: R820T / R820T2 tuner
 entry_type: hardware
-category: hardware
-description: The Rafael Micro R820T and R820T2 are the most common tuner chips paired with the RTL2832U in RTL-SDR dongles, providing the RF front-end and mixer up to ~1.7 GHz.
-keywords: R820T, R820T2, R828D, Rafael Micro, tuner chip, RTL-SDR front end, mixer
-aka: [R820T, R820T2]
+category: sdr-devices
+description: "The Rafael Micro R820T/R820T2 are the most common tuner chips paired with the RTL2832U in RTL-SDR dongles, providing the RF front-end, mixer and local oscillator up to ~1.7 GHz."
+keywords: R820T, R820T2, R860, R828D, R828S, Rafael Micro, tuner chip, RTL-SDR front end, mixer, low-IF, silicon tuner
+aka: [R820T, R820T2, R860]
 autolink: true
 infobox:
   - { label: Type, value: RF tuner IC }
   - { label: Vendor, value: Rafael Micro }
-  - { label: Role, value: Front-end + mixer/LO }
-  - { label: Range, value: ~24 MHz – 1.7 GHz }
-see_also: [rtl-sdr, rtl2832u, superheterodyne-receiver, local-oscillator]
+  - { label: Role, value: LNA + mixer + LO (front-end) }
+  - { label: Range, value: ~24 MHz – 1.766 GHz }
+  - { label: Architecture, value: Low-IF silicon tuner }
+  - { label: Current name, value: R860 (R820T2 equivalent) }
+see_also: [rtl-sdr, rtl2832u, e4000-tuner, superheterodyne-receiver, local-oscillator, low-noise-amplifier, mixer-rf]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 related_reading:
   - { title: "RF Front End, Part 7: RTL-SDR / RTL2832U bring-up", url: /blog/deep-dives/rf-front-end-07-rtlsdr-rtl2832u-bringup/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR
+  - https://www.rtl-sdr.com/comparisons-r820t-r820t2-rtl-sdr-tuners/
 ---
 
-The **R820T** and improved **R820T2** (and related R828D) from Rafael Micro are the most
-common tuner chips paired with the [RTL2832U](/reference/rtl2832u/) in
-[RTL-SDR](/reference/rtl-sdr/) dongles. They provide the RF front-end and
-mixer/[local oscillator](/reference/local-oscillator/).[^wiki]
+The **R820T** and its improved successor the **R820T2** (with the closely related
+R828D and R828S) from **Rafael Micro** are the most common tuner chips paired with the
+[RTL2832U](/reference/rtl2832u/) in [RTL-SDR](/reference/rtl-sdr/) dongles. The tuner is
+the **RF front-end**: it selects the band you want, amplifies it, and mixes it down
+with a [local oscillator](/reference/local-oscillator/) to a low intermediate frequency
+the demodulator can digitise.[^wiki] Because it defines the frequency range and much of
+the sensitivity, the tuner — not the RTL2832U behind it — is what most distinguishes
+one RTL-SDR from another.
 
 <figure class="figure" markdown="0">
-<svg viewBox="0 0 460 100" role="img" aria-label="The tuner's role: RF in, mixed with a local oscillator, low-IF out to the ADC." xmlns="http://www.w3.org/2000/svg">
-  <g font-size="9" fill="currentColor" text-anchor="middle">
-    <text x="35" y="55">RF in</text>
-    <rect x="80" y="36" width="120" height="34" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.3"/><text x="140" y="50">R820T/R820T2</text><text x="140" y="62" font-size="7.5">LNA · mixer · LO</text>
-    <rect x="240" y="38" width="80" height="30" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="280" y="57">to ADC</text>
-    <g stroke="currentColor" stroke-width="1.1"><line x1="60" y1="53" x2="79" y2="53"/><line x1="200" y1="53" x2="239" y2="53"/></g>
+<svg viewBox="0 0 460 120" role="img" aria-label="Signal chain inside the R820T tuner: RF from the antenna passes through a low-noise amplifier, is mixed with a tunable local oscillator, filtered, and output as a low intermediate frequency to the RTL2832U ADC." xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="r82ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+  <g font-size="8.5" fill="currentColor" text-anchor="middle">
+    <text x="28" y="52">RF in</text>
+    <rect x="56" y="38" width="46" height="28" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="79" y="55">LNA</text>
+    <circle cx="150" cy="52" r="16" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="150" y="55">×</text><text x="150" y="30" font-size="7">mixer</text>
+    <rect x="196" y="38" width="52" height="28" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="222" y="52">IF filt.</text>
+    <text x="300" y="52">low-IF →</text>
+    <rect x="340" y="38" width="66" height="28" rx="4" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="373" y="55">RTL2832U</text>
+    <rect x="120" y="92" width="60" height="22" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="150" y="107" font-size="8">LO (PLL)</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.1">
+    <line x1="40" y1="52" x2="54" y2="52" marker-end="url(#r82ar)"/>
+    <line x1="102" y1="52" x2="132" y2="52" marker-end="url(#r82ar)"/>
+    <line x1="166" y1="52" x2="194" y2="52" marker-end="url(#r82ar)"/>
+    <line x1="248" y1="52" x2="272" y2="52" marker-end="url(#r82ar)"/>
+    <line x1="336" y1="52" x2="338" y2="52" marker-end="url(#r82ar)"/>
+    <line x1="150" y1="92" x2="150" y2="70" marker-end="url(#r82ar)"/>
   </g>
 </svg>
-<figcaption>The R820T/R820T2 is the most common RTL-SDR tuner chip — it amplifies and mixes RF down for the ADC.</figcaption>
+<figcaption>The R820T/R820T2 amplifies the antenna signal, mixes it with a tunable PLL local oscillator, and hands a low-IF output to the RTL2832U for digitising.</figcaption>
 </figure>
 
-## Overview
+## How it works
 
-The tuner amplifies and shifts the selected band down to a low frequency the RTL2832U
-can digitise, covering roughly 24 MHz–1.7 GHz. Tuner quality affects sensitivity and
-overload behaviour.
+The R820T family is a **low-IF silicon tuner** — a single chip that integrates the
+whole analog receiver front end that older designs built from discrete parts:
+
+- A **[low-noise amplifier](/reference/low-noise-amplifier/)** and tunable RF
+  pre-filtering set the sensitivity and reject far-off interference.
+- A **[mixer](/reference/mixer-rf/)** multiplies the incoming RF against a **local
+  oscillator** generated by an on-chip PLL, translating the band of interest down to a
+  fixed **low intermediate frequency** (around 3.57 MHz for the RTL-SDR use case) —
+  a [superheterodyne](/reference/superheterodyne-receiver/) architecture.
+- Programmable **IF gain and filtering** condition that low-IF signal before it leaves
+  the chip for the [RTL2832U](/reference/rtl2832u/)'s ADC.
+
+The RTL2832U talks to the tuner over an I²C bus, commanding it to a target frequency
+and gain. The tuner covers roughly **24 MHz to 1.766 GHz** continuously. Its noise
+figure, the purity of its LO ([phase noise](/reference/phase-noise/)), and how quickly
+it overloads under strong signals are what determine real-world performance far more
+than the demodulator behind it. The tuner needs a moment to PLL-lock after a large
+frequency jump, and above ~1.5 GHz it runs warm and loses some sensitivity.
+
+## Variants
+
+- **R820T** — the original SDR-era workhorse (2012), a repurposed DVB-T/T2 tuner.
+- **R820T2** — a running production improvement with better sensitivity, a smaller DC
+  spike and slightly lower noise across the VHF/UHF range scanners care about; it became
+  the de-facto standard.[^r820t]
+- **R860** — the current-production part, functionally an R820T2 (Rafael renamed the
+  die after the R820T2 was formally discontinued).
+- **R828D** — a three-input variant whose extra RF ports let a board add a built-in HF
+  upconverter and switchable notch filters (used in the RTL-SDR Blog V4).
+- **R828S** — a two-input cost-reduced sibling (used in the V4 Lite).
+
+All share the same ~24 MHz–1.766 GHz reach and low-IF architecture. The alternative
+Elonics [E4000](/reference/e4000-tuner/) reaches higher (past 2 GHz) but is noisier and
+long discontinued, which is why the R820T2/R860 dominates.
 
 ## Relevance to SDR
 
-The tuner sets the dongle's frequency range and much of its noise performance, important
-when chasing weak signals.
+The tuner is the single component that most shapes an RTL-SDR's usefulness: it sets the
+**frequency range**, the **noise floor**, and the **overload behaviour** near strong
+transmitters — everything that matters when chasing a weak trunking control channel. An
+R820T2/R860-class tuner is the recommended choice for a general scanner. From
+GopherTrunk's side the tuner is transparent: the same pure-Go driver that speaks to the
+RTL2832U sets tuner frequency and gain through it, and the decode chain sees only the
+resulting IQ. Getting the [gain](/learn/rf-sdr/gain-and-agc/) right on the R820T — high
+enough to lift the signal, low enough to avoid front-end overload and
+[intermodulation](/reference/intermodulation/) — is one of the most consequential
+tuning choices for reliable trunk decoding.
 
 ## Sources
 
-[^wiki]: [RTL-SDR](https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR) — Wikipedia, on the R820T/R820T2 tuners commonly paired with the RTL2832U.
+[^wiki]: [RTL-SDR](https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR) — Wikipedia, on the R820T/R820T2 silicon tuners commonly paired with the RTL2832U.
+[^r820t]: [Comparisons between the R820T and R820T2 tuners](https://www.rtl-sdr.com/comparisons-r820t-r820t2-rtl-sdr-tuners/) — rtl-sdr.com, on tuner sensitivity, DC spike and overload behaviour across the R820T family.

@@ -4,20 +4,26 @@ title: Baseband
 entry_type: term
 category: sdr-dsp
 description: Baseband is a signal centred at (or near) zero frequency, after a receiver has mixed the carrier away. SDRs deliver IQ samples at baseband for software to process.
-keywords: baseband, zero-IF, complex baseband, IQ, downconversion, DC
+keywords: baseband, zero-IF, complex baseband, IQ, downconversion, DC, passband, negative frequency
 aka: [baseband, "complex baseband"]
 autolink: true
-see_also: [iq-data, intermediate-frequency, local-oscillator, dc-offset]
+infobox:
+  - { label: Type, value: Signal frequency band }
+  - { label: Centre, value: At or near 0 Hz }
+  - { label: SDR form, value: Complex (IQ) baseband }
+see_also: [iq-data, intermediate-frequency, local-oscillator, dc-offset, direct-conversion-receiver, iq-imbalance, zero-if]
 related_lessons:
   - { title: "IQ data & complex signals", url: /learn/rf-sdr/iq-data/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Baseband
+  - https://en.wikipedia.org/wiki/In-phase_and_quadrature_components
 ---
 
 **Baseband** is a signal centred at (or near) **zero frequency**, after the carrier has
 been mixed away.[^wiki] An SDR delivers **complex baseband** [IQ samples](/reference/iq-data/) —
 the channel shifted down to 0 Hz — which is the natural form for software to filter and
-demodulate.
+demodulate. The term contrasts with *passband*, where the same information rides on a carrier
+somewhere up the spectrum.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A signal at a high carrier frequency shifted down to sit centred on zero hertz at baseband." xmlns="http://www.w3.org/2000/svg">
@@ -32,12 +38,43 @@ demodulate.
 <figcaption>Baseband is the channel shifted down to 0 Hz; SDRs output complex (IQ) baseband samples.</figcaption>
 </figure>
 
-## Overview
+## How it works
 
-Working at complex baseband lets software represent both positive and negative
-frequencies around the centre (thanks to [IQ](/reference/iq-data/)), so the whole
-captured band is available for [filtering](/reference/digital-filter/) and demodulation.
+A receiver mixes the wanted channel down until its centre sits at 0 Hz. A *real* baseband signal
+(one number per sample) would fold the spectrum onto itself — a component just above 0 Hz would
+be indistinguishable from one just below. Radios avoid this by using **complex baseband**: two
+sampled streams, in-phase (I) and quadrature (Q), that together represent both positive and
+negative frequencies around the centre.[^iq] With I and Q, a signal 10 kHz above the tuned
+frequency and one 10 kHz below occupy genuinely different parts of the complex spectrum, so no
+information is lost. This is why an SDR's native output is a stream of complex samples rather than
+a single audio-like waveform.
+
+Working at baseband is a matter of convenience and rate. Once a channel is at 0 Hz, only its own
+bandwidth needs to be represented, so it can be [decimated](/reference/decimation/) to a low
+sample rate and processed cheaply. All the receiver's remaining
+[filtering](/reference/digital-filter/) and demodulation happen here.
+
+## In practice
+
+Producing baseband directly in the analog front end — mixing RF straight to 0 Hz — is
+**[direct conversion](/reference/direct-conversion-receiver/)** (zero-IF). It is simple and
+cheap, but it puts the sensitive part of the spectrum right where two hardware artefacts live: a
+**[DC offset](/reference/dc-offset/)** spike from LO leakage at the exact centre, and
+**[IQ imbalance](/reference/iq-imbalance/)** — gain or phase mismatch between the I and Q paths
+that leaks a mirror image of each signal across 0 Hz. Both are corrected in software or sidestepped
+by tuning slightly off-centre. Architectures that mix to a small
+[low-IF](/reference/low-if/) instead keep the wanted channel just off 0 Hz to dodge the DC spike,
+then shift it the last step digitally.
+
+## Relevance to SDR
+
+Baseband is where nearly all SDR software actually operates. GopherTrunk's digital
+down-converter translates each control or voice channel to complex baseband, filters and
+decimates it to the per-protocol channel rate, and hands that stream to the demodulator. Reading
+a signal as [IQ](/reference/iq-data/) at baseband — with its symmetric positive and negative
+frequency axes — is the foundation every later stage builds on.
 
 ## Sources
 
-[^wiki]: [Baseband](https://en.wikipedia.org/wiki/Baseband) — Wikipedia, on signals centred near zero frequency.
+[^wiki]: [Baseband](https://en.wikipedia.org/wiki/Baseband) — Wikipedia, on signals centred near zero frequency and the passband contrast.
+[^iq]: [In-phase and quadrature components](https://en.wikipedia.org/wiki/In-phase_and_quadrature_components) — Wikipedia, on the I/Q representation that lets complex baseband carry positive and negative frequencies.
