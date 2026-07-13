@@ -50,6 +50,15 @@ the demodulated signal-to-noise ratio, because FM's noise-quieting advantage gro
 deviation — this is the classic bandwidth-for-quality bargain that makes wideband FM sound so
 clean.
 
+The improvement is not free of a threshold, though. FM's noise advantage only appears once the
+carrier is strong enough for the demodulator to stay locked; below the **FM threshold** (very
+roughly 10 dB of carrier-to-noise) the discriminator produces sharp clicks and the signal
+collapses much faster than an AM signal would. A higher-deviation, wider-bandwidth signal admits
+more noise and so reaches that threshold at a higher carrier level — one more reason deviation is
+a balance rather than a "more is always better" setting. Related is the **capture effect**: when
+two FM signals overlap, the discriminator locks to the stronger one and largely ignores the
+weaker, an effect that also strengthens with deviation.
+
 Systems are described as **narrowband** or **wideband** purely by their deviation. A narrowband
 land-mobile channel might allow only ±2.5 kHz of deviation; classic wideband voice used ±5 kHz;
 [broadcast FM](/reference/broadcast-fm/) uses ±75 kHz. The receiver's channel filter and
@@ -74,6 +83,15 @@ Regulators specify a maximum deviation per channel plan, and transmitters use a 
 to keep peaks inside it. When narrowbanding forced many land-mobile users from 25 kHz to 12.5 kHz
 channels, the allowed deviation was cut roughly in half, which is why older wideband radios sound
 over-deviated (distorted, loud) when heard on a narrowband receiver, and vice versa.
+
+Deviation is also directly measurable, which makes it a handy diagnostic. On a calibrated
+receiver or [spectrum analyzer](/reference/spectrum-analyzer/) an operator can read peak deviation
+to confirm a transmitter is neither under-deviated (weak, quiet audio, poor noise performance) nor
+over-deviated (distorted, splattering into neighbors). For the digital FSK-family carriers a
+scanner decodes, the "deviation" is really the spacing of the discrete frequency states, and it is
+fixed by the standard rather than by an audio level — so a symbol-level discriminator expects the
+states to land at their nominal offsets, and a transmitter whose deviation has drifted shows up as
+a distorted symbol constellation and a rising error rate.
 
 ## Sources
 

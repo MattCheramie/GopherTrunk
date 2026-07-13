@@ -75,6 +75,14 @@ the streak's width and texture, and watch a trunked system's control channel sit
 while voice channels blink on and off across the band. It is also the fastest way to spot
 interference, birdies, and images.
 
+A few artefacts are worth recognising because they are display features, not signals. A DC spike
+draws a permanent bright line at the exact center of a zero-IF receiver's span, from residual
+[DC offset](/reference/dc-offset/) rather than a real carrier. An IQ image ghosts a real signal to
+the mirror side of center and slides the opposite way when you retune. "Birdies" are internal
+oscillator harmonics that stay fixed on the display regardless of antenna. And a strong nearby
+transmitter can smear across the whole waterfall when the front end overloads. Learning to
+discount these keeps a waterfall from sending an operator chasing phantom channels.
+
 ## Relevance to SDR
 
 Waterfall displays are ubiquitous in SDR software — [GQRX](/reference/gqrx/),

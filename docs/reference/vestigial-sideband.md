@@ -84,6 +84,20 @@ interest here is conceptual, as the middle point on the DSB → VSB → SSB band
 filtering spectrum, and as a reminder that practical modulation choices are driven as much by
 realizable filters as by theory.
 
+## In practice
+
+Analog NTSC video fit a full-detail luminance signal, a color subcarrier, and an
+FM-modulated audio carrier into a single 6 MHz channel precisely because the video used
+VSB rather than double-sideband — DSB video would have needed roughly 8 MHz for the picture
+alone. The digital 8VSB successor keeps the vestigial shape but is notoriously demanding on
+the receiver: terrestrial multipath produces long delayed echoes that smear the eight-level
+symbols, so an 8VSB demodulator leans on a long adaptive
+[equalizer](/reference/decision-feedback-equalizer/) and a trellis decoder to recover the
+data, and the small pilot at the vestigial carrier frequency exists specifically to give the
+receiver a robust phase reference to lock onto before the equalizer converges. That
+sensitivity to multipath was a recurring complaint against 8VSB, and it is one reason
+[ATSC 3.0](/reference/atsc-3/) abandoned VSB entirely in favor of OFDM.
+
 ## Sources
 
 [^wiki]: [Vestigial sideband](https://en.wikipedia.org/wiki/Vestigial_sideband) — Wikipedia, for the partial-sideband definition, Nyquist slope, and TV/8VSB applications.

@@ -55,6 +55,15 @@ ratio (harder on the transmit amplifier). **High α** wastes spectrum but yields
 eye, and relaxed timing tolerance. Because the shaping is split as a root-raised-cosine at both ends, the
 transmitter and receiver must use the **same** α for the composite to remain a proper Nyquist pulse.
 
+There is a matching story in the time domain. A low-α pulse is a long, slowly decaying sinc-like waveform
+with prominent ringing before and after its peak; a high-α pulse is compact, dying away within a couple of
+symbol periods. Those tails are exactly the energy that becomes
+[intersymbol interference](/reference/intersymbol-interference/) if the receiver samples even slightly off
+the ideal instant, which is why low-α systems demand tight clock recovery. The long tails also make the
+transmitted envelope swing more, raising the peak-to-average power ratio and forcing the power amplifier to
+back off from saturation — a real cost in battery-powered and satellite links where amplifier efficiency
+matters.
+
 ## Relevance to SDR
 
 Every digitally modulated signal an SDR touches has a defined roll-off, and matching it is part of
@@ -72,6 +81,13 @@ Common values cluster low for spectrum-tight land-mobile systems (α around 0.2)
 that prize simple filtering (older modems used α = 0.35 or more). Halving α saves only a fraction of
 bandwidth but noticeably tightens the timing budget, which is why very small α is reserved for links that
 can afford precise clock recovery.
+
+A related subtlety is filter length. A root-raised-cosine filter is theoretically infinite, so an
+implementation truncates it to a finite span (commonly ±4 to ±8 symbols) and applies a window. A small
+α needs a *longer* truncation to capture its slowly decaying tails without spectral artifacts, so the
+bandwidth saving of low α is partly paid back in a longer, more expensive filter. GopherTrunk builds its
+RRC matched filters at a fixed number of taps per symbol chosen to hold the truncation error well below
+the noise floor for each protocol's α, so the theoretical roll-off and the realized one agree closely.
 
 ## Sources
 

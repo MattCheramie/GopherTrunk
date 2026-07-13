@@ -71,6 +71,20 @@ Beyond finding the packet, the peak's exact sample index gives a coarse **timing
 the complex value at the peak carries the carrier phase and frequency offset — useful seeds for
 [clock recovery](/reference/clock-recovery/) and carrier correction that follow.
 
+## In practice
+
+Correlation is computed one of two ways. A time-domain sliding correlator is cheap for a short
+preamble and can run continuously, one multiply-accumulate window per sample. For a long preamble
+it is more efficient to correlate in the **frequency domain** — an FFT-based fast convolution
+computes the whole correlation for a block at once, trading latency for far fewer operations, the
+same overlap-save trick used for long FIR filters. Either way, a carrier frequency offset is the
+practical enemy: a large offset rotates the samples during the correlation window and shrinks the
+peak, so wideband systems either search a bank of frequency hypotheses in parallel or use a
+**differential** correlation (correlating sample-to-sample phase changes rather than absolute
+phase) that is inherently offset-tolerant at some SNR cost. The preamble length is chosen to
+balance these forces: longer gives a taller, sharper peak and better estimates, but costs airtime
+and widens the frequency-search burden.
+
 ## Relevance to SDR
 
 Preamble correlation is how nearly every packet radio acquires a burst. Wi-Fi correlates its
@@ -79,7 +93,11 @@ correlates chirp symbols, and LTE/5G correlate Zadoff–Chu synchronization sign
 digital voice the same mechanism finds the [frame-sync](/reference/frame-synchronization/)
 pattern that marks each frame. GopherTrunk relies on correlation-style sync detection inside its
 protocol decoders: matching the known P25/DMR/NXDN sync sequence against the demodulated symbols
-is what triggers frame alignment and lets the parsers lock onto a control or voice channel.
+is what triggers frame alignment and lets the parsers lock onto a control or voice channel. Because
+the sync words in these land-mobile formats are short and the symbols are already timing-recovered,
+the correlation runs in the time domain over the symbol stream rather than through an FFT, and
+tolerating a few symbol errors lets the detector hold sync through brief fades instead of dropping
+the channel on every glitch.
 
 ## Sources
 

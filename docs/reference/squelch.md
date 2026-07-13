@@ -77,7 +77,11 @@ rejected; too loose and the channel opens on noise. The useful reference is the
 the noise floor so that anything it passes is actually intelligible. Digital voice systems fold
 this decision into the modem — a P25 or DMR receiver "opens" only when it detects a valid
 [frame sync](/reference/frame-synchronization/) pattern and produces good symbols, which is a far
-more selective test than raw energy.
+more selective test than raw energy. That sync-based gate is why a digital scanner stays silent on
+a strong analog interferer sitting on the channel: energy is present, but the expected digital
+structure is not, so the squelch correctly stays closed. It is also why digital squelch tends to
+be more nearly all-or-nothing than analog carrier squelch — either the frame decodes or it does
+not, with little of the marginal, noisy-but-audible zone that analog FM has near threshold.
 
 ## Relevance to SDR
 

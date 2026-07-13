@@ -4,7 +4,7 @@ title: DMR Tier III
 entry_type: protocol
 category: land-mobile-trunking
 description: DMR Tier III is the trunked tier of the ETSI DMR standard, adding a control channel and signalling (CSBK) so many talkgroups share a pool of two-slot TDMA channels.
-keywords: DMR Tier III, DMR Tier 3, trunked DMR, Capacity Plus, control channel, CSBK, talkgroup
+keywords: DMR Tier III, DMR Tier 3, trunked DMR, Capacity Plus, Connect Plus, control channel, CSBK, talkgroup, color code
 aka: [DMR Tier III, DMR Tier 3]
 autolink: true
 infobox:
@@ -16,7 +16,7 @@ infobox:
   - { label: Signalling, value: CSBK (control signalling block) }
   - { label: Vocoder, value: AMBE+2 }
   - { label: GopherTrunk support, value: Decoded }
-see_also: [dmr, dmr-tier-2, trunked-radio, control-channel, talkgroup, channel-grant, tdma]
+see_also: [dmr, dmr-tier-2, capacity-plus, connect-plus, color-code, csbk, trunked-radio, control-channel, talkgroup, channel-grant, tdma]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
@@ -24,12 +24,13 @@ related_reading:
   - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Digital_mobile_radio
+  - https://www.dmrassociation.org/
 ---
 
 **DMR Tier III** is the **trunked** tier of the [DMR](/reference/dmr/) standard. It
 adds a [control channel](/reference/control-channel/) and trunking signalling so many
 [talkgroups](/reference/talkgroup/) can share a pool of two-slot
-[TDMA](/reference/tdma/) channels, assigned on demand.[^wiki]
+[TDMA](/reference/tdma/) channels, assigned on demand.[^wiki][^dmra]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 150" role="img" aria-label="A DMR Tier III control channel assigning two-slot TDMA traffic channels from a pool." xmlns="http://www.w3.org/2000/svg">
@@ -46,36 +47,53 @@ adds a [control channel](/reference/control-channel/) and trunking signalling so
 
 Where [Tier II](/reference/dmr-tier-2/) is conventional, Tier III is a full
 [trunked-radio](/reference/trunked-radio/) system. Radios register
-([affiliate](/reference/affiliation/)) and request calls over the control channel,
-which issues [channel grants](/reference/channel-grant/) pointing them to a traffic
-channel and slot. (Motorola's proprietary Capacity Plus offers similar trunking
-outside the strict Tier III standard.)
+([affiliate](/reference/affiliation/)) and request calls over a dedicated control
+channel, which issues [channel grants](/reference/channel-grant/) pointing them to a
+traffic channel and slot. Tier III (TS 102 361-4) is a standardised, multi-vendor
+trunking layer; Motorola's [Capacity Plus](/reference/capacity-plus/) and Hytera's
+[Connect Plus](/reference/connect-plus/) are proprietary alternatives that trunk DMR
+outside the strict Tier III specification, so a decoder has to recognise which
+signalling dialect a given system speaks.
 
 ## Technical characteristics
 
 | Property | Value |
 |----------|-------|
 | Access | Two-slot TDMA + dedicated control channel |
-| Signalling | CSBK control messages |
+| Signalling | [CSBK](/reference/csbk/) control messages |
 | Channel | 12.5 kHz |
+| Modulation | [4FSK](/reference/four-fsk/), 9600 bps |
 | Vocoder | [AMBE+2](/reference/ambe-plus-2/) |
+| Squelch / identity | [color code](/reference/color-code/), talkgroup, source ID |
+
+The control channel continuously broadcasts [CSBK](/reference/csbk/) messages —
+system announcements, registration acknowledgements, and channel grants — and the
+same CSBK format also carries short data and SMS-style messaging. A radio idles on
+the control channel, requests a call, and is directed to a free traffic
+channel/slot; when the call ends the resources return to the pool.
 
 ## History
 
-Tier III trunking was standardised by [ETSI](/reference/etsi/) to give DMR a
-multi-site, high-capacity option competing with P25 and TETRA in the commercial
-market.[^wiki]
+Tier III trunking was standardised by [ETSI](/reference/etsi/) (TS 102 361-4) to give
+DMR a multi-site, high-capacity option competing with [P25](/reference/project-25/)
+and [TETRA](/reference/tetra/) in the commercial market at lower equipment cost.[^wiki][^dmra]
 
 ## Deployment
 
-Used by larger commercial, utility, and transport operators needing trunked capacity
-at lower cost than [TETRA](/reference/tetra/) or [P25](/reference/project-25/).
+Used by larger commercial, utility, transport, and campus operators needing trunked
+capacity at lower cost than TETRA or P25. Some networks instead run vendor trunking
+([Capacity Plus](/reference/capacity-plus/), [Connect Plus](/reference/connect-plus/))
+where the vendor's own infrastructure keeps the deployment within one ecosystem.
 
 ## Decoding it with GopherTrunk
 
-GopherTrunk locks the Tier III control channel, follows CSBK channel grants to the
-assigned channel/slot, and decodes the voice. See [Status](/status.html).
+GopherTrunk locks the Tier III control channel, decodes the
+[CSBK](/reference/csbk/) [channel grants](/reference/channel-grant/), follows them to
+the assigned channel and slot, and decodes the [AMBE+2](/reference/ambe-plus-2/)
+voice — reading the [color code](/reference/color-code/) and talkgroup per call. It
+also handles the common vendor trunking dialects. See [Status](/status.html).
 
 ## Sources
 
 [^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the ETSI DMR tiers, including the trunked Tier III with its control channel and CSBK signalling.
+[^dmra]: [DMR Association](https://www.dmrassociation.org/) — the DMR manufacturer association, for the TS 102 361-4 trunking standard and Tier III's relationship to vendor trunking modes.

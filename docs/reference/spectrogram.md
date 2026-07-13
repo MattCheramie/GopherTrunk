@@ -52,7 +52,8 @@ The spectrogram is the squared magnitude of the STFT. The procedure is:
    suppression.
 3. **Transform** each windowed frame with an FFT and take the magnitude squared to get its power
    spectrum (a [PSD](/reference/power-spectral-density/) estimate for that instant).
-4. **Stack** the spectra along the time axis and map power to color.
+4. **Stack** the spectra along the time axis and map power to color, typically after converting
+   to a logarithmic (dB) scale so that both strong and weak features are visible in one image.
 
 The defining constraint is the **time–frequency resolution trade-off**. A long window gives fine
 frequency resolution (narrow bins) but blurs time, smearing brief events across a wide interval; a
@@ -69,6 +70,15 @@ satellite pass, or the harmonics of interference. Because the eye integrates ove
 signal a few dB below the instantaneous noise can still be seen as a faint but persistent line —
 the visual analog of coherent averaging.
 
+Reading a spectrogram is partly pattern recognition. Bandwidth appears directly as the vertical
+thickness of a trace; a steady carrier is a thin horizontal line, an FM signal breathes vertically
+with its modulation, and a wideband digital signal fills a fixed rectangular band. Timing appears
+horizontally: the regular gaps of a TDMA system, the burst cadence of a paging channel, or the
+brief flash of a data packet. Frequency-versus-time slopes reveal chirps and Doppler. With
+practice, many signals can be identified from their spectrogram signature before any decoder is
+attached — which is why signal-identification references catalog transmissions by their
+spectrogram appearance.
+
 ## Relevance to SDR
 
 The spectrogram is the workhorse display of software radio. In SDR applications its live,
@@ -78,7 +88,10 @@ spectrogram reveals control-channel carriers, simulcast timing, and interference
 GopherTrunk is a decoder rather than a GUI SDR, so it does not render a live spectrogram itself,
 but the same short-time FFT analysis underlies the channel-power measurements it uses to detect
 activity, and captured [I/Q](/reference/iq-data/) files are routinely inspected in a spectrogram
-tool when diagnosing why a signal did or did not decode.
+tool when diagnosing why a signal did or did not decode. A spectrogram of a problem capture often
+settles the question quickly — showing at a glance whether the expected carrier was even present,
+whether it was clipped by overload, or whether an adjacent signal was interfering during the
+window that failed to decode.
 
 ## Sources
 

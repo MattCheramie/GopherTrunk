@@ -81,6 +81,17 @@ everything smart has stopped. Radios and monitors can often tell which rung a sy
 from what the control channel is (or is not) doing and from the identifiers the site
 transmits.
 
+Failsoft is intentionally the least-loved but most-tested part of a system's design. It has
+to work with no controller intelligence behind it, so its rules are static and its channel
+plan is fixed in the radios and repeaters ahead of time. That simplicity is the point:
+when the smart infrastructure is gone, a mode that depends on more of that same
+infrastructure would be worthless. The cost is everything trunking normally buys —
+efficient channel sharing, [private calls](/reference/private-call/), patches, wide-area
+reach — all of which vanish until the controller returns. Well-run agencies rehearse
+operating in failsoft precisely because it is the mode they will be in on the worst day, and
+recognizing it quickly, both for users and for anyone monitoring, is what keeps that day
+manageable.
+
 ## Relevance to SDR
 
 Failsoft matters to a monitor because a system in failsoft no longer behaves like a

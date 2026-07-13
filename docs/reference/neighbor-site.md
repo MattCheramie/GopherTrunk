@@ -64,6 +64,15 @@ and 7; site 7 names 3, 8 and 9; and so on — reconstructs the whole multi-site 
 all of its control-channel frequencies. This is invaluable for anyone mapping a system,
 and it is exactly the data a mobile radio consumes to stay connected while moving.
 
+The frequency of these broadcasts is a design balance. Advertise neighbors too rarely and a
+fast-moving unit can reach the edge of coverage before it has learned where to go next,
+producing dropouts; advertise them too often and the airtime spent on housekeeping crowds
+out grants and other useful signalling. Systems therefore interleave neighbor messages with
+the rest of the control-channel traffic at a modest rate, enough that a radio parking on a
+site accumulates the full neighbor picture within a short window. For a monitor this means a
+site's neighbor list is not learned instantly on tuning; it fills in over the first several
+seconds as the individual adjacent-site messages come around.
+
 There is a limit to how much of the network any one site reveals. A neighbor broadcast
 usually lists only the *immediately adjacent* sites, not the entire system, and a large
 network is advertised in fragments — each site knows its own neighborhood. Reconstructing

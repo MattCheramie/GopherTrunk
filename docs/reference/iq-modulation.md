@@ -67,6 +67,14 @@ both). The receiver reverses the process — a
 [quadrature demodulator](/reference/quadrature-demodulation/) mixes the incoming RF against
 the same cosine and sine and low-pass filters to recover I and Q.
 
+Mathematically the (I, Q) pair is a **complex number** I + jQ, and the modulated RF is the
+real part of (I + jQ)·e^{jωt}. Treating baseband as complex is what makes the whole framework
+so powerful: a positive baseband frequency ends up above the carrier and a negative one below
+it, so I/Q can distinguish the two sides of the carrier that a single real signal cannot. That
+distinction is the entire reason the constellation is two-dimensional — the horizontal I axis
+and vertical Q axis are genuinely independent degrees of freedom, doubling the information a
+carrier can hold at a given instant compared with amplitude-only or phase-only schemes.
+
 ## Relevance to SDR
 
 IQ modulation is the reason software radio exists in the form it does. An SDR front end is
@@ -86,6 +94,14 @@ an IQ mixer can separate signal energy above the local oscillator from energy be
 something a single real mixer cannot do. That lets [zero-IF](/reference/zero-if/) and low-IF
 receivers place the LO in or near the band of interest without the mirror-image problem that
 forces classic superheterodyne designs to use bulky image filters.
+
+The same orthogonality is what lets one carrier carry two data streams. Because the cosine and
+sine branches do not interfere, a modulator can send one bit stream on I and an independent one
+on Q — the definition of QPSK and the general principle behind every QAM constellation. It also
+means the receiver can, in software, rotate the whole constellation (multiply the complex
+samples by e^{jθ}) to correct a carrier phase offset, or spin it steadily to correct a frequency
+offset, using nothing but complex multiplication. These are the exact operations GopherTrunk's
+carrier-recovery loops perform to lock onto a signal before slicing symbols.
 
 ## Sources
 

@@ -73,6 +73,15 @@ carrier-to-noise ratio is a ratio of a signal's integrated power to the noise de
 bandwidth. A spectrum analyzer's "noise marker" reports dBm/Hz precisely so results are
 independent of its RBW setting.
 
+A recurring confusion is between the PSD of noise and the PSD of a discrete tone. A continuous
+noise process genuinely has a density — its power spreads over frequency, so halving the RBW halves
+the noise power in each bin, and the noise floor on a display *drops* as you narrow the RBW. A pure
+sinusoid, by contrast, carries all its power in an infinitesimal bandwidth, so its bin value does
+*not* change with RBW; it sits at a fixed level while the noise around it sinks. This is exactly
+why narrowing the resolution bandwidth digs weak carriers out of noise, and why "processing gain"
+in an FFT is really just the RBW reduction that comes from a longer transform. Reporting a signal
+as a power (dBm) and noise as a density (dBm/Hz) keeps the two straight.
+
 ## Relevance to SDR
 
 Every SDR spectrum view is a PSD estimate under the hood — the [waterfall](/reference/waterfall-display/)

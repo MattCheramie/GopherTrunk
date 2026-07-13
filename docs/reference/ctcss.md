@@ -53,6 +53,14 @@ channel — it only manages who *your* radio bothers you with. It is also widely
 access tone**: a repeater keys up only for users transmitting the correct CTCSS, rejecting interference
 and distant co-channel signals.
 
+To avoid a burst of noise when a transmission ends, many radios send a **reverse burst** (also
+called a turn-off phase shift): just before unkeying, the transmitter shifts the CTCSS tone's
+phase by about 120-180°, which the receiver detects as a loss of valid tone and uses to close its
+squelch a fraction of a second early, muting the "squelch tail" before the carrier actually drops.
+This is the analog-tone equivalent of the turn-off codeword that [DCS](/reference/dcs/) uses for
+the same purpose. The standardized tone set is chosen so no tone is a harmonic of another, which
+keeps a strong low tone from falsely triggering a detector tuned to a higher one.
+
 ## Relevance to SDR
 
 For a scanner, CTCSS is a useful sorting and identification tool. A software receiver that FM-demodulates
@@ -64,6 +72,18 @@ CTCSS belongs to the analog FM world; GopherTrunk targets digital trunking, wher
 handled at the protocol layer by talkgroup IDs rather than sub-audible tones, so it does not decode CTCSS
 in its trunking path — but the same tone-detection technique applies when working with conventional FM
 audio.
+
+## In practice
+
+Because CTCSS tones are so close together (100.0 vs 103.5 Hz, for instance) a software detector needs
+good frequency resolution, which in turn needs a fair-length observation window — a fraction of a
+second of audio. That is not a problem for a continuous tone but it does mean a decoder cannot report
+the tone instantly at the start of a transmission. A common implementation runs several
+[Goertzel](/reference/goertzel-algorithm/) detectors, one per candidate tone, and declares a match
+when one clearly dominates for long enough to rule out a transient. Note that CTCSS is orthogonal to
+squelch quality: it only decides *whether* to unmute, so a receiver still needs a good
+[signal-to-noise ratio](/reference/signal-to-noise-ratio/) for the audio itself to be usable once the
+tone gate opens.
 
 ## Sources
 

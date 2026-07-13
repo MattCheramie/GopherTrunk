@@ -72,6 +72,22 @@ channel noise so the magnitudes mean the same thing across different SNRs.
   gain.
 - **Cost** — the demapper must expose the metric and the decoder must handle real-valued inputs,
   so datapaths widen; the ~2 dB payoff is almost always worth it.
+- **Erasures** — a middle ground between hard and soft marks a bit as "unknown" rather than
+  guessing, which some algebraic block decoders can exploit (correcting twice as many erasures as
+  errors). It captures part of the benefit of soft decision with hard-decision-like simplicity.
+
+Where does the ~2 dB come from intuitively? Hard slicing discards information at exactly the point
+where it is most valuable — for bits near the decision boundary, which are the ones most likely to
+be wrong. A hard decoder is then forced to treat a bit that was "51% a one" identically to one
+that was "99% a one," and it makes its worst mistakes on precisely the bits the demapper already
+knew were shaky. Soft decision keeps that warning attached to each bit, so the decoder spends its
+error-correcting power where it is needed and trusts the confident bits, which is why the gain
+shows up as a shift of the whole bit-error-rate curve rather than a change in its shape.
+
+Producing good soft values also depends on the stages before the decoder. The demapper needs a
+reasonable estimate of the noise level to scale the metrics, and any residual carrier or timing
+error skews them, so soft decision rewards a clean front end more than hard decision does — the
+extra information is only useful if it is trustworthy.
 
 ## Relevance to SDR
 

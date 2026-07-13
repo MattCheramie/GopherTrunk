@@ -67,6 +67,16 @@ consoles) stay consistent, which means a monitor can reconstruct the grouping to
 Patches are common during large incidents, mutual-aid operations, and events that pull
 together agencies that normally run on separate talkgroups.
 
+A patch can also span audio types and even systems. A console may patch a trunked
+talkgroup to a [conventional](/reference/conventional-radio/) channel, to a telephone
+line, or to a talkgroup on a neighboring system, acting as a bridge so users who could
+never otherwise hear each other share one net. When that happens, the identity a monitor
+sees on the trunked side is only part of the conversation — the other participants live
+outside the trunked signalling entirely. This is why patches are as much an
+interoperability tool as a convenience: during a multi-agency incident, a single patch can
+be the only thing letting fire, police, and EMS on three different radio systems talk on
+one virtual channel.
+
 A further wrinkle is **dynamic regrouping**, a related console power in which the system
 temporarily reassigns radios to a new group — sometimes forcing selected units onto a
 special talkgroup and even locking their selector so they cannot leave it. Where a patch

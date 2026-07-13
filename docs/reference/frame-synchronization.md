@@ -70,6 +70,23 @@ The sync word resolves this too — the pattern only correlates in the correct r
 [differential decoding](/reference/differential-decoding/) or testing all rotations recovers the
 right one.
 
+## In practice
+
+Frame synchronization is one layer of a synchronization stack that must be established in order.
+Carrier and symbol timing recovery come first (you cannot match a pattern until you have clean
+symbols); frame sync aligns the frame; and higher layers may then perform block or superframe
+synchronization for interleaving and encryption that span multiple frames. Design choices trade
+robustness against overhead:
+
+- **Sync-word length** — longer words have a lower false-alarm probability and tolerate more bit
+  errors, but every bit spent on sync is a bit not spent on payload, so systems pick a length
+  matched to their expected error rate.
+- **Placement** — a single sync at the head of a burst suits packet systems; continuous streams
+  (digital voice) insert sync periodically so a late-tuning receiver can still acquire mid-stream,
+  a feature P25 and DMR rely on for fast channel changes.
+- **Distributed vs contiguous** — some formats spread sync symbols through the frame rather than
+  bunching them, which spreads the detection energy and can survive a localized fade better.
+
 ## Relevance to SDR
 
 Essentially every digital radio protocol carries a frame sync. P25 uses a 48-bit frame sync at

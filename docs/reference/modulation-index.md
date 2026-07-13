@@ -52,8 +52,16 @@ it is β = Δf / f_m, the ratio of the peak [frequency deviation](/reference/fm-
 the modulating frequency; for phase modulation it is simply the peak phase deviation. Here the
 index is not a "depth" you can exceed — it directly sets the number and strength of significant
 sidebands. Unlike AM, an FM carrier's amplitude never changes; increasing β spreads energy
-into ever more sideband pairs whose amplitudes follow Bessel functions of β. (Curiously, at a
-few specific β values the carrier component itself vanishes.)
+into ever more sideband pairs whose amplitudes follow Bessel functions of β. As a rule of thumb
+the number of significant sideband pairs is roughly β + 1, which is why a large index spreads a
+signal across many kilohertz even from a single audio tone.
+
+The Bessel-function behavior has a famous practical use. At β ≈ 2.405 (the first zero of J₀) the
+**carrier component disappears entirely**, all the power having moved into the sidebands.
+Transmitter engineers exploit this "Bessel null" to set FM deviation precisely: feed a single
+known-frequency tone, watch the carrier on a spectrum analyzer, and adjust the modulator until
+the carrier nulls — the deviation is then exactly 2.405 times the tone frequency, a calibration
+that needs no absolute amplitude reference at all.
 
 ## Relevance to SDR
 
@@ -72,6 +80,17 @@ as a quick check of whether a station is under- or over-modulating.
 Index directly feeds bandwidth estimates: Carson's rule for FM, B ≈ 2(Δf + f_m) = 2 f_m(β + 1),
 is really a statement in terms of the deviation ratio. Choosing the index is therefore a
 bandwidth-versus-quality trade the system designer makes before anyone tunes the signal.
+
+The two families also differ in how gracefully they tolerate an over-large index. In AM,
+exceeding m = 1 is destructive — the envelope inverts, the audio clips, and adjacent channels
+get splattered — so AM systems hard-limit modulation depth. In FM there is no equivalent hard
+ceiling on β; a larger index simply spreads energy into more sidebands and widens the signal,
+which is only a problem if it exceeds the allotted channel. That difference is why FM channel
+plans are specified by a maximum [deviation](/reference/fm-deviation/) rather than a maximum
+index: deviation, not β, is what a regulator can police with a fixed channel mask. For a digital
+FSK signal the same idea reappears as the modulation index between the mark and space tones,
+which sets how far apart the frequency states sit and hence how easily a discriminator tells them
+apart.
 
 ## Sources
 

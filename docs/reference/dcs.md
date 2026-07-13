@@ -44,7 +44,17 @@ bits are a fixed-polynomial [Golay](/reference/golay-code/) error-correcting/fra
 lets the receiver find the word boundary and reject noise. The receiver continuously demodulates and
 correlates the sub-audible bitstream; when it matches the programmed code, squelch opens. Because
 there are far more valid DCS codes (on the order of 80-100 in common use) than CTCSS tones, DCS gives
-system planners more distinct channel-sharing groups.
+system planners more distinct channel-sharing groups. The framing structure is designed so the
+receiver can find the 23-bit boundary without a separate sync word: the Golay code's fixed
+generator lets a correlator recognize a valid, correctly aligned codeword and reject a
+random-noise alignment, so the decoder effectively slides along the bitstream until the parity
+checks out. Because the code carries error correction, DCS is fairly robust to the noise and
+FM-discriminator "clicks" that would corrupt a raw slow bitstream.
+
+A subtlety that trips up scanner users is **inverted DCS**: the same 9-bit code transmitted with
+inverted polarity decodes to a different octal number, so a given physical signal may be reported
+as, say, 023 by one radio and its inverse by another depending on the polarity convention. Good
+decoders resolve this by trying both polarities and reporting the standard-normal form.
 
 A characteristic detail is the **turn-off code**: when the transmitter unkeys, it briefly sends a
 distinctive ~134 Hz phase reversal / turn-off sequence so receivers close their squelch immediately
@@ -61,6 +71,18 @@ signaling and sits outside GopherTrunk's digital-trunking focus, where group mem
 explicitly as talkgroup identifiers in the control-channel messaging rather than as a sub-audible code;
 GopherTrunk therefore does not decode DCS in its trunking path. Its relevance here is as the digital
 sibling of CTCSS and a compact real-world example of a Golay-protected sub-audible codeword.
+
+## In practice
+
+Recovering DCS in software is a small but complete demodulation chain: low-pass the demodulated
+audio to isolate the sub-audible band, recover the 134.4 bit/s clock, slice the bits, then search
+all 23 rotations of the running window for one whose [Golay](/reference/golay-code/) parity is
+consistent. Once framed, the 9 data bits map back to the octal code. Because the word repeats
+continuously, a decoder can average over several repetitions to beat down noise before deciding —
+the same trick that makes the continuous nature of both DCS and [CTCSS](/reference/ctcss/) more
+robust than a one-shot signalling burst. The 134.4 bit/s rate and low deviation keep DCS safely
+below the 300 Hz voice floor, so like a CTCSS tone it is inaudible to the listener and separated
+from voice by a simple filter.
 
 ## Sources
 

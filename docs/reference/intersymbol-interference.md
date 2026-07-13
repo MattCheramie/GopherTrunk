@@ -60,6 +60,23 @@ margin against noise. Two things reintroduce ISI even with good pulse shaping: s
 instant (a timing error moves you off the zero-crossings), and a dispersive channel such as multipath,
 whose echoes are literally delayed copies of past symbols.
 
+It is worth separating the two sources because the cures differ. ISI from filtering and pulse shaping
+is fully under the system designer's control and is eliminated by choosing a Nyquist pulse and sampling
+correctly — no channel knowledge needed. ISI from the propagation channel is not known in advance and
+varies as the radio or reflectors move, so it cannot be designed away; it must be *measured and undone*
+at the receiver by an adaptive equalizer that learns the channel's impulse response and subtracts the
+interfering tails. A useful mental model is that a Nyquist-shaped symbol stream arriving through a
+multipath channel is the clean stream convolved with the channel, and equalization is the deconvolution
+that restores it.
+
+## Variants
+
+Not all ISI is unwanted. **Partial-response** signalling (such as duobinary and the Gaussian-filtered
+[GMSK](/reference/gmsk/) used in GSM) deliberately introduces a controlled, known amount of ISI to
+shrink bandwidth or smooth the phase trajectory, then removes its effect with a matched detector that
+expects it. In that light the Nyquist criterion is not "no pulse overlap" but "no *uncontrolled* pulse
+overlap at the decision instants" — overlap is fine as long as the receiver knows exactly what it is.
+
 ## Relevance to SDR
 
 Controlling ISI is a central job of any digital demodulator, GopherTrunk's included. Its receivers apply a

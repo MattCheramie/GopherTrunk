@@ -74,6 +74,16 @@ round.
 - **Sign-magnitude view** — many hardware decoders store an LLR as a sign bit plus a small
   magnitude, mirroring the intuition of a [soft bit](/reference/soft-decision/).
 
+The additive property is worth dwelling on because it is what makes iterative decoding tractable.
+In the probability domain, combining independent evidence about a bit means multiplying
+likelihoods and renormalizing — awkward and numerically unstable. Taking the log converts those
+products into sums, so a check node in an [LDPC](/reference/ldpc-code/) decoder or a component
+decoder in a [turbo](/reference/turbo-code/) decoder simply adds and subtracts LLRs. It also keeps
+the arithmetic well conditioned: a probability near 0 or 1, which would underflow in fixed point,
+maps to a large but finite LLR magnitude that clips gracefully. This is the same reason
+statisticians and machine-learning systems work in log-probabilities, and it is why the LLR, not
+the raw probability, is the number that actually flows through a decoder.
+
 ## Relevance to SDR
 
 LLRs are the input format of every high-performance FEC in use today:

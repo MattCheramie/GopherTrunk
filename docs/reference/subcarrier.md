@@ -58,6 +58,24 @@ pilot), which the receiver reconstructs by doubling the pilot; and [RDS](/refere
 rides a further subcarrier at 57 kHz (three times the pilot). Additional SCA subcarriers around
 67 kHz and 92 kHz have historically carried background music and reading services.
 
+Notice the arithmetic: the 38 kHz stereo subcarrier is exactly twice the 19 kHz pilot and the
+57 kHz RDS subcarrier exactly three times it. This is deliberate — deriving every subcarrier
+from harmonics of one pilot lets the receiver regenerate all of them from a single locked
+reference, and it keeps the subcarriers from drifting relative to one another. It is the analog
+ancestor of the coherent-reference thinking that pervades digital systems.
+
+## Variants
+
+Subcarriers appear far beyond FM stereo. Analog color television carried the chrominance
+(color) information on a suppressed subcarrier (about 3.58 MHz in NTSC) sitting inside the
+luminance band, itself a small-scale frequency-division multiplex. Telemetry and instrumentation
+systems have long used FM/FM schemes in which many sensor channels each frequency-modulate their
+own subcarrier and the whole stack then modulates the RF carrier. And in the digital world the
+idea generalizes completely: [OFDM](/reference/ofdm/) splits a channel into hundreds or thousands
+of closely spaced, individually modulated subcarriers, the technique behind Wi-Fi, LTE, 5G NR,
+DAB, and DVB-T. The humble FM pilot-and-subcarrier scheme and a 5G resource grid are points on
+the same continuum.
+
 ## Relevance to SDR
 
 Subcarriers are where a lot of "hidden" data lives in an otherwise analog broadcast, and they are
@@ -70,6 +88,14 @@ pilot, exactly the coherent-detection problem that
 on digital land-mobile trunking rather than broadcast, so it does not decode FM subcarriers, but
 the frequency-division-multiplex idea recurs throughout RF, and the pilot-regeneration technique is
 the same math its digital carriers use for synchronization.
+
+Reading a subcarrier well depends on cleanly recovering the whole composite baseband first, which
+in turn needs enough receiver bandwidth and a low-distortion FM demodulator — a subcarrier riding
+at 57 kHz is useless if the receiver's channel filter rolls off at 20 kHz. This is why
+subcarrier decoding rewards a wideband front end: the SDR must pass the full multiplex, not just
+the audio a listener hears. The same requirement applies in reverse as a warning about aliasing —
+a subcarrier sits at a real baseband frequency and must be sampled fast enough to represent it, or
+it folds back on top of the wanted audio.
 
 ## Sources
 

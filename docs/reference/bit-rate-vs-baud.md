@@ -68,12 +68,30 @@ scheme at 6000 symbols/s carrying more bits per symbol — different baud and bi
 When someone reports a "9600 baud" system that is really 4800 baud, four-level, the confusion is precisely
 this bit-rate-versus-baud mix-up, and it changes what symbol clock a decoder should hunt for.
 
+The confusion has deep roots. The unit "baud" honors Émile Baudot, whose 1870s telegraph code sent
+one symbol per signalling interval, so in that binary world baud and bits per second genuinely were the
+same number — and the habit of using the words interchangeably stuck long after multi-level modems made
+them diverge. Early voiceband modems made the split concrete and public: a "2400 baud" telephone modem
+running four-level or higher modulation carried 4800, 9600, or more bits per second over the same 2400
+symbols, and later modems held the symbol rate near the channel's Nyquist limit while stacking ever
+denser constellations to push the bit rate up. The channel bandwidth never changed; only the bits per
+symbol did.
+
 ## In practice
 
 Because bandwidth scales with baud and not bit rate, engineers size filters and channelizers from the
 symbol rate, then report throughput as a bit rate. A quick sanity check on any modulation is
 R_b / R_s = log₂(M): if that ratio is not a clean power-of-two count of bits, either the order or one of
 the rates has been misquoted.
+
+The distinction also reframes what "faster" means. Raising the baud rate widens the signal and needs
+more spectrum; raising the bits per symbol raises throughput within the *same* spectrum but demands more
+[signal-to-noise ratio](/reference/signal-to-noise-ratio/). Modern systems push both levers at once and
+adapt them to conditions — cellular and Wi-Fi links switch to a denser constellation (more bits/symbol)
+when the channel is clean and fall back to a sparser, more robust one when it degrades, all while holding
+the symbol rate fixed. Understanding which quantity a spec is quoting is therefore the difference between
+predicting a signal's bandwidth (a baud question) and predicting its data throughput or its noise margin
+(a bits-per-symbol question).
 
 ## Sources
 

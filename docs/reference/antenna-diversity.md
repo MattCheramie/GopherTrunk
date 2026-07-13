@@ -70,6 +70,37 @@ probability of a deep fade drops roughly as the Nth power of a single branch's f
 which is why even two antennas dramatically cut dropout rates in a
 [Rayleigh-fading](/reference/rayleigh-fading/) channel.
 
+## Variants
+
+Diversity is not only spatial. The same "combine independently faded copies" idea applies across
+any dimension where fades decorrelate:
+
+- **Spatial diversity** — separated antennas, as above; the most common form.
+- **Polarization diversity** — one antenna per orthogonal [polarization](/reference/polarization/),
+  useful where physical separation is impractical (a compact handset) because a multipath channel
+  scrambles polarization.
+- **Frequency diversity** — sending the same information on frequencies spaced beyond the
+  channel's coherence bandwidth, so a frequency-selective fade cannot hit both. Frequency hopping
+  and wideband spreading achieve this implicitly.
+- **Time diversity** — repeating or interleaving data across time beyond the coherence time, so a
+  temporal fade only damages part of a codeword; interleaving with FEC is the everyday example.
+
+The branches need not be equally strong for combining to pay off — that is MRC's strength, since a
+weak branch still contributes its share of the summed SNR rather than being discarded.
+
+## In practice
+
+The engineering questions are how far apart to place antennas and how many to use. Spacing must
+exceed the channel's spatial coherence: roughly half a wavelength suffices in a rich-multipath
+indoor environment, but a line-of-sight outdoor link with little scattering may need several
+wavelengths to decorrelate the branches, because correlated branches give little diversity gain no
+matter how they are combined. Returns also diminish with count — the jump from one to two antennas
+removes most deep fades, while each further antenna adds progressively less, so two- and
+four-branch systems dominate in practice. Cost and complexity scale with the method: selection
+needs the least hardware, MRC the most (a full coherent receiver per branch plus channel
+estimation), and real systems pick the point on that curve that their power and size budget
+allows.
+
 ## Relevance to SDR
 
 Antenna diversity is everywhere in modern wireless: Wi-Fi access points, cellular handsets and

@@ -68,6 +68,22 @@ blanks on strong wanted signals or on modulation peaks, punching holes that *deg
 and can create intermodulation-like artefacts from the switching itself. It is a scalpel for
 clicks, not a general noise reducer.
 
+## Variants
+
+- **Time-domain blanker** — the classic form described above: an envelope detector and a fast
+  gate operating on the raw sample stream. Cheap and effective against sharp, isolated pulses.
+- **Wideband ("noise-derived") blanker** — takes its detection cue from a separate wide-bandwidth
+  path so it can catch the impulse before the narrow channel filter smears it, then blanks the
+  main path. This is the arrangement that copes with the filter-ringing problem.
+- **Frequency-domain / spectral blanking** — in an FFT-based receiver, an impulse spreads across
+  all bins of the block it lands in, so a detector can flag and zero the affected transform blocks
+  or use interpolation across them. This suits SDRs that already run block transforms and can
+  target periodic noise (like power-line hash at twice the mains frequency) by its timing.
+
+Blankers are frequently paired with, but distinct from, a **noise reducer** (an averaging or
+spectral-subtraction stage that lowers steady hiss): the blanker removes short spikes, the reducer
+smooths continuous noise, and the two solve different problems.
+
 ## Relevance to SDR
 
 Noise blankers are standard in HF and VHF communications receivers and are a common feature in

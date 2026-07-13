@@ -64,6 +64,16 @@ call. On busy systems updates for many simultaneous calls are interleaved on the
 control channel, so a monitor may see a rotating stream of "TG 101 on ch 3, TG 204 on ch
 7, TG 101 on ch 3 …" as the controller keeps every active call advertised.
 
+Late entry is also the mechanism that makes trunk-following resilient to plain radio
+imperfection. Control-channel messages are error-coded but not infallible; a burst of
+noise, a fade, or a moment of contention can corrupt the one grant that started a call. If
+that grant were the only announcement, the call would be invisible to anyone who missed it.
+Because the grant keeps being re-broadcast, a receiver that dropped the first copy simply
+catches a later one — the repetition is redundancy against loss as much as it is a courtesy
+to radios that were busy. The same property is what lets a monitor tuning to a system
+"cold" begin following calls within a second or two rather than waiting for the next call to
+start from scratch.
+
 Late entry also interacts with encryption and vocoder framing. A voice call carries its
 own embedded signalling — algorithm and key identifiers, the talkgroup, sometimes the
 source unit — repeated within the traffic channel itself, so a radio (or monitor) that

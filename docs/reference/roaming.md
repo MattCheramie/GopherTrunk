@@ -63,6 +63,14 @@ not "ping-pong" between two sites. During an active call, well-designed systems 
 a unit's call over as it roams so the conversation is not dropped mid-transmission,
 though the exact capability depends on the system and its network backhaul.
 
+Roaming policy also has to account for which sites a unit is even *allowed* to use. On
+shared or regional networks, a radio may be permitted on some sites and barred from others,
+and a site can decline to accept a roamer during congestion. So the neighbor a radio would
+prefer on signal strength is not always one it may register on, and the roaming algorithm
+weighs permission and site status alongside raw signal quality. From the outside, a unit
+that seems to "skip" the nearest site and register on a farther one is often obeying exactly
+these constraints rather than making a poor choice.
+
 Roaming and registration are two halves of the same behaviour: roaming is the *decision*
 to change sites, and [registration](/reference/registration/) is the *announcement* that
 carries it out. The system's picture of where every unit is stays correct only because

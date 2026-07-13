@@ -58,6 +58,18 @@ de-emphasis attenuates most. The result is a meaningful improvement in high-freq
 headroom (loud treble transients deviate the carrier further, which the pre-emphasis stage must
 be limited to control).
 
+The reason a fixed time constant works so well is that the FM output-noise spectrum is
+predictable — it rises at a fixed 6 dB/octave — so a first-order network with a matching corner
+can track it almost exactly across the audio band. Because the pre-emphasis and de-emphasis
+transfer functions are exact reciprocals, the pairing is transparent to the wanted signal
+regardless of program content; only the noise, which is added *after* the transmit pre-emphasis
+and *before* the receive de-emphasis, is affected. The catch is headroom: pre-emphasis can lift a
+cymbal or sibilant by 15-17 dB at the top of the band, and if unchecked that would drive the
+transmitter far past its allowed [deviation](/reference/fm-deviation/). Broadcasters therefore
+place a fast pre-emphasized peak limiter after the boost so treble transients are clamped before
+they overdeviate — which subtly ties emphasis to the loudness processing that gives commercial FM
+its characteristic sound.
+
 ## Relevance to SDR
 
 Any software FM demodulator that wants to sound right must apply de-emphasis with the correct time
@@ -69,6 +81,17 @@ land-mobile digital modes the concept mostly falls away: P25 and DMR carry digit
 rather than analog FM audio, so there is no analog emphasis stage in GopherTrunk's digital decode
 path. Emphasis matters to GopherTrunk-adjacent work only when demodulating conventional analog FM
 voice, where the standard land-mobile 750 µs de-emphasis should be used.
+
+## In practice
+
+The regional split matters when decoding real signals. A broadcast receiver hard-wired for the
+75 µs Americas standard fed a 50 µs European signal leaves a gentle high-frequency lift of a few
+decibels — audible as extra brightness or sibilance but not fatal — while the reverse sounds
+slightly dull. In software this is trivial to make configurable: the de-emphasis is one
+first-order [IIR](/reference/iir-filter/) section whose single coefficient encodes τ, so a demod
+can offer 75/50/750 µs as a menu choice. Land-mobile analog FM's 750 µs constant corners much
+lower (~212 Hz), reflecting the narrower 3 kHz voice band and heavier deviation limiting of
+communications audio versus hi-fi broadcast.
 
 ## Sources
 
