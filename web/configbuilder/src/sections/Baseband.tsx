@@ -11,6 +11,11 @@ const ROLES = [
   { value: "auto", label: "auto" },
 ];
 
+const TAPS = [
+  { value: "", label: "wideband (default)" },
+  { value: "ddc", label: "ddc (narrowband channel)" },
+];
+
 // Loop is *bool (nil defaults to true). Map to a tri-state select.
 function loopValue(loop: boolean | null): string {
   if (loop === null || loop === undefined) return "default";
@@ -34,13 +39,14 @@ export function BasebandSection() {
           label="Recorders"
           items={c.Record}
           onChange={(x) => set({ ...c, Record: x })}
-          makeNew={() => ({ Serial: "", Dir: "" })}
+          makeNew={() => ({ Serial: "", Dir: "", Tap: "" })}
           itemTitle={(r) => r.Serial || "recorder"}
           emptyHint="No recorders."
           renderItem={(r, setR) => (
             <div className="grid gap-3 sm:grid-cols-2">
               <TextField label="Serial" value={r.Serial} onChange={(v) => setR({ ...r, Serial: v })} />
               <TextField label="Directory" value={r.Dir} onChange={(v) => setR({ ...r, Dir: v })} />
+              <SelectField label="Tap" value={r.Tap ?? ""} onChange={(v) => setR({ ...r, Tap: v })} options={TAPS} />
             </div>
           )}
         />
