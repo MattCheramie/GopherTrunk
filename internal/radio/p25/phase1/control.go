@@ -230,6 +230,17 @@ func (c *ControlChannel) LastNAC() uint16 { return c.lastNAC }
 // SystemName returns the operator-assigned system name, if any.
 func (c *ControlChannel) SystemName() string { return c.systemName }
 
+// P25Phase2FEC reports the per-system Phase 2 FEC mode codes this
+// Phase 1 CC stamps onto the TDMA voice grants it publishes for hybrid
+// (Phase 1 CC + Phase 2 TC) systems — trellis / RS / interleave /
+// scrambler, in that order (issue #376). Exposed read-only so callers
+// and tests can confirm the decode config was wired in; the wideband
+// path relied on this to catch issue #882, where the modes defaulted to
+// zero and every Phase 2 grant decoded with the FEC chain disabled.
+func (c *ControlChannel) P25Phase2FEC() (trellis, rs, interleave, scrambler uint8) {
+	return c.p25Phase2Trellis, c.p25Phase2RS, c.p25Phase2Interleave, c.p25Phase2Scrambler
+}
+
 // TopologySnapshot builds the protocol-neutral topology snapshot for this
 // control channel: identity, primary/secondary control channels, neighbours,
 // and band plan, with every channel's downlink frequency resolved through the

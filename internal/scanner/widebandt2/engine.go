@@ -621,13 +621,24 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 				})
 			}
 		}
+		// A Phase 1 CC can issue Phase 2 TDMA voice grants (hybrid
+		// systems such as Victorian MMR — issue #882). The voice
+		// composer's Phase 2 chain needs the per-system FEC config to
+		// decode those grants' MAC PDUs; without it every grant carries
+		// TrellisOff / ScramblerOff / zero seed and MAC decode fails.
+		// Parse and forward the same knobs the ccdecoder pipeline does.
+		p2Trellis, p2RS, p2Interleave, p2Scrambler := parseP25Phase2FECModes(sys, log)
 		cc := p25phase1.New(p25phase1.Options{
-			Bus:         bus,
-			Log:         log.With("system", sys.Name, "freq_hz", freqHz, "phase", 1),
-			SystemName:  sys.Name,
-			FrequencyHz: freqHz,
-			BandPlan:    bandPlan,
-			Rotations:   rotations,
+			Bus:                 bus,
+			Log:                 log.With("system", sys.Name, "freq_hz", freqHz, "phase", 1),
+			SystemName:          sys.Name,
+			FrequencyHz:         freqHz,
+			BandPlan:            bandPlan,
+			Rotations:           rotations,
+			P25Phase2Trellis:    p2Trellis,
+			P25Phase2RS:         p2RS,
+			P25Phase2Interleave: p2Interleave,
+			P25Phase2Scrambler:  p2Scrambler,
 		})
 		rx := p25phase1rx.New(p25phase1rx.Options{
 			SampleRateHz: outRateHz,
@@ -691,6 +702,38 @@ func requireControlChannel(sys trunking.System, freqHz uint32, label string) err
 	return fmt.Errorf("widebandt2: channel freq=%d on system %q (protocol %s) "+
 		"must match one of the system's control_channels %v",
 		freqHz, sys.Name, label, sys.ControlChannels)
+}
+
+// parseP25Phase2FECModes parses the per-system Phase 2 FEC knobs
+// (trellis / RS / interleave / scrambler) into the uint8 codes the
+// p25phase1.Options block carries, mirroring ccdecoder's
+// newP25Phase1Pipeline. A Phase 1 CC on a hybrid system uses these to
+// stamp its Phase 2 TDMA voice grants so the voice composer can decode
+// their MAC PDUs (issue #882). Unrecognised values warn then fall back
+// to the same defaults the ccdecoder path uses; an empty per-system
+// value keeps the default (Trellis=on, everything else=off).
+func parseP25Phase2FECModes(sys trunking.System, log *slog.Logger) (trellis, rs, interleave, scrambler uint8) {
+	p2Trellis, ok := p25phase2.ParseTrellisMode(sys.P25Phase2TrellisMode)
+	if !ok {
+		log.Warn("widebandt2: unrecognised p25_phase2_trellis_mode; falling back to on",
+			"system", sys.Name, "value", sys.P25Phase2TrellisMode)
+	}
+	p2RS, ok := p25phase2.ParseRSMode(sys.P25Phase2RSMode)
+	if !ok {
+		log.Warn("widebandt2: unrecognised p25_phase2_rs_mode; falling back to off",
+			"system", sys.Name, "value", sys.P25Phase2RSMode)
+	}
+	p2Interleave, ok := p25phase2.ParseInterleaveMode(sys.P25Phase2InterleaveMode)
+	if !ok {
+		log.Warn("widebandt2: unrecognised p25_phase2_interleave_mode; falling back to off",
+			"system", sys.Name, "value", sys.P25Phase2InterleaveMode)
+	}
+	p2Scrambler, ok := p25phase2.ParseScramblerMode(sys.P25Phase2ScramblerMode)
+	if !ok {
+		log.Warn("widebandt2: unrecognised p25_phase2_scrambler_mode; falling back to on",
+			"system", sys.Name, "value", sys.P25Phase2ScramblerMode)
+	}
+	return uint8(p2Trellis), uint8(p2RS), uint8(p2Interleave), uint8(p2Scrambler)
 }
 
 // applyP25Phase2Modes mirrors newP25Phase2Pipeline's per-system mode
