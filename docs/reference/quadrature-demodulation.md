@@ -11,10 +11,10 @@ infobox:
   - { label: Type, value: FM/PM demodulator }
   - { label: Recovers, value: Instantaneous frequency from IQ }
   - { label: Feeds, value: C4FM / FSK symbol slicing }
-see_also: [demodulation, frequency-modulation, iq-data, c4fm, cordic]
+see_also: [demodulation, frequency-modulation, iq-data, c4fm, cordic, iq-imbalance, direct-conversion-receiver, soft-decision]
 cite_urls:
-  - https://en.wikipedia.org/wiki/Quadrature_amplitude_modulation
   - https://en.wikipedia.org/wiki/Frequency_modulation
+  - https://en.wikipedia.org/wiki/Atan2
 ---
 
 **Quadrature demodulation** recovers a frequency- or phase-modulated signal by measuring the
@@ -67,7 +67,27 @@ to estimate how far the vector rotated from one sample to the next:
 
 Because the whole operation lives in complex baseband after the tuner has mixed the signal to
 zero IF, it is a natural fit for SDR — no analog discriminator, PLL, or slope detector is
-needed.
+needed. It is a **non-coherent** demodulator: it never reconstructs the carrier's absolute
+phase, only the change from sample to sample, so it needs no carrier-recovery loop and locks
+instantly. The price is a few dB of sensitivity versus a coherent detector, and a characteristic
+noise behaviour below the FM threshold, where the discriminator output degrades sharply rather
+than gracefully.
+
+## Variants
+
+- **Delay-and-multiply discriminator.** The form above, *z[n]·z\*[n−1]*, uses a one-sample
+  delay. Using a longer delay narrows the frequency-to-amplitude slope and can trade noise
+  bandwidth against deviation range.
+- **Differentiator/divider form.** Computing the derivative of I and Q directly and forming
+  (I·Q′ − Q·I′)/(I²+Q²) yields the same instantaneous frequency without an arctangent — the
+  small-angle algebraic path noted above, common in fixed-point implementations.
+- **CORDIC phase extraction.** A [CORDIC](/reference/cordic/) rotation extracts the argument
+  with only shifts and adds, which is why FPGA and microcontroller receivers favour it over a
+  library `atan2`.
+- **Imbalance sensitivity.** Because the discriminator reads angle, any
+  [IQ imbalance](/reference/iq-imbalance/) or residual DC in a
+  [direct-conversion receiver](/reference/direct-conversion-receiver/) injects a spurious tone
+  and distortion into the demodulated output, so front-end correction matters upstream.
 
 ## In practice
 
@@ -75,9 +95,11 @@ The raw discriminator output is noisy, so it is normally followed by matched or 
 filtering. For digital voice the demodulated frequency deviation maps onto discrete symbol
 levels: four-level **[C4FM](/reference/c4fm/)** (±1800, ±600 Hz deviations) for P25 Phase 1
 and DMR, or two-level FSK for POCSAG and many telemetry links. The demodulator's output is
-then symbol-timing-recovered and sliced into dibits or bits. A discriminator-based receiver is
-simple and robust, though for the CQPSK/linear-modulation view of the same C4FM signal a
-coherent phase-tracking demodulator can perform better on weak signals.
+then symbol-timing-recovered and sliced into dibits or bits — and the distance of each sample
+from the ideal deviation levels doubles as a [soft-decision](/reference/soft-decision/)
+confidence for the error-correction decoder. A discriminator-based receiver is simple and
+robust, though for the CQPSK/linear-modulation view of the same C4FM signal a coherent
+phase-tracking demodulator can perform better on weak signals.
 
 ## Relevance to SDR
 
@@ -91,3 +113,4 @@ of "[demodulation](/reference/demodulation/)" in the decode chain.
 ## Sources
 
 [^wiki]: [Frequency modulation](https://en.wikipedia.org/wiki/Frequency_modulation) — Wikipedia, for instantaneous frequency as the derivative of phase, the basis of the discriminator.
+[^atan2]: [atan2](https://en.wikipedia.org/wiki/Atan2) — Wikipedia, on the two-argument arctangent that resolves the full-circle phase angle used by the discriminator.
