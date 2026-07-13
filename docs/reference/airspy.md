@@ -3,22 +3,26 @@ slug: airspy
 title: Airspy
 entry_type: hardware
 category: sdr-devices
-description: Airspy is a line of high-performance VHF/UHF software-defined radio receivers (R2 and Mini) offering better sensitivity and wider bandwidth than RTL-SDR.
-keywords: Airspy, Airspy R2, Airspy Mini, high performance SDR, VHF UHF receiver
+description: "Airspy is a line of high-performance VHF/UHF software-defined radio receivers (R2 and Mini) offering better sensitivity, dynamic range and wider bandwidth than an RTL-SDR."
+keywords: Airspy, Airspy R2, Airspy Mini, high performance SDR, VHF UHF receiver, 12-bit ADC, real-to-complex, oversampling, wideband capture
 aka: [Airspy]
 autolink: true
 infobox:
   - { label: Type, value: VHF/UHF SDR receiver }
+  - { label: Vendor/Chip, value: "Airspy; R820T2 tuner + LPC4370" }
   - { label: Models, value: Airspy R2, Airspy Mini }
+  - { label: ADC, value: 12-bit }
   - { label: Range, value: ~24 MHz – 1.8 GHz }
   - { label: Bandwidth, value: up to ~10 MHz (R2) }
-see_also: [rtl-sdr, airspy-hf-plus, hackrf, software-defined-radio]
+  - { label: TX, value: No (receive only) }
+see_also: [rtl-sdr, rtl2832u, r820t-tuner, airspy-hf-plus, hackrf, sdrplay-rsp1a, dynamic-range, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 related_reading:
   - { title: "RF Front End, Part 10: Airspy — real to complex", url: /blog/deep-dives/rf-front-end-10-airspy-real-to-complex/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio
+  - https://airspy.com/airspy-r2/
 ---
 
 **Airspy** is a line of high-performance VHF/UHF
@@ -40,12 +44,59 @@ smaller Mini) offering better sensitivity, dynamic range, and wider
 
 Airspy R2 captures up to ~10 MHz, useful when a system's channels are spread across a
 band or in tough RF environments. For the lower bands, the
-[Airspy HF+](/reference/airspy-hf-plus/) is the specialised choice.
+[Airspy HF+](/reference/airspy-hf-plus/) is the specialised choice. Where an
+[RTL-SDR](/reference/rtl-sdr/) is deliberately the cheapest thing that works, an Airspy
+is what you reach for when the RTL-SDR's 8-bit ADC or ~2.4 MHz of usable bandwidth is
+the thing standing between you and a decode.
+
+## How it works
+
+An Airspy R2 shares the front-end tuner with an RTL-SDR — a Rafael Micro
+[R820T2](/reference/r820t-tuner/) — but replaces everything behind it. Instead of the
+[RTL2832U](/reference/rtl2832u/)'s 8-bit ADC and USB bridge, the Airspy digitises the
+tuner's IF with a **12-bit** [ADC](/reference/analog-to-digital-converter/) driven by an
+NXP LPC4370 microcontroller, then streams the samples over USB 2.0. Two design choices
+give it its edge:
+
+- **More bits.** A 12-bit ADC carries roughly **72 dB** of theoretical
+  [dynamic range](/reference/dynamic-range/) against the RTL2832U's ~48 dB — the
+  headroom that lets a weak signal survive next to a strong one without the front end
+  being pushed into clipping.
+- **Oversampling and real-to-complex conversion.** The Airspy samples the IF at a high
+  real rate (e.g. 20 MS/s) and digitally converts it to complex baseband on the way
+  out, decimating to the requested rate. Averaging many high-rate samples into each
+  output sample adds effective bits (process gain), so the delivered stream is quieter
+  than the raw ADC alone.
+
+The R2 delivers up to about **10 MS/s** of complex [bandwidth](/reference/bandwidth/);
+the smaller **Mini** tops out around 6 MS/s.[^airspy] Both are **receive-only** — there
+is no transmit path.
+
+## Variants
+
+- **Airspy R2** — the flagship VHF/UHF receiver, ~24 MHz–1.8 GHz, up to ~10 MS/s, with a
+  clock output for chaining and a 4.5 V [bias tee](/reference/bias-tee/) for powering an
+  inline LNA.
+- **Airspy Mini** — the same architecture in a dongle form factor, up to ~6 MS/s;
+  cheaper and more portable, with slightly less capture width.
+- **[Airspy HF+](/reference/airspy-hf-plus/)** — a different design entirely, optimised
+  for HF and low-VHF with very high dynamic range rather than wide VHF/UHF coverage.
+
+Compared with a [HackRF One](/reference/hackrf/), an Airspy trades the HackRF's 6 GHz
+reach and transmit capability for a quieter, higher-resolution receive path in the bands
+scanners actually use. An [SDRplay RSP1A](/reference/sdrplay-rsp1a/) is the closest
+14-bit alternative in the same niche.
 
 ## Relevance to SDR
 
 GopherTrunk supports Airspy receivers for demanding reception where an RTL-SDR's
-bandwidth or sensitivity falls short.
+bandwidth or sensitivity falls short — a congested band, a distant control channel, or a
+multi-site system whose control channels are spread too far apart to fit one RTL-SDR
+capture. The extra ADC bits and wider capture are exactly what a wideband, multi-tap
+channelizer wants, which is why the Airspy is GopherTrunk's recommended device for the
+`role: wideband` use below. GopherTrunk drives it over USB with a pure-Go backend (no
+`libairspy` needed); it remains a receiver only, so it decodes clear and scrambled
+traffic, never keyed encryption.
 
 ## Wideband multi-site monitoring
 
@@ -147,3 +198,4 @@ cleanly.
 ## Sources
 
 [^wiki]: [Software-defined radio](https://en.wikipedia.org/wiki/Software-defined_radio) — Wikipedia, for background on Airspy-class high-performance VHF/UHF SDR receivers.
+[^airspy]: [Airspy R2](https://airspy.com/airspy-r2/) — Airspy, on the R2's R820T2 front end, 12-bit oversampling architecture and up-to-10 MS/s capture.
