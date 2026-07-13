@@ -2,7 +2,7 @@
 slug: dtmf
 title: DTMF
 entry_type: term
-category: algorithms
+category: modulation
 description: DTMF (dual-tone multi-frequency) signalling encodes each keypad digit as the sum of two simultaneous tones — one from a low group and one from a high group.
 keywords: DTMF, dual-tone multi-frequency, touch-tone, Goertzel, signalling tones
 aka: [DTMF, touch-tone, "dual-tone multi-frequency"]

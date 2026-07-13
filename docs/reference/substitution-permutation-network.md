@@ -3,24 +3,24 @@ slug: substitution-permutation-network
 title: Substitution-permutation network (SPN)
 entry_type: algorithm
 category: cryptography
-description: A substitution-permutation network is a block-cipher structure that alternates S-box substitution layers with bit-permutation layers across several rounds to achieve confusion and diffusion.
-keywords: substitution-permutation network, SPN, S-box, permutation, confusion, diffusion, AES, block cipher, rounds
+description: A substitution-permutation network is a block-cipher structure that alternates S-box substitution layers with bit-permutation/mixing layers over several rounds to achieve confusion and diffusion.
+keywords: substitution-permutation network, SPN, S-box, permutation, confusion, diffusion, avalanche, AES, SubBytes, ShiftRows, MixColumns, block cipher, rounds
 aka: [SPN]
 autolink: true
 infobox:
   - { label: Type, value: "Block-cipher structure" }
   - { label: Layers, value: "Substitution + permutation" }
   - { label: Used by, value: "AES" }
-see_also: [block-cipher, s-box, feistel-network, advanced-encryption-standard, cipher]
+see_also: [block-cipher, s-box, advanced-encryption-standard, feistel-network, data-encryption-standard]
 cite_urls:
   - https://en.wikipedia.org/wiki/Substitution%E2%80%93permutation_network
 ---
 
 **A substitution-permutation network (SPN)** builds a [block cipher](/reference/block-cipher/)
 by alternating two kinds of layer over many rounds: a substitution layer of
-[S-boxes](/reference/s-box/) and a permutation layer that rearranges or mixes bits.[^wiki]
-The two layers deliver Shannon's *confusion* and *diffusion*, and it is the structure behind
-[AES](/reference/advanced-encryption-standard/).
+[S-boxes](/reference/s-box/) and a permutation layer that rearranges or linearly mixes
+bits.[^wiki] The two layers deliver Shannon's *confusion* and *diffusion*, and the structure
+is the basis of [AES](/reference/advanced-encryption-standard/), today's dominant cipher.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="One SPN round: add the round key, pass through a substitution layer of S-boxes, then a permutation layer." xmlns="http://www.w3.org/2000/svg">
@@ -39,17 +39,36 @@ The two layers deliver Shannon's *confusion* and *diffusion*, and it is the stru
 
 Each round of an SPN applies three steps to the whole block:
 
-- **Key mixing** — XOR in a round key derived from the master key.
+- **Key mixing** — XOR in a round key derived from the master key by the key schedule.
 - **Substitution** — split the block into small chunks and pass each through an
   [S-box](/reference/s-box/), a nonlinear lookup that supplies *confusion* by making the
-  relationship between key and ciphertext complicated.
-- **Permutation** — shuffle or linearly mix the bits across the block so that the local
-  effect of each S-box spreads out, supplying *diffusion*.
+  relationship between key and ciphertext complicated and non-affine.
+- **Permutation / mixing** — shuffle or linearly combine the bits across the block so that
+  the local effect of each S-box spreads out, supplying *diffusion*.
 
-Stacking many such rounds means a one-bit change at the input cascades, after a few rounds,
-into a change in roughly half the output bits (the avalanche effect). Unlike a
-[Feistel network](/reference/feistel-network/), an SPN transforms the entire block each
-round, so the substitution and permutation steps must themselves be invertible for decryption.
+Stacking many such rounds means a one-bit change at the input cascades, after only a few
+rounds, into a change in roughly half the output bits — the avalanche effect. Unlike a
+[Feistel network](/reference/feistel-network/), an SPN transforms the *entire* block each
+round, so the substitution and permutation steps must themselves be invertible: decryption
+runs the inverse S-boxes and inverse permutation with the round keys reversed.
+
+## Variants — AES as the worked example
+
+AES is the SPN everyone actually uses, and its round names map one-to-one onto the abstract
+layers:
+
+- **AddRoundKey** is the key-mixing step (XOR the 128-bit round key).
+- **SubBytes** is the substitution layer — every byte of the 16-byte state passes through
+  the same 8-to-8-bit AES [S-box](/reference/s-box/).
+- **ShiftRows** and **MixColumns** together are the permutation/mixing layer: ShiftRows
+  rotates the rows of the state (a byte permutation) and MixColumns mixes each column with a
+  fixed matrix over GF(2⁸), so within two rounds every output byte depends on every input
+  byte. The final round drops MixColumns to keep encryption and decryption symmetric.
+
+AES runs 10, 12, or 14 such rounds for 128-, 192-, or 256-bit keys. Its MixColumns diffusion
+is engineered for a provable resistance bound against
+[differential](/reference/differential-cryptanalysis/) and linear attacks — the "wide trail"
+strategy — which is a defining advantage of the SPN approach over ad-hoc round functions.
 
 ## Relevance to SDR
 
@@ -63,4 +82,4 @@ data, the kind of nonlinear lookup an SPN would call an S-box.
 
 ## Sources
 
-[^wiki]: [Substitution–permutation network](https://en.wikipedia.org/wiki/Substitution%E2%80%93permutation_network) — Wikipedia, for the alternating substitution/permutation rounds and confusion/diffusion.
+[^wiki]: [Substitution–permutation network](https://en.wikipedia.org/wiki/Substitution%E2%80%93permutation_network) — Wikipedia, for the alternating substitution/permutation rounds, confusion/diffusion, and the AES round mapping.

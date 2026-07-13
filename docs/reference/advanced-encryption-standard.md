@@ -4,22 +4,25 @@ title: Advanced Encryption Standard (AES)
 entry_type: algorithm
 category: cryptography
 description: AES is a symmetric block cipher standardized as FIPS-197, encrypting 128-bit blocks with 128-, 192-, or 256-bit keys via a substitution-permutation network; P25 and DMR use AES for secure voice.
-keywords: AES, Advanced Encryption Standard, Rijndael, FIPS-197, block cipher, symmetric, S-box, substitution-permutation network, AES-256, P25 encryption, DMR encryption
+keywords: AES, Advanced Encryption Standard, Rijndael, FIPS-197, block cipher, symmetric, S-box, substitution-permutation network, key schedule, AES-256, CTR mode, OFB mode, side-channel, P25 encryption, DMR encryption
 aka: [AES, Rijndael]
 autolink: true
 infobox:
   - { label: Type, value: Symmetric block cipher }
   - { label: Block, value: 128-bit }
   - { label: Keys, value: 128 / 192 / 256-bit }
-see_also: [substitution-permutation-network, s-box, block-cipher, symmetric-key-cryptography, hash-function]
+see_also: [substitution-permutation-network, s-box, block-cipher, data-encryption-standard, stream-cipher, symmetric-key-cryptography, project-25, dmr]
 cite_urls:
   - https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+  - https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
 ---
 
 **The Advanced Encryption Standard (AES)** is a symmetric
 [block cipher](/reference/block-cipher/), standardized by NIST as FIPS-197, that encrypts
-128-bit blocks under a 128-, 192-, or 256-bit key.[^wiki] It was selected from the Rijndael
-design of Daemen and Rijmen and is the dominant cipher for secure digital voice.
+128-bit blocks under a 128-, 192-, or 256-bit key.[^wiki] It was selected in 2000 from the
+Rijndael design of Joan Daemen and Vincent Rijmen, replacing the aging
+[DES](/reference/data-encryption-standard/), and is now the dominant cipher for secure
+digital voice and data worldwide.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="A 128-bit block and key enter several AES rounds of S-box substitution and permutation, producing ciphertext." xmlns="http://www.w3.org/2000/svg">
@@ -42,31 +45,65 @@ design of Daemen and Rijmen and is the dominant cipher for secure digital voice.
 ## How it works
 
 AES is a [substitution-permutation network](/reference/substitution-permutation-network/).
-Each round applies four steps to the 128-bit state arranged as a 4×4 byte matrix:
+The 128-bit state is arranged as a 4×4 matrix of bytes, and each round applies four steps:
 
 - **SubBytes** — a fixed [S-box](/reference/s-box/) substitutes each byte (nonlinear
-  *confusion*);
-- **ShiftRows** and **MixColumns** — permute and mix bytes across the block (*diffusion*);
-- **AddRoundKey** — XOR in a round key derived from the cipher key.
+  *confusion*), built from inversion in the finite field GF(2⁸);
+- **ShiftRows** — cyclically shifts the matrix rows to spread bytes across columns;
+- **MixColumns** — mixes the four bytes of each column by a fixed matrix multiply over
+  GF(2⁸) (together with ShiftRows this provides *diffusion*);
+- **AddRoundKey** — XORs in a round key derived from the cipher key.
 
-The number of rounds depends on key length: 10 for AES-128, 12 for AES-192, and 14 for
-AES-256. Decryption runs the inverse steps with the round keys in reverse order. As a
-[symmetric](/reference/symmetric-key-cryptography/) cipher, the same key encrypts and
-decrypts, so a listener without the key cannot recover the plaintext. A bare block cipher
-only encrypts one block, so it is used with a *mode of operation* (CTR, OFB, CBC) to handle
-streams of data.
+The final round omits MixColumns.[^fips] Decryption runs the inverse steps with the round
+keys in reverse order. As a [symmetric](/reference/symmetric-key-cryptography/) cipher, the same key
+encrypts and decrypts, so a listener without the key cannot recover the plaintext.
+
+### Rounds and the key schedule
+
+The round count scales with key length: **10 rounds for AES-128, 12 for AES-192, and 14 for
+AES-256**. Each round needs its own 128-bit round key, and the *key schedule* expands the
+original key into that sequence. It processes the key in 4-byte words, and at word boundaries
+applies a rotation, the same S-box, and a round constant (Rcon) before XOR-chaining words
+together. This nonlinear, round-dependent expansion is what stops an attacker who recovers
+one round key from trivially rolling back to the master key.
+
+## Variants — modes of operation
+
+A bare block cipher only transforms one 128-bit block, so real traffic uses AES inside a
+*mode of operation* that chains blocks and injects a nonce or initialization vector:
+
+- **CTR (counter)** and **OFB (output feedback)** turn AES into a keystream generator: AES
+  encrypts a running counter or feedback register, and the output is XORed with the data.
+  This makes AES behave exactly like a [stream cipher](/reference/stream-cipher/), which is
+  ideal for a continuous voice bitstream because it needs no block-boundary padding and
+  errors do not propagate.
+- **CBC** chains each block into the next for bulk data at rest.
+- Authenticated modes such as **GCM** add integrity on top of confidentiality.
+
+P25 and DMR secure voice use the keystream-style modes (CTR/OFB) so a fixed-rate vocoder
+stream can be encrypted symbol-for-symbol.
+
+## In practice — side channels
+
+AES is not broken mathematically; the best key-recovery attacks are only marginally faster
+than brute force and remain utterly infeasible. Real attacks target *implementations*
+instead. Naive lookup-table S-boxes leak key-dependent cache-timing information, so
+production code uses constant-time implementations or the hardware **AES-NI** instructions.
+Power-analysis and fault attacks threaten smart cards and radios physically, which is why
+secure handhelds store keys in tamper-resistant modules rather than in software.
 
 ## Relevance to SDR
 
-AES is the encryption a scanner most often runs into and cannot defeat. P25 systems carry
-**AES-256** (often alongside legacy DES) for secure voice, and DMR equipment offers AES
-options; in both, AES typically runs in a keystream mode so it behaves like a
-[stream cipher](/reference/stream-cipher/) over the audio. GopherTrunk can detect, follow,
-and log these encrypted calls — it sees the talkgroup, source, and that the traffic is
-encrypted — but it cannot decode the voice without the key, which is the entire point of the
-standard. This is the honest boundary of the project: clear and scrambled traffic decode,
-keyed AES traffic does not.
+AES is the encryption a scanner most often runs into and cannot defeat. [P25](/reference/project-25/)
+systems carry **AES-256** (often alongside legacy DES) for secure voice, and
+[DMR](/reference/dmr/) equipment offers AES options; in both, AES runs in a keystream mode so
+it behaves like a stream cipher over the audio, re-seeded per transmission by a message
+indicator. GopherTrunk can detect, follow, and log these encrypted calls — it sees the
+talkgroup, source, and that the traffic is encrypted — but it cannot decode the voice without
+the key, which is the entire point of the standard. This is the honest boundary of the
+project: clear and scrambled traffic decode, keyed AES traffic does not.
 
 ## Sources
 
-[^wiki]: [Advanced Encryption Standard](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) — Wikipedia, for the FIPS-197 standard, Rijndael origin, round structure, and key sizes.
+[^wiki]: [Advanced Encryption Standard](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) — Wikipedia, for the Rijndael origin, round structure, key sizes, key schedule, and modes.
+[^fips]: [FIPS-197 (updated)](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf) — NIST, the primary standard defining SubBytes, ShiftRows, MixColumns, AddRoundKey, and the key expansion.
