@@ -972,6 +972,35 @@ func parseDeviceArgs(s string) (map[string]string, error) {
 	return out, nil
 }
 
+// reservedStreamArgs maps SoapyRemote stream-setup keys that GopherTrunk owns
+// (it constructs the SETUP_STREAM frame itself) to the config key that actually
+// applies them. Left in the free-form args string they reach the remote make()
+// call and are silently dropped for streaming, so config load rejects them.
+var reservedStreamArgs = map[string]string{
+	"remote:mtu":    "stream_mtu",
+	"remote:window": "stream_window",
+	"remote:prot":   "stream_protocol",
+}
+
+// reservedStreamArg reports the first reserved SoapyRemote stream key present
+// in the free-form args string, along with the config key that supersedes it.
+// It returns "", "" when args carries no reserved stream key (or is malformed,
+// which DeviceArgs reports separately).
+func reservedStreamArg(argsStr string) (key, dest string) {
+	args, err := parseDeviceArgs(argsStr)
+	if err != nil {
+		return "", ""
+	}
+	// Iterate in a stable order so the reported key is deterministic when args
+	// names more than one.
+	for _, k := range []string{"remote:mtu", "remote:window", "remote:prot"} {
+		if _, ok := args[k]; ok {
+			return k, reservedStreamArgs[k]
+		}
+	}
+	return "", ""
+}
+
 // DeviceArgs returns the SoapySDR make() kwargs for this endpoint: any
 // key=value pairs from Args, merged with the Driver shorthand. An explicit
 // "driver=" in Args wins over the Driver field. It returns nil when no args
@@ -2131,6 +2160,15 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 	}
 	if _, err := s.DeviceArgs(); err != nil {
 		return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)
+	}
+	// SoapyRemote stream arguments must not be smuggled through args.
+	// Everything in args goes to the remote make() call, but GopherTrunk
+	// builds the SETUP_STREAM frame itself, so a remote:* stream knob left in
+	// args is silently ignored for streaming (issue #876: a user set
+	// remote:mtu=8000 in args and stayed on the 1500-byte default). Reject the
+	// reserved keys and point at the dedicated field that actually takes effect.
+	if reserved, dest := reservedStreamArg(s.Args); reserved != "" {
+		return fmt.Errorf("sdr.soapy_remote[%d]: args contains stream argument %q, which is ignored in make() args; set the %q config key instead", i, reserved, dest)
 	}
 	// master_clock_rate is in Hz; a non-zero value below 1 MHz is almost
 	// certainly a units slip (e.g. "61" meaning 61 MHz) — catch it early.

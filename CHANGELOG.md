@@ -15,6 +15,18 @@ for tagged releases.
   `go.mod` and every CI/build workflow.
 
 ### Fixed
+- **SoapyRemote stream arguments smuggled through `sdr.soapy_remote[].args`
+  were silently ignored.** Everything in `args` is passed to the remote
+  SoapySDR `make()` call, but GopherTrunk builds the `SETUP_STREAM` frame
+  itself, so `remote:mtu` / `remote:window` / `remote:prot` placed in `args`
+  never reached the stream setup — a user who set `remote:mtu=8000` in `args`
+  stayed on the 1500-byte default with no warning (issue #876). Config load now
+  rejects those reserved stream keys in `args` and points at the dedicated
+  `stream_mtu` / `stream_window` / `stream_protocol` keys that actually take
+  effect. `docs/hardware.md` gains a field-tested networked-USRP-X310 example,
+  a B210 `args` snippet, the `SOAPY_SDR_LOG_LEVEL=DEBUG SoapySDRServer` debug
+  invocation, and guidance to prefer a manually chosen gain over AGC for survey
+  work.
 - **Airspy on macOS aborted mid-stream with `usb: ReadPipe: 0xe00002eb`.** After
   a second or two of healthy decoding the bulk-IN pipe was aborted by macOS
   (`kIOReturnAborted`), the daemon retried, hit the same wall, and escalated to a

@@ -324,6 +324,15 @@ func TestValidate(t *testing.T) {
 		// soapy_remote args: SoapySDR make() kwargs as "k=v,k=v" (issue #542).
 		{"soapy args ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0,antenna=RX1"}}}}, false},
 		{"soapy args malformed", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec"}}}}, true},
+		// soapy_remote args must not carry SoapyRemote stream knobs: GT builds
+		// the SETUP_STREAM frame itself and ignores remote:* in make() args, so
+		// they belong in the dedicated stream_* keys, not args (issue #876).
+		{"soapy args remote:mtu rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "remote:mtu=8000"}}}}, true},
+		{"soapy args remote:window rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "remote:window=16777216"}}}}, true},
+		{"soapy args remote:prot rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "remote:prot=tcp"}}}}, true},
+		{"soapy args remote:mtu mixed rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "antenna=RX1,remote:mtu=8000"}}}}, true},
+		// UHD frame-size make() args are legitimate and stay allowed.
+		{"soapy args recv_frame_size ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "num_recv_frames=512,recv_frame_size=16384"}}}}, false},
 		// soapy_remote stream_mtu: 0 = default; a real MTU is fine; out-of-range fails.
 		{"soapy stream_mtu zero ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1"}}}}, false},
 		{"soapy stream_mtu valid", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 8192}}}}, false},
