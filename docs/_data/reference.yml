@@ -98,6 +98,8 @@ domains:
           - { slug: nrzi, title: NRZI, type: term }
           - { slug: dibit, title: Dibit, type: term }
           - { slug: pulse-shaping, title: Pulse shaping, type: term }
+          - { slug: manchester-coding, title: Manchester coding, type: algorithm }
+          - { slug: dtmf, title: DTMF, type: term }
 
       - id: sdr-dsp
         label: SDR & DSP
@@ -114,48 +116,126 @@ domains:
           - { slug: digital-down-converter, title: Digital down-converter (DDC), type: term }
           - { slug: decimation, title: Decimation, type: term }
           - { slug: digital-filter, title: Digital filter, type: term }
-          - { slug: cic-filter, title: CIC filter, type: algorithm }
-          - { slug: root-raised-cosine-filter, title: Root-raised-cosine filter, type: algorithm }
-          - { slug: matched-filter, title: Matched filter, type: algorithm }
           - { slug: automatic-gain-control, title: Automatic gain control (AGC), type: term }
           - { slug: demodulation, title: Demodulation, type: term }
+          - { slug: quadrature-demodulation, title: Quadrature demodulation, type: algorithm }
           - { slug: clock-recovery, title: Clock recovery, type: term }
-          - { slug: costas-loop, title: Costas loop, type: algorithm }
-          - { slug: cma-equalizer, title: CMA equalizer, type: algorithm }
           - { slug: ppm-frequency-correction, title: PPM frequency correction, type: term }
           - { slug: numerically-controlled-oscillator, title: Numerically controlled oscillator (NCO), type: term }
-          - { slug: fir-filter, title: FIR filter, type: algorithm }
-          - { slug: iir-filter, title: IIR filter, type: algorithm }
           - { slug: intermediate-frequency, title: Intermediate frequency (IF), type: term }
           - { slug: baseband, title: Baseband, type: term }
-          - { slug: channelizer, title: Channelizer, type: algorithm }
-          - { slug: resampler, title: Resampler, type: algorithm }
           - { slug: automatic-frequency-control, title: Automatic frequency control (AFC), type: term }
           - { slug: dc-offset, title: DC offset (DC spike), type: term }
 
-      - id: algorithms
-        label: Transforms & algorithms
-        blurb: The mathematics of spectra, error correction, and timing recovery.
+      - id: filtering-multirate
+        label: Filtering & multirate DSP
+        blurb: The digital filters and rate-changing structures that isolate a channel and hand clean samples to the demodulator.
         entries:
-          - { slug: fourier-transform, title: Fourier transform, type: algorithm }
-          - { slug: fast-fourier-transform, title: Fast Fourier transform (FFT), type: algorithm }
-          - { slug: viterbi-algorithm, title: Viterbi algorithm, type: algorithm }
-          - { slug: convolutional-code, title: Convolutional code, type: algorithm }
-          - { slug: reed-solomon-code, title: Reed–Solomon code, type: algorithm }
-          - { slug: bch-code, title: BCH code, type: algorithm }
-          - { slug: golay-code, title: Golay code, type: algorithm }
-          - { slug: hamming-code, title: Hamming code, type: algorithm }
-          - { slug: cyclic-redundancy-check, title: Cyclic redundancy check (CRC), type: algorithm }
-          - { slug: trellis-coded-modulation, title: Trellis-coded modulation, type: algorithm }
-          - { slug: forward-error-correction, title: Forward error correction (FEC), type: term }
-          - { slug: interleaving, title: Interleaving, type: algorithm }
-          - { slug: scrambling, title: Scrambling (whitening), type: algorithm }
+          - { slug: fir-filter, title: FIR filter, type: algorithm }
+          - { slug: iir-filter, title: IIR filter, type: algorithm }
+          - { slug: cic-filter, title: CIC filter, type: algorithm }
+          - { slug: half-band-filter, title: Half-band filter, type: algorithm }
+          - { slug: root-raised-cosine-filter, title: Root-raised-cosine filter, type: algorithm }
+          - { slug: matched-filter, title: Matched filter, type: algorithm }
+          - { slug: polyphase-filter-bank, title: Polyphase filter bank, type: algorithm }
+          - { slug: channelizer, title: Channelizer, type: algorithm }
+          - { slug: resampler, title: Resampler, type: algorithm }
+
+      - id: synchronization
+        label: Synchronization, carrier & timing
+        blurb: The feedback loops and estimators that lock onto a signal's carrier and symbol clock.
+        entries:
+          - { slug: phase-locked-loop, title: Phase-locked loop (PLL), type: algorithm }
+          - { slug: frequency-locked-loop, title: Frequency-locked loop (FLL), type: algorithm }
+          - { slug: costas-loop, title: Costas loop, type: algorithm }
           - { slug: gardner-timing-recovery, title: Gardner timing recovery, type: algorithm }
           - { slug: mueller-muller-timing-recovery, title: Mueller–Müller timing recovery, type: algorithm }
-          - { slug: multi-band-excitation, title: Multi-band excitation (MBE), type: algorithm }
-          - { slug: compact-position-reporting, title: Compact position reporting (CPR), type: algorithm }
+          - { slug: early-late-gate, title: Early-late gate timing recovery, type: algorithm }
+          - { slug: zero-crossing-detection, title: Zero-crossing detection, type: algorithm }
+          - { slug: differential-decoding, title: Differential decoding, type: algorithm }
+
+      - id: equalization
+        label: Equalization
+        blurb: The adaptive filters that undo multipath and channel distortion so symbols can be sliced.
+        entries:
+          - { slug: adaptive-filter, title: Adaptive filter, type: algorithm }
+          - { slug: lms-algorithm, title: Least mean squares (LMS), type: algorithm }
+          - { slug: rls-algorithm, title: Recursive least squares (RLS), type: algorithm }
+          - { slug: cma-equalizer, title: CMA equalizer, type: algorithm }
+          - { slug: zero-forcing-equalizer, title: Zero-forcing equalizer, type: algorithm }
+          - { slug: mmse-equalizer, title: MMSE equalizer, type: algorithm }
+          - { slug: decision-feedback-equalizer, title: Decision-feedback equalizer (DFE), type: algorithm }
+          - { slug: maximum-likelihood-sequence-estimation, title: Maximum-likelihood sequence estimation (MLSE), type: algorithm }
+
+      - id: algorithms
+        label: Transforms & spectral analysis
+        blurb: The Fourier machinery and spectral-estimation methods behind every waterfall, filter, and OFDM link.
+        entries:
+          - { slug: fourier-transform, title: Fourier transform, type: algorithm }
+          - { slug: discrete-fourier-transform, title: Discrete Fourier transform (DFT), type: algorithm }
+          - { slug: fast-fourier-transform, title: Fast Fourier transform (FFT), type: algorithm }
+          - { slug: goertzel-algorithm, title: Goertzel algorithm, type: algorithm }
+          - { slug: window-function, title: Window function, type: algorithm }
+          - { slug: welch-method, title: Welch's method, type: algorithm }
+          - { slug: overlap-add-overlap-save, title: Overlap-add & overlap-save, type: algorithm }
+          - { slug: hilbert-transform, title: Hilbert transform, type: algorithm }
+          - { slug: cordic, title: CORDIC, type: algorithm }
+
+      - id: error-correction
+        label: Error-correcting codes
+        blurb: The forward-error-correction codes and their decoders that recover bits from a noisy channel.
+        entries:
+          - { slug: forward-error-correction, title: Forward error correction (FEC), type: term }
+          - { slug: convolutional-code, title: Convolutional code, type: algorithm }
+          - { slug: viterbi-algorithm, title: Viterbi algorithm, type: algorithm }
+          - { slug: bcjr-algorithm, title: BCJR algorithm, type: algorithm }
+          - { slug: fano-algorithm, title: Fano algorithm (sequential decoding), type: algorithm }
+          - { slug: trellis-coded-modulation, title: Trellis-coded modulation, type: algorithm }
+          - { slug: turbo-code, title: Turbo code, type: algorithm }
+          - { slug: ldpc-code, title: Low-density parity-check (LDPC) code, type: algorithm }
+          - { slug: polar-code, title: Polar code, type: algorithm }
+          - { slug: reed-solomon-code, title: Reed–Solomon code, type: algorithm }
+          - { slug: bch-code, title: BCH code, type: algorithm }
+          - { slug: berlekamp-massey-algorithm, title: Berlekamp–Massey algorithm, type: algorithm }
+          - { slug: chien-search, title: Chien search, type: algorithm }
+          - { slug: forney-algorithm, title: Forney algorithm, type: algorithm }
+          - { slug: golay-code, title: Golay code, type: algorithm }
+          - { slug: hamming-code, title: Hamming code, type: algorithm }
+          - { slug: reed-muller-code, title: Reed–Muller code, type: algorithm }
+          - { slug: hadamard-code, title: Hadamard code (Walsh–Hadamard), type: algorithm }
+          - { slug: fire-code, title: Fire code, type: algorithm }
+          - { slug: cyclic-redundancy-check, title: Cyclic redundancy check (CRC), type: algorithm }
           - { slug: bptc, title: BPTC, type: algorithm }
-          - { slug: dtmf, title: DTMF, type: term }
+          - { slug: interleaving, title: Interleaving, type: algorithm }
+          - { slug: puncturing, title: Puncturing, type: algorithm }
+          - { slug: gray-code, title: Gray code, type: algorithm }
+          - { slug: scrambling, title: Scrambling (whitening), type: algorithm }
+
+      - id: spread-spectrum
+        label: Spread spectrum & multiple access
+        blurb: The spreading codes and multi-carrier schemes that share spectrum and resist interference.
+        entries:
+          - { slug: direct-sequence-spread-spectrum, title: Direct-sequence spread spectrum (DSSS), type: algorithm }
+          - { slug: frequency-hopping-spread-spectrum, title: Frequency-hopping spread spectrum (FHSS), type: algorithm }
+          - { slug: cdma, title: Code-division multiple access (CDMA), type: algorithm }
+          - { slug: ofdm, title: Orthogonal frequency-division multiplexing (OFDM), type: algorithm }
+          - { slug: ofdma, title: OFDMA, type: algorithm }
+          - { slug: maximal-length-sequence, title: Maximal-length sequence (m-sequence), type: algorithm }
+          - { slug: gold-code, title: Gold code, type: algorithm }
+          - { slug: barker-code, title: Barker code, type: algorithm }
+
+      - id: estimation-array
+        label: Estimation, detection & array processing
+        blurb: The algorithms that track parameters, decide whether a signal is present, and locate emitters in space.
+        entries:
+          - { slug: kalman-filter, title: Kalman filter, type: algorithm }
+          - { slug: energy-detection, title: Energy detection, type: algorithm }
+          - { slug: cfar-detection, title: CFAR detection, type: algorithm }
+          - { slug: beamforming, title: Beamforming, type: algorithm }
+          - { slug: music-algorithm, title: MUSIC algorithm, type: algorithm }
+          - { slug: esprit-algorithm, title: ESPRIT algorithm, type: algorithm }
+          - { slug: multilateration, title: Multilateration (MLAT), type: algorithm }
+          - { slug: compact-position-reporting, title: Compact position reporting (CPR), type: algorithm }
 
       - id: cryptography
         label: Cryptography & cryptanalysis
@@ -180,6 +260,7 @@ domains:
           - { slug: one-time-pad, title: One-time pad (OTP), type: algorithm }
           - { slug: hash-function, title: Cryptographic hash function, type: algorithm }
           - { slug: advanced-encryption-standard, title: Advanced Encryption Standard (AES), type: algorithm }
+          - { slug: data-encryption-standard, title: Data Encryption Standard (DES), type: algorithm }
           - { slug: rc4-cipher, title: RC4 (ARC4) cipher, type: algorithm }
           - { slug: frequency-analysis, title: Frequency analysis, type: term }
           - { slug: ciphertext-only-attack, title: Ciphertext-only attack, type: term }
@@ -245,9 +326,13 @@ domains:
 
       - id: voice-coding
         label: Voice coding
-        blurb: The vocoders that compress speech into a few kilobits per second.
+        blurb: The vocoders and speech-coding algorithms that compress voice into a few kilobits per second.
         entries:
           - { slug: vocoder, title: Vocoder, type: technology }
+          - { slug: linear-predictive-coding, title: Linear predictive coding (LPC), type: algorithm }
+          - { slug: code-excited-linear-prediction, title: Code-excited linear prediction (CELP), type: algorithm }
+          - { slug: multi-band-excitation, title: Multi-band excitation (MBE), type: algorithm }
+          - { slug: melp, title: MELP / MELPe, type: algorithm }
           - { slug: imbe, title: IMBE, type: technology }
           - { slug: ambe, title: AMBE, type: technology }
           - { slug: ambe-plus-2, title: AMBE+2, type: technology }

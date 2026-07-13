@@ -3,26 +3,30 @@ slug: fast-fourier-transform
 title: Fast Fourier transform (FFT)
 entry_type: algorithm
 category: algorithms
-description: The fast Fourier transform is an efficient algorithm for computing the discrete Fourier transform, making real-time spectrum and waterfall displays practical.
-keywords: FFT, fast Fourier transform, DFT, spectrum, waterfall, bins, Cooley-Tukey
+description: The fast Fourier transform is an efficient O(N log N) algorithm for computing the discrete Fourier transform, making real-time spectrum, waterfall, and OFDM processing practical.
+keywords: FFT, fast Fourier transform, DFT, Cooley-Tukey, radix-2, butterfly, spectrum, waterfall, bins, windowing, OFDM
 aka: [fast Fourier transform, FFT]
 autolink: true
 infobox:
   - { label: Type, value: Algorithm }
   - { label: Computes, value: Discrete Fourier transform efficiently }
-  - { label: Output, value: Spectrum (bins) }
-see_also: [fourier-transform, bandwidth, sample-rate, iq-data]
+  - { label: Complexity, value: O(N log N) vs O(N²) }
+see_also: [fourier-transform, discrete-fourier-transform, window-function, welch-method, overlap-add-overlap-save, ofdm]
 related_lessons:
   - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
 related_reading:
   - { title: "SDR Internals, Part 8: Equalization, diversity & the FFT", url: /blog/deep-dives/sdr-internals-08-equalization-diversity-fft/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Fast_Fourier_transform
+  - https://en.wikipedia.org/wiki/Cooley%E2%80%93Tukey_FFT_algorithm
 ---
 
 The **fast Fourier transform** (**FFT**) is an efficient algorithm for computing the
-discrete [Fourier transform](/reference/fourier-transform/), reducing the work enough to
-run many times a second in real time.[^wiki]
+discrete [Fourier transform](/reference/discrete-fourier-transform/) (DFT), reducing the
+arithmetic from O(N²) to O(N log N) so the same result can be produced fast enough to run
+many times a second in real time.[^wiki] It computes exactly the same spectrum as a direct
+DFT — it is a shortcut, not an approximation — and that speedup is what makes live spectrum
+displays, waterfalls, and OFDM radios practical at all.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A block of time samples feeding an FFT block that outputs a row of frequency bins." xmlns="http://www.w3.org/2000/svg">
@@ -40,15 +44,43 @@ run many times a second in real time.[^wiki]
 
 ## How it works
 
-It splits the captured [bandwidth](/reference/bandwidth/) into a number of **bins** (the
-FFT size); resolution ≈ [sample rate](/reference/sample-rate/) ÷ FFT size. More bins give
-finer resolution but slower updates and more CPU.
+The FFT exploits the redundancy in the DFT sum. The most common variant, the
+**Cooley–Tukey radix-2** algorithm, recursively splits an N-point transform into two
+N/2-point transforms — one over the even-indexed samples, one over the odd — and then
+recombines them with a **butterfly** that multiplies one half by a *twiddle factor* (a
+complex root of unity) and adds and subtracts. Applying this split log₂N times leaves only
+2-point butterflies, so the total cost is N/2 · log₂N butterflies rather than N² complex
+multiplies. Radix-2 wants a power-of-two length; mixed-radix and Bluestein variants handle
+other sizes.
+
+The band is divided into a number of **bins** equal to the FFT size; the frequency
+resolution is roughly [sample rate](/reference/sample-rate/) ÷ FFT size. More bins give
+finer resolution but cover a longer time window, so the update rate drops and CPU cost
+rises — the familiar time-versus-frequency resolution trade-off.
+
+## In practice
+
+Feeding raw samples straight into an FFT causes **spectral leakage**: because the block is
+a finite chunk cut from a longer signal, its edges act like a discontinuity and smear
+energy across neighbouring bins. The fix is to multiply the block by a tapered
+[window function](/reference/window-function/) (Hann, Hamming, Blackman-Harris…) before the
+transform, trading a slightly wider main lobe for far lower sidelobes. To turn short, noisy
+transforms into a stable power-spectral-density estimate, [Welch's method](/reference/welch-method/)
+averages the windowed FFTs of many overlapping segments.
+
+The FFT also accelerates *filtering*: convolving a signal with a long filter is far cheaper
+as a multiply in the frequency domain, and streaming that idea across successive blocks is
+exactly the [overlap-add and overlap-save](/reference/overlap-add-overlap-save/) method.
 
 ## Relevance to SDR
 
 The FFT drives the spectrum and waterfall displays used to find signals and spot a steady
-[control channel](/reference/control-channel/).
+[control channel](/reference/control-channel/), and GopherTrunk relies on it for band
+surveys and inside polyphase channelizers. It is also the heart of
+[OFDM](/reference/ofdm/): systems such as Wi-Fi, LTE, 5G NR, DVB-T, and DAB transmit data on
+thousands of orthogonal subcarriers, and the receiver recovers them all with a single FFT
+per symbol — the algorithm that makes wideband digital broadcasting economical.
 
 ## Sources
 
-[^wiki]: [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform) — Wikipedia, for the algorithm and its efficiency over the direct DFT.
+[^wiki]: [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform) — Wikipedia, for the algorithm and its efficiency over the direct DFT. See also [Cooley–Tukey FFT algorithm](https://en.wikipedia.org/wiki/Cooley%E2%80%93Tukey_FFT_algorithm) for the radix-2 decomposition.
