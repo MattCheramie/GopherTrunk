@@ -2,7 +2,7 @@
 slug: provoice
 title: ProVoice
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: ProVoice is the digital-voice option for EDACS trunked systems, using an AMBE-family vocoder over the otherwise analog-trunking EDACS air interface.
 keywords: ProVoice, EDACS digital voice, M/A-COM, AMBE, digital trunking
 aka: [ProVoice]

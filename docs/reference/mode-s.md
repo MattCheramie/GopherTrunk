@@ -2,7 +2,7 @@
 slug: mode-s
 title: Mode S
 entry_type: protocol
-category: protocols
+category: aviation-marine
 description: Mode S is the 1090 MHz selective-addressing aviation transponder protocol underlying ADS-B, carrying a 24-bit aircraft address and CRC-protected data frames.
 keywords: Mode S, Mode-S, 1090 MHz, transponder, ICAO 24-bit address, squitter, ADS-B, CRC-24
 aka: [Mode S, Mode-S]

@@ -2,7 +2,7 @@
 slug: rtl-tcp
 title: rtl_tcp
 entry_type: technology
-category: hardware
+category: sdr-software
 description: rtl_tcp is a small server that streams raw IQ samples from an RTL-SDR over a TCP network connection, allowing the dongle to be used remotely.
 keywords: rtl_tcp, network SDR, remote RTL-SDR, IQ over TCP, Raspberry Pi SDR
 aka: [rtl_tcp]

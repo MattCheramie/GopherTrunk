@@ -2,7 +2,7 @@
 slug: system-fusion-ysf
 title: System Fusion (YSF)
 entry_type: protocol
-category: protocols
+category: amateur-digital
 description: System Fusion (Yaesu System Fusion, YSF) is Yaesu's amateur C4FM digital-voice system, supporting digital and analog modes with an AMBE-family vocoder and internet-linked rooms.
 keywords: System Fusion, YSF, Yaesu, C4FM, amateur digital voice, Fusion, Wires-X, AMBE
 aka: [System Fusion, Yaesu System Fusion, YSF, Fusion]

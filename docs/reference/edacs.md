@@ -2,7 +2,7 @@
 slug: edacs
 title: EDACS
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: EDACS (Enhanced Digital Access Communications System) is a trunked-radio system from GE/Ericsson/M-A-COM using a dedicated control channel, with analog and ProVoice digital variants.
 keywords: EDACS, Ericsson, GE, M/A-COM, trunked radio, ProVoice, control channel, legacy
 aka: [EDACS]

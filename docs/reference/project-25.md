@@ -2,7 +2,7 @@
 slug: project-25
 title: Project 25 (P25)
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: Project 25 (P25) is a suite of open standards for digital land-mobile radio used by public-safety agencies in North America, defining Phase 1 (FDMA) and Phase 2 (TDMA) air interfaces.
 keywords: P25, Project 25, APCO-25, public safety radio, digital trunking, C4FM, IMBE, AMBE+2
 aka: [P25, Project 25, APCO-25, APCO P25]

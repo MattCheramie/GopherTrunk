@@ -2,7 +2,7 @@
 slug: ais
 title: Automatic Identification System (AIS)
 entry_type: protocol
-category: protocols
+category: aviation-marine
 description: AIS (Automatic Identification System) is a maritime VHF data system in which ships broadcast identity, position, course, and speed using GMSK in a self-organising TDMA scheme.
 keywords: AIS, Automatic Identification System, marine tracking, GMSK, SOTDMA, 161.975 162.025, vessel position, NMEA
 aka: [AIS]

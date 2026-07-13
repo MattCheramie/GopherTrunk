@@ -2,7 +2,7 @@
 slug: airspy-hf-plus
 title: Airspy HF+
 entry_type: hardware
-category: hardware
+category: sdr-devices
 description: Airspy HF+ is a software-defined radio optimised for the HF and low-VHF bands, with excellent dynamic range for receiving shortwave and weak low-band signals.
 keywords: Airspy HF+, HF SDR, shortwave receiver, dynamic range, Discovery, low VHF
 aka: [Airspy HF+, Airspy HF plus]

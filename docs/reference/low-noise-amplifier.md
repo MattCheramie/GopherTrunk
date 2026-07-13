@@ -2,7 +2,7 @@
 slug: low-noise-amplifier
 title: Low-noise amplifier (LNA)
 entry_type: hardware
-category: hardware
+category: rf-front-end
 description: A low-noise amplifier boosts a weak antenna signal early in the receive chain with minimal added noise, setting much of a receiver's sensitivity.
 keywords: LNA, low noise amplifier, noise figure, sensitivity, front end, preamp
 aka: [low-noise amplifier, LNA]

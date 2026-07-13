@@ -2,7 +2,7 @@
 slug: dpmr
 title: dPMR
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: dPMR (digital private mobile radio) is an ETSI narrowband 4FSK standard using 6.25 kHz FDMA channels, closely related to NXDN, for licence-free and licensed business radio.
 keywords: dPMR, digital private mobile radio, ETSI, 6.25 kHz, narrowband, FDMA, 4FSK
 aka: [dPMR]

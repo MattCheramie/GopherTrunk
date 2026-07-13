@@ -2,7 +2,7 @@
 slug: dmr
 title: Digital Mobile Radio (DMR)
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: Digital Mobile Radio (DMR) is an ETSI open standard for digital two-way radio using two-slot TDMA in a 12.5 kHz channel with the AMBE+2 vocoder, defined in three tiers.
 keywords: DMR, Digital Mobile Radio, ETSI, two-slot TDMA, AMBE+2, Tier I II III, MOTOTRBO
 aka: [DMR, Digital Mobile Radio]

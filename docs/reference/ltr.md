@@ -2,7 +2,7 @@
 slug: ltr
 title: LTR (Logic Trunked Radio)
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: LTR (Logic Trunked Radio) is a simple distributed trunking protocol by E.F. Johnson with no dedicated control channel — signalling is embedded subaudibly on each channel.
 keywords: LTR, Logic Trunked Radio, E.F. Johnson, distributed trunking, subaudible signalling, business radio
 aka: [LTR, Logic Trunked Radio]

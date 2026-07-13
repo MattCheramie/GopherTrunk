@@ -2,7 +2,7 @@
 slug: r820t-tuner
 title: R820T / R820T2 tuner
 entry_type: hardware
-category: hardware
+category: sdr-devices
 description: The Rafael Micro R820T and R820T2 are the most common tuner chips paired with the RTL2832U in RTL-SDR dongles, providing the RF front-end and mixer up to ~1.7 GHz.
 keywords: R820T, R820T2, R828D, Rafael Micro, tuner chip, RTL-SDR front end, mixer
 aka: [R820T, R820T2]

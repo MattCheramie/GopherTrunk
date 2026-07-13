@@ -2,7 +2,7 @@
 slug: tetra
 title: TETRA
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: TETRA (Terrestrial Trunked Radio) is an ETSI digital trunked-radio standard using four-slot TDMA and π/4-DQPSK, widely used by public safety and transport outside North America.
 keywords: TETRA, Terrestrial Trunked Radio, ETSI, four-slot TDMA, pi/4-DQPSK, ACELP, public safety Europe
 aka: [TETRA, Terrestrial Trunked Radio]

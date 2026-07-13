@@ -2,7 +2,7 @@
 slug: p25-phase-2
 title: P25 Phase 2
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: P25 Phase 2 is the TDMA air interface of Project 25, placing two voice timeslots in a 12.5 kHz channel using H-DQPSK/H-CPM and the AMBE+2 vocoder for doubled spectrum efficiency.
 keywords: P25 Phase 2, TDMA, AMBE+2, H-DQPSK, two-slot, spectrum efficiency, public safety
 aka: [P25 Phase 2, P25 Phase II, Phase 2 P25]

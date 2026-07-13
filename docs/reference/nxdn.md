@@ -2,7 +2,7 @@
 slug: nxdn
 title: NXDN
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: NXDN is a narrowband digital land-mobile radio standard by Kenwood and Icom, using 4FSK in 6.25 or 12.5 kHz channels with the AMBE+2 vocoder, in conventional and trunked forms.
 keywords: NXDN, NEXEDGE, IDAS, narrowband digital, 6.25 kHz, Kenwood, Icom, 4FSK
 aka: [NXDN, NEXEDGE, IDAS]

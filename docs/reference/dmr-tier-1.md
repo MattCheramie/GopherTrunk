@@ -2,7 +2,7 @@
 slug: dmr-tier-1
 title: DMR Tier I
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: DMR Tier I is the licence-free tier of the ETSI DMR standard, intended for low-power consumer and light commercial use without an individual licence.
 keywords: DMR Tier I, DMR Tier 1, licence-free, PMR446, dPMR, consumer radio
 aka: [DMR Tier I, DMR Tier 1]

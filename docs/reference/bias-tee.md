@@ -2,7 +2,7 @@
 slug: bias-tee
 title: Bias tee
 entry_type: hardware
-category: hardware
+category: rf-front-end
 description: A bias tee injects DC power onto the coax feeding an antenna-mounted device such as an LNA, while passing the RF signal through to the receiver.
 keywords: bias tee, bias-T, DC injection, LNA power, phantom power, coax
 aka: [bias tee, bias-T]

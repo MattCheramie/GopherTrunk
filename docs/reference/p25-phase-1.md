@@ -2,7 +2,7 @@
 slug: p25-phase-1
 title: P25 Phase 1
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: P25 Phase 1 is the FDMA air interface of Project 25, using C4FM modulation at 4800 baud and the IMBE vocoder in 12.5 kHz channels for North American public-safety radio.
 keywords: P25 Phase 1, C4FM, IMBE, FDMA, 9600 bps, public safety, trunking
 aka: [P25 Phase 1, P25 Phase I, Phase 1 P25]

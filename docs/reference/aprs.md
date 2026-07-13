@@ -2,7 +2,7 @@
 slug: aprs
 title: APRS
 entry_type: protocol
-category: protocols
+category: paging-data
 description: APRS (Automatic Packet Reporting System) is an amateur-radio data network for real-time position, weather, telemetry, and messaging, carried over AX.25 packet using AFSK.
 keywords: APRS, Automatic Packet Reporting System, amateur radio, 144.390, AX.25, AFSK, Bob Bruninga, position reporting
 aka: [APRS]

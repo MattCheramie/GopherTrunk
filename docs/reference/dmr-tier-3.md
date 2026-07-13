@@ -2,7 +2,7 @@
 slug: dmr-tier-3
 title: DMR Tier III
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: DMR Tier III is the trunked tier of the ETSI DMR standard, adding a control channel and signalling (CSBK) so many talkgroups share a pool of two-slot TDMA channels.
 keywords: DMR Tier III, DMR Tier 3, trunked DMR, Capacity Plus, control channel, CSBK, talkgroup
 aka: [DMR Tier III, DMR Tier 3]

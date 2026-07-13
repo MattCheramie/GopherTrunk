@@ -2,7 +2,7 @@
 slug: zadig
 title: Zadig
 entry_type: hardware
-category: hardware
+category: sdr-software
 description: Zadig is a Windows utility that installs the generic WinUSB driver onto an SDR dongle, replacing the default TV-tuner driver so SDR software can access the device.
 keywords: Zadig, WinUSB, RTL-SDR driver, Windows, libusb, DVB-T driver, USB driver
 aka: [Zadig, WinUSB]

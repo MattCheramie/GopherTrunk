@@ -2,7 +2,7 @@
 slug: upconverter
 title: Upconverter
 entry_type: hardware
-category: hardware
+category: rf-front-end
 description: An upconverter shifts HF signals up into the tuning range of a VHF/UHF SDR such as an RTL-SDR, enabling shortwave reception on radios that cannot tune HF directly.
 keywords: upconverter, HF converter, Ham It Up, shortwave, RTL-SDR HF, frequency shifting
 aka: [upconverter]

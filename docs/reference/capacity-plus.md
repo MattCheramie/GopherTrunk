@@ -2,7 +2,7 @@
 slug: capacity-plus
 title: Capacity Plus
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: Capacity Plus is Motorola's proprietary DMR trunking mode that pools channels and rotates the control signalling, adding trunked capacity to conventional DMR.
 keywords: Capacity Plus, Cap Plus, Motorola DMR trunking, MOTOTRBO, rest channel, single-site trunking
 aka: [Capacity Plus, "Cap Plus", "Capacity Max"]

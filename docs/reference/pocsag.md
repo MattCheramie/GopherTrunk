@@ -2,7 +2,7 @@
 slug: pocsag
 title: POCSAG
 entry_type: protocol
-category: protocols
+category: paging-data
 description: POCSAG (CCIR Radiopaging Code No. 1) is the classic asynchronous FSK paging protocol used worldwide for numeric and alphanumeric pager messages at 512, 1200, and 2400 bps.
 keywords: POCSAG, paging, CCIR 584, pager, FSK, numeric alphanumeric, DAPNET, fire EMS
 aka: [POCSAG]

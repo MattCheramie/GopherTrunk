@@ -2,7 +2,7 @@
 slug: motorola-type-ii
 title: Motorola Type II
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: Motorola Type II is a classic analog trunked-radio system using a digital control channel to assign analog FM voice channels, widely deployed before the move to P25.
 keywords: Motorola Type II, SmartNet, SmartZone, analog trunking, control channel, fleet, public safety legacy
 aka: [Motorola Type II, SmartNet, SmartZone]

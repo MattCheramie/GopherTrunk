@@ -2,7 +2,7 @@
 slug: dmr-tier-2
 title: DMR Tier II
 entry_type: protocol
-category: protocols
+category: land-mobile-trunking
 description: DMR Tier II is the licensed conventional tier of the ETSI DMR standard, using two-slot TDMA in 12.5 kHz channels — the most common commercial and amateur DMR mode.
 keywords: DMR Tier II, DMR Tier 2, conventional DMR, MOTOTRBO, two-slot TDMA, AMBE+2
 aka: [DMR Tier II, DMR Tier 2]

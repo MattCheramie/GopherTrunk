@@ -2,7 +2,7 @@
 slug: hackrf
 title: HackRF One
 entry_type: hardware
-category: hardware
+category: sdr-devices
 description: HackRF One is an open-source wideband half-duplex software-defined radio transceiver covering 1 MHz to 6 GHz with up to 20 MHz of bandwidth and transmit capability.
 keywords: HackRF One, Great Scott Gadgets, wideband SDR, transceiver, 1 MHz 6 GHz, transmit
 aka: [HackRF, HackRF One]

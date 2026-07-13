@@ -2,7 +2,7 @@
 slug: airspy
 title: Airspy
 entry_type: hardware
-category: hardware
+category: sdr-devices
 description: Airspy is a line of high-performance VHF/UHF software-defined radio receivers (R2 and Mini) offering better sensitivity and wider bandwidth than RTL-SDR.
 keywords: Airspy, Airspy R2, Airspy Mini, high performance SDR, VHF UHF receiver
 aka: [Airspy]

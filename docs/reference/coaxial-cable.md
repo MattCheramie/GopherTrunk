@@ -2,7 +2,7 @@
 slug: coaxial-cable
 title: Coaxial cable
 entry_type: hardware
-category: hardware
+category: rf-front-end
 description: Coaxial cable carries RF from antenna to receiver on a shielded centre conductor. Every metre and connector adds loss, more at higher frequencies — keep runs short.
 keywords: coaxial cable, coax, feedline, RG-58, RG-6, LMR-400, cable loss, shield, impedance
 aka: [coax, "coaxial cable", feedline]
