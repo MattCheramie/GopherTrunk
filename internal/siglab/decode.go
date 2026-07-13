@@ -27,6 +27,12 @@ const (
 	FormatU8 SampleFormat = iota
 	// FormatF32 is GNU Radio's interleaved little-endian float32 cfile.
 	FormatF32
+	// FormatWAV is a two-channel 16-bit signed PCM RIFF/WAVE baseband
+	// recording (I in channel 1, Q in channel 2) — the layout GopherTrunk's
+	// own IQWriter and SDRtrunk/SDR++ write. The sample rate is read from the
+	// WAV header, overriding -sample-rate, and the 44-byte header is skipped
+	// before decoding.
+	FormatWAV
 )
 
 // String renders the format as the flag value operators type.
@@ -34,6 +40,8 @@ func (f SampleFormat) String() string {
 	switch f {
 	case FormatF32:
 		return "f32"
+	case FormatWAV:
+		return "wav"
 	default:
 		return "u8"
 	}
@@ -41,15 +49,18 @@ func (f SampleFormat) String() string {
 
 // ParseSampleFormat maps a -format flag value to a SampleFormat. It accepts
 // the same spellings the replay subcommand always has (u8, f32, plus the
-// float32/cfile aliases) so existing muscle memory keeps working.
+// float32/cfile aliases) so existing muscle memory keeps working, plus wav
+// (aka sw16) for two-channel 16-bit baseband recordings.
 func ParseSampleFormat(s string) (SampleFormat, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "u8", "":
 		return FormatU8, nil
 	case "f32", "float32", "cfile":
 		return FormatF32, nil
+	case "wav", "sw16", "s16":
+		return FormatWAV, nil
 	default:
-		return FormatU8, fmt.Errorf("siglab: unknown sample format %q (want u8 or f32)", s)
+		return FormatU8, fmt.Errorf("siglab: unknown sample format %q (want u8, f32, or wav)", s)
 	}
 }
 
@@ -64,6 +75,8 @@ func (f SampleFormat) Decoder() (SampleDecoder, int) {
 	switch f {
 	case FormatF32:
 		return decodeF32, 8
+	case FormatWAV:
+		return decodeSW16, 4
 	default:
 		return decodeU8, 2
 	}
@@ -89,5 +102,18 @@ func decodeF32(buf []byte, out []complex64) {
 		ir := math.Float32frombits(binary.LittleEndian.Uint32(buf[8*i:]))
 		qr := math.Float32frombits(binary.LittleEndian.Uint32(buf[8*i+4:]))
 		out[i] = complex(ir, qr)
+	}
+}
+
+// decodeSW16 converts interleaved 16-bit signed PCM (I in channel 1, Q in
+// channel 2) to complex64, matching the normalisation the baseband IQWriter
+// and SDRtrunk/SDR++ use (÷32768). The 44-byte WAV header is stripped before
+// this decoder is fed any bytes (see the FormatWAV handling in engine.go).
+func decodeSW16(buf []byte, out []complex64) {
+	n := len(buf) / 4
+	for i := 0; i < n; i++ {
+		iv := int16(binary.LittleEndian.Uint16(buf[4*i:]))
+		qv := int16(binary.LittleEndian.Uint16(buf[4*i+2:]))
+		out[i] = complex(float32(iv)/32768, float32(qv)/32768)
 	}
 }

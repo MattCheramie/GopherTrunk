@@ -1678,6 +1678,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Autotune:     d.autotune.Get(controlEntry.Info.Serial),
 					// 0 → ccdecoder's built-in default (issue #815).
 					CarrierOffsetWarnHz: int(cfg.SDR.CarrierOffsetWarnHz),
+					// A baseband record entry with tap: ddc on this control
+					// serial tees the narrowband channelized stream (the DDC
+					// output the decoder sees) to WAV — small, shareable, and
+					// replayable with `replay -format wav`.
+					DDCRecordDir: ddcRecordDirForSerial(cfg, controlEntry.Info.Serial),
 				}
 				d.controlSerial = controlEntry.Info.Serial
 				// The CC decoder owns StreamIQ on this dongle's broker,
@@ -4326,17 +4331,39 @@ func (s sitesProvider) Topology(system string) (*trunking.TopologySnapshot, bool
 	return s.t.Topology(system)
 }
 
+// ddcRecordDirForSerial returns the recording directory for a baseband
+// record entry with tap: ddc on the given serial, or "" if none is
+// configured. This drives ccdecoder.Options.DDCRecordDir so the narrowband
+// DDC output is teed at the decoder rather than by wrapping the raw device.
+func ddcRecordDirForSerial(cfg config.Config, serial string) string {
+	for _, r := range cfg.Baseband.Record {
+		if r.Serial == serial && r.TapDDC() {
+			return r.Dir
+		}
+	}
+	return ""
+}
+
 // wrapBasebandRecorders replaces the Device of every pool entry whose
-// serial appears in baseband.record with a RecordingDevice, teeing its
-// live IQ to a WAV recording. Runs once at construction, before any
-// streaming starts, so mutating the entry's Device pointer is safe.
+// serial appears in baseband.record (tap: wideband) with a RecordingDevice,
+// teeing its live IQ to a WAV recording. Runs once at construction, before
+// any streaming starts, so mutating the entry's Device pointer is safe.
 func (d *Daemon) wrapBasebandRecorders(cfg config.Config, log *slog.Logger) {
 	if len(cfg.Baseband.Record) == 0 || d.pool == nil {
 		return
 	}
 	dirBySerial := make(map[string]string, len(cfg.Baseband.Record))
 	for _, r := range cfg.Baseband.Record {
+		if r.TapDDC() {
+			// Narrowband DDC-output recording is teed at the control-channel
+			// decoder (ccDecoderOpts.DDCRecordDir), not by wrapping the raw
+			// device — the device only ever sees the wideband SDR stream.
+			continue
+		}
 		dirBySerial[r.Serial] = r.Dir
+	}
+	if len(dirBySerial) == 0 {
+		return
 	}
 	rate := cfg.SDR.SampleRate
 	if rate == 0 {

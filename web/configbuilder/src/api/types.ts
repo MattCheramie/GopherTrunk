@@ -385,6 +385,7 @@ export interface BroadcastConfig {
 export interface BasebandRecordConfig {
   Serial: string;
   Dir: string;
+  Tap: string;
 }
 export interface BasebandReplayConfig {
   File: string;

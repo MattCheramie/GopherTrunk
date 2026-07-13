@@ -266,6 +266,14 @@ type Options struct {
 	// (issue #815). Zero selects defaultCarrierOffsetWarnHz. Raise it for a
 	// high-drift dongle to avoid benign warnings.
 	CarrierOffsetWarnHz int
+	// DDCRecordDir, when non-empty, records the post-DDC narrowband IQ (the
+	// channelized stream the active pipeline decodes, at the pipeline rate) to
+	// two-channel 16-bit baseband WAVs in this directory. This is the "record
+	// the digital down-converter output" tap: a small per-channel recording of
+	// exactly the signal being decoded, instead of a fat wideband capture at
+	// the SDR rate. Empty (the default) disables it at zero cost. Driven by a
+	// baseband record entry with tap: ddc.
+	DDCRecordDir string
 }
 
 // Decoder is the long-lived component that converts the control
@@ -351,6 +359,11 @@ type Decoder struct {
 	// hands it to Downconverter.Process each chunk so the decimated
 	// stream doesn't allocate per call.
 	ddcOut []complex64
+
+	// ddcRec, when non-nil (Options.DDCRecordDir set), tees ddcOut to a
+	// narrowband baseband WAV each chunk. Owned by the pump goroutine (all
+	// access is under mu), closed on Run exit.
+	ddcRec *ddcRecorder
 
 	// IQ-power tracking — see observeIQPower for the math. Owned solely by
 	// the forwarder goroutine, which observes every delivered chunk before
@@ -462,6 +475,7 @@ func New(opts Options) (*Decoder, error) {
 	if d.carrierOffsetWarnHz <= 0 {
 		d.carrierOffsetWarnHz = defaultCarrierOffsetWarnHz
 	}
+	d.ddcRec = newDDCRecorder(opts.DDCRecordDir, log)
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
 	}
@@ -492,6 +506,7 @@ func (d *Decoder) Run(ctx context.Context) error {
 	}
 
 	defer d.sub.Close()
+	defer d.ddcRec.close() // nil-safe; finalizes any open DDC recording
 
 	// Decouple real-time IQ ingestion from decode (issue #402). The SDR
 	// driver drops a chunk the instant its small delivery channel backs up,
@@ -796,6 +811,9 @@ func (d *Decoder) pump(iq []complex64) {
 		return
 	}
 	d.ddcOut = d.ddc.Process(d.ddcOut, iq)
+	if d.ddcRec != nil {
+		d.ddcRec.write(d.activeAt, d.pipelineRateHz, d.ddcOut)
+	}
 	d.active.Process(d.ddcOut)
 	d.sampleAutotuneLocked()
 	d.checkCarrierOffsetLocked()

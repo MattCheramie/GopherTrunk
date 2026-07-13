@@ -493,12 +493,27 @@ type BasebandConfig struct {
 	Replay []BasebandReplayConfig `yaml:"replay"`
 }
 
-// BasebandRecordConfig taps one tuner's live IQ to WAV recordings.
+// BasebandRecordConfig taps one tuner's IQ to WAV recordings.
 type BasebandRecordConfig struct {
 	// Serial is the SDR serial whose IQ stream is recorded.
 	Serial string `yaml:"serial"`
 	// Dir is the directory recordings are written into.
 	Dir string `yaml:"dir"`
+	// Tap selects what is recorded:
+	//   "wideband" (default) — the full-rate raw SDR IQ (large files; the
+	//     historical behaviour), useful for re-channelizing or wideband work.
+	//   "ddc" — the narrowband digital-down-converter output (the channelized
+	//     stream the decoder actually sees, at the pipeline rate: 144 kHz for
+	//     TETRA, ~48 kHz for the C4FM family). Orders of magnitude smaller than
+	//     wideband, and directly replayable with `replay -format wav`. This is
+	//     the "record the DDC output" tap for sharing a hard-to-decode channel.
+	Tap string `yaml:"tap"`
+}
+
+// TapDDC reports whether this record entry taps the narrowband DDC output
+// rather than the wideband SDR stream.
+func (b BasebandRecordConfig) TapDDC() bool {
+	return strings.EqualFold(strings.TrimSpace(b.Tap), "ddc")
 }
 
 // BasebandReplayConfig mounts one recorded WAV as a virtual tuner.
@@ -2344,6 +2359,11 @@ func (c Config) validateBaseband() []error {
 		}
 		if r.Dir == "" {
 			errs = append(errs, fmt.Errorf("baseband.record[%d]: dir required", i))
+		}
+		switch strings.ToLower(strings.TrimSpace(r.Tap)) {
+		case "", "wideband", "ddc":
+		default:
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: tap must be wideband|ddc", i))
 		}
 	}
 	for i, r := range c.Baseband.Replay {

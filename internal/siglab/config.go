@@ -79,6 +79,17 @@ type Config struct {
 	// ChunkSamples is the read-loop chunk size in IQ samples; 0 ⇒ default.
 	ChunkSamples int
 
+	// RecordDDCPath, when non-empty, writes the post-DDC narrowband IQ (the
+	// exact channelized complex stream the receiver decodes, at the DDC output
+	// rate — 144 kHz for TETRA, ~48 kHz for the C4FM family) to a two-channel
+	// 16-bit baseband WAV at that path. This is the offline half of the "record
+	// the digital down-converter output" tooling: point it at a fat 2.5/10 MS/s
+	// cfile and it emits a small narrowband WAV that `replay -format wav`
+	// decodes bit-for-bit the same way — a shareable, reproducible fixture that
+	// is orders of magnitude smaller than the wideband capture. Empty ⇒ no
+	// recording.
+	RecordDDCPath string
+
 	// CaptureIQ enables buffering a stride-decimated copy of the
 	// post-DDC (channelized) IQ and the pre-slicer soft samples into
 	// Result.IQTaps, so a web/visualization consumer can render the

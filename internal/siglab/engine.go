@@ -12,9 +12,36 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// prepareWAVInput handles FormatWAV captures: it reads the RIFF/WAVE header
+// from r (advancing r to the first IQ sample) and overrides cfg.SampleRateHz
+// with the rate the recording was made at, so the DDC target and receiver
+// sizing derive from the file's real rate rather than the -sample-rate flag.
+// For any other format r and cfg are returned untouched. A WAV is an
+// already-channelized narrowband recording, so -auto-tune (which needs to
+// re-seek and re-estimate a wideband carrier) is rejected here — use -tune-hz
+// for a small residual offset instead.
+func prepareWAVInput(r io.Reader, cfg *Config) (io.Reader, error) {
+	if cfg.Format != FormatWAV {
+		return r, nil
+	}
+	if cfg.AutoTune {
+		return nil, fmt.Errorf("siglab: -auto-tune is not supported for wav input (a baseband WAV is already channelized; use -tune-hz for a residual offset)")
+	}
+	info, err := baseband.ReadIQWavStreamHeader(r)
+	if err != nil {
+		return nil, err
+	}
+	if info.SampleRate == 0 {
+		return nil, fmt.Errorf("siglab: wav header reports a zero sample rate")
+	}
+	cfg.SampleRateHz = float64(info.SampleRate)
+	return r, nil
+}
 
 // Run decodes the capture at path through the production pipeline for
 // cfg.Protocol and returns the structured Result. It is the batch entry
@@ -62,6 +89,10 @@ func RunReader(r io.Reader, source string, cfg Config) (*Result, error) {
 // RunReaderStream is RunReader with a live per-event sink (see RunStream).
 // It is the single decode path RunStream and the in-memory callers share.
 func RunReaderStream(r io.Reader, source string, cfg Config, onEvent func(EventRecord)) (*Result, error) {
+	r, err := prepareWAVInput(r, &cfg)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.SampleRateHz <= 0 {
 		return nil, fmt.Errorf("siglab: sample rate must be > 0")
 	}
@@ -128,6 +159,10 @@ func RunReaderMonitor(r io.Reader, source string, cfg Config, tick time.Duration
 	if tick <= 0 {
 		tick = time.Second
 	}
+	r, err := prepareWAVInput(r, &cfg)
+	if err != nil {
+		return nil, err
+	}
 	decode, bytesPerSample := cfg.Format.Decoder()
 	mon := &monitorHook{Interval: tick, OnTick: onTick}
 	return runReader(r, source, decode, bytesPerSample, cfg.TuneHz, cfg, nil, mon)
@@ -143,6 +178,9 @@ func RunReaderMonitor(r io.Reader, source string, cfg Config, tick time.Duration
 // promising failure). r must be an io.ReadSeeker; cfg.AutoTune is implied and
 // cfg.TuneHz is ignored. maxCandidates ≤ 0 uses the package default.
 func RunReaderAutoTuneMulti(r io.ReadSeeker, source string, cfg Config, maxCandidates int) (*Result, error) {
+	if cfg.Format == FormatWAV {
+		return nil, fmt.Errorf("siglab: -auto-tune is not supported for wav input (a baseband WAV is already channelized; use -tune-hz for a residual offset)")
+	}
 	if cfg.SampleRateHz <= 0 {
 		return nil, fmt.Errorf("siglab: sample rate must be > 0")
 	}
@@ -240,6 +278,26 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	if tuneHz != 0 || ddcTarget < cfg.SampleRateHz {
 		ddc = ccdecoder.NewDownconverterWithOffset(cfg.SampleRateHz, ddcTarget, tuneHz)
 		receiverRate = ddc.OutRateHz()
+	}
+
+	// Optional narrowband DDC-output recorder (-record-ddc): tee the exact
+	// channelized stream the receiver decodes to a small baseband WAV at the
+	// DDC output rate, so a fat wideband capture can be reduced to a shareable
+	// fixture that `replay -format wav` decodes identically.
+	var ddcRec *baseband.IQWriter
+	if cfg.RecordDDCPath != "" {
+		w, werr := baseband.NewIQWriter(cfg.RecordDDCPath, uint32(receiverRate+0.5))
+		if werr != nil {
+			return nil, fmt.Errorf("siglab: open -record-ddc %s: %w", cfg.RecordDDCPath, werr)
+		}
+		ddcRec = w
+		logger.Info("siglab: recording DDC output",
+			"path", cfg.RecordDDCPath, "rate_hz", uint32(receiverRate+0.5))
+		defer func() {
+			if cerr := ddcRec.Close(); cerr != nil {
+				logger.Warn("siglab: close -record-ddc", "path", cfg.RecordDDCPath, "err", cerr)
+			}
+		}()
 	}
 
 	bus := events.NewBus(1024)
@@ -366,6 +424,13 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			if ddc != nil {
 				ddcOut = ddc.Process(ddcOut, feed)
 				feed = ddcOut
+			}
+			if ddcRec != nil {
+				if werr := ddcRec.Write(feed); werr != nil {
+					logger.Warn("siglab: -record-ddc write failed; continuing",
+						"path", cfg.RecordDDCPath, "err", werr)
+					ddcRec = nil
+				}
 			}
 			if iqTap != nil {
 				iqTap.observeIQ(feed)

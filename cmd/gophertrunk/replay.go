@@ -31,7 +31,7 @@ func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	in := fs.String("in", "", "raw IQ input file (required)")
-	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32)")
+	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32) | wav (2-channel 16-bit baseband WAV — SDRtrunk/SDR++/GopherTrunk narrowband recording; sample rate is read from the header)")
 	sampleRate := fs.Float64("sample-rate", 2_400_000, "IQ sample rate in Hz")
 	demod := fs.String("demod", "c4fm", "P25 Phase 1 demod mode: c4fm | cqpsk")
 	protocolFlag := fs.String("protocol", "p25p1", "decoder to run: p25p1 | p25-phase2 | dmr | dmr-tier2 | nxdn | dpmr | edacs | motorola | ltr | mpt1327 | tetra | ysf | dstar (aliases: dmr-tier3)")
@@ -45,6 +45,7 @@ func runReplay(args []string) {
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation (off by default; see issue #402)")
 	tuneHzFlag := fs.Float64("tune-hz", 0, "frequency-shift the capture so a channel at +tune-hz lands at 0 Hz before demod (0 = no shift)")
 	autoTune := fs.Bool("auto-tune", false, "find the control channel by trying the ranked carrier candidates and keeping the best lock — handles an off-centre / non-dominant control channel in a wideband capture (overrides -tune-hz)")
+	recordDDC := fs.String("record-ddc", "", "also write the post-DDC narrowband IQ (the exact channelized stream the receiver decodes) to this 2-channel 16-bit baseband WAV — shrinks a fat 2.5/10 MS/s capture into a small shareable fixture that `replay -format wav` decodes identically")
 	outFormat := fs.String("out-format", "text", "output format: text | json | jsonl | yaml | csv | csv-events")
 	out := fs.String("out", "", "write structured output to this file (default: stdout for non-text)")
 	fs.Usage = func() {
@@ -116,6 +117,7 @@ FLAGS:`)
 		IQCorrect:            *iqCorrect,
 		CollectIQDiag:        *diag,
 		DemodMode:            *demod,
+		RecordDDCPath:        *recordDDC,
 		NIDSearchSpan:        *nidSearchSpan,
 		EnableDDA:            *enableDDA,
 		EnableAdaptiveSlicer: *enableAdaptiveSlicer,
