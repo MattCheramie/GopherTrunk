@@ -202,6 +202,65 @@ sdr:
       gain: "auto"
 ```
 
+#### Will a different radio (e.g. Airspy Mini at 6 MSPS) avoid the deficit?
+
+There is no way to promise this in advance — it has to be measured on the
+radio in hand — but the physics narrows it down. The #771 deficit has two
+possible sources and the two radios share one of them:
+
+- The **Airspy Mini uses the same R820T2 tuner** as the R2, so the tuner's
+  LO phase noise — the reciprocal-mixing term — is common to both. If that
+  term dominates the deficit, a Mini will inherit it.
+- The two radios **sample on different clocks** (the Mini's top native rate
+  is 6 MSPS, the R2's is 10 MSPS). If the deficit is instead dominated by
+  phase noise on the *sampling* clock, the Mini's lower top rate could be
+  cleaner. That part is genuinely untested.
+
+The one thing the #771 data does settle: **the deficit only appeared at the
+R2's *top* native rate.** The same R2's decimated 2.5 MSPS slot was clean
+and locked; only the native 10 MSPS was ~16 dB worse. 6 MSPS is the Mini's
+*top* native rate, i.e. the same regime that bit the R2 — so it is exactly
+the case you cannot assume is clean without checking. For a **single**
+control channel on any of these R820T2 radios the safe answer is unchanged:
+capture at a moderate/decimated rate (~2.4–2.5 MSPS) and it behaves like the
+R2 did at 2.5 MSPS. If the goal is a **wide window covering several sites at
+once** (the reason to reach for 6 MSPS at all), measure the top-rate capture
+before relying on it — an RTL-SDR already covering that span in wideband
+mode is a proven fallback that needs no new hardware.
+
+#### Measuring the in-channel deficit on your own hardware
+
+You don't have to guess whether a given radio/rate carries the deficit —
+`replay -diag` reports the in-channel demod quality, so you can measure it
+directly. Capture the *same* control channel at a moderate rate and at the
+rate under test (same antenna, gain, and centre frequency — only
+`-sample-rate` differs), then replay each with `-diag`:
+
+```
+# Same CC, two rates, on the radio under test (example: an Airspy Mini)
+gophertrunk capture -freq 420900000 -sample-rate 2400000 -gain 600 -seconds 10 \
+  -format f32 -out cc_lo.cfile -serial ""
+gophertrunk capture -freq 420900000 -sample-rate 6000000 -gain 600 -seconds 10 \
+  -format f32 -out cc_hi.cfile -serial ""
+
+gophertrunk replay -in cc_lo.cfile -format f32 -sample-rate 2400000 \
+  -protocol p25p1 -demod c4fm -tune-hz -812500 -diag
+gophertrunk replay -in cc_hi.cfile -format f32 -sample-rate 6000000 \
+  -protocol p25p1 -demod c4fm -tune-hz -812500 -diag
+```
+
+Compare the `demod` line each run prints:
+
+```
+siglab: demod (c4fm): EVM=7.4%  SNR≈19.7 dB  (n=… symbols)
+```
+
+A radio that is *clean at the higher rate* reports near-identical EVM/SNR at
+both rates. A radio that is phase-noise-limited at its top rate reports the
+higher rate several dB worse — on the R2, EVM went 7.4%→22.5% and demod SNR
+19.7→9.5 dB (issue #771). The `-diag` line is emitted whether or not the
+channel locks, so it works even when the higher rate no longer decodes.
+
 ## Linux
 
 No package install is needed for the build itself; the driver only
