@@ -773,6 +773,50 @@ B210 specifics worth knowing before the first run:
   the documented follow-up** (see the support matrix). Field reports from
   a real B210 are welcome.
 
+For a B210 the `args` string is where the UHD device selection lives, e.g.
+`args: "type=b200,num_recv_frames=512,recv_frame_size=16384"` alongside
+`master_clock_rate: 61_440_000` and `sample_rate: 6_144_000`.
+
+### Field-tested example: networked USRP X310
+
+The B210 recipe above runs `SoapySDRServer` on loopback, but the same driver
+works over the network — the antenna host runs `SoapySDRServer` bound to the
+radio's NIC and the daemon connects across the LAN. This config, contributed
+from real field use of a networked X310 (issue #876), shows a full UHD
+`args` string driving subdev/antenna selection, a GPSDO clock/time reference,
+and the bias tee — all passed through to the remote `make()`:
+
+```yaml
+sdr:
+  sample_rate: 6_250_000              # ÷32 of the X310's 200 MHz default clock
+  soapy_remote:
+    - addr: "10.110.162.1:23313"      # antenna host running SoapySDRServer
+      driver: "uhd"
+      # UHD device-selection kwargs go here (num_recv_frames/recv_frame_size
+      # are fine too). But remote:mtu / remote:window are SoapyRemote STREAM
+      # args — set the MTU under stream_mtu below, not in args (config load
+      # rejects remote:* here).
+      args: "addr=10.110.162.17,rx_subdev_spec=A:0,antenna=RX1,clock_source=gpsdo,time_source=gpsdo,enable_bias_tee=1"
+      format: "CS16"
+      role: "auto"
+      gain: "750"                     # 75.0 dB, set manually — see gain note below
+      bias_tee: true
+      stream_mtu: 8192                 # jumbo-frame link; sizes SETUP_STREAM + window
+      connect_timeout_ms: 20000
+```
+
+Two operational notes from that deployment:
+
+- **Prefer a manually chosen gain over AGC.** On UHD front ends, dial in the
+  gain with a familiar SDR app first (e.g. SDR++), then set that value here in
+  tenths of a dB (`gain: "750"` = 75 dB). `gain: "auto"` requests the device's
+  AGC where it exists, but a fixed, known-good gain is more predictable for
+  survey work where you want comparable signal levels run to run.
+- **`SoapySDRServer` can be unstable.** Independent of GopherTrunk, the server
+  has been observed to crash under load or on some devices; run it under a
+  supervisor that restarts it, and see the diagnostics note below for turning on
+  its debug log.
+
 Once it is streaming, the whole toolset works against it — trunked
 decode, plus the user-defined frequency-range survey in
 [`hunt.md`]({{ '/hunt.html' | relative_url }}): `gophertrunk hunt
@@ -798,8 +842,18 @@ classifies every carrier, and streams the inventory to
   `"key=value,key2=value2"` string, merged with `driver` (an explicit
   `driver=` in `args` wins). Use it for server-side device selection and
   configuration that `driver` alone can't express — e.g. a USRP TwinRX needs
-  `args: "rx_subdev_spec=A:0,antenna=RX1"`. This is distinct from the top-level
+  `args: "rx_subdev_spec=A:0,antenna=RX1"`, and a UHD device can take
+  `rx_subdev_spec`, `antenna`, `clock_source`/`time_source` (e.g. `gpsdo`),
+  `enable_bias_tee`, and receive-buffer sizing like
+  `num_recv_frames`/`recv_frame_size`. This is distinct from the top-level
   `serial`, which only names the virtual pool device locally.
+  **Stream arguments do not belong here.** `remote:mtu`, `remote:window`, and
+  `remote:prot` configure SoapyRemote's *stream* setup, which GopherTrunk builds
+  itself — anything `remote:*` placed in `args` reaches `make()` and is silently
+  dropped for streaming (you stay on the 1500-byte default). Config load now
+  rejects those keys in `args` and points you at the dedicated `stream_mtu`,
+  `stream_window`, and `stream_protocol` keys that actually take effect
+  (issue #876).
 - `ppm` (frequency correction) and `bias_tee` map to SoapySDR's
   `setFrequencyCorrection` / `writeSetting` and silently no-op on
   drivers that don't implement them.
@@ -829,6 +883,17 @@ classifies every carrier, and streams the inventory to
 format=... proto=...` on each successful Open, `make device:` with the
 remote exception text when the server can't open the requested device,
 and `dial: connection refused` if the server isn't listening.
+
+On the server side, start `SoapySDRServer` with SoapySDR's debug log enabled to
+see what UHD is doing with the device and stream setup:
+
+```sh
+SOAPY_SDR_LOG_LEVEL=DEBUG SoapySDRServer --bind=10.110.162.17:23313
+```
+
+(bind to the radio host's LAN address for a networked SDR, or `127.0.0.1` for
+the loopback B210 recipe above). This is the first place to look when a device
+opens but never streams, or when the server crashes on a client connect.
 
 > **Note — upstream server crashes.** Some radios were observed crashing
 > `SoapySDRServer` itself (a `zsh: segmentation fault` inside `libuhd`) when the
