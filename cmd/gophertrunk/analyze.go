@@ -28,6 +28,7 @@ func runAnalyze(args []string) {
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation")
 	out := fs.String("out", "", "write structured output to this file (default: stdout)")
 	outFormat := fs.String("out-format", "text", "output format: text | json | jsonl | yaml | csv | csv-events")
+	bundlePath := fs.String("bundle", "", "read the capture from this GopherTrunk Bundle (.gtb.tar.gz) and write the result back into it (siglab/result.yaml + events.jsonl)")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk analyze — decode + analyze a raw IQ capture, with structured export.
 
@@ -52,9 +53,36 @@ FLAGS:`)
 	resolveVerbose(*verboseFlag, false)
 	rep := newReporter("analyze")
 
+	// When a bundle is given, source the capture (and defaults) from it so a
+	// bundled case analyzes without unpacking by hand.
+	var bundleCleanup func()
+	if *bundlePath != "" {
+		iqPath, meta, cleanup, err := extractBundleCapture(*bundlePath)
+		if err != nil {
+			rep.Fatal(1, err)
+		}
+		bundleCleanup = cleanup
+		defer bundleCleanup()
+		*in = iqPath
+		if meta != nil {
+			if !flagPassed(fs, "sample-rate") && meta.SampleRateHz > 0 {
+				*sampleRate = meta.SampleRateHz
+			}
+			if !flagPassed(fs, "format") && meta.Format != "" {
+				*format = meta.Format
+			}
+			if !flagPassed(fs, "protocol") && meta.Protocol != "" {
+				*protocolFlag = meta.Protocol
+			}
+			if !flagPassed(fs, "tune-hz") && meta.TuneHz != 0 {
+				*tuneHz = meta.TuneHz
+			}
+		}
+	}
+
 	if *in == "" {
 		fs.Usage()
-		rep.Fatalf(2, "-in is required")
+		rep.Fatalf(2, "-in is required (or pass -bundle to read the capture from a GopherTrunk Bundle)")
 	}
 	proto, err := siglab.ParseProtocolCLI(*protocolFlag)
 	if err != nil {
@@ -98,6 +126,26 @@ FLAGS:`)
 	if err := emitResult(res, of, *out); err != nil {
 		rep.Fatal(1, err)
 	}
+
+	if *bundlePath != "" {
+		if err := writeResultToBundle(*bundlePath, res); err != nil {
+			rep.Fatal(1, fmt.Errorf("write result to bundle: %w", err))
+		}
+		fmt.Fprintf(os.Stderr, "analyze: wrote result → %s (siglab/result.yaml)\n", *bundlePath)
+	}
+}
+
+// flagPassed reports whether the named flag was explicitly set on the command
+// line (as opposed to left at its default), so a bundle's metadata can supply a
+// default only when the operator did not override it.
+func flagPassed(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
 
 // emitResult writes res in the requested format to outPath (or stdout when

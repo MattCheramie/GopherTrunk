@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
+	"github.com/MattCheramie/GopherTrunk/internal/gtbundle"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/huntrr"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
@@ -100,6 +102,7 @@ func runHunt(args []string) {
 	captureTo := fs.String("to", "siglab", "with -survey-capture, where to send the capture: siglab | cryptolab")
 	captureSeconds := fs.Float64("capture-seconds", 10, "with -survey-capture, seconds of IQ to record")
 	captureOut := fs.String("capture-out", "", "with -survey-capture, output capture path (default: survey-<MHz>.cfile)")
+	captureBundle := fs.String("bundle", "", "package the result into a GopherTrunk Bundle (.gtb.tar.gz) at this path: the discovered mapping (system + survey + exports), or with -survey-capture the capture + metadata + SigLab/CryptoLab handoff")
 
 	configPath := fs.String("config", "config.yaml", "config.yaml path for -commit")
 	csvDir := fs.String("csv-dir", "", "directory for generated talkgroup CSVs on -commit (default: alongside -config)")
@@ -171,6 +174,7 @@ FLAGS:`)
 			gain:         *gain,
 			ppm:          *ppm,
 			out:          *captureOut,
+			bundle:       *captureBundle,
 		})
 		return
 	}
@@ -349,6 +353,7 @@ FLAGS:`)
 		csvDir:     *csvDir,
 		force:      *force,
 		dryRun:     *dryRun,
+		bundlePath: *captureBundle,
 	})
 }
 
@@ -366,6 +371,7 @@ type huntExportParams struct {
 	csvDir     string
 	force      bool
 	dryRun     bool
+	bundlePath string // optional GopherTrunk Bundle to package the mapping into
 }
 
 // finishHunt prints the per-candidate reports, runs the optional RadioReference
@@ -450,9 +456,83 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 		fmt.Fprintf(os.Stderr, "hunt: wrote %s (%s)\n", fname, hf)
 	}
 
+	if p.bundlePath != "" {
+		if err := packHuntBundle(p.bundlePath, sys, p.survey, outDir); err != nil {
+			rep.Fatal(1, fmt.Errorf("write bundle: %w", err))
+		}
+		fmt.Fprintf(os.Stderr, "hunt: packaged mapping → %s\n", p.bundlePath)
+	}
+
 	if p.commit {
 		commitDiscovery(rep, sys, p.configPath, p.csvDir, p.force, p.dryRun)
 	}
+}
+
+// packHuntBundle assembles a GopherTrunk Bundle carrying the discovered system
+// map: mapping/system.json (the DiscoveredSystem), mapping/survey.jsonl (the
+// classified inventory, when a survey ran), and every hunt export file already
+// written to outDir as mapping-export artifacts. This is the mapping half of a
+// case bundle — a SigLab/CryptoLab capture can be added to it later with
+// `bundle add`.
+func packHuntBundle(bundlePath string, sys *hunt.DiscoveredSystem, sv *hunt.SignalSurvey, outDir string) error {
+	f, err := os.Create(bundlePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	name := strings.TrimSuffix(baseName(bundlePath), gtbundle.Ext)
+	name = strings.TrimSuffix(strings.TrimSuffix(name, ".tar.gz"), ".gtb")
+
+	w, err := gtbundle.NewWriter(f, gtbundle.WriterOptions{
+		Name:          name,
+		CaptureIntent: gtbundle.IntentCCMap,
+		Title:         sys.DisplayName(),
+		Provenance:    gtbundle.Provenance{Protocol: sys.Protocol, Source: "gophertrunk hunt"},
+	})
+	if err != nil {
+		return err
+	}
+
+	if _, err := w.AddJSON(gtbundle.RoleMappingSystem, "system.json", sys, "hunt"); err != nil {
+		return err
+	}
+	if sv != nil && len(sv.Signals) > 0 {
+		var b strings.Builder
+		for _, ds := range sv.Signals {
+			line, merr := json.Marshal(ds)
+			if merr != nil {
+				return merr
+			}
+			b.Write(line)
+			b.WriteByte('\n')
+		}
+		if _, err := w.AddBytes(gtbundle.RoleMappingSurvey, "survey.jsonl", []byte(b.String()), "hunt"); err != nil {
+			return err
+		}
+	}
+	// Fold in the human/interchange exports already written to outDir.
+	entries, _ := os.ReadDir(outDir)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ename := e.Name()
+		if !strings.HasSuffix(ename, ".csv") && !strings.HasSuffix(ename, ".json") &&
+			!strings.HasSuffix(ename, ".md") && !strings.HasSuffix(ename, ".txt") {
+			continue
+		}
+		src, oerr := os.Open(filepath.Join(outDir, ename))
+		if oerr != nil {
+			continue
+		}
+		_, aerr := w.Add(gtbundle.RoleMappingExport, ename, src, "hunt")
+		src.Close()
+		if aerr != nil {
+			return aerr
+		}
+	}
+	return w.Close()
 }
 
 // writeSurveyFiles writes the classified signal inventory to <outDir>/

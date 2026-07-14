@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/gtbundle"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
@@ -42,6 +43,8 @@ func runCapture(args []string) {
 	autoTune := fs.Bool("auto-tune", false, "set auto_tune in the metadata sidecar")
 	conjugate := fs.Bool("conjugate", false, "set conjugate (spectrum-inverted / I-Q-swapped front end) in the metadata sidecar")
 	metaOut := fs.String("meta", "", "metadata sidecar path (default: <out stem>.metadata.json; \"none\" skips it)")
+	bundleOut := fs.String("bundle", "", "also package the capture (+ metadata + a carved narrowband slice) into a GopherTrunk Bundle (.gtb.tar.gz) at this path")
+	bundleIntent := fs.String("intent", "general", "bundle capture intent: cc-map | crypto | survey | general (sets the slice length)")
 	listDevices := fs.Bool("list", false, "list the SDRs available to capture from and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk capture — record raw IQ off a live SDR to a .cfile + metadata sidecar.
@@ -137,6 +140,17 @@ FLAGS:`)
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
 	}
 
+	meta := &siglab.Metadata{
+		Protocol:     *protocol,
+		Source:       *source,
+		SampleRateHz: float64(*sampleRate),
+		CenterFreqHz: uint32(*freq),
+		Format:       sampleFormat.String(),
+		TuneHz:       *tune,
+		AutoTune:     *autoTune,
+		Conjugate:    *conjugate,
+	}
+
 	metaPath := *metaOut
 	switch {
 	case strings.EqualFold(metaPath, "none"):
@@ -145,16 +159,6 @@ FLAGS:`)
 		metaPath = strings.TrimSuffix(*out, ext(*out)) + ".metadata.json"
 	}
 	if metaPath != "" {
-		meta := &siglab.Metadata{
-			Protocol:     *protocol,
-			Source:       *source,
-			SampleRateHz: float64(*sampleRate),
-			CenterFreqHz: uint32(*freq),
-			Format:       sampleFormat.String(),
-			TuneHz:       *tune,
-			AutoTune:     *autoTune,
-			Conjugate:    *conjugate,
-		}
 		if err := siglab.WriteMetadata(metaPath, meta); err != nil {
 			rep.Fatal(1, fmt.Errorf("write metadata: %w", err))
 		}
@@ -167,6 +171,27 @@ FLAGS:`)
 	}
 	if *protocol == "" && metaPath != "" {
 		fmt.Fprintln(os.Stderr, "capture: note — no -protocol set; sidecar is informational only (the `test` harness needs a protocol).")
+	}
+
+	if *bundleOut != "" {
+		name := strings.TrimSuffix(baseName(*bundleOut), gtbundle.Ext)
+		name = strings.TrimSuffix(strings.TrimSuffix(name, ".tar.gz"), ".gtb")
+		if err := writeCaptureBundle(captureBundleParams{
+			bundlePath:   *bundleOut,
+			name:         name,
+			intent:       gtbundle.CaptureIntent(*bundleIntent),
+			capturePath:  *out,
+			format:       sampleFormat,
+			sampleRateHz: float64(*sampleRate),
+			centerHz:     uint32(*freq),
+			tuneHz:       *tune,
+			protocol:     *protocol,
+			source:       *source,
+			meta:         meta,
+		}); err != nil {
+			rep.Fatal(1, fmt.Errorf("write bundle: %w", err))
+		}
+		fmt.Printf("capture: packaged → %s\n", *bundleOut)
 	}
 }
 

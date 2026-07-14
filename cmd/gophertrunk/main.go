@@ -103,6 +103,11 @@ func main() {
 		// linked only with -tags cryptolab; the default build links a stub
 		// that explains how to opt in (see cryptolab_{enabled,disabled}.go).
 		runCryptolab(os.Args[2:])
+	case "bundle":
+		// GopherTrunk Bundle (.gtb.tar.gz): pack/inspect/verify/extract/commit a
+		// single-file capture-to-analysis case. Distinct from hunt's CSV
+		// "import bundle" (that CSV is stored inside a GopherTrunk Bundle).
+		runBundle(os.Args[2:])
 	case "import-pdf":
 		runImport(os.Args[2:])
 	case "daemon", "run":
@@ -134,6 +139,7 @@ USAGE:
   gophertrunk hunt [flags]            discover & map an unknown trunked system, export it + an RR submission package
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
   gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
+  gophertrunk bundle <cmd> [flags]    build/inspect a GopherTrunk Bundle (.gtb.tar.gz): pack|info|verify|extract|add|commit
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
   gophertrunk cryptolab <tool> ...    cryptographic-research toolkit (optional; build with -tags cryptolab)
   gophertrunk siglab [flags]          standalone replay/test/analysis TUI

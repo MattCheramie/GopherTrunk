@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
+	"github.com/MattCheramie/GopherTrunk/internal/gtbundle"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/rfscope"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -31,6 +32,7 @@ type surveyCaptureParams struct {
 	gain         int
 	ppm          int
 	out          string // capture path (default: survey-<MHz>.cfile)
+	bundle       string // optional GopherTrunk Bundle (.gtb.tar.gz) to package into
 }
 
 // runSurveyCapture records the selected signal and routes the capture. It is the
@@ -104,12 +106,77 @@ func runSurveyCapture(rep *diag.Reporter, p surveyCaptureParams) {
 	}
 	fmt.Printf("survey-capture: wrote %d samples → %s  (metadata → %s)\n", written, out, metaPath)
 
+	var framesPath string
 	switch to {
 	case "siglab":
 		routeToSigLab(out, rate)
 	case "cryptolab":
-		routeToCryptoLab(rep, out, sig.FreqHz, rate)
+		framesPath = routeToCryptoLab(rep, out, sig.FreqHz, rate)
 	}
+
+	if p.bundle != "" {
+		if err := packSurveyCaptureBundle(surveyBundleInputs{
+			bundlePath:  p.bundle,
+			to:          to,
+			capturePath: out,
+			meta:        meta,
+			sampleRate:  rate,
+			protocol:    meta.Protocol,
+			framesPath:  framesPath,
+		}); err != nil {
+			rep.Fatal(1, fmt.Errorf("write bundle: %w", err))
+		}
+		fmt.Printf("survey-capture: packaged → %s\n", p.bundle)
+	}
+}
+
+// surveyBundleInputs carries what packSurveyCaptureBundle needs to assemble a
+// bundle from a survey-capture run.
+type surveyBundleInputs struct {
+	bundlePath  string
+	to          string
+	capturePath string
+	meta        *siglab.Metadata
+	sampleRate  float64
+	protocol    string
+	framesPath  string // cryptolab frames.jsonl, when -to cryptolab
+}
+
+// packSurveyCaptureBundle packages a survey-capture into a GopherTrunk Bundle:
+// the raw IQ + metadata + a carved narrowband slice, plus the CryptoLab frames
+// when the capture was routed there. Intent follows the routing target (crypto
+// vs cc-map) so the slice length matches the workflow.
+func packSurveyCaptureBundle(in surveyBundleInputs) error {
+	intent := gtbundle.IntentCCMap
+	if in.to == "cryptolab" {
+		intent = gtbundle.IntentCrypto
+	}
+	name := strings.TrimSuffix(baseName(in.bundlePath), gtbundle.Ext)
+	name = strings.TrimSuffix(strings.TrimSuffix(name, ".tar.gz"), ".gtb")
+
+	// Reuse the capture-bundle assembler for IQ + meta + slice.
+	if err := writeCaptureBundle(captureBundleParams{
+		bundlePath:   in.bundlePath,
+		name:         name,
+		intent:       intent,
+		capturePath:  in.capturePath,
+		format:       siglab.FormatF32,
+		sampleRateHz: in.sampleRate,
+		centerHz:     in.meta.CenterFreqHz,
+		tuneHz:       in.meta.TuneHz,
+		protocol:     in.protocol,
+		source:       in.meta.Source,
+		meta:         in.meta,
+	}); err != nil {
+		return err
+	}
+	// Fold the CryptoLab frames in as a second step (bundle add semantics).
+	if in.framesPath != "" {
+		if err := bundleAddFile(in.bundlePath, gtbundle.RoleCryptolabFrames, in.framesPath, "cryptolab"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // captureSignalToFile tunes the device to a signal and records seconds of raw
@@ -160,8 +227,9 @@ func routeToSigLab(path string, rateHz float64) {
 }
 
 // routeToCryptoLab runs rfscope over the capture to emit a cryptolab `ks` frames
-// file from any unidentified payloads, then prints the cryptolab next step.
-func routeToCryptoLab(rep *diag.Reporter, path string, centerHz uint32, rateHz float64) {
+// file from any unidentified payloads, then prints the cryptolab next step. It
+// returns the frames-file path so a caller can fold it into a bundle.
+func routeToCryptoLab(rep *diag.Reporter, path string, centerHz uint32, rateHz float64) string {
 	framesOut, n, err := emitCryptolabFramesFromFile(path, centerHz, rateHz)
 	if err != nil {
 		rep.Fatal(1, fmt.Errorf("rfscope frames: %w", err))
@@ -169,6 +237,7 @@ func routeToCryptoLab(rep *diag.Reporter, path string, centerHz uint32, rateHz f
 	fmt.Printf("cryptolab: wrote %d frame(s) → %s\n", n, framesOut)
 	fmt.Printf("cryptolab: triage them →  gophertrunk cryptolab classify auto -in %s\n", framesOut)
 	fmt.Println("cryptolab: (needs a -tags cryptolab build; see docs/cryptolab.md)")
+	return framesOut
 }
 
 // defaultRFScopeSegConfig is the carrier-discovery configuration the capture
