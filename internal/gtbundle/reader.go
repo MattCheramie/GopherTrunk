@@ -317,6 +317,13 @@ func (r *Reader) MappingSurvey() (*hunt.SignalSurvey, error) {
 	return sv, nil
 }
 
+// CryptolabFramesRaw returns the verified bytes of the cryptolab frames stream
+// (cryptolab/frames.jsonl). Returns ErrNotFound when absent.
+func (r *Reader) CryptolabFramesRaw() ([]byte, error) {
+	body, _, err := r.Bytes(RoleCryptolabFrames)
+	return body, err
+}
+
 // CryptolabResultRaw returns the verified bytes of the cryptolab result
 // (cryptolab/assess.result.yaml). It is exposed as raw YAML rather than a typed
 // accessor so this package needn't import internal/cryptolab; the caller (which
