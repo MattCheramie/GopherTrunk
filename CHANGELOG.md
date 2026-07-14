@@ -73,6 +73,22 @@ for tagged releases.
   self-heals instead of quietly stopping.
 
 ### Added
+- **GopherTrunk Bundle (`.gtb.tar.gz`) — the capture-to-analysis case format.**
+  A single portable archive that packages one SDR case — the raw IQ capture, an
+  auto-carved narrowband DDC slice, logs, the SigLab signal analysis, the
+  CryptoLab crypto analysis, and the hunt site/network mapping — under one
+  human-and-machine-readable `MANIFEST.yaml` with per-file SHA-256, so a whole
+  investigation is shared as one file and flows capture → SigLab → CryptoLab →
+  back into `config.yaml`. New `gophertrunk bundle` subcommand
+  (`pack`/`info`/`verify`/`extract`/`add`/`commit`), and `-bundle` on `capture`,
+  `hunt` (mapping and `-survey-capture`), `analyze` (reads the capture and writes
+  the result back), and `cryptolab assess` (tagged build). `commit` marks
+  talkgroups encrypted from the bundle's crypto frames (algorithm named via P25
+  ALGID) before merging into `config.yaml`. An opt-in `-sigmf` sidecar makes the
+  capture interoperable with SigMF tooling. The daemon serves
+  `/api/v1/bundle/{info,verify,download}` (confined to `recordings.dir`), and the
+  SigLab, CryptoLab, and main web consoles gain a **Bundles** view to inspect,
+  verify, and download a case. See [`docs/bundle.md`](docs/bundle.md).
 - **Per-call received signal level in the call log.** Each recorded voice call
   now carries a `signal_dbfs` figure — the mean received channel power in dBFS,
   measured by the voice composer over the call's baseband IQ. It surfaces in the

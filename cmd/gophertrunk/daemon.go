@@ -2298,6 +2298,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Systems:        d.systems,
 			Log:            log,
 			Version:        version,
+			BundleRoot:     cfg.Recordings.Dir,
 			Diagnostics:    d.newDiagCollector(),
 			VerboseErrors:  cfg.Diagnostics.VerboseErrors,
 			DisplayLoc:     d.displayLoc,

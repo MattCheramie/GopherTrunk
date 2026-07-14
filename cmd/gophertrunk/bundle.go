@@ -9,6 +9,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/gtbundle"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
 // runBundle dispatches `gophertrunk bundle <subcommand>`. The GopherTrunk
@@ -89,6 +90,7 @@ func runBundlePack(args []string) {
 	cryptoResult := fs.String("cryptolab-result", "", "CryptoLab result (yaml/json) → cryptolab-result")
 	notesFile := fs.String("notes", "", "notes.md file → notes")
 	fromDir := fs.String("from-dir", "", "pack a pre-laid-out directory (capture/, logs/, mapping/, …)")
+	sigmf := fs.Bool("sigmf", false, "emit a SigMF .sigmf-meta sidecar from -meta (interop with SigMF tooling)")
 	_ = fs.Parse(args)
 
 	rep := newReporter("bundle pack")
@@ -140,6 +142,22 @@ func runBundlePack(args []string) {
 	}
 	add(gtbundle.RoleCaptureIQ, *capture, "gophertrunk capture")
 	add(gtbundle.RoleCaptureMeta, *meta, "gophertrunk capture")
+	if *sigmf && *meta != "" {
+		m, lerr := siglab.LoadMetadata(*meta)
+		if lerr != nil {
+			rep.Fatal(1, fmt.Errorf("sigmf: load metadata: %w", lerr))
+		}
+		if doc, ok, serr := gtbundle.MetadataToSigMF(m); serr != nil {
+			rep.Fatal(1, fmt.Errorf("sigmf: %w", serr))
+		} else if ok {
+			if _, aerr := w.AddBytes(gtbundle.RoleCaptureSigMF, stemOf(baseName(*capture))+".sigmf-meta", doc, "gophertrunk bundle"); aerr != nil {
+				rep.Fatal(1, aerr)
+			}
+			added++
+		} else {
+			fmt.Fprintln(os.Stderr, "bundle: -sigmf skipped (capture format has no SigMF datatype equivalent)")
+		}
+	}
 	add(gtbundle.RoleCaptureSlice, *slice, "gophertrunk bundle")
 	add(gtbundle.RoleLogEvents, *events, "daemon")
 	add(gtbundle.RoleLogMessages, *messages, "daemon")

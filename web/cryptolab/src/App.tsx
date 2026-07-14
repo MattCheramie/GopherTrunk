@@ -3,10 +3,12 @@ import { useStore } from "./store/shared";
 import { ParamField } from "./components/ParamField";
 import { ResultView } from "./components/ResultView";
 import { RecipeBuilder } from "./components/RecipeBuilder";
+import { Bundle } from "./components/Bundle";
 import { ConsoleNav } from "./ConsoleNav";
 
 export function App() {
-  const [page, setPage] = useState<"tools" | "recipe">("tools");
+  const [page, setPage] = useState<"tools" | "recipe" | "bundle">("tools");
+  const [bundleEnabled, setBundleEnabled] = useState(false);
   const loadSchema = useStore((s) => s.loadSchema);
   const schema = useStore((s) => s.schema);
   const loadingSchema = useStore((s) => s.loadingSchema);
@@ -22,6 +24,20 @@ export function App() {
 
   useEffect(() => {
     void loadSchema();
+    // Gate the Bundles page on the daemon advertising the bundle endpoints.
+    // A standalone `cryptolab serve` 503s the runtime route, hiding the tab.
+    let alive = true;
+    fetch("/api/v1/runtime")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (alive && j && typeof j === "object" && j.bundle === true) setBundleEnabled(true);
+      })
+      .catch(() => {
+        /* standalone serve — leave the Bundles tab hidden */
+      });
+    return () => {
+      alive = false;
+    };
   }, [loadSchema]);
 
   const tools = useMemo(() => {
@@ -51,17 +67,21 @@ export function App() {
           ) : null}
         </div>
         <nav className="flex items-center gap-1">
-          {(["tools", "recipe"] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPage(p)}
-              className={`rounded px-2.5 py-1 text-sm ${
-                page === p ? "bg-accent/20 text-fg" : "text-muted hover:bg-panel"
-              }`}
-            >
-              {p === "tools" ? "Tools" : "Recipe Builder"}
-            </button>
-          ))}
+          {((bundleEnabled
+            ? (["tools", "recipe", "bundle"] as const)
+            : (["tools", "recipe"] as const)) as readonly ("tools" | "recipe" | "bundle")[]).map(
+            (p) => (
+              <button
+                key={p}
+                onClick={() => setPage(p)}
+                className={`rounded px-2.5 py-1 text-sm ${
+                  page === p ? "bg-accent/20 text-fg" : "text-muted hover:bg-panel"
+                }`}
+              >
+                {p === "tools" ? "Tools" : p === "recipe" ? "Recipe Builder" : "Bundles"}
+              </button>
+            ),
+          )}
         </nav>
         <div className="ml-auto flex items-center gap-3 text-xs text-muted">
           <ConsoleNav self="cryptolab" />
@@ -69,7 +89,11 @@ export function App() {
         </div>
       </header>
 
-      {page === "recipe" ? (
+      {page === "bundle" ? (
+        <main className="min-h-0 flex-1 overflow-y-auto p-4">
+          <Bundle />
+        </main>
+      ) : page === "recipe" ? (
         <main className="min-h-0 flex-1 overflow-y-auto p-4">
           <RecipeBuilder />
         </main>

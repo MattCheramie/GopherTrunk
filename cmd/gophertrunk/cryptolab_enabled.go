@@ -17,6 +17,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/webserver"
+	"github.com/MattCheramie/GopherTrunk/internal/gtbundle"
 	cryptolabweb "github.com/MattCheramie/GopherTrunk/web/cryptolab"
 	// Blank imports register the toolkit's tools and subjects via init().
 	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/subjects/motorola"
@@ -52,6 +53,7 @@ func runCryptolab(args []string) {
 	format := gfs.String("format", "text", "output format: text|json|jsonl|yaml|csv")
 	logLevel := gfs.String("log-level", "info", "log level: debug|info|warn|error")
 	logFormat := gfs.String("log-format", "text", "log format: text|json")
+	bundlePath := gfs.String("bundle", "", "read the frames from this GopherTrunk Bundle (.gtb.tar.gz) as -in, and write the result back into it (cryptolab/assess.result.yaml)")
 	gfs.Usage = func() { cryptolabUsage(os.Stderr) }
 	if err := gfs.Parse(args); err != nil {
 		os.Exit(2)
@@ -92,6 +94,20 @@ func runCryptolab(args []string) {
 		rep.Fatal(2, err)
 	}
 
+	// When a bundle is given, source the frames from it (as -in) so a bundled
+	// case is assessed without unpacking by hand. The result is written back
+	// into the bundle after the run.
+	if *bundlePath != "" {
+		framesPath, cleanup, ferr := extractBundleFrames(*bundlePath)
+		if ferr != nil {
+			rep.Fatal(1, ferr)
+		}
+		defer cleanup()
+		if !hasFlag(modeArgs, "in") {
+			modeArgs = append([]string{"-in", framesPath}, modeArgs...)
+		}
+	}
+
 	env := cryptolab.Env{
 		Logger:     gtlog.New(*logLevel, *logFormat),
 		OutDir:     *out,
@@ -110,6 +126,66 @@ func runCryptolab(args []string) {
 	if err := cryptolab.WriteResult(os.Stdout, res, fmtKind); err != nil {
 		rep.Fatal(1, err)
 	}
+
+	if *bundlePath != "" {
+		if err := writeCryptolabResultToBundle(*bundlePath, res); err != nil {
+			rep.Fatal(1, fmt.Errorf("write result to bundle: %w", err))
+		}
+		fmt.Fprintf(os.Stderr, "cryptolab: wrote result → %s (cryptolab/assess.result.yaml)\n", *bundlePath)
+	}
+}
+
+// extractBundleFrames pulls the cryptolab-frames stream out of a bundle to a
+// temp file so a mode's -in can point at it. The returned cleanup removes the
+// temp dir.
+func extractBundleFrames(bundlePath string) (framesPath string, cleanup func(), err error) {
+	r, err := gtbundle.Open(bundlePath)
+	if err != nil {
+		return "", func() {}, err
+	}
+	tmp, err := os.MkdirTemp("", "gtb-crypto-*")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup = func() { os.RemoveAll(tmp) }
+	written, err := r.ExtractRole(gtbundle.RoleCryptolabFrames, tmp)
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("bundle has no cryptolab-frames: %w", err)
+	}
+	return written[0], cleanup, nil
+}
+
+// writeCryptolabResultToBundle deposits a cryptolab result into an existing
+// bundle as cryptolab/assess.result.yaml via the bundle add (repack) path.
+func writeCryptolabResultToBundle(bundlePath string, res *cryptolab.Result) error {
+	tmp, err := os.MkdirTemp("", "gtb-cres-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	resPath := tmp + "/assess.result.yaml"
+	f, err := os.Create(resPath)
+	if err != nil {
+		return err
+	}
+	if werr := cryptolab.WriteResult(f, res, cryptolab.FormatYAML); werr != nil {
+		f.Close()
+		return werr
+	}
+	f.Close()
+	return bundleAddFile(bundlePath, gtbundle.RoleCryptolabResult, resPath, "cryptolab assess")
+}
+
+// hasFlag reports whether -name (or -name=…) already appears in args.
+func hasFlag(args []string, name string) bool {
+	for _, a := range args {
+		if a == "-"+name || a == "--"+name ||
+			strings.HasPrefix(a, "-"+name+"=") || strings.HasPrefix(a, "--"+name+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 // runCryptolabServe launches the standalone cryptolab web console — the

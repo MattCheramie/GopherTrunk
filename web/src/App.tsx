@@ -32,6 +32,7 @@ import { Pagers } from "./panels/Pagers";
 import { RadioIDs } from "./panels/RadioIDs";
 import { Scanner } from "./panels/Scanner";
 import { Hunt } from "./panels/Hunt";
+import { Bundles } from "./panels/Bundles";
 import { Settings } from "./panels/Settings";
 import { Spectrum } from "./panels/Spectrum";
 import { Systems } from "./panels/Systems";
@@ -53,6 +54,7 @@ export function App() {
   const setWSStatus = useShared((s) => s.setWSStatus);
   const setHiddenTabs = useShared((s) => s.setHiddenTabs);
   const setCryptolabConsole = useShared((s) => s.setCryptolabConsole);
+  const setBundleEnabled = useShared((s) => s.setBundleEnabled);
   const setSiglabConsole = useShared((s) => s.setSiglabConsole);
   const setRFScopeConsole = useShared((s) => s.setRFScopeConsole);
   const setIDBase = useShared((s) => s.setIDBase);
@@ -116,6 +118,7 @@ export function App() {
         setCryptolabConsole(rt.cryptolab_console === true);
         setSiglabConsole(rt.siglab_console === true);
         setRFScopeConsole(rt.rfscope_console === true);
+        setBundleEnabled(rt.bundle === true);
         setIDBase(rt.id_base === "dec" ? "dec" : "hex");
         setConfigPath(rt.config_path ?? "");
       })
@@ -139,6 +142,7 @@ export function App() {
     setCryptolabConsole,
     setSiglabConsole,
     setRFScopeConsole,
+    setBundleEnabled,
     setConfigPath,
   ]);
 
@@ -178,6 +182,7 @@ export function App() {
           <Route path="/active" element={<Active />} />
           <Route path="/scanner" element={<Scanner />} />
           <Route path="/hunt" element={<Hunt />} />
+          <Route path="/bundles" element={<Bundles />} />
           <Route path="/spectrum" element={<Spectrum />} />
           <Route path="/plots" element={<Plots />} />
           <Route path="/plots/:tab" element={<Plots />} />

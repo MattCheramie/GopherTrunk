@@ -116,6 +116,7 @@ type captureBundleParams struct {
 	protocol     string
 	source       string
 	meta         *siglab.Metadata
+	emitSigMF    bool
 }
 
 // writeCaptureBundle assembles a bundle from a just-recorded capture: the raw
@@ -157,6 +158,15 @@ func writeCaptureBundle(p captureBundleParams) error {
 	if p.meta != nil {
 		if _, err := w.AddYAML(gtbundle.RoleCaptureMeta, stemOf(iqLeaf)+".meta.yaml", p.meta, "gophertrunk capture"); err != nil {
 			return err
+		}
+		if p.emitSigMF {
+			if doc, ok, serr := gtbundle.MetadataToSigMF(p.meta); serr != nil {
+				return serr
+			} else if ok {
+				if _, err := w.AddBytes(gtbundle.RoleCaptureSigMF, stemOf(iqLeaf)+".sigmf-meta", doc, "gophertrunk bundle"); err != nil {
+					return err
+				}
+			}
 		}
 	}
 

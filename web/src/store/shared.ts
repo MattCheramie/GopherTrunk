@@ -78,6 +78,10 @@ interface SharedState {
    *  Gates the RF Scope nav link. */
   rfscopeConsole: boolean;
 
+  /** True when the daemon serves the GopherTrunk Bundle endpoints
+   *  (/api/v1/bundle/*). Gates the Bundles nav item. */
+  bundleEnabled: boolean;
+
   /** Base for rendering identity numbers (WACN, System ID, NAC, RFSS,
    *  Site): "hex" (default, P25 field convention) or "dec". Sourced from
    *  web.id_base config via /api/v1/runtime. */
@@ -112,6 +116,7 @@ interface SharedState {
   setCryptolabConsole(v: boolean): void;
   setSiglabConsole(v: boolean): void;
   setRFScopeConsole(v: boolean): void;
+  setBundleEnabled(v: boolean): void;
   setIDBase(base: "hex" | "dec"): void;
   setConfigPath(path: string | null): void;
   appendEvents(evs: EventDTO[]): void;
@@ -146,6 +151,7 @@ export const useShared = create<SharedState>((set, get) => ({
   cryptolabConsole: false,
   siglabConsole: false,
   rfscopeConsole: false,
+  bundleEnabled: false,
   idBase: "hex",
   configPath: null,
 
@@ -205,6 +211,9 @@ export const useShared = create<SharedState>((set, get) => ({
   },
   setRFScopeConsole(v) {
     set({ rfscopeConsole: v });
+  },
+  setBundleEnabled(v) {
+    set({ bundleEnabled: v });
   },
   setIDBase(base) {
     set({ idBase: base });
@@ -285,6 +294,7 @@ export const useShared = create<SharedState>((set, get) => ({
       cryptolabConsole: false,
       siglabConsole: false,
       rfscopeConsole: false,
+      bundleEnabled: false,
       idBase: "hex",
       configPath: null,
       lastError: null,

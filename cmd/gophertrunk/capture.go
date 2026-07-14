@@ -45,6 +45,7 @@ func runCapture(args []string) {
 	metaOut := fs.String("meta", "", "metadata sidecar path (default: <out stem>.metadata.json; \"none\" skips it)")
 	bundleOut := fs.String("bundle", "", "also package the capture (+ metadata + a carved narrowband slice) into a GopherTrunk Bundle (.gtb.tar.gz) at this path")
 	bundleIntent := fs.String("intent", "general", "bundle capture intent: cc-map | crypto | survey | general (sets the slice length)")
+	bundleSigMF := fs.Bool("sigmf", false, "with -bundle, also emit a SigMF .sigmf-meta sidecar for the capture (interop with SigMF tooling)")
 	listDevices := fs.Bool("list", false, "list the SDRs available to capture from and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk capture — record raw IQ off a live SDR to a .cfile + metadata sidecar.
@@ -188,6 +189,7 @@ FLAGS:`)
 			protocol:     *protocol,
 			source:       *source,
 			meta:         meta,
+			emitSigMF:    *bundleSigMF,
 		}); err != nil {
 			rep.Fatal(1, fmt.Errorf("write bundle: %w", err))
 		}
