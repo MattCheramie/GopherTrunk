@@ -26,6 +26,29 @@ This module zooms all the way down to the smallest computers in the path. After 
 
 A **microcontroller**, or **MCU**, packs everything a computer needs onto a single piece of silicon: a processor to do the work, a small amount of RAM for working data, flash memory to hold the program, and a set of built-in **peripherals** — the hardware blocks that read sensors, drive pins, talk to other chips, and keep time. Plug in power and it runs.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 208" role="img" aria-label="On the left, one microcontroller die enclosing a CPU, RAM, flash, and peripherals as blocks on a single chip that runs bare-metal with no operating system. On the right, a single-board computer for contrast, drawn as a separate system-on-chip plus a separate removable storage card wired together." xmlns="http://www.w3.org/2000/svg">
+  <text x="116" y="26" text-anchor="middle" font-size="10" fill="currentColor" font-weight="600">Microcontroller (MCU)</text>
+  <rect x="18" y="38" width="196" height="152" rx="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.6"/>
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="34" y="56" width="76" height="42" rx="5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.1"/><text x="72" y="81">CPU</text>
+    <rect x="122" y="56" width="76" height="42" rx="5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.1"/><text x="160" y="81">RAM</text>
+    <rect x="34" y="106" width="76" height="42" rx="5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.1"/><text x="72" y="131">flash</text>
+    <rect x="122" y="106" width="76" height="42" rx="5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.1"/><text x="160" y="127">peripherals</text><text x="160" y="139" font-size="7">pins · timers</text>
+    <text x="116" y="176" font-size="8" fill-opacity="0.85">one chip · bare-metal · no OS</text>
+  </g>
+  <line x1="234" y1="44" x2="234" y2="184" stroke="currentColor" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="4 3"/>
+  <text x="346" y="26" text-anchor="middle" font-size="10" fill="currentColor" font-weight="600">Single-board computer</text>
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="286" y="52" width="120" height="52" rx="6" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.3"/><text x="346" y="76">SoC</text><text x="346" y="90" font-size="7.5">CPU · GPU · RAM</text>
+    <rect x="286" y="132" width="120" height="42" rx="6" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 3"/><text x="346" y="152">SD / eMMC card</text><text x="346" y="165" font-size="7.5">separate storage</text>
+  </g>
+  <line x1="346" y1="104" x2="346" y2="132" stroke="currentColor" stroke-width="1.4" marker-end="url(#mcu_ar)"/>
+  <defs><marker id="mcu_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>An MCU folds the whole computer — CPU, RAM, flash, and peripherals — onto one die, running your program bare-metal with no operating system. An SBC keeps its parts separate: a system-on-chip plus a removable storage card holding a full OS. That integration is what makes the MCU cheap, tiny, and instant to boot.</figcaption>
+</figure>
+
 That integration is the whole point. A desktop CPU needs separate memory sticks, a storage drive, and a motherboard full of support chips. An MCU folds all of that into one part you can buy for a dollar or two. Common families you'll meet are Microchip's 8-bit **ATmega** (the classic Arduino brain), the huge range of 32-bit **ARM Cortex-M** chips, the Raspberry Pi Foundation's **RP2040**, and Espressif's Wi-Fi-capable **ESP** chips.
 
 Because the chip *is* the computer, you measure it in units that would be rounding errors on a laptop: kilobytes of RAM rather than gigabytes, megahertz rather than gigahertz, and milliwatts or even microwatts rather than watts. That smallness is a feature, not a limitation — it's what lets the same chip live inside a coin-cell-powered sensor for years.

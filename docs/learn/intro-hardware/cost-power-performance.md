@@ -56,6 +56,48 @@ Rent cloud hosting and you control little — but the provider handles the hardw
 
 The reason hardware choice is interesting — and why there's no universal best answer — is that these axes fight one another. You rarely improve one without giving ground on another:
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 214" role="img" aria-label="Five trade-off axes — cost, power draw, performance, control, and effort — drawn as horizontal spectra either side of a central dividing line. Two opposing arrows at the top pull toward a frugal, low-effort left pole and a powerful, high-control right pole, and a shared vertical position line shows the five axes are coupled, so pulling toward one pole drags every axis with it." xmlns="http://www.w3.org/2000/svg">
+  <line x1="230" y1="52" x2="34" y2="52" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#cpp_ar)"/>
+  <line x1="230" y1="52" x2="426" y2="52" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#cpp_ar)"/>
+  <text x="130" y="44" text-anchor="middle" font-size="8" fill="currentColor" fill-opacity="0.9">cheaper · frugal · less effort</text>
+  <text x="330" y="44" text-anchor="middle" font-size="8" fill="currentColor" fill-opacity="0.9">more power · control · cost</text>
+  <line x1="230" y1="64" x2="230" y2="200" stroke="currentColor" stroke-width="1" stroke-opacity="0.4" stroke-dasharray="4 3"/>
+  <g fill="currentColor" font-size="8.5">
+    <g>
+      <text x="14" y="80" font-weight="600">Cost</text>
+      <text x="222" y="80" text-anchor="end" font-size="7.5" fill-opacity="0.8">low upfront</text>
+      <text x="238" y="80" text-anchor="start" font-size="7.5" fill-opacity="0.8">high upfront</text>
+    </g>
+    <g>
+      <text x="14" y="108" font-weight="600">Power draw</text>
+      <text x="222" y="108" text-anchor="end" font-size="7.5" fill-opacity="0.8">milliwatts</text>
+      <text x="238" y="108" text-anchor="start" font-size="7.5" fill-opacity="0.8">always-on watts</text>
+    </g>
+    <g>
+      <text x="14" y="136" font-weight="600">Performance</text>
+      <text x="222" y="136" text-anchor="end" font-size="7.5" fill-opacity="0.8">just enough</text>
+      <text x="238" y="136" text-anchor="start" font-size="7.5" fill-opacity="0.8">abundant</text>
+    </g>
+    <g>
+      <text x="14" y="164" font-weight="600">Control</text>
+      <text x="222" y="164" text-anchor="end" font-size="7.5" fill-opacity="0.8">managed for you</text>
+      <text x="238" y="164" text-anchor="start" font-size="7.5" fill-opacity="0.8">all yours</text>
+    </g>
+    <g>
+      <text x="14" y="192" font-weight="600">Effort</text>
+      <text x="222" y="192" text-anchor="end" font-size="7.5" fill-opacity="0.8">minimal</text>
+      <text x="238" y="192" text-anchor="start" font-size="7.5" fill-opacity="0.8">hands-on</text>
+    </g>
+  </g>
+  <g fill="currentColor">
+    <circle cx="230" cy="76" r="3"/><circle cx="230" cy="104" r="3"/><circle cx="230" cy="132" r="3"/><circle cx="230" cy="160" r="3"/><circle cx="230" cy="188" r="3"/>
+  </g>
+  <defs><marker id="cpp_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Five axes, two poles. You'd love the left of cost, power, and effort but the right of performance and control — and the coupling line shows why you can't have both: sliding toward one pole drags every axis with it. Gaining capability costs money, watts, and work; going frugal gives some up.</figcaption>
+</figure>
+
 | Axis | Cheap end | Expensive / demanding end | The tension |
 |------|-----------|----------------------------|-------------|
 | **Cost** | Low upfront (cloud, MCU) | High upfront (owned server) | Pay now or pay forever |

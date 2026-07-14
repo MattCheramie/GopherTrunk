@@ -70,6 +70,39 @@ Copyleft is not all-or-nothing. It comes in two strengths that differ in *how fa
 
 Weak copyleft is the middle ground between "anything goes" permissive and "the whole thing must be free" strong copyleft.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 200" role="img" aria-label="Three products side by side showing the escalating share-alike obligation. Under a permissive license nothing in the product must stay open; under weak copyleft only the licensed component must stay open; under strong copyleft the entire combined work must stay open. A top arrow points right to show the obligation growing across the three." xmlns="http://www.w3.org/2000/svg">
+  <line x1="40" y1="30" x2="420" y2="30" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#pc_ar)"/>
+  <text x="230" y="22" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.9">share-alike obligation grows →</text>
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <text x="78" y="52" font-weight="600">Permissive</text>
+    <rect x="18" y="58" width="120" height="88" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.3"/>
+    <text x="78" y="98" font-size="8" fill-opacity="0.85">your product</text>
+    <text x="78" y="132" font-size="7.5" fill-opacity="0.7">nothing must open</text>
+    <text x="78" y="162" font-size="7.5">MIT · BSD · Apache</text>
+
+    <text x="230" y="52" font-weight="600">Weak copyleft</text>
+    <rect x="170" y="58" width="120" height="88" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.3"/>
+    <text x="230" y="80" font-size="7.5" fill-opacity="0.7">your product</text>
+    <rect x="182" y="100" width="96" height="36" rx="4" fill="currentColor" fill-opacity="0.28" stroke="currentColor" stroke-width="1"/>
+    <text x="230" y="122" font-size="7.5">the component</text>
+    <text x="230" y="162" font-size="7.5">LGPL · MPL · EPL</text>
+
+    <text x="382" y="52" font-weight="600">Strong copyleft</text>
+    <rect x="322" y="58" width="120" height="88" rx="6" fill="currentColor" fill-opacity="0.28" stroke="currentColor" stroke-width="1.3"/>
+    <text x="382" y="106" font-size="7.5">entire combined</text>
+    <text x="382" y="117" font-size="7.5">work</text>
+    <text x="382" y="162" font-size="7.5">GPL · AGPL</text>
+  </g>
+  <g font-size="7.5" fill="currentColor">
+    <rect x="150" y="180" width="12" height="10" rx="2" fill="currentColor" fill-opacity="0.28" stroke="currentColor" stroke-width="0.8"/>
+    <text x="168" y="189" text-anchor="start">shaded = must stay open downstream</text>
+  </g>
+  <defs><marker id="pc_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>The obligation escalates left to right. Permissive asks nothing to stay open; weak copyleft keeps just the licensed component open so the rest of your product can stay closed; strong copyleft pulls the whole combined work open. The shaded region — what must stay open downstream — widens at every step.</figcaption>
+</figure>
+
 ## The comparison at a glance
 
 This table is the one to keep in your head. It frames the next several lessons.

@@ -34,6 +34,40 @@ Think of hardware in a real system as three rough tiers, from the physical world
 
 Not every system needs all three. A single sensor reporting to a phone is one tier and a half. But once a project has several devices, or needs both local responsiveness and remote access, the layering pays off.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 190" role="img" aria-label="Three tiers side by side — edge devices such as sensors and microcontrollers on the left, a gateway like a Raspberry Pi or home server in the middle, and the cloud on the right. Paired arrows between each tier show raw data flowing up toward the cloud and results or commands flowing back down toward the edge." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="10" fill="currentColor" text-anchor="middle">
+    <rect x="16" y="62" width="104" height="62" rx="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.3"/>
+    <text x="68" y="86" font-weight="600">Edge</text>
+    <text x="68" y="101" font-size="8">sensors · MCUs</text>
+    <text x="68" y="113" font-size="8">physically there</text>
+    <rect x="178" y="62" width="104" height="62" rx="6" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.3"/>
+    <text x="230" y="86" font-weight="600">Gateway</text>
+    <text x="230" y="101" font-size="8">Pi / home server</text>
+    <text x="230" y="113" font-size="8">aggregates</text>
+    <rect x="340" y="62" width="104" height="62" rx="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.3"/>
+    <text x="392" y="86" font-weight="600">Cloud</text>
+    <text x="392" y="101" font-size="8">storage · remote</text>
+    <text x="392" y="113" font-size="8">reach anywhere</text>
+  </g>
+  <g stroke="currentColor" fill="none" stroke-width="1.5">
+    <line x1="120" y1="82" x2="178" y2="82" marker-end="url(#ct_ar)"/>
+    <line x1="178" y1="104" x2="120" y2="104" marker-end="url(#ct_ar)"/>
+    <line x1="282" y1="82" x2="340" y2="82" marker-end="url(#ct_ar)"/>
+    <line x1="340" y1="104" x2="282" y2="104" marker-end="url(#ct_ar)"/>
+  </g>
+  <g fill="currentColor" text-anchor="middle" font-size="7.5" fill-opacity="0.9">
+    <text x="149" y="76">data up</text>
+    <text x="149" y="119">commands down</text>
+    <text x="311" y="76">data up</text>
+    <text x="311" y="119">results down</text>
+  </g>
+  <text x="230" y="38" text-anchor="middle" font-size="10" fill="currentColor" font-weight="600">edge → gateway → cloud</text>
+  <defs><marker id="ct_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>A real system is layered, not single-tier. Raw, high-rate data flows up from the physically-present edge to a gateway that aggregates it and on to the cloud; results and commands flow back down. Each tier does what it is best at, and the middle keeps working even when the link to the cloud drops.</figcaption>
+</figure>
+
 ## Edge vs cloud: why work moves
 
 The central decision in a layered system is *where each piece of work runs*. Five forces pull the answer one way or the other:

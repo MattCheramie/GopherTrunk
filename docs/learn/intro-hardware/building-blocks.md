@@ -67,7 +67,44 @@ I/O is often what actually decides which machine fits a job. A Raspberry Pi runn
 
 ## Putting it together across the spectrum
 
-Each block scales independently, but they tend to move together: powerful machines have lots of everything, tiny ones have little of anything. Here's the rough shape of it, from largest to smallest:
+Each block scales independently, but they tend to move together: powerful machines have lots of everything, tiny ones have little of anything.
+
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 200" role="img" aria-label="A block diagram of the four building blocks. Storage on the left loads programs into RAM in the middle, which the CPU on the right fetches and runs; the CPU also exchanges data with input and output below it. Storage is non-volatile and keeps its contents with the power off, while RAM is volatile and clears when the power is cut." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="10" fill="currentColor" text-anchor="middle">
+    <rect x="20" y="52" width="112" height="58" rx="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.3"/>
+    <text x="76" y="78" font-weight="600">Storage</text>
+    <text x="76" y="94" font-size="8">non-volatile</text>
+    <rect x="174" y="52" width="112" height="58" rx="6" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.3"/>
+    <text x="230" y="78" font-weight="600">RAM</text>
+    <text x="230" y="94" font-size="8">volatile · working</text>
+    <rect x="328" y="52" width="112" height="58" rx="6" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.3"/>
+    <text x="384" y="78" font-weight="600">CPU</text>
+    <text x="384" y="94" font-size="8">runs instructions</text>
+    <rect x="328" y="140" width="112" height="42" rx="6" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.2"/>
+    <text x="384" y="160" font-weight="600" font-size="9">I/O</text>
+    <text x="384" y="173" font-size="8">USB · net · GPIO</text>
+  </g>
+  <g stroke="currentColor" fill="none">
+    <line x1="132" y1="74" x2="174" y2="74" stroke-width="1.6" marker-end="url(#bb_ar)"/>
+    <line x1="286" y1="74" x2="328" y2="74" stroke-width="1.6" marker-end="url(#bb_ar)"/>
+    <line x1="384" y1="110" x2="384" y2="140" stroke-width="1.4" marker-end="url(#bb_ar)"/>
+    <line x1="374" y1="140" x2="374" y2="110" stroke-width="1.4" marker-end="url(#bb_ar)"/>
+  </g>
+  <g fill="currentColor" text-anchor="middle" font-size="7.5" fill-opacity="0.9">
+    <text x="153" y="68">load</text>
+    <text x="307" y="68">fetch</text>
+  </g>
+  <g fill="currentColor" text-anchor="middle" font-size="8" fill-opacity="0.75">
+    <text x="76" y="126">kept when power off</text>
+    <text x="230" y="126">wiped when power off</text>
+  </g>
+  <defs><marker id="bb_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>The four parts and how data moves between them. A program lives permanently in storage, is loaded into fast volatile RAM to run, and the CPU fetches and executes it while trading data with I/O. Cut the power and RAM empties; storage keeps everything — that volatile-versus-permanent split is the whole reason both exist.</figcaption>
+</figure>
+
+Here's the rough shape of it, from largest to smallest:
 
 | Platform | Typical RAM | Typical storage | Typical I/O |
 |----------|-------------|-----------------|-------------|

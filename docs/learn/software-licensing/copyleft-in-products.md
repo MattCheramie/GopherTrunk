@@ -52,6 +52,32 @@ The hard part is that "derivative work" is a copyright concept, not a precise te
 | Separate process, talking over IPC/CLI/socket | Low — strong evidence of independence |
 | Two independent programs shipped together | Mere aggregation — not derivative |
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 178" role="img" aria-label="A coupling gradient of four ways to combine with copyleft code — static link, dynamic link, separate process over IPC, and mere aggregation — ordered from tightest coupling on the left to loosest on the right. A shaded band under the left half marks where the copyleft obligation likely reaches, and a dashed contested boundary sits between dynamic linking and a separate process, past which the code is likely independent." xmlns="http://www.w3.org/2000/svg">
+  <text x="230" y="22" text-anchor="middle" font-size="10" fill="currentColor" font-weight="600">Coupling gradient: where copyleft reach fades</text>
+  <text x="44" y="46" text-anchor="start" font-size="8" fill="currentColor" fill-opacity="0.85">◄ tighter coupling</text>
+  <text x="416" y="46" text-anchor="end" font-size="8" fill="currentColor" fill-opacity="0.85">looser coupling ►</text>
+  <line x1="40" y1="72" x2="430" y2="72" stroke="currentColor" stroke-width="1" stroke-opacity="0.35"/>
+  <g text-anchor="middle" fill="currentColor">
+    <circle cx="66" cy="72" r="6" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1.3"/>
+    <text x="66" y="90" font-size="8" font-weight="600">static link</text><text x="66" y="101" font-size="7">compiled in</text>
+    <circle cx="176" cy="72" r="6" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1.2"/>
+    <text x="176" y="90" font-size="8" font-weight="600">dynamic link</text><text x="176" y="101" font-size="7">shared library</text>
+    <circle cx="296" cy="72" r="6" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <text x="296" y="90" font-size="8" font-weight="600">separate process</text><text x="296" y="101" font-size="7">IPC · CLI · socket</text>
+    <circle cx="410" cy="72" r="6" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.2"/>
+    <text x="410" y="90" font-size="8" font-weight="600">aggregation</text><text x="410" y="101" font-size="7">bundled only</text>
+  </g>
+  <rect x="40" y="118" width="196" height="20" rx="3" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.8"/>
+  <text x="138" y="131" text-anchor="middle" font-size="7.5" fill="currentColor">obligation likely reaches</text>
+  <rect x="236" y="118" width="194" height="20" rx="3" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.5" stroke-dasharray="4 3"/>
+  <text x="333" y="131" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.85">likely independent</text>
+  <line x1="236" y1="56" x2="236" y2="142" stroke="currentColor" stroke-width="1" stroke-opacity="0.5" stroke-dasharray="4 3"/>
+  <text x="236" y="158" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.85">contested boundary</text>
+</svg>
+<figcaption>How tightly you bind to copyleft code is the lever. Static linking fuses it into your binary (high reach); a separate process talking over IPC keeps it at arm's length (low reach). The obligation fades as coupling loosens, and the exact stopping point — somewhere around the dynamic-link boundary — is contested, which is why a clean separation is the strongest defense.</figcaption>
+</figure>
+
 ### LGPL's relink allowance
 
 The [LGPL](/learn/software-licensing/weak-copyleft-licenses/) — "Lesser GPL," a weak copyleft license — was designed for exactly the linking case. It lets your proprietary program link against an LGPL library while keeping your own code closed, **on the condition** that the user can replace the library with a modified version. In practice that means dynamic linking (so the user can swap the `.so`/`.dll`), or shipping object files for relinking. The library itself stays copyleft — changes to *it* must be shared — but your application doesn't.

@@ -53,6 +53,33 @@ Here is the key mental model — **one-way compatibility**:
 
 So compatibility has a *direction*. Code flows "uphill" from permissive into copyleft, but copyleft code can't flow "downhill" into something more permissive. People get burned when they assume "it's all open source, so it must mix" — adding one GPL dependency can force your entire distributable work to become GPL, or block the combination entirely if you can't accept that.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 186" role="img" aria-label="Three license boxes in a row: permissive licenses like MIT, BSD, and Apache on the left, a copyleft GPL project in the middle, and a proprietary or permissive work on the right. A solid arrow marked allowed flows from permissive into the GPL, while a barred, crossed-out arrow marked blocked shows GPL code cannot flow out into the proprietary or permissive work." xmlns="http://www.w3.org/2000/svg">
+  <text x="230" y="26" text-anchor="middle" font-size="10" fill="currentColor" font-weight="600">One-way compatibility</text>
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="16" y="64" width="118" height="56" rx="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.3"/>
+    <text x="75" y="88" font-weight="600">Permissive</text><text x="75" y="102" font-size="7.5">MIT · BSD · Apache</text>
+    <rect x="172" y="64" width="112" height="56" rx="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.3"/>
+    <text x="228" y="88" font-weight="600">Copyleft</text><text x="228" y="102" font-size="7.5">GPL</text>
+    <rect x="326" y="64" width="118" height="56" rx="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.3"/>
+    <text x="385" y="88" font-weight="600">Proprietary</text><text x="385" y="102" font-size="7.5">or permissive</text>
+  </g>
+  <line x1="134" y1="92" x2="172" y2="92" stroke="currentColor" stroke-width="1.8" marker-end="url(#lc_ar)"/>
+  <text x="153" y="82" text-anchor="middle" font-size="8" fill="currentColor" font-weight="600">✓</text>
+  <text x="153" y="138" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">flows in</text>
+  <g stroke="currentColor" stroke-width="1.8">
+    <line x1="284" y1="92" x2="316" y2="92" stroke-dasharray="4 3" stroke-opacity="0.6"/>
+    <line x1="320" y1="84" x2="320" y2="100"/>
+    <line x1="300" y1="84" x2="308" y2="100"/>
+    <line x1="308" y1="84" x2="300" y2="100"/>
+  </g>
+  <text x="305" y="138" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">can't flow out</text>
+  <text x="230" y="166" text-anchor="middle" font-size="8" fill="currentColor" fill-opacity="0.8">combined result ships as GPL</text>
+  <defs><marker id="lc_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Copyleft compatibility runs one way. Permissive code (MIT, BSD, Apache) can be pulled <em>into</em> a GPL project and the combined work ships as GPL — but GPL code can't be folded back out into a proprietary or permissive work without forcing that work to become GPL too. The blocked arrow is where most people get burned.</figcaption>
+</figure>
+
 ## The specific pairings that trip people up
 
 Beyond the broad rule, a handful of named incompatibilities cause most real-world headaches.

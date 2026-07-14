@@ -32,6 +32,28 @@ Here is the full range, ordered from the most powerful and abstract down to the 
 
 At the top, you don't own a machine at all — you rent a slice of someone else's, and they handle the physical hardware. In the middle sit the personal computers most people picture. Toward the bottom, the machines get small, cheap, and physical: boards you hold in your hand and wire to the world. Nothing about this is a quality ranking. It's a map of trade-offs, and which end you reach for depends entirely on what you're building.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 480 182" role="img" aria-label="Eight computing platforms laid on one spectrum line — cloud, VPS, server, desktop, laptop, phone, single-board computer, and microcontroller — read with two opposing axes: raw power and capability grow toward the cloud end on the left, while control, low cost, and low power grow toward the microcontroller end on the right." xmlns="http://www.w3.org/2000/svg">
+  <line x1="446" y1="46" x2="34" y2="46" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#hws_ar)"/>
+  <text x="240" y="37" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.9">more raw power · capability</text>
+  <line x1="40" y1="96" x2="440" y2="96" stroke="currentColor" stroke-width="1" stroke-opacity="0.35"/>
+  <g text-anchor="middle" fill="currentColor" font-size="8.5">
+    <circle cx="40" cy="96" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="40" y="115" font-weight="600">cloud</text>
+    <circle cx="97" cy="96" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="97" y="115" font-weight="600">VPS</text>
+    <circle cx="154" cy="96" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="154" y="115" font-weight="600">server</text>
+    <circle cx="211" cy="96" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="211" y="115" font-weight="600">desktop</text>
+    <circle cx="269" cy="96" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="269" y="115" font-weight="600">laptop</text>
+    <circle cx="326" cy="96" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="326" y="115" font-weight="600">phone</text>
+    <circle cx="383" cy="96" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="383" y="115" font-weight="600">SBC</text>
+    <circle cx="440" cy="96" r="6.5" fill="currentColor" fill-opacity="0.35" stroke="currentColor" stroke-width="1.4"/><text x="440" y="115" font-weight="600">MCU</text>
+  </g>
+  <line x1="34" y1="150" x2="446" y2="150" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#hws_ar)"/>
+  <text x="240" y="168" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.9">more control · cheaper · lower power · yours to manage</text>
+  <defs><marker id="hws_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>The whole path on one line. Read left to right, power and capability fall away while control, low cost, and low power draw rise — the two axes pull in opposite directions, which is why there's no single best platform, only the best fit for a job's constraints.</figcaption>
+</figure>
+
 ## Ordering by raw power
 
 The most obvious way to read the spectrum is by capability — CPU, memory, storage, and how much work the machine can do at once. This tracks closely with the building blocks from the last lesson.
