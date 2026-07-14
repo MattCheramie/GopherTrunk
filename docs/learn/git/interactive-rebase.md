@@ -97,6 +97,39 @@ fixup m0n1o2p wip more
 pick q3r4s5t Add tests for login
 ```
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 176" role="img" aria-label="An interactive rebase todo list on the left holds five commits: one pick followed by three fixups, then another pick. An arrow labelled rebase dash i leads to the result on the right, where the three fixups have been folded into the commit above them, leaving just two clean commits." xmlns="http://www.w3.org/2000/svg">
+  <text x="18" y="20" font-size="9" fill="currentColor" font-weight="600">todo list (before)</text>
+  <g font-size="8.5">
+    <rect x="16" y="30" width="198" height="18" rx="3" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.4"/>
+    <rect x="22" y="33" width="38" height="12" rx="2" fill="currentColor" fill-opacity="0.20" stroke="currentColor" stroke-width="0.9"/><text x="41" y="42" text-anchor="middle" fill="currentColor" font-weight="600">pick</text>
+    <text x="66" y="42" fill="currentColor">Add login form</text>
+    <rect x="16" y="52" width="198" height="18" rx="3" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="3 2"/>
+    <rect x="30" y="55" width="38" height="12" rx="2" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="0.9" stroke-dasharray="3 2"/><text x="49" y="64" text-anchor="middle" fill="currentColor">fixup</text>
+    <text x="74" y="64" fill="currentColor" fill-opacity="0.6">wip</text>
+    <rect x="16" y="74" width="198" height="18" rx="3" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="3 2"/>
+    <rect x="30" y="77" width="38" height="12" rx="2" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="0.9" stroke-dasharray="3 2"/><text x="49" y="86" text-anchor="middle" fill="currentColor">fixup</text>
+    <text x="74" y="86" fill="currentColor" fill-opacity="0.6">fix typo</text>
+    <rect x="16" y="96" width="198" height="18" rx="3" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="3 2"/>
+    <rect x="30" y="99" width="38" height="12" rx="2" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="0.9" stroke-dasharray="3 2"/><text x="49" y="108" text-anchor="middle" fill="currentColor">fixup</text>
+    <text x="74" y="108" fill="currentColor" fill-opacity="0.6">wip more</text>
+    <rect x="16" y="118" width="198" height="18" rx="3" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.4"/>
+    <rect x="22" y="121" width="38" height="12" rx="2" fill="currentColor" fill-opacity="0.20" stroke="currentColor" stroke-width="0.9"/><text x="41" y="130" text-anchor="middle" fill="currentColor" font-weight="600">pick</text>
+    <text x="66" y="130" fill="currentColor">Add tests for login</text>
+  </g>
+  <line x1="222" y1="83" x2="288" y2="83" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ireb_ar)"/>
+  <text x="255" y="76" text-anchor="middle" font-size="8" fill="currentColor" fill-opacity="0.9">rebase -i</text>
+  <text x="298" y="20" font-size="9" fill="currentColor" font-weight="600">clean history (after)</text>
+  <g font-size="8.5">
+    <rect x="296" y="56" width="158" height="26" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.2"/><text x="375" y="72" text-anchor="middle" fill="currentColor" font-weight="600">Add login form</text>
+    <rect x="296" y="102" width="158" height="26" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.2"/><text x="375" y="118" text-anchor="middle" fill="currentColor" font-weight="600">Add tests for login</text>
+  </g>
+  <text x="235" y="162" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">five messy commits → two clean ones · each survivor gets a new hash</text>
+  <defs><marker id="ireb_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Marking the three throwaway commits <strong>fixup</strong> melds each into the <strong>pick</strong> above it and discards its message. The five-line todo collapses to two coherent commits — the tidy, reviewable story you'd put in front of a teammate. (Use <strong>squash</strong> instead when a message is worth keeping.)</figcaption>
+</figure>
+
 Here the three throwaway commits melt into "Add login form" and their useless messages
 vanish. Use `squash` instead of `fixup` for any commit whose message is worth keeping —
 Git then opens an editor so you can write one combined message:

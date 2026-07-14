@@ -39,6 +39,40 @@ Each arrow is a queue; each box is a stage running on its own thread or task. Wh
 - **Separation of concerns.** Each stage does one job and knows nothing about its neighbours except the data format on the queue — very low coupling.
 - **Composability.** Insert, remove, or swap a stage (add a new filter, change the demodulator) by rewiring queues, not rewriting the whole flow.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 472 150" role="img" aria-label="A dataflow pipeline of four concurrent stages — capture, filter, demodulate, and decode — joined by bounded queues; the queue feeding the slow decode stage is full, and a feedback arrow shows backpressure forcing the upstream demodulate stage to wait." xmlns="http://www.w3.org/2000/svg">
+  <text x="236" y="22" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.9">each box a concurrent stage · each arrow a bounded queue</text>
+  <g font-size="9.5" text-anchor="middle" fill="currentColor">
+    <rect x="16" y="52" width="74" height="38" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+    <text x="53" y="71" font-weight="600">capture</text><text x="53" y="83" font-size="7.5" fill-opacity="0.85">SDR</text>
+    <rect x="138" y="52" width="74" height="38" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+    <text x="175" y="71" font-weight="600">filter</text><text x="175" y="83" font-size="7.5" fill-opacity="0.85">decimate</text>
+    <rect x="260" y="52" width="74" height="38" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+    <text x="297" y="71" font-weight="600">demod</text><text x="297" y="83" font-size="7.5" fill-opacity="0.85">to audio</text>
+    <rect x="382" y="52" width="74" height="38" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+    <text x="419" y="71" font-weight="600">decode</text><text x="419" y="83" font-size="7.5" fill-opacity="0.85">slow · to data</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.4" fill="none">
+    <line x1="90" y1="71" x2="138" y2="71" marker-end="url(#pipe_ar)"/>
+    <line x1="212" y1="71" x2="260" y2="71" marker-end="url(#pipe_ar)"/>
+    <line x1="334" y1="71" x2="382" y2="71" marker-end="url(#pipe_ar)"/>
+  </g>
+  <g stroke="currentColor" stroke-width="0.9">
+    <rect x="100" y="64" width="7" height="14" rx="1.5" fill="none"/>
+    <rect x="109" y="64" width="7" height="14" rx="1.5" fill="currentColor" fill-opacity="0.2"/>
+    <rect x="222" y="64" width="7" height="14" rx="1.5" fill="currentColor" fill-opacity="0.2"/>
+    <rect x="231" y="64" width="7" height="14" rx="1.5" fill="none"/>
+    <rect x="344" y="64" width="7" height="14" rx="1.5" fill="currentColor" fill-opacity="0.38"/>
+    <rect x="353" y="64" width="7" height="14" rx="1.5" fill="currentColor" fill-opacity="0.38"/>
+  </g>
+  <text x="356" y="46" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.95">queue full</text>
+  <path d="M352 98 C 340 116 316 112 300 96" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#pipe_ar)"/>
+  <text x="300" y="132" text-anchor="middle" font-size="8" fill="currentColor" fill-opacity="0.9">backpressure: a full queue makes the upstream stage wait</text>
+  <defs><marker id="pipe_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>A receive chain is literally a pipeline: capture, filter, demodulate, and decode each run at once on their own core, passing work forward through bounded queues. When a downstream stage can't keep up its queue fills, and <strong>backpressure</strong> forces the stage feeding it to wait — pacing the whole pipeline to its slowest stage instead of growing an unbounded backlog.</figcaption>
+</figure>
+
 A stage is, in effect, both a consumer of its input queue and a producer for its output queue — which brings us to the core relationship.
 
 ## Producer/consumer and bounded buffers

@@ -108,6 +108,36 @@ project's `main`. That's the next lesson.
   upstream (original)  ◄── pull request ──  origin (your fork)  ◄── push ──  your laptop
 ```
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 176" role="img" aria-label="The fork and pull-request flow. Your laptop pushes to your fork, called origin, on GitHub. Your fork opens a pull request to the upstream original repository. A return arrow along the bottom shows git fetch upstream syncing changes from upstream back down to your laptop." xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <rect x="14" y="44" width="112" height="46" rx="6" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.3"/>
+    <rect x="179" y="44" width="112" height="46" rx="6" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.3"/>
+    <rect x="344" y="44" width="112" height="46" rx="6" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.3"/>
+  </g>
+  <g text-anchor="middle" fill="currentColor">
+    <text x="70" y="66" font-size="9" font-weight="600">your laptop</text>
+    <text x="70" y="80" font-size="8" fill-opacity="0.85">local clone</text>
+    <text x="235" y="66" font-size="9" font-weight="600">your fork</text>
+    <text x="235" y="80" font-size="8" fill-opacity="0.85">origin</text>
+    <text x="400" y="66" font-size="9" font-weight="600">upstream</text>
+    <text x="400" y="80" font-size="8" fill-opacity="0.85">the original</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <line x1="126" y1="60" x2="176" y2="60" marker-end="url(#fork_ar)"/>
+    <line x1="291" y1="60" x2="341" y2="60" marker-end="url(#fork_ar)"/>
+    <path d="M400 90 V128 H70 V98" marker-end="url(#fork_ar)"/>
+  </g>
+  <g text-anchor="middle" fill="currentColor" font-size="8.5">
+    <text x="151" y="52">push</text>
+    <text x="316" y="52">pull request</text>
+    <text x="235" y="146">git fetch upstream — keep your fork in sync</text>
+  </g>
+  <defs><marker id="fork_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>You can't push to the original, so you push to your own <strong>fork</strong> (origin) and propose changes back with a <strong>pull request</strong>. Because the fork doesn't update itself, you periodically <strong>fetch upstream</strong> and merge or rebase its latest commits back down — the loop that keeps a long-lived fork current.</figcaption>
+</figure>
+
 ## Keeping a fork in sync
 
 Here's the catch with forks: **they don't update themselves**. While you work, the

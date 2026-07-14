@@ -36,6 +36,27 @@ Then it loops back to plan again, using what it just observed. This **plan → a
 
 The key enabler is **tools** — functions the model is allowed to call. Reading a file, writing a file, and running a command are tools. Given those, an agent can explore an unfamiliar codebase, make a change, check whether it worked, and fix it if it didn't — much like a developer would, just faster and tirelessly.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 380 222" role="img" aria-label="The agent loop as a cycle: plan the next step, act by calling a tool, observe the result, then feed what was learned back into planning and repeat until the goal is met." xmlns="http://www.w3.org/2000/svg">
+  <g text-anchor="middle" fill="currentColor">
+    <rect x="132" y="26" width="116" height="42" rx="6" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.3"/><text x="190" y="45" font-size="9.5" font-weight="600">1 · Plan</text><text x="190" y="58" font-size="7.5" fill-opacity="0.85">pick the next step</text>
+    <rect x="248" y="150" width="116" height="42" rx="6" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.3"/><text x="306" y="169" font-size="9.5" font-weight="600">2 · Act</text><text x="306" y="182" font-size="7.5" fill-opacity="0.85">use a tool: read · run · edit</text>
+    <rect x="16" y="150" width="116" height="42" rx="6" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.3"/><text x="74" y="169" font-size="9.5" font-weight="600">3 · Observe</text><text x="74" y="182" font-size="7.5" fill-opacity="0.85">read the result</text>
+  </g>
+  <text x="190" y="112" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.95" font-weight="600">loop until</text>
+  <text x="190" y="124" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.95" font-weight="600">the goal is met</text>
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <path d="M248 60 C 300 78 314 112 306 148" marker-end="url(#agent_ar)"/>
+    <path d="M248 178 C 200 196 158 196 134 180" marker-end="url(#agent_ar)"/>
+    <path d="M64 148 C 70 100 92 82 130 66" marker-end="url(#agent_ar)"/>
+  </g>
+  <text x="332" y="108" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">act</text>
+  <text x="44" y="108" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">feedback</text>
+  <defs><marker id="agent_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>"Agentic" just means a loop with feedback. The model plans a step, acts by calling a tool (reading a file, running a command, editing code), and observes the result — then feeds what it learned back into the next plan, repeating until the goal is met. That observe-to-plan feedback edge is exactly what separates an agent from a one-shot chat reply.</figcaption>
+</figure>
+
 ## Agentic tools live in your terminal
 
 These tools typically run in your **terminal** (the command-line shell) and operate on the **whole project** — the entire repository, not just the file you have open. Common examples include Anthropic's **Claude Code**, OpenAI's **Codex CLI**, and **Aider**. They differ in details, but the shape is the same: you describe a goal in plain language, and the agent works through the repo to accomplish it.

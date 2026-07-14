@@ -110,6 +110,40 @@ Merge made by the 'recursive' strategy.
 C1 ── C2 ── C5 ── C6 ── M   ← main
 ```
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 205" role="img" aria-label="A three-way merge. Commit C2 is the common merge base; from it the feature line (C3, C4) and the main line (C5, C6) have diverged. A merge commit M joins them, with arrows to two parents — the tip of main and the tip of feature — becoming the new tip of main." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-width="1.4" fill="none">
+    <line x1="108" y1="120" x2="52" y2="120" marker-end="url(#mrg_ar)"/>
+    <line x1="198" y1="120" x2="132" y2="120" marker-end="url(#mrg_ar)"/>
+    <line x1="278" y1="120" x2="222" y2="120" marker-end="url(#mrg_ar)"/>
+    <line x1="200" y1="60" x2="133" y2="111" marker-end="url(#mrg_ar)"/>
+    <line x1="278" y1="56" x2="222" y2="56" marker-end="url(#mrg_ar)"/>
+    <line x1="369" y1="94" x2="302" y2="115" marker-end="url(#mrg_ar)"/>
+    <line x1="369" y1="82" x2="302" y2="61" marker-end="url(#mrg_ar)"/>
+  </g>
+  <g fill="currentColor" font-size="9" text-anchor="middle">
+    <circle cx="40" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="40" y="123">C1</text>
+    <circle cx="120" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="120" y="123">C2</text>
+    <circle cx="210" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="210" y="123">C5</text>
+    <circle cx="290" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="290" y="123">C6</text>
+    <circle cx="210" cy="56" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="210" y="59">C3</text>
+    <circle cx="290" cy="56" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="290" y="59">C4</text>
+    <circle cx="380" cy="88" r="12" fill="currentColor" fill-opacity="0.30" stroke="currentColor" stroke-width="1.6"/><text x="380" y="91">M</text>
+  </g>
+  <g font-size="8.5" text-anchor="middle" font-weight="600">
+    <line x1="290" y1="44" x2="290" y2="36" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="258" y="18" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="290" y="30" fill="currentColor">feature</text>
+    <line x1="380" y1="100" x2="380" y2="110" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="348" y="110" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="380" y="122" fill="currentColor">main</text>
+    <line x1="120" y1="132" x2="120" y2="150" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="82" y="150" width="76" height="18" rx="4" fill="currentColor" fill-opacity="0.10" stroke="currentColor" stroke-width="1.1" stroke-dasharray="3 2"/><text x="120" y="162" fill="currentColor">merge base</text>
+  </g>
+  <text x="250" y="192" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">the merge commit M records two parents — one tip from each diverged branch</text>
+  <defs><marker id="mrg_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Because both lines gained commits after they split at the <strong>merge base</strong> (C2), Git can't just move a pointer. It compares each tip against that base, combines the two sets of changes, and records the result as a <strong>merge commit</strong> (M) with <strong>two parents</strong> — which is what a fork-and-rejoin looks like in the graph.</figcaption>
+</figure>
+
 If both sides changed the *same lines*, Git can't decide automatically and you get a
 [merge conflict](/learn/git/merge-conflicts/) — the subject of the next lesson.
 

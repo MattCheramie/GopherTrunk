@@ -34,6 +34,38 @@ A **layered** (or *n-tier*) architecture organizes the system into horizontal la
 
 The rule that makes it work is *directional dependency*: the UI calls the logic, the logic calls the data, and nothing calls upward. Because each layer talks only to its neighbour through a defined interface, you can replace one (swap a web UI for a CLI, swap one database for another) without disturbing the rest. This is the system-scale version of the [abstraction and coupling](/learn/intro-software-dev/abstraction-coupling/) ideas: clear boundaries, dependencies pointing one way. The cost is that a request often passes through every layer, which adds some ceremony for trivial operations — but the structure keeps a growing codebase comprehensible.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 464 210" role="img" aria-label="On the left a layered architecture stacks presentation, business logic, and data with dependency arrows pointing only downward; on the right a small scanner core with P25, DMR, and NXDN decoder plugins registering through one shared interface." xmlns="http://www.w3.org/2000/svg">
+  <text x="138" y="24" text-anchor="middle" font-size="9" font-weight="600" fill="currentColor">Layered — depend downward</text>
+  <g text-anchor="middle" fill="currentColor">
+    <rect x="48" y="40" width="180" height="42" rx="5" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.2"/><text x="138" y="60" font-size="9" font-weight="600">Presentation (UI)</text><text x="138" y="73" font-size="7.5" fill-opacity="0.85">dashboard · CLI</text>
+    <rect x="48" y="98" width="180" height="42" rx="5" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.2"/><text x="138" y="118" font-size="9" font-weight="600">Business logic</text><text x="138" y="131" font-size="7.5" fill-opacity="0.85">trunk-follow · filtering</text>
+    <rect x="48" y="156" width="180" height="42" rx="5" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.2"/><text x="138" y="176" font-size="9" font-weight="600">Data</text><text x="138" y="189" font-size="7.5" fill-opacity="0.85">call DB · config</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.4" fill="none">
+    <line x1="138" y1="82" x2="138" y2="98" marker-end="url(#arch_ar)"/>
+    <line x1="138" y1="140" x2="138" y2="156" marker-end="url(#arch_ar)"/>
+  </g>
+  <text x="176" y="93" text-anchor="start" font-size="7" fill="currentColor" fill-opacity="0.85">uses</text>
+  <text x="176" y="151" text-anchor="start" font-size="7" fill="currentColor" fill-opacity="0.85">uses</text>
+  <text x="360" y="24" text-anchor="middle" font-size="9" font-weight="600" fill="currentColor">Plugin — core plus modules</text>
+  <rect x="300" y="92" width="120" height="40" rx="5" fill="currentColor" fill-opacity="0.16" stroke="currentColor" stroke-width="1.3"/><text x="360" y="112" text-anchor="middle" font-size="9" font-weight="600" fill="currentColor">scanner core</text><text x="360" y="124" text-anchor="middle" font-size="6.8" fill="currentColor" fill-opacity="0.85">knows only the interface</text>
+  <g text-anchor="middle" fill="currentColor" font-size="8">
+    <rect x="300" y="160" width="36" height="28" rx="3" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1"/><text x="318" y="178">P25</text>
+    <rect x="342" y="160" width="36" height="28" rx="3" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1"/><text x="360" y="178">DMR</text>
+    <rect x="384" y="160" width="36" height="28" rx="3" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1"/><text x="402" y="178" font-size="7.5">NXDN</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.1" fill="none">
+    <line x1="318" y1="160" x2="345" y2="132" marker-end="url(#arch_ar)"/>
+    <line x1="360" y1="160" x2="360" y2="132" marker-end="url(#arch_ar)"/>
+    <line x1="402" y1="160" x2="375" y2="132" marker-end="url(#arch_ar)"/>
+  </g>
+  <text x="360" y="202" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">new protocol = new plugin, core unchanged</text>
+  <defs><marker id="arch_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>A <strong>layered</strong> architecture stacks responsibilities so each layer depends only on the one beneath it — the UI calls the logic, the logic calls the data, and nothing calls upward — which lets any layer be swapped behind its interface. The <strong>plugin (microkernel)</strong> idea is the complement: a small stable core plus decoders that register through one interface, so a new protocol is added without touching the core.</figcaption>
+</figure>
+
 ## Client-server
 
 In a **client-server** architecture, work is split between **clients** that request services and a **server** that provides them, communicating over a network. The server centralizes shared resources and logic; many clients connect to it. The web is the giant example: browsers (clients) request pages from web servers.

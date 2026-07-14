@@ -141,6 +141,39 @@ HEAD ─▶ main ─▶ D            "I'm on main, whose latest commit is D"
         feature ─▶ G
 ```
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 210" role="img" aria-label="A commit graph: commits A through D form the main line and commits E and F branch off commit B, each commit linked to its parent by an arrow. Small rounded pills labelled HEAD, main, feature, and a v1.0 tag point at individual commits, showing that branches, tags, and HEAD are just movable labels attached to commits." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-width="1.4" fill="none">
+    <line x1="138" y1="120" x2="72" y2="120" marker-end="url(#mm_ar)"/>
+    <line x1="238" y1="120" x2="162" y2="120" marker-end="url(#mm_ar)"/>
+    <line x1="338" y1="120" x2="262" y2="120" marker-end="url(#mm_ar)"/>
+    <line x1="242" y1="64" x2="160" y2="110" marker-end="url(#mm_ar)"/>
+    <line x1="338" y1="56" x2="262" y2="56" marker-end="url(#mm_ar)"/>
+  </g>
+  <g fill="currentColor" font-size="9" text-anchor="middle">
+    <circle cx="60" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="60" y="123">A</text>
+    <circle cx="150" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="150" y="123">B</text>
+    <circle cx="250" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="250" y="123">C</text>
+    <circle cx="350" cy="120" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="350" y="123">D</text>
+    <circle cx="250" cy="56" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="250" y="59">E</text>
+    <circle cx="350" cy="56" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="350" y="59">F</text>
+  </g>
+  <g font-size="8.5" text-anchor="middle" font-weight="600">
+    <line x1="350" y1="44" x2="350" y2="36" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="318" y="18" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="350" y="30" fill="currentColor">feature</text>
+    <line x1="350" y1="132" x2="350" y2="150" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="318" y="150" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="350" y="162" fill="currentColor">main</text>
+    <rect x="236" y="150" width="58" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="265" y="162" fill="currentColor">HEAD</text>
+    <line x1="294" y1="159" x2="314" y2="159" stroke="currentColor" stroke-width="1.2" marker-end="url(#mm_ar)"/>
+    <line x1="150" y1="132" x2="150" y2="150" stroke="currentColor" stroke-width="1" stroke-opacity="0.6" stroke-dasharray="3 2"/>
+    <rect x="118" y="150" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2"/><text x="150" y="162" fill="currentColor">tag v1.0</text>
+  </g>
+  <text x="230" y="192" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">every arrow points at a parent · every pill is just a label pointing at a commit</text>
+  <defs><marker id="mm_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Commits link to their parents to form the graph (a merge commit would point at two). Everything else — <strong>main</strong>, <strong>feature</strong>, the <strong>v1.0</strong> tag, and <strong>HEAD</strong> — is just a lightweight label pointing at one commit. HEAD points at the branch you're on; making a commit slides that branch's pill forward.</figcaption>
+</figure>
+
 Make a commit and Git creates the new snapshot, then nudges the current branch
 pointer forward to it. That's why creating a branch is instant: it writes a 41-byte
 file, not a copy of your project. These pointers are called **refs**, and you'll see

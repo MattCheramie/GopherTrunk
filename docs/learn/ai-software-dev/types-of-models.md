@@ -54,6 +54,35 @@ An **embedding model** does something that doesn't look like chatting at all. It
 
 That single trick powers **semantic search** and **retrieval-augmented generation (RAG)**. To find the most relevant docs for a question, you embed the question and compare its vector to the embedded documents, retrieving the closest ones by meaning rather than keyword. Then you hand those documents to an LLM as [context](/learn/ai-software-dev/context-windows/) — which is exactly the "give the model the right material" move we keep returning to, and which we'll build out in [Providing context](/learn/ai-software-dev/providing-context/). Embeddings don't talk to you; they're a **component** other systems are built from.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 440 240" role="img" aria-label="A two-dimensional sketch of a vector space in which texts about similar things cluster together: protocol terms in one group, antenna terms in another, memory terms in a third, with an embedded query point retrieving its two nearest neighbours." xmlns="http://www.w3.org/2000/svg">
+  <rect x="28" y="34" width="384" height="182" rx="4" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-width="1" stroke-opacity="0.4"/>
+  <g stroke="currentColor" stroke-width="0.7" stroke-opacity="0.15">
+    <line x1="124" y1="34" x2="124" y2="216"/><line x1="220" y1="34" x2="220" y2="216"/><line x1="316" y1="34" x2="316" y2="216"/>
+    <line x1="28" y1="94" x2="412" y2="94"/><line x1="28" y1="155" x2="412" y2="155"/>
+  </g>
+  <text x="220" y="230" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.85">a 2-D sketch of a high-dimensional vector space</text>
+  <g fill="currentColor">
+    <text x="110" y="52" text-anchor="middle" font-size="8" font-weight="600">'P25' · 'DMR' · 'trunking'</text>
+    <circle cx="100" cy="74" r="4" fill-opacity="0.5"/><circle cx="122" cy="68" r="4" fill-opacity="0.5"/><circle cx="112" cy="94" r="4" fill-opacity="0.5"/><circle cx="132" cy="86" r="4" fill-opacity="0.5"/>
+    <text x="330" y="78" text-anchor="middle" font-size="8" font-weight="600">'antenna' · 'coax' · 'SWR'</text>
+    <circle cx="316" cy="100" r="4" fill-opacity="0.5"/><circle cx="340" cy="104" r="4" fill-opacity="0.5"/><circle cx="324" cy="124" r="4" fill-opacity="0.5"/><circle cx="346" cy="118" r="4" fill-opacity="0.5"/>
+    <text x="190" y="206" text-anchor="middle" font-size="8" font-weight="600">'malloc' · 'GC pause'</text>
+    <circle cx="178" cy="176" r="4" fill-opacity="0.5"/><circle cx="202" cy="184" r="4" fill-opacity="0.5"/><circle cx="186" cy="192" r="4" fill-opacity="0.5"/>
+  </g>
+  <circle cx="128" cy="112" r="38" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="4 3" stroke-opacity="0.7"/>
+  <circle cx="128" cy="112" r="5.5" fill="currentColor" fill-opacity="0.9"/>
+  <text x="128" y="130" text-anchor="middle" font-size="7.5" fill="currentColor" font-weight="600">query</text>
+  <g stroke="currentColor" stroke-width="1.1" fill="none">
+    <line x1="128" y1="112" x2="114" y2="96" marker-end="url(#tom_ar)"/>
+    <line x1="128" y1="112" x2="132" y2="90" marker-end="url(#tom_ar)"/>
+  </g>
+  <text x="150" y="150" text-anchor="start" font-size="7" fill="currentColor" fill-opacity="0.9">retrieve nearest neighbours</text>
+  <defs><marker id="tom_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>An embedding model places each piece of text at a point in a high-dimensional space (sketched here in 2-D) so that texts about similar things land near each other — protocol terms cluster apart from antenna terms. Embedding your question puts it in the same space; retrieving its nearest neighbours returns the most relevant chunks, which is the engine under semantic search and RAG.</figcaption>
+</figure>
+
 ## Multimodal and vision models
 
 A **multimodal** model accepts more than text — most usefully for developers, images. A **vision**-capable model can take a screenshot of a broken UI, a photo of a whiteboard architecture sketch, a diagram, or an error dialog, and reason about it alongside your words. You can paste a picture of a misaligned layout and ask what's wrong, or hand it a flowchart and ask for the code. Many leading chat models are now multimodal, so this is often a capability *of* an LLM rather than a wholly separate model.

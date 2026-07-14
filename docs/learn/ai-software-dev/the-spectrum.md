@@ -36,6 +36,28 @@ Line the modes up and a pattern appears immediately. The thing that varies from 
 
 That's a smooth gradient from "your hands on every keystroke" to "your hands off entirely," not four unrelated boxes. You can even move along it within a single session: vibe-code a rough prototype, then drop back to chat to harden the part that matters, then use completion as you polish it line by line.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 464 168" role="img" aria-label="A delegation spectrum from you-drive to AI-drives across four modes — completion, chat, agentic, and vibe coding — where moving right increases speed and risk while decreasing how much you understand and review." xmlns="http://www.w3.org/2000/svg">
+  <line x1="34" y1="42" x2="430" y2="42" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#spec_ar)"/>
+  <text x="232" y="32" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">more delegated · faster · more risk</text>
+  <g text-anchor="middle" fill="currentColor">
+    <circle cx="70" cy="90" r="7" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="70" y="112" font-size="9" font-weight="600">Completion</text><text x="70" y="124" font-size="7.5" fill-opacity="0.85">you type</text>
+    <circle cx="180" cy="90" r="7" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="180" y="112" font-size="9" font-weight="600">Chat</text><text x="180" y="124" font-size="7.5" fill-opacity="0.85">you direct</text>
+    <circle cx="290" cy="90" r="7" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="290" y="112" font-size="9" font-weight="600">Agentic</text><text x="290" y="124" font-size="7.5" fill-opacity="0.85">you supervise</text>
+    <circle cx="400" cy="90" r="7" fill="currentColor" fill-opacity="0.35" stroke="currentColor" stroke-width="1.4"/><text x="400" y="112" font-size="9" font-weight="600">Vibe coding</text><text x="400" y="124" font-size="7.5" fill-opacity="0.85">AI runs</text>
+  </g>
+  <line x1="77" y1="90" x2="173" y2="90" stroke="currentColor" stroke-width="1" stroke-opacity="0.4"/>
+  <line x1="187" y1="90" x2="283" y2="90" stroke="currentColor" stroke-width="1" stroke-opacity="0.4"/>
+  <line x1="297" y1="90" x2="393" y2="90" stroke="currentColor" stroke-width="1" stroke-opacity="0.4"/>
+  <line x1="430" y1="138" x2="34" y2="138" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#spec_ar)"/>
+  <text x="232" y="152" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">more understanding · more control · you review more</text>
+  <text x="70" y="72" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.85">you drive</text>
+  <text x="400" y="72" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.85">AI drives</text>
+  <defs><marker id="spec_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Completion, chat, agentic, and vibe coding are one continuous <strong>spectrum of delegation</strong>, from "you drive" to "the AI drives." Moving right buys speed but costs understanding and adds risk, because you write and review less of what lands in the codebase. The skill is choosing the point that fits the task — not picking a favourite mode.</figcaption>
+</figure>
+
 ## The core trade-off
 
 Moving up the spectrum always trades the same currencies. It's worth stating bluntly because it's the heart of every choice you'll make:

@@ -34,6 +34,30 @@ From most restrictive to least, the five main bands are:
 
 Notice the spectrum has two axes hiding inside it: *can you see the source?* and *what may you do with it?* They don't move in lockstep — source-available shows you the code without granting the freedoms, which is exactly why "I can see it" tells you almost nothing about "I can use it." Keep the four actions from [lesson one](/learn/software-licensing/what-is-a-software-license/) in mind — use, copy, modify, distribute — because each band answers them differently.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 480 176" role="img" aria-label="A horizontal licensing spectrum of five bands — proprietary, source-available, permissive, copyleft, and public domain — from left to right. A top arrow pointing right shows freedoms and rights growing toward public domain, while a bottom arrow pointing left shows restrictions and obligations growing back toward proprietary." xmlns="http://www.w3.org/2000/svg">
+  <line x1="34" y1="44" x2="446" y2="44" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#spec_ar)"/>
+  <text x="240" y="35" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.9">freedoms &amp; rights grow →</text>
+  <line x1="40" y1="90" x2="440" y2="90" stroke="currentColor" stroke-width="1" stroke-opacity="0.35"/>
+  <g text-anchor="middle" fill="currentColor">
+    <circle cx="52" cy="90" r="6.5" fill="currentColor" fill-opacity="0.35" stroke="currentColor" stroke-width="1.4"/>
+    <text x="52" y="110" font-size="8.5" font-weight="600">proprietary</text><text x="52" y="121" font-size="7.5" fill-opacity="0.85">source hidden</text>
+    <circle cx="151" cy="90" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/>
+    <text x="151" y="110" font-size="8.5" font-weight="600">source-available</text><text x="151" y="121" font-size="7.5" fill-opacity="0.85">visible, restricted</text>
+    <circle cx="250" cy="90" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/>
+    <text x="250" y="110" font-size="8.5" font-weight="600">permissive</text><text x="250" y="121" font-size="7.5" fill-opacity="0.85">few conditions</text>
+    <circle cx="349" cy="90" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/>
+    <text x="349" y="110" font-size="8.5" font-weight="600">copyleft</text><text x="349" y="121" font-size="7.5" fill-opacity="0.85">share-alike</text>
+    <circle cx="440" cy="90" r="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/>
+    <text x="440" y="110" font-size="8.5" font-weight="600">public domain</text><text x="440" y="121" font-size="7.5" fill-opacity="0.85">no conditions</text>
+  </g>
+  <line x1="446" y1="146" x2="34" y2="146" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#spec_ar)"/>
+  <text x="240" y="164" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.9">← restrictions &amp; obligations grow</text>
+  <defs><marker id="spec_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>The five bands on one line. Moving right — proprietary to public domain — the rights you're granted grow while the obligations placed on you shrink. The two arrows pull in opposite directions, which is why placing a license on this map tells you most of what it lets you do before you read the fine print.</figcaption>
+</figure>
+
 ## Band 1: Proprietary / closed-source
 
 **Proprietary** software is the default-restrictive end. The source code is kept secret (protected as a [trade secret](/learn/software-licensing/other-ip-in-software/)), and the license grants you a narrow right — usually just to *use* the binary, often on specific terms, with no right to copy beyond your license, modify, or redistribute. Most commercial desktop and enterprise software lives here. This is the world of EULAs, seat licenses, and subscriptions, which we cover in [Proprietary & closed-source licensing](/learn/software-licensing/proprietary-licensing/).

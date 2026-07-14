@@ -31,6 +31,33 @@ The previous lesson showed how a [CLA](/learn/software-licensing/contributor-agr
 
 The clever part is that the GPL does the selling for you. Because the GPL would force a commercial user to open their product, it creates demand for the paid escape hatch. The community gets genuinely free software; the vendor gets paying customers among those who need to stay closed. The two licenses aren't in conflict — they're offered to *different audiences* by the one party allowed to offer them.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 196" role="img" aria-label="One codebase owned by a single copyright holder splits into two licensing paths: an arrow to the left leads to an open GPL path for the community with free copyleft use, and an arrow to the right leads to a paid commercial path for customers who embed the code in closed products." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="16" y="30" width="170" height="54" rx="6" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.3"/>
+    <text x="101" y="52" font-weight="600">Open / GPL path</text>
+    <text x="101" y="67" font-size="7.5">community · free · copyleft</text>
+    <rect x="274" y="30" width="170" height="54" rx="6" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.3"/>
+    <text x="359" y="52" font-weight="600">Commercial path</text>
+    <text x="359" y="67" font-size="7.5">paying customers · closed</text>
+    <rect x="175" y="122" width="110" height="56" rx="6" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+    <text x="230" y="146" font-weight="600">One codebase</text>
+    <text x="230" y="160" font-size="7.5">single owner</text>
+    <text x="230" y="171" font-size="7.5">(or CLA rights)</text>
+  </g>
+  <g stroke="currentColor" fill="none" stroke-width="1.6">
+    <line x1="205" y1="124" x2="120" y2="84" marker-end="url(#dl_ar)"/>
+    <line x1="255" y1="124" x2="340" y2="84" marker-end="url(#dl_ar)"/>
+  </g>
+  <g fill="currentColor" text-anchor="middle" font-size="7.5" fill-opacity="0.9">
+    <text x="138" y="108">GPL license</text>
+    <text x="322" y="108">paid license</text>
+  </g>
+  <defs><marker id="dl_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Dual licensing is one codebase, two offers. Because a single party owns all the rights, it can hand the same code to the community under the GPL and sell a copyleft-free commercial license to customers who need to stay closed. The GPL itself drives that sale — and it only works while one owner (or a CLA) holds every line.</figcaption>
+</figure>
+
 This is exactly the **open-core / commercial open-source** model behind famous examples: **MySQL** was dual-licensed (GPL plus a commercial license for embedding in closed products), and **Qt** has long offered both an open-source license and a paid commercial one. The community edition drives adoption and contributions; the commercial license funds the company.
 
 ## Why you must own (or have rights to) all the code

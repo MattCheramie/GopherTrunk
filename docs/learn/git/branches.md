@@ -88,6 +88,41 @@ before:   C1 ── C2          after:   C1 ── C2 ── C3
                main                            main  ← HEAD
 ```
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 158" role="img" aria-label="Before and after making a commit. On the left, HEAD points at main which points at commit C2. On the right, a new commit C3 has been created with C2 as its parent, and the main pointer — with HEAD following it — has slid forward from C2 onto C3." xmlns="http://www.w3.org/2000/svg">
+  <text x="30" y="22" font-size="9" fill="currentColor" font-weight="600">before</text>
+  <text x="240" y="22" font-size="9" fill="currentColor" font-weight="600">after — commit, main slides forward</text>
+  <line x1="210" y1="12" x2="210" y2="146" stroke="currentColor" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="4 3"/>
+  <line x1="116" y1="58" x2="60" y2="58" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#br_ar)"/>
+  <g fill="currentColor" font-size="9" text-anchor="middle">
+    <circle cx="48" cy="58" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="48" y="61">C1</text>
+    <circle cx="128" cy="58" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="128" y="61">C2</text>
+  </g>
+  <g font-size="8.5" text-anchor="middle" font-weight="600">
+    <line x1="128" y1="70" x2="128" y2="88" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="96" y="88" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="128" y="100" fill="currentColor">main</text>
+    <line x1="128" y1="114" x2="128" y2="106" stroke="currentColor" stroke-width="1.2" marker-end="url(#br_ar)"/>
+    <rect x="96" y="114" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="128" y="126" fill="currentColor">HEAD</text>
+  </g>
+  <line x1="326" y1="58" x2="270" y2="58" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#br_ar)"/>
+  <line x1="406" y1="58" x2="350" y2="58" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#br_ar)"/>
+  <g fill="currentColor" font-size="9" text-anchor="middle">
+    <circle cx="258" cy="58" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="258" y="61">C1</text>
+    <circle cx="338" cy="58" r="12" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="338" y="61">C2</text>
+    <circle cx="418" cy="58" r="12" fill="currentColor" fill-opacity="0.30" stroke="currentColor" stroke-width="1.6"/><text x="418" y="61">C3</text>
+  </g>
+  <text x="418" y="34" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.85">new</text>
+  <g font-size="8.5" text-anchor="middle" font-weight="600">
+    <line x1="418" y1="70" x2="418" y2="88" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="386" y="88" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="418" y="100" fill="currentColor">main</text>
+    <line x1="418" y1="114" x2="418" y2="106" stroke="currentColor" stroke-width="1.2" marker-end="url(#br_ar)"/>
+    <rect x="386" y="114" width="64" height="18" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="418" y="126" fill="currentColor">HEAD</text>
+  </g>
+  <defs><marker id="br_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Committing doesn't copy anything or rearrange history — Git adds one new commit whose parent is the old tip, then advances the current branch pointer onto it. <strong>HEAD</strong> is attached to <strong>main</strong>, so it follows along automatically. That single pointer move is the whole of "making progress" on a branch.</figcaption>
+</figure>
+
 Every commit you make slides the current branch pointer one step forward. Switch to a
 different branch and commit, and *that* branch's pointer moves instead — the two lines
 of work diverge from their shared history.
