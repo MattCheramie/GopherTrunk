@@ -730,8 +730,6 @@ domains:
         label: SDR software
         blurb: The software that drives SDR hardware and decodes what it hears.
         entries:
-          - { slug: soapysdr, title: SoapySDR, type: technology }
-          - { slug: rtl-tcp, title: rtl_tcp, type: technology }
           - { slug: zadig, title: Zadig, type: hardware }
           - { slug: gnuradio, title: GNU Radio, type: technology }
           - { slug: sdr-sharp, title: SDR#, type: technology }
@@ -743,6 +741,96 @@ domains:
           - { slug: op25, title: OP25, type: technology }
           - { slug: multimon-ng, title: multimon-ng, type: technology }
           - { slug: direwolf, title: Dire Wolf, type: technology }
+
+      - id: sdr-frameworks
+        label: SDR frameworks & libraries
+        blurb: The toolkits, driver libraries, and DSP libraries you build SDR software on.
+        entries:
+          - { slug: uhd, title: UHD (USRP Hardware Driver), type: technology }
+          - { slug: gnuradio-companion, title: GNU Radio Companion (GRC), type: technology }
+          - { slug: volk, title: VOLK, type: technology }
+          - { slug: liquid-dsp, title: liquid-dsp, type: technology }
+          - { slug: fftw, title: FFTW, type: technology }
+          - { slug: gr-osmosdr, title: gr-osmosdr, type: technology }
+          - { slug: libiio, title: libiio, type: technology }
+          - { slug: librtlsdr, title: librtlsdr, type: technology }
+          - { slug: libhackrf, title: libhackrf, type: technology }
+          - { slug: libairspy, title: libairspy, type: technology }
+          - { slug: libbladerf, title: libbladeRF, type: technology }
+          - { slug: pothos, title: Pothos, type: technology }
+          - { slug: redhawk-sdr, title: REDHAWK SDR, type: technology }
+          - { slug: csdr, title: csdr, type: technology }
+          - { slug: numpy-scipy-dsp, title: NumPy & SciPy for DSP, type: technology }
+          - { slug: soapysdr, title: SoapySDR, type: technology }
+
+      - id: sdr-programming
+        label: SDR programming & DSP engineering
+        blurb: The streaming-DSP programming model and the engineering concerns of real-time signal processing in software.
+        entries:
+          - { slug: flowgraph, title: Flowgraph, type: concept }
+          - { slug: signal-processing-block, title: Signal-processing block, type: concept }
+          - { slug: block-scheduler, title: Block scheduler, type: concept }
+          - { slug: stream-vs-message-passing, title: Stream vs message passing, type: concept }
+          - { slug: stream-tags, title: Stream tags, type: concept }
+          - { slug: hierarchical-block, title: Hierarchical block, type: concept }
+          - { slug: out-of-tree-module, title: Out-of-tree module, type: concept }
+          - { slug: sample-buffer, title: Sample buffer, type: concept }
+          - { slug: ring-buffer, title: Ring buffer, type: concept }
+          - { slug: overruns-underruns, title: Overruns & underruns, type: concept }
+          - { slug: back-pressure, title: Back-pressure, type: concept }
+          - { slug: throttle-block, title: Throttle, type: concept }
+          - { slug: sample-format, title: Sample format (CS8/CS16/CF32), type: term }
+          - { slug: interleaved-iq, title: Interleaved IQ, type: term }
+          - { slug: real-time-dsp, title: Real-time DSP, type: concept }
+          - { slug: dsp-latency, title: DSP latency, type: concept }
+          - { slug: vectorization-simd, title: SIMD vectorization, type: concept }
+          - { slug: fixed-point-vs-floating-point, title: Fixed-point vs floating-point DSP, type: concept }
+          - { slug: zero-copy-dsp, title: Zero-copy, type: concept }
+          - { slug: multithreaded-dsp, title: Multithreaded DSP, type: concept }
+          - { slug: numerical-precision-dsp, title: Numerical precision in DSP, type: concept }
+          - { slug: callback-vs-stream-api, title: Callback vs stream API, type: concept }
+
+      - id: sdr-data-streaming
+        label: SDR data & streaming
+        blurb: How IQ samples are represented, recorded, and moved between processes and machines.
+        entries:
+          - { slug: sigmf, title: SigMF (Signal Metadata Format), type: technology }
+          - { slug: iq-file-format, title: IQ file format, type: term }
+          - { slug: cfile-format, title: cfile format, type: term }
+          - { slug: wav-iq-recording, title: WAV IQ recording, type: term }
+          - { slug: vita-49, title: VITA 49 (VRT), type: technology }
+          - { slug: spyserver-protocol, title: SpyServer protocol, type: technology }
+          - { slug: soapyremote, title: SoapyRemote, type: technology }
+          - { slug: network-iq-streaming, title: Network IQ streaming, type: concept }
+          - { slug: iq-recording-playback, title: IQ recording & playback, type: concept }
+          - { slug: zeromq-sdr, title: ZeroMQ for SDR, type: technology }
+          - { slug: rtl-tcp, title: rtl_tcp, type: technology }
+
+      - id: sdr-app-building
+        label: Building SDR applications
+        blurb: The building blocks and practices of a working SDR application — from the software receiver chain to testing without a radio.
+        entries:
+          - { slug: software-defined-receiver, title: Software-defined receiver, type: concept }
+          - { slug: receiver-chain, title: Receiver chain, type: concept }
+          - { slug: transmit-chain, title: Transmit chain, type: concept }
+          - { slug: frequency-xlating-fir, title: Frequency-translating FIR filter, type: algorithm }
+          - { slug: deframing, title: Deframing, type: concept }
+          - { slug: packet-framing, title: Packet framing, type: concept }
+          - { slug: correlate-access-code, title: Access-code correlation, type: algorithm }
+          - { slug: hdlc, title: HDLC, type: technology }
+          - { slug: testing-dsp-without-hardware, title: Testing DSP without hardware, type: concept }
+          - { slug: golden-test-vectors, title: Golden test vectors, type: concept }
+          - { slug: file-source-sink, title: File source & sink, type: concept }
+          - { slug: simulation-driven-sdr, title: Simulation-driven SDR development, type: concept }
+          - { slug: benchmarking-dsp, title: Benchmarking DSP, type: concept }
+          - { slug: waterfall-rendering, title: Waterfall rendering, type: concept }
+          - { slug: audio-output, title: Audio output (PortAudio/ALSA), type: concept }
+          - { slug: web-sdr, title: Web SDR (OpenWebRX/KiwiSDR), type: technology }
+          - { slug: gpu-dsp, title: GPU DSP, type: concept }
+          - { slug: embedded-sdr, title: Embedded SDR, type: concept }
+          - { slug: rf-machine-learning, title: RF machine learning, type: technology }
+          - { slug: signal-classification, title: Signal classification, type: concept }
+          - { slug: automatic-modulation-classification, title: Automatic modulation classification, type: algorithm }
 
       - id: people
         label: People
