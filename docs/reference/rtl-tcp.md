@@ -2,7 +2,7 @@
 slug: rtl-tcp
 title: rtl_tcp
 entry_type: technology
-category: sdr-software
+category: sdr-data-streaming
 description: rtl_tcp is a small server that streams raw IQ samples from an RTL-SDR over a TCP network connection, allowing the dongle to be used remotely.
 keywords: rtl_tcp, network SDR, remote RTL-SDR, IQ over TCP, Raspberry Pi SDR, Osmocom, rtl-sdr tools, remote dongle
 aka: [rtl_tcp]

@@ -2,7 +2,7 @@
 slug: soapysdr
 title: SoapySDR
 entry_type: technology
-category: sdr-software
+category: sdr-frameworks
 description: SoapySDR is a vendor-neutral hardware abstraction library that provides a common API to many software-defined radios, including networked access via SoapyRemote.
 keywords: SoapySDR, SDR abstraction, SoapyRemote, hardware API, device support, Pothosware, driver plugin, gr-soapy
 aka: [SoapySDR]
