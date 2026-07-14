@@ -593,6 +593,10 @@ type ServerOptions struct {
 	Log            *slog.Logger
 	// Version is reported by GET /api/v1/version.
 	Version string
+	// BundleRoot, when set, confines the /api/v1/bundle/* endpoints to
+	// GopherTrunk Bundles under this directory (the daemon passes the
+	// recordings dir). Empty allows any reachable .gtb path.
+	BundleRoot string
 	// AllowMutations is the legacy mutation gate. Deprecated in
 	// favour of Auth — set Auth.Mode = AuthModeDisabled to get the
 	// same wide-open semantics, or AuthModeAuto / AuthModeRequired
@@ -896,6 +900,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		metrics:        opts.MetricsHandler,
 		log:            log,
 		version:        opts.Version,
+		bundleRoot:     opts.BundleRoot,
 		auth:           auth,
 		allowMutations: opts.AllowMutations,
 		tlsCert:        opts.TLSCert,
