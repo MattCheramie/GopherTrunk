@@ -33,6 +33,9 @@ export interface NavItem {
   /** Shown only when the daemon advertises the RF Scope console
    *  (runtime.rfscope_console — the SPA is mounted at /rfscope/). */
   requiresRFScope?: boolean;
+  /** Shown only when the daemon serves the GopherTrunk Bundle endpoints
+   *  (runtime.bundle — part of the standard daemon build). */
+  requiresBundle?: boolean;
 }
 
 export interface NavGroup {
@@ -114,6 +117,13 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/settings", label: "Settings", icon: "⚙", primary: true, keywords: ["preferences", "theme", "config"] },
       { to: "/devices", label: "Devices", icon: "⌗", keywords: ["sdr", "pool", "rtl", "dongle"] },
       { to: "/metrics", label: "Metrics", icon: "▰", keywords: ["prometheus", "stats", "graphs"] },
+      {
+        to: "/bundles",
+        label: "Bundles",
+        icon: "📦",
+        requiresBundle: true,
+        keywords: ["bundle", "gtb", "case", "capture", "archive", "manifest", "verify", "sigmf"],
+      },
       { to: "/config/", label: "Config Builder", icon: "🛠", external: true, keywords: ["yaml", "editor"] },
       {
         to: "/siglab/",
@@ -160,6 +170,7 @@ export function useVisibleNavGroups(): NavGroup[] {
   const cryptolabConsole = useShared((s) => s.cryptolabConsole);
   const siglabConsole = useShared((s) => s.siglabConsole);
   const rfscopeConsole = useShared((s) => s.rfscopeConsole);
+  const bundleEnabled = useShared((s) => s.bundleEnabled);
   return useMemo(() => {
     const hidden = new Set(hiddenTabs);
     return NAV_GROUPS.map((g) => ({
@@ -168,10 +179,11 @@ export function useVisibleNavGroups(): NavGroup[] {
         if (i.requiresCryptolab && !cryptolabConsole) return false;
         if (i.requiresSiglab && !siglabConsole) return false;
         if (i.requiresRFScope && !rfscopeConsole) return false;
+        if (i.requiresBundle && !bundleEnabled) return false;
         return i.external || !hidden.has(tabKey(i));
       }),
     })).filter((g) => g.items.length > 0);
-  }, [hiddenTabs, cryptolabConsole, siglabConsole, rfscopeConsole]);
+  }, [hiddenTabs, cryptolabConsole, siglabConsole, rfscopeConsole, bundleEnabled]);
 }
 
 /** Flat visible items (for the command palette and bottom nav). */

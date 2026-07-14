@@ -49,7 +49,12 @@ describe("AppShell navigation", () => {
     // Signal Lab / RF Scope links, shown only when the matching
     // runtime.*_console flag is set).
     for (const item of NAV_ITEMS) {
-      if (item.requiresCryptolab || item.requiresSiglab || item.requiresRFScope)
+      if (
+        item.requiresCryptolab ||
+        item.requiresSiglab ||
+        item.requiresRFScope ||
+        item.requiresBundle
+      )
         continue;
       expect(
         within(drawer).getByText(item.label),

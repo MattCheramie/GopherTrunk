@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useStore } from "./store/shared";
 import { Captures } from "./panels/Captures";
@@ -7,9 +7,10 @@ import { Synthesize } from "./panels/Synthesize";
 import { Identify } from "./panels/Identify";
 import { Wideband } from "./panels/Wideband";
 import { Compare } from "./panels/Compare";
+import { Bundle } from "./panels/Bundle";
 import { ConsoleNav } from "./ConsoleNav";
 
-const tabs = [
+const baseTabs = [
   { to: "/captures", label: "Captures" },
   { to: "/synthesize", label: "Synthesize" },
   { to: "/identify", label: "Identify" },
@@ -19,12 +20,30 @@ const tabs = [
 
 export function App() {
   const loadProtocols = useStore((s) => s.loadProtocols);
+  // bundleEnabled gates the Bundles tab on the daemon advertising the bundle
+  // endpoints (GET /api/v1/runtime → { bundle: true }). Under a standalone
+  // `siglab serve` the runtime route 503s and the tab stays hidden.
+  const [bundleEnabled, setBundleEnabled] = useState(false);
 
   useEffect(() => {
     loadProtocols().catch(() => {
       /* surfaced lazily in the forms */
     });
+    let alive = true;
+    fetch("/api/v1/runtime")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (alive && j && typeof j === "object" && j.bundle === true) setBundleEnabled(true);
+      })
+      .catch(() => {
+        /* standalone serve — leave the Bundles tab hidden */
+      });
+    return () => {
+      alive = false;
+    };
   }, [loadProtocols]);
+
+  const tabs = bundleEnabled ? [...baseTabs, { to: "/bundle", label: "Bundles" }] : baseTabs;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -62,6 +81,7 @@ export function App() {
           <Route path="/identify" element={<Identify />} />
           <Route path="/wideband" element={<Wideband />} />
           <Route path="/compare" element={<Compare />} />
+          <Route path="/bundle" element={<Bundle />} />
           <Route path="*" element={<Navigate to="/captures" replace />} />
         </Routes>
       </main>
