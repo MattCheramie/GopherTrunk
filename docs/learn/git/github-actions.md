@@ -75,6 +75,58 @@ The four nouns to know:
 | `runs-on:` | The **runner** OS image (`ubuntu-latest`, `windows-latest`, `macos-latest`) |
 | `steps:` | The ordered actions inside a job |
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 248" role="img" aria-label="A GitHub Actions pipeline. An on-push event triggers a workflow whose jobs build and test run in parallel; inside a job an ordered list of steps runs top to bottom — checkout, setup-node, npm ci, npm test. A matrix inset below shows one job expanded across a two-by-three matrix of operating systems and versions, producing six runs." xmlns="http://www.w3.org/2000/svg">
+  <rect x="14" y="42" width="84" height="30" rx="6" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.3"/>
+  <text x="56" y="61" text-anchor="middle" font-size="9" fill="currentColor" font-weight="600">on: push</text>
+  <line x1="98" y1="57" x2="138" y2="57" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#gha_ar)"/>
+  <text x="188" y="18" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">jobs — run in parallel</text>
+  <rect x="142" y="26" width="92" height="26" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+  <text x="188" y="43" text-anchor="middle" font-size="8.5" fill="currentColor">job: build</text>
+  <rect x="142" y="62" width="92" height="26" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+  <text x="188" y="79" text-anchor="middle" font-size="8.5" fill="currentColor">job: test</text>
+  <line x1="234" y1="75" x2="292" y2="66" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#gha_ar)"/>
+  <text x="262" y="60" text-anchor="middle" font-size="8" fill="currentColor" fill-opacity="0.85">steps</text>
+  <rect x="296" y="24" width="160" height="106" rx="6" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+  <text x="376" y="40" text-anchor="middle" font-size="8.5" fill="currentColor" font-weight="600">steps — in order</text>
+  <line x1="312" y1="50" x2="312" y2="122" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#gha_ar)"/>
+  <g font-size="8.5" fill="currentColor">
+    <text x="322" y="58">uses: checkout</text>
+    <text x="322" y="80">uses: setup-node</text>
+    <text x="322" y="102">run: npm ci</text>
+    <text x="322" y="124">run: npm test</text>
+  </g>
+  <line x1="14" y1="150" x2="456" y2="150" stroke="currentColor" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="4 3"/>
+  <text x="235" y="166" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">a matrix fans one job out across versions</text>
+  <rect x="16" y="188" width="78" height="30" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+  <text x="55" y="207" text-anchor="middle" font-size="8.5" fill="currentColor">1 job</text>
+  <text x="108" y="208" text-anchor="middle" font-size="12" fill="currentColor">×</text>
+  <g font-size="7.5" fill="currentColor" text-anchor="middle">
+    <text x="160" y="184">ubuntu</text>
+    <text x="214" y="184">windows</text>
+  </g>
+  <g font-size="7.5" fill="currentColor" text-anchor="end">
+    <text x="130" y="200">18</text>
+    <text x="130" y="218">20</text>
+    <text x="130" y="236">22</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1">
+    <rect x="136" y="188" width="48" height="16" rx="2" fill="currentColor" fill-opacity="0.15"/>
+    <rect x="190" y="188" width="48" height="16" rx="2" fill="currentColor" fill-opacity="0.15"/>
+    <rect x="136" y="206" width="48" height="16" rx="2" fill="currentColor" fill-opacity="0.15"/>
+    <rect x="190" y="206" width="48" height="16" rx="2" fill="currentColor" fill-opacity="0.15"/>
+    <rect x="136" y="224" width="48" height="16" rx="2" fill="currentColor" fill-opacity="0.15"/>
+    <rect x="190" y="224" width="48" height="16" rx="2" fill="currentColor" fill-opacity="0.15"/>
+  </g>
+  <text x="256" y="220" text-anchor="middle" font-size="12" fill="currentColor">=</text>
+  <rect x="274" y="196" width="80" height="36" rx="6" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1.3"/>
+  <text x="314" y="214" text-anchor="middle" font-size="11" fill="currentColor" font-weight="600">6 runs</text>
+  <text x="314" y="227" text-anchor="middle" font-size="7" fill="currentColor" fill-opacity="0.85">2 × 3</text>
+  <defs><marker id="gha_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>An event (<strong>on: push</strong>) triggers the workflow; its <strong>jobs</strong> run in parallel, and within each job the <strong>steps</strong> run in order — <code>checkout</code> first so the runner has your code. A <strong>matrix</strong> expands one job definition across every combination of values: two operating systems times three versions is six runs.</figcaption>
+</figure>
+
 ## Events: the `on:` trigger
 
 `on:` decides when a workflow runs. The common events:

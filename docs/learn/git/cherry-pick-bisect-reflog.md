@@ -89,6 +89,39 @@ Bisecting: 97 revisions left to test after this (roughly 7 steps)
 [c4d5e6f] Refactor session store
 ```
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 182" role="img" aria-label="A row of nine commits runs from a known good commit on the left to a known bad commit on the right. Three shrinking brackets below show git bisect testing the midpoint of the range and halving it each step, converging in about log base two N steps on the first bad commit." xmlns="http://www.w3.org/2000/svg">
+  <line x1="52" y1="52" x2="412" y2="52" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.4"/>
+  <g fill="currentColor" font-size="8" text-anchor="middle">
+    <circle cx="40" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <circle cx="88" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <circle cx="136" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <circle cx="184" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <circle cx="232" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <circle cx="280" cy="52" r="9" fill="currentColor" fill-opacity="0.32" stroke="currentColor" stroke-width="1.7"/>
+    <circle cx="328" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <circle cx="376" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+    <circle cx="424" cy="52" r="9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/>
+  </g>
+  <g font-size="8" text-anchor="middle" font-weight="600">
+    <line x1="40" y1="43" x2="40" y2="40" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="16" y="22" width="48" height="16" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="40" y="34" fill="currentColor">good ✓</text>
+    <line x1="424" y1="43" x2="424" y2="40" stroke="currentColor" stroke-width="1" stroke-opacity="0.6"/>
+    <rect x="400" y="22" width="48" height="16" rx="4" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"/><text x="424" y="34" fill="currentColor">bad ✗</text>
+  </g>
+  <g stroke="currentColor" fill="currentColor" font-size="7.5">
+    <path d="M40 84 v5 M40 84 H424 M424 84 v5" stroke-width="1.1" fill="none" stroke-opacity="0.8"/>
+    <circle cx="232" cy="84" r="2.4" stroke="none"/><text x="232" y="79" text-anchor="middle" stroke="none">test 1 → good</text>
+    <path d="M232 108 v5 M232 108 H424 M424 108 v5" stroke-width="1.1" fill="none" stroke-opacity="0.8"/>
+    <circle cx="328" cy="108" r="2.4" stroke="none"/><text x="328" y="103" text-anchor="middle" stroke="none">test 2 → bad</text>
+    <path d="M232 132 v5 M232 132 H328 M328 132 v5" stroke-width="1.1" fill="none" stroke-opacity="0.8"/>
+    <circle cx="280" cy="132" r="2.4" stroke="none"/><text x="280" y="127" text-anchor="middle" stroke="none">test 3 → first bad</text>
+  </g>
+  <text x="235" y="170" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">each test halves the range · ~log₂N tests to pinpoint the culprit</text>
+</svg>
+<figcaption>You mark one <strong>good</strong> and one <strong>bad</strong> commit; Git checks out the midpoint, you test it, and it discards the half that can't contain the regression. Halving repeatedly finds the first bad commit in about <strong>log₂N</strong> steps — roughly 8 tests across 200 commits instead of 200.</figcaption>
+</figure>
+
 Build and test that checkout, then report the result. Git halves the range and checks out
 the next midpoint:
 

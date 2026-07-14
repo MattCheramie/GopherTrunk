@@ -70,6 +70,34 @@ retries: 3
 log_level: info
 ```
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 208" role="img" aria-label="A conflicted file with Git's three conflict markers. Between the marker less-than signs HEAD and the equals-sign divider is the current branch's version, bracketed and labelled ours. Between the divider and the greater-than signs feature-slash-login marker is the incoming branch's version, bracketed and labelled theirs. Lines outside the markers are unchanged context." xmlns="http://www.w3.org/2000/svg">
+  <rect x="16" y="28" width="272" height="164" rx="5" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1" stroke-opacity="0.5"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="currentColor">
+    <text x="28" y="48" fill-opacity="0.5">timeout: 30</text>
+    <text x="28" y="67" font-weight="600">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</text>
+    <text x="28" y="86">retries: 5</text>
+    <text x="28" y="105">backoff: exponential</text>
+    <text x="28" y="124" font-weight="600">=======</text>
+    <text x="28" y="143">retries: 3</text>
+    <text x="28" y="162" font-weight="600">&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature/login</text>
+    <text x="28" y="181" fill-opacity="0.5">log_level: info</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.2" fill="none">
+    <path d="M306 76 H298 V112 H306"/>
+    <path d="M306 133 H298 V151 H306"/>
+  </g>
+  <g fill="currentColor">
+    <text x="312" y="90" font-size="9" font-weight="600">ours</text>
+    <text x="312" y="102" font-size="7.5" fill-opacity="0.85">HEAD — your branch</text>
+    <text x="312" y="144" font-size="9" font-weight="600">theirs</text>
+    <text x="312" y="156" font-size="7.5" fill-opacity="0.85">the incoming branch</text>
+  </g>
+  <text x="152" y="205" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">delete all three marker lines and keep the text you actually want</text>
+</svg>
+<figcaption>Git wraps the disputed region in three markers. Everything from <strong>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</strong> to <strong>=======</strong> is <em>your</em> current branch's version; everything from there to <strong>&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature/login</strong> is <em>theirs</em>. Lines outside the markers merged cleanly. Resolve by editing the region to its final form and deleting all three marker lines.</figcaption>
+</figure>
+
 Read it like this:
 
 | Section | Meaning |

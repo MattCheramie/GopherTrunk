@@ -78,6 +78,39 @@ index, and the working tree.
 | `--mixed` *(default)* | yes | yes | no | undone changes become **unstaged** |
 | `--hard` | yes | yes | yes | undone changes are **discarded** |
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 440 210" role="img" aria-label="A grid of three git reset modes against Git's three trees. Rows are reset dash dash soft, dash dash mixed, and dash dash hard; columns are HEAD, the index or staging area, and the working tree. Filled cells show which trees each mode resets: soft reaches only HEAD, mixed also resets the index, and hard resets all three, forming a staircase of increasing reach." xmlns="http://www.w3.org/2000/svg">
+  <g fill="currentColor" font-size="9" text-anchor="middle" font-weight="600">
+    <text x="162" y="38">HEAD</text>
+    <text x="258" y="38">Index</text>
+    <text x="354" y="38">Working tree</text>
+  </g>
+  <g fill="currentColor" font-size="9" text-anchor="end">
+    <text x="108" y="72">--soft</text>
+    <text x="108" y="110">--mixed</text>
+    <text x="108" y="148">--hard</text>
+  </g>
+  <g stroke="currentColor">
+    <rect x="118" y="52" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.22" stroke-width="1"/>
+    <rect x="214" y="52" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.04" stroke-width="0.8" stroke-opacity="0.5" stroke-dasharray="4 3"/>
+    <rect x="310" y="52" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.04" stroke-width="0.8" stroke-opacity="0.5" stroke-dasharray="4 3"/>
+    <rect x="118" y="90" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.22" stroke-width="1"/>
+    <rect x="214" y="90" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.22" stroke-width="1"/>
+    <rect x="310" y="90" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.04" stroke-width="0.8" stroke-opacity="0.5" stroke-dasharray="4 3"/>
+    <rect x="118" y="128" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.22" stroke-width="1"/>
+    <rect x="214" y="128" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.22" stroke-width="1"/>
+    <rect x="310" y="128" width="88" height="32" rx="2" fill="currentColor" fill-opacity="0.22" stroke-width="1"/>
+  </g>
+  <g font-size="8" fill="currentColor">
+    <rect x="118" y="180" width="14" height="12" rx="2" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1"/>
+    <text x="138" y="190" text-anchor="start">resets this tree</text>
+    <rect x="250" y="180" width="14" height="12" rx="2" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.5" stroke-dasharray="4 3"/>
+    <text x="270" y="190" text-anchor="start">left untouched</text>
+  </g>
+</svg>
+<figcaption>All three modes move <strong>HEAD</strong> back; they differ in how far the reset reaches. <strong>--soft</strong> stops at HEAD (your changes stay staged), <strong>--mixed</strong> also resets the index (changes become unstaged), and <strong>--hard</strong> resets the working tree too — the only mode that discards your files. Reach grows one tree per step.</figcaption>
+</figure>
+
 ```bash
 # Undo the last commit but keep everything staged (e.g. to re-commit)
 $ git reset --soft HEAD~1
