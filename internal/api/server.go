@@ -426,6 +426,12 @@ type Server struct {
 	// when it is actually reachable.
 	cryptolabConsole bool
 
+	// bundleRoot, when non-empty, confines the /api/v1/bundle/* endpoints to
+	// GopherTrunk Bundles under this directory, so a web client cannot read
+	// arbitrary files off the host. Empty allows any .gtb path the daemon can
+	// stat (the standalone/dev default).
+	bundleRoot string
+
 	// configBuilder backs the standalone web Config Builder/Editor:
 	// the /api/v1/config/* routes (browse / load / validate / save /
 	// RadioReference browse) and, when assets are wired, the builder SPA
@@ -1056,6 +1062,13 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/devices", s.handleListDevices)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)
+
+	// GopherTrunk Bundle endpoints: inspect, verify, and download a .gtb case
+	// from the web consoles. Part of the standard build (read-side only; packing
+	// runs through the CLI). Confined to bundleRoot when set.
+	mux.HandleFunc("GET /api/v1/bundle/info", s.handleBundleInfo)
+	mux.HandleFunc("POST /api/v1/bundle/verify", s.handleBundleVerify)
+	mux.HandleFunc("GET /api/v1/bundle/download", s.handleBundleDownload)
 	if s.metrics != nil {
 		mux.Handle("GET /metrics", s.metrics)
 	}

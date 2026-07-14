@@ -111,6 +111,12 @@ type RuntimeDTO struct {
 	// /rfscope/. The web consoles use it to show an RF Scope link only when it
 	// is reachable. Injected by the API server, not the runtime provider.
 	RFScopeConsole bool `json:"rfscope_console,omitempty"`
+
+	// Bundle is true when the daemon serves the GopherTrunk Bundle endpoints
+	// (/api/v1/bundle/*). The web consoles use it to show the Bundles view and
+	// the "Save to Bundle" / "Open Bundle" actions only when reachable. Always
+	// true for a standard daemon build; injected by the API server.
+	Bundle bool `json:"bundle,omitempty"`
 }
 
 // ToneProfileDTO is the minimal projection of a tone-out profile —
@@ -138,6 +144,7 @@ func (s *Server) handleRuntime(w http.ResponseWriter, _ *http.Request) {
 	dto.CryptolabConsole = s.cryptolabConsole
 	dto.SiglabConsole = s.siglabConsole
 	dto.RFScopeConsole = s.rfscopeConsole
+	dto.Bundle = true // the bundle endpoints are part of the standard build
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(dto)
 }
