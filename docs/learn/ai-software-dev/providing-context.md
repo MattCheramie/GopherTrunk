@@ -52,6 +52,38 @@ When the material is far bigger than any context window — a million-line codeb
 
 The trick relies on **embeddings**, which we met in [types of models](/learn/ai-software-dev/types-of-models/): a model turns each chunk of text into a vector — a list of numbers — positioned so that passages about similar things sit near each other. Your question gets embedded the same way, and the system retrieves the chunks whose vectors are closest to it. Those few chunks get pasted into the prompt, and the model answers grounded in *your* content rather than its general training. That's the whole shape of RAG: embed everything once, retrieve the nearest matches per question, generate from them. It's how a tool can answer about a codebase it could never hold in memory all at once.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 476 214" role="img" aria-label="A retrieval-augmented-generation pipeline: offline, the corpus is embedded into a vector store; per query, the question is embedded, its nearest chunks are retrieved from the store, injected into the prompt alongside the question, and passed to the model to generate an answer." xmlns="http://www.w3.org/2000/svg">
+  <text x="150" y="14" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">index once · offline</text>
+  <g text-anchor="middle" fill="currentColor" font-size="8">
+    <rect x="18" y="24" width="78" height="40" rx="5" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="57" y="42" font-weight="600">corpus</text><text x="57" y="54" font-size="7">code · docs</text>
+    <rect x="120" y="24" width="56" height="40" rx="5" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.1"/><text x="148" y="48" font-weight="600">embed</text>
+    <rect x="206" y="18" width="92" height="52" rx="5" fill="currentColor" fill-opacity="0.16" stroke="currentColor" stroke-width="1.3"/><text x="252" y="40" font-weight="600">vector</text><text x="252" y="52">store</text>
+    <rect x="250" y="86" width="120" height="32" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.1"/><text x="310" y="106" font-weight="600">nearest chunks</text>
+  </g>
+  <text x="57" y="142" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">per query</text>
+  <g text-anchor="middle" fill="currentColor" font-size="8">
+    <rect x="18" y="150" width="78" height="40" rx="5" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="57" y="168" font-weight="600">question</text><text x="57" y="180" font-size="7">'control channel'</text>
+    <rect x="120" y="150" width="56" height="40" rx="5" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.1"/><text x="148" y="174" font-weight="600">embed</text>
+    <rect x="250" y="150" width="140" height="40" rx="5" fill="currentColor" fill-opacity="0.16" stroke="currentColor" stroke-width="1.3"/><text x="320" y="168" font-weight="600">prompt</text><text x="320" y="180" font-size="7">question + chunks</text>
+    <rect x="398" y="150" width="70" height="40" rx="5" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.3"/><text x="433" y="168" font-weight="600">model</text><text x="433" y="180" font-size="7">answer</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.3" fill="none">
+    <line x1="96" y1="44" x2="120" y2="44" marker-end="url(#rag_ar)"/>
+    <line x1="176" y1="44" x2="206" y2="44" marker-end="url(#rag_ar)"/>
+    <line x1="252" y1="70" x2="300" y2="86" marker-end="url(#rag_ar)"/>
+    <line x1="310" y1="118" x2="320" y2="150" marker-end="url(#rag_ar)"/>
+    <line x1="96" y1="170" x2="120" y2="170" marker-end="url(#rag_ar)"/>
+    <line x1="176" y1="170" x2="240" y2="74" marker-end="url(#rag_ar)"/>
+    <line x1="390" y1="170" x2="398" y2="170" marker-end="url(#rag_ar)"/>
+  </g>
+  <text x="196" y="118" text-anchor="middle" font-size="7" fill="currentColor" fill-opacity="0.9">retrieve</text>
+  <text x="330" y="136" text-anchor="middle" font-size="7" fill="currentColor" fill-opacity="0.9">inject</text>
+  <defs><marker id="rag_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>RAG has two phases. Once, <strong>offline</strong>, every chunk of the corpus is embedded into a vector store. Then <strong>per question</strong> the query is embedded too, the nearest chunks are retrieved by vector similarity, and those few chunks are injected into the prompt so the model answers grounded in your content — never holding the whole corpus in context at once.</figcaption>
+</figure>
+
 ### Tools and MCP for live data
 
 Some context isn't a file at all — it's the current state of a database, a live API response, or today's open issues. **Tools** let a model reach out and fetch such things during a conversation. The **Model Context Protocol (MCP)** is an open standard for these connections: an MCP *server* exposes a source — files, docs, an API, a database, an issue tracker — through a common interface, and any MCP-aware client can use it. The point of a standard is leverage: expose your data source once, and every MCP-capable tool can read it, instead of writing custom glue for each tool. This is increasingly how an agent grounds itself in current, external reality rather than a static snapshot.

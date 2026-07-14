@@ -140,6 +140,40 @@ runtime optimises, predicts the speed, startup and distribution characteristics
 better than any single label. When you read that a language is "fast" or "slow",
 ask *which* of these stages it is doing and *when*.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 476 214" role="img" aria-label="Three translation paths compared across a build-time and run-time divider: ahead-of-time compilation turns source to a native binary before running; a bytecode VM translates on the fly every run; and a JIT ships bytecode but compiles hot paths to native while the program runs." xmlns="http://www.w3.org/2000/svg">
+  <line x1="300" y1="36" x2="300" y2="206" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" stroke-opacity="0.6"/>
+  <text x="176" y="30" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">before run · build time</text>
+  <text x="388" y="30" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">during run · run time</text>
+  <g text-anchor="middle" fill="currentColor" font-size="7">
+    <text x="30" y="62" font-size="8.5" font-weight="600">AOT</text><text x="30" y="72">C·Go·Rust</text>
+    <text x="30" y="122" font-size="8.5" font-weight="600">VM</text><text x="30" y="132">Python</text>
+    <text x="30" y="182" font-size="8.5" font-weight="600">JIT</text><text x="30" y="192">JVM·V8</text>
+  </g>
+  <g text-anchor="middle" font-size="8" fill="currentColor">
+    <rect x="68" y="44" width="46" height="30" rx="4" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="91" y="63">source</text>
+    <rect x="124" y="44" width="60" height="30" rx="4" fill="currentColor" fill-opacity="0.24" stroke="currentColor" stroke-width="1.3"/><text x="154" y="60" font-weight="600">compiler</text><text x="154" y="70" font-size="6.5">translate</text>
+    <rect x="196" y="44" width="66" height="30" rx="4" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="229" y="60">native</text><text x="229" y="70" font-size="7">binary</text>
+    <rect x="410" y="44" width="52" height="30" rx="4" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="436" y="63">CPU</text>
+    <rect x="68" y="104" width="46" height="30" rx="4" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="91" y="123">source</text>
+    <rect x="124" y="104" width="60" height="30" rx="4" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="154" y="123">bytecode</text>
+    <rect x="318" y="104" width="120" height="30" rx="4" fill="currentColor" fill-opacity="0.24" stroke="currentColor" stroke-width="1.3"/><text x="378" y="120" font-weight="600">VM interprets</text><text x="378" y="130" font-size="6.5">translate each run</text>
+    <rect x="68" y="164" width="56" height="30" rx="4" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="96" y="183">bytecode</text>
+    <rect x="318" y="164" width="120" height="30" rx="4" fill="currentColor" fill-opacity="0.24" stroke="currentColor" stroke-width="1.3"/><text x="378" y="180" font-weight="600">VM · JIT</text><text x="378" y="190" font-size="6.5">hot paths to native, mid-run</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.3" fill="none">
+    <line x1="114" y1="59" x2="124" y2="59" marker-end="url(#ci_ar)"/>
+    <line x1="184" y1="59" x2="196" y2="59" marker-end="url(#ci_ar)"/>
+    <line x1="262" y1="59" x2="410" y2="59" marker-end="url(#ci_ar)"/>
+    <line x1="114" y1="119" x2="124" y2="119" marker-end="url(#ci_ar)"/>
+    <line x1="184" y1="119" x2="318" y2="119" marker-end="url(#ci_ar)"/>
+    <line x1="124" y1="179" x2="318" y2="179" marker-end="url(#ci_ar)"/>
+  </g>
+  <defs><marker id="ci_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>The useful question isn't which box a language sits in but <strong>where translation to machine code happens</strong>. An ahead-of-time compiler does it once at build time, so the CPU later runs native code directly. A bytecode VM translates on the fly, every run. A JIT ships bytecode but compiles the hot paths to native while the program runs — portability up front, near-native speed once warmed up.</figcaption>
+</figure>
+
 ## Why this matters for GopherTrunk
 
 Two concerns from radio software make the choice concrete.

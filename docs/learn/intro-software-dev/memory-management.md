@@ -44,6 +44,37 @@ function that created it, a growing list. Heap memory must be explicitly
 *allocated* and eventually *released*. **All the hard memory problems live on the
 heap**, because something has to decide when each piece is no longer needed.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 462 188" role="img" aria-label="Two memory regions side by side: on the left a call stack of frames for main, process, and decode, with the newest decode frame just pushed and popped on return; on the right a heap of variously sized blocks, one referenced by a pointer held in a stack frame." xmlns="http://www.w3.org/2000/svg">
+  <text x="104" y="26" text-anchor="middle" font-size="9.5" font-weight="600" fill="currentColor">call stack</text>
+  <g font-size="8.5" text-anchor="middle" fill="currentColor">
+    <rect x="44" y="40" width="120" height="30" rx="4" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="1.1"/><text x="104" y="59">main( ) frame</text>
+    <rect x="44" y="72" width="120" height="30" rx="4" fill="currentColor" fill-opacity="0.14" stroke="currentColor" stroke-width="1.1"/><text x="104" y="91">process( ) frame</text>
+    <rect x="44" y="104" width="120" height="30" rx="4" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1.3" stroke-dasharray="4 3"/><text x="104" y="123">decode( ) frame</text>
+  </g>
+  <line x1="30" y1="40" x2="30" y2="134" stroke="currentColor" stroke-width="1.1" marker-end="url(#mem_ar)"/>
+  <text x="20" y="87" text-anchor="middle" font-size="7" fill="currentColor" fill-opacity="0.9" transform="rotate(-90 20 87)">grows each call</text>
+  <text x="104" y="150" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">newest frame on top —</text>
+  <text x="104" y="160" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">pushed on call, popped on return</text>
+  <text x="356" y="26" text-anchor="middle" font-size="9.5" font-weight="600" fill="currentColor">heap</text>
+  <rect x="250" y="34" width="196" height="104" rx="5" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3"/>
+  <g stroke="currentColor" stroke-width="1">
+    <rect x="264" y="46" width="42" height="22" rx="3" fill="currentColor" fill-opacity="0.22"/>
+    <rect x="318" y="42" width="34" height="26" rx="3" fill="currentColor" fill-opacity="0.14"/>
+    <rect x="364" y="48" width="30" height="20" rx="3" fill="currentColor" fill-opacity="0.26"/>
+    <rect x="404" y="44" width="30" height="28" rx="3" fill="currentColor" fill-opacity="0.18"/>
+    <rect x="270" y="86" width="46" height="22" rx="3" fill="currentColor" fill-opacity="0.12"/>
+    <rect x="330" y="90" width="34" height="24" rx="3" fill="currentColor" fill-opacity="0.22"/>
+    <rect x="382" y="88" width="42" height="20" rx="3" fill="currentColor" fill-opacity="0.16"/>
+  </g>
+  <text x="348" y="128" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">any size · any lifetime · must be freed</text>
+  <line x1="164" y1="119" x2="262" y2="63" stroke="currentColor" stroke-width="1.2" marker-end="url(#mem_ar)"/>
+  <text x="205" y="102" text-anchor="middle" font-size="7" fill="currentColor" fill-opacity="0.9">pointer</text>
+  <defs><marker id="mem_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Two regions with opposite rules. The <strong>stack</strong> holds a frame per active call — pushed on call, popped on return — so its storage is automatic and fixed-size. The <strong>heap</strong> is a free-form pool for data whose size or lifetime the compiler can't predict; a stack variable often just holds a pointer into it. Every hard memory bug lives on the heap, because something must decide when each block is no longer needed.</figcaption>
+</figure>
+
 ```text
 stack:  fast, auto-freed, fixed-size, function-scoped
 heap:   flexible, manually/automatically managed, the source of memory bugs

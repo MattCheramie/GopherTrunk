@@ -50,6 +50,24 @@ collection and, historically, fewer features (it lacked generics until 2022). **
 and C#** also occupy a managed middle, with big ecosystems and JIT-driven speed.
 There's no free lunch — every position pays for what it gains.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 464 168" role="img" aria-label="A single spectrum from fast-to-run to fast-to-write languages: C, C++, and Rust on the left trade productivity for control and speed; Go, Java, and C# form a middle; Python, JavaScript, and Ruby on the right trade run-time efficiency for quick, concise development." xmlns="http://www.w3.org/2000/svg">
+  <line x1="34" y1="42" x2="430" y2="42" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#pv_ar)"/>
+  <text x="232" y="32" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">fewer lines · quicker to write · more productive</text>
+  <g text-anchor="middle" fill="currentColor">
+    <circle cx="80" cy="90" r="7" fill="currentColor" fill-opacity="0.28" stroke="currentColor" stroke-width="1.3"/><text x="80" y="112" font-size="9" font-weight="600">C · C++ · Rust</text><text x="80" y="124" font-size="7.5" fill-opacity="0.85">fast to run</text>
+    <circle cx="232" cy="90" r="7" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="232" y="112" font-size="9" font-weight="600">Go · Java · C#</text><text x="232" y="124" font-size="7.5" fill-opacity="0.85">the middle</text>
+    <circle cx="384" cy="90" r="7" fill="currentColor" fill-opacity="0.28" stroke="currentColor" stroke-width="1.3"/><text x="384" y="112" font-size="9" font-weight="600">Python · JS · Ruby</text><text x="384" y="124" font-size="7.5" fill-opacity="0.85">fast to write</text>
+  </g>
+  <line x1="87" y1="90" x2="225" y2="90" stroke="currentColor" stroke-width="1" stroke-opacity="0.4"/>
+  <line x1="239" y1="90" x2="377" y2="90" stroke="currentColor" stroke-width="1" stroke-opacity="0.4"/>
+  <line x1="430" y1="138" x2="34" y2="138" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" marker-end="url(#pv_ar)"/>
+  <text x="232" y="152" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">less CPU and memory · predictable timing · more control</text>
+  <defs><marker id="pv_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>One axis, two opposing pulls. Toward the left, languages give more control and predictable speed at the cost of ceremony; toward the right, they trade run-time efficiency for fewer lines and quicker iteration. Go and the managed languages sit in a deliberate middle. Most of choosing a language is deciding which end your problem actually rewards.</figcaption>
+</figure>
+
 ## Productivity often beats raw speed — because of economics
 
 Here's the uncomfortable truth for performance purists: for most software,

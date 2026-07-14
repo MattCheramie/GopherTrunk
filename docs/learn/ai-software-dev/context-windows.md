@@ -37,6 +37,37 @@ This is lesson 4 of the path, and the one to slow down on. Almost every frustrat
 
 All of it is concatenated into one long sequence of tokens and fed to the model at once. The model has no memory between calls beyond this — it doesn't "remember" your last session unless that information is in the context this time. Anything outside the context window might as well not exist to the model. This is why two people can get wildly different answers to the same question: their context differed.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 158" role="img" aria-label="One fixed context window drawn as a token-budget bar split into system prompt, conversation history, files, current message, and reserved output; beside it a U-shaped recall curve shows attention is strongest at the start and end of the window and weakest in the middle." xmlns="http://www.w3.org/2000/svg">
+  <text x="160" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="currentColor">one fixed token budget</text>
+  <g stroke="currentColor" stroke-width="1.1">
+    <rect x="20" y="30" width="28" height="42" fill="currentColor" fill-opacity="0.12"/>
+    <rect x="48" y="30" width="84" height="42" fill="currentColor" fill-opacity="0.2"/>
+    <rect x="132" y="30" width="84" height="42" fill="currentColor" fill-opacity="0.12"/>
+    <rect x="216" y="30" width="34" height="42" fill="currentColor" fill-opacity="0.24"/>
+    <rect x="250" y="30" width="50" height="42" fill="currentColor" fill-opacity="0.06" stroke-dasharray="4 3"/>
+  </g>
+  <g font-size="7.5" fill="currentColor" text-anchor="middle">
+    <text x="34" y="86">system</text>
+    <text x="90" y="86">history</text>
+    <text x="174" y="86">files</text>
+    <text x="233" y="100">message</text>
+    <text x="275" y="86">reserved</text>
+    <text x="275" y="95">output</text>
+  </g>
+  <line x1="233" y1="72" x2="233" y2="94" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.6"/>
+  <text x="160" y="124" text-anchor="middle" font-size="7.5" fill="currentColor" fill-opacity="0.9">input and output share one ceiling — overflow drops the oldest</text>
+  <text x="395" y="20" text-anchor="middle" font-size="8" font-weight="600" fill="currentColor">lost in the middle</text>
+  <line x1="335" y1="98" x2="335" y2="34" stroke="currentColor" stroke-width="1" stroke-opacity="0.6" marker-end="url(#ctx_ar)"/>
+  <line x1="335" y1="98" x2="458" y2="98" stroke="currentColor" stroke-width="1" stroke-opacity="0.6" marker-end="url(#ctx_ar)"/>
+  <path d="M340 44 C 366 60 380 92 397 92 C 414 92 428 60 454 44" fill="none" stroke="currentColor" stroke-width="1.6"/>
+  <text x="326" y="40" text-anchor="middle" font-size="6.5" fill="currentColor" fill-opacity="0.85" transform="rotate(-90 326 40)">recall</text>
+  <text x="397" y="112" text-anchor="middle" font-size="6.5" fill="currentColor" fill-opacity="0.85">start → middle → end</text>
+  <defs><marker id="ctx_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>One fixed token budget holds everything at once — the hidden system prompt, the conversation history, attached files, your current message, and the room reserved for the reply. Input and output share the same ceiling, so a packed session leaves less space to answer. And attention isn't even: recall is strongest at the start and end of the window and weakest in the middle, so place what matters most where it will be seen.</figcaption>
+</figure>
+
 ## The window is a hard limit
 
 The **context window** is the maximum number of tokens a model can handle in one pass — and it counts *both* the input (everything above) *and* the output the model is about to generate. It is a hard architectural limit, not a guideline. As a rough illustration, models today range from tens of thousands of tokens up to a million or more, and the numbers keep climbing — so don't memorize a figure; check the provider's docs for any specific model.

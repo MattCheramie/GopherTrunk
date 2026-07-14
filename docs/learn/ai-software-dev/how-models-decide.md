@@ -51,6 +51,34 @@ With the input tokenized, generation runs as a tight loop. The word for it is **
 
 So a paragraph of output is this loop run hundreds of times, one token at a time, each new token chosen in light of everything before it. Crucially, the model commits to each token before generating the next — it can't go back and revise an earlier word once it's out. That one-directional, one-token-at-a-time nature explains a lot of LLM behaviour, including why a single early misstep can send an answer down the wrong path.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 470 182" role="img" aria-label="The autoregressive generation loop: the model reads the tokens so far, produces a probability distribution over the vocabulary, samples one token, appends it, and feeds the longer sequence back to the start to repeat." xmlns="http://www.w3.org/2000/svg">
+  <path d="M401 78 C 401 34 59 34 59 78" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#hmd_ar)"/>
+  <text x="230" y="26" text-anchor="middle" font-size="8.5" fill="currentColor" fill-opacity="0.9">append, then feed the longer sequence back in — repeat</text>
+  <g text-anchor="middle" fill="currentColor" font-size="8.5">
+    <rect x="12" y="78" width="94" height="46" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="59" y="99" font-weight="600">read tokens</text><text x="59" y="112" font-size="7.5" fill-opacity="0.85">prompt so far</text>
+    <rect x="126" y="78" width="94" height="46" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="173" y="96" font-weight="600">probability</text><text x="173" y="108" font-weight="600">distribution</text>
+    <rect x="240" y="78" width="94" height="46" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="287" y="99" font-weight="600">sample one</text><text x="287" y="112" font-size="7.5" fill-opacity="0.85">token</text>
+    <rect x="354" y="78" width="94" height="46" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="401" y="99" font-weight="600">append it</text><text x="401" y="112" font-size="7.5" fill-opacity="0.85">commit · no revise</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.4" fill="none">
+    <line x1="106" y1="101" x2="126" y2="101" marker-end="url(#hmd_ar)"/>
+    <line x1="220" y1="101" x2="240" y2="101" marker-end="url(#hmd_ar)"/>
+    <line x1="334" y1="101" x2="354" y2="101" marker-end="url(#hmd_ar)"/>
+  </g>
+  <g stroke="currentColor" stroke-width="0.9" fill="currentColor">
+    <rect x="140" y="150" width="8" height="8" fill-opacity="0.35"/>
+    <rect x="152" y="142" width="8" height="16" fill-opacity="0.5"/>
+    <rect x="164" y="146" width="8" height="12" fill-opacity="0.35"/>
+    <rect x="176" y="152" width="8" height="6" fill-opacity="0.35"/>
+    <rect x="188" y="154" width="8" height="4" fill-opacity="0.35"/>
+  </g>
+  <text x="205" y="157" text-anchor="start" font-size="7.5" fill="currentColor" fill-opacity="0.9">pick one from the distribution</text>
+  <defs><marker id="hmd_ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Generation is <strong>autoregressive</strong>: the model reads every token so far, produces a probability distribution over the whole vocabulary, samples one token, and appends it — then feeds the longer sequence back in and repeats. Because it commits to each token before choosing the next and never revises, a single early misstep can steer the whole answer.</figcaption>
+</figure>
+
 ## Sampling: how the token gets picked
 
 Step 3 — *picks one token* — is where you have control. Several strategies exist for turning the probability distribution into an actual choice.
