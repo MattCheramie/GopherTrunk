@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -30,7 +32,7 @@ import (
 func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
-	in := fs.String("in", "", "raw IQ input file (required)")
+	in := fs.String("in", "", "raw IQ input file (required); \"-\" reads from stdin, for piping a live IQ stream (issue #314)")
 	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32) | wav (2-channel 16-bit baseband WAV — SDRtrunk/SDR++/GopherTrunk narrowband recording; sample rate is read from the header)")
 	sampleRate := fs.Float64("sample-rate", 2_400_000, "IQ sample rate in Hz")
 	demod := fs.String("demod", "c4fm", "P25 Phase 1 demod mode: c4fm | cqpsk")
@@ -48,6 +50,7 @@ func runReplay(args []string) {
 	recordDDC := fs.String("record-ddc", "", "also write the post-DDC narrowband IQ (the exact channelized stream the receiver decodes) to this 2-channel 16-bit baseband WAV — shrinks a fat 2.5/10 MS/s capture into a small shareable fixture that `replay -format wav` decodes identically")
 	outFormat := fs.String("out-format", "text", "output format: text | json | jsonl | yaml | csv | csv-events")
 	out := fs.String("out", "", "write structured output to this file (default: stdout for non-text)")
+	stream := fs.Bool("stream", false, "streaming mode: decode a continuous IQ stream and emit each decoded event as a JSON line to stdout as it happens, instead of buffering a whole capture and printing a report at EOF. Pair with -in - to read IQ from stdin (e.g. from OpenWebRX+). -out-format/-out are ignored; -auto-tune is unavailable (a live stream can't be seeked — use -tune-hz). Issue #314")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk replay — decode a raw IQ capture file offline (any protocol).
 
@@ -68,6 +71,10 @@ EXAMPLES:
 
   # Any other protocol GopherTrunk decodes (e.g. TETRA), with structured export
   gophertrunk replay -in tetra.cfile -format f32 -sample-rate 2400000 -protocol tetra -out-format json -out out.json
+
+  # Stream IQ from stdin and emit decoded events as live JSON lines to stdout
+  # (e.g. piped from OpenWebRX+); channel already tuned to 0 Hz upstream
+  … | gophertrunk replay -in - -stream -format f32 -sample-rate 48000 -protocol p25p1
 
 FLAGS:`)
 		fs.PrintDefaults()
@@ -129,14 +136,39 @@ FLAGS:`)
 		Log:                  logger,
 	}
 
+	// Streaming mode (issue #314): decode a continuous IQ stream and emit each
+	// decoded event as a JSON line to stdout the moment it is produced, so a
+	// live upstream — e.g. OpenWebRX+ piping IQ to stdin — sees decodes in real
+	// time instead of one report at EOF. Memory stays bounded (chunked reads).
+	if *stream {
+		if *autoTune {
+			rep.Fatalf(2, "-stream is incompatible with -auto-tune: a live stream can't be seeked to estimate the carrier — set -tune-hz instead")
+		}
+		r, closeIn, oerr := openIQInput(*in)
+		if oerr != nil {
+			rep.Fatal(1, oerr)
+		}
+		defer closeIn()
+		if err = streamDecode(r, iqSourceName(*in), cfg, os.Stdout); err != nil {
+			rep.Fatal(1, err)
+		}
+		return
+	}
+
 	// Under -auto-tune, try the ranked carrier candidates and keep the best
 	// lock — so a control channel that is off-centre and not the loudest carrier
 	// in a wideband capture is still found (a single dominant-carrier estimate
 	// would miss it). -tune-hz (without -auto-tune) still forces one offset.
 	var res *siglab.Result
-	if *autoTune {
+	switch {
+	case *in == "-":
+		if *autoTune {
+			rep.Fatalf(2, "-auto-tune requires a seekable file, not stdin")
+		}
+		res, err = siglab.RunReader(os.Stdin, "stdin", cfg)
+	case *autoTune:
 		res, err = siglab.RunAutoTuneMulti(*in, cfg, 0)
-	} else {
+	default:
 		res, err = siglab.Run(*in, cfg)
 	}
 	if err != nil {
@@ -146,4 +178,43 @@ FLAGS:`)
 	if err := emitResult(res, of, *out); err != nil {
 		rep.Fatal(1, err)
 	}
+}
+
+// streamDecode runs the streaming decoder over r and writes each decoded event
+// as a JSON line to w the moment it is produced — the core of `replay -stream`
+// (issue #314), factored out so it is testable without the CLI's os.Exit paths.
+// json.Encoder.Encode appends a newline and flushes to w on each call, so events
+// reach a live consumer immediately as line-delimited JSON. A per-event write
+// error (typically the downstream closing the pipe) is reported on stderr and
+// decoding continues to EOF; only a decode/read error is returned.
+func streamDecode(r io.Reader, source string, cfg siglab.Config, w io.Writer) error {
+	enc := json.NewEncoder(w)
+	_, err := siglab.RunReaderStream(r, source, cfg, func(ev siglab.EventRecord) {
+		if encErr := enc.Encode(ev); encErr != nil {
+			fmt.Fprintln(os.Stderr, "replay: emit event:", encErr)
+		}
+	})
+	return err
+}
+
+// openIQInput returns a reader for the raw IQ input: os.Stdin when path is "-"
+// (with a no-op closer), otherwise the opened file. The caller must call the
+// returned closer.
+func openIQInput(path string) (io.Reader, func() error, error) {
+	if path == "-" {
+		return os.Stdin, func() error { return nil }, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	return f, f.Close, nil
+}
+
+// iqSourceName is the human-facing label for the input in logs and results.
+func iqSourceName(path string) string {
+	if path == "-" {
+		return "stdin"
+	}
+	return path
 }

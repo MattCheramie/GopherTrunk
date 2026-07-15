@@ -156,6 +156,28 @@ The TUI and browser console are friendlier front-ends onto exactly these. To
 discover and map an *unknown* trunked system from captures, reach for
 [Hunt](hunt.html) instead.
 
+### Streaming decode from a pipe (`replay -stream`)
+
+`replay` normally reads a whole capture and prints a report at EOF. Add
+`-stream` to instead decode a **continuous** IQ stream and emit each decoded
+event as its own JSON line to stdout the moment it happens — line-delimited
+JSON (one `{"seq":…,"kind":…,"fields":…}` object per line). Pair it with
+`-in -` to read raw IQ from **stdin**, so an upstream tool (e.g. OpenWebRX+ or
+any pipeline that produces a narrowband IQ stream) can feed GopherTrunk's
+decoder live:
+
+```sh
+# OpenWebRX+-style: upstream channelizes to a narrowband IQ stream tuned to
+# 0 Hz and pipes it in; decoded control-channel events stream out as JSONL.
+… | gophertrunk replay -in - -stream -format f32 -sample-rate 48000 -protocol p25p1
+```
+
+Notes: the channel must already be tuned to 0 Hz upstream (or via `-tune-hz`) —
+`-auto-tune` needs to seek a prefix and so is unavailable on a live stream;
+`-out-format`/`-out` are ignored (stream mode always writes JSONL to stdout);
+diagnostics still go to stderr, keeping stdout a clean event feed. Memory stays
+bounded — nothing is buffered whole. (Issue #314.)
+
 ## Supported protocols
 
 SigLab decodes every protocol the engine knows, including P25 Phase 1/2, DMR

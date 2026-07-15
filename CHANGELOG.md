@@ -86,6 +86,16 @@ for tagged releases.
   self-heals instead of quietly stopping.
 
 ### Added
+- **`replay -stream` — decode a live IQ stream from a pipe and emit decoded
+  events as line-delimited JSON to stdout.** `gophertrunk replay -in - -stream`
+  reads raw IQ from stdin and, instead of buffering a whole capture and printing
+  a report at EOF, writes each decoded event as its own JSON line the moment it
+  is produced — so an upstream channelizer (e.g. OpenWebRX+) can pipe a
+  narrowband IQ stream in and consume GopherTrunk's decodes live. `-out-format` /
+  `-out` are ignored (stdout is the JSONL event feed, stderr keeps diagnostics),
+  and `-auto-tune` is unavailable on a non-seekable stream — tune to 0 Hz
+  upstream or with `-tune-hz`. Memory stays bounded (chunked reads). `-in -` also
+  works in ordinary (batch) mode. (Issue #314.)
 - **`dc_avoid` self-suggesting diagnostic on a poorly-decoding zero-IF control
   channel.** When a P25 control channel is locked but running at zero-IF (no
   DC-spike-avoidance LO offset) and its TSBK blocks are failing Viterbi/CRC at a
