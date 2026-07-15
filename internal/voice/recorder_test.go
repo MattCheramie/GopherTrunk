@@ -1346,6 +1346,105 @@ func TestRecorderRecordsEncryptedWhenSkipDisabled(t *testing.T) {
 	}
 }
 
+// TestRecorderBackfillsMidCallEncryptionIntoCallComplete pins issue #897: when a
+// call's encryption / source only resolves on the traffic channel (a P25 Phase 2
+// compressed grant arrives src=0 + enc=false, or a Phase 1 LDU2 Encryption Sync
+// lands after the grant), the CallComplete the recorder publishes — the payload
+// the webhook / upload feeds serialize — must carry the updated encryption state
+// and source RID, not the stale grant-time snapshot. Runs with SkipEncrypted off
+// so the call records instead of aborting.
+func TestRecorderBackfillsMidCallEncryptionIntoCallComplete(t *testing.T) {
+	sourceUpdate := func(dev string) events.Event {
+		return events.Event{Kind: events.KindCallSourceUpdate, Payload: trunking.CallSourceUpdate{
+			DeviceSerial: dev, SourceID: 42, Encrypted: true, At: time.Now(),
+		}}
+	}
+	encSync := func(dev string) events.Event {
+		return events.Event{Kind: events.KindCallEncryption, Payload: trunking.CallEncryption{
+			DeviceSerial: dev, AlgorithmID: 0x84, KeyID: 0x1234, At: time.Now(),
+		}}
+	}
+
+	cases := []struct {
+		name       string
+		update     func(string) events.Event
+		wantSource uint32
+		wantAlg    uint8
+		wantKey    uint16
+	}{
+		{"phase2 source update", sourceUpdate, 42, 0, 0},
+		{"phase1 encryption sync", encSync, 0, 0x84, 0x1234},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, bus, _ := mkRecorder(t, false) // SkipEncrypted off
+			defer r.Close()
+			defer bus.Close()
+
+			watch := bus.Subscribe()
+			defer watch.Close()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go r.Run(ctx)
+
+			// Grant arrives CLEAR — encryption is not yet known at grant time.
+			cs := trunking.CallStart{
+				Grant:        trunking.Grant{System: "S", Protocol: "p25", GroupID: 30301, SourceID: 0, Encrypted: false},
+				Talkgroup:    &trunking.TalkGroup{ID: 30301, AlphaTag: "EMS", Record: true},
+				DeviceSerial: "VOICE-1",
+				StartedAt:    time.Now(),
+			}
+			bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+			waitSession(t, r, "VOICE-1", true)
+			if err := r.WritePCM("VOICE-1", make([]int16, 1600)); err != nil {
+				t.Fatal(err)
+			}
+
+			// Encryption / source resolves mid-call on the traffic channel.
+			bus.Publish(tc.update("VOICE-1"))
+			time.Sleep(30 * time.Millisecond) // let the update land before end
+
+			// End the call carrying the ORIGINAL clear grant, so the only path
+			// to an encrypted CallComplete is the recorder's session backfill.
+			bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+				Grant: cs.Grant, Talkgroup: cs.Talkgroup, DeviceSerial: "VOICE-1",
+				StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(2 * time.Second),
+				Reason: trunking.EndReasonNormal,
+			}})
+
+			var cc trunking.CallComplete
+			deadline := time.After(2 * time.Second)
+			for {
+				done := false
+				select {
+				case ev := <-watch.C:
+					if ev.Kind == events.KindCallComplete {
+						cc = ev.Payload.(trunking.CallComplete)
+						done = true
+					}
+				case <-deadline:
+					t.Fatal("timed out waiting for CallComplete")
+				}
+				if done {
+					break
+				}
+			}
+
+			if !cc.Grant.Encrypted {
+				t.Error("CallComplete.Grant.Encrypted = false, want true (mid-call update not backfilled)")
+			}
+			if cc.Grant.SourceID != tc.wantSource {
+				t.Errorf("CallComplete.Grant.SourceID = %d, want %d", cc.Grant.SourceID, tc.wantSource)
+			}
+			if cc.Grant.AlgorithmID != tc.wantAlg || cc.Grant.KeyID != tc.wantKey {
+				t.Errorf("alg/key = 0x%02X/0x%04X, want 0x%02X/0x%04X",
+					cc.Grant.AlgorithmID, cc.Grant.KeyID, tc.wantAlg, tc.wantKey)
+			}
+		})
+	}
+}
+
 // wavFiles returns every .wav path under root.
 func wavFiles(t *testing.T, root string) []string {
 	t.Helper()

@@ -438,13 +438,16 @@ func (r *Recorder) Run(ctx context.Context) error {
 				// In-call Encryption Sync recovered (P25 Phase 1 LDU2).
 				// AlgorithmID 0x80 is CLEAR; anything else is encrypted.
 				if ce, ok := ev.Payload.(trunking.CallEncryption); ok {
-					r.handleEncryptionUpdate(ce.DeviceSerial, ce.AlgorithmID != algorithmClear)
+					enc := ce.AlgorithmID != algorithmClear
+					r.backfillSessionGrant(ce.DeviceSerial, enc, ce.AlgorithmID, ce.KeyID, 0)
+					r.handleEncryptionUpdate(ce.DeviceSerial, enc)
 				}
 			case events.KindCallSourceUpdate:
 				// In-call source/encryption resolved on the traffic channel
 				// (e.g. a P25 Phase 2 compressed grant). Carries an explicit
 				// encrypted flag.
 				if su, ok := ev.Payload.(trunking.CallSourceUpdate); ok {
+					r.backfillSessionGrant(su.DeviceSerial, su.Encrypted, 0, 0, su.SourceID)
 					r.handleEncryptionUpdate(su.DeviceSerial, su.Encrypted)
 				}
 			}
@@ -678,6 +681,39 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 // call advertises; anything else means the call is encrypted. Mirrors
 // p25.AlgorithmClear, kept local to avoid a radio-package import.
 const algorithmClear uint8 = 0x80
+
+// backfillSessionGrant mirrors onto the recorder's stored grant the encryption
+// and source facts the engine recovers mid-call — a P25 Phase 1 LDU2 Encryption
+// Sync or a Phase 2 traffic-channel GROUP_VOICE_CHANNEL_USER PDU — and backfills
+// onto the live ActiveCall. Without this the CallComplete the recorder later
+// publishes (built from the session's grant, see finalizeLocked) carries the
+// grant-time snapshot, so a call whose encryption only resolves on the traffic
+// channel broadcasts as encrypted=false even though the call log — fed from the
+// engine-backfilled CallEnd grant — correctly shows it encrypted (issue #897).
+// Encryption is sticky-true and never cleared here; alg/key are recorded only
+// for an encrypted call; a zero source is ignored so a later clear-source update
+// can't erase a known RID. No-op when no session is open for the device. Caller
+// must not hold r.mu.
+func (r *Recorder) backfillSessionGrant(deviceSerial string, encrypted bool, algID uint8, keyID uint16, sourceID uint32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.sessions[deviceSerial]
+	if !ok {
+		return
+	}
+	if encrypted {
+		s.cs.Grant.Encrypted = true
+		if algID != 0 {
+			s.cs.Grant.AlgorithmID = algID
+		}
+		if keyID != 0 {
+			s.cs.Grant.KeyID = keyID
+		}
+	}
+	if sourceID != 0 {
+		s.cs.Grant.SourceID = sourceID
+	}
+}
 
 // handleEncryptionUpdate aborts an in-flight recording when SkipEncrypted
 // is set and a call is discovered to be encrypted mid-stream — e.g. a P25

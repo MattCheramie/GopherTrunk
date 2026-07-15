@@ -84,14 +84,32 @@ func NewWebhook(cfg WebhookConfig, hc *http.Client) (Backend, error) {
 
 func (b *webhookBackend) Name() string { return b.name }
 
+// callType classifies a call for the webhook payload so a consumer can tell a
+// group call from a unit (individual) call — otherwise a unit call's
+// destination RID in the talkgroup field reads as a talkgroup (issue #897).
+func callType(c *Call) string {
+	switch {
+	case c.DataCall:
+		return "data"
+	case c.Individual:
+		return "unit"
+	default:
+		return "group"
+	}
+}
+
 // webhookPayload is the stable JSON schema POSTed for each call. Fields
 // that don't apply to a given call (site identity on non-P25, encryption
 // params on clear calls, audio when not requested) are omitted via
 // omitempty so a consumer can rely on presence meaning "known".
 type webhookPayload struct {
-	Event         string   `json:"event"` // always "call"
-	System        string   `json:"system"`
-	Protocol      string   `json:"protocol"`
+	Event    string `json:"event"` // always "call"
+	System   string `json:"system"`
+	Protocol string `json:"protocol"`
+	// CallType is "group", "unit" (individual / unit-to-unit — Talkgroup
+	// carries a destination RID, not a talkgroup), or "data". Always emitted
+	// so a consumer can classify Talkgroup without guessing (issue #897).
+	CallType      string   `json:"call_type"`
 	Talkgroup     uint32   `json:"talkgroup"`
 	TalkgroupID   string   `json:"talkgroup_label,omitempty"`
 	Source        uint32   `json:"source,omitempty"`
@@ -122,6 +140,7 @@ func (b *webhookBackend) Send(ctx context.Context, c *Call) error {
 		Event:         "call",
 		System:        c.System,
 		Protocol:      c.Protocol,
+		CallType:      callType(c),
 		Talkgroup:     c.Talkgroup,
 		TalkgroupID:   c.TalkgroupLabel,
 		Source:        c.Source,

@@ -59,8 +59,15 @@ type Call struct {
 	// before the call ended. Aggregators that accept the fields can
 	// thread them into their API payload; aggregators that don't will
 	// just ignore them.
-	AlgorithmID   uint8
-	KeyID         uint16
+	AlgorithmID uint8
+	KeyID       uint16
+	// Individual marks a unit-to-unit / individual call, whose Talkgroup
+	// field carries a destination radio ID rather than a talkgroup, and
+	// DataCall a data (non-voice) grant. They let a metadata sink emit a
+	// call_type so a downstream consumer doesn't mistake a unit's target RID
+	// for a talkgroup (issue #897). Both false for an ordinary group call.
+	Individual    bool
+	DataCall      bool
 	Emergency     bool
 	PatchedGroups []uint32
 	StartedAt     time.Time
@@ -149,6 +156,8 @@ func callFromEvent(cc trunking.CallComplete) *Call {
 		Encrypted:     cc.Grant.Encrypted,
 		AlgorithmID:   cc.Grant.AlgorithmID,
 		KeyID:         cc.Grant.KeyID,
+		Individual:    cc.Grant.Individual,
+		DataCall:      cc.Grant.DataCall,
 		Emergency:     cc.Grant.Emergency,
 		PatchedGroups: cc.Grant.PatchedGroups,
 		StartedAt:     cc.StartedAt,
