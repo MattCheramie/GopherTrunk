@@ -15,6 +15,19 @@ for tagged releases.
   `go.mod` and every CI/build workflow.
 
 ### Fixed
+- **Webhook payloads reported every call as `encrypted: false` and gave unit
+  calls no `call_type`.** On systems whose encryption only resolves on the
+  traffic channel (P25 Phase 2 compressed grants, Phase 1 LDU2 Encryption Sync),
+  the recorder built its `CallComplete` from the grant-time session snapshot,
+  which never saw the mid-call update — so the webhook said `false` (and never
+  emitted `algorithm_id`/`key_id`) even though `/api/v1/calls/history`, fed from
+  the engine-backfilled `CallEnd` grant, correctly showed the call encrypted. The
+  recorder now mirrors the mid-call encryption / source facts onto its session
+  grant, so every broadcast backend agrees with the call log. A new `call_type`
+  field (`group` / `unit` / `data`, always emitted) lets a consumer tell a unit
+  call — whose `talkgroup` carries a destination RID, not a talkgroup — apart from
+  a group call, and unit-call `source` now populates when the RID resolves in-call
+  (issue #897).
 - **SoapyRemote stream arguments smuggled through `sdr.soapy_remote[].args`
   were silently ignored.** Everything in `args` is passed to the remote
   SoapySDR `make()` call, but GopherTrunk builds the `SETUP_STREAM` frame
@@ -73,6 +86,13 @@ for tagged releases.
   self-heals instead of quietly stopping.
 
 ### Added
+- **`dc_avoid` self-suggesting diagnostic on a poorly-decoding zero-IF control
+  channel.** When a P25 control channel is locked but running at zero-IF (no
+  DC-spike-avoidance LO offset) and its TSBK blocks are failing Viterbi/CRC at a
+  high rate, the daemon now emits one advisory WARN pointing the operator at
+  `dc_avoid: true` — the exact remedy for the on-DC front-end I/Q image / 1-f
+  degradation. Advisory only (it never changes tuning), silent once `dc_avoid` is
+  in effect, and fires at most once per lock session (issue #402).
 - **GopherTrunk Bundle (`.gtb.tar.gz`) — the capture-to-analysis case format.**
   A single portable archive that packages one SDR case — the raw IQ capture, an
   auto-carved narrowband DDC slice, logs, the SigLab signal analysis, the
