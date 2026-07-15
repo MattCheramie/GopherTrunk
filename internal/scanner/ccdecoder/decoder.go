@@ -176,6 +176,25 @@ const iqClipWarnRatio = 0.002
 // dongle's 1-3 kHz crystal error stays under it.
 const defaultCarrierOffsetWarnHz = 4000
 
+// zeroIFHealthWindow is the accumulation window over which the decoder measures
+// the TSBK error rate before deciding a zero-IF lock is decoding poorly enough
+// to suggest dc_avoid (issue #402). ~30 s is long enough to average past
+// acquisition transients and short bursts, so the nudge only fires on a
+// sustained problem. Sized as a field on the Decoder (defaulted from this
+// const) so tests can drive the check without waiting real seconds.
+const zeroIFHealthWindow = 30 * time.Second
+
+// zeroIFHealthMinAttempts is the minimum number of TSBK decode attempts that
+// must accrue within a window before its error rate is trusted — below this the
+// sample is too small to distinguish a bad site from a quiet one. Issue #402.
+const zeroIFHealthMinAttempts = 100
+
+// zeroIFHealthErrPct is the TSBK frame-error-rate threshold (percent) above
+// which a locked, zero-IF control channel is deemed to be suffering the issue
+// #402 on-DC degradation. Clean sites sit near 0%; the reporter's marginal
+// zero-IF site ran ~33%. 20% sits well clear of both. Issue #402.
+const zeroIFHealthErrPct = 20
+
 // carrierOffsetWarnInterval throttles a sustained large-offset WARN, matching the
 // iqClipLog / iqDCLog 30 s cadence so a stuck adjacent-channel lock logs steadily.
 const carrierOffsetWarnInterval = 30 * time.Second
@@ -311,7 +330,21 @@ type Decoder struct {
 	// goroutine). Issue #815.
 	carrierOffsetWarnHz int
 	lastOffsetWarnAt    time.Time
-	systems             map[string]trunking.System
+
+	// zeroIF* back the issue #402 dc_avoid nudge: while locked at zero-IF
+	// (loOffsetHz == 0), the decoder measures the TSBK error rate over
+	// zeroIFHealthWindow and, if it stays high, emits one actionable WARN
+	// pointing the operator at dc_avoid. zeroIFHealthAt/BaseDecoded/BaseFailed
+	// hold the start-of-window snapshot; zeroIFWarned latches the one-shot so
+	// the nudge fires at most once per lock session (re-armed on a fresh
+	// KindCCLocked). All owned by the pump goroutine under mu.
+	zeroIFHealthWindow time.Duration
+	zeroIFHealthAt     time.Time
+	zeroIFBaseDecoded  int64
+	zeroIFBaseFailed   int64
+	zeroIFWarned       bool
+
+	systems map[string]trunking.System
 
 	// ddc decimates the raw SDR IQ stream to pipelineRateHz before
 	// the active pipeline sees a chunk; ddcTarget records the
@@ -475,6 +508,7 @@ func New(opts Options) (*Decoder, error) {
 	if d.carrierOffsetWarnHz <= 0 {
 		d.carrierOffsetWarnHz = defaultCarrierOffsetWarnHz
 	}
+	d.zeroIFHealthWindow = zeroIFHealthWindow
 	d.ddcRec = newDDCRecorder(opts.DDCRecordDir, log)
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
@@ -535,6 +569,12 @@ func (d *Decoder) Run(ctx context.Context) error {
 				// only means anything once the FSW is correlating. Payload
 				// shape is per-protocol, so we only read the lock edge.
 				d.locked.Store(true)
+				// Re-arm the issue #402 dc_avoid nudge for this lock session,
+				// so a fresh acquisition gets one clean measurement window.
+				d.mu.Lock()
+				d.zeroIFWarned = false
+				d.zeroIFHealthAt = time.Time{}
+				d.mu.Unlock()
 				continue
 			case events.KindCCLost:
 				d.locked.Store(false)
@@ -723,6 +763,10 @@ func (d *Decoder) clearActiveLocked() {
 		_ = d.active.Close()
 		d.active = nil
 	}
+	// Drop the issue #402 zero-IF health window so the next pipeline
+	// re-baselines against its own fresh TSBK counters instead of
+	// diffing against the torn-down pipeline's totals.
+	d.zeroIFHealthAt = time.Time{}
 	if d.activeAt != "" && d.metrics != nil {
 		d.metrics.ClearIQPowerDbFS(d.activeAt)
 		d.metrics.ClearIQDCRatioDb(d.activeAt)
@@ -817,6 +861,7 @@ func (d *Decoder) pump(iq []complex64) {
 	d.active.Process(d.ddcOut)
 	d.sampleAutotuneLocked()
 	d.checkCarrierOffsetLocked()
+	d.checkZeroIFHealthLocked()
 }
 
 // afcReporter is the optional capability a pipeline exposes when its
@@ -825,6 +870,14 @@ func (d *Decoder) pump(iq []complex64) {
 // average. Pipelines without an AFC stage simply don't implement it.
 type afcReporter interface {
 	AFCOffsetHz() float64
+}
+
+// ccHealthReporter is the optional capability a pipeline exposes when it can
+// report cumulative TSBK decode success/failure counts. Today only the P25
+// Phase 1 pipeline implements it; the decoder uses it to nudge the operator
+// toward dc_avoid when a zero-IF control lock decodes poorly (issue #402).
+type ccHealthReporter interface {
+	TSBKCounts() (decoded, failed int64)
 }
 
 // sampleAutotuneLocked folds the active receiver's residual carrier offset
@@ -891,6 +944,60 @@ func (d *Decoder) checkCarrierOffsetLocked() {
 		"or the receiver oscillator is badly mistuned; verify the reported site against "+
 		"the configured frequency (issue #815)",
 		"offset_hz", total, "freq_hz", d.activeFreqHz, "system", d.activeAt)
+}
+
+// checkZeroIFHealthLocked emits one actionable WARN when a control channel is
+// locked, the receiver is running at zero-IF (no DC-spike-avoidance LO offset
+// applied), and TSBK blocks are failing Viterbi/CRC at a high rate over a full
+// zeroIFHealthWindow. That is the exact signature issue #402 chased for 44
+// comments: the R820T2's on-DC I/Q image and 1-f noise degrade EVM enough to
+// fail the TSBK trailer CRC while NID's stronger BCH survives, so the channel
+// stays locked but decodes poorly. The remedy is dc_avoid — tune the LO
+// off-channel and mix the wanted channel back to baseband, off the DC spur and
+// its image (the same offset tuning SDRTrunk / OP25 do by default). This nudge
+// points a suffering operator straight at that switch instead of leaving it to
+// be rediscovered. Advisory only — it never changes tuning, and it stays silent
+// once dc_avoid is in effect (loOffsetHz != 0). Caller holds d.mu.
+func (d *Decoder) checkZeroIFHealthLocked() {
+	if d.zeroIFWarned || d.loOffsetHz != 0 || !d.locked.Load() {
+		return
+	}
+	rep, ok := d.active.(ccHealthReporter)
+	if !ok {
+		return
+	}
+	decoded, failed := rep.TSBKCounts()
+	now := time.Now()
+	if d.zeroIFHealthAt.IsZero() {
+		// Start of a measurement window: snapshot the baseline and wait.
+		d.zeroIFHealthAt = now
+		d.zeroIFBaseDecoded = decoded
+		d.zeroIFBaseFailed = failed
+		return
+	}
+	if now.Sub(d.zeroIFHealthAt) < d.zeroIFHealthWindow {
+		return
+	}
+	dDecoded := decoded - d.zeroIFBaseDecoded
+	dFailed := failed - d.zeroIFBaseFailed
+	// Roll the window forward regardless of the verdict so the next window
+	// measures fresh traffic.
+	d.zeroIFHealthAt = now
+	d.zeroIFBaseDecoded = decoded
+	d.zeroIFBaseFailed = failed
+	attempts := dDecoded + dFailed
+	if attempts < zeroIFHealthMinAttempts || dFailed*100 < int64(zeroIFHealthErrPct)*attempts {
+		return
+	}
+	d.zeroIFWarned = true
+	d.log.Warn("ccdecoder: control channel locked but TSBK blocks are failing at a high rate "+
+		"while tuned at zero-IF — the issue #402 signature (front-end DC spur / I/Q image "+
+		"degrading the on-DC channel). Set dc_avoid: true on this device to tune the LO "+
+		"off-channel and mix the channel back to baseband; SDRTrunk / OP25 do this by default.",
+		"tsbk_err_pct", int(dFailed*100/attempts),
+		"tsbk_attempts", attempts,
+		"freq_hz", d.activeFreqHz,
+		"system", d.activeAt)
 }
 
 // observeIQPower folds one raw IQ chunk into the per-second power / DC /
