@@ -26,6 +26,45 @@ const p25p1VoiceIntermediateHz = 48_000
 // per TIA-102.BAAA. It calibrates the receiver's 4-level slicer.
 const p25p1DeviationHz = 1800.0
 
+// p25p1ChannelSelectHz caps the voice front-end channel filter at half the
+// 12.5 kHz P25 channel spacing. A wideband DDC voice tap hands the chain a
+// stream already at the intermediate rate but band-limited only to the tap's
+// output Nyquist (~±24 kHz), NOT to a single 12.5 kHz channel — so the old
+// pass-through front end fed that whole ±24 kHz span into the receiver's FM
+// discriminator, where the capture effect locks onto a stronger ±12.5 kHz
+// neighbour during the wanted talker's syllable gaps. That decodes foreign
+// talkgroups (gated out → short recordings) and raises in-band interference
+// (garbled audio) versus SDRTrunk's per-channel channelizer. Filtering to
+// ±6.25 kHz drops an adjacent channel centred at ±12.5 kHz deep into the
+// 81-tap front end's stopband (~>80 dB) while the wanted C4FM (Carson
+// bandwidth ≈ ±4.2 kHz) passes flat.
+const p25p1ChannelSelectHz = 6250.0
+
+// newP25P1VoiceFrontEnd builds the channel-select + decimation front end for
+// the P25 Phase 1 voice chain. On the dedicated-tuner path (iqHz well above
+// the intermediate rate) the decimating FIR already band-limits to the
+// operator voice bandwidth as it decimates, so it is left unchanged. On the
+// pass-through path (a wideband DDC tap already at the intermediate rate,
+// decim==1) the old front end applied NO filter at all; this now channel-
+// selects to ±min(bw, p25p1ChannelSelectHz) before the receiver's FM
+// discriminator so adjacent channels can't leak in. Factored out so the
+// selectivity is unit-testable without the full IQ → LDU pipeline.
+func newP25P1VoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
+	chanBW := float64(bw)
+	// decim mirrors newDecimatingFIR's own computation: decim==1 is the
+	// pass-through (wideband tap / pre-channelised) case that historically
+	// skipped filtering entirely.
+	decim := int(math.Round(iqHz)) / p25p1VoiceIntermediateHz
+	filterAtUnity := false
+	if decim <= 1 {
+		filterAtUnity = true
+		if chanBW > p25p1ChannelSelectHz {
+			chanBW = p25p1ChannelSelectHz
+		}
+	}
+	return newDecimatingFIR(iqHz, p25p1VoiceIntermediateHz, chanBW, filterAtUnity)
+}
+
 // resolveP25Phase1DemodMode parses the system-level
 // p25_phase1_demod_mode string carried on the grant into a receiver
 // mode. Unknown values warn-log and fall back to C4FM so a typo doesn't
@@ -74,9 +113,13 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	// of the result. At 2.4 MS/s that wasted ~194M MACs/sec per voice call
 	// and starved the live IQ consumer until the SDR dropped chunks. Same
 	// coefficients and same kept samples as before, so the decode is
-	// byte-for-byte unchanged — only the wasted work is removed. decim==1
-	// (a source already at the intermediate rate) is a pass-through no-op.
-	fe := newDecimatingFIR(iqHz, p25p1VoiceIntermediateHz, float64(c.bw), false)
+	// byte-for-byte unchanged — only the wasted work is removed. decim==1 (a
+	// source already at the intermediate rate — a wideband DDC voice tap) is
+	// NOT a pass-through: it still channel-selects to a single P25 channel
+	// before the FM discriminator (see newP25P1VoiceFrontEnd /
+	// p25p1ChannelSelectHz) so an adjacent ±12.5 kHz channel can't capture the
+	// demod during the wanted talker's gaps.
+	fe := newP25P1VoiceFrontEnd(iqHz, c.bw)
 	symbolHz := fe.OutRateHz()
 
 	mode := c.resolveP25Phase1DemodMode(serial, demodMode)
@@ -184,6 +227,14 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	var (
 		uncorrectableLDUs atomic.Uint64
 		corrErrBits       atomic.Uint64
+		// gatedLDUs counts LDUs whose audio was dropped by the talkgroup gate
+		// (the in-band talkgroup didn't match the grant). It is the direct
+		// measure of the audio the recording is missing: `frames` counts LDUs
+		// delivered, `gatedLDUs` counts how many of those never reached the
+		// WAV, so `frames - gatedLDUs` ≈ the recorded length in LDUs. A high
+		// value on a call whose wall-clock ran long is the fingerprint of
+		// adjacent-channel bleed on a wideband tap.
+		gatedLDUs atomic.Uint64
 	)
 	// Outer-RS telemetry for the Link Control (LDU1) and Encryption Sync
 	// (LDU2) words. A rising RS-uncorrectable rate is the measurable
@@ -265,6 +316,9 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 				}
 			}
 			write := bt.onVoice(tg)
+			if !write {
+				gatedLDUs.Add(1)
+			}
 
 			if write && rs != nil {
 				fs, frameErrs, errBits, err := phase1.ExtractVoiceFramesDetailed(ldu)
@@ -422,6 +476,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		c.log.Info("composer: p25p1 decode quality",
 			"serial", serial, "demod_mode", mode,
 			"ldus", n, "uncorrectable_ldus", uncorrectableLDUs.Load(),
+			"gated_ldus", gatedLDUs.Load(),
 			"corrected_bit_errs", corrErrBits.Load(),
 			"lc_rs_uncorrectable", lcRSUncorrectable.Load(),
 			"ess_rs_uncorrectable", essRSUncorrectable.Load())

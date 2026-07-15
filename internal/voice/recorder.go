@@ -917,6 +917,23 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	dataBytes := s.wav.DataBytes()
 	vs, haveStats := r.voiceStatsFor(s)
 	r.logVoiceStats(serial, s)
+	// Audio-vs-wall-clock: a decoded (digital) call whose WAV runs much shorter
+	// than the call's wall-clock span lost voice frames upstream — talkgroup
+	// gating or undecoded windows — rather than being a genuinely short over.
+	// Surfacing both makes the "16 s call, 9 s recording" symptom self-evident
+	// in the log without diffing the WAV against the call record. Digital only
+	// (analog FM writes continuous PCM, so audio ≈ wall by construction). Logged
+	// at DEBUG: a multi-over call legitimately drops the silent gaps between
+	// overs, so this is an investigation aid, not a routine warning.
+	if s.vocoder != nil && dataBytes > 0 && s.sampleRate > 0 {
+		audioSec := float64(dataBytes) / (float64(s.sampleRate) * 2)
+		wallSec := endedAt.Sub(s.startedAt).Seconds()
+		if wallSec > 1 && audioSec < 0.75*wallSec {
+			r.log.Debug("recorder: recording shorter than call span",
+				"device", serial, "wav", s.wavPath,
+				"audio_seconds", round1(audioSec), "wall_seconds", round1(wallSec))
+		}
+	}
 	// Smooth an abrupt end-of-call cut on decoded digital voice. A short
 	// transmission that stops mid-waveform leaves a non-zero final sample
 	// that clicks/scratches on playback — the "trailing" artifact most
