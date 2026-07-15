@@ -43,12 +43,19 @@ func p25p1VoiceInfo(seed int) []byte {
 // LDU1s preceded by a clock-settling lead-in. want holds every IMBE
 // frame it carries, in transmission order.
 func buildP25P1VoiceStream(t *testing.T, ldus int) (dibits []uint8, want [][]byte) {
+	return buildP25P1VoiceStreamSeed(t, ldus, 0)
+}
+
+// buildP25P1VoiceStreamSeed is buildP25P1VoiceStream with a seed offset so a
+// test can build two streams with DISTINCT voice frames (e.g. a wanted call
+// and an adjacent-channel neighbour) and tell which one the chain decoded.
+func buildP25P1VoiceStreamSeed(t *testing.T, ldus, seed0 int) (dibits []uint8, want [][]byte) {
 	t.Helper()
 	dibits = make([]uint8, 400)
 	for i := range dibits {
 		dibits[i] = uint8(i % 4)
 	}
-	frame := 0
+	frame := seed0
 	for l := 0; l < ldus; l++ {
 		var voice [phase1.LDUVoiceSubframeCount][]byte
 		for s := range voice {
@@ -235,6 +242,141 @@ func TestComposerP25Phase1VoiceChainDecodesWidebandIQ(t *testing.T) {
 	if matches < framesPerLDU {
 		t.Errorf("wideband path: only %d of %d captured frames round-tripped; want at least one LDU (%d)",
 			matches, len(got), framesPerLDU)
+	}
+}
+
+// TestP25P1VoiceFrontEndRejectsAdjacentChannel pins the channel selectivity
+// of the wideband voice tap's front end: an adjacent P25 channel centred at
+// ±12.5 kHz must be strongly rejected before the receiver's FM discriminator.
+// The old pass-through front end (decim==1) applied NO filter, so a ±12.5 kHz
+// neighbour reached the discriminator at full amplitude and the capture effect
+// decoded it as a foreign talkgroup — the root cause of short/garbled wideband
+// recordings. Fails first: pass-through leaves the neighbour at ~0 dB.
+func TestP25P1VoiceFrontEndRejectsAdjacentChannel(t *testing.T) {
+	const (
+		fs        = float64(p25p1VoiceIntermediateHz) // 48 kHz wideband tap output → decim==1
+		bw        = uint32(12_500)                    // default operator VoiceBandwidthHz
+		adjOffset = 12_500.0                          // adjacent P25 channel spacing
+		nSamples  = 24_000
+	)
+	// Amplitude at DC (wanted channel centre) vs at +12.5 kHz (adjacent centre).
+	// A fresh front end per tone keeps the filter history from carrying over.
+	respAt := func(offsetHz float64) float64 {
+		fe := newP25P1VoiceFrontEnd(fs, bw)
+		in := make([]complex64, nSamples)
+		for i := range in {
+			th := 2 * math.Pi * offsetHz * float64(i) / fs
+			in[i] = complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		}
+		out := fe.Process(nil, in)
+		// Peak magnitude over the settled tail (skip the filter warm-up).
+		var peak float64
+		for _, s := range out[len(out)/2:] {
+			if m := math.Hypot(float64(real(s)), float64(imag(s))); m > peak {
+				peak = m
+			}
+		}
+		return peak
+	}
+
+	wanted := respAt(0)
+	neighbour := respAt(adjOffset)
+	if wanted < 0.5 {
+		t.Fatalf("wanted channel (DC) attenuated to %.3f; front end should pass it flat", wanted)
+	}
+	rejectionDB := 20 * math.Log10(neighbour/wanted)
+	if rejectionDB > -40 {
+		t.Errorf("adjacent channel (+%.0f Hz) rejection = %.1f dB; want <= -40 dB "+
+			"(a ±12.5 kHz neighbour leaks into the voice tap and the FM discriminator "+
+			"captures it during the wanted talker's gaps)", adjOffset, rejectionDB)
+	}
+}
+
+// TestComposerP25Phase1VoiceChainSurvivesAdjacentChannel is the end-to-end
+// regression for the wideband truncation/quality report: a wanted call at DC
+// with a STRONGER adjacent call at +12.5 kHz present. Without a channel-select
+// filter the FM discriminator is captured by the louder neighbour and the
+// wanted call's frames are lost (short/garbled recording). With the filter the
+// neighbour is rejected and the wanted call decodes cleanly. Fails first.
+func TestComposerP25Phase1VoiceChainSurvivesAdjacentChannel(t *testing.T) {
+	const (
+		sampleRate = float64(p25p1VoiceIntermediateHz) // 48 kHz: wideband tap, decim==1
+		deviation  = 1800.0
+		ldus       = 12
+		adjOffset  = 12_500.0
+	)
+	framesPerLDU := phase1.LDUVoiceSubframeCount
+
+	// Wanted call (TG 42) at DC.
+	dibitsW, wantW := buildP25P1VoiceStreamSeed(t, ldus, 0)
+	iq := demod.ModulateP25C4FM(dibitsW, sampleRate, deviation)
+
+	// A DISTINCT, LOUDER neighbour on the adjacent channel (+12.5 kHz). At 2×
+	// amplitude it would win the FM capture and be decoded in place of the
+	// wanted call if it reached the discriminator unfiltered.
+	dibitsN, wantN := buildP25P1VoiceStreamSeed(t, ldus, 500_000)
+	iqN := demod.ModulateP25C4FM(dibitsN, sampleRate, deviation)
+	for i := range iq {
+		if i >= len(iqN) {
+			break
+		}
+		th := 2 * math.Pi * adjOffset * float64(i) / sampleRate
+		rot := complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		iq[i] += 2 * iqN[i] * rot
+	}
+
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	eng := &fakeEngine{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        eng,
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "P25P1Site", Protocol: "p25",
+				GroupID: 42, FrequencyHz: 851_000_000,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	src.SendIQ(iq)
+
+	waitFor(t, 6*time.Second, func() bool {
+		return len(sink.rawFrames("VOICE-1")) >= 6*framesPerLDU
+	})
+	got := sink.rawFrames("VOICE-1")
+
+	matchW := bestAlignmentMatches(got, wantW)
+	matchN := bestAlignmentMatches(got, wantN)
+	if matchW < framesPerLDU {
+		t.Errorf("wanted call recovered only %d frames with a strong +%.0f Hz neighbour present; "+
+			"want >= %d (adjacent channel leaked into the tap and captured the demod)",
+			matchW, adjOffset, framesPerLDU)
+	}
+	if matchN >= framesPerLDU {
+		t.Errorf("adjacent-channel neighbour leaked: %d of its frames decoded; "+
+			"the channel-select filter should reject the +%.0f Hz channel", matchN, adjOffset)
 	}
 }
 
@@ -601,6 +743,12 @@ func TestComposerP25Phase1VoiceChainLogsDecodeQuality(t *testing.T) {
 	}
 	if !strings.Contains(out, "ldus=") || !strings.Contains(out, "uncorrectable_ldus=") {
 		t.Errorf("expected ldus= and uncorrectable_ldus= fields in decode quality log; got:\n%s", out)
+	}
+	// gated_ldus is the truncation metric: how many delivered LDUs the
+	// talkgroup gate dropped from the WAV. It must be surfaced so a field
+	// operator can see a short recording's cause without re-deriving it.
+	if !strings.Contains(out, "gated_ldus=") {
+		t.Errorf("expected gated_ldus= field in decode quality log; got:\n%s", out)
 	}
 }
 

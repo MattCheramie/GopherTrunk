@@ -15,6 +15,24 @@ for tagged releases.
   `go.mod` and every CI/build workflow.
 
 ### Fixed
+- **Wideband P25 Phase 1 voice recordings came out short and garbled next to
+  SDRTrunk** — on a busy multi-channel site a wideband DDC voice tap decoded
+  clean *foreign* talkgroups mid-call (e.g. a 16 s over recorded as ~9 s of the
+  wanted call spliced with dropped windows). The tap delivered a stream
+  band-limited only to its ±24 kHz output Nyquist, and the voice chain's
+  front end was a pass-through no-op at that rate — so the whole span, including
+  the ±12.5 kHz adjacent channels, reached the receiver's FM discriminator. The
+  capture effect then locked onto a stronger neighbour during the wanted talker's
+  syllable gaps: those LDUs decoded as another talkgroup and were gated out
+  (short recording), while the neighbour's energy raised in-band interference on
+  the frames that *were* kept (garbled audio). The chain now channel-selects each
+  wideband tap to ±6.25 kHz — half the P25 channel spacing — before the
+  discriminator, dropping an adjacent channel ~80 dB while passing the wanted
+  C4FM flat. The dedicated-tuner path (which already band-limits as it decimates)
+  is unchanged. For diagnosing any residual truncation, the `composer: p25p1
+  decode quality` log gains a `gated_ldus` count (delivered LDUs the talkgroup
+  gate dropped from the WAV), and the recorder now logs when a decoded call's
+  audio runs materially shorter than its wall-clock span.
 - **Webhook payloads reported every call as `encrypted: false` and gave unit
   calls no `call_type`.** On systems whose encryption only resolves on the
   traffic channel (P25 Phase 2 compressed grants, Phase 1 LDU2 Encryption Sync),
