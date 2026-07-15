@@ -390,6 +390,16 @@ func (p *p25Phase1Pipeline) Close() error           { return nil }
 // the unexported afcReporter capability the decoder type-asserts for.
 func (p *p25Phase1Pipeline) AFCOffsetHz() float64 { return p.rx.AFCOffsetHz() }
 
+// TSBKCounts reports the control channel's cumulative decoded and failed
+// (Viterbi + CRC) TSBK block counts. Satisfies the unexported ccHealthReporter
+// capability the decoder type-asserts for, so it can watch the live TSBK error
+// rate and nudge the operator toward dc_avoid when a zero-IF lock decodes
+// poorly (issue #402).
+func (p *p25Phase1Pipeline) TSBKCounts() (decoded, failed int64) {
+	s := p.cc.Stats()
+	return s.TSBKDecoded, s.TSBKTrellisFailed + s.TSBKCRCFailed
+}
+
 // TopologySnapshot surfaces the P25 Phase 1 system topology (identity, primary/
 // secondary control channels, neighbours, band plan) the control channel
 // accumulated from its status broadcasts. Satisfies trunking.TopologyProvider so

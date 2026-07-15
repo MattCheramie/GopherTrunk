@@ -2073,6 +2073,91 @@ func TestDecoderWarnsOnLargeCarrierOffset(t *testing.T) {
 	}
 }
 
+// fakeCCHealthPipeline is a ProtocolPipeline that also satisfies the unexported
+// ccHealthReporter capability, reporting mutable cumulative TSBK decoded/failed
+// counts so a test can drive the pump's zero-IF health nudge without a real
+// receiver (issue #402).
+type fakeCCHealthPipeline struct{ decoded, failed int64 }
+
+func (f *fakeCCHealthPipeline) Process([]complex64)           {}
+func (f *fakeCCHealthPipeline) Reset()                        {}
+func (f *fakeCCHealthPipeline) Close() error                  { return nil }
+func (f *fakeCCHealthPipeline) TSBKCounts() (dec, fail int64) { return f.decoded, f.failed }
+
+const dcAvoidNudgeMsg = "Set dc_avoid: true"
+
+// TestDecoderSuggestsDCAvoidOnZeroIFCRCFailures pins the issue #402 nudge: while
+// a control channel is locked at zero-IF (no LO offset applied) and TSBK blocks
+// fail at a high rate over a full window, the decoder must emit exactly one
+// actionable WARN pointing the operator at dc_avoid. It must stay silent when
+// the error rate is low, when dc_avoid is already in effect (loOffsetHz != 0),
+// when too few attempts have accrued, and when the channel isn't locked — so the
+// nudge only fires on the real signature, not on quiet or already-mitigated sites.
+func TestDecoderSuggestsDCAvoidOnZeroIFCRCFailures(t *testing.T) {
+	cases := []struct {
+		name       string
+		decoded    int64
+		failed     int64
+		loOffsetHz float64
+		locked     bool
+		wantWarn   bool
+	}{
+		{"high crc rate at zero-IF", 200, 200, 0, true, true}, // 50% over 400 attempts
+		{"clean at zero-IF", 1000, 5, 0, true, false},         // ~0.5%
+		{"high crc but dc_avoid applied", 200, 200, 240_000, true, false},
+		{"too few attempts", 30, 30, 0, true, false}, // 60 < min 100
+		{"not locked", 200, 200, 0, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			d := newOffsetTestDecoder(t, &buf)
+			// Window 0 so the second check evaluates the accumulated delta at
+			// once, without waiting real seconds.
+			d.zeroIFHealthWindow = 0
+			d.loOffsetHz = tc.loOffsetHz
+			d.locked.Store(tc.locked)
+			fake := &fakeCCHealthPipeline{}
+			d.active = fake
+
+			// First check snapshots the window baseline (counts still zero);
+			// the second sees the window's traffic and decides.
+			d.checkZeroIFHealthLocked()
+			fake.decoded, fake.failed = tc.decoded, tc.failed
+			d.checkZeroIFHealthLocked()
+
+			got := strings.Contains(buf.String(), dcAvoidNudgeMsg)
+			if got != tc.wantWarn {
+				t.Fatalf("nudge emitted = %v, want %v (log: %q)", got, tc.wantWarn, buf.String())
+			}
+			if tc.wantWarn && !strings.Contains(buf.String(), "freq_hz=420075000") {
+				t.Errorf("WARN missing freq_hz=420075000; log: %q", buf.String())
+			}
+		})
+	}
+}
+
+// TestDecoderDCAvoidNudgeFiresOnce pins the one-shot: a persistently-bad zero-IF
+// lock must warn at most once per lock session, not every window.
+func TestDecoderDCAvoidNudgeFiresOnce(t *testing.T) {
+	var buf bytes.Buffer
+	d := newOffsetTestDecoder(t, &buf)
+	d.zeroIFHealthWindow = 0
+	d.locked.Store(true)
+	fake := &fakeCCHealthPipeline{}
+	d.active = fake
+
+	// Three consecutive bad windows; the nudge must appear exactly once.
+	d.checkZeroIFHealthLocked() // baseline
+	for i := 1; i <= 3; i++ {
+		fake.decoded, fake.failed = int64(200*i), int64(200*i)
+		d.checkZeroIFHealthLocked()
+	}
+	if n := strings.Count(buf.String(), dcAvoidNudgeMsg); n != 1 {
+		t.Fatalf("nudge emitted %d times, want exactly 1 (log: %q)", n, buf.String())
+	}
+}
+
 // TestDecoderWarnsOnLargeCarrierOffsetEndToEnd is the end-to-end counterpart of
 // TestDecoderWarnsOnLargeCarrierOffset (which stubs AFCOffsetHz via
 // fakeAFCPipeline). It reproduces issue #815 through the REAL ccdecoder.Decoder:
