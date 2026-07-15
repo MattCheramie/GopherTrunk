@@ -15,6 +15,16 @@ for tagged releases.
   `go.mod` and every CI/build workflow.
 
 ### Fixed
+- **Extended the wideband voice-tap channel-select fix to P25 Phase 2 and DMR.**
+  The same defect fixed for P25 Phase 1 — a wideband DDC voice tap feeding the
+  receiver a ±24 kHz-wide stream with no channel filter (the front end was a
+  pass-through no-op at the tap rate) — was present in the Phase 2 and DMR voice
+  chains too. On DMR (4FSK/FM discriminator) a stronger adjacent channel could
+  be captured and, because DMR talkgroup gating is disabled, recorded *as* the
+  call. On P25 Phase 2 (linear H-DQPSK) adjacent energy instead pumped the AGC
+  and degraded carrier recovery, raising EVM. Both chains now channel-select each
+  wideband tap to ±6.25 kHz (half the 12.5 kHz channel spacing) before the
+  receiver, matching Phase 1; the dedicated-tuner path is unchanged.
 - **Wideband P25 Phase 1 voice recordings came out short and garbled next to
   SDRTrunk** — on a busy multi-channel site a wideband DDC voice tap decoded
   clean *foreign* talkgroups mid-call (e.g. a 16 s over recorded as ~9 s of the

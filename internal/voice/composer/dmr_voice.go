@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +17,40 @@ import (
 // filter and Mueller-Müller clock recovery, without the cost of
 // running them at the SDR's native multi-MS/s rate.
 const dmrVoiceIntermediateHz = 48_000
+
+// dmrVoiceChannelSelectHz caps the voice front-end channel filter at half the
+// 12.5 kHz DMR channel spacing. A wideband DDC voice tap hands the chain a
+// stream already at the intermediate rate but band-limited only to the tap's
+// output Nyquist (~±24 kHz), NOT to a single 12.5 kHz channel — so the old
+// pass-through front end fed that whole ±24 kHz span into the receiver's FM
+// discriminator, where the capture effect locks onto a stronger ±12.5 kHz
+// neighbour during voice gaps. DMR gating is disabled (grantTG 0), so a leaked
+// neighbour is recorded AS the call — wrong audio, not just dropped. Filtering
+// to ±6.25 kHz drops an adjacent channel centred at ±12.5 kHz deep into the
+// 81-tap front end's stopband while the wanted 4FSK (deviation ±1944 Hz,
+// Carson ≈ ±4.8 kHz) passes flat. Both DMR timeslots share the one 12.5 kHz
+// carrier, so the filter isolates the carrier without splitting the slots.
+const dmrVoiceChannelSelectHz = 6250.0
+
+// newDMRVoiceFrontEnd builds the channel-select + decimation front end for the
+// DMR voice chain. Mirrors newP25P1VoiceFrontEnd: the dedicated-tuner path
+// (iqHz well above the intermediate rate) already band-limits as it decimates;
+// the pass-through path (a wideband DDC tap already at the intermediate rate,
+// decim==1) applied NO filter, so this channel-selects to
+// ±min(bw, dmrVoiceChannelSelectHz) before the FM discriminator. Factored out
+// so the selectivity is unit-testable.
+func newDMRVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
+	chanBW := float64(bw)
+	decim := int(math.Round(iqHz)) / dmrVoiceIntermediateHz
+	filterAtUnity := false
+	if decim <= 1 {
+		filterAtUnity = true
+		if chanBW > dmrVoiceChannelSelectHz {
+			chanBW = dmrVoiceChannelSelectHz
+		}
+	}
+	return newDecimatingFIR(iqHz, dmrVoiceIntermediateHz, chanBW, filterAtUnity)
+}
 
 // rawFrameSink is the subset of voice.Recorder the DMR voice chain
 // needs. The composer holds its sink as a PCMSink; runDMRVoiceChain
@@ -152,9 +187,13 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	// of the result. At 2.4 MS/s that wasted ~194M MACs/sec per voice call
 	// and starved the live IQ consumer until the SDR dropped chunks. Same
 	// coefficients and same kept samples as before, so the decode is
-	// byte-for-byte unchanged — only the wasted work is removed. decim==1
-	// (a source already at the intermediate rate) is a pass-through no-op.
-	fe := newDecimatingFIR(iqHz, dmrVoiceIntermediateHz, float64(c.bw), false)
+	// byte-for-byte unchanged — only the wasted work is removed. decim==1 (a
+	// source already at the intermediate rate — a wideband DDC voice tap) is NOT
+	// a pass-through: it still channel-selects to a single DMR channel before the
+	// FM discriminator (see newDMRVoiceFrontEnd / dmrVoiceChannelSelectHz) so an
+	// adjacent ±12.5 kHz channel can't capture the demod and be recorded as this
+	// call.
+	fe := newDMRVoiceFrontEnd(iqHz, c.bw)
 	symbolHz := fe.OutRateHz()
 
 	rs, _ := c.sink.(rawFrameSink)

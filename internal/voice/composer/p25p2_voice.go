@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,40 @@ import (
 // filter and Gardner clock recovery without running them at the SDR's
 // native multi-MS/s rate.
 const p25p2VoiceIntermediateHz = 48_000
+
+// p25p2ChannelSelectHz caps the voice front-end channel filter at half the
+// 12.5 kHz P25 channel spacing. A wideband DDC voice tap hands the chain a
+// stream already at the intermediate rate but band-limited only to the tap's
+// output Nyquist (~±24 kHz), NOT to a single 12.5 kHz channel — so the old
+// pass-through front end fed that whole ±24 kHz span into the receiver. Unlike
+// Phase 1 (C4FM/FM discriminator) there is no FM capture effect here: Phase 2
+// is linear H-DQPSK, and adjacent-channel energy instead pumps the receiver's
+// AGC down (shrinking the wanted constellation's decision margin) and raises the
+// noise floor the coarse-carrier / Costas loops estimate against — degrading
+// carrier recovery and raising EVM. Filtering to ±6.25 kHz drops an adjacent
+// channel centred at ±12.5 kHz deep into the 81-tap front end's stopband while
+// the wanted H-DQPSK (occupied ≈ ±3.6 kHz at 6000 baud, α=0.2) passes flat.
+const p25p2ChannelSelectHz = 6250.0
+
+// newP25P2VoiceFrontEnd builds the channel-select + decimation front end for
+// the P25 Phase 2 voice chain. Mirrors newP25P1VoiceFrontEnd: on the
+// dedicated-tuner path (iqHz well above the intermediate rate) the decimating
+// FIR already band-limits as it decimates; on the pass-through path (a wideband
+// DDC tap already at the intermediate rate, decim==1) the old front end applied
+// NO filter at all, so this channel-selects to ±min(bw, p25p2ChannelSelectHz)
+// before the receiver. Factored out so the selectivity is unit-testable.
+func newP25P2VoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
+	chanBW := float64(bw)
+	decim := int(math.Round(iqHz)) / p25p2VoiceIntermediateHz
+	filterAtUnity := false
+	if decim <= 1 {
+		filterAtUnity = true
+		if chanBW > p25p2ChannelSelectHz {
+			chanBW = p25p2ChannelSelectHz
+		}
+	}
+	return newDecimatingFIR(iqHz, p25p2VoiceIntermediateHz, chanBW, filterAtUnity)
+}
 
 // p25p2VoiceGardnerGain matches the value newP25Phase2Pipeline settled
 // on for the H-DQPSK symbol clock (smaller than the receiver default
@@ -101,9 +136,12 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// of the result. At 2.4 MS/s that wasted ~194M MACs/sec per voice call
 	// and starved the live IQ consumer until the SDR dropped chunks. Same
 	// coefficients and same kept samples as before, so the decode is
-	// byte-for-byte unchanged — only the wasted work is removed. decim==1
-	// (a source already at the intermediate rate) is a pass-through no-op.
-	fe := newDecimatingFIR(iqHz, p25p2VoiceIntermediateHz, float64(c.bw), false)
+	// byte-for-byte unchanged — only the wasted work is removed. decim==1 (a
+	// source already at the intermediate rate — a wideband DDC voice tap) is NOT
+	// a pass-through: it still channel-selects to a single P25 channel before the
+	// receiver (see newP25P2VoiceFrontEnd / p25p2ChannelSelectHz) so an adjacent
+	// ±12.5 kHz channel can't pump the AGC / degrade carrier recovery.
+	fe := newP25P2VoiceFrontEnd(iqHz, c.bw)
 	symbolHz := fe.OutRateHz()
 
 	rs, _ := c.sink.(rawFrameSink)

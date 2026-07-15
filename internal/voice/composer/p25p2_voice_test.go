@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -32,11 +33,18 @@ func p25p2VoicePayload(seed int) []byte {
 // superframes preceded by a clock-settling lead-in. want holds every
 // AMBE+2 payload it carries, in transmission order.
 func buildP25P2VoiceStream(n int) (dibits []uint8, want [][]byte) {
+	return buildP25P2VoiceStreamSeed(n, 0)
+}
+
+// buildP25P2VoiceStreamSeed is buildP25P2VoiceStream with a seed offset so a
+// test can build two streams with DISTINCT AMBE+2 payloads (a wanted call and
+// an adjacent-channel neighbour) and tell which one the chain decoded.
+func buildP25P2VoiceStreamSeed(n, seed0 int) (dibits []uint8, want [][]byte) {
 	dibits = make([]uint8, 600)
 	for i := range dibits {
 		dibits[i] = uint8(i % 4) // never matches the outbound sync
 	}
-	frame := 0
+	frame := seed0
 	for s := 0; s < n; s++ {
 		var subs [p25p2.SubframesPerSuperframe][]uint8
 		for i := range subs {
@@ -615,5 +623,130 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 	}
 	if !strings.Contains(out, "slot_"+p25p2.SlotTypeMACSignaling.String()+"=") {
 		t.Fatalf("census missing slot_%s bucket, got:\n%s", p25p2.SlotTypeMACSignaling, out)
+	}
+}
+
+// TestP25P2VoiceFrontEndRejectsAdjacentChannel pins the channel selectivity of
+// the wideband Phase 2 voice tap's front end: an adjacent P25 channel centred
+// at ±12.5 kHz must be strongly rejected. The old pass-through front end
+// (decim==1) applied NO filter, so a neighbour reached the linear H-DQPSK
+// receiver at full amplitude, pumping its AGC and degrading carrier recovery.
+// Fails first: pass-through leaves the neighbour at ~0 dB.
+func TestP25P2VoiceFrontEndRejectsAdjacentChannel(t *testing.T) {
+	const (
+		fs        = float64(p25p2VoiceIntermediateHz) // 48 kHz wideband tap output → decim==1
+		bw        = uint32(12_500)
+		adjOffset = 12_500.0
+		nSamples  = 24_000
+	)
+	respAt := func(offsetHz float64) float64 {
+		fe := newP25P2VoiceFrontEnd(fs, bw)
+		in := make([]complex64, nSamples)
+		for i := range in {
+			th := 2 * math.Pi * offsetHz * float64(i) / fs
+			in[i] = complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		}
+		out := fe.Process(nil, in)
+		var peak float64
+		for _, s := range out[len(out)/2:] {
+			if m := math.Hypot(float64(real(s)), float64(imag(s))); m > peak {
+				peak = m
+			}
+		}
+		return peak
+	}
+	wanted := respAt(0)
+	neighbour := respAt(adjOffset)
+	if wanted < 0.5 {
+		t.Fatalf("wanted channel (DC) attenuated to %.3f; front end should pass it flat", wanted)
+	}
+	rejectionDB := 20 * math.Log10(neighbour/wanted)
+	if rejectionDB > -40 {
+		t.Errorf("adjacent channel (+%.0f Hz) rejection = %.1f dB; want <= -40 dB "+
+			"(a ±12.5 kHz neighbour leaks into the Phase 2 voice tap and degrades the demod)",
+			adjOffset, rejectionDB)
+	}
+}
+
+// TestComposerP25Phase2VoiceChainSurvivesAdjacentChannel is the end-to-end
+// regression: a wanted Phase 2 call at DC with a STRONGER adjacent call at
+// +12.5 kHz present. Without a channel-select filter the neighbour corrupts the
+// linear demod (AGC pumping, carrier-recovery degradation, raised EVM) and the
+// wanted call's frames are lost. With the filter the neighbour is rejected and
+// the wanted call decodes. Fails first. (Unlike the FM Phase 1 path the linear
+// demod does not cleanly "capture" the neighbour, so we assert only that the
+// wanted call survives, not that the neighbour decodes.)
+func TestComposerP25Phase2VoiceChainSurvivesAdjacentChannel(t *testing.T) {
+	const (
+		sampleRate = float64(p25p2VoiceIntermediateHz) // 48 kHz: wideband tap, decim==1
+		sps        = 8
+		span       = 8
+		alpha      = 0.20
+		superframes = 8
+		adjOffset  = 12_500.0
+	)
+	framesPerSuperframe := p25p2.SubframesPerSuperframe * p25p2.Voice4VFrameCount
+
+	dibitsW, wantW := buildP25P2VoiceStreamSeed(superframes, 0)
+	iq := demod.ModulateHDQPSKSpec(dibitsW, sps, span, alpha)
+
+	dibitsN, _ := buildP25P2VoiceStreamSeed(superframes, 500_000)
+	iqN := demod.ModulateHDQPSKSpec(dibitsN, sps, span, alpha)
+	for i := range iq {
+		if i >= len(iqN) {
+			break
+		}
+		th := 2 * math.Pi * adjOffset * float64(i) / sampleRate
+		rot := complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		iq[i] += 2 * iqN[i] * rot
+	}
+
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	eng := &fakeEngine{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        eng,
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "P25P2Site", Protocol: "p25-phase2",
+				GroupID: 42, FrequencyHz: 851_062_500,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	src.SendIQ(iq)
+
+	waitFor(t, 6*time.Second, func() bool {
+		return len(sink.rawFrames("VOICE-1")) >= framesPerSuperframe
+	})
+	got := sink.rawFrames("VOICE-1")
+
+	matchW := bestAlignmentMatches(got, wantW)
+	if matchW < framesPerSuperframe {
+		t.Errorf("wanted call recovered only %d frames with a strong +%.0f Hz neighbour present; "+
+			"want >= %d (adjacent channel leaked into the tap and degraded the demod)",
+			matchW, adjOffset, framesPerSuperframe)
 	}
 }
