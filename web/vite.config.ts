@@ -2,6 +2,7 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { SW_NAVIGATE_FALLBACK_DENYLIST } from "./src/lib/swDenylist";
 
 // Vite bundles every dependency listed in package.json into the
 // shipped `dist/`. The output has no runtime Node dependency and
@@ -53,11 +54,12 @@ export default defineConfig({
         // works without a network round-trip for the assets).
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
         // API responses are always fetched live; the SW never caches
-        // /api/* or /metrics responses. The Config Builder SPA mounted at
-        // /config/ on the daemon is also denied so this console's SW
-        // (scope "/") doesn't shadow its navigations with our own
-        // index.html — otherwise the Config Builder tab opens blank.
-        navigateFallbackDenylist: [/^\/api\//, /^\/metrics/, /^\/config\//],
+        // /api/* or /metrics responses. The daemon-mounted sibling consoles
+        // (Config Builder /config/, Signal Lab /siglab/, RF Scope /rfscope/,
+        // Crypto Lab /cryptolab/) are also denied so this console's SW
+        // (scope "/") doesn't shadow their navigations with our own
+        // index.html — otherwise those tabs open blank. See swDenylist.ts.
+        navigateFallbackDenylist: SW_NAVIGATE_FALLBACK_DENYLIST,
       },
       devOptions: { enabled: false },
     }),
