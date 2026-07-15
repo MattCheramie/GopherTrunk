@@ -81,6 +81,71 @@ func TestWebhookPostsJSONMetadata(t *testing.T) {
 	}
 }
 
+// TestWebhookCallTypeAndEncrypted pins issue #897: the payload must carry a
+// call_type so a unit (individual) call's destination RID in the talkgroup
+// field isn't mistaken for a talkgroup, and it must faithfully report the
+// call's encryption state (the serializer used to hardcode neither, so unit
+// RIDs looked like talkgroups and every call read encrypted=false).
+func TestWebhookCallTypeAndEncrypted(t *testing.T) {
+	send := func(t *testing.T, mutate func(*Call)) webhookPayload {
+		t.Helper()
+		var got webhookPayload
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer srv.Close()
+		be, err := NewWebhook(WebhookConfig{URL: srv.URL}, srv.Client())
+		if err != nil {
+			t.Fatalf("NewWebhook: %v", err)
+		}
+		c := testCall(t)
+		mutate(c)
+		if err := be.Send(context.Background(), c); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		return got
+	}
+
+	t.Run("group call", func(t *testing.T) {
+		got := send(t, func(c *Call) {})
+		if got.CallType != "group" {
+			t.Errorf("call_type = %q, want group", got.CallType)
+		}
+		if got.Encrypted {
+			t.Error("clear call reported encrypted")
+		}
+	})
+
+	t.Run("unit call surfaces call_type and encryption", func(t *testing.T) {
+		got := send(t, func(c *Call) {
+			c.Individual = true
+			c.Talkgroup = 206606 // a destination RID, not a talkgroup
+			c.Encrypted = true
+			c.AlgorithmID = 0x84
+			c.KeyID = 0x1234
+		})
+		if got.CallType != "unit" {
+			t.Errorf("call_type = %q, want unit", got.CallType)
+		}
+		if !got.Encrypted {
+			t.Error("encrypted call reported clear")
+		}
+		if got.AlgorithmID != 0x84 || got.KeyID != 0x1234 {
+			t.Errorf("alg/key not surfaced: alg=0x%02X key=0x%04X", got.AlgorithmID, got.KeyID)
+		}
+	})
+
+	t.Run("data call", func(t *testing.T) {
+		got := send(t, func(c *Call) { c.DataCall = true })
+		if got.CallType != "data" {
+			t.Errorf("call_type = %q, want data", got.CallType)
+		}
+	})
+}
+
 func TestWebhookIncludeAudioEmbedsMP3(t *testing.T) {
 	var got webhookPayload
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
