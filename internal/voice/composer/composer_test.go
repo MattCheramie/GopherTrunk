@@ -111,6 +111,7 @@ type fakeEngine struct {
 	ended   []string
 	reasons map[string]trunking.EndReason
 	signals map[string]float64
+	demods  map[string][2]float64
 }
 
 func (e *fakeEngine) Touch(string) { e.touched.Add(1) }
@@ -132,6 +133,24 @@ func (e *fakeEngine) UpdateSignal(serial string, dbfs float64) {
 		e.signals = make(map[string]float64)
 	}
 	e.signals[serial] = dbfs
+}
+
+func (e *fakeEngine) UpdateDemod(serial string, evmPct, snrDB float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.demods == nil {
+		e.demods = make(map[string][2]float64)
+	}
+	e.demods[serial] = [2]float64{evmPct, snrDB}
+}
+
+// demod returns the last (evmPct, snrDB) UpdateDemod(serial) carried and
+// whether it was ever called for serial.
+func (e *fakeEngine) demod(serial string) ([2]float64, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	v, ok := e.demods[serial]
+	return v, ok
 }
 
 // signal returns the last dBFS UpdateSignal(serial) carried and whether

@@ -14,6 +14,17 @@ for tagged releases.
   the rtl_tcp / import-client TLS paths. No source changes; the pin moves in
   `go.mod` and every CI/build workflow.
 
+### Added
+- **Per-call demod quality (EVM / SNR) on P25 Phase 1 calls.** Each decoded P25
+  Phase 1 voice call now carries a measured RMS error-vector magnitude (`evm_pct`)
+  and estimated symbol SNR (`snr_db`), surfaced in the call-history API and
+  `call_log` alongside `signal_dbfs` — the demod-quality numbers to compare
+  against another decoder (SDRTrunk). Measured over the settled decode from the
+  receiver's soft/symbol taps and stamped onto `CallEnd`; nil for calls with no
+  measurement (short blips, non-composer ends) and for the Phase 2 / DMR chains,
+  which don't yet expose the taps (#878 follow-up). The gRPC `RIDCallRow` surface
+  is unchanged (a separate proto change, as `signal_dbfs` also awaits).
+
 ### Fixed
 - **Extended the wideband voice-tap channel-select fix to P25 Phase 2 and DMR.**
   The same defect fixed for P25 Phase 1 — a wideband DDC voice tap feeding the

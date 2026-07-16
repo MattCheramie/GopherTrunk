@@ -249,6 +249,14 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		SampleRateHz: symbolHz,
 		DeviationHz:  p25p1DeviationHz,
 		DemodMode:    mode,
+		// Feed the demod symbol taps into the boundary tracker's per-call
+		// EVM/SNR accumulator. C4FM populates SoftSink (the 4-level soft eye);
+		// the CQPSK/LSM path populates SymbolSink (the complex constellation).
+		// The tracker computes one figure at end-of-call and stamps it onto the
+		// CallEnd, so operators get a per-call demod-quality number to compare
+		// against SDRTrunk (issue #878 follow-up).
+		SoftSink:   bt.observeSoft,
+		SymbolSink: bt.observeSymbols,
 		Sink: func(ldu []byte) {
 			duid, derr := phase1.LDUDuid(ldu)
 			// A Terminator Data Unit (with or without LC) marks the end

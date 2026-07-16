@@ -255,6 +255,14 @@ type CallEnd struct {
 	// shutdown, or decoded outside the composer). It is a channel-power /
 	// RSSI-style figure — NOT calibrated absolute RSSI and NOT SNR/EVM.
 	SignalDbFS *float64
+	// EVMPct and SNRDb are the call's demod quality — RMS error-vector
+	// magnitude (%) and estimated symbol SNR (dB) — measured by the voice
+	// composer over the settled decode. Unlike SignalDbFS these ARE the
+	// demod-quality figures to compare against another decoder (SDRTrunk).
+	// nil when unmeasured — currently only P25 Phase 1 chains feed the demod
+	// taps that populate them (issue #878 follow-up).
+	EVMPct *float64
+	SNRDb  *float64
 }
 
 // Duration returns how long the call ran.

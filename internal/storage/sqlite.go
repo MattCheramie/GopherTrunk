@@ -86,7 +86,9 @@ CREATE TABLE IF NOT EXISTS call_log (
     duration_ms     INTEGER,
     end_reason      TEXT,
     talkgroup_alpha TEXT,
-    signal_dbfs     REAL   -- mean received channel power, dBFS; NULL = unmeasured
+    signal_dbfs     REAL,  -- mean received channel power, dBFS; NULL = unmeasured
+    evm_pct         REAL,  -- demod RMS error-vector magnitude, %; NULL = unmeasured
+    snr_db          REAL   -- demod estimated symbol SNR, dB; NULL = unmeasured
 );
 
 CREATE INDEX IF NOT EXISTS idx_call_log_started ON call_log(started_at);
@@ -379,6 +381,10 @@ func (d *DB) ensureCallLogColumns() error {
 		// Nullable (no DEFAULT) so a row with no measurement reads NULL —
 		// "unset" is distinct from a legitimate 0 dBFS reading.
 		{"signal_dbfs", `ALTER TABLE call_log ADD COLUMN signal_dbfs REAL`},
+		// Demod quality (EVM % / SNR dB), likewise nullable — NULL when the
+		// call's chain fed no demod taps (every protocol but P25 Phase 1).
+		{"evm_pct", `ALTER TABLE call_log ADD COLUMN evm_pct REAL`},
+		{"snr_db", `ALTER TABLE call_log ADD COLUMN snr_db REAL`},
 	}
 	for _, a := range adds {
 		if have[a.name] {
