@@ -50,6 +50,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -206,6 +208,18 @@ type Options struct {
 	// auto-selects by channel count; "ddc" forces DDCBank;
 	// "polyphase" forces ChannelizerBank.
 	TunerStrategy string
+
+	// Gain is this wideband dongle's configured tuner gain string,
+	// verbatim from sdr.devices[].gain. "" / "auto" selects AGC; any
+	// other value is a fixed gain (tenths of dB). When more than one
+	// channel shares this one front end and the gain is pinned to a
+	// fixed value, New emits a one-shot startup WARN suggesting
+	// gain: auto — a single fixed gain can only be right for one site,
+	// so the strongest co-tenant sets the level and a weaker site sits
+	// below the shared ADC floor and never decodes (issue #749).
+	// Empty (the zero value) is treated as AGC, so callers that don't
+	// set it get no warning.
+	Gain string
 
 	// Channels is the list of per-repeater carriers to monitor.
 	// All FrequencyHz values must fall inside the dongle's IQ
@@ -386,6 +400,31 @@ type engineChannel struct {
 	lastDecoded uint64
 }
 
+// fixedGainTenthDB interprets a configured gain string the same way the
+// daemon's parseGain does, but reports only whether it is a *fixed* gain
+// (and its value in tenths of a dB). "" / "auto" (any case) is AGC and
+// returns fixed=false; an unparseable value is treated as not-fixed so a
+// typo never trips the multi-channel gain WARN. Kept local to avoid a
+// dependency on the cmd package from this decoder package.
+func fixedGainTenthDB(s string) (tenthDB int, fixed bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.EqualFold(s, "auto") {
+		return 0, false
+	}
+	if strings.ContainsAny(s, ".,") {
+		f, err := strconv.ParseFloat(strings.ReplaceAll(s, ",", "."), 64)
+		if err != nil {
+			return 0, false
+		}
+		return int(f*10 + 0.5), true
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 // New constructs an Engine. The device is not opened or streamed
 // here; that happens in Run. Returns an error if construction
 // inputs are invalid (offset out of band, colliding channelizer
@@ -448,6 +487,24 @@ func New(opts Options) (*Engine, error) {
 				"sample_rate_hz", opts.SampleRateHz,
 				"channel_span_hz", uint64(2*maxAbsOffset),
 				"min_sample_rate_hz", uint64(math.Ceil(minRateHz)),
+			)
+		}
+	}
+
+	// A multi-channel wideband plan pinned to a single fixed gain can't
+	// serve sites at different signal strengths off one shared front end:
+	// the strongest co-tenant sets the level, and a weaker site sits below
+	// the shared ADC floor with "iq power very low" and never decodes
+	// (issue #749). AGC ("gain: auto") lets the front end run hot enough
+	// for the weak site to clear while the strong one still fits. Warn once
+	// at startup — before any traffic — so the operator sees the fix without
+	// having to wait for and correlate the per-channel runtime WARN.
+	if len(opts.Channels) > 1 {
+		if tenthDB, fixed := fixedGainTenthDB(opts.Gain); fixed {
+			log.Warn("widebandt2: multi-channel wideband device is pinned to a fixed gain — one gain can't serve sites at different signal strengths off a shared front end, so a weaker co-tenant site may sit below the ADC floor and never decode; try 'gain: auto' (AGC) on this dongle (issue #749)",
+				"serial", opts.Serial,
+				"channels", len(opts.Channels),
+				"gain_db", fmt.Sprintf("%.1f", float64(tenthDB)/10),
 			)
 		}
 	}
