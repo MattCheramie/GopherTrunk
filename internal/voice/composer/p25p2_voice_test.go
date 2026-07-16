@@ -678,12 +678,12 @@ func TestP25P2VoiceFrontEndRejectsAdjacentChannel(t *testing.T) {
 // wanted call survives, not that the neighbour decodes.)
 func TestComposerP25Phase2VoiceChainSurvivesAdjacentChannel(t *testing.T) {
 	const (
-		sampleRate = float64(p25p2VoiceIntermediateHz) // 48 kHz: wideband tap, decim==1
-		sps        = 8
-		span       = 8
-		alpha      = 0.20
+		sampleRate  = float64(p25p2VoiceIntermediateHz) // 48 kHz: wideband tap, decim==1
+		sps         = 8
+		span        = 8
+		alpha       = 0.20
 		superframes = 8
-		adjOffset  = 12_500.0
+		adjOffset   = 12_500.0
 	)
 	framesPerSuperframe := p25p2.SubframesPerSuperframe * p25p2.Voice4VFrameCount
 
