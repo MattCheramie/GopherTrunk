@@ -7,6 +7,22 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **P25 Phase 1 recordings opened with a full-scale "startup scratch".** While
+  the receiver is still acquiring symbol lock at the start of a transmission, the
+  FEC layer resolves the marginal dibit stream to random-but-valid IMBE frames
+  that the vocoder synthesised as a loud burst — where a reference decoder
+  (TrunkRecorder) is silent. Measured across field captures, every call blasted
+  the soft-limiter rail (~24000–26000) for the first ~0.15–0.55 s. The IMBE
+  decoder now applies a **call-startup acquisition squelch**: it mutes output
+  until a sustained run of stable-pitch voiced frames confirms real speech
+  (acquisition garbage is idle / unvoiced / pitch-jumping), then releases for the
+  rest of the segment. Muted frames are zeroed, not dropped, so the recording
+  keeps its length. Enabled on the recorder/live path only (the raw decoder is
+  unchanged). This is a heuristic — the true acquisition state lives in the
+  receiver, not the vocoder frames — so a call that never presents a stable
+  voiced run (e.g. unvoiced-only) opens muted up to a failsafe window.
+
 ### Security
 - **Go toolchain bumped to 1.25.12** to close `GO-2026-5856` — an Encrypted
   Client Hello privacy leak in the standard library's `crypto/tls`, which

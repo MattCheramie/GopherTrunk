@@ -49,6 +49,45 @@ const (
 // naturally.
 var recoveryRampFactors = [3]float64{0.4, 0.7, 1.0}
 
+// Call-startup acquisition squelch. While a P25 receiver is still acquiring
+// symbol lock at the very start of a transmission, the FEC layer can resolve
+// the marginal dibit stream to random-but-VALID IMBE parameters (jumping pitch,
+// brief invalid frames) that the synthesiser renders as a loud burst — the
+// "startup scratch" that reference decoders (TrunkRecorder / OP25) suppress.
+// There is no error signal to key off (the frames FEC-decode clean), so the
+// squelch gates on the SPEECH signature instead: real voice opens with a
+// sustained run of stable-pitch voiced frames, whereas acquisition garbage is
+// idle / unvoiced / pitch-jumping. Output is muted until that run appears, then
+// released for the rest of the segment; a failsafe releases after
+// acqMaxMuteFrames so an unusual call is never over-muted. Re-armed per
+// call/segment in ResetStats. This is a heuristic (the true acquisition state
+// lives in the receiver, not the vocoder frames) — see the field report /
+// tuning against the p25_16jul captures.
+const (
+	// acqRunFrames is how many consecutive stable-pitch voiced frames confirm
+	// real speech (each ~20 ms). 3 keeps the leaked onset under ~40 ms.
+	acqRunFrames = 4
+	// acqVoicedFracMin is the minimum voiced-harmonic fraction for a frame to
+	// count as a speech candidate — excludes the fully-unvoiced acquisition
+	// noise (voicedFrac 0) while still catching a real voiced onset (which
+	// runs well above this even on a breathy talker).
+	acqVoicedFracMin = 0.1
+	// acqMaxB0Jump is the largest frame-to-frame pitch-index change still
+	// counted as "stable". Real speech pitch glides by a few indices/frame;
+	// acquisition garbage jumps by ~100.
+	acqMaxB0Jump = 20
+	// acqMaxMuteFrames is the failsafe: never squelch more than this many
+	// frames (~2 s) of a call, so a pathological call can't be fully muted.
+	acqMaxMuteFrames = 100
+)
+
+func iabs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 // IdleToneRunThreshold drives idle-tone suppression. An unmodulated/idle
 // voice-channel carrier (or the demod warm-up/decay transient at the very
 // start/end of a transmission) produces a dibit stream the per-vector FEC
@@ -185,6 +224,23 @@ type Decoder struct {
 	// recording opens cleanly. See the muteTone gate in Decode.
 	voiceStarted bool
 
+	// squelchEnabled turns on the call-startup acquisition squelch (see
+	// acqRunFrames). Off by default so the raw decoder (and its unit tests)
+	// behave exactly as before; the recorder enables it on the live/recording
+	// path via EnableStartupSquelch. Kept opt-in because it is a heuristic that
+	// can mute the opening of an atypical call.
+	squelchEnabled bool
+	// Call-startup acquisition squelch state (see acqRunFrames). acquired is
+	// false until a sustained stable-pitch voiced run confirms real speech;
+	// output is muted until then. acqRun counts the current run;
+	// acqLastVoicedB0 is the previous candidate frame's pitch index (−1 = none);
+	// acqFrames counts frames since (re)arm for the failsafe. Re-armed per
+	// call/segment in ResetStats.
+	acquired        bool
+	acqRun          int
+	acqLastVoicedB0 int
+	acqFrames       int
+
 	// stats accumulates the per-call VoiceStats summary. Cleared only by
 	// ResetStats (the recorder calls it at call/segment boundaries) — NOT
 	// by Reset, so a mid-call re-sync doesn't discard the running totals.
@@ -262,11 +318,20 @@ func NewWithConfig(seed int64, cfg mbe.AGCConfig) *Decoder {
 		agc:      mbe.NewAGC(cfg),
 		// Fade in the first frames of the very first segment (stream onset).
 		segFadeRemaining: len(recoveryRampFactors),
+		// Arm the call-startup acquisition squelch (see acqRunFrames).
+		acqLastVoicedB0: -1,
 	}
 }
 
 // Name returns the registry key. Matches VocoderName.
 func (d *Decoder) Name() string { return VocoderName }
+
+// EnableStartupSquelch turns on the call-startup acquisition squelch (see
+// acqRunFrames): the decoder mutes output at the start of a transmission until
+// a sustained stable-pitch voiced run confirms real speech, suppressing the
+// receiver-acquisition "startup scratch". Off by default (opt-in) because it is
+// a heuristic; the recorder enables it on the recording/live path.
+func (d *Decoder) EnableStartupSquelch() { d.squelchEnabled = true }
 
 // FrameSize returns the per-frame input byte count (11 bytes / 88
 // bits, packed MSB-first).
@@ -347,6 +412,40 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	// started, fall back to the run threshold so a lone idle frame inside
 	// speech still leaks once rather than clipping audio.
 	muteTone := tone && (d.lowB0RunCount >= IdleToneRunThreshold || !d.voiceStarted)
+
+	// Call-startup acquisition squelch (see acqRunFrames): advance the
+	// stable-pitch voiced run and confirm real speech before un-muting. Runs
+	// for every frame (before the switch) so idle/bad/silent frames break the
+	// run. accumStats (called on every return path) zeroes the output while
+	// !acquired, so the mute covers all dispositions uniformly.
+	if d.squelchEnabled && !d.acquired {
+		voiceCand := err == nil && !p.Silent && !p.IdleTone
+		vf := 0.0
+		if voiceCand && p.L > 0 {
+			vc := 0
+			for l := 1; l <= p.L; l++ {
+				if p.Vl[l] == 1 {
+					vc++
+				}
+			}
+			vf = float64(vc) / float64(p.L)
+		}
+		if voiceCand && vf >= acqVoicedFracMin {
+			if d.acqLastVoicedB0 >= 0 && iabs(b0-d.acqLastVoicedB0) <= acqMaxB0Jump {
+				d.acqRun++
+			} else {
+				d.acqRun = 1
+			}
+			d.acqLastVoicedB0 = b0
+		} else {
+			d.acqRun = 0
+			d.acqLastVoicedB0 = -1
+		}
+		d.acqFrames++
+		if d.acqRun >= acqRunFrames || d.acqFrames >= acqMaxMuteFrames {
+			d.acquired = true
+		}
+	}
 
 	switch {
 	case err != nil && d.lastGoodParams.L > 0 && d.badFrameCount < mbe.MaxBadFrames:
@@ -595,6 +694,17 @@ func (d *Decoder) SetVoiceEnhancer(cfg mbe.EnhancerConfig) {
 // samples into the per-call stats. Call immediately after agc.Apply on
 // every return path so the amplitude-health numbers cover all output.
 func (d *Decoder) accumStats(out []int16) {
+	// Call-startup acquisition squelch (see acqRunFrames): while the receiver
+	// is still acquiring, zero the output so the startup burst never reaches
+	// the WAV / live audio. The samples are muted, NOT dropped, so the
+	// recording keeps its length; they register as silence in the stats.
+	if d.squelchEnabled && !d.acquired {
+		for i := range out {
+			out[i] = 0
+		}
+		d.stats.sampleCount += len(out)
+		return
+	}
 	d.stats.clipSamples += d.agc.LastClipSamples()
 	if p := d.agc.LastMaxPreClipPeak(); p > d.stats.maxPreClipPeak {
 		d.stats.maxPreClipPeak = p
@@ -711,8 +821,15 @@ func (d *Decoder) SetFrameErrors(correctedBits int) { d.frameErrs = correctedBit
 // ResetStats clears the per-call telemetry. The recorder calls it at
 // call / segment boundaries. Kept separate from Reset (which clears
 // synthesis state on mid-call re-sync) so a re-sync doesn't discard the
-// call's running totals.
-func (d *Decoder) ResetStats() { d.stats = callStats{} }
+// call's running totals. Also re-arms the call-startup acquisition squelch
+// (see acqRunFrames) so each call/segment re-suppresses its own startup burst.
+func (d *Decoder) ResetStats() {
+	d.stats = callStats{}
+	d.acquired = false
+	d.acqRun = 0
+	d.acqLastVoicedB0 = -1
+	d.acqFrames = 0
+}
 
 // clearLastGood resets the frame-repeat cache + bad-frame counter.
 // Called on silence-window frames, on the bad-frame budget being
