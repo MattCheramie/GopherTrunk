@@ -46,6 +46,14 @@
             </a>
           </li>
         {%- endfor -%}
+        <li class="site-nav__auth">
+          <a class="nav-auth" href="{{ '/account/' | relative_url }}" data-auth-nav aria-label="Account" title="Account">
+            <span class="nav-auth__icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="3"/><path d="M2.5 13.8a5.6 5.6 0 0 1 11 0"/></svg>
+            </span>
+            <span class="nav-auth__label">Account</span>
+          </a>
+        </li>
         <li>
           <button class="dark-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
             <span class="dark-toggle__sun" aria-hidden="true">{% include icons/sun.svg %}</span>

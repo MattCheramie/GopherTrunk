@@ -9,14 +9,26 @@
 (function () {
   'use strict';
 
-  var STORE = 'gt-learn-progress';        // legacy single-path store
+  var STORE = 'gt-learn-progress';        // key prefix (fallback when GTStore absent)
   var LEGACY_PATH = 'rf-sdr';             // where legacy progress belongs
 
   function storeKey(path) { return STORE + ':' + path; }
 
+  // Repaint callbacks registered by the init functions below. store.js fires
+  // `gt:progress-hydrated` after it merges cloud progress on sign-in; we re-run
+  // these to reflect the newly-synced state without a page reload.
+  var repainters = [];
+
+  // Storage normally lives in store.js (window.GTStore), which owns the
+  // localStorage layer AND the signed-in cloud sync. If that file failed to
+  // load, fall back to a self-contained localStorage store so lessons keep
+  // working exactly as before (progressive enhancement).
+
   // One-time migration: the original single-path store held bare RF slugs.
   // Move it under the rf-sdr key so existing visitors keep their checkmarks.
+  // store.js runs the same migration; skip it here when store.js is present.
   (function migrateLegacy() {
+    if (window.GTStore) return;
     try {
       var legacy = localStorage.getItem(STORE);
       if (legacy && !localStorage.getItem(storeKey(LEGACY_PATH))) {
@@ -27,6 +39,7 @@
   })();
 
   function load(path) {
+    if (window.GTStore) return window.GTStore.load(path);
     try {
       var raw = localStorage.getItem(storeKey(path));
       var arr = raw ? JSON.parse(raw) : [];
@@ -34,6 +47,7 @@
     } catch (e) { return []; }
   }
   function save(path, list) {
+    if (window.GTStore) { window.GTStore.save(path, list); return; }
     try { localStorage.setItem(storeKey(path), JSON.stringify(list)); } catch (e) {}
   }
   function has(path, slug) { return load(path).indexOf(slug) !== -1; }
@@ -76,6 +90,7 @@
       render();
     });
     render();
+    repainters.push(render);
 
     if (nav && nav.parentNode) nav.parentNode.insertBefore(wrap, nav);
     else article.appendChild(wrap);
@@ -112,6 +127,7 @@
     box.hidden = false;
     if (reset) reset.addEventListener('click', function () { save(path, []); paint(); });
     paint();
+    repainters.push(paint);
   }
 
   /* ---- Chooser page: cross-path progress dashboard ---- */
@@ -322,5 +338,13 @@
     document.querySelectorAll('[data-calc="freq"]').forEach(initFreqCalc);
     document.querySelectorAll('[data-calc="db"]').forEach(initDbCalc);
     document.querySelectorAll('[data-quiz]').forEach(initQuiz);
+
+    // initChooserProgress is idempotent (it guards its own reset binding), so it
+    // doubles as its own repainter. When store.js merges cloud progress after a
+    // sign-in, re-run every registered painter to reflect the synced state.
+    repainters.push(initChooserProgress);
+    document.addEventListener('gt:progress-hydrated', function () {
+      repainters.forEach(function (f) { try { f(); } catch (e) {} });
+    });
   });
 })();

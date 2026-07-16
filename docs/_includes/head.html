@@ -21,6 +21,17 @@
 <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
 
 {%- comment -%}
+Supabase-backed accounts (optional). Loaded here, deferred, so the shared auth
+core (window.GT) is ready before the body/content scripts (store.js, learn.js,
+the account page). All three are inert until supabase-config.js holds a real
+project — the committed placeholders keep the site localStorage-only. Order
+matters: config -> vendored client -> auth.
+{%- endcomment -%}
+<script defer src="{{ '/assets/js/supabase-config.js' | relative_url }}"></script>
+<script defer src="{{ '/assets/js/vendor/supabase.min.js' | relative_url }}"></script>
+<script defer src="{{ '/assets/js/auth.js' | relative_url }}"></script>
+
+{%- comment -%}
 Schema.org SoftwareApplication structured data — surfaces in Google
 rich-results panels (sidebar info card on SERP, version chip, license
 chip). Only rendered on the homepage to avoid duplicate-entity signals.

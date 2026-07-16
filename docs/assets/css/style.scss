@@ -1747,3 +1747,96 @@ a.category-chip:hover {
 .lab-verdict--ok    { color: #fff; background: #2f9e44; }
 .lab-verdict--warn  { color: #1a202c; background: #f0b429; }
 .lab-verdict--bad   { color: #fff; background: #c92a2a; }
+
+/* ---------- Account: nav control ---------- */
+.nav-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 34px;
+  padding: 0 0.6rem;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.nav-auth:hover { background: var(--bg-elev); color: var(--fg); text-decoration: none; }
+.nav-auth__icon { display: inline-flex; align-items: center; }
+.nav-auth[data-signed-in] { color: var(--accent); }
+.nav-auth[data-signed-in]:hover { color: var(--link-hover); }
+.nav-auth__label {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Buttons: danger ---------- */
+.btn--danger {
+  background: transparent;
+  color: #c92a2a;
+  border-color: #c92a2a;
+}
+.btn--danger:hover { color: #fff; background: #c92a2a; border-color: #c92a2a; }
+:root.dark .btn--danger { color: #f85149; border-color: #f85149; }
+:root.dark .btn--danger:hover { color: #0d1117; background: #f85149; }
+
+/* ---------- Account page ---------- */
+.account { max-width: var(--maxw-prose); margin: 1.5rem 0 0; }
+.account__loading { color: var(--fg-muted); }
+.account__signin > h2,
+.account__panel > h2 { margin-top: 0; }
+
+.account__oauth {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 1.5rem;
+}
+
+.account__form {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+  margin: 0 0 1.2rem;
+  background: var(--bg-elev);
+}
+.account__form h3 { margin: 0 0 0.8rem; font-size: 1rem; }
+.account__form label {
+  display: block;
+  margin: 0 0 0.7rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.account__form input {
+  display: block;
+  width: 100%;
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.account__form input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.account__form-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.3rem; }
+
+.account__msg { min-height: 1.2em; margin: 0.4rem 0 0; font-size: 0.9rem; color: var(--fg-muted); }
+.account__msg.is-error { color: #c92a2a; }
+.account__msg.is-ok { color: #1a7f37; }
+:root.dark .account__msg.is-error { color: #f85149; }
+:root.dark .account__msg.is-ok { color: #3fb950; }
+
+.account__email { color: var(--fg-muted); }
+.account__panel-actions { margin: 1rem 0; }
+.account__danger {
+  margin-top: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.4rem 1rem;
+}
+.account__danger summary { cursor: pointer; font-weight: 600; color: #c92a2a; }
+:root.dark .account__danger summary { color: #f85149; }
+.account__danger[open] { padding-bottom: 1rem; }

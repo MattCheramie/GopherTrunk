@@ -140,6 +140,7 @@ include:
 
 exclude:
   - specs/
+  - supabase/          # SQL schema + setup notes; repo docs, not published pages
   - Gemfile
   - Gemfile.lock
   - vendor/
