@@ -155,6 +155,7 @@ var modeParams = map[string][]Param{
 	},
 	"alias/fromseed":  {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
 	"alias/propagate": {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
+	"alias/sweep":     {{Name: "csv", Label: "Chosen-plaintext corpus CSV (no CRC)", Kind: "file", Required: true, Help: "encoded_hex is pure cipher output, exactly 2·len(alias) bytes"}},
 }
 
 // Schema returns the web-facing description of every registered tool/mode,

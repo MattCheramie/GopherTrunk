@@ -348,8 +348,9 @@ see `p25-talker-alias-chosen-plaintext.md`.
 ## Reproducing
 
 The recovery toolkit is committed under `internal/cryptolab/subjects/motorola`
-(build tag `cryptolab`). Point any mode at a `rid,talkgroup,encoded_hex,alias`
-corpus — the trailing 2 CRC bytes are stripped on load:
+(build tag `cryptolab`). The first five modes take a passive-capture
+`rid,talkgroup,encoded_hex,alias` corpus (the trailing 2 CRC bytes are stripped
+on load):
 
 ```
 gophertrunk cryptolab alias gauge     -csv corpus.csv   # affine gauge sweep
@@ -359,8 +360,22 @@ gophertrunk cryptolab alias fromseed  -csv corpus.csv   # simulate candidate upd
 gophertrunk cryptolab alias propagate -csv corpus.csv   # harvest (state,eo)->state transition + seed; coverage
 ```
 
-The `propagate` mode produced the dense-corpus results above. Earlier scratch
-tooling (not committed) covered even-H extraction and determinism sweeps, the
-LUT/keystream recovery, the simulate-from-seed brutes (linear / mod-prime / MWC /
-nonlinear / both-feedback), the train/test table decoder, and the NLFSR/S-box
-search.
+The **`sweep`** mode takes a *chosen-plaintext* corpus — same columns, but
+`encoded_hex` is the pure cipher output with **no CRC** (e.g. `moto_alias_t.zip`'s
+`Alias Encoded` field, exactly `2·len(alias)` bytes). It reproduces every
+chosen-plaintext technique from the 2026-07 results above — sweep detection,
+differential state pinning, fold-input determination, the `Hnext = H + g(value) +
+branch` law, `g` coverage, and the low-byte observability accounting:
+
+```
+gophertrunk cryptolab alias sweep     -csv chosen.csv   # differential: pin states, find fold input + Hnext law
+```
+
+On the `moto_alias_t.zip` sweeps it pins the three states `(H56,L|1 161)`,
+`(H117,L|1 225)`, `(H206,L|1 11)`, reports the fold input as the value/ciphertext
+byte (≈2 vs ≈77 cross-state deltas), confirms the g-law on every state pair,
+covers `g` over 197/256, and reports `0` observed low-byte transitions.
+
+Earlier scratch tooling (not committed) covered the simulate-from-seed brutes
+(linear / mod-prime / MWC / nonlinear / both-feedback), the train/test table
+decoder, and the NLFSR/S-box search.
