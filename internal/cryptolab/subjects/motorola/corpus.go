@@ -33,19 +33,33 @@ func StripCRC(encWithCRC []byte) (enc []byte, ok bool) {
 	return encWithCRC[:len(encWithCRC)-2], true
 }
 
-// LoadCSV reads rid,talkgroup,encoded_hex,alias rows from path, hex-decoding
-// and CRC-stripping each encoded field. A header row (non-hex first field)
-// is skipped. Rows too short to hold a CRC are skipped with a warning.
+// LoadCSV reads rid,talkgroup,encoded_hex,alias rows from a passive-capture
+// corpus, hex-decoding and CRC-stripping each encoded field. A header row
+// (non-hex first field) is skipped. Rows too short to hold a CRC are skipped
+// with a warning.
 func LoadCSV(path string, logger *slog.Logger) ([]Row, error) {
+	return loadCSV(path, logger, true)
+}
+
+// LoadChosenCSV reads the same rid,talkgroup,encoded_hex,alias shape but treats
+// encoded_hex as the *pure* cipher output with NO trailing CRC — the form a
+// chosen-plaintext encoder emits (e.g. moto_alias_t.zip's "Alias Encoded"
+// field, exactly 2·len(alias) bytes). Use this for the sweep mode; the CRC
+// strip that LoadCSV applies would otherwise eat two real cipher bytes.
+func LoadChosenCSV(path string, logger *slog.Logger) ([]Row, error) {
+	return loadCSV(path, logger, false)
+}
+
+func loadCSV(path string, logger *slog.Logger, stripCRC bool) ([]Row, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("alias: open corpus: %w", err)
 	}
 	defer f.Close()
-	return parseCSV(f, logger)
+	return parseCSV(f, logger, stripCRC)
 }
 
-func parseCSV(r io.Reader, logger *slog.Logger) ([]Row, error) {
+func parseCSV(r io.Reader, logger *slog.Logger, stripCRC bool) ([]Row, error) {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1
 	var rows []Row
@@ -70,12 +84,16 @@ func parseCSV(r io.Reader, logger *slog.Logger) ([]Row, error) {
 			}
 			continue
 		}
-		enc, ok := StripCRC(raw)
-		if !ok {
-			if logger != nil {
-				logger.Warn("skipping row too short for CRC", "line", line)
+		enc := raw
+		if stripCRC {
+			var ok bool
+			enc, ok = StripCRC(raw)
+			if !ok {
+				if logger != nil {
+					logger.Warn("skipping row too short for CRC", "line", line)
+				}
+				continue
 			}
-			continue
 		}
 		var rid uint32
 		if v, err := strconv.ParseUint(strings.TrimSpace(rec[0]), 10, 32); err == nil {
