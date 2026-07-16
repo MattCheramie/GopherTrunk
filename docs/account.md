@@ -47,6 +47,17 @@ progress just lives in this browser.
     <h2>You're signed in</h2>
     <p>Signed in as <strong data-account-name>…</strong> <span class="account__email" data-account-email></span>.
        Your learning-path progress syncs automatically.</p>
+
+    <form class="account__form" data-form="profile" novalidate>
+      <h3>Profile</h3>
+      <label>Display name <input type="text" name="display_name" maxlength="60" autocomplete="name"></label>
+      <label>Username <input type="text" name="username" maxlength="30" autocomplete="off"></label>
+      <div class="account__form-actions">
+        <button type="submit" class="btn">Save profile</button>
+      </div>
+      <p class="account__msg" data-account-profile-msg role="status" aria-live="polite"></p>
+    </form>
+
     <p class="account__panel-actions">
       <button type="button" class="btn btn--secondary" data-signout>Sign out</button>
     </p>
@@ -97,6 +108,7 @@ document.addEventListener('DOMContentLoaded', function () {
     return m.user_name || m.preferred_username || m.name ||
       (u.email ? u.email.split('@')[0] : 'you');
   }
+  var profileLoadedFor = null;
   function render() {
     hide(loading);
     if (GT.user) {
@@ -105,12 +117,43 @@ document.addEventListener('DOMContentLoaded', function () {
       var e = panel.querySelector('[data-account-email]');
       if (n) n.textContent = displayName(GT.user);
       if (e) e.textContent = GT.user.email ? '(' + GT.user.email + ')' : '';
+      if (profileLoadedFor !== GT.user.id) { profileLoadedFor = GT.user.id; loadProfile(); }
     } else {
       hide(panel); show(signin);
+      profileLoadedFor = null;
     }
   }
   GT.onChange(render);
   if (GT.ready && GT.ready.then) GT.ready.then(render);
+
+  // Profile (display name + username) — reads/writes the `profiles` table.
+  var pf = root.querySelector('[data-form="profile"]');
+  var pfMsg = root.querySelector('[data-account-profile-msg]');
+  function loadProfile() {
+    if (!pf || !GT.user) return;
+    GT.supabase.from('profiles').select('username, display_name').eq('id', GT.user.id).single()
+      .then(function (res) {
+        if (res.error || !res.data) return;
+        pf.querySelector('[name=display_name]').value = res.data.display_name || '';
+        pf.querySelector('[name=username]').value = res.data.username || '';
+      });
+  }
+  if (pf) pf.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    if (!GT.user) return;
+    var dn = pf.querySelector('[name=display_name]').value.trim();
+    var un = pf.querySelector('[name=username]').value.trim();
+    setMsg(pfMsg, 'Saving…', true);
+    GT.supabase.from('profiles').upsert({
+      id: GT.user.id, display_name: dn || null, username: un || null
+    }).then(function (res) {
+      if (res.error) {
+        setMsg(pfMsg, /duplicate|unique/i.test(res.error.message) ? 'That username is taken.' : res.error.message, false);
+      } else {
+        setMsg(pfMsg, 'Saved.', true);
+      }
+    });
+  });
 
   root.querySelectorAll('[data-oauth]').forEach(function (btn) {
     btn.addEventListener('click', function () {

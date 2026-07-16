@@ -16,6 +16,13 @@ public values (project URL + anon key) in `docs/assets/js/supabase-config.js`.
    For the forum (Phase 2), also run `schema-forum.sql` afterwards — it adds the
    `forum_categories` / `forum_threads` / `forum_posts` tables, their RLS policies, and
    a few starter categories.
+   For forum moderation + live updates (Phase 3), also run
+   `schema-forum-moderation.sql` — it adds admins (`app_admins` + `is_admin()`),
+   `forum_reports`, server-side rate limiting, and registers the forum tables for
+   Realtime. Grant yourself admin afterwards:
+   `insert into public.app_admins (user_id) values ('<your-user-uuid>');` (find the uuid
+   under Authentication → Users). Everything is additive and the client feature-detects
+   it, so the forum works even before this file is applied.
 3. **Enable auth providers** — Authentication → Providers:
    - **GitHub** and **Google** OAuth (create the OAuth apps on GitHub/Google, paste the
      client id + secret into Supabase). Set each provider's callback to the Supabase

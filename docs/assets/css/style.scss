@@ -1951,3 +1951,38 @@ a.category-chip:hover {
 :root.dark .forum-post__del:hover { color: #f85149; border-color: #f85149; }
 
 .forum__reply { margin-top: 1.5rem; }
+
+/* ---------- Forum: Phase 3 controls ---------- */
+.forum-more {
+  display: block;
+  margin: 1.2rem auto 0;
+  padding: 0.5rem 1.1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.forum-more:hover { border-color: var(--accent); }
+.forum-more:disabled { opacity: 0.6; cursor: default; }
+
+.forum-post__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.forum-post__act {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.forum-post__act:hover { color: var(--fg); border-color: var(--accent); }
+.forum-post__act:disabled { opacity: 0.6; cursor: default; }
+
+.forum-mod { margin-top: 0.6rem; }
