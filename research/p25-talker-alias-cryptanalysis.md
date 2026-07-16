@@ -262,10 +262,28 @@ states the passive corpus couldn't):
   at a fixed state is not affine in the char, the value `FWD[C]`, or `C`, nor an
   `FWD`-composition of any of them (best 3/95) — the input hits the high byte
   through a substitution/multiply, not an add.
-- **A single global 16-bit multiply is ruled out (new test).** If the update were
-  `(state + T[input])·MUL + ADD` with input = plaintext char, then for the shared
-  char range the two pinned states force `Hnext₃(c) − Hnext₁(c)` to take only two
-  consecutive values (the carry). It takes **73 distinct values** — falsified.
+- **The update folds the ciphertext byte / value `FWD[C]`, not the plaintext char.**
+  Matching the two pinned states by plaintext char, the next-high-byte delta
+  `Hnext_b − Hnext_a` takes **73** distinct values; matching by value (≡ by
+  ciphertext byte — they are bijective) it collapses to **2**. So the per-step
+  update folds the ciphertext/value; the plaintext enters only via the encode map
+  `value = char·(L|1)+H`. This pins `eo` as the *sole* input driver in
+  `H[k+1] ~ (H[k-1],H[k],eo)`.
+- **`Hnext = H_state + g(value)` with a low-byte branch — the sharpest lead.**
+  Across all three pinned states the delta `Hnext_b(v) − Hnext_a(v)` takes exactly
+  **two** values, and one is *always* the state high-byte difference `H_b − H_a`:
+  `A1↔A3 {61,200} (Hdiff 61)`, `A1↔A7 {33,150} (Hdiff 150)`, `A3↔A7 {89,206}
+  (Hdiff 89)`. So `Hnext@state(v) = H_state + g(v)` for a **state-independent**
+  `g(v)`, except on a two-way branch (≈40 % of values) that shifts the result by a
+  fixed ±139 and is governed by the state's low byte. No single-bit / threshold
+  predicate on the value selects the branch (best 22/33 ≈ random) — i.e. the
+  selector is the hidden low byte folded through an internal table, a concrete,
+  quantified form of the "second internal table" hypothesis.
+- **A single global 16-bit multiply is ruled out.** If the update were linear in
+  the state (`(state + T[input])·MUL + ADD`), the two pinned states would force
+  `Hnext_b − Hnext_a` to two *consecutive* values (a carry). They differ by 139,
+  not 1 — the state does not enter linearly, and `value·Q+K` / `value·L_state +
+  H_state·256` closed forms both fail at a fixed state (≤2/95).
 - **The seed is itself nonlinear in length.** `H₀(n)` steps by −22 with irregular
   +95 jumps not explained by carries — `seed(n)` runs through the same machinery,
   not a `base + n·K` line.
