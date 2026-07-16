@@ -1986,3 +1986,75 @@ a.category-chip:hover {
 .forum-post__act:disabled { opacity: 0.6; cursor: default; }
 
 .forum-mod { margin-top: 0.6rem; }
+
+.forum-thread__controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
+.forum-author { color: var(--accent); }
+.forum-author:hover { text-decoration: underline; }
+
+/* ---------- Account: auth-page extras ---------- */
+.account__lede { color: var(--fg-muted); margin: 0 0 1rem; }
+.account__panel-links { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0; }
+
+/* ---------- Profile editor (/profile/) ---------- */
+.profile-edit { max-width: var(--maxw-prose); margin: 1.5rem 0 0; }
+.profile-edit__form { display: flex; flex-direction: column; gap: 1rem; }
+.profile-edit__hint { display: block; margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--fg-muted); }
+.profile-edit__avatar { display: flex; gap: 1rem; align-items: flex-start; }
+.profile-edit__avatar-img {
+  width: 96px; height: 96px; border-radius: 50%; object-fit: cover;
+  background: var(--bg-elev); border: 1px solid var(--border); flex: 0 0 auto;
+}
+.profile-edit__avatar-controls { flex: 1 1 auto; min-width: 0; }
+.profile-edit__avatar-label { display: block; font-weight: 600; }
+.profile-edit__location {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.8rem 1rem 1rem; margin: 0; display: flex; flex-direction: column; gap: 0.8rem;
+}
+.profile-edit__location legend { font-weight: 600; padding: 0 0.4rem; }
+.profile-edit__since { margin: 0; font-size: 0.85rem; color: var(--fg-muted); }
+.profile-edit select {
+  width: 100%; padding: 0.45rem 0.5rem; font: inherit; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+
+/* ---------- Public profile (/u/) ---------- */
+.profile { max-width: var(--maxw-prose); margin: 1.5rem 0 0; }
+.profile__head { display: flex; gap: 1rem; align-items: center; }
+.profile__avatar {
+  width: 96px; height: 96px; border-radius: 50%; object-fit: cover;
+  background: var(--bg-elev); border: 1px solid var(--border); flex: 0 0 auto;
+}
+.profile__name { margin: 0; }
+.profile__id { margin: 0.25rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.profile__username { color: var(--fg-muted); font-size: 0.9rem; }
+.profile__meta { margin: 0.8rem 0 0; font-size: 0.88rem; color: var(--fg-muted); }
+.profile__bio { margin: 1rem 0 0; overflow-wrap: anywhere; }
+.profile__website { margin: 0.6rem 0 0; overflow-wrap: anywhere; }
+.profile__activity { margin: 1.8rem 0 0; }
+.profile__activity-title { font-size: 1.05rem; margin: 0 0 0.6rem; }
+.profile__activity-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.profile__activity-list li { font-size: 0.92rem; }
+.profile__activity-date { color: var(--fg-muted); font-size: 0.82rem; }
+
+/* ---------- Moderation dashboard (/moderation/) ---------- */
+.moderation { max-width: var(--maxw-prose); margin: 1.5rem 0 0; }
+.mod-section { margin: 0 0 2rem; }
+.mod-section__title { font-size: 1.15rem; margin: 0 0 0.8rem; }
+.mod-report {
+  padding: 1rem; margin: 0 0 1rem; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--bg-elev);
+  transition: opacity 0.4s ease;
+}
+.mod-report.is-resolved { opacity: 0.4; }
+.mod-report__target { margin: 0 0 0.4rem; font-weight: 600; overflow-wrap: anywhere; }
+.mod-report__excerpt { font-weight: 400; color: var(--fg-muted); }
+.mod-report__meta { margin: 0 0 0.3rem; font-size: 0.82rem; color: var(--fg-muted); }
+.mod-report__reason { margin: 0 0 0.6rem; font-style: italic; overflow-wrap: anywhere; }
+.mod-report__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.mod-btn { padding: 0.3rem 0.7rem; font-size: 0.82rem; }
+.mod-ban { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+.mod-ban__who { font-weight: 600; }
+.mod-ban__meta { color: var(--fg-muted); font-size: 0.85rem; }
+.mod-audit { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.mod-audit li { font-size: 0.85rem; color: var(--fg-muted); overflow-wrap: anywhere; }
+.mod-audit__action { color: var(--fg); font-weight: 600; }

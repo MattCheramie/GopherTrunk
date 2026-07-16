@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Account
-description: Sign in to sync your GopherTrunk learning-path progress across devices — GitHub, Google, email, or a magic link.
+description: Create a free GopherTrunk account or sign in — GitHub, Google, email, or a magic link. Syncs your learning-path progress and unlocks the community forum and a public profile.
 permalink: /account/
 nav_group: Community
 hide_ctas: true
@@ -9,15 +9,18 @@ hide_ctas: true
 
 # Account
 
-Signing in is optional. It syncs your **learning-path progress** across devices — your
-completed lessons follow you from laptop to phone. Signed out, everything still works;
-progress just lives in this browser.
+A free account is optional. It **syncs your learning-path progress** across devices, and
+unlocks the **[community forum](/forum/)** and a **[public profile](/u/)**. Signed out,
+everything still works — progress just lives in this browser.
 
 <div class="account" data-account>
   <p class="account__loading" data-account-loading>Loading…</p>
 
   <section class="account__signin" data-account-signin hidden>
     <h2>Sign in or create an account</h2>
+    <p class="account__lede">New here? Use any method below — the first time you sign in,
+      your account is created automatically. Creating one lets you post in the forum and
+      gives you a public profile you can fill out.</p>
 
     <div class="account__oauth">
       <button type="button" class="btn btn--secondary" data-oauth="github">Continue with GitHub</button>
@@ -48,15 +51,10 @@ progress just lives in this browser.
     <p>Signed in as <strong data-account-name>…</strong> <span class="account__email" data-account-email></span>.
        Your learning-path progress syncs automatically.</p>
 
-    <form class="account__form" data-form="profile" novalidate>
-      <h3>Profile</h3>
-      <label>Display name <input type="text" name="display_name" maxlength="60" autocomplete="name"></label>
-      <label>Username <input type="text" name="username" maxlength="30" autocomplete="off"></label>
-      <div class="account__form-actions">
-        <button type="submit" class="btn">Save profile</button>
-      </div>
-      <p class="account__msg" data-account-profile-msg role="status" aria-live="polite"></p>
-    </form>
+    <p class="account__panel-links">
+      <a class="btn" data-profile-edit href="/profile/">Edit your profile</a>
+      <a class="btn btn--secondary" data-profile-view href="/u/">View public profile</a>
+    </p>
 
     <p class="account__panel-actions">
       <button type="button" class="btn btn--secondary" data-signout>Sign out</button>
@@ -108,7 +106,22 @@ document.addEventListener('DOMContentLoaded', function () {
     return m.user_name || m.preferred_username || m.name ||
       (u.email ? u.email.split('@')[0] : 'you');
   }
-  var profileLoadedFor = null;
+
+  // Fill in the "view public profile" link with the user's username once known,
+  // so it points at /u/?u=<username> rather than the bare /u/ prompt page.
+  var viewLink = panel.querySelector('[data-profile-view]');
+  var profileLinkedFor = null;
+  function linkPublicProfile() {
+    if (!viewLink || !GT.user || profileLinkedFor === GT.user.id) return;
+    profileLinkedFor = GT.user.id;
+    GT.supabase.from('profiles').select('username').eq('id', GT.user.id).single()
+      .then(function (res) {
+        if (res && res.data && res.data.username) {
+          viewLink.setAttribute('href', '/u/?u=' + encodeURIComponent(res.data.username));
+        }
+      });
+  }
+
   function render() {
     hide(loading);
     if (GT.user) {
@@ -117,43 +130,14 @@ document.addEventListener('DOMContentLoaded', function () {
       var e = panel.querySelector('[data-account-email]');
       if (n) n.textContent = displayName(GT.user);
       if (e) e.textContent = GT.user.email ? '(' + GT.user.email + ')' : '';
-      if (profileLoadedFor !== GT.user.id) { profileLoadedFor = GT.user.id; loadProfile(); }
+      linkPublicProfile();
     } else {
       hide(panel); show(signin);
-      profileLoadedFor = null;
+      profileLinkedFor = null;
     }
   }
   GT.onChange(render);
   if (GT.ready && GT.ready.then) GT.ready.then(render);
-
-  // Profile (display name + username) — reads/writes the `profiles` table.
-  var pf = root.querySelector('[data-form="profile"]');
-  var pfMsg = root.querySelector('[data-account-profile-msg]');
-  function loadProfile() {
-    if (!pf || !GT.user) return;
-    GT.supabase.from('profiles').select('username, display_name').eq('id', GT.user.id).single()
-      .then(function (res) {
-        if (res.error || !res.data) return;
-        pf.querySelector('[name=display_name]').value = res.data.display_name || '';
-        pf.querySelector('[name=username]').value = res.data.username || '';
-      });
-  }
-  if (pf) pf.addEventListener('submit', function (ev) {
-    ev.preventDefault();
-    if (!GT.user) return;
-    var dn = pf.querySelector('[name=display_name]').value.trim();
-    var un = pf.querySelector('[name=username]').value.trim();
-    setMsg(pfMsg, 'Saving…', true);
-    GT.supabase.from('profiles').upsert({
-      id: GT.user.id, display_name: dn || null, username: un || null
-    }).then(function (res) {
-      if (res.error) {
-        setMsg(pfMsg, /duplicate|unique/i.test(res.error.message) ? 'That username is taken.' : res.error.message, false);
-      } else {
-        setMsg(pfMsg, 'Saved.', true);
-      }
-    });
-  });
 
   root.querySelectorAll('[data-oauth]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -175,7 +159,9 @@ document.addEventListener('DOMContentLoaded', function () {
             : GT.signInWithPassword(email, password)).then(function (res) {
       if (res.error) { setMsg(msg, res.error.message, false); return; }
       if (signup && res.data && res.data.user && !res.data.session) {
-        setMsg(msg, 'Check your email to confirm your account.', true);
+        setMsg(msg, 'Almost there — check your email to confirm your account, then you’re in.', true);
+      } else if (signup) {
+        setMsg(msg, 'Account created — you’re signed in.', true);
       } else {
         setMsg(msg, 'Signed in.', true);
       }
