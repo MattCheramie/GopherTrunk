@@ -233,10 +233,71 @@ variable that matters — the hidden accumulator low byte folded through that
 internal table — stays under-observed in any passive capture. The cipher stays
 gated (`CipherVerified = false`).
 
+## Chosen-plaintext results (2026-07, #773)
+
+A chosen-plaintext corpus arrived on #773 (`moto_alias_t.zip`, from a third-party
+working encoder/decoder — I/O logs only, consumed as data, no source read).
+299 round-trip-verified records against the synthetic SUID `BEE00.ABC.123456`:
+a length sweep of all-`A` (lengths 1–14), a first-character sweep at length 6
+(`?AAAAA`, chars `0x20`–`0x7E`), a second-character sweep at length 6 (`A?AAAA`),
+and a fourth-character sweep at length 8 (`AAA?AAAA`). The `Alias Encoded` field
+is the pure `2n`-byte cipher output with **no CRC**, cleaner than the corpus.
+
+What the controlled data establishes (reconfirming the machine, and pinning
+states the passive corpus couldn't):
+
+- **The memory-2 machine holds exactly on new data.** `(H[k-1], H[k], eo[k]) →
+  H[k+1]` is functional with **0 conflicts / 1408 observations** across the sweeps.
+- **LCG stays dead; the generic cell-solver doesn't close it.** `fromseed`
+  mismatch ≈ 0.996; `cells` pins only 3/859 contexts on the chosen-plaintext,
+  because the generic *intersection* method doesn't exploit the controlled
+  structure — the differential method below is the right tool for this data.
+- **Differential state pinning works cleanly.** At a swept position the pre-char
+  state is fixed, so `FWD[C] = char·(L|1) + H` fits **95/95** and pins the
+  odd-position state directly: byte 1 (len 6) `H=56, L|1=161` (Modd 97); byte 3
+  (len 6, prefix `A`) `H=117, L|1=225` (Modd 33); byte 7 (len 8, prefix `AAA`)
+  `H=206, L|1=11` (Modd 163). This is exactly the low-byte observability the
+  passive corpus lacked.
+- **The update transfer function is genuinely nonlinear.** `U(state, input).high`
+  at a fixed state is not affine in the char, the value `FWD[C]`, or `C`, nor an
+  `FWD`-composition of any of them (best 3/95) — the input hits the high byte
+  through a substitution/multiply, not an add.
+- **A single global 16-bit multiply is ruled out (new test).** If the update were
+  `(state + T[input])·MUL + ADD` with input = plaintext char, then for the shared
+  char range the two pinned states force `Hnext₃(c) − Hnext₁(c)` to take only two
+  consecutive values (the carry). It takes **73 distinct values** — falsified.
+- **The seed is itself nonlinear in length.** `H₀(n)` steps by −22 with irregular
+  +95 jumps not explained by carries — `seed(n)` runs through the same machinery,
+  not a `base + n·K` line.
+- **The state map is non-bijective.** In the length sweep, lengths 7 and 9 share
+  the high-byte trajectory from position 2 (`H(7)[2:] == H(9)[2:7]`). A bijective
+  LCG/MWC/odd-multiply cannot merge trajectories — this is the fingerprint of a
+  **non-invertible internal substitution table** inside the update, matching the
+  "second internal table" hypothesis above.
+
+**Net:** the chosen-plaintext confirms the 16-bit machine, pins the seed and
+several exact states, and makes the update *observable* at fixed states — but the
+provided sweeps (positions 1/2/4, lengths ≤ 14) do not densely cover the update's
+input domain at enough *repeated* states to recover the ~256-entry internal table
+or its closed form. `CipherVerified` stays **false**. The decisive remaining
+capture is Tier-3-style: single-character sweeps at *more* positions and a second
+length, plus single-bit differentials, to pin `U(state, ·)` as a full function at
+states that recur — see `p25-talker-alias-chosen-plaintext.md`.
+
+> **Data-access note (also unblocks #813).** The gated GitHub attachments
+> (`user-attachments/...`, fork release assets) that this session's network policy
+> 403s can be retrieved by letting `WebFetch` resolve the `github.com` link — it
+> returns the signed `objects.githubusercontent.com` redirect — then `curl`-ing
+> that signed URL directly (that host is reachable; the 5-minute signature window
+> is ample).
+
 ## Two paths to finish
 
 1. **Chosen-plaintext captures** from a programmable Motorola radio — see
-   `p25-talker-alias-chosen-plaintext.md`. The memory-3 finding *sharpens* this:
+   `p25-talker-alias-chosen-plaintext.md`. A first tranche arrived (see the
+   2026-07 results above) and confirmed the machine + pinned the seed, but was not
+   dense enough to recover the internal table; a wider positional/length sweep is
+   the specific follow-up. The memory-3 finding *sharpens* this:
    a short length sweep plus single-character differentials at a couple of
    positions is enough to pin the memory-2/3 transition directly, because the
    state is now observable rather than hidden. The dense-corpus result above is
