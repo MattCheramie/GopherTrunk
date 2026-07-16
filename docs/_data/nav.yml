@@ -95,6 +95,12 @@ groups:
     items:
       - title: The Story of GopherTrunk
         url: /story.html
+  - label: Community
+    items:
+      - title: Forum
+        url: /forum/
+      - title: Account
+        url: /account/
   - label: Blog
     items:
       - title: All posts

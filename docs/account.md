@@ -3,7 +3,7 @@ layout: page
 title: Account
 description: Sign in to sync your GopherTrunk learning-path progress across devices — GitHub, Google, email, or a magic link.
 permalink: /account/
-nav_group: About
+nav_group: Community
 hide_ctas: true
 ---
 

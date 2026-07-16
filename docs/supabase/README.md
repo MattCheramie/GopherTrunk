@@ -13,6 +13,9 @@ public values (project URL + anon key) in `docs/assets/js/supabase-config.js`.
 
 1. **Create a project** at <https://supabase.com/dashboard>.
 2. **Run the schema.** SQL Editor → paste `schema.sql` → Run. (Re-runnable; idempotent.)
+   For the forum (Phase 2), also run `schema-forum.sql` afterwards — it adds the
+   `forum_categories` / `forum_threads` / `forum_posts` tables, their RLS policies, and
+   a few starter categories.
 3. **Enable auth providers** — Authentication → Providers:
    - **GitHub** and **Google** OAuth (create the OAuth apps on GitHub/Google, paste the
      client id + secret into Supabase). Set each provider's callback to the Supabase
