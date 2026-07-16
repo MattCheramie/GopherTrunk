@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.7.1] — 2026-07-16
+
 ### Fixed
 - **P25 Phase 1 recordings opened with a full-scale "startup scratch".** While
   the receiver is still acquiring symbol lock at the start of a transmission, the
