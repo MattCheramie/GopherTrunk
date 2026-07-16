@@ -58,6 +58,15 @@
   }
   function fmtDate(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return ''; } }
   function authorName(a) { return (a && (a.display_name || a.username)) || 'someone'; }
+  // Author name as a link to their public profile (/u/?u=<username>) when a
+  // username is known; a plain text node otherwise. Returns a NODE so it drops
+  // straight into the h()/child arrays used for meta lines (stays XSS-safe).
+  function authorLink(a) {
+    if (a && a.username) {
+      return h('a', { class: 'forum-author', href: '/u/?u=' + encodeURIComponent(a.username) }, [authorName(a)]);
+    }
+    return document.createTextNode(authorName(a));
+  }
   function setMsg(box, text, ok) {
     if (!box) return;
     box.textContent = text || '';
@@ -73,7 +82,7 @@
   }
 
   var state = {
-    cats: [], activeCat: null, thread: null, isAdmin: false,
+    cats: [], activeCat: null, thread: null, isAdmin: false, isBanned: false,
     threadsOffset: 0, postsOffset: 0, postsFullyLoaded: false, channel: null
   };
 
@@ -84,6 +93,17 @@
       state.isAdmin = !!(res && !res.error && res.data === true);
       done();
     }, function () { state.isAdmin = false; done(); });
+  }
+
+  // is_banned() RPC (from schema-moderation.sql). Absent -> treat as not banned,
+  // so the forum keeps working before Phase 5 is applied. Banned users still get
+  // blocked server-side by the RESTRICTIVE RLS policy even if the UI misses it.
+  function checkBanned(done) {
+    if (!signedIn()) { state.isBanned = false; return done(); }
+    sb().rpc('is_banned').then(function (res) {
+      state.isBanned = !!(res && !res.error && res.data === true);
+      done();
+    }, function () { state.isBanned = false; done(); });
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -110,7 +130,7 @@
       .then(function (res) {
         state.cats = (res && res.data) || [];
         renderCategories(catBox);
-        renderNewThread(newBox);
+        checkBanned(function () { renderNewThread(newBox); });
         loadThreads(threadBox, true);
         subscribeList(threadBox);
       });
@@ -119,7 +139,7 @@
       var first = true;
       window.GT.onChange(function () {
         if (first) { first = false; return; }
-        checkAdmin(function () { renderNewThread(newBox); });
+        checkBanned(function () { renderNewThread(newBox); });
       });
     }
   }
@@ -159,7 +179,7 @@
     var posts = (t.replies && t.replies[0] && t.replies[0].count) || 0;
     var title = h('a', { class: 'forum-thread__title', href: threadUrl(t.id) }, [t.title]);
     var meta = h('p', { class: 'forum-thread__meta' }, [
-      (t.category ? t.category.title : ''), ' · by ', authorName(t.author),
+      (t.category ? t.category.title : ''), ' · by ', authorLink(t.author),
       ' · ', posts + (posts === 1 ? ' post' : ' posts'), ' · ', fmtDate(t.updated_at)
     ]);
     var kids = [title, meta];
@@ -182,6 +202,10 @@
     box.textContent = '';
     if (!signedIn()) {
       box.appendChild(h('p', { class: 'forum__signin' }, ['Want to post? ', h('a', { href: '/account/' }, ['Sign in']), '.']));
+      return;
+    }
+    if (state.isBanned) {
+      box.appendChild(h('p', { class: 'forum-msg', text: 'You’re currently suspended and can’t start new threads.' }));
       return;
     }
     if (!state.cats.length) return;
@@ -238,23 +262,25 @@
     if (!tid) { head.textContent = 'Thread not found.'; return; }
 
     sb().from('forum_threads')
-      .select('id, title, is_locked, created_at, category:forum_categories(slug,title), author:profiles(username,display_name)')
+      .select('id, title, is_locked, created_at, author_id, category:forum_categories(slug,title), author:profiles(username,display_name)')
       .eq('id', tid).single().then(function (res) {
         if (!res || res.error || !res.data) { head.textContent = 'Thread not found.'; return; }
         state.thread = res.data;
-        checkAdmin(function () {
+        checkAdmin(function () { checkBanned(function () {
           renderThreadHead(head);
           loadPosts(postsBox, true);
           renderReply(replyBox);
           subscribeThread(postsBox);
-        });
+        }); });
       });
 
     if (window.GT && window.GT.onChange) {
       var first = true;
       window.GT.onChange(function () {
         if (first) { first = false; return; }
-        if (state.thread) checkAdmin(function () { renderThreadHead(head); renderReply(replyBox); loadPosts(postsBox, true); });
+        if (state.thread) checkAdmin(function () { checkBanned(function () {
+          renderThreadHead(head); renderReply(replyBox); loadPosts(postsBox, true);
+        }); });
       });
     }
   }
@@ -265,10 +291,12 @@
     head.textContent = '';
     head.appendChild(h('h1', { class: 'forum-thread__heading', text: t.title }));
     var meta = h('p', { class: 'forum-thread__meta' }, [
-      (t.category ? t.category.title : ''), ' · started by ', authorName(t.author), ' · ', fmtDate(t.created_at)
+      (t.category ? t.category.title : ''), ' · started by ', authorLink(t.author), ' · ', fmtDate(t.created_at)
     ]);
     if (t.is_locked) meta.appendChild(h('span', { class: 'forum-badge', text: 'locked' }));
     head.appendChild(meta);
+
+    var controls = h('div', { class: 'forum-thread__controls' });
 
     if (state.isAdmin) {
       var lock = h('button', { class: 'btn btn--secondary forum-mod', type: 'button' }, [t.is_locked ? 'Unlock thread' : 'Lock thread']);
@@ -283,8 +311,27 @@
           renderReply(document.querySelector('[data-thread-reply]'));
         });
       });
-      head.appendChild(lock);
+      controls.appendChild(lock);
     }
+
+    // Report thread — any signed-in user who isn't the author. Feature-detected:
+    // the thread_id column on forum_reports arrives with schema-moderation.sql; if
+    // it isn't applied the insert fails and the button says so, harmlessly.
+    if (signedIn() && t.author_id !== uid()) {
+      var rep = h('button', { class: 'forum-post__act', type: 'button' }, ['Report thread']);
+      rep.addEventListener('click', function () { reportThread(t.id, rep); });
+      controls.appendChild(rep);
+    }
+
+    if (controls.childNodes.length) head.appendChild(controls);
+  }
+
+  function reportThread(threadId, btn) {
+    var reason = window.prompt('Report this thread — reason (optional):');
+    if (reason === null) return;
+    btn.disabled = true;
+    sb().from('forum_reports').insert({ thread_id: threadId, reporter_id: uid(), reason: reason || null })
+      .then(function (res) { btn.textContent = res.error ? 'Report unavailable' : 'Reported'; });
   }
 
   function loadPosts(box, reset) {
@@ -312,7 +359,7 @@
   function postCard(p) {
     var card = h('article', { class: 'forum-post', id: 'post-' + p.id });
     card.appendChild(h('p', { class: 'forum-post__meta' }, [
-      p.is_deleted ? 'unknown' : authorName(p.author), ' · ', fmtDate(p.created_at), p.edited_at ? ' · edited' : ''
+      p.is_deleted ? 'unknown' : authorLink(p.author), ' · ', fmtDate(p.created_at), p.edited_at ? ' · edited' : ''
     ]));
     var bodyEl = h('div', { class: 'forum-post__body' });
     if (p.is_deleted) bodyEl.appendChild(h('em', { text: '[deleted]' }));
@@ -380,6 +427,10 @@
     if (t.is_locked) { box.appendChild(h('p', { class: 'forum-msg', text: 'This thread is locked.' })); return; }
     if (!signedIn()) {
       box.appendChild(h('p', { class: 'forum__signin' }, ['Want to reply? ', h('a', { href: '/account/' }, ['Sign in']), '.']));
+      return;
+    }
+    if (state.isBanned) {
+      box.appendChild(h('p', { class: 'forum-msg', text: 'You’re currently suspended and can’t reply.' }));
       return;
     }
     var form = h('form', { class: 'forum-form' });

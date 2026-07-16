@@ -101,6 +101,10 @@ groups:
         url: /forum/
       - title: Account
         url: /account/
+      - title: Profile
+        url: /profile/
+      - title: Moderation
+        url: /moderation/
   - label: Blog
     items:
       - title: All posts
