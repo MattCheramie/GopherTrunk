@@ -75,6 +75,8 @@ Run each once in the SQL Editor. All are idempotent; re-running is safe.
 
 ## Moderation & bans
 
+- **Add a moderator** (grant admin access): see
+  [`adding-a-moderator.md`](adding-a-moderator.md) for the step-by-step.
 - **Review reports** on the site at `/moderation/` — a dashboard visible only to admins
   (it calls `is_admin()`; RLS denies the underlying rows to everyone else). From there you
   resolve or dismiss reports, lock threads, remove posts, and ban or suspend users. Every
