@@ -19,6 +19,6 @@
  * to build or render.
  */
 window.GT_SUPABASE = {
-  url: 'https://YOUR-PROJECT-REF.supabase.co',
-  anonKey: 'YOUR-ANON-OR-PUBLISHABLE-KEY'
+  url: 'https://fzundthahevgjrwoesjz.supabase.co',
+  anonKey: 'sb_publishable_Qc0e9q7BHp2gGirMKM5Ftg_issUBvk0'
 };
