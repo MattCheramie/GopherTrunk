@@ -14,7 +14,28 @@ for tagged releases.
   the rtl_tcp / import-client TLS paths. No source changes; the pin moves in
   `go.mod` and every CI/build workflow.
 
+### Added
+- **Per-call demod quality (EVM / SNR) on P25 Phase 1 calls.** Each decoded P25
+  Phase 1 voice call now carries a measured RMS error-vector magnitude (`evm_pct`)
+  and estimated symbol SNR (`snr_db`), surfaced in the call-history API and
+  `call_log` alongside `signal_dbfs` — the demod-quality numbers to compare
+  against another decoder (SDRTrunk). Measured over the settled decode from the
+  receiver's soft/symbol taps and stamped onto `CallEnd`; nil for calls with no
+  measurement (short blips, non-composer ends) and for the Phase 2 / DMR chains,
+  which don't yet expose the taps (#878 follow-up). The gRPC `RIDCallRow` surface
+  is unchanged (a separate proto change, as `signal_dbfs` also awaits).
+
 ### Fixed
+- **Extended the wideband voice-tap channel-select fix to P25 Phase 2 and DMR.**
+  The same defect fixed for P25 Phase 1 — a wideband DDC voice tap feeding the
+  receiver a ±24 kHz-wide stream with no channel filter (the front end was a
+  pass-through no-op at the tap rate) — was present in the Phase 2 and DMR voice
+  chains too. On DMR (4FSK/FM discriminator) a stronger adjacent channel could
+  be captured and, because DMR talkgroup gating is disabled, recorded *as* the
+  call. On P25 Phase 2 (linear H-DQPSK) adjacent energy instead pumped the AGC
+  and degraded carrier recovery, raising EVM. Both chains now channel-select each
+  wideband tap to ±6.25 kHz (half the 12.5 kHz channel spacing) before the
+  receiver, matching Phase 1; the dedicated-tuner path is unchanged.
 - **Wideband P25 Phase 1 voice recordings came out short and garbled next to
   SDRTrunk** — on a busy multi-channel site a wideband DDC voice tap decoded
   clean *foreign* talkgroups mid-call (e.g. a 16 s over recorded as ~9 s of the

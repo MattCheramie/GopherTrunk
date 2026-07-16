@@ -623,6 +623,21 @@ func (e *Engine) UpdateSignal(deviceSerial string, dbfs float64) {
 	e.mu.Unlock()
 }
 
+// UpdateDemod stamps the call's demod quality (RMS EVM % and estimated SNR dB)
+// onto the bound trunked call and any synthetic call on the same serial, so the
+// engine carries it into CallEnd. Mirrors UpdateSignal; called by the composer
+// once at end-of-call, before EndCall.
+func (e *Engine) UpdateDemod(deviceSerial string, evmPct, snrDB float64) {
+	e.pool.UpdateDemod(deviceSerial, evmPct, snrDB)
+	e.mu.Lock()
+	if ac, ok := e.synthetic[deviceSerial]; ok {
+		evm, snr := evmPct, snrDB
+		ac.EVMPct = &evm
+		ac.SNRDb = &snr
+	}
+	e.mu.Unlock()
+}
+
 // ActiveCalls returns a snapshot of every active call — trunked
 // calls allocated through the voice pool plus synthetic calls owned
 // by external scanners (the conventional FM scanner publishes these
@@ -785,6 +800,8 @@ func (e *Engine) endCall(ac *ActiveCall, reason EndReason) {
 			EndedAt:      e.now(),
 			Reason:       reason,
 			SignalDbFS:   released.SignalDbFS,
+			EVMPct:       released.EVMPct,
+			SNRDb:        released.SNRDb,
 		},
 	})
 	e.log.Info("call ended",
@@ -917,6 +934,8 @@ func (e *Engine) EndSyntheticCall(deviceSerial string, reason EndReason) bool {
 			EndedAt:      e.now(),
 			Reason:       reason,
 			SignalDbFS:   ac.SignalDbFS,
+			EVMPct:       ac.EVMPct,
+			SNRDb:        ac.SNRDb,
 		},
 	})
 	e.log.Info("synthetic call ended",

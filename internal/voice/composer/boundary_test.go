@@ -125,6 +125,48 @@ func TestBoundaryMeasuresSignalDbFS(t *testing.T) {
 	}
 }
 
+// TestBoundaryMeasuresDemodMetrics feeds a clean 4-level C4FM soft eye into the
+// tracker's demod accumulator and confirms it stamps a finite EVM/SNR onto the
+// call at end-of-call (via UpdateDemod), and that too few symbols report nothing.
+func TestBoundaryMeasuresDemodMetrics(t *testing.T) {
+	c, _, eng := mkBoundaryComposer(t, false, 150*time.Millisecond)
+	bt := c.newBoundaryTracker("VOICE-1", 0, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go bt.run(ctx)
+
+	// Below the warm-up + minimum threshold: no metric yet.
+	bt.observeSoft(make([]float32, 100))
+	if _, _, ok := bt.demodMetrics(); ok {
+		t.Fatal("demodMetrics reported ok with too few symbols; want false")
+	}
+
+	// A clean 4-level C4FM soft eye (ideal rails ±3, ±1) past the warm-up prefix.
+	rails := []float32{-3, -1, 1, 3}
+	soft := make([]float32, demodWarmupSkip+1024)
+	for i := range soft {
+		soft[i] = rails[i%4]
+	}
+	bt.observeSoft(soft)
+	bt.onVoice(0) // one voice frame, then silence → hangtime ends the call
+
+	waitFor(t, time.Second, func() bool {
+		_, ok := eng.demod("VOICE-1")
+		return ok
+	})
+	m, ok := eng.demod("VOICE-1")
+	if !ok {
+		t.Fatal("UpdateDemod was never called at end-of-call")
+	}
+	evm, snr := m[0], m[1]
+	if evm < 0 || evm > 5 {
+		t.Errorf("EVM = %v%%, want ~0 for a clean eye", evm)
+	}
+	if snr < 20 {
+		t.Errorf("SNR = %v dB, want high (clean eye)", snr)
+	}
+}
+
 // TestBoundaryHangtimeEndsCall: after voice stops for longer than the
 // hangtime, the tracker ends the call.
 func TestBoundaryHangtimeEndsCall(t *testing.T) {

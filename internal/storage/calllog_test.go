@@ -512,6 +512,63 @@ func TestCallLogPersistsSignalDbFS(t *testing.T) {
 	}
 }
 
+// TestCallLogPersistsDemodMetrics verifies the composer-measured demod quality
+// (EVM % / SNR dB) survives the CallEnd → call_log round-trip, and that a call
+// ended with no measurement reads back nil (unset ≠ a legitimate 0).
+func TestCallLogPersistsDemodMetrics(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	f64 := func(v float64) *float64 { return &v }
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+
+	// Call 1 carries measured EVM/SNR on CallEnd.
+	g1 := trunking.Grant{System: "Alpha", Protocol: "p25", GroupID: 1, SourceID: 10, FrequencyHz: 851_000_000}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: g1, DeviceSerial: "VOICE-1", StartedAt: startedAt,
+	}})
+	waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool { return len(r) == 1 })
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: g1, DeviceSerial: "VOICE-1", StartedAt: startedAt,
+		EndedAt: startedAt.Add(time.Second), Reason: trunking.EndReasonNormal,
+		EVMPct: f64(4.2), SNRDb: f64(27.5),
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{System: "Alpha", GroupID: 1, OnlyEnded: true}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].EVMPct != nil && r[0].SNRDb != nil
+	})
+	if len(rows) != 1 || rows[0].EVMPct == nil || rows[0].SNRDb == nil {
+		t.Fatalf("call-1 row = %+v, want EVMPct+SNRDb populated", rows)
+	}
+	if got := *rows[0].EVMPct; math.Abs(got-4.2) > 0.01 {
+		t.Errorf("EVMPct = %v, want 4.2", got)
+	}
+	if got := *rows[0].SNRDb; math.Abs(got-27.5) > 0.01 {
+		t.Errorf("SNRDb = %v, want 27.5", got)
+	}
+
+	// Call 2 ends with no measurement → columns stay NULL → read nil.
+	started2 := startedAt.Add(time.Minute)
+	g2 := trunking.Grant{System: "Alpha", Protocol: "dmr-tier3", GroupID: 2, SourceID: 20, FrequencyHz: 460_000_000}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: g2, DeviceSerial: "VOICE-2", StartedAt: started2,
+	}})
+	waitHistory(t, db, HistoryFilter{System: "Alpha", GroupID: 2}, func(r []CallRow) bool { return len(r) == 1 })
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: g2, DeviceSerial: "VOICE-2", StartedAt: started2,
+		EndedAt: started2.Add(time.Second), Reason: trunking.EndReasonNormal,
+		// EVMPct/SNRDb deliberately nil (a non-Phase-1 chain measures neither).
+	}})
+	rows = waitHistory(t, db, HistoryFilter{System: "Alpha", GroupID: 2, OnlyEnded: true}, func(r []CallRow) bool {
+		return len(r) == 1
+	})
+	if len(rows) != 1 {
+		t.Fatalf("call-2 rows = %d, want 1", len(rows))
+	}
+	if rows[0].EVMPct != nil || rows[0].SNRDb != nil {
+		t.Errorf("unmeasured call demod = (%v,%v), want nil (unset ≠ 0)", rows[0].EVMPct, rows[0].SNRDb)
+	}
+}
+
 func TestOpenRejectsEmpty(t *testing.T) {
 	if _, err := Open(""); err == nil {
 		t.Error("expected error for empty path")

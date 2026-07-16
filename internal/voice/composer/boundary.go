@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -66,7 +67,36 @@ type boundaryTracker struct {
 	nSamp        uint64
 	meanDbFSBits atomic.Uint64
 	haveSignal   atomic.Bool
+
+	// Demod-quality accumulator (per-call SNR/EVM). Populated ONLY when the
+	// chain installs the receiver's soft/symbol taps — currently just P25
+	// Phase 1 — via observeSoft / observeSymbols; other protocols never call
+	// them, so their metrics stay unmeasured (nil in the call record). The
+	// taps write on the chain goroutine while end() reads on the bt.run
+	// goroutine, so the bounded buffers are guarded by demodMu. See
+	// demodMetrics for the estimator choice.
+	demodMu sync.Mutex
+	softBuf []float32   // C4FM 4-level soft symbols (FM-discriminator path)
+	symBuf  []complex64 // CQPSK / linear constellation points
 }
+
+// Demod-metric accumulation bounds, mirroring internal/siglab so a per-call
+// figure agrees with the `replay -diag` line an operator would compare against.
+const (
+	// demodWarmupSkip drops the receiver's sync/AGC/timing warm-up symbols,
+	// whose EVM is transient and unrepresentative of the settled decode.
+	demodWarmupSkip = 256
+	// demodMinSymbols is the minimum settled (post-warmup) symbol count before
+	// a stable EVM/SNR is reported; a shorter blip reports NULL rather than a
+	// noisy figure (mirrors how signal_dbfs is nil when unmeasured).
+	demodMinSymbols = 64
+	// demodMaxSymbols bounds the per-call buffer past the warm-up prefix —
+	// enough for a stable RMS EVM without holding a whole 30 s call in memory.
+	demodMaxSymbols = 8192
+	// demodSNRCapDB is the finite ceiling for a (near) noise-free residual,
+	// mirroring siglab's demodSNRCapDB so a capped value is JSON-marshalable.
+	demodSNRCapDB = 99.0
+)
 
 // foreignRunToEnd is how many consecutive frames carrying the SAME known
 // foreign talkgroup end the call. A couple of frames debounces a single
@@ -259,6 +289,78 @@ func (bt *boundaryTracker) signalDbFS() (float64, bool) {
 	return math.Float64frombits(bt.meanDbFSBits.Load()), true
 }
 
+// observeSoft accumulates a batch of C4FM 4-level soft symbols (the
+// FM-discriminator path's post-matched-filter symbol values) for the call's
+// EVM/SNR estimate, capped at the warm-up prefix plus demodMaxSymbols. Called
+// from the chain goroutine via the receiver's SoftSink.
+func (bt *boundaryTracker) observeSoft(soft []float32) {
+	if len(soft) == 0 {
+		return
+	}
+	bt.demodMu.Lock()
+	if room := demodWarmupSkip + demodMaxSymbols - len(bt.softBuf); room > 0 {
+		if len(soft) > room {
+			soft = soft[:room]
+		}
+		bt.softBuf = append(bt.softBuf, soft...)
+	}
+	bt.demodMu.Unlock()
+}
+
+// observeSymbols accumulates a batch of complex constellation points (the
+// linear CQPSK/LSM path) for the call's EVM/SNR estimate. Called from the chain
+// goroutine via the receiver's SymbolSink.
+func (bt *boundaryTracker) observeSymbols(pts []complex64) {
+	if len(pts) == 0 {
+		return
+	}
+	bt.demodMu.Lock()
+	if room := demodWarmupSkip + demodMaxSymbols - len(bt.symBuf); room > 0 {
+		if len(pts) > room {
+			pts = pts[:room]
+		}
+		bt.symBuf = append(bt.symBuf, pts...)
+	}
+	bt.demodMu.Unlock()
+}
+
+// demodMetrics computes the call's RMS EVM (%) and estimated SNR (dB) from the
+// buffered demod symbols, mirroring internal/siglab's demodMetrics: the complex
+// constellation (CQPSK/linear) when the receiver populated it, otherwise the
+// 4-level C4FM soft eye. Returns ok=false until enough settled (post-warmup)
+// symbols accumulated for a stable estimate, or when no soft/symbol tap fed the
+// tracker at all (every protocol but P25 Phase 1 today). Safe to call from any
+// goroutine.
+func (bt *boundaryTracker) demodMetrics() (evmPct, snrDB float64, ok bool) {
+	bt.demodMu.Lock()
+	defer bt.demodMu.Unlock()
+	if len(bt.symBuf) >= demodWarmupSkip+demodMinSymbols {
+		pts := bt.symBuf[demodWarmupSkip:]
+		return metrics.EVMConstellation(pts), capDemodSNR(metrics.SNRM2M4Constellation(pts)), true
+	}
+	if len(bt.softBuf) >= demodWarmupSkip+demodMinSymbols {
+		soft := bt.softBuf[demodWarmupSkip:]
+		outer := metrics.EstimateOuterRailC4FM(soft)
+		if outer <= 0 {
+			return 0, 0, false
+		}
+		return metrics.EVMC4FM(soft, outer), capDemodSNR(metrics.SNRResidualC4FM(soft, outer)), true
+	}
+	return 0, 0, false
+}
+
+// capDemodSNR clamps an SNR estimate to ±demodSNRCapDB so a noise-free residual
+// (SNR → ±Inf) stays finite and JSON-marshalable, mirroring siglab's capSNR.
+func capDemodSNR(db float64) float64 {
+	switch {
+	case math.IsInf(db, 1) || db > demodSNRCapDB:
+		return demodSNRCapDB
+	case math.IsInf(db, -1) || db < -demodSNRCapDB:
+		return -demodSNRCapDB
+	}
+	return db
+}
+
 // end ends the call exactly once via the engine, which publishes
 // CallEnd; the composer then cancels this chain's context.
 func (bt *boundaryTracker) end(reason trunking.EndReason) {
@@ -272,6 +374,12 @@ func (bt *boundaryTracker) end(reason trunking.EndReason) {
 		// preemption, shutdown) carry no measurement and read back NULL.
 		if d, ok := bt.signalDbFS(); ok {
 			bt.c.engine.UpdateSignal(bt.serial, d)
+		}
+		// Same for the demod-quality (EVM/SNR) figure — the number an operator
+		// compares against SDRTrunk. Only P25 Phase 1 feeds the soft/symbol
+		// taps today, so other protocols carry no measurement (NULL).
+		if evm, snr, ok := bt.demodMetrics(); ok {
+			bt.c.engine.UpdateDemod(bt.serial, evm, snr)
 		}
 		bt.c.engine.EndCall(bt.serial, reason)
 	})

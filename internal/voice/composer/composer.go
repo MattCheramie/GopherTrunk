@@ -112,6 +112,11 @@ type EngineHooks interface {
 	// (dBFS) onto the bound ActiveCall so the engine carries it into
 	// CallEnd. Called once at end-of-call, before EndCall.
 	UpdateSignal(deviceSerial string, dbfs float64)
+	// UpdateDemod stamps the call's measured demod quality — RMS EVM (%) and
+	// estimated SNR (dB) — onto the bound ActiveCall so the engine carries it
+	// into CallEnd. Called once at end-of-call, before EndCall, and only for a
+	// call whose chain fed the receiver soft/symbol taps (P25 Phase 1).
+	UpdateDemod(deviceSerial string, evmPct, snrDB float64)
 }
 
 // Options configure a Composer.

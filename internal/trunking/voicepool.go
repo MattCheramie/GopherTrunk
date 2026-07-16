@@ -67,6 +67,12 @@ type ActiveCall struct {
 	// preemption, shutdown) leave it nil. See composer.boundaryTracker
 	// for the semantics (channel power, not calibrated RSSI or SNR).
 	SignalDbFS *float64
+	// EVMPct / SNRDb are the call's demod quality (RMS EVM % and estimated
+	// SNR dB), stamped in via UpdateDemod shortly before end-of-call. nil
+	// until measured; only chains that feed the receiver demod taps (P25
+	// Phase 1) populate them. Issue #878 follow-up.
+	EVMPct *float64
+	SNRDb  *float64
 }
 
 // NewVoicePool returns a pool over the supplied devices. The order of
@@ -342,6 +348,19 @@ func (p *VoicePool) UpdateSignal(serial string, dbfs float64) {
 	if ac, ok := p.active[serial]; ok {
 		v := dbfs
 		ac.SignalDbFS = &v
+	}
+}
+
+// UpdateDemod stamps the call's demod quality (RMS EVM % and estimated SNR dB)
+// onto the ActiveCall bound to serial. No-op when no call is bound. Fresh
+// pointers are stored per update so the values are stable once released.
+func (p *VoicePool) UpdateDemod(serial string, evmPct, snrDB float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ac, ok := p.active[serial]; ok {
+		evm, snr := evmPct, snrDB
+		ac.EVMPct = &evm
+		ac.SNRDb = &snr
 	}
 }
 

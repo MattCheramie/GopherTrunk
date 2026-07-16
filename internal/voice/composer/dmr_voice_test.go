@@ -3,6 +3,7 @@ package composer
 import (
 	"bytes"
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -69,6 +70,13 @@ func voiceBurstDibits(frames [][]byte, sync [24]uint8) []uint8 {
 // carries is the FEC-encoding of mkInfo(frameIndex); the returned
 // slice holds those 49-bit payloads in order.
 func buildVoiceStream(t *testing.T, n int) (dibits []uint8, infos [][]byte) {
+	return buildVoiceStreamSeed(t, n, 0)
+}
+
+// buildVoiceStreamSeed is buildVoiceStream with a seed offset so a test can
+// build two streams with DISTINCT AMBE payloads (a wanted call and an
+// adjacent-channel neighbour) and tell which one the chain decoded.
+func buildVoiceStreamSeed(t *testing.T, n, seed0 int) (dibits []uint8, infos [][]byte) {
 	t.Helper()
 	dibits = make([]uint8, 240)
 	for i := range dibits {
@@ -76,7 +84,7 @@ func buildVoiceStream(t *testing.T, n int) (dibits []uint8, infos [][]byte) {
 	}
 	var onair [][]byte
 	for f := 0; f < n*dmrvoice.FramesPerSuperframe; f++ {
-		info := mkInfo(f)
+		info := mkInfo(seed0 + f)
 		frame, err := dmrvoice.EncodeAMBEFrame(info)
 		if err != nil {
 			t.Fatalf("EncodeAMBEFrame: %v", err)
@@ -376,5 +384,132 @@ func TestComposerDMRInterleavedRoutesBySlot(t *testing.T) {
 	}
 	if matchesAnySuperframe(got, bInfos) {
 		t.Errorf("the other timeslot's (TG %d) audio leaked into our call", otherTG)
+	}
+}
+
+// TestDMRVoiceFrontEndRejectsAdjacentChannel pins the channel selectivity of
+// the wideband DMR voice tap's front end: an adjacent 12.5 kHz channel centred
+// at ±12.5 kHz must be strongly rejected before the FM discriminator. The old
+// pass-through front end (decim==1) applied NO filter, so a neighbour reached
+// the discriminator at full amplitude and — DMR gating being disabled — could
+// be recorded as the call. Fails first: pass-through leaves the neighbour at
+// ~0 dB.
+func TestDMRVoiceFrontEndRejectsAdjacentChannel(t *testing.T) {
+	const (
+		fs        = float64(dmrVoiceIntermediateHz) // 48 kHz wideband tap output → decim==1
+		bw        = uint32(12_500)
+		adjOffset = 12_500.0
+		nSamples  = 24_000
+	)
+	respAt := func(offsetHz float64) float64 {
+		fe := newDMRVoiceFrontEnd(fs, bw)
+		in := make([]complex64, nSamples)
+		for i := range in {
+			th := 2 * math.Pi * offsetHz * float64(i) / fs
+			in[i] = complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		}
+		out := fe.Process(nil, in)
+		var peak float64
+		for _, s := range out[len(out)/2:] {
+			if m := math.Hypot(float64(real(s)), float64(imag(s))); m > peak {
+				peak = m
+			}
+		}
+		return peak
+	}
+	wanted := respAt(0)
+	neighbour := respAt(adjOffset)
+	if wanted < 0.5 {
+		t.Fatalf("wanted channel (DC) attenuated to %.3f; front end should pass it flat", wanted)
+	}
+	rejectionDB := 20 * math.Log10(neighbour/wanted)
+	if rejectionDB > -40 {
+		t.Errorf("adjacent channel (+%.0f Hz) rejection = %.1f dB; want <= -40 dB "+
+			"(a ±12.5 kHz neighbour leaks into the DMR voice tap and the discriminator captures it)",
+			adjOffset, rejectionDB)
+	}
+}
+
+// TestComposerDMRVoiceChainSurvivesAdjacentChannel is the end-to-end regression:
+// a wanted DMR call at DC with a STRONGER adjacent call at +12.5 kHz present.
+// Without a channel-select filter the FM discriminator is captured by the louder
+// neighbour and — gating disabled — the neighbour's audio is recorded in place
+// of the wanted call. With the filter the neighbour is rejected and the wanted
+// call decodes. Fails first.
+func TestComposerDMRVoiceChainSurvivesAdjacentChannel(t *testing.T) {
+	const (
+		sampleRate  = float64(dmrVoiceIntermediateHz) // 48 kHz: wideband tap, decim==1
+		sps         = 10
+		span        = 8
+		alpha       = 0.20
+		deviation   = 1944.0
+		superframes = 12
+		adjOffset   = 12_500.0
+	)
+
+	dibitsW, wantW := buildVoiceStreamSeed(t, superframes, 0)
+	iq := demod.ModulateC4FM(dibitsW, sps, span, alpha, sampleRate, deviation)
+
+	dibitsN, wantN := buildVoiceStreamSeed(t, superframes, 500_000)
+	iqN := demod.ModulateC4FM(dibitsN, sps, span, alpha, sampleRate, deviation)
+	for i := range iq {
+		if i >= len(iqN) {
+			break
+		}
+		th := 2 * math.Pi * adjOffset * float64(i) / sampleRate
+		rot := complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		iq[i] += 2 * iqN[i] * rot
+	}
+
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	eng := &fakeEngine{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        eng,
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "DMRSite", Protocol: "dmr-tier3",
+				GroupID: 7, FrequencyHz: 460_000_000,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	src.SendIQ(iq)
+
+	waitFor(t, 8*time.Second, func() bool {
+		return len(sink.rawFrames("VOICE-1")) >= 4*dmrvoice.FramesPerSuperframe
+	})
+	got := sink.rawFrames("VOICE-1")
+	got = got[:len(got)-len(got)%dmrvoice.FramesPerSuperframe]
+
+	if !matchesAnySuperframe(got, wantW) {
+		t.Errorf("wanted DMR call did not round-trip with a strong +%.0f Hz neighbour present "+
+			"(adjacent channel captured the demod and was recorded instead)", adjOffset)
+	}
+	if matchesAnySuperframe(got, wantN) {
+		t.Errorf("adjacent-channel neighbour leaked: its superframes were recorded as the call; "+
+			"the channel-select filter should reject the +%.0f Hz channel", adjOffset)
 	}
 }

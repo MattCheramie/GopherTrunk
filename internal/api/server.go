@@ -558,6 +558,11 @@ type CallRow struct {
 	// SignalDbFS is the call's mean received channel power in dBFS
 	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
 	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`
+	// EVMPct / SNRDb are the call's demod quality — RMS error-vector
+	// magnitude (%) and estimated symbol SNR (dB) — the figures to compare
+	// against another decoder. nil when unmeasured (P25 Phase 1 only).
+	EVMPct *float64 `json:"evm_pct,omitempty"`
+	SNRDb  *float64 `json:"snr_db,omitempty"`
 }
 
 // ServerOptions configure a new Server.
