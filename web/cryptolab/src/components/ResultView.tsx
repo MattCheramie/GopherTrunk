@@ -14,10 +14,36 @@ function StateBadge({ state }: { state: RunState }) {
   return <span className={`rounded px-2 py-0.5 text-xs ${cls}`}>{state}</span>;
 }
 
-function renderValue(v: unknown): string {
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+// formatScalar renders a leaf value: integers stay integers, floats trim to 4
+// significant decimals (so a count doesn't show 4.0000 and a ratio isn't a long
+// tail), everything else stringifies.
+function formatScalar(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(4)));
+  }
   return String(v);
+}
+
+// KeyVals renders an object as readable `key=value` chips instead of a
+// JSON one-liner, so a Field value or a Finding detail map is legible.
+function KeyVals({ obj }: { obj: Record<string, unknown> }) {
+  const entries = Object.entries(obj);
+  if (entries.length === 0) return <span className="text-muted">—</span>;
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+      {entries.map(([k, v]) => (
+        <span key={k} className="whitespace-nowrap">
+          <span className="text-muted">{k}=</span>
+          <span>{isPlainObject(v) || Array.isArray(v) ? JSON.stringify(v) : formatScalar(v)}</span>
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export function ResultView() {
@@ -49,7 +75,9 @@ export function ResultView() {
           {r.fields.map((f) => (
             <div key={f.key} className="card">
               <div className="text-xs uppercase tracking-wide text-muted">{f.key}</div>
-              <div className="mt-1 break-words font-mono text-sm">{renderValue(f.value)}</div>
+              <div className="mt-1 break-words font-mono text-sm">
+                {isPlainObject(f.value) ? <KeyVals obj={f.value} /> : formatScalar(f.value)}
+              </div>
             </div>
           ))}
         </div>
@@ -72,9 +100,9 @@ export function ResultView() {
                 <tr key={i} className="border-t border-line align-top">
                   <td className="py-1 pr-3 text-muted">{i + 1}</td>
                   <td className="py-1 pr-3 font-mono">{f.label}</td>
-                  <td className="py-1 pr-3 tabular-nums">{f.score.toFixed(4)}</td>
+                  <td className="py-1 pr-3 tabular-nums">{formatScalar(f.score)}</td>
                   <td className="py-1 font-mono text-muted">
-                    {f.detail ? JSON.stringify(f.detail) : ""}
+                    {f.detail ? <KeyVals obj={f.detail} /> : ""}
                   </td>
                 </tr>
               ))}

@@ -46,3 +46,15 @@ func TestSchemaCoversEveryRegisteredMode(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryToolHasAWorkflowCategory: every registered tool must map to a known
+// workflow category, so the web console groups it under a real heading rather
+// than the "Other" catch-all. A new tool that forgets its category trips this.
+func TestEveryToolHasAWorkflowCategory(t *testing.T) {
+	t.Parallel()
+	for _, ms := range cryptolab.Schema() {
+		if ms.Category == "" || ms.Category == "Other" {
+			t.Errorf("tool %q (mode %q) has no workflow category — add it to toolCategory in schema.go", ms.Tool, ms.Mode)
+		}
+	}
+}
