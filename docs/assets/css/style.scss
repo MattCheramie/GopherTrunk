@@ -449,6 +449,12 @@ button { font: inherit; cursor: pointer; }
   border-color: #ff4500;
 }
 .btn--reddit:hover { color: #ffffff; background: #d93c00; border-color: #d93c00; }
+.btn--forum {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.btn--forum:hover { color: var(--accent-fg); background: var(--link-hover); border-color: var(--link-hover); }
 .btn svg { width: 16px; height: 16px; }
 
 /* ---------- Hero community callout ---------- */
