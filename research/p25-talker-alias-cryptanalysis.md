@@ -293,14 +293,27 @@ states the passive corpus couldn't):
   **non-invertible internal substitution table** inside the update, matching the
   "second internal table" hypothesis above.
 
-**Net:** the chosen-plaintext confirms the 16-bit machine, pins the seed and
-several exact states, and makes the update *observable* at fixed states — but the
-provided sweeps (positions 1/2/4, lengths ≤ 14) do not densely cover the update's
-input domain at enough *repeated* states to recover the ~256-entry internal table
-or its closed form. `CipherVerified` stays **false**. The decisive remaining
-capture is Tier-3-style: single-character sweeps at *more* positions and a second
-length, plus single-bit differentials, to pin `U(state, ·)` as a full function at
-states that recur — see `p25-talker-alias-chosen-plaintext.md`.
+**The low-byte attack hits an observability floor (not an effort limit).** The
+high-byte update law `Hnext = H + g(value) + s·139` is well-determined, and `g`
+is covered for 197/256 values. But a *decoder* also needs the **low-byte** update
+`Lnext = LowUpdate(H, L, value)` to propagate the accumulator, and this data
+exposes `L` only as `L|1` at the **three** swept positions — which are
+non-consecutive (byte 1 and byte 3 straddle byte 2's unobserved `L`; byte 7 is a
+different length/seed). So the number of observed `(L_in → L_out)` transitions is
+**zero**, and `L`'s bit 0 is never observable at all (the decode multiplier forces
+`L|1`). No amount of cryptanalysis recovers an update with zero observed
+transitions — the branch bit `s(L, value)` is correspondingly only ~80 %
+predictable by a multiply-carry (best 27/33, different multiplier per state-pair),
+the residual being exactly that hidden low bit.
+
+**Net:** the chosen-plaintext confirms the 16-bit machine, pins the seed and three
+exact states, determines the high-byte update law, and recovers `g` over most of
+its domain — but the low-byte update and the branch table are *observationally*
+out of reach from sweeps at only three positions. `CipherVerified` stays
+**false**. The decisive remaining capture is Tier-3-style and now has a precise
+justification: single-character sweeps at **consecutive** positions (so
+`L_in → L_out` becomes observable) across **more** positions and a second length —
+see `p25-talker-alias-chosen-plaintext.md`.
 
 > **Data-access note (also unblocks #813).** The gated GitHub attachments
 > (`user-attachments/...`, fork release assets) that this session's network policy
