@@ -62,12 +62,14 @@ func TestRecorderDecodesP25IntoWav(t *testing.T) {
 		t.Fatal("session never opened")
 	}
 
-	// Feed N IMBE frames. Each frame is 11 bytes; goodVoiceFrame is a
-	// valid non-idle voice frame (b₀ just outside the idle-tone corner)
-	// so synthesis runs from the first frame instead of the onset mute.
-	const n = 4
+	// Feed N IMBE frames. The recorder enables the call-startup acquisition
+	// squelch (EnableStartupSquelch), which mutes until a stable-pitch VOICED
+	// run confirms real speech — so use a voiced frame (speechBits), repeated
+	// for a stable pitch, and enough of them to release the squelch and emit.
+	voiceFrame := packInfo(speechBits(48))
+	const n = 8
 	for i := 0; i < n; i++ {
-		if err := rec.WriteRawFrame("VOICE-1", goodVoiceFrame()); err != nil {
+		if err := rec.WriteRawFrame("VOICE-1", voiceFrame); err != nil {
 			t.Fatalf("WriteRawFrame: %v", err)
 		}
 	}

@@ -45,12 +45,21 @@ import (
 func TestLDUEndToEndIntoRecorder(t *testing.T) {
 	// Build 9 synthetic IMBE info-bit patterns, one per voice
 	// subframe.
+	// The recorder enables the call-startup acquisition squelch, which mutes
+	// output until a stable-pitch VOICED run confirms real speech. So build the
+	// 9 subframes with a FIXED fundamental (stable pitch) and a voiced-leaning
+	// payload — a real recording opens this way — otherwise the whole call is
+	// squelched and the WAV is silent. b0 bits live at info[0..5, 85, 86].
+	const b0 = 48
 	var infos [phase1.LDUVoiceSubframeCount][]byte
 	for i := 0; i < phase1.LDUVoiceSubframeCount; i++ {
 		bits := make([]byte, imbe.InfoBits)
 		for k := range bits {
-			bits[k] = byte((i*11 + k*3) % 2)
+			bits[k] = byte((k * 7) % 3 & 1)
 		}
+		bits[0], bits[1], bits[2] = byte((b0>>7)&1), byte((b0>>6)&1), byte((b0>>5)&1)
+		bits[3], bits[4], bits[5] = byte((b0>>4)&1), byte((b0>>3)&1), byte((b0>>2)&1)
+		bits[85], bits[86] = byte((b0>>1)&1), byte(b0&1)
 		infos[i] = bits
 	}
 

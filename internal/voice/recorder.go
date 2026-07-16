@@ -30,6 +30,16 @@ type VoiceEnhanceable interface {
 	SetVoiceEnhancer(cfg mbe.EnhancerConfig)
 }
 
+// StartupSquelchable is the optional interface a software vocoder implements
+// to accept the call-startup acquisition squelch — muting the receiver's
+// acquisition "startup scratch" until real speech is confirmed. The recorder
+// enables it on every decoded call so recordings and the live fan-out both
+// open cleanly. Vocoders that don't implement it decode unchanged. The imbe
+// (P25 Phase 1) decoder implements it.
+type StartupSquelchable interface {
+	EnableStartupSquelch()
+}
+
 // Recorder writes per-call audio + raw-frame files. It subscribes to
 // events.KindCallStart and events.KindCallEnd from the trunking engine,
 // opens a WAV (and optional raw-frame sidecar) for each new call, and
@@ -792,6 +802,12 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 			// SetVoiceEnhance take effect on the next call.
 			if enh, ok := v.(VoiceEnhanceable); ok {
 				enh.SetVoiceEnhancer(r.VoiceEnhance())
+			}
+			// Suppress the receiver-acquisition "startup scratch" on the
+			// recording/live path (opt-in on the vocoder; off in the raw
+			// decoder so unit tests are unaffected).
+			if sq, ok := v.(StartupSquelchable); ok {
+				sq.EnableStartupSquelch()
 			}
 			s.vocoder = v
 			s.vocoderName = name
