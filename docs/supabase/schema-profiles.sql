@@ -16,7 +16,8 @@
 --      optional country / region / city) with light validation.
 --   2. Adds Row Level Security policies for a public `avatars` Storage bucket so a
 --      signed-in user can upload/replace only their OWN avatar. You must still
---      CREATE the bucket in the dashboard first — see docs/supabase/README.md.
+--      CREATE the bucket in the dashboard first (see section 2 below for the exact
+--      bucket name and settings).
 
 -- ---------------------------------------------------------------------------
 -- 1. profiles — new optional columns.
@@ -79,7 +80,7 @@ end $$;
 -- PREREQUISITE (dashboard, one time): create a PUBLIC bucket named `avatars`
 --   Storage -> New bucket -> name `avatars`, Public = on,
 --   file size limit 2 MB, allowed MIME types: image/png, image/jpeg, image/webp.
--- See docs/supabase/README.md. This file only adds the row-level policies.
+-- This file only adds the row-level policies; it does not create the bucket.
 --
 -- Path convention: `avatars/<uid>/avatar` — one fixed object key per user,
 -- overwritten with upsert. The first path segment must equal the caller's uid,
