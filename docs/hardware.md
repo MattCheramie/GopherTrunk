@@ -773,6 +773,18 @@ B210 specifics worth knowing before the first run:
   the documented follow-up** (see the support matrix). Field reports from
   a real B210 are welcome.
 
+> **macOS loopback caps the stream MTU — bind to your NIC IP, not
+> `127.0.0.1`.** macOS limits the MTU on the loopback interface (`lo0`),
+> so a local `SoapySDRServer` bound to `127.0.0.1` can't negotiate a jumbo
+> `stream_mtu` — the stream falls back to the small loopback frame size and
+> a high-rate USRP can overrun. The workaround, even when the server and
+> GopherTrunk run on the **same** Mac, is to bind `SoapySDRServer` to the
+> host's real NIC address and point `addr:` at that same IP:
+> `SoapySDRServer --bind=192.168.1.50:55132` with
+> `addr: "192.168.1.50:55132"`. Linux loopback has no such cap, so
+> `127.0.0.1` is fine there. This is only relevant when you raise
+> `stream_mtu` above the ~1500-byte default (issue #876).
+
 For a B210 the `args` string is where the UHD device selection lives, e.g.
 `args: "type=b200,num_recv_frames=512,recv_frame_size=16384"` alongside
 `master_clock_rate: 61_440_000` and `sample_rate: 6_144_000`.
