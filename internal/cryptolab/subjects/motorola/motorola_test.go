@@ -380,7 +380,17 @@ func TestAliasToolRegistered(t *testing.T) {
 	if !ok {
 		t.Fatal("alias tool not registered")
 	}
-	if len(tool.Modes()) != 5 {
-		t.Fatalf("alias has %d modes, want 5", len(tool.Modes()))
+	if len(tool.Modes()) != 6 {
+		t.Fatalf("alias has %d modes, want 6", len(tool.Modes()))
+	}
+	// The chosen-plaintext differential mode must be registered by name.
+	var haveSweep bool
+	for _, m := range tool.Modes() {
+		if m.Name() == "sweep" {
+			haveSweep = true
+		}
+	}
+	if !haveSweep {
+		t.Fatal("alias tool missing the 'sweep' mode")
 	}
 }

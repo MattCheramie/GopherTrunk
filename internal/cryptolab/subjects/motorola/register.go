@@ -3,7 +3,8 @@ package motorola
 import "github.com/MattCheramie/GopherTrunk/internal/cryptolab"
 
 // aliasTool is a cryptolab subject: a length-seeded, keyless, byte-oriented
-// alias obfuscator, with five recovery modes.
+// alias obfuscator, with six recovery modes (five passive-corpus, plus the
+// chosen-plaintext differential "sweep" mode).
 type aliasTool struct{}
 
 func (aliasTool) Name() string     { return "alias" }
@@ -15,6 +16,7 @@ func (aliasTool) Modes() []cryptolab.Mode {
 		cellsMode{},
 		fromseedMode{},
 		propagateMode{},
+		sweepMode{},
 	}
 }
 
