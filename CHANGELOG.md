@@ -7,6 +7,21 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **Completed-call webhook now carries the source RID on nearly every call,
+  not just the ~18% whose voice-side `call.source` decoded.** The per-call
+  `broadcast.webhook` sink read the source RID off the grant that *bound* the
+  call, but a call frequently binds from a source-less grant (a P25 Phase 2
+  compressed grant, or a `GRP_VCH_UPDATE` repeat) while the initiating
+  `GRP_VCH_GRANT`'s RID arrives on a later repeat. That RID reached the engine
+  but was never associated back to the running call. The engine now folds a
+  later same-call grant's RID onto the bound call and republishes it through the
+  existing source-update path, so the completed-call webhook (and the live
+  SSE/TUI view) report the source. An in-call `call.source` update — which
+  reflects the radio actually keyed on the traffic channel — still takes
+  precedence, and the republish fires only on the first fill so the repeated
+  control-channel grant stream never floods the bus (issue #915).
+
 ## [v0.7.1] — 2026-07-16
 
 ### Fixed

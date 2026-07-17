@@ -474,3 +474,24 @@ func (p *VoicePool) UpdateSource(serial string, sourceID uint32, encrypted bool)
 	}
 	return ac.Grant, true
 }
+
+// BackfillSourceFromGrant fills the bound call's source RID from a control-
+// channel grant, but only when the call has no source yet: the initiating
+// GRP_VCH_GRANT's RID is a fallback, so an in-call GROUP_VOICE_CHANNEL_USER
+// update (UpdateSource) — which reflects the radio actually keyed on the
+// traffic channel — must be able to set the source over this, never the
+// reverse, and a later grant must never clobber an already-known RID. Returns the
+// updated Grant with filled=true only when a previously-zero source was set,
+// so the engine republishes the source-update event once per call instead of
+// on every repeat grant. No-op (filled=false) when no call is bound, sourceID
+// is zero, or the source is already known. Issue #915.
+func (p *VoicePool) BackfillSourceFromGrant(serial string, sourceID uint32) (Grant, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ac, ok := p.active[serial]
+	if !ok || sourceID == 0 || ac.Grant.SourceID != 0 {
+		return Grant{}, false
+	}
+	ac.Grant.SourceID = sourceID
+	return ac.Grant, true
+}
