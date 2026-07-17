@@ -26,6 +26,14 @@ This is a plain-language reference for the key terms used across the Intro to Ha
 
 **Clock speed** — How many cycles per second a CPU runs, measured in gigahertz (GHz); a rough, not absolute, guide to how fast it works. See [CPU, memory, storage & I/O](/learn/intro-hardware/building-blocks/)
 
+**GPU (graphics processing unit)** — A processor with thousands of small cores built for massively parallel math; used for graphics, scientific computing, and modern AI. See [Beyond the CPU — GPUs, FPGAs & accelerators](/learn/intro-hardware/specialized-compute/)
+
+**FPGA (field-programmable gate array)** — A chip you configure into a custom digital circuit, giving deterministic, low-latency hardware — often used in the front end of high-end SDRs. See [Beyond the CPU — GPUs, FPGAs & accelerators](/learn/intro-hardware/specialized-compute/)
+
+**DSP (digital signal processor)** — A processor specialized for signal math like filtering and transforms, common in radios, modems, and audio gear. See [Beyond the CPU — GPUs, FPGAs & accelerators](/learn/intro-hardware/specialized-compute/)
+
+**ASIC / accelerator** — Fixed-function silicon built for one job at maximum efficiency, including AI accelerators (NPUs and TPUs). See [Beyond the CPU — GPUs, FPGAs & accelerators](/learn/intro-hardware/specialized-compute/)
+
 **RAM (memory)** — Fast, temporary working storage that holds the data and programs a computer is actively using; it is cleared when power is lost. See [CPU, memory, storage & I/O](/learn/intro-hardware/building-blocks/)
 
 **Storage** — Where data is kept long-term so it survives a power cycle, such as a hard drive or solid-state drive. See [CPU, memory, storage & I/O](/learn/intro-hardware/building-blocks/)

@@ -226,5 +226,6 @@ system is worth chasing and what a better antenna or location would buy you.
   it, and decoders need a minimum.
 - Gains and losses along a path **add**, which is the whole point of decibels.
 
-Next, we'll look at how the spectrum is divided into bands — and then start putting
-information *onto* these waves with modulation.
+Next up: one more fundamental before antennas and modulation — [noise, SNR &
+sensitivity](/learn/rf-sdr/noise-and-snr/), the numbers that decide whether a signal is
+decodable at all.

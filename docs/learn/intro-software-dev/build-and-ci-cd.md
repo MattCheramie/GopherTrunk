@@ -102,4 +102,4 @@ One toolchain, many targets. A CI pipeline can fan out across a build matrix and
 - **Pipelines & artifacts** — staged, versioned-in-code automation that produces stored, deployable, rollback-able artifacts.
 - **Reproducible & cross-compiled** — identical outputs from identical inputs, and one toolchain emitting binaries for many platforms.
 
-Next up: the work that outlasts the build — [documentation, tech debt & maintenance](/learn/intro-software-dev/docs-and-maintenance/).
+Next up: where all this software keeps what it remembers — [storing data: files & databases](/learn/intro-software-dev/databases-and-persistence/).

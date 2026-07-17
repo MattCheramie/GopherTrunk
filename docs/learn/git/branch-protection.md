@@ -163,4 +163,4 @@ or malicious — can quietly compromise it. (Unsure about "force-push," "status 
   [Actions](/learn/git/github-actions/), this makes the reviewed, tested path the only
   way into `main`.
 
-Next up: rewriting history precisely with [interactive rebase](/learn/git/interactive-rebase/).
+Next up: three power features that round out the GitHub toolkit — [the CLI, Git LFS & repo security](/learn/git/cli-lfs-and-security/).

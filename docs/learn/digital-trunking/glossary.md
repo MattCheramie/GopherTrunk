@@ -237,6 +237,18 @@ before granting it service, separate from encrypting the traffic itself. See
 temporarily (stun) or permanently (kill), used when a unit is lost or stolen. See
 [Encryption & authentication](/learn/digital-trunking/encryption-and-authentication/)
 
+**OTAR (over-the-air rekeying)** — Distributing and updating encryption keys to
+radios remotely over the air, instead of touching each one with a keyloader. See
+[OTAR & key management](/learn/digital-trunking/otar-key-management/)
+
+**Key ID (KID)** — A number sent in the clear that tells radios which key a
+transmission used, without revealing the key itself. See
+[OTAR & key management](/learn/digital-trunking/otar-key-management/)
+
+**Algorithm ID (ALGID)** — A code identifying which cipher (or clear) a transmission
+uses; visible to a monitor even when the audio is not. See
+[OTAR & key management](/learn/digital-trunking/otar-key-management/)
+
 ## P25 (Project 25)
 
 **P25 (Project 25)** — A North American suite of standards for public-safety digital
