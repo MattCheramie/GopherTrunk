@@ -134,4 +134,4 @@ Read down the columns and the scale of the difference is clear: a server can hav
 - **I/O connects to the world** — networking, USB, displays, and GPIO are how a computer senses and acts, and often the deciding factor in fit.
 - **Same parts, different scale** — a server and a microcontroller share all four blocks, separated by a factor of millions.
 
-Next up: with the parts named, we can lay every platform out on one map, ordered by power, cost, and control. See [The hardware spectrum — cloud to microcontroller](/learn/intro-hardware/hardware-spectrum/).
+Next up: those four blocks assume a general-purpose CPU — but some jobs reach for [GPUs, FPGAs & accelerators](/learn/intro-hardware/specialized-compute/) instead.

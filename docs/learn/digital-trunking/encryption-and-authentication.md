@@ -145,5 +145,6 @@ rather than leaving you to wonder why a strong, well-locked signal produces no v
   **stun/kill**.
 - GopherTrunk shows an **encrypted indicator** but does **not** break encryption.
 
-That completes how trunking works. The next module turns to the protocols themselves,
-starting with [P25 Phase 1](p25-phase-1/) — the workhorse of North-American public safety.
+Encryption raises an obvious question: how do all those radios get — and change — their
+keys without a technician touching each one? Next up: [OTAR & key
+management](/learn/digital-trunking/otar-key-management/).

@@ -75,6 +75,12 @@ paths:
             minutes: 10
             level: beginner
             status: full
+          - slug: noise-and-snr
+            title: Noise, SNR & sensitivity
+            summary: The noise floor, signal-to-noise ratio, and receiver sensitivity — why SNR, not raw signal strength, decides whether a signal decodes.
+            minutes: 9
+            level: intermediate
+            status: full
           - slug: antennas
             title: Antennas 101
             summary: Resonance, polarization, gain, SWR, and the connectors that join your antenna to your SDR.
@@ -150,6 +156,12 @@ paths:
             summary: Set gain too low and you lose weak signals; too high and you drown in distortion. Finding the sweet spot.
             minutes: 8
             level: intermediate
+            status: full
+          - slug: front-end-and-overload
+            title: Front-end filters, LNAs & overload
+            summary: Preselector filters, low-noise amplifiers, and how out-of-band signals overload the front end — the intermod and reciprocal-mixing traps behind a noisy decode.
+            minutes: 10
+            level: advanced
             status: full
           - slug: sdr-hardware
             title: SDR hardware — RTL-SDR, HackRF, Airspy
@@ -453,6 +465,12 @@ paths:
             minutes: 8
             level: advanced
             status: full
+          - slug: cli-lfs-and-security
+            title: The GitHub CLI, Git LFS & repo security
+            summary: Three power features worth knowing — the gh command-line tool, Git LFS for large files, and GitHub's security features (Dependabot, secret scanning, advisories).
+            minutes: 9
+            level: intermediate
+            status: full
 
       - id: advanced-git
         label: "Module 6 — Advanced Git & Best Practices"
@@ -624,6 +642,12 @@ paths:
             minutes: 9
             level: intermediate
             status: full
+          - slug: data-structures-algorithms
+            title: Data structures & algorithms, briefly
+            summary: The handful of data structures every developer leans on, how to pick the right one, and what Big-O notation actually tells you about speed.
+            minutes: 10
+            level: intermediate
+            status: full
 
       - id: patterns
         label: "Module 4 — Software Design Patterns"
@@ -692,6 +716,18 @@ paths:
             title: Build systems, CI/CD & automation
             summary: Turning source into a shippable artifact automatically — and catching problems the moment they're introduced.
             minutes: 9
+            level: intermediate
+            status: full
+          - slug: databases-and-persistence
+            title: Storing data — files & databases
+            summary: How programs remember things after they exit — files, relational vs. NoSQL databases, and how to choose where your data should live.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: apis-and-integration
+            title: APIs & talking to other software
+            summary: How programs talk to each other — APIs, HTTP and REST, and the integration glue that connects your software to the rest of the world.
+            minutes: 10
             level: intermediate
             status: full
           - slug: docs-and-maintenance
@@ -936,6 +972,18 @@ paths:
             minutes: 8
             level: intermediate
             status: full
+          - slug: otar-key-management
+            title: OTAR & key management
+            summary: How encrypted systems distribute and rotate keys over the air — key IDs, OTAR, and what a scanner can and can't see when the keys change.
+            minutes: 8
+            level: advanced
+            status: full
+          - slug: data-services
+            title: Data services — GPS, text & registration
+            summary: Trunked systems carry more than voice — location updates, short data, and registration traffic riding the control and data channels.
+            minutes: 8
+            level: intermediate
+            status: full
 
       - id: p25-dmr
         label: "Module 4 — P25 & DMR: The Dominant Systems"
@@ -1073,6 +1121,12 @@ paths:
             summary: The four building blocks inside every computer, from a data center to a microcontroller, and how their size and speed define what a device can do.
             minutes: 9
             level: beginner
+            status: full
+          - slug: specialized-compute
+            title: Beyond the CPU — GPUs, FPGAs & accelerators
+            summary: When a general-purpose CPU isn't the right tool — graphics cards, FPGAs, DSPs, and AI accelerators, what each is for, and where SDR and DSP work lean on them.
+            minutes: 9
+            level: intermediate
             status: full
           - slug: hardware-spectrum
             title: The hardware spectrum — cloud to microcontroller
@@ -1383,6 +1437,12 @@ paths:
             title: Agentic & command-line tools
             summary: Tools that read your repo, run commands, and edit files on their own — what an agent can do, and the guardrails you need before you let it.
             minutes: 10
+            level: intermediate
+            status: full
+          - slug: local-and-open-models
+            title: Running local & open models
+            summary: Open-weight models on your own hardware — Ollama, llama.cpp, and GPU limits — when running a model locally makes sense for coding and when it doesn't.
+            minutes: 9
             level: intermediate
             status: full
           - slug: app-vs-ide-vs-both

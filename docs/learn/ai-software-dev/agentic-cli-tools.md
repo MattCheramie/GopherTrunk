@@ -134,4 +134,4 @@ And reach for something lighter when the task is small: a quick question goes to
 - **Guardrails are mandatory** — permission prompts, sandboxing, and version control turn that power into something safe to use.
 - **Always review the diff** — the agent's output is unverified until you read it, just like a colleague's pull request.
 
-Next up: now that you've met the app, the editor, and the agent, how do you decide which to use — and is it really one or the other? See [App, IDE, agent — or all three?](/learn/ai-software-dev/app-vs-ide-vs-both/).
+Next up: each of those reaches a model running on someone else's servers — or you can run one on your own hardware. See [running local & open models](/learn/ai-software-dev/local-and-open-models/).

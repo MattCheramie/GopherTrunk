@@ -150,4 +150,5 @@ weak — clearing the overload often helps more than the lost gain costs.
 - **Manual gain** is usually best for a fixed decoding setup; AGC can pump.
 - Routine: raise until SNR plateaus, check for clipping, back off for headroom.
 
-Next: choosing the hardware that all of this runs on.
+Next up: the front-end hardware that decides what even reaches the ADC —
+[filters, LNAs & overload](/learn/rf-sdr/front-end-and-overload/).

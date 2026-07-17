@@ -120,4 +120,4 @@ This robustness is exactly what makes streaming pipelines viable — see how the
 - **Idempotency** — make retry-able operations safe to run more than once.
 - **Resilience in practice** — a radio decoder must tolerate noise, drops, and malformed frames without crashing.
 
-Next up: Module 4 begins by asking what design patterns even are — [what are patterns](/learn/intro-software-dev/what-are-patterns/).
+Next up: one more piece of everyday craft before we get to patterns — [data structures & algorithms, briefly](/learn/intro-software-dev/data-structures-algorithms/).

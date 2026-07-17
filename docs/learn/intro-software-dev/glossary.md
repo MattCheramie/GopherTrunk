@@ -217,6 +217,18 @@ This is a plain-language reference for the key terms used across the Intro to So
 
 **Idempotency** — A property where doing an operation more than once has the same effect as doing it once, which makes retries safe. See [Robustness and errors](/learn/intro-software-dev/robustness-and-errors/)
 
+## Data structures & algorithms
+
+**Data structure** — A way of organizing data in memory so the operations you need are cheap; the right choice makes code simpler and faster. See [Data structures & algorithms, briefly](/learn/intro-software-dev/data-structures-algorithms/)
+
+**Algorithm** — A step-by-step recipe for solving a problem, such as searching or sorting a collection. See [Data structures & algorithms, briefly](/learn/intro-software-dev/data-structures-algorithms/)
+
+**Big-O notation** — A shorthand for how an algorithm's work grows with input size — O(1), O(n), O(n log n), O(n²) — used to compare approaches at scale. See [Data structures & algorithms, briefly](/learn/intro-software-dev/data-structures-algorithms/)
+
+**Hash map (hash table)** — A structure that stores key→value pairs for near-instant (O(1)) lookup by key. See [Data structures & algorithms, briefly](/learn/intro-software-dev/data-structures-algorithms/)
+
+**Ring buffer** — A fixed-size circular buffer that overwrites its oldest data, ideal for streaming a continuous flow of samples. See [Data structures & algorithms, briefly](/learn/intro-software-dev/data-structures-algorithms/)
+
 ## Design patterns
 
 **Design pattern** — A reusable, named solution to a problem that recurs in software design. See [What are design patterns?](/learn/intro-software-dev/what-are-patterns/)
@@ -342,6 +354,20 @@ This is a plain-language reference for the key terms used across the Intro to So
 **Deprecation** — Marking a feature as outdated and discouraged, signalling it will be removed so users can move off it. See [Documentation and maintenance](/learn/intro-software-dev/docs-and-maintenance/)
 
 **Bus factor** — The number of people who would have to be lost before a project stalls; a bus factor of one is a warning sign. See [Documentation and maintenance](/learn/intro-software-dev/docs-and-maintenance/)
+
+## Data, storage & APIs
+
+**Persistence** — Keeping data so it survives a program exiting or the power cycling, by writing it to a file or database. See [Storing data — files & databases](/learn/intro-software-dev/databases-and-persistence/)
+
+**Database** — An organized store designed for querying and updating data reliably, from a single-file embedded engine to a networked server. See [Storing data — files & databases](/learn/intro-software-dev/databases-and-persistence/)
+
+**SQL vs NoSQL** — SQL databases store structured rows in related tables with strong guarantees; NoSQL stores (key-value, document, time-series) trade some guarantees for flexibility. See [Storing data — files & databases](/learn/intro-software-dev/databases-and-persistence/)
+
+**SQLite** — A self-contained database that lives in a single file with no server, the common choice for desktop and embedded apps. See [Storing data — files & databases](/learn/intro-software-dev/databases-and-persistence/)
+
+**API (application programming interface)** — A defined contract that lets one piece of software use another without knowing its internals. See [APIs & talking to other software](/learn/intro-software-dev/apis-and-integration/)
+
+**REST / HTTP / JSON** — The common style and formats of web APIs: resources addressed by URL, HTTP methods as verbs, and JSON as the data format. See [APIs & talking to other software](/learn/intro-software-dev/apis-and-integration/)
 
 ## Choosing a language
 

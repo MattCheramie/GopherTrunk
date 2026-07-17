@@ -75,7 +75,14 @@ noise, in dBm. A signal must rise above it to be usable. See
 receiver. See [Decibels & signal power](/learn/rf-sdr/decibels/)
 
 **SNR (signal-to-noise ratio)** — The gap in dB between a signal and the noise floor.
-Digital modes need a minimum SNR to decode. See [Decibels & signal power](/learn/rf-sdr/decibels/)
+Digital modes need a minimum SNR to decode — it, not raw signal strength, decides a
+lock. See [Noise, SNR & sensitivity](/learn/rf-sdr/noise-and-snr/)
+
+**Noise figure (NF)** — How much noise a receiver stage adds of its own; the first
+amplifier's NF dominates the whole chain. See [Noise, SNR & sensitivity](/learn/rf-sdr/noise-and-snr/)
+
+**Sensitivity / MDS** — The weakest signal a receiver can usefully detect — its
+minimum discernible signal. See [Noise, SNR & sensitivity](/learn/rf-sdr/noise-and-snr/)
 
 ## Signals & modulation
 
@@ -140,6 +147,22 @@ aligns the radio to true frequency. See [Calibration & troubleshooting](/learn/r
 **RTL-SDR / HackRF / Airspy** — Common SDR hardware. RTL-SDR is the cheap entry
 point; HackRF and Airspy add bandwidth, sensitivity, or transmit. See
 [SDR hardware](/learn/rf-sdr/sdr-hardware/) and the [Hardware guide](/hardware.html)
+
+**LNA (low-noise amplifier)** — An amplifier that boosts weak signals while adding
+very little noise of its own; placed early to set a good noise figure. See
+[Front-end filters, LNAs & overload](/learn/rf-sdr/front-end-and-overload/)
+
+**Preselector / bandpass filter** — A filter that passes your band of interest and
+rejects strong out-of-band signals before they can overload the receiver. See
+[Front-end filters, LNAs & overload](/learn/rf-sdr/front-end-and-overload/)
+
+**Intermodulation (IMD)** — False "ghost" signals created when strong signals mix in
+an overloaded, non-linear front end. See
+[Front-end filters, LNAs & overload](/learn/rf-sdr/front-end-and-overload/)
+
+**Reciprocal mixing** — Noise smeared onto a weak channel when a strong nearby signal
+mixes with an oscillator's phase noise; the carrier looks clean but the demod is
+degraded. See [Front-end filters, LNAs & overload](/learn/rf-sdr/front-end-and-overload/)
 
 ## DSP
 
