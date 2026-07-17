@@ -7,6 +7,20 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **DC-spike-avoidance LO offset (`dc_avoid`) now defaults on for zero-IF
+  RTL-SDR control tuners.** The R820T2/R860 front end runs the control channel
+  at zero-IF, where the DC spur, 1/f noise and the channel's own I/Q image
+  corrupt C4FM enough to fail TSBK CRCs while the channel still locks — the
+  root cause of issue #402, and why SDRTrunk/OP25 offset the LO by default.
+  `dc_avoid` is now a tri-state: leaving the key **unset** auto-enables the
+  offset on an `rtlsdr` / `rtltcp` control device and leaves it off for other
+  drivers (pre-#402 behaviour preserved), an explicit `true` forces it on for
+  any driver (e.g. an Airspy that also benefits), and an explicit `false`
+  forces it off. The offset is still skipped when the delivered sample rate has
+  no room above the channel rate. No config change is needed to pick this up on
+  an RTL-SDR (issue #402).
+
 ### Fixed
 - **Completed-call webhook now carries the source RID on nearly every call,
   not just the ~18% whose voice-side `call.source` decoded.** The per-call

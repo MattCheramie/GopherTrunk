@@ -1175,9 +1175,17 @@ type DeviceConfig struct {
 	// the down-converter, off the front-end DC spur, 1/f noise and the
 	// channel's own I/Q-imbalance image (all of which corrupt a C4FM channel
 	// sitting at zero-IF on an RTL-SDR). This is the same offset tuning
-	// SDRTrunk/OP25 apply. Off by default; enable per control device and
-	// confirm the tsbk-crc/nid-bch rates drop while the channel stays locked.
-	DCAvoid bool `yaml:"dc_avoid"`
+	// SDRTrunk/OP25 apply.
+	//
+	// Tri-state pointer so "unset" is distinct from an explicit false: nil
+	// (the default, when the key is absent) AUTO-enables the offset on a
+	// zero-IF RTL-SDR control device — the R820T2/R860 front end that #402 was
+	// filed against — and leaves it off for other drivers; an explicit true
+	// forces it on for any control device (e.g. an Airspy that also benefits);
+	// an explicit false forces it off. The offset is still skipped when the
+	// delivered rate has no room above the channel rate. Applies to the
+	// control role only.
+	DCAvoid *bool `yaml:"dc_avoid,omitempty"`
 
 	// DCAvoidOffsetHz pins the LO offset in Hz used when DCAvoid is set.
 	// 0 (the default) auto-selects sample_rate/4. Must be < sample_rate/2;

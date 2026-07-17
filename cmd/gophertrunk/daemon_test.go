@@ -99,6 +99,62 @@ func TestControlLOOffsetHz(t *testing.T) {
 	}
 }
 
+// TestResolveControlDCAvoid pins the issue #402 default: an unset dc_avoid
+// auto-enables DC-spike-avoidance LO offset on a zero-IF RTL-SDR control front
+// end (USB or networked) and leaves it off for other drivers, while an explicit
+// setting always wins. Literal driver strings pin the canonical names the
+// backends register under.
+func TestResolveControlDCAvoid(t *testing.T) {
+	tru, fal := true, false
+	cases := []struct {
+		name     string
+		explicit *bool
+		driver   string
+		want     bool
+	}{
+		{"unset_rtlsdr_auto_on", nil, "rtlsdr", true},
+		{"unset_rtltcp_auto_on", nil, "rtltcp", true},
+		{"unset_airspy_off", nil, "airspy", false},
+		{"unset_hackrf_off", nil, "hackrf", false},
+		{"unset_mock_off", nil, "mock", false},
+		{"explicit_true_airspy_on", &tru, "airspy", true},
+		{"explicit_false_rtlsdr_off", &fal, "rtlsdr", false},
+		{"explicit_true_rtlsdr_on", &tru, "rtlsdr", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := resolveControlDCAvoid(c.explicit, c.driver); got != c.want {
+				t.Errorf("resolveControlDCAvoid(%v, %q) = %v, want %v",
+					c.explicit, c.driver, got, c.want)
+			}
+		})
+	}
+}
+
+// TestControlDCAvoidDefaultEndToEnd ties the resolution to the offset
+// computation: an unset dc_avoid on an RTL-SDR control device at a normal
+// wideband rate yields the auto rate/4 offset (the #402 fix, now on by
+// default), while the same config on an Airspy stays at zero (pre-#402
+// behaviour preserved for drivers the issue was not filed against).
+func TestControlDCAvoidDefaultEndToEnd(t *testing.T) {
+	const rate = 2_048_000
+	const c4fm = 48_000.0
+
+	rtlOffset := controlLOOffsetHz(rate, c4fm, resolveControlDCAvoid(nil, "rtlsdr"), 0)
+	if rtlOffset != rate/4 {
+		t.Errorf("unset dc_avoid on rtlsdr: offset = %v, want %v", rtlOffset, rate/4)
+	}
+	airspyOffset := controlLOOffsetHz(rate, c4fm, resolveControlDCAvoid(nil, "airspy"), 0)
+	if airspyOffset != 0 {
+		t.Errorf("unset dc_avoid on airspy: offset = %v, want 0", airspyOffset)
+	}
+	// An operator can still force the offset off on an RTL.
+	off := false
+	if got := controlLOOffsetHz(rate, c4fm, resolveControlDCAvoid(&off, "rtlsdr"), 0); got != 0 {
+		t.Errorf("explicit dc_avoid=false on rtlsdr: offset = %v, want 0", got)
+	}
+}
+
 func TestMinControlDDCTarget(t *testing.T) {
 	// No systems → default C4FM 48 kHz.
 	if got := minControlDDCTarget(nil); got != 48_000 {

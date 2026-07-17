@@ -51,6 +51,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/ka9qradio"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/purego"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/soapyremote"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/wbvoice"
@@ -291,6 +292,30 @@ func controlLOOffsetHz(effectiveRate uint32, minDDCTarget float64, dcAvoid bool,
 		return 0 // override exceeds Nyquist — reject (caller warns)
 	}
 	return float64(effectiveRate) / 4
+}
+
+// isZeroIFRTLDriver reports whether driver is one of the RTL-SDR backends
+// whose R820T2 / R860 tuner runs zero-IF — the front end issue #402 was filed
+// against, where the control channel sits on the DC spur and its own I/Q
+// image. Both the USB (rtlsdr) and networked (rtltcp) backends drive the same
+// silicon. Airspy / HackRF / SDRplay and file/mock sources are not covered.
+func isZeroIFRTLDriver(driver string) bool {
+	return driver == purego.DriverName || driver == rtltcp.DriverName
+}
+
+// resolveControlDCAvoid decides whether DC-spike-avoidance LO offset applies to
+// a control SDR (issue #402) from the operator's tri-state dc_avoid setting and
+// the device's driver. An explicit setting always wins; when unset (nil), the
+// offset auto-enables on a zero-IF RTL-SDR — the front end #402 was filed
+// against, and what SDRTrunk/OP25 offset by default — and stays off for other
+// drivers, preserving pre-#402 behaviour there. controlLOOffsetHz still gates
+// on the delivered rate having room, so a non-RTL default-off device and a
+// no-room RTL both end up at a zero offset.
+func resolveControlDCAvoid(explicit *bool, driver string) bool {
+	if explicit != nil {
+		return *explicit
+	}
+	return isZeroIFRTLDriver(driver)
 }
 
 // offsetTuner wraps a control Tuner so the physical LO lands offsetHz below
@@ -1560,17 +1585,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				// opt-in for this control SDR (matched by serial).
 				iqCorrect := false
 				iqInvert := false
-				dcAvoid := false
+				var dcAvoidCfg *bool
 				dcAvoidOffsetHz := 0
 				for _, dev := range cfg.SDR.Devices {
 					if dev.Serial == controlEntry.Info.Serial {
 						iqCorrect = dev.IQCorrect
 						iqInvert = dev.IQInvert
-						dcAvoid = dev.DCAvoid
+						dcAvoidCfg = dev.DCAvoid
 						dcAvoidOffsetHz = dev.DCAvoidOffsetHz
 						break
 					}
 				}
+				// Resolve the tri-state dc_avoid: an explicit setting wins;
+				// unset auto-enables on a zero-IF RTL-SDR control front end
+				// (the #402 hardware) and stays off elsewhere.
+				dcAvoid := resolveControlDCAvoid(dcAvoidCfg, controlEntry.Info.Driver)
+				dcAvoidAuto := dcAvoidCfg == nil && dcAvoid
 				// Build the down-converter from the rate the hardware
 				// actually delivers, not the requested one (issue #402).
 				effectiveRate := effectiveStreamRate(log, controlEntry.Device, controlEntry.Info.Serial, cfg.SDR.SampleRate)
@@ -1580,7 +1610,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				// two MUST match. Zero when disabled / no room.
 				loOffsetHz := controlLOOffsetHz(effectiveRate, minControlDDCTarget(d.systems), dcAvoid, dcAvoidOffsetHz)
 				d.controlLOOffsetHz = loOffsetHz
-				if dcAvoid && loOffsetHz == 0 {
+				if dcAvoid && loOffsetHz == 0 && !dcAvoidAuto {
+					// Operator opted in explicitly but the rate has no room —
+					// warn so they know their setting had no effect. When the
+					// offset was only auto-selected (RTL default), staying at
+					// zero is expected, so we skip the warning and just don't
+					// apply it (pre-#402 behaviour).
 					log.Warn("daemon: dc_avoid enabled but no LO offset applied — sample rate has no room above the channel rate, or the explicit dc_avoid_offset_hz exceeds Nyquist (issue #402)",
 						"serial", controlEntry.Info.Serial,
 						"effective_rate_hz", effectiveRate,
@@ -1588,7 +1623,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				} else if loOffsetHz != 0 {
 					log.Info("daemon: DC-spike-avoidance LO offset enabled on control SDR (issue #402)",
 						"serial", controlEntry.Info.Serial,
-						"lo_offset_hz", int(loOffsetHz))
+						"driver", controlEntry.Info.Driver,
+						"lo_offset_hz", int(loOffsetHz),
+						// auto = defaulted on for a zero-IF RTL front end
+						// because dc_avoid was unset; false = operator opted in.
+						"auto", dcAvoidAuto)
 				}
 
 				// Route the supervisor's retunes through the broker
