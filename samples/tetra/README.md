@@ -180,12 +180,29 @@ surfaced two findings.
    the committed 48 kHz `TETRA IQ.wav` and any SDR++ baseband WAV now
    feed the receiver at the right baud.
 
-Follow-up (not fixed here): the receiver's feed-forward carrier AFC
-leaves a residual offset on a noisy or resampled constellation — an
-external CFO correction lifted the slice's NTS hit count 129 → 173, and
-the AFC's data-blind 4·Δφ estimator misfires on noiseless resampled IQ.
-A decision-directed / finer carrier-tracking loop is worth a separate,
-independently-verifiable change.
+On the carrier AFC (`internal/radio/tetra/receiver/afc.go`): a follow-up
+investigation with controlled fixtures found it **sound**, not the
+weak link the residual originally looked like. Its per-block feed-forward
+4·Δφ estimator drives a constant offset to a **~1 Hz** residual on a
+clean signal and **~3 Hz at 6 dB SNR**, and still locks under linear
+drift (±1.5 kHz across the capture) and per-symbol phase noise
+(400 Hz-rms). The earlier "misfire on resampled IQ" was the DDC's short
+up-sampling prototype (images collapsing a dibit class), fixed above by
+`ddcUpMinTaps` — not the AFC. So the 15 Jul slice's ~700–900 Hz offset
+is well inside what the AFC removes, and its non-lock is the baked-in
+modulation degradation, consistent with #764 rather than a carrier bug.
+
+The AFC's one real boundary is its **±2250 Hz pull-in ceiling** — the
+4·Δφ estimator folds larger offsets into ±π/4 per symbol, so a control
+channel sitting more than ~2.25 kHz off centre after tuning does not
+lock (verified: a clean 3 kHz offset fails). That gross offset is
+nominally the tuner/DDC's job (`-tune-hz` / `-auto-tune` / `iq_invert`),
+so it is a documented design boundary, not a defect. Extending it would
+need a coarse frequency-acquisition stage ahead of the fine estimator
+computed on the pre-matched-filter signal (the matched RRC, centred at
+0 Hz, biases any coarse estimate taken after it toward 0) — a
+self-contained enhancement worth its own change, but one that would not
+have altered the 15 Jul result.
 
 ## Recommended sources
 
