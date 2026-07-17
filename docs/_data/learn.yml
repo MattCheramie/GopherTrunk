@@ -979,6 +979,240 @@ paths:
       level: beginner
       status: full
 
+  - id: cybersecurity
+    label: "Cybersecurity Fundamentals"
+    title: "Cybersecurity Fundamentals — from threats and crypto to defending real systems"
+    tagline: "How attacks work and how to stop them — the CIA triad, cryptography, authentication, common attacks, hardening, secure coding, and the ethics of it all, including the RF-monitoring side a scanner like GopherTrunk lives in."
+    start_slug: what-is-cybersecurity
+    workload: "PT7H"
+    intro: >
+      Security isn't a bolt-on; it's a way of thinking about every system you
+      build or run. This path teaches that mindset from the ground up, entirely
+      from the defender's side. Start with the core goals — confidentiality,
+      integrity, availability — and the vocabulary of threats, vulnerabilities,
+      and risk, then build a working understanding of the cryptography that
+      underpins modern security. From there you'll cover identity and access,
+      the common attacks every developer should recognise (explained so you can
+      defend against them, not carry them out), and the layered defenses that
+      stop them — hardening systems, writing secure code, and protecting data. The
+      path closes with security in practice, including personal safety online and
+      the wireless-and-RF security world a scanner like GopherTrunk lives in,
+      where the law and ethics matter as much as the technology. No security
+      background required; the Linux and Networking paths pair well.
+    modules:
+      - id: foundations
+        label: "Module 1 — Security Foundations"
+        blurb: "The mindset and vocabulary of security: what it protects, the goals it aims for, how threats and risk are described, who attacks, and how a defender thinks."
+        lessons:
+          - slug: what-is-cybersecurity
+            title: What is cybersecurity?
+            summary: What security actually protects, why every system needs it, and the defender's job — the one idea everything else builds on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: cia-triad
+            title: The CIA triad
+            summary: Confidentiality, integrity, and availability — the three goals that define what "secure" even means.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: threats-vulnerabilities-risk
+            title: Threats, vulnerabilities & risk
+            summary: The words security people actually use — threat, vulnerability, exploit, risk, and attack surface — and how they fit together.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: threat-actors
+            title: Who attacks, and why
+            summary: From opportunists and criminals to insiders and nation-states — the actors, their motives, and what that means for your defenses.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: security-mindset
+            title: The security mindset
+            summary: Thinking like an attacker to defend like a pro — assume breach, least privilege, and defense in depth as habits, not slogans.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: crypto
+        label: "Module 2 — Cryptography Essentials"
+        blurb: "The math-free version of the cryptography that underpins everything secure: encryption, keys, hashing, signatures, and where each shows up in real life."
+        lessons:
+          - slug: what-is-cryptography
+            title: What is cryptography?
+            summary: Plaintext, ciphertext, and keys — what encryption does, what it doesn't, and why you never roll your own.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: symmetric-and-asymmetric
+            title: Symmetric & public-key encryption
+            summary: One shared secret versus a public/private key pair — the two families of encryption and what each is good for.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: hashing-and-integrity
+            title: Hashing & integrity
+            summary: One-way hashes, checksums, and how they detect tampering and store passwords safely — and why hashing isn't encryption.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: signatures-and-certificates
+            title: Digital signatures & certificates
+            summary: Proving who sent something and that it wasn't changed — signatures, public-key infrastructure, and the certificates behind HTTPS.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: crypto-in-practice
+            title: Cryptography in practice
+            summary: Where the theory shows up — TLS, SSH, disk and end-to-end encryption — and how the encryption on a radio system fits the same ideas.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: identity-access
+        label: "Module 3 — Identity, Authentication & Access"
+        blurb: "Proving who you are and controlling what you can do: authentication, passwords and MFA, authorization, managing secrets, and the human layer attackers love."
+        lessons:
+          - slug: authentication-basics
+            title: Authentication basics
+            summary: The three factors — something you know, have, and are — and how a system decides you are who you claim to be.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: passwords-and-mfa
+            title: Passwords, MFA & passkeys
+            summary: Why passwords fail, how they should be stored, and how multi-factor authentication and passkeys close the gap.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: authorization-and-access
+            title: Authorization & access control
+            summary: The difference between who you are and what you're allowed to do — least privilege, roles, and access models.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: secrets-management
+            title: Managing secrets & keys
+            summary: API keys, tokens, and passwords in software — keeping them out of code, rotating them, and using a secrets manager.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: social-engineering
+            title: Social engineering & the human layer
+            summary: Phishing, pretexting, and why the easiest way past strong technology is often a person — and how to defend against it.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: attacks-defenses
+        label: "Module 4 — Attacks & Defenses"
+        blurb: "The attacks every developer should recognise — explained so you can defend against them — and the layered defenses that stop them."
+        lessons:
+          - slug: common-attacks
+            title: Common attacks, in plain terms
+            summary: A field guide to the attacks you'll hear about — malware, phishing, credential attacks, and denial of service — and what each targets.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: web-application-attacks
+            title: Web application attacks
+            summary: How injection, cross-site scripting, and CSRF work at a high level, why they happen, and the coding habits that prevent them.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: network-attacks
+            title: Network attacks
+            summary: Interception, spoofing, and floods — the network-layer attacks from the networking path, seen through a defender's eyes.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: malware-and-endpoints
+            title: Malware & endpoint security
+            summary: Viruses, worms, ransomware, and trojans — how malware spreads, what it does, and how endpoints are defended.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: defense-in-depth
+            title: Defense in depth
+            summary: Why no single control is enough — layering prevention, detection, and response so one failure isn't a breach.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: securing
+        label: "Module 5 — Securing Systems & Software"
+        blurb: "Applying the defenses: hardening a machine, writing secure code, protecting networks and services, watching for trouble, and safeguarding data."
+        lessons:
+          - slug: hardening-systems
+            title: Hardening systems
+            summary: Shrinking the attack surface — least privilege, disabling what you don't need, patching, and the config that keeps a box safe.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: secure-coding
+            title: Secure coding
+            summary: The handful of habits that stop most software vulnerabilities — validate input, avoid injection, handle errors, and watch dependencies.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: securing-networks-and-services
+            title: Securing networks & services
+            summary: Putting network security to work — firewalls, encryption in transit, segmentation, and exposing a service without regret.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: monitoring-and-incident-response
+            title: Monitoring & incident response
+            summary: You can't stop everything, so you plan to notice and recover — logging, detection, a basic incident-response flow, and backups.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: privacy-and-data-protection
+            title: Privacy & data protection
+            summary: Security serves privacy — classifying data, minimizing what you collect, protecting personal information, and the rules around it.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: in-practice
+        label: "Module 6 — Security in Practice"
+        blurb: "Everything applied: a developer's security checklist, staying safe as an individual, the wireless-and-RF security world, and where to keep learning."
+        lessons:
+          - slug: security-for-developers
+            title: Security for developers
+            summary: A practical, repeatable checklist for building security into what you ship — a secure development lifecycle without the jargon.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: staying-safe-online
+            title: Staying safe online
+            summary: The personal security that actually matters — updates, a password manager, MFA, backups, and a healthy suspicion.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: rf-and-radio-security
+            title: Wireless & RF security
+            summary: Security on the airwaves — Wi-Fi and radio encryption, jamming and replay, what monitoring can and can't reveal, and the law and ethics that govern it.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: keep-learning-security
+            title: Where to go next
+            summary: Turning fundamentals into skill — CTFs, certifications, responsible disclosure, and how to keep up with a field that never sits still.
+            minutes: 8
+            level: beginner
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of cybersecurity terms
+      summary: Plain-language definitions for every term in the path — CIA triad, threat, vulnerability, encryption, hash, MFA, least privilege, phishing, injection, malware, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
   - id: intro-software-dev
     label: "Intro to Software Dev"
     title: "Intro to Software Development — from punch cards to your own solo stack"
