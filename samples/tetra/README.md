@@ -136,6 +136,57 @@ the carrier/timing loop). A **≥30 s** cleartext capture that includes
 several clean frame-18 SB slots is still what closes the lock + Viterbi
 histogram criteria.
 
+### What the 15 Jul capture set taught us (469.875 MHz, 2.5 MS/s)
+
+A third contribution — a `gophertrunk`-bundle downlink capture at
+469.875 MHz plus SDR++ side recordings — was replayed through the
+production pipeline. The set:
+
+- a bundle DDC slice (`.slice.wav`, 144 kHz IQ, 15 s),
+- an SDR++ **baseband** WAV (39062.5 Hz IQ = 2.5 MS/s ÷ 64, 90 s),
+- an SDR++ **audio** WAV (48 kHz mono — already FM/PSK-demodulated
+  audio, not IQ, so not decodable).
+
+None are committed (`samples/.gitignore` excludes `*.wav`), but they
+surfaced two findings.
+
+1. **The signal is modulation-degraded — it does not lock.** On the
+   144 kHz slice the receiver acquires stable symbol timing (17954 baud)
+   and correlates the normal training sequence on the correct 255-dibit
+   TDMA grid (NTS1 at Hamming distance 1, ~129 hits in 15 s), but the
+   demodulated dibit histogram is skewed (~37/18/17/28 % vs. the ideal
+   25/25/25/25), the constellation EVM is ≈22 %, and **every** SCH/HD
+   burst fails the §8.3.1 CRC-16. Over the full 90 s baseband capture
+   (1189 normal bursts, resampled to 144 kHz + CFO-corrected + spectrum
+   de-inverted) the chain recovers effectively **zero** genuine
+   CRC-valid frames — a single pass in 1189 is at the ~1.8 % random
+   CRC-16 collision rate. This is the same "the degradation is baked
+   into the captured samples" signature as issues #764/#771: no receiver
+   change recovers it, so **no `cc.locked` is claimed** and no
+   `.metadata.json` sidecar ships (the skip-gated realair test stays
+   dormant). A cleaner cleartext downlink is still what's needed.
+
+2. **It exposed a real low-rate-replay bug (now fixed).** The 39062.5 Hz
+   baseband WAV decoded at **+8.5 % baud (19531 vs. 18000)** with a
+   broken TDMA grid, because `ccdecoder.Downconverter` only *decimated*:
+   a pre-channelized capture below the 144 kHz TETRA target was passed
+   through un-resampled, and the receiver rounded the resulting
+   fractional 2.17 samples/symbol to 2. The down-converter now
+   **interpolates** a sub-target stream up to the per-protocol channel
+   rate so the receiver always gets its designed ~8 sps (see
+   `internal/scanner/ccdecoder/ddc.go`; regression tests
+   `TestDownconverterUpsample*` and `TestDDCUpsamplesSubTargetTETRAToLock`
+   in that package, plus `TestDaemonCCDecodesTETRAAt48kHz`). This is why
+   the committed 48 kHz `TETRA IQ.wav` and any SDR++ baseband WAV now
+   feed the receiver at the right baud.
+
+Follow-up (not fixed here): the receiver's feed-forward carrier AFC
+leaves a residual offset on a noisy or resampled constellation — an
+external CFO correction lifted the slice's NTS hit count 129 → 173, and
+the AFC's data-blind 4·Δφ estimator misfires on noiseless resampled IQ.
+A decision-directed / finer carrier-tracking loop is worth a separate,
+independently-verifiable change.
+
 ## Recommended sources
 
 - **telive / osmo-tetra** — produces both IQ recordings and a

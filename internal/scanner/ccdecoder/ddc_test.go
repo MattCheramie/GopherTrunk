@@ -139,6 +139,82 @@ func TestDownconverterIsolatesChannel(t *testing.T) {
 	}
 }
 
+// TestDownconverterUpsampleBuildsResampler: a pre-channelized capture
+// BELOW the target rate must be interpolated up to ~target, not passed
+// through — the regression guard for the low-rate-replay bug where a
+// 39062.5 Hz / 48000 Hz WAV reached the TETRA receiver at a fractional
+// samples-per-symbol and decoded at the wrong baud. Before the fix
+// NewDownconverter returned a nil resampler for in < target.
+func TestDownconverterUpsampleBuildsResampler(t *testing.T) {
+	const target = tetraDDCTargetRateHz // 144 kHz, 8 sps at 18000 baud
+
+	// 48 kHz → 144 kHz is an exact 3× interpolation.
+	d48 := NewDownconverter(48_000, target)
+	if d48.resampler == nil {
+		t.Errorf("48000 → %v: expected a resampler (was pass-through before fix)", target)
+	}
+	if math.Abs(d48.outRateHz-target) > 1e-6 {
+		t.Errorf("48000 → %v: outRateHz = %v, want %v exactly", target, d48.outRateHz, target)
+	}
+
+	// 39062.5 Hz (2.5 MS/s ÷ 64, the SDR++ baseband rate) does not
+	// reduce to small terms, so the ratio search snaps to within 1 %.
+	dbb := NewDownconverter(39_062.5, target)
+	if dbb.resampler == nil {
+		t.Fatalf("39062.5 → %v: expected a resampler (was pass-through before fix)", target)
+	}
+	if relErr := math.Abs(dbb.outRateHz-target) / target; relErr > ddcUpTolerance {
+		t.Errorf("39062.5 → %v: outRateHz = %v (rel err %.4f), want within %.2f%%",
+			target, dbb.outRateHz, relErr, ddcUpTolerance*100)
+	}
+	if sps := dbb.outRateHz / 18_000; sps < 7.5 || sps > 8.5 {
+		t.Errorf("39062.5 → %v: sps = %.3f, want ~8 (in [7.5, 8.5])", target, sps)
+	}
+}
+
+// TestDownconverterUpsampleRateAndLength: the interpolated output has
+// ~len(in)·L/M samples and reports the corresponding rate.
+func TestDownconverterUpsampleRateAndLength(t *testing.T) {
+	const target = tetraDDCTargetRateHz
+	d := NewDownconverter(48_000, target)
+	in := make([]complex64, 48_000) // 1 s at 48 kHz
+	out := d.Process(nil, in)
+	want := len(in) * 3 // exact 3× interpolation
+	if diff := len(out) - want; diff < -8 || diff > 8 {
+		t.Errorf("len(out) = %d, want %d ± 8", len(out), want)
+	}
+}
+
+// TestDownconverterUpsamplePreservesInbandTone: interpolation must not
+// attenuate an in-channel tone (gain restored) nor let a spectral image
+// leak into the band. Mirror of TestDownconverterIsolatesChannel for
+// the L>M path.
+func TestDownconverterUpsamplePreservesInbandTone(t *testing.T) {
+	const inRate, target = 48_000.0, tetraDDCTargetRateHz
+	const n = 48_000
+	// +5 kHz is well inside both the 48 kHz input band and the TETRA
+	// channel; it must survive interpolation at ~unity gain.
+	out := NewDownconverter(inRate, target).
+		Process(nil, complexTone(5_000, inRate, n, 1.0))
+	if got := rms(out[200:]); got < 0.7 || got > 1.3 {
+		t.Errorf("in-band tone after upsample: rms = %v, want ~1.0", got)
+	}
+}
+
+// TestDownconverterPassthroughPreserved: the fix must not disturb the
+// rate==target no-op path — only in < target changed.
+func TestDownconverterPassthroughPreserved(t *testing.T) {
+	for _, rate := range []float64{48_000, tetraDDCTargetRateHz} {
+		d := NewDownconverter(rate, rate)
+		if d.resampler != nil {
+			t.Errorf("rate==target %v: expected pass-through (nil resampler)", rate)
+		}
+		if d.outRateHz != rate {
+			t.Errorf("rate==target %v: outRateHz = %v, want %v", rate, d.outRateHz, rate)
+		}
+	}
+}
+
 // TestDownconverterReset: after Reset the decimation filter history
 // is cleared, so re-processing the same input reproduces the first
 // run bit-for-bit.

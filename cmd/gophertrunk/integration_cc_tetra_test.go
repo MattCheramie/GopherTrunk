@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
@@ -36,7 +37,6 @@ import (
 // the wire. This test exercises the chain end-to-end.
 func TestDaemonCCDecodesTETRA(t *testing.T) {
 	const (
-		controlFreqHz = 412_062_500
 		// TETRA symbol rate is 18000. Pick 72000 = 4 × 18000 so
 		// the receiver's float sps computation rounds to an exact
 		// integer (4) with no drift.
@@ -44,16 +44,61 @@ func TestDaemonCCDecodesTETRA(t *testing.T) {
 		sps        = 4
 		span       = 8
 		alpha      = 0.35
-		colourCode = uint32(0x12345)
-		// LocationArea is what nxdn / dpmr / edacs / motorola got
-		// plumbed into LockedNAC; for TETRA we use LocationArea
-		// the same way. 0x42 = 66 is a small recognisable value.
-		locationArea uint16 = 0x42
-		burstRepeats        = 100
 	)
-
-	dibits := buildTETRASCHHDStream(burstRepeats, colourCode, locationArea)
+	dibits := buildTETRASCHHDStream(100, tetraCCColourCode, tetraCCLocationArea)
 	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/4)
+	assertDaemonTETRALocks(t, iq, sampleRate)
+}
+
+// TestDaemonCCDecodesTETRAAt48kHz is the sub-target sibling of
+// TestDaemonCCDecodesTETRA. It feeds the daemon a 48 kHz TETRA capture —
+// below the 144 kHz channel target, and at a fractional 2.667 sps that
+// the receiver cannot decode directly — and asserts the production
+// pipeline still locks because the Downconverter now interpolates the
+// stream up to the 144 kHz / 8-sps design point.
+//
+// 48000/18000 is not an integer, so the fixture cannot be modulated at
+// 48 kHz directly; it is modulated at 144 kHz (8 sps) and downsampled
+// 3:1 to a genuine 48 kHz capture, exactly the rate an SDR++ baseband
+// recording or the samples/tetra reference WAV lands at.
+//
+// Before the DDC up-sample fix the daemon passed the 48 kHz stream
+// through untouched, the receiver rounded 2.667 → 3 sps and decoded at
+// 16000 baud, and no lock ever fired. This test fails without the fix.
+func TestDaemonCCDecodesTETRAAt48kHz(t *testing.T) {
+	const (
+		span  = 8
+		alpha = 0.35
+	)
+	dibits := buildTETRASCHHDStream(160, tetraCCColourCode, tetraCCLocationArea)
+	iq144 := demod.ModulatePiOver4DQPSK(dibits, 8, span, alpha, math.Pi/4)
+	// Downsample 144 kHz → 48 kHz with a sharp anti-alias prototype so
+	// the capture is clean; the daemon's DDC does the inverse 3:1
+	// interpolation back to 144 kHz.
+	iq48 := dsp.NewResampler(1, 3, 64, 8.6).Process(nil, iq144)
+	assertDaemonTETRALocks(t, iq48, 48_000)
+}
+
+const (
+	tetraCCControlFreqHz = 412_062_500
+	tetraCCColourCode    = uint32(0x12345)
+	// LocationArea is what nxdn / dpmr / edacs / motorola got plumbed
+	// into LockedNAC; for TETRA we use LocationArea the same way.
+	// 0x42 = 66 is a small recognisable value.
+	tetraCCLocationArea uint16 = 0x42
+)
+
+// assertDaemonTETRALocks boots the daemon with a mock SDR replaying the
+// given TETRA IQ at sampleRate and asserts the production
+// newTETRAPipeline + config + supervisor + API + metrics chain recovers
+// the lock carrying tetraCCLocationArea.
+func assertDaemonTETRALocks(t *testing.T, iq []complex64, sampleRate float64) {
+	t.Helper()
+	const (
+		controlFreqHz = tetraCCControlFreqHz
+		colourCode    = tetraCCColourCode
+		locationArea  = tetraCCLocationArea
+	)
 
 	dir := t.TempDir()
 	iqPath := filepath.Join(dir, "tetra-cc.cfile")
