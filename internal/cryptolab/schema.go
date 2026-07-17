@@ -18,10 +18,68 @@ type Param struct {
 
 // ModeSchema is the web-facing description of one tool/mode and its inputs.
 type ModeSchema struct {
-	Tool     string  `json:"tool"`
-	Mode     string  `json:"mode"`
+	Tool string `json:"tool"`
+	Mode string `json:"mode"`
+	// Category is the workflow stage the tool serves, so the web console can
+	// group modes by what the analyst is trying to DO (triage → attack →
+	// verify) instead of an alphabetical tool list. Derived from the tool via
+	// toolCategory; unmapped tools fall back to "Other".
+	Category string  `json:"category"`
 	Synopsis string  `json:"synopsis"`
 	Params   []Param `json:"params"`
+}
+
+// categoryOrder is the workflow order the console lists categories in — the
+// triage → analyze → attack → verify pipeline cryptolab is designed around
+// (see doc.go). Schema() sorts by this order so the frontend can group the
+// returned list in place.
+var categoryOrder = []string{
+	"Triage",             // what am I looking at?
+	"Statistical",        // characterize the structure
+	"Keystream & reuse",  // the operator-misuse attacks
+	"Classical ciphers",  // XOR / shift / substitution keyspace brute
+	"Voice descrambling", // analog spectral inversion
+	"Protocol subjects",  // NXDN / Motorola proprietary obfuscators
+	"Pipelines & CRC",    // recipe chaining + CRC parameter recovery
+	"Security test",      // the assess harness verdict
+}
+
+// toolCategory maps each registered tool to its workflow category. Modes under
+// a tool share its category. Keep in sync with the registered tools; an
+// unlisted tool is grouped under "Other" (and the schema stays valid — the
+// coverage test only requires params, not a category).
+var toolCategory = map[string]string{
+	"classify":   "Triage",
+	"stats":      "Statistical",
+	"randomness": "Statistical",
+	"ks":         "Keystream & reuse",
+	"lfsr":       "Keystream & reuse",
+	"brute":      "Classical ciphers",
+	"descramble": "Voice descrambling",
+	"nxdn":       "Protocol subjects",
+	"alias":      "Protocol subjects",
+	"recipe":     "Pipelines & CRC",
+	"crc":        "Pipelines & CRC",
+	"assess":     "Security test",
+}
+
+// categoryFor returns a tool's workflow category, defaulting to "Other".
+func categoryFor(tool string) string {
+	if c, ok := toolCategory[tool]; ok {
+		return c
+	}
+	return "Other"
+}
+
+// categoryRank returns a category's position in categoryOrder, sorting any
+// unlisted category ("Other") to the end.
+func categoryRank(cat string) int {
+	for i, c := range categoryOrder {
+		if c == cat {
+			return i
+		}
+	}
+	return len(categoryOrder)
 }
 
 // modeParams maps "tool/mode" to its input parameters. It is the single
@@ -159,8 +217,9 @@ var modeParams = map[string][]Param{
 }
 
 // Schema returns the web-facing description of every registered tool/mode,
-// sorted by tool then mode. It joins the live registry (so every registered
-// mode appears with its synopsis) with the parameter table above.
+// sorted by workflow category (the triage → attack → verify order), then tool,
+// then mode. It joins the live registry (so every registered mode appears with
+// its synopsis) with the parameter table above and the workflow category.
 func Schema() []ModeSchema {
 	var out []ModeSchema
 	for _, t := range Tools() {
@@ -169,12 +228,16 @@ func Schema() []ModeSchema {
 			out = append(out, ModeSchema{
 				Tool:     t.Name(),
 				Mode:     m.Name(),
+				Category: categoryFor(t.Name()),
 				Synopsis: m.Synopsis(),
 				Params:   modeParams[key],
 			})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if ri, rj := categoryRank(out[i].Category), categoryRank(out[j].Category); ri != rj {
+			return ri < rj
+		}
 		if out[i].Tool != out[j].Tool {
 			return out[i].Tool < out[j].Tool
 		}

@@ -13,6 +13,9 @@ export interface Param {
 export interface ModeSchema {
   tool: string;
   mode: string;
+  /** Workflow category the mode belongs to (triage → attack → verify), used to
+   *  group the tool list. Older servers omit it; treat missing as "Other". */
+  category?: string;
   synopsis: string;
   params: Param[] | null;
 }

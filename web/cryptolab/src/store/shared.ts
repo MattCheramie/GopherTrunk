@@ -45,9 +45,12 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const schema = await api.tools();
       set({ schema, loadingSchema: false });
-      // Auto-select the first tool/mode for a non-empty initial view.
+      // Land on the triage front door (`classify auto` — "what am I looking
+      // at?") when present, else the first mode, for a sensible initial view.
       if (!get().tool && schema.length > 0) {
-        get().select(schema[0].tool, schema[0].mode);
+        const front =
+          schema.find((s) => s.tool === "classify" && s.mode === "auto") ?? schema[0];
+        get().select(front.tool, front.mode);
       }
     } catch (e) {
       set({ loadingSchema: false, schemaError: String(e) });

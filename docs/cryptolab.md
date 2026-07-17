@@ -51,10 +51,13 @@ gophertrunk cryptolab serve -open  # serve at http://127.0.0.1:8096/ and open a 
 The console exposes **every** tool, mode, and setting: it renders a form from
 the backend's `GET /api/v1/cryptolab/tools` schema, so each parameter (file
 upload, text, number, checkbox) gets a control, and new tools appear
-automatically. A run uploads inputs, streams the live log, and shows the
-structured result — summary, fields, ranked findings, notes, and downloadable
-artifacts (survivor logs, checkpoints, descrambled output). It runs entirely
-offline against uploaded files; no SDR or daemon required.
+automatically. The tool list is grouped by **workflow stage** (triage → attack
+→ verify — see the Tools table below) with a search box, and the console lands
+on `classify auto` so the first thing offered is "what am I looking at?". A run
+uploads inputs, streams the live log, and shows the structured result — summary,
+fields, ranked findings, notes, and downloadable artifacts (survivor logs,
+checkpoints, descrambled output). It runs entirely offline against uploaded
+files; no SDR or daemon required.
 
 When the main `gophertrunk` daemon is built with `-tags cryptolab`, the same
 console is also mounted inside it at `/cryptolab/` (its API lives under
@@ -97,7 +100,16 @@ Global flags precede the tool name (`-out`, `-resume`, `-format`,
 | `recipe` | `run` | CyberChef-style pipeline: chain transform + analysis ops, piping bytes between steps |
 | `crc` | `recover`, `compute` | recover / compute CRC parameters from sample frames |
 | `descramble` | `invert`, `splitband`, `rolling` | analog spectral / split-band / rolling-code voice inversion |
-| `alias` | `gauge`, `structure`, `cells`, `fromseed` | length-seeded byte-obfuscator recovery |
+| `alias` | `gauge`, `structure`, `cells`, `fromseed`, `propagate`, `sweep` | length-seeded Motorola byte-obfuscator recovery (five passive-corpus modes + one chosen-plaintext) |
+| `nxdn` | `descramble`, `brute` | NXDN 15-bit scrambler: descramble with a known key, or brute-force the 2¹⁵ keyspace against a CRC / known-plaintext oracle |
+
+In the web console these tools are grouped by **workflow stage** — Triage
+(`classify`, `stats`, `randomness`), Keystream & reuse (`ks`, `lfsr`), Classical
+ciphers (`brute`), Voice descrambling (`descramble`), Protocol subjects (`nxdn`,
+`alias`), Pipelines & CRC (`recipe`, `crc`), and the `assess` Security test — so
+the tool list reads as the triage → attack → verify pipeline rather than an
+alphabetical index. The console lands on `classify auto` (the "what am I looking
+at?" front door) and has a search box over the tool list.
 
 ### Examples
 
@@ -201,10 +213,10 @@ styling, and upload flow).
 The toolkit's subject framework studies length-seeded, keyless, byte-oriented
 obfuscators where the output substitution table and per-character decode
 `char = int8(Modd·(LUT[eo] − Hodd))` are established but the per-character
-state update is not. The `alias` tool provides four incremental, logging,
-resumable recovery modes over a user-supplied ground-truth corpus
+state update is not. The `alias` tool provides six incremental, logging,
+resumable recovery modes — five over a passive-capture ground-truth corpus
 (`rid,talkgroup,encoded_hex,alias`; a trailing 2-byte CRC is stripped
-automatically):
+automatically), plus one over a chosen-plaintext corpus:
 
 - **`gauge`** — brute-force all 32,768 affine gauges, looking for a
   coordinate frame in which the odd high byte becomes a clean function of a
@@ -218,6 +230,16 @@ automatically):
   feed the high-byte recurrence.
 - **`fromseed`** — simulate candidate accumulator updates from the length
   seed, auto-solve the affine output gauge, and cull by high-byte mismatch.
+- **`propagate`** — harvest the explicit `(state, eo) → state` transition and
+  length seed from the corpus, propagate forward, and report decode coverage —
+  measuring whether a passive corpus can close the cipher.
+- **`sweep`** — the chosen-plaintext differential attack. Its `-csv` is the
+  *pure* cipher output with **no CRC** (`2·len(alias)` bytes, as a chosen-
+  plaintext encoder emits). It detects single-character sweeps, pins the
+  odd-position state by the affine fit `value = char·(L|1)+H`, determines the
+  update's fold input (value vs. char), confirms the `Hnext = H + g(value) +
+  branch` law, and reports the low-byte observability floor. See
+  `research/p25-talker-alias-cryptanalysis.md`.
 
 ### What the data supports
 

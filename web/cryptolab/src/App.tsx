@@ -9,6 +9,7 @@ import { ConsoleNav } from "./ConsoleNav";
 export function App() {
   const [page, setPage] = useState<"tools" | "recipe" | "bundle">("tools");
   const [bundleEnabled, setBundleEnabled] = useState(false);
+  const [query, setQuery] = useState("");
   const loadSchema = useStore((s) => s.loadSchema);
   const schema = useStore((s) => s.schema);
   const loadingSchema = useStore((s) => s.loadingSchema);
@@ -40,15 +41,31 @@ export function App() {
     };
   }, [loadSchema]);
 
-  const tools = useMemo(() => {
-    const m = new Map<string, { mode: string; synopsis: string }[]>();
+  // Group the (already category→tool→mode sorted) schema into workflow
+  // categories so the sidebar reflects the triage → attack → verify pipeline
+  // instead of an alphabetical tool list. A search box filters across
+  // tool / mode / synopsis / category.
+  const groups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const match = (s: (typeof schema)[number]) =>
+      !q ||
+      s.tool.toLowerCase().includes(q) ||
+      s.mode.toLowerCase().includes(q) ||
+      (s.synopsis ?? "").toLowerCase().includes(q) ||
+      (s.category ?? "").toLowerCase().includes(q);
+    const cats: { category: string; items: { tool: string; mode: string; synopsis: string }[] }[] = [];
     for (const s of schema) {
-      const arr = m.get(s.tool) ?? [];
-      arr.push({ mode: s.mode, synopsis: s.synopsis });
-      m.set(s.tool, arr);
+      if (!match(s)) continue;
+      const cat = s.category ?? "Other";
+      let c = cats.find((x) => x.category === cat);
+      if (!c) {
+        c = { category: cat, items: [] };
+        cats.push(c);
+      }
+      c.items.push({ tool: s.tool, mode: s.mode, synopsis: s.synopsis });
     }
-    return [...m.entries()];
-  }, [schema]);
+    return cats;
+  }, [schema, query]);
 
   const missingRequiredFile = (selected?.params ?? []).some(
     (p) => p.kind === "file" && p.required && !files[p.name],
@@ -99,30 +116,47 @@ export function App() {
         </main>
       ) : (
       <div className="flex min-h-0 flex-1">
-        <nav className="w-56 shrink-0 overflow-y-auto border-r border-line p-2">
-          {tools.length === 0 ? (
-            <p className="help p-2">{loadingSchema ? "Loading tools…" : "No tools."}</p>
-          ) : (
-            tools.map(([t, modes]) => (
-              <div key={t} className="mb-2">
-                <div className="px-2 py-1 text-xs uppercase tracking-wide text-muted">{t}</div>
-                {modes.map((m) => (
-                  <button
-                    key={m.mode}
-                    onClick={() => select(t, m.mode)}
-                    title={m.synopsis}
-                    className={`mb-0.5 block w-full truncate rounded px-2 py-1.5 text-left text-sm ${
-                      tool === t && mode === m.mode
-                        ? "bg-accent/20 text-fg"
-                        : "text-muted hover:bg-panel"
-                    }`}
-                  >
-                    {m.mode}
-                  </button>
-                ))}
-              </div>
-            ))
-          )}
+        <nav className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-line">
+          <div className="border-b border-line p-2">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search tools…"
+              aria-label="Search tools"
+              className="input w-full text-sm"
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {schema.length === 0 ? (
+              <p className="help p-2">{loadingSchema ? "Loading tools…" : "No tools."}</p>
+            ) : groups.length === 0 ? (
+              <p className="help p-2">No tools match “{query}”.</p>
+            ) : (
+              groups.map((g) => (
+                <div key={g.category} className="mb-3">
+                  <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-accent">
+                    {g.category}
+                  </div>
+                  {g.items.map((m) => (
+                    <button
+                      key={`${m.tool}/${m.mode}`}
+                      onClick={() => select(m.tool, m.mode)}
+                      title={m.synopsis}
+                      className={`mb-0.5 block w-full truncate rounded px-2 py-1.5 text-left text-sm ${
+                        tool === m.tool && mode === m.mode
+                          ? "bg-accent/20 text-fg"
+                          : "text-muted hover:bg-panel"
+                      }`}
+                    >
+                      <span className="text-muted">{m.tool}</span>
+                      <span className="text-fg"> {m.mode}</span>
+                    </button>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
         </nav>
 
         <main className="min-w-0 flex-1 space-y-4 overflow-y-auto p-4">
@@ -135,6 +169,11 @@ export function App() {
           {selected ? (
             <>
               <div>
+                {selected.category ? (
+                  <div className="text-xs font-semibold uppercase tracking-wide text-accent">
+                    {selected.category}
+                  </div>
+                ) : null}
                 <h2 className="text-lg font-semibold">
                   {selected.tool} <span className="text-muted">/ {selected.mode}</span>
                 </h2>
