@@ -1554,6 +1554,232 @@ paths:
       level: beginner
       status: full
 
+  - id: building-ai
+    label: "Building AI Into Software"
+    title: "Building AI Into Your Software — from your first API call to a feature you ship"
+    tagline: "Go from using AI tools to building AI-powered features into your own software — model APIs, prompts in code, structured output, tools, retrieval, agents, evaluation, and shipping responsibly."
+    start_slug: building-vs-using-ai
+    workload: "PT7H"
+    intro: >
+      The AI in Software Dev path taught you to *use* AI to write code. This one
+      teaches you to *build* AI into the software you ship — to call a model from
+      your own program and turn it into a feature. Start with what changes when a
+      language model becomes a component in your architecture, make your first API
+      call, and learn to treat the model as a powerful but unreliable dependency.
+      From there you'll write prompts as code, get reliable structured output, give
+      the model tools, ground it in your own data with retrieval (RAG), let it act
+      as an agent, and — crucially — evaluate, secure, and operate all of it in
+      production. Examples lean on real software, including AI features you might
+      add to a project like GopherTrunk. Pairs with the AI in Software Dev path; no
+      AI background beyond it required.
+    modules:
+      - id: foundations
+        label: "Module 1 — From Using AI to Building With It"
+        blurb: "The shift from chatting with AI to calling it from your own code: what an AI feature is, the model as a component, how the API works, your first call, and the cost it carries."
+        lessons:
+          - slug: building-vs-using-ai
+            title: What it means to build AI into software
+            summary: The jump from using an AI tool to shipping an AI feature — what changes when the model runs inside your program instead of a chat window.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: llm-as-a-component
+            title: The model as a probabilistic component
+            summary: Designing around a dependency that is powerful, non-deterministic, and occasionally wrong — the mindset shift everything else builds on.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: how-a-model-api-works
+            title: How a model API call works
+            summary: Messages, roles, tokens, and the request/response cycle — what actually goes over the wire when your code talks to a model.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: your-first-api-call
+            title: Your first API call
+            summary: API keys, SDKs, and a first request in code — the smallest end-to-end example of software calling a model.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: cost-latency-and-limits
+            title: Cost, latency & rate limits by design
+            summary: Every call costs tokens and time — why cost, latency, and rate limits are design constraints you plan for, not afterthoughts.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: prompting-in-code
+        label: "Module 2 — Prompting in Code"
+        blurb: "Turning prompts from throwaway chat messages into reliable, versioned parts of your program that produce output consistent enough to build on."
+        lessons:
+          - slug: prompts-as-code
+            title: Prompts as code — system prompts & templates
+            summary: Treating prompts as first-class, version-controlled artifacts — system vs. user roles, templating, and separating instructions from data.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: context-and-user-input
+            title: Feeding the model context & user input
+            summary: Assembling the right context safely — injecting your data and user input into a prompt without letting it hijack your instructions.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: few-shot-and-steering
+            title: Few-shot examples & steering output
+            summary: Showing the model what "good" looks like — examples, constraints, and the levers that make output consistent enough to rely on.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: parsing-and-validating-output
+            title: Getting usable output back
+            summary: The model returns text — parsing, validating, and retrying it so your program gets data it can actually trust.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: structured-tools-streaming
+        label: "Module 3 — Structured Output, Tools & Streaming"
+        blurb: "The features that turn a text generator into a programmable component: JSON output, tool and function calling, streaming, and multimodal inputs."
+        lessons:
+          - slug: structured-output
+            title: Structured output & JSON
+            summary: Getting the model to return machine-readable JSON that matches a schema — the key to wiring a model into the rest of your code.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: tool-use-and-function-calling
+            title: Tool use & function calling
+            summary: Letting the model call your functions — how tool use works, and how a model that can't do math or fetch live data suddenly can.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: streaming
+            title: Streaming responses
+            summary: Showing output token-by-token as it's generated — why streaming matters for user experience and how it changes your code.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: multimodal-inputs
+            title: Multimodal — images, audio & documents
+            summary: Models that read more than text — sending images, audio, and documents, and the feature ideas that opens up.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: rag
+        label: "Module 4 — Retrieval-Augmented Generation (RAG)"
+        blurb: "Grounding the model in your own data so it answers from your documents and facts instead of only its training — the most common way to build a genuinely useful AI feature."
+        lessons:
+          - slug: grounding-and-retrieval
+            title: Why retrieval — grounding the model in your data
+            summary: The model only knows its training data — retrieval feeds it your facts at query time, cutting hallucination and keeping answers current.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: embeddings-and-vector-search
+            title: Embeddings & vector search
+            summary: Turning text into vectors so you can search by meaning, not keywords — the engine underneath retrieval.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: building-a-rag-pipeline
+            title: Building a RAG pipeline
+            summary: The end-to-end shape — ingest, chunk, embed, store, retrieve, and augment the prompt — assembled into a working feature.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: chunking-and-retrieval-quality
+            title: Chunking & retrieval quality
+            summary: RAG lives or dies on retrieval — chunking, metadata, re-ranking, and how to tell when retrieval is the thing that's broken.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: rag-vs-long-context-vs-finetuning
+            title: RAG vs. long context vs. fine-tuning
+            summary: Three ways to give a model knowledge it didn't ship with — what each is for, what each costs, and how to choose.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: agents-eval-safety
+        label: "Module 5 — Agents, Evaluation & Safety"
+        blurb: "Letting the model act, then making sure it acts well: agent loops and tools, evaluating a probabilistic feature, handling failure, and defending against prompt injection."
+        lessons:
+          - slug: what-is-an-ai-agent
+            title: Agents — letting the model act in a loop
+            summary: From one-shot calls to a plan-act-observe loop — what an agent is, what it can do, and where the risk goes up.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: giving-agents-tools-and-mcp
+            title: Giving agents tools (and MCP)
+            summary: Tools are how an agent affects the world — designing safe tools and the Model Context Protocol (MCP) that standardizes them.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: evaluating-ai-features
+            title: Evaluating AI features
+            summary: You can't unit-test a probabilistic feature the old way — evals, test sets, LLM-as-judge, and measuring quality before and after a change.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: handling-hallucinations-and-failure
+            title: Handling hallucinations & failure
+            summary: The model will be confidently wrong, slow, or unavailable — grounding, guardrails, fallbacks, and failing safe when it does.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: prompt-injection-and-security
+            title: Prompt injection & data safety
+            summary: Untrusted text can hijack your prompt — prompt injection, data exfiltration, the "lethal trifecta", and how to design against them.
+            minutes: 11
+            level: advanced
+            status: full
+
+      - id: shipping
+        label: "Module 6 — Shipping & Operating AI Features"
+        blurb: "Everything applied: choose a model, control cost and latency, protect user data, watch it in production, and ship your first AI feature end to end."
+        lessons:
+          - slug: choosing-a-model-for-a-feature
+            title: Choosing a model for a feature
+            summary: Matching model to job — capability, context, speed, cost, and privacy — and why most products end up using more than one.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: optimizing-cost-and-latency
+            title: Optimizing cost & latency
+            summary: Prompt caching, smaller models, batching, and streaming — the practical levers that make an AI feature affordable and fast.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: privacy-data-and-compliance
+            title: Privacy, data & compliance
+            summary: Where prompts and user data go, what providers do with them, and the privacy, retention, and compliance questions to settle before you ship.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: observability-and-monitoring
+            title: Observability & monitoring
+            summary: You can't fix what you can't see — logging prompts and outputs, tracing, cost and latency metrics, and catching quality drift in production.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: shipping-your-first-ai-feature
+            title: Shipping your first AI feature
+            summary: Putting it all together — an end-to-end worked example that adds a real AI feature to a project like GopherTrunk, and how to keep improving it.
+            minutes: 10
+            level: intermediate
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of AI-engineering terms
+      summary: Plain-language definitions for every term in the path — API, token, system prompt, structured output, tool use, embedding, RAG, agent, MCP, eval, prompt injection, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
   - id: software-licensing
     label: "Software Licensing"
     title: "Software Licensing & Agreements — from open source to selling your own"
