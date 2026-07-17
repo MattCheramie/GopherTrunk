@@ -1037,6 +1037,129 @@ func TestEngineHandleCallSourceUpdateBackfillsActiveCall(t *testing.T) {
 	}
 }
 
+// TestEngineHandleGrantBackfillsSourceFromRepeatGrant covers issue #915:
+// the completed-call webhook was populating the source RID on only a small
+// fraction of calls because it read the RID off the grant that BOUND the
+// call, and a call frequently binds from a source-less grant (a P25 Phase 2
+// compressed grant, or a GRP_VCH_UPDATE repeat) while the initiating
+// GRP_VCH_GRANT's RID arrives on a subsequent repeat. The engine must fold a
+// later same-call grant's RID onto the bound call and republish it as a
+// KindCallSourceUpdate — the event the recorder consumes to patch the
+// completed-call (webhook) grant it builds from its own session.
+func TestEngineHandleGrantBackfillsSourceFromRepeatGrant(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	pool, _ := mkPool(1)
+	e, _ := NewEngine(EngineOptions{
+		Bus:         bus,
+		VoicePool:   pool,
+		Talkgroups:  NewTalkgroupDB(),
+		CallTimeout: 5 * time.Second,
+	})
+
+	// The grant that binds the call carries no source (compressed / update
+	// form): src=0.
+	g := Grant{System: "MMR", Protocol: "p25-phase2", GroupID: 20001, FrequencyHz: 422_612_500}
+	e.HandleGrant(g)
+	actives := e.ActiveCalls()
+	if len(actives) != 1 {
+		t.Fatalf("expected 1 active call, got %d", len(actives))
+	}
+	dev := actives[0].Device.Serial
+	if actives[0].Grant.SourceID != 0 {
+		t.Fatalf("pre-backfill source should be 0, got %d", actives[0].Grant.SourceID)
+	}
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// The control channel repeats the grant for the running call; this repeat
+	// carries the initiating GRP_VCH_GRANT's source RID.
+	gWithSrc := g
+	gWithSrc.SourceID = 202419 // @er-imagery's example MMR radio
+	e.HandleGrant(gWithSrc)
+
+	updated := e.ActiveCalls()
+	if len(updated) != 1 {
+		t.Fatalf("repeat grant must not bind a second call: got %d active", len(updated))
+	}
+	if updated[0].Device.Serial != dev {
+		t.Fatalf("repeat grant rebound device: got %q want %q", updated[0].Device.Serial, dev)
+	}
+	if updated[0].Grant.SourceID != 202419 {
+		t.Fatalf("source RID not backfilled onto bound call: got %d want 202419",
+			updated[0].Grant.SourceID)
+	}
+
+	// The backfill must republish a source-update event so the recorder patches
+	// the completed-call (webhook) grant and SSE/TUI patch their live view.
+	select {
+	case ev := <-sub.C:
+		if ev.Kind != events.KindCallSourceUpdate {
+			t.Fatalf("expected KindCallSourceUpdate republish, got %s", ev.Kind)
+		}
+		c, ok := ev.Payload.(CallSourceUpdate)
+		if !ok {
+			t.Fatalf("payload type = %T", ev.Payload)
+		}
+		if c.DeviceSerial != dev || c.System != "MMR" || c.Protocol != "p25-phase2" ||
+			c.GroupID != 20001 || c.SourceID != 202419 {
+			t.Errorf("enriched source-update payload = %+v", c)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("backfill did not republish a KindCallSourceUpdate")
+	}
+}
+
+// TestEngineHandleGrantSourceBackfillDoesNotClobberOrReflood guards the
+// two invariants of the #915 backfill: (1) a grant source never overwrites a
+// source already recovered in-call (call.source is more authoritative than a
+// CC grant), and (2) the source-update event is republished only on the
+// first fill, so the heavily-repeated CC grant stream can't flood the bus
+// with a republish per repeat.
+func TestEngineHandleGrantSourceBackfillDoesNotClobberOrReflood(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	pool, _ := mkPool(1)
+	e, _ := NewEngine(EngineOptions{
+		Bus:         bus,
+		VoicePool:   pool,
+		Talkgroups:  NewTalkgroupDB(),
+		CallTimeout: 5 * time.Second,
+	})
+
+	g := Grant{System: "MMR", Protocol: "p25-phase2", GroupID: 20001, FrequencyHz: 422_612_500}
+	e.HandleGrant(g)
+	dev := e.ActiveCalls()[0].Device.Serial
+
+	// In-call traffic-channel PDU recovers the real talking radio first.
+	e.handleCallSourceUpdate(CallSourceUpdate{DeviceSerial: dev, SourceID: 999001})
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// A later CC grant carries a different (call-setup) RID; it must NOT clobber
+	// the in-call source, and must NOT republish (no first-fill transition).
+	gWithSrc := g
+	gWithSrc.SourceID = 202419
+	e.HandleGrant(gWithSrc)
+	if got := e.ActiveCalls()[0].Grant.SourceID; got != 999001 {
+		t.Fatalf("grant source clobbered the in-call source: got %d want 999001", got)
+	}
+	// A second identical repeat must also be silent.
+	e.HandleGrant(gWithSrc)
+
+	select {
+	case ev := <-sub.C:
+		if ev.Kind == events.KindCallSourceUpdate {
+			c, _ := ev.Payload.(CallSourceUpdate)
+			t.Fatalf("unexpected source-update republish on an already-sourced call: %+v", c)
+		}
+	case <-time.After(150 * time.Millisecond):
+		// No republish — correct.
+	}
+}
+
 // TestEngineHandleCallSourceUpdateUnknownDeviceDoesNotPanic guards
 // the late-arriving PDU after a call ends.
 func TestEngineHandleCallSourceUpdateUnknownDeviceDoesNotPanic(t *testing.T) {

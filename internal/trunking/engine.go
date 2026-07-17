@@ -374,6 +374,22 @@ func (e *Engine) HandleGrant(g Grant) {
 				// Same channel: the CC is repeating the grant while the call
 				// runs (issue #356). Refresh LastHeardAt and we're done.
 				e.pool.Touch(ac.Device.Serial, e.now())
+				// Backfill a source RID that only surfaced on this later grant
+				// (#915): the call may have been bound from a source-less
+				// compressed / update grant, with the initiating
+				// GRP_VCH_GRANT's RID (or a sibling grant carrying it) arriving
+				// on a subsequent repeat. Only fill a still-unknown source, and
+				// only republish the source-update event on that first-fill
+				// transition — that republish is what patches the recorder's
+				// completed-call (webhook) grant and the live SSE/TUI view, the
+				// same path the in-call call.source update uses (#897). Firing
+				// once per call, not once per repeat grant, keeps the heavily-
+				// repeated CC grant stream from flooding the bus.
+				if g.SourceID != 0 {
+					if upd, filled := e.pool.BackfillSourceFromGrant(ac.Device.Serial, g.SourceID); filled {
+						e.republishCallSource(ac.Device.Serial, upd)
+					}
+				}
 				e.log.Debug("grant already active; refreshed",
 					"grant", g.String(), "device", ac.Device.Serial)
 				return
@@ -562,6 +578,29 @@ func (e *Engine) handleCallSourceUpdate(c CallSourceUpdate) {
 		"src", enriched.SourceID,
 		"enc", enriched.Encrypted)
 	e.applyEncryptedPolicy(c.DeviceSerial, g, g.Encrypted)
+}
+
+// republishCallSource emits an enriched KindCallSourceUpdate for a source
+// RID the engine recovered from a control-channel grant (issue #915), so the
+// recorder patches the completed-call (webhook) grant it builds from its own
+// session and SSE/TUI consumers patch their live view — the same downstream
+// plumbing the in-call call.source update uses. System is set, so the event
+// the engine's own subscription reads back is short-circuited by
+// handleCallSourceUpdate (no re-entrant loop). Encrypted is carried from the
+// bound grant unchanged; it is never flipped from a grant source alone.
+func (e *Engine) republishCallSource(serial string, g Grant) {
+	e.bus.Publish(events.Event{
+		Kind: events.KindCallSourceUpdate,
+		Payload: CallSourceUpdate{
+			DeviceSerial: serial,
+			System:       g.System,
+			Protocol:     g.Protocol,
+			GroupID:      g.GroupID,
+			SourceID:     g.SourceID,
+			Encrypted:    g.Encrypted,
+			At:           e.now(),
+		},
+	})
 }
 
 // handlePatch applies a patch announcement to the registry: an Add
