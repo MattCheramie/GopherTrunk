@@ -21,6 +21,13 @@ for tagged releases.
   no room above the channel rate. No config change is needed to pick this up on
   an RTL-SDR (issue #402).
 
+### Documentation
+- **Documented that `recordings.skip_encrypted: true` suppresses the webhook /
+  broadcast for encrypted calls** — such a call is ended before the recorder
+  lifecycle completes, so no completed-call event fires. Operators who want
+  encrypted calls delivered to the webhook with their (now-populated) metadata
+  should set `skip_encrypted: false` (issue #897).
+
 ### Fixed
 - **Completed-call webhook now carries the source RID on nearly every call,
   not just the ~18% whose voice-side `call.source` decoded.** The per-call
