@@ -41,9 +41,9 @@ layout: default
     <section class="learn-journey" aria-labelledby="journey-h">
       <h2 id="journey-h" class="learn-journey__title">Your journey to shipping a project</h2>
       <p class="learn-journey__lede">
-        Six paths take you from first principles to a real, shipping application
-        like GopherTrunk — an SDR trunking scanner. Follow them in order, or jump
-        straight to what you need. Your progress fills in as you go.
+        {{ paths.size }} paths take you from first principles to a real, shipping
+        application like GopherTrunk — an SDR trunking scanner. Follow them in
+        order, or jump straight to what you need. Your progress fills in as you go.
       </p>
       <ol class="journey" role="list">
         {%- for p in paths -%}

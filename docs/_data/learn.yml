@@ -515,6 +515,704 @@ paths:
       level: beginner
       status: full
 
+  - id: linux-cli
+    label: "Linux & the Command Line"
+    title: "Linux & the Command Line — from first command to confident operator"
+    tagline: "The operating system and shell every developer leans on — files, permissions, processes, pipes, scripting, and services — from your first command to a Raspberry Pi humming by the antenna."
+    start_slug: what-is-linux
+    workload: "PT7H"
+    intro: >
+      Sooner or later every developer meets a black window with a blinking cursor:
+      a server to configure, a Raspberry Pi to set up, a build to run, a tool with
+      no buttons. This path makes that window feel like home. Start with what Linux
+      even is and why the command line is worth learning, then build up one small,
+      safe command at a time — moving around the filesystem, managing files,
+      permissions, and processes, and installing software. From there you'll learn
+      the real superpower of the shell — pipes and text tools that snap together
+      into custom commands — write your first scripts to automate the boring parts,
+      and finish able to run and maintain your own services over SSH, including
+      GopherTrunk itself on a Linux box or an SBC. No prior command-line experience
+      required; examples use Linux (with notes for macOS and Windows/WSL).
+    modules:
+      - id: getting-started
+        label: "Module 1 — Getting Started with Linux & the Shell"
+        blurb: "What Linux is, why the command line is worth your time, and how to open a shell and run your very first commands without fear."
+        lessons:
+          - slug: what-is-linux
+            title: What is Linux?
+            summary: The kernel, the distributions, and why Linux quietly runs the servers, phones, and single-board computers the world depends on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: why-the-command-line
+            title: Why the command line?
+            summary: What a terminal gives you that a mouse can't — speed, precision, remote control, and automation — and why it's still essential.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: the-shell
+            title: The shell explained
+            summary: What the shell actually is, the prompt, and the command-arguments-options pattern behind everything you'll type.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: getting-a-shell
+            title: Getting a shell
+            summary: Opening a terminal on Linux, macOS, and Windows (WSL), plus reaching one on a server or a Raspberry Pi.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: first-commands
+            title: Your first commands
+            summary: pwd, ls, cd, and echo — moving around and looking about — plus how to ask any command for help.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: files
+        label: "Module 2 — Files & the Filesystem"
+        blurb: "Everything on Linux is a file in one big tree. Learn to navigate it, and to create, view, edit, and find files with confidence."
+        lessons:
+          - slug: filesystem-layout
+            title: The filesystem hierarchy
+            summary: One tree from /, the folders that matter (/home, /etc, /var), and absolute vs. relative paths.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: navigating-and-listing
+            title: Navigating & listing files
+            summary: Moving around with cd, reading ls in detail, hidden files, and seeing the shape of a directory tree.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: working-with-files
+            title: Creating, copying & moving files
+            summary: mkdir, touch, cp, mv, and rm — building and rearranging files and folders, and why rm has no undo.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: viewing-and-editing
+            title: Viewing & editing files
+            summary: cat, less, head, and tail for reading, plus a gentle first look at editing in nano and vim.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: finding-things
+            title: Finding files & text
+            summary: Locating files with find, searching inside them with grep, and finding a command with which and locate.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: permissions-processes
+        label: "Module 3 — Permissions, Users & Processes"
+        blurb: "Who can do what, and what's running right now: the multi-user model, file permissions, root, and managing live processes."
+        lessons:
+          - slug: users-and-groups
+            title: Users, groups & root
+            summary: Linux as a multi-user system — accounts, groups, and the all-powerful root user you should mostly avoid being.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: permissions
+            title: File permissions
+            summary: Read, write, execute for user, group, and other — reading ls -l, and changing access with chmod and chown.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: sudo-and-root
+            title: sudo & becoming root safely
+            summary: Why you don't log in as root — using sudo to borrow admin power for one command, and the habits that keep you safe.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: processes
+            title: Processes & jobs
+            summary: What a process is, watching them with ps and top, foreground vs. background jobs, and stopping one with signals.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: package-management
+            title: Installing software with a package manager
+            summary: apt, dnf, and pacman — how Linux installs, updates, and removes software from trusted repositories instead of downloads.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: power-of-the-cli
+        label: "Module 4 — The Power of the Command Line"
+        blurb: "The real superpower: small tools that snap together. Pipes, redirection, text processing, wildcards, and the environment."
+        lessons:
+          - slug: pipes-and-redirection
+            title: Pipes & redirection
+            summary: stdin, stdout, and stderr — sending one command's output into another with |, and to and from files with > and <.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: text-tools
+            title: Text-processing tools
+            summary: grep, sort, uniq, wc, cut, and a taste of sed and awk — the toolkit that turns raw text into answers.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: wildcards-and-expansion
+            title: Wildcards, globbing & expansion
+            summary: How the shell expands *, ?, and {…} before a command runs, and why quoting sometimes matters.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: environment-variables
+            title: Environment variables & PATH
+            summary: What environment variables are, why PATH decides which programs you can run, and how to set them for a session or for good.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: history-and-shortcuts
+            title: History, tab completion & shortcuts
+            summary: Command history, reverse-search, tab completion, and the keyboard shortcuts that make the shell fast.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: scripting
+        label: "Module 5 — Scripting & Automation"
+        blurb: "Turn a sequence of commands into a reusable program: your first scripts, variables and input, control flow, and scheduling."
+        lessons:
+          - slug: first-shell-script
+            title: Your first shell script
+            summary: The shebang line, making a file executable, and running a saved sequence of commands as a program.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: variables-and-input
+            title: Variables, arguments & input
+            summary: Storing values, reading script arguments, and taking input — the pieces that make a script flexible.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: conditionals-and-loops
+            title: Conditionals & loops
+            summary: if, for, and while with the test command — making a script decide and repeat instead of running blindly.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: functions-and-exit-codes
+            title: Functions, exit codes & error handling
+            summary: Reusable functions, the exit codes every command returns, and writing scripts that fail loudly instead of silently.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: scheduling-with-cron
+            title: Scheduling with cron & timers
+            summary: Running a job every night or every minute — cron syntax, systemd timers, and where scheduled output goes.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: living-on-linux
+        label: "Module 6 — Living on Linux: Servers, SBCs & GopherTrunk"
+        blurb: "Everything applied: reach a machine over SSH, run software as a managed service, watch its health, and put GopherTrunk on a Linux box."
+        lessons:
+          - slug: ssh-and-remote
+            title: SSH & working remotely
+            summary: Logging into another machine over the network with SSH, key-based login, and copying files with scp.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: services-and-systemd
+            title: Services & systemd
+            summary: How Linux runs background services — systemctl to start and enable them, and journalctl to read their logs.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: monitoring-and-logs
+            title: Monitoring, disk & logs
+            summary: Checking disk with df and du, memory and load with free and htop, and finding out what went wrong in the logs.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: running-gophertrunk-on-linux
+            title: Running GopherTrunk on Linux
+            summary: Putting it all together — installing GopherTrunk, running it, and keeping it alive as a service on a Linux box or a Raspberry Pi.
+            minutes: 10
+            level: intermediate
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of Linux & command-line terms
+      summary: Plain-language definitions for every term in the path — shell, kernel, path, permission, process, pipe, PATH, script, cron, SSH, systemd, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
+  - id: networking
+    label: "Networking & the Internet"
+    title: "Networking & the Internet — from your first packet to a service on the open web"
+    tagline: "How data actually moves — packets, IP, DNS, TCP, HTTP, and TLS — plus firewalls, VPNs, the command-line tools to debug it all, and how to put your own service safely on the network."
+    start_slug: what-is-a-network
+    workload: "PT7H"
+    intro: >
+      Every program that talks to another machine — a browser, an app, a server,
+      a scanner streaming audio across the house — leans on the same handful of
+      networking ideas. This path demystifies them. Start with what a network even
+      is and follow one web request end to end, then learn the addressing that
+      makes it work — IP, DNS, and ports — and the protocols that carry it — TCP,
+      UDP, HTTP, and TLS. From there you'll cover the pieces that connect and
+      protect real systems (firewalls, NAT, VPNs, proxies), pick up the
+      command-line tools to inspect and debug a connection, and finish able to put
+      your own service on the network safely, including reaching GopherTrunk across
+      your home network or the internet. No prior networking knowledge required;
+      the Linux & the Command Line path pairs well for the hands-on parts.
+    modules:
+      - id: how-it-works
+        label: "Module 1 — How Networks & the Internet Work"
+        blurb: "The big picture: what a network is, how data is chopped into packets and routed, the layered model behind it, and one web request traced end to end."
+        lessons:
+          - slug: what-is-a-network
+            title: What is a network?
+            summary: Nodes, links, and the leap from a home LAN to the internet — a network of networks — the one idea everything else builds on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: packets-and-switching
+            title: Packets & switching
+            summary: Why data is chopped into packets, how switches and routers pass them along, and what "best-effort" delivery really means.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: protocols-and-layers
+            title: Protocols & layers
+            summary: The layered model — link, internet, transport, application — and why splitting networking into layers makes the whole thing work.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: clients-and-servers
+            title: Clients, servers & peers
+            summary: The request-response model most of the internet runs on, and the peer-to-peer alternative — who asks and who answers.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: how-a-web-request-works
+            title: How a web request works, end to end
+            summary: Type a URL and press Enter — DNS, TCP, TLS, HTTP, and back — the whole journey in one trace that the rest of the path unpacks.
+            minutes: 10
+            level: beginner
+            status: full
+
+      - id: addressing
+        label: "Module 2 — Addressing: IP, DNS & Ports"
+        blurb: "How machines find each other: IP addresses and subnets, the DNS name system, ports and sockets, and how home networks share one public address."
+        lessons:
+          - slug: ip-addresses
+            title: IP addresses & subnets
+            summary: IPv4 and IPv6, public vs. private addresses, and what a subnet (and CIDR /24) actually means — gently.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: dns
+            title: DNS — names to addresses
+            summary: How a name like example.com becomes an IP address — resolvers, records (A, AAAA, CNAME, MX, TXT), and caching.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: ports-and-sockets
+            title: Ports & sockets
+            summary: How one machine runs many services at once — ports, well-known port numbers, and the socket that ties an address to a program.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: nat-and-private-networks
+            title: NAT & private networks
+            summary: Why every device in your home shares one public IP — network address translation, private ranges, and what it hides.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: dhcp-and-local-networks
+            title: DHCP & joining a local network
+            summary: How a device gets an address the moment it connects — DHCP, the default gateway, and what your router is doing.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: transport-and-web
+        label: "Module 3 — The Transport & Web Protocols"
+        blurb: "The protocols you'll actually build on: TCP vs. UDP, HTTP and its methods and status codes, TLS/HTTPS, web APIs, and real-time connections."
+        lessons:
+          - slug: tcp-and-udp
+            title: TCP vs. UDP
+            summary: Reliable-and-ordered vs. fast-and-lossy — the handshake, what each is for, and why voice and video often pick UDP.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: http
+            title: HTTP — the web's protocol
+            summary: Requests and responses, methods (GET/POST/…), status codes, and headers — the language nearly every API and site speaks.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: tls-and-https
+            title: TLS & HTTPS
+            summary: How HTTPS encrypts traffic and proves a server is who it claims — certificates, the handshake, and why the padlock matters.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: web-apis-and-rest
+            title: Web APIs & REST
+            summary: Programs talking over HTTP — REST, JSON, endpoints, and how an app, a server, and a browser exchange data.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: websockets-and-realtime
+            title: WebSockets & real-time connections
+            summary: When request-response isn't enough — long-lived, two-way connections for live updates, streaming, and push.
+            minutes: 9
+            level: advanced
+            status: full
+
+      - id: connecting-securing
+        label: "Module 4 — Connecting & Securing Networks"
+        blurb: "The infrastructure that connects and protects real systems: firewalls, port forwarding, VPNs, proxies and load balancers, and the security basics."
+        lessons:
+          - slug: firewalls
+            title: Firewalls & controlling access
+            summary: Deciding what traffic is allowed — default-deny, open vs. closed ports, and where a firewall sits in the path.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: port-forwarding-and-dynamic-dns
+            title: Port forwarding & dynamic DNS
+            summary: Reaching a service behind your home router from outside — port forwarding, dynamic DNS, and the risks of opening a door.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: vpns
+            title: VPNs & tunnels
+            summary: What a VPN actually does — an encrypted tunnel — what it hides and what it doesn't, and when to reach for one.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: proxies-and-load-balancers
+            title: Proxies, reverse proxies & load balancers
+            summary: The middlemen of the web — forward and reverse proxies, load balancers, and CDNs — and what each is for.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: network-security-basics
+            title: Network security basics
+            summary: The everyday threats — interception, spoofing, and floods — and the defenses that counter them, from encryption to least exposure.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: cli-tools
+        label: "Module 5 — Networking from the Command Line"
+        blurb: "The tools that turn 'it won't connect' into an answer: inspecting your own network, testing connectivity, making requests, tunneling, and capturing packets."
+        lessons:
+          - slug: inspecting-your-network
+            title: Inspecting your network
+            summary: What's my address and what's listening — ip, ss, and friends for seeing your own machine's network state.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: testing-connectivity
+            title: Testing connectivity
+            summary: A repeatable way to diagnose "it won't connect" — ping, traceroute, and dig, from the machine outward.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: curl-and-http-tools
+            title: Making requests with curl
+            summary: curl and wget — sending HTTP requests, reading headers and status codes, and testing an API or a site from the shell.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: ssh-tunnels-and-transfers
+            title: SSH tunnels & transfers
+            summary: Reaching a remote service securely — SSH port forwarding (local and remote tunnels) and copying files with scp and rsync.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: packet-capture-basics
+            title: Packet capture basics
+            summary: Watching the actual traffic — tcpdump and Wireshark — to see what's really on the wire when something misbehaves.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: your-service
+        label: "Module 6 — Putting a Service on the Network"
+        blurb: "Everything applied: run a server and understand what it's bound to, expose it safely, self-host on a home network, and reach GopherTrunk across the network."
+        lessons:
+          - slug: running-a-server
+            title: Running a server — binding & reachability
+            summary: localhost vs. 0.0.0.0, binding to a port, and the difference between a service running and a service you can actually reach.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: exposing-a-service-safely
+            title: Exposing a service safely
+            summary: Putting a service online without regret — a reverse proxy, TLS, a firewall, and authentication in front of it.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: self-hosting-at-home
+            title: Self-hosting on a home network
+            summary: Running your own services on your own connection — the practical setup, the pitfalls, and when to keep it on the LAN.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: gophertrunk-on-the-network
+            title: GopherTrunk on the network
+            summary: Putting it together — reaching GopherTrunk's web interface across your LAN or the internet, and streaming to other tools, securely.
+            minutes: 9
+            level: intermediate
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of networking terms
+      summary: Plain-language definitions for every term in the path — packet, protocol, IP, subnet, DNS, port, NAT, TCP, UDP, HTTP, TLS, firewall, VPN, proxy, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
+  - id: cybersecurity
+    label: "Cybersecurity Fundamentals"
+    title: "Cybersecurity Fundamentals — from threats and crypto to defending real systems"
+    tagline: "How attacks work and how to stop them — the CIA triad, cryptography, authentication, common attacks, hardening, secure coding, and the ethics of it all, including the RF-monitoring side a scanner like GopherTrunk lives in."
+    start_slug: what-is-cybersecurity
+    workload: "PT7H"
+    intro: >
+      Security isn't a bolt-on; it's a way of thinking about every system you
+      build or run. This path teaches that mindset from the ground up, entirely
+      from the defender's side. Start with the core goals — confidentiality,
+      integrity, availability — and the vocabulary of threats, vulnerabilities,
+      and risk, then build a working understanding of the cryptography that
+      underpins modern security. From there you'll cover identity and access,
+      the common attacks every developer should recognise (explained so you can
+      defend against them, not carry them out), and the layered defenses that
+      stop them — hardening systems, writing secure code, and protecting data. The
+      path closes with security in practice, including personal safety online and
+      the wireless-and-RF security world a scanner like GopherTrunk lives in,
+      where the law and ethics matter as much as the technology. No security
+      background required; the Linux and Networking paths pair well.
+    modules:
+      - id: foundations
+        label: "Module 1 — Security Foundations"
+        blurb: "The mindset and vocabulary of security: what it protects, the goals it aims for, how threats and risk are described, who attacks, and how a defender thinks."
+        lessons:
+          - slug: what-is-cybersecurity
+            title: What is cybersecurity?
+            summary: What security actually protects, why every system needs it, and the defender's job — the one idea everything else builds on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: cia-triad
+            title: The CIA triad
+            summary: Confidentiality, integrity, and availability — the three goals that define what "secure" even means.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: threats-vulnerabilities-risk
+            title: Threats, vulnerabilities & risk
+            summary: The words security people actually use — threat, vulnerability, exploit, risk, and attack surface — and how they fit together.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: threat-actors
+            title: Who attacks, and why
+            summary: From opportunists and criminals to insiders and nation-states — the actors, their motives, and what that means for your defenses.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: security-mindset
+            title: The security mindset
+            summary: Thinking like an attacker to defend like a pro — assume breach, least privilege, and defense in depth as habits, not slogans.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: crypto
+        label: "Module 2 — Cryptography Essentials"
+        blurb: "The math-free version of the cryptography that underpins everything secure: encryption, keys, hashing, signatures, and where each shows up in real life."
+        lessons:
+          - slug: what-is-cryptography
+            title: What is cryptography?
+            summary: Plaintext, ciphertext, and keys — what encryption does, what it doesn't, and why you never roll your own.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: symmetric-and-asymmetric
+            title: Symmetric & public-key encryption
+            summary: One shared secret versus a public/private key pair — the two families of encryption and what each is good for.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: hashing-and-integrity
+            title: Hashing & integrity
+            summary: One-way hashes, checksums, and how they detect tampering and store passwords safely — and why hashing isn't encryption.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: signatures-and-certificates
+            title: Digital signatures & certificates
+            summary: Proving who sent something and that it wasn't changed — signatures, public-key infrastructure, and the certificates behind HTTPS.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: crypto-in-practice
+            title: Cryptography in practice
+            summary: Where the theory shows up — TLS, SSH, disk and end-to-end encryption — and how the encryption on a radio system fits the same ideas.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: identity-access
+        label: "Module 3 — Identity, Authentication & Access"
+        blurb: "Proving who you are and controlling what you can do: authentication, passwords and MFA, authorization, managing secrets, and the human layer attackers love."
+        lessons:
+          - slug: authentication-basics
+            title: Authentication basics
+            summary: The three factors — something you know, have, and are — and how a system decides you are who you claim to be.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: passwords-and-mfa
+            title: Passwords, MFA & passkeys
+            summary: Why passwords fail, how they should be stored, and how multi-factor authentication and passkeys close the gap.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: authorization-and-access
+            title: Authorization & access control
+            summary: The difference between who you are and what you're allowed to do — least privilege, roles, and access models.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: secrets-management
+            title: Managing secrets & keys
+            summary: API keys, tokens, and passwords in software — keeping them out of code, rotating them, and using a secrets manager.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: social-engineering
+            title: Social engineering & the human layer
+            summary: Phishing, pretexting, and why the easiest way past strong technology is often a person — and how to defend against it.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: attacks-defenses
+        label: "Module 4 — Attacks & Defenses"
+        blurb: "The attacks every developer should recognise — explained so you can defend against them — and the layered defenses that stop them."
+        lessons:
+          - slug: common-attacks
+            title: Common attacks, in plain terms
+            summary: A field guide to the attacks you'll hear about — malware, phishing, credential attacks, and denial of service — and what each targets.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: web-application-attacks
+            title: Web application attacks
+            summary: How injection, cross-site scripting, and CSRF work at a high level, why they happen, and the coding habits that prevent them.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: network-attacks
+            title: Network attacks
+            summary: Interception, spoofing, and floods — the network-layer attacks from the networking path, seen through a defender's eyes.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: malware-and-endpoints
+            title: Malware & endpoint security
+            summary: Viruses, worms, ransomware, and trojans — how malware spreads, what it does, and how endpoints are defended.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: defense-in-depth
+            title: Defense in depth
+            summary: Why no single control is enough — layering prevention, detection, and response so one failure isn't a breach.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: securing
+        label: "Module 5 — Securing Systems & Software"
+        blurb: "Applying the defenses: hardening a machine, writing secure code, protecting networks and services, watching for trouble, and safeguarding data."
+        lessons:
+          - slug: hardening-systems
+            title: Hardening systems
+            summary: Shrinking the attack surface — least privilege, disabling what you don't need, patching, and the config that keeps a box safe.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: secure-coding
+            title: Secure coding
+            summary: The handful of habits that stop most software vulnerabilities — validate input, avoid injection, handle errors, and watch dependencies.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: securing-networks-and-services
+            title: Securing networks & services
+            summary: Putting network security to work — firewalls, encryption in transit, segmentation, and exposing a service without regret.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: monitoring-and-incident-response
+            title: Monitoring & incident response
+            summary: You can't stop everything, so you plan to notice and recover — logging, detection, a basic incident-response flow, and backups.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: privacy-and-data-protection
+            title: Privacy & data protection
+            summary: Security serves privacy — classifying data, minimizing what you collect, protecting personal information, and the rules around it.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: in-practice
+        label: "Module 6 — Security in Practice"
+        blurb: "Everything applied: a developer's security checklist, staying safe as an individual, the wireless-and-RF security world, and where to keep learning."
+        lessons:
+          - slug: security-for-developers
+            title: Security for developers
+            summary: A practical, repeatable checklist for building security into what you ship — a secure development lifecycle without the jargon.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: staying-safe-online
+            title: Staying safe online
+            summary: The personal security that actually matters — updates, a password manager, MFA, backups, and a healthy suspicion.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: rf-and-radio-security
+            title: Wireless & RF security
+            summary: Security on the airwaves — Wi-Fi and radio encryption, jamming and replay, what monitoring can and can't reveal, and the law and ethics that govern it.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: keep-learning-security
+            title: Where to go next
+            summary: Turning fundamentals into skill — CTFs, certifications, responsible disclosure, and how to keep up with a field that never sits still.
+            minutes: 8
+            level: beginner
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of cybersecurity terms
+      summary: Plain-language definitions for every term in the path — CIA triad, threat, vulnerability, encryption, hash, MFA, least privilege, phishing, injection, malware, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
   - id: intro-software-dev
     label: "Intro to Software Dev"
     title: "Intro to Software Development — from punch cards to your own solo stack"
@@ -1550,6 +2248,232 @@ paths:
       slug: glossary
       title: Glossary of AI-for-development terms
       summary: Plain-language definitions for every term in the learning path — token, context window, RLHF, embedding, RAG, MCP, agent, vibe coding, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
+  - id: building-ai
+    label: "Building AI Into Software"
+    title: "Building AI Into Your Software — from your first API call to a feature you ship"
+    tagline: "Go from using AI tools to building AI-powered features into your own software — model APIs, prompts in code, structured output, tools, retrieval, agents, evaluation, and shipping responsibly."
+    start_slug: building-vs-using-ai
+    workload: "PT7H"
+    intro: >
+      The AI in Software Dev path taught you to *use* AI to write code. This one
+      teaches you to *build* AI into the software you ship — to call a model from
+      your own program and turn it into a feature. Start with what changes when a
+      language model becomes a component in your architecture, make your first API
+      call, and learn to treat the model as a powerful but unreliable dependency.
+      From there you'll write prompts as code, get reliable structured output, give
+      the model tools, ground it in your own data with retrieval (RAG), let it act
+      as an agent, and — crucially — evaluate, secure, and operate all of it in
+      production. Examples lean on real software, including AI features you might
+      add to a project like GopherTrunk. Pairs with the AI in Software Dev path; no
+      AI background beyond it required.
+    modules:
+      - id: foundations
+        label: "Module 1 — From Using AI to Building With It"
+        blurb: "The shift from chatting with AI to calling it from your own code: what an AI feature is, the model as a component, how the API works, your first call, and the cost it carries."
+        lessons:
+          - slug: building-vs-using-ai
+            title: What it means to build AI into software
+            summary: The jump from using an AI tool to shipping an AI feature — what changes when the model runs inside your program instead of a chat window.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: llm-as-a-component
+            title: The model as a probabilistic component
+            summary: Designing around a dependency that is powerful, non-deterministic, and occasionally wrong — the mindset shift everything else builds on.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: how-a-model-api-works
+            title: How a model API call works
+            summary: Messages, roles, tokens, and the request/response cycle — what actually goes over the wire when your code talks to a model.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: your-first-api-call
+            title: Your first API call
+            summary: API keys, SDKs, and a first request in code — the smallest end-to-end example of software calling a model.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: cost-latency-and-limits
+            title: Cost, latency & rate limits by design
+            summary: Every call costs tokens and time — why cost, latency, and rate limits are design constraints you plan for, not afterthoughts.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: prompting-in-code
+        label: "Module 2 — Prompting in Code"
+        blurb: "Turning prompts from throwaway chat messages into reliable, versioned parts of your program that produce output consistent enough to build on."
+        lessons:
+          - slug: prompts-as-code
+            title: Prompts as code — system prompts & templates
+            summary: Treating prompts as first-class, version-controlled artifacts — system vs. user roles, templating, and separating instructions from data.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: context-and-user-input
+            title: Feeding the model context & user input
+            summary: Assembling the right context safely — injecting your data and user input into a prompt without letting it hijack your instructions.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: few-shot-and-steering
+            title: Few-shot examples & steering output
+            summary: Showing the model what "good" looks like — examples, constraints, and the levers that make output consistent enough to rely on.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: parsing-and-validating-output
+            title: Getting usable output back
+            summary: The model returns text — parsing, validating, and retrying it so your program gets data it can actually trust.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: structured-tools-streaming
+        label: "Module 3 — Structured Output, Tools & Streaming"
+        blurb: "The features that turn a text generator into a programmable component: JSON output, tool and function calling, streaming, and multimodal inputs."
+        lessons:
+          - slug: structured-output
+            title: Structured output & JSON
+            summary: Getting the model to return machine-readable JSON that matches a schema — the key to wiring a model into the rest of your code.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: tool-use-and-function-calling
+            title: Tool use & function calling
+            summary: Letting the model call your functions — how tool use works, and how a model that can't do math or fetch live data suddenly can.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: streaming
+            title: Streaming responses
+            summary: Showing output token-by-token as it's generated — why streaming matters for user experience and how it changes your code.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: multimodal-inputs
+            title: Multimodal — images, audio & documents
+            summary: Models that read more than text — sending images, audio, and documents, and the feature ideas that opens up.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: rag
+        label: "Module 4 — Retrieval-Augmented Generation (RAG)"
+        blurb: "Grounding the model in your own data so it answers from your documents and facts instead of only its training — the most common way to build a genuinely useful AI feature."
+        lessons:
+          - slug: grounding-and-retrieval
+            title: Why retrieval — grounding the model in your data
+            summary: The model only knows its training data — retrieval feeds it your facts at query time, cutting hallucination and keeping answers current.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: embeddings-and-vector-search
+            title: Embeddings & vector search
+            summary: Turning text into vectors so you can search by meaning, not keywords — the engine underneath retrieval.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: building-a-rag-pipeline
+            title: Building a RAG pipeline
+            summary: The end-to-end shape — ingest, chunk, embed, store, retrieve, and augment the prompt — assembled into a working feature.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: chunking-and-retrieval-quality
+            title: Chunking & retrieval quality
+            summary: RAG lives or dies on retrieval — chunking, metadata, re-ranking, and how to tell when retrieval is the thing that's broken.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: rag-vs-long-context-vs-finetuning
+            title: RAG vs. long context vs. fine-tuning
+            summary: Three ways to give a model knowledge it didn't ship with — what each is for, what each costs, and how to choose.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: agents-eval-safety
+        label: "Module 5 — Agents, Evaluation & Safety"
+        blurb: "Letting the model act, then making sure it acts well: agent loops and tools, evaluating a probabilistic feature, handling failure, and defending against prompt injection."
+        lessons:
+          - slug: what-is-an-ai-agent
+            title: Agents — letting the model act in a loop
+            summary: From one-shot calls to a plan-act-observe loop — what an agent is, what it can do, and where the risk goes up.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: giving-agents-tools-and-mcp
+            title: Giving agents tools (and MCP)
+            summary: Tools are how an agent affects the world — designing safe tools and the Model Context Protocol (MCP) that standardizes them.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: evaluating-ai-features
+            title: Evaluating AI features
+            summary: You can't unit-test a probabilistic feature the old way — evals, test sets, LLM-as-judge, and measuring quality before and after a change.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: handling-hallucinations-and-failure
+            title: Handling hallucinations & failure
+            summary: The model will be confidently wrong, slow, or unavailable — grounding, guardrails, fallbacks, and failing safe when it does.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: prompt-injection-and-security
+            title: Prompt injection & data safety
+            summary: Untrusted text can hijack your prompt — prompt injection, data exfiltration, the "lethal trifecta", and how to design against them.
+            minutes: 11
+            level: advanced
+            status: full
+
+      - id: shipping
+        label: "Module 6 — Shipping & Operating AI Features"
+        blurb: "Everything applied: choose a model, control cost and latency, protect user data, watch it in production, and ship your first AI feature end to end."
+        lessons:
+          - slug: choosing-a-model-for-a-feature
+            title: Choosing a model for a feature
+            summary: Matching model to job — capability, context, speed, cost, and privacy — and why most products end up using more than one.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: optimizing-cost-and-latency
+            title: Optimizing cost & latency
+            summary: Prompt caching, smaller models, batching, and streaming — the practical levers that make an AI feature affordable and fast.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: privacy-data-and-compliance
+            title: Privacy, data & compliance
+            summary: Where prompts and user data go, what providers do with them, and the privacy, retention, and compliance questions to settle before you ship.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: observability-and-monitoring
+            title: Observability & monitoring
+            summary: You can't fix what you can't see — logging prompts and outputs, tracing, cost and latency metrics, and catching quality drift in production.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: shipping-your-first-ai-feature
+            title: Shipping your first AI feature
+            summary: Putting it all together — an end-to-end worked example that adds a real AI feature to a project like GopherTrunk, and how to keep improving it.
+            minutes: 10
+            level: intermediate
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of AI-engineering terms
+      summary: Plain-language definitions for every term in the path — API, token, system prompt, structured output, tool use, embedding, RAG, agent, MCP, eval, prompt injection, and more — cross-linked to the lessons.
       minutes: 12
       level: beginner
       status: full

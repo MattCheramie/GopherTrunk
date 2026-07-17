@@ -101,4 +101,4 @@ For now, the most valuable thing you can do is the smallest: pick that one real 
 - **Build compounding habits** — read what you keep, lean on tests, keep your setup portable and your judgement engaged.
 - **Look ahead** — this path was about *using* AI to write software; a future path covers *building* software with AI embedded inside it.
 
-Next up: this is the final lesson, so there's no next lesson to point to. Consolidate the terms you've learned in the [glossary](/learn/ai-software-dev/glossary/) — and keep an eye out for the coming path on building software with embedded AI, where you'll put LLMs, embeddings, and local models inside your own applications.
+Next up: this is the final lesson, so there's no next lesson to point to. Consolidate the terms you've learned in the [glossary](/learn/ai-software-dev/glossary/) — and when you're ready, the [Building AI Into Your Software](/learn/building-ai/) path is the sequel, where you'll put LLMs, embeddings, and local models inside your own applications.
