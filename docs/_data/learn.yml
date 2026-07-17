@@ -515,6 +515,238 @@ paths:
       level: beginner
       status: full
 
+  - id: linux-cli
+    label: "Linux & the Command Line"
+    title: "Linux & the Command Line — from first command to confident operator"
+    tagline: "The operating system and shell every developer leans on — files, permissions, processes, pipes, scripting, and services — from your first command to a Raspberry Pi humming by the antenna."
+    start_slug: what-is-linux
+    workload: "PT7H"
+    intro: >
+      Sooner or later every developer meets a black window with a blinking cursor:
+      a server to configure, a Raspberry Pi to set up, a build to run, a tool with
+      no buttons. This path makes that window feel like home. Start with what Linux
+      even is and why the command line is worth learning, then build up one small,
+      safe command at a time — moving around the filesystem, managing files,
+      permissions, and processes, and installing software. From there you'll learn
+      the real superpower of the shell — pipes and text tools that snap together
+      into custom commands — write your first scripts to automate the boring parts,
+      and finish able to run and maintain your own services over SSH, including
+      GopherTrunk itself on a Linux box or an SBC. No prior command-line experience
+      required; examples use Linux (with notes for macOS and Windows/WSL).
+    modules:
+      - id: getting-started
+        label: "Module 1 — Getting Started with Linux & the Shell"
+        blurb: "What Linux is, why the command line is worth your time, and how to open a shell and run your very first commands without fear."
+        lessons:
+          - slug: what-is-linux
+            title: What is Linux?
+            summary: The kernel, the distributions, and why Linux quietly runs the servers, phones, and single-board computers the world depends on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: why-the-command-line
+            title: Why the command line?
+            summary: What a terminal gives you that a mouse can't — speed, precision, remote control, and automation — and why it's still essential.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: the-shell
+            title: The shell explained
+            summary: What the shell actually is, the prompt, and the command-arguments-options pattern behind everything you'll type.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: getting-a-shell
+            title: Getting a shell
+            summary: Opening a terminal on Linux, macOS, and Windows (WSL), plus reaching one on a server or a Raspberry Pi.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: first-commands
+            title: Your first commands
+            summary: pwd, ls, cd, and echo — moving around and looking about — plus how to ask any command for help.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: files
+        label: "Module 2 — Files & the Filesystem"
+        blurb: "Everything on Linux is a file in one big tree. Learn to navigate it, and to create, view, edit, and find files with confidence."
+        lessons:
+          - slug: filesystem-layout
+            title: The filesystem hierarchy
+            summary: One tree from /, the folders that matter (/home, /etc, /var), and absolute vs. relative paths.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: navigating-and-listing
+            title: Navigating & listing files
+            summary: Moving around with cd, reading ls in detail, hidden files, and seeing the shape of a directory tree.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: working-with-files
+            title: Creating, copying & moving files
+            summary: mkdir, touch, cp, mv, and rm — building and rearranging files and folders, and why rm has no undo.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: viewing-and-editing
+            title: Viewing & editing files
+            summary: cat, less, head, and tail for reading, plus a gentle first look at editing in nano and vim.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: finding-things
+            title: Finding files & text
+            summary: Locating files with find, searching inside them with grep, and finding a command with which and locate.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: permissions-processes
+        label: "Module 3 — Permissions, Users & Processes"
+        blurb: "Who can do what, and what's running right now: the multi-user model, file permissions, root, and managing live processes."
+        lessons:
+          - slug: users-and-groups
+            title: Users, groups & root
+            summary: Linux as a multi-user system — accounts, groups, and the all-powerful root user you should mostly avoid being.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: permissions
+            title: File permissions
+            summary: Read, write, execute for user, group, and other — reading ls -l, and changing access with chmod and chown.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: sudo-and-root
+            title: sudo & becoming root safely
+            summary: Why you don't log in as root — using sudo to borrow admin power for one command, and the habits that keep you safe.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: processes
+            title: Processes & jobs
+            summary: What a process is, watching them with ps and top, foreground vs. background jobs, and stopping one with signals.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: package-management
+            title: Installing software with a package manager
+            summary: apt, dnf, and pacman — how Linux installs, updates, and removes software from trusted repositories instead of downloads.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: power-of-the-cli
+        label: "Module 4 — The Power of the Command Line"
+        blurb: "The real superpower: small tools that snap together. Pipes, redirection, text processing, wildcards, and the environment."
+        lessons:
+          - slug: pipes-and-redirection
+            title: Pipes & redirection
+            summary: stdin, stdout, and stderr — sending one command's output into another with |, and to and from files with > and <.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: text-tools
+            title: Text-processing tools
+            summary: grep, sort, uniq, wc, cut, and a taste of sed and awk — the toolkit that turns raw text into answers.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: wildcards-and-expansion
+            title: Wildcards, globbing & expansion
+            summary: How the shell expands *, ?, and {…} before a command runs, and why quoting sometimes matters.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: environment-variables
+            title: Environment variables & PATH
+            summary: What environment variables are, why PATH decides which programs you can run, and how to set them for a session or for good.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: history-and-shortcuts
+            title: History, tab completion & shortcuts
+            summary: Command history, reverse-search, tab completion, and the keyboard shortcuts that make the shell fast.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: scripting
+        label: "Module 5 — Scripting & Automation"
+        blurb: "Turn a sequence of commands into a reusable program: your first scripts, variables and input, control flow, and scheduling."
+        lessons:
+          - slug: first-shell-script
+            title: Your first shell script
+            summary: The shebang line, making a file executable, and running a saved sequence of commands as a program.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: variables-and-input
+            title: Variables, arguments & input
+            summary: Storing values, reading script arguments, and taking input — the pieces that make a script flexible.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: conditionals-and-loops
+            title: Conditionals & loops
+            summary: if, for, and while with the test command — making a script decide and repeat instead of running blindly.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: functions-and-exit-codes
+            title: Functions, exit codes & error handling
+            summary: Reusable functions, the exit codes every command returns, and writing scripts that fail loudly instead of silently.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: scheduling-with-cron
+            title: Scheduling with cron & timers
+            summary: Running a job every night or every minute — cron syntax, systemd timers, and where scheduled output goes.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: living-on-linux
+        label: "Module 6 — Living on Linux: Servers, SBCs & GopherTrunk"
+        blurb: "Everything applied: reach a machine over SSH, run software as a managed service, watch its health, and put GopherTrunk on a Linux box."
+        lessons:
+          - slug: ssh-and-remote
+            title: SSH & working remotely
+            summary: Logging into another machine over the network with SSH, key-based login, and copying files with scp.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: services-and-systemd
+            title: Services & systemd
+            summary: How Linux runs background services — systemctl to start and enable them, and journalctl to read their logs.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: monitoring-and-logs
+            title: Monitoring, disk & logs
+            summary: Checking disk with df and du, memory and load with free and htop, and finding out what went wrong in the logs.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: running-gophertrunk-on-linux
+            title: Running GopherTrunk on Linux
+            summary: Putting it all together — installing GopherTrunk, running it, and keeping it alive as a service on a Linux box or a Raspberry Pi.
+            minutes: 10
+            level: intermediate
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of Linux & command-line terms
+      summary: Plain-language definitions for every term in the path — shell, kernel, path, permission, process, pipe, PATH, script, cron, SSH, systemd, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
   - id: intro-software-dev
     label: "Intro to Software Dev"
     title: "Intro to Software Development — from punch cards to your own solo stack"
