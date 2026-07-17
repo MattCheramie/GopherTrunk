@@ -2,8 +2,8 @@
 layout: learn-index
 title: Learn
 lede: Free, structured learning paths that take you from complete beginner to confident practitioner — one short, self-contained lesson at a time.
-description: Free, structured GopherTrunk learning paths — radio & SDR fundamentals, a complete Git & GitHub course, the Linux command line, an intro to software development, digital & trunked radio, an intro to hardware, using AI in software development, and building AI features into your own software — taking you from beginner to expert one short lesson at a time.
-keywords: GopherTrunk learn, SDR tutorial, learn git, github tutorial, learn linux, command line tutorial, bash, radio fundamentals, learn software development, programming for beginners, learn computer hardware, hardware for developers, using AI for coding, AI software development, build AI features, LLM app development, learn LLMs, free courses
+description: Free, structured GopherTrunk learning paths — radio & SDR fundamentals, a complete Git & GitHub course, the Linux command line, computer networking & the internet, an intro to software development, digital & trunked radio, an intro to hardware, using AI in software development, and building AI features into your own software — taking you from beginner to expert one short lesson at a time.
+keywords: GopherTrunk learn, SDR tutorial, learn git, github tutorial, learn linux, command line tutorial, bash, learn networking, how the internet works, TCP IP, DNS, radio fundamentals, learn software development, programming for beginners, learn computer hardware, hardware for developers, using AI for coding, AI software development, build AI features, LLM app development, learn LLMs, free courses
 permalink: /learn/
 ---
 

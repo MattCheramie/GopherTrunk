@@ -747,6 +747,238 @@ paths:
       level: beginner
       status: full
 
+  - id: networking
+    label: "Networking & the Internet"
+    title: "Networking & the Internet — from your first packet to a service on the open web"
+    tagline: "How data actually moves — packets, IP, DNS, TCP, HTTP, and TLS — plus firewalls, VPNs, the command-line tools to debug it all, and how to put your own service safely on the network."
+    start_slug: what-is-a-network
+    workload: "PT7H"
+    intro: >
+      Every program that talks to another machine — a browser, an app, a server,
+      a scanner streaming audio across the house — leans on the same handful of
+      networking ideas. This path demystifies them. Start with what a network even
+      is and follow one web request end to end, then learn the addressing that
+      makes it work — IP, DNS, and ports — and the protocols that carry it — TCP,
+      UDP, HTTP, and TLS. From there you'll cover the pieces that connect and
+      protect real systems (firewalls, NAT, VPNs, proxies), pick up the
+      command-line tools to inspect and debug a connection, and finish able to put
+      your own service on the network safely, including reaching GopherTrunk across
+      your home network or the internet. No prior networking knowledge required;
+      the Linux & the Command Line path pairs well for the hands-on parts.
+    modules:
+      - id: how-it-works
+        label: "Module 1 — How Networks & the Internet Work"
+        blurb: "The big picture: what a network is, how data is chopped into packets and routed, the layered model behind it, and one web request traced end to end."
+        lessons:
+          - slug: what-is-a-network
+            title: What is a network?
+            summary: Nodes, links, and the leap from a home LAN to the internet — a network of networks — the one idea everything else builds on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: packets-and-switching
+            title: Packets & switching
+            summary: Why data is chopped into packets, how switches and routers pass them along, and what "best-effort" delivery really means.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: protocols-and-layers
+            title: Protocols & layers
+            summary: The layered model — link, internet, transport, application — and why splitting networking into layers makes the whole thing work.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: clients-and-servers
+            title: Clients, servers & peers
+            summary: The request-response model most of the internet runs on, and the peer-to-peer alternative — who asks and who answers.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: how-a-web-request-works
+            title: How a web request works, end to end
+            summary: Type a URL and press Enter — DNS, TCP, TLS, HTTP, and back — the whole journey in one trace that the rest of the path unpacks.
+            minutes: 10
+            level: beginner
+            status: full
+
+      - id: addressing
+        label: "Module 2 — Addressing: IP, DNS & Ports"
+        blurb: "How machines find each other: IP addresses and subnets, the DNS name system, ports and sockets, and how home networks share one public address."
+        lessons:
+          - slug: ip-addresses
+            title: IP addresses & subnets
+            summary: IPv4 and IPv6, public vs. private addresses, and what a subnet (and CIDR /24) actually means — gently.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: dns
+            title: DNS — names to addresses
+            summary: How a name like example.com becomes an IP address — resolvers, records (A, AAAA, CNAME, MX, TXT), and caching.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: ports-and-sockets
+            title: Ports & sockets
+            summary: How one machine runs many services at once — ports, well-known port numbers, and the socket that ties an address to a program.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: nat-and-private-networks
+            title: NAT & private networks
+            summary: Why every device in your home shares one public IP — network address translation, private ranges, and what it hides.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: dhcp-and-local-networks
+            title: DHCP & joining a local network
+            summary: How a device gets an address the moment it connects — DHCP, the default gateway, and what your router is doing.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: transport-and-web
+        label: "Module 3 — The Transport & Web Protocols"
+        blurb: "The protocols you'll actually build on: TCP vs. UDP, HTTP and its methods and status codes, TLS/HTTPS, web APIs, and real-time connections."
+        lessons:
+          - slug: tcp-and-udp
+            title: TCP vs. UDP
+            summary: Reliable-and-ordered vs. fast-and-lossy — the handshake, what each is for, and why voice and video often pick UDP.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: http
+            title: HTTP — the web's protocol
+            summary: Requests and responses, methods (GET/POST/…), status codes, and headers — the language nearly every API and site speaks.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: tls-and-https
+            title: TLS & HTTPS
+            summary: How HTTPS encrypts traffic and proves a server is who it claims — certificates, the handshake, and why the padlock matters.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: web-apis-and-rest
+            title: Web APIs & REST
+            summary: Programs talking over HTTP — REST, JSON, endpoints, and how an app, a server, and a browser exchange data.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: websockets-and-realtime
+            title: WebSockets & real-time connections
+            summary: When request-response isn't enough — long-lived, two-way connections for live updates, streaming, and push.
+            minutes: 9
+            level: advanced
+            status: full
+
+      - id: connecting-securing
+        label: "Module 4 — Connecting & Securing Networks"
+        blurb: "The infrastructure that connects and protects real systems: firewalls, port forwarding, VPNs, proxies and load balancers, and the security basics."
+        lessons:
+          - slug: firewalls
+            title: Firewalls & controlling access
+            summary: Deciding what traffic is allowed — default-deny, open vs. closed ports, and where a firewall sits in the path.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: port-forwarding-and-dynamic-dns
+            title: Port forwarding & dynamic DNS
+            summary: Reaching a service behind your home router from outside — port forwarding, dynamic DNS, and the risks of opening a door.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: vpns
+            title: VPNs & tunnels
+            summary: What a VPN actually does — an encrypted tunnel — what it hides and what it doesn't, and when to reach for one.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: proxies-and-load-balancers
+            title: Proxies, reverse proxies & load balancers
+            summary: The middlemen of the web — forward and reverse proxies, load balancers, and CDNs — and what each is for.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: network-security-basics
+            title: Network security basics
+            summary: The everyday threats — interception, spoofing, and floods — and the defenses that counter them, from encryption to least exposure.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: cli-tools
+        label: "Module 5 — Networking from the Command Line"
+        blurb: "The tools that turn 'it won't connect' into an answer: inspecting your own network, testing connectivity, making requests, tunneling, and capturing packets."
+        lessons:
+          - slug: inspecting-your-network
+            title: Inspecting your network
+            summary: What's my address and what's listening — ip, ss, and friends for seeing your own machine's network state.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: testing-connectivity
+            title: Testing connectivity
+            summary: A repeatable way to diagnose "it won't connect" — ping, traceroute, and dig, from the machine outward.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: curl-and-http-tools
+            title: Making requests with curl
+            summary: curl and wget — sending HTTP requests, reading headers and status codes, and testing an API or a site from the shell.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: ssh-tunnels-and-transfers
+            title: SSH tunnels & transfers
+            summary: Reaching a remote service securely — SSH port forwarding (local and remote tunnels) and copying files with scp and rsync.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: packet-capture-basics
+            title: Packet capture basics
+            summary: Watching the actual traffic — tcpdump and Wireshark — to see what's really on the wire when something misbehaves.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: your-service
+        label: "Module 6 — Putting a Service on the Network"
+        blurb: "Everything applied: run a server and understand what it's bound to, expose it safely, self-host on a home network, and reach GopherTrunk across the network."
+        lessons:
+          - slug: running-a-server
+            title: Running a server — binding & reachability
+            summary: localhost vs. 0.0.0.0, binding to a port, and the difference between a service running and a service you can actually reach.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: exposing-a-service-safely
+            title: Exposing a service safely
+            summary: Putting a service online without regret — a reverse proxy, TLS, a firewall, and authentication in front of it.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: self-hosting-at-home
+            title: Self-hosting on a home network
+            summary: Running your own services on your own connection — the practical setup, the pitfalls, and when to keep it on the LAN.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: gophertrunk-on-the-network
+            title: GopherTrunk on the network
+            summary: Putting it together — reaching GopherTrunk's web interface across your LAN or the internet, and streaming to other tools, securely.
+            minutes: 9
+            level: intermediate
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of networking terms
+      summary: Plain-language definitions for every term in the path — packet, protocol, IP, subnet, DNS, port, NAT, TCP, UDP, HTTP, TLS, firewall, VPN, proxy, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
+
   - id: intro-software-dev
     label: "Intro to Software Dev"
     title: "Intro to Software Development — from punch cards to your own solo stack"
