@@ -21,6 +21,16 @@ for tagged releases.
   reflects the radio actually keyed on the traffic channel — still takes
   precedence, and the republish fires only on the first fill so the repeated
   control-channel grant stream never floods the bus (issue #915).
+  Follow-up: on a heavily-compressed Phase 2 system a field test found that
+  talkgroup-keyed matching alone reached only ~12% coverage, because the
+  RID-bearing grant often arrives under a *different* talkgroup label than the
+  source-less grant that bound the call (a mis-aliased compressed grant, or a
+  super-group/patch remap). The engine now also recovers the source by physical
+  channel: a frequency + timeslot hosts exactly one in-progress transmission, so
+  a source-carrying grant landing on an active call's exact channel is folded
+  onto that call regardless of its talkgroup label — which additionally
+  suppresses the phantom duplicate call the mismatched talkgroup would otherwise
+  spawn (issue #915).
 
 ## [v0.7.1] — 2026-07-16
 
