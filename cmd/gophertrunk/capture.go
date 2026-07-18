@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/gtbundle"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
@@ -36,7 +37,9 @@ func runCapture(args []string) {
 	ppm := fs.Int("ppm", 0, "frequency-correction in PPM")
 	seconds := fs.Float64("seconds", 10, "capture length in seconds (required, > 0)")
 	out := fs.String("out", "capture.cfile", "output capture path")
-	format := fs.String("format", "f32", "capture sample format: u8 | f32 (f32 = GNU Radio cfile)")
+	format := fs.String("format", "f32", "capture sample format: u8 | f32 | cs16 (f32 = GNU Radio cfile; cs16 = headerless 16-bit raw)")
+	centerHz := fs.Uint("center", 0, "narrowband slice centre in Hz (default: -freq); with -bandwidth, carves a channel from the captured wideband without retuning")
+	bandwidthHz := fs.Uint("bandwidth", 0, "narrowband slice bandwidth in Hz; when > 0 the capture is decimated to ~this rate around -center (must fit inside -freq ± sample-rate/2)")
 	protocol := fs.String("protocol", "", "protocol name written to the metadata sidecar (enables `test`; see `gophertrunk gen -list`)")
 	source := fs.String("source", "", "free-text provenance written to the metadata sidecar")
 	tune := fs.Float64("tune", 0, "fine software tune offset in Hz written to the metadata sidecar")
@@ -61,6 +64,11 @@ EXAMPLES:
   # rtl_sdr-native u8 capture from a specific dongle
   gophertrunk capture -serial 00000001 -freq 453000000 -seconds 10 \
     -format u8 -out dmr.bin
+
+  # Small 16-bit narrowband slice: carve a 50 kHz channel at 467.913 MHz out of
+  # a 2.4 MS/s grab centred there — a shareable .raw a fraction of the full size
+  gophertrunk capture -freq 467913000 -sample-rate 2400000 -seconds 30 \
+    -center 467913000 -bandwidth 50000 -format cs16 -out cc.raw
 
   # List the SDRs this binary can capture from
   gophertrunk capture -list
@@ -136,7 +144,31 @@ FLAGS:`)
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
-	written, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds)
+	// Optional narrowband slice: decimate the captured wideband to a channel at
+	// -center ± -bandwidth without retuning the SDR (the same DDC the daemon and
+	// replay path use). The recorded rate + centre become the channel's.
+	var ddc *ccdecoder.Downconverter
+	recRate := float64(*sampleRate)
+	recCenter := uint32(*freq)
+	if *bandwidthHz > 0 {
+		center := uint32(*centerHz)
+		if center == 0 {
+			center = uint32(*freq)
+		}
+		offsetHz := int64(center) - int64(*freq)
+		half := int64(*sampleRate) / 2
+		if absInt64(offsetHz)+int64(*bandwidthHz)/2 > half {
+			rep.Fatalf(2, "-center %d + -bandwidth %d falls outside the captured span %d ± %d Hz",
+				center, *bandwidthHz, *freq, half)
+		}
+		ddc = ccdecoder.NewDownconverterWithOffset(float64(*sampleRate), float64(*bandwidthHz), float64(offsetHz))
+		recRate = ddc.OutRateHz()
+		recCenter = center
+		fmt.Printf("capture: narrowband slice → centre %.3f MHz, %.1f kHz channel rate\n",
+			float64(recCenter)/1e6, recRate/1e3)
+	}
+
+	written, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds, ddc)
 	if capErr != nil && !errors.Is(capErr, context.Canceled) {
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
 	}
@@ -144,8 +176,8 @@ FLAGS:`)
 	meta := &siglab.Metadata{
 		Protocol:     *protocol,
 		Source:       *source,
-		SampleRateHz: float64(*sampleRate),
-		CenterFreqHz: uint32(*freq),
+		SampleRateHz: recRate,
+		CenterFreqHz: recCenter,
 		Format:       sampleFormat.String(),
 		TuneHz:       *tune,
 		AutoTune:     *autoTune,
@@ -183,8 +215,8 @@ FLAGS:`)
 			intent:       gtbundle.CaptureIntent(*bundleIntent),
 			capturePath:  *out,
 			format:       sampleFormat,
-			sampleRateHz: float64(*sampleRate),
-			centerHz:     uint32(*freq),
+			sampleRateHz: recRate,
+			centerHz:     recCenter,
 			tuneHz:       *tune,
 			protocol:     *protocol,
 			source:       *source,
@@ -237,12 +269,14 @@ func openCaptureDevice(serial string) (sdr.Device, sdr.Info, error) {
 	return dev, chosen, nil
 }
 
-// captureToFile streams complex64 chunks from src, encodes them in the
-// requested on-disk format with the shared encodeF32/encodeU8 packers, and
-// writes them to path until it has collected seconds*rate samples, the stream
-// ends, ctx cancels, or a wall-clock safety deadline elapses. Returns the
-// number of IQ samples written.
-func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64) (int64, error) {
+// captureToFile streams complex64 chunks from src, optionally decimates each
+// chunk to a narrowband channel through ddc (nil = full band), encodes the
+// result in the requested on-disk format with the shared encodeF32/encodeU8/
+// encodeS16 packers, and writes to path until it has collected seconds*rate
+// INPUT samples, the stream ends, ctx cancels, or a wall-clock safety deadline
+// elapses. Returns the number of IQ samples written (post-decimation when ddc
+// is set).
+func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return 0, fmt.Errorf("create %s: %w", path, err)
@@ -250,43 +284,64 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 
 	encode := encodeF32
 	bytesPerSample := 8
-	if format == siglab.FormatU8 {
+	switch format {
+	case siglab.FormatU8:
 		encode = encodeU8
 		bytesPerSample = 2
+	case siglab.FormatS16:
+		encode = encodeS16
+		bytesPerSample = 4
 	}
 
+	// Stop once seconds worth of INPUT samples have been read; the written
+	// count may be far smaller when ddc decimates to a narrow channel.
 	target := int64(seconds * float64(rate))
 	// Safety deadline so a stalled/under-delivering device doesn't hang the
-	// command forever waiting to reach the sample target.
-	deadline := time.Now().Add(time.Duration(seconds*float64(time.Second)) + 5*time.Second)
+	// command forever waiting to reach the sample target. The timer is an
+	// explicit select arm (not a post-receive check) so a source that never
+	// delivers a chunk can't block the receive forever — see the same fix in
+	// captureProvider.Capture for the daemon's broker-tap path.
+	timer := time.NewTimer(time.Duration(seconds*float64(time.Second)) + 5*time.Second)
+	defer timer.Stop()
 
 	var scratch []byte
-	var written int64
+	var ddcBuf []complex64
+	var inputRead, written int64
 	var loopErr error
-	for written < target {
+loop:
+	for inputRead < target {
 		select {
 		case <-ctx.Done():
 			loopErr = ctx.Err()
+			break loop
+		case <-timer.C:
+			break loop
 		case chunk, ok := <-src:
 			if !ok {
 				loopErr = errors.New("IQ stream ended before capture finished")
-				break
+				break loop
 			}
-			n := len(chunk) * bytesPerSample
+			inputRead += int64(len(chunk))
+			samples := chunk
+			if ddc != nil {
+				ddcBuf = ddc.Process(ddcBuf, chunk)
+				samples = ddcBuf
+			}
+			if len(samples) == 0 {
+				continue
+			}
+			n := len(samples) * bytesPerSample
 			if cap(scratch) < n {
 				scratch = make([]byte, n)
 			} else {
 				scratch = scratch[:n]
 			}
-			encode(scratch, chunk)
+			encode(scratch, samples)
 			if _, werr := f.Write(scratch); werr != nil {
 				loopErr = fmt.Errorf("write: %w", werr)
-				break
+				break loop
 			}
-			written += int64(len(chunk))
-		}
-		if loopErr != nil || time.Now().After(deadline) {
-			break
+			written += int64(len(samples))
 		}
 	}
 
@@ -294,6 +349,14 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 		loopErr = cerr
 	}
 	return written, loopErr
+}
+
+// absInt64 is the absolute value of a signed 64-bit integer.
+func absInt64(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // serialsOf renders the serials of the discovered devices for a friendly hint.

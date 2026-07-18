@@ -134,6 +134,119 @@ func TestSiglabCaptureStagesAndDownloads(t *testing.T) {
 	}
 }
 
+// TestSiglabCaptureCS16 stages a cs16 (headerless 16-bit) capture and checks
+// the DTO size (4 bytes/sample, half of f32) and the .raw download extension.
+func TestSiglabCaptureCS16(t *testing.T) {
+	iq := make([]complex64, 4800)
+	for i := range iq {
+		iq[i] = complex(float32(i%7)/7, float32(i%3)/3)
+	}
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      iq,
+		rate:    2_400_000,
+		center:  460_000_000,
+	}
+	ts := newCaptureTestServer(t, prov)
+
+	cResp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json",
+		bytes.NewBufferString(`{"serial":"SDR1","seconds":2,"format":"cs16"}`))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	defer cResp.Body.Close()
+	if cResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(cResp.Body)
+		t.Fatalf("status = %d, want 200 (%s)", cResp.StatusCode, b)
+	}
+	var cr captureResponse
+	if err := json.NewDecoder(cResp.Body).Decode(&cr); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if want := int64(len(iq)) * 4; cr.Capture.Size != want {
+		t.Fatalf("cs16 size = %d, want %d (4 bytes/sample)", cr.Capture.Size, want)
+	}
+	dlResp, err := http.Get(ts.URL + cr.DownloadURL)
+	if err != nil {
+		t.Fatalf("GET download: %v", err)
+	}
+	defer dlResp.Body.Close()
+	if cd := dlResp.Header.Get("Content-Disposition"); !bytes.Contains([]byte(cd), []byte(".raw")) {
+		t.Errorf("Content-Disposition = %q, want a .raw filename", cd)
+	}
+	got, _ := io.ReadAll(dlResp.Body)
+	if want := int64(len(iq)) * 4; int64(len(got)) != want {
+		t.Errorf("downloaded %d bytes, want %d", len(got), want)
+	}
+}
+
+// TestSiglabCaptureNarrowband carves a narrow channel out of a wideband grab:
+// the staged file must be at the (much lower) channel rate and far smaller than
+// the full-band capture, and its centre must be the requested centre.
+func TestSiglabCaptureNarrowband(t *testing.T) {
+	const rate = 2_400_000
+	iq := make([]complex64, rate) // ~1 s
+	for i := range iq {
+		iq[i] = complex(float32(i%5)/5, float32(i%9)/9)
+	}
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      iq,
+		rate:    rate,
+		center:  460_000_000,
+	}
+	ts := newCaptureTestServer(t, prov)
+
+	// A 50 kHz channel offset +100 kHz from the tuner centre — well inside the
+	// ±1.2 MHz span.
+	body := `{"serial":"SDR1","seconds":1,"format":"cs16","center_hz":460100000,"bandwidth_hz":50000}`
+	cResp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	defer cResp.Body.Close()
+	if cResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(cResp.Body)
+		t.Fatalf("status = %d, want 200 (%s)", cResp.StatusCode, b)
+	}
+	var cr captureResponse
+	if err := json.NewDecoder(cResp.Body).Decode(&cr); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if cr.Capture.SampleRateHz > 60_000 {
+		t.Errorf("narrowband rate = %g, want ~50 kHz", cr.Capture.SampleRateHz)
+	}
+	fullBytes := int64(len(iq)) * 4
+	if cr.Capture.Size >= fullBytes/10 {
+		t.Errorf("narrowband size %d not much smaller than full-band %d", cr.Capture.Size, fullBytes)
+	}
+	if cr.Metadata == nil || cr.Metadata.CenterFreqHz != 460_100_000 {
+		t.Errorf("metadata centre = %+v, want 460.1 MHz", cr.Metadata)
+	}
+}
+
+// TestSiglabCaptureNarrowbandOutOfSpan rejects a channel that does not fit the
+// tuner's current span (the capture does not retune).
+func TestSiglabCaptureNarrowbandOutOfSpan(t *testing.T) {
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      make([]complex64, 2_400_000),
+		rate:    2_400_000,
+		center:  460_000_000,
+	}
+	ts := newCaptureTestServer(t, prov)
+	// +5 MHz offset is far outside the ±1.2 MHz tuned span.
+	body := `{"serial":"SDR1","seconds":1,"format":"cs16","center_hz":465000000,"bandwidth_hz":50000}`
+	resp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for an out-of-span centre", resp.StatusCode)
+	}
+}
+
 func TestSiglabCaptureRejectsBadSeconds(t *testing.T) {
 	prov := &fakeCaptureProvider{iq: []complex64{complex(1, 0)}, rate: 48000}
 	ts := newCaptureTestServer(t, prov)

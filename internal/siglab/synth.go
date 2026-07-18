@@ -85,14 +85,24 @@ func WriteCapture(path string, iq []complex64, format SampleFormat) error {
 	return os.WriteFile(path, EncodeCapture(iq, format), 0o644)
 }
 
-// EncodeCapture returns IQ encoded in the given on-disk format (u8 or f32).
-// It is the pure (no-I/O) core shared by WriteCapture and the in-memory
-// synth→decode bridge (SynthesizeAndAnalyze), so a synthesized signal can be
-// fed straight back into the engine via a bytes.Reader without touching disk.
+// EncodeCapture returns IQ encoded in the given on-disk format (u8, f32, or the
+// headerless 16-bit cs16). It is the pure (no-I/O) core shared by WriteCapture
+// and the in-memory synth→decode bridge (SynthesizeAndAnalyze), so a
+// synthesized signal can be fed straight back into the engine via a
+// bytes.Reader without touching disk.
+//
+// FormatWAV is encoded as the same headerless 16-bit body: a real WAV *file*
+// needs a RIFF/WAVE header carrying the sample rate, which this pure encoder
+// (iq + format only) does not have — write those through baseband.IQWriter,
+// which is rate-aware. Emitting the 16-bit body here (rather than silently
+// falling through to u8, the prior behaviour) at least preserves the sample
+// depth instead of quantising to 8 bits.
 func EncodeCapture(iq []complex64, format SampleFormat) []byte {
 	switch format {
 	case FormatF32:
 		return encodeF32(iq)
+	case FormatS16, FormatWAV:
+		return encodeSW16(iq)
 	default:
 		return encodeU8(iq)
 	}
@@ -127,6 +137,31 @@ func encodeU8(iq []complex64) []byte {
 		buf[2*i+1] = floatToU8(imag(s))
 	}
 	return buf
+}
+
+// encodeSW16 encodes interleaved little-endian 16-bit signed PCM IQ (I then Q,
+// ×32768, clamped) — the headerless body of the cs16/wav formats and the exact
+// inverse of decodeSW16.
+func encodeSW16(iq []complex64) []byte {
+	buf := make([]byte, len(iq)*4)
+	for i, s := range iq {
+		binary.LittleEndian.PutUint16(buf[4*i:], uint16(floatToI16(real(s))))
+		binary.LittleEndian.PutUint16(buf[4*i+2:], uint16(floatToI16(imag(s))))
+	}
+	return buf
+}
+
+// floatToI16 maps a normalised [-1,+1] sample to a 16-bit signed integer,
+// clamped to the int16 range. Mirrors the ÷32768 normalisation decodeSW16 uses.
+func floatToI16(v float32) int16 {
+	x := math.Round(float64(v) * 32768)
+	if x > 32767 {
+		return 32767
+	}
+	if x < -32768 {
+		return -32768
+	}
+	return int16(x)
 }
 
 func floatToU8(v float32) byte {

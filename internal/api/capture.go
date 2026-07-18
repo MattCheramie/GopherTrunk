@@ -34,12 +34,21 @@ type CaptureProvider interface {
 }
 
 // captureRequest is the body of POST /api/v1/siglab/capture.
+//
+// CenterHz + BandwidthHz (both optional) request a narrowband slice carved from
+// the tuner's current wideband stream: the channel at CenterHz is shifted to DC
+// and decimated to ~BandwidthHz, so the staged file is a small baseband
+// recording instead of a full-rate wideband grab. The tuner is NOT retuned (the
+// slice is extracted from what it is already streaming), so CenterHz must fall
+// inside the tuned span. BandwidthHz == 0 keeps the legacy full-band behaviour.
 type captureRequest struct {
-	Serial   string `json:"serial"`
-	Seconds  int    `json:"seconds"`
-	Format   string `json:"format"`
-	Protocol string `json:"protocol,omitempty"`
-	Source   string `json:"source,omitempty"`
+	Serial      string `json:"serial"`
+	Seconds     int    `json:"seconds"`
+	Format      string `json:"format"`
+	Protocol    string `json:"protocol,omitempty"`
+	Source      string `json:"source,omitempty"`
+	CenterHz    uint32 `json:"center_hz,omitempty"`
+	BandwidthHz uint32 `json:"bandwidth_hz,omitempty"`
 }
 
 // captureResponse is returned by a successful capture: the staged capture
@@ -100,6 +109,17 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional narrowband slice: carve the channel at CenterHz down to
+	// ~BandwidthHz from the tuner's current wideband stream (no retune), so the
+	// staged file is small enough to hand to an analysis tool.
+	if req.BandwidthHz > 0 {
+		iq, sampleRateHz, centerHz, err = narrowband(iq, sampleRateHz, centerHz, req.CenterHz, req.BandwidthHz)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
+			return
+		}
+	}
+
 	id := randomID(16)
 	path := s.siglab.newCapturePath(id)
 	if err := os.WriteFile(path, siglab.EncodeCapture(iq, format), 0o644); err != nil {
@@ -156,14 +176,56 @@ func (s *Server) handleSiglabCaptureDownload(w http.ResponseWriter, r *http.Requ
 	defer f.Close()
 
 	ext := "cfile"
-	if c.Format == siglab.FormatU8 {
+	switch c.Format {
+	case siglab.FormatU8:
 		ext = "bin"
+	case siglab.FormatS16:
+		ext = "raw"
+	case siglab.FormatWAV:
+		ext = "wav"
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", c.ID, ext))
 	if _, err := io.Copy(w, f); err != nil {
 		s.log.Warn("api: siglab capture download failed", "err", err)
 	}
+}
+
+// narrowband carves the channel at wantCenterHz (±wantBWHz/2) out of the
+// wideband IQ the tuner is currently streaming, decimating it to a baseband
+// stream and returning the slice, its new sample rate, and its new centre
+// (== wantCenterHz, or the tuner centre when wantCenterHz is 0). The tuner is
+// not retuned — the slice is extracted from the live stream — so the requested
+// channel must fit wholly inside the tuned span [tunerCentre ± rate/2].
+func narrowband(iq []complex64, rateHz, tunerCenterHz, wantCenterHz, wantBWHz uint32) ([]complex64, uint32, uint32, error) {
+	center := wantCenterHz
+	if center == 0 {
+		center = tunerCenterHz
+	}
+	offsetHz := int64(center) - int64(tunerCenterHz)
+	half := int64(rateHz) / 2
+	if abs64(offsetHz)+int64(wantBWHz)/2 > half {
+		return nil, 0, 0, fmt.Errorf(
+			"center_hz %d + bandwidth_hz %d falls outside the tuner's current span %.3f–%.3f MHz "+
+				"(centre %.3f MHz, rate %.3f MS/s); a capture extracts a channel from the live stream "+
+				"without retuning, so pick a centre/bandwidth inside the span",
+			center, wantBWHz,
+			float64(int64(tunerCenterHz)-half)/1e6, float64(int64(tunerCenterHz)+half)/1e6,
+			float64(tunerCenterHz)/1e6, float64(rateHz)/1e6)
+	}
+	nb, outRate := siglab.Downconvert(iq, float64(rateHz), float64(offsetHz), float64(wantBWHz))
+	if len(nb) == 0 {
+		return nil, 0, 0, fmt.Errorf("bandwidth_hz %d is too small for a %d-sample capture (no output samples)", wantBWHz, len(iq))
+	}
+	return nb, uint32(outRate + 0.5), center, nil
+}
+
+// abs64 is the absolute value of a signed 64-bit integer.
+func abs64(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // captureName builds a friendly staged-capture name from the device + tuning.
@@ -174,10 +236,10 @@ func captureName(serial string, centerHz uint32) string {
 	return "capture-" + serial
 }
 
-// bytesPerSample returns the on-disk size of one IQ sample in the format.
+// bytesPerSample returns the on-disk size of one IQ sample in the format. It
+// defers to the format's own decoder width (f32 → 8, cs16/wav → 4, u8 → 2) so
+// staged-capture sizes stay correct as formats are added.
 func bytesPerSample(format siglab.SampleFormat) int {
-	if format == siglab.FormatF32 {
-		return 8
-	}
-	return 2
+	_, n := format.Decoder()
+	return n
 }

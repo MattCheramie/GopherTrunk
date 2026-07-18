@@ -28,7 +28,7 @@ type iqCaptureSpec struct {
 	Serial  string
 	Path    string
 	Seconds int
-	Format  string // "f32" or "u8"
+	Format  string // "f32", "u8", or "cs16"
 }
 
 // parseIQCaptureSpec parses "serial=<s>,path=<file>,seconds=<n>[,format=u8|f32]".
@@ -64,10 +64,10 @@ func parseIQCaptureSpec(s string) (iqCaptureSpec, error) {
 		case "format":
 			f := strings.ToLower(v)
 			switch f {
-			case "f32", "u8":
+			case "f32", "u8", "cs16":
 				spec.Format = f
 			default:
-				return iqCaptureSpec{}, fmt.Errorf("iq-capture: format must be u8 or f32, got %q", v)
+				return iqCaptureSpec{}, fmt.Errorf("iq-capture: format must be u8, f32, or cs16, got %q", v)
 			}
 		default:
 			return iqCaptureSpec{}, fmt.Errorf("iq-capture: unknown key %q", k)
@@ -110,11 +110,21 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 	var scratch []byte
 	encode := encodeF32
 	bytesPerSample := 8
-	if spec.Format == "u8" {
+	switch spec.Format {
+	case "u8":
 		encode = encodeU8
 		bytesPerSample = 2
+	case "cs16":
+		encode = encodeS16
+		bytesPerSample = 4
 	}
 
+	// Safety timer as an explicit select arm: the broker pauses fan-out when no
+	// primary StreamIQ session is running, so a receive-then-check deadline
+	// would block on sub.C forever if the primary stalls. The timer fires the
+	// normal end-of-capture path after the requested duration regardless.
+	timer := time.NewTimer(time.Duration(spec.Seconds) * time.Second)
+	defer timer.Stop()
 	deadline := time.Now().Add(time.Duration(spec.Seconds) * time.Second)
 	log.Info("iq-capture: started",
 		"serial", spec.Serial, "path", spec.Path,
@@ -125,6 +135,8 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 		select {
 		case <-ctx.Done():
 			return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), ctx.Err())
+		case <-timer.C:
+			return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), nil)
 		case chunk, ok := <-sub.C:
 			if !ok {
 				return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), errors.New("iq-capture: broker closed before capture finished"))
@@ -207,6 +219,28 @@ func encodeU8(dst []byte, src []complex64) {
 		dst[2*i] = clipU8(float64(real(c))*127.5 + 127.5)
 		dst[2*i+1] = clipU8(float64(imag(c))*127.5 + 127.5)
 	}
+}
+
+// encodeS16 packs complex64 samples into interleaved little-endian 16-bit
+// signed PCM (I then Q, ×32768, clamped) — the headerless "cs16" shape
+// siglab's decodeSW16 reads back. Half the size of f32 while keeping the
+// resolution of a 12–14-bit ADC.
+func encodeS16(dst []byte, src []complex64) {
+	for i, c := range src {
+		binary.LittleEndian.PutUint16(dst[4*i:], uint16(clipI16(float64(real(c))*32768)))
+		binary.LittleEndian.PutUint16(dst[4*i+2:], uint16(clipI16(float64(imag(c))*32768)))
+	}
+}
+
+func clipI16(x float64) int16 {
+	x = math.Round(x)
+	if x > 32767 {
+		return 32767
+	}
+	if x < -32768 {
+		return -32768
+	}
+	return int16(x)
 }
 
 func clipU8(x float64) byte {

@@ -102,7 +102,7 @@ func (s *Server) handleSiglabProtocols(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"protocols": decode,
 		"fixtures":  synth,
-		"formats":   []string{"u8", "f32"},
+		"formats":   []string{"u8", "f32", "cs16"},
 	})
 }
 

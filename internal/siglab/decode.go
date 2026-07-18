@@ -33,6 +33,13 @@ const (
 	// WAV header, overriding -sample-rate, and the 44-byte header is skipped
 	// before decoding.
 	FormatWAV
+	// FormatS16 is headerless interleaved little-endian 16-bit signed PCM IQ
+	// (I then Q, normalised ÷32768) — the same sample layout as FormatWAV but
+	// with no RIFF/WAVE header. Half the size of f32 while keeping the
+	// resolution of a 12–14-bit ADC (Airspy/RSPdx/USRP), where u8 would throw
+	// it away. The sample rate is not carried in-band, so it comes from the
+	// metadata sidecar (or -sample-rate), like u8/f32.
+	FormatS16
 )
 
 // String renders the format as the flag value operators type.
@@ -42,6 +49,8 @@ func (f SampleFormat) String() string {
 		return "f32"
 	case FormatWAV:
 		return "wav"
+	case FormatS16:
+		return "cs16"
 	default:
 		return "u8"
 	}
@@ -50,7 +59,12 @@ func (f SampleFormat) String() string {
 // ParseSampleFormat maps a -format flag value to a SampleFormat. It accepts
 // the same spellings the replay subcommand always has (u8, f32, plus the
 // float32/cfile aliases) so existing muscle memory keeps working, plus wav
-// (aka sw16) for two-channel 16-bit baseband recordings.
+// (aka sw16/s16) for two-channel 16-bit RIFF/WAVE baseband recordings, and
+// cs16 (aka sc16/i16/raw) for the headerless interleaved 16-bit raw variant.
+//
+// NOTE: s16/sw16 remain WAV aliases (a documented, tested contract — reading a
+// WAV file as headerless would misinterpret its 44-byte header as samples).
+// The headerless format uses the unambiguous "cs16" (complex signed 16) family.
 func ParseSampleFormat(s string) (SampleFormat, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "u8", "":
@@ -59,8 +73,10 @@ func ParseSampleFormat(s string) (SampleFormat, error) {
 		return FormatF32, nil
 	case "wav", "sw16", "s16":
 		return FormatWAV, nil
+	case "cs16", "sc16", "i16", "raw":
+		return FormatS16, nil
 	default:
-		return FormatU8, fmt.Errorf("siglab: unknown sample format %q (want u8, f32, or wav)", s)
+		return FormatU8, fmt.Errorf("siglab: unknown sample format %q (want u8, f32, cs16, or wav)", s)
 	}
 }
 
@@ -75,7 +91,11 @@ func (f SampleFormat) Decoder() (SampleDecoder, int) {
 	switch f {
 	case FormatF32:
 		return decodeF32, 8
-	case FormatWAV:
+	case FormatWAV, FormatS16:
+		// Same interleaved-16-bit decoder for both. FormatWAV's 44-byte
+		// RIFF/WAVE header is stripped upstream (prepareWAVInput in engine.go)
+		// before any bytes reach this decoder; FormatS16 is headerless, so its
+		// bytes are all IQ samples.
 		return decodeSW16, 4
 	default:
 		return decodeU8, 2

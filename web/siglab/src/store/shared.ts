@@ -62,7 +62,7 @@ export const useStore = create<Store>((set, get) => ({
 
   protocols: [],
   fixtures: [],
-  formats: ["u8", "f32"],
+  formats: ["u8", "f32", "cs16"],
   loadProtocols: async () => {
     const p = await api.protocols(get().config);
     set({ protocols: p.protocols, fixtures: p.fixtures, formats: p.formats });
