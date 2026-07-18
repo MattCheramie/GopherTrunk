@@ -1,0 +1,90 @@
+# GopherTrunk — Supabase CLI project configuration.
+#
+# This scaffolds the database-as-code workflow for the schema that previously
+# lived only as documentation under docs/supabase/*.sql. The committed
+# migrations under supabase/migrations/ are the source of truth; apply them with
+# `supabase db push` (remote) or `supabase start` + `supabase db reset` (local).
+#
+# A string like "env(MY_VAR)" is read from the environment / .env at runtime —
+# never commit real secrets here.
+
+# The project ref of your linked Supabase project (Settings -> General). Leaving
+# the human-readable slug is fine for local dev; `supabase link` sets the ref.
+project_id = "gophertrunk"
+
+[api]
+enabled = true
+# Port used by `supabase start` for the local API (PostgREST).
+port = 54321
+# Schemas exposed by the REST/GraphQL API. `public` holds all GopherTrunk
+# tables; the storage schema is managed by Supabase.
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+# Local Postgres port for `supabase start`.
+port = 54322
+# Port for the shadow database used to diff/verify migrations.
+shadow_port = 54320
+# Match your remote instance major version (Supabase currently provisions 15).
+major_version = 15
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+
+[realtime]
+# The schema files add forum_posts / forum_threads / forum_reports / user_bans
+# to the supabase_realtime publication, so keep Realtime on.
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+# Local email testing UI (captures auth/confirmation emails).
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+# schema-profiles migration expects a public `avatars` bucket (2 MB image cap).
+# Buckets are created in the dashboard / via the Storage API, not in config, but
+# this bound documents the intended per-file limit.
+file_size_limit = "2MiB"
+
+[auth]
+enabled = true
+# Base URL of the site; used to build redirect URLs. Override per environment.
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["https://127.0.0.1:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+# OAuth providers. The signup trigger (handle_new_user) seeds profiles from
+# GitHub / Google metadata, so enable whichever you use and supply secrets via
+# environment variables rather than committing them.
+[auth.external.github]
+enabled = false
+client_id = "env(SUPABASE_AUTH_GITHUB_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GITHUB_SECRET)"
+
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+
+[edge_runtime]
+enabled = true
+
+[analytics]
+enabled = false
