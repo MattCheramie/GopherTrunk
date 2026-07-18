@@ -20,8 +20,8 @@ type idleDevice struct{ rateOnlyDevice }
 // StreamIQ session — e.g. a scan looping trying → hunt failed → backoff), a
 // capture must return a bounded error instead of blocking the request forever.
 //
-// Before the timer-arm fix the select in captureProvider.Capture blocked on
-// sub.C with no deadline arm, so this test would hang until the -timeout kills
+// Before the timer-arm fix the select in captureProvider.CaptureStream blocked
+// on sub.C with no deadline arm, so this test would hang until the -timeout kills
 // the run.
 func TestCaptureProviderTimesOutWhenBrokerIdle(t *testing.T) {
 	br := iqtap.New(idleDevice{}, 0, nil)
@@ -39,7 +39,7 @@ func TestCaptureProviderTimesOutWhenBrokerIdle(t *testing.T) {
 	done := make(chan error, 1)
 	start := time.Now()
 	go func() {
-		_, _, _, err := p.Capture(context.Background(), "dev-a", seconds)
+		_, _, err := p.CaptureStream(context.Background(), "dev-a", seconds, func([]complex64) error { return nil })
 		done <- err
 	}()
 
