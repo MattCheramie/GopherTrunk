@@ -15,8 +15,20 @@ import (
 )
 
 // maxCaptureSeconds bounds a single live capture so an operator can't pin a
-// tuner (and pile up hundreds of MB of staged IQ) with one request.
-const maxCaptureSeconds = 30
+// tuner indefinitely with one request. The tighter real bound on memory is
+// maxCaptureIQBytes below (peak RAM scales with seconds × sample rate, which
+// varies ~5x across SDRs); this is a coarse ceiling on wall-clock duration.
+const maxCaptureSeconds = 120
+
+// maxCaptureIQBytes caps the raw wideband IQ a single capture may buffer. The
+// whole capture is collected into RAM as complex64 (8 bytes/sample) and then
+// EncodeCapture allocates a second copy, so peak resident memory is roughly
+// twice this. 1 GiB of complex64 (~134 M samples) keeps that peak to a couple
+// of GB even on a modest host. A high-rate grab that would exceed it is
+// rejected up front (before the tuner is pinned) with an actionable error
+// instead of swapping/OOM-ing the daemon. The guard is on the raw collection,
+// so it also bounds a narrowband slice (which buffers the full band first).
+const maxCaptureIQBytes = 1 << 30
 
 // CaptureProvider taps a live SDR for a fixed-length raw-IQ capture. The
 // daemon (cmd/gophertrunk) implements it over its iqtap.Broker map; nil keeps
@@ -80,6 +92,13 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusServiceUnavailable, "siglab: live capture not available (no SDR)")
 		return
 	}
+	// A live capture spends `seconds` of real time collecting IQ before the
+	// handler writes anything, then stages a large file — both can exceed the
+	// server-level 30s WriteTimeout (server.go), which would silently tear down
+	// the 200 mid-write and leave the UI stuck on "Capturing…". Disable the
+	// write deadline per-request, exactly as the SSE and audio-stream handlers
+	// do (see sse.go / handlers_audio_stream.go).
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	var req captureRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
@@ -97,6 +116,22 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
 		return
+	}
+
+	// Reject an over-budget grab before pinning the tuner. The device's current
+	// sample rate is known from the picker, so the raw-IQ footprint
+	// (seconds × rate × 8 bytes for complex64) can be estimated up front. When
+	// the rate is unknown (device not streaming yet) the estimate is skipped and
+	// maxCaptureSeconds is the only bound.
+	if rate := captureDeviceRate(s.capture.Devices(), req.Serial); rate > 0 {
+		estIQBytes := int64(req.Seconds) * int64(rate) * 8
+		if estIQBytes > maxCaptureIQBytes {
+			s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
+				"siglab: a %ds capture at %.3f MS/s needs ~%d MiB of IQ, over the %d MiB budget — "+
+					"reduce seconds or request a narrowband slice (center_hz + bandwidth_hz)",
+				req.Seconds, float64(rate)/1e6, estIQBytes>>20, int64(maxCaptureIQBytes)>>20))
+			return
+		}
 	}
 
 	iq, sampleRateHz, centerHz, err := s.capture.Capture(r.Context(), req.Serial, req.Seconds)
@@ -226,6 +261,18 @@ func abs64(x int64) int64 {
 		return -x
 	}
 	return x
+}
+
+// captureDeviceRate returns the current sample rate of the device with the
+// given serial from the capture picker's device list, or 0 when the device is
+// unknown or has no rate yet (not streaming).
+func captureDeviceRate(devices []SpectrumDevice, serial string) uint32 {
+	for _, d := range devices {
+		if d.Serial == serial {
+			return d.SampleRateHz
+		}
+	}
+	return 0
 }
 
 // captureName builds a friendly staged-capture name from the device + tuning.

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 )
@@ -252,6 +253,7 @@ func TestSiglabCaptureRejectsBadSeconds(t *testing.T) {
 	ts := newCaptureTestServer(t, prov)
 	for _, body := range []string{
 		`{"serial":"SDR1","seconds":0,"format":"f32"}`,
+		`{"serial":"SDR1","seconds":121,"format":"f32"}`, // just over the 120s ceiling
 		`{"serial":"SDR1","seconds":9999,"format":"f32"}`,
 		`{"seconds":1,"format":"f32"}`, // missing serial
 	} {
@@ -264,5 +266,108 @@ func TestSiglabCaptureRejectsBadSeconds(t *testing.T) {
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("body %s → status %d, want 400", body, resp.StatusCode)
 		}
+	}
+}
+
+// TestSiglabCaptureRejectsOverBudget rejects a grab whose estimated raw-IQ
+// footprint exceeds maxCaptureIQBytes before the tuner is pinned, using the
+// device's advertised sample rate. A 120s capture at 10 MS/s is ~9.6 GiB of
+// complex64 — far over the 1 GiB budget.
+func TestSiglabCaptureRejectsOverBudget(t *testing.T) {
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock", SampleRateHz: 10_000_000}},
+		iq:      []complex64{complex(1, 0)},
+		rate:    10_000_000,
+	}
+	ts := newCaptureTestServer(t, prov)
+	resp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json",
+		bytes.NewBufferString(`{"serial":"SDR1","seconds":120,"format":"f32"}`))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 400 for an over-budget grab (%s)", resp.StatusCode, b)
+	}
+}
+
+// slowCaptureProvider returns IQ only after a delay, simulating a live capture
+// whose real-time collection crosses the server's WriteTimeout.
+type slowCaptureProvider struct {
+	delay  time.Duration
+	iq     []complex64
+	rate   uint32
+	center uint32
+}
+
+func (p *slowCaptureProvider) Devices() []SpectrumDevice {
+	return []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}}
+}
+
+func (p *slowCaptureProvider) Capture(ctx context.Context, _ string, _ int) ([]complex64, uint32, uint32, error) {
+	select {
+	case <-time.After(p.delay):
+	case <-ctx.Done():
+		return nil, 0, 0, ctx.Err()
+	}
+	return p.iq, p.rate, p.center, nil
+}
+
+// TestSiglabCaptureSurvivesWriteTimeout is the regression test for the 30s
+// "Capturing…" hang: a capture that takes longer to collect than the server's
+// WriteTimeout must still deliver a complete 200 response, because the handler
+// disables the per-request write deadline. The default httptest.NewServer has
+// no WriteTimeout, so this builds an unstarted server and sets one (as
+// Server.Run does in server.go). Without the SetWriteDeadline fix the write
+// deadline fires while Capture is still collecting and the response is torn
+// down (POST error or truncated decode); with it the body decodes cleanly.
+func TestSiglabCaptureSurvivesWriteTimeout(t *testing.T) {
+	iq := make([]complex64, 4800)
+	for i := range iq {
+		iq[i] = complex(float32(i%7)/7, float32(i%3)/3)
+	}
+	prov := &slowCaptureProvider{delay: 750 * time.Millisecond, iq: iq, rate: 2_400_000, center: 460_000_000}
+
+	bus := events.NewBus(8)
+	t.Cleanup(bus.Close)
+	srv, err := NewServer(ServerOptions{
+		Addr:           "127.0.0.1:0",
+		Bus:            bus,
+		AllowMutations: true,
+		Siglab:         SiglabOptions{Enabled: true, TempDir: t.TempDir()},
+		Capture:        prov,
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+
+	// Unstarted so we can set a small WriteTimeout like Server.Run does — well
+	// under the 750ms collection so a pre-fix run trips the deadline.
+	ts := httptest.NewUnstartedServer(srv.routes())
+	ts.Config.WriteTimeout = 250 * time.Millisecond
+	ts.Config.ReadTimeout = 5 * time.Second
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	// Client timeout guards the test itself (must exceed collection time).
+	cli := &http.Client{Timeout: 5 * time.Second}
+	resp, err := cli.Post(ts.URL+"/api/v1/siglab/capture", "application/json",
+		bytes.NewBufferString(`{"serial":"SDR1","seconds":1,"format":"f32"}`))
+	if err != nil {
+		t.Fatalf("POST capture (write deadline tore down the response?): %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200 (%s)", resp.StatusCode, b)
+	}
+	var cr captureResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		t.Fatalf("decode capture response (truncated by write deadline?): %v", err)
+	}
+	if cr.Capture.ID == "" || cr.Capture.Size != int64(len(iq))*8 {
+		t.Fatalf("capture DTO = %+v, want id + %d bytes", cr.Capture, int64(len(iq))*8)
 	}
 }

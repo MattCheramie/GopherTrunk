@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store/shared";
 import { api } from "../api/client";
+import { CaptureRow } from "./CaptureRow";
 import type { CaptureDTO, CaptureDevice, RunConfig } from "../api/types";
 
 export function Captures() {
@@ -11,6 +12,7 @@ export function Captures() {
   const toggleCompare = useStore((s) => s.toggleCompare);
   const compareIds = useStore((s) => s.compareIds);
   const removeCapture = useStore((s) => s.removeCapture);
+  const config = useStore((s) => s.config);
   const selected = captures.find((c) => c.id === selectedId);
 
   return (
@@ -27,34 +29,16 @@ export function Captures() {
           ) : (
             <ul className="space-y-1">
               {captures.map((c) => (
-                <li
+                <CaptureRow
                   key={c.id}
-                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                    c.id === selectedId ? "bg-accent/15" : "hover:bg-panel"
-                  }`}
-                >
-                  <button className="flex-1 text-left" onClick={() => select(c.id)}>
-                    <div className="truncate">{c.name}</div>
-                    <div className="text-xs text-muted">
-                      {c.format} · {c.sample_rate_hz ? `${c.sample_rate_hz} Hz` : "rate?"} ·{" "}
-                      {(c.size / 1024).toFixed(0)} KiB
-                    </div>
-                  </button>
-                  <label className="flex items-center gap-1 text-xs text-muted">
-                    <input
-                      type="checkbox"
-                      checked={compareIds.includes(c.id)}
-                      onChange={() => toggleCompare(c.id)}
-                    />
-                    cmp
-                  </label>
-                  <button
-                    className="text-xs text-err/80 hover:text-err"
-                    onClick={() => removeCapture(c.id)}
-                  >
-                    ✕
-                  </button>
-                </li>
+                  capture={c}
+                  selected={c.id === selectedId}
+                  inCompare={compareIds.includes(c.id)}
+                  downloadURL={api.captureDownloadURL(config, c.id)}
+                  onSelect={() => select(c.id)}
+                  onToggleCompare={() => toggleCompare(c.id)}
+                  onRemove={() => removeCapture(c.id)}
+                />
               ))}
             </ul>
           )}
