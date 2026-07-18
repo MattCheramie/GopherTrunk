@@ -13,10 +13,10 @@ import (
 // phasor, so |mean| ≈ mean|·| (an off-DC tone would average toward zero).
 func TestDownconvertShiftsToneToDC(t *testing.T) {
 	const (
-		rate    = 2_400_000.0
-		offset  = 100_000.0
-		target  = 50_000.0
-		nsamp   = 240_000 // 0.1 s
+		rate   = 2_400_000.0
+		offset = 100_000.0
+		target = 50_000.0
+		nsamp  = 240_000 // 0.1 s
 	)
 	in := make([]complex64, nsamp)
 	for n := range in {
