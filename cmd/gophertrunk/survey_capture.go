@@ -203,7 +203,7 @@ func captureSignalToFile(dev sdr.Device, freqHz, rateHz uint32, gain, ppm int, o
 	if err != nil {
 		return 0, fmt.Errorf("start IQ stream: %w", err)
 	}
-	return captureToFile(ctx, out, siglab.FormatF32, stream, rateHz, seconds)
+	return captureToFile(ctx, out, siglab.FormatF32, stream, rateHz, seconds, nil)
 }
 
 // routeToSigLab runs a quick in-process identify on the capture and prints the

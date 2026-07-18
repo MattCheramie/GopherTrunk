@@ -55,22 +55,34 @@ func (p *captureProvider) Capture(ctx context.Context, serial string, seconds in
 	defer sub.Close()
 
 	// Safety deadline so an under-delivering device can't hang the request
-	// waiting to reach the sample target.
-	deadline := time.Now().Add(time.Duration(seconds)*time.Second + 5*time.Second)
+	// waiting to reach the sample target. The timer is an explicit select arm
+	// (not a post-receive check) because the broker pauses fan-out whenever no
+	// primary StreamIQ session is running — during a control-channel hunt
+	// backoff the device delivers nothing, so a receive-then-check deadline
+	// would block forever on sub.C and wedge the HTTP request ("Capturing…"
+	// never ends). See internal/sdr/iqtap/broker.go.
+	timer := time.NewTimer(time.Duration(seconds)*time.Second + 5*time.Second)
+	defer timer.Stop()
 	out := make([]complex64, 0, target)
+loop:
 	for int64(len(out)) < target {
 		select {
 		case <-ctx.Done():
 			return out, rate, br.CenterHz(), ctx.Err()
+		case <-timer.C:
+			break loop
 		case chunk, ok := <-sub.C:
 			if !ok {
 				return out, rate, br.CenterHz(), errors.New("capture: IQ stream ended before capture finished")
 			}
 			out = append(out, chunk...)
 		}
-		if time.Now().After(deadline) {
-			break
-		}
+	}
+	if len(out) == 0 {
+		return out, rate, br.CenterHz(), fmt.Errorf(
+			"capture: device %q delivered no IQ within %ds — the tuner is not currently "+
+				"streaming (a scan may be mid-hunt / in control-channel backoff); start or "+
+				"resume a scan on this SDR, or retry", serial, seconds)
 	}
 	return out, rate, br.CenterHz(), nil
 }

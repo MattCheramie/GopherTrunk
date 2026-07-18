@@ -144,6 +144,8 @@ function CaptureForm() {
   const [seconds, setSeconds] = useState("10");
   const [format, setFormat] = useState("f32");
   const [protocol, setProtocol] = useState("");
+  const [centerMHz, setCenterMHz] = useState("");
+  const [bandwidthKHz, setBandwidthKHz] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [downloadID, setDownloadID] = useState<string | null>(null);
@@ -171,11 +173,17 @@ function CaptureForm() {
     setErr(null);
     setDownloadID(null);
     try {
+      const bandwidthHz = bandwidthKHz.trim() ? Math.round(Number(bandwidthKHz) * 1e3) : 0;
+      const centerHz = centerMHz.trim() ? Math.round(Number(centerMHz) * 1e6) : 0;
       const res = await captureFromTuner({
         serial,
         seconds: Number(seconds) || 1,
         format,
         protocol: protocol || undefined,
+        // A narrowband slice is requested only when a bandwidth is given; the
+        // centre defaults to the tuner centre server-side when omitted.
+        bandwidth_hz: bandwidthHz > 0 ? bandwidthHz : undefined,
+        center_hz: bandwidthHz > 0 && centerHz > 0 ? centerHz : undefined,
       });
       setDownloadID(res.capture.id);
     } catch (e) {
@@ -241,6 +249,31 @@ function CaptureForm() {
           </select>
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="label">Center MHz (optional)</label>
+          <input
+            className="input"
+            placeholder="tuner centre"
+            value={centerMHz}
+            onChange={(e) => setCenterMHz(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label">Bandwidth kHz (optional)</label>
+          <input
+            className="input"
+            placeholder="full band"
+            value={bandwidthKHz}
+            onChange={(e) => setBandwidthKHz(e.target.value)}
+          />
+        </div>
+      </div>
+      <p className="text-xs text-muted">
+        Set a bandwidth to save a small narrowband slice around the centre (carved from the
+        tuner&rsquo;s current span, no retune). Leave blank for a full-band grab. cs16 = 16-bit raw
+        (half the size of f32).
+      </p>
       <button className="btn" disabled={busy || !serial} onClick={onCapture}>
         {busy ? "Capturing…" : "Capture"}
       </button>
@@ -249,7 +282,7 @@ function CaptureForm() {
           className="btn-ghost block text-center"
           href={api.captureDownloadURL(config, downloadID)}
         >
-          Download .cfile
+          Download capture
         </a>
       )}
       {err && <p className="text-xs text-err">{err}</p>}

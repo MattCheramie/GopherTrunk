@@ -344,13 +344,19 @@ export interface CaptureDevice {
   sample_rate_hz: number;
 }
 
-// CaptureRequest is the body of POST /api/v1/siglab/capture.
+// CaptureRequest is the body of POST /api/v1/siglab/capture. center_hz +
+// bandwidth_hz (both optional) request a small narrowband slice carved from the
+// tuner's current wideband stream: the channel at center_hz is shifted to DC and
+// decimated to ~bandwidth_hz. The tuner is not retuned, so center_hz must sit
+// inside the tuned span. Omit bandwidth_hz for a full-band capture.
 export interface CaptureRequest {
   serial: string;
   seconds: number;
   format: string;
   protocol?: string;
   source?: string;
+  center_hz?: number;
+  bandwidth_hz?: number;
 }
 
 // CaptureResponse is returned by a successful live capture.

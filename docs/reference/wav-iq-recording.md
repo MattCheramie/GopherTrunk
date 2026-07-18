@@ -68,7 +68,12 @@ The trade-offs are the size ceiling and that not every tool honours `auxi`.
 GopherTrunk reads WAV IQ recordings through its offline engine's `-format wav` decoder (also
 accepted as `sw16`/`s16`). It parses the RIFF/WAVE header, takes the sample rate from the header —
 overriding any `-sample-rate` flag — strips the 44-byte header, and decodes the two-channel 16-bit
-PCM as I-then-Q normalised by 32768. This is the same layout GopherTrunk's own IQ writer emits and
+PCM as I-then-Q normalised by 32768. The same 16-bit sample body without the RIFF/WAVE header is the
+separate `-format cs16` (also `sc16`/`i16`/`raw`) format — a headerless complex-signed-16-bit blob
+that carries its sample rate in the metadata sidecar instead of a header. It is half the size of a
+`f32` cfile while keeping the resolution of a 12–14-bit ADC (Airspy/RSPdx/USRP), where `u8` would
+throw it away, and is the recommended small format for a capture you want to hand to an analysis
+tool. This is the same layout GopherTrunk's own IQ writer emits and
 that SDRtrunk and SDR++ produce, so a WAV captured in one of those tools replays through
 GopherTrunk's production receiver pipeline unchanged. Because a baseband WAV is already channelised
 to one signal, GopherTrunk treats it as pre-tuned: auto-tune is rejected for WAV input and a residual
