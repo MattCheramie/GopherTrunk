@@ -254,6 +254,12 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		TunerName:    tuner.Type().String(),
 		Gains:        tuner.Gains(),
 	}
+	// Bring-up is done: arm the runtime control-pipe stall recovery so a
+	// transient demod-write STALL during a later retune (the RTL-SDR Blog V4
+	// SetI2CRepeater "broken pipe", issue #753) is retried in place instead of
+	// aborting the tune. Deliberately after the reset+retry envelope above,
+	// which owns cold-boot stall recovery via full device resets.
+	demod.EnableControlStallRetry()
 	return &Device{
 		transport:   transport,
 		demod:       demod,

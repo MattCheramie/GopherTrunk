@@ -1,11 +1,61 @@
 package rtl2832u
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
+
+// ctrlStallRetryDelay is the settle applied before retrying a demod control
+// transfer that STALLed the USB control pipe. A package var (not a const) so
+// tests can zero it. Matches the tuner burst path's r82xxBurstRetryDelayMillis
+// order of magnitude — long enough to let the RTL2832U's I²C bridge drain,
+// short enough to be invisible on a healthy retune.
+var ctrlStallRetryDelay = 8 * time.Millisecond
+
+// isControlPipeStall reports whether err is a recoverable USB control-pipe
+// stall: the RTL-SDR Blog V4's R828D intermittently STALLs a demod control
+// write (most visibly the SetI2CRepeater toggle inside a retune), which
+// surfaces as a raw syscall.EPIPE on Linux usbdevfs or usb.ErrPipeStalled on
+// Windows/WinUSB. Mirrors the tuner path's isI2CBurstStall predicate. A
+// control-endpoint stall is cleared by the next SETUP, so a single resubmit
+// recovers it. Issue #753.
+func isControlPipeStall(err error) bool {
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrPipeStalled)
+}
+
+// ctrlOut issues a vendor-OUT demod/block control transfer, retrying once on a
+// recoverable control-pipe stall (isControlPipeStall). librtlsdr/libusb get
+// this recovery for free — which is why rtl_test / SDR++ retune cleanly on the
+// same RTL-SDR Blog V4 where GopherTrunk's native stack surfaced the stall as
+// `SetI2CRepeater(true): ... broken pipe` and aborted the whole SetCenterFreq
+// (issue #753). A full device Reset (the open-time recovery envelope) is
+// deliberately NOT used on this runtime path: it would tear down the live IQ
+// stream mid-tune. The register writes routed through here carry absolute
+// values, so replaying a stalled (un-applied) write is idempotent.
+func (d *Demod) ctrlOut(wValue, wIndex uint16, data []byte) error {
+	err := d.t.ControlOut(0, wValue, wIndex, data, CtrlTimeoutMs)
+	if err == nil || !d.stallRetry || !isControlPipeStall(err) {
+		return err
+	}
+	time.Sleep(ctrlStallRetryDelay)
+	return d.t.ControlOut(0, wValue, wIndex, data, CtrlTimeoutMs)
+}
+
+// ctrlIn is the vendor-IN counterpart to ctrlOut, applying the same
+// single-retry recovery to a stalled demod/block register read. Issue #753.
+func (d *Demod) ctrlIn(wValue, wIndex uint16, n int) ([]byte, error) {
+	out, err := d.t.ControlIn(0, wValue, wIndex, n, CtrlTimeoutMs)
+	if err == nil || !d.stallRetry || !isControlPipeStall(err) {
+		return out, err
+	}
+	time.Sleep(ctrlStallRetryDelay)
+	return d.t.ControlIn(0, wValue, wIndex, n, CtrlTimeoutMs)
+}
 
 // Demod is the per-device register interface. One [Demod] wraps one
 // claimed [usb.Transport] and is owned by the higher-level driver
@@ -24,6 +74,24 @@ type Demod struct {
 	ifHz  int32
 	ppm   int
 	repON bool // last value pushed to SetI2CRepeater
+	// stallRetry enables the single settle-and-retry recovery in ctrlOut /
+	// ctrlIn on a control-pipe stall. OFF during open-time bring-up, where a
+	// cold-boot stall must propagate to the driver's reset+retry envelope (a
+	// full USBDEVFS_RESET is the only thing that clears the NESDR-v5
+	// latch-and-NAK; an inline resubmit just re-NAKs, issue #248). Enabled by
+	// the driver via EnableControlStallRetry once bring-up succeeds, so the
+	// runtime retune path recovers a transient stall without a stream-killing
+	// reset (issue #753).
+	stallRetry bool
+}
+
+// EnableControlStallRetry turns on the runtime control-pipe stall recovery in
+// ctrlOut / ctrlIn. The driver calls it after a successful bring-up; see the
+// stallRetry field. Issue #753.
+func (d *Demod) EnableControlStallRetry() {
+	d.mu.Lock()
+	d.stallRetry = true
+	d.mu.Unlock()
 }
 
 // New wraps the given transport. The caller is responsible for opening
@@ -73,7 +141,7 @@ func (d *Demod) ReadBlockReg(block uint8, addr uint16, n int) ([]byte, error) {
 
 func (d *Demod) readBlockRegLocked(block uint8, addr uint16, n int) ([]byte, error) {
 	index := uint16(block) << 8
-	out, err := d.t.ControlIn(0, addr, index, n, CtrlTimeoutMs)
+	out, err := d.ctrlIn(addr, index, n)
 	if err != nil {
 		return nil, fmt.Errorf("rtl2832u: read block=%d addr=0x%04x: %w", block, addr, err)
 	}
@@ -93,7 +161,7 @@ func (d *Demod) WriteBlockReg(block uint8, addr, val uint16, n int) error {
 func (d *Demod) writeBlockRegLocked(block uint8, addr, val uint16, n int) error {
 	index := uint16(block)<<8 | 0x10
 	data := encodeWriteVal(val, n)
-	if err := d.t.ControlOut(0, addr, index, data, CtrlTimeoutMs); err != nil {
+	if err := d.ctrlOut(addr, index, data); err != nil {
 		return fmt.Errorf("rtl2832u: write block=%d addr=0x%04x val=0x%04x: %w", block, addr, val, err)
 	}
 	return nil
@@ -113,7 +181,7 @@ func (d *Demod) ReadDemodReg(page uint8, addr uint16, n int) ([]byte, error) {
 func (d *Demod) readDemodRegLocked(page uint8, addr uint16, n int) ([]byte, error) {
 	wValue := (addr << 8) | 0x20
 	wIndex := uint16(page)
-	out, err := d.t.ControlIn(0, wValue, wIndex, n, CtrlTimeoutMs)
+	out, err := d.ctrlIn(wValue, wIndex, n)
 	if err != nil {
 		return nil, fmt.Errorf("rtl2832u: read demod page=%d addr=0x%02x: %w", page, addr, err)
 	}
@@ -136,7 +204,7 @@ func (d *Demod) writeDemodRegLocked(page uint8, addr, val uint16, n int) error {
 	wValue := (addr << 8) | 0x20
 	wIndex := uint16(0x10) | uint16(page)
 	data := encodeWriteVal(val, n)
-	if err := d.t.ControlOut(0, wValue, wIndex, data, CtrlTimeoutMs); err != nil {
+	if err := d.ctrlOut(wValue, wIndex, data); err != nil {
 		return fmt.Errorf("rtl2832u: write demod page=%d addr=0x%02x val=0x%04x: %w", page, addr, val, err)
 	}
 	// Commit. Required by the RTL2832U register interface — without it

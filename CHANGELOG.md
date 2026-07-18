@@ -8,6 +8,21 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **RTL-SDR Blog V4 retunes no longer abort on a `SetI2CRepeater(true): ...
+  broken pipe`.** The V4's R828D intermittently STALLs a demod control write
+  mid-run — most visibly the I²C-repeater toggle inside a `SetCenterFreq` —
+  which surfaced as a raw `EPIPE` ("broken pipe") on Linux usbdevfs (or
+  `ErrPipeStalled` on Windows) and failed the whole tune, even though
+  `rtl_test`/SDR++ tune the same dongle cleanly (libusb recovers a control-pipe
+  stall). GopherTrunk's native stack recovered such stalls only on the open-time
+  bring-up path (via a full device reset) and on the tuner burst path (via
+  `writeBurstChunk`'s inner retry); the runtime demod control path had no
+  recovery. It now settles and retries a stalled demod/block control transfer
+  once — the librtlsdr-equivalent behaviour — instead of aborting. The retry is
+  armed only after bring-up completes, so the cold-boot reset envelope is
+  unchanged, and a full reset is deliberately not used at runtime (it would tear
+  down the live IQ stream mid-tune). A persistent stall still surfaces (issue
+  #753).
 - **Completed-call webhook now carries the source RID on nearly every call,
   not just the ~18% whose voice-side `call.source` decoded.** The per-call
   `broadcast.webhook` sink read the source RID off the grant that *bound* the

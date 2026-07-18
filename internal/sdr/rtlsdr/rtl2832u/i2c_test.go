@@ -2,10 +2,105 @@ package rtl2832u
 
 import (
 	"bytes"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
+
+// demodWriteStep builds a single demod-register-write CtrlExchange (no commit
+// read), optionally scripted to return err instead of completing — so a test
+// can inject a control-pipe stall on the write itself.
+func demodWriteStep(page uint8, addr, val uint16, n int, err error) usb.CtrlExchange {
+	return usb.CtrlExchange{
+		In: false, BRequest: 0,
+		WValue: (addr << 8) | 0x20,
+		WIndex: uint16(0x10) | uint16(page),
+		Data:   encodeWriteVal(val, n),
+		Err:    err,
+	}
+}
+
+// TestSetI2CRepeater_RecoversFromControlPipeStall reproduces issue #753: the
+// RTL-SDR Blog V4's R828D intermittently STALLs the SetI2CRepeater demod
+// write mid-run — surfacing as a "broken pipe" (EPIPE) on Linux usbdevfs, or
+// usb.ErrPipeStalled on Windows/WinUSB — which aborted the whole
+// SetCenterFreq retune with `SetI2CRepeater(true): ... broken pipe`.
+// rtl_test / SDR++ tune cleanly because libusb recovers a control-endpoint
+// stall (it clears on the next SETUP); GopherTrunk's native demod control
+// path did not retry, unlike the tuner burst path (writeBurstChunk). The
+// write must settle-and-retry once and succeed.
+func TestSetI2CRepeater_RecoversFromControlPipeStall(t *testing.T) {
+	defer func(d time.Duration) { ctrlStallRetryDelay = d }(ctrlStallRetryDelay)
+	ctrlStallRetryDelay = 0
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"linux-epipe", syscall.EPIPE},
+		{"win-pipe-stalled", usb.ErrPipeStalled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := usb.NewMockTransport()
+			m.Script = []usb.CtrlExchange{
+				demodWriteStep(1, 0x01, 0x18, 1, tc.err), // stall
+				demodWriteStep(1, 0x01, 0x18, 1, nil),    // retry succeeds
+				commit,
+			}
+			d := New(m)
+			d.EnableControlStallRetry() // runtime path (post bring-up)
+			if err := d.SetI2CRepeater(true); err != nil {
+				t.Fatalf("SetI2CRepeater(true) must recover from a single control-pipe stall, got: %v", err)
+			}
+			if m.Err != nil || m.Remaining() != 0 {
+				t.Errorf("mock state: err=%v remaining=%d", m.Err, m.Remaining())
+			}
+		})
+	}
+}
+
+// TestSetI2CRepeater_StallNotRetriedDuringBringup guards that the runtime
+// recovery stays OFF until EnableControlStallRetry is called: during open-time
+// bring-up a control-pipe stall must propagate raw so the driver's reset+retry
+// envelope owns recovery (a full USBDEVFS_RESET, not an inline resubmit — the
+// NESDR-v5 cold-boot latch only clears on reset, issue #248). This is what
+// keeps the purego bring-up envelope tests intact.
+func TestSetI2CRepeater_StallNotRetriedDuringBringup(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		demodWriteStep(1, 0x01, 0x18, 1, syscall.EPIPE), // stall — must NOT be retried
+	}
+	d := New(m) // retry not enabled: models bring-up
+	if err := d.SetI2CRepeater(true); err == nil {
+		t.Fatal("expected the stall to propagate during bring-up, got nil")
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("bring-up path must issue exactly one attempt (no inline retry), remaining=%d", m.Remaining())
+	}
+}
+
+// TestSetI2CRepeater_PersistentStallSurfaces guards that the retry is bounded:
+// a stall that persists across the retry surfaces the error (wrapped so the
+// caller can still classify it) rather than looping.
+func TestSetI2CRepeater_PersistentStallSurfaces(t *testing.T) {
+	defer func(d time.Duration) { ctrlStallRetryDelay = d }(ctrlStallRetryDelay)
+	ctrlStallRetryDelay = 0
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		demodWriteStep(1, 0x01, 0x18, 1, syscall.EPIPE), // stall
+		demodWriteStep(1, 0x01, 0x18, 1, syscall.EPIPE), // retry also stalls
+	}
+	d := New(m)
+	d.EnableControlStallRetry() // runtime path (post bring-up)
+	err := d.SetI2CRepeater(true)
+	if err == nil {
+		t.Fatal("a persistent stall must surface an error, got nil")
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("expected exactly one retry (2 attempts), remaining=%d", m.Remaining())
+	}
+}
 
 func TestSetI2CRepeater_On(t *testing.T) {
 	// page=1 addr=0x01 val=0x18 (bit 3 + bit 4 = enable repeater).
