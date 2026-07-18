@@ -415,6 +415,30 @@ func (e *Engine) HandleGrant(g Grant) {
 		}
 	}
 
+	// Physical-channel source backfill (#915). The talkgroup dedup above
+	// recovers a source RID only from a repeat grant that matches the bound
+	// call's (System, talkgroup, timeslot). The reporter's #916 field test
+	// showed that reaches ~12% coverage on a heavily-compressed Phase 2 system
+	// because the RID-bearing grant usually arrives under a *different*
+	// talkgroup identity than the source-less grant that bound the call, so it
+	// misses that match and — with a free device — would spawn a phantom second
+	// call from the mismatched talkgroup. A frequency + timeslot hosts exactly
+	// one in-progress transmission, so a source-carrying grant on an active
+	// call's exact channel belongs to that call: fold the RID on (only when the
+	// source is still unknown) and treat the grant as a repeat of that call,
+	// both recovering the source for the completed-call webhook and suppressing
+	// the duplicate call. Republish the source-update on the first fill only —
+	// the same path the talkgroup backfill and in-call call.source updates use.
+	if g.SourceID != 0 && g.FrequencyHz != 0 {
+		if serial, upd, filled := e.pool.BackfillSourceForChannel(g.System, g.FrequencyHz, g.Timeslot, g.SourceID); filled {
+			e.pool.Touch(serial, e.now())
+			e.republishCallSource(serial, upd)
+			e.log.Debug("grant matched active call by channel; source backfilled",
+				"grant", g.String(), "device", serial)
+			return
+		}
+	}
+
 	// 1) Free device available? Allocate. FindFreeForFrequency skips
 	// virtual voice tuners whose wideband window doesn't cover the
 	// grant — so a P25 voice grant outside the wideband band falls

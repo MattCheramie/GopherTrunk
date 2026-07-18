@@ -1160,6 +1160,126 @@ func TestEngineHandleGrantSourceBackfillDoesNotClobberOrReflood(t *testing.T) {
 	}
 }
 
+// TestEngineHandleGrantBackfillsSourceByChannelDespiteTalkgroupMismatch
+// covers the residual #915 coverage gap the repeat-grant backfill
+// (TestEngineHandleGrantBackfillsSourceFromRepeatGrant) could not reach.
+// The reporter's #916 field test on Victorian MMR (heavily Phase 2 TDMA)
+// showed source-RID coverage rising only to ~12%: the RID-bearing grant
+// "arrives after the call binds with a different talkgroup identity", so it
+// never matches the (System, talkgroup, timeslot) dedup that the repeat-grant
+// backfill keys on. A physical channel + timeslot hosts exactly one in-
+// progress transmission (Grant.Timeslot documents (FrequencyHz, Timeslot) as
+// the call identity), so a source-carrying grant landing on an active call's
+// exact channel belongs to that call even when its talkgroup label differs —
+// a mis-aliased compressed grant, or a super-group / patch remap. The engine
+// must fold that RID onto the bound call by channel, republish it for the
+// completed-call webhook, and NOT spawn a phantom second call from the
+// mismatched talkgroup.
+func TestEngineHandleGrantBackfillsSourceByChannelDespiteTalkgroupMismatch(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	pool, _ := mkPool(2) // a free second device makes the phantom-call regression observable
+	e, _ := NewEngine(EngineOptions{
+		Bus:         bus,
+		VoicePool:   pool,
+		Talkgroups:  NewTalkgroupDB(),
+		CallTimeout: 5 * time.Second,
+	})
+
+	// The call binds from a source-less compressed grant on TS1: src=0, and a
+	// talkgroup label of 20001.
+	bind := Grant{System: "MMR", Protocol: "p25-phase2", GroupID: 20001, Timeslot: 1, FrequencyHz: 422_612_500}
+	e.HandleGrant(bind)
+	actives := e.ActiveCalls()
+	if len(actives) != 1 {
+		t.Fatalf("expected 1 active call after bind, got %d", len(actives))
+	}
+	dev := actives[0].Device.Serial
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// The RID-bearing grant for the SAME physical channel/timeslot arrives
+	// under a different talkgroup identity (20050) than the call bound with.
+	ridGrant := Grant{System: "MMR", Protocol: "p25-phase2", GroupID: 20050, Timeslot: 1,
+		FrequencyHz: 422_612_500, SourceID: 202419}
+	e.HandleGrant(ridGrant)
+
+	updated := e.ActiveCalls()
+	if len(updated) != 1 {
+		t.Fatalf("mismatched-talkgroup grant on an active channel must not spawn a second call: got %d active", len(updated))
+	}
+	if updated[0].Device.Serial != dev {
+		t.Fatalf("backfill rebound the call to a different device: got %q want %q", updated[0].Device.Serial, dev)
+	}
+	if updated[0].Grant.SourceID != 202419 {
+		t.Fatalf("source RID not backfilled onto the channel's bound call: got %d want 202419", updated[0].Grant.SourceID)
+	}
+	// The call keeps the talkgroup it bound under, not the RID grant's label.
+	if updated[0].Grant.GroupID != 20001 {
+		t.Errorf("channel backfill changed the call's talkgroup: got %d want 20001", updated[0].Grant.GroupID)
+	}
+
+	// The backfill must republish a source-update carrying the call's own
+	// identity (talkgroup 20001) so the recorder patches the completed-call
+	// (webhook) grant.
+	select {
+	case ev := <-sub.C:
+		if ev.Kind != events.KindCallSourceUpdate {
+			t.Fatalf("expected KindCallSourceUpdate republish, got %s", ev.Kind)
+		}
+		c, ok := ev.Payload.(CallSourceUpdate)
+		if !ok {
+			t.Fatalf("payload type = %T", ev.Payload)
+		}
+		if c.DeviceSerial != dev || c.System != "MMR" || c.GroupID != 20001 || c.SourceID != 202419 {
+			t.Errorf("enriched source-update payload = %+v", c)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("channel backfill did not republish a KindCallSourceUpdate")
+	}
+}
+
+// TestEngineChannelBackfillRespectsTimeslotAndSystem guards the physical-
+// channel key of the #915 backfill against source leakage: a DMR Tier III
+// carrier runs two independent calls on one frequency (TS1 + TS2), so a
+// source grant on TS2 must never fold its RID onto the TS1 call sharing the
+// frequency, and a grant on another system's identical frequency must never
+// match either.
+func TestEngineChannelBackfillRespectsTimeslotAndSystem(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	pool, _ := mkPool(3)
+	e, _ := NewEngine(EngineOptions{
+		Bus:         bus,
+		VoicePool:   pool,
+		Talkgroups:  NewTalkgroupDB(),
+		CallTimeout: 5 * time.Second,
+	})
+
+	// A source-less TS1 call on a shared carrier.
+	e.HandleGrant(Grant{System: "DMR3", Protocol: "dmr", GroupID: 100, Timeslot: 1, FrequencyHz: 421_000_000})
+	ts1 := e.ActiveCalls()[0].Device.Serial
+
+	// A source-carrying grant on TS2 of the SAME frequency must bind its own
+	// call, not backfill the TS1 call.
+	e.HandleGrant(Grant{System: "DMR3", Protocol: "dmr", GroupID: 200, Timeslot: 2, FrequencyHz: 421_000_000, SourceID: 555})
+	for _, ac := range e.ActiveCalls() {
+		if ac.Device.Serial == ts1 && ac.Grant.SourceID != 0 {
+			t.Fatalf("TS2 grant leaked its source onto the TS1 call: got %d", ac.Grant.SourceID)
+		}
+	}
+
+	// A source-carrying grant on another system's identical frequency+timeslot
+	// must not touch the DMR3 TS1 call either.
+	e.HandleGrant(Grant{System: "OTHER", Protocol: "dmr", GroupID: 100, Timeslot: 1, FrequencyHz: 421_000_000, SourceID: 777})
+	for _, ac := range e.ActiveCalls() {
+		if ac.Device.Serial == ts1 && ac.Grant.SourceID != 0 {
+			t.Fatalf("cross-system grant leaked its source onto the TS1 call: got %d", ac.Grant.SourceID)
+		}
+	}
+}
+
 // TestEngineHandleCallSourceUpdateUnknownDeviceDoesNotPanic guards
 // the late-arriving PDU after a call ends.
 func TestEngineHandleCallSourceUpdateUnknownDeviceDoesNotPanic(t *testing.T) {

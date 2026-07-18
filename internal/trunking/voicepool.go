@@ -495,3 +495,40 @@ func (p *VoicePool) BackfillSourceFromGrant(serial string, sourceID uint32) (Gra
 	ac.Grant.SourceID = sourceID
 	return ac.Grant, true
 }
+
+// BackfillSourceForChannel folds a control-channel grant's source RID onto the
+// active call occupying a physical channel — identified by (system, frequency,
+// timeslot) — regardless of the grant's talkgroup label. It is the wider net
+// BackfillSourceFromGrant (keyed on the call's talkgroup) can't cast: on a
+// heavily-compressed Phase 2 system the RID-bearing GRP_VCH_GRANT for a call
+// frequently arrives under a *different* talkgroup than the source-less grant
+// that bound the call (a mis-aliased compressed grant, or a super-group / patch
+// remap), so it never matches the talkgroup dedup — the residual ~88% of the
+// #915 coverage gap the reporter measured. A frequency + timeslot hosts exactly
+// one in-progress transmission (see Grant.Timeslot, which documents
+// (FrequencyHz, Timeslot) as the engine's call identity), so a source-carrying
+// grant on an active call's exact channel belongs to that call.
+//
+// Fill-only-when-zero, like BackfillSourceFromGrant: an in-call
+// GROUP_VOICE_CHANNEL_USER (UpdateSource) still wins, and a later grant never
+// clobbers a known RID. Returns the bound device serial, the updated Grant, and
+// filled=true only on the first fill of a previously-zero source — so the engine
+// republishes the source-update once per call. Returns ("", zero, false) when
+// sourceID or freqHz is zero, or no channel-matching call has an unset source.
+// Issue #915.
+func (p *VoicePool) BackfillSourceForChannel(system string, freqHz uint32, timeslot uint8, sourceID uint32) (serial string, g Grant, filled bool) {
+	if sourceID == 0 || freqHz == 0 {
+		return "", Grant{}, false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for s, ac := range p.active {
+		if ac.Grant.System != system || ac.Grant.FrequencyHz != freqHz ||
+			ac.Grant.Timeslot != timeslot || ac.Grant.SourceID != 0 {
+			continue
+		}
+		ac.Grant.SourceID = sourceID
+		return s, ac.Grant, true
+	}
+	return "", Grant{}, false
+}
