@@ -26,7 +26,7 @@ import (
 // Unlike the daemon's --iq-capture flag — which taps a control SDR already in
 // the running pool (issue #402) — this is a standalone one-shot for grabbing a
 // capture off a dedicated dongle without bringing the whole daemon up. Both
-// paths share the encodeF32/encodeU8 packers in iqcapture.go.
+// paths stream chunk-by-chunk through siglab.CaptureWriter.
 func runCapture(args []string) {
 	fs := flag.NewFlagSet("capture", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
@@ -270,28 +270,18 @@ func openCaptureDevice(serial string) (sdr.Device, sdr.Info, error) {
 }
 
 // captureToFile streams complex64 chunks from src, optionally decimates each
-// chunk to a narrowband channel through ddc (nil = full band), encodes the
-// result in the requested on-disk format with the shared encodeF32/encodeU8/
-// encodeS16 packers, and writes to path until it has collected seconds*rate
-// INPUT samples, the stream ends, ctx cancels, or a wall-clock safety deadline
-// elapses. Returns the number of IQ samples written (post-decimation when ddc
-// is set).
+// chunk to a narrowband channel through ddc (nil = full band), and streams the
+// result to path in the requested on-disk format via siglab.CaptureWriter (one
+// reused scratch buffer, no whole-capture buffering), until it has collected
+// seconds*rate INPUT samples, the stream ends, ctx cancels, or a wall-clock
+// safety deadline elapses. Returns the number of IQ samples written
+// (post-decimation when ddc is set).
 func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return 0, fmt.Errorf("create %s: %w", path, err)
 	}
-
-	encode := encodeF32
-	bytesPerSample := 8
-	switch format {
-	case siglab.FormatU8:
-		encode = encodeU8
-		bytesPerSample = 2
-	case siglab.FormatS16:
-		encode = encodeS16
-		bytesPerSample = 4
-	}
+	enc := siglab.NewCaptureWriter(f, format)
 
 	// Stop once seconds worth of INPUT samples have been read; the written
 	// count may be far smaller when ddc decimates to a narrow channel.
@@ -300,13 +290,12 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 	// command forever waiting to reach the sample target. The timer is an
 	// explicit select arm (not a post-receive check) so a source that never
 	// delivers a chunk can't block the receive forever — see the same fix in
-	// captureProvider.Capture for the daemon's broker-tap path.
+	// captureProvider.CaptureStream for the daemon's broker-tap path.
 	timer := time.NewTimer(time.Duration(seconds*float64(time.Second)) + 5*time.Second)
 	defer timer.Stop()
 
-	var scratch []byte
 	var ddcBuf []complex64
-	var inputRead, written int64
+	var inputRead int64
 	var loopErr error
 loop:
 	for inputRead < target {
@@ -327,28 +316,17 @@ loop:
 				ddcBuf = ddc.Process(ddcBuf, chunk)
 				samples = ddcBuf
 			}
-			if len(samples) == 0 {
-				continue
-			}
-			n := len(samples) * bytesPerSample
-			if cap(scratch) < n {
-				scratch = make([]byte, n)
-			} else {
-				scratch = scratch[:n]
-			}
-			encode(scratch, samples)
-			if _, werr := f.Write(scratch); werr != nil {
+			if werr := enc.Write(samples); werr != nil {
 				loopErr = fmt.Errorf("write: %w", werr)
 				break loop
 			}
-			written += int64(len(samples))
 		}
 	}
 
 	if cerr := f.Close(); cerr != nil && loopErr == nil {
 		loopErr = cerr
 	}
-	return written, loopErr
+	return enc.Samples(), loopErr
 }
 
 // absInt64 is the absolute value of a signed 64-bit integer.

@@ -115,8 +115,7 @@ func TestEncodeF32RoundTripsThroughReplay(t *testing.T) {
 		complex(-0.5, 0.75),
 		complex(1.0, -1.0),
 	}
-	buf := make([]byte, len(in)*8)
-	encodeF32(buf, in)
+	buf := siglab.EncodeCapture(in, siglab.FormatF32)
 
 	out := make([]complex64, len(in))
 	decF32, _ := siglab.FormatF32.Decoder()
@@ -138,8 +137,7 @@ func TestEncodeU8RoundTripsThroughReplay(t *testing.T) {
 		complex(-0.5, 0.5),
 		complex(0.99, -0.99),
 	}
-	buf := make([]byte, len(in)*2)
-	encodeU8(buf, in)
+	buf := siglab.EncodeCapture(in, siglab.FormatU8)
 
 	out := make([]complex64, len(in))
 	decU8, _ := siglab.FormatU8.Decoder()
@@ -163,8 +161,7 @@ func TestEncodeU8Clips(t *testing.T) {
 		complex(5.0, -5.0),
 		complex(-10.0, 10.0),
 	}
-	buf := make([]byte, len(in)*2)
-	encodeU8(buf, in)
+	buf := siglab.EncodeCapture(in, siglab.FormatU8)
 	if buf[0] != 255 || buf[1] != 0 {
 		t.Errorf("positive sat = (%d,%d), want (255,0)", buf[0], buf[1])
 	}
