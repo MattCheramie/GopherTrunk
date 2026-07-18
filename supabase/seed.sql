@@ -1,0 +1,9 @@
+-- GopherTrunk — local seed data.
+--
+-- Run automatically by `supabase start` / `supabase db reset` AFTER the
+-- migrations in supabase/migrations/ have been applied. Keep this to
+-- development-only fixtures; production data does not belong here.
+--
+-- The starter forum categories (general / help / systems / dev) are seeded by
+-- the initial migration itself via an idempotent INSERT, so they are NOT
+-- repeated here. Add local test users / threads below as needed.
