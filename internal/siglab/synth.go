@@ -121,22 +121,34 @@ func WriteMetadata(path string, m *Metadata) error {
 // Inverse of decodeF32.
 func encodeF32(iq []complex64) []byte {
 	buf := make([]byte, len(iq)*8)
-	for i, s := range iq {
-		binary.LittleEndian.PutUint32(buf[8*i:], math.Float32bits(real(s)))
-		binary.LittleEndian.PutUint32(buf[8*i+4:], math.Float32bits(imag(s)))
-	}
+	encodeF32Into(buf, iq)
 	return buf
+}
+
+// encodeF32Into writes the f32 encoding of iq into dst (which must be at least
+// len(iq)*8 bytes). Split out so the streaming CaptureWriter can encode chunk
+// by chunk into a reused buffer without re-implementing the byte layout.
+func encodeF32Into(dst []byte, iq []complex64) {
+	for i, s := range iq {
+		binary.LittleEndian.PutUint32(dst[8*i:], math.Float32bits(real(s)))
+		binary.LittleEndian.PutUint32(dst[8*i+4:], math.Float32bits(imag(s)))
+	}
 }
 
 // encodeU8 encodes rtl_sdr 8-bit unsigned interleaved IQ. Inverse of
 // decodeU8: maps [-1,+1] back to [0,255] centred on 127.5, clamped.
 func encodeU8(iq []complex64) []byte {
 	buf := make([]byte, len(iq)*2)
-	for i, s := range iq {
-		buf[2*i] = floatToU8(real(s))
-		buf[2*i+1] = floatToU8(imag(s))
-	}
+	encodeU8Into(buf, iq)
 	return buf
+}
+
+// encodeU8Into writes the u8 encoding of iq into dst (≥ len(iq)*2 bytes).
+func encodeU8Into(dst []byte, iq []complex64) {
+	for i, s := range iq {
+		dst[2*i] = floatToU8(real(s))
+		dst[2*i+1] = floatToU8(imag(s))
+	}
 }
 
 // encodeSW16 encodes interleaved little-endian 16-bit signed PCM IQ (I then Q,
@@ -144,11 +156,16 @@ func encodeU8(iq []complex64) []byte {
 // inverse of decodeSW16.
 func encodeSW16(iq []complex64) []byte {
 	buf := make([]byte, len(iq)*4)
-	for i, s := range iq {
-		binary.LittleEndian.PutUint16(buf[4*i:], uint16(floatToI16(real(s))))
-		binary.LittleEndian.PutUint16(buf[4*i+2:], uint16(floatToI16(imag(s))))
-	}
+	encodeSW16Into(buf, iq)
 	return buf
+}
+
+// encodeSW16Into writes the cs16 encoding of iq into dst (≥ len(iq)*4 bytes).
+func encodeSW16Into(dst []byte, iq []complex64) {
+	for i, s := range iq {
+		binary.LittleEndian.PutUint16(dst[4*i:], uint16(floatToI16(real(s))))
+		binary.LittleEndian.PutUint16(dst[4*i+2:], uint16(floatToI16(imag(s))))
+	}
 }
 
 // floatToI16 maps a normalised [-1,+1] sample to a 16-bit signed integer,

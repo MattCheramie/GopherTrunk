@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
 // fakeCaptureProvider is an in-memory CaptureProvider for handler tests.
@@ -19,16 +20,66 @@ type fakeCaptureProvider struct {
 	iq      []complex64
 	rate    uint32
 	center  uint32
+	chunks  int // number of chunks to deliver f.iq in (0 → a small default)
 	err     error
 }
 
-func (f *fakeCaptureProvider) Devices() []SpectrumDevice { return f.devices }
-
-func (f *fakeCaptureProvider) Capture(_ context.Context, _ string, _ int) ([]complex64, uint32, uint32, error) {
-	if f.err != nil {
-		return nil, 0, 0, f.err
+// Devices stamps the provider's rate/centre onto any device that doesn't carry
+// its own, so the handler's up-front rate/centre lookup (budget guard, narrowband
+// span check) sees the same values CaptureStream returns.
+func (f *fakeCaptureProvider) Devices() []SpectrumDevice {
+	out := make([]SpectrumDevice, len(f.devices))
+	copy(out, f.devices)
+	for i := range out {
+		if out[i].SampleRateHz == 0 {
+			out[i].SampleRateHz = f.rate
+		}
+		if out[i].CenterHz == 0 {
+			out[i].CenterHz = f.center
+		}
 	}
-	return f.iq, f.rate, f.center, nil
+	return out
+}
+
+func (f *fakeCaptureProvider) CaptureStream(_ context.Context, _ string, _ int, sink func([]complex64) error) (uint32, uint32, error) {
+	if f.err != nil {
+		return 0, 0, f.err
+	}
+	n := f.chunks
+	if n == 0 {
+		n = 4
+	}
+	for _, chunk := range splitChunks(f.iq, n) {
+		if err := sink(chunk); err != nil {
+			return f.rate, f.center, err
+		}
+	}
+	return f.rate, f.center, nil
+}
+
+// splitChunks splits iq into up to n roughly-equal, non-empty chunks so a fake
+// provider exercises the streaming/chunked capture path (a real broker delivers
+// IQ in many small chunks).
+func splitChunks(iq []complex64, n int) [][]complex64 {
+	if len(iq) == 0 {
+		return nil
+	}
+	if n < 1 {
+		n = 1
+	}
+	if n > len(iq) {
+		n = len(iq)
+	}
+	size := (len(iq) + n - 1) / n
+	var out [][]complex64
+	for i := 0; i < len(iq); i += size {
+		end := i + size
+		if end > len(iq) {
+			end = len(iq)
+		}
+		out = append(out, iq[i:end])
+	}
+	return out
 }
 
 func newCaptureTestServer(t *testing.T, prov CaptureProvider) *httptest.Server {
@@ -292,6 +343,52 @@ func TestSiglabCaptureRejectsOverBudget(t *testing.T) {
 	}
 }
 
+// TestSiglabCaptureStreamsMultipleChunks proves the capture is streamed to disk
+// chunk-by-chunk (not buffered whole): the staged file must equal EncodeCapture
+// of the full IQ even when the provider delivers it in many small chunks.
+func TestSiglabCaptureStreamsMultipleChunks(t *testing.T) {
+	iq := make([]complex64, 10_000)
+	for i := range iq {
+		iq[i] = complex(float32(i%11)/11, float32(i%5)/5)
+	}
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      iq,
+		rate:    2_400_000,
+		center:  460_000_000,
+		chunks:  17, // many small chunks
+	}
+	ts := newCaptureTestServer(t, prov)
+
+	cResp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json",
+		bytes.NewBufferString(`{"serial":"SDR1","seconds":1,"format":"cs16"}`))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	defer cResp.Body.Close()
+	if cResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(cResp.Body)
+		t.Fatalf("status = %d, want 200 (%s)", cResp.StatusCode, b)
+	}
+	var cr captureResponse
+	if err := json.NewDecoder(cResp.Body).Decode(&cr); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if want := int64(len(iq)) * 4; cr.Capture.Size != want {
+		t.Fatalf("size = %d, want %d (streamed cs16)", cr.Capture.Size, want)
+	}
+
+	dlResp, err := http.Get(ts.URL + cr.DownloadURL)
+	if err != nil {
+		t.Fatalf("GET download: %v", err)
+	}
+	defer dlResp.Body.Close()
+	got, _ := io.ReadAll(dlResp.Body)
+	if want := siglab.EncodeCapture(iq, siglab.FormatS16); !bytes.Equal(got, want) {
+		t.Fatalf("streamed file (%d bytes) != EncodeCapture of the whole capture (%d bytes)", len(got), len(want))
+	}
+}
+
 // slowCaptureProvider returns IQ only after a delay, simulating a live capture
 // whose real-time collection crosses the server's WriteTimeout.
 type slowCaptureProvider struct {
@@ -305,13 +402,16 @@ func (p *slowCaptureProvider) Devices() []SpectrumDevice {
 	return []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}}
 }
 
-func (p *slowCaptureProvider) Capture(ctx context.Context, _ string, _ int) ([]complex64, uint32, uint32, error) {
+func (p *slowCaptureProvider) CaptureStream(ctx context.Context, _ string, _ int, sink func([]complex64) error) (uint32, uint32, error) {
 	select {
 	case <-time.After(p.delay):
 	case <-ctx.Done():
-		return nil, 0, 0, ctx.Err()
+		return 0, 0, ctx.Err()
 	}
-	return p.iq, p.rate, p.center, nil
+	if err := sink(p.iq); err != nil {
+		return p.rate, p.center, err
+	}
+	return p.rate, p.center, nil
 }
 
 // TestSiglabCaptureSurvivesWriteTimeout is the regression test for the 30s

@@ -36,19 +36,24 @@ func newCaptureProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, log *s
 // Devices reuses the spectrum provider's broker walk.
 func (p *captureProvider) Devices() []api.SpectrumDevice { return p.sp.Devices() }
 
-// Capture records seconds worth of raw IQ from the named device's broker.
-func (p *captureProvider) Capture(ctx context.Context, serial string, seconds int) ([]complex64, uint32, uint32, error) {
+// CaptureStream records seconds worth of raw IQ from the named device's broker,
+// handing each chunk to sink as it arrives instead of buffering the whole grab.
+// The api handler's sink encodes each chunk straight to disk, so a long or
+// high-rate capture no longer holds the whole stream (and a second encoded copy)
+// in RAM.
+func (p *captureProvider) CaptureStream(ctx context.Context, serial string, seconds int, sink func([]complex64) error) (uint32, uint32, error) {
 	if p == nil {
-		return nil, 0, 0, errors.New("capture: provider not wired")
+		return 0, 0, errors.New("capture: provider not wired")
 	}
 	br, ok := p.brokers[serial]
 	if !ok {
-		return nil, 0, 0, fmt.Errorf("capture: serial %q is not a known SDR", serial)
+		return 0, 0, fmt.Errorf("capture: serial %q is not a known SDR", serial)
 	}
 	rate := br.SampleRateHz()
 	if rate == 0 {
-		return nil, 0, 0, errors.New("capture: device has no sample rate yet")
+		return 0, 0, errors.New("capture: device has no sample rate yet")
 	}
+	center := br.CenterHz()
 	target := int64(seconds) * int64(rate)
 
 	sub := br.Subscribe()
@@ -63,26 +68,29 @@ func (p *captureProvider) Capture(ctx context.Context, serial string, seconds in
 	// never ends). See internal/sdr/iqtap/broker.go.
 	timer := time.NewTimer(time.Duration(seconds)*time.Second + 5*time.Second)
 	defer timer.Stop()
-	out := make([]complex64, 0, target)
+	var got int64
 loop:
-	for int64(len(out)) < target {
+	for got < target {
 		select {
 		case <-ctx.Done():
-			return out, rate, br.CenterHz(), ctx.Err()
+			return rate, center, ctx.Err()
 		case <-timer.C:
 			break loop
 		case chunk, ok := <-sub.C:
 			if !ok {
-				return out, rate, br.CenterHz(), errors.New("capture: IQ stream ended before capture finished")
+				return rate, center, errors.New("capture: IQ stream ended before capture finished")
 			}
-			out = append(out, chunk...)
+			if err := sink(chunk); err != nil {
+				return rate, center, err
+			}
+			got += int64(len(chunk))
 		}
 	}
-	if len(out) == 0 {
-		return out, rate, br.CenterHz(), fmt.Errorf(
+	if got == 0 {
+		return rate, center, fmt.Errorf(
 			"capture: device %q delivered no IQ within %ds — the tuner is not currently "+
 				"streaming (a scan may be mid-hunt / in control-channel backoff); start or "+
 				"resume a scan on this SDR, or retry", serial, seconds)
 	}
-	return out, rate, br.CenterHz(), nil
+	return rate, center, nil
 }

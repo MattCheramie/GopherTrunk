@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,19 +16,19 @@ import (
 )
 
 // maxCaptureSeconds bounds a single live capture so an operator can't pin a
-// tuner indefinitely with one request. The tighter real bound on memory is
-// maxCaptureIQBytes below (peak RAM scales with seconds × sample rate, which
-// varies ~5x across SDRs); this is a coarse ceiling on wall-clock duration.
+// tuner indefinitely with one request. The capture streams encoded IQ straight
+// to disk (peak RAM is one chunk, not the whole grab), so duration is bounded by
+// disk — see maxCaptureIQBytes — rather than memory; this is a coarse ceiling on
+// wall-clock duration.
 const maxCaptureSeconds = 120
 
-// maxCaptureIQBytes caps the raw wideband IQ a single capture may buffer. The
-// whole capture is collected into RAM as complex64 (8 bytes/sample) and then
-// EncodeCapture allocates a second copy, so peak resident memory is roughly
-// twice this. 1 GiB of complex64 (~134 M samples) keeps that peak to a couple
-// of GB even on a modest host. A high-rate grab that would exceed it is
-// rejected up front (before the tuner is pinned) with an actionable error
-// instead of swapping/OOM-ing the daemon. The guard is on the raw collection,
-// so it also bounds a narrowband slice (which buffers the full band first).
+// maxCaptureIQBytes caps the on-disk size a single capture may stage. Because
+// the capture now streams encoded IQ to disk one chunk at a time (see
+// siglab.CaptureWriter), memory is no longer the constraint — this bounds the
+// staged file so one request can't fill the disk. 1 GiB is ~13 s of f32 at
+// 10 MS/s or ~55 s at 2.4 MS/s; a grab that would exceed it is rejected up front
+// (before the tuner is pinned) with an actionable error suggesting a shorter
+// duration or a narrowband slice.
 const maxCaptureIQBytes = 1 << 30
 
 // CaptureProvider taps a live SDR for a fixed-length raw-IQ capture. The
@@ -39,10 +40,12 @@ const maxCaptureIQBytes = 1 << 30
 type CaptureProvider interface {
 	// Devices returns the SDRs that can be captured from.
 	Devices() []SpectrumDevice
-	// Capture records seconds worth of raw IQ from the named device and
-	// returns the complex samples plus the device's current sample rate and
-	// centre frequency. ctx cancels an in-flight capture.
-	Capture(ctx context.Context, serial string, seconds int) (iq []complex64, sampleRateHz, centerHz uint32, err error)
+	// CaptureStream records seconds worth of raw IQ from the named device,
+	// invoking sink for each chunk of complex samples as it arrives (never
+	// buffering the whole capture), and returns the device's current sample
+	// rate and centre frequency. A sink error aborts the capture and is
+	// returned. ctx cancels an in-flight capture.
+	CaptureStream(ctx context.Context, serial string, seconds int, sink func(iq []complex64) error) (sampleRateHz, centerHz uint32, err error)
 }
 
 // captureRequest is the body of POST /api/v1/siglab/capture.
@@ -118,55 +121,95 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject an over-budget grab before pinning the tuner. The device's current
-	// sample rate is known from the picker, so the raw-IQ footprint
-	// (seconds × rate × 8 bytes for complex64) can be estimated up front. When
-	// the rate is unknown (device not streaming yet) the estimate is skipped and
-	// maxCaptureSeconds is the only bound.
-	if rate := captureDeviceRate(s.capture.Devices(), req.Serial); rate > 0 {
-		estIQBytes := int64(req.Seconds) * int64(rate) * 8
-		if estIQBytes > maxCaptureIQBytes {
+	rate, centerHz := captureDeviceRateCenter(s.capture.Devices(), req.Serial)
+
+	// Reject an over-budget grab before pinning the tuner. Streaming keeps RAM
+	// bounded to one chunk, so this bounds the on-disk file size (seconds × rate ×
+	// bytes-per-sample), not memory. Skipped when the rate is unknown (device not
+	// streaming yet) — then maxCaptureSeconds is the only bound.
+	if rate > 0 {
+		estBytes := int64(req.Seconds) * int64(rate) * int64(bytesPerSample(format))
+		if estBytes > maxCaptureIQBytes {
 			s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
-				"siglab: a %ds capture at %.3f MS/s needs ~%d MiB of IQ, over the %d MiB budget — "+
+				"siglab: a %ds capture at %.3f MS/s would stage ~%d MiB, over the %d MiB budget — "+
 					"reduce seconds or request a narrowband slice (center_hz + bandwidth_hz)",
-				req.Seconds, float64(rate)/1e6, estIQBytes>>20, int64(maxCaptureIQBytes)>>20))
+				req.Seconds, float64(rate)/1e6, estBytes>>20, int64(maxCaptureIQBytes)>>20))
 			return
 		}
 	}
 
-	iq, sampleRateHz, centerHz, err := s.capture.Capture(r.Context(), req.Serial, req.Seconds)
-	if err != nil {
-		s.writeError(w, http.StatusBadGateway, "siglab: capture: "+err.Error())
-		return
-	}
-	if len(iq) == 0 {
-		s.writeError(w, http.StatusBadGateway, "siglab: capture produced no samples")
-		return
-	}
-
-	// Optional narrowband slice: carve the channel at CenterHz down to
-	// ~BandwidthHz from the tuner's current wideband stream (no retune), so the
-	// staged file is small enough to hand to an analysis tool.
+	// Optional narrowband slice: validate the requested channel fits the tuner's
+	// current span and build a streaming down-converter up front, so an
+	// out-of-span request 400s before the tuner is pinned. The slice is carved
+	// from the live stream chunk-by-chunk during capture — no wideband buffer.
+	var ddc *siglab.StreamDownconverter
+	outRate, outCenter := rate, centerHz
 	if req.BandwidthHz > 0 {
-		iq, sampleRateHz, centerHz, err = narrowband(iq, sampleRateHz, centerHz, req.CenterHz, req.BandwidthHz)
+		if rate == 0 {
+			s.writeError(w, http.StatusBadGateway,
+				"siglab: capture: device has no sample rate yet (start or resume a scan on this SDR)")
+			return
+		}
+		offsetHz, center, err := narrowbandParams(rate, centerHz, req.CenterHz, req.BandwidthHz)
 		if err != nil {
 			s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
 			return
 		}
+		ddc = siglab.NewStreamDownconverter(float64(rate), float64(offsetHz), float64(req.BandwidthHz))
+		outRate = uint32(ddc.OutRateHz() + 0.5)
+		outCenter = center
 	}
 
+	// Stream encoded IQ straight to the staged file: peak memory is one chunk
+	// (plus the DDC's FIR state for a narrowband slice), independent of duration.
 	id := randomID(16)
 	path := s.siglab.newCapturePath(id)
-	if err := os.WriteFile(path, siglab.EncodeCapture(iq, format), 0o644); err != nil {
+	f, err := os.Create(path)
+	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+err.Error())
 		return
+	}
+	bw := bufio.NewWriterSize(f, 1<<20)
+	enc := siglab.NewCaptureWriter(bw, format)
+	sink := func(chunk []complex64) error {
+		if ddc != nil {
+			chunk = ddc.Process(chunk)
+		}
+		return enc.Write(chunk)
+	}
+
+	gotRate, gotCenter, capErr := s.capture.CaptureStream(r.Context(), req.Serial, req.Seconds, sink)
+	flushErr := bw.Flush()
+	if cerr := f.Close(); cerr != nil && flushErr == nil {
+		flushErr = cerr
+	}
+	if capErr != nil {
+		_ = os.Remove(path)
+		s.writeError(w, http.StatusBadGateway, "siglab: capture: "+capErr.Error())
+		return
+	}
+	if flushErr != nil {
+		_ = os.Remove(path)
+		s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+flushErr.Error())
+		return
+	}
+	if enc.Samples() == 0 {
+		_ = os.Remove(path)
+		s.writeError(w, http.StatusBadGateway, "siglab: capture produced no samples")
+		return
+	}
+
+	// A full-band grab keeps the tuner's authoritative rate/centre from the
+	// stream; a narrowband slice keeps its decimated rate + requested centre.
+	if req.BandwidthHz == 0 {
+		outRate, outCenter = gotRate, gotCenter
 	}
 
 	meta := &siglab.Metadata{
 		Protocol:     req.Protocol,
 		Source:       req.Source,
-		SampleRateHz: float64(sampleRateHz),
-		CenterFreqHz: centerHz,
+		SampleRateHz: float64(outRate),
+		CenterFreqHz: outCenter,
 		Format:       format.String(),
 	}
 	// Best-effort sidecar at the path siglab.DiscoverMetadata probes
@@ -178,11 +221,11 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 
 	c := &siglabCapture{
 		ID:           id,
-		Name:         captureName(req.Serial, centerHz),
+		Name:         captureName(req.Serial, outCenter),
 		Path:         path,
 		Format:       format,
-		SampleRateHz: float64(sampleRateHz),
-		Size:         int64(len(iq)) * int64(bytesPerSample(format)),
+		SampleRateHz: float64(outRate),
+		Size:         enc.Samples() * int64(bytesPerSample(format)),
 		Created:      time.Now(),
 	}
 	s.siglab.putCapture(c)
@@ -226,21 +269,20 @@ func (s *Server) handleSiglabCaptureDownload(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-// narrowband carves the channel at wantCenterHz (±wantBWHz/2) out of the
-// wideband IQ the tuner is currently streaming, decimating it to a baseband
-// stream and returning the slice, its new sample rate, and its new centre
-// (== wantCenterHz, or the tuner centre when wantCenterHz is 0). The tuner is
-// not retuned — the slice is extracted from the live stream — so the requested
-// channel must fit wholly inside the tuned span [tunerCentre ± rate/2].
-func narrowband(iq []complex64, rateHz, tunerCenterHz, wantCenterHz, wantBWHz uint32) ([]complex64, uint32, uint32, error) {
-	center := wantCenterHz
+// narrowbandParams validates that the channel at wantCenterHz (±wantBWHz/2) fits
+// wholly inside the tuner's current span [tunerCentre ± rate/2] — a capture is
+// carved from the live stream without retuning — and returns the channel's
+// offset from the tuner centre and its resolved centre (== wantCenterHz, or the
+// tuner centre when wantCenterHz is 0). The offset drives the streaming DDC.
+func narrowbandParams(rateHz, tunerCenterHz, wantCenterHz, wantBWHz uint32) (offsetHz int64, center uint32, err error) {
+	center = wantCenterHz
 	if center == 0 {
 		center = tunerCenterHz
 	}
-	offsetHz := int64(center) - int64(tunerCenterHz)
+	offsetHz = int64(center) - int64(tunerCenterHz)
 	half := int64(rateHz) / 2
 	if abs64(offsetHz)+int64(wantBWHz)/2 > half {
-		return nil, 0, 0, fmt.Errorf(
+		return 0, 0, fmt.Errorf(
 			"center_hz %d + bandwidth_hz %d falls outside the tuner's current span %.3f–%.3f MHz "+
 				"(centre %.3f MHz, rate %.3f MS/s); a capture extracts a channel from the live stream "+
 				"without retuning, so pick a centre/bandwidth inside the span",
@@ -248,11 +290,7 @@ func narrowband(iq []complex64, rateHz, tunerCenterHz, wantCenterHz, wantBWHz ui
 			float64(int64(tunerCenterHz)-half)/1e6, float64(int64(tunerCenterHz)+half)/1e6,
 			float64(tunerCenterHz)/1e6, float64(rateHz)/1e6)
 	}
-	nb, outRate := siglab.Downconvert(iq, float64(rateHz), float64(offsetHz), float64(wantBWHz))
-	if len(nb) == 0 {
-		return nil, 0, 0, fmt.Errorf("bandwidth_hz %d is too small for a %d-sample capture (no output samples)", wantBWHz, len(iq))
-	}
-	return nb, uint32(outRate + 0.5), center, nil
+	return offsetHz, center, nil
 }
 
 // abs64 is the absolute value of a signed 64-bit integer.
@@ -263,16 +301,16 @@ func abs64(x int64) int64 {
 	return x
 }
 
-// captureDeviceRate returns the current sample rate of the device with the
-// given serial from the capture picker's device list, or 0 when the device is
-// unknown or has no rate yet (not streaming).
-func captureDeviceRate(devices []SpectrumDevice, serial string) uint32 {
+// captureDeviceRateCenter returns the current sample rate and centre frequency
+// of the device with the given serial from the capture picker's device list, or
+// (0, 0) when the device is unknown or has no rate yet (not streaming).
+func captureDeviceRateCenter(devices []SpectrumDevice, serial string) (rate, center uint32) {
 	for _, d := range devices {
 		if d.Serial == serial {
-			return d.SampleRateHz
+			return d.SampleRateHz, d.CenterHz
 		}
 	}
-	return 0
+	return 0, 0
 }
 
 // captureName builds a friendly staged-capture name from the device + tuning.
