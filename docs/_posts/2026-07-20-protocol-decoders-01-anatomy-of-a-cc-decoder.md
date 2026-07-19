@@ -248,15 +248,15 @@ p2, err := factory(PipelineOptions{
 ```
 
 From there, every IQ chunk goes `d.ddc.Process(...)` then `d.active.Process(...)`.
-There is one subtlety worth its own callout in the source: a `HuntProgress` that
-*repeats* the same `(system, frequency)` must **not** tear down and rebuild the
-pipeline, or a single-candidate system that re-hunts every dwell resets acquisition
-every few seconds and never converges. So the swap is idempotent — same target,
-same pipeline, keep decoding. Small rule, big consequence for lock stability.
+One subtlety is worth a callout: a `HuntProgress` that *repeats* the same
+`(system, frequency)` must **not** tear down and rebuild the pipeline, or a
+single-candidate system that re-hunts every dwell resets acquisition every few
+seconds and never converges. So the swap is idempotent — same target, same
+pipeline, keep decoding. Small rule, big consequence for lock stability.
 
 The output is never a function call into the engine. The pipeline's state machine
 `Publish`es `KindCCLocked` when it first locks and `KindGrant` when it decodes a
-voice-channel grant. Those events are the seam between this series and the
+voice-channel grant — the seam between this series and the
 [Trunking Engine]({{ '/blog/deep-dives/trunking-engine-03-grants/' | relative_url }})
 series: we produce the `Grant`; the engine turns it into a recorded call.
 

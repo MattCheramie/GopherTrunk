@@ -187,6 +187,31 @@ if d.squelchEnabled && !d.acquired {
 }
 ```
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 170" width="680" height="170" role="img" aria-label="State machine of the acquisition squelch: it starts muted with a run counter at zero; a stable-pitch voiced frame increments the run while any other frame resets it to zero; reaching a run of four, or the failsafe frame count of 100, transitions to the acquired state where output flows">
+  <ellipse cx="140" cy="80" rx="86" ry="40" fill="currentColor" opacity="0.08" stroke="currentColor"/>
+  <text x="140" y="74" text-anchor="middle" fill="currentColor" font-size="12">MUTED</text>
+  <text x="140" y="92" text-anchor="middle" fill="var(--fg-muted)" font-size="10">output zeroed · acqRun</text>
+  <!-- self loop: stable voiced frame -->
+  <path d="M100 48 q-20 -34 40 -34 q60 0 40 34" fill="none" stroke="var(--accent)"/>
+  <polygon points="176,44 182,52 172,52" fill="var(--accent)"/>
+  <text x="140" y="8" text-anchor="middle" fill="var(--accent)" font-size="9">stable-pitch voiced frame → acqRun++</text>
+  <!-- self loop: reset -->
+  <path d="M100 112 q-20 34 40 34 q60 0 40 -34" fill="none" stroke="var(--fg-muted)"/>
+  <polygon points="176,116 182,108 172,108" fill="var(--fg-muted)"/>
+  <text x="140" y="164" text-anchor="middle" fill="var(--fg-muted)" font-size="9">idle / unvoiced / bad / pitch-jump → acqRun = 0</text>
+  <!-- transition to acquired -->
+  <line x1="226" y1="80" x2="452" y2="80" stroke="var(--accent)" stroke-width="1.5"/>
+  <polygon points="452,75 462,80 452,85" fill="var(--accent)"/>
+  <text x="344" y="70" text-anchor="middle" fill="var(--accent)" font-size="10">acqRun ≥ 4</text>
+  <text x="344" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="10">OR acqFrames ≥ 100 (failsafe)</text>
+  <ellipse cx="560" cy="80" rx="86" ry="40" fill="var(--accent)" opacity="0.14" stroke="var(--accent)"/>
+  <text x="560" y="74" text-anchor="middle" fill="var(--accent)" font-size="12">ACQUIRED</text>
+  <text x="560" y="92" text-anchor="middle" fill="var(--fg-muted)" font-size="10">output flows · stays latched</text>
+</svg>
+<figcaption>The squelch is a two-state latch. It stays muted, counting a run of stable-pitch voiced frames that any non-speech frame resets, until either the run confirms speech (≥4) or the ~2 s failsafe fires — then it latches open for the rest of the segment.</figcaption>
+</figure>
+
 Two ways out of the muted state: the run reaches 4 stable-pitch voiced frames
 (speech confirmed), *or* the failsafe `acqFrames` hits 100 (~2 s). The failsafe is
 what makes the heuristic safe to ship — it's a heuristic, and the true acquisition
