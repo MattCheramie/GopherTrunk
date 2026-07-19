@@ -141,6 +141,58 @@ func TestDownconverterCapFallbackRate(t *testing.T) {
 	}
 }
 
+// TestDownconverterUpsampleRate: a narrowband capture recorded BELOW the
+// channel target must be interpolated UP to the target so the receiver runs
+// at its designed samples-per-symbol, not fed raw. The motivating case is a
+// TETRA channel recorded at 50 kHz (or the natural 48 kHz SDR++/SDRTrunk
+// narrowband rate): the receiver rounds 50000/18000 = 2.78 → 3 sps and the
+// Gardner loop, told a 3.0 nominal against a 2.78 true rate, never locks —
+// emitting 50000/3 ≈ 16667 baud (−7.4%). Normalising the input to 144 kHz
+// restores 8 sps. Equality with the target must still short-circuit to the
+// byte-exact pass-through (no resampler).
+func TestDownconverterUpsampleRate(t *testing.T) {
+	const tetra = 144_000.0
+	// The narrowband rates SDR++/SDRTrunk actually record a TETRA slice at
+	// must land within 0.1% of the channel target.
+	for _, in := range []float64{50_000, 48_000} {
+		d := NewDownconverter(in, tetra)
+		if d.resampler == nil {
+			t.Errorf("in=%.0f→%.0f: expected an interpolating resampler, got pass-through", in, tetra)
+			continue
+		}
+		if rel := math.Abs(d.OutRateHz()-tetra) / tetra; rel > 0.001 {
+			t.Errorf("in=%.0f: OutRateHz = %.1f, want within 0.1%% of %.0f (got %.3f%%)",
+				in, d.OutRateHz(), tetra, rel*100)
+		}
+		// Output must grow by ~L/M (interpolation lengthens the stream).
+		out := d.Process(nil, make([]complex64, 5_000))
+		want := int(5_000 * d.OutRateHz() / in)
+		if diff := len(out) - want; diff < -16 || diff > 16 {
+			t.Errorf("in=%.0f: len(out) = %d, want %d ± 16", in, len(out), want)
+		}
+	}
+	// Equality with the target must remain a pass-through (nil resampler),
+	// guarding the in==target predicate against regressing to in<target.
+	if d := NewDownconverter(tetra, tetra); d.resampler != nil {
+		t.Errorf("rate == target must pass through (nil resampler), got a resampler")
+	}
+}
+
+// TestDownconverterUpsampleIsolatesChannel: interpolating a sub-target capture
+// up to the channel rate must preserve the in-band signal at ~unity gain and
+// not raise spectral images into the band. A +8 kHz tone (well inside a 25 kHz
+// TETRA channel) recorded at 50 kHz survives the upsample to 144 kHz.
+func TestDownconverterUpsampleIsolatesChannel(t *testing.T) {
+	const inRate, target = 50_000.0, 144_000.0
+	const n = 131_072
+	up := NewDownconverter(inRate, target).
+		Process(nil, complexTone(8_000, inRate, n, 1.0))
+	got := rms(up[200:]) // skip the interpolation start-up transient
+	if got < 0.7 || got > 1.3 {
+		t.Errorf("in-band tone after upsample: rms = %v, want ~1.0", got)
+	}
+}
+
 // TestDownconverterIsolatesChannel: an in-channel tone survives the
 // decimation at ~unity gain while an out-of-band interferer (which
 // would otherwise alias straight into the passband) is rejected by

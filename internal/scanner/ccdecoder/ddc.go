@@ -74,12 +74,16 @@ const ddcKaiserBeta = 7.0
 // Downconverter decimates a wideband SDR IQ stream to a narrowband
 // channel rate.
 //
-// Decimation is a rational polyphase resample (dsp.Resampler) whose
+// Rate conversion is a rational polyphase resample (dsp.Resampler) whose
 // L/M ratio is chosen so the output rate lands exactly on the
 // requested target for every standard SDR rate. When the SDR already
-// streams at (or below) the target the resampler is skipped and the
-// chunk passes straight through — keeping the rate==target unit
-// tests (and any future low-rate SDR) on a no-op path.
+// streams at the target the resampler is skipped and the chunk passes
+// straight through — keeping the rate==target unit tests on a no-op path.
+// A wider capture is decimated to the target; a narrowband capture recorded
+// BELOW the target (e.g. a 50 kHz or 48 kHz TETRA slice, whose 144 kHz
+// channel target the live path always delivers) is interpolated UP to it, so
+// the receiver always runs at its designed samples-per-symbol rather than a
+// rounded, decode-breaking one.
 //
 // It deliberately does NOT remove the front-end DC offset: a C4FM /
 // FM control channel carries real signal energy at 0 Hz (the FM
@@ -104,10 +108,11 @@ type Downconverter struct {
 	outRateHz float64
 }
 
-// NewDownconverter builds a down-converter that decimates inRateHz to
-// ~targetHz. The exact achieved output rate is reported by
-// OutRateHz (it equals targetHz for every SDR rate that reduces to
-// a sane L/M, and equals inRateHz in pass-through mode).
+// NewDownconverter builds a down-converter that resamples inRateHz to
+// ~targetHz (decimating a wider capture, interpolating a sub-target one).
+// The exact achieved output rate is reported by OutRateHz (it equals
+// targetHz for every SDR rate that reduces to a sane L/M, and equals
+// inRateHz in the rate==target pass-through mode).
 func NewDownconverter(inRateHz, targetHz float64) *Downconverter {
 	return NewDownconverterWithOffset(inRateHz, targetHz, 0)
 }
@@ -126,8 +131,8 @@ func NewDownconverterWithOffset(inRateHz, targetHz, offsetHz float64) *Downconve
 	}
 	in := int(math.Round(inRateHz))
 	target := int(math.Round(targetHz))
-	if in <= 0 || target <= 0 || in <= target {
-		return d // pass-through decimation: the NCO mix (if any) still runs
+	if in <= 0 || target <= 0 || in == target {
+		return d // pass-through: the NCO mix (if any) still runs, no resample
 	}
 	l, m := ddcRatio(target, in)
 	tapsPerBranch := (ddcStopbandTaps*m + l - 1) / l
@@ -141,7 +146,8 @@ func NewDownconverterWithOffset(inRateHz, targetHz, offsetHz float64) *Downconve
 
 // OutRateHz returns the achieved narrowband output rate (equals the
 // requested target for standard SDR rates that reduce to a sane L/M;
-// equals inRateHz in pass-through mode). Callers building a receiver
+// equals inRateHz only when the capture is already at the target).
+// Callers building a receiver
 // against the downconverter's output should use this value for
 // SampleRateHz so matched-filter sizing matches the actual stream.
 func (d *Downconverter) OutRateHz() float64 { return d.outRateHz }

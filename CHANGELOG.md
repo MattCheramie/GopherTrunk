@@ -8,6 +8,21 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **A TETRA channel recorded as a narrowband slice below the 144 kHz channel
+  rate (e.g. the natural 48/50 kHz SDR++/SDRTrunk record rate) now decodes
+  instead of emitting a nonsense symbol rate.** The `siglab` replay/analyze
+  engine only ever *decimated* to the per-protocol channel rate — a capture
+  already at or below the target was fed to the receiver raw. For TETRA (144 kHz
+  target) that left a 50 kHz recording at 50000/18000 ≈ 2.78 samples/symbol,
+  which the receiver rounded to 3 and handed the Gardner loop as a 3.0 nominal:
+  an ~8% clock error it can't pull in, so it produced 50000/3 ≈ 16667 sym/s
+  (−7.4%) and never locked. The down-converter now *normalises* to the channel
+  rate in both directions — a sub-target capture is interpolated **up** to
+  144 kHz (`dsp.Resampler` already supports L>M), restoring the receiver's
+  designed 8 samples/symbol. A 50 kHz capture now recovers 18004.9 sym/s (+0.0%)
+  and the training sequences correlate; the committed 48 kHz `samples/tetra`
+  reference likewise normalises to exactly 144000 Hz. Only sub-target replays
+  change; every wideband SDR rate reduces exactly as before.
 - **The narrowband down-converter no longer shifts the channel rate on SDR
   sample rates that don't divide cleanly into the channel target.** When a
   capture rate reduced to a ratio past the resampler's L/M caps, `ccdecoder`'s

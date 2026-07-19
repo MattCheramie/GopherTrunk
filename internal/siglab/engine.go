@@ -264,18 +264,22 @@ func ccYield(r *Result) int64 {
 func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample int, tuneHz float64, cfg Config, onEvent func(EventRecord), mon *monitorHook) (*Result, error) {
 	logger := cfg.logger()
 
-	// Mirror the production ccdecoder DDC: decimate to the per-protocol
-	// channel rate (TETRA → 144 kHz, else 48 kHz) whenever the input is
-	// wider, and apply the tuning shift. An already-channelized capture
-	// (rate ≤ target) with no tuning passes straight through.
+	// Mirror the production ccdecoder DDC: normalise to the per-protocol
+	// channel rate (TETRA → 144 kHz, else 48 kHz) and apply the tuning shift.
+	// A wider capture is decimated; a narrowband capture recorded BELOW the
+	// target — e.g. a TETRA slice grabbed at the natural 48/50 kHz SDR++ rate,
+	// far under the 144 kHz TETRA channel target — is interpolated UP to it, so
+	// the receiver runs at its designed samples-per-symbol instead of a rounded,
+	// decode-breaking one. Only a capture already exactly at the target (no
+	// tuning) passes straight through.
 	target := ccdecoder.DDCTargetForProtocol(cfg.Protocol)
 	ddcTarget := cfg.SampleRateHz
-	if cfg.SampleRateHz > target {
+	if cfg.SampleRateHz != target {
 		ddcTarget = target
 	}
 	var ddc *ccdecoder.Downconverter
 	receiverRate := cfg.SampleRateHz
-	if tuneHz != 0 || ddcTarget < cfg.SampleRateHz {
+	if tuneHz != 0 || ddcTarget != cfg.SampleRateHz {
 		ddc = ccdecoder.NewDownconverterWithOffset(cfg.SampleRateHz, ddcTarget, tuneHz)
 		receiverRate = ddc.OutRateHz()
 	}
