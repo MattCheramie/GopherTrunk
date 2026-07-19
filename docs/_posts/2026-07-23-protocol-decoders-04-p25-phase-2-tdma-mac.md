@@ -208,6 +208,30 @@ come from somewhere else: a subsequent extended in-call PDU, or the full grant, 
 later in the transmission. Resolving it is a stateful, cross-PDU backfill, and it
 belongs in the layer that owns call state, not the stateless decoder.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 158" width="680" height="158" role="img" aria-label="Two MAC PDUs describe the same call: the full grant 0x44 carries the 24-bit source radio ID, while the compressed abbreviated user 0x01 decodes its source to zero, and the trunking engine backfills the missing source downstream where call state lives">
+  <rect x="6" y="16" width="300" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="156" y="36" text-anchor="middle" fill="currentColor" font-size="12">Full grant 0x44</text>
+  <text x="156" y="52" text-anchor="middle" fill="var(--fg-muted)" font-size="10">TG=1234 · Source=5001 ✓</text>
+  <text x="156" y="63" text-anchor="middle" fill="var(--fg-muted)" font-size="10">costs slot space</text>
+  <rect x="6" y="86" width="300" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="156" y="106" text-anchor="middle" fill="var(--accent)" font-size="12">Abbreviated user 0x01</text>
+  <text x="156" y="122" text-anchor="middle" fill="var(--fg-muted)" font-size="10">TG=1234 · Source=0 ✗ (compressed)</text>
+  <text x="156" y="133" text-anchor="middle" fill="var(--fg-muted)" font-size="10">the common case in the field</text>
+  <line x1="306" y1="77" x2="372" y2="77" stroke="currentColor"/><polygon points="372,73 382,77 372,81" fill="currentColor"/>
+  <rect x="382" y="40" width="150" height="74" rx="6" fill="none" stroke="currentColor"/>
+  <text x="457" y="70" text-anchor="middle" fill="currentColor" font-size="11">stateless decoder</text>
+  <text x="457" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="10">publishes what</text>
+  <text x="457" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="10">the PDU says</text>
+  <line x1="532" y1="77" x2="596" y2="77" stroke="var(--accent)"/><polygon points="596,73 606,77 596,81" fill="var(--accent)"/>
+  <rect x="606" y="46" width="68" height="62" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="640" y="72" text-anchor="middle" fill="var(--accent)" font-size="10">engine</text>
+  <text x="640" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="9">backfills</text>
+  <text x="640" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="9">source</text>
+</svg>
+<figcaption>The source-less-grant seam: the decoder faithfully reports <code>Source=0</code> from the compressed PDU; reconciling who was talking is the trunking engine's job, not the decoder's.</figcaption>
+</figure>
+
 ### How that principle shaped the Go code
 
 - **The decoder stays stateless about calls.** It publishes what the PDU says —

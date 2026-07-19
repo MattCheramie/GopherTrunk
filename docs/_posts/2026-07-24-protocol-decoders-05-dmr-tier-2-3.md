@@ -206,6 +206,29 @@ different wire format from the Motorola P25 alias, it's the same *kind* of field
 the display name of the transmitting radio, riding link control. Our cross-series
 mystery has cousins everywhere.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 168" width="680" height="168" role="img" aria-label="The Full Link Control word reaches the receiver two ways: a single Voice LC Header burst carries it whole, while embedded signalling spreads a 32-bit fragment across voice bursts B through E, marked First, Continuation, Continuation, Last, that reassemble into a 128-bit embedded link control word">
+  <text x="120" y="20" text-anchor="middle" fill="var(--accent)" font-size="11">Route 1 — Voice LC Header</text>
+  <rect x="40" y="30" width="160" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="120" y="52" text-anchor="middle" fill="currentColor" font-size="11">FLC (whole)</text>
+  <text x="120" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="9">BPTC(196,96) + RS(12,9)</text>
+  <text x="430" y="20" text-anchor="middle" fill="currentColor" font-size="11">Route 2 — embedded signalling (bursts B–E)</text>
+  <g font-size="9">
+    <rect x="270" y="34" width="70" height="34" rx="4" fill="none" stroke="currentColor"/><text x="305" y="50" text-anchor="middle" fill="currentColor">B</text><text x="305" y="62" text-anchor="middle" fill="var(--fg-muted)">First</text>
+    <rect x="348" y="34" width="70" height="34" rx="4" fill="none" stroke="currentColor"/><text x="383" y="50" text-anchor="middle" fill="currentColor">C</text><text x="383" y="62" text-anchor="middle" fill="var(--fg-muted)">Cont</text>
+    <rect x="426" y="34" width="70" height="34" rx="4" fill="none" stroke="currentColor"/><text x="461" y="50" text-anchor="middle" fill="currentColor">D</text><text x="461" y="62" text-anchor="middle" fill="var(--fg-muted)">Cont</text>
+    <rect x="504" y="34" width="70" height="34" rx="4" fill="none" stroke="currentColor"/><text x="539" y="50" text-anchor="middle" fill="currentColor">E</text><text x="539" y="62" text-anchor="middle" fill="var(--fg-muted)">Last</text>
+  </g>
+  <text x="422" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="9">4 × 32 bits, LCSS-ordered</text>
+  <line x1="120" y1="70" x2="120" y2="118" stroke="var(--accent)"/><polygon points="116,118 120,128 124,118" fill="var(--accent)"/>
+  <line x1="422" y1="88" x2="422" y2="118" stroke="currentColor"/><polygon points="418,118 422,128 426,118" fill="currentColor"/>
+  <rect x="200" y="128" width="240" height="34" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="320" y="145" text-anchor="middle" fill="var(--accent)" font-size="11">ParseFLC → group · source · alias</text>
+  <text x="320" y="157" text-anchor="middle" fill="var(--fg-muted)" font-size="9">a bad fragment fails BPTC+CRC → rejected, not garbled</text>
+</svg>
+<figcaption>DMR names a call twice for redundancy: a whole FLC in the Voice LC Header, and the same word spread across four embedded fragments that reassemble under BPTC + CRC.</figcaption>
+</figure>
+
 ### A note on honest FEC — the reverse channel
 
 The DMR **reverse channel** is in-call signalling distinct from the control-channel

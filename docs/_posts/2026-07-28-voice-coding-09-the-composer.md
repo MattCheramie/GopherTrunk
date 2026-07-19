@@ -162,6 +162,35 @@ competing with the control-channel decode — enough to starve the SDR reader an
 drop live IQ. The decimating FIR keeps the exact same coefficients and kept
 samples (so the decode is unchanged) and just deletes the wasted multiplies.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 132" width="680" height="132" role="img" aria-label="A single digital voice chain: wideband IQ passes through a channel-selecting decimating FIR, a protocol receiver, a superframe FEC decoder, and out as raw vocoder frames to the recorder sink">
+  <rect x="8" y="46" width="104" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="60" y="66" text-anchor="middle" fill="currentColor" font-size="11">wideband IQ</text>
+  <text x="60" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="9">2.4 MS/s</text>
+  <line x1="112" y1="68" x2="150" y2="68" stroke="currentColor"/>
+  <polygon points="150,64 160,68 150,72" fill="currentColor"/>
+  <rect x="160" y="46" width="120" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="220" y="66" text-anchor="middle" fill="var(--accent)" font-size="11">decimating FIR</text>
+  <text x="220" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="9">channel-select</text>
+  <line x1="280" y1="68" x2="318" y2="68" stroke="currentColor"/>
+  <polygon points="318,64 328,68 318,72" fill="currentColor"/>
+  <rect x="328" y="46" width="112" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="384" y="66" text-anchor="middle" fill="currentColor" font-size="11">receiver</text>
+  <text x="384" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="9">symbols/dibits</text>
+  <line x1="440" y1="68" x2="478" y2="68" stroke="currentColor"/>
+  <polygon points="478,64 488,68 478,72" fill="currentColor"/>
+  <rect x="488" y="46" width="112" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="544" y="66" text-anchor="middle" fill="currentColor" font-size="11">superframe</text>
+  <text x="544" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="9">FEC → frames</text>
+  <line x1="600" y1="68" x2="638" y2="68" stroke="currentColor"/>
+  <polygon points="638,64 648,68 638,72" fill="currentColor"/>
+  <text x="662" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="10">sink</text>
+  <text x="662" y="78" text-anchor="middle" fill="var(--fg-muted)" font-size="10">recorder</text>
+  <text x="340" y="116" text-anchor="middle" fill="var(--fg-muted)" font-size="10">the analog FM chain replaces receiver+superframe with an FM discriminator and emits PCM directly</text>
+</svg>
+<figcaption>A digital chain's stages: the decimating FIR channel-selects and drops the rate, the receiver recovers symbols, the superframe decoder FEC-decodes vocoder frames, and the recorder sink takes them from there.</figcaption>
+</figure>
+
 The chains also respect **per-source sample rates**. A physical SDR delivers
 the daemon-wide rate (2.4 MS/s); a wideband-derived *virtual* voice tuner
 delivers 48 kHz already. Sources can even expose their exact fractional rate

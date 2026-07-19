@@ -177,6 +177,29 @@ setup — while the explicit update (0x03) reuses the full grant layout includin
 source. Parsing them into the right shape is what keeps a single ongoing
 transmission from fragmenting into phantom calls.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 156" width="680" height="156" role="img" aria-label="Decode flow: a TSBK with opcode 0x00 parses into a GroupVoiceChannelGrant, whose channel ID and number resolve through the IDEN band plan to a frequency, and the whole tuple is published as a KindGrant event the trunking engine consumes">
+  <rect x="6" y="20" width="150" height="42" rx="6" fill="none" stroke="currentColor"/>
+  <text x="81" y="40" text-anchor="middle" fill="currentColor" font-size="12">TSBK</text>
+  <text x="81" y="55" text-anchor="middle" fill="var(--fg-muted)" font-size="10">opcode 0x00</text>
+  <line x1="156" y1="41" x2="200" y2="41" stroke="currentColor"/><polygon points="200,37 210,41 200,45" fill="currentColor"/>
+  <rect x="210" y="14" width="190" height="54" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="305" y="34" text-anchor="middle" fill="var(--accent)" font-size="12">GroupVoiceChannelGrant</text>
+  <text x="305" y="50" text-anchor="middle" fill="var(--fg-muted)" font-size="10">ChannelID · ChannelNumber</text>
+  <text x="305" y="62" text-anchor="middle" fill="var(--fg-muted)" font-size="10">GroupAddress · SourceID · opts</text>
+  <line x1="305" y1="68" x2="305" y2="92" stroke="currentColor"/><polygon points="301,92 305,102 309,92" fill="currentColor"/>
+  <rect x="210" y="102" width="190" height="38" rx="6" fill="none" stroke="currentColor"/>
+  <text x="305" y="120" text-anchor="middle" fill="currentColor" font-size="11">IDEN band plan → frequency</text>
+  <text x="305" y="133" text-anchor="middle" fill="var(--fg-muted)" font-size="10">(ChannelID, ChannelNumber) ↦ Hz</text>
+  <line x1="400" y1="121" x2="470" y2="121" stroke="currentColor"/><polygon points="470,117 480,121 470,125" fill="currentColor"/>
+  <rect x="480" y="96" width="194" height="50" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="577" y="116" text-anchor="middle" fill="var(--accent)" font-size="12">events.KindGrant</text>
+  <text x="577" y="132" text-anchor="middle" fill="var(--fg-muted)" font-size="10">system·TG·freq·source·enc·prio</text>
+  <text x="577" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="10">→ trunking engine</text>
+</svg>
+<figcaption>One opcode, one struct, one band-plan lookup, one event: how a control-channel grant becomes the <code>KindGrant</code> the trunking engine turns into a call.</figcaption>
+</figure>
+
 ## Vendor namespaces: MFID changes the language
 
 The same 6-bit opcode means different things under a manufacturer's MFID. This is

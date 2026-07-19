@@ -126,6 +126,25 @@ still scores `|xcorr| ≈ 1`, and the sign mismatch is caught separately by
 `RMSRatioDb`, so a polarity flip can't sneak through as a "match."
 
 <figure class="lab-figure">
+<svg viewBox="0 0 660 180" width="660" height="180" role="img" aria-label="A cross-correlation versus lag curve that peaks near a small non-zero lag corresponding to the two decoders' group-delay difference, within the plus or minus 25 millisecond search window">
+  <line x1="60" y1="150" x2="620" y2="150" stroke="var(--fg-muted)"/>
+  <line x1="340" y1="150" x2="340" y2="30" stroke="var(--fg-muted)" stroke-dasharray="2 3"/>
+  <text x="340" y="166" text-anchor="middle" fill="var(--fg-muted)" font-size="10">lag 0</text>
+  <text x="72" y="166" text-anchor="middle" fill="var(--fg-muted)" font-size="10">−200</text>
+  <text x="608" y="166" text-anchor="middle" fill="var(--fg-muted)" font-size="10">+200 samples</text>
+  <text x="34" y="90" text-anchor="middle" fill="var(--fg-muted)" font-size="10" transform="rotate(-90 34 90)">|xcorr|</text>
+  <path d="M60,142 Q250,138 360,52 Q400,20 420,44 Q470,120 620,144" fill="none" stroke="var(--accent)"/>
+  <circle cx="388" cy="40" r="4" fill="var(--accent)"/>
+  <line x1="388" y1="40" x2="388" y2="150" stroke="var(--accent)" stroke-dasharray="3 3"/>
+  <text x="388" y="30" text-anchor="middle" fill="var(--accent)" font-size="10">peak = PeakXcorr</text>
+  <text x="440" y="128" text-anchor="middle" fill="var(--fg-muted)" font-size="10">best-alignment lag ≈ group-delay Δ</text>
+  <line x1="60" y1="60" x2="620" y2="60" stroke="var(--fg-muted)" stroke-dasharray="2 4"/>
+  <text x="96" y="55" text-anchor="middle" fill="var(--fg-muted)" font-size="9">0.85 pass floor</text>
+</svg>
+<figcaption>The harness sweeps correlation across a ±25 ms lag window and reports the peak. A peak above 0.85 near a small lag means the two decoders agree in shape after absorbing their group-delay difference.</figcaption>
+</figure>
+
+<figure class="lab-figure">
 <svg viewBox="0 0 680 176" width="680" height="176" role="img" aria-label="The same raw vocoder frames are decoded by the pure-Go vocoder and by a reference decoder, and both PCM streams feed CompareSamples which outputs an RMS ratio, a peak cross-correlation, and a best-alignment lag">
   <rect x="12" y="66" width="128" height="44" rx="6" fill="none" stroke="currentColor"/>
   <text x="76" y="86" text-anchor="middle" fill="currentColor" font-size="12">raw frames</text>
