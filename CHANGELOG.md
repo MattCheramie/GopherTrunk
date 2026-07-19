@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **P25 Phase 2 control-channel MAC opcode census (`--log-level debug`).** A
+  new diagnostic inventories every MAC opcode seen on the control channel —
+  logging a one-shot `payload_hex` sample the first time each opcode appears
+  plus a periodic `opcode:count` summary. Unlike the existing per-grant DEBUG
+  line, it has no survivorship bias: it also surfaces opcodes GT does not
+  currently parse as a grant, which is where a RID-bearing grant would hide on
+  a system whose completed-call `source_rid` under-populates (issue #915). The
+  raw opcode inventory + byte sample is what pins the remaining gap on a
+  missing/mis-mapped grant opcode (decode-side) vs. a call-association gap.
+
 ### Fixed
 - **A TETRA channel recorded as a narrowband slice below the 144 kHz channel
   rate (e.g. the natural 48/50 kHz SDR++/SDRTrunk record rate) now decodes

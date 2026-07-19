@@ -1,7 +1,10 @@
 package phase2
 
 import (
+	"encoding/hex"
+	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -86,12 +89,96 @@ type ControlChannel struct {
 	// gate reads via DecodedFrames; bumped from the IQ-pump goroutine but
 	// exported as an atomic so other goroutines can sample it lock-free.
 	macDecoded atomic.Uint64
+
+	// macCensus counts, per MAC opcode, every PDU that reached Ingest.
+	// It backs the control-channel opcode census (issue #915): the
+	// per-grant DEBUG line only fires for opcodes GT already parses as a
+	// grant, so it can't reveal a RID-bearing grant arriving under an
+	// opcode GT drops or mis-maps — the leading suspect for the calls
+	// whose source RID never populates. The census has no such blind
+	// spot: it inventories the raw opcode set with a one-shot byte sample
+	// so a source-less-call log pins the remaining gap on a missing/
+	// mis-mapped opcode (decode-side) vs. an association gap. Guarded by mu.
+	macCensus map[Opcode]uint64
 }
 
 // DecodedFrames reports the cumulative count of MAC PDUs that cleared
 // FEC + CRC on this channel. It is the protocol-agnostic decode-activity
 // counter the wideband engine polls to gate per-channel power logging.
 func (c *ControlChannel) DecodedFrames() uint64 { return c.macDecoded.Load() }
+
+// MACCensus returns a snapshot of the per-opcode PDU counts observed on
+// this control channel since start. Used by tests and available for the
+// daemon/metrics to surface the opcode inventory that disambiguates the
+// #915 remaining-gap fork (missing/mis-mapped grant opcode vs association).
+func (c *ControlChannel) MACCensus() map[Opcode]uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[Opcode]uint64, len(c.macCensus))
+	for op, n := range c.macCensus {
+		out[op] = n
+	}
+	return out
+}
+
+// censusObserve records p's opcode in the running census and logs a
+// one-shot sample (opcode + name + known-flag + payload hex) the first
+// time each distinct opcode is seen, plus a full opcode:count summary at a
+// coarse cadence. Pure telemetry — it changes no decode or dispatch
+// behaviour. See macCensus for why this exists (issue #915).
+func (c *ControlChannel) censusObserve(p MACPDU) {
+	c.mu.Lock()
+	if c.macCensus == nil {
+		c.macCensus = make(map[Opcode]uint64)
+	}
+	first := c.macCensus[p.Opcode] == 0
+	c.macCensus[p.Opcode]++
+	c.mu.Unlock()
+
+	if first {
+		c.log.Debug("p25/phase2 cc mac census: opcode seen",
+			"system", c.systemName, "freq", c.freqHz,
+			"opcode", fmt.Sprintf("0x%02X", uint8(p.Opcode)),
+			"name", p.Opcode.String(), "known", p.Opcode.IsKnown(),
+			"len", len(p.Payload), "payload_hex", hex.EncodeToString(p.Payload))
+	}
+	// Rolling frequency table, throttled to keep the log quiet. The
+	// distribution (which opcodes dominate, and whether a RID-bearing
+	// grant opcode is present at all) is what characterises a system.
+	if n := c.macDecoded.Load(); n != 0 && n%censusSummaryEvery == 0 {
+		c.log.Debug("p25/phase2 cc mac census: summary",
+			"system", c.systemName, "freq", c.freqHz,
+			"pdus", n, "opcodes", c.censusSummary())
+	}
+}
+
+// censusSummary renders the per-opcode counts as a stable, opcode-sorted
+// "0xNN(name)=count" list for a single log field.
+func (c *ControlChannel) censusSummary() string {
+	c.mu.Lock()
+	ops := make([]Opcode, 0, len(c.macCensus))
+	for op := range c.macCensus {
+		ops = append(ops, op)
+	}
+	counts := make(map[Opcode]uint64, len(c.macCensus))
+	for op, n := range c.macCensus {
+		counts[op] = n
+	}
+	c.mu.Unlock()
+	sort.Slice(ops, func(i, j int) bool { return ops[i] < ops[j] })
+	var b strings.Builder
+	for i, op := range ops {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "0x%02X(%s)=%d", uint8(op), op.String(), counts[op])
+	}
+	return b.String()
+}
+
+// censusSummaryEvery is how many Ingested MAC PDUs elapse between rolling
+// census-summary log lines. Coarse enough to stay quiet on a busy CC.
+const censusSummaryEvery = 2048
 
 // TrellisMode selects how the Process adapter interprets the MAC
 // PDU dibit window inside the Phase 2 traffic channel.
@@ -472,6 +559,7 @@ func New(opts Options) *ControlChannel {
 // against the very first PDUs.
 func (c *ControlChannel) Ingest(p MACPDU) {
 	c.macDecoded.Add(1)
+	c.censusObserve(p)
 	c.mu.Lock()
 	strict := c.strictValidation
 	c.mu.Unlock()
