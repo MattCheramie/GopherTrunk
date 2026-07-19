@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **The MPT 1327 FFSK demodulator now applies a symbol matched filter, holding
+  the bit-error rate lower on weak/noisy control channels.** Every sibling
+  FM-discriminator FSK demod (GFSK Gaussian, C4FM/TETRA RRC) integrates the
+  symbol before slicing; the FFSK path alone sliced each bit on a single
+  discriminator sample, throwing away the in-symbol SNR. It now runs a
+  one-symbol integrate-and-dump (a unity-gain boxcar matched to FFSK's
+  unshaped tone bursts) between the tone discriminator and the symbol clock —
+  the input the Mueller-Müller loop's contract already assumed. Measured at
+  4 dB AWGN the recovered BER drops from ~2.0% to ~0.7%. The filter is opt-in,
+  so the other audio-FSK receivers (APRS / DSC / MDC1200) are unchanged. Note:
+  this improves marginal-SNR captures; it does not rescue a recording whose
+  frequency eye is already closed by front-end overload or dropped samples.
 - **A TETRA channel recorded as a narrowband slice below the 144 kHz channel
   rate (e.g. the natural 48/50 kHz SDR++/SDRTrunk record rate) now decodes
   instead of emitting a nonsense symbol rate.** The `siglab` replay/analyze

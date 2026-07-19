@@ -41,6 +41,14 @@ type FFSK struct {
 	// discriminator output must be negated to make positive →
 	// mark for the slicer.
 	invertSlice bool
+
+	// Optional post-discriminator symbol matched filter (see
+	// EnableMatchedFilter). boxcar holds the (normalised) taps and
+	// mfHist/mfPos are its ring-buffer state. nil boxcar ⇒ MatchedFilter
+	// is a passthrough, so callers that don't enable it are unaffected.
+	boxcar []float32
+	mfHist []float32
+	mfPos  int
 }
 
 // NewFFSK constructs an FFSK demod for the given audio sample rate
@@ -140,6 +148,69 @@ func (f *FFSK) Discriminate(dst, src []float32) []float32 {
 	return dst
 }
 
+// EnableMatchedFilter turns on a post-discriminator symbol matched filter of
+// the given length (in samples). MPT 1327 FFSK sends pure per-bit tone bursts
+// with no premod pulse shaping, so after FM discrimination each symbol is a
+// ~rectangular pulse; its matched filter is an equal-length integrate-and-dump
+// (a normalised moving average), which averages the whole symbol's energy
+// before the slicer instead of deciding on a single noisy discriminator
+// sample. Pass taps = round(samplesPerSymbol) (e.g. 40 at 48 kHz / 1200 baud).
+//
+// The filter is opt-in: without this call MatchedFilter is a passthrough, so
+// the many other NewFFSK callers (APRS / DSC / MDC1200 AFSK) are unaffected.
+// taps < 1 is treated as 1 (passthrough-equivalent). Each tap is 1/taps so the
+// filter has unity DC gain — the zero-threshold slicer and soft magnitudes are
+// unchanged in scale. Its group delay ((taps−1)/2) is a constant the downstream
+// symbol-clock recovery absorbs, exactly like the pre-discriminator LPF delay.
+func (f *FFSK) EnableMatchedFilter(taps int) {
+	if taps < 1 {
+		taps = 1
+	}
+	f.boxcar = make([]float32, taps)
+	w := float32(1) / float32(taps)
+	for i := range f.boxcar {
+		f.boxcar[i] = w
+	}
+	f.mfHist = make([]float32, taps)
+	f.mfPos = 0
+}
+
+// MatchedFilter applies the symbol matched filter enabled by
+// EnableMatchedFilter and returns a same-length output; internal history
+// carries across calls so chunk boundaries do not corrupt the stream. When no
+// matched filter is enabled it is a passthrough copy (src → dst), so it is
+// always safe to call. Mirrors GFSK.MatchedFilter.
+func (f *FFSK) MatchedFilter(dst, src []float32) []float32 {
+	if cap(dst) < len(src) {
+		dst = make([]float32, len(src))
+	} else {
+		dst = dst[:len(src)]
+	}
+	if f.boxcar == nil {
+		copy(dst, src)
+		return dst
+	}
+	N := len(f.boxcar)
+	for i, x := range src {
+		f.mfHist[f.mfPos] = x
+		f.mfPos = (f.mfPos + 1) % N
+		var acc float32
+		idx := f.mfPos - 1
+		if idx < 0 {
+			idx = N - 1
+		}
+		for k := 0; k < N; k++ {
+			acc += f.boxcar[k] * f.mfHist[idx]
+			idx--
+			if idx < 0 {
+				idx = N - 1
+			}
+		}
+		dst[i] = acc
+	}
+	return dst
+}
+
 // Slice maps a soft sample to a binary symbol: mark tone present
 // (positive) → 1, space tone present (non-positive) → 0. CCIR FFSK
 // convention: mark = binary 1, space = binary 0.
@@ -170,6 +241,12 @@ func (f *FFSK) Reset() {
 	f.phase = 0
 	f.lpf.Reset()
 	f.last = complex(1, 0)
+	if f.mfHist != nil {
+		for i := range f.mfHist {
+			f.mfHist[i] = 0
+		}
+		f.mfPos = 0
+	}
 }
 
 // Delay returns the LPF group delay (in samples). Symbol-rate

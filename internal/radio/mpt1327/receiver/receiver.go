@@ -58,6 +58,7 @@ type Receiver struct {
 
 	disc    []float32
 	tone    []float32
+	matched []float32
 	symbols []float32
 	bits    []byte
 }
@@ -83,9 +84,18 @@ func New(opts Options) *Receiver {
 		gain = 0.05
 	}
 
+	ffsk := demod.NewFFSK(opts.SampleRateHz, MarkHz, SpaceHz)
+	// Integrate-and-dump matched filter over one symbol period. FFSK sends
+	// unshaped per-bit tone bursts, so the post-discriminator symbol pulse is
+	// ~rectangular and a one-symbol boxcar is its matched filter — it averages
+	// the whole symbol's energy before slicing instead of deciding on a single
+	// noisy discriminator sample, the SNR the raw per-sample slicer threw away.
+	// The Mueller-Müller loop's contract is matched-filtered input.
+	ffsk.EnableMatchedFilter(int(sps + 0.5))
+
 	return &Receiver{
 		fm:      demod.NewFM(),
-		ffsk:    demod.NewFFSK(opts.SampleRateHz, MarkHz, SpaceHz),
+		ffsk:    ffsk,
 		clock:   sync.NewMuellerMuller(sps, gain),
 		bitSink: opts.BitSink,
 	}
@@ -100,7 +110,8 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 	r.disc = r.fm.Process(r.disc, iq)
 	r.tone = r.ffsk.Discriminate(r.tone, r.disc)
-	r.symbols = r.clock.Process(r.symbols, r.tone)
+	r.matched = r.ffsk.MatchedFilter(r.matched, r.tone)
+	r.symbols = r.clock.Process(r.symbols, r.matched)
 	if len(r.symbols) == 0 {
 		return
 	}
