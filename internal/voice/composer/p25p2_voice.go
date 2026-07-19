@@ -8,6 +8,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	p25p2rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/sigfollow"
@@ -338,6 +339,15 @@ func (c *Composer) publishP25Phase2CallSource(serial string, u p25p2.GroupVoiceC
 // Grant and republishes with the call's identity.
 func (c *Composer) publishP25Phase2CallEncryption(serial string, es p25p2.EncryptionSync) {
 	if c.bus == nil {
+		return
+	}
+	// Validity gate: a mis-decoded MAC Encryption Sync yields an Algorithm
+	// ID outside the TIA-102 set (the field-observed smear across 0x00-0xFF,
+	// one Key ID per call). Drop it rather than surface a plausible-but-wrong
+	// algid+key that downstream can't tell from a real key. Issue #924.
+	if !p25.AlgorithmKnown(es.AlgorithmID) {
+		c.log.Debug("composer: p25p2 dropping out-of-set encryption sync",
+			"serial", serial, "alg", p25.FormatAlgorithm(es.AlgorithmID), "key", es.KeyID)
 		return
 	}
 	c.bus.Publish(events.Event{

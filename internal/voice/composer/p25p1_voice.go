@@ -10,6 +10,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25p1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -403,7 +404,15 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 					// garbage algorithm/key as a real encryption change.
 					essRSUncorrectable.Add(1)
 				}
-				if lerr == nil && es.Encrypted() {
+				if lerr == nil && es.Encrypted() && !p25.AlgorithmKnown(es.AlgorithmID) {
+					// The outer RS reported success but "corrected" to an
+					// Algorithm ID outside the TIA-102 set — a residual-error
+					// mis-decode. Surfacing it is worse than omitting it
+					// (downstream it's indistinguishable from a real key), and
+					// its MI would pollute cryptolab too, so drop it. Issue #924.
+					c.log.Debug("composer: p25p1 dropping out-of-set encryption sync",
+						"serial", serial, "alg", p25.FormatAlgorithm(es.AlgorithmID), "key", es.KeyID)
+				} else if lerr == nil && es.Encrypted() {
 					c.log.Debug("composer: p25p1 encryption sync",
 						"serial", serial, "alg", es.AlgorithmID, "key", es.KeyID)
 					// cryptolab crypto-frame bridge: hand this superframe's

@@ -483,6 +483,48 @@ func TestComposerP25Phase2InCallMetadataFires(t *testing.T) {
 	}
 }
 
+// TestComposerP25Phase2DropsOutOfSetEncryptionSync pins the #924 validity
+// gate: a MAC Encryption Sync whose Algorithm ID is not a registered TIA-102
+// value is a bit-error mis-decode and must not be surfaced. Before the gate
+// both syncs published, so the completed-call webhook carried a plausible
+// algid+key that downstream couldn't tell from a real one.
+func TestComposerP25Phase2DropsOutOfSetEncryptionSync(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	c := &Composer{bus: bus, log: discardLogger()}
+
+	// Out-of-set algid (bit-error smear) — must be dropped.
+	c.publishP25Phase2CallEncryption("VOICE-1", p25p2.EncryptionSync{AlgorithmID: 0x37, KeyID: 0xABCD})
+	// Valid AES-256 — must publish.
+	c.publishP25Phase2CallEncryption("VOICE-1", p25p2.EncryptionSync{AlgorithmID: 0x84, KeyID: 0x1234})
+
+	var got []trunking.CallEncryption
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindCallEncryption {
+				continue
+			}
+			ce, ok := ev.Payload.(trunking.CallEncryption)
+			if !ok {
+				t.Fatalf("KindCallEncryption payload type = %T", ev.Payload)
+			}
+			got = append(got, ce)
+		case <-deadline:
+			if len(got) != 1 {
+				t.Fatalf("published %d CallEncryption events, want 1 — the out-of-set algid must be dropped: %+v", len(got), got)
+			}
+			if got[0].AlgorithmID != 0x84 || got[0].KeyID != 0x1234 {
+				t.Fatalf("surfaced alg/key = 0x%X/0x%X, want 0x84/0x1234", got[0].AlgorithmID, got[0].KeyID)
+			}
+			return
+		}
+	}
+}
+
 // TestComposerP25Phase2VoiceChainWarnsTrellisOff confirms the chain-entry
 // diagnostic fires a warning when the grant carries TrellisOff — the
 // inconsistent FEC profile (trellis off while RS/interleave/scrambler are

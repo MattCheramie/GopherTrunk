@@ -22,6 +22,35 @@ func TestAlgorithmName(t *testing.T) {
 	}
 }
 
+func TestAlgorithmKnown(t *testing.T) {
+	cases := []struct {
+		id   uint8
+		want bool
+	}{
+		// Registered TIA-102 algorithms (clear included) are known.
+		{0x80, true}, // CLEAR
+		{0x81, true}, // DES-OFB
+		{0x83, true}, // TDES-2
+		{0x84, true}, // AES-256
+		{0x85, true}, // AES-128
+		{0x89, true}, // AES-256-OFB
+		{0x9F, true}, // DES-XL
+		{0xAA, true}, // ADP/RC4
+		// Bit-error smear values that a mis-decoded Encryption Sync emits
+		// must be rejected so they are never surfaced as a real key (#924).
+		{0x00, false},
+		{0x01, false},
+		{0x37, false},
+		{0x82, false},
+		{0xFF, false},
+	}
+	for _, c := range cases {
+		if got := AlgorithmKnown(c.id); got != c.want {
+			t.Errorf("AlgorithmKnown(0x%02X) = %v, want %v", c.id, got, c.want)
+		}
+	}
+}
+
 func TestFormatAlgorithm(t *testing.T) {
 	cases := []struct {
 		id   uint8

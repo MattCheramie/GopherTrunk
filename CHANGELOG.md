@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Encrypted-call `algorithm_id`/`key_id` are no longer surfaced when the
+  crypto sync mis-decodes.** On P25 Phase 2 (and Phase 1's residual-error
+  tail) a bit-error in a traffic-channel Encryption Sync smears the decoded
+  Algorithm ID roughly uniformly across `0x00-0xFF`, with a near-distinct Key
+  ID per call. Those values were published straight to the completed-call
+  webhook and `/api/v1/calls/history`, where they were indistinguishable from
+  a real key (a 7-day MMR sample showed the real AES-256 `0x84` alongside a
+  flat ~4-22 calls at *every* other algid). The composer now validates the
+  decoded Algorithm ID against the TIA-102 registry (`p25.AlgorithmKnown`)
+  before publishing, so an out-of-set value is dropped and the fields stay
+  omitted rather than carrying garbage. Clear and every registered algorithm
+  pass through unchanged. Refs #813, #924.
 - **A TETRA channel recorded as a narrowband slice below the 144 kHz channel
   rate (e.g. the natural 48/50 kHz SDR++/SDRTrunk record rate) now decodes
   instead of emitting a nonsense symbol rate.** The `siglab` replay/analyze

@@ -42,6 +42,20 @@ func AlgorithmName(id uint8) string {
 	return "unknown"
 }
 
+// AlgorithmKnown reports whether id is a registered TIA-102 Algorithm ID
+// (i.e. AlgorithmName has a mnemonic for it, clear included). It exists so
+// the call path can gate crypto metadata before surfacing it: a bit-error
+// in a traffic-channel Encryption Sync smears the Algorithm ID roughly
+// uniformly across 0x00-0xFF (with a near-distinct Key ID per call), so an
+// out-of-set value is provably a mis-decode and, surfaced, is downstream
+// indistinguishable from a real key. Callers omit algorithm_id/key_id when
+// this returns false rather than emit plausible-looking garbage. The set
+// tracks AlgorithmName, so a genuinely new algorithm is admitted the moment
+// it is added there. Issues #813, #924.
+func AlgorithmKnown(id uint8) bool {
+	return AlgorithmName(id) != "unknown"
+}
+
 // FormatAlgorithm renders id as "0x84 (AES-256)" for human-readable
 // log lines and UI tooltips. Unknown values render as "0xNN (unknown)"
 // so an operator can still cross-reference the raw ID with SDRtrunk
