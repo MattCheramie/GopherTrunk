@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **The narrowband down-converter no longer shifts the channel rate on SDR
+  sample rates that don't divide cleanly into the channel target.** When a
+  capture rate reduced to a ratio past the resampler's L/M caps, `ccdecoder`'s
+  DDC fell back to a crude integer decimator that missed the target rate by up
+  to a few percent — e.g. a 3.019 MS/s stream landed the 144 kHz TETRA channel
+  at 143762 Hz, i.e. 17970 sym/s instead of 18000 (−0.165%), a decode-breaking
+  symbol-clock error. It now falls back to the closest L/M under the caps (the
+  bounded search already used in the wideband `internal/dsp/tuner` path for
+  issue #550), landing the same stream at 143998 Hz (17999.8 sym/s). Standard
+  SDR rates (2.4/2.5/10 MS/s) reduce cleanly and are unaffected.
 - **Completed-call webhook now carries the source RID on nearly every call,
   not just the ~18% whose voice-side `call.source` decoded.** The per-call
   `broadcast.webhook` sink read the source RID off the grant that *bound* the

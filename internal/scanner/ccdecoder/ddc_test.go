@@ -110,6 +110,37 @@ func TestDownconverterDecimationRate(t *testing.T) {
 	}
 }
 
+// TestDownconverterCapFallbackRate: a wideband SDR rate whose exact
+// reduction to the channel target exceeds the L/M caps must fall back to
+// the closest representable ratio (issue #550 bounded search), not the
+// old integer decimator that shifted the achieved rate by up to a few
+// percent. A 3.019 MS/s capture landed the 144 kHz TETRA channel at
+// 143762 Hz (17970 baud, −0.165%) under the old fallback; the bounded
+// search must keep it within 0.1% of target, and standard rates that
+// never trip the caps must still land exactly.
+func TestDownconverterCapFallbackRate(t *testing.T) {
+	const tetra = 144_000.0
+	// Rates whose exact target/in reduction trips the L>64 / M>8192 caps.
+	for _, in := range []float64{3_019_000, 2_999_999, 1_500_001} {
+		got := NewDownconverter(in, tetra).OutRateHz()
+		if rel := math.Abs(got-tetra) / tetra; rel > 0.001 {
+			t.Errorf("in=%.0f: OutRateHz = %.1f, want within 0.1%% of %.0f (got %.3f%%)",
+				in, got, tetra, rel*100)
+		}
+	}
+	// Standard rates reduce cleanly and must remain exact for both the
+	// 48 kHz C4FM target and the 144 kHz TETRA target — the fallback must
+	// not perturb rates that never trip the caps.
+	for _, tc := range []struct{ in, target float64 }{
+		{2_048_000, 48_000}, {2_400_000, 48_000},
+		{2_400_000, 144_000}, {2_500_000, 144_000}, {10_000_000, 144_000},
+	} {
+		if got := NewDownconverter(tc.in, tc.target).OutRateHz(); math.Abs(got-tc.target) > 1e-6 {
+			t.Errorf("in=%.0f→%.0f: OutRateHz = %.3f, want exact", tc.in, tc.target, got)
+		}
+	}
+}
+
 // TestDownconverterIsolatesChannel: an in-channel tone survives the
 // decimation at ~unity gain while an out-of-band interferer (which
 // would otherwise alias straight into the passband) is rejected by

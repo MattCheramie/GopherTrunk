@@ -176,21 +176,51 @@ func (d *Downconverter) Reset() {
 	}
 }
 
-// ddcRatio reduces target/in to its lowest L/M terms. A non-standard
-// SDR rate can reduce to a pathologically large ratio; since the
-// output rate only needs to be *roughly* 48 kHz, those fall back to
-// a pure integer decimator (L=1).
+// ddcRatio reduces target/in to its lowest L/M terms so the resampler
+// lands the output rate exactly on target. A non-standard SDR rate can
+// reduce to a pathologically large ratio (L>64 branches or M>8192);
+// rather than a crude integer decimator (L=1, M=round(in/target)) —
+// which silently shifts the achieved rate, and therefore the recovered
+// symbol rate, by up to a few percent — it falls back to the closest
+// L/M under the caps. For a 3.019 MS/s capture the old fallback landed
+// the 144 kHz TETRA channel at 143762 Hz (17970 baud, −0.165% — the
+// "baud drift" signature); the bounded search lands it at 143998 Hz
+// (17999.8 baud, −0.001%).
+//
+// This is the issue #550 fix already proven in internal/dsp/tuner
+// (bestRatioUnderCaps); porting it here closes the "two separate DDC
+// paths" divergence CLAUDE.md #764/#771 warns about. Standard SDR rates
+// (2.4/2.5/10 MS/s, common USRP rates) reduce cleanly and never reach
+// the fallback, so they are unaffected.
 func ddcRatio(target, in int) (l, m int) {
 	g := gcd(target, in)
 	l, m = target/g, in/g
 	if l > 64 || m > 8192 {
-		l = 1
-		m = int(math.Round(float64(in) / float64(target)))
-		if m < 1 {
-			m = 1
-		}
+		l, m = bestRatioUnderCaps(float64(target) / float64(in))
 	}
 	return l, m
+}
+
+// bestRatioUnderCaps returns the L/M (L in 1..64, M in 1..8192) whose ratio is
+// closest to r. O(64) and reached only on the cap-exceeded fallback, so it has
+// no per-sample cost. Mirrors internal/dsp/tuner.bestRatioUnderCaps (issue
+// #550) so both down-converter paths reduce a pathological rate the same way
+// instead of the old integer decimator that shifted the achieved rate.
+func bestRatioUnderCaps(r float64) (l, m int) {
+	bestL, bestM := 1, 1
+	bestErr := math.Inf(1)
+	for li := 1; li <= 64; li++ {
+		mi := int(math.Round(float64(li) / r))
+		if mi < 1 {
+			mi = 1
+		} else if mi > 8192 {
+			mi = 8192
+		}
+		if e := math.Abs(float64(li)/float64(mi) - r); e < bestErr {
+			bestErr, bestL, bestM = e, li, mi
+		}
+	}
+	return bestL, bestM
 }
 
 func gcd(a, b int) int {
