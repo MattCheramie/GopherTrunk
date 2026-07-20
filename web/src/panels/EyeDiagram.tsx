@@ -11,6 +11,7 @@ import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 import { EyeDiagramChart } from "../components/EyeDiagramChart";
 import { TuningControls } from "../components/TuningControls";
+import { useActiveCallsPoll } from "../hooks/useActiveCallsPoll";
 
 // Eye diagram panel — GopherTrunk's take on OP25's "datascope". The
 // daemon runs a parallel P25 C4FM receiver on the selected channel and
@@ -30,6 +31,11 @@ type ConnState = "connecting" | "open" | "closed";
 export function EyeDiagram() {
   const cfg = useShared(selectClientConfig);
   const activeCalls = useShared((s) => s.activeCalls);
+  // Keep the follow logic live: this panel reads activeCalls but, unlike
+  // Active/Dashboard, didn't refresh it — so the view froze on a stale
+  // call ("following call" forever, single freq) when opened directly.
+  // Matches the Constellation and Symbol scope panels (#557).
+  useActiveCallsPoll();
   const [devices, setDevices] = useState<SpectrumDevice[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>("closed");
@@ -196,7 +202,14 @@ export function EyeDiagram() {
             setOffsetKHz(khz);
           }}
           hold={hold}
-          onHoldChange={setHold}
+          onHoldChange={(next) => {
+            // Re-checking Hold parks the view on the control channel (a
+            // stable, known reference) rather than freezing on a call
+            // frequency that may already be stale — matching the
+            // Constellation and Symbol scope panels (#557).
+            if (next && controlOffsetKHz != null) setOffsetKHz(controlOffsetKHz);
+            setHold(next);
+          }}
           following={
             followOffsetKHz != null
               ? "call"

@@ -48,6 +48,15 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **Eye diagram panel now follows the locked channel like the other Plots
+  scopes.** The Eye diagram carried the offset/frequency tuning controls from
+  the constellation work (issue #557) but, unlike the Constellation and Symbol
+  scope panels, never refreshed the active-call snapshot — so its "follow the
+  newest call" offset froze on a stale call the moment the panel was opened
+  directly, and re-checking Hold left the view on that stale call frequency
+  instead of parking it on the control channel. The panel now polls active
+  calls while mounted and parks on the configured control channel on Hold,
+  matching the sibling scopes.
 - **Completed-call `source_rid` is no longer set from an unverified P25 Phase 2
   traffic-channel MAC PDU.** The in-call source RID is backfilled from the
   `GROUP_VOICE_CHANNEL_USER` MAC PDU decoded off the voice channel, but that

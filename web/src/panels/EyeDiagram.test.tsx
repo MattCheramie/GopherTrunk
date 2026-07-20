@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 vi.mock("../api/spectrum", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/spectrum")>()),
@@ -84,6 +84,115 @@ describe("EyeDiagram panel", () => {
     render(<EyeDiagram />);
     await waitFor(() => {
       expect(screen.getByText("live")).toBeInTheDocument();
+    });
+  });
+
+  it("rests on the control channel by default when no call is active (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 851_000_000,
+        sample_rate_hz: 2_048_000,
+        control_channel_hz: 851_025_000,
+      },
+    ] as never);
+
+    render(<EyeDiagram />);
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      // CC is 25 kHz above the 851.000 MHz centre.
+      expect(last?.offset).toBe(25_000);
+    });
+  });
+
+  it("prefers an active call over the control channel (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 851_000_000,
+        sample_rate_hz: 2_048_000,
+        control_channel_hz: 851_025_000,
+      },
+    ] as never);
+
+    useShared.setState({
+      activeCalls: [
+        {
+          grant: {
+            system: "sys",
+            protocol: "p25",
+            group_id: 1,
+            frequency_hz: 851_050_000,
+          },
+          device_serial: "rtl-1",
+          started_at: "2026-06-07T00:00:00Z",
+        },
+      ] as never,
+    });
+
+    render(<EyeDiagram />);
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      // Follows the call (50 kHz), not the CC (25 kHz).
+      expect(last?.offset).toBe(50_000);
+    });
+  });
+
+  it("stays at centre when the device reports no control channel (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
+
+    render(<EyeDiagram />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalled();
+    });
+    expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.offset).toBe(0);
+  });
+
+  it("parks the view on the control channel when Hold is re-checked (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 851_000_000,
+        sample_rate_hz: 2_048_000,
+        control_channel_hz: 851_025_000,
+      },
+    ] as never);
+    // Hold off + an active call → the view follows the call (50 kHz).
+    useShared.setState({
+      activeCalls: [
+        {
+          grant: {
+            system: "sys",
+            protocol: "p25",
+            group_id: 1,
+            frequency_hz: 851_050_000,
+          },
+          device_serial: "rtl-1",
+          started_at: "2026-06-07T00:00:00Z",
+        },
+      ] as never,
+    });
+
+    render(<EyeDiagram />);
+    await waitFor(() => {
+      expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.offset).toBe(
+        50_000,
+      );
+    });
+
+    // Re-checking Hold must jump the view to the control channel (25 kHz),
+    // not freeze on the (possibly stale) call frequency.
+    fireEvent.click(screen.getByRole("checkbox"));
+    await waitFor(() => {
+      expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.offset).toBe(
+        25_000,
+      );
     });
   });
 
