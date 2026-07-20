@@ -434,7 +434,18 @@ func (c *ControlChannel) dispatchSlice(slice []uint8, mode ChannelCodingMode, ch
 		if errs < 0 {
 			return
 		}
-		info = framing.PackBitsMSB(recovered)
+		// The AACH carries an ACCESS-ASSIGN PDU — a MAC-layer per-slot usage
+		// marker — NOT a CMCE/MLE Layer-3 PDU, so it must not go through
+		// ParsePDU (which would mis-parse it, occasionally as a spurious
+		// grant/release). Parse the downlink usage marker instead: it is what
+		// identifies, slot by slot, whether the slot is currently control or
+		// traffic — the signal a dynamic-MCCH-sharing SCBS needs (issue #925).
+		if aa, ok := ParseAccessAssign(recovered); ok {
+			c.log.Debug("tetra aach access-assign",
+				"header", aa.Header, "dl_usage", aa.DownlinkUsage(),
+				"control", aa.IsControlChannel(), "traffic", aa.IsTraffic())
+		}
+		return
 	case channel == ChannelBSCH:
 		recovered, ok := DecodeBSCH(bits)
 		if !ok {

@@ -17,6 +17,14 @@ for tagged releases.
   a system whose completed-call `source_rid` under-populates (issue #915). The
   raw opcode inventory + byte sample is what pins the remaining gap on a
   missing/mis-mapped grant opcode (decode-side) vs. a call-association gap.
+- **TETRA AACH downlink usage marker parsing (per-slot control/traffic
+  identification).** GopherTrunk now decodes the ACCESS-ASSIGN PDU the AACH
+  carries in the centre of every TETRA downlink slot into its downlink usage
+  marker (`unallocated` / `assigned control` / `common control` / `traffic`,
+  per ETSI EN 300 392-2 §21.4.7). This is the per-slot MCCH indicator a
+  Single Carrier Base Station running dynamic MCCH sharing relies on, where
+  any of the four TDMA slots can be the control channel at a given moment
+  rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
 - **Encrypted-call `algorithm_id`/`key_id` are no longer surfaced when the
@@ -31,6 +39,11 @@ for tagged releases.
   before publishing, so an out-of-set value is dropped and the fields stay
   omitted rather than carrying garbage. Clear and every registered algorithm
   pass through unchanged. Refs #813, #924.
+- **The AACH is no longer mis-routed through the CMCE/MLE Layer-3 PDU
+  parser.** The decoded AACH (a MAC-layer ACCESS-ASSIGN PDU) was being handed
+  to `ParsePDU`, which is for CMCE/MLE Layer-3 PDUs, so it was mis-parsed
+  (and could surface as a spurious grant/release). It is now parsed as the
+  ACCESS-ASSIGN PDU it actually is.
 - **A TETRA channel recorded as a narrowband slice below the 144 kHz channel
   rate (e.g. the natural 48/50 kHz SDR++/SDRTrunk record rate) now decodes
   instead of emitting a nonsense symbol rate.** The `siglab` replay/analyze
