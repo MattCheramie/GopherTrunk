@@ -158,15 +158,13 @@ func TestDispatcherPTTSlotDrivesEncryptionHook(t *testing.T) {
 	}
 }
 
-// TestDispatcherSourceCallback verifies the in-call GROUP_VOICE_CHANNEL_USER
-// PDU routes to the OnCallSource hook (the voice composer wires this to its
-// engine-backfill publisher; the follower leaves it nil).
-func TestDispatcherSourceCallback(t *testing.T) {
-	const wantSrc = 315203
-	user := p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
-		ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc,
-	}, false)
-
+// sourceSuperframes builds one superframe whose sub-frame 0 carries the
+// supplied GROUP_VOICE_CHANNEL_USER PDU (the rest voice), decodes the
+// dibit stream back into Superframes, and returns them — the input to
+// MACDispatcher.Dispatch. The PDU is passed in so a caller can supply an
+// RS-valid (EncodeMACPDURS) or a raw/RS-invalid form.
+func sourceSuperframes(t *testing.T, user p25p2.MACPDU) []p25p2.Superframe {
+	t.Helper()
 	dibits := make([]uint8, 50)
 	var subs [p25p2.SubframesPerSuperframe][]uint8
 	for i := range subs {
@@ -186,6 +184,19 @@ func TestDispatcherSourceCallback(t *testing.T) {
 	if len(sfs) == 0 {
 		t.Fatal("no superframes decoded")
 	}
+	return sfs
+}
+
+// TestDispatcherSourceCallback verifies the in-call GROUP_VOICE_CHANNEL_USER
+// PDU routes to the OnCallSource hook (the voice composer wires this to its
+// engine-backfill publisher; the follower leaves it nil). The PDU carries a
+// valid outer RS(24,16,9) parity, as a real over-the-air one does — the
+// dispatcher only trusts a source RID that survives the FEC check (#915).
+func TestDispatcherSourceCallback(t *testing.T) {
+	const wantSrc = 315203
+	user := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
+		ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc,
+	}, false))
 
 	var gotSrc uint32
 	var called int
@@ -194,7 +205,7 @@ func TestDispatcherSourceCallback(t *testing.T) {
 		OnCallSource: func(u p25p2.GroupVoiceChannelUser) { gotSrc = u.SourceID; called++ },
 	})
 	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
-	for _, sf := range sfs {
+	for _, sf := range sourceSuperframes(t, user) {
 		d.Dispatch(sf, macCfg)
 	}
 	if called == 0 {
@@ -202,5 +213,82 @@ func TestDispatcherSourceCallback(t *testing.T) {
 	}
 	if gotSrc != wantSrc {
 		t.Errorf("OnCallSource SourceID = %d, want %d", gotSrc, wantSrc)
+	}
+}
+
+// TestDispatcherSourceRequiresRSIntegrity is the #915 regression guard:
+// the completed-call webhook's source_rid is backfilled from the in-call
+// GROUP_VOICE_CHANNEL_USER PDU, and the MAC path runs with the outer RS
+// check off by default, so a mis-framed traffic channel decoding random
+// bytes will occasionally land on opcode 0x01/0x21 and — before the fix —
+// inject a plausible-but-wrong RID indistinguishable from a real one. The
+// dispatcher now trusts a source RID only when its PDU carries a valid
+// RS(24,16,9) parity.
+//
+//   - An RS-INVALID (raw Encode*, no parity) source PDU must NOT fire
+//     OnCallSource — it fails without the gate and passes with it.
+//   - An RS-VALID (EncodeMACPDURS) source PDU with the SAME opcode/RID
+//     still fires, so the gate blocks only the garbage, not real traffic.
+func TestDispatcherSourceRequiresRSIntegrity(t *testing.T) {
+	const wantSrc = 315203
+	base := p25p2.GroupVoiceChannelUser{ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc}
+	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
+
+	// RS-invalid: a raw GROUP_VOICE_CHANNEL_USER with no outer parity —
+	// stands in for a mis-decoded MAC window whose opcode byte happens to
+	// be 0x01. It must be dropped.
+	garbage := p25p2.EncodeGroupVoiceChannelUser(base, false)
+	var garbageCalls int
+	dGarbage := NewMACDispatcher(MACDispatcherOptions{
+		Log: quietLog(), System: "TestSys", Serial: "tap-0",
+		OnCallSource: func(p25p2.GroupVoiceChannelUser) { garbageCalls++ },
+	})
+	for _, sf := range sourceSuperframes(t, garbage) {
+		dGarbage.Dispatch(sf, macCfg)
+	}
+	if garbageCalls != 0 {
+		t.Errorf("OnCallSource fired %d time(s) for an RS-invalid source PDU; want 0 (bogus source_rid must not reach the webhook)", garbageCalls)
+	}
+
+	// RS-valid: identical opcode + RID, but with the outer parity a real
+	// over-the-air PDU carries. It must still fire with the correct RID.
+	valid := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(base, false))
+	var gotSrc uint32
+	var validCalls int
+	dValid := NewMACDispatcher(MACDispatcherOptions{
+		Log: quietLog(), System: "TestSys", Serial: "tap-0",
+		OnCallSource: func(u p25p2.GroupVoiceChannelUser) { gotSrc = u.SourceID; validCalls++ },
+	})
+	for _, sf := range sourceSuperframes(t, valid) {
+		dValid.Dispatch(sf, macCfg)
+	}
+	if validCalls == 0 {
+		t.Fatal("OnCallSource never fired for an RS-valid source PDU")
+	}
+	if gotSrc != wantSrc {
+		t.Errorf("OnCallSource SourceID = %d, want %d", gotSrc, wantSrc)
+	}
+}
+
+// TestDispatchReturnsRSValidCount verifies Dispatch reports how many
+// decoded MAC PDUs carried a clean outer RS parity — the framing-health
+// signal the per-call census surfaces as mac_rs_valid (#915).
+func TestDispatchReturnsRSValidCount(t *testing.T) {
+	user := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
+		ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: 315203,
+	}, false))
+	d := NewMACDispatcher(MACDispatcherOptions{Log: quietLog(), System: "TestSys", Serial: "tap-0"})
+	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
+	var totDec, totRS int
+	for _, sf := range sourceSuperframes(t, user) {
+		dec, rs := d.Dispatch(sf, macCfg)
+		totDec += dec
+		totRS += rs
+	}
+	if totDec == 0 {
+		t.Fatal("Dispatch decoded no MAC PDUs")
+	}
+	if totRS == 0 {
+		t.Errorf("Dispatch reported rsValid=0 for an RS-valid source PDU; want >=1")
 	}
 }

@@ -154,6 +154,48 @@ func TestDecodeSuperframeMACPDUsWithSlotTagsPTT(t *testing.T) {
 	}
 }
 
+// TestDecodeSuperframeMACPDUsRSValidFlag pins the per-PDU RS-integrity
+// signal the source-RID gate + framing-health census read (issue #915):
+// a MAC PDU carrying a valid outer RS(24,16,9) parity (EncodeMACPDURS)
+// decodes with RSValid=true and its fields intact, while the same PDU
+// without parity (the plain Encode* form, standing in for a mis-framed
+// window) decodes with RSValid=false.
+func TestDecodeSuperframeMACPDUsRSValidFlag(t *testing.T) {
+	const wantSrc = 315203
+	base := GroupVoiceChannelUser{ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc}
+	cfg := MACDecodeConfig{Trellis: TrellisOn}
+
+	decodeSource := func(pdu MACPDU) DecodedMACPDU {
+		t.Helper()
+		var subs [SubframesPerSuperframe][]uint8
+		for i := range subs {
+			if i == 0 {
+				subs[i] = EncodeMACSubframe(SlotTypeMACSignaling, uint8(i), pdu, TrellisOn, InterleaveOff)
+			} else {
+				subs[i] = EncodeVoiceSubframe(SlotTypeVoice4V, uint8(i), voicePayloads(Voice4VFrameCount))
+			}
+		}
+		got := DecodeSuperframeMACPDUsWithSlot(decodeOneSuperframe(t, subs), cfg)
+		if len(got) != 1 {
+			t.Fatalf("DecodeSuperframeMACPDUsWithSlot returned %d PDUs, want 1", len(got))
+		}
+		return got[0]
+	}
+
+	valid := decodeSource(EncodeMACPDURS(EncodeGroupVoiceChannelUser(base, false)))
+	if !valid.RSValid {
+		t.Error("RS-valid GROUP_VOICE_CHANNEL_USER decoded with RSValid=false")
+	}
+	if u, ok := valid.PDU.AsGroupVoiceChannelUser(); !ok || u.SourceID != wantSrc {
+		t.Errorf("RS-encoding altered the source RID: got %+v ok=%v, want SourceID=%d", u, ok, wantSrc)
+	}
+
+	raw := decodeSource(EncodeGroupVoiceChannelUser(base, false))
+	if raw.RSValid {
+		t.Error("RS-invalid (no-parity) source PDU decoded with RSValid=true")
+	}
+}
+
 // TestIngestSuperframeAllVoicePublishesNothing confirms an all-voice
 // superframe drives no control-channel events — the composer owns voice.
 func TestIngestSuperframeAllVoicePublishesNothing(t *testing.T) {

@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **P25 Phase 2 per-call MAC framing-health signal (`mac_rs_valid`).** The
+  end-of-call census line now reports how many of the decoded traffic-channel
+  MAC PDUs carried a valid outer RS(24,16,9) parity, and the per-opcode
+  `p25p2 mac pdu` debug line carries an `rs_valid` flag. `mac_pdus>0` with
+  `mac_rs_valid=0` is the built-in fingerprint of a mis-framed / mis-descrambled
+  Phase 2 superframe (random bytes parsing as MAC PDUs rather than real
+  signalling) — the objective before/after metric for a superframe-framing fix,
+  and the reason a system's clear-MAC source RID never lands (issue #915).
 - **P25 Phase 2 control-channel MAC opcode census (`--log-level debug`).** A
   new diagnostic inventories every MAC opcode seen on the control channel —
   logging a one-shot `payload_hex` sample the first time each opcode appears
@@ -27,8 +35,20 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
-- **Encrypted-call `algorithm_id`/`key_id` are no longer surfaced when the
-  crypto sync mis-decodes.** On P25 Phase 2 (and Phase 1's residual-error
+- **Completed-call `source_rid` is no longer set from an unverified P25 Phase 2
+  traffic-channel MAC PDU.** The in-call source RID is backfilled from the
+  `GROUP_VOICE_CHANNEL_USER` MAC PDU decoded off the voice channel, but that
+  MAC path runs with the outer RS(24,16,9) check off by default, so any 18
+  descrambled bytes parse — and a mis-framed / mis-descrambled superframe
+  decoding random bytes occasionally lands on opcode `0x01`/`0x21` and injects
+  a plausible-but-wrong RID indistinguishable from a real one (the source-side
+  analogue of the `algorithm_id` smear above; the field report on MMR saw a
+  near-uniform 234-of-256 MAC opcode distribution, i.e. garbage passing
+  ungated). GopherTrunk now trusts a source RID only when its MAC PDU carries a
+  valid outer RS parity, so a wrong RID is never carried to the webhook or
+  `/api/v1/calls/history` — it stays omitted instead. Recovering the RIDs GT
+  never frames on such systems is a separate Phase 2 superframe-framing fix
+  (issue #915). On P25 Phase 2 (and Phase 1's residual-error
   tail) a bit-error in a traffic-channel Encryption Sync smears the decoded
   Algorithm ID roughly uniformly across `0x00-0xFF`, with a near-distinct Key
   ID per call. Those values were published straight to the completed-call

@@ -190,6 +190,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		superframesSeen  atomic.Uint64
 		macSubframesSeen atomic.Uint64
 		macPDUsDecoded   atomic.Uint64
+		macRSValid       atomic.Uint64
 		slotHist         [slotHistLen]atomic.Uint64
 	)
 	rx := p25p2rx.New(p25p2rx.Options{
@@ -240,8 +241,13 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				// The talker alias, in-call source, and encryption-sync
 				// MAC PDUs that interleave with voice are decoded by the
 				// shared dispatcher (same path the signalling follower
-				// runs off the traffic channel, #376).
-				macPDUsDecoded.Add(uint64(dispatcher.Dispatch(sf, macCfg)))
+				// runs off the traffic channel, #376). rsValid counts how
+				// many carried a clean outer RS(24,16,9) parity — the
+				// framing-health signal the end-of-call census reports
+				// (issue #915).
+				nDec, nRS := dispatcher.Dispatch(sf, macCfg)
+				macPDUsDecoded.Add(uint64(nDec))
+				macRSValid.Add(uint64(nRS))
 			}
 		},
 	})
@@ -272,6 +278,13 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	//   - superframes>0, mac_subframes=0 → ISCH never classified a MAC slot
 	//                                       (inspect the slot_* histogram)
 	//   - mac_subframes>0, mac_pdus=0    → MAC FEC chain failed every slot
+	//   - mac_pdus>0, mac_rs_valid=0     → the MAC window parses but never
+	//                                       satisfies the outer RS(24,16,9)
+	//                                       parity: a mis-framed / mis-
+	//                                       descrambled superframe decoding
+	//                                       random bytes, not real signalling
+	//                                       (issue #915 — this is why the
+	//                                       clear-MAC source RID never lands)
 	// The slot_<type> buckets reuse SlotType.String() so the line is
 	// self-describing.
 	logCallCensus := func() {
@@ -281,6 +294,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			"voice_subframes", voiceSubframes.Load(),
 			"mac_subframes", macSubframesSeen.Load(),
 			"mac_pdus", macPDUsDecoded.Load(),
+			"mac_rs_valid", macRSValid.Load(),
 		}
 		for st := 0; st < slotHistLen; st++ {
 			if cnt := slotHist[st].Load(); cnt > 0 {

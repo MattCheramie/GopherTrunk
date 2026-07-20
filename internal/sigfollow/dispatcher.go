@@ -106,24 +106,34 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 
 // Dispatch decodes every MAC PDU in sf under macCfg, publishing any
 // completed talker alias and invoking the source / encryption hooks. It
-// returns the number of MAC PDUs decoded so a caller can drive an
-// activity watchdog off signalling presence (0 means the superframe
-// carried only voice / idle).
-func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConfig) int {
+// returns the number of MAC PDUs decoded (0 means the superframe carried
+// only voice / idle) and, of those, how many carried a valid outer
+// RS(24, 16, 9) parity — the framing-health signal a caller feeds the
+// per-call census (issue #915): on a correctly framed + descrambled
+// channel nearly every PDU is RS-valid, whereas a mis-framed traffic
+// channel decodes a stream of random bytes that (almost) never verify.
+func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConfig) (decodedCount, rsValidCount int) {
 	decoded := p25p2.DecodeSuperframeMACPDUsWithSlot(sf, macCfg)
 	for _, dec := range decoded {
 		pdu := dec.PDU
+		if dec.RSValid {
+			rsValidCount++
+		}
 		// Log the first PDU seen per (slot, opcode, MFID) on this channel,
-		// with the payload bytes. If a real on-air system rides the
-		// encryption sync on a slot/opcode we don't dispatch, the hex tells
-		// the next field tester exactly what we saw — the bytes needed to
-		// confirm or correct the MAC_PTT layout (issues #376, #813).
+		// with the payload bytes and its RS-integrity flag. If a real
+		// on-air system rides the encryption sync on a slot/opcode we don't
+		// dispatch, the hex tells the next field tester exactly what we saw
+		// — the bytes needed to confirm or correct the MAC_PTT layout; and
+		// rs_valid=false across the board is the fingerprint of a mis-framed
+		// superframe rather than an unhandled-but-real opcode (issues #376,
+		// #813, #915).
 		key := uint32(dec.SlotType)<<16 | uint32(pdu.Opcode)<<8 | uint32(pdu.MFID)
 		if _, seen := d.macSeen[key]; !seen {
 			d.macSeen[key] = struct{}{}
 			d.log.Info(d.logPrefix+": p25p2 mac pdu",
 				"system", d.system, "serial", d.serial,
 				"slot", dec.SlotType, "opcode", pdu.Opcode, "mfid", pdu.MFID,
+				"rs_valid", dec.RSValid,
 				"payload_len", len(pdu.Payload),
 				"payload_hex", hex.EncodeToString(pdu.Payload))
 		}
@@ -139,7 +149,18 @@ func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConf
 			}
 		}
 		if u, ok := pdu.AsGroupVoiceChannelUser(); ok {
-			if d.onCallSource != nil {
+			// Source-RID integrity gate (issue #915). The completed-call
+			// webhook's source_rid is backfilled from this in-call PDU, so a
+			// mis-decoded MAC window whose opcode byte happens to land on
+			// 0x01/0x21 would inject a plausible-but-wrong RID that is
+			// indistinguishable downstream from a real one — the source-side
+			// analogue of the #924 algid smear. The outer RS parity is the
+			// only signal that separates a genuine GROUP_VOICE_CHANNEL_USER
+			// from garbage (the opcode alone can't), so only an RS-verified
+			// PDU is trusted to set the call's source. A wrong RID is worse
+			// than an absent one; the real recovery of the ~64% missing on
+			// MMR is a Phase 2 superframe-framing fix, tracked in #915.
+			if dec.RSValid && d.onCallSource != nil {
 				d.onCallSource(u)
 			}
 			continue
@@ -176,7 +197,7 @@ func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConf
 			continue
 		}
 	}
-	return len(decoded)
+	return len(decoded), rsValidCount
 }
 
 // publishTalkerAlias mirrors phase2.ControlChannel.publishTalkerAlias: a

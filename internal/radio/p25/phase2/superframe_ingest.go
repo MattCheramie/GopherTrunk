@@ -31,6 +31,21 @@ type MACDecodeConfig struct {
 type DecodedMACPDU struct {
 	SlotType SlotType
 	PDU      MACPDU
+	// RSValid reports whether the recovered 18-byte MAC PDU satisfies
+	// the outer RS(24, 16, 9) parity check (TIA-102.BAAA-A §5.9),
+	// computed regardless of the channel's RSMode. It is the per-PDU
+	// FEC-integrity signal: a real over-the-air MAC PDU that framed and
+	// descrambled correctly verifies clean, whereas a mis-framed /
+	// mis-descrambled window packs into random bytes that (almost)
+	// never satisfy the RS syndromes. The MAC path runs with the outer
+	// RS check off by default (a permissive parse for weak signals), so
+	// without this flag the caller cannot tell a genuine PDU from
+	// garbage that merely happened to parse — which lets a mis-decoded
+	// GROUP_VOICE_CHANNEL_USER inject a bogus source RID (issue #915,
+	// the source-side analogue of the #924 algid gate). Callers that
+	// backfill trust-sensitive fields (the completed-call source RID)
+	// gate on this; the framing-health census counts it.
+	RSValid bool
 }
 
 // DecodeSuperframeMACPDUsWithSlot returns every successfully decoded MAC
@@ -60,7 +75,11 @@ func DecodeSuperframeMACPDUsWithSlot(sf Superframe, cfg MACDecodeConfig) []Decod
 		offset := slotPN44Offset(sub.Index)
 		if pdu, ok := decodeMACPDUDibits(macDibits, cfg.Trellis, cfg.RS,
 			cfg.Interleave, cfg.Scrambler, cfg.Seed, offset); ok {
-			out = append(out, DecodedMACPDU{SlotType: sub.SlotType, PDU: pdu})
+			out = append(out, DecodedMACPDU{
+				SlotType: sub.SlotType,
+				PDU:      pdu,
+				RSValid:  verifyMACPDURS(AssembleMACPDU(pdu)),
+			})
 		}
 	}
 	return out
