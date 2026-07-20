@@ -5,7 +5,7 @@ entry_type: protocol
 category: amateur-digital
 description: "RTTY (Radioteletype) is a classic digital mode that sends text as 5-bit Baudot characters over frequency-shift keying, historically at 45.45 baud with a 170 Hz shift."
 keywords: RTTY, radioteletype, Baudot, ITA2, FSK, frequency shift keying, mark, space, 45.45 baud, 170 Hz shift, amateur radio, teletype
-aka: [RTTY, Radioteletype]
+aka: [RTTY, Radioteletype, LTRS, FIGS]
 autolink: true
 infobox:
   - { label: Type, value: Text-over-radio digital mode }

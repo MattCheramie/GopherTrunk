@@ -5,7 +5,8 @@ entry_type: concept
 category: hw-networking
 description: An IP address is a numeric label assigned to each device on a network running the Internet Protocol, identifying the host and letting packets be routed to it; IPv4 uses 32 bits, IPv6 uses 128.
 keywords: IP address, IPv4, IPv6, Internet Protocol, subnet, subnet mask, DHCP, NAT, dotted quad, host address
-aka: [Internet Protocol address]
+aka: [Internet Protocol address, IPv4, IPv6]
+autolink: true
 infobox:
   - { label: Type, value: Network address }
   - { label: Identifies, value: A host on an IP network }

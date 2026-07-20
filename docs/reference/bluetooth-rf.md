@@ -5,7 +5,7 @@ entry_type: protocol
 category: wireless-data-iot
 description: "Bluetooth's RF layer is a 2.4 GHz frequency-hopping spread-spectrum air interface using GFSK across 79 (Classic) or 40 (LE) channels for short-range personal-area links."
 keywords: Bluetooth, Bluetooth RF, Bluetooth Classic, BR/EDR, FHSS, frequency hopping, GFSK, 2.4 GHz ISM, adaptive frequency hopping, personal area network, piconet
-aka: [Bluetooth Classic PHY, BR/EDR, Bluetooth radio]
+aka: [Bluetooth Classic PHY, BR/EDR, Bluetooth radio, EDR, "Enhanced Data Rate"]
 autolink: true
 infobox:
   - { label: Type, value: Short-range wireless PHY }
