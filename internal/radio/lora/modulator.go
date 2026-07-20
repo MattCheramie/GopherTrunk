@@ -19,9 +19,20 @@ func syncSymbolValues(syncWord uint8) (int, int) {
 }
 
 // LoRaModulate builds baseband IQ (complex64, rate osf*BW) carrying payload
-// as a complete LoRa frame. bw is recorded for downstream metadata only —
-// the sample values depend on sf and osf, not the absolute bandwidth.
+// as a complete LoRa frame. Low Data Rate Optimization is auto-detected
+// from the (SF, BW) pair (the Semtech Ts >= 16 ms rule), matching what a
+// NewDemodulator for the same pair expects. Use LoRaModulateMode to force
+// it. bw is recorded for downstream metadata only — the sample values
+// depend on sf and osf, not the absolute bandwidth (aside from the LDRO
+// decision).
 func LoRaModulate(payload []byte, sf, cr, osf int, bw Bandwidth, hasCRC bool, syncWord uint8) []complex64 {
+	return LoRaModulateMode(payload, sf, cr, osf, bw, hasCRC, syncWord, LDROAuto)
+}
+
+// LoRaModulateMode is LoRaModulate with an explicit LDRO mode, for building
+// fixtures that force reduced-rate on or off regardless of (SF, BW).
+func LoRaModulateMode(payload []byte, sf, cr, osf int, bw Bandwidth, hasCRC bool, syncWord uint8, mode LDROMode) []complex64 {
+	ldro := ResolveLDRO(mode, sf, bw)
 	up := GenChirp(sf, osf, true)
 	down := GenChirp(sf, osf, false)
 	sps := len(up)
@@ -42,7 +53,7 @@ func LoRaModulate(payload []byte, sf, cr, osf int, bw Bandwidth, hasCRC bool, sy
 	out = append(out, down[:sps/4]...)
 
 	// Header + payload symbols.
-	for _, v := range encodeFrameSymbols(payload, sf, cr, hasCRC) {
+	for _, v := range encodeFrameSymbols(payload, sf, cr, hasCRC, ldro) {
 		out = append(out, GenSymbolChirp(sf, osf, int(v))...)
 	}
 	return out

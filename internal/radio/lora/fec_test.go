@@ -90,20 +90,25 @@ func TestFrameSymbolRoundTrip(t *testing.T) {
 	}
 	for _, sf := range []int{7, 8, 10, 12} {
 		for cr := 1; cr <= 4; cr++ {
-			for _, pl := range payloads {
-				syms := encodeFrameSymbols(pl, sf, cr, true)
-				f, ok := decodeFrameFromSymbols(syms, sf)
-				if !ok {
-					t.Fatalf("sf=%d cr=%d len=%d: decode failed", sf, cr, len(pl))
-				}
-				if !f.HeaderOK || !f.CRCOK {
-					t.Fatalf("sf=%d cr=%d: headerOK=%v crcOK=%v", sf, cr, f.HeaderOK, f.CRCOK)
-				}
-				if f.CR != cr {
-					t.Fatalf("sf=%d: decoded CR=%d want %d", sf, f.CR, cr)
-				}
-				if string(f.Payload) != string(pl) {
-					t.Fatalf("sf=%d cr=%d: payload %x want %x", sf, cr, f.Payload, pl)
+			for _, ldro := range []bool{false, true} {
+				for _, pl := range payloads {
+					syms := encodeFrameSymbols(pl, sf, cr, true, ldro)
+					f, ok := decodeFrameFromSymbols(syms, sf, ldro)
+					if !ok {
+						t.Fatalf("sf=%d cr=%d ldro=%v len=%d: decode failed", sf, cr, ldro, len(pl))
+					}
+					if !f.HeaderOK || !f.CRCOK {
+						t.Fatalf("sf=%d cr=%d ldro=%v: headerOK=%v crcOK=%v", sf, cr, ldro, f.HeaderOK, f.CRCOK)
+					}
+					if f.CR != cr {
+						t.Fatalf("sf=%d ldro=%v: decoded CR=%d want %d", sf, ldro, f.CR, cr)
+					}
+					if f.LDRO != ldro {
+						t.Fatalf("sf=%d: decoded LDRO=%v want %v", sf, f.LDRO, ldro)
+					}
+					if string(f.Payload) != string(pl) {
+						t.Fatalf("sf=%d cr=%d ldro=%v: payload %x want %x", sf, cr, ldro, f.Payload, pl)
+					}
 				}
 			}
 		}

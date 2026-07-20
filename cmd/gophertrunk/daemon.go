@@ -4940,11 +4940,17 @@ func buildLoRaReceiver(sampleRate uint32, lc config.LoRaChannelConfig, bus *even
 		if sw == 0 {
 			sw = 0x12 // default private-network sync word
 		}
+		ldro, ok := lorapkg.ParseLDROMode(sc.LowDataRateOptimize)
+		if !ok {
+			log.Warn("lora: unrecognised low_data_rate_optimize; falling back to auto",
+				"serial", lc.Serial, "offset_hz", sc.OffsetHz, "value", sc.LowDataRateOptimize)
+		}
 		chans = append(chans, lorarx.ChannelConfig{
 			OffsetHz:    float64(sc.OffsetHz),
 			FrequencyHz: uint32(int64(lc.CenterHz) + int64(sc.OffsetHz)),
 			SF:          sc.SpreadingFactor,
 			SyncWord:    sw,
+			LDRO:        ldro,
 		})
 	}
 

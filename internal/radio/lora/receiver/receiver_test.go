@@ -131,6 +131,77 @@ func TestWidebandTwoChannels(t *testing.T) {
 	}
 }
 
+// TestWidebandLDROChannel verifies the per-sub-channel LDRO override is
+// wired through to the demodulator: a packet modulated with LDRO forced on
+// at SF7 (where the auto rule would leave it off) only decodes because the
+// sub-channel is configured LDROOn. A default (auto) sub-channel at SF7
+// would not carry the reduced-rate payload.
+func TestWidebandLDROChannel(t *testing.T) {
+	const (
+		inRate  = 1_000_000.0
+		bw      = lora.BW125
+		osfWide = int(inRate) / int(bw) // 8
+	)
+	pl := []byte("ldro wideband")
+	base := lora.LoRaModulateMode(pl, 7, 4, osfWide, bw, true, 0x12, lora.LDROOn)
+
+	wide := shift(base, -150_000, inRate)
+	wide = append(wide, make([]complex64, 40_000)...)
+
+	bus := events.NewBus(128)
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	rx, err := New(Options{
+		InputRateHz: uint32(inRate),
+		BW:          bw,
+		Oversample:  lora.DefaultOversample,
+		Channels: []ChannelConfig{
+			{OffsetHz: -150_000, FrequencyHz: 915_000_000, SF: 7, SyncWord: 0x12, LDRO: lora.LDROOn},
+		},
+		Bus: bus,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	in := make(chan []complex64)
+	go func() {
+		const chunk = 10_000
+		for off := 0; off < len(wide); off += chunk {
+			end := off + chunk
+			if end > len(wide) {
+				end = len(wide)
+			}
+			in <- wide[off:end]
+		}
+		close(in)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := rx.Process(ctx, in); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	want := hexOf(pl)
+	found := false
+	for {
+		select {
+		case ev := <-sub.C:
+			if f, ok := ev.Payload.(storage.LoRaFrame); ok && f.PayloadHex == want && f.CRCOK {
+				found = true
+			}
+			continue
+		default:
+		}
+		break
+	}
+	if !found {
+		t.Errorf("LDRO sub-channel did not recover the forced-LDRO frame %q", pl)
+	}
+}
+
 func hexOf(b []byte) string {
 	const hexd = "0123456789abcdef"
 	out := make([]byte, len(b)*2)

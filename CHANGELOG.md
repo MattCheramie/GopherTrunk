@@ -8,6 +8,19 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **LoRa Low Data Rate Optimization (LDRO).** The LoRa PHY now decodes the
+  reduced-rate payload mode LoRa uses at high spreading factors, where the long
+  symbol lets clock drift smear the dechirp peak across the two least-significant
+  chip bins. LDRO carries the payload at SF-2 meaningful bits per symbol (the
+  transmitted bin is always a multiple of four), tolerating that drift. It is
+  auto-detected from the (SF, BW) pair per Semtech's Ts >= 16 ms rule — on for
+  SF11/SF12 at 125 kHz and SF12 at 250 kHz — on both the demodulator and the
+  built-in modulator, so no configuration is needed for standard networks;
+  without it those (very common, long-range) frames could never be decoded. A
+  per-sub-channel `low_data_rate_optimize: auto | on | off` override handles
+  networks that deviate from the recommendation. (issue #586; the reduced-rate
+  SF-2 *header* region and bit-exact Semtech interop remain gated on captured
+  golden vectors.)
 - **P25 Phase 2 per-call MAC framing-health signal (`mac_rs_valid`).** The
   end-of-call census line now reports how many of the decoded traffic-channel
   MAC PDUs carried a valid outer RS(24,16,9) parity, and the per-opcode

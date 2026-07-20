@@ -299,12 +299,15 @@ type LoRaChannelConfig struct {
 // LoRaSubChannelConfig is one LoRa carrier within the dongle's IQ band.
 // OffsetHz is the carrier's offset from CenterHz. SpreadingFactor pins the
 // SF (7..12); 0 auto-detects across SF7..12. SyncWord defaults to 0x12
-// (private); set 0x34 for LoRaWAN.
+// (private); set 0x34 for LoRaWAN. LowDataRateOptimize is "auto" (default),
+// "on", or "off" — auto applies the Semtech Ts >= 16 ms rule (SF11/SF12 at
+// 125 kHz, SF12 at 250 kHz); set it explicitly for a network that deviates.
 type LoRaSubChannelConfig struct {
-	OffsetHz        int32  `yaml:"offset_hz"`
-	SpreadingFactor int    `yaml:"spreading_factor"`
-	SyncWord        uint8  `yaml:"sync_word"`
-	Label           string `yaml:"label"`
+	OffsetHz            int32  `yaml:"offset_hz"`
+	SpreadingFactor     int    `yaml:"spreading_factor"`
+	SyncWord            uint8  `yaml:"sync_word"`
+	Label               string `yaml:"label"`
+	LowDataRateOptimize string `yaml:"low_data_rate_optimize"`
 }
 
 // LoRaWANKeyConfig is one operator-supplied LoRaWAN device session-key set,
