@@ -8,15 +8,28 @@ import "math"
 // One Demodulator is bound to a single spreading factor; the wideband
 // receiver runs a Demodulator per candidate SF for auto-detection.
 type Demodulator struct {
-	d  *dechirper
-	bw Bandwidth
+	d    *dechirper
+	bw   Bandwidth
+	ldro bool // reduced-rate payload (see ldro.go)
 }
 
 // NewDemodulator builds a Demodulator for the given SF / oversample /
-// bandwidth.
+// bandwidth, auto-detecting Low Data Rate Optimization from the (SF, BW)
+// pair (the Semtech Ts >= 16 ms rule). Use NewDemodulatorMode to force it.
 func NewDemodulator(sf, osf int, bw Bandwidth) *Demodulator {
-	return &Demodulator{d: newDechirper(sf, osf), bw: bw}
+	return NewDemodulatorMode(sf, osf, bw, LDROAuto)
 }
+
+// NewDemodulatorMode builds a Demodulator with an explicit LDRO mode.
+// LDROAuto applies the (SF, BW) rule; LDROOn / LDROOff force it, for a
+// network that deviates from the recommendation.
+func NewDemodulatorMode(sf, osf int, bw Bandwidth, mode LDROMode) *Demodulator {
+	return &Demodulator{d: newDechirper(sf, osf), bw: bw, ldro: ResolveLDRO(mode, sf, bw)}
+}
+
+// LDRO reports whether this demodulator decodes the payload in reduced-rate
+// (Low Data Rate Optimize) mode.
+func (m *Demodulator) LDRO() bool { return m.ldro }
 
 // SF reports the spreading factor this demodulator is tuned to.
 func (m *Demodulator) SF() int { return m.d.sf }
@@ -102,15 +115,15 @@ func (m *Demodulator) decodeFrameAt(buf []complex64, dataStart int, cfoBins floa
 	}
 	hdr := ParseHeader(hdrNibs)
 	if !hdr.Valid {
-		return Frame{SF: m.d.sf, HeaderOK: false}, false
+		return Frame{SF: m.d.sf, HeaderOK: false, LDRO: m.ldro}, false
 	}
 
-	nBlocks := payloadBlockCount(m.d.sf, hdr.PayloadLen, hdr.HasCRC)
+	nBlocks := payloadBlockCount(m.d.sf, hdr.PayloadLen, hdr.HasCRC, m.ldro)
 	total := hc + nBlocks*blockSymbols(hdr.CR)
 
 	region := m.mix(buf, dataStart, total*m.d.sps, cfoBins)
 	syms := m.d.demodSymbols(region, 0, total, 0)
-	f, ok := decodeFrameFromSymbols(syms, m.d.sf)
+	f, ok := decodeFrameFromSymbols(syms, m.d.sf, m.ldro)
 	if !ok {
 		return f, false
 	}

@@ -743,6 +743,8 @@ sdr:
 #         - offset_hz: -200_000       # carrier offset from center_hz
 #           spreading_factor: 0       # 0 = auto-detect SF7..12; or pin 7..12
 #           sync_word: 0x12           # 0x12 private, 0x34 LoRaWAN
+#           low_data_rate_optimize: auto  # auto (Ts>=16ms: SF11/12@125k,
+#                                     #  SF12@250k) | on | off
 #           label: "LoRa 914.8"
 #         - offset_hz: 300_000
 #           spreading_factor: 7

@@ -61,22 +61,27 @@ func ParseHeader(nibbles []uint8) Header {
 }
 
 // blockNibbles is the number of data nibbles carried by one interleaver
-// block at spreading factor sf: ppm = sf codewords per block.
-func blockNibbles(sf int) int { return sf }
+// block with ppm codewords (rows): one nibble per row. ppm is the spreading
+// factor for a full-rate block, or SF-2 for a reduced-rate (LDRO / header)
+// block.
+func blockNibbles(ppm int) int { return ppm }
 
 // blockSymbols is the number of symbols one interleaver block occupies at
-// coding rate cr: (4+cr) symbols.
+// coding rate cr: (4+cr) symbols. It depends only on cr (the column count),
+// not on ppm, so a reduced-rate block still spans (4+cr) symbols — it just
+// carries fewer nibbles.
 func blockSymbols(cr int) int { return 4 + cr }
 
 // payloadBlockCount returns how many payload interleaver blocks a frame of
 // payloadLen bytes (plus an optional 2-byte CRC) needs at spreading factor
-// sf. Each block carries blockNibbles(sf) nibbles.
-func payloadBlockCount(sf, payloadLen int, hasCRC bool) int {
+// sf. Each block carries blockNibbles(payloadPPM(sf, ldro)) nibbles — SF
+// normally, SF-2 when LDRO reduces the rate.
+func payloadBlockCount(sf, payloadLen int, hasCRC, ldro bool) int {
 	nib := payloadLen * 2
 	if hasCRC {
 		nib += 4 // 2 CRC bytes
 	}
-	per := blockNibbles(sf)
+	per := blockNibbles(payloadPPM(sf, ldro))
 	if per <= 0 {
 		return 0
 	}
@@ -84,7 +89,8 @@ func payloadBlockCount(sf, payloadLen int, hasCRC bool) int {
 }
 
 // PayloadSymbolCount returns the number of symbols the payload (after the
-// header block) occupies for the given parameters.
-func PayloadSymbolCount(sf, cr, payloadLen int, hasCRC bool) int {
-	return payloadBlockCount(sf, payloadLen, hasCRC) * blockSymbols(cr)
+// header block) occupies for the given parameters. LDRO increases the count
+// because each reduced-rate block carries fewer nibbles.
+func PayloadSymbolCount(sf, cr, payloadLen int, hasCRC, ldro bool) int {
+	return payloadBlockCount(sf, payloadLen, hasCRC, ldro) * blockSymbols(cr)
 }

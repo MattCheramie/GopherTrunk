@@ -41,10 +41,11 @@ const channelizerThreshold = 7
 // ChannelConfig describes one LoRa sub-channel to decode within the
 // dongle's IQ band.
 type ChannelConfig struct {
-	OffsetHz    float64 // offset from the dongle centre frequency
-	FrequencyHz uint32  // absolute centre frequency (metadata only)
-	SF          int     // spreading factor 7..12; 0 = auto-detect SF7..12
-	SyncWord    uint8   // expected sync word (0x12 private, 0x34 LoRaWAN)
+	OffsetHz    float64       // offset from the dongle centre frequency
+	FrequencyHz uint32        // absolute centre frequency (metadata only)
+	SF          int           // spreading factor 7..12; 0 = auto-detect SF7..12
+	SyncWord    uint8         // expected sync word (0x12 private, 0x34 LoRaWAN)
+	LDRO        lora.LDROMode // Low Data Rate Optimize; LDROAuto (0) = the (SF,BW) rule
 }
 
 // Options configures a Receiver.
@@ -245,7 +246,7 @@ func newSubChannel(cfg ChannelConfig, bw lora.Bandwidth, osf int, emit func(Chan
 	}
 	maxSps := 0
 	for _, sf := range sfs {
-		d := lora.NewDemodulator(sf, osf, bw)
+		d := lora.NewDemodulatorMode(sf, osf, bw, cfg.LDRO)
 		sc.demods = append(sc.demods, d)
 		if d.SymbolLen() > maxSps {
 			maxSps = d.SymbolLen()

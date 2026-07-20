@@ -31,7 +31,7 @@ var webRoundTripAllow = map[string][]string{
 	// follow-up. The fields remain fully editable in the TUI and via raw YAML.
 	"Config":               {"LoRa"},
 	"LoRaChannelConfig":    {"CenterHz", "Bandwidth", "Oversample", "SubChannels", "LoRaWANKeys"},
-	"LoRaSubChannelConfig": {"OffsetHz", "SpreadingFactor", "SyncWord"},
+	"LoRaSubChannelConfig": {"OffsetHz", "SpreadingFactor", "SyncWord", "LowDataRateOptimize"},
 	"LoRaWANKeyConfig":     {"DevAddr", "NwkSKey", "AppSKey"},
 
 	// Per-system P25 site name catalogue (issue #698). Optional
