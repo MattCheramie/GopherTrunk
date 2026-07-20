@@ -318,11 +318,14 @@ func buildP25P2MetadataStream(n int) (dibits []uint8, wantSrc uint32, wantAlias 
 	wantAlgID = 0x84 // AES-256
 	wantKeyID = 0x1234
 
-	userPDU := p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
+	// RS-valid outer parity, as a real over-the-air PDU carries: the
+	// completed-call source_rid backfill only trusts an RS-verified
+	// GROUP_VOICE_CHANNEL_USER (issue #915).
+	userPDU := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
 		ServiceOptions: 0x40, // bit 6 = encrypted
 		GroupAddress:   0x4EEA,
 		SourceID:       wantSrc,
-	}, false)
+	}, false))
 	encPDU := p25p2.EncodeEncryptionSync(p25p2.EncryptionSync{
 		AlgorithmID:      wantAlgID,
 		KeyID:            wantKeyID,

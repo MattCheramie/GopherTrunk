@@ -81,6 +81,56 @@ func EncodeMACSubframe(slotType SlotType, counter uint8, pdu MACPDU, mode Trelli
 	return sub
 }
 
+// EncodeMACPDURS returns pdu with the outer RS(24, 16, 9) parity
+// (TIA-102.BAAA-A §5.9) filled in, so the assembled 18-byte MAC PDU
+// verifies under verifyMACPDURS. Real over-the-air MAC PDUs always
+// carry this parity; the plain Encode* helpers omit it (their fixtures
+// decode fine with the outer RS check off), so a fixture that must pass
+// an RS-integrity gate — the completed-call source-RID backfill, issue
+// #915 — is built by wrapping the base PDU in this helper.
+//
+// The opcode (+ MFID, for a manufacturer-specific opcode) and the
+// existing payload must fit the 12-byte / 16-hex-symbol information
+// region; the 6-byte parity tail is (re)computed from it. Because
+// EncodeRS24_16 is systematic (the 16 information symbols pass through
+// verbatim), the opcode and payload bytes are unchanged — only the
+// trailing parity is added. Panics if the content overflows the info
+// region.
+func EncodeMACPDURS(pdu MACPDU) MACPDU {
+	base := AssembleMACPDU(pdu)
+	if len(base) > 12 {
+		panic("p25/phase2: EncodeMACPDURS content exceeds the 12-byte MAC PDU info region")
+	}
+	var info18 [18]byte
+	copy(info18[:], base)
+	// Read the 16 information hex-symbols (6 bits each, MSB-first) out
+	// of bytes 0..11 — the same bit convention verifyMACPDURS uses.
+	var syms [16]byte
+	for i := 0; i < 16; i++ {
+		var s byte
+		for j := 0; j < 6; j++ {
+			bit := i*6 + j
+			s = (s << 1) | ((info18[bit>>3] >> uint(7-(bit&7))) & 1)
+		}
+		syms[i] = s
+	}
+	cw := framing.EncodeRS24_16(syms)
+	// Pack the full 24-symbol codeword back into 18 bytes: bytes 0..11
+	// reproduce the information verbatim, bytes 12..17 are the parity.
+	var full [18]byte
+	bit := 0
+	for _, sym := range cw {
+		for b := 5; b >= 0; b-- {
+			if (sym>>uint(b))&1 == 1 {
+				full[bit>>3] |= 1 << uint(7-(bit&7))
+			}
+			bit++
+		}
+	}
+	out, _ := ParseMACPDU(full[:])
+	return out
+}
+
 // EncodeEncryptionSync builds the MAC PDU form of an Encryption Sync —
 // the inverse of MACPDU.AsEncryptionSync.
 func EncodeEncryptionSync(es EncryptionSync) MACPDU {
