@@ -203,7 +203,10 @@ recordings:
       release_ms: 80     # envelope release (default 80)
       makeup_db: 0       # fixed post-compression gain (default 0)
   write_raw: true   # also append a .raw sidecar with the vocoder frames
-  skip_encrypted: false  # don't write files for calls flagged encrypted
+  skip_encrypted: false  # don't write files for calls flagged encrypted.
+                         # NOTE: true also suppresses the completed-call
+                         # broadcast backends (webhook/rdioscanner) for
+                         # encrypted calls — keep false to deliver them.
   warm_dmr_audio: false  # opt-in: warmer DMR vocoder (gentle high-shelf, softens the bright software-AMBE+2 timbre; superseded by enhance, DMR only)
   equalizer:
     enabled: false  # CMA blind equalizer in the FM voice chain (simulcast mitigation)
@@ -1217,9 +1220,13 @@ broadcast:
   # Generic JSON webhook: POST one JSON object per completed call to your
   # own endpoint (analytics DB, Grafana pipeline, Discord/Slack relay,
   # custom uploader). The payload carries the call metadata — system,
-  # talkgroup, source RID, frequency, P25 site identity (rfss_id/site_id/
-  # nac/channel_id), encryption + emergency flags, patched groups, and
+  # talkgroup, source RID, call_type (group/unit/data), frequency, P25 site
+  # identity (rfss_id/site_id/nac/channel_id), encryption + emergency flags
+  # (with algorithm_id/key_id on encrypted calls), patched groups, and
   # start/stop timestamps. Set include_audio to also embed the base64 MP3.
+  # NOTE: recordings.skip_encrypted: true suppresses the webhook for
+  # encrypted calls (the call ends before the recorder lifecycle completes);
+  # keep skip_encrypted: false to receive them. See issue #897.
   # webhook:
   #   - enabled: true
   #     name: "analytics"
