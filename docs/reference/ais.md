@@ -5,7 +5,7 @@ entry_type: protocol
 category: aviation-marine
 description: AIS (Automatic Identification System) is a maritime VHF data system in which ships broadcast identity, position, course, and speed using GMSK in a self-organising TDMA scheme.
 keywords: AIS, Automatic Identification System, marine tracking, GMSK, SOTDMA, 161.975 162.025, AIS channel A B, vessel position, MMSI, NMEA, AIVDM, satellite AIS
-aka: [AIS]
+aka: [AIS, CSTDMA]
 autolink: true
 infobox:
   - { label: Type, value: Maritime data broadcast }

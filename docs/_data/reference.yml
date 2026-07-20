@@ -217,6 +217,8 @@ domains:
           - { slug: intersymbol-interference, title: Intersymbol interference (ISI), type: term }
           - { slug: roll-off-factor, title: Roll-off factor, type: term }
           - { slug: bit-rate-vs-baud, title: Bit rate vs baud, type: term }
+          - { slug: amplitude-phase-shift-keying, title: Amplitude and phase-shift keying (APSK), type: technology }
+          - { slug: modulation-and-coding-scheme, title: Modulation and coding scheme (MCS), type: concept }
 
       - id: sdr-dsp
         label: SDR & DSP
@@ -480,6 +482,7 @@ domains:
           - { slug: mpt-1327, title: MPT 1327, type: protocol }
           - { slug: iden, title: iDEN, type: protocol }
           - { slug: provoice, title: ProVoice, type: protocol }
+          - { slug: direct-mode-operation, title: Direct mode operation (DMO), type: concept }
 
       - id: cellular
         label: Cellular
@@ -499,6 +502,10 @@ domains:
           - { slug: imsi-imei, title: IMSI & IMEI, type: term }
           - { slug: cellular-handover, title: Handover, type: term }
           - { slug: base-station-enodeb-gnodeb, title: Base station (eNodeB / gNodeB), type: term }
+          - { slug: frequency-division-duplex, title: Frequency-division duplex (FDD), type: concept }
+          - { slug: time-division-duplex, title: Time-division duplex (TDD), type: concept }
+          - { slug: discontinuous-reception, title: Discontinuous reception (DRX), type: concept }
+          - { slug: imt, title: International Mobile Telecommunications (IMT), type: technology }
 
       - id: wireless-data-iot
         label: Wireless data & IoT
@@ -561,6 +568,7 @@ domains:
           - { slug: atsc-1, title: ATSC 1.0, type: protocol }
           - { slug: atsc-3, title: ATSC 3.0 (NextGen TV), type: protocol }
           - { slug: isdb-t, title: ISDB-T, type: protocol }
+          - { slug: single-frequency-network, title: Single-frequency network (SFN), type: technology }
 
       - id: aviation-marine
         label: Aviation & marine
@@ -587,6 +595,9 @@ domains:
           - { slug: navtex, title: NAVTEX, type: protocol }
           - { slug: epirb-406, title: EPIRB (406 MHz), type: protocol }
           - { slug: marine-vhf, title: Marine VHF, type: technology }
+          - { slug: identification-friend-or-foe, title: Identification friend or foe (IFF), type: technology }
+          - { slug: sitor, title: SITOR, type: protocol }
+          - { slug: solas, title: SOLAS, type: concept }
 
       - id: paging-data
         label: Paging & data
@@ -651,6 +662,7 @@ domains:
           - { slug: ralcwi, title: RALCWI, type: technology }
           - { slug: evrc, title: EVRC, type: technology }
           - { slug: gsm-fr-hr-efr, title: GSM FR / HR / EFR, type: technology }
+          - { slug: advanced-audio-coding, title: Advanced Audio Coding (AAC), type: technology }
 
       - id: sdr-devices
         label: SDR devices
@@ -904,6 +916,12 @@ domains:
           - { slug: connectivity-standards-alliance, title: Connectivity Standards Alliance, type: organization }
           - { slug: rsgb, title: RSGB, type: organization }
           - { slug: dmr-association, title: DMR Association, type: organization }
+          - { slug: faa, title: Federal Aviation Administration (FAA), type: organization }
+          - { slug: imo, title: International Maritime Organization (IMO), type: organization }
+          - { slug: iec, title: International Electrotechnical Commission (IEC), type: organization }
+          - { slug: tapr, title: Tucson Amateur Packet Radio (TAPR), type: organization }
+          - { slug: nrsc, title: National Radio Systems Committee (NRSC), type: organization }
+          - { slug: ccitt, title: CCITT, type: organization }
   - id: software-dev
     label: "Software Development"
     blurb: Programming languages and the concepts, paradigms, and practices of building software — the craft behind GopherTrunk itself.
@@ -1036,6 +1054,7 @@ domains:
           - { slug: clock-speed, title: Clock speed, type: concept }
           - { slug: bios-uefi, title: BIOS & UEFI, type: concept }
           - { slug: chipset, title: Chipset, type: hardware }
+          - { slug: binary-coded-decimal, title: Binary-coded decimal (BCD), type: concept }
 
       - id: hw-servers
         label: Servers & hosting

@@ -5,7 +5,7 @@ entry_type: protocol
 category: paging-data
 description: "FLEX is a high-speed one-way paging protocol developed by Motorola, using 4-level FSK at up to 6400 bps with strong synchronisation and error correction for reliable wide-area paging."
 keywords: FLEX paging, Motorola FLEX, 4-FSK, high-speed pager, 1600 3200 6400 bps, simulcast paging, ReFLEX, frame phase, time synchronised
-aka: [FLEX]
+aka: [FLEX, ReFLEX]
 autolink: true
 infobox:
   - { label: Type, value: One-way paging protocol }

@@ -5,7 +5,7 @@ entry_type: protocol
 category: cellular
 description: 5G NR is the 3GPP fifth-generation air interface using scalable OFDM numerologies, LDPC and polar coding, massive MIMO, and mmWave bands for high-throughput, low-latency service.
 keywords: 5G NR, New Radio, 3GPP, OFDM numerology, flexible subcarrier spacing, LDPC code, polar code, massive MIMO, beamforming, mmWave, FR1, FR2, sub-6, standalone, non-standalone
-aka: [5G NR, New Radio, 5G]
+aka: [5G NR, New Radio, 5G, RedCap]
 autolink: true
 infobox:
   - { label: Type, value: 5G cellular air interface }
