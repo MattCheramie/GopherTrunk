@@ -144,6 +144,72 @@ func TestReceiverBitSinkBaseIdxMonotonic(t *testing.T) {
 	}
 }
 
+// bestBitMatch slides want over got and returns the largest number of
+// bit-exact matches at any alignment — the metric for "did the FM+FFSK
+// receiver recover the transmitted bits", independent of clock-recovery
+// warm-up latency at the front of the stream.
+func bestBitMatch(got []byte, want []int) (best, at int) {
+	for off := 0; off+len(want) <= len(got); off++ {
+		n := 0
+		for i, w := range want {
+			if int(got[off+i]) == w {
+				n++
+			}
+		}
+		if n > best {
+			best, at = n, off
+		}
+	}
+	return best, at
+}
+
+// TestReceiverRecoversTransmittedBits is the bit-correctness guard the
+// older TestReceiverEmitsBitsFromFMFFSK lacked: it asserts the FM →
+// FFSK-discriminator → clock-recovery → slicer chain recovers the actual
+// transmitted bit values, not merely that it emits some symbols. A demod
+// that produced a plausible-but-wrong 2-level stream (the failure mode
+// reported in issue #927) would emit bits but never align to the payload.
+func TestReceiverRecoversTransmittedBits(t *testing.T) {
+	// A 1010… preamble lets the Mueller-Müller loop settle before the
+	// distinctive payload, whose recovery is what the assertion checks.
+	var bits []int
+	for i := 0; i < 48; i++ {
+		bits = append(bits, i%2)
+	}
+	payload := []int{1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0,
+		1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0}
+	bits = append(bits, payload...)
+	// Trailing flush so the payload sits comfortably inside the recovered
+	// stream rather than at its truncated edge (clock recovery can drop/add
+	// a symbol at the very start/end as it warms up and drains).
+	for i := 0; i < 16; i++ {
+		bits = append(bits, i%2)
+	}
+
+	var got []byte
+	r := New(Options{
+		SampleRateHz: 48_000,
+		BitSink:      func(b []byte, baseIdx int) { got = append(got, b...) },
+	})
+	iq := makeFMFFSKIQ(bits)
+	const chunk = 4096
+	for i := 0; i < len(iq); i += chunk {
+		end := i + chunk
+		if end > len(iq) {
+			end = len(iq)
+		}
+		r.Process(iq[i:end])
+	}
+
+	best, at := bestBitMatch(got, payload)
+	// Allow one slip at the very edges of clock recovery, but the payload
+	// must otherwise come through bit-exact.
+	if best < len(payload)-1 {
+		t.Errorf("recovered %d/%d payload bits at best alignment (offset %d); got=%v",
+			best, len(payload), at, got)
+	}
+}
+
 func TestReceiverEmittedBitsAreBinary(t *testing.T) {
 	var bad int
 	r := New(Options{
