@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -157,6 +160,103 @@ func TestCaptureSampleRateHint(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// gatedWriter blocks every Write until release is closed, then records the
+// bytes. It models a stalled disk so a test can prove the capture drain is
+// decoupled from the write.
+type gatedWriter struct {
+	release chan struct{}
+	mu      sync.Mutex
+	buf     []byte
+}
+
+func (w *gatedWriter) Write(p []byte) (int, error) {
+	<-w.release
+	w.mu.Lock()
+	w.buf = append(w.buf, p...)
+	w.mu.Unlock()
+	return len(p), nil
+}
+
+func (w *gatedWriter) len() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.buf)
+}
+
+// TestCaptureStreamDrainsDespiteBlockedWriter proves the fix: even when every
+// disk write is blocked, the goroutine draining src keeps running and empties
+// the source into the deep write buffer. On a live SDR that is what stops the
+// driver from dropping chunks when storage stalls. Fails first: a synchronous
+// write in the drain goroutine would leave src full until the writer unblocks.
+func TestCaptureStreamDrainsDespiteBlockedWriter(t *testing.T) {
+	const n, size = 100, 50 // fits captureWriterDepth
+	w := &gatedWriter{release: make(chan struct{})}
+	src := feedChunks(n, size)
+
+	type res struct {
+		written int64
+		err     error
+	}
+	done := make(chan res, 1)
+	go func() {
+		wr, err := captureStream(context.Background(), w, siglab.FormatF32, src, uint32(n*size), 1.0, nil)
+		done <- res{wr, err}
+	}()
+
+	// src must drain while the writer is still blocked.
+	deadline := time.After(2 * time.Second)
+	for len(src) > 0 {
+		select {
+		case <-deadline:
+			t.Fatalf("src still has %d chunks while the writer is blocked — the write is not decoupled from the drain", len(src))
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if w.len() != 0 {
+		t.Fatalf("writer wrote %d bytes while gated — it should be blocked", w.len())
+	}
+
+	close(w.release)
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("captureStream: %v", r.err)
+		}
+		if r.written != int64(n*size) {
+			t.Errorf("written = %d, want %d", r.written, n*size)
+		}
+		if got := w.len(); got != n*size*8 {
+			t.Errorf("wrote %d bytes, want %d (f32)", got, n*size*8)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("captureStream did not finish after releasing the writer")
+	}
+}
+
+// errWriter fails every write.
+type errWriter struct{ err error }
+
+func (w errWriter) Write(p []byte) (int, error) { return 0, w.err }
+
+func TestCaptureStreamSurfacesWriteError(t *testing.T) {
+	src := feedChunks(10, 50)
+	_, err := captureStream(context.Background(), errWriter{err: errors.New("disk full")}, siglab.FormatF32, src, 500, 1.0, nil)
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("want a surfaced write error, got %v", err)
+	}
+}
+
+func TestCaptureDropCounter(t *testing.T) {
+	c := &captureDropCounter{serial: "ABC"}
+	c.observe(sdr.Info{Serial: "ABC"})
+	c.observe(sdr.Info{Serial: "OTHER"}) // different device: ignored
+	c.observe(sdr.Info{Serial: "ABC"})
+	if got := c.count(); got != 2 {
+		t.Errorf("count = %d, want 2 (drops for OTHER must not be counted)", got)
 	}
 }
 
