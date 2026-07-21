@@ -343,6 +343,47 @@ func TestSiglabCaptureRejectsOverBudget(t *testing.T) {
 	}
 }
 
+// TestSiglabCaptureNarrowbandUnderBudgetOverFullBand pins the fix for the
+// narrowband budget check. A 120s grab at 2.5 MS/s would stage ~1144 MiB as a
+// full band — over the 1 GiB budget — but a 50 kHz slice stages only ~23 MiB.
+// The budget must be sized by the decimated slice rate, not the full band, so a
+// legitimate narrowband request is accepted. Previously it 400'd, telling the
+// caller to request the very slice they already supplied.
+func TestSiglabCaptureNarrowbandUnderBudgetOverFullBand(t *testing.T) {
+	const rate = 2_500_000
+	iq := make([]complex64, rate/10) // ~0.1 s — enough for the DDC to emit samples
+	for i := range iq {
+		iq[i] = complex(float32(i%5)/5, float32(i%9)/9)
+	}
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      iq,
+		rate:    rate,
+		center:  467_900_000,
+	}
+	ts := newCaptureTestServer(t, prov)
+
+	// 50 kHz slice at the tuner centre, 120 s. Full band ≈ 1144 MiB (over budget);
+	// slice ≈ 23 MiB (under). Without the fix the full-band footprint 400s here.
+	body := `{"serial":"SDR1","seconds":120,"format":"cs16","center_hz":467900000,"bandwidth_hz":50000}`
+	resp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200 for a narrowband slice under budget (%s)", resp.StatusCode, b)
+	}
+	var cr captureResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if cr.Capture.SampleRateHz > 60_000 {
+		t.Errorf("narrowband rate = %g, want ~50 kHz", cr.Capture.SampleRateHz)
+	}
+}
+
 // TestSiglabCaptureStreamsMultipleChunks proves the capture is streamed to disk
 // chunk-by-chunk (not buffered whole): the staged file must equal EncodeCapture
 // of the full IQ even when the provider delivers it in many small chunks.
