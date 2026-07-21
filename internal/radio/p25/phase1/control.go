@@ -241,6 +241,14 @@ func (c *ControlChannel) P25Phase2FEC() (trellis, rs, interleave, scrambler uint
 	return c.p25Phase2Trellis, c.p25Phase2RS, c.p25Phase2Interleave, c.p25Phase2Scrambler
 }
 
+// P25Phase1DemodMode reports the raw demod-mode string this CC stamps
+// onto the voice grants it publishes (issue #935). Empty means the
+// composer falls back to its own default (c4fm). Exposed read-only so
+// tests can confirm a per-site override reached the grant path — the
+// wideband multi-site fix relied on this to prove an LSM tap's grants
+// carry the LSM mode rather than defaulting to c4fm.
+func (c *ControlChannel) P25Phase1DemodMode() string { return c.p25Phase1DemodMode }
+
 // TopologySnapshot builds the protocol-neutral topology snapshot for this
 // control channel: identity, primary/secondary control channels, neighbours,
 // and band plan, with every channel's downlink frequency resolved through the

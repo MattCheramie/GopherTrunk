@@ -1197,6 +1197,27 @@ type DeviceConfig struct {
 type DeviceChannelConfig struct {
 	FrequencyHz uint32 `yaml:"frequency_hz"`
 	System      string `yaml:"system"`
+
+	// P25Phase1DemodMode optionally overrides the parent system's
+	// p25_phase1_demod_mode for this one control-channel tap. Within a
+	// single P25 system, individual sites can transmit different
+	// modulation — e.g. an urban simulcast site on Linear Simulcast
+	// Modulation (cqpsk / lsm) alongside rural single-transmitter sites
+	// on straight C4FM (issue #935). Because a wideband dongle decodes
+	// every site's control channel in parallel and the correct demod
+	// path must be chosen before the CC locks (it is what lets it lock),
+	// the override is keyed here per control-channel frequency — the one
+	// place a site's identity is known at config time — rather than by
+	// the RFSS/Site the CC only reveals after it decodes.
+	//
+	// Recognised values match the system-level key (case-insensitive):
+	// "" (inherit the system's p25_phase1_demod_mode) / "c4fm" / "fm"
+	// (FM discriminator + 4-level slicer) or "cqpsk" / "lsm" / "linear"
+	// (the LSM path — complex RRC + Gardner + differential QPSK).
+	// Applies to both the control-channel decoder and the voice grants
+	// this tap issues, so a granted voice call on an LSM site is decoded
+	// on the LSM path too. Ignored for non-P25-Phase-1 channels.
+	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
 }
 
 type TrunkingConfig struct {

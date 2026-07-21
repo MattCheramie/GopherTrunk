@@ -225,6 +225,17 @@ function DeviceEditor(props: {
                 ) : (
                   <TextField label="System" value={c.System} onChange={(v) => set({ ...c, System: v })} help="Must match a trunking system name." />
                 )}
+                <SelectField
+                  label="P25 Ph1 demod override"
+                  value={c.P25Phase1DemodMode ?? ""}
+                  onChange={(v) => set({ ...c, P25Phase1DemodMode: v })}
+                  options={[
+                    { value: "", label: "Inherit system default" },
+                    { value: "c4fm", label: "C4FM / FM" },
+                    { value: "cqpsk", label: "CQPSK / LSM (simulcast)" },
+                  ]}
+                  help="Override the system's demod path for this site only. Use when one P25 system mixes LSM simulcast and C4FM sites (issue #935). P25 Phase 1 only."
+                />
               </div>
             )}
           />
