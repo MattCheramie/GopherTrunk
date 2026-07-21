@@ -48,6 +48,18 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **P25 Phase 2 superframes now lock under any dibit rotation.** Real-air Phase 2
+  is differentially decoded H-DQPSK, so a residual carrier offset near an odd
+  multiple of ±1500 Hz (a quarter of the 6000-baud symbol rate) rotates every
+  recovered dibit by a constant 0..3. The superframe decoder only correlated the
+  outbound frame sync under the single canonical rotation, so a rotated stream
+  never locked — no superframe, no traffic-channel MAC PDU, and hence no source
+  RID or talker alias. It now searches all four rotations (the three non-canonical
+  ones at a stricter tolerance so noise cannot false-lock) and de-rotates the
+  sliced superframe to canonical before the ISCH + MAC FEC. Verified against a
+  real Victorian MMR (WACN 0xBEE00) Phase 2 voice capture: 0 superframes before,
+  ~430 after. (issue #915; the traffic-channel MAC descramble mapping that keeps
+  `mac_rs_valid=0` even on a locked superframe is a separate, still-open blocker.)
 - **TETRA control channels now lock on real air (§8.2.5 scrambler).** The
   scrambling LFSR shifted its register the wrong direction relative to the tap
   convention, so the generated sequence diverged from ETSI EN 300 392-2 §8.2.5
