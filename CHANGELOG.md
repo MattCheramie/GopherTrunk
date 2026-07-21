@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Startup warning when paging is configured without storage.** A
+  `paging.pocsag` / `paging.flex` / `paging.wideband` subsystem with no
+  `storage.path` set decodes fine and consumes live IQ, but decoded pages are
+  never persisted and `GET /api/v1/pager/messages` returns `503`, so the
+  Pagers panel shows a bare `pager/messages 503` with no hint that storage is
+  the missing piece. The daemon now surfaces this at load time as a startup
+  warning (alongside the launcher / TUI dashboard warnings) instead of leaving
+  the misconfiguration silent. (issue #565)
 - **Per-site P25 Phase 1 demod mode on wideband multi-site taps.** A single P25
   system can now mix modulation across its sites: set the system-level
   `p25_phase1_demod_mode` to the majority modulation and add a per-channel

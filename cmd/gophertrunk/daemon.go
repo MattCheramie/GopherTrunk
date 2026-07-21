@@ -629,6 +629,31 @@ func (d *Daemon) addWarning(msg string) {
 	d.startupWarnings = append(d.startupWarnings, msg)
 }
 
+// warnPagingNeedsStorage records a startup warning when a paging subsystem
+// (POCSAG / FLEX / wideband) is configured but storage.path is empty.
+// Without storage the receivers still start and consume live IQ, but decoded
+// pages are never persisted and GET /api/v1/pager/messages returns 503 — so
+// the operator sees the Pagers panel fail with a bare "pager/messages 503"
+// and no hint that the missing piece is storage.path. The 503's own body
+// carries that hint, but it never reaches an operator watching the log or the
+// GUI status code. The reporter of issue #565 hit exactly this: POCSAG
+// "not working" until they discovered on their own that adding storage: to
+// the config fixed it. Surfacing it at load time — alongside the other
+// startup warnings the launcher and TUI dashboard show — turns a silent
+// misconfiguration into an actionable one.
+func (d *Daemon) warnPagingNeedsStorage(cfg config.Config) {
+	if cfg.Storage.Path != "" {
+		return
+	}
+	if len(cfg.Paging.POCSAG)+len(cfg.Paging.FLEX)+len(cfg.Paging.Wideband) == 0 {
+		return
+	}
+	d.addWarning("paging is configured but storage.path is not set — decoded " +
+		"pages will not be persisted and the Pagers panel " +
+		"(GET /api/v1/pager/messages) returns 503; set storage.path to keep " +
+		"and view pager messages (issue #565)")
+}
+
 // newDiagCollector builds the error-diagnostics collector handed to the
 // API/gRPC servers. When the SDR pool is up, it seeds the collector
 // from the live pool snapshot so a banner never triggers a fresh USB
@@ -1939,6 +1964,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			d.pagingGroups = append(d.pagingGroups, *group)
 		}
 	}
+
+	// Paging decodes only persist / surface via the API when storage is
+	// wired; warn the operator at load time if they configured paging but
+	// no storage.path (issue #565).
+	d.warnPagingNeedsStorage(cfg)
 
 	// M17 link-layer receivers — one per configured m17.channels entry.
 	// Same construction shape as the paging receivers above; decoded
