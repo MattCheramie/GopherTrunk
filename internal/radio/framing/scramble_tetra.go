@@ -54,8 +54,16 @@ func (s *ScramblerTetra) Next() byte {
 	// New bit = XOR of tapped state bits.
 	v := s.state & scrambleTetraTapMask
 	bit := byte(popcount32(v) & 1)
-	// Shift state right, inserting the new bit at the top.
-	s.state = (s.state >> 1) | (uint32(bit) << 31)
+	// Shift state left, inserting the new bit p(k) at bit 0 (the newest
+	// position the tap mask reads as p(k-1)). The previous implementation
+	// shifted right and inserted at bit 31, which reversed the register
+	// relative to the tap convention and produced a sequence that diverged
+	// from ETSI §8.2.5 eq. 8.41 at p(2). Because scramble/descramble share
+	// this generator, the error was invisible to round-trip tests but broke
+	// every real (externally scrambled) burst — the whole BSCH/BNCH/SCH
+	// family — while the unscrambled sync training sequence still correlated
+	// (issue #925).
+	s.state = (s.state << 1) | uint32(bit)
 	return bit
 }
 

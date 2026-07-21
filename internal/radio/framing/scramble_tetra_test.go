@@ -107,6 +107,61 @@ func TestScrambleTetraRandomRoundTrip(t *testing.T) {
 	}
 }
 
+// refScrambleTetraETSI is an independent, textbook implementation of the
+// ETSI EN 300 392-2 §8.2.5 scrambling sequence, built directly from the
+// recurrence rather than from an LFSR register-shift — precisely so it can
+// not share a shift-direction bug with the production ScramblerTetra.
+//
+//	p(k) = Σ_{i∈taps} p(k-i)                    (eq. 8.41, mod 2)
+//	taps = {1,2,4,5,7,8,10,11,12,16,22,23,26,32}
+//	init: p(-31)=p(-30)=1, p(-29)=e(30), …, p(0)=e(1)   (eq. 8.42)
+//	      e(m) = bit (m-1) of the 30-bit extended colour code (e(1)=LSB)
+//
+// Output is p(1), p(2), … For BSCH the extended colour code is 0.
+func refScrambleTetraETSI(n int, ext uint32) []byte {
+	taps := []int{1, 2, 4, 5, 7, 8, 10, 11, 12, 16, 22, 23, 26, 32}
+	// p[idx] with idx = k+31, so p(-31) is p[0] and p(1) is p[32].
+	p := make([]byte, n+32)
+	p[0], p[1] = 1, 1 // p(-31), p(-30)
+	for j := 0; j < 30; j++ {
+		m := 30 - j // p(-29+j) = e(m)
+		p[2+j] = byte((ext >> uint(m-1)) & 1)
+	}
+	out := make([]byte, n)
+	for k := 1; k <= n; k++ {
+		idx := k + 31
+		var b byte
+		for _, i := range taps {
+			b ^= p[idx-i]
+		}
+		p[idx] = b
+		out[k-1] = b
+	}
+	return out
+}
+
+// TestScrambleTetraMatchesETSIReference pins the production scrambler to the
+// ETSI §8.2.5 sequence via an independent reference. This is the regression
+// guard for issue #925: the LFSR previously shifted the wrong way, so its
+// sequence diverged from the standard at p(2). Because scramble and
+// descramble share the generator, every round-trip test still passed while
+// no real (externally scrambled) TETRA burst — the whole BSCH/BNCH/SCH
+// family — could be decoded, so the control channel never locked. Colour 0
+// is the BSCH case that gates cold-start acquisition; the others guard the
+// data-carrying channels.
+func TestScrambleTetraMatchesETSIReference(t *testing.T) {
+	for _, ext := range []uint32{0, 0x2C, 0x12345, 0x2AAAAAAA, 0x3FFFFFFF} {
+		want := refScrambleTetraETSI(200, ext)
+		got := NewScramblerTetra(ext).Generate(200)
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("colour %#x: scrambler diverges from ETSI §8.2.5 reference at p(%d): got %d, want %d",
+					ext, i+1, got[i], want[i])
+			}
+		}
+	}
+}
+
 func equalBytes(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false
