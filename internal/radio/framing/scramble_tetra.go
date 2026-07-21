@@ -39,13 +39,38 @@ type ScramblerTetra struct {
 	state uint32
 }
 
-// NewScramblerTetra constructs a fresh scrambler seeded by the
-// 30-bit extended colour code. The low 30 bits of colourCode hold
-// e(1)..e(30) with bit i = e(i+1). Pass 0 for BSCH / BSCH-Q.
+// NewScramblerTetra constructs a fresh scrambler seeded by the 30-bit
+// extended colour code. colourCode carries the extended colour code as a
+// value — MCC (10) || MNC (14) || colour (6), MSB first (§8.2.5.3, the
+// packing tetra.ExtendedColourCode produces) — so its most-significant
+// bit (bit 29) is e(1) and its least-significant bit is e(30). Pass 0 for
+// BSCH / BSCH-Q.
+//
+// The LFSR init (§8.2.5.2 eq. 8.42) requires state bit i = e(i+1), i.e.
+// e(1) in state bit 0. Since the value carries e(1) in bit 29, the low 30
+// bits are bit-reversed on the way into the register. Getting this wrong
+// is invisible to BSCH (extended colour 0, a bit-reversal fixed point) and
+// to every scramble/descramble round-trip (both sides share the reversed
+// seed), yet leaves every real (externally scrambled) BNCH/SCH burst
+// undecodable — lock succeeds off the unscrambled BSCH while no message
+// ever decodes.
 func NewScramblerTetra(colourCode uint32) *ScramblerTetra {
 	return &ScramblerTetra{
-		state: (colourCode & 0x3FFFFFFF) | 0xC0000000,
+		state: reverseLow30(colourCode) | 0xC0000000,
 	}
+}
+
+// reverseLow30 bit-reverses the low 30 bits of v (bit i ↔ bit 29-i),
+// mapping the extended-colour-code value's e(1)-in-MSB layout onto the
+// LFSR's e(i+1)-in-state-bit-i initialisation.
+func reverseLow30(v uint32) uint32 {
+	var out uint32
+	for i := 0; i < 30; i++ {
+		if v&(1<<uint(i)) != 0 {
+			out |= 1 << uint(29-i)
+		}
+	}
+	return out
 }
 
 // Next advances the LFSR by one step and returns the next bit
