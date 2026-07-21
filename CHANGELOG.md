@@ -48,6 +48,18 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA control channels now lock on real air (§8.2.5 scrambler).** The
+  scrambling LFSR shifted its register the wrong direction relative to the tap
+  convention, so the generated sequence diverged from ETSI EN 300 392-2 §8.2.5
+  at the second bit. Because scramble and descramble share the generator, every
+  encode→decode round-trip still matched and the coding tests stayed green, but
+  no real, externally scrambled burst could be decoded: on air the unscrambled
+  sync training sequence correlated while the scrambled BSCH never reached a
+  CRC-clean codeword, so the colour code was never learned and the control
+  channel never locked — the "18 000-baud symbol timing recovers but no CC
+  lock" symptom, including on Single Carrier Base Station / dynamic-MCCH-sharing
+  sites. Verified against a real 467.913 MHz SCBS capture, which now locks in
+  ~11 ms and decodes MCC 250 / MNC 013 / colour code 0x2C. (issue #925)
 - **Eye diagram panel now follows the locked channel like the other Plots
   scopes.** The Eye diagram carried the offset/frequency tuning controls from
   the constellation work (issue #557) but, unlike the Constellation and Symbol
