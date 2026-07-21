@@ -287,6 +287,14 @@ func dmrVoiceProtocol(protocol string) bool {
 	return protocol == "dmr-tier1" || protocol == "dmr-tier2" || protocol == "dmr-tier3"
 }
 
+// tetraVoiceProtocol reports whether a call is TETRA voice. TETRA has no
+// in-process vocoder yet (TCH/S FEC + ACELP are follow-ups), so — like
+// ProVoice — its `.raw` sidecar of raw full-slot traffic frames is the only
+// capture of the call and is always written.
+func tetraVoiceProtocol(protocol string) bool {
+	return protocol == "tetra"
+}
+
 // NewRecorder validates options and returns a recorder ready to Run.
 // Like the engine, the recorder subscribes to the bus at construction
 // so that CallStart events published before Run starts are not lost.
@@ -833,7 +841,7 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 	// ProVoice and DMR voice grants always get a sidecar — neither has
 	// an in-process vocoder, so the .raw file is the only capture of
 	// the call.
-	if r.writeRaw || cs.Grant.ProVoice || dmrVoiceProtocol(cs.Grant.Protocol) {
+	if r.writeRaw || cs.Grant.ProVoice || dmrVoiceProtocol(cs.Grant.Protocol) || tetraVoiceProtocol(cs.Grant.Protocol) {
 		s.rawPath = filepath.Join(dir, base+".raw")
 		s.rawWanted = true
 	}

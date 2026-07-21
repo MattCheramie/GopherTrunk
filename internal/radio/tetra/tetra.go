@@ -45,8 +45,13 @@
 //   - End-to-end air-interface encryption (TEA1/2/3/4) — TETRA voice
 //     traffic on most operational networks is encrypted; the
 //     `Encrypted` flag on a grant just records what the CC said.
-//   - Voice frame extraction → AMBE+2 vocoder. The vocoder lives
-//     in internal/voice/ambe2 (pure-Go, default-on).
+//   - TCH/S traffic-channel FEC (§8.4 unequal error protection) and the
+//     TETRA ACELP speech decoder that would turn recovered speech frames
+//     into PCM. The voice-follow path (traffic.go + the composer's TETRA
+//     chain) already retunes to the granted carrier, demodulates it, and
+//     extracts each Normal Continuous Downlink Burst's data blocks to the
+//     recorder's `.raw` sidecar for out-of-band decode; the FEC + vocoder
+//     are the remaining steps to intelligible audio.
 //
 // As with the other trunking packages: ship a clean structured
 // surface now, leave the analogue / FEC / encryption pieces as named

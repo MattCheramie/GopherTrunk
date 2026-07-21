@@ -15,9 +15,12 @@
 //
 // DMR voice grants run a dedicated chain (see dmr_voice.go): IQ →
 // DMR receiver → voice superframe decoder → on-air AMBE frames
-// appended to the recorder's .raw sidecar. Other digital protocols
-// (P25, NXDN, ...) have no composer chain yet — their grants are
-// logged and bypassed.
+// appended to the recorder's .raw sidecar. P25 Phase 1 / Phase 2 have
+// their own chains; TETRA follows the traffic channel and lays down a
+// raw full-slot sidecar (see tetra_voice.go — TCH/S FEC + ACELP are
+// follow-ups). The remaining digital protocols (NXDN, dPMR, YSF,
+// D-STAR, EDACS ProVoice) have no composer chain yet — their grants
+// are logged and bypassed.
 package composer
 
 import (
@@ -425,10 +428,14 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	isDMRVoice := proto == "dmr-tier1" || proto == "dmr-tier2" || proto == "dmr-tier3"
 	isP25P2Voice := proto == "p25-phase2"
 	isP25P1Voice := proto == "p25"
-	if !isFM && !isDMRVoice && !isP25P2Voice && !isP25P1Voice {
-		// Remaining digital protocols (NXDN, dPMR, TETRA, YSF, D-STAR,
-		// EDACS ProVoice) have no composer voice chain yet — their
-		// voice bursts are not decoded into PCM here.
+	// TETRA follows the traffic channel and lays down a raw full-slot
+	// sidecar (TCH/S FEC + ACELP vocoder are follow-ups — see
+	// runTETRAVoiceChain), like the DMR/P25 raw-frame paths.
+	isTETRAVoice := proto == "tetra"
+	if !isFM && !isDMRVoice && !isP25P2Voice && !isP25P1Voice && !isTETRAVoice {
+		// Remaining digital protocols (NXDN, dPMR, YSF, D-STAR, EDACS
+		// ProVoice) have no composer voice chain yet — their voice bursts
+		// are not decoded into PCM here.
 		c.log.Info("composer: digital protocol not yet decoded; chain bypassed",
 			"device", cs.DeviceSerial, "protocol", proto,
 			"group", cs.Grant.GroupID)
@@ -504,6 +511,8 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case isP25P1Voice:
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
+	case isTETRAVoice:
+		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, ch.done)
 	default:
 		// Analog FM has no symbol clock to drift, so the rounded integer
 		// rate is fine; keep its uint32 signature unchanged.
