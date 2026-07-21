@@ -1670,6 +1670,13 @@ type RecordingsConfig struct {
 	// opened; a call whose encryption is only discovered mid-stream has
 	// its in-progress WAV/raw files closed and deleted. Live follow /
 	// playback is unaffected. Default false (record everything).
+	//
+	// Note it also suppresses the completed-call broadcast backends
+	// (webhook, rdioscanner, …) for encrypted calls: because the recorder
+	// discards the call without publishing a CallComplete, no completed-call
+	// event reaches those backends. Set skip_encrypted: false to deliver
+	// encrypted calls (with their backfilled encryption / alg / key
+	// metadata) to them. See issue #897.
 	SkipEncrypted bool `yaml:"skip_encrypted"`
 	// CryptoCapturePath, when set, opts into the cryptolab crypto-frame
 	// bridge: for each encrypted P25 Phase 1 superframe the voice composer
