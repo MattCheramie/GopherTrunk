@@ -245,7 +245,17 @@ func (r *Receiver) Process(iq []complex64) {
 	// matched samples than it consumed.
 	matched := r.matched
 	if r.afc != nil {
-		r.derotated = r.afc.Process(r.derotated, r.matched)
+		// The AFC's coarse (wide-range) stage reads the pre-matched-filter
+		// stream, which is only free of adjacent carriers when the channel
+		// filter ran; without it, pass nil so the AFC stays fine-only rather
+		// than risk locking the coarse estimate onto a neighbour. When the
+		// filter is on, iq still holds that channel-filtered stream here,
+		// sample-aligned with r.matched.
+		var wide []complex64
+		if r.chanFilt != nil {
+			wide = iq
+		}
+		r.derotated = r.afc.Process(r.derotated, r.matched, wide)
 		matched = r.derotated
 		if len(matched) == 0 {
 			return

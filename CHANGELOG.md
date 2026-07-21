@@ -48,6 +48,16 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA AFC now acquires carriers several kHz off-centre.** The carrier AFC
+  estimated the offset from the 4×Δφ differential mean, which wraps into
+  ±f_sym/8 ≈ ±2250 Hz — so a control channel more than 2250 Hz off-frequency
+  aliased into that window and left a multi-kHz constellation spin that broke
+  Gardner timing, and the receiver never locked even on a clean, strong signal.
+  Real SDR front-ends (RTL-SDR, Airspy, HackRF, non-GPSDO USRP) routinely sit
+  several kHz off, so this was a real acquisition gap. A coarse mean-frequency
+  stage (the angle of the pre-matched-filter block's lag-1 autocorrelation)
+  now picks the alias bucket before the existing fine estimator refines it,
+  extending acquisition to roughly ±6 kHz. (issue #940)
 - **TETRA control channels now lock on real air (§8.2.5 scrambler).** The
   scrambling LFSR shifted its register the wrong direction relative to the tap
   convention, so the generated sequence diverged from ETSI EN 300 392-2 §8.2.5
