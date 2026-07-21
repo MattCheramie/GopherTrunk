@@ -52,18 +52,61 @@ const syncLookback = SyncDibits - 1
 // trivial.
 const superframeBufKeep = 2 * DibitsPerSuperframe
 
+// syncAnchor is a candidate superframe start: the absolute index the
+// SyncDetector reported, plus the constant dibit rotation under which the
+// sync matched. Real air H-DQPSK is differentially decoded, so a residual
+// carrier offset near an odd multiple of ±1500 Hz (a quarter of the 6000-baud
+// symbol rate) rotates every dibit in the stream by a constant 0..3. The
+// SuperframeDecoder detects the outbound sync under all four rotations and
+// de-rotates the sliced superframe back to the canonical convention, so the
+// ISCH + MAC FEC downstream always sees canonical dibits regardless of the
+// receiver's residual carrier phase (issue #915).
+type syncAnchor struct {
+	idx int
+	rot uint8
+}
+
 // SuperframeDecoder is the stateful dibit → Superframe assembler.
 type SuperframeDecoder struct {
-	det      *SyncDetector
+	dets     [4]*SyncDetector // one per constant dibit rotation (issue #915)
 	buf      []uint8
-	bufStart int   // absolute dibit index of buf[0]
-	pending  []int // sync-match indices awaiting a full superframe
+	bufStart int          // absolute dibit index of buf[0]
+	pending  []syncAnchor // sync anchors awaiting a full superframe
 }
 
 // NewSuperframeDecoder returns a SuperframeDecoder ready to consume
 // dibits.
 func NewSuperframeDecoder() *SuperframeDecoder {
-	return &SuperframeDecoder{det: NewSyncDetector(OutboundSyncDibits(), 2)}
+	d := &SuperframeDecoder{}
+	d.initDetectors()
+	return d
+}
+
+// initDetectors builds the four rotation-shifted sync detectors. Detector r
+// matches when the incoming stream is rotated by +r from the canonical sync;
+// a match therefore means every dibit is canonical+r, so the superframe is
+// de-rotated by -r (add 4-r) to recover canonical dibits.
+//
+// The canonical rotation (r=0) keeps the historical tolerance of 2 dibit
+// mismatches. The three added rotations use a stricter tolerance of 1 so that
+// searching four patterns instead of one does not multiply the false-lock rate
+// on noise (a spurious 18/20 match under any of the extra rotations would
+// otherwise let a non-signal masquerade as a locked Phase 2 superframe — see
+// hunt.TestSurveyDeepRoutesAnalogToSiglab). A real rotated on-air stream carries
+// a clean sync (≥19/20), so tolerance 1 still catches it.
+func (d *SuperframeDecoder) initDetectors() {
+	base := OutboundSyncDibits()
+	for r := 0; r < 4; r++ {
+		pat := make([]uint8, len(base))
+		for i, p := range base {
+			pat[i] = (p + uint8(r)) & 3
+		}
+		tolerance := 2
+		if r != 0 {
+			tolerance = 1
+		}
+		d.dets[r] = NewSyncDetector(pat, tolerance)
+	}
 }
 
 // Reset clears all buffered state. Call on a stream re-sync so a stale
@@ -72,7 +115,7 @@ func (d *SuperframeDecoder) Reset() {
 	d.buf = d.buf[:0]
 	d.bufStart = 0
 	d.pending = d.pending[:0]
-	d.det = NewSyncDetector(OutboundSyncDibits(), 2)
+	d.initDetectors()
 }
 
 // Process consumes a window of dibits and returns every superframe that
@@ -85,26 +128,47 @@ func (d *SuperframeDecoder) Process(dibits []uint8, baseIdx int) []Superframe {
 	}
 	d.buf = append(d.buf, dibits...)
 
-	matches, _ := d.det.Process(nil, dibits, baseIdx)
-	d.pending = append(d.pending, matches...)
+	// Detect the outbound sync under each of the four constant dibit
+	// rotations; only the rotation that matches the stream's residual-carrier
+	// phase fires (a wrong rotation shifts most of the 20 sync dibits, far
+	// exceeding the tolerance). Merge the fresh anchors in stream order.
+	var fresh []syncAnchor
+	for r := uint8(0); r < 4; r++ {
+		matches, _ := d.dets[r].Process(nil, dibits, baseIdx)
+		for _, m := range matches {
+			fresh = append(fresh, syncAnchor{idx: m, rot: r})
+		}
+	}
+	sortAnchors(fresh)
+	d.pending = append(d.pending, fresh...)
 
 	var out []Superframe
 	bufEnd := d.bufStart + len(d.buf)
 	keep := d.pending[:0]
-	for _, m := range d.pending {
-		start := m - syncLookback - SyncSubframeIndex*DibitsPerSubframe
+	for _, a := range d.pending {
+		start := a.idx - syncLookback - SyncSubframeIndex*DibitsPerSubframe
 		if start+DibitsPerSuperframe > bufEnd {
-			keep = append(keep, m) // trailing sub-frames not buffered yet
+			keep = append(keep, a) // trailing sub-frames not buffered yet
 			continue
 		}
 		if start < d.bufStart {
 			continue // anchor fell off the front of the buffer
 		}
-		out = append(out, d.sliceSuperframe(start))
+		out = append(out, d.sliceSuperframe(start, a.rot))
 	}
 	d.pending = keep
 	d.trim()
 	return out
+}
+
+// sortAnchors orders anchors by their absolute index (insertion sort — the
+// per-call anchor count is tiny: sync is ~one match per 2160-dibit superframe).
+func sortAnchors(a []syncAnchor) {
+	for i := 1; i < len(a); i++ {
+		for j := i; j > 0 && a[j-1].idx > a[j].idx; j-- {
+			a[j-1], a[j] = a[j], a[j-1]
+		}
+	}
 }
 
 // trim bounds the cross-call buffer. A pending anchor whose data is
@@ -121,14 +185,23 @@ func (d *SuperframeDecoder) trim() {
 
 // sliceSuperframe cuts the 12 fixed-length sub-frames starting at
 // absolute dibit index start. The caller has confirmed the full
-// superframe span is buffered. Each sub-frame's ISCH is decoded so the
-// SlotType is populated; an uncorrectable ISCH leaves SlotTypeUnknown.
-func (d *SuperframeDecoder) sliceSuperframe(start int) Superframe {
+// superframe span is buffered. rot is the constant dibit rotation under
+// which the sync matched; each sub-frame is de-rotated by -rot (add 4-rot)
+// to recover the canonical dibit convention before the ISCH + MAC FEC run.
+// Each sub-frame's ISCH is decoded so the SlotType is populated; an
+// uncorrectable ISCH leaves SlotTypeUnknown.
+func (d *SuperframeDecoder) sliceSuperframe(start int, rot uint8) Superframe {
 	sf := Superframe{StartDibit: start}
 	off := start - d.bufStart
+	derot := (4 - rot) & 3
 	for i := 0; i < SubframesPerSuperframe; i++ {
 		sub := make([]uint8, DibitsPerSubframe)
 		copy(sub, d.buf[off+i*DibitsPerSubframe:off+(i+1)*DibitsPerSubframe])
+		if derot != 0 {
+			for j := range sub {
+				sub[j] = (sub[j] + derot) & 3
+			}
+		}
 		slot := SlotTypeUnknown
 		if isch, _, err := DecodeISCH(sub[ISCHOffset : ISCHOffset+ISCHDibits]); err == nil {
 			slot = isch.SlotType
