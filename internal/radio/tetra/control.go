@@ -272,8 +272,10 @@ func (c *ControlChannel) LearnColourCode(ext uint32) bool {
 	}
 	c.colourCode = ext
 	c.colourLearned = true
+	// colour_code is the ETSI 6-bit colour code (low 6 bits); colour_ext is the
+	// full 30-bit extended value that also seeds the scrambler.
 	c.log.Info("tetra cc learned colour code from BSCH",
-		"colour_ext", ext, "system", c.systemName)
+		"colour_code", ext&0x3F, "colour_ext", ext, "system", c.systemName)
 	return true
 }
 

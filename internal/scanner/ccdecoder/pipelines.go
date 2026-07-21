@@ -630,7 +630,10 @@ func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 		MCC:          t.MCC,
 		MNC:          t.MNC,
 		LocationArea: t.LocationArea,
-		ColorCode:    uint8(t.ColourCode & 0xFF),
+		// The ETSI 6-bit colour code is the low 6 bits of the 30-bit extended
+		// colour code (MCC<<20 | MNC<<6 | CC); masking 0xFF would drag in two
+		// stray MNC bits and corrupt the surfaced value.
+		ColorCode: uint8(t.ColourCode & 0x3F),
 	}
 }
 

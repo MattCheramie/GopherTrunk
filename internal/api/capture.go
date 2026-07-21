@@ -123,25 +123,12 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 
 	rate, centerHz := captureDeviceRateCenter(s.capture.Devices(), req.Serial)
 
-	// Reject an over-budget grab before pinning the tuner. Streaming keeps RAM
-	// bounded to one chunk, so this bounds the on-disk file size (seconds × rate ×
-	// bytes-per-sample), not memory. Skipped when the rate is unknown (device not
-	// streaming yet) — then maxCaptureSeconds is the only bound.
-	if rate > 0 {
-		estBytes := int64(req.Seconds) * int64(rate) * int64(bytesPerSample(format))
-		if estBytes > maxCaptureIQBytes {
-			s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
-				"siglab: a %ds capture at %.3f MS/s would stage ~%d MiB, over the %d MiB budget — "+
-					"reduce seconds or request a narrowband slice (center_hz + bandwidth_hz)",
-				req.Seconds, float64(rate)/1e6, estBytes>>20, int64(maxCaptureIQBytes)>>20))
-			return
-		}
-	}
-
 	// Optional narrowband slice: validate the requested channel fits the tuner's
 	// current span and build a streaming down-converter up front, so an
 	// out-of-span request 400s before the tuner is pinned. The slice is carved
 	// from the live stream chunk-by-chunk during capture — no wideband buffer.
+	// Done before the budget check so a slice is sized by its decimated output
+	// rate, not the full band.
 	var ddc *siglab.StreamDownconverter
 	outRate, outCenter := rate, centerHz
 	if req.BandwidthHz > 0 {
@@ -158,6 +145,27 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		ddc = siglab.NewStreamDownconverter(float64(rate), float64(offsetHz), float64(req.BandwidthHz))
 		outRate = uint32(ddc.OutRateHz() + 0.5)
 		outCenter = center
+	}
+
+	// Reject an over-budget grab before pinning the tuner. Streaming keeps RAM
+	// bounded to one chunk, so this bounds the on-disk file size (seconds ×
+	// effective rate × bytes-per-sample), not memory. outRate is the full band
+	// for a plain grab and the decimated slice rate for a narrowband request, so
+	// a legitimate slice is not rejected on its full-band footprint. Skipped when
+	// the rate is unknown (device not streaming yet) — then maxCaptureSeconds is
+	// the only bound.
+	if rate > 0 {
+		estBytes := int64(req.Seconds) * int64(outRate) * int64(bytesPerSample(format))
+		if estBytes > maxCaptureIQBytes {
+			hint := "reduce seconds or request a narrowband slice (center_hz + bandwidth_hz)"
+			if req.BandwidthHz > 0 {
+				hint = "reduce seconds or bandwidth"
+			}
+			s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
+				"siglab: a %ds capture at %.3f MS/s would stage ~%d MiB, over the %d MiB budget — %s",
+				req.Seconds, float64(outRate)/1e6, estBytes>>20, int64(maxCaptureIQBytes)>>20, hint))
+			return
+		}
 	}
 
 	// Stream encoded IQ straight to the staged file: peak memory is one chunk
