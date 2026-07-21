@@ -85,6 +85,33 @@ The inner FEC layers still pending real-air validation:
   fixtures end-to-end; on-air recovery margins (Viterbi
   correction depth vs. real co-channel + adjacent-channel
   interference) need a live capture to characterise.
+- **P25 Phase 2 traffic-channel MAC descramble (issues #915, #773, #451).**
+  The superframe now locks on real air under any dibit rotation (the
+  differential-H-DQPSK residual-carrier ambiguity fixed in #943), so the ISCH
+  classifies the MAC sub-frames correctly and `mac_pdus > 0`. What still does
+  **not** work is recovering a valid MAC PDU from the payload: `mac_rs_valid`
+  stays 0, so the clear-MAC source RID (#915) and talker alias (#773) never
+  surface. Replaying the reporter's Victorian MMR (WACN `0xBEE00`) Phase 2 voice
+  `.cfile` offline ruled out — against real bytes — every tractable hypothesis:
+  the payload's trellis path-metric is ~42/73 (random) undescrambled while the
+  un-scrambled sync + ISCH decode clean, so the payload *is* transformed; but
+  descrambling it (both **after** the trellis at per-slot offsets
+  {`index·360`, `index·144`, `0`} and **before** the trellis at offsets
+  {`0`, superframe `index·360+64`}) across **all 16.7 M** `(WACN, SysID, NAC)`
+  identity seeds never validates the outer RS and only nudges the best trellis
+  metric 41.8 → 33.8 (still garbage). A seed-independent structure test
+  (XOR two same-slot payloads, which must share the sequence under any
+  per-superframe-restarting PN44 model — the sequence then cancels and the linear
+  trellis code makes the XOR a clean codeword) stays at ~41 error, so the
+  transform is **not** a fixed positional PN44 XOR keyed by the network identity.
+  What remains is a continuous / counter-seeded scrambler or a MAC FEC chain
+  (trellis params / interleaver / RS-before-conv order) different from what GT
+  models — pinning it needs the TIA-102.BBAC §7.x scramble/FEC definition or an
+  SDRtrunk / OP25 P25P2 reference to cross-check. The site's real System ID + NAC
+  would remove the seed unknown and separate a seed-formula bug from a
+  scramble-structure bug. The `mac_rs_valid` census counter (#934) is the
+  before/after metric once a candidate mapping is tried, and the RS-valid gate
+  keeps the mis-decoded bytes from injecting a bogus source RID in the meantime.
 - **DMR 2-slot interleaved voice — now the Tier II conventional &
   Tier III default (issue #644).** A DMR carrier is 2-slot TDMA, so a real
   outbound stream interleaves both timeslots' bursts. The single-slot
