@@ -1796,8 +1796,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			channels := make([]widebandt2.ChannelConfig, 0, len(devCfg.Channels))
 			for _, ch := range devCfg.Channels {
 				channels = append(channels, widebandt2.ChannelConfig{
-					FrequencyHz: ch.FrequencyHz,
-					SystemName:  ch.System,
+					FrequencyHz:        ch.FrequencyHz,
+					SystemName:         ch.System,
+					P25Phase1DemodMode: ch.P25Phase1DemodMode,
 				})
 			}
 			// Route IQ + tuning through the iqtap broker so the live

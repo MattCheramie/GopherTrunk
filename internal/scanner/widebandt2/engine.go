@@ -161,6 +161,16 @@ const channelizerCleanResidualFrac = 0.40
 type ChannelConfig struct {
 	FrequencyHz uint32
 	SystemName  string
+
+	// P25Phase1DemodMode optionally overrides the parent system's
+	// P25Phase1DemodMode for this one tap (issue #935). A P25 system can
+	// span sites of differing modulation — an LSM simulcast site and a
+	// C4FM single-transmitter site under one system name — and each tap
+	// must pick its symbol-recovery path independently before the CC
+	// locks. Empty inherits sys.P25Phase1DemodMode; any value the
+	// system-level key accepts (c4fm/fm/cqpsk/lsm/linear) is valid here.
+	// Ignored for non-P25-Phase-1 channels.
+	P25Phase1DemodMode string
 }
 
 // IQPowerObserver is the minimal metrics surface the engine uses to
@@ -653,10 +663,21 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 		if err := requireControlChannel(sys, freqHz, "p25 / Phase 1"); err != nil {
 			return nil, err
 		}
-		demodMode, ok := p25phase1rx.ParseDemodMode(sys.P25Phase1DemodMode)
+		// Per-site demod override (issue #935): a single P25 system can
+		// span an LSM simulcast site and a C4FM single-transmitter site,
+		// so an empty per-channel value inherits the system default while
+		// a non-empty one overrides it for this tap only. The mode must be
+		// chosen here, before the CC locks — it is what lets it lock — so
+		// it is keyed per control-channel frequency, not by the RFSS/Site
+		// the CC only reveals once decoded.
+		demodStr := sys.P25Phase1DemodMode
+		if ch.P25Phase1DemodMode != "" {
+			demodStr = ch.P25Phase1DemodMode
+		}
+		demodMode, ok := p25phase1rx.ParseDemodMode(demodStr)
 		if !ok {
 			log.Warn("widebandt2: unrecognised p25_phase1_demod_mode; falling back to c4fm",
-				"system", sys.Name, "value", sys.P25Phase1DemodMode)
+				"system", sys.Name, "freq_hz", freqHz, "value", demodStr)
 		}
 		// C4FM has only two physical rotations (identity, polarity
 		// flip); the CQPSK / LSM path has the full four-fold QPSK
@@ -686,12 +707,19 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 		// Parse and forward the same knobs the ccdecoder pipeline does.
 		p2Trellis, p2RS, p2Interleave, p2Scrambler := parseP25Phase2FECModes(sys, log)
 		cc := p25phase1.New(p25phase1.Options{
-			Bus:                 bus,
-			Log:                 log.With("system", sys.Name, "freq_hz", freqHz, "phase", 1),
-			SystemName:          sys.Name,
-			FrequencyHz:         freqHz,
-			BandPlan:            bandPlan,
-			Rotations:           rotations,
+			Bus:         bus,
+			Log:         log.With("system", sys.Name, "freq_hz", freqHz, "phase", 1),
+			SystemName:  sys.Name,
+			FrequencyHz: freqHz,
+			BandPlan:    bandPlan,
+			Rotations:   rotations,
+			// Stamp the resolved demod mode onto every voice grant this CC
+			// publishes so the composer decodes the traffic channel on the
+			// same path — an LSM site's grants must run the LSM voice chain
+			// too, or they lock the CC yet never decode an LDU (issue #935 /
+			// #356 follow-up). The wideband path previously left this unset,
+			// so grants always defaulted to c4fm regardless of the CC's mode.
+			P25Phase1DemodMode:  demodStr,
 			P25Phase2Trellis:    p2Trellis,
 			P25Phase2RS:         p2RS,
 			P25Phase2Interleave: p2Interleave,

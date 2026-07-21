@@ -118,8 +118,9 @@ var fieldMetas = map[string]FieldMeta{
 	"DeviceConfig.DCAvoid":         {Label: "DC-spike avoid", Help: "Tune a control SDR's LO off-channel and mix the channel back to baseband, off the front-end DC spur and its I/Q-image (the offset tuning SDRTrunk/OP25 use). Helps marginal sites; off by default (issue #402)."},
 	"DeviceConfig.DCAvoidOffsetHz": {Label: "DC-avoid offset", Hz: true, Help: "LO offset in Hz when DC-spike avoid is on. 0 = auto (sample_rate/4). Must be < sample_rate/2."},
 
-	"DeviceChannelConfig.FrequencyHz": {Label: "Frequency", Hz: true, Help: "Repeater carrier frequency. Must lie inside the dongle's IQ band."},
-	"DeviceChannelConfig.System":      {Help: "Name of the trunking.systems entry this carrier belongs to."},
+	"DeviceChannelConfig.FrequencyHz":        {Label: "Frequency", Hz: true, Help: "Repeater carrier frequency. Must lie inside the dongle's IQ band."},
+	"DeviceChannelConfig.System":             {Help: "Name of the trunking.systems entry this carrier belongs to."},
+	"DeviceChannelConfig.P25Phase1DemodMode": {Label: "P25 Ph1 demod mode", Help: "Per-site override of the system's demod path for this tap: blank inherits, or c4fm/fm vs cqpsk/lsm. Use when one P25 system mixes LSM simulcast and C4FM sites. P25 Phase 1 only."},
 
 	"RTLTCPConfig.Addr":             {Label: "Address", Help: "host:port the rtl_tcp server listens on, e.g. 192.168.1.50:1234. Required."},
 	"RTLTCPConfig.Serial":           {Help: "Virtual device serial reported by the pool. Empty derives one from the address."},

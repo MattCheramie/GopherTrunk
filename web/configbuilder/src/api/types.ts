@@ -68,6 +68,10 @@ export interface APIConfig {
 export interface DeviceChannelConfig {
   FrequencyHz: number;
   System: string;
+  // Optional per-site P25 Phase 1 demod override for this tap (issue #935):
+  // "" inherits the system's p25_phase1_demod_mode, else "c4fm"/"fm" or
+  // "cqpsk"/"lsm"/"linear". Ignored for non-P25-Phase-1 channels.
+  P25Phase1DemodMode?: string;
 }
 
 export interface DeviceConfig {

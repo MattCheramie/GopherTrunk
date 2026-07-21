@@ -8,6 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Per-site P25 Phase 1 demod mode on wideband multi-site taps.** A single P25
+  system can now mix modulation across its sites: set the system-level
+  `p25_phase1_demod_mode` to the majority modulation and add a per-channel
+  `p25_phase1_demod_mode:` override on the wideband dongle's `channels:` entries
+  for the exceptions (blank inherits the system default). Recognised values
+  match the system-level key (`c4fm`/`fm` vs `cqpsk`/`lsm`/`linear`). The
+  override is keyed per control-channel frequency — the one place a site's
+  identity is known before its CC locks — and drives both the control-channel
+  decode and the voice grants that tap issues, so a granted call on an LSM
+  simulcast site is decoded on the LSM path instead of timing out with no LDU
+  (a C4FM demodulator can't recover a linearly-modulated simulcast signal —
+  the symptom was `control_channel_decode_quality: poor` on urban simulcast
+  sites regardless of hardware). This also closes a latent gap where the
+  wideband path never stamped a demod mode onto its grants at all, so wideband
+  P25 voice always ran the C4FM chain regardless of the system setting.
+  (issue #935)
 - **LoRa Low Data Rate Optimization (LDRO).** The LoRa PHY now decodes the
   reduced-rate payload mode LoRa uses at high spreading factors, where the long
   symbol lets clock drift smear the dechirp peak across the two least-significant
