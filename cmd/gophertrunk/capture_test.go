@@ -33,7 +33,7 @@ func feedChunks(n, size int) <-chan []complex64 {
 func TestCaptureToFileF32(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cap.cfile")
 	// 1000-sample target at rate=1000, 1 s; 5×300 = 1500 ≥ 1000.
-	written, err := captureToFile(context.Background(), path, siglab.FormatF32, feedChunks(5, 300), 1000, 1.0, nil)
+	written, _, err := captureToFile(context.Background(), path, siglab.FormatF32, feedChunks(5, 300), 1000, 1.0, nil)
 	if err != nil {
 		t.Fatalf("captureToFile: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestCaptureToFileF32(t *testing.T) {
 
 func TestCaptureToFileU8(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cap.bin")
-	written, err := captureToFile(context.Background(), path, siglab.FormatU8, feedChunks(4, 300), 1000, 1.0, nil)
+	written, _, err := captureToFile(context.Background(), path, siglab.FormatU8, feedChunks(4, 300), 1000, 1.0, nil)
 	if err != nil {
 		t.Fatalf("captureToFile: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestCaptureToFileU8(t *testing.T) {
 
 func TestCaptureToFileCS16(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cap.raw")
-	written, err := captureToFile(context.Background(), path, siglab.FormatS16, feedChunks(4, 300), 1000, 1.0, nil)
+	written, _, err := captureToFile(context.Background(), path, siglab.FormatS16, feedChunks(4, 300), 1000, 1.0, nil)
 	if err != nil {
 		t.Fatalf("captureToFile: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestCaptureToFileNarrowband(t *testing.T) {
 	// Decimate a 48 kHz input to a ~6 kHz channel at zero offset. Feed enough
 	// input (target = 48000 input samples) so the DDC produces output.
 	ddc := ccdecoder.NewDownconverterWithOffset(48000, 6000, 0)
-	written, err := captureToFile(context.Background(), path, siglab.FormatS16, feedChunks(160, 320), 48000, 1.0, ddc)
+	written, _, err := captureToFile(context.Background(), path, siglab.FormatS16, feedChunks(160, 320), 48000, 1.0, ddc)
 	if err != nil {
 		t.Fatalf("captureToFile: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestCaptureToFileStreamEndsEarly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "short.cfile")
 	// Only 600 samples available but target is 1000 → returns the partial
 	// capture plus an error so the caller can report it.
-	written, err := captureToFile(context.Background(), path, siglab.FormatF32, feedChunks(2, 300), 1000, 1.0, nil)
+	written, _, err := captureToFile(context.Background(), path, siglab.FormatF32, feedChunks(2, 300), 1000, 1.0, nil)
 	if err == nil {
 		t.Fatalf("expected an error when the stream ends before the target")
 	}
@@ -119,7 +119,7 @@ func TestCaptureToFileContextCancel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cancelled.cfile")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancelled before the first read
-	_, err := captureToFile(ctx, path, siglab.FormatF32, feedChunks(5, 300), 1_000_000, 1.0, nil)
+	_, _, err := captureToFile(ctx, path, siglab.FormatF32, feedChunks(5, 300), 1_000_000, 1.0, nil)
 	if err == nil {
 		t.Fatalf("expected ctx.Err() when the context is already cancelled")
 	}
@@ -202,7 +202,7 @@ func TestCaptureStreamDrainsDespiteBlockedWriter(t *testing.T) {
 	}
 	done := make(chan res, 1)
 	go func() {
-		wr, err := captureStream(context.Background(), w, siglab.FormatF32, src, uint32(n*size), 1.0, nil)
+		wr, _, err := captureStream(context.Background(), w, siglab.FormatF32, src, uint32(n*size), 1.0, nil)
 		done <- res{wr, err}
 	}()
 
@@ -244,7 +244,7 @@ func (w errWriter) Write(p []byte) (int, error) { return 0, w.err }
 
 func TestCaptureStreamSurfacesWriteError(t *testing.T) {
 	src := feedChunks(10, 50)
-	_, err := captureStream(context.Background(), errWriter{err: errors.New("disk full")}, siglab.FormatF32, src, 500, 1.0, nil)
+	_, _, err := captureStream(context.Background(), errWriter{err: errors.New("disk full")}, siglab.FormatF32, src, 500, 1.0, nil)
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("want a surfaced write error, got %v", err)
 	}

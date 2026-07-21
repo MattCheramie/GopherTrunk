@@ -182,9 +182,14 @@ FLAGS:`)
 			float64(recCenter)/1e6, recRate/1e3)
 	}
 
-	written, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds, ddc)
+	written, probe, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds, ddc)
 	if capErr != nil && !errors.Is(capErr, context.Canceled) {
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
+	}
+	// Warn if a ppm error has pulled the recorded carrier off centre — the
+	// other half of the "capture won't lock" story alongside dropped chunks.
+	if w := carrierOffsetWarning(probe, recRate, recCenter); w != "" {
+		fmt.Fprintln(os.Stderr, w)
 	}
 	if d := drops.count(); d > 0 {
 		// Loud + actionable: a dropped-chunk capture looks fine on disk but
@@ -327,13 +332,16 @@ func encoderFor(format siglab.SampleFormat) (func(dst []byte, src []complex64), 
 // INPUT samples, the stream ends, ctx cancels, or a wall-clock safety deadline
 // elapses. Returns the number of IQ samples written (post-decimation when ddc
 // is set).
-func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, error) {
+// captureToFile returns the samples written plus the first captureProbeSamples
+// of recorded (post-DDC) IQ, which the caller FFTs for the carrier-offset
+// warning.
+func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
 	f, err := os.Create(path)
 	if err != nil {
-		return 0, fmt.Errorf("create %s: %w", path, err)
+		return 0, nil, fmt.Errorf("create %s: %w", path, err)
 	}
 	bw := bufio.NewWriterSize(f, captureBufWriter)
-	written, loopErr := captureStream(ctx, bw, format, src, rate, seconds, ddc)
+	written, probe, loopErr := captureStream(ctx, bw, format, src, rate, seconds, ddc)
 	// captureStream has joined its writer goroutine before returning, so bw is
 	// no longer touched concurrently — flush + close on this goroutine.
 	if ferr := bw.Flush(); ferr != nil && loopErr == nil {
@@ -342,7 +350,7 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 	if cerr := f.Close(); cerr != nil && loopErr == nil {
 		loopErr = cerr
 	}
-	return written, loopErr
+	return written, probe, loopErr
 }
 
 // captureStream is the format-encode + write loop behind captureToFile,
@@ -356,8 +364,9 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 // Decoupling keeps the drain running so a transient stall costs latency, not
 // samples. The stateful DDC stays on the drain goroutine (it must run in
 // order); only the encoded bytes cross to the writer.
-func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, error) {
+func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
 	encode, bytesPerSample := encoderFor(format)
+	probe := make([]complex64, 0, captureProbeSamples)
 
 	// Stop once seconds worth of INPUT samples have been read; the written
 	// count may be far smaller when ddc decimates to a narrow channel.
@@ -417,6 +426,16 @@ loop:
 			if len(samples) == 0 {
 				continue
 			}
+			// Collect the first window of recorded samples for the caller's
+			// carrier-offset probe (append copies, so it's safe against the
+			// reused ddcBuf / the src-owned chunk).
+			if len(probe) < captureProbeSamples {
+				take := samples
+				if n := captureProbeSamples - len(probe); len(take) > n {
+					take = take[:n]
+				}
+				probe = append(probe, take...)
+			}
 			// Fresh buffer per chunk: it is handed to the writer goroutine, so
 			// it must not alias the reused ddcBuf.
 			buf := make([]byte, len(samples)*bytesPerSample)
@@ -445,7 +464,7 @@ loop:
 		default:
 		}
 	}
-	return written, loopErr
+	return written, probe, loopErr
 }
 
 // captureDropCounter counts SDR IQ-chunk drops for one device during a
