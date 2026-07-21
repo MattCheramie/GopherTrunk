@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/gtbundle"
@@ -132,6 +135,17 @@ FLAGS:`)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	// Count IQ chunks the driver drops while this capture runs. A dropped
+	// chunk is a contiguous time gap in the recording — enough to slip a
+	// downstream decoder's symbol clock and make the carrier appear to
+	// "jump". The daemon's --iq-capture path already surfaces its drops
+	// (iqcapture.go); this standalone path did not, so a corrupt capture was
+	// silent to the operator. Install a device-scoped counter and warn at the
+	// end if any dropped.
+	drops := &captureDropCounter{serial: info.Serial}
+	sdr.SetIQDropObserver(drops.observe)
+	defer sdr.SetIQDropObserver(nil)
+
 	stream, err := dev.StreamIQ(ctx)
 	if err != nil {
 		rep.Fatal(1, fmt.Errorf("start IQ stream: %w", err))
@@ -168,9 +182,26 @@ FLAGS:`)
 			float64(recCenter)/1e6, recRate/1e3)
 	}
 
-	written, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds, ddc)
+	written, probe, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds, ddc)
 	if capErr != nil && !errors.Is(capErr, context.Canceled) {
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
+	}
+	// Warn if a ppm error has pulled the recorded carrier off centre — the
+	// other half of the "capture won't lock" story alongside dropped chunks.
+	if w := carrierOffsetWarning(probe, recRate, recCenter); w != "" {
+		fmt.Fprintln(os.Stderr, w)
+	}
+	if d := drops.count(); d > 0 {
+		// Loud + actionable: a dropped-chunk capture looks fine on disk but
+		// decodes as a clock-slipping, carrier-jumping mess. The bottleneck is
+		// almost always the drain not keeping up with the native rate — the DDC
+		// (-bandwidth) decimation cost or slow storage — so the driver sheds
+		// whole chunks.
+		fmt.Fprintf(os.Stderr,
+			"capture: WARNING — the SDR dropped %d IQ chunk(s) during this capture. "+
+				"Each is a time gap that corrupts downstream decode (symbol-clock slip / carrier jumps). "+
+				"Remedy: lower -sample-rate, drop or widen -bandwidth (the DDC decimation is CPU-heavy), "+
+				"or write to faster storage; then re-capture.\n", d)
 	}
 
 	meta := &siglab.Metadata{
@@ -269,6 +300,31 @@ func openCaptureDevice(serial string) (sdr.Device, sdr.Info, error) {
 	return dev, chosen, nil
 }
 
+// captureWriterDepth is how many encoded chunks captureStream buffers between
+// the IQ-drain goroutine and the disk-writer goroutine. A storage-latency
+// spike up to this many chunks is absorbed here instead of stalling the drain
+// — which, on a live SDR, would make the driver shed whole IQ chunks
+// (NotifyIQDrop), punching time gaps into the capture that slip a downstream
+// decoder's symbol clock. Each entry is one post-DDC encoded chunk (a few KB
+// for a narrowband slice), so this is trivial memory.
+const captureWriterDepth = 256
+
+// captureBufWriter is the disk write-buffer size. Batching many small chunk
+// writes into one syscall keeps the writer goroutine from falling behind.
+const captureBufWriter = 1 << 20 // 1 MiB
+
+// encoderFor returns the byte packer and per-sample size for a capture format.
+func encoderFor(format siglab.SampleFormat) (func(dst []byte, src []complex64), int) {
+	switch format {
+	case siglab.FormatU8:
+		return encodeU8, 2
+	case siglab.FormatS16:
+		return encodeS16, 4
+	default:
+		return encodeF32, 8
+	}
+}
+
 // captureToFile streams complex64 chunks from src, optionally decimates each
 // chunk to a narrowband channel through ddc (nil = full band), encodes the
 // result in the requested on-disk format with the shared encodeF32/encodeU8/
@@ -276,22 +332,41 @@ func openCaptureDevice(serial string) (sdr.Device, sdr.Info, error) {
 // INPUT samples, the stream ends, ctx cancels, or a wall-clock safety deadline
 // elapses. Returns the number of IQ samples written (post-decimation when ddc
 // is set).
-func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, error) {
+// captureToFile returns the samples written plus the first captureProbeSamples
+// of recorded (post-DDC) IQ, which the caller FFTs for the carrier-offset
+// warning.
+func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
 	f, err := os.Create(path)
 	if err != nil {
-		return 0, fmt.Errorf("create %s: %w", path, err)
+		return 0, nil, fmt.Errorf("create %s: %w", path, err)
 	}
+	bw := bufio.NewWriterSize(f, captureBufWriter)
+	written, probe, loopErr := captureStream(ctx, bw, format, src, rate, seconds, ddc)
+	// captureStream has joined its writer goroutine before returning, so bw is
+	// no longer touched concurrently — flush + close on this goroutine.
+	if ferr := bw.Flush(); ferr != nil && loopErr == nil {
+		loopErr = fmt.Errorf("flush: %w", ferr)
+	}
+	if cerr := f.Close(); cerr != nil && loopErr == nil {
+		loopErr = cerr
+	}
+	return written, probe, loopErr
+}
 
-	encode := encodeF32
-	bytesPerSample := 8
-	switch format {
-	case siglab.FormatU8:
-		encode = encodeU8
-		bytesPerSample = 2
-	case siglab.FormatS16:
-		encode = encodeS16
-		bytesPerSample = 4
-	}
+// captureStream is the format-encode + write loop behind captureToFile,
+// decoupled from the file so it is testable with any io.Writer.
+//
+// The disk write runs on its own goroutine fed by a deep buffered channel, so
+// a slow/stalling writer never stalls the goroutine draining src. That
+// matters because src is the SDR driver's bounded delivery channel: if this
+// goroutine blocks on a disk write, the driver's channel backs up and the
+// driver drops whole IQ chunks (non-blocking, silent), corrupting the capture.
+// Decoupling keeps the drain running so a transient stall costs latency, not
+// samples. The stateful DDC stays on the drain goroutine (it must run in
+// order); only the encoded bytes cross to the writer.
+func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
+	encode, bytesPerSample := encoderFor(format)
+	probe := make([]complex64, 0, captureProbeSamples)
 
 	// Stop once seconds worth of INPUT samples have been read; the written
 	// count may be far smaller when ddc decimates to a narrow channel.
@@ -299,12 +374,30 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 	// Safety deadline so a stalled/under-delivering device doesn't hang the
 	// command forever waiting to reach the sample target. The timer is an
 	// explicit select arm (not a post-receive check) so a source that never
-	// delivers a chunk can't block the receive forever — see the same fix in
-	// captureProvider.Capture for the daemon's broker-tap path.
+	// delivers a chunk can't block the receive forever.
 	timer := time.NewTimer(time.Duration(seconds*float64(time.Second)) + 5*time.Second)
 	defer timer.Stop()
 
-	var scratch []byte
+	writerCh := make(chan []byte, captureWriterDepth)
+	writeErrCh := make(chan error, 1)
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for b := range writerCh {
+			if _, werr := w.Write(b); werr != nil {
+				select {
+				case writeErrCh <- werr:
+				default:
+				}
+				// Keep draining so the producer never blocks on a full channel
+				// after a write failure; stop writing.
+				for range writerCh {
+				}
+				return
+			}
+		}
+	}()
+
 	var ddcBuf []complex64
 	var inputRead, written int64
 	var loopErr error
@@ -315,6 +408,9 @@ loop:
 			loopErr = ctx.Err()
 			break loop
 		case <-timer.C:
+			break loop
+		case werr := <-writeErrCh:
+			loopErr = fmt.Errorf("write: %w", werr)
 			break loop
 		case chunk, ok := <-src:
 			if !ok {
@@ -330,26 +426,66 @@ loop:
 			if len(samples) == 0 {
 				continue
 			}
-			n := len(samples) * bytesPerSample
-			if cap(scratch) < n {
-				scratch = make([]byte, n)
-			} else {
-				scratch = scratch[:n]
+			// Collect the first window of recorded samples for the caller's
+			// carrier-offset probe (append copies, so it's safe against the
+			// reused ddcBuf / the src-owned chunk).
+			if len(probe) < captureProbeSamples {
+				take := samples
+				if n := captureProbeSamples - len(probe); len(take) > n {
+					take = take[:n]
+				}
+				probe = append(probe, take...)
 			}
-			encode(scratch, samples)
-			if _, werr := f.Write(scratch); werr != nil {
+			// Fresh buffer per chunk: it is handed to the writer goroutine, so
+			// it must not alias the reused ddcBuf.
+			buf := make([]byte, len(samples)*bytesPerSample)
+			encode(buf, samples)
+			select {
+			case writerCh <- buf:
+			case werr := <-writeErrCh:
 				loopErr = fmt.Errorf("write: %w", werr)
+				break loop
+			case <-ctx.Done():
+				loopErr = ctx.Err()
 				break loop
 			}
 			written += int64(len(samples))
 		}
 	}
 
-	if cerr := f.Close(); cerr != nil && loopErr == nil {
-		loopErr = cerr
+	close(writerCh)
+	<-writerDone
+	// A write error that landed as the loop was exiting (or during the final
+	// drain) still counts.
+	if loopErr == nil {
+		select {
+		case werr := <-writeErrCh:
+			loopErr = fmt.Errorf("write: %w", werr)
+		default:
+		}
 	}
-	return written, loopErr
+	return written, probe, loopErr
 }
+
+// captureDropCounter counts SDR IQ-chunk drops for one device during a
+// capture, via the process-wide sdr IQ-drop observer. It turns a silently
+// corrupt capture (dropped chunks = time gaps) into a count the command can
+// warn about.
+type captureDropCounter struct {
+	serial string
+	n      atomic.Uint64
+}
+
+// observe is the sdr.SetIQDropObserver callback; it counts drops for the
+// capture's device and ignores any other device's.
+func (c *captureDropCounter) observe(info sdr.Info) {
+	if info.Serial == c.serial {
+		c.n.Add(1)
+	}
+}
+
+// count returns the number of dropped chunks observed so far.
+func (c *captureDropCounter) count() uint64 { return c.n.Load() }
 
 // absInt64 is the absolute value of a signed 64-bit integer.
 func absInt64(x int64) int64 {

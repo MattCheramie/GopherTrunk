@@ -414,9 +414,14 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			SourceID:    g.SourceSSI,
 			FrequencyHz: freq,
 			ChannelNum:  g.CarrierNumber,
-			Encrypted:   g.Encrypted,
-			Emergency:   g.Emergency,
-			At:          c.now(),
+			// TETRA carries a 0-based (0..3) timeslot on the grant; the
+			// trunking engine's Timeslot is 1-based with 0 reserved for
+			// "not applicable", so map 0..3 → 1..4. The voice tap uses it
+			// to pick the granted slot out of the 4-slot TDMA frame.
+			Timeslot:  g.Timeslot + 1,
+			Encrypted: g.Encrypted,
+			Emergency: g.Emergency,
+			At:        c.now(),
 		},
 	})
 	c.log.Debug("tetra: grant",

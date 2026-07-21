@@ -115,7 +115,14 @@ func TestScrambleTetraRandomRoundTrip(t *testing.T) {
 //	p(k) = Σ_{i∈taps} p(k-i)                    (eq. 8.41, mod 2)
 //	taps = {1,2,4,5,7,8,10,11,12,16,22,23,26,32}
 //	init: p(-31)=p(-30)=1, p(-29)=e(30), …, p(0)=e(1)   (eq. 8.42)
-//	      e(m) = bit (m-1) of the 30-bit extended colour code (e(1)=LSB)
+//
+// The extended colour code is MCC || MNC || colour, MSB first
+// (§8.2.5.3, the packing tetra.ExtendedColourCode produces), so e(1) is
+// its most-significant (bit 29) bit and e(30) its least-significant
+// (bit 0): e(m) = bit (30-m) of ext. Getting this endianness wrong (e(1)
+// as the LSB) still round-trips and still passes BSCH, but does not match
+// the sequence a real base station scrambles with, so no BNCH/SCH burst
+// decodes.
 //
 // Output is p(1), p(2), … For BSCH the extended colour code is 0.
 func refScrambleTetraETSI(n int, ext uint32) []byte {
@@ -124,8 +131,8 @@ func refScrambleTetraETSI(n int, ext uint32) []byte {
 	p := make([]byte, n+32)
 	p[0], p[1] = 1, 1 // p(-31), p(-30)
 	for j := 0; j < 30; j++ {
-		m := 30 - j // p(-29+j) = e(m)
-		p[2+j] = byte((ext >> uint(m-1)) & 1)
+		// p(-29+j) = e(30-j); e(m) = bit (30-m) of ext, so e(30-j) = bit j.
+		p[2+j] = byte((ext >> uint(j)) & 1)
 	}
 	out := make([]byte, n)
 	for k := 1; k <= n; k++ {
