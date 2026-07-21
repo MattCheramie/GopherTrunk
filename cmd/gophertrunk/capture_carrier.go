@@ -107,7 +107,7 @@ func captureCarrierOffsetHz(iq []complex64, rate float64) (float64, bool) {
 		}
 		r = q
 	}
-	width := ((r - l) % n + n) % n
+	width := ((r-l)%n + n) % n
 	centerK := (l + width/2) % n
 
 	// Map the centre bin to a signed baseband frequency (fftshift): the upper
