@@ -62,7 +62,12 @@ func TestComposerTETRAVoiceChainWritesRawFrames(t *testing.T) {
 		IQSampleRate:  uint32(sps * 18000), // 144 kHz tap
 		PCMSampleRate: 8000,
 		TouchInterval: 30 * time.Millisecond,
-		VoiceHangtime: 300 * time.Millisecond,
+		// Generous hangtime: the no-voice teardown fires at 2×hangtime, and the
+		// heavy TETRA receiver processing the whole IQ chunk must emit its first
+		// burst before then — otherwise, under a saturated CI running the whole
+		// suite under -race, the call would end as a no-voice Timeout instead of
+		// decoding traffic. 2 s → 4 s no-voice window is ample.
+		VoiceHangtime: 2 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -85,11 +90,13 @@ func TestComposerTETRAVoiceChainWritesRawFrames(t *testing.T) {
 		},
 	})
 
-	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	// Generous timeouts throughout: this test runs in the full `-race` suite on
+	// shared CI, where the TETRA receiver DSP is CPU-heavy and slow to schedule.
+	waitFor(t, 10*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
 	src.SendIQ(iq)
 
 	// Full-slot traffic frames must reach the sidecar.
-	waitFor(t, 5*time.Second, func() bool { return len(sink.rawFrames("VOICE-1")) >= 5 })
+	waitFor(t, 20*time.Second, func() bool { return len(sink.rawFrames("VOICE-1")) >= 5 })
 	got := sink.rawFrames("VOICE-1")
 	if len(got) == 0 {
 		t.Fatal("no raw traffic frames written")
@@ -101,8 +108,9 @@ func TestComposerTETRAVoiceChainWritesRawFrames(t *testing.T) {
 	}
 
 	// The chain keeps the engine's call alive while traffic flows.
-	waitFor(t, time.Second, func() bool { return eng.touched.Load() > 0 })
+	waitFor(t, 5*time.Second, func() bool { return eng.touched.Load() > 0 })
 
-	// After the IQ stops, the boundary tracker ends the call on hangtime.
-	waitFor(t, 3*time.Second, func() bool { return eng.endReason("VOICE-1") == trunking.EndReasonNormal })
+	// After the IQ stops, the boundary tracker ends the call on hangtime
+	// (VoiceHangtime after the last decoded burst).
+	waitFor(t, 15*time.Second, func() bool { return eng.endReason("VOICE-1") == trunking.EndReasonNormal })
 }
