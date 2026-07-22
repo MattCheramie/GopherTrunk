@@ -125,6 +125,8 @@ groups:
         url: /blog/series/protocol-decoders/
       - title: "Series: Voice Coding"
         url: /blog/series/voice-coding/
+      - title: "Series: Recording, Composition & Streaming"
+        url: /blog/series/recording-streaming/
       - title: Tutorials
         url: /blog/category/tutorials/
       - title: "Series: Signal Lab"

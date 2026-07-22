@@ -97,8 +97,10 @@ The daemon constructs the dependency graph from configuration at startup.
 
 The recording and streaming path has plenty worth its own series — call
 segmentation heuristics, the pure-Go MP3 encoder, and the quirks of each upload
-backend's API. A future deep dive can trace one call from PCM to a Broadcastify
-upload. Next, the finale: how all of this is exposed, observed, and tested.
+backend's API. That series now exists:
+[Recording, Composition & Streaming]({{ '/blog/series/recording-streaming/' | relative_url }})
+traces one call from PCM to a Broadcastify upload across 14 parts. Next here, the
+finale: how all of this is exposed, observed, and tested.
 
 ## FAQ
 

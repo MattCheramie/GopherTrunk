@@ -256,8 +256,11 @@ is a vocoder you can't trust, so the last thing the series built was the ruler.
 Voice frames arrive from the
 [Protocol Decoders]({{ '/blog/series/protocol-decoders/' | relative_url }}) series;
 calls come from the
-[Trunking Engine]({{ '/blog/series/trunking-engine/' | relative_url }}) series. If
-you want the rest of the pipeline, those are where to go next.
+[Trunking Engine]({{ '/blog/series/trunking-engine/' | relative_url }}) series. And
+once the vocoder has produced PCM, the
+[Recording, Composition & Streaming]({{ '/blog/series/recording-streaming/' | relative_url }})
+series picks up the *output* half — turning that audio into crash-safe files, a
+searchable call log, live streams, and uploads to the public call aggregators.
 
 ## FAQ
 
