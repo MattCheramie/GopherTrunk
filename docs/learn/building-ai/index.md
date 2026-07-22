@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: building-ai
+learn_module: building-ai
 permalink: /learn/building-ai/
 title: Building AI Into Your Software — from your first API call to a feature you ship
 description: A free, structured path to building AI-powered features into your own software — model APIs, prompts in code, structured output and tools, retrieval (RAG), agents, evaluation, security, and shipping to production.

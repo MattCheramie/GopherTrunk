@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: intro-hardware
+learn_module: intro-hardware
 permalink: /learn/intro-hardware/
 title: Intro to Hardware — from the cloud to the microcontroller
 description: A free, structured learning path covering the hardware a developer chooses between — web hosting, VPSes, dedicated and home servers, desktops, laptops, smartphones, tablets, single-board computers like the Raspberry Pi, and microcontrollers like the Arduino and ESP32 — with the use cases, programming languages, and trade-offs of each, plus how to pick the right platform for your project.

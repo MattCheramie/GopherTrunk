@@ -11,19 +11,26 @@ sitemap: false
 > The site also hosts a free, structured learning path that teaches radio and SDR
 > fundamentals from beginner to expert.
 
-## Learn (learning paths)
+## Learn
 
 Free, structured curricula taking a complete newcomer to a confident
 practitioner. Browse: {{ '/learn/' | absolute_url }}
-{% for path in site.data.learn.paths %}{% assign base = '/learn/' | append: path.id | append: '/' %}
-## Learn {{ path.label }} (learning path)
+
+### Learning paths (optional guides)
+
+Each Learning Path recommends an ordered set of modules toward competence in a
+broad domain. Guidance only — no module is required.
+{% for lp in site.data.learn.learning_paths %}- [{{ lp.label }}]({{ '/learn/paths/' | append: lp.id | append: '/' | absolute_url }}): {{ lp.tagline }}
+{% endfor %}
+{% for path in site.data.learn.modules %}{% assign base = '/learn/' | append: path.id | append: '/' %}
+## Learn {{ path.label }} (learning module)
 
 {{ path.intro }}
 Start: {{ base | absolute_url }}
-{% for mod in path.modules %}
-### {{ mod.label }}
-{{ mod.blurb }}
-{% for lesson in mod.lessons %}- [{{ lesson.title }}]({{ base | append: lesson.slug | append: '/' | absolute_url }}): {{ lesson.summary }}
+{% for unit in path.units %}
+### {{ unit.label }}
+{{ unit.blurb }}
+{% for lesson in unit.lessons %}- [{{ lesson.title }}]({{ base | append: lesson.slug | append: '/' | absolute_url }}): {{ lesson.summary }}
 {% endfor %}{% endfor %}{% if path.glossary %}### Glossary
 - [{{ path.glossary.title }}]({{ base | append: 'glossary/' | absolute_url }}): {{ path.glossary.summary }}
 {% endif %}{% endfor %}

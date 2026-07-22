@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: cybersecurity
+learn_module: cybersecurity
 permalink: /learn/cybersecurity/
 title: Cybersecurity Fundamentals — from threats and crypto to defending real systems
 description: A free, structured, defender-focused path through cybersecurity — the CIA triad, cryptography, authentication and access, the common attacks explained so you can defend against them, hardening, secure coding, and the ethics of wireless and RF monitoring.

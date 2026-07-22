@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: intro-software-dev
+learn_module: intro-software-dev
 permalink: /learn/intro-software-dev/
 title: Intro to Software Development — from punch cards to your own solo stack
 description: A free, structured learning path covering software development from the ground up — its history, modern programming languages and their trade-offs, design principles and patterns, how teams ship, how to choose the right language, and how to build and distribute your own software solo.

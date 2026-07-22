@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: networking
+learn_module: networking
 permalink: /learn/networking/
 title: Networking & the Internet — from your first packet to a service on the open web
 description: A free, structured path through how data actually moves — packets, IP, DNS, ports, TCP, UDP, HTTP, and TLS — plus firewalls, NAT, VPNs, proxies, the command-line tools to debug a connection, and how to put your own service safely online.

@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: ai-software-dev
+learn_module: ai-software-dev
 permalink: /learn/ai-software-dev/
 title: Intro to Using AI in Software Development — from how models work to shipping with them
 description: A free, structured learning path on using AI to write software — how large language models work and are trained, how context windows work, the providers and models for coding and what they cost, the ways to use AI (app, IDE, agent), prompting and config files, and how to choose your own stack and start today.

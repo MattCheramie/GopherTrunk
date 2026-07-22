@@ -1,0 +1,171 @@
+---
+layout: default
+---
+{%- comment -%}
+  Learning Path guide — one optional, guidance-only domain track. Selects its
+  path with `learn_path_id:` in front matter, resolves each referenced module id
+  against site.data.learn.modules, and renders an ordered list of module cards
+  plus a derived progress dashboard. Nothing here is required — a path only
+  recommends an order for otherwise-independent modules.
+
+  Progress reuse: this page emits the same `learn-paths-data` blob and data-*
+  hooks the chooser uses, scoped to this path's modules, so assets/js/learn.js
+  paints per-module rings, the continue button, and the overall donut straight
+  from the learner's saved (Supabase-synced) progress — no path-specific JS and
+  no path-specific storage. Path progress is purely derived from the modules'
+  completions.
+{%- endcomment -%}
+{%- assign lp = site.data.learn.learning_paths | where: "id", page.learn_path_id | first -%}
+
+{%- comment -%} Resolve module references to full module objects, preserving order. {%- endcomment -%}
+{%- assign lp_modules = "" | split: "" -%}
+{%- assign lp_notes = "" | split: "" -%}
+{%- for ref in lp.modules -%}
+  {%- assign m = site.data.learn.modules | where: "id", ref.id | first -%}
+  {%- if m -%}
+    {%- assign lp_modules = lp_modules | push: m -%}
+    {%- assign lp_notes = lp_notes | push: ref.note -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- assign grand_total = 0 -%}
+{%- for m in lp_modules -%}
+  {%- for unit in m.units -%}{%- assign grand_total = grand_total | plus: unit.lessons.size -%}{%- endfor -%}
+{%- endfor -%}
+
+<main id="content" class="page" role="main">
+  <div class="container" data-cta-host>
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="{{ '/' | relative_url }}">Home</a></li>
+        <li><a href="{{ '/learn/' | relative_url }}">Learn</a></li>
+        <li><span aria-current="page">{{ lp.label }}</span></li>
+      </ol>
+    </nav>
+
+    <header class="learn-hero">
+      <h1 class="learn-hero__title">{{ lp.title }}</h1>
+      <p class="learn-hero__lede">{{ lp.intro }}</p>
+    </header>
+
+    <p class="learn-pathnote" role="note">
+      <strong>This is a guide, not a requirement.</strong> A Learning Path only
+      recommends an order for working through otherwise-independent modules toward
+      competence in this area. Take them all, or pick just the ones you need —
+      your progress is tracked per module either way.
+    </p>
+
+    <article class="prose prose--wide learn-intro">
+      {{ content }}
+    </article>
+
+    {%- comment -%} ---- Derived progress dashboard (hidden until learn.js runs) ---- {%- endcomment -%}
+    <section class="learn-dashboard" aria-labelledby="dash-h" hidden data-learn-dashboard>
+      <h2 id="dash-h" class="learn-dashboard__title">Your progress on this path</h2>
+      <div class="learn-dashboard__grid">
+        <figure class="learn-donut" role="img" aria-label="Overall progress across this learning path" data-donut-figure>
+          <svg class="learn-donut__svg" viewBox="0 0 120 120" focusable="false" aria-hidden="true">
+            <circle class="learn-donut__track" cx="60" cy="60" r="52" />
+            <circle class="learn-donut__fill" cx="60" cy="60" r="52"
+                    data-donut-fill stroke-dasharray="326.726" stroke-dashoffset="326.726"
+                    transform="rotate(-90 60 60)" />
+            <text class="learn-donut__pct" x="60" y="67" text-anchor="middle" data-donut-pct>0%</text>
+          </svg>
+          <figcaption class="learn-donut__caption" data-donut-caption>0 of {{ grand_total }} lessons complete</figcaption>
+        </figure>
+        <ul class="learn-stats" data-learn-stats>
+          <li><span class="learn-stats__num" data-stat-lessons>0</span><span class="learn-stats__lbl">lessons done</span></li>
+          <li><span class="learn-stats__num" data-stat-started>0</span><span class="learn-stats__lbl">of {{ lp_modules.size }} modules started</span></li>
+          <li><span class="learn-stats__num" data-stat-completed>0</span><span class="learn-stats__lbl">modules completed</span></li>
+        </ul>
+      </div>
+    </section>
+
+    {%- comment -%} ---- Ordered module recommendations ---- {%- endcomment -%}
+    <div class="learn-modules">
+      <section class="learn-module">
+        <h2 class="learn-module__title">Recommended order</h2>
+        <ol class="learn-grid">
+          {%- for m in lp_modules -%}
+            {%- assign count = 0 -%}
+            {%- for unit in m.units -%}{%- assign count = count | plus: unit.lessons.size -%}{%- endfor -%}
+            {%- assign base = '/learn/' | append: m.id | append: '/' -%}
+            <li class="learn-card learn-card--path" data-path-card="{{ m.id }}" data-path-total="{{ count }}">
+              <a class="learn-card__link" href="{{ base | relative_url }}">
+                <span class="learn-card__ring" aria-hidden="true">
+                  <svg viewBox="0 0 44 44" focusable="false">
+                    <circle class="learn-card__ring-track" cx="22" cy="22" r="19" />
+                    <circle class="learn-card__ring-fill" cx="22" cy="22" r="19"
+                            data-card-ring stroke-dasharray="119.38" stroke-dashoffset="119.38"
+                            transform="rotate(-90 22 22)" />
+                  </svg>
+                </span>
+                <span class="learn-card__body">
+                  <span class="learn-card__title">{{ forloop.index }}. {{ m.label }}</span>
+                  <span class="learn-card__summary">{% if lp_notes[forloop.index0] %}{{ lp_notes[forloop.index0] }}{% else %}{{ m.tagline }}{% endif %}</span>
+                  <span class="learn-card__meta">
+                    <span class="learn-card__time" data-card-count>{{ count }} lessons</span>
+                    <span class="learn-card__tag">{{ m.units.size }} units</span>
+                  </span>
+                </span>
+              </a>
+              <div class="learn-card__actions" data-card-actions hidden>
+                <a class="btn btn--secondary learn-card__continue" data-card-continue href="{{ base | append: m.start_slug | append: '/' | relative_url }}">Start lesson 1 &rarr;</a>
+                <button type="button" class="learn-card__reset" data-card-reset hidden>reset</button>
+              </div>
+            </li>
+          {%- endfor -%}
+        </ol>
+      </section>
+    </div>
+
+    {%- include page-ctas.html -%}
+  </div>
+</main>
+
+<script type="application/json" id="learn-paths-data">
+{
+  "paths": [
+    {%- for m in lp_modules -%}
+    {%- assign base = '/learn/' | append: m.id | append: '/' -%}
+    {%- assign t = 0 -%}
+    {%- for unit in m.units -%}{%- assign t = t | plus: unit.lessons.size -%}{%- endfor -%}
+    {
+      "id": {{ m.id | jsonify }},
+      "label": {{ m.label | jsonify }},
+      "total": {{ t }},
+      "hubUrl": {{ base | relative_url | jsonify }},
+      "lessons": [
+        {%- assign k = 0 -%}
+        {%- for unit in m.units -%}
+          {%- for lesson in unit.lessons -%}
+            {%- assign k = k | plus: 1 -%}
+            {"slug": {{ lesson.slug | jsonify }}, "title": {{ lesson.title | jsonify }}, "url": {{ base | append: lesson.slug | append: '/' | relative_url | jsonify }}}{%- unless k == t -%},{%- endunless -%}
+          {%- endfor -%}
+        {%- endfor -%}
+      ]
+    }{%- unless forloop.last -%},{%- endunless -%}
+    {%- endfor -%}
+  ]
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": {{ lp.title | jsonify }},
+  "description": {{ lp.tagline | jsonify }},
+  "itemListElement": [
+    {%- for m in lp_modules -%}
+    {
+      "@type": "ListItem",
+      "position": {{ forloop.index }},
+      "name": {{ m.title | jsonify }},
+      "url": {{ '/learn/' | append: m.id | append: '/' | absolute_url | jsonify }}
+    }{%- unless forloop.last -%},{%- endunless -%}
+    {%- endfor -%}
+  ]
+}
+</script>
+<script defer src="{{ '/assets/js/store.js' | relative_url }}"></script>
+<script defer src="{{ '/assets/js/learn.js' | relative_url }}"></script>

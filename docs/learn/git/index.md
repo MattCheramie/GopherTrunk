@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: git
+learn_module: git
 permalink: /learn/git/
 title: Learn Git & GitHub — from first commit to advanced workflows
 description: A free, structured learning path covering Git and GitHub from the absolute basics to advanced workflows — commits, branching, merging, remotes, pull requests, GitHub Actions, and the best practices professional teams rely on.

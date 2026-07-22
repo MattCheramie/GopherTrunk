@@ -1,5 +1,5 @@
 {%- comment -%}
-  Structured data for learning-path pages. Emits:
+  Structured data for lesson pages. Emits:
     - TechArticle           (the lesson itself, with learning metadata)
     - BreadcrumbList        (Home › Learn › Lesson)
     - FAQPage               (only when the page defines a `faq:` list)
@@ -7,7 +7,7 @@
   Expects include.idx / include.total from the lesson layout.
 {%- endcomment -%}
 {%- assign page_url = page.url | absolute_url -%}
-{%- assign p = site.data.learn.paths | where: "id", page.learn_path | first -%}
+{%- assign p = site.data.learn.modules | where: "id", page.learn_module | first -%}
 {%- assign path_base = '/learn/' | append: p.id | append: '/' -%}
 <script type="application/ld+json">
 {

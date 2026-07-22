@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: linux-cli
+learn_module: linux-cli
 permalink: /learn/linux-cli/
 title: Linux & the Command Line — from first command to confident operator
 description: A free, structured path from your first terminal command to running your own Linux services — the shell, filesystem, permissions, processes, pipes, scripting, SSH, and systemd, with a Raspberry Pi and GopherTrunk as the payoff.

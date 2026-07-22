@@ -2,15 +2,21 @@
 layout: default
 ---
 {%- comment -%}
-  Hub landing page for one learning path. The page selects its path with
-  `learn_path:` in front matter. Renders the module/lesson grid from
+  Hub landing page for one learning module. The page selects its module with
+  `learn_module:` in front matter. Renders the unit/lesson grid from
   _data/learn.yml and a localStorage-backed progress bar (progressively
   enhanced by assets/js/learn.js). Emits Course + ItemList structured data.
 {%- endcomment -%}
-{%- assign p = site.data.learn.paths | where: "id", page.learn_path | first -%}
+{%- assign p = site.data.learn.modules | where: "id", page.learn_module | first -%}
 {%- assign base = '/learn/' | append: p.id | append: '/' -%}
 {%- assign total = 0 -%}
-{%- for mod in p.modules -%}{%- assign total = total | plus: mod.lessons.size -%}{%- endfor -%}
+{%- for unit in p.units -%}{%- assign total = total | plus: unit.lessons.size -%}{%- endfor -%}
+{%- comment -%} Learning Paths that recommend this module (guidance backlinks) {%- endcomment -%}
+{%- assign in_paths = "" | split: "" -%}
+{%- for lp in site.data.learn.learning_paths -%}
+  {%- assign lp_match = lp.modules | where: "id", p.id | first -%}
+  {%- if lp_match -%}{%- assign in_paths = in_paths | push: lp -%}{%- endif -%}
+{%- endfor -%}
 
 <main id="content" class="page" role="main">
   <div class="container" data-cta-host>
@@ -42,15 +48,26 @@ layout: default
       {{ content }}
     </article>
 
+    {%- if in_paths.size > 0 -%}
+      <aside class="learn-inpaths" aria-label="Learning paths that include this module">
+        <span class="learn-inpaths__label">Part of these Learning Paths:</span>
+        <ul class="learn-inpaths__list">
+          {%- for lp in in_paths -%}
+            <li><a href="{{ '/learn/paths/' | append: lp.id | append: '/' | relative_url }}">{{ lp.label }}</a></li>
+          {%- endfor -%}
+        </ul>
+      </aside>
+    {%- endif -%}
+
     <div class="learn-modules">
-      {%- for mod in p.modules -%}
-        <section class="learn-module" id="{{ mod.id }}">
+      {%- for unit in p.units -%}
+        <section class="learn-module" id="{{ unit.id }}">
           <div class="learn-module__head">
-            <h2 class="learn-module__title">{{ mod.label }}</h2>
-            <p class="learn-module__blurb">{{ mod.blurb }}</p>
+            <h2 class="learn-module__title">{{ unit.label }}</h2>
+            <p class="learn-module__blurb">{{ unit.blurb }}</p>
           </div>
           <ol class="learn-grid">
-            {%- for lesson in mod.lessons -%}
+            {%- for lesson in unit.lessons -%}
               {%- assign lesson_url = base | append: lesson.slug | append: '/' -%}
               <li class="learn-card{% if lesson.status == 'stub' %} learn-card--stub{% endif %}" data-lesson="{{ p.id }}/{{ lesson.slug }}">
                 <a class="learn-card__link" href="{{ lesson_url | relative_url }}">
@@ -118,8 +135,8 @@ layout: default
   "name": {{ page.title | append: ' lessons' | jsonify }},
   "itemListElement": [
     {%- assign n = 0 -%}
-    {%- for mod in p.modules -%}
-      {%- for lesson in mod.lessons -%}
+    {%- for unit in p.units -%}
+      {%- for lesson in unit.lessons -%}
         {%- assign n = n | plus: 1 -%}
         {
           "@type": "ListItem",

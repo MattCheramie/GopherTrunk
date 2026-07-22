@@ -13,17 +13,29 @@ groups:
         url: /guide-advanced.html
   - label: Learn
     items:
-      - title: All learning paths
+      - title: All learning
         url: /learn/
-      - title: "RF & SDR"
+      - title: "Path: RF Software Development"
+        url: /learn/paths/rf-software-dev/
+      - title: "Path: RF Hardware"
+        url: /learn/paths/rf-hardware/
+      - title: "Path: Software Engineering"
+        url: /learn/paths/software-engineering/
+      - title: "Path: AI Software Development"
+        url: /learn/paths/ai-development/
+      - title: "Path: Cybersecurity"
+        url: /learn/paths/security/
+      - title: "Path: Digital Trunking & Scanning"
+        url: /learn/paths/trunked-radio/
+      - title: "Module: RF & SDR"
         url: /learn/rf-sdr/
-      - title: "Git & GitHub"
+      - title: "Module: Git & GitHub"
         url: /learn/git/
-      - title: "Intro to Software Dev"
+      - title: "Module: Intro to Software Dev"
         url: /learn/intro-software-dev/
-      - title: "Digital Trunking"
+      - title: "Module: Digital Trunking"
         url: /learn/digital-trunking/
-      - title: "Intro to Hardware"
+      - title: "Module: Intro to Hardware"
         url: /learn/intro-hardware/
   - label: Field Guide
     items:

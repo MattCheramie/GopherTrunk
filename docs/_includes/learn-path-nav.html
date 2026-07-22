@@ -1,16 +1,16 @@
 {%- comment -%}
-  Prev / next navigation for a learning path. Expects:
+  Prev / next navigation for a learning module. Expects:
     all_lessons — flat ordered array of lesson objects (slug, title)
-    idx         — index of the current lesson, or -1 if not in the path
-    total       — number of lessons in the path
-    base        — the path's base URL, e.g. /learn/git/
-    has_glossary — truthy if the path has a glossary (for the finish link)
+    idx         — index of the current lesson, or -1 if not in the module
+    total       — number of lessons in the module
+    base        — the module's base URL, e.g. /learn/git/
+    has_glossary — truthy if the module has a glossary (for the finish link)
   Wired up by _layouts/lesson.html.
 {%- endcomment -%}
 {%- if include.idx >= 0 -%}
   {%- assign prev_i = include.idx | minus: 1 -%}
   {%- assign next_i = include.idx | plus: 1 -%}
-  <nav class="path-nav" aria-label="Learning path">
+  <nav class="path-nav" aria-label="Lessons in this module">
     {%- if include.idx > 0 -%}
       {%- assign prev = include.all_lessons[prev_i] -%}
       <a class="path-nav__link path-nav__link--prev" href="{{ include.base | append: prev.slug | append: '/' | relative_url }}">
@@ -19,8 +19,8 @@
       </a>
     {%- else -%}
       <a class="path-nav__link path-nav__link--prev" href="{{ include.base | relative_url }}">
-        <span class="path-nav__dir">&larr; Path overview</span>
-        <span class="path-nav__title">Start of the path</span>
+        <span class="path-nav__dir">&larr; Module overview</span>
+        <span class="path-nav__title">Start of the module</span>
       </a>
     {%- endif -%}
 
@@ -39,7 +39,7 @@
     {%- else -%}
       <a class="path-nav__link path-nav__link--next" href="{{ include.base | relative_url }}">
         <span class="path-nav__dir">You finished! &rarr;</span>
-        <span class="path-nav__title">Back to the path overview</span>
+        <span class="path-nav__title">Back to the module overview</span>
       </a>
     {%- endif -%}
   </nav>
