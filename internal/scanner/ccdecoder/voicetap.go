@@ -1,0 +1,158 @@
+package ccdecoder
+
+import (
+	"context"
+	"errors"
+	"sync"
+)
+
+// Same-carrier voice tap. A TETRA Single Carrier Base Station keeps voice calls
+// on other TDMA timeslots of the *control* carrier, so a granted call's IQ is
+// the control channel's own channelised (post-DDC) stream — already at the
+// per-protocol pipeline rate (144 kHz for TETRA), exactly what the voice chain
+// wants. Rather than allocate a second SDR or a redundant down-converter, the
+// decoder fans that stream to voice subscribers. `CCVoiceSource` adapts one
+// Decoder into a voice device the trunking engine binds — but only for grants
+// on the control channel's current carrier (a no-retune, same-carrier tap).
+
+// voiceFanout distributes copies of the post-DDC IQ to zero or more voice
+// subscribers. Sends are non-blocking (drop on a full buffer) so a slow voice
+// consumer can never stall the decode hot path.
+type voiceFanout struct {
+	mu   sync.Mutex
+	subs map[int]chan []complex64
+	next int
+}
+
+func newVoiceFanout() *voiceFanout { return &voiceFanout{subs: map[int]chan []complex64{}} }
+
+func (f *voiceFanout) subscribe() (<-chan []complex64, func()) {
+	ch := make(chan []complex64, 64)
+	f.mu.Lock()
+	id := f.next
+	f.next++
+	f.subs[id] = ch
+	f.mu.Unlock()
+	var once sync.Once
+	return ch, func() {
+		once.Do(func() {
+			f.mu.Lock()
+			if c, ok := f.subs[id]; ok {
+				delete(f.subs, id)
+				close(c)
+			}
+			f.mu.Unlock()
+		})
+	}
+}
+
+// broadcast copies chunk to every subscriber. The caller's slice is reused
+// across chunks, so each subscriber receives its own copy. A no-op (and no
+// allocation) when nothing is subscribed — the production hot-path default.
+func (f *voiceFanout) broadcast(chunk []complex64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.subs) == 0 {
+		return
+	}
+	for _, ch := range f.subs {
+		cp := make([]complex64, len(chunk))
+		copy(cp, chunk)
+		select {
+		case ch <- cp:
+		default: // subscriber lagging; drop to protect the decode path
+		}
+	}
+}
+
+// SubscribeVoiceIQ returns a channel of channelised (post-DDC) IQ at the
+// pipeline rate plus an unsubscribe func. The same-carrier voice tap consumes
+// it for the life of a followed call.
+func (d *Decoder) SubscribeVoiceIQ() (<-chan []complex64, func()) {
+	return d.voiceFan.subscribe()
+}
+
+// CenterFreqHz reports the frequency the active control pipeline is tuned to,
+// or 0 when idle/hunting. Gates the same-carrier voice tap.
+func (d *Decoder) CenterFreqHz() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.activeFreqHz
+}
+
+// PipelineRateHz reports the channelised stream rate the voice subscriber
+// receives (e.g. 144 kHz for TETRA).
+func (d *Decoder) PipelineRateHz() float64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.pipelineRateHz
+}
+
+// CCVoiceSource adapts a control-channel Decoder into a voice device that
+// streams the control carrier's own IQ for a same-carrier grant — no second
+// SDR, no retune. It satisfies the voice composer's IQSource, the trunking
+// Tuner, and FrequencyChecker, so the engine binds it only for grants on the
+// control channel's current carrier.
+//
+// The Decoder is resolved lazily through an accessor so the source can be
+// registered in the voice pool before the decoder exists (the pool is built
+// during daemon startup ahead of the control decoder) and keeps working across
+// a control-SDR reacquire that swaps the decoder. Nil-safe until then.
+type CCVoiceSource struct {
+	get    func() *Decoder
+	serial string
+}
+
+// NewCCVoiceSource wraps the decoder returned by get as a same-carrier voice
+// device with the given serial. get may return nil before the control decoder
+// is constructed; the source stays inert (never binds) until it is non-nil.
+func NewCCVoiceSource(get func() *Decoder, serial string) *CCVoiceSource {
+	return &CCVoiceSource{get: get, serial: serial}
+}
+
+func (s *CCVoiceSource) Serial() string { return s.serial }
+
+// SetCenterFreq is a no-op: the carrier is already tuned by the control decoder.
+func (s *CCVoiceSource) SetCenterFreq(uint32) error { return nil }
+
+// CanTune reports whether hz is the control channel's current carrier — the only
+// frequency this tap can serve. A nil/idle CC never binds, and off-carrier
+// grants fall through to a real role:voice SDR.
+func (s *CCVoiceSource) CanTune(hz uint32) bool {
+	dec := s.get()
+	if dec == nil {
+		return false
+	}
+	cc := dec.CenterFreqHz()
+	return cc != 0 && hz == cc
+}
+
+func (s *CCVoiceSource) SampleRateHz() uint32 {
+	if dec := s.get(); dec != nil {
+		return uint32(dec.PipelineRateHz() + 0.5)
+	}
+	return 0
+}
+
+func (s *CCVoiceSource) SampleRateExactHz() float64 {
+	if dec := s.get(); dec != nil {
+		return dec.PipelineRateHz()
+	}
+	return 0
+}
+
+// StreamIQ subscribes to the control carrier's channelised IQ until ctx ends.
+func (s *CCVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	dec := s.get()
+	if dec == nil {
+		return nil, errNoControlDecoder
+	}
+	ch, unsub := dec.SubscribeVoiceIQ()
+	go func() {
+		<-ctx.Done()
+		unsub() // closes ch, ending the composer's read loop
+	}()
+	return ch, nil
+}
+
+var errNoControlDecoder = errors.New("ccdecoder: no control decoder for same-carrier voice tap")

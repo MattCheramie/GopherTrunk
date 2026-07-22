@@ -363,6 +363,11 @@ type Decoder struct {
 	ddcOffsetHz    float64
 	pipelineRateHz float64
 
+	// voiceFan distributes the channelised (post-DDC) IQ to same-carrier voice
+	// subscribers (see voicetap.go). Independent lock; nil-safe via newVoiceFanout
+	// in New. A no-op on the hot path when nothing is subscribed.
+	voiceFan *voiceFanout
+
 	// sub is the bus subscription the Decoder uses to learn about
 	// KindHuntProgress retunes. Subscribed in New so the
 	// subscription is alive before any other goroutine
@@ -497,6 +502,7 @@ func New(opts Options) (*Decoder, error) {
 		metrics:      opts.Metrics,
 		fec:          opts.FEC,
 		autotune:     opts.Autotune,
+		voiceFan:     newVoiceFanout(),
 	}
 	empty := ""
 	d.activeSystem.Store(&empty)
@@ -858,6 +864,9 @@ func (d *Decoder) pump(iq []complex64) {
 	if d.ddcRec != nil {
 		d.ddcRec.write(d.activeAt, d.pipelineRateHz, d.ddcOut)
 	}
+	// Fan the channelised stream to any same-carrier voice subscriber before the
+	// control pipeline consumes it (a no-op with no subscribers). See voicetap.go.
+	d.voiceFan.broadcast(d.ddcOut)
 	d.active.Process(d.ddcOut)
 	d.sampleAutotuneLocked()
 	d.checkCarrierOffsetLocked()
