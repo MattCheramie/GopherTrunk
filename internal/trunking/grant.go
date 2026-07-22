@@ -56,6 +56,10 @@ type Grant struct {
 	// false (the default) keeps the single-slot decoder. Ignored for
 	// non-DMR grants.
 	DMRInterleavedVoice bool
+	// TETRAColourExt is the cell's 30-bit extended colour code (MCC/MNC/CC),
+	// the scrambler seed the voice chain descrambles the granted call's traffic
+	// frames with. Zero on non-TETRA grants and until the colour code is learned.
+	TETRAColourExt uint32
 	// AlgorithmID and KeyID carry the encryption parameters the
 	// protocol's privacy header advertises (the DMR PI header, etc.).
 	// They are meaningful only when Encrypted is true and stay zero

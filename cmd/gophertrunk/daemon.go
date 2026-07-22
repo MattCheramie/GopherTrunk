@@ -454,6 +454,14 @@ type Daemon struct {
 	// voice pool via collectVoiceDevices and into the composer via
 	// poolDevices.virtualMap. See internal/sdr/wbvoice.
 	virtualVoiceTuners []*wbvoice.VirtualTuner
+	// ccVoiceSource is the same-carrier voice tap: it reuses the control
+	// decoder's own channelised IQ for a grant on the control carrier (a TETRA
+	// SCBS keeps voice on other timeslots of the control carrier), so no second
+	// SDR or retune is needed. Resolves the control decoder lazily since the
+	// voice pool is built before the decoder exists. Registered after physical /
+	// wideband voice devices so a real role:voice SDR is preferred; it only ever
+	// binds a grant whose frequency equals the control channel's own carrier.
+	ccVoiceSource *ccdecoder.CCVoiceSource
 	// p25p2Follower harvests P25 Phase 2 talker aliases off the traffic
 	// channel's FACCH-S signalling using standalone signalling DDC taps,
 	// independent of the voice pool — so aliases surface even when no
@@ -1096,6 +1104,19 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	}
 	if err := d.buildP25P2SignallingFollower(cfg, log); err != nil {
 		return nil, err
+	}
+	// Same-carrier voice tap: reuse the control decoder's own channelised IQ so
+	// a grant on the control carrier (a TETRA SCBS keeps voice on other timeslots
+	// of the control carrier) is followed without a second SDR or a retune. The
+	// control decoder is built below (after the voice pool), so resolve it lazily.
+	// Gated to TETRA systems: for P25/DMR (voice always on a different carrier) it
+	// would never bind but would mask the "no voice SDR" diagnostic, so skip it.
+	for _, sys := range cfg.Trunking.Systems {
+		if strings.EqualFold(sys.Protocol, "tetra") {
+			d.ccVoiceSource = ccdecoder.NewCCVoiceSource(
+				func() *ccdecoder.Decoder { return d.ccDecoder }, "cc:same-carrier")
+			break
+		}
 	}
 
 	// Metrics — constructed early so downstream components (notably
@@ -4097,6 +4118,14 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 			Serial: vt.Serial(),
 		})
 	}
+	// The same-carrier CC tap goes last so a physical role:voice SDR or a
+	// wideband tap is preferred; it binds only a grant on the CC's own carrier.
+	if d.ccVoiceSource != nil {
+		voices = append(voices, &trunking.VoiceDevice{
+			Tuner:  d.ccVoiceSource,
+			Serial: d.ccVoiceSource.Serial(),
+		})
+	}
 	return voices
 }
 
@@ -4104,12 +4133,15 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 // poolDevices uses to resolve a virtual tuner. Returns nil when no
 // virtual tuners are configured so the lookup is a no-op.
 func (d *Daemon) virtualVoiceMap() map[string]composer.IQSource {
-	if len(d.virtualVoiceTuners) == 0 {
+	if len(d.virtualVoiceTuners) == 0 && d.ccVoiceSource == nil {
 		return nil
 	}
-	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners))
+	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+1)
 	for _, vt := range d.virtualVoiceTuners {
 		out[vt.Serial()] = vt
+	}
+	if d.ccVoiceSource != nil {
+		out[d.ccVoiceSource.Serial()] = d.ccVoiceSource
 	}
 	return out
 }

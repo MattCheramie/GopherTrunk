@@ -59,7 +59,7 @@ func newTETRAVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 // The extractor emits a frame for every burst on the carrier (all four TDMA
 // timeslots), not just the granted one; groupID/timeslot are threaded
 // through for a future per-slot filter and logging only.
-func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, done chan<- struct{}) {
+func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, colourExt uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-tetra:"+serial, nil)
 
@@ -74,7 +74,7 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 
 	rs, _ := c.sink.(rawFrameSink)
 	var bursts atomic.Uint64
-	extractor := tetra.NewTrafficExtractor(func(frame []byte) {
+	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte) {
 		bursts.Add(1)
 		// Each recovered burst counts as traffic activity: keep the call
 		// alive and reset the hangtime timer.
@@ -96,8 +96,9 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		EnableChannelFilter: true,
 	})
 
-	c.log.Info("composer: tetra voice follow started — raw traffic sidecar (TCH/S FEC + ACELP vocoder are follow-ups)",
-		"serial", serial, "group", groupID, "timeslot", timeslot, "rate_hz", symbolHz)
+	c.log.Info("composer: tetra voice follow started — descrambled traffic sidecar (TCH/S FEC + ACELP vocoder are follow-ups)",
+		"serial", serial, "group", groupID, "timeslot", timeslot,
+		"colour_code", colourExt&0x3F, "rate_hz", symbolHz)
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()

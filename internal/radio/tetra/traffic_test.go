@@ -39,7 +39,7 @@ func TestTrafficExtractorSingleBurst(t *testing.T) {
 	buildNCDB(stream, L, bkn1, bkn2)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(func(f []byte) {
+	te := NewTrafficExtractor(0, func(f []byte) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	te.Process(stream, 0)
@@ -55,6 +55,31 @@ func TestTrafficExtractorSingleBurst(t *testing.T) {
 	}
 }
 
+// TestTrafficExtractorDescrambles pins the voice-path descramble: with a
+// non-zero colour code the emitted frame is the raw type-5 bits descrambled
+// with the cell's extended colour code — the input the TCH/S channel decoder
+// expects — not the still-scrambled bits.
+func TestTrafficExtractorDescrambles(t *testing.T) {
+	bkn1 := rampDibits(ndbBlockDibits, 0)
+	bkn2 := rampDibits(ndbBlockDibits, 2)
+	stream := make([]uint8, 600)
+	buildNCDB(stream, 200, bkn1, bkn2)
+
+	const colour = 262144876 // the reporter's cell (467.913 MHz)
+	var got []byte
+	te := NewTrafficExtractor(colour, func(f []byte) { got = append([]byte(nil), f...) })
+	te.Process(stream, 0)
+
+	rawBits := TetraDibitsToBits(append(append([]uint8{}, bkn1...), bkn2...))
+	want := framing.PackBitsMSB(framing.DescrambleTetra(rawBits, colour))
+	if !bytes.Equal(got, want) {
+		t.Errorf("emitted frame is not descrambled with the colour code")
+	}
+	if bytes.Equal(got, wantFrame(bkn1, bkn2)) {
+		t.Errorf("descramble not applied — frame equals the still-scrambled bits")
+	}
+}
+
 func TestTrafficExtractorChunkedAcrossCalls(t *testing.T) {
 	bkn1 := rampDibits(ndbBlockDibits, 1)
 	bkn2 := rampDibits(ndbBlockDibits, 3)
@@ -63,7 +88,7 @@ func TestTrafficExtractorChunkedAcrossCalls(t *testing.T) {
 	buildNCDB(stream, L, bkn1, bkn2)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(func(f []byte) {
+	te := NewTrafficExtractor(0, func(f []byte) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	// Feed in small chunks so the training-sequence match, BKN1 look-back
@@ -93,7 +118,7 @@ func TestTrafficExtractorMultipleSlots(t *testing.T) {
 	buildNCDB(stream, 200+255, b1b, b2b)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(func(f []byte) {
+	te := NewTrafficExtractor(0, func(f []byte) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	te.Process(stream, 0)
@@ -112,7 +137,7 @@ func TestTrafficExtractorNoFalseEmitOnNoise(t *testing.T) {
 		stream[i] = uint8((i*7 + 1) % 4) // deterministic non-sync filler
 	}
 	n := 0
-	te := NewTrafficExtractor(func(f []byte) { n++ })
+	te := NewTrafficExtractor(0, func(f []byte) { n++ })
 	te.Process(stream, 0)
 	// A rare chance correlation within tolerance is possible; assert it does
 	// not spuriously fire on structured filler.
