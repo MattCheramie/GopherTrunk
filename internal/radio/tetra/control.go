@@ -497,6 +497,9 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 	if c.bus == nil {
 		return
 	}
+	c.mu.Lock()
+	colourExt := c.colourCode
+	c.mu.Unlock()
 	freq := uint32(0)
 	if c.resolver != nil {
 		if hz, err := c.resolver.Frequency(g.CarrierNumber); err == nil {
@@ -524,10 +527,11 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			// trunking engine's Timeslot is 1-based with 0 reserved for
 			// "not applicable", so map 0..3 → 1..4. The voice tap uses it
 			// to pick the granted slot out of the 4-slot TDMA frame.
-			Timeslot:  g.Timeslot + 1,
-			Encrypted: g.Encrypted,
-			Emergency: g.Emergency,
-			At:        c.now(),
+			Timeslot:       g.Timeslot + 1,
+			Encrypted:      g.Encrypted,
+			Emergency:      g.Emergency,
+			TETRAColourExt: colourExt,
+			At:             c.now(),
 		},
 	})
 	c.addStat(&c.stats.Grants, 1)

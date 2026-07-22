@@ -64,18 +64,22 @@ const TrafficFrameBytes = (2 * ndbBlockDibits * 2) / 8 // 54
 //
 // Not safe for concurrent use; construct one per followed call.
 type TrafficExtractor struct {
-	dets    []*SyncDetector // NTS1 + NTS2, each under all four constellation rotations
-	scratch []int
-	buf     []uint8
-	bufBase int
-	pending []int // training-sequence leading indices awaiting look-ahead
-	onBurst func(frame []byte)
+	dets       []*SyncDetector // NTS1 + NTS2, each under all four constellation rotations
+	scratch    []int
+	buf        []uint8
+	bufBase    int
+	pending    []int // training-sequence leading indices awaiting look-ahead
+	colourCode uint32
+	onBurst    func(frame []byte)
 }
 
 // NewTrafficExtractor returns an extractor that calls onBurst with each
-// recovered 54-byte traffic frame. onBurst must not retain the slice.
-func NewTrafficExtractor(onBurst func(frame []byte)) *TrafficExtractor {
-	te := &TrafficExtractor{onBurst: onBurst}
+// recovered 54-byte traffic frame. When colourCode is non-zero the frame is
+// descrambled with the cell's extended colour code (learned from the control
+// channel's BSCH) before onBurst, so the sidecar holds descrambled type-5 —
+// the input the TCH/S channel decoder expects. onBurst must not retain the slice.
+func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte)) *TrafficExtractor {
+	te := &TrafficExtractor{colourCode: colourCode, onBurst: onBurst}
 	// π/4-DQPSK leaves a constant 0..3 dibit rotation (residual CFO), so
 	// correlate the training sequence under all four rotations of the
 	// pattern — the same trick processSB uses for the sync burst.
@@ -158,5 +162,9 @@ func (te *TrafficExtractor) emit(L int) {
 	d := make([]uint8, 0, TrafficFrameDibits)
 	d = append(d, block(ndbBKN1Start)...)
 	d = append(d, block(ndbBKN2Start)...)
-	te.onBurst(framing.PackBitsMSB(TetraDibitsToBits(d)))
+	bits := TetraDibitsToBits(d)
+	if te.colourCode != 0 {
+		bits = framing.DescrambleTetra(bits, te.colourCode)
+	}
+	te.onBurst(framing.PackBitsMSB(bits))
 }
