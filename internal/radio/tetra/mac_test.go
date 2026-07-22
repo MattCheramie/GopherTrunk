@@ -77,3 +77,21 @@ func TestParseMACResourceRejectsNonResource(t *testing.T) {
 		t.Errorf("SYSINFO main carrier = %d, want 2716", mc)
 	}
 }
+
+// TestSysInfoMainCarrier decodes the cell's own carrier number from a real
+// SYSINFO broadcast recovered from the 467.913 MHz capture — carrier 2716,
+// which resolves to 467.913 MHz on the band plan.
+func TestSysInfoMainCarrier(t *testing.T) {
+	bits := hexToBits(t, "8a9c4c0e928eec8bd0c0041cffffd700")
+	mc, ok := SysInfoMainCarrier(bits)
+	if !ok {
+		t.Fatal("SysInfoMainCarrier returned !ok on a real SYSINFO broadcast")
+	}
+	if mc != 2716 {
+		t.Errorf("main carrier = %d, want 2716", mc)
+	}
+	// A MAC-RESOURCE PDU is not a SYSINFO broadcast.
+	if _, ok := SysInfoMainCarrier(hexToBits(t, "20760f572c3c83d538c90a1fe305009e")); ok {
+		t.Error("SysInfoMainCarrier accepted a non-broadcast PDU")
+	}
+}

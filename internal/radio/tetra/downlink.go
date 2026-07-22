@@ -199,6 +199,13 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 				c.Ingest(pdu)
 			}
 		}
+	case MACPDUBroadcast:
+		// Learn the cell's own carrier number so grant carrier numbers resolve
+		// to Hz relative to this carrier (see carrierFrequency). SYSINFO
+		// identity (MCC/MNC/LA) still reaches the lock via the sync-burst path.
+		if mc, ok := SysInfoMainCarrier(recovered); ok {
+			c.learnMainCarrier(mc)
+		}
 	}
 }
 

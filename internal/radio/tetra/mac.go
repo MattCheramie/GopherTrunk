@@ -30,6 +30,13 @@ const (
 	macEnd  uint8 = 1
 )
 
+// Broadcast sub-types (the 2 bits following the MAC PDU type when
+// MACPDUType == MACPDUBroadcast), EN 300 392-2 §21.4.4.
+const (
+	TETRAMACBcastSysInfo      uint8 = 0 // SYSINFO
+	TETRAMACBcastAccessDefine uint8 = 1 // ACCESS-DEFINE
+)
+
 // Address types (§21.4.3.1). addrLenBits gives the address element width for
 // each; NULL carries no address (and the PDU no TM-SDU).
 const (
@@ -242,6 +249,24 @@ func ParseMACResource(bits []byte, isDecrypted bool) (MACResource, bool) {
 	}
 	m.TMSDUBitOffset = r.pos
 	return m, true
+}
+
+// SysInfoMainCarrier extracts the cell's own main carrier number from a MAC
+// broadcast SYSINFO PDU (type-1 bits, one-per-byte MSB first): MAC PDU type (2)
+// + broadcast type (2) + main carrier (12), per EN 300 392-2 §21.4.4.1. Returns
+// (0, false) unless the PDU is a broadcast whose subtype is SYSINFO.
+func SysInfoMainCarrier(bits []byte) (uint16, bool) {
+	if len(bits) < 16 {
+		return 0, false
+	}
+	r := &bitReader{bits: bits}
+	if MACPDUType(r.u(2)) != MACPDUBroadcast {
+		return 0, false
+	}
+	if r.u(2) != uint32(TETRAMACBcastSysInfo) {
+		return 0, false
+	}
+	return uint16(r.u(12)), true
 }
 
 // tmSDU returns the TM-SDU (Layer-3 PDU) bits following the MAC header, as a

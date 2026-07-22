@@ -76,3 +76,57 @@ func TestProcessDecodesGrantFromNCDB(t *testing.T) {
 		t.Errorf("grant timeslot = %d, want 2", grant.Timeslot)
 	}
 }
+
+// TestCarrierFrequencyDerivation checks that a grant carrier number resolves to
+// Hz relative to the cell's own carrier (learned from SYSINFO) at 25 kHz
+// spacing, with no configured band plan.
+func TestCarrierFrequencyDerivation(t *testing.T) {
+	cc := New(Options{Log: slog.Default(), FrequencyHz: 467_913_000})
+	if _, ok := cc.carrierFrequency(2716); ok {
+		t.Error("carrierFrequency resolved before the main carrier was learned")
+	}
+	cc.learnMainCarrier(2716)
+	for carrier, want := range map[uint16]uint32{
+		2716: 467_913_000, // same carrier ⇒ the control frequency
+		2717: 467_938_000, // +25 kHz
+		2715: 467_888_000, // −25 kHz
+	} {
+		hz, ok := cc.carrierFrequency(carrier)
+		if !ok || hz != want {
+			t.Errorf("carrier %d → %d (ok=%v), want %d", carrier, hz, ok, want)
+		}
+	}
+}
+
+// TestGrantPublishesResolvedFrequency drives the MAC ingest end to end: a real
+// SYSINFO broadcast teaches the cell's carrier, then a real MAC-RESOURCE grant
+// publishes with the traffic frequency resolved (same-carrier SCBS ⇒ 467.913).
+func TestGrantPublishesResolvedFrequency(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Sys", FrequencyHz: 467_913_000})
+	cc.ingestMAC(hexToBits(t, "8a9c4c0e928eec8bd0c0041cffffd700"))                                     // SYSINFO → carrier 2716
+	cc.ingestMAC(hexToBits(t, "20760f572c3c83d538c90a1fe305009e0f92813c83d538c91e1fe301304a1eae5880")) // grant
+
+	var grant *trunking.Grant
+	for drained := false; !drained; {
+		select {
+		case ev := <-sub.C:
+			if g, ok := ev.Payload.(trunking.Grant); ok && ev.Kind == events.KindGrant {
+				gg := g
+				grant = &gg
+			}
+		default:
+			drained = true
+		}
+	}
+	if grant == nil {
+		t.Fatal("no grant published")
+	}
+	if grant.FrequencyHz != 467_913_000 {
+		t.Errorf("grant frequency = %d, want 467913000 (carrier 2716 resolved)", grant.FrequencyHz)
+	}
+}
