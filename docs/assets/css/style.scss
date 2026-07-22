@@ -952,6 +952,46 @@ a.category-chip:hover {
 .learn-journey__title { font-size: 1.4rem; font-weight: 600; margin: 0 0 0.3rem; }
 .learn-journey__lede { margin: 0 0 1.5rem; color: var(--fg-muted); max-width: 48rem; }
 
+/* Learning Paths (optional guidance layer) */
+.learn-paths { margin: 0 0 2.75rem; }
+
+.learn-pathnote {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 0.7rem 1rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.92rem;
+  margin: 0 0 1.75rem;
+  max-width: 48rem;
+}
+
+/* "Part of these Learning Paths" backlinks on a module hub */
+.learn-inpaths {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.75rem;
+  font-size: 0.9rem;
+}
+.learn-inpaths__label { color: var(--fg-muted); }
+.learn-inpaths__list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+}
+.learn-inpaths__list a {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  text-decoration: none;
+}
+.learn-inpaths__list a:hover { border-color: var(--accent); }
+
 .journey {
   list-style: none;
   margin: 0;

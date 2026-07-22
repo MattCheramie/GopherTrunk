@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: software-licensing
+learn_module: software-licensing
 permalink: /learn/software-licensing/
 title: Software Licensing & Agreements — from open source to selling your own
 description: A free, structured learning path on software licensing and agreements — every license type from open source to proprietary, the open-source licenses in depth, writing a commercial license, using open source in software you sell, how to read an agreement, EULAs, terms of service, privacy and SLA terms, and choosing the right license and agreements for your own software.

@@ -90,11 +90,15 @@ create trigger on_auth_user_created
 
 -- ---------------------------------------------------------------------------
 -- learn_progress — one row per completed lesson, private to the user.
--- Matches the client store: key is (user_id, path_id, slug).
+-- Matches the client store: key is (user_id, path_id, slug). `path_id` holds a
+-- learning-MODULE id (e.g. "rf-sdr"). The site's "learning paths" are an optional
+-- guidance layer with no rows of their own — path progress is derived from the
+-- referenced modules' completions. Module ids are append-only, so these rows
+-- stay valid across learning-content restructures.
 -- ---------------------------------------------------------------------------
 create table if not exists public.learn_progress (
   user_id      uuid not null references auth.users (id) on delete cascade,
-  path_id      text not null,
+  path_id      text not null,  -- learning-module id (append-only); not a "learning path"
   slug         text not null,
   completed_at timestamptz not null default now(),
   primary key (user_id, path_id, slug)

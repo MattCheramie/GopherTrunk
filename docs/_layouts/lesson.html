@@ -2,23 +2,23 @@
 layout: default
 ---
 {%- comment -%}
-  Lesson layout for any learning path.
+  Lesson layout for any learning module.
 
-  The lesson selects its path with `learn_path:` (set per-directory in
-  _config.yml). Flattens that path's modules into one ordered list so it can
-  compute the lesson's position, its module, and prev/next links from a single
+  The lesson selects its module with `learn_module:` (set per-directory in
+  _config.yml). Flattens that module's units into one ordered list so it can
+  compute the lesson's position, its unit, and prev/next links from a single
   source (_data/learn.yml). The page identifies itself with `slug:` in front
-  matter. The glossary (page.lesson_standalone) skips path nav.
+  matter. The glossary (page.lesson_standalone) skips lesson nav.
 {%- endcomment -%}
 
-{%- assign p = site.data.learn.paths | where: "id", page.learn_path | first -%}
+{%- assign p = site.data.learn.modules | where: "id", page.learn_module | first -%}
 {%- assign base = '/learn/' | append: p.id | append: '/' -%}
 {%- assign all_lessons = "" | split: "" -%}
-{%- assign module_labels = "" | split: "" -%}
-{%- for mod in p.modules -%}
-  {%- for lesson in mod.lessons -%}
+{%- assign unit_labels = "" | split: "" -%}
+{%- for unit in p.units -%}
+  {%- for lesson in unit.lessons -%}
     {%- assign all_lessons = all_lessons | push: lesson -%}
-    {%- assign module_labels = module_labels | push: mod.label -%}
+    {%- assign unit_labels = unit_labels | push: unit.label -%}
   {%- endfor -%}
 {%- endfor -%}
 {%- assign total = all_lessons | size -%}
@@ -39,7 +39,7 @@ layout: default
         <li><a href="{{ '/learn/' | relative_url }}">Learn</a></li>
         <li><a href="{{ base | relative_url }}">{{ p.label }}</a></li>
         {%- if idx >= 0 -%}
-          <li><span class="breadcrumb__group">{{ module_labels[idx] }}</span></li>
+          <li><span class="breadcrumb__group">{{ unit_labels[idx] }}</span></li>
         {%- endif -%}
         <li><span aria-current="page">{{ page.title }}</span></li>
       </ol>
@@ -70,8 +70,8 @@ layout: default
         {%- if page.prereq and page.prereq.size > 0 -%}
           <p class="lesson__prereq"><span class="lesson__prereq-label">Before this:</span>
             {%- for slug in page.prereq -%}
-              {%- assign p = all_lessons | where: "slug", slug | first -%}
-              {%- if p -%}<a class="lesson__chip" href="{{ '/learn/' | append: slug | append: '/' | relative_url }}">{{ p.title }}</a>{%- endif -%}
+              {%- assign pl = all_lessons | where: "slug", slug | first -%}
+              {%- if pl -%}<a class="lesson__chip" href="{{ base | append: slug | append: '/' | relative_url }}">{{ pl.title }}</a>{%- endif -%}
             {%- endfor -%}
           </p>
         {%- endif -%}

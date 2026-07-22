@@ -1,15 +1,41 @@
-# GopherTrunk learning paths — single source of truth.
+# GopherTrunk learning content — single source of truth.
 #
 # This file drives several things at once, so they never drift apart:
 #   1. The /learn/ chooser page          (docs/learn/index.md + learn-index.html)
-#   2. Each path's hub landing grid       (docs/learn/<id>/index.md + learn-hub.html)
-#   3. The in-lesson sidebar / module list and prev/next nav (lesson.html)
-#   4. The llms.txt export                (docs/llms.txt)
+#   2. Each Learning Path guide page      (docs/learn/paths/<id>/index.md + learn-path.html)
+#   3. Each module's hub landing grid     (docs/learn/<id>/index.md + learn-hub.html)
+#   4. The in-lesson unit list and prev/next nav (lesson.html)
+#   5. The llms.txt export                (docs/llms.txt)
 #
-# Structure: a top-level `paths:` list. Each path is one self-contained
-# curriculum (RF & SDR, Git & GitHub, …) with its own URL space /learn/<id>/.
+# Four-level hierarchy:
 #
-# Per path:
+#   Learning Path   optional, guidance-only domain track (RF Software Development,
+#                   RF Hardware, …). A curated, ordered *reading list of modules*
+#                   toward competence in a domain. NOT required to take any module.
+#     Learning Module   one self-contained curriculum (RF & SDR, Git & GitHub, …)
+#                       with its own URL space /learn/<id>/.
+#       Unit            an ordered group of lessons inside a module (display only;
+#                       does not appear in URLs).
+#         Lesson        one page at /learn/<module-id>/<slug>/.
+#
+# Two top-level lists: `learning_paths:` (the guidance layer) and `modules:` (the
+# curricula). Learning Paths reference modules by id, so a module can appear in
+# several paths. Progress is saved per (module-id, lesson-slug) — see store.js and
+# the Supabase learn_progress table — so every `id` below is APPEND-ONLY: renaming
+# one breaks lesson URLs and orphans saved progress. Path progress is derived from
+# the referenced modules' completions; it needs no storage of its own.
+#
+# Per learning_path (guidance only):
+#   id          URL segment -> /learn/paths/<id>/  (append-only)
+#   label       Short display name shown on the chooser and path card
+#   title       Full guide <h1> / page title
+#   tagline     One-line description for the chooser card
+#   intro       Folded blurb shown on the guide hero
+#   modules     Ordered list of module references: { id, note? }
+#                 id    an existing module id (see `modules:` below)
+#                 note  optional one-line "why this module / what you'll get"
+#
+# Per module (was "path"):
 #   id          URL segment -> /learn/<id>/ and /learn/<id>/<slug>/  (append-only)
 #   label       Short display name shown on the chooser and in breadcrumbs
 #   title       Full hub <h1> / page title
@@ -17,30 +43,140 @@
 #   start_slug  Slug of lesson 1 (drives the hub "Start lesson 1" CTA)
 #   workload    ISO-8601 duration estimate for Course schema (e.g. PT6H)
 #   intro       Folded blurb shown on the hub hero
-#   modules     Ordered list of modules (see below)
+#   units       Ordered list of units (see below)
 #   glossary    Optional standalone reference (no prev/next slot); keep slug: glossary
 #
-# Per module:
-#   id          Anchor id used on the hub (/learn/<path>/#<id>)
-#   label       Module heading (e.g. "Module 1 — Foundations")
-#   blurb       One-line module summary
+# Per unit (was "module"):
+#   id          Anchor id used on the hub (/learn/<module>/#<id>)
+#   label       Unit heading (e.g. "Unit 1 — Foundations")
+#   blurb       One-line unit summary
 #   lessons     Ordered list of lessons
 #
 # Per lesson:
-#   slug        URL slug -> /learn/<path>/<slug>/  (append-only; renaming breaks links)
+#   slug        URL slug -> /learn/<module>/<slug>/  (append-only; renaming breaks links)
 #   title       Lesson title (also the card heading)
 #   summary     One-line description for cards, sidebar, and llms.txt
 #   minutes     Estimated reading time (integer; shown on cards)
 #   level       beginner | intermediate | advanced  (badge + filtering)
 #   status      full | stub   (stub = outline published, body still being written)
 #
-# Lesson files live at docs/learn/<path-id>/<slug>.md. The matching `learn`
+# Lesson files live at docs/learn/<module-id>/<slug>.md. The matching `learn`
 # defaults scopes in _config.yml give them the lesson layout, nav_group, and the
-# `learn_path` key automatically, so individual lessons only declare slug/title/
+# `learn_module` key automatically, so individual lessons only declare slug/title/
 # description. Each hub overrides layout back to `learn-hub`; the chooser
 # (learn/index.md) overrides to `learn-index`.
 
-paths:
+# ---------------------------------------------------------------------------
+# Learning Paths — optional guidance. Each is an ordered recommendation of which
+# modules to work through to become competent in a broad domain. No module here
+# is required; a path only points the way.
+# ---------------------------------------------------------------------------
+learning_paths:
+  - id: rf-software-dev
+    label: "RF Software Development"
+    title: "Learning Path — RF Software Development"
+    tagline: "Write the software that turns raw radio into decoded data — the GopherTrunk skill set."
+    intro: >
+      Guidance only — nothing here is required. Work these modules in order to
+      build real competence developing SDR/RF software: understand the signal,
+      learn to build and ship software, then bring the two together to decode
+      digital trunked voice like GopherTrunk does.
+    modules:
+      - id: rf-sdr
+        note: "Start here — the RF and SDR fundamentals every signal path leans on."
+      - id: intro-software-dev
+        note: "How software is designed, built, tested, and shipped."
+      - id: linux-cli
+        note: "The command line where SDR tooling and servers live."
+      - id: git
+        note: "Version control — the backbone of any real codebase."
+      - id: digital-trunking
+        note: "Apply it: how trunked systems work and how software follows them."
+      - id: ai-software-dev
+        note: "Optional — use AI tools to accelerate your development workflow."
+  - id: rf-hardware
+    label: "RF Hardware"
+    title: "Learning Path — RF Hardware"
+    tagline: "Understand the radios, antennas, and front-ends that put signals in front of your software."
+    intro: >
+      Guidance only. For the hardware side of RF: what a signal is, the physical
+      devices that capture and move it, and how RF links are engineered.
+    modules:
+      - id: rf-sdr
+        note: "The physics of signals — waves, power, antennas, propagation."
+      - id: intro-hardware
+        note: "Computers and devices from the ground up, including SDR front-ends."
+      - id: networking
+        note: "How RF ultimately carries data across links and networks."
+  - id: software-engineering
+    label: "Software Engineering Foundations"
+    title: "Learning Path — Software Engineering Foundations"
+    tagline: "Become a well-rounded developer, from first program to shipping and licensing."
+    intro: >
+      Guidance only. A broad grounding in building software: the craft, the tools,
+      the systems it runs on, and the rules for releasing it.
+    modules:
+      - id: intro-software-dev
+        note: "The craft of building software."
+      - id: git
+        note: "Version control and collaboration."
+      - id: linux-cli
+        note: "The command line every developer lives in."
+      - id: networking
+        note: "How software talks across machines."
+      - id: software-licensing
+        note: "The legal side of shipping and reusing code."
+  - id: ai-development
+    label: "AI Software Development"
+    title: "Learning Path — AI Software Development"
+    tagline: "Build software with — and powered by — modern AI."
+    intro: >
+      Guidance only. From general software skills to building AI-assisted and
+      AI-powered applications.
+    modules:
+      - id: intro-software-dev
+        note: "The software foundations AI work builds on."
+      - id: git
+        note: "Version control for any real project."
+      - id: ai-software-dev
+        note: "Use AI tools to write and ship software faster."
+      - id: building-ai
+        note: "Build applications powered by AI."
+  - id: security
+    label: "Cybersecurity"
+    title: "Learning Path — Cybersecurity"
+    tagline: "Understand systems well enough to defend them."
+    intro: >
+      Guidance only. The systems knowledge that security rests on, then the
+      security discipline itself.
+    modules:
+      - id: linux-cli
+        note: "The environment most security work happens in."
+      - id: networking
+        note: "You can't secure what you don't understand — start with the network."
+      - id: cybersecurity
+        note: "Threats, defenses, and the security mindset."
+      - id: git
+        note: "Track changes and collaborate safely."
+  - id: trunked-radio
+    label: "Digital Trunking & Scanning"
+    title: "Learning Path — Digital Trunking & Scanning"
+    tagline: "Go from first radio wave to following live trunked voice systems."
+    intro: >
+      Guidance only. The fastest route to understanding and operating digital
+      trunked radio the way GopherTrunk decodes it.
+    modules:
+      - id: rf-sdr
+        note: "Signals, SDR, and how digital voice is carried."
+      - id: digital-trunking
+        note: "How trunked control channels and voice calls work."
+      - id: intro-hardware
+        note: "The SDR hardware that feeds a scanner."
+
+# ---------------------------------------------------------------------------
+# Learning Modules — the self-contained curricula. Each owns /learn/<id>/.
+# ---------------------------------------------------------------------------
+modules:
   - id: rf-sdr
     label: "RF & SDR"
     title: "Learn RF & SDR — from newbie to expert"
@@ -52,9 +188,9 @@ paths:
       with what a radio wave actually is, learn how software-defined radios turn the
       airwaves into numbers, then follow the signal all the way to decoded digital
       voice — and put it to work in GopherTrunk.
-    modules:
+    units:
       - id: rf-fundamentals
-        label: "Module 1 — RF Fundamentals"
+        label: "Unit 1 — RF Fundamentals"
         blurb: "The physics every operator leans on: waves, frequency, power, antennas, and how signals travel."
         lessons:
           - slug: radio-waves
@@ -95,7 +231,7 @@ paths:
             status: full
 
       - id: signals-modulation
-        label: "Module 2 — Signals & Modulation"
+        label: "Unit 2 — Signals & Modulation"
         blurb: How information rides on a carrier — from analog AM/FM to the digital constellations GopherTrunk decodes.
         lessons:
           - slug: signal-anatomy
@@ -124,7 +260,7 @@ paths:
             status: full
 
       - id: sdr
-        label: "Module 3 — Software-Defined Radio"
+        label: "Unit 3 — Software-Defined Radio"
         blurb: What an SDR actually is, how it samples the air into IQ data, and how to set it up without overloading it.
         lessons:
           - slug: what-is-sdr
@@ -171,7 +307,7 @@ paths:
             status: full
 
       - id: dsp
-        label: "Module 4 — DSP Essentials"
+        label: "Unit 4 — DSP Essentials"
         blurb: The digital signal processing that lives between IQ samples and decoded bits — explained without the heavy math.
         lessons:
           - slug: fft-and-waterfall
@@ -200,7 +336,7 @@ paths:
             status: full
 
       - id: digital-voice-trunking
-        label: "Module 5 — Digital Voice & Trunked Radio"
+        label: "Unit 5 — Digital Voice & Trunked Radio"
         blurb: From vocoded voice to control channels — the systems GopherTrunk was built to follow.
         lessons:
           - slug: digital-voice
@@ -241,7 +377,7 @@ paths:
             status: full
 
       - id: gophertrunk
-        label: "Module 6 — Putting It Together with GopherTrunk"
+        label: "Unit 6 — Putting It Together with GopherTrunk"
         blurb: "Everything you've learned, applied: from a bare antenna to decoded calls, and how to fix it when it won't lock."
         lessons:
           - slug: antenna-to-audio
@@ -296,9 +432,9 @@ paths:
       is, build a rock-solid mental model of how Git stores your work, then learn
       branching, collaboration on GitHub, and the power tools — rebase, bisect,
       Actions — that separate confident users from the rest.
-    modules:
+    units:
       - id: git-foundations
-        label: "Module 1 — Version Control Foundations"
+        label: "Unit 1 — Version Control Foundations"
         blurb: "Why version control exists, how Git thinks, and the core loop — edit, stage, commit — you'll use every day."
         lessons:
           - slug: what-is-version-control
@@ -333,7 +469,7 @@ paths:
             status: full
 
       - id: everyday-git
-        label: "Module 2 — Everyday Git"
+        label: "Unit 2 — Everyday Git"
         blurb: The handful of commands you'll run dozens of times a day — reading state, history, and safely undoing mistakes.
         lessons:
           - slug: status-and-diffs
@@ -362,7 +498,7 @@ paths:
             status: full
 
       - id: branching-merging
-        label: "Module 3 — Branching & Merging"
+        label: "Unit 3 — Branching & Merging"
         blurb: Git's superpower — cheap branches — and how to bring lines of work back together cleanly.
         lessons:
           - slug: branches
@@ -397,7 +533,7 @@ paths:
             status: full
 
       - id: remotes-github
-        label: "Module 4 — Remotes & GitHub"
+        label: "Unit 4 — Remotes & GitHub"
         blurb: Taking Git online — pushing to GitHub, authenticating securely, and the fork-and-pull-request workflow.
         lessons:
           - slug: what-is-github
@@ -432,7 +568,7 @@ paths:
             status: full
 
       - id: github-features
-        label: "Module 5 — Collaboration & GitHub Features"
+        label: "Unit 5 — Collaboration & GitHub Features"
         blurb: The platform features that turn a code host into a place teams plan, automate, ship, and protect their work.
         lessons:
           - slug: issues-and-projects
@@ -473,7 +609,7 @@ paths:
             status: full
 
       - id: advanced-git
-        label: "Module 6 — Advanced Git & Best Practices"
+        label: "Unit 6 — Advanced Git & Best Practices"
         blurb: The power tools and habits that mark a confident operator — history surgery, debugging, and clean workflows.
         lessons:
           - slug: interactive-rebase
@@ -533,9 +669,9 @@ paths:
       and finish able to run and maintain your own services over SSH, including
       GopherTrunk itself on a Linux box or an SBC. No prior command-line experience
       required; examples use Linux (with notes for macOS and Windows/WSL).
-    modules:
+    units:
       - id: getting-started
-        label: "Module 1 — Getting Started with Linux & the Shell"
+        label: "Unit 1 — Getting Started with Linux & the Shell"
         blurb: "What Linux is, why the command line is worth your time, and how to open a shell and run your very first commands without fear."
         lessons:
           - slug: what-is-linux
@@ -570,7 +706,7 @@ paths:
             status: full
 
       - id: files
-        label: "Module 2 — Files & the Filesystem"
+        label: "Unit 2 — Files & the Filesystem"
         blurb: "Everything on Linux is a file in one big tree. Learn to navigate it, and to create, view, edit, and find files with confidence."
         lessons:
           - slug: filesystem-layout
@@ -605,7 +741,7 @@ paths:
             status: full
 
       - id: permissions-processes
-        label: "Module 3 — Permissions, Users & Processes"
+        label: "Unit 3 — Permissions, Users & Processes"
         blurb: "Who can do what, and what's running right now: the multi-user model, file permissions, root, and managing live processes."
         lessons:
           - slug: users-and-groups
@@ -640,7 +776,7 @@ paths:
             status: full
 
       - id: power-of-the-cli
-        label: "Module 4 — The Power of the Command Line"
+        label: "Unit 4 — The Power of the Command Line"
         blurb: "The real superpower: small tools that snap together. Pipes, redirection, text processing, wildcards, and the environment."
         lessons:
           - slug: pipes-and-redirection
@@ -675,7 +811,7 @@ paths:
             status: full
 
       - id: scripting
-        label: "Module 5 — Scripting & Automation"
+        label: "Unit 5 — Scripting & Automation"
         blurb: "Turn a sequence of commands into a reusable program: your first scripts, variables and input, control flow, and scheduling."
         lessons:
           - slug: first-shell-script
@@ -710,7 +846,7 @@ paths:
             status: full
 
       - id: living-on-linux
-        label: "Module 6 — Living on Linux: Servers, SBCs & GopherTrunk"
+        label: "Unit 6 — Living on Linux: Servers, SBCs & GopherTrunk"
         blurb: "Everything applied: reach a machine over SSH, run software as a managed service, watch its health, and put GopherTrunk on a Linux box."
         lessons:
           - slug: ssh-and-remote
@@ -765,9 +901,9 @@ paths:
       your own service on the network safely, including reaching GopherTrunk across
       your home network or the internet. No prior networking knowledge required;
       the Linux & the Command Line path pairs well for the hands-on parts.
-    modules:
+    units:
       - id: how-it-works
-        label: "Module 1 — How Networks & the Internet Work"
+        label: "Unit 1 — How Networks & the Internet Work"
         blurb: "The big picture: what a network is, how data is chopped into packets and routed, the layered model behind it, and one web request traced end to end."
         lessons:
           - slug: what-is-a-network
@@ -802,7 +938,7 @@ paths:
             status: full
 
       - id: addressing
-        label: "Module 2 — Addressing: IP, DNS & Ports"
+        label: "Unit 2 — Addressing: IP, DNS & Ports"
         blurb: "How machines find each other: IP addresses and subnets, the DNS name system, ports and sockets, and how home networks share one public address."
         lessons:
           - slug: ip-addresses
@@ -837,7 +973,7 @@ paths:
             status: full
 
       - id: transport-and-web
-        label: "Module 3 — The Transport & Web Protocols"
+        label: "Unit 3 — The Transport & Web Protocols"
         blurb: "The protocols you'll actually build on: TCP vs. UDP, HTTP and its methods and status codes, TLS/HTTPS, web APIs, and real-time connections."
         lessons:
           - slug: tcp-and-udp
@@ -872,7 +1008,7 @@ paths:
             status: full
 
       - id: connecting-securing
-        label: "Module 4 — Connecting & Securing Networks"
+        label: "Unit 4 — Connecting & Securing Networks"
         blurb: "The infrastructure that connects and protects real systems: firewalls, port forwarding, VPNs, proxies and load balancers, and the security basics."
         lessons:
           - slug: firewalls
@@ -907,7 +1043,7 @@ paths:
             status: full
 
       - id: cli-tools
-        label: "Module 5 — Networking from the Command Line"
+        label: "Unit 5 — Networking from the Command Line"
         blurb: "The tools that turn 'it won't connect' into an answer: inspecting your own network, testing connectivity, making requests, tunneling, and capturing packets."
         lessons:
           - slug: inspecting-your-network
@@ -942,7 +1078,7 @@ paths:
             status: full
 
       - id: your-service
-        label: "Module 6 — Putting a Service on the Network"
+        label: "Unit 6 — Putting a Service on the Network"
         blurb: "Everything applied: run a server and understand what it's bound to, expose it safely, self-host on a home network, and reach GopherTrunk across the network."
         lessons:
           - slug: running-a-server
@@ -999,9 +1135,9 @@ paths:
       the wireless-and-RF security world a scanner like GopherTrunk lives in,
       where the law and ethics matter as much as the technology. No security
       background required; the Linux and Networking paths pair well.
-    modules:
+    units:
       - id: foundations
-        label: "Module 1 — Security Foundations"
+        label: "Unit 1 — Security Foundations"
         blurb: "The mindset and vocabulary of security: what it protects, the goals it aims for, how threats and risk are described, who attacks, and how a defender thinks."
         lessons:
           - slug: what-is-cybersecurity
@@ -1036,7 +1172,7 @@ paths:
             status: full
 
       - id: crypto
-        label: "Module 2 — Cryptography Essentials"
+        label: "Unit 2 — Cryptography Essentials"
         blurb: "The math-free version of the cryptography that underpins everything secure: encryption, keys, hashing, signatures, and where each shows up in real life."
         lessons:
           - slug: what-is-cryptography
@@ -1071,7 +1207,7 @@ paths:
             status: full
 
       - id: identity-access
-        label: "Module 3 — Identity, Authentication & Access"
+        label: "Unit 3 — Identity, Authentication & Access"
         blurb: "Proving who you are and controlling what you can do: authentication, passwords and MFA, authorization, managing secrets, and the human layer attackers love."
         lessons:
           - slug: authentication-basics
@@ -1106,7 +1242,7 @@ paths:
             status: full
 
       - id: attacks-defenses
-        label: "Module 4 — Attacks & Defenses"
+        label: "Unit 4 — Attacks & Defenses"
         blurb: "The attacks every developer should recognise — explained so you can defend against them — and the layered defenses that stop them."
         lessons:
           - slug: common-attacks
@@ -1141,7 +1277,7 @@ paths:
             status: full
 
       - id: securing
-        label: "Module 5 — Securing Systems & Software"
+        label: "Unit 5 — Securing Systems & Software"
         blurb: "Applying the defenses: hardening a machine, writing secure code, protecting networks and services, watching for trouble, and safeguarding data."
         lessons:
           - slug: hardening-systems
@@ -1176,7 +1312,7 @@ paths:
             status: full
 
       - id: in-practice
-        label: "Module 6 — Security in Practice"
+        label: "Unit 6 — Security in Practice"
         blurb: "Everything applied: a developer's security checklist, staying safe as an individual, the wireless-and-RF security world, and where to keep learning."
         lessons:
           - slug: security-for-developers
@@ -1229,9 +1365,9 @@ paths:
       finally how to assemble your own solo development stack, workflow, and
       distribution strategy. Examples lean on real-time and radio software — the
       kind of streaming, signal-crunching code behind GopherTrunk.
-    modules:
+    units:
       - id: history
-        label: "Module 1 — A Brief History of Software"
+        label: "Unit 1 — A Brief History of Software"
         blurb: "Where software came from: the hardware, the first languages, the pioneers, and the cheap compute that put a radio receiver inside a program."
         lessons:
           - slug: what-is-software
@@ -1266,7 +1402,7 @@ paths:
             status: full
 
       - id: languages
-        label: "Module 2 — Modern Programming Languages"
+        label: "Unit 2 — Modern Programming Languages"
         blurb: "The families languages fall into, how they run, and the capabilities, trade-offs, and security properties that set them apart."
         lessons:
           - slug: language-families
@@ -1307,7 +1443,7 @@ paths:
             status: full
 
       - id: principles
-        label: "Module 3 — Software Development Principles"
+        label: "Unit 3 — Software Development Principles"
         blurb: "The timeless, language-agnostic ideas that make code readable, changeable, and robust instead of a tangle nobody dares touch."
         lessons:
           - slug: clean-code
@@ -1348,7 +1484,7 @@ paths:
             status: full
 
       - id: patterns
-        label: "Module 4 — Software Design Patterns"
+        label: "Unit 4 — Software Design Patterns"
         blurb: "Named, reusable solutions to problems that come up again and again — including the streaming and plugin shapes signal software lives on."
         lessons:
           - slug: what-are-patterns
@@ -1389,7 +1525,7 @@ paths:
             status: full
 
       - id: process
-        label: "Module 5 — Development Systems & Strategies"
+        label: "Unit 5 — Development Systems & Strategies"
         blurb: "How software actually gets built and kept alive: life cycles, version control, testing, automation, and fighting technical debt."
         lessons:
           - slug: sdlc-and-methodologies
@@ -1436,7 +1572,7 @@ paths:
             status: full
 
       - id: choosing-a-language
-        label: "Module 6 — Choosing the Right Language"
+        label: "Unit 6 — Choosing the Right Language"
         blurb: "A full toolkit for the question every project starts with: which language? Driven by requirements, trade-offs, and the domain you're in."
         lessons:
           - slug: why-language-choice-matters
@@ -1477,7 +1613,7 @@ paths:
             status: full
 
       - id: solo-stack
-        label: "Module 7 — Build Your Solo Developer Stack"
+        label: "Unit 7 — Build Your Solo Developer Stack"
         blurb: "Putting it all together as a team of one: pick your stack, set up your workflow, and ship and distribute software you build alone."
         lessons:
           - slug: solo-developer-mindset
@@ -1547,9 +1683,9 @@ paths:
       finish able to recognise a system on the waterfall and follow it in
       GopherTrunk. New to radio? Skim the RF & SDR path first; this one assumes
       only the basics.
-    modules:
+    units:
       - id: history
-        label: "Module 1 — A Brief History of Trunked & Digital Radio"
+        label: "Unit 1 — A Brief History of Trunked & Digital Radio"
         blurb: "How we got here: from one-frequency-per-fleet, to shared trunked channels, to the digital standards that run public safety today."
         lessons:
           - slug: why-radio-went-digital
@@ -1584,7 +1720,7 @@ paths:
             status: full
 
       - id: digital-radio
-        label: "Module 2 — Digital Radio End-to-End"
+        label: "Unit 2 — Digital Radio End-to-End"
         blurb: "The complete digital chain: turning a voice into bits, putting bits on a carrier, protecting them from errors, and packing many calls onto one channel."
         lessons:
           - slug: analog-vs-digital-voice
@@ -1625,7 +1761,7 @@ paths:
             status: full
 
       - id: how-trunking-works
-        label: "Module 3 — How Trunking Works"
+        label: "Unit 3 — How Trunking Works"
         blurb: "The mechanics every trunked system shares: talkgroups, affiliation, the request-grant-release dance, multi-site coverage, and encryption."
         lessons:
           - slug: conventional-vs-trunked
@@ -1684,7 +1820,7 @@ paths:
             status: full
 
       - id: p25-dmr
-        label: "Module 4 — P25 & DMR: The Dominant Systems"
+        label: "Unit 4 — P25 & DMR: The Dominant Systems"
         blurb: "The two digital trunking standards you'll meet most — examined in depth, from frame structure to the way GopherTrunk follows them."
         lessons:
           - slug: p25-phase-1
@@ -1707,7 +1843,7 @@ paths:
             status: full
 
       - id: other-systems
-        label: "Module 5 — Other Digital Systems You'll Meet"
+        label: "Unit 5 — Other Digital Systems You'll Meet"
         blurb: "The rest of the landscape GopherTrunk decodes — from European TETRA to legacy LTR, and the amateur digital voice modes in between."
         lessons:
           - slug: tetra
@@ -1742,7 +1878,7 @@ paths:
             status: full
 
       - id: gophertrunk
-        label: "Module 6 — Decoding Digital Trunking with GopherTrunk"
+        label: "Unit 6 — Decoding Digital Trunking with GopherTrunk"
         blurb: "Everything applied: spot a system on the waterfall, find its control channel, follow every call, and fix it when the lock won't hold."
         lessons:
           - slug: identifying-the-system
@@ -1803,9 +1939,9 @@ paths:
       is right for your project. Examples lean on GopherTrunk, the kind of
       software-defined-radio software that can live on anything from a laptop to a
       Raspberry Pi by the antenna.
-    modules:
+    units:
       - id: foundations
-        label: "Module 1 — Hardware Foundations"
+        label: "Unit 1 — Hardware Foundations"
         blurb: "The ideas every later module leans on: what hardware is, the parts inside every computer, the spectrum from cloud to microcontroller, and the trade-offs that drive every choice."
         lessons:
           - slug: what-is-hardware
@@ -1846,7 +1982,7 @@ paths:
             status: full
 
       - id: servers
-        label: "Module 2 — Servers & Hosting"
+        label: "Unit 2 — Servers & Hosting"
         blurb: "Where software runs for other people: the ladder from cheap shared web hosting, through VPSes and dedicated servers, to a server humming in your own home."
         lessons:
           - slug: web-hosting
@@ -1875,7 +2011,7 @@ paths:
             status: full
 
       - id: personal-computers
-        label: "Module 3 — Personal Computers"
+        label: "Unit 3 — Personal Computers"
         blurb: "The machines you build software on: the trade between a fixed, powerful desktop and a portable laptop, and how to choose the one you'll work on every day."
         lessons:
           - slug: desktop-computers
@@ -1898,7 +2034,7 @@ paths:
             status: full
 
       - id: mobile
-        label: "Module 4 — Mobile Devices"
+        label: "Unit 4 — Mobile Devices"
         blurb: "The computers in everyone's pocket and bag: what smartphones and tablets are good at, what they're not, and what it takes to build software for them."
         lessons:
           - slug: smartphones
@@ -1921,7 +2057,7 @@ paths:
             status: full
 
       - id: single-board-computers
-        label: "Module 5 — Single-Board Computers"
+        label: "Unit 5 — Single-Board Computers"
         blurb: "A complete computer on one small board: what an SBC like the Raspberry Pi is, what it's brilliant at, how you program it, and where its limits begin."
         lessons:
           - slug: what-is-an-sbc
@@ -1950,7 +2086,7 @@ paths:
             status: full
 
       - id: microcontrollers
-        label: "Module 6 — Microcontrollers"
+        label: "Unit 6 — Microcontrollers"
         blurb: "The tiny chips that run the physical world: what a microcontroller is, the Arduino that made them approachable, the wireless ESP32, and how you program them."
         lessons:
           - slug: what-is-a-microcontroller
@@ -1979,7 +2115,7 @@ paths:
             status: full
 
       - id: choosing-hardware
-        label: "Module 7 — Choosing the Right Hardware"
+        label: "Unit 7 — Choosing the Right Hardware"
         blurb: "Everything applied: turn a project's needs into the platform — or, more often, the combination of platforms — that fits it best, with a repeatable framework and worked examples."
         lessons:
           - slug: start-with-requirements
@@ -2044,9 +2180,9 @@ paths:
       to work in a real project. No coding background required, though the
       Intro to Software Development path pairs well; examples lean on real
       software, including the kind of signal-crunching code behind GopherTrunk.
-    modules:
+    units:
       - id: how-models-work
-        label: "Module 1 — How AI Models Actually Work"
+        label: "Unit 1 — How AI Models Actually Work"
         blurb: "Under the hood before the hype: what an AI model is, how it's trained, how it decides what to write, how context works, and which kinds of models write code."
         lessons:
           - slug: what-is-ai-for-coding
@@ -2081,7 +2217,7 @@ paths:
             status: full
 
       - id: providers-and-cost
-        label: "Module 2 — Providers, Models & What They Cost"
+        label: "Unit 2 — Providers, Models & What They Cost"
         blurb: "The market you're choosing from: the major providers and models for coding, their strengths and weaknesses, the interfaces you reach them through, and how limits and cost work."
         lessons:
           - slug: the-provider-landscape
@@ -2116,7 +2252,7 @@ paths:
             status: full
 
       - id: ways-to-use
-        label: "Module 3 — Ways to Use AI in Your Workflow"
+        label: "Unit 3 — Ways to Use AI in Your Workflow"
         blurb: "Where the AI actually lives while you work: the provider's app, your IDE, an agent in the terminal, or a deliberate blend — with the honest pluses and drawbacks of each."
         lessons:
           - slug: the-provider-app
@@ -2151,7 +2287,7 @@ paths:
             status: full
 
       - id: coding-modes
-        label: "Module 4 — Modes of AI-Assisted Coding"
+        label: "Unit 4 — Modes of AI-Assisted Coding"
         blurb: "The full spectrum, from a model finishing your line to a model building a feature unattended — what each mode is good for, and where it bites."
         lessons:
           - slug: code-completion
@@ -2180,7 +2316,7 @@ paths:
             status: full
 
       - id: directing-behavior
-        label: "Module 5 — Directing How the Model Writes Code"
+        label: "Unit 5 — Directing How the Model Writes Code"
         blurb: "Going from random results to reliable ones: prompting well, steering behavior with skills and config files, feeding the right context, and deciding between one model and many."
         lessons:
           - slug: prompting-for-code
@@ -2209,7 +2345,7 @@ paths:
             status: full
 
       - id: putting-it-together
-        label: "Module 6 — Putting AI to Work in Your Projects"
+        label: "Unit 6 — Putting AI to Work in Your Projects"
         blurb: "Everything applied: choose your model and provider, pick your method, keep the output trustworthy and safe, and start using AI in a real project today."
         lessons:
           - slug: choosing-model-and-provider
@@ -2270,9 +2406,9 @@ paths:
       production. Examples lean on real software, including AI features you might
       add to a project like GopherTrunk. Pairs with the AI in Software Dev path; no
       AI background beyond it required.
-    modules:
+    units:
       - id: foundations
-        label: "Module 1 — From Using AI to Building With It"
+        label: "Unit 1 — From Using AI to Building With It"
         blurb: "The shift from chatting with AI to calling it from your own code: what an AI feature is, the model as a component, how the API works, your first call, and the cost it carries."
         lessons:
           - slug: building-vs-using-ai
@@ -2307,7 +2443,7 @@ paths:
             status: full
 
       - id: prompting-in-code
-        label: "Module 2 — Prompting in Code"
+        label: "Unit 2 — Prompting in Code"
         blurb: "Turning prompts from throwaway chat messages into reliable, versioned parts of your program that produce output consistent enough to build on."
         lessons:
           - slug: prompts-as-code
@@ -2336,7 +2472,7 @@ paths:
             status: full
 
       - id: structured-tools-streaming
-        label: "Module 3 — Structured Output, Tools & Streaming"
+        label: "Unit 3 — Structured Output, Tools & Streaming"
         blurb: "The features that turn a text generator into a programmable component: JSON output, tool and function calling, streaming, and multimodal inputs."
         lessons:
           - slug: structured-output
@@ -2365,7 +2501,7 @@ paths:
             status: full
 
       - id: rag
-        label: "Module 4 — Retrieval-Augmented Generation (RAG)"
+        label: "Unit 4 — Retrieval-Augmented Generation (RAG)"
         blurb: "Grounding the model in your own data so it answers from your documents and facts instead of only its training — the most common way to build a genuinely useful AI feature."
         lessons:
           - slug: grounding-and-retrieval
@@ -2400,7 +2536,7 @@ paths:
             status: full
 
       - id: agents-eval-safety
-        label: "Module 5 — Agents, Evaluation & Safety"
+        label: "Unit 5 — Agents, Evaluation & Safety"
         blurb: "Letting the model act, then making sure it acts well: agent loops and tools, evaluating a probabilistic feature, handling failure, and defending against prompt injection."
         lessons:
           - slug: what-is-an-ai-agent
@@ -2435,7 +2571,7 @@ paths:
             status: full
 
       - id: shipping
-        label: "Module 6 — Shipping & Operating AI Features"
+        label: "Unit 6 — Shipping & Operating AI Features"
         blurb: "Everything applied: choose a model, control cost and latency, protect user data, watch it in production, and ship your first AI feature end to end."
         lessons:
           - slug: choosing-a-model-for-a-feature
@@ -2504,9 +2640,9 @@ paths:
       educational material, not legal advice. No legal background required;
       examples lean on real software, including GopherTrunk's own Apache-2.0
       license and dependency notices.
-    modules:
+    units:
       - id: foundations
-        label: "Module 1 — Licensing & IP Foundations"
+        label: "Unit 1 — Licensing & IP Foundations"
         blurb: "What a software license actually is, how copyright and other IP make code ownable, license versus contract, the full spectrum of license types, and how the law differs around the world."
         lessons:
           - slug: what-is-a-software-license
@@ -2547,7 +2683,7 @@ paths:
             status: full
 
       - id: open-source-in-depth
-        label: "Module 2 — Open Source Licenses in Depth"
+        label: "Unit 2 — Open Source Licenses in Depth"
         blurb: "What 'open source' really means, the permissive-versus-copyleft divide, and a detailed look at every common license — MIT, BSD, Apache, GPL, AGPL, the weak-copyleft licenses, and public domain — with the real strengths and weaknesses of each."
         lessons:
           - slug: what-is-open-source
@@ -2600,7 +2736,7 @@ paths:
             status: full
 
       - id: choosing-and-combining
-        label: "Module 3 — Choosing & Combining Open Source"
+        label: "Unit 3 — Choosing & Combining Open Source"
         blurb: "Putting the licenses to work: how they combine and where they conflict, how to pick one for your own project, contributor agreements, dual licensing, and the long-term risks of depending on open source."
         lessons:
           - slug: license-compatibility
@@ -2635,7 +2771,7 @@ paths:
             status: full
 
       - id: proprietary-and-commercial
-        label: "Module 4 — Proprietary & Commercial Licensing"
+        label: "Unit 4 — Proprietary & Commercial Licensing"
         blurb: "The paid side of the spectrum: how proprietary licensing works, the commercial pricing models, source-available licenses, and how to write and price a custom license to sell your own software — plus where to get real help."
         lessons:
           - slug: proprietary-licensing
@@ -2676,7 +2812,7 @@ paths:
             status: full
 
       - id: oss-in-products
-        label: "Module 5 — Using Open Source in Software You Sell"
+        label: "Unit 5 — Using Open Source in Software You Sell"
         blurb: "You can absolutely build a paid product on open source — if you follow the rules. Meeting permissive obligations, handling copyleft and the 'viral' question, and auditing your dependencies so compliance is continuous, not a fire drill."
         lessons:
           - slug: using-oss-in-products
@@ -2705,7 +2841,7 @@ paths:
             status: full
 
       - id: reading-agreements
-        label: "Module 6 — Reading Agreements & Other User Agreements"
+        label: "Unit 6 — Reading Agreements & Other User Agreements"
         blurb: "How to actually read a software agreement and understand it before you sign — the main clauses, the risk clauses, and the red flags — then a tour of the other agreements software needs: EULAs, terms of service, privacy policies, DPAs, SLAs, and NDAs."
         lessons:
           - slug: how-to-read-an-agreement
@@ -2758,7 +2894,7 @@ paths:
             status: full
 
       - id: putting-it-together
-        label: "Module 7 — Choosing Your License & Agreements"
+        label: "Unit 7 — Choosing Your License & Agreements"
         blurb: "Everything applied: a repeatable framework that turns your goals into a license choice, a step-by-step walkthrough to pick yours, a way to determine which other agreements your software needs, and a full worked example end to end."
         lessons:
           - slug: the-decision-framework

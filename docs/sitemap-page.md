@@ -28,9 +28,19 @@ Google Search Console.
 
 ## Learn
 
-Structured learning paths. See [all learning paths]({{ '/learn/' | relative_url }}).
+Structured learning content. See [all learning]({{ '/learn/' | relative_url }}).
 
-{%- for path in site.data.learn.paths %}
+### Learning paths
+
+Optional guided routes through several modules toward competence in a domain.
+
+<ul>
+{%- for lp in site.data.learn.learning_paths -%}
+  <li><a href="{{ '/learn/paths/' | append: lp.id | append: '/' | relative_url }}">{{ lp.title }}</a></li>
+{%- endfor -%}
+</ul>
+
+{%- for path in site.data.learn.modules %}
 ### {{ path.title }}
 
 <ul>

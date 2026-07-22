@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: rf-sdr
+learn_module: rf-sdr
 permalink: /learn/rf-sdr/
 title: Learn RF & SDR — from newbie to expert
 description: A free, structured learning path covering radio and software-defined-radio (SDR) fundamentals — frequency, modulation, IQ data, DSP, and digital trunked radio — taking you from complete beginner to confident GopherTrunk operator.

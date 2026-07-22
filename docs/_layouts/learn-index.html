@@ -2,21 +2,27 @@
 layout: default
 ---
 {%- comment -%}
-  The /learn/ chooser. The hub's front door: it explains the overall goal
-  (work from first principles up to shipping a real project like GopherTrunk),
-  shows the visitor's progress across every path, and lets them resume or reset
-  any path. Every path in _data/learn.yml becomes a card linking to its hub.
+  The /learn/ chooser. The hub's front door: it introduces the optional
+  Learning Paths (guided routes toward a domain), shows the visitor's progress
+  across every module, and lets them resume or reset any module. Every module in
+  _data/learn.yml becomes a card linking to its hub; every Learning Path becomes
+  a card linking to its guide.
 
   Progressive enhancement: the page is fully usable with JS off — every card
-  links to its hub, the journey stepper is a static numbered list, and the
+  links to its target, the journey stepper is a static numbered list, and the
   mission copy and ItemList schema are server-rendered. The progress dashboard,
   per-card rings, "continue" targets and reset buttons are populated by
   assets/js/learn.js from localStorage, and stay hidden/empty without it.
+
+  learn.js reads the `learn-paths-data` JSON blob and the data-* hooks below,
+  all keyed on the module `id`. Those identifiers are intentionally left as
+  "path" (data.paths, data-path-card, …) to match the JS; only the visible copy
+  speaks of "modules".
 {%- endcomment -%}
-{%- assign paths = site.data.learn.paths -%}
+{%- assign modules = site.data.learn.modules -%}
 {%- assign grand_total = 0 -%}
-{%- for p in paths -%}
-  {%- for mod in p.modules -%}{%- assign grand_total = grand_total | plus: mod.lessons.size -%}{%- endfor -%}
+{%- for p in modules -%}
+  {%- for unit in p.units -%}{%- assign grand_total = grand_total | plus: unit.lessons.size -%}{%- endfor -%}
 {%- endfor -%}
 
 <main id="content" class="page" role="main">
@@ -37,16 +43,43 @@ layout: default
       {{ content }}
     </article>
 
-    {%- comment -%} ---- Journey stepper: the 6 paths leading to "ship it" ---- {%- endcomment -%}
+    {%- comment -%} ---- Learning Paths: optional domain guides ---- {%- endcomment -%}
+    <section class="learn-paths" aria-labelledby="paths-h">
+      <h2 id="paths-h" class="learn-journey__title">Learning Paths</h2>
+      <p class="learn-journey__lede">
+        Not sure where to start? A <strong>Learning Path</strong> is a guided,
+        ordered route through several modules toward competence in a bigger area —
+        like RF software or hardware. They are guidance only: nothing here is
+        required, and every module can be taken on its own.
+      </p>
+      <ol class="learn-grid">
+        {%- for lp in site.data.learn.learning_paths -%}
+          <li class="learn-card learn-card--path">
+            <a class="learn-card__link" href="{{ '/learn/paths/' | append: lp.id | append: '/' | relative_url }}">
+              <span class="learn-card__body">
+                <span class="learn-card__title">{{ lp.label }}</span>
+                <span class="learn-card__summary">{{ lp.tagline }}</span>
+                <span class="learn-card__meta">
+                  <span class="learn-card__tag">{{ lp.modules.size }} modules</span>
+                </span>
+              </span>
+            </a>
+          </li>
+        {%- endfor -%}
+      </ol>
+    </section>
+
+    {%- comment -%} ---- Journey stepper: the modules leading to "ship it" ---- {%- endcomment -%}
     <section class="learn-journey" aria-labelledby="journey-h">
       <h2 id="journey-h" class="learn-journey__title">Your journey to shipping a project</h2>
       <p class="learn-journey__lede">
-        {{ paths.size }} paths take you from first principles to a real, shipping
-        application like GopherTrunk — an SDR trunking scanner. Follow them in
-        order, or jump straight to what you need. Your progress fills in as you go.
+        {{ modules.size }} modules take you from first principles to a real,
+        shipping application like GopherTrunk — an SDR trunking scanner. Follow
+        them in order, or jump straight to what you need. Your progress fills in
+        as you go.
       </p>
       <ol class="journey" role="list">
-        {%- for p in paths -%}
+        {%- for p in modules -%}
           <li class="journey__step" data-journey-path="{{ p.id }}">
             <a class="journey__link" href="{{ '/learn/' | append: p.id | append: '/' | relative_url }}">
               <span class="journey__marker">
@@ -74,7 +107,7 @@ layout: default
     <section class="learn-dashboard" aria-labelledby="dash-h" hidden data-learn-dashboard>
       <h2 id="dash-h" class="learn-dashboard__title">Your progress</h2>
       <div class="learn-dashboard__grid">
-        <figure class="learn-donut" role="img" aria-label="Overall progress across all learning paths" data-donut-figure>
+        <figure class="learn-donut" role="img" aria-label="Overall progress across all learning modules" data-donut-figure>
           <svg class="learn-donut__svg" viewBox="0 0 120 120" focusable="false" aria-hidden="true">
             <circle class="learn-donut__track" cx="60" cy="60" r="52" />
             <circle class="learn-donut__fill" cx="60" cy="60" r="52"
@@ -87,14 +120,14 @@ layout: default
 
         <ul class="learn-stats" data-learn-stats>
           <li><span class="learn-stats__num" data-stat-lessons>0</span><span class="learn-stats__lbl">lessons done</span></li>
-          <li><span class="learn-stats__num" data-stat-started>0</span><span class="learn-stats__lbl">of {{ paths.size }} paths started</span></li>
-          <li><span class="learn-stats__num" data-stat-completed>0</span><span class="learn-stats__lbl">paths completed</span></li>
+          <li><span class="learn-stats__num" data-stat-started>0</span><span class="learn-stats__lbl">of {{ modules.size }} modules started</span></li>
+          <li><span class="learn-stats__num" data-stat-completed>0</span><span class="learn-stats__lbl">modules completed</span></li>
         </ul>
 
-        <ul class="learn-cluster" data-learn-cluster aria-label="Progress by path">
-          {%- for p in paths -%}
+        <ul class="learn-cluster" data-learn-cluster aria-label="Progress by module">
+          {%- for p in modules -%}
             {%- assign t = 0 -%}
-            {%- for mod in p.modules -%}{%- assign t = t | plus: mod.lessons.size -%}{%- endfor -%}
+            {%- for unit in p.units -%}{%- assign t = t | plus: unit.lessons.size -%}{%- endfor -%}
             <li class="learn-cluster__row" data-cluster-path="{{ p.id }}" data-cluster-total="{{ t }}">
               <span class="learn-cluster__name">{{ p.label }}</span>
               <span class="learn-cluster__track"><span class="learn-cluster__bar" data-cluster-bar></span></span>
@@ -105,14 +138,14 @@ layout: default
       </div>
     </section>
 
-    {%- comment -%} ---- Enhanced path cards ---- {%- endcomment -%}
+    {%- comment -%} ---- Enhanced module cards ---- {%- endcomment -%}
     <div class="learn-modules">
       <section class="learn-module">
-        <h2 class="learn-module__title">Pick a path</h2>
+        <h2 class="learn-module__title">Browse all modules</h2>
         <ol class="learn-grid">
-          {%- for p in paths -%}
+          {%- for p in modules -%}
             {%- assign count = 0 -%}
-            {%- for mod in p.modules -%}{%- assign count = count | plus: mod.lessons.size -%}{%- endfor -%}
+            {%- for unit in p.units -%}{%- assign count = count | plus: unit.lessons.size -%}{%- endfor -%}
             {%- assign base = '/learn/' | append: p.id | append: '/' -%}
             <li class="learn-card learn-card--path" data-path-card="{{ p.id }}" data-path-total="{{ count }}">
               <a class="learn-card__link" href="{{ base | relative_url }}">
@@ -129,7 +162,7 @@ layout: default
                   <span class="learn-card__summary">{{ p.tagline }}</span>
                   <span class="learn-card__meta">
                     <span class="learn-card__time" data-card-count>{{ count }} lessons</span>
-                    <span class="learn-card__tag">{{ p.modules.size }} modules</span>
+                    <span class="learn-card__tag">{{ p.units.size }} units</span>
                   </span>
                 </span>
               </a>
@@ -150,10 +183,10 @@ layout: default
 <script type="application/json" id="learn-paths-data">
 {
   "paths": [
-    {%- for p in paths -%}
+    {%- for p in modules -%}
     {%- assign base = '/learn/' | append: p.id | append: '/' -%}
     {%- assign t = 0 -%}
-    {%- for mod in p.modules -%}{%- assign t = t | plus: mod.lessons.size -%}{%- endfor -%}
+    {%- for unit in p.units -%}{%- assign t = t | plus: unit.lessons.size -%}{%- endfor -%}
     {
       "id": {{ p.id | jsonify }},
       "label": {{ p.label | jsonify }},
@@ -161,8 +194,8 @@ layout: default
       "hubUrl": {{ base | relative_url | jsonify }},
       "lessons": [
         {%- assign k = 0 -%}
-        {%- for mod in p.modules -%}
-          {%- for lesson in mod.lessons -%}
+        {%- for unit in p.units -%}
+          {%- for lesson in unit.lessons -%}
             {%- assign k = k | plus: 1 -%}
             {"slug": {{ lesson.slug | jsonify }}, "title": {{ lesson.title | jsonify }}, "url": {{ base | append: lesson.slug | append: '/' | relative_url | jsonify }}}{%- unless k == t -%},{%- endunless -%}
           {%- endfor -%}
@@ -182,7 +215,7 @@ layout: default
   "@type": "ItemList",
   "name": {{ page.title | jsonify }},
   "itemListElement": [
-    {%- for p in paths -%}
+    {%- for p in modules -%}
     {
       "@type": "ListItem",
       "position": {{ forloop.index }},

@@ -53,18 +53,24 @@ defaults:
       type: pages
     values:
       layout: page
-  # Learning-path lessons under each path get the lesson layout, nav group, and
-  # their `learn_path` id automatically, so individual lessons only declare
-  # slug/title/description. Each path's hub (learn/<id>/index.md) overrides
+  # Learning-module lessons under each module get the lesson layout, nav group,
+  # and their `learn_module` id automatically, so individual lessons only declare
+  # slug/title/description. Each module's hub (learn/<id>/index.md) overrides
   # layout to `learn-hub`; the chooser (learn/index.md) overrides to
-  # `learn-index`. `learn_path` is a custom key — never `page.path`, which is a
+  # `learn-index`; the Learning Path guides (learn/paths/<id>/index.md) use
+  # `learn-path`. `learn_module` is a custom key — never `page.path`, which is a
   # Jekyll built-in used for the "Edit on GitHub" links.
+  - scope:
+      path: "learn/paths"
+      type: pages
+    values:
+      nav_group: Learn
   - scope:
       path: "learn/rf-sdr"
       type: pages
     values:
       layout: lesson
-      learn_path: rf-sdr
+      learn_module: rf-sdr
       nav_group: Learn
       permalink: /learn/rf-sdr/:basename/
   - scope:
@@ -72,15 +78,39 @@ defaults:
       type: pages
     values:
       layout: lesson
-      learn_path: git
+      learn_module: git
       nav_group: Learn
       permalink: /learn/git/:basename/
+  - scope:
+      path: "learn/linux-cli"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: linux-cli
+      nav_group: Learn
+      permalink: /learn/linux-cli/:basename/
+  - scope:
+      path: "learn/networking"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: networking
+      nav_group: Learn
+      permalink: /learn/networking/:basename/
+  - scope:
+      path: "learn/cybersecurity"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: cybersecurity
+      nav_group: Learn
+      permalink: /learn/cybersecurity/:basename/
   - scope:
       path: "learn/intro-software-dev"
       type: pages
     values:
       layout: lesson
-      learn_path: intro-software-dev
+      learn_module: intro-software-dev
       nav_group: Learn
       permalink: /learn/intro-software-dev/:basename/
   - scope:
@@ -88,7 +118,7 @@ defaults:
       type: pages
     values:
       layout: lesson
-      learn_path: digital-trunking
+      learn_module: digital-trunking
       nav_group: Learn
       permalink: /learn/digital-trunking/:basename/
   - scope:
@@ -96,7 +126,7 @@ defaults:
       type: pages
     values:
       layout: lesson
-      learn_path: intro-hardware
+      learn_module: intro-hardware
       nav_group: Learn
       permalink: /learn/intro-hardware/:basename/
   - scope:
@@ -104,15 +134,23 @@ defaults:
       type: pages
     values:
       layout: lesson
-      learn_path: ai-software-dev
+      learn_module: ai-software-dev
       nav_group: Learn
       permalink: /learn/ai-software-dev/:basename/
+  - scope:
+      path: "learn/building-ai"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: building-ai
+      nav_group: Learn
+      permalink: /learn/building-ai/:basename/
   - scope:
       path: "learn/software-licensing"
       type: pages
     values:
       layout: lesson
-      learn_path: software-licensing
+      learn_module: software-licensing
       nav_group: Learn
       permalink: /learn/software-licensing/:basename/
   # Field Guide articles under /reference/ get the reference layout and nav

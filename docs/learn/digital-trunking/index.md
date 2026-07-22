@@ -1,6 +1,6 @@
 ---
 layout: learn-hub
-learn_path: digital-trunking
+learn_module: digital-trunking
 permalink: /learn/digital-trunking/
 title: Learn Digital & Trunked Radio — from analog roots to decoding every system
 description: A free, structured learning path on digital and digital-trunking radio systems — the history of trunking and digital voice, the end-to-end digital signal chain, and every trunked system GopherTrunk decodes (P25, DMR, TETRA, NXDN, Motorola, EDACS, LTR, MPT-1327).
