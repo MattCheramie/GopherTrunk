@@ -79,6 +79,12 @@ type ControlChannel struct {
 	channelType      ChannelType
 	colourCode       uint32
 	colourLearned    bool
+	// mainCarrier is the cell's own carrier number, learned from the
+	// broadcast SYSINFO. With the tuned control-channel frequency it lets a
+	// grant's carrier number resolve to Hz relative to this carrier, without a
+	// configured band plan (see publishGrant).
+	mainCarrier    uint16
+	mainCarrierSet bool
 
 	// pendingSoft holds the per-symbol complex differential (soft
 	// information) for the next Process call, stashed by StashSoft
@@ -456,6 +462,37 @@ func (c *ControlChannel) Ingest(p PDU) {
 	}
 }
 
+// tetraChannelSpacingHz is the TETRA carrier spacing (25 kHz), used to derive a
+// grant carrier's frequency relative to the cell's own carrier.
+const tetraChannelSpacingHz = 25_000
+
+// carrierFrequency derives the Hz of a TETRA carrier number relative to this
+// cell's own carrier (learned from SYSINFO) at 25 kHz spacing. Returns false
+// until both the cell's carrier and the tuned control frequency are known — so
+// an offline replay with no centre frequency simply reports 0.
+func (c *ControlChannel) carrierFrequency(carrier uint16) (uint32, bool) {
+	c.mu.Lock()
+	mc, set := c.mainCarrier, c.mainCarrierSet
+	c.mu.Unlock()
+	if !set || c.freqHz == 0 {
+		return 0, false
+	}
+	hz := int64(c.freqHz) + (int64(carrier)-int64(mc))*tetraChannelSpacingHz
+	if hz <= 0 {
+		return 0, false
+	}
+	return uint32(hz), true
+}
+
+// learnMainCarrier records the cell's own carrier number from a SYSINFO
+// broadcast, so grant carrier numbers can resolve to Hz relative to it.
+func (c *ControlChannel) learnMainCarrier(carrier uint16) {
+	c.mu.Lock()
+	c.mainCarrier = carrier
+	c.mainCarrierSet = true
+	c.mu.Unlock()
+}
+
 func (c *ControlChannel) publishGrant(g VoiceGrant) {
 	if c.bus == nil {
 		return
@@ -468,6 +505,11 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			c.log.Debug("tetra: band-plan resolution failed",
 				"carrier", g.CarrierNumber, "err", err)
 		}
+	} else if hz, ok := c.carrierFrequency(g.CarrierNumber); ok {
+		// No configured band plan: derive the grant frequency relative to this
+		// cell's own carrier (learned from SYSINFO) at 25 kHz TETRA spacing.
+		// Exact for a same-carrier SCBS (carrier == mainCarrier ⇒ the CC freq).
+		freq = hz
 	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
