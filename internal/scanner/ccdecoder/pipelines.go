@@ -1,8 +1,11 @@
 package ccdecoder
 
 import (
+	"context"
 	"log/slog"
+	"math"
 	"sort"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
@@ -610,17 +613,96 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// cut the on-air symbol error rate by ~10x (issue #553).
 		EnableChannelFilter: true,
 	})
-	return &tetraPipeline{rx: rx, cc: cc}, nil
+	return &tetraPipeline{
+		rx:     rx,
+		cc:     cc,
+		log:    opts.Log,
+		system: opts.SystemName,
+		now:    time.Now,
+		// Gate the periodic decode-status line on debug once, up front, so a
+		// production (info-level) decode does no per-chunk clock reads. The
+		// control channel gates its own counter accumulation the same way.
+		debug: opts.Log != nil && opts.Log.Enabled(context.Background(), slog.LevelDebug),
+	}, nil
 }
+
+// tetraStatusInterval throttles the aggregate "tetra: decode status" debug
+// line so a long capture emits a compact health summary a few times a minute
+// rather than once per IQ chunk. Mirrors the ~1 s AFC-status throttle in
+// decoder.go.
+const tetraStatusInterval = 5 * time.Second
 
 type tetraPipeline struct {
-	rx *tetrarx.Receiver
-	cc *tetra.ControlChannel
+	rx      *tetrarx.Receiver
+	cc      *tetra.ControlChannel
+	log     *slog.Logger
+	system  string
+	debug   bool
+	now     func() time.Time // injectable for tests; set to time.Now at construction
+	lastLog time.Time        // wall clock of the previous status line (zero ⇒ not primed)
 }
 
-func (p *tetraPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *tetraPipeline) Reset()                 { p.rx.Reset() }
-func (p *tetraPipeline) Close() error           { return nil }
+func (p *tetraPipeline) Process(iq []complex64) {
+	p.rx.Process(iq)
+	p.maybeLogStatus()
+}
+
+// tetraEffectiveBaud derives the effective symbol rate (baud) and its
+// percentage deviation from the nominal 18000 sym/s over a window of `dibits`
+// symbols spanning `elapsed`. This is the same figure siglab reports as
+// EffectiveBaud = symbols / duration. Returns zeros for a non-positive window.
+func tetraEffectiveBaud(dibits int64, elapsed time.Duration) (baud, devPct float64) {
+	secs := elapsed.Seconds()
+	if secs <= 0 {
+		return 0, 0
+	}
+	baud = float64(dibits) / secs
+	devPct = (baud - tetrarx.SymbolRate) / tetrarx.SymbolRate * 100
+	return baud, devPct
+}
+
+// maybeLogStatus emits a throttled decode-health summary at debug level:
+// effective baud + deviation (symbols over wall time, the same figure siglab
+// reports as EffectiveBaud), the AFC's residual carrier offset, lock state and
+// the per-window decode counts. No-op unless the logger is at debug level.
+func (p *tetraPipeline) maybeLogStatus() {
+	if !p.debug || p.log == nil {
+		return
+	}
+	now := p.now()
+	if p.lastLog.IsZero() {
+		p.lastLog = now // prime the window; first line lands one interval later
+		return
+	}
+	elapsed := now.Sub(p.lastLog)
+	if elapsed < tetraStatusInterval {
+		return
+	}
+	p.lastLog = now
+
+	st := p.cc.DrainStats()
+	baud, dev := tetraEffectiveBaud(st.Dibits, elapsed)
+	p.log.Debug("tetra: decode status",
+		"system", p.system,
+		"locked", p.cc.Locked(),
+		"carrier_off_hz", math.Round(p.rx.CarrierOffsetHz()*10)/10,
+		"baud", math.Round(baud),
+		"baud_dev_pct", math.Round(dev*100)/100,
+		"sb_bursts", st.SBBursts,
+		"bsch_ok", st.BSCHOK,
+		"bsch_fail", st.BSCHFail,
+		"sysinfo", st.SysInfo,
+		"sch_pdus", st.SCHPDUs,
+		"grants", st.Grants,
+		"colour_code", p.cc.Topology().ColourCode&0x3F,
+	)
+}
+
+func (p *tetraPipeline) Reset() {
+	p.rx.Reset()
+	p.lastLog = time.Time{}
+}
+func (p *tetraPipeline) Close() error { return nil }
 
 // TopologySnapshot surfaces the TETRA single-cell identity (MCC/MNC/LA + colour
 // code) the control channel learned. No adjacent cells for TETRA.

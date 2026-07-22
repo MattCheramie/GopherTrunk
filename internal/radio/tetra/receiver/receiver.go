@@ -291,6 +291,17 @@ func (r *Receiver) Process(iq []complex64) {
 	r.dibitBase += len(r.dibits)
 }
 
+// CarrierOffsetHz reports the residual carrier-frequency offset the AFC most
+// recently estimated, in Hz. Zero when the AFC is disabled (EnableAFC off).
+// Diagnostic only — surfaced in the connector's periodic decode-status line so
+// an operator can see how far off-centre the tuned control channel sits.
+func (r *Receiver) CarrierOffsetHz() float64 {
+	if r.afc == nil {
+		return 0
+	}
+	return r.afc.OffsetHz(SymbolRate)
+}
+
 // Reset returns the receiver to its initial state. Call on stream
 // re-sync (control-channel hunt success, IQ underrun recovery) so
 // the matched filter + differential decoder shed their history and
