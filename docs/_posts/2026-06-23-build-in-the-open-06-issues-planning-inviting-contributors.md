@@ -106,6 +106,31 @@ This is the highest-leverage habit on this whole list: it ties the *why* (the
 issue) to the *what* (the PR) permanently, and it keeps your issue tracker
 honest by closing work as it lands instead of leaving stale tickets.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 100" width="660" height="100" role="img" aria-label="The issue lifecycle as a left-to-right pipeline: an issue is opened, then triaged and labeled by type, area and signal, then attached to a milestone and assigned, then linked from a pull request with Closes hash-N, and finally auto-closed when that pull request merges.">
+  <rect x="6" y="30" width="116" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="64" y="52" text-anchor="middle" fill="currentColor" font-size="11">opened</text>
+  <text x="64" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="9">bug / feature</text>
+  <line x1="122" y1="52" x2="132" y2="52" stroke="currentColor"/><polygon points="132,48 138,52 132,56" fill="currentColor"/>
+  <rect x="138" y="30" width="116" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="196" y="52" text-anchor="middle" fill="currentColor" font-size="11">triaged</text>
+  <text x="196" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="9">type · area · signal</text>
+  <line x1="254" y1="52" x2="264" y2="52" stroke="currentColor"/><polygon points="264,48 270,52 264,56" fill="currentColor"/>
+  <rect x="270" y="30" width="116" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="328" y="52" text-anchor="middle" fill="currentColor" font-size="11">milestone</text>
+  <text x="328" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="9">+ assignee</text>
+  <line x1="386" y1="52" x2="396" y2="52" stroke="currentColor"/><polygon points="396,48 402,52 396,56" fill="currentColor"/>
+  <rect x="402" y="30" width="116" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="460" y="52" text-anchor="middle" fill="var(--accent)" font-size="11">pull request</text>
+  <text x="460" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="9">Closes #N</text>
+  <line x1="518" y1="52" x2="528" y2="52" stroke="currentColor"/><polygon points="528,48 534,52 528,56" fill="currentColor"/>
+  <rect x="534" y="30" width="116" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="592" y="52" text-anchor="middle" fill="var(--accent)" font-size="11">merged</text>
+  <text x="592" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="9">auto-closed</text>
+</svg>
+<figcaption>An issue's path on GopherTrunk: opened, triaged with the type·area·signal labels, milestoned, then closed automatically when a <code>Closes #N</code> pull request merges to <code>main</code>.</figcaption>
+</figure>
+
 ## How do I invite contributors?
 
 People help projects where helping is *easy*. Think of it as a funnel — every
@@ -126,6 +151,29 @@ friction point loses people — and reduce friction at each step:
 
 You don't need all of these on day one. A `CONTRIBUTING.md` and a couple of
 good-first-issues are the highest-value starting pair.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 640 208" width="640" height="208" role="img" aria-label="The contributor funnel: each step from finding the repository to a merged pull request is paired with the file that lowers its friction. Find the repo maps to README and topics; want to help maps to CONTRIBUTING.md; pick a task maps to the good first issue label; submit maps to the issue and PR templates; get reviewed maps to CODEOWNERS.">
+  <text x="120" y="22" text-anchor="middle" fill="var(--fg-muted)" font-size="10">contributor step</text>
+  <text x="491" y="22" text-anchor="middle" fill="var(--fg-muted)" font-size="10">what lowers the friction</text>
+  <rect x="24" y="34" width="192" height="26" rx="5" fill="none" stroke="currentColor"/><text x="120" y="51" text-anchor="middle" fill="currentColor" font-size="11">find the repo</text>
+  <line x1="216" y1="47" x2="356" y2="47" stroke="currentColor"/><polygon points="356,43 366,47 356,51" fill="currentColor"/>
+  <rect x="366" y="34" width="250" height="26" rx="5" fill="none" stroke="currentColor"/><text x="491" y="51" text-anchor="middle" fill="currentColor" font-size="11">README + topics</text>
+  <rect x="24" y="68" width="192" height="26" rx="5" fill="none" stroke="currentColor"/><text x="120" y="85" text-anchor="middle" fill="currentColor" font-size="11">want to help</text>
+  <line x1="216" y1="81" x2="356" y2="81" stroke="currentColor"/><polygon points="356,77 366,81 356,85" fill="currentColor"/>
+  <rect x="366" y="68" width="250" height="26" rx="5" fill="none" stroke="currentColor"/><text x="491" y="85" text-anchor="middle" fill="currentColor" font-size="11">CONTRIBUTING.md</text>
+  <rect x="24" y="102" width="192" height="26" rx="5" fill="none" stroke="var(--accent)"/><text x="120" y="119" text-anchor="middle" fill="var(--accent)" font-size="11">pick a task</text>
+  <line x1="216" y1="115" x2="356" y2="115" stroke="currentColor"/><polygon points="356,111 366,115 356,119" fill="currentColor"/>
+  <rect x="366" y="102" width="250" height="26" rx="5" fill="none" stroke="var(--accent)"/><text x="491" y="119" text-anchor="middle" fill="var(--accent)" font-size="11">good first issue</text>
+  <rect x="24" y="136" width="192" height="26" rx="5" fill="none" stroke="currentColor"/><text x="120" y="153" text-anchor="middle" fill="currentColor" font-size="11">submit a PR</text>
+  <line x1="216" y1="149" x2="356" y2="149" stroke="currentColor"/><polygon points="356,145 366,149 356,153" fill="currentColor"/>
+  <rect x="366" y="136" width="250" height="26" rx="5" fill="none" stroke="currentColor"/><text x="491" y="153" text-anchor="middle" fill="currentColor" font-size="11">issue + PR templates</text>
+  <rect x="24" y="170" width="192" height="26" rx="5" fill="none" stroke="currentColor"/><text x="120" y="187" text-anchor="middle" fill="currentColor" font-size="11">get reviewed</text>
+  <line x1="216" y1="183" x2="356" y2="183" stroke="currentColor"/><polygon points="356,179 366,183 356,187" fill="currentColor"/>
+  <rect x="366" y="170" width="250" height="26" rx="5" fill="none" stroke="currentColor"/><text x="491" y="187" text-anchor="middle" fill="currentColor" font-size="11">CODEOWNERS</text>
+</svg>
+<figcaption>Every step of the funnel is backed by a file that removes a question: the pair a project should ship first is <code>CONTRIBUTING.md</code> plus a few <code>good first issue</code> tickets.</figcaption>
+</figure>
 
 ## How much access should I give collaborators?
 

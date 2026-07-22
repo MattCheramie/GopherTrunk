@@ -82,6 +82,30 @@ time for you to test. You can even automate it: `git bisect run ./test.sh` lets
 the test suite find the culprit hands-free across hundreds of commits in a dozen
 steps.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 150" width="660" height="150" role="img" aria-label="A commit graph illustrating git bisect: a linear chain of eight commits runs from a known-good commit on the left to a known-bad commit on the right; bisect checks out the midpoint, marks it good, halves the range, checks the next midpoint, marks it bad, and converges on the single first-bad commit.">
+  <line x1="30" y1="40" x2="630" y2="40" stroke="currentColor"/>
+  <circle cx="40" cy="40" r="7" fill="none" stroke="var(--accent)"/>
+  <circle cx="124" cy="40" r="7" fill="none" stroke="currentColor"/>
+  <circle cx="208" cy="40" r="7" fill="none" stroke="currentColor"/>
+  <circle cx="292" cy="40" r="7" fill="none" stroke="currentColor"/>
+  <circle cx="376" cy="40" r="7" fill="none" stroke="currentColor"/>
+  <circle cx="460" cy="40" r="7" fill="var(--accent)" stroke="var(--accent)"/>
+  <circle cx="544" cy="40" r="7" fill="none" stroke="currentColor"/>
+  <circle cx="628" cy="40" r="7" fill="none" stroke="var(--accent)"/>
+  <text x="40" y="24" text-anchor="middle" fill="var(--accent)" font-size="9">good</text>
+  <text x="628" y="24" text-anchor="middle" fill="var(--accent)" font-size="9">bad</text>
+  <text x="460" y="24" text-anchor="middle" fill="var(--accent)" font-size="9">first bad</text>
+  <line x1="292" y1="66" x2="292" y2="48" stroke="var(--fg-muted)"/><polygon points="288,50 292,42 296,50" fill="var(--fg-muted)"/>
+  <text x="292" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="9">1. midpoint → test good</text>
+  <line x1="460" y1="112" x2="460" y2="50" stroke="var(--fg-muted)"/><polygon points="456,52 460,44 464,52" fill="var(--fg-muted)"/>
+  <text x="460" y="100" text-anchor="middle" fill="var(--fg-muted)" font-size="9">2. new midpoint → test bad</text>
+  <text x="460" y="126" text-anchor="middle" fill="currentColor" font-size="9">3. range = one commit → culprit found</text>
+  <text x="330" y="146" text-anchor="middle" fill="var(--fg-muted)" font-size="8">git bisect run ./test.sh — ~10 tests over 1000 commits</text>
+</svg>
+<figcaption>Bisect binary-searches the history between a known-good and known-bad commit, halving the suspect range each test until one commit remains — the change that introduced the bug.</figcaption>
+</figure>
+
 ### Reflog: undo almost anything
 
 `git reflog` records *every* move of `HEAD` — including after a bad reset, a
@@ -128,6 +152,32 @@ The platform layered on top of Git is deep. The high-value pieces:
 
 You won't use all of these on day one, but knowing they exist means you reach for
 the right tool when the need shows up.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 200" width="660" height="200" role="img" aria-label="A two-column feature map. The left column, Git power tools operating on local history, lists interactive rebase, cherry-pick, stash, bisect, reflog, and worktrees. The right column, the GitHub platform layered on the same repo, lists Discussions, code search, Codespaces, GHCR packages, Environments, and the GraphQL API.">
+  <rect x="16" y="14" width="300" height="176" rx="6" fill="none" stroke="currentColor"/>
+  <text x="166" y="34" text-anchor="middle" fill="currentColor" font-size="11">Git power tools</text>
+  <text x="166" y="47" text-anchor="middle" fill="var(--fg-muted)" font-size="8">operate on local history</text>
+  <rect x="34" y="58" width="128" height="26" rx="5" fill="none" stroke="var(--accent)"/><text x="98" y="75" text-anchor="middle" fill="var(--accent)" font-size="10">rebase -i</text>
+  <rect x="170" y="58" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="234" y="75" text-anchor="middle" fill="currentColor" font-size="10">cherry-pick</text>
+  <rect x="34" y="90" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="98" y="107" text-anchor="middle" fill="currentColor" font-size="10">stash</text>
+  <rect x="170" y="90" width="128" height="26" rx="5" fill="none" stroke="var(--accent)"/><text x="234" y="107" text-anchor="middle" fill="var(--accent)" font-size="10">bisect</text>
+  <rect x="34" y="122" width="128" height="26" rx="5" fill="none" stroke="var(--accent)"/><text x="98" y="139" text-anchor="middle" fill="var(--accent)" font-size="10">reflog</text>
+  <rect x="170" y="122" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="234" y="139" text-anchor="middle" fill="currentColor" font-size="10">worktree</text>
+  <rect x="34" y="154" width="264" height="26" rx="5" fill="none" stroke="currentColor"/><text x="166" y="171" text-anchor="middle" fill="currentColor" font-size="10">resolve conflicts deliberately</text>
+  <rect x="344" y="14" width="300" height="176" rx="6" fill="none" stroke="currentColor"/>
+  <text x="494" y="34" text-anchor="middle" fill="currentColor" font-size="11">GitHub platform</text>
+  <text x="494" y="47" text-anchor="middle" fill="var(--fg-muted)" font-size="8">layered on the same repo</text>
+  <rect x="362" y="58" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="426" y="75" text-anchor="middle" fill="currentColor" font-size="10">Discussions</text>
+  <rect x="498" y="58" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="562" y="75" text-anchor="middle" fill="currentColor" font-size="10">code search</text>
+  <rect x="362" y="90" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="426" y="107" text-anchor="middle" fill="currentColor" font-size="10">Codespaces</text>
+  <rect x="498" y="90" width="128" height="26" rx="5" fill="none" stroke="var(--accent)"/><text x="562" y="107" text-anchor="middle" fill="var(--accent)" font-size="10">GHCR</text>
+  <rect x="362" y="122" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="426" y="139" text-anchor="middle" fill="currentColor" font-size="10">Environments</text>
+  <rect x="498" y="122" width="128" height="26" rx="5" fill="none" stroke="currentColor"/><text x="562" y="139" text-anchor="middle" fill="currentColor" font-size="10">GraphQL API</text>
+  <rect x="362" y="154" width="264" height="26" rx="5" fill="none" stroke="var(--fg-muted)"/><text x="494" y="171" text-anchor="middle" fill="var(--fg-muted)" font-size="9">Insights · saved replies · shortcuts</text>
+</svg>
+<figcaption>The second tier at a glance: Git power tools that reshape local history on the left, and the GitHub platform features that layer on the same repo on the right — GopherTrunk uses the highlighted ones for real.</figcaption>
+</figure>
 
 ## How GopherTrunk does it
 

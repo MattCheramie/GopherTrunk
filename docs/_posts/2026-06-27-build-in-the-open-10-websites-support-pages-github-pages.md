@@ -53,6 +53,27 @@ JavaScript — there's nothing to run, nothing to patch, and nothing to pay for.
 marketing sites are all static by nature, and a static site is the fastest and
 most secure thing you can ship.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 120" width="660" height="120" role="img" aria-label="The GitHub Pages deploy flow: a push to docs or the daily cron triggers the pages.yml workflow, which runs a Jekyll build, which deploys to GitHub Pages on a CDN over HTTPS, which serves the custom domain gophertrunk.org named in the CNAME file.">
+  <rect x="10" y="34" width="130" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="75" y="58" text-anchor="middle" fill="currentColor" font-size="11">git push</text>
+  <text x="75" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">docs/** or cron</text>
+  <line x1="140" y1="60" x2="172" y2="60" stroke="currentColor"/><polygon points="172,56 178,60 172,64" fill="currentColor"/>
+  <rect x="178" y="34" width="160" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="258" y="58" text-anchor="middle" fill="currentColor" font-size="11">pages.yml</text>
+  <text x="258" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">Actions · Jekyll build</text>
+  <line x1="338" y1="60" x2="370" y2="60" stroke="currentColor"/><polygon points="370,56 376,60 370,64" fill="currentColor"/>
+  <rect x="376" y="34" width="130" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="441" y="58" text-anchor="middle" fill="currentColor" font-size="11">GitHub Pages</text>
+  <text x="441" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">CDN · HTTPS</text>
+  <line x1="506" y1="60" x2="538" y2="60" stroke="currentColor"/><polygon points="538,56 544,60 538,64" fill="currentColor"/>
+  <rect x="544" y="34" width="110" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="599" y="58" text-anchor="middle" fill="var(--accent)" font-size="11">gophertrunk.org</text>
+  <text x="599" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">CNAME</text>
+</svg>
+<figcaption>Every push (or the daily <code>cron</code>) runs <code>pages.yml</code>, which builds the Jekyll site and deploys it to GitHub Pages — served over HTTPS on the domain in <code>docs/CNAME</code>.</figcaption>
+</figure>
+
 ## Why use a static-site generator?
 
 Writing raw HTML for every page gets old fast. A **static-site generator** lets
@@ -101,6 +122,25 @@ Beyond the docs, a few pages do real work:
   more.
 - **A blog.** For release notes, tutorials, and build-in-the-open posts like this
   one — which doubles as SEO and a reason for people to come back.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 540 210" width="540" height="210" role="img" aria-label="The site page structure fanning out from the repository root: a landing page synthesized from the README, the docs folder of guides, reference and learning pages, a support page, a self-drip-releasing blog, and a FUNDING.yml that renders the Sponsor button.">
+  <rect x="20" y="80" width="120" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="80" y="102" text-anchor="middle" fill="currentColor" font-size="11">site root</text>
+  <text x="80" y="117" text-anchor="middle" fill="var(--fg-muted)" font-size="9">docs/ folder</text>
+  <line x1="140" y1="104" x2="242" y2="29" stroke="currentColor"/><polygon points="243,25 250,29 240,35" fill="currentColor"/>
+  <line x1="140" y1="104" x2="242" y2="67" stroke="currentColor"/><polygon points="242,63 250,67 241,73" fill="currentColor"/>
+  <line x1="140" y1="104" x2="242" y2="105" stroke="currentColor"/><polygon points="242,101 250,105 242,109" fill="currentColor"/>
+  <line x1="140" y1="104" x2="242" y2="143" stroke="currentColor"/><polygon points="242,139 250,143 241,149" fill="currentColor"/>
+  <line x1="140" y1="104" x2="242" y2="181" stroke="currentColor"/><polygon points="243,177 250,181 240,187" fill="currentColor"/>
+  <rect x="250" y="14" width="260" height="30" rx="5" fill="none" stroke="currentColor"/><text x="380" y="33" text-anchor="middle" fill="currentColor" font-size="10">landing page — index.md (from README)</text>
+  <rect x="250" y="52" width="260" height="30" rx="5" fill="none" stroke="currentColor"/><text x="380" y="71" text-anchor="middle" fill="currentColor" font-size="10">docs/ — learn · reference · guides</text>
+  <rect x="250" y="90" width="260" height="30" rx="5" fill="none" stroke="currentColor"/><text x="380" y="109" text-anchor="middle" fill="currentColor" font-size="10">support.md — get help</text>
+  <rect x="250" y="128" width="260" height="30" rx="5" fill="none" stroke="var(--accent)"/><text x="380" y="147" text-anchor="middle" fill="var(--accent)" font-size="10">blog — _posts, drip-released</text>
+  <rect x="250" y="166" width="260" height="30" rx="5" fill="none" stroke="currentColor"/><text x="380" y="185" text-anchor="middle" fill="currentColor" font-size="10">FUNDING.yml — Sponsor button</text>
+</svg>
+<figcaption>The pages a real project ships, all from one repo: a landing page synthesized from the README, the <code>docs/</code> tree, a support page, a <code>FUNDING.yml</code> sponsor button, and a blog that drip-releases itself.</figcaption>
+</figure>
 
 ## Running a blog (and drip-releasing posts)
 

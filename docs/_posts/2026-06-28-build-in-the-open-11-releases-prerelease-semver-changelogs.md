@@ -78,6 +78,30 @@ the number is lying and your users stop trusting it. When in doubt about whether
 something is a feature or a fix, ask: *could this surprise someone who upgrades
 without reading?* If yes, it's at least a MINOR.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 168" width="660" height="168" role="img" aria-label="The three SemVer bump rules applied to version 1.2.3: a breaking change bumps MAJOR to 2.0.0 and resets minor and patch; a backward-compatible feature bumps MINOR to 1.3.0 and resets patch; a bug fix bumps PATCH to 1.2.4.">
+  <rect x="270" y="12" width="120" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="330" y="27" text-anchor="middle" fill="currentColor" font-size="13">1.2.3</text>
+  <text x="330" y="40" text-anchor="middle" fill="var(--fg-muted)" font-size="8">current version</text>
+  <line x1="300" y1="46" x2="150" y2="84" stroke="currentColor"/><polygon points="153,79 143,86 156,88" fill="currentColor"/>
+  <line x1="330" y1="46" x2="330" y2="84" stroke="currentColor"/><polygon points="326,84 330,94 334,84" fill="currentColor"/>
+  <line x1="360" y1="46" x2="510" y2="84" stroke="currentColor"/><polygon points="504,79 517,86 507,88" fill="currentColor"/>
+  <rect x="26" y="96" width="196" height="58" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="124" y="114" text-anchor="middle" fill="var(--accent)" font-size="11">MAJOR → 2.0.0</text>
+  <text x="124" y="130" text-anchor="middle" fill="currentColor" font-size="9">breaking change</text>
+  <text x="124" y="144" text-anchor="middle" fill="var(--fg-muted)" font-size="8">read notes before upgrade</text>
+  <rect x="232" y="96" width="196" height="58" rx="6" fill="none" stroke="currentColor"/>
+  <text x="330" y="114" text-anchor="middle" fill="currentColor" font-size="11">MINOR → 1.3.0</text>
+  <text x="330" y="130" text-anchor="middle" fill="currentColor" font-size="9">new feature, compatible</text>
+  <text x="330" y="144" text-anchor="middle" fill="var(--fg-muted)" font-size="8">safe to upgrade</text>
+  <rect x="438" y="96" width="196" height="58" rx="6" fill="none" stroke="currentColor"/>
+  <text x="536" y="114" text-anchor="middle" fill="currentColor" font-size="11">PATCH → 1.2.4</text>
+  <text x="536" y="130" text-anchor="middle" fill="currentColor" font-size="9">bug fix, no API change</text>
+  <text x="536" y="144" text-anchor="middle" fill="var(--fg-muted)" font-size="8">always safe</text>
+</svg>
+<figcaption>What each number promises: bump MAJOR for a breaking change, MINOR for a backward-compatible feature, PATCH for a fix — and reset the lower fields to zero.</figcaption>
+</figure>
+
 A subtle but important rule: **everything below `1.0.0` is a free-for-all.**
 SemVer §4 says the public API should not be considered stable until `1.0.0`. A
 `0.x` version is itself a signal — "I'm still figuring out the shape of this,
@@ -145,6 +169,34 @@ the binary can report exactly which release and commit it came from. In Go this
 is `-ldflags "-X pkg.Version=..."`; other ecosystems have equivalents. And always
 publish a `SHA256SUMS` file so anyone can verify the download wasn't corrupted or
 tampered with.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="The release timeline: an Unreleased changelog section fills up as PRs merge; pushing a v-prefixed tag triggers CI to build artifacts and checksums; a 0.x or -rc tag publishes as a pre-release, while a clean v1.0.0-plus tag publishes as the latest stable release, and the Unreleased heading is renamed to the dated version.">
+  <line x1="24" y1="40" x2="636" y2="40" stroke="var(--fg-muted)"/><polygon points="636,36 646,40 636,44" fill="var(--fg-muted)"/>
+  <rect x="24" y="52" width="150" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="99" y="70" text-anchor="middle" fill="currentColor" font-size="10">## [Unreleased]</text>
+  <text x="99" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="8">filled as PRs merge</text>
+  <text x="99" y="94" text-anchor="middle" fill="var(--fg-muted)" font-size="8">Added · Fixed · Changed</text>
+  <line x1="174" y1="75" x2="206" y2="75" stroke="currentColor"/><polygon points="206,71 216,75 206,79" fill="currentColor"/>
+  <rect x="216" y="52" width="150" height="46" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="291" y="70" text-anchor="middle" fill="var(--accent)" font-size="10">git tag vX.Y.Z</text>
+  <text x="291" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="8">on: push tags v*.*.*</text>
+  <text x="291" y="94" text-anchor="middle" fill="var(--fg-muted)" font-size="8">triggers release.yml</text>
+  <line x1="366" y1="75" x2="398" y2="75" stroke="currentColor"/><polygon points="398,71 408,75 398,79" fill="currentColor"/>
+  <rect x="408" y="52" width="150" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="483" y="70" text-anchor="middle" fill="currentColor" font-size="10">CI build matrix</text>
+  <text x="483" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="8">ldflags version stamp</text>
+  <text x="483" y="94" text-anchor="middle" fill="var(--fg-muted)" font-size="8">+ SHA256SUMS</text>
+  <line x1="483" y1="98" x2="483" y2="120" stroke="currentColor"/><polygon points="479,120 483,130 487,120" fill="currentColor"/>
+  <rect x="330" y="132" width="146" height="34" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="403" y="148" text-anchor="middle" fill="var(--fg-muted)" font-size="10">v0.x / -rc.1</text>
+  <text x="403" y="160" text-anchor="middle" fill="var(--fg-muted)" font-size="8">prerelease: true</text>
+  <rect x="490" y="132" width="146" height="34" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="563" y="148" text-anchor="middle" fill="var(--accent)" font-size="10">v1.0.0+</text>
+  <text x="563" y="160" text-anchor="middle" fill="var(--fg-muted)" font-size="8">latest stable release</text>
+</svg>
+<figcaption>One tag drives the whole timeline: the <code>[Unreleased]</code> changelog fills as PRs merge, a pushed <code>v*.*.*</code> tag triggers the build, and the version pattern decides pre-release versus latest.</figcaption>
+</figure>
 
 ## How GopherTrunk does it
 

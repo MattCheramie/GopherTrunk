@@ -98,6 +98,27 @@ trying to be two of these at once. A tutorial bloated with reference detail
 loses the beginner; a reference padded with tutorial hand-holding annoys the
 expert. Split them, and each gets clearer.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 520 236" width="520" height="236" role="img" aria-label="The Diátaxis framework as four quadrants: tutorials are learning-oriented, how-to guides are task-oriented, explanation is understanding-oriented and reference is information-oriented. The top row is practical and the bottom row is theoretical; the left column serves study and the right column serves work.">
+  <text x="245" y="20" text-anchor="middle" fill="var(--fg-muted)" font-size="9">practical — steps you follow</text>
+  <rect x="50" y="30" width="190" height="82" rx="6" fill="none" stroke="currentColor"/>
+  <text x="145" y="66" text-anchor="middle" fill="var(--accent)" font-size="12">Tutorials</text>
+  <text x="145" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="9">learning-oriented</text>
+  <rect x="250" y="30" width="190" height="82" rx="6" fill="none" stroke="currentColor"/>
+  <text x="345" y="66" text-anchor="middle" fill="currentColor" font-size="12">How-to guides</text>
+  <text x="345" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="9">task-oriented</text>
+  <rect x="50" y="120" width="190" height="82" rx="6" fill="none" stroke="currentColor"/>
+  <text x="145" y="156" text-anchor="middle" fill="currentColor" font-size="12">Explanation</text>
+  <text x="145" y="174" text-anchor="middle" fill="var(--fg-muted)" font-size="9">understanding-oriented</text>
+  <rect x="250" y="120" width="190" height="82" rx="6" fill="none" stroke="currentColor"/>
+  <text x="345" y="156" text-anchor="middle" fill="currentColor" font-size="12">Reference</text>
+  <text x="345" y="174" text-anchor="middle" fill="var(--fg-muted)" font-size="9">information-oriented</text>
+  <text x="245" y="216" text-anchor="middle" fill="var(--fg-muted)" font-size="9">theoretical — knowledge you absorb</text>
+  <text x="16" y="145" fill="var(--fg-muted)" font-size="9" transform="rotate(-90 16 145)">study ← → work</text>
+</svg>
+<figcaption>Diátaxis names four kinds of doc so each stays pure; a page that feels muddled is usually two quadrants at once and should be split.</figcaption>
+</figure>
+
 ## Keep docs next to the code
 
 Wherever it's reasonable, keep documentation **in the repository**, in a `/docs`
@@ -124,6 +145,30 @@ first-class part of the repo, and the layout maps cleanly onto everything above:
   [Pages landing page]({{ '/' | relative_url }}) is *synthesized from the README
   at build time* (see Part 10), so the front door and the homepage never drift
   apart. The README links out to the deeper docs rather than absorbing them.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 640 120" width="640" height="120" role="img" aria-label="The source-to-site build flow: README.md is synthesized into docs/index.md, which sits alongside the docs folder of learn, reference and guides pages; Jekyll builds those Markdown sources; and GitHub Pages serves the result at gophertrunk.org.">
+  <rect x="10" y="34" width="120" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="70" y="58" text-anchor="middle" fill="currentColor" font-size="11">README.md</text>
+  <text x="70" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">the front door</text>
+  <text x="149" y="52" text-anchor="middle" fill="var(--fg-muted)" font-size="8">synthesize</text>
+  <line x1="130" y1="60" x2="162" y2="60" stroke="currentColor"/><polygon points="162,56 168,60 162,64" fill="currentColor"/>
+  <rect x="168" y="34" width="150" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="243" y="55" text-anchor="middle" fill="currentColor" font-size="11">docs/</text>
+  <text x="243" y="69" text-anchor="middle" fill="var(--fg-muted)" font-size="8">index.md · learn</text>
+  <text x="243" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">reference · guides</text>
+  <line x1="318" y1="60" x2="350" y2="60" stroke="currentColor"/><polygon points="350,56 356,60 350,64" fill="currentColor"/>
+  <rect x="356" y="34" width="110" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="411" y="58" text-anchor="middle" fill="currentColor" font-size="11">Jekyll</text>
+  <text x="411" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">build</text>
+  <line x1="466" y1="60" x2="498" y2="60" stroke="currentColor"/><polygon points="498,56 504,60 498,64" fill="currentColor"/>
+  <rect x="504" y="34" width="126" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="567" y="58" text-anchor="middle" fill="var(--accent)" font-size="11">gophertrunk.org</text>
+  <text x="567" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">GitHub Pages</text>
+</svg>
+<figcaption>One source of truth: the README is synthesized into <code>docs/index.md</code> at build time, so the homepage and the front door can never drift apart.</figcaption>
+</figure>
+
 - **The standard files are all present.** `CONTRIBUTING.md` documents the build,
   test, branch, and PR conventions (including the table of `make` targets and the
   opt-in hardware-test env vars); `SECURITY.md` carries the threat model and

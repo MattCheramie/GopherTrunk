@@ -73,6 +73,32 @@ Two habits make this trustworthy. First, **ask for sources or reasoning**, not
 just conclusions, so you can sanity-check. Second, remember Claude is generating
 candidates — the *judgment* about what's actually worth building is yours.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 640 190" width="640" height="190" role="img" aria-label="An AI-assisted planning loop: your problem statement feeds Claude Code, which proposes a domain map, a competitor scan, and a candidate feature list; you prioritize those candidates into Must, Should, Could and Won't; and a refined prompt loops back to Claude. A CLAUDE.md file supplies standing rules to every pass.">
+  <rect x="16" y="76" width="130" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="81" y="94" text-anchor="middle" fill="currentColor" font-size="10">problem</text>
+  <text x="81" y="108" text-anchor="middle" fill="currentColor" font-size="10">statement</text>
+  <line x1="146" y1="98" x2="182" y2="98" stroke="currentColor"/><polygon points="182,94 192,98 182,102" fill="currentColor"/>
+  <rect x="192" y="70" width="170" height="56" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="277" y="90" text-anchor="middle" fill="var(--accent)" font-size="10">Claude proposes</text>
+  <text x="277" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="8">domain map · competitor scan</text>
+  <text x="277" y="116" text-anchor="middle" fill="var(--fg-muted)" font-size="8">candidate feature list</text>
+  <line x1="362" y1="98" x2="398" y2="98" stroke="currentColor"/><polygon points="398,94 408,98 398,102" fill="currentColor"/>
+  <rect x="408" y="70" width="170" height="56" rx="6" fill="none" stroke="currentColor"/>
+  <text x="493" y="90" text-anchor="middle" fill="currentColor" font-size="10">you prioritize</text>
+  <text x="493" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="8">Must · Should</text>
+  <text x="493" y="116" text-anchor="middle" fill="var(--fg-muted)" font-size="8">Could · Won't</text>
+  <line x1="493" y1="126" x2="493" y2="158" stroke="currentColor"/>
+  <line x1="493" y1="158" x2="277" y2="158" stroke="currentColor"/>
+  <line x1="277" y1="158" x2="277" y2="126" stroke="currentColor"/><polygon points="273,134 277,124 281,134" fill="currentColor"/>
+  <text x="385" y="153" text-anchor="middle" fill="var(--fg-muted)" font-size="8">refine the prompt, repeat</text>
+  <rect x="192" y="16" width="170" height="26" rx="6" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="277" y="33" text-anchor="middle" fill="var(--fg-muted)" font-size="9">CLAUDE.md · standing rules</text>
+  <line x1="277" y1="42" x2="277" y2="68" stroke="var(--fg-muted)" stroke-dasharray="4 3"/><polygon points="273,60 277,70 281,60" fill="var(--fg-muted)"/>
+</svg>
+<figcaption>The AI-assisted planning loop: Claude proposes candidates, you prioritize with MoSCoW, and a refined prompt loops back — with <code>CLAUDE.md</code> supplying standing rules to every pass.</figcaption>
+</figure>
+
 ## From brainstorm to a prioritized list
 
 A brainstorm gives you breadth; a project needs a spine. Converge the long list
@@ -125,6 +151,27 @@ Keep the README's snapshot short and link out to deeper planning documents — a
 and a `CHANGELOG.md` for what's already shipped. The README summarizes; those
 docs carry the detail. Update the snapshot whenever reality changes, and it stays
 trustworthy.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 168" width="660" height="168" role="img" aria-label="The flow from a prioritized feature list into a README that doubles as a roadmap: the list becomes the README's what-is-this, quick start, features, and status snapshot; the status snapshot links out to roadmap.md, status.md, and CHANGELOG.md; and a build step synthesizes the website landing page from the same README.">
+  <rect x="12" y="60" width="120" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="72" y="80" text-anchor="middle" fill="currentColor" font-size="10">prioritized</text>
+  <text x="72" y="94" text-anchor="middle" fill="currentColor" font-size="10">feature list</text>
+  <line x1="132" y1="84" x2="164" y2="84" stroke="currentColor"/><polygon points="164,80 174,84 164,88" fill="currentColor"/>
+  <rect x="174" y="46" width="150" height="76" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="249" y="64" text-anchor="middle" fill="var(--accent)" font-size="11">README.md</text>
+  <text x="249" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">what is this? · quick start</text>
+  <text x="249" y="92" text-anchor="middle" fill="var(--fg-muted)" font-size="8">features</text>
+  <text x="249" y="110" text-anchor="middle" fill="currentColor" font-size="9">status snapshot</text>
+  <line x1="324" y1="84" x2="356" y2="84" stroke="currentColor"/><polygon points="356,80 366,84 356,88" fill="currentColor"/>
+  <rect x="366" y="40" width="150" height="26" rx="5" fill="none" stroke="var(--fg-muted)"/><text x="441" y="57" text-anchor="middle" fill="var(--fg-muted)" font-size="9">docs/roadmap.md</text>
+  <rect x="366" y="71" width="150" height="26" rx="5" fill="none" stroke="var(--fg-muted)"/><text x="441" y="88" text-anchor="middle" fill="var(--fg-muted)" font-size="9">docs/status.md</text>
+  <rect x="366" y="102" width="150" height="26" rx="5" fill="none" stroke="var(--fg-muted)"/><text x="441" y="119" text-anchor="middle" fill="var(--fg-muted)" font-size="9">CHANGELOG.md</text>
+  <line x1="249" y1="122" x2="249" y2="140" stroke="currentColor"/><polygon points="245,132 249,142 253,132" fill="currentColor"/>
+  <rect x="150" y="140" width="198" height="22" rx="5" fill="none" stroke="currentColor"/><text x="249" y="155" text-anchor="middle" fill="currentColor" font-size="9">pages.yml → website landing page</text>
+</svg>
+<figcaption>The prioritized list becomes a README that doubles as a roadmap; its status snapshot links out to <code>roadmap.md</code>, <code>status.md</code>, and <code>CHANGELOG.md</code>, and the same README is synthesized into the website landing page.</figcaption>
+</figure>
 
 ## What CLAUDE.md is
 

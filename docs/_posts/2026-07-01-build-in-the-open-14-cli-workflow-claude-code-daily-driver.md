@@ -81,6 +81,25 @@ intent ("add a `/api/v1/sites` endpoint and a regression test"), and the agent
 does the multi-step work: explore the code, make the change, run the tests, and
 prepare a commit.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 156" width="660" height="156" role="img" aria-label="The Claude Code daily-driver loop as a cycle: a plain-English prompt leads the agent to explore the code, edit it, run the tests, commit, and open a PR; from the PR the loop returns to the next prompt, with review feeding back in.">
+  <rect x="14" y="52" width="92" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="60" y="70" text-anchor="middle" fill="var(--accent)" font-size="10">prompt</text>
+  <text x="60" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">plain intent</text>
+  <line x1="106" y1="72" x2="132" y2="72" stroke="currentColor"/><polygon points="132,68 142,72 132,76" fill="currentColor"/>
+  <rect x="142" y="52" width="92" height="40" rx="6" fill="none" stroke="currentColor"/><text x="188" y="70" text-anchor="middle" fill="currentColor" font-size="10">explore</text><text x="188" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">read files</text>
+  <line x1="234" y1="72" x2="260" y2="72" stroke="currentColor"/><polygon points="260,68 270,72 260,76" fill="currentColor"/>
+  <rect x="270" y="52" width="92" height="40" rx="6" fill="none" stroke="currentColor"/><text x="316" y="70" text-anchor="middle" fill="currentColor" font-size="10">edit</text><text x="316" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">make change</text>
+  <line x1="362" y1="72" x2="388" y2="72" stroke="currentColor"/><polygon points="388,68 398,72 388,76" fill="currentColor"/>
+  <rect x="398" y="52" width="92" height="40" rx="6" fill="none" stroke="currentColor"/><text x="444" y="70" text-anchor="middle" fill="currentColor" font-size="10">test</text><text x="444" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">run suite</text>
+  <line x1="490" y1="72" x2="516" y2="72" stroke="currentColor"/><polygon points="516,68 526,72 516,76" fill="currentColor"/>
+  <rect x="526" y="52" width="118" height="40" rx="6" fill="none" stroke="var(--accent)"/><text x="585" y="70" text-anchor="middle" fill="var(--accent)" font-size="10">commit → PR</text><text x="585" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">gh pr create</text>
+  <line x1="585" y1="92" x2="585" y2="122" stroke="currentColor"/><line x1="585" y1="122" x2="60" y2="122" stroke="currentColor"/><line x1="60" y1="122" x2="60" y2="92" stroke="currentColor"/><polygon points="56,100 60,90 64,100" fill="currentColor"/>
+  <text x="322" y="138" text-anchor="middle" fill="var(--fg-muted)" font-size="9">review the result → next prompt</text>
+</svg>
+<figcaption>Delegate, don't copy-paste: one prompt drives the agent through explore, edit, test, and commit to an opened PR — then you review and start the loop again.</figcaption>
+</figure>
+
 It comes in two forms that share the same setup:
 
 - **The CLI** — `claude` in your terminal, right next to `gh` and `git`.
@@ -131,6 +150,27 @@ any project, in any language:
 
 Then back to step 2. That loop, run consistently, is how a blank idea becomes a
 released, maintained project.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="The full daily loop as a cycle of seven stages: capture an idea as an issue, branch off main, build with Claude Code, open a PR, let CI run required checks, merge to main, and release when there is something worth shipping — then the arrow returns from release to the next issue.">
+  <rect x="16" y="20" width="118" height="38" rx="6" fill="none" stroke="var(--accent)"/><text x="75" y="38" text-anchor="middle" fill="var(--accent)" font-size="10">idea → issue</text><text x="75" y="51" text-anchor="middle" fill="var(--fg-muted)" font-size="8">scoped w/ Claude</text>
+  <line x1="134" y1="39" x2="176" y2="39" stroke="currentColor"/><polygon points="176,35 186,39 176,43" fill="currentColor"/>
+  <rect x="186" y="20" width="118" height="38" rx="6" fill="none" stroke="currentColor"/><text x="245" y="38" text-anchor="middle" fill="currentColor" font-size="10">branch</text><text x="245" y="51" text-anchor="middle" fill="var(--fg-muted)" font-size="8">claude/issue-NNN</text>
+  <line x1="304" y1="39" x2="346" y2="39" stroke="currentColor"/><polygon points="346,35 356,39 346,43" fill="currentColor"/>
+  <rect x="356" y="20" width="118" height="38" rx="6" fill="none" stroke="var(--accent)"/><text x="415" y="38" text-anchor="middle" fill="var(--accent)" font-size="10">build w/ Claude</text><text x="415" y="51" text-anchor="middle" fill="var(--fg-muted)" font-size="8">CLAUDE.md · tests</text>
+  <line x1="474" y1="39" x2="516" y2="39" stroke="currentColor"/><polygon points="516,35 526,39 516,43" fill="currentColor"/>
+  <rect x="526" y="20" width="118" height="38" rx="6" fill="none" stroke="currentColor"/><text x="585" y="38" text-anchor="middle" fill="currentColor" font-size="10">open PR</text><text x="585" y="51" text-anchor="middle" fill="var(--fg-muted)" font-size="8">gh pr create</text>
+  <line x1="585" y1="58" x2="585" y2="88" stroke="currentColor"/><polygon points="581,88 585,98 589,88" fill="currentColor"/>
+  <rect x="526" y="98" width="118" height="38" rx="6" fill="none" stroke="currentColor"/><text x="585" y="116" text-anchor="middle" fill="currentColor" font-size="10">CI checks</text><text x="585" y="129" text-anchor="middle" fill="var(--fg-muted)" font-size="8">required gates</text>
+  <line x1="526" y1="117" x2="484" y2="117" stroke="currentColor"/><polygon points="484,113 474,117 484,121" fill="currentColor"/>
+  <rect x="356" y="98" width="118" height="38" rx="6" fill="none" stroke="currentColor"/><text x="415" y="116" text-anchor="middle" fill="currentColor" font-size="10">merge</text><text x="415" y="129" text-anchor="middle" fill="var(--fg-muted)" font-size="8">squash to main</text>
+  <line x1="356" y1="117" x2="314" y2="117" stroke="currentColor"/><polygon points="314,113 304,117 314,121" fill="currentColor"/>
+  <rect x="186" y="98" width="118" height="38" rx="6" fill="none" stroke="var(--accent)"/><text x="245" y="116" text-anchor="middle" fill="var(--accent)" font-size="10">release</text><text x="245" y="129" text-anchor="middle" fill="var(--fg-muted)" font-size="8">push vX.Y.Z</text>
+  <line x1="186" y1="117" x2="75" y2="117" stroke="currentColor"/><line x1="75" y1="117" x2="75" y2="58" stroke="currentColor"/><polygon points="71,68 75,58 79,68" fill="currentColor"/>
+  <text x="130" y="90" text-anchor="middle" fill="var(--fg-muted)" font-size="9">back to the next issue</text>
+</svg>
+<figcaption>Parts 1–13 collapse into one repeatable cycle: issue → branch → build with Claude → PR → CI → merge → release, then round again — the loop GopherTrunk's own history runs on.</figcaption>
+</figure>
 
 ## How GopherTrunk does it
 

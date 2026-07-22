@@ -100,6 +100,29 @@ separate push/pull step. That's exactly why the web interface is such a friendly
 on-ramp: you get commits, branches, and pull requests without yet installing Git
 or learning the command line.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 640 176" width="640" height="176" role="img" aria-label="The local repository and the GitHub remote as two synced copies. Locally, edited working files are staged and then committed into the repo's history. Push sends local commits up to the GitHub remote; pull brings the remote's new commits down; clone makes the first local copy from the remote.">
+  <rect x="14" y="40" width="270" height="120" rx="8" fill="none" stroke="currentColor"/>
+  <text x="149" y="58" text-anchor="middle" fill="var(--fg-muted)" font-size="9">local repo · your laptop</text>
+  <rect x="30" y="70" width="72" height="34" rx="5" fill="none" stroke="currentColor"/><text x="66" y="90" text-anchor="middle" fill="currentColor" font-size="9">working files</text>
+  <line x1="102" y1="87" x2="126" y2="87" stroke="currentColor"/><polygon points="126,83 136,87 126,91" fill="currentColor"/>
+  <rect x="136" y="70" width="60" height="34" rx="5" fill="none" stroke="currentColor"/><text x="166" y="86" text-anchor="middle" fill="currentColor" font-size="9">staging</text><text x="166" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="8">area</text>
+  <line x1="196" y1="87" x2="220" y2="87" stroke="currentColor"/><polygon points="220,83 230,87 220,91" fill="currentColor"/>
+  <rect x="230" y="70" width="42" height="34" rx="5" fill="none" stroke="currentColor"/><text x="251" y="90" text-anchor="middle" fill="currentColor" font-size="9">commit</text>
+  <text x="149" y="132" text-anchor="middle" fill="var(--fg-muted)" font-size="8">history of snapshots</text>
+  <rect x="430" y="40" width="196" height="120" rx="8" fill="none" stroke="var(--accent)"/>
+  <text x="528" y="58" text-anchor="middle" fill="var(--accent)" font-size="10">GitHub remote (origin)</text>
+  <text x="528" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="9">the shared copy</text>
+  <line x1="288" y1="76" x2="426" y2="76" stroke="var(--accent)"/><polygon points="426,72 436,76 426,80" fill="var(--accent)"/>
+  <text x="358" y="70" text-anchor="middle" fill="var(--accent)" font-size="9">push</text>
+  <line x1="426" y1="106" x2="288" y2="106" stroke="currentColor"/><polygon points="288,102 278,106 288,110" fill="currentColor"/>
+  <text x="358" y="120" text-anchor="middle" fill="var(--fg-muted)" font-size="9">pull</text>
+  <line x1="426" y1="142" x2="288" y2="142" stroke="var(--fg-muted)" stroke-dasharray="4 3"/><polygon points="288,138 278,142 288,146" fill="var(--fg-muted)"/>
+  <text x="358" y="155" text-anchor="middle" fill="var(--fg-muted)" font-size="8">clone (first copy)</text>
+</svg>
+<figcaption>The local repo and the GitHub remote are two synced copies: you stage and commit locally, then <code>push</code> commits up and <code>pull</code> new ones down, while <code>clone</code> makes the first local copy. Working purely in the web UI, the remote is the only copy you touch.</figcaption>
+</figure>
+
 ## The whole loop in the GitHub web interface
 
 Here's the complete beginner workflow, no terminal required.
@@ -133,6 +156,20 @@ heart of collaborating on GitHub, and we'll dig into merge strategies in
 
 That's the entire loop: **edit → commit → branch → pull request**, all from a
 web browser.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 150" width="660" height="150" role="img" aria-label="The beginner GitHub web loop, all in the browser: edit a file with the pencil icon, commit the change with a message, create a branch to work off to the side while main stays safe, and open a pull request proposing the branch be merged into main. Every step happens directly on the remote.">
+  <rect x="14" y="52" width="112" height="44" rx="6" fill="none" stroke="currentColor"/><text x="70" y="72" text-anchor="middle" fill="currentColor" font-size="10">edit file</text><text x="70" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">pencil icon</text>
+  <line x1="126" y1="74" x2="158" y2="74" stroke="currentColor"/><polygon points="158,70 168,74 158,78" fill="currentColor"/>
+  <rect x="168" y="52" width="112" height="44" rx="6" fill="none" stroke="currentColor"/><text x="224" y="72" text-anchor="middle" fill="currentColor" font-size="10">commit</text><text x="224" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">with a message</text>
+  <line x1="280" y1="74" x2="312" y2="74" stroke="currentColor"/><polygon points="312,70 322,74 312,78" fill="currentColor"/>
+  <rect x="322" y="52" width="112" height="44" rx="6" fill="none" stroke="currentColor"/><text x="378" y="72" text-anchor="middle" fill="currentColor" font-size="10">new branch</text><text x="378" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">main stays safe</text>
+  <line x1="434" y1="74" x2="466" y2="74" stroke="var(--accent)"/><polygon points="466,70 476,74 466,78" fill="var(--accent)"/>
+  <rect x="476" y="52" width="130" height="44" rx="6" fill="none" stroke="var(--accent)"/><text x="541" y="72" text-anchor="middle" fill="var(--accent)" font-size="10">pull request</text><text x="541" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">propose merge → main</text>
+  <text x="310" y="28" text-anchor="middle" fill="var(--fg-muted)" font-size="9">all in the browser — the remote is the only copy</text>
+</svg>
+<figcaption>The whole beginner loop in the browser: edit → commit → new branch → pull request, every step happening directly on the GitHub remote.</figcaption>
+</figure>
 
 ## .gitignore essentials
 

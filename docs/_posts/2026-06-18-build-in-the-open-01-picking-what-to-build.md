@@ -61,6 +61,27 @@ mentioning your solution?** "I want to build a React dashboard" is a solution.
 "I can't see all my home-lab services' health in one place" is a problem. Lead
 with the second kind.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 664 130" width="664" height="130" role="img" aria-label="A funnel that narrows a raw idea into a shippable first version in four stages: many candidate ideas, then a one-sentence problem statement, then validated shared demand, then a walking-skeleton first milestone of only the Must features.">
+  <rect x="10" y="46" width="120" height="40" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="70" y="63" text-anchor="middle" fill="var(--fg-muted)" font-size="10">many ideas</text>
+  <text x="70" y="77" text-anchor="middle" fill="var(--fg-muted)" font-size="8">"a cool app"</text>
+  <line x1="130" y1="66" x2="160" y2="66" stroke="currentColor"/><polygon points="160,62 170,66 160,70" fill="currentColor"/>
+  <rect x="170" y="44" width="130" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="235" y="61" text-anchor="middle" fill="currentColor" font-size="10">problem statement</text>
+  <text x="235" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">one sentence, no solution</text>
+  <line x1="300" y1="66" x2="330" y2="66" stroke="currentColor"/><polygon points="330,62 340,66 330,70" fill="currentColor"/>
+  <rect x="340" y="46" width="120" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="400" y="63" text-anchor="middle" fill="currentColor" font-size="10">validated demand</text>
+  <text x="400" y="77" text-anchor="middle" fill="var(--fg-muted)" font-size="8">others share the pain</text>
+  <line x1="460" y1="66" x2="490" y2="66" stroke="currentColor"/><polygon points="490,62 500,66 490,70" fill="currentColor"/>
+  <rect x="500" y="48" width="154" height="38" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="577" y="64" text-anchor="middle" fill="var(--accent)" font-size="10">walking skeleton</text>
+  <text x="577" y="78" text-anchor="middle" fill="var(--fg-muted)" font-size="8">Musts only — ship in weeks</text>
+</svg>
+<figcaption>The funnel from Part 1: a raw idea narrows to a one-sentence problem, then to validated demand, then to a walking skeleton of only the Must features.</figcaption>
+</figure>
+
 ## Validate that the problem is real (and shared)
 
 Scratching your own itch gets you a user of one. Before you sink months in, do a
@@ -101,6 +122,41 @@ The walking skeleton matters because it forces every layer of the system to
 exist, even if each is minimal. That flushes out the hard integration problems
 early, when they're cheap to fix, instead of after you've polished a feature
 nobody can reach yet.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="A build-versus-skip decision tree: ask whether you feel the itch personally, whether others share the pain, and whether a first version fits in a few weeks. A no on any question routes to shelve, reassess, or narrow the idea; three yeses route to build it.">
+  <rect x="8" y="20" width="140" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="78" y="40" text-anchor="middle" fill="currentColor" font-size="10">feel the itch</text>
+  <text x="78" y="54" text-anchor="middle" fill="currentColor" font-size="10">yourself?</text>
+  <line x1="148" y1="43" x2="188" y2="43" stroke="currentColor"/><polygon points="188,39 198,43 188,47" fill="currentColor"/>
+  <text x="168" y="36" text-anchor="middle" fill="var(--fg-muted)" font-size="8">yes</text>
+  <rect x="198" y="20" width="140" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="268" y="40" text-anchor="middle" fill="currentColor" font-size="10">others share</text>
+  <text x="268" y="54" text-anchor="middle" fill="currentColor" font-size="10">the pain?</text>
+  <line x1="338" y1="43" x2="378" y2="43" stroke="currentColor"/><polygon points="378,39 388,43 378,47" fill="currentColor"/>
+  <text x="358" y="36" text-anchor="middle" fill="var(--fg-muted)" font-size="8">yes</text>
+  <rect x="388" y="20" width="150" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="463" y="40" text-anchor="middle" fill="currentColor" font-size="10">v1 fits in</text>
+  <text x="463" y="54" text-anchor="middle" fill="currentColor" font-size="10">a few weeks?</text>
+  <line x1="538" y1="43" x2="578" y2="43" stroke="var(--accent)"/><polygon points="578,39 588,43 578,47" fill="var(--accent)"/>
+  <text x="558" y="36" text-anchor="middle" fill="var(--fg-muted)" font-size="8">yes</text>
+  <rect x="588" y="24" width="64" height="38" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="620" y="47" text-anchor="middle" fill="var(--accent)" font-size="11">BUILD</text>
+  <line x1="78" y1="66" x2="78" y2="130" stroke="var(--fg-muted)"/><polygon points="74,130 78,140 82,130" fill="var(--fg-muted)"/>
+  <text x="90" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="8">no</text>
+  <line x1="268" y1="66" x2="268" y2="130" stroke="var(--fg-muted)"/><polygon points="264,130 268,140 272,130" fill="var(--fg-muted)"/>
+  <text x="280" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="8">no</text>
+  <line x1="463" y1="66" x2="463" y2="130" stroke="var(--fg-muted)"/><polygon points="459,130 463,140 467,130" fill="var(--fg-muted)"/>
+  <text x="475" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="8">no</text>
+  <rect x="18" y="140" width="120" height="28" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="78" y="158" text-anchor="middle" fill="var(--fg-muted)" font-size="9">shelve it</text>
+  <rect x="208" y="140" width="120" height="28" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="268" y="158" text-anchor="middle" fill="var(--fg-muted)" font-size="9">user of one — reassess</text>
+  <rect x="403" y="140" width="120" height="28" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="463" y="158" text-anchor="middle" fill="var(--fg-muted)" font-size="9">narrow the scope</text>
+</svg>
+<figcaption>The build-versus-skip test: a personal itch, shared pain, and a few-weeks scope all have to hold; a no on any one sends the idea back to shelve, reassess, or narrow before you write code.</figcaption>
+</figure>
 
 ## Write it down before you write code
 

@@ -69,6 +69,33 @@ Notice that "which language is best" isn't on the list. There's no best
 language, only a best *fit* for a specific set of constraints. The same problem
 can have different right answers for a solo hobbyist and a ten-person team.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 184" width="660" height="184" role="img" aria-label="A constraint-driven stack decision map: five constraints — where it runs, performance, distribution, ecosystem, and existing skills — feed a language choice, which makes a single static binary that cross-compiles to the target operating systems Linux, macOS, and Windows.">
+  <rect x="8" y="20" width="150" height="144" rx="6" fill="none" stroke="currentColor"/>
+  <text x="83" y="38" text-anchor="middle" fill="var(--fg-muted)" font-size="9">constraints</text>
+  <text x="83" y="60" text-anchor="middle" fill="currentColor" font-size="10">where it runs</text>
+  <text x="83" y="80" text-anchor="middle" fill="currentColor" font-size="10">performance</text>
+  <text x="83" y="100" text-anchor="middle" fill="currentColor" font-size="10">distribution</text>
+  <text x="83" y="120" text-anchor="middle" fill="currentColor" font-size="10">ecosystem</text>
+  <text x="83" y="140" text-anchor="middle" fill="currentColor" font-size="10">skills you have</text>
+  <line x1="158" y1="92" x2="200" y2="92" stroke="currentColor"/><polygon points="200,88 210,92 200,96" fill="currentColor"/>
+  <rect x="210" y="66" width="150" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="285" y="88" text-anchor="middle" fill="var(--accent)" font-size="11">language choice</text>
+  <text x="285" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="8">best fit, not best</text>
+  <line x1="360" y1="92" x2="402" y2="92" stroke="currentColor"/><polygon points="402,88 412,92 402,96" fill="currentColor"/>
+  <rect x="412" y="66" width="150" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="487" y="88" text-anchor="middle" fill="currentColor" font-size="10">single static binary</text>
+  <text x="487" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="8">download &amp; run</text>
+  <line x1="562" y1="80" x2="600" y2="46" stroke="currentColor"/><polygon points="596,42 606,44 600,53" fill="currentColor"/>
+  <line x1="562" y1="92" x2="600" y2="92" stroke="currentColor"/><polygon points="600,88 610,92 600,96" fill="currentColor"/>
+  <line x1="562" y1="104" x2="600" y2="138" stroke="currentColor"/><polygon points="596,131 606,140 594,140" fill="currentColor"/>
+  <rect x="600" y="32" width="54" height="24" rx="5" fill="none" stroke="var(--fg-muted)"/><text x="627" y="48" text-anchor="middle" fill="var(--fg-muted)" font-size="9">Linux</text>
+  <rect x="600" y="80" width="54" height="24" rx="5" fill="none" stroke="var(--fg-muted)"/><text x="627" y="96" text-anchor="middle" fill="var(--fg-muted)" font-size="9">macOS</text>
+  <rect x="600" y="128" width="54" height="24" rx="5" fill="none" stroke="var(--fg-muted)"/><text x="627" y="144" text-anchor="middle" fill="var(--fg-muted)" font-size="8">Windows</text>
+</svg>
+<figcaption>Constraints, not taste, pick the stack: five questions select a language, the language makes "download and run" real via a single static binary, and that binary cross-compiles to Linux, macOS, and Windows.</figcaption>
+</figure>
+
 ## Why boring technology usually wins
 
 Once a few candidates survive the constraint checklist, prefer the **boring**
@@ -135,6 +162,26 @@ a fix or feature you need lands. Your future self and your CI both thank you.
 
 [GopherTrunk](https://github.com/MattCheramie/GopherTrunk) is a digital-trunking
 SDR scanner, and every stack decision traces straight back to a constraint.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="How each GopherTrunk stack choice traces to a constraint: needing no C dependencies and a single binary selects pure Go with CGO disabled; needing a database selects the pure-Go modernc.org/sqlite driver; needing a browser console selects a prebuilt React and Vite bundle; needing reproducible patched builds pins the Go 1.25.11 toolchain.">
+  <text x="150" y="22" text-anchor="middle" fill="var(--fg-muted)" font-size="10">constraint</text>
+  <text x="501" y="22" text-anchor="middle" fill="var(--fg-muted)" font-size="10">GopherTrunk choice</text>
+  <rect x="20" y="34" width="260" height="28" rx="5" fill="none" stroke="currentColor"/><text x="150" y="52" text-anchor="middle" fill="currentColor" font-size="10">no C deps · single binary</text>
+  <line x1="280" y1="48" x2="352" y2="48" stroke="currentColor"/><polygon points="352,44 362,48 352,52" fill="currentColor"/>
+  <rect x="362" y="34" width="278" height="28" rx="5" fill="none" stroke="var(--accent)"/><text x="501" y="52" text-anchor="middle" fill="var(--accent)" font-size="10">pure Go · CGO_ENABLED=0</text>
+  <rect x="20" y="70" width="260" height="28" rx="5" fill="none" stroke="currentColor"/><text x="150" y="88" text-anchor="middle" fill="currentColor" font-size="10">needs a database</text>
+  <line x1="280" y1="84" x2="352" y2="84" stroke="currentColor"/><polygon points="352,80 362,84 352,88" fill="currentColor"/>
+  <rect x="362" y="70" width="278" height="28" rx="5" fill="none" stroke="currentColor"/><text x="501" y="88" text-anchor="middle" fill="currentColor" font-size="10">modernc.org/sqlite (pure Go)</text>
+  <rect x="20" y="106" width="260" height="28" rx="5" fill="none" stroke="currentColor"/><text x="150" y="124" text-anchor="middle" fill="currentColor" font-size="10">browser operator console</text>
+  <line x1="280" y1="120" x2="352" y2="120" stroke="currentColor"/><polygon points="352,116 362,120 352,124" fill="currentColor"/>
+  <rect x="362" y="106" width="278" height="28" rx="5" fill="none" stroke="currentColor"/><text x="501" y="124" text-anchor="middle" fill="currentColor" font-size="10">React 18 + Vite static bundle</text>
+  <rect x="20" y="142" width="260" height="28" rx="5" fill="none" stroke="currentColor"/><text x="150" y="160" text-anchor="middle" fill="currentColor" font-size="10">reproducible, patched builds</text>
+  <line x1="280" y1="156" x2="352" y2="156" stroke="currentColor"/><polygon points="352,152 362,156 352,160" fill="currentColor"/>
+  <rect x="362" y="142" width="278" height="28" rx="5" fill="none" stroke="currentColor"/><text x="501" y="160" text-anchor="middle" fill="currentColor" font-size="10">toolchain go1.25.11</text>
+</svg>
+<figcaption>Every GopherTrunk stack choice traces to a constraint — the no-C-dependencies, single-binary goal is why Go, <code>modernc.org/sqlite</code>, a prebuilt web bundle, and a pinned toolchain were all chosen.</figcaption>
+</figure>
 
 - **Language: pure Go, with `CGO_ENABLED=0`.** The problem statement from Part 1
   was essentially "there's no SDR scanner that installs as a single,
