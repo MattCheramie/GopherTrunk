@@ -69,6 +69,35 @@ close. Anything one radio can do that another cannot is, by definition, *not* in
 discipline to keep it that way is what lets a recorded WAV file or a network
 socket satisfy the same eight methods as a $25 dongle.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 210" width="660" height="210" role="img" aria-label="The trunking engine depends only on the eight-method Device interface — Info, SetCenterFreq, SetSampleRate, SetGain, SetPPM, SetBiasTee, StreamIQ, Close. Five backends implement it: RTL-SDR, Airspy R2 or Mini, Airspy HF+, HackRF One, and the rtltcp and mock drivers.">
+  <rect x="8" y="88" width="120" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="68" y="114" text-anchor="middle" fill="currentColor" font-size="10">trunking engine</text>
+  <line x1="128" y1="110" x2="170" y2="110" stroke="currentColor"/><polygon points="170,106 180,110 170,114" fill="currentColor"/>
+  <rect x="180" y="22" width="180" height="168" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="270" y="40" text-anchor="middle" fill="var(--accent)" font-size="11">Device interface</text>
+  <text x="270" y="60" text-anchor="middle" fill="currentColor" font-size="10">Info()</text>
+  <text x="270" y="78" text-anchor="middle" fill="currentColor" font-size="10">SetCenterFreq</text>
+  <text x="270" y="96" text-anchor="middle" fill="currentColor" font-size="10">SetSampleRate</text>
+  <text x="270" y="114" text-anchor="middle" fill="currentColor" font-size="10">SetGain (-1 = AGC)</text>
+  <text x="270" y="132" text-anchor="middle" fill="currentColor" font-size="10">SetPPM</text>
+  <text x="270" y="150" text-anchor="middle" fill="currentColor" font-size="10">SetBiasTee</text>
+  <text x="270" y="168" text-anchor="middle" fill="currentColor" font-size="10">StreamIQ</text>
+  <text x="270" y="184" text-anchor="middle" fill="currentColor" font-size="10">Close</text>
+  <line x1="470" y1="30" x2="372" y2="30" stroke="currentColor"/><polygon points="372,26 362,30 372,34" fill="currentColor"/>
+  <line x1="470" y1="66" x2="372" y2="66" stroke="currentColor"/><polygon points="372,62 362,66 372,70" fill="currentColor"/>
+  <line x1="470" y1="102" x2="372" y2="102" stroke="currentColor"/><polygon points="372,98 362,102 372,106" fill="currentColor"/>
+  <line x1="470" y1="138" x2="372" y2="138" stroke="currentColor"/><polygon points="372,134 362,138 372,142" fill="currentColor"/>
+  <line x1="470" y1="174" x2="372" y2="174" stroke="currentColor"/><polygon points="372,170 362,174 372,178" fill="currentColor"/>
+  <rect x="472" y="16" width="180" height="28" rx="6" fill="none" stroke="currentColor"/><text x="562" y="34" text-anchor="middle" fill="currentColor" font-size="10">RTL-SDR (R820T)</text>
+  <rect x="472" y="52" width="180" height="28" rx="6" fill="none" stroke="currentColor"/><text x="562" y="70" text-anchor="middle" fill="currentColor" font-size="10">Airspy R2 / Mini</text>
+  <rect x="472" y="88" width="180" height="28" rx="6" fill="none" stroke="currentColor"/><text x="562" y="106" text-anchor="middle" fill="currentColor" font-size="10">Airspy HF+</text>
+  <rect x="472" y="124" width="180" height="28" rx="6" fill="none" stroke="currentColor"/><text x="562" y="142" text-anchor="middle" fill="currentColor" font-size="10">HackRF One</text>
+  <rect x="472" y="160" width="180" height="28" rx="6" fill="none" stroke="var(--fg-muted)"/><text x="562" y="178" text-anchor="middle" fill="var(--fg-muted)" font-size="10">rtltcp · mock</text>
+</svg>
+<figcaption>The engine only ever sees the eight-method <code>Device</code> contract; every backend — three USB radio families plus the network and mock drivers — implements it, so nothing chip-specific leaks upward.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 ### Identity: `Info`
@@ -199,7 +228,29 @@ if d, ok := dev.(sdr.BlogV4Forcer); ok {
 The type assertion succeeds for the RTL-SDR driver and fails — cleanly, with `ok
 == false` — for every other backend. The Blog V4 fix reaches exactly the hardware
 that needs it, and the Airspy and HackRF drivers never hear about a 28.8 MHz
-crystal. The doc comments on both interfaces even encode the failure signature:
+crystal.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="A caller type-asserts a Device value to the BlogV4Forcer interface. The assertion returns ok equals true only for the RTL-SDR driver, which then calls SetBlogV4, and returns ok equals false for the Airspy and HackRF drivers, which are skipped, leaving the Device contract untouched.">
+  <rect x="8" y="72" width="100" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="58" y="98" text-anchor="middle" fill="currentColor" font-size="10">dev (Device)</text>
+  <line x1="108" y1="94" x2="148" y2="94" stroke="currentColor"/><polygon points="148,90 158,94 148,98" fill="currentColor"/>
+  <rect x="160" y="66" width="200" height="56" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="260" y="90" text-anchor="middle" fill="var(--fg-muted)" font-size="9">type assertion</text>
+  <text x="260" y="108" text-anchor="middle" fill="var(--accent)" font-size="10">dev.(sdr.BlogV4Forcer)</text>
+  <line x1="360" y1="80" x2="430" y2="40" stroke="currentColor"/><polygon points="422,36 432,40 422,44" fill="currentColor"/>
+  <line x1="360" y1="108" x2="430" y2="150" stroke="currentColor"/><polygon points="422,146 432,150 422,154" fill="currentColor"/>
+  <rect x="430" y="18" width="222" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="541" y="36" text-anchor="middle" fill="var(--accent)" font-size="10">ok == true → RTL-SDR</text>
+  <text x="541" y="52" text-anchor="middle" fill="currentColor" font-size="10">d.SetBlogV4(lite)</text>
+  <rect x="430" y="128" width="222" height="44" rx="6" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="541" y="146" text-anchor="middle" fill="var(--fg-muted)" font-size="10">ok == false → Airspy, HackRF</text>
+  <text x="541" y="162" text-anchor="middle" fill="var(--fg-muted)" font-size="10">skip · Device untouched</text>
+</svg>
+<figcaption>The optional quirk is discovered, not assumed: <code>dev.(sdr.BlogV4Forcer)</code> succeeds only for the RTL-SDR driver, so the Blog V4 fix reaches exactly that hardware while every other radio falls through with <code>ok == false</code>.</figcaption>
+</figure>
+
+The doc comments on both interfaces even encode the failure signature:
 "`xtalHz` of 16 MHz on an R828D is the signature that RTL-SDR Blog V4
 auto-detection missed and the LO is mistuned by ~1.8×."
 

@@ -61,6 +61,34 @@ files in `internal/sdr/rtlsdr/rtl2832u`:
 This post is the bring-up; the tuner that rides on top of the I2C bridge is
 Part 8, and sustained streaming through the USB FIFO is Part 9.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 150" width="660" height="150" role="img" aria-label="The RTL-SDR signal path: the antenna feeds the R82xx tuner, which mixes RF down to a 3.57 MHz IF and hands it to the RTL2832U acting as a raw 8-bit ADC clocked at 28.8 MHz; the RTL2832U streams unsigned IQ out the USB bulk-IN endpoint to the host, and separately reaches the tuner as an I2C master through its bridge repeater.">
+  <rect x="150" y="14" width="210" height="28" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="255" y="31" text-anchor="middle" fill="var(--fg-muted)" font-size="9">I2C bridge · repeater bit (control)</text>
+  <line x1="321" y1="68" x2="321" y2="42" stroke="var(--fg-muted)"/>
+  <line x1="200" y1="42" x2="162" y2="66" stroke="var(--fg-muted)"/><polygon points="171,60 158,68 172,71" fill="var(--fg-muted)"/>
+  <rect x="8" y="68" width="70" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="43" y="94" text-anchor="middle" fill="currentColor" font-size="9">antenna</text>
+  <line x1="78" y1="91" x2="92" y2="91" stroke="currentColor"/><polygon points="92,87 102,91 92,95" fill="currentColor"/>
+  <rect x="102" y="68" width="130" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="167" y="88" text-anchor="middle" fill="currentColor" font-size="10">R82xx tuner</text>
+  <text x="167" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="8">RF → 3.57 MHz IF</text>
+  <line x1="232" y1="91" x2="246" y2="91" stroke="currentColor"/><polygon points="246,87 256,91 246,95" fill="currentColor"/>
+  <rect x="256" y="68" width="158" height="46" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="335" y="88" text-anchor="middle" fill="var(--accent)" font-size="10">RTL2832U</text>
+  <text x="335" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="8">raw 8-bit ADC · 28.8 MHz</text>
+  <line x1="414" y1="91" x2="428" y2="91" stroke="currentColor"/><polygon points="428,87 438,91 428,95" fill="currentColor"/>
+  <rect x="438" y="68" width="104" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="490" y="88" text-anchor="middle" fill="currentColor" font-size="9">USB bulk-IN</text>
+  <text x="490" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="8">FIFO endpoint</text>
+  <line x1="542" y1="91" x2="556" y2="91" stroke="currentColor"/><polygon points="556,87 566,91 556,95" fill="currentColor"/>
+  <rect x="566" y="68" width="86" height="46" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="609" y="88" text-anchor="middle" fill="var(--fg-muted)" font-size="9">host</text>
+  <text x="609" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="8">unsigned IQ</text>
+</svg>
+<figcaption>All the tuning happens in the R82xx; the RTL2832U is only a raw ADC with a USB FIFO, and the same chip reaches its tuner as an I2C master through the bridge the bring-up layer opens.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 ### The register transport
@@ -177,7 +205,32 @@ func (d *Demod) InitBaseband() error {
 The FIR upload sits *inside* the sequence — after the demod soft-reset (bit 3)
 and the DDC/IF-register clear, but before SDR mode is enabled and zero-IF gets
 turned on. That placement is what the table's comment means by "order is
-load-bearing." The 20-tap FIR filter itself is the DAB/FM-tuned coefficient set
+load-bearing."
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 150" width="660" height="150" role="img" aria-label="The InitBaseband sequence as a timeline: steps 0 to 14 configure the USB endpoints, power the demod, soft-reset it and clear the DDC/IF registers; then the 20-tap FIR is uploaded to page 1, addresses 0x1C to 0x2F; then steps 15 to the end enable SDR mode, zero-IF, and DC and IQ compensation. The FIR upload sits inside the sequence, and every demod write must be followed by a commit read of page 0x0A register 0x01 or it never latches.">
+  <text x="330" y="20" text-anchor="middle" fill="var(--fg-muted)" font-size="10">InitBaseband() — order is load-bearing</text>
+  <rect x="16" y="36" width="190" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="111" y="58" text-anchor="middle" fill="currentColor" font-size="10">steps 0–14</text>
+  <text x="111" y="72" text-anchor="middle" fill="var(--fg-muted)" font-size="8">USB EP cfg · demod power</text>
+  <text x="111" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">soft-reset · clear DDC/IF</text>
+  <line x1="206" y1="62" x2="234" y2="62" stroke="currentColor"/><polygon points="234,58 244,62 234,66" fill="currentColor"/>
+  <rect x="244" y="36" width="172" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="330" y="58" text-anchor="middle" fill="var(--accent)" font-size="10">FIR upload</text>
+  <text x="330" y="72" text-anchor="middle" fill="var(--fg-muted)" font-size="8">20 taps · page 1</text>
+  <text x="330" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">addr 0x1C–0x2F</text>
+  <line x1="416" y1="62" x2="444" y2="62" stroke="currentColor"/><polygon points="444,58 454,62 444,66" fill="currentColor"/>
+  <rect x="454" y="36" width="190" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="549" y="58" text-anchor="middle" fill="currentColor" font-size="10">steps 15–end</text>
+  <text x="549" y="72" text-anchor="middle" fill="var(--fg-muted)" font-size="8">SDR mode · zero-IF</text>
+  <text x="549" y="83" text-anchor="middle" fill="var(--fg-muted)" font-size="8">DC + IQ compensation</text>
+  <rect x="120" y="106" width="420" height="30" rx="6" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="330" y="125" text-anchor="middle" fill="var(--fg-muted)" font-size="9">every demod write → commit read (page 0x0A, reg 0x01) or it never latches</text>
+</svg>
+<figcaption>The FIR upload is split into the middle of the flood — after the soft-reset and DDC/IF clear, before SDR mode — which is the "order is load-bearing" boundary the <code>initBasebandSteps</code> table pins as code.</figcaption>
+</figure>
+
+The 20-tap FIR filter itself is the DAB/FM-tuned coefficient set
 librtlsdr ships, packed with a fiddly layout — the first 8 taps are 8-bit signed
 (one byte each), and taps 8–15 are 12-bit signed and pack three nibbles per pair
 into 12 bytes:

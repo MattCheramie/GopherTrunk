@@ -46,6 +46,36 @@ tuner's PLL doesn't target 154 MHz — it targets 154 MHz + 3.57 MHz, and the
 RTL2832U is configured (back in `PrepareDemod`) to expect signal at that IF
 offset.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 165" width="660" height="165" role="img" aria-label="The R82xx tuner block: the antenna's RF passes through an LNA with RF gain, then a mixer that subtracts a PLL-driven local oscillator to translate the signal down to a fixed 3.57 MHz intermediate frequency with VGA gain, which the RTL2832U's ADC then samples. The PLL and its local oscillator are clocked from the reference crystal.">
+  <rect x="8" y="40" width="60" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="38" y="66" text-anchor="middle" fill="currentColor" font-size="9">antenna</text>
+  <line x1="68" y1="62" x2="82" y2="62" stroke="currentColor"/><polygon points="82,58 92,62 82,66" fill="currentColor"/>
+  <rect x="92" y="40" width="96" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="140" y="60" text-anchor="middle" fill="currentColor" font-size="10">LNA</text>
+  <text x="140" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="8">RF gain</text>
+  <line x1="188" y1="62" x2="202" y2="62" stroke="currentColor"/><polygon points="202,58 212,62 202,66" fill="currentColor"/>
+  <rect x="212" y="40" width="96" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="260" y="60" text-anchor="middle" fill="currentColor" font-size="10">mixer</text>
+  <text x="260" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="8">RF − LO</text>
+  <line x1="308" y1="62" x2="322" y2="62" stroke="currentColor"/><polygon points="322,58 332,62 322,66" fill="currentColor"/>
+  <rect x="332" y="40" width="120" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="392" y="60" text-anchor="middle" fill="var(--accent)" font-size="10">3.57 MHz IF</text>
+  <text x="392" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="8">VGA gain</text>
+  <line x1="452" y1="62" x2="466" y2="62" stroke="currentColor"/><polygon points="466,58 476,62 466,66" fill="currentColor"/>
+  <rect x="476" y="40" width="176" height="44" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="564" y="60" text-anchor="middle" fill="var(--fg-muted)" font-size="10">RTL2832U ADC</text>
+  <text x="564" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="8">samples the IF</text>
+  <rect x="212" y="112" width="96" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="260" y="133" text-anchor="middle" fill="currentColor" font-size="9">PLL · LO</text>
+  <line x1="260" y1="112" x2="260" y2="86" stroke="currentColor"/><polygon points="256,94 260,84 264,94" fill="currentColor"/>
+  <rect x="92" y="112" width="96" height="34" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="140" y="133" text-anchor="middle" fill="var(--fg-muted)" font-size="9">xtal ref</text>
+  <line x1="188" y1="129" x2="202" y2="129" stroke="currentColor"/><polygon points="202,125 212,129 202,133" fill="currentColor"/>
+</svg>
+<figcaption>The R82xx mixes RF down to a fixed 3.57 MHz IF, so the RTL2832U only ever samples an intermediate frequency; every PLL division that sets the LO is computed off the reference crystal.</figcaption>
+</figure>
+
 The driver is a straight port of osmocom librtlsdr's `tuner_r82xx.c` — register
 addresses, the init flood, the PLL math, and the frequency-range mux table are
 all kept byte-identical so real-hardware captures replay-validate against the
@@ -120,6 +150,33 @@ vcoFra := uint32((vcoFreq - 2*pllRef*uint64(nint)) / 1000)
 Notice `effectiveXtalHz()`. *Every* PLL division is computed off the reference
 crystal. If the driver believes the crystal is 16 MHz when it's actually 28.8
 MHz, every tune is wrong by the ratio 28.8/16 = **1.8×**. Hold that thought.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 140" width="660" height="140" role="img" aria-label="Two tuning paths through the same setPLL math. With the R828D default crystal of 16 MHz, setPLL puts the local oscillator off target by the ratio 28.8 over 16, which is 1.8 times, leaving the Blog V4 deaf and receiving noise. With the SetBlogV4 override supplying 28.8 MHz, the same setPLL lands the local oscillator on target and the Blog V4 locks.">
+  <text x="330" y="16" text-anchor="middle" fill="var(--fg-muted)" font-size="9">every tune divides off the crystal:  nint, vcoFra = vcoFreq / (2 · effectiveXtalHz)</text>
+  <rect x="14" y="26" width="176" height="40" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="102" y="44" text-anchor="middle" fill="var(--fg-muted)" font-size="9">R828D default</text>
+  <text x="102" y="57" text-anchor="middle" fill="var(--fg-muted)" font-size="9">xtal = 16 MHz</text>
+  <line x1="190" y1="46" x2="216" y2="46" stroke="currentColor"/><polygon points="216,42 226,46 216,50" fill="currentColor"/>
+  <rect x="226" y="26" width="150" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="301" y="50" text-anchor="middle" fill="currentColor" font-size="10">setPLL</text>
+  <line x1="376" y1="46" x2="402" y2="46" stroke="currentColor"/><polygon points="402,42 412,46 402,50" fill="currentColor"/>
+  <rect x="412" y="26" width="234" height="40" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="529" y="44" text-anchor="middle" fill="var(--fg-muted)" font-size="9">LO off by 28.8 / 16 = 1.8×</text>
+  <text x="529" y="57" text-anchor="middle" fill="var(--fg-muted)" font-size="9">deaf — receives noise</text>
+  <rect x="14" y="86" width="176" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="102" y="104" text-anchor="middle" fill="var(--accent)" font-size="9">SetBlogV4 override</text>
+  <text x="102" y="117" text-anchor="middle" fill="var(--accent)" font-size="9">xtal = 28.8 MHz</text>
+  <line x1="190" y1="106" x2="216" y2="106" stroke="currentColor"/><polygon points="216,102 226,106 216,110" fill="currentColor"/>
+  <rect x="226" y="86" width="150" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="301" y="110" text-anchor="middle" fill="currentColor" font-size="10">setPLL</text>
+  <line x1="376" y1="106" x2="402" y2="106" stroke="currentColor"/><polygon points="402,102 412,106 402,110" fill="currentColor"/>
+  <rect x="412" y="86" width="234" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="529" y="104" text-anchor="middle" fill="var(--accent)" font-size="9">LO on target</text>
+  <text x="529" y="117" text-anchor="middle" fill="var(--accent)" font-size="9">Blog V4 locks</text>
+</svg>
+<figcaption>Same PLL math, different crystal: the wrong 16 MHz reference mistunes every Blog V4 by 1.8×, and <code>SetBlogV4</code> restoring the 28.8 MHz crystal is what puts the LO back on target.</figcaption>
+</figure>
 
 ### Tuner auto-detection
 

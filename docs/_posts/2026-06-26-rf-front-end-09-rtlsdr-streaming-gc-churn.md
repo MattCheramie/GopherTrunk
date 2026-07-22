@@ -48,6 +48,32 @@ dropping samples when the consumer hiccups.
 The whole thing lives in `internal/sdr/rtlsdr/purego/stream.go`, with the device
 state machine in `device.go`.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 130" width="660" height="130" role="img" aria-label="The RTL2832U streaming pipeline: the bulk-IN endpoint fills a ring of 32 async USB buffers of 16 KiB each, about 6 ms of headroom; each completed URB calls deliver, which converts unsigned-8-bit IQ into complex64 through a 256-entry lookup table and enqueues the chunk on a consumer channel 32 chunks deep, about 110 ms of slack, which a control-channel decoder drains.">
+  <text x="330" y="20" text-anchor="middle" fill="var(--fg-muted)" font-size="10">2.4 MS/s · 4.8 MB/s continuous</text>
+  <rect x="8" y="44" width="112" height="50" rx="6" fill="none" stroke="currentColor"/>
+  <text x="64" y="66" text-anchor="middle" fill="currentColor" font-size="9">RTL2832U</text>
+  <text x="64" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">bulk-IN 0x81</text>
+  <line x1="120" y1="69" x2="134" y2="69" stroke="currentColor"/><polygon points="134,65 144,69 134,73" fill="currentColor"/>
+  <rect x="144" y="44" width="128" height="50" rx="6" fill="none" stroke="currentColor"/>
+  <text x="208" y="66" text-anchor="middle" fill="currentColor" font-size="9">32 async buffers</text>
+  <text x="208" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">16 KiB · ~6 ms headroom</text>
+  <line x1="272" y1="69" x2="286" y2="69" stroke="currentColor"/><polygon points="286,65 296,69 286,73" fill="currentColor"/>
+  <rect x="296" y="44" width="108" height="50" rx="6" fill="none" stroke="currentColor"/>
+  <text x="350" y="66" text-anchor="middle" fill="currentColor" font-size="9">deliver()</text>
+  <text x="350" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">U8→c64 LUT</text>
+  <line x1="404" y1="69" x2="418" y2="69" stroke="currentColor"/><polygon points="418,65 428,69 418,73" fill="currentColor"/>
+  <rect x="428" y="44" width="112" height="50" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="484" y="66" text-anchor="middle" fill="var(--accent)" font-size="9">chan depth 32</text>
+  <text x="484" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">~110 ms slack</text>
+  <line x1="540" y1="69" x2="554" y2="69" stroke="currentColor"/><polygon points="554,65 564,69 554,73" fill="currentColor"/>
+  <rect x="564" y="44" width="88" height="50" rx="6" fill="none" stroke="currentColor"/>
+  <text x="608" y="66" text-anchor="middle" fill="currentColor" font-size="9">consumer</text>
+  <text x="608" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">CC decoder</text>
+</svg>
+<figcaption>The bulk-IN flood crosses 32 async USB buffers, a lookup-table conversion in <code>deliver</code>, and a 32-deep consumer channel — the geometry the GC-churn bug systematically defeated.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 ### The geometry
@@ -214,6 +240,33 @@ With the ring in place the steady state allocates **nothing** per chunk, the GC
 went quiet, the consumer kept its budget, and the drop rate fell to zero. The
 deeper channel depth from earlier is slack on top of this — not a substitute for
 it.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 145" width="660" height="145" role="img" aria-label="Before and after the issue 489 fix. Before: deliver allocates a fresh 64 KiB complex64 slice per chunk, which drives GC churn whose pauses land on the consumer goroutine, so the pipeline sheds 25 to 48 percent of live IQ. After: a reuse ring of streamChanDepth plus 2 slots that advances only on a successful send means zero allocation in steady state, the GC stays quiet, and the drop rate falls to zero.">
+  <text x="330" y="18" text-anchor="middle" fill="var(--fg-muted)" font-size="10">issue #489 — per-chunk allocation vs buffer reuse</text>
+  <rect x="14" y="28" width="182" height="42" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="105" y="46" text-anchor="middle" fill="var(--fg-muted)" font-size="9">make([]complex64)</text>
+  <text x="105" y="60" text-anchor="middle" fill="var(--fg-muted)" font-size="8">fresh ~64 KiB per chunk</text>
+  <line x1="196" y1="49" x2="222" y2="49" stroke="currentColor"/><polygon points="222,45 232,49 222,53" fill="currentColor"/>
+  <rect x="232" y="28" width="160" height="42" rx="6" fill="none" stroke="currentColor"/>
+  <text x="312" y="46" text-anchor="middle" fill="currentColor" font-size="9">GC churn</text>
+  <text x="312" y="60" text-anchor="middle" fill="var(--fg-muted)" font-size="8">pauses hit consumer</text>
+  <line x1="392" y1="49" x2="418" y2="49" stroke="currentColor"/><polygon points="418,45 428,49 418,53" fill="currentColor"/>
+  <rect x="428" y="28" width="218" height="42" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="537" y="53" text-anchor="middle" fill="var(--fg-muted)" font-size="9">sheds 25–48% of live IQ</text>
+  <rect x="14" y="92" width="182" height="42" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="105" y="110" text-anchor="middle" fill="var(--accent)" font-size="9">reuse ring</text>
+  <text x="105" y="124" text-anchor="middle" fill="var(--fg-muted)" font-size="8">streamChanDepth + 2 slots</text>
+  <line x1="196" y1="113" x2="222" y2="113" stroke="currentColor"/><polygon points="222,109 232,113 222,117" fill="currentColor"/>
+  <rect x="232" y="92" width="160" height="42" rx="6" fill="none" stroke="currentColor"/>
+  <text x="312" y="110" text-anchor="middle" fill="currentColor" font-size="9">0 alloc steady state</text>
+  <text x="312" y="124" text-anchor="middle" fill="var(--fg-muted)" font-size="8">advances only on send</text>
+  <line x1="392" y1="113" x2="418" y2="113" stroke="currentColor"/><polygon points="418,109 428,113 418,117" fill="currentColor"/>
+  <rect x="428" y="92" width="218" height="42" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="537" y="117" text-anchor="middle" fill="var(--accent)" font-size="9">GC quiet · drop rate → 0</text>
+</svg>
+<figcaption>The fix wasn't cleverer code, it was <em>no</em> code in the allocator: reusing <code>streamChanDepth + 2</code> preallocated buffers took the GC out of the consumer's real-time budget and dropped the loss rate to zero.</figcaption>
+</figure>
 
 ## The second problem: silent live IQ loss (issue #402)
 

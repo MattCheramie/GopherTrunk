@@ -48,6 +48,28 @@ to find a `RoleVoice` device by serial when the engine binds a call. That
 indirection is what lets the same code run on a one-stick hobby setup and a
 four-stick site without a branch anywhere in the engine.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="The SDR pool owns a slice of opened PoolEntry devices, each carrying a Driver, Device, Info, and a Role. The engine never names a specific dongle; it asks the pool for a device by role — RoleControl for the control-channel decoder, RoleVoice for call audio, and RoleWideband for a whole-site Airspy.">
+  <rect x="8" y="66" width="120" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="68" y="86" text-anchor="middle" fill="currentColor" font-size="10">engine</text>
+  <text x="68" y="100" text-anchor="middle" fill="var(--fg-muted)" font-size="9">"give me role X"</text>
+  <line x1="128" y1="89" x2="166" y2="89" stroke="currentColor"/><polygon points="166,85 176,89 166,93" fill="currentColor"/>
+  <rect x="176" y="60" width="120" height="58" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="236" y="84" text-anchor="middle" fill="var(--accent)" font-size="11">Pool</text>
+  <text x="236" y="99" text-anchor="middle" fill="var(--fg-muted)" font-size="9">entries + mutex</text>
+  <line x1="296" y1="72" x2="330" y2="41" stroke="currentColor"/><polygon points="326,37 336,39 331,48" fill="currentColor"/>
+  <line x1="296" y1="89" x2="330" y2="89" stroke="currentColor"/><polygon points="330,85 340,89 330,93" fill="currentColor"/>
+  <line x1="296" y1="106" x2="330" y2="137" stroke="currentColor"/><polygon points="331,130 336,139 326,141" fill="currentColor"/>
+  <rect x="340" y="22" width="300" height="30" rx="5" fill="none" stroke="currentColor"/>
+  <text x="490" y="41" text-anchor="middle" fill="currentColor" font-size="10">RoleControl · decodes grants</text>
+  <rect x="340" y="74" width="300" height="30" rx="5" fill="none" stroke="currentColor"/>
+  <text x="490" y="93" text-anchor="middle" fill="currentColor" font-size="10">RoleVoice · follows to call audio</text>
+  <rect x="340" y="126" width="300" height="30" rx="5" fill="none" stroke="currentColor"/>
+  <text x="490" y="145" text-anchor="middle" fill="currentColor" font-size="10">RoleWideband · whole-site Airspy</text>
+</svg>
+<figcaption>The pool owns every opened dongle as a <code>PoolEntry</code> and answers one question — give me the device with role X — so the engine never names a specific stick.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 A `Pool` is a slice of opened entries behind a mutex, plus an optional event bus:
@@ -195,6 +217,29 @@ Crucially it swaps the `Device` **in place** on the existing `PoolEntry` —
 `Info.Index` updates to the new enumeration. `TestPoolReacquireSwapsDeviceHandleInPlace`
 asserts exactly that: same `PoolEntry`, new `*fakeDevice`, stale handle closed,
 bias-tee re-applied, index refreshed to 7.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 160" width="660" height="160" role="img" aria-label="The USB watchdog state machine keyed on each serial: a present device that the 30-second enumerate stops seeing flips to missing and emits KindSDRDetached; when the same serial reappears under a new bus address the watchdog calls Reacquire, which swaps the Device in place on the existing PoolEntry and returns the serial to present.">
+  <rect x="20" y="52" width="150" height="50" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="95" y="74" text-anchor="middle" fill="var(--accent)" font-size="11">present</text>
+  <text x="95" y="90" text-anchor="middle" fill="var(--fg-muted)" font-size="9">enumerate sees serial</text>
+  <line x1="170" y1="65" x2="253" y2="65" stroke="currentColor"/><polygon points="253,61 263,65 253,69" fill="currentColor"/>
+  <text x="211" y="57" text-anchor="middle" fill="var(--fg-muted)" font-size="9">stops seeing</text>
+  <rect x="263" y="52" width="150" height="50" rx="6" fill="none" stroke="currentColor"/>
+  <text x="338" y="74" text-anchor="middle" fill="currentColor" font-size="11">missing</text>
+  <text x="338" y="90" text-anchor="middle" fill="var(--fg-muted)" font-size="9">KindSDRDetached</text>
+  <line x1="413" y1="65" x2="496" y2="65" stroke="currentColor"/><polygon points="496,61 506,65 496,69" fill="currentColor"/>
+  <text x="454" y="57" text-anchor="middle" fill="var(--fg-muted)" font-size="9">serial reappears</text>
+  <rect x="506" y="52" width="140" height="50" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="576" y="74" text-anchor="middle" fill="var(--accent)" font-size="11">Reacquire</text>
+  <text x="576" y="90" text-anchor="middle" fill="var(--fg-muted)" font-size="9">swap Device in place</text>
+  <line x1="576" y1="102" x2="576" y2="130" stroke="currentColor"/>
+  <line x1="576" y1="130" x2="95" y2="130" stroke="currentColor"/>
+  <line x1="95" y1="130" x2="95" y2="104" stroke="currentColor"/><polygon points="91,112 95,102 99,112" fill="currentColor"/>
+  <text x="335" y="145" text-anchor="middle" fill="var(--fg-muted)" font-size="9">new bus address · same PoolEntry, Role and serial survive</text>
+</svg>
+<figcaption>The watchdog keys a state machine on each serial: a device the 30-second enumerate stops seeing goes <code>missing</code> (<code>KindSDRDetached</code>); when it reappears under a new bus address, <code>Reacquire</code> swaps the <code>Device</code> in place on the same <code>PoolEntry</code>.</figcaption>
+</figure>
 
 ## The problem we hit: the retune-vs-teardown re-open race (issue #686)
 

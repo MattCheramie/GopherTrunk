@@ -47,6 +47,27 @@ so the protocol logic is exercised, **a golden-master conversion test** so the
 DSP-facing output is byte-for-byte correct, and **an opt-in real-hardware tier**
 that smoke-tests against actual silicon when you have it plugged in.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 650 170" width="650" height="170" role="img" aria-label="Every driver depends on the Transport interface, not on the OS USB stack. At that seam two peers are interchangeable: the real platform transport backed by USBDEVFS, WinUSB, or IOKit talking to silicon, and MockTransport, which replays a captured control-transfer Script with no hardware present. The driver cannot tell them apart.">
+  <rect x="8" y="66" width="130" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="73" y="86" text-anchor="middle" fill="currentColor" font-size="11">driver</text>
+  <text x="73" y="100" text-anchor="middle" fill="var(--fg-muted)" font-size="9">rtl2832u · tuners</text>
+  <line x1="138" y1="89" x2="184" y2="89" stroke="currentColor"/><polygon points="184,85 194,89 184,93" fill="currentColor"/>
+  <rect x="194" y="64" width="140" height="50" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="264" y="86" text-anchor="middle" fill="var(--accent)" font-size="11">Transport</text>
+  <text x="264" y="101" text-anchor="middle" fill="var(--fg-muted)" font-size="9">interface (the seam)</text>
+  <line x1="334" y1="78" x2="388" y2="46" stroke="currentColor"/><polygon points="384,42 394,44 389,53" fill="currentColor"/>
+  <line x1="334" y1="100" x2="388" y2="132" stroke="currentColor"/><polygon points="389,125 394,135 384,137" fill="currentColor"/>
+  <rect x="394" y="24" width="248" height="42" rx="6" fill="none" stroke="currentColor"/>
+  <text x="518" y="43" text-anchor="middle" fill="currentColor" font-size="10">real transport → silicon</text>
+  <text x="518" y="57" text-anchor="middle" fill="var(--fg-muted)" font-size="9">USBDEVFS · WinUSB · IOKit</text>
+  <rect x="394" y="112" width="248" height="42" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="518" y="131" text-anchor="middle" fill="var(--accent)" font-size="10">MockTransport → Script</text>
+  <text x="518" y="145" text-anchor="middle" fill="var(--fg-muted)" font-size="9">replays captured transfers · no hardware</text>
+</svg>
+<figcaption>The <code>Transport</code> interface is the seam: the real platform transport and <code>MockTransport</code> are interchangeable peers, so the driver runs its full bring-up against a replayed <code>Script</code> with no hardware present.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 ### The scripted mock transport
@@ -95,6 +116,32 @@ happened, in order, with the right bytes.** The mock even models the messy parts
 path ran, `ClaimErr` injects an `EBUSY` so the claim-failure branch is exercised,
 and `BulkSimulateDeath` fires `onStreamDead` after delivering its packets so the
 issue #345 reaper-death path is covered without unplugging anything.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="How MockTransport verifies a bring-up: the driver issues a ControlOut, the mock pops the next CtrlExchange from its ordered Script and compares direction, bRequest, wValue, wIndex, and the exact payload bytes; a match advances the step, a mismatch records a descriptive error, and after bring-up the test asserts Remaining equals zero, proving every expected transfer happened in order.">
+  <rect x="8" y="62" width="140" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="78" y="82" text-anchor="middle" fill="currentColor" font-size="10">driver ControlOut</text>
+  <text x="78" y="96" text-anchor="middle" fill="var(--fg-muted)" font-size="9">req · val · idx · data</text>
+  <line x1="148" y1="85" x2="184" y2="85" stroke="currentColor"/><polygon points="184,81 194,85 184,89" fill="currentColor"/>
+  <rect x="194" y="62" width="140" height="46" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="264" y="82" text-anchor="middle" fill="var(--accent)" font-size="10">pop CtrlExchange</text>
+  <text x="264" y="96" text-anchor="middle" fill="var(--fg-muted)" font-size="9">next Script step</text>
+  <line x1="334" y1="85" x2="370" y2="85" stroke="currentColor"/><polygon points="370,81 380,85 370,89" fill="currentColor"/>
+  <rect x="380" y="62" width="140" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="450" y="82" text-anchor="middle" fill="currentColor" font-size="10">compare fields</text>
+  <text x="450" y="96" text-anchor="middle" fill="var(--fg-muted)" font-size="9">+ exact bytes</text>
+  <line x1="520" y1="74" x2="566" y2="42" stroke="currentColor"/><polygon points="562,38 572,40 567,49" fill="currentColor"/>
+  <text x="548" y="30" text-anchor="middle" fill="var(--fg-muted)" font-size="9">match</text>
+  <rect x="566" y="24" width="86" height="30" rx="5" fill="none" stroke="var(--accent)"/>
+  <text x="609" y="43" text-anchor="middle" fill="var(--accent)" font-size="10">advance</text>
+  <line x1="520" y1="96" x2="566" y2="128" stroke="currentColor"/><polygon points="567,121 572,131 562,133" fill="currentColor"/>
+  <text x="546" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">mismatch</text>
+  <rect x="566" y="116" width="86" height="30" rx="5" fill="none" stroke="var(--fg-muted)"/>
+  <text x="609" y="135" text-anchor="middle" fill="var(--fg-muted)" font-size="10">recordErr</text>
+  <text x="264" y="130" text-anchor="middle" fill="var(--fg-muted)" font-size="9">after bring-up: assert Remaining() == 0</text>
+</svg>
+<figcaption><code>MockTransport</code> replays a captured <code>Script</code>: each driver transfer is matched against the next <code>CtrlExchange</code> — direction, request, value, index, and exact bytes — and <code>Remaining() == 0</code> proves every expected transfer happened in order.</figcaption>
+</figure>
 
 The same file ships a `MockEnumerator` so even discovery is fakeable — it returns
 a fixed set of descriptors and opens each as a `MockTransport`, which is how the
