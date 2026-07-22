@@ -91,6 +91,10 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	colour := c.colourCode
 	c.mu.Unlock()
 
+	// Count symbols for the effective-baud estimate in the periodic
+	// decode-status line (debug-only; no-op otherwise).
+	c.addStat(&c.stats.Dibits, int64(len(dibits)))
+
 	if c.proc == nil {
 		sts := SyncTrainingDibits()
 		ps := &processState{
@@ -264,6 +268,7 @@ func (c *ControlChannel) processSB(p *processState, dibits []uint8, diffs []comp
 // the BSCH SYNC PDU, locks on the cell identity, then descrambles the
 // BNCH SYSINFO with the learned code to fill the location area.
 func (c *ControlChannel) decodeSB(p *processState, L int) {
+	c.addStat(&c.stats.SBBursts, 1)
 	block := func(start, n int) []uint8 {
 		s := start - p.bufBase
 		return p.buf[s : s+n]
@@ -301,8 +306,17 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		}
 	}
 	if !found {
+		c.addStat(&c.stats.BSCHFail, 1)
+		c.log.Debug("tetra: sync burst BSCH decode failed",
+			"sts_at", L, "system", c.systemName)
 		return
 	}
+	c.addStat(&c.stats.BSCHOK, 1)
+	c.log.Debug("tetra: sync burst decoded",
+		"sts_at", L, "rot", bschRot,
+		"colour_code", sync.ExtendedColourCode()&0x3F,
+		"colour_ext", sync.ExtendedColourCode(),
+		"mcc", sync.MCC, "mnc", sync.MNC, "system", c.systemName)
 	c.LearnColourCode(sync.ExtendedColourCode())
 	// Report the BSCH FEC correction depth: re-encode the recovered
 	// type-1 bits and count how many channel bits the §8.3.1 chain
@@ -342,6 +356,10 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 				if sb.MCC != 0 {
 					ls.MCC, ls.MNC = sb.MCC, sb.MNC
 				}
+				c.addStat(&c.stats.SysInfo, 1)
+				c.log.Debug("tetra: sysinfo",
+					"la", sb.LocationArea, "mcc", ls.MCC, "mnc", ls.MNC,
+					"rot", rot, "system", c.systemName)
 			}
 			if c.fecObserver != nil {
 				received := TetraDibitsToBits(rotateDibits(bnch, rot))
@@ -473,6 +491,7 @@ func (c *ControlChannel) dispatchSlice(slice []uint8, mode ChannelCodingMode, ch
 	}
 	if len(info) >= 1 {
 		if pdu, err := ParsePDU(info); err == nil {
+			c.addStat(&c.stats.SCHPDUs, 1)
 			c.Ingest(pdu)
 		}
 	}

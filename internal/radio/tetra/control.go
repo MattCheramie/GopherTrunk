@@ -1,6 +1,7 @@
 package tetra
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"sync"
@@ -57,6 +58,18 @@ type ControlChannel struct {
 	// adapter uses (see process.go). Lazily constructed on the
 	// first Process call.
 	proc *processState
+
+	// debug is set once in New when the logger is at debug level. It gates
+	// the decode-health counter accumulation (bumpStat) so a production
+	// (info-level) decode carries no counter overhead — same nil-guard
+	// spirit as fecObserver above.
+	debug bool
+	// statsMu guards stats independently of mu: the counters are bumped
+	// from the decode path (dispatchSlice / decodeSB / publishGrant), some
+	// of which run outside mu or call methods that take mu, so a separate
+	// lock avoids any re-entrancy. DrainStats reads and resets under it.
+	statsMu sync.Mutex
+	stats   Stats
 
 	mu               sync.Mutex
 	locked           bool
@@ -326,6 +339,54 @@ func (c *ControlChannel) Topology() TopologyConfig {
 	}
 }
 
+// Stats is a snapshot of TETRA decode-health counters accumulated since the
+// last DrainStats call. It is debug-only telemetry: the counters only move
+// when the control channel's logger is at debug level (see New), and feed the
+// throttled "tetra: decode status" console line the connector emits. All
+// fields are cumulative counts over the drain window except Dibits, which is
+// the symbol count used to estimate the effective baud.
+type Stats struct {
+	Dibits   int64 // symbols (dibits) processed — effective-baud numerator
+	SBBursts int64 // synchronisation-burst candidates entering the SB decoder
+	BSCHOK   int64 // BSCH blocks recovered CRC-clean
+	BSCHFail int64 // SB candidates whose BSCH did not decode under any rotation
+	SysInfo  int64 // BNCH SYSINFO PDUs decoded off the synchronisation burst
+	SCHPDUs  int64 // signalling PDUs parsed off the normal-sync path
+	Grants   int64 // voice grants published
+}
+
+// addStat adds n to a decode-health counter when debug telemetry is on. A
+// no-op (no lock, no write) otherwise, so production decode is unaffected.
+// field must point into c.stats.
+func (c *ControlChannel) addStat(field *int64, n int64) {
+	if !c.debug {
+		return
+	}
+	c.statsMu.Lock()
+	*field += n
+	c.statsMu.Unlock()
+}
+
+// DrainStats returns the decode-health counters accumulated since the last
+// call and resets them to zero. Stays all-zero unless the logger is at debug
+// level (see New / addStat). Safe for concurrent use.
+func (c *ControlChannel) DrainStats() Stats {
+	c.statsMu.Lock()
+	defer c.statsMu.Unlock()
+	s := c.stats
+	c.stats = Stats{}
+	return s
+}
+
+// Locked reports whether the control channel has declared lock. Read-only;
+// mirrors the Topology accessor so the connector can surface lock state in the
+// periodic decode-status line without poking unexported fields.
+func (c *ControlChannel) Locked() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.locked
+}
+
 // Options configure a ControlChannel.
 type Options struct {
 	Bus         *events.Bus
@@ -361,6 +422,7 @@ func New(opts Options) *ControlChannel {
 		resolver:    opts.Resolver,
 		now:         now,
 		fecObserver: opts.FECObserver,
+		debug:       log.Enabled(context.Background(), slog.LevelDebug),
 	}
 }
 
@@ -426,6 +488,7 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			At:        c.now(),
 		},
 	})
+	c.addStat(&c.stats.Grants, 1)
 	c.log.Debug("tetra: grant",
 		"system", c.systemName,
 		"src", g.SourceSSI, "dst", g.DestSSI,
