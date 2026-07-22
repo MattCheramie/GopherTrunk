@@ -537,10 +537,12 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			res.IQTaps.SymbolCardinality = an.cardinality
 		}
 		// Per-symbol differential phase (the π/4-DQPSK rotation signal) for the
-		// rotation-tracker viz. Populated only on the CQPSK path, which is the
-		// only one that buffers complex constellation points.
+		// rotation-tracker viz, plus the 2-D symbol-decision constellation for
+		// the constellation viz's "Symbols" mode. Populated only on the CQPSK
+		// path, which is the only one that buffers complex constellation points.
 		if an != nil && len(an.constBuf) > 1 {
 			res.IQTaps.DiffPhase = diffPhaseSeries(an.constBuf, cfg.captureIQMaxPoints())
+			res.IQTaps.SymbolIQ = symbolIQSeries(an.constBuf, cfg.captureIQMaxPoints())
 		}
 	}
 
