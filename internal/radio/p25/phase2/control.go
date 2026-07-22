@@ -377,34 +377,35 @@ func ParseInterleaveMode(s string) (InterleaveMode, bool) {
 //     scrambled, so the config default (ParseScramblerMode) is
 //     ScramblerOn.
 //
-//   - ScramblerOn (config default): the trellis-decoded 144-bit MAC PDU is XORed
-//     with the leading 144 bits of the PN44 scrambling sequence
-//     derived from the configured (WACN_ID, System_ID, Color_Code)
-//     seed before ParseMACPDU runs. SetScramblerSeed must be
-//     called first so the LFSR has a real seed to clock from; a
-//     zero seed maps to (2^44 - 1) per spec, which is unlikely to
-//     produce useful decoding against on-air traffic.
+//   - ScramblerOn (config default): the CODED MAC channel bits are XORed
+//     with the PN44 scrambling sequence — derived from the configured
+//     (WACN_ID, System_ID, NAC) seed — BEFORE deinterleave/trellis, per
+//     TIA-102.BBAC-1 §7.2.5 (the scrambler wraps the burst "between
+//     demodulation and FEC"). SetScramblerSeed must be called first so
+//     the LFSR has a real seed to clock from; a zero seed maps to
+//     (2^44 - 1) per spec, which is unlikely to produce useful decoding
+//     against on-air traffic. Descrambling in the channel domain is the
+//     issue-#915 fix: the pre-fix code XORed the post-trellis info bits,
+//     a domain the trellis code cannot commute with, so RS(24,16,9)
+//     could never converge on a scrambled burst (mac_rs_valid=0).
 //
-//     ScramblerOn descrambles from the per-burst slot offset
-//     installed via SetScramblerOffset (default 0). Operators
-//     with superframe tracking can update the offset before each
-//     burst arrives; operators without superframe tracking should
-//     use ScramblerProbe instead.
+//     ScramblerOn descrambles from the channel-bit offset installed via
+//     SetScramblerOffset (default 0); the superframe-structured path
+//     supplies each sub-frame's slotChannelPN44Offset automatically.
+//     Operators without superframe tracking should use ScramblerProbe.
 //
-//   - ScramblerProbe: the Process adapter walks each of the 12
-//     spec-defined slot offsets in
-//     framing.PN44SlotOffsetsOutbound (Figure 7-5), descrambles
-//     with each, and accepts the first candidate whose outer
-//     RS(24, 16, 9) syndromes are zero. This is the blind-probe
-//     form for receivers without superframe synchronization — it
-//     locks onto any of the 12 slots without external timing
-//     context.
+//   - ScramblerProbe: descrambles the channel bits at each candidate
+//     offset in the continuous 4320-bit superframe sequence and accepts
+//     the first whose outer RS(24, 16, 9) syndromes are zero. This is the
+//     self-aligning form for a receiver whose slot-to-sequence phase is
+//     not yet pinned; the RS gate makes the sweep safe (a wrong offset
+//     satisfies the syndromes with probability ≈2^-48, so garbage is
+//     never accepted).
 //
 //     ScramblerProbe requires RSMode to be RSOn — without RS
-//     verification there is no way to tell which of the 12
-//     descrambled candidates is the true PDU. When RSMode is
-//     RSOff, ScramblerProbe degrades silently to ScramblerOn
-//     behaviour (the leading offset wins).
+//     verification there is no way to tell which descrambled candidate
+//     is the true PDU. When RSMode is RSOff, ScramblerProbe degrades
+//     silently to ScramblerOn behaviour at the configured offset.
 type ScramblerMode uint8
 
 const (

@@ -81,6 +81,32 @@ func EncodeMACSubframe(slotType SlotType, counter uint8, pdu MACPDU, mode Trelli
 	return sub
 }
 
+// EncodeMACSubframeScrambled builds a MAC sub-frame exactly like
+// EncodeMACSubframe and then applies the PN44 channel-bit scrambling that
+// a real P25 Phase 2 downlink carries (TIA-102.BBAC-1 §7.2.5): the coded
+// MAC channel bits are XORed with the superframe scrambling sequence at
+// the sub-frame's channel-bit offset (slotChannelPN44Offset). It is the
+// transmit-side inverse of the ScramblerOn descramble in
+// decodeMACPDUDibits, and exists so tests can build a realistically
+// scrambled burst without a real over-the-air capture (issue #915).
+//
+// slotIndex is the sub-frame's 0..11 position within the superframe; seed
+// is the 44-bit PN44 seed (framing.PN44SeedFromIdentity). Only the MAC
+// payload region is scrambled — the ISCH is outside the scrambled window.
+func EncodeMACSubframeScrambled(slotType SlotType, counter uint8, pdu MACPDU, mode TrellisMode, interleave InterleaveMode, slotIndex int, seed uint64) []uint8 {
+	sub := EncodeMACSubframe(slotType, counter, pdu, mode, interleave)
+	macLen := macPDUDibits
+	if mode == TrellisOn {
+		macLen = macPDUDibitsTrellis
+	}
+	region := sub[MACPayloadOffset : MACPayloadOffset+macLen]
+	bits := framing.DibitsToBits(region)
+	// XOR is symmetric, so the descramble primitive scrambles too.
+	descrambleAtOffset(bits, seed, slotChannelPN44Offset(slotIndex))
+	copy(region, framing.BitsToDibits(bits))
+	return sub
+}
+
 // EncodeMACPDURS returns pdu with the outer RS(24, 16, 9) parity
 // (TIA-102.BAAA-A §5.9) filled in, so the assembled 18-byte MAC PDU
 // verifies under verifyMACPDURS. Real over-the-air MAC PDUs always

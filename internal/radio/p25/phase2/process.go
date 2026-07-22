@@ -135,26 +135,77 @@ func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rs
 //     dibits + 1 finisher transition. DecodeP25Trellis recovers
 //     the 72 information dibits.
 //
-// When interleaveMode is InterleaveOn the per-burst block
-// interleaver (TIA-102.BBAC) is undone before trellis decoding.
+// Pipeline order (issue #915). Per TIA-102.BBAC-1 §7.2.5 the PN44
+// scrambler wraps the CODED channel bits "between demodulation and
+// FEC", so the descramble runs FIRST — on the raw channel dibits —
+// and only then does the FEC chain (deinterleave, then trellis) run.
+// This matches the reference decoders (SDRtrunk's Timeslot.xor() and
+// OP25's handle_packet() both XOR the mask over the coded burst before
+// deinterleave/trellis/RS). GopherTrunk previously descrambled the
+// recovered 144 INFORMATION bits AFTER the trellis; because the trellis
+// code does not commute with the XOR, that domain can never satisfy the
+// outer RS(24, 16, 9) check on a genuinely scrambled burst, which is
+// why real Phase 2 traffic decoded with mac_rs_valid = 0 regardless of
+// seed (issue #915, Finding B).
 //
-// When scramblerMode is ScramblerOn the recovered 144 info bits
-// are XORed with 144 bits of the PN44 sequence starting at
-// scramblerOffset (per TIA-102.BBAC-1 §7.2.5) before RS check or
-// MAC parse runs.
+// When scramblerMode is ScramblerOn the channel bits are XORed with the
+// PN44 sequence starting at scramblerOffset — the caller passes the
+// slot's channel-bit offset into the continuous 4320-bit superframe
+// sequence (slotChannelPN44Offset); the sequence runs continuously
+// across the 360 ms superframe rather than restarting per burst.
 //
-// When scramblerMode is ScramblerProbe each of the 12 spec-defined
-// slot offsets in framing.PN44SlotOffsetsOutbound (Figure 7-5) is
-// tried and the first candidate whose outer RS(24, 16, 9) syndromes
-// are zero is accepted — the blind-probe form for receivers without
-// superframe synchronization. ScramblerProbe requires rsMode == RSOn;
-// otherwise it degrades to ScramblerOn behaviour at scramblerOffset.
+// When scramblerMode is ScramblerProbe each of the 12 slot channel-bit
+// phases (slotChannelPN44Offset) is tried and the first candidate whose
+// outer RS(24, 16, 9) syndromes are zero is accepted — the self-aligning
+// form for a receiver without superframe synchronization, where the
+// sub-frame's slot within the superframe (hence its phase into the
+// continuous 4320-bit sequence) is not yet pinned. The RS gate makes the
+// sweep safe: a wrong offset packs into random bytes that satisfy the
+// 8-parity-symbol syndrome with probability ≈2^-48, so the sweep never
+// accepts garbage. ScramblerProbe requires rsMode == RSOn; otherwise it
+// degrades to ScramblerOn at scramblerOffset.
 //
-// When rsMode is RSOn the (post-descramble) 18-byte MAC PDU is
-// re-grouped into 24 hex symbols and verified against the
-// RS(24, 16, 9) outer code per TIA-102.BAAA-A §5.9; PDUs whose
-// syndromes are non-zero are rejected.
+// When rsMode is RSOn the (descrambled, FEC-decoded) 18-byte MAC PDU is
+// re-grouped into 24 hex symbols and verified against the RS(24, 16, 9)
+// outer code per TIA-102.BAAA-A §5.9; PDUs whose syndromes are non-zero
+// are rejected.
 func decodeMACPDUDibits(macDibits []uint8, mode TrellisMode, rsMode RSMode, interleaveMode InterleaveMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) (MACPDU, bool) {
+	switch scramblerMode {
+	case ScramblerProbe:
+		if rsMode != RSOn {
+			// Without the RS gate there is no way to tell a correct
+			// offset from a wrong one, so fall back to the fixed offset.
+			return descrambleChannelAndParse(macDibits, mode, interleaveMode, rsMode, scramblerSeed, scramblerOffset)
+		}
+		for slot := 0; slot < SubframesPerSuperframe; slot++ {
+			off := slotChannelPN44Offset(slot)
+			if pdu, ok := descrambleChannelAndParse(macDibits, mode, interleaveMode, RSOn, scramblerSeed, off); ok {
+				return pdu, true
+			}
+		}
+		return MACPDU{}, false
+	case ScramblerOn:
+		return descrambleChannelAndParse(macDibits, mode, interleaveMode, rsMode, scramblerSeed, scramblerOffset)
+	default: // ScramblerOff
+		return decodeMACChannelAndParse(macDibits, mode, interleaveMode, rsMode)
+	}
+}
+
+// descrambleChannelAndParse XOR-descrambles the coded channel bits of
+// macDibits at channelOffset (per TIA-102.BBAC-1 §7.2.5 — the scrambler
+// domain is the channel bits, not the post-FEC info bits) and then runs
+// the FEC + parse chain over the descrambled burst. The input slice is
+// left untouched.
+func descrambleChannelAndParse(macDibits []uint8, mode TrellisMode, interleaveMode InterleaveMode, rsMode RSMode, seed uint64, channelOffset int) (MACPDU, bool) {
+	bits := framing.DibitsToBits(macDibits)
+	descrambleAtOffset(bits, seed, channelOffset)
+	return decodeMACChannelAndParse(framing.BitsToDibits(bits), mode, interleaveMode, rsMode)
+}
+
+// decodeMACChannelAndParse runs the FEC chain (deinterleave, then
+// trellis) over channel dibits, re-groups the recovered 144 information
+// bits into the 18-byte MAC PDU, optionally RS-verifies, and parses.
+func decodeMACChannelAndParse(macDibits []uint8, mode TrellisMode, interleaveMode InterleaveMode, rsMode RSMode) (MACPDU, bool) {
 	// Undo the per-burst block interleaver before trellis decoding,
 	// when enabled. DeinterleaveMACBurst returns a fresh slice so the
 	// caller's buffer is untouched.
@@ -178,48 +229,7 @@ func decodeMACPDUDibits(macDibits []uint8, mode TrellisMode, rsMode RSMode, inte
 		}
 		infoDibits = macDibits
 	}
-	rawBits := framing.DibitsToBits(infoDibits)
-
-	switch scramblerMode {
-	case ScramblerProbe:
-		if rsMode != RSOn {
-			return descrambleAndParse(rawBits, scramblerSeed, scramblerOffset, rsMode)
-		}
-		for _, off := range framing.PN44SlotOffsetsOutbound {
-			candidate := append([]byte(nil), rawBits...)
-			descrambleAtOffset(candidate, scramblerSeed, off)
-			info := framing.PackBitsMSB(candidate)
-			if len(info) < 18 || !verifyMACPDURS(info[:18]) {
-				continue
-			}
-			if pdu, err := ParseMACPDU(info[:18]); err == nil {
-				return pdu, true
-			}
-			return MACPDU{}, false
-		}
-		return MACPDU{}, false
-	case ScramblerOn:
-		return descrambleAndParse(rawBits, scramblerSeed, scramblerOffset, rsMode)
-	default:
-		info := framing.PackBitsMSB(rawBits)
-		if len(info) < 18 {
-			return MACPDU{}, false
-		}
-		if rsMode == RSOn && !verifyMACPDURS(info[:18]) {
-			return MACPDU{}, false
-		}
-		if pdu, err := ParseMACPDU(info[:18]); err == nil {
-			return pdu, true
-		}
-		return MACPDU{}, false
-	}
-}
-
-// descrambleAndParse descrambles bits in-place at the supplied offset,
-// RS-verifies (when rsMode == RSOn), and returns the parsed PDU.
-func descrambleAndParse(bits []byte, seed uint64, offset int, rsMode RSMode) (MACPDU, bool) {
-	descrambleAtOffset(bits, seed, offset)
-	info := framing.PackBitsMSB(bits)
+	info := framing.PackBitsMSB(framing.DibitsToBits(infoDibits))
 	if len(info) < 18 {
 		return MACPDU{}, false
 	}
@@ -232,15 +242,20 @@ func descrambleAndParse(bits []byte, seed uint64, offset int, rsMode RSMode) (MA
 	return MACPDU{}, false
 }
 
+// pn44SuperframeBits is the length in channel bits of one 360 ms P25
+// Phase 2 superframe (12 sub-frames × 180 dibits × 2 bits) — the period
+// of the PN44 scrambling sequence per TIA-102.BBAC-1 §7.2.5. Channel-bit
+// offsets fold into this period.
+const pn44SuperframeBits = DibitsPerSuperframe * 2
+
 // descrambleAtOffset XOR-descrambles bits in-place with the PN44
 // sequence starting at offset (folded into the 4320-bit
 // superframe period).
 func descrambleAtOffset(bits []byte, seed uint64, offset int) {
 	s := framing.NewPN44Scrambler(seed)
-	const superframeBits = 4320
-	offset = offset % superframeBits
+	offset = offset % pn44SuperframeBits
 	if offset < 0 {
-		offset += superframeBits
+		offset += pn44SuperframeBits
 	}
 	if offset > 0 {
 		s.Advance(offset)
