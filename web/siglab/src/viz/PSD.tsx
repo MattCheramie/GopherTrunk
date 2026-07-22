@@ -42,6 +42,10 @@ export function PSD({ jobId }: { jobId: string }) {
   const n = psd?.bins.length ?? 0;
   const base = psd ? -psd.sample_rate_hz / 2 : 0;
   const step = psd && n > 0 ? psd.sample_rate_hz / n : 0;
+  // Symmetric baseband span in kHz — the spectrum is centered on DC, so a
+  // linear ±rate/2 axis gives round, symmetric ticks (a "mean" view) instead
+  // of the ragged category-index labels Chart.js would otherwise pick.
+  const halfKHz = psd ? psd.sample_rate_hz / 2 / 1000 : 0;
 
   return (
     <div className="card">
@@ -50,11 +54,12 @@ export function PSD({ jobId }: { jobId: string }) {
       {psd && n > 0 ? (
         <Line
           data={{
-            labels: psd.bins.map((_, i) => ((base + i * step) / 1000).toFixed(1)),
             datasets: [
               {
                 label: "PSD (dBFS)",
-                data: psd.bins,
+                // {x,y} points on a linear kHz axis: x is the bin's baseband
+                // frequency, so the axis is symmetric about DC.
+                data: psd.bins.map((y, i) => ({ x: (base + i * step) / 1000, y })),
                 borderColor: "#38bdf8",
                 pointRadius: 0,
                 borderWidth: 1,
@@ -65,7 +70,13 @@ export function PSD({ jobId }: { jobId: string }) {
             responsive: true,
             plugins: { legend: { display: false } },
             scales: {
-              x: { title: { display: true, text: "kHz" }, ticks: { maxTicksLimit: 12 } },
+              x: {
+                type: "linear",
+                min: -halfKHz,
+                max: halfKHz,
+                title: { display: true, text: "kHz" },
+                ticks: { maxTicksLimit: 13 },
+              },
               y: { title: { display: true, text: "dBFS" } },
             },
           }}

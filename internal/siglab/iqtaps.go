@@ -56,6 +56,16 @@ type IQTaps struct {
 	// ±π/4 and ±3π/4. Populated only on the CQPSK / π4-DQPSK path (the deep
 	// constellation buffer); empty for C4FM and the 2-level paths.
 	DiffPhase []float32 `json:"diff_phase,omitempty" yaml:"diff_phase,omitempty"`
+
+	// SymbolIQ is the recovered complex symbol-decision constellation — the
+	// post-timing-recovery decision points, one per symbol, decimated to the
+	// same cap as the IQ. Unlike DecimatedIQ (the raw channelized stream, which
+	// renders as a diffuse disc), these are the actual demod outputs, so a
+	// π/4-DQPSK control channel renders as discrete decision clusters. It backs
+	// the constellation viz's "Symbols" mode. Populated only on the CQPSK /
+	// π4-DQPSK path (the deep constellation buffer); empty for C4FM and the
+	// 2-level paths, which buffer no complex constellation.
+	SymbolIQ []IQPoint `json:"symbol_iq,omitempty" yaml:"symbol_iq,omitempty"`
 }
 
 // decimateSymbolSeries stride-decimates an aligned dibit + soft stream
@@ -101,6 +111,26 @@ func diffPhaseSeries(constBuf []complex64, maxPoints int) []float32 {
 	out := make([]float32, 0, (len(d)+stride-1)/stride)
 	for i := 0; i < len(d); i += stride {
 		out = append(out, float32(d[i]))
+	}
+	return out
+}
+
+// symbolIQSeries stride-decimates a complex constellation buffer — the
+// recovered per-symbol decision points — to at most maxPoints IQPoints,
+// preserving each point's I/Q. It is the 2-D companion to diffPhaseSeries
+// (same buffer, but the whole complex point instead of the differential
+// phase). Returns nil when the buffer is empty or maxPoints ≤ 0.
+func symbolIQSeries(constBuf []complex64, maxPoints int) []IQPoint {
+	if len(constBuf) == 0 || maxPoints <= 0 {
+		return nil
+	}
+	stride := 1
+	if len(constBuf) > maxPoints {
+		stride = (len(constBuf) + maxPoints - 1) / maxPoints
+	}
+	out := make([]IQPoint, 0, (len(constBuf)+stride-1)/stride)
+	for i := 0; i < len(constBuf); i += stride {
+		out = append(out, IQPoint{I: real(constBuf[i]), Q: imag(constBuf[i])})
 	}
 	return out
 }

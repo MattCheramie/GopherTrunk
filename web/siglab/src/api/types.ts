@@ -20,6 +20,10 @@ export interface IQTaps {
   // Per-symbol differential phase (radians) of the complex constellation —
   // the π/4-DQPSK rotation signal. Present only on the CQPSK path.
   diff_phase?: number[];
+  // Recovered complex symbol-decision points (the true constellation). Unlike
+  // decimated_iq (the raw disc), these render as discrete decision clusters.
+  // Present only on the CQPSK / π4-DQPSK path.
+  symbol_iq?: IQPoint[];
 }
 
 // PSDResult is the server-computed Welch power spectrum from

@@ -128,7 +128,7 @@ function VizGrid({ r, iq, jobId }: { r: Result; iq?: Result["iq_taps"]; jobId?: 
     <div className="grid gap-4 lg:grid-cols-2">
       {r.signal && <SymbolHistogram signal={r.signal} />}
       {r.signal?.demod && <VSAMetrics demod={r.signal.demod} />}
-      {hasIQ && <Constellation points={iq!.decimated_iq} />}
+      {hasIQ && <Constellation points={iq!.decimated_iq} symbols={iq!.symbol_iq} />}
       {hasIQ && jobId && <PSD jobId={jobId} />}
       {hasIQ && jobId && <Spectrogram jobId={jobId} />}
       {(soft.length > 1 || detail.soft_eye) && (
