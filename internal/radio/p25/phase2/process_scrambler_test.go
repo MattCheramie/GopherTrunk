@@ -187,7 +187,10 @@ func TestProcessDescramblerProbeFindsOffset(t *testing.T) {
 		slotIndex  = 5
 		opGrpGrant = byte(0x40)
 	)
-	offset := framing.PN44SlotOffsetsOutbound[slotIndex]
+	// Channel-domain descramble (issue #915): the probe sweeps each slot's
+	// channel-bit offset (slotChannelPN44Offset), so the fixture is scrambled
+	// at that same offset rather than the bare slot-start offset.
+	offset := slotChannelPN44Offset(slotIndex)
 
 	// Build a MAC PDU whose first 16 hex symbols (96 bits = 12
 	// bytes) carry the payload, then RS-encode to fill the trailing
@@ -271,7 +274,10 @@ func TestProcessDescramblerProbeRejectsWrongSeed(t *testing.T) {
 		differentSeed = uint64(0x1234567890A)
 		slotIndex     = 3
 	)
-	offset := framing.PN44SlotOffsetsOutbound[slotIndex]
+	// Channel-domain descramble (issue #915): the probe sweeps each slot's
+	// channel-bit offset (slotChannelPN44Offset), so the fixture is scrambled
+	// at that same offset rather than the bare slot-start offset.
+	offset := slotChannelPN44Offset(slotIndex)
 
 	// Build any RS-encoded MAC PDU.
 	var info [16]byte

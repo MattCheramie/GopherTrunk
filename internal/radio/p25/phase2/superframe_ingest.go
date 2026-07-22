@@ -1,7 +1,5 @@
 package phase2
 
-import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
-
 // MACPayloadOffset is the dibit offset of the MAC PDU within a
 // 180-dibit sub-frame: it follows the SyncDibits-wide region and the
 // ISCH, sharing the same start as a voice sub-frame's first voice
@@ -55,9 +53,10 @@ type DecodedMACPDU struct {
 // DecodeSuperframeMACPDUs; callers that route on the PTT slot
 // (encryption sync) use this one.
 //
-// The PN44 descrambler is handed the spec's per-slot offset
-// (slotPN44Offset) because superframe sync pins which of the 12 TDMA
-// slots each sub-frame occupies.
+// The PN44 descrambler is handed the sub-frame's channel-bit offset
+// (slotChannelPN44Offset) because superframe sync pins which of the 12
+// TDMA slots each sub-frame occupies, and the descramble runs on the
+// coded channel bits before FEC (issue #915).
 func DecodeSuperframeMACPDUsWithSlot(sf Superframe, cfg MACDecodeConfig) []DecodedMACPDU {
 	macLen := macPDUDibits
 	if cfg.Trellis == TrellisOn {
@@ -72,7 +71,7 @@ func DecodeSuperframeMACPDUsWithSlot(sf Superframe, cfg MACDecodeConfig) []Decod
 			continue
 		}
 		macDibits := sub.Dibits[MACPayloadOffset : MACPayloadOffset+macLen]
-		offset := slotPN44Offset(sub.Index)
+		offset := slotChannelPN44Offset(sub.Index)
 		if pdu, ok := decodeMACPDUDibits(macDibits, cfg.Trellis, cfg.RS,
 			cfg.Interleave, cfg.Scrambler, cfg.Seed, offset); ok {
 			out = append(out, DecodedMACPDU{
@@ -129,14 +128,24 @@ func (c *ControlChannel) IngestSuperframe(sf Superframe) {
 	}
 }
 
-// slotPN44Offset returns the PN44 sequence offset for sub-frame index
-// (0..11) — the spec-defined per-slot offset, known here because
-// superframe sync pins which slot a sub-frame occupies. Out-of-range
-// indices fall back to offset 0.
-func slotPN44Offset(index int) int {
-	offs := framing.PN44SlotOffsetsOutbound
-	if index < 0 || index >= len(offs) {
+// slotChannelPN44Offset returns the PN44 sequence offset, in CHANNEL
+// bits, at which sub-frame index's MAC payload begins within the
+// continuous 4320-bit superframe scrambling sequence (TIA-102.BBAC-1
+// §7.2.5). Because the descramble is applied to the coded channel bits
+// before FEC (issue #915), the offset is the absolute channel-bit
+// position of the MAC payload: the sub-frame's start in the superframe
+// (index × DibitsPerSubframe × 2 bits) plus the MAC payload's offset
+// within the sub-frame (MACPayloadOffset × 2 bits), which follows the
+// sync + ISCH region.
+//
+// GopherTrunk's superframe grid (sync width, ISCH placement) is a
+// documented working assumption, so this offset is the principled
+// default for ScramblerOn; ScramblerProbe confirms the true phase
+// against the RS gate rather than trusting it. Out-of-range indices
+// fall back to offset 0.
+func slotChannelPN44Offset(index int) int {
+	if index < 0 || index >= SubframesPerSuperframe {
 		return 0
 	}
-	return offs[index]
+	return (index*DibitsPerSubframe + MACPayloadOffset) * 2
 }

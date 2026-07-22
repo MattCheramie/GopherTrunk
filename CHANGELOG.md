@@ -84,6 +84,21 @@ for tagged releases.
   real Victorian MMR (WACN 0xBEE00) Phase 2 voice capture: 0 superframes before,
   ~430 after. (issue #915; the traffic-channel MAC descramble mapping that keeps
   `mac_rs_valid=0` even on a locked superframe is a separate, still-open blocker.)
+- **P25 Phase 2 MAC descramble moved to the coded-channel-bit domain.** The PN44
+  scrambler (TIA-102.BBAC-1 §7.2.5) wraps the burst "between demodulation and
+  FEC", i.e. over the coded channel bits — but GopherTrunk XORed the recovered
+  144 *information* bits *after* the trellis decode. The trellis code does not
+  commute with the XOR, so a genuinely scrambled burst could never satisfy the
+  outer RS(24,16,9) check regardless of seed — the `mac_rs_valid=0` blocker that
+  suppresses the Phase 2 source RID (and talker alias). The descramble now runs
+  on the raw channel dibits before deinterleave/trellis, at each sub-frame's
+  channel-bit offset into the continuous 4320-bit superframe sequence, matching
+  the reference decoders (SDRtrunk `Timeslot.xor()`, OP25 `handle_packet()`).
+  `ScramblerProbe` self-aligns the slot phase against the RS gate. Regression
+  tests build a channel-scrambled burst from the reporter's confirmed MMR
+  identity (WACN 0xBEE00 / System ID 0x164 / NAC 0x161) and recover the source
+  RID through the full FEC chain; live-air confirmation of the per-slot offset is
+  pending the reporter's `mac_rs_valid` re-pull. (issue #915, Finding B)
 - **TETRA control channels now lock on real air (§8.2.5 scrambler).** The
   scrambling LFSR shifted its register the wrong direction relative to the tap
   convention, so the generated sequence diverged from ETSI EN 300 392-2 §8.2.5
