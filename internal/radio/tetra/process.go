@@ -25,6 +25,10 @@ type processState struct {
 	softBuf    []complex64 // per-dibit soft differential, parallel to buf (nil ⇒ hard-only)
 	bufBase    int         // absolute dibit index of buf[0] / softBuf[0]
 	pendingSTS []int       // STS leading indices awaiting look-ahead
+
+	// ncdb decodes real downlink slots (correct NCDB geometry + AACH-steered
+	// MAC demux) under ChannelCodingOn. Lazily built. See downlink.go.
+	ncdb *downlinkNCDB
 }
 
 // Synchronisation downlink burst (SB) geometry in dibits, per ETSI
@@ -112,6 +116,14 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	if mode == ChannelCodingOn {
 		diffs := c.takeStashSoft(baseIdx, len(dibits))
 		c.processSB(p, dibits, diffs, baseIdx)
+		// AACH-steered NCDB decode with correct burst geometry + MAC demux —
+		// the path that recovers voice-call grants on real air. Additive
+		// alongside the legacy fixed-slice normal path below (which stays for
+		// the synthetic in-package fixtures).
+		if p.ncdb == nil {
+			p.ncdb = newDownlinkNCDB(c.decodeDownlinkSlot)
+		}
+		p.ncdb.process(dibits, baseIdx)
 	}
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
