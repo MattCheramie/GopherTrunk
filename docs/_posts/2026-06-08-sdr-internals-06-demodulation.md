@@ -42,6 +42,31 @@ The learn-path lesson
 [The demodulation pipeline]({{ '/learn/rf-sdr/demodulation-pipeline/' | relative_url }})
 gives the visual intuition.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 650 110" width="650" height="110" role="img" aria-label="The shared demodulation pipeline: baseband IQ enters an FM discriminator front-end, whose discriminated signal passes through a matched filter, then a 4-level slicer, producing soft symbols on the plus or minus three, plus or minus one alphabet.">
+  <rect x="8" y="34" width="108" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="62" y="54" text-anchor="middle" fill="currentColor" font-size="11">IQ samples</text>
+  <text x="62" y="68" text-anchor="middle" fill="var(--fg-muted)" font-size="8">baseband</text>
+  <line x1="116" y1="56" x2="134" y2="56" stroke="currentColor"/><polygon points="134,52 144,56 134,60" fill="currentColor"/>
+  <rect x="136" y="34" width="108" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="190" y="54" text-anchor="middle" fill="var(--accent)" font-size="11">FM discriminator</text>
+  <text x="190" y="68" text-anchor="middle" fill="var(--fg-muted)" font-size="8">shared front-end</text>
+  <line x1="244" y1="56" x2="262" y2="56" stroke="currentColor"/><polygon points="262,52 272,56 262,60" fill="currentColor"/>
+  <rect x="264" y="34" width="108" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="318" y="54" text-anchor="middle" fill="currentColor" font-size="11">matched filter</text>
+  <text x="318" y="68" text-anchor="middle" fill="var(--fg-muted)" font-size="8">RRC / Gaussian</text>
+  <line x1="372" y1="56" x2="390" y2="56" stroke="currentColor"/><polygon points="390,52 400,56 390,60" fill="currentColor"/>
+  <rect x="392" y="34" width="108" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="446" y="54" text-anchor="middle" fill="currentColor" font-size="11">4-level slicer</text>
+  <text x="446" y="68" text-anchor="middle" fill="var(--fg-muted)" font-size="8">to symbol alphabet</text>
+  <line x1="500" y1="56" x2="518" y2="56" stroke="currentColor"/><polygon points="518,52 528,56 518,60" fill="currentColor"/>
+  <rect x="530" y="34" width="112" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="586" y="54" text-anchor="middle" fill="currentColor" font-size="11">soft symbols</text>
+  <text x="586" y="68" text-anchor="middle" fill="var(--fg-muted)" font-size="8">&#177;3, &#177;1</text>
+</svg>
+<figcaption>The C4FM demod pipeline: IQ through the shared FM discriminator, a root-raised-cosine matched filter, and a 4-level slicer to soft symbols &#8212; each stage a Part 4 primitive.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 Each demodulator is a self-contained stateful struct that takes IQ (or a
@@ -69,6 +94,30 @@ There's also an `AdaptiveC4FM` that adds automatic frequency correction to track
 transmitter drift. Each type is a few dozen lines because the hard work — the
 filters, the oscillator — was already built in
 [Part 4]({{ '/blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/' | relative_url }}).
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 196" width="660" height="196" role="img" aria-label="One shared FM discriminator front-end fans out to four matched-filter-and-slicer variants: C4FM with a root-raised-cosine filter and 4-level slicer, GFSK with a Gaussian matched filter, FFSK for audio-band signaling, and pi-over-4 DQPSK for TETRA.">
+  <rect x="8" y="80" width="70" height="36" rx="6" fill="none" stroke="currentColor"/>
+  <text x="43" y="102" text-anchor="middle" fill="currentColor" font-size="10">IQ</text>
+  <line x1="78" y1="98" x2="96" y2="98" stroke="currentColor"/><polygon points="96,94 106,98 96,102" fill="currentColor"/>
+  <rect x="106" y="74" width="120" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="166" y="94" text-anchor="middle" fill="var(--accent)" font-size="11">FM discriminator</text>
+  <text x="166" y="110" text-anchor="middle" fill="var(--fg-muted)" font-size="8">shared front-end</text>
+  <line x1="226" y1="90" x2="300" y2="30" stroke="currentColor"/><polygon points="296,26 306,29 300,38" fill="currentColor"/>
+  <line x1="226" y1="96" x2="300" y2="76" stroke="currentColor"/><polygon points="296,72 306,75 299,84" fill="currentColor"/>
+  <line x1="226" y1="104" x2="300" y2="122" stroke="currentColor"/><polygon points="299,116 306,124 296,125" fill="currentColor"/>
+  <line x1="226" y1="110" x2="300" y2="168" stroke="currentColor"/><polygon points="298,161 306,170 294,169" fill="currentColor"/>
+  <rect x="306" y="14" width="340" height="32" rx="5" fill="none" stroke="currentColor"/>
+  <text x="318" y="34" fill="currentColor" font-size="10">C4FM &#8212; RRC matched filter + 4-level slicer (P25/DMR/NXDN)</text>
+  <rect x="306" y="60" width="340" height="32" rx="5" fill="none" stroke="currentColor"/>
+  <text x="318" y="80" fill="currentColor" font-size="10">GFSK &#8212; Gaussian matched filter (EDACS)</text>
+  <rect x="306" y="106" width="340" height="32" rx="5" fill="none" stroke="currentColor"/>
+  <text x="318" y="126" fill="currentColor" font-size="10">FFSK &#8212; audio-band FSK (MPT 1327, POCSAG)</text>
+  <rect x="306" y="152" width="340" height="32" rx="5" fill="none" stroke="currentColor"/>
+  <text x="318" y="172" fill="currentColor" font-size="10">&#960;/4-DQPSK &#8212; differential QPSK (TETRA)</text>
+</svg>
+<figcaption>The demod family: one FM discriminator feeds four matched-filter-and-slicer variants, each a small single-responsibility type composed from shared primitives.</figcaption>
+</figure>
 
 ## The design principle: single responsibility
 

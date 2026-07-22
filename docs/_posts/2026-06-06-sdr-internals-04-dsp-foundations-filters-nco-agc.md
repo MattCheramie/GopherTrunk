@@ -40,6 +40,34 @@ the band. Four primitives fix that:
   dongle's rate and a protocol's symbol clock.
   ([reference]({{ '/reference/resampler/' | relative_url }}))
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 150" width="680" height="150" role="img" aria-label="The four DSP primitives compose left to right into one signal chain: wideband IQ enters an NCO or mixer that shifts it to baseband, then FIR or CIC filters that filter and decimate, then AGC that levels amplitude to a target, then a resampler that converts to the protocol symbol clock, emitting symbols. Every stage uses the same Process destination-source buffer-reuse convention.">
+  <text x="340" y="20" text-anchor="middle" fill="var(--fg-muted)" font-size="10">Process(dst, src) — buffers reused every chunk</text>
+  <rect x="8" y="52" width="86" height="44" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="51" y="78" text-anchor="middle" fill="var(--fg-muted)" font-size="10">wideband IQ</text>
+  <line x1="94" y1="74" x2="108" y2="74" stroke="currentColor"/><polygon points="108,70 116,74 108,78" fill="currentColor"/>
+  <rect x="116" y="52" width="96" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="164" y="72" text-anchor="middle" fill="var(--accent)" font-size="10">NCO / mixer</text>
+  <text x="164" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">shift to baseband</text>
+  <line x1="212" y1="74" x2="226" y2="74" stroke="currentColor"/><polygon points="226,70 234,74 226,78" fill="currentColor"/>
+  <rect x="234" y="52" width="96" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="282" y="72" text-anchor="middle" fill="currentColor" font-size="10">FIR / CIC</text>
+  <text x="282" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">filter + decimate</text>
+  <line x1="330" y1="74" x2="344" y2="74" stroke="currentColor"/><polygon points="344,70 352,74 344,78" fill="currentColor"/>
+  <rect x="352" y="52" width="96" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="400" y="72" text-anchor="middle" fill="var(--accent)" font-size="10">AGC</text>
+  <text x="400" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">level to target</text>
+  <line x1="448" y1="74" x2="462" y2="74" stroke="currentColor"/><polygon points="462,70 470,74 462,78" fill="currentColor"/>
+  <rect x="470" y="52" width="120" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="530" y="72" text-anchor="middle" fill="currentColor" font-size="10">resampler</text>
+  <text x="530" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">L/M to symbol clock</text>
+  <line x1="590" y1="74" x2="604" y2="74" stroke="currentColor"/><polygon points="604,70 612,74 604,78" fill="currentColor"/>
+  <rect x="612" y="52" width="62" height="44" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="643" y="78" text-anchor="middle" fill="var(--fg-muted)" font-size="10">symbols</text>
+</svg>
+<figcaption>The four primitives compose into one chain — mix, filter, level, resample — each a stateful struct driven through the same <code>Process(dst, src)</code> signature so the hot path never allocates.</figcaption>
+</figure>
+
 The learn-path lesson
 [Filtering & decimation]({{ '/learn/rf-sdr/filtering-decimation/' | relative_url }})
 covers the theory; this post is about the code.
@@ -67,6 +95,24 @@ advanced sample by sample so the phasor stays continuous across chunk
 boundaries. The AGC tracks a running magnitude estimate (an exponential moving
 average) and scales toward a target level. The resampler keeps its polyphase
 filter state between calls.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 620 170" width="620" height="170" role="img" aria-label="A signal-level-over-time timeline showing what AGC does. The raw input amplitude sits at noise level, jumps sharply when a transmitter keys up, and later fades. The AGC output is held near a constant target level throughout, with only a brief transient at key-up and at the fade.">
+  <line x1="40" y1="20" x2="40" y2="140" stroke="currentColor"/>
+  <line x1="40" y1="140" x2="600" y2="140" stroke="currentColor"/>
+  <text x="16" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="9" transform="rotate(-90 16 84)">level</text>
+  <text x="576" y="156" text-anchor="middle" fill="var(--fg-muted)" font-size="9">time →</text>
+  <line x1="40" y1="70" x2="600" y2="70" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="80" y="64" fill="var(--fg-muted)" font-size="9">target level</text>
+  <polyline points="50,120 170,120 180,45 300,50 420,48 432,96 590,102" fill="none" stroke="currentColor"/>
+  <polyline points="50,74 178,74 188,52 214,72 420,72 432,86 462,72 590,72" fill="none" stroke="var(--accent)"/>
+  <text x="185" y="36" text-anchor="middle" fill="var(--fg-muted)" font-size="9">key-up</text>
+  <text x="470" y="118" text-anchor="middle" fill="var(--fg-muted)" font-size="9">fade</text>
+  <text x="120" y="112" fill="currentColor" font-size="9">input amplitude</text>
+  <text x="500" y="64" fill="var(--accent)" font-size="9">AGC output</text>
+</svg>
+<figcaption>AGC tracks a running magnitude estimate and scales toward a target: the input amplitude swings as a transmitter keys up and fades, but downstream slicers see a level held steady near the target.</figcaption>
+</figure>
 
 Factory functions handle the math-heavy design step once, up front:
 `LowpassKaiser(n, fc, beta)`, `RootRaisedCosine(sps, span, alpha)`, and

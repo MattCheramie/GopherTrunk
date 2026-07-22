@@ -41,6 +41,32 @@ Both belong to the
 [Multi-Band Excitation]({{ '/reference/multi-band-excitation/' | relative_url }})
 family — and that shared lineage is the key to the design.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 140" width="680" height="140" role="img" aria-label="The MBE vocoder model as a pipeline: a few-kilobit voice frame is unpacked and error-corrected into MBE parameters — pitch, voicing, and a spectral envelope — which the MBE synthesis core turns into 8 kilohertz PCM speech.">
+  <rect x="8" y="46" width="98" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="57" y="67" text-anchor="middle" fill="currentColor" font-size="10">frame bits</text>
+  <text x="57" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="8">2.4–4.4 kbps</text>
+  <line x1="106" y1="70" x2="126" y2="70" stroke="currentColor"/><polygon points="126,66 136,70 126,74" fill="currentColor"/>
+  <rect x="136" y="46" width="104" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="188" y="67" text-anchor="middle" fill="currentColor" font-size="10">unpack + FEC</text>
+  <text x="188" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="8">de-interleave</text>
+  <line x1="240" y1="70" x2="260" y2="70" stroke="currentColor"/><polygon points="260,66 270,70 260,74" fill="currentColor"/>
+  <rect x="270" y="40" width="150" height="60" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="345" y="60" text-anchor="middle" fill="var(--accent)" font-size="10">MBE parameters</text>
+  <text x="345" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">pitch · voicing</text>
+  <text x="345" y="89" text-anchor="middle" fill="var(--fg-muted)" font-size="8">spectral envelope</text>
+  <line x1="420" y1="70" x2="440" y2="70" stroke="currentColor"/><polygon points="440,66 450,70 440,74" fill="currentColor"/>
+  <rect x="450" y="46" width="118" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="509" y="67" text-anchor="middle" fill="currentColor" font-size="10">MBE synthesis</text>
+  <text x="509" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="8">harmonics + FFT</text>
+  <line x1="568" y1="70" x2="588" y2="70" stroke="currentColor"/><polygon points="588,66 598,70 588,74" fill="currentColor"/>
+  <rect x="598" y="46" width="74" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="635" y="67" text-anchor="middle" fill="var(--accent)" font-size="10">8 kHz</text>
+  <text x="635" y="81" text-anchor="middle" fill="var(--fg-muted)" font-size="8">PCM</text>
+</svg>
+<figcaption>A vocoder models how speech is produced, not the waveform: the radio ships MBE parameters and the receiver resynthesizes speech from pitch, voicing, and a spectral envelope.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 IMBE and AMBE+2 differ in how they *unpack and error-correct* their on-air bits,
@@ -56,6 +82,34 @@ front-ends:
 - `internal/voice/mbe` — takes those parameters and synthesizes 8 kHz PCM:
   voiced-harmonic generation, unvoiced FFT excitation with overlap-add, spectral
   enhancement, and per-frame AGC.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 680 180" width="680" height="180" role="img" aria-label="Per-protocol vocoder selection: P25 Phase 1 uses the IMBE front-end, while P25 Phase 2, DMR and NXDN use the AMBE+2 front-end; both front-ends reduce their frames to MBE parameters and feed the shared internal/voice/mbe synthesis core, which emits 8 kilohertz PCM.">
+  <rect x="8" y="26" width="132" height="42" rx="6" fill="none" stroke="currentColor"/>
+  <text x="74" y="51" text-anchor="middle" fill="currentColor" font-size="10">P25 Phase 1</text>
+  <rect x="8" y="110" width="132" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="74" y="131" text-anchor="middle" fill="currentColor" font-size="10">P25 Phase 2</text>
+  <text x="74" y="146" text-anchor="middle" fill="var(--fg-muted)" font-size="9">DMR · NXDN</text>
+  <line x1="140" y1="47" x2="178" y2="47" stroke="currentColor"/><polygon points="178,43 188,47 178,51" fill="currentColor"/>
+  <line x1="140" y1="133" x2="178" y2="133" stroke="currentColor"/><polygon points="178,129 188,133 178,137" fill="currentColor"/>
+  <rect x="188" y="26" width="158" height="42" rx="6" fill="none" stroke="currentColor"/>
+  <text x="267" y="47" text-anchor="middle" fill="currentColor" font-size="10">internal/voice/imbe</text>
+  <text x="267" y="60" text-anchor="middle" fill="var(--fg-muted)" font-size="8">Golay/Hamming FEC</text>
+  <rect x="188" y="110" width="158" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="267" y="131" text-anchor="middle" fill="currentColor" font-size="10">internal/voice/ambe2</text>
+  <text x="267" y="145" text-anchor="middle" fill="var(--fg-muted)" font-size="8">BPTC + codebook</text>
+  <line x1="346" y1="47" x2="392" y2="80" stroke="currentColor"/><polygon points="386,74 396,82 384,84" fill="currentColor"/>
+  <line x1="346" y1="133" x2="392" y2="100" stroke="currentColor"/><polygon points="384,96 396,98 386,106" fill="currentColor"/>
+  <rect x="398" y="60" width="160" height="60" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="478" y="84" text-anchor="middle" fill="var(--accent)" font-size="10">internal/voice/mbe</text>
+  <text x="478" y="100" text-anchor="middle" fill="var(--fg-muted)" font-size="9">shared synthesis core</text>
+  <line x1="558" y1="90" x2="588" y2="90" stroke="currentColor"/><polygon points="588,86 598,90 588,94" fill="currentColor"/>
+  <rect x="598" y="68" width="74" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="635" y="88" text-anchor="middle" fill="currentColor" font-size="10">8 kHz</text>
+  <text x="635" y="101" text-anchor="middle" fill="var(--fg-muted)" font-size="8">PCM</text>
+</svg>
+<figcaption>The <code>Vocoder</code> registry hands the decoder "imbe" or "ambe2" by name; the two front-ends differ only in bit-unpacking and FEC, then share the single <code>internal/voice/mbe</code> synthesis core.</figcaption>
+</figure>
 
 Every vocoder satisfies one interface:
 

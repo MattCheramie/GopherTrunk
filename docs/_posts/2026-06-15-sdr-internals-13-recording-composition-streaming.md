@@ -38,6 +38,33 @@ starts a call, three things have to happen on the output side:
 These are the
 [antenna-to-audio]({{ '/learn/rf-sdr/antenna-to-audio/' | relative_url }}) last mile.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 120" width="680" height="120" role="img" aria-label="The composer's per-call demodulation chain: a voice-device IQ stream passes through an FM or protocol receiver, an audio low-pass filter, an optional AGC stage, and a resampler, emerging as 16-bit PCM handed to the recorder.">
+  <rect x="6" y="42" width="84" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="48" y="62" text-anchor="middle" fill="var(--accent)" font-size="10">IQ stream</text>
+  <text x="48" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">StreamIQ</text>
+  <line x1="90" y1="64" x2="102" y2="64" stroke="currentColor"/><polygon points="102,60 112,64 102,68" fill="currentColor"/>
+  <rect x="112" y="42" width="104" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="164" y="62" text-anchor="middle" fill="currentColor" font-size="10">FM / proto RX</text>
+  <text x="164" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">demod</text>
+  <line x1="216" y1="64" x2="228" y2="64" stroke="currentColor"/><polygon points="228,60 238,64 228,68" fill="currentColor"/>
+  <rect x="238" y="42" width="90" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="283" y="66" text-anchor="middle" fill="currentColor" font-size="10">audio LPF</text>
+  <line x1="328" y1="64" x2="340" y2="64" stroke="currentColor"/><polygon points="340,60 350,64 340,68" fill="currentColor"/>
+  <rect x="350" y="42" width="94" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="397" y="62" text-anchor="middle" fill="currentColor" font-size="10">AGC</text>
+  <text x="397" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">optional</text>
+  <line x1="444" y1="64" x2="456" y2="64" stroke="currentColor"/><polygon points="456,60 466,64 456,68" fill="currentColor"/>
+  <rect x="466" y="42" width="90" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="511" y="66" text-anchor="middle" fill="currentColor" font-size="10">resample</text>
+  <line x1="556" y1="64" x2="568" y2="64" stroke="currentColor"/><polygon points="568,60 578,64 568,68" fill="currentColor"/>
+  <rect x="578" y="42" width="96" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="626" y="62" text-anchor="middle" fill="var(--accent)" font-size="10">16-bit PCM</text>
+  <text x="626" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">to recorder</text>
+</svg>
+<figcaption>The composer (<code>internal/voice/composer</code>) runs this chain per call over consumer-owned <code>IQSource</code>/<code>PCMSink</code> interfaces, so it never imports the whole SDR or recorder packages.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 The **composer** (`internal/voice/composer`) bridges call events to a demod
@@ -67,6 +94,36 @@ The **broadcaster** (`internal/broadcast`) is a `Manager` that subscribes to
 `internal/voice/mp3` package, and fans it out to the configured backends
 (`broadcastify`, `rdioscanner`, `openmhz`, `icecast`) with bounded
 exponential-backoff retry.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 680 180" width="680" height="180" role="img" aria-label="Output fan-out on the streaming side: the recorder writes a WAV then publishes KindCallComplete; the broadcast Manager subscribes to it, encodes MP3 once with internal/voice/mp3, and pushes to four backends — Broadcastify, RdioScanner, OpenMHz and Icecast — with bounded exponential-backoff retry.">
+  <rect x="8" y="68" width="120" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="68" y="88" text-anchor="middle" fill="currentColor" font-size="10">recorder</text>
+  <text x="68" y="103" text-anchor="middle" fill="var(--fg-muted)" font-size="8">writes .wav</text>
+  <text x="154" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">KindCallComplete</text>
+  <line x1="128" y1="91" x2="178" y2="91" stroke="currentColor"/><polygon points="178,87 188,91 178,95" fill="currentColor"/>
+  <rect x="188" y="64" width="140" height="54" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="258" y="86" text-anchor="middle" fill="var(--accent)" font-size="10">broadcast.Manager</text>
+  <text x="258" y="101" text-anchor="middle" fill="var(--fg-muted)" font-size="8">subscribes complete</text>
+  <line x1="328" y1="91" x2="360" y2="91" stroke="currentColor"/><polygon points="360,87 370,91 360,95" fill="currentColor"/>
+  <rect x="370" y="68" width="108" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="424" y="88" text-anchor="middle" fill="currentColor" font-size="10">MP3 encode</text>
+  <text x="424" y="103" text-anchor="middle" fill="var(--fg-muted)" font-size="8">voice/mp3</text>
+  <line x1="478" y1="82" x2="540" y2="26" stroke="currentColor"/><polygon points="536,22 546,24 540,33" fill="currentColor"/>
+  <line x1="478" y1="88" x2="540" y2="70" stroke="currentColor"/><polygon points="536,66 546,68 539,77" fill="currentColor"/>
+  <line x1="478" y1="94" x2="540" y2="112" stroke="currentColor"/><polygon points="539,105 546,114 536,116" fill="currentColor"/>
+  <line x1="478" y1="100" x2="540" y2="156" stroke="currentColor"/><polygon points="538,149 546,158 534,158" fill="currentColor"/>
+  <rect x="548" y="12" width="126" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="611" y="30" text-anchor="middle" fill="currentColor" font-size="10">broadcastify</text>
+  <rect x="548" y="56" width="126" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="611" y="74" text-anchor="middle" fill="currentColor" font-size="10">rdioscanner</text>
+  <rect x="548" y="100" width="126" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="611" y="118" text-anchor="middle" fill="currentColor" font-size="10">openmhz</text>
+  <rect x="548" y="144" width="126" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="611" y="162" text-anchor="middle" fill="currentColor" font-size="10">icecast</text>
+</svg>
+<figcaption>The broadcaster is a bus subscriber, not something the recorder calls: it waits for <code>KindCallComplete</code>, encodes MP3 once, and fans the file out to each configured backend with bounded retry.</figcaption>
+</figure>
 
 ## The design principle: config-driven lazy initialization
 
