@@ -117,6 +117,32 @@ import (
 That import block *is* the hardware-support list. Want a build that only talks to
 RTL-SDR? Drop three lines. The engine doesn't change; the binary's import set does.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 200" width="660" height="200" role="img" aria-label="The blank imports in cmd/gophertrunk trigger each driver package's init function, which calls sdr.Register to populate the process-global registry, a map from driver name to Driver.">
+  <rect x="8" y="50" width="160" height="100" rx="6" fill="none" stroke="currentColor"/>
+  <text x="88" y="68" text-anchor="middle" fill="currentColor" font-size="10">cmd/gophertrunk (main)</text>
+  <text x="88" y="88" text-anchor="middle" fill="var(--fg-muted)" font-size="9">_ import airspy</text>
+  <text x="88" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="9">_ import airspyhf</text>
+  <text x="88" y="120" text-anchor="middle" fill="var(--fg-muted)" font-size="9">_ import hackrf</text>
+  <text x="88" y="136" text-anchor="middle" fill="var(--fg-muted)" font-size="9">_ import rtlsdr/purego</text>
+  <line x1="168" y1="100" x2="200" y2="100" stroke="currentColor"/><polygon points="200,96 210,100 200,104" fill="currentColor"/>
+  <rect x="210" y="78" width="90" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="255" y="104" text-anchor="middle" fill="currentColor" font-size="10">init()</text>
+  <line x1="300" y1="100" x2="332" y2="100" stroke="currentColor"/><polygon points="332,96 342,100 332,104" fill="currentColor"/>
+  <rect x="342" y="74" width="140" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="412" y="96" text-anchor="middle" fill="currentColor" font-size="10">sdr.Register</text>
+  <text x="412" y="112" text-anchor="middle" fill="currentColor" font-size="10">(&amp;Driver{})</text>
+  <line x1="482" y1="100" x2="514" y2="100" stroke="currentColor"/><polygon points="514,96 524,100 514,104" fill="currentColor"/>
+  <rect x="524" y="50" width="128" height="100" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="588" y="70" text-anchor="middle" fill="var(--accent)" font-size="11">registry</text>
+  <text x="588" y="88" text-anchor="middle" fill="var(--fg-muted)" font-size="9">map[string]Driver</text>
+  <text x="588" y="108" text-anchor="middle" fill="currentColor" font-size="9">"airspy" →</text>
+  <text x="588" y="123" text-anchor="middle" fill="currentColor" font-size="9">"hackrf" →</text>
+  <text x="588" y="138" text-anchor="middle" fill="currentColor" font-size="9">"rtlsdr" →</text>
+</svg>
+<figcaption>Registration is a side effect of importing: a blank import pulls a driver package in, its <code>init()</code> calls <code>sdr.Register</code>, and the driver lands in the process-global <code>map[string]Driver</code> — the core never names a concrete type.</figcaption>
+</figure>
+
 This is more than a tidy trick — it is the mechanism by which the engine stays
 genuinely ignorant of its drivers. The `internal/sdr` package, which defines
 `Device`, `Driver`, and the registry, does *not* import the driver sub-packages;
@@ -190,6 +216,31 @@ The `continue` is the whole fix: a driver that errors contributes an entry to
 device list plus one error per driver that failed to enumerate, so callers can
 surface the failure instead of silently reporting an empty list." The operator now
 sees their RTL-SDR *and* a precise note about which backend failed and why.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 200" width="660" height="200" role="img" aria-label="EnumerateAll walks each driver returned by Drivers, sorted by name, and calls Enumerate. On success it appends the driver's devices to the out list; on error it appends one error and continues. Both paths feed the returned out and errs pair, so one failing backend cannot blank out the others.">
+  <rect x="8" y="78" width="120" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="68" y="98" text-anchor="middle" fill="currentColor" font-size="10">Drivers()</text>
+  <text x="68" y="114" text-anchor="middle" fill="var(--fg-muted)" font-size="9">sorted by name</text>
+  <line x1="128" y1="102" x2="160" y2="102" stroke="currentColor"/><polygon points="160,98 170,102 160,106" fill="currentColor"/>
+  <rect x="170" y="78" width="130" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="235" y="106" text-anchor="middle" fill="currentColor" font-size="10">d.Enumerate()</text>
+  <line x1="300" y1="90" x2="320" y2="42" stroke="currentColor"/><polygon points="312,38 322,42 312,46" fill="currentColor"/>
+  <line x1="300" y1="114" x2="320" y2="154" stroke="currentColor"/><polygon points="312,150 322,154 312,158" fill="currentColor"/>
+  <rect x="320" y="20" width="210" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="425" y="38" text-anchor="middle" fill="var(--accent)" font-size="10">success</text>
+  <text x="425" y="54" text-anchor="middle" fill="currentColor" font-size="10">out += infos</text>
+  <rect x="320" y="132" width="210" height="44" rx="6" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="425" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="10">error</text>
+  <text x="425" y="166" text-anchor="middle" fill="var(--fg-muted)" font-size="10">errs += err · continue</text>
+  <line x1="530" y1="42" x2="560" y2="88" stroke="currentColor"/><polygon points="552,84 562,88 552,92" fill="currentColor"/>
+  <line x1="530" y1="154" x2="560" y2="116" stroke="currentColor"/><polygon points="552,112 562,116 552,120" fill="currentColor"/>
+  <rect x="560" y="80" width="92" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="606" y="99" text-anchor="middle" fill="currentColor" font-size="10">returns</text>
+  <text x="606" y="114" text-anchor="middle" fill="currentColor" font-size="9">(out, errs)</text>
+</svg>
+<figcaption>The <code>continue</code> is the whole fix: a driver that errors adds one entry to <code>errs</code> and is skipped, while every other driver still appends its devices to <code>out</code> — so a single flaky backend can no longer hide every dongle.</figcaption>
+</figure>
 
 `Drivers()` itself returns the backends sorted by name, so enumeration order — and
 the device list the operator sees — is deterministic across runs rather than

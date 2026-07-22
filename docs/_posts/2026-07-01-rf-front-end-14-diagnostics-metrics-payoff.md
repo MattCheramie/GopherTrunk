@@ -144,6 +144,30 @@ There's a sibling counter, `ccdecoder_decode_overruns_total`, that distinguishes
 says "the machine can't sustain this decode," while a climbing `iq_underruns`
 says "the USB transport hiccuped." Two counters, one diagnosis.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 664 132" width="664" height="132" role="img" aria-label="The IQ-drop metric flow: a driver's reaper goroutine hits an overrun and calls NotifyIQDrop with its Info; the daemon's installed atomic-pointer observer increments the iq_underruns_total counter labelled by driver and serial; Prometheus scrapes the slash-metrics endpoint, which an operator dashboard or alert watches.">
+  <rect x="6" y="44" width="116" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="64" y="65" text-anchor="middle" fill="currentColor" font-size="10">reaper overrun</text>
+  <text x="64" y="79" text-anchor="middle" fill="var(--fg-muted)" font-size="9">driver goroutine</text>
+  <line x1="122" y1="68" x2="150" y2="68" stroke="currentColor"/><polygon points="150,64 160,68 150,72" fill="currentColor"/>
+  <rect x="160" y="44" width="120" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="220" y="65" text-anchor="middle" fill="currentColor" font-size="10">NotifyIQDrop</text>
+  <text x="220" y="79" text-anchor="middle" fill="var(--fg-muted)" font-size="9">atomic observer</text>
+  <line x1="280" y1="68" x2="308" y2="68" stroke="currentColor"/><polygon points="308,64 318,68 308,72" fill="currentColor"/>
+  <rect x="318" y="44" width="140" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="388" y="65" text-anchor="middle" fill="var(--accent)" font-size="10">iq_underruns_total</text>
+  <text x="388" y="79" text-anchor="middle" fill="var(--fg-muted)" font-size="9">{driver, serial}</text>
+  <line x1="458" y1="68" x2="486" y2="68" stroke="currentColor"/><polygon points="486,64 496,68 486,72" fill="currentColor"/>
+  <rect x="496" y="44" width="92" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="542" y="65" text-anchor="middle" fill="currentColor" font-size="10">/metrics</text>
+  <text x="542" y="79" text-anchor="middle" fill="var(--fg-muted)" font-size="9">scrape</text>
+  <line x1="588" y1="68" x2="616" y2="68" stroke="currentColor"/><polygon points="616,64 626,68 616,72" fill="currentColor"/>
+  <rect x="626" y="44" width="32" height="48" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="642" y="71" text-anchor="middle" fill="var(--fg-muted)" font-size="8">dash</text>
+</svg>
+<figcaption>The IQ-drop flow: a driver's reaper calls <code>NotifyIQDrop</code>, the daemon's atomic-pointer observer increments <code>iq_underruns_total{driver,serial}</code>, and Prometheus scrapes <code>/metrics</code> for an operator dashboard.</figcaption>
+</figure>
+
 ## The problem we hit: silent IQ loss looked exactly like an RF problem
 
 This is the bug that drove the entire issue #402 investigation, and it's worth
@@ -172,6 +196,27 @@ on purpose: you can't fix what you can't see, and you certainly can't tell an
 operator "this is a CPU problem, not an antenna problem" without a number to point
 at. Once `iq_underruns_total` was climbing in front of them, the diagnosis became
 a glance instead of an afternoon.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="What the counters reveal, starting from a no-decode symptom: if iq_underruns_total is climbing the USB transport hiccuped; if ccdecoder_decode_overruns_total climbs while iq_underruns stays flat the host cannot sustain the decode; if both drop counters are flat but iq_power_dbfs is weak the problem is RF — a bad antenna or gain.">
+  <rect x="8" y="72" width="130" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="73" y="92" text-anchor="middle" fill="currentColor" font-size="11">no decode</text>
+  <text x="73" y="106" text-anchor="middle" fill="var(--fg-muted)" font-size="9">which layer?</text>
+  <line x1="138" y1="88" x2="356" y2="37" stroke="currentColor"/><polygon points="352,33 362,35 357,44" fill="currentColor"/>
+  <text x="248" y="44" text-anchor="middle" fill="var(--fg-muted)" font-size="9">iq_underruns_total climbing</text>
+  <rect x="362" y="18" width="290" height="34" rx="5" fill="none" stroke="var(--accent)"/>
+  <text x="507" y="39" text-anchor="middle" fill="var(--accent)" font-size="10">USB transport hiccup</text>
+  <line x1="138" y1="95" x2="356" y2="95" stroke="currentColor"/><polygon points="356,91 366,95 356,99" fill="currentColor"/>
+  <text x="248" y="88" text-anchor="middle" fill="var(--fg-muted)" font-size="9">decode_overruns up · underruns flat</text>
+  <rect x="362" y="78" width="290" height="34" rx="5" fill="none" stroke="currentColor"/>
+  <text x="507" y="99" text-anchor="middle" fill="currentColor" font-size="10">host can't sustain decode</text>
+  <line x1="138" y1="102" x2="356" y2="153" stroke="currentColor"/><polygon points="352,146 362,149 356,158" fill="currentColor"/>
+  <text x="248" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">drops flat · iq_power_dbfs weak</text>
+  <rect x="362" y="138" width="290" height="34" rx="5" fill="none" stroke="currentColor"/>
+  <text x="507" y="159" text-anchor="middle" fill="currentColor" font-size="10">RF: antenna / gain</text>
+</svg>
+<figcaption>What the counters reveal: a climbing <code>iq_underruns_total</code> means the USB transport hiccuped, a climbing decode-overruns with flat underruns means the host can't keep up, and flat drops with weak <code>iq_power_dbfs</code> means the problem is RF.</figcaption>
+</figure>
 
 ## The design principle: observability is a feature — and the pure-Go thesis, vindicated
 

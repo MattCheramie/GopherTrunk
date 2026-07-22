@@ -120,6 +120,31 @@ directly — USBDEVFS on Linux, WinUSB on Windows, IOKit on macOS — instead of
 linking a C USB stack. The build stays `CGO_ENABLED=0`, and `go build` keeps
 cross-compiling to every target with no toolchain gymnastics.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 220" width="660" height="220" role="img" aria-label="Two USB stacks compared. The conventional CGO stack routes the scanner through librtlsdr and libusb, both C shared libraries, before reaching the kernel USB interface. GopherTrunk's pure-Go stack calls the same kernel USB interface directly with no C libraries in between.">
+  <text x="150" y="18" text-anchor="middle" fill="var(--fg-muted)" font-size="10">conventional (CGO)</text>
+  <text x="510" y="18" text-anchor="middle" fill="var(--accent)" font-size="10">GopherTrunk (pure Go)</text>
+  <rect x="60" y="30" width="180" height="30" rx="6" fill="none" stroke="currentColor"/>
+  <text x="150" y="49" text-anchor="middle" fill="currentColor" font-size="10">scanner (Go)</text>
+  <line x1="150" y1="60" x2="150" y2="76" stroke="currentColor"/><polygon points="146,76 150,84 154,76" fill="currentColor"/>
+  <rect x="60" y="84" width="180" height="30" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="150" y="103" text-anchor="middle" fill="var(--fg-muted)" font-size="10">librtlsdr / libhackrf (C)</text>
+  <line x1="150" y1="114" x2="150" y2="130" stroke="currentColor"/><polygon points="146,130 150,138 154,130" fill="currentColor"/>
+  <rect x="60" y="138" width="180" height="30" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="150" y="157" text-anchor="middle" fill="var(--fg-muted)" font-size="10">libusb (C)</text>
+  <line x1="150" y1="168" x2="150" y2="184" stroke="currentColor"/><polygon points="146,184 150,192 154,184" fill="currentColor"/>
+  <rect x="60" y="192" width="180" height="26" rx="6" fill="none" stroke="currentColor"/>
+  <text x="150" y="209" text-anchor="middle" fill="currentColor" font-size="10">kernel USB interface</text>
+  <rect x="420" y="30" width="180" height="30" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="510" y="49" text-anchor="middle" fill="var(--accent)" font-size="10">scanner + Go USB driver</text>
+  <line x1="510" y1="60" x2="510" y2="184" stroke="var(--accent)"/><polygon points="506,184 510,192 514,184" fill="var(--accent)"/>
+  <text x="524" y="128" fill="var(--fg-muted)" font-size="9">no C libraries</text>
+  <rect x="420" y="192" width="180" height="26" rx="6" fill="none" stroke="currentColor"/>
+  <text x="510" y="209" text-anchor="middle" fill="currentColor" font-size="10">kernel USB interface</text>
+</svg>
+<figcaption>The CGO path drags in <code>librtlsdr</code> and <code>libusb</code> as C shared libraries that must be present and version-matched; GopherTrunk's pure-Go driver reaches the same kernel USB interface directly, so the build stays <code>CGO_ENABLED=0</code>.</figcaption>
+</figure>
+
 The cost of refusing the tax is that we have to *write* the USB transport and the
 chip protocols ourselves. That cost is exactly what this series documents.
 
@@ -134,6 +159,28 @@ out to a C toolchain. For a daemon that is meant to run unattended at the antenn
 often on a Raspberry Pi or a small ARM box — "one static binary with no shared
 libraries to drift out from under it" is a reliability feature, not just a
 packaging convenience.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="One Go source tree cross-compiles with GOOS and GOARCH to a single static binary for Linux, macOS, and Windows, each talking to that platform's native USB API: USBDEVFS, IOKit, and WinUSB respectively.">
+  <rect x="8" y="72" width="150" height="46" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="83" y="92" text-anchor="middle" fill="var(--accent)" font-size="11">one Go source tree</text>
+  <text x="83" y="108" text-anchor="middle" fill="var(--fg-muted)" font-size="9">CGO_ENABLED=0</text>
+  <text x="250" y="88" text-anchor="middle" fill="var(--fg-muted)" font-size="9">go build GOOS/GOARCH</text>
+  <line x1="158" y1="95" x2="360" y2="36" stroke="currentColor"/><polygon points="352,32 362,36 352,40" fill="currentColor"/>
+  <line x1="158" y1="95" x2="360" y2="95" stroke="currentColor"/><polygon points="360,91 370,95 360,99" fill="currentColor"/>
+  <line x1="158" y1="95" x2="360" y2="154" stroke="currentColor"/><polygon points="352,150 362,154 352,158" fill="currentColor"/>
+  <rect x="370" y="16" width="270" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="505" y="34" text-anchor="middle" fill="currentColor" font-size="10">Linux binary → USBDEVFS</text>
+  <text x="505" y="48" text-anchor="middle" fill="var(--fg-muted)" font-size="9">single static binary</text>
+  <rect x="370" y="75" width="270" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="505" y="93" text-anchor="middle" fill="currentColor" font-size="10">macOS binary → IOKit</text>
+  <text x="505" y="107" text-anchor="middle" fill="var(--fg-muted)" font-size="9">single static binary</text>
+  <rect x="370" y="134" width="270" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="505" y="152" text-anchor="middle" fill="currentColor" font-size="10">Windows binary → WinUSB</text>
+  <text x="505" y="166" text-anchor="middle" fill="var(--fg-muted)" font-size="9">single static binary</text>
+</svg>
+<figcaption>The same source tree cross-compiles with <code>GOOS</code>/<code>GOARCH</code> to one static binary per OS, each speaking that platform's native USB interface — no C toolchain and no shared libraries to drift out from under the operator.</figcaption>
+</figure>
 
 The other half of the payoff is on *our* side of the build. Because every byte
 from the USB endpoint to the `complex64` is Go, the whole RF front end is in scope

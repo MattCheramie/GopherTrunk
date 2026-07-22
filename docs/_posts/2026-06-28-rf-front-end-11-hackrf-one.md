@@ -43,6 +43,26 @@ was the Airspy R2/Mini in
 [Part 10]({{ '/blog/deep-dives/rf-front-end-10-airspy-real-to-complex/' | relative_url }}))
 and no 16-bit unpacking; just two signed bytes per complex sample.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 140" width="660" height="140" role="img" aria-label="The HackRF receive sample path: the firmware delivers signed 8-bit interleaved I,Q bytes on bulk endpoint 0x81, decodeInt8IQ reinterprets each byte as int8 and divides by 128, producing normalised complex64 samples in the range minus one to one, which feed the DSP chain.">
+  <rect x="8" y="46" width="160" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="88" y="68" text-anchor="middle" fill="currentColor" font-size="11">bulk-IN 0x81</text>
+  <text x="88" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="9">I, Q, I, Q · signed 8-bit</text>
+  <line x1="168" y1="70" x2="206" y2="70" stroke="currentColor"/><polygon points="206,66 216,70 206,74" fill="currentColor"/>
+  <rect x="216" y="46" width="160" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="296" y="68" text-anchor="middle" fill="var(--accent)" font-size="11">decodeInt8IQ</text>
+  <text x="296" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="9">int8(b) / 128</text>
+  <line x1="376" y1="70" x2="414" y2="70" stroke="currentColor"/><polygon points="414,66 424,70 414,74" fill="currentColor"/>
+  <rect x="424" y="46" width="150" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="499" y="68" text-anchor="middle" fill="currentColor" font-size="11">complex64</text>
+  <text x="499" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="9">[-1, 1]</text>
+  <line x1="574" y1="70" x2="604" y2="70" stroke="currentColor"/><polygon points="604,66 614,70 604,74" fill="currentColor"/>
+  <rect x="614" y="46" width="40" height="48" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="634" y="73" text-anchor="middle" fill="var(--fg-muted)" font-size="9">DSP</text>
+</svg>
+<figcaption>The HackRF's receive path is the friendliest of the three: signed 8-bit interleaved bytes on bulk endpoint <code>0x81</code>, reinterpreted as <code>int8</code> and divided by 128 into <code>complex64</code> in <code>[-1, 1]</code>.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 ### Decoding the samples
@@ -92,6 +112,22 @@ func (d *Device) setMode(mode uint16) error {
 `StreamIQ` flips to receive, starts the bulk-IN reaper, and a detached goroutine
 flips back to off on either context cancellation or an unrecoverable URB death —
 the same teardown shape every driver in this series shares.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 620 150" width="620" height="150" role="img" aria-label="The HackRF half-duplex transceiver state machine over SET_TRANSCEIVER_MODE: StreamIQ moves the device from transceiver mode off, value zero, to receive, value one, where bulk-IN samples flow; a context cancellation or an unrecoverable URB death flips it back to off.">
+  <rect x="30" y="52" width="200" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="130" y="76" text-anchor="middle" fill="currentColor" font-size="11">transceiverModeOff</text>
+  <text x="130" y="92" text-anchor="middle" fill="var(--fg-muted)" font-size="9">mode 0 · no stream</text>
+  <rect x="390" y="52" width="200" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="490" y="76" text-anchor="middle" fill="var(--accent)" font-size="11">transceiverModeReceive</text>
+  <text x="490" y="92" text-anchor="middle" fill="var(--fg-muted)" font-size="9">mode 1 · bulk-IN flowing</text>
+  <line x1="230" y1="68" x2="388" y2="68" stroke="currentColor"/><polygon points="388,64 398,68 388,72" fill="currentColor"/>
+  <text x="309" y="60" text-anchor="middle" fill="var(--fg-muted)" font-size="9">StreamIQ</text>
+  <line x1="390" y1="90" x2="232" y2="90" stroke="currentColor"/><polygon points="232,86 222,90 232,94" fill="currentColor"/>
+  <text x="311" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="9">ctx cancel / URB death</text>
+</svg>
+<figcaption>Half-duplex: the HackRF streams only in receive mode. <code>StreamIQ</code> flips <code>SET_TRANSCEIVER_MODE</code> to receive (1); context cancellation or an unrecoverable URB death flips it back to off (0).</figcaption>
+</figure>
 
 ### Tuning and the tracking baseband filter
 

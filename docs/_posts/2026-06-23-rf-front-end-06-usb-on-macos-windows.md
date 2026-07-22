@@ -49,6 +49,30 @@ from `setupapi.dll`. Both are normally consumed from C. GopherTrunk consumes the
 from pure Go — purego on macOS, lazy DLL procs on Windows — to keep the
 CGO-free, single-static-binary promise intact on every OS.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 210" width="660" height="210" role="img" aria-label="The RTL2832U driver talks to one eight-method Transport port, which is satisfied by three interchangeable operating-system adapters underneath: Linux USBDEVFS ioctls with an async URB ring, macOS IOKit vtables via purego with N pinned reader threads, and Windows WinUSB procs with overlapped I/O.">
+  <rect x="230" y="12" width="200" height="30" rx="6" fill="none" stroke="currentColor"/>
+  <text x="330" y="31" text-anchor="middle" fill="currentColor" font-size="11">RTL2832U driver</text>
+  <line x1="330" y1="42" x2="330" y2="64" stroke="currentColor"/><polygon points="326,56 330,66 334,56" fill="currentColor"/>
+  <rect x="168" y="66" width="324" height="38" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="330" y="84" text-anchor="middle" fill="var(--accent)" font-size="11">Transport port · eight methods</text>
+  <text x="330" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="8">ControlIn · ControlOut · ClaimInterface · StartBulkIn / StopBulkIn</text>
+  <line x1="250" y1="104" x2="132" y2="146" stroke="currentColor"/><polygon points="136,137 126,148 140,148" fill="currentColor"/>
+  <line x1="330" y1="104" x2="330" y2="146" stroke="currentColor"/><polygon points="326,138 330,148 334,138" fill="currentColor"/>
+  <line x1="410" y1="104" x2="528" y2="146" stroke="currentColor"/><polygon points="520,148 534,148 524,137" fill="currentColor"/>
+  <rect x="20" y="150" width="200" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="120" y="170" text-anchor="middle" fill="currentColor" font-size="10">Linux — USBDEVFS</text>
+  <text x="120" y="184" text-anchor="middle" fill="var(--fg-muted)" font-size="8">ioctls · URB ring · 1 reaper</text>
+  <rect x="230" y="150" width="200" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="330" y="170" text-anchor="middle" fill="var(--accent)" font-size="10">macOS — IOKit (purego)</text>
+  <text x="330" y="184" text-anchor="middle" fill="var(--fg-muted)" font-size="8">vtables · sync ReadPipe · N pinned</text>
+  <rect x="440" y="150" width="200" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="540" y="170" text-anchor="middle" fill="currentColor" font-size="10">Windows — WinUSB</text>
+  <text x="540" y="184" text-anchor="middle" fill="var(--fg-muted)" font-size="8">procs · overlapped · 1 + N events</text>
+</svg>
+<figcaption>All three USB backends satisfy the identical eight-method <code>Transport</code> port; the RTL2832U driver above can't tell which OS adapter — or which threading model — is underneath it.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 ### macOS: IOKit through purego
@@ -244,6 +268,37 @@ aborts vanished. This is also why the macOS design uses **one OS thread per slot
 in the first place: pinning makes the synchronous-`ReadPipe`-per-thread model the
 *natural* one, and lets us skip CFRunLoop callbacks entirely. The threading rule
 isn't an implementation detail we tolerated — it dictated the whole bulk-IN shape.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="Before and after the macOS threading fix. Before: one reader goroutine issues ReadPipe on OS thread A but the Go scheduler resumes it on thread B, so two threads reach the same IOKit user client concurrently and the process aborts. After: runtime.LockOSThread welds the bulkLoop goroutine to a single OS thread that owns the slot, so IOKit sees a single owner and the aborts vanish.">
+  <text x="166" y="16" text-anchor="middle" fill="var(--fg-muted)" font-size="10">before — one goroutine, two threads</text>
+  <rect x="22" y="34" width="128" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="86" y="50" text-anchor="middle" fill="currentColor" font-size="9">thread A</text>
+  <text x="86" y="62" text-anchor="middle" fill="var(--fg-muted)" font-size="8">issues ReadPipe</text>
+  <rect x="182" y="34" width="128" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="246" y="50" text-anchor="middle" fill="currentColor" font-size="9">thread B</text>
+  <text x="246" y="62" text-anchor="middle" fill="var(--fg-muted)" font-size="8">resumes goroutine</text>
+  <line x1="150" y1="51" x2="178" y2="51" stroke="currentColor" stroke-dasharray="4 3"/><polygon points="178,47 188,51 178,55" fill="currentColor"/>
+  <text x="164" y="30" text-anchor="middle" fill="var(--fg-muted)" font-size="7">migrate</text>
+  <line x1="86" y1="68" x2="140" y2="118" stroke="currentColor"/><polygon points="132,110 143,120 129,118" fill="currentColor"/>
+  <line x1="246" y1="68" x2="192" y2="118" stroke="currentColor"/><polygon points="203,118 189,120 200,110" fill="currentColor"/>
+  <rect x="80" y="120" width="172" height="42" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="166" y="138" text-anchor="middle" fill="var(--accent)" font-size="9">IOKit user client</text>
+  <text x="166" y="152" text-anchor="middle" fill="var(--fg-muted)" font-size="8">cross-thread access → process abort</text>
+  <line x1="330" y1="14" x2="330" y2="172" stroke="var(--fg-muted)" stroke-dasharray="3 4"/>
+  <text x="496" y="16" text-anchor="middle" fill="var(--fg-muted)" font-size="10">after — runtime.LockOSThread</text>
+  <rect x="416" y="34" width="160" height="34" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="496" y="50" text-anchor="middle" fill="var(--accent)" font-size="9">bulkLoop goroutine</text>
+  <text x="496" y="62" text-anchor="middle" fill="var(--fg-muted)" font-size="8">LockOSThread on entry</text>
+  <line x1="496" y1="68" x2="496" y2="90" stroke="currentColor"/><polygon points="492,82 496,92 500,82" fill="currentColor"/>
+  <rect x="416" y="92" width="160" height="28" rx="6" fill="none" stroke="currentColor"/>
+  <text x="496" y="110" text-anchor="middle" fill="currentColor" font-size="9">one OS thread · owns slot</text>
+  <line x1="496" y1="120" x2="496" y2="142" stroke="currentColor"/><polygon points="492,134 496,144 500,134" fill="currentColor"/>
+  <rect x="408" y="144" width="176" height="32" rx="6" fill="none" stroke="currentColor"/>
+  <text x="496" y="164" text-anchor="middle" fill="currentColor" font-size="9">IOKit user client · single owner</text>
+</svg>
+<figcaption>Pinning each per-slot reader to its own OS thread gives IOKit the single-owner model it demands — which is exactly why the macOS backend runs one pinned thread per ring slot rather than one shared reaper.</figcaption>
+</figure>
 
 (The same `runtime.LockOSThread` shows up in the Linux and Windows reapers too, but
 for a milder reason: keeping a long-blocking syscall loop off the threads serving

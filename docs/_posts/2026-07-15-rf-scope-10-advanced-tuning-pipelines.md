@@ -98,6 +98,27 @@ underneath it, in the right order. Skipping the analyzers you do not need is the
 cheapest speed-up on a big capture: `-analyzers hierarchy` alone skips all the
 per-emitter demodulation entropy and topology do.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="The rfscope analyzer dependency graph. Hierarchy stands alone. Topology feeds entropy; timeline feeds timing. Expert depends on topology, timeline, and entropy. Requesting expert transparently pulls topology, timeline, and entropy in, topologically sorted so each runs after what it depends on.">
+  <text x="90" y="18" text-anchor="middle" fill="var(--fg-muted)" font-size="9">roots</text>
+  <text x="330" y="18" text-anchor="middle" fill="var(--fg-muted)" font-size="9">dependents</text>
+  <text x="566" y="18" text-anchor="middle" fill="var(--fg-muted)" font-size="9">requested</text>
+  <rect x="24" y="30" width="132" height="28" rx="5" fill="none" stroke="currentColor"/><text x="90" y="48" text-anchor="middle" fill="currentColor" font-size="10">topology</text>
+  <rect x="24" y="70" width="132" height="28" rx="5" fill="none" stroke="currentColor"/><text x="90" y="88" text-anchor="middle" fill="currentColor" font-size="10">timeline</text>
+  <rect x="24" y="130" width="132" height="28" rx="5" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/><text x="90" y="148" text-anchor="middle" fill="var(--fg-muted)" font-size="10">hierarchy (standalone)</text>
+  <rect x="266" y="30" width="132" height="28" rx="5" fill="none" stroke="currentColor"/><text x="332" y="48" text-anchor="middle" fill="currentColor" font-size="10">entropy</text>
+  <rect x="266" y="70" width="132" height="28" rx="5" fill="none" stroke="currentColor"/><text x="332" y="88" text-anchor="middle" fill="currentColor" font-size="10">timing</text>
+  <rect x="500" y="50" width="132" height="30" rx="5" fill="none" stroke="var(--accent)"/><text x="566" y="69" text-anchor="middle" fill="var(--accent)" font-size="11">expert</text>
+  <line x1="156" y1="44" x2="262" y2="44" stroke="currentColor"/><polygon points="262,40 272,44 262,48" fill="currentColor"/>
+  <line x1="156" y1="84" x2="262" y2="84" stroke="currentColor"/><polygon points="262,80 272,84 262,88" fill="currentColor"/>
+  <line x1="398" y1="46" x2="496" y2="60" stroke="currentColor"/><polygon points="490,55 500,62 487,63" fill="currentColor"/>
+  <line x1="156" y1="40" x2="496" y2="58" stroke="var(--fg-muted)"/><polygon points="490,52 500,59 487,61" fill="var(--fg-muted)"/>
+  <line x1="156" y1="78" x2="496" y2="66" stroke="var(--fg-muted)"/><polygon points="488,62 500,66 489,71" fill="var(--fg-muted)"/>
+  <text x="330" y="182" text-anchor="middle" fill="var(--fg-muted)" font-size="9">-analyzers expert → topology · timeline · entropy pulled in, topologically sorted</text>
+</svg>
+<figcaption>The registry resolves <code>DependsOn</code> into a topological order: asking for <code>expert</code> transparently runs topology, timeline, and entropy first, each after the analyzers it depends on — no central list to edit.</figcaption>
+</figure>
+
 ## Tuning segmentation for weird bands
 
 When the defaults miss something, the fix is almost always in segmentation (Part 2),
@@ -198,6 +219,34 @@ gophertrunk cryptolab ks reuse -in frames.jsonl             # if IVs/MIs repeat
 7), and RF Scope even prints a `cryptolab ks reuse` suggestion when it detects frames
 sharing an IV. Detection lives in RF Scope; the byte-level attack lives in Crypto Lab;
 the frames file is the seam between them.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="The RF Scope tuning and reverse-engineering pipeline: a wideband capture file is segmented into carriers, each carrier is retuned to baseband one at a time by the single-tap ccdecoder downconverter, the analyzer chain runs, and unknown payloads are emitted to a frames JSONL file that hands off to the separate cryptolab toolkit.">
+  <rect x="14" y="60" width="104" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="66" y="80" text-anchor="middle" fill="currentColor" font-size="10">wide.cfile</text>
+  <text x="66" y="94" text-anchor="middle" fill="var(--fg-muted)" font-size="8">wideband capture</text>
+  <line x1="118" y1="83" x2="146" y2="83" stroke="currentColor"/><polygon points="146,79 156,83 146,87" fill="currentColor"/>
+  <rect x="156" y="52" width="120" height="62" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="216" y="72" text-anchor="middle" fill="var(--accent)" font-size="10">segmentation</text>
+  <text x="216" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">single-tap ccdecoder</text>
+  <text x="216" y="97" text-anchor="middle" fill="var(--fg-muted)" font-size="8">retune each carrier</text>
+  <text x="216" y="108" text-anchor="middle" fill="var(--fg-muted)" font-size="8">to baseband, one at a time</text>
+  <line x1="276" y1="83" x2="304" y2="83" stroke="currentColor"/><polygon points="304,79 314,83 304,87" fill="currentColor"/>
+  <rect x="314" y="60" width="104" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="366" y="80" text-anchor="middle" fill="currentColor" font-size="10">analyzers</text>
+  <text x="366" y="94" text-anchor="middle" fill="var(--fg-muted)" font-size="8">registry chain</text>
+  <line x1="418" y1="83" x2="446" y2="83" stroke="currentColor"/><polygon points="446,79 456,83 446,87" fill="currentColor"/>
+  <rect x="456" y="60" width="104" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="508" y="80" text-anchor="middle" fill="currentColor" font-size="10">-frames-out</text>
+  <text x="508" y="94" text-anchor="middle" fill="var(--fg-muted)" font-size="8">frames.jsonl</text>
+  <line x1="560" y1="83" x2="588" y2="83" stroke="var(--accent)"/><polygon points="588,79 598,83 588,87" fill="var(--accent)"/>
+  <rect x="588" y="52" width="60" height="62" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="618" y="86" text-anchor="middle" fill="var(--accent)" font-size="10" transform="rotate(-90 618 86)">cryptolab</text>
+  <text x="216" y="140" text-anchor="middle" fill="var(--fg-muted)" font-size="8">not the wideband DDCBank / channelizer</text>
+  <text x="508" y="140" text-anchor="middle" fill="var(--fg-muted)" font-size="8">the seam: detection hands off bytes</text>
+</svg>
+<figcaption>One carrier at a time: segmentation retunes each discovered carrier to baseband with the single-tap <code>ccdecoder</code> downconverter, runs the analyzer chain, and emits unknown payloads to <code>frames.jsonl</code> — the seam Crypto Lab picks up.</figcaption>
+</figure>
 
 <aside class="lab-note">
 <p><strong>Sidebar — which downconverter?</strong> RF Scope's segmentation shifts each

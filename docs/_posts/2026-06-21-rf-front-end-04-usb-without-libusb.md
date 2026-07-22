@@ -58,6 +58,33 @@ on Windows, **IOKit** on macOS. GopherTrunk speaks to those directly. The cost i
 that we write three backends by hand; the payoff is a pure-Go, CGO-free,
 `go build`-and-ship binary on every target.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="The RTL2832U driver calls the Transport port, which exposes only vendor control-out 0x40, vendor control-in 0xC0, and a bulk-IN endpoint 0x81. Below the OS boundary, a per-OS adapter turns those calls into USBDEVFS, WinUSB, or IOKit to reach the RTL2832U's endpoint 0x81.">
+  <text x="230" y="14" text-anchor="middle" fill="var(--fg-muted)" font-size="9">pure-Go driver</text>
+  <text x="500" y="14" text-anchor="middle" fill="var(--fg-muted)" font-size="9">OS USB stack</text>
+  <rect x="8" y="66" width="110" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="63" y="94" text-anchor="middle" fill="currentColor" font-size="10">RTL2832U driver</text>
+  <line x1="118" y1="90" x2="146" y2="90" stroke="currentColor"/><polygon points="146,86 156,90 146,94" fill="currentColor"/>
+  <rect x="158" y="30" width="180" height="120" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="248" y="50" text-anchor="middle" fill="var(--accent)" font-size="11">Transport · usb.go</text>
+  <text x="248" y="72" text-anchor="middle" fill="currentColor" font-size="9">ControlOut  0x40</text>
+  <text x="248" y="90" text-anchor="middle" fill="currentColor" font-size="9">ControlIn   0xC0</text>
+  <text x="248" y="108" text-anchor="middle" fill="currentColor" font-size="9">StartBulkIn ep 0x81</text>
+  <text x="248" y="128" text-anchor="middle" fill="var(--fg-muted)" font-size="9">Claim · Reset · Close</text>
+  <line x1="358" y1="22" x2="358" y2="168" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="358" y="182" text-anchor="middle" fill="var(--fg-muted)" font-size="9">OS boundary</text>
+  <line x1="338" y1="90" x2="378" y2="90" stroke="currentColor"/><polygon points="378,86 388,90 378,94" fill="currentColor"/>
+  <rect x="390" y="66" width="160" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="470" y="87" text-anchor="middle" fill="currentColor" font-size="10">USBDEVFS · WinUSB</text>
+  <text x="470" y="102" text-anchor="middle" fill="currentColor" font-size="10">· IOKit</text>
+  <line x1="550" y1="90" x2="578" y2="90" stroke="currentColor"/><polygon points="578,86 588,90 578,94" fill="currentColor"/>
+  <rect x="590" y="66" width="62" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="621" y="87" text-anchor="middle" fill="currentColor" font-size="9">RTL2832U</text>
+  <text x="621" y="102" text-anchor="middle" fill="var(--fg-muted)" font-size="9">ep 0x81</text>
+</svg>
+<figcaption>The <code>Transport</code> port exposes only the slice of USB the RTL2832U needs — vendor control in/out and one bulk-IN endpoint (<code>0x81</code>) — and a per-OS adapter below the boundary turns those calls into USBDEVFS, WinUSB, or IOKit.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 **Everything funnels through two interfaces.** The first, `Enumerator`, discovers and
@@ -244,6 +271,35 @@ owned by the application's needs. `linuxTransport`, `winTransport`, and
 `darwinTransport` are the *adapters* — concrete implementations that translate
 those needs into one specific OS's USB ABI. The RTL2832U driver lives entirely on
 the port side and is, by construction, ignorant of which adapter it's talking to.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 200" width="660" height="200" role="img" aria-label="One Transport port defined in usb.go is satisfied by several adapters selected by go:build tags: usb_linux.go for USBDEVFS, usb_darwin.go for IOKit, usb_windows.go for WinUSB, usb_other.go as the unsupported null adapter, and usb_mock.go for tests. Exactly one real backend is compiled into each binary.">
+  <rect x="230" y="16" width="200" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="330" y="43" text-anchor="middle" fill="var(--accent)" font-size="11">Transport port · usb.go</text>
+  <text x="330" y="84" text-anchor="middle" fill="var(--fg-muted)" font-size="9">//go:build selects one adapter</text>
+  <line x1="330" y1="60" x2="67" y2="100" stroke="currentColor"/><polygon points="63,96 67,106 71,98" fill="currentColor"/>
+  <line x1="330" y1="60" x2="197" y2="100" stroke="currentColor"/><polygon points="193,96 197,106 201,98" fill="currentColor"/>
+  <line x1="330" y1="60" x2="327" y2="100" stroke="currentColor"/><polygon points="323,97 327,106 331,97" fill="currentColor"/>
+  <line x1="330" y1="60" x2="457" y2="100" stroke="currentColor"/><polygon points="453,98 457,106 461,96" fill="currentColor"/>
+  <line x1="330" y1="60" x2="587" y2="100" stroke="currentColor"/><polygon points="583,98 587,106 591,96" fill="currentColor"/>
+  <rect x="8" y="106" width="118" height="62" rx="6" fill="none" stroke="currentColor"/>
+  <text x="67" y="134" text-anchor="middle" fill="currentColor" font-size="9">usb_linux.go</text>
+  <text x="67" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">USBDEVFS</text>
+  <rect x="138" y="106" width="118" height="62" rx="6" fill="none" stroke="currentColor"/>
+  <text x="197" y="134" text-anchor="middle" fill="currentColor" font-size="9">usb_darwin.go</text>
+  <text x="197" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">IOKit</text>
+  <rect x="268" y="106" width="118" height="62" rx="6" fill="none" stroke="currentColor"/>
+  <text x="327" y="134" text-anchor="middle" fill="currentColor" font-size="9">usb_windows.go</text>
+  <text x="327" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">WinUSB</text>
+  <rect x="398" y="106" width="118" height="62" rx="6" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="457" y="134" text-anchor="middle" fill="var(--fg-muted)" font-size="9">usb_other.go</text>
+  <text x="457" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">unsupported</text>
+  <rect x="528" y="106" width="118" height="62" rx="6" fill="none" stroke="currentColor"/>
+  <text x="587" y="134" text-anchor="middle" fill="currentColor" font-size="9">usb_mock.go</text>
+  <text x="587" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">tests</text>
+</svg>
+<figcaption>One port, several adapters: <code>//go:build</code> tags compile exactly one real OS backend into each binary, while <code>usb_other.go</code> keeps exotic targets building and <code>MockTransport</code> plugs into the same port for hardware-free tests.</figcaption>
+</figure>
 
 ### How that principle shaped the Go code
 

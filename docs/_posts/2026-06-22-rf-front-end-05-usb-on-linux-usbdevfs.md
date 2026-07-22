@@ -53,6 +53,31 @@ func (l *linuxEnumerator) Name() string { return "usbdevfs" }
 and wraps the file descriptor in a `linuxTransport`. Everything after that is
 ioctls on that one fd.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 180" width="660" height="180" role="img" aria-label="The linuxTransport in userspace opens the device node under /dev/bus/usb with O_RDWR and drives it with ioctl(2) across the OS boundary into the kernel usbfs layer, which reaches the RTL2832U dongle. Enumeration separately reads VID, PID, and serial from sysfs without opening anything.">
+  <text x="200" y="14" text-anchor="middle" fill="var(--fg-muted)" font-size="9">userspace (Go)</text>
+  <text x="520" y="14" text-anchor="middle" fill="var(--fg-muted)" font-size="9">kernel</text>
+  <rect x="8" y="60" width="120" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="68" y="82" text-anchor="middle" fill="var(--accent)" font-size="10">linuxTransport</text>
+  <text x="68" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="9">(Go)</text>
+  <line x1="128" y1="84" x2="158" y2="84" stroke="currentColor"/><polygon points="158,80 168,84 158,88" fill="currentColor"/>
+  <rect x="170" y="60" width="150" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="245" y="82" text-anchor="middle" fill="currentColor" font-size="10">/dev/bus/usb/</text>
+  <text x="245" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="9">BBB/DDD · O_RDWR</text>
+  <text x="352" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="9">ioctl(2)</text>
+  <line x1="320" y1="84" x2="360" y2="84" stroke="currentColor"/><polygon points="360,80 370,84 360,88" fill="currentColor"/>
+  <line x1="376" y1="24" x2="376" y2="140" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <rect x="388" y="60" width="130" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="453" y="82" text-anchor="middle" fill="currentColor" font-size="10">kernel usbfs</text>
+  <text x="453" y="98" text-anchor="middle" fill="var(--fg-muted)" font-size="9">(usbdevfs)</text>
+  <line x1="518" y1="84" x2="548" y2="84" stroke="currentColor"/><polygon points="548,80 558,84 548,88" fill="currentColor"/>
+  <rect x="560" y="60" width="92" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="606" y="88" text-anchor="middle" fill="currentColor" font-size="9">RTL2832U</text>
+  <text x="330" y="158" text-anchor="middle" fill="var(--fg-muted)" font-size="9">enumerate: /sys/bus/usb/devices (sysfs) — VID/PID/serial, no open</text>
+</svg>
+<figcaption>The Linux backend opens the node under <code>/dev/bus/usb</code> and drives it entirely with <code>ioctl(2)</code> into the kernel's usbfs — nothing between userspace and the kernel — while enumeration reads identity from sysfs without opening anything.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 **The first thing the backend needs is the ioctl request numbers, and Go gives us no
@@ -155,6 +180,29 @@ for i := 0; i < ringBufs; i++ {
 The driver's default geometry is **32 buffers of 16 KiB** — `DefaultRingBuffers`
 and `DefaultBufferLen` in `usb.go`. With 32 URBs queued, the kernel can keep the
 bus saturated even if the consumer stalls for several milliseconds.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 200" width="660" height="200" role="img" aria-label="StartBulkIn submits a ring of 32 URBs of 16 KiB each. The kernel fills each URB asynchronously; a single reaper goroutine pinned with LockOSThread reaps a completion with REAPURB, hands the bytes to onPacket, and immediately resubmits the same URB to keep the ring full.">
+  <rect x="20" y="28" width="170" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="105" y="48" text-anchor="middle" fill="var(--accent)" font-size="10">SUBMITURB ×32</text>
+  <text x="105" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="9">16 KiB each</text>
+  <line x1="190" y1="52" x2="248" y2="52" stroke="currentColor"/><polygon points="248,48 258,52 248,56" fill="currentColor"/>
+  <rect x="250" y="28" width="150" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="325" y="48" text-anchor="middle" fill="currentColor" font-size="10">kernel fills</text>
+  <text x="325" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="9">URB (async)</text>
+  <line x1="400" y1="52" x2="458" y2="52" stroke="currentColor"/><polygon points="458,48 468,52 458,56" fill="currentColor"/>
+  <rect x="460" y="28" width="180" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="550" y="48" text-anchor="middle" fill="currentColor" font-size="10">REAPURB</text>
+  <text x="550" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="9">reaper · LockOSThread</text>
+  <line x1="550" y1="76" x2="550" y2="116" stroke="currentColor"/><polygon points="546,116 550,124 554,116" fill="currentColor"/>
+  <rect x="460" y="124" width="180" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="550" y="151" text-anchor="middle" fill="currentColor" font-size="10">onPacket(buf[:n])</text>
+  <line x1="460" y1="146" x2="105" y2="146" stroke="currentColor"/>
+  <line x1="105" y1="146" x2="105" y2="76" stroke="currentColor"/><polygon points="101,84 105,76 109,84" fill="currentColor"/>
+  <text x="282" y="140" text-anchor="middle" fill="var(--fg-muted)" font-size="9">resubmit same URB</text>
+</svg>
+<figcaption>A ring of 32 URBs stays in flight: the kernel fills them asynchronously while one OS-thread-pinned reaper reaps each completion, feeds <code>onPacket</code>, and immediately resubmits that URB — so the bus never runs dry.</figcaption>
+</figure>
 
 Once the ring is submitted, a **single reaper goroutine** owns the completion
 loop. It pins itself to its OS thread, reaps one URB at a time, hands the bytes to

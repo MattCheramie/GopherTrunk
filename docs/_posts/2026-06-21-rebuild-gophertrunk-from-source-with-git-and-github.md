@@ -71,6 +71,22 @@ and Windows on any of those hosts without a cross-toolchain. The rest of this
 post is the detailed version of those five steps, plus how to keep your clone
 current and a few build knobs worth knowing.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 132" width="660" height="132" role="img" aria-label="The five-step build pipeline: git clone the repository, git checkout the version you want (main, a tag, or a branch), make build to compile cmd/gophertrunk into bin/gophertrunk, verify with gophertrunk version and sdr list, and optionally install the binary onto your PATH.">
+  <rect x="10" y="42" width="112" height="46" rx="6" fill="none" stroke="currentColor"/><text x="66" y="62" text-anchor="middle" fill="currentColor" font-size="10">clone</text><text x="66" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">git clone</text>
+  <line x1="122" y1="65" x2="146" y2="65" stroke="currentColor"/><polygon points="146,61 156,65 146,69" fill="currentColor"/>
+  <rect x="156" y="42" width="112" height="46" rx="6" fill="none" stroke="currentColor"/><text x="212" y="62" text-anchor="middle" fill="currentColor" font-size="10">checkout</text><text x="212" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">main · tag · branch</text>
+  <line x1="268" y1="65" x2="292" y2="65" stroke="currentColor"/><polygon points="292,61 302,65 292,69" fill="currentColor"/>
+  <rect x="302" y="42" width="112" height="46" rx="6" fill="none" stroke="var(--accent)"/><text x="358" y="62" text-anchor="middle" fill="var(--accent)" font-size="10">make build</text><text x="358" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">bin/gophertrunk</text>
+  <line x1="414" y1="65" x2="438" y2="65" stroke="currentColor"/><polygon points="438,61 448,65 438,69" fill="currentColor"/>
+  <rect x="448" y="42" width="112" height="46" rx="6" fill="none" stroke="currentColor"/><text x="504" y="62" text-anchor="middle" fill="currentColor" font-size="10">verify</text><text x="504" y="76" text-anchor="middle" fill="var(--fg-muted)" font-size="8">version · sdr list</text>
+  <line x1="560" y1="65" x2="584" y2="65" stroke="currentColor"/><polygon points="584,61 594,65 584,69" fill="currentColor"/>
+  <rect x="594" y="42" width="60" height="46" rx="6" fill="none" stroke="var(--fg-muted)"/><text x="624" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="9" transform="rotate(-90 624 66)">install PATH</text>
+  <text x="358" y="112" text-anchor="middle" fill="var(--fg-muted)" font-size="9">compiles ./cmd/gophertrunk with version, commit &amp; build time stamped in</text>
+</svg>
+<figcaption>The whole loop, five steps: clone the repo, check out the version you want, <code>make build</code> the binary, verify it runs and sees your SDR, then optionally install it on your <code>PATH</code>.</figcaption>
+</figure>
+
 > New to Git itself? This post assumes you can run `git clone` and
 > `git checkout`. If those aren't second nature yet, the free
 > [**Git & GitHub learning path**]({{ '/learn/git/' | relative_url }}) starts from
@@ -92,6 +108,25 @@ That is the entire list. GopherTrunk uses `purego` for every system call it make
 `CGO_ENABLED=0` and ships as one
 [static binary]({{ '/reference/static-binary/' | relative_url }}). There is no
 `libusb`, no `librtlsdr`, no compiler toolchain to install.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 620 196" width="620" height="196" role="img" aria-label="The build toolchain dependency stack, bottom to top: the Go 1.25-plus toolchain building with CGO_ENABLED=0 sits at the base; make sits above it wrapping a plain go build; git supplies the source at cmd/gophertrunk; and the top layer is the single static binary bin/gophertrunk with no C libraries — no libusb, librtlsdr, or compiler toolchain.">
+  <rect x="120" y="12" width="380" height="34" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="310" y="30" text-anchor="middle" fill="var(--accent)" font-size="11">bin/gophertrunk — one static binary</text>
+  <text x="310" y="42" text-anchor="middle" fill="var(--fg-muted)" font-size="8">no C libs · no libusb · no librtlsdr</text>
+  <line x1="310" y1="46" x2="310" y2="58" stroke="currentColor"/><polygon points="306,48 310,58 314,48" fill="currentColor"/>
+  <rect x="120" y="60" width="380" height="30" rx="6" fill="none" stroke="currentColor"/>
+  <text x="310" y="79" text-anchor="middle" fill="currentColor" font-size="10">make build  →  wraps  go build ./cmd/gophertrunk</text>
+  <line x1="310" y1="90" x2="310" y2="102" stroke="currentColor"/><polygon points="306,92 310,102 314,92" fill="currentColor"/>
+  <rect x="120" y="104" width="380" height="30" rx="6" fill="none" stroke="currentColor"/>
+  <text x="310" y="123" text-anchor="middle" fill="currentColor" font-size="10">Go 1.25+ toolchain  ·  CGO_ENABLED=0</text>
+  <line x1="310" y1="134" x2="310" y2="146" stroke="currentColor"/><polygon points="306,136 310,146 314,136" fill="currentColor"/>
+  <rect x="120" y="148" width="380" height="30" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="310" y="167" text-anchor="middle" fill="var(--fg-muted)" font-size="10">git  ·  source at ./cmd/gophertrunk</text>
+  <text x="60" y="97" text-anchor="middle" fill="var(--fg-muted)" font-size="9" transform="rotate(-90 60 97)">the three required tools</text>
+</svg>
+<figcaption>The toolchain is a short stack: git fetches the source, the Go 1.25+ toolchain compiles it with <code>CGO_ENABLED=0</code>, <code>make</code> wraps <code>go build</code>, and the top of the stack is a single static binary with no C libraries underneath.</figcaption>
+</figure>
 
 > **On Linux and want to actually receive with an SDR after building?** USB
 > device permissions are a separate, one-time setup step. See

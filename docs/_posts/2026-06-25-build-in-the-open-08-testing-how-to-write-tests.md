@@ -80,6 +80,27 @@ Most pain in real projects comes from an *inverted* pyramid — a few brittle
 end-to-end tests and no unit tests underneath. Push the bulk of your coverage
 down to the fast layer, where a failure points straight at the broken function.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 210" width="660" height="210" role="img" aria-label="The testing pyramid: a wide base of many fast unit tests, a narrower middle band of fewer integration tests, and a small tip of a handful of slow end-to-end tests. GopherTrunk's make test is the unit base, make integration the middle, and the per-protocol lights-up checks the tip.">
+  <polygon points="170,20 40,185 300,185" fill="none" stroke="currentColor"/>
+  <line x1="127" y1="75" x2="213" y2="75" stroke="currentColor"/>
+  <line x1="83" y1="130" x2="257" y2="130" stroke="currentColor"/>
+  <text x="170" y="56" text-anchor="middle" fill="var(--fg-muted)" font-size="10">e2e</text>
+  <text x="170" y="107" text-anchor="middle" fill="currentColor" font-size="11">integration</text>
+  <text x="170" y="162" text-anchor="middle" fill="var(--accent)" font-size="12">unit</text>
+  <line x1="220" y1="50" x2="330" y2="50" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="336" y="46" fill="var(--fg-muted)" font-size="10">a handful, slowest</text>
+  <text x="336" y="60" fill="var(--fg-muted)" font-size="9">per-protocol lights-up</text>
+  <line x1="262" y1="103" x2="330" y2="103" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="336" y="99" fill="currentColor" font-size="10">fewer — make integration</text>
+  <text x="336" y="113" fill="var(--fg-muted)" font-size="9">wired daemon, no SDR</text>
+  <line x1="305" y1="158" x2="330" y2="158" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="336" y="154" fill="var(--accent)" font-size="10">thousands — make test</text>
+  <text x="336" y="168" fill="var(--fg-muted)" font-size="9">go test -race, &lt;30s, the CI gate</text>
+</svg>
+<figcaption>Push the bulk of coverage to the wide base: GopherTrunk's <code>make test</code> unit layer is the gate CI enforces, with tagged integration tests and per-protocol end-to-end checks above it.</figcaption>
+</figure>
+
 ## How do you write a good test?
 
 A few techniques transfer to any language and test runner.
@@ -151,6 +172,27 @@ work is structured and the right answer is checkable:
 - **Write the regression test for a bug.** Describe the bug (or paste the stack
   trace), and ask for a test that fails *before* the fix and passes *after*. Land
   that test in the same PR as the fix — exactly the discipline good projects use.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 540 170" width="540" height="170" role="img" aria-label="The red, green, refactor loop: first write a failing test that is red, then write just enough code to make it pass and go green, then refactor while keeping the tests green, and repeat. For a bug fix the failing test comes first and ships in the same pull request as the fix.">
+  <rect x="20" y="30" width="150" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="95" y="49" text-anchor="middle" fill="var(--accent)" font-size="11">1 · red</text>
+  <text x="95" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="9">write a failing test</text>
+  <line x1="170" y1="52" x2="187" y2="52" stroke="currentColor"/><polygon points="187,48 193,52 187,56" fill="currentColor"/>
+  <rect x="195" y="30" width="150" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="270" y="49" text-anchor="middle" fill="currentColor" font-size="11">2 · green</text>
+  <text x="270" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="9">make it pass</text>
+  <line x1="345" y1="52" x2="362" y2="52" stroke="currentColor"/><polygon points="362,48 368,52 362,56" fill="currentColor"/>
+  <rect x="370" y="30" width="150" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="445" y="49" text-anchor="middle" fill="currentColor" font-size="11">3 · refactor</text>
+  <text x="445" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="9">clean up, stay green</text>
+  <line x1="445" y1="74" x2="445" y2="140" stroke="currentColor"/>
+  <line x1="445" y1="140" x2="95" y2="140" stroke="currentColor"/>
+  <line x1="95" y1="140" x2="95" y2="80" stroke="currentColor"/><polygon points="91,80 95,74 99,80" fill="currentColor"/>
+  <text x="270" y="135" text-anchor="middle" fill="var(--fg-muted)" font-size="9">repeat — for a bug fix, the red test lands in the same PR</text>
+</svg>
+<figcaption>The red→green→refactor loop, and the rule GopherTrunk enforces: a bug fix ships with a regression test that fails before the fix and passes after it, in the same PR.</figcaption>
+</figure>
 
 Always read what it produces. Claude is great at breadth; you supply the
 judgment about which cases actually matter and whether the assertions are real.

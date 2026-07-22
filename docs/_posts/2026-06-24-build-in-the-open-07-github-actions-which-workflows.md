@@ -58,6 +58,35 @@ define *jobs* (groups of *steps*) and the *events* that trigger them
 `workflow_dispatch`). The mental model: *an event happens → a workflow runs →
 jobs report success or failure.*
 
+<figure class="lab-figure">
+<svg viewBox="0 0 680 100" width="680" height="100" role="img" aria-label="A continuous-integration pipeline drawn as ordered stages that a pull request passes through: go vet for static checks, a gofmt format check, go build to compile, go test with the race detector, make integration, and finally the required status check that gates the merge.">
+  <rect x="10" y="30" width="102" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="61" y="52" text-anchor="middle" fill="currentColor" font-size="11">go vet</text>
+  <text x="61" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">static check</text>
+  <line x1="112" y1="52" x2="118" y2="52" stroke="currentColor"/><polygon points="117,48 121,52 117,56" fill="currentColor"/>
+  <rect x="121" y="30" width="102" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="172" y="52" text-anchor="middle" fill="currentColor" font-size="11">gofmt</text>
+  <text x="172" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">format check</text>
+  <line x1="223" y1="52" x2="229" y2="52" stroke="currentColor"/><polygon points="228,48 232,52 228,56" fill="currentColor"/>
+  <rect x="232" y="30" width="102" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="283" y="52" text-anchor="middle" fill="currentColor" font-size="11">go build</text>
+  <text x="283" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">compile</text>
+  <line x1="334" y1="52" x2="340" y2="52" stroke="currentColor"/><polygon points="339,48 343,52 339,56" fill="currentColor"/>
+  <rect x="343" y="30" width="102" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="394" y="52" text-anchor="middle" fill="currentColor" font-size="11">go test</text>
+  <text x="394" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">-race -count=1</text>
+  <line x1="445" y1="52" x2="451" y2="52" stroke="currentColor"/><polygon points="450,48 454,52 450,56" fill="currentColor"/>
+  <rect x="454" y="30" width="102" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="505" y="52" text-anchor="middle" fill="currentColor" font-size="11">integration</text>
+  <text x="505" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">make integration</text>
+  <line x1="556" y1="52" x2="562" y2="52" stroke="currentColor"/><polygon points="561,48 565,52 561,56" fill="currentColor"/>
+  <rect x="565" y="30" width="102" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="616" y="52" text-anchor="middle" fill="var(--accent)" font-size="11">merge gate</text>
+  <text x="616" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">required ✓</text>
+</svg>
+<figcaption>The <code>build-test</code> job of <code>ci.yml</code> as a stage pipeline: vet, format, build, race-tested, integrated — and only a green run clears the required-status-check merge gate.</figcaption>
+</figure>
+
 ## Which workflows should most projects have?
 
 You don't need everything on day one, but here's the menu and why each item
@@ -140,6 +169,29 @@ to cut wasted runner minutes on active PRs. (For deploys, you usually set
 workflows in
 [`.github/workflows/`](https://github.com/MattCheramie/GopherTrunk/tree/main/.github/workflows),
 one for each need above.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 208" width="660" height="208" role="img" aria-label="The trigger matrix mapping each GitHub event to the workflow it starts: pull request and push to main start ci.yml, a version tag starts release.yml, a pull request starts installer.yml, a push to docs plus a daily cron start pages.yml, and a manual workflow_dispatch starts cleanup-branches.yml.">
+  <text x="125" y="22" text-anchor="middle" fill="var(--fg-muted)" font-size="10">trigger event</text>
+  <text x="520" y="22" text-anchor="middle" fill="var(--fg-muted)" font-size="10">workflow (.github/workflows/)</text>
+  <rect x="20" y="34" width="210" height="26" rx="5" fill="none" stroke="currentColor"/><text x="125" y="51" text-anchor="middle" fill="currentColor" font-size="10">pull_request · push main</text>
+  <line x1="230" y1="47" x2="380" y2="47" stroke="currentColor"/><polygon points="380,43 390,47 380,51" fill="currentColor"/>
+  <rect x="390" y="34" width="260" height="26" rx="5" fill="none" stroke="var(--accent)"/><text x="520" y="51" text-anchor="middle" fill="var(--accent)" font-size="11">ci.yml — merge gate</text>
+  <rect x="20" y="68" width="210" height="26" rx="5" fill="none" stroke="currentColor"/><text x="125" y="85" text-anchor="middle" fill="currentColor" font-size="10">tag v*.*.*</text>
+  <line x1="230" y1="81" x2="380" y2="81" stroke="currentColor"/><polygon points="380,77 390,81 380,85" fill="currentColor"/>
+  <rect x="390" y="68" width="260" height="26" rx="5" fill="none" stroke="currentColor"/><text x="520" y="85" text-anchor="middle" fill="currentColor" font-size="11">release.yml</text>
+  <rect x="20" y="102" width="210" height="26" rx="5" fill="none" stroke="currentColor"/><text x="125" y="119" text-anchor="middle" fill="currentColor" font-size="10">pull_request (not docs)</text>
+  <line x1="230" y1="115" x2="380" y2="115" stroke="currentColor"/><polygon points="380,111 390,115 380,119" fill="currentColor"/>
+  <rect x="390" y="102" width="260" height="26" rx="5" fill="none" stroke="currentColor"/><text x="520" y="119" text-anchor="middle" fill="currentColor" font-size="11">installer.yml — PR-only</text>
+  <rect x="20" y="136" width="210" height="26" rx="5" fill="none" stroke="currentColor"/><text x="125" y="153" text-anchor="middle" fill="currentColor" font-size="10">push docs/** · daily cron</text>
+  <line x1="230" y1="149" x2="380" y2="149" stroke="currentColor"/><polygon points="380,145 390,149 380,153" fill="currentColor"/>
+  <rect x="390" y="136" width="260" height="26" rx="5" fill="none" stroke="currentColor"/><text x="520" y="153" text-anchor="middle" fill="currentColor" font-size="11">pages.yml</text>
+  <rect x="20" y="170" width="210" height="26" rx="5" fill="none" stroke="currentColor"/><text x="125" y="187" text-anchor="middle" fill="currentColor" font-size="10">workflow_dispatch</text>
+  <line x1="230" y1="183" x2="380" y2="183" stroke="currentColor"/><polygon points="380,179 390,183 380,187" fill="currentColor"/>
+  <rect x="390" y="170" width="260" height="26" rx="5" fill="none" stroke="currentColor"/><text x="520" y="187" text-anchor="middle" fill="currentColor" font-size="11">cleanup-branches.yml</text>
+</svg>
+<figcaption>GopherTrunk's five workflows, each bound to the event that should start it — the trigger, not the workflow, is what makes a release deliberate and a chore scheduled.</figcaption>
+</figure>
 
 ### `ci.yml` — the merge gate
 

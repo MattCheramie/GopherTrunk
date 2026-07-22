@@ -92,6 +92,36 @@ contributors.
 Optimization gets people in the door. Security keeps the door from being kicked
 off its hinges.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="A defense-in-depth stack guarding the main branch: an incoming change passes through four hardening layers in turn — branch protection with required checks, secret scanning with push protection, Dependabot and CVE scanning, and least-privilege Actions tokens — before it can reach a protected main.">
+  <rect x="16" y="78" width="96" height="36" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="64" y="100" text-anchor="middle" fill="var(--fg-muted)" font-size="10">a change</text>
+  <line x1="112" y1="96" x2="140" y2="96" stroke="currentColor"/><polygon points="140,92 150,96 140,100" fill="currentColor"/>
+  <rect x="150" y="20" width="118" height="150" rx="6" fill="none" stroke="currentColor"/>
+  <text x="209" y="40" text-anchor="middle" fill="currentColor" font-size="10">branch</text>
+  <text x="209" y="53" text-anchor="middle" fill="currentColor" font-size="10">protection</text>
+  <text x="209" y="70" text-anchor="middle" fill="var(--fg-muted)" font-size="8">PR required</text>
+  <text x="209" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">status checks</text>
+  <text x="209" y="94" text-anchor="middle" fill="var(--fg-muted)" font-size="8">no force-push</text>
+  <rect x="274" y="20" width="118" height="150" rx="6" fill="none" stroke="currentColor"/>
+  <text x="333" y="40" text-anchor="middle" fill="currentColor" font-size="10">secret</text>
+  <text x="333" y="53" text-anchor="middle" fill="currentColor" font-size="10">scanning</text>
+  <text x="333" y="70" text-anchor="middle" fill="var(--fg-muted)" font-size="8">push protection</text>
+  <text x="333" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">blocks the commit</text>
+  <rect x="398" y="20" width="118" height="150" rx="6" fill="none" stroke="currentColor"/>
+  <text x="457" y="40" text-anchor="middle" fill="currentColor" font-size="10">Dependabot</text>
+  <text x="457" y="53" text-anchor="middle" fill="currentColor" font-size="10">+ CVE scan</text>
+  <text x="457" y="70" text-anchor="middle" fill="var(--fg-muted)" font-size="8">govulncheck</text>
+  <text x="457" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">fails the build</text>
+  <rect x="522" y="20" width="60" height="150" rx="6" fill="none" stroke="currentColor"/>
+  <text x="552" y="86" text-anchor="middle" fill="currentColor" font-size="10" transform="rotate(-90 552 86)">least-priv tokens</text>
+  <line x1="582" y1="95" x2="606" y2="95" stroke="currentColor"/><polygon points="606,91 616,95 606,99" fill="currentColor"/>
+  <rect x="600" y="60" width="52" height="70" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="626" y="98" text-anchor="middle" fill="var(--accent)" font-size="11" transform="rotate(-90 626 98)">main</text>
+</svg>
+<figcaption>Hardening is layered, not a single wall: a change must clear branch protection, secret scanning, dependency-CVE gates, and least-privilege token scope before it touches the protected <code>main</code>.</figcaption>
+</figure>
+
 ### Branch protection and required checks
 
 Protect `main` so nobody (including you on a bad day) can push broken code or
@@ -172,6 +202,34 @@ graph. Because `build-test` and the USB jobs are required, a failing security
 scan keeps a PR from merging. There's also a `licenses` job that regenerates the
 third-party license inventory with `go-licenses`, backstopping the hand-curated
 table.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 640 188" width="640" height="188" role="img" aria-label="A pull request fans out to four CI jobs — build-test, usb-windows, usb-macos, and vulncheck running govulncheck — that all report back to a required-checks gate; only when every required check passes does the PR merge to main, and any failure blocks the merge.">
+  <rect x="14" y="76" width="96" height="42" rx="6" fill="none" stroke="currentColor"/>
+  <text x="62" y="94" text-anchor="middle" fill="currentColor" font-size="11">pull request</text>
+  <text x="62" y="108" text-anchor="middle" fill="var(--fg-muted)" font-size="8">into main</text>
+  <line x1="110" y1="88" x2="150" y2="34" stroke="currentColor"/><polygon points="146,30 156,32 150,41" fill="currentColor"/>
+  <line x1="110" y1="94" x2="150" y2="74" stroke="currentColor"/><polygon points="146,70 156,74 146,79" fill="currentColor"/>
+  <line x1="110" y1="100" x2="150" y2="114" stroke="currentColor"/><polygon points="146,109 156,116 146,119" fill="currentColor"/>
+  <line x1="110" y1="106" x2="150" y2="160" stroke="currentColor"/><polygon points="147,153 156,162 143,162" fill="currentColor"/>
+  <rect x="156" y="18" width="150" height="28" rx="5" fill="none" stroke="currentColor"/><text x="231" y="36" text-anchor="middle" fill="currentColor" font-size="10">build-test</text>
+  <rect x="156" y="60" width="150" height="28" rx="5" fill="none" stroke="currentColor"/><text x="231" y="78" text-anchor="middle" fill="currentColor" font-size="10">usb-windows</text>
+  <rect x="156" y="102" width="150" height="28" rx="5" fill="none" stroke="currentColor"/><text x="231" y="120" text-anchor="middle" fill="currentColor" font-size="10">usb-macos</text>
+  <rect x="156" y="144" width="150" height="30" rx="5" fill="none" stroke="var(--accent)"/><text x="231" y="159" text-anchor="middle" fill="var(--accent)" font-size="10">vulncheck</text><text x="231" y="170" text-anchor="middle" fill="var(--fg-muted)" font-size="8">govulncheck ./...</text>
+  <line x1="306" y1="32" x2="410" y2="86" stroke="currentColor"/><polygon points="405,81 414,90 401,90" fill="currentColor"/>
+  <line x1="306" y1="74" x2="410" y2="90" stroke="currentColor"/><polygon points="404,85 414,92 403,95" fill="currentColor"/>
+  <line x1="306" y1="116" x2="410" y2="96" stroke="currentColor"/><polygon points="404,91 414,94 405,101" fill="currentColor"/>
+  <line x1="306" y1="158" x2="410" y2="100" stroke="currentColor"/><polygon points="401,100 414,100 405,109" fill="currentColor"/>
+  <rect x="414" y="70" width="106" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="467" y="90" text-anchor="middle" fill="currentColor" font-size="10">required-</text>
+  <text x="467" y="103" text-anchor="middle" fill="currentColor" font-size="10">checks gate</text>
+  <line x1="520" y1="80" x2="556" y2="52" stroke="var(--accent)"/><polygon points="552,48 562,50 556,59" fill="var(--accent)"/>
+  <line x1="520" y1="104" x2="556" y2="132" stroke="var(--fg-muted)"/><polygon points="556,125 562,135 549,133" fill="var(--fg-muted)"/>
+  <rect x="562" y="34" width="72" height="32" rx="6" fill="none" stroke="var(--accent)"/><text x="598" y="50" text-anchor="middle" fill="var(--accent)" font-size="10">all green</text><text x="598" y="61" text-anchor="middle" fill="var(--fg-muted)" font-size="8">→ merge</text>
+  <rect x="562" y="118" width="72" height="32" rx="6" fill="none" stroke="var(--fg-muted)"/><text x="598" y="134" text-anchor="middle" fill="var(--fg-muted)" font-size="10">any red</text><text x="598" y="145" text-anchor="middle" fill="var(--fg-muted)" font-size="8">blocked</text>
+</svg>
+<figcaption>Required checks are the gate: <code>build-test</code>, the two USB jobs, and the <code>vulncheck</code> CVE scan must all pass before a PR can merge to <code>main</code> — a failing security scan blocks the merge like any other check.</figcaption>
+</figure>
 
 **A real disclosure policy.** `SECURITY.md` is not boilerplate — it opens with a
 *threat model* (an operator running the daemon on a private network or single

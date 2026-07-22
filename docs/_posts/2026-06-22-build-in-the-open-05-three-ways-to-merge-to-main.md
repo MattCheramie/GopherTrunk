@@ -82,10 +82,72 @@ three safety mechanisms live:
 Crucially, the *shape* of the commits inside your branch and the *merge button*
 you press are two different decisions. The next sections connect them.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 176" width="660" height="176" role="img" aria-label="The pull request as a merge gate: a feature branch opens a pull request, which must pass the required status checks build-test, usb-windows, and usb-macos and have review threads resolved before the merge gate unlocks and the change lands on main.">
+  <rect x="14" y="62" width="104" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="66" y="82" text-anchor="middle" fill="currentColor" font-size="10">feature</text>
+  <text x="66" y="96" text-anchor="middle" fill="currentColor" font-size="10">branch</text>
+  <line x1="118" y1="85" x2="150" y2="85" stroke="currentColor"/><polygon points="150,81 160,85 150,89" fill="currentColor"/>
+  <rect x="160" y="62" width="104" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="212" y="82" text-anchor="middle" fill="currentColor" font-size="10">pull</text>
+  <text x="212" y="96" text-anchor="middle" fill="currentColor" font-size="10">request</text>
+  <line x1="264" y1="85" x2="296" y2="85" stroke="currentColor"/><polygon points="296,81 306,85 296,89" fill="currentColor"/>
+  <rect x="306" y="30" width="168" height="110" rx="6" fill="none" stroke="currentColor"/>
+  <text x="390" y="47" text-anchor="middle" fill="var(--fg-muted)" font-size="9">required to merge</text>
+  <text x="390" y="66" text-anchor="middle" fill="currentColor" font-size="10">build-test</text>
+  <text x="390" y="84" text-anchor="middle" fill="currentColor" font-size="10">usb-windows</text>
+  <text x="390" y="102" text-anchor="middle" fill="currentColor" font-size="10">usb-macos</text>
+  <text x="390" y="124" text-anchor="middle" fill="currentColor" font-size="10">review resolved</text>
+  <line x1="474" y1="85" x2="506" y2="85" stroke="var(--accent)"/><polygon points="506,81 516,85 506,89" fill="var(--accent)"/>
+  <rect x="516" y="62" width="130" height="46" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="581" y="82" text-anchor="middle" fill="var(--accent)" font-size="10">merge to main</text>
+  <text x="581" y="96" text-anchor="middle" fill="var(--fg-muted)" font-size="8">gate unlocks when green</text>
+</svg>
+<figcaption>The pull request is the gate: GopherTrunk requires the <code>build-test</code>, <code>usb-windows</code>, and <code>usb-macos</code> checks to pass and review threads resolved before the merge button to <code>main</code> unlocks.</figcaption>
+</figure>
+
 ## The three ways to merge to main
 
 There are three honest ways to land a branch, defined by how many commits you
 want to appear on `main`. GitHub exposes each as a merge-button option.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 188" width="660" height="188" role="img" aria-label="The three GitHub merge strategies drawn as branch graphs. Merge commit: the feature branch commits are kept and joined to main by a merge commit, forming a bubble. Squash and merge: the branch's commits collapse into a single new commit on main. Rebase and merge: the branch commits are replayed onto main as a straight line with no merge commit.">
+  <line x1="215" y1="30" x2="215" y2="150" stroke="var(--fg-muted)" stroke-dasharray="2 4"/>
+  <line x1="445" y1="30" x2="445" y2="150" stroke="var(--fg-muted)" stroke-dasharray="2 4"/>
+  <text x="100" y="20" text-anchor="middle" fill="currentColor" font-size="10">merge commit</text>
+  <line x1="20" y1="78" x2="185" y2="78" stroke="currentColor"/>
+  <circle cx="38" cy="78" r="5" fill="currentColor"/>
+  <circle cx="66" cy="78" r="5" fill="currentColor"/>
+  <line x1="66" y1="78" x2="98" y2="128" stroke="currentColor"/>
+  <line x1="98" y1="128" x2="132" y2="128" stroke="currentColor"/>
+  <circle cx="98" cy="128" r="5" fill="currentColor"/>
+  <circle cx="132" cy="128" r="5" fill="currentColor"/>
+  <line x1="132" y1="128" x2="168" y2="78" stroke="var(--accent)"/>
+  <circle cx="168" cy="78" r="6" fill="var(--accent)"/>
+  <text x="100" y="160" text-anchor="middle" fill="var(--fg-muted)" font-size="8">all commits + a bubble</text>
+  <text x="330" y="20" text-anchor="middle" fill="currentColor" font-size="10">squash &amp; merge</text>
+  <line x1="245" y1="78" x2="415" y2="78" stroke="currentColor"/>
+  <circle cx="262" cy="78" r="5" fill="currentColor"/>
+  <circle cx="290" cy="78" r="5" fill="currentColor"/>
+  <circle cx="400" cy="78" r="6" fill="var(--accent)"/>
+  <line x1="305" y1="128" x2="360" y2="128" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <circle cx="305" cy="128" r="4" fill="var(--fg-muted)"/>
+  <circle cx="333" cy="128" r="4" fill="var(--fg-muted)"/>
+  <circle cx="360" cy="128" r="4" fill="var(--fg-muted)"/>
+  <line x1="360" y1="128" x2="396" y2="86" stroke="var(--fg-muted)" stroke-dasharray="4 3"/><polygon points="391,88 400,80 396,91" fill="var(--fg-muted)"/>
+  <text x="330" y="160" text-anchor="middle" fill="var(--fg-muted)" font-size="8">3 commits collapse to 1</text>
+  <text x="558" y="20" text-anchor="middle" fill="currentColor" font-size="10">rebase &amp; merge</text>
+  <line x1="460" y1="78" x2="648" y2="78" stroke="currentColor"/>
+  <circle cx="478" cy="78" r="5" fill="currentColor"/>
+  <circle cx="508" cy="78" r="5" fill="currentColor"/>
+  <circle cx="558" cy="78" r="6" fill="var(--accent)"/>
+  <circle cx="588" cy="78" r="6" fill="var(--accent)"/>
+  <circle cx="618" cy="78" r="6" fill="var(--accent)"/>
+  <text x="558" y="160" text-anchor="middle" fill="var(--fg-muted)" font-size="8">commits replayed, linear</text>
+</svg>
+<figcaption>The three merge buttons as branch graphs: a merge commit keeps every branch commit and joins with a bubble, squash collapses them into one commit on <code>main</code>, and rebase replays them as a straight line.</figcaption>
+</figure>
 
 ### 1. Many small commits → one PR
 

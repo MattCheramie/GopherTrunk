@@ -90,6 +90,30 @@ This is **dependency inversion**: the high-level engine depends on the abstract
 contracts by registering themselves. The arrow points the "wrong" way on
 purpose.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 520 180" width="520" height="180" role="img" aria-label="Four SDR driver packages — rtlsdr/purego, hackrf, airspy, and airspyhf — each call sdr.Register from their init function at import time, populating a single process-global registry that is a map from driver name to Driver.">
+  <text x="85" y="14" text-anchor="middle" fill="var(--fg-muted)" font-size="10">init() at import</text>
+  <rect x="10" y="22" width="150" height="26" rx="6" fill="none" stroke="currentColor"/>
+  <text x="85" y="39" text-anchor="middle" fill="currentColor" font-size="10">rtlsdr/purego</text>
+  <rect x="10" y="54" width="150" height="26" rx="6" fill="none" stroke="currentColor"/>
+  <text x="85" y="71" text-anchor="middle" fill="currentColor" font-size="10">hackrf</text>
+  <rect x="10" y="86" width="150" height="26" rx="6" fill="none" stroke="currentColor"/>
+  <text x="85" y="103" text-anchor="middle" fill="currentColor" font-size="10">airspy</text>
+  <rect x="10" y="118" width="150" height="26" rx="6" fill="none" stroke="currentColor"/>
+  <text x="85" y="135" text-anchor="middle" fill="currentColor" font-size="10">airspyhf</text>
+  <line x1="160" y1="35" x2="290" y2="55" stroke="currentColor"/><polygon points="290,51 300,55 290,59" fill="currentColor"/>
+  <line x1="160" y1="67" x2="290" y2="75" stroke="currentColor"/><polygon points="290,71 300,75 290,79" fill="currentColor"/>
+  <line x1="160" y1="99" x2="290" y2="95" stroke="currentColor"/><polygon points="290,91 300,95 290,99" fill="currentColor"/>
+  <line x1="160" y1="131" x2="290" y2="115" stroke="currentColor"/><polygon points="290,111 300,115 290,119" fill="currentColor"/>
+  <rect x="300" y="30" width="200" height="110" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="400" y="52" text-anchor="middle" fill="var(--fg-muted)" font-size="8">internal/sdr/registry.go</text>
+  <text x="400" y="82" text-anchor="middle" fill="var(--accent)" font-size="12">registry</text>
+  <text x="400" y="102" text-anchor="middle" fill="var(--accent)" font-size="11">map[string]Driver</text>
+  <text x="400" y="124" text-anchor="middle" fill="var(--fg-muted)" font-size="9">sdr.Register(d)</text>
+</svg>
+<figcaption>Each driver package calls <code>sdr.Register</code> from its <code>init()</code>, so the binary's blank-import set — not a switch statement — decides which hardware the registry knows about.</figcaption>
+</figure>
+
 ### How that principle shaped the Go code
 
 - **Blank imports choose the hardware.** `cmd/gophertrunk` blank-imports the
@@ -103,6 +127,30 @@ purpose.
   that satisfies `Device` and calls `Register` — no existing file changes. The
   same hook is how the baseband-replay "virtual tuner" mounts recorded WAVs as
   if they were real dongles.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 680 130" width="680" height="130" role="img" aria-label="The runtime lookup flow: the engine calls sdr.DriverByName to enumerate and pick a driver, calls Open on that Driver to get a Device, and calls StreamIQ on the Device interface to obtain a receive-only channel of complex64 IQ chunks.">
+  <rect x="8" y="50" width="68" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="42" y="74" text-anchor="middle" fill="currentColor" font-size="10">engine</text>
+  <line x1="76" y1="70" x2="90" y2="70" stroke="currentColor"/><polygon points="90,66 98,70 90,74" fill="currentColor"/>
+  <rect x="98" y="50" width="138" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="167" y="68" text-anchor="middle" fill="var(--accent)" font-size="10">sdr.DriverByName()</text>
+  <text x="167" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">enumerate → pick</text>
+  <line x1="236" y1="70" x2="250" y2="70" stroke="currentColor"/><polygon points="250,66 258,70 250,74" fill="currentColor"/>
+  <rect x="258" y="50" width="84" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="300" y="68" text-anchor="middle" fill="currentColor" font-size="10">Driver</text>
+  <text x="300" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">Open(serial)</text>
+  <line x1="342" y1="70" x2="356" y2="70" stroke="currentColor"/><polygon points="356,66 364,70 356,74" fill="currentColor"/>
+  <rect x="364" y="50" width="84" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="406" y="68" text-anchor="middle" fill="currentColor" font-size="10">Device</text>
+  <text x="406" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">one interface</text>
+  <line x1="448" y1="70" x2="462" y2="70" stroke="currentColor"/><polygon points="462,66 470,70 462,74" fill="currentColor"/>
+  <rect x="470" y="50" width="200" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="570" y="68" text-anchor="middle" fill="var(--accent)" font-size="10">StreamIQ(ctx)</text>
+  <text x="570" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="8">&lt;-chan []complex64</text>
+</svg>
+<figcaption>Enumerate, open, stream: the engine names a driver, opens it into a <code>Device</code>, and only ever touches the <code>Device</code> interface — it never imports <code>rtlsdr</code>, <code>hackrf</code>, or <code>airspy</code>.</figcaption>
+</figure>
 
 The registry pattern is one of the most reused ideas in the codebase — you'll
 see it again for vocoders in

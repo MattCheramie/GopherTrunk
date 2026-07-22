@@ -40,6 +40,33 @@ program." That is the whole premise of GopherTrunk: a P25, DMR, TETRA, NXDN and
 multi-protocol trunking scanner where every block — from the USB driver to the
 voice codec — is Go code.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 150" width="660" height="150" role="img" aria-label="A software-defined radio block diagram split into a hardware half and a software half. The hardware dongle chain is antenna, then RF front-end, then ADC; a dashed boundary separates it from the software half, where the ADC output becomes IQ samples fed into software DSP and finally audio.">
+  <text x="144" y="26" text-anchor="middle" fill="var(--fg-muted)" font-size="10">hardware (the dongle)</text>
+  <text x="467" y="26" text-anchor="middle" fill="var(--fg-muted)" font-size="10">software (a program)</text>
+  <rect x="10" y="58" width="64" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="42" y="82" text-anchor="middle" fill="currentColor" font-size="10">antenna</text>
+  <line x1="74" y1="78" x2="88" y2="78" stroke="currentColor"/><polygon points="88,74 96,78 88,82" fill="currentColor"/>
+  <rect x="96" y="58" width="96" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="144" y="82" text-anchor="middle" fill="currentColor" font-size="10">RF front-end</text>
+  <line x1="192" y1="78" x2="206" y2="78" stroke="currentColor"/><polygon points="206,74 214,78 206,82" fill="currentColor"/>
+  <rect x="214" y="58" width="64" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="246" y="82" text-anchor="middle" fill="currentColor" font-size="10">ADC</text>
+  <line x1="289" y1="18" x2="289" y2="132" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <line x1="278" y1="78" x2="292" y2="78" stroke="currentColor"/><polygon points="292,74 300,78 292,82" fill="currentColor"/>
+  <rect x="300" y="58" width="104" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="352" y="76" text-anchor="middle" fill="var(--accent)" font-size="10">IQ samples</text>
+  <text x="352" y="90" text-anchor="middle" fill="var(--fg-muted)" font-size="8">[]complex64</text>
+  <line x1="404" y1="78" x2="418" y2="78" stroke="currentColor"/><polygon points="418,74 426,78 418,82" fill="currentColor"/>
+  <rect x="426" y="58" width="110" height="40" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="481" y="82" text-anchor="middle" fill="var(--accent)" font-size="10">software DSP</text>
+  <line x1="536" y1="78" x2="550" y2="78" stroke="currentColor"/><polygon points="550,74 558,78 550,82" fill="currentColor"/>
+  <rect x="558" y="58" width="76" height="40" rx="6" fill="none" stroke="var(--fg-muted)"/>
+  <text x="596" y="82" text-anchor="middle" fill="var(--fg-muted)" font-size="10">audio</text>
+</svg>
+<figcaption>Software-defined radio digitizes the spectrum as early as possible: the dongle only carries the signal to the ADC, and everything after the IQ samples — tuning, filtering, demodulation — is just a program.</figcaption>
+</figure>
+
 > New to the fundamentals? See the reference entries on
 > [software-defined radio]({{ '/reference/software-defined-radio/' | relative_url }})
 > and [IQ data]({{ '/reference/iq-data/' | relative_url }}), or the learn-path
@@ -73,6 +100,31 @@ The single most important architectural decision in GopherTrunk is that
 DSP knows nothing about protocols, protocols know nothing about the trunking
 engine, and the engine knows nothing about the API, storage, or UI that consume
 its output.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 470 240" width="470" height="240" role="img" aria-label="The GopherTrunk layered architecture as a five-level stack. From bottom to top: internal/sdr producing IQ samples, internal/dsp producing symbols, internal/radio doing protocol decode, internal/trunking plus internal/events publishing domain events, and internal/api plus internal/voice emitting audio. Data flows upward through typed channels, while all package dependencies point one way, downward.">
+  <rect x="40" y="14" width="300" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="190" y="30" text-anchor="middle" fill="currentColor" font-size="10">internal/api · internal/voice</text>
+  <text x="190" y="42" text-anchor="middle" fill="var(--fg-muted)" font-size="8">audio out</text>
+  <rect x="40" y="58" width="300" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="190" y="74" text-anchor="middle" fill="currentColor" font-size="10">internal/trunking · internal/events</text>
+  <text x="190" y="86" text-anchor="middle" fill="var(--fg-muted)" font-size="8">domain events</text>
+  <rect x="40" y="102" width="300" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="190" y="118" text-anchor="middle" fill="currentColor" font-size="10">internal/radio</text>
+  <text x="190" y="130" text-anchor="middle" fill="var(--fg-muted)" font-size="8">protocol decode</text>
+  <rect x="40" y="146" width="300" height="34" rx="6" fill="none" stroke="currentColor"/>
+  <text x="190" y="162" text-anchor="middle" fill="currentColor" font-size="10">internal/dsp</text>
+  <text x="190" y="174" text-anchor="middle" fill="var(--fg-muted)" font-size="8">symbols</text>
+  <rect x="40" y="190" width="300" height="34" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="190" y="206" text-anchor="middle" fill="var(--accent)" font-size="10">internal/sdr</text>
+  <text x="190" y="218" text-anchor="middle" fill="var(--fg-muted)" font-size="8">IQ samples</text>
+  <line x1="20" y1="224" x2="20" y2="18" stroke="currentColor"/><polygon points="16,26 20,14 24,26" fill="currentColor"/>
+  <text x="12" y="120" text-anchor="middle" fill="var(--fg-muted)" font-size="9" transform="rotate(-90 12 120)">data flows up (channels)</text>
+  <line x1="360" y1="18" x2="360" y2="224" stroke="var(--fg-muted)"/><polygon points="356,216 360,228 364,216" fill="var(--fg-muted)"/>
+  <text x="378" y="120" text-anchor="middle" fill="var(--fg-muted)" font-size="9" transform="rotate(90 378 120)">dependencies point down</text>
+</svg>
+<figcaption>Every layer depends only downward — the SDR layer knows nothing about DSP, DSP nothing about protocols — while IQ data flows up through typed channels from <code>internal/sdr</code> to <code>internal/api</code>.</figcaption>
+</figure>
 
 ### How that principle shaped the Go code
 

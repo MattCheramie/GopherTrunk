@@ -73,6 +73,32 @@ device contract; here we build the converter that justifies it.
 one method per USB packet. Its job, top to bottom: decode `uint16` reals,
 remove DC, mix by `Fs/4`, run the half-band pair, emit `complex64`.**
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 130" width="660" height="130" role="img" aria-label="The Airspy R2/Mini real-to-complex pipeline in iqconverter.go: bare 12-bit uint16 real ADC samples with DC at 2048 pass through a leaky high-pass DC blocker, then a multiplier-free Fs over 4 mix, then a 47-tap half-band Hilbert pair, then decimation by two, producing complex64 IQ at half the input rate.">
+  <rect x="8" y="46" width="96" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="56" y="66" text-anchor="middle" fill="currentColor" font-size="9">uint16 reals</text>
+  <text x="56" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">12-bit · DC 2048</text>
+  <line x1="104" y1="70" x2="118" y2="70" stroke="currentColor"/><polygon points="118,66 128,70 118,74" fill="currentColor"/>
+  <rect x="128" y="46" width="104" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="180" y="66" text-anchor="middle" fill="currentColor" font-size="9">DC blocker</text>
+  <text x="180" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">leaky HPF</text>
+  <line x1="232" y1="70" x2="246" y2="70" stroke="currentColor"/><polygon points="246,66 256,70 246,74" fill="currentColor"/>
+  <rect x="256" y="46" width="104" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="308" y="66" text-anchor="middle" fill="currentColor" font-size="9">Fs/4 mix</text>
+  <text x="308" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">sign flip · no ×</text>
+  <line x1="360" y1="70" x2="374" y2="70" stroke="currentColor"/><polygon points="374,66 384,70 374,74" fill="currentColor"/>
+  <rect x="384" y="46" width="120" height="48" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="444" y="66" text-anchor="middle" fill="var(--accent)" font-size="9">half-band pair</text>
+  <text x="444" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">47-tap Hilbert</text>
+  <line x1="504" y1="70" x2="518" y2="70" stroke="currentColor"/><polygon points="518,66 528,70 518,74" fill="currentColor"/>
+  <rect x="528" y="46" width="124" height="48" rx="6" fill="none" stroke="currentColor"/>
+  <text x="590" y="66" text-anchor="middle" fill="currentColor" font-size="9">÷2 → complex64</text>
+  <text x="590" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="8">N reals → N/2 IQ</text>
+  <text x="330" y="22" text-anchor="middle" fill="var(--fg-muted)" font-size="10">processRaw() — one call per USB packet, state carried across boundaries</text>
+</svg>
+<figcaption>The Airspy R2/Mini hand the host bare real samples, so the driver synthesizes complex baseband in four stages — DC removal, a free Fs/4 mix, a half-band Hilbert pair, and decimate-by-two — entirely in <code>iqconverter.go</code>.</figcaption>
+</figure>
+
 ### Stage 1 — leaky-HPF DC removal
 
 The ADC parks DC at 2048 and the front end adds its own slow bias drift. Left
@@ -199,6 +225,29 @@ func (c *iqConverter) processRaw(buf []byte) []complex64 {
 
 One bulk-IN payload of `N` real bytes-as-uint16 yields `N/2` real samples and
 `N/4` complex samples, at exactly the configured IQ rate.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 165" width="660" height="165" role="img" aria-label="How the persistent phase counter routes each real sample. The phase cycles 0,1,2,3 and carries across USB packets. Even phases 0 and 2 take the in-phase lane: a sign flip feeds the 24-tap half-band FIR to produce lastI. Odd phases 1 and 3 take the quadrature lane: a 0.5-scaled sign-flipped sample runs through a matched delay to produce qOut. On the odd phases the converter emits complex of lastI and qOut, giving an implicit decimate-by-two into complex64.">
+  <text x="330" y="14" text-anchor="middle" fill="var(--fg-muted)" font-size="10">the Fs/4 phase counter routes each real sample into one lane</text>
+  <rect x="12" y="58" width="120" height="54" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="72" y="82" text-anchor="middle" fill="var(--accent)" font-size="10">phase 0→1→2→3</text>
+  <text x="72" y="96" text-anchor="middle" fill="var(--fg-muted)" font-size="8">persists across packets</text>
+  <line x1="132" y1="74" x2="176" y2="44" stroke="currentColor"/><polygon points="167,41 179,37 175,49" fill="currentColor"/>
+  <line x1="132" y1="96" x2="176" y2="128" stroke="currentColor"/><polygon points="167,123 179,127 172,135" fill="currentColor"/>
+  <rect x="180" y="22" width="236" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="298" y="40" text-anchor="middle" fill="currentColor" font-size="9">I lane · phases 0,2</text>
+  <text x="298" y="53" text-anchor="middle" fill="var(--fg-muted)" font-size="8">sign-flip → half-band FIR (24 taps) → lastI</text>
+  <rect x="180" y="110" width="236" height="40" rx="6" fill="none" stroke="currentColor"/>
+  <text x="298" y="128" text-anchor="middle" fill="currentColor" font-size="9">Q lane · phases 1,3</text>
+  <text x="298" y="141" text-anchor="middle" fill="var(--fg-muted)" font-size="8">0.5·x sign-flip → matched delay → qOut</text>
+  <line x1="416" y1="42" x2="462" y2="74" stroke="currentColor"/><polygon points="453,69 465,73 456,81" fill="currentColor"/>
+  <line x1="416" y1="130" x2="462" y2="96" stroke="currentColor"/><polygon points="453,89 465,95 457,101" fill="currentColor"/>
+  <rect x="464" y="58" width="184" height="54" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="556" y="82" text-anchor="middle" fill="var(--accent)" font-size="9">emit complex(lastI, qOut)</text>
+  <text x="556" y="96" text-anchor="middle" fill="var(--fg-muted)" font-size="8">÷2 decimate → complex64</text>
+</svg>
+<figcaption>Emitting only on the odd (quadrature) phases makes the decimate-by-two implicit: every four real samples collapse to one <code>complex64</code>, with the phase counter carried across packet boundaries so the rotation never glitches.</figcaption>
+</figure>
 
 ## The problem we hit: a half-band Hilbert that joined packets seamlessly (#454)
 

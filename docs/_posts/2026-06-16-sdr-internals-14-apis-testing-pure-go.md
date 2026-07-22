@@ -39,6 +39,30 @@ Every one of them subscribes to the event bus from
 [Part 11]({{ '/blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/' | relative_url }}).
 None of them calls into the engine.
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 190" width="660" height="190" role="img" aria-label="Ports-and-adapters output surface: the engine core and its event bus sit on the left, and five adapters — internal/api for gRPC, REST and WebSocket; internal/tui; internal/metrics; internal/storage; and the web single-page console — each subscribe to the bus, while the engine imports none of them.">
+  <rect x="8" y="68" width="140" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="78" y="90" text-anchor="middle" fill="var(--accent)" font-size="11">engine core</text>
+  <text x="78" y="106" text-anchor="middle" fill="var(--fg-muted)" font-size="9">event bus (Part 11)</text>
+  <line x1="148" y1="94" x2="290" y2="22" stroke="currentColor"/><polygon points="286,18 296,20 290,29" fill="currentColor"/>
+  <line x1="148" y1="94" x2="290" y2="58" stroke="currentColor"/><polygon points="286,54 296,56 289,65" fill="currentColor"/>
+  <line x1="148" y1="94" x2="290" y2="94" stroke="currentColor"/><polygon points="290,90 300,94 290,98" fill="currentColor"/>
+  <line x1="148" y1="94" x2="290" y2="130" stroke="currentColor"/><polygon points="289,123 296,132 286,134" fill="currentColor"/>
+  <line x1="148" y1="94" x2="290" y2="166" stroke="currentColor"/><polygon points="288,159 296,168 284,168" fill="currentColor"/>
+  <rect x="300" y="8" width="340" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="470" y="26" text-anchor="middle" fill="currentColor" font-size="10">internal/api · gRPC / REST / WebSocket · SSE</text>
+  <rect x="300" y="44" width="340" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="470" y="62" text-anchor="middle" fill="currentColor" font-size="10">internal/tui · Bubbletea cockpit</text>
+  <rect x="300" y="80" width="340" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="470" y="98" text-anchor="middle" fill="currentColor" font-size="10">internal/metrics · Prometheus /metrics</text>
+  <rect x="300" y="116" width="340" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="470" y="134" text-anchor="middle" fill="currentColor" font-size="10">internal/storage · SQLite call log</text>
+  <rect x="300" y="152" width="340" height="28" rx="5" fill="none" stroke="currentColor"/>
+  <text x="470" y="170" text-anchor="middle" fill="currentColor" font-size="10">web/ · React SPA console</text>
+</svg>
+<figcaption>Every output is an adapter over one event stream. Adapters depend on the core through the bus and the core depends on none of them, so any surface can be added, removed, or tested alone.</figcaption>
+</figure>
+
 ## How GopherTrunk implements it in Go
 
 This is **ports and adapters** (a.k.a. hexagonal architecture): the engine is the
@@ -65,6 +89,27 @@ iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRateHz, deviationHz)
 These run under `-tags integration` so they're separate from fast unit tests,
 which are table-driven (the DSP and FEC suites inject known inputs and assert
 exact outputs).
+
+<figure class="lab-figure">
+<svg viewBox="0 0 680 130" width="680" height="130" role="img" aria-label="The synthesized-IQ integration test path: a modulator and mock SDR are the only fake — the sample source — feeding real demodulator, receiver and FEC code, then the engine and event bus, ending in assertions that KindCCLocked appears and the metrics agree.">
+  <rect x="8" y="42" width="152" height="52" rx="6" fill="none" stroke="var(--accent)" stroke-dasharray="4 3"/>
+  <text x="84" y="64" text-anchor="middle" fill="var(--accent)" font-size="10">synth IQ · mock SDR</text>
+  <text x="84" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="9">the only fake</text>
+  <line x1="160" y1="68" x2="180" y2="68" stroke="currentColor"/><polygon points="180,64 190,68 180,72" fill="currentColor"/>
+  <rect x="190" y="42" width="172" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="276" y="64" text-anchor="middle" fill="currentColor" font-size="10">demod → receiver → FEC</text>
+  <text x="276" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="9">production code</text>
+  <line x1="362" y1="68" x2="382" y2="68" stroke="currentColor"/><polygon points="382,64 392,68 382,72" fill="currentColor"/>
+  <rect x="392" y="42" width="120" height="52" rx="6" fill="none" stroke="currentColor"/>
+  <text x="452" y="64" text-anchor="middle" fill="currentColor" font-size="10">engine + bus</text>
+  <text x="452" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="9">real path</text>
+  <line x1="512" y1="68" x2="532" y2="68" stroke="currentColor"/><polygon points="532,64 542,68 532,72" fill="currentColor"/>
+  <rect x="542" y="42" width="130" height="52" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="607" y="64" text-anchor="middle" fill="var(--accent)" font-size="10">assert CCLocked</text>
+  <text x="607" y="80" text-anchor="middle" fill="var(--fg-muted)" font-size="9">+ metrics agree</text>
+</svg>
+<figcaption>Under <code>-tags integration</code>, only the sample source is faked: the test synthesizes spec-correct IQ and runs the genuine DSP, protocol, engine, and bus code end to end.</figcaption>
+</figure>
 
 ## The design principle: ports & adapters + testability
 

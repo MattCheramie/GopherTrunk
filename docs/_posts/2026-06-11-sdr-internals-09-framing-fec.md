@@ -29,6 +29,29 @@ survives this by adding **forward error correction**: structured redundancy that
 lets the receiver detect *and repair* errors without asking for a retransmission.
 ([reference]({{ '/reference/forward-error-correction/' | relative_url }}))
 
+<figure class="lab-figure">
+<svg viewBox="0 0 660 116" width="660" height="116" role="img" aria-label="The framing and FEC stack: a symbol stream is scanned for a sync word that marks the frame boundary, the framed bits are assembled, the FEC decoder detects and repairs errors, and a clean payload emerges.">
+  <rect x="8" y="36" width="112" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="64" y="56" text-anchor="middle" fill="currentColor" font-size="10">symbol stream</text>
+  <text x="64" y="70" text-anchor="middle" fill="var(--fg-muted)" font-size="8">dibits, with errors</text>
+  <line x1="120" y1="58" x2="138" y2="58" stroke="currentColor"/><polygon points="138,54 148,58 138,62" fill="currentColor"/>
+  <rect x="148" y="36" width="104" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="200" y="56" text-anchor="middle" fill="currentColor" font-size="10">sync word</text>
+  <text x="200" y="70" text-anchor="middle" fill="var(--fg-muted)" font-size="8">frame boundary</text>
+  <line x1="252" y1="58" x2="270" y2="58" stroke="currentColor"/><polygon points="270,54 280,58 270,62" fill="currentColor"/>
+  <rect x="280" y="36" width="104" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="332" y="60" text-anchor="middle" fill="currentColor" font-size="10">frame</text>
+  <line x1="384" y1="58" x2="402" y2="58" stroke="currentColor"/><polygon points="402,54 412,58 402,62" fill="currentColor"/>
+  <rect x="412" y="36" width="118" height="44" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="471" y="56" text-anchor="middle" fill="var(--accent)" font-size="10">FEC decode</text>
+  <text x="471" y="70" text-anchor="middle" fill="var(--fg-muted)" font-size="8">detect + repair</text>
+  <line x1="530" y1="58" x2="548" y2="58" stroke="currentColor"/><polygon points="548,54 558,58 548,62" fill="currentColor"/>
+  <rect x="558" y="36" width="94" height="44" rx="6" fill="none" stroke="currentColor"/>
+  <text x="605" y="60" text-anchor="middle" fill="currentColor" font-size="10">payload</text>
+</svg>
+<figcaption>The framing stack: sync word &#8594; frame &#8594; FEC decode &#8594; clean payload &#8212; every protocol draws its codes from the shared <code>internal/radio/framing</code> toolbox.</figcaption>
+</figure>
+
 Each protocol layers several codes, plus
 [interleaving]({{ '/reference/interleaving/' | relative_url }}) (spreads burst
 errors out so the codes can handle them) and
@@ -69,6 +92,34 @@ pattern, flip the bad bits. Where a code is small, the error patterns are
 not a search. The Viterbi decoder walks a trellis and traces back the
 most-likely path; soft-decision variants take symbol confidences (LLRs) when the
 demodulator can supply them.
+
+<figure class="lab-figure">
+<svg viewBox="0 0 660 170" width="660" height="170" role="img" aria-label="The syndrome-decoding flow for a Golay codeword: a noisy 24-bit word has its syndrome computed; the syndrome indexes a precomputed error-pattern table built at package init; the matching pattern is XORed to flip the bad bits, yielding 12 clean data bits and an ok flag.">
+  <rect x="8" y="30" width="120" height="46" rx="6" fill="none" stroke="var(--accent)"/>
+  <text x="68" y="50" text-anchor="middle" fill="var(--accent)" font-size="10">noisy codeword</text>
+  <text x="68" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="8">24 bits</text>
+  <line x1="128" y1="53" x2="146" y2="53" stroke="currentColor"/><polygon points="146,49 156,53 146,57" fill="currentColor"/>
+  <rect x="156" y="30" width="118" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="215" y="57" text-anchor="middle" fill="currentColor" font-size="10">compute syndrome</text>
+  <line x1="274" y1="53" x2="292" y2="53" stroke="currentColor"/><polygon points="292,49 302,53 292,57" fill="currentColor"/>
+  <rect x="302" y="30" width="126" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="365" y="52" text-anchor="middle" fill="currentColor" font-size="10">lookup error</text>
+  <text x="365" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">pattern (O(1))</text>
+  <line x1="428" y1="53" x2="446" y2="53" stroke="currentColor"/><polygon points="446,49 456,53 446,57" fill="currentColor"/>
+  <rect x="456" y="30" width="110" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="511" y="52" text-anchor="middle" fill="currentColor" font-size="10">XOR flip</text>
+  <text x="511" y="66" text-anchor="middle" fill="var(--fg-muted)" font-size="8">bad bits</text>
+  <line x1="566" y1="53" x2="584" y2="53" stroke="currentColor"/><polygon points="584,49 594,53 584,57" fill="currentColor"/>
+  <rect x="594" y="30" width="58" height="46" rx="6" fill="none" stroke="currentColor"/>
+  <text x="623" y="50" text-anchor="middle" fill="currentColor" font-size="9">data</text>
+  <text x="623" y="64" text-anchor="middle" fill="var(--fg-muted)" font-size="8">12b &#183; ok</text>
+  <rect x="302" y="118" width="126" height="34" rx="6" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
+  <text x="365" y="134" text-anchor="middle" fill="var(--fg-muted)" font-size="9">syndrome&#8594;pattern</text>
+  <text x="365" y="146" text-anchor="middle" fill="var(--fg-muted)" font-size="8">table built in init()</text>
+  <line x1="365" y1="118" x2="365" y2="78" stroke="var(--fg-muted)"/><polygon points="361,86 365,78 369,86" fill="var(--fg-muted)"/>
+</svg>
+<figcaption>Syndrome decoding as a pure function: <code>GolayDecode</code> computes a syndrome, looks up the error pattern in a table precomputed at <code>init()</code>, and XORs it away &#8212; a lookup on the hot path, not a search.</figcaption>
+</figure>
 
 These pieces compose into a protocol's framer. A P25 Phase 1 voice frame, for
 example, runs deinterleave → trellis/Viterbi → Hamming on the link-control words —
