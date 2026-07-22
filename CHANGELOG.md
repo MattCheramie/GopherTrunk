@@ -72,6 +72,18 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **Config guidance no longer conflates LSM/simulcast with CQPSK.** The
+  `p25_phase1_demod_mode` docs, config-builder help, `config.example.yaml`, and the
+  per-site override example (issue #942) all implied that a *simulcast* site needs the
+  `cqpsk`/`lsm` demod path — using Victoria's MMR / Melbourne CBD as the worked
+  "→ cqpsk" example. That is backwards: simulcast is a transmitter-coordination
+  technique, not a modulation, and most simulcast systems (MMR included, every site)
+  transmit C4FM — forcing CQPSK there kills the decode. Linear Simulcast Modulation
+  (LSM/CQPSK) is a *choice* some systems make, not implied by simulcast and not
+  readable from emission-designator/licensing data. All guidance now says: leave it at
+  C4FM, and switch a channel to `cqpsk` only when a strong, clean signal won't lock in
+  C4FM. The per-channel override feature itself is unchanged and still correct for
+  genuinely-CQPSK systems. (issue #935)
 - **P25 Phase 2 superframes now lock under any dibit rotation.** Real-air Phase 2
   is differentially decoded H-DQPSK, so a residual carrier offset near an odd
   multiple of ±1500 Hz (a quarter of the 6000-baud symbol rate) rotates every

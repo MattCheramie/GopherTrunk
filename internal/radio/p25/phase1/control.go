@@ -110,8 +110,8 @@ type ControlChannel struct {
 	// p25Phase1DemodMode is the system-level operator-set demod-mode
 	// string (e.g. "cqpsk" / "c4fm"). Stamped onto every published
 	// trunking.Grant so the voice composer can route the voice IQ
-	// through the matching symbol-recovery path; without this an LSM
-	// simulcast site's voice grants would land in a hardcoded C4FM
+	// through the matching symbol-recovery path; without this a
+	// CQPSK/LSM site's voice grants would land in a hardcoded C4FM
 	// voice receiver and never decode (issue #356 follow-up). Empty
 	// string preserves the C4FM default in the voice chain.
 	p25Phase1DemodMode string

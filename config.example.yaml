@@ -300,10 +300,10 @@ sdr:
     #                           (frequency_hz must be in
     #                           control_channels; respects the
     #                           system's p25_phase1_demod_mode for
-    #                           C4FM vs CQPSK / LSM simulcast, or a
-    #                           per-channel p25_phase1_demod_mode
-    #                           override when sites of one system differ
-    #                           in modulation — see below, issue #935)
+    #                           C4FM vs CQPSK/LSM, or a per-channel
+    #                           p25_phase1_demod_mode override when
+    #                           sites of one system differ in
+    #                           modulation — see below, issue #935)
     #   protocol: p25-phase2  → P25 Phase 2 trunked control channel
     #                           (frequency_hz must be in
     #                           control_channels; respects the
@@ -321,16 +321,26 @@ sdr:
     # come from the system's sites: mapping (RFSS/Site → name) further down.
     #
     # PER-SITE MODULATION (issue #935): sites of one P25 system can use
-    # different modulation — an urban simulcast site on LSM (cqpsk)
-    # alongside rural single-transmitter sites on C4FM. Set the system's
-    # p25_phase1_demod_mode to the modulation MOST sites use, then add a
-    # per-channel `p25_phase1_demod_mode:` on the exceptions. A blank /
-    # absent per-channel value inherits the system default. The override
-    # drives both the control-channel decode AND the voice grants that tap
-    # issues, so a granted call on an LSM site is decoded on the LSM path
-    # too (a C4FM demod can't recover a linearly-modulated simulcast
+    # different modulation — a site that genuinely transmits linear/CQPSK
+    # (Linear Simulcast Modulation, LSM) alongside sites on C4FM. Set the
+    # system's p25_phase1_demod_mode to the modulation MOST sites use,
+    # then add a per-channel `p25_phase1_demod_mode:` on the exceptions.
+    # A blank / absent per-channel value inherits the system default. The
+    # override drives both the control-channel decode AND the voice grants
+    # that tap issues, so a granted call on a CQPSK site is decoded on the
+    # linear path too (a C4FM demod can't recover a linearly-modulated
     # signal — the CC would show control_channel_decode_quality: poor and
     # voice grants would time out without an LDU).
+    #
+    # IMPORTANT — do NOT set cqpsk just because a site is SIMULCAST.
+    # Simulcast is a transmitter-coordination technique, not a modulation:
+    # most simulcast systems transmit plain C4FM (Victoria's MMR, every
+    # site including its multi-tower CBD simulcast, is C4FM — forcing
+    # CQPSK there kills the decode). You cannot infer the modulation from
+    # the fact a site is simulcast, nor from emission-designator/licensing
+    # data (e.g. "10K1D7W" covers both C4FM and CQPSK). Determine it
+    # empirically: leave it at C4FM, and switch a channel to cqpsk only if
+    # a strong, clean signal will not lock in C4FM.
     #
     # SHARED FRONT END (issue #749): every tap on a dongle shares one
     # antenna, one centre frequency and one gain. The channelizer is
@@ -399,7 +409,7 @@ sdr:
     # P25 Phase 1 control channel on a wideband dongle. The
     # referenced system carries `protocol: p25` and the
     # channel's frequency_hz must appear in its control_channels.
-    # Honours `p25_phase1_demod_mode` (c4fm vs cqpsk / LSM) on the
+    # Honours `p25_phase1_demod_mode` (c4fm vs cqpsk/LSM) on the
     # system entry just like a dedicated CC dongle.
     #
     # MULTIPLE SITES IN PARALLEL (issue #749): a P25 system with
@@ -413,25 +423,33 @@ sdr:
     # hosted this way is automatically excluded from the sequential,
     # single-tuner cc-hunt below, so a wideband site is never starved
     # by the round-robin hunter. Example: all four sites of "MMR"
-    # decoded at once from one Airspy —
-    # Here system "MMR" defaults to p25_phase1_demod_mode: c4fm (most
-    # sites are single-TX C4FM), and the two urban simulcast sites carry a
-    # per-channel cqpsk override (issue #935):
+    # decoded at once from one Airspy. System "MMR" is C4FM on every
+    # site (including its multi-tower CBD simulcast), so it just uses the
+    # system default and needs no per-channel override:
     # - serial: "AIRSPY SN:637862DC2E8449D7"
     #   role: wideband
     #   center_freq_hz: 420_900_000
     #   voice_taps: 4
     #   channels:
-    #     - frequency_hz: 420_012_500   # Melbourne / CBD — LSM simulcast
+    #     - frequency_hz: 420_012_500   # Melbourne / CBD (C4FM simulcast)
     #       system: "MMR"
+    #     - frequency_hz: 420_037_500   # 120 Collins Street (C4FM simulcast)
+    #       system: "MMR"
+    #     - frequency_hz: 420_087_500   # Mt Anakie (C4FM)
+    #       system: "MMR"
+    #     - frequency_hz: 421_837_500   # Mt Blackwood (C4FM)
+    #       system: "MMR"
+    #
+    # The per-channel cqpsk override (issue #935) is for a DIFFERENT case:
+    # a system that actually mixes modulations — most sites C4FM, but one
+    # or two proven (empirically — C4FM won't lock a strong signal) to
+    # transmit linear/CQPSK. Then, and only then:
+    #   channels:
+    #     - frequency_hz: 460_100_000   # C4FM site — inherits system default
+    #       system: "mixed-p25"
+    #     - frequency_hz: 460_350_000   # confirmed-CQPSK site — override
+    #       system: "mixed-p25"
     #       p25_phase1_demod_mode: cqpsk
-    #     - frequency_hz: 420_037_500   # 120 Collins Street — LSM simulcast
-    #       system: "MMR"
-    #       p25_phase1_demod_mode: cqpsk
-    #     - frequency_hz: 420_087_500   # Mt Anakie — single-TX C4FM (inherits system default)
-    #       system: "MMR"
-    #     - frequency_hz: 421_837_500   # Mt Blackwood — single-TX C4FM (inherits)
-    #       system: "MMR"
     # (List every one of these frequencies in the system's
     # control_channels too — see the systems section below — and add a
     # `sites:` mapping there to give each RFSS/Site a human name.)
@@ -967,19 +985,22 @@ trunking:
   #                                     # for non-spec transmitters (see
   #                                     # samples/nxdn/README.md sweep recipe)
   #
-  #   - name: "Simulcast-P25"
+  #   - name: "Linear-CQPSK-P25"
   #     protocol: p25
   #     control_channels: [420_087_500]
-  #     p25_phase1_demod_mode: "cqpsk"  # LSM linear-CQPSK — required on
-  #                                     # P25 simulcast sites whose CC
-  #                                     # is transmitted as Linear
-  #                                     # Simulcast Modulation rather
-  #                                     # than C4FM (issue #275). Also
+  #     p25_phase1_demod_mode: "cqpsk"  # linear-CQPSK / LSM path — for a
+  #                                     # system that actually transmits
+  #                                     # Linear Simulcast Modulation
+  #                                     # rather than C4FM (issue #275).
+  #                                     # NOT triggered by a site being
+  #                                     # simulcast — most simulcast
+  #                                     # systems are C4FM; set this only
+  #                                     # when C4FM won't lock a strong,
+  #                                     # clean signal (issue #935). Also
   #                                     # routes the per-call voice chain
-  #                                     # through the LSM path; without
-  #                                     # this voice grants on simulcast
-  #                                     # sites time out with no audio
-  #                                     # (issue #356).
+  #                                     # through the linear path; without
+  #                                     # it voice grants on a CQPSK site
+  #                                     # time out with no audio (#356).
   #
   #   - name: "Legacy-P25-Phase2"
   #     protocol: p25

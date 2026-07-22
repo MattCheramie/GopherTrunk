@@ -12,7 +12,7 @@ faq:
   - q: What modulation does P25 Phase 1 use?
     a: P25 Phase 1 uses C4FM, a four-level frequency-shift keying. It runs at 4800 symbols per second, and because four levels carry two bits each, that yields 9600 bits per second. The same signal can also be produced with CQPSK, a linear-modulation cousin that fits the same constellation.
   - q: Why does P25 specify both C4FM and CQPSK?
-    a: They produce a compatible on-air signal but suit different transmitters. C4FM uses a constant-envelope FM-style path that works with cheap, efficient nonlinear amplifiers in handhelds. CQPSK (also called LSM) is a linear modulation that simulcast transmitters need so multiple sites can overlap cleanly, so infrastructure often uses it.
+    a: They produce a compatible on-air signal but suit different transmitters. C4FM uses a constant-envelope FM-style path that works with cheap, efficient nonlinear amplifiers in handhelds. CQPSK (also called LSM, Linear Simulcast Modulation) is a linear modulation that some simulcast systems use so overlapping copies combine more cleanly. But it is a choice, not a requirement: many simulcast systems transmit plain C4FM, so you cannot infer the modulation from the fact that a system is simulcast — you confirm it by which demodulator actually locks.
   - q: What is the difference between 4FSK and π/4-DQPSK?
     a: 4FSK shifts the carrier among four frequencies, one per symbol, and is used by DMR and NXDN as well as P25 Phase 1's C4FM. π/4-DQPSK is a phase-shift modulation used by TETRA that rotates the carrier phase in quarter-pi steps, encoding bits in the change of phase rather than its absolute value.
   - q: How can I see these modulations in GopherTrunk?
@@ -79,12 +79,12 @@ care which one transmitted it.
 
 Why bother with two ways to make the same signal? Because of **simulcast**: large
 systems broadcast the same channel from many transmitters at once over an overlapping
-area. For those overlapping signals to combine cleanly rather than smear, the
-transmitters need the tighter control that a **linear** modulation gives. C4FM's
-nonlinear path is fine for a single handheld but not for phase-precise simulcast, so
-infrastructure transmitters often use **CQPSK/LSM** while the constellation a receiver
-sees stays the same. (This is exactly why simulcast distortion is its own decoding
-challenge, covered later in the path.)
+area. A **linear** modulation gives the transmitters tighter control so those
+overlapping signals combine cleanly rather than smear, so **some** simulcast operators
+choose **CQPSK/LSM** while the constellation a receiver sees stays the same. It is not
+mandatory, though — plenty of simulcast systems still run C4FM — so simulcast alone
+doesn't tell you the modulation; the demodulator that locks does. (This is exactly why
+simulcast distortion is its own decoding challenge, covered later in the path.)
 
 ## π/4-DQPSK and 4FSK — the rest of the field
 

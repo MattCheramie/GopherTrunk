@@ -90,10 +90,10 @@ func (c *Composer) resolveP25Phase1DemodMode(serial, mode string) p25p1rx.DemodM
 // demodMode is the raw system-level p25_phase1_demod_mode string from
 // the grant ("c4fm" / "cqpsk" / ""). An empty or unrecognised value
 // preserves the legacy C4FM path; "cqpsk" / "lsm" / "linear" routes
-// voice IQ through the linear-CQPSK path required for LSM simulcast
-// sites. Without this the voice chain was hardcoded to C4FM regardless
-// of the system setting and never decoded LDUs on simulcast sites
-// (issue #356 follow-up).
+// voice IQ through the linear-CQPSK path required for sites that
+// transmit a linear/LSM modulation. Without this the voice chain was
+// hardcoded to C4FM regardless of the system setting and never decoded
+// LDUs on CQPSK sites (issue #356 follow-up).
 //
 // The recorder maps protocol "p25" to the pure-Go IMBE vocoder
 // (voice.DefaultVocoderForProtocol), so WriteRawFrame here decodes each

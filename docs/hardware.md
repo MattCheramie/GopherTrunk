@@ -458,7 +458,7 @@ directly and needs no band plan.
 ### P25 trunked control channel on a wideband dongle
 
 A wideband dongle can also host a P25 control channel — Phase 1 (C4FM
-or CQPSK / LSM simulcast) or Phase 2 (H-DQPSK TDMA). The configuration
+or CQPSK / LSM) or Phase 2 (H-DQPSK TDMA). The configuration
 mirrors the DMR Tier III case: the wideband channel sits on the
 system's declared `control_channels`, and the engine decodes the TSBK
 (Phase 1) or MAC PDU (Phase 2) chain inline. Voice grants ride on the
@@ -479,9 +479,11 @@ trunking:
     - name: "regional-p25"
       protocol: p25                       # Phase 1
       control_channels: [851_037_500]     # MUST include the wideband channel above
-      # On a simulcast site whose CC is transmitted as Linear
-      # Simulcast Modulation rather than C4FM, opt in to the
-      # linear-CQPSK demod path:
+      # For a system that actually transmits a linear/CQPSK waveform
+      # (Linear Simulcast Modulation) rather than C4FM, opt in to the
+      # linear-CQPSK demod path. NOTE: simulcast alone does NOT require
+      # this — most simulcast systems are C4FM; set cqpsk only when a
+      # strong, clean signal won't lock in C4FM (issue #935):
       # p25_phase1_demod_mode: cqpsk
 ```
 
@@ -592,7 +594,7 @@ message that names the offending entry.
 - **DMR + P25.** Wideband supports `protocol: dmr-tier2` (Tier II
   conventional), `protocol: dmr` (Tier III trunked control channel),
   `protocol: p25` (P25 Phase 1 trunked control channel — C4FM and
-  CQPSK / LSM simulcast), and `protocol: p25-phase2` (P25 Phase 2
+  CQPSK / LSM), and `protocol: p25-phase2` (P25 Phase 2
   H-DQPSK trunked control channel). Other protocols (NXDN, TETRA,
   …) are not in scope yet.
 - **Trunked voice on the same wideband dongle.** With `voice_taps`

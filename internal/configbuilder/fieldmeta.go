@@ -120,7 +120,7 @@ var fieldMetas = map[string]FieldMeta{
 
 	"DeviceChannelConfig.FrequencyHz":        {Label: "Frequency", Hz: true, Help: "Repeater carrier frequency. Must lie inside the dongle's IQ band."},
 	"DeviceChannelConfig.System":             {Help: "Name of the trunking.systems entry this carrier belongs to."},
-	"DeviceChannelConfig.P25Phase1DemodMode": {Label: "P25 Ph1 demod mode", Help: "Per-site override of the system's demod path for this tap: blank inherits, or c4fm/fm vs cqpsk/lsm. Use when one P25 system mixes LSM simulcast and C4FM sites. P25 Phase 1 only."},
+	"DeviceChannelConfig.P25Phase1DemodMode": {Label: "P25 Ph1 demod mode", Help: "Per-site override of the system's demod path for this tap: blank inherits, or c4fm/fm vs cqpsk/lsm. Use when one P25 system mixes genuinely CQPSK/LSM sites with C4FM sites. Note: simulcast does NOT imply CQPSK — most simulcast systems are C4FM; pick cqpsk only where a strong signal won't lock in C4FM. P25 Phase 1 only."},
 
 	"RTLTCPConfig.Addr":             {Label: "Address", Help: "host:port the rtl_tcp server listens on, e.g. 192.168.1.50:1234. Required."},
 	"RTLTCPConfig.Serial":           {Help: "Virtual device serial reported by the pool. Empty derives one from the address."},
@@ -180,7 +180,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.TETRAClockMode":          {Label: "TETRA clock mode", Help: "Symbol-timing recovery: gardner (default, live SDR) or naive (sample-aligned fixtures). TETRA only."},
 	"SystemConfig.LTRFCSMode":              {Label: "LTR FCS mode", Help: "CRC-7 FCS check on LTR Status words. on (default) or off (un-populated fixtures). LTR only."},
 	"SystemConfig.LTRManchesterMode":       {Label: "LTR Manchester mode", Help: "LTR sub-audible decode: soft (default), strict, or off/nrz. LTR only."},
-	"SystemConfig.P25Phase1DemodMode":      {Label: "P25 Ph1 demod mode", Help: "Phase 1 symbol recovery: c4fm/fm (default) or cqpsk/lsm (simulcast LSM sites). P25 Phase 1 only."},
+	"SystemConfig.P25Phase1DemodMode":      {Label: "P25 Ph1 demod mode", Help: "Phase 1 symbol recovery: c4fm/fm (default, correct for most systems including most simulcast) or cqpsk/lsm (only for systems that actually transmit linear/LSM modulation). Simulcast alone does not require cqpsk. P25 Phase 1 only."},
 	"SystemConfig.P25Phase2TrellisMode":    {Label: "P25 Ph2 trellis", Help: "½-rate trellis FEC on the Phase 2 MAC PDU. on (default) or off (pre-stripped fixtures). P25 Phase 2 only."},
 	"SystemConfig.P25Phase2RSMode":         {Label: "P25 Ph2 RS", Help: "Outer Reed-Solomon RS(24,16,9) verification. off (default) or on. P25 Phase 2 only."},
 	"SystemConfig.P25Phase2InterleaveMode": {Label: "P25 Ph2 interleave", Help: "Per-burst block deinterleave before trellis decode. off (default) or on. P25 Phase 2 only."},

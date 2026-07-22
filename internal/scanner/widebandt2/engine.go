@@ -164,12 +164,13 @@ type ChannelConfig struct {
 
 	// P25Phase1DemodMode optionally overrides the parent system's
 	// P25Phase1DemodMode for this one tap (issue #935). A P25 system can
-	// span sites of differing modulation — an LSM simulcast site and a
-	// C4FM single-transmitter site under one system name — and each tap
-	// must pick its symbol-recovery path independently before the CC
-	// locks. Empty inherits sys.P25Phase1DemodMode; any value the
-	// system-level key accepts (c4fm/fm/cqpsk/lsm/linear) is valid here.
-	// Ignored for non-P25-Phase-1 channels.
+	// span sites of differing modulation — a genuinely CQPSK/LSM site
+	// and a C4FM site under one system name — and each tap must pick its
+	// symbol-recovery path independently before the CC locks. (Simulcast
+	// alone does not imply CQPSK — most simulcast systems are C4FM.)
+	// Empty inherits sys.P25Phase1DemodMode; any value the system-level
+	// key accepts (c4fm/fm/cqpsk/lsm/linear) is valid here. Ignored for
+	// non-P25-Phase-1 channels.
 	P25Phase1DemodMode string
 }
 
@@ -664,7 +665,8 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			return nil, err
 		}
 		// Per-site demod override (issue #935): a single P25 system can
-		// span an LSM simulcast site and a C4FM single-transmitter site,
+		// span a genuinely CQPSK/LSM site and a C4FM site (simulcast
+		// alone does not imply CQPSK — most simulcast systems are C4FM),
 		// so an empty per-channel value inherits the system default while
 		// a non-empty one overrides it for this tap only. The mode must be
 		// chosen here, before the CC locks — it is what lets it lock — so
