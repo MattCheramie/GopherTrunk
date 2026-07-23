@@ -76,8 +76,8 @@ closes, and the *shape* reveals the modulation family:
   peaks.
 - **A ring of phase points** — **π/4-DQPSK** (TETRA): the constellation rotates in
   quarter-pi steps and traces a rosette rather than fixed levels.
-- **A tight four-corner QPSK box** — **CQPSK/LSM**, the linear cousin P25 simulcast
-  transmitters use.
+- **A tight four-corner QPSK box** — **CQPSK/LSM**, a linear P25 modulation some
+  systems transmit (simulcast alone does not imply it — most simulcast is C4FM).
 
 A clean lock draws tight clusters and a wide-open eye; smearing means you're close to
 the noise floor — useful information, but don't mistake a weak-signal smear for the
@@ -98,11 +98,11 @@ peaks, and a two-versus-four-level question answers itself.
     <g fill="currentColor"><circle cx="270" cy="55" r="3.5"/><circle cx="300" cy="68" r="3.5"/><circle cx="313" cy="98" r="3.5"/><circle cx="300" cy="128" r="3.5"/><circle cx="270" cy="141" r="3.5"/><circle cx="240" cy="128" r="3.5"/><circle cx="227" cy="98" r="3.5"/><circle cx="240" cy="68" r="3.5"/></g>
     <!-- CQPSK -->
     <text x="450" y="22" font-weight="600">CQPSK / LSM</text>
-    <text x="450" y="36" font-size="8.5">P25 simulcast — QPSK box</text>
+    <text x="450" y="36" font-size="8.5">P25 linear/LSM — QPSK box</text>
     <g fill="currentColor"><circle cx="420" cy="68" r="4"/><circle cx="480" cy="68" r="4"/><circle cx="420" cy="128" r="4"/><circle cx="480" cy="128" r="4"/></g>
   </g>
 </svg>
-<figcaption>The constellation gives away the modulation family at a glance: four levels for FSK systems, a rosette ring for TETRA's π/4-DQPSK, a four-corner box for CQPSK simulcast.</figcaption>
+<figcaption>The constellation gives away the modulation family at a glance: four levels for FSK systems, a rosette ring for TETRA's π/4-DQPSK, a four-corner box for CQPSK/LSM.</figcaption>
 </figure>
 
 ## Clue 3 — audio and burst cadence
@@ -121,7 +121,7 @@ recognition table as a field guide:
 
 | System | Channel bandwidth | Modulation | Access | Telltale |
 |--------|-------------------|------------|--------|----------|
-| **P25 Phase 1** | 12.5 kHz | C4FM (or CQPSK simulcast) | FDMA | Four levels, continuous trace, 4800 sym/s |
+| **P25 Phase 1** | 12.5 kHz | C4FM (or CQPSK/LSM on some systems) | FDMA | Four levels, continuous trace, 4800 sym/s |
 | **P25 Phase 2** | 6.25 kHz equiv. | H-CPM / TDMA | TDMA (2-slot) | Narrow channel, pulsing bursts |
 | **DMR** | 12.5 kHz | 4FSK | TDMA (2-slot) | Four levels *and* slotting on one 12.5 kHz carrier |
 | **NXDN** | 6.25 / 12.5 kHz | 4FSK | FDMA | Very narrow carrier, four levels, continuous |
