@@ -156,6 +156,12 @@ func warnGainUnits(log *slog.Logger, serial, raw string, tenthDB int) {
 // (issue #402: 8.7 dB applied vs the 49 dB the same site decoded at, no FSW).
 const lowManualGainTenthDB = 150
 
+// tetraSameCarrierTaps is how many same-carrier voice taps are registered for a
+// TETRA system — one per TDMA timeslot, so up to four concurrent calls on the
+// control carrier each bind their own tap. The per-slot voice chain filters to
+// its granted timeslot (see internal/voice/composer/tetra_voice.go).
+const tetraSameCarrierTaps = 4
+
 // gainLooksTooLow reports whether a manual (non-auto) gain is below the
 // digital-decode floor but above the tenths-of-dB-mistake band that
 // gainLooksLikeDBMistake already covers. The two checks partition the
@@ -461,7 +467,10 @@ type Daemon struct {
 	// voice pool is built before the decoder exists. Registered after physical /
 	// wideband voice devices so a real role:voice SDR is preferred; it only ever
 	// binds a grant whose frequency equals the control channel's own carrier.
-	ccVoiceSource *ccdecoder.CCVoiceSource
+	// One tap per TDMA timeslot (up to tetraSameCarrierTaps) so up to four
+	// concurrent calls on the control carrier — one per slot — each bind their
+	// own tap; the fan-out under the control decoder copies IQ to all of them.
+	ccVoiceSources []*ccdecoder.CCVoiceSource
 	// p25p2Follower harvests P25 Phase 2 talker aliases off the traffic
 	// channel's FACCH-S signalling using standalone signalling DDC taps,
 	// independent of the voice pool — so aliases surface even when no
@@ -1113,8 +1122,15 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// would never bind but would mask the "no voice SDR" diagnostic, so skip it.
 	for _, sys := range cfg.Trunking.Systems {
 		if strings.EqualFold(sys.Protocol, "tetra") {
-			d.ccVoiceSource = ccdecoder.NewCCVoiceSource(
-				func() *ccdecoder.Decoder { return d.ccDecoder }, "cc:same-carrier")
+			// One tap per TDMA timeslot: a TETRA carrier has four slots, so up
+			// to four calls can run at once on the control carrier. Each tap
+			// subscribes to the control decoder's voice-IQ fan-out independently
+			// and the per-slot voice chain keeps only its granted timeslot.
+			for i := 1; i <= tetraSameCarrierTaps; i++ {
+				d.ccVoiceSources = append(d.ccVoiceSources, ccdecoder.NewCCVoiceSource(
+					func() *ccdecoder.Decoder { return d.ccDecoder },
+					fmt.Sprintf("cc:same-carrier:%d", i)))
+			}
 			break
 		}
 	}
@@ -4118,12 +4134,14 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 			Serial: vt.Serial(),
 		})
 	}
-	// The same-carrier CC tap goes last so a physical role:voice SDR or a
-	// wideband tap is preferred; it binds only a grant on the CC's own carrier.
-	if d.ccVoiceSource != nil {
+	// The same-carrier CC taps go last so a physical role:voice SDR or a
+	// wideband tap is preferred; each binds only a grant on the CC's own carrier
+	// and the engine keys concurrent calls by timeslot, so up to four slots bind
+	// their own tap.
+	for _, cc := range d.ccVoiceSources {
 		voices = append(voices, &trunking.VoiceDevice{
-			Tuner:  d.ccVoiceSource,
-			Serial: d.ccVoiceSource.Serial(),
+			Tuner:  cc,
+			Serial: cc.Serial(),
 		})
 	}
 	return voices
@@ -4133,15 +4151,15 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 // poolDevices uses to resolve a virtual tuner. Returns nil when no
 // virtual tuners are configured so the lookup is a no-op.
 func (d *Daemon) virtualVoiceMap() map[string]composer.IQSource {
-	if len(d.virtualVoiceTuners) == 0 && d.ccVoiceSource == nil {
+	if len(d.virtualVoiceTuners) == 0 && len(d.ccVoiceSources) == 0 {
 		return nil
 	}
-	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+1)
+	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+len(d.ccVoiceSources))
 	for _, vt := range d.virtualVoiceTuners {
 		out[vt.Serial()] = vt
 	}
-	if d.ccVoiceSource != nil {
-		out[d.ccVoiceSource.Serial()] = d.ccVoiceSource
+	for _, cc := range d.ccVoiceSources {
+		out[cc.Serial()] = cc
 	}
 	return out
 }

@@ -39,7 +39,7 @@ func TestTrafficExtractorSingleBurst(t *testing.T) {
 	buildNCDB(stream, L, bkn1, bkn2)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(0, func(f []byte) {
+	te := NewTrafficExtractor(0, func(f []byte, _ uint8) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	te.Process(stream, 0)
@@ -67,7 +67,7 @@ func TestTrafficExtractorDescrambles(t *testing.T) {
 
 	const colour = 262144876 // the reporter's cell (467.913 MHz)
 	var got []byte
-	te := NewTrafficExtractor(colour, func(f []byte) { got = append([]byte(nil), f...) })
+	te := NewTrafficExtractor(colour, func(f []byte, _ uint8) { got = append([]byte(nil), f...) })
 	te.Process(stream, 0)
 
 	rawBits := TetraDibitsToBits(append(append([]uint8{}, bkn1...), bkn2...))
@@ -88,7 +88,7 @@ func TestTrafficExtractorChunkedAcrossCalls(t *testing.T) {
 	buildNCDB(stream, L, bkn1, bkn2)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(0, func(f []byte) {
+	te := NewTrafficExtractor(0, func(f []byte, _ uint8) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	// Feed in small chunks so the training-sequence match, BKN1 look-back
@@ -118,7 +118,7 @@ func TestTrafficExtractorMultipleSlots(t *testing.T) {
 	buildNCDB(stream, 200+255, b1b, b2b)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(0, func(f []byte) {
+	te := NewTrafficExtractor(0, func(f []byte, _ uint8) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	te.Process(stream, 0)
@@ -130,6 +130,64 @@ func TestTrafficExtractorMultipleSlots(t *testing.T) {
 	}
 }
 
+// TestTrafficExtractorSlotTagging pins the SB-anchored slot numbering: a
+// synchronisation burst (STS) anchors slot 1 (TN1), and each subsequent NCDB is
+// tagged with its TDMA timeslot by rounding its 255-dibit offset from the
+// anchor. The small (+30-dibit) offsets prove the rounding absorbs the intra-
+// slot NTS↔STS displacement (< half a slot).
+func TestTrafficExtractorSlotTagging(t *testing.T) {
+	const sbL = 200
+	stream := make([]uint8, 1500)
+	for i := range stream {
+		stream[i] = uint8((i*7 + 1) % 4) // filler
+	}
+	// Synchronisation burst: STS leading at sbL anchors slot 1.
+	copy(stream[sbL:], SyncTrainingDibits())
+
+	// NCDBs at slots 2, 3, 4, then slot 1 of the next frame — each offset +30
+	// dibits from the exact grid to exercise the rounding tolerance.
+	type ndb struct {
+		L        int
+		wantSlot uint8
+	}
+	ndbs := []ndb{
+		{sbL + 1*255 + 30, 2},
+		{sbL + 2*255 + 30, 3},
+		{sbL + 3*255 + 30, 4},
+		{sbL + 4*255 + 30, 1}, // wraps mod 4 back to TN1
+	}
+	for i, n := range ndbs {
+		buildNCDB(stream, n.L, rampDibits(ndbBlockDibits, uint8(i)), rampDibits(ndbBlockDibits, uint8(i+1)))
+	}
+
+	var slots []uint8
+	te := NewTrafficExtractor(0, func(_ []byte, slot uint8) { slots = append(slots, slot) })
+	te.Process(stream, 0)
+
+	if len(slots) != len(ndbs) {
+		t.Fatalf("emitted %d frames, want %d (slots=%v)", len(slots), len(ndbs), slots)
+	}
+	for i, n := range ndbs {
+		if slots[i] != n.wantSlot {
+			t.Errorf("burst %d (L=%d): slot=%d, want %d", i, n.L, slots[i], n.wantSlot)
+		}
+	}
+}
+
+// TestTrafficExtractorSlotUnanchored checks that without a synchronisation burst
+// the slot is reported as 0 (unknown) — the single-call / traffic-only-carrier
+// fallback.
+func TestTrafficExtractorSlotUnanchored(t *testing.T) {
+	stream := make([]uint8, 600)
+	buildNCDB(stream, 300, rampDibits(ndbBlockDibits, 0), rampDibits(ndbBlockDibits, 1))
+	var slots []uint8
+	te := NewTrafficExtractor(0, func(_ []byte, slot uint8) { slots = append(slots, slot) })
+	te.Process(stream, 0)
+	if len(slots) != 1 || slots[0] != 0 {
+		t.Fatalf("unanchored slots=%v, want [0]", slots)
+	}
+}
+
 func TestTrafficExtractorNoFalseEmitOnNoise(t *testing.T) {
 	// A stream with no training sequence must emit nothing.
 	stream := make([]uint8, 2000)
@@ -137,7 +195,7 @@ func TestTrafficExtractorNoFalseEmitOnNoise(t *testing.T) {
 		stream[i] = uint8((i*7 + 1) % 4) // deterministic non-sync filler
 	}
 	n := 0
-	te := NewTrafficExtractor(0, func(f []byte) { n++ })
+	te := NewTrafficExtractor(0, func(f []byte, _ uint8) { n++ })
 	te.Process(stream, 0)
 	// A rare chance correlation within tolerance is possible; assert it does
 	// not spuriously fire on structured filler.
