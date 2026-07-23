@@ -153,6 +153,30 @@ defaults:
       learn_module: software-licensing
       nav_group: Learn
       permalink: /learn/software-licensing/:basename/
+  - scope:
+      path: "learn/programming-go"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: programming-go
+      nav_group: Learn
+      permalink: /learn/programming-go/:basename/
+  - scope:
+      path: "learn/dsp"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: dsp
+      nav_group: Learn
+      permalink: /learn/dsp/:basename/
+  - scope:
+      path: "learn/deployment"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: deployment
+      nav_group: Learn
+      permalink: /learn/deployment/:basename/
   # Field Guide articles under /reference/ get the reference layout and nav
   # group automatically. The hub (reference/index.md) overrides to reference-hub.
   - scope:
