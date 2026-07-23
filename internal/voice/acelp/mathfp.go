@@ -69,11 +69,29 @@ func pow2fp(exponent, fraction int16) int32 {
 
 // lExtract splits a 32-bit value into a high word and a low word in the
 // double-precision format used by the LPC routines: hi = L>>16, and lo carries
-// the residual so that L ≈ (hi<<16) + (lo<<1). Mirrors L_Extract.
+// the residual so that L ≈ (hi<<16) + (lo<<1). Mirrors the standard ITU-T
+// L_Extract; pairs with lComp.
 func lExtract(l int32) (hi, lo int16) {
 	hi = extractH(l)
 	lo = extractL(lMsu(lShr(l, 1), hi, 16384))
 	return hi, lo
+}
+
+// lExtractLog splits a Q15 log-domain value into its integer exponent and Q15
+// fraction for pow2fp: exp = L>>15, frac = L - (exp<<15) (the low 15 bits). This
+// is a faithful port of the TETRA reference L_extract (FEXP_TET.C):
+//
+//	hi = extract_h(L_shl(L, 1))          // L>>15, with L_shl saturation
+//	lo = extract_l(sub_sh(L, hi, 15))    // low 15 bits
+//
+// Dec_Ener feeds L_extract's output straight to pow2 as an (integer, fraction)
+// pair, so the split MUST use this L>>15 convention — distinct from the DPF
+// lExtract (L>>16) the LPC path uses. Mixing the two is what made the recovered
+// gains 2^N too small (the whole call decoded at a fraction of its true level).
+func lExtractLog(l int32) (exp, frac int16) {
+	exp = extractH(lShl(l, 1))
+	frac = extractL(subSh(l, exp, 15))
+	return exp, frac
 }
 
 // lComp reconstructs a 32-bit value from the double-precision (hi,lo) pair,

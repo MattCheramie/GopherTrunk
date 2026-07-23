@@ -25,7 +25,10 @@ func (v *vocoder) FrameSize() int { return speechFrameBytes }
 func (v *vocoder) Reset()         { v.d = NewDecoder() }
 func (v *vocoder) Close() error   { return nil }
 
-// Decode renders one packed 137-bit speech frame to 240 PCM samples.
+// Decode renders one packed 137-bit speech frame to 240 PCM samples. The raw
+// Decod_Tetra synthesis is post-processed by the reference's saturating x2
+// (Post_Process, EN 300 395-2) so the output level matches the ETSI reference
+// decoder sample-for-sample; without it GT's audio is 6 dB below reference.
 func (v *vocoder) Decode(frame []byte) ([]int16, error) {
 	bfi := len(frame) < speechFrameBytes
 	var bits []byte
@@ -37,7 +40,11 @@ func (v *vocoder) Decode(frame []byte) ([]int16, error) {
 			}
 		}
 	}
-	return v.d.Decode(bits, bfi), nil
+	pcm := v.d.Decode(bits, bfi)
+	for i, sfin := range pcm {
+		pcm[i] = addOp(sfin, sfin) // Post_Process: saturating x2
+	}
+	return pcm, nil
 }
 
 // Compile-time check that vocoder satisfies voice.Vocoder.
