@@ -39,6 +39,11 @@ import (
 	// PR-E wires the shared mbe synthesis pipeline. See
 	// docs/vocoders.md for the AMBE+2 patent posture.
 	_ "github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
+
+	// Blank import: pulls in the pure-Go TETRA ACELP decoder so the daemon
+	// registers the "tetra-acelp" vocoder name (TETRA full-rate voice).
+	// Clean-room from ETSI EN 300 395-2; see docs/vocoders.md.
+	_ "github.com/MattCheramie/GopherTrunk/internal/voice/acelp"
 )
 
 func main() {

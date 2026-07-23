@@ -122,6 +122,22 @@ func EncodeTCHS(frameA, frameB []byte) []byte {
 	return framing.PackBitsMSB(tchInterleave(type3))
 }
 
+// TCHSpeechFrames decodes one descrambled 54-byte type-5 traffic frame and, if
+// its class-2 CRC verifies, returns the two 137-bit speech frames packed
+// MSB-first (18 bytes each) ready for the ACELP vocoder. A frame that fails the
+// CRC — a non-TCH/S burst (signalling on another timeslot) or a badly corrupted
+// slot — returns nil. On a single-call carrier this CRC gate is what isolates
+// the granted call's speech from the other TDMA timeslots' bursts: a burst that
+// is not TCH/S speech descrambles to essentially random class-2 bits and passes
+// the 8-bit CRC only ~1/256 of the time.
+func TCHSpeechFrames(traffic []byte) [][]byte {
+	frameA, frameB, crcOK, _, ok := DecodeTCHS(traffic)
+	if !ok || !crcOK {
+		return nil
+	}
+	return [][]byte{framing.PackBitsMSB(frameA), framing.PackBitsMSB(frameB)}
+}
+
 // DecodeTCHS decodes a 54-byte packed, descrambled type-5 (= type-4) traffic
 // frame into two 137-bit speech frames (bit-per-byte). crcOK reports whether
 // the class-2 CRC verified. errs is the Viterbi path metric (corrected bit

@@ -7,8 +7,8 @@ nav_group: Reference
 
 # Vocoders
 
-Digital trunked-radio voice traffic is carried by one of two
-DVSI-derived vocoders:
+Digital trunked-radio voice traffic is carried by one of three
+vocoders — two DVSI-derived, plus TETRA's own ACELP:
 
 - **IMBE** — used by P25 Phase 1 LDU1/LDU2 voice frames. Core US patents
   (filed early-to-mid-1990s, 20-year term) have **expired**. The
@@ -20,6 +20,12 @@ DVSI-derived vocoders:
   implementations (e.g. `mbelib`) implement the algorithm; the *code*
   is permissively licensed (mbelib is ISC) but the *patents* are the
   user's risk to evaluate.
+- **TETRA ACELP** — the full-rate speech codec used by TETRA voice
+  (ETSI EN 300 395-2). This is **not** a DVSI/MBE-family vocoder; it is
+  a conventional ACELP codec (LSP-quantised LPC + adaptive/algebraic
+  codebooks), specified openly by ETSI. GopherTrunk ships a pure-Go
+  decoder at `internal/voice/acelp`. See the TETRA ACELP section below
+  for the clean-room / patent posture.
 
 Re-implementing AMBE+2 in pure Go does not change the patent posture —
 the algorithm itself is what the patents cover, regardless of
@@ -275,6 +281,48 @@ or document section in the PR) can land a per-vendor preset under
 worth checking: `szechyjs/mbelib`, DSDcc, DSD-FME, OP25 — search
 the tone-decode paths for the b1 index range.
 
+## TETRA ACELP (`internal/voice/acelp`)
+
+TETRA full-rate voice uses an ACELP speech codec specified openly in
+**ETSI EN 300 395-2** (13.167 kbit/s, 137-bit frames / 30 ms → 240
+samples at 8 kHz). GopherTrunk ships a **pure-Go, clean-room** decoder.
+
+**Chain.** A granted call's traffic bursts are recovered by the
+composer's TETRA voice chain, TCH/S channel-decoded (EN 300 395-2 §5.5:
+RCPC + interleave + class-2 CRC) into 137-bit speech frames, and rendered
+to PCM by the ACELP decoder registered as the `tetra-acelp` vocoder. The
+decoder is the usual ACELP pipeline: parameter unpack → LSP split-VQ
+dequantisation → per-subframe adaptive (pitch) + algebraic (4-pulse)
+codebooks → log-energy gain dequantisation → LSP→LPC conversion →
+synthesis filter. Bit-exact fixed-point arithmetic (ITU-T-style 16/32-bit
+saturating operators) underlies every block.
+
+**Slot isolation.** The traffic extractor emits a burst for every TDMA
+timeslot on the carrier. The TCH/S class-2 CRC is used as the slot filter:
+only the granted call's TCH/S speech bursts verify, so other slots'
+signalling bursts (and encrypted TEA1-4 traffic) are dropped. This cleanly
+separates a *single* active call; two concurrent TCH/S calls on the same
+carrier would still need TDMA frame-number demux (a follow-up).
+
+**Provenance / licensing.** The decoder was ported from the *algorithmic*
+description in EN 300 395-2 and the ITU-T fixed-point operator
+definitions; the fixed quantiser tables (LSP codebooks, energy codebook,
+interpolation filters) are numeric constants sourced from the ETSI
+reference codec (via `github.com/curlyboi/libtetradec`). ACELP's core
+algebraic-CELP patents (Sherbrooke/VoiceAge, filed late-1980s to
+mid-1990s, 20-year term) have **expired**, so ACELP is far less
+patent-encumbered than the DVSI/MBE family. As with IMBE/AMBE+2, the legal
+responsibility for operating the codec falls on the deployer, not the
+project; operators in licence-restrictive jurisdictions should evaluate
+with counsel. The decoder lives behind an explicit vocoder registration
+(`tetra-acelp`) so builds can omit it.
+
+**Validation.** Each block carries unit tests validated *independently*
+of the reference where possible (e.g. the LSP→LPC conversion is checked
+against the LSP root property; log2/pow2 against `math`; the synthesis
+filter against a float recursion). Bit-exact conformance against the ETSI
+clause-4 test sequences is the remaining validation step (see Future work).
+
 ## Future work
 
 - Absolute-level calibration thresholds documented; reference data
@@ -292,3 +340,8 @@ the tone-decode paths for the b1 index range.
   long-running archives.
 - Plain AMBE decoder for D-STAR voice (different algorithm from AMBE+2;
   same DVSI patent family).
+- TETRA ACELP: bit-exact conformance against the ETSI EN 300 395-2
+  clause-4 test sequences (add under `internal/voice/acelp/testdata/`),
+  and TDMA frame-number slot demux so concurrent same-carrier TCH/S
+  calls separate cleanly (today a single active call is isolated by the
+  TCH/S CRC).

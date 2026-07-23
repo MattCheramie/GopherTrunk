@@ -43,22 +43,22 @@ func newTETRAVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 }
 
 // runTETRAVoiceChain consumes IQ for one TETRA traffic-channel call. It
-// decimates the tap IQ to the TETRA symbol rate, recovers the π/4-DQPSK
-// dibit stream with the shared TETRA receiver, extracts each Normal
-// Continuous Downlink Burst's two data blocks (tetra.TrafficExtractor), and
-// appends them to the recorder's `.raw` sidecar as raw full-slot traffic
-// frames.
+// decimates the tap IQ to the TETRA symbol rate, recovers the π/4-DQPSK dibit
+// stream with the shared TETRA receiver, extracts each Normal Continuous
+// Downlink Burst's two data blocks (tetra.TrafficExtractor), TCH/S-decodes each
+// burst, and emits the recovered 137-bit speech frames to the recorder — which
+// renders them to PCM with the clean-room ACELP vocoder ("tetra-acelp") and
+// writes both the decoded WAV and a `.raw` sidecar of the speech frames. This
+// mirrors the DMR/P25 shape (post-FEC frames in `.raw` + decoded WAV).
 //
-// This is the traffic-following + capture half of TETRA voice support. TCH/S
-// channel decoding (§8.4) and the TETRA ACELP vocoder that would turn the
-// raw frames into PCM are the labelled follow-ups; until they land the `.raw`
-// sidecar is the capture, exactly as for DMR/P25 (post-FEC frames) and EDACS
-// ProVoice (raw frames). Encrypted calls (TEA1-4) still capture raw — the
-// bytes exist even when no in-process decode does.
-//
-// The extractor emits a frame for every burst on the carrier (all four TDMA
-// timeslots), not just the granted one; groupID/timeslot are threaded
-// through for a future per-slot filter and logging only.
+// The extractor emits a burst for every timeslot on the carrier (all four TDMA
+// slots), not just the granted one. Slot isolation is done by the TCH/S CRC:
+// only the granted call's TCH/S bursts pass, so the other slots' signalling
+// bursts are dropped (tetra.TCHSpeechFrames). This cleanly separates a single
+// active call; concurrent TCH/S calls on the same carrier would still mix and
+// need TDMA frame-number demux (a follow-up). groupID/timeslot are threaded
+// through for logging and that future demux. Encrypted calls (TEA1-4) fail the
+// CRC and produce no decoded audio (their raw bursts still exist upstream).
 func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, colourExt uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-tetra:"+serial, nil)
@@ -73,7 +73,7 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 	symbolHz := fe.OutRateHz()
 
 	rs, _ := c.sink.(rawFrameSink)
-	var bursts atomic.Uint64
+	var bursts, speech atomic.Uint64
 	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte) {
 		bursts.Add(1)
 		// Each recovered burst counts as traffic activity: keep the call
@@ -82,8 +82,16 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		if rs == nil {
 			return
 		}
-		if err := rs.WriteRawFrame(serial, frame); err != nil {
-			c.log.Warn("composer: TETRA raw-frame write failed", "serial", serial, "err", err)
+		// TCH/S-decode the burst. Only bursts whose class-2 CRC verifies are
+		// TCH/S speech for the granted call (other TDMA timeslots' bursts fail
+		// the CRC); emit each recovered 137-bit speech frame to the recorder,
+		// which renders it with the ACELP vocoder and appends it to the `.raw`
+		// sidecar.
+		for _, sf := range tetra.TCHSpeechFrames(frame) {
+			speech.Add(1)
+			if err := rs.WriteRawFrame(serial, sf); err != nil {
+				c.log.Warn("composer: TETRA speech-frame write failed", "serial", serial, "err", err)
+			}
 		}
 	})
 
@@ -96,9 +104,14 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		EnableChannelFilter: true,
 	})
 
-	c.log.Info("composer: tetra voice follow started — descrambled traffic sidecar (TCH/S FEC + ACELP vocoder are follow-ups)",
+	c.log.Info("composer: tetra voice follow started — TCH/S decode + ACELP vocoder",
 		"serial", serial, "group", groupID, "timeslot", timeslot,
 		"colour_code", colourExt&0x3F, "rate_hz", symbolHz)
+
+	defer func() {
+		c.log.Info("composer: tetra voice follow ended",
+			"serial", serial, "bursts", bursts.Load(), "speech_frames", speech.Load())
+	}()
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
