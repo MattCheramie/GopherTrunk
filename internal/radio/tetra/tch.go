@@ -24,24 +24,19 @@ const (
 )
 
 // crcTCHClass2 computes the 8 CRC bits protecting the 60 class-2 bits
-// (§5.5.1): 7 parity bits from G(X)=1+X³+X⁷, then an 8th overall even-parity
-// bit over the class-2 bits plus the 7 parity bits. class2 is 60 bit-per-byte.
+// (EN 300 395-2 §5.5.1). Each CRC bit is the even parity (XOR) of the class-2
+// bits at the ranks in tchCRCTaps — the ETSI reference's fixed parity-check
+// matrix. class2 is 60 bit-per-byte. This must match the on-air CRC exactly:
+// any deviation makes every received TCH/S burst fail the check and be dropped.
 func crcTCHClass2(class2 []byte) []byte {
-	var reg [7]byte // reg[k] holds the x^k coefficient
-	for _, b := range class2 {
-		fb := (b & 1) ^ reg[6]
-		reg = [7]byte{fb, reg[0], reg[1], reg[2] ^ fb, reg[3], reg[4], reg[5]}
-	}
 	out := make([]byte, tchCRCBits)
-	var parity byte
-	for k := 0; k < 7; k++ {
-		out[k] = reg[k]
-		parity ^= reg[k]
+	for k := range tchCRCTaps {
+		var parity byte
+		for _, rank := range tchCRCTaps[k] {
+			parity ^= class2[rank-1] & 1 // ranks are 1-based
+		}
+		out[k] = parity
 	}
-	for _, b := range class2 {
-		parity ^= b & 1
-	}
-	out[7] = parity
 	return out
 }
 

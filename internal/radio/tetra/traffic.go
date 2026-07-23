@@ -1,6 +1,10 @@
 package tetra
 
-import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+import (
+	"math"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+)
 
 // Traffic-channel burst extraction for the voice-follow path.
 //
@@ -31,11 +35,22 @@ import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 // control channel's BSCH) before TCH/S FEC.
 //
 // Slot demultiplexing: the extractor emits a frame for every NCDB it sees
-// on the carrier — all four TDMA timeslots, not just the granted one —
-// because absolute slot alignment needs frame-number tracking the tap does
-// not yet have. That is an honest first-pass limitation; the granted
-// Timeslot is carried on the grant for a future per-slot filter.
+// on the carrier — all four TDMA timeslots — and tags each with its TDMA
+// timeslot (TN, 1..4) so a per-slot voice chain can keep only its granted
+// slot and up to four calls on one carrier decode independently. The slot is
+// numbered from the synchronisation burst (SB), which the same detector
+// correlates: the SB's synchronisation training sequence is transmitted in
+// slot 1 (TN1) of frame 18, so it anchors the 255-dibit slot grid. A burst
+// leading at dibit L is then in slot ((round((L - sbAnchor)/255)) mod 4) + 1;
+// the ~15-dibit intra-slot offset between the normal and synchronisation
+// training sequences is far below the half-slot (127-dibit) rounding margin,
+// so it need not be modelled exactly. Until an SB is seen the slot is reported
+// as 0 (unknown) and the consumer falls back to CRC-gated single-call
+// behaviour. On a traffic-only carrier with no SB the slot stays 0.
 const (
+	// ndbSlotDibits is the dibit span of one TDMA timeslot (510 bits): four
+	// slots make a 1020-dibit TDMA frame. The slot grid the SB anchor pins.
+	ndbSlotDibits = 255
 	// ndbBKN1Start / ndbBKN2Start are the leading dibit of each data block
 	// relative to the training-sequence leading dibit L.
 	ndbBKN1Start = -115
@@ -65,20 +80,30 @@ const TrafficFrameBytes = (2 * ndbBlockDibits * 2) / 8 // 54
 // Not safe for concurrent use; construct one per followed call.
 type TrafficExtractor struct {
 	dets       []*SyncDetector // NTS1 + NTS2, each under all four constellation rotations
+	stsDets    []*SyncDetector // synchronisation training sequence, all four rotations (slot-1 anchor)
 	scratch    []int
+	stsScratch []int
 	buf        []uint8
 	bufBase    int
 	pending    []int // training-sequence leading indices awaiting look-ahead
 	colourCode uint32
-	onBurst    func(frame []byte)
+	onBurst    func(frame []byte, slot uint8)
+
+	// sbAnchor is the absolute dibit index of the most recent SB
+	// synchronisation-training-sequence leading dibit (TN1), pinning the
+	// 255-dibit slot grid; haveAnchor is false until the first SB is seen.
+	sbAnchor   int
+	haveAnchor bool
 }
 
 // NewTrafficExtractor returns an extractor that calls onBurst with each
-// recovered 54-byte traffic frame. When colourCode is non-zero the frame is
-// descrambled with the cell's extended colour code (learned from the control
-// channel's BSCH) before onBurst, so the sidecar holds descrambled type-5 —
-// the input the TCH/S channel decoder expects. onBurst must not retain the slice.
-func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte)) *TrafficExtractor {
+// recovered 54-byte traffic frame and its TDMA timeslot (1..4, or 0 when the
+// slot grid is not yet anchored to a synchronisation burst). When colourCode is
+// non-zero the frame is descrambled with the cell's extended colour code
+// (learned from the control channel's BSCH) before onBurst, so the sidecar
+// holds descrambled type-5 — the input the TCH/S channel decoder expects.
+// onBurst must not retain the slice.
+func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte, slot uint8)) *TrafficExtractor {
 	te := &TrafficExtractor{colourCode: colourCode, onBurst: onBurst}
 	// π/4-DQPSK leaves a constant 0..3 dibit rotation (residual CFO), so
 	// correlate the training sequence under all four rotations of the
@@ -87,6 +112,13 @@ func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte)) *Traffic
 		for r := uint8(0); r < 4; r++ {
 			te.dets = append(te.dets, NewSyncDetector(rotateDibits(base, r), 2))
 		}
+	}
+	// Synchronisation-training-sequence detectors (all four rotations) pin
+	// the slot grid: the SB is transmitted in TN1, so its STS leading dibit
+	// anchors slot 1. Threshold 3 matches the control channel's processSB.
+	sts := SyncTrainingDibits()
+	for r := uint8(0); r < 4; r++ {
+		te.stsDets = append(te.stsDets, NewSyncDetector(rotateDibits(sts, r), 3))
 	}
 	return te
 }
@@ -99,6 +131,17 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 		te.bufBase = baseIdx
 	}
 	te.buf = append(te.buf, dibits...)
+
+	// Anchor the slot grid on the synchronisation burst. The SB's STS is
+	// transmitted in TN1, so its leading dibit pins slot 1; refresh on every
+	// SB (once per multiframe) so the anchor tracks any slow clock drift.
+	for _, det := range te.stsDets {
+		hits, _ := det.Process(te.stsScratch[:0], dibits, baseIdx)
+		for _, trailing := range hits {
+			te.sbAnchor = trailing - (stsDibits - 1)
+			te.haveAnchor = true
+		}
+	}
 
 	ntsLen := len(NormalSyncDibits()) // 11
 	for _, det := range te.dets {
@@ -166,5 +209,31 @@ func (te *TrafficExtractor) emit(L int) {
 	if te.colourCode != 0 {
 		bits = framing.DescrambleTetra(bits, te.colourCode)
 	}
-	te.onBurst(framing.PackBitsMSB(bits))
+	te.onBurst(framing.PackBitsMSB(bits), te.slotOf(L))
+}
+
+// ndbSBSlotShift aligns the synchronisation-burst anchor to the NDB slot grid.
+// The SB is transmitted in TN1, but its synchronisation training sequence sits
+// late in the SB burst (after the frequency-correction + BSCH preamble), so the
+// detected STS leading dibit lands one NDB slot before the TN1 traffic burst's
+// normal-training-sequence position. Adding 3 (= −1 mod 4) makes a burst one
+// slot after the anchor read as TN1, matching the control channel's granted
+// timeslots — verified against the reporter's real same-carrier capture
+// (grant ts1↔decoded slot, ts2↔decoded slot line up once shifted).
+const ndbSBSlotShift = 3
+
+// slotOf returns the TDMA timeslot (1..4) of a burst whose training sequence
+// leads at absolute dibit L, or 0 when no synchronisation burst has anchored the
+// slot grid yet. The SB anchors the grid (see ndbSBSlotShift); each further slot
+// is 255 dibits on, and rounding to the nearest slot absorbs the small intra-slot
+// offset between the normal and synchronisation training sequences.
+func (te *TrafficExtractor) slotOf(L int) uint8 {
+	if !te.haveAnchor {
+		return 0
+	}
+	si := (int(math.Round(float64(L-te.sbAnchor)/float64(ndbSlotDibits))) + ndbSBSlotShift) % 4
+	if si < 0 {
+		si += 4
+	}
+	return uint8(si) + 1
 }
