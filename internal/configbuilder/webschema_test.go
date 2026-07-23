@@ -46,6 +46,15 @@ var webRoundTripAllow = map[string][]string{
 	// RecordingsConfig index signature; editable in the TUI and raw YAML. A
 	// bespoke web editor for this niche knob is intentionally omitted.
 	"RecordingsConfig": {"CryptoCapturePath"},
+
+	// Event-driven raw-IQ auto-record (baseband.auto_record) — a debug/research
+	// capture hook. Round-trips through the BasebandConfig index signature;
+	// editable in the TUI and raw YAML. A bespoke web editor is a follow-up.
+	"BasebandConfig": {"AutoRecord"},
+	"BasebandAutoRecordConfig": {
+		"Enabled", "Dir", "Format", "Seconds", "Cooldown",
+		"OnConcurrentCalls", "OnNoVoiceDevice", "OnEncrypted", "OnEmergency",
+	},
 }
 
 // TestConfigSchemaCoveredByWebBuilder fails when a config.Config field has no

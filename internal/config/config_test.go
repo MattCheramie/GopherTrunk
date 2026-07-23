@@ -354,6 +354,17 @@ func TestValidate(t *testing.T) {
 		{"ka9q bad encoding", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Encoding: "opus"}}}}, true},
 		{"ka9q bad channels", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Channels: 3}}}}, true},
 		{"ka9q serial collides", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "x"}}, Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Serial: "x"}}}}, true},
+		// baseband.auto_record: event-triggered raw-IQ capture.
+		{"auto_record disabled ignores fields", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Format: "bogus"}}}, false},
+		{"auto_record concurrent ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, OnConcurrentCalls: 2}}}, false},
+		{"auto_record manual-only ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8}}}, false},
+		{"auto_record cs16 ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 4, Format: "cs16", OnEncrypted: true}}}, false},
+		{"auto_record cooldown ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 4, Cooldown: "5s", OnEmergency: true}}}, false},
+		{"auto_record missing dir", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Seconds: 8, OnNoVoiceDevice: true}}}, true},
+		{"auto_record zero seconds", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", OnConcurrentCalls: 2}}}, true},
+		{"auto_record bad format", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Format: "flac", OnEncrypted: true}}}, true},
+		{"auto_record bad cooldown", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Cooldown: "soon", OnEncrypted: true}}}, true},
+		{"auto_record negative concurrent", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, OnConcurrentCalls: -1}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

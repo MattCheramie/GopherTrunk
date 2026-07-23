@@ -398,6 +398,11 @@ type Daemon struct {
 	// recorder (writes no files) so live audio works without recording. Nil
 	// only when there is no SDR pool to source voice from.
 	voiceDecoder *voice.Recorder
+	// iqAutoRec captures short raw-IQ slices of the control SDR on classified
+	// events (concurrent calls, unserved grant, encrypted/emergency, or a
+	// manual API trigger). Nil when baseband.auto_record is disabled.
+	iqAutoRec    *iqAutoRecorder
+	iqAutoRecSub *events.Subscription
 	broadcast    *broadcast.Manager
 	composer     *composer.Composer
 	player       *player.Player
@@ -2392,6 +2397,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			opts.Mixer = newMixerProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
 			opts.Capture = newCaptureProvider(d.pool, d.iqBrokers, log)
 		}
+		// Event-driven raw-IQ auto-recorder (baseband.auto_record). Constructed
+		// here so the API server can expose a manual trigger; subscribed to the
+		// bus now so it doesn't miss events before the run phase spawns Run.
+		if cfg.Baseband.AutoRecord.Enabled && d.controlSerial != "" {
+			if br := d.iqBrokers[d.controlSerial]; br != nil {
+				sysName, proto := primaryControlSystem(cfg)
+				d.iqAutoRec = newIQAutoRecorder(cfg.Baseband.AutoRecord, sysName, proto, d.controlSerial, br, log)
+				if d.iqAutoRec != nil {
+					d.iqAutoRecSub = d.bus.Subscribe()
+					opts.AutoRecord = autoRecordTrigger{rec: d.iqAutoRec}
+				}
+			} else {
+				log.Warn("daemon: baseband.auto_record enabled but no IQ broker for the control SDR; auto-record disabled",
+					"control_serial", d.controlSerial)
+			}
+		}
 		if d.bookmarks != nil {
 			opts.Bookmarks = bookmarkProvider{store: d.bookmarks}
 		}
@@ -2760,6 +2781,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.voiceDecoder != nil {
 		d.spawn(runCtx, "recorder", false, func(ctx context.Context) error {
 			return d.voiceDecoder.Run(ctx)
+		})
+	}
+	if d.iqAutoRec != nil && d.iqAutoRecSub != nil {
+		d.spawn(runCtx, "iq-autorecord", false, func(ctx context.Context) error {
+			return d.iqAutoRec.Run(ctx, d.iqAutoRecSub)
 		})
 	}
 	if d.broadcast != nil {

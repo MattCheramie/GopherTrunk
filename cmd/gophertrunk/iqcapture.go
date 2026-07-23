@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"strconv"
@@ -94,63 +93,78 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 	if broker == nil {
 		return fmt.Errorf("iq-capture: no broker for serial %q", spec.Serial)
 	}
-
-	f, err := os.Create(spec.Path)
-	if err != nil {
-		return fmt.Errorf("iq-capture: create %s: %w", spec.Path, err)
-	}
-	defer f.Close()
-
-	sub := broker.Subscribe()
-	defer sub.Close()
-
-	// Stream each chunk straight to disk via siglab.CaptureWriter (one reused
-	// scratch buffer, no whole-capture buffering). spec.Format is already
-	// validated to u8/f32/cs16 by parseIQCaptureSpec.
+	// spec.Format is already validated to u8/f32/cs16 by parseIQCaptureSpec.
 	format, err := siglab.ParseSampleFormat(spec.Format)
 	if err != nil {
 		return fmt.Errorf("iq-capture: %w", err)
 	}
-	_, bytesPerSample := format.Decoder()
+	log.Info("iq-capture: started",
+		"serial", spec.Serial, "path", spec.Path,
+		"seconds", spec.Seconds, "format", spec.Format)
+	samples, bytesPerSample, drops, capErr := captureIQToFile(ctx, broker, spec.Path, format, spec.Seconds)
+	return finishIQCapture(log, spec, samples, bytesPerSample, drops, capErr)
+}
+
+// captureIQToFile owns the full lifecycle of one raw-IQ capture: create the
+// file, subscribe to the broker, stream `seconds` of IQ through
+// siglab.CaptureWriter (one reused scratch buffer, no whole-capture
+// buffering), then close the file. It returns the samples written, the
+// bytes-per-sample of the chosen format, and the subscriber drop count so the
+// caller can log/report the result. ctx cancels the capture early.
+//
+// Shared by the `--iq-capture` CLI flag (runIQCapture) and the event-driven
+// IQ auto-recorder, so both produce byte-identical captures.
+func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, format siglab.SampleFormat, seconds int) (samples int64, bytesPerSample int, drops uint64, err error) {
+	_, bytesPerSample = format.Decoder()
+	f, err := os.Create(path)
+	if err != nil {
+		return 0, bytesPerSample, 0, fmt.Errorf("iq-capture: create %s: %w", path, err)
+	}
+
+	sub := broker.Subscribe()
+	defer sub.Close()
 	enc := siglab.NewCaptureWriter(f, format)
 
 	// Safety timer as an explicit select arm: the broker pauses fan-out when no
 	// primary StreamIQ session is running, so a receive-then-check deadline
 	// would block on sub.C forever if the primary stalls. The timer fires the
 	// normal end-of-capture path after the requested duration regardless.
-	timer := time.NewTimer(time.Duration(spec.Seconds) * time.Second)
+	timer := time.NewTimer(time.Duration(seconds) * time.Second)
 	defer timer.Stop()
-	deadline := time.Now().Add(time.Duration(spec.Seconds) * time.Second)
-	log.Info("iq-capture: started",
-		"serial", spec.Serial, "path", spec.Path,
-		"seconds", spec.Seconds, "format", spec.Format)
+	deadline := time.Now().Add(time.Duration(seconds) * time.Second)
 
-	var samplesWritten int64
-	for {
-		select {
-		case <-ctx.Done():
-			return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), ctx.Err())
-		case <-timer.C:
-			return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), nil)
-		case chunk, ok := <-sub.C:
-			if !ok {
-				return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), errors.New("iq-capture: broker closed before capture finished"))
-			}
-			if err := enc.Write(chunk); err != nil {
-				return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), fmt.Errorf("write: %w", err))
-			}
-			samplesWritten += int64(len(chunk))
-			if time.Now().After(deadline) {
-				return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), nil)
+	streamErr := func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				return nil
+			case chunk, ok := <-sub.C:
+				if !ok {
+					return errors.New("iq-capture: broker closed before capture finished")
+				}
+				if werr := enc.Write(chunk); werr != nil {
+					return fmt.Errorf("write: %w", werr)
+				}
+				samples += int64(len(chunk))
+				if time.Now().After(deadline) {
+					return nil
+				}
 			}
 		}
+	}()
+
+	// Close for flush/error visibility right here; report a close error only
+	// when the stream itself succeeded (so the real cause isn't masked).
+	closeErr := f.Close()
+	if streamErr == nil && closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+		streamErr = closeErr
 	}
+	return samples, bytesPerSample, sub.Dropped(), streamErr
 }
 
-func finishIQCapture(log *slog.Logger, spec iqCaptureSpec, f io.Closer, samples int64, bytesPerSample int, drops uint64, runErr error) error {
-	// Best-effort close; the deferred Close in runIQCapture also fires
-	// but we want flush/error visibility right here.
-	closeErr := f.Close()
+func finishIQCapture(log *slog.Logger, spec iqCaptureSpec, samples int64, bytesPerSample int, drops uint64, runErr error) error {
 	args := []any{
 		"serial", spec.Serial, "path", spec.Path,
 		"samples", samples, "bytes", samples * int64(bytesPerSample),
@@ -159,11 +173,6 @@ func finishIQCapture(log *slog.Logger, spec iqCaptureSpec, f io.Closer, samples 
 	if runErr != nil {
 		args = append(args, "err", runErr)
 		log.Warn("iq-capture: stopped", args...)
-		// Closing twice is harmless on *os.File; ignore the second
-		// "file already closed" error.
-		if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
-			return fmt.Errorf("%w (and close: %v)", runErr, closeErr)
-		}
 		return runErr
 	}
 	log.Info("iq-capture: finished", args...)
@@ -182,9 +191,6 @@ func finishIQCapture(log *slog.Logger, spec iqCaptureSpec, f io.Closer, samples 
 			"drops", drops, "path", spec.Path,
 			"cause", "capture writer fell behind the IQ stream (subscriber buffer full), not an SDR overflow",
 			"remedy", "write to faster storage, lower sdr.sample_rate, or reduce concurrent IQ sinks; check Prometheus sdr_iq_underruns_total to rule out an SDR overrun")
-	}
-	if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
-		return closeErr
 	}
 	return nil
 }

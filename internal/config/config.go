@@ -494,6 +494,59 @@ type PagingPOCSAGConfig struct {
 type BasebandConfig struct {
 	Record []BasebandRecordConfig `yaml:"record"`
 	Replay []BasebandReplayConfig `yaml:"replay"`
+	// AutoRecord grabs a short slice of the control SDR's raw IQ whenever a
+	// classified event fires (concurrent calls, an unserved grant, an
+	// encrypted/emergency grant, or a manual API trigger). The captures are
+	// self-describing (`.metadata.json` sidecar) so they drop straight into
+	// `replay`/siglab — the event-driven debugging hook the operator asked for.
+	AutoRecord BasebandAutoRecordConfig `yaml:"auto_record"`
+}
+
+// BasebandAutoRecordConfig configures event-triggered raw-IQ capture of the
+// control SDR. Empty/disabled == off (zero cost). Files land in Dir named
+// `<system>_<UTC>_<reason>_<freqHz>_<rateHz>.<ext>` so the capture time and
+// trigger are obvious from the filename alone.
+type BasebandAutoRecordConfig struct {
+	// Enabled turns the whole feature on. When false every trigger is a no-op.
+	Enabled bool `yaml:"enabled"`
+	// Dir is the directory triggered captures (and their metadata sidecars)
+	// are written into. Required when Enabled.
+	Dir string `yaml:"dir"`
+	// Format is the on-disk sample format: "cs16" (default), "f32"
+	// (GNU Radio cfile), or "u8" (rtl_sdr native). Parsed by
+	// siglab.ParseSampleFormat.
+	Format string `yaml:"format"`
+	// Seconds is the length of each triggered capture. Required when Enabled.
+	Seconds int `yaml:"seconds"`
+	// Cooldown is a Go duration string ("10s") — the minimum gap between two
+	// automatic triggers, so a burst of grants doesn't spawn a capture storm.
+	// Empty defaults to 10s. The manual API trigger bypasses the cooldown.
+	Cooldown string `yaml:"cooldown"`
+	// OnConcurrentCalls fires a capture when this many voice calls (or more)
+	// are active on the system at once. 0 disables this trigger. This is the
+	// operator's headline "record when more than one grant at the same time".
+	OnConcurrentCalls int `yaml:"on_concurrent_calls"`
+	// OnNoVoiceDevice fires when a grant arrives but every voice tuner is busy
+	// (the "no voice device available for grant" overload moment).
+	OnNoVoiceDevice bool `yaml:"on_no_voice_device"`
+	// OnEncrypted fires on a grant flagged encrypted (TEA/AES/DES).
+	OnEncrypted bool `yaml:"on_encrypted"`
+	// OnEmergency fires on an emergency-flagged grant.
+	OnEmergency bool `yaml:"on_emergency"`
+}
+
+// autoRecordDefaultCooldown is used when Cooldown is empty.
+const autoRecordDefaultCooldown = 10 * time.Second
+
+// CooldownDuration parses Cooldown, falling back to autoRecordDefaultCooldown
+// on an empty string. Validate rejects a malformed value, so callers may
+// ignore the error at runtime.
+func (a BasebandAutoRecordConfig) CooldownDuration() (time.Duration, error) {
+	s := strings.TrimSpace(a.Cooldown)
+	if s == "" {
+		return autoRecordDefaultCooldown, nil
+	}
+	return time.ParseDuration(s)
 }
 
 // BasebandRecordConfig taps one tuner's IQ to WAV recordings.
@@ -1942,6 +1995,9 @@ func (c *Config) resolvePaths(base string) {
 	c.Log.PowerLog.Path = resolve(c.Log.PowerLog.Path)
 	c.Log.EventLog.Path = resolve(c.Log.EventLog.Path)
 	c.API.Auth.TokenFile = resolve(c.API.Auth.TokenFile)
+	if c.Baseband.AutoRecord.Dir != "" {
+		c.Baseband.AutoRecord.Dir = resolve(c.Baseband.AutoRecord.Dir)
+	}
 	for i := range c.Baseband.Record {
 		c.Baseband.Record[i].Dir = resolve(c.Baseband.Record[i].Dir)
 	}
@@ -2455,6 +2511,30 @@ func (c Config) validateBaseband() []error {
 		default:
 			errs = append(errs, fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i))
 		}
+	}
+	if a := c.Baseband.AutoRecord; a.Enabled {
+		if a.Dir == "" {
+			errs = append(errs, fmt.Errorf("baseband.auto_record: dir required when enabled"))
+		}
+		if a.Seconds <= 0 {
+			errs = append(errs, fmt.Errorf("baseband.auto_record: seconds must be a positive integer"))
+		}
+		// Format is validated against the siglab sample-format set inline (the
+		// widely-imported config package deliberately does not import siglab).
+		// Keep this list in sync with siglab.ParseSampleFormat.
+		switch strings.ToLower(strings.TrimSpace(a.Format)) {
+		case "", "cs16", "f32", "u8":
+		default:
+			errs = append(errs, fmt.Errorf("baseband.auto_record: format must be cs16|f32|u8, got %q", a.Format))
+		}
+		if a.OnConcurrentCalls < 0 {
+			errs = append(errs, fmt.Errorf("baseband.auto_record: on_concurrent_calls must not be negative"))
+		}
+		if _, err := a.CooldownDuration(); err != nil {
+			errs = append(errs, fmt.Errorf("baseband.auto_record: cooldown %q: %w", a.Cooldown, err))
+		}
+		// No automatic trigger set is allowed: it leaves the feature armed for
+		// the manual API trigger only (still a valid, useful configuration).
 	}
 	return errs
 }

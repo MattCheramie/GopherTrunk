@@ -586,6 +586,7 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 	if s == nil {
 		return nil
 	}
+	s.rawFrames++
 	if s.raw != nil {
 		if _, err := s.raw.Write(frame); err != nil {
 			return err
@@ -955,9 +956,16 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		audioSec := float64(dataBytes) / (float64(s.sampleRate) * 2)
 		wallSec := endedAt.Sub(s.startedAt).Seconds()
 		if wallSec > 1 && audioSec < 0.75*wallSec {
+			// audio_pct is the frame yield: how much of the call span actually
+			// decoded to audio. A very low value (e.g. 0.1 s / 5.4 s = ~2%) with
+			// a small frames count is the fingerprint of upstream frame loss
+			// (few TCH/S bursts passing CRC on a starved same-carrier tap), not
+			// a genuinely short over. Surfacing frames + pct makes that
+			// diagnosable from this one line.
 			r.log.Debug("recorder: recording shorter than call span",
-				"device", serial, "wav", s.wavPath,
-				"audio_seconds", round1(audioSec), "wall_seconds", round1(wallSec))
+				"device", serial, "wav", s.wavPath, "vocoder", s.vocoderName,
+				"audio_seconds", round1(audioSec), "wall_seconds", round1(wallSec),
+				"frames", s.rawFrames, "audio_pct", round1(100*audioSec/wallSec))
 		}
 	}
 	// Smooth an abrupt end-of-call cut on decoded digital voice. A short
@@ -1253,6 +1261,12 @@ type recordingSession struct {
 	// first frame (openSessionFiles), so a call with no audio never leaves a
 	// 0-byte .raw behind.
 	rawWanted bool
+	// rawFrames counts vocoder frames delivered to this session (each ~one
+	// speech frame, e.g. 30 ms for TETRA ACELP). Surfaced in the
+	// "recording shorter than call span" diagnostic so the frame yield of a
+	// too-short digital recording is visible without cross-referencing the
+	// composer's follow-ended log.
+	rawFrames int
 	startedAt time.Time
 	// callID is the Grant.CallID of the call this session records. Frames
 	// arriving via WriteRawFrameForCall with a different non-zero callID are

@@ -1303,6 +1303,21 @@ broadcast:
 #       serial: "replay-01"
 #       role: "control"
 #       loop: true
+#   # Event-driven raw-IQ capture of the control SDR. When a classified event
+#   # fires, a short slice of raw IQ is written to `dir` with a self-describing
+#   # filename (<system>_<UTC>_<reason>_<freqHz>_<rateHz>hz.<ext>) plus a
+#   # .metadata.json sidecar, so the file drops straight into `replay`/siglab.
+#   # A manual trigger is also exposed at POST /api/v1/siglab/autorecord/trigger.
+#   auto_record:
+#     enabled: true
+#     dir: "../iq/auto/"
+#     format: cs16               # cs16 (default) | f32 (GNU Radio cfile) | u8
+#     seconds: 8                 # capture length per trigger
+#     cooldown: 10s              # min gap between automatic triggers
+#     on_concurrent_calls: 2     # fire at N+ concurrent calls (0 = off)
+#     on_no_voice_device: true   # fire when a grant found no free voice tuner
+#     on_encrypted: true         # fire on an encrypted grant
+#     on_emergency: true         # fire on an emergency grant
 
 # User-interface tabs. Every navigation tab shows by default in both the
 # web UI and the terminal TUI. If you run GopherTrunk for one main task

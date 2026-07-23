@@ -489,6 +489,13 @@ func (e *Engine) HandleGrant(g Grant) {
 	}
 	if !CanPreempt(victim.Grant, victim.Talkgroup, g, tg) {
 		e.log.Info("no voice device available for grant", "grant", g.String())
+		// Signal the overload so the IQ auto-recorder can capture the carrier
+		// at the instant the system had more calls than voice tuners. Payload
+		// is the grant that went unserved.
+		e.bus.Publish(events.Event{
+			Kind:    events.KindGrantUnserved,
+			Payload: g,
+		})
 		return
 	}
 	// 3) Preempt: end victim, allocate freed device.
