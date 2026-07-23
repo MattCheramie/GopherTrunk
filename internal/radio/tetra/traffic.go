@@ -25,14 +25,13 @@ import (
 // sequence and emits them concatenated as one 432-bit (54-byte) full-slot
 // traffic frame.
 //
-// The emitted frame is the raw, still-scrambled type-5 payload. TCH/S
-// channel decoding (the unequal-error-protection scheme of §8.4) and the
-// TETRA ACELP vocoder are deliberately NOT applied here — they are the
-// labelled follow-ups. The raw frames go to the recorder's `.raw` sidecar
-// for out-of-band decode, exactly as the DMR / P25 / EDACS-ProVoice voice
-// paths write their post-FEC or raw frames. Being scrambled, a consumer
-// descrambles with the cell's extended colour code (learned from the
-// control channel's BSCH) before TCH/S FEC.
+// The emitted frame is the raw, still-scrambled type-5 payload; TCH/S channel
+// decoding (§5.5) and the ACELP vocoder run downstream in the composer's TETRA
+// chain (tch.go + internal/voice/acelp), which descrambles with the cell's
+// extended colour code (learned from the control channel's BSCH), TCH/S-decodes
+// each burst into 137-bit speech frames, and renders them to PCM. The raw frames
+// are also written to the recorder's `.raw` sidecar, exactly as the DMR / P25 /
+// EDACS-ProVoice voice paths write their post-FEC or raw frames.
 //
 // Slot demultiplexing: the extractor emits a frame for every NCDB it sees
 // on the carrier — all four TDMA timeslots — and tags each with its TDMA

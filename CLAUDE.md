@@ -65,3 +65,21 @@ confirmation before any close-as-completed.
   at the Airspy's native 10 MS/s clock. `TestDownconverterSNRInvariantAcrossRate`
   in the file above pins this: a noisy channel reaches the receiver at the same
   in-channel SNR whether decoded natively at 10 MS/s or decimated to 2.5 MS/s.
+- **TETRA voice** decodes end-to-end: traffic burst → TCH/S channel decode
+  (`internal/radio/tetra/tch.go`) → clean-room ACELP vocoder
+  (`internal/voice/acelp`) → PCM. Two independent conformance passes against the
+  **ETSI EN 300 395-2 reference C codec** underpin it, and both are reproducible
+  via skip-guarded harnesses: `internal/voice/acelp/etsi_reference_test.go`
+  (feed both the same 137-bit bitstream → bit-identical PCM) and
+  `cmd/gophertrunk/tetra_multislot_replay_test.go` (replay a real cs16 IQ capture
+  → per-slot audio, correlated against the control channel's grant timeslots).
+  Build the ETSI tools with `Word32` as a 32-bit `int` — on LP64 the default
+  `typedef long` is 64-bit and every saturating op returns garbage. Lessons that
+  cost time: the class-2 CRC is a fixed parity-check matrix (the reference's
+  `TAB_CRC` tables), **not** a `G(X)` LFSR — the wrong CRC silently dropped every
+  on-air burst while synthetic round-trips passed (self-consistent bug); TCH/S is
+  hard-decision while the control SCH path is soft-decision; and the SB anchors
+  the slot grid one NDB-slot before its frame's TN1 traffic
+  (`ndbSBSlotShift` in `traffic.go`). When "voice doesn't decode" but the vocoder
+  unit tests pass, suspect the channel coding (CRC / interleave / reorder), not
+  the vocoder — validate the whole chain against the reference, not just parts.

@@ -76,7 +76,7 @@ Default mapping (see `voice.DefaultVocoderForProtocol`):
 | `dmr-tier3`    | `ambe2` | DMR Tier III trunked             |
 | `nxdn`         | `ambe2` |                                  |
 | `dpmr`         | `ambe2` | dPMR Mode 3                      |
-| `tetra`        | `ambe2` |                                  |
+| `tetra`        | `tetra-acelp` | full-rate ACELP; up to 4 concurrent same-carrier timeslots |
 
 Analog protocols (`motorola`, `edacs`, `ltr`, `mpt1327`, etc.)
 have no entry — for those, the composer's FM chain feeds
@@ -298,11 +298,15 @@ synthesis filter. Bit-exact fixed-point arithmetic (ITU-T-style 16/32-bit
 saturating operators) underlies every block.
 
 **Slot isolation.** The traffic extractor emits a burst for every TDMA
-timeslot on the carrier. The TCH/S class-2 CRC is used as the slot filter:
-only the granted call's TCH/S speech bursts verify, so other slots'
-signalling bursts (and encrypted TEA1-4 traffic) are dropped. This cleanly
-separates a *single* active call; two concurrent TCH/S calls on the same
-carrier would still need TDMA frame-number demux (a follow-up).
+timeslot on the carrier and tags each with its TDMA timeslot (1..4),
+numbered from the synchronisation burst that anchors the 255-dibit slot
+grid. The composer's TETRA chain keeps only bursts on its granted timeslot,
+so up to four concurrent calls on one carrier — one per slot, each on its
+own `cc:same-carrier:N` tap — decode into four independent recordings. The
+TCH/S class-2 CRC still gates what counts as speech (signalling bursts and
+encrypted TEA1-4 traffic fail it); until the slot grid anchors, or on a
+traffic-only carrier with no synchronisation burst, the chain falls back to
+CRC-gated single-call isolation.
 
 **Provenance / licensing.** The decoder was ported from the *algorithmic*
 description in EN 300 395-2 and the ITU-T fixed-point operator
@@ -317,11 +321,19 @@ project; operators in licence-restrictive jurisdictions should evaluate
 with counsel. The decoder lives behind an explicit vocoder registration
 (`tetra-acelp`) so builds can omit it.
 
-**Validation.** Each block carries unit tests validated *independently*
-of the reference where possible (e.g. the LSP→LPC conversion is checked
-against the LSP root property; log2/pow2 against `math`; the synthesis
-filter against a float recursion). Bit-exact conformance against the ETSI
-clause-4 test sequences is the remaining validation step (see Future work).
+**Validation.** Each block carries unit tests validated *independently* of
+the reference where possible (e.g. the LSP→LPC conversion is checked against
+the LSP root property; log2/pow2 against `math`; the synthesis filter against
+a float recursion). Beyond that, the decoder is **bit-exact** to the ETSI
+EN 300 395-2 reference codec: feeding both the same 137-bit bitstream yields
+identical PCM sample-for-sample (0 / 96000 mismatches over 400 frames,
+including erasure/BFI frames). The TCH/S channel decode was validated the
+same way against the ETSI reference *channel* codec — GT's type-3 frame is
+bit-identical, which is how the class-2 CRC error that had been dropping
+every on-air burst was found and fixed. The ACELP check is reproducible via the
+skip-guarded harness `internal/voice/acelp/etsi_reference_test.go`; the class-2
+CRC is guarded in-tree by `TestTCHClass2CRCMatchesETSI` (two reference-verified
+vectors). The ETSI sources/vectors themselves are copyrighted and not committed.
 
 ## Future work
 
@@ -340,8 +352,9 @@ clause-4 test sequences is the remaining validation step (see Future work).
   long-running archives.
 - Plain AMBE decoder for D-STAR voice (different algorithm from AMBE+2;
   same DVSI patent family).
-- TETRA ACELP: bit-exact conformance against the ETSI EN 300 395-2
-  clause-4 test sequences (add under `internal/voice/acelp/testdata/`),
-  and TDMA frame-number slot demux so concurrent same-carrier TCH/S
-  calls separate cleanly (today a single active call is isolated by the
-  TCH/S CRC).
+- TETRA ACELP concurrent-call decoding runs four independent TETRA
+  receivers (one per same-carrier tap) over the same IQ; sharing one
+  receiver's slot-tagged bursts across the per-slot chains would cut that
+  CPU. Per-burst talkgroup gating is also still disabled for TETRA (the
+  boundary tracker uses grantTG 0) because TCH/S carries no in-band
+  talkgroup identity.
