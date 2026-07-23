@@ -73,6 +73,26 @@ func newTestAutoRecorder(t *testing.T, cfg config.BasebandAutoRecordConfig) (*iq
 	a.now = clock.now
 	rec := &captureRecorder{}
 	a.capture = rec.fn
+	// A capture goroutine writes its metadata sidecar into cfg.Dir AFTER the
+	// capture func returns, so wait for the recorder to go idle before t.TempDir's
+	// RemoveAll runs (registered earlier ⇒ this LIFO cleanup runs first). Release
+	// any capture still blocked on rec.block so the drain can complete.
+	t.Cleanup(func() {
+		rec.mu.Lock()
+		if rec.block != nil {
+			select {
+			case <-rec.block: // already closed
+			default:
+				close(rec.block)
+			}
+			rec.block = nil
+		}
+		rec.mu.Unlock()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) && a.inFlightCount() > 0 {
+			time.Sleep(2 * time.Millisecond)
+		}
+	})
 	return a, rec, clock
 }
 
@@ -208,7 +228,8 @@ func TestAutoRecordInFlightCap(t *testing.T) {
 	if rec.count() != autoRecordMaxInFlight {
 		t.Fatalf("in-flight cap breached: got %d, want %d", rec.count(), autoRecordMaxInFlight)
 	}
-	close(rec.block)
+	// The blocked captures are released and drained by the t.Cleanup registered
+	// in newTestAutoRecorder before the temp dir is removed.
 }
 
 func TestAutoRecordFilename(t *testing.T) {

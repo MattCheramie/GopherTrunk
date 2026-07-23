@@ -119,6 +119,15 @@ func newIQAutoRecorder(cfg config.BasebandAutoRecordConfig, system, protocol, se
 // for the (validated-away) error path in the constructor.
 const autoRecordDefaultCooldownFallback = 10 * time.Second
 
+// inFlightCount returns the number of captures currently running. Used by
+// tests to wait until the recorder is idle before tearing down temp dirs (a
+// capture goroutine writes its metadata sidecar after the capture returns).
+func (a *iqAutoRecorder) inFlightCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.inFlight
+}
+
 // defaultCapture writes the capture through the shared captureIQToFile helper.
 func (a *iqAutoRecorder) defaultCapture(ctx context.Context, path string, format siglab.SampleFormat, seconds int) (int64, uint64, error) {
 	if a.broker == nil {
