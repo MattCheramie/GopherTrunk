@@ -48,8 +48,8 @@ const (
 	// carrier at the instant the system was too busy to follow a call.
 	KindGrantUnserved Kind = "grant.unserved"
 	KindToneAlert     Kind = "tone.alert"
-	KindDecodeError Kind = "decode.error"
-	KindError       Kind = "error"
+	KindDecodeError   Kind = "decode.error"
+	KindError         Kind = "error"
 	// Scanner subsystem (internal/scanner/cchunt):
 	//   KindHuntProgress fires once per CC candidate the hunter
 	//     tries — payload identifies which system + frequency +
