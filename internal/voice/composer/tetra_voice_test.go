@@ -3,6 +3,8 @@ package composer
 import (
 	"context"
 	"math"
+	"math/rand"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,11 +42,19 @@ func buildTETRATrafficDibits(nSlots int) []uint8 {
 
 // TestComposerTETRAVoiceChainLifecycle drives the composer's TETRA
 // traffic-follow path end to end: modulated π/4-DQPSK IQ → TETRA receiver →
-// TrafficExtractor → TCH/S decode, and confirms the chain starts, recovered
-// bursts keep the engine's call alive, and the call ends on hangtime once the
-// IQ stops. The filler bursts do not carry valid TCH/S, so the CRC gate emits
-// no speech frames — speech-frame decoding is covered by the tetra package's
-// TCHSpeechFrames test and the ACELP vocoder tests.
+// TrafficExtractor → TCH/S decode, and confirms the chain starts and — because
+// the filler bursts carry no valid TCH/S speech (the CRC gate rejects them) —
+// the call is NOT kept alive by raw carrier activity and tears down via the
+// no-voice startup timeout instead of hanging on the carrier forever. This is
+// the regression guard for the "active call never ends" bug: before the fix,
+// every recovered burst refreshed the hangtime timer, so a continuous carrier
+// held the single voice device indefinitely.
+//
+// The speech-keeps-the-call-alive / ends-on-hangtime path is covered
+// deterministically by TestTETRATrafficBurstLivenessGatedByCRC (a clean
+// EncodeTCHS→TCHSpeechFrames round trip, no DSP), which avoids depending on the
+// class-2 CRC surviving the full modulate→demod round trip under a loaded
+// -race CI.
 func TestComposerTETRAVoiceChainLifecycle(t *testing.T) {
 	const (
 		sps   = 8 // 18000 baud × 8 = 144 kHz intermediate rate
@@ -100,10 +110,75 @@ func TestComposerTETRAVoiceChainLifecycle(t *testing.T) {
 	waitFor(t, 10*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
 	src.SendIQ(iq)
 
-	// Recovered bursts keep the engine's call alive while traffic flows.
-	waitFor(t, 20*time.Second, func() bool { return eng.touched.Load() > 0 })
+	// The filler bursts carry no valid TCH/S speech, so no matching voice frame
+	// ever decodes. The boundary tracker must therefore end the call via the
+	// no-voice startup timeout (2×VoiceHangtime) — NOT keep it alive off raw
+	// carrier activity. Reason timeout matches the "silent-from-start" teardown.
+	waitFor(t, 15*time.Second, func() bool { return eng.endReason("VOICE-1") == trunking.EndReasonTimeout })
+}
 
-	// After the IQ stops, the boundary tracker ends the call on hangtime
-	// (VoiceHangtime after the last decoded burst).
-	waitFor(t, 15*time.Second, func() bool { return eng.endReason("VOICE-1") == trunking.EndReasonNormal })
+// TestTETRATrafficBurstLivenessGatedByCRC is the direct regression for the
+// "active call never ends" bug. It exercises onTETRATrafficBurst without any DSP
+// and asserts that call liveness is driven ONLY by CRC-valid TCH/S speech:
+//
+//   - a non-TCH/S (junk) burst must NOT touch the boundary tracker — no onVoice,
+//     no sawVoice, no lastVoiceNano advance, no speech frame written; and
+//   - a CRC-valid TCH/S burst (EncodeTCHS) must mark voice activity and emit the
+//     two 137-bit speech frames.
+//
+// Before the fix, onVoice fired on every raw burst, so the junk case would set
+// sawVoice / advance lastVoiceNano — and a continuous carrier of such bursts
+// held the voice device forever. This test fails on that code and passes once
+// liveness is gated on TCHSpeechFrames.
+func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	bt := c.newBoundaryTracker("VOICE-1", 0, nil)
+	rs := &recordingSink{}
+	var bursts, speech atomic.Uint64
+
+	// Case A: a deterministic non-TCH/S 54-byte burst. Guard that the CRC gate
+	// rejects it (it does for this fixed vector), then confirm it leaves the
+	// call-liveness state completely untouched.
+	junk := make([]byte, tetra.TrafficFrameBytes)
+	rng := rand.New(rand.NewSource(42))
+	rng.Read(junk)
+	if tetra.TCHSpeechFrames(junk) != nil {
+		t.Fatalf("test vector precondition: junk frame unexpectedly passed the TCH/S CRC gate")
+	}
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", junk, &bursts, &speech)
+	if bt.sawVoice.Load() {
+		t.Error("non-speech burst set sawVoice — liveness not gated on CRC-valid speech")
+	}
+	if got := bt.lastVoiceNano.Load(); got != 0 {
+		t.Errorf("non-speech burst advanced lastVoiceNano to %d, want 0", got)
+	}
+	if n := len(rs.rawFrames("VOICE-1")); n != 0 {
+		t.Errorf("non-speech burst wrote %d raw frames, want 0", n)
+	}
+	if got := speech.Load(); got != 0 {
+		t.Errorf("non-speech burst counted %d speech frames, want 0", got)
+	}
+	if got := bursts.Load(); got != 1 {
+		t.Errorf("bursts = %d after one call, want 1", got)
+	}
+
+	// Case B: a CRC-valid TCH/S burst carrying two 137-bit speech frames. It must
+	// mark voice activity and emit both speech frames to the recorder.
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", frame, &bursts, &speech)
+	if !bt.sawVoice.Load() {
+		t.Error("CRC-valid TCH/S burst did not set sawVoice")
+	}
+	if bt.lastVoiceNano.Load() == 0 {
+		t.Error("CRC-valid TCH/S burst did not advance lastVoiceNano")
+	}
+	if n := len(rs.rawFrames("VOICE-1")); n != 2 {
+		t.Errorf("CRC-valid burst wrote %d raw frames, want 2", n)
+	}
+	if got := speech.Load(); got != 2 {
+		t.Errorf("speech frames = %d, want 2", got)
+	}
+	if got := bursts.Load(); got != 2 {
+		t.Errorf("bursts = %d after two calls, want 2", got)
+	}
 }
