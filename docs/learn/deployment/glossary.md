@@ -133,3 +133,76 @@ trends. See [Monitoring & updates](/learn/deployment/monitoring-and-updates/)
 
 **Rolling update** — Deploying a new version while watching its health, ready to roll
 back. See [Monitoring & updates](/learn/deployment/monitoring-and-updates/)
+
+## Lifecycle & releases
+
+**Deployment lifecycle** — The repeating loop every change moves through: build, test,
+release, deploy, operate. See [The deployment lifecycle](/learn/deployment/the-deployment-lifecycle/)
+
+**Rolling / blue-green / canary** — Release strategies that push a new version gradually,
+by switching between two environments, or to a small slice of users first. See [Release strategies](/learn/deployment/release-strategies/)
+
+## More on containers
+
+**Distroless / scratch base** — Minimal container base images with little or no OS
+userland, shrinking size and attack surface. See [Optimizing container images](/learn/deployment/container-image-optimization/)
+
+**.dockerignore** — A file listing paths to exclude from the build context, keeping images
+small and builds fast. See [Optimizing container images](/learn/deployment/container-image-optimization/)
+
+**Bridge network / port publishing** — How Docker gives containers an internal network and
+maps their ports to the host. See [Container networking & volumes](/learn/deployment/container-networking-and-volumes/)
+
+**Capability (Linux)** — A fine-grained privilege; containers drop all and add back only
+what they need. See [Container security](/learn/deployment/container-security/)
+
+**Image scanning** — Automatically checking an image for known vulnerabilities before
+deploying it. See [Container security](/learn/deployment/container-security/)
+
+## Networking, data & hardening
+
+**Reverse proxy** — A server (nginx, Caddy) in front of an app that terminates TLS and
+routes requests to it. See [Reverse proxies & TLS](/learn/deployment/reverse-proxies-and-tls/)
+
+**TLS termination** — Handling HTTPS encryption at the proxy so the app behind it can
+speak plain HTTP. See [Reverse proxies & TLS](/learn/deployment/reverse-proxies-and-tls/)
+
+**Stateful vs stateless** — Whether a service keeps important data locally; stateful data
+needs backups and a persistence plan. See [Backups & persistent data](/learn/deployment/backups-and-data/)
+
+**Least privilege** — Granting a service only the access it needs — the core idea behind
+production hardening. See [Production hardening](/learn/deployment/production-hardening/)
+
+## Automate & scale
+
+**Infrastructure as code (IaC)** — Describing servers and services in versioned,
+declarative files (Terraform, Ansible). See [Infrastructure as code](/learn/deployment/infrastructure-as-code/)
+
+**Orchestrator** — A system (like Kubernetes) that schedules, heals, and scales many
+containers across machines. See [Container orchestration](/learn/deployment/container-orchestration/)
+
+**Horizontal vs vertical scaling** — Adding more instances vs making one instance bigger;
+a load balancer spreads traffic across instances. See [Scaling & load balancing](/learn/deployment/scaling-and-load-balancing/)
+
+**Load balancer** — A component that distributes incoming requests across several service
+instances. See [Scaling & load balancing](/learn/deployment/scaling-and-load-balancing/)
+
+**Connection draining** — Letting in-flight requests finish before removing an old
+instance during a deploy. See [Zero-downtime deploys](/learn/deployment/zero-downtime-deploys/)
+
+## Operate
+
+**Observability** — Understanding a system from its outputs, via the three pillars of
+metrics, logs, and traces. See [Observability — metrics, logs & traces](/learn/deployment/observability/)
+
+**Trace** — A record following one request across services, showing where time is spent.
+See [Observability — metrics, logs & traces](/learn/deployment/observability/)
+
+**Alert / on-call** — An automatic notification when a metric crosses a threshold, and the
+rotation of who responds. See [Alerting & on-call](/learn/deployment/alerting-and-oncall/)
+
+**Runbook / postmortem** — A documented response procedure, and the blameless review that
+follows an incident. See [Incident response & runbooks](/learn/deployment/incident-response/)
+
+**Right-sizing** — Matching allocated CPU and memory to what a service actually needs, to
+control cost. See [Cost & resource management](/learn/deployment/cost-and-resources/)

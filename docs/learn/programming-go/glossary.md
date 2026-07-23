@@ -146,3 +146,63 @@ test -bench`. See [Testing in Go](/learn/programming-go/testing-in-go/)
 
 **Standard library** — The large set of packages Go ships with — `io`, `net/http`,
 `encoding/json`, and many more — reducing the need for dependencies. See [The standard library](/learn/programming-go/the-standard-library/)
+
+## Control flow & memory
+
+**Control flow** — Go's small set of control structures: `if`, a single `for` loop
+that covers every looping case, and `switch`. See [Control flow](/learn/programming-go/control-flow/)
+
+**Pointer** — A value holding the address of another value; Go has pointers (`*T`, `&x`)
+but no pointer arithmetic. See [Pointers](/learn/programming-go/pointers/)
+
+## Data & text
+
+**Rune** — Go's name for a Unicode code point (an `int32`); ranging over a string yields
+runes, not bytes. See [Strings, bytes & runes](/learn/programming-go/strings-and-runes/)
+
+**Struct tag** — A string annotation on a struct field (like `json:"name"`) that guides
+encoding such as JSON. See [JSON & serialization](/learn/programming-go/json-and-serialization/)
+
+**Marshal / Unmarshal** — Converting a Go value to JSON (marshal) and back (unmarshal)
+with `encoding/json`. See [JSON & serialization](/learn/programming-go/json-and-serialization/)
+
+**bufio** — Buffered wrappers around readers and writers for efficient I/O. See [Working with files & I/O](/learn/programming-go/working-with-files/)
+
+## Concurrency
+
+**Context** — A value carrying cancellation and deadlines through a call tree; passed as
+the first argument by convention. See [Context & cancellation](/learn/programming-go/context-and-cancellation/)
+
+**Worker pool** — A fixed set of goroutines pulling jobs off a channel — a core
+concurrency pattern. See [Concurrency patterns](/learn/programming-go/concurrency-patterns/)
+
+**Pipeline / fan-out / fan-in** — Composing stages connected by channels, splitting work
+across goroutines and merging results. See [Concurrency patterns](/learn/programming-go/concurrency-patterns/)
+
+## Dependencies, errors & quality
+
+**`go.sum`** — The file recording cryptographic checksums of dependencies for
+reproducible, verifiable builds. See [Dependency management](/learn/programming-go/dependency-management/)
+
+**Error wrapping** — Adding context to an error with `fmt.Errorf("...: %w", err)`,
+inspected later with `errors.Is` / `errors.As`. See [Error-handling patterns](/learn/programming-go/error-handling-patterns/)
+
+**Sentinel error** — A predefined error value (like `io.EOF`) compared against with
+`errors.Is`. See [Error-handling patterns](/learn/programming-go/error-handling-patterns/)
+
+**Benchmark / pprof** — A `func BenchmarkX(b *testing.B)` measuring performance, and the
+profiler for finding hot paths. See [Benchmarking & profiling](/learn/programming-go/benchmarking-and-profiling/)
+
+**delve** — The Go debugger (`dlv`) for stepping through code and inspecting state. See
+[Debugging Go](/learn/programming-go/debugging-go/)
+
+**`log/slog`** — The standard structured-logging package: leveled log records with
+key/value attributes. See [Logging with slog](/learn/programming-go/logging-and-slog/)
+
+## Idioms & structure
+
+**`cmd/` and `internal/`** — Conventional directories for entry points and private
+packages in a Go repository. See [Structuring a Go project](/learn/programming-go/project-structure/)
+
+**Idiomatic Go** — Code written the community way: gofmt-formatted, explicit errors,
+small interfaces, clear names. See [Writing idiomatic Go](/learn/programming-go/idiomatic-go/)

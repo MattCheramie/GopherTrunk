@@ -2956,7 +2956,7 @@ modules:
     title: "Learn Go — from your first program to reading real code"
     tagline: "The language GopherTrunk is written in — from hello world to goroutines, interfaces, and reading a real Go codebase."
     start_slug: why-go
-    workload: "PT5H"
+    workload: "PT9H"
     intro: >
       A hands-on path into Go, the language GopherTrunk itself is built in. Start
       with why Go exists and your first compiled program, learn the type system,
@@ -2986,9 +2986,9 @@ modules:
             minutes: 9
             level: beginner
             status: full
-      - id: the-language
-        label: "Unit 2 — The Language"
-        blurb: "Values, functions, errors, structs, and interfaces — the core of Go."
+      - id: language-fundamentals
+        label: "Unit 2 — Language Fundamentals"
+        blurb: "Values, control flow, functions, errors, pointers, structs, and interfaces — the core of Go."
         lessons:
           - slug: values-and-types
             title: Values, variables & types
@@ -2996,11 +2996,23 @@ modules:
             minutes: 9
             level: beginner
             status: full
+          - slug: control-flow
+            title: Control flow
+            summary: if, for, and switch — Go's deliberately small set of control structures, including the one loop keyword that does everything.
+            minutes: 9
+            level: beginner
+            status: full
           - slug: functions-and-errors
             title: Functions & error handling
-            summary: Multiple return values, the error interface, and why Go returns errors instead of throwing exceptions — the pattern you will see on every line.
+            summary: Multiple return values, the error interface, and why Go returns errors instead of throwing exceptions — the pattern you'll see on every line.
             minutes: 10
             level: beginner
+            status: full
+          - slug: pointers
+            title: Pointers
+            summary: What a pointer is, why Go has them without pointer arithmetic, and how they let functions modify values and avoid copying big structs.
+            minutes: 9
+            level: intermediate
             status: full
           - slug: structs-and-methods
             title: Structs & methods
@@ -3014,9 +3026,37 @@ modules:
             minutes: 10
             level: intermediate
             status: full
+      - id: data-and-text
+        label: "Unit 3 — Data & Text"
+        blurb: "The collections, text, files, and encodings real programs are built from."
+        lessons:
+          - slug: slices-maps-generics
+            title: Slices, maps & generics
+            summary: Go's core collections — slices and maps — how they grow and alias, plus type parameters (generics) for reusable, type-safe code.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: strings-and-runes
+            title: Strings, bytes & runes
+            summary: How Go handles text — immutable strings, byte slices, and runes — and why Unicode means a character isn't always one byte.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: json-and-serialization
+            title: JSON & serialization
+            summary: Turning Go structs into JSON and back with encoding/json, struct tags, and the marshal/unmarshal pattern behind most APIs and config.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: working-with-files
+            title: Working with files & I/O
+            summary: Reading and writing files and streams with os, io, and bufio — and the reader/writer interfaces that make it all composable.
+            minutes: 9
+            level: intermediate
+            status: full
       - id: concurrency
-        label: "Unit 3 — Concurrency"
-        blurb: "Goroutines, channels, and coordination — Go's headline feature."
+        label: "Unit 4 — Concurrency"
+        blurb: "Goroutines, channels, coordination, and the patterns that put them to work."
         lessons:
           - slug: goroutines
             title: Goroutines
@@ -3032,13 +3072,25 @@ modules:
             status: full
           - slug: select-and-sync
             title: select & synchronization
-            summary: Coordinate multiple channels with select, and use the sync package — mutexes, WaitGroups, contexts — when channels are not the right tool.
+            summary: Coordinate multiple channels with select, and use the sync package — mutexes, WaitGroups — when channels are not the right tool.
             minutes: 10
             level: advanced
             status: full
-      - id: building-real-programs
-        label: "Unit 4 — Building Real Programs"
-        blurb: "Packages, collections, generics, testing, and the standard library."
+          - slug: context-and-cancellation
+            title: Context & cancellation
+            summary: The context package — how a single cancel signal or timeout propagates through every goroutine in a call tree to shut work down cleanly.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: concurrency-patterns
+            title: Concurrency patterns
+            summary: Worker pools, pipelines, and fan-out/fan-in — the reusable shapes for structuring concurrent work, the way a real sample pipeline does.
+            minutes: 10
+            level: advanced
+            status: full
+      - id: packages-and-quality
+        label: "Unit 5 — Packages & Quality"
+        blurb: "Organizing, depending on, testing, measuring, and debugging real code."
         lessons:
           - slug: packages-and-modules
             title: Packages & modules
@@ -3046,28 +3098,64 @@ modules:
             minutes: 9
             level: intermediate
             status: full
-          - slug: slices-maps-generics
-            title: Slices, maps & generics
-            summary: Go's core collections — slices and maps — how they grow and alias, plus type parameters (generics) for reusable, type-safe code.
-            minutes: 10
+          - slug: dependency-management
+            title: Dependency management
+            summary: How go.mod and go.sum pin versions, how go get and go mod tidy manage dependencies, and why reproducible builds and few dependencies matter.
+            minutes: 9
             level: intermediate
+            status: full
+          - slug: error-handling-patterns
+            title: Error-handling patterns
+            summary: Beyond if err != nil — wrapping errors with %w, sentinel errors, errors.Is and errors.As, and custom error types for real programs.
+            minutes: 10
+            level: advanced
             status: full
           - slug: testing-in-go
             title: Testing in Go
-            summary: The built-in testing package, table-driven tests, benchmarks, and why testing is a first-class part of the language, not an add-on.
+            summary: The built-in testing package, table-driven tests, and why testing is a first-class part of the language, not an add-on.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: benchmarking-and-profiling
+            title: Benchmarking & profiling
+            summary: Measuring performance with benchmarks and pprof — finding the hot path before optimizing it, the way real-time DSP code demands.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: debugging-go
+            title: Debugging Go
+            summary: Finding bugs with print debugging, the delve debugger, the race detector, and static analysis — the toolkit for when a test goes red.
             minutes: 9
             level: intermediate
             status: full
           - slug: the-standard-library
             title: The standard library
-            summary: A tour of the batteries Go ships with — io, bytes, encoding, net, and more — and why you reach for a dependency far less often than in other ecosystems.
+            summary: A tour of the batteries Go ships with — io, bytes, encoding, net, and more — and why you reach for a dependency far less often than elsewhere.
             minutes: 9
             level: intermediate
             status: full
       - id: go-in-the-wild
-        label: "Unit 5 — Go in the Wild"
-        blurb: "Read real code, then chart your next steps as a Go developer."
+        label: "Unit 6 — Go in the Wild"
+        blurb: "Logging, project layout, idioms, and reading real code — then your next steps."
         lessons:
+          - slug: logging-and-slog
+            title: Logging with slog
+            summary: Structured logging with the standard log/slog package — levels, fields, and why a running service logs in structured form, not just printed lines.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: project-structure
+            title: Structuring a Go project
+            summary: The cmd, internal, and package conventions that shape real Go repositories — where code goes and why, using GopherTrunk's layout as the map.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: idiomatic-go
+            title: Writing idiomatic Go
+            summary: The conventions that make Go code look and read the same everywhere — naming, accepting interfaces, handling errors, and avoiding cleverness.
+            minutes: 9
+            level: intermediate
+            status: full
           - slug: reading-real-go
             title: Reading a real Go codebase
             summary: A guided tour of how a working SDR engine like GopherTrunk is structured in Go — packages, interfaces, and goroutines you can now recognize.
@@ -3093,7 +3181,7 @@ modules:
     title: "Learn DSP — from samples to decoded bits"
     tagline: "The math and code that turn a stream of radio samples into data — filters, FFTs, mixing, and clock recovery, the way an SDR really works."
     start_slug: what-is-dsp
-    workload: "PT5H"
+    workload: "PT9H"
     intro: >
       Software-defined radio is digital signal processing wearing an antenna. This
       path takes the ideas the RF & SDR module introduces and shows how they become
@@ -3111,6 +3199,12 @@ modules:
             minutes: 8
             level: beginner
             status: full
+          - slug: what-is-a-signal
+            title: What is a signal?
+            summary: Amplitude, phase, and the sine wave that underlies everything — the vocabulary of signals before we start turning them into numbers.
+            minutes: 8
+            level: beginner
+            status: full
           - slug: sampling-and-quantization
             title: Sampling & quantization
             summary: Turning a wave into samples — sample rate, the Nyquist limit, bit depth, and the aliasing and quantization noise that come with digitizing.
@@ -3122,6 +3216,12 @@ modules:
             summary: Why SDRs carry signals as complex I/Q pairs, what the imaginary part really means, and how negative frequency becomes a useful, everyday idea.
             minutes: 10
             level: intermediate
+            status: full
+          - slug: the-decibel-in-dsp
+            title: Decibels & dynamic range
+            summary: Why signal levels are measured in decibels, how dB math turns multiplication into addition, and what dynamic range means for a sampled signal.
+            minutes: 9
+            level: beginner
             status: full
       - id: frequency-domain
         label: "Unit 2 — The Frequency Domain"
@@ -3145,6 +3245,18 @@ modules:
             minutes: 9
             level: advanced
             status: full
+          - slug: spectrograms-and-stft
+            title: Spectrograms & the STFT
+            summary: The short-time Fourier transform — sliding the FFT along a signal to see how its spectrum changes over time, the math behind a waterfall.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: the-analytic-signal
+            title: The analytic signal & Hilbert transform
+            summary: How a real signal becomes complex I/Q in the first place — the Hilbert transform, the analytic signal, and why it removes the negative-frequency mirror.
+            minutes: 10
+            level: advanced
+            status: full
       - id: filters
         label: "Unit 3 — Filters"
         blurb: "Selecting the signal you want and throwing away the rest."
@@ -3154,6 +3266,12 @@ modules:
             summary: The operation at the heart of every filter — what an impulse response is, and how sliding-and-summing in time equals multiplying in frequency.
             minutes: 10
             level: advanced
+            status: full
+          - slug: filter-design-basics
+            title: Filter design basics
+            summary: Passband, stopband, transition width, and ripple — the specification you hand a filter designer, and how those choices trade off against each other.
+            minutes: 9
+            level: intermediate
             status: full
           - slug: fir-filters
             title: FIR filters
@@ -3172,6 +3290,12 @@ modules:
             summary: Changing sample rate without aliasing — decimation, interpolation, and rational resampling — how an SDR narrows 2.4 MS/s down to a 48 kHz channel.
             minutes: 10
             level: intermediate
+            status: full
+          - slug: matched-filters-and-pulse-shaping
+            title: Matched filters & pulse shaping
+            summary: Root-raised-cosine filters, the Nyquist no-ISI criterion, and why a matched filter at the receiver maximizes SNR right where symbols are decided.
+            minutes: 10
+            level: advanced
             status: full
       - id: signal-to-bits
         label: "Unit 4 — From Signal to Bits"
@@ -3195,20 +3319,72 @@ modules:
             minutes: 11
             level: advanced
             status: full
+          - slug: carrier-and-frequency-recovery
+            title: Carrier & frequency recovery
+            summary: Correcting the frequency and phase offset between transmitter and receiver — the PLL and Costas loop that lock a carrier before symbols can be read.
+            minutes: 10
+            level: advanced
+            status: full
           - slug: gain-and-agc
             title: Gain & automatic gain control
             summary: Keeping a signal at a usable amplitude as it fades — how an AGC loop works and why the demodulator needs stable levels to decide symbols correctly.
             minutes: 9
             level: intermediate
             status: full
+          - slug: constellations-and-symbol-mapping
+            title: Constellations & symbol mapping
+            summary: Reading digital modulation as points on the I/Q plane — how PSK and QAM map bits to symbols, and what a constellation diagram tells you.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: equalization
+            title: Equalization & multipath
+            summary: Why reflections smear symbols together and how an equalizer undoes a channel's distortion — the filter that adapts to clean up inter-symbol interference.
+            minutes: 10
+            level: advanced
+            status: full
+      - id: quality-and-coding
+        label: "Unit 5 — Signal Quality & Coding"
+        blurb: "Measuring how well a decode is working, and the coding that protects the bits."
+        lessons:
+          - slug: snr-evm-and-ber
+            title: SNR, EVM & BER
+            summary: The three numbers that measure a digital link's health — signal-to-noise ratio, error-vector magnitude, and bit error rate — and how they relate.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: the-eye-diagram
+            title: The eye diagram
+            summary: Overlaying symbol periods into an "eye" — how to read timing margin, noise, and inter-symbol interference at a glance from one picture.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: error-correction-and-framing
+            title: Error correction & framing
+            summary: How raw symbols become trustworthy data — sync words, framing, interleaving, and forward error correction that fix bit errors before decoding.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: real-time-and-buffering
+            title: Real-time processing & buffering
+            summary: Block processing, ring buffers, latency, and keeping up with the sample stream — the engineering that makes DSP run live instead of offline.
+            minutes: 9
+            level: advanced
+            status: full
       - id: dsp-in-practice
-        label: "Unit 5 — DSP in Practice"
+        label: "Unit 6 — DSP in Practice"
         blurb: "Put the whole chain together the way a real decoder does."
         lessons:
           - slug: dsp-in-gophertrunk
             title: DSP in GopherTrunk
             summary: A walkthrough of GopherTrunk's real signal path — capture, downconvert, filter, demodulate, recover symbols — mapping each stage to the lessons you just learned.
             minutes: 11
+            level: advanced
+            status: full
+          - slug: testing-and-debugging-dsp
+            title: Testing & debugging DSP
+            summary: Golden vectors, offline replay of captures, and the invariants that catch a broken signal path — how you prove a decoder actually works.
+            minutes: 10
             level: advanced
             status: full
           - slug: fixed-vs-floating-point
@@ -3230,7 +3406,7 @@ modules:
     title: "Learn deployment — from your machine to production"
     tagline: "How software actually ships and runs — containers, Docker, systemd, CI/CD, and the cloud — using GopherTrunk's own deployment as the worked example."
     start_slug: what-is-deployment
-    workload: "PT5H"
+    workload: "PT9H"
     intro: >
       Writing software is only half the job; getting it running reliably somewhere
       other than your laptop is the other half. This path covers the modern
@@ -3240,11 +3416,17 @@ modules:
     units:
       - id: foundations
         label: "Unit 1 — Foundations"
-        blurb: "What deployment means, and the artifacts and config it depends on."
+        blurb: "What deployment means, its lifecycle, and the artifacts and config it depends on."
         lessons:
           - slug: what-is-deployment
             title: What is deployment?
             summary: The journey from source code to a running service, what "it works on my machine" really costs, and the moving parts every deployment has to handle.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: the-deployment-lifecycle
+            title: The deployment lifecycle
+            summary: Build, test, release, deploy, operate — the repeating cycle every change moves through, and how the rest of this module maps onto its stages.
             minutes: 8
             level: beginner
             status: full
@@ -3260,9 +3442,15 @@ modules:
             minutes: 9
             level: beginner
             status: full
+          - slug: release-strategies
+            title: Release strategies
+            summary: Rolling, blue-green, and canary releases — the patterns for pushing a new version to users without downtime or a risky big-bang cutover.
+            minutes: 9
+            level: intermediate
+            status: full
       - id: containers
         label: "Unit 2 — Containers"
-        blurb: "Package an app with everything it needs to run, anywhere."
+        blurb: "Package an app with everything it needs to run, anywhere — safely."
         lessons:
           - slug: what-is-a-container
             title: What is a container?
@@ -3272,8 +3460,14 @@ modules:
             status: full
           - slug: writing-a-dockerfile
             title: Writing a Dockerfile
-            summary: Build an image step by step — base images, layers, multi-stage builds, and how GopherTrunk's own Dockerfile turns Go source into a small runtime image.
+            summary: Build an image step by step — base images, layers, and multi-stage builds — and how GopherTrunk's own Dockerfile turns Go source into a small runtime image.
             minutes: 11
+            level: intermediate
+            status: full
+          - slug: container-image-optimization
+            title: Optimizing container images
+            summary: Small, fast, secure images — multi-stage builds, minimal and distroless bases, layer-cache ordering, and .dockerignore — and why GopherTrunk's image is tiny.
+            minutes: 9
             level: intermediate
             status: full
           - slug: images-and-registries
@@ -3288,9 +3482,21 @@ modules:
             minutes: 10
             level: intermediate
             status: full
+          - slug: container-networking-and-volumes
+            title: Container networking & volumes
+            summary: How containers get an IP, talk to each other, publish ports, and persist data — the networking and storage model beneath a Compose file.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: container-security
+            title: Container security
+            summary: Running as non-root, dropping capabilities, read-only filesystems, and scanning images — giving a container exactly the access it needs and no more.
+            minutes: 10
+            level: advanced
+            status: full
       - id: running-in-production
         label: "Unit 3 — Running in Production"
-        blurb: "Keep a service alive, observable, and configured safely."
+        blurb: "Keep a service alive, reachable, observable, and configured safely."
         lessons:
           - slug: services-and-systemd
             title: Services & systemd
@@ -3298,9 +3504,15 @@ modules:
             minutes: 10
             level: intermediate
             status: full
+          - slug: reverse-proxies-and-tls
+            title: Reverse proxies & TLS
+            summary: Putting a service behind nginx or Caddy — terminating HTTPS, routing by host, and why the proxy, not the app, usually handles certificates.
+            minutes: 10
+            level: intermediate
+            status: full
           - slug: logging-and-health-checks
             title: Logging & health checks
-            summary: How a running service tells you it is healthy — structured logs, health endpoints, and the signals an orchestrator uses to restart what is broken.
+            summary: How a running service tells you it's healthy — structured logs, health endpoints, and the signals an orchestrator uses to restart what is broken.
             minutes: 9
             level: intermediate
             status: full
@@ -3310,14 +3522,32 @@ modules:
             minutes: 9
             level: intermediate
             status: full
+          - slug: backups-and-data
+            title: Backups & persistent data
+            summary: Where a service's data lives, how to back it up and restore it, and why stateful data needs a plan that stateless containers don't.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: production-hardening
+            title: Production hardening
+            summary: Least privilege, firewalls, updates, and the systemd sandboxing GopherTrunk ships — locking a deployment down against the threats a real host faces.
+            minutes: 10
+            level: advanced
+            status: full
       - id: automate-and-scale
         label: "Unit 4 — Automate & Scale"
-        blurb: "Ship automatically, host in the cloud, and keep it running."
+        blurb: "Ship automatically, describe infrastructure as code, and grow to meet load."
         lessons:
           - slug: ci-cd-pipelines
             title: CI/CD pipelines
             summary: Automating build, test, and release so every commit is shippable — what a pipeline does, and how GopherTrunk uses GitHub Actions to build and publish.
             minutes: 10
+            level: intermediate
+            status: full
+          - slug: infrastructure-as-code
+            title: Infrastructure as code
+            summary: Describing servers and services declaratively so environments are reproducible — the idea behind tools like Terraform and Ansible, versioned like code.
+            minutes: 9
             level: intermediate
             status: full
           - slug: deploying-to-cloud-and-vps
@@ -3326,14 +3556,60 @@ modules:
             minutes: 10
             level: intermediate
             status: full
+          - slug: container-orchestration
+            title: Container orchestration
+            summary: What Kubernetes and its cousins actually do — scheduling, self-healing, and scaling many containers — and how to tell when you truly need one.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: scaling-and-load-balancing
+            title: Scaling & load balancing
+            summary: Scaling up vs out, stateless vs stateful services, and how a load balancer spreads traffic across instances — the mechanics of handling more users.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: zero-downtime-deploys
+            title: Zero-downtime deploys
+            summary: Health-gated rollouts, draining connections, and rollback — how to replace a running version without dropping a single request.
+            minutes: 9
+            level: advanced
+            status: full
+      - id: operate
+        label: "Unit 5 — Operate"
+        blurb: "Keep a live system healthy: monitor it, get alerted, respond, and control cost."
+        lessons:
           - slug: monitoring-and-updates
             title: Monitoring & updates
             summary: Keeping a deployment healthy over time — metrics and alerts, rolling out new versions safely, and rolling back when a release goes wrong.
             minutes: 9
             level: intermediate
             status: full
+          - slug: observability
+            title: Observability — metrics, logs & traces
+            summary: The three pillars that let you understand a running system — metrics, logs, and traces — and how they answer "is it up?", "what happened?", and "why is it slow?".
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: alerting-and-oncall
+            title: Alerting & on-call
+            summary: Turning metrics into pages that matter — good alert thresholds, avoiding alert fatigue, and what being on-call for a service actually means.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: incident-response
+            title: Incident response & runbooks
+            summary: What to do when production breaks — detecting, mitigating, and communicating during an incident, and the runbooks and postmortems that prevent the next one.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: cost-and-resources
+            title: Cost & resource management
+            summary: Right-sizing CPU and memory, understanding what cloud resources cost, and keeping a deployment affordable without starving it.
+            minutes: 9
+            level: intermediate
+            status: full
       - id: deployment-applied
-        label: "Unit 5 — Applied"
+        label: "Unit 6 — Applied"
         blurb: "Deploy a real application from start to finish."
         lessons:
           - slug: deploying-gophertrunk

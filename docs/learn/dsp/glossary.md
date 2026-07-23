@@ -155,3 +155,71 @@ float `complex64` throughout. See [Fixed vs floating point & performance](/learn
 
 **`complex64`** — Go's 64-bit complex type (a pair of 32-bit floats) carrying I/Q
 through GopherTrunk. See [Fixed vs floating point & performance](/learn/dsp/fixed-vs-floating-point/)
+
+## More signal fundamentals
+
+**Signal** — A quantity that varies over time carrying information; described by
+amplitude, frequency, and phase. See [What is a signal?](/learn/dsp/what-is-a-signal/)
+
+**Decibel (dB)** — A logarithmic ratio of power (10·log10) or amplitude (20·log10) that
+turns huge ranges into manageable numbers. See [Decibels & dynamic range](/learn/dsp/the-decibel-in-dsp/)
+
+**Dynamic range** — The span between the strongest and weakest signal a system can
+represent, set largely by bit depth. See [Decibels & dynamic range](/learn/dsp/the-decibel-in-dsp/)
+
+**STFT / spectrogram** — The short-time Fourier transform (FFT over sliding windows) and
+its time-frequency image. See [Spectrograms & the STFT](/learn/dsp/spectrograms-and-stft/)
+
+**Analytic signal / Hilbert transform** — The transform that turns a real signal into a
+complex one, removing the negative-frequency mirror. See [The analytic signal & Hilbert transform](/learn/dsp/the-analytic-signal/)
+
+## More on filters
+
+**Passband / stopband / transition** — The frequencies a filter keeps, the ones it
+rejects, and the ramp between them. See [Filter design basics](/learn/dsp/filter-design-basics/)
+
+**Ripple / order** — The allowed variation in a filter's response and a measure of its
+complexity. See [Filter design basics](/learn/dsp/filter-design-basics/)
+
+**Pulse shaping / RRC** — Shaping symbols (often with a root-raised-cosine filter) to
+limit bandwidth without inter-symbol interference. See [Matched filters & pulse shaping](/learn/dsp/matched-filters-and-pulse-shaping/)
+
+**Nyquist ISI criterion** — The condition under which pulses don't interfere at symbol
+sampling instants. See [Matched filters & pulse shaping](/learn/dsp/matched-filters-and-pulse-shaping/)
+
+## More on recovering data
+
+**Carrier recovery** — Correcting the frequency and phase offset between transmitter and
+receiver so symbols can be read. See [Carrier & frequency recovery](/learn/dsp/carrier-and-frequency-recovery/)
+
+**PLL / Costas loop** — Feedback loops that lock onto a carrier's phase and frequency
+(the Costas loop for suppressed-carrier PSK). See [Carrier & frequency recovery](/learn/dsp/carrier-and-frequency-recovery/)
+
+**Constellation** — The set of I/Q points a modulation uses to represent symbols (BPSK,
+QPSK, QAM). See [Constellations & symbol mapping](/learn/dsp/constellations-and-symbol-mapping/)
+
+**Equalization** — Undoing the distortion a multipath channel imposes, reducing
+inter-symbol interference. See [Equalization & multipath](/learn/dsp/equalization/)
+
+**Inter-symbol interference (ISI)** — Symbols smearing into their neighbours, caused by
+filtering or multipath. See [Equalization & multipath](/learn/dsp/equalization/)
+
+## Quality & coding
+
+**SNR / EVM / BER** — Signal-to-noise ratio, error-vector magnitude, and bit error rate —
+the three health metrics of a digital link. See [SNR, EVM & BER](/learn/dsp/snr-evm-and-ber/)
+
+**Eye diagram** — Overlapping symbol periods into an "eye" whose opening shows timing and
+noise margin. See [The eye diagram](/learn/dsp/the-eye-diagram/)
+
+**Forward error correction (FEC)** — Redundancy added before transmission that fixes bit
+errors at the receiver without retransmission. See [Error correction & framing](/learn/dsp/error-correction-and-framing/)
+
+**Interleaving / sync word / framing** — Spreading data to survive burst errors, marking
+frame starts, and grouping bits into frames. See [Error correction & framing](/learn/dsp/error-correction-and-framing/)
+
+**Ring buffer / block processing** — Processing samples in fixed blocks through a circular
+buffer to run DSP in real time. See [Real-time processing & buffering](/learn/dsp/real-time-and-buffering/)
+
+**Golden vectors / replay** — Known-good reference outputs and offline capture replay used
+to test and debug a signal path. See [Testing & debugging DSP](/learn/dsp/testing-and-debugging-dsp/)
