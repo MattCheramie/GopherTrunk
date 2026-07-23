@@ -84,6 +84,44 @@ func DecodeSuperframeMACPDUsWithSlot(sf Superframe, cfg MACDecodeConfig) []Decod
 	return out
 }
 
+// DecodeSuperframeMACPDUsWithSlotPinned is DecodeSuperframeMACPDUsWithSlot
+// with a self-aligning ScramblerProbe. When cfg.Scrambler is ScramblerProbe
+// and pin is non-nil, each MAC sub-frame is descrambled at the channel phase
+// the pin has discovered (or, until one is found, an RS-gated sweep of the
+// full 4320-bit sequence), so probe recovers a channel whose true intra-slot
+// PN44 offset differs from GopherTrunk's superframe-grid assumption
+// (slotChannelPN44Offset) — the mac_rs_valid=0 case in issue #915, Finding B.
+// The slot-base-only sweep in DecodeSuperframeMACPDUsWithSlot holds that
+// intra-slot offset fixed, so it cannot. For any other scrambler mode, or a
+// nil pin, this is identical to DecodeSuperframeMACPDUsWithSlot.
+func DecodeSuperframeMACPDUsWithSlotPinned(sf Superframe, cfg MACDecodeConfig, pin *ScramblerPin) []DecodedMACPDU {
+	if pin == nil || cfg.Scrambler != ScramblerProbe {
+		return DecodeSuperframeMACPDUsWithSlot(sf, cfg)
+	}
+	macLen := macPDUDibits
+	if cfg.Trellis == TrellisOn {
+		macLen = macPDUDibitsTrellis
+	}
+	var out []DecodedMACPDU
+	for _, sub := range sf.Subframes {
+		if !sub.SlotType.IsMAC() {
+			continue
+		}
+		if len(sub.Dibits) < MACPayloadOffset+macLen {
+			continue
+		}
+		macDibits := sub.Dibits[MACPayloadOffset : MACPayloadOffset+macLen]
+		if pdu, ok := pin.probeSubframe(macDibits, cfg.Trellis, cfg.Interleave, cfg.Seed, sub.Index); ok {
+			out = append(out, DecodedMACPDU{
+				SlotType: sub.SlotType,
+				PDU:      pdu,
+				RSValid:  verifyMACPDURS(AssembleMACPDU(pdu)),
+			})
+		}
+	}
+	return out
+}
+
 // DecodeSuperframeMACPDUs returns every successfully decoded MAC PDU
 // found in sf's MAC-typed sub-frames, in sub-frame order. Voice
 // sub-frames are skipped. Both the control-channel ingest path and the
