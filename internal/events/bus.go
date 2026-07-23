@@ -40,7 +40,14 @@ const (
 	// "conversation" grouping (the composer never emits it).
 	KindCallSegment Kind = "call.segment"
 	KindGrant       Kind = "grant"
-	KindToneAlert   Kind = "tone.alert"
+	// KindGrantUnserved fires when a grant was accepted (passed lockout /
+	// scan / encryption gates) but no free voice device could be bound to
+	// follow it — the "no voice device available for grant" overload moment.
+	// Payload is trunking.Grant. Consumed by the event-driven IQ auto-recorder
+	// (baseband.auto_record on_no_voice_device) to capture the raw IQ of the
+	// carrier at the instant the system was too busy to follow a call.
+	KindGrantUnserved Kind = "grant.unserved"
+	KindToneAlert     Kind = "tone.alert"
 	KindDecodeError Kind = "decode.error"
 	KindError       Kind = "error"
 	// Scanner subsystem (internal/scanner/cchunt):

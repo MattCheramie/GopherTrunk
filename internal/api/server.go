@@ -316,6 +316,11 @@ type Server struct {
 	// daemon over the same iqtap broker map as spectrum.
 	capture CaptureProvider
 
+	// autoRecord backs POST /api/v1/siglab/autorecord/trigger — a manual
+	// event-driven raw-IQ capture of the control SDR. nil keeps the route
+	// returning 503. Implemented by the daemon over its iqAutoRecorder.
+	autoRecord AutoRecordProvider
+
 	// bookmarks is the optional provider backing /api/v1/bookmarks/...
 	// routes. nil disables the routes (503). Implemented by the
 	// daemon over storage.BookmarkStore.
@@ -702,6 +707,13 @@ type ServerOptions struct {
 	// back a .cfile download URL. The daemon implements this over its
 	// iqtap.Broker map; nil keeps the routes returning 503.
 	Capture CaptureProvider
+
+	// AutoRecord, when non-nil, enables the manual
+	// POST /api/v1/siglab/autorecord/trigger route — fire an event-driven
+	// raw-IQ capture of the control SDR on demand (baseband.auto_record).
+	// The daemon implements this over its iqAutoRecorder; nil keeps the
+	// route returning 503.
+	AutoRecord AutoRecordProvider
 	// Bookmarks, when non-nil, enables the
 	// GET/POST/PATCH/DELETE /api/v1/bookmarks routes for operator-
 	// managed conventional channel bookmarks. nil keeps the routes
@@ -914,6 +926,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		audioPub:       opts.AudioPublisher,
 		spectrum:       opts.Spectrum,
 		capture:        opts.Capture,
+		autoRecord:     opts.AutoRecord,
 		bookmarks:      opts.Bookmarks,
 		diag:           opts.Diag,
 		symbols:        opts.Symbols,
@@ -1213,6 +1226,11 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/siglab/capture/devices", s.handleSiglabCaptureDevices)
 		mux.HandleFunc("POST /api/v1/siglab/capture", s.gate(s.handleSiglabCapture))
 		mux.HandleFunc("GET /api/v1/siglab/captures/{id}/download", s.handleSiglabCaptureDownload)
+		// Manual trigger for the event-driven raw-IQ auto-recorder
+		// (baseband.auto_record): fire a capture of the control SDR on demand.
+		// Gated mutation (spends SDR + CPU + disk). 503 when auto_record is
+		// disabled / no control SDR.
+		mux.HandleFunc("POST /api/v1/siglab/autorecord/trigger", s.gate(s.handleSiglabAutoRecordTrigger))
 
 		// Secondary SPA at /siglab/ (daemon path). The standalone `siglab
 		// serve` puts the SPA in WebAssets (served at /) instead, so this only

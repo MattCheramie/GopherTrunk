@@ -57,4 +57,18 @@ describe("CaptureRow", () => {
     fireEvent.click(screen.getByRole("button", { name: /remove capture/i }));
     expect(props.onRemove).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the capture start time so otherwise-identical captures can be told apart", () => {
+    renderRow();
+    const when = screen.getByTestId("captured-at");
+    // The full ISO timestamp is preserved in the title; the visible text is the
+    // localized start time (non-empty).
+    expect(when).toHaveAttribute("title", longNamed.created_at);
+    expect(when.textContent?.trim()).not.toBe("");
+  });
+
+  it("omits the time when created_at is missing", () => {
+    renderRow({ capture: { ...longNamed, created_at: "" } });
+    expect(screen.queryByTestId("captured-at")).toBeNull();
+  });
 });

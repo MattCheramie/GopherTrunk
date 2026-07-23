@@ -382,6 +382,17 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandReplayConfig.Role":   {Help: "Pool role: control / voice / auto.", Options: roleOpts()},
 	"BasebandReplayConfig.Loop":   {Help: "Restart the recording on EOF for a continuous source. Default true."},
 
+	"BasebandConfig.AutoRecord":                   {Label: "Auto-record", Help: "Event-driven raw-IQ capture of the control SDR (concurrent calls, unserved grant, encrypted/emergency, or manual API trigger)."},
+	"BasebandAutoRecordConfig.Enabled":            {Help: "Turn event-driven IQ auto-recording on. When off, every trigger is a no-op."},
+	"BasebandAutoRecordConfig.Dir":                {Label: "Directory", Help: "Directory triggered captures (and their .metadata.json sidecars) are written into."},
+	"BasebandAutoRecordConfig.Format":             {Help: "On-disk sample format for triggered captures.", Options: opts("", "cs16 (default)", "f32", "f32", "u8", "u8")},
+	"BasebandAutoRecordConfig.Seconds":            {Help: "Length in seconds of each triggered capture."},
+	"BasebandAutoRecordConfig.Cooldown":           {Help: "Minimum gap between automatic triggers (Go duration, e.g. 10s). The manual API trigger bypasses it."},
+	"BasebandAutoRecordConfig.OnConcurrentCalls":  {Label: "On concurrent calls", Help: "Fire when this many voice calls are active at once. 0 disables this trigger."},
+	"BasebandAutoRecordConfig.OnNoVoiceDevice":    {Label: "On no voice device", Help: "Fire when a grant arrives but every voice tuner is busy."},
+	"BasebandAutoRecordConfig.OnEncrypted":        {Label: "On encrypted", Help: "Fire on a grant flagged encrypted."},
+	"BasebandAutoRecordConfig.OnEmergency":        {Label: "On emergency", Help: "Fire on an emergency-flagged grant."},
+
 	// ---- Paging ------------------------------------------------------------
 	"PagingConfig.POCSAG":               {Label: "POCSAG", Help: "POCSAG channels, each pinning one SDR to a paging frequency."},
 	"PagingConfig.FLEX":                 {Label: "FLEX", Help: "FLEX channels, each pinning one SDR to a paging frequency (1600 bps)."},

@@ -1,5 +1,17 @@
 import type { CaptureDTO } from "../api/types";
 
+// formatCapturedAt renders the capture's start time in the viewer's local zone.
+// Empty string for a missing/invalid timestamp so the row simply omits it.
+// This is what lets an operator tell otherwise-identical captures apart
+// (e.g. three "capture-AIRSPY SN:…" grabs of the same carrier) by when each
+// recording started.
+function formatCapturedAt(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString();
+}
+
 // CaptureRow is one entry in the captures list. It is a pure presentational
 // component (no store/router coupling) so it can be unit-tested directly, and
 // so the layout fixes below are self-contained:
@@ -44,6 +56,14 @@ export function CaptureRow({
           {capture.format} ·{" "}
           {capture.sample_rate_hz ? `${capture.sample_rate_hz} Hz` : "rate?"} ·{" "}
           {(capture.size / 1024).toFixed(0)} KiB
+          {formatCapturedAt(capture.created_at) && (
+            <>
+              {" · "}
+              <span data-testid="captured-at" title={capture.created_at}>
+                {formatCapturedAt(capture.created_at)}
+              </span>
+            </>
+          )}
         </div>
       </button>
       <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
