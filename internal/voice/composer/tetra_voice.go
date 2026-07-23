@@ -75,24 +75,7 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 	rs, _ := c.sink.(rawFrameSink)
 	var bursts, speech atomic.Uint64
 	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte) {
-		bursts.Add(1)
-		// Each recovered burst counts as traffic activity: keep the call
-		// alive and reset the hangtime timer.
-		bt.onVoice(0)
-		if rs == nil {
-			return
-		}
-		// TCH/S-decode the burst. Only bursts whose class-2 CRC verifies are
-		// TCH/S speech for the granted call (other TDMA timeslots' bursts fail
-		// the CRC); emit each recovered 137-bit speech frame to the recorder,
-		// which renders it with the ACELP vocoder and appends it to the `.raw`
-		// sidecar.
-		for _, sf := range tetra.TCHSpeechFrames(frame) {
-			speech.Add(1)
-			if err := rs.WriteRawFrame(serial, sf); err != nil {
-				c.log.Warn("composer: TETRA speech-frame write failed", "serial", serial, "err", err)
-			}
-		}
+		c.onTETRATrafficBurst(bt, rs, serial, frame, &bursts, &speech)
 	})
 
 	rx := tetrarx.New(tetrarx.Options{
@@ -127,6 +110,47 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 			}
 			bt.observe(iq)
 			rx.Process(fe.Process(nil, iq))
+		}
+	}
+}
+
+// onTETRATrafficBurst handles one Normal Continuous Downlink Burst recovered by
+// the TrafficExtractor. Call liveness (the hangtime end-of-call) is driven ONLY
+// by CRC-valid TCH/S speech for the granted call — not by every raw burst.
+//
+// This matters because the extractor emits a burst for all four TDMA timeslots
+// on the carrier, continuously, whether or not it is the granted call's speech.
+// Refreshing the boundary tracker on every raw burst (the previous behaviour)
+// kept lastVoiceNano perpetually fresh while the carrier was up, so the hangtime
+// never elapsed and the (single, same-carrier) voice device was held forever —
+// every later grant was then dropped with "no voice device available for grant".
+//
+// The class-2 CRC gate (tetra.TCHSpeechFrames) already isolates the granted
+// call's speech: a non-TCH/S burst (signalling on another timeslot, an encrypted
+// call, or a badly corrupted slot) returns no frames. Gating onVoice on that
+// same result makes TETRA teardown behave like every other protocol — the call
+// ends hangtime after its last decoded speech frame (or via the no-voice
+// startup timeout when a grant never decodes any speech).
+func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, bursts, speech *atomic.Uint64) {
+	bursts.Add(1)
+	// TCH/S-decode the burst. Only bursts whose class-2 CRC verifies are TCH/S
+	// speech for the granted call; everything else yields no frames.
+	frames := tetra.TCHSpeechFrames(frame)
+	if len(frames) == 0 {
+		// Not the granted call's speech — do NOT touch call liveness.
+		return
+	}
+	// CRC-valid speech: keep the call alive and reset the hangtime timer.
+	bt.onVoice(0)
+	if rs == nil {
+		return
+	}
+	// Emit each recovered 137-bit speech frame to the recorder, which renders it
+	// with the ACELP vocoder and appends it to the `.raw` sidecar.
+	for _, sf := range frames {
+		speech.Add(1)
+		if err := rs.WriteRawFrame(serial, sf); err != nil {
+			c.log.Warn("composer: TETRA speech-frame write failed", "serial", serial, "err", err)
 		}
 	}
 }
