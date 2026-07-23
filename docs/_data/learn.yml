@@ -84,14 +84,20 @@ learning_paths:
     modules:
       - id: rf-sdr
         note: "Start here — the RF and SDR fundamentals every signal path leans on."
+      - id: dsp
+        note: "How those signals become code — filters, FFTs, mixing, and clock recovery."
       - id: intro-software-dev
         note: "How software is designed, built, tested, and shipped."
+      - id: programming-go
+        note: "Learn Go, the language GopherTrunk itself is written in."
       - id: linux-cli
         note: "The command line where SDR tooling and servers live."
       - id: git
         note: "Version control — the backbone of any real codebase."
       - id: digital-trunking
         note: "Apply it: how trunked systems work and how software follows them."
+      - id: deployment
+        note: "Ship it — package and run your decoder as a real service."
       - id: ai-software-dev
         note: "Optional — use AI tools to accelerate your development workflow."
   - id: rf-hardware
@@ -104,6 +110,8 @@ learning_paths:
     modules:
       - id: rf-sdr
         note: "The physics of signals — waves, power, antennas, propagation."
+      - id: dsp
+        note: "The signal processing that turns captured samples into usable data."
       - id: intro-hardware
         note: "Computers and devices from the ground up, including SDR front-ends."
       - id: networking
@@ -118,12 +126,16 @@ learning_paths:
     modules:
       - id: intro-software-dev
         note: "The craft of building software."
+      - id: programming-go
+        note: "A real language, end to end — Go, from first program to concurrency."
       - id: git
         note: "Version control and collaboration."
       - id: linux-cli
         note: "The command line every developer lives in."
       - id: networking
         note: "How software talks across machines."
+      - id: deployment
+        note: "Containers, CI/CD, and getting your software running in production."
       - id: software-licensing
         note: "The legal side of shipping and reusing code."
   - id: ai-development
@@ -136,12 +148,16 @@ learning_paths:
     modules:
       - id: intro-software-dev
         note: "The software foundations AI work builds on."
+      - id: programming-go
+        note: "A concrete language to build in — Go, from basics to concurrency."
       - id: git
         note: "Version control for any real project."
       - id: ai-software-dev
         note: "Use AI tools to write and ship software faster."
       - id: building-ai
         note: "Build applications powered by AI."
+      - id: deployment
+        note: "Ship your AI feature — containers, config, and CI/CD."
   - id: security
     label: "Cybersecurity"
     title: "Learning Path — Cybersecurity"
@@ -156,6 +172,8 @@ learning_paths:
         note: "You can't secure what you don't understand — start with the network."
       - id: cybersecurity
         note: "Threats, defenses, and the security mindset."
+      - id: deployment
+        note: "Where software actually runs — containers, secrets, and hardening the deploy."
       - id: git
         note: "Track changes and collaborate safely."
   - id: trunked-radio
@@ -168,6 +186,8 @@ learning_paths:
     modules:
       - id: rf-sdr
         note: "Signals, SDR, and how digital voice is carried."
+      - id: dsp
+        note: "The signal processing that recovers bits from a noisy channel."
       - id: digital-trunking
         note: "How trunked control channels and voice calls work."
       - id: intro-hardware
@@ -2928,5 +2948,404 @@ modules:
       title: Glossary of software-licensing terms
       summary: Plain-language definitions for every term in the path — copyright, copyleft, permissive, GPL/AGPL/LGPL, dual licensing, EULA, ToS, SLA, DPA, SBOM, SPDX, indemnity, and more — cross-linked to the lessons.
       minutes: 12
+      level: beginner
+      status: full
+
+  - id: programming-go
+    label: "Programming in Go"
+    title: "Learn Go — from your first program to reading real code"
+    tagline: "The language GopherTrunk is written in — from hello world to goroutines, interfaces, and reading a real Go codebase."
+    start_slug: why-go
+    workload: "PT5H"
+    intro: >
+      A hands-on path into Go, the language GopherTrunk itself is built in. Start
+      with why Go exists and your first compiled program, learn the type system,
+      interfaces, and the concurrency model that makes Go shine, then finish by
+      reading real code from a working SDR engine. No prior Go — or compiled
+      language — experience assumed.
+    units:
+      - id: meeting-go
+        label: "Unit 1 — Meeting Go"
+        blurb: "What Go is, why it exists, and the toolchain you run every day."
+        lessons:
+          - slug: why-go
+            title: Why Go?
+            summary: Where Go came from, the problems it was built to solve, and why a fast, simple, compiled language is a great fit for systems like GopherTrunk.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: hello-go
+            title: Your first Go program
+            summary: Install Go, write hello world, and understand the difference between go run and go build — from source to a single static binary.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: the-go-toolchain
+            title: The Go toolchain
+            summary: go build, run, test, fmt, and vet — the batteries-included tools that format, check, and build your code with zero configuration.
+            minutes: 9
+            level: beginner
+            status: full
+      - id: the-language
+        label: "Unit 2 — The Language"
+        blurb: "Values, functions, errors, structs, and interfaces — the core of Go."
+        lessons:
+          - slug: values-and-types
+            title: Values, variables & types
+            summary: Go's built-in types, declarations, zero values, and static typing — why a small, strict type set makes programs easier to reason about.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: functions-and-errors
+            title: Functions & error handling
+            summary: Multiple return values, the error interface, and why Go returns errors instead of throwing exceptions — the pattern you will see on every line.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: structs-and-methods
+            title: Structs & methods
+            summary: Group data with structs, attach behaviour with methods, and understand pointer vs value receivers — Go's answer to objects.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: interfaces
+            title: Interfaces & composition
+            summary: Small interfaces, implicit satisfaction, and composition over inheritance — the idea that makes Go code flexible without class hierarchies.
+            minutes: 10
+            level: intermediate
+            status: full
+      - id: concurrency
+        label: "Unit 3 — Concurrency"
+        blurb: "Goroutines, channels, and coordination — Go's headline feature."
+        lessons:
+          - slug: goroutines
+            title: Goroutines
+            summary: Lightweight concurrency you launch with one keyword — what a goroutine is, how it differs from a thread, and why GopherTrunk runs thousands.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: channels
+            title: Channels
+            summary: Typed pipes that let goroutines communicate safely — sending, receiving, buffering, and closing — Go's "share memory by communicating" model.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: select-and-sync
+            title: select & synchronization
+            summary: Coordinate multiple channels with select, and use the sync package — mutexes, WaitGroups, contexts — when channels are not the right tool.
+            minutes: 10
+            level: advanced
+            status: full
+      - id: building-real-programs
+        label: "Unit 4 — Building Real Programs"
+        blurb: "Packages, collections, generics, testing, and the standard library."
+        lessons:
+          - slug: packages-and-modules
+            title: Packages & modules
+            summary: How Go organizes code into packages and modules, how imports and go.mod work, and how visibility is controlled by capitalization.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: slices-maps-generics
+            title: Slices, maps & generics
+            summary: Go's core collections — slices and maps — how they grow and alias, plus type parameters (generics) for reusable, type-safe code.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: testing-in-go
+            title: Testing in Go
+            summary: The built-in testing package, table-driven tests, benchmarks, and why testing is a first-class part of the language, not an add-on.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: the-standard-library
+            title: The standard library
+            summary: A tour of the batteries Go ships with — io, bytes, encoding, net, and more — and why you reach for a dependency far less often than in other ecosystems.
+            minutes: 9
+            level: intermediate
+            status: full
+      - id: go-in-the-wild
+        label: "Unit 5 — Go in the Wild"
+        blurb: "Read real code, then chart your next steps as a Go developer."
+        lessons:
+          - slug: reading-real-go
+            title: Reading a real Go codebase
+            summary: A guided tour of how a working SDR engine like GopherTrunk is structured in Go — packages, interfaces, and goroutines you can now recognize.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: next-steps-in-go
+            title: Where to go next
+            summary: Idiomatic Go, the tooling ecosystem, the community, and a short project ladder to take you from this path to shipping your own Go programs.
+            minutes: 8
+            level: beginner
+            status: full
+    glossary:
+      slug: glossary
+      title: Glossary of Go terms
+      summary: Plain-language definitions for every Go term in the path — goroutine, channel, interface, slice, struct, method, package, module, and more — cross-linked to the lessons.
+      minutes: 10
+      level: beginner
+      status: full
+
+  - id: dsp
+    label: "Digital Signal Processing"
+    title: "Learn DSP — from samples to decoded bits"
+    tagline: "The math and code that turn a stream of radio samples into data — filters, FFTs, mixing, and clock recovery, the way an SDR really works."
+    start_slug: what-is-dsp
+    workload: "PT5H"
+    intro: >
+      Software-defined radio is digital signal processing wearing an antenna. This
+      path takes the ideas the RF & SDR module introduces and shows how they become
+      code — sampling, the Fourier transform, filters, downconversion, demodulation,
+      and clock recovery — then maps every one of them onto the pipeline GopherTrunk
+      runs to decode digital trunked voice.
+    units:
+      - id: signals-as-numbers
+        label: "Unit 1 — Signals as Numbers"
+        blurb: "How a continuous wave becomes an array your code can work on."
+        lessons:
+          - slug: what-is-dsp
+            title: What is DSP?
+            summary: Why we process signals with numbers instead of analog circuits, what a digital signal processor does, and where DSP sits in a software radio.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: sampling-and-quantization
+            title: Sampling & quantization
+            summary: Turning a wave into samples — sample rate, the Nyquist limit, bit depth, and the aliasing and quantization noise that come with digitizing.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: complex-signals-and-iq
+            title: Complex signals & I/Q
+            summary: Why SDRs carry signals as complex I/Q pairs, what the imaginary part really means, and how negative frequency becomes a useful, everyday idea.
+            minutes: 10
+            level: intermediate
+            status: full
+      - id: frequency-domain
+        label: "Unit 2 — The Frequency Domain"
+        blurb: "Seeing a signal as its component frequencies — the Fourier view."
+        lessons:
+          - slug: the-fourier-transform
+            title: The Fourier transform
+            summary: The single idea that any signal is a sum of sine waves — what the transform computes, and why the frequency domain makes filtering and detection easy.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: the-fft
+            title: The FFT in practice
+            summary: How the Fast Fourier Transform makes the DFT computable in real time, bin resolution, the time-vs-frequency tradeoff, and what a waterfall really shows.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: windows-and-leakage
+            title: Windows & spectral leakage
+            summary: Why chopping a signal into blocks smears energy across bins, and how window functions trade resolution for cleaner spectra.
+            minutes: 9
+            level: advanced
+            status: full
+      - id: filters
+        label: "Unit 3 — Filters"
+        blurb: "Selecting the signal you want and throwing away the rest."
+        lessons:
+          - slug: convolution-and-impulse-response
+            title: Convolution & impulse response
+            summary: The operation at the heart of every filter — what an impulse response is, and how sliding-and-summing in time equals multiplying in frequency.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: fir-filters
+            title: FIR filters
+            summary: Finite impulse response filters — taps, linear phase, and how to design a low-pass filter to isolate one channel from a wideband capture.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: iir-filters
+            title: IIR filters
+            summary: Infinite impulse response filters — feedback, poles and zeros, far fewer taps, and the stability and phase tradeoffs that come with them.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: decimation-and-resampling
+            title: Decimation & resampling
+            summary: Changing sample rate without aliasing — decimation, interpolation, and rational resampling — how an SDR narrows 2.4 MS/s down to a 48 kHz channel.
+            minutes: 10
+            level: intermediate
+            status: full
+      - id: signal-to-bits
+        label: "Unit 4 — From Signal to Bits"
+        blurb: "Tuning, demodulating, and recovering the data hidden in the wave."
+        lessons:
+          - slug: mixing-and-downconversion
+            title: Mixing & downconversion
+            summary: Multiplying by a local oscillator to shift a signal to baseband — the digital downconverter (DDC) that centres a channel before it is decoded.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: demodulation
+            title: Demodulation in code
+            summary: Recovering the message from a carrier — AM, FM, and phase demodulation as arithmetic on I/Q samples, and how C4FM voice starts to appear.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: clock-and-symbol-recovery
+            title: Clock & symbol recovery
+            summary: Finding where each symbol begins when you have no shared clock — timing error detectors, interpolation, and the loop that locks onto the data rate.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: gain-and-agc
+            title: Gain & automatic gain control
+            summary: Keeping a signal at a usable amplitude as it fades — how an AGC loop works and why the demodulator needs stable levels to decide symbols correctly.
+            minutes: 9
+            level: intermediate
+            status: full
+      - id: dsp-in-practice
+        label: "Unit 5 — DSP in Practice"
+        blurb: "Put the whole chain together the way a real decoder does."
+        lessons:
+          - slug: dsp-in-gophertrunk
+            title: DSP in GopherTrunk
+            summary: A walkthrough of GopherTrunk's real signal path — capture, downconvert, filter, demodulate, recover symbols — mapping each stage to the lessons you just learned.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: fixed-vs-floating-point
+            title: Fixed vs floating point & performance
+            summary: Why real-time DSP cares about how numbers are stored, the tradeoffs of fixed vs floating point, and simple ways to keep a sample pipeline fast.
+            minutes: 9
+            level: advanced
+            status: full
+    glossary:
+      slug: glossary
+      title: Glossary of DSP terms
+      summary: Plain-language definitions for every DSP term in the path — sample rate, Nyquist, I/Q, FFT, FIR, IIR, decimation, mixing, AGC, symbol recovery, and more — cross-linked to the lessons.
+      minutes: 11
+      level: beginner
+      status: full
+
+  - id: deployment
+    label: "Containers & Deployment"
+    title: "Learn deployment — from your machine to production"
+    tagline: "How software actually ships and runs — containers, Docker, systemd, CI/CD, and the cloud — using GopherTrunk's own deployment as the worked example."
+    start_slug: what-is-deployment
+    workload: "PT5H"
+    intro: >
+      Writing software is only half the job; getting it running reliably somewhere
+      other than your laptop is the other half. This path covers the modern
+      deployment toolkit — build artifacts, containers and Docker, running services
+      with systemd, secrets and configuration, CI/CD pipelines, and cloud hosting —
+      and finishes by deploying a real application, GopherTrunk, end to end.
+    units:
+      - id: foundations
+        label: "Unit 1 — Foundations"
+        blurb: "What deployment means, and the artifacts and config it depends on."
+        lessons:
+          - slug: what-is-deployment
+            title: What is deployment?
+            summary: The journey from source code to a running service, what "it works on my machine" really costs, and the moving parts every deployment has to handle.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: environments-and-config
+            title: Environments & configuration
+            summary: Dev, staging, and production, why the same build must run in all of them, and how environment variables and config files keep settings out of code.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: build-artifacts-and-versioning
+            title: Build artifacts & versioning
+            summary: What a build produces, why a single reproducible artifact beats rebuilding everywhere, and how version tags let you ship and roll back with confidence.
+            minutes: 9
+            level: beginner
+            status: full
+      - id: containers
+        label: "Unit 2 — Containers"
+        blurb: "Package an app with everything it needs to run, anywhere."
+        lessons:
+          - slug: what-is-a-container
+            title: What is a container?
+            summary: Containers vs virtual machines, the isolation the kernel provides, and why "ship the whole environment" solves the works-on-my-machine problem.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: writing-a-dockerfile
+            title: Writing a Dockerfile
+            summary: Build an image step by step — base images, layers, multi-stage builds, and how GopherTrunk's own Dockerfile turns Go source into a small runtime image.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: images-and-registries
+            title: Images & registries
+            summary: How images are named, tagged, stored, and shared through registries, and how a pull-and-run makes deploying somewhere new a one-line operation.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: docker-compose
+            title: Multi-container apps with Compose
+            summary: Describe an app and its dependencies as one file — services, networks, and volumes — and bring the whole stack up with a single command.
+            minutes: 10
+            level: intermediate
+            status: full
+      - id: running-in-production
+        label: "Unit 3 — Running in Production"
+        blurb: "Keep a service alive, observable, and configured safely."
+        lessons:
+          - slug: services-and-systemd
+            title: Services & systemd
+            summary: Turn a program into a managed service that starts on boot and restarts on failure, using the systemd unit GopherTrunk ships as the example.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: logging-and-health-checks
+            title: Logging & health checks
+            summary: How a running service tells you it is healthy — structured logs, health endpoints, and the signals an orchestrator uses to restart what is broken.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: secrets-and-configuration
+            title: Secrets & configuration management
+            summary: Keeping API keys and passwords out of images and repos — environment injection, secret stores, and the difference between config and secrets.
+            minutes: 9
+            level: intermediate
+            status: full
+      - id: automate-and-scale
+        label: "Unit 4 — Automate & Scale"
+        blurb: "Ship automatically, host in the cloud, and keep it running."
+        lessons:
+          - slug: ci-cd-pipelines
+            title: CI/CD pipelines
+            summary: Automating build, test, and release so every commit is shippable — what a pipeline does, and how GopherTrunk uses GitHub Actions to build and publish.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: deploying-to-cloud-and-vps
+            title: Deploying to the cloud & VPS
+            summary: The hosting spectrum — a VPS you manage, managed platforms, and container services — and how to choose based on control, cost, and effort.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: monitoring-and-updates
+            title: Monitoring & updates
+            summary: Keeping a deployment healthy over time — metrics and alerts, rolling out new versions safely, and rolling back when a release goes wrong.
+            minutes: 9
+            level: intermediate
+            status: full
+      - id: deployment-applied
+        label: "Unit 5 — Applied"
+        blurb: "Deploy a real application from start to finish."
+        lessons:
+          - slug: deploying-gophertrunk
+            title: Deploying GopherTrunk end to end
+            summary: A complete worked example — container image, docker-compose stack, and a systemd service — taking GopherTrunk from a repo to a running scanner on a server.
+            minutes: 12
+            level: advanced
+            status: full
+    glossary:
+      slug: glossary
+      title: Glossary of deployment terms
+      summary: Plain-language definitions for every deployment term in the path — container, image, registry, Dockerfile, Compose, systemd, CI/CD, artifact, secret, and more — cross-linked to the lessons.
+      minutes: 10
       level: beginner
       status: full
