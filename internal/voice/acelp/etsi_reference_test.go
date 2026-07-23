@@ -15,9 +15,12 @@ import (
 //	sdecoder serial.bin ref_out.pcm                   # ETSI reference decoder
 //
 // GT_ETSI_SERIAL = serial.bin : shared bitstream, int16 LE, 138 words/frame
+//
 //	(word 0 = BFI, words 1..137 = the 137 coded speech bits 0/1) — exactly the
 //	format ETSI sdecoder reads (Bits2prm_Tetra) and GT's Decoder.Decode consumes.
+//
 // GT_ETSI_REF = ref_out.pcm : reference decoder output, int16 LE, 240 samples/
+//
 //	frame, INCLUDING the reference Post_Process (saturating x2 after Decod_Tetra).
 //	GT omits that x2, so the harness applies postProcessX2 to GT's output first.
 //
