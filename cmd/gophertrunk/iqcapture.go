@@ -2,18 +2,17 @@ package main
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
 // iqCaptureSpec is the parsed form of the `--iq-capture` flag.
@@ -105,19 +104,15 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 	sub := broker.Subscribe()
 	defer sub.Close()
 
-	// Encode chunk → bytes per the requested format. Reused scratch
-	// buffer keeps the per-chunk allocation amortised.
-	var scratch []byte
-	encode := encodeF32
-	bytesPerSample := 8
-	switch spec.Format {
-	case "u8":
-		encode = encodeU8
-		bytesPerSample = 2
-	case "cs16":
-		encode = encodeS16
-		bytesPerSample = 4
+	// Stream each chunk straight to disk via siglab.CaptureWriter (one reused
+	// scratch buffer, no whole-capture buffering). spec.Format is already
+	// validated to u8/f32/cs16 by parseIQCaptureSpec.
+	format, err := siglab.ParseSampleFormat(spec.Format)
+	if err != nil {
+		return fmt.Errorf("iq-capture: %w", err)
 	}
+	_, bytesPerSample := format.Decoder()
+	enc := siglab.NewCaptureWriter(f, format)
 
 	// Safety timer as an explicit select arm: the broker pauses fan-out when no
 	// primary StreamIQ session is running, so a receive-then-check deadline
@@ -141,13 +136,7 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 			if !ok {
 				return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), errors.New("iq-capture: broker closed before capture finished"))
 			}
-			if cap(scratch) < len(chunk)*bytesPerSample {
-				scratch = make([]byte, len(chunk)*bytesPerSample)
-			} else {
-				scratch = scratch[:len(chunk)*bytesPerSample]
-			}
-			encode(scratch, chunk)
-			if _, err := f.Write(scratch); err != nil {
+			if err := enc.Write(chunk); err != nil {
 				return finishIQCapture(log, spec, f, samplesWritten, bytesPerSample, sub.Dropped(), fmt.Errorf("write: %w", err))
 			}
 			samplesWritten += int64(len(chunk))
@@ -198,57 +187,4 @@ func finishIQCapture(log *slog.Logger, spec iqCaptureSpec, f io.Closer, samples 
 		return closeErr
 	}
 	return nil
-}
-
-// encodeF32 packs complex64 samples into interleaved little-endian
-// float32 — the GNU Radio cfile shape replay.go's decodeF32Replay
-// reads back.
-func encodeF32(dst []byte, src []complex64) {
-	for i, c := range src {
-		binary.LittleEndian.PutUint32(dst[8*i:], math.Float32bits(real(c)))
-		binary.LittleEndian.PutUint32(dst[8*i+4:], math.Float32bits(imag(c)))
-	}
-}
-
-// encodeU8 packs complex64 samples back into the rtl_sdr-native
-// unsigned-8-bit shape (inverse of decodeU8Replay): centre at 127.5,
-// scale by 127.5, clip to [0, 255]. Lossy — favour f32 unless the
-// downstream tool only consumes rtl_sdr-native bytes.
-func encodeU8(dst []byte, src []complex64) {
-	for i, c := range src {
-		dst[2*i] = clipU8(float64(real(c))*127.5 + 127.5)
-		dst[2*i+1] = clipU8(float64(imag(c))*127.5 + 127.5)
-	}
-}
-
-// encodeS16 packs complex64 samples into interleaved little-endian 16-bit
-// signed PCM (I then Q, ×32768, clamped) — the headerless "cs16" shape
-// siglab's decodeSW16 reads back. Half the size of f32 while keeping the
-// resolution of a 12–14-bit ADC.
-func encodeS16(dst []byte, src []complex64) {
-	for i, c := range src {
-		binary.LittleEndian.PutUint16(dst[4*i:], uint16(clipI16(float64(real(c))*32768)))
-		binary.LittleEndian.PutUint16(dst[4*i+2:], uint16(clipI16(float64(imag(c))*32768)))
-	}
-}
-
-func clipI16(x float64) int16 {
-	x = math.Round(x)
-	if x > 32767 {
-		return 32767
-	}
-	if x < -32768 {
-		return -32768
-	}
-	return int16(x)
-}
-
-func clipU8(x float64) byte {
-	if x < 0 {
-		return 0
-	}
-	if x > 255 {
-		return 255
-	}
-	return byte(x + 0.5)
 }

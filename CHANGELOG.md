@@ -196,6 +196,17 @@ for tagged releases.
   bounded search already used in the wideband `internal/dsp/tuner` path for
   issue #550), landing the same stream at 143998 Hz (17999.8 sym/s). Standard
   SDR rates (2.4/2.5/10 MS/s) reduce cleanly and are unaffected.
+- **Signal-Lab "Capture from tuner" hung on 30 s grabs and hid the recorded
+  file.** A capture of N seconds spends ≥N seconds collecting IQ in real time
+  before the handler writes anything, so a 30 s grab ran past the API server's
+  30 s write timeout and the response was torn down mid-write — the console sat
+  on "Capturing…" forever (10 s worked). The capture handler now disables the
+  per-request write deadline (as the SSE and audio-stream handlers already do),
+  and the duration ceiling rose from 30 s to 120 s (bounded by a staged-file-size
+  budget). The captures list also gained a persistent per-row **Download** link
+  (previously the only link was transient state on the capture form, so it
+  appeared to show up only after a second capture), and a long capture name no
+  longer overflows the card and pushes the compare checkbox out of reach.
 - **Completed-call webhook now carries the source RID on nearly every call,
   not just the ~18% whose voice-side `call.source` decoded.** The per-call
   `broadcast.webhook` sink read the source RID off the grant that *bound* the
@@ -219,6 +230,16 @@ for tagged releases.
   onto that call regardless of its talkgroup label — which additionally
   suppresses the phantom duplicate call the mismatched talkgroup would otherwise
   spawn (issue #915).
+
+### Changed
+- **Live captures stream straight to disk instead of buffering the whole grab in
+  RAM.** The Signal-Lab capture path (and the `gophertrunk capture` / daemon
+  `--iq-capture` subcommands) previously held the entire capture in memory as
+  `complex64` and then allocated a second encoded copy, so peak memory scaled
+  with `seconds × sample-rate` (~4.8 GB for 30 s at 10 MS/s). They now encode and
+  write one chunk at a time through a shared streaming writer — narrowband slices
+  too, via a stateful down-converter — so peak memory is a single chunk
+  regardless of capture length, and maximum duration is bounded by disk, not RAM.
 
 ## [v0.7.1] — 2026-07-16
 

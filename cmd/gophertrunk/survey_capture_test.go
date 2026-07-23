@@ -8,6 +8,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/survey"
 )
 
@@ -69,8 +70,7 @@ func TestCaptureSignalToFile(t *testing.T) {
 	// A float32 IQ fixture for the mock f32 driver to replay.
 	const fixtureSamples = 8192
 	iq := make([]complex64, fixtureSamples)
-	buf := make([]byte, fixtureSamples*8)
-	encodeF32(buf, iq)
+	buf := siglab.EncodeCapture(iq, siglab.FormatF32)
 	fixture := filepath.Join(dir, "fixture.cfile")
 	if err := os.WriteFile(fixture, buf, 0o644); err != nil {
 		t.Fatal(err)
