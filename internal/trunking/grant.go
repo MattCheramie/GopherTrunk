@@ -96,7 +96,7 @@ type Grant struct {
 	// system (C4FM vs CQPSK / LSM). The control-channel decoder
 	// already honours the setting via the ccdecoder connector; without
 	// this field every voice grant landed in a hardcoded C4FM voice
-	// receiver and never decoded on LSM-modulated simulcast sites
+	// receiver and never decoded on CQPSK/LSM-modulated sites
 	// (issue #356 follow-up). Populated by the protocol layer when it
 	// publishes the grant; ignored for non-P25-Phase-1 grants.
 	P25Phase1DemodMode string

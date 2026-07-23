@@ -197,8 +197,8 @@ type Options struct {
 	// DemodC4FM (the legacy FM-discriminator → Mueller-Müller
 	// path). DemodCQPSK routes IQ through the LSM / linear-CQPSK
 	// chain (complex RRC → Gardner → π/4-DQPSK + LSM dibit remap)
-	// — required for simulcast P25 sites whose control channel is
-	// on the wire as LSM rather than C4FM. See modes.go.
+	// — for P25 sites that transmit a linear/LSM waveform rather
+	// than C4FM (not implied by simulcast; see #935). See modes.go.
 	DemodMode DemodMode
 	// GardnerGain overrides the Gardner loop step used by the
 	// CQPSK path. <=0 uses defaultGardnerGain. Ignored when

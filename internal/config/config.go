@@ -1201,22 +1201,29 @@ type DeviceChannelConfig struct {
 	// P25Phase1DemodMode optionally overrides the parent system's
 	// p25_phase1_demod_mode for this one control-channel tap. Within a
 	// single P25 system, individual sites can transmit different
-	// modulation — e.g. an urban simulcast site on Linear Simulcast
-	// Modulation (cqpsk / lsm) alongside rural single-transmitter sites
-	// on straight C4FM (issue #935). Because a wideband dongle decodes
-	// every site's control channel in parallel and the correct demod
-	// path must be chosen before the CC locks (it is what lets it lock),
-	// the override is keyed here per control-channel frequency — the one
-	// place a site's identity is known at config time — rather than by
-	// the RFSS/Site the CC only reveals after it decodes.
+	// modulation — e.g. a site that genuinely transmits linear/CQPSK
+	// (Linear Simulcast Modulation, LSM) alongside sites on straight
+	// C4FM (issue #935). Because a wideband dongle decodes every site's
+	// control channel in parallel and the correct demod path must be
+	// chosen before the CC locks (it is what lets it lock), the override
+	// is keyed here per control-channel frequency — the one place a
+	// site's identity is known at config time — rather than by the
+	// RFSS/Site the CC only reveals after it decodes.
+	//
+	// Do NOT set this to cqpsk merely because a site is simulcast:
+	// simulcast is a transmitter-coordination technique, not a
+	// modulation, and most simulcast systems transmit C4FM (Victoria's
+	// MMR, all sites, is the worked example in #935 — forcing CQPSK
+	// there kills the decode). Override to cqpsk only for sites that a
+	// strong, clean signal proves won't lock in C4FM.
 	//
 	// Recognised values match the system-level key (case-insensitive):
 	// "" (inherit the system's p25_phase1_demod_mode) / "c4fm" / "fm"
 	// (FM discriminator + 4-level slicer) or "cqpsk" / "lsm" / "linear"
-	// (the LSM path — complex RRC + Gardner + differential QPSK).
+	// (the linear path — complex RRC + Gardner + differential QPSK).
 	// Applies to both the control-channel decoder and the voice grants
-	// this tap issues, so a granted voice call on an LSM site is decoded
-	// on the LSM path too. Ignored for non-P25-Phase-1 channels.
+	// this tap issues, so a granted voice call on a CQPSK site is decoded
+	// on the linear path too. Ignored for non-P25-Phase-1 channels.
 	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
 }
 
@@ -1359,18 +1366,21 @@ type SystemConfig struct {
 
 	// P25Phase1DemodMode selects the symbol-recovery path for the
 	// P25 Phase 1 receiver. Recognised values: "" / "c4fm" / "fm"
-	// (the default — FM discriminator + 4-level slicer; matches
-	// every previously shipping config and works on conventional
-	// non-simulcast P25 transmitters) or "cqpsk" / "lsm" / "linear"
-	// (the linear / LSM path — complex RRC + Gardner + differential
-	// QPSK; required for simulcast P25 deployments whose control
-	// channel transmits Linear Simulcast Modulation rather than
-	// straight C4FM, see issue #275 and TIA-102.BAAA). Applies to
-	// both the control channel decoder and the per-call voice
-	// chain — without the voice-chain side a simulcast site would
-	// lock the CC fine but never decode an LDU on a granted voice
-	// call (issue #356 follow-up). Ignored for non-P25-Phase-1
-	// protocols.
+	// (the default — FM discriminator + 4-level slicer; matches every
+	// previously shipping config and is correct for the large majority
+	// of P25 systems, including most simulcast systems, which transmit
+	// C4FM) or "cqpsk" / "lsm" / "linear" (the linear / LSM path —
+	// complex RRC + Gardner + differential QPSK; for the minority of
+	// systems that transmit Linear Simulcast Modulation, a linear
+	// π/4-DQPSK waveform, rather than C4FM — see issue #275 and
+	// TIA-102.BAAA). The modulation is NOT implied by a system being
+	// simulcast, nor readable from emission-designator/licensing data;
+	// determine it empirically and set cqpsk only when a strong, clean
+	// signal will not lock in C4FM (issue #935). Applies to both the
+	// control channel decoder and the per-call voice chain — without
+	// the voice-chain side a CQPSK site would lock the CC fine but
+	// never decode an LDU on a granted voice call (issue #356
+	// follow-up). Ignored for non-P25-Phase-1 protocols.
 	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
 	// DMRInterleavedVoice overrides the 2-slot interleaved voice decoder.
 	// A DMR carrier is 2-slot TDMA, so the demodulated stream interleaves
