@@ -29,7 +29,7 @@ import (
 // Unlike the daemon's --iq-capture flag — which taps a control SDR already in
 // the running pool (issue #402) — this is a standalone one-shot for grabbing a
 // capture off a dedicated dongle without bringing the whole daemon up. Both
-// paths share the encodeF32/encodeU8 packers in iqcapture.go.
+// paths stream chunk-by-chunk through siglab's shared capture encoder.
 func runCapture(args []string) {
 	fs := flag.NewFlagSet("capture", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
@@ -313,22 +313,10 @@ const captureWriterDepth = 256
 // writes into one syscall keeps the writer goroutine from falling behind.
 const captureBufWriter = 1 << 20 // 1 MiB
 
-// encoderFor returns the byte packer and per-sample size for a capture format.
-func encoderFor(format siglab.SampleFormat) (func(dst []byte, src []complex64), int) {
-	switch format {
-	case siglab.FormatU8:
-		return encodeU8, 2
-	case siglab.FormatS16:
-		return encodeS16, 4
-	default:
-		return encodeF32, 8
-	}
-}
-
 // captureToFile streams complex64 chunks from src, optionally decimates each
 // chunk to a narrowband channel through ddc (nil = full band), encodes the
-// result in the requested on-disk format with the shared encodeF32/encodeU8/
-// encodeS16 packers, and writes to path until it has collected seconds*rate
+// result in the requested on-disk format with siglab's shared capture encoder,
+// and writes to path until it has collected seconds*rate
 // INPUT samples, the stream ends, ctx cancels, or a wall-clock safety deadline
 // elapses. Returns the number of IQ samples written (post-decimation when ddc
 // is set).
@@ -365,7 +353,6 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 // samples. The stateful DDC stays on the drain goroutine (it must run in
 // order); only the encoded bytes cross to the writer.
 func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
-	encode, bytesPerSample := encoderFor(format)
 	probe := make([]complex64, 0, captureProbeSamples)
 
 	// Stop once seconds worth of INPUT samples have been read; the written
@@ -437,9 +424,9 @@ loop:
 				probe = append(probe, take...)
 			}
 			// Fresh buffer per chunk: it is handed to the writer goroutine, so
-			// it must not alias the reused ddcBuf.
-			buf := make([]byte, len(samples)*bytesPerSample)
-			encode(buf, samples)
+			// it must not alias the reused ddcBuf. siglab.EncodeCapture allocates
+			// a new buffer per call, which the cross-goroutine handoff needs.
+			buf := siglab.EncodeCapture(samples, format)
 			select {
 			case writerCh <- buf:
 			case werr := <-writeErrCh:
