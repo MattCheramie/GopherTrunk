@@ -83,7 +83,9 @@ for tagged releases.
   readable from emission-designator/licensing data. All guidance now says: leave it at
   C4FM, and switch a channel to `cqpsk` only when a strong, clean signal won't lock in
   C4FM. The per-channel override feature itself is unchanged and still correct for
-  genuinely-CQPSK systems. (issue #935)
+  genuinely-CQPSK systems. A follow-up completes the same correction on the surfaces the
+  first pass missed — the opt-in-features reference, the web config-builder's per-channel
+  demod-override help, and the system-identification learn article. (issue #935)
 - **P25 Phase 2 superframes now lock under any dibit rotation.** Real-air Phase 2
   is differentially decoded H-DQPSK, so a residual carrier offset near an odd
   multiple of ±1500 Hz (a quarter of the 6000-baud symbol rate) rotates every

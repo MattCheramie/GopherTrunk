@@ -100,18 +100,27 @@ decimator per system.
 
 ## 2a. P25 Phase 1 demodulator selection
 
-**C4FM on by default; opt into CQPSK/LSM per system.** Conventional
-P25 Phase 1 sites transmit C4FM on the air — the FM-discriminator +
-4-level slicer the receiver ships with handles them. P25 simulcast
-deployments commonly transmit the control channel as
+**C4FM on by default; opt into CQPSK/LSM only when a site genuinely
+transmits it.** Almost all P25 Phase 1 sites transmit C4FM on the air —
+**including most simulcast systems** — and the FM-discriminator +
+4-level slicer the receiver ships with handles them. Some systems
+instead transmit
 [Linear Simulcast Modulation](https://www.dsheirer.com/linear-simulcast-modulation/)
-(LSM, TIA-102.BAAA), a CQPSK-shaped variant designed to survive the
-multi-transmitter overlap that destroys pure C4FM. LSM pushed through
+(LSM, TIA-102.BAAA), a CQPSK-shaped linear waveform. LSM pushed through
 an FM discriminator produces near-random dibits and the FSW never
 matches — the failure mode reported against
 [issue #275](https://github.com/MattCheramie/GopherTrunk/issues/275).
 
-Operators on simulcast sites opt into the CQPSK path per system:
+**Simulcast does not imply CQPSK.** Simulcast is a transmitter-
+coordination technique, not a modulation — most simulcast systems
+(Victoria's MMR, its multi-tower Melbourne CBD included) transmit plain
+C4FM, and forcing CQPSK there kills the decode. You cannot read the
+modulation off the fact a site is simulcast, nor off emission-designator
+/ licensing data (`10K1D7W` covers both C4FM and CQPSK). Determine it
+empirically: leave it at C4FM, and switch a system — or a single site,
+via the per-channel `p25_phase1_demod_mode` override
+([issue #935](https://github.com/MattCheramie/GopherTrunk/issues/935)) —
+to CQPSK only when a strong, clean signal will not lock in C4FM:
 
 | Receiver | YAML key | Default | Opt-in string |
 | --- | --- | --- | --- |

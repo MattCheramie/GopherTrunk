@@ -232,9 +232,9 @@ function DeviceEditor(props: {
                   options={[
                     { value: "", label: "Inherit system default" },
                     { value: "c4fm", label: "C4FM / FM" },
-                    { value: "cqpsk", label: "CQPSK / LSM (simulcast)" },
+                    { value: "cqpsk", label: "CQPSK / LSM (linear)" },
                   ]}
-                  help="Override the system's demod path for this site only. Use when one P25 system mixes LSM simulcast and C4FM sites (issue #935). P25 Phase 1 only."
+                  help="Override the system's demod path for this site only. Use when one P25 system genuinely mixes CQPSK/linear (LSM) sites and C4FM sites — decided empirically (a strong signal won't lock in C4FM), NOT just because a site is simulcast (most simulcast is C4FM). Issue #935. P25 Phase 1 only."
                 />
               </div>
             )}
