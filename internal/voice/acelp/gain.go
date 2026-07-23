@@ -103,7 +103,7 @@ func (e *enerPredictor) decEner(index int16, bfi bool, a, prdLt, code []int16, s
 	L = loadSh(e.lastEnerPit, 6)
 	L = subSh(L, enerPlt, 6)
 	L = addSh(L, 12, 15) // gain in Q12
-	exp, frac = lExtract(L)
+	exp, frac = lExtractLog(L)
 	L = pow2fp(exp, frac)
 	if lSub(L, 4915) > 0 { // 1.2 in Q12
 		L = 4915
@@ -113,7 +113,7 @@ func (e *enerPredictor) decEner(index int16, bfi bool, a, prdLt, code []int16, s
 	// Code gain = pow2(0.5*(last_ener_cod - ener_c)).
 	L = loadSh(e.lastEnerCod, 6)
 	L = subSh(L, enerC, 6)
-	exp, frac = lExtract(L)
+	exp, frac = lExtractLog(L)
 	L = pow2fp(exp, frac)
 	gainCod = extractL(L)
 

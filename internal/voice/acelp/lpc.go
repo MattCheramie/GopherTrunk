@@ -8,12 +8,16 @@ package acelp
 // filter. Clean-room ports of the reference Fac_Pond / Get_Lsp_Pol / Lsp_Az /
 // Int_Lpc4 / Pond_Ai.
 
-// mpyMix multiplies a double-precision (hi,lo) value by a 16-bit n, in DPF
-// (Mpy_32_16): result ≈ (hi<<16 + lo<<1) * n >> 15.
+// mpyMix multiplies a value split by lExtractLog (hi = L>>15, lo = low 15 bits)
+// by a 16-bit n: hi*n + 2*((lo*n)>>16). Faithful port of the reference mpy_mix
+// (FEXP_TET.C) — it pairs with lExtractLog's L>>15 split, NOT the DPF lExtract.
+// Using the DPF pair here rounds differently and left occasional 1-LSB errors in
+// the interpolated LPC coefficients, which the synthesis filter then grew into a
+// small drift on a handful of frames.
 func mpyMix(hi, lo, n int16) int32 {
-	L := lMult(hi, n)
-	L = lMac(L, mult(lo, n), 1)
-	return L
+	p1 := extractH(lMult0(lo, n))
+	L := lMult0(hi, n)
+	return addSh(L, p1, 1)
 }
 
 // facPond builds the spectral-expansion factor vector for a bandwidth-expansion
@@ -45,7 +49,7 @@ func getLspPol(lsp []int16) [6]int32 {
 	for i := 2; i <= 5; i++ {
 		f[fi] = f[fi-2]
 		for j := 1; j < i; j++ {
-			hi, lo := lExtract(f[fi-1])
+			hi, lo := lExtractLog(f[fi-1])
 			t0 := mpyMix(hi, lo, lsp[li])
 			t0 = lShl(t0, 1)
 			f[fi] = lAdd(f[fi], f[fi-2])
