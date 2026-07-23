@@ -150,11 +150,13 @@ func TestTrafficExtractorSlotTagging(t *testing.T) {
 		L        int
 		wantSlot uint8
 	}
+	// The SB's STS anchors the grid one NDB-slot before its frame's TN1 traffic
+	// (ndbSBSlotShift), so the first NDB after the SB is TN1, then 2, 3, 4.
 	ndbs := []ndb{
-		{sbL + 1*255 + 30, 2},
-		{sbL + 2*255 + 30, 3},
-		{sbL + 3*255 + 30, 4},
-		{sbL + 4*255 + 30, 1}, // wraps mod 4 back to TN1
+		{sbL + 1*255 + 30, 1},
+		{sbL + 2*255 + 30, 2},
+		{sbL + 3*255 + 30, 3},
+		{sbL + 4*255 + 30, 4},
 	}
 	for i, n := range ndbs {
 		buildNCDB(stream, n.L, rampDibits(ndbBlockDibits, uint8(i)), rampDibits(ndbBlockDibits, uint8(i+1)))

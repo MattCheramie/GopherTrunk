@@ -77,6 +77,34 @@ func bitsEqual(x, y []byte) bool {
 	return true
 }
 
+// TestTCHClass2CRCMatchesETSI pins the class-2 CRC to the ETSI EN 300 395-2
+// reference (its TAB_CRC parity matrix). The two vectors' expected outputs were
+// produced by the reference codec's Build_Crc; an earlier G(X)=1+X³+X⁷ LFSR
+// approximation produced different bits, so every real on-air TCH/S burst failed
+// the CRC and was dropped (no decoded voice). This guards against regressing to
+// any CRC that disagrees with real air.
+func TestTCHClass2CRCMatchesETSI(t *testing.T) {
+	cases := []struct {
+		class2 []byte
+		want   []byte
+	}{
+		{
+			class2: []byte{1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1},
+			want:   []byte{1, 0, 1, 1, 0, 0, 1, 1},
+		},
+		{
+			class2: []byte{1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0},
+			want:   []byte{1, 1, 1, 0, 0, 1, 1, 1},
+		},
+	}
+	for i, c := range cases {
+		got := crcTCHClass2(c.class2)
+		if !bitsEqual(got, c.want) {
+			t.Errorf("case %d: crcTCHClass2 = %v, want %v (ETSI reference)", i, got, c.want)
+		}
+	}
+}
+
 // TestTCHSpeechFramesGate checks the CRC gate: a well-formed traffic frame
 // yields the two 137-bit speech frames packed to 18 bytes each, matching the
 // input; a random (non-TCH/S) frame is rejected (nil) by the class-2 CRC.

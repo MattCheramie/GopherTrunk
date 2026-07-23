@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"os"
+	"sort"
 	"strconv"
 	"testing"
 
@@ -61,6 +62,7 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		speechFrames  [][]byte
 		crcBursts     int
 		firstT, lastT float64
+		activeSec     map[int]int
 	}
 	var slots [5]slotAcc // index 1..4
 	var dibitsFed int
@@ -100,6 +102,10 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		s.lastT = tSec
 		s.crcBursts++
 		s.speechFrames = append(s.speechFrames, sfs...)
+		if s.activeSec == nil {
+			s.activeSec = map[int]int{}
+		}
+		s.activeSec[int(tSec)]++
 	})
 
 	rx := tetrarx.New(tetrarx.Options{
@@ -149,8 +155,15 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 				peak = -v
 			}
 		}
-		t.Logf("slot %d: crc_bursts=%d speech_frames=%d active=%.1f..%.1fs pcm=%.1fs peak=%d",
-			tn, s.crcBursts, len(s.speechFrames), s.firstT, s.lastT, float64(len(pcm))/8000, peak)
+		var secs []int
+		for k := range s.activeSec {
+			if s.activeSec[k] >= 2 { // >=2 bursts in the second = real activity, not a lone spurious
+				secs = append(secs, k)
+			}
+		}
+		sort.Ints(secs)
+		t.Logf("slot %d: crc_bursts=%d speech_frames=%d pcm=%.1fs peak=%d active_secs(>=2)=%v",
+			tn, s.crcBursts, len(s.speechFrames), float64(len(pcm))/8000, peak, secs)
 		if outDir != "" {
 			writeWav8kLocal(outDir+"/slot"+string(rune('0'+tn))+".wav", pcm)
 		}

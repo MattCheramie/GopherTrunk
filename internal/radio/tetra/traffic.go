@@ -212,16 +212,26 @@ func (te *TrafficExtractor) emit(L int) {
 	te.onBurst(framing.PackBitsMSB(bits), te.slotOf(L))
 }
 
+// ndbSBSlotShift aligns the synchronisation-burst anchor to the NDB slot grid.
+// The SB is transmitted in TN1, but its synchronisation training sequence sits
+// late in the SB burst (after the frequency-correction + BSCH preamble), so the
+// detected STS leading dibit lands one NDB slot before the TN1 traffic burst's
+// normal-training-sequence position. Adding 3 (= −1 mod 4) makes a burst one
+// slot after the anchor read as TN1, matching the control channel's granted
+// timeslots — verified against the reporter's real same-carrier capture
+// (grant ts1↔decoded slot, ts2↔decoded slot line up once shifted).
+const ndbSBSlotShift = 3
+
 // slotOf returns the TDMA timeslot (1..4) of a burst whose training sequence
-// leads at absolute dibit L, or 0 when no synchronisation burst has anchored
-// the slot grid yet. The SB anchors TN1; each further slot is 255 dibits on.
-// Rounding to the nearest slot absorbs the small intra-slot offset between the
-// normal and synchronisation training sequences.
+// leads at absolute dibit L, or 0 when no synchronisation burst has anchored the
+// slot grid yet. The SB anchors the grid (see ndbSBSlotShift); each further slot
+// is 255 dibits on, and rounding to the nearest slot absorbs the small intra-slot
+// offset between the normal and synchronisation training sequences.
 func (te *TrafficExtractor) slotOf(L int) uint8 {
 	if !te.haveAnchor {
 		return 0
 	}
-	si := int(math.Round(float64(L-te.sbAnchor)/float64(ndbSlotDibits))) % 4
+	si := (int(math.Round(float64(L-te.sbAnchor)/float64(ndbSlotDibits))) + ndbSBSlotShift) % 4
 	if si < 0 {
 		si += 4
 	}
