@@ -52,6 +52,11 @@ type MACDispatcher struct {
 	motorolaAliasAsm *p25p2.MotorolaAliasAssembler
 	macSeen          map[uint32]struct{}
 
+	// scramblerPin lets ScramblerProbe self-align to this channel's PN44
+	// phase once and reuse it, instead of sweeping on every MAC burst (issue
+	// #915). One per dispatcher, driven single-threaded from Dispatch.
+	scramblerPin *p25p2.ScramblerPin
+
 	onCallSource     func(p25p2.GroupVoiceChannelUser)
 	onCallEncryption func(p25p2.EncryptionSync)
 }
@@ -99,6 +104,7 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 		aliasAsm:         p25p2.NewTalkerAliasAssembler(nil),
 		motorolaAliasAsm: p25p2.NewMotorolaAliasAssembler(nil),
 		macSeen:          make(map[uint32]struct{}),
+		scramblerPin:     &p25p2.ScramblerPin{},
 		onCallSource:     opts.OnCallSource,
 		onCallEncryption: opts.OnCallEncryption,
 	}
@@ -113,7 +119,7 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 // channel nearly every PDU is RS-valid, whereas a mis-framed traffic
 // channel decodes a stream of random bytes that (almost) never verify.
 func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConfig) (decodedCount, rsValidCount int) {
-	decoded := p25p2.DecodeSuperframeMACPDUsWithSlot(sf, macCfg)
+	decoded := p25p2.DecodeSuperframeMACPDUsWithSlotPinned(sf, macCfg, d.scramblerPin)
 	for _, dec := range decoded {
 		pdu := dec.PDU
 		if dec.RSValid {
