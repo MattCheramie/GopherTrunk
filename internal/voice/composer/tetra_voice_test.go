@@ -15,9 +15,11 @@ import (
 // buildTETRATrafficDibits lays out nSlots Normal Continuous Downlink Bursts
 // (255-dibit TDMA slots) into a dibit stream, each with the normal training
 // sequence at its §9.4.4.3.2 intra-slot position (bit 244 → dibit 122). The
-// data blocks are deterministic filler — the chain test asserts the raw
-// full-slot frames flow and drive the call lifecycle, not their payload
-// (the payload round-trip is TrafficExtractor's own unit test).
+// data blocks are deterministic filler — the chain test asserts that bursts
+// are recovered and drive the call lifecycle, not their payload. (Payload
+// round-trips are covered by TrafficExtractor and TCHSpeechFrames unit tests;
+// the CRC gate legitimately drops these filler bursts, so no decoded speech is
+// asserted here.)
 func buildTETRATrafficDibits(nSlots int) []uint8 {
 	const (
 		slot   = 255
@@ -36,11 +38,14 @@ func buildTETRATrafficDibits(nSlots int) []uint8 {
 	return stream
 }
 
-// TestComposerTETRAVoiceChainWritesRawFrames drives the composer's TETRA
+// TestComposerTETRAVoiceChainLifecycle drives the composer's TETRA
 // traffic-follow path end to end: modulated π/4-DQPSK IQ → TETRA receiver →
-// TrafficExtractor → recorder .raw sidecar, and confirms full-slot traffic
-// frames flow, the engine is kept alive, and the call ends on hangtime.
-func TestComposerTETRAVoiceChainWritesRawFrames(t *testing.T) {
+// TrafficExtractor → TCH/S decode, and confirms the chain starts, recovered
+// bursts keep the engine's call alive, and the call ends on hangtime once the
+// IQ stops. The filler bursts do not carry valid TCH/S, so the CRC gate emits
+// no speech frames — speech-frame decoding is covered by the tetra package's
+// TCHSpeechFrames test and the ACELP vocoder tests.
+func TestComposerTETRAVoiceChainLifecycle(t *testing.T) {
 	const (
 		sps   = 8 // 18000 baud × 8 = 144 kHz intermediate rate
 		span  = 8
@@ -95,20 +100,8 @@ func TestComposerTETRAVoiceChainWritesRawFrames(t *testing.T) {
 	waitFor(t, 10*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
 	src.SendIQ(iq)
 
-	// Full-slot traffic frames must reach the sidecar.
-	waitFor(t, 20*time.Second, func() bool { return len(sink.rawFrames("VOICE-1")) >= 5 })
-	got := sink.rawFrames("VOICE-1")
-	if len(got) == 0 {
-		t.Fatal("no raw traffic frames written")
-	}
-	for i, f := range got {
-		if len(f) != tetra.TrafficFrameBytes {
-			t.Fatalf("frame %d is %d bytes, want %d (BKN1+BKN2 type-5)", i, len(f), tetra.TrafficFrameBytes)
-		}
-	}
-
-	// The chain keeps the engine's call alive while traffic flows.
-	waitFor(t, 5*time.Second, func() bool { return eng.touched.Load() > 0 })
+	// Recovered bursts keep the engine's call alive while traffic flows.
+	waitFor(t, 20*time.Second, func() bool { return eng.touched.Load() > 0 })
 
 	// After the IQ stops, the boundary tracker ends the call on hangtime
 	// (VoiceHangtime after the last decoded burst).

@@ -1153,7 +1153,7 @@ func TestDefaultVocoderForProtocolMappings(t *testing.T) {
 		"dmr-tier3":  "ambe2-dmr",
 		"nxdn":       "ambe2",
 		"dpmr":       "ambe2",
-		"tetra":      "ambe2",
+		"tetra":      "tetra-acelp",
 	}
 	if len(got) != len(want) {
 		t.Errorf("len = %d, want %d", len(got), len(want))

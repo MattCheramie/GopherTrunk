@@ -274,8 +274,8 @@ func DefaultVocoderForProtocol() map[string]string {
 		"dmr-tier2":  "ambe2-dmr", // DMR Tier II — AMBE+2 3600x2450
 		"dmr-tier3":  "ambe2-dmr", // DMR Tier III — AMBE+2 3600x2450
 		"nxdn":       "ambe2",
-		"dpmr":       "ambe2", // dPMR Mode 3 (digital)
-		"tetra":      "ambe2", // TETRA voice
+		"dpmr":       "ambe2",       // dPMR Mode 3 (digital)
+		"tetra":      "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
 	}
 }
 
@@ -287,10 +287,12 @@ func dmrVoiceProtocol(protocol string) bool {
 	return protocol == "dmr-tier1" || protocol == "dmr-tier2" || protocol == "dmr-tier3"
 }
 
-// tetraVoiceProtocol reports whether a call is TETRA voice. TETRA has no
-// in-process vocoder yet (TCH/S FEC + ACELP are follow-ups), so — like
-// ProVoice — its `.raw` sidecar of raw full-slot traffic frames is the only
-// capture of the call and is always written.
+// tetraVoiceProtocol reports whether a call is TETRA voice. The composer's
+// TETRA chain now TCH/S-decodes each traffic burst and emits post-FEC 137-bit
+// speech frames, which the clean-room ACELP vocoder ("tetra-acelp") renders to
+// PCM — the same post-FEC-frames-in-`.raw` + decoded-WAV shape as DMR. The
+// `.raw` sidecar is always written so the speech frames remain available for
+// out-of-band tools.
 func tetraVoiceProtocol(protocol string) bool {
 	return protocol == "tetra"
 }

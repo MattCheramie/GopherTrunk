@@ -76,3 +76,44 @@ func bitsEqual(x, y []byte) bool {
 	}
 	return true
 }
+
+// TestTCHSpeechFramesGate checks the CRC gate: a well-formed traffic frame
+// yields the two 137-bit speech frames packed to 18 bytes each, matching the
+// input; a random (non-TCH/S) frame is rejected (nil) by the class-2 CRC.
+func TestTCHSpeechFramesGate(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	a := randBits(rng, tchSpeechFrameBits)
+	b := randBits(rng, tchSpeechFrameBits)
+	traffic := EncodeTCHS(a, b)
+
+	frames := TCHSpeechFrames(traffic)
+	if len(frames) != 2 {
+		t.Fatalf("TCHSpeechFrames returned %d frames, want 2", len(frames))
+	}
+	wantBytes := (tchSpeechFrameBits + 7) / 8
+	for i, f := range frames {
+		if len(f) != wantBytes {
+			t.Errorf("frame %d = %d bytes, want %d", i, len(f), wantBytes)
+		}
+	}
+	if !bitsEqual(framing.UnpackBitsMSB(frames[0], tchSpeechFrameBits), a) {
+		t.Error("frame A not recovered from packed speech frame")
+	}
+	if !bitsEqual(framing.UnpackBitsMSB(frames[1], tchSpeechFrameBits), b) {
+		t.Error("frame B not recovered from packed speech frame")
+	}
+
+	// A random 54-byte frame is overwhelmingly not TCH/S: the CRC gate rejects
+	// it. Sweep a handful of seeds; none should pass.
+	passes := 0
+	for s := 0; s < 64; s++ {
+		junk := make([]byte, TrafficFrameBytes)
+		rng.Read(junk)
+		if TCHSpeechFrames(junk) != nil {
+			passes++
+		}
+	}
+	if passes > 1 { // ~1/256 chance each; >1 in 64 would be suspicious
+		t.Errorf("CRC gate let %d/64 random frames through", passes)
+	}
+}
