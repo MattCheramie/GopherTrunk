@@ -107,6 +107,17 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA colour code locked on the first sync burst, so a single mis-decoded
+  BSCH could poison a whole session.** The extended colour code (the scrambler
+  seed for every BNCH/SCH/TCH block) was learned from the first BSCH and never
+  re-evaluated. If that burst's bit errors slipped through the BSCH FEC as a
+  valid-but-wrong codeword, the wrong scrambler locked in and every subsequent
+  descramble failed silently — empty or truncated recordings until a restart.
+  The colour is now adopted provisionally on the first BSCH (so a cold receiver
+  still starts decoding immediately) but only locked once a second BSCH
+  corroborates it; a mis-decoded first burst is corrected by the true colour
+  that every later BSCH carries. An operator-configured colour is still
+  authoritative.
 - **TETRA same-carrier voice leaked audio between timeslots / talkgroups.** On a
   single-carrier site every concurrent call built its own receiver + slot
   extractor over the shared post-DDC IQ. A fresh extractor had no
