@@ -18,6 +18,21 @@ for tagged releases.
   own files instead of only one binding and the rest being dropped with
   "no voice device available for grant". The same-carrier voice device serial
   changes from `cc:same-carrier` to `cc:same-carrier:1..4`.
+- **Event-driven raw-IQ auto-recording (`baseband.auto_record`).** The daemon
+  can now capture a short slice of the control SDR's raw IQ whenever a
+  classified event fires — `on_concurrent_calls: N` (N+ calls active at once),
+  `on_no_voice_device` (a grant arrived but every voice tuner was busy),
+  `on_encrypted`, or `on_emergency` — plus a manual
+  `POST /api/v1/siglab/autorecord/trigger`. Each capture lands in the
+  configured `dir` with a self-describing name
+  (`<system>_<UTC>_<reason>_<freqHz>_<rateHz>hz.<ext>`) and a `.metadata.json`
+  sidecar, so it drops straight into `gophertrunk replay` / siglab. A cooldown
+  and an in-flight cap keep a burst of grants from spawning a capture storm.
+  This is the event-based debugging hook for capturing hard-to-decode moments
+  (concurrent grants, unknown packets) as they happen.
+- **siglab capture start time in the capture list.** Each capture row now shows
+  its recording start time, so otherwise-identical grabs of the same carrier
+  (e.g. three `capture-AIRSPY SN:…` captures) can be told apart at a glance.
 - **Startup warning when paging is configured without storage.** A
   `paging.pocsag` / `paging.flex` / `paging.wideband` subsystem with no
   `storage.path` set decodes fine and consumes live IQ, but decoded pages are
@@ -253,6 +268,17 @@ for tagged releases.
   spawn (issue #915).
 
 ### Changed
+- **Short digital recordings now report their frame yield.** The recorder's
+  `recording shorter than call span` diagnostic gained `frames`, `audio_pct`
+  (the fraction of the call span that decoded to audio), and `vocoder`, so a
+  sparse-decode recording (few TCH/S bursts passing CRC — the TETRA
+  short-recording symptom) is diagnosable from one log line instead of by
+  diffing the WAV against the call record.
+- **Same-carrier voice-tap IQ drops are no longer silent.** When the control
+  decoder's voice tap drops IQ to a lagging voice consumer (still dropping to
+  protect the decode hot path), the dropped chunks are now counted and surfaced
+  as a single warning at call end with the remedy — so starved voice decode
+  (the short/gappy-recording symptom) is visible instead of silent (issue #402).
 - **Live captures stream straight to disk instead of buffering the whole grab in
   RAM.** The Signal-Lab capture path (and the `gophertrunk capture` / daemon
   `--iq-capture` subcommands) previously held the entire capture in memory as

@@ -3,7 +3,9 @@ package ccdecoder
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // Same-carrier voice tap. A TETRA Single Carrier Base Station keeps voice calls
@@ -20,28 +22,52 @@ import (
 // consumer can never stall the decode hot path.
 type voiceFanout struct {
 	mu   sync.Mutex
-	subs map[int]chan []complex64
+	subs map[int]*voiceSub
 	next int
+	log  *slog.Logger
 }
 
-func newVoiceFanout() *voiceFanout { return &voiceFanout{subs: map[int]chan []complex64{}} }
+// voiceSub is one subscriber's channel plus its dropped-chunk counter. A drop
+// is a gap of missing IQ delivered to the followed call's voice chain, which
+// breaks the receiver's symbol timing / lock — the mechanism behind starved,
+// short/gappy TETRA recordings (issue #402). Counting them turns that silent
+// loss into an actionable log line at call end.
+type voiceSub struct {
+	ch    chan []complex64
+	drops atomic.Uint64
+}
+
+func newVoiceFanout(log *slog.Logger) *voiceFanout {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &voiceFanout{subs: map[int]*voiceSub{}, log: log}
+}
 
 func (f *voiceFanout) subscribe() (<-chan []complex64, func()) {
-	ch := make(chan []complex64, 64)
+	sub := &voiceSub{ch: make(chan []complex64, 64)}
 	f.mu.Lock()
 	id := f.next
 	f.next++
-	f.subs[id] = ch
+	f.subs[id] = sub
 	f.mu.Unlock()
 	var once sync.Once
-	return ch, func() {
+	return sub.ch, func() {
 		once.Do(func() {
 			f.mu.Lock()
-			if c, ok := f.subs[id]; ok {
+			if s, ok := f.subs[id]; ok {
 				delete(f.subs, id)
-				close(c)
+				close(s.ch)
 			}
 			f.mu.Unlock()
+			// After the delete-under-lock no further broadcast can increment
+			// this sub's counter, so the load sees the final total. Surface a
+			// non-zero drop count once at unsubscribe (call end) with the
+			// remedy, mirroring the --iq-capture drop warning.
+			if d := sub.drops.Load(); d > 0 {
+				f.log.Warn("ccdecoder: same-carrier voice tap dropped IQ to a lagging voice consumer — the followed call's decode was starved (expect short/gappy recordings); reduce CPU load or lower sdr.sample_rate (issue #402)",
+					"dropped_chunks", d)
+			}
 		})
 	}
 }
@@ -49,18 +75,21 @@ func (f *voiceFanout) subscribe() (<-chan []complex64, func()) {
 // broadcast copies chunk to every subscriber. The caller's slice is reused
 // across chunks, so each subscriber receives its own copy. A no-op (and no
 // allocation) when nothing is subscribed — the production hot-path default.
+// A full subscriber buffer drops the chunk (protecting the decode path) and
+// bumps that subscriber's drop counter so the loss is not silent.
 func (f *voiceFanout) broadcast(chunk []complex64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.subs) == 0 {
 		return
 	}
-	for _, ch := range f.subs {
+	for _, s := range f.subs {
 		cp := make([]complex64, len(chunk))
 		copy(cp, chunk)
 		select {
-		case ch <- cp:
+		case s.ch <- cp:
 		default: // subscriber lagging; drop to protect the decode path
+			s.drops.Add(1)
 		}
 	}
 }

@@ -502,7 +502,7 @@ func New(opts Options) (*Decoder, error) {
 		metrics:      opts.Metrics,
 		fec:          opts.FEC,
 		autotune:     opts.Autotune,
-		voiceFan:     newVoiceFanout(),
+		voiceFan:     newVoiceFanout(log),
 	}
 	empty := ""
 	d.activeSystem.Store(&empty)
