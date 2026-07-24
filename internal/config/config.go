@@ -533,6 +533,22 @@ type BasebandAutoRecordConfig struct {
 	OnEncrypted bool `yaml:"on_encrypted"`
 	// OnEmergency fires on an emergency-flagged grant.
 	OnEmergency bool `yaml:"on_emergency"`
+	// Tap selects what IQ is captured, mirroring BasebandRecordConfig.Tap:
+	//   "wideband" (default) — the control SDR's full-rate raw IQ (the historical
+	//     behaviour; large files, e.g. ~50 MB per 30 s at 2.5 MS/s).
+	//   "ddc" — the control decoder's narrowband digital-down-converter output
+	//     (the channelised stream at the pipeline rate: 144 kHz for TETRA, ~48 kHz
+	//     for the C4FM family). Orders of magnitude smaller and directly replayable
+	//     with `replay -format wav` / siglab. For a same-carrier TETRA site the DDC
+	//     tap holds all four voice timeslots of the control carrier — exactly the
+	//     channel worth sharing when a hard-to-decode call fires a trigger.
+	Tap string `yaml:"tap"`
+}
+
+// TapDDC reports whether triggered captures tap the narrowband DDC output rather
+// than the wideband SDR stream. Mirrors BasebandRecordConfig.TapDDC.
+func (a BasebandAutoRecordConfig) TapDDC() bool {
+	return strings.EqualFold(strings.TrimSpace(a.Tap), "ddc")
 }
 
 // autoRecordDefaultCooldown is used when Cooldown is empty.
@@ -2529,6 +2545,11 @@ func (c Config) validateBaseband() []error {
 		}
 		if a.OnConcurrentCalls < 0 {
 			errs = append(errs, fmt.Errorf("baseband.auto_record: on_concurrent_calls must not be negative"))
+		}
+		switch strings.ToLower(strings.TrimSpace(a.Tap)) {
+		case "", "wideband", "ddc":
+		default:
+			errs = append(errs, fmt.Errorf("baseband.auto_record: tap must be wideband|ddc, got %q", a.Tap))
 		}
 		if _, err := a.CooldownDuration(); err != nil {
 			errs = append(errs, fmt.Errorf("baseband.auto_record: cooldown %q: %w", a.Cooldown, err))

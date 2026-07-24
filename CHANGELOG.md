@@ -30,6 +30,16 @@ for tagged releases.
   and an in-flight cap keep a burst of grants from spawning a capture storm.
   This is the event-based debugging hook for capturing hard-to-decode moments
   (concurrent grants, unknown packets) as they happen.
+- **`baseband.auto_record` can capture the narrowband DDC output (`tap: ddc`).**
+  The default `tap: wideband` records the control SDR's full-rate raw IQ
+  (~50 MB per 30 s at 2.5 MS/s); `tap: ddc` instead records the control
+  decoder's channelised post-DDC stream at the pipeline rate (144 kHz for TETRA,
+  ~48 kHz for the C4FM family) — orders of magnitude smaller and directly
+  replayable with `replay -format wav` / siglab. For a same-carrier TETRA site
+  the DDC tap holds all four voice timeslots of the control carrier, so a
+  triggered capture of a hard-to-decode concurrent-call moment stays small
+  enough to share. Triggered captures also now create their target directory if
+  it does not exist.
 - **siglab capture start time in the capture list.** Each capture row now shows
   its recording start time, so otherwise-identical grabs of the same carrier
   (e.g. three `capture-AIRSPY SN:…` captures) can be told apart at a glance.
