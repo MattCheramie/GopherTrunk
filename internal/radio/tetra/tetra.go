@@ -35,23 +35,19 @@
 //   - The π/4-DQPSK demodulator + symbol-clock recovery for TETRA's
 //     18 ksym/sec air interface. internal/dsp/demod/dqpsk.go is the
 //     closest fit; matched-filter parameters differ from P25 Phase 2.
-//   - TDMA timing recovery + slot demarcation. The 4-slot frame +
-//     18-frame multiframe + 60-multiframe hyperframe scheduling
-//     belongs in a separate sync stage.
-//   - Lower-layer FEC: RCPC convolutional + reed-muller block coding
-//     across the various logical channels (BSCH, AACH, SCH/F,
-//     SCH/HD, BNCH). Parsing here assumes upstream FEC has corrected
-//     errors.
 //   - End-to-end air-interface encryption (TEA1/2/3/4) — TETRA voice
 //     traffic on most operational networks is encrypted; the
-//     `Encrypted` flag on a grant just records what the CC said.
-//   - TCH/S traffic-channel FEC (§8.4 unequal error protection) and the
-//     TETRA ACELP speech decoder that would turn recovered speech frames
-//     into PCM. The voice-follow path (traffic.go + the composer's TETRA
-//     chain) already retunes to the granted carrier, demodulates it, and
-//     extracts each Normal Continuous Downlink Burst's data blocks to the
-//     recorder's `.raw` sidecar for out-of-band decode; the FEC + vocoder
-//     are the remaining steps to intelligible audio.
+//     `Encrypted` flag on a grant just records what the CC said. Encrypted
+//     TCH/S fails the class-2 CRC and produces no decoded audio.
+//
+// Now wired (voice path): the composer's TETRA chain retunes to the granted
+// carrier, demodulates it, and — via traffic.go — recovers each Normal
+// Continuous Downlink Burst tagged with its TDMA timeslot (numbered from the
+// synchronisation burst). TCH/S channel decode (§5.5: RCPC + interleave +
+// class-2 CRC) turns each burst into 137-bit speech frames, which the
+// clean-room ACELP vocoder (internal/voice/acelp, bit-exact to ETSI
+// EN 300 395-2) renders to PCM. Per-slot filtering lets up to four concurrent
+// same-carrier calls decode into independent recordings.
 //
 // As with the other trunking packages: ship a clean structured
 // surface now, leave the analogue / FEC / encryption pieces as named
