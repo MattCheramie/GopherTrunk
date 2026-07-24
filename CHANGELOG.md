@@ -97,6 +97,19 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA same-carrier voice leaked audio between timeslots / talkgroups.** On a
+  single-carrier site every concurrent call built its own receiver + slot
+  extractor over the shared post-DDC IQ. A fresh extractor had no
+  synchronisation-burst anchor for up to ~1 s, during which it accepted *every*
+  slot's speech — so the first second of each recording absorbed all four slots
+  — and a call lingering in hangtime kept decoding its physical slot, so a new
+  call reusing that slot bled into the old recording. These are replaced by one
+  shared per-carrier slot demultiplexer whose SB anchor stays warm across calls
+  and routes each burst only to the single call that currently owns that
+  timeslot (most-recent grant wins); unanchored bursts are dropped, never
+  broadcast. The granted-timeslot decode itself was verified correct against the
+  reporter's captures — the leak was in the composer's per-call demux, not the
+  channel-allocation parser.
 - **TETRA TCH/S class-2 CRC was computed wrong, so no on-air voice ever
   decoded.** The 8-bit CRC was a `G(X)=1+X³+X⁷` LFSR; the TETRA CRC
   (EN 300 395-2 §5.5.1) is a fixed parity-check matrix, so every received TCH/S

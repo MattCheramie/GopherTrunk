@@ -230,3 +230,89 @@ func TestTETRATrafficBurstSlotFilter(t *testing.T) {
 		t.Errorf("offSlot = %d after one foreign + one granted + one unanchored, want 1", got)
 	}
 }
+
+// TestTETRASlotDemuxDropsUnanchored is the L1 regression: the shared per-carrier
+// demux must DROP an unanchored (slot 0) burst instead of accepting it, even when
+// a call owns another slot — otherwise the pre-anchor window leaks every slot's
+// speech into a fresh call's recording. A burst on the owned slot still decodes.
+func TestTETRASlotDemuxDropsUnanchored(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := &tetraSlotDemux{c: c, owners: map[uint8]*tetraSlotOwner{}}
+	rs := &recordingSink{}
+	bt := c.newBoundaryTracker("SC-2", 0, nil)
+	o := &tetraSlotOwner{serial: "SC-2", slot: 2, bt: bt, rs: rs}
+	d.addOwner(o)
+
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	// Unanchored (slot 0): dropped before any owner lookup — no decode, not even
+	// counted against the owner.
+	d.onBurst(frame, 0)
+	if n := len(rs.rawFrames("SC-2")); n != 0 {
+		t.Errorf("slot-0 burst wrote %d frames, want 0 (L1: no pre-anchor accept-all)", n)
+	}
+	if got := o.bursts.Load(); got != 0 {
+		t.Errorf("slot-0 burst counted %d bursts, want 0 (dropped before owner)", got)
+	}
+	if bt.sawVoice.Load() {
+		t.Error("slot-0 burst marked voice activity — must be dropped")
+	}
+
+	// A burst on a slot with no owner is also dropped (no panic, no write).
+	d.onBurst(frame, 4)
+	if n := len(rs.rawFrames("SC-2")); n != 0 {
+		t.Errorf("unowned-slot burst wrote %d frames, want 0", n)
+	}
+
+	// The owned slot decodes and drives liveness.
+	d.onBurst(frame, 2)
+	if n := len(rs.rawFrames("SC-2")); n != 2 {
+		t.Errorf("owned-slot burst wrote %d frames, want 2", n)
+	}
+	if !bt.sawVoice.Load() {
+		t.Error("owned-slot burst did not mark voice activity")
+	}
+}
+
+// TestTETRASlotDemuxMostRecentOwnerWins is the L2 regression: when a new call
+// reuses a physical slot while the previous call still lingers in hangtime, the
+// new call takes the slot and the OLD call must stop receiving it — so the new
+// call's speech never bleeds into the old call's recording. The old call ending
+// must not release the new owner's slot.
+func TestTETRASlotDemuxMostRecentOwnerWins(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := &tetraSlotDemux{c: c, owners: map[uint8]*tetraSlotOwner{}}
+	rs := &recordingSink{}
+	btA := c.newBoundaryTracker("SC-A", 0, nil)
+	btB := c.newBoundaryTracker("SC-B", 0, nil)
+	oA := &tetraSlotOwner{serial: "SC-A", slot: 3, bt: btA, rs: rs}
+	oB := &tetraSlotOwner{serial: "SC-B", slot: 3, bt: btB, rs: rs}
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	// Call A owns slot 3.
+	d.addOwner(oA)
+	d.onBurst(frame, 3)
+	if n := len(rs.rawFrames("SC-A")); n != 2 {
+		t.Fatalf("A got %d frames, want 2", n)
+	}
+
+	// Call B reuses slot 3 (new grant) while A is still in hangtime → B owns it.
+	d.addOwner(oB)
+	d.onBurst(frame, 3)
+	if n := len(rs.rawFrames("SC-A")); n != 2 {
+		t.Errorf("A received %d frames after losing slot 3, want 2 (no leak into old recording)", n)
+	}
+	if n := len(rs.rawFrames("SC-B")); n != 2 {
+		t.Errorf("B got %d frames after claiming slot 3, want 2", n)
+	}
+
+	// A ending (hangtime elapsed) must not release B's ownership of slot 3.
+	d.removeOwner(oA)
+	d.onBurst(frame, 3)
+	if n := len(rs.rawFrames("SC-B")); n != 4 {
+		t.Errorf("B got %d frames after A ended, want 4 (A's teardown kept B's slot)", n)
+	}
+	if n := len(rs.rawFrames("SC-A")); n != 2 {
+		t.Errorf("A got %d frames total, want 2", n)
+	}
+}
