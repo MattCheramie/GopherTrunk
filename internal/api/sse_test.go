@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -111,6 +112,84 @@ func TestEventToDTOUnitRegistrationSiteJSON(t *testing.T) {
 	want := `{"system":"MMR","protocol":"p25","source_id":1122867,"wacn":781832,"system_id":1332,"response":"accepted","rfss_id":2,"site_id":9,"nac":659}`
 	if got != want {
 		t.Errorf("registration+site JSON =\n  %s\nwant\n  %s", got, want)
+	}
+}
+
+// TestEventToDTOGrantCarriesNAC pins that a P25 grant event surfaces the
+// control channel's NAC on the wire (issue #268). NAC is threaded from the
+// decoded NID, so it is present on every P25 grant; downstream site-identity
+// dashboards read it alongside rfss_id/site_id. The `omitempty` tag only drops
+// it for non-P25 protocols (DMR/TETRA/…) where NAC does not apply — so a
+// consumer can treat "nac absent" as "not a P25 grant", never as "P25 grant
+// that silently lost its NAC".
+func TestEventToDTOGrantCarriesNAC(t *testing.T) {
+	dto := eventToDTO(events.Event{
+		Kind: events.KindGrant,
+		Payload: trunking.Grant{
+			System: "MMR", Protocol: "p25", GroupID: 0x1234, SourceID: 0xABCDEF,
+			FrequencyHz: 851_000_000, RFSSID: 1, SiteID: 9, NAC: 0x293,
+		},
+	})
+	body, err := json.Marshal(dto.Payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	nac, ok := m["nac"]
+	if !ok {
+		t.Fatalf("P25 grant JSON is missing `nac`: %s", body)
+	}
+	if nac.(float64) != 659 {
+		t.Errorf("nac = %v, want 659", nac)
+	}
+
+	// Contract: a grant with no NAC (non-P25, NAC unset) omits the field rather
+	// than surfacing a misleading nac:0.
+	body2, _ := json.Marshal(grantToDTO(trunking.Grant{System: "DMR-T3", Protocol: "dmr", GroupID: 1001}))
+	var m2 map[string]any
+	if err := json.Unmarshal(body2, &m2); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, present := m2["nac"]; present {
+		t.Errorf("non-P25 grant should omit nac, got: %s", body2)
+	}
+}
+
+// TestEventToDTOCallEndDuration pins that the call.end event carries
+// duration_ms (issue #268), so an SSE/WS-only consumer reads a call's length
+// off the completion event — matching the completed-call webhook's duration_ms
+// — instead of pairing call.end back to call.start and subtracting itself.
+func TestEventToDTOCallEndDuration(t *testing.T) {
+	start := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	end := start.Add(3200 * time.Millisecond)
+	dto := eventToDTO(events.Event{
+		Kind: events.KindCallEnd,
+		Payload: trunking.CallEnd{
+			Grant:        trunking.Grant{System: "MMR", Protocol: "p25", NAC: 0x293},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    start,
+			EndedAt:      end,
+			Reason:       trunking.EndReasonNormal,
+		},
+	})
+	body, err := json.Marshal(dto.Payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if d, _ := m["duration_ms"].(float64); d != 3200 {
+		t.Errorf("duration_ms = %v, want 3200 (json=%s)", m["duration_ms"], body)
+	}
+	// A zero StartedAt (watchdog/shutdown teardown) yields duration 0, not a
+	// garbage value from subtracting the zero time.
+	if z := callEndToDTO(trunking.CallEnd{EndedAt: end, Reason: trunking.EndReasonNormal}); z.DurationMs != 0 {
+		t.Errorf("zero-start duration = %d, want 0", z.DurationMs)
 	}
 }
 

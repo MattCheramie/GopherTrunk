@@ -809,7 +809,13 @@ type CallEndDTO struct {
 	DeviceSerial string        `json:"device_serial"`
 	StartedAt    time.Time     `json:"started_at"`
 	EndedAt      time.Time     `json:"ended_at"`
-	Reason       string        `json:"reason"`
+	// DurationMs is the call's length in milliseconds (ended − started). It
+	// mirrors the completed-call webhook's duration_ms so an SSE/WS-only
+	// consumer (a Prometheus exporter, a Grafana feed) can read a call's
+	// duration off the completion event without pairing it back to the
+	// call.start and subtracting timestamps itself (issue #268).
+	DurationMs int64 `json:"duration_ms"`
+	Reason     string `json:"reason"`
 }
 
 func callStartToDTO(cs trunking.CallStart) CallStartDTO {
@@ -822,12 +828,19 @@ func callStartToDTO(cs trunking.CallStart) CallStartDTO {
 }
 
 func callEndToDTO(ce trunking.CallEnd) CallEndDTO {
+	// Duration only when both timestamps are sane; a watchdog/shutdown teardown
+	// can leave StartedAt zero, and clock skew must not surface a negative.
+	var durMs int64
+	if !ce.StartedAt.IsZero() && ce.EndedAt.After(ce.StartedAt) {
+		durMs = ce.EndedAt.Sub(ce.StartedAt).Milliseconds()
+	}
 	return CallEndDTO{
 		Grant:        grantToDTO(ce.Grant),
 		Talkgroup:    talkgroupToDTO(ce.Talkgroup),
 		DeviceSerial: ce.DeviceSerial,
 		StartedAt:    ce.StartedAt,
 		EndedAt:      ce.EndedAt,
+		DurationMs:   durMs,
 		Reason:       ce.Reason.String(),
 	}
 }
