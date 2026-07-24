@@ -37,6 +37,12 @@ groups:
         url: /learn/digital-trunking/
       - title: "Module: Intro to Hardware"
         url: /learn/intro-hardware/
+      - title: "Module: Programming in Go"
+        url: /learn/programming-go/
+      - title: "Module: Digital Signal Processing"
+        url: /learn/dsp/
+      - title: "Module: Containers & Deployment"
+        url: /learn/deployment/
   - label: Field Guide
     items:
       - title: Field Guide overview

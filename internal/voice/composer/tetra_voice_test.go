@@ -134,18 +134,19 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
 	bt := c.newBoundaryTracker("VOICE-1", 0, nil)
 	rs := &recordingSink{}
-	var bursts, speech atomic.Uint64
+	var bursts, speech, offSlot atomic.Uint64
 
 	// Case A: a deterministic non-TCH/S 54-byte burst. Guard that the CRC gate
 	// rejects it (it does for this fixed vector), then confirm it leaves the
-	// call-liveness state completely untouched.
+	// call-liveness state completely untouched. slot 0 = unanchored (the
+	// single-call fallback), grantSlot 0 = no per-slot filter.
 	junk := make([]byte, tetra.TrafficFrameBytes)
 	rng := rand.New(rand.NewSource(42))
 	rng.Read(junk)
 	if tetra.TCHSpeechFrames(junk) != nil {
 		t.Fatalf("test vector precondition: junk frame unexpectedly passed the TCH/S CRC gate")
 	}
-	c.onTETRATrafficBurst(bt, rs, "VOICE-1", junk, &bursts, &speech)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", junk, 0, 0, &bursts, &speech, &offSlot)
 	if bt.sawVoice.Load() {
 		t.Error("non-speech burst set sawVoice — liveness not gated on CRC-valid speech")
 	}
@@ -165,7 +166,7 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	// Case B: a CRC-valid TCH/S burst carrying two 137-bit speech frames. It must
 	// mark voice activity and emit both speech frames to the recorder.
 	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
-	c.onTETRATrafficBurst(bt, rs, "VOICE-1", frame, &bursts, &speech)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", frame, 0, 0, &bursts, &speech, &offSlot)
 	if !bt.sawVoice.Load() {
 		t.Error("CRC-valid TCH/S burst did not set sawVoice")
 	}
@@ -180,5 +181,52 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	}
 	if got := bursts.Load(); got != 2 {
 		t.Errorf("bursts = %d after two calls, want 2", got)
+	}
+}
+
+// TestTETRATrafficBurstSlotFilter is the regression for concurrent same-carrier
+// calls: once the slot grid is anchored, a burst whose timeslot differs from the
+// chain's granted timeslot must be dropped (counted as off-slot) and never
+// decoded — even if it is a CRC-valid TCH/S frame for the OTHER call. A burst on
+// the granted slot, and any burst while the grid is unanchored (slot 0), must
+// still be processed.
+func TestTETRATrafficBurstSlotFilter(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	bt := c.newBoundaryTracker("VOICE-2", 0, nil)
+	rs := &recordingSink{}
+	var bursts, speech, offSlot atomic.Uint64
+
+	// A CRC-valid TCH/S frame (belongs to whichever slot it arrives on).
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+	const grantSlot uint8 = 2
+
+	// Foreign slot (3 != granted 2), anchored: dropped as off-slot, no decode.
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 3, grantSlot, &bursts, &speech, &offSlot)
+	if got := offSlot.Load(); got != 1 {
+		t.Errorf("foreign-slot burst offSlot = %d, want 1", got)
+	}
+	if n := len(rs.rawFrames("VOICE-2")); n != 0 {
+		t.Errorf("foreign-slot burst wrote %d frames, want 0 (must not decode another call's slot)", n)
+	}
+	if bt.sawVoice.Load() {
+		t.Error("foreign-slot burst set sawVoice — a concurrent call would keep this call alive")
+	}
+
+	// Granted slot (2 == granted 2): decoded and written.
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, grantSlot, grantSlot, &bursts, &speech, &offSlot)
+	if n := len(rs.rawFrames("VOICE-2")); n != 2 {
+		t.Errorf("granted-slot burst wrote %d frames, want 2", n)
+	}
+	if !bt.sawVoice.Load() {
+		t.Error("granted-slot burst did not mark voice activity")
+	}
+
+	// Unanchored (slot 0): single-call fallback still processes it.
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 0, grantSlot, &bursts, &speech, &offSlot)
+	if n := len(rs.rawFrames("VOICE-2")); n != 4 {
+		t.Errorf("unanchored burst wrote total %d frames, want 4", n)
+	}
+	if got := offSlot.Load(); got != 1 {
+		t.Errorf("offSlot = %d after one foreign + one granted + one unanchored, want 1", got)
 	}
 }

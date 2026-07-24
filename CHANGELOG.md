@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **TETRA voice now decodes to audible audio, including up to 4 concurrent
+  calls on one carrier.** The TETRA voice path recovers each traffic burst,
+  channel-decodes TCH/S, and renders it with the clean-room ACELP vocoder
+  (`tetra-acelp`), now bit-exact to the ETSI EN 300 395-2 reference. Each burst
+  is tagged with its TDMA timeslot (anchored to the synchronisation burst), and
+  the daemon registers up to four `cc:same-carrier:N` taps, so up to four
+  simultaneous calls on one control carrier — one per slot — record into their
+  own files instead of only one binding and the rest being dropped with
+  "no voice device available for grant". The same-carrier voice device serial
+  changes from `cc:same-carrier` to `cc:same-carrier:1..4`.
 - **Event-driven raw-IQ auto-recording (`baseband.auto_record`).** The daemon
   can now capture a short slice of the control SDR's raw IQ whenever a
   classified event fires — `on_concurrent_calls: N` (N+ calls active at once),
@@ -87,6 +97,15 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA TCH/S class-2 CRC was computed wrong, so no on-air voice ever
+  decoded.** The 8-bit CRC was a `G(X)=1+X³+X⁷` LFSR; the TETRA CRC
+  (EN 300 395-2 §5.5.1) is a fixed parity-check matrix, so every received TCH/S
+  burst failed the check and was dropped (recordings held only spurious frames).
+  Reimplemented from the ETSI reference tap tables — real voice now decodes.
+- **TETRA voice calls could hang forever, monopolising the same-carrier tap.**
+  Call liveness is now driven by CRC-valid decoded speech rather than every raw
+  carrier burst, so a call ends on hangtime when its transmission stops and the
+  tap is freed for the next grant.
 - **Config guidance no longer conflates LSM/simulcast with CQPSK.** The
   `p25_phase1_demod_mode` docs, config-builder help, `config.example.yaml`, and the
   per-site override example (issue #942) all implied that a *simulcast* site needs the

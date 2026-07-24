@@ -57,6 +57,22 @@ const (
 	tchClass0Bits = 102 // 2 frames x 51
 	tchClass1Bits = 112 // 2 frames x 56
 	tchClass2Bits = 60  // 2 frames x 30
-	tchCRCBits    = 8   // 7 CRC (G=1+X^3+X^7) + 1 overall parity
+	tchCRCBits    = 8   // 8-bit CRC over the class-2 bits (ETSI EN 300 395-2 §5.5)
 	tchTailBits   = 4   // convolutional flush
 )
+
+// tchCRCTaps defines the TETRA TCH/S 8-bit CRC (EN 300 395-2 §5.5.1): CRC bit k
+// is the XOR (even parity) of the class-2 bits at these 1-based ranks. Verbatim
+// from the ETSI reference codec's TAB_CRC1..8 (the CRC is a fixed parity-check
+// matrix, NOT a cyclic G(X) LFSR — an earlier G(X)=1+X³+X⁷ approximation did not
+// match on-air frames, so every real TCH/S burst failed the CRC and was dropped).
+var tchCRCTaps = [tchCRCBits][]uint8{
+	{1, 5, 8, 9, 13, 15, 16, 17, 19, 21, 22, 24, 25, 31, 32, 35, 36, 38, 40, 43, 44, 45, 48, 49, 50, 51, 53, 54, 56},
+	{2, 6, 9, 10, 14, 16, 17, 18, 20, 22, 23, 25, 26, 32, 33, 36, 37, 39, 41, 44, 45, 46, 49, 50, 51, 52, 54, 55, 57},
+	{3, 7, 10, 11, 15, 17, 18, 19, 21, 23, 24, 26, 27, 33, 34, 37, 38, 40, 42, 45, 46, 47, 50, 51, 52, 53, 55, 56, 58},
+	{1, 4, 5, 9, 11, 12, 13, 15, 17, 18, 20, 21, 27, 28, 31, 32, 34, 36, 39, 40, 41, 44, 45, 46, 47, 49, 50, 52, 57, 59},
+	{2, 5, 6, 10, 12, 13, 14, 16, 18, 19, 21, 22, 28, 29, 32, 33, 35, 37, 40, 41, 42, 45, 46, 47, 48, 50, 51, 53, 58, 60},
+	{3, 6, 7, 11, 13, 14, 15, 17, 19, 20, 22, 23, 29, 30, 33, 34, 36, 38, 41, 42, 43, 46, 47, 48, 49, 51, 52, 54, 59},
+	{4, 7, 8, 12, 14, 15, 16, 18, 20, 21, 23, 24, 30, 31, 34, 35, 37, 39, 42, 43, 44, 47, 48, 49, 50, 52, 53, 55, 60},
+	{1, 2, 3, 4, 8, 13, 14, 16, 19, 20, 22, 23, 25, 26, 27, 28, 29, 30, 32, 33, 34, 36, 37, 40, 41, 42, 44, 48, 50, 53, 56, 57, 58, 59, 60},
+}
