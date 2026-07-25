@@ -30,6 +30,11 @@ type Subframe struct {
 	SlotType SlotType
 	// Dibits holds the DibitsPerSubframe raw dibits of the sub-frame.
 	Dibits []uint8
+	// Soft holds the per-dibit complex differential (diagonal frame) parallel
+	// to Dibits when the superframe was assembled via ProcessSoft (soft path,
+	// issue #915); nil on the hard path. It is de-rotated in step with Dibits
+	// so it stays in the canonical decision frame.
+	Soft []complex64
 }
 
 // Superframe is one decoded 360 ms P25 Phase 2 superframe.
@@ -70,6 +75,7 @@ type syncAnchor struct {
 type SuperframeDecoder struct {
 	dets     [4]*SyncDetector // one per constant dibit rotation (issue #915)
 	buf      []uint8
+	softBuf  []complex64  // parallel per-dibit soft samples (soft path; nil-len on hard)
 	bufStart int          // absolute dibit index of buf[0]
 	pending  []syncAnchor // sync anchors awaiting a full superframe
 }
@@ -113,6 +119,7 @@ func (d *SuperframeDecoder) initDetectors() {
 // anchor does not slice across the discontinuity.
 func (d *SuperframeDecoder) Reset() {
 	d.buf = d.buf[:0]
+	d.softBuf = d.softBuf[:0]
 	d.bufStart = 0
 	d.pending = d.pending[:0]
 	d.initDetectors()
@@ -123,10 +130,26 @@ func (d *SuperframeDecoder) Reset() {
 // dibits[0]; it must be monotonically non-decreasing across calls.
 // Superframes are returned in stream order.
 func (d *SuperframeDecoder) Process(dibits []uint8, baseIdx int) []Superframe {
+	return d.process(dibits, nil, baseIdx)
+}
+
+// ProcessSoft is Process with a parallel per-dibit soft stream (soft path,
+// issue #915). soft must have the same length as dibits; the soft samples ride
+// through slicing + de-rotation so each MAC sub-frame carries a Subframe.Soft
+// the soft Viterbi can use. It returns exactly the superframes Process would
+// for the identical dibit stream — soft never changes sync locking or slicing.
+func (d *SuperframeDecoder) ProcessSoft(dibits []uint8, soft []complex64, baseIdx int) []Superframe {
+	return d.process(dibits, soft, baseIdx)
+}
+
+func (d *SuperframeDecoder) process(dibits []uint8, soft []complex64, baseIdx int) []Superframe {
 	if len(d.buf) == 0 {
 		d.bufStart = baseIdx
 	}
 	d.buf = append(d.buf, dibits...)
+	if soft != nil && len(soft) == len(dibits) {
+		d.softBuf = append(d.softBuf, soft...)
+	}
 
 	// Detect the outbound sync under each of the four constant dibit
 	// rotations; only the rotation that matches the stream's residual-carrier
@@ -180,6 +203,10 @@ func (d *SuperframeDecoder) trim() {
 	drop := len(d.buf) - superframeBufKeep
 	copy(d.buf, d.buf[drop:])
 	d.buf = d.buf[:superframeBufKeep]
+	if len(d.softBuf) == len(d.buf)+drop {
+		copy(d.softBuf, d.softBuf[drop:])
+		d.softBuf = d.softBuf[:superframeBufKeep]
+	}
 	d.bufStart += drop
 }
 
@@ -194,12 +221,21 @@ func (d *SuperframeDecoder) sliceSuperframe(start int, rot uint8) Superframe {
 	sf := Superframe{StartDibit: start}
 	off := start - d.bufStart
 	derot := (4 - rot) & 3
+	haveSoft := len(d.softBuf) >= off+SubframesPerSuperframe*DibitsPerSubframe
 	for i := 0; i < SubframesPerSuperframe; i++ {
 		sub := make([]uint8, DibitsPerSubframe)
 		copy(sub, d.buf[off+i*DibitsPerSubframe:off+(i+1)*DibitsPerSubframe])
+		var soft []complex64
+		if haveSoft {
+			soft = make([]complex64, DibitsPerSubframe)
+			copy(soft, d.softBuf[off+i*DibitsPerSubframe:off+(i+1)*DibitsPerSubframe])
+		}
 		if derot != 0 {
 			for j := range sub {
 				sub[j] = (sub[j] + derot) & 3
+			}
+			for j := range soft {
+				soft[j] = derotSoft(soft[j], derot)
 			}
 		}
 		slot := SlotTypeUnknown
@@ -211,7 +247,33 @@ func (d *SuperframeDecoder) sliceSuperframe(start int, rot uint8) Superframe {
 			Timeslot: i & 1,
 			SlotType: slot,
 			Dibits:   sub,
+			Soft:     soft,
 		}
 	}
 	return sf
+}
+
+// derotSoft applies to a diagonal-frame soft sample the geometric transform
+// that (dibit + k) & 3 applies to the hard dibit value it encodes (b0 = Re<0,
+// b1 = Im<0, canonical value = 2·b1 + b0). Adding k mod 4 to the value is a
+// carry-coupled bit permutation; the k=1,3 cases flip Im conditioned on the
+// sign of Re (a soft "controlled-NOT"), so the soft stays in the canonical
+// decision frame after de-rotation. Issue #915.
+func derotSoft(z complex64, k uint8) complex64 {
+	re, im := real(z), imag(z)
+	switch k & 3 {
+	case 1:
+		if re >= 0 {
+			return complex(-re, im)
+		}
+		return complex(-re, -im)
+	case 2:
+		return complex(re, -im)
+	case 3:
+		if re >= 0 {
+			return complex(-re, -im)
+		}
+		return complex(-re, im)
+	}
+	return z
 }

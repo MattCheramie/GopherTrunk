@@ -121,6 +121,17 @@ type Options struct {
 	// GardnerGain overrides the Gardner loop step (default 0.03,
 	// applied only when ClockMode is ClockGardner).
 	GardnerGain float64
+	// SoftDecision enables soft-decision output: alongside the hard dibits the
+	// receiver emits, per dibit, the complex differential in the diagonal frame
+	// (b0 = Re<0, b1 = Im<0) via SoftSink, so the Phase 2 MAC path can run a
+	// true per-bit soft Viterbi (~1.5-2 dB of coding gain the hard slicer
+	// discards; issue #915). Requires SoftSink; the hard DibitSink is not
+	// called on the soft path. Default false ⇒ the hard path runs
+	// byte-identically. ClockGardner only.
+	SoftDecision bool
+	// SoftSink receives the (dibits, soft, baseIdx) stream when SoftDecision is
+	// set. Required in that case.
+	SoftSink phase2.SoftDibitSink
 }
 
 // ClockMode selects how the receiver decimates the matched-filter
@@ -174,10 +185,12 @@ func ParseClockMode(s string) (ClockMode, bool) {
 
 // Receiver is the composed IQ → dibit pipeline.
 type Receiver struct {
-	dq        *demod.PiOver4DQPSK
-	sps       int
-	dibitSink phase2.DibitSink
-	dibitBase int
+	dq           *demod.PiOver4DQPSK
+	sps          int
+	dibitSink    phase2.DibitSink
+	softSink     phase2.SoftDibitSink
+	softDecision bool
+	dibitBase    int
 	// rxOffset is the absolute sample index where the next symbol
 	// centre should be picked from the matched-filter output. It
 	// advances by sps each time we emit a dibit, and wraps when the
@@ -203,6 +216,8 @@ type Receiver struct {
 	rotated []complex64 // NCO-de-rotated IQ, fed to the matched filter
 	matched []complex64
 	dibits  []uint8
+	diffs   []complex64 // soft path: per-symbol differential from DecodeBoth
+	soft    []complex64 // soft path: differential rotated into the diagonal frame
 	symbols []complex64
 	// pending holds matched-filter samples from prior Process calls
 	// that didn't align with a symbol centre and are needed for the
@@ -217,7 +232,11 @@ func New(opts Options) *Receiver {
 	if opts.SampleRateHz <= 0 {
 		panic("receiver: SampleRateHz is required")
 	}
-	if opts.DibitSink == nil {
+	if opts.SoftDecision {
+		if opts.SoftSink == nil {
+			panic("receiver: SoftSink is required when SoftDecision is set")
+		}
+	} else if opts.DibitSink == nil {
 		panic("receiver: DibitSink is required")
 	}
 	sps := opts.SampleRateHz / SymbolRate
@@ -233,10 +252,12 @@ func New(opts Options) *Receiver {
 		alpha = RolloffAlpha
 	}
 	r := &Receiver{
-		dq:        demod.NewPiOver4DQPSK(int(sps+0.5), span, alpha, Rotation),
-		sps:       int(sps + 0.5),
-		dibitSink: opts.DibitSink,
-		clockMode: opts.ClockMode,
+		dq:           demod.NewPiOver4DQPSK(int(sps+0.5), span, alpha, Rotation),
+		sps:          int(sps + 0.5),
+		dibitSink:    opts.DibitSink,
+		softSink:     opts.SoftSink,
+		softDecision: opts.SoftDecision,
+		clockMode:    opts.ClockMode,
 	}
 	if r.clockMode == ClockGardner {
 		gain := opts.GardnerGain
@@ -336,6 +357,27 @@ func (r *Receiver) Process(iq []complex64) {
 		}
 	}
 	if len(r.symbols) == 0 {
+		return
+	}
+	if r.softDecision {
+		// Soft path: recover the hard dibit AND the complex differential
+		// (DecodeBoth, as the TETRA receiver does). The differential's ideal
+		// points sit at π/8 + k·π/2; rotating by +π/8 puts them on the
+		// diagonals, so the two on-air bits become the signs of Re and Im —
+		// the frame framing.DecodeP25TrellisSoftC expects (issue #915).
+		r.dibits, r.diffs = r.dq.DecodeBoth(r.dibits, r.diffs, r.symbols)
+		if cap(r.soft) < len(r.diffs) {
+			r.soft = make([]complex64, len(r.diffs))
+		}
+		r.soft = r.soft[:len(r.diffs)]
+		const c, s = float32(0.9238795325112867), float32(0.3826834323650898) // cos/sin(π/8)
+		for i, d := range r.dibits {
+			r.dibits[i] = canonicalDibitRemap[d&3]
+			re, im := real(r.diffs[i]), imag(r.diffs[i])
+			r.soft[i] = complex(re*c-im*s, re*s+im*c)
+		}
+		r.softSink(r.dibits, r.soft, r.dibitBase)
+		r.dibitBase += len(r.dibits)
 		return
 	}
 	r.dibits = r.dq.Decode(r.dibits, r.symbols)

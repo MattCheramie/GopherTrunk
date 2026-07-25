@@ -242,6 +242,81 @@ func decodeMACChannelAndParse(macDibits []uint8, mode TrellisMode, interleaveMod
 	return MACPDU{}, false
 }
 
+// decodeMACPDUDibitsSoftC is the soft-decision counterpart of
+// decodeMACPDUDibits: it drives the true per-bit soft Viterbi
+// (framing.DecodeP25TrellisSoftC) off the diagonal-frame differential samples
+// carried alongside the hard dibits. It mirrors the scrambler dispatch exactly.
+// soft must be the same length as macDibits; a nil / mismatched soft degrades to
+// the hard path. Issue #915.
+func decodeMACPDUDibitsSoftC(macDibits []uint8, soft []complex64, mode TrellisMode, rsMode RSMode, interleaveMode InterleaveMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) (MACPDU, bool) {
+	if len(soft) != len(macDibits) || mode != TrellisOn {
+		return decodeMACPDUDibits(macDibits, mode, rsMode, interleaveMode, scramblerMode, scramblerSeed, scramblerOffset)
+	}
+	switch scramblerMode {
+	case ScramblerProbe:
+		if rsMode != RSOn {
+			return descrambleAndParseSoftC(soft, interleaveMode, rsMode, scramblerSeed, scramblerOffset)
+		}
+		for slot := 0; slot < SubframesPerSuperframe; slot++ {
+			off := slotChannelPN44Offset(slot)
+			if pdu, ok := descrambleAndParseSoftC(soft, interleaveMode, RSOn, scramblerSeed, off); ok {
+				return pdu, true
+			}
+		}
+		return MACPDU{}, false
+	case ScramblerOn:
+		return descrambleAndParseSoftC(soft, interleaveMode, rsMode, scramblerSeed, scramblerOffset)
+	default: // ScramblerOff
+		return decodeMACChannelAndParseSoftC(soft, interleaveMode, rsMode)
+	}
+}
+
+// descrambleAndParseSoftC descrambles the diagonal-frame soft samples (a set
+// PN44 channel bit flips the sign of the matching soft component: bit b1 → Im,
+// bit b0 → Re) at channelOffset, then runs the soft FEC chain. The input slice
+// is left untouched.
+func descrambleAndParseSoftC(soft []complex64, interleaveMode InterleaveMode, rsMode RSMode, seed uint64, channelOffset int) (MACPDU, bool) {
+	ds := make([]complex64, len(soft))
+	copy(ds, soft)
+	seq := make([]byte, len(soft)*2)
+	descrambleAtOffset(seq, seed, channelOffset) // XOR into zeros ⇒ seq = PN44 bits
+	for i := range ds {
+		if seq[2*i] == 1 { // b1 (Im)
+			ds[i] = complex(real(ds[i]), -imag(ds[i]))
+		}
+		if seq[2*i+1] == 1 { // b0 (Re)
+			ds[i] = complex(-real(ds[i]), imag(ds[i]))
+		}
+	}
+	return decodeMACChannelAndParseSoftC(ds, interleaveMode, rsMode)
+}
+
+// decodeMACChannelAndParseSoftC deinterleaves the soft samples (same permutation
+// as the dibits), runs the soft Viterbi, then RS-verifies and parses.
+func decodeMACChannelAndParseSoftC(soft []complex64, interleaveMode InterleaveMode, rsMode RSMode) (MACPDU, bool) {
+	if len(soft) != macPDUDibitsTrellis {
+		return MACPDU{}, false
+	}
+	if interleaveMode == InterleaveOn {
+		soft = framing.DeinterleaveMACBurstC(soft)
+	}
+	decoded, _ := framing.DecodeP25TrellisSoftC(soft)
+	if len(decoded) != macPDUDibits {
+		return MACPDU{}, false
+	}
+	info := framing.PackBitsMSB(framing.DibitsToBits(decoded))
+	if len(info) < 18 {
+		return MACPDU{}, false
+	}
+	if rsMode == RSOn && !verifyMACPDURS(info[:18]) {
+		return MACPDU{}, false
+	}
+	if pdu, err := ParseMACPDU(info[:18]); err == nil {
+		return pdu, true
+	}
+	return MACPDU{}, false
+}
+
 // pn44SuperframeBits is the length in channel bits of one 360 ms P25
 // Phase 2 superframe (12 sub-frames × 180 dibits × 2 bits) — the period
 // of the PN44 scrambling sequence per TIA-102.BBAC-1 §7.2.5. Channel-bit
