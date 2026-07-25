@@ -816,7 +816,7 @@ type CallEndDTO struct {
 	// consumer (a Prometheus exporter, a Grafana feed) can read a call's
 	// duration off the completion event without pairing it back to the
 	// call.start and subtracting timestamps itself (issue #268).
-	DurationMs int64 `json:"duration_ms"`
+	DurationMs int64  `json:"duration_ms"`
 	Reason     string `json:"reason"`
 }
 
