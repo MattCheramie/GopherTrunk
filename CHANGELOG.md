@@ -12,12 +12,13 @@ for tagged releases.
   calls on one carrier.** The TETRA voice path recovers each traffic burst,
   channel-decodes TCH/S, and renders it with the clean-room ACELP vocoder
   (`tetra-acelp`), now bit-exact to the ETSI EN 300 395-2 reference. Each burst
-  is tagged with its TDMA timeslot (anchored to the synchronisation burst), and
-  the daemon registers up to four `cc:same-carrier:N` taps, so up to four
-  simultaneous calls on one control carrier — one per slot — record into their
-  own files instead of only one binding and the rest being dropped with
-  "no voice device available for grant". The same-carrier voice device serial
-  changes from `cc:same-carrier` to `cc:same-carrier:1..4`.
+  is tagged with its AACH downlink usage marker (the per-slot call identifier),
+  and the daemon registers up to four `cc:same-carrier:N` taps, so up to four
+  simultaneous calls on one control carrier — demultiplexed by matching each
+  call's grant usage marker — record into their own files instead of only one
+  binding and the rest being dropped with "no voice device available for grant".
+  The same-carrier voice device serial changes from `cc:same-carrier` to
+  `cc:same-carrier:1..4`.
 - **Event-driven raw-IQ auto-recording (`baseband.auto_record`).** The daemon
   can now capture a short slice of the control SDR's raw IQ whenever a
   classified event fires — `on_concurrent_calls: N` (N+ calls active at once),
@@ -97,6 +98,21 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **Concurrent same-carrier TETRA calls decoded as "DJ scratches" — most calls
+  produced only brief garbled fragments.** The per-slot demux dropped a burst
+  whose decoded TDMA timeslot did not match the call's *granted* timeslot, but on
+  real air the grant timeslot does not identify the physical slot (distinct calls
+  collide on one value; the synchronisation-burst slot anchor also jitters a
+  call's bursts across adjacent slot numbers), so most calls had their own speech
+  discarded as "off-slot" and recorded only the handful of frames decoded before
+  the slot grid anchored. The voice chain now demultiplexes concurrent calls by
+  the **AACH downlink usage marker** — the per-slot call identifier the AACH
+  broadcasts in every downlink slot, matched against the usage marker carried in
+  the call's grant — which cleanly separates simultaneous calls on one carrier.
+  A grant addressed without a usage marker, or a burst whose AACH does not decode,
+  falls back to CRC-gated single-call decoding so a call's speech is never dropped
+  on a guess. Verified against a real 5-capture same-carrier IQ set: the two
+  concurrent calls that the timeslot filter starved now recover their full audio.
 - **TETRA TCH/S class-2 CRC was computed wrong, so no on-air voice ever
   decoded.** The 8-bit CRC was a `G(X)=1+X³+X⁷` LFSR; the TETRA CRC
   (EN 300 395-2 §5.5.1) is a fixed parity-check matrix, so every received TCH/S

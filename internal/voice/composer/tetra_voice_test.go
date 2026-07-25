@@ -184,49 +184,74 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	}
 }
 
-// TestTETRATrafficBurstSlotFilter is the regression for concurrent same-carrier
-// calls: once the slot grid is anchored, a burst whose timeslot differs from the
-// chain's granted timeslot must be dropped (counted as off-slot) and never
-// decoded — even if it is a CRC-valid TCH/S frame for the OTHER call. A burst on
-// the granted slot, and any burst while the grid is unanchored (slot 0), must
-// still be processed.
-func TestTETRATrafficBurstSlotFilter(t *testing.T) {
+// TestTETRATrafficBurstUsageMarkerFilter is the regression for concurrent
+// same-carrier calls: a burst whose AACH downlink usage marker differs from the
+// chain's granted usage marker belongs to another call sharing the carrier and
+// must be dropped (counted off-call) and never decoded — even if it is a
+// CRC-valid TCH/S frame for the OTHER call. A burst carrying the granted marker
+// must be decoded; a burst whose AACH did not decode (marker 0) must fall through
+// to the CRC gate rather than being dropped, so an occasional AACH miss never
+// drops the granted call's own speech.
+func TestTETRATrafficBurstUsageMarkerFilter(t *testing.T) {
 	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
 	bt := c.newBoundaryTracker("VOICE-2", 0, nil)
 	rs := &recordingSink{}
 	var bursts, speech, offSlot atomic.Uint64
 
-	// A CRC-valid TCH/S frame (belongs to whichever slot it arrives on).
+	// A CRC-valid TCH/S frame (belongs to whichever call it arrives on).
 	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
-	const grantSlot uint8 = 2
+	const grantUsage uint8 = 20 // this call's downlink usage marker
 
-	// Foreign slot (3 != granted 2), anchored: dropped as off-slot, no decode.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 3, grantSlot, &bursts, &speech, &offSlot)
+	// Another call's slot (marker 19 != granted 20): dropped off-call, no decode.
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 19, grantUsage, &bursts, &speech, &offSlot)
 	if got := offSlot.Load(); got != 1 {
-		t.Errorf("foreign-slot burst offSlot = %d, want 1", got)
+		t.Errorf("foreign-call burst offSlot = %d, want 1", got)
 	}
 	if n := len(rs.rawFrames("VOICE-2")); n != 0 {
-		t.Errorf("foreign-slot burst wrote %d frames, want 0 (must not decode another call's slot)", n)
+		t.Errorf("foreign-call burst wrote %d frames, want 0 (must not decode another call's slot)", n)
 	}
 	if bt.sawVoice.Load() {
-		t.Error("foreign-slot burst set sawVoice — a concurrent call would keep this call alive")
+		t.Error("foreign-call burst set sawVoice — a concurrent call would keep this call alive")
 	}
 
-	// Granted slot (2 == granted 2): decoded and written.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, grantSlot, grantSlot, &bursts, &speech, &offSlot)
+	// Granted marker (20 == granted 20): decoded and written.
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, grantUsage, grantUsage, &bursts, &speech, &offSlot)
 	if n := len(rs.rawFrames("VOICE-2")); n != 2 {
-		t.Errorf("granted-slot burst wrote %d frames, want 2", n)
+		t.Errorf("granted-marker burst wrote %d frames, want 2", n)
 	}
 	if !bt.sawVoice.Load() {
-		t.Error("granted-slot burst did not mark voice activity")
+		t.Error("granted-marker burst did not mark voice activity")
 	}
 
-	// Unanchored (slot 0): single-call fallback still processes it.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 0, grantSlot, &bursts, &speech, &offSlot)
+	// Undecoded AACH (marker 0): CRC-gated fallback still processes it — an AACH
+	// miss must not drop the granted call's own speech.
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 0, grantUsage, &bursts, &speech, &offSlot)
 	if n := len(rs.rawFrames("VOICE-2")); n != 4 {
-		t.Errorf("unanchored burst wrote total %d frames, want 4", n)
+		t.Errorf("undecoded-AACH burst wrote total %d frames, want 4", n)
 	}
 	if got := offSlot.Load(); got != 1 {
-		t.Errorf("offSlot = %d after one foreign + one granted + one unanchored, want 1", got)
+		t.Errorf("offSlot = %d after one foreign + one granted + one undecoded-AACH, want 1", got)
+	}
+}
+
+// TestTETRATrafficBurstNoGrantMarkerFallback pins the safety net: when the grant
+// carries no usage marker (0 — addressed by plain SSI), every CRC-valid burst is
+// accepted regardless of the burst's own marker, so a call's speech is never
+// silently discarded on a guess (the pre-demux single-call behaviour).
+func TestTETRATrafficBurstNoGrantMarkerFallback(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	bt := c.newBoundaryTracker("VOICE-3", 0, nil)
+	rs := &recordingSink{}
+	var bursts, speech, offSlot atomic.Uint64
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	// Grant marker 0 (unknown): a burst with any marker is decoded, none dropped.
+	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, 19, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, 0, 0, &bursts, &speech, &offSlot)
+	if n := len(rs.rawFrames("VOICE-3")); n != 4 {
+		t.Errorf("no-grant-marker fallback wrote %d frames, want 4 (accept all CRC-valid speech)", n)
+	}
+	if got := offSlot.Load(); got != 0 {
+		t.Errorf("offSlot = %d, want 0 (no dropping without a grant marker)", got)
 	}
 }

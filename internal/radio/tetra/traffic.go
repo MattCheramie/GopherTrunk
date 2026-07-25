@@ -34,18 +34,22 @@ import (
 // EDACS-ProVoice voice paths write their post-FEC or raw frames.
 //
 // Slot demultiplexing: the extractor emits a frame for every NCDB it sees
-// on the carrier — all four TDMA timeslots — and tags each with its TDMA
-// timeslot (TN, 1..4) so a per-slot voice chain can keep only its granted
-// slot and up to four calls on one carrier decode independently. The slot is
-// numbered from the synchronisation burst (SB), which the same detector
-// correlates: the SB's synchronisation training sequence is transmitted in
-// slot 1 (TN1) of frame 18, so it anchors the 255-dibit slot grid. A burst
-// leading at dibit L is then in slot ((round((L - sbAnchor)/255)) mod 4) + 1;
-// the ~15-dibit intra-slot offset between the normal and synchronisation
-// training sequences is far below the half-slot (127-dibit) rounding margin,
-// so it need not be modelled exactly. Until an SB is seen the slot is reported
-// as 0 (unknown) and the consumer falls back to CRC-gated single-call
-// behaviour. On a traffic-only carrier with no SB the slot stays 0.
+// on the carrier — all four TDMA timeslots — tagged with both its AACH downlink
+// usage marker (the reliable per-slot call identifier, ETSI §21.4.7) and its TDMA
+// timeslot number, so concurrent calls on one carrier decode independently.
+//
+// The usage marker is the demux key the voice chain routes by: the AACH is
+// present and decodes in every downlink slot, and a call's marker matches the
+// usage marker carried in its grant. The TDMA timeslot number is retained for
+// telemetry, but on real air it is NOT a reliable demux key — the SB anchor's
+// intra-slot rounding jitters a call's bursts across adjacent slot numbers, and
+// the channel-allocation grant timeslot field does not map to the physical slot.
+//
+// The slot number is derived from the synchronisation burst (SB): the SB's
+// synchronisation training sequence is transmitted in slot 1 (TN1) of frame 18,
+// so it anchors the 255-dibit slot grid. A burst leading at dibit L is then in
+// slot ((round((L - sbAnchor)/255)) mod 4) + 1. Until an SB is seen the slot is
+// reported as 0 (unknown). On a traffic-only carrier with no SB the slot stays 0.
 const (
 	// ndbSlotDibits is the dibit span of one TDMA timeslot (510 bits): four
 	// slots make a 1020-dibit TDMA frame. The slot grid the SB anchor pins.
@@ -86,7 +90,7 @@ type TrafficExtractor struct {
 	bufBase    int
 	pending    []int // training-sequence leading indices awaiting look-ahead
 	colourCode uint32
-	onBurst    func(frame []byte, slot uint8)
+	onBurst    func(frame []byte, slot, usage uint8)
 
 	// sbAnchor is the absolute dibit index of the most recent SB
 	// synchronisation-training-sequence leading dibit (TN1), pinning the
@@ -96,13 +100,17 @@ type TrafficExtractor struct {
 }
 
 // NewTrafficExtractor returns an extractor that calls onBurst with each
-// recovered 54-byte traffic frame and its TDMA timeslot (1..4, or 0 when the
-// slot grid is not yet anchored to a synchronisation burst). When colourCode is
-// non-zero the frame is descrambled with the cell's extended colour code
-// (learned from the control channel's BSCH) before onBurst, so the sidecar
-// holds descrambled type-5 — the input the TCH/S channel decoder expects.
-// onBurst must not retain the slice.
-func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte, slot uint8)) *TrafficExtractor {
+// recovered 54-byte traffic frame, its TDMA timeslot (1..4, or 0 when the slot
+// grid is not yet anchored to a synchronisation burst), and the burst's AACH
+// downlink usage marker (§21.4.7; the per-slot call identifier, >= DLUsageTraffic
+// for a traffic slot, 0 when the AACH did not decode or the slot is not traffic).
+// When colourCode is non-zero the frame is descrambled with the cell's extended
+// colour code (learned from the control channel's BSCH) before onBurst, so the
+// sidecar holds descrambled type-5 — the input the TCH/S channel decoder expects.
+// The usage marker is what lets a per-call voice chain demultiplex concurrent
+// same-carrier calls reliably (the channel-allocation timeslot field does not map
+// to the physical slot on real air). onBurst must not retain the slice.
+func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte, slot, usage uint8)) *TrafficExtractor {
 	te := &TrafficExtractor{colourCode: colourCode, onBurst: onBurst}
 	// π/4-DQPSK leaves a constant 0..3 dibit rotation (residual CFO), so
 	// correlate the training sequence under all four rotations of the
@@ -195,7 +203,8 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 }
 
 // emit slices BKN1 and BKN2 around the training sequence leading at L and
-// forwards the concatenated raw type-5 frame.
+// forwards the concatenated raw type-5 frame, tagged with the burst's TDMA slot
+// and its AACH downlink usage marker.
 func (te *TrafficExtractor) emit(L int) {
 	block := func(off int) []uint8 {
 		s := L + off - te.bufBase
@@ -208,7 +217,45 @@ func (te *TrafficExtractor) emit(L int) {
 	if te.colourCode != 0 {
 		bits = framing.DescrambleTetra(bits, te.colourCode)
 	}
-	te.onBurst(framing.PackBitsMSB(bits), te.slotOf(L))
+	te.onBurst(framing.PackBitsMSB(bits), te.slotOf(L), te.usageOf(L))
+}
+
+// usageOf recovers the AACH downlink usage marker of the burst leading at L. The
+// 30-bit access-assignment sits in two halves either side of the normal training
+// sequence (same geometry as the control-channel downlinkNCDB); it is scrambled
+// with the cell colour code and RM(30,14)-coded. Returns 0 when the AACH is not
+// buffered, does not decode, or the slot is not carrying traffic — callers treat
+// 0 as "unknown" and fall back to CRC-gated isolation. The receiver's AFC locks
+// the constellation to rotation 0 (the same assumption the BKN descramble above
+// relies on), so no rotation search is needed here.
+func (te *TrafficExtractor) usageOf(L int) uint8 {
+	half := func(off, n int) []uint8 {
+		s := L + off - te.bufBase
+		if s < 0 || s+n > len(te.buf) {
+			return nil
+		}
+		return te.buf[s : s+n]
+	}
+	a1 := half(ndbAACH1Start, ndbAACH1Len)
+	a2 := half(ndbAACH2Start, ndbAACH2Len)
+	if a1 == nil || a2 == nil {
+		return 0
+	}
+	di := make([]uint8, 0, ndbAACH1Len+ndbAACH2Len)
+	di = append(di, a1...)
+	di = append(di, a2...)
+	rec, errs := DecodeAACH(TetraDibitsToBits(di), te.colourCode)
+	if errs < 0 {
+		return 0
+	}
+	aa, ok := ParseAccessAssign(rec)
+	if !ok {
+		return 0
+	}
+	if u := aa.DownlinkUsage(); u >= DLUsageTraffic {
+		return u
+	}
+	return 0
 }
 
 // ndbSBSlotShift aligns the synchronisation-burst anchor to the NDB slot grid.

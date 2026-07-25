@@ -46,8 +46,10 @@
 // synchronisation burst). TCH/S channel decode (§5.5: RCPC + interleave +
 // class-2 CRC) turns each burst into 137-bit speech frames, which the
 // clean-room ACELP vocoder (internal/voice/acelp, bit-exact to ETSI
-// EN 300 395-2) renders to PCM. Per-slot filtering lets up to four concurrent
-// same-carrier calls decode into independent recordings.
+// EN 300 395-2) renders to PCM. Each burst also carries its AACH downlink usage
+// marker; the voice chain routes bursts by matching that marker to the granted
+// call's, so up to four concurrent same-carrier calls decode into independent
+// recordings.
 //
 // As with the other trunking packages: ship a clean structured
 // surface now, leave the analogue / FEC / encryption pieces as named
