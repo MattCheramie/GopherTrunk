@@ -1483,6 +1483,16 @@ type SystemConfig struct {
 	// Color Code = NAC) per spec equation (5); the zero-seed edge
 	// case maps to (2^44 - 1). Ignored for non-P25-Phase-2 protocols.
 	P25Phase2ScramblerMode string `yaml:"p25_phase2_scrambler_mode"`
+	// P25Phase2SoftDecision enables the soft-decision demod path on the
+	// P25 Phase 2 traffic-channel receiver (issue #915). Recognised
+	// values: "" / "off" / "false" / "0" (the default — the hard
+	// slicer, byte-for-byte the historical behaviour) or "on" / "true"
+	// / "1" (feed the demodulator's soft symbol differentials into a
+	// per-bit soft Viterbi on the MAC trellis, recovering the ~1.5-2 dB
+	// of coding gain the hard slicer discards). Helps recover the
+	// clear-MAC source RID on weak signals; neutral on strong ones.
+	// Ignored for non-P25-Phase-2 protocols.
+	P25Phase2SoftDecision string `yaml:"p25_phase2_soft_decision"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
 	// "gardner" / "on" (the new default — non-data-aided Gardner

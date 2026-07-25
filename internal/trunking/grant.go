@@ -134,6 +134,13 @@ type P25Phase2Decode struct {
 	Interleave uint8
 	Scrambler  uint8
 	Seed       uint64
+	// SoftDecision mirrors phase2.MACDecodeConfig.SoftDecision: when set,
+	// the voice composer / sigfollow build the Phase 2 traffic-channel
+	// receiver with soft-decision demod (per-bit soft Viterbi on the MAC
+	// trellis) instead of the hard slicer, recovering ~1.5-2 dB of coding
+	// gain on weak signals (issue #915). Default false keeps today's hard
+	// path byte-for-byte.
+	SoftDecision bool
 }
 
 // String renders a one-line summary of a Grant for log output.
