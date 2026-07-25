@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Motorola P25 talker-alias ciphertext is logged as cryptanalysis ground
+  truth.** When a Motorola FACCH-S talker alias reassembles on a Phase 2
+  traffic channel, GopherTrunk now emits a `p25p2 alias ciphertext` log line
+  carrying the source RID, talkgroup, and the reassembled encoded-alias bytes
+  (`encoded_hex`) — the `rid,talkgroup,encoded_hex,alias` record the alias
+  cipher analysis consumes. The proprietary alias cipher is still gated
+  (unsolved, so the decoded name stays blank), but this lets an operator
+  harvest the chosen-plaintext / known-RID corpus needed to finish it
+  (`research/p25-talker-alias-chosen-plaintext.md`) using GopherTrunk alone
+  instead of SDRTrunk (#773).
 - **TETRA voice now decodes to audible audio, including up to 4 concurrent
   calls on one carrier.** The TETRA voice path recovers each traffic burst,
   channel-decodes TCH/S, and renders it with the clean-room ACELP vocoder

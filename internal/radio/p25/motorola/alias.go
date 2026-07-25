@@ -193,6 +193,14 @@ type Message struct {
 	SystemID uint16
 	RadioID  uint32
 	Alias    string
+	// Encoded is the reassembled per-byte-cipher region — the exactly
+	// 2n encoded-alias bytes, with the trailing CRC-16 stripped. It is
+	// the *ciphertext* the proprietary cipher operates on, independent of
+	// whether that cipher is solved (CipherVerified), so callers can log
+	// it as chosen-plaintext / known-RID ground truth to finish the
+	// cryptanalysis (#773). This is the same shape the cryptolab `alias
+	// sweep` solver consumes (pure cipher output, no CRC).
+	Encoded []byte
 	// AliasReliable reports whether the decoded alias can be trusted as a
 	// confirmed name. It is true only when the decode is all printable
 	// ASCII (no bit-error corruption hallmarks, #711) AND the cipher
@@ -249,6 +257,7 @@ func DecodeMessage(msg []byte) (Message, bool) {
 		SystemID:      sysID,
 		RadioID:       rid,
 		Alias:         alias,
+		Encoded:       append([]byte(nil), encoded...),
 		AliasReliable: aliasReliable,
 		CRCOK:         crcOK,
 	}, true
