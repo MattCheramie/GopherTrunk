@@ -52,15 +52,19 @@ func newTETRAVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 // mirrors the DMR/P25 shape (post-FEC frames in `.raw` + decoded WAV).
 //
 // The extractor emits a burst for every timeslot on the carrier (all four TDMA
-// slots), each tagged with its timeslot (anchored to the synchronisation burst,
-// TN1). This chain keeps only bursts on its granted timeslot and drops the rest
-// (onTETRATrafficBurst), so up to four concurrent calls on one carrier — one per
-// slot, each on its own same-carrier tap — decode into four independent
-// recordings instead of mixing. Until the slot grid anchors (or on a traffic
-// carrier with no synchronisation burst) the slot is unknown and the chain falls
-// back to the TCH/S-CRC single-call isolation. Encrypted calls (TEA1-4) fail the
-// CRC and produce no decoded audio (their raw bursts still exist upstream).
-func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, colourExt uint32, done chan<- struct{}) {
+// slots), each tagged with the AACH downlink usage marker of the slot it came
+// from. This chain keeps only bursts whose marker matches the granted call's
+// usage marker and drops the rest (onTETRATrafficBurst), so up to four concurrent
+// calls on one carrier — one per slot, each on its own same-carrier tap — decode
+// into four independent recordings instead of mixing. The AACH usage marker, not
+// the channel-allocation timeslot field, is the demux key: on real air the grant
+// timeslot does not map to the physical slot (distinct calls collide on one
+// value), which silently starved every mis-mapped call. When the grant carries no
+// usage marker, or a burst's AACH does not decode, the chain falls back to
+// TCH/S-CRC single-call isolation so a call's own speech is never dropped on a
+// guess. Encrypted calls (TEA1-4) fail the CRC and produce no decoded audio
+// (their raw bursts still exist upstream).
+func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, colourExt uint32, usageMarker uint8, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-tetra:"+serial, nil)
 
@@ -75,8 +79,8 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 
 	rs, _ := c.sink.(rawFrameSink)
 	var bursts, speech, offSlot atomic.Uint64
-	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, slot uint8) {
-		c.onTETRATrafficBurst(bt, rs, serial, frame, slot, timeslot, &bursts, &speech, &offSlot)
+	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, slot, usage uint8) {
+		c.onTETRATrafficBurst(bt, rs, serial, frame, usage, usageMarker, &bursts, &speech, &offSlot)
 	})
 
 	rx := tetrarx.New(tetrarx.Options{
@@ -90,12 +94,12 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 
 	c.log.Info("composer: tetra voice follow started — TCH/S decode + ACELP vocoder",
 		"serial", serial, "group", groupID, "timeslot", timeslot,
-		"colour_code", colourExt&0x3F, "rate_hz", symbolHz)
+		"usage_marker", usageMarker, "colour_code", colourExt&0x3F, "rate_hz", symbolHz)
 
 	defer func() {
 		c.log.Info("composer: tetra voice follow ended",
 			"serial", serial, "bursts", bursts.Load(), "speech_frames", speech.Load(),
-			"other_slot_bursts", offSlot.Load())
+			"other_call_bursts", offSlot.Load())
 	}()
 
 	touchTicker := time.NewTicker(c.touchEvery)
@@ -127,27 +131,36 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 // never elapsed and the (single, same-carrier) voice device was held forever —
 // every later grant was then dropped with "no voice device available for grant".
 //
-// Slot demultiplexing: the extractor tags each burst with its TDMA timeslot
-// (slot, 1..4; 0 = not yet anchored to a synchronisation burst). When the slot
-// is known and does NOT match this chain's granted timeslot, the burst belongs
-// to another call sharing the carrier and is dropped here — this is what lets up
-// to four concurrent calls on one carrier decode into four independent
-// recordings. Until the grid anchors (slot 0), the chain falls back to the
-// CRC-gated single-call behaviour (a non-same-carrier traffic tap has no SB, so
-// slot stays 0 and every chain behaves as before).
+// Usage-marker demultiplexing: the extractor tags each burst with the AACH
+// downlink usage marker of the slot it came from (burstUsage, >= DLUsageTraffic
+// for a traffic slot, 0 when the AACH did not decode or the slot is not traffic).
+// The grant carries the call's usage marker (grantUsage). When both are present
+// and differ, the burst belongs to another call sharing the carrier and is
+// dropped — this is what lets up to four concurrent same-carrier calls decode
+// into independent recordings. The channel-allocation timeslot field is NOT used:
+// on real air it does not map to the physical slot (distinct calls collide on one
+// value), which silently starved every mis-mapped call; the AACH usage marker is
+// the reliable per-slot call identifier.
+//
+// Fallbacks (never discard the granted call's own speech on a guess):
+//   - grantUsage == 0 (the grant was addressed by plain SSI, no usage marker):
+//     accept every CRC-valid burst — the pre-demux single-call behaviour. Audio
+//     is preserved; true concurrency without markers may mix (rare).
+//   - burstUsage == 0 (this burst's AACH did not decode): let the CRC gate decide
+//     rather than dropping, so an occasional AACH miss does not drop own speech.
 //
 // The class-2 CRC gate (tetra.TCHSpeechFrames) then isolates the granted call's
-// speech: a non-TCH/S burst (signalling on another timeslot, an encrypted call,
-// or a badly corrupted slot) returns no frames. Gating onVoice on that result
-// makes TETRA teardown behave like every other protocol — the call ends hangtime
-// after its last decoded speech frame (or via the no-voice startup timeout when
-// a grant never decodes any speech).
-func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, slot, grantSlot uint8, bursts, speech, offSlot *atomic.Uint64) {
+// speech: a non-TCH/S burst (signalling, an encrypted call, or a badly corrupted
+// slot) returns no frames. Gating onVoice on that result makes TETRA teardown
+// behave like every other protocol — the call ends hangtime after its last
+// decoded speech frame (or via the no-voice startup timeout when a grant never
+// decodes any speech).
+func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, burstUsage, grantUsage uint8, bursts, speech, offSlot *atomic.Uint64) {
 	bursts.Add(1)
-	// Drop bursts from another timeslot once the slot grid is anchored and the
-	// grant names a slot. slot==0 (unanchored) or grantSlot==0 (unknown) falls
-	// through to the CRC-gated single-call path.
-	if slot != 0 && grantSlot != 0 && slot != grantSlot {
+	// Drop bursts that carry a different call's AACH usage marker. Only when both
+	// markers are known (>= DLUsageTraffic) — an unknown marker on either side
+	// falls through to the CRC gate so we never drop the granted call's own speech.
+	if grantUsage >= tetra.DLUsageTraffic && burstUsage >= tetra.DLUsageTraffic && burstUsage != grantUsage {
 		offSlot.Add(1)
 		return
 	}

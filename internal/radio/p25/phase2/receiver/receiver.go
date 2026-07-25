@@ -163,6 +163,25 @@ const (
 	ClockGardner
 )
 
+// ParseSoftDecision maps a config / user-facing string into the
+// Options.SoftDecision boolean. Recognised values (case-insensitive):
+// "" / "off" / "false" / "0" → false (the default — the hard slicer,
+// byte-for-byte the historical behaviour); "on" / "true" / "1" → true
+// (feed the demodulator's soft differentials into the per-bit soft
+// Viterbi on the MAC trellis, recovering the ~1.5-2 dB of coding gain
+// the hard slicer discards; issue #915). Unknown strings return false
+// with `ok = false` so callers can warn and fall back.
+func ParseSoftDecision(s string) (on bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return false, true
+	case "on", "true", "1":
+		return true, true
+	default:
+		return false, false
+	}
+}
+
 // ParseClockMode maps a config / user-facing string into a
 // ClockMode. Recognised values (case-insensitive): "" / "gardner" /
 // "on" / "true" / "1" → ClockGardner (the new default — Gardner

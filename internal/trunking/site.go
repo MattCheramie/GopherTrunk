@@ -306,6 +306,15 @@ type System struct {
 	// p25phase2.ControlChannel.SetScramblerMode +
 	// SetScramblerSeed by the ccdecoder connector.
 	P25Phase2ScramblerMode string
+	// P25Phase2SoftDecision enables the soft-decision demod path on the
+	// P25 Phase 2 traffic-channel receiver (issue #915). Recognised
+	// values (case-insensitive): "" / "off" / "false" / "0" → hard
+	// slicer (the default, historical behaviour); "on" / "true" / "1" →
+	// per-bit soft Viterbi on the MAC trellis (~1.5-2 dB coding gain on
+	// weak signals). Parsed via p25phase2rx.ParseSoftDecision and
+	// forwarded through the grant's P25Phase2Decode to the composer /
+	// sigfollow receiver.
+	P25Phase2SoftDecision string
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values (case-
 	// insensitive): "" / "gardner" / "on" → ClockGardner (the new

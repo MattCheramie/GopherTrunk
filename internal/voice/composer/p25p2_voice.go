@@ -193,64 +193,86 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		macRSValid       atomic.Uint64
 		slotHist         [slotHistLen]atomic.Uint64
 	)
-	rx := p25p2rx.New(p25p2rx.Options{
+	// drainSuperframes runs the shared per-superframe voice + MAC census
+	// body. It is driven by the hard DibitSink or, when the grant requests
+	// soft-decision demod (issue #915), the soft SoftSink whose superframes
+	// carry per-symbol soft differentials in Subframe.Soft that the MAC
+	// decode path picks up automatically. The census body is identical
+	// either way, so both paths stay in lock-step.
+	drainSuperframes := func(sfs []p25p2.Superframe) {
+		for _, sf := range sfs {
+			superframesSeen.Add(1)
+			for _, sub := range sf.Subframes {
+				// Census every sub-frame's slot type — including
+				// SlotTypeUnknown and MAC types — before the voice gate,
+				// so the end-of-call census can show whether ISCH ever
+				// classified a MAC slot (#813).
+				if int(sub.SlotType) < slotHistLen {
+					slotHist[sub.SlotType].Add(1)
+				}
+				if sub.SlotType.IsMAC() {
+					macSubframesSeen.Add(1)
+				}
+				if !sub.SlotType.IsVoice() {
+					continue
+				}
+				voiceSubframes.Add(1)
+				bt.onVoice(0)
+				if rs == nil {
+					continue
+				}
+				frames, errBits, err := p25p2.ExtractVoiceFrames(sub)
+				if errBits > 0 {
+					corrErrBits.Add(uint64(errBits))
+				}
+				if err != nil {
+					uncorrectableSubframes.Add(1)
+					c.log.Debug("composer: p25p2 voice extract uncorrectable subframe",
+						"serial", serial, "err", err)
+				}
+				for _, f := range frames {
+					if f == nil {
+						continue
+					}
+					if werr := rs.WriteRawFrame(serial, f); werr != nil {
+						c.log.Warn("composer: p25p2 raw-frame write failed",
+							"serial", serial, "err", werr)
+					}
+				}
+			}
+			// The talker alias, in-call source, and encryption-sync
+			// MAC PDUs that interleave with voice are decoded by the
+			// shared dispatcher (same path the signalling follower
+			// runs off the traffic channel, #376). rsValid counts how
+			// many carried a clean outer RS(24,16,9) parity — the
+			// framing-health signal the end-of-call census reports
+			// (issue #915).
+			nDec, nRS := dispatcher.Dispatch(sf, macCfg)
+			macPDUsDecoded.Add(uint64(nDec))
+			macRSValid.Add(uint64(nRS))
+		}
+	}
+
+	// Build the receiver on the hard slicer by default; when the grant
+	// carries the soft-decision flag (issue #915) wire the soft sink so the
+	// receiver emits per-symbol soft differentials and the SuperframeDecoder
+	// carries them into Subframe.Soft via ProcessSoft.
+	rxOpts := p25p2rx.Options{
 		SampleRateHz: symbolHz,
 		ClockMode:    p25p2rx.ClockGardner,
 		GardnerGain:  p25p2VoiceGardnerGain,
-		DibitSink: func(dibits []uint8, baseIdx int) {
-			for _, sf := range sfDec.Process(dibits, baseIdx) {
-				superframesSeen.Add(1)
-				for _, sub := range sf.Subframes {
-					// Census every sub-frame's slot type — including
-					// SlotTypeUnknown and MAC types — before the voice gate,
-					// so the end-of-call census can show whether ISCH ever
-					// classified a MAC slot (#813).
-					if int(sub.SlotType) < slotHistLen {
-						slotHist[sub.SlotType].Add(1)
-					}
-					if sub.SlotType.IsMAC() {
-						macSubframesSeen.Add(1)
-					}
-					if !sub.SlotType.IsVoice() {
-						continue
-					}
-					voiceSubframes.Add(1)
-					bt.onVoice(0)
-					if rs == nil {
-						continue
-					}
-					frames, errBits, err := p25p2.ExtractVoiceFrames(sub)
-					if errBits > 0 {
-						corrErrBits.Add(uint64(errBits))
-					}
-					if err != nil {
-						uncorrectableSubframes.Add(1)
-						c.log.Debug("composer: p25p2 voice extract uncorrectable subframe",
-							"serial", serial, "err", err)
-					}
-					for _, f := range frames {
-						if f == nil {
-							continue
-						}
-						if werr := rs.WriteRawFrame(serial, f); werr != nil {
-							c.log.Warn("composer: p25p2 raw-frame write failed",
-								"serial", serial, "err", werr)
-						}
-					}
-				}
-				// The talker alias, in-call source, and encryption-sync
-				// MAC PDUs that interleave with voice are decoded by the
-				// shared dispatcher (same path the signalling follower
-				// runs off the traffic channel, #376). rsValid counts how
-				// many carried a clean outer RS(24,16,9) parity — the
-				// framing-health signal the end-of-call census reports
-				// (issue #915).
-				nDec, nRS := dispatcher.Dispatch(sf, macCfg)
-				macPDUsDecoded.Add(uint64(nDec))
-				macRSValid.Add(uint64(nRS))
-			}
-		},
-	})
+	}
+	if macCfg.SoftDecision {
+		rxOpts.SoftDecision = true
+		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
+			drainSuperframes(sfDec.ProcessSoft(dibits, soft, baseIdx))
+		}
+	} else {
+		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
+			drainSuperframes(sfDec.Process(dibits, baseIdx))
+		}
+	}
+	rx := p25p2rx.New(rxOpts)
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()

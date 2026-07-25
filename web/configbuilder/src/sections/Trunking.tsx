@@ -38,7 +38,7 @@ const PROTOCOL_KNOBS: (keyof SystemConfig)[] = [
   "TETRAColourCode", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode",
   "LTRFCSMode", "LTRManchesterMode", "P25Phase1DemodMode", "DMRInterleavedVoice",
   "P25Phase2TrellisMode", "P25Phase2RSMode", "P25Phase2InterleaveMode",
-  "P25Phase2ScramblerMode", "P25Phase2ClockMode", "NXDNViterbiMode",
+  "P25Phase2ScramblerMode", "P25Phase2SoftDecision", "P25Phase2ClockMode", "NXDNViterbiMode",
   "NXDNDeviationHz", "EDACSBCHMode", "MPT1327BCHMode", "MPT1327CWSCTolerance",
   "MotorolaBCHMode", "DStarFECMode",
 ];

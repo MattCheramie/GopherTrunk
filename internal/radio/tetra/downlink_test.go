@@ -75,6 +75,15 @@ func TestProcessDecodesGrantFromNCDB(t *testing.T) {
 	if grant.Timeslot != 2 { // chan-alloc timeslot 1 (0-based) → 1-based 2
 		t.Errorf("grant timeslot = %d, want 2", grant.Timeslot)
 	}
+	// The grant is addressed by SSI+usage (address type 6), so it carries the
+	// call's downlink usage marker — the reliable key the voice chain uses to
+	// demultiplex concurrent same-carrier calls (the channel-allocation timeslot
+	// field does not map to the physical slot on real air). It must survive the
+	// MAC → VoiceGrant → trunking.Grant plumbing so the voice chain can match it
+	// against each burst's AACH marker.
+	if grant.TETRAUsageMarker != 15 {
+		t.Errorf("grant usage marker = %d, want 15 (from the addrSSIUsage grant)", grant.TETRAUsageMarker)
+	}
 }
 
 // TestCarrierFrequencyDerivation checks that a grant carrier number resolves to
