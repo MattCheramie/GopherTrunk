@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -93,6 +94,13 @@ type ControlChannel struct {
 	pendingSoft     []complex64
 	pendingSoftBase int
 	pendingSoftSet  bool
+
+	// lastActivityNano is the Unix-nanos timestamp of the most recent
+	// successful control-channel decode (a synchronisation burst, SYSINFO,
+	// or grant). It is the heartbeat CheckStale watches to declare the lock
+	// lost when the carrier goes silent. Atomic so the decode hot path
+	// (noteActivity) never contends on mu. Zero until the first decode.
+	lastActivityNano atomic.Int64
 }
 
 // StashSoft records the soft per-symbol differentials for the dibit
@@ -543,7 +551,35 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 		"group", g.Group, "enc", g.Encrypted, "emer", g.Emergency)
 }
 
+// noteActivity stamps the control-channel heartbeat with the current time.
+// Called from the decode path on every successful CC recovery (sync burst,
+// SYSINFO, grant) so CheckStale can tell a live carrier from a silent one.
+// Lock-free (atomic) so it adds no contention to the hot path.
+func (c *ControlChannel) noteActivity() {
+	c.lastActivityNano.Store(c.now().UnixNano())
+}
+
+// CheckStale declares the control channel lost (publishes cc.lost via MarkLost)
+// when it is locked but has decoded nothing for longer than timeout. This is the
+// watchdog the cchunt supervisor needs to leave StateLocked and re-hunt when the
+// carrier genuinely goes silent — TETRA's maybeLock is edge-triggered and never
+// re-affirms a steady lock, so without this a dead carrier would never surface a
+// cc.lost. A no-op until the first decode (lastActivity==0), while unlocked, or
+// while activity is fresh, so a healthy carrier (sync burst every ~1 s) never
+// trips it.
+func (c *ControlChannel) CheckStale(now time.Time, timeout time.Duration) {
+	last := c.lastActivityNano.Load()
+	if last == 0 {
+		return
+	}
+	if now.Sub(time.Unix(0, last)) <= timeout {
+		return
+	}
+	c.MarkLost()
+}
+
 func (c *ControlChannel) maybeLock(s LockState) {
+	c.noteActivity()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.locked && c.last == s {
@@ -566,8 +602,10 @@ func (c *ControlChannel) maybeLock(s LockState) {
 		"la", s.LocationArea, "system", c.systemName)
 }
 
-// MarkLost publishes cc.lost and resets the locked flag. The trunking
-// engine's hunter calls this when the control channel goes silent.
+// MarkLost publishes cc.lost and resets the locked flag. CheckStale calls this
+// when a locked control channel has gone silent past the staleness timeout, so
+// the cchunt supervisor leaves StateLocked and re-hunts. Idempotent while
+// already unlocked.
 func (c *ControlChannel) MarkLost() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

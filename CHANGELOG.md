@@ -129,6 +129,20 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **A locked TETRA control channel flapped "CC hunt failed · candidates
+  exhausted" every ~30–60 s while it was decoding calls fine.** Two coupled gaps:
+  the control-channel hunter's success test needs a fresh `cc.locked` event within
+  its dwell (default 3 s), but TETRA emits the lock only once (edge-triggered), so
+  when cold acquisition (BSCH sync + colour code) outlasts the dwell the first hunt
+  fails and every same-frequency re-hunt then exhausts the dwell against an
+  already-locked, silent-on-the-wire pipeline; and there was no TETRA lock-loss
+  watchdog (`MarkLost` had no callers), so the scanner could never leave the locked
+  state on a genuine outage. Now the supervisor parks a system it already knows is
+  locked instead of re-hunting it, and a new control-channel watchdog publishes
+  `cc.lost` when a locked carrier decodes nothing for ~5 s (≈5 missed
+  multiframes), so a genuinely dead carrier still re-hunts and recovers. (The
+  ±6 kHz AFC acquisition range, #940, was already merged and is unrelated — a
+  ~1.5 kHz carrier offset sits well inside it.)
 - **Concurrent same-carrier TETRA calls decoded as "DJ scratches" — most calls
   produced only brief garbled fragments.** The per-slot demux dropped a burst
   whose decoded TDMA timeslot did not match the call's *granted* timeslot, but on
