@@ -60,6 +60,16 @@ type Grant struct {
 	// the scrambler seed the voice chain descrambles the granted call's traffic
 	// frames with. Zero on non-TETRA grants and until the colour code is learned.
 	TETRAColourExt uint32
+	// TETRAUsageMarker is the call's downlink usage marker (ETSI EN 300 392-2
+	// §21.4.7), the per-slot control-vs-traffic identifier the AACH broadcasts in
+	// every downlink slot. On a same-carrier SCBS it — not the unreliable
+	// channel-allocation timeslot field — is what maps a granted call to the
+	// physical TDMA slot carrying its speech, so the voice chain demultiplexes
+	// concurrent calls by matching this against each burst's AACH marker. Traffic
+	// markers are >= 4 (DLUsageTraffic); 0 means "unknown" (grant addressed by SSI
+	// without a usage marker), which falls the voice chain back to CRC-gated
+	// single-call isolation. Zero on non-TETRA grants.
+	TETRAUsageMarker uint8
 	// AlgorithmID and KeyID carry the encryption parameters the
 	// protocol's privacy header advertises (the DMR PI header, etc.).
 	// They are meaningful only when Encrypted is true and stay zero
