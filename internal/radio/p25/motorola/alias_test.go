@@ -192,6 +192,44 @@ func TestRealSampleYieldsRIDButNoConfidentAlias(t *testing.T) {
 	}
 }
 
+// TestDecodeMessageExposesEncodedCiphertext pins the reassembled cipher
+// region on the decoded message (#773). Message.Encoded must be exactly
+// the 2n encoded-alias bytes — the SUID prefix and the trailing CRC-16
+// stripped — so a caller can surface it as chosen-plaintext / known-RID
+// ground truth for the cipher cryptanalysis regardless of whether the
+// cipher itself decodes. Uses the real #376 reassembled stream for RID
+// 200062 (24 cipher bytes between the 7-byte SUID and the 2-byte CRC).
+func TestDecodeMessageExposesEncodedCiphertext(t *testing.T) {
+	msg := []byte{
+		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, // SUID (RID 200062)
+		0x24, 0x44, 0xF6, 0xFF, 0x2F, 0xA9, 0xAC, 0x3E, 0xC3, 0x44,
+		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, // encoded alias
+		0x00, 0x00, 0x00, 0x00, // cipher tail
+		0x00, 0x00, // CRC-16
+	}
+	m, ok := DecodeMessage(msg)
+	if !ok {
+		t.Fatal("DecodeMessage returned ok=false")
+	}
+	want := msg[7:31] // between the 7-byte SUID and the 2-byte CRC tail
+	if len(m.Encoded) != len(want) {
+		t.Fatalf("Encoded len = %d, want %d", len(m.Encoded), len(want))
+	}
+	for i := range want {
+		if m.Encoded[i] != want[i] {
+			t.Fatalf("Encoded[%d] = %02X, want %02X\n got % X\nwant % X",
+				i, m.Encoded[i], want[i], m.Encoded, want)
+		}
+	}
+	// Must be an independent copy, not an alias into the caller's buffer.
+	if len(m.Encoded) > 0 {
+		m.Encoded[0] ^= 0xFF
+		if msg[7] == m.Encoded[0] {
+			t.Error("Encoded aliases the input slice; want an independent copy")
+		}
+	}
+}
+
 func TestDecodeMessageTooShort(t *testing.T) {
 	if _, ok := DecodeMessage([]byte{0x00, 0x01}); ok {
 		t.Error("expected ok=false for too-short input")

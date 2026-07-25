@@ -296,22 +296,28 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
+	p2SoftDecision, p2SoftOK := p25phase2rx.ParseSoftDecision(opts.System.P25Phase2SoftDecision)
+	if !p2SoftOK {
+		log.Warn("ccdecoder: unrecognised p25_phase2_soft_decision; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2SoftDecision)
+	}
 	// rx is forward-declared so the control channel's CarrierOffsetHz provider
 	// can close over it; the closure is only called later, at site-update
 	// publish time, well after rx is assigned below (issue #815).
 	var rx *p25phase1rx.Receiver
 	cc := p25phase1.New(p25phase1.Options{
-		Bus:                 opts.Bus,
-		Log:                 opts.Log,
-		SystemName:          opts.SystemName,
-		FrequencyHz:         opts.FrequencyHz,
-		BandPlan:            bandPlan,
-		Rotations:           rotations,
-		P25Phase1DemodMode:  opts.System.P25Phase1DemodMode,
-		P25Phase2Trellis:    uint8(p2Trellis),
-		P25Phase2RS:         uint8(p2RS),
-		P25Phase2Interleave: uint8(p2Interleave),
-		P25Phase2Scrambler:  uint8(p2Scrambler),
+		Bus:                   opts.Bus,
+		Log:                   opts.Log,
+		SystemName:            opts.SystemName,
+		FrequencyHz:           opts.FrequencyHz,
+		BandPlan:              bandPlan,
+		Rotations:             rotations,
+		P25Phase1DemodMode:    opts.System.P25Phase1DemodMode,
+		P25Phase2Trellis:      uint8(p2Trellis),
+		P25Phase2RS:           uint8(p2RS),
+		P25Phase2Interleave:   uint8(p2Interleave),
+		P25Phase2Scrambler:    uint8(p2Scrambler),
+		P25Phase2SoftDecision: p2SoftDecision,
 		// Report the TOTAL carrier offset from the configured frequency:
 		// the receiver's residual AFC plus any correction the decoder folded
 		// into the DDC (CarrierBiasHz). Residual-only would drop toward 0
@@ -475,6 +481,12 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc.SetScramblerSeed(framing.PN44SeedFromIdentity(
 		opts.System.WACN, opts.System.SystemID, uint16(opts.System.Site),
 	))
+	softDecision, softOK := p25phase2rx.ParseSoftDecision(opts.System.P25Phase2SoftDecision)
+	if !softOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_soft_decision; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2SoftDecision)
+	}
+	cc.SetSoftDecision(softDecision)
 	clockMode, clockOK := p25phase2rx.ParseClockMode(opts.System.P25Phase2ClockMode)
 	if !clockOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",

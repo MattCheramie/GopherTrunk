@@ -59,6 +59,12 @@ type ControlChannel struct {
 	scramblerMode    ScramblerMode
 	scramblerSeed    uint64
 	scramblerOffset  int
+	// softDecision, when set, is stamped onto every published Phase 2
+	// voice grant (P25Phase2Decode.SoftDecision) so the voice composer /
+	// sigfollow build their traffic-channel receiver with the
+	// soft-decision demod path (issue #915). The CC's own receiver is
+	// unaffected — this field only travels to the traffic-channel decode.
+	softDecision bool
 	// bandPlan accumulates IdentifierUpdate MAC PDUs so publishGrant
 	// can resolve a voice grant's (ChannelID, ChannelNumber) into a
 	// downlink frequency. Guarded by mu.
@@ -422,6 +428,16 @@ func (c *ControlChannel) SetScramblerMode(mode ScramblerMode) {
 	c.scramblerMode = mode
 }
 
+// SetSoftDecision toggles whether published Phase 2 voice grants request
+// the soft-decision traffic-channel demod path (issue #915). It does not
+// change the CC's own receiver; it only sets the flag the composer /
+// sigfollow read off the grant to build a soft-decision receiver.
+func (c *ControlChannel) SetSoftDecision(on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.softDecision = on
+}
+
 // ScramblerMode returns the current ScramblerMode.
 func (c *ControlChannel) ScramblerMode() ScramblerMode {
 	c.mu.Lock()
@@ -774,11 +790,12 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 	// the CC (see internal/voice/composer/p25p2_voice.go).
 	c.mu.Lock()
 	dec := trunking.P25Phase2Decode{
-		Trellis:    uint8(c.trellisMode),
-		RS:         uint8(c.rsMode),
-		Interleave: uint8(c.interleaveMode),
-		Scrambler:  uint8(c.scramblerMode),
-		Seed:       c.scramblerSeed,
+		Trellis:      uint8(c.trellisMode),
+		RS:           uint8(c.rsMode),
+		Interleave:   uint8(c.interleaveMode),
+		Scrambler:    uint8(c.scramblerMode),
+		Seed:         c.scramblerSeed,
+		SoftDecision: c.softDecision,
 	}
 	c.mu.Unlock()
 	rfss, site, nac := c.siteIdentity()

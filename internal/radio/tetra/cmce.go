@@ -72,6 +72,7 @@ type VoiceGrant struct {
 	DestSSI        uint32 // 24-bit
 	CarrierNumber  uint16 // 12-bit
 	Timeslot       uint8  // 2-bit (0..3)
+	UsageMarker    uint8  // downlink usage marker (AACH §21.4.7); 0 = none
 	Group          bool
 	Emergency      bool
 	Encrypted      bool

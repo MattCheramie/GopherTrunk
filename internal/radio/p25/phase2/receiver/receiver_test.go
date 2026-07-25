@@ -366,3 +366,36 @@ func TestParseClockMode(t *testing.T) {
 		}
 	}
 }
+
+// TestParseSoftDecision pins the config-string contract the ccdecoder /
+// widebandt2 pipelines rely on to turn p25_phase2_soft_decision into
+// Options.SoftDecision (issue #915): empty / off-family → false (the default
+// hard slicer), on-family → true, anything else → (false, ok=false) so the
+// caller warns and falls back.
+func TestParseSoftDecision(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+		ok   bool
+	}{
+		{"", false, true},
+		{"off", false, true},
+		{"OFF", false, true},
+		{"false", false, true},
+		{"0", false, true},
+		{" off ", false, true},
+		{"on", true, true},
+		{"On", true, true},
+		{"true", true, true},
+		{"1", true, true},
+		{" on ", true, true},
+		{"nonsense", false, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseSoftDecision(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseSoftDecision(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}

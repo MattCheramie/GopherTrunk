@@ -221,6 +221,12 @@ func (c *ControlChannel) publishGrantFromMAC(m MACResource) {
 		DestSSI:       m.Address.SSI,
 		CarrierNumber: m.ChanAlloc.CarrierNumber,
 		Timeslot:      m.ChanAlloc.Timeslot & 0x3,
-		Encrypted:     m.Encrypted,
+		// The MAC address usage marker (present when the party is addressed by
+		// SSI+usage, §21.4.3.1) is the call's downlink usage marker — the reliable
+		// key the voice chain uses to demultiplex concurrent same-carrier calls by
+		// matching it against each traffic slot's AACH marker. Absent (0) on a
+		// plain-SSI grant, which falls the voice chain back to CRC-gated isolation.
+		UsageMarker: m.Address.UsageMarker,
+		Encrypted:   m.Encrypted,
 	})
 }

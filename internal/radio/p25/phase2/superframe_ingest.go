@@ -18,6 +18,17 @@ type MACDecodeConfig struct {
 	Interleave InterleaveMode
 	Scrambler  ScramblerMode
 	Seed       uint64
+	// SoftDecision requests the receiver-level soft-decision demod path
+	// (issue #915): when set, the traffic-channel receiver is built with
+	// receiver.Options.SoftDecision so it emits per-symbol soft
+	// differentials alongside the hard dibits, and the superframe decoder's
+	// ProcessSoft carries them into Subframe.Soft. The MAC-decode routines
+	// here consume Subframe.Soft automatically when it is present
+	// (DecodeSuperframeMACPDUsWithSlot), so this field is inert to the
+	// decode side itself — it exists so the flag can travel with the rest
+	// of the per-channel FEC config from the grant to the composer /
+	// sigfollow receiver setup. Default false keeps the hard slicer.
+	SoftDecision bool
 }
 
 // DecodedMACPDU pairs a decoded MAC PDU with the SlotType of the
@@ -72,8 +83,20 @@ func DecodeSuperframeMACPDUsWithSlot(sf Superframe, cfg MACDecodeConfig) []Decod
 		}
 		macDibits := sub.Dibits[MACPayloadOffset : MACPayloadOffset+macLen]
 		offset := slotChannelPN44Offset(sub.Index)
-		if pdu, ok := decodeMACPDUDibits(macDibits, cfg.Trellis, cfg.RS,
-			cfg.Interleave, cfg.Scrambler, cfg.Seed, offset); ok {
+		var pdu MACPDU
+		var ok bool
+		if len(sub.Soft) >= MACPayloadOffset+macLen {
+			// Soft-decision path (issue #915): true per-bit soft Viterbi over
+			// the diagonal-frame differential. Byte-identical to the hard path
+			// on a clean signal; recovers ~1.5-2 dB otherwise.
+			soft := sub.Soft[MACPayloadOffset : MACPayloadOffset+macLen]
+			pdu, ok = decodeMACPDUDibitsSoftC(macDibits, soft, cfg.Trellis, cfg.RS,
+				cfg.Interleave, cfg.Scrambler, cfg.Seed, offset)
+		} else {
+			pdu, ok = decodeMACPDUDibits(macDibits, cfg.Trellis, cfg.RS,
+				cfg.Interleave, cfg.Scrambler, cfg.Seed, offset)
+		}
+		if ok {
 			out = append(out, DecodedMACPDU{
 				SlotType: sub.SlotType,
 				PDU:      pdu,

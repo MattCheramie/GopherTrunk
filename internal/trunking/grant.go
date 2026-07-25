@@ -60,6 +60,16 @@ type Grant struct {
 	// the scrambler seed the voice chain descrambles the granted call's traffic
 	// frames with. Zero on non-TETRA grants and until the colour code is learned.
 	TETRAColourExt uint32
+	// TETRAUsageMarker is the call's downlink usage marker (ETSI EN 300 392-2
+	// §21.4.7), the per-slot control-vs-traffic identifier the AACH broadcasts in
+	// every downlink slot. On a same-carrier SCBS it — not the unreliable
+	// channel-allocation timeslot field — is what maps a granted call to the
+	// physical TDMA slot carrying its speech, so the voice chain demultiplexes
+	// concurrent calls by matching this against each burst's AACH marker. Traffic
+	// markers are >= 4 (DLUsageTraffic); 0 means "unknown" (grant addressed by SSI
+	// without a usage marker), which falls the voice chain back to CRC-gated
+	// single-call isolation. Zero on non-TETRA grants.
+	TETRAUsageMarker uint8
 	// AlgorithmID and KeyID carry the encryption parameters the
 	// protocol's privacy header advertises (the DMR PI header, etc.).
 	// They are meaningful only when Encrypted is true and stay zero
@@ -134,6 +144,13 @@ type P25Phase2Decode struct {
 	Interleave uint8
 	Scrambler  uint8
 	Seed       uint64
+	// SoftDecision mirrors phase2.MACDecodeConfig.SoftDecision: when set,
+	// the voice composer / sigfollow build the Phase 2 traffic-channel
+	// receiver with soft-decision demod (per-bit soft Viterbi on the MAC
+	// trellis) instead of the hard slicer, recovering ~1.5-2 dB of coding
+	// gain on weak signals (issue #915). Default false keeps today's hard
+	// path byte-for-byte.
+	SoftDecision bool
 }
 
 // String renders a one-line summary of a Grant for log output.
