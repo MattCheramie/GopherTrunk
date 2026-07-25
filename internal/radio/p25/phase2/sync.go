@@ -11,6 +11,16 @@ package phase2
 // Phase 2 CC state machine on live IQ.
 type DibitSink func(dibits []uint8, baseIdx int)
 
+// SoftDibitSink is the soft-decision counterpart of DibitSink: alongside the
+// hard dibits it carries, per dibit, the complex differential rotated into the
+// diagonal frame where the two on-air bits are the signs of the real and
+// imaginary parts (b0 = Re<0, b1 = Im<0). This is the true per-bit soft
+// information the MAC trellis's soft Viterbi (framing.DecodeP25TrellisSoftC)
+// needs — a magnitude-weighted log-likelihood, which recovers ~1.5-2 dB the
+// hard slicer discards. soft has the same length as dibits. Used only when the
+// receiver's Options.SoftDecision is set (issue #915).
+type SoftDibitSink func(dibits []uint8, soft []complex64, baseIdx int)
+
 // Phase 2 sync words. Outbound (BS → MS) and inbound (MS → BS) carry distinct
 // patterns so a receiver can lock onto the appropriate side of the link.
 // hexToDibits materialises SyncDibits (20) dibits MSB-first from the low 40 bits
