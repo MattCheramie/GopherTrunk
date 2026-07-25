@@ -194,14 +194,14 @@ fecRefresh:
 	// to) the FEC tab — the hash gate keeps the cost negligible.
 	if p.tab == tabFEC {
 		h := hashRows(s.Systems, func(sys client.SystemDTO) string {
-			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%.1f|%s",
+			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%.1f|%s",
 				sys.Name, sys.Protocol,
 				sys.TETRAColourCode, sys.TETRAChannel,
 				sys.TETRAChannelCoding,
 				sys.LTRFCSMode, sys.LTRManchesterMode,
 				sys.P25Phase1DemodMode,
 				sys.P25Phase2TrellisMode, sys.P25Phase2RSMode,
-				sys.P25Phase2ScramblerMode,
+				sys.P25Phase2ScramblerMode, sys.P25Phase2SoftDecision,
 				sys.NXDNViterbiMode,
 				sys.NXDNDeviationHz,
 				sys.EDACSBCHMode)
@@ -473,6 +473,7 @@ func fecSummary(s client.SystemDTO) string {
 		parts = append(parts, "trellis: "+orDefault(s.P25Phase2TrellisMode, "on"))
 		parts = append(parts, "rs: "+orDefault(s.P25Phase2RSMode, "off"))
 		parts = append(parts, "scrambler: "+orDefault(s.P25Phase2ScramblerMode, "on"))
+		parts = append(parts, "soft: "+orDefault(s.P25Phase2SoftDecision, "off"))
 	case "nxdn":
 		parts = append(parts, "viterbi: "+orDefault(s.NXDNViterbiMode, "spec"))
 		if s.NXDNDeviationHz > 0 {

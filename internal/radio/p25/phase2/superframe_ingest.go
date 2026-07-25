@@ -18,6 +18,17 @@ type MACDecodeConfig struct {
 	Interleave InterleaveMode
 	Scrambler  ScramblerMode
 	Seed       uint64
+	// SoftDecision requests the receiver-level soft-decision demod path
+	// (issue #915): when set, the traffic-channel receiver is built with
+	// receiver.Options.SoftDecision so it emits per-symbol soft
+	// differentials alongside the hard dibits, and the superframe decoder's
+	// ProcessSoft carries them into Subframe.Soft. The MAC-decode routines
+	// here consume Subframe.Soft automatically when it is present
+	// (DecodeSuperframeMACPDUsWithSlot), so this field is inert to the
+	// decode side itself — it exists so the flag can travel with the rest
+	// of the per-channel FEC config from the grant to the composer /
+	// sigfollow receiver setup. Default false keeps the hard slicer.
+	SoftDecision bool
 }
 
 // DecodedMACPDU pairs a decoded MAC PDU with the SlotType of the

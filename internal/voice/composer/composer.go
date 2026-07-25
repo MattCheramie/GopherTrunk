@@ -502,11 +502,12 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, ch.done)
 	case isP25P2Voice:
 		macCfg := p25p2.MACDecodeConfig{
-			Trellis:    p25p2.TrellisMode(cs.Grant.P25Phase2Decode.Trellis),
-			RS:         p25p2.RSMode(cs.Grant.P25Phase2Decode.RS),
-			Interleave: p25p2.InterleaveMode(cs.Grant.P25Phase2Decode.Interleave),
-			Scrambler:  p25p2.ScramblerMode(cs.Grant.P25Phase2Decode.Scrambler),
-			Seed:       cs.Grant.P25Phase2Decode.Seed,
+			Trellis:      p25p2.TrellisMode(cs.Grant.P25Phase2Decode.Trellis),
+			RS:           p25p2.RSMode(cs.Grant.P25Phase2Decode.RS),
+			Interleave:   p25p2.InterleaveMode(cs.Grant.P25Phase2Decode.Interleave),
+			Scrambler:    p25p2.ScramblerMode(cs.Grant.P25Phase2Decode.Scrambler),
+			Seed:         cs.Grant.P25Phase2Decode.Seed,
+			SoftDecision: cs.Grant.P25Phase2Decode.SoftDecision,
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case isP25P1Voice:

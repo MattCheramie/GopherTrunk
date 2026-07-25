@@ -209,11 +209,12 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 	}
 
 	macCfg := p25p2.MACDecodeConfig{
-		Trellis:    p25p2.TrellisMode(g.P25Phase2Decode.Trellis),
-		RS:         p25p2.RSMode(g.P25Phase2Decode.RS),
-		Interleave: p25p2.InterleaveMode(g.P25Phase2Decode.Interleave),
-		Scrambler:  p25p2.ScramblerMode(g.P25Phase2Decode.Scrambler),
-		Seed:       g.P25Phase2Decode.Seed,
+		Trellis:      p25p2.TrellisMode(g.P25Phase2Decode.Trellis),
+		RS:           p25p2.RSMode(g.P25Phase2Decode.RS),
+		Interleave:   p25p2.InterleaveMode(g.P25Phase2Decode.Interleave),
+		Scrambler:    p25p2.ScramblerMode(g.P25Phase2Decode.Scrambler),
+		Seed:         g.P25Phase2Decode.Seed,
+		SoftDecision: g.P25Phase2Decode.SoftDecision,
 	}
 
 	sfDec := p25p2.NewSuperframeDecoder()
@@ -231,17 +232,31 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 	var lastActivity atomic.Int64
 	lastActivity.Store(time.Now().UnixNano())
 
-	rx := p25p2rx.New(p25p2rx.Options{
+	// drainSuperframes is shared by the hard DibitSink and, when the grant
+	// requests soft-decision demod (issue #915), the soft SoftSink whose
+	// superframes carry per-symbol soft differentials in Subframe.Soft.
+	drainSuperframes := func(sfs []p25p2.Superframe) {
+		for _, sf := range sfs {
+			lastActivity.Store(time.Now().UnixNano())
+			dispatcher.Dispatch(sf, macCfg)
+		}
+	}
+	rxOpts := p25p2rx.Options{
 		SampleRateHz: rateHz,
 		ClockMode:    p25p2rx.ClockGardner,
 		GardnerGain:  gardnerGain,
-		DibitSink: func(dibits []uint8, baseIdx int) {
-			for _, sf := range sfDec.Process(dibits, baseIdx) {
-				lastActivity.Store(time.Now().UnixNano())
-				dispatcher.Dispatch(sf, macCfg)
-			}
-		},
-	})
+	}
+	if macCfg.SoftDecision {
+		rxOpts.SoftDecision = true
+		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
+			drainSuperframes(sfDec.ProcessSoft(dibits, soft, baseIdx))
+		}
+	} else {
+		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
+			drainSuperframes(sfDec.Process(dibits, baseIdx))
+		}
+	}
+	rx := p25p2rx.New(rxOpts)
 
 	m.log.Info("sigfollow: p25p2 signalling follow started",
 		"system", g.System, "serial", vt.Serial(),

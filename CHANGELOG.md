@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **P25 Phase 2 soft-decision demod (`p25_phase2_soft_decision`).** A new
+  per-system opt-in knob (on/off, default off) that builds the Phase 2
+  traffic-channel receiver with soft-decision decoding: the demodulator's
+  soft symbol differentials feed a per-bit soft Viterbi on the MAC trellis,
+  recovering the ~1.5–2 dB of coding gain the hard slicer discards. On weak
+  signals this can surface the clear-MAC source RID the hard path drops; on
+  strong signals it is neutral, and with the knob off the decode is
+  byte-for-byte unchanged. Applies to the voice composer and signalling
+  follower (including Phase 1 control channels that grant Phase 2 traffic).
+  Issue #915.
 - **TETRA voice now decodes to audible audio, including up to 4 concurrent
   calls on one carrier.** The TETRA voice path recovers each traffic burst,
   channel-decodes TCH/S, and renders it with the clean-room ACELP vocoder
