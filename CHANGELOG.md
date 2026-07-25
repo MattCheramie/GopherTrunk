@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`call.end` real-time event now carries `duration_ms`.** The SSE/WebSocket
+  event stream's call-completion event (`event: call.end` on `/api/v1/events`
+  and the WS stream) now includes the call length in milliseconds alongside
+  `started_at`/`ended_at`, matching the completed-call webhook's `duration_ms`,
+  so an SSE/WS-only consumer (a Prometheus exporter, a Grafana feed) reads a
+  call's duration off the completion event without pairing it back to
+  `call.start` and subtracting timestamps itself. Also confirmed and pinned by
+  a regression test that the P25 control-channel `nac` — site identity
+  alongside `rfss_id`/`site_id` — is present on every P25 grant / affiliation /
+  registration event (threaded from the decoded NID; omitted only for non-P25
+  protocols where NAC does not apply). (issue #268)
 - **Motorola P25 talker-alias ciphertext is logged as cryptanalysis ground
   truth.** When a Motorola FACCH-S talker alias reassembles on a Phase 2
   traffic channel, GopherTrunk now emits a `p25p2 alias ciphertext` log line
