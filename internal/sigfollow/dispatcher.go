@@ -191,19 +191,48 @@ func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConf
 		// reassembler, data blocks (0x95) complete it, and the source RID
 		// falls out of the decoded message prefix (#376).
 		if h, ok := pdu.AsMotorolaAliasHeader(); ok {
-			if alias, src, reliable, complete := d.motorolaAliasAsm.AddHeader(h); complete {
-				d.publishTalkerAlias(src, alias, reliable)
+			if res := d.motorolaAliasAsm.AddHeader(h); res.Complete {
+				d.completeMotorolaAlias(res)
 			}
 			continue
 		}
 		if dat, ok := pdu.AsMotorolaAliasData(); ok {
-			if alias, src, reliable, complete := d.motorolaAliasAsm.AddData(dat); complete {
-				d.publishTalkerAlias(src, alias, reliable)
+			if res := d.motorolaAliasAsm.AddData(dat); res.Complete {
+				d.completeMotorolaAlias(res)
 			}
 			continue
 		}
 	}
 	return len(decoded), rsValidCount
+}
+
+// completeMotorolaAlias handles a fully reassembled Motorola FACCH-S
+// alias. It publishes the decoded alias (when non-empty) and always emits
+// the reassembled ciphertext as cryptanalysis ground truth.
+//
+// The proprietary alias cipher is still gated (motorola.CipherVerified is
+// false), so the decoded Alias is typically empty on real traffic and the
+// alias card shows nothing (#773). But the reassembled *ciphertext* — the
+// 2n encoded-alias bytes paired with the known source RID and talkgroup —
+// is exactly the record the cipher cryptanalysis needs, and the
+// chosen-plaintext capture procedure (research/p25-talker-alias-chosen-
+// plaintext.md) names GopherTrunk as a valid capture receiver. Surfacing
+// it here lets an operator harvest the `rid,talkgroup,encoded_hex,alias`
+// corpus from live air with GopherTrunk alone, instead of falling back to
+// SDRTrunk — the dependency #773 is trying to retire. It is logged for
+// every completed alias regardless of decode success; multiple identical
+// lines across keyups are expected and let the capturer confirm the
+// ciphertext is stable (deterministic), as the procedure's sanity check
+// requires.
+func (d *MACDispatcher) completeMotorolaAlias(res p25p2.MotorolaAliasResult) {
+	if len(res.Encoded) > 0 {
+		d.log.Info(d.logPrefix+": p25p2 alias ciphertext",
+			"system", d.system, "serial", d.serial,
+			"rid", res.SourceID, "talkgroup", res.TalkgroupID,
+			"encoded_hex", hex.EncodeToString(res.Encoded),
+			"crc_ok", res.CRCOK, "reliable", res.Reliable)
+	}
+	d.publishTalkerAlias(res.SourceID, res.Alias, res.Reliable)
 }
 
 // publishTalkerAlias mirrors phase2.ControlChannel.publishTalkerAlias: a

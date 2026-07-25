@@ -41,6 +41,13 @@ equipment.
   3,607-pair dataset**. For each transmission we need the **reassembled
   encoded-alias bytes (the ciphertext hex)** paired with the alias string you
   programmed.
+  - **GopherTrunk emits this natively.** When a Motorola FACCH-S alias
+    reassembles on a followed Phase 2 traffic channel, GopherTrunk logs a
+    `p25p2 alias ciphertext` line with `rid`, `talkgroup`, and `encoded_hex`
+    — the ciphertext hex this procedure needs. Grep the daemon log for
+    `alias ciphertext` while capturing; each keyup produces one line, and the
+    `encoded_hex` must be byte-identical across the 2–3 keyups (the sanity
+    check below). No SDRTrunk required.
 
 ## Core procedure (repeat per alias)
 1. In CPS, set the radio's talker alias to the next string from the list below.

@@ -1,6 +1,7 @@
 package phase2
 
 import (
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -137,20 +138,58 @@ func TestMotorolaAliasAssemblerYieldsRID(t *testing.T) {
 	a := NewMotorolaAliasAssembler(nil)
 
 	h, _ := macPDU(t, aliasHeaderMSG...).AsMotorolaAliasHeader()
-	if _, _, _, done := a.AddHeader(h); done {
+	if a.AddHeader(h).Complete {
 		t.Fatal("header alone (2 blocks pending) must not complete")
 	}
 	d1, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
-	if _, _, _, done := a.AddData(d1); done {
+	if a.AddData(d1).Complete {
 		t.Fatal("1 of 2 blocks must not complete")
 	}
 	d2, _ := macPDU(t, aliasData2MSG...).AsMotorolaAliasData()
-	_, rid, _, done := a.AddData(d2)
-	if !done {
+	res := a.AddData(d2)
+	if !res.Complete {
 		t.Fatal("both blocks present should complete the alias")
 	}
-	if rid != 200062 {
-		t.Errorf("source RID = %d, want 200062", rid)
+	if res.SourceID != 200062 {
+		t.Errorf("source RID = %d, want 200062", res.SourceID)
+	}
+}
+
+// TestMotorolaAliasAssemblerExposesCiphertext pins the chosen-plaintext /
+// known-RID ground-truth record surfaced on completion (#773). The
+// proprietary alias cipher is gated (motorola.CipherVerified == false), so
+// the decoded alias string is unreliable and typically empty — but the
+// reassembled *ciphertext* (the 2n encoded-alias bytes, CRC stripped)
+// paired with the RID and talkgroup is exactly the corpus row the cipher
+// cryptanalysis consumes, and must be surfaced regardless of decode
+// success so an operator can capture it with GopherTrunk alone rather than
+// SDRTrunk. Before this change the completion result carried no ciphertext
+// at all.
+func TestMotorolaAliasAssemblerExposesCiphertext(t *testing.T) {
+	a := NewMotorolaAliasAssembler(nil)
+
+	h, _ := macPDU(t, aliasHeaderMSG...).AsMotorolaAliasHeader()
+	a.AddHeader(h)
+	d1, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
+	a.AddData(d1)
+	d2, _ := macPDU(t, aliasData2MSG...).AsMotorolaAliasData()
+	res := a.AddData(d2)
+
+	if !res.Complete {
+		t.Fatal("both blocks present should complete the alias")
+	}
+	if res.SourceID != 200062 {
+		t.Errorf("source RID = %d, want 200062", res.SourceID)
+	}
+	if res.TalkgroupID != 20208 {
+		t.Errorf("talkgroup = %d, want 20208", res.TalkgroupID)
+	}
+	// The 2n-byte cipher region of the reassembled SDRTrunk ground-truth
+	// stream (bytes after the 7-byte SUID, before the 2-byte CRC tail).
+	wantHex := "2444f6ff2fa9ac3ec34432fa63cc81c3c5d96a9600000000"
+	gotHex := hex.EncodeToString(res.Encoded)
+	if gotHex != wantHex {
+		t.Errorf("encoded ciphertext = %s, want %s", gotHex, wantHex)
 	}
 }
 
@@ -208,7 +247,7 @@ func TestMotorolaAliasAssemblerWrongOpcodeRejected(t *testing.T) {
 	// A 0x95 PDU before any header must not complete or panic.
 	d, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
 	a := NewMotorolaAliasAssembler(nil)
-	if _, _, _, done := a.AddData(d); done {
+	if a.AddData(d).Complete {
 		t.Error("data before header must not complete")
 	}
 }

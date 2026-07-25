@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Motorola P25 talker-alias ciphertext is logged as cryptanalysis ground
+  truth.** When a Motorola FACCH-S talker alias reassembles on a Phase 2
+  traffic channel, GopherTrunk now emits a `p25p2 alias ciphertext` log line
+  carrying the source RID, talkgroup, and the reassembled encoded-alias bytes
+  (`encoded_hex`) — the `rid,talkgroup,encoded_hex,alias` record the alias
+  cipher analysis consumes. The proprietary alias cipher is still gated
+  (unsolved, so the decoded name stays blank), but this lets an operator
+  harvest the chosen-plaintext / known-RID corpus needed to finish it
+  (`research/p25-talker-alias-chosen-plaintext.md`) using GopherTrunk alone
+  instead of SDRTrunk (#773).
 - **P25 Phase 2 soft-decision demod (`p25_phase2_soft_decision`).** A new
   per-system opt-in knob (on/off, default off) that builds the Phase 2
   traffic-channel receiver with soft-decision decoding: the demodulator's
