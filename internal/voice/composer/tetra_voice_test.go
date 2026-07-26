@@ -255,3 +255,122 @@ func TestTETRATrafficBurstNoGrantMarkerFallback(t *testing.T) {
 		t.Errorf("offSlot = %d, want 0 (no dropping without a grant marker)", got)
 	}
 }
+
+// --- shared per-carrier usage-marker demux regressions ---------------------
+
+// newDemuxOwner builds a tetraSlotOwner with its own recorder sink + boundary
+// tracker for the demux tests.
+func newDemuxOwner(c *Composer, serial string, marker uint8) (*tetraSlotOwner, *recordingSink) {
+	rs := &recordingSink{}
+	bt := c.newBoundaryTracker(serial, 0, nil)
+	return &tetraSlotOwner{serial: serial, marker: marker, bt: bt, rs: rs}, rs
+}
+
+func mkDemux(c *Composer) *tetraSlotDemux {
+	return &tetraSlotDemux{c: c, key: "test", owners: make(map[uint8]*tetraSlotOwner)}
+}
+
+// TestTETRADemuxRoutesByUsageMarker is the core regression for cross-slot audio
+// leaks: each concurrent same-carrier call is keyed by its AACH usage marker, so
+// a burst is delivered only to the call whose marker it carries — never to a peer.
+func TestTETRADemuxRoutesByUsageMarker(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	oA, rsA := newDemuxOwner(c, "A", 19)
+	oB, rsB := newDemuxOwner(c, "B", 20)
+	d.addOwner(oA)
+	d.addOwner(oB)
+
+	d.onBurst(frame, 1, 19) // marker 19 → A only
+	d.onBurst(frame, 2, 20) // marker 20 → B only
+	if n := len(rsA.rawFrames("A")); n != 2 {
+		t.Errorf("owner A got %d frames, want 2", n)
+	}
+	if n := len(rsB.rawFrames("B")); n != 2 {
+		t.Errorf("owner B got %d frames, want 2", n)
+	}
+
+	// A marker with no owner is dropped (not broadcast to A or B).
+	d.onBurst(frame, 3, 21)
+	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 4 {
+		t.Errorf("unowned marker 21 leaked: total frames now %d, want 4", n)
+	}
+	// A non-traffic AACH marker (< DLUsageTraffic, e.g. undecoded 0) is dropped.
+	d.onBurst(frame, 1, 0)
+	if n := len(rsA.rawFrames("A")); n != 2 {
+		t.Errorf("non-traffic marker leaked to A: %d frames, want 2", n)
+	}
+}
+
+// TestTETRADemuxMostRecentGrantEvicts is the hangtime-reuse (R2) regression: when
+// the network reuses a usage marker for a new call while the old one lingers in
+// hangtime, the newest grant owns the marker and the old recording stops — no
+// leak of the new call's audio into the old file.
+func TestTETRADemuxMostRecentGrantEvicts(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	oOld, rsOld := newDemuxOwner(c, "old", 19)
+	d.addOwner(oOld)
+	d.onBurst(frame, 1, 19)
+	if n := len(rsOld.rawFrames("old")); n != 2 {
+		t.Fatalf("old owner got %d frames before reuse, want 2", n)
+	}
+
+	// New call reuses marker 19 while "old" is still registered (hangtime).
+	oNew, rsNew := newDemuxOwner(c, "new", 19)
+	d.addOwner(oNew)
+	d.onBurst(frame, 1, 19)
+	if n := len(rsNew.rawFrames("new")); n != 2 {
+		t.Errorf("new owner got %d frames after reuse, want 2", n)
+	}
+	if n := len(rsOld.rawFrames("old")); n != 2 {
+		t.Errorf("old owner leaked new call's audio: %d frames, want 2 (frozen at eviction)", n)
+	}
+
+	// The lingering old owner unregistering must NOT remove the new owner's marker.
+	d.removeOwner(oOld)
+	d.onBurst(frame, 1, 19)
+	if n := len(rsNew.rawFrames("new")); n != 4 {
+		t.Errorf("new owner lost its marker after old unregistered: %d frames, want 4", n)
+	}
+}
+
+// TestTETRADemuxWildcardBinding pins the type-1 (no-usage-marker) grant handling:
+// a wildcard owner claims the first unclaimed traffic marker it sees, and must not
+// steal a marker a marker-bearing call already owns.
+func TestTETRADemuxWildcardBinding(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	// A marker-bearing call owns 19; a wildcard (marker 0) is also waiting.
+	oA, rsA := newDemuxOwner(c, "A", 19)
+	oW, rsW := newDemuxOwner(c, "W", 0)
+	d.addOwner(oA)
+	d.addOwner(oW)
+
+	// Burst on 19 goes to A, not the wildcard.
+	d.onBurst(frame, 1, 19)
+	if n := len(rsA.rawFrames("A")); n != 2 {
+		t.Errorf("owner A got %d frames, want 2", n)
+	}
+	if n := len(rsW.rawFrames("W")); n != 0 {
+		t.Errorf("wildcard stole a claimed marker: %d frames, want 0", n)
+	}
+
+	// A burst on an unclaimed marker 25 binds the wildcard to 25.
+	d.onBurst(frame, 3, 25)
+	d.onBurst(frame, 3, 25)
+	if n := len(rsW.rawFrames("W")); n != 4 {
+		t.Errorf("wildcard did not bind marker 25: %d frames, want 4", n)
+	}
+	// It must not also grab a different unclaimed marker now that it is bound.
+	d.onBurst(frame, 4, 30)
+	if n := len(rsW.rawFrames("W")); n != 4 {
+		t.Errorf("bound wildcard grabbed a second marker: %d frames, want 4", n)
+	}
+}

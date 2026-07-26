@@ -1314,6 +1314,12 @@ broadcast:
 #     enabled: true
 #     dir: "../iq/auto/"
 #     format: cs16               # cs16 (default) | f32 (GNU Radio cfile) | u8
+#     tap: wideband              # wideband (default, full-rate SDR — large files)
+#                                # | ddc (narrowband channelised stream at the
+#                                #   pipeline rate, e.g. 144 kHz for TETRA — far
+#                                #   smaller and directly replayable). For a
+#                                #   same-carrier TETRA site the ddc tap holds all
+#                                #   four voice timeslots of the control carrier.
 #     seconds: 8                 # capture length per trigger
 #     cooldown: 10s              # min gap between automatic triggers
 #     on_concurrent_calls: 2     # fire at N+ concurrent calls (0 = off)

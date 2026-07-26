@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +15,119 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// fakeDDCTap is a stub ddcVoiceTap: SubscribeVoiceIQ pre-loads a buffered channel
+// with the configured chunks (then blocks, so the capture ends on its timer),
+// letting the DDC-tap capture path be exercised without a live decoder.
+type fakeDDCTap struct {
+	rate   float64
+	center uint32
+	chunks [][]complex64
+}
+
+func (f *fakeDDCTap) SubscribeVoiceIQ() (<-chan []complex64, func()) {
+	ch := make(chan []complex64, len(f.chunks)+1)
+	for _, c := range f.chunks {
+		ch <- c
+	}
+	return ch, func() {}
+}
+
+func (f *fakeDDCTap) PipelineRateHz() float64 { return f.rate }
+func (f *fakeDDCTap) CenterFreqHz() uint32    { return f.center }
+
+// TestCaptureDDCToFile checks the narrowband DDC capture writes every delivered
+// sample in the chosen format (cs16 = 4 bytes/sample) and ends cleanly on the
+// duration timer.
+func TestCaptureDDCToFile(t *testing.T) {
+	tap := &fakeDDCTap{rate: 144000, center: 467913000, chunks: [][]complex64{
+		make([]complex64, 128), make([]complex64, 128), make([]complex64, 128),
+	}}
+	path := filepath.Join(t.TempDir(), "ddc.cs16")
+	samples, _, err := captureDDCToFile(context.Background(), tap, path, siglab.FormatS16, 1)
+	if err != nil {
+		t.Fatalf("captureDDCToFile: %v", err)
+	}
+	if samples != 384 {
+		t.Errorf("samples = %d, want 384", samples)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Size() != 384*4 {
+		t.Errorf("file size = %d, want %d (384 samples × 4 bytes cs16)", fi.Size(), 384*4)
+	}
+}
+
+// TestCaptureDDCToFileNilTap errors clearly when the control decoder is absent.
+func TestCaptureDDCToFileNilTap(t *testing.T) {
+	if _, _, err := captureDDCToFile(context.Background(), nil, filepath.Join(t.TempDir(), "x.cs16"), siglab.FormatS16, 1); err == nil {
+		t.Error("captureDDCToFile(nil tap) = nil error, want an error")
+	}
+}
+
+// TestAutoRecordDDCTapMetadata drives a full triggered capture with tap: ddc and
+// confirms the file + metadata carry the DDC pipeline rate (144 kHz) and control
+// centre, not the wideband SDR rate — and that a missing dir is created.
+func TestAutoRecordDDCTapMetadata(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "made", "on", "demand") // exercises MkdirAll
+	cfg := config.BasebandAutoRecordConfig{
+		Enabled: true, Dir: dir, Seconds: 1, Format: "cs16", Tap: "ddc",
+	}
+	tap := &fakeDDCTap{rate: 144000, center: 467913000, chunks: [][]complex64{make([]complex64, 144)}}
+	a := newIQAutoRecorder(cfg, "TETRA_Site_1", "tetra", "cc:same-carrier", nil, func() ddcVoiceTap { return tap }, nil)
+	if a == nil {
+		t.Fatal("newIQAutoRecorder returned nil")
+	}
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	a.now = func() time.Time { return now }
+	a.runCapture(context.Background(), "concurrent", "TETRA_Site_1", "tetra", now)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	var cs16, meta string
+	for _, e := range entries {
+		switch {
+		case strings.HasSuffix(e.Name(), ".cs16"):
+			cs16 = e.Name()
+		case strings.HasSuffix(e.Name(), ".metadata.json"):
+			meta = filepath.Join(dir, e.Name())
+		}
+	}
+	if cs16 == "" {
+		t.Fatalf("no .cs16 capture written; dir has %v", entries)
+	}
+	if !strings.Contains(cs16, "144000hz") {
+		t.Errorf("filename %q does not carry the DDC rate 144000hz", cs16)
+	}
+	if !strings.Contains(cs16, "467913000") {
+		t.Errorf("filename %q does not carry the control centre 467913000", cs16)
+	}
+	b, err := os.ReadFile(meta)
+	if err != nil {
+		t.Fatalf("read metadata: %v", err)
+	}
+	var m struct {
+		SampleRateHz float64 `json:"sample_rate_hz"`
+		CenterFreqHz uint32  `json:"center_freq_hz"`
+		Format       string  `json:"format"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("parse metadata: %v", err)
+	}
+	if m.SampleRateHz != 144000 {
+		t.Errorf("metadata sample_rate_hz = %v, want 144000 (DDC pipeline rate)", m.SampleRateHz)
+	}
+	if m.CenterFreqHz != 467913000 {
+		t.Errorf("metadata center_freq_hz = %d, want 467913000", m.CenterFreqHz)
+	}
+	if m.Format != "cs16" {
+		t.Errorf("metadata format = %q, want cs16", m.Format)
+	}
+}
 
 // fakeClock is a manually-advanced clock for deterministic cooldown tests.
 type fakeClock struct {
@@ -65,7 +182,7 @@ func newTestAutoRecorder(t *testing.T, cfg config.BasebandAutoRecordConfig) (*iq
 	if cfg.Seconds == 0 {
 		cfg.Seconds = 4
 	}
-	a := newIQAutoRecorder(cfg, "TETRA_Site_1", "tetra", "cc:same-carrier", nil, nil)
+	a := newIQAutoRecorder(cfg, "TETRA_Site_1", "tetra", "cc:same-carrier", nil, nil, nil)
 	if a == nil {
 		t.Fatal("newIQAutoRecorder returned nil for enabled config")
 	}
@@ -115,7 +232,7 @@ func grant(system string, tg uint32, ts uint8) trunking.Grant {
 }
 
 func TestAutoRecordDisabledReturnsNil(t *testing.T) {
-	if a := newIQAutoRecorder(config.BasebandAutoRecordConfig{Enabled: false}, "s", "tetra", "x", nil, nil); a != nil {
+	if a := newIQAutoRecorder(config.BasebandAutoRecordConfig{Enabled: false}, "s", "tetra", "x", nil, nil, nil); a != nil {
 		t.Fatal("expected nil for disabled config")
 	}
 }
