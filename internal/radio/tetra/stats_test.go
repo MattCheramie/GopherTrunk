@@ -57,6 +57,35 @@ func buildCleanSBStream(t *testing.T, cc6 uint8, mcc, mnc uint16, sysinfo PDU) [
 	return s
 }
 
+// buildCleanSBStreamMN is buildCleanSBStream with the BSCH SYNC PDU's multiframe
+// number (MN, bits 17..22) set, so tests can drive the multiframe-keyed sync log
+// across multiframe boundaries and gaps.
+func buildCleanSBStreamMN(t *testing.T, cc6 uint8, mcc, mnc uint16, mn uint8, sysinfo PDU) []uint8 {
+	t.Helper()
+	syncInfo := make([]byte, 60)
+	putBits(syncInfo, 4, 6, uint32(cc6))
+	putBits(syncInfo, 17, 6, uint32(mn))
+	putBits(syncInfo, 31, 10, uint32(mcc))
+	putBits(syncInfo, 41, 14, uint32(mnc))
+	bschDibits := TetraBitsToDibits(EncodeBSCH(syncInfo))
+
+	ext := ExtendedColourCode(mcc, mnc, cc6)
+	info := pduToType1Bits(sysinfo, 124)
+	if info == nil {
+		t.Fatalf("sysinfo PDU too large for SCH/HD 124 type-1 bits")
+	}
+	bnchDibits := TetraBitsToDibits(EncodeSCHHD(info, ext))
+
+	var s []uint8
+	s = append(s, make([]uint8, 50)...)
+	s = append(s, bschDibits...)
+	s = append(s, SyncTrainingDibits()...)
+	s = append(s, make([]uint8, sbBroadcastDibits)...)
+	s = append(s, bnchDibits...)
+	s = append(s, make([]uint8, 300)...)
+	return s
+}
+
 // cleanSysinfoPDU is a minimal valid MLE SYSINFO PDU (MCC=10b / MNC=14b /
 // LA=14b), the same payload layout the topology / round-trip tests use.
 func cleanSysinfoPDU() PDU {
@@ -126,29 +155,58 @@ func TestStatsInertAtInfoLevel(t *testing.T) {
 	}
 }
 
-// TestSyncBurstDebugLines confirms the per-milestone debug lines are emitted at
-// debug level and suppressed at info level. These are the "more debug info from
-// the control channel" the request asked for.
+// TestSyncBurstDebugLines confirms the higher-level, multiframe-keyed sync log
+// (ETSI EN 300 392-2 §4.5.2) replaces the old per-burst spam: the first burst
+// logs "tetra sync acquired", further bursts in the same multiframe are silent,
+// a new multiframe logs "tetra sync", a non-consecutive multiframe logs
+// "tetra sync gap", and all of it is suppressed at info level. Streams are fed at
+// consecutive baseIdx to keep the SB decoder's absolute-index buffer monotonic.
 func TestSyncBurstDebugLines(t *testing.T) {
-	t.Run("debug emits", func(t *testing.T) {
+	t.Run("debug emits multiframe-keyed lines, not per-burst spam", func(t *testing.T) {
 		var buf bytes.Buffer
 		cc, bus := debugCC(t, &buf, slog.LevelDebug)
 		defer bus.Close()
-		cc.Process(buildCleanSBStream(t, 0x2D, 3, 5, cleanSysinfoPDU()), 0)
+
+		base := 0
+		feed := func(mn uint8) {
+			s := buildCleanSBStreamMN(t, 0x2D, 3, 5, mn, cleanSysinfoPDU())
+			cc.Process(s, base)
+			base += len(s)
+		}
+
+		feed(1) // first burst → acquired
+		feed(1) // same multiframe → silent
+		feed(2) // next multiframe → sync
+		feed(5) // skipped MN 3,4 → gap (missed 2)
+
 		out := buf.String()
-		for _, want := range []string{"tetra: sync burst decoded", "tetra: sysinfo"} {
+		for _, want := range []string{"tetra sync acquired", "tetra sync gap"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("debug output missing %q\n---\n%s", want, out)
 			}
+		}
+		// The old per-burst spam must be gone.
+		for _, gone := range []string{"tetra: sync burst decoded", "tetra: sysinfo", "BSCH decode failed"} {
+			if strings.Contains(out, gone) {
+				t.Errorf("debug output still contains removed per-burst line %q\n---\n%s", gone, out)
+			}
+		}
+		// Exactly one "acquired" line (same-MN second burst did not re-acquire).
+		if n := strings.Count(out, "tetra sync acquired"); n != 1 {
+			t.Errorf("acquired lines = %d, want 1 (same-MN burst must not re-log)\n%s", n, out)
+		}
+		// The gap collapses the missed multiframes into one "gap" line reporting 2.
+		if !strings.Contains(out, "missed=2") {
+			t.Errorf("gap line should report missed=2\n---\n%s", out)
 		}
 	})
 	t.Run("info suppresses", func(t *testing.T) {
 		var buf bytes.Buffer
 		cc, bus := debugCC(t, &buf, slog.LevelInfo)
 		defer bus.Close()
-		cc.Process(buildCleanSBStream(t, 0x2D, 3, 5, cleanSysinfoPDU()), 0)
-		if out := buf.String(); strings.Contains(out, "tetra: sync burst decoded") {
-			t.Errorf("info output should not contain debug milestone lines\n---\n%s", out)
+		cc.Process(buildCleanSBStreamMN(t, 0x2D, 3, 5, 1, cleanSysinfoPDU()), 0)
+		if out := buf.String(); strings.Contains(out, "tetra sync") {
+			t.Errorf("info output should not contain debug sync lines\n---\n%s", out)
 		}
 	})
 }

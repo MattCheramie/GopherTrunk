@@ -29,6 +29,19 @@ type processState struct {
 	// ncdb decodes real downlink slots (correct NCDB geometry + AACH-steered
 	// MAC demux) under ChannelCodingOn. Lazily built. See downlink.go.
 	ncdb *downlinkNCDB
+
+	// Sync-continuity tracking for the higher-level (multiframe-keyed) sync log.
+	// TETRA numbers time in a 4-slot frame / 18-frame multiframe / 60-multiframe
+	// hyperframe hierarchy (ETSI EN 300 392-2 §4.5.2); the BSCH SYNC PDU carries
+	// the current multiframe number (MN). Rather than log every sync burst
+	// (thousands of lines), the decoder logs once per multiframe on an MN change
+	// and flags multiframe gaps. lastMN is the previous decoded MN; haveMN gates
+	// the first-burst "acquired" line; mfCount counts multiframes seen since
+	// acquisition. Cleared with the rest of processState on ResyncReset, so a
+	// post-noise reacquire re-emits the "acquired" marker.
+	lastMN  uint8
+	haveMN  bool
+	mfCount uint64
 }
 
 // Synchronisation downlink burst (SB) geometry in dibits, per ETSI
@@ -318,20 +331,17 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		}
 	}
 	if !found {
+		// A failed BSCH decode is one bad/false sync candidate among the many the
+		// four-rotation correlator throws off on noise; it is counted (BSCHFail)
+		// and surfaced in aggregate by the throttled decode-status line, not
+		// logged per burst (that was tens of thousands of lines per capture).
 		c.addStat(&c.stats.BSCHFail, 1)
-		c.log.Debug("tetra: sync burst BSCH decode failed",
-			"sts_at", L, "system", c.systemName)
 		return
 	}
 	c.addStat(&c.stats.BSCHOK, 1)
-	// Heartbeat: a CRC-clean sync burst is the ~1 s cadence that proves the
-	// carrier is still live, independent of voice traffic. Feeds CheckStale.
+	// Heartbeat: a CRC-clean sync burst proves the carrier is still live,
+	// independent of voice traffic. Feeds CheckStale / NeedsResync.
 	c.noteActivity()
-	c.log.Debug("tetra: sync burst decoded",
-		"sts_at", L, "rot", bschRot,
-		"colour_code", sync.ExtendedColourCode()&0x3F,
-		"colour_ext", sync.ExtendedColourCode(),
-		"mcc", sync.MCC, "mnc", sync.MNC, "system", c.systemName)
 	c.LearnColourCode(sync.ExtendedColourCode())
 	// Report the BSCH FEC correction depth: re-encode the recovered
 	// type-1 bits and count how many channel bits the §8.3.1 chain
@@ -372,9 +382,6 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 					ls.MCC, ls.MNC = sb.MCC, sb.MNC
 				}
 				c.addStat(&c.stats.SysInfo, 1)
-				c.log.Debug("tetra: sysinfo",
-					"la", sb.LocationArea, "mcc", ls.MCC, "mnc", ls.MNC,
-					"rot", rot, "system", c.systemName)
 			}
 			if c.fecObserver != nil {
 				received := TetraDibitsToBits(rotateDibits(bnch, rot))
@@ -384,6 +391,51 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		}
 	}
 	c.maybeLock(ls)
+	c.logSyncProgress(p, sync, ls.LocationArea)
+}
+
+// logSyncProgress emits the higher-level, multiframe-keyed sync log in place of
+// the old per-burst spam. TETRA numbers time as 4-slot frames / 18-frame
+// multiframes / 60-multiframe hyperframes (ETSI EN 300 392-2 §4.5.2), and the
+// BSCH SYNC PDU carries the current multiframe number (MN). A healthy carrier
+// throws off a decodable sync burst roughly every frame, so keying the log on MN
+// collapses it to about one line per multiframe:
+//
+//   - the first burst after (re)acquisition logs "tetra sync acquired";
+//   - further bursts within the same multiframe are silent (also folds away the
+//     duplicate hits the four-rotation correlator produces for one SB);
+//   - a new multiframe logs "tetra sync", and a non-consecutive MN logs
+//     "tetra sync gap" with the number of multiframes missed — the compact
+//     signal that sync briefly dropped.
+//
+// All at debug level; production (info) decode logs nothing here.
+func (c *ControlChannel) logSyncProgress(p *processState, sync SyncPDU, la uint16) {
+	if !p.haveMN {
+		p.haveMN = true
+		p.lastMN = sync.MN
+		p.mfCount = 1
+		c.log.Debug("tetra sync acquired",
+			"mn", sync.MN, "fn", sync.FN,
+			"colour_code", sync.ExtendedColourCode()&0x3F,
+			"mcc", sync.MCC, "mnc", sync.MNC, "la", la, "system", c.systemName)
+		return
+	}
+	if sync.MN == p.lastMN {
+		return // same multiframe — already logged
+	}
+	// Multiframe advanced. Wrapped modulo 60 (0..59); a gap > 1 means one or more
+	// multiframes went undecoded (a brief sync dropout).
+	gap := (int(sync.MN) - int(p.lastMN) + 60) % 60
+	p.lastMN = sync.MN
+	p.mfCount++
+	if gap > 1 {
+		c.log.Debug("tetra sync gap",
+			"mn", sync.MN, "missed", gap-1, "mf_count", p.mfCount, "system", c.systemName)
+		return
+	}
+	c.log.Debug("tetra sync",
+		"mn", sync.MN, "fn", sync.FN, "mf_count", p.mfCount,
+		"colour_code", sync.ExtendedColourCode()&0x3F, "la", la, "system", c.systemName)
 }
 
 // hammingBits counts the positions where two 0/1 bit slices differ, over
