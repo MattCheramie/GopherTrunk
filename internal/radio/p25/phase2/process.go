@@ -255,16 +255,16 @@ func decodeMACChannelAndParse(macDibits []uint8, mode TrellisMode, interleaveMod
 //
 //   - RSOff:     the PDU passes through unchanged (permissive parse).
 //   - RSOn:      the PDU is accepted only if its syndromes are already
-//                zero (detection-only); any residual symbol error rejects it.
+//     zero (detection-only); any residual symbol error rejects it.
 //   - RSCorrect: the PDU is run through the bounded-distance corrector
-//                (up to t=4 symbol errors). A clean codeword (0 corrections)
-//                passes through exactly as RSOn would accept it, so RSCorrect
-//                is a strict superset of RSOn. A PDU that actually needed
-//                correction is additionally gated on a recognised opcode,
-//                because t=4 correction admits ~6e-4 of random windows (versus
-//                2^-48 for verify) — the gate stops a wrong-phase / weak-frame
-//                window from being miscorrected into a plausible-but-bogus PDU
-//                that injects a bad source RID (issue #915 / #924).
+//     (up to t=4 symbol errors). A clean codeword (0 corrections)
+//     passes through exactly as RSOn would accept it, so RSCorrect
+//     is a strict superset of RSOn. A PDU that actually needed
+//     correction is additionally gated on a recognised opcode,
+//     because t=4 correction admits ~6e-4 of random windows (versus
+//     2^-48 for verify) — the gate stops a wrong-phase / weak-frame
+//     window from being miscorrected into a plausible-but-bogus PDU
+//     that injects a bad source RID (issue #915 / #924).
 //
 // The returned slice is safe to parse directly; ok=false means the PDU was
 // rejected.
