@@ -69,6 +69,16 @@ for tagged releases.
   and an in-flight cap keep a burst of grants from spawning a capture storm.
   This is the event-based debugging hook for capturing hard-to-decode moments
   (concurrent grants, unknown packets) as they happen.
+- **`baseband.auto_record` can capture the narrowband DDC output (`tap: ddc`).**
+  The default `tap: wideband` records the control SDR's full-rate raw IQ
+  (~50 MB per 30 s at 2.5 MS/s); `tap: ddc` instead records the control
+  decoder's channelised post-DDC stream at the pipeline rate (144 kHz for TETRA,
+  ~48 kHz for the C4FM family) — orders of magnitude smaller and directly
+  replayable with `replay -format wav` / siglab. For a same-carrier TETRA site
+  the DDC tap holds all four voice timeslots of the control carrier, so a
+  triggered capture of a hard-to-decode concurrent-call moment stays small
+  enough to share. Triggered captures also now create their target directory if
+  it does not exist.
 - **siglab capture start time in the capture list.** Each capture row now shows
   its recording start time, so otherwise-identical grabs of the same carrier
   (e.g. three `capture-AIRSPY SN:…` captures) can be told apart at a glance.
@@ -136,6 +146,17 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA colour code locked on the first sync burst, so a single mis-decoded
+  BSCH could poison a whole session.** The extended colour code (the scrambler
+  seed for every BNCH/SCH/TCH block) was learned from the first BSCH and never
+  re-evaluated. If that burst's bit errors slipped through the BSCH FEC as a
+  valid-but-wrong codeword, the wrong scrambler locked in and every subsequent
+  descramble failed silently — empty or truncated recordings until a restart.
+  The colour is now adopted provisionally on the first BSCH (so a cold receiver
+  still starts decoding immediately) but only locked once a second BSCH
+  corroborates it; a mis-decoded first burst is corrected by the true colour
+  that every later BSCH carries. An operator-configured colour is still
+  authoritative.
 - **Concurrent same-carrier TETRA calls could still leak audio between each
   other** — a long conversation would pick up a second slot's speech mid-stream.
   The per-call demux ran one receiver per call and routed by the AACH usage

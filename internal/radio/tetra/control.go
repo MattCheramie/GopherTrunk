@@ -80,6 +80,13 @@ type ControlChannel struct {
 	channelType      ChannelType
 	colourCode       uint32
 	colourLearned    bool
+	// colourConfirmed marks the learned colour code as corroborated by more
+	// than one BSCH (or set by the operator), after which it is authoritative
+	// and a single mis-decoded sync burst can no longer change it. colourTally
+	// counts how many BSCHs agreed on each candidate extended colour code until
+	// one crosses colourConfirmThreshold. See LearnColourCode.
+	colourConfirmed bool
+	colourTally     map[uint32]int
 	// mainCarrier is the cell's own carrier number, learned from the
 	// broadcast SYSINFO. With the tuned control-channel frequency it lets a
 	// grant's carrier number resolve to Hz relative to this carrier, without a
@@ -276,34 +283,67 @@ func (c *ControlChannel) SetColourCode(colourCode uint32) {
 	defer c.mu.Unlock()
 	c.colourCode = colourCode & 0x3FFFFFFF
 	c.colourLearned = true
+	// A non-zero operator-configured colour is authoritative: no learned BSCH may
+	// override it. A zero value means "unset — auto-learn from the BSCH", so it
+	// must NOT confirm/lock (the pipeline seeds SetColourCode(0) when no colour is
+	// configured).
+	c.colourConfirmed = c.colourCode != 0
 }
 
-// LearnColourCode records a colour code recovered at runtime from a
-// decoded BSCH SYNC PDU (see process.go). It overrides the configured
-// colour code only when none was configured (or it changed), so an
-// operator-set colour code still wins on the first burst but a cold
-// receiver auto-acquires the cell's scrambling code and every
-// subsequent BNCH/SCH burst descrambles. Returns true if the stored
-// value changed.
+// colourConfirmThreshold is how many BSCHs must agree on a colour code before
+// it is locked in as authoritative. The colour code is constant for a cell and
+// the BSCH repeats about once per second, so requiring two agreeing decodes
+// filters out a single sync burst whose bit errors slipped through the BSCH FEC
+// (a mis-correction to a valid-but-wrong codeword) — which would otherwise lock
+// a wrong scrambler for the whole session and silently break every BNCH/SCH/TCH
+// descramble (empty or truncated recordings until restart).
+const colourConfirmThreshold = 2
+
+// LearnColourCode records a colour code recovered at runtime from a decoded BSCH
+// SYNC PDU (see process.go). The first BSCH sets the colour PROVISIONALLY so a
+// cold receiver can start descrambling immediately, but the value is not locked
+// until a second BSCH corroborates it (colourConfirmThreshold): if the first
+// burst mis-decoded the colour, the true colour — which every later BSCH carries
+// — overtakes it and corrects the scrambler instead of being ignored. An
+// operator-configured colour is authoritative and never overridden. Returns true
+// if the stored value changed.
 func (c *ControlChannel) LearnColourCode(ext uint32) bool {
 	ext &= 0x3FFFFFFF
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.colourLearned && c.colourCode == ext {
+	// A confirmed (operator-set, or already-corroborated) colour is authoritative.
+	if c.colourConfirmed {
 		return false
 	}
-	// A configured (non-zero) colour code is authoritative; don't let a
-	// marginal BSCH decode clobber it, but do fill an unset one.
-	if c.colourLearned && c.colourCode != 0 {
-		return false
+	if c.colourTally == nil {
+		c.colourTally = make(map[uint32]int)
 	}
-	c.colourCode = ext
-	c.colourLearned = true
-	// colour_code is the ETSI 6-bit colour code (low 6 bits); colour_ext is the
-	// full 30-bit extended value that also seeds the scrambler.
-	c.log.Info("tetra cc learned colour code from BSCH",
-		"colour_code", ext&0x3F, "colour_ext", ext, "system", c.systemName)
-	return true
+	c.colourTally[ext]++
+	changed := false
+	// Provisionally adopt the first colour we see so decode can begin at once —
+	// but a later, corroborated value may still correct it below. The gate is
+	// "no usable colour yet" (colourCode == 0), which also covers the pipeline's
+	// SetColourCode(0) "unset" seed; a real cell's colour is never 0 (its MCC/MNC
+	// are non-zero).
+	if c.colourCode == 0 {
+		c.colourCode = ext
+		c.colourLearned = true
+		changed = true
+		c.log.Info("tetra cc provisional colour code from BSCH (unconfirmed)",
+			"colour_code", ext&0x3F, "colour_ext", ext, "system", c.systemName)
+	}
+	if c.colourTally[ext] >= colourConfirmThreshold {
+		if c.colourCode != ext {
+			c.colourCode = ext
+			changed = true
+		}
+		c.colourConfirmed = true
+		// colour_code is the ETSI 6-bit colour code (low 6 bits); colour_ext is
+		// the full 30-bit extended value that also seeds the scrambler.
+		c.log.Info("tetra cc colour code confirmed from BSCH",
+			"colour_code", ext&0x3F, "colour_ext", ext, "system", c.systemName)
+	}
+	return changed
 }
 
 // ChannelCoding returns the current ChannelCodingMode. Mirrors the
