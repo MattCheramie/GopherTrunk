@@ -8,6 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **P25 Phase 2 outer RS can now error-*correct* weak MAC PDUs
+  (`p25_phase2_rs_mode: correct`).** The `p25_phase2_rs_mode` knob gains a
+  `correct` (alias `fix` / `ecc`) setting that runs the RS(24, 16, 9) outer code
+  as a bounded-distance error corrector — repairing up to t=4 GF(2⁶) symbol
+  errors (Berlekamp-Massey + Chien + Forney) before the MAC PDU is parsed —
+  instead of the detection-only `on` mode that drops any PDU with a residual
+  symbol error. This is the weak-frame recovery path for the completed-call
+  source-RID gap: a traffic-channel `GROUP_VOICE_CHANNEL_USER` PDU that framed
+  and descrambled at the right phase but carries a handful of symbol errors from
+  marginal-SNR demod now still yields its source RID, where before it was
+  rejected and the call landed with no source. `correct` strictly supersets
+  `on` (a clean codeword decodes identically); because t=4 correction admits a
+  small fraction of random windows, a PDU that actually needed correction is
+  additionally gated on a recognised MAC opcode so a wrong descramble phase
+  cannot be miscorrected into a bogus source RID. Off by default; pairs with
+  `p25_phase2_soft_decision: on`. (issue #915)
 - **`call.end` real-time event now carries `duration_ms`.** The SSE/WebSocket
   event stream's call-completion event (`event: call.end` on `/api/v1/events`
   and the WS stream) now includes the call length in milliseconds alongside

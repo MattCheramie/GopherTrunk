@@ -26,6 +26,11 @@ func TestParseRSMode(t *testing.T) {
 		{"true", RSOn, true},
 		{"1", RSOn, true},
 		{" on ", RSOn, true},
+		{"correct", RSCorrect, true},
+		{"Correct", RSCorrect, true},
+		{"fix", RSCorrect, true},
+		{"ecc", RSCorrect, true},
+		{" correct ", RSCorrect, true},
 		{"yes", RSOff, false},
 		{"rs", RSOff, false},
 	}

@@ -466,8 +466,8 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
-	if scramblerMode == p25phase2.ScramblerProbe && rsMode != p25phase2.RSOn {
-		opts.Log.Warn("ccdecoder: p25_phase2_scrambler_mode=probe requires p25_phase2_rs_mode=on; descrambler will degrade to offset 0",
+	if scramblerMode == p25phase2.ScramblerProbe && !rsMode.Enabled() {
+		opts.Log.Warn("ccdecoder: p25_phase2_scrambler_mode=probe requires p25_phase2_rs_mode=on or =correct; descrambler will degrade to offset 0",
 			"system", opts.SystemName)
 	}
 	cc.SetScramblerMode(scramblerMode)

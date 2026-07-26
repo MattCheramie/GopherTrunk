@@ -268,22 +268,43 @@ func ParseTrellisMode(s string) (TrellisMode, bool) {
 //
 //   - RSOn: the trellis-decoded 144-bit MAC PDU is treated as 24
 //     hex symbols and verified with the RS(24, 16, 9) outer code
-//     (8-symbol parity, t = 4 corrections of detection). MAC PDUs
-//     whose syndromes are non-zero are dropped at the framing layer
-//     before reaching the state machine.
+//     (8-symbol parity). MAC PDUs whose syndromes are non-zero are
+//     dropped at the framing layer before reaching the state machine.
+//     This is detection-only: a PDU with any residual symbol error is
+//     rejected, not repaired.
 //
-// RSOn is currently the only opt-in setting that exercises the
-// outer RS layer; the per-burst block interleaver schedule defined
-// in TIA-102.BBAC (MAC Layer) is documented as a follow-up because
-// the spec text was not available at implementation time. The
-// framing primitives (EncodeRS24_*, VerifyRS24_*) are spec-correct
-// per TIA-102.BAAA-A §5.9 and round-trip through unit tests.
+//   - RSCorrect: the same RS(24, 16, 9) outer code, but run as a
+//     bounded-distance *error corrector* (Berlekamp-Massey + Chien +
+//     Forney, framing.DecodeRS24_16) that repairs up to t = 4 symbol
+//     errors before the PDU is parsed, instead of dropping it. This
+//     recovers the weak-frame case that leaves issue #915's
+//     ground-truth replay at 0 recovered source RIDs: a MAC PDU that
+//     framed and descrambled at the right phase but carries a handful
+//     of symbol errors from marginal-SNR demod. Because t = 4
+//     correction admits ~6e-4 of random windows (versus 2^-48 for the
+//     verify-only gate), an accepted-after-correction PDU is
+//     additionally required to carry a recognised opcode
+//     (Opcode.IsKnown) so the ScramblerProbe offset sweep and the
+//     weak-frame path cannot inject a bogus source RID (issue
+//     #915 / #924). RSCorrect strictly supersets RSOn's accepts (a
+//     clean codeword corrects with zero errors).
+//
+// The framing primitives (EncodeRS24_*, VerifyRS24_*, DecodeRS24_*)
+// are spec-correct per TIA-102.BAAA-A §5.9 and round-trip through unit
+// tests.
 type RSMode uint8
 
 const (
 	RSOff RSMode = iota
 	RSOn
+	RSCorrect
 )
+
+// Enabled reports whether the outer RS(24, 16, 9) layer is exercised at
+// all (verify or correct) — i.e. anything but RSOff. The ScramblerProbe
+// offset sweep is only safe when RS is enabled, because it relies on the
+// RS gate to reject a wrong descramble phase.
+func (m RSMode) Enabled() bool { return m == RSOn || m == RSCorrect }
 
 // SetRSMode toggles the outer Reed-Solomon verification layer on
 // the trellis-decoded MAC PDU window. See RSMode for the trade-offs.
@@ -307,15 +328,19 @@ func (c *ControlChannel) RSMode() RSMode {
 // Recognised values (case-insensitive): "" / "off" / "false" / "0"
 // → RSOff (the default — outer RS verification is off; matches the
 // historical decoder behaviour); "on" / "true" / "1" → RSOn (outer
-// RS(24, 16, 9) verification on top of trellis-decoded MAC PDU).
-// Unknown strings return RSOff with `ok = false` so callers can
-// surface the misconfiguration.
+// RS(24, 16, 9) verification on top of trellis-decoded MAC PDU);
+// "correct" / "fix" / "ecc" → RSCorrect (bounded-distance error
+// correction of up to t = 4 symbol errors, the weak-frame recovery
+// path for issue #915). Unknown strings return RSOff with `ok = false`
+// so callers can surface the misconfiguration.
 func ParseRSMode(s string) (RSMode, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "off", "false", "0":
 		return RSOff, true
 	case "on", "true", "1":
 		return RSOn, true
+	case "correct", "fix", "ecc":
+		return RSCorrect, true
 	default:
 		return RSOff, false
 	}
@@ -408,10 +433,12 @@ func ParseInterleaveMode(s string) (InterleaveMode, bool) {
 //     satisfies the syndromes with probability ≈2^-48, so garbage is
 //     never accepted).
 //
-//     ScramblerProbe requires RSMode to be RSOn — without RS
-//     verification there is no way to tell which descrambled candidate
-//     is the true PDU. When RSMode is RSOff, ScramblerProbe degrades
-//     silently to ScramblerOn behaviour at the configured offset.
+//     ScramblerProbe requires RSMode to be enabled (RSOn or RSCorrect)
+//     — without the RS gate there is no way to tell which descrambled
+//     candidate is the true PDU. Under RSCorrect the sweep additionally
+//     repairs up to t = 4 symbol errors per candidate and gates the
+//     accept on a recognised opcode. When RSMode is RSOff, ScramblerProbe
+//     degrades silently to ScramblerOn behaviour at the configured offset.
 type ScramblerMode uint8
 
 const (
@@ -499,10 +526,10 @@ func (c *ControlChannel) ScramblerOffset() int {
 // ScramblerProbe (try each of the 12 spec-defined slot offsets and
 // accept the first that passes RS verification).
 //
-// ScramblerProbe is only meaningful when RSMode is RSOn — without
-// RS verification there's no way to tell which offset produced the
-// real PDU; the connector emits a warning if probe is selected
-// without RSOn and degrades to ScramblerOn behaviour.
+// ScramblerProbe is only meaningful when RSMode is enabled (RSOn or
+// RSCorrect) — without the RS gate there's no way to tell which offset
+// produced the real PDU; the connector emits a warning if probe is
+// selected without an RS mode and degrades to ScramblerOn behaviour.
 //
 // Unknown strings return ScramblerOn with `ok = false` so callers
 // can surface the misconfiguration while still defaulting to the

@@ -162,24 +162,31 @@ func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rs
 // continuous 4320-bit sequence) is not yet pinned. The RS gate makes the
 // sweep safe: a wrong offset packs into random bytes that satisfy the
 // 8-parity-symbol syndrome with probability ≈2^-48, so the sweep never
-// accepts garbage. ScramblerProbe requires rsMode == RSOn; otherwise it
-// degrades to ScramblerOn at scramblerOffset.
+// accepts garbage. ScramblerProbe requires an enabled rsMode (RSOn or
+// RSCorrect); otherwise it degrades to ScramblerOn at scramblerOffset.
 //
 // When rsMode is RSOn the (descrambled, FEC-decoded) 18-byte MAC PDU is
 // re-grouped into 24 hex symbols and verified against the RS(24, 16, 9)
 // outer code per TIA-102.BAAA-A §5.9; PDUs whose syndromes are non-zero
-// are rejected.
+// are rejected. When rsMode is RSCorrect the same layer instead corrects
+// up to t=4 symbol errors (framing.DecodeRS24_16) and accepts the repaired
+// PDU if it carries a recognised opcode — the weak-frame recovery for
+// issue #915. See gateMACPDURS.
 func decodeMACPDUDibits(macDibits []uint8, mode TrellisMode, rsMode RSMode, interleaveMode InterleaveMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) (MACPDU, bool) {
 	switch scramblerMode {
 	case ScramblerProbe:
-		if rsMode != RSOn {
+		if !rsMode.Enabled() {
 			// Without the RS gate there is no way to tell a correct
 			// offset from a wrong one, so fall back to the fixed offset.
 			return descrambleChannelAndParse(macDibits, mode, interleaveMode, rsMode, scramblerSeed, scramblerOffset)
 		}
 		for slot := 0; slot < SubframesPerSuperframe; slot++ {
 			off := slotChannelPN44Offset(slot)
-			if pdu, ok := descrambleChannelAndParse(macDibits, mode, interleaveMode, RSOn, scramblerSeed, off); ok {
+			// Pass the caller's rsMode through so RSCorrect repairs each
+			// candidate (up to t=4) rather than only verifying it — the
+			// known-opcode gate inside decodeMACChannelAndParse keeps the
+			// sweep from accepting a wrong-phase garbage window.
+			if pdu, ok := descrambleChannelAndParse(macDibits, mode, interleaveMode, rsMode, scramblerSeed, off); ok {
 				return pdu, true
 			}
 		}
@@ -233,13 +240,53 @@ func decodeMACChannelAndParse(macDibits []uint8, mode TrellisMode, interleaveMod
 	if len(info) < 18 {
 		return MACPDU{}, false
 	}
-	if rsMode == RSOn && !verifyMACPDURS(info[:18]) {
+	pduBytes, ok := gateMACPDURS(info[:18], rsMode)
+	if !ok {
 		return MACPDU{}, false
 	}
-	if pdu, err := ParseMACPDU(info[:18]); err == nil {
+	if pdu, err := ParseMACPDU(pduBytes); err == nil {
 		return pdu, true
 	}
 	return MACPDU{}, false
+}
+
+// gateMACPDURS applies the outer RS(24, 16, 9) layer to an 18-byte MAC PDU
+// according to rsMode and returns the bytes to parse:
+//
+//   - RSOff:     the PDU passes through unchanged (permissive parse).
+//   - RSOn:      the PDU is accepted only if its syndromes are already
+//                zero (detection-only); any residual symbol error rejects it.
+//   - RSCorrect: the PDU is run through the bounded-distance corrector
+//                (up to t=4 symbol errors). A clean codeword (0 corrections)
+//                passes through exactly as RSOn would accept it, so RSCorrect
+//                is a strict superset of RSOn. A PDU that actually needed
+//                correction is additionally gated on a recognised opcode,
+//                because t=4 correction admits ~6e-4 of random windows (versus
+//                2^-48 for verify) — the gate stops a wrong-phase / weak-frame
+//                window from being miscorrected into a plausible-but-bogus PDU
+//                that injects a bad source RID (issue #915 / #924).
+//
+// The returned slice is safe to parse directly; ok=false means the PDU was
+// rejected.
+func gateMACPDURS(pdu []byte, rsMode RSMode) ([]byte, bool) {
+	switch rsMode {
+	case RSOn:
+		if !verifyMACPDURS(pdu) {
+			return nil, false
+		}
+		return pdu, true
+	case RSCorrect:
+		corrected, nErr, ok := correctMACPDURS(pdu)
+		if !ok {
+			return nil, false
+		}
+		if nErr > 0 && !Opcode(corrected[0]).IsKnown() {
+			return nil, false
+		}
+		return corrected, true
+	default: // RSOff
+		return pdu, true
+	}
 }
 
 // decodeMACPDUDibitsSoftC is the soft-decision counterpart of
@@ -254,12 +301,12 @@ func decodeMACPDUDibitsSoftC(macDibits []uint8, soft []complex64, mode TrellisMo
 	}
 	switch scramblerMode {
 	case ScramblerProbe:
-		if rsMode != RSOn {
+		if !rsMode.Enabled() {
 			return descrambleAndParseSoftC(soft, interleaveMode, rsMode, scramblerSeed, scramblerOffset)
 		}
 		for slot := 0; slot < SubframesPerSuperframe; slot++ {
 			off := slotChannelPN44Offset(slot)
-			if pdu, ok := descrambleAndParseSoftC(soft, interleaveMode, RSOn, scramblerSeed, off); ok {
+			if pdu, ok := descrambleAndParseSoftC(soft, interleaveMode, rsMode, scramblerSeed, off); ok {
 				return pdu, true
 			}
 		}
@@ -308,10 +355,11 @@ func decodeMACChannelAndParseSoftC(soft []complex64, interleaveMode InterleaveMo
 	if len(info) < 18 {
 		return MACPDU{}, false
 	}
-	if rsMode == RSOn && !verifyMACPDURS(info[:18]) {
+	pduBytes, ok := gateMACPDURS(info[:18], rsMode)
+	if !ok {
 		return MACPDU{}, false
 	}
-	if pdu, err := ParseMACPDU(info[:18]); err == nil {
+	if pdu, err := ParseMACPDU(pduBytes); err == nil {
 		return pdu, true
 	}
 	return MACPDU{}, false
@@ -362,6 +410,64 @@ func verifyMACPDURS(pdu []byte) bool {
 		syms[i] = s
 	}
 	return framing.VerifyRS24_16(syms[:])
+}
+
+// correctMACPDURS runs bounded-distance RS(24, 16, 9) error correction over an
+// 18-byte MAC PDU and returns the corrected 18 bytes plus the number of symbol
+// errors repaired. It uses the same 24-symbol MSB-first grouping as
+// verifyMACPDURS: the 144 information bits are read MSB-first from the byte
+// stream and grouped into 24 six-bit GF(2^6) symbols, of which the first 16 are
+// information and the last 8 are parity.
+//
+// Unlike verifyMACPDURS (accepts only syndromes==0), this repairs up to t=4
+// symbol errors via framing.DecodeRS24_16 (Berlekamp-Massey + Chien + Forney,
+// with a defensive re-syndrome), then re-encodes to a clean codeword and
+// repacks it into 18 bytes. ok is false when the codeword lies beyond the
+// correction radius. This is the weak-frame recovery path for issue #915: a MAC
+// PDU that framed and descrambled at the right phase but carries a handful of
+// symbol errors from marginal-SNR demod, which the detection-only gate drops.
+func correctMACPDURS(pdu []byte) (corrected []byte, nErr int, ok bool) {
+	if len(pdu) != 18 {
+		return nil, 0, false
+	}
+	var bits [144]byte
+	for i := 0; i < 18; i++ {
+		for j := 0; j < 8; j++ {
+			bits[i*8+j] = (pdu[i] >> uint(7-j)) & 1
+		}
+	}
+	var syms [24]byte
+	for i := 0; i < 24; i++ {
+		var s byte
+		for j := 0; j < 6; j++ {
+			s = (s << 1) | bits[i*6+j]
+		}
+		syms[i] = s
+	}
+	info, nErr, err := framing.DecodeRS24_16(syms[:])
+	if err != nil {
+		return nil, 0, false
+	}
+	// Re-encode the corrected information to a full, self-consistent codeword,
+	// then repack all 24 symbols back into 18 bytes — the exact inverse of the
+	// grouping above, so ParseMACPDU sees the corrected information bytes in the
+	// same layout verifyMACPDURS would accept.
+	cw := framing.EncodeRS24_16(info)
+	var outBits [144]byte
+	for i := 0; i < 24; i++ {
+		for j := 0; j < 6; j++ {
+			outBits[i*6+j] = (cw[i] >> uint(5-j)) & 1
+		}
+	}
+	out := make([]byte, 18)
+	for i := 0; i < 18; i++ {
+		var b byte
+		for j := 0; j < 8; j++ {
+			b = (b << 1) | outBits[i*8+j]
+		}
+		out[i] = b
+	}
+	return out, nErr, true
 }
 
 // Reset clears the SyncDetector's history so a stale match doesn't
