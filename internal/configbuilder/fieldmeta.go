@@ -185,6 +185,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.P25Phase2RSMode":         {Label: "P25 Ph2 RS", Help: "Outer Reed-Solomon RS(24,16,9) verification. off (default) or on. P25 Phase 2 only."},
 	"SystemConfig.P25Phase2InterleaveMode": {Label: "P25 Ph2 interleave", Help: "Per-burst block deinterleave before trellis decode. off (default) or on. P25 Phase 2 only."},
 	"SystemConfig.P25Phase2ScramblerMode":  {Label: "P25 Ph2 scrambler", Help: "PN44 descrambling of the MAC PDU. on (default, all on-air) or off (unscrambled fixtures). P25 Phase 2 only."},
+	"SystemConfig.P25Phase2SoftDecision":   {Label: "P25 Ph2 soft decision", Help: "Soft-decision demod on the traffic-channel MAC trellis (~1.5-2 dB gain on weak signals; recovers clear-MAC source RIDs). off (default) or on. P25 Phase 2 only."},
 	"SystemConfig.P25Phase2ClockMode":      {Label: "P25 Ph2 clock", Help: "Symbol-timing recovery: gardner (default, live SDR) or naive (fixtures). P25 Phase 2 only."},
 	"SystemConfig.DMRInterleavedVoice":     {Label: "DMR interleaved voice", Help: "Override the 2-slot interleaved DMR voice decoder. Unset = on for DMR Tier II conventional & Tier III (single-slot only for Tier I direct-mode); set true/false to force. DMR only."},
 	"SystemConfig.NXDNViterbiMode":         {Label: "NXDN Viterbi mode", Help: "K=5 Viterbi FEC on the NXDN CAC. spec (default), on (older fixtures), or off. NXDN only."},

@@ -36,6 +36,26 @@ func InterleaveMACBurst(in []uint8) []uint8 {
 	return out
 }
 
+// DeinterleaveMACBurstC applies the exact same de-interleave permutation as
+// DeinterleaveMACBurst to a parallel complex64 slice (the soft-decision
+// per-dibit differential, issue #915), keeping the soft sample aligned with its
+// dibit through the block interleaver. Lengths not a multiple of
+// macInterleaveRows are returned unchanged, matching the dibit path.
+func DeinterleaveMACBurstC(in []complex64) []complex64 {
+	n := len(in)
+	if n == 0 || n%macInterleaveRows != 0 {
+		return append([]complex64(nil), in...)
+	}
+	cols := n / macInterleaveRows
+	out := make([]complex64, n)
+	for r := 0; r < macInterleaveRows; r++ {
+		for c := 0; c < cols; c++ {
+			out[r*cols+c] = in[c*macInterleaveRows+r]
+		}
+	}
+	return out
+}
+
 // DeinterleaveMACBurst is the exact inverse of InterleaveMACBurst: it
 // recovers the original dibit order from a block-interleaved MAC burst.
 func DeinterleaveMACBurst(in []uint8) []uint8 {

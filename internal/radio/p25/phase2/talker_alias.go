@@ -273,19 +273,50 @@ func (p MACPDU) AsMotorolaAliasData() (MotorolaAliasData, bool) {
 	}, true
 }
 
+// MotorolaAliasResult is the outcome of feeding a fragment to a
+// MotorolaAliasAssembler. Complete is true once the header and every
+// data block of the same sequence have arrived and the message
+// reassembled; the other fields are meaningful only then.
+type MotorolaAliasResult struct {
+	// Alias is the decoded talker-alias string (best-effort printable
+	// ASCII). While the proprietary cipher is unverified it is typically
+	// empty or garbage — see Reliable.
+	Alias string
+	// SourceID is the radio (subscriber) ID the alias belongs to,
+	// recovered from the byte-aligned message prefix.
+	SourceID uint32
+	// TalkgroupID is the talkgroup carried in the alias header PDU.
+	TalkgroupID uint16
+	// Encoded is the reassembled cipher region (the 2n encoded-alias
+	// bytes, CRC stripped) — chosen-plaintext / known-RID ground truth
+	// for the cipher cryptanalysis (#773), surfaced regardless of whether
+	// the cipher decodes.
+	Encoded []byte
+	// CRCOK reports whether the reassembled message's trailing CRC-16
+	// matched. Advisory (#376).
+	CRCOK bool
+	// Reliable is true only when the decode is clean printable ASCII AND
+	// the cipher is verified; false while the cipher is gated (#773).
+	Reliable bool
+	// Complete is true once a full alias message reassembled.
+	Complete bool
+}
+
 // MotorolaAliasAssembler reassembles the real Motorola FACCH-S talker
 // alias for one active call. Construct one per voice chain; it is
 // single-goroutine like phase1.MotorolaTalkerAliasBuf. AddHeader /
-// AddData return (alias, sourceRID, reliable, true) once the header and
-// every data block of the same sequence have arrived. reliable is false
-// when the decoded alias holds non-ASCII-printable characters (bit-error
-// corruption surviving the CRC, #711).
+// AddData return a MotorolaAliasResult whose Complete is true once the
+// header and every data block of the same sequence have arrived. Reliable
+// is false when the decoded alias holds non-ASCII-printable characters
+// (bit-error corruption surviving the CRC, #711) or the cipher is still
+// gated (#773).
 type MotorolaAliasAssembler struct {
 	now func() time.Time
 
 	haveHeader bool
 	sequence   uint8
 	blockCount uint8
+	talkgroup  uint16
 	header     []byte
 	blocks     map[uint8][]byte
 	leads      map[uint8]uint8 // per-block leading cipher nibble
@@ -307,10 +338,10 @@ func NewMotorolaAliasAssembler(now func() time.Time) *MotorolaAliasAssembler {
 
 // AddHeader feeds a decoded alias header. A header with a new sequence
 // resets any in-flight data blocks.
-func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint32, bool, bool) {
+func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) MotorolaAliasResult {
 	a.evictStale()
 	if h.BlockCount == 0 || h.BlockCount > aliasMaxBlocks {
-		return "", 0, false, false
+		return MotorolaAliasResult{}
 	}
 	if !a.haveHeader || h.Sequence != a.sequence {
 		a.blocks = make(map[uint8][]byte)
@@ -319,6 +350,7 @@ func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint3
 	a.haveHeader = true
 	a.sequence = h.Sequence
 	a.blockCount = h.BlockCount
+	a.talkgroup = h.TalkgroupID
 	a.header = append([]byte(nil), h.Fragment...)
 	a.updated = a.now()
 	return a.tryComplete()
@@ -326,11 +358,11 @@ func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint3
 
 // AddData feeds a decoded alias data block. Blocks whose sequence
 // doesn't match the current header are ignored.
-func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) (string, uint32, bool, bool) {
+func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) MotorolaAliasResult {
 	a.evictStale()
 	if !a.haveHeader || d.Sequence != a.sequence || d.BlockNumber == 0 ||
 		d.BlockNumber > a.blockCount {
-		return "", 0, false, false
+		return MotorolaAliasResult{}
 	}
 	a.blocks[d.BlockNumber] = append([]byte(nil), d.Fragment...)
 	a.leads[d.BlockNumber] = d.LeadNibble
@@ -340,28 +372,39 @@ func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) (string, uint32, b
 
 // tryComplete reassembles and decodes once the header and every data
 // block are present.
-func (a *MotorolaAliasAssembler) tryComplete() (string, uint32, bool, bool) {
+func (a *MotorolaAliasAssembler) tryComplete() MotorolaAliasResult {
 	if !a.haveHeader || len(a.blocks) < int(a.blockCount) {
-		return "", 0, false, false
+		return MotorolaAliasResult{}
 	}
 	blocks := make([][]byte, 0, a.blockCount)
 	leads := make([]uint8, 0, a.blockCount)
 	for i := uint8(1); i <= a.blockCount; i++ {
 		b, ok := a.blocks[i]
 		if !ok {
-			return "", 0, false, false
+			return MotorolaAliasResult{}
 		}
 		blocks = append(blocks, b)
 		leads = append(leads, a.leads[i])
 	}
+	talkgroup := a.talkgroup
 	decoded, ok := motorola.DecodeMessage(assembleMotorolaAliasMessage(a.header, blocks, leads))
 	if !ok {
-		return "", 0, false, false
+		return MotorolaAliasResult{}
 	}
 	a.reset()
 	// An empty alias (all-non-printable decode) still completes so the
-	// source RID is reported; the publish path drops the empty alias.
-	return decoded.Alias, decoded.RadioID, decoded.AliasReliable, true
+	// source RID and the reassembled ciphertext are reported; the publish
+	// path drops the empty alias string, but the ciphertext is surfaced as
+	// cryptanalysis ground truth regardless (#773).
+	return MotorolaAliasResult{
+		Alias:       decoded.Alias,
+		SourceID:    decoded.RadioID,
+		TalkgroupID: talkgroup,
+		Encoded:     decoded.Encoded,
+		CRCOK:       decoded.CRCOK,
+		Reliable:    decoded.AliasReliable,
+		Complete:    true,
+	}
 }
 
 // assembleMotorolaAliasMessage rebuilds the packed Motorola alias message
@@ -420,6 +463,7 @@ func (a *MotorolaAliasAssembler) reset() {
 	a.haveHeader = false
 	a.sequence = 0
 	a.blockCount = 0
+	a.talkgroup = 0
 	a.header = nil
 	a.blocks = make(map[uint8][]byte)
 	a.leads = make(map[uint8]uint8)

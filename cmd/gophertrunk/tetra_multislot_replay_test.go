@@ -68,9 +68,20 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 	var dibitsFed int
 	dibitRate := tetrarx.SymbolRate // 18000 symbols(=dibits)/sec
 
+	// Per-usage-marker accumulator: the AACH downlink usage marker is the demux
+	// key the live voice chain routes by (concurrent same-carrier calls each carry
+	// a distinct marker). Cross-check that CRC-valid speech clusters cleanly by
+	// marker, and that each marker maps to a single physical slot.
+	type usageAcc struct {
+		speechFrames [][]byte
+		crcBursts    int
+		slotHits     map[uint8]int
+	}
+	usage := map[uint8]*usageAcc{}
+
 	var totalBursts, anchoredBursts int
 	errsHist := map[string]int{}
-	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, slot uint8) {
+	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, slot, mark uint8) {
 		totalBursts++
 		if slot != 0 {
 			anchoredBursts++
@@ -87,11 +98,21 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 				errsHist["31+"]++
 			}
 		}
-		if slot < 1 || slot > 4 {
-			return
-		}
 		sfs := tetra.TCHSpeechFrames(frame)
 		if len(sfs) == 0 {
+			return
+		}
+		if mark >= tetra.DLUsageTraffic {
+			u := usage[mark]
+			if u == nil {
+				u = &usageAcc{slotHits: map[uint8]int{}}
+				usage[mark] = u
+			}
+			u.crcBursts++
+			u.speechFrames = append(u.speechFrames, sfs...)
+			u.slotHits[slot]++
+		}
+		if slot < 1 || slot > 4 {
 			return
 		}
 		s := &slots[slot]
@@ -167,6 +188,19 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		if outDir != "" {
 			writeWav8kLocal(outDir+"/slot"+string(rune('0'+tn))+".wav", pcm)
 		}
+	}
+
+	// Per-usage-marker view: the live demux key. Each traffic marker should
+	// cluster on a single physical slot (one call = one marker = one slot).
+	var marks []int
+	for m := range usage {
+		marks = append(marks, int(m))
+	}
+	sort.Ints(marks)
+	for _, mi := range marks {
+		u := usage[uint8(mi)]
+		t.Logf("usage_marker %d: crc_bursts=%d speech_frames=%d slot_hits=%v",
+			mi, u.crcBursts, len(u.speechFrames), u.slotHits)
 	}
 }
 

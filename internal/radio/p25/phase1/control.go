@@ -128,6 +128,10 @@ type ControlChannel struct {
 	p25Phase2RS         uint8
 	p25Phase2Interleave uint8
 	p25Phase2Scrambler  uint8
+	// p25Phase2SoftDecision is stamped onto Phase 2 TDMA voice grants so
+	// the voice composer builds a soft-decision traffic-channel receiver
+	// (issue #915). Default false keeps the hard slicer.
+	p25Phase2SoftDecision bool
 
 	// stats is the per-frame outcome counter exposed via Stats().
 	// Atomic so the daemon's API / diagnostic goroutines can read it
@@ -446,6 +450,9 @@ type Options struct {
 	P25Phase2RS         uint8
 	P25Phase2Interleave uint8
 	P25Phase2Scrambler  uint8
+	// P25Phase2SoftDecision mirrors phase2's soft-decision toggle onto
+	// hybrid Phase 2 TDMA voice grants (issue #915).
+	P25Phase2SoftDecision bool
 
 	// CarrierOffsetHz, when non-nil, reports the demodulator's current carrier
 	// offset (Hz) of the locked control carrier relative to the tuned centre.
@@ -487,25 +494,26 @@ func New(opts Options) *ControlChannel {
 		span = NIDSearchSpan
 	}
 	return &ControlChannel{
-		bus:                 opts.Bus,
-		log:                 log,
-		det:                 det,
-		systemName:          opts.SystemName,
-		freqHz:              opts.FrequencyHz,
-		bandPlan:            bp,
-		now:                 now,
-		carrierOffsetHz:     opts.CarrierOffsetHz,
-		fswTol:              fswTol,
-		aliasAsm:            NewTalkerAliasAssembler(now),
-		diagSeen:            make(map[uint32]int),
-		rotations:           resolveRotations(opts.Rotations),
-		pduSink:             opts.PDUSink,
-		nidSearchSpan:       span,
-		p25Phase1DemodMode:  opts.P25Phase1DemodMode,
-		p25Phase2Trellis:    opts.P25Phase2Trellis,
-		p25Phase2RS:         opts.P25Phase2RS,
-		p25Phase2Interleave: opts.P25Phase2Interleave,
-		p25Phase2Scrambler:  opts.P25Phase2Scrambler,
+		bus:                   opts.Bus,
+		log:                   log,
+		det:                   det,
+		systemName:            opts.SystemName,
+		freqHz:                opts.FrequencyHz,
+		bandPlan:              bp,
+		now:                   now,
+		carrierOffsetHz:       opts.CarrierOffsetHz,
+		fswTol:                fswTol,
+		aliasAsm:              NewTalkerAliasAssembler(now),
+		diagSeen:              make(map[uint32]int),
+		rotations:             resolveRotations(opts.Rotations),
+		pduSink:               opts.PDUSink,
+		nidSearchSpan:         span,
+		p25Phase1DemodMode:    opts.P25Phase1DemodMode,
+		p25Phase2Trellis:      opts.P25Phase2Trellis,
+		p25Phase2RS:           opts.P25Phase2RS,
+		p25Phase2Interleave:   opts.P25Phase2Interleave,
+		p25Phase2Scrambler:    opts.P25Phase2Scrambler,
+		p25Phase2SoftDecision: opts.P25Phase2SoftDecision,
 	}
 }
 
@@ -1658,11 +1666,12 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 		protocol = "p25-phase2"
 		seed := framing.PN44SeedFromIdentity(net.WACN, net.SystemID, nac&0x0FFF)
 		p2dec = trunking.P25Phase2Decode{
-			Trellis:    c.p25Phase2Trellis,
-			RS:         c.p25Phase2RS,
-			Interleave: c.p25Phase2Interleave,
-			Scrambler:  c.p25Phase2Scrambler,
-			Seed:       seed,
+			Trellis:      c.p25Phase2Trellis,
+			RS:           c.p25Phase2RS,
+			Interleave:   c.p25Phase2Interleave,
+			Scrambler:    c.p25Phase2Scrambler,
+			Seed:         seed,
+			SoftDecision: c.p25Phase2SoftDecision,
 		}
 	}
 	c.bus.Publish(events.Event{

@@ -145,7 +145,7 @@ func (s *CCVoiceSource) Serial() string { return s.serial }
 // CarrierKey returns a stable identifier for the control carrier this tap shares
 // with the other same-carrier taps. Every cc:same-carrier:N source backed by the
 // same control decoder returns the same key, so the voice composer groups them
-// under one shared per-carrier TETRA slot demux (one receiver + slot demux for the
+// under one shared per-carrier TETRA voice demux (one receiver + demux for the
 // whole carrier, instead of one per concurrent call). Empty while the control
 // decoder is not yet constructed (the source never binds then anyway).
 func (s *CCVoiceSource) CarrierKey() string {

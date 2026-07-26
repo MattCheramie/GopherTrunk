@@ -296,22 +296,28 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
+	p2SoftDecision, p2SoftOK := p25phase2rx.ParseSoftDecision(opts.System.P25Phase2SoftDecision)
+	if !p2SoftOK {
+		log.Warn("ccdecoder: unrecognised p25_phase2_soft_decision; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2SoftDecision)
+	}
 	// rx is forward-declared so the control channel's CarrierOffsetHz provider
 	// can close over it; the closure is only called later, at site-update
 	// publish time, well after rx is assigned below (issue #815).
 	var rx *p25phase1rx.Receiver
 	cc := p25phase1.New(p25phase1.Options{
-		Bus:                 opts.Bus,
-		Log:                 opts.Log,
-		SystemName:          opts.SystemName,
-		FrequencyHz:         opts.FrequencyHz,
-		BandPlan:            bandPlan,
-		Rotations:           rotations,
-		P25Phase1DemodMode:  opts.System.P25Phase1DemodMode,
-		P25Phase2Trellis:    uint8(p2Trellis),
-		P25Phase2RS:         uint8(p2RS),
-		P25Phase2Interleave: uint8(p2Interleave),
-		P25Phase2Scrambler:  uint8(p2Scrambler),
+		Bus:                   opts.Bus,
+		Log:                   opts.Log,
+		SystemName:            opts.SystemName,
+		FrequencyHz:           opts.FrequencyHz,
+		BandPlan:              bandPlan,
+		Rotations:             rotations,
+		P25Phase1DemodMode:    opts.System.P25Phase1DemodMode,
+		P25Phase2Trellis:      uint8(p2Trellis),
+		P25Phase2RS:           uint8(p2RS),
+		P25Phase2Interleave:   uint8(p2Interleave),
+		P25Phase2Scrambler:    uint8(p2Scrambler),
+		P25Phase2SoftDecision: p2SoftDecision,
 		// Report the TOTAL carrier offset from the configured frequency:
 		// the receiver's residual AFC plus any correction the decoder folded
 		// into the DDC (CarrierBiasHz). Residual-only would drop toward 0
@@ -475,6 +481,12 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc.SetScramblerSeed(framing.PN44SeedFromIdentity(
 		opts.System.WACN, opts.System.SystemID, uint16(opts.System.Site),
 	))
+	softDecision, softOK := p25phase2rx.ParseSoftDecision(opts.System.P25Phase2SoftDecision)
+	if !softOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_soft_decision; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2SoftDecision)
+	}
+	cc.SetSoftDecision(softDecision)
 	clockMode, clockOK := p25phase2rx.ParseClockMode(opts.System.P25Phase2ClockMode)
 	if !clockOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",
@@ -632,19 +644,45 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 // decoder.go.
 const tetraStatusInterval = 5 * time.Second
 
+// tetraLockStaleTimeout is how long a locked TETRA control channel may decode
+// nothing before the watchdog (ControlChannel.CheckStale) declares it lost and
+// publishes cc.lost, so the cchunt supervisor leaves StateLocked and re-hunts.
+// Generous (~5 missed multiframes at the ~1 s BSCH cadence) so brief fades or a
+// momentarily busy carrier never trip it, while a genuinely dead carrier is
+// surfaced within a few seconds. tetraStaleCheckInterval throttles how often
+// Process runs the (cheap) check.
+const (
+	tetraLockStaleTimeout   = 5 * time.Second
+	tetraStaleCheckInterval = 1 * time.Second
+)
+
 type tetraPipeline struct {
-	rx      *tetrarx.Receiver
-	cc      *tetra.ControlChannel
-	log     *slog.Logger
-	system  string
-	debug   bool
-	now     func() time.Time // injectable for tests; set to time.Now at construction
-	lastLog time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	rx        *tetrarx.Receiver
+	cc        *tetra.ControlChannel
+	log       *slog.Logger
+	system    string
+	debug     bool
+	now       func() time.Time // injectable for tests; set to time.Now at construction
+	lastLog   time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	lastStale time.Time        // wall clock of the previous lock-staleness check
 }
 
 func (p *tetraPipeline) Process(iq []complex64) {
 	p.rx.Process(iq)
+	p.checkLockStale()
 	p.maybeLogStatus()
+}
+
+// checkLockStale runs the control-channel lock watchdog on a light throttle.
+// Unlike maybeLogStatus it is NOT debug-gated — the watchdog must run in
+// production so a silent carrier surfaces cc.lost and the supervisor re-hunts.
+func (p *tetraPipeline) checkLockStale() {
+	now := p.now()
+	if now.Sub(p.lastStale) < tetraStaleCheckInterval {
+		return
+	}
+	p.lastStale = now
+	p.cc.CheckStale(now, tetraLockStaleTimeout)
 }
 
 // tetraEffectiveBaud derives the effective symbol rate (baud) and its
@@ -701,6 +739,7 @@ func (p *tetraPipeline) maybeLogStatus() {
 func (p *tetraPipeline) Reset() {
 	p.rx.Reset()
 	p.lastLog = time.Time{}
+	p.lastStale = time.Time{}
 }
 func (p *tetraPipeline) Close() error { return nil }
 

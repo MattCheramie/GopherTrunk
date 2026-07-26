@@ -215,6 +215,105 @@ func TestSupervisorPauseAllResumeAll(t *testing.T) {
 	}
 }
 
+// TestSupervisorParksAfterLateLock is the regression for the flapping
+// "CC hunt failed · candidates exhausted" a TETRA system shows while it is
+// actually locked and decoding. A cc.locked edge can land AFTER a hunt round has
+// already failed and backed off (TETRA cold acquisition outlasting the dwell);
+// an edge-triggered decoder then never re-emits cc.locked, so every subsequent
+// re-hunt exhausts the dwell. The supervisor must PARK a system it already knows
+// is StateLocked instead of re-hunting it — and a later cc.lost (from the
+// protocol's lock-loss watchdog) must un-park it so a genuinely dead carrier
+// still recovers.
+func TestSupervisorParksAfterLateLock(t *testing.T) {
+	bus := events.NewBus(128)
+	defer bus.Close()
+	tuner := &fakeTuner{}
+	sys := trunking.System{
+		Name:            "Late",
+		Protocol:        trunking.ProtocolP25,
+		ControlChannels: []uint32{851_000_000}, // single candidate
+	}
+	sup, err := New(Options{
+		Bus:            bus,
+		Tuner:          tuner,
+		Systems:        []trunking.System{sys},
+		Dwell:          40 * time.Millisecond,
+		InitialBackoff: 120 * time.Millisecond,
+		MaxBackoff:     120 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = sup.Run(ctx) }()
+
+	waitKind := func(kind events.Kind, within time.Duration) bool {
+		deadline := time.After(within)
+		for {
+			select {
+			case ev := <-sub.C:
+				if ev.Kind == kind {
+					return true
+				}
+			case <-deadline:
+				return false
+			}
+		}
+	}
+	countKind := func(kind events.Kind, window time.Duration) int {
+		n := 0
+		deadline := time.After(window)
+		for {
+			select {
+			case ev := <-sub.C:
+				if ev.Kind == kind {
+					n++
+				}
+			case <-deadline:
+				return n
+			}
+		}
+	}
+
+	// The first hunt fails (nothing locks within the dwell) — the scenario the
+	// fix targets: a failure BEFORE any lock is observed.
+	if !waitKind(events.KindHuntFailed, 2*time.Second) {
+		t.Fatal("never saw the initial HuntFailed")
+	}
+	// A late lock lands during the ensuing backoff (no hunt in flight).
+	bus.Publish(events.Event{Kind: events.KindCCLocked, Payload: fakeLock{freq: 851_000_000}})
+
+	// The supervisor must reach StateLocked and stay parked there.
+	lockedDeadline := time.Now().Add(time.Second)
+	for {
+		if sup.Snapshot()[0].State == StateLocked {
+			break
+		}
+		if time.Now().After(lockedDeadline) {
+			t.Fatalf("never reached StateLocked: %+v", sup.Snapshot())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Parked: no further HuntFailed across several would-be backoff rounds.
+	if got := countKind(events.KindHuntFailed, 500*time.Millisecond); got != 0 {
+		t.Errorf("saw %d HuntFailed after the lock — the supervisor re-hunts an already-locked system instead of parking", got)
+	}
+	if st := sup.Snapshot()[0].State; st != StateLocked {
+		t.Errorf("state after parking = %q, want locked", st)
+	}
+
+	// A cc.lost un-parks the system and a fresh hunt begins (recovery).
+	bus.Publish(events.Event{Kind: events.KindCCLost, Payload: fakeLock{freq: 851_000_000}})
+	if !waitKind(events.KindHuntProgress, time.Second) {
+		t.Error("no new hunt round after cc.lost — a dead carrier would never recover")
+	}
+}
+
 func TestSupervisorForceRetuneClearsBackoff(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

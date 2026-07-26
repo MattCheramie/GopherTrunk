@@ -194,6 +194,20 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			s.waitOrSleep(ctx, minDur(remaining, 500*time.Millisecond))
 			continue
 		}
+		// Park an already-locked system instead of re-hunting it. A cc.locked
+		// edge (recordLock → StateLocked) can land AFTER a hunt round already
+		// failed and backed off — e.g. a TETRA control channel whose cold
+		// acquisition (BSCH sync + colour code) took longer than the dwell.
+		// Without this the loop re-hunts a system it already knows is locked,
+		// and because an edge-triggered decoder (TETRA) never re-emits cc.locked
+		// on the same locked pipeline, every such re-hunt exhausts the dwell and
+		// reports "candidates exhausted" while the decoder keeps decoding calls.
+		// parkUntilUnlocked returns as soon as the state leaves StateLocked,
+		// which the protocol's lock-loss watchdog (cc.lost) drives on real loss.
+		if s.isLocked(name) {
+			s.parkUntilUnlocked(ctx, name)
+			continue
+		}
 
 		s.startRound(name)
 		hunter, err := trunking.NewHunter(trunking.HunterOptions{
@@ -543,6 +557,15 @@ func (s *Supervisor) isHeld(name string) bool {
 	defer s.mu.RUnlock()
 	rt := s.states[name]
 	return rt != nil && rt.heldByOp
+}
+
+// isLocked reports whether the system is already in StateLocked (a cc.locked
+// edge was observed), so the Run loop parks it instead of re-hunting.
+func (s *Supervisor) isLocked(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rt := s.states[name]
+	return rt != nil && rt.state == StateLocked && !rt.heldByOp
 }
 
 // --- operator mutation surface ---

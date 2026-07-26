@@ -155,3 +155,67 @@ func p25TrellisDibitDist(a, b uint8) int {
 		return 2
 	}
 }
+
+// DecodeP25TrellisSoftC runs true soft-decision Viterbi over the trellis using
+// per-channel-dibit complex soft samples. soft[i] is the received differential
+// for channel dibit i, rotated into the diagonal frame where the two on-air
+// bits are the signs of the real and imaginary parts: b0 = (Re < 0), b1 =
+// (Im < 0). The branch metric is the negative correlation of the received soft
+// with the expected dibit's bit signs — a magnitude-weighted log-likelihood, so
+// an ambiguous (near-zero) symbol contributes little and a strong one dominates,
+// which the scalar reliability-weighted form cannot express. len(soft) must
+// equal the channel length (2·stages). Returns the info dibits and path metric.
+func DecodeP25TrellisSoftC(soft []complex64) ([]uint8, float64) {
+	const inf = 1e30
+	if len(soft) < 2 || len(soft)%2 != 0 {
+		return nil, inf
+	}
+	stages := len(soft) / 2
+
+	// Per stage, per candidate output dibit value (0..3), the soft cost.
+	// cost(e, z) = (2*b0-1)*Re(z) + (2*b1-1)*Im(z), minimised.
+	pm := [4]float64{0, inf, inf, inf}
+	trace := make([][4]uint8, stages)
+	for s := 0; s < stages; s++ {
+		zh, zl := soft[2*s], soft[2*s+1]
+		var costHi, costLo [4]float64
+		for e := 0; e < 4; e++ {
+			sb0 := float64(2*(e&1) - 1)
+			sb1 := float64(2*((e>>1)&1) - 1)
+			costHi[e] = sb0*float64(real(zh)) + sb1*float64(imag(zh))
+			costLo[e] = sb0*float64(real(zl)) + sb1*float64(imag(zl))
+		}
+		var npm [4]float64
+		for i := range npm {
+			npm[i] = inf
+		}
+		for cur := 0; cur < 4; cur++ {
+			if pm[cur] >= inf {
+				continue
+			}
+			for next := 0; next < 4; next++ {
+				idx := p25TrellisStates[cur][next]
+				cost := pm[cur] + costHi[p25TrellisPairs[idx][0]] + costLo[p25TrellisPairs[idx][1]]
+				if cost < npm[next] {
+					npm[next] = cost
+					trace[s][next] = uint8(cur)
+				}
+			}
+		}
+		pm = npm
+	}
+	finalState := 0
+	for s := 1; s < 4; s++ {
+		if pm[s] < pm[finalState] {
+			finalState = s
+		}
+	}
+	finalMetric := pm[finalState]
+	out := make([]uint8, stages)
+	state := finalState
+	for s := stages - 1; s >= 0; s-- {
+		out[s] = uint8(state)
+		state = int(trace[s][state])
+	}
+	return out[:stages-1], finalMetric
+}

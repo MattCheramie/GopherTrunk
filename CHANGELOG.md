@@ -8,16 +8,55 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`call.end` real-time event now carries `duration_ms`.** The SSE/WebSocket
+  event stream's call-completion event (`event: call.end` on `/api/v1/events`
+  and the WS stream) now includes the call length in milliseconds alongside
+  `started_at`/`ended_at`, matching the completed-call webhook's `duration_ms`,
+  so an SSE/WS-only consumer (a Prometheus exporter, a Grafana feed) reads a
+  call's duration off the completion event without pairing it back to
+  `call.start` and subtracting timestamps itself. Also confirmed and pinned by
+  a regression test that the P25 control-channel `nac` — site identity
+  alongside `rfss_id`/`site_id` — is present on every P25 grant / affiliation /
+  registration event (threaded from the decoded NID; omitted only for non-P25
+  protocols where NAC does not apply). (issue #268)
+- **Motorola P25 talker-alias ciphertext is logged as cryptanalysis ground
+  truth.** When a Motorola FACCH-S talker alias reassembles on a Phase 2
+  traffic channel, GopherTrunk now emits a `p25p2 alias ciphertext` log line
+  carrying the source RID, talkgroup, and the reassembled encoded-alias bytes
+  (`encoded_hex`) — the `rid,talkgroup,encoded_hex,alias` record the alias
+  cipher analysis consumes. The proprietary alias cipher is still gated
+  (unsolved, so the decoded name stays blank), but this lets an operator
+  harvest the chosen-plaintext / known-RID corpus needed to finish it
+  (`research/p25-talker-alias-chosen-plaintext.md`) using GopherTrunk alone
+  instead of SDRTrunk (#773).
+- **P25 Phase 2 soft-decision demod (`p25_phase2_soft_decision`).** A new
+  per-system opt-in knob (on/off, default off) that builds the Phase 2
+  traffic-channel receiver with soft-decision decoding: the demodulator's
+  soft symbol differentials feed a per-bit soft Viterbi on the MAC trellis,
+  recovering the ~1.5–2 dB of coding gain the hard slicer discards. On weak
+  signals this can surface the clear-MAC source RID the hard path drops; on
+  strong signals it is neutral, and with the knob off the decode is
+  byte-for-byte unchanged. Applies to the voice composer and signalling
+  follower (including Phase 1 control channels that grant Phase 2 traffic).
+  Issue #915.
+- **`baseband.auto_record.tap: ddc`** — event-triggered auto-captures can now
+  record the control decoder's narrowband post-DDC stream (the pipeline rate,
+  144 kHz for TETRA) instead of the full-rate wideband SDR IQ. Files are orders of
+  magnitude smaller (a few MB vs ~95 MB) and directly replayable; for a
+  same-carrier TETRA site the DDC tap holds all four voice timeslots of the
+  control carrier. `tap: wideband` (default) is unchanged. Triggered captures also
+  create their target directory if missing.
 - **TETRA voice now decodes to audible audio, including up to 4 concurrent
   calls on one carrier.** The TETRA voice path recovers each traffic burst,
   channel-decodes TCH/S, and renders it with the clean-room ACELP vocoder
   (`tetra-acelp`), now bit-exact to the ETSI EN 300 395-2 reference. Each burst
-  is tagged with its TDMA timeslot (anchored to the synchronisation burst), and
-  the daemon registers up to four `cc:same-carrier:N` taps, so up to four
-  simultaneous calls on one control carrier — one per slot — record into their
-  own files instead of only one binding and the rest being dropped with
-  "no voice device available for grant". The same-carrier voice device serial
-  changes from `cc:same-carrier` to `cc:same-carrier:1..4`.
+  is tagged with its AACH downlink usage marker (the per-slot call identifier),
+  and the daemon registers up to four `cc:same-carrier:N` taps, so up to four
+  simultaneous calls on one control carrier — demultiplexed by matching each
+  call's grant usage marker — record into their own files instead of only one
+  binding and the rest being dropped with "no voice device available for grant".
+  The same-carrier voice device serial changes from `cc:same-carrier` to
+  `cc:same-carrier:1..4`.
 - **Event-driven raw-IQ auto-recording (`baseband.auto_record`).** The daemon
   can now capture a short slice of the control SDR's raw IQ whenever a
   classified event fires — `on_concurrent_calls: N` (N+ calls active at once),
@@ -118,19 +157,49 @@ for tagged releases.
   corroborates it; a mis-decoded first burst is corrected by the true colour
   that every later BSCH carries. An operator-configured colour is still
   authoritative.
-- **TETRA same-carrier voice leaked audio between timeslots / talkgroups.** On a
-  single-carrier site every concurrent call built its own receiver + slot
-  extractor over the shared post-DDC IQ. A fresh extractor had no
-  synchronisation-burst anchor for up to ~1 s, during which it accepted *every*
-  slot's speech — so the first second of each recording absorbed all four slots
-  — and a call lingering in hangtime kept decoding its physical slot, so a new
-  call reusing that slot bled into the old recording. These are replaced by one
-  shared per-carrier slot demultiplexer whose SB anchor stays warm across calls
-  and routes each burst only to the single call that currently owns that
-  timeslot (most-recent grant wins); unanchored bursts are dropped, never
-  broadcast. The granted-timeslot decode itself was verified correct against the
-  reporter's captures — the leak was in the composer's per-call demux, not the
-  channel-allocation parser.
+- **Concurrent same-carrier TETRA calls could still leak audio between each
+  other** — a long conversation would pick up a second slot's speech mid-stream.
+  The per-call demux ran one receiver per call and routed by the AACH usage
+  marker, but could not evict a peer: when a call ended and the network reused its
+  usage marker for a new call while the old one lingered in hangtime, both matched
+  and the old recording absorbed the new call's audio. Concurrent same-carrier
+  calls now share ONE per-carrier voice demux (its sync/AACH state stays warm
+  across calls) with a single owner per usage marker and most-recent-grant-wins
+  eviction, so a reused marker immediately displaces the lingering call. Routing by
+  the AACH usage marker (not the physical TDMA slot) is what makes this reliable:
+  on real captures a single call's bursts jitter across adjacent decoded slot
+  numbers, so slot-keyed routing mis-delivers them — the usage marker is stable
+  per call. Grants addressed without a usage marker bind to the first unclaimed
+  marker instead of accept-all-mixing.
+- **A locked TETRA control channel flapped "CC hunt failed · candidates
+  exhausted" every ~30–60 s while it was decoding calls fine.** Two coupled gaps:
+  the control-channel hunter's success test needs a fresh `cc.locked` event within
+  its dwell (default 3 s), but TETRA emits the lock only once (edge-triggered), so
+  when cold acquisition (BSCH sync + colour code) outlasts the dwell the first hunt
+  fails and every same-frequency re-hunt then exhausts the dwell against an
+  already-locked, silent-on-the-wire pipeline; and there was no TETRA lock-loss
+  watchdog (`MarkLost` had no callers), so the scanner could never leave the locked
+  state on a genuine outage. Now the supervisor parks a system it already knows is
+  locked instead of re-hunting it, and a new control-channel watchdog publishes
+  `cc.lost` when a locked carrier decodes nothing for ~5 s (≈5 missed
+  multiframes), so a genuinely dead carrier still re-hunts and recovers. (The
+  ±6 kHz AFC acquisition range, #940, was already merged and is unrelated — a
+  ~1.5 kHz carrier offset sits well inside it.)
+- **Concurrent same-carrier TETRA calls decoded as "DJ scratches" — most calls
+  produced only brief garbled fragments.** The per-slot demux dropped a burst
+  whose decoded TDMA timeslot did not match the call's *granted* timeslot, but on
+  real air the grant timeslot does not identify the physical slot (distinct calls
+  collide on one value; the synchronisation-burst slot anchor also jitters a
+  call's bursts across adjacent slot numbers), so most calls had their own speech
+  discarded as "off-slot" and recorded only the handful of frames decoded before
+  the slot grid anchored. The voice chain now demultiplexes concurrent calls by
+  the **AACH downlink usage marker** — the per-slot call identifier the AACH
+  broadcasts in every downlink slot, matched against the usage marker carried in
+  the call's grant — which cleanly separates simultaneous calls on one carrier.
+  A grant addressed without a usage marker, or a burst whose AACH does not decode,
+  falls back to CRC-gated single-call decoding so a call's speech is never dropped
+  on a guess. Verified against a real 5-capture same-carrier IQ set: the two
+  concurrent calls that the timeslot filter starved now recover their full audio.
 - **TETRA TCH/S class-2 CRC was computed wrong, so no on-air voice ever
   decoded.** The 8-bit CRC was a `G(X)=1+X³+X⁷` LFSR; the TETRA CRC
   (EN 300 395-2 §5.5.1) is a fixed parity-check matrix, so every received TCH/S

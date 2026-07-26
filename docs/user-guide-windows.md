@@ -962,6 +962,7 @@ OP25 fixtures, MMDVMHost / DSDcc test data) opt out per-system:
 | P25 Phase 2 trellis | `p25_phase2_trellis_mode` | `off` |
 | P25 Phase 2 RS | `p25_phase2_rs_mode` | `on` enables verification |
 | P25 Phase 2 PN44 scrambler | `p25_phase2_scrambler_mode` | `on` / `probe` |
+| P25 Phase 2 soft decision | `p25_phase2_soft_decision` | `on` (soft MAC trellis; ~1.5-2 dB) |
 | NXDN Viterbi | `nxdn_viterbi_mode` | `off` |
 | EDACS BCH | `edacs_bch_mode` | `off` |
 | MPT 1327 BCH | `mpt1327_bch_mode` | `off` |
