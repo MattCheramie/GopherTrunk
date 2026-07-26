@@ -656,21 +656,67 @@ const (
 	tetraStaleCheckInterval = 1 * time.Second
 )
 
+// tetraResyncTimeout is how long the control channel may decode nothing before
+// the pipeline forces a fast DSP re-acquire (reset the receiver's symbol-timing
+// and AFC loops to centre, then rebuild the CC's dibit-sync scratch). A noise
+// burst wanders the Gardner timing phase off-lock and, at the production
+// GardnerGain, it re-converges only very slowly — the field symptom was a
+// control channel taking tens of seconds to re-lock after brief wideband noise
+// while a from-cold receiver acquires in ~one AFC block. Resetting to centre on
+// a short heartbeat drought reacquires in that same ~one-block time.
+//
+// A healthy carrier decodes a CRC-clean sync burst roughly every frame (~57 ms),
+// thinning to ~130 ms only on a marginal-but-still-locked signal, so 500 ms
+// leaves a comfortable margin against a false reset (which is cheap anyway — it
+// costs ~one block of reacquisition and self-heals within a frame). It fires
+// well before the 5 s tetraLockStaleTimeout, so transient noise is absorbed
+// without ever declaring cc.lost.
+const tetraResyncTimeout = 500 * time.Millisecond
+
 type tetraPipeline struct {
-	rx        *tetrarx.Receiver
-	cc        *tetra.ControlChannel
-	log       *slog.Logger
-	system    string
-	debug     bool
-	now       func() time.Time // injectable for tests; set to time.Now at construction
-	lastLog   time.Time        // wall clock of the previous status line (zero ⇒ not primed)
-	lastStale time.Time        // wall clock of the previous lock-staleness check
+	rx         *tetrarx.Receiver
+	cc         *tetra.ControlChannel
+	log        *slog.Logger
+	system     string
+	debug      bool
+	now        func() time.Time // injectable for tests; set to time.Now at construction
+	lastLog    time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	lastStale  time.Time        // wall clock of the previous lock-staleness check
+	lastResync time.Time        // wall clock of the previous DSP resync (throttle)
 }
 
 func (p *tetraPipeline) Process(iq []complex64) {
 	p.rx.Process(iq)
+	p.checkResync()
 	p.checkLockStale()
 	p.maybeLogStatus()
+}
+
+// checkResync forces a fast DSP re-acquire when the control-channel heartbeat has
+// gone stale (see tetraResyncTimeout). It resets the receiver's timing/AFC loops
+// to centre and drops the CC's dibit-sync scratch (kept in lock-step because
+// rx.Reset restarts the dibit index at 0), so a channel knocked off-lock by a
+// noise burst reacquires in ~one AFC block instead of waiting for the slow
+// steady-state Gardner loop to drift back. Throttled to one attempt per timeout
+// window so a genuinely dead carrier reacquires at most once per window rather
+// than every chunk. Unlike maybeLogStatus this runs in production (not
+// debug-gated): the reacquire itself must happen regardless of log level; only
+// the diagnostic line is level-filtered.
+func (p *tetraPipeline) checkResync() {
+	now := p.now()
+	if !p.cc.NeedsResync(now, tetraResyncTimeout) {
+		return
+	}
+	if now.Sub(p.lastResync) < tetraResyncTimeout {
+		return
+	}
+	p.lastResync = now
+	p.rx.Reset()
+	p.cc.ResyncReset()
+	if p.log != nil {
+		p.log.Debug("tetra: dsp resync (heartbeat stale; reacquiring symbol timing from centre)",
+			"system", p.system)
+	}
 }
 
 // checkLockStale runs the control-channel lock watchdog on a light throttle.
@@ -738,8 +784,13 @@ func (p *tetraPipeline) maybeLogStatus() {
 
 func (p *tetraPipeline) Reset() {
 	p.rx.Reset()
+	// rx.Reset restarts the receiver's dibit index at 0; keep the CC's
+	// absolute-indexed sync scratch in step so a post-reset stream can
+	// reacquire (see ControlChannel.ResyncReset).
+	p.cc.ResyncReset()
 	p.lastLog = time.Time{}
 	p.lastStale = time.Time{}
+	p.lastResync = time.Time{}
 }
 func (p *tetraPipeline) Close() error { return nil }
 
