@@ -644,19 +644,45 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 // decoder.go.
 const tetraStatusInterval = 5 * time.Second
 
+// tetraLockStaleTimeout is how long a locked TETRA control channel may decode
+// nothing before the watchdog (ControlChannel.CheckStale) declares it lost and
+// publishes cc.lost, so the cchunt supervisor leaves StateLocked and re-hunts.
+// Generous (~5 missed multiframes at the ~1 s BSCH cadence) so brief fades or a
+// momentarily busy carrier never trip it, while a genuinely dead carrier is
+// surfaced within a few seconds. tetraStaleCheckInterval throttles how often
+// Process runs the (cheap) check.
+const (
+	tetraLockStaleTimeout   = 5 * time.Second
+	tetraStaleCheckInterval = 1 * time.Second
+)
+
 type tetraPipeline struct {
-	rx      *tetrarx.Receiver
-	cc      *tetra.ControlChannel
-	log     *slog.Logger
-	system  string
-	debug   bool
-	now     func() time.Time // injectable for tests; set to time.Now at construction
-	lastLog time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	rx        *tetrarx.Receiver
+	cc        *tetra.ControlChannel
+	log       *slog.Logger
+	system    string
+	debug     bool
+	now       func() time.Time // injectable for tests; set to time.Now at construction
+	lastLog   time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	lastStale time.Time        // wall clock of the previous lock-staleness check
 }
 
 func (p *tetraPipeline) Process(iq []complex64) {
 	p.rx.Process(iq)
+	p.checkLockStale()
 	p.maybeLogStatus()
+}
+
+// checkLockStale runs the control-channel lock watchdog on a light throttle.
+// Unlike maybeLogStatus it is NOT debug-gated — the watchdog must run in
+// production so a silent carrier surfaces cc.lost and the supervisor re-hunts.
+func (p *tetraPipeline) checkLockStale() {
+	now := p.now()
+	if now.Sub(p.lastStale) < tetraStaleCheckInterval {
+		return
+	}
+	p.lastStale = now
+	p.cc.CheckStale(now, tetraLockStaleTimeout)
 }
 
 // tetraEffectiveBaud derives the effective symbol rate (baud) and its
@@ -713,6 +739,7 @@ func (p *tetraPipeline) maybeLogStatus() {
 func (p *tetraPipeline) Reset() {
 	p.rx.Reset()
 	p.lastLog = time.Time{}
+	p.lastStale = time.Time{}
 }
 func (p *tetraPipeline) Close() error { return nil }
 

@@ -39,6 +39,13 @@ for tagged releases.
   byte-for-byte unchanged. Applies to the voice composer and signalling
   follower (including Phase 1 control channels that grant Phase 2 traffic).
   Issue #915.
+- **`baseband.auto_record.tap: ddc`** — event-triggered auto-captures can now
+  record the control decoder's narrowband post-DDC stream (the pipeline rate,
+  144 kHz for TETRA) instead of the full-rate wideband SDR IQ. Files are orders of
+  magnitude smaller (a few MB vs ~95 MB) and directly replayable; for a
+  same-carrier TETRA site the DDC tap holds all four voice timeslots of the
+  control carrier. `tap: wideband` (default) is unchanged. Triggered captures also
+  create their target directory if missing.
 - **TETRA voice now decodes to audible audio, including up to 4 concurrent
   calls on one carrier.** The TETRA voice path recovers each traffic burst,
   channel-decodes TCH/S, and renders it with the clean-room ACELP vocoder
@@ -129,6 +136,34 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **Concurrent same-carrier TETRA calls could still leak audio between each
+  other** — a long conversation would pick up a second slot's speech mid-stream.
+  The per-call demux ran one receiver per call and routed by the AACH usage
+  marker, but could not evict a peer: when a call ended and the network reused its
+  usage marker for a new call while the old one lingered in hangtime, both matched
+  and the old recording absorbed the new call's audio. Concurrent same-carrier
+  calls now share ONE per-carrier voice demux (its sync/AACH state stays warm
+  across calls) with a single owner per usage marker and most-recent-grant-wins
+  eviction, so a reused marker immediately displaces the lingering call. Routing by
+  the AACH usage marker (not the physical TDMA slot) is what makes this reliable:
+  on real captures a single call's bursts jitter across adjacent decoded slot
+  numbers, so slot-keyed routing mis-delivers them — the usage marker is stable
+  per call. Grants addressed without a usage marker bind to the first unclaimed
+  marker instead of accept-all-mixing.
+- **A locked TETRA control channel flapped "CC hunt failed · candidates
+  exhausted" every ~30–60 s while it was decoding calls fine.** Two coupled gaps:
+  the control-channel hunter's success test needs a fresh `cc.locked` event within
+  its dwell (default 3 s), but TETRA emits the lock only once (edge-triggered), so
+  when cold acquisition (BSCH sync + colour code) outlasts the dwell the first hunt
+  fails and every same-frequency re-hunt then exhausts the dwell against an
+  already-locked, silent-on-the-wire pipeline; and there was no TETRA lock-loss
+  watchdog (`MarkLost` had no callers), so the scanner could never leave the locked
+  state on a genuine outage. Now the supervisor parks a system it already knows is
+  locked instead of re-hunting it, and a new control-channel watchdog publishes
+  `cc.lost` when a locked carrier decodes nothing for ~5 s (≈5 missed
+  multiframes), so a genuinely dead carrier still re-hunts and recovers. (The
+  ±6 kHz AFC acquisition range, #940, was already merged and is unrelated — a
+  ~1.5 kHz carrier offset sits well inside it.)
 - **Concurrent same-carrier TETRA calls decoded as "DJ scratches" — most calls
   produced only brief garbled fragments.** The per-slot demux dropped a burst
   whose decoded TDMA timeslot did not match the call's *granted* timeslot, but on

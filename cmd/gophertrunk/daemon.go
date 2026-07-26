@@ -2404,7 +2404,15 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if cfg.Baseband.AutoRecord.Enabled && d.controlSerial != "" {
 			if br := d.iqBrokers[d.controlSerial]; br != nil {
 				sysName, proto := primaryControlSystem(cfg)
-				d.iqAutoRec = newIQAutoRecorder(cfg.Baseband.AutoRecord, sysName, proto, d.controlSerial, br, log)
+				// Lazy control-decoder accessor for the "ddc" tap (nil interface
+				// until the decoder is built, mirroring the same-carrier voice tap).
+				ddcTap := func() ddcVoiceTap {
+					if d.ccDecoder == nil {
+						return nil
+					}
+					return d.ccDecoder
+				}
+				d.iqAutoRec = newIQAutoRecorder(cfg.Baseband.AutoRecord, sysName, proto, d.controlSerial, br, ddcTap, log)
 				if d.iqAutoRec != nil {
 					d.iqAutoRecSub = d.bus.Subscribe()
 					opts.AutoRecord = autoRecordTrigger{rec: d.iqAutoRec}

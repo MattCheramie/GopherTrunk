@@ -324,6 +324,9 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		return
 	}
 	c.addStat(&c.stats.BSCHOK, 1)
+	// Heartbeat: a CRC-clean sync burst is the ~1 s cadence that proves the
+	// carrier is still live, independent of voice traffic. Feeds CheckStale.
+	c.noteActivity()
 	c.log.Debug("tetra: sync burst decoded",
 		"sts_at", L, "rot", bschRot,
 		"colour_code", sync.ExtendedColourCode()&0x3F,

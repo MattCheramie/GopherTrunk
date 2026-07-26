@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +17,16 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// ddcVoiceTap is the subset of the control-channel decoder the DDC-tap capture
+// consumes: the post-DDC channelised IQ fan-out (the same stream the same-carrier
+// voice taps read) plus its pipeline rate and centre. *ccdecoder.Decoder
+// satisfies it; tests supply a fake. Used only when auto_record's tap is "ddc".
+type ddcVoiceTap interface {
+	SubscribeVoiceIQ() (<-chan []complex64, func())
+	PipelineRateHz() float64
+	CenterFreqHz() uint32
+}
 
 // autoRecordConcurrencyWindow is how long a granted call is counted as
 // "active" for the on_concurrent_calls trigger. The control channel repeats a
@@ -58,6 +70,10 @@ type iqAutoRecorder struct {
 	seconds  int
 	log      *slog.Logger
 
+	// ddc lazily resolves the control decoder for the "ddc" tap (nil when the
+	// decoder is not yet built / not applicable). Nil for the wideband tap.
+	ddc func() ddcVoiceTap
+
 	// capture actuates a capture; defaults to captureIQToFile over broker.
 	capture captureFunc
 	// now is the clock (injectable for tests).
@@ -74,7 +90,7 @@ type iqAutoRecorder struct {
 // Returns nil when disabled, so the daemon can skip wiring it entirely. cfg is
 // assumed already validated (config.Validate); format/cooldown fall back to
 // their documented defaults.
-func newIQAutoRecorder(cfg config.BasebandAutoRecordConfig, system, protocol, serial string, broker *iqtap.Broker, log *slog.Logger) *iqAutoRecorder {
+func newIQAutoRecorder(cfg config.BasebandAutoRecordConfig, system, protocol, serial string, broker *iqtap.Broker, ddc func() ddcVoiceTap, log *slog.Logger) *iqAutoRecorder {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -106,6 +122,7 @@ func newIQAutoRecorder(cfg config.BasebandAutoRecordConfig, system, protocol, se
 		cooldown: cooldown,
 		dir:      cfg.Dir,
 		seconds:  cfg.Seconds,
+		ddc:      ddc,
 		log:      log.With("component", "iq-autorecord", "serial", serial),
 		now:      time.Now,
 		baseCtx:  context.Background(),
@@ -128,13 +145,76 @@ func (a *iqAutoRecorder) inFlightCount() int {
 	return a.inFlight
 }
 
-// defaultCapture writes the capture through the shared captureIQToFile helper.
+// defaultCapture writes the capture: the narrowband post-DDC channel stream when
+// tap: ddc, otherwise the wideband broker via the shared captureIQToFile helper.
 func (a *iqAutoRecorder) defaultCapture(ctx context.Context, path string, format siglab.SampleFormat, seconds int) (int64, uint64, error) {
+	if a.cfg.TapDDC() {
+		var tap ddcVoiceTap
+		if a.ddc != nil {
+			tap = a.ddc()
+		}
+		return captureDDCToFile(ctx, tap, path, format, seconds)
+	}
 	if a.broker == nil {
 		return 0, 0, fmt.Errorf("iq-autorecord: no broker")
 	}
 	samples, _, drops, err := captureIQToFile(ctx, a.broker, path, format, seconds)
 	return samples, drops, err
+}
+
+// captureDDCToFile records `seconds` of the control decoder's post-DDC channelised
+// IQ (the pipeline-rate stream: 144 kHz for TETRA, ~48 kHz for the C4FM family) to
+// path in the chosen format, reusing siglab.CaptureWriter so the bytes are
+// identical to a wideband capture at that rate. Orders of magnitude smaller than
+// the wideband broker capture, and directly replayable. ctx cancels early.
+func captureDDCToFile(ctx context.Context, tap ddcVoiceTap, path string, format siglab.SampleFormat, seconds int) (samples int64, drops uint64, err error) {
+	if tap == nil {
+		return 0, 0, fmt.Errorf("iq-autorecord: no control decoder for ddc tap")
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return 0, 0, fmt.Errorf("iq-autorecord: create %s: %w", path, err)
+	}
+	ch, unsub := tap.SubscribeVoiceIQ()
+	defer unsub()
+	enc := siglab.NewCaptureWriter(f, format)
+
+	// The DDC fan-out only broadcasts while the control pipeline is locked/active;
+	// a timer arm ends the capture after the requested duration even if the stream
+	// stalls (mirrors captureIQToFile's safety timer).
+	timer := time.NewTimer(time.Duration(seconds) * time.Second)
+	defer timer.Stop()
+	deadline := time.Now().Add(time.Duration(seconds) * time.Second)
+
+	streamErr := func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				return nil
+			case chunk, ok := <-ch:
+				if !ok {
+					return errors.New("iq-autorecord: voice tap closed before capture finished")
+				}
+				if werr := enc.Write(chunk); werr != nil {
+					return fmt.Errorf("write: %w", werr)
+				}
+				samples += int64(len(chunk))
+				if time.Now().After(deadline) {
+					return nil
+				}
+			}
+		}
+	}()
+
+	closeErr := f.Close()
+	if streamErr == nil && closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+		streamErr = closeErr
+	}
+	// Subscriber drops are logged by the fan-out itself at unsubscribe; the DDC
+	// tap exposes no per-capture drop count, so report 0.
+	return samples, 0, streamErr
 }
 
 // Run drains the event subscription until ctx is cancelled. sub is an
@@ -269,7 +349,16 @@ func (a *iqAutoRecorder) runCapture(ctx context.Context, reason, system, protoco
 	}()
 
 	var centerHz, rateHz uint32
-	if a.broker != nil {
+	if a.cfg.TapDDC() {
+		// DDC tap: centre + rate come from the control decoder's channelised
+		// pipeline (≈144 kHz for TETRA), not the wideband SDR.
+		if a.ddc != nil {
+			if tap := a.ddc(); tap != nil {
+				centerHz = tap.CenterFreqHz()
+				rateHz = uint32(tap.PipelineRateHz() + 0.5)
+			}
+		}
+	} else if a.broker != nil {
 		centerHz = a.broker.CenterHz()
 		rateHz = a.broker.SampleRateHz()
 	}
@@ -278,6 +367,12 @@ func (a *iqAutoRecorder) runCapture(ctx context.Context, reason, system, protoco
 	}
 	if protocol == "" {
 		protocol = a.protocol
+	}
+	// Ensure the capture directory exists — a missing dir was the operator's
+	// "no such file or directory" capture failure. Cheap and idempotent.
+	if err := os.MkdirAll(a.dir, 0o755); err != nil {
+		a.log.Warn("iq-autorecord: could not create capture dir", "reason", reason, "dir", a.dir, "err", err)
+		return
 	}
 	path := filepath.Join(a.dir, autoRecordFilename(system, reason, at, centerHz, rateHz, a.format))
 

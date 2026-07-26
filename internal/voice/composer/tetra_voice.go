@@ -3,6 +3,7 @@ package composer
 import (
 	"context"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -42,28 +43,24 @@ func newTETRAVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 	return newDecimatingFIR(iqHz, tetraVoiceIntermediateHz, chanBW, filterAtUnity)
 }
 
-// runTETRAVoiceChain consumes IQ for one TETRA traffic-channel call. It
+// runTETRAVoiceChain consumes IQ for one TETRA traffic-channel call on a SOLO tap
+// — a dedicated retuned voice SDR carrying a single call (one call per traffic
+// carrier), NOT a same-carrier SCBS. (Concurrent same-carrier calls go through the
+// shared per-carrier tetraSlotDemux instead — see followTETRASameCarrier.) It
 // decimates the tap IQ to the TETRA symbol rate, recovers the π/4-DQPSK dibit
-// stream with the shared TETRA receiver, extracts each Normal Continuous
-// Downlink Burst's two data blocks (tetra.TrafficExtractor), TCH/S-decodes each
-// burst, and emits the recovered 137-bit speech frames to the recorder — which
-// renders them to PCM with the clean-room ACELP vocoder ("tetra-acelp") and
-// writes both the decoded WAV and a `.raw` sidecar of the speech frames. This
-// mirrors the DMR/P25 shape (post-FEC frames in `.raw` + decoded WAV).
+// stream with the shared TETRA receiver, extracts each Normal Continuous Downlink
+// Burst's two data blocks (tetra.TrafficExtractor), TCH/S-decodes each burst, and
+// emits the recovered 137-bit speech frames to the recorder — which renders them
+// to PCM with the clean-room ACELP vocoder ("tetra-acelp") and writes both the
+// decoded WAV and a `.raw` sidecar. This mirrors the DMR/P25 shape.
 //
-// The extractor emits a burst for every timeslot on the carrier (all four TDMA
-// slots), each tagged with the AACH downlink usage marker of the slot it came
-// from. This chain keeps only bursts whose marker matches the granted call's
-// usage marker and drops the rest (onTETRATrafficBurst), so up to four concurrent
-// calls on one carrier — one per slot, each on its own same-carrier tap — decode
-// into four independent recordings instead of mixing. The AACH usage marker, not
-// the channel-allocation timeslot field, is the demux key: on real air the grant
-// timeslot does not map to the physical slot (distinct calls collide on one
-// value), which silently starved every mis-mapped call. When the grant carries no
-// usage marker, or a burst's AACH does not decode, the chain falls back to
-// TCH/S-CRC single-call isolation so a call's own speech is never dropped on a
-// guess. Encrypted calls (TEA1-4) fail the CRC and produce no decoded audio
-// (their raw bursts still exist upstream).
+// Each burst is tagged with the AACH downlink usage marker of the slot it came
+// from; the chain keeps only bursts whose marker matches the granted call's
+// (onTETRATrafficBurst). When the grant carries no usage marker, or a burst's AACH
+// does not decode, the chain falls back to TCH/S-CRC single-call isolation so a
+// call's own speech is never dropped on a guess — which is the common case on a
+// solo tap (one call present). Encrypted calls (TEA1-4) fail the CRC and produce
+// no decoded audio (their raw bursts still exist upstream).
 func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, colourExt uint32, usageMarker uint8, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-tetra:"+serial, nil)
@@ -164,8 +161,16 @@ func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, ser
 		offSlot.Add(1)
 		return
 	}
-	// TCH/S-decode the burst. Only bursts whose class-2 CRC verifies are TCH/S
-	// speech for the granted call; everything else yields no frames.
+	c.decodeTETRASpeech(bt, rs, serial, frame, speech)
+}
+
+// decodeTETRASpeech TCH/S-decodes one traffic frame for an owning call: it
+// recovers the CRC-valid 137-bit speech frames, refreshes call liveness (only on
+// real speech, never on raw bursts) and appends each frame to the recorder's
+// `.raw` sidecar (the ACELP vocoder renders it to PCM downstream). A non-TCH/S
+// burst (signalling, encrypted, or corrupt) yields no frames and does not touch
+// liveness. Shared by the solo traffic tap and the same-carrier slot demux.
+func (c *Composer) decodeTETRASpeech(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, speech *atomic.Uint64) {
 	frames := tetra.TCHSpeechFrames(frame)
 	if len(frames) == 0 {
 		// Not the granted call's speech — do NOT touch call liveness.
@@ -179,9 +184,196 @@ func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, ser
 	// Emit each recovered 137-bit speech frame to the recorder, which renders it
 	// with the ACELP vocoder and appends it to the `.raw` sidecar.
 	for _, sf := range frames {
-		speech.Add(1)
+		if speech != nil {
+			speech.Add(1)
+		}
 		if err := rs.WriteRawFrame(serial, sf); err != nil {
 			c.log.Warn("composer: TETRA speech-frame write failed", "serial", serial, "err", err)
 		}
 	}
+}
+
+// --- Shared per-carrier TETRA voice demultiplexer --------------------------
+//
+// On a TETRA single-carrier base station every concurrent call rides a different
+// TDMA timeslot of the SAME control carrier, and all same-carrier voice taps see
+// the SAME post-DDC IQ (the control decoder's voice fan-out, ccdecoder/voicetap.go).
+// Running a fresh receiver + TrafficExtractor per call caused cross-slot audio
+// leaks:
+//
+//   - pre-anchor accept-all: a fresh per-call extractor had no reference frame yet,
+//     so it could not tell one call's speech from another's for the first second.
+//   - hangtime marker reuse: a call lingers in hangtime after its speech stops; if
+//     the network reuses its usage marker for a new call, a per-call chain (which
+//     cannot evict a peer) kept decoding it into the old call's recording.
+//
+// tetraSlotDemux replaces the per-call extractors with ONE receiver + extractor
+// for the whole carrier whose AACH/SB state stays warm across calls. It routes
+// each decoded burst to the single call that owns that burst's AACH downlink
+// usage marker (the reliable per-call identifier — the channel-allocation timeslot
+// does not map to the physical slot on real air, and the SB slot index jitters
+// across adjacent slots). owners is keyed by usage marker with most-recent-grant-
+// wins, so a new call for a reused marker immediately displaces the lingering one.
+// One demux exists per carrier for the composer's lifetime; per-call chains are
+// thin owners that register/unregister a marker.
+type tetraSlotDemux struct {
+	c      *Composer
+	key    string
+	colour uint32
+	cancel context.CancelFunc
+	done   chan struct{}
+
+	mu     sync.Mutex
+	owners map[uint8]*tetraSlotOwner // usage marker (>=DLUsageTraffic) -> current owner
+	// wildcards are owners whose grant carried no usage marker (addressed by plain
+	// SSI). Each claims the first unclaimed traffic marker the demux observes, in
+	// registration order, so concurrent marker-less calls still separate instead of
+	// falling back to accept-all/mix. Best-effort; verified against real DDC IQ.
+	wildcards []*tetraSlotOwner
+}
+
+// tetraSlotOwner is one call's registration with the carrier demux: the usage
+// marker it follows (0 until a wildcard claims one) plus the boundary tracker +
+// recorder sink its decoded speech drives. bursts/speech feed the ended log line.
+type tetraSlotOwner struct {
+	serial         string
+	marker         uint8 // grant usage marker; 0 = wildcard until it claims one
+	bt             *boundaryTracker
+	rs             rawFrameSink
+	bursts, speech atomic.Uint64
+}
+
+// run streams the carrier's post-DDC IQ through one front end + receiver +
+// TrafficExtractor, feeding every burst to onBurst. It self-removes from the
+// composer's registry when the IQ stream ends so a later grant rebuilds it.
+func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz float64) {
+	defer close(d.done)
+	defer d.c.removeTETRADemux(d.key, d)
+	defer gtlog.Recover(d.c.log, "tetra-voice-demux:"+d.key, nil)
+
+	fe := newTETRAVoiceFrontEnd(iqHz, d.c.bw)
+	symbolHz := fe.OutRateHz()
+	extractor := tetra.NewTrafficExtractor(d.colour, d.onBurst)
+	rx := tetrarx.New(tetrarx.Options{
+		SampleRateHz:        symbolHz,
+		DibitSink:           func(di []uint8, base int) { extractor.Process(di, base) },
+		ClockMode:           tetrarx.ClockGardner,
+		GardnerGain:         0.005,
+		EnableAFC:           true,
+		EnableChannelFilter: true,
+	})
+	d.c.log.Info("composer: tetra shared voice demux started (usage-marker routing)",
+		"key", d.key, "colour_code", d.colour&0x3F, "rate_hz", symbolHz)
+	defer d.c.log.Info("composer: tetra shared voice demux ended", "key", d.key)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case iq, ok := <-iqCh:
+			if !ok {
+				return
+			}
+			d.observe(iq)
+			rx.Process(fe.Process(nil, iq))
+		}
+	}
+}
+
+// observe folds the carrier's channel power into every current owner's signal
+// meter. All calls share one carrier, so its post-DDC power is each call's RSSI.
+func (d *tetraSlotDemux) observe(iq []complex64) {
+	d.mu.Lock()
+	for _, o := range d.owners {
+		o.bt.observe(iq)
+	}
+	for _, o := range d.wildcards {
+		o.bt.observe(iq)
+	}
+	d.mu.Unlock()
+}
+
+// onBurst routes one extracted traffic frame to the call that owns its AACH usage
+// marker. Non-traffic bursts (usage < DLUsageTraffic, including an undecoded AACH
+// reported as 0) carry no speech and are dropped; a marker with no live owner is
+// dropped too. When a marker has no owner but a wildcard call is waiting, the
+// oldest wildcard claims that marker. Runs on the single demux goroutine, so each
+// owner's boundary tracker has exactly one writer.
+func (d *tetraSlotDemux) onBurst(frame []byte, slot, usage uint8) {
+	if usage < tetra.DLUsageTraffic {
+		return
+	}
+	d.mu.Lock()
+	o := d.owners[usage]
+	if o == nil && len(d.wildcards) > 0 {
+		o = d.wildcards[0]
+		d.wildcards = d.wildcards[1:]
+		o.marker = usage
+		d.owners[usage] = o
+	}
+	d.mu.Unlock()
+	if o == nil {
+		return
+	}
+	o.bursts.Add(1)
+	d.c.decodeTETRASpeech(o.bt, o.rs, o.serial, frame, &o.speech)
+}
+
+// addOwner registers o. A marker-bearing grant claims its marker (most-recent
+// grant wins, so a new call reusing a marker displaces a hangtime-lingering one);
+// a marker-less (wildcard) grant queues to claim the first unowned marker seen.
+func (d *tetraSlotDemux) addOwner(o *tetraSlotOwner) {
+	d.mu.Lock()
+	if o.marker >= tetra.DLUsageTraffic {
+		d.owners[o.marker] = o
+	} else {
+		d.wildcards = append(d.wildcards, o)
+	}
+	d.mu.Unlock()
+}
+
+// removeOwner releases o's marker (only if o still owns it — a newer call that
+// already displaced it keeps it) and drops it from the wildcard queue if it never
+// claimed a marker.
+func (d *tetraSlotDemux) removeOwner(o *tetraSlotOwner) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if o.marker >= tetra.DLUsageTraffic && d.owners[o.marker] == o {
+		delete(d.owners, o.marker)
+	}
+	for i, w := range d.wildcards {
+		if w == o {
+			d.wildcards = append(d.wildcards[:i], d.wildcards[i+1:]...)
+			break
+		}
+	}
+}
+
+// runTETRASameCarrierChain is the thin per-call goroutine for a same-carrier
+// TETRA call. It owns the call's boundary tracker (hangtime end-of-call + Touch
+// heartbeat) and registers itself as the owner of its granted AACH usage marker
+// with the carrier's shared demux; the demux delivers that marker's decoded
+// speech. It does no IQ work of its own. On ctx cancel (call end) it releases the
+// marker.
+func (c *Composer) runTETRASameCarrierChain(ctx context.Context, d *tetraSlotDemux, serial string, groupID uint32, grantSlot, usageMarker uint8, done chan<- struct{}) {
+	defer close(done)
+	defer gtlog.Recover(c.log, "voice-chain-tetra-sc:"+serial, nil)
+
+	// Talkgroup gating disabled (grantTG 0): the chain surfaces no per-burst
+	// in-band identity, so liveness is driven purely by CRC-valid speech.
+	bt := c.newBoundaryTracker(serial, 0, nil)
+	go bt.run(ctx)
+	rs, _ := c.sink.(rawFrameSink)
+
+	o := &tetraSlotOwner{serial: serial, marker: usageMarker, bt: bt, rs: rs}
+	d.addOwner(o)
+	c.log.Info("composer: tetra voice follow started (shared demux) — TCH/S decode + ACELP vocoder",
+		"serial", serial, "group", groupID, "timeslot", grantSlot, "usage_marker", usageMarker)
+	defer func() {
+		d.removeOwner(o)
+		c.log.Info("composer: tetra voice follow ended",
+			"serial", serial, "bursts", o.bursts.Load(), "speech_frames", o.speech.Load())
+	}()
+
+	<-ctx.Done()
 }

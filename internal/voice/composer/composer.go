@@ -268,6 +268,21 @@ type Composer struct {
 
 	mu     sync.Mutex
 	chains map[string]*chain
+	// tetraDemuxes holds one shared voice demultiplexer per same-carrier TETRA
+	// control carrier (keyed by sameCarrierSource.CarrierKey). It decodes the
+	// carrier once and routes each burst to the single call that owns its AACH
+	// usage marker, so concurrent same-carrier calls decode independently without
+	// the per-call pre-anchor / hangtime-reuse cross-slot leaks. See tetra_voice.go.
+	tetraDemuxes map[string]*tetraSlotDemux
+}
+
+// sameCarrierSource is the optional capability a voice IQ source implements when
+// it is a shared same-carrier tap: several such taps on one control carrier
+// deliver the same post-DDC stream, so they must share ONE TETRA voice demux
+// rather than each running its own receiver. CarrierKey groups the taps that
+// belong to the same physical carrier. Implemented by ccdecoder.CCVoiceSource.
+type sameCarrierSource interface {
+	CarrierKey() string
 }
 
 type chain struct {
@@ -334,26 +349,27 @@ func New(opts Options) (*Composer, error) {
 		log = slog.Default()
 	}
 	c := &Composer{
-		bus:        opts.Bus,
-		dev:        opts.Devices,
-		sink:       opts.Sink,
-		engine:     opts.Engine,
-		log:        log,
-		iqHz:       opts.IQSampleRate,
-		pcmHz:      opts.PCMSampleRate,
-		bw:         opts.VoiceBandwidthHz,
-		touchEvery: opts.TouchInterval,
-		hangtime:   opts.VoiceHangtime,
-		splitTx:    opts.SplitPerTransmission,
-		eqCfg:      opts.Equalizer,
-		deemphCfg:  opts.DeEmphasis,
-		lpfCfg:     opts.AudioLPF,
-		agcCfg:     opts.AudioAGC,
-		resampCfg:  opts.AudioResampler,
-		autotune:   opts.Autotune,
-		cryptoSink: opts.CryptoSink,
-		chains:     make(map[string]*chain),
-		runDone:    make(chan struct{}),
+		bus:          opts.Bus,
+		dev:          opts.Devices,
+		sink:         opts.Sink,
+		engine:       opts.Engine,
+		log:          log,
+		iqHz:         opts.IQSampleRate,
+		pcmHz:        opts.PCMSampleRate,
+		bw:           opts.VoiceBandwidthHz,
+		touchEvery:   opts.TouchInterval,
+		hangtime:     opts.VoiceHangtime,
+		splitTx:      opts.SplitPerTransmission,
+		eqCfg:        opts.Equalizer,
+		deemphCfg:    opts.DeEmphasis,
+		lpfCfg:       opts.AudioLPF,
+		agcCfg:       opts.AudioAGC,
+		resampCfg:    opts.AudioResampler,
+		autotune:     opts.Autotune,
+		cryptoSink:   opts.CryptoSink,
+		chains:       make(map[string]*chain),
+		tetraDemuxes: make(map[string]*tetraSlotDemux),
+		runDone:      make(chan struct{}),
 	}
 	c.sub = opts.Bus.Subscribe()
 	return c, nil
@@ -455,6 +471,22 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	}
 	c.mu.Unlock()
 
+	// Same-carrier TETRA: route through the shared per-carrier voice demux instead
+	// of opening a per-call IQ subscription + receiver. One demux decodes the
+	// carrier and delivers each burst only to the call that currently owns that
+	// burst's AACH usage marker, eliminating the per-call pre-anchor accept-all and
+	// hangtime marker-reuse leaks. Non-same-carrier TETRA (a dedicated retuned voice
+	// SDR — one call per tap) and every other protocol fall through to the per-call
+	// StreamIQ path below.
+	if isTETRAVoice {
+		if scs, ok := src.(sameCarrierSource); ok {
+			if key := scs.CarrierKey(); key != "" {
+				c.followTETRASameCarrier(parent, src, key, cs)
+				return
+			}
+		}
+	}
+
 	chainCtx, cancel := context.WithCancel(parent)
 	iqCh, err := src.StreamIQ(chainCtx)
 	if err != nil {
@@ -537,11 +569,95 @@ func (c *Composer) cancelAll() {
 	c.mu.Lock()
 	chains := c.chains
 	c.chains = make(map[string]*chain)
+	demuxes := c.tetraDemuxes
+	c.tetraDemuxes = make(map[string]*tetraSlotDemux)
 	c.mu.Unlock()
+	// Cancel the per-call chains first so their owners unregister from the
+	// demuxes, then tear the demuxes down.
 	for _, ch := range chains {
 		ch.cancel()
 		<-ch.done
 	}
+	for _, d := range demuxes {
+		d.cancel()
+		<-d.done
+	}
+}
+
+// followTETRASameCarrier binds one same-carrier TETRA call to the carrier's
+// shared voice demux: it ensures the demux exists, then spawns a thin chain
+// goroutine that registers this call as the owner of its granted AACH usage
+// marker and unregisters on call end. The chain does no IQ work of its own — the
+// demux delivers its marker's decoded speech frames.
+func (c *Composer) followTETRASameCarrier(parent context.Context, src IQSource, key string, cs trunking.CallStart) {
+	d := c.ensureTETRADemux(parent, key, src, cs.Grant.TETRAColourExt)
+	if d == nil {
+		c.log.Warn("composer: could not start TETRA voice demux", "serial", cs.DeviceSerial, "key", key)
+		return
+	}
+	chainCtx, cancel := context.WithCancel(parent)
+	ch := &chain{cancel: cancel, done: make(chan struct{})}
+	c.mu.Lock()
+	c.chains[cs.DeviceSerial] = ch
+	c.mu.Unlock()
+	go c.runTETRASameCarrierChain(chainCtx, d, cs.DeviceSerial, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAUsageMarker, ch.done)
+}
+
+// ensureTETRADemux returns the shared voice demux for a control carrier, creating
+// and starting it on first use. The demux lives for the composer's lifetime (its
+// SB anchor + AACH state stay warm across calls, so a new call never re-anchors
+// from scratch) until Close/cancelAll or the control decoder's IQ stream closes.
+// Only ever called from the single Run goroutine, so the create is race-free.
+func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSource, colourExt uint32) *tetraSlotDemux {
+	c.mu.Lock()
+	if d := c.tetraDemuxes[key]; d != nil {
+		c.mu.Unlock()
+		return d
+	}
+	d := &tetraSlotDemux{
+		c:      c,
+		key:    key,
+		colour: colourExt,
+		owners: make(map[uint8]*tetraSlotOwner),
+		done:   make(chan struct{}),
+	}
+	c.tetraDemuxes[key] = d
+	c.mu.Unlock()
+
+	demuxCtx, cancel := context.WithCancel(parent)
+	d.cancel = cancel
+	iqCh, err := src.StreamIQ(demuxCtx)
+	if err != nil {
+		cancel()
+		c.mu.Lock()
+		delete(c.tetraDemuxes, key)
+		c.mu.Unlock()
+		close(d.done)
+		c.log.Warn("composer: TETRA voice demux StreamIQ failed", "key", key, "err", err)
+		return nil
+	}
+	rateHzF := float64(src.SampleRateHz())
+	if rateHzF == 0 {
+		rateHzF = float64(c.iqHz)
+	}
+	if exact, ok := src.(exactRateSource); ok {
+		if r := exact.SampleRateExactHz(); r > 0 {
+			rateHzF = r
+		}
+	}
+	go d.run(demuxCtx, iqCh, rateHzF)
+	return d
+}
+
+// removeTETRADemux drops a demux from the registry once its IQ stream has ended
+// (self-called from the demux goroutine), so the next same-carrier grant builds a
+// fresh one (e.g. after a control-SDR reacquire swaps the decoder).
+func (c *Composer) removeTETRADemux(key string, d *tetraSlotDemux) {
+	c.mu.Lock()
+	if c.tetraDemuxes[key] == d {
+		delete(c.tetraDemuxes, key)
+	}
+	c.mu.Unlock()
 }
 
 // runFMChain consumes IQ for one call. The chain is intentionally

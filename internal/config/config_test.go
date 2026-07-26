@@ -363,6 +363,9 @@ func TestValidate(t *testing.T) {
 		{"auto_record missing dir", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Seconds: 8, OnNoVoiceDevice: true}}}, true},
 		{"auto_record zero seconds", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", OnConcurrentCalls: 2}}}, true},
 		{"auto_record bad format", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Format: "flac", OnEncrypted: true}}}, true},
+		{"auto_record tap ddc ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "ddc", OnConcurrentCalls: 2}}}, false},
+		{"auto_record tap wideband ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "wideband"}}}, false},
+		{"auto_record bad tap", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "narrowband"}}}, true},
 		{"auto_record bad cooldown", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Cooldown: "soon", OnEncrypted: true}}}, true},
 		{"auto_record negative concurrent", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, OnConcurrentCalls: -1}}}, true},
 	}
