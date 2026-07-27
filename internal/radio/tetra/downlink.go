@@ -218,11 +218,14 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 			c.handleCMCE(m, msg)
 		}
 	case MACPDUBroadcast:
-		// Learn the cell's own carrier number so grant carrier numbers resolve
-		// to Hz relative to this carrier (see carrierFrequency). SYSINFO
-		// identity (MCC/MNC/LA) still reaches the lock via the sync-burst path.
-		if mc, ok := SysInfoMainCarrier(recovered); ok {
-			c.learnMainCarrier(mc)
+		// Learn the cell's full SYSINFO frequency parameters (main carrier +
+		// frequency band + offset + duplex spacing + reverse operation) so grant
+		// carrier numbers resolve to their absolute Hz *including the offset
+		// field* (see carrierFrequency), and the true downlink/uplink carrier can
+		// be reported. SYSINFO identity (MCC/MNC/LA) still reaches the lock via the
+		// sync-burst path.
+		if si, ok := ParseSysInfo(recovered); ok {
+			c.learnSysInfo(si)
 		}
 	}
 }

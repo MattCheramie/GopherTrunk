@@ -108,8 +108,13 @@ func TestCarrierFrequencyDerivation(t *testing.T) {
 }
 
 // TestGrantPublishesResolvedFrequency drives the MAC ingest end to end: a real
-// SYSINFO broadcast teaches the cell's carrier, then a real MAC-RESOURCE grant
-// publishes with the traffic frequency resolved (same-carrier SCBS ⇒ 467.913).
+// SYSINFO broadcast teaches the cell's carrier + frequency band + offset, then a
+// real MAC-RESOURCE grant publishes with the traffic frequency resolved to the
+// cell's own carrier. The SYSINFO carries frequency band 4 (400 MHz base), main
+// carrier 2716 and offset field 3 (+12.5 kHz), so the *true* downlink carrier is
+// 400 MHz + 2716×25 kHz + 12.5 kHz = 467.9125 MHz — 500 Hz below the nominal
+// 467.913 the device was tuned to. Resolving the offset field (rather than
+// echoing the tuned frequency) is the fix under test.
 func TestGrantPublishesResolvedFrequency(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()
@@ -135,7 +140,7 @@ func TestGrantPublishesResolvedFrequency(t *testing.T) {
 	if grant == nil {
 		t.Fatal("no grant published")
 	}
-	if grant.FrequencyHz != 467_913_000 {
-		t.Errorf("grant frequency = %d, want 467913000 (carrier 2716 resolved)", grant.FrequencyHz)
+	if grant.FrequencyHz != 467_912_500 {
+		t.Errorf("grant frequency = %d, want 467912500 (carrier 2716 + band 4 + offset +12.5 kHz)", grant.FrequencyHz)
 	}
 }
