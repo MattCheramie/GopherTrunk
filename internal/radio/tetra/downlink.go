@@ -199,10 +199,16 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 			haveCMCE bool
 		)
 		if sdu := m.tmSDU(recovered); sdu != nil {
-			msg, haveCMCE = ParseCMCE(sdu)
-			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
-			if pdu, err := PDUFromBits(sdu); err == nil {
-				c.Ingest(pdu)
+			// The MAC TM-SDU is an LLC PDU (§21.2): strip the basic-link header
+			// (and any FCS trailer) to reach the TL-SDU — the MLE PDU — before the
+			// 3-bit MLE discriminator + CMCE fields line up. Feeding the raw TM-SDU
+			// into ParseCMCE misframes every L3 address (corrupts ISSI/GSSI).
+			if tl, ok := ParseLLC(sdu); ok {
+				msg, haveCMCE = ParseCMCE(tl)
+				// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
+				if pdu, err := PDUFromBits(tl); err == nil {
+					c.Ingest(pdu)
+				}
 			}
 		}
 		if m.ChanAlloc != nil {
