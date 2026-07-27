@@ -6,9 +6,11 @@ package tetra
 // bit-packed, not byte-aligned, so the L3 PDU must be read one field at a time
 // with the MSB-first bitReader (the same reader mac.go uses for MAC-RESOURCE).
 //
-// The TM-SDU delivered by the MAC layer (MACResource.tmSDU) is an MLE service
-// PDU: a 3-bit MLE protocol discriminator (Table 18.1) followed by the SDU. When
-// the discriminator selects CMCE, the SDU opens with a 5-bit CMCE PDU type
+// The bits handed to ParseCMCE are the TL-SDU — the MLE service PDU — recovered
+// by stripping the LLC basic-link header from the MAC TM-SDU (see llc.go /
+// ParseLLC). It opens with a 3-bit MLE protocol discriminator (Table 18.1)
+// followed by the SDU. When the discriminator selects CMCE, the SDU opens with a
+// 5-bit CMCE PDU type
 // (Table 14.66) and the type's information elements. Type-1 (mandatory) elements
 // are always present in a fixed order; the optional type-2 elements that follow
 // are introduced by a single O-bit and then, one per element in table order, a

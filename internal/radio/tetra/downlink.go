@@ -199,10 +199,16 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 			haveCMCE bool
 		)
 		if sdu := m.tmSDU(recovered); sdu != nil {
-			msg, haveCMCE = ParseCMCE(sdu)
-			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
-			if pdu, err := PDUFromBits(sdu); err == nil {
-				c.Ingest(pdu)
+			// The MAC TM-SDU is an LLC PDU (§21.2): strip the basic-link header
+			// (and any FCS trailer) to reach the TL-SDU — the MLE PDU — before the
+			// 3-bit MLE discriminator + CMCE fields line up. Feeding the raw TM-SDU
+			// into ParseCMCE misframes every L3 address (corrupts ISSI/GSSI).
+			if tl, ok := ParseLLC(sdu); ok {
+				msg, haveCMCE = ParseCMCE(tl)
+				// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
+				if pdu, err := PDUFromBits(tl); err == nil {
+					c.Ingest(pdu)
+				}
 			}
 		}
 		if m.ChanAlloc != nil {
@@ -212,11 +218,14 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 			c.handleCMCE(m, msg)
 		}
 	case MACPDUBroadcast:
-		// Learn the cell's own carrier number so grant carrier numbers resolve
-		// to Hz relative to this carrier (see carrierFrequency). SYSINFO
-		// identity (MCC/MNC/LA) still reaches the lock via the sync-burst path.
-		if mc, ok := SysInfoMainCarrier(recovered); ok {
-			c.learnMainCarrier(mc)
+		// Learn the cell's full SYSINFO frequency parameters (main carrier +
+		// frequency band + offset + duplex spacing + reverse operation) so grant
+		// carrier numbers resolve to their absolute Hz *including the offset
+		// field* (see carrierFrequency), and the true downlink/uplink carrier can
+		// be reported. SYSINFO identity (MCC/MNC/LA) still reaches the lock via the
+		// sync-burst path.
+		if si, ok := ParseSysInfo(recovered); ok {
+			c.learnSysInfo(si)
 		}
 	}
 }

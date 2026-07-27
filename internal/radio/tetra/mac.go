@@ -251,22 +251,50 @@ func ParseMACResource(bits []byte, isDecrypted bool) (MACResource, bool) {
 	return m, true
 }
 
-// SysInfoMainCarrier extracts the cell's own main carrier number from a MAC
-// broadcast SYSINFO PDU (type-1 bits, one-per-byte MSB first): MAC PDU type (2)
-// + broadcast type (2) + main carrier (12), per EN 300 392-2 §21.4.4.1. Returns
-// (0, false) unless the PDU is a broadcast whose subtype is SYSINFO.
-func SysInfoMainCarrier(bits []byte) (uint16, bool) {
-	if len(bits) < 16 {
-		return 0, false
+// SysInfo holds the cell's frequency parameters decoded from a MAC broadcast
+// SYSINFO PDU (§21.4.4.1, Table 21.65): the main carrier number plus the fields
+// that place it on an absolute frequency — frequency band, offset, duplex
+// spacing and reverse operation. See freq.go for the frequency arithmetic.
+type SysInfo struct {
+	MainCarrier   uint16 // 12-bit main carrier number (25 kHz steps)
+	FreqBand      uint8  // 4-bit frequency band (base = band × 100 MHz)
+	Offset        uint8  // 2-bit offset (0 / +6.25 / -6.25 / +12.5 kHz)
+	DuplexSpacing uint8  // 3-bit duplex spacing selector (for the uplink)
+	ReverseOper   bool   // reverse operation: add duplex spacing instead of subtract
+}
+
+// ParseSysInfo decodes the cell's frequency parameters from a MAC broadcast
+// SYSINFO PDU (type-1 bits, one-per-byte MSB first): MAC PDU type (2) = broadcast
+// + broadcast type (2) = SYSINFO + main carrier (12) + frequency band (4) +
+// offset (2) + duplex spacing (3) + reverse operation (1), per EN 300 392-2
+// §21.4.4.1 Table 21.65. Returns (zero, false) unless the PDU is a broadcast
+// whose subtype is SYSINFO.
+func ParseSysInfo(bits []byte) (SysInfo, bool) {
+	if len(bits) < 26 { // 2+2+12+4+2+3+1
+		return SysInfo{}, false
 	}
 	r := &bitReader{bits: bits}
 	if MACPDUType(r.u(2)) != MACPDUBroadcast {
-		return 0, false
+		return SysInfo{}, false
 	}
 	if r.u(2) != uint32(TETRAMACBcastSysInfo) {
-		return 0, false
+		return SysInfo{}, false
 	}
-	return uint16(r.u(12)), true
+	return SysInfo{
+		MainCarrier:   uint16(r.u(12)),
+		FreqBand:      uint8(r.u(4)),
+		Offset:        uint8(r.u(2)),
+		DuplexSpacing: uint8(r.u(3)),
+		ReverseOper:   r.bit() == 1,
+	}, true
+}
+
+// SysInfoMainCarrier extracts just the cell's own main carrier number from a MAC
+// broadcast SYSINFO PDU. Thin wrapper over ParseSysInfo for callers that only
+// need the carrier number.
+func SysInfoMainCarrier(bits []byte) (uint16, bool) {
+	si, ok := ParseSysInfo(bits)
+	return si.MainCarrier, ok
 }
 
 // tmSDU returns the TM-SDU (Layer-3 PDU) bits following the MAC header, as a

@@ -94,6 +94,16 @@ type ControlChannel struct {
 	mainCarrier    uint16
 	mainCarrierSet bool
 
+	// sysInfo holds the cell's full SYSINFO frequency parameters (band, offset,
+	// duplex spacing, reverse operation) once a SYSINFO broadcast is decoded.
+	// With these the cell's carriers resolve to their *absolute* frequency
+	// including the ±6.25/12.5 kHz offset field — a carrier a cell broadcasts as
+	// 469.875 MHz actually sits at 469.88125 MHz. sysInfoSet gates the absolute
+	// path; without it carrierFrequency falls back to 25 kHz spacing relative to
+	// the tuned control frequency (see carrierFrequency).
+	sysInfo    SysInfo
+	sysInfoSet bool
+
 	// callGroups maps a CMCE 14-bit call identifier to the group SSI (GSSI) the
 	// call is addressed to, learned from D-SETUP/D-CONNECT. A D-RELEASE /
 	// D-TX-GRANTED carries only the call identifier, so this resolves it back to
@@ -385,11 +395,19 @@ type TopologyConfig struct {
 	MNC          uint16
 	LocationArea uint16
 	ColourCode   uint32
+	// MainCarrier and the absolute downlink/uplink carrier frequencies derived
+	// from SYSINFO (§21.4.4.1) — the offset-corrected true carrier, not the tuned
+	// frequency. DownlinkHz/UplinkHz are 0 when not yet known (UplinkHz also 0
+	// when the band's duplex spacing is not mapped; see duplexSpacingHz).
+	MainCarrier uint16
+	DownlinkHz  uint32
+	UplinkHz    uint32
 }
 
 // Topology returns the accumulated single-cell identity. Safe for concurrent
 // use (reads the lock state + colour code under the control-channel mutex).
 func (c *ControlChannel) Topology() TopologyConfig {
+	dl, ul, _, _ := c.cellFrequencies()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return TopologyConfig{
@@ -397,6 +415,9 @@ func (c *ControlChannel) Topology() TopologyConfig {
 		MNC:          c.last.MNC,
 		LocationArea: c.last.LocationArea,
 		ColourCode:   c.colourCode,
+		MainCarrier:  c.mainCarrier,
+		DownlinkHz:   dl,
+		UplinkHz:     ul,
 	}
 }
 
@@ -519,31 +540,93 @@ func (c *ControlChannel) Ingest(p PDU) {
 // grant carrier's frequency relative to the cell's own carrier.
 const tetraChannelSpacingHz = 25_000
 
-// carrierFrequency derives the Hz of a TETRA carrier number relative to this
-// cell's own carrier (learned from SYSINFO) at 25 kHz spacing. Returns false
-// until both the cell's carrier and the tuned control frequency are known — so
-// an offline replay with no centre frequency simply reports 0.
+// carrierFrequency derives the Hz of a TETRA carrier number for this cell.
+//
+// When the full SYSINFO frequency parameters are known (frequency band +
+// offset), it returns the *absolute* downlink carrier — base(band) +
+// carrier*25 kHz + offset — so a grant's frequency lands on the real carrier,
+// including the ±6.25/12.5 kHz offset the cell broadcasts. Falling back (only
+// the main carrier number learned, e.g. an operator-seeded band plan), it
+// derives the carrier at 25 kHz spacing relative to the tuned control frequency.
+// Returns false until enough is known to resolve a frequency.
 func (c *ControlChannel) carrierFrequency(carrier uint16) (uint32, bool) {
 	c.mu.Lock()
+	si, siSet := c.sysInfo, c.sysInfoSet
 	mc, set := c.mainCarrier, c.mainCarrierSet
 	c.mu.Unlock()
-	if !set || c.freqHz == 0 {
+	var hz int64
+	switch {
+	case siSet:
+		hz = tetraDLCarrierHz(si.FreqBand, carrier, si.Offset)
+	case set && c.freqHz != 0:
+		hz = int64(c.freqHz) + (int64(carrier)-int64(mc))*tetraChannelSpacingHz
+	default:
 		return 0, false
 	}
-	hz := int64(c.freqHz) + (int64(carrier)-int64(mc))*tetraChannelSpacingHz
 	if hz <= 0 {
 		return 0, false
 	}
 	return uint32(hz), true
 }
 
-// learnMainCarrier records the cell's own carrier number from a SYSINFO
-// broadcast, so grant carrier numbers can resolve to Hz relative to it.
+// learnMainCarrier records the cell's own carrier number, so grant carrier
+// numbers can resolve to Hz relative to it at 25 kHz spacing. Used by the
+// relative fallback path; learnSysInfo supersedes it with absolute frequencies.
 func (c *ControlChannel) learnMainCarrier(carrier uint16) {
 	c.mu.Lock()
 	c.mainCarrier = carrier
 	c.mainCarrierSet = true
 	c.mu.Unlock()
+}
+
+// learnSysInfo records the cell's full SYSINFO frequency parameters (band,
+// offset, duplex spacing, reverse operation) so carrier numbers resolve to their
+// absolute downlink frequency including the offset field, and the true downlink
+// and uplink carrier frequencies can be reported. The first time it resolves a
+// downlink that differs from the tuned frequency it logs the offset-corrected
+// carrier — visible in debug.log, where "broadcast 469.875 but real 469.88125"
+// finally shows up.
+func (c *ControlChannel) learnSysInfo(si SysInfo) {
+	c.mu.Lock()
+	first := !c.sysInfoSet || c.sysInfo != si
+	c.sysInfo = si
+	c.sysInfoSet = true
+	c.mainCarrier = si.MainCarrier
+	c.mainCarrierSet = true
+	c.mu.Unlock()
+	if first {
+		dl := tetraDLCarrierHz(si.FreqBand, si.MainCarrier, si.Offset)
+		ul, ulOK := tetraULCarrierHz(dl, si.FreqBand, si.DuplexSpacing, si.ReverseOper)
+		c.log.Info("tetra: SYSINFO carrier",
+			"system", c.systemName,
+			"main_carrier", si.MainCarrier,
+			"band", si.FreqBand,
+			"offset_field", si.Offset,
+			"downlink_hz", dl,
+			"uplink_hz", ul,
+			"uplink_known", ulOK,
+			"tuned_hz", c.freqHz)
+	}
+}
+
+// cellFrequencies returns the cell's absolute downlink and uplink carrier
+// frequencies (Hz) derived from the learned SYSINFO. downlinkOK/uplinkOK report
+// whether each is known (uplink needs a mapped duplex spacing for the band).
+func (c *ControlChannel) cellFrequencies() (downlinkHz, uplinkHz uint32, downlinkOK, uplinkOK bool) {
+	c.mu.Lock()
+	si, set := c.sysInfo, c.sysInfoSet
+	c.mu.Unlock()
+	if !set {
+		return 0, 0, false, false
+	}
+	dl := tetraDLCarrierHz(si.FreqBand, si.MainCarrier, si.Offset)
+	if dl <= 0 {
+		return 0, 0, false, false
+	}
+	if ul, ok := tetraULCarrierHz(dl, si.FreqBand, si.DuplexSpacing, si.ReverseOper); ok && ul > 0 {
+		return uint32(dl), uint32(ul), true, true
+	}
+	return uint32(dl), 0, true, false
 }
 
 func (c *ControlChannel) publishGrant(g VoiceGrant) {

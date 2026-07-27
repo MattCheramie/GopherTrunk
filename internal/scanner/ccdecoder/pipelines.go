@@ -810,7 +810,7 @@ func (p *tetraPipeline) Close() error { return nil }
 // code) the control channel learned. No adjacent cells for TETRA.
 func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 	t := p.cc.Topology()
-	return &trunking.TopologySnapshot{
+	snap := &trunking.TopologySnapshot{
 		MCC:          t.MCC,
 		MNC:          t.MNC,
 		LocationArea: t.LocationArea,
@@ -819,6 +819,16 @@ func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 		// stray MNC bits and corrupt the surfaced value.
 		ColorCode: uint8(t.ColourCode & 0x3F),
 	}
+	// Surface the cell's own control carrier with its offset-corrected downlink
+	// frequency (§21.4.4.1) — the true carrier, not the tuned frequency — so the
+	// network-config report shows where the CC actually is.
+	if t.DownlinkHz != 0 {
+		snap.PrimaryCC = &trunking.TopoChannelRef{
+			ChannelNumber: t.MainCarrier,
+			FrequencyHz:   t.DownlinkHz,
+		}
+	}
+	return snap
 }
 
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
