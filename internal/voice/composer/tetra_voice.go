@@ -230,6 +230,18 @@ type tetraSlotDemux struct {
 	// registration order, so concurrent marker-less calls still separate instead of
 	// falling back to accept-all/mix. Best-effort; verified against real DDC IQ.
 	wildcards []*tetraSlotOwner
+
+	// Drop/fallback counters — the demux's routing was previously a telemetry
+	// blind spot (a slot-loss showed up only as an empty recording). Logged at
+	// demux teardown so a "gappy recordings" report is self-triaging: undecoded =
+	// bursts with no routable AACH marker dropped (no single owner to fall back
+	// to), ownerless = decoded traffic markers with no registered call, crcFallback
+	// = undecoded bursts routed to the sole active call via the CRC gate,
+	// collisions = two calls contending for one marker.
+	undecodedDrops   atomic.Uint64
+	ownerlessDrops   atomic.Uint64
+	crcFallbacks     atomic.Uint64
+	markerCollisions atomic.Uint64
 }
 
 // tetraSlotOwner is one call's registration with the carrier demux: the usage
@@ -264,7 +276,13 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 	})
 	d.c.log.Info("composer: tetra shared voice demux started (usage-marker routing)",
 		"key", d.key, "colour_code", d.colour&0x3F, "rate_hz", symbolHz)
-	defer d.c.log.Info("composer: tetra shared voice demux ended", "key", d.key)
+	defer func() {
+		d.c.log.Info("composer: tetra shared voice demux ended", "key", d.key,
+			"undecoded_drops", d.undecodedDrops.Load(),
+			"ownerless_drops", d.ownerlessDrops.Load(),
+			"crc_fallbacks", d.crcFallbacks.Load(),
+			"marker_collisions", d.markerCollisions.Load())
+	}()
 
 	for {
 		select {
@@ -300,7 +318,34 @@ func (d *tetraSlotDemux) observe(iq []complex64) {
 // oldest wildcard claims that marker. Runs on the single demux goroutine, so each
 // owner's boundary tracker has exactly one writer.
 func (d *tetraSlotDemux) onBurst(frame []byte, slot, usage uint8) {
+	// A burst whose AACH did not decode (usage 0) or is a control slot
+	// (< DLUsageTraffic) carries no routable marker. Dropping it outright loses
+	// the granted call's own speech whenever its AACH is momentarily
+	// un-decodable — the shared-demux gap the solo tap did not have. Fall back to
+	// the CRC gate, but ONLY when exactly one call is active (one owner and no
+	// waiting wildcard, or one waiting wildcard and no owner): with a single call
+	// there is no concurrent call to cross-talk into, so this matches the solo
+	// tap's burstUsage==0 behaviour. With ≥2 active calls an unrouteable burst is
+	// dropped (and counted) rather than mixed into an arbitrary recording.
 	if usage < tetra.DLUsageTraffic {
+		d.mu.Lock()
+		var sole *tetraSlotOwner
+		switch {
+		case len(d.owners) == 1 && len(d.wildcards) == 0:
+			for _, o := range d.owners {
+				sole = o
+			}
+		case len(d.owners) == 0 && len(d.wildcards) == 1:
+			sole = d.wildcards[0]
+		}
+		d.mu.Unlock()
+		if sole == nil {
+			d.undecodedDrops.Add(1)
+			return
+		}
+		d.crcFallbacks.Add(1)
+		sole.bursts.Add(1)
+		d.c.decodeTETRASpeech(sole.bt, sole.rs, sole.serial, frame, &sole.speech)
 		return
 	}
 	d.mu.Lock()
@@ -313,6 +358,7 @@ func (d *tetraSlotDemux) onBurst(frame []byte, slot, usage uint8) {
 	}
 	d.mu.Unlock()
 	if o == nil {
+		d.ownerlessDrops.Add(1)
 		return
 	}
 	o.bursts.Add(1)
@@ -325,6 +371,15 @@ func (d *tetraSlotDemux) onBurst(frame []byte, slot, usage uint8) {
 func (d *tetraSlotDemux) addOwner(o *tetraSlotOwner) {
 	d.mu.Lock()
 	if o.marker >= tetra.DLUsageTraffic {
+		if prev := d.owners[o.marker]; prev != nil && prev != o {
+			// Two live calls contending for one on-air marker: most-recent-grant
+			// wins (a reused marker must displace a hangtime-lingering call), but
+			// if these are genuinely concurrent the prior call now starves. Count
+			// + warn so the case is visible rather than a silent empty recording.
+			d.markerCollisions.Add(1)
+			d.c.log.Warn("composer: tetra usage-marker collision — newest call takes the marker, prior call starves",
+				"key", d.key, "marker", o.marker, "prev", prev.serial, "new", o.serial)
+		}
 		d.owners[o.marker] = o
 	} else {
 		d.wildcards = append(d.wildcards, o)
