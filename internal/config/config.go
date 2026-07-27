@@ -1472,13 +1472,18 @@ type SystemConfig struct {
 	// pre-stripped fixtures). Ignored for non-P25-Phase-2 protocols.
 	P25Phase2TrellisMode string `yaml:"p25_phase2_trellis_mode"`
 	// P25Phase2RSMode enables the outer Reed-Solomon RS(24, 16, 9)
-	// verification layer on top of the trellis-decoded MAC PDU.
-	// Recognised values: "" / "off" / "false" / "0" (the default —
-	// no outer RS verification; matches historical decoder
-	// behaviour) or "on" / "true" / "1" (verify RS syndromes per
-	// TIA-102.BAAA-A §5.9; drop MAC PDUs whose syndromes are
-	// non-zero before parsing). Ignored for non-P25-Phase-2
-	// protocols.
+	// layer on top of the trellis-decoded MAC PDU. Recognised values:
+	// "" / "off" / "false" / "0" (the default — no outer RS; matches
+	// historical decoder behaviour); "on" / "true" / "1" (verify RS
+	// syndromes per TIA-102.BAAA-A §5.9 and drop MAC PDUs whose
+	// syndromes are non-zero — detection only); or "correct" / "fix" /
+	// "ecc" (bounded-distance error *correction* of up to t=4 symbol
+	// errors before parsing, instead of dropping the PDU — the
+	// weak-frame recovery path for issue #915 that lets marginal-SNR
+	// traffic-channel MAC PDUs still yield a source RID). "correct"
+	// strictly supersets "on"; a corrected PDU is additionally gated on
+	// a recognised opcode so a wrong-phase window cannot be miscorrected
+	// into a bogus PDU. Ignored for non-P25-Phase-2 protocols.
 	P25Phase2RSMode string `yaml:"p25_phase2_rs_mode"`
 	// P25Phase2InterleaveMode enables the TIA-102.BBAC per-burst block
 	// deinterleaver applied to the MAC-burst dibits before trellis

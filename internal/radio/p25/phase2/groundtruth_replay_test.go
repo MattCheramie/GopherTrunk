@@ -188,10 +188,23 @@ func gtDecodeSource(win []uint8, seed uint64, phase int) (rid uint32, rsValid, i
 		return 0, false, false
 	}
 	packed := framing.PackBitsMSB(framing.DibitsToBits(info))
-	if len(packed) < 18 || !gtVerifyRS(packed[:18]) {
+	if len(packed) < 18 {
 		return 0, false, false
 	}
-	pdu, err := p25p2.ParseMACPDU(packed[:18])
+	// RSCorrect path (issue #915): the detection-only gate drops any window
+	// with a residual symbol error, which is why the demod baseline recovered
+	// 0 RIDs. Correct up to t=4 symbol errors instead, and — since
+	// t=4 correction admits ~6e-4 of random windows at a wrong descramble phase
+	// — require the corrected PDU to carry a recognised opcode before trusting
+	// it, mirroring the production gateMACPDURS.
+	corrected, nErr, ok := gtCorrectRS(packed[:18])
+	if !ok {
+		return 0, false, false
+	}
+	if nErr > 0 && !p25p2.Opcode(corrected[0]).IsKnown() {
+		return 0, false, false
+	}
+	pdu, err := p25p2.ParseMACPDU(corrected)
 	if err != nil {
 		return 0, true, false
 	}
@@ -201,7 +214,14 @@ func gtDecodeSource(win []uint8, seed uint64, phase int) (rid uint32, rsValid, i
 	return 0, true, false
 }
 
-func gtVerifyRS(pdu []byte) bool {
+// gtCorrectRS mirrors the production correctMACPDURS: it regroups the 18-byte
+// MAC PDU into 24 GF(2^6) symbols (MSB-first), corrects up to t=4 symbol errors
+// via framing.DecodeRS24_16, and re-encodes to a clean 18-byte codeword. ok is
+// false when the window is beyond the correction radius.
+func gtCorrectRS(pdu []byte) (corrected []byte, nErr int, ok bool) {
+	if len(pdu) != 18 {
+		return nil, 0, false
+	}
 	var bits [144]byte
 	for i := 0; i < 18; i++ {
 		for j := 0; j < 8; j++ {
@@ -216,7 +236,26 @@ func gtVerifyRS(pdu []byte) bool {
 		}
 		syms[i] = s
 	}
-	return framing.VerifyRS24_16(syms[:])
+	info, nErr, err := framing.DecodeRS24_16(syms[:])
+	if err != nil {
+		return nil, 0, false
+	}
+	cw := framing.EncodeRS24_16(info)
+	var outBits [144]byte
+	for i := 0; i < 24; i++ {
+		for j := 0; j < 6; j++ {
+			outBits[i*6+j] = (cw[i] >> uint(5-j)) & 1
+		}
+	}
+	out := make([]byte, 18)
+	for i := 0; i < 18; i++ {
+		var b byte
+		for j := 0; j < 8; j++ {
+			b = (b << 1) | outBits[i*8+j]
+		}
+		out[i] = b
+	}
+	return out, nErr, true
 }
 
 func TestGroundTruthReplay(t *testing.T) {

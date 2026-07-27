@@ -856,8 +856,8 @@ func applyP25Phase2Modes(cc *p25phase2.ControlChannel, sys trunking.System, log 
 		log.Warn("widebandt2: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", sys.Name, "value", sys.P25Phase2ScramblerMode)
 	}
-	if scramblerMode == p25phase2.ScramblerProbe && rsMode != p25phase2.RSOn {
-		log.Warn("widebandt2: p25_phase2_scrambler_mode=probe requires p25_phase2_rs_mode=on; descrambler will degrade to offset 0",
+	if scramblerMode == p25phase2.ScramblerProbe && !rsMode.Enabled() {
+		log.Warn("widebandt2: p25_phase2_scrambler_mode=probe requires p25_phase2_rs_mode=on or =correct; descrambler will degrade to offset 0",
 			"system", sys.Name)
 	}
 	cc.SetScramblerMode(scramblerMode)
