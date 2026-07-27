@@ -87,14 +87,14 @@ func TestLLCRealignsCMCE(t *testing.T) {
 	c := &cmceBitWriter{}
 	c.header(CMCETypeDSetup)
 	c.u(callID, 14)
-	c.u(0, 4+1+1+8+2+1)                // timeout..txReqPerm
+	c.u(0, 4+1+1+8+2+1) // timeout..txReqPerm
 	c.u(uint64(callPriorityEmergency), 4)
-	c.u(1, 1)                          // O-bit
-	c.opt(false, 0, 6)                 // notification indicator absent
-	c.opt(true, gssi, 24)              // temporary address (GSSI)
-	c.pbit(true)                       // calling party type identifier present
-	c.u(1, 2)                          // CPTI = 1 ⇒ SSI present
-	c.u(issi, 24)                      // calling party SSI (ISSI)
+	c.u(1, 1)             // O-bit
+	c.opt(false, 0, 6)    // notification indicator absent
+	c.opt(true, gssi, 24) // temporary address (GSSI)
+	c.pbit(true)          // calling party type identifier present
+	c.u(1, 2)             // CPTI = 1 ⇒ SSI present
+	c.u(issi, 24)         // calling party SSI (ISSI)
 
 	// Wrap it in a BL-ADATA LLC PDU (4-bit type + N(R) + N(S) = 6-bit header).
 	llcPDU := append(bl(llcBLADATA, 2), c.bits...)

@@ -54,11 +54,11 @@ func TestTetraDLCarrierHz(t *testing.T) {
 		offset  uint8
 		want    int64
 	}{
-		{4, 2795, 0, 469_875_000},   // no offset: nominal
-		{4, 2795, 1, 469_881_250},   // +6.25 kHz — the reported cell
-		{4, 2795, 2, 469_868_750},   // -6.25 kHz
-		{4, 2795, 3, 469_887_500},   // +12.5 kHz
-		{4, 2716, 3, 467_912_500},   // the 467.913 capture (offset field 3)
+		{4, 2795, 0, 469_875_000}, // no offset: nominal
+		{4, 2795, 1, 469_881_250}, // +6.25 kHz — the reported cell
+		{4, 2795, 2, 469_868_750}, // -6.25 kHz
+		{4, 2795, 3, 469_887_500}, // +12.5 kHz
+		{4, 2716, 3, 467_912_500}, // the 467.913 capture (offset field 3)
 	}
 	for _, tc := range cases {
 		if got := tetraDLCarrierHz(tc.band, tc.carrier, tc.offset); got != tc.want {
