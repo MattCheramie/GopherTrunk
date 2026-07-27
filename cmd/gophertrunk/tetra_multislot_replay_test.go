@@ -79,12 +79,18 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 	}
 	usage := map[uint8]*usageAcc{}
 
-	var totalBursts, anchoredBursts int
+	var totalBursts, anchoredBursts, trafficMarked, trafficMarkedCRC int
 	errsHist := map[string]int{}
 	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, slot, mark uint8) {
 		totalBursts++
 		if slot != 0 {
 			anchoredBursts++
+		}
+		if mark >= tetra.DLUsageTraffic {
+			trafficMarked++
+			if len(tetra.TCHSpeechFrames(frame)) > 0 {
+				trafficMarkedCRC++
+			}
 		}
 		if _, _, _, errs, ok := tetra.DecodeTCHS(frame); ok {
 			switch {
@@ -153,7 +159,7 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 	}
 
 	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs", inRate, outRate, len(iq), float64(len(iq))/inRate)
-	t.Logf("total_bursts=%d anchored=%d errs_hist=%v", totalBursts, anchoredBursts, errsHist)
+	t.Logf("total_bursts=%d anchored=%d traffic_marked=%d traffic_marked_crc=%d errs_hist=%v", totalBursts, anchoredBursts, trafficMarked, trafficMarkedCRC, errsHist)
 	outDir := os.Getenv("GT_TETRA_OUT")
 	for tn := 1; tn <= 4; tn++ {
 		s := slots[tn]

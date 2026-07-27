@@ -1473,3 +1473,113 @@ func TestEngineHandleCallEncryptionEnrichedRepublishDoesNotLoop(t *testing.T) {
 		// pass
 	}
 }
+
+// TestEngineHandleCallReleaseEndsCall: a decoded call-teardown (e.g. TETRA CMCE
+// D-RELEASE) ends the active call for that (System, GroupID) at once — the fix
+// for TETRA calls that otherwise only ended on the ~7 s no-voice timeout. A
+// zero Reason defaults to EndReasonReleased.
+func TestEngineHandleCallReleaseEndsCall(t *testing.T) {
+	e, pool, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	if len(pool.Active()) != 1 {
+		t.Fatalf("precondition: want 1 active call, got %d", len(pool.Active()))
+	}
+
+	e.handleCallRelease(CallRelease{System: "X", GroupID: 100})
+
+	c := &testBusCollector{}
+	evs := c.drain(sub, 2, 500*time.Millisecond)
+	var end *CallEnd
+	for _, ev := range evs {
+		if ev.Kind == events.KindCallEnd {
+			ce := ev.Payload.(CallEnd)
+			end = &ce
+		}
+	}
+	if end == nil {
+		t.Fatal("no call.end published after release")
+	}
+	if end.Reason != EndReasonReleased {
+		t.Errorf("end reason = %v, want released", end.Reason)
+	}
+	if end.Grant.GroupID != 100 {
+		t.Errorf("ended call GroupID = %d, want 100", end.Grant.GroupID)
+	}
+	if len(pool.Active()) != 0 {
+		t.Errorf("call still active after release: %d", len(pool.Active()))
+	}
+}
+
+// TestEngineHandleCallReleaseNoMatchNoop: a release for a group with no active
+// call is harmless.
+func TestEngineHandleCallReleaseNoMatchNoop(t *testing.T) {
+	e, pool, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	e.handleCallRelease(CallRelease{System: "X", GroupID: 999}) // different group
+	if len(pool.Active()) != 1 {
+		t.Errorf("unrelated release ended the call: active=%d", len(pool.Active()))
+	}
+}
+
+// TestEngineHandleCallReleaseIdempotent: two releases for the same call publish
+// exactly one call.end (the pool release is idempotent), so a release racing the
+// hangtime end can't double-end.
+func TestEngineHandleCallReleaseIdempotent(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	e.handleCallRelease(CallRelease{System: "X", GroupID: 100})
+	e.handleCallRelease(CallRelease{System: "X", GroupID: 100})
+
+	c := &testBusCollector{}
+	evs := c.drain(sub, 3, 300*time.Millisecond)
+	ends := 0
+	for _, ev := range evs {
+		if ev.Kind == events.KindCallEnd {
+			ends++
+		}
+	}
+	if ends != 1 {
+		t.Errorf("call.end published %d times, want exactly 1", ends)
+	}
+}
+
+// TestEngineHandleCallTalkerUpdatesSource: a decoded transmitting party (TETRA
+// CMCE D-TX-GRANTED) backfills the active call's source via the source-update
+// path.
+func TestEngineHandleCallTalkerUpdatesSource(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	e.handleCallTalker(CallTalker{System: "X", GroupID: 100, SourceID: 4242})
+
+	c := &testBusCollector{}
+	evs := c.drain(sub, 3, 500*time.Millisecond)
+	var upd *CallSourceUpdate
+	for _, ev := range evs {
+		if ev.Kind == events.KindCallSourceUpdate {
+			u := ev.Payload.(CallSourceUpdate)
+			if u.System != "" { // the engine's enriched republish
+				upd = &u
+			}
+		}
+	}
+	if upd == nil {
+		t.Fatal("no enriched call.source published after talker update")
+	}
+	if upd.SourceID != 4242 || upd.GroupID != 100 {
+		t.Errorf("source update = %+v, want src 4242 group 100", *upd)
+	}
+}

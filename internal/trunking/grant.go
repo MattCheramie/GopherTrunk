@@ -215,6 +215,12 @@ const (
 	// tuner was freed by policy, not by a decode problem or a higher-
 	// priority preemption. Issue #711.
 	EndReasonEncrypted
+	// EndReasonReleased is an explicit, decoded call-teardown end: the
+	// control-channel decoder saw a channel-release message (e.g. a TETRA CMCE
+	// D-RELEASE) and ended the call at once. Distinct from EndReasonNormal (a
+	// hangtime/carrier-drop inference) and EndReasonTimeout (silent from start)
+	// so operators can see the call ended because the network said so.
+	EndReasonReleased
 )
 
 func (r EndReason) String() string {
@@ -235,6 +241,8 @@ func (r EndReason) String() string {
 		return "manual"
 	case EndReasonEncrypted:
 		return "encrypted"
+	case EndReasonReleased:
+		return "released"
 	default:
 		return "unknown"
 	}
@@ -350,6 +358,31 @@ type CallSourceUpdate struct {
 	SourceID     uint32
 	Encrypted    bool
 	At           time.Time
+}
+
+// CallRelease is the payload of an events.KindCallRelease event. A
+// control-channel decoder publishes one when it decodes an explicit
+// call-teardown message (e.g. a TETRA CMCE D-RELEASE). The engine ends every
+// active call matching (System, GroupID) at once, instead of waiting out the
+// hangtime/no-voice timers. Keyed by talkgroup because a TETRA release rides in
+// a MAC-RESOURCE addressed to the GSSI and carries no device/serial notion.
+type CallRelease struct {
+	System  string
+	GroupID uint32
+	Reason  EndReason
+	At      time.Time
+}
+
+// CallTalker is the payload of an events.KindCallTalker event. A control-channel
+// decoder publishes one when it resolves the current transmitting party of an
+// active call (e.g. a TETRA CMCE D-TX-GRANTED carrying the transmitting party
+// SSI). The engine resolves (System, GroupID) to the bound device and backfills
+// the source via the KindCallSourceUpdate path.
+type CallTalker struct {
+	System   string
+	GroupID  uint32
+	SourceID uint32
+	At       time.Time
 }
 
 // SiteUpdate is the payload of an events.KindSiteUpdate event. The P25

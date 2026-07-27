@@ -229,6 +229,14 @@ func (e *Engine) Run(ctx context.Context) error {
 				if c, ok := ev.Payload.(CallSourceUpdate); ok {
 					e.handleCallSourceUpdate(c)
 				}
+			case events.KindCallRelease:
+				if r, ok := ev.Payload.(CallRelease); ok {
+					e.handleCallRelease(r)
+				}
+			case events.KindCallTalker:
+				if t, ok := ev.Payload.(CallTalker); ok {
+					e.handleCallTalker(t)
+				}
 			case events.KindTalkerAlias:
 				if a, ok := ev.Payload.(TalkerAlias); ok {
 					e.handleTalkerAlias(a)
@@ -609,6 +617,54 @@ func (e *Engine) handleCallSourceUpdate(c CallSourceUpdate) {
 		"src", enriched.SourceID,
 		"enc", enriched.Encrypted)
 	e.applyEncryptedPolicy(c.DeviceSerial, g, g.Encrypted)
+}
+
+// callsBySystemGroup returns the active calls bound to a given system +
+// talkgroup. A TETRA release/talker event is keyed by (System, GroupID) because
+// the CMCE PDU that produced it is addressed to the GSSI and carries no device
+// serial. Snapshots pool.Active(), so callers may end/mutate the results without
+// holding a lock (endCall re-checks via the idempotent pool.Release).
+func (e *Engine) callsBySystemGroup(system string, group uint32) []*ActiveCall {
+	var out []*ActiveCall
+	for _, ac := range e.pool.Active() {
+		if ac.Grant.System == system && ac.Grant.GroupID == group {
+			out = append(out, ac)
+		}
+	}
+	return out
+}
+
+// handleCallRelease ends every active call matching the released (System,
+// GroupID) at once — the decoded-teardown path that replaces waiting out the
+// composer's hangtime/no-voice timers. A no-match release is a harmless no-op
+// (the call may have already ended, or was never followed). endCall is
+// idempotent (pool.Release returns nil if already released), so a release racing
+// the hangtime end still publishes exactly one CallEnd.
+func (e *Engine) handleCallRelease(r CallRelease) {
+	reason := r.Reason
+	if reason == EndReasonUnknown {
+		reason = EndReasonReleased
+	}
+	for _, ac := range e.callsBySystemGroup(r.System, r.GroupID) {
+		e.endCall(ac, reason)
+	}
+}
+
+// handleCallTalker backfills the current transmitting party onto the active
+// call(s) for (System, GroupID), reusing the KindCallSourceUpdate path (keyed by
+// the resolved device serial). A talker update for an unfollowed call resolves
+// to no serials and is a no-op.
+func (e *Engine) handleCallTalker(t CallTalker) {
+	if t.SourceID == 0 {
+		return
+	}
+	for _, ac := range e.callsBySystemGroup(t.System, t.GroupID) {
+		e.handleCallSourceUpdate(CallSourceUpdate{
+			DeviceSerial: ac.Device.Serial,
+			SourceID:     t.SourceID,
+			At:           t.At,
+		})
+	}
 }
 
 // republishCallSource emits an enriched KindCallSourceUpdate for a source

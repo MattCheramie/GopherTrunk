@@ -374,3 +374,73 @@ func TestTETRADemuxWildcardBinding(t *testing.T) {
 		t.Errorf("bound wildcard grabbed a second marker: %d frames, want 4", n)
 	}
 }
+
+// TestTETRADemuxCRCFallbackSingleOwner: when only one call is active and a burst
+// arrives with an undecoded/non-traffic AACH marker (usage 0), the demux falls
+// back to the CRC gate and routes it to that sole owner — parity with the solo
+// tap. Before this fallback the shared demux dropped every usage-0 burst, so a
+// single marker-less (plain-SSI grant) call decoded no speech.
+func TestTETRADemuxCRCFallbackSingleOwner(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	o, rs := newDemuxOwner(c, "A", 0) // wildcard: grant carried no usage marker
+	d.addOwner(o)
+
+	d.onBurst(frame, 2, 0) // undecoded AACH, single active call → CRC fallback
+	if n := len(rs.rawFrames("A")); n != 2 {
+		t.Errorf("single-owner CRC fallback: A got %d frames, want 2", n)
+	}
+	if got := d.crcFallbacks.Load(); got != 1 {
+		t.Errorf("crcFallbacks = %d, want 1", got)
+	}
+}
+
+// TestTETRADemuxCRCFallbackNoCrossTalkConcurrent is the cross-talk guard: with
+// two concurrent calls active, a burst whose AACH did not decode (usage 0) is
+// NOT routed to either — there is no way to tell which call it belongs to, so
+// mixing it into an arbitrary recording is worse than dropping. It is counted.
+func TestTETRADemuxCRCFallbackNoCrossTalkConcurrent(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	oA, rsA := newDemuxOwner(c, "A", 19)
+	oB, rsB := newDemuxOwner(c, "B", 20)
+	d.addOwner(oA)
+	d.addOwner(oB)
+
+	d.onBurst(frame, 2, 0) // undecoded AACH, two active calls → drop, no cross-talk
+	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 0 {
+		t.Errorf("undecoded burst leaked to a concurrent owner: %d frames, want 0", n)
+	}
+	if got := d.undecodedDrops.Load(); got != 1 {
+		t.Errorf("undecodedDrops = %d, want 1", got)
+	}
+}
+
+// TestTETRADemuxMarkerCollisionCounted: two calls registering the same usage
+// marker is now counted + warned (previously a silent orphan). Most-recent-grant
+// still wins the marker (existing eviction semantics preserved).
+func TestTETRADemuxMarkerCollisionCounted(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	oOld, rsOld := newDemuxOwner(c, "old", 19)
+	oNew, rsNew := newDemuxOwner(c, "new", 19)
+	d.addOwner(oOld)
+	d.addOwner(oNew) // collision on marker 19
+
+	if got := d.markerCollisions.Load(); got != 1 {
+		t.Errorf("markerCollisions = %d, want 1", got)
+	}
+	d.onBurst(frame, 1, 19) // newest owns the marker
+	if n := len(rsNew.rawFrames("new")); n != 2 {
+		t.Errorf("newest owner got %d frames, want 2 (most-recent-grant wins)", n)
+	}
+	if n := len(rsOld.rawFrames("old")); n != 0 {
+		t.Errorf("displaced owner got %d frames, want 0 (starved by collision)", n)
+	}
+}

@@ -191,13 +191,25 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 		if !ok || m.NullPDU {
 			return
 		}
-		if m.ChanAlloc != nil {
-			c.publishGrantFromMAC(m)
-		}
+		// Parse the L3 CMCE PDU first (bit-accurate, from the raw TM-SDU bits) so
+		// a grant can be enriched with its emergency flag + source SSI, and so a
+		// D-RELEASE / D-TX change can act on the same MAC-RESOURCE's address.
+		var (
+			msg      CMCEMessage
+			haveCMCE bool
+		)
 		if sdu := m.tmSDU(recovered); sdu != nil {
+			msg, haveCMCE = ParseCMCE(sdu)
+			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
 			if pdu, err := PDUFromBits(sdu); err == nil {
 				c.Ingest(pdu)
 			}
+		}
+		if m.ChanAlloc != nil {
+			c.publishGrantFromMAC(m, msg, haveCMCE)
+		}
+		if haveCMCE {
+			c.handleCMCE(m, msg)
 		}
 	case MACPDUBroadcast:
 		// Learn the cell's own carrier number so grant carrier numbers resolve
@@ -210,14 +222,14 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 }
 
 // publishGrantFromMAC turns a MAC-RESOURCE channel allocation into a voice
-// grant. The physical resource (carrier + timeslot) comes from the MAC
-// channel-allocation element; the addressed party SSI is the grant's group/dest
-// identity. Source SSI and the emergency/group flags live in the CMCE TM-SDU and
-// are filled once fragment reassembly surfaces the full CMCE PDU.
-func (c *ControlChannel) publishGrantFromMAC(m MACResource) {
+// grant. The physical resource (carrier + timeslot) and the addressed group SSI
+// come from the MAC layer (reliable, bit-accurate). When the same MAC-RESOURCE's
+// CMCE TM-SDU decoded (haveCMCE), the grant is enriched with the correctly
+// decoded emergency flag and — when present — the calling party's source SSI.
+func (c *ControlChannel) publishGrantFromMAC(m MACResource, msg CMCEMessage, haveCMCE bool) {
 	// A grant on the CC is itself enough to declare the channel locked.
 	c.maybeLock(LockState{FrequencyHz: c.freqHz})
-	c.publishGrant(VoiceGrant{
+	g := VoiceGrant{
 		DestSSI:       m.Address.SSI,
 		CarrierNumber: m.ChanAlloc.CarrierNumber,
 		Timeslot:      m.ChanAlloc.Timeslot & 0x3,
@@ -228,5 +240,45 @@ func (c *ControlChannel) publishGrantFromMAC(m MACResource) {
 		// plain-SSI grant, which falls the voice chain back to CRC-gated isolation.
 		UsageMarker: m.Address.UsageMarker,
 		Encrypted:   m.Encrypted,
-	})
+	}
+	if haveCMCE {
+		g.Emergency = msg.Emergency
+		if msg.PartySSI != 0 {
+			g.SourceSSI = msg.PartySSI
+		}
+	}
+	c.publishGrant(g)
+}
+
+// handleCMCE acts on a decoded CMCE call-control PDU that rode in a MAC-RESOURCE
+// addressed to m.Address.SSI (the GSSI for a group call). It learns the
+// call-identifier → group mapping from setup PDUs so a later release/talker PDU
+// resolves to the talkgroup the engine keys calls by, ends a call on D-RELEASE,
+// and surfaces the transmitting party on D-TX-GRANTED.
+func (c *ControlChannel) handleCMCE(m MACResource, msg CMCEMessage) {
+	switch msg.Type {
+	case CMCETypeDSetup, CMCETypeDConnect:
+		// Map to the MAC-RESOURCE address SSI — the exact value publishGrantFromMAC
+		// uses as the grant's group id, so a later release/talker resolves to the
+		// same key the engine tracks the call by. Fall back to the CMCE temporary
+		// address only when the MAC address is not an SSI (0).
+		gssi := m.Address.SSI
+		if gssi == 0 {
+			gssi = msg.GroupSSI
+		}
+		c.rememberCall(msg.CallIdentifier, gssi)
+	case CMCETypeDRelease:
+		gssi := c.resolveGroup(msg.CallIdentifier, m.Address.SSI)
+		c.publishRelease(gssi, msg.DisconnectCause)
+		c.forgetCall(msg.CallIdentifier)
+	case CMCETypeDTxGranted:
+		if msg.PartySSI != 0 {
+			gssi := c.resolveGroup(msg.CallIdentifier, m.Address.SSI)
+			c.publishTalker(gssi, msg.PartySSI)
+		}
+	case CMCETypeDTxCeased:
+		// Transmission boundary within a call; no engine action today (a
+		// CallSourceUpdate cannot represent "talker stopped"). Hook for a future
+		// KindCallSegment emission.
+	}
 }

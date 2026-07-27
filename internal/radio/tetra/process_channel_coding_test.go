@@ -93,9 +93,11 @@ func TestProcessChannelCodingOnSCHHDRoundTrip(t *testing.T) {
 	}
 }
 
-// TestProcessChannelCodingOnSCHFRoundTrip: same idea but with a
-// full-slot signaling channel (432 type-5 bits / 216 dibits) and
-// a CMCE D-CONNECT (voice grant) PDU.
+// TestProcessChannelCodingOnSCHFRoundTrip: same idea but with a full-slot
+// signaling channel (432 type-5 bits / 216 dibits). It carries an MLE SYSINFO
+// (the L3 PDU the legacy Process/Ingest path still surfaces — grants are decoded
+// from the MAC layer, not this path) and asserts cc.locked, exercising the
+// SCH/F FEC round-trip end to end.
 func TestProcessChannelCodingOnSCHFRoundTrip(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()
@@ -120,15 +122,10 @@ func TestProcessChannelCodingOnSCHFRoundTrip(t *testing.T) {
 	// exercises the intended decode path.
 	cc.SetColourCode(0x1234)
 
-	// CMCE D-CONNECT carrying a VoiceGrant for talkgroup 0xCAFE,
-	// source 0xAAAAAA, dest 0xBBBBBB, carrier 7, group flag set.
-	payload := make([]byte, 11)
-	payload[0], payload[1] = 0x00, 0x04 // CID = 1
-	payload[2], payload[3], payload[4] = 0xAA, 0xAA, 0xAA
-	payload[5], payload[6], payload[7] = 0xBB, 0xBB, 0xBB
-	payload[8] = 0x80                    // group flag
-	payload[9], payload[10] = 0x00, 0x70 // carrier 7
-	pdu := PDU{Disc: DiscCMCE, Type: uint8(CMCEDConnect), Payload: payload}
+	// An MLE SYSINFO PDU carried over SCH/F; the legacy Process/Ingest path
+	// surfaces it as cc.locked. (Grants are decoded from the MAC layer, covered
+	// by downlink_test.go.)
+	pdu := PDU{Disc: DiscMLE, Type: uint8(MLESystemInfo), Payload: buildSysInfoPayload(206, 1, 5)}
 	info := pduToType1Bits(pdu, 268)
 	if info == nil {
 		t.Fatalf("PDU too large for SCH/F 268 type-1 bits")
@@ -145,16 +142,16 @@ func TestProcessChannelCodingOnSCHFRoundTrip(t *testing.T) {
 
 	cc.Process(stream, 0)
 
-	var sawGrant bool
+	var sawLock bool
 	for {
 		select {
 		case ev := <-sub.C:
-			if ev.Kind == events.KindGrant {
-				sawGrant = true
+			if ev.Kind == events.KindCCLocked {
+				sawLock = true
 			}
 		default:
-			if !sawGrant {
-				t.Errorf("ChannelCodingOn Process did not publish KindGrant for a CMCE D-CONNECT encoded via SCH/F")
+			if !sawLock {
+				t.Errorf("ChannelCodingOn Process did not publish cc.locked for an MLE SYSINFO encoded via SCH/F")
 			}
 			return
 		}

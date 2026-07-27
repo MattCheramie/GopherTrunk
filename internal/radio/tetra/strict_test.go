@@ -52,37 +52,34 @@ func TestStrictValidationDropsUnknownDiscriminator(t *testing.T) {
 }
 
 // TestStrictValidationKeepsKnownPDU: a PDU with a recognised
-// (Discriminator, Type) pair must still publish its event under
-// strict mode. Uses a D-CONNECT carrying a voice grant.
+// (Discriminator, Type) pair must still publish its event under strict mode.
+// Uses an MLE SYSINFO, the L3 PDU Ingest still surfaces (grants/teardown are
+// decoded from the MAC layer, not Ingest — see downlink.go).
 func TestStrictValidationKeepsKnownPDU(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Sys"})
+	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Sys", FrequencyHz: 410_000_000})
 	cc.SetStrictValidation(true)
 
-	// Build a minimal D-CONNECT payload: 14-bit CID + flags, source SSI,
-	// dest SSI, flags byte, carrier+slot. Channel 7, slot 0, group call.
-	payload := make([]byte, 11)
-	payload[0], payload[1] = 0x00, 0x04 // CID = 1 in upper 14 bits
-	payload[2], payload[3], payload[4] = 0xAA, 0xAA, 0xAA
-	payload[5], payload[6], payload[7] = 0xBB, 0xBB, 0xBB
-	payload[8] = 0x80                    // group flag set
-	payload[9], payload[10] = 0x00, 0x70 // carrier 7 in upper 12 bits, slot 0
-	cc.Ingest(PDU{Disc: DiscCMCE, Type: uint8(CMCEDConnect), Payload: payload})
+	cc.Ingest(PDU{
+		Disc:    DiscMLE,
+		Type:    uint8(MLESystemInfo),
+		Payload: buildSysInfoPayload(206, 1, 5),
+	})
 
 	got := 0
 	for {
 		select {
 		case ev := <-sub.C:
-			if ev.Kind == events.KindGrant {
+			if ev.Kind == events.KindCCLocked {
 				got++
 			}
 		default:
 			if got == 0 {
-				t.Errorf("strict-mode D-CONNECT did not publish a Grant")
+				t.Errorf("strict-mode MLE SYSINFO did not publish cc.locked")
 			}
 			return
 		}

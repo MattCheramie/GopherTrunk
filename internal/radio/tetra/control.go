@@ -94,6 +94,13 @@ type ControlChannel struct {
 	mainCarrier    uint16
 	mainCarrierSet bool
 
+	// callGroups maps a CMCE 14-bit call identifier to the group SSI (GSSI) the
+	// call is addressed to, learned from D-SETUP/D-CONNECT. A D-RELEASE /
+	// D-TX-GRANTED carries only the call identifier, so this resolves it back to
+	// the talkgroup the engine keys active calls by. Lazily built; entries are
+	// dropped on release. Guarded by mu.
+	callGroups map[uint16]uint32
+
 	// pendingSoft holds the per-symbol complex differential (soft
 	// information) for the next Process call, stashed by StashSoft
 	// immediately before the matching dibit chunk arrives (see
@@ -500,14 +507,12 @@ func (c *ControlChannel) Ingest(p PDU) {
 			MNC:          sb.MNC,
 			LocationArea: sb.LocationArea,
 		})
-		return
 	}
-	if g, ok := p.AsVoiceGrant(); ok {
-		// Even without a prior SYSINFO, a voice grant on the CC is
-		// enough to declare the channel locked.
-		c.maybeLock(LockState{FrequencyHz: c.freqHz})
-		c.publishGrant(g)
-	}
+	// Voice grants and call teardown are NOT parsed here: on real air they ride
+	// in a bit-packed CMCE TM-SDU that the byte-aligned ParsePDU cannot frame
+	// (a 3-bit MLE discriminator + 5-bit type, not 4+4). They are decoded
+	// bit-accurately from the MAC layer instead — see downlink.go handleCMCE,
+	// where the MAC-RESOURCE address already gives the reliable GSSI.
 }
 
 // tetraChannelSpacingHz is the TETRA carrier spacing (25 kHz), used to derive a
@@ -589,6 +594,82 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 		"src", g.SourceSSI, "dst", g.DestSSI,
 		"carrier", g.CarrierNumber, "slot", g.Timeslot, "freq_hz", freq,
 		"group", g.Group, "enc", g.Encrypted, "emer", g.Emergency)
+}
+
+// rememberCall records the call-identifier → group-SSI mapping learned from a
+// D-SETUP/D-CONNECT, so a later D-RELEASE/D-TX-GRANTED (which carries only the
+// call identifier) can be resolved back to the talkgroup. No-op for a zero
+// group.
+func (c *ControlChannel) rememberCall(callID uint16, gssi uint32) {
+	if gssi == 0 {
+		return
+	}
+	c.mu.Lock()
+	if c.callGroups == nil {
+		c.callGroups = make(map[uint16]uint32)
+	}
+	c.callGroups[callID] = gssi
+	c.mu.Unlock()
+}
+
+// resolveGroup maps a CMCE call identifier to its group SSI, preferring the
+// learned D-SETUP/D-CONNECT mapping and falling back to the MAC-RESOURCE address
+// SSI the PDU was addressed under (which for a group call is the GSSI). Returns
+// 0 when neither is known.
+func (c *ControlChannel) resolveGroup(callID uint16, addrSSI uint32) uint32 {
+	c.mu.Lock()
+	gssi := c.callGroups[callID]
+	c.mu.Unlock()
+	if gssi != 0 {
+		return gssi
+	}
+	return addrSSI
+}
+
+// forgetCall drops a call-identifier mapping once its call has been released.
+func (c *ControlChannel) forgetCall(callID uint16) {
+	c.mu.Lock()
+	delete(c.callGroups, callID)
+	c.mu.Unlock()
+}
+
+// publishRelease emits a KindCallRelease so the engine ends the active call for
+// this talkgroup at once, rather than waiting out the voice hangtime/no-voice
+// timers. No-op without a bus or a resolvable group.
+func (c *ControlChannel) publishRelease(gssi uint32, cause uint8) {
+	if c.bus == nil || gssi == 0 {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindCallRelease,
+		Payload: trunking.CallRelease{
+			System:  c.systemName,
+			GroupID: gssi,
+			Reason:  trunking.EndReasonReleased,
+			At:      c.now(),
+		},
+	})
+	c.log.Debug("tetra: call release",
+		"system", c.systemName, "group", gssi, "cause", cause)
+}
+
+// publishTalker emits a KindCallTalker so the engine backfills the current
+// transmitting party's SSI onto the active call for this talkgroup.
+func (c *ControlChannel) publishTalker(gssi, src uint32) {
+	if c.bus == nil || gssi == 0 || src == 0 {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindCallTalker,
+		Payload: trunking.CallTalker{
+			System:   c.systemName,
+			GroupID:  gssi,
+			SourceID: src,
+			At:       c.now(),
+		},
+	})
+	c.log.Debug("tetra: call talker",
+		"system", c.systemName, "group", gssi, "src", src)
 }
 
 // noteActivity stamps the control-channel heartbeat with the current time.

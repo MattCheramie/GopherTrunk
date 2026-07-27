@@ -1,7 +1,6 @@
 package tetra
 
 import (
-	"encoding/binary"
 	"fmt"
 )
 
@@ -78,61 +77,11 @@ type VoiceGrant struct {
 	Encrypted      bool
 }
 
-// AsVoiceGrant returns the structured grant if the PDU is a CMCE
-// D-CONNECT (or D-TX-GRANTED), otherwise (zero, false). Both PDUs
-// carry the same channel-allocation sub-element layout.
-func (p PDU) AsVoiceGrant() (VoiceGrant, bool) {
-	if !p.IsCMCE() {
-		return VoiceGrant{}, false
-	}
-	switch PDUType(p.Type) {
-	case CMCEDConnect, CMCEDTxGranted:
-	default:
-		return VoiceGrant{}, false
-	}
-	if len(p.Payload) < 11 {
-		return VoiceGrant{}, false
-	}
-	cidAndFlags := binary.BigEndian.Uint16(p.Payload[0:2])
-	flagsByte := p.Payload[8]
-	carrierAndSlot := binary.BigEndian.Uint16(p.Payload[9:11])
-	return VoiceGrant{
-		CallIdentifier: cidAndFlags >> 2, // upper 14 bits
-		SourceSSI: uint32(p.Payload[2])<<16 |
-			uint32(p.Payload[3])<<8 | uint32(p.Payload[4]),
-		DestSSI: uint32(p.Payload[5])<<16 |
-			uint32(p.Payload[6])<<8 | uint32(p.Payload[7]),
-		CarrierNumber: carrierAndSlot >> 4, // upper 12 bits
-		Timeslot:      uint8((carrierAndSlot >> 2) & 0x3),
-		Group:         flagsByte&0x80 != 0,
-		Emergency:     flagsByte&0x40 != 0,
-		Encrypted:     flagsByte&0x20 != 0,
-	}, true
-}
-
-// CallRelease is the structured shape of a CMCE D-RELEASE PDU. We
-// surface the call identifier so a higher-layer state machine can
-// match the release to a previously-seen D-CONNECT.
-type CallRelease struct {
-	CallIdentifier  uint16
-	DisconnectCause uint8
-}
-
-// AsRelease returns the structured release if the PDU is a CMCE
-// D-RELEASE, otherwise (zero, false).
-func (p PDU) AsRelease() (CallRelease, bool) {
-	if !p.IsCMCE() || PDUType(p.Type) != CMCEDRelease {
-		return CallRelease{}, false
-	}
-	if len(p.Payload) < 3 {
-		return CallRelease{}, false
-	}
-	cid := binary.BigEndian.Uint16(p.Payload[0:2]) >> 2
-	return CallRelease{
-		CallIdentifier:  cid,
-		DisconnectCause: p.Payload[2],
-	}, true
-}
+// Voice grants and call teardown are decoded bit-accurately from the MAC layer
+// (see downlink.go ingestMAC / ParseCMCE), not from this byte-aligned PDU view:
+// a real CMCE TM-SDU is bit-packed (3-bit MLE discriminator + 5-bit PDU type),
+// which the byte-oriented ParsePDU cannot frame. The VoiceGrant struct below is
+// retained as the grant carrier the MAC path fills.
 
 // SystemBroadcast is the structured shape of an MLE SYSINFO PDU. The
 // network identifiers (MCC + MNC) uniquely tag a TETRA system; the
