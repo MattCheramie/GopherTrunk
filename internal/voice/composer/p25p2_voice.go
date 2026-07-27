@@ -261,6 +261,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		SampleRateHz: symbolHz,
 		ClockMode:    p25p2rx.ClockGardner,
 		GardnerGain:  p25p2VoiceGardnerGain,
+		Equalizer:    macCfg.Equalizer,
 	}
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true

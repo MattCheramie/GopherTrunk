@@ -65,6 +65,11 @@ type ControlChannel struct {
 	// soft-decision demod path (issue #915). The CC's own receiver is
 	// unaffected — this field only travels to the traffic-channel decode.
 	softDecision bool
+	// equalizer, when set, is stamped onto every published Phase 2 voice
+	// grant (P25Phase2Decode.Equalizer) so the voice composer / sigfollow
+	// build the traffic-channel receiver with the blind CMA equalizer
+	// (issue #915). Default false leaves the symbol stream untouched.
+	equalizer bool
 	// bandPlan accumulates IdentifierUpdate MAC PDUs so publishGrant
 	// can resolve a voice grant's (ChannelID, ChannelNumber) into a
 	// downlink frequency. Guarded by mu.
@@ -465,6 +470,16 @@ func (c *ControlChannel) SetSoftDecision(on bool) {
 	c.softDecision = on
 }
 
+// SetEqualizer toggles whether published Phase 2 voice grants request the
+// blind CMA adaptive equalizer on the traffic-channel demod path (issue
+// #915). Like SetSoftDecision it does not change the CC's own receiver; it
+// only sets the flag the composer / sigfollow read off the grant.
+func (c *ControlChannel) SetEqualizer(on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.equalizer = on
+}
+
 // ScramblerMode returns the current ScramblerMode.
 func (c *ControlChannel) ScramblerMode() ScramblerMode {
 	c.mu.Lock()
@@ -823,6 +838,7 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 		Scrambler:    uint8(c.scramblerMode),
 		Seed:         c.scramblerSeed,
 		SoftDecision: c.softDecision,
+		Equalizer:    c.equalizer,
 	}
 	c.mu.Unlock()
 	rfss, site, nac := c.siteIdentity()

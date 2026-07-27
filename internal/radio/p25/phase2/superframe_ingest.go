@@ -29,6 +29,14 @@ type MACDecodeConfig struct {
 	// of the per-channel FEC config from the grant to the composer /
 	// sigfollow receiver setup. Default false keeps the hard slicer.
 	SoftDecision bool
+	// Equalizer requests the blind CMA adaptive equalizer on the Phase 2
+	// traffic-channel receiver (receiver.Options.Equalizer, issue #915): it
+	// removes residual inter-symbol interference on the symbol stream ahead of
+	// the differential decode. Like SoftDecision this field is inert to the
+	// MAC-decode routines here — it only travels with the per-channel config
+	// from the grant to the composer / sigfollow receiver setup. Default false
+	// leaves the symbol stream untouched.
+	Equalizer bool
 }
 
 // DecodedMACPDU pairs a decoded MAC PDU with the SlotType of the

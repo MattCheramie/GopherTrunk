@@ -151,6 +151,12 @@ type P25Phase2Decode struct {
 	// gain on weak signals (issue #915). Default false keeps today's hard
 	// path byte-for-byte.
 	SoftDecision bool
+	// Equalizer mirrors phase2.MACDecodeConfig.Equalizer: when set, the voice
+	// composer / sigfollow build the Phase 2 traffic-channel receiver with the
+	// blind CMA adaptive equalizer, removing residual inter-symbol interference
+	// on the symbol stream ahead of the differential decode (issue #915).
+	// Default false keeps the symbol stream untouched.
+	Equalizer bool
 }
 
 // String renders a one-line summary of a Grant for log output.

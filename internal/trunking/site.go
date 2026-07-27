@@ -315,6 +315,14 @@ type System struct {
 	// forwarded through the grant's P25Phase2Decode to the composer /
 	// sigfollow receiver.
 	P25Phase2SoftDecision string
+	// P25Phase2Equalizer enables the blind CMA adaptive equalizer on the
+	// P25 Phase 2 traffic-channel receiver (issue #915). Recognised values
+	// (case-insensitive): "" / "off" / "false" / "0" → no equalization (the
+	// default); "on" / "true" / "1" / "cma" → remove residual inter-symbol
+	// interference on the symbol stream ahead of the differential decode.
+	// Parsed via p25phase2rx.ParseEqualizer and forwarded through the grant's
+	// P25Phase2Decode to the composer / sigfollow receiver.
+	P25Phase2Equalizer string
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values (case-
 	// insensitive): "" / "gardner" / "on" → ClockGardner (the new

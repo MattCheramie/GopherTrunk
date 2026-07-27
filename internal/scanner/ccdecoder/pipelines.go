@@ -301,6 +301,11 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		log.Warn("ccdecoder: unrecognised p25_phase2_soft_decision; falling back to off",
 			"system", opts.SystemName, "value", opts.System.P25Phase2SoftDecision)
 	}
+	p2Equalizer, p2EqOK := p25phase2rx.ParseEqualizer(opts.System.P25Phase2Equalizer)
+	if !p2EqOK {
+		log.Warn("ccdecoder: unrecognised p25_phase2_equalizer; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2Equalizer)
+	}
 	// rx is forward-declared so the control channel's CarrierOffsetHz provider
 	// can close over it; the closure is only called later, at site-update
 	// publish time, well after rx is assigned below (issue #815).
@@ -318,6 +323,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		P25Phase2Interleave:   uint8(p2Interleave),
 		P25Phase2Scrambler:    uint8(p2Scrambler),
 		P25Phase2SoftDecision: p2SoftDecision,
+		P25Phase2Equalizer:    p2Equalizer,
 		// Report the TOTAL carrier offset from the configured frequency:
 		// the receiver's residual AFC plus any correction the decoder folded
 		// into the DDC (CarrierBiasHz). Residual-only would drop toward 0
@@ -487,6 +493,12 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.P25Phase2SoftDecision)
 	}
 	cc.SetSoftDecision(softDecision)
+	equalizer, eqOK := p25phase2rx.ParseEqualizer(opts.System.P25Phase2Equalizer)
+	if !eqOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_equalizer; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2Equalizer)
+	}
+	cc.SetEqualizer(equalizer)
 	clockMode, clockOK := p25phase2rx.ParseClockMode(opts.System.P25Phase2ClockMode)
 	if !clockOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",

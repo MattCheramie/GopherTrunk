@@ -707,7 +707,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 		// decode those grants' MAC PDUs; without it every grant carries
 		// TrellisOff / ScramblerOff / zero seed and MAC decode fails.
 		// Parse and forward the same knobs the ccdecoder pipeline does.
-		p2Trellis, p2RS, p2Interleave, p2Scrambler, p2SoftDecision := parseP25Phase2FECModes(sys, log)
+		p2Trellis, p2RS, p2Interleave, p2Scrambler, p2SoftDecision, p2Equalizer := parseP25Phase2FECModes(sys, log)
 		cc := p25phase1.New(p25phase1.Options{
 			Bus:         bus,
 			Log:         log.With("system", sys.Name, "freq_hz", freqHz, "phase", 1),
@@ -727,6 +727,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			P25Phase2Interleave:   p2Interleave,
 			P25Phase2Scrambler:    p2Scrambler,
 			P25Phase2SoftDecision: p2SoftDecision,
+			P25Phase2Equalizer:    p2Equalizer,
 		})
 		rx := p25phase1rx.New(p25phase1rx.Options{
 			SampleRateHz: outRateHz,
@@ -800,7 +801,7 @@ func requireControlChannel(sys trunking.System, freqHz uint32, label string) err
 // their MAC PDUs (issue #882). Unrecognised values warn then fall back
 // to the same defaults the ccdecoder path uses; an empty per-system
 // value keeps the default (Trellis=on, everything else=off).
-func parseP25Phase2FECModes(sys trunking.System, log *slog.Logger) (trellis, rs, interleave, scrambler uint8, softDecision bool) {
+func parseP25Phase2FECModes(sys trunking.System, log *slog.Logger) (trellis, rs, interleave, scrambler uint8, softDecision, equalizer bool) {
 	p2Trellis, ok := p25phase2.ParseTrellisMode(sys.P25Phase2TrellisMode)
 	if !ok {
 		log.Warn("widebandt2: unrecognised p25_phase2_trellis_mode; falling back to on",
@@ -826,7 +827,12 @@ func parseP25Phase2FECModes(sys trunking.System, log *slog.Logger) (trellis, rs,
 		log.Warn("widebandt2: unrecognised p25_phase2_soft_decision; falling back to off",
 			"system", sys.Name, "value", sys.P25Phase2SoftDecision)
 	}
-	return uint8(p2Trellis), uint8(p2RS), uint8(p2Interleave), uint8(p2Scrambler), p2SoftDecision
+	p2Equalizer, eqOK := p25phase2rx.ParseEqualizer(sys.P25Phase2Equalizer)
+	if !eqOK {
+		log.Warn("widebandt2: unrecognised p25_phase2_equalizer; falling back to off",
+			"system", sys.Name, "value", sys.P25Phase2Equalizer)
+	}
+	return uint8(p2Trellis), uint8(p2RS), uint8(p2Interleave), uint8(p2Scrambler), p2SoftDecision, p2Equalizer
 }
 
 // applyP25Phase2Modes mirrors newP25Phase2Pipeline's per-system mode
@@ -870,6 +876,12 @@ func applyP25Phase2Modes(cc *p25phase2.ControlChannel, sys trunking.System, log 
 			"system", sys.Name, "value", sys.P25Phase2SoftDecision)
 	}
 	cc.SetSoftDecision(softDecision)
+	equalizer, eqOK := p25phase2rx.ParseEqualizer(sys.P25Phase2Equalizer)
+	if !eqOK {
+		log.Warn("widebandt2: unrecognised p25_phase2_equalizer; falling back to off",
+			"system", sys.Name, "value", sys.P25Phase2Equalizer)
+	}
+	cc.SetEqualizer(equalizer)
 }
 
 // Channels returns the per-channel frequencies the engine is

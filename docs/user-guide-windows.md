@@ -961,6 +961,7 @@ OP25 fixtures, MMDVMHost / DSDcc test data) opt out per-system:
 | LTR Manchester | `ltr_manchester_mode` | `off` / `nrz` |
 | P25 Phase 2 trellis | `p25_phase2_trellis_mode` | `off` |
 | P25 Phase 2 RS | `p25_phase2_rs_mode` | `on` verifies (drop); `correct` fixes up to 4 symbol errors |
+| P25 Phase 2 equalizer | `p25_phase2_equalizer` | `on` runs a blind CMA equalizer (removes residual ISI) |
 | P25 Phase 2 PN44 scrambler | `p25_phase2_scrambler_mode` | `on` / `probe` |
 | P25 Phase 2 soft decision | `p25_phase2_soft_decision` | `on` (soft MAC trellis; ~1.5-2 dB) |
 | NXDN Viterbi | `nxdn_viterbi_mode` | `off` |
