@@ -146,6 +146,35 @@ func (e *LMSEqualizer) Apply(x complex64) complex64 {
 	return complex(float32(real(y)), float32(imag(y)))
 }
 
+// EqualizeGated pushes one input symbol, equalizes it, and adapts the taps
+// toward the sliced decision ONLY when the equalized sample is within tol of
+// that decision — i.e. the symbol is reliable. On an unreliable symbol (the
+// equalized point sits far from every constellation point) the taps are frozen
+// for that sample. It returns the equalized symbol.
+//
+// This is the streaming form used in the live receiver, where no known training
+// sequence is fed in. Plain decision-directed LMS adapts on every symbol,
+// including its own decision errors, and can walk the taps away from the
+// solution when the eye starts closed; the reliability gate breaks that
+// feedback — the taps only move on symbols the current equalizer already
+// decodes confidently. The frame sync and clean payload are exactly those
+// high-confidence symbols, so the equalizer sharpens the eye on the reliable
+// structure and leaves the noise-dominated symbols alone (issue #915). tol is a
+// Euclidean distance on the unit-radius constellation; ~0.4 keeps only symbols
+// comfortably inside a decision region. A centre-spike (un-adapted) equalizer on
+// a clean signal decides every symbol reliably and adapts toward its own
+// (correct) decisions, so it stays transparent.
+func (e *LMSEqualizer) EqualizeGated(x complex64, slice func(complex128) complex128, tol float64) complex64 {
+	e.push(complex(float64(real(x)), float64(imag(x))))
+	y := e.output()
+	d := slice(y)
+	dr, di := real(y)-real(d), imag(y)-imag(d)
+	if dr*dr+di*di <= tol*tol {
+		e.adapt(d, y)
+	}
+	return complex(float32(real(y)), float32(imag(y)))
+}
+
 // Delay returns the equalizer's reference delay in symbols: the centre-tap
 // index. The equalized output at step n corresponds to the input symbol the
 // centre tap sees, so a caller training on known symbols must align the
@@ -154,6 +183,47 @@ func (e *LMSEqualizer) Apply(x complex64) complex64 {
 // alignment wrong makes the taps chase an unrelated symbol and never
 // converge.
 func (e *LMSEqualizer) Delay() int { return e.center }
+
+// cmaRadius is the Godard / CMA dispersion constant R₂ = E[|s|⁴]/E[|s|²].
+// Every symbol of a PSK (constant-modulus) constellation has |s| = 1, so
+// R₂ = 1: the algorithm drives the equalized modulus toward unity.
+const cmaRadius = 1.0
+
+// CMAUpdate pushes one input symbol, equalizes it, and adapts the taps by the
+// Constant Modulus Algorithm (Godard, p = 2) — it drives |y| toward the unit
+// modulus every π/4-DQPSK / H-DQPSK symbol carries, using NO phase decision.
+//
+// This is the correct blind equalizer for P25 Phase 2. The H-DQPSK absolute
+// constellation is not a fixed phase grid: the modulator adds a π/8 rotation
+// *cumulatively every symbol* (and the carrier loop is designed to keep it, so
+// it survives to the symbol stream), so the absolute symbols spin through every
+// phase. A decision-directed phase slicer has no fixed grid to lock to and
+// would fight the spin; CMA is immune to it — it only sees the modulus, which
+// is constant regardless of rotation and of any residual carrier phase. It
+// removes the amplitude ripple / inter-symbol interference a channel imposes;
+// the leftover phase is cancelled downstream by the differential decode.
+//
+// The taps still initialise to a centre spike, so on a clean unit-modulus
+// signal the CMA error is ~0 and the equalizer stays transparent. Returns the
+// equalized symbol.
+func (e *LMSEqualizer) CMAUpdate(x complex64) complex64 {
+	e.push(complex(float64(real(x)), float64(imag(x))))
+	y := e.output()
+	yy := real(y)*real(y) + imag(y)*imag(y)
+	// CMA cost J = (|y|² − R₂)². Gradient descent gives the tap update
+	// w[k] += μ · (R₂ − |y|²)·y · conj(line[k]) / (ε + ‖line‖²).
+	errTerm := complex(cmaRadius-yy, 0) * y
+	e.lastSq = (yy - cmaRadius) * (yy - cmaRadius)
+	var norm float64
+	for _, s := range e.line {
+		norm += real(s)*real(s) + imag(s)*imag(s)
+	}
+	g := e.mu / (e.eps + norm)
+	for k, s := range e.line {
+		e.w[k] += complex(g, 0) * errTerm * complex(real(s), -imag(s))
+	}
+	return complex(float32(real(y)), float32(imag(y)))
+}
 
 // LastErrorSq returns |e|² of the most recent Train / DecisionUpdate — a
 // convergence diagnostic. It falls toward the noise floor as the taps

@@ -1514,6 +1514,17 @@ type SystemConfig struct {
 	// clear-MAC source RID on weak signals; neutral on strong ones.
 	// Ignored for non-P25-Phase-2 protocols.
 	P25Phase2SoftDecision string `yaml:"p25_phase2_soft_decision"`
+	// P25Phase2Equalizer enables a blind constant-modulus (CMA) adaptive
+	// equalizer on the P25 Phase 2 traffic-channel receiver (issue #915).
+	// Recognised values: "" / "off" / "false" / "0" (the default — no
+	// equalization, the symbol stream is untouched) or "on" / "true" / "1" /
+	// "cma" (remove residual inter-symbol interference — RRC mismatch, a
+	// fractional timing error, mild multipath — on the symbol stream ahead of
+	// the differential decode, so a burst the ISI would otherwise corrupt still
+	// satisfies the outer RS). Helps ISI-limited channels; neutral-to-slightly-
+	// noisy on a purely AWGN-limited one, so it is opt-in. Ignored for
+	// non-P25-Phase-2 protocols.
+	P25Phase2Equalizer string `yaml:"p25_phase2_equalizer"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
 	// "gardner" / "on" (the new default — non-data-aided Gardner

@@ -132,7 +132,33 @@ type Options struct {
 	// SoftSink receives the (dibits, soft, baseIdx) stream when SoftDecision is
 	// set. Required in that case.
 	SoftSink phase2.SoftDibitSink
+	// Equalizer enables a blind constant-modulus (CMA) adaptive equalizer on
+	// the recovered symbol stream, after carrier recovery and before the
+	// differential decode (issue #915). It removes the residual inter-symbol
+	// interference a real channel leaves on the absolute symbols — RRC
+	// pulse-shape mismatch, a fractional Gardner timing error, mild multipath —
+	// which widens the differential-phase decision and costs the outer
+	// RS(24,16,9) symbol errors on an otherwise-decodable burst. CMA is used
+	// (not decision-directed) because the H-DQPSK absolute constellation spins
+	// π/8 per symbol and has no fixed phase grid; CMA is rotation-invariant.
+	// ClockGardner only. Default false ⇒ the symbol stream is untouched (an
+	// AWGN-limited channel gains nothing from equalization, so this stays
+	// opt-in). See sync.LMSEqualizer.CMAUpdate.
+	Equalizer bool
+	// EqualizerTaps overrides the equalizer tap count (forced odd). <= 0 uses
+	// eqDefaultTaps. Only meaningful when Equalizer is set.
+	EqualizerTaps int
+	// EqualizerMu overrides the equalizer NLMS/CMA step. <= 0 uses eqDefaultMu.
+	// Only meaningful when Equalizer is set.
+	EqualizerMu float64
 }
+
+// Equalizer defaults. A modest step keeps CMA's noise enhancement low on a
+// weak channel while still opening a moderately closed eye within a burst.
+const (
+	eqDefaultTaps = 11
+	eqDefaultMu   = 0.05
+)
 
 // ClockMode selects how the receiver decimates the matched-filter
 // output to one sample per symbol.
@@ -182,6 +208,24 @@ func ParseSoftDecision(s string) (on bool, ok bool) {
 	}
 }
 
+// ParseEqualizer maps a config / user-facing string into the
+// Options.Equalizer boolean. Recognised values (case-insensitive): "" /
+// "off" / "false" / "0" → false (the default — no equalization, the symbol
+// stream is untouched); "on" / "true" / "1" / "cma" → true (blind CMA
+// adaptive equalizer on the traffic-channel symbol stream, removing residual
+// ISI ahead of the differential decode; issue #915). Unknown strings return
+// false with `ok = false` so callers can warn and fall back.
+func ParseEqualizer(s string) (on bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return false, true
+	case "on", "true", "1", "cma":
+		return true, true
+	default:
+		return false, false
+	}
+}
+
 // ParseClockMode maps a config / user-facing string into a
 // ClockMode. Recognised values (case-insensitive): "" / "gardner" /
 // "on" / "true" / "1" → ClockGardner (the new default — Gardner
@@ -218,6 +262,10 @@ type Receiver struct {
 
 	clockMode ClockMode
 	gardner   *sync.Gardner
+	// eq is the optional blind CMA equalizer applied to the post-Costas
+	// symbol stream before the differential decode (ClockGardner only; nil
+	// when Options.Equalizer is unset). See Options.Equalizer and issue #915.
+	eq *sync.LMSEqualizer
 
 	// Carrier-frequency recovery (ClockGardner only; nil under ClockNaive).
 	// nco removes the coarse seed from the raw IQ; costas tracks the residual
@@ -291,6 +339,17 @@ func New(opts Options) *Receiver {
 		// 4·(π/8) = π/2, not the π/4 family's π. The wrong constant would
 		// settle a π/8 per-symbol bias that halves the decision margin.
 		r.costas = sync.NewQPSKCostasForRotation(SymbolRate, costasLoopBWHz, costasDamping, Rotation)
+		if opts.Equalizer {
+			taps := opts.EqualizerTaps
+			if taps <= 0 {
+				taps = eqDefaultTaps
+			}
+			mu := opts.EqualizerMu
+			if mu <= 0 {
+				mu = eqDefaultMu
+			}
+			r.eq = sync.NewLMSEqualizer(taps, mu)
+		}
 	}
 	return r
 }
@@ -349,6 +408,16 @@ func (r *Receiver) Process(iq []complex64) {
 		// downstream Decode applies the static π/8 subtraction.
 		for i, y := range r.symbols {
 			r.symbols[i] = r.costas.Update(y)
+		}
+		// Blind CMA equalization (issue #915): remove residual ISI on the
+		// carrier-corrected absolute symbols before the differential decode.
+		// CMA (not decision-directed) because the H-DQPSK constellation spins
+		// π/8/symbol and has no fixed phase grid; the centre-spike init makes
+		// this transparent on a clean signal. Opt-in via Options.Equalizer.
+		if r.eq != nil {
+			for i, y := range r.symbols {
+				r.symbols[i] = r.eq.CMAUpdate(y)
+			}
 		}
 	} else {
 		r.matched = r.dq.MatchedFilter(r.matched, iq)
@@ -449,6 +518,9 @@ func (r *Receiver) Reset() {
 	}
 	if r.costas != nil {
 		r.costas.Reset()
+	}
+	if r.eq != nil {
+		r.eq.Reset()
 	}
 	r.seeded = false
 	r.seedHz = 0

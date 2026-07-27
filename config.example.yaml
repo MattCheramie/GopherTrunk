@@ -1014,6 +1014,9 @@ trunking:
   #     #                              # (degrades to off without rs on/correct)
   #     # p25_phase2_soft_decision: "on"      # soft-decision MAC trellis
   #     #                              # (~1.5-2 dB; recovers weak-signal RIDs)
+  #     # p25_phase2_equalizer: "on"          # blind CMA equalizer: removes
+  #     #                              # residual ISI (multipath/timing/RRC)
+  #     #                              # ahead of the differential decode (#915)
   #     # p25_phase2_clock_mode: "naive"      # decimate; default Gardner
   #
   #   - name: "Legacy-TETRA"

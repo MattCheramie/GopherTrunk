@@ -128,6 +128,7 @@ type ControlChannel struct {
 	p25Phase2RS         uint8
 	p25Phase2Interleave uint8
 	p25Phase2Scrambler  uint8
+	p25Phase2Equalizer  bool
 	// p25Phase2SoftDecision is stamped onto Phase 2 TDMA voice grants so
 	// the voice composer builds a soft-decision traffic-channel receiver
 	// (issue #915). Default false keeps the hard slicer.
@@ -453,6 +454,9 @@ type Options struct {
 	// P25Phase2SoftDecision mirrors phase2's soft-decision toggle onto
 	// hybrid Phase 2 TDMA voice grants (issue #915).
 	P25Phase2SoftDecision bool
+	// P25Phase2Equalizer mirrors phase2's blind CMA equalizer toggle onto
+	// hybrid Phase 2 TDMA voice grants (issue #915).
+	P25Phase2Equalizer bool
 
 	// CarrierOffsetHz, when non-nil, reports the demodulator's current carrier
 	// offset (Hz) of the locked control carrier relative to the tuned centre.
@@ -514,6 +518,7 @@ func New(opts Options) *ControlChannel {
 		p25Phase2Interleave:   opts.P25Phase2Interleave,
 		p25Phase2Scrambler:    opts.P25Phase2Scrambler,
 		p25Phase2SoftDecision: opts.P25Phase2SoftDecision,
+		p25Phase2Equalizer:    opts.P25Phase2Equalizer,
 	}
 }
 
@@ -1672,6 +1677,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 			Scrambler:    c.p25Phase2Scrambler,
 			Seed:         seed,
 			SoftDecision: c.p25Phase2SoftDecision,
+			Equalizer:    c.p25Phase2Equalizer,
 		}
 	}
 	c.bus.Publish(events.Event{

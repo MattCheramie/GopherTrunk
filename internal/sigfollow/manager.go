@@ -215,6 +215,7 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 		Scrambler:    p25p2.ScramblerMode(g.P25Phase2Decode.Scrambler),
 		Seed:         g.P25Phase2Decode.Seed,
 		SoftDecision: g.P25Phase2Decode.SoftDecision,
+		Equalizer:    g.P25Phase2Decode.Equalizer,
 	}
 
 	sfDec := p25p2.NewSuperframeDecoder()
@@ -245,6 +246,7 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 		SampleRateHz: rateHz,
 		ClockMode:    p25p2rx.ClockGardner,
 		GardnerGain:  gardnerGain,
+		Equalizer:    macCfg.Equalizer,
 	}
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true

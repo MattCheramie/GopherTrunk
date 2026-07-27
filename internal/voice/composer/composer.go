@@ -540,6 +540,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 			Scrambler:    p25p2.ScramblerMode(cs.Grant.P25Phase2Decode.Scrambler),
 			Seed:         cs.Grant.P25Phase2Decode.Seed,
 			SoftDecision: cs.Grant.P25Phase2Decode.SoftDecision,
+			Equalizer:    cs.Grant.P25Phase2Decode.Equalizer,
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case isP25P1Voice:

@@ -8,6 +8,23 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **P25 Phase 2 blind CMA equalizer on the traffic-channel receiver
+  (`p25_phase2_equalizer: on`).** A new opt-in adds a blind constant-modulus
+  (CMA) adaptive equalizer on the Phase 2 symbol stream, after carrier
+  recovery and before the differential decode. It removes residual
+  inter-symbol interference a real channel leaves on the symbols — RRC
+  pulse-shape mismatch, a fractional Gardner timing error, mild multipath —
+  which widens the differential-phase decision and costs the outer RS(24,16,9)
+  symbol errors on an otherwise-decodable burst. CMA (not decision-directed) is
+  used because the H-DQPSK absolute constellation spins π/8 per symbol and has
+  no fixed phase grid, so a phase slicer has nothing to lock to; CMA is
+  rotation-invariant and drives the modulus toward unity blindly, leaving the
+  phase to the differential decode. Through the production receiver, a
+  multipath channel that dropped a Phase 2 MAC-payload recovery to a fraction
+  of bursts is restored to near-full recovery; a clean signal decodes
+  byte-identically (the centre-spike init is transparent). Off by default — an
+  AWGN-limited channel gains nothing from equalization, so it is opt-in; pairs
+  with `p25_phase2_soft_decision` and `p25_phase2_rs_mode: correct`. (issue #915)
 - **P25 Phase 2 outer RS can now error-*correct* weak MAC PDUs
   (`p25_phase2_rs_mode: correct`).** The `p25_phase2_rs_mode` knob gains a
   `correct` (alias `fix` / `ecc`) setting that runs the RS(24, 16, 9) outer code

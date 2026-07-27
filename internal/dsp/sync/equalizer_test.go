@@ -185,5 +185,159 @@ func TestLMSEqualizerResetRestoresSpike(t *testing.T) {
 	}
 }
 
+// TestLMSEqualizerGatedOpensEyeWithoutTraining is the streaming-path check:
+// with NO known training sequence, EqualizeGated (confidence-gated
+// decision-directed) bootstraps from the centre spike and opens a moderately
+// closed ISI eye, driving the symbol-error rate well below the raw rate. The
+// gate is what makes this safe — plain DD on every symbol would adapt on its
+// own errors and can diverge.
+func TestLMSEqualizerGatedOpensEyeWithoutTraining(t *testing.T) {
+	rng := rand.New(rand.NewSource(0x5EED))
+	const (
+		n       = 8000
+		chDelay = 1
+	)
+	// A moderate ISI channel — eye partly closed but decisions still mostly
+	// right, the regime where a reliability-gated DD equalizer bootstraps.
+	h := []complex128{complex(0.22, 0.04), complex(1.0, 0.0), complex(0.26, -0.06)}
+	tx := make([]complex128, n)
+	for i := range tx {
+		tx[i] = qpskPoint(rng.Intn(4))
+	}
+	rx := isiChannel(tx, h, 0.04, rng)
+
+	eq := NewLMSEqualizer(9, 0.4)
+	delta := eq.Delay() + chDelay
+
+	rawErrs, eqErrs, measured := 0, 0, 0
+	for i := 0; i < n; i++ {
+		y := eq.EqualizeGated(c64(rx[i]), SlicePiOver4DQPSK, 0.45)
+		// Measure only the back half, after the gated loop has converged.
+		if i >= n/2 && i-delta >= 0 {
+			measured++
+			if symbolError(rx[i], tx[i-chDelay]) {
+				rawErrs++
+			}
+			if symbolError(complex(float64(real(y)), float64(imag(y))), tx[i-delta]) {
+				eqErrs++
+			}
+		}
+	}
+	rawSER := float64(rawErrs) / float64(measured)
+	eqSER := float64(eqErrs) / float64(measured)
+	t.Logf("raw SER=%.4f  gated-equalized SER=%.4f  tapE=%.3f", rawSER, eqSER, eq.TapEnergy())
+
+	if rawSER < 0.02 {
+		t.Fatalf("channel too benign to prove anything: raw SER=%.4f", rawSER)
+	}
+	if eqSER >= rawSER*0.5 {
+		t.Fatalf("gated equalizer did not open the eye: raw=%.4f eq=%.4f", rawSER, eqSER)
+	}
+}
+
+// hdqpskStream builds a spinning H-DQPSK-like absolute symbol stream: each
+// dibit's raw phase increment {0, π/2, π, −π/2} plus a fixed per-symbol
+// rotation (π/8 for P25 Phase 2) accumulate into the absolute phase, so the
+// constellation has no fixed grid — exactly the case CMA handles and a phase
+// slicer cannot.
+func hdqpskStream(dibits []int, rotation float64) []complex128 {
+	out := make([]complex128, len(dibits))
+	inc := [4]float64{0, math.Pi / 2, math.Pi, -math.Pi / 2}
+	phase := 0.3 // arbitrary initial phase
+	for i, b := range dibits {
+		phase += inc[b&3] + rotation
+		out[i] = complex(math.Cos(phase), math.Sin(phase))
+	}
+	return out
+}
+
+// diffDibit recovers a dibit from the differential phase of consecutive
+// symbols, the same operation the receiver's differential decoder performs:
+// arg(cur·conj(prev)) − rotation, sliced to the nearest π/2.
+func diffDibit(cur, prev complex128, rotation float64) int {
+	d := cur * complex(real(prev), -imag(prev)) // cur · conj(prev)
+	ang := math.Atan2(imag(d), real(d)) - rotation
+	return int(math.Round(ang/(math.Pi/2))) & 3
+}
+
+// TestLMSEqualizerCMARecoversSpinningISIChannel is the receiver-realistic
+// check: a spinning H-DQPSK constellation through an ISI channel loses
+// differential dibits, and CMA — which needs no fixed phase grid — reduces the
+// modulus dispersion and drives the differential dibit-error rate down. A
+// decision-directed phase slicer cannot help here because the absolute
+// constellation never sits still.
+func TestLMSEqualizerCMARecoversSpinningISIChannel(t *testing.T) {
+	rng := rand.New(rand.NewSource(0xB16B00B5))
+	const (
+		n        = 8000
+		rotation = math.Pi / 8 // P25 Phase 2 H-DQPSK
+		chDelay  = 1
+	)
+	h := []complex128{complex(0.30, 0.05), complex(1.0, 0.0), complex(0.30, -0.05)}
+	tx := make([]int, n)
+	for i := range tx {
+		tx[i] = rng.Intn(4)
+	}
+	sym := hdqpskStream(tx, rotation)
+	rx := isiChannel(sym, h, 0.03, rng)
+
+	eq := NewLMSEqualizer(11, 0.3)
+	delta := eq.Delay() + chDelay
+
+	eqOut := make([]complex128, n)
+	for i := 0; i < n; i++ {
+		y := eq.CMAUpdate(c64(rx[i]))
+		eqOut[i] = complex(float64(real(y)), float64(imag(y)))
+	}
+
+	// Compare differential dibit errors over the converged back half.
+	rawErrs, eqErrs, measured := 0, 0, 0
+	for i := n / 2; i < n; i++ {
+		measured++
+		if diffDibit(rx[i], rx[i-1], rotation) != tx[i] {
+			rawErrs++
+		}
+		if i-delta-1 >= 0 && diffDibit(eqOut[i], eqOut[i-1], rotation) != tx[i-delta] {
+			eqErrs++
+		}
+	}
+	rawSER := float64(rawErrs) / float64(measured)
+	eqSER := float64(eqErrs) / float64(measured)
+	t.Logf("spinning H-DQPSK: raw diff-SER=%.4f  CMA diff-SER=%.4f  tapE=%.3f  lastErr=%.4g",
+		rawSER, eqSER, eq.TapEnergy(), eq.LastErrorSq())
+
+	if rawSER < 0.02 {
+		t.Fatalf("channel too benign: raw diff-SER=%.4f", rawSER)
+	}
+	if eqSER >= rawSER*0.6 {
+		t.Fatalf("CMA did not open the spinning eye: raw=%.4f eq=%.4f", rawSER, eqSER)
+	}
+}
+
+// TestLMSEqualizerCMACleanSignalIsTransparent confirms CMA on a clean
+// unit-modulus spinning stream stays near the centre-spike identity (the CMA
+// error is ~0 when the modulus is already unity), so enabling it is a no-op on
+// a strong signal.
+func TestLMSEqualizerCMACleanSignalIsTransparent(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	const rotation = math.Pi / 8
+	tx := make([]int, 3000)
+	for i := range tx {
+		tx[i] = rng.Intn(4)
+	}
+	sym := hdqpskStream(tx, rotation)
+	eq := NewLMSEqualizer(11, 0.3)
+	var maxErr float64
+	for i, s := range sym {
+		eq.CMAUpdate(c64(s))
+		if i > 200 && eq.LastErrorSq() > maxErr {
+			maxErr = eq.LastErrorSq()
+		}
+	}
+	if maxErr > 0.02 {
+		t.Fatalf("CMA not transparent on a clean signal: max |e|^2=%.4g", maxErr)
+	}
+}
+
 // c64 narrows a complex128 to complex64 for the equalizer's boundary API.
 func c64(z complex128) complex64 { return complex(float32(real(z)), float32(imag(z))) }
