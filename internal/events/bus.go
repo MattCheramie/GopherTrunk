@@ -144,6 +144,19 @@ const (
 	// source ID + encrypted state at grant time do not need this
 	// event — the values are already on the Grant.
 	KindCallSourceUpdate Kind = "call.source"
+	// KindCallRelease fires when a protocol control-channel decoder sees an
+	// explicit call-teardown message (e.g. a TETRA CMCE D-RELEASE) rather than
+	// inferring the end from a silence timeout. Payload is a
+	// trunking.CallRelease keyed by (System, GroupID); the engine ends the
+	// matching active call at once instead of waiting out the hangtime/no-voice
+	// timers.
+	KindCallRelease Kind = "call.release"
+	// KindCallTalker fires when a control-channel decoder resolves the current
+	// transmitting party of an active call (e.g. a TETRA CMCE D-TX-GRANTED
+	// carrying the transmitting party SSI). Payload is a trunking.CallTalker
+	// keyed by (System, GroupID); the engine backfills the bound call's source
+	// via the same path as KindCallSourceUpdate.
+	KindCallTalker Kind = "call.talker"
 	// KindSiteUpdate fires when the P25 control-channel decoder parses
 	// an RFSS Status Broadcast (TSBK 0x3A), naming the site it is
 	// camped on and the control-channel frequency it was heard on.

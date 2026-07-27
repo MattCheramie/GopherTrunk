@@ -78,109 +78,16 @@ func TestDiscriminatorClassification(t *testing.T) {
 	}
 }
 
-// buildVoiceGrantPayload constructs the 11-byte D-CONNECT payload
-// that AsVoiceGrant decodes.
-func buildVoiceGrantPayload(cid uint16, src, dst uint32, carrier uint16, slot uint8, group, emer, enc bool) []byte {
-	out := make([]byte, 11)
-	cidField := (cid & 0x3FFF) << 2
-	out[0] = byte(cidField >> 8)
-	out[1] = byte(cidField & 0xFF)
-	out[2] = byte((src >> 16) & 0xFF)
-	out[3] = byte((src >> 8) & 0xFF)
-	out[4] = byte(src & 0xFF)
-	out[5] = byte((dst >> 16) & 0xFF)
-	out[6] = byte((dst >> 8) & 0xFF)
-	out[7] = byte(dst & 0xFF)
-	var flags byte
-	if group {
-		flags |= 0x80
-	}
-	if emer {
-		flags |= 0x40
-	}
-	if enc {
-		flags |= 0x20
-	}
-	out[8] = flags
-	carrierField := ((carrier & 0xFFF) << 4) | (uint16(slot&0x3) << 2)
-	out[9] = byte(carrierField >> 8)
-	out[10] = byte(carrierField & 0xFF)
-	return out
-}
-
-func TestAsVoiceGrantExtractsFields(t *testing.T) {
-	payload := buildVoiceGrantPayload(
-		0x1234, 0x100200, 0x300400, 0x0ABC, 2,
-		true, true, false,
-	)
-	pdu := PDU{Disc: DiscCMCE, Type: uint8(CMCEDConnect), Payload: payload}
-	g, ok := pdu.AsVoiceGrant()
-	if !ok {
-		t.Fatal("AsVoiceGrant returned !ok")
-	}
-	if g.CallIdentifier != 0x1234 {
-		t.Errorf("CallIdentifier = %X, want 1234", g.CallIdentifier)
-	}
-	if g.SourceSSI != 0x100200 || g.DestSSI != 0x300400 {
-		t.Errorf("SSIs = %X / %X", g.SourceSSI, g.DestSSI)
-	}
-	if g.CarrierNumber != 0x0ABC {
-		t.Errorf("CarrierNumber = %X, want ABC", g.CarrierNumber)
-	}
-	if g.Timeslot != 2 {
-		t.Errorf("Timeslot = %d", g.Timeslot)
-	}
-	if !g.Group || !g.Emergency || g.Encrypted {
-		t.Errorf("flags = %+v", g)
-	}
-}
-
-func TestAsVoiceGrantTxGrantedAlsoMatches(t *testing.T) {
-	payload := buildVoiceGrantPayload(0x10, 1, 2, 0x100, 0, false, false, true)
-	pdu := PDU{Disc: DiscCMCE, Type: uint8(CMCEDTxGranted), Payload: payload}
-	g, ok := pdu.AsVoiceGrant()
-	if !ok || !g.Encrypted || g.CarrierNumber != 0x100 {
-		t.Errorf("D-TX-GRANTED grant = %+v ok=%v", g, ok)
-	}
-}
-
-func TestAsVoiceGrantWrongType(t *testing.T) {
-	pdu := PDU{Disc: DiscCMCE, Type: uint8(CMCEDRelease), Payload: make([]byte, 11)}
-	if _, ok := pdu.AsVoiceGrant(); ok {
-		t.Error("AsVoiceGrant returned ok for D-RELEASE")
-	}
-}
-
-func TestAsVoiceGrantWrongDisc(t *testing.T) {
-	pdu := PDU{Disc: DiscMM, Type: uint8(CMCEDConnect), Payload: make([]byte, 11)}
-	if _, ok := pdu.AsVoiceGrant(); ok {
-		t.Error("AsVoiceGrant returned ok for non-CMCE Disc")
-	}
-}
-
-func TestAsVoiceGrantShortPayload(t *testing.T) {
-	pdu := PDU{Disc: DiscCMCE, Type: uint8(CMCEDConnect), Payload: make([]byte, 8)}
-	if _, ok := pdu.AsVoiceGrant(); ok {
-		t.Error("AsVoiceGrant returned ok for short payload")
-	}
-}
-
-func TestAsRelease(t *testing.T) {
-	payload := []byte{0x12, 0x38, 0x05} // CID = 0x048E (after >>2), cause = 5
-	pdu := PDU{Disc: DiscCMCE, Type: uint8(CMCEDRelease), Payload: payload}
-	r, ok := pdu.AsRelease()
-	if !ok {
-		t.Fatal("AsRelease returned !ok")
-	}
-	if r.CallIdentifier != 0x048E {
-		t.Errorf("CallIdentifier = %X, want 048E", r.CallIdentifier)
-	}
-	if r.DisconnectCause != 5 {
-		t.Errorf("DisconnectCause = %d", r.DisconnectCause)
-	}
-	other := PDU{Disc: DiscCMCE, Type: uint8(CMCEDConnect)}
-	if _, ok := other.AsRelease(); ok {
-		t.Error("AsRelease returned ok for non-RELEASE")
+// grantMAC builds the MACResource that publishGrantFromMAC turns into a voice
+// grant — the real on-air grant carrier (a MAC-RESOURCE channel allocation
+// addressed to the group SSI), replacing the byte-aligned D-CONNECT the deleted
+// AsVoiceGrant used to parse. The bit-accurate CMCE parse itself is covered by
+// cmce_parse_test.go and the end-to-end MAC path by downlink_test.go.
+func grantMAC(dst uint32, carrier uint16, slot uint8, enc bool) MACResource {
+	return MACResource{
+		Encrypted: enc,
+		Address:   MACAddress{Type: addrSSI, SSI: dst},
+		ChanAlloc: &ChannelAllocation{CarrierNumber: carrier, Timeslot: slot},
 	}
 }
 
@@ -401,14 +308,13 @@ func TestControlChannelEmitsGrant(t *testing.T) {
 		Now:         func() time.Time { return fixed },
 	})
 
-	cc.Ingest(PDU{
-		Disc: DiscCMCE,
-		Type: uint8(CMCEDConnect),
-		Payload: buildVoiceGrantPayload(
-			0x55, 0x000123, 0x00ABCD, 200, 1,
-			true, false, true,
-		),
-	})
+	// A MAC-RESOURCE grant for dest 0x00ABCD on carrier 200 / slot 1, encrypted,
+	// with a D-SETUP CMCE PDU supplying the source SSI (0x000123), non-emergency.
+	cc.publishGrantFromMAC(
+		grantMAC(0x00ABCD, 200, 1, true),
+		CMCEMessage{Type: CMCETypeDSetup, PartySSI: 0x000123},
+		true,
+	)
 
 	// First event: cc.locked synthesized when grant arrives.
 	select {
@@ -460,11 +366,7 @@ func TestControlChannelGrantWithoutResolver(t *testing.T) {
 	defer sub.Close()
 
 	cc := New(Options{Bus: bus, FrequencyHz: 380_500_000})
-	cc.Ingest(PDU{
-		Disc:    DiscCMCE,
-		Type:    uint8(CMCEDConnect),
-		Payload: buildVoiceGrantPayload(1, 2, 3, 42, 0, false, false, false),
-	})
+	cc.publishGrantFromMAC(grantMAC(3, 42, 0, false), CMCEMessage{}, false)
 
 	<-sub.C // cc.locked
 	ev := <-sub.C
