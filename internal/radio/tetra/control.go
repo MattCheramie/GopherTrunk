@@ -618,6 +618,28 @@ func (c *ControlChannel) CheckStale(now time.Time, timeout time.Duration) {
 	c.MarkLost()
 }
 
+// NeedsResync reports whether the control-channel heartbeat is older than
+// timeout, i.e. no sync burst / SYSINFO / grant has decoded for that long. It is
+// the trigger the pipeline uses to force a fast DSP re-acquire (reset the symbol
+// timing to centre) after a noise burst wanders the loops off-lock — the
+// steady-state Gardner loop at the production gain re-converges only very slowly,
+// so from-centre reacquisition (~one AFC block) is far faster than waiting it
+// out.
+//
+// Like CheckStale it is a lock-free atomic read of the heartbeat and is a no-op
+// before the first decode (lastActivity==0). Deliberately independent of the
+// locked flag: MarkLost never clears the heartbeat, so a stale locked OR
+// already-lost channel both keep asking for a reacquire until the carrier
+// returns — bounding the recovery tail the cchunt same-frequency guard would
+// otherwise leave running for tens of seconds.
+func (c *ControlChannel) NeedsResync(now time.Time, timeout time.Duration) bool {
+	last := c.lastActivityNano.Load()
+	if last == 0 {
+		return false
+	}
+	return now.Sub(time.Unix(0, last)) > timeout
+}
+
 func (c *ControlChannel) maybeLock(s LockState) {
 	c.noteActivity()
 	c.mu.Lock()
@@ -654,4 +676,31 @@ func (c *ControlChannel) MarkLost() {
 	}
 	c.locked = false
 	c.bus.Publish(events.Event{Kind: events.KindCCLost, Payload: c.last})
+}
+
+// ResyncReset drops the dibit-domain synchronisation state so the next Process
+// call rebuilds it from a fresh baseline. It is called immediately after the
+// receiver's Reset (which restarts its dibit index at 0) so the two stay in
+// step: processState indexes its rolling SB buffer by ABSOLUTE dibit index
+// (bufBase, pendingSTS), so a receiver whose index jumped back to 0 while proc
+// held a large bufBase would drive every future SB look-back into the
+// "already trimmed" branch and never decode another sync burst. Nil-ing proc
+// forces a clean lazy rebuild with the new baseIdx.
+//
+// Everything that makes re-lock fast is PRESERVED: the learned/confirmed colour
+// code, the lock flag and cell identity, the channel configuration, the activity
+// heartbeat, and the decode-health stats. Only the throwaway dibit-sync scratch
+// (proc) and the soft-differential stash are cleared.
+//
+// Precondition: called on the same goroutine as Process (from
+// tetraPipeline.Process, after rx.Process returns), so the unlocked proc read in
+// Process never races this write; the mutex here guards proc and the pendingSoft
+// stash against the other lock-holding accessors.
+func (c *ControlChannel) ResyncReset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.proc = nil
+	c.pendingSoft = c.pendingSoft[:0]
+	c.pendingSoftBase = 0
+	c.pendingSoftSet = false
 }
