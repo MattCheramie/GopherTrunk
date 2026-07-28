@@ -211,7 +211,12 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 				}
 			}
 		}
-		if m.ChanAlloc != nil {
+		// Publish a voice grant for the allocated resource — unless the CMCE PDU
+		// riding in this MAC-RESOURCE is a teardown (D-RELEASE): its
+		// channel-allocation element is the resource being reclaimed, not a new
+		// call, and publishing it spawns a zero-byte ghost call that handleCMCE's
+		// release then immediately ends.
+		if m.ChanAlloc != nil && !(haveCMCE && isCMCETeardown(msg.Type)) {
 			c.publishGrantFromMAC(m, msg, haveCMCE)
 		}
 		if haveCMCE {
