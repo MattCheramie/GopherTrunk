@@ -119,6 +119,18 @@ type ControlChannel struct {
 	// dropped on release. Guarded by mu.
 	callGroups map[uint16]uint32
 
+	// fragTMSDU accumulates a TM-SDU that spans a start-fragment MAC-RESOURCE and
+	// one or more following MAC-FRAG / MAC-END PDUs (§21.4.3.3/.4). fragResource
+	// is the start fragment's MAC-RESOURCE context (address + channel allocation),
+	// needed to act on the reassembled L3 CMCE PDU because MAC-FRAG/MAC-END carry
+	// no address of their own. fragActive marks a reassembly in progress. A single
+	// TM-SDU is in flight at a time (a new start fragment replaces an incomplete
+	// one); bounded by fragMaxBits and cleared on reassembly or resync. Guarded by
+	// mu.
+	fragTMSDU    []byte
+	fragResource MACResource
+	fragActive   bool
+
 	// pendingSoft holds the per-symbol complex differential (soft
 	// information) for the next Process call, stashed by StashSoft
 	// immediately before the matching dibit chunk arrives (see
@@ -786,6 +798,60 @@ func (c *ControlChannel) isIndividual(ssi uint32) bool {
 	return ok
 }
 
+// fragMaxBits bounds the reassembly buffer (one-bit-per-byte). A control-channel
+// TM-SDU is well under this; the cap only stops a runaway MAC-FRAG stream that
+// never delivers a MAC-END from growing the buffer without limit.
+const fragMaxBits = 2048
+
+// stashFragment records a start-fragment MAC-RESOURCE's partial TM-SDU and its
+// resource context so a following MAC-END can reassemble the complete L3 PDU. A
+// new start fragment replaces any incomplete one (single TM-SDU in flight).
+func (c *ControlChannel) stashFragment(m MACResource, partial []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.fragResource = m
+	c.fragTMSDU = append(c.fragTMSDU[:0], partial...)
+	c.fragActive = true
+}
+
+// appendFragment appends a MAC-FRAG continuation to the in-progress TM-SDU. A
+// no-op when no start fragment is in progress; a stream that would exceed
+// fragMaxBits is dropped rather than accumulated.
+func (c *ControlChannel) appendFragment(payload []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.fragActive {
+		return
+	}
+	if len(c.fragTMSDU)+len(payload) > fragMaxBits {
+		c.fragActive = false
+		c.fragTMSDU = c.fragTMSDU[:0]
+		return
+	}
+	c.fragTMSDU = append(c.fragTMSDU, payload...)
+}
+
+// takeFragment appends a MAC-END payload, returns the reassembled TM-SDU (a
+// fresh slice) plus the start fragment's MAC-RESOURCE context, and clears the
+// buffer. ok is false for a stray MAC-END with no start fragment in progress or
+// an over-length reassembly.
+func (c *ControlChannel) takeFragment(payload []byte) (MACResource, []byte, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	defer func() {
+		c.fragActive = false
+		c.fragTMSDU = c.fragTMSDU[:0]
+		c.fragResource = MACResource{}
+	}()
+	if !c.fragActive || len(c.fragTMSDU)+len(payload) > fragMaxBits {
+		return MACResource{}, nil, false
+	}
+	sdu := make([]byte, 0, len(c.fragTMSDU)+len(payload))
+	sdu = append(sdu, c.fragTMSDU...)
+	sdu = append(sdu, payload...)
+	return c.fragResource, sdu, true
+}
+
 // publishRelease emits a KindCallRelease so the engine ends the active call for
 // this talkgroup at once, rather than waiting out the voice hangtime/no-voice
 // timers. No-op without a bus or a resolvable group.
@@ -937,4 +1003,10 @@ func (c *ControlChannel) ResyncReset() {
 	c.pendingSoft = c.pendingSoft[:0]
 	c.pendingSoftBase = 0
 	c.pendingSoftSet = false
+	// A stream re-sync abandons any half-reassembled TM-SDU: its continuation
+	// belonged to the pre-resync bit index and must not splice onto a fragment
+	// decoded after the baseline jump.
+	c.fragActive = false
+	c.fragTMSDU = c.fragTMSDU[:0]
+	c.fragResource = MACResource{}
 }

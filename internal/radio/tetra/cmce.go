@@ -51,20 +51,12 @@ func (p PDU) TypeString() string {
 	return fmt.Sprintf("%s/Type(%X)", p.Disc, p.Type)
 }
 
-// VoiceGrant is the structured shape of a CMCE D-CONNECT PDU. The
-// fields surface what a trunking follower needs to retune a Voice
-// device to the assigned slot:
-//
-//	bytes 0-1  Call Identifier (14 bits) + flags
-//	bytes 2-4  Source SSI (24 bits)
-//	bytes 5-7  Destination SSI (24 bits)
-//	byte  8    Communication type / flags
-//	bytes 9-10 Carrier Number (12 bits) + Timeslot (2 bits) + flags
-//
-// The exact bit positions follow the most-cited public reference for
-// CMCE D-CONNECT; vendor extensions repurpose the high bits of
-// byte 8 and the trailing bytes. Cross-check before trusting live
-// captures.
+// VoiceGrant is the grant a trunking follower needs to retune a Voice device to
+// the assigned traffic slot. It is filled field-by-field from the bit-accurate
+// MAC layer (see downlink.go publishGrantFromMAC / classifyParties): the
+// physical resource (carrier + timeslot + usage marker) from the MAC-RESOURCE
+// channel-allocation element, and the party SSIs / emergency flag from the CMCE
+// TM-SDU riding in the same PDU.
 type VoiceGrant struct {
 	CallIdentifier uint16 // 14-bit
 	SourceSSI      uint32 // 24-bit
@@ -72,7 +64,6 @@ type VoiceGrant struct {
 	CarrierNumber  uint16 // 12-bit
 	Timeslot       uint8  // 2-bit (0..3)
 	UsageMarker    uint8  // downlink usage marker (AACH §21.4.7); 0 = none
-	Group          bool
 	// Individual marks a grant whose DestSSI is an individual subscriber ISSI
 	// (a unit-to-unit / individual-addressed call), not a talkgroup GSSI — so the
 	// engine and UI do not surface the radio ID as a phantom talkgroup. Set by

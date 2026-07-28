@@ -226,9 +226,10 @@ func (c *ControlChannel) decodeDownlinkHalf(bkn []uint8, diffs []complex64, r ui
 
 // ingestMAC demultiplexes a recovered logical-channel block (type-1 bits) at the
 // MAC layer: a MAC-RESOURCE PDU's channel-allocation element becomes a voice
-// grant, and its TM-SDU is handed to the L3 parser. MAC-FRAG/END reassembly and
-// broadcast (SYSINFO) handling here are follow-ups — SYSINFO identity already
-// reaches Ingest via the synchronisation-burst lock path.
+// grant, and its TM-SDU is handed to the L3 parser. A TM-SDU too large for one
+// block arrives as a start-fragment MAC-RESOURCE plus following MAC-FRAG /
+// MAC-END PDUs, reassembled here. Broadcast (SYSINFO) frequency parameters are
+// learned; SYSINFO identity already reaches Ingest via the sync-burst lock path.
 func (c *ControlChannel) ingestMAC(recovered []byte) {
 	if len(recovered) < 2 {
 		return
@@ -239,36 +240,38 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 		if !ok || m.NullPDU {
 			return
 		}
-		// Parse the L3 CMCE PDU first (bit-accurate, from the raw TM-SDU bits) so
-		// a grant can be enriched with its emergency flag + source SSI, and so a
-		// D-RELEASE / D-TX change can act on the same MAC-RESOURCE's address.
-		var (
-			msg      CMCEMessage
-			haveCMCE bool
-		)
-		if sdu := m.tmSDU(recovered); sdu != nil {
-			// The MAC TM-SDU is an LLC PDU (§21.2): strip the basic-link header
-			// (and any FCS trailer) to reach the TL-SDU — the MLE PDU — before the
-			// 3-bit MLE discriminator + CMCE fields line up. Feeding the raw TM-SDU
-			// into ParseCMCE misframes every L3 address (corrupts ISSI/GSSI).
-			if tl, ok := ParseLLC(sdu); ok {
-				msg, haveCMCE = ParseCMCE(tl)
-				// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
-				if pdu, err := PDUFromBits(tl); err == nil {
-					c.Ingest(pdu)
-				}
+		if m.StartFragment {
+			// The TM-SDU is truncated here and continues in following
+			// MAC-FRAG/MAC-END PDUs. The physical resource (carrier/timeslot/GSSI)
+			// is fully known from this MAC header, so publish the grant now — no
+			// latency cost, and robust to a lost MAC-END — and stash the partial
+			// TM-SDU so the MAC-END can recover the complete L3 CMCE PDU (the
+			// call-id→group mapping / release / talker a single block can't carry).
+			if m.ChanAlloc != nil {
+				c.publishGrantFromMAC(m, CMCEMessage{}, false)
 			}
+			if sdu := m.tmSDU(recovered); sdu != nil {
+				c.stashFragment(m, sdu)
+			}
+			return
 		}
-		// Publish a voice grant for the allocated resource — unless the CMCE PDU
-		// riding in this MAC-RESOURCE is a teardown (D-RELEASE): its
-		// channel-allocation element is the resource being reclaimed, not a new
-		// call, and publishing it spawns a zero-byte ghost call that handleCMCE's
-		// release then immediately ends.
-		if m.ChanAlloc != nil && !(haveCMCE && isCMCETeardown(msg.Type)) {
-			c.publishGrantFromMAC(m, msg, haveCMCE)
+		c.ingestResourceTMSDU(m, m.tmSDU(recovered))
+	case MACPDUFragEnd:
+		// Continuation of a start-fragment TM-SDU (§21.4.3.3/.4). MAC-FRAG appends;
+		// MAC-END completes the reassembly and runs the same L3 handling as a
+		// single-block MAC-RESOURCE, keyed by the stashed start-fragment context.
+		sub, ok := macFragmentSubtype(recovered)
+		if !ok {
+			return
 		}
-		if haveCMCE {
-			c.handleCMCE(m, msg)
+		payload := macFragmentPayload(recovered)
+		switch sub {
+		case macFrag:
+			c.appendFragment(payload)
+		case macEnd:
+			if m, sdu, ok := c.takeFragment(payload); ok {
+				c.ingestResourceTMSDU(m, sdu)
+			}
 		}
 	case MACPDUBroadcast:
 		// Learn the cell's full SYSINFO frequency parameters (main carrier +
@@ -280,6 +283,40 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 		if si, ok := ParseSysInfo(recovered); ok {
 			c.learnSysInfo(si)
 		}
+	}
+}
+
+// ingestResourceTMSDU runs the L3 handling for a MAC-RESOURCE whose TM-SDU is
+// complete — either delivered in a single block or reassembled from a
+// start-fragment + MAC-FRAG/MAC-END chain. sdu is the TM-SDU bits (nil for a
+// bare grant with no TM-SDU). It decodes the CMCE PDU (to enrich the grant with
+// its emergency flag + source SSI and to drive call-state), publishes a voice
+// grant for any channel allocation — unless the CMCE is a teardown (D-RELEASE /
+// D-DISCONNECT) whose allocation is the resource being reclaimed, which would
+// otherwise spawn a zero-byte ghost call — and acts on the call-control PDU.
+func (c *ControlChannel) ingestResourceTMSDU(m MACResource, sdu []byte) {
+	var (
+		msg      CMCEMessage
+		haveCMCE bool
+	)
+	if sdu != nil {
+		// The MAC TM-SDU is an LLC PDU (§21.2): strip the basic-link header (and
+		// any FCS trailer) to reach the TL-SDU — the MLE PDU — before the 3-bit MLE
+		// discriminator + CMCE fields line up. Feeding the raw TM-SDU into
+		// ParseCMCE misframes every L3 address (corrupts ISSI/GSSI).
+		if tl, ok := ParseLLC(sdu); ok {
+			msg, haveCMCE = ParseCMCE(tl)
+			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
+			if pdu, err := PDUFromBits(tl); err == nil {
+				c.Ingest(pdu)
+			}
+		}
+	}
+	if m.ChanAlloc != nil && !(haveCMCE && isCMCETeardown(msg.Type)) {
+		c.publishGrantFromMAC(m, msg, haveCMCE)
+	}
+	if haveCMCE {
+		c.handleCMCE(m, msg)
 	}
 }
 
@@ -371,7 +408,9 @@ func (c *ControlChannel) handleCMCE(m MACResource, msg CMCEMessage) {
 		if !c.isIndividual(gssi) {
 			c.rememberCall(msg.CallIdentifier, gssi)
 		}
-	case CMCETypeDRelease:
+	case CMCETypeDRelease, CMCETypeDDisconnect:
+		// Both end the call: D-RELEASE from the SwMI, D-DISCONNECT the
+		// infrastructure-initiated disconnect (EN 300 392-2 §14.5.1.3.3).
 		gssi := c.resolveGroup(msg.CallIdentifier, m.Address.SSI)
 		c.publishRelease(gssi, msg.DisconnectCause)
 		c.forgetCall(msg.CallIdentifier)

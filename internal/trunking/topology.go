@@ -61,6 +61,11 @@ type TopoChannelRef struct {
 	ChannelID     uint8  `json:"channel_id" yaml:"channel_id"`
 	ChannelNumber uint16 `json:"channel_number" yaml:"channel_number"`
 	FrequencyHz   uint32 `json:"frequency_hz,omitempty" yaml:"frequency_hz,omitempty"`
+	// UplinkHz is the channel's uplink (MS transmit) frequency when the protocol
+	// resolves it directly rather than via a band-plan transmit offset — TETRA
+	// derives it from the SYSINFO duplex spacing (§21.4.4.1). Zero when unknown or
+	// when the uplink is instead computed from a band plan (P25).
+	UplinkHz uint32 `json:"uplink_hz,omitempty" yaml:"uplink_hz,omitempty"`
 }
 
 // TopoNeighborRef is an adjacent site advertised by the control channel.

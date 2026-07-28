@@ -8,6 +8,25 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **TETRA control-channel PDUs that span multiple MAC blocks are reassembled
+  (MAC-FRAG / MAC-END).** A TM-SDU too large for one MAC block arrives as a
+  start-fragment MAC-RESOURCE followed by MAC-FRAG and a MAC-END (ETSI EN 300
+  392-2 §21.4.3.3/.4); those continuation PDUs were previously dropped, losing
+  the L3 CMCE PDU carried across them (a large D-SETUP's call-identifier→group
+  mapping, calling-party SSI, and emergency flag). The channel allocation is
+  complete on the start fragment, so the voice grant still publishes immediately;
+  the reassembled MAC-END now recovers the full call-control PDU and enriches the
+  call with its source and emergency state.
+- **TETRA network-configuration report now shows the control channel's uplink.**
+  The cell's uplink carrier, derived from the SYSINFO duplex spacing and the
+  frequency offset (§21.4.4.1), was computed but dropped before the report; the
+  primary control channel now renders its `UPLINK:` frequency alongside the
+  downlink.
+- **Soft-decision decode on the TETRA grant (SCH/F + SCH/HD) path.** The
+  signalling-channel decode on the grant-bearing blocks now uses the per-symbol
+  soft (log-likelihood) information when available, falling back to the
+  hard-decision Viterbi path, recovering grants on marginal control channels that
+  a hard decision drops.
 - **P25 Phase 2 blind CMA equalizer on the traffic-channel receiver
   (`p25_phase2_equalizer: on`).** A new opt-in adds a blind constant-modulus
   (CMA) adaptive equalizer on the Phase 2 symbol stream, after carrier
@@ -208,6 +227,35 @@ for tagged releases.
   log line always showed `drops=0` — the drop count was only surfaced in a
   separate fan-out warning. The capture now reports the real subscriber drop
   count, matching the wideband tap, so a gappy grab is visible in its own result.
+- **TETRA subscriber/talkgroup identities (ISSI/GSSI) were corrupted on a live
+  single-carrier site.** The MAC TM-SDU is an LLC PDU (§21.2); its basic-link
+  header was not stripped before the L3 CMCE PDU was parsed, so the 3-bit MLE
+  discriminator and every address field were misframed and the decoded radio /
+  talkgroup IDs were wrong. GopherTrunk now parses the LLC sublayer (`ParseLLC`)
+  before CMCE, recovering the correct ISSI/GSSI.
+- **TETRA grant frequencies ignored the SYSINFO frequency offset.** The broadcast
+  frequency-offset field (0 / ±6.25 / +12.5 kHz, §21.4.4.1) was dropped, so a
+  cell whose carrier actually sits at e.g. 469.88125 MHz resolved to 469.875 MHz.
+  The offset (with the frequency band, duplex spacing, and reverse-operation
+  flags) is now parsed and applied, so grant carriers resolve to their true
+  absolute downlink/uplink frequencies.
+- **Ghost TETRA recordings from teardown PDUs.** A MAC-RESOURCE whose CMCE PDU is
+  a call teardown (D-RELEASE, and now D-DISCONNECT, EN 300 392-2 Table 14.9)
+  carries a channel-allocation element for the resource being *reclaimed*, not a
+  new call; publishing a grant for it spawned a zero-byte phantom recording. Such
+  grants are now suppressed, and D-DISCONNECT is modelled so it tears the call
+  down instead of leaking a ghost.
+- **Individual (unit-to-unit) TETRA calls were surfaced as phantom talkgroups.** A
+  grant addressed to a subscriber ISSI showed the radio ID as if it were a
+  talkgroup. Calls are now classified individual-vs-group (any SSI seen as a CMCE
+  calling/transmitting party is an individual radio), and an individual-addressed
+  grant is flagged as such (`GrantDTO.individual`) instead of being listed as a
+  talkgroup.
+- **TETRA active-call tracking thrashed on a busy carrier (marker collisions,
+  starved audio).** Grants for the same call on one carrier could be keyed as
+  separate calls, colliding on the voice tap and starving audio. Same-carrier
+  TETRA grants that share a (system, frequency, timeslot) are now folded into one
+  call, backfilling the source onto the existing recording.
 - **TETRA colour code locked on the first sync burst, so a single mis-decoded
   BSCH could poison a whole session.** The extended colour code (the scrambler
   seed for every BNCH/SCH/TCH block) was learned from the first BSCH and never
