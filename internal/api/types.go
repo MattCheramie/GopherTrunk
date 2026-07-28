@@ -470,6 +470,11 @@ type GrantDTO struct {
 	Encrypted bool  `json:"encrypted,omitempty"`
 	Emergency bool  `json:"emergency,omitempty"`
 	DataCall  bool  `json:"data_call,omitempty"`
+	// Individual marks a grant whose group_id is NOT a talkgroup but an
+	// individual destination — a unit-to-unit target radio, an interconnect
+	// target, or a TETRA subscriber ISSI — so a consumer can render the radio ID
+	// as a unit rather than a phantom talkgroup. Omitted (false) for group calls.
+	Individual bool `json:"individual,omitempty"`
 	// AlgorithmID / KeyID surface the P25 encryption parameters
 	// recovered from the in-call signalling. Zero when Encrypted is
 	// false; also zero on a Phase 1 grant until the LDU2 Encryption
@@ -490,6 +495,7 @@ func grantToDTO(g trunking.Grant) GrantDTO {
 		Timeslot:  g.Timeslot,
 		Encrypted: g.Encrypted, Emergency: g.Emergency,
 		DataCall:    g.DataCall,
+		Individual:  g.Individual,
 		AlgorithmID: g.AlgorithmID, KeyID: g.KeyID,
 	}
 }

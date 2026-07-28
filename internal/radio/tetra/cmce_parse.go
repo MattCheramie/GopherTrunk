@@ -31,6 +31,16 @@ const (
 	CMCETypeDTxGranted CMCEType = 0x0B // D-TX GRANTED
 )
 
+// isCMCETeardown reports whether a CMCE PDU type tears a call down rather than
+// establishing or maintaining it. A channel-allocation element that accompanies
+// a teardown PDU refers to the traffic resource being *reclaimed*, not a new
+// voice grant — so ingestMAC must not publish a grant for it, which would spawn a
+// zero-byte ghost call that the release then immediately ends. D-DISCONNECT is
+// not yet modelled by ParseCMCE; add it here when it is.
+func isCMCETeardown(t CMCEType) bool {
+	return t == CMCETypeDRelease
+}
+
 // cmceMLEPD is the 3-bit MLE protocol discriminator value that selects the CMCE
 // SDU (Table 18.1: 010 = CMCE; 001 = MM, 100 = SNDCP, 101 = MLE).
 const cmceMLEPD uint32 = 0x2

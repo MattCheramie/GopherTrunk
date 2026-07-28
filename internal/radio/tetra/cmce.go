@@ -73,8 +73,13 @@ type VoiceGrant struct {
 	Timeslot       uint8  // 2-bit (0..3)
 	UsageMarker    uint8  // downlink usage marker (AACH §21.4.7); 0 = none
 	Group          bool
-	Emergency      bool
-	Encrypted      bool
+	// Individual marks a grant whose DestSSI is an individual subscriber ISSI
+	// (a unit-to-unit / individual-addressed call), not a talkgroup GSSI — so the
+	// engine and UI do not surface the radio ID as a phantom talkgroup. Set by
+	// classifyParties.
+	Individual bool
+	Emergency  bool
+	Encrypted  bool
 }
 
 // Voice grants and call teardown are decoded bit-accurately from the MAC layer
