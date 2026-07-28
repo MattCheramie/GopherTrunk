@@ -423,6 +423,40 @@ func (e *Engine) HandleGrant(g Grant) {
 		}
 	}
 
+	// TETRA notification supersede. A call can be bound from a *provisional* grant:
+	// a group-call notification, or a D-CONNECT addressed to the calling party that
+	// arrives before that party is known as a radio ID — so it is labelled with the
+	// individual's SSI (or a phantom talkgroup), carries no source, and, worst,
+	// carries the notification's own downlink usage marker rather than the traffic
+	// channel's. When the authoritative group grant for the same physical channel
+	// then arrives — the real GSSI, the calling party as source, and the traffic
+	// slot's usage marker — the #915 source backfill below would fold it onto the
+	// provisional call as a mere source update, leaving the recording on the wrong
+	// talkgroup AND following the notification's usage marker instead of the traffic
+	// marker, which starves the vocoder (the reporter saw 4 speech frames / 1.7%
+	// audio over a 7 s call). Instead, end the provisional call and let the
+	// authoritative grant start a fresh one below, so the composer's slot demux
+	// registers the correct usage marker from the outset. The provisional call has
+	// decoded no traffic — its marker never matched the voice slot — so no real
+	// audio is lost. Gated on TETRA and on a still-unfinalised (source-less)
+	// provisional call whose talkgroup differs, so P25's legitimate same-channel
+	// different-talkgroup grants (#915) and ordinary same-call repeats are untouched.
+	if g.Protocol == "tetra" && g.GroupID != 0 && g.SourceID != 0 && g.FrequencyHz != 0 {
+		for _, ac := range e.pool.Active() {
+			if ac.Grant.System != g.System || ac.Grant.FrequencyHz != g.FrequencyHz ||
+				ac.Grant.Timeslot != g.Timeslot {
+				continue
+			}
+			if ac.Grant.SourceID != 0 || ac.Grant.GroupID == g.GroupID {
+				continue // finalised, or the same talkgroup — an ordinary repeat (handled below)
+			}
+			e.log.Info("tetra: superseding notification-bound call with the authoritative group grant",
+				"provisional", ac.Grant.String(), "authoritative", g.String(), "device", ac.Device.Serial)
+			e.endCall(ac, EndReasonNormal)
+			break
+		}
+	}
+
 	// Physical-channel source backfill (#915). The talkgroup dedup above
 	// recovers a source RID only from a repeat grant that matches the bound
 	// call's (System, talkgroup, timeslot). The reporter's #916 field test

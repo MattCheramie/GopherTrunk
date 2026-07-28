@@ -548,6 +548,17 @@ func (c *ControlChannel) Ingest(p PDU) {
 // grant carrier's frequency relative to the cell's own carrier.
 const tetraChannelSpacingHz = 25_000
 
+// maxGrantCarrierOffsetHz bounds how far a grant's resolved traffic frequency may
+// sit from the control channel before it is treated as a bit-alignment / false-CRC
+// parsing artefact rather than a real allocation. Every traffic carrier a control
+// channel grants lives in the same operator allocation as the CC itself — TETRA
+// site downlink carriers span at most a few MHz — so a resolved frequency tens of
+// MHz away (e.g. carrier 6 → 400 MHz on a 467 MHz cell) can only be a corrupt
+// block whose 16-bit SCH CRC happened to pass, or a slipped bit cursor. 10 MHz is
+// comfortably wider than any real single-site carrier spread yet rejects such
+// foreign-band garbage outright.
+const maxGrantCarrierOffsetHz = 10_000_000
+
 // carrierFrequency derives the Hz of a TETRA carrier number for this cell.
 //
 // When the full SYSINFO frequency parameters are known (frequency band +
@@ -657,6 +668,26 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 		// cell's own carrier (learned from SYSINFO) at 25 kHz TETRA spacing.
 		// Exact for a same-carrier SCBS (carrier == mainCarrier ⇒ the CC freq).
 		freq = hz
+	}
+	// Structural sanity guard against a bit-alignment slip or a false-positive SCH
+	// CRC: a grant whose carrier resolves to a band foreign to this cell cannot be
+	// real (see maxGrantCarrierOffsetHz). Drop it rather than log a ghost call and
+	// spawn a phantom recording on a frequency the site does not operate. Only
+	// enforced once both the CC frequency and a resolved grant frequency are known;
+	// an offline replay with neither (freq == 0) simply skips the guard.
+	if freq != 0 && c.freqHz != 0 {
+		off := int64(freq) - int64(c.freqHz)
+		if off < 0 {
+			off = -off
+		}
+		if off > maxGrantCarrierOffsetHz {
+			c.log.Warn("tetra: dropping grant — carrier resolves to a foreign band (bit-alignment/CRC artefact)",
+				"system", c.systemName,
+				"src", g.SourceSSI, "dst", g.DestSSI,
+				"carrier", g.CarrierNumber, "resolved_hz", freq,
+				"cc_hz", c.freqHz, "offset_hz", off)
+			return
+		}
 	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,

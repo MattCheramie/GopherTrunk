@@ -32,6 +32,48 @@ func TestEngineTETRAFoldsGrantsByChannel(t *testing.T) {
 	}
 }
 
+// TestEngineTETRANotificationSuperseded is the regression for the group
+// notification vs channel grant bug (Discord report, log 01753d5b): a call bound
+// from a provisional notification grant — labelled with the calling party's own
+// SSI (the temporal race: the party is not yet known as a radio ID), no source,
+// and the notification's usage marker (8) — must yield to the authoritative group
+// grant for the same physical channel, which carries the real GSSI, the calling
+// party as source, and the traffic slot's usage marker (23). Before the supersede
+// the #915 channel backfill folded the group grant on as a source update, so the
+// call stayed on the wrong talkgroup and followed marker 8, starving the vocoder.
+func TestEngineTETRANotificationSuperseded(t *testing.T) {
+	e, pool, bus, _ := mkEngine(t, 2)
+	defer bus.Close()
+
+	const (
+		freq = uint32(467_912_500)
+		ts   = uint8(2)
+		issi = uint32(1005724) // calling party radio ID (also the notification address)
+		gssi = uint32(1020543) // the real talkgroup
+	)
+	// Grant 1: the provisional notification — addressed to the individual's SSI
+	// (surfaced as a phantom talkgroup because the ISSI is not yet known), no
+	// source, the notification's usage marker.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: ts, TETRAUsageMarker: 8})
+	// Grant 2: the authoritative group grant — real GSSI, the calling party as
+	// source, and the traffic channel's downlink usage marker.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: gssi, SourceID: issi, FrequencyHz: freq, Timeslot: ts, TETRAUsageMarker: 23})
+
+	act := pool.Active()
+	if len(act) != 1 {
+		t.Fatalf("active calls = %d, want 1", len(act))
+	}
+	if got := act[0].Grant.GroupID; got != gssi {
+		t.Errorf("call talkgroup = %d, want %d (the authoritative GSSI must supersede the notification)", got, gssi)
+	}
+	if got := act[0].Grant.TETRAUsageMarker; got != 23 {
+		t.Errorf("call usage marker = %d, want 23 (the traffic marker must supersede the notification marker)", got)
+	}
+	if got := act[0].Grant.SourceID; got != issi {
+		t.Errorf("call source = %d, want %d", got, issi)
+	}
+}
+
 // TestEngineTETRAConcurrentSlotsStayDistinct guards that the channel fold keys on
 // timeslot: two TETRA calls on the same carrier but different timeslots are
 // distinct calls and must not be folded.

@@ -179,6 +179,29 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA group calls could land on the wrong talkgroup with starved audio when
+  the first grant was a notification.** On a same-carrier site a group call's
+  first control-channel grant is often a notification / a D-CONNECT addressed to
+  the calling party, which arrives before that party is known as a radio ID — so
+  it is labelled with the individual's SSI (a phantom talkgroup), carries no
+  source, and follows the notification's own downlink usage marker rather than
+  the traffic channel's. The recording bound to that provisional identity, and
+  when the authoritative group grant for the same physical channel arrived, the
+  physical-channel source backfill folded it on as a mere source update — so the
+  recording stayed on the wrong talkgroup and kept following the wrong usage
+  marker, starving the voice demux (a few percent of the call decoded). The
+  engine now supersedes a still-unfinalised, notification-bound TETRA call when
+  the authoritative group grant (real GSSI, calling-party source, traffic usage
+  marker) lands on its channel, so the recording follows the correct talkgroup
+  and marker from the outset. TETRA-gated; P25 same-channel grants are unchanged.
+- **TETRA: a corrupt control-channel block whose CRC happened to pass could
+  surface a ghost grant on a foreign frequency band.** A false-positive SCH CRC
+  (or a slipped bit cursor) produced a bogus voice grant whose carrier resolved
+  tens of MHz from the site — e.g. `carrier 6 → 400 MHz` on a 467 MHz cell —
+  spawning a phantom call on a band the site does not operate. Grants whose
+  resolved carrier sits more than 10 MHz from the control channel are now
+  dropped as bit-alignment / CRC artefacts (a site's downlink carriers span at
+  most a few MHz).
 - **`auto_record` with `tap: ddc` reported `drops=0` even when the DDC grab had
   gaps.** A triggered narrowband capture that fell behind the voice fan-out
   dropped IQ chunks (time gaps that break downstream decode), but the "captured"
