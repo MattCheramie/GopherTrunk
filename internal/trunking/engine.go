@@ -447,6 +447,34 @@ func (e *Engine) HandleGrant(g Grant) {
 		}
 	}
 
+	// TETRA: a physical channel + timeslot hosts exactly one call, but the SwMI
+	// grants that one call under several SSIs — the group GSSI in a D-SETUP, the
+	// calling party's individual ISSI in a D-CONNECT addressed to the caller. Those
+	// grants carry different GroupIDs, so the (System, GroupID, Timeslot) dedup and
+	// the source-backfill above both miss them and a free device would spawn a
+	// duplicate call that then collides with the first on their shared usage marker
+	// and starves its recording. Fold any TETRA grant on an active call's exact
+	// (System, frequency, timeslot) onto that call. Gated on TETRA so P25 — whose
+	// compressed/patch grants legitimately reuse a channel under different
+	// talkgroups (#915) — is unchanged.
+	if g.Protocol == "tetra" && g.FrequencyHz != 0 {
+		for _, ac := range e.pool.Active() {
+			if ac.Grant.System != g.System || ac.Grant.FrequencyHz != g.FrequencyHz ||
+				ac.Grant.Timeslot != g.Timeslot {
+				continue
+			}
+			e.pool.Touch(ac.Device.Serial, e.now())
+			if g.SourceID != 0 {
+				if upd, filled := e.pool.BackfillSourceFromGrant(ac.Device.Serial, g.SourceID); filled {
+					e.republishCallSource(ac.Device.Serial, upd)
+				}
+			}
+			e.log.Debug("tetra grant on an active channel; treated as a repeat",
+				"grant", g.String(), "device", ac.Device.Serial)
+			return
+		}
+	}
+
 	// 1) Free device available? Allocate. FindFreeForFrequency skips
 	// virtual voice tuners whose wideband window doesn't cover the
 	// grant — so a P25 voice grant outside the wideband band falls
