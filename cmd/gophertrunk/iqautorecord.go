@@ -23,7 +23,7 @@ import (
 // voice taps read) plus its pipeline rate and centre. *ccdecoder.Decoder
 // satisfies it; tests supply a fake. Used only when auto_record's tap is "ddc".
 type ddcVoiceTap interface {
-	SubscribeVoiceIQ() (<-chan []complex64, func())
+	SubscribeVoiceIQ() (<-chan []complex64, func() uint64)
 	PipelineRateHz() float64
 	CenterFreqHz() uint32
 }
@@ -176,7 +176,6 @@ func captureDDCToFile(ctx context.Context, tap ddcVoiceTap, path string, format 
 		return 0, 0, fmt.Errorf("iq-autorecord: create %s: %w", path, err)
 	}
 	ch, unsub := tap.SubscribeVoiceIQ()
-	defer unsub()
 	enc := siglab.NewCaptureWriter(f, format)
 
 	// The DDC fan-out only broadcasts while the control pipeline is locked/active;
@@ -208,13 +207,17 @@ func captureDDCToFile(ctx context.Context, tap ddcVoiceTap, path string, format 
 		}
 	}()
 
+	// Unsubscribe and read the fan-out's drop count for this capture: dropped IQ
+	// chunks are time gaps in the grab that break downstream decode, exactly like
+	// the wideband path's subscriber drops. runCapture surfaces the count (and the
+	// fan-out logs its own warning at unsubscribe).
+	drops = unsub()
+
 	closeErr := f.Close()
 	if streamErr == nil && closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
 		streamErr = closeErr
 	}
-	// Subscriber drops are logged by the fan-out itself at unsubscribe; the DDC
-	// tap exposes no per-capture drop count, so report 0.
-	return samples, 0, streamErr
+	return samples, drops, streamErr
 }
 
 // Run drains the event subscription until ctx is cancelled. sub is an

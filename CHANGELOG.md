@@ -179,6 +179,12 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **`auto_record` with `tap: ddc` reported `drops=0` even when the DDC grab had
+  gaps.** A triggered narrowband capture that fell behind the voice fan-out
+  dropped IQ chunks (time gaps that break downstream decode), but the "captured"
+  log line always showed `drops=0` — the drop count was only surfaced in a
+  separate fan-out warning. The capture now reports the real subscriber drop
+  count, matching the wideband tap, so a gappy grab is visible in its own result.
 - **TETRA colour code locked on the first sync burst, so a single mis-decoded
   BSCH could poison a whole session.** The extended colour code (the scrambler
   seed for every BNCH/SCH/TCH block) was learned from the first BSCH and never

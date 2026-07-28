@@ -45,7 +45,12 @@ func newVoiceFanout(log *slog.Logger) *voiceFanout {
 	return &voiceFanout{subs: map[int]*voiceSub{}, log: log}
 }
 
-func (f *voiceFanout) subscribe() (<-chan []complex64, func()) {
+// subscribe registers a voice subscriber and returns its IQ channel plus an
+// unsubscribe func. The unsubscribe func returns the number of chunks that were
+// dropped to this subscriber over its lifetime (0 when it kept up), so a consumer
+// that wants the count — e.g. a triggered DDC capture reporting whether the grab
+// has gaps — can read it; callers that don't care simply ignore the return.
+func (f *voiceFanout) subscribe() (<-chan []complex64, func() uint64) {
 	sub := &voiceSub{ch: make(chan []complex64, 64)}
 	f.mu.Lock()
 	id := f.next
@@ -53,7 +58,7 @@ func (f *voiceFanout) subscribe() (<-chan []complex64, func()) {
 	f.subs[id] = sub
 	f.mu.Unlock()
 	var once sync.Once
-	return sub.ch, func() {
+	return sub.ch, func() uint64 {
 		once.Do(func() {
 			f.mu.Lock()
 			if s, ok := f.subs[id]; ok {
@@ -70,6 +75,9 @@ func (f *voiceFanout) subscribe() (<-chan []complex64, func()) {
 					"dropped_chunks", d)
 			}
 		})
+		// The counter is final once the delete above ran; safe to read on any
+		// call (a second unsubscribe is a no-op that still reports the total).
+		return sub.drops.Load()
 	}
 }
 
@@ -97,8 +105,10 @@ func (f *voiceFanout) broadcast(chunk []complex64) {
 
 // SubscribeVoiceIQ returns a channel of channelised (post-DDC) IQ at the
 // pipeline rate plus an unsubscribe func. The same-carrier voice tap consumes
-// it for the life of a followed call.
-func (d *Decoder) SubscribeVoiceIQ() (<-chan []complex64, func()) {
+// it for the life of a followed call. The unsubscribe func returns the number of
+// IQ chunks dropped to this subscriber (0 when it kept up); callers that don't
+// need the count ignore it.
+func (d *Decoder) SubscribeVoiceIQ() (<-chan []complex64, func() uint64) {
 	return d.voiceFan.subscribe()
 }
 
