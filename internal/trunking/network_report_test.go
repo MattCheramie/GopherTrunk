@@ -111,3 +111,28 @@ func TestReportFromTopologyMapsFieldsAndUplink(t *testing.T) {
 		t.Errorf("neighbour uplink not derived: %+v", site.Neighbors)
 	}
 }
+
+// TestReportFromTopologyDirectUplink covers a protocol (TETRA) that resolves the
+// uplink directly from its own duplex spacing, with no band plan: the explicit
+// TopoChannelRef.UplinkHz must flow through to the report and the rendered
+// UPLINK line, not be dropped for want of a band-plan transmit offset.
+func TestReportFromTopologyDirectUplink(t *testing.T) {
+	snap := &TopologySnapshot{
+		SystemName: "TETRA Cell",
+		Protocol:   "tetra",
+		// Offset-corrected duplex pair (§21.4.4.1): 469.88125 MHz DL / 459.88125 UL.
+		PrimaryCC: &TopoChannelRef{ChannelNumber: 3595, FrequencyHz: 469881250, UplinkHz: 459881250},
+	}
+	r := ReportFromTopology(snap)
+	if len(r.Sites) != 1 {
+		t.Fatalf("Sites = %d, want 1", len(r.Sites))
+	}
+	if got := r.Sites[0].PrimaryCC.UplinkHz; got != 459881250 {
+		t.Errorf("primary uplink = %d, want 459881250 (direct, no band plan)", got)
+	}
+	var buf strings.Builder
+	RenderNetworkReport(&buf, r)
+	if !strings.Contains(buf.String(), "UPLINK:459.881250 MHz") {
+		t.Errorf("rendered report missing direct TETRA uplink:\n%s", buf.String())
+	}
+}

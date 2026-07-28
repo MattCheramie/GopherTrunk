@@ -826,6 +826,9 @@ func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 		snap.PrimaryCC = &trunking.TopoChannelRef{
 			ChannelNumber: t.MainCarrier,
 			FrequencyHz:   t.DownlinkHz,
+			// The uplink is the offset-corrected duplex pair (§21.4.4.1), derived
+			// directly from the SYSINFO duplex spacing rather than a band plan.
+			UplinkHz: t.UplinkHz,
 		}
 	}
 	return snap

@@ -232,9 +232,14 @@ func ReportFromTopology(t *TopologySnapshot) NetworkReport {
 	for _, b := range t.BandPlan {
 		offsets[b.ChannelID] = b.TxOffsetHz
 	}
-	conv := func(id uint8, num uint16, downHz uint32) ReportChannel {
+	conv := func(id uint8, num uint16, downHz, upHz uint32) ReportChannel {
 		c := ReportChannel{ChannelID: id, ChannelNumber: num, DownlinkHz: downHz}
-		if downHz != 0 {
+		switch {
+		case upHz != 0:
+			// The protocol resolved the uplink directly (TETRA duplex spacing).
+			c.UplinkHz = upHz
+		case downHz != 0:
+			// Otherwise derive it from the band-plan transmit offset (P25).
 			if off, ok := offsets[id]; ok && off != 0 {
 				if up := int64(downHz) + off; up > 0 {
 					c.UplinkHz = uint32(up)
@@ -254,16 +259,17 @@ func ReportFromTopology(t *TopologySnapshot) NetworkReport {
 	}
 	site := ReportSite{RFSS: t.RFSS, Site: t.Site, LRA: t.LRA}
 	if t.PrimaryCC != nil {
-		site.PrimaryCC = conv(t.PrimaryCC.ChannelID, t.PrimaryCC.ChannelNumber, t.PrimaryCC.FrequencyHz)
+		site.PrimaryCC = conv(t.PrimaryCC.ChannelID, t.PrimaryCC.ChannelNumber, t.PrimaryCC.FrequencyHz, t.PrimaryCC.UplinkHz)
 	}
 	for _, s := range t.Secondary {
-		site.SecondaryCC = append(site.SecondaryCC, conv(s.ChannelID, s.ChannelNumber, s.FrequencyHz))
+		site.SecondaryCC = append(site.SecondaryCC, conv(s.ChannelID, s.ChannelNumber, s.FrequencyHz, s.UplinkHz))
 	}
 	for _, n := range t.Neighbors {
 		site.Neighbors = append(site.Neighbors, ReportNeighbor{
-			RFSS:    n.RFSS,
-			Site:    n.Site,
-			Channel: conv(n.ChannelID, n.ChannelNumber, n.FrequencyHz),
+			RFSS: n.RFSS,
+			Site: n.Site,
+			// TopoNeighborRef carries no explicit uplink; it comes from the band plan.
+			Channel: conv(n.ChannelID, n.ChannelNumber, n.FrequencyHz, 0),
 		})
 	}
 	r.Sites = []ReportSite{site}
