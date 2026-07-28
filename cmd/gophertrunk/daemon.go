@@ -391,6 +391,7 @@ type Daemon struct {
 	voicePool    *trunking.VoicePool
 	affiliations *trunking.AffiliationTracker
 	siteTracker  *trunking.SiteTracker
+	grantTracker *trunking.GrantTracker
 	recorder     *voice.Recorder
 	// voiceDecoder is the recorder the composer decodes digital voice through
 	// and taps PCM from for the live web/gRPC stream. It equals `recorder` when
@@ -1429,6 +1430,18 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.siteTracker = st
 	}
 
+	// Grant tracker — always on. Subscribes to the bus and retains a
+	// bounded, most-recent-first log of decoded control-channel grants,
+	// surfaced at GET /api/v1/grants (the pollable form of the KindGrant
+	// SSE stream, issue #915).
+	{
+		gt, err := trunking.NewGrantTracker(trunking.GrantTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: grant tracker: %w", err)
+		}
+		d.grantTracker = gt
+	}
+
 	// Tone-out detector — optional. Built before the composer so it can
 	// share the composer's PCM sink via fanoutSink.
 	if len(cfg.ToneOut.Profiles) > 0 {
@@ -2462,6 +2475,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if d.siteTracker != nil {
 			opts.Sites = sitesProvider{d.siteTracker}
 		}
+		if d.grantTracker != nil {
+			opts.Grants = grantsProvider{d.grantTracker}
+		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
 		}
@@ -2768,6 +2784,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.affiliations != nil {
 		d.spawn(runCtx, "affiliations", false, func(ctx context.Context) error {
 			return d.affiliations.Run(ctx)
+		})
+	}
+	if d.grantTracker != nil {
+		d.spawn(runCtx, "grant-tracker", false, func(ctx context.Context) error {
+			return d.grantTracker.Run(ctx)
 		})
 	}
 	if d.p25p2Follower != nil {
@@ -3463,6 +3484,9 @@ func (d *Daemon) Close() {
 		}
 		if d.affiliations != nil {
 			_ = d.affiliations.Close()
+		}
+		if d.grantTracker != nil {
+			_ = d.grantTracker.Close()
 		}
 		if d.siteTracker != nil {
 			_ = d.siteTracker.Close()
@@ -4431,6 +4455,12 @@ func (b broadcastStatus) BroadcastStats() any { return b.mgr.Stats() }
 type affiliationProvider struct{ t *trunking.AffiliationTracker }
 
 func (a affiliationProvider) Affiliations() []trunking.UnitActivity { return a.t.Snapshot() }
+
+// grantsProvider adapts the GrantTracker into the api.GrantsProvider
+// interface (GET /api/v1/grants, issue #915).
+type grantsProvider struct{ t *trunking.GrantTracker }
+
+func (g grantsProvider) RecentGrants(limit int) []trunking.Grant { return g.t.Snapshot(limit) }
 
 // sitesProvider adapts the SiteTracker into the api.SitesProvider
 // interface.

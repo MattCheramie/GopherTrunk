@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`GET /api/v1/grants` — a pollable log of recent control-channel grants.**
+  GopherTrunk decodes a source RID off most `GRP_VCH_GRANT` TSBKs, and already
+  streams every grant live over the `grant` SSE event; this adds the pollable
+  snapshot form so a telemetry consumer can read the source RID (plus talkgroup,
+  frequency, channel, site and encryption) straight off the grant — the way
+  SDRtrunk's control-channel grant log exposes it — without holding an SSE
+  connection. The response reuses the same stable `GrantDTO` schema the SSE
+  stream emits, with a per-row `at` timestamp; `?limit=` and `?system=` narrow
+  the result. Backed by a bounded in-memory ring (newest-first, always on), so a
+  busy system never grows the log without bound (issue #915, reporter fix #2).
 - **TETRA control-channel PDUs that span multiple MAC blocks are reassembled
   (MAC-FRAG / MAC-END).** A TM-SDU too large for one MAC block arrives as a
   start-fragment MAC-RESOURCE followed by MAC-FRAG and a MAC-END (ETSI EN 300

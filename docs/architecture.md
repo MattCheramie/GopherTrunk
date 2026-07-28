@@ -156,6 +156,13 @@ constructed only when its config section is present:
   table of unit→talkgroup activity built from `KindGrant`,
   `KindAffiliation` and `KindUnitRegistration` events, served at
   `GET /api/v1/affiliations`.
+- **`trunking.GrantTracker`** — a bounded, most-recent-first ring-buffer
+  log of the voice-channel grants decoded off the control channel, built
+  from `KindGrant` events and served at `GET /api/v1/grants`. It is the
+  pollable form of the live `grant` SSE stream, so a telemetry consumer can
+  read the source RID (plus talkgroup, frequency and encryption) straight
+  off the control-channel grant — the way SDRtrunk's grant log exposes it —
+  without holding an SSE connection (issue #915).
 - **`trunking.SiteTracker`** — an in-memory table of the P25 sites
   discovered from the control channel, built from `KindSiteUpdate`
   events (published on each RFSS Status Broadcast) and served at
