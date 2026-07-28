@@ -283,6 +283,7 @@ type Server struct {
 	locations    LocationQuery
 	affiliations AffiliationProvider
 	sites        SitesProvider
+	grants       GrantsProvider
 	metrics      http.Handler
 	log          *slog.Logger
 	version      string
@@ -499,6 +500,14 @@ type SitesProvider interface {
 	Sites() []trunking.SiteInfo
 }
 
+// GrantsProvider is the read side of the grant tracker, supplying the
+// most-recent voice-channel grants decoded off the control channel for
+// GET /api/v1/grants (issue #915). RecentGrants returns newest-first, up to
+// limit entries (limit <= 0 = all retained).
+type GrantsProvider interface {
+	RecentGrants(limit int) []trunking.Grant
+}
+
 // NetworkReporter is the optional capability a SitesProvider may implement to
 // render the live, human-readable network-configuration report for a system
 // (the SiteTracker does). GET /api/v1/systems/{name}/report uses it when the
@@ -595,6 +604,9 @@ type ServerOptions struct {
 	// Sites is optional. When non-nil the server exposes
 	// GET /api/v1/sites (the discovered-P25-site table, issue #698).
 	Sites SitesProvider
+	// Grants is optional. When non-nil the server exposes
+	// GET /api/v1/grants (the recent control-channel grant log, issue #915).
+	Grants GrantsProvider
 	// MetricsHandler is optional. When non-nil it is mounted at
 	// GET /metrics; the daemon passes internal/metrics.Metrics.Handler()
 	// here. Decoupling via http.Handler keeps the api package free of a
@@ -914,6 +926,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		locations:      opts.Locations,
 		affiliations:   opts.Affiliations,
 		sites:          opts.Sites,
+		grants:         opts.Grants,
 		metrics:        opts.MetricsHandler,
 		log:            log,
 		version:        opts.Version,
@@ -1078,6 +1091,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
 	mux.HandleFunc("GET /api/v1/locations", s.handleLocations)
 	mux.HandleFunc("GET /api/v1/affiliations", s.handleAffiliations)
+	mux.HandleFunc("GET /api/v1/grants", s.handleGrants)
 	mux.HandleFunc("GET /api/v1/sites", s.handleListSites)
 	mux.HandleFunc("GET /api/v1/rids", s.handleListRIDs)
 	mux.HandleFunc("GET /api/v1/rids/{id}", s.handleGetRID)
