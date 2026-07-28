@@ -38,12 +38,13 @@ type downlinkNCDB struct {
 	dets    []*SyncDetector
 	scratch []int
 	buf     []uint8
+	softBuf []complex64 // per-symbol differentials, strictly parallel to buf (or empty)
 	bufBase int
 	pending []int
-	onSlot  func(bkn1, aach1, aach2, bkn2 []uint8)
+	onSlot  func(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)
 }
 
-func newDownlinkNCDB(onSlot func(bkn1, aach1, aach2, bkn2 []uint8)) *downlinkNCDB {
+func newDownlinkNCDB(onSlot func(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)) *downlinkNCDB {
 	d := &downlinkNCDB{onSlot: onSlot}
 	// The π/4-DQPSK stream carries a residual 0..3 dibit rotation, so correlate
 	// the normal training sequence (NTS1 + NTS2) under all four rotations.
@@ -57,11 +58,19 @@ func newDownlinkNCDB(onSlot func(bkn1, aach1, aach2, bkn2 []uint8)) *downlinkNCD
 
 // process consumes a window of dibits (baseIdx = absolute index of dibits[0],
 // monotonically non-decreasing) and emits each fully-buffered NCDB.
-func (d *downlinkNCDB) process(dibits []uint8, baseIdx int) {
+func (d *downlinkNCDB) process(dibits []uint8, diffs []complex64, baseIdx int) {
 	if len(d.buf) == 0 {
 		d.bufBase = baseIdx
 	}
 	d.buf = append(d.buf, dibits...)
+	// Keep the soft buffer strictly parallel to buf (same discipline as
+	// processSB): append only while soft data is supplied every call, else drop
+	// the soft path rather than misalign. Empty softBuf ⇒ hard-only decode.
+	if diffs != nil && len(diffs) == len(dibits) && len(d.softBuf) == len(d.buf)-len(dibits) {
+		d.softBuf = append(d.softBuf, diffs...)
+	} else if len(d.softBuf) != len(d.buf) {
+		d.softBuf = d.softBuf[:0]
+	}
 
 	ntsLen := len(NormalSyncDibits())
 	for _, det := range d.dets {
@@ -109,6 +118,9 @@ func (d *downlinkNCDB) process(dibits []uint8, baseIdx int) {
 		if drop > len(d.buf) {
 			drop = len(d.buf)
 		}
+		if len(d.softBuf) == len(d.buf) {
+			d.softBuf = append(d.softBuf[:0], d.softBuf[drop:]...)
+		}
 		d.buf = append(d.buf[:0], d.buf[drop:]...)
 		d.bufBase += drop
 	}
@@ -122,6 +134,18 @@ func (d *downlinkNCDB) emit(L int) {
 		}
 		return d.buf[s : s+n]
 	}
+	// softSlice returns the per-symbol differentials for the same span, or nil
+	// when soft data is not available/aligned (hard-only decode downstream).
+	softSlice := func(off, n int) []complex64 {
+		if len(d.softBuf) != len(d.buf) {
+			return nil
+		}
+		s := L + off - d.bufBase
+		if s < 0 || s+n > len(d.softBuf) {
+			return nil
+		}
+		return d.softBuf[s : s+n]
+	}
 	bkn1 := slice(ndbBKN1Start, ndbBlockDibits)
 	aach1 := slice(ndbAACH1Start, ndbAACH1Len)
 	aach2 := slice(ndbAACH2Start, ndbAACH2Len)
@@ -129,7 +153,7 @@ func (d *downlinkNCDB) emit(L int) {
 	if bkn1 == nil || aach1 == nil || aach2 == nil || bkn2 == nil {
 		return
 	}
-	d.onSlot(bkn1, aach1, aach2, bkn2)
+	d.onSlot(bkn1, aach1, aach2, bkn2, softSlice(ndbBKN1Start, ndbBlockDibits), softSlice(ndbBKN2Start, ndbBlockDibits))
 }
 
 // decodeDownlinkSlot classifies and decodes one NCDB. It reads the AACH to find
@@ -138,7 +162,7 @@ func (d *downlinkNCDB) emit(L int) {
 // and hands each CRC-clean block to the MAC demux. CRC gates every decode, so
 // trying all three channel shapes never double-counts: a full-slot SCH/F slot
 // fails the half-slot SCH/HD CRC and vice versa.
-func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8) {
+func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64) {
 	c.mu.Lock()
 	colour := c.colourCode
 	c.mu.Unlock()
@@ -162,17 +186,41 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8) {
 		}
 	}
 
+	// Soft data (the per-symbol differentials) lets the longer SCH/F and SCH/HD
+	// blocks decode ~1.5–2 dB deeper on a marginal constellation — the same soft
+	// path the BSCH/BNCH already use. Try soft first, fall back to the hard slice.
+	// softType5FromDiffs(diffs, (4-r)&3) hard-slices to derot(dibits, r), so soft
+	// and hard use the identical rotation. CRC gates both, so no double-count.
+	haveF := bkn1Diffs != nil && bkn2Diffs != nil && len(bkn1Diffs) == len(bkn1) && len(bkn2Diffs) == len(bkn2)
+
 	for _, r := range rots {
 		full := append(append([]uint8{}, bkn1...), bkn2...)
-		if rec, ok := DecodeSCHF(derot(full, r), colour); ok {
+		if haveF {
+			fullDiffs := append(append([]complex64{}, bkn1Diffs...), bkn2Diffs...)
+			if rec, ok := DecodeSCHFSoft(softType5FromDiffs(fullDiffs, (4-r)&3), colour); ok {
+				c.ingestMAC(rec)
+			} else if rec, ok := DecodeSCHF(derot(full, r), colour); ok {
+				c.ingestMAC(rec)
+			}
+		} else if rec, ok := DecodeSCHF(derot(full, r), colour); ok {
 			c.ingestMAC(rec)
 		}
-		if rec, ok := DecodeSCHHD(derot(bkn1, r), colour); ok {
+		c.decodeDownlinkHalf(bkn1, bkn1Diffs, r, derot, colour)
+		c.decodeDownlinkHalf(bkn2, bkn2Diffs, r, derot, colour)
+	}
+}
+
+// decodeDownlinkHalf decodes one SCH/HD half-slot under rotation r, soft-first
+// (when the per-symbol differentials are available and aligned) then hard.
+func (c *ControlChannel) decodeDownlinkHalf(bkn []uint8, diffs []complex64, r uint8, derot func([]uint8, uint8) []byte, colour uint32) {
+	if diffs != nil && len(diffs) == len(bkn) {
+		if rec, ok := DecodeSCHHDSoft(softType5FromDiffs(diffs, (4-r)&3), colour); ok {
 			c.ingestMAC(rec)
+			return
 		}
-		if rec, ok := DecodeSCHHD(derot(bkn2, r), colour); ok {
-			c.ingestMAC(rec)
-		}
+	}
+	if rec, ok := DecodeSCHHD(derot(bkn, r), colour); ok {
+		c.ingestMAC(rec)
 	}
 }
 

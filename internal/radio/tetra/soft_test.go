@@ -127,6 +127,68 @@ func TestSoftSCHHDOutperformsHardUnderNoise(t *testing.T) {
 	}
 }
 
+// TestSoftSCHFRoundTripClean: soft SCH/F recovers the exact 268 info bits on a
+// clean channel (the grant-carrying full-slot channel; no soft variant existed
+// before the fat-tetra work).
+func TestSoftSCHFRoundTripClean(t *testing.T) {
+	info := make([]byte, 268)
+	for i := range info {
+		info[i] = byte((i*7 + 3) & 1)
+	}
+	const colour = 0x12345
+	type5 := EncodeSCHF(info, colour)
+	llr, hard := bitsToLLR(type5, 0, rand.New(rand.NewSource(3)))
+	got, ok := DecodeSCHFSoft(llr, colour)
+	if !ok {
+		t.Fatal("soft SCH/F failed CRC on a clean channel")
+	}
+	for i := range info {
+		if got[i] != info[i] {
+			t.Fatalf("soft SCH/F recovered bit %d = %d, want %d", i, got[i], info[i])
+		}
+	}
+	if _, ok := DecodeSCHF(hard, colour); !ok {
+		t.Fatal("hard SCH/F failed CRC on a clean channel (sanity)")
+	}
+}
+
+// TestSoftSCHFOutperformsHardUnderNoise: at a noise level where the hard SCH/F
+// decoder mostly fails, the soft decoder mostly succeeds — the ~2 dB soft gain
+// now available on the grant path (previously hard-only), which is what lets
+// marginal-constellation grants clear the CRC.
+func TestSoftSCHFOutperformsHardUnderNoise(t *testing.T) {
+	info := make([]byte, 268)
+	for i := range info {
+		info[i] = byte((i*5 + 1) & 1)
+	}
+	const colour = 0x12345
+	type5 := EncodeSCHF(info, colour)
+	rng := rand.New(rand.NewSource(7))
+	const (
+		sigma  = 0.7
+		trials = 200
+	)
+	hardPass, softPass := 0, 0
+	for tr := 0; tr < trials; tr++ {
+		llr, hard := bitsToLLR(type5, sigma, rng)
+		if _, ok := DecodeSCHF(hard, colour); ok {
+			hardPass++
+		}
+		if got, ok := DecodeSCHFSoft(llr, colour); ok {
+			softPass++
+			for i := range info {
+				if got[i] != info[i] {
+					t.Fatalf("soft CRC passed but bit %d wrong", i)
+				}
+			}
+		}
+	}
+	t.Logf("sigma=%.2f: hard %d/%d, soft %d/%d", sigma, hardPass, trials, softPass, trials)
+	if softPass < 2*hardPass || softPass <= hardPass {
+		t.Errorf("soft SCH/F gain insufficient: hard %d, soft %d of %d", hardPass, softPass, trials)
+	}
+}
+
 // TestSoftBSCHOutperformsHardUnderNoise: same gain on the colour-0 BSCH
 // (the cold-start lock chain).
 func TestSoftBSCHOutperformsHardUnderNoise(t *testing.T) {

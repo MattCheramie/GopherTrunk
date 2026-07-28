@@ -211,6 +211,14 @@ func DecodeSCHF(type5 []byte, colourCode uint32) ([]byte, bool) {
 	return signalingDecode(type5, framing.InterleaveKSCHF, framing.InterleaveASCHF, colourCode, 268)
 }
 
+// DecodeSCHFSoft is the soft-decision analog of DecodeSCHF: 432 type-5 LLRs →
+// 268 type-1 bits + CRC-pass flag. The soft-input Viterbi recovers ~1.5–2 dB the
+// hard slicer discards, which matters on the longer SCH/F block where a marginal
+// constellation accumulates more symbol errors before the CRC gate.
+func DecodeSCHFSoft(type5LLR []float32, colourCode uint32) ([]byte, bool) {
+	return signalingDecodeSoft(type5LLR, framing.InterleaveKSCHF, framing.InterleaveASCHF, colourCode, 268)
+}
+
 // EncodeSCHHU runs 92 type-1 bits through the SCH/HU chain per
 // §8.3.1.4.3. Returns 168 type-5 bits.
 func EncodeSCHHU(type1 []byte, colourCode uint32) []byte {

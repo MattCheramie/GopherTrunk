@@ -140,7 +140,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 		if p.ncdb == nil {
 			p.ncdb = newDownlinkNCDB(c.decodeDownlinkSlot)
 		}
-		p.ncdb.process(dibits, baseIdx)
+		p.ncdb.process(dibits, diffs, baseIdx)
 	}
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
