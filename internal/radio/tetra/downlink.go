@@ -371,7 +371,9 @@ func (c *ControlChannel) handleCMCE(m MACResource, msg CMCEMessage) {
 		if !c.isIndividual(gssi) {
 			c.rememberCall(msg.CallIdentifier, gssi)
 		}
-	case CMCETypeDRelease:
+	case CMCETypeDRelease, CMCETypeDDisconnect:
+		// Both end the call: D-RELEASE from the SwMI, D-DISCONNECT the
+		// infrastructure-initiated disconnect (EN 300 392-2 §14.5.1.3.3).
 		gssi := c.resolveGroup(msg.CallIdentifier, m.Address.SSI)
 		c.publishRelease(gssi, msg.DisconnectCause)
 		c.forgetCall(msg.CallIdentifier)

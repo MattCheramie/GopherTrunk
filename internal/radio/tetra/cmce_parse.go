@@ -24,21 +24,23 @@ package tetra
 type CMCEType uint8
 
 const (
-	CMCETypeDConnect   CMCEType = 0x02 // D-CONNECT
-	CMCETypeDRelease   CMCEType = 0x06 // D-RELEASE
-	CMCETypeDSetup     CMCEType = 0x07 // D-SETUP
-	CMCETypeDTxCeased  CMCEType = 0x09 // D-TX CEASED
-	CMCETypeDTxGranted CMCEType = 0x0B // D-TX GRANTED
+	CMCETypeDConnect    CMCEType = 0x02 // D-CONNECT
+	CMCETypeDDisconnect CMCEType = 0x04 // D-DISCONNECT
+	CMCETypeDRelease    CMCEType = 0x06 // D-RELEASE
+	CMCETypeDSetup      CMCEType = 0x07 // D-SETUP
+	CMCETypeDTxCeased   CMCEType = 0x09 // D-TX CEASED
+	CMCETypeDTxGranted  CMCEType = 0x0B // D-TX GRANTED
 )
 
 // isCMCETeardown reports whether a CMCE PDU type tears a call down rather than
 // establishing or maintaining it. A channel-allocation element that accompanies
 // a teardown PDU refers to the traffic resource being *reclaimed*, not a new
 // voice grant — so ingestMAC must not publish a grant for it, which would spawn a
-// zero-byte ghost call that the release then immediately ends. D-DISCONNECT is
-// not yet modelled by ParseCMCE; add it here when it is.
+// zero-byte ghost call that the release then immediately ends. Both the
+// infrastructure-initiated D-RELEASE and D-DISCONNECT (EN 300 392-2
+// §14.5.1.3.3) reclaim the resource this way.
 func isCMCETeardown(t CMCEType) bool {
-	return t == CMCETypeDRelease
+	return t == CMCETypeDRelease || t == CMCETypeDDisconnect
 }
 
 // cmceMLEPD is the 3-bit MLE protocol discriminator value that selects the CMCE
@@ -130,6 +132,15 @@ func ParseCMCE(bits []byte) (CMCEMessage, bool) {
 			optSkip(r, 8)              // basic service information
 			msg.GroupSSI = optU(r, 24) // temporary address (GSSI)
 		}
+
+	case CMCETypeDDisconnect:
+		// CallId(14) DisconnectCause(5) — mandatory (Table 14.9). Same shape as
+		// D-RELEASE; the infrastructure sends it to disconnect an established call.
+		if r.remaining() < 14+5 {
+			return CMCEMessage{}, false
+		}
+		msg.CallIdentifier = uint16(r.u(14))
+		msg.DisconnectCause = uint8(r.u(5))
 
 	case CMCETypeDRelease:
 		// CallId(14) DisconnectCause(5) — mandatory (Table 14.12).

@@ -46,6 +46,14 @@ func cmceReleaseTMSDU(callID uint16, cause uint8) []byte {
 	return append(bl(llcBLUDATA, 0), c.bits...)
 }
 
+func cmceDisconnectTMSDU(callID uint16, cause uint8) []byte {
+	c := &cmceBitWriter{}
+	c.header(CMCETypeDDisconnect)
+	c.u(uint64(callID), 14)
+	c.u(uint64(cause), 5)
+	return append(bl(llcBLUDATA, 0), c.bits...)
+}
+
 func cmceSetupTMSDU(callID uint16) []byte {
 	c := &cmceBitWriter{}
 	c.header(CMCETypeDSetup)
@@ -89,6 +97,32 @@ func TestIngestMACSuppressesGrantOnRelease(t *testing.T) {
 	}
 	if counts[events.KindCallRelease] == 0 {
 		t.Error("did not publish the D-RELEASE")
+	}
+}
+
+// TestIngestMACSuppressesGrantOnDisconnect is the ghost-call regression for
+// D-DISCONNECT (EN 300 392-2 Table 14.9). A MAC-RESOURCE carrying both a
+// channel-allocation element and a CMCE D-DISCONNECT must NOT publish a voice
+// grant — the allocation is the resource being reclaimed — and must emit the
+// release. Before D-DISCONNECT was modelled, ParseCMCE returned ok=false for
+// it, so haveCMCE was false, the teardown gate never fired, and a zero-byte
+// ghost call was published (that nothing then tore down).
+func TestIngestMACSuppressesGrantOnDisconnect(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "Sys", FrequencyHz: 467_913_000})
+	block := macResourceGrant(0x0F5670, 2716, 1, cmceDisconnectTMSDU(0x1234, 13))
+	cc.ingestMAC(block)
+
+	counts := drainKinds(sub)
+	if counts[events.KindGrant] != 0 {
+		t.Errorf("published %d grant(s) for a D-DISCONNECT-bearing MAC-RESOURCE, want 0 (ghost call)", counts[events.KindGrant])
+	}
+	if counts[events.KindCallRelease] == 0 {
+		t.Error("did not publish the D-DISCONNECT as a release")
 	}
 }
 

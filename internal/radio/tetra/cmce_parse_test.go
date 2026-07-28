@@ -207,6 +207,31 @@ func TestParseCMCE_NoOptionalChain(t *testing.T) {
 	}
 }
 
+func TestParseCMCE_DDisconnect(t *testing.T) {
+	// D-DISCONNECT (Table 14.9) is CallId(14) + DisconnectCause(5), the same
+	// mandatory shape as D-RELEASE, and must parse and read as a teardown.
+	w := &cmceBitWriter{}
+	w.header(CMCETypeDDisconnect)
+	w.u(0x1ABC&0x3FFF, 14) // call id
+	w.u(0x0A, 5)           // disconnect cause
+	msg, ok := ParseCMCE(w.bits)
+	if !ok {
+		t.Fatal("ParseCMCE ok=false on a valid D-DISCONNECT")
+	}
+	if msg.Type != CMCETypeDDisconnect {
+		t.Errorf("Type = %#x, want D-DISCONNECT (%#x)", msg.Type, CMCETypeDDisconnect)
+	}
+	if msg.CallIdentifier != (0x1ABC & 0x3FFF) {
+		t.Errorf("CallIdentifier = %#x, want %#x", msg.CallIdentifier, 0x1ABC&0x3FFF)
+	}
+	if msg.DisconnectCause != 0x0A {
+		t.Errorf("DisconnectCause = %#x, want 0x0A", msg.DisconnectCause)
+	}
+	if !isCMCETeardown(msg.Type) {
+		t.Error("D-DISCONNECT should be classified as a teardown")
+	}
+}
+
 func TestParseCMCE_RejectsNonCMCE(t *testing.T) {
 	w := &cmceBitWriter{}
 	w.u(0x1, 3) // MLE PD = 001 (MM), not CMCE
