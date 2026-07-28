@@ -257,11 +257,49 @@ func (c *ControlChannel) publishGrantFromMAC(m MACResource, msg CMCEMessage, hav
 	}
 	if haveCMCE {
 		g.Emergency = msg.Emergency
-		if msg.PartySSI != 0 {
-			g.SourceSSI = msg.PartySSI
-		}
 	}
+	c.classifyParties(&g, m, msg, haveCMCE)
 	c.publishGrant(g)
+}
+
+// classifyParties fills a grant's GroupID (DestSSI), SourceID (SourceSSI) and
+// Individual flag from the MAC address and the decoded CMCE, so a unit-to-unit
+// call's subscriber ISSI is not surfaced as a talkgroup.
+//
+// The reliable on-air signal (confirmed against real captures): a CMCE
+// calling/transmitting party SSI (msg.PartySSI) is always an *individual* radio,
+// and a grant that carries one is addressed under the group's GSSI (the MAC
+// address) with that party as the source. Any SSI ever seen as a party is
+// therefore an individual; a later grant addressed to it (e.g. a D-CONNECT to the
+// calling party, which has no party field of its own) is an individual-addressed
+// PDU, not a talkgroup grant.
+func (c *ControlChannel) classifyParties(g *VoiceGrant, m MACResource, msg CMCEMessage, haveCMCE bool) {
+	addr := m.Address.SSI
+	g.DestSSI = addr
+	g.SourceSSI = 0
+	g.Individual = false
+
+	if haveCMCE && msg.PartySSI != 0 {
+		// Group call addressed under the GSSI, with the calling/transmitting party
+		// as the source. Definitive — no history needed. Learn the party as an
+		// individual so a later PDU addressed to it is classified correctly.
+		g.SourceSSI = msg.PartySSI
+		c.noteIndividual(msg.PartySSI)
+		return
+	}
+
+	// No party field on this PDU. If the addressed SSI is one we have seen act as
+	// a party, it is an individual radio: mark the grant Individual so discovery /
+	// the UI do not treat the subscriber ISSI as a talkgroup. Fold onto the real
+	// group when a prior setup mapped this call to one.
+	if c.isIndividual(addr) {
+		if resolved := c.resolveGroup(msg.CallIdentifier, addr); resolved != 0 && resolved != addr && !c.isIndividual(resolved) {
+			g.DestSSI = resolved
+			g.SourceSSI = addr
+			return
+		}
+		g.Individual = true
+	}
 }
 
 // handleCMCE acts on a decoded CMCE call-control PDU that rode in a MAC-RESOURCE
@@ -272,15 +310,19 @@ func (c *ControlChannel) publishGrantFromMAC(m MACResource, msg CMCEMessage, hav
 func (c *ControlChannel) handleCMCE(m MACResource, msg CMCEMessage) {
 	switch msg.Type {
 	case CMCETypeDSetup, CMCETypeDConnect:
-		// Map to the MAC-RESOURCE address SSI — the exact value publishGrantFromMAC
-		// uses as the grant's group id, so a later release/talker resolves to the
-		// same key the engine tracks the call by. Fall back to the CMCE temporary
-		// address only when the MAC address is not an SSI (0).
+		// Map the call identifier to the group SSI — the MAC address a group setup
+		// is addressed under — so a later release/talker resolves to the talkgroup
+		// the engine tracks the call by. Fall back to the CMCE temporary address
+		// only when the MAC address is not an SSI (0). Skip a known individual: a
+		// D-CONNECT addressed to the calling party must not overwrite the mapping
+		// with the radio ID (which would misattribute the release/talker).
 		gssi := m.Address.SSI
 		if gssi == 0 {
 			gssi = msg.GroupSSI
 		}
-		c.rememberCall(msg.CallIdentifier, gssi)
+		if !c.isIndividual(gssi) {
+			c.rememberCall(msg.CallIdentifier, gssi)
+		}
 	case CMCETypeDRelease:
 		gssi := c.resolveGroup(msg.CallIdentifier, m.Address.SSI)
 		c.publishRelease(gssi, msg.DisconnectCause)

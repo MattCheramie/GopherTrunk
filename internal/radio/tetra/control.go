@@ -104,6 +104,14 @@ type ControlChannel struct {
 	sysInfo    SysInfo
 	sysInfoSet bool
 
+	// individuals is the set of SSIs observed acting as a CMCE calling /
+	// transmitting party (msg.PartySSI). A party is always an individual radio, so
+	// this lets classifyParties recognise a grant addressed to a subscriber ISSI
+	// (e.g. a D-CONNECT to the calling party, which carries no party field of its
+	// own) and flag it Individual instead of surfacing it as a talkgroup. Bounded
+	// by individualsCap; guarded by mu.
+	individuals map[uint32]struct{}
+
 	// callGroups maps a CMCE 14-bit call identifier to the group SSI (GSSI) the
 	// call is addressed to, learned from D-SETUP/D-CONNECT. A D-RELEASE /
 	// D-TX-GRANTED carries only the call identifier, so this resolves it back to
@@ -666,6 +674,7 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			Timeslot:         g.Timeslot + 1,
 			Encrypted:        g.Encrypted,
 			Emergency:        g.Emergency,
+			Individual:       g.Individual,
 			TETRAColourExt:   colourExt,
 			TETRAUsageMarker: g.UsageMarker,
 			At:               c.now(),
@@ -676,7 +685,7 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 		"system", c.systemName,
 		"src", g.SourceSSI, "dst", g.DestSSI,
 		"carrier", g.CarrierNumber, "slot", g.Timeslot, "freq_hz", freq,
-		"group", g.Group, "enc", g.Encrypted, "emer", g.Emergency)
+		"individual", g.Individual, "enc", g.Encrypted, "emer", g.Emergency)
 }
 
 // rememberCall records the call-identifier → group-SSI mapping learned from a
@@ -714,6 +723,36 @@ func (c *ControlChannel) forgetCall(callID uint16) {
 	c.mu.Lock()
 	delete(c.callGroups, callID)
 	c.mu.Unlock()
+}
+
+// individualsCap bounds the learned-individuals set so a long-running site cannot
+// grow it without limit. A cell's active subscriber set is far smaller; once full
+// the set stops learning new individuals (existing ones still classify).
+const individualsCap = 8192
+
+// noteIndividual records an SSI seen acting as a CMCE calling/transmitting party
+// — always an individual radio. No-op for 0 or once the set is at capacity.
+func (c *ControlChannel) noteIndividual(ssi uint32) {
+	if ssi == 0 {
+		return
+	}
+	c.mu.Lock()
+	if c.individuals == nil {
+		c.individuals = make(map[uint32]struct{})
+	}
+	if _, ok := c.individuals[ssi]; !ok && len(c.individuals) < individualsCap {
+		c.individuals[ssi] = struct{}{}
+	}
+	c.mu.Unlock()
+}
+
+// isIndividual reports whether an SSI has been seen acting as a party (and is
+// therefore an individual radio rather than a talkgroup GSSI).
+func (c *ControlChannel) isIndividual(ssi uint32) bool {
+	c.mu.Lock()
+	_, ok := c.individuals[ssi]
+	c.mu.Unlock()
+	return ok
 }
 
 // publishRelease emits a KindCallRelease so the engine ends the active call for
