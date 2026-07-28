@@ -86,6 +86,48 @@ func TestProcessDecodesGrantFromNCDB(t *testing.T) {
 	}
 }
 
+// TestGrantForeignCarrierRejected is the regression for the parser bit-alignment
+// bug report: a corrupt block whose SCH CRC happened to pass surfaced a grant
+// dst=4603484 carrier=6 slot=2 on a 467.9125 MHz (carrier 2716) cell, resolving to
+// 400.1625 MHz — a foreign band. The structural sanity guard in publishGrant must
+// drop such a grant (its carrier resolves tens of MHz from the CC) while a
+// legitimate same-cell grant still publishes. Before the guard both grants
+// published, spawning a ghost call on a band the site does not operate.
+func TestGrantForeignCarrierRejected(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Sys", FrequencyHz: 467_912_500})
+	cc.learnMainCarrier(2716) // the cell's own carrier
+
+	// carrier 6 → 467.9125 MHz + (6-2716)×25 kHz = 400.1625 MHz — a bit-alignment /
+	// false-CRC artefact 67.75 MHz from the CC. Must be dropped.
+	cc.publishGrant(VoiceGrant{DestSSI: 4603484, CarrierNumber: 6, Timeslot: 2})
+	// A legitimate same-carrier grant must still publish.
+	cc.publishGrant(VoiceGrant{DestSSI: 1020543, CarrierNumber: 2716, Timeslot: 1})
+
+	var grants []trunking.Grant
+	for drained := false; !drained; {
+		select {
+		case ev := <-sub.C:
+			if g, ok := ev.Payload.(trunking.Grant); ok && ev.Kind == events.KindGrant {
+				grants = append(grants, g)
+			}
+		default:
+			drained = true
+		}
+	}
+	if len(grants) != 1 {
+		t.Fatalf("published %d grants, want 1 (foreign-band carrier 6 must be dropped)", len(grants))
+	}
+	if grants[0].GroupID != 1020543 || grants[0].ChannelNum != 2716 {
+		t.Errorf("published grant = tg %d carrier %d, want tg 1020543 carrier 2716",
+			grants[0].GroupID, grants[0].ChannelNum)
+	}
+}
+
 // TestCarrierFrequencyDerivation checks that a grant carrier number resolves to
 // Hz relative to the cell's own carrier (learned from SYSINFO) at 25 kHz
 // spacing, with no configured band plan.
