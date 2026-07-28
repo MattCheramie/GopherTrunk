@@ -32,9 +32,6 @@
 //
 // What's NOT yet wired (honest deferrals):
 //
-//   - The π/4-DQPSK demodulator + symbol-clock recovery for TETRA's
-//     18 ksym/sec air interface. internal/dsp/demod/dqpsk.go is the
-//     closest fit; matched-filter parameters differ from P25 Phase 2.
 //   - End-to-end air-interface encryption (TEA1/2/3/4) — TETRA voice
 //     traffic on most operational networks is encrypted; the
 //     `Encrypted` flag on a grant just records what the CC said. Encrypted

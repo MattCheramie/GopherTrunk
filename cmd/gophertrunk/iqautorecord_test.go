@@ -23,14 +23,15 @@ type fakeDDCTap struct {
 	rate   float64
 	center uint32
 	chunks [][]complex64
+	drops  uint64 // reported by the unsubscribe func, mirroring the fan-out
 }
 
-func (f *fakeDDCTap) SubscribeVoiceIQ() (<-chan []complex64, func()) {
+func (f *fakeDDCTap) SubscribeVoiceIQ() (<-chan []complex64, func() uint64) {
 	ch := make(chan []complex64, len(f.chunks)+1)
 	for _, c := range f.chunks {
 		ch <- c
 	}
-	return ch, func() {}
+	return ch, func() uint64 { return f.drops }
 }
 
 func (f *fakeDDCTap) PipelineRateHz() float64 { return f.rate }
@@ -57,6 +58,22 @@ func TestCaptureDDCToFile(t *testing.T) {
 	}
 	if fi.Size() != 384*4 {
 		t.Errorf("file size = %d, want %d (384 samples × 4 bytes cs16)", fi.Size(), 384*4)
+	}
+}
+
+// TestCaptureDDCToFileReportsDrops confirms the capture surfaces the fan-out's
+// subscriber drop count (a gappy grab) instead of always reporting 0.
+func TestCaptureDDCToFileReportsDrops(t *testing.T) {
+	tap := &fakeDDCTap{rate: 144000, center: 467913000, drops: 7, chunks: [][]complex64{
+		make([]complex64, 64),
+	}}
+	path := filepath.Join(t.TempDir(), "ddc.cs16")
+	_, drops, err := captureDDCToFile(context.Background(), tap, path, siglab.FormatS16, 1)
+	if err != nil {
+		t.Fatalf("captureDDCToFile: %v", err)
+	}
+	if drops != 7 {
+		t.Errorf("drops = %d, want 7 (the fan-out drop count must be surfaced, not hard-coded 0)", drops)
 	}
 }
 
