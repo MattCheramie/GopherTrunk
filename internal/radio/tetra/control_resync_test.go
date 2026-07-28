@@ -104,3 +104,34 @@ func TestNeedsResyncPredicate(t *testing.T) {
 		t.Error("NeedsResync false after MarkLost, want true (heartbeat must survive loss)")
 	}
 }
+
+// TestResyncResetPreservesLearnedIndividuals pins the invariant that a resync
+// keeps the learned individual/group classification: ResyncReset clears only the
+// dibit-sync scratch (proc) and the transient soft / fragment stashes, never the
+// individuals set. If a resync dropped it, every noise burst would regress a
+// subscriber ISSI back to being surfaced as a phantom talkgroup until it was
+// seen as a party again. The reassembly buffer, by contrast, MUST be cleared —
+// its continuation belonged to the pre-resync bit index.
+func TestResyncResetPreservesLearnedIndividuals(t *testing.T) {
+	cc := New(Options{SystemName: "Sys", FrequencyHz: 412_000_000})
+
+	cc.noteIndividual(0x0123AB)
+	if !cc.isIndividual(0x0123AB) {
+		t.Fatal("noteIndividual did not record the SSI")
+	}
+
+	// Seed an in-flight fragment reassembly to prove the resync abandons it.
+	cc.stashFragment(MACResource{}, []byte{1, 0, 1})
+
+	cc.ResyncReset()
+
+	if !cc.isIndividual(0x0123AB) {
+		t.Error("ResyncReset dropped a learned individual — classification would regress after every resync")
+	}
+	cc.mu.Lock()
+	fragActive := cc.fragActive
+	cc.mu.Unlock()
+	if fragActive {
+		t.Error("ResyncReset left a half-reassembled TM-SDU active; it must abandon the pre-resync fragment")
+	}
+}
