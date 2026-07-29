@@ -208,6 +208,18 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA voice recordings on a same-carrier site came out short and garbled
+  (low `audio_pct`).** The TCH/S traffic decoder was hard-decision while the
+  control channel already ran soft-decision, so on a marginal same-carrier
+  signal ~70% of a call's own speech bursts failed the class-2 CRC and were
+  dropped; the recorder concatenates only the surviving bursts, so the audio
+  played back choppy/robotic (the `recording shorter than call span` diagnostic
+  showed `audio_pct` ≈ 30%). The TCH/S channel decode now uses the receiver's
+  per-symbol soft (log-likelihood) information — a soft-input rate-1/3 Viterbi
+  mother decoder with soft depuncture and descramble, mirroring the existing
+  soft SCH path — recovering the ~2 dB of coding gain the hard path threw away.
+  Bursts with no soft info still fall back to the hard decoder, so the change is
+  never worse than before.
 - **TETRA group calls could land on the wrong talkgroup with starved audio when
   the first grant was a notification.** On a same-carrier site a group call's
   first control-channel grant is often a notification / a D-CONNECT addressed to

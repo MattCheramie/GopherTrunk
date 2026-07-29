@@ -81,7 +81,7 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 
 	var totalBursts, anchoredBursts, trafficMarked, trafficMarkedCRC int
 	errsHist := map[string]int{}
-	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, slot, mark uint8) {
+	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, _ []float32, slot, mark uint8) {
 		totalBursts++
 		if slot != 0 {
 			anchoredBursts++

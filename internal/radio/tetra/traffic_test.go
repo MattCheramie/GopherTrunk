@@ -39,7 +39,7 @@ func TestTrafficExtractorSingleBurst(t *testing.T) {
 	buildNCDB(stream, L, bkn1, bkn2)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(0, func(f []byte, _, _ uint8) {
+	te := NewTrafficExtractor(0, func(f []byte, _ []float32, _, _ uint8) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	te.Process(stream, 0)
@@ -67,7 +67,7 @@ func TestTrafficExtractorDescrambles(t *testing.T) {
 
 	const colour = 262144876 // the reporter's cell (467.913 MHz)
 	var got []byte
-	te := NewTrafficExtractor(colour, func(f []byte, _, _ uint8) { got = append([]byte(nil), f...) })
+	te := NewTrafficExtractor(colour, func(f []byte, _ []float32, _, _ uint8) { got = append([]byte(nil), f...) })
 	te.Process(stream, 0)
 
 	rawBits := TetraDibitsToBits(append(append([]uint8{}, bkn1...), bkn2...))
@@ -88,7 +88,7 @@ func TestTrafficExtractorChunkedAcrossCalls(t *testing.T) {
 	buildNCDB(stream, L, bkn1, bkn2)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(0, func(f []byte, _, _ uint8) {
+	te := NewTrafficExtractor(0, func(f []byte, _ []float32, _, _ uint8) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	// Feed in small chunks so the training-sequence match, BKN1 look-back
@@ -118,7 +118,7 @@ func TestTrafficExtractorMultipleSlots(t *testing.T) {
 	buildNCDB(stream, 200+255, b1b, b2b)
 
 	var frames [][]byte
-	te := NewTrafficExtractor(0, func(f []byte, _, _ uint8) {
+	te := NewTrafficExtractor(0, func(f []byte, _ []float32, _, _ uint8) {
 		frames = append(frames, append([]byte(nil), f...))
 	})
 	te.Process(stream, 0)
@@ -163,7 +163,7 @@ func TestTrafficExtractorSlotTagging(t *testing.T) {
 	}
 
 	var slots []uint8
-	te := NewTrafficExtractor(0, func(_ []byte, slot, _ uint8) { slots = append(slots, slot) })
+	te := NewTrafficExtractor(0, func(_ []byte, _ []float32, slot, _ uint8) { slots = append(slots, slot) })
 	te.Process(stream, 0)
 
 	if len(slots) != len(ndbs) {
@@ -183,7 +183,7 @@ func TestTrafficExtractorSlotUnanchored(t *testing.T) {
 	stream := make([]uint8, 600)
 	buildNCDB(stream, 300, rampDibits(ndbBlockDibits, 0), rampDibits(ndbBlockDibits, 1))
 	var slots []uint8
-	te := NewTrafficExtractor(0, func(_ []byte, slot, _ uint8) { slots = append(slots, slot) })
+	te := NewTrafficExtractor(0, func(_ []byte, _ []float32, slot, _ uint8) { slots = append(slots, slot) })
 	te.Process(stream, 0)
 	if len(slots) != 1 || slots[0] != 0 {
 		t.Fatalf("unanchored slots=%v, want [0]", slots)
@@ -197,7 +197,7 @@ func TestTrafficExtractorNoFalseEmitOnNoise(t *testing.T) {
 		stream[i] = uint8((i*7 + 1) % 4) // deterministic non-sync filler
 	}
 	n := 0
-	te := NewTrafficExtractor(0, func(f []byte, _, _ uint8) { n++ })
+	te := NewTrafficExtractor(0, func(f []byte, _ []float32, _, _ uint8) { n++ })
 	te.Process(stream, 0)
 	// A rare chance correlation within tolerance is possible; assert it does
 	// not spuriously fire on structured filler.

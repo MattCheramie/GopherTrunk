@@ -57,6 +57,84 @@ func TestTCHSCorrectsSingleError(t *testing.T) {
 	}
 }
 
+// TestTCHSSoftRoundTrip proves the soft-decision TCH/S decoder recovers both
+// speech frames from a clean (noise-free) ideal-LLR type-5 stream, matching the
+// hard decoder bit-for-bit — the soft chain is a faithful mirror of the hard one.
+func TestTCHSSoftRoundTrip(t *testing.T) {
+	rng := rand.New(rand.NewSource(3))
+	for trial := 0; trial < 50; trial++ {
+		a := randBits(rng, tchSpeechFrameBits)
+		b := randBits(rng, tchSpeechFrameBits)
+		bits := framing.UnpackBitsMSB(EncodeTCHS(a, b), tchType3Bits)
+		gotA, gotB, crcOK, _, ok := DecodeTCHSSoft(idealLLR(bits, 1))
+		if !ok || !crcOK {
+			t.Fatalf("trial %d: soft decode failed on a clean frame (ok=%v crc=%v)", trial, ok, crcOK)
+		}
+		if !bitsEqual(gotA, a) || !bitsEqual(gotB, b) {
+			t.Errorf("trial %d: soft path did not recover the speech frames", trial)
+		}
+	}
+}
+
+// TestTCHSSoftCodingGain is the regression that ties the fix to the reported
+// symptom. On the SAME noisy channel, the soft-decision decoder passes the
+// class-2 CRC on far more bursts than the hard-decision decoder — the ~2 dB
+// coding gain the control channel already enjoyed but TCH/S did not. That gap is
+// why ~70% of a same-carrier call's own bursts failed CRC and the recordings
+// came out short/garbled (audio_pct ≈ 32%). Fails before the soft path exists.
+func TestTCHSSoftCodingGain(t *testing.T) {
+	rng := rand.New(rand.NewSource(20260729))
+	const trials = 300
+	const sigma = 1.0 // AWGN std-dev on unit-amplitude BPSK soft samples
+	var hardPass, softPass int
+	for i := 0; i < trials; i++ {
+		a := randBits(rng, tchSpeechFrameBits)
+		b := randBits(rng, tchSpeechFrameBits)
+		bits := framing.UnpackBitsMSB(EncodeTCHS(a, b), tchType3Bits)
+		llr := noisyLLR(rng, bits, sigma)
+		hard := make([]byte, len(llr))
+		for j, v := range llr {
+			if v < 0 {
+				hard[j] = 1
+			}
+		}
+		if len(TCHSpeechFrames(framing.PackBitsMSB(hard))) == 2 {
+			hardPass++
+		}
+		if len(TCHSpeechFramesSoft(llr)) == 2 {
+			softPass++
+		}
+	}
+	t.Logf("sigma=%.2f: hardPass=%d/%d softPass=%d/%d", sigma, hardPass, trials, softPass, trials)
+	if softPass < 2*hardPass {
+		t.Fatalf("soft coding gain too small: soft=%d hard=%d of %d (want soft >= 2x hard)", softPass, hardPass, trials)
+	}
+}
+
+func idealLLR(bits []byte, amp float32) []float32 {
+	out := make([]float32, len(bits))
+	for i, b := range bits {
+		if b&1 == 0 {
+			out[i] = amp
+		} else {
+			out[i] = -amp
+		}
+	}
+	return out
+}
+
+func noisyLLR(rng *rand.Rand, bits []byte, sigma float64) []float32 {
+	out := make([]float32, len(bits))
+	for i, b := range bits {
+		mean := 1.0
+		if b&1 == 1 {
+			mean = -1.0
+		}
+		out[i] = float32(mean + rng.NormFloat64()*sigma)
+	}
+	return out
+}
+
 func randBits(rng *rand.Rand, n int) []byte {
 	out := make([]byte, n)
 	for i := range out {
