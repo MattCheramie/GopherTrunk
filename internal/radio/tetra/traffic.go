@@ -90,7 +90,17 @@ type TrafficExtractor struct {
 	bufBase    int
 	pending    []int // training-sequence leading indices awaiting look-ahead
 	colourCode uint32
-	onBurst    func(frame []byte, slot, usage uint8)
+	onBurst    func(frame []byte, softType5 []float32, slot, usage uint8)
+
+	// softBuf holds the per-dibit complex differentials (the receiver's soft
+	// info) strictly parallel to buf, so emit can build a soft-decision type-5
+	// LLR stream for the burst. It is either empty (no soft data supplied — the
+	// hard-only path used by tests and any caller that never StashSofts) or
+	// exactly len(buf). pendingSoft carries the differentials stashed for the
+	// NEXT Process call (StashSoft), keyed by pendingSoftBase and consumed once.
+	softBuf         []complex64
+	pendingSoft     []complex64
+	pendingSoftBase int
 
 	// sbAnchor is the absolute dibit index of the most recent SB
 	// synchronisation-training-sequence leading dibit (TN1), pinning the
@@ -100,17 +110,19 @@ type TrafficExtractor struct {
 }
 
 // NewTrafficExtractor returns an extractor that calls onBurst with each
-// recovered 54-byte traffic frame, its TDMA timeslot (1..4, or 0 when the slot
-// grid is not yet anchored to a synchronisation burst), and the burst's AACH
-// downlink usage marker (§21.4.7; the per-slot call identifier, >= DLUsageTraffic
-// for a traffic slot, 0 when the AACH did not decode or the slot is not traffic).
+// recovered 54-byte traffic frame, the burst's soft-decision type-5 stream
+// (432 descrambled LLRs, or nil when no soft info was stashed — see StashSoft),
+// its TDMA timeslot (1..4, or 0 when the slot grid is not yet anchored to a
+// synchronisation burst), and the burst's AACH downlink usage marker (§21.4.7;
+// the per-slot call identifier, >= DLUsageTraffic for a traffic slot, 0 when the
+// AACH did not decode or the slot is not traffic).
 // When colourCode is non-zero the frame is descrambled with the cell's extended
 // colour code (learned from the control channel's BSCH) before onBurst, so the
 // sidecar holds descrambled type-5 — the input the TCH/S channel decoder expects.
 // The usage marker is what lets a per-call voice chain demultiplex concurrent
 // same-carrier calls reliably (the channel-allocation timeslot field does not map
 // to the physical slot on real air). onBurst must not retain the slice.
-func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte, slot, usage uint8)) *TrafficExtractor {
+func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte, softType5 []float32, slot, usage uint8)) *TrafficExtractor {
 	te := &TrafficExtractor{colourCode: colourCode, onBurst: onBurst}
 	// π/4-DQPSK leaves a constant 0..3 dibit rotation (residual CFO), so
 	// correlate the training sequence under all four rotations of the
@@ -137,6 +149,19 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 	if len(te.buf) == 0 {
 		te.bufBase = baseIdx
 	}
+	// Keep softBuf strictly parallel to buf. Append the stashed differentials
+	// only when they match this dibit block (same base + length) AND softBuf is
+	// already in lockstep with buf; otherwise drop the soft path (reset to empty)
+	// rather than risk a misalignment — the burst then decodes hard-only. In the
+	// live path SoftSink stashes every call, so softBuf tracks buf from the first
+	// call and stays parallel; tests never stash, so it stays empty (hard-only).
+	if te.pendingSoft != nil && te.pendingSoftBase == baseIdx &&
+		len(te.pendingSoft) == len(dibits) && len(te.softBuf) == len(te.buf) {
+		te.softBuf = append(te.softBuf, te.pendingSoft...)
+	} else {
+		te.softBuf = te.softBuf[:0]
+	}
+	te.pendingSoft = nil
 	te.buf = append(te.buf, dibits...)
 
 	// Anchor the slot grid on the synchronisation burst. The SB's STS is
@@ -198,8 +223,26 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 			drop = len(te.buf)
 		}
 		te.buf = append(te.buf[:0], te.buf[drop:]...)
+		// Trim softBuf by the same amount to keep it parallel; if it is not in
+		// lockstep (empty / short), drop the soft path rather than misalign.
+		if len(te.softBuf) >= drop {
+			te.softBuf = append(te.softBuf[:0], te.softBuf[drop:]...)
+		} else {
+			te.softBuf = te.softBuf[:0]
+		}
 		te.bufBase += drop
 	}
+}
+
+// StashSoft hands the extractor the per-dibit complex differentials (the
+// receiver's SoftSink output) for the dibits the NEXT Process call will
+// deliver, keyed by the same baseIdx. It lets the traffic path carry soft
+// (LLR) information for soft-decision TCH/S decoding without changing the hard
+// DibitSink contract — the same stash bridge the control channel uses. A caller
+// that never StashSofts leaves the extractor hard-only.
+func (te *TrafficExtractor) StashSoft(diffs []complex64, baseIdx int) {
+	te.pendingSoft = diffs
+	te.pendingSoftBase = baseIdx
 }
 
 // emit slices BKN1 and BKN2 around the training sequence leading at L and
@@ -217,7 +260,40 @@ func (te *TrafficExtractor) emit(L int) {
 	if te.colourCode != 0 {
 		bits = framing.DescrambleTetra(bits, te.colourCode)
 	}
-	te.onBurst(framing.PackBitsMSB(bits), te.slotOf(L), te.usageOf(L))
+	te.onBurst(framing.PackBitsMSB(bits), te.softFrame(L), te.slotOf(L), te.usageOf(L))
+}
+
+// softFrame builds the descrambled 432-LLR type-5 stream for the burst leading
+// at L from the parallel soft buffer, mirroring emit's hard BKN1+BKN2 slicing,
+// or nil when soft info is unavailable for this burst (hard-only fallback). The
+// receiver's AFC locks the constellation to rotation 0 (the same assumption the
+// hard BKN descramble relies on), so softType5FromDiffs is called with rot 0;
+// its hard-slice equals the emitted hard bits, and DescrambleTetraSoft applies
+// the same colour-code sign flips the hard DescrambleTetra does.
+func (te *TrafficExtractor) softFrame(L int) []float32 {
+	if len(te.softBuf) != len(te.buf) {
+		return nil
+	}
+	block := func(off int) []complex64 {
+		s := L + off - te.bufBase
+		if s < 0 || s+ndbBlockDibits > len(te.softBuf) {
+			return nil
+		}
+		return te.softBuf[s : s+ndbBlockDibits]
+	}
+	b1 := block(ndbBKN1Start)
+	b2 := block(ndbBKN2Start)
+	if b1 == nil || b2 == nil {
+		return nil
+	}
+	diffs := make([]complex64, 0, TrafficFrameDibits)
+	diffs = append(diffs, b1...)
+	diffs = append(diffs, b2...)
+	llr := softType5FromDiffs(diffs, 0)
+	if te.colourCode != 0 {
+		llr = framing.DescrambleTetraSoft(llr, te.colourCode)
+	}
+	return llr
 }
 
 // usageOf recovers the AACH downlink usage marker of the burst leading at L. The

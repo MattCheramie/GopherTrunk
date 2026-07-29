@@ -77,9 +77,15 @@ confirmation before any close-as-completed.
   `typedef long` is 64-bit and every saturating op returns garbage. Lessons that
   cost time: the class-2 CRC is a fixed parity-check matrix (the reference's
   `TAB_CRC` tables), **not** a `G(X)` LFSR — the wrong CRC silently dropped every
-  on-air burst while synthetic round-trips passed (self-consistent bug); TCH/S is
-  hard-decision while the control SCH path is soft-decision; and the SB anchors
-  the slot grid one NDB-slot before its frame's TN1 traffic
-  (`ndbSBSlotShift` in `traffic.go`). When "voice doesn't decode" but the vocoder
+  on-air burst while synthetic round-trips passed (self-consistent bug); and the
+  SB anchors the slot grid one NDB-slot before its frame's TN1 traffic
+  (`ndbSBSlotShift` in `traffic.go`). TCH/S now decodes **soft-decision** like the
+  control SCH path (the receiver's `SoftSink` differentials → `softType5FromDiffs`
+  → soft depuncture/Viterbi in `framing.DecodeRCPCTetraMotherSoft` →
+  `tetra.DecodeTCHSSoft`); it was hard-decision until then, which failed ~70% of a
+  marginal same-carrier call's bursts and produced short/garbled recordings. The
+  traffic extractor carries the per-burst soft LLRs parallel to its dibit buffer
+  (`TrafficExtractor.StashSoft`), and the composer falls back to the hard
+  `TCHSpeechFrames` when no soft info is present. When "voice doesn't decode" but the vocoder
   unit tests pass, suspect the channel coding (CRC / interleave / reorder), not
   the vocoder — validate the whole chain against the reference, not just parts.

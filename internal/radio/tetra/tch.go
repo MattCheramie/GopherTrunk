@@ -90,6 +90,18 @@ func tchDeinterleave(type4 []byte) []byte {
 	return out
 }
 
+// tchDeinterleaveSoft is the soft-LLR twin of tchDeinterleave: the identical
+// 24×18 inverse permutation applied to per-bit LLRs instead of hard bits.
+func tchDeinterleaveSoft(type4 []float32) []float32 {
+	out := make([]float32, tchType3Bits)
+	for i := 0; i < 18; i++ {
+		for j := 0; j < 24; j++ {
+			out[j*18+i] = type4[i*24+j]
+		}
+	}
+	return out
+}
+
 // EncodeTCHS codes two 137-bit speech frames (bit-per-byte) into a 54-byte
 // packed type-4 (descrambled type-5) traffic frame. Mirrors DecodeTCHS for the
 // round-trip test; not used in the live receive path.
@@ -172,4 +184,80 @@ func DecodeTCHS(frame []byte) (frameA, frameB []byte, crcOK bool, errs int, ok b
 		}
 	}
 	return frameA, frameB, crcOK, metric, true
+}
+
+// TCHSpeechFramesSoft is the soft-decision analog of TCHSpeechFrames: it
+// decodes one already-descrambled 432-LLR type-5 stream and, if the class-2
+// CRC verifies, returns the two 137-bit speech frames packed MSB-first (18
+// bytes each) ready for the ACELP vocoder. A frame that fails the CRC returns
+// nil, exactly like the hard gate. The soft Viterbi corrects several more bit
+// errors than the hard-decision path (the ~2 dB coding gain), so a real TCH/S
+// burst that the hard decoder drops on a marginal same-carrier signal is
+// recovered here — the fix for the short/garbled same-carrier recordings.
+// Convention (framing/soft_tetra.go): LLR > 0 ⇒ bit 0, magnitude = reliability.
+func TCHSpeechFramesSoft(type5LLR []float32) [][]byte {
+	frameA, frameB, crcOK, _, ok := DecodeTCHSSoft(type5LLR)
+	if !ok || !crcOK {
+		return nil
+	}
+	return [][]byte{framing.PackBitsMSB(frameA), framing.PackBitsMSB(frameB)}
+}
+
+// DecodeTCHSSoft is the soft-decision analog of DecodeTCHS. It mirrors the hard
+// chain step for step in the LLR domain: soft deinterleave → split
+// class0(LLR)/class-1/class-2 coded regions → soft depuncture each region into
+// the K=5 rate-1/3 mother stream (erasure = 0.0) → soft Viterbi
+// (DecodeRCPCTetraMotherSoft) → hard class-2 CRC check. class0 is uncoded, so
+// its LLRs are hard-sliced straight through. type5LLR is the already-descrambled
+// 432-LLR type-5 stream (the traffic extractor descrambles in the soft domain
+// with DescrambleTetraSoft, mirroring the hard DescrambleTetra). errs is the
+// surviving soft path metric (lower is a better fit), not a bit-error count.
+func DecodeTCHSSoft(type5LLR []float32) (frameA, frameB []byte, crcOK bool, errs float32, ok bool) {
+	if len(type5LLR) < tchType3Bits {
+		return nil, nil, false, 0, false
+	}
+	type3 := tchDeinterleaveSoft(type5LLR[:tchType3Bits])
+
+	class0 := type3[:tchClass0Bits]
+	c1 := type3[tchClass0Bits : tchClass0Bits+tchClass1Coded]
+	c2 := type3[tchClass0Bits+tchClass1Coded:]
+
+	m1 := framing.DepunctureRCPCTetraSoft(c1, framing.RCPCTetraPeriod23, framing.RCPCTetraPuncture23, 3*tchClass1Bits)
+	m2 := framing.DepunctureRCPCTetraSoft(c2, framing.RCPCTetraPeriod818, framing.RCPCTetraPuncture818, 3*(tchClass2Bits+tchCRCBits+tchTailBits))
+	mother := append(append([]float32{}, m1...), m2...)
+
+	conv, metric := framing.DecodeRCPCTetraMotherSoft(mother, tchConvIn)
+	class1 := conv[:tchClass1Bits]
+	class2 := conv[tchClass1Bits : tchClass1Bits+tchClass2Bits]
+	crc := conv[tchClass1Bits+tchClass2Bits : tchClass1Bits+tchClass2Bits+tchCRCBits]
+
+	type2 := make([]byte, 0, tchType2SpeechN)
+	type2 = append(type2, hardSliceLLR(class0)...)
+	type2 = append(type2, class1...)
+	type2 = append(type2, class2...)
+	frameA, frameB = type2ToSpeech(type2)
+
+	crcOK = true
+	want := crcTCHClass2(class2)
+	for i := range want {
+		if want[i] != (crc[i] & 1) {
+			crcOK = false
+			break
+		}
+	}
+	return frameA, frameB, crcOK, metric, true
+}
+
+// hardSliceLLR hard-decides an LLR stream into bit-per-byte bits under the
+// soft convention LLR > 0 ⇒ bit 0, LLR < 0 ⇒ bit 1 (an exact 0 erasure decides
+// bit 0). Used for the uncoded class-0 bits, which carry no FEC and so are read
+// directly off their soft values.
+func hardSliceLLR(llr []float32) []byte {
+	out := make([]byte, len(llr))
+	for i, v := range llr {
+		if v < 0 {
+			out[i] = 1
+		}
+	}
+	return out
 }

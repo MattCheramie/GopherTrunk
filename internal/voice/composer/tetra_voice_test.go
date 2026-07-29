@@ -10,9 +10,62 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// idealType5LLR maps a descrambled 54-byte type-5 traffic frame to the ideal
+// soft LLR stream the soft TCH/S decoder consumes (LLR > 0 ⇒ bit 0).
+func idealType5LLR(frame []byte) []float32 {
+	bits := framing.UnpackBitsMSB(frame, tetra.TrafficFrameBytes*8)
+	out := make([]float32, len(bits))
+	for i, bit := range bits {
+		if bit&1 == 0 {
+			out[i] = 1
+		} else {
+			out[i] = -1
+		}
+	}
+	return out
+}
+
+// TestTETRADemuxSoftDecodeUsesLLRs proves the shared demux decodes a burst from
+// its soft-decision LLR stream when one is supplied, independent of the hard
+// frame bytes: a valid soft type-5 recovers the speech even though the hard
+// frame passed alongside is corrupt (all-zero → hard CRC fails). This pins the
+// soft path as wired end-to-end through onBurst → decodeTETRASpeech.
+func TestTETRADemuxSoftDecodeUsesLLRs(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+
+	a := make([]byte, 137)
+	b := make([]byte, 137)
+	for i := range a {
+		a[i] = byte(i % 2)
+	}
+	soft := idealType5LLR(tetra.EncodeTCHS(a, b))
+	// A random hard frame that fails the class-2 CRC gate — decoding must come
+	// from the soft LLRs, not these bytes.
+	corrupt := make([]byte, tetra.TrafficFrameBytes)
+	rand.New(rand.NewSource(42)).Read(corrupt)
+	if tetra.TCHSpeechFrames(corrupt) != nil {
+		t.Fatal("precondition: corrupt frame unexpectedly passed the hard CRC gate")
+	}
+
+	o, rs := newDemuxOwner(c, "A", 19)
+	d.addOwner(o)
+	d.onBurst(corrupt, soft, 1, 19)
+	if n := len(rs.rawFrames("A")); n != 2 {
+		t.Fatalf("soft-decode path: A got %d frames, want 2 (soft LLRs must decode despite a corrupt hard frame)", n)
+	}
+	// The SAME corrupt hard frame with no soft info decodes nothing — confirming
+	// it was the soft LLRs, not the frame bytes, that produced the speech above.
+	d.onBurst(corrupt, nil, 1, 19)
+	if n := len(rs.rawFrames("A")); n != 2 {
+		t.Errorf("hard fallback on a CRC-failing frame should add no frames; total = %d, want 2", n)
+	}
+}
 
 // buildTETRATrafficDibits lays out nSlots Normal Continuous Downlink Bursts
 // (255-dibit TDMA slots) into a dibit stream, each with the normal training
@@ -146,7 +199,7 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	if tetra.TCHSpeechFrames(junk) != nil {
 		t.Fatalf("test vector precondition: junk frame unexpectedly passed the TCH/S CRC gate")
 	}
-	c.onTETRATrafficBurst(bt, rs, "VOICE-1", junk, 0, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", junk, nil, 0, 0, &bursts, &speech, &offSlot)
 	if bt.sawVoice.Load() {
 		t.Error("non-speech burst set sawVoice — liveness not gated on CRC-valid speech")
 	}
@@ -166,7 +219,7 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	// Case B: a CRC-valid TCH/S burst carrying two 137-bit speech frames. It must
 	// mark voice activity and emit both speech frames to the recorder.
 	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
-	c.onTETRATrafficBurst(bt, rs, "VOICE-1", frame, 0, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", frame, nil, 0, 0, &bursts, &speech, &offSlot)
 	if !bt.sawVoice.Load() {
 		t.Error("CRC-valid TCH/S burst did not set sawVoice")
 	}
@@ -203,7 +256,7 @@ func TestTETRATrafficBurstUsageMarkerFilter(t *testing.T) {
 	const grantUsage uint8 = 20 // this call's downlink usage marker
 
 	// Another call's slot (marker 19 != granted 20): dropped off-call, no decode.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 19, grantUsage, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, 19, grantUsage, &bursts, &speech, &offSlot)
 	if got := offSlot.Load(); got != 1 {
 		t.Errorf("foreign-call burst offSlot = %d, want 1", got)
 	}
@@ -215,7 +268,7 @@ func TestTETRATrafficBurstUsageMarkerFilter(t *testing.T) {
 	}
 
 	// Granted marker (20 == granted 20): decoded and written.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, grantUsage, grantUsage, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, grantUsage, grantUsage, &bursts, &speech, &offSlot)
 	if n := len(rs.rawFrames("VOICE-2")); n != 2 {
 		t.Errorf("granted-marker burst wrote %d frames, want 2", n)
 	}
@@ -225,7 +278,7 @@ func TestTETRATrafficBurstUsageMarkerFilter(t *testing.T) {
 
 	// Undecoded AACH (marker 0): CRC-gated fallback still processes it — an AACH
 	// miss must not drop the granted call's own speech.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, 0, grantUsage, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, 0, grantUsage, &bursts, &speech, &offSlot)
 	if n := len(rs.rawFrames("VOICE-2")); n != 4 {
 		t.Errorf("undecoded-AACH burst wrote total %d frames, want 4", n)
 	}
@@ -246,8 +299,8 @@ func TestTETRATrafficBurstNoGrantMarkerFallback(t *testing.T) {
 	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
 
 	// Grant marker 0 (unknown): a burst with any marker is decoded, none dropped.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, 19, 0, &bursts, &speech, &offSlot)
-	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, 0, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, nil, 19, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, nil, 0, 0, &bursts, &speech, &offSlot)
 	if n := len(rs.rawFrames("VOICE-3")); n != 4 {
 		t.Errorf("no-grant-marker fallback wrote %d frames, want 4 (accept all CRC-valid speech)", n)
 	}
@@ -283,8 +336,8 @@ func TestTETRADemuxRoutesByUsageMarker(t *testing.T) {
 	d.addOwner(oA)
 	d.addOwner(oB)
 
-	d.onBurst(frame, 1, 19) // marker 19 → A only
-	d.onBurst(frame, 2, 20) // marker 20 → B only
+	d.onBurst(frame, nil, 1, 19) // marker 19 → A only
+	d.onBurst(frame, nil, 2, 20) // marker 20 → B only
 	if n := len(rsA.rawFrames("A")); n != 2 {
 		t.Errorf("owner A got %d frames, want 2", n)
 	}
@@ -293,12 +346,12 @@ func TestTETRADemuxRoutesByUsageMarker(t *testing.T) {
 	}
 
 	// A marker with no owner is dropped (not broadcast to A or B).
-	d.onBurst(frame, 3, 21)
+	d.onBurst(frame, nil, 3, 21)
 	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 4 {
 		t.Errorf("unowned marker 21 leaked: total frames now %d, want 4", n)
 	}
 	// A non-traffic AACH marker (< DLUsageTraffic, e.g. undecoded 0) is dropped.
-	d.onBurst(frame, 1, 0)
+	d.onBurst(frame, nil, 1, 0)
 	if n := len(rsA.rawFrames("A")); n != 2 {
 		t.Errorf("non-traffic marker leaked to A: %d frames, want 2", n)
 	}
@@ -315,7 +368,7 @@ func TestTETRADemuxMostRecentGrantEvicts(t *testing.T) {
 
 	oOld, rsOld := newDemuxOwner(c, "old", 19)
 	d.addOwner(oOld)
-	d.onBurst(frame, 1, 19)
+	d.onBurst(frame, nil, 1, 19)
 	if n := len(rsOld.rawFrames("old")); n != 2 {
 		t.Fatalf("old owner got %d frames before reuse, want 2", n)
 	}
@@ -323,7 +376,7 @@ func TestTETRADemuxMostRecentGrantEvicts(t *testing.T) {
 	// New call reuses marker 19 while "old" is still registered (hangtime).
 	oNew, rsNew := newDemuxOwner(c, "new", 19)
 	d.addOwner(oNew)
-	d.onBurst(frame, 1, 19)
+	d.onBurst(frame, nil, 1, 19)
 	if n := len(rsNew.rawFrames("new")); n != 2 {
 		t.Errorf("new owner got %d frames after reuse, want 2", n)
 	}
@@ -333,7 +386,7 @@ func TestTETRADemuxMostRecentGrantEvicts(t *testing.T) {
 
 	// The lingering old owner unregistering must NOT remove the new owner's marker.
 	d.removeOwner(oOld)
-	d.onBurst(frame, 1, 19)
+	d.onBurst(frame, nil, 1, 19)
 	if n := len(rsNew.rawFrames("new")); n != 4 {
 		t.Errorf("new owner lost its marker after old unregistered: %d frames, want 4", n)
 	}
@@ -354,7 +407,7 @@ func TestTETRADemuxWildcardBinding(t *testing.T) {
 	d.addOwner(oW)
 
 	// Burst on 19 goes to A, not the wildcard.
-	d.onBurst(frame, 1, 19)
+	d.onBurst(frame, nil, 1, 19)
 	if n := len(rsA.rawFrames("A")); n != 2 {
 		t.Errorf("owner A got %d frames, want 2", n)
 	}
@@ -363,13 +416,13 @@ func TestTETRADemuxWildcardBinding(t *testing.T) {
 	}
 
 	// A burst on an unclaimed marker 25 binds the wildcard to 25.
-	d.onBurst(frame, 3, 25)
-	d.onBurst(frame, 3, 25)
+	d.onBurst(frame, nil, 3, 25)
+	d.onBurst(frame, nil, 3, 25)
 	if n := len(rsW.rawFrames("W")); n != 4 {
 		t.Errorf("wildcard did not bind marker 25: %d frames, want 4", n)
 	}
 	// It must not also grab a different unclaimed marker now that it is bound.
-	d.onBurst(frame, 4, 30)
+	d.onBurst(frame, nil, 4, 30)
 	if n := len(rsW.rawFrames("W")); n != 4 {
 		t.Errorf("bound wildcard grabbed a second marker: %d frames, want 4", n)
 	}
@@ -388,7 +441,7 @@ func TestTETRADemuxCRCFallbackSingleOwner(t *testing.T) {
 	o, rs := newDemuxOwner(c, "A", 0) // wildcard: grant carried no usage marker
 	d.addOwner(o)
 
-	d.onBurst(frame, 2, 0) // undecoded AACH, single active call → CRC fallback
+	d.onBurst(frame, nil, 2, 0) // undecoded AACH, single active call → CRC fallback
 	if n := len(rs.rawFrames("A")); n != 2 {
 		t.Errorf("single-owner CRC fallback: A got %d frames, want 2", n)
 	}
@@ -411,7 +464,7 @@ func TestTETRADemuxCRCFallbackNoCrossTalkConcurrent(t *testing.T) {
 	d.addOwner(oA)
 	d.addOwner(oB)
 
-	d.onBurst(frame, 2, 0) // undecoded AACH, two active calls → drop, no cross-talk
+	d.onBurst(frame, nil, 2, 0) // undecoded AACH, two active calls → drop, no cross-talk
 	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 0 {
 		t.Errorf("undecoded burst leaked to a concurrent owner: %d frames, want 0", n)
 	}
@@ -436,7 +489,7 @@ func TestTETRADemuxMarkerCollisionCounted(t *testing.T) {
 	if got := d.markerCollisions.Load(); got != 1 {
 		t.Errorf("markerCollisions = %d, want 1", got)
 	}
-	d.onBurst(frame, 1, 19) // newest owns the marker
+	d.onBurst(frame, nil, 1, 19) // newest owns the marker
 	if n := len(rsNew.rawFrames("new")); n != 2 {
 		t.Errorf("newest owner got %d frames, want 2 (most-recent-grant wins)", n)
 	}

@@ -76,13 +76,14 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 
 	rs, _ := c.sink.(rawFrameSink)
 	var bursts, speech, offSlot atomic.Uint64
-	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, slot, usage uint8) {
-		c.onTETRATrafficBurst(bt, rs, serial, frame, usage, usageMarker, &bursts, &speech, &offSlot)
+	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, softType5 []float32, slot, usage uint8) {
+		c.onTETRATrafficBurst(bt, rs, serial, frame, softType5, usage, usageMarker, &bursts, &speech, &offSlot)
 	})
 
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz:        symbolHz,
 		DibitSink:           func(d []uint8, base int) { extractor.Process(d, base) },
+		SoftSink:            func(diffs []complex64, base int) { extractor.StashSoft(diffs, base) },
 		ClockMode:           tetrarx.ClockGardner,
 		GardnerGain:         0.005,
 		EnableAFC:           true,
@@ -152,7 +153,7 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 // behave like every other protocol — the call ends hangtime after its last
 // decoded speech frame (or via the no-voice startup timeout when a grant never
 // decodes any speech).
-func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, burstUsage, grantUsage uint8, bursts, speech, offSlot *atomic.Uint64) {
+func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, softType5 []float32, burstUsage, grantUsage uint8, bursts, speech, offSlot *atomic.Uint64) {
 	bursts.Add(1)
 	// Drop bursts that carry a different call's AACH usage marker. Only when both
 	// markers are known (>= DLUsageTraffic) — an unknown marker on either side
@@ -161,7 +162,7 @@ func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, ser
 		offSlot.Add(1)
 		return
 	}
-	c.decodeTETRASpeech(bt, rs, serial, frame, speech)
+	c.decodeTETRASpeech(bt, rs, serial, frame, softType5, speech)
 }
 
 // decodeTETRASpeech TCH/S-decodes one traffic frame for an owning call: it
@@ -170,8 +171,18 @@ func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, ser
 // `.raw` sidecar (the ACELP vocoder renders it to PCM downstream). A non-TCH/S
 // burst (signalling, encrypted, or corrupt) yields no frames and does not touch
 // liveness. Shared by the solo traffic tap and the same-carrier slot demux.
-func (c *Composer) decodeTETRASpeech(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, speech *atomic.Uint64) {
-	frames := tetra.TCHSpeechFrames(frame)
+func (c *Composer) decodeTETRASpeech(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, softType5 []float32, speech *atomic.Uint64) {
+	// Prefer soft-decision TCH/S when the extractor supplied the burst's LLRs:
+	// the soft Viterbi's ~2 dB coding gain recovers real speech bursts the
+	// hard-decision gate drops on a marginal same-carrier signal (the fix for
+	// the short/garbled recordings). Fall back to the hard gate when no soft
+	// info is available (never worse than before).
+	var frames [][]byte
+	if softType5 != nil {
+		frames = tetra.TCHSpeechFramesSoft(softType5)
+	} else {
+		frames = tetra.TCHSpeechFrames(frame)
+	}
 	if len(frames) == 0 {
 		// Not the granted call's speech — do NOT touch call liveness.
 		return
@@ -269,6 +280,7 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz:        symbolHz,
 		DibitSink:           func(di []uint8, base int) { extractor.Process(di, base) },
+		SoftSink:            func(diffs []complex64, base int) { extractor.StashSoft(diffs, base) },
 		ClockMode:           tetrarx.ClockGardner,
 		GardnerGain:         0.005,
 		EnableAFC:           true,
@@ -317,7 +329,7 @@ func (d *tetraSlotDemux) observe(iq []complex64) {
 // dropped too. When a marker has no owner but a wildcard call is waiting, the
 // oldest wildcard claims that marker. Runs on the single demux goroutine, so each
 // owner's boundary tracker has exactly one writer.
-func (d *tetraSlotDemux) onBurst(frame []byte, slot, usage uint8) {
+func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage uint8) {
 	// A burst whose AACH did not decode (usage 0) or is a control slot
 	// (< DLUsageTraffic) carries no routable marker. Dropping it outright loses
 	// the granted call's own speech whenever its AACH is momentarily
@@ -345,7 +357,7 @@ func (d *tetraSlotDemux) onBurst(frame []byte, slot, usage uint8) {
 		}
 		d.crcFallbacks.Add(1)
 		sole.bursts.Add(1)
-		d.c.decodeTETRASpeech(sole.bt, sole.rs, sole.serial, frame, &sole.speech)
+		d.c.decodeTETRASpeech(sole.bt, sole.rs, sole.serial, frame, softType5, &sole.speech)
 		return
 	}
 	d.mu.Lock()
@@ -362,7 +374,7 @@ func (d *tetraSlotDemux) onBurst(frame []byte, slot, usage uint8) {
 		return
 	}
 	o.bursts.Add(1)
-	d.c.decodeTETRASpeech(o.bt, o.rs, o.serial, frame, &o.speech)
+	d.c.decodeTETRASpeech(o.bt, o.rs, o.serial, frame, softType5, &o.speech)
 }
 
 // addOwner registers o. A marker-bearing grant claims its marker (most-recent
