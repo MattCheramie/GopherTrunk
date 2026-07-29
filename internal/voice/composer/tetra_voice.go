@@ -324,11 +324,14 @@ func (d *tetraSlotDemux) observe(iq []complex64) {
 }
 
 // onBurst routes one extracted traffic frame to the call that owns its AACH usage
-// marker. Non-traffic bursts (usage < DLUsageTraffic, including an undecoded AACH
-// reported as 0) carry no speech and are dropped; a marker with no live owner is
-// dropped too. When a marker has no owner but a wildcard call is waiting, the
-// oldest wildcard claims that marker. Runs on the single demux goroutine, so each
-// owner's boundary tracker has exactly one writer.
+// marker. When a marker has no owner but a wildcard call is waiting, the oldest
+// wildcard claims that marker. A burst that cannot be routed by marker — an
+// undecoded/control AACH (usage < DLUsageTraffic) or a decoded marker with no
+// registered owner — is handed to the CRC gate of the sole active call when
+// exactly one call is up (a stray/undecoded AACH on that call's own burst), and
+// dropped (counted) only when ≥2 calls are concurrent, where cross-talk would be
+// possible. Runs on the single demux goroutine, so each owner's boundary tracker
+// has exactly one writer.
 func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage uint8) {
 	// A burst whose AACH did not decode (usage 0) or is a control slot
 	// (< DLUsageTraffic) carries no routable marker. Dropping it outright loses
@@ -368,8 +371,27 @@ func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage 
 		o.marker = usage
 		d.owners[usage] = o
 	}
+	// No owner for this decoded marker and no wildcard to claim it. When exactly
+	// one call is active, this is that call's own burst whose AACH usage marker
+	// miscorrected to a stray value (a common RM(30,14) miss on a marginal AACH):
+	// capture the sole owner so it goes through the CRC gate below instead of
+	// being dropped. Safe for the same reason as the usage-0 fallback — with a
+	// single active call there is no peer to cross-talk into, and the class-2 CRC
+	// still rejects a non-matching burst ~255/256.
+	var sole *tetraSlotOwner
+	if o == nil && len(d.owners) == 1 && len(d.wildcards) == 0 {
+		for _, only := range d.owners {
+			sole = only
+		}
+	}
 	d.mu.Unlock()
 	if o == nil {
+		if sole != nil {
+			d.crcFallbacks.Add(1)
+			sole.bursts.Add(1)
+			d.c.decodeTETRASpeech(sole.bt, sole.rs, sole.serial, frame, softType5, &sole.speech)
+			return
+		}
 		d.ownerlessDrops.Add(1)
 		return
 	}
