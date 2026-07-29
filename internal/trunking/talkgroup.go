@@ -106,6 +106,28 @@ func (d *TalkgroupDB) Delete(id uint32) bool {
 	return true
 }
 
+// discoveredTag is the Tag stamped on auto-learned talkgroups (see
+// Engine.discoverTalkgroup), distinguishing them from operator-catalogued
+// entries so retraction never removes a curated record.
+const discoveredTag = "Discovered"
+
+// DeleteDiscovered removes an auto-discovered talkgroup (Tag == discoveredTag)
+// by id, returning true only if such an entry was present and removed. An
+// operator-catalogued talkgroup (any other Tag) is left untouched. The Tag check
+// and the delete run under one write lock so a concurrent UpdateFields cannot
+// race the read. Used to retract a phantom talkgroup once its id is revealed to
+// be a subscriber radio (the TETRA notification/D-CONNECT ordering race).
+func (d *TalkgroupDB) DeleteDiscovered(id uint32) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	tg, ok := d.tgs[id]
+	if !ok || tg.Tag != discoveredTag {
+		return false
+	}
+	delete(d.tgs, id)
+	return true
+}
+
 // All returns a snapshot of every talkgroup in the DB.
 func (d *TalkgroupDB) All() []*TalkGroup {
 	d.mu.RLock()
