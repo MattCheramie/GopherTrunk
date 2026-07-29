@@ -128,6 +128,54 @@ func TestEngineDiscoversTalkgroupFromGrant(t *testing.T) {
 	}
 }
 
+// TestEngineRetractsRadioIDLeakedAsTalkgroup pins the RadioID→TGID leak fix.
+// A TETRA notification / D-CONNECT addressed to the calling party arrives as a
+// group grant (Individual=false) before that SSI is known to be a radio, so the
+// engine phantom-catalogues the radio ID as a talkgroup. Once a later grant
+// reveals the SSI is a radio — either as a calling party (SourceID) or via an
+// Individual-addressed grant — the phantom must be retracted, and a subsequent
+// notification for the same radio must not re-discover it.
+func TestEngineRetractsRadioIDLeakedAsTalkgroup(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+
+	// Ordering A — phantom first, then the SSI is seen as a calling party.
+	// A bare notification addressed to radio 1005387 (src unknown) leaks it in.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005387, FrequencyHz: 467_912_500})
+	if tg := e.talkgroups.Lookup(1005387); tg == nil || tg.Tag != discoveredTag {
+		t.Fatalf("precondition: radio 1005387 should be leaked as a Discovered TG, got %+v", tg)
+	}
+	// A real group call where 1005387 is the calling party reveals it as a radio.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020529, SourceID: 1005387, FrequencyHz: 467_912_500})
+	if e.talkgroups.Lookup(1005387) != nil {
+		t.Errorf("radio 1005387 was not retracted after being seen as a calling party")
+	}
+	if e.talkgroups.Lookup(1020529) == nil {
+		t.Errorf("real group TG 1020529 should still be discovered")
+	}
+	// A later notification for the same radio must NOT re-discover it.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005387, FrequencyHz: 467_912_500})
+	if e.talkgroups.Lookup(1005387) != nil {
+		t.Errorf("radio 1005387 re-discovered as a TG after being known as a radio")
+	}
+
+	// Ordering B — the SSI is known as a radio first (Individual grant), so a
+	// later bare notification for it is never catalogued.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005574, FrequencyHz: 467_912_500, Individual: true})
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005574, FrequencyHz: 467_912_500})
+	if e.talkgroups.Lookup(1005574) != nil {
+		t.Errorf("radio 1005574 (known individual) must not be discovered as a TG")
+	}
+
+	// An operator-catalogued talkgroup that happens to share an id with a radio
+	// sighting must NEVER be retracted — only auto-"Discovered" entries are.
+	e.talkgroups.Add(&TalkGroup{ID: 4242, Tag: "Ops", AlphaTag: "Dispatch"})
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020529, SourceID: 4242, FrequencyHz: 467_912_500})
+	if tg := e.talkgroups.Lookup(4242); tg == nil {
+		t.Errorf("operator-catalogued TG 4242 was wrongly retracted")
+	}
+}
+
 // TestEngineSkipsOutOfBandVirtualTunerInFavorOfPhysical covers the
 // Phase B fallback: when a wideband virtual voice tuner can't serve
 // a grant (frequency outside its IQ window) and a physical voice

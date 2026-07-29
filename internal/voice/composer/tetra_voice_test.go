@@ -473,6 +473,44 @@ func TestTETRADemuxCRCFallbackNoCrossTalkConcurrent(t *testing.T) {
 	}
 }
 
+// TestTETRADemuxOwnerlessMarkerSingleOwnerCRCFallback: a burst that decodes a
+// traffic marker with no registered owner is the sole active call's own burst
+// whose AACH usage marker miscorrected. With one call active it must be routed
+// to that call through the CRC gate (recovering speech a strict marker match
+// would drop as ownerless), and with two concurrent calls it must still be
+// dropped as ownerless (no cross-talk). Regression for the same-carrier
+// ownerless-drop audio loss.
+func TestTETRADemuxOwnerlessMarkerSingleOwnerCRCFallback(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	// One active call (marker 24); a CRC-valid burst carries a stray marker 25.
+	d := mkDemux(c)
+	o, rs := newDemuxOwner(c, "A", 24)
+	d.addOwner(o)
+	d.onBurst(frame, nil, 1, 25) // decoded marker 25, no owner, single call → CRC fallback
+	if n := len(rs.rawFrames("A")); n != 2 {
+		t.Errorf("ownerless single-owner fallback: A got %d frames, want 2", n)
+	}
+	if got := d.ownerlessDrops.Load(); got != 0 {
+		t.Errorf("ownerlessDrops = %d, want 0 (burst was recovered, not dropped)", got)
+	}
+
+	// Two concurrent calls: a stray-marker burst has no safe owner and must drop.
+	d2 := mkDemux(c)
+	oA, rsA := newDemuxOwner(c, "A", 24)
+	oB, rsB := newDemuxOwner(c, "B", 26)
+	d2.addOwner(oA)
+	d2.addOwner(oB)
+	d2.onBurst(frame, nil, 1, 25) // stray marker 25, two calls → drop, no cross-talk
+	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 0 {
+		t.Errorf("ownerless burst leaked to a concurrent owner: %d frames, want 0", n)
+	}
+	if got := d2.ownerlessDrops.Load(); got != 1 {
+		t.Errorf("ownerlessDrops = %d, want 1", got)
+	}
+}
+
 // TestTETRADemuxMarkerCollisionCounted: two calls registering the same usage
 // marker is now counted + warned (previously a silent orphan). Most-recent-grant
 // still wins the marker (existing eviction semantics preserved).

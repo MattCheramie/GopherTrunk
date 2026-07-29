@@ -76,6 +76,18 @@ type Engine struct {
 	// channel's repeated grant TSBKs and age out via runWatchdog once the call
 	// drops. Guarded by mu, like calls/synthetic.
 	observed map[string]*ActiveCall
+
+	// knownRadios is the set of subscriber SSIs a grant has revealed to be an
+	// individual radio, not a talkgroup: any grant's calling/transmitting party
+	// (SourceID) and any Individual-addressed destination. It guards talkgroup
+	// auto-discovery against the TETRA ordering race where a notification /
+	// D-CONNECT addressed to the calling party is seen before that SSI is known
+	// to be a radio (so it is published Individual=false) — which would otherwise
+	// catalogue the radio ID as a phantom talkgroup. GSSIs and ISSIs never
+	// overlap on a TETRA network, so an SSI seen as a radio is never a real
+	// talkgroup. Bounded by knownRadiosCap; guarded by radiosMu.
+	radiosMu    sync.Mutex
+	knownRadios map[uint32]struct{}
 }
 
 // observedKey identifies a logical call for the observed-call tracker:
@@ -262,7 +274,7 @@ func (e *Engine) Run(ctx context.Context) error {
 func (e *Engine) discoverTalkgroup(g Grant) *TalkGroup {
 	tg := &TalkGroup{
 		ID:     g.GroupID,
-		Tag:    "Discovered",
+		Tag:    discoveredTag,
 		Mode:   "D",
 		Scan:   e.ScanMode() != ScanModeList,
 		Stream: true,
@@ -274,6 +286,52 @@ func (e *Engine) discoverTalkgroup(g Grant) *TalkGroup {
 	return tg
 }
 
+// knownRadiosCap bounds the learned-radios set so a long-running busy site
+// cannot grow it without bound. Past the cap the set stops learning new SSIs
+// (existing ones still guard discovery, and retraction still fires whenever a
+// radio is seen), mirroring the tetra decoder's individualsCap.
+const knownRadiosCap = 16384
+
+// noteRadio records that ssi is a subscriber radio (an individual unit) rather
+// than a talkgroup, and retracts any talkgroup previously auto-discovered for
+// it. A radio is revealed by any grant that carries it as a calling /
+// transmitting party (SourceID) or addresses it individually; GSSIs and ISSIs
+// never overlap on a TETRA network, so an SSI seen as a radio is never a real
+// talkgroup. Only auto-"Discovered" entries are retracted (DeleteDiscovered) —
+// an operator-catalogued talkgroup is authoritative and left untouched. No-op
+// for ssi 0. Retraction is what fixes the leaked radio IDs already sitting in
+// the Talkgroups list; the knownRadios guard in HandleGrant then keeps a later
+// notification for the same radio from re-discovering it.
+func (e *Engine) noteRadio(ssi uint32, system string) {
+	if ssi == 0 {
+		return
+	}
+	e.radiosMu.Lock()
+	if e.knownRadios == nil {
+		e.knownRadios = make(map[uint32]struct{})
+	}
+	_, known := e.knownRadios[ssi]
+	if !known && len(e.knownRadios) < knownRadiosCap {
+		e.knownRadios[ssi] = struct{}{}
+	}
+	e.radiosMu.Unlock()
+	if known {
+		return // already learned — any phantom was retracted on first sighting
+	}
+	if e.talkgroups.DeleteDiscovered(ssi) {
+		e.log.Info("retracted auto-discovered talkgroup — SSI is a subscriber radio, not a talkgroup",
+			"tg", ssi, "system", system)
+	}
+}
+
+// isKnownRadio reports whether ssi has been revealed as a subscriber radio.
+func (e *Engine) isKnownRadio(ssi uint32) bool {
+	e.radiosMu.Lock()
+	defer e.radiosMu.Unlock()
+	_, ok := e.knownRadios[ssi]
+	return ok
+}
+
 func (e *Engine) HandleGrant(g Grant) {
 	if g.At.IsZero() {
 		g.At = e.now()
@@ -282,13 +340,24 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.log.Warn("dropping grant with zero frequency", "grant", g.String())
 		return
 	}
+	// Learn subscriber radios this grant reveals and retract any phantom
+	// talkgroup previously catalogued for one. A calling/transmitting party is
+	// always a radio; an Individual grant's destination is a subscriber address.
+	// This both cleans up radio IDs already leaked into the Talkgroups list and
+	// primes the discovery guard below.
+	e.noteRadio(g.SourceID, g.System)
+	if g.Individual {
+		e.noteRadio(g.GroupID, g.System)
+	}
 	tg := e.talkgroups.Lookup(g.GroupID)
-	if tg == nil && g.GroupID != 0 && !g.Individual {
+	if tg == nil && g.GroupID != 0 && !g.Individual && !e.isKnownRadio(g.GroupID) {
 		// First time this talkgroup has been heard: catalogue it so
 		// Database → Talkgroups fills in from the air (the trunk-recorder
 		// behaviour the operator asked for). Individual (unit-to-unit /
 		// interconnect) grants are skipped — their 24-bit destination is a
-		// subscriber address, not a talkgroup.
+		// subscriber address, not a talkgroup — as are SSIs already known to be
+		// radios (the notification/D-CONNECT ordering race that leaked radio IDs
+		// into the talkgroup list).
 		tg = e.discoverTalkgroup(g)
 	}
 	if tg != nil && tg.Lockout && !g.Emergency {

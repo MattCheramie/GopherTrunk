@@ -958,10 +958,14 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		if wallSec > 1 && audioSec < 0.75*wallSec {
 			// audio_pct is the frame yield: how much of the call span actually
 			// decoded to audio. A very low value (e.g. 0.1 s / 5.4 s = ~2%) with
-			// a small frames count is the fingerprint of upstream frame loss
-			// (few TCH/S bursts passing CRC on a starved same-carrier tap), not
-			// a genuinely short over. Surfacing frames + pct makes that
-			// diagnosable from this one line.
+			// a small frames count is the fingerprint of upstream frame loss —
+			// on TETRA, few TCH/S bursts passing the class-2 CRC (a marginal
+			// same-carrier signal without soft-decision coding gain) or bursts
+			// mis-routed away from the call by the usage-marker demux — rather
+			// than a genuinely short over. (IQ starvation of the tap is a distinct
+			// cause, surfaced separately by the ccdecoder "dropped IQ to a lagging
+			// voice consumer" warning; a zero there rules it out.) Surfacing
+			// frames + pct makes this diagnosable from this one line.
 			r.log.Debug("recorder: recording shorter than call span",
 				"device", serial, "wav", s.wavPath, "vocoder", s.vocoderName,
 				"audio_seconds", round1(audioSec), "wall_seconds", round1(wallSec),

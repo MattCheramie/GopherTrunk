@@ -208,6 +208,27 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **A single-call same-carrier TETRA burst whose AACH usage marker miscorrected
+  was dropped instead of decoded.** The shared per-carrier voice demux routes by
+  AACH downlink usage marker; on a marginal signal the RM(30,14) AACH occasionally
+  miscorrects to a stray marker with no registered owner, so the burst was counted
+  as an `ownerless_drop` and its speech lost. When exactly one call is active the
+  demux now routes such a burst to that sole call through the class-2 CRC gate
+  (the same single-call fallback already used for an undecoded AACH) — the CRC
+  rejects a genuinely foreign burst ~255/256, and with one call there is no peer
+  to cross-talk into. With ≥2 concurrent calls the burst is still dropped, so the
+  cross-talk guarantees are unchanged.
+- **TETRA radio IDs leaked into the Talkgroups list.** A notification / D-CONNECT
+  addressed to a call's calling party arrives as a bare grant before that SSI is
+  known to be a radio, so it was published `Individual=false` and the engine
+  auto-catalogued the radio ID as a phantom talkgroup (e.g. `100xxxx` source IDs
+  showing up alongside real `102xxxx` talkgroups). The engine now learns which
+  SSIs are subscriber radios — any grant's calling/transmitting party (`SourceID`)
+  and any `Individual`-addressed destination — retracts a phantom talkgroup
+  already catalogued for one (`TalkgroupDB.DeleteDiscovered`, which only removes
+  auto-`Discovered` entries, never an operator-catalogued talkgroup), and refuses
+  to re-discover a known radio. GSSIs and ISSIs never overlap on a TETRA network,
+  so this is safe.
 - **TETRA voice recordings on a same-carrier site came out short and garbled
   (low `audio_pct`).** The TCH/S traffic decoder was hard-decision while the
   control channel already ran soft-decision, so on a marginal same-carrier
