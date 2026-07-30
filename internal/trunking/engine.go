@@ -322,6 +322,34 @@ func (e *Engine) noteRadio(ssi uint32, system string) {
 		e.log.Info("retracted auto-discovered talkgroup — SSI is a subscriber radio, not a talkgroup",
 			"tg", ssi, "system", system)
 	}
+	// Drop any live control-only "observed" call provisionally tracked under this
+	// radio ID. A TETRA notification / D-CONNECT to the calling party creates one
+	// (keyed by the radio ID as GroupID) before the authoritative group grant
+	// supersedes the pool-bound call; the supersede only released the bound call,
+	// leaving this observed entry to linger in the Active Calls list as a phantom
+	// "TG <radioID>". Retracting it here propagates the correction to the other
+	// half of the Active Calls set.
+	if e.purgeObservedForGroup(ssi) {
+		e.log.Info("retracted observed call — SSI is a subscriber radio, not a talkgroup",
+			"tg", ssi, "system", system)
+	}
+}
+
+// purgeObservedForGroup removes every control-only "observed" call whose grant
+// GroupID equals ssi, returning true if any were removed. Called when ssi is
+// revealed to be a subscriber radio so a phantom call provisionally tracked
+// under the radio ID stops appearing in the Active Calls list. Guarded by e.mu.
+func (e *Engine) purgeObservedForGroup(ssi uint32) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	removed := false
+	for key, ac := range e.observed {
+		if ac.Grant.GroupID == ssi {
+			delete(e.observed, key)
+			removed = true
+		}
+	}
+	return removed
 }
 
 // isKnownRadio reports whether ssi has been revealed as a subscriber radio.
@@ -412,7 +440,13 @@ func (e *Engine) HandleGrant(g Grant) {
 	// talkgroup" report). Repeated grant TSBKs for a live call refresh the
 	// entry; data grants are not voice calls and are skipped. ObservedCalls
 	// filters out whichever of these a tuner ends up following.
-	if !g.DataCall {
+	if !g.DataCall && !g.Individual && !e.isKnownRadio(g.GroupID) {
+		// Skip individual (unit-to-unit) grants and grants addressed to a known
+		// subscriber radio — their destination is a radio ID, not a talkgroup, so
+		// tracking them here would surface the radio ID as a phantom talkgroup in
+		// the Active Calls list (the same notification/D-CONNECT ordering race the
+		// discovery gate above guards). A radio only learned to be one AFTER a
+		// provisional entry was made is retracted by noteRadio's observed purge.
 		e.observeCall(g, tg)
 	}
 

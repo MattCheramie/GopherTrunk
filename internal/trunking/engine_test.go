@@ -176,6 +176,51 @@ func TestEngineRetractsRadioIDLeakedAsTalkgroup(t *testing.T) {
 	}
 }
 
+// engineHasCallForTG reports whether any active (pool-bound) or observed
+// (control-only) call is labelled with talkgroup tg — the union the Active Calls
+// UI renders.
+func engineHasCallForTG(e *Engine, tg uint32) bool {
+	for _, ac := range e.ActiveCalls() {
+		if ac.Grant.GroupID == tg {
+			return true
+		}
+	}
+	for _, ac := range e.ObservedCalls() {
+		if ac.Grant.GroupID == tg {
+			return true
+		}
+	}
+	return false
+}
+
+// TestEngineRetractsRadioIDFromActiveCalls pins the Active-Calls half of the
+// RadioID→TGID leak: a TETRA notification bound to the calling party's radio ID
+// creates a provisional call labelled "TG <radioID>". When the authoritative
+// group grant reveals that SSI is the calling party (a radio), the provisional
+// must vanish from the Active Calls list — not just the Talkgroups catalogue.
+// Before the fix the supersede only released the pool-bound call and left the
+// control-only "observed" entry lingering (the reporter's "not passed anywhere
+// else").
+func TestEngineRetractsRadioIDFromActiveCalls(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	const freq = 467_912_500
+
+	// Provisional notification addressed to radio 1005399 (source unknown).
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005399, FrequencyHz: freq, Timeslot: 3})
+	if !engineHasCallForTG(e, 1005399) {
+		t.Fatalf("precondition: a provisional call for radio 1005399 should exist")
+	}
+	// Authoritative group grant: 1005399 is the calling party, real TG is 1020545.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020545, SourceID: 1005399, FrequencyHz: freq, Timeslot: 3})
+	if engineHasCallForTG(e, 1005399) {
+		t.Errorf("radio 1005399 still shown as a call after the authoritative grant superseded it")
+	}
+	if !engineHasCallForTG(e, 1020545) {
+		t.Errorf("authoritative group call 1020545 should be active")
+	}
+}
+
 // TestEngineSkipsOutOfBandVirtualTunerInFavorOfPhysical covers the
 // Phase B fallback: when a wideband virtual voice tuner can't serve
 // a grant (frequency outside its IQ window) and a physical voice

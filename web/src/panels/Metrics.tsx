@@ -30,7 +30,7 @@ const CURATED = [
   "gophertrunk_calls_active",
   "gophertrunk_calls_total",
   "gophertrunk_grants_total",
-  "gophertrunk_cc_locked",
+  "gophertrunk_control_channel_locked",
   "gophertrunk_sse_clients",
   "gophertrunk_devices_attached",
   "gophertrunk_tone_alerts_total",
@@ -132,7 +132,7 @@ export function Metrics() {
         },
         {
           label: "cc_locked",
-          data: hist.map((s) => s.values.get("gophertrunk_cc_locked") ?? 0),
+          data: hist.map((s) => s.values.get("gophertrunk_control_channel_locked") ?? 0),
           borderColor: "rgb(234, 179, 8)",
           backgroundColor: "rgba(234, 179, 8, 0.15)",
           fill: true,
