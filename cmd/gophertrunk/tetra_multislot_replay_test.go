@@ -135,6 +135,10 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		s.activeSec[int(tSec)]++
 	})
 
+	// GT_TETRA_EQ=1 enables the adaptive channel equalizer (issue #1001), so the
+	// same capture can be A/B'd with and without it — compare the total_bursts /
+	// traffic_marked_crc / errs_hist lines and the per-slot crc_bursts counts.
+	enableEQ := os.Getenv("GT_TETRA_EQ") == "1" || os.Getenv("GT_TETRA_EQ") == "true"
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: outRate,
 		DibitSink: func(d []uint8, base int) {
@@ -145,7 +149,9 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		GardnerGain:         0.005,
 		EnableAFC:           true,
 		EnableChannelFilter: true,
+		EnableEqualizer:     enableEQ,
 	})
+	t.Logf("equalizer=%v (set GT_TETRA_EQ=1 to enable)", enableEQ)
 
 	const chunk = 65536
 	var scratch []complex64

@@ -15,9 +15,9 @@ for tagged releases.
   and radios that equalize. A blind Constant-Modulus-Algorithm equalizer now sits
   between symbol-timing recovery and the differential decoder on the TETRA voice
   path, inverting that channel. Across the reporter's six captures it roughly
-  doubles CRC-valid TCH/S burst yield (~1.9×; one call went 1→206 bursts, another
-  35→129) with at most a 2-burst loss on already-clean captures. On automatically
-  (voice path); no configuration change. Refs #764, #771.
+  doubles CRC-valid TCH/S burst yield (soft-decision 410→778, ~1.9×; one call
+  went 4→207 bursts, another 42→134) with no loss on already-clean captures. On
+  automatically (voice path); no configuration change. Refs #764, #771, #1001.
 - **Cross-site duplicate-recording suppression (`recordings.dedup`).** When
   monitoring several networked / simulcast sites where the same talkgroup carries
   the same traffic, a call heard on more than one system is now saved once

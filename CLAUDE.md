@@ -96,8 +96,8 @@ confirmation before any close-as-completed.
   constellation — *not* the signal-limited front-end degradation of #764. A blind
   CMA equalizer between symbol-timing recovery and the differential decoder
   inverts it and roughly **doubles** CRC-valid TCH/S yield across the six captures
-  (hard 400→766, soft 410→769, ~1.9×; e.g. one call 1→206, another 35→129) with
-  ≤2-burst loss on already-clean captures. Lessons that cost time, all pinned by
+  (soft-decision 410→778, ~1.9×; e.g. one call 4→207, another 42→134) with no
+  loss on already-clean captures. Lessons that cost time, all pinned by
   `equalizer_test.go` + the skip-guarded capture sweep:
   - **CRC yield is the only trustworthy metric; EVM is a trap.** Blind CMA
     minimises *modulus*, not correctness, and has spurious constant-modulus

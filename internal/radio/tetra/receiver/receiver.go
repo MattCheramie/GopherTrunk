@@ -125,13 +125,15 @@ type Options struct {
 	// synth, but non-zero cost); recommended for live / replayed captures. See
 	// equalizer.go.
 	EnableEqualizer bool
-	// EqualizerTaps overrides the CMA tap count (forced odd; <=0 ⇒ 11).
+	// EqualizerTaps overrides the CMA tap count (forced odd; <=0 ⇒ default).
 	EqualizerTaps int
-	// EqualizerMu overrides the CMA step size (<=0 ⇒ 3e-3).
+	// EqualizerMu overrides the CMA step size (<=0 ⇒ default).
 	EqualizerMu float64
 	// EqualizerSnapshot overrides the symbols between frozen-tap snapshots
-	// (<=0 ⇒ 1000). Must stay ≫ a burst (255 symbols) so each burst sees a
-	// constant filter and the differential decode stays phase-coherent.
+	// (<=0 ⇒ default). Trades convergence speed against phase continuity: the
+	// applied filter is frozen between snapshots so each burst decodes with a
+	// constant phase, and the one symbol straddling a snapshot is absorbed by
+	// the FEC. See equalizer.go.
 	EqualizerSnapshot int
 }
 

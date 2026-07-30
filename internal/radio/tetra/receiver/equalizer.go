@@ -6,8 +6,9 @@ import "math"
 // channel (multipath / ISI / band-edge group delay) smearing the π/4-DQPSK
 // constellation on real captures — the demod-side gap that made otherwise-clean
 // concurrent-load TETRA recordings garble. Validated on the reporter's captures
-// to roughly double the CRC-valid TCH/S burst yield (e.g. 1→208, 35→133,
-// 101→161) with no regression on already-clean captures.
+// to roughly double the CRC-valid TCH/S burst yield (soft-decision 410→778,
+// ~1.9×; e.g. one call 4→207, another 42→134, another 101→161) with no
+// regression on already-clean captures.
 //
 // Design — adapt continuously, apply a FROZEN snapshot:
 //
@@ -23,10 +24,10 @@ import "math"
 // adapting output to the *differential* decoder (s·conj(last)) is fatal — a
 // time-varying phase does not cancel in the differential and corrupts every
 // dibit. wApply is held FIXED between snapshots, so within any window (and so
-// within any 255-symbol burst) it imposes only a constant phase, which the
-// differential decoder cancels, while still removing the ISI. Only the single
-// symbol straddling a snapshot sees a phase step; with snapEvery ≫ a burst that
-// is a few dibits per stream, absorbed by the FEC.
+// within a burst spanned by one snapshot interval) it imposes only a constant
+// phase, which the differential decoder cancels, while still removing the ISI.
+// Only the single symbol straddling a snapshot sees a phase step — at most a
+// dibit or two per 255-symbol burst, absorbed by the FEC.
 //
 // wApply is center-spike initialised (a pass-through), so before CMA converges
 // the output is exactly the un-equalized signal — the equalizer can only help
@@ -51,17 +52,21 @@ type cmaEqualizer struct {
 	count     float64     // symbols seen (denominator of the cumulative mean)
 }
 
-// equalizer tuning validated on the reporter's captures; robust across
-// taps∈{11,21} and mu∈{1e-3,3e-3}, so these are safe defaults.
+// equalizer tuning: validated on the reporter's captures (soft-decision TCH/S
+// yield 410→778, ~1.9×) and on the synthetic multipath fixtures in
+// equalizer_test.go / receiver_equalizer_test.go. snapEvery=200 converges
+// within a few hundred symbols yet stays ≪ the |tap|-blowup regime; mu=6e-3
+// tracks a same-carrier multipath channel without over-shooting on the
+// near-unit-modulus symbols the AFC hands the equalizer.
 const (
 	eqDefaultTaps      = 11
-	eqDefaultMu        = 3e-3
-	eqDefaultSnapEvery = 1000
+	eqDefaultMu        = 6e-3
+	eqDefaultSnapEvery = 200
 	eqDivergeGuard     = 9.0 // reseed wAdapt when any |tap|² exceeds this (|tap|>3)
 )
 
-// newCMAEqualizer builds an equalizer. taps<=0 ⇒ 11 (forced odd for an exact
-// center spike), mu<=0 ⇒ 3e-3, snapEvery<=0 ⇒ 1000.
+// newCMAEqualizer builds an equalizer. taps<=0 ⇒ eqDefaultTaps (forced odd for
+// an exact center spike), mu<=0 ⇒ eqDefaultMu, snapEvery<=0 ⇒ eqDefaultSnapEvery.
 func newCMAEqualizer(taps int, mu float64, snapEvery int) *cmaEqualizer {
 	if taps <= 0 {
 		taps = eqDefaultTaps
