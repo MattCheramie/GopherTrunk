@@ -89,16 +89,19 @@ confirmation before any close-as-completed.
   `TCHSpeechFrames` when no soft info is present. When "voice doesn't decode" but the vocoder
   unit tests pass, suspect the channel coding (CRC / interleave / reorder), not
   the vocoder — validate the whole chain against the reference, not just parts.
-- **TETRA demod equalizer** (`internal/radio/tetra/receiver/equalizer.go`,
-  `EnableEqualizer`, enabled in the voice composer). On the reporter's
+- **TETRA demod equalizer** (`internal/dsp/equalizer.SnapshotCMA`, wired via the
+  receiver's `EnableEqualizer`, enabled in the voice composer). On the reporter's
   concurrent-load captures the residual garble after soft-decision was **linear
   channel / ISI** (multipath / band-edge group delay) smearing the π/4-DQPSK
   constellation — *not* the signal-limited front-end degradation of #764. A blind
   CMA equalizer between symbol-timing recovery and the differential decoder
   inverts it and roughly **doubles** CRC-valid TCH/S yield across the six captures
   (soft-decision 410→778, ~1.9×; e.g. one call 4→207, another 42→134) with no
-  loss on already-clean captures. Lessons that cost time, all pinned by
-  `equalizer_test.go` + the skip-guarded capture sweep:
+  loss on already-clean captures. `SnapshotCMA` is the differential-decoder-safe
+  variant of the package's plain `CMA` (which applies its live, continuously-
+  adapting taps — fine ahead of a coherent slicer, fatal ahead of a differential
+  decoder). Lessons that cost time, all pinned by `snapshot_cma_test.go` +
+  `receiver_equalizer_test.go` + the skip-guarded capture sweep:
   - **CRC yield is the only trustworthy metric; EVM is a trap.** Blind CMA
     minimises *modulus*, not correctness, and has spurious constant-modulus
     minima — a numerically-unstable variant once showed differential EVM

@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
@@ -74,6 +75,18 @@ const channelFilterSpanSymbols = 9
 // (matches the halfband design's ~70 dB stopband).
 const channelFilterBeta = 8.6
 
+// Equalizer defaults (see Options.EnableEqualizer). Applied by New when the
+// corresponding Options field is <= 0. Validated on the reporter's captures
+// (soft-decision TCH/S yield 410→778, ~1.9×) and the synthetic multipath
+// fixtures: snapEvery=200 converges within a few hundred symbols; mu=6e-3 tracks
+// a same-carrier multipath channel without over-shooting the near-unit-modulus
+// symbols the AFC hands the equalizer.
+const (
+	DefaultEqualizerTaps     = 11
+	DefaultEqualizerMu       = 6e-3
+	DefaultEqualizerSnapshot = 200
+)
+
 // Options configures a Receiver.
 type Options struct {
 	// SampleRateHz is the IQ sample rate after any upstream
@@ -123,7 +136,7 @@ type Options struct {
 	// captures it roughly doubles CRC-valid TCH/S burst yield with no regression
 	// on clean captures. Off by default (a near-noop on a clean single-carrier
 	// synth, but non-zero cost); recommended for live / replayed captures. See
-	// equalizer.go.
+	// internal/dsp/equalizer.SnapshotCMA.
 	EnableEqualizer bool
 	// EqualizerTaps overrides the CMA tap count (forced odd; <=0 ⇒ default).
 	EqualizerTaps int
@@ -186,7 +199,7 @@ type Receiver struct {
 	afc       *carrierAFC
 	chanFilt  *filter.FIR
 	softSink  func(diffs []complex64, baseIdx int)
-	eq        *cmaEqualizer
+	eq        *equalizer.SnapshotCMA
 	equalized []complex64
 
 	matched   []complex64
@@ -242,7 +255,19 @@ func New(opts Options) *Receiver {
 		r.chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc, channelFilterBeta))
 	}
 	if opts.EnableEqualizer {
-		r.eq = newCMAEqualizer(opts.EqualizerTaps, opts.EqualizerMu, opts.EqualizerSnapshot)
+		taps := opts.EqualizerTaps
+		if taps <= 0 {
+			taps = DefaultEqualizerTaps
+		}
+		mu := opts.EqualizerMu
+		if mu <= 0 {
+			mu = DefaultEqualizerMu
+		}
+		snap := opts.EqualizerSnapshot
+		if snap <= 0 {
+			snap = DefaultEqualizerSnapshot
+		}
+		r.eq = equalizer.NewSnapshotCMA(taps, float32(mu), snap)
 	}
 	return r
 }
@@ -315,7 +340,10 @@ func (r *Receiver) Process(iq []complex64) {
 		return
 	}
 	if r.eq != nil {
-		r.equalized = r.eq.process(r.equalized, r.symbols)
+		r.equalized = r.equalized[:0]
+		for _, s := range r.symbols {
+			r.equalized = append(r.equalized, r.eq.Process(s))
+		}
 		r.symbols = r.equalized
 	}
 	if r.softSink != nil {
@@ -360,6 +388,6 @@ func (r *Receiver) Reset() {
 		r.chanFilt.Reset()
 	}
 	if r.eq != nil {
-		r.eq.reset()
+		r.eq.Reset()
 	}
 }
