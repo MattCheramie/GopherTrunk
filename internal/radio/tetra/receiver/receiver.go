@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
@@ -74,6 +75,23 @@ const channelFilterSpanSymbols = 9
 // (matches the halfband design's ~70 dB stopband).
 const channelFilterBeta = 8.6
 
+// Equalizer defaults (see Options.EnableEqualizer). Consumed by New when the
+// equalizer is enabled without explicit EqualizerTaps / EqualizerMu.
+const (
+	// DefaultEqualizerTaps is the CMA FIR length. 11 symbol-spaced taps span a
+	// ±5-symbol window — enough to invert the 1–2 symbol echoes a same-carrier
+	// TETRA multipath channel produces, matching the equalizer package's own
+	// convergence tests, without over-fitting noise.
+	DefaultEqualizerTaps = 11
+	// DefaultEqualizerMu is the CMA step size. 0.003 converges within a call's
+	// symbol run while staying stable on the near-unit-modulus symbols the AFC
+	// hands the equalizer.
+	DefaultEqualizerMu = 0.003
+	// equalizerModulus is the CMA target squared modulus R². The π/4-DQPSK
+	// constellation is unit-magnitude, so R² = 1.
+	equalizerModulus = 1.0
+)
+
 // Options configures a Receiver.
 type Options struct {
 	// SampleRateHz is the IQ sample rate after any upstream
@@ -115,6 +133,30 @@ type Options struct {
 	// LLRs are Im and Re of the differential). Emitted just before the
 	// matching DibitSink call. nil ⇒ no soft emission, zero overhead.
 	SoftSink func(diffs []complex64, baseIdx int)
+	// EnableEqualizer inserts a blind adaptive channel equalizer
+	// (internal/dsp/equalizer.CMA) on the recovered symbol stream, between timing
+	// recovery/AFC and the differential decode. It inverts the post-cursor
+	// inter-symbol interference a same-carrier multipath channel imposes — the
+	// eye-closing distortion the matched filter alone cannot undo, which
+	// commercial TETRA radios remove with adaptive equalization while GT (matched
+	// filter → Gardner → AFC → differential decode) currently cannot (issue
+	// #1001). The Constant Modulus Algorithm needs no training sequence (it drives
+	// the constant-modulus π/4-DQPSK constellation back toward unit magnitude) and
+	// is phase-blind, which is exactly right here: the residual rotation it leaves
+	// cancels in the downstream differential decode. Off by default: an un-adapted
+	// CMA is a centre-spike pass-through, but adaptation still perturbs a clean
+	// sample-aligned synth, so existing fixtures keep it off. Recommended for live
+	// / replayed captures that garble under concurrent load. See EqualizerTaps /
+	// EqualizerMu for tuning.
+	EnableEqualizer bool
+	// EqualizerTaps overrides the equalizer FIR length (symbol-spaced; odd is
+	// recommended so the centre spike is well-defined). <= 0 uses
+	// DefaultEqualizerTaps. Only consulted when EnableEqualizer.
+	EqualizerTaps int
+	// EqualizerMu overrides the CMA step size. <= 0 uses DefaultEqualizerMu.
+	// Larger converges faster but settles noisier. Only consulted when
+	// EnableEqualizer.
+	EqualizerMu float64
 }
 
 // ClockMode selects how the receiver decimates the matched-filter
@@ -165,6 +207,7 @@ type Receiver struct {
 	gardner   *sync.Gardner
 	afc       *carrierAFC
 	chanFilt  *filter.FIR
+	eq        *equalizer.CMA
 	softSink  func(diffs []complex64, baseIdx int)
 
 	matched   []complex64
@@ -172,6 +215,7 @@ type Receiver struct {
 	dibits    []uint8
 	diffs     []complex64
 	symbols   []complex64
+	equalized []complex64
 	derotated []complex64
 	pending   []complex64
 }
@@ -218,6 +262,17 @@ func New(opts Options) *Receiver {
 		fc := ChannelCutoffHz / opts.SampleRateHz
 		taps := 2*channelFilterSpanSymbols*r.sps + 1 // delay = span*sps = whole symbols
 		r.chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc, channelFilterBeta))
+	}
+	if opts.EnableEqualizer {
+		nt := opts.EqualizerTaps
+		if nt <= 0 {
+			nt = DefaultEqualizerTaps
+		}
+		mu := opts.EqualizerMu
+		if mu <= 0 {
+			mu = DefaultEqualizerMu
+		}
+		r.eq = equalizer.NewCMA(nt, float32(mu), equalizerModulus)
 	}
 	return r
 }
@@ -289,6 +344,22 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
+	// Adaptive channel equalization: invert the post-cursor ISI a same-carrier
+	// multipath channel imposes on the symbol stream before the differential
+	// decode (issue #1001). The blind CMA needs no burst framing — it drives the
+	// constant-modulus constellation open as it tracks a slowly time-varying
+	// channel across a call — and emits one output per symbol, so the stream
+	// stays 1:1 (the filter's N/2-symbol group delay is absorbed in its carried
+	// history; dibitBase counts emitted dibits, so it is unaffected). Off unless
+	// EnableEqualizer.
+	if r.eq != nil {
+		r.equalized = r.equalized[:0]
+		for _, s := range r.symbols {
+			y, _ := r.eq.Process(s)
+			r.equalized = append(r.equalized, y)
+		}
+		r.symbols = r.equalized
+	}
 	if r.softSink != nil {
 		// Emit the complex differential (soft info) just before the
 		// matching dibits, both keyed by r.dibitBase.
@@ -329,5 +400,8 @@ func (r *Receiver) Reset() {
 	}
 	if r.chanFilt != nil {
 		r.chanFilt.Reset()
+	}
+	if r.eq != nil {
+		r.eq.Reset()
 	}
 }
