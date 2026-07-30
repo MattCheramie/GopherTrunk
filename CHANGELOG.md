@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Cross-site duplicate-recording suppression (`recordings.dedup`).** When
+  monitoring several networked / simulcast sites where the same talkgroup carries
+  the same traffic, a call heard on more than one system is now saved once
+  instead of once per site. Enable with `recordings.dedup.enabled: true`
+  (`window_seconds` defaults to 60): a call whose `(talkgroup, source)` was
+  already recorded from a *different* system within the window is skipped. Keying
+  on the calling-radio RID (globally unique in a network) means two genuinely
+  different calls that share a talkgroup number across systems still both record
+  when their sources are known; a re-key on the same system is never suppressed;
+  and live monitoring is unaffected (recording-only). Off by default.
 - **`GET /api/v1/grants` — a pollable log of recent control-channel grants.**
   GopherTrunk decodes a source RID off most `GRP_VCH_GRANT` TSBKs, and already
   streams every grant live over the `grant` SSE event; this adds the pollable

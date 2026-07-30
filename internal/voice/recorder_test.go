@@ -31,6 +31,49 @@ func mkRecorder(t *testing.T, writeRaw bool) (*Recorder, *events.Bus, string) {
 	return r, bus, dir
 }
 
+// TestRecorderCrossSiteDedup pins cross-site duplicate suppression: the same
+// call (talkgroup + source) heard on a second monitored system within the
+// window is skipped, a re-key on the same system is not, a different source on
+// the same talkgroup records, and a copy after the window elapses records.
+func TestRecorderCrossSiteDedup(t *testing.T) {
+	bus := events.NewBus(8)
+	r, err := NewRecorder(RecorderOptions{
+		Bus:        bus,
+		OutDir:     t.TempDir(),
+		SampleRate: 8000,
+		Dedup:      DedupConfig{Enabled: true, Window: 60 * time.Second},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Unix(1_700_000_000, 0)
+	cs := func(system string, tg, src uint32) trunking.CallStart {
+		return trunking.CallStart{Grant: trunking.Grant{System: system, GroupID: tg, SourceID: src}}
+	}
+
+	if r.dedupSuppress(cs("SiteA", 1020529, 1005746), t0) {
+		t.Fatal("first sighting on SiteA should record, not suppress")
+	}
+	if !r.dedupSuppress(cs("SiteB", 1020529, 1005746), t0.Add(time.Second)) {
+		t.Error("SiteB near-simultaneous copy of the same call should be suppressed")
+	}
+	if r.dedupSuppress(cs("SiteA", 1020529, 1005746), t0.Add(2*time.Second)) {
+		t.Error("a re-key on the same system must not be suppressed")
+	}
+	if r.dedupSuppress(cs("SiteB", 1020529, 1009999), t0.Add(2*time.Second)) {
+		t.Error("a different source on the same talkgroup must record")
+	}
+	if r.dedupSuppress(cs("SiteB", 1020529, 1005746), t0.Add(120*time.Second)) {
+		t.Error("a copy after the window elapsed should record")
+	}
+
+	// Disabled by default: nothing is ever suppressed.
+	rOff, _ := NewRecorder(RecorderOptions{Bus: bus, OutDir: t.TempDir(), SampleRate: 8000})
+	if rOff.dedupSuppress(cs("SiteA", 1, 1), t0) || rOff.dedupSuppress(cs("SiteB", 1, 1), t0) {
+		t.Error("dedup disabled: no call should ever be suppressed")
+	}
+}
+
 func TestRecorderWritesPerCallWav(t *testing.T) {
 	r, bus, dir := mkRecorder(t, false)
 	defer r.Close()

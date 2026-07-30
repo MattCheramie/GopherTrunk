@@ -262,6 +262,10 @@ var fieldMetas = map[string]FieldMeta{
 	"NormalizeConfig.TruePeakDBTP":       {Label: "True peak (dBTP)", Help: "True-peak ceiling in dBTP. Default -1.5 when enabled."},
 	"NormalizeConfig.MaxBoostDB":         {Label: "Max gain (dB)", Help: "Cap on applied gain in either direction so quiet calls don't amplify hiss. Default 12 when enabled."},
 
+	"RecordingsConfig.Dedup":       {Help: "Cross-site duplicate suppression — when monitoring networked/simulcast sites that share talkgroups, save a call once instead of once per site."},
+	"DedupConfig.Enabled":          {Help: "Skip recording a call already being recorded from another monitored system (same talkgroup + source)."},
+	"DedupConfig.WindowSeconds":    {Label: "Window (seconds)", Help: "How long a recorded call suppresses another system's copy of it. Default 60 when enabled."},
+
 	// ---- Recordings ▸ Voice enhancement (sound-good chain) -----------------
 	"RecordingsConfig.Enhance":   {Label: "Voice enhancement", Help: "Opt-in \"sound-good\" chain for decoded digital voice: band-limits to the telephone band, warms the bright software-AMBE+2 timbre, runs the AGC to a louder target, and (optionally) compresses. Shapes BOTH recordings and live monitoring. Trades a little faithfulness for a cleaner/louder sound like OP25 / Trunk Recorder / DSDPlus. Off by default."},
 	"EnhanceConfig.Enabled":      {Help: "Turn the voice enhancement chain on. When off, decoded audio is byte-identical to the faithful path."},

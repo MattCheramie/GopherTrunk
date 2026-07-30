@@ -1826,6 +1826,11 @@ type RecordingsConfig struct {
 	// consistent level. Off by default. This is post-processing of the
 	// recorded WAV only; live monitoring/playback is unaffected.
 	Normalize NormalizeConfig `yaml:"normalize"`
+	// Dedup suppresses near-simultaneous duplicate recordings of the same call
+	// heard on more than one monitored system — networked / simulcast sites
+	// where the same talkgroup carries the same traffic, so a call is saved once
+	// instead of once per site. Off by default. See DedupConfig.
+	Dedup DedupConfig `yaml:"dedup"`
 	// WarmDMRAudio selects the opt-in "ambe2-dmr-warm" vocoder for DMR
 	// voice instead of the default "ambe2-dmr". It applies a gentle
 	// output high-shelf that trims ~2 dB above ~1.5 kHz, softening the
@@ -1871,6 +1876,31 @@ func (n NormalizeConfig) AppliesToRecording() bool {
 // copy should be normalized in the broadcast subsystem.
 func (n NormalizeConfig) AppliesToDistributed() bool {
 	return n.Enabled && (n.ApplyTo == "distributed" || n.ApplyTo == "both")
+}
+
+// DedupConfig is the YAML shape of cross-site duplicate-recording suppression.
+// When enabled, a call whose (talkgroup, source) was already recorded from a
+// DIFFERENT monitored system within the window is skipped — so a call heard on
+// several networked / simulcast sites is saved once instead of once per site. A
+// re-key on the SAME system is always recorded. Keying on the source RID (which
+// is globally unique in a network) means two genuinely different calls that
+// happen to share a talkgroup number across systems still both record whenever
+// their sources are known and differ.
+type DedupConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// WindowSeconds is how long a recorded call suppresses another system's copy
+	// of the same (talkgroup, source); it should cover a typical over plus
+	// inter-site skew. Default 60 when enabled.
+	WindowSeconds int `yaml:"window_seconds"`
+}
+
+// Window returns the dedup suppression window, applying the 60 s default when
+// enabled with an unset/invalid WindowSeconds.
+func (d DedupConfig) Window() time.Duration {
+	if d.WindowSeconds <= 0 {
+		return 60 * time.Second
+	}
+	return time.Duration(d.WindowSeconds) * time.Second
 }
 
 // EnhanceConfig is the YAML shape of the opt-in voice enhancement chain
