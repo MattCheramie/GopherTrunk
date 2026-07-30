@@ -115,6 +115,24 @@ type Options struct {
 	// LLRs are Im and Re of the differential). Emitted just before the
 	// matching DibitSink call. nil ⇒ no soft emission, zero overhead.
 	SoftSink func(diffs []complex64, baseIdx int)
+	// EnableEqualizer inserts a blind CMA adaptive equalizer between symbol-
+	// timing recovery and the differential decoder. It inverts the linear
+	// channel (multipath / ISI / band-edge group delay) that smears the
+	// π/4-DQPSK constellation on real captures — the demod-side gap that made
+	// otherwise-clean concurrent-load recordings garble. On the reporter's
+	// captures it roughly doubles CRC-valid TCH/S burst yield with no regression
+	// on clean captures. Off by default (a near-noop on a clean single-carrier
+	// synth, but non-zero cost); recommended for live / replayed captures. See
+	// equalizer.go.
+	EnableEqualizer bool
+	// EqualizerTaps overrides the CMA tap count (forced odd; <=0 ⇒ 11).
+	EqualizerTaps int
+	// EqualizerMu overrides the CMA step size (<=0 ⇒ 3e-3).
+	EqualizerMu float64
+	// EqualizerSnapshot overrides the symbols between frozen-tap snapshots
+	// (<=0 ⇒ 1000). Must stay ≫ a burst (255 symbols) so each burst sees a
+	// constant filter and the differential decode stays phase-coherent.
+	EqualizerSnapshot int
 }
 
 // ClockMode selects how the receiver decimates the matched-filter
@@ -166,6 +184,8 @@ type Receiver struct {
 	afc       *carrierAFC
 	chanFilt  *filter.FIR
 	softSink  func(diffs []complex64, baseIdx int)
+	eq        *cmaEqualizer
+	equalized []complex64
 
 	matched   []complex64
 	filtered  []complex64
@@ -218,6 +238,9 @@ func New(opts Options) *Receiver {
 		fc := ChannelCutoffHz / opts.SampleRateHz
 		taps := 2*channelFilterSpanSymbols*r.sps + 1 // delay = span*sps = whole symbols
 		r.chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc, channelFilterBeta))
+	}
+	if opts.EnableEqualizer {
+		r.eq = newCMAEqualizer(opts.EqualizerTaps, opts.EqualizerMu, opts.EqualizerSnapshot)
 	}
 	return r
 }
@@ -289,6 +312,10 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
+	if r.eq != nil {
+		r.equalized = r.eq.process(r.equalized, r.symbols)
+		r.symbols = r.equalized
+	}
 	if r.softSink != nil {
 		// Emit the complex differential (soft info) just before the
 		// matching dibits, both keyed by r.dibitBase.
@@ -329,5 +356,8 @@ func (r *Receiver) Reset() {
 	}
 	if r.chanFilt != nil {
 		r.chanFilt.Reset()
+	}
+	if r.eq != nil {
+		r.eq.reset()
 	}
 }

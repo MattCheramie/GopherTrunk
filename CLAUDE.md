@@ -89,3 +89,31 @@ confirmation before any close-as-completed.
   `TCHSpeechFrames` when no soft info is present. When "voice doesn't decode" but the vocoder
   unit tests pass, suspect the channel coding (CRC / interleave / reorder), not
   the vocoder — validate the whole chain against the reference, not just parts.
+- **TETRA demod equalizer** (`internal/radio/tetra/receiver/equalizer.go`,
+  `EnableEqualizer`, enabled in the voice composer). On the reporter's
+  concurrent-load captures the residual garble after soft-decision was **linear
+  channel / ISI** (multipath / band-edge group delay) smearing the π/4-DQPSK
+  constellation — *not* the signal-limited front-end degradation of #764. A blind
+  CMA equalizer between symbol-timing recovery and the differential decoder
+  inverts it and roughly **doubles** CRC-valid TCH/S yield across the six captures
+  (hard 400→766, soft 410→769, ~1.9×; e.g. one call 1→206, another 35→129) with
+  ≤2-burst loss on already-clean captures. Lessons that cost time, all pinned by
+  `equalizer_test.go` + the skip-guarded capture sweep:
+  - **CRC yield is the only trustworthy metric; EVM is a trap.** Blind CMA
+    minimises *modulus*, not correctness, and has spurious constant-modulus
+    minima — a numerically-unstable variant once showed differential EVM
+    collapsing 34%→8% while CRC stayed **0**. Never conclude an equalizer helps
+    from EVM; decode to CRC.
+  - **Never feed a continuously-adapting equalizer to a differential decoder.**
+    CMA's cost is rotation-invariant, so its output phase wanders as the taps
+    adapt, and a *time-varying* phase does not cancel in `s·conj(last)` — every
+    dibit is corrupted (streaming-adaptive → CRC 0, frozen taps → baseline). The
+    design is **adapt a tracking filter continuously but apply a FROZEN snapshot**
+    (refreshed every ≫-a-burst symbols) so each 255-symbol burst sees a constant
+    filter; the one straddling symbol per snapshot is absorbed by the FEC.
+  - **Normalise by a constant (cumulative-mean), not a local EMA.** The CMA update
+    scales with |x|³; an EMA that tracks the TDMA downlink's slot-to-slot power
+    swings gives a moving modulus target and CMA converges to garbage (CRC 0 even
+    though a global-RMS normalise gives the full win). A divergence guard re-seeds
+    the tracking filter to pass-through if a normalisation transient / deep fade
+    blows the taps up, so one bad patch cannot poison later snapshots.
