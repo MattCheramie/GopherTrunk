@@ -1287,6 +1287,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
 			},
 			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			Dedup: voice.DedupConfig{
+				Enabled: cfg.Recordings.Dedup.Enabled,
+				Window:  cfg.Recordings.Dedup.Window(),
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: recorder: %w", err)

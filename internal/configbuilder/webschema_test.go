@@ -42,10 +42,12 @@ var webRoundTripAllow = map[string][]string{
 	"SystemConfig": {"Sites"},
 	"SiteConfig":   {"RFSS", "Site", "Name"},
 
-	// Research/offline cryptolab crypto-frame capture path. Round-trips via the
-	// RecordingsConfig index signature; editable in the TUI and raw YAML. A
-	// bespoke web editor for this niche knob is intentionally omitted.
-	"RecordingsConfig": {"CryptoCapturePath"},
+	// Research/offline cryptolab crypto-frame capture path, and cross-site
+	// duplicate-recording suppression (recordings.dedup) — both round-trip via
+	// the RecordingsConfig index signature; editable in the TUI, raw YAML, and
+	// the web builder's generic editor. A bespoke web editor is a follow-up.
+	"RecordingsConfig": {"CryptoCapturePath", "Dedup"},
+	"DedupConfig":      {"Enabled", "WindowSeconds"},
 
 	// Event-driven raw-IQ auto-record (baseband.auto_record) — a debug/research
 	// capture hook. Round-trips through the BasebandConfig index signature;

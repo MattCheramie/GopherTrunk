@@ -137,7 +137,36 @@ type Recorder struct {
 	// timestamps (display.timezone). Never nil after NewRecorder; defaults
 	// to time.UTC when the caller leaves it unset (the prior behaviour).
 	displayLoc *time.Location
+
+	// dedup configures cross-site duplicate-recording suppression; dedupSeen is
+	// the recently-recorded (talkgroup, source) → (system, time) index it keys
+	// on, guarded by dedupMu. Only consulted for file-writing recorders (a
+	// decode-only recorder writes nothing, so there is no duplicate to suppress).
+	dedup     DedupConfig
+	dedupMu   sync.Mutex
+	dedupSeen map[dedupKey]dedupEntry
 }
+
+// DedupConfig configures cross-site duplicate-recording suppression. When
+// Enabled, a call whose (talkgroup, source) was already recorded from a
+// DIFFERENT system within Window is skipped — one copy of a call heard on
+// several networked/simulcast sites instead of one per site.
+type DedupConfig struct {
+	Enabled bool
+	Window  time.Duration
+}
+
+type dedupKey struct{ group, source uint32 }
+
+type dedupEntry struct {
+	system string
+	at     time.Time
+}
+
+// dedupMaxKeys bounds the recently-recorded index so a long-running busy
+// multi-system deployment cannot grow it without bound; stale keys are pruned
+// once it is exceeded.
+const dedupMaxKeys = 4096
 
 // DecodedPCMSink receives PCM the recorder decodes from digital
 // vocoder frames, so live consumers (web stream, host player,
@@ -250,6 +279,10 @@ type RecorderOptions struct {
 	// match the local wall-clock the rest of the UI/logs already show,
 	// instead of always UTC.
 	DisplayLoc *time.Location
+
+	// Dedup opts into cross-site duplicate-recording suppression (off by
+	// default). See DedupConfig / Recorder.dedupSuppress.
+	Dedup DedupConfig
 }
 
 // DefaultVocoderForProtocol returns the Protocol → vocoder-name
@@ -345,11 +378,46 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		vocoderForProtocol: vocoderMap,
 		displayLoc:         loc,
 		decodeOnly:         decodeOnly,
+		dedup:              opts.Dedup,
+		dedupSeen:          make(map[dedupKey]dedupEntry),
 		sessions:           make(map[string]*recordingSession),
 		runDone:            make(chan struct{}),
 	}
 	r.sub = opts.Bus.Subscribe()
 	return r, nil
+}
+
+// dedupSuppress reports whether this CallStart is a cross-site duplicate of a
+// call already recorded within the window from a DIFFERENT system, and records
+// this call's (talkgroup, source) fingerprint for future checks. Networked /
+// simulcast sites carry the same call under the same talkgroup and calling-radio
+// RID, so only the first system to key it up records; later copies are skipped.
+// A re-key on the SAME system is never suppressed (it is a new over). No-op
+// (returns false) when dedup is disabled. now is passed in for testability.
+func (r *Recorder) dedupSuppress(cs trunking.CallStart, now time.Time) bool {
+	if !r.dedup.Enabled {
+		return false
+	}
+	key := dedupKey{group: cs.Grant.GroupID, source: cs.Grant.SourceID}
+	r.dedupMu.Lock()
+	defer r.dedupMu.Unlock()
+	if prev, ok := r.dedupSeen[key]; ok && now.Sub(prev.at) <= r.dedup.Window && prev.system != cs.Grant.System {
+		// The same call is already being recorded from another system. Refresh
+		// the window so a long call keeps suppressing late copies, keep the
+		// original recording system, and skip this one.
+		prev.at = now
+		r.dedupSeen[key] = prev
+		return true
+	}
+	r.dedupSeen[key] = dedupEntry{system: cs.Grant.System, at: now}
+	if len(r.dedupSeen) > dedupMaxKeys {
+		for k, e := range r.dedupSeen {
+			if now.Sub(e.at) > r.dedup.Window {
+				delete(r.dedupSeen, k)
+			}
+		}
+	}
+	return false
 }
 
 // VoiceEnhance returns the current voice enhancement config (defaults
@@ -676,6 +744,16 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		r.log.Debug("recorder: skipping encrypted call",
 			"device", cs.DeviceSerial, "tg", cs.Grant.GroupID,
 			"alg", cs.Grant.AlgorithmID, "key", cs.Grant.KeyID)
+		return
+	}
+	if !r.decodeOnly && r.dedupSuppress(cs, time.Now()) {
+		// Cross-site duplicate: this exact call (talkgroup + source) is already
+		// being recorded from another monitored system. Skip the file write so a
+		// call heard on several networked/simulcast sites is saved once. Live
+		// follow/monitoring is unaffected (this gate is recording-only).
+		r.log.Info("recorder: skipping cross-site duplicate recording",
+			"device", cs.DeviceSerial, "system", cs.Grant.System,
+			"tg", cs.Grant.GroupID, "src", cs.Grant.SourceID)
 		return
 	}
 	r.mu.Lock()
