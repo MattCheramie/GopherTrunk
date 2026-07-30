@@ -27,7 +27,7 @@ var curatedMetrics = []string{
 	"gophertrunk_calls_active",
 	"gophertrunk_calls_total",
 	"gophertrunk_grants_total",
-	"gophertrunk_cc_locked",
+	"gophertrunk_control_channel_locked",
 	"gophertrunk_sse_clients",
 	"gophertrunk_devices_attached",
 	"gophertrunk_tone_alerts_total",

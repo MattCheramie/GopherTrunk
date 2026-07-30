@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -43,6 +44,7 @@ type Metrics struct {
 	callsStarted   *prometheus.CounterVec // by system,protocol,encrypted
 	activeCalls    *prometheus.GaugeVec   // by system,protocol
 	dmrSlotCalls   *prometheus.CounterVec // DMR voice calls by system,timeslot (ts1/ts2)
+	grantsTotal    *prometheus.CounterVec // control-channel voice grants by system,protocol
 	ccLockedGauge  *prometheus.GaugeVec   // by system (1 when CC locked)
 	ccFrequencyHz  *prometheus.GaugeVec   // by system; deleted on CC loss
 	ccTransitions  *prometheus.CounterVec // by system,event (locked|lost)
@@ -130,6 +132,17 @@ func New(bus *events.Bus, pool Snapshotter, version string, detailedFEC bool) (*
 		Name:      "dmr_voice_calls_total",
 		Help:      "DMR voice calls started, split by TDMA timeslot (ts1/ts2), by system.",
 	}, []string{"system", "timeslot"})
+
+	// Control-channel voice grants seen, by system and protocol. Counts every
+	// grant PDU (the CC repeats a live call's grant), so it tracks control-
+	// channel activity, not distinct calls (see calls_started_total for those).
+	// Wired for every protocol's events.KindGrant — TETRA grants were previously
+	// uncounted because observeEvent had no KindGrant case.
+	m.grantsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "grants_total",
+		Help:      "Control-channel voice grants observed, by system and protocol.",
+	}, []string{"system", "protocol"})
 
 	m.ccLockedGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -286,6 +299,7 @@ func New(bus *events.Bus, pool Snapshotter, version string, detailedFEC bool) (*
 		m.callsStarted,
 		m.activeCalls,
 		m.dmrSlotCalls,
+		m.grantsTotal,
 		m.ccLockedGauge,
 		m.ccFrequencyHz,
 		m.ccTransitions,
@@ -377,9 +391,17 @@ func (m *Metrics) observeEvent(ev events.Event) {
 			sys, proto, enc := callLabels(cs.Grant)
 			m.activeCalls.WithLabelValues(sys, proto).Inc()
 			m.callsStarted.WithLabelValues(sys, proto, enc).Inc()
-			if cs.Grant.Timeslot != 0 {
+			// dmr_voice_calls_total is a DMR-specific per-timeslot counter; gate
+			// it on the DMR protocol so a slotted non-DMR call (TETRA carries a
+			// 1..4 timeslot too) is not miscounted under the DMR-named metric.
+			if strings.HasPrefix(cs.Grant.Protocol, "dmr") && cs.Grant.Timeslot != 0 {
 				m.dmrSlotCalls.WithLabelValues(sys, fmt.Sprintf("ts%d", cs.Grant.Timeslot)).Inc()
 			}
+		}
+	case events.KindGrant:
+		if g, ok := ev.Payload.(trunking.Grant); ok {
+			sys, proto, _ := callLabels(g)
+			m.grantsTotal.WithLabelValues(sys, proto).Inc()
 		}
 	case events.KindCallEnd:
 		if ce, ok := ev.Payload.(trunking.CallEnd); ok {

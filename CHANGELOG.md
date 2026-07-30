@@ -208,6 +208,23 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA radio IDs still surfaced as talkgroups in the live Active Calls list.**
+  The engine's RadioID→TGID retraction cleaned the Talkgroups catalogue but not
+  the control-only "observed" call set, which is the other half of what the
+  Active Calls UI renders: a notification / D-CONNECT bound to the calling party
+  creates a provisional call keyed by the radio ID, and the notification-supersede
+  only released the pool-bound call, leaving the observed entry to linger as a
+  phantom "TG <radioID>". The engine now skips individual / known-radio grants when
+  recording observed calls, and retracts any observed call already tracked under an
+  SSI once that SSI is revealed to be a subscriber radio.
+- **TETRA metrics weren't counting.** `grants_total` was never defined or
+  incremented (the metrics event handler had no `KindGrant` case), so TETRA grants
+  went uncounted; TETRA voice calls were miscounted under the DMR-named
+  `dmr_voice_calls_total` (its per-timeslot increment was gated only on a non-zero
+  timeslot, which TETRA also carries); and the curated dashboards asked for a
+  `cc_locked` metric the daemon never emits (it exports `control_channel_locked`).
+  Added a protocol-labelled `grants_total`, gated `dmr_voice_calls_total` to the
+  DMR protocol, and pointed the TUI/web curated panels at `control_channel_locked`.
 - **A single-call same-carrier TETRA burst whose AACH usage marker miscorrected
   was dropped instead of decoded.** The shared per-carrier voice demux routes by
   AACH downlink usage marker; on a marginal signal the RM(30,14) AACH occasionally

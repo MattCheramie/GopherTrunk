@@ -153,6 +153,48 @@ func TestDMRSlotCallsCounter(t *testing.T) {
 	}
 }
 
+// TestTETRAMetricsGrantsAndNoDMRMislabel pins the TETRA metrics fixes: a TETRA
+// KindGrant increments grants_total{tetra} (previously observeEvent had no
+// KindGrant case, so it was always zero), and a slotted TETRA voice call does
+// NOT increment the DMR-named dmr_voice_calls_total (previously any Timeslot!=0
+// grant was miscounted there).
+func TestTETRAMetricsGrantsAndNoDMRMislabel(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	m, _ := New(bus, nil, "test", false)
+	defer m.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+
+	// A TETRA voice call on timeslot 3 (must not touch the DMR slot counter).
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant:        trunking.Grant{System: "TSys", Protocol: "tetra", GroupID: 1020529, FrequencyHz: 467912500, Timeslot: 3},
+		DeviceSerial: "D0", StartedAt: time.Now(),
+	}})
+	// Two TETRA grants (the CC repeats a live call's grant).
+	for i := 0; i < 2; i++ {
+		bus.Publish(events.Event{Kind: events.KindGrant, Payload: trunking.Grant{
+			System: "TSys", Protocol: "tetra", GroupID: 1020529, SourceID: 1005746, FrequencyHz: 467912500, Timeslot: 3,
+		}})
+	}
+
+	grants := m.grantsTotal.WithLabelValues("TSys", "tetra")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(grants) == 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(grants); got != 2 {
+		t.Errorf("grants_total{TSys,tetra} = %v, want 2 (TETRA grants must be counted)", got)
+	}
+	if got := testutil.CollectAndCount(m.dmrSlotCalls); got != 0 {
+		t.Errorf("dmr_voice_calls_total has %d series, want 0 (TETRA must not increment the DMR counter)", got)
+	}
+}
+
 func TestDecodeErrorEventIncrementsCounter(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
