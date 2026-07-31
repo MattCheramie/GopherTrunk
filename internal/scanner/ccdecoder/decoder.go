@@ -1169,7 +1169,15 @@ func (d *Decoder) observeIQPower(iq []complex64) {
 		d.metrics.RecordIQDCRatioDb(system, ratioDb)
 		d.metrics.RecordIQClipRatio(system, clipRatio)
 	}
-	if dbfs < iqLowPowerThresholdDbFS && now.Sub(d.pwLowLogAt) >= 5*time.Second {
+	if dbfs < iqLowPowerThresholdDbFS && !d.locked.Load() && now.Sub(d.pwLowLogAt) >= 30*time.Second {
+		// Only meaningful when the decoder CANNOT lock — a real antenna/gain/USB
+		// fault. Once the control channel is locked and decoding, a low ABSOLUTE
+		// level is fine (e.g. a USRP/SDR at conservative gain sits at ~-60 dBFS
+		// with ~55 dB of unused ADC headroom yet decodes TETRA cleanly), so
+		// emitting it every few seconds while locked was pure noise. Gated on
+		// !locked and throttled to 30 s to match the clip / DC-dominant siblings.
+		// The Prometheus gauge (RecordIQPowerDbFS above) still reflects every
+		// window regardless of lock, so the level stays observable.
 		d.log.Debug("ccdecoder: iq power very low — check antenna, gain, USB",
 			"system", system, "dbfs", dbfs, "dc_dbfs", dcDbfs, "dc_ratio_db", ratioDb)
 		d.pwLowLogAt = now
