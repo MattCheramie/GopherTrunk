@@ -1816,12 +1816,13 @@ func TestForwardIQDecouplesIngestFromDecode(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	// Pre-load every chunk and close the source. The forwarder's enqueue is
-	// non-blocking (it drops on a full queue), so it runs to completion with
-	// no consumer: the first two chunks land in the cap-2 queue and the next
-	// three are dropped. Waiting for it to finish before draining keeps the
-	// queued set and drop count deterministic (a concurrent drain would race
-	// the last enqueue). Tag each chunk by its first sample to check order.
+	// Pre-load every chunk and close the source. The forwarder drops once the
+	// in-flight sample budget is reached, so with a 2-sample budget and
+	// 1-sample chunks it runs to completion with no consumer: the first two
+	// chunks land in the queue and the next three are dropped. Waiting for it to
+	// finish before draining keeps the queued set and drop count deterministic (a
+	// concurrent drain would race the last enqueue). Tag each chunk by its first
+	// sample to check order.
 	in := make(chan []complex64, 5)
 	out := make(chan []complex64, 2)
 	mk := func(tag float32) []complex64 { return []complex64{complex(tag, 0)} }
@@ -1831,7 +1832,7 @@ func TestForwardIQDecouplesIngestFromDecode(t *testing.T) {
 	close(in)
 
 	done := make(chan struct{})
-	go func() { d.forwardIQ(context.Background(), in, out); close(done) }()
+	go func() { d.forwardIQ(context.Background(), in, out, 2); close(done) }()
 	<-done // forwarder has processed all 5 chunks and closed out
 
 	var got []float32
@@ -1866,7 +1867,7 @@ func TestForwardIQCopiesDriverBuffer(t *testing.T) {
 	close(in)
 
 	done := make(chan struct{})
-	go func() { d.forwardIQ(context.Background(), in, out); close(done) }()
+	go func() { d.forwardIQ(context.Background(), in, out, 1<<20); close(done) }()
 	<-done
 
 	queued := <-out
@@ -1909,7 +1910,7 @@ func TestIQHealthConcurrentWithForwarder(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); d.forwardIQ(ctx, in, out) }()
+	go func() { defer wg.Done(); d.forwardIQ(ctx, in, out, 1<<20) }()
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 2000; i++ {
