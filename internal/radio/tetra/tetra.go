@@ -8,8 +8,13 @@
 //
 // This package targets TMO — the centralised-trunking mode where a
 // dedicated control channel grants voice / data calls onto traffic
-// channels. The two non-trunked modes (DMO direct, and Repeater
-// mode) don't have a CC for the engine to hunt and are out of scope.
+// channels. The non-trunked modes have no CC for the engine to hunt:
+// Repeater mode is out of scope, and DMO (Direct Mode Operation) is
+// being added incrementally — dmo.go implements the EN 300 396-2 (part
+// 2) burst framing (DSB / DNB detection + block slicing), reusing this
+// package's shared π/4-DQPSK demod, training sequences and scrambler.
+// The DMO channel decode, the EN 300 396-3 call-control protocol, and a
+// no-CC ingestion path for the scanner are not yet wired.
 //
 // What this package gives you:
 //

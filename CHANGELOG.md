@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **TETRA DMO (Direct Mode Operation) burst-framing foundation.** First increment
+  toward decoding TETRA's infrastructure-less peer-to-peer mode (ETSI EN 300 396-2,
+  part 2 — radio aspects): a burst detector/slicer for the Direct Mode
+  Synchronisation Burst (DSB) and Normal Burst (DNB) that recovers each burst's
+  SCH/S / BKN1 / BKN2 type-5 blocks from a demodulated dibit stream. DMO shares
+  TMO's π/4-DQPSK air interface, so this reuses the existing demod, training
+  sequences (verified against the DMO spec equations) and scrambler; only the
+  DMO-specific burst field layout is new. Not yet wired end-to-end — the DMO
+  channel decode, the EN 300 396-3 call-control protocol (source/group SSI, call
+  type), and a control-channel-less scanner ingestion path are the remaining
+  stages, and none is validated against a real DMO capture yet.
 - **TETRA recordings split per talker, so every over is attributed to its source.**
   A group call stays on one traffic channel while members key up in turn; GT
   recorded the whole call as one WAV tagged with only the first talker, so a reply
