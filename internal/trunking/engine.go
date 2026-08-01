@@ -88,7 +88,52 @@ type Engine struct {
 	// talkgroup. Bounded by knownRadiosCap; guarded by radiosMu.
 	radiosMu    sync.Mutex
 	knownRadios map[uint32]struct{}
+
+	// held holds TETRA individual (wakeup-page) grants for a short window before
+	// they are allowed to spawn a call. On a group call the SwMI often sends an
+	// individual-addressed Energy-Economy wakeup page (individual=true, no source,
+	// dst = the calling party's radio SSI) ~160 ms before the authoritative group
+	// grant. Spawning the wakeup page immediately created a ghost call + a WAV
+	// directory named after the radio ID, then tore it down when the group grant
+	// superseded it (fragmented recordings, radio IDs leaking as talkgroups). The
+	// hold lets the group grant arrive first and cancel the page; a page that is
+	// never superseded (a genuine unit-to-unit call) is flushed when the window
+	// expires. Keyed by physical channel; guarded by mu.
+	held map[channelKey]*heldGrant
+	// heldFlush marshals an expired hold back onto the engine's single grant-
+	// processing goroutine (the Run loop). The afterFunc timer fires on its own
+	// goroutine, so it cannot call HandleGrant directly without racing Run; it
+	// enqueues the channel key here instead. Buffered + non-blocking send so a
+	// stalled/absent Run loop can never wedge a timer goroutine.
+	heldFlush chan channelKey
+	// afterFunc is time.AfterFunc, injectable so tests can drive the hold window
+	// deterministically. Returns a *time.Timer whose Stop cancels a pending flush.
+	afterFunc func(time.Duration, func()) *time.Timer
+	// tetraIndividualHold is how long a TETRA individual (wakeup-page) grant is
+	// held for an authoritative group grant to supersede it. The observed page →
+	// group gap is ~160 ms; 300 ms covers it with margin. A held genuine unit-to-
+	// unit call records this much later, an acceptable cost.
+	tetraIndividualHold time.Duration
 }
+
+// channelKey identifies a physical TETRA logical channel (carrier + timeslot on
+// a system), the granularity at which exactly one call is in progress.
+type channelKey struct {
+	system string
+	freq   uint32
+	ts     uint8
+}
+
+// heldGrant is a TETRA individual grant parked in the hold window plus the timer
+// that will flush it if no authoritative group grant supersedes it first.
+type heldGrant struct {
+	grant Grant
+	timer *time.Timer
+}
+
+// defaultTETRAIndividualHold is the hold window applied when the engine is
+// constructed without an explicit value.
+const defaultTETRAIndividualHold = 300 * time.Millisecond
 
 // observedKey identifies a logical call for the observed-call tracker:
 // (System, talkgroup, timeslot) — the same identity HandleGrant's duplicate-
@@ -191,6 +236,11 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 		calls:          make(map[string]*ActiveCall),
 		synthetic:      make(map[string]*ActiveCall),
 		observed:       make(map[string]*ActiveCall),
+
+		held:                make(map[channelKey]*heldGrant),
+		heldFlush:           make(chan channelKey, 64),
+		afterFunc:           time.AfterFunc,
+		tetraIndividualHold: defaultTETRAIndividualHold,
 	}
 	// Subscribe at construction time so callers can publish grants
 	// before Run starts without losing them.
@@ -254,6 +304,8 @@ func (e *Engine) Run(ctx context.Context) error {
 					e.handleTalkerAlias(a)
 				}
 			}
+		case key := <-e.heldFlush:
+			e.flushHeldGrant(key)
 		case <-tick.C:
 			e.runWatchdog()
 		}
@@ -360,6 +412,88 @@ func (e *Engine) isKnownRadio(ssi uint32) bool {
 	return ok
 }
 
+// channelKeyOf identifies the physical logical channel a grant addresses.
+func channelKeyOf(g Grant) channelKey {
+	return channelKey{system: g.System, freq: g.FrequencyHz, ts: g.Timeslot}
+}
+
+// isTETRAWakeupPage reports whether g is a TETRA individual-addressed page with
+// no source — the Energy-Economy wakeup frame that precedes a group grant and
+// must not be spawned as a private call. A flushed page (heldFromWakeup) still
+// matches this shape; callers gate on heldFromWakeup separately where it matters.
+func isTETRAWakeupPage(g Grant) bool {
+	return g.Protocol == "tetra" && g.Individual && g.SourceID == 0
+}
+
+// holdWakeupPage parks a wakeup page for tetraIndividualHold, arming a timer to
+// flush it if no authoritative group grant supersedes it first. A repeat page
+// for a channel already held refreshes the stored grant without re-arming, so
+// the original deadline still governs (the page → group gap is fixed regardless
+// of how many page repeats arrive).
+func (e *Engine) holdWakeupPage(g Grant) {
+	key := channelKeyOf(g)
+	e.mu.Lock()
+	if h := e.held[key]; h != nil {
+		h.grant = g
+		e.mu.Unlock()
+		return
+	}
+	h := &heldGrant{grant: g}
+	h.timer = e.afterFunc(e.tetraIndividualHold, func() {
+		// Marshal onto the Run goroutine; never call HandleGrant from the timer
+		// goroutine (it would race Run's pool allocation). Non-blocking so a
+		// stopped/absent Run loop cannot wedge the timer goroutine.
+		select {
+		case e.heldFlush <- key:
+		default:
+		}
+	})
+	e.held[key] = h
+	e.mu.Unlock()
+	e.log.Debug("tetra: holding individual wakeup page for a group grant",
+		"grant", g.String(), "hold", e.tetraIndividualHold)
+}
+
+// dropHeldIndividual cancels and discards any held wakeup page for key. Called
+// when an authoritative grant for the same channel arrives (the page is
+// superseded before it ever spawned a call) and on shutdown.
+func (e *Engine) dropHeldIndividual(key channelKey) {
+	e.mu.Lock()
+	h := e.held[key]
+	if h != nil {
+		delete(e.held, key)
+	}
+	e.mu.Unlock()
+	if h != nil {
+		if h.timer != nil {
+			h.timer.Stop()
+		}
+		e.log.Debug("tetra: cancelled held wakeup page (superseded by group grant)",
+			"grant", h.grant.String())
+	}
+}
+
+// flushHeldGrant re-dispatches a wakeup page whose hold window expired with no
+// authoritative group grant to supersede it — a genuine unit-to-unit individual
+// call, which now allocates (heldFromWakeup skips the hold on re-entry). Runs on
+// the Run goroutine via heldFlush. A no-op if the page was already cancelled.
+func (e *Engine) flushHeldGrant(key channelKey) {
+	e.mu.Lock()
+	h := e.held[key]
+	if h != nil {
+		delete(e.held, key)
+	}
+	e.mu.Unlock()
+	if h == nil {
+		return
+	}
+	g := h.grant
+	g.heldFromWakeup = true
+	e.log.Debug("tetra: flushing held wakeup page (no group grant superseded it)",
+		"grant", g.String())
+	e.HandleGrant(g)
+}
+
 func (e *Engine) HandleGrant(g Grant) {
 	if g.At.IsZero() {
 		g.At = e.now()
@@ -376,6 +510,14 @@ func (e *Engine) HandleGrant(g Grant) {
 	e.noteRadio(g.SourceID, g.System)
 	if g.Individual {
 		e.noteRadio(g.GroupID, g.System)
+	}
+	// Cancel a parked TETRA wakeup-page hold on this channel the moment any
+	// non-page grant for the same physical channel arrives — the authoritative
+	// group grant (or any other real allocation) has landed, so the page must not
+	// spawn its ghost call. A page repeat (still a wakeup page) leaves the hold in
+	// place; it is refreshed in the hold block below. See held/heldGrant.
+	if !isTETRAWakeupPage(g) {
+		e.dropHeldIndividual(channelKeyOf(g))
 	}
 	tg := e.talkgroups.Lookup(g.GroupID)
 	if tg == nil && g.GroupID != 0 && !g.Individual && !e.isKnownRadio(g.GroupID) {
@@ -610,6 +752,20 @@ func (e *Engine) HandleGrant(g Grant) {
 				"grant", g.String(), "device", ac.Device.Serial)
 			return
 		}
+	}
+
+	// Hold a TETRA wakeup page. Reaching here means no active call and no fold
+	// matched this channel, so an individual-addressed page (individual=true, no
+	// source) would spawn a fresh call + a WAV directory named after the paged
+	// radio SSI. Park it for tetraIndividualHold instead: the authoritative group
+	// grant that follows a real group call (~160 ms later) cancels it via the
+	// drop above, and only a page that is never superseded — a genuine unit-to-
+	// unit call — is flushed to allocation when the window expires. A repeat page
+	// refreshes the existing hold without re-arming. heldFromWakeup grants have
+	// already served their window and fall through to allocate.
+	if isTETRAWakeupPage(g) && !g.heldFromWakeup {
+		e.holdWakeupPage(g)
+		return
 	}
 
 	// 1) Free device available? Allocate. FindFreeForFrequency skips
@@ -1159,6 +1315,17 @@ func (e *Engine) runWatchdog() {
 }
 
 func (e *Engine) shutdown() {
+	// Cancel any parked wakeup-page timers so they can't fire into a torn-down
+	// engine (their flush is a no-op once Run has exited, but stopping the timers
+	// releases the goroutines promptly).
+	e.mu.Lock()
+	for key, h := range e.held {
+		if h.timer != nil {
+			h.timer.Stop()
+		}
+		delete(e.held, key)
+	}
+	e.mu.Unlock()
 	for _, ac := range e.pool.Active() {
 		e.endCall(ac, EndReasonNormal)
 	}

@@ -254,7 +254,35 @@ type tetraSlotDemux struct {
 	ownerlessDrops   atomic.Uint64
 	crcFallbacks     atomic.Uint64
 	markerCollisions atomic.Uint64
+	// concurrencySuppressed counts bursts the single-owner CRC fallback WOULD have
+	// routed but dropped instead because ≥2 physical TDMA slots were carrying
+	// traffic — i.e. the carrier had concurrent calls even though GT had only one
+	// owner registered. Those fallbacks were the cross-slot audio-leak vector:
+	// a valid TCH/S CRC proves a burst is speech, not WHOSE speech, so funnelling
+	// another slot's speech into the sole recording bled calls together.
+	concurrencySuppressed atomic.Uint64
+
+	// slotRing is a sliding window of the physical TDMA slot (1..4) of recent
+	// traffic-marked bursts, used only to decide whether the carrier is currently
+	// running concurrent calls. Unlike the AACH usage marker (which decodes on a
+	// minority of bursts) the SB-anchored physical slot is available on ~100% of
+	// bursts, so counting distinct busy slots is a robust concurrency signal. The
+	// ring is touched only on the single demux goroutine (onBurst), so it needs no
+	// lock. 0 entries are empty slots.
+	slotRing    [concurrencyWindow]uint8
+	slotRingPos int
 }
+
+const (
+	// concurrencyWindow is how many recent traffic-marked bursts the slot ring
+	// remembers — ~one TETRA multiframe of traffic across four slots.
+	concurrencyWindow = 48
+	// minSlotBurstsForActive is how many of a slot's traffic-marked bursts must
+	// appear in the window before it counts as an active call, high enough that
+	// the ~5% SB-anchor slot jitter (a burst tagged one slot off) cannot make a
+	// single active call look like two.
+	minSlotBurstsForActive = 3
+)
 
 // tetraSlotOwner is one call's registration with the carrier demux: the usage
 // marker it follows (0 until a wildcard claims one) plus the boundary tracker +
@@ -295,7 +323,8 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 			"undecoded_drops", d.undecodedDrops.Load(),
 			"ownerless_drops", d.ownerlessDrops.Load(),
 			"crc_fallbacks", d.crcFallbacks.Load(),
-			"marker_collisions", d.markerCollisions.Load())
+			"marker_collisions", d.markerCollisions.Load(),
+			"concurrency_suppressed", d.concurrencySuppressed.Load())
 	}()
 
 	for {
@@ -335,16 +364,28 @@ func (d *tetraSlotDemux) observe(iq []complex64) {
 // possible. Runs on the single demux goroutine, so each owner's boundary tracker
 // has exactly one writer.
 func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage uint8) {
+	// Fold this burst's physical slot into the concurrency window (traffic-marked
+	// bursts only — those unambiguously mark a slot as carrying an active call).
+	d.noteSlotActivity(slot, usage)
+
 	// A burst whose AACH did not decode (usage 0) or is a control slot
 	// (< DLUsageTraffic) carries no routable marker. Dropping it outright loses
 	// the granted call's own speech whenever its AACH is momentarily
 	// un-decodable — the shared-demux gap the solo tap did not have. Fall back to
-	// the CRC gate, but ONLY when exactly one call is active (one owner and no
-	// waiting wildcard, or one waiting wildcard and no owner): with a single call
-	// there is no concurrent call to cross-talk into, so this matches the solo
-	// tap's burstUsage==0 behaviour. With ≥2 active calls an unrouteable burst is
-	// dropped (and counted) rather than mixed into an arbitrary recording.
+	// the CRC gate, but ONLY when the carrier is genuinely running one call: a
+	// single registered owner AND the physical slots show no concurrent traffic.
+	// The registered-owner count alone is not enough — a call GT never granted (a
+	// missed grant, a call in hangtime, a wakeup-page ghost) still keys up a
+	// physical slot, and routing that foreign slot's speech to GT's one owner via
+	// the CRC gate is exactly the cross-slot leak (a valid TCH/S CRC proves the
+	// burst is speech, not whose). When ≥2 slots are active the burst is dropped
+	// rather than mixed into an arbitrary recording.
 	if usage < tetra.DLUsageTraffic {
+		if d.onAirConcurrent() {
+			d.concurrencySuppressed.Add(1)
+			d.undecodedDrops.Add(1)
+			return
+		}
 		d.mu.Lock()
 		var sole *tetraSlotOwner
 		switch {
@@ -377,11 +418,12 @@ func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage 
 	// one call is active, this is that call's own burst whose AACH usage marker
 	// miscorrected to a stray value (a common RM(30,14) miss on a marginal AACH):
 	// capture the sole owner so it goes through the CRC gate below instead of
-	// being dropped. Safe for the same reason as the usage-0 fallback — with a
-	// single active call there is no peer to cross-talk into, and the class-2 CRC
-	// still rejects a non-matching burst ~255/256.
+	// being dropped. Guarded on BOTH a single registered owner AND no concurrent
+	// on-air traffic — an ownerless traffic marker while another physical slot is
+	// active is far more likely a genuine peer call GT isn't tracking than the one
+	// owner's own miscorrection, and routing it in is the cross-slot leak.
 	var sole *tetraSlotOwner
-	if o == nil && len(d.owners) == 1 && len(d.wildcards) == 0 {
+	if o == nil && len(d.owners) == 1 && len(d.wildcards) == 0 && !d.onAirConcurrent() {
 		for _, only := range d.owners {
 			sole = only
 		}
@@ -394,11 +436,48 @@ func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage 
 			d.c.decodeTETRASpeech(sole.bt, sole.rs, sole.serial, frame, softType5, &sole.speech)
 			return
 		}
+		if d.onAirConcurrent() {
+			d.concurrencySuppressed.Add(1)
+		}
 		d.ownerlessDrops.Add(1)
 		return
 	}
 	o.bursts.Add(1)
 	d.c.decodeTETRASpeech(o.bt, o.rs, o.serial, frame, softType5, &o.speech)
+}
+
+// noteSlotActivity folds a traffic-marked burst's physical slot into the sliding
+// concurrency window. Only usage >= DLUsageTraffic bursts are recorded: those
+// unambiguously mark a slot as carrying a live call, whereas an undecoded AACH
+// (usage 0) tells us nothing about which slot is busy. Runs on the demux
+// goroutine, so the ring needs no lock.
+func (d *tetraSlotDemux) noteSlotActivity(slot, usage uint8) {
+	if usage < tetra.DLUsageTraffic || slot < 1 || slot > 4 {
+		return
+	}
+	d.slotRing[d.slotRingPos] = slot
+	d.slotRingPos = (d.slotRingPos + 1) % len(d.slotRing)
+}
+
+// onAirConcurrent reports whether the carrier is currently running more than one
+// call, judged from how many distinct physical slots carry traffic in the recent
+// window. This is decoupled from how many owners GT has registered: a call GT
+// never granted still keys up a slot, and it is exactly that untracked concurrent
+// traffic that the single-owner CRC fallback used to leak into the one recording.
+func (d *tetraSlotDemux) onAirConcurrent() bool {
+	var counts [5]int // index 1..4
+	for _, s := range d.slotRing {
+		if s >= 1 && s <= 4 {
+			counts[s]++
+		}
+	}
+	active := 0
+	for s := 1; s <= 4; s++ {
+		if counts[s] >= minSlotBurstsForActive {
+			active++
+		}
+	}
+	return active >= 2
 }
 
 // addOwner registers o. A marker-bearing grant claims its marker (most-recent

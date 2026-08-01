@@ -511,6 +511,57 @@ func TestTETRADemuxOwnerlessMarkerSingleOwnerCRCFallback(t *testing.T) {
 	}
 }
 
+// TestTETRADemuxNoLeakWhenAirConcurrentButOneOwner is the regression for the
+// reported cross-slot audio leak: when the carrier is running concurrent calls
+// but GT has only ONE owner registered (a call it never granted, one in hangtime,
+// or a wakeup-page ghost keeps the other slot busy), the single-owner CRC
+// fallback funnelled that foreign slot's speech into the one recording — a valid
+// TCH/S CRC proves a burst is speech, not whose. With ≥2 physical slots active
+// the fallback must be suppressed so no foreign audio leaks.
+func TestTETRADemuxNoLeakWhenAirConcurrentButOneOwner(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
+
+	o, rs := newDemuxOwner(c, "A", 19) // the one call GT is following, on slot 1
+	d.addOwner(o)
+
+	// The air is concurrent: slot 1 (owner) and slot 2 (a call GT is not tracking)
+	// both carry traffic. Seed the concurrency window directly so the state is
+	// deterministic regardless of routing.
+	for i := 0; i < minSlotBurstsForActive; i++ {
+		d.noteSlotActivity(1, tetra.DLUsageTraffic)
+		d.noteSlotActivity(2, tetra.DLUsageTraffic)
+	}
+	if !d.onAirConcurrent() {
+		t.Fatal("setup: expected the carrier to read as concurrent")
+	}
+
+	before := len(rs.rawFrames("A"))
+	// A foreign burst whose AACH did not decode (usage 0) on the other slot: must
+	// be dropped, not CRC-fallback-routed to the sole owner.
+	d.onBurst(frame, nil, 2, 0)
+	// A foreign burst carrying an ownerless traffic marker (another call's slot):
+	// also must not leak to the sole owner.
+	d.onBurst(frame, nil, 2, 20)
+	if n := len(rs.rawFrames("A")); n != before {
+		t.Errorf("foreign concurrent-slot speech leaked to the sole owner: %d frames, want %d", n, before)
+	}
+	if got := d.concurrencySuppressed.Load(); got < 2 {
+		t.Errorf("concurrencySuppressed = %d, want >= 2", got)
+	}
+
+	// Control: the SAME owner on a quiet carrier (one active slot) still recovers
+	// its own AACH-undecodable bursts via the fallback — no regression there.
+	d2 := mkDemux(c)
+	o2, rs2 := newDemuxOwner(c, "A", 19)
+	d2.addOwner(o2)
+	d2.onBurst(frame, nil, 1, 0) // single slot, undecoded AACH → fallback recovers it
+	if n := len(rs2.rawFrames("A")); n != 2 {
+		t.Errorf("single-call fallback regressed: A got %d frames, want 2", n)
+	}
+}
+
 // TestTETRADemuxMarkerCollisionCounted: two calls registering the same usage
 // marker is now counted + warned (previously a silent orphan). Most-recent-grant
 // still wins the marker (existing eviction semantics preserved).

@@ -117,6 +117,13 @@ type Grant struct {
 	// channel when publishing the grant; zero on non-Phase-2 grants.
 	P25Phase2Decode P25Phase2Decode
 	At              time.Time
+	// heldFromWakeup is an engine-internal marker (never set by the protocol
+	// layer): true on a TETRA individual grant being re-dispatched after its
+	// wakeup-page hold window expired with no authoritative group grant to
+	// supersede it. It tells HandleGrant to skip the hold and allocate the call
+	// so a genuine unit-to-unit individual call still records. Unexported so it
+	// stays inside the trunking package and never crosses the events bus wire.
+	heldFromWakeup bool
 	// CallID is a process-monotonic identifier the voice pool assigns when
 	// it binds a device to this grant (VoicePool.Bind); a real handoff
 	// (VoicePool.Retune) preserves it so a followed call keeps one identity.

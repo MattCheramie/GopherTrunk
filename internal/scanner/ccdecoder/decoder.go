@@ -199,19 +199,55 @@ const zeroIFHealthErrPct = 20
 // iqClipLog / iqDCLog 30 s cadence so a stuck adjacent-channel lock logs steadily.
 const carrierOffsetWarnInterval = 30 * time.Second
 
-// decodeQueueDepth is the size of the internal queue between the
-// lightweight IQ forwarder and the decode goroutine (issue #402). The
-// SDR driver drops the instant its own small delivery channel backs up
-// (~27 ms at 2.4 MS/s, ~68 ms at 960 kS/s), so any decode/retune/GC
-// stall longer than that on a single combined goroutine corrupts the
-// continuous symbol stream. The forwarder drains the driver channel into
-// this larger queue so a transient stall backs up here instead of
-// dropping RF; at 65 KB/chunk this is ~8 MB and buys ≈0.44 s of slack at
-// 2.4 MS/s (≈1.1 s at 960 kS/s). Deeper would absorb longer stalls at the
-// cost of higher decode latency under a sustained backlog; 128 balances
-// the two. Sustained overload still drops here — attributably, via
-// RecordDecodeOverrun — rather than silently in the driver.
-const decodeQueueDepth = 128
+// The decode queue between the lightweight IQ forwarder and the decode goroutine
+// (issue #402) is bounded by a wall-clock SAMPLE BUDGET, not a fixed count of
+// chunks. The SDR driver drops the instant its own delivery channel backs up, so
+// any decode/retune/GC stall longer than the queue's depth-in-seconds corrupts
+// the continuous symbol stream. A fixed chunk count made that depth collapse on
+// small-datagram sources: SoapyRemote hands a remote USRP ~369 samples/datagram,
+// so a 128-chunk queue was only ~47 ms at 1 MS/s — while the driver's own channel
+// is sized for 400 ms and never overflowed, producing decode overruns at idle CPU
+// that the driver never saw. Sizing the budget from the sample rate gives every
+// source the same ~0.5 s of slack regardless of chunk size. Sustained overload
+// still drops here — attributably, via RecordDecodeOverrun — not silently in the
+// driver.
+const (
+	// decodeQueueSeconds is the target wall-clock depth of the decode queue.
+	// ~0.5 s on top of the driver's ~0.4 s channel gives ~0.9 s total slack.
+	decodeQueueSeconds = 0.5
+	// minDecodeQueueSamples floors the budget so a very low sample rate still
+	// gets a usable queue; maxDecodeQueueSamples caps memory at ~64 MB of
+	// complex64 for very high rates (a decode that far behind is unrecoverable
+	// anyway — dropping is correct).
+	minDecodeQueueSamples = 131072
+	maxDecodeQueueSamples = 8 << 20 // 8,388,608 samples
+	// minDecodeQueueChunks / maxDecodeQueueChunks bound the backing channel's
+	// slot count, derived from the budget assuming a small (64-sample) chunk so
+	// the channel is never the real limiter — the sample budget is.
+	minDecodeQueueChunks = 128
+	maxDecodeQueueChunks = 262144
+)
+
+// decodeQueueBudget returns the sample budget and the backing channel's slot
+// count for a decode queue fed at sampleRateHz. Both are clamped so the queue is
+// sane from ~48 kHz replay to 20+ MS/s live SDRs.
+func decodeQueueBudget(sampleRateHz float64) (budgetSamples int64, chanCap int) {
+	b := int64(decodeQueueSeconds * sampleRateHz)
+	if b < minDecodeQueueSamples {
+		b = minDecodeQueueSamples
+	}
+	if b > maxDecodeQueueSamples {
+		b = maxDecodeQueueSamples
+	}
+	c := int(b / 64)
+	if c < minDecodeQueueChunks {
+		c = minDecodeQueueChunks
+	}
+	if c > maxDecodeQueueChunks {
+		c = maxDecodeQueueChunks
+	}
+	return b, c
+}
 
 // Tuner is the subset of sdr.Device the decoder uses for retuning.
 // Matches the same interface cchunt + conventional consume so the
@@ -322,6 +358,12 @@ type Decoder struct {
 	autotuneApplied atomic.Int64
 	locked          atomic.Bool
 	lastATSampleAt  time.Time
+	// queuedSamples counts IQ samples parked in the decode queue (issue #402).
+	// The queue's real limit is a wall-clock sample budget, not a fixed chunk
+	// count, so the depth is invariant to how the SDR driver chunks delivery
+	// (a remote USRP delivers many tiny datagrams; an Airspy a few big blocks).
+	// The forwarder adds on enqueue; the decode goroutine subtracts on dequeue.
+	queuedSamples atomic.Int64
 	// carrierOffsetWarnHz is the large-offset WARN threshold (Options.
 	// CarrierOffsetWarnHz, defaulted in New). lastOffsetWarnAt throttles the
 	// WARN to one line per carrierOffsetWarnInterval while the offset stays
@@ -558,8 +600,10 @@ func (d *Decoder) Run(ctx context.Context) error {
 	// keeps the driver channel drained into a larger queue; decode and
 	// retune run here, off the ingestion path, so a stall backs up in the
 	// queue instead of dropping RF.
-	decodeCh := make(chan []complex64, decodeQueueDepth)
-	go d.forwardIQ(ctx, stream, decodeCh)
+	budgetSamples, chanCap := decodeQueueBudget(d.sampleRateHz)
+	decodeCh := make(chan []complex64, chanCap)
+	d.queuedSamples.Store(0)
+	go d.forwardIQ(ctx, stream, decodeCh, budgetSamples)
 
 	for {
 		select {
@@ -605,6 +649,7 @@ func (d *Decoder) Run(ctx context.Context) error {
 				}
 				return streamClosedErr(d.iq)
 			}
+			d.queuedSamples.Add(-int64(len(iq))) // dequeued — free budget before decode
 			d.pump(iq)
 			d.putIQBuf(iq) // decode done — recycle the queue buffer
 		}
@@ -624,15 +669,33 @@ func (d *Decoder) Run(ctx context.Context) error {
 // hands the driver's ring slot straight back; only the pooled copy lives
 // in the queue. Kept cheap (an O(n) observe + memcpy) so it always
 // out-drains the driver channel. Under *sustained* overload the queue
-// fills and chunks are dropped here, attributably (RecordDecodeOverrun +
-// a throttled WARN), rather than silently in the driver. Closing out on
-// return propagates stream EOF / ctx cancellation to Run.
-func (d *Decoder) forwardIQ(ctx context.Context, in <-chan []complex64, out chan<- []complex64) {
+// exceeds its sample budget and chunks are dropped here, attributably
+// (RecordDecodeOverrun + a throttled WARN), rather than silently in the driver.
+// The limit is a wall-clock sample budget (budgetSamples), not the channel's
+// slot count, so the depth-in-seconds is invariant to the driver's chunk size.
+// Closing out on return propagates stream EOF / ctx cancellation to Run.
+func (d *Decoder) forwardIQ(ctx context.Context, in <-chan []complex64, out chan<- []complex64, budgetSamples int64) {
 	defer close(out)
 	var (
 		dropped   uint64
 		lastLogAt time.Time
 	)
+	drop := func() {
+		// Decode is sustainedly behind real time: the queue is at its budget.
+		// Surface it as a decode overrun, distinct from the driver's
+		// iq_underruns_total, so "CPU can't keep up" is attributable rather than
+		// looking like an RF fault.
+		dropped++
+		if d.metrics != nil {
+			d.metrics.RecordDecodeOverrun()
+		}
+		if now := time.Now(); now.Sub(lastLogAt) >= time.Second {
+			d.log.Warn("ccdecoder: decode can't keep up with real time; dropping IQ at the decode queue (raise CPU / lower sample rate / shed load) — issue #402",
+				"dropped_since_last", dropped)
+			dropped = 0
+			lastLogAt = now
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -642,27 +705,25 @@ func (d *Decoder) forwardIQ(ctx context.Context, in <-chan []complex64, out chan
 				return
 			}
 			d.observeIQPower(iq) // measures the raw driver chunk (every delivery)
+			// Sample-budget gate: drop before copying if enqueueing this chunk
+			// would push the in-flight backlog past the wall-clock budget. This
+			// caps decode latency in seconds, independent of chunk size.
+			if d.queuedSamples.Load()+int64(len(iq)) > budgetSamples {
+				drop()
+				continue
+			}
 			buf := d.getIQBuf(len(iq))
 			copy(buf, iq) // decouple from the driver's reuse ring before queueing
+			d.queuedSamples.Add(int64(len(buf)))
 			select {
 			case out <- buf:
 			default:
-				// Decode is sustainedly behind real time: the queue is full.
-				// Return the copy to the pool and drop the chunk (caps latency
-				// at the queue depth). Surface it as a decode overrun, distinct
-				// from the driver's iq_underruns_total, so "CPU can't keep up"
-				// is attributable rather than looking like an RF fault.
+				// Channel slot count exhausted despite the budget (only reachable
+				// with pathologically tiny chunks). Undo the reservation, recycle
+				// the copy, and drop — same accounting as the budget path.
+				d.queuedSamples.Add(-int64(len(buf)))
 				d.putIQBuf(buf)
-				dropped++
-				if d.metrics != nil {
-					d.metrics.RecordDecodeOverrun()
-				}
-				if now := time.Now(); now.Sub(lastLogAt) >= time.Second {
-					d.log.Warn("ccdecoder: decode can't keep up with real time; dropping IQ at the decode queue (raise CPU / lower sample rate / shed load) — issue #402",
-						"dropped_since_last", dropped)
-					dropped = 0
-					lastLogAt = now
-				}
+				drop()
 			}
 		}
 	}
@@ -1108,7 +1169,15 @@ func (d *Decoder) observeIQPower(iq []complex64) {
 		d.metrics.RecordIQDCRatioDb(system, ratioDb)
 		d.metrics.RecordIQClipRatio(system, clipRatio)
 	}
-	if dbfs < iqLowPowerThresholdDbFS && now.Sub(d.pwLowLogAt) >= 5*time.Second {
+	if dbfs < iqLowPowerThresholdDbFS && !d.locked.Load() && now.Sub(d.pwLowLogAt) >= 30*time.Second {
+		// Only meaningful when the decoder CANNOT lock — a real antenna/gain/USB
+		// fault. Once the control channel is locked and decoding, a low ABSOLUTE
+		// level is fine (e.g. a USRP/SDR at conservative gain sits at ~-60 dBFS
+		// with ~55 dB of unused ADC headroom yet decodes TETRA cleanly), so
+		// emitting it every few seconds while locked was pure noise. Gated on
+		// !locked and throttled to 30 s to match the clip / DC-dominant siblings.
+		// The Prometheus gauge (RecordIQPowerDbFS above) still reflects every
+		// window regardless of lock, so the level stays observable.
 		d.log.Debug("ccdecoder: iq power very low — check antenna, gain, USB",
 			"system", system, "dbfs", dbfs, "dc_dbfs", dcDbfs, "dc_ratio_db", ratioDb)
 		d.pwLowLogAt = now
