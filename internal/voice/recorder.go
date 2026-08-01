@@ -82,8 +82,13 @@ type Recorder struct {
 	sampleRate         uint32
 	writeRaw           bool
 	skipEncrypted      bool
+	writeCallJSON      bool
 	normalize          NormalizeConfig
 	vocoderForProtocol map[string]string
+
+	// callNum is a monotonic per-recorder call counter stamped into each
+	// .json sidecar's call_num (the trunk-recorder sequential call number).
+	callNum atomic.Uint64
 
 	// decodeOnly runs the recorder as a live decoder that writes NO files:
 	// every call still builds its per-protocol vocoder and fans decoded PCM
@@ -235,6 +240,9 @@ type RecorderOptions struct {
 	OutDir     string
 	SampleRate uint32 // 8000 typical
 	WriteRaw   bool   // emit a .raw sidecar alongside each .wav
+	// WriteCallJSON emits a trunk-recorder-compatible <basename>.json metadata
+	// sidecar next to each recording (per WAV / segment).
+	WriteCallJSON bool
 
 	// SkipEncrypted, when true, makes the recorder refuse to write files
 	// for calls flagged encrypted. A grant that already signals encryption
@@ -373,6 +381,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		sampleRate:         opts.SampleRate,
 		writeRaw:           opts.WriteRaw,
 		skipEncrypted:      opts.SkipEncrypted,
+		writeCallJSON:      opts.WriteCallJSON,
 		normalize:          opts.Normalize,
 		enhance:            opts.Enhance,
 		vocoderForProtocol: vocoderMap,
@@ -811,6 +820,12 @@ func (r *Recorder) backfillSessionGrant(deviceSerial string, encrypted bool, alg
 	}
 	if sourceID != 0 {
 		s.cs.Grant.SourceID = sourceID
+		// Record a talker change for the .json srcList: append when the source
+		// differs from the last one recorded for this file (a genuine talker
+		// change, not a repeat backfill of the same source).
+		if n := len(s.srcs); n == 0 || s.srcs[n-1].src != sourceID {
+			s.srcs = append(s.srcs, srcEvent{src: sourceID, at: time.Now().UTC(), emergency: s.cs.Grant.Emergency})
+		}
 	}
 }
 
@@ -873,6 +888,14 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 	nameCS.StartedAt = startedAt
 	base := r.basenameFor(nameCS)
 	s := &recordingSession{startedAt: startedAt, cs: cs, callID: cs.Grant.CallID}
+	// Seed the trunk-recorder freqList / srcList accumulators. The frequency is
+	// always known; the source may not be yet (a call that opens before the
+	// calling party resolves), in which case the first talker is recorded when
+	// backfillSessionGrant fills it in.
+	s.freqs = []freqEvent{{freq: cs.Grant.FrequencyHz, at: startedAt}}
+	if cs.Grant.SourceID != 0 {
+		s.srcs = []srcEvent{{src: cs.Grant.SourceID, at: startedAt, emergency: cs.Grant.Emergency}}
+	}
 	// Instantiate a vocoder for the protocol if one is mapped. This must
 	// happen before the WAV is opened so the header rate can track the
 	// vocoder's native output rate (below). Construction failure (unknown
@@ -982,7 +1005,7 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 		r.mu.Unlock()
 		return // no active file to roll (already dormant or unknown)
 	}
-	cc := r.finalizeLocked(s, seg.DeviceSerial, seg.At, trunking.EndReasonNormal)
+	cc, meta := r.finalizeLocked(s, seg.DeviceSerial, seg.At, trunking.EndReasonNormal)
 	// Park a dormant session: keeps the call's identity so the next write
 	// opens the next segment file, without creating an empty trailing
 	// file if no further audio arrives before the call ends.
@@ -990,7 +1013,21 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 	r.mu.Unlock()
 	if cc != nil {
 		r.normalizeIfEnabled(cc.AudioPath)
+		r.writeCallMetaFor(cc.AudioPath, meta)
 		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
+	}
+}
+
+// writeCallMetaFor writes the trunk-recorder .json sidecar next to a finished
+// recording, off the recorder lock (like normalizeIfEnabled). A nil meta (JSON
+// disabled or nothing to write) is a no-op; a failure is logged and the
+// recording is kept.
+func (r *Recorder) writeCallMetaFor(wavPath string, meta *callMeta) {
+	if meta == nil {
+		return
+	}
+	if err := writeCallMeta(wavPath, meta); err != nil {
+		r.log.Warn("recorder: writing call .json sidecar failed", "wav", wavPath, "err", err)
 	}
 }
 
@@ -1011,13 +1048,17 @@ func (r *Recorder) normalizeIfEnabled(wavPath string) {
 // finalizeLocked closes a session's files and returns a CallComplete to
 // publish when audio was written; an empty file (no PCM) is removed and
 // nil returned. Caller holds r.mu and publishes after releasing it.
-func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt time.Time, reason trunking.EndReason) *trunking.CallComplete {
+// finalizeLocked returns the CallComplete to publish and, when a JSON sidecar
+// is enabled and audio was written, the trunk-recorder metadata to write for it
+// (both nil when the recording is discarded). The caller writes the JSON and
+// publishes after releasing r.mu.
+func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt time.Time, reason trunking.EndReason) (*trunking.CallComplete, *callMeta) {
 	// Callers only reach here with an open WAV (handleEnd/handleSegment guard on
 	// s.wav != nil); a decode-only session has no file to finalize. Guard anyway
 	// so a future caller can't panic on the nil writer.
 	if s.wav == nil {
 		_ = s.close()
-		return nil
+		return nil, nil
 	}
 	dataBytes := s.wav.DataBytes()
 	vs, haveStats := r.voiceStatsFor(s)
@@ -1089,7 +1130,7 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	// classified here and keep the dataBytes behaviour below.
 	if haveStats && vs.Voiced+vs.Unvoiced == 0 {
 		r.removeSessionFiles(s)
-		return nil
+		return nil, nil
 	}
 	// No PCM decoded into the WAV — nothing to stream. The files are left
 	// in place: a digital call (ProVoice / DMR / pre-vocoder) keeps its
@@ -1097,9 +1138,9 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	// Per-transmission segment rolls never reach here empty because the
 	// next file is opened lazily on the first write.
 	if dataBytes == 0 {
-		return nil
+		return nil, nil
 	}
-	return &trunking.CallComplete{
+	cc := &trunking.CallComplete{
 		Grant:        s.cs.Grant,
 		Talkgroup:    s.cs.Talkgroup,
 		DeviceSerial: serial,
@@ -1109,6 +1150,11 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		AudioPath:    s.wavPath,
 		SampleRate:   s.sampleRate,
 	}
+	var meta *callMeta
+	if r.writeCallJSON {
+		meta = buildCallMeta(s.cs, s.startedAt, endedAt, int(r.callNum.Add(1)), s.vocoder != nil, s.srcs, s.freqs)
+	}
+	return cc, meta
 }
 
 // removeSessionFiles deletes a session's WAV and .raw sidecar from disk.
@@ -1222,7 +1268,7 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 	wavPath := s.wavPath
 	// Announce the finished WAV so the outbound-streaming subsystem can
 	// upload it. Skip (and delete) calls that captured no PCM.
-	cc := r.finalizeLocked(s, ce.DeviceSerial, ce.EndedAt, ce.Reason)
+	cc, meta := r.finalizeLocked(s, ce.DeviceSerial, ce.EndedAt, ce.Reason)
 	r.mu.Unlock()
 	r.log.Info("recorder: call ended",
 		"device", ce.DeviceSerial,
@@ -1231,6 +1277,7 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 		"reason", ce.Reason)
 	if cc != nil {
 		r.normalizeIfEnabled(cc.AudioPath)
+		r.writeCallMetaFor(cc.AudioPath, meta)
 		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
 	}
 }
@@ -1363,6 +1410,12 @@ type recordingSession struct {
 	// next file lazily on the first write, so an over with no following
 	// audio never leaves an empty trailing file.
 	cs trunking.CallStart
+	// srcs / freqs accumulate the talker and frequency observations for this
+	// file, seeded at buildSession and appended on talker changes
+	// (backfillSessionGrant). buildCallMeta turns them into the trunk-recorder
+	// srcList / freqList in the .json sidecar at finalize.
+	srcs  []srcEvent
+	freqs []freqEvent
 }
 
 func (s *recordingSession) close() error {

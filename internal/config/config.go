@@ -1861,6 +1861,12 @@ type RecordingsConfig struct {
 	// software decoding (only a DVSI hardware vocoder removes it). Off by
 	// default; affects DMR only.
 	WarmDMRAudio bool `yaml:"warm_dmr_audio"`
+	// WriteCallJSON writes a trunk-recorder-compatible <basename>.json metadata
+	// sidecar next to each recording (per WAV / per-transmission segment). It
+	// carries the call's talkgroup, source, frequency, timing, flags, and the
+	// per-talker srcList / freqList so the existing trunk-recorder parsers work
+	// unchanged. Tri-state: unset (nil) defaults ON; set false to disable.
+	WriteCallJSON *bool `yaml:"write_call_json,omitempty"`
 	// VoiceTapBufferChunks sizes the per-consumer buffer on the same-carrier
 	// voice tap — the queue of post-DDC IQ chunks the control decoder fans to
 	// each followed TETRA call. A deeper buffer absorbs more scheduling jitter

@@ -1273,12 +1273,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			}
 		}
 		rec, err := voice.NewRecorder(voice.RecorderOptions{
-			Bus:                d.bus,
-			Log:                log,
-			OutDir:             cfg.Recordings.Dir,
-			SampleRate:         cfg.Recordings.SampleRate,
-			WriteRaw:           cfg.Recordings.WriteRaw,
-			SkipEncrypted:      cfg.Recordings.SkipEncrypted,
+			Bus:           d.bus,
+			Log:           log,
+			OutDir:        cfg.Recordings.Dir,
+			SampleRate:    cfg.Recordings.SampleRate,
+			WriteRaw:      cfg.Recordings.WriteRaw,
+			SkipEncrypted: cfg.Recordings.SkipEncrypted,
+			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
+			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,
 			VocoderForProtocol: vocoderMap,
 			// Same display timezone the logs/TUI/API use, so WAV filenames
 			// carry the local wall-clock rather than UTC. Resolved here
