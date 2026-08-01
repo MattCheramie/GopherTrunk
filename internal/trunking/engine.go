@@ -552,14 +552,21 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.dropHeldNotification(channelKeyOf(g))
 	}
 	tg := e.talkgroups.Lookup(g.GroupID)
-	if tg == nil && g.GroupID != 0 && !g.Individual && !e.isKnownRadio(g.GroupID) {
+	if tg == nil && g.GroupID != 0 && !g.Individual && !e.isKnownRadio(g.GroupID) && !isTETRANotificationGrant(g) {
 		// First time this talkgroup has been heard: catalogue it so
 		// Database → Talkgroups fills in from the air (the trunk-recorder
 		// behaviour the operator asked for). Individual (unit-to-unit /
 		// interconnect) grants are skipped — their 24-bit destination is a
 		// subscriber address, not a talkgroup — as are SSIs already known to be
 		// radios (the notification/D-CONNECT ordering race that leaked radio IDs
-		// into the talkgroup list).
+		// into the talkgroup list). Source-less TETRA notification grants are
+		// skipped too: their GroupID is the paged radio's SSI, never a talkgroup,
+		// and only a source-bearing (authoritative) grant reliably names a real
+		// talkgroup. Without this a notification that bypasses the hold below —
+		// e.g. one that lands on an already-active channel and is folded as a
+		// repeat — catalogued the radio SSI as a phantom talkgroup that lingered
+		// in the list unless the SSI was later seen as a source (the residual
+		// RadioID→TGID leak from the reporter's captures, e.g. tg=1009311).
 		tg = e.discoverTalkgroup(g)
 	}
 	if tg != nil && tg.Lockout && !g.Emergency {
@@ -621,6 +628,11 @@ func (e *Engine) HandleGrant(g Grant) {
 		// the Active Calls list (the same notification/D-CONNECT ordering race the
 		// discovery gate above guards). A radio only learned to be one AFTER a
 		// provisional entry was made is retracted by noteRadio's observed purge.
+		// (Source-less notifications are intentionally still observed here so the
+		// live Active Calls list shows the in-progress transmission; that entry is
+		// transient and is purged by noteRadio once the SSI is seen as a source —
+		// unlike the Talkgroups catalogue, which persists, so only discovery above
+		// skips notifications.)
 		e.observeCall(g, tg)
 	}
 

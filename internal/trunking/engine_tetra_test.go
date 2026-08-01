@@ -54,6 +54,41 @@ func TestEngineTETRANotificationHeldUntilGroupGrant(t *testing.T) {
 	}
 }
 
+// TestEngineTETRANotificationDoesNotDiscoverTalkgroup is the regression for the
+// residual RadioID→TGID leak seen in the reporter's captures (e.g. tg=1009311):
+// a source-less TETRA notification grant addresses the paged radio's SSI, not a
+// talkgroup, yet the discovery gate catalogued its GroupID as a "Discovered"
+// talkgroup — a phantom that lingered in the /#/talkgroups list unless the SSI
+// was later seen as a source. Discovery ran before the notification hold, so it
+// leaked even for a notification that never spawned a call (held, folded as a
+// repeat on an active channel, or dropped). A source-less notification must
+// never self-discover a talkgroup; only a source-bearing group grant does.
+func TestEngineTETRANotificationDoesNotDiscoverTalkgroup(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 2)
+	defer bus.Close()
+	e.afterFunc = noFireAfterFunc
+
+	const (
+		freq = uint32(467_912_500)
+		issi = uint32(1009311) // paged radio SSI — the leaked phantom in the capture
+		gssi = uint32(1020539) // the real talkgroup
+	)
+	// A bare source-less notification for the radio SSI must NOT be catalogued.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: 1})
+	if tg := e.talkgroups.Lookup(issi); tg != nil {
+		t.Fatalf("source-less notification catalogued radio SSI %d as a talkgroup: %+v", issi, tg)
+	}
+	// The authoritative source-bearing group grant still discovers the real TG.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: gssi, SourceID: issi, FrequencyHz: freq, Timeslot: 1})
+	if tg := e.talkgroups.Lookup(gssi); tg == nil || tg.Tag != discoveredTag {
+		t.Errorf("authoritative group grant should have discovered TG %d, got %+v", gssi, tg)
+	}
+	// And the notification's SSI is still not a talkgroup afterwards.
+	if tg := e.talkgroups.Lookup(issi); tg != nil {
+		t.Errorf("radio SSI %d must not appear as a talkgroup, got %+v", issi, tg)
+	}
+}
+
 // TestEngineTETRANotificationToKnownRadioDropped guards that a held notification
 // targeting a KNOWN radio SSI that no group grant ever supersedes is DROPPED at
 // flush, not recorded under the radio ID — recording under a radio ID is exactly

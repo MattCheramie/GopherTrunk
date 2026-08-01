@@ -140,8 +140,12 @@ func TestEngineRetractsRadioIDLeakedAsTalkgroup(t *testing.T) {
 	defer bus.Close()
 
 	// Ordering A — phantom first, then the SSI is seen as a calling party.
-	// A bare notification addressed to radio 1005387 (src unknown) leaks it in.
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005387, FrequencyHz: 467_912_500})
+	// A group grant addressed under radio 1005387's SSI with a different calling
+	// party (a unit-to-unit call the SwMI carried as a group, before 1005387 is
+	// known to be a radio) leaks it in. (A source-less notification no longer
+	// leaks — the discovery gate skips those; see
+	// TestEngineTETRANotificationDoesNotDiscoverTalkgroup.)
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005387, SourceID: 1009000, FrequencyHz: 467_912_500})
 	if tg := e.talkgroups.Lookup(1005387); tg == nil || tg.Tag != discoveredTag {
 		t.Fatalf("precondition: radio 1005387 should be leaked as a Discovered TG, got %+v", tg)
 	}
