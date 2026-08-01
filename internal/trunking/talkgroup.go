@@ -106,10 +106,14 @@ func (d *TalkgroupDB) Delete(id uint32) bool {
 	return true
 }
 
-// discoveredTag is the Tag stamped on auto-learned talkgroups (see
+// DiscoveredTag is the Tag stamped on auto-learned talkgroups (see
 // Engine.discoverTalkgroup), distinguishing them from operator-catalogued
-// entries so retraction never removes a curated record.
-const discoveredTag = "Discovered"
+// entries so retraction never removes a curated record. Exported so the API can
+// tell auto-discovered entries apart when filtering the Talkgroups list.
+const DiscoveredTag = "Discovered"
+
+// discoveredTag is the internal alias for DiscoveredTag.
+const discoveredTag = DiscoveredTag
 
 // DeleteDiscovered removes an auto-discovered talkgroup (Tag == discoveredTag)
 // by id, returning true only if such an entry was present and removed. An

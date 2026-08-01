@@ -29,6 +29,9 @@ type EngineSnapshot interface {
 	// merges them with ActiveCalls so the operator sees every talkgroup up on
 	// the system, not just the ones a tuner is decoding.
 	ObservedCalls() []*trunking.ActiveCall
+	// IsKnownRadio reports whether id has been observed as a subscriber radio,
+	// used to filter a phantom auto-discovered talkgroup out of the list.
+	IsKnownRadio(id uint32) bool
 }
 
 // EngineMutator is the optional write side of the engine. Daemons

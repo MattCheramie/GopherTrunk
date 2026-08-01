@@ -685,16 +685,31 @@ const (
 // without ever declaring cc.lost.
 const tetraResyncTimeout = 500 * time.Millisecond
 
+// tetraResyncMaxBackoff caps the exponential back-off applied to repeated DSP
+// resyncs that fail to reacquire. A resync resets the receiver's symbol timing
+// to centre; when the control decode has stalled because concurrent-call voice
+// DSP starved it of CPU (not because timing drifted), a reset cannot help — and
+// firing one every tetraResyncTimeout only discards the receiver's converged
+// timing and blocks the natural reacquire once load eases, so the channel churns
+// through resyncs until the load drops (the "heavy DSP resync when multiple
+// calls happen" field symptom). Each resync that lands with no decode since the
+// previous one doubles the wait up to this cap; the first successful decode
+// snaps it back to tetraResyncTimeout. Kept below tetraLockStaleTimeout so a
+// genuinely dead carrier still trips the 5 s lost-watchdog and re-hunts.
+const tetraResyncMaxBackoff = 2 * time.Second
+
 type tetraPipeline struct {
-	rx         *tetrarx.Receiver
-	cc         *tetra.ControlChannel
-	log        *slog.Logger
-	system     string
-	debug      bool
-	now        func() time.Time // injectable for tests; set to time.Now at construction
-	lastLog    time.Time        // wall clock of the previous status line (zero ⇒ not primed)
-	lastStale  time.Time        // wall clock of the previous lock-staleness check
-	lastResync time.Time        // wall clock of the previous DSP resync (throttle)
+	rx                 *tetrarx.Receiver
+	cc                 *tetra.ControlChannel
+	log                *slog.Logger
+	system             string
+	debug              bool
+	now                func() time.Time // injectable for tests; set to time.Now at construction
+	lastLog            time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	lastStale          time.Time        // wall clock of the previous lock-staleness check
+	lastResync         time.Time        // wall clock of the previous DSP resync (throttle)
+	resyncBackoff      time.Duration    // current wait before the next resync; grows on ineffective resyncs
+	lastResyncActivity int64            // cc heartbeat nano captured at the last resync (detects "did it reacquire")
 }
 
 func (p *tetraPipeline) Process(iq []complex64) {
@@ -717,12 +732,36 @@ func (p *tetraPipeline) Process(iq []complex64) {
 func (p *tetraPipeline) checkResync() {
 	now := p.now()
 	if !p.cc.NeedsResync(now, tetraResyncTimeout) {
+		// Heartbeat is fresh — the control decode is keeping up, so any prior
+		// resync reacquired (or none was needed). Return to the base interval.
+		p.resyncBackoff = 0
 		return
 	}
-	if now.Sub(p.lastResync) < tetraResyncTimeout {
+	// Throttle: at least the current back-off must have elapsed since the last
+	// resync. The back-off is tetraResyncTimeout until an ineffective resync
+	// grows it (below), so the steady case is unchanged one-per-window behaviour.
+	wait := p.resyncBackoff
+	if wait < tetraResyncTimeout {
+		wait = tetraResyncTimeout
+	}
+	if !p.lastResync.IsZero() && now.Sub(p.lastResync) < wait {
 		return
+	}
+	// Decide whether the PREVIOUS resync reacquired. A decode since it fired
+	// (heartbeat advanced) means reset-to-centre worked, so keep the base
+	// interval; an unchanged heartbeat means the reset did nothing — CPU
+	// starvation or ongoing wideband noise — so back off exponentially rather
+	// than hammering reset-to-centre every window and blocking the reacquire.
+	act := p.cc.LastActivityNano()
+	if p.lastResync.IsZero() || act != p.lastResyncActivity {
+		p.resyncBackoff = tetraResyncTimeout
+	} else if next := 2 * wait; next < tetraResyncMaxBackoff {
+		p.resyncBackoff = next
+	} else {
+		p.resyncBackoff = tetraResyncMaxBackoff
 	}
 	p.lastResync = now
+	p.lastResyncActivity = act
 	p.rx.Reset()
 	p.cc.ResyncReset()
 	if p.log != nil {

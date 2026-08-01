@@ -26,7 +26,17 @@ type voiceFanout struct {
 	subs map[int]*voiceSub
 	next int
 	log  *slog.Logger
+	// bufDepth is the per-subscriber channel capacity: how many post-DDC IQ
+	// chunks may queue before a lagging consumer starts dropping (issue #402).
+	// Configurable via recordings.voice_tap_buffer_chunks; 0 uses the default.
+	bufDepth int
 }
+
+// defaultVoiceTapBufferChunks is the per-subscriber buffer depth when none is
+// configured. Concurrent same-carrier calls share one tap consumer, so the
+// memory cost is a single buffer per active carrier — a depth well above the
+// original 64 buys jitter headroom for a few tens of KB.
+const defaultVoiceTapBufferChunks = 128
 
 // voiceSub is one subscriber's channel plus its dropped-chunk counter. A drop
 // is a gap of missing IQ delivered to the followed call's voice chain, which
@@ -38,11 +48,14 @@ type voiceSub struct {
 	drops atomic.Uint64
 }
 
-func newVoiceFanout(log *slog.Logger) *voiceFanout {
+func newVoiceFanout(log *slog.Logger, bufDepth int) *voiceFanout {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &voiceFanout{subs: map[int]*voiceSub{}, log: log}
+	if bufDepth <= 0 {
+		bufDepth = defaultVoiceTapBufferChunks
+	}
+	return &voiceFanout{subs: map[int]*voiceSub{}, log: log, bufDepth: bufDepth}
 }
 
 // subscribe registers a voice subscriber and returns its IQ channel plus an
@@ -51,7 +64,7 @@ func newVoiceFanout(log *slog.Logger) *voiceFanout {
 // that wants the count — e.g. a triggered DDC capture reporting whether the grab
 // has gaps — can read it; callers that don't care simply ignore the return.
 func (f *voiceFanout) subscribe() (<-chan []complex64, func() uint64) {
-	sub := &voiceSub{ch: make(chan []complex64, 64)}
+	sub := &voiceSub{ch: make(chan []complex64, f.bufDepth)}
 	f.mu.Lock()
 	id := f.next
 	f.next++

@@ -329,6 +329,11 @@ type Options struct {
 	// the SDR rate. Empty (the default) disables it at zero cost. Driven by a
 	// baseband record entry with tap: ddc.
 	DDCRecordDir string
+	// VoiceTapBufferChunks sizes the per-consumer same-carrier voice-tap
+	// buffer (how many post-DDC IQ chunks queue before a lagging voice consumer
+	// drops, issue #402). 0 selects the built-in default. Driven by
+	// recordings.voice_tap_buffer_chunks.
+	VoiceTapBufferChunks int
 }
 
 // Decoder is the long-lived component that converts the control
@@ -544,7 +549,7 @@ func New(opts Options) (*Decoder, error) {
 		metrics:      opts.Metrics,
 		fec:          opts.FEC,
 		autotune:     opts.Autotune,
-		voiceFan:     newVoiceFanout(log),
+		voiceFan:     newVoiceFanout(log, opts.VoiceTapBufferChunks),
 	}
 	empty := ""
 	d.activeSystem.Store(&empty)

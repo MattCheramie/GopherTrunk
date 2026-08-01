@@ -220,10 +220,29 @@ func (s *Server) overlayTopology(dto *SystemDTO) {
 	}
 }
 
-func (s *Server) handleListTalkgroups(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleListTalkgroups(w http.ResponseWriter, r *http.Request) {
+	// ?discovered=false hides auto-discovered entries — the operator's "collapse
+	// the phantoms" toggle. Any other value (or absent) includes them; the DTO's
+	// `discovered` flag lets the UI badge/filter client-side too.
+	includeDiscovered := true
+	if v := r.URL.Query().Get("discovered"); v == "false" || v == "0" {
+		includeDiscovered = false
+	}
 	all := s.talkgroups.All()
 	out := make([]*TalkgroupDTO, 0, len(all))
 	for _, tg := range all {
+		if tg.Tag == trunking.DiscoveredTag {
+			// A discovered entry whose id is really a subscriber radio is a leaked
+			// phantom (the RadioID→TGID retraction race); never surface it, even
+			// when discovered entries are included. Reactive retraction usually
+			// removes it already; this closes the window where it hasn't yet.
+			if s.engine != nil && s.engine.IsKnownRadio(tg.ID) {
+				continue
+			}
+			if !includeDiscovered {
+				continue
+			}
+		}
 		out = append(out, talkgroupToDTO(tg))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"talkgroups": out})

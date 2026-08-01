@@ -79,6 +79,10 @@ export interface TalkgroupDTO {
   priority?: number;
   lockout?: boolean;
   scan?: boolean;
+  // discovered marks an auto-learned entry (Tag == "Discovered"). The UI badges
+  // these and offers a "hide auto-discovered" filter to collapse the phantom
+  // radio-ID entries the operator doesn't want cluttering the list.
+  discovered?: boolean;
 }
 
 // RIDDTO mirrors api.RIDDTO. `configured` distinguishes a row backed
