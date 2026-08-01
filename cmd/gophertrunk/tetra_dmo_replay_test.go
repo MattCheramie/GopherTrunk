@@ -104,9 +104,9 @@ func TestTETRADMOReplay(t *testing.T) {
 	bursts := tetra.ExtractDMBursts(allDibits, 0)
 
 	var dsbTotal, dsbCRC, dnbTotal, tchCRC int
-	var syncSecs []int              // seconds carrying a CRC-valid SCH/S (transmission starts)
-	speechBySec := map[int]int{}    // CRC-valid TCH/S bursts per second
-	var speechFrames [][]byte       // ordered speech frames for the vocoder
+	var syncSecs []int           // seconds carrying a CRC-valid SCH/S (transmission starts)
+	speechBySec := map[int]int{} // CRC-valid TCH/S bursts per second
+	var speechFrames [][]byte    // ordered speech frames for the vocoder
 	seenSyncSec := map[int]struct{}{}
 
 	for i := range bursts {

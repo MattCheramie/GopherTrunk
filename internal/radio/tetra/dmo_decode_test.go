@@ -62,7 +62,7 @@ func seqBits(seed, n int) []byte {
 // DecodeDMSCHS recovers it CRC-valid.
 func TestDMSCHSRoundTrip(t *testing.T) {
 	sync := seqBits(1, 60)
-	schs := EncodeBSCH(sync)   // 120 type-5 bits, colour 0
+	schs := EncodeBSCH(sync)                // 120 type-5 bits, colour 0
 	schh := EncodeSCHHD(seqBits(2, 124), 0) // DSB BKN2 (SCH/H), colour 0
 
 	bursts := ExtractDMBursts(buildDSB(schs, schh), 0)
