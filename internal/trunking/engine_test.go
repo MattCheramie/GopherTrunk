@@ -1577,7 +1577,7 @@ func TestEngineHandleCallReleaseEndsCall(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, SourceID: 500, FrequencyHz: 851_000_000})
 	if len(pool.Active()) != 1 {
 		t.Fatalf("precondition: want 1 active call, got %d", len(pool.Active()))
 	}
@@ -1613,7 +1613,7 @@ func TestEngineHandleCallReleaseNoMatchNoop(t *testing.T) {
 	e, pool, bus, _ := mkEngine(t, 1)
 	defer bus.Close()
 
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, SourceID: 500, FrequencyHz: 851_000_000})
 	e.handleCallRelease(CallRelease{System: "X", GroupID: 999}) // different group
 	if len(pool.Active()) != 1 {
 		t.Errorf("unrelated release ended the call: active=%d", len(pool.Active()))
@@ -1629,7 +1629,7 @@ func TestEngineHandleCallReleaseIdempotent(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, SourceID: 500, FrequencyHz: 851_000_000})
 	e.handleCallRelease(CallRelease{System: "X", GroupID: 100})
 	e.handleCallRelease(CallRelease{System: "X", GroupID: 100})
 
@@ -1655,7 +1655,7 @@ func TestEngineHandleCallTalkerUpdatesSource(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 851_000_000})
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, SourceID: 500, FrequencyHz: 851_000_000})
 	e.handleCallTalker(CallTalker{System: "X", GroupID: 100, SourceID: 4242})
 
 	c := &testBusCollector{}

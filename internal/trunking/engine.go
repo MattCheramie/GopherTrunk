@@ -89,16 +89,17 @@ type Engine struct {
 	radiosMu    sync.Mutex
 	knownRadios map[uint32]struct{}
 
-	// held holds TETRA individual (wakeup-page) grants for a short window before
-	// they are allowed to spawn a call. On a group call the SwMI often sends an
-	// individual-addressed Energy-Economy wakeup page (individual=true, no source,
-	// dst = the calling party's radio SSI) ~160 ms before the authoritative group
-	// grant. Spawning the wakeup page immediately created a ghost call + a WAV
-	// directory named after the radio ID, then tore it down when the group grant
-	// superseded it (fragmented recordings, radio IDs leaking as talkgroups). The
-	// hold lets the group grant arrive first and cancel the page; a page that is
-	// never superseded (a genuine unit-to-unit call) is flushed when the window
-	// expires. Keyed by physical channel; guarded by mu.
+	// held holds TETRA source-less notification grants for a short window before
+	// they are allowed to spawn a call. On a group call the SwMI sends a
+	// notification (SourceID==0, dst = the calling party's radio SSI — an
+	// Energy-Economy wakeup page or a plain group-call notification) 50-400 ms
+	// before the authoritative group grant. Spawning it immediately created a ghost
+	// call + a WAV directory named after the radio ID, then tore it down when the
+	// group grant superseded it (fragmented recordings, radio IDs leaking as
+	// talkgroups). The hold lets the group grant arrive first and cancel the
+	// notification; a notification never superseded is resolved at flush (dropped if
+	// it targets a known radio, else allocated under a real GSSI). Keyed by physical
+	// channel; guarded by mu.
 	held map[channelKey]*heldGrant
 	// heldFlush marshals an expired hold back onto the engine's single grant-
 	// processing goroutine (the Run loop). The afterFunc timer fires on its own
@@ -109,10 +110,9 @@ type Engine struct {
 	// afterFunc is time.AfterFunc, injectable so tests can drive the hold window
 	// deterministically. Returns a *time.Timer whose Stop cancels a pending flush.
 	afterFunc func(time.Duration, func()) *time.Timer
-	// tetraIndividualHold is how long a TETRA individual (wakeup-page) grant is
-	// held for an authoritative group grant to supersede it. The observed page →
-	// group gap is ~160 ms; 300 ms covers it with margin. A held genuine unit-to-
-	// unit call records this much later, an acceptable cost.
+	// tetraIndividualHold is how long a TETRA source-less notification grant is
+	// held for an authoritative group grant to supersede it. See
+	// defaultTETRAIndividualHold for sizing.
 	tetraIndividualHold time.Duration
 }
 
@@ -132,8 +132,11 @@ type heldGrant struct {
 }
 
 // defaultTETRAIndividualHold is the hold window applied when the engine is
-// constructed without an explicit value.
-const defaultTETRAIndividualHold = 300 * time.Millisecond
+// constructed without an explicit value. Sized to cover the observed
+// notification→group-grant gap (52-400 ms on the reporter's system) with margin;
+// a group grant cancels the hold the instant it arrives, so a real call incurs no
+// added latency — only a never-superseded notification waits the full window.
+const defaultTETRAIndividualHold = 500 * time.Millisecond
 
 // observedKey identifies a logical call for the observed-call tracker:
 // (System, talkgroup, timeslot) — the same identity HandleGrant's duplicate-
@@ -417,20 +420,27 @@ func channelKeyOf(g Grant) channelKey {
 	return channelKey{system: g.System, freq: g.FrequencyHz, ts: g.Timeslot}
 }
 
-// isTETRAWakeupPage reports whether g is a TETRA individual-addressed page with
-// no source — the Energy-Economy wakeup frame that precedes a group grant and
-// must not be spawned as a private call. A flushed page (heldFromWakeup) still
-// matches this shape; callers gate on heldFromWakeup separately where it matters.
-func isTETRAWakeupPage(g Grant) bool {
-	return g.Protocol == "tetra" && g.Individual && g.SourceID == 0
+// isTETRANotificationGrant reports whether g is a TETRA source-less notification
+// grant: the SwMI announces an imminent transmission (an Energy-Economy wakeup
+// page, or a group-call notification) with no calling party yet, addressed to the
+// paged radio's SSI. It is followed ~50-400 ms later by the authoritative group
+// grant (source populated, dst = GSSI). The reliable signature is SourceID==0 —
+// NOT the Individual flag: classifyParties only sets Individual=true once the SSI
+// is already known as a party, so the FIRST notification for a radio is published
+// individual=false and would otherwise slip past the hold. A genuine unit-to-unit
+// call carries its caller (SourceID!=0), so it is never a notification. A flushed
+// notification (heldFromWakeup) still matches this shape; callers gate on
+// heldFromWakeup separately where it matters. Data calls are excluded.
+func isTETRANotificationGrant(g Grant) bool {
+	return g.Protocol == "tetra" && g.SourceID == 0 && !g.DataCall
 }
 
-// holdWakeupPage parks a wakeup page for tetraIndividualHold, arming a timer to
-// flush it if no authoritative group grant supersedes it first. A repeat page
-// for a channel already held refreshes the stored grant without re-arming, so
-// the original deadline still governs (the page → group gap is fixed regardless
-// of how many page repeats arrive).
-func (e *Engine) holdWakeupPage(g Grant) {
+// holdNotificationGrant parks a source-less notification for tetraIndividualHold,
+// arming a timer to flush it if no authoritative group grant supersedes it first.
+// A repeat notification for a channel already held refreshes the stored grant
+// without re-arming, so the original deadline still governs (the notification →
+// group gap is fixed regardless of how many repeats arrive).
+func (e *Engine) holdNotificationGrant(g Grant) {
 	key := channelKeyOf(g)
 	e.mu.Lock()
 	if h := e.held[key]; h != nil {
@@ -450,14 +460,14 @@ func (e *Engine) holdWakeupPage(g Grant) {
 	})
 	e.held[key] = h
 	e.mu.Unlock()
-	e.log.Debug("tetra: holding individual wakeup page for a group grant",
+	e.log.Debug("tetra: holding source-less notification grant for a group grant",
 		"grant", g.String(), "hold", e.tetraIndividualHold)
 }
 
-// dropHeldIndividual cancels and discards any held wakeup page for key. Called
-// when an authoritative grant for the same channel arrives (the page is
+// dropHeldNotification cancels and discards any held notification for key. Called
+// when an authoritative grant for the same channel arrives (the notification is
 // superseded before it ever spawned a call) and on shutdown.
-func (e *Engine) dropHeldIndividual(key channelKey) {
+func (e *Engine) dropHeldNotification(key channelKey) {
 	e.mu.Lock()
 	h := e.held[key]
 	if h != nil {
@@ -468,15 +478,18 @@ func (e *Engine) dropHeldIndividual(key channelKey) {
 		if h.timer != nil {
 			h.timer.Stop()
 		}
-		e.log.Debug("tetra: cancelled held wakeup page (superseded by group grant)",
+		e.log.Debug("tetra: cancelled held notification grant (superseded by group grant)",
 			"grant", h.grant.String())
 	}
 }
 
-// flushHeldGrant re-dispatches a wakeup page whose hold window expired with no
-// authoritative group grant to supersede it — a genuine unit-to-unit individual
-// call, which now allocates (heldFromWakeup skips the hold on re-entry). Runs on
-// the Run goroutine via heldFlush. A no-op if the page was already cancelled.
+// flushHeldGrant handles a notification whose hold window expired with no
+// authoritative group grant to supersede it. If the destination is a known radio
+// SSI, this was a wakeup page for a call whose group grant we never saw — recording
+// under the radio ID is the leak the hold exists to prevent, so it is discarded.
+// Otherwise the destination is a real talkgroup (GSSI) or a genuinely-unknown
+// target, so it allocates (heldFromWakeup skips the hold on re-entry). Runs on the
+// Run goroutine via heldFlush. A no-op if the notification was already cancelled.
 func (e *Engine) flushHeldGrant(key channelKey) {
 	e.mu.Lock()
 	h := e.held[key]
@@ -488,8 +501,15 @@ func (e *Engine) flushHeldGrant(key channelKey) {
 		return
 	}
 	g := h.grant
+	if e.isKnownRadio(g.GroupID) {
+		// Destination is a learned radio ID — a notification whose group grant was
+		// missed/too-late. Do NOT record under the radio ID (that is the leak).
+		e.log.Debug("tetra: dropping held notification to a known radio (no group grant superseded it)",
+			"grant", g.String())
+		return
+	}
 	g.heldFromWakeup = true
-	e.log.Debug("tetra: flushing held wakeup page (no group grant superseded it)",
+	e.log.Debug("tetra: flushing held notification grant (no group grant superseded it)",
 		"grant", g.String())
 	e.HandleGrant(g)
 }
@@ -511,13 +531,13 @@ func (e *Engine) HandleGrant(g Grant) {
 	if g.Individual {
 		e.noteRadio(g.GroupID, g.System)
 	}
-	// Cancel a parked TETRA wakeup-page hold on this channel the moment any
-	// non-page grant for the same physical channel arrives — the authoritative
-	// group grant (or any other real allocation) has landed, so the page must not
-	// spawn its ghost call. A page repeat (still a wakeup page) leaves the hold in
-	// place; it is refreshed in the hold block below. See held/heldGrant.
-	if !isTETRAWakeupPage(g) {
-		e.dropHeldIndividual(channelKeyOf(g))
+	// Cancel a parked TETRA notification hold on this channel the moment any
+	// authoritative (source-bearing) grant for the same physical channel arrives —
+	// the real group grant has landed, so the notification must not spawn its ghost
+	// call. A notification repeat (still source-less) leaves the hold in place; it
+	// is refreshed in the hold block below. See held/heldGrant.
+	if !isTETRANotificationGrant(g) {
+		e.dropHeldNotification(channelKeyOf(g))
 	}
 	tg := e.talkgroups.Lookup(g.GroupID)
 	if tg == nil && g.GroupID != 0 && !g.Individual && !e.isKnownRadio(g.GroupID) {
@@ -754,17 +774,18 @@ func (e *Engine) HandleGrant(g Grant) {
 		}
 	}
 
-	// Hold a TETRA wakeup page. Reaching here means no active call and no fold
-	// matched this channel, so an individual-addressed page (individual=true, no
-	// source) would spawn a fresh call + a WAV directory named after the paged
-	// radio SSI. Park it for tetraIndividualHold instead: the authoritative group
-	// grant that follows a real group call (~160 ms later) cancels it via the
-	// drop above, and only a page that is never superseded — a genuine unit-to-
-	// unit call — is flushed to allocation when the window expires. A repeat page
-	// refreshes the existing hold without re-arming. heldFromWakeup grants have
-	// already served their window and fall through to allocate.
-	if isTETRAWakeupPage(g) && !g.heldFromWakeup {
-		e.holdWakeupPage(g)
+	// Hold a TETRA source-less notification grant. Reaching here means no active
+	// call and no fold matched this channel, so a notification (SourceID==0,
+	// regardless of the Individual flag) would spawn a fresh call + a WAV directory
+	// named after its destination SSI — a ghost when that destination is the paged
+	// radio. Park it for tetraIndividualHold instead: the authoritative group grant
+	// that follows (~50-400 ms later) cancels it via the drop above; a notification
+	// never superseded is resolved at flush (dropped if it targets a known radio,
+	// else allocated under a real GSSI). A repeat notification refreshes the hold
+	// without re-arming. heldFromWakeup grants have already served their window and
+	// fall through to allocate.
+	if isTETRANotificationGrant(g) && !g.heldFromWakeup {
+		e.holdNotificationGrant(g)
 		return
 	}
 
@@ -1315,7 +1336,7 @@ func (e *Engine) runWatchdog() {
 }
 
 func (e *Engine) shutdown() {
-	// Cancel any parked wakeup-page timers so they can't fire into a torn-down
+	// Cancel any parked notification-hold timers so they can't fire into a torn-down
 	// engine (their flush is a no-op once Run has exited, but stopping the timers
 	// releases the goroutines promptly).
 	e.mu.Lock()
