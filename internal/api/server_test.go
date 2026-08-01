@@ -19,12 +19,14 @@ import (
 )
 
 type fakeEngine struct {
-	calls    []*trunking.ActiveCall
-	observed []*trunking.ActiveCall
+	calls       []*trunking.ActiveCall
+	observed    []*trunking.ActiveCall
+	knownRadios map[uint32]bool
 }
 
 func (f *fakeEngine) ActiveCalls() []*trunking.ActiveCall   { return f.calls }
 func (f *fakeEngine) ObservedCalls() []*trunking.ActiveCall { return f.observed }
+func (f *fakeEngine) IsKnownRadio(id uint32) bool           { return f.knownRadios[id] }
 
 // mkServer wires a Server on a random localhost port and returns the
 // base URL plus a teardown function.
@@ -164,6 +166,54 @@ func TestListAndGetSystems(t *testing.T) {
 	defer resp3.Body.Close()
 	if resp3.StatusCode != 404 {
 		t.Errorf("missing system status = %d, want 404", resp3.StatusCode)
+	}
+}
+
+// TestListTalkgroupsFiltersPhantoms pins the /#/talkgroups phantom filtering:
+// an auto-discovered entry whose id is a known subscriber radio is never shown
+// (the RadioID→TGID leak), and ?discovered=false collapses the remaining
+// auto-discovered entries while always keeping curated ones.
+func TestListTalkgroupsFiltersPhantoms(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	db := trunking.NewTalkgroupDB()
+	db.Add(&trunking.TalkGroup{ID: 100, AlphaTag: "OPS-1"})               // curated
+	db.Add(&trunking.TalkGroup{ID: 1020539, Tag: trunking.DiscoveredTag}) // real discovered TG
+	db.Add(&trunking.TalkGroup{ID: 1009311, Tag: trunking.DiscoveredTag}) // leaked radio ID
+	eng := &fakeEngine{knownRadios: map[uint32]bool{1009311: true}}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Talkgroups: db, Engine: eng})
+	defer teardown()
+
+	ids := func(url string) map[uint32]bool {
+		resp := mustGet(t, url)
+		defer resp.Body.Close()
+		var body struct {
+			Talkgroups []TalkgroupDTO `json:"talkgroups"`
+		}
+		json.NewDecoder(resp.Body).Decode(&body)
+		got := map[uint32]bool{}
+		for _, tg := range body.Talkgroups {
+			got[tg.ID] = true
+		}
+		return got
+	}
+
+	// Default: the known-radio phantom is hidden; curated + real discovered show.
+	def := ids(base + "/api/v1/talkgroups")
+	if def[1009311] {
+		t.Errorf("known-radio phantom 1009311 must never be listed")
+	}
+	if !def[100] || !def[1020539] {
+		t.Errorf("curated 100 and real discovered 1020539 should be listed, got %v", def)
+	}
+
+	// discovered=false collapses auto-discovered entries but keeps curated ones.
+	hid := ids(base + "/api/v1/talkgroups?discovered=false")
+	if hid[1020539] || hid[1009311] {
+		t.Errorf("discovered=false must hide all discovered entries, got %v", hid)
+	}
+	if !hid[100] {
+		t.Errorf("curated 100 must remain when discovered=false, got %v", hid)
 	}
 }
 

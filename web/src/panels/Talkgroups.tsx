@@ -28,6 +28,7 @@ export function Talkgroups() {
   const setTalkgroups = useShared((s) => s.setTalkgroups);
   const [selected, setSelected] = useState<TalkgroupDTO | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hideDiscovered, setHideDiscovered] = useState(false);
 
   const { stale, lastUpdated } = useDataPoll({
     fetcher: () => api.talkgroups(cfg),
@@ -99,11 +100,24 @@ export function Talkgroups() {
             {r.priority != null && r.priority > 0 && (
               <Badge tone="warn">pri</Badge>
             )}
+            {r.discovered && <Badge tone="neutral">discovered</Badge>}
           </div>
         ),
       },
     ],
     [],
+  );
+
+  // Auto-discovered entries self-populate from the air; the operator can hide
+  // them to collapse phantom radio-ID leaks that slipped past the backend
+  // known-radio filter. Curated entries are always shown.
+  const discoveredCount = useMemo(
+    () => talkgroups.filter((t) => t.discovered).length,
+    [talkgroups],
+  );
+  const visibleTalkgroups = useMemo(
+    () => (hideDiscovered ? talkgroups.filter((t) => !t.discovered) : talkgroups),
+    [talkgroups, hideDiscovered],
   );
 
   return (
@@ -113,15 +127,25 @@ export function Talkgroups() {
         actions={
           <>
             <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            {discoveredCount > 0 && (
+              <label className="flex items-center gap-1 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={hideDiscovered}
+                  onChange={(e) => setHideDiscovered(e.target.checked)}
+                />
+                Hide auto-discovered ({discoveredCount})
+              </label>
+            )}
             <span className="text-xs text-muted">
-              {talkgroups.length} total
+              {visibleTalkgroups.length} shown
             </span>
           </>
         }
       />
 
       <DataTable
-        rows={talkgroups}
+        rows={visibleTalkgroups}
         columns={columns}
         rowKey={(r) => String(r.id)}
         defaultSortKey="id"

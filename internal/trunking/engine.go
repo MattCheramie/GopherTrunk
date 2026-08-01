@@ -427,6 +427,13 @@ func (e *Engine) isKnownRadio(ssi uint32) bool {
 	return ok
 }
 
+// IsKnownRadio reports whether ssi has been observed as a subscriber radio
+// (seen as a calling/transmitting party or an individually-addressed grant).
+// Exported so the API's Talkgroups list can suppress a phantom auto-discovered
+// entry whose id is really a radio, as a safety net for the window before
+// reactive retraction (DeleteDiscovered) removes it.
+func (e *Engine) IsKnownRadio(ssi uint32) bool { return e.isKnownRadio(ssi) }
+
 // channelKeyOf identifies the physical logical channel a grant addresses.
 func channelKeyOf(g Grant) channelKey {
 	return channelKey{system: g.System, freq: g.FrequencyHz, ts: g.Timeslot}

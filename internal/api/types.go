@@ -346,6 +346,10 @@ type TalkgroupDTO struct {
 	Record      bool   `json:"record"`
 	Mute        bool   `json:"mute"`
 	Icon        string `json:"icon,omitempty"`
+	// Discovered marks an auto-learned talkgroup (Tag == "Discovered") so the
+	// UI can badge it and offer a "hide auto-discovered" filter — the phantom
+	// radio-ID entries the operator wants collapsed.
+	Discovered bool `json:"discovered"`
 }
 
 func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
@@ -366,6 +370,7 @@ func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
 		Record:      tg.Record,
 		Mute:        tg.Mute,
 		Icon:        tg.Icon,
+		Discovered:  tg.Tag == trunking.DiscoveredTag,
 	}
 }
 
