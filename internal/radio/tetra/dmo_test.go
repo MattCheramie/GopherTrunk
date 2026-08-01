@@ -54,8 +54,8 @@ func concatDibits(parts ...[]uint8) []uint8 {
 // spec offsets.
 func TestExtractDMBurstsDSB(t *testing.T) {
 	freqCorr := ramp(0, 40)
-	schs := ramp(1, dmSCHSDibits) // 60 dibits
-	sts := SyncTrainingDibits()   // 19 dibits
+	schs := ramp(1, dmSCHSDibits)  // 60 dibits
+	sts := SyncTrainingDibits()    // 19 dibits
 	bkn2 := ramp(2, dmBlockDibits) // 108 dibits
 	prefix := ramp(3, 12)
 	suffix := ramp(3, 12)

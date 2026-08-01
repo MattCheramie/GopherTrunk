@@ -145,8 +145,8 @@ func appendDMBursts(out []DMBurst, dibits []uint8, baseIdx int, kind DMBurstKind
 		det := NewSyncDetector(rotateDibits(pattern, rot), tol)
 		hits, _ := det.Process(nil, dibits, baseIdx)
 		for _, trailing := range hits {
-			lead := trailing - (n - 1)          // absolute lead dibit
-			rel := lead - baseIdx               // index into dibits
+			lead := trailing - (n - 1) // absolute lead dibit
+			rel := lead - baseIdx      // index into dibits
 			if _, dup := seen[lead]; dup {
 				continue
 			}

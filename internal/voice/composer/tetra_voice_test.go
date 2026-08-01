@@ -562,6 +562,50 @@ func TestTETRADemuxNoLeakWhenAirConcurrentButOneOwner(t *testing.T) {
 	}
 }
 
+// TestTETRADemuxConcurrentStreamNoLeakToSoleOwner is the at-scale regression for
+// the reported cross-slot leak, streaming a realistic interleaved two-call
+// sequence — one call GT tracks (owner A on physical slot 1), one it does NOT (a
+// call on slot 2 GT never granted an owner for). Before the fix every one of the
+// untracked call's bursts funnelled through owner A's sole-owner CRC gate (a valid
+// TCH/S CRC proves a burst is speech, not whose), over-producing A's recording
+// with the other call's audio. After the fix the demux detects the two active
+// physical slots and suppresses the fallback, so A gets essentially only its own
+// speech — the untracked call's leakage is bounded to the brief concurrency-ramp
+// window, not proportional to its length.
+func TestTETRADemuxConcurrentStreamNoLeakToSoleOwner(t *testing.T) {
+	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
+	d := mkDemux(c)
+	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137)) // CRC-valid → 2 speech frames
+
+	// GT tracks call A (marker 19, physical slot 1) only. Call B (marker 20, slot 2)
+	// is on the air but has no registered owner.
+	oA, rsA := newDemuxOwner(c, "A", 19)
+	d.addOwner(oA)
+
+	const rounds = 40
+	for i := 0; i < rounds; i++ {
+		d.onBurst(frame, nil, 1, 19) // A's own burst — marker-routed to A
+		d.onBurst(frame, nil, 2, 20) // B's burst — ownerless, another physical slot
+	}
+
+	// A must get its own speech (2 frames/burst × rounds).
+	aFrames := len(rsA.rawFrames("A"))
+	own := 2 * rounds
+	if aFrames < own {
+		t.Errorf("owner A lost its own speech: %d frames, want >= %d", aFrames, own)
+	}
+	// Leakage of B is bounded to the ramp-up before both slots read as active
+	// (a few bursts per slot). It must NOT scale with the stream length.
+	maxLeakFrames := 2 * (minSlotBurstsForActive + 2)
+	if leak := aFrames - own; leak > maxLeakFrames {
+		t.Errorf("call B leaked %d frames into A's recording (want <= %d); the sole-owner fallback is not gated on on-air concurrency", leak, maxLeakFrames)
+	}
+	// Most of B's bursts were suppressed, not funnelled.
+	if got := d.concurrencySuppressed.Load(); got < uint64(rounds-minSlotBurstsForActive-2) {
+		t.Errorf("concurrencySuppressed = %d, want most of B's %d bursts suppressed", got, rounds)
+	}
+}
+
 // TestTETRADemuxMarkerCollisionCounted: two calls registering the same usage
 // marker is now counted + warned (previously a silent orphan). Most-recent-grant
 // still wins the marker (existing eviction semantics preserved).
