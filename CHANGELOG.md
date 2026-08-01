@@ -20,6 +20,28 @@ for tagged releases.
   read the source RID off the grant at call-setup time without holding an SSE
   connection or polling. Off by default; opt in per feed with a URL, optional
   `Authorization` header, and an optional system filter. Refs #915, #268.
+- **TETRA DMO (Direct Mode Operation) burst-framing foundation.** First increment
+  toward decoding TETRA's infrastructure-less peer-to-peer mode (ETSI EN 300 396-2,
+  part 2 — radio aspects): a burst detector/slicer for the Direct Mode
+  Synchronisation Burst (DSB) and Normal Burst (DNB) that recovers each burst's
+  SCH/S / BKN1 / BKN2 type-5 blocks from a demodulated dibit stream. DMO shares
+  TMO's π/4-DQPSK air interface, so this reuses the existing demod, training
+  sequences (verified against the DMO spec equations) and scrambler; only the
+  DMO-specific burst field layout is new. Not yet wired end-to-end — the DMO
+  channel decode, the EN 300 396-3 call-control protocol (source/group SSI, call
+  type), and a control-channel-less scanner ingestion path are the remaining
+  stages, and none is validated against a real DMO capture yet.
+- **TETRA recordings split per talker, so every over is attributed to its source.**
+  A group call stays on one traffic channel while members key up in turn; GT
+  recorded the whole call as one WAV tagged with only the first talker, so a reply
+  from a second member had no correctly-attributed file. The per-transmission split
+  pipeline P25 already uses (a `CallSegment` boundary rolls the recording to a fresh
+  file named from the current source) is now driven for TETRA: on a talker change
+  (D-TX-GRANTED → call talker) the engine emits the boundary before backfilling the
+  new source, so the closing file keeps the previous talker and the next over opens
+  a file named with the new one. Honors the existing `voice_call_grouping` setting
+  (default splits per transmission, matching P25; `conversation` keeps one file per
+  call). No configuration change.
 - **TETRA demodulator equalizer recovers garbled voice recordings.** On
   concurrent-load captures a residual garble survived the soft-decision TCH/S
   decode: a linear channel / ISI defect (multipath, band-edge group delay) was
@@ -240,6 +262,47 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **TETRA wakeup / notification grants spawned ghost recordings named after a
+  radio ID.** On a group call the SwMI sends a source-less notification (an
+  Energy-Economy wakeup page, `SourceID==0`, addressed to the calling party's radio
+  SSI) 50–400 ms before the authoritative group grant. The engine spawned it
+  immediately, creating a ghost call and a WAV directory named after the radio ID
+  (`recordings/<sys>/<radioSSI>/…src0…`) that was then torn down when the group
+  grant superseded it — fragmenting audio and leaking radio IDs as talkgroups. The
+  engine now holds a source-less TETRA notification for a short window (500 ms) so
+  the group grant arrives first and cancels it, spawning the one real call under
+  the GSSI. The hold keys on `SourceID==0` (not the `Individual` flag, which the
+  first notification for a radio is published without), and a notification that is
+  never superseded is dropped if it targets a known radio (else recorded under its
+  real talkgroup). A genuine unit-to-unit call carries a source, so it is never
+  held.
+- **Cross-slot audio leaked between concurrent same-carrier TETRA calls.** The
+  shared per-carrier voice demux fell back to a "sole active call" CRC gate for
+  bursts it could not route by AACH marker — but a single *registered* owner is not
+  the same as a single call on the *air*. When another slot carried a call GT was
+  not tracking as an owner (a missed grant, a call in hangtime, a wakeup-page
+  ghost), that foreign slot's speech funnelled through the one owner's CRC gate and
+  bled into its recording (a valid TCH/S CRC proves a burst is speech, not *whose*).
+  The demux now judges on-air concurrency from the SB-anchored physical TDMA slot
+  (available on ~100% of bursts, unlike the marker) and suppresses the sole-owner
+  fallback whenever two or more slots are active, so foreign speech is dropped
+  rather than mis-attributed. Clean single-call captures are unchanged.
+- **`ccdecoder: decode can't keep up… dropping IQ` (#402) fired at idle CPU on a
+  remote USRP.** The decode queue between the IQ forwarder and the decode goroutine
+  was a fixed 128-*chunk* buffer. That is only meaningful in seconds when chunks are
+  large; SoapyRemote delivers a remote USRP ~369-sample datagrams, so 128 chunks was
+  only ~47 ms at 1 MS/s — while the driver's own channel is sized for 400 ms and
+  never overflowed, producing attributable decode overruns the driver never saw. The
+  queue is now bounded by a wall-clock **sample budget** (~0.5 s) derived from the
+  sample rate, so its depth-in-seconds is invariant to how the driver chunks
+  delivery. Airspy/B210 (large native blocks) are unaffected.
+- **`ccdecoder: iq power very low` DEBUG spam while locked and decoding.** The
+  low-power hint fired whenever windowed RMS sat below −55 dBFS with no gate on lock
+  state, so a USRP/SDR run at conservative gain (~−60 dBFS, ~55 dB of unused ADC
+  headroom) that decoded TETRA cleanly logged it every few seconds. It is now gated
+  on `!locked` — a low absolute level only matters when the decoder cannot lock — and
+  throttled to 30 s to match the clip / DC-dominant siblings. The Prometheus IQ-power
+  gauge still records every window.
 - **TETRA radio IDs still surfaced as talkgroups in the live Active Calls list.**
   The engine's RadioID→TGID retraction cleaned the Talkgroups catalogue but not
   the control-only "observed" call set, which is the other half of what the

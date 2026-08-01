@@ -1251,6 +1251,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
 		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
 		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
+		// Same per-transmission grouping the voice composer uses (below): lets the
+		// engine roll a TETRA recording on a talker change so each over is
+		// attributed to its own source.
+		SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("daemon: engine: %w", err)
