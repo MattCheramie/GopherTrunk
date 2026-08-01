@@ -1861,6 +1861,17 @@ type RecordingsConfig struct {
 	// software decoding (only a DVSI hardware vocoder removes it). Off by
 	// default; affects DMR only.
 	WarmDMRAudio bool `yaml:"warm_dmr_audio"`
+	// VoiceTapBufferChunks sizes the per-consumer buffer on the same-carrier
+	// voice tap — the queue of post-DDC IQ chunks the control decoder fans to
+	// each followed TETRA call. A deeper buffer absorbs more scheduling jitter
+	// before a lagging voice consumer starts dropping IQ (the issue #402
+	// "dropped IQ to a lagging voice consumer" starvation), at a small memory
+	// cost: roughly depth × (post-DDC chunk length) × 8 bytes per active carrier
+	// (concurrent same-carrier calls share one tap consumer, so the multiplier
+	// is one, not one-per-call) — order tens to low-hundreds of KB. It is
+	// headroom for bursty stalls, not a cure for sustained CPU starvation.
+	// 0 selects the built-in default (128); the accepted range is 1..1024.
+	VoiceTapBufferChunks int `yaml:"voice_tap_buffer_chunks"`
 }
 
 // EqualizerConfig is the YAML shape of the optional CMA equalizer in
@@ -2495,6 +2506,9 @@ func validateSystem(i int, s SystemConfig) error {
 func (c Config) validateRecordings() []error {
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
 		return []error{fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)}
+	}
+	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
+		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}
 	switch c.Recordings.Normalize.ApplyTo {
 	case "", "recording", "distributed", "both":

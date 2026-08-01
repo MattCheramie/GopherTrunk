@@ -1790,6 +1790,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					// output the decoder sees) to WAV — small, shareable, and
 					// replayable with `replay -format wav`.
 					DDCRecordDir: ddcRecordDirForSerial(cfg, controlEntry.Info.Serial),
+					// Same-carrier voice-tap buffer depth (issue #402); 0 → the
+					// decoder's built-in default.
+					VoiceTapBufferChunks: cfg.Recordings.VoiceTapBufferChunks,
 				}
 				d.controlSerial = controlEntry.Info.Serial
 				// The CC decoder owns StreamIQ on this dongle's broker,
