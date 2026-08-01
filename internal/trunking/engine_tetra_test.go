@@ -13,15 +13,15 @@ func noFireAfterFunc(d time.Duration, f func()) *time.Timer {
 	return time.AfterFunc(time.Hour, f)
 }
 
-// TestEngineTETRAWakeupPageHeldUntilGroupGrant is the regression for the
-// Energy-Economy wakeup-page bug (Discord report + attached bug report): the SwMI
-// sends an individual-addressed page (individual=true, no source, dst = the
-// calling party's radio SSI) ~160 ms before the authoritative group grant.
-// Spawning the page immediately created a ghost call + a WAV directory named
-// after the radio ID, torn down when the group grant superseded it. The page must
-// instead be held so no ghost is ever created, and the group grant then starts
-// the one true call under the GSSI.
-func TestEngineTETRAWakeupPageHeldUntilGroupGrant(t *testing.T) {
+// TestEngineTETRANotificationHeldUntilGroupGrant is the regression for the
+// source-less notification bug (Discord reports + attached bug report): the SwMI
+// sends a notification (no source, dst = the calling party's radio SSI) 50-400 ms
+// before the authoritative group grant. Spawning it immediately created a ghost
+// call + a WAV directory named after the radio ID, torn down when the group grant
+// superseded it. Crucially the FIRST notification for a radio is published
+// individual=FALSE (classifyParties only learns the SSI is a party later), so the
+// hold must trigger on SourceID==0, NOT the Individual flag.
+func TestEngineTETRANotificationHeldUntilGroupGrant(t *testing.T) {
 	e, pool, bus, _ := mkEngine(t, 2)
 	defer bus.Close()
 	e.afterFunc = noFireAfterFunc
@@ -32,14 +32,15 @@ func TestEngineTETRAWakeupPageHeldUntilGroupGrant(t *testing.T) {
 		issi = uint32(1005750) // paged radio ID (leaks as a phantom talkgroup today)
 		gssi = uint32(1020545) // the real talkgroup
 	)
-	// The wakeup page. Before the fix this spawns a ghost call under the radio SSI.
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: ts, Individual: true, TETRAUsageMarker: 8})
+	// The notification — individual=FALSE (the common first-sighting case), no
+	// source. Before the fix this spawns a ghost call under the radio SSI.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: ts, TETRAUsageMarker: 8})
 	if n := len(pool.Active()); n != 0 {
-		t.Fatalf("active calls after wakeup page = %d, want 0 (the page must be held, not spawned)", n)
+		t.Fatalf("active calls after notification = %d, want 0 (must be held, not spawned)", n)
 	}
 
 	// The authoritative group grant lands within the hold window: it cancels the
-	// held page and starts the one real call under the GSSI.
+	// held notification and starts the one real call under the GSSI.
 	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: gssi, SourceID: issi, FrequencyHz: freq, Timeslot: ts, TETRAUsageMarker: 23})
 	act := pool.Active()
 	if len(act) != 1 {
@@ -53,11 +54,11 @@ func TestEngineTETRAWakeupPageHeldUntilGroupGrant(t *testing.T) {
 	}
 }
 
-// TestEngineTETRAWakeupPageFlushesWithoutGroupGrant guards that a genuine
-// unit-to-unit individual call — an individual page that no group grant ever
-// supersedes — still records once the hold window expires, so the hold does not
-// silently drop private calls.
-func TestEngineTETRAWakeupPageFlushesWithoutGroupGrant(t *testing.T) {
+// TestEngineTETRANotificationToKnownRadioDropped guards that a held notification
+// targeting a KNOWN radio SSI that no group grant ever supersedes is DROPPED at
+// flush, not recorded under the radio ID — recording under a radio ID is exactly
+// the leak the hold exists to prevent.
+func TestEngineTETRANotificationToKnownRadioDropped(t *testing.T) {
 	e, pool, bus, _ := mkEngine(t, 2)
 	defer bus.Close()
 	e.afterFunc = noFireAfterFunc
@@ -65,22 +66,49 @@ func TestEngineTETRAWakeupPageFlushesWithoutGroupGrant(t *testing.T) {
 	const (
 		freq = uint32(467_912_500)
 		ts   = uint8(1)
-		issi = uint32(1005750) // the individually-called radio
+		issi = uint32(1005750) // a radio the engine has already learned
 	)
-	page := Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: ts, Individual: true}
+	e.noteRadio(issi, "X") // learned from an earlier call's source
+	page := Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: ts}
 	e.HandleGrant(page)
 	if n := len(pool.Active()); n != 0 {
-		t.Fatalf("active calls after page = %d, want 0 (held)", n)
+		t.Fatalf("active calls after notification = %d, want 0 (held)", n)
 	}
 
-	// The hold window expires with no group grant: the flush allocates the call.
+	// Flush with no group grant: destination is a known radio → dropped, not recorded.
+	e.flushHeldGrant(channelKeyOf(page))
+	if n := len(pool.Active()); n != 0 {
+		t.Fatalf("active calls after flush = %d, want 0 (notification to a known radio must not record)", n)
+	}
+}
+
+// TestEngineTETRANotificationToTalkgroupFlushes guards the legitimate case: a
+// source-less notification addressed to a real talkgroup (not a known radio) that
+// no group grant supersedes still records under that talkgroup once the window
+// expires — the hold must not silently drop a real (if unattributed) group call.
+func TestEngineTETRANotificationToTalkgroupFlushes(t *testing.T) {
+	e, pool, bus, _ := mkEngine(t, 2)
+	defer bus.Close()
+	e.afterFunc = noFireAfterFunc
+
+	const (
+		freq = uint32(467_912_500)
+		ts   = uint8(1)
+		gssi = uint32(1020545) // a talkgroup — never learned as a radio
+	)
+	page := Grant{System: "X", Protocol: "tetra", GroupID: gssi, FrequencyHz: freq, Timeslot: ts}
+	e.HandleGrant(page)
+	if n := len(pool.Active()); n != 0 {
+		t.Fatalf("active calls after notification = %d, want 0 (held)", n)
+	}
+
 	e.flushHeldGrant(channelKeyOf(page))
 	act := pool.Active()
 	if len(act) != 1 {
-		t.Fatalf("active calls after flush = %d, want 1 (unit-to-unit call must record)", len(act))
+		t.Fatalf("active calls after flush = %d, want 1 (talkgroup call must record)", len(act))
 	}
-	if got := act[0].Grant.GroupID; got != issi {
-		t.Errorf("flushed call destination = %d, want %d", got, issi)
+	if got := act[0].Grant.GroupID; got != gssi {
+		t.Errorf("flushed call talkgroup = %d, want %d", got, gssi)
 	}
 }
 
@@ -163,8 +191,10 @@ func TestEngineTETRAConcurrentSlotsStayDistinct(t *testing.T) {
 	e, pool, bus, _ := mkEngine(t, 2)
 	defer bus.Close()
 
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, FrequencyHz: 467_912_500, Timeslot: 1})
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 200, FrequencyHz: 467_912_500, Timeslot: 2})
+	// Authoritative group grants (source-bearing) on distinct timeslots: both spawn
+	// immediately and must not fold into one.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 100, SourceID: 501, FrequencyHz: 467_912_500, Timeslot: 1})
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 200, SourceID: 502, FrequencyHz: 467_912_500, Timeslot: 2})
 
 	if n := len(pool.Active()); n != 2 {
 		t.Fatalf("active calls = %d, want 2 (distinct timeslots are distinct calls)", n)
