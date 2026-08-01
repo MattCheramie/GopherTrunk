@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Push grant webhook (`broadcast.grant_webhook`).** A new outbound sink POSTs
+  one JSON object per control-channel grant the moment GopherTrunk decodes it —
+  the push counterpart to the pollable `GET /api/v1/grants` and the live
+  `KindGrant` SSE stream, all on one schema. The payload carries the grant as
+  decoded (system, protocol, talkgroup, source RID, frequency, P25 site
+  identity, timeslot, encryption + algorithm/key), stamped with the decode time.
+  Grants are coverage-truthful: a grant whose TSBK carried `source_id=0` is sent
+  with `source_id=0`, never backfilled — so the feed reports exactly what the
+  control channel saw, the way SDRtrunk's grant log does, letting a consumer
+  read the source RID off the grant at call-setup time without holding an SSE
+  connection or polling. Off by default; opt in per feed with a URL, optional
+  `Authorization` header, and an optional system filter. Refs #915, #268.
 - **TETRA demodulator equalizer recovers garbled voice recordings.** On
   concurrent-load captures a residual garble survived the soft-decision TCH/S
   decode: a linear channel / ISI defect (multipath, band-edge group delay) was

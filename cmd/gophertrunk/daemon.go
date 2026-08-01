@@ -405,6 +405,7 @@ type Daemon struct {
 	iqAutoRec    *iqAutoRecorder
 	iqAutoRecSub *events.Subscription
 	broadcast    *broadcast.Manager
+	grantHooks   []*broadcast.GrantWebhook
 	composer     *composer.Composer
 	player       *player.Player
 	toneout      *toneout.Detector
@@ -1357,6 +1358,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if mgr != nil {
 			d.broadcast = mgr
 			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
+		}
+	}
+
+	// Push grant-webhook sinks — optional. Each POSTs one JSON object per
+	// decoded control-channel grant (the push form of GET /api/v1/grants,
+	// issue #915 / #268). Subscribes to the bus at construction so grants
+	// decoded before Run starts are not lost. Built only when at least one
+	// feed is enabled.
+	{
+		hooks, err := buildGrantWebhooks(cfg.Broadcast, d.bus, dispLoc, log)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: grant webhook: %w", err)
+		}
+		if len(hooks) > 0 {
+			d.grantHooks = hooks
+			log.Info("grant webhook sinks enabled", "count", len(hooks))
 		}
 	}
 
@@ -2828,6 +2845,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.broadcast.Run(ctx)
 		})
 	}
+	for _, h := range d.grantHooks {
+		h := h
+		d.spawn(runCtx, "grant-webhook", false, func(ctx context.Context) error {
+			return h.Run(ctx)
+		})
+	}
 	if d.composer != nil {
 		d.spawn(runCtx, "composer", false, func(ctx context.Context) error {
 			return d.composer.Run(ctx)
@@ -3441,6 +3464,9 @@ func (d *Daemon) Close() {
 		}
 		if d.broadcast != nil {
 			_ = d.broadcast.Close()
+		}
+		for _, h := range d.grantHooks {
+			_ = h.Close()
 		}
 		// Closes the file recorder or the decode-only recorder (same object
 		// when recording; voiceDecoder is a superset of recorder).

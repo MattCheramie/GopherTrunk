@@ -128,3 +128,38 @@ func buildBroadcastManager(cfg config.BroadcastConfig, normCfg config.NormalizeC
 		Normalize:   normalize,
 	})
 }
+
+// buildGrantWebhooks constructs the push grant-webhook sinks from config —
+// one per enabled feed. It returns nil when none are enabled, so the daemon
+// simply skips the subsystem. Each sink subscribes to the bus at construction
+// (so grants decoded before Run starts are not lost) and POSTs the GrantDTO
+// schema per control-channel grant (issue #915 / #268).
+func buildGrantWebhooks(cfg config.BroadcastConfig, bus *events.Bus, loc *time.Location, log *slog.Logger) ([]*broadcast.GrantWebhook, error) {
+	var hooks []*broadcast.GrantWebhook
+	for _, f := range cfg.GrantWebhook {
+		if !f.Enabled {
+			continue
+		}
+		h, err := broadcast.NewGrantWebhook(broadcast.GrantWebhookOptions{
+			Bus: bus,
+			Log: log,
+			Config: broadcast.GrantWebhookConfig{
+				Name:       f.Name,
+				URL:        f.URL,
+				AuthHeader: f.AuthHeader,
+				Systems:    f.Systems,
+				Loc:        loc,
+			},
+		})
+		if err != nil {
+			// Close any already-built sinks so their bus subscriptions
+			// don't leak on a partial failure.
+			for _, done := range hooks {
+				_ = done.Close()
+			}
+			return nil, err
+		}
+		hooks = append(hooks, h)
+	}
+	return hooks, nil
+}

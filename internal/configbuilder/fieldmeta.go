@@ -345,6 +345,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BroadcastConfig.OpenMHz":         {Label: "OpenMHz", Help: "OpenMHz upload feeds."},
 	"BroadcastConfig.Icecast":         {Help: "Live Icecast/ShoutCast mountpoint feeds."},
 	"BroadcastConfig.Webhook":         {Help: "Generic JSON-webhook call sinks: POST one JSON object per completed call."},
+	"BroadcastConfig.GrantWebhook":    {Help: "Push grant-webhook sinks: POST one JSON object per control-channel grant as it is decoded (the push form of GET /api/v1/grants)."},
 	"BroadcastifyFeedConfig.Enabled":  {Help: "Enable this feed. false keeps it configured but skipped."},
 	"BroadcastifyFeedConfig.Name":     {Help: "Feed label for logs/metrics."},
 	"BroadcastifyFeedConfig.APIKey":   {Label: "API key", Help: "Broadcastify Calls API key."},
@@ -376,6 +377,12 @@ var fieldMetas = map[string]FieldMeta{
 	"WebhookFeedConfig.AuthHeader":    {Label: "Auth header", Help: "Sent verbatim as the Authorization header (e.g. 'Bearer <token>'). Empty omits it."},
 	"WebhookFeedConfig.IncludeAudio":  {Help: "Embed the base64 MP3 in the payload. Off keeps the webhook a lightweight metadata feed."},
 	"WebhookFeedConfig.Systems":       {Help: "GopherTrunk system names to stream. Empty = every system."},
+
+	"GrantWebhookFeedConfig.Enabled":    {Help: "Enable this feed. false keeps it configured but skipped."},
+	"GrantWebhookFeedConfig.Name":       {Help: "Feed label for logs/metrics."},
+	"GrantWebhookFeedConfig.URL":        {Label: "URL", Help: "Endpoint each decoded control-channel grant is POSTed to as JSON."},
+	"GrantWebhookFeedConfig.AuthHeader": {Label: "Auth header", Help: "Sent verbatim as the Authorization header (e.g. 'Bearer <token>'). Empty omits it."},
+	"GrantWebhookFeedConfig.Systems":    {Help: "GopherTrunk system names to stream. Empty = every system."},
 
 	// ---- Baseband ----------------------------------------------------------
 	"BasebandConfig.Record":       {Help: "Tap tuners and write their IQ to WAV (wideband or narrowband DDC output)."},

@@ -1285,6 +1285,24 @@ broadcast:
   #     include_audio: false               # true embeds the base64 MP3 in each POST
   #     systems: ["Metro P25"]             # empty = every system
 
+  # Push grant webhook: POST one JSON object per control-channel grant the
+  # moment it is decoded — the push form of GET /api/v1/grants (issue #915).
+  # The payload is the same grant schema the REST snapshot and the KindGrant
+  # SSE stream use (system, protocol, group_id, source_id, frequency_hz, P25
+  # site identity, timeslot, encryption + algorithm_id/key_id, plus an `at`
+  # decode timestamp). Grants are surfaced exactly as decoded: a grant whose
+  # TSBK carried source_id=0 is POSTed with source_id=0, never backfilled — the
+  # source RID rides the grant at call-setup time the way SDRtrunk's grant log
+  # reads it, letting a consumer retire a separate grant-log dependency. Unlike
+  # the per-call webhook this carries no audio (a grant is a control-channel
+  # event, not a recording), and it is independent of recordings.skip_encrypted.
+  # grant_webhook:
+  #   - enabled: true
+  #     name: "grant-log"
+  #     url: "https://example.org/gophertrunk/grants"
+  #     auth_header: "Bearer YOUR_TOKEN"   # sent verbatim as Authorization; omit to disable
+  #     systems: ["Metro P25"]             # empty = every system
+
 # Baseband (IQ) recording and offline replay. `record` taps a tuner and
 # writes IQ to a two-channel 16-bit WAV (the same layout SDRtrunk/SDR++ use);
 # `replay` mounts recorded WAVs as virtual tuners so a capture can be decoded

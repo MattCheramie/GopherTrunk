@@ -622,6 +622,11 @@ type BroadcastConfig struct {
 	OpenMHz      []OpenMHzFeedConfig      `yaml:"openmhz"`
 	Icecast      []IcecastFeedConfig      `yaml:"icecast"`
 	Webhook      []WebhookFeedConfig      `yaml:"webhook"`
+	// GrantWebhook lists zero or more push grant-webhook sinks. Each POSTs
+	// one JSON object per control-channel grant as it is decoded — the push
+	// form of GET /api/v1/grants (issue #915 / #268). A feed with
+	// enabled=false is parsed but skipped.
+	GrantWebhook []GrantWebhookFeedConfig `yaml:"grant_webhook"`
 }
 
 // BroadcastifyFeedConfig is one Broadcastify Calls upload feed.
@@ -665,6 +670,22 @@ type WebhookFeedConfig struct {
 	// keeps the webhook a lightweight metadata feed.
 	IncludeAudio bool     `yaml:"include_audio"`
 	Systems      []string `yaml:"systems"`
+}
+
+// GrantWebhookFeedConfig is one push grant-webhook sink: each control-channel
+// grant is POSTed as one JSON object to URL as it is decoded (issue #915 /
+// #268). The payload is the same GrantDTO schema GET /api/v1/grants and the
+// KindGrant SSE stream publish, so a consumer reads one schema across all
+// three. Unlike the per-call webhook it carries no audio — a grant is a
+// control-channel event, not a recording.
+type GrantWebhookFeedConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Name    string `yaml:"name"`
+	URL     string `yaml:"url"`
+	// AuthHeader is sent verbatim as the Authorization header (e.g.
+	// "Bearer <token>"). Empty omits the header.
+	AuthHeader string   `yaml:"auth_header"`
+	Systems    []string `yaml:"systems"`
 }
 
 // IcecastFeedConfig is one live Icecast/ShoutCast feed.
@@ -2808,6 +2829,14 @@ func (b BroadcastConfig) validate() error {
 		}
 		if f.URL == "" {
 			return fmt.Errorf("broadcast.webhook[%d]: url required", i)
+		}
+	}
+	for i, f := range b.GrantWebhook {
+		if !f.Enabled {
+			continue
+		}
+		if f.URL == "" {
+			return fmt.Errorf("broadcast.grant_webhook[%d]: url required", i)
 		}
 	}
 	return nil
