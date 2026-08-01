@@ -101,6 +101,9 @@ type Engine struct {
 	// it targets a known radio, else allocated under a real GSSI). Keyed by physical
 	// channel; guarded by mu.
 	held map[channelKey]*heldGrant
+	// splitTx mirrors EngineOptions.SplitPerTransmission — emit a per-transmission
+	// segment on a TETRA talker change. Read-only after NewEngine.
+	splitTx bool
 	// heldFlush marshals an expired hold back onto the engine's single grant-
 	// processing goroutine (the Run loop). The afterFunc timer fires on its own
 	// goroutine, so it cannot call HandleGrant directly without racing Run; it
@@ -183,6 +186,14 @@ type EngineOptions struct {
 	// IDs. Calls whose KeyID matches are exempt from the encrypted-call
 	// policy (always followed). nil disables the exemption. Issue #711.
 	ConfiguredKeys map[string]map[uint16]bool
+	// SplitPerTransmission mirrors the voice composer's per-transmission
+	// grouping (trunking.voice_call_grouping != "conversation"). When set, the
+	// engine emits a KindCallSegment on a TETRA talker change so each over is
+	// recorded to its own file named with the new talker's source — the same
+	// per-transmission split P25 Phase 1 gets from its traffic-channel terminator,
+	// which the TETRA traffic path cannot see (the over boundary arrives on the
+	// control channel as D-TX-GRANTED). Default false keeps one file per call.
+	SplitPerTransmission bool
 }
 
 // defaultEncryptedMetadataFollow is the metadata-mode follow window
@@ -240,6 +251,7 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 		synthetic:      make(map[string]*ActiveCall),
 		observed:       make(map[string]*ActiveCall),
 
+		splitTx:             opts.SplitPerTransmission,
 		held:                make(map[channelKey]*heldGrant),
 		heldFlush:           make(chan channelKey, 64),
 		afterFunc:           time.AfterFunc,
@@ -996,11 +1008,33 @@ func (e *Engine) handleCallRelease(r CallRelease) {
 // call(s) for (System, GroupID), reusing the KindCallSourceUpdate path (keyed by
 // the resolved device serial). A talker update for an unfollowed call resolves
 // to no serials and is a no-op.
+//
+// When per-transmission grouping is enabled, a genuine talker change on a TETRA
+// call (a new member keying up on the same channel — the reporter's "second
+// person replying") also rolls the recording to a fresh file: emit a
+// KindCallSegment BEFORE the source backfill so the recorder closes the current
+// file (still tagged the previous talker) and the next over opens a file named
+// with the new talker. This is the split P25 Phase 1 gets from its traffic-channel
+// terminator; TETRA's over boundary (D-TX-GRANTED) only surfaces here on the
+// control channel, so the engine is the one place that can drive it.
 func (e *Engine) handleCallTalker(t CallTalker) {
 	if t.SourceID == 0 {
 		return
 	}
 	for _, ac := range e.callsBySystemGroup(t.System, t.GroupID) {
+		if e.splitTx && ac.Grant.Protocol == "tetra" &&
+			ac.Grant.SourceID != 0 && ac.Grant.SourceID != t.SourceID {
+			// A real talker change on a live call — split the recording so each
+			// over is attributed to its own source. Emit before the source update
+			// so the closing file keeps the prior talker's id.
+			e.bus.Publish(events.Event{
+				Kind:    events.KindCallSegment,
+				Payload: CallSegment{DeviceSerial: ac.Device.Serial, At: t.At},
+			})
+			e.log.Debug("tetra: talker change — rolling recording to new transmission",
+				"device", ac.Device.Serial, "tg", t.GroupID,
+				"prev_src", ac.Grant.SourceID, "new_src", t.SourceID)
+		}
 		e.handleCallSourceUpdate(CallSourceUpdate{
 			DeviceSerial: ac.Device.Serial,
 			SourceID:     t.SourceID,

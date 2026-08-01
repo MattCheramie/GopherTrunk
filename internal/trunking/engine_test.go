@@ -1676,3 +1676,85 @@ func TestEngineHandleCallTalkerUpdatesSource(t *testing.T) {
 		t.Errorf("source update = %+v, want src 4242 group 100", *upd)
 	}
 }
+
+// TestEngineTETRATalkerChangeSplitsRecording is the regression for the
+// "missing second srcID" report: a TETRA group call stays on one channel while a
+// second member keys up (a reply). With per-transmission grouping the engine must
+// roll the recording to a fresh file on the talker change — emitting a
+// KindCallSegment (for the bound device) BEFORE the source backfill — so each over
+// is attributed to its own talker instead of the whole call keeping the first src.
+func TestEngineTETRATalkerChangeSplitsRecording(t *testing.T) {
+	e, pool, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	e.splitTx = true
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020545, SourceID: 1005736, FrequencyHz: 467_912_500, Timeslot: 2})
+	if len(pool.Active()) != 1 {
+		t.Fatalf("precondition: want 1 active call, got %d", len(pool.Active()))
+	}
+	serial := pool.Active()[0].Device.Serial
+
+	// A different member replies on the same call → talker change.
+	e.handleCallTalker(CallTalker{System: "X", GroupID: 1020545, SourceID: 1005526})
+
+	c := &testBusCollector{}
+	evs := c.drain(sub, 6, 500*time.Millisecond)
+	segAt, srcAt := -1, -1
+	for i, ev := range evs {
+		switch ev.Kind {
+		case events.KindCallSegment:
+			if seg, ok := ev.Payload.(CallSegment); ok && seg.DeviceSerial == serial {
+				segAt = i
+			}
+		case events.KindCallSourceUpdate:
+			if u, ok := ev.Payload.(CallSourceUpdate); ok && u.System != "" && u.SourceID == 1005526 {
+				srcAt = i
+			}
+		}
+	}
+	if segAt < 0 {
+		t.Fatal("no KindCallSegment published on the TETRA talker change (recording not split per talker)")
+	}
+	if srcAt < 0 {
+		t.Fatal("no enriched source update for the new talker")
+	}
+	if segAt > srcAt {
+		t.Errorf("segment (idx %d) must precede the source update (idx %d) so the closed file keeps the prior talker", segAt, srcAt)
+	}
+}
+
+// TestEngineTETRATalkerSplitGatedOffAndOnSameSource guards the two negatives: no
+// segment when the source is unchanged (a repeat talker), and no segment when
+// per-transmission grouping is disabled (conversation mode = one file per call).
+func TestEngineTETRATalkerSplitGatedOffAndOnSameSource(t *testing.T) {
+	// (a) splitTx on, but the talker is the SAME as the current source.
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	e.splitTx = true
+	sub := bus.Subscribe()
+	defer sub.Close()
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020545, SourceID: 1005736, FrequencyHz: 467_912_500, Timeslot: 2})
+	e.handleCallTalker(CallTalker{System: "X", GroupID: 1020545, SourceID: 1005736}) // same src
+	c := &testBusCollector{}
+	for _, ev := range c.drain(sub, 8, 200*time.Millisecond) {
+		if ev.Kind == events.KindCallSegment {
+			t.Error("segment published for an unchanged talker (no over boundary)")
+		}
+	}
+
+	// (b) splitTx OFF: a genuine talker change must NOT split.
+	e2, _, bus2, _ := mkEngine(t, 1)
+	defer bus2.Close()
+	sub2 := bus2.Subscribe()
+	defer sub2.Close()
+	e2.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020545, SourceID: 1005736, FrequencyHz: 467_912_500, Timeslot: 2})
+	e2.handleCallTalker(CallTalker{System: "X", GroupID: 1020545, SourceID: 1005526})
+	c2 := &testBusCollector{}
+	for _, ev := range c2.drain(sub2, 8, 200*time.Millisecond) {
+		if ev.Kind == events.KindCallSegment {
+			t.Error("segment published while per-transmission grouping is off")
+		}
+	}
+}
