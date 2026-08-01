@@ -940,6 +940,17 @@ func (c *ControlChannel) NeedsResync(now time.Time, timeout time.Duration) bool 
 	return now.Sub(time.Unix(0, last)) > timeout
 }
 
+// LastActivityNano returns the Unix-nano timestamp of the most recent decode
+// (sync burst / SYSINFO / grant), or 0 before the first decode. A lock-free
+// atomic read, exposed so the pipeline can tell whether a decode has landed
+// since its previous DSP resync: a resync that is not followed by any decode
+// did not reacquire, so the pipeline backs off instead of resetting the symbol
+// timing to centre every window (the self-perpetuating resync loop that shows
+// up as heavy DSP resync under concurrent-call CPU load).
+func (c *ControlChannel) LastActivityNano() int64 {
+	return c.lastActivityNano.Load()
+}
+
 func (c *ControlChannel) maybeLock(s LockState) {
 	c.noteActivity()
 	c.mu.Lock()

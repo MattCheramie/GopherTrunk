@@ -98,3 +98,81 @@ func TestTETRAResyncTriggerAndThrottle(t *testing.T) {
 		t.Errorf("resync fired twice within one timeout window (throttle failed)\n%s", buf.String())
 	}
 }
+
+// TestTETRAResyncBacksOffWhenIneffective pins the exponential back-off that
+// breaks the self-perpetuating resync loop: when a resync does not reacquire
+// (the heartbeat stays stale, as under concurrent-call CPU starvation), the
+// pipeline must NOT keep firing reset-to-centre every tetraResyncTimeout —
+// it doubles the wait. A decode (heartbeat advance) snaps the cadence back to
+// the base window. Fail-first: with a fixed tetraResyncTimeout throttle a
+// resync fires at every window and the +1 window assertion below goes red.
+func TestTETRAResyncBacksOffWhenIneffective(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bus := events.NewBus(8)
+	defer bus.Close()
+
+	pp, err := newTETRAPipeline(PipelineOptions{
+		Bus: bus, Log: logger, SystemName: "Test", FrequencyHz: 412_000_000,
+		SampleRateHz: 144_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolTETRA,
+			ControlChannels: []uint32{412_000_000},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newTETRAPipeline: %v", err)
+	}
+	p := pp.(*tetraPipeline)
+
+	t0 := time.Now()
+	cur := t0
+	p.now = func() time.Time { return cur }
+	p.cc.Process(buildArmingSBStream(), 0)
+	if !p.cc.Locked() {
+		t.Fatal("control channel did not lock on the clean arming burst")
+	}
+
+	// resyncFires advances the clock to t0+off and reports whether a resync line
+	// was emitted on that Process call.
+	resyncFires := func(off time.Duration) bool {
+		buf.Reset()
+		cur = t0.Add(off)
+		p.Process(nil)
+		return strings.Contains(buf.String(), "tetra: dsp resync")
+	}
+
+	// The heartbeat never advances (no decode), so every resync is ineffective.
+	// #1 at one base window: fires (back-off starts at the base).
+	if !resyncFires(tetraResyncTimeout + 100*time.Millisecond) {
+		t.Fatalf("expected the first resync after the heartbeat went stale\n%s", buf.String())
+	}
+	// #2 one base window later: still fires; firing #1 with no decode since then
+	// doubles the wait to 2×base for the NEXT one.
+	if !resyncFires(2*tetraResyncTimeout + 100*time.Millisecond) {
+		t.Fatalf("expected the second resync one window later\n%s", buf.String())
+	}
+	if p.resyncBackoff != 2*tetraResyncTimeout {
+		t.Fatalf("back-off = %v after two ineffective resyncs, want %v", p.resyncBackoff, 2*tetraResyncTimeout)
+	}
+	// One base window after #2 the wait has doubled, so a resync must NOT fire
+	// yet — this is the back-off a plain fixed throttle would violate.
+	if resyncFires(3*tetraResyncTimeout + 100*time.Millisecond) {
+		t.Fatalf("resync fired at the base window after an ineffective resync; back-off did not apply\n%s", buf.String())
+	}
+	// After the doubled wait elapses it fires again.
+	if !resyncFires(4*tetraResyncTimeout + 100*time.Millisecond) {
+		t.Fatalf("expected a resync once the doubled back-off elapsed\n%s", buf.String())
+	}
+
+	// A fresh heartbeat (the decode recovered) snaps the back-off back to the
+	// base window so the next stall reacquires promptly again. Anchor the clock
+	// to the re-armed heartbeat (stamped in real time inside cc.Process) so the
+	// age reads well under one window regardless of test wall-clock timing.
+	p.cc.Process(buildArmingSBStream(), 0)
+	cur = time.Unix(0, p.cc.LastActivityNano()).Add(tetraResyncTimeout / 2)
+	p.Process(nil)
+	if p.resyncBackoff != 0 {
+		t.Fatalf("back-off = %v after a fresh heartbeat, want it reset to 0 (base)", p.resyncBackoff)
+	}
+}
