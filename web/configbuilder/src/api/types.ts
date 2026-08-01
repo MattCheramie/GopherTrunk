@@ -376,6 +376,13 @@ export interface WebhookFeed {
   IncludeAudio: boolean;
   Systems: string[] | null;
 }
+export interface GrantWebhookFeed {
+  Enabled: boolean;
+  Name: string;
+  URL: string;
+  AuthHeader: string;
+  Systems: string[] | null;
+}
 export interface BroadcastConfig {
   MinDurationMs: number;
   Workers: number;
@@ -384,6 +391,7 @@ export interface BroadcastConfig {
   OpenMHz: OpenMHzFeed[] | null;
   Icecast: IcecastFeed[] | null;
   Webhook: WebhookFeed[] | null;
+  GrantWebhook: GrantWebhookFeed[] | null;
 }
 
 export interface BasebandRecordConfig {

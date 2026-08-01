@@ -6,6 +6,7 @@ import { useSection } from "./useSection";
 import type {
   BroadcastConfig,
   BroadcastifyFeed,
+  GrantWebhookFeed,
   IcecastFeed,
   OpenMHzFeed,
   RdioScannerFeed,
@@ -18,7 +19,7 @@ export function BroadcastSection() {
   const [cfg, set] = useSection("Broadcast");
   const c =
     (cfg as BroadcastConfig) ??
-    ({ MinDurationMs: 0, Workers: 0, Broadcastify: null, RdioScanner: null, OpenMHz: null, Icecast: null, Webhook: null } as BroadcastConfig);
+    ({ MinDurationMs: 0, Workers: 0, Broadcastify: null, RdioScanner: null, OpenMHz: null, Icecast: null, Webhook: null, GrantWebhook: null } as BroadcastConfig);
   return (
     <Section
       sectionKey="broadcast"
@@ -148,6 +149,28 @@ export function BroadcastSection() {
                 <TextField label="URL" value={f.URL} onChange={(v) => setF({ ...f, URL: v })} placeholder="https://example/hook" />
                 <TextField label="Auth header" value={f.AuthHeader} onChange={(v) => setF({ ...f, AuthHeader: v })} placeholder="Bearer …" help="Sent verbatim as the Authorization header. Empty omits it." />
                 <BoolField label="Include audio" value={f.IncludeAudio} onChange={(v) => setF({ ...f, IncludeAudio: v })} />
+                <TextField label="Systems" value={formatCommaList(f.Systems)} onChange={(v) => setF({ ...f, Systems: parseCommaList(v) })} help={SYSTEMS_HELP} />
+              </div>
+            </div>
+          )}
+        />
+      </Fieldset>
+
+      <Fieldset legend="Grant webhook (JSON POST per grant)">
+        <ListEditor<GrantWebhookFeed>
+          label="Feeds"
+          items={c.GrantWebhook}
+          onChange={(x) => set({ ...c, GrantWebhook: x })}
+          makeNew={() => ({ Enabled: true, Name: "", URL: "", AuthHeader: "", Systems: null })}
+          itemTitle={(f) => f.Name || "feed"}
+          emptyHint="No grant webhook feeds."
+          renderItem={(f, setF) => (
+            <div className="space-y-3">
+              <BoolField label="Enabled" value={f.Enabled} onChange={(v) => setF({ ...f, Enabled: v })} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField label="Name" value={f.Name} onChange={(v) => setF({ ...f, Name: v })} />
+                <TextField label="URL" value={f.URL} onChange={(v) => setF({ ...f, URL: v })} placeholder="https://example/grants" />
+                <TextField label="Auth header" value={f.AuthHeader} onChange={(v) => setF({ ...f, AuthHeader: v })} placeholder="Bearer …" help="Sent verbatim as the Authorization header. Empty omits it." />
                 <TextField label="Systems" value={formatCommaList(f.Systems)} onChange={(v) => setF({ ...f, Systems: parseCommaList(v) })} help={SYSTEMS_HELP} />
               </div>
             </div>

@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Push grant webhook (`broadcast.grant_webhook`).** A new outbound sink POSTs
+  one JSON object per control-channel grant the moment GopherTrunk decodes it —
+  the push counterpart to the pollable `GET /api/v1/grants` and the live
+  `KindGrant` SSE stream, all on one schema. The payload carries the grant as
+  decoded (system, protocol, talkgroup, source RID, frequency, P25 site
+  identity, timeslot, encryption + algorithm/key), stamped with the decode time.
+  Grants are coverage-truthful: a grant whose TSBK carried `source_id=0` is sent
+  with `source_id=0`, never backfilled — so the feed reports exactly what the
+  control channel saw, the way SDRtrunk's grant log does, letting a consumer
+  read the source RID off the grant at call-setup time without holding an SSE
+  connection or polling. Off by default; opt in per feed with a URL, optional
+  `Authorization` header, and an optional system filter. Refs #915, #268.
 - **TETRA DMO (Direct Mode Operation) burst-framing foundation.** First increment
   toward decoding TETRA's infrastructure-less peer-to-peer mode (ETSI EN 300 396-2,
   part 2 — radio aspects): a burst detector/slicer for the Direct Mode
