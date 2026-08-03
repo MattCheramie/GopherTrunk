@@ -3,7 +3,7 @@ slug: uniden-bcd436hp
 title: Uniden BCD436HP
 entry_type: hardware
 category: consumer-scanners
-description: "The Uniden BCD436HP is a HomePatrol-database handheld police scanner you program from your ZIP code — the best beginner digital handheld, decoding P25 Phase I/II with TrunkTracker V and S.A.M.E. weather alerts."
+description: "The Uniden BCD436HP is a HomePatrol-database handheld police scanner you program from your ZIP code — the best beginner digital handheld, decoding P25 Phase I/II with TrunkTracker V and S.A.M.E."
 keywords: Uniden BCD436HP, BCD436HP scanner, HomePatrol handheld, ZIP code scanner, beginner police scanner, P25 Phase 2 handheld, TrunkTracker V, Uniden BCD436HP review
 aka: [BCD436HP]
 autolink: true
@@ -42,7 +42,6 @@ faq:
   - q: "Can I get the same thing for free?"
     a: "A ~$30 RTL-SDR plus free GopherTrunk decodes P25 (and DMR/NXDN the BCD436HP can't) and records every call. The BCD436HP wins on pocket portability, instant ZIP-code setup, and needing no PC. See the honest comparison."
 ---
-
 **The Uniden BCD436HP** is a digital handheld police scanner built around Uniden's
 **HomePatrol database**: you enter your ZIP code and it loads every known nearby
 system automatically.[^uniden] It follows and decodes

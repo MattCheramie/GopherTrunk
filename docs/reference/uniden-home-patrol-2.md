@@ -3,7 +3,7 @@ slug: uniden-home-patrol-2
 title: Uniden HomePatrol-2
 entry_type: hardware
 category: consumer-scanners
-description: "The Uniden HomePatrol-2 is the simplest digital police scanner to use — a color touchscreen you program by ZIP code, decoding P25 Phase I/II with TrunkTracker V and S.A.M.E. weather alerts. An older but easy design."
+description: "The Uniden HomePatrol-2 is the simplest digital police scanner to use — a color touchscreen you program by ZIP code, decoding P25 Phase I/II with TrunkTracker V and S.A.M.E. weather alerts. An older."
 keywords: Uniden HomePatrol-2, HomePatrol 2 scanner, easiest police scanner, touchscreen scanner, ZIP code scanner, P25 Phase 2 scanner, beginner digital scanner, Uniden HomePatrol-2 review
 aka: [HomePatrol-2]
 autolink: true
@@ -42,7 +42,6 @@ faq:
   - q: "HomePatrol-2 or BCD436HP?"
     a: "Both program by ZIP code from the same database. The HomePatrol-2 has a touchscreen and is the simplest to operate; the BCD436HP is a more modern handheld with more features and Close Call. If touchscreen simplicity matters most, pick the HomePatrol-2; otherwise the BCD436HP is the newer choice."
 ---
-
 **The Uniden HomePatrol-2** is the simplest digital police scanner to operate: a
 **color touchscreen** you program by entering your **ZIP code** against Uniden's
 built-in database.[^uniden] It follows and decodes

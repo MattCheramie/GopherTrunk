@@ -3,7 +3,7 @@ slug: uniden-bcd996p2
 title: Uniden BCD996P2
 entry_type: hardware
 category: consumer-scanners
-description: "The Uniden BCD996P2 is a value-priced P25 Phase I/II base/mobile police scanner with 25,000 channels, TrunkTracker V and Close Call — no HomePatrol database, so you program it manually or with Sentinel software."
+description: "The Uniden BCD996P2 is a value-priced P25 Phase I/II base/mobile police scanner with 25,000 channels, TrunkTracker V and Close Call — no HomePatrol database, so you program it manually or with."
 keywords: Uniden BCD996P2, BCD996P2 scanner, P25 Phase 2 base scanner, value digital scanner, TrunkTracker V, Close Call, manual programming scanner, Uniden BCD996P2 review
 aka: [BCD996P2]
 autolink: true
@@ -42,7 +42,6 @@ faq:
   - q: "Is the BCD996P2 a good value?"
     a: "Yes — it's the best-value digital base scanner if you don't need the simulcast premium or the ZIP-code database. If you'd rather not program by hand at all, a free SDR + GopherTrunk auto-follows systems and records every call for the price of a $30 dongle."
 ---
-
 **The Uniden BCD996P2** is a value-priced digital base/mobile police scanner that
 follows and decodes [P25 Phase I and II](/reference/p25-phase-2/) with **TrunkTracker
 V**, holds **25,000 channels**, and includes **Close Call** near-signal capture.[^uniden]

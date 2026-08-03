@@ -3,7 +3,7 @@ slug: police-scanner
 title: Police scanner
 entry_type: concept
 category: consumer-scanners
-description: "A police scanner is a radio receiver that automatically sweeps public-safety, business, and hobby frequencies so you can listen to police, fire, and EMS dispatch in real time — analog or digital, conventional or trunked."
+description: "A police scanner is a radio receiver that automatically sweeps public-safety, business, and hobby frequencies so you can listen to police, fire, and EMS dispatch in real time — analog or digital."
 keywords: police scanner, scanner radio, public safety scanner, trunking scanner, digital scanner, P25 scanner, how police scanners work, listen to police radio
 aka: [scanner radio, public-safety scanner, radio scanner]
 autolink: true
@@ -32,7 +32,6 @@ faq:
   - q: "What is the cheapest way to start scanning?"
     a: "A ~$30 RTL-SDR USB dongle plus the free, open-source GopherTrunk software will follow and decode digital trunked systems on a PC you already own. A dedicated handheld scanner is more convenient and portable but starts around $100 for analog and $380+ for digital."
 ---
-
 **A police scanner** is a radio receiver that automatically sweeps a list of
 frequencies and stops on whichever one is active, so you can listen to live
 police, fire, and emergency-medical dispatch as it happens.[^wiki] Modern

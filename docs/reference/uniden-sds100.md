@@ -3,7 +3,7 @@ slug: uniden-sds100
 title: Uniden SDS100
 entry_type: hardware
 category: consumer-scanners
-description: "The Uniden SDS100 is a True I/Q handheld police scanner with the best simulcast decode performance you can carry — P25 Phase I/II, DMR, NXDN and ProVoice, weatherproof and programmed from your ZIP code."
+description: "The Uniden SDS100 is a True I/Q handheld police scanner with the best simulcast decode performance you can carry — P25 Phase I/II, DMR, NXDN and ProVoice, weatherproof and programmed from your ZIP."
 keywords: Uniden SDS100, SDS100 scanner, True I/Q handheld, P25 Phase 2 handheld scanner, simulcast handheld scanner, best handheld police scanner, Uniden SDS100 review
 aka: [SDS100]
 autolink: true
@@ -42,7 +42,6 @@ faq:
   - q: "Can I get the same decoding for free?"
     a: "A ~$30 RTL-SDR plus free GopherTrunk decodes the same P25/DMR/NXDN and records every call. The SDS100's front end still edges out a cheap dongle on the hardest simulcast, and it needs no PC. See our honest comparison."
 ---
-
 **The Uniden SDS100** is a digital handheld police scanner whose **True I/Q**
 software-defined front end gives it the best [simulcast](/reference/simulcast/)
 decode performance of any scanner you can carry.[^uniden] It follows and decodes

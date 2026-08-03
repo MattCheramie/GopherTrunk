@@ -3,7 +3,7 @@ slug: uniden-bcd325p2
 title: Uniden BCD325P2
 entry_type: hardware
 category: consumer-scanners
-description: "The Uniden BCD325P2 is Uniden's cheapest P25 Phase I/II digital handheld — 25,000 channels, TrunkTracker V and Close Call, programmed manually or with Sentinel software. The handheld version of the BCD996P2."
+description: "The Uniden BCD325P2 is Uniden's cheapest P25 Phase I/II digital handheld — 25,000 channels, TrunkTracker V and Close Call, programmed manually or with Sentinel software. The handheld version of the."
 keywords: Uniden BCD325P2, BCD325P2 scanner, cheapest P25 handheld, P25 Phase 2 handheld, TrunkTracker V, Close Call handheld, manual programming scanner, Uniden BCD325P2 review
 aka: [BCD325P2]
 autolink: true
@@ -42,7 +42,6 @@ faq:
   - q: "Is there a cheaper way to hear P25?"
     a: "A ~$30 RTL-SDR plus free GopherTrunk decodes P25 (and DMR/NXDN) and records every call — far cheaper than any scanner if you already have a PC. The BCD325P2 wins on pocket portability and needing no computer."
 ---
-
 **The Uniden BCD325P2** is Uniden's most affordable digital handheld: it follows and
 decodes [P25 Phase I and II](/reference/p25-phase-2/) with **TrunkTracker V**, holds
 **25,000 channels**, and includes **Close Call** near-signal capture.[^uniden] It has

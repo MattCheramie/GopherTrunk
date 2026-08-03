@@ -3,7 +3,7 @@ slug: uniden-bcd536hp
 title: Uniden BCD536HP
 entry_type: hardware
 category: consumer-scanners
-description: "The Uniden BCD536HP is a HomePatrol-database base/mobile police scanner with built-in Wi-Fi and ZIP-code programming — the easiest base scanner to set up, decoding P25 Phase I/II and controllable from your phone."
+description: "The Uniden BCD536HP is a HomePatrol-database base/mobile police scanner with built-in Wi-Fi and ZIP-code programming — the easiest base scanner to set up, decoding P25 Phase I/II and controllable."
 keywords: Uniden BCD536HP, BCD536HP scanner, HomePatrol base scanner, Wi-Fi police scanner, ZIP code scanner, P25 Phase 2 base scanner, TrunkTracker V, Uniden BCD536HP review
 aka: [BCD536HP]
 autolink: true
@@ -42,7 +42,6 @@ faq:
   - q: "Can I get the same thing for free?"
     a: "A ~$30 RTL-SDR plus free GopherTrunk decodes P25 and records every call, with a web console you reach from any device — a superset of the BCD536HP's Wi-Fi app. The BCD536HP wins on turnkey ZIP-code setup and needing no PC. See the comparison."
 ---
-
 **The Uniden BCD536HP** is a digital base/mobile police scanner built around
 Uniden's **HomePatrol database** and **built-in Wi-Fi**: you program it from your
 ZIP code and control it from a phone app.[^uniden] It follows and decodes
