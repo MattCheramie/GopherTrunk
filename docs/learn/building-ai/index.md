@@ -30,4 +30,4 @@ evaluating quality, defending against prompt injection, and controlling cost,
 privacy, and reliability in production. Examples lean on real software, including
 AI features you might add to [GopherTrunk]({{ '/' | relative_url }}) itself. Mark
 lessons complete as you go — your progress is saved in your browser. New here?
-**[Start with lesson 1: What it means to build AI into software](building-vs-using-ai/)**
+**[Start with lesson 1: What it means to build AI into software](/learn/building-ai/building-vs-using-ai/)**

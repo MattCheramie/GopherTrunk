@@ -24,4 +24,4 @@ radio. The later modules connect each idea directly to running GopherTrunk, so
 you finish knowing not just *what* a constellation diagram is, but how to use the
 one in GopherTrunk to fix a signal that won't lock. Mark lessons complete as you
 go — your progress is saved in your browser. New here? **[Start with lesson 1:
-What is a radio wave?](radio-waves/)**
+What is a radio wave?](/learn/rf-sdr/radio-waves/)**

@@ -40,7 +40,7 @@ conservative gain. And accept the hard limit: a system that **covers more area t
 can hear** will only ever give you the sites that reach your antenna.
 </div>
 
-The [sites, simulcast and roaming](sites-simulcast-roaming/) lesson explained the
+The [sites, simulcast and roaming](/learn/digital-trunking/sites-simulcast-roaming/) lesson explained the
 architecture; this one is about *operating* against it. Multi-site and simulcast are the
 two situations where a perfectly configured system still fights you, so it's worth
 knowing the practical moves.
@@ -60,7 +60,7 @@ overload. Pick the one that *locks best*, then let GopherTrunk follow that site'
 
 ## What simulcast distortion looks like
 
-[Simulcast](sites-simulcast-roaming/) sites broadcast the **same signal from several
+[Simulcast](/learn/digital-trunking/sites-simulcast-roaming/) sites broadcast the **same signal from several
 towers simultaneously on the same frequency** — a design that extends coverage cheaply
 but punishes receivers in the overlap zones. There, copies from different towers arrive
 at **slightly different times** and combine, smearing the waveform the same way
@@ -153,4 +153,4 @@ just distance.
   that's a hard limit, not a fault.
 
 Last in the module: a systematic checklist for when a system still won't decode, in
-[troubleshooting a digital decode](troubleshooting-a-decode/).
+[troubleshooting a digital decode](/learn/digital-trunking/troubleshooting-a-decode/).

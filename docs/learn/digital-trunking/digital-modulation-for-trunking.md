@@ -164,5 +164,5 @@ just learned to read.
 - Reading those shapes is how you **identify** a system and **tune** a clean lock.
 
 Next, we look inside the bitstream itself: [framing, error correction and
-interleaving](framing-fec-interleaving/) — the structure that lets digital survive
+interleaving](/learn/digital-trunking/framing-fec-interleaving/) — the structure that lets digital survive
 fading.

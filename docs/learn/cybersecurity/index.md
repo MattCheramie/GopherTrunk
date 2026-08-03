@@ -28,4 +28,4 @@ as an individual, and the wireless-and-RF security world a scanner like
 [GopherTrunk]({{ '/' | relative_url }}) lives in — where the **law and ethics**
 matter as much as the technology. Mark lessons complete as you go — your progress
 is saved in your browser. New here? **[Start with lesson 1: What is
-cybersecurity?](what-is-cybersecurity/)**
+cybersecurity?](/learn/cybersecurity/what-is-cybersecurity/)**

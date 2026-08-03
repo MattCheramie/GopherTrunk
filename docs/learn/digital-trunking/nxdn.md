@@ -36,10 +36,10 @@ symbols/s), both using the **AMBE+2** vocoder. It supports **conventional** and 
 (Type-C) operation and is sold as **NEXEDGE** by Kenwood and **IDAS** by Icom. It's common
 in **business and industrial** radio, with some public-safety use. Its signature is being
 **very narrow** — NXDN48 is one of the thinnest signals you'll see on the waterfall. Its
-close ETSI cousin **[dPMR](dpmr-dstar-ysf/)** works almost identically.
+close ETSI cousin **[dPMR](/learn/digital-trunking/dpmr-dstar-ysf/)** works almost identically.
 </div>
 
-After the 25 kHz bulk of [TETRA](tetra/), NXDN is the opposite extreme: one of the
+After the 25 kHz bulk of [TETRA](/learn/digital-trunking/tetra/), NXDN is the opposite extreme: one of the
 narrowest digital voice standards in regular use. Where TETRA spread its calls wide, NXDN
 squeezes them into a sliver of spectrum.
 
@@ -48,7 +48,7 @@ squeezes them into a sliver of spectrum.
 NXDN grew out of a joint effort by **Icom** and **Kenwood** to define an open *common air
 interface* for narrowband digital radio. The result is **FDMA** — each call gets its own
 frequency, no time slots — using **4FSK**, the same four-level frequency modulation you met
-in [digital modulation for trunking](digital-modulation-for-trunking/) and that P25 and DMR
+in [digital modulation for trunking](/learn/digital-trunking/digital-modulation-for-trunking/) and that P25 and DMR
 also use. Voice rides on the **[AMBE+2](/learn/rf-sdr/vocoders/)** vocoder.
 
 Because the two vendors sell it under their own names, you'll see NXDN behind several
@@ -102,26 +102,26 @@ Both use the same 4FSK and AMBE+2; only the width and rate change.
 ## Conventional and trunked
 
 NXDN runs in both styles you met earlier in [conventional vs
-trunked](conventional-vs-trunked/):
+trunked](/learn/digital-trunking/conventional-vs-trunked/):
 
 - **Conventional** — a fixed channel that a group always uses, common for small business and
   industrial fleets.
 - **Trunked** — NXDN's trunking is called **Type-C**, with a [control
-  channel](the-control-channel/) granting traffic channels just like the systems you've
+  channel](/learn/digital-trunking/the-control-channel/) granting traffic channels just like the systems you've
   studied. GopherTrunk follows the control channel to track [talkgroups and
-  IDs](talkgroups-ids-affiliation/).
+  IDs](/learn/digital-trunking/talkgroups-ids-affiliation/).
 
 ## Recognising it, and its cousin dPMR
 
 The easiest tell is **width**. NXDN48's 6.25 kHz channel is one of the thinnest signals on
 the [waterfall](/learn/rf-sdr/fft-and-waterfall/) — much narrower than DMR or P25. It *is* 4FSK
 like those systems, so width alone won't fully distinguish it; the reliable answer comes
-from letting the decoder read the [signaling](identifying-the-system/) once it locks.
+from letting the decoder read the [signaling](/learn/digital-trunking/identifying-the-system/) once it locks.
 
 NXDN has a very close European relative, **dPMR**, an ETSI standard that also does 6.25 kHz
 4FSK FDMA. They are separate standards but so similar in footprint that they're easy to
 confuse — we cover dPMR alongside D-STAR and System Fusion in [dPMR, D-STAR & System
-Fusion](dpmr-dstar-ysf/).
+Fusion](/learn/digital-trunking/dpmr-dstar-ysf/).
 
 <div class="knowledge-check" data-quiz data-correct-msg="Correct — NXDN48 is a 6.25 kHz 4FSK FDMA channel, about half a DMR channel's width." markdown="0">
   <p class="knowledge-check__q">Quick check: what is the most distinctive thing about NXDN48 on the air?</p>
@@ -146,4 +146,4 @@ Fusion](dpmr-dstar-ysf/).
 - Its ETSI cousin **dPMR** is nearly identical in footprint.
 
 Next, we turn to a North-American giant that's still everywhere — Motorola's analog
-trunking family: [SmartNet / SmartZone & Type II](motorola-smartnet/).
+trunking family: [SmartNet / SmartZone & Type II](/learn/digital-trunking/motorola-smartnet/).

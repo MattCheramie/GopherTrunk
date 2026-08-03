@@ -46,7 +46,7 @@ these visible, so identification becomes a glance rather than a guess.
 Before GopherTrunk can follow a system, it needs to know *which* system. Sometimes a
 database tells you; often you're staring at an unknown carrier on the waterfall and
 have to work it out. The good news is that digital trunking uses only a [handful of
-modulations](digital-modulation-for-trunking/), and each leaves fingerprints you can
+modulations](/learn/digital-trunking/digital-modulation-for-trunking/), and each leaves fingerprints you can
 read with the scopes.
 
 ## Clue 1 — channel bandwidth on the waterfall
@@ -109,7 +109,7 @@ peaks, and a two-versus-four-level question answers itself.
 
 Even without decoding, the *rhythm* of a signal helps. **FDMA** systems (P25 Phase 1,
 NXDN, conventional DMR carriers) put one continuous transmission on the channel for the
-duration of a call. **[TDMA](tdma-vs-fdma/)** systems (P25 Phase 2, DMR, TETRA) chop the
+duration of a call. **[TDMA](/learn/digital-trunking/tdma-vs-fdma/)** systems (P25 Phase 2, DMR, TETRA) chop the
 carrier into time slots, so on the waterfall and in the symbol stream you see a
 *pulsing* pattern — bursts with gaps — even during a single conversation. A steady
 solid trace versus a stuttering one is a strong TDMA-versus-FDMA tell.
@@ -153,4 +153,4 @@ the deeper reference.
 - Two or three clues together usually name the system before you decode a single bit.
 
 Next, we'll find the one frequency worth monitoring — locating and confirming the
-[control channel](finding-the-control-channel/).
+[control channel](/learn/digital-trunking/finding-the-control-channel/).

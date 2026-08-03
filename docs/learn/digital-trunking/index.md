@@ -27,4 +27,4 @@ one by one (P25 and DMR in depth, then TETRA, NXDN, Motorola, and the legacy
 families); and Module 6 puts it to work in GopherTrunk — finding a control
 channel, following calls, and fixing a decode that won't lock. Mark lessons
 complete as you go; your progress is saved in your browser. **[Start with lesson
-1: Why radio went digital](why-radio-went-digital/)**
+1: Why radio went digital](/learn/digital-trunking/why-radio-went-digital/)**

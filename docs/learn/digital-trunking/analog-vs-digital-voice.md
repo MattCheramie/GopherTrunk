@@ -1,4 +1,5 @@
 ---
+redirect_from: /learn/analog-vs-digital-voice/
 slug: analog-vs-digital-voice
 title: Analog vs. digital voice
 description: Analog FM voice fades gracefully into noise; digital voice stays clean then falls off the digital cliff at the BER threshold. The trade-offs that drove radio to digital.
@@ -156,5 +157,5 @@ you chase a *clean lock*, not a *readable signal*.
 - For monitoring, raise [SNR](/learn/rf-sdr/decibels/) to back off the cliff — a
   marginal digital signal decodes well or not at all.
 
-Next, we open up that vocoder: [from voice to bits](voice-to-bits-vocoders/), where
+Next, we open up that vocoder: [from voice to bits](/learn/digital-trunking/voice-to-bits-vocoders/), where
 we meet IMBE, AMBE+2, and how a few kilobits become speech again.

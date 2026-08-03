@@ -1,4 +1,5 @@
 ---
+redirect_from: /learn/talkgroups-ids-affiliation/
 slug: talkgroups-ids-affiliation
 title: "Talkgroups, radio IDs & affiliation"
 description: A talkgroup is a virtual channel; a radio ID identifies the individual unit; affiliation registers a radio so the system knows which talkgroup it monitors — and why you follow talkgroups, not frequencies.
@@ -42,7 +43,7 @@ frequencies change per call, **you follow talkgroups, not frequencies**.
 
 A trunked system constantly moves conversations across its channel pool, so it needs
 *stable identities* to make sense of it all. Three identities matter, and once you know
-them, the [control-channel data](control-channel-signaling/) stops looking like noise.
+them, the [control-channel data](/learn/digital-trunking/control-channel-signaling/) stops looking like noise.
 
 ## Talkgroups — the virtual channel
 
@@ -140,4 +141,4 @@ log. All three are announced in the same data stream you decode, so you can see 
 - You **follow talkgroups, not frequencies**, because the frequency changes per call.
 
 Next, we trace a single call from start to finish — the
-[anatomy of a trunked call](anatomy-of-a-call/): request, grant, and release.
+[anatomy of a trunked call](/learn/digital-trunking/anatomy-of-a-call/): request, grant, and release.

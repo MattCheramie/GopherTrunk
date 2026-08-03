@@ -48,7 +48,7 @@ a decoder can and can't do about it.
 
 ## What encrypts the voice
 
-Encryption sits on the **voice payload** — the [vocoder](voice-to-bits-vocoders/) bits —
+Encryption sits on the **voice payload** — the [vocoder](/learn/digital-trunking/voice-to-bits-vocoders/) bits —
 scrambling them so only a radio holding the matching key can recover audio. The schemes you
 meet on trunked systems include:
 

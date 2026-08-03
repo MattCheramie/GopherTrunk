@@ -43,7 +43,7 @@ like a NAC. Vendors also built proprietary trunked variants — **Capacity Plus,
 Plus, Capacity Max, Hytera XPT** — that differ from open Tier III.
 </div>
 
-Where [P25](p25-phase-1/) rules North-American public safety, **DMR** rules almost
+Where [P25](/learn/digital-trunking/p25-phase-1/) rules North-American public safety, **DMR** rules almost
 everything else digital: taxis, warehouses, utilities, security, and a vast amateur
 network. Its appeal is simple — it is an open standard with cheap radios that doubles
 capacity on existing 12.5 kHz channels. This lesson unpacks how it works and the tiers
@@ -52,7 +52,7 @@ you will meet.
 ## The physical layer: two slots in 12.5 kHz
 
 DMR uses **4FSK** — the same four-level FSK family as P25's
-[C4FM](digital-modulation-for-trunking/) — running at **4800 symbols/s**, which (two bits
+[C4FM](/learn/digital-trunking/digital-modulation-for-trunking/) — running at **4800 symbols/s**, which (two bits
 per symbol) gives **9600 bps**. The clever part is **two-slot TDMA**: a single 12.5 kHz
 channel is split in *time* into two alternating slots, so it carries **two simultaneous
 calls**. That is the same **6.25 kHz equivalent** efficiency idea as P25 Phase 2, but DMR
@@ -114,7 +114,7 @@ lock the carrier, read the embedded link control to learn the talkgroup and sour
 slot, and decode AMBE+2 for whichever slot is transmitting. For **Tier III**, it does the
 full trunking dance — lock the **control channel**, read **CSBKs** on the
 **[CC Activity](/cc-activity.html)** panel, and follow each grant to the assigned voice
-channel and slot, exactly as it does for [P25](p25-phase-1/) but with DMR framing.
+channel and slot, exactly as it does for [P25](/learn/digital-trunking/p25-phase-1/) but with DMR framing.
 
 ## CSBKs: DMR's trunking signaling
 
@@ -180,4 +180,4 @@ to monitor.
 - DMR **RC4 Enhanced Privacy** is supported in a known-key model only.
 
 That closes the P25 and DMR module. The next module opens with another major trunked
-family rooted in Europe: [TETRA](tetra/).
+family rooted in Europe: [TETRA](/learn/digital-trunking/tetra/).

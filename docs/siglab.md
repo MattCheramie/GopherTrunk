@@ -1,5 +1,6 @@
 ---
 layout: page
+redirect_from: /siglab
 title: SigLab — offline signal workbench
 description: Replay, analyze, identify, synthesize, and grade RF captures with no radio attached — gophertrunk siglab as a terminal app, a browser console, and a demod benchmark
 nav_group: Operate

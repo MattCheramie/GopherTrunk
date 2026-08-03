@@ -41,7 +41,7 @@ same way it follows a digital system.
 
 </div>
 
-You met the era of [analog trunking](analog-trunking-era/) earlier. SmartNet is its most
+You met the era of [analog trunking](/learn/digital-trunking/analog-trunking-era/) earlier. SmartNet is its most
 successful survivor: a Motorola design from the 1980s–90s that, despite being decades old
 and proprietary, still carries an enormous amount of traffic across North America.
 
@@ -51,7 +51,7 @@ The defining idea of SmartNet is the split between *how it's coordinated* and *w
 carries*:
 
 - The **control channel** is **digital** — a continuous **3600 bps** data stream. It does
-  exactly what a control channel does in any [trunked system](conventional-vs-trunked/):
+  exactly what a control channel does in any [trunked system](/learn/digital-trunking/conventional-vs-trunked/):
   registers radios, takes call requests, and broadcasts grants telling a talkgroup which
   voice channel to use.
 - The **voice channels** are **analog FM** — the same modulation as a conventional analog
@@ -99,7 +99,7 @@ you'll encounter:
 | **Type IIi** | **Hybrid** of Type I and Type II | Supports both radio types on one system during a migration |
 
 **Type II** is the one you'll meet most. Its flat [talkgroup
-IDs](talkgroups-ids-affiliation/) map cleanly onto the talkgroup model you already know —
+IDs](/learn/digital-trunking/talkgroups-ids-affiliation/) map cleanly onto the talkgroup model you already know —
 a number with a label, like "1808 — County Fire Dispatch." Type I's fleet/subfleet/size-code
 scheme is a holdover that takes a little decoding to map back to a meaningful unit, which is
 why you sometimes see Type I IDs written in a fleet-subfleet-ID notation.
@@ -109,17 +109,17 @@ why you sometimes see Type I IDs written in a fleet-subfleet-ID notation.
 A single SmartNet site covers one area. **SmartZone** is Motorola's extension that
 **networks several sites together** into one logical system, so a radio can roam between
 sites and stay reachable on the same talkgroup. This is the same multi-site idea you'll see
-again in [sites, simulcast & roaming](sites-simulcast-roaming/) — a wide-area network built
+again in [sites, simulcast & roaming](/learn/digital-trunking/sites-simulcast-roaming/) — a wide-area network built
 from many sites, each with its own control channel, stitched together by the back-end
 network.
 
 ## Proprietary, but everywhere
 
 It's worth being clear: SmartNet/SmartZone is a **proprietary Motorola system**, not an open
-standard like [P25](p25-phase-1/) or the [ETSI](standards-and-bodies/) standards. There's no
+standard like [P25](/learn/digital-trunking/p25-phase-1/) or the [ETSI](/learn/digital-trunking/standards-and-bodies/) standards. There's no
 public specification you can simply read; understanding it came largely from the
 scanner-enthusiast community reverse-engineering the [control-channel
-signaling](control-channel-signaling/).
+signaling](/learn/digital-trunking/control-channel-signaling/).
 
 So why does so much of it remain? Cost and inertia. These systems were expensive to build,
 they work reliably, and many agencies kept them running for decades — sometimes as a
@@ -148,4 +148,4 @@ commonly encountered trunking systems in North America, and **GopherTrunk decode
   it like any trunked system.
 
 Next, three more legacy families you'll still run into: [EDACS, LTR &
-MPT-1327](edacs-ltr-mpt1327/).
+MPT-1327](/learn/digital-trunking/edacs-ltr-mpt1327/).

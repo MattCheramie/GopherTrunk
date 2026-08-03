@@ -1,5 +1,6 @@
 ---
 layout: page
+redirect_from: /launcher/
 title: Launcher
 description: Picking TUI / Web / Headless when the daemon starts on a TTY
 nav_group: Operate

@@ -35,4 +35,4 @@ names, are taught as *how the mechanism works* with current examples, so the
 ideas stay useful as the tools change. Examples lean gently on real software —
 including the kind of signal-crunching code behind **GopherTrunk** — to keep
 things concrete. Mark lessons complete as you go; your progress is saved in your
-browser. **[Start with lesson 1: What is AI, for a developer?](what-is-ai-for-coding/)**
+browser. **[Start with lesson 1: What is AI, for a developer?](/learn/ai-software-dev/what-is-ai-for-coding/)**

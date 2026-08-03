@@ -54,7 +54,7 @@ site it's currently in; as it moves, it switches to a neighbor's control channel
 
 For a monitor this has a direct consequence: **you choose a site**. You lock the control
 channel of the site whose coverage you're in and whose signal you receive cleanly. The
-[control-channel signaling](control-channel-signaling/) you decode is *that site's* view of
+[control-channel signaling](/learn/digital-trunking/control-channel-signaling/) you decode is *that site's* view of
 the system, and its **adjacent-site broadcasts** tell you where the neighbors are.
 
 ## P25 identifiers: WACN, System ID, RFSS, Site
@@ -104,7 +104,7 @@ it's a signal-quality problem, not a weak-signal problem.
 </figure>
 
 This is exactly why systems sometimes use a **linear modulation** like
-[CQPSK/LSM](digital-modulation-for-trunking/) for simulcast: it lets the overlapping copies
+[CQPSK/LSM](/learn/digital-trunking/digital-modulation-for-trunking/) for simulcast: it lets the overlapping copies
 combine more cleanly. When you can't lock a strong-but-smeared signal, the
 **[Constellation panel](/constellation.html)** usually shows the simulcast fingerprint, and
 moving the antenna even a little can help by changing which copy dominates.
@@ -120,7 +120,7 @@ voting mostly explains why the *infrastructure* hears mobiles so reliably.
 
 **Roaming** is a radio moving between sites. As it travels out of one site's coverage and
 into another's, it **re-registers and re-affiliates** on the new site's
-[control channel](control-channel-signaling/), so the network keeps routing its calls
+[control channel](/learn/digital-trunking/control-channel-signaling/), so the network keeps routing its calls
 correctly. To a monitor, a roaming radio appears to come and go across sites — and it's a
 reminder that the *site you monitor* determines which radios and calls you see.
 
@@ -148,5 +148,5 @@ reminder that the *site you monitor* determines which radios and calls you see.
   you're hearing.
 
 Next, the last piece of how trunking works: [encryption and
-authentication](encryption-and-authentication/) — and what a decoder can and cannot do
+authentication](/learn/digital-trunking/encryption-and-authentication/) — and what a decoder can and cannot do
 about them.

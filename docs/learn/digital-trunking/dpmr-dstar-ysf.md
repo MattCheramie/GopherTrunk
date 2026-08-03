@@ -42,13 +42,13 @@ mode rounds out the picture.
 
 The systems earlier in this module were full trunked networks. These last few are different:
 they're mostly **conventional** digital modes — fixed channels and repeaters — that you'll
-nonetheless run across on the air. None usually has a [control channel](the-control-channel/)
+nonetheless run across on the air. None usually has a [control channel](/learn/digital-trunking/the-control-channel/)
 to follow, but each carries digital voice GopherTrunk can decode.
 
 ## dPMR — NXDN's close cousin
 
 **dPMR** (digital Private Mobile Radio) is an **ETSI** standard that uses **6.25 kHz FDMA**
-with **4FSK** modulation. If that sounds almost identical to [NXDN](nxdn/), it is — the two
+with **4FSK** modulation. If that sounds almost identical to [NXDN](/learn/digital-trunking/nxdn/), it is — the two
 share the same narrowband 4FSK footprint and are easy to confuse on the
 [waterfall](/learn/rf-sdr/fft-and-waterfall/). They're separate standards, but their on-air
 fingerprints are nearly the same width and shape.
@@ -76,7 +76,7 @@ repeaters and simplex.
 
 **Yaesu System Fusion** is Yaesu's amateur digital mode, built on **C4FM** — the same
 four-level FSK family you met in [digital modulation for
-trunking](digital-modulation-for-trunking/). Its standout feature is **AMS**, *Automatic Mode
+trunking](/learn/digital-trunking/digital-modulation-for-trunking/). Its standout feature is **AMS**, *Automatic Mode
 Select*: a Fusion repeater can **automatically handle both digital and analog** signals,
 switching as needed. That lets a single repeater serve digital Fusion users and traditional
 analog FM users without anyone choosing a mode by hand — a pragmatic bridge for clubs moving
@@ -109,7 +109,7 @@ to digital gradually.
 ## Not trunked, but still on the air
 
 The common thread is that none of these is normally a **trunked** system. There's usually no
-control channel granting voice channels — they're [conventional](conventional-vs-trunked/)
+control channel granting voice channels — they're [conventional](/learn/digital-trunking/conventional-vs-trunked/)
 modes on fixed frequencies and repeaters. You meet them not by hunting a control channel but
 by tuning the channel directly. The good news is that **GopherTrunk can decode the voice**
 they carry once you're on the right frequency, even though there's no trunking to track.
@@ -132,7 +132,7 @@ elsewhere in this path.
 - The open **M17** mode is a patent-free alternative worth knowing.
 
 That wraps the survey of other digital systems. The next module gets hands-on, starting with
-[identifying the system](identifying-the-system/) you're actually looking at.
+[identifying the system](/learn/digital-trunking/identifying-the-system/) you're actually looking at.
 
 You can also revisit the broader catalogue of non-trunked transmissions in [other
 signals](/learn/rf-sdr/other-signals/).

@@ -28,4 +28,4 @@ through assembling your own solo development stack, workflow, and distribution
 strategy. Examples lean gently on real-time and radio software — the streaming,
 signal-crunching kind of code behind **GopherTrunk** — so abstract ideas stay
 concrete. Mark lessons complete as you go; your progress is saved in your
-browser. New here? **[Start with lesson 1: What is software?](what-is-software/)**
+browser. New here? **[Start with lesson 1: What is software?](/learn/intro-software-dev/what-is-software/)**

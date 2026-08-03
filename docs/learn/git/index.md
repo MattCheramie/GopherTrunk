@@ -25,4 +25,4 @@ you host on GitHub, GitLab, or your own server. The later modules move onto
 GitHub itself: pull requests, issues, Actions, and the guardrails that keep a
 shared `main` branch healthy. Mark lessons complete as you go — your progress is
 saved in your browser. New here? **[Start with lesson 1: Why version
-control?](what-is-version-control/)**
+control?](/learn/git/what-is-version-control/)**
