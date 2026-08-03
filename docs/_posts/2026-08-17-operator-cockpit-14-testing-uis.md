@@ -1,6 +1,6 @@
 ---
 title: "The Operator's Cockpit, Part 14: Testing Browser & Terminal UIs"
-description: The finale — how GopherTrunk tests a browser and a terminal operator UI without a live radio, standing the whole cockpit up in memory: httptest API contract tests, a byte-for-byte WAV header pinned on both the Go server and the TypeScript client, Bubbletea model tests that feed synthetic messages into the reducer, and pure SSE-parser and audio-framer unit tests.
+description: The finale — how GopherTrunk tests a browser and a terminal operator UI without a live radio, standing the whole cockpit up in memory — httptest API contract tests, a byte-for-byte WAV header pinned on both the Go server and the TypeScript client, Bubbletea model tests that feed synthetic messages into the reducer, and pure SSE-parser and audio-framer unit tests.
 category: deep-dives
 keywords: test ui without radio, httptest api contract, bubbletea model test, sse parser test, wav header byte for byte, vitest jsdom audio, spa fallback test, in memory server test, one contract two renderers, gophertrunk operator cockpit
 tags: [operator-cockpit, testing, httptest, bubbletea, vitest, go]
@@ -184,9 +184,8 @@ func newTestModel(t *testing.T) *Model {
 
 func TestPollActiveMsg_PopulatesShared(t *testing.T) {
     m := newTestModel(t)
-    updated, _ := m.Update(pollActiveMsg{calls: []client.ActiveCallDTO{{
-        Talkgroup: &client.TalkgroupDTO{ID: 42, AlphaTag: "Dispatch"}, /* … */
-    }}})
+    call := client.ActiveCallDTO{Talkgroup: &client.TalkgroupDTO{ID: 42, AlphaTag: "Dispatch"}}
+    updated, _ := m.Update(pollActiveMsg{calls: []client.ActiveCallDTO{call}})
     m = updated.(*Model)
     if !strings.Contains(m.View(), "Dispatch") { t.Errorf("Dispatch not in dashboard") }
 }
