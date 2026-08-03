@@ -181,6 +181,16 @@ groups:
         url: /best-scanner-antenna/
       - title: "Scanner hardware (Field Guide)"
         url: /reference/#consumer-scanners
+      - title: Best SDR for GopherTrunk
+        url: /best-sdr-for-gophertrunk/
+      - title: What hardware do I need?
+        url: /what-do-i-need-for-gophertrunk/
+      - title: Best RTL-SDR
+        url: /best-rtl-sdr/
+      - title: Best SDR antenna
+        url: /best-sdr-antenna/
+      - title: SDR cables & connectors
+        url: /sdr-cables-and-connectors/
       - title: "SDR devices (Field Guide)"
         url: /reference/#sdr-devices
       - title: SDR hardware setup

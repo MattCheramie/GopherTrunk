@@ -7,12 +7,23 @@ description: HackRF One is an open-source wideband half-duplex software-defined 
 keywords: HackRF One, Great Scott Gadgets, wideband SDR, transceiver, 1 MHz 6 GHz, transmit
 aka: [HackRF, HackRF One]
 autolink: true
+affiliate: true
+product:
+  name: "HackRF One"
+  brand: Great Scott Gadgets
+  category: Software-defined radio
+  lowPrice: "140"
+  highPrice: "170"
+  url: https://www.amazon.com/dp/B0BKH7Z2NJ?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Wideband SDR transceiver }
   - { label: Vendor, value: Great Scott Gadgets }
   - { label: Range, value: 1 MHz – 6 GHz }
   - { label: Bandwidth, value: up to ~20 MHz }
   - { label: TX, value: Yes (half-duplex) }
+  - { label: With GopherTrunk, value: Receive-only decode }
+  - { label: Price, value: around $150 }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B0BKH7Z2NJ?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [rtl-sdr, airspy, airspy-hf-plus, bladerf, limesdr, plutosdr, sdrplay-rsp1a, zadig, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
@@ -20,6 +31,15 @@ related_reading:
   - { title: "RF Front End, Part 11: HackRF One", url: /blog/deep-dives/rf-front-end-11-hackrf-one/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/HackRF_One
+faq:
+  - q: "Is the HackRF One good for police scanning with GopherTrunk?"
+    a: "It works, but it is overkill. HackRF's 8-bit ADC gives less dynamic range than an Airspy, and its transmit and 6 GHz reach are wasted on receive-only VHF/UHF scanning. For following P25/DMR/NXDN trunked systems, a $30 RTL-SDR or an Airspy is usually the better buy. Reach for a HackRF when you also want its huge tuning range or transmit for other projects."
+  - q: "Can GopherTrunk transmit with a HackRF?"
+    a: "No. GopherTrunk is a receive-only decoder — it uses the HackRF purely as a receiver. Transmitting also requires appropriate licensing and is outside GopherTrunk's scope."
+  - q: "Does GopherTrunk need libhackrf or hackrf-tools?"
+    a: "No. GopherTrunk speaks the HackRF's USB protocol directly with a pure-Go driver. On Linux you add one udev rule; on Windows the in-box WinUSB driver usually binds automatically. No SoapySDR or vendor C libraries required."
+  - q: "HackRF One or Airspy for GopherTrunk?"
+    a: "For scanning, the Airspy — its 12-bit ADC and cleaner front end decode weak and busy channels better than the HackRF's 8-bit sampling. Choose the HackRF only if you need 1 MHz–6 GHz coverage or transmit for other work."
 ---
 
 **HackRF One** is an open-source, wideband, half-duplex
@@ -36,6 +56,19 @@ Gadgets, covering **1 MHz to 6 GHz** with up to ~20 MHz bandwidth and the abilit
 </svg>
 <figcaption>HackRF spans a huge range and can transmit, but with lower dynamic range — overkill for scanning.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0BKH7Z2NJ?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**Huge range, transmit-capable, 8-bit.** HackRF One covers **1 MHz–6 GHz** and can
+transmit — but its 8-bit ADC gives less dynamic range than an
+[Airspy](/reference/airspy/), and **GopherTrunk uses it receive-only**. **For scanning
+it's overkill:** a ~$30 [RTL-SDR](/reference/rtl-sdr/) or an Airspy decodes
+[P25](/reference/project-25/)/[DMR](/reference/dmr/)/[NXDN](/reference/nxdn/) better for
+less. **Buy it** if you also want 6 GHz reach or transmit for other projects. **~$150.**
+Like every receiver, it can't decode [AES encryption](/police-scanner-encryption/).
+</div>
 
 ## Overview
 
@@ -130,6 +163,20 @@ full serial so each entry pins exactly one device.
 > string — the leading 16 digits are a constant prefix (commonly all zeros) and
 > the trailing digits are the unique part. `gophertrunk sdr list` prints the
 > whole string, matching `hackrf_info`'s "Serial number".
+
+## Where to buy
+
+The HackRF One is sold by Great Scott Gadgets and resellers; the Amazon listing below
+is a Nooelec bundle that adds an ANT500 telescopic antenna and SMA adapters — a
+convenient way to get on the air. If you only want to *scan* trunked systems, a
+[RTL-SDR](/reference/rtl-sdr/) or [Airspy](/reference/airspy/) is the cheaper, better-
+suited pick — see [best SDR for GopherTrunk](/best-sdr-for-gophertrunk/) and
+[Airspy vs RTL-SDR vs HackRF](/airspy-vs-rtl-sdr-vs-hackrf/).
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0BKH7Z2NJ?tag=gophertrunk-20" rel="nofollow sponsored noopener">HackRF One bundle on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

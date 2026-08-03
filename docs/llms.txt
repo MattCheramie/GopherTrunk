@@ -66,6 +66,20 @@ Consumer scanner hardware (Uniden, Whistler) compared honestly against a free SD
 - [Digital vs analog scanners]({{ '/digital-vs-analog-scanner/' | absolute_url }}): what you can still hear on an analog radio in 2026.
 - [P25 scanners]({{ '/p25-scanner/' | absolute_url }}): what Phase I/II and simulcast mean for buyers.
 
+## SDR hardware for GopherTrunk (buyer's guides)
+The receivers, antennas, cables, and accessories to run GopherTrunk, with honest picks and Amazon links.
+- [Best SDR for GopherTrunk]({{ '/best-sdr-for-gophertrunk/' | absolute_url }}): RTL-SDR, NESDR, Airspy, and HackRF compared for P25/DMR/NXDN decoding.
+- [What hardware do I need to run GopherTrunk?]({{ '/what-do-i-need-for-gophertrunk/' | absolute_url }}): the complete dongle + antenna + adapter + computer checklist.
+- [Best RTL-SDR for scanning]({{ '/best-rtl-sdr/' | absolute_url }}): which RTL-SDR dongle to buy (and why the V4 is end-of-line).
+- [Airspy vs RTL-SDR vs HackRF]({{ '/airspy-vs-rtl-sdr-vs-hackrf/' | absolute_url }}): choosing a receiver by use case.
+- [Best SDR antenna]({{ '/best-sdr-antenna/' | absolute_url }}): dipole kits, discones, and mounting for better reception.
+- [SDR cables & connectors]({{ '/sdr-cables-and-connectors/' | absolute_url }}): SMA/BNC/N/F/UHF adapters and coax.
+- [Best LNA for SDR]({{ '/best-sdr-lna/' | absolute_url }}) and [SDR filters]({{ '/sdr-filters/' | absolute_url }}): fixing weak signals and overload.
+- [Best SDR for HF]({{ '/best-hf-sdr/' | absolute_url }}): Airspy HF+ and upconverters for shortwave/ham.
+- [Run GopherTrunk on a Raspberry Pi]({{ '/raspberry-pi-sdr-scanner/' | absolute_url }}): 24/7 headless decoding.
+- [Best SDR for P25 trunking]({{ '/best-sdr-for-p25-trunking/' | absolute_url }}) and [multi-dongle setups]({{ '/multi-dongle-sdr-setup/' | absolute_url }}): single-site vs wideband multi-site.
+- [Cheapest way to scan digital radio]({{ '/cheap-sdr-scanner/' | absolute_url }}): a $30 SDR beats a $380 digital scanner.
+
 ## Technical docs
 - [Architecture]({{ '/architecture.html' | absolute_url }}): how the engine is built.
 - [Vocoders]({{ '/vocoders.html' | absolute_url }}): IMBE and AMBE+2 voice decoding.
