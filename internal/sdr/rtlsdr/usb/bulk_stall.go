@@ -156,10 +156,17 @@ func (w *bulkStallWatch) run(now func() int64, tick <-chan time.Time, stop <-cha
 		case <-stop:
 			return
 		case <-tick:
+			// Sample the clock AT tick receipt, before onTick(). onTick is a
+			// test-only hook that hands control back to the driver, which may
+			// advance an injected clock for the next tick; reading now() after it
+			// would let that next value decide THIS tick's stall (a false early
+			// fire — the flake behind the CI hang in the stall-watch test). In
+			// production onTick is nil, so this is behaviour-identical there.
+			atTick := now()
 			if onTick != nil {
 				onTick()
 			}
-			if w.shouldFire(now(), stallTimeoutNanos) {
+			if w.shouldFire(atTick, stallTimeoutNanos) {
 				if w.fired.CompareAndSwap(false, true) {
 					if onStall != nil {
 						onStall()

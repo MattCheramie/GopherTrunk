@@ -98,6 +98,13 @@ type DMBurst struct {
 	// burst kinds; BKN1 is set only for a DNB (a DSB's shorter block 1 is in SCHS,
 	// so BKN1 is nil for a DSB).
 	BKN1, BKN2 []uint8
+	// SoftBKN1, SoftBKN2 are the per-symbol complex differentials (the receiver's
+	// SoftSink output) strictly parallel to BKN1/BKN2, populated only by
+	// ExtractDMBurstsSoft — nil after the hard ExtractDMBursts. They let
+	// DMBurstTCHSpeechSoft soft-decode a DNB's TCH/S speech (the ~2× yield lever
+	// soft-decision gives the TMO path, #1001), and are the DMO analog of the
+	// differentials TrafficExtractor carries via StashSoft/softFrame.
+	SoftBKN1, SoftBKN2 []complex64
 	// Rotation is the residual π/4-DQPSK dibit rotation (0..3) at which the
 	// training sequence correlated — the burst's dibits must be de-rotated by this
 	// before channel decoding (rotateDibits(dibits, (4-Rotation)&3)).
@@ -115,18 +122,36 @@ type DMBurst struct {
 // baseIdx is the absolute dibit index of dibits[0], carried into DMBurst.Lead so
 // callers can order bursts across calls; pass 0 for a one-shot slice.
 func ExtractDMBursts(dibits []uint8, baseIdx int) []DMBurst {
+	return extractDMBursts(dibits, nil, baseIdx)
+}
+
+// ExtractDMBurstsSoft is the soft-decision-capable twin of ExtractDMBursts: it
+// carries the receiver's per-symbol complex differentials (diffs, the SoftSink
+// output — strictly parallel to dibits and the SAME length) into each DNB's
+// SoftBKN1/SoftBKN2, so DMBurstTCHSpeechSoft can soft-decode the TCH/S speech
+// (the ~2× yield lever, #1001). When diffs is nil or a length mismatch it
+// degrades cleanly to the hard ExtractDMBursts (soft fields left nil, callers
+// fall back to the hard decode) rather than misaligning.
+func ExtractDMBurstsSoft(dibits []uint8, diffs []complex64, baseIdx int) []DMBurst {
+	if len(diffs) != len(dibits) {
+		diffs = nil
+	}
+	return extractDMBursts(dibits, diffs, baseIdx)
+}
+
+func extractDMBursts(dibits []uint8, diffs []complex64, baseIdx int) []DMBurst {
 	var out []DMBurst
 
 	// DSB: correlate the 19-dibit synchronisation training sequence (shared with
 	// TMO's SB). Threshold 3 matches processSB / TrafficExtractor.
 	sts := SyncTrainingDibits()
-	out = appendDMBursts(out, dibits, baseIdx, DMBurstSync, sts, 3,
+	out = appendDMBursts(out, dibits, diffs, baseIdx, DMBurstSync, sts, 3,
 		dmDSBBKN1Start, dmSCHSDibits, dmDSBBKN2Start, dmBlockDibits)
 
 	// DNB: correlate either 11-dibit normal training sequence. Threshold 2 matches
 	// TrafficExtractor's normal-burst detectors.
 	for _, nts := range [][]uint8{NormalSyncDibits(), NormalSyncDibits2()} {
-		out = appendDMBursts(out, dibits, baseIdx, DMBurstNormal, nts, 2,
+		out = appendDMBursts(out, dibits, diffs, baseIdx, DMBurstNormal, nts, 2,
 			dmDNBBKN1Start, dmBlockDibits, dmDNBBKN2Start, dmBlockDibits)
 	}
 	return out
@@ -137,7 +162,7 @@ func ExtractDMBursts(dibits []uint8, baseIdx int) []DMBurst {
 // training lead. For a DSB the first block is the 60-dibit SCH/S (placed in SCHS);
 // for a DNB both blocks are 108-dibit (placed in BKN1/BKN2). De-duplicates a lead
 // that correlates under more than one rotation (keeps the first).
-func appendDMBursts(out []DMBurst, dibits []uint8, baseIdx int, kind DMBurstKind,
+func appendDMBursts(out []DMBurst, dibits []uint8, diffs []complex64, baseIdx int, kind DMBurstKind,
 	pattern []uint8, tol, b1Start, b1Len, b2Start, b2Len int) []DMBurst {
 	n := len(pattern)
 	seen := map[int]struct{}{}
@@ -164,6 +189,15 @@ func appendDMBursts(out []DMBurst, dibits []uint8, baseIdx int, kind DMBurstKind
 			} else {
 				b.BKN1 = blk1
 			}
+			// Carry the parallel soft differentials for the DNB traffic blocks
+			// (soft SCH/S isn't the yield lever, so a DSB keeps only SoftBKN2 for
+			// symmetry). diffs is guaranteed parallel to dibits by the caller.
+			if diffs != nil {
+				b.SoftBKN2 = cloneDiffs(diffs[b2From:b2To])
+				if kind == DMBurstNormal {
+					b.SoftBKN1 = cloneDiffs(diffs[b1From:b1To])
+				}
+			}
 			out = append(out, b)
 		}
 	}
@@ -172,6 +206,12 @@ func appendDMBursts(out []DMBurst, dibits []uint8, baseIdx int, kind DMBurstKind
 
 func cloneDibits(s []uint8) []uint8 {
 	c := make([]uint8, len(s))
+	copy(c, s)
+	return c
+}
+
+func cloneDiffs(s []complex64) []complex64 {
+	c := make([]complex64, len(s))
 	copy(c, s)
 	return c
 }
