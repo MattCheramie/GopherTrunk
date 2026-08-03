@@ -40,8 +40,8 @@ the **British/European** standard with a **1200 bps control channel**, used wide
 
 </div>
 
-Beyond Motorola's [SmartNet](motorola-smartnet/), three other legacy families filled the
-analog-trunking world. Each solved the [trunking](conventional-vs-trunked/) problem
+Beyond Motorola's [SmartNet](/learn/digital-trunking/motorola-smartnet/), three other legacy families filled the
+analog-trunking world. Each solved the [trunking](/learn/digital-trunking/conventional-vs-trunked/) problem
 differently, and each has a recognisable fingerprint on the air.
 
 ## EDACS
@@ -53,7 +53,7 @@ hallmarks:
 - A **fast, dedicated control channel** running at **9600 bps** — quicker than SmartNet's
   3600 bps or MPT's 1200 bps, which made EDACS feel snappy in assigning channels.
 - **AFS** talkgroup numbering — **Agency / Fleet / Subfleet** — a three-level hierarchy that
-  organises [talkgroups](talkgroups-ids-affiliation/) by agency, then fleet within it, then
+  organises [talkgroups](/learn/digital-trunking/talkgroups-ids-affiliation/) by agency, then fleet within it, then
   subfleet, rather than a flat number.
 - Voice is usually **analog FM**, but a **digital variant, ProVoice**, exists for systems
   that wanted digital audio over the EDACS infrastructure.
@@ -121,7 +121,7 @@ The quickest fingerprints: EDACS has a *fast* dedicated control channel; **LTR h
 dedicated control channel** to find at all (look for sub-audible data on the voice
 repeaters); and MPT-1327's slower 1200 bps control channel turns up mostly outside the US.
 As always, the surest identification is letting a decoder read the [control-channel
-signaling](control-channel-signaling/) once it's locked.
+signaling](/learn/digital-trunking/control-channel-signaling/) once it's locked.
 
 <div class="knowledge-check" data-quiz data-correct-msg="Right — LTR has no dedicated control channel; the data is distributed across every repeater." markdown="0">
   <p class="knowledge-check__q">Quick check: which of these systems has no dedicated control channel?</p>
@@ -145,4 +145,4 @@ signaling](control-channel-signaling/) once it's locked.
 - Tell them apart by control-channel behaviour — or let the decoder identify the signaling.
 
 Next, we lighten up with the smaller digital modes you'll meet on the bands: [dPMR, D-STAR
-& System Fusion](dpmr-dstar-ysf/).
+& System Fusion](/learn/digital-trunking/dpmr-dstar-ysf/).

@@ -27,4 +27,4 @@ commands into scripts. The last module puts it all to work on real machines: SSH
 systemd services, monitoring, and a full walkthrough of running GopherTrunk on
 Linux. Examples use Linux, with notes for macOS and Windows (WSL). Mark lessons
 complete as you go — your progress is saved in your browser. New here? **[Start
-with lesson 1: What is Linux?](what-is-linux/)**
+with lesson 1: What is Linux?](/learn/linux-cli/what-is-linux/)**

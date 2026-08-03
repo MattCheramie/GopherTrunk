@@ -1,4 +1,5 @@
 ---
+redirect_from: /learn/the-control-channel/
 slug: the-control-channel
 title: "The control channel: the system's heartbeat"
 description: A dedicated control channel carries only data, continuously, and is the map of a whole trunked system — broadcasting identity, channel grants, and neighbors. Why you decode it first.
@@ -52,7 +53,7 @@ On a trunked system, one frequency is set aside to carry a **constant stream of 
 and **no voice at all**. While voice channels sit idle between calls, the control
 channel never stops talking — it is the always-on signaling bus that every radio on the
 system listens to. That continuous data is what lets the system assign and reclaim
-voice channels [on demand](conventional-vs-trunked/), and what lets a monitor follow along.
+voice channels [on demand](/learn/digital-trunking/conventional-vs-trunked/), and what lets a monitor follow along.
 
 Because it's always transmitting, the control channel is also the **easiest part of the
 system to find and lock**: it's a steady digital carrier on a known frequency, not a
@@ -72,7 +73,7 @@ understand and follow the system:
 | Status / paging | individual calls, alerts, and short data |
 
 The **channel grant** is the one a monitor lives on: it's the message that says
-*"talkgroup 101 is now on voice channel 3"* (and, on a [TDMA](tdma-vs-fdma/) system,
+*"talkgroup 101 is now on voice channel 3"* (and, on a [TDMA](/learn/digital-trunking/tdma-vs-fdma/) system,
 *which slot*). Read those in real time and you always know where every conversation is.
 The **identity** broadcasts let you recognise the system, and the **neighbor list** is
 how multi-site roaming works, both topics later in the path.
@@ -151,4 +152,4 @@ where Module 3 and beyond pick up.
 - Not all systems have one — **LTR** uses distributed, sub-audible control instead.
 
 That closes Module 2. The next module opens with the distinction that started it all:
-[conventional vs. trunked](conventional-vs-trunked/).
+[conventional vs. trunked](/learn/digital-trunking/conventional-vs-trunked/).

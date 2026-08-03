@@ -241,7 +241,7 @@ your hardware:
 
 That enumerates attached SDR devices. (On Linux, if nothing shows up, revisit the
 USB permissions in [Installing on Linux]({{ '/install-linux/' | relative_url }}).)
-For a guided first run, the [Launcher]({{ '/launcher/' | relative_url }}) and the
+For a guided first run, the [Launcher]({{ '/launcher.html' | relative_url }}) and the
 TUI walkthrough take it from here.
 
 ## 5. Install on your PATH

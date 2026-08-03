@@ -25,4 +25,4 @@ piece — types, functions, errors, structs, interfaces. The middle unit covers 
 headline feature, concurrency. The last units show how real programs are organized
 and tested, then walk through actual GopherTrunk code so the ideas land somewhere
 concrete. Mark lessons complete as you go — your progress is saved in your browser.
-New here? **[Start with lesson 1: Why Go?](why-go/)**
+New here? **[Start with lesson 1: Why Go?](/learn/programming-go/why-go/)**

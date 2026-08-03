@@ -37,7 +37,7 @@ and crucially, **identifier/frequency-band updates** carry the formula that turn
 
 </div>
 
-You've watched a [single call](anatomy-of-a-call/) flow through the control channel. Now we
+You've watched a [single call](/learn/digital-trunking/anatomy-of-a-call/) flow through the control channel. Now we
 catalogue the *full vocabulary* — the message types that, taken together, let a decoder
 reconstruct the entire system. This is the most data-dense part of trunking, and it's where
 a "trunk-tracker" earns its name.
@@ -149,5 +149,5 @@ seen the identifier update you need.
   into **frequencies**.
 - A trunk-tracker fuses these into a **live channel map** — exactly what CC Activity shows.
 
-Next, we step back and compare the [trunking flavors](trunking-flavors/) — dedicated vs.
+Next, we step back and compare the [trunking flavors](/learn/digital-trunking/trunking-flavors/) — dedicated vs.
 distributed control, and message vs. transmission trunking.

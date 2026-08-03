@@ -43,8 +43,8 @@ superframes carrying IMBE plus link control. **GopherTrunk decodes the control c
 first**, then follows each grant to the voice channel.
 </div>
 
-You met the [modulations of digital trunking](digital-modulation-for-trunking/) and how
-a [control channel signals](control-channel-signaling/) calls. P25 Phase 1 is where all
+You met the [modulations of digital trunking](/learn/digital-trunking/digital-modulation-for-trunking/) and how
+a [control channel signals](/learn/digital-trunking/control-channel-signaling/) calls. P25 Phase 1 is where all
 of it comes together into the single most common digital system you will track in North
 America. This lesson opens it up end to end.
 
@@ -174,7 +174,7 @@ systems) and key. GopherTrunk reads the encrypted flag from the link control *be
 voice even starts, logs the call as encrypted, and still captures the protected frames —
 but without the (operator-supplied, legally held) key the audio stays unintelligible.
 This is the same known-key-only posture covered in [encryption and
-authentication](encryption-and-authentication/).
+authentication](/learn/digital-trunking/encryption-and-authentication/).
 
 ## How GopherTrunk follows a Phase 1 system
 
@@ -215,4 +215,4 @@ The procedure is exactly the trunking pattern, made concrete:
   IMBE** to audio.
 
 Next, we see how P25 doubled its capacity by moving the traffic channels to TDMA:
-[P25 Phase 2](p25-phase-2/).
+[P25 Phase 2](/learn/digital-trunking/p25-phase-2/).

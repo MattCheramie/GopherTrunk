@@ -15,6 +15,9 @@ on:
       - "docs/**"
       - "README.md"
       - ".github/workflows/pages.yml"
+      - ".github/scripts/check_site_pages.py"
+      - ".github/scripts/check_internal_links.py"
+      - ".github/scripts/synthesize_home.sh"
   schedule:
     # Daily rebuild so future-dated posts publish on their date. A series can be
     # committed all at once with `future: false` (docs/_config.yml) and
@@ -44,41 +47,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Synthesize landing page from README.md
-        run: |
-          {
-            # No `title:` front-matter — jekyll-seo-tag falls back to
-            # site.title for the homepage <title>, which gives us the
-            # SEO-optimal "GopherTrunk · <site.description>" string
-            # instead of "Home | GopherTrunk".
-            printf -- '---\nlayout: home\n---\n\n'
-            # Five transforms:
-            # 1. docs/assets/foo -> /assets/foo (docs/ is the Jekyll
-            #    source root, so the asset publishes at /assets/foo).
-            # 2. ](docs/foo.md) -> ](/foo.html) so README cross-links
-            #    resolve on the Pages site.
-            # 3/4. Remaining repo-relative links (CHANGELOG.md, LICENSE,
-            #    CONTRIBUTING.md, samples/…, etc.) point at files that
-            #    live in the repo but NOT on the Pages site, so on the
-            #    homepage they'd 404. Rewrite them to absolute GitHub
-            #    URLs — tree/main for directories (trailing slash),
-            #    blob/main for files. These run AFTER rule 2, so the
-            #    already-rewritten /foo.html links (leading `/`) and any
-            #    http(s):// links (the `[^):#]` class stops at the `:`)
-            #    are left untouched.
-            # 5. Strip everything from the start of the README through
-            #    the first `---` horizontal-rule separator. That cuts
-            #    the README hero (logo + H1 + tagline + badges) which
-            #    is already rendered by the home.html layout's own
-            #    hero block — without this, the homepage double-H1s
-            #    and Google penalizes multi-H1 documents.
-            sed -E \
-              -e 's|docs/assets/|/assets/|g' \
-              -e 's|\]\(docs/([a-z0-9_-]+)\.md(#[^)]*)?\)|](/\1.html\2)|g' \
-              -e 's|\]\(([A-Za-z][^):#]*/)\)|](https://github.com/MattCheramie/GopherTrunk/tree/main/\1)|g' \
-              -e 's|\]\(([A-Za-z][^):#]*)(#[^)]*)?\)|](https://github.com/MattCheramie/GopherTrunk/blob/main/\1\2)|g' \
-              README.md \
-              | sed '0,/^---$/d'
-          } > docs/index.md
+        run: .github/scripts/synthesize_home.sh README.md docs/index.md
 
       - uses: actions/configure-pages@v5
 
@@ -91,6 +60,11 @@ jobs:
       # sitemap.xml or not linked from /sitemap/). Same check runs on PRs.
       - name: Verify every page is in the site map
         run: python3 .github/scripts/check_site_pages.py _site
+
+      # Block the deploy if any built page links to a URL that doesn't exist
+      # (broken internal link). Same check runs on PRs.
+      - name: Verify every internal link resolves
+        run: python3 .github/scripts/check_internal_links.py _site
 
       - uses: actions/upload-pages-artifact@v3
         with:

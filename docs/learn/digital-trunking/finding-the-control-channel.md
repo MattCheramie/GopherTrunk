@@ -31,7 +31,7 @@ gophertrunk_links:
 <div class="tldr" markdown="1">
 <span class="tldr__label">Key takeaways</span>
 To follow a trunked system you need exactly one frequency: its **[control
-channel](the-control-channel/)**. Find it three ways — look it up in a **database** like
+channel](/learn/digital-trunking/the-control-channel/)**. Find it three ways — look it up in a **database** like
 RadioReference, recognise its **constant data burst** on the
 [waterfall](/learn/rf-sdr/fft-and-waterfall/) (a control channel *never* goes quiet),
 or let GopherTrunk's **[Hunt](/hunt.html)** feature sweep a band, identify carriers, and
@@ -40,7 +40,7 @@ system type** to your configuration — Hunt can even commit it for you — and 
 locks on and starts following grants.
 </div>
 
-You've learned to [identify](identifying-the-system/) what a system *is*. Now you need
+You've learned to [identify](/learn/digital-trunking/identifying-the-system/) what a system *is*. Now you need
 the one frequency to point GopherTrunk at. Everything else — voice channels,
 talkgroups, who's talking — flows from decoding the control channel, so finding it is
 the whole job.
@@ -61,7 +61,7 @@ not be in any database — which is where the other two paths come in.
 
 A control channel has one unmistakable signature: **it carries data continuously and
 never stops**. While voice channels light up only when a call is granted and fall silent
-between calls, the control channel transmits its [signalling](control-channel-signaling/)
+between calls, the control channel transmits its [signalling](/learn/digital-trunking/control-channel-signaling/)
 stream every moment the system is up.
 
 <figure class="figure" markdown="0">
@@ -121,7 +121,7 @@ begins reading grants.
 Confirm it worked in the **[CC Activity](/cc-activity.html)** panel: within seconds of a
 good lock you should see affiliations, registrations, and voice grants scrolling past.
 If the panel stays empty, the control channel either isn't locked or you've got the wrong
-frequency — a problem we'll tackle in [troubleshooting](troubleshooting-a-decode/).
+frequency — a problem we'll tackle in [troubleshooting](/learn/digital-trunking/troubleshooting-a-decode/).
 
 <div class="knowledge-check" data-quiz data-correct-msg="Right — the control channel transmits data constantly, so it's the carrier that never goes quiet." markdown="0">
   <p class="knowledge-check__q">Quick check: on the waterfall, which carrier is most likely the control channel?</p>
@@ -144,4 +144,4 @@ frequency — a problem we'll tackle in [troubleshooting](troubleshooting-a-deco
   in **[CC Activity](/cc-activity.html)**.
 
 Next, we'll trace the whole pipeline — from a locked control channel to recorded audio —
-in [following a system end to end](following-a-system-end-to-end/).
+in [following a system end to end](/learn/digital-trunking/following-a-system-end-to-end/).

@@ -40,8 +40,8 @@ hop channels. These choices change **what you lock onto** and **how a call moves
 
 </div>
 
-By now you can read a [control channel](control-channel-signaling/) and follow a
-[call](anatomy-of-a-call/). But not all trunked systems are built the same way. Two simple
+By now you can read a [control channel](/learn/digital-trunking/control-channel-signaling/) and follow a
+[call](/learn/digital-trunking/anatomy-of-a-call/). But not all trunked systems are built the same way. Two simple
 axes classify nearly all of them, and together they explain a lot about how a given system
 behaves on the air — and how you monitor it.
 
@@ -138,4 +138,4 @@ channel keeps moving. Watching grant frequency in
   moves**.
 
 Next, we scale up to real deployments: [sites, simulcast and
-roaming](sites-simulcast-roaming/) in multi-site systems.
+roaming](/learn/digital-trunking/sites-simulcast-roaming/) in multi-site systems.

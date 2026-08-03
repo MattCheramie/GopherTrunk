@@ -51,7 +51,7 @@ single open digital standard for *professional mobile radio* — the kind of mis
 network police, fire, ambulance, railways, airports, and utilities depend on. It succeeded
 spectacularly outside the US: national public-safety networks across Europe, large parts of
 Asia, the Middle East, Africa, and Latin America are TETRA. Think of it as the
-rough-equivalent role that [P25](p25-phase-1/) plays in North America, filling the same
+rough-equivalent role that [P25](/learn/digital-trunking/p25-phase-1/) plays in North America, filling the same
 public-safety niche with a different rulebook.
 
 ## How the air interface works
@@ -59,12 +59,12 @@ public-safety niche with a different rulebook.
 TETRA's physical layer is its most distinctive trait. A carrier is **25 kHz wide** and
 carries **four time slots** in a TDMA frame, so up to four calls (or signaling plus three
 calls) share one frequency by taking turns — the same time-sharing idea you met in
-[TDMA vs FDMA](tdma-vs-fdma/), but with *four* slots rather than DMR's two.
+[TDMA vs FDMA](/learn/digital-trunking/tdma-vs-fdma/), but with *four* slots rather than DMR's two.
 
 - **Modulation:** **π/4-DQPSK** — a differential four-phase scheme. Each symbol carries two
   bits, and the constellation rotates by a quarter-turn between symbols, which keeps the
   envelope from passing through zero and eases the transmitter's amplifier. This is *not*
-  the [4FSK](digital-modulation-for-trunking/) of P25 and DMR; it's phase modulation, and on
+  the [4FSK](/learn/digital-trunking/digital-modulation-for-trunking/) of P25 and DMR; it's phase modulation, and on
   the [constellation](/constellation.html) it shows up as a ring of points rather than four
   frequency levels.
 - **Symbol rate:** **18000 symbols/s**, giving a **36 kbps** gross channel rate (2 bits per
@@ -102,7 +102,7 @@ TETRA radios operate in two modes:
 
 - **TMO — Trunked Mode Operation.** The normal case: radios register with and talk through
   the **infrastructure** (base stations linked to a switching and management network),
-  coordinated by a [control channel](the-control-channel/). This gives you all the trunking
+  coordinated by a [control channel](/learn/digital-trunking/the-control-channel/). This gives you all the trunking
   benefits — group calls, individual calls, priority, area-wide coverage.
 - **DMO — Direct Mode Operation.** Radios talk **directly to one another** with no
   infrastructure at all, like a simplex walkie-talkie. Crews use DMO when they're out of
@@ -126,7 +126,7 @@ The standard defines both **air-interface encryption** (scrambling the whole rad
 including signaling) and **end-to-end encryption** for the most sensitive users. Where it's
 enabled, you'll see a healthy control channel and active traffic slots but get no
 intelligible audio — the same wall you met in [encryption and
-authentication](encryption-and-authentication/). That's expected on a lot of TETRA networks.
+authentication](/learn/digital-trunking/encryption-and-authentication/). That's expected on a lot of TETRA networks.
 
 <div class="knowledge-check" data-quiz data-correct-msg="Right — TETRA uses 25 kHz channels with four TDMA slots and π/4-DQPSK." markdown="0">
   <p class="knowledge-check__q">Quick check: what makes a TETRA carrier stand out on the waterfall compared with P25 or DMR?</p>
@@ -149,4 +149,4 @@ authentication](encryption-and-authentication/). That's expected on a lot of TET
   modulation, both handy identification clues.
 - **Encryption is common**, so don't be surprised by active-but-silent TETRA traffic.
 
-Next we cross back to a narrowband North-American favourite and its global cousins: [NXDN](nxdn/).
+Next we cross back to a narrowband North-American favourite and its global cousins: [NXDN](/learn/digital-trunking/nxdn/).

@@ -29,4 +29,4 @@ demodulates, and recovers the data hidden in the wave. Unit 5 puts the whole
 chain together the way a real decoder does and maps every stage onto
 GopherTrunk's actual code. Mark lessons complete as you go — your progress is
 saved in your browser. New here? **[Start with lesson 1: What is
-DSP?](what-is-dsp/)**
+DSP?](/learn/dsp/what-is-dsp/)**

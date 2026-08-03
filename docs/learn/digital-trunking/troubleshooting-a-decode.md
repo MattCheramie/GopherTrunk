@@ -57,9 +57,9 @@ Read down the **Symptom** column until one matches what you're seeing, then appl
 | Signal buried in noise, weak meter | **Gain too low** or **signal too weak** | Raise [gain](/learn/rf-sdr/gain-and-agc/); improve antenna/placement |
 | Smeared spectrum, ghost signals, strong meter | **Gain too high — overload** | **Reduce gain**, add attenuation |
 | Strong signal, **constellation slowly rotating** | **Frequency / PPM error** | Set the correct [PPM](/learn/rf-sdr/calibration-troubleshooting/) correction |
-| Strong meter but **fuzzy constellation**, won't lock | **Simulcast distortion** | Directional antenna, favour one site, lower gain ([multi-site lesson](multisite-and-simulcast-in-practice/)) |
+| Strong meter but **fuzzy constellation**, won't lock | **Simulcast distortion** | Directional antenna, favour one site, lower gain ([multi-site lesson](/learn/digital-trunking/multisite-and-simulcast-in-practice/)) |
 | Locks but **no calls / no grants** | **Wrong system type** or parameters | Confirm the configured protocol matches; re-check system details |
-| **Calls listed but silent or garbled** | **Encryption** | Expected — [encrypted](encryption-and-authentication/) talkgroup, **not fixable** |
+| **Calls listed but silent or garbled** | **Encryption** | Expected — [encrypted](/learn/digital-trunking/encryption-and-authentication/) talkgroup, **not fixable** |
 | Audio decodes but sounds wrong | **Voice level / clarity** | [Voice calibration](/voice-calibration.html) |
 
 The trick is discipline: change **one thing at a time** and watch the
@@ -94,7 +94,7 @@ the [radio ID](/radio-ids.html) and talkgroup show, but the audio is silent or g
 the talkgroup is **encrypted**. No receiver can recover encrypted voice without the key.
 Confirm by checking whether *other* talkgroups on the same system produce audio — if they
 do, your chain is healthy and the silent one is simply encrypted. This is a
-[fundamental limit](encryption-and-authentication/), not a bug to chase.
+[fundamental limit](/learn/digital-trunking/encryption-and-authentication/), not a bug to chase.
 
 <div class="knowledge-check" data-quiz data-correct-msg="Right — grants visible but silent audio, while other talkgroups work, means the talkgroup is encrypted." markdown="0">
   <p class="knowledge-check__q">Quick check: the control channel decodes, grants and radio IDs appear, but one talkgroup's calls play back silent while others work. Most likely cause?</p>
@@ -134,6 +134,6 @@ them, finding the control channel, following calls end to end, handling multi-si
 simulcast, and troubleshooting when it fights you. You now have a mental model of every
 stage, which is exactly what turns settings-poking into reasoning.
 
-Keep the **[glossary](glossary/)** open whenever a term needs a refresher, and head to
+Keep the **[glossary](/learn/digital-trunking/glossary/)** open whenever a term needs a refresher, and head to
 **[getting started](/getting-started.html)** to put all of this into practice on a real
 system. Well done — you've earned the lock.
