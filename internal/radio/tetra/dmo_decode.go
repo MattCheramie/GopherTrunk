@@ -34,11 +34,12 @@ import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 // that PDU parser lands, callers pass the colour code explicitly (0 is both the
 // spec default for the DSB blocks and the common radio-to-radio DMO value).
 //
-// This layer is hard-decision. Soft-decision TCH/S decode (which ~doubled the
-// TMO same-carrier yield, #1001) needs the receiver's per-dibit differentials
-// carried parallel to the sliced blocks (the TrafficExtractor.StashSoft bridge);
-// wiring that for DMO is the natural follow-up once this hard path is validated
-// on air.
+// Both a hard-decision path (DMBurstTCHSpeech, off the sliced dibits) and a
+// soft-decision path (DMBurstTCHSpeechSoft, off the per-symbol differentials
+// ExtractDMBurstsSoft carries in DMBurst.SoftBKN1/SoftBKN2) are provided. The
+// soft path is the DMO analog of the TMO TrafficExtractor.softFrame bridge and
+// gives the same ~2× same-carrier yield lever (#1001); callers try soft first
+// and fall back to hard when no differentials were stashed.
 
 // dmDerotatedBits converts a burst's sliced dibit block back to on-air type-5
 // bits, undoing the residual π/4-DQPSK rotation (0..3) the detector reported for
@@ -102,6 +103,34 @@ func DMBurstTCHSpeech(b DMBurst, colour uint32) [][]byte {
 		type5 = framing.DescrambleTetra(type5, colour)
 	}
 	return TCHSpeechFrames(framing.PackBitsMSB(type5))
+}
+
+// DMBurstTCHSpeechSoft is the soft-decision analog of DMBurstTCHSpeech: it
+// decodes a DNB's TCH/S speech from the per-symbol complex differentials
+// ExtractDMBurstsSoft stashed in b.SoftBKN1/SoftBKN2 (rather than the hard-sliced
+// dibits), running the soft-Viterbi TCH/S chain that recovers several more
+// corrupted bursts per the #1001 soft-decision win. Returns the two 137-bit
+// speech frames when the class-2 CRC passes, or nil — including when no soft
+// info is present (a hard-only extraction), so a caller can fall back to
+// DMBurstTCHSpeech. colour is the 30-bit DM colour code (0 for the default).
+//
+// The differentials are de-rotated by the same (4-Rotation)&3 the hard
+// dmDerotatedBits applies: softType5FromDiffs(diffs, r) hard-slices to exactly
+// TetraDibitsToBits(rotateDibits(dibits, r)), so passing r=(4-Rotation)&3 makes
+// the soft LLR stream the differential twin of the hard dmDNBType5 bits, and
+// DescrambleTetraSoft applies the same colour-code sign flips as DescrambleTetra.
+func DMBurstTCHSpeechSoft(b DMBurst, colour uint32) [][]byte {
+	if b.Kind != DMBurstNormal || len(b.SoftBKN1) != dmBlockDibits || len(b.SoftBKN2) != dmBlockDibits {
+		return nil
+	}
+	diffs := make([]complex64, 0, 2*dmBlockDibits)
+	diffs = append(diffs, b.SoftBKN1...)
+	diffs = append(diffs, b.SoftBKN2...)
+	llr := softType5FromDiffs(diffs, (4-b.Rotation)&3)
+	if colour != 0 {
+		llr = framing.DescrambleTetraSoft(llr, colour)
+	}
+	return TCHSpeechFramesSoft(llr)
 }
 
 // DecodeDMSCHF decodes a DNB carrying SCH/F short-data signalling (the full-slot

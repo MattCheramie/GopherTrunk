@@ -1,6 +1,7 @@
 package tetra
 
 import (
+	"math/rand"
 	"reflect"
 	"testing"
 
@@ -149,6 +150,131 @@ func TestDMTCHSpeechRotation(t *testing.T) {
 		if !reflect.DeepEqual(frames[0], framing.PackBitsMSB(frameA)) {
 			t.Errorf("rot %d: frame A mismatch after de-rotation", rot)
 		}
+	}
+}
+
+// dmoNoisyDNB builds a DNB carrying the 432 on-air (post-scramble) type-5 bits
+// onair as BOTH the hard dibit blocks (BKN1/BKN2) and the parallel per-symbol
+// complex differentials (SoftBKN1/SoftBKN2), adding Gaussian noise of the given
+// sigma to each π/4-DQPSK quadrature. Crucially the hard dibits are sign-sliced
+// from the SAME noisy differentials the soft path reads, so the hard and soft
+// decoders see one identical channel realisation — the only difference is hard
+// vs soft decision, which is exactly what the outperform test must isolate.
+// Constellation rotation 0 (softType5FromDiffs polarity: Im→b1, Re→b2, +⇒bit 0).
+func dmoNoisyDNB(onair []byte, sigma float64, rng *rand.Rand) DMBurst {
+	half := dmBlockDibits * 2 // 216 on-air bits per block
+	block := func(bits []byte) ([]uint8, []complex64) {
+		nsym := len(bits) / 2
+		diffs := make([]complex64, nsym)
+		hard := make([]byte, len(bits))
+		amp := func(b byte) float64 {
+			if b&1 == 0 {
+				return 1 // bit 0 ⇒ +LLR
+			}
+			return -1 // bit 1 ⇒ -LLR
+		}
+		for i := 0; i < nsym; i++ {
+			im := amp(bits[2*i]) + rng.NormFloat64()*sigma   // b1 → Im
+			re := amp(bits[2*i+1]) + rng.NormFloat64()*sigma // b2 → Re
+			diffs[i] = complex(float32(re), float32(im))
+			if im < 0 {
+				hard[2*i] = 1
+			}
+			if re < 0 {
+				hard[2*i+1] = 1
+			}
+		}
+		return TetraBitsToDibits(hard), diffs
+	}
+	bkn1, soft1 := block(onair[:half])
+	bkn2, soft2 := block(onair[half:])
+	return DMBurst{Kind: DMBurstNormal, BKN1: bkn1, BKN2: bkn2, SoftBKN1: soft1, SoftBKN2: soft2}
+}
+
+// TestDMTCHSpeechSoftRoundTripClean pins that the soft DNB path is the exact
+// soft twin of the hard one: on a noiseless channel ExtractDMBurstsSoft carries
+// the differentials, and DMBurstTCHSpeechSoft recovers the same two speech
+// frames the hard DMBurstTCHSpeech does — through the four-rotation search and at
+// a non-zero DM colour code (the descramble seed).
+func TestDMTCHSpeechSoftRoundTripClean(t *testing.T) {
+	for _, colour := range []uint32{0, 0x0AB1F} {
+		frameA := seqBits(7, tchSpeechFrameBits)
+		frameB := seqBits(9, tchSpeechFrameBits)
+		descrambled := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits)
+		onair := descrambled
+		if colour != 0 {
+			onair = framing.ScrambleTetra(descrambled, colour)
+		}
+
+		// Build a DNB and its parallel ideal differentials (sigma 0), then run the
+		// soft-capable extractor over the correlated stream so the soft fields come
+		// from ExtractDMBurstsSoft, not hand-set — exercising the real slicing.
+		src := dmoNoisyDNB(onair, 0, rand.New(rand.NewSource(1)))
+		dibits := buildDNB(TetraDibitsToBits(src.BKN1), TetraDibitsToBits(src.BKN2))
+		diffs := make([]complex64, len(dibits))
+		// Place the block differentials at the same offsets buildDNB lays the
+		// blocks (ramp(3,12) lead, BKN1, 11-dibit train, BKN2, trailing ramp).
+		lead := 12
+		copy(diffs[lead:], src.SoftBKN1)
+		copy(diffs[lead+dmBlockDibits+len(NormalSyncDibits()):], src.SoftBKN2)
+
+		bursts := ExtractDMBurstsSoft(dibits, diffs, 0)
+		dnb := findBurst(bursts, DMBurstNormal)
+		if dnb == nil {
+			t.Fatalf("colour %#x: no DNB detected", colour)
+		}
+		if len(dnb.SoftBKN1) != dmBlockDibits || len(dnb.SoftBKN2) != dmBlockDibits {
+			t.Fatalf("colour %#x: soft blocks not carried (%d/%d)", colour, len(dnb.SoftBKN1), len(dnb.SoftBKN2))
+		}
+		frames := DMBurstTCHSpeechSoft(*dnb, colour)
+		if len(frames) != 2 {
+			t.Fatalf("colour %#x: soft TCH/S returned %d frames, want 2", colour, len(frames))
+		}
+		if !reflect.DeepEqual(frames[0], framing.PackBitsMSB(frameA)) || !reflect.DeepEqual(frames[1], framing.PackBitsMSB(frameB)) {
+			t.Errorf("colour %#x: soft speech frames mismatch", colour)
+		}
+	}
+}
+
+// TestDMTCHSpeechSoftOutperformsHardUnderNoise is the failing-first regression
+// for the #1003 soft-decision lever: at a noise level where the hard
+// DMBurstTCHSpeech mostly fails the class-2 CRC, the soft DMBurstTCHSpeechSoft
+// passes far more of the SAME noisy bursts — the soft-Viterbi coding gain that
+// ~doubled the TMO same-carrier yield (#1001), now on the DMO path. The metric
+// is class-2-CRC yield (a returned frame pair), exactly what the replay harness
+// counts as a CRC-valid TCH/S burst; the CLAUDE.md rule "CRC yield is the only
+// trustworthy metric" applies. Exact speech recovery is pinned separately by the
+// noiseless TestDMTCHSpeechSoftRoundTripClean — under noise the uncoded class-0
+// speech bits legitimately differ even on a CRC pass, so they are not asserted
+// here (that is why class-0 is unprotected).
+func TestDMTCHSpeechSoftOutperformsHardUnderNoise(t *testing.T) {
+	frameA := seqBits(7, tchSpeechFrameBits)
+	frameB := seqBits(9, tchSpeechFrameBits)
+	onair := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits) // colour 0
+
+	rng := rand.New(rand.NewSource(42))
+	const (
+		sigma  = 0.9
+		trials = 200
+	)
+	hardPass, softPass := 0, 0
+	for tr := 0; tr < trials; tr++ {
+		b := dmoNoisyDNB(onair, sigma, rng)
+		if frames := DMBurstTCHSpeech(b, 0); len(frames) == 2 {
+			hardPass++
+		}
+		if frames := DMBurstTCHSpeechSoft(b, 0); len(frames) == 2 {
+			softPass++
+		}
+	}
+	t.Logf("sigma=%.2f trials=%d hardPass=%d softPass=%d", sigma, trials, hardPass, softPass)
+	if softPass <= hardPass {
+		t.Fatalf("soft-decision did not outperform hard: softPass=%d hardPass=%d", softPass, hardPass)
+	}
+	// Guard against a degenerate "both near zero" pass: soft must recover a
+	// meaningful share the hard path misses.
+	if softPass < hardPass+trials/10 {
+		t.Errorf("soft-decision uplift too small: softPass=%d hardPass=%d (trials=%d)", softPass, hardPass, trials)
 	}
 }
 

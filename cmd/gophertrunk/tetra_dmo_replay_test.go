@@ -29,7 +29,9 @@ import (
 //   - each DSB's SCH/S is channel-decoded with colour 0 (§8.2.5.2) — a CRC-valid
 //     SCH/S is the DMO sync/lock indicator, marking a PTT/transmission start;
 //   - each DNB's TCH/S is descrambled + decoded (dmo_decode.go) into 137-bit
-//     speech frames, gated on the class-2 CRC exactly like the TMO path;
+//     speech frames, gated on the class-2 CRC exactly like the TMO path —
+//     soft-decision (DMBurstTCHSpeechSoft, off the receiver's differentials) with
+//     a hard fallback, the ~2× same-carrier yield lever from #1001;
 //   - the speech frames feed the clean-room ACELP vocoder to PCM.
 //
 // The pass signal is CRC-valid speech clustered in time on the transmissions
@@ -73,14 +75,21 @@ func TestTETRADMOReplay(t *testing.T) {
 	ddc := ccdecoder.NewDownconverter(inRate, 144000)
 	outRate := ddc.OutRateHz()
 
-	// Accumulate the full demodulated dibit stream; ExtractDMBursts is stateless
-	// over a complete slice, which keeps the offline framing deterministic.
+	// Accumulate the full demodulated dibit stream and the parallel per-symbol
+	// differentials (soft info); ExtractDMBurstsSoft is stateless over a complete
+	// slice, which keeps the offline framing deterministic. The SoftSink fires
+	// just before the matching DibitSink with the same base, so appending both in
+	// order keeps allDiffs strictly parallel to allDibits.
 	var allDibits []uint8
+	var allDiffs []complex64
 	enableEQ := os.Getenv("GT_TETRA_DMO_EQ") == "1" || os.Getenv("GT_TETRA_DMO_EQ") == "true"
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: outRate,
 		DibitSink: func(d []uint8, _ int) {
 			allDibits = append(allDibits, d...)
+		},
+		SoftSink: func(diffs []complex64, _ int) {
+			allDiffs = append(allDiffs, diffs...)
 		},
 		ClockMode:           tetrarx.ClockGardner,
 		GardnerGain:         0.005,
@@ -101,9 +110,13 @@ func TestTETRADMOReplay(t *testing.T) {
 	}
 
 	dibitRate := tetrarx.SymbolRate // 18000 dibits/sec
-	bursts := tetra.ExtractDMBursts(allDibits, 0)
+	// Soft-capable extraction: carry the differentials so DMBurstTCHSpeechSoft can
+	// recover corrupted TCH/S bursts the hard path drops (the #1001 ~2× lever).
+	// Falls back to the hard ExtractDMBursts geometry if the soft stream didn't
+	// stay parallel (length mismatch).
+	bursts := tetra.ExtractDMBurstsSoft(allDibits, allDiffs, 0)
 
-	var dsbTotal, dsbCRC, dnbTotal, tchCRC int
+	var dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly int
 	var syncSecs []int           // seconds carrying a CRC-valid SCH/S (transmission starts)
 	speechBySec := map[int]int{} // CRC-valid TCH/S bursts per second
 	var speechFrames [][]byte    // ordered speech frames for the vocoder
@@ -124,7 +137,16 @@ func TestTETRADMOReplay(t *testing.T) {
 			}
 		case tetra.DMBurstNormal:
 			dnbTotal++
-			frames := tetra.DMBurstTCHSpeech(b, colour)
+			// Prefer soft-decision; fall back to hard when no differentials were
+			// carried for this burst (e.g. an edge burst).
+			frames := tetra.DMBurstTCHSpeechSoft(b, colour)
+			if len(frames) != 2 {
+				if hard := tetra.DMBurstTCHSpeech(b, colour); len(hard) == 2 {
+					frames = hard
+				}
+			} else if tetra.DMBurstTCHSpeech(b, colour) == nil {
+				tchSoftOnly++ // recovered by soft-decision that the hard path missed
+			}
 			if len(frames) == 2 {
 				tchCRC++
 				speechBySec[sec]++
@@ -135,8 +157,8 @@ func TestTETRADMOReplay(t *testing.T) {
 
 	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs colour=%#x eq=%v",
 		inRate, outRate, len(iq), float64(len(iq))/inRate, colour, enableEQ)
-	t.Logf("bursts: dsb_total=%d dsb_schs_crc=%d dnb_total=%d tch_crc=%d",
-		dsbTotal, dsbCRC, dnbTotal, tchCRC)
+	t.Logf("bursts: dsb_total=%d dsb_schs_crc=%d dnb_total=%d tch_crc=%d (soft_only=%d)",
+		dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly)
 	sort.Ints(syncSecs)
 	t.Logf("sync (SCH/S CRC-valid) at seconds: %v", syncSecs)
 
