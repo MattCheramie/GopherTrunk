@@ -1,7 +1,7 @@
 ---
 layout: page
 title: "Best SDR Antenna for Scanning"
-description: "The best antennas for SDR scanning with GopherTrunk — RTL-SDR dipole kit for starters, a discone for outdoor wideband coverage, and the Nagoya NA-771 whip for portable use, plus mounting and coax tips."
+description: "The best antennas for SDR scanning with GopherTrunk — RTL-SDR dipole kit for starters, a discone for outdoor wideband coverage, and the Nagoya NA-771 whip for portable use, plus mounting and coax."
 keywords: best SDR antenna, best scanner antenna SDR, RTL-SDR antenna, discone antenna, dipole antenna kit, Nagoya NA-771, SDR antenna for scanning, wideband scanner antenna
 permalink: /best-sdr-antenna/
 nav_group: Hardware
@@ -20,7 +20,6 @@ faq:
   - q: "Does coax length hurt reception?"
     a: "Yes — every foot of coax adds loss, and thin cable like RG316 loses a lot at UHF. Use as short a run as practical, use better cable (RG58 or RG8X) for long outdoor runs, and if the run is long, a mast-mounted LNA recovers the loss."
 ---
-
 # Best SDR Antenna for Scanning
 
 **The antenna matters more than the dongle.** A cheap
