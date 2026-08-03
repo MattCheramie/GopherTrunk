@@ -54,6 +54,50 @@ func TestBulkStallWatchFiresOnceAfterTimeout(t *testing.T) {
 	close(stop)
 }
 
+// TestBulkStallWatchSamplesNowAtTickReceipt is the regression for the CI hang in
+// TestBulkStallWatchFiresOnceAfterTimeout: run() must decide a stall on the clock
+// AS OF the tick it just received, not a value that races in afterwards. The
+// original loop called onTick() before sampling now(); onTick unblocks the test,
+// which advances now for the NEXT tick, and that store could be observed by the
+// CURRENT tick's stall check — so a below-threshold tick fired early and returned,
+// stranding the test's next `tick <-` send with no receiver (a 10-minute timeout).
+//
+// This models that adverse schedule deterministically by advancing now inside
+// onTick (the exact window the flake exploited). Tick 1 arrives at 1s (below the
+// 2s threshold): run must NOT fire on it. If it mis-samples the leaked 3s it fires
+// and returns, and the follow-up tick send blocks — detected here with a timeout
+// instead of hanging.
+func TestBulkStallWatchSamplesNowAtTickReceipt(t *testing.T) {
+	w := newBulkStallWatch(1)
+	w.start(0)
+
+	var now atomic.Int64
+	now.Store(int64(1 * time.Second)) // tick 1 is below the 2s threshold
+	nowFn := func() int64 { return now.Load() }
+	tick := make(chan time.Time)
+	stop := make(chan struct{})
+	stalled := make(chan struct{}, 1)
+	// Advance now for the "next" tick from inside onTick — the leaked store the
+	// real test races on. run must have already sampled now for tick 1 by now.
+	onTick := func() { now.Store(int64(3 * time.Second)) }
+	onStall := func() { stalled <- struct{}{} }
+
+	go w.run(nowFn, tick, stop, testStallTimeoutNanos, onTick, onStall)
+
+	tick <- time.Time{} // deliver tick 1 (rendezvous: run has received it)
+
+	// If run judged tick 1 on the leaked 3s it fired and returned, so this send
+	// has no receiver; if it correctly used the 1s at receipt it stayed in its
+	// loop and accepts another tick. The timeout tells them apart without hanging.
+	select {
+	case tick <- time.Time{}:
+		// run still looping — tick 1 did not fire. Correct.
+	case <-time.After(2 * time.Second):
+		t.Fatal("run returned after a below-threshold tick — stall decision used a leaked next-tick now()")
+	}
+	close(stop)
+}
+
 // TestBulkStallWatchStaysQuietWhileActive proves a healthy stream — one
 // that keeps delivering packets — never trips the stall path, and that
 // the throughput counters accumulate as data flows.
