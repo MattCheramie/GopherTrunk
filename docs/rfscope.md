@@ -1,3 +1,10 @@
+---
+layout: page
+title: RF Scope — protocol-agnostic RF network analysis
+description: rfscope is Wireshark for the RF physical layer — point it at any band, a live SDR or an IQ capture, with no prior knowledge of the modulation, framing, or encryption, and get a structured analysis of what is on the air and how it behaves.
+nav_group: Operate
+---
+
 # RF Scope — protocol-agnostic RF network analysis
 
 `rfscope` is **Wireshark for the RF physical layer**. Point it at any band — a
