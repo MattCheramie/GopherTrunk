@@ -65,6 +65,49 @@ func TestTETRASlotOwnerEnqueueCopiesSlices(t *testing.T) {
 	}
 }
 
+// TestDrainTETRAIQProcessesBufferedTail pins the solo voice chain's teardown
+// drain: when a call is cancelled (typically a control-channel D-RELEASE, which
+// bypasses the voice hangtime), the IQ still buffered in the chain's channel must
+// be demodulated before the chain exits, not dropped. Dropping it truncated the
+// tail of the transmission — the "recordings end a beat early" report. Fail-first:
+// before the fix runTETRAVoiceChain returned immediately on ctx.Done with no
+// drain, so this buffered tail was lost.
+func TestDrainTETRAIQProcessesBufferedTail(t *testing.T) {
+	ch := make(chan []complex64, 8)
+	const n = 5
+	for i := 0; i < n; i++ {
+		ch <- []complex64{complex(float32(i), 0)}
+	}
+
+	var got []float32
+	done := make(chan struct{})
+	go func() {
+		drainTETRAIQ(ch, func(iq []complex64) { got = append(got, real(iq[0])) })
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drainTETRAIQ blocked instead of returning once the buffer emptied")
+	}
+
+	if len(got) != n {
+		t.Fatalf("drained %d buffered chunks, want %d (tail dropped)", len(got), n)
+	}
+	for i := 0; i < n; i++ {
+		if got[i] != float32(i) {
+			t.Fatalf("drain reordered chunks: got %v", got)
+		}
+	}
+
+	// A closed channel makes drain return immediately (chain teardown when the
+	// carrier IQ stream ends).
+	closed := make(chan []complex64)
+	close(closed)
+	drainTETRAIQ(closed, func([]complex64) { t.Fatal("processed from a closed empty channel") })
+}
+
 // TestTETRAOwnerWorkerDrainsAndExits confirms the worker consumes its backlog and
 // exits promptly on ctx cancel (call end). Garbage frames decode to no speech, so
 // the worker loop is exercised without needing a real TCH/S bitstream or sink.

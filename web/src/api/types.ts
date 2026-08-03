@@ -27,6 +27,15 @@ export interface SystemDTO {
   system_id?: number;
   rfss?: number;
   site?: number;
+  // TETRA network identity decoded live from the control channel (MLE-SYSINFO /
+  // D-NWRK-BROADCAST). TETRA has no WACN/RFSS/Site, so the P25 fields above stay
+  // zero and the UI shows these instead. MCC+MNC form the Mobile Network Identity
+  // (MNI). has_tetra_identity distinguishes decoded from "not yet".
+  tetra_mcc?: number;
+  tetra_mnc?: number;
+  tetra_location_area?: number;
+  tetra_decoded_colour_code?: number;
+  has_tetra_identity?: boolean;
   // Active DMR Tier III LCN→frequency band plan (configured or learned),
   // surfaced so the Systems panel can show how voice grants resolve. (#638)
   dmr_band_plan?: DMRBandPlanDTO;
@@ -419,6 +428,12 @@ export interface SystemHuntStatusDTO {
   decode_quality?: string;
   carrier_offset_hz?: number;
   has_decode_health?: boolean;
+  // Locked carrier's mean channel power in dBFS — the raw front-end level for
+  // antenna/LNA aiming, a different axis from decode_quality. has_signal
+  // distinguishes a real reading from "no data" (0 is ambiguous since a genuine
+  // level is negative). Present as soon as the CC locks.
+  signal_dbfs?: number;
+  has_signal?: boolean;
 }
 
 export interface ConvScannerStatusDTO {

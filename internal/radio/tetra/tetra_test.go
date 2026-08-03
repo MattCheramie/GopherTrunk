@@ -408,6 +408,7 @@ func TestControlChannelMarkLost(t *testing.T) {
 		Payload: buildSysInfoPayload(234, 1234, 5678),
 	})
 	<-sub.C // cc.locked
+	<-sub.C // site.update (decoded TETRA identity surfaced to the systems API)
 
 	cc.MarkLost()
 	select {
@@ -431,6 +432,48 @@ func TestControlChannelMarkLost(t *testing.T) {
 	}
 }
 
+// TestControlChannelPublishesSiteIdentity pins that a TETRA lock surfaces the
+// decoded single-cell identity to the systems API: after cc.locked, a
+// KindSiteUpdate carries a TopologySnapshot with the MCC/MNC/Location Area and
+// the 6-bit colour code (low 6 bits of the extended colour code). Before this
+// the TETRA identity was decoded but never reached GET /api/v1/systems, so the
+// Systems page showed only empty P25 fields.
+func TestControlChannelPublishesSiteIdentity(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "250_013", FrequencyHz: 467_912_500})
+	cc.Ingest(PDU{
+		Disc:    DiscMLE,
+		Type:    uint8(MLESystemInfo),
+		Payload: buildSysInfoPayload(250, 13, 42),
+	})
+
+	var update *trunking.SiteUpdate
+	for i := 0; i < 2; i++ { // cc.locked then site.update, in that order
+		ev := <-sub.C
+		if ev.Kind == events.KindSiteUpdate {
+			u := ev.Payload.(trunking.SiteUpdate)
+			update = &u
+		}
+	}
+	if update == nil {
+		t.Fatal("no site.update published on TETRA lock")
+	}
+	if update.System != "250_013" || update.Topology == nil {
+		t.Fatalf("site.update missing system/topology: %+v", update)
+	}
+	if update.Topology.MCC != 250 || update.Topology.MNC != 13 || update.Topology.LocationArea != 42 {
+		t.Errorf("topology identity = MCC %d MNC %d LA %d, want 250/13/42",
+			update.Topology.MCC, update.Topology.MNC, update.Topology.LocationArea)
+	}
+	if update.Topology.Protocol != "tetra" {
+		t.Errorf("topology protocol = %q, want tetra", update.Topology.Protocol)
+	}
+}
+
 func TestControlChannelNoRepublishOnSameSysInfo(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
@@ -444,7 +487,8 @@ func TestControlChannelNoRepublishOnSameSysInfo(t *testing.T) {
 		Payload: buildSysInfoPayload(234, 1234, 5678),
 	}
 	cc.Ingest(pdu)
-	<-sub.C
+	<-sub.C // cc.locked
+	<-sub.C // site.update (decoded TETRA identity surfaced to the systems API)
 	cc.Ingest(pdu)
 	select {
 	case ev := <-sub.C:

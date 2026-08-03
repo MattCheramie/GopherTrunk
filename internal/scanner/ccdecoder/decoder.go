@@ -1020,6 +1020,33 @@ func (d *Decoder) DecodeHealth(system string) (quality string, offsetHz int32, o
 	return bucketErrorRate(rate), offsetHz, true
 }
 
+// SignalDbFS returns the last-window mean channel power in dBFS for `system`
+// when it is the pipeline this decoder is currently locked to. This is the raw
+// front-end signal level — the metric an operator aims an antenna or trims LNA
+// gain against — and is a different axis from DecodeHealth's error-rate quality
+// bucket (which needs a run of decoded frames before it means anything). The
+// value is available as soon as the CC locks and the first IQ-power window has
+// been observed, so it is reported independently of the frame-count gate.
+//
+// ok is false when `system` is not the active locked pipeline, or no IQ-power
+// window has been observed for it yet. A lightweight pull, safe for the status
+// path (mirrors DecodeHealth). The dBFS snapshot is guarded by healthMu; take
+// d.mu first then healthMu, the same order IQHealth / clearActiveLocked use.
+func (d *Decoder) SignalDbFS(system string) (dbfs float64, ok bool) {
+	d.mu.Lock()
+	active := d.active != nil && d.activeAt == system && d.locked.Load()
+	d.mu.Unlock()
+	if !active {
+		return 0, false
+	}
+	d.healthMu.Lock()
+	defer d.healthMu.Unlock()
+	if d.lastHealthSystem != system || d.lastHealthAt.IsZero() {
+		return 0, false
+	}
+	return d.lastDbfs, true
+}
+
 // sampleAutotuneLocked folds the active receiver's residual carrier offset
 // into the running average about once a second while the CC is locked, then
 // logs the suggested correction. The new average takes effect at the next
