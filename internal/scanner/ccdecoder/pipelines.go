@@ -405,6 +405,14 @@ func (p *p25Phase1Pipeline) Close() error           { return nil }
 // the unexported afcReporter capability the decoder type-asserts for.
 func (p *p25Phase1Pipeline) AFCOffsetHz() float64 { return p.rx.AFCOffsetHz() }
 
+// appliesAutotune marks P25 Phase 1 as a protocol whose measured control-channel
+// carrier error is consumed downstream (the P25 Phase 1 voice composer reads the
+// per-dongle autotune Manager to pre-rotate voice IQ). Only marked pipelines are
+// sampled + logged by sampleAutotuneLocked, so a protocol without an autotune
+// consumer (e.g. TETRA) no longer floods the debug log with a correction it never
+// applies. See autotuneApplier in decoder.go.
+func (p *p25Phase1Pipeline) appliesAutotune() {}
+
 // TSBKCounts reports the control channel's cumulative decoded and failed
 // (Viterbi + CRC) TSBK block counts. Satisfies the unexported ccHealthReporter
 // capability the decoder type-asserts for, so it can watch the live TSBK error

@@ -2063,6 +2063,54 @@ func (f *fakeAFCPipeline) AFCOffsetHz() float64 { return f.offsetHz }
 
 const carrierOffsetWarnMsg = "control carrier offset far from configured frequency"
 
+// fakeAutotunePipeline is a P25-Phase-1-like pipeline: afcReporter AND
+// autotuneApplier (its measured correction is consumed downstream).
+type fakeAutotunePipeline struct{ offsetHz float64 }
+
+func (f *fakeAutotunePipeline) Process([]complex64)  {}
+func (f *fakeAutotunePipeline) Reset()               {}
+func (f *fakeAutotunePipeline) Close() error         { return nil }
+func (f *fakeAutotunePipeline) AFCOffsetHz() float64 { return f.offsetHz }
+func (f *fakeAutotunePipeline) appliesAutotune()     {}
+
+// TestSampleAutotuneGatedToApplier pins the fix for the TETRA "autotune spam":
+// sampleAutotuneLocked samples + logs only for a protocol whose correction is
+// actually consumed (implements autotuneApplier, like P25 Phase 1). A pipeline
+// that implements afcReporter but not autotuneApplier — TETRA, which needs
+// afcReporter only for the #815 carrier-offset WARN — is not sampled at all, so
+// the per-second measure-and-log dead work is gone.
+func TestSampleAutotuneGatedToApplier(t *testing.T) {
+	newLockedDecoder := func(active ProtocolPipeline) (*Decoder, *autotune.Manager) {
+		bus := events.NewBus(8)
+		t.Cleanup(bus.Close)
+		mgr := autotune.NewManager("dongle", nil)
+		d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Autotune: mgr})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		t.Cleanup(func() { d.Close() })
+		setActiveSystem(d, "Sys")
+		d.activeFreqHz = 467_912_500
+		d.active = active
+		d.locked.Store(true)
+		return d, mgr
+	}
+
+	// TETRA-like (afcReporter only): must NOT be sampled.
+	dT, mgrT := newLockedDecoder(&fakeAFCPipeline{offsetHz: -800})
+	dT.sampleAutotuneLocked()
+	if got := mgrT.AverageError(); got != 0 {
+		t.Errorf("afcReporter-only (TETRA-like) pipeline was sampled: avg=%d Hz, want 0", got)
+	}
+
+	// P25-Phase-1-like (afcReporter + autotuneApplier): must be sampled.
+	dP, mgrP := newLockedDecoder(&fakeAutotunePipeline{offsetHz: -800})
+	dP.sampleAutotuneLocked()
+	if got := mgrP.AverageError(); got == 0 {
+		t.Errorf("autotuneApplier (P25-like) pipeline was not sampled: avg=0, want the -800 Hz measurement")
+	}
+}
+
 func newOffsetTestDecoder(t *testing.T, buf *bytes.Buffer) *Decoder {
 	t.Helper()
 	bus := events.NewBus(8)
