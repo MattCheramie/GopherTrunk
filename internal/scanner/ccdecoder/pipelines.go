@@ -675,15 +675,24 @@ const (
 // GardnerGain, it re-converges only very slowly — the field symptom was a
 // control channel taking tens of seconds to re-lock after brief wideband noise
 // while a from-cold receiver acquires in ~one AFC block. Resetting to centre on
-// a short heartbeat drought reacquires in that same ~one-block time.
+// a genuine heartbeat drought reacquires in that same ~one-block time.
 //
-// A healthy carrier decodes a CRC-clean sync burst roughly every frame (~57 ms),
-// thinning to ~130 ms only on a marginal-but-still-locked signal, so 500 ms
-// leaves a comfortable margin against a false reset (which is cheap anyway — it
-// costs ~one block of reacquisition and self-heals within a frame). It fires
-// well before the 5 s tetraLockStaleTimeout, so transient noise is absorbed
-// without ever declaring cc.lost.
-const tetraResyncTimeout = 500 * time.Millisecond
+// The window is deliberately generous. Reset-to-centre is destructive — it
+// discards the receiver's *converged* Gardner timing and AFC — so it must fire
+// only on genuine loss, never on a transient scheduling stall. Under concurrent
+// same-carrier voice load the CPU-heavy shared voice demux momentarily starves
+// this CC decode goroutine: the heartbeat then ages purely because the goroutine
+// was descheduled, not because timing drifted, and the receiver resumes decoding
+// the instant it is scheduled again. A short (sub-second) window turned that
+// transient starvation into a self-perpetuating reset storm — reset-to-centre
+// every ~500 ms, discarding a still-good lock each time and garbling the control
+// channel throughout every multislot call (the reporter's "losing dsp sync on
+// multislots"). 1.5 s sits above the worst realistic scheduling gap while a call
+// is up yet well below the 5 s tetraLockStaleTimeout backstop, so a genuinely
+// dead carrier still re-hunts. The companion fix removes the starvation itself by
+// running per-call vocoding off the demux goroutine; this window makes the CC
+// resync robust to whatever transient stalls remain.
+const tetraResyncTimeout = 1500 * time.Millisecond
 
 // tetraResyncMaxBackoff caps the exponential back-off applied to repeated DSP
 // resyncs that fail to reacquire. A resync resets the receiver's symbol timing
@@ -696,7 +705,7 @@ const tetraResyncTimeout = 500 * time.Millisecond
 // previous one doubles the wait up to this cap; the first successful decode
 // snaps it back to tetraResyncTimeout. Kept below tetraLockStaleTimeout so a
 // genuinely dead carrier still trips the 5 s lost-watchdog and re-hunts.
-const tetraResyncMaxBackoff = 2 * time.Second
+const tetraResyncMaxBackoff = 4 * time.Second
 
 type tetraPipeline struct {
 	rx                 *tetrarx.Receiver

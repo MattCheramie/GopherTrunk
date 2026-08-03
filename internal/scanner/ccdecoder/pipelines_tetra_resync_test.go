@@ -99,6 +99,73 @@ func TestTETRAResyncTriggerAndThrottle(t *testing.T) {
 	}
 }
 
+// TestTETRAResyncIgnoresTransientStalls pins the anti-churn fix: a control
+// channel that keeps decoding — but on an irregular, CPU-starved cadence whose
+// gaps exceed the pre-fix 500 ms window yet stay under tetraResyncTimeout — must
+// NOT have its converged symbol timing reset to centre. Resetting on such
+// transient stalls is what produced the multislot "dsp resync" storm (a
+// reset-to-centre every ~500 ms) that garbled the control channel throughout
+// concurrent-call load. Fail-first: with the old 500 ms reset window each
+// sub-second gap trips a resync and the no-resync assertion below goes red.
+func TestTETRAResyncIgnoresTransientStalls(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bus := events.NewBus(8)
+	defer bus.Close()
+
+	pp, err := newTETRAPipeline(PipelineOptions{
+		Bus: bus, Log: logger, SystemName: "Test", FrequencyHz: 412_000_000,
+		SampleRateHz: 144_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolTETRA,
+			ControlChannels: []uint32{412_000_000},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newTETRAPipeline: %v", err)
+	}
+	p := pp.(*tetraPipeline)
+	p.now = func() time.Time { return time.Now() } // overwritten per step below
+
+	// An ABSOLUTE gap (not derived from tetraResyncTimeout) that sits above the
+	// pre-fix 500 ms reset window but below the current floor, so the test stays
+	// fail-first: revert tetraResyncTimeout to 500 ms and this gap trips a resync.
+	const subFloorGap = 900 * time.Millisecond
+	if subFloorGap >= tetraResyncTimeout {
+		t.Fatalf("test invariant broken: subFloorGap %v must stay below the reset floor %v",
+			subFloorGap, tetraResyncTimeout)
+	}
+
+	// Intermittent decodes on a starved cadence: after each decode, age the
+	// heartbeat by the sub-floor gap. The receiver still holds a good lock, so no
+	// reset must fire. Anchor the pipeline clock to the heartbeat (stamped in real
+	// time inside cc.Process) so the age is exact regardless of test wall clock.
+	for i := 0; i < 5; i++ {
+		p.cc.Process(buildArmingSBStream(), 0)
+		if !p.cc.Locked() {
+			t.Fatalf("control channel did not lock on the arming burst (iteration %d)", i)
+		}
+		cur := time.Unix(0, p.cc.LastActivityNano()).Add(subFloorGap)
+		p.now = func() time.Time { return cur }
+		buf.Reset()
+		p.Process(nil)
+		if strings.Contains(buf.String(), "tetra: dsp resync") {
+			t.Fatalf("resync fired on a transient sub-floor stall (iteration %d, gap %v)\n%s",
+				i, subFloorGap, buf.String())
+		}
+	}
+
+	// A genuine decode drought past the floor still resets, so a real loss recovers.
+	p.cc.Process(buildArmingSBStream(), 0)
+	cur := time.Unix(0, p.cc.LastActivityNano()).Add(tetraResyncTimeout + 100*time.Millisecond)
+	p.now = func() time.Time { return cur }
+	buf.Reset()
+	p.Process(nil)
+	if !strings.Contains(buf.String(), "tetra: dsp resync") {
+		t.Fatalf("expected a resync after a genuine decode drought past the floor\n%s", buf.String())
+	}
+}
+
 // TestTETRAResyncBacksOffWhenIneffective pins the exponential back-off that
 // breaks the self-perpetuating resync loop: when a resync does not reacquire
 // (the heartbeat stays stale, as under concurrent-call CPU starvation), the
