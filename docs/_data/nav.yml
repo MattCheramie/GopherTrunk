@@ -213,6 +213,8 @@ groups:
         url: /rfscope.html
       - title: rigctld integration
         url: /rigctld.html
+      - title: Event API & webhooks
+        url: /api-events.html
       - title: Hardening
         url: /hardening.html
   - label: Technical docs
