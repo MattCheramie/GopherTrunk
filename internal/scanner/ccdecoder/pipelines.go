@@ -642,6 +642,7 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		cc:     cc,
 		log:    opts.Log,
 		system: opts.SystemName,
+		rateHz: opts.SampleRateHz,
 		now:    time.Now,
 		// Gate the periodic decode-status line on debug once, up front, so a
 		// production (info-level) decode does no per-chunk clock reads. The
@@ -668,62 +669,60 @@ const (
 	tetraStaleCheckInterval = 1 * time.Second
 )
 
-// tetraResyncTimeout is how long the control channel may decode nothing before
-// the pipeline forces a fast DSP re-acquire (reset the receiver's symbol-timing
-// and AFC loops to centre, then rebuild the CC's dibit-sync scratch). A noise
-// burst wanders the Gardner timing phase off-lock and, at the production
-// GardnerGain, it re-converges only very slowly — the field symptom was a
-// control channel taking tens of seconds to re-lock after brief wideband noise
-// while a from-cold receiver acquires in ~one AFC block. Resetting to centre on
-// a genuine heartbeat drought reacquires in that same ~one-block time.
+// tetraResyncTimeout is how much CONTROL-CHANNEL SIGNAL the receiver may process
+// without a single CRC-clean decode before the pipeline forces a fast DSP
+// re-acquire (reset the symbol-timing and AFC loops to centre, then rebuild the
+// CC's dibit-sync scratch). A noise burst wanders the Gardner timing phase
+// off-lock and, at the production GardnerGain, it re-converges only very slowly —
+// the field symptom was a control channel taking tens of seconds to re-lock after
+// brief wideband noise while a from-cold receiver acquires in ~one AFC block.
+// Resetting to centre on a genuine decode drought reacquires in that same time.
 //
-// The window is deliberately generous. Reset-to-centre is destructive — it
-// discards the receiver's *converged* Gardner timing and AFC — so it must fire
-// only on genuine loss, never on a transient scheduling stall. Under concurrent
-// same-carrier voice load the CPU-heavy shared voice demux momentarily starves
-// this CC decode goroutine: the heartbeat then ages purely because the goroutine
-// was descheduled, not because timing drifted, and the receiver resumes decoding
-// the instant it is scheduled again. A short (sub-second) window turned that
-// transient starvation into a self-perpetuating reset storm — reset-to-centre
-// every ~500 ms, discarding a still-good lock each time and garbling the control
-// channel throughout every multislot call (the reporter's "losing dsp sync on
-// multislots"). 1.5 s sits above the worst realistic scheduling gap while a call
-// is up yet well below the 5 s tetraLockStaleTimeout backstop, so a genuinely
-// dead carrier still re-hunts. The companion fix removes the starvation itself by
-// running per-call vocoding off the demux goroutine; this window makes the CC
-// resync robust to whatever transient stalls remain.
+// It is expressed as a duration but measured against PROCESSED-SIGNAL time, not
+// wall clock: checkResync counts the post-DDC IQ samples actually fed to the
+// receiver since the last decode and compares them against a sample budget
+// (tetraResyncTimeout × the channel rate). This is the fix for the multislot
+// "losing dsp sync" garble. Reset-to-centre is destructive — it discards the
+// receiver's *converged* Gardner timing and AFC — so it must fire only on genuine
+// loss, never on a transient scheduling stall. Under concurrent same-carrier voice
+// load the CPU-heavy shared voice demux momentarily starves this CC decode
+// goroutine, and its input IQ is meanwhile dropped upstream (forwardIQ). A
+// wall-clock window then aged out purely because the goroutine was descheduled —
+// not because timing drifted — firing a destructive reset every window and
+// churning through resets that discard a still-good lock (the reporter's field
+// captures show ~46 such resyncs). A signal-time budget is immune: a descheduled
+// goroutine processes no samples, so the budget never advances and no reset fires;
+// a healthy lock decodes a sync burst (~1/s) well within the budget and never
+// trips it; only a genuine off-lock that processes a full window of real signal
+// with no decode reacquires. 1.5 s of signal sits above the ~1 s BSCH cadence yet
+// well below the 5 s tetraLockStaleTimeout backstop, so a genuinely dead carrier
+// still re-hunts. Because starvation can no longer trigger a reset, the earlier
+// exponential back-off (whose only job was to damp the starvation-driven reset
+// storm) is no longer needed and has been removed.
 const tetraResyncTimeout = 1500 * time.Millisecond
 
-// tetraResyncMaxBackoff caps the exponential back-off applied to repeated DSP
-// resyncs that fail to reacquire. A resync resets the receiver's symbol timing
-// to centre; when the control decode has stalled because concurrent-call voice
-// DSP starved it of CPU (not because timing drifted), a reset cannot help — and
-// firing one every tetraResyncTimeout only discards the receiver's converged
-// timing and blocks the natural reacquire once load eases, so the channel churns
-// through resyncs until the load drops (the "heavy DSP resync when multiple
-// calls happen" field symptom). Each resync that lands with no decode since the
-// previous one doubles the wait up to this cap; the first successful decode
-// snaps it back to tetraResyncTimeout. Kept below tetraLockStaleTimeout so a
-// genuinely dead carrier still trips the 5 s lost-watchdog and re-hunts.
-const tetraResyncMaxBackoff = 4 * time.Second
-
 type tetraPipeline struct {
-	rx                 *tetrarx.Receiver
-	cc                 *tetra.ControlChannel
-	log                *slog.Logger
-	system             string
-	debug              bool
-	now                func() time.Time // injectable for tests; set to time.Now at construction
-	lastLog            time.Time        // wall clock of the previous status line (zero ⇒ not primed)
-	lastStale          time.Time        // wall clock of the previous lock-staleness check
-	lastResync         time.Time        // wall clock of the previous DSP resync (throttle)
-	resyncBackoff      time.Duration    // current wait before the next resync; grows on ineffective resyncs
-	lastResyncActivity int64            // cc heartbeat nano captured at the last resync (detects "did it reacquire")
+	rx        *tetrarx.Receiver
+	cc        *tetra.ControlChannel
+	log       *slog.Logger
+	system    string
+	debug     bool
+	rateHz    float64          // post-DDC channel rate; converts the resync window into a sample budget
+	now       func() time.Time // injectable for tests; set to time.Now at construction
+	lastLog   time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	lastStale time.Time        // wall clock of the previous lock-staleness check
+	// Signal-time DSP-resync trigger: the receiver must PROCESS a full
+	// tetraResyncTimeout-worth of post-DDC samples with no CRC-clean CC decode
+	// before a destructive reset-to-centre is allowed. Counting processed signal
+	// (not wall clock) makes the reset immune to CPU starvation, which ages a wall
+	// clock without advancing the sample count. See tetraResyncTimeout.
+	samplesSinceDecode int64
+	lastSeenActivity   int64 // cc heartbeat nano last observed; a change ⇒ a decode landed since
 }
 
 func (p *tetraPipeline) Process(iq []complex64) {
 	p.rx.Process(iq)
-	p.checkResync()
+	p.checkResync(len(iq))
 	p.checkLockStale()
 	p.maybeLogStatus()
 }
@@ -737,53 +736,54 @@ func (p *tetraPipeline) AFCOffsetHz() float64 { return p.rx.CarrierOffsetHz() }
 // the analogue of the P25 pipeline's TSBKCounts. Satisfies bschHealthReporter.
 func (p *tetraPipeline) BSCHCounts() (ok, fail int64) { return p.cc.BSCHCounts() }
 
-// checkResync forces a fast DSP re-acquire when the control-channel heartbeat has
-// gone stale (see tetraResyncTimeout). It resets the receiver's timing/AFC loops
-// to centre and drops the CC's dibit-sync scratch (kept in lock-step because
-// rx.Reset restarts the dibit index at 0), so a channel knocked off-lock by a
-// noise burst reacquires in ~one AFC block instead of waiting for the slow
-// steady-state Gardner loop to drift back. Throttled to one attempt per timeout
-// window so a genuinely dead carrier reacquires at most once per window rather
-// than every chunk. Unlike maybeLogStatus this runs in production (not
-// debug-gated): the reacquire itself must happen regardless of log level; only
-// the diagnostic line is level-filtered.
-func (p *tetraPipeline) checkResync() {
-	now := p.now()
-	if !p.cc.NeedsResync(now, tetraResyncTimeout) {
-		// Heartbeat is fresh — the control decode is keeping up, so any prior
-		// resync reacquired (or none was needed). Return to the base interval.
-		p.resyncBackoff = 0
-		return
-	}
-	// Throttle: at least the current back-off must have elapsed since the last
-	// resync. The back-off is tetraResyncTimeout until an ineffective resync
-	// grows it (below), so the steady case is unchanged one-per-window behaviour.
-	wait := p.resyncBackoff
-	if wait < tetraResyncTimeout {
-		wait = tetraResyncTimeout
-	}
-	if !p.lastResync.IsZero() && now.Sub(p.lastResync) < wait {
-		return
-	}
-	// Decide whether the PREVIOUS resync reacquired. A decode since it fired
-	// (heartbeat advanced) means reset-to-centre worked, so keep the base
-	// interval; an unchanged heartbeat means the reset did nothing — CPU
-	// starvation or ongoing wideband noise — so back off exponentially rather
-	// than hammering reset-to-centre every window and blocking the reacquire.
+// checkResync forces a fast DSP re-acquire once the control channel has PROCESSED
+// a full tetraResyncTimeout-worth of post-DDC signal (n counts the samples just
+// fed to the receiver) without a single CRC-clean decode. It resets the receiver's
+// timing/AFC loops to centre and drops the CC's dibit-sync scratch (kept in
+// lock-step because rx.Reset restarts the dibit index at 0), so a channel knocked
+// off-lock by a noise burst reacquires in ~one AFC block instead of waiting for
+// the slow steady-state Gardner loop to drift back.
+//
+// The trigger is PROCESSED-SIGNAL time, not wall clock (see tetraResyncTimeout):
+// a CC decode since the last call (heartbeat advanced) clears the sample budget;
+// otherwise the budget accumulates and exactly one reset fires per window-worth of
+// real signal, resetting the budget again — an inherent throttle and reacquire
+// window. Counting processed signal is what makes the reset immune to CPU
+// starvation: a descheduled goroutine (whose IQ is meanwhile dropped upstream)
+// feeds no samples, so the budget never advances and a still-good lock is never
+// discarded. Unlike maybeLogStatus this runs in production (not debug-gated): the
+// reacquire must happen regardless of log level; only the diagnostic line is
+// level-filtered. Called after rx.Process so a decode from the current chunk is
+// credited before the budget grows.
+func (p *tetraPipeline) checkResync(n int) {
 	act := p.cc.LastActivityNano()
-	if p.lastResync.IsZero() || act != p.lastResyncActivity {
-		p.resyncBackoff = tetraResyncTimeout
-	} else if next := 2 * wait; next < tetraResyncMaxBackoff {
-		p.resyncBackoff = next
-	} else {
-		p.resyncBackoff = tetraResyncMaxBackoff
+	if act == 0 {
+		// No decode has ever landed — nothing to reacquire toward. Mirrors
+		// NeedsResync/CheckStale, both no-ops before the first decode.
+		return
 	}
-	p.lastResync = now
-	p.lastResyncActivity = act
+	if act != p.lastSeenActivity {
+		// A decode landed since the last check: the drought (if any) is over, so
+		// reset the budget and keep the lock.
+		p.lastSeenActivity = act
+		p.samplesSinceDecode = 0
+		return
+	}
+	if p.rateHz <= 0 {
+		return // defensive; tetrarx.New already requires SampleRateHz > 0
+	}
+	p.samplesSinceDecode += int64(n)
+	if p.samplesSinceDecode < int64(tetraResyncTimeout.Seconds()*p.rateHz) {
+		return
+	}
+	// A full window of real signal processed with no decode: a genuine off-lock.
+	// Reset the budget first so the next reset needs another full window (throttle
+	// + reacquire window), then reacquire the symbol timing from centre.
+	p.samplesSinceDecode = 0
 	p.rx.Reset()
 	p.cc.ResyncReset()
 	if p.log != nil {
-		p.log.Debug("tetra: dsp resync (heartbeat stale; reacquiring symbol timing from centre)",
+		p.log.Debug("tetra: dsp resync (signal-time decode drought; reacquiring symbol timing from centre)",
 			"system", p.system)
 	}
 }
@@ -859,7 +859,8 @@ func (p *tetraPipeline) Reset() {
 	p.cc.ResyncReset()
 	p.lastLog = time.Time{}
 	p.lastStale = time.Time{}
-	p.lastResync = time.Time{}
+	p.samplesSinceDecode = 0
+	p.lastSeenActivity = 0
 }
 func (p *tetraPipeline) Close() error { return nil }
 

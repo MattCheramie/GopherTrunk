@@ -934,12 +934,11 @@ func (c *ControlChannel) CheckStale(now time.Time, timeout time.Duration) {
 }
 
 // NeedsResync reports whether the control-channel heartbeat is older than
-// timeout, i.e. no sync burst / SYSINFO / grant has decoded for that long. It is
-// the trigger the pipeline uses to force a fast DSP re-acquire (reset the symbol
-// timing to centre) after a noise burst wanders the loops off-lock — the
-// steady-state Gardner loop at the production gain re-converges only very slowly,
-// so from-centre reacquisition (~one AFC block) is far faster than waiting it
-// out.
+// timeout, i.e. no sync burst / SYSINFO / grant has decoded for that long — a
+// wall-clock heartbeat-age predicate. The pipeline's DSP re-acquire no longer
+// triggers off wall-clock age (it uses a processed-signal budget in
+// tetraPipeline.checkResync, immune to CPU starvation); this predicate is retained
+// as a tested heartbeat-age helper.
 //
 // Like CheckStale it is a lock-free atomic read of the heartbeat and is a no-op
 // before the first decode (lastActivity==0). Deliberately independent of the
