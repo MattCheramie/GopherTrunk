@@ -7,6 +7,14 @@ description: "Airspy is a line of high-performance VHF/UHF software-defined radi
 keywords: Airspy, Airspy R2, Airspy Mini, high performance SDR, VHF UHF receiver, 12-bit ADC, real-to-complex, oversampling, wideband capture
 aka: [Airspy]
 autolink: true
+affiliate: true
+product:
+  name: "Airspy R2"
+  brand: Airspy
+  category: Software-defined radio
+  lowPrice: "150"
+  highPrice: "185"
+  url: https://www.amazon.com/s?k=Airspy+R2+SDR&tag=gophertrunk-20
 infobox:
   - { label: Type, value: VHF/UHF SDR receiver }
   - { label: Vendor/Chip, value: "Airspy; R820T2 tuner + LPC4370" }
@@ -15,6 +23,8 @@ infobox:
   - { label: Range, value: ~24 MHz – 1.8 GHz }
   - { label: Bandwidth, value: up to ~10 MHz (R2) }
   - { label: TX, value: No (receive only) }
+  - { label: Price, value: around $110–170 }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=Airspy+R2+SDR&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [rtl-sdr, rtl2832u, r820t-tuner, airspy-hf-plus, hackrf, sdrplay-rsp1a, dynamic-range, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
@@ -23,6 +33,15 @@ related_reading:
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio
   - https://airspy.com/airspy-r2/
+faq:
+  - q: "Is an Airspy worth it over an RTL-SDR for GopherTrunk?"
+    a: "For tough or busy RF, yes. The Airspy's 12-bit ADC carries far more dynamic range than an RTL-SDR's 8-bit converter, and its wider capture (up to ~10 MS/s on the R2) lets a single dongle channelize multiple control channels at once. For a first radio on a clean single-site system a $30 RTL-SDR is still the cheapest thing that works — step up to an Airspy when bandwidth or sensitivity is the thing standing between you and a decode."
+  - q: "Airspy R2 or Airspy Mini?"
+    a: "Same architecture and 12-bit front end; the R2 captures up to ~10 MS/s with a clock output and a bias tee, the Mini tops out around 6 MS/s in a smaller, cheaper dongle. Choose the R2 for wideband multi-site channelizing; the Mini if you want most of the quality in a more portable, lower-cost package."
+  - q: "Does GopherTrunk need libairspy or SoapySDR to use an Airspy?"
+    a: "No. GopherTrunk drives the Airspy directly over USB with a pure-Go backend — no libairspy, no SoapySDR. It is the recommended device for GopherTrunk's wideband, multi-tap channelizer role."
+  - q: "Can an Airspy decode encrypted police channels?"
+    a: "No. An Airspy is a receiver, and GopherTrunk is receive-only. It decodes clear P25/DMR/NXDN/TETRA traffic but no radio or scanner can decode AES-encrypted transmissions."
 ---
 
 **Airspy** is a line of high-performance VHF/UHF
@@ -39,6 +58,22 @@ smaller Mini) offering better sensitivity, dynamic range, and wider
 </svg>
 <figcaption>Airspy adds sensitivity and bandwidth over RTL-SDR across VHF/UHF.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=Airspy+R2+SDR&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**12-bit, cleaner decode than [RTL-SDR](/reference/rtl-sdr/).** The Airspy R2/Mini
+carry roughly **72 dB** of [dynamic range](/reference/dynamic-range/) against an
+RTL-SDR's ~48 dB, and capture up to **~10 MS/s** — so they decode weak and busy
+[P25](/reference/project-25/)/[DMR](/reference/dmr/)/[NXDN](/reference/nxdn/) channels
+an 8-bit dongle stumbles on. **This is GopherTrunk's recommended wideband /
+multi-site channelizer:** one Airspy can follow several sites of one system out of a
+single capture. **Receive-only, ~$110–170.** Airspy is distributor-sold, so Amazon
+stock is intermittent — the button tracks live listings. Like every receiver it can't
+decode [AES encryption](/police-scanner-encryption/). New here? See
+[best SDR for GopherTrunk](/best-sdr-for-gophertrunk/).
+</div>
 
 ## Overview
 
@@ -197,6 +232,26 @@ cleanly.
 > shedding samples on the host — that is an overrun (degraded decode), *not* the
 > reaper death above, which the `IQ stream died` cause line identifies
 > separately.
+
+## Where to buy
+
+Airspy is sold through its own distributor network, so Amazon stock comes and goes —
+the buttons below are tagged searches that always resolve to the current listings
+rather than a single product page that may be out of stock. Get the **R2** for the
+full ~10 MS/s wideband capture and clock output, or the smaller **Mini** for most of
+the quality at a lower price.
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=Airspy+R2+SDR&tag=gophertrunk-20" rel="nofollow sponsored noopener">Airspy R2 on Amazon &rarr;</a>
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=Airspy+Mini+SDR&tag=gophertrunk-20" rel="nofollow sponsored noopener">Airspy Mini on Amazon &rarr;</a>
+
+Deciding between radios? See [best SDR for GopherTrunk](/best-sdr-for-gophertrunk/),
+compare against the [RTL-SDR](/reference/rtl-sdr/) and [HackRF One](/reference/hackrf/),
+or, if you also want shortwave/ham HF, the [Airspy HF+](/reference/airspy-hf-plus/).
+Weighing a scanner instead? Read [police scanner vs SDR](/police-scanner-vs-sdr/).
+Then grab GopherTrunk from the [downloads page](/downloads.html).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

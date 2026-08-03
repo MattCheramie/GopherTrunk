@@ -7,6 +7,14 @@ description: "Airspy HF+ is a software-defined radio optimised for the HF and lo
 keywords: Airspy HF+, Airspy HF plus, HF+ Discovery, HF SDR, shortwave receiver, high dynamic range, polyphase harmonic rejection, low VHF, 18-bit
 aka: [Airspy HF+, Airspy HF plus, HF+ Discovery]
 autolink: true
+affiliate: true
+product:
+  name: "Airspy HF+ Discovery"
+  brand: Airspy
+  category: Software-defined radio
+  lowPrice: "155"
+  highPrice: "185"
+  url: https://www.amazon.com/s?k=Airspy+HF+Discovery&tag=gophertrunk-20
 infobox:
   - { label: Type, value: HF / low-VHF SDR receiver }
   - { label: Vendor, value: Airspy }
@@ -14,6 +22,8 @@ infobox:
   - { label: Range, value: "~9 kHz – 31 MHz, 60–260 MHz" }
   - { label: Bandwidth, value: up to ~768 kHz }
   - { label: TX, value: No (receive only) }
+  - { label: Price, value: around $170 }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=Airspy+HF+Discovery&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [airspy, rtl-sdr, sdrplay-rsp1a, funcube-dongle, upconverter, ionospheric-propagation, frequency-bands, dynamic-range]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
@@ -22,6 +32,15 @@ related_reading:
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio
   - https://airspy.com/airspy-hf-discovery/
+faq:
+  - q: "Is the Airspy HF+ Discovery the right SDR for GopherTrunk?"
+    a: "Only if the low bands are your target. GopherTrunk decodes land-mobile trunking (P25/DMR/NXDN/TETRA) that lives in VHF/UHF, where an Airspy R2 or an RTL-SDR is the right radio. The HF+ Discovery is the pick when you also want shortwave, amateur SSB/CW or marine HF — its dynamic range is the best in class on a crowded low band. GopherTrunk can drive it as a receiver, but its wideband-channelizer strengths don't apply to the HF+'s narrow captures."
+  - q: "Why choose the HF+ Discovery over an RTL-SDR with an upconverter for HF?"
+    a: "Dynamic range. On HF the challenge is not sensitivity but surviving dozens of strong broadcasters at once. The HF+ Discovery's polyphase harmonic-rejection mixer and high-resolution ADC hear a weak signal next to a broadcaster tens of dB louder, where an 8-bit RTL-SDR plus a lossy upconverter or direct-sampling hack folds under overload."
+  - q: "How wide a capture does the HF+ Discovery give?"
+    a: "Up to about 768 kHz — deliberately narrow. That is all a shortwave, marine or amateur channel needs, and keeping the window small is exactly what lets the ADC deliver its very high dynamic range. It will not give you the 10 MHz-wide slice an Airspy R2 does."
+  - q: "Can it decode encrypted transmissions?"
+    a: "No. The HF+ Discovery is receive-only and GopherTrunk is a receive-only decoder — no SDR or scanner can decode AES-encrypted traffic."
 ---
 
 **Airspy HF+** is a [software-defined radio](/reference/software-defined-radio/)
@@ -43,6 +62,23 @@ broadcaster can otherwise desensitise the whole receiver.
 </svg>
 <figcaption>The Airspy HF+ covers HF (to ~31 MHz) and a low-VHF window (60–260 MHz), trading wide bandwidth for exceptional dynamic range.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=Airspy+HF+Discovery&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**The HF / low-VHF dynamic-range champion.** The Airspy HF+ Discovery covers HF (to
+~31 MHz) and a low-VHF window (60–260 MHz) with a narrow (~768 kHz), exceptionally
+clean capture — its polyphase harmonic-rejection mixer and high-resolution ADC survive
+a crowded shortwave band where cheaper receivers fold under overload. **Pick it if you
+want shortwave or ham HF too**, not primarily for scanning:
+[GopherTrunk](/downloads.html)'s trunking targets ([P25](/reference/project-25/),
+[DMR](/reference/dmr/), [NXDN](/reference/nxdn/)) live in VHF/UHF, where an
+[Airspy R2](/reference/airspy/) or an [RTL-SDR](/reference/rtl-sdr/) is the right radio.
+**Receive-only, ~$170.** Like every receiver it can't decode
+[AES encryption](/police-scanner-encryption/). See
+[best SDR for GopherTrunk](/best-sdr-for-gophertrunk/).
+</div>
 
 ## How it works
 
@@ -91,6 +127,24 @@ trunking systems GopherTrunk decodes (P25, DMR, NXDN, TETRA) live in VHF/UHF, wh
 [Airspy R2](/reference/airspy/) or an RTL-SDR is the right radio. GopherTrunk can drive
 the HF+ as a receiver, but its wideband-channelizer strengths don't apply to the HF+'s
 narrow captures. Choose the HF+ when the low bands themselves are what you want to hear.
+
+## Where to buy
+
+The current mainstream model is the **Airspy HF+ Discovery**. Airspy sells through its
+own distributor network, so Amazon stock is intermittent — the button below is a tagged
+search that resolves to the live listings rather than a single page that may be out of
+stock.
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=Airspy+HF+Discovery&tag=gophertrunk-20" rel="nofollow sponsored noopener">Airspy HF+ Discovery on Amazon &rarr;</a>
+
+If your target is really VHF/UHF trunking rather than the low bands, an
+[Airspy R2](/reference/airspy/) or an [RTL-SDR](/reference/rtl-sdr/) is the better buy —
+see [best SDR for GopherTrunk](/best-sdr-for-gophertrunk/) and, if you're comparing
+against a handheld, [police scanner vs SDR](/police-scanner-vs-sdr/). Then get the
+software from the [downloads page](/downloads.html).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 
