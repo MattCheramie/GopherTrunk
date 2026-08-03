@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/Badge";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
+import { formatClock } from "../lib/formatTime";
 
 // DSC panel — list of recent decoded marine DSC sequences. The
 // category badge reflects priority: distress = red, urgency = amber,
@@ -193,10 +194,4 @@ export function DSC() {
   );
 }
 
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toISOString().slice(11, 19);
-  } catch {
-    return ts.slice(11, 19);
-  }
-}
+const formatTime = formatClock;
