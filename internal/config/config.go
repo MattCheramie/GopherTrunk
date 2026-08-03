@@ -1332,12 +1332,18 @@ type TrunkingConfig struct {
 	CallTimeoutMs int `yaml:"call_timeout_ms"`
 
 	// VoiceHangtimeMs is the universal "end of transmission" window
-	// applied to EVERY voice protocol (FM, DMR, P25 Phase 1 / 2): once a
-	// call has been decoding voice, the composer ends it this long after
-	// the last decoded voice frame, instead of waiting out the much
+	// applied to EVERY voice protocol (FM, DMR, P25 Phase 1 / 2, TETRA):
+	// once a call has been decoding voice, the composer ends it this long
+	// after the last decoded voice frame, instead of waiting out the much
 	// longer CallTimeoutMs watchdog. Keeps recordings tightly bounded to
 	// the actual transmission. Defaults to 3500 (3.5 s) when zero;
 	// negative values are rejected by Validate.
+	//
+	// Note this governs when the SDR/voice chain is released, NOT the audio
+	// length. For digital protocols the recording is exactly the decoded
+	// voice frames, so raising this cannot lengthen a recording that ends
+	// early — that is a decode-completeness matter (e.g. CRC-failed tail
+	// bursts), not a hangtime one.
 	VoiceHangtimeMs int `yaml:"voice_hangtime_ms"`
 
 	// VoiceCallGrouping controls how voice recordings are split, for

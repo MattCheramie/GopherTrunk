@@ -101,11 +101,25 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 			"other_call_bursts", offSlot.Load())
 	}()
 
+	process := func(iq []complex64) {
+		bt.observe(iq)
+		rx.Process(fe.Process(nil, iq))
+	}
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			// The call is being torn down (usually a control-channel D-RELEASE,
+			// which cancels immediately and bypasses the voice hangtime). Drain
+			// whatever IQ is already buffered in iqCh before returning, so the tail
+			// of the transmission — the last speech bursts that arrived just before
+			// the release — is still demodulated and recorded instead of dropped
+			// mid-flight. The recorder is finalized only after this goroutine
+			// returns (handleEnd's <-ch.done), so these late frames still land in
+			// the .raw. Mirrors the same-carrier owner worker's cancel drain
+			// (tetraOwnerWorker).
+			drainTETRAIQ(iqCh, process)
 			return
 		case <-touchTicker.C:
 			// Touch + hangtime end-of-call are driven by the boundary tracker.
@@ -113,8 +127,26 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 			if !ok {
 				return
 			}
-			bt.observe(iq)
-			rx.Process(fe.Process(nil, iq))
+			process(iq)
+		}
+	}
+}
+
+// drainTETRAIQ consumes whatever IQ is already buffered in ch (non-blocking) and
+// feeds each chunk to process. It returns as soon as the buffer is empty or the
+// channel is closed — it never waits for more IQ. Used on call teardown to
+// recover the tail of a transmission still queued when the chain is cancelled,
+// rather than dropping it (the "recordings end a beat early" report).
+func drainTETRAIQ(ch <-chan []complex64, process func([]complex64)) {
+	for {
+		select {
+		case iq, ok := <-ch:
+			if !ok {
+				return
+			}
+			process(iq)
+		default:
+			return
 		}
 	}
 }
