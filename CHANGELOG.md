@@ -8,6 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **TETRA on the wideband multi-system path.** A `role: wideband` SDR can now
+  follow multiple TETRA control channels alongside DMR/P25, so several TETRA
+  sites/systems share one dongle. The blocker was never the protocol allowlist —
+  the DDC/channelizer banks emitted one bank-global 48 kHz per-tap rate, while
+  TETRA's 18000-baud π/4-DQPSK needs 144 kHz; `tuner.DDCBank` now supports per-tap
+  output rates (`AddTapAtRate`), and the wideband engine gives each tap its
+  protocol's rate and forces the per-tap DDC strategy when TETRA is present (the
+  polyphase channelizer can't emit 144 kHz). The wideband path multiplexes
+  control channels; TETRA voice grants still follow on a `role: voice` SDR.
+- **Live signal level (dBFS) in the Scanner cockpit.** The locked carrier's mean
+  channel power is surfaced per system as a numeric read-out + bar, so an operator
+  can aim an antenna / trim LNA gain against a live number instead of only the
+  clean/marginal/poor quality pill.
+- **TETRA network identity on the Systems page.** A TETRA system's decoded MCC/MNC
+  (MNI), Location Area and colour code are now surfaced in place of the P25
+  WACN/RFSS/Site fields, which have no TETRA analogue.
 - **Push grant webhook (`broadcast.grant_webhook`).** A new outbound sink POSTs
   one JSON object per control-channel grant the moment GopherTrunk decodes it —
   the push counterpart to the pollable `GET /api/v1/grants` and the live
@@ -262,6 +278,23 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **DC spur leaked into TETRA voice under heavy multislot traffic.** Same-carrier
+  TETRA voice rides the control carrier at 0 Hz offset, so the zero-IF front end's
+  DC spur (worsened by ADC-clipping/IMD as concurrent-call power rises) sat on the
+  wanted signal and biased the π/4-DQPSK differential decode; nothing in the voice
+  path removed it. A first-order complex DC-block high-pass is now applied on the
+  TETRA voice receivers (safe because π/4-DQPSK has a spectral null at DC), leaving
+  the control-channel path untouched.
+- **TETRA recordings ended a beat early.** On the solo voice path a control-channel
+  D-RELEASE cancelled the chain immediately and dropped IQ still buffered in its
+  channel; that in-flight tail is now drained before teardown. (Raising
+  `voice_hangtime_ms` does not help — hangtime governs SDR release, not digital
+  audio length.)
+- **TETRA control-channel grant spam.** TETRA re-announces an active call's grant
+  every multiframe; each was published as a separate `KindGrant` event (~3.7 per
+  call). Identical grants are now de-duplicated per `(group, carrier, timeslot)`
+  within a short window, while an enriched re-grant (backfilled source, emergency)
+  still publishes.
 - **TETRA wakeup / notification grants spawned ghost recordings named after a
   radio ID.** On a group call the SwMI sends a source-less notification (an
   Energy-Economy wakeup page, `SourceID==0`, addressed to the calling party's radio

@@ -128,6 +128,14 @@ type Options struct {
 	// LLRs are Im and Re of the differential). Emitted just before the
 	// matching DibitSink call. nil ⇒ no soft emission, zero overhead.
 	SoftSink func(diffs []complex64, baseIdx int)
+	// EnableDCBlock inserts a first-order complex DC-removal high-pass at the
+	// very top of Process, ahead of the channel filter, to strip the front-end
+	// DC spur that sits on a same-carrier TETRA voice channel (0 Hz offset) and
+	// biases the π/4-DQPSK differential decode under heavy multislot load. Safe
+	// for TETRA because π/4-DQPSK has a spectral null at DC; off by default and
+	// intended for the VOICE receivers only — never the control-channel path,
+	// which must not disturb steady-state CC decode. See dcblock.go.
+	EnableDCBlock bool
 	// EnableEqualizer inserts a blind CMA adaptive equalizer between symbol-
 	// timing recovery and the differential decoder. It inverts the linear
 	// channel (multipath / ISI / band-edge group delay) that smears the
@@ -201,6 +209,8 @@ type Receiver struct {
 	softSink  func(diffs []complex64, baseIdx int)
 	eq        *equalizer.SnapshotCMA
 	equalized []complex64
+	dcBlk     *dcBlock
+	dcBuf     []complex64
 
 	matched   []complex64
 	filtered  []complex64
@@ -246,6 +256,9 @@ func New(opts Options) *Receiver {
 		}
 		r.gardner = sync.NewGardner(float64(r.sps), gain)
 	}
+	if opts.EnableDCBlock {
+		r.dcBlk = &dcBlock{}
+	}
 	if opts.EnableAFC {
 		r.afc = newCarrierAFC(r.sps)
 	}
@@ -278,6 +291,13 @@ func New(opts Options) *Receiver {
 func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
+	}
+	if r.dcBlk != nil {
+		// Strip the front-end DC spur before any filtering so it never enters the
+		// matched filter / AFC / differential decode. TETRA-only (voice path); a
+		// no-op numerically on a clean, DC-free synthetic fixture.
+		r.dcBuf = r.dcBlk.process(r.dcBuf, iq)
+		iq = r.dcBuf
 	}
 	if r.chanFilt != nil {
 		// Reject adjacent carriers in the wide channelised passband
@@ -378,6 +398,9 @@ func (r *Receiver) Reset() {
 	r.dq.Reset()
 	r.pending = r.pending[:0]
 	r.rxOffset = 0
+	if r.dcBlk != nil {
+		r.dcBlk.Reset()
+	}
 	if r.gardner != nil {
 		r.gardner.Reset()
 	}

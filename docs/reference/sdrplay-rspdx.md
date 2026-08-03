@@ -3,9 +3,9 @@ slug: sdrplay-rspdx
 title: SDRplay RSPdx
 entry_type: hardware
 category: sdr-devices
-description: SDRplay RSPdx is a 14-bit, 1 kHz–2 GHz receive-only SDR with extensive preselection, three antenna ports, and an HDR mode for high-dynamic-range LF/MW/HF reception.
-keywords: SDRplay RSPdx, RSPdx, HDR mode, high dynamic range SDR, 14-bit receiver, three antenna ports, wideband receiver, SoapySDR
-aka: [RSPdx, SDRplay RSPdx]
+description: SDRplay RSPdx (and the current RSPdx-R2 revision) is a 14-bit, 1 kHz–2 GHz receive-only SDR with extensive preselection, three antenna ports, and an HDR mode for high-dynamic-range LF/MW/HF reception.
+keywords: SDRplay RSPdx, RSPdx-R2, RSPdx R2, HDR mode, high dynamic range SDR, 14-bit receiver, three antenna ports, wideband receiver, SoapySDR
+aka: [RSPdx, RSPdx-R2, SDRplay RSPdx, SDRplay RSPdx-R2]
 autolink: true
 infobox:
   - { label: Type, value: Receive-only SDR }
@@ -14,8 +14,11 @@ infobox:
   - { label: Range, value: 1 kHz – 2 GHz }
   - { label: Bandwidth, value: up to ~10 MHz }
   - { label: TX, value: No }
+  - { label: Current model, value: "RSPdx-R2 (2023 refresh)" }
   - { label: Typical price, value: ~US$250 }
-see_also: [sdrplay-rsp1a, software-defined-radio, soapysdr, rf-filter, dynamic-range]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B0821NMGVP?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [sdrplay-rsp1a, sdrplay-rspduo, software-defined-radio, soapysdr, rf-filter, dynamic-range]
+affiliate: true
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio
   - https://www.sdrplay.com/rspdx/
@@ -65,9 +68,11 @@ receiver with the fuller filter bank switched in as you tune.
 
 ## Variants
 
-The RSPdx anchors the high end of the single-tuner RSP family; the closely related
-**RSPdx-R2** is a hardware refresh with the same interface and feature set. It contrasts
-with:
+The **RSPdx-R2** is the current-production revision (2023) and the one you will buy new
+today — it supersedes the original RSPdx with a refreshed front end and an upgraded
+processor for improved performance, while keeping the same three antenna ports, 14-bit
+converter, HDR mode, interface, and software. Treat "RSPdx" and "RSPdx-R2" as the same
+device for GopherTrunk purposes; prefer the R2 when buying. The line contrasts with:
 
 - **[RSP1A](/reference/sdrplay-rsp1a/)** — the entry model: one antenna port, fewer filters,
   no HDR mode.

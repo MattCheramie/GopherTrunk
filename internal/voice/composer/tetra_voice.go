@@ -89,6 +89,7 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		EnableAFC:           true,
 		EnableChannelFilter: true,
 		EnableEqualizer:     true, // invert linear channel/ISI that garbles TCH/S (#764/#771 follow-up)
+		EnableDCBlock:       true, // strip the front-end DC spur that leaks into same-carrier voice under heavy multislot
 	})
 
 	c.log.Info("composer: tetra voice follow started — TCH/S decode + ACELP vocoder",
@@ -420,6 +421,7 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 		EnableAFC:           true,
 		EnableChannelFilter: true,
 		EnableEqualizer:     true, // invert linear channel/ISI that garbles TCH/S (#764/#771 follow-up)
+		EnableDCBlock:       true, // strip the front-end DC spur that leaks into same-carrier voice under heavy multislot
 	})
 	d.c.log.Info("composer: tetra shared voice demux started (usage-marker routing)",
 		"key", d.key, "colour_code", d.colour&0x3F, "rate_hz", symbolHz)

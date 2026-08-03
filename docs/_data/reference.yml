@@ -676,12 +676,14 @@ domains:
           - { slug: nesdr, title: Nooelec NESDR, type: hardware }
           - { slug: hackrf, title: HackRF One, type: hardware }
           - { slug: airspy, title: Airspy, type: hardware }
+          - { slug: hydrasdr, title: HydraSDR RFOne, type: hardware }
           - { slug: airspy-hf-plus, title: Airspy HF+, type: hardware }
           - { slug: sdrplay-rsp1a, title: SDRplay RSP1A, type: hardware }
           - { slug: sdrplay-rspdx, title: SDRplay RSPdx, type: hardware }
           - { slug: sdrplay-rspduo, title: SDRplay RSPduo, type: hardware }
           - { slug: limesdr, title: LimeSDR, type: hardware }
           - { slug: usrp-ettus, title: USRP (Ettus), type: hardware }
+          - { slug: usrp-b210, title: USRP B210, type: hardware }
           - { slug: plutosdr, title: ADALM-Pluto (PlutoSDR), type: hardware }
           - { slug: bladerf, title: BladeRF, type: hardware }
           - { slug: krakensdr, title: KrakenSDR, type: hardware }
@@ -725,6 +727,7 @@ domains:
           - { slug: duplexer, title: Duplexer, type: hardware }
           - { slug: diplexer, title: Diplexer, type: hardware }
           - { slug: rf-filter, title: RF filter, type: hardware }
+          - { slug: fm-broadcast-filter, title: FM broadcast notch filter, type: hardware }
           - { slug: saw-filter, title: SAW filter, type: hardware }
           - { slug: cavity-filter, title: Cavity filter, type: hardware }
           - { slug: helical-filter, title: Helical filter, type: hardware }
