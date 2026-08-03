@@ -70,7 +70,8 @@ give it its edge:
 
 The R2 delivers up to about **10 MS/s** of complex [bandwidth](/reference/bandwidth/);
 the smaller **Mini** tops out around 6 MS/s.[^airspy] Both are **receive-only** — there
-is no transmit path.
+is no transmit path. The [HydraSDR RFOne](/reference/hydrasdr/) is an independent successor
+to the R2 built on the same 12-bit R820T2 architecture.
 
 ## Variants
 
@@ -113,7 +114,9 @@ the others sit at the noise floor, the cause is RF, not the DDC:
   into clipping, raising the noise floor and burying weaker sites. Gain is in
   **tenths of a dB** — `gain: 600` means 60 dB, very high for a wideband capture.
   If `gophertrunk_sdr_wideband_input_clip_ratio` is non-zero (a throttled WARN
-  also fires), **lower the gain or add attenuation** — do not raise it.
+  also fires), **lower the gain or add attenuation** — do not raise it. In a metro
+  area the usual culprit is broadcast FM; an [FM broadcast notch
+  filter](/reference/fm-broadcast-filter/) inline is often the cheapest fix.
 - **A genuinely weak/distant site** may not survive a capture optimised for a
   stronger one. Give it a dedicated dongle if it matters.
 

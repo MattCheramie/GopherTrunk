@@ -30,8 +30,10 @@ four facts decide everything below.
 
 <div class="tldr" markdown="1">
 <span class="tldr__label">Key takeaways</span>
-**Best overall (digital/simulcast):** [Uniden SDS100](/reference/uniden-sds100/)
-(handheld) / [SDS200](/reference/uniden-sds200/) (base). **Best for beginners:**
+**Best RF (digital/simulcast):** [Uniden SDS150](/reference/uniden-sds150/) — the newest
+True I/Q handheld, best-in-class on P25 Phase II simulcast. **Best value simulcast:**
+[SDS100](/reference/uniden-sds100/) (handheld) / [SDS200](/reference/uniden-sds200/)
+(base) — same True I/Q engine for less. **Best for beginners:**
 [Uniden BCD436HP](/reference/uniden-bcd436hp/) — ZIP-code programming. **Best
 value digital:** [BCD996P2](/reference/uniden-bcd996p2/). **Best budget/analog:**
 [BC125AT](/reference/uniden-bc125at/) (~$110). **Free alternative:** a $30
@@ -43,10 +45,18 @@ here decodes [encryption](/police-scanner-encryption/).**
 
 <div class="pick-cards" markdown="0">
 <div class="pick-card pick-card--top">
-<span class="pick-card__badge">Best overall</span>
+<span class="pick-card__badge">Best RF (newest)</span>
+<h3>Uniden SDS150</h3>
+<p class="pick-card__price">around $800</p>
+<p>Uniden's newest True I/Q handheld — the best RF on P25 Phase II simulcast, superseding the SDS100, with a color touchscreen and built-in GPS.</p>
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0FXNFPB4C?tag=gophertrunk-20" rel="nofollow sponsored noopener">SDS150 on Amazon &rarr;</a>
+<p class="pick-card__note"><a href="/reference/uniden-sds150/">SDS150 details</a></p>
+</div>
+<div class="pick-card">
+<span class="pick-card__badge">Best value simulcast</span>
 <h3>Uniden SDS100 / SDS200</h3>
 <p class="pick-card__price">around $650</p>
-<p>True I/Q decode beats every other scanner on P25 Phase II simulcast. SDS100 is the handheld; SDS200 is base/mobile.</p>
+<p>The same True I/Q simulcast engine as the SDS150 for less. SDS100 is the handheld; SDS200 is base/mobile.</p>
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B07DK26FDN?tag=gophertrunk-20" rel="nofollow sponsored noopener">SDS100 on Amazon &rarr;</a>
 <p class="pick-card__note"><a href="/reference/uniden-sds100/">SDS100 details</a> · <a href="/reference/uniden-sds200/">SDS200 details</a></p>
 </div>
@@ -82,7 +92,7 @@ here decodes [encryption](/police-scanner-encryption/).**
 |---|---|---|---|---|---|
 | [Uniden SDS100](/reference/uniden-sds100/) | Handheld | P25 P1/P2, DMR, NXDN | **True I/Q (best)** | ZIP / DB | ~$650 |
 | [Uniden SDS200](/reference/uniden-sds200/) | Base/mobile | P25 P1/P2, DMR, NXDN | **True I/Q (best)** | ZIP / DB | ~$650 |
-| [Uniden SDS150](/reference/uniden-sds150/) | Handheld | P25 P1/P2, DMR, NXDN | True I/Q | ZIP / DB | ~$800 |
+| [Uniden SDS150](/reference/uniden-sds150/) | Handheld | P25 P1/P2, DMR, NXDN | **True I/Q (best)** | ZIP / DB | ~$800 |
 | [Uniden BCD536HP](/reference/uniden-bcd536hp/) | Base/mobile | P25 P1/P2 | Fair | **ZIP** / Wi-Fi | ~$550 |
 | [Uniden BCD436HP](/reference/uniden-bcd436hp/) | Handheld | P25 P1/P2 | Fair | **ZIP** | ~$520 |
 | [Uniden BCD996P2](/reference/uniden-bcd996p2/) | Base/mobile | P25 P1/P2 | Fair | Manual / SW | ~$470 |
