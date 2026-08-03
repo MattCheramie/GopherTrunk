@@ -38,7 +38,11 @@ import (
 // Concurrency: onVoice / onTransmissionEnd are called from the single
 // chain goroutine; run executes in its own goroutine and only reads the
 // atomics. The mutable match/segment bookkeeping is touched only by the
-// chain goroutine.
+// chain goroutine. (For the shared TETRA same-carrier demux the "chain
+// goroutine" for onVoice is the owner's single vocoder worker, while the
+// demux goroutine calls observe(); the two touch disjoint non-atomic field
+// sets — onVoice: lastMatch/foreignRun/voiceSinceRoll; observe: sumSq/nSamp —
+// so they do not race. See tetraSlotOwner.)
 type boundaryTracker struct {
 	c              *Composer
 	serial         string

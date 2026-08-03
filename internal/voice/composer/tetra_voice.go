@@ -284,15 +284,88 @@ const (
 	minSlotBurstsForActive = 3
 )
 
+// tetraVocoderQueueDepth is the per-owner backlog of decoded traffic bursts
+// awaiting TCH/S channel decode + ACELP synthesis on the owner's worker
+// goroutine. A downlink call occupies one TDMA slot ≈ 18 bursts/s, so a worker
+// clears its backlog far faster than it fills; the depth only absorbs scheduling
+// jitter (~3 s here). It exists so the demux goroutine's enqueue is non-blocking:
+// vocoding must never stall the single goroutine that drains the carrier's IQ (a
+// stall there drops post-DDC IQ chunks upstream and garbles every slot — the
+// multislot garble). On the rare overflow a burst is dropped and counted rather
+// than blocking the demux.
+const tetraVocoderQueueDepth = 64
+
+// tetraDecodeJob is one decoded traffic burst handed from the demux goroutine to
+// an owner's vocoder worker. The frame / soft-LLR slices are COPIES: the
+// TrafficExtractor may reuse its backing arrays for the next burst, so the demux
+// goroutine must not hand the worker a slice it will overwrite.
+type tetraDecodeJob struct {
+	frame     []byte
+	softType5 []float32
+}
+
 // tetraSlotOwner is one call's registration with the carrier demux: the usage
 // marker it follows (0 until a wildcard claims one) plus the boundary tracker +
 // recorder sink its decoded speech drives. bursts/speech feed the ended log line.
+//
+// Concurrency: the demux goroutine routes a burst to this owner and enqueues it on
+// jobs; a single per-owner worker goroutine (tetraOwnerWorker) dequeues and runs
+// decodeTETRASpeech. One worker per owner keeps decodeTETRASpeech's boundary-tracker
+// bookkeeping single-writer (as boundary.go requires), while moving the heavy
+// Viterbi + ACELP off the demux goroutine. The demux still folds carrier power into
+// bt via observe(), but that touches a disjoint non-atomic field set (sumSq/nSamp)
+// from onVoice's (lastMatch/foreignRun/…), so the two goroutines do not race.
 type tetraSlotOwner struct {
 	serial         string
 	marker         uint8 // grant usage marker; 0 = wildcard until it claims one
 	bt             *boundaryTracker
 	rs             rawFrameSink
 	bursts, speech atomic.Uint64
+
+	jobs         chan tetraDecodeJob // decoded bursts awaiting the vocoder worker
+	vocoderDrops atomic.Uint64       // bursts dropped because the worker queue was full
+}
+
+// enqueue hands a decoded burst to the owner's vocoder worker without ever
+// blocking the demux goroutine. The slices are copied (the extractor reuses its
+// buffers) and, on a full queue, the burst is dropped and counted rather than
+// stalling IQ intake.
+func (o *tetraSlotOwner) enqueue(frame []byte, softType5 []float32) {
+	job := tetraDecodeJob{}
+	if frame != nil {
+		job.frame = append([]byte(nil), frame...)
+	}
+	if softType5 != nil {
+		job.softType5 = append([]float32(nil), softType5...)
+	}
+	select {
+	case o.jobs <- job:
+	default:
+		o.vocoderDrops.Add(1)
+	}
+}
+
+// tetraOwnerWorker is the single per-owner goroutine that runs the CPU-heavy
+// TCH/S channel decode + ACELP synthesis for one call, off the shared demux
+// goroutine. On ctx cancel (call end) it drains whatever bursts are already
+// queued — so tail speech at the end of a transmission is not lost — then exits.
+func (c *Composer) tetraOwnerWorker(ctx context.Context, o *tetraSlotOwner) {
+	defer gtlog.Recover(c.log, "tetra-voice-worker:"+o.serial, nil)
+	for {
+		select {
+		case <-ctx.Done():
+			for {
+				select {
+				case job := <-o.jobs:
+					c.decodeTETRASpeech(o.bt, o.rs, o.serial, job.frame, job.softType5, &o.speech)
+				default:
+					return
+				}
+			}
+		case job := <-o.jobs:
+			c.decodeTETRASpeech(o.bt, o.rs, o.serial, job.frame, job.softType5, &o.speech)
+		}
+	}
 }
 
 // run streams the carrier's post-DDC IQ through one front end + receiver +
@@ -403,7 +476,7 @@ func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage 
 		}
 		d.crcFallbacks.Add(1)
 		sole.bursts.Add(1)
-		d.c.decodeTETRASpeech(sole.bt, sole.rs, sole.serial, frame, softType5, &sole.speech)
+		sole.enqueue(frame, softType5)
 		return
 	}
 	d.mu.Lock()
@@ -433,7 +506,7 @@ func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage 
 		if sole != nil {
 			d.crcFallbacks.Add(1)
 			sole.bursts.Add(1)
-			d.c.decodeTETRASpeech(sole.bt, sole.rs, sole.serial, frame, softType5, &sole.speech)
+			sole.enqueue(frame, softType5)
 			return
 		}
 		if d.onAirConcurrent() {
@@ -443,7 +516,7 @@ func (d *tetraSlotDemux) onBurst(frame []byte, softType5 []float32, slot, usage 
 		return
 	}
 	o.bursts.Add(1)
-	d.c.decodeTETRASpeech(o.bt, o.rs, o.serial, frame, softType5, &o.speech)
+	o.enqueue(frame, softType5)
 }
 
 // noteSlotActivity folds a traffic-marked burst's physical slot into the sliding
@@ -535,14 +608,22 @@ func (c *Composer) runTETRASameCarrierChain(ctx context.Context, d *tetraSlotDem
 	go bt.run(ctx)
 	rs, _ := c.sink.(rawFrameSink)
 
-	o := &tetraSlotOwner{serial: serial, marker: usageMarker, bt: bt, rs: rs}
+	o := &tetraSlotOwner{
+		serial: serial, marker: usageMarker, bt: bt, rs: rs,
+		jobs: make(chan tetraDecodeJob, tetraVocoderQueueDepth),
+	}
+	// Start the vocoder worker BEFORE registering the owner, so a burst routed the
+	// instant addOwner returns already has a draining consumer. The worker exits
+	// (after draining) when ctx is cancelled at call end.
+	go c.tetraOwnerWorker(ctx, o)
 	d.addOwner(o)
 	c.log.Info("composer: tetra voice follow started (shared demux) — TCH/S decode + ACELP vocoder",
 		"serial", serial, "group", groupID, "timeslot", grantSlot, "usage_marker", usageMarker)
 	defer func() {
 		d.removeOwner(o)
 		c.log.Info("composer: tetra voice follow ended",
-			"serial", serial, "bursts", o.bursts.Load(), "speech_frames", o.speech.Load())
+			"serial", serial, "bursts", o.bursts.Load(), "speech_frames", o.speech.Load(),
+			"vocoder_drops", o.vocoderDrops.Load())
 	}()
 
 	<-ctx.Done()
