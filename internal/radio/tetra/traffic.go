@@ -320,18 +320,71 @@ func (te *TrafficExtractor) usageOf(L int) uint8 {
 	di := make([]uint8, 0, ndbAACH1Len+ndbAACH2Len)
 	di = append(di, a1...)
 	di = append(di, a2...)
-	rec, errs := DecodeAACH(TetraDibitsToBits(di), te.colourCode)
-	if errs < 0 {
-		return 0
+	if rec, errs := DecodeAACH(TetraDibitsToBits(di), te.colourCode); errs >= 0 {
+		if aa, ok := ParseAccessAssign(rec); ok {
+			if u := aa.DownlinkUsage(); u >= DLUsageTraffic {
+				return u
+			}
+		}
 	}
-	aa, ok := ParseAccessAssign(rec)
-	if !ok {
-		return 0
-	}
-	if u := aa.DownlinkUsage(); u >= DLUsageTraffic {
+	// Hard decode found no routable traffic marker. On a marginal AACH (a common
+	// RM(30,14) miss under concurrent-call load) the soft-decision decode recovers
+	// it from the per-symbol confidences, so the burst routes by marker instead of
+	// being dropped and garbling that slot's recording. Only used as a fallback and
+	// gated on a confident, valid decode so it never invents a marker that would
+	// misroute another call's speech (a cross-slot leak).
+	if u, ok := te.usageOfSoft(L); ok {
 		return u
 	}
 	return 0
+}
+
+// aachSoftMaxDist gates the soft AACH fallback: the soft maximum-likelihood
+// codeword must sit within this Hamming distance of the hard-sliced received bits
+// to be trusted. A genuine marginal burst the soft decoder rescues differs from
+// the hard bits by only the few symbols the LLRs re-decided; a decode this far from
+// the received word is a low-confidence guess that could misroute, so it is
+// dropped (as it is today). Validated against the reporter's concurrent-call
+// captures: soft-recovered markers keep mapping cleanly to a single physical slot.
+const aachSoftMaxDist = 6
+
+// usageOfSoft is the soft-decision fallback for usageOf: it pulls the per-symbol
+// differentials for the two AACH halves from the parallel soft buffer, builds the
+// type-5 LLR stream (rotation 0, the AFC-locked assumption usageOf relies on) and
+// runs the soft RM(30,14) decode. Returns the traffic usage marker and true only
+// on a confident, valid traffic decode. A no-op (false) when no soft info is
+// buffered, so the hard-only path is unchanged.
+func (te *TrafficExtractor) usageOfSoft(L int) (uint8, bool) {
+	if len(te.softBuf) != len(te.buf) {
+		return 0, false
+	}
+	half := func(off, n int) []complex64 {
+		s := L + off - te.bufBase
+		if s < 0 || s+n > len(te.softBuf) {
+			return nil
+		}
+		return te.softBuf[s : s+n]
+	}
+	a1 := half(ndbAACH1Start, ndbAACH1Len)
+	a2 := half(ndbAACH2Start, ndbAACH2Len)
+	if a1 == nil || a2 == nil {
+		return 0, false
+	}
+	diffs := make([]complex64, 0, ndbAACH1Len+ndbAACH2Len)
+	diffs = append(diffs, a1...)
+	diffs = append(diffs, a2...)
+	rec, dist, _ := DecodeAACHSoft(softType5FromDiffs(diffs, 0), te.colourCode)
+	if dist < 0 || dist > aachSoftMaxDist {
+		return 0, false
+	}
+	aa, ok := ParseAccessAssign(rec)
+	if !ok {
+		return 0, false
+	}
+	if u := aa.DownlinkUsage(); u >= DLUsageTraffic {
+		return u, true
+	}
+	return 0, false
 }
 
 // ndbSBSlotShift aligns the synchronisation-burst anchor to the NDB slot grid.

@@ -1,5 +1,7 @@
 package framing
 
+import "math"
+
 // Shortened (30,14) Reed-Muller block code per ETSI EN 300 392-2
 // §8.2.3.2. Used by the TETRA AACH (Access Assignment Channel) to
 // encode 14 type-1 information bits into 30 type-2 channel bits with
@@ -116,4 +118,76 @@ func DecodeRM3014Tetra(received []byte) ([]byte, int) {
 	out := make([]byte, 14)
 	copy(out, bestInfo[:])
 	return out, bestDist
+}
+
+// DecodeRM3014TetraSoft decodes 30 soft type-4 LLRs via soft-decision
+// maximum-likelihood search across the same 2^14 valid codewords as the hard
+// DecodeRM3014Tetra, but maximising the soft correlation instead of minimising
+// Hamming distance. The LLR sign convention is the one softType5FromDiffs /
+// DescrambleTetraSoft produce: positive ⇒ bit 0, negative ⇒ bit 1, magnitude ⇒
+// confidence. Soft-decision decoding of this short block code recovers the AACH
+// usage marker on marginal bursts a hard decoder mis-corrects (~2 dB of coding
+// gain), so more concurrent-call bursts carry a routable marker instead of being
+// dropped.
+//
+// Returns (info, dist, margin): info is the 14-bit information vector of the
+// most-likely codeword; dist is that codeword's Hamming distance to the
+// hard-sliced LLRs (the same metric the hard decoder returns, so a caller can gate
+// a low-confidence soft pick exactly as before); margin is the normalised gap
+// between the best and second-best codeword correlations in [0,1] (0 ⇒ a tie,
+// higher ⇒ more confident), a soft-domain confidence signal. dist is -1 for a
+// malformed input length.
+func DecodeRM3014TetraSoft(llr []float32) (info []byte, dist int, margin float64) {
+	if len(llr) != 30 {
+		return nil, -1, 0
+	}
+	best, second := math.Inf(-1), math.Inf(-1)
+	var bestInfo [14]byte
+	for v := 0; v < (1 << 14); v++ {
+		var cand [14]byte
+		for i := 0; i < 14; i++ {
+			cand[i] = byte((v >> uint(13-i)) & 1)
+		}
+		cw := EncodeRM3014Tetra(cand[:])
+		// Correlation metric: +llr where the codeword bit is 0 (LLR says bit 0),
+		// -llr where it is 1. The ML codeword maximises it.
+		var m float64
+		for i := 0; i < 30; i++ {
+			if cw[i] == 0 {
+				m += float64(llr[i])
+			} else {
+				m -= float64(llr[i])
+			}
+		}
+		switch {
+		case m > best:
+			second = best
+			best = m
+			bestInfo = cand
+		case m > second:
+			second = m
+		}
+	}
+	cw := EncodeRM3014Tetra(bestInfo[:])
+	var energy float64
+	for i := 0; i < 30; i++ {
+		hb := byte(0)
+		if llr[i] < 0 {
+			hb = 1
+		}
+		if cw[i] != hb {
+			dist++
+		}
+		if llr[i] < 0 {
+			energy -= float64(llr[i])
+		} else {
+			energy += float64(llr[i])
+		}
+	}
+	if energy > 0 {
+		margin = (best - second) / (2 * energy) // best-second ∈ [0, 2·energy]
+	}
+	out := make([]byte, 14)
+	copy(out, bestInfo[:])
+	return out, dist, margin
 }

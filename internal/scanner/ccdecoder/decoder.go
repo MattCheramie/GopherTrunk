@@ -1042,8 +1042,16 @@ func (d *Decoder) sampleAutotuneLocked() {
 	observed := int(math.Round(rep.AFCOffsetHz()))
 	applied := int(d.autotuneApplied.Load())
 	d.autotune.AddErrorMeasurement(observed, applied, d.activeFreqHz)
-	d.log.Info("ccdecoder: "+d.autotune.StatusString(d.activeFreqHz, 0),
-		"system", d.activeAt, "freq_hz", d.activeFreqHz,
+	// This samples about once a second while the CC is locked. Emitting the status
+	// at Info flooded the console (the "autotune freq spam" field report), so the
+	// per-tick line is Debug and an Info line is surfaced only when the correction
+	// has drifted materially (autotune.Manager.LogWorthy).
+	status := "ccdecoder: " + d.autotune.StatusString(d.activeFreqHz, 0)
+	logStatus := d.log.Debug
+	if d.autotune.LogWorthy() {
+		logStatus = d.log.Info
+	}
+	logStatus(status, "system", d.activeAt, "freq_hz", d.activeFreqHz,
 		"observed_hz", observed, "applied_hz", applied)
 }
 

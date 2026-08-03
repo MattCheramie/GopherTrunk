@@ -133,6 +133,46 @@ func TestEncodeDecodeAACHRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDecodeAACHSoftRoundTrip checks the soft AACH decoder recovers the info from
+// clean, high-confidence type-5 LLRs (the softType5FromDiffs convention: positive
+// ⇒ bit 0), matching the hard DecodeAACH on a clean word, at distance 0.
+func TestDecodeAACHSoftRoundTrip(t *testing.T) {
+	cases := []struct {
+		name       string
+		seed       int64
+		colourCode uint32
+	}{
+		{"colour 0", 8, 0},
+		{"colour 0x12345", 9, 0x12345},
+		{"colour 0x3FFFFFFF", 10, 0x3FFFFFFF},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			info := fillBits(14, tc.seed)
+			type5 := EncodeAACH(info, tc.colourCode)
+			// Map hard type-5 bits to strong LLRs: +K for bit 0, -K for bit 1.
+			llr := make([]float32, len(type5))
+			for i, b := range type5 {
+				if b&1 == 0 {
+					llr[i] = 6
+				} else {
+					llr[i] = -6
+				}
+			}
+			recovered, dist, _ := DecodeAACHSoft(llr, tc.colourCode)
+			if dist != 0 {
+				t.Errorf("DecodeAACHSoft: dist = %d, want 0 on clean round-trip", dist)
+			}
+			for i, want := range info {
+				if recovered[i] != want {
+					t.Errorf("bit %d: got %d, want %d", i, recovered[i], want)
+					break
+				}
+			}
+		})
+	}
+}
+
 // TestDecodeSCHHDDetectsCRCError: flip enough bits in the type-5
 // stream to overwhelm the inner Viterbi correction radius, and
 // confirm the decoder reports CRC failure (not a silent pass).

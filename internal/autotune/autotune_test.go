@@ -173,3 +173,46 @@ func TestRegistrySharesPerSerial(t *testing.T) {
 		t.Fatal("different serials must return different Managers")
 	}
 }
+
+func TestLogWorthyGatesInfoOnMaterialChange(t *testing.T) {
+	m := NewManager("test", nil)
+
+	// First call is always worthy so the initial correction surfaces once.
+	if !m.LogWorthy() {
+		t.Fatal("first LogWorthy should be true (surface the initial correction)")
+	}
+	// No change since: not worthy — this is what keeps the ~1/s CC status off Info.
+	if m.LogWorthy() {
+		t.Fatal("LogWorthy true with no change; per-tick status would still spam Info")
+	}
+
+	// Move the running average well past the threshold.
+	for i := 0; i < MaxHistory; i++ {
+		m.AddErrorMeasurement(1000, 0, 450_000_000) // total 1000 → avg 1000
+	}
+	if got := m.AverageError(); got != 1000 {
+		t.Fatalf("avg after settling: got %d want 1000", got)
+	}
+	if !m.LogWorthy() {
+		t.Fatalf("LogWorthy should be true after a %d Hz move (threshold %d)", 1000, StatusLogChangeHz)
+	}
+	if m.LogWorthy() {
+		t.Fatal("LogWorthy true again with no further change")
+	}
+
+	// A sub-threshold drift stays off Info.
+	for i := 0; i < MaxHistory; i++ {
+		m.AddErrorMeasurement(1000+StatusLogChangeHz-50, 0, 450_000_000)
+	}
+	if m.LogWorthy() {
+		t.Fatalf("LogWorthy true on a sub-threshold drift (%d < %d)", StatusLogChangeHz-50, StatusLogChangeHz)
+	}
+
+	// A further move that crosses the threshold from the last-logged value fires.
+	for i := 0; i < MaxHistory; i++ {
+		m.AddErrorMeasurement(1000+StatusLogChangeHz+50, 0, 450_000_000)
+	}
+	if !m.LogWorthy() {
+		t.Fatal("LogWorthy should be true once the drift crosses the threshold")
+	}
+}
