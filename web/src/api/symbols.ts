@@ -52,6 +52,11 @@ export function demodModeToProto(mod: string | undefined | null): string {
     case "lsm":
     case "linear":
       return "p25-cqpsk";
+    case "tetra":
+    case "pi/4-dqpsk":
+    case "pi4dqpsk":
+    case "dqpsk":
+      return "tetra";
     default:
       return "p25-c4fm";
   }

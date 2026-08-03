@@ -29,6 +29,7 @@ const PLOT_H = 200;
 const PROTOS: { value: string; label: string }[] = [
   { value: "p25-c4fm", label: "P25 C4FM" },
   { value: "p25-cqpsk", label: "P25 CQPSK" },
+  { value: "tetra", label: "TETRA" },
 ];
 
 type ConnState = "connecting" | "open" | "closed";
