@@ -1,3 +1,12 @@
+---
+# specs/ is repo-internal reference (excluded from the site via _config.yml
+# `exclude`). The github-pages toolchain's jekyll-optional-front-matter and
+# jekyll-readme-index plugins otherwise render these front-matter-less files
+# as pages anyway, leaking broken links to unpublished standards PDFs.
+# published:false keeps them out of the build regardless of those plugins.
+published: false
+---
+
 # Motorola proprietary P25 TSBK opcodes (MFID 0x90)
 
 Status of Motorola-specific (MFID `0x90`) Phase 1 TSBK opcodes seen on real
