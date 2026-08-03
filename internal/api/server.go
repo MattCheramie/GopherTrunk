@@ -237,6 +237,12 @@ type SystemHuntStatusDTO struct {
 	DecodeQuality   string `json:"decode_quality,omitempty"`
 	CarrierOffsetHz int32  `json:"carrier_offset_hz,omitempty"`
 	HasDecodeHealth bool   `json:"has_decode_health,omitempty"`
+	// SignalDbFS is the locked carrier's mean channel power in dBFS — the raw
+	// front-end level for antenna/LNA aiming, shown as a numeric value + bar in the
+	// cockpit. HasSignal distinguishes a real reading from no data (0 is ambiguous
+	// since a genuine level is negative). Present as soon as the CC locks.
+	SignalDbFS float64 `json:"signal_dbfs,omitempty"`
+	HasSignal  bool    `json:"has_signal,omitempty"`
 }
 
 // ConvScannerStatusDTO is the conventional FM scanner's read shape.

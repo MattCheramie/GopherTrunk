@@ -495,9 +495,11 @@ func TestMarkFailedNoProvider(t *testing.T) {
 // fakeHealth is a CCHealthProvider (and IQHealthProvider) test double so the
 // snapshot-enrichment path can be exercised without a real decoder.
 type fakeHealth struct {
-	quality string
-	offset  int32
-	ok      bool
+	quality  string
+	offset   int32
+	ok       bool
+	dbfs     float64
+	signalOK bool
 }
 
 func (f fakeHealth) IQHealth(string) (trunking.HuntDiagnostics, bool) {
@@ -505,6 +507,9 @@ func (f fakeHealth) IQHealth(string) (trunking.HuntDiagnostics, bool) {
 }
 func (f fakeHealth) DecodeHealth(string) (string, int32, bool) {
 	return f.quality, f.offset, f.ok
+}
+func (f fakeHealth) SignalDbFS(string) (float64, bool) {
+	return f.dbfs, f.signalOK
 }
 
 // TestSupervisorSnapshotCarriesDecodeHealth pins the live signal-quality wiring:
@@ -530,8 +535,8 @@ func TestSupervisorSnapshotCarriesDecodeHealth(t *testing.T) {
 		t.Fatalf("expected one system with no decode health, got %+v", snap)
 	}
 
-	// A provider reporting quality must surface it on the snapshot.
-	sup.SetIQHealthProvider(fakeHealth{quality: "marginal", offset: -958, ok: true})
+	// A provider reporting quality + signal must surface both on the snapshot.
+	sup.SetIQHealthProvider(fakeHealth{quality: "marginal", offset: -958, ok: true, dbfs: -42.3, signalOK: true})
 	snap := sup.Snapshot()
 	if len(snap) != 1 {
 		t.Fatalf("systems = %d, want 1", len(snap))
@@ -539,10 +544,25 @@ func TestSupervisorSnapshotCarriesDecodeHealth(t *testing.T) {
 	if !snap[0].HasDecodeHealth || snap[0].DecodeQuality != "marginal" || snap[0].CarrierOffsetHz != -958 {
 		t.Fatalf("decode health not surfaced: %+v", snap[0])
 	}
+	if !snap[0].HasSignal || snap[0].SignalDbFS != -42.3 {
+		t.Fatalf("signal level not surfaced: %+v", snap[0])
+	}
 
-	// A provider reporting nothing (ok=false) leaves the fields clear.
-	sup.SetIQHealthProvider(fakeHealth{ok: false})
-	if snap := sup.Snapshot(); snap[0].HasDecodeHealth {
+	// Signal level is reported independently of the decode-quality gate: a
+	// freshly-locked system reads a dBFS level before enough frames decode to
+	// bucket its error rate (DecodeHealth ok=false).
+	sup.SetIQHealthProvider(fakeHealth{ok: false, dbfs: -55.0, signalOK: true})
+	snap = sup.Snapshot()
+	if snap[0].HasDecodeHealth {
 		t.Fatalf("ok=false must leave decode health clear, got %+v", snap[0])
+	}
+	if !snap[0].HasSignal || snap[0].SignalDbFS != -55.0 {
+		t.Fatalf("signal level must surface even without decode quality: %+v", snap[0])
+	}
+
+	// A provider reporting no signal leaves the signal fields clear.
+	sup.SetIQHealthProvider(fakeHealth{ok: false, signalOK: false})
+	if snap := sup.Snapshot(); snap[0].HasSignal {
+		t.Fatalf("signalOK=false must leave signal level clear, got %+v", snap[0])
 	}
 }

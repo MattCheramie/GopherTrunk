@@ -419,6 +419,12 @@ export interface SystemHuntStatusDTO {
   decode_quality?: string;
   carrier_offset_hz?: number;
   has_decode_health?: boolean;
+  // Locked carrier's mean channel power in dBFS — the raw front-end level for
+  // antenna/LNA aiming, a different axis from decode_quality. has_signal
+  // distinguishes a real reading from "no data" (0 is ambiguous since a genuine
+  // level is negative). Present as soon as the CC locks.
+  signal_dbfs?: number;
+  has_signal?: boolean;
 }
 
 export interface ConvScannerStatusDTO {
