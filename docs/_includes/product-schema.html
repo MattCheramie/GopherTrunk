@@ -1,0 +1,46 @@
+{%- comment -%}
+  Product JSON-LD for hardware / affiliate pages. Driven by `product:` front matter:
+
+    product:
+      name: "Uniden SDS200"
+      brand: Uniden
+      category: Police scanner
+      price: "649.99"                                          # optional, real street price
+      currency: USD                                            # optional, defaults USD
+      lowPrice: "579"                                           # optional, for a range
+      highPrice: "699"                                          # optional, for a range
+      url: https://www.amazon.com/dp/XXXXXXXXXX?tag=gophertrunk-20   # affiliate offer
+
+  Honesty rule: NO review or aggregateRating is emitted — we do not fabricate
+  ratings. Offers carry a real price (or price range) and the affiliate URL only.
+{%- endcomment -%}
+{%- assign pr = page.product -%}
+{%- if pr -%}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": {{ pr.name | default: page.title | jsonify }},
+  "description": {{ page.description | jsonify }},
+  {%- if pr.brand %}"brand": { "@type": "Brand", "name": {{ pr.brand | jsonify }} },{% endif %}
+  {%- if pr.category %}"category": {{ pr.category | jsonify }},{% endif %}
+  "url": {{ page.url | absolute_url | jsonify }},
+  "offers": {
+    {%- if pr.lowPrice and pr.highPrice -%}
+    "@type": "AggregateOffer",
+    "lowPrice": {{ pr.lowPrice | jsonify }},
+    "highPrice": {{ pr.highPrice | jsonify }},
+    {%- else -%}
+    "@type": "Offer",
+    {%- if pr.price %}"price": {{ pr.price | jsonify }},{% endif %}
+    {%- endif -%}
+    "priceCurrency": {{ pr.currency | default: "USD" | jsonify }},
+    "availability": "https://schema.org/InStock"
+    {%- if pr.url -%},
+    "url": {{ pr.url | jsonify }},
+    "seller": { "@type": "Organization", "name": "Amazon" }
+    {%- endif -%}
+  }
+}
+</script>
+{%- endif -%}

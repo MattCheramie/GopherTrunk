@@ -53,6 +53,19 @@ organizations. Browse: {{ '/reference/' | absolute_url }}
 - [Hardware]({{ '/hardware.html' | absolute_url }}): supported SDR dongles.
 - [Downloads]({{ '/downloads.html' | absolute_url }}): builds for Linux, macOS, and Windows.
 
+## Police scanner buyer's guides & hardware
+Consumer scanner hardware (Uniden, Whistler) compared honestly against a free SDR + GopherTrunk.
+- [Best police scanners]({{ '/best-police-scanners/' | absolute_url }}): buyer's guide to every scanner worth owning, with an honest SDR comparison.
+- [Police scanner vs GopherTrunk (SDR)]({{ '/police-scanner-vs-sdr/' | absolute_url }}): where dedicated hardware wins and where free software wins.
+- [How police scanners work]({{ '/how-police-scanners-work/' | absolute_url }}): trunking, talkgroups, P25/DMR/NXDN in plain language.
+- [Police scanner encryption explained]({{ '/police-scanner-encryption/' | absolute_url }}): why no scanner (or SDR) can decode AES, and what stays open.
+- [Is a police scanner legal?]({{ '/police-scanner-legal/' | absolute_url }}): federal and state law on owning and using a scanner.
+- [Scanner frequencies by service]({{ '/scanner-frequencies/' | absolute_url }}): police, fire, EMS, aviation, marine, and railroad band plans.
+- [How to program a police scanner]({{ '/how-to-program-a-police-scanner/' | absolute_url }}): zip-code, manual, and software programming.
+- [Best scanner antennas]({{ '/best-scanner-antenna/' | absolute_url }}): indoor, outdoor, and mobile antennas that fix weak reception.
+- [Digital vs analog scanners]({{ '/digital-vs-analog-scanner/' | absolute_url }}): what you can still hear on an analog radio in 2026.
+- [P25 scanners]({{ '/p25-scanner/' | absolute_url }}): what Phase I/II and simulcast mean for buyers.
+
 ## Technical docs
 - [Architecture]({{ '/architecture.html' | absolute_url }}): how the engine is built.
 - [Vocoders]({{ '/vocoders.html' | absolute_url }}): IMBE and AMBE+2 voice decoding.
