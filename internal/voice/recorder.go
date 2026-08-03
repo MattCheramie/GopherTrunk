@@ -106,11 +106,20 @@ type Recorder struct {
 	enhanceMu sync.RWMutex
 	enhance   mbe.EnhancerConfig
 
-	mu        sync.Mutex
-	sessions  map[string]*recordingSession // by device serial
-	sub       *events.Subscription
-	runDone   chan struct{}
-	closeOnce sync.Once
+	mu       sync.Mutex
+	sessions map[string]*recordingSession // by device serial
+	// callTalkers accumulates every distinct talker heard during a call, keyed by
+	// device serial and spanning the call's whole life — unlike a recordingSession's
+	// srcs, which resets on each per-transmission segment roll. In transmission
+	// grouping each rolled WAV legitimately holds one talker, but the trunk-recorder
+	// .json is call metadata, so every transmission's sidecar srcList should list all
+	// the call's talkers (the operator's "second srcID is missed"). Seeded on a new
+	// call (handleStart), appended on a talker change (backfillSessionGrant), read at
+	// finalize, and cleared when the call ends. Guarded by mu.
+	callTalkers map[string][]srcEvent
+	sub         *events.Subscription
+	runDone     chan struct{}
+	closeOnce   sync.Once
 
 	// decodedTap, when set, receives the PCM decoded from digital
 	// vocoder frames in WriteRawFrame — the live consumers (web
@@ -390,6 +399,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		dedup:              opts.Dedup,
 		dedupSeen:          make(map[dedupKey]dedupEntry),
 		sessions:           make(map[string]*recordingSession),
+		callTalkers:        make(map[string][]srcEvent),
 		runDone:            make(chan struct{}),
 	}
 	r.sub = opts.Bus.Subscribe()
@@ -779,6 +789,13 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		return
 	}
 	r.sessions[cs.DeviceSerial] = s
+	// Reset+seed the call-level talker list for this new call (the previous call
+	// on this serial, if any, is over). Later talkers accrue in backfillSessionGrant.
+	if cs.Grant.SourceID != 0 {
+		r.callTalkers[cs.DeviceSerial] = []srcEvent{{src: cs.Grant.SourceID, at: cs.StartedAt, emergency: cs.Grant.Emergency}}
+	} else {
+		delete(r.callTalkers, cs.DeviceSerial)
+	}
 	r.log.Info("recorder: call started",
 		"device", cs.DeviceSerial, "wav", s.wavPath,
 		"tg", cs.Grant.GroupID, "provoice", cs.Grant.ProVoice,
@@ -820,11 +837,17 @@ func (r *Recorder) backfillSessionGrant(deviceSerial string, encrypted bool, alg
 	}
 	if sourceID != 0 {
 		s.cs.Grant.SourceID = sourceID
+		now := time.Now().UTC()
 		// Record a talker change for the .json srcList: append when the source
 		// differs from the last one recorded for this file (a genuine talker
 		// change, not a repeat backfill of the same source).
 		if n := len(s.srcs); n == 0 || s.srcs[n-1].src != sourceID {
-			s.srcs = append(s.srcs, srcEvent{src: sourceID, at: time.Now().UTC(), emergency: s.cs.Grant.Emergency})
+			s.srcs = append(s.srcs, srcEvent{src: sourceID, at: now, emergency: s.cs.Grant.Emergency})
+		}
+		// Also accrue onto the call-level list (spans segment rolls) so every
+		// transmission's sidecar can list all the call's talkers.
+		if t := r.callTalkers[deviceSerial]; len(t) == 0 || t[len(t)-1].src != sourceID {
+			r.callTalkers[deviceSerial] = append(t, srcEvent{src: sourceID, at: now, emergency: s.cs.Grant.Emergency})
 		}
 	}
 }
@@ -847,6 +870,7 @@ func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
 		return
 	}
 	delete(r.sessions, deviceSerial)
+	delete(r.callTalkers, deviceSerial) // call aborted — drop its talker history
 	// A dormant post-segment session (parked between overs) has no open
 	// files; only close when a WAV is actually open, mirroring handleEnd.
 	if s.wav == nil {
@@ -1152,7 +1176,14 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	}
 	var meta *callMeta
 	if r.writeCallJSON {
-		meta = buildCallMeta(s.cs, s.startedAt, endedAt, int(r.callNum.Add(1)), s.vocoder != nil, s.srcs, s.freqs)
+		// Prefer the call-level talker list (all talkers of the whole call, across
+		// transmission rolls) so a rolled segment's sidecar still lists every
+		// srcID; fall back to this file's own srcs when none was accumulated.
+		srcs := s.srcs
+		if ct := r.callTalkers[serial]; len(ct) > 0 {
+			srcs = ct
+		}
+		meta = buildCallMeta(s.cs, s.startedAt, endedAt, int(r.callNum.Add(1)), s.vocoder != nil, srcs, s.freqs)
 	}
 	return cc, meta
 }
@@ -1262,6 +1293,7 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 		// open WAV and there's nothing to publish, but the session may still
 		// hold a live vocoder — close it so it isn't leaked.
 		_ = s.close()
+		delete(r.callTalkers, ce.DeviceSerial) // call over — drop its talker history
 		r.mu.Unlock()
 		return
 	}
@@ -1269,6 +1301,9 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 	// Announce the finished WAV so the outbound-streaming subsystem can
 	// upload it. Skip (and delete) calls that captured no PCM.
 	cc, meta := r.finalizeLocked(s, ce.DeviceSerial, ce.EndedAt, ce.Reason)
+	// The call is over — drop its talker history now that finalizeLocked has read
+	// it for the closing sidecar (still under r.mu, before the unlock below).
+	delete(r.callTalkers, ce.DeviceSerial)
 	r.mu.Unlock()
 	r.log.Info("recorder: call ended",
 		"device", ce.DeviceSerial,
