@@ -145,6 +145,12 @@ groups:
         url: /blog/series/voice-coding/
       - title: "Series: Recording, Composition & Streaming"
         url: /blog/series/recording-streaming/
+      - title: "Series: The Hunt"
+        url: /blog/series/the-hunt/
+      - title: "Series: The Operator's Cockpit"
+        url: /blog/series/operator-cockpit/
+      - title: "Series: Running It For Real"
+        url: /blog/series/running-it-for-real/
       - title: Tutorials
         url: /blog/category/tutorials/
       - title: "Series: Signal Lab"
