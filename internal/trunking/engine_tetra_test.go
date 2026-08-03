@@ -54,6 +54,47 @@ func TestEngineTETRANotificationHeldUntilGroupGrant(t *testing.T) {
 	}
 }
 
+// TestEngineTETRADiscoveryRequiresCorroboration pins the residual RadioID→TGID
+// leak fix: a TETRA unit-to-unit call's destination radio that never transmits is
+// never revealed as an individual, so a single such grant (Individual=false,
+// source-bearing, not a notification) would catalogue the callee ISSI as a phantom
+// talkgroup that retraction never cleans up. TETRA discovery is therefore
+// corroborated — a first sighting is held pending and only a second catalogues it
+// (a real talkgroup recurs; a one-off callee does not). Non-TETRA protocols carry
+// explicit individual-call opcodes and are NOT gated, so P25 discovery is
+// unchanged. Fail-first: without corroboration the first TETRA grant catalogues
+// the SSI and the "must not be catalogued yet" assertion goes red.
+func TestEngineTETRADiscoveryRequiresCorroboration(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 2)
+	defer bus.Close()
+	e.afterFunc = noFireAfterFunc
+
+	// TETRA: a single source-bearing group grant to a fresh SSI is NOT catalogued.
+	g := Grant{System: "X", Protocol: "tetra", GroupID: 1020600, SourceID: 1005001, FrequencyHz: 467_912_500}
+	e.HandleGrant(g)
+	if tg := e.talkgroups.Lookup(1020600); tg != nil {
+		t.Fatalf("first TETRA sighting must not catalogue SSI 1020600 yet (corroboration), got %+v", tg)
+	}
+	// The second sighting corroborates and catalogues it.
+	e.HandleGrant(g)
+	if tg := e.talkgroups.Lookup(1020600); tg == nil || tg.Tag != discoveredTag {
+		t.Fatalf("second TETRA sighting should catalogue SSI 1020600, got %+v", tg)
+	}
+
+	// Emergency bypasses corroboration (a first-sighting emergency is catalogued).
+	em := Grant{System: "X", Protocol: "tetra", GroupID: 1020601, SourceID: 1005002, FrequencyHz: 467_912_500, Emergency: true}
+	e.HandleGrant(em)
+	if tg := e.talkgroups.Lookup(1020601); tg == nil {
+		t.Errorf("emergency TETRA grant should catalogue on first sight, got nil")
+	}
+
+	// Non-TETRA (P25) discovery is unchanged: catalogued on the first sighting.
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 4321, SourceID: 7, FrequencyHz: 851_000_000})
+	if tg := e.talkgroups.Lookup(4321); tg == nil {
+		t.Errorf("P25 discovery must be unchanged (catalogued on first sight), got nil")
+	}
+}
+
 // TestEngineTETRANotificationDoesNotDiscoverTalkgroup is the regression for the
 // residual RadioID→TGID leak seen in the reporter's captures (e.g. tg=1009311):
 // a source-less TETRA notification grant addresses the paged radio's SSI, not a
@@ -78,10 +119,15 @@ func TestEngineTETRANotificationDoesNotDiscoverTalkgroup(t *testing.T) {
 	if tg := e.talkgroups.Lookup(issi); tg != nil {
 		t.Fatalf("source-less notification catalogued radio SSI %d as a talkgroup: %+v", issi, tg)
 	}
-	// The authoritative source-bearing group grant still discovers the real TG.
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: gssi, SourceID: issi, FrequencyHz: freq, Timeslot: 1})
+	// The authoritative source-bearing group grant discovers the real TG — but
+	// TETRA discovery is now corroborated, so a second sighting is needed (a real
+	// talkgroup recurs; a one-off unit-to-unit callee does not). See
+	// TestEngineTETRADiscoveryRequiresCorroboration.
+	authoritative := Grant{System: "X", Protocol: "tetra", GroupID: gssi, SourceID: issi, FrequencyHz: freq, Timeslot: 1}
+	e.HandleGrant(authoritative)
+	e.HandleGrant(authoritative)
 	if tg := e.talkgroups.Lookup(gssi); tg == nil || tg.Tag != discoveredTag {
-		t.Errorf("authoritative group grant should have discovered TG %d, got %+v", gssi, tg)
+		t.Errorf("authoritative group grant should have discovered TG %d after corroboration, got %+v", gssi, tg)
 	}
 	// And the notification's SSI is still not a talkgroup afterwards.
 	if tg := e.talkgroups.Lookup(issi); tg != nil {

@@ -88,6 +88,18 @@ type Engine struct {
 	// talkgroup. Bounded by knownRadiosCap; guarded by radiosMu.
 	radiosMu    sync.Mutex
 	knownRadios map[uint32]struct{}
+	// pendingTETRADiscovery holds TETRA group SSIs seen exactly once as a
+	// (non-individual, non-notification) group destination but not yet catalogued.
+	// TETRA cannot flag a unit-to-unit call's destination as Individual on first
+	// sight — a callee radio that never transmits is never revealed as one — so a
+	// single such grant would leak the radio ISSI into the Talkgroups list and,
+	// unlike a source-less notification, is never reactively retracted. A real
+	// talkgroup recurs on the control channel; a one-off unit-to-unit callee does
+	// not, so cataloguing is deferred until a TETRA group SSI is seen a SECOND time
+	// (Emergency bypasses). Only TETRA is gated — P25/DMR carry explicit
+	// individual-call opcodes, so their discovery is unchanged. Bounded by
+	// pendingDiscoveryCap; guarded by radiosMu.
+	pendingTETRADiscovery map[uint32]struct{}
 
 	// held holds TETRA source-less notification grants for a short window before
 	// they are allowed to spawn a call. On a group call the SwMI sends a
@@ -359,6 +371,39 @@ func (e *Engine) discoverTalkgroup(g Grant) *TalkGroup {
 // radio is seen), mirroring the tetra decoder's individualsCap.
 const knownRadiosCap = 16384
 
+// pendingDiscoveryCap bounds the TETRA one-sighting corroboration set. Past the
+// cap a first-seen TETRA SSI is catalogued immediately (fail open to the prior
+// behaviour) rather than growing the set without bound.
+const pendingDiscoveryCap = 16384
+
+// tetraDiscoveryCorroborated reports whether a first-seen TETRA group grant may be
+// catalogued as a talkgroup now. TETRA callee radios that never transmit cannot be
+// flagged Individual, so a lone unit-to-unit grant would leak the radio ISSI as a
+// phantom talkgroup that is never retracted. Require a second sighting first: the
+// first records the SSI as pending and returns false; the second (and Emergency,
+// which bypasses) returns true. Non-TETRA grants are never gated. On the return of
+// true the pending entry is cleared. Guarded by radiosMu.
+func (e *Engine) tetraDiscoveryCorroborated(g Grant) bool {
+	if g.Protocol != "tetra" || g.Emergency {
+		return true
+	}
+	e.radiosMu.Lock()
+	defer e.radiosMu.Unlock()
+	if e.pendingTETRADiscovery == nil {
+		e.pendingTETRADiscovery = make(map[uint32]struct{})
+	}
+	if _, seen := e.pendingTETRADiscovery[g.GroupID]; seen {
+		delete(e.pendingTETRADiscovery, g.GroupID)
+		return true
+	}
+	if len(e.pendingTETRADiscovery) < pendingDiscoveryCap {
+		e.pendingTETRADiscovery[g.GroupID] = struct{}{}
+	} else {
+		return true // set full — fail open rather than suppress discovery forever
+	}
+	return false
+}
+
 // noteRadio records that ssi is a subscriber radio (an individual unit) rather
 // than a talkgroup, and retracts any talkgroup previously auto-discovered for
 // it. A radio is revealed by any grant that carries it as a calling /
@@ -381,6 +426,9 @@ func (e *Engine) noteRadio(ssi uint32, system string) {
 	if !known && len(e.knownRadios) < knownRadiosCap {
 		e.knownRadios[ssi] = struct{}{}
 	}
+	// If this radio was a pending TETRA discovery candidate, drop it — it is a
+	// subscriber, never a talkgroup, so its second sighting must not catalogue it.
+	delete(e.pendingTETRADiscovery, ssi)
 	e.radiosMu.Unlock()
 	if known {
 		return // already learned — any phantom was retracted on first sighting
@@ -559,7 +607,7 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.dropHeldNotification(channelKeyOf(g))
 	}
 	tg := e.talkgroups.Lookup(g.GroupID)
-	if tg == nil && g.GroupID != 0 && !g.Individual && !e.isKnownRadio(g.GroupID) && !isTETRANotificationGrant(g) {
+	if tg == nil && g.GroupID != 0 && !g.Individual && !e.isKnownRadio(g.GroupID) && !isTETRANotificationGrant(g) && e.tetraDiscoveryCorroborated(g) {
 		// First time this talkgroup has been heard: catalogue it so
 		// Database → Talkgroups fills in from the air (the trunk-recorder
 		// behaviour the operator asked for). Individual (unit-to-unit /

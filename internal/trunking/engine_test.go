@@ -142,15 +142,22 @@ func TestEngineRetractsRadioIDLeakedAsTalkgroup(t *testing.T) {
 	// Ordering A — phantom first, then the SSI is seen as a calling party.
 	// A group grant addressed under radio 1005387's SSI with a different calling
 	// party (a unit-to-unit call the SwMI carried as a group, before 1005387 is
-	// known to be a radio) leaks it in. (A source-less notification no longer
-	// leaks — the discovery gate skips those; see
-	// TestEngineTETRANotificationDoesNotDiscoverTalkgroup.)
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1005387, SourceID: 1009000, FrequencyHz: 467_912_500})
+	// known to be a radio) can still leak it in when the call has more than one
+	// over — corroboration (two sightings) suppresses the single-over case but a
+	// repeated unit-to-unit grant slips through, and the retraction net below is
+	// what catches it. (A source-less notification no longer leaks — the discovery
+	// gate skips those; see TestEngineTETRANotificationDoesNotDiscoverTalkgroup.)
+	leak := Grant{System: "X", Protocol: "tetra", GroupID: 1005387, SourceID: 1009000, FrequencyHz: 467_912_500}
+	e.HandleGrant(leak)
+	e.HandleGrant(leak) // second sighting corroborates the (mis-classified) TG
 	if tg := e.talkgroups.Lookup(1005387); tg == nil || tg.Tag != discoveredTag {
-		t.Fatalf("precondition: radio 1005387 should be leaked as a Discovered TG, got %+v", tg)
+		t.Fatalf("precondition: radio 1005387 should be leaked as a Discovered TG after two sightings, got %+v", tg)
 	}
-	// A real group call where 1005387 is the calling party reveals it as a radio.
-	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020529, SourceID: 1005387, FrequencyHz: 467_912_500})
+	// A real group call where 1005387 is the calling party reveals it as a radio;
+	// send it twice so the real TG 1020529 also corroborates.
+	reveal := Grant{System: "X", Protocol: "tetra", GroupID: 1020529, SourceID: 1005387, FrequencyHz: 467_912_500}
+	e.HandleGrant(reveal)
+	e.HandleGrant(reveal)
 	if e.talkgroups.Lookup(1005387) != nil {
 		t.Errorf("radio 1005387 was not retracted after being seen as a calling party")
 	}
