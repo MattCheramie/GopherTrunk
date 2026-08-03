@@ -126,6 +126,17 @@ type ControlChannel struct {
 	// dropped on release. Guarded by mu.
 	callGroups map[uint16]uint32
 
+	// grantSeen deduplicates the voice grants TETRA rebroadcasts on the control
+	// channel every multiframe while a call is up. publishGrant fires one
+	// KindGrant (and a debug line) per decoded grant PDU, so a single call emitted
+	// ~3-4 grant events — the "CC spam" a field report flagged. An entry records
+	// the last-published grant content for a given (group, carrier, timeslot); an
+	// IDENTICAL re-publish within grantDedupWindow is suppressed, but a grant that
+	// carries new information (a source SSI backfilled from a reassembled fragment,
+	// an emergency flag, a changed frequency) still publishes. Entries are dropped
+	// on the call's release and pruned by age. Lazily built; guarded by mu.
+	grantSeen map[grantKey]grantSnapshot
+
 	// fragTMSDU accumulates a TM-SDU that spans a start-fragment MAC-RESOURCE and
 	// one or more following MAC-FRAG / MAC-END PDUs (§21.4.3.3/.4). fragResource
 	// is the start fragment's MAC-RESOURCE context (address + channel allocation),
@@ -675,6 +686,45 @@ func (c *ControlChannel) cellFrequencies() (downlinkHz, uplinkHz uint32, downlin
 	return uint32(dl), 0, true, false
 }
 
+// grantKey identifies a distinct voice grant for dedup: the destination group
+// (or individual) SSI plus the physical channel it was granted on. A repeat with
+// the same key inside grantDedupWindow is the same call's rebroadcast.
+type grantKey struct {
+	dst      uint32
+	carrier  uint16
+	timeslot uint8
+}
+
+// grantSnapshot is the last-published content for a grantKey. `at` times the
+// dedup window; the remaining fields are the grant payload details that can
+// legitimately change mid-call (so a re-publish carrying new info is NOT
+// suppressed as a rebroadcast). The key fields (dst/carrier/timeslot) are not
+// repeated here.
+type grantSnapshot struct {
+	at         time.Time
+	src        uint32
+	freq       uint32
+	usage      uint8
+	encrypted  bool
+	emergency  bool
+	individual bool
+}
+
+// sameContent reports whether two snapshots describe the same grant, ignoring
+// when it was published.
+func (s grantSnapshot) sameContent(o grantSnapshot) bool {
+	return s.src == o.src && s.freq == o.freq && s.usage == o.usage &&
+		s.encrypted == o.encrypted && s.emergency == o.emergency &&
+		s.individual == o.individual
+}
+
+// grantDedupWindow is how long a repeated identical voice grant is suppressed
+// after it was last published. TETRA rebroadcasts the grant roughly every
+// multiframe (~1.02 s) for the life of the call, so a few seconds collapses the
+// steady-state rebroadcasts to one event while still re-announcing a genuinely
+// new call promptly (its entry is also dropped on release).
+const grantDedupWindow = 5 * time.Second
+
 func (c *ControlChannel) publishGrant(g VoiceGrant) {
 	if c.bus == nil {
 		return
@@ -716,6 +766,35 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			return
 		}
 	}
+	// Suppress the rebroadcast spam: TETRA re-announces an active call's grant
+	// every multiframe, so an IDENTICAL (group, carrier, timeslot) grant with the
+	// same content is published only once per grantDedupWindow. A re-publish that
+	// carries new info (backfilled source SSI, emergency, changed frequency) is
+	// not identical and still publishes. The entry is dropped on release
+	// (evictGrantSeen), so a genuinely new call for the same target re-announces.
+	now := c.now()
+	snap := grantSnapshot{
+		at: now, src: g.SourceSSI, freq: freq, usage: g.UsageMarker,
+		encrypted: g.Encrypted, emergency: g.Emergency, individual: g.Individual,
+	}
+	c.mu.Lock()
+	if c.grantSeen == nil {
+		c.grantSeen = make(map[grantKey]grantSnapshot)
+	}
+	key := grantKey{dst: g.DestSSI, carrier: g.CarrierNumber, timeslot: g.Timeslot}
+	if prev, seen := c.grantSeen[key]; seen && now.Sub(prev.at) < grantDedupWindow && prev.sameContent(snap) {
+		c.mu.Unlock()
+		return
+	}
+	c.grantSeen[key] = snap
+	// Opportunistic age-prune so the map can't grow unbounded on a busy site.
+	for k, s := range c.grantSeen {
+		if now.Sub(s.at) >= grantDedupWindow {
+			delete(c.grantSeen, k)
+		}
+	}
+	c.mu.Unlock()
+
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
@@ -885,6 +964,23 @@ func (c *ControlChannel) publishRelease(gssi uint32, cause uint8) {
 	})
 	c.log.Debug("tetra: call release",
 		"system", c.systemName, "group", gssi, "cause", cause)
+	c.evictGrantSeen(gssi)
+}
+
+// evictGrantSeen drops the dedup entries for a released group so the next grant
+// addressed to it (a genuinely new call) is announced immediately rather than
+// being swallowed as a rebroadcast of the call that just ended.
+func (c *ControlChannel) evictGrantSeen(dst uint32) {
+	if dst == 0 {
+		return
+	}
+	c.mu.Lock()
+	for k := range c.grantSeen {
+		if k.dst == dst {
+			delete(c.grantSeen, k)
+		}
+	}
+	c.mu.Unlock()
 }
 
 // publishTalker emits a KindCallTalker so the engine backfills the current
