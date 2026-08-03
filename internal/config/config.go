@@ -2750,13 +2750,15 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 			// Tier II conventional / Tier I direct-mode — channel freq is a
 			// repeater or simplex carrier, no relationship to
 			// system.ControlChannels required.
-		case "dmr", "p25", "p25-phase2", "p25_phase2", "p25p2":
+		case "dmr", "p25", "p25-phase2", "p25_phase2", "p25p2", "tetra":
 			// Trunked control-channel protocols — the wideband channel
 			// MUST be one of the system's declared control channels.
-			// Tier III DMR's CSBK chain, P25 Phase 1's TSBK chain, and
-			// P25 Phase 2's H-DQPSK MAC chain all run on a frequency
-			// the system advertises in control_channels; voice grants
-			// hop elsewhere.
+			// Tier III DMR's CSBK chain, P25 Phase 1's TSBK chain, P25
+			// Phase 2's H-DQPSK MAC chain, and TETRA's MAC/CMCE chain all
+			// run on a frequency the system advertises in control_channels;
+			// voice grants hop elsewhere (TETRA voice follows on a
+			// role: voice SDR — the wideband path multiplexes control
+			// channels, not the 144 kHz TETRA voice slots).
 			matched := false
 			for _, cc := range sys.ControlChannels {
 				if cc == ch.FrequencyHz {
@@ -2774,7 +2776,8 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 			return fmt.Errorf(
 				"sdr.devices[%d].channels[%d]: system %q has protocol %q; wideband currently supports "+
 					"dmr-tier2 (Tier II conventional), dmr (Tier III trunked control channel), "+
-					"p25 (Phase 1 trunked control channel), and p25-phase2 (Phase 2 trunked control channel)",
+					"p25 (Phase 1 trunked control channel), p25-phase2 (Phase 2 trunked control channel), "+
+					"and tetra (trunked control channel)",
 				idx, j, ch.System, sys.Protocol)
 		}
 		offset := float64(ch.FrequencyHz) - float64(d.CenterFreqHz)

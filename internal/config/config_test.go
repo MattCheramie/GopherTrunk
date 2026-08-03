@@ -167,6 +167,43 @@ func TestValidate(t *testing.T) {
 				{Name: "regional-t3", Protocol: "dmr", ControlChannels: []uint32{453_775_000}},
 			}},
 		}, false},
+		{"wideband TETRA ok", Config{
+			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
+				Serial: "00000010", Role: "wideband", CenterFreqHz: 467_900_000,
+				Channels: []DeviceChannelConfig{
+					{FrequencyHz: 467_912_500, System: "tetra-net"},
+				},
+			}}},
+			Trunking: TrunkingConfig{Systems: []SystemConfig{{
+				Name: "tetra-net", Protocol: "tetra",
+				ControlChannels: []uint32{467_912_500},
+			}}},
+		}, false},
+		{"wideband mixed T3 + TETRA", Config{
+			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
+				Serial: "00000010", Role: "wideband", CenterFreqHz: 460_000_000,
+				Channels: []DeviceChannelConfig{
+					{FrequencyHz: 459_775_000, System: "regional-t3"},
+					{FrequencyHz: 460_212_500, System: "tetra-net"},
+				},
+			}}},
+			Trunking: TrunkingConfig{Systems: []SystemConfig{
+				{Name: "regional-t3", Protocol: "dmr", ControlChannels: []uint32{459_775_000}},
+				{Name: "tetra-net", Protocol: "tetra", ControlChannels: []uint32{460_212_500}},
+			}},
+		}, false},
+		{"wideband TETRA channel not in CC list", Config{
+			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
+				Serial: "00000010", Role: "wideband", CenterFreqHz: 467_900_000,
+				Channels: []DeviceChannelConfig{
+					{FrequencyHz: 467_800_000, System: "tetra-net"},
+				},
+			}}},
+			Trunking: TrunkingConfig{Systems: []SystemConfig{{
+				Name: "tetra-net", Protocol: "tetra",
+				ControlChannels: []uint32{467_912_500}, // doesn't include 467_800_000
+			}}},
+		}, true},
 		{"wideband missing serial", Config{
 			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
 				Role: "wideband", CenterFreqHz: 453_500_000,

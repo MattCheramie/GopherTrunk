@@ -869,3 +869,65 @@ func TestEngineProcessesWhenNotSuspended(t *testing.T) {
 		t.Error("running engine recorded 0 diagnostics windows; want > 0 (fixture should process)")
 	}
 }
+
+// tetraSystem is a test helper for a TETRA wideband channel: a trunked control
+// channel, like DMR Tier III / P25.
+func tetraSystem(name string, ccFreq uint32) trunking.System {
+	return trunking.System{Name: name, Protocol: trunking.ProtocolTETRA, ControlChannels: []uint32{ccFreq}}
+}
+
+// TestEngineMixedTETRAWidebandPerTapRates pins TETRA wideband support: a TETRA
+// channel builds alongside a 48 kHz DMR channel on one wideband SDR, gets its own
+// 144 kHz tap, and forces the per-tap DDC strategy (the polyphase channelizer
+// can't emit 144 kHz), warning when it overrides a requested polyphase strategy.
+func TestEngineMixedTETRAWidebandPerTapRates(t *testing.T) {
+	var logBuf strings.Builder
+	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	dev := newMockDevice(nil)
+	bus := events.NewBus(8)
+	defer bus.Close()
+
+	const (
+		center  = 467_900_000
+		tetraCC = 467_912_500
+		dmrFreq = 467_800_000
+	)
+	e, err := New(Options{
+		Device: dev, Bus: bus, Log: log,
+		SampleRateHz: 2_400_000, CenterFreqHz: center,
+		TunerStrategy: "polyphase", // must be overridden to ddc by the TETRA tap
+		Channels: []ChannelConfig{
+			{FrequencyHz: dmrFreq, SystemName: "dmr"},
+			{FrequencyHz: tetraCC, SystemName: "tet"},
+		},
+		Systems: []trunking.System{t2System("dmr"), tetraSystem("tet", tetraCC)},
+	})
+	if err != nil {
+		t.Fatalf("New with a mixed DMR+TETRA plan: %v", err)
+	}
+	if e.strategyTag != "ddc(tetra-forced)" {
+		t.Errorf("strategyTag = %q, want ddc(tetra-forced)", e.strategyTag)
+	}
+	if !strings.Contains(logBuf.String(), "forcing DDC") {
+		t.Errorf("expected a 'forcing DDC' warning; log:\n%s", logBuf.String())
+	}
+	if len(e.channels) != 2 {
+		t.Fatalf("channels = %d, want 2", len(e.channels))
+	}
+	var tetraRcv *tetraChannelReceiver
+	for _, ec := range e.channels {
+		if ec.protoTag == "tetra" {
+			r, ok := ec.receiver.(*tetraChannelReceiver)
+			if !ok {
+				t.Fatalf("tetra channel receiver is %T, want *tetraChannelReceiver", ec.receiver)
+			}
+			tetraRcv = r
+		}
+	}
+	if tetraRcv == nil {
+		t.Fatal("no tetra channel built")
+	}
+	if tetraRcv.rateHz < 143_000 || tetraRcv.rateHz > 145_000 {
+		t.Errorf("tetra tap rate = %.0f Hz, want ~144000", tetraRcv.rateHz)
+	}
+}

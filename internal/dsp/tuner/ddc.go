@@ -78,6 +78,7 @@ type DDCBank struct {
 
 type ddcTap struct {
 	offsetHz  float64
+	actualOut float64 // this tap's emitted rate (may differ per tap; see AddTapAtRate)
 	nco       *nco
 	resampler *dsp.Resampler
 	outBuf    []complex64
@@ -155,24 +156,44 @@ func buildSharedDecimator(inRateHz, minRedRateHz float64) (redRateHz float64, pr
 	return red, dsp.NewResampler(1, d, tapsPerBranch, ddcKaiserBeta)
 }
 
-// AddTap registers a new tap at the given offset.
+// AddTap registers a new tap at the given offset, emitting the bank's default
+// output rate (OutputRateHz).
 func (b *DDCBank) AddTap(offsetHz float64, sink SinkFunc) error {
+	_, err := b.AddTapAtRate(offsetHz, b.outRateHz, sink)
+	return err
+}
+
+// AddTapAtRate registers a tap that emits its OWN output rate, independent of the
+// bank default and of other taps. This lets one bank host, e.g., 48 kHz DMR/P25
+// taps alongside a 144 kHz TETRA tap out of the same wideband capture: each tap
+// owns an independent polyphase resampler from the shared reduced-rate stream, so
+// mixed per-tap rates cost nothing extra. Returns the tap's actual emitted rate,
+// which may differ from outRateHz by a fraction of a percent when the exact ratio
+// exceeds the resampler caps (issue #550) — build that tap's symbol clock from the
+// returned value. The offset gate is unchanged (the shared reduced band is common
+// to all taps).
+func (b *DDCBank) AddTapAtRate(offsetHz, outRateHz float64, sink SinkFunc) (actualHz float64, err error) {
 	if !b.offsetInBand(offsetHz) {
-		return ErrOffsetOutOfBand
+		return 0, ErrOffsetOutOfBand
 	}
-	l, m := rationalRatio(b.outRateHz, b.redRateHz)
+	if outRateHz <= 0 {
+		outRateHz = b.outRateHz
+	}
+	l, m := rationalRatio(outRateHz, b.redRateHz)
 	tapsPerBranch := (ddcStopbandTaps*m + l - 1) / l
 	if tapsPerBranch < ddcMinTapsPerBranch {
 		tapsPerBranch = ddcMinTapsPerBranch
 	}
+	actual := b.redRateHz * float64(l) / float64(m)
 	tap := &ddcTap{
 		offsetHz:  offsetHz,
+		actualOut: actual,
 		nco:       newNCO(offsetHz, b.redRateHz),
 		resampler: dsp.NewResampler(l, m, tapsPerBranch, ddcKaiserBeta),
 		sink:      sink,
 	}
 	b.taps = append(b.taps, tap)
-	return nil
+	return actual, nil
 }
 
 // offsetInBand tests the offset against the usable band AFTER the shared
@@ -237,6 +258,19 @@ func (b *DDCBank) InputRateHz() float64 { return b.inRateHz }
 // ratio exceeds the resampler caps (issue #550); consumers should build their
 // symbol clocks from this value, not the nominal target.
 func (b *DDCBank) OutputRateHz() float64 { return b.actualOutHz }
+
+// ActualRateFor returns the rate a tap requesting outRateHz would actually emit,
+// without adding a tap. Lets a caller size a receiver's symbol clock before it
+// wires the tap's sink (AddTapAtRate needs that sink). outRateHz <= 0 selects the
+// bank default. Uses the same rational-ratio computation as AddTapAtRate, so the
+// two agree.
+func (b *DDCBank) ActualRateFor(outRateHz float64) float64 {
+	if outRateHz <= 0 {
+		outRateHz = b.outRateHz
+	}
+	l, m := rationalRatio(outRateHz, b.redRateHz)
+	return b.redRateHz * float64(l) / float64(m)
+}
 
 // Reset clears the shared decimator plus every tap's NCO and resampler state.
 func (b *DDCBank) Reset() {

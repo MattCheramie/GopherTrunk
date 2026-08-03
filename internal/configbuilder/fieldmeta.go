@@ -156,7 +156,7 @@ var fieldMetas = map[string]FieldMeta{
 	"Ka9qRadioConfig.ConnectTimeoutMs": {Help: "mDNS resolution / status-poll timeout in ms. 0 = driver default (3000)."},
 
 	// ---- Trunking ----------------------------------------------------------
-	"TrunkingConfig.Systems":           {Help: "Trunked radio networks to follow. Add by hand, by RadioReference browse, or by PDF/CSV import. Each system (and each site of a network) needs its own control-channel SDR; the wideband path can share one SDR across DMR/P25 systems, but not TETRA. Cross-site duplicates are collapsed by recordings.dedup."},
+	"TrunkingConfig.Systems":           {Help: "Trunked radio networks to follow. Add by hand, by RadioReference browse, or by PDF/CSV import. Each system (and each site of a network) needs its own control-channel SDR; the wideband path can share one SDR across DMR/P25/TETRA control channels (TETRA voice still follows on a role: voice SDR). Cross-site duplicates are collapsed by recordings.dedup."},
 	"TrunkingConfig.CallTimeoutMs":     {Help: "Inactivity window before the watchdog ends a call and frees its voice SDR. 0 = 30 s."},
 	"TrunkingConfig.VoiceHangtimeMs":   {Help: "End-of-transmission window for every voice protocol — ends a call this long after the last voice frame. 0 = 3.5 s."},
 	"TrunkingConfig.VoiceCallGrouping": {Help: "How recordings split: transmission (one file per over) or conversation (group same-TG overs). Empty = transmission.", Options: opts("", "(default: transmission)", "transmission", "transmission", "conversation", "conversation")},
