@@ -4,6 +4,7 @@ import { useShared } from "../store/shared";
 import { groupEvents } from "../lib/groupEvents";
 import type { EventDTO, TalkgroupDTO } from "../api/types";
 import { PageHeader } from "../components/ui/PageHeader";
+import { formatClock } from "../lib/formatTime";
 
 // CC Activity panel — a focused view of the trunked control-channel
 // "chatter" already flowing on the events bus. Filters the rolling
@@ -408,10 +409,4 @@ function num(v: unknown): number {
   return 0;
 }
 
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toISOString().slice(11, 19);
-  } catch {
-    return ts.slice(11, 19);
-  }
-}
+const formatTime = formatClock;

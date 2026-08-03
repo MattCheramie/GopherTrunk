@@ -6,6 +6,7 @@ import { Badge } from "../components/ui/Badge";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
+import { formatClock } from "../lib/formatTime";
 
 // MDC1200 panel — list of recent decoded Motorola FFSK signaling
 // bursts off conventional analog voice channels. Each row shows the
@@ -141,10 +142,4 @@ function hex2(v: number): string {
   return "0x" + v.toString(16).toUpperCase().padStart(2, "0");
 }
 
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toISOString().slice(11, 19);
-  } catch {
-    return ts.slice(11, 19);
-  }
-}
+const formatTime = formatClock;

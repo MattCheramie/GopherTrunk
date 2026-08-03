@@ -71,6 +71,13 @@ type ControlChannel struct {
 	// lock avoids any re-entrancy. DrainStats reads and resets under it.
 	statsMu sync.Mutex
 	stats   Stats
+	// bschOKTotal / bschFailTotal are always-on cumulative BSCH decode counters
+	// (unlike stats, which is debug-gated and drained). They give a lightweight,
+	// lock-free BSCH frame-error rate — the TETRA analogue of the P25 TSBK error
+	// rate — for the live signal-quality indicator, without depending on the debug
+	// logger being on. Two atomic adds per sync-burst candidate; never reset.
+	bschOKTotal   atomic.Int64
+	bschFailTotal atomic.Int64
 
 	mu               sync.Mutex
 	locked           bool
@@ -478,6 +485,14 @@ func (c *ControlChannel) DrainStats() Stats {
 	s := c.stats
 	c.stats = Stats{}
 	return s
+}
+
+// BSCHCounts returns the always-on cumulative (ok, fail) BSCH decode counts since
+// the channel was created. Lock-free; unlike DrainStats it never resets and is not
+// debug-gated, so a caller can derive a live BSCH frame-error rate. ok + fail is
+// the attempt count (a confidence weight); both zero before the first sync burst.
+func (c *ControlChannel) BSCHCounts() (ok, fail int64) {
+	return c.bschOKTotal.Load(), c.bschFailTotal.Load()
 }
 
 // Locked reports whether the control channel has declared lock. Read-only;

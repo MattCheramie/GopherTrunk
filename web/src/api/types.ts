@@ -413,6 +413,12 @@ export interface SystemHuntStatusDTO {
   last_failed_at?: string;
   backoff_ms?: number;
   last_grant_at?: string;
+  // Live control-channel signal quality (clean/marginal/poor) and carrier offset
+  // (Hz) for the locked CC. has_decode_health distinguishes a real 0 offset from
+  // "no data yet"; decode_quality is empty until enough frames have decoded.
+  decode_quality?: string;
+  carrier_offset_hz?: number;
+  has_decode_health?: boolean;
 }
 
 export interface ConvScannerStatusDTO {

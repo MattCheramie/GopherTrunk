@@ -55,13 +55,13 @@ func TestTETRADemuxSoftDecodeUsesLLRs(t *testing.T) {
 
 	o, rs := newDemuxOwner(c, "A", 19)
 	d.addOwner(o)
-	d.onBurst(corrupt, soft, 1, 19)
+	d.onBurstSync(corrupt, soft, 1, 19)
 	if n := len(rs.rawFrames("A")); n != 2 {
 		t.Fatalf("soft-decode path: A got %d frames, want 2 (soft LLRs must decode despite a corrupt hard frame)", n)
 	}
 	// The SAME corrupt hard frame with no soft info decodes nothing — confirming
 	// it was the soft LLRs, not the frame bytes, that produced the speech above.
-	d.onBurst(corrupt, nil, 1, 19)
+	d.onBurstSync(corrupt, nil, 1, 19)
 	if n := len(rs.rawFrames("A")); n != 2 {
 		t.Errorf("hard fallback on a CRC-failing frame should add no frames; total = %d, want 2", n)
 	}
@@ -316,11 +316,47 @@ func TestTETRATrafficBurstNoGrantMarkerFallback(t *testing.T) {
 func newDemuxOwner(c *Composer, serial string, marker uint8) (*tetraSlotOwner, *recordingSink) {
 	rs := &recordingSink{}
 	bt := c.newBoundaryTracker(serial, 0, nil)
-	return &tetraSlotOwner{serial: serial, marker: marker, bt: bt, rs: rs}, rs
+	return &tetraSlotOwner{
+		serial: serial, marker: marker, bt: bt, rs: rs,
+		jobs: make(chan tetraDecodeJob, tetraVocoderQueueDepth),
+	}, rs
 }
 
 func mkDemux(c *Composer) *tetraSlotDemux {
 	return &tetraSlotDemux{c: c, key: "test", owners: make(map[uint8]*tetraSlotOwner)}
+}
+
+// drainForTest synchronously runs any queued vocoder jobs for every currently
+// registered owner (and pending wildcards), mirroring tetraOwnerWorker. Vocoding
+// now runs off the demux goroutine (a per-owner worker), so a routing test that
+// asserts delivery right after onBurst must first drain the queue to see the
+// (now off-goroutine) speech deterministically.
+func (d *tetraSlotDemux) drainForTest() {
+	d.mu.Lock()
+	owners := make([]*tetraSlotOwner, 0, len(d.owners)+len(d.wildcards))
+	for _, o := range d.owners {
+		owners = append(owners, o)
+	}
+	owners = append(owners, d.wildcards...)
+	d.mu.Unlock()
+	for _, o := range owners {
+	drain:
+		for {
+			select {
+			case job := <-o.jobs:
+				d.c.decodeTETRASpeech(o.bt, o.rs, o.serial, job.frame, job.softType5, &o.speech)
+			default:
+				break drain
+			}
+		}
+	}
+}
+
+// onBurstSync routes a burst and then synchronously drains the resulting vocoder
+// work, so the demux routing regressions keep asserting delivery immediately.
+func (d *tetraSlotDemux) onBurstSync(frame []byte, softType5 []float32, slot, usage uint8) {
+	d.onBurst(frame, softType5, slot, usage)
+	d.drainForTest()
 }
 
 // TestTETRADemuxRoutesByUsageMarker is the core regression for cross-slot audio
@@ -336,8 +372,8 @@ func TestTETRADemuxRoutesByUsageMarker(t *testing.T) {
 	d.addOwner(oA)
 	d.addOwner(oB)
 
-	d.onBurst(frame, nil, 1, 19) // marker 19 → A only
-	d.onBurst(frame, nil, 2, 20) // marker 20 → B only
+	d.onBurstSync(frame, nil, 1, 19) // marker 19 → A only
+	d.onBurstSync(frame, nil, 2, 20) // marker 20 → B only
 	if n := len(rsA.rawFrames("A")); n != 2 {
 		t.Errorf("owner A got %d frames, want 2", n)
 	}
@@ -346,12 +382,12 @@ func TestTETRADemuxRoutesByUsageMarker(t *testing.T) {
 	}
 
 	// A marker with no owner is dropped (not broadcast to A or B).
-	d.onBurst(frame, nil, 3, 21)
+	d.onBurstSync(frame, nil, 3, 21)
 	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 4 {
 		t.Errorf("unowned marker 21 leaked: total frames now %d, want 4", n)
 	}
 	// A non-traffic AACH marker (< DLUsageTraffic, e.g. undecoded 0) is dropped.
-	d.onBurst(frame, nil, 1, 0)
+	d.onBurstSync(frame, nil, 1, 0)
 	if n := len(rsA.rawFrames("A")); n != 2 {
 		t.Errorf("non-traffic marker leaked to A: %d frames, want 2", n)
 	}
@@ -368,7 +404,7 @@ func TestTETRADemuxMostRecentGrantEvicts(t *testing.T) {
 
 	oOld, rsOld := newDemuxOwner(c, "old", 19)
 	d.addOwner(oOld)
-	d.onBurst(frame, nil, 1, 19)
+	d.onBurstSync(frame, nil, 1, 19)
 	if n := len(rsOld.rawFrames("old")); n != 2 {
 		t.Fatalf("old owner got %d frames before reuse, want 2", n)
 	}
@@ -376,7 +412,7 @@ func TestTETRADemuxMostRecentGrantEvicts(t *testing.T) {
 	// New call reuses marker 19 while "old" is still registered (hangtime).
 	oNew, rsNew := newDemuxOwner(c, "new", 19)
 	d.addOwner(oNew)
-	d.onBurst(frame, nil, 1, 19)
+	d.onBurstSync(frame, nil, 1, 19)
 	if n := len(rsNew.rawFrames("new")); n != 2 {
 		t.Errorf("new owner got %d frames after reuse, want 2", n)
 	}
@@ -386,7 +422,7 @@ func TestTETRADemuxMostRecentGrantEvicts(t *testing.T) {
 
 	// The lingering old owner unregistering must NOT remove the new owner's marker.
 	d.removeOwner(oOld)
-	d.onBurst(frame, nil, 1, 19)
+	d.onBurstSync(frame, nil, 1, 19)
 	if n := len(rsNew.rawFrames("new")); n != 4 {
 		t.Errorf("new owner lost its marker after old unregistered: %d frames, want 4", n)
 	}
@@ -407,7 +443,7 @@ func TestTETRADemuxWildcardBinding(t *testing.T) {
 	d.addOwner(oW)
 
 	// Burst on 19 goes to A, not the wildcard.
-	d.onBurst(frame, nil, 1, 19)
+	d.onBurstSync(frame, nil, 1, 19)
 	if n := len(rsA.rawFrames("A")); n != 2 {
 		t.Errorf("owner A got %d frames, want 2", n)
 	}
@@ -416,13 +452,13 @@ func TestTETRADemuxWildcardBinding(t *testing.T) {
 	}
 
 	// A burst on an unclaimed marker 25 binds the wildcard to 25.
-	d.onBurst(frame, nil, 3, 25)
-	d.onBurst(frame, nil, 3, 25)
+	d.onBurstSync(frame, nil, 3, 25)
+	d.onBurstSync(frame, nil, 3, 25)
 	if n := len(rsW.rawFrames("W")); n != 4 {
 		t.Errorf("wildcard did not bind marker 25: %d frames, want 4", n)
 	}
 	// It must not also grab a different unclaimed marker now that it is bound.
-	d.onBurst(frame, nil, 4, 30)
+	d.onBurstSync(frame, nil, 4, 30)
 	if n := len(rsW.rawFrames("W")); n != 4 {
 		t.Errorf("bound wildcard grabbed a second marker: %d frames, want 4", n)
 	}
@@ -441,7 +477,7 @@ func TestTETRADemuxCRCFallbackSingleOwner(t *testing.T) {
 	o, rs := newDemuxOwner(c, "A", 0) // wildcard: grant carried no usage marker
 	d.addOwner(o)
 
-	d.onBurst(frame, nil, 2, 0) // undecoded AACH, single active call → CRC fallback
+	d.onBurstSync(frame, nil, 2, 0) // undecoded AACH, single active call → CRC fallback
 	if n := len(rs.rawFrames("A")); n != 2 {
 		t.Errorf("single-owner CRC fallback: A got %d frames, want 2", n)
 	}
@@ -464,7 +500,7 @@ func TestTETRADemuxCRCFallbackNoCrossTalkConcurrent(t *testing.T) {
 	d.addOwner(oA)
 	d.addOwner(oB)
 
-	d.onBurst(frame, nil, 2, 0) // undecoded AACH, two active calls → drop, no cross-talk
+	d.onBurstSync(frame, nil, 2, 0) // undecoded AACH, two active calls → drop, no cross-talk
 	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 0 {
 		t.Errorf("undecoded burst leaked to a concurrent owner: %d frames, want 0", n)
 	}
@@ -488,7 +524,7 @@ func TestTETRADemuxOwnerlessMarkerSingleOwnerCRCFallback(t *testing.T) {
 	d := mkDemux(c)
 	o, rs := newDemuxOwner(c, "A", 24)
 	d.addOwner(o)
-	d.onBurst(frame, nil, 1, 25) // decoded marker 25, no owner, single call → CRC fallback
+	d.onBurstSync(frame, nil, 1, 25) // decoded marker 25, no owner, single call → CRC fallback
 	if n := len(rs.rawFrames("A")); n != 2 {
 		t.Errorf("ownerless single-owner fallback: A got %d frames, want 2", n)
 	}
@@ -502,7 +538,7 @@ func TestTETRADemuxOwnerlessMarkerSingleOwnerCRCFallback(t *testing.T) {
 	oB, rsB := newDemuxOwner(c, "B", 26)
 	d2.addOwner(oA)
 	d2.addOwner(oB)
-	d2.onBurst(frame, nil, 1, 25) // stray marker 25, two calls → drop, no cross-talk
+	d2.onBurstSync(frame, nil, 1, 25) // stray marker 25, two calls → drop, no cross-talk
 	if n := len(rsA.rawFrames("A")) + len(rsB.rawFrames("B")); n != 0 {
 		t.Errorf("ownerless burst leaked to a concurrent owner: %d frames, want 0", n)
 	}
@@ -540,10 +576,10 @@ func TestTETRADemuxNoLeakWhenAirConcurrentButOneOwner(t *testing.T) {
 	before := len(rs.rawFrames("A"))
 	// A foreign burst whose AACH did not decode (usage 0) on the other slot: must
 	// be dropped, not CRC-fallback-routed to the sole owner.
-	d.onBurst(frame, nil, 2, 0)
+	d.onBurstSync(frame, nil, 2, 0)
 	// A foreign burst carrying an ownerless traffic marker (another call's slot):
 	// also must not leak to the sole owner.
-	d.onBurst(frame, nil, 2, 20)
+	d.onBurstSync(frame, nil, 2, 20)
 	if n := len(rs.rawFrames("A")); n != before {
 		t.Errorf("foreign concurrent-slot speech leaked to the sole owner: %d frames, want %d", n, before)
 	}
@@ -556,7 +592,7 @@ func TestTETRADemuxNoLeakWhenAirConcurrentButOneOwner(t *testing.T) {
 	d2 := mkDemux(c)
 	o2, rs2 := newDemuxOwner(c, "A", 19)
 	d2.addOwner(o2)
-	d2.onBurst(frame, nil, 1, 0) // single slot, undecoded AACH → fallback recovers it
+	d2.onBurstSync(frame, nil, 1, 0) // single slot, undecoded AACH → fallback recovers it
 	if n := len(rs2.rawFrames("A")); n != 2 {
 		t.Errorf("single-call fallback regressed: A got %d frames, want 2", n)
 	}
@@ -584,8 +620,8 @@ func TestTETRADemuxConcurrentStreamNoLeakToSoleOwner(t *testing.T) {
 
 	const rounds = 40
 	for i := 0; i < rounds; i++ {
-		d.onBurst(frame, nil, 1, 19) // A's own burst — marker-routed to A
-		d.onBurst(frame, nil, 2, 20) // B's burst — ownerless, another physical slot
+		d.onBurstSync(frame, nil, 1, 19) // A's own burst — marker-routed to A
+		d.onBurstSync(frame, nil, 2, 20) // B's burst — ownerless, another physical slot
 	}
 
 	// A must get its own speech (2 frames/burst × rounds).
@@ -622,7 +658,7 @@ func TestTETRADemuxMarkerCollisionCounted(t *testing.T) {
 	if got := d.markerCollisions.Load(); got != 1 {
 		t.Errorf("markerCollisions = %d, want 1", got)
 	}
-	d.onBurst(frame, nil, 1, 19) // newest owns the marker
+	d.onBurstSync(frame, nil, 1, 19) // newest owns the marker
 	if n := len(rsNew.rawFrames("new")); n != 2 {
 		t.Errorf("newest owner got %d frames, want 2 (most-recent-grant wins)", n)
 	}

@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/Badge";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
+import { formatClock } from "../lib/formatTime";
 
 // ADS-B panel — list of recent decoded Mode-S frames. Each row
 // shows the ICAO 24-bit address (hex form, the standard "tail
@@ -198,10 +199,4 @@ export function ADSB() {
   );
 }
 
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toISOString().slice(11, 19);
-  } catch {
-    return ts.slice(11, 19);
-  }
-}
+const formatTime = formatClock;

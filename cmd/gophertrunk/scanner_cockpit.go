@@ -45,6 +45,9 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 				LastFailedAt:    ss.LastFailedAt,
 				BackoffMs:       ss.BackoffMs,
 				LastGrantAt:     ss.LastGrantAt,
+				DecodeQuality:   ss.DecodeQuality,
+				CarrierOffsetHz: ss.CarrierOffsetHz,
+				HasDecodeHealth: ss.HasDecodeHealth,
 			})
 		}
 	}

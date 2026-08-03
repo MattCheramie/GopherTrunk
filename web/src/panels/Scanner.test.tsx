@@ -83,4 +83,48 @@ describe("Scanner panel", () => {
       expect(screen.getByText(/7 of 42 talkgroups eligible/i)).toBeInTheDocument(),
     );
   });
+
+  // The signal-quality chip renders from the per-system decode-health fields, with
+  // the carrier offset in its tooltip. Cross-protocol — here a locked TETRA system.
+  it("shows a signal-quality chip when decode health is present", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [
+        {
+          name: "Tetra1",
+          protocol: "tetra",
+          state: "locked",
+          locked_freq_hz: 467_912_500,
+          decode_quality: "marginal",
+          carrier_offset_hz: -958,
+          has_decode_health: true,
+        },
+      ],
+      conventional: { enabled: false, channels: [] },
+      tg_scan_count: 0,
+      tg_total: 0,
+    } as unknown as ScannerStatusDTO);
+
+    render(<Scanner />);
+
+    const chip = await screen.findByText(/signal: marginal/i);
+    expect(chip).toBeInTheDocument();
+    expect(chip.closest("[title]")?.getAttribute("title")).toContain("offset -958 Hz");
+  });
+
+  // No chip when the daemon reports no decode health (unlocked / too few frames).
+  it("omits the signal chip when decode health is absent", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [{ name: "Tetra1", protocol: "tetra", state: "hunting" }],
+      conventional: { enabled: false, channels: [] },
+      tg_scan_count: 0,
+      tg_total: 0,
+    } as unknown as ScannerStatusDTO);
+
+    render(<Scanner />);
+
+    await waitFor(() => expect(screen.getByText("Tetra1")).toBeInTheDocument());
+    expect(screen.queryByText(/signal:/i)).not.toBeInTheDocument();
+  });
 });

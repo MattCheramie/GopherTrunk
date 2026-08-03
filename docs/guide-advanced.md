@@ -68,6 +68,28 @@ receiver with its own log and console panel:
 Which of these are on by default, and how to enable the rest, lives in
 [Opt-in features](opt-in-features.html).
 
+## Following multiple systems and sites
+
+GopherTrunk can follow several trunked systems at once, but how they map onto SDRs
+depends on the path:
+
+- **One control channel per SDR (classic path).** Each `system` in your config is
+  followed by its own control receiver, so following *N* systems — or *N* sites of
+  the same network, since each site is added as its own `system` with its own
+  control-channel frequency — needs *N* SDRs with `role: control`. This is the path
+  **TETRA** uses today: **multiple TETRA sites on a single SDR is not yet
+  supported**, even when they fall inside one dongle's bandwidth.
+- **Many systems on one wideband SDR.** A `role: wideband` device can follow
+  several carriers (control channels and their voice grants) at once from a single
+  dongle, as long as they all fit in its IQ band. This wideband multi-system path
+  currently covers **DMR (Tier II/III) and P25 (Phase 1/2)** — not TETRA.
+
+Either way, when the same call is heard on several networked or simulcast sites,
+**cross-site call deduplication** saves it once instead of once per site: enable
+`recordings.dedup` (a call with the same talkgroup + source already recorded from
+another monitored system within the window — default 60 s — is skipped). Live
+follow and monitoring are unaffected; the gate is recording-only.
+
 ## Remote and recorded sources
 
 Your dongle doesn't have to be on the same machine — or even a physical radio:

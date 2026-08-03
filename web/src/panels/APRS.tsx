@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/Badge";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
+import { formatClock } from "../lib/formatTime";
 
 // APRS panel — list of recent decoded APRS / AX.25 packets. Each row
 // shows the AX.25 envelope (src → dst + path), the decoded APRS
@@ -159,10 +160,4 @@ export function APRS() {
   );
 }
 
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toISOString().slice(11, 19);
-  } catch {
-    return ts.slice(11, 19);
-  }
-}
+const formatTime = formatClock;

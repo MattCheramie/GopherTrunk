@@ -29,6 +29,15 @@ type IQHealthProvider interface {
 	IQHealth(system string) (trunking.HuntDiagnostics, bool)
 }
 
+// CCHealthProvider is the optional capability that reports a locked control
+// channel's decode-quality bucket and carrier offset for the live signal-quality
+// indicator. The ccdecoder Decoder satisfies it, so it is type-asserted from the
+// same handle set via SetIQHealthProvider — no separate wiring needed. Decoupled
+// via an interface so the supervisor doesn't import the decoder.
+type CCHealthProvider interface {
+	DecodeHealth(system string) (quality string, offsetHz int32, ok bool)
+}
+
 // noIQDiagnosis is published when the decoder reports no observations
 // for a failed system — the strongest single hint that the control SDR
 // isn't delivering IQ at all (USB/driver binding, a dead handle, or
@@ -679,7 +688,6 @@ func (s *Supervisor) ForceRetune(name string) bool {
 // call concurrently with Run.
 func (s *Supervisor) Snapshot() []SystemStatus {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	out := make([]SystemStatus, 0, len(s.order))
 	for _, name := range s.order {
 		rt := s.states[name]
@@ -706,6 +714,22 @@ func (s *Supervisor) Snapshot() []SystemStatus {
 			st.BackoffMs = int(rem / time.Millisecond)
 		}
 		out = append(out, st)
+	}
+	provider := s.iqHealth
+	s.mu.RUnlock()
+
+	// Enrich with live control-channel decode health, queried OUTSIDE s.mu — the
+	// decoder takes its own locks, the same rule markFailed follows. DecodeHealth
+	// self-gates on the active/locked system, so a hunting or non-active system
+	// simply reports nothing.
+	if h, ok := provider.(CCHealthProvider); ok {
+		for i := range out {
+			if q, off, ok := h.DecodeHealth(out[i].Name); ok {
+				out[i].DecodeQuality = q
+				out[i].CarrierOffsetHz = off
+				out[i].HasDecodeHealth = true
+			}
+		}
 	}
 	return out
 }

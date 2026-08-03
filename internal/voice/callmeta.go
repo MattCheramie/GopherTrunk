@@ -153,12 +153,24 @@ func buildCallMeta(cs trunking.CallStart, startedAt, endedAt time.Time, callNum 
 		})
 	}
 
-	// srcList: one entry per talker, in order.
+	// srcList: one entry per talker, in order. pos is seconds from the CALL start
+	// (cs.StartedAt), not this file's start — in transmission grouping the list is
+	// call-complete, so a talker from an earlier over would otherwise get a negative
+	// pos. For a single-transmission call the two starts coincide, so pos is
+	// unchanged. Clamp at 0 as a floor against clock skew.
+	srcBase := cs.StartedAt
+	if srcBase.IsZero() {
+		srcBase = startedAt
+	}
 	for _, se := range srcs {
+		pos := se.at.Sub(srcBase).Seconds()
+		if pos < 0 {
+			pos = 0
+		}
 		m.SrcList = append(m.SrcList, callSrcEntry{
 			Src:       se.src,
 			Time:      se.at.Unix(),
-			Pos:       round2(se.at.Sub(startedAt).Seconds()),
+			Pos:       round2(pos),
 			Emergency: boolToInt(se.emergency),
 		})
 	}

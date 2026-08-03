@@ -955,6 +955,71 @@ type ccHealthReporter interface {
 	TSBKCounts() (decoded, failed int64)
 }
 
+// bschHealthReporter is the TETRA analogue of ccHealthReporter: cumulative
+// (ok, fail) BSCH sync-burst decode counts, from which DecodeHealth derives a
+// frame-error rate. Implemented by tetraPipeline.
+type bschHealthReporter interface {
+	BSCHCounts() (ok, fail int64)
+}
+
+// Control-channel decode-quality buckets and their frame-error-rate thresholds
+// (percent). Mirrors the P25 sites path (internal/api decodeQuality), shared here
+// so P25 (TSBK) and TETRA (BSCH) report the same SDRTrunk-style categories on the
+// live per-system status. ccQualityMinAttempts gates a bucket until enough frames
+// have been attempted that the rate is meaningful (not a fresh-lock 0/0 or a
+// single-frame fluke).
+const (
+	ccQualityCleanMaxPct    = 1.0
+	ccQualityMarginalMaxPct = 5.0
+	ccQualityMinAttempts    = 20
+)
+
+// bucketErrorRate maps a frame-error rate (percent) to clean / marginal / poor.
+func bucketErrorRate(ratePct float64) string {
+	switch {
+	case ratePct <= ccQualityCleanMaxPct:
+		return "clean"
+	case ratePct <= ccQualityMarginalMaxPct:
+		return "marginal"
+	default:
+		return "poor"
+	}
+}
+
+// DecodeHealth returns the active control channel's decode-quality bucket
+// (clean/marginal/poor) and total carrier offset (Hz) when `system` is the one
+// this decoder is currently locked to. Quality comes from the P25 TSBK or TETRA
+// BSCH frame-error rate; offset reuses the same autotuneApplied + residual-AFC sum
+// checkCarrierOffsetLocked warns on. ok is false when the system is not the active
+// one, the pipeline exposes no health capability, or too few frames have been
+// attempted for a meaningful rate. A lightweight pull, safe for the status path.
+func (d *Decoder) DecodeHealth(system string) (quality string, offsetHz int32, ok bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.active == nil || d.activeAt != system || !d.locked.Load() {
+		return "", 0, false
+	}
+	if rep, isAFC := d.active.(afcReporter); isAFC {
+		total := int(d.autotuneApplied.Load()) + int(math.Round(rep.AFCOffsetHz()))
+		offsetHz = int32(total)
+	}
+	var decoded, failed int64
+	switch h := d.active.(type) {
+	case ccHealthReporter:
+		decoded, failed = h.TSBKCounts()
+	case bschHealthReporter:
+		decoded, failed = h.BSCHCounts()
+	default:
+		return "", offsetHz, false
+	}
+	attempts := decoded + failed
+	if attempts < ccQualityMinAttempts {
+		return "", offsetHz, false
+	}
+	rate := float64(failed) / float64(attempts) * 100
+	return bucketErrorRate(rate), offsetHz, true
+}
+
 // sampleAutotuneLocked folds the active receiver's residual carrier offset
 // into the running average about once a second while the CC is locked, then
 // logs the suggested correction. The new average takes effect at the next
