@@ -27,6 +27,15 @@ export interface SystemDTO {
   system_id?: number;
   rfss?: number;
   site?: number;
+  // TETRA network identity decoded live from the control channel (MLE-SYSINFO /
+  // D-NWRK-BROADCAST). TETRA has no WACN/RFSS/Site, so the P25 fields above stay
+  // zero and the UI shows these instead. MCC+MNC form the Mobile Network Identity
+  // (MNI). has_tetra_identity distinguishes decoded from "not yet".
+  tetra_mcc?: number;
+  tetra_mnc?: number;
+  tetra_location_area?: number;
+  tetra_decoded_colour_code?: number;
+  has_tetra_identity?: boolean;
   // Active DMR Tier III LCN→frequency band plan (configured or learned),
   // surfaced so the Systems panel can show how voice grants resolve. (#638)
   dmr_band_plan?: DMRBandPlanDTO;

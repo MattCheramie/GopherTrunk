@@ -255,6 +255,49 @@ export function Systems() {
           />
           {(() => {
             const hunt = scanner?.systems?.find((h) => h.name === selected.name);
+            // TETRA has no WACN/RFSS/Site; it identifies a cell by MNI (MCC/MNC),
+            // Location Area, and colour code, all decoded from MLE-SYSINFO. Render
+            // those instead of the P25 fields, which would sit empty forever.
+            if (selected.protocol === "tetra") {
+              const tHint =
+                hunt?.state === "hunting"
+                  ? "Hunting control channel"
+                  : "Awaiting SYSINFO broadcast";
+              const has = selected.has_tetra_identity ?? false;
+              return (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted mb-2">
+                    Network identity (decoded live)
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <DetailField
+                      label="MNI (MCC / MNC)"
+                      mono
+                      value={
+                        has
+                          ? `${selected.tetra_mcc ?? 0} / ${selected.tetra_mnc ?? 0}`
+                          : null
+                      }
+                      emptyHint={tHint}
+                    />
+                    <DetailField
+                      label="Location area"
+                      mono
+                      value={has ? String(selected.tetra_location_area ?? 0) : null}
+                      emptyHint={tHint}
+                    />
+                    <DetailField
+                      label="Colour code"
+                      mono
+                      value={
+                        has ? String(selected.tetra_decoded_colour_code ?? 0) : null
+                      }
+                      emptyHint={tHint}
+                    />
+                  </div>
+                </div>
+              );
+            }
             const hint = identityEmptyHint(hunt);
             return (
               <div>

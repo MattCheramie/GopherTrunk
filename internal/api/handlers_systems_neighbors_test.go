@@ -92,3 +92,47 @@ func TestGetSystemNeighbors(t *testing.T) {
 		t.Fatalf("list neighbors missing: %+v", list.Systems)
 	}
 }
+
+// TestGetSystemTETRAIdentity checks that a TETRA system's decoded identity
+// (MCC/MNC/Location Area + colour code) from the live topology snapshot is
+// overlaid onto SystemDTO — the fields the Systems page renders in place of the
+// P25 WACN/SysID/RFSS/Site block, which is always empty for TETRA.
+func TestGetSystemTETRAIdentity(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+
+	snap := &trunking.TopologySnapshot{
+		SystemName:   "250_013",
+		Protocol:     "tetra",
+		MCC:          250,
+		MNC:          13,
+		LocationArea: 0,
+		ColorCode:    44,
+	}
+	prov := fakeTopoProvider{system: "250_013", snap: snap}
+	systems := []trunking.System{{Name: "250_013", Protocol: trunking.ProtocolTETRA}}
+
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Systems: systems, Sites: prov})
+	defer teardown()
+
+	resp := mustGet(t, base+"/api/v1/systems/250_013")
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var dto SystemDTO
+	if err := json.NewDecoder(resp.Body).Decode(&dto); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !dto.HasTETRAIdentity {
+		t.Fatal("HasTETRAIdentity = false, want true")
+	}
+	if dto.TETRAMCC != 250 || dto.TETRAMNC != 13 || dto.TETRADecodedColourCode != 44 {
+		t.Fatalf("TETRA identity = MCC %d MNC %d colour %d, want 250/13/44",
+			dto.TETRAMCC, dto.TETRAMNC, dto.TETRADecodedColourCode)
+	}
+	// The P25 identity fields stay empty for a TETRA system.
+	if dto.WACN != 0 || dto.RFSS != 0 || dto.Site != 0 {
+		t.Errorf("P25 identity should be zero for TETRA: %+v", dto)
+	}
+}

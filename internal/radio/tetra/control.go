@@ -442,6 +442,58 @@ type TopologyConfig struct {
 	UplinkHz    uint32
 }
 
+// TopologySnapshot renders the decoded single-cell identity as the protocol-
+// neutral trunking.TopologySnapshot the SiteTracker stores per system, so the
+// live systems API can surface TETRA identity (MCC/MNC/Location Area + colour
+// code) the same way it surfaces P25 WACN/SysID/RFSS/Site. TETRA advertises no
+// adjacent cells, so there are no neighbours. Mirrors the offline
+// tetraPipeline.TopologySnapshot. Returns nil-safe zero when nothing is decoded.
+func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
+	t := c.Topology()
+	snap := &trunking.TopologySnapshot{
+		SystemName:   c.systemName,
+		Protocol:     "tetra",
+		MCC:          t.MCC,
+		MNC:          t.MNC,
+		LocationArea: t.LocationArea,
+		// The ETSI 6-bit colour code is the low 6 bits of the 30-bit extended
+		// colour code (MCC<<20 | MNC<<6 | CC); masking wider would drag in MNC bits.
+		ColorCode: uint8(t.ColourCode & 0x3F),
+	}
+	if t.DownlinkHz != 0 {
+		snap.PrimaryCC = &trunking.TopoChannelRef{
+			ChannelNumber: t.MainCarrier,
+			FrequencyHz:   t.DownlinkHz,
+			UplinkHz:      t.UplinkHz,
+		}
+	}
+	return snap
+}
+
+// publishSiteIdentity emits a KindSiteUpdate carrying the decoded TETRA identity
+// so the SiteTracker records it per system (topo map) and the live systems API
+// can render it. TETRA has no RFSS/Site, so those are left zero — the same shape
+// a P25 system with only a voted System ID publishes. No-op without a bus or
+// before any identity is decoded.
+func (c *ControlChannel) publishSiteIdentity() {
+	if c.bus == nil {
+		return
+	}
+	topo := c.TopologySnapshot()
+	if topo.Empty() {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindSiteUpdate,
+		Payload: trunking.SiteUpdate{
+			System:           c.systemName,
+			ControlChannelHz: c.freqHz,
+			Topology:         topo,
+			At:               c.now(),
+		},
+	})
+}
+
 // Topology returns the accumulated single-cell identity. Safe for concurrent
 // use (reads the lock state + colour code under the control-channel mutex).
 func (c *ControlChannel) Topology() TopologyConfig {
@@ -1064,8 +1116,8 @@ func (c *ControlChannel) LastActivityNano() int64 {
 func (c *ControlChannel) maybeLock(s LockState) {
 	c.noteActivity()
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.locked && c.last == s {
+		c.mu.Unlock()
 		return
 	}
 	// Preserve previously-learned MCC/MNC/LA if the new state has none.
@@ -1074,6 +1126,7 @@ func (c *ControlChannel) maybeLock(s LockState) {
 		s.MNC = c.last.MNC
 		s.LocationArea = c.last.LocationArea
 		if c.last == s {
+			c.mu.Unlock()
 			return
 		}
 	}
@@ -1083,6 +1136,13 @@ func (c *ControlChannel) maybeLock(s LockState) {
 	c.log.Info("tetra cc locked",
 		"freq", s.FrequencyHz, "mcc", s.MCC, "mnc", s.MNC,
 		"la", s.LocationArea, "system", c.systemName)
+	c.mu.Unlock()
+
+	// Surface the decoded single-cell identity (MCC/MNC/LA + colour) to the live
+	// systems API, mirroring P25's publishSiteUpdate. Published after releasing mu
+	// because TopologySnapshot takes the lock itself. Edge-triggered like the lock
+	// transition above, so a steady lock publishes once per identity change.
+	c.publishSiteIdentity()
 }
 
 // MarkLost publishes cc.lost and resets the locked flag. CheckStale calls this
