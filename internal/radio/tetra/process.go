@@ -336,9 +336,11 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		// and surfaced in aggregate by the throttled decode-status line, not
 		// logged per burst (that was tens of thousands of lines per capture).
 		c.addStat(&c.stats.BSCHFail, 1)
+		c.bschFailTotal.Add(1) // always-on quality counter (see BSCHCounts)
 		return
 	}
 	c.addStat(&c.stats.BSCHOK, 1)
+	c.bschOKTotal.Add(1) // always-on quality counter (see BSCHCounts)
 	// Heartbeat: a CRC-clean sync burst proves the carrier is still live,
 	// independent of voice traffic. Feeds CheckStale / NeedsResync.
 	c.noteActivity()

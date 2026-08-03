@@ -231,6 +231,12 @@ type SystemHuntStatusDTO struct {
 	LastFailedAt    time.Time `json:"last_failed_at,omitempty"`
 	BackoffMs       int       `json:"backoff_ms,omitempty"`
 	LastGrantAt     time.Time `json:"last_grant_at,omitempty"`
+	// DecodeQuality / CarrierOffsetHz surface the locked control channel's live
+	// signal quality (clean/marginal/poor) and carrier offset for the Web UI's
+	// signal indicator. HasDecodeHealth distinguishes a real 0 offset from no data.
+	DecodeQuality   string `json:"decode_quality,omitempty"`
+	CarrierOffsetHz int32  `json:"carrier_offset_hz,omitempty"`
+	HasDecodeHealth bool   `json:"has_decode_health,omitempty"`
 }
 
 // ConvScannerStatusDTO is the conventional FM scanner's read shape.

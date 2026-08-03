@@ -187,6 +187,12 @@ function Hunt({
                   {sys.protocol}
                 </span>
                 <StatePill state={sys.state} />
+                {sys.has_decode_health && sys.decode_quality && (
+                  <SignalQualityChip
+                    quality={sys.decode_quality}
+                    offsetHz={sys.carrier_offset_hz}
+                  />
+                )}
                 {sys.locked_freq_hz != null && (
                   <span className="font-mono text-xs text-muted">
                     lock {formatHz(sys.locked_freq_hz)}
@@ -529,6 +535,28 @@ function StatePill({ state }: { state: string }) {
           ? "err"
           : "neutral";
   return <Badge tone={tone}>{state}</Badge>;
+}
+
+// SignalQualityChip is the simple control-channel signal indicator: a
+// clean/marginal/poor pill (green/amber/red), with the measured carrier offset in
+// its tooltip. Backed by the decoder's live TSBK (P25) / BSCH (TETRA) frame-error
+// rate, so it works across protocols — not just TETRA.
+function SignalQualityChip({
+  quality,
+  offsetHz,
+}: {
+  quality: string;
+  offsetHz?: number;
+}) {
+  const tone =
+    quality === "clean" ? "ok" : quality === "marginal" ? "warn" : "err";
+  const offset =
+    offsetHz != null ? ` · offset ${offsetHz > 0 ? "+" : ""}${offsetHz} Hz` : "";
+  return (
+    <span title={`control-channel signal: ${quality}${offset}`}>
+      <Badge tone={tone}>signal: {quality}</Badge>
+    </span>
+  );
 }
 
 function timeOnly(ts: string): string {

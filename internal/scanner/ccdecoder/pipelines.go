@@ -728,6 +728,15 @@ func (p *tetraPipeline) Process(iq []complex64) {
 	p.maybeLogStatus()
 }
 
+// AFCOffsetHz reports the receiver's measured carrier offset (Hz), so the Decoder
+// can surface control_channel_carrier_offset for TETRA. Satisfies afcReporter.
+func (p *tetraPipeline) AFCOffsetHz() float64 { return p.rx.CarrierOffsetHz() }
+
+// BSCHCounts exposes the control channel's always-on cumulative BSCH (ok, fail)
+// decode counts, from which the Decoder derives a TETRA decode-quality bucket —
+// the analogue of the P25 pipeline's TSBKCounts. Satisfies bschHealthReporter.
+func (p *tetraPipeline) BSCHCounts() (ok, fail int64) { return p.cc.BSCHCounts() }
+
 // checkResync forces a fast DSP re-acquire when the control-channel heartbeat has
 // gone stale (see tetraResyncTimeout). It resets the receiver's timing/AFC loops
 // to centre and drops the CC's dibit-sync scratch (kept in lock-step because

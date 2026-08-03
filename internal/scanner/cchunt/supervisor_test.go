@@ -491,3 +491,58 @@ func TestMarkFailedNoProvider(t *testing.T) {
 		t.Errorf("diagnoseFailure(nil) = %+v, want zero value", got)
 	}
 }
+
+// fakeHealth is a CCHealthProvider (and IQHealthProvider) test double so the
+// snapshot-enrichment path can be exercised without a real decoder.
+type fakeHealth struct {
+	quality string
+	offset  int32
+	ok      bool
+}
+
+func (f fakeHealth) IQHealth(string) (trunking.HuntDiagnostics, bool) {
+	return trunking.HuntDiagnostics{}, false
+}
+func (f fakeHealth) DecodeHealth(string) (string, int32, bool) {
+	return f.quality, f.offset, f.ok
+}
+
+// TestSupervisorSnapshotCarriesDecodeHealth pins the live signal-quality wiring:
+// Snapshot enriches each system with the CCHealthProvider's decode quality +
+// carrier offset, and leaves the fields clear when the provider reports nothing.
+func TestSupervisorSnapshotCarriesDecodeHealth(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sup, err := New(Options{
+		Bus:            bus,
+		Tuner:          &fakeTuner{},
+		Systems:        []trunking.System{{Name: "Demo", Protocol: trunking.ProtocolTETRA, ControlChannels: []uint32{467_912_500}}},
+		Dwell:          50 * time.Millisecond,
+		InitialBackoff: 50 * time.Millisecond,
+		MaxBackoff:     200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No provider → no decode-health fields.
+	if snap := sup.Snapshot(); len(snap) != 1 || snap[0].HasDecodeHealth {
+		t.Fatalf("expected one system with no decode health, got %+v", snap)
+	}
+
+	// A provider reporting quality must surface it on the snapshot.
+	sup.SetIQHealthProvider(fakeHealth{quality: "marginal", offset: -958, ok: true})
+	snap := sup.Snapshot()
+	if len(snap) != 1 {
+		t.Fatalf("systems = %d, want 1", len(snap))
+	}
+	if !snap[0].HasDecodeHealth || snap[0].DecodeQuality != "marginal" || snap[0].CarrierOffsetHz != -958 {
+		t.Fatalf("decode health not surfaced: %+v", snap[0])
+	}
+
+	// A provider reporting nothing (ok=false) leaves the fields clear.
+	sup.SetIQHealthProvider(fakeHealth{ok: false})
+	if snap := sup.Snapshot(); snap[0].HasDecodeHealth {
+		t.Fatalf("ok=false must leave decode health clear, got %+v", snap[0])
+	}
+}

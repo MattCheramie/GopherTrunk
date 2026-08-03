@@ -60,4 +60,12 @@ type SystemStatus struct {
 	LastFailedAt    time.Time `json:"last_failed_at,omitempty"`
 	BackoffMs       int       `json:"backoff_ms,omitempty"`
 	LastGrantAt     time.Time `json:"last_grant_at,omitempty"`
+	// DecodeQuality buckets the locked control channel's frame-error rate as
+	// clean / marginal / poor (from P25 TSBK or TETRA BSCH decode counts), for the
+	// live signal-quality indicator. Empty when not locked or too few frames yet.
+	// CarrierOffsetHz is the measured offset of the locked carrier from the tuned
+	// frequency; HasDecodeHealth distinguishes a real 0 offset from "no data".
+	DecodeQuality   string `json:"decode_quality,omitempty"`
+	CarrierOffsetHz int32  `json:"carrier_offset_hz,omitempty"`
+	HasDecodeHealth bool   `json:"has_decode_health,omitempty"`
 }

@@ -236,3 +236,29 @@ func TestDrainStatsCountsSCHPDU(t *testing.T) {
 		t.Errorf("SCHPDUs = %d, want >= 1 (normal-sync SCH/HD PDU)", got.SCHPDUs)
 	}
 }
+
+// TestBSCHCountsAlwaysOn pins that BSCHCounts accumulates cumulative BSCH decode
+// counts even when debug telemetry is OFF — the always-on quality counter the live
+// signal indicator reads. DrainStats stays zero at info level (it is debug-gated),
+// while BSCHCounts still moves. Fail-first: without the always-on counters
+// BSCHCounts returns 0 and the ok>=1 assertion goes red.
+func TestBSCHCountsAlwaysOn(t *testing.T) {
+	cc, bus := debugCC(t, io.Discard, slog.LevelInfo) // debug OFF
+	defer bus.Close()
+
+	stream := buildCleanSBStream(t, 0x2D, 3, 5, cleanSysinfoPDU())
+	cc.Process(stream, 1_000_000)
+
+	ok, fail := cc.BSCHCounts()
+	if ok < 1 {
+		t.Fatalf("BSCHCounts ok = %d, want >= 1 (always-on, independent of debug)", ok)
+	}
+	if fail < 0 {
+		t.Fatalf("BSCHCounts fail = %d, want >= 0", fail)
+	}
+	// The debug-gated drain stays zero at info level, proving BSCHCounts is a
+	// separate always-on path.
+	if drained := cc.DrainStats().BSCHOK; drained != 0 {
+		t.Fatalf("DrainStats BSCHOK = %d at info level, want 0 (debug-gated)", drained)
+	}
+}
