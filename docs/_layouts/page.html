@@ -16,7 +16,9 @@ layout: default
     {%- endif -%}
 
     <article class="prose" data-cta-host>
+      {%- if page.affiliate -%}{%- include affiliate-disclosure.html -%}{%- endif -%}
       {{ content }}
+      {%- include faq.html -%}
       {%- include page-ctas.html -%}
     </article>
 
@@ -29,3 +31,5 @@ layout: default
     {%- endif -%}
   </div>
 </main>
+
+{%- if page.product -%}{%- include product-schema.html -%}{%- endif -%}

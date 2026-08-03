@@ -58,7 +58,11 @@ layout: default
           <p class="ref-aka">Also known as: {% for a in page.aka %}<span>{{ a }}</span>{% unless forloop.last %}, {% endunless %}{% endfor %}</p>
         {%- endif -%}
 
+        {%- if page.affiliate -%}{%- include affiliate-disclosure.html -%}{%- endif -%}
+
         {{ content }}
+
+        {%- include faq.html -%}
 
         {%- if page.see_also and page.see_also.size > 0 -%}
           <section class="ref-seealso" aria-label="See also">
@@ -133,3 +137,4 @@ layout: default
 </main>
 
 {%- include reference-schema.html cat_label=cat_label -%}
+{%- if page.product -%}{%- include product-schema.html -%}{%- endif -%}
