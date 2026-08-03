@@ -148,21 +148,43 @@ export function SelectField(props: {
 // FreqListField edits a list of integer Hz values as a comma/space/newline
 // separated textarea, accepting MHz or Hz per line (values < 10000 are
 // treated as MHz for convenience).
+//
+// It keeps a local text buffer (like HzField) instead of deriving the textarea
+// value from the parsed list every render. Deriving it swallowed newlines: a
+// trailing "\n" (or a blank in-progress line) parses to no token, so the value
+// round-tripped back to a newline-free string and the caret collapsed — the user
+// could never open a second line to enter a second control channel. The buffer is
+// the source of truth while editing and only resyncs from props.value on a genuine
+// out-of-band change (e.g. loading a different config), so newlines survive.
 export function FreqListField(props: {
   label: string;
   value: number[] | null;
   onChange: (v: number[]) => void;
   help?: ReactNode;
 }) {
-  const text = (props.value ?? []).map(hzToDisplay).join("\n");
+  const [text, setText] = useState(() => (props.value ?? []).map(hzToDisplay).join("\n"));
+  const emitted = useRef<number[]>(props.value ?? []);
+  useEffect(() => {
+    const v = props.value ?? [];
+    if (!sameFreqList(v, emitted.current)) {
+      emitted.current = v;
+      setText(v.map(hzToDisplay).join("\n"));
+    }
+  }, [props.value]);
+  const onText = (raw: string) => {
+    setText(raw);
+    const parsed = parseFreqList(raw);
+    emitted.current = parsed;
+    props.onChange(parsed);
+  };
   return (
     <label className="block">
       <span className="label">{props.label}</span>
       <textarea
         className="input font-mono"
-        rows={Math.max(2, (props.value ?? []).length + 1)}
+        rows={Math.max(2, text.split("\n").length + 1)}
         value={text}
-        onChange={(e) => props.onChange(parseFreqList(e.target.value))}
+        onChange={(e) => onText(e.target.value)}
       />
       <p className="help mt-1">
         One frequency per line. Accepts MHz (851.0375) or Hz (851037500).
@@ -170,6 +192,17 @@ export function FreqListField(props: {
       </p>
     </label>
   );
+}
+
+// sameFreqList reports whether two Hz lists are element-for-element equal, so
+// FreqListField only rebuilds its text buffer on a genuine out-of-band change and
+// not on the value it just emitted itself (which would clobber the caret).
+function sameFreqList(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 // HzField edits a single integer-Hz value as text, accepting MHz or Hz
