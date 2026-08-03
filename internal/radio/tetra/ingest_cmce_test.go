@@ -98,6 +98,41 @@ func TestHandleCMCETxGrantedPublishesTalker(t *testing.T) {
 	}
 }
 
+// TestHandleCMCETxGrantedSuppressesSelfTalker: a D-TX-GRANTED whose party equals
+// the call's own identity (an individual call GT tracks by the radio's ISSI) must
+// NOT publish a KindCallTalker — a "tg==src" self-reference is impossible and was
+// the "call source update tg==src" the operator reported. It's learned as an
+// individual instead.
+func TestHandleCMCETxGrantedSuppressesSelfTalker(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "Sys", FrequencyHz: 467_913_000})
+	const radio = 1005499
+	// No remembered call → resolveGroup returns the addressed SSI, so gssi == party.
+	cc.handleCMCE(
+		MACResource{Address: MACAddress{Type: addrSSI, SSI: radio}},
+		CMCEMessage{Type: CMCETypeDTxGranted, CallIdentifier: 0x66, PartySSI: radio},
+	)
+
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallTalker {
+				tk := ev.Payload.(trunking.CallTalker)
+				t.Fatalf("published a self-referential talker %+v (tg==src), want none", tk)
+			}
+		default:
+			if !cc.isIndividual(radio) {
+				t.Errorf("self-talker radio %d not learned as an individual", radio)
+			}
+			return
+		}
+	}
+}
+
 func waitForRelease(t *testing.T, sub *events.Subscription) trunking.CallRelease {
 	t.Helper()
 	for {

@@ -1041,6 +1041,20 @@ func (c *ControlChannel) publishTalker(gssi, src uint32) {
 	if c.bus == nil || gssi == 0 || src == 0 {
 		return
 	}
+	if gssi == src {
+		// The transmitting party equals the call's own identity — impossible for a
+		// real call (you can't call yourself). This is an INDIVIDUAL (point-to-point)
+		// call whose called-party ISSI GT is tracking as a phantom "group"; the
+		// D-TX-GRANTED then names that same radio as the party. Learn it as an
+		// individual and drop the self-referential source update rather than emit
+		// "tg=X src=X" (the "call source update tg==src" a TETRA operator reported).
+		// Fully modelling both parties of a direct call needs the CMCE
+		// communication-type field and a labelled capture to validate.
+		c.noteIndividual(src)
+		c.log.Debug("tetra: suppressing self-referential talker (individual call)",
+			"system", c.systemName, "ssi", src)
+		return
+	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindCallTalker,
 		Payload: trunking.CallTalker{
