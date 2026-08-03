@@ -7,6 +7,14 @@ description: SDRplay RSPdx (and the current RSPdx-R2 revision) is a 14-bit, 1 kH
 keywords: SDRplay RSPdx, RSPdx-R2, RSPdx R2, HDR mode, high dynamic range SDR, 14-bit receiver, three antenna ports, wideband receiver, SoapySDR
 aka: [RSPdx, RSPdx-R2, SDRplay RSPdx, SDRplay RSPdx-R2]
 autolink: true
+affiliate: true
+product:
+  name: "SDRplay RSPdx"
+  brand: SDRplay
+  category: Software-defined radio
+  lowPrice: "220"
+  highPrice: "260"
+  url: https://www.amazon.com/dp/B0821NMGVP?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Receive-only SDR }
   - { label: Vendor/Chip, value: "SDRplay, Mirics chipset" }
@@ -15,13 +23,22 @@ infobox:
   - { label: Bandwidth, value: up to ~10 MHz }
   - { label: TX, value: No }
   - { label: Current model, value: "RSPdx-R2 (2023 refresh)" }
+  - { label: With GopherTrunk, value: Network only (SoapySDR/rtl_tcp bridge) }
   - { label: Typical price, value: ~US$250 }
   - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B0821NMGVP?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [sdrplay-rsp1a, sdrplay-rspduo, software-defined-radio, soapysdr, rf-filter, dynamic-range]
-affiliate: true
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio
   - https://www.sdrplay.com/rspdx/
+faq:
+  - q: "Does GopherTrunk support the SDRplay RSPdx?"
+    a: "Yes, but network only. GopherTrunk's pure-Go USB drivers cover RTL-SDR, HackRF, and Airspy — not the RSP's closed API/service. You drive the RSPdx over the network via a SoapySDRServer/SoapyRemote (or rtl_tcp) bridge: run SDRplay's service and the Soapy server on the machine the RSPdx is plugged into, then mount it over TCP. See the hardware guide."
+  - q: "What does the RSPdx add over the RSP1A?"
+    a: "A much larger bank of switchable preselection filters, three antenna ports (two SMA plus a dedicated HF/BNC path), and an HDR (high-dynamic-range) mode below about 2 MHz that trades span for cleaner dynamic range. For VHF/UHF trunking the two behave similarly; the RSPdx earns its price mainly on crowded HF and below."
+  - q: "Can I use the RSPdx's HDR mode with GopherTrunk?"
+    a: "GopherTrunk sees the RSPdx only as an IQ source over the SoapySDR/rtl_tcp bridge, so HDR mode and antenna-port selection are configured on the SDRplay service side, not from GopherTrunk. For VHF/UHF trunking you would typically run it as a plain wideband receiver anyway."
+  - q: "RSPdx or a directly-supported SDR for GopherTrunk?"
+    a: "For scanning simplicity, a plug-and-play RTL-SDR or Airspy needs no bridge. Reach for the RSPdx when you want its best-in-class front-end filtering and HDR dynamic range and are willing to run a SoapySDR server for it."
 ---
 
 **SDRplay RSPdx** is a top-of-line receive-only
@@ -41,6 +58,27 @@ ports, and an extensive bank of front-end filters.[^wiki] It extends the
 </svg>
 <figcaption>The RSPdx spans VLF to UHF; below ~2 MHz its HDR mode trades span for cleaner dynamic range.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0821NMGVP?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**Top-of-line single-tuner RSP: 14-bit, three antenna ports, HDR mode.** The RSPdx wraps
+the Mirics tuner in the family's richest [preselection](/reference/rf-filter/) filter bank
+and adds an HDR [dynamic-range](/reference/dynamic-range/) mode below ~2 MHz — the pick for
+DXers fighting overload under strong broadcasters. **GopherTrunk support is network only:**
+it drives the RSPdx over a [SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/)
+bridge, not as a direct USB device, because SDRplay's closed API/service rules out the
+pure-Go USB path used for RTL-SDR, HackRF, and Airspy. **Around $220.** Like every receiver,
+it can't decode [AES encryption](/police-scanner-encryption/).
+</div>
+
+> **GopherTrunk support: network only.** GopherTrunk drives the RSPdx over the network via
+> SoapySDRServer/SoapyRemote (or an `rtl_tcp`-style bridge), not as a direct USB device —
+> you run SDRplay's API service and a [SoapySDR](/reference/soapysdr/) server on the machine
+> it's plugged into and mount it over TCP. GopherTrunk's pure-Go USB drivers cover only
+> RTL-SDR, HackRF, and Airspy. See the [hardware guide](/hardware.html) and
+> [rtl_tcp](/reference/rtl-tcp/) notes.
 
 ## Overview
 
@@ -95,6 +133,21 @@ closed API/service, so any use goes through a SoapySDR bridge rather than Gopher
 direct USB drivers for RTL-SDR, HackRF, and Airspy. The RF hardware is more than capable;
 the practical question is driver integration, so verify current project support before
 relying on it.
+
+## Where to buy
+
+The RSPdx is sold by SDRplay and its distributors, and listed on Amazon. Note the
+integration path before buying it for GopherTrunk: it is supported **over the network only**,
+through a [SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge rather than
+GopherTrunk's direct USB drivers — see the [hardware guide](/hardware.html). If you want a
+plug-and-play scanner front end instead, a [RTL-SDR](/reference/rtl-sdr/) or
+[Airspy](/reference/airspy/) is the simpler choice; the RSPdx's real edge is HF/below-UHF
+DXing.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0821NMGVP?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 
