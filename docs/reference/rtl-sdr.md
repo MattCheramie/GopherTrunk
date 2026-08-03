@@ -3,7 +3,7 @@ slug: rtl-sdr
 title: RTL-SDR
 entry_type: hardware
 category: sdr-devices
-description: RTL-SDR is a family of low-cost USB software-defined radio receivers built on the RTL2832U chip — repurposed from DVB-T TV tuners — covering roughly 24 MHz to 1.7 GHz. A full history, the hardware explained, every major tuner and dongle variant compared, and where to buy the ones still in production.
+description: "RTL-SDR is a family of low-cost USB software-defined radio receivers built on the RTL2832U chip — repurposed from DVB-T TV tuners — covering roughly 24 MHz to 1.7 GHz. A full history, the hardware."
 keywords: RTL-SDR, RTL2832U, cheap SDR, DVB-T dongle, R820T2, R828D, R828S, E4000, RTL-SDR Blog V3, RTL-SDR Blog V4, V4 Lite, NooElec NESDR, FlightAware Pro Stick, 24 MHz 1.7 GHz, receive only, which RTL-SDR to buy
 aka: [RTL-SDR, RTL SDR, RTL2832U dongle]
 autolink: true
@@ -53,7 +53,6 @@ faq:
   - q: "RTL-SDR or a step up to an Airspy?"
     a: "Start with an RTL-SDR — it's the cheapest thing that works and the baseline GopherTrunk targets. Move to an Airspy when its 12-bit ADC and wider capture are what stands between you and a decode on a busy or weak-signal system. See best SDR for GopherTrunk."
 ---
-
 **RTL-SDR** is a family of inexpensive USB [software-defined radio](/reference/software-defined-radio/)
 receivers built around the [RTL2832U](/reference/rtl2832u/) chip — originally a DVB-T
 digital-TV tuner that hobbyists discovered could stream raw [IQ](/reference/iq-data/)
