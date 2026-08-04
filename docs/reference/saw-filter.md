@@ -7,16 +7,34 @@ description: "A SAW (surface acoustic wave) filter is a compact, sharp band-pass
 keywords: SAW filter, surface acoustic wave, band-pass, front-end filter, 1090 MHz, ADS-B, preselector, piezoelectric, interdigital transducer, IDT
 aka: [SAW filter, "surface acoustic wave filter"]
 autolink: true
+affiliate: true
+product:
+  name: "RTL-SDR Blog Flamingo+ FM broadcast notch filter"
+  brand: RTL-SDR Blog
+  category: SDR front-end filter
+  lowPrice: "21"
+  highPrice: "29"
+  url: https://www.amazon.com/dp/B07XKY8YKB?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Band-pass RF filter }
   - { label: Principle, value: Acoustic wave on piezoelectric substrate }
   - { label: Used for, value: Front-end preselection (e.g. 1090 MHz) }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B07XKY8YKB?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [rf-filter, crystal-filter, cavity-filter, low-noise-amplifier, ads-b, attenuation]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Surface_acoustic_wave
   - https://en.wikipedia.org/wiki/Interdigital_transducer
+faq:
+  - q: "How do I buy a SAW filter for SDR use?"
+    a: "SAW band-pass filters are usually sold as a filter-and-LNA 'green' board cut for one service — the 1090 MHz ADS-B module is the classic example — or as part of a filter kit for a target band. For the broadcast-band overload most scanner users hit first, a notch filter such as the RTL-SDR Blog Flamingo+ FM (around $25) is the everyday buy; add a band-specific SAW when you need steep preselection for one band."
+  - q: "What is a SAW filter good for on a scanner?"
+    a: "Sharp, fixed-frequency preselection. A SAW gives near-rectangular skirts in a tiny package, so it passes only the wanted band (e.g. 1090 MHz, 137 MHz weather satellite, GPS L1) and strongly rejects nearby cellular and broadcast signals that would otherwise overload the dongle. Because it is fixed-frequency it only helps the one service it was cut for."
+  - q: "SAW filter or notch filter?"
+    a: "A SAW band-pass is preselection — it keeps only one band. A notch filter removes one strong offender (like the FM broadcast band) while passing everything else, which is what you want for general wideband scanning. Reach for a SAW when you are dedicated to a single service; reach for a notch when you scan many bands but one strong transmitter is the problem."
+  - q: "Does a SAW filter need its own amplifier?"
+    a: "A passive SAW costs a few dB of insertion loss, so it is usually followed immediately by a low-noise amplifier to restore the noise budget — which is why most hobby SAW modules are sold as a combined filter-plus-LNA board."
 ---
 
 A **SAW** (**surface acoustic wave**) filter is a compact, sharp **band-pass**
@@ -86,6 +104,22 @@ filter; on a trunking site crowded with strong pager, cellular, and broadcast si
 band-appropriate SAW or [cavity filter](/reference/cavity-filter/) ahead of the SDR is often
 what turns an unusable, intermod-riddled spectrum into a clean control channel GopherTrunk
 can lock.
+
+## Where to buy
+
+A SAW band-pass filter is bought cut for one service — the 1090 MHz ADS-B
+filter-and-LNA board is the classic example — so choose it by your target band. For
+the broadcast-band overload most scanner users hit first, the notch filters in the
+same RTL-SDR Blog **Flamingo** family are the everyday buy: the **Flamingo+ FM**
+(around $25) rejects the 88–108 MHz band while passing your scanning range.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B07XKY8YKB?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For band-pass and SAW preselectors matched to a specific band, see the
+[SDR filters guide](/sdr-filters/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

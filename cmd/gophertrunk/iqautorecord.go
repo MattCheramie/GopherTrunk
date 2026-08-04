@@ -230,7 +230,8 @@ func (a *iqAutoRecorder) Run(ctx context.Context, sub *events.Subscription) erro
 		"dir", a.dir, "format", a.format.String(), "seconds", a.seconds,
 		"cooldown", a.cooldown, "on_concurrent_calls", a.cfg.OnConcurrentCalls,
 		"on_no_voice_device", a.cfg.OnNoVoiceDevice,
-		"on_encrypted", a.cfg.OnEncrypted, "on_emergency", a.cfg.OnEmergency)
+		"on_encrypted", a.cfg.OnEncrypted, "on_emergency", a.cfg.OnEmergency,
+		"on_cc_sync_loss", a.cfg.OnCCSyncLoss)
 	for {
 		select {
 		case <-ctx.Done():
@@ -248,6 +249,8 @@ func (a *iqAutoRecorder) Run(ctx context.Context, sub *events.Subscription) erro
 				if g, ok := ev.Payload.(trunking.Grant); ok {
 					a.onGrantUnserved(g)
 				}
+			case events.KindCCLost:
+				a.onCCLost(ev.Payload)
 			}
 		}
 	}
@@ -274,6 +277,27 @@ func (a *iqAutoRecorder) onGrantUnserved(g trunking.Grant) {
 	if a.cfg.OnNoVoiceDevice {
 		a.maybeFire("no_voice_device", g.System, g.Protocol, false)
 	}
+}
+
+// onCCLost fires the CC-sync-loss trigger. events.KindCCLost is published only
+// after a genuine lock (every protocol's MarkLost early-returns unless locked),
+// so this is exclusively a "was locked, now lost" edge — never a hunt that never
+// locked. The capture is forward-looking, so it records the re-acquisition after
+// the drop: the raw IQ needed to debug sync-loss and slow warm-up-lock episodes,
+// where the carrier is still present but GT fails to re-lock. The event payload
+// carries the frequency but no system name, so the capture is labelled with the
+// primary control system (a.system), like the manual trigger.
+func (a *iqAutoRecorder) onCCLost(payload any) {
+	if !a.cfg.OnCCSyncLoss {
+		return
+	}
+	var freqHz uint32
+	if lp, ok := payload.(trunking.LockedPayload); ok {
+		freqHz = lp.LockedFrequencyHz()
+	}
+	a.log.Info("iq-autorecord: control-channel sync loss — capturing re-acquisition IQ",
+		"system", a.system, "freq_hz", freqHz)
+	a.maybeFire("cc_sync_loss", a.system, a.protocol, false)
 }
 
 // TriggerManual fires a capture on operator request, bypassing the cooldown.

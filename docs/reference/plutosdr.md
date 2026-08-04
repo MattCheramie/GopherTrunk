@@ -7,6 +7,14 @@ description: ADALM-Pluto (PlutoSDR) is Analog Devices' low-cost learning SDR, an
 keywords: ADALM-Pluto, PlutoSDR, Pluto SDR, AD9363, AD9364, Analog Devices, learning SDR, transceiver, 12-bit, full duplex, Zynq
 aka: [PlutoSDR, ADALM-Pluto, Pluto]
 autolink: true
+affiliate: true
+product:
+  name: "ADALM-Pluto (PlutoSDR)"
+  brand: Analog Devices
+  category: Software-defined radio
+  lowPrice: "210"
+  highPrice: "250"
+  url: https://www.amazon.com/s?k=ADALM+Pluto+SDR&tag=gophertrunk-20
 infobox:
   - { label: Type, value: Learning SDR transceiver }
   - { label: Vendor/Chip, value: "Analog Devices, AD9363" }
@@ -14,11 +22,22 @@ infobox:
   - { label: Range, value: 325 MHz – 3.8 GHz }
   - { label: Bandwidth, value: up to ~20 MHz }
   - { label: TX, value: Yes (full-duplex) }
+  - { label: With GopherTrunk, value: Network only, RX (SoapySDR/rtl_tcp bridge) }
   - { label: Typical price, value: ~US$230 }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=ADALM+Pluto+SDR&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [software-defined-radio, iq-data, mimo, gnuradio, hackrf]
 cite_urls:
   - https://en.wikipedia.org/wiki/ADALM-PLUTO
   - https://www.analog.com/en/resources/evaluation-hardware-and-software/evaluation-boards-kits/adalm-pluto.html
+faq:
+  - q: "Does GopherTrunk support the ADALM-Pluto?"
+    a: "Only over the network, and receive-only. GopherTrunk's pure-Go USB drivers cover RTL-SDR, HackRF, and Airspy — not the Pluto's IIO stack. You drive it over the network via a SoapySDRServer/SoapyRemote (or rtl_tcp) bridge: run the Soapy server against libiio on the machine the Pluto is plugged into, then mount it over TCP. GopherTrunk uses only its receive path. See the hardware guide."
+  - q: "Is the PlutoSDR a good choice for scanning trunked systems?"
+    a: "Not really. On stock firmware its lower limit of ~325 MHz misses VHF systems entirely, its dynamic range is ordinary, and its transmit capability is irrelevant to receive-only scanning. The Pluto is designed as a learning and RF-development tool, not a scanner front end."
+  - q: "Can GopherTrunk transmit with a Pluto?"
+    a: "No. GopherTrunk is a receive-only decoder; it uses the Pluto purely as an IQ source over the bridge and never keys the transmitter. Transmitting also requires appropriate licensing and is outside GopherTrunk's scope."
+  - q: "Pluto or a directly-supported SDR for GopherTrunk?"
+    a: "For trunk-tracking, a plug-and-play RTL-SDR or Airspy is both cheaper and better matched — they cover VHF, need no network bridge, and have GopherTrunk's native USB backends. Buy a Pluto for learning digital comms and TX/RX experiments, not for scanning."
 ---
 
 **ADALM-Pluto** (often **PlutoSDR**) is Analog Devices' low-cost learning
@@ -37,6 +56,27 @@ Analog Devices' documentation and courseware.[^adi]
 </svg>
 <figcaption>Pluto is a compact full-duplex transceiver spanning UHF through low microwave, aimed at learners.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=ADALM+Pluto+SDR&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**A learning transceiver, not a scanner.** The Pluto is a 12-bit, full-duplex TX/RX radio
+(325 MHz–3.8 GHz on stock firmware) built for teaching digital comms with tight
+MATLAB/Python tooling. For trunking it's a **poor fit**: stock firmware misses VHF, dynamic
+range is ordinary, and transmit is irrelevant to receive-only scanning. **GopherTrunk
+support is network only** and receive-only: it drives the Pluto over a
+[SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge (not the pure-Go USB
+path used for RTL-SDR, HackRF, and Airspy). **Around $230.** Like every receiver, it can't
+decode [AES encryption](/police-scanner-encryption/).
+</div>
+
+> **GopherTrunk support: network only.** GopherTrunk drives the ADALM-Pluto over the network
+> via SoapySDRServer/SoapyRemote (or an `rtl_tcp`-style bridge), not as a direct USB device —
+> you run a [SoapySDR](/reference/soapysdr/) server against the Pluto's IIO/`libiio` stack on
+> the machine it's plugged into and mount it over TCP, using its receive path only.
+> GopherTrunk's pure-Go USB drivers cover only RTL-SDR, HackRF, and Airspy. See the
+> [hardware guide](/hardware.html) and [rtl_tcp](/reference/rtl-tcp/) notes.
 
 ## Overview
 
@@ -83,6 +123,21 @@ transmit is irrelevant to scanning. GopherTrunk offers native USB backends for R
 HackRF, and Airspy, not for the Pluto's IIO stack, so any use would rely on an external
 bridge. It belongs in the learning and RF-development category rather than the scanning
 toolbox.
+
+## Where to buy
+
+The ADALM-Pluto is sold by Analog Devices and its distributors, and listed on Amazon. If
+you're buying it to use with GopherTrunk, remember two things: support is **network only**
+(through a [SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge, not
+GopherTrunk's direct USB drivers — see the [hardware guide](/hardware.html)) and GopherTrunk
+uses **receive only**. For actual trunk-tracking, a [RTL-SDR](/reference/rtl-sdr/) or
+[Airspy](/reference/airspy/) is the cheaper, better-matched, plug-and-play choice; buy the
+Pluto for learning and TX/RX experiments.
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=ADALM+Pluto+SDR&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

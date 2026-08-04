@@ -7,15 +7,33 @@ description: "SMA is a compact 50Ω threaded coaxial connector rated to 18 GHz, 
 keywords: SMA connector, SubMiniature version A, 50 ohm, RP-SMA, reverse polarity SMA, coaxial connector, SDR antenna port, 18 GHz
 aka: [SMA, "SubMiniature version A", RP-SMA]
 autolink: true
+affiliate: true
+product:
+  name: "SMA adapter kit (SMA to BNC/UHF/F/N, 16pc)"
+  brand: Generic
+  category: SMA connector adapter kit
+  lowPrice: "11"
+  highPrice: "15"
+  url: https://www.amazon.com/dp/B07PXCC5G2?tag=gophertrunk-20
 infobox:
   - { label: Type, value: "Threaded coaxial connector" }
   - { label: Impedance, value: "50 Ω (75 Ω variant rare)" }
   - { label: Range, value: "DC to 18 GHz" }
   - { label: Coupling, value: "1/4-36 threaded" }
   - { label: TX, value: "Yes (low power)" }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B07PXCC5G2?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [bnc-connector, n-type-connector, coaxial-cable, rtl-sdr, antenna]
 cite_urls:
   - https://en.wikipedia.org/wiki/SMA_connector
+faq:
+  - q: "What connector do SDR dongles use?"
+    a: "Almost all of them use SMA — a small 50 Ω threaded coaxial jack. RTL-SDR Blog V3/V4, Airspy, and HackRF all present an SMA antenna port, as do the bias-tee LNAs and filters that sit between antenna and radio. To connect an older BNC, UHF (PL-259), F, or N-type antenna you need an SMA adapter."
+  - q: "Which SMA adapter kit should I buy for SDR use?"
+    a: "A 16-piece SMA adapter kit (around $13) covers the common transitions — SMA to BNC, UHF/PL-259, F, and N-type — so almost any antenna you own can mate with an SDR's SMA port. Pair it with a set of RG316 SMA pigtails when you need a short flexible lead rather than a rigid barrel adapter."
+  - q: "Is SMA the same as RP-SMA?"
+    a: "No, and mixing them is the most common cause of a cable that screws together but passes no signal. RP-SMA (reverse-polarity, common on Wi-Fi gear) swaps the centre pin and socket while keeping the same thread, so an RP-SMA plug threads onto a standard SMA jack but the centre conductors never touch. Always check the pin/socket, not just the thread."
+  - q: "Do SMA adapters hurt my signal?"
+    a: "Each adapter adds a small reflection and a little insertion loss, so a clean run uses the fewest transitions possible. For an occasional connection a good adapter is fine; for a permanent install, use the right connector on the cable rather than stacking multiple adapters."
 ---
 
 **SMA** (SubMiniature version A) is a small threaded [coaxial](/reference/coaxial-cable/)
@@ -87,6 +105,22 @@ clean run uses the fewest transitions possible. GopherTrunk is decode software a
 no connectors directly, but the quality and correctness of the SMA joints in front of the
 receiver set the signal-to-noise ratio it has to work with — a loose nut or an RP-SMA
 mismatch shows up as missing or weak captures long before any DSP tuning matters.
+
+## Where to buy
+
+Because nearly every SDR uses an SMA antenna port, a small **SMA adapter kit** (16
+pieces, around $13) is the cheapest way to mate whatever antennas and cables you
+already own — SMA to BNC, UHF/PL-259, F, and N-type. Add a set of **RG316 SMA
+pigtails** when you want a short flexible lead instead of a rigid barrel adapter.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B07PXCC5G2?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0132N1DM0?tag=gophertrunk-20" rel="nofollow sponsored noopener">RG316 pigtail kit &rarr;</a>
+
+For coax, patch leads, and full runs, see the
+[SDR cables and connectors guide](/sdr-cables-and-connectors/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

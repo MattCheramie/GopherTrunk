@@ -7,16 +7,34 @@ description: A low-noise amplifier boosts a weak antenna signal early in the rec
 keywords: LNA, low noise amplifier, noise figure, sensitivity, front end, preamp, preamplifier, Friis, cascade noise, mast-mounted amplifier
 aka: [low-noise amplifier, LNA]
 autolink: true
+affiliate: true
+product:
+  name: "RTL-SDR Blog Wideband LNA"
+  brand: RTL-SDR Blog
+  category: Low-noise amplifier
+  lowPrice: "26"
+  highPrice: "35"
+  url: https://www.amazon.com/dp/B07G14Q6XX?tag=gophertrunk-20
 infobox:
   - { label: Type, value: RF amplifier }
   - { label: Placed, value: Early in receive chain (near antenna) }
   - { label: Key spec, value: Noise figure }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B07G14Q6XX?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [noise-figure, preamplifier, signal-to-noise-ratio, superheterodyne-receiver, bias-tee, antenna]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Low-noise_amplifier
   - https://en.wikipedia.org/wiki/Friis_formulas_for_noise
+faq:
+  - q: "Which LNA should I buy for SDR scanning?"
+    a: "For general SDR and scanner use the RTL-SDR Blog Wideband LNA (around $30) is the popular pick: flat gain from roughly 20 MHz to 2 GHz and powered over the coax by your dongle's bias tee, so no separate power lead is needed. Enable the bias tee in software and the LNA lives right at the antenna, where its gain suppresses feedline loss."
+  - q: "How is the RTL-SDR Blog LNA powered?"
+    a: "By a bias tee — it takes 3.3–5 V DC injected up the coax. Any SDR with a switchable bias tee (RTL-SDR Blog V3/V4, NESDR SMArTee) can feed it, or an inline bias tee module can. See our note on the bias tee for how DC and RF share one cable."
+  - q: "Can an LNA make reception worse?"
+    a: "Yes. In a strong-signal urban environment an un-filtered wideband LNA amplifies everything, including nearby FM, pager, and cellular transmitters, and can push the SDR into overload and intermodulation. Add it only when the front end is genuinely noise-limited — long coax, a weak target — and pair it with an RF filter if strong signals are present."
+  - q: "Do I need a filter with a wideband LNA?"
+    a: "Often, yes. Because a wideband LNA boosts out-of-band signals too, a band-pass or notch filter ahead of it keeps strong local transmitters from overloading the amplifier. A filtered (band-specific) LNA does this in one box for services like 1090 MHz ADS-B."
 ---
 
 A **low-noise amplifier** (**LNA**) boosts a weak [antenna](/reference/antenna/) signal
@@ -97,6 +115,24 @@ control the LNA, but a well-chosen LNA raises the in-channel SNR that GopherTrun
 demodulators see, which is the difference between a locked control channel and a dropped
 one. See the DSP notes on rate-invariance — the decode path is only as good as the samples
 handed to it, and the LNA is where that quality is won or lost.
+
+## Recommended for SDR
+
+For SDR and scanner use, the **RTL-SDR Blog Wideband LNA** (around $30) is the
+default choice: flat gain of roughly 20 dB from ~20 MHz to 2 GHz, and it is
+[bias-tee](/reference/bias-tee/) powered, so the dongle feeds it DC up the coax
+with no extra wiring. Mount it at the antenna to suppress feedline loss per the
+Friis budget — but don't over-amplify: in a strong-signal environment an
+un-filtered LNA can overload the SDR, so add an [RF filter](/reference/rf-filter/)
+or reach for a filtered LNA if nearby transmitters are hot.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B07G14Q6XX?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For a wider comparison of LNAs and where each one helps, see
+[the best SDR LNA guide](/best-sdr-lna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

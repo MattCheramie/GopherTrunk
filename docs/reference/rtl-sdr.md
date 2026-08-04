@@ -3,10 +3,18 @@ slug: rtl-sdr
 title: RTL-SDR
 entry_type: hardware
 category: sdr-devices
-description: RTL-SDR is a family of low-cost USB software-defined radio receivers built on the RTL2832U chip — repurposed from DVB-T TV tuners — covering roughly 24 MHz to 1.7 GHz. A full history, the hardware explained, every major tuner and dongle variant compared, and where to buy the ones still in production.
+description: "RTL-SDR is a family of low-cost USB software-defined radio receivers built on the RTL2832U chip — repurposed from DVB-T TV tuners — covering roughly 24 MHz to 1.7 GHz. A full history, the hardware."
 keywords: RTL-SDR, RTL2832U, cheap SDR, DVB-T dongle, R820T2, R828D, R828S, E4000, RTL-SDR Blog V3, RTL-SDR Blog V4, V4 Lite, NooElec NESDR, FlightAware Pro Stick, 24 MHz 1.7 GHz, receive only, which RTL-SDR to buy
 aka: [RTL-SDR, RTL SDR, RTL2832U dongle]
 autolink: true
+affiliate: true
+product:
+  name: "RTL-SDR Blog V4"
+  brand: RTL-SDR Blog
+  category: Software-defined radio
+  lowPrice: "35"
+  highPrice: "50"
+  url: https://www.amazon.com/dp/B0CD745394?tag=gophertrunk-20
 infobox:
   - { label: Type, value: USB SDR receiver }
   - { label: Bridge chip, value: RTL2832U }
@@ -35,8 +43,16 @@ cite_urls:
   - https://www.rtl-sdr.com/rtl-sdr-blog-v4-end-of-line/
   - https://www.rtl-sdr.com/comparisons-r820t-r820t2-rtl-sdr-tuners/
   - https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR
+faq:
+  - q: "Which RTL-SDR should I buy for GopherTrunk?"
+    a: "An R820T2/R860-class dongle. The RTL-SDR Blog V4 is the flagship — a built-in HF upconverter, 1 ppm TCXO and broadcast notch filtering — but it's end-of-line as of 2026, so buy it while stock lasts. The NooElec NESDR SMArt v5 is the ongoing mainstream pick if the V4 is sold out. Either follows most VHF/UHF trunked systems on one ~$35 stick."
+  - q: "How much does a good RTL-SDR cost?"
+    a: "About $35–50 for a purpose-built dongle like the RTL-SDR Blog V4 or a NESDR SMArt v5. A generic no-name stick is ~$12–15 but drifts, overloads and has poor shielding — the small premium for a TCXO board is worth it for steady control-channel lock."
+  - q: "Can an RTL-SDR decode encrypted police channels?"
+    a: "No. An RTL-SDR is receive-only and GopherTrunk is a receive-only decoder — it decodes clear P25/DMR/NXDN/TETRA traffic, but no SDR or scanner can decode AES-encrypted transmissions."
+  - q: "RTL-SDR or a step up to an Airspy?"
+    a: "Start with an RTL-SDR — it's the cheapest thing that works and the baseline GopherTrunk targets. Move to an Airspy when its 12-bit ADC and wider capture are what stands between you and a decode on a busy or weak-signal system. See best SDR for GopherTrunk."
 ---
-
 **RTL-SDR** is a family of inexpensive USB [software-defined radio](/reference/software-defined-radio/)
 receivers built around the [RTL2832U](/reference/rtl2832u/) chip — originally a DVB-T
 digital-TV tuner that hobbyists discovered could stream raw [IQ](/reference/iq-data/)
@@ -54,6 +70,24 @@ GopherTrunk is built to run on.
 </svg>
 <figcaption>RTL-SDR covers most VHF/UHF scanning at low cost — receive only.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0CD745394?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**The ~$35 baseline GopherTrunk is built to run on.** An RTL-SDR is two chips on a
+stick — an [R820T2](/reference/r820t-tuner/)-class tuner and the 8-bit
+[RTL2832U](/reference/rtl2832u/) — tuning ~24 MHz–1.7 GHz with ~2.4 MHz of usable
+[bandwidth](/reference/bandwidth/), enough to follow most VHF/UHF trunked systems.
+**Buy an R820T2/R860 dongle:** the [RTL-SDR Blog V4](#dongle-variants-the-products)
+(flagship, but end-of-line as of 2026 — grab it while stock lasts) or the ongoing
+[NESDR SMArt v5](/reference/nesdr/). Skip generic no-name sticks that drift and
+overload. Step up to an [Airspy](/reference/airspy/) only when 8-bit dynamic range or
+2.4 MHz is the thing standing between you and a decode. **Receive-only;** no dongle
+decodes [AES encryption](/police-scanner-encryption/). See
+[best SDR for GopherTrunk](/best-sdr-for-gophertrunk/) or the buy table
+[below](#where-to-buy).
+</div>
 
 ## A short history
 

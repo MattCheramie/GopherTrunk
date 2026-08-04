@@ -7,16 +7,27 @@ description: "A ferrite choke is a ferrite core clamped over a cable that adds i
 keywords: ferrite choke, ferrite bead, ferrite core, common-mode choke, RFI suppression, EMI filter, snap-on ferrite, clip-on ferrite, cable choke, feedline choke, current balun
 aka: [ferrite choke, "ferrite bead", "clip-on ferrite", "common-mode choke"]
 autolink: true
+affiliate: true
 infobox:
   - { label: Type, value: "Common-mode suppression component" }
   - { label: Material, value: "Ferrite core (NiZn or MnZn mix)" }
   - { label: Key spec, value: "Impedance vs frequency, mix number" }
   - { label: TX, value: "Yes (as feedline choke)" }
   - { label: Typical price, value: "$0.50–$10 each" }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=snap+on+ferrite+choke+kit&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">Search on Amazon &rarr;</a>" }
 see_also: [balun, coaxial-cable, feedpoint-impedance, dipole-antenna]
 cite_urls:
   - https://en.wikipedia.org/wiki/Ferrite_bead
   - https://en.wikipedia.org/wiki/Ferrite_core
+faq:
+  - q: "Will a ferrite choke reduce noise on my SDR?"
+    a: "Often, yes. Common-mode current on the feedline and USB cable is one of the most common — and most misdiagnosed — noise sources for SDR listeners, showing up as birdies and a raised noise floor. A snap-on ferrite choke of the right mix at the antenna feedpoint and at the SDR end of the USB cable breaks that path and can drop the noise floor by several dB with no change to the wanted signal."
+  - q: "What ferrite choke should I buy for USB/computer noise?"
+    a: "An assorted snap-on (clip-on) ferrite choke kit — around $10 for a mixed pack — is the practical buy, since you clamp them over existing USB and coax cables without cutting anything. Get a variety of sizes so you can fit the USB lead, the power lead, and the feedline. Wind the cable through the core a couple of turns for extra effect at lower frequencies."
+  - q: "Where do I put the ferrite chokes?"
+    a: "Clamp one at the SDR end of the USB cable (the most common source of computer 'hash'), and one on the coax near the antenna feedpoint. For a dipole or other balanced antenna, a choke at the feedpoint also restores balance and keeps the coax shield from becoming part of the antenna."
+  - q: "Does the ferrite mix matter?"
+    a: "Yes. Manganese-zinc mixes (types 31, 43) work best from a few MHz through VHF, while nickel-zinc (type 61) peaks higher into UHF. For general SDR USB and feedline noise a type 31/43 snap-on is the usual first choice; a variety kit lets you try a couple across your bands."
 ---
 
 A **ferrite choke** is a ring or clamp of ferrite material placed around a cable so
@@ -84,6 +95,20 @@ purely part of the analog install ahead of the SDR. Its payoff for GopherTrunk i
 practical: lowering feedline-borne noise directly improves the signal-to-noise ratio
 at the demodulator, which is often the cheapest way to turn a marginal
 control-channel lock into a solid one.
+
+## Where to buy
+
+For SDR use, an assorted **snap-on ferrite choke kit** (around $10) is the practical
+buy — clip-on cores in a range of sizes that clamp over your existing USB and coax
+cables without cutting anything. Fit one at the SDR end of the USB lead (the usual
+source of computer birdies) and one on the feedline near the antenna. Because the
+right size and mix depend on your cables and bands, a variety pack is the safest
+choice.
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=snap+on+ferrite+choke+kit&tag=gophertrunk-20" rel="nofollow sponsored noopener">Search on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

@@ -6,17 +6,35 @@ category: hw-sbc
 description: A Compute Module is a single-board computer stripped to a small module without ports, designed to be soldered or socketed into a custom carrier board for embedded products.
 keywords: Raspberry Pi Compute Module, CM4, CM5, SO-DIMM module, carrier board, system on module, embedded SBC, custom carrier
 aka: [Raspberry Pi Compute Module, CM4]
+affiliate: true
+product:
+  name: "Raspberry Pi Compute Module (CM4/CM5)"
+  brand: Raspberry Pi
+  category: Single-board computer
+  lowPrice: "48"
+  highPrice: "62"
+  url: https://www.amazon.com/s?k=Raspberry+Pi+Compute+Module+4&tag=gophertrunk-20
 infobox:
   - { label: Type, value: Embeddable SBC module }
   - { label: Form, value: SO-DIMM or board-to-board }
   - { label: Needs, value: A custom carrier board }
   - { label: Runs, value: Linux }
   - { label: Best-known, value: Raspberry Pi CM4 / CM5 }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=Raspberry+Pi+Compute+Module+4&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [raspberry-pi, single-board-computer, system-on-a-chip, hat-add-on-board, gpio, embedded-system]
 related_lessons:
   - { title: "Raspberry Pi and family", url: /learn/intro-hardware/raspberry-pi-and-family/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Raspberry_Pi#Compute_Module
+faq:
+  - q: "Can I run GopherTrunk on a Compute Module?"
+    a: "Yes — a CM4/CM5 runs the same Raspberry Pi OS and the same pure-Go ARM64 GopherTrunk binary as a full Pi. The catch is that a Compute Module is just the module: it needs a carrier board to expose USB, Ethernet, and power before you can plug in an SDR. For most builds, a standard Raspberry Pi is far simpler and the default recommendation."
+  - q: "Do I need a carrier board?"
+    a: "Yes. A Compute Module has no ports of its own — it mates through an edge connector into a carrier board that provides USB, Ethernet, GPIO, and power. You either buy an off-the-shelf carrier or design your own, which is the whole reason to choose a module over a stock board."
+  - q: "When is a Compute Module the right choice for GopherTrunk?"
+    a: "Only when you're building a custom, embedded capture node — a sealed, antenna-mounted product with exactly the connectors it needs — and the engineering effort pays off at volume. For a normal home or hobby setup, a full Raspberry Pi is cheaper and much less work."
+  - q: "Does it decode anything a full Pi can't?"
+    a: "No. A CM4/CM5 is the same silicon as the matching Pi, so it decodes exactly the same signals — and no SBC changes the encryption wall: GopherTrunk cannot decode AES-protected traffic on any host."
 ---
 
 **A Compute Module** is a [single-board computer](/reference/single-board-computer/) stripped down to a small module — the processor, memory, and storage — without the usual ports, meant to plug into a custom carrier board.[^wiki]
@@ -50,6 +68,18 @@ cite_urls:
 <figcaption>A Compute Module holds only the brains — SoC, RAM, and storage — and mates through an edge connector into a carrier board that the product designer lays out with exactly the ports and shape the product requires.</figcaption>
 </figure>
 
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**A module — it needs a carrier board.** The Raspberry Pi Compute Module (CM4/CM5, ~$55) is
+the same silicon as a full Pi but with no ports of its own: it plugs into a
+[carrier board](/reference/hat-add-on-board/) that provides USB, Ethernet, and power. It runs
+the same pure-Go ARM64 GopherTrunk binary, but it's aimed at **custom, embedded capture
+nodes** built at volume, not everyday setups. For a normal build, a full
+[Raspberry Pi](/reference/raspberry-pi/) is far simpler and the default recommendation. No
+SBC decodes [AES encryption](/police-scanner-encryption/). Compare on
+[best SBC for GopherTrunk](/best-single-board-computer-for-gophertrunk/).
+</div>
+
 ## Overview
 
 The best-known example is the Raspberry Pi Compute Module (CM4, CM5), but the idea is general: take the [system on a chip](/reference/system-on-a-chip/) and memory of a board like the [Raspberry Pi](/reference/raspberry-pi/) and put it on a compact module that breaks all of its signals out to an edge connector. A product designer then lays out a *carrier board* that routes the [GPIO](/reference/gpio/), USB, Ethernet, and power exactly as the product needs, rather than working around a fixed consumer layout.
@@ -69,6 +99,37 @@ This separation lets one well-supported compute module serve many different prod
 ## Where it fits
 
 A Compute Module is the choice when an [embedded system](/reference/embedded-system/) needs the brains of an SBC but its own enclosure, connectors, and shape — a step beyond bolting a [HAT](/reference/hat-add-on-board/) onto a stock board. In a GopherTrunk-style product, a Compute Module on a custom carrier could host the SDR front end, timing, and storage in a sealed, antenna-mounted capture node with only the connectors it actually uses. The trade-off is engineering effort: you design, lay out, and manufacture the carrier yourself, which only pays off past a certain volume.
+
+## Running GopherTrunk on a Compute Module
+
+A Compute Module is the same silicon as the matching [Raspberry Pi](/reference/raspberry-pi/),
+so its GopherTrunk abilities equal that Pi's — with the crucial caveat that the module has no
+ports of its own and depends on a carrier board to expose them:
+
+- **Architecture** — the CM4 and CM5 are ARM64 (aarch64), running the same static `linux/arm64` GopherTrunk binary from the [downloads page](/downloads.html) as a full Pi — no vendor toolchain.
+- **CPU** — a CM4 carries the Pi 4's quad Cortex-A72 (1.5 GHz); a CM5 carries the Pi 5's quad Cortex-A76 (2.4 GHz). Real-time DSP capacity is identical to those boards: a couple of channels on the CM4, comfortable multi-channel work on the CM5.
+- **RAM** — the same options as the matching Pi (up to 8 GB on the CM4, up to 16 GB on the CM5), enough for recording, the web console, and several systems.
+- **USB** — the module breaks USB out to the carrier, so the number and speed (USB 2.0 vs 3.0) of ports for your SDR dongle(s) is whatever the carrier board provides — check that it offers USB 3.0 if you plan on wideband Airspy capture or [several dongles](/multi-dongle-sdr-setup/).
+- **Storage** — most modules include onboard eMMC (a "Lite" variant uses microSD on the carrier), and the carrier can route PCIe to an [NVMe](/reference/nvme/) drive for continuous IQ recording and the call database.
+- **Power / thermals** — draw matches the equivalent Pi; a CM5-class module under sustained load wants a heatsink, and cooling is designed into the carrier/enclosure since the module has none.
+- **OS / networking** — runs Raspberry Pi OS (64-bit), the most turnkey Linux for GopherTrunk; Ethernet and Wi-Fi come from the carrier, so a well-chosen carrier gives you the same headless [web console](/what-do-i-need-for-gophertrunk/) access as a stock Pi.
+
+**Bottom line:** a Compute Module runs exactly the workload of the Pi it's based on — a
+couple of SDRs with recording (CM4) up through comfortable multi-channel work (CM5) — once
+it's on a carrier board that supplies the USB, storage, and networking it needs.
+
+## Where to buy
+
+A Compute Module makes sense only for a custom, embedded GopherTrunk build — remember it's a
+*module* and needs a carrier board to expose USB, Ethernet, and power before you can plug in
+an SDR. For a normal setup, a full [Raspberry Pi](/reference/raspberry-pi/) is cheaper, needs
+no carrier, and is the default recommendation — see
+[best single-board computer for GopherTrunk](/best-single-board-computer-for-gophertrunk/).
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=Raspberry+Pi+Compute+Module+4&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

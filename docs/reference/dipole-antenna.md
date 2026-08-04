@@ -7,16 +7,34 @@ description: A dipole is a simple resonant antenna of two conductors fed at the 
 keywords: dipole, half-wave dipole, resonant antenna, radiation pattern, balun, feedpoint impedance, dBd, folded dipole
 aka: [dipole antenna, dipole]
 autolink: true
+affiliate: true
+product:
+  name: "RTL-SDR Blog Multipurpose Dipole Antenna Kit"
+  brand: RTL-SDR Blog
+  category: SDR dipole antenna kit
+  lowPrice: "21"
+  highPrice: "29"
+  url: https://www.amazon.com/dp/B075445JDF?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Resonant antenna }
   - { label: Length, value: ~λ/2 (half-wave) }
   - { label: Pattern, value: Omnidirectional broadside }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B075445JDF?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [antenna, monopole-antenna, yagi-uda-antenna, antenna-gain, radiation-pattern, feedpoint-impedance, polarization, wavelength]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Dipole_antenna
   - https://en.wikipedia.org/wiki/Balun
+faq:
+  - q: "Which dipole should I buy for an SDR?"
+    a: "The RTL-SDR Blog Multipurpose Dipole Antenna Kit (around $25) is the standard SDR starter antenna: two telescopic elements you extend to length for your target band, a mount and tripod, and SMA coax. It is a cheap, effective step up from the tiny whip that ships with most dongles."
+  - q: "How do I set the dipole length for my band?"
+    a: "Each element is about a quarter wavelength: total half-wave length in metres is roughly 143 / f(MHz), so extend each side to half of that. Cut for the centre of your target band and it stays usable across a fair range on either side. The RTL-SDR Blog kit includes a length chart for common bands."
+  - q: "Should I mount the dipole vertically or horizontally?"
+    a: "Vertically for scanning. Land-mobile P25, DMR, and NXDN traffic is vertically polarized, so a vertical dipole matches it and stays omnidirectional in the horizontal plane — exactly what you want when signals can come from any bearing. Mount it up high with a clear path."
+  - q: "Is a dipole better than the whip that came with my dongle?"
+    a: "Almost always. A resonant dipole cut for the band hands the SDR a stronger, cleaner signal than the short, poorly grounded rubber-duck whip, which improves lock on weak control channels. A few ferrite chokes on the feedline can clean up a marginal install further."
 ---
 
 A **dipole antenna** is a simple resonant [antenna](/reference/antenna/) made of two
@@ -84,6 +102,21 @@ a wideband SDR that watches many sites at once, and its predictable ~73 Ω feedp
 front end delivers; a resonant dipole simply hands the [ADC](/reference/analog-to-digital-converter/)
 a stronger, cleaner signal than a random wire, improving lock on weak
 [control channels](/reference/control-channel/).
+
+## Where to buy
+
+For SDR and scanner use, the **RTL-SDR Blog Multipurpose Dipole Antenna Kit** (around
+$25) is the standard starter antenna: adjustable telescopic elements you extend to
+length for your target band, plus a mount, tripod, and SMA coax. It is the cheapest
+worthwhile upgrade from the tiny whip bundled with most dongles.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B075445JDF?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For wideband discones and band-cut options, see the
+[best SDR antenna guide](/best-sdr-antenna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

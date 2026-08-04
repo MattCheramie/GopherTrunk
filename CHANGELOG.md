@@ -15,6 +15,13 @@ for tagged releases.
   affiliation, registration, unit.request, patch, DMR grant/bandplan), the per-call
   and per-grant webhook payloads, config keys, and reliability caveats (no stream
   auth, no server-side filtering, slow-subscriber drop). Refs #268.
+- **Baseband auto-record trigger on control-channel sync loss
+  (`baseband.auto_record.on_cc_sync_loss`).** Fires an IQ capture when a locked
+  control channel suddenly loses sync (`cc.lost`, which only fires after a genuine
+  lock — never for a hunt that never locked), recording the re-acquisition that
+  follows. That is exactly the raw IQ needed to debug sync-loss and slow
+  warm-up-lock episodes, where the carrier is present but GT fails to re-lock.
+  Off by default; pair with `tap: ddc` for small, directly-replayable captures.
 - **TETRA in the live Signals/DSP scopes.** The Constellation / Symbol / Histogram
   / Tuning / Mixer scopes gain a **TETRA** mode, plotting the π/4-DQPSK
   constellation (the four ±45°/±135° clusters) and dibits from the TETRA receiver's

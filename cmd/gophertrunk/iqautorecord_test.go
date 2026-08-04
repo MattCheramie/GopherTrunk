@@ -317,6 +317,35 @@ func TestAutoRecordNoVoiceDeviceTrigger(t *testing.T) {
 	}
 }
 
+// fakeLostPayload is a trunking.LockedPayload for the cc.lost event.
+type fakeLostPayload struct{ freq uint32 }
+
+func (f fakeLostPayload) LockedFrequencyHz() uint32 { return f.freq }
+func (f fakeLostPayload) LockedNAC() uint16         { return 0 }
+
+// TestAutoRecordCCSyncLossTrigger pins the new on_cc_sync_loss trigger: a cc.lost
+// event (a locked control channel that suddenly lost sync) fires a capture
+// labelled "cc_sync_loss" when enabled, and is ignored when off.
+func TestAutoRecordCCSyncLossTrigger(t *testing.T) {
+	a, rec, _ := newTestAutoRecorder(t, config.BasebandAutoRecordConfig{OnCCSyncLoss: true})
+	a.onCCLost(fakeLostPayload{freq: 467_912_500})
+	waitFor(t, func() bool { return rec.count() == 1 })
+	rec.mu.Lock()
+	path := rec.paths[0]
+	rec.mu.Unlock()
+	if !strings.Contains(path, "cc_sync_loss") {
+		t.Errorf("capture path %q missing cc_sync_loss reason", path)
+	}
+
+	// With the trigger off, a sync-loss event is ignored.
+	b, rec2, _ := newTestAutoRecorder(t, config.BasebandAutoRecordConfig{OnConcurrentCalls: 2})
+	b.onCCLost(fakeLostPayload{freq: 467_912_500})
+	time.Sleep(20 * time.Millisecond)
+	if rec2.count() != 0 {
+		t.Fatalf("on_cc_sync_loss off should ignore cc.lost; got %d captures", rec2.count())
+	}
+}
+
 func TestAutoRecordCooldownThrottlesAuto(t *testing.T) {
 	a, rec, clock := newTestAutoRecorder(t, config.BasebandAutoRecordConfig{OnEncrypted: true, Cooldown: "10s"})
 	enc := func(tg uint32) trunking.Grant { g := grant("TETRA_Site_1", tg, 1); g.Encrypted = true; return g }

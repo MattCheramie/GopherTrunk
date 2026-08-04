@@ -7,12 +7,29 @@ description: "Coaxial cable carries RF from antenna to receiver on a shielded ce
 keywords: coaxial cable, coax, feedline, RG-58, RG-6, LMR-400, cable loss, shield, impedance, velocity factor, characteristic impedance
 aka: [coax, "coaxial cable", feedline]
 autolink: true
+affiliate: true
+product:
+  name: "NooElec SMA coaxial cable connectivity kit"
+  brand: NooElec
+  category: SDR coaxial cable kit
+  lowPrice: "15"
+  highPrice: "21"
+  url: https://www.amazon.com/dp/B077H87LTS?tag=gophertrunk-20
 see_also: [attenuation, path-loss, antenna, standing-wave-ratio, low-noise-amplifier, sma-connector, n-type-connector]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Coaxial_cable
   - https://en.wikipedia.org/wiki/Characteristic_impedance
+faq:
+  - q: "What coax should I buy for an SDR?"
+    a: "For short bench and patch leads with the SMA connectors SDRs use, a NooElec SMA cable connectivity kit (around $18) covers the common lengths and adapters. For any run over a few metres, especially at UHF or 800 MHz, step up to low-loss RG8X or LMR-400 rather than thin RG58, which throws away too much signal over distance."
+  - q: "How much does cable loss matter for scanning?"
+    a: "A lot on the higher bands. Loss grows with frequency, so a long thin cable that is fine at HF can cost several dB at 1 GHz — and 6 dB of feedline loss throws away three-quarters of the signal before it reaches the SDR. Keep runs short and thick, or mount an LNA at the antenna so its gain is applied before the cable loss."
+  - q: "RG58 or RG8X for an SDR feedline?"
+    a: "RG58 (or thin RG174) is fine only for short patch leads. For a real feedline run use RG8X for moderate lengths or LMR-400/RG213 for masthead installs — the extra thickness cuts loss sharply at VHF/UHF. RG6 (75 Ω TV cable) is also excellent and cheap for receive-only use if you accept the minor impedance mismatch."
+  - q: "Do connectors and adapters add loss too?"
+    a: "Yes — each junction adds a small insertion loss and a potential mismatch, so use the fewest transitions you can. Weatherproof any outdoor connectors, since water in coax raises loss dramatically."
 ---
 
 **Coaxial cable** ("coax") carries RF between the [antenna](/reference/antenna/) and
@@ -86,6 +103,22 @@ weak trunking signal is most often lost before digitisation. On a UHF or 800 MHz
 using proper low-loss cable — or moving the SDR to the antenna and streaming
 [IQ](/reference/iq-data/) back over the network — is frequently the single biggest
 improvement to GopherTrunk's decode reliability.
+
+## Where to buy
+
+For the short SMA-terminated patch leads an SDR bench setup needs, a **NooElec SMA
+coaxial cable connectivity kit** (around $18) bundles common lengths and adapters in
+one box. For an actual feedline run of more than a few metres — especially at UHF or
+800 MHz P25 — buy proper low-loss **RG8X** or **LMR-400** by the length instead of
+relying on thin RG58.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B077H87LTS?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For connectors, adapters, and full cable choices, see the
+[SDR cables and connectors guide](/sdr-cables-and-connectors/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

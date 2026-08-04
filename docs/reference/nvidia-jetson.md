@@ -6,18 +6,36 @@ category: hw-sbc
 description: NVIDIA Jetson is a family of single-board computers with a powerful onboard GPU, aimed at on-device AI and computer vision such as edge inference and robotics.
 keywords: NVIDIA Jetson, Jetson Nano, Jetson Orin, edge AI, GPU SBC, computer vision, edge inference, robotics, CUDA, JetPack
 autolink: true
+affiliate: true
+product:
+  name: "NVIDIA Jetson Orin Nano"
+  brand: NVIDIA
+  category: Single-board computer
+  lowPrice: "220"
+  highPrice: "280"
+  url: https://www.amazon.com/dp/B0BZJTQ5YP?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Single-board computer (GPU) }
   - { label: CPU, value: ARM + NVIDIA GPU }
   - { label: RAM, value: ~4 GB – 64 GB }
   - { label: Runs, value: Linux (JetPack) }
   - { label: Typical price, value: ~$100 – $2000+ }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B0BZJTQ5YP?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [single-board-computer, raspberry-pi, beaglebone, gpio, central-processing-unit, edge-ai]
 related_lessons:
   - { title: "Raspberry Pi and family", url: /learn/intro-hardware/raspberry-pi-and-family/ }
   - { title: "SBC use cases and limits", url: /learn/intro-hardware/sbc-use-cases-and-limits/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Nvidia_Jetson
+faq:
+  - q: "Should I buy a Jetson to run GopherTrunk?"
+    a: "No — for plain trunk-following it is overkill. GopherTrunk is pure Go and uses the CPU only; it does not touch CUDA or the Jetson's GPU at all. A ~$55–80 Raspberry Pi decodes exactly the same channels. Buy a Jetson only if you also want its GPU for other work — signal-classification, machine-learning analysis of decoded traffic, or computer vision on the same node."
+  - q: "Does GopherTrunk use the Jetson's GPU or CUDA?"
+    a: "No. GopherTrunk's DSP and decoders run on the ARM CPU. On a Jetson the expensive GPU sits idle during decoding, which is why it is poor value as a dedicated decode host."
+  - q: "Can the Jetson decode encrypted channels a Pi can't?"
+    a: "No. No single-board computer changes the encryption wall — GopherTrunk cannot decode AES-protected traffic on any host, Jetson included. The GPU does not help here."
+  - q: "Will GopherTrunk even install on a Jetson?"
+    a: "Yes — it cross-compiles to ARM64 and runs on the JetPack Linux image with just a USB port for your SDR, no vendor toolchain. It simply won't use most of what you paid for."
 ---
 
 **NVIDIA Jetson** is a family of [single-board computers](/reference/single-board-computer/) with a powerful onboard GPU, aimed at on-device AI and computer vision.[^wiki]
@@ -66,6 +84,19 @@ cite_urls:
 <figcaption>A Jetson pairs a conventional ARM CPU with a large array of GPU cores; frames from a camera are classified by the neural network running across those cores and the result comes straight back on-device, without a cloud round trip.</figcaption>
 </figure>
 
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**Overkill for GopherTrunk.** The Jetson Orin Nano (~$250) is a GPU board built for
+[edge AI](/reference/edge-ai/) — but **GopherTrunk uses the CPU only, never CUDA or the
+GPU**, so the pricey silicon sits idle during decoding. A ~$55–80
+[Raspberry Pi](/reference/raspberry-pi/) follows the exact same channels for a fraction of
+the cost. **Buy a Jetson only if you also need the GPU** for signal-classification, ML
+analysis of decoded traffic, or vision on the same node. It runs GopherTrunk fine
+(pure-Go ARM64 binary), but no board — Jetson included — decodes
+[AES encryption](/police-scanner-encryption/). For a decode host, get a
+[Pi](/best-single-board-computer-for-gophertrunk/) instead.
+</div>
+
 ## Overview
 
 Where a general-purpose board leans on its [CPU](/reference/central-processing-unit/), a Jetson pairs an ARM CPU with an NVIDIA GPU so that machine-learning inference can run locally. Neural-network math is overwhelmingly parallel — the same operation across thousands of values — which is precisely what a GPU's many cores are built for, so a model that would crawl on a CPU runs in real time on the Jetson's silicon. This makes it a fit for robotics, cameras, and other edge devices that cannot rely on the cloud.
@@ -85,6 +116,37 @@ Jetsons run Linux through NVIDIA's JetPack distribution, which bundles the CUDA 
 ## Where it fits
 
 A Jetson is more expensive and more power-hungry than a [Raspberry Pi](/reference/raspberry-pi/), so it is the SBC you reach for specifically when you need GPU compute at the edge — [edge AI](/reference/edge-ai/), computer vision, robotics — rather than a general-purpose board. For lighter, always-on roles a Pi is usually the better fit; when real-time I/O matters more than compute, look at the [BeagleBone](/reference/beaglebone/). In a GopherTrunk context a Jetson is overkill for plain decoding, but its GPU could accelerate signal-classification or machine-learning analysis of decoded traffic on the same node.
+
+## Running GopherTrunk on the Jetson Orin Nano
+
+A Jetson runs GopherTrunk perfectly well — it simply does so on its ARM CPU, leaving the
+expensive GPU idle, which is why it's overkill as a dedicated decode host. Concretely:
+
+- **Architecture** — the Orin Nano is ARM64 (aarch64), so it takes the same static `linux/arm64` Go binary as a [Raspberry Pi](/reference/raspberry-pi/) from the [downloads page](/downloads.html). No CUDA build, no vendor toolchain, and GopherTrunk never links against the GPU stack.
+- **CPU** — its 6-core Arm Cortex-A78AE (~1.5 GHz) is more than enough for real-time DSP on a multi-SDR pool — but so is a far cheaper Pi. The GPU that justifies the Jetson's price does no decoding work.
+- **RAM** — the 8 GB shared between CPU and GPU leaves plenty for recording, the web console, and several systems at once; only a fraction is needed for the decode itself.
+- **USB** — USB 3.2 ports handle one or more SDR dongles with bandwidth to spare for wideband Airspy capture; use a powered hub for [several dongles](/multi-dongle-sdr-setup/).
+- **Storage** — microSD plus an M.2 [NVMe](/reference/nvme/) slot, so continuous IQ recording and a large call database can live on fast solid-state storage.
+- **Power / thermals** — considerably more draw than a Pi (roughly 7–25 W depending on power mode) and it ships with an active heatsink-fan; fine for 24/7 but far from the most efficient always-on option.
+- **OS / networking** — runs NVIDIA's JetPack (an Ubuntu-based 64-bit Linux); gigabit Ethernet is on board (Wi-Fi is an M.2 add-in) for reaching the [web console](/what-do-i-need-for-gophertrunk/) headless.
+
+**Bottom line:** the Orin Nano handles the same workload as a Raspberry Pi — a couple of SDRs
+with recording, or a small pool — with the GPU sitting unused; buy it only if that GPU will
+earn its keep on other work.
+
+## Where to buy
+
+Be honest with yourself about why you want one. As a GopherTrunk decode host the Jetson
+Orin Nano is overkill — it runs the decoders on its CPU and leaves the GPU idle, so a
+[Raspberry Pi](/reference/raspberry-pi/) at a quarter of the price does the same job. The
+Jetson earns its keep only if the GPU will do real work alongside decoding. If that's you,
+the Orin Nano developer kit is the sensible entry point; otherwise see
+[best single-board computer for GopherTrunk](/best-single-board-computer-for-gophertrunk/).
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0BZJTQ5YP?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

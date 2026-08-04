@@ -22,10 +22,14 @@
             </button>
             <ul class="nav-group__items" role="menu">
               {%- for item in group.items -%}
-                {%- assign item_url = item.url | relative_url -%}
-                <li role="none">
-                  <a role="menuitem" href="{{ item_url }}"{% if page.url == item.url %} aria-current="page"{% endif %}>{{ item.title }}</a>
-                </li>
+                {%- if item.heading -%}
+                  <li role="presentation" class="nav-group__heading">{{ item.heading }}</li>
+                {%- else -%}
+                  {%- assign item_url = item.url | relative_url -%}
+                  <li role="none">
+                    <a role="menuitem" href="{{ item_url }}"{% if page.url == item.url %} aria-current="page"{% endif %}>{{ item.title }}</a>
+                  </li>
+                {%- endif -%}
               {%- endfor -%}
             </ul>
           </li>
