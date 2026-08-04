@@ -96,6 +96,8 @@ learning_paths:
         note: "Version control — the backbone of any real codebase."
       - id: digital-trunking
         note: "Apply it: how trunked systems work and how software follows them."
+      - id: scanning
+        note: "Operate it — find, follow, and monitor real systems with your decoder."
       - id: deployment
         note: "Ship it — package and run your decoder as a real service."
       - id: ai-software-dev
@@ -134,6 +136,10 @@ learning_paths:
         note: "The command line every developer lives in."
       - id: networking
         note: "How software talks across machines."
+      - id: databases
+        note: "Where your application's data lives — SQL, NoSQL, and vector stores."
+      - id: web-dev
+        note: "The web layer most software meets its users through."
       - id: deployment
         note: "Containers, CI/CD, and getting your software running in production."
       - id: software-licensing
@@ -152,6 +158,10 @@ learning_paths:
         note: "A concrete language to build in — Go, from basics to concurrency."
       - id: git
         note: "Version control for any real project."
+      - id: databases
+        note: "Store your data — including the vector search that powers RAG features."
+      - id: web-dev
+        note: "Deliver AI features to users through a web app."
       - id: ai-software-dev
         note: "Use AI tools to write and ship software faster."
       - id: building-ai
@@ -190,6 +200,8 @@ learning_paths:
         note: "The signal processing that recovers bits from a noisy channel."
       - id: digital-trunking
         note: "How trunked control channels and voice calls work."
+      - id: scanning
+        note: "Apply it — build a station and follow live systems in the field."
       - id: intro-hardware
         note: "The SDR hardware that feeds a scanner."
 
@@ -3622,6 +3634,751 @@ modules:
       slug: glossary
       title: Glossary of deployment terms
       summary: Plain-language definitions for every deployment term in the path — container, image, registry, Dockerfile, Compose, systemd, CI/CD, artifact, secret, and more — cross-linked to the lessons.
+      minutes: 10
+      level: beginner
+      status: full
+
+  - id: databases
+    label: "Databases & Data"
+    title: "Databases & Data — where your application's data lives, from a first table to production"
+    tagline: "Every app needs somewhere to keep its data — tables, SQL, keys and joins, the relational and NoSQL and vector stores, and how to query, model, and run a database from your own code."
+    start_slug: what-is-a-database
+    workload: "PT7H"
+    intro: >
+      Almost every program you build eventually needs to remember something — a
+      user, a setting, a log of decoded calls. A database is where that data lives:
+      structured so you can store it reliably and get it back fast. This module
+      starts from why plain files aren't enough, builds up the relational model and
+      SQL — the language nearly every database speaks — then teaches you to design
+      data well, reach beyond relational to key-value, document, time-series, and
+      vector stores, and finally talk to a database from your own code and run one
+      in production. Examples lean on real software, including how a project like
+      GopherTrunk stores the calls and systems it decodes. Pairs with the Software
+      Engineering and AI Software Development paths; no prior database experience
+      assumed.
+    units:
+      - id: why-data-needs-structure
+        label: "Unit 1 — Why Data Needs Structure"
+        blurb: "What a database is and the ideas underneath it: persistence, the relational model, schemas and types, and the keys that tie data together."
+        lessons:
+          - slug: what-is-a-database
+            title: What a database is (and why not just files)
+            summary: The problem databases solve — storing data so many readers and writers can query it reliably, safely, and fast, instead of hand-rolling files.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: data-and-persistence
+            title: Data, state & persistence
+            summary: The difference between data your program holds in memory and data that outlives it — persistence, durability, and why "save it somewhere" is harder than it looks.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: the-relational-model
+            title: The relational model — tables, rows & columns
+            summary: The idea that has run the data world for fifty years — organising data into tables of rows and columns, and why that simple shape is so powerful.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: schemas-and-types
+            title: Schemas, columns & data types
+            summary: A schema is the shape of your data — the columns, their types, and the rules — and why deciding it up front saves you from a mess later.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: keys-and-relationships
+            title: Keys & relationships
+            summary: Primary keys that name each row and foreign keys that link tables — how a database models the relationships between your things.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: sql
+        label: "Unit 2 — SQL, the Language of Data"
+        blurb: "The query language almost every database understands: selecting, filtering, joining, aggregating, changing data, and making it all fast with indexes."
+        lessons:
+          - slug: what-is-sql
+            title: What SQL is
+            summary: The declarative language for talking to a relational database — you describe the data you want, not how to fetch it, and the database works out the rest.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: querying-with-select
+            title: Querying with SELECT
+            summary: The single most-used statement in all of software — SELECT — and how to ask a database for exactly the columns and rows you need.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: filtering-and-sorting
+            title: Filtering, sorting & limiting
+            summary: WHERE, ORDER BY, and LIMIT — narrowing a result set to the rows that matter, in the order you want, without dragging back the whole table.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: joins
+            title: Joining tables
+            summary: The heart of relational power — combining rows from two tables on a shared key, and the difference between inner and outer joins.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: aggregation-and-grouping
+            title: Aggregation & GROUP BY
+            summary: Turning many rows into a summary — counts, sums, and averages — with GROUP BY and HAVING, the tools behind every dashboard number.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: inserting-updating-deleting
+            title: Inserting, updating & deleting
+            summary: The write side of SQL — INSERT, UPDATE, and DELETE — and the WHERE clause you forget at your peril.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: indexes
+            title: Indexes & how queries get fast
+            summary: Why the same query can take a millisecond or a minute — indexes, what they cost, and the mental model of a book's index that explains them.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: designing-data-well
+        label: "Unit 3 — Designing Data Well"
+        blurb: "Turning a pile of columns into a sound design: normalization, modeling a real app, constraints, transactions, and evolving the schema safely over time."
+        lessons:
+          - slug: normalization
+            title: Normalization & avoiding duplication
+            summary: Why storing the same fact in two places will eventually betray you — normalization, and the handful of normal forms worth actually knowing.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: data-modeling
+            title: Data modeling for a real app
+            summary: Going from "what does my app do" to a set of tables and relationships — the practical craft of modeling data before you write a line of code.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: constraints-and-integrity
+            title: Constraints & data integrity
+            summary: Letting the database enforce the rules — NOT NULL, UNIQUE, CHECK, and foreign-key constraints that keep bad data out no matter what the app does.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: transactions-and-acid
+            title: Transactions & ACID
+            summary: All-or-nothing changes — transactions, the ACID guarantees behind them, and why moving money (or updating two tables) needs them.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: migrations
+            title: Schema migrations & evolving a database
+            summary: Your schema is never finished — migrations are how you change a live database's shape safely, in version control, without losing data.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: beyond-relational
+        label: "Unit 4 — Beyond Relational"
+        blurb: "The other database families and when they beat a table: key-value and document stores, time-series and analytics, vector search, and caching layers."
+        lessons:
+          - slug: sql-vs-nosql
+            title: SQL vs. NoSQL
+            summary: What "NoSQL" actually means, the tradeoff it makes, and how to tell when a non-relational store fits a problem better than tables do.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: key-value-and-document
+            title: Key-value & document stores
+            summary: Two of the most common NoSQL shapes — the dictionary-like key-value store and the JSON-document store — and the jobs each is built for.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: time-series-and-analytics
+            title: Time-series & analytical stores
+            summary: Databases tuned for when-it-happened data and for crunching huge tables — time-series and column stores, and why your metrics live in one.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: vector-databases
+            title: Vector databases & similarity search
+            summary: The store behind AI retrieval — embeddings as vectors, searching by meaning instead of keywords, and how RAG features lean on it.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: caching-layers
+            title: Caching layers
+            summary: Keeping hot data in fast memory in front of the database — caches like Redis, what they buy you, and the classic hard problem of keeping them fresh.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: using-a-database-from-code
+        label: "Unit 5 — Using a Database From Code"
+        blurb: "Wiring a database into a program: connecting, pooling connections, ORMs versus raw SQL, defending against injection, and doing it all in Go."
+        lessons:
+          - slug: connecting-from-code
+            title: Connecting from your program
+            summary: Drivers, connection strings, and credentials — how a running program actually opens a link to a database and sends it queries.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: connection-pooling
+            title: Connection pools
+            summary: Opening a connection is expensive, so real apps reuse a pool of them — what a pool is, why you need one, and how to size it.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: orms-vs-raw-sql
+            title: ORMs vs. raw SQL
+            summary: The perennial choice — let a library map objects to rows, or write SQL by hand — what each buys you and what each costs.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: sql-injection
+            title: SQL injection & querying safely
+            summary: The classic, still-common vulnerability where user input becomes SQL — how it happens and why parameterised queries end it.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: databases-in-go
+            title: Talking to a database from Go
+            summary: The Go way — database/sql, drivers, prepared statements, and querying safely — with the patterns GopherTrunk-style services use.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: databases-in-production
+        label: "Unit 6 — Running a Database in Production"
+        blurb: "Everything applied: keeping data safe with backups, scaling with replication, watching performance, choosing the right database, and the data behind GopherTrunk."
+        lessons:
+          - slug: backups-and-recovery
+            title: Backups & recovery
+            summary: The single most important operational habit — backups you have actually restored, point-in-time recovery, and testing them before you need them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: replication-and-scaling
+            title: Replication, sharding & scaling
+            summary: When one server isn't enough — read replicas, sharding, and the CAP tradeoffs that shape how a database scales out.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: performance-and-monitoring
+            title: Performance tuning & monitoring
+            summary: Finding the slow query before your users do — EXPLAIN, query plans, the metrics that matter, and the usual suspects behind a sluggish database.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: choosing-a-database
+            title: Choosing a database
+            summary: SQLite, Postgres, MySQL, a document store, a managed service like Supabase — a practical framework for picking the right one for a project.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: data-in-gophertrunk
+            title: Data in GopherTrunk
+            summary: A worked example — how a scanner like GopherTrunk models systems, talkgroups, and decoded calls, and stores them for search and playback.
+            minutes: 10
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of database terms
+      summary: Plain-language definitions for every term in the module — database, schema, SQL, primary and foreign key, join, index, normalization, transaction, ACID, NoSQL, vector store, ORM, migration, replica, and more — cross-linked to the lessons.
+      minutes: 11
+      level: beginner
+      status: full
+
+  - id: web-dev
+    label: "Web Development"
+    title: "Web Development — how a website becomes a web app, from the browser to production"
+    tagline: "How the web is actually built — HTML, CSS, and JavaScript on the front end, HTTP servers and REST APIs on the back, auth and real-time and security, and shipping the whole thing to production."
+    start_slug: what-is-web-development
+    workload: "PT8H"
+    intro: >
+      The web is where most software meets its users. This module is the working
+      developer's tour of how a web app is built — not a framework tutorial, but the
+      durable ideas that outlast any framework. Start with how the browser and the
+      client-server web actually work, learn the front-end trio of HTML, CSS, and
+      JavaScript and how modern component frameworks build on them, then cross to
+      the back end: HTTP servers, REST APIs, and the database behind them. From
+      there you'll handle the parts that separate a page from a product — auth and
+      sessions, real-time updates, web security, caching — and finish by shipping,
+      measuring, and operating a real web app, using GopherTrunk's own web dashboard
+      as the worked example. Pairs with the Networking, Databases, and Deployment
+      modules; a little programming experience helps but no web background is
+      assumed.
+    units:
+      - id: how-the-web-works
+        label: "Unit 1 — How the Web Works (for Building)"
+        blurb: "The mental model every web developer needs: what web development is, how the browser renders a page, the client-server web, the anatomy of a web app, and static versus dynamic."
+        lessons:
+          - slug: what-is-web-development
+            title: What web development is
+            summary: The lay of the land — front end, back end, and full stack — and what actually happens between typing a URL and seeing a page.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: how-the-browser-works
+            title: How the browser works
+            summary: The most important program in web development — how a browser fetches, parses, and renders HTML, CSS, and JavaScript into the page you see.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: client-server-web
+            title: The client-server web
+            summary: Every web interaction is a request and a response — the client-server model on the web, building on how a web request works under the hood.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: anatomy-of-a-web-app
+            title: Anatomy of a modern web app
+            summary: The pieces and how they fit — front end, back end, database, and the APIs between them — the map the rest of the module fills in.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: static-vs-dynamic
+            title: Static vs. dynamic sites
+            summary: A file served as-is versus a page built on the fly — the spectrum from static sites to full web apps, and why this very site is static.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: the-frontend-trio
+        label: "Unit 2 — The Front-End Trio"
+        blurb: "The three languages of the browser and how a user interacts with them: HTML structure, CSS styling, JavaScript behaviour, the DOM, forms, and accessibility."
+        lessons:
+          - slug: html-structure
+            title: HTML — structure & semantics
+            summary: The skeleton of every page — HTML elements, semantic markup, and why the right tag matters for meaning, accessibility, and search.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: css-and-layout
+            title: CSS — styling & layout
+            summary: How a page goes from plain text to designed — selectors, the box model, and the flexbox and grid layout systems modern sites are built on.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: javascript-in-the-browser
+            title: JavaScript in the browser
+            summary: The language that makes pages interactive — what JavaScript does in the browser, events, and where it runs versus server-side code.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: the-dom
+            title: The DOM — manipulating the page
+            summary: The live tree the browser builds from your HTML — the DOM — and how JavaScript reads and changes it to update the page without a reload.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: forms-and-user-input
+            title: Forms & user input
+            summary: How the web takes input — forms, validation, and safely getting what a user types from the browser to your server.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: accessibility-basics
+            title: Accessibility basics
+            summary: Building for everyone — semantic HTML, keyboard use, contrast, and ARIA — the accessibility fundamentals that are also just good engineering.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: frontend-at-scale
+        label: "Unit 3 — The Front End at Scale"
+        blurb: "How real front ends are built today: component frameworks, state, fetching data from the browser, the build toolchain, and responsive design."
+        lessons:
+          - slug: frontend-frameworks
+            title: Front-end frameworks
+            summary: Why React and its peers exist — the problem of keeping a complex UI in sync with data, and what a framework does that hand-written DOM code doesn't.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: components-and-state
+            title: Components & state
+            summary: The building block of modern UIs — a component — and the idea of state that drives what it shows, the core mental model of every framework.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: fetching-data
+            title: Fetching data from the front end
+            summary: How a page pulls fresh data without reloading — fetch, JSON, async requests, and talking to an API from the browser.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: build-tools-and-bundlers
+            title: Build tools & bundlers
+            summary: What turns your source into what the browser downloads — bundlers, transpiling, and why modern front ends have a build step at all.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: responsive-design
+            title: Responsive design
+            summary: One site, every screen — fluid layouts, media queries, and the mobile-first mindset that keeps a page usable from phone to desktop.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: the-backend
+        label: "Unit 4 — The Back End"
+        blurb: "The server side of a web app: what a back end does, HTTP servers and routing, building a REST API, the database behind it, rendering strategies, and templating."
+        lessons:
+          - slug: what-a-backend-does
+            title: What a back end does
+            summary: The work that can't happen in the browser — business logic, data, auth, and secrets — and why a web app needs a server behind it.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: http-servers-and-routing
+            title: HTTP servers & routing
+            summary: How a server answers the web — listening for requests, routing a URL and method to the right handler, and returning a response.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: building-a-rest-api
+            title: Building a REST API
+            summary: The contract between front and back end — resources, HTTP verbs, status codes, and JSON — assembled into an API a front end can consume.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: backend-and-database
+            title: The back end & its database
+            summary: Where the server meets the data layer — how a back end reads and writes a database safely, and where the boundary belongs.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: ssr-spa-static
+            title: SSR vs. SPA vs. static
+            summary: Three ways to build a page — rendered on the server, in the browser, or ahead of time — what each is good at, and how to choose.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: templating-and-static-sites
+            title: Templating & static site generators
+            summary: Generating HTML from templates and data — server-side templating and static generators like the Jekyll build behind this very site.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: auth-sessions-realtime
+        label: "Unit 5 — Auth, Sessions & Real-Time"
+        blurb: "The features that make a web app real and safe: authentication and sessions, cookies and tokens, live updates over WebSockets, web security, and caching."
+        lessons:
+          - slug: authentication-and-sessions
+            title: Authentication & sessions
+            summary: Knowing who a user is across stateless requests — logging in, sessions, and the difference between authentication and authorization on the web.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: cookies-tokens-jwt
+            title: Cookies, tokens & JWTs
+            summary: How the browser remembers you between requests — cookies, bearer tokens, and JWTs — and the tradeoffs and pitfalls of each.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: websockets-and-realtime
+            title: WebSockets & real-time updates
+            summary: When request-response isn't enough — pushing live data to the browser over WebSockets, the way a live scanner dashboard updates.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: web-security-essentials
+            title: Web security essentials
+            summary: The vulnerabilities every web dev must know — XSS, CSRF, and CORS — how they work and the defenses that stop them.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: caching-and-cdns
+            title: Caching & CDNs
+            summary: Making the web fast — browser caches, HTTP cache headers, and content delivery networks that serve your site from close to the user.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: shipping-a-web-app
+        label: "Unit 6 — Shipping a Web App"
+        blurb: "From working locally to running for users: deploying, measuring performance, monitoring, choosing a stack, and a look at GopherTrunk's own dashboard."
+        lessons:
+          - slug: deploying-a-web-app
+            title: Deploying a web app
+            summary: Getting your app onto the internet — build, host, and serve the front end and back end, connecting to the deployment module's toolkit.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: performance-and-web-vitals
+            title: Performance & Core Web Vitals
+            summary: What "fast" means on the web and how it's measured — load, interactivity, and layout stability — and the levers that move them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: monitoring-and-analytics
+            title: Monitoring & analytics
+            summary: Knowing what your app does in the wild — error tracking, uptime, and privacy-respecting analytics — after it ships.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: choosing-a-web-stack
+            title: Choosing your web stack
+            summary: A practical framework for the endless "what should I use" question — matching front end, back end, and hosting to the project in front of you.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: gophertrunk-web-dashboard
+            title: The GopherTrunk web dashboard
+            summary: A worked example — how a live dashboard for a scanner is built, from the API that serves decoded calls to the browser that shows them in real time.
+            minutes: 10
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of web-development terms
+      summary: Plain-language definitions for every term in the module — front end, back end, HTML, CSS, DOM, framework, component, state, REST API, SSR, SPA, session, cookie, JWT, WebSocket, XSS, CSRF, CORS, CDN, and more — cross-linked to the lessons.
+      minutes: 11
+      level: beginner
+      status: full
+
+  - id: scanning
+    label: "Scanning & Monitoring"
+    title: "Scanning & Monitoring — the practical craft of listening to the radio spectrum"
+    tagline: "The operator's side of the hobby — building a listening station, finding and identifying systems, following trunked calls in the field, and logging, recording, and monitoring them with a scanner or SDR."
+    start_slug: what-is-scanning
+    workload: "PT7H"
+    intro: >
+      The Digital & Trunked Radio module explains how these systems work on the
+      inside; this one is about actually listening to them. Scanning is the decades-
+      old hobby of monitoring the radio spectrum — public safety, utilities,
+      aviation, business — and this module is the practical craft of doing it well
+      and legally. Start with what scanning is and what you can and can't hear
+      today, build a real listening station out of a scanner or SDR and a decent
+      antenna, learn to find and identify systems in the field, follow trunked calls
+      across a system, and log, record, and share what you hear. It finishes by
+      turning GopherTrunk into an always-on monitoring post. Pairs with the RF & SDR
+      and Digital & Trunked Radio modules; it assumes only curiosity, and everything
+      here stays firmly on the right side of the law.
+    units:
+      - id: the-scanning-hobby
+        label: "Unit 1 — The Scanning Hobby"
+        blurb: "What radio scanning is and the ground rules: a short history, conventional versus trunked, what's listenable today, and the legal and ethical lines."
+        lessons:
+          - slug: what-is-scanning
+            title: What radio scanning is
+            summary: The hobby of monitoring live radio traffic — who's on the air, why people listen, and what a modern scanning setup actually does.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: history-of-scanning
+            title: A short history of scanners
+            summary: From crystal-controlled boxes to SDR — how scanners evolved alongside the radio systems they follow, and why that history still shapes the hobby.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: conventional-vs-trunked-recap
+            title: Conventional vs. trunked, in the field
+            summary: The one distinction that changes how you scan — a fixed channel you can park on versus a trunked system you have to follow — from the listener's chair.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: what-you-can-hear
+            title: What you can (and can't) hear today
+            summary: A realistic tour of the spectrum — the analog and unencrypted traffic still open, and the encrypted systems that have gone dark.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: scanning-legal-and-ethical
+            title: Legal & ethical scanning
+            summary: The rules that keep the hobby healthy — what's legal to receive, what's not legal to do with it, and the etiquette of responsible monitoring.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: your-listening-station
+        label: "Unit 2 — Your Listening Station"
+        blurb: "The gear that puts signals in front of you: scanners versus SDR, choosing hardware, antennas and feedlines, station setup, and beating noise."
+        lessons:
+          - slug: scanners-vs-sdr
+            title: Hardware scanners vs. SDR
+            summary: The two roads into the hobby — a dedicated scanner you switch on versus an SDR and software like GopherTrunk — and what each is best at.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: choosing-a-scanner
+            title: Choosing a scanner or SDR
+            summary: Matching hardware to what you want to hear — bands, trunking support, and budget — so you buy the right receiver the first time.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: antennas-for-scanning
+            title: Antennas for scanning
+            summary: The single biggest upgrade to what you can hear — discones, verticals, and the difference the right antenna makes over the stock whip.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: feedlines-and-connectors
+            title: Feedlines, connectors & grounding
+            summary: The unglamorous parts that quietly cost you signal — coax loss, connectors, and grounding your station safely.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: station-setup
+            title: Setting up your station
+            summary: Putting it together — receiver, antenna, and computer — into a working monitoring setup, indoors or on a rooftop.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: reducing-interference
+            title: Reducing noise & interference
+            summary: Why the city is loud on the radio — where local noise comes from, how to hunt it down, and the filters and habits that cut it.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: finding-what-to-listen-to
+        label: "Unit 3 — Finding What to Listen To"
+        blurb: "Turning a quiet radio into a busy one: system databases, band plans, searching and discovery, identifying unknown signals, and keeping records."
+        lessons:
+          - slug: radioreference-database
+            title: RadioReference & system databases
+            summary: The scanning community's shared map of the airwaves — how databases like RadioReference tell you what's on the air near you.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: band-plans
+            title: Band plans & where services live
+            summary: The spectrum has a floor plan — the bands where public safety, business, aviation, and the rest live, so you know where to look.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: searching-and-discovery
+            title: Search, scan & discovery
+            summary: Finding what the databases don't list — searching a band, spotting active channels, and close-call techniques for catching nearby transmitters.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: identifying-unknown-signals
+            title: Identifying an unknown signal
+            summary: You found a signal — now what is it? — using the waterfall, bandwidth, and modulation to name a mystery transmission.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: frequency-records
+            title: Building your frequency records
+            summary: Turning what you find into a reusable log — organising frequencies, talkgroups, and notes so your setup gets smarter over time.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: following-trunked-systems
+        label: "Unit 4 — Following Trunked Systems"
+        blurb: "The heart of modern scanning: programming a trunked system, working with talkgroups and scan lists, following a call, multisite and roaming, and troubleshooting."
+        lessons:
+          - slug: programming-a-trunked-system
+            title: Programming a trunked system
+            summary: Getting a scanner or SDR to follow a trunked system — the control channel, system parameters, and what you actually enter to track it.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: talkgroups-and-scan-lists
+            title: Talkgroups, scan lists & priorities
+            summary: Deciding what you hear — organising talkgroups into scan lists, locking out the noise, and setting priorities so you never miss the calls you care about.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: following-a-call
+            title: Following a call across the system
+            summary: What happens in the seconds after a radio keys up — how your setup follows a grant from the control channel to the voice channel and back.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: multisite-and-roaming
+            title: Multisite, simulcast & roaming
+            summary: Big systems have many sites — picking the right one to monitor, what simulcast does to your signal, and following units as they roam.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: when-decoding-fails
+            title: When decoding fails
+            summary: The field troubleshooting guide — no control-channel lock, garbled voice, missed calls — and how to tell a signal problem from a setup problem.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: logging-recording-sharing
+        label: "Unit 5 — Logging, Recording & Sharing"
+        blurb: "Getting value out of what you hear: logging and recording calls, tagging them, streaming feeds, alerting on what matters, and building an always-on post."
+        lessons:
+          - slug: logging-and-recording
+            title: Logging & recording calls
+            summary: Capturing traffic so you can review it later — call logging, per-call recording, and the storage that a busy system quickly demands.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: metadata-and-tagging
+            title: Metadata, tagging & searchability
+            summary: A recording is only useful if you can find it — tagging calls with talkgroup, time, and system so a month of audio stays searchable.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: audio-feeds-and-streaming
+            title: Audio feeds & streaming
+            summary: Sharing what you hear — how live scanner feeds like Broadcastify work, and what it takes to put one on the air responsibly.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: alerting-on-calls
+            title: Alerting on the calls you care about
+            summary: Letting the setup watch for you — triggers and alerts on specific talkgroups or keywords so you're notified when something happens.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: building-a-monitoring-post
+            title: Building an always-on monitoring post
+            summary: Going from "switch it on when I'm home" to a setup that runs unattended — the hardware, software, and reliability of a 24/7 post.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: scanning-with-gophertrunk
+        label: "Unit 6 — Scanning With GopherTrunk"
+        blurb: "Everything applied with real software: SDR scanning tools, GopherTrunk as a scanner, a full worked setup, the community, and where to go next."
+        lessons:
+          - slug: scanning-with-sdr-software
+            title: Scanning with SDR software
+            summary: The software side of SDR scanning — the tools that turn a raw receiver into a trunk-tracking scanner, and where GopherTrunk fits among them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: gophertrunk-as-a-scanner
+            title: GopherTrunk as a scanner
+            summary: Using GopherTrunk to follow and decode a real system — the control channel, the calls it grants, and the audio that comes out.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: a-worked-monitoring-setup
+            title: A worked end-to-end monitoring setup
+            summary: Start to finish — antenna, SDR, GopherTrunk, logging, and a dashboard — assembled into a complete, always-on monitoring station.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: contributing-and-community
+            title: The community & contributing data
+            summary: The hobby runs on shared knowledge — the forums, databases, and open-source projects, and how to give back the systems and fixes you find.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: where-to-go-next
+            title: Where to go next
+            summary: Where the hobby leads — decoding data modes, digging into protocols, or writing your own decoder — and the modules that take you there.
+            minutes: 8
+            level: beginner
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of scanning terms
+      summary: Plain-language definitions for every term in the module — scanner, SDR, control channel, talkgroup, scan list, lockout, simulcast, multisite, roaming, feed, discone, squelch, close call, and more — cross-linked to the lessons.
       minutes: 10
       level: beginner
       status: full
