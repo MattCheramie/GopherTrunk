@@ -43,8 +43,18 @@ type Gardner struct {
 	// stash holds samples from a previous Process call that
 	// didn't yet line up with a symbol boundary; reused as
 	// extra context so a long-running stream can be processed
-	// in chunks without losing the timing estimate.
+	// in chunks without losing the timing estimate. It is an
+	// owned buffer, appended in place each call, so the per-chunk
+	// keep-tail copy allocates only when it has to grow.
 	stashed []complex64
+	// catBuf is a reusable backing array for the stash+src
+	// concatenation built at the head of Process/Process2x. Kept
+	// on the struct so the hot loop (one Process call per IQ chunk)
+	// does not allocate a fresh slice every chunk — the churn that
+	// dominated the TETRA CC decode goroutine's GC pressure. A
+	// distinct array from stashed, so copying buf's tail back into
+	// stashed never aliases.
+	catBuf []complex64
 }
 
 // NewGardner constructs a Gardner timing-recovery loop. sps is the
@@ -76,11 +86,13 @@ func (g *Gardner) Process(dst, src []complex64) []complex64 {
 	}
 	// Concatenate any stashed tail from the previous call so the
 	// midpoint look-back across the chunk boundary is correct.
+	// Reuse catBuf as the backing array so this concatenation does
+	// not allocate every chunk.
 	var buf []complex64
 	if len(g.stashed) > 0 {
-		buf = make([]complex64, 0, len(g.stashed)+len(src))
-		buf = append(buf, g.stashed...)
-		buf = append(buf, src...)
+		g.catBuf = append(g.catBuf[:0], g.stashed...)
+		g.catBuf = append(g.catBuf, src...)
+		buf = g.catBuf
 	} else {
 		buf = src
 	}
@@ -137,13 +149,14 @@ func (g *Gardner) Process(dst, src []complex64) []complex64 {
 	}
 	// Keep enough tail samples in stash for the next call's first
 	// midpoint look-back (one full symbol period of context).
+	// Append in place into the owned stashed buffer (distinct array
+	// from buf/catBuf, so no aliasing) — allocates only when it must
+	// grow, which after warm-up it never does.
 	keep := int(g.sps) + 1
 	if keep > len(buf) {
 		keep = len(buf)
 	}
-	stash := make([]complex64, keep)
-	copy(stash, buf[len(buf)-keep:])
-	g.stashed = stash
+	g.stashed = append(g.stashed[:0], buf[len(buf)-keep:]...)
 	return dst
 }
 
@@ -164,9 +177,9 @@ func (g *Gardner) Process2x(dst, src []complex64) []complex64 {
 	}
 	var buf []complex64
 	if len(g.stashed) > 0 {
-		buf = make([]complex64, 0, len(g.stashed)+len(src))
-		buf = append(buf, g.stashed...)
-		buf = append(buf, src...)
+		g.catBuf = append(g.catBuf[:0], g.stashed...)
+		g.catBuf = append(g.catBuf, src...)
+		buf = g.catBuf
 	} else {
 		buf = src
 	}
@@ -209,9 +222,7 @@ func (g *Gardner) Process2x(dst, src []complex64) []complex64 {
 	if keep > len(buf) {
 		keep = len(buf)
 	}
-	stash := make([]complex64, keep)
-	copy(stash, buf[len(buf)-keep:])
-	g.stashed = stash
+	g.stashed = append(g.stashed[:0], buf[len(buf)-keep:]...)
 	return dst
 }
 
@@ -233,7 +244,11 @@ func (g *Gardner) Reset() {
 	g.have = false
 	g.prevSym = 0
 	g.prevMid = 0
-	g.stashed = nil
+	// Truncate rather than nil so the reused backing arrays survive a
+	// re-tune and the next chunk stays allocation-free. Every consumer
+	// gates on len(g.stashed), so an empty non-nil slice is equivalent.
+	g.stashed = g.stashed[:0]
+	g.catBuf = g.catBuf[:0]
 }
 
 // interpComplex returns a linear interpolation between a and b at
