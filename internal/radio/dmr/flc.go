@@ -14,7 +14,10 @@ type FLCO uint8
 const (
 	FLCOGroupVoiceUser  FLCO = 0x00 // Group voice channel user
 	FLCOUnitToUnitVoice FLCO = 0x03 // Unit-to-Unit voice channel user
-	FLCOTalkerAlias     FLCO = 0x04 // Talker alias header
+	FLCOTalkerAlias     FLCO = 0x04 // Talker alias header (block 0)
+	FLCOTalkerAlias1    FLCO = 0x05 // Talker alias block 1
+	FLCOTalkerAlias2    FLCO = 0x06 // Talker alias block 2
+	FLCOTalkerAlias3    FLCO = 0x07 // Talker alias block 3
 	FLCOGPS             FLCO = 0x08 // GPS info
 	FLCOTerminator      FLCO = 0x30 // Terminator
 )
@@ -26,7 +29,13 @@ func (o FLCO) String() string {
 	case FLCOUnitToUnitVoice:
 		return "UnitToUnitVoiceChannelUser"
 	case FLCOTalkerAlias:
-		return "TalkerAlias"
+		return "TalkerAliasHeader"
+	case FLCOTalkerAlias1:
+		return "TalkerAliasBlock1"
+	case FLCOTalkerAlias2:
+		return "TalkerAliasBlock2"
+	case FLCOTalkerAlias3:
+		return "TalkerAliasBlock3"
 	case FLCOGPS:
 		return "GPSInfo"
 	case FLCOTerminator:
