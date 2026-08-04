@@ -1,10 +1,12 @@
 package symbolscope
 
 import (
+	"math"
 	"sort"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -160,6 +162,69 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 // the constellation), so frames carry an empty Soft track but a complex
 // symbol-decision track (SymI/SymQ) aligned index-for-index with the
 // dibits.
+// TestTETRAEmitsComplexConstellation pins the TETRA scope support: a π/4-DQPSK
+// stream drives the TETRA receiver, whose complex differential (the constellation
+// points) reaches the frame as SymI/SymQ aligned with the dibits, at the 18 kHz
+// TETRA symbol rate, with no C4FM soft/eye track.
+func TestTETRAEmitsComplexConstellation(t *testing.T) {
+	// 8 samples/symbol × 18000 baud = 144 kHz, the TETRA channel rate the DDC
+	// targets, so the input feeds the receiver near-unity.
+	const sps = 8
+	dibits := make([]uint8, 4000)
+	for i := range dibits {
+		dibits[i] = uint8((i*7 + 3) & 3)
+	}
+	iq := demod.ModulatePiOver4DQPSK(dibits, sps, 8, tetrarx.RolloffAlpha, tetrarx.Rotation)
+	for i := range iq {
+		iq[i] *= 100
+	}
+
+	var frames []Frame
+	e, err := New(Options{
+		Emit:         func(f Frame) { frames = append(frames, f) },
+		InRateHz:     18000 * sps,
+		Protocol:     trunking.ProtocolTETRA,
+		FrameSymbols: 64,
+	})
+	if err != nil {
+		t.Fatalf("New(TETRA): %v", err)
+	}
+	if math.Abs(e.SymbolRateHz()-tetrarx.SymbolRate) > 1 {
+		t.Fatalf("SymbolRateHz = %v, want %v", e.SymbolRateHz(), tetrarx.SymbolRate)
+	}
+	e.Process(iq)
+
+	if len(frames) == 0 {
+		t.Fatal("no frames emitted on the TETRA path")
+	}
+	sawSymbols := false
+	for fi, f := range frames {
+		if math.Abs(f.SymbolRateHz-tetrarx.SymbolRate) > 1 {
+			t.Errorf("frame %d: SymbolRateHz = %v, want %v", fi, f.SymbolRateHz, tetrarx.SymbolRate)
+		}
+		if len(f.Soft) != 0 || len(f.EyeSoft) != 0 {
+			t.Errorf("frame %d: TETRA has no soft/eye track, got soft=%d eye=%d", fi, len(f.Soft), len(f.EyeSoft))
+		}
+		if len(f.SymI) != len(f.SymQ) {
+			t.Fatalf("frame %d: SymI len %d != SymQ len %d", fi, len(f.SymI), len(f.SymQ))
+		}
+		if len(f.SymI) != 0 {
+			if len(f.SymI) != len(f.Dibits) {
+				t.Fatalf("frame %d: symbol track len %d != dibit len %d", fi, len(f.SymI), len(f.Dibits))
+			}
+			sawSymbols = true
+		}
+		for _, d := range f.Dibits {
+			if d > 3 {
+				t.Fatalf("frame %d: dibit %d out of range", fi, d)
+			}
+		}
+	}
+	if !sawSymbols {
+		t.Fatal("TETRA path emitted no complex constellation points")
+	}
+}
+
 func TestCQPSKEmitsComplexSymbolsWithoutSoft(t *testing.T) {
 	iq, _ := makeC4FMIQ(960_000, 4000) // any IQ drives the Gardner loop
 

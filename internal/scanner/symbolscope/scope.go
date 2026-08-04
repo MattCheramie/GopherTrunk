@@ -27,6 +27,7 @@ import (
 	"time"
 
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
+	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -143,8 +144,12 @@ type Options struct {
 // Process calls — drive it from a single goroutine (the broker drain
 // loop), exactly like diag.Decimator.
 type Engine struct {
-	ddc          *ccdecoder.Downconverter
+	ddc *ccdecoder.Downconverter
+	// Exactly one receiver is built per engine. rx is the P25 Phase 1 receiver;
+	// tetraRx is the TETRA π/4-DQPSK receiver. Process/stampMetrics branch on
+	// which is non-nil.
 	rx           *p25phase1rx.Receiver
+	tetraRx      *tetrarx.Receiver
 	symbolRateHz float64
 	centerHz     uint32
 	offsetHz     int32
@@ -187,12 +192,8 @@ func New(opts Options) (*Engine, error) {
 	if opts.InRateHz <= 0 {
 		return nil, errors.New("symbolscope: InRateHz must be > 0")
 	}
-	if opts.Protocol != trunking.ProtocolP25 {
-		return nil, fmt.Errorf("symbolscope: protocol %s is not supported yet (P25 Phase 1 only)", opts.Protocol)
-	}
-	demodMode, ok := p25phase1rx.ParseDemodMode(opts.DemodMode)
-	if !ok {
-		return nil, fmt.Errorf("symbolscope: unknown demod mode %q (want c4fm or cqpsk)", opts.DemodMode)
+	if opts.Protocol != trunking.ProtocolP25 && opts.Protocol != trunking.ProtocolTETRA {
+		return nil, fmt.Errorf("symbolscope: protocol %s is not supported (P25 Phase 1 and TETRA only)", opts.Protocol)
 	}
 
 	frameSymbols := opts.FrameSymbols
@@ -204,33 +205,58 @@ func New(opts Options) (*Engine, error) {
 		nowNs = func() int64 { return time.Now().UnixNano() }
 	}
 
-	target := ccdecoder.DDCTargetForProtocol(trunking.ProtocolP25)
+	target := ccdecoder.DDCTargetForProtocol(opts.Protocol)
 	ddc := ccdecoder.NewDownconverterWithOffset(opts.InRateHz, target, float64(opts.OffsetHz))
 
 	e := &Engine{
 		ddc:          ddc,
-		symbolRateHz: p25phase1rx.SymbolRate,
 		centerHz:     opts.CenterHz,
 		offsetHz:     opts.OffsetHz,
 		frameSymbols: frameSymbols,
-		isCQPSK:      demodMode == p25phase1rx.DemodCQPSK,
 		nowNs:        nowNs,
 		emit:         opts.Emit,
 	}
 
-	// Build the receiver directly (no control channel) so the SoftSink
-	// surfaces the pre-slicer waveform. The DibitSink drives the frame
-	// accumulator; soft↔dibit alignment holds because the receiver
-	// fires SoftSink then DibitSink on the same symbol batch.
-	e.rx = p25phase1rx.New(p25phase1rx.Options{
-		SampleRateHz: ddc.OutRateHz(),
-		DeviationHz:  p25DeviationHz,
-		DemodMode:    demodMode,
-		SoftSink:     e.onSoft,
-		SymbolSink:   e.onSymbols,
-		EyeSink:      e.onEye,
-		DibitSink:    e.onDibits,
-	})
+	// Build the receiver directly (no control channel) so its symbol taps surface
+	// the constellation. The DibitSink drives the frame accumulator; the
+	// soft/symbol tap fires just before DibitSink on the same batch, so alignment
+	// holds.
+	switch opts.Protocol {
+	case trunking.ProtocolTETRA:
+		e.symbolRateHz = tetrarx.SymbolRate
+		// The receiver's SoftSink emits the complex π/4-DQPSK differential
+		// (s·conj(last)) per symbol — the constellation points (clustering at the
+		// four ±45°/±135° positions on a clean signal). Route them into the same
+		// complex-symbol accumulator the P25 CQPSK path uses. TETRA has no 4-level
+		// soft eye, so no soft/eye tap. AFC + channel filter + equalizer mirror the
+		// live decode so the scope shows what the decoder sees.
+		e.tetraRx = tetrarx.New(tetrarx.Options{
+			SampleRateHz:        ddc.OutRateHz(),
+			DibitSink:           e.onDibits,
+			SoftSink:            func(diffs []complex64, _ int) { e.onSymbols(diffs) },
+			ClockMode:           tetrarx.ClockGardner,
+			GardnerGain:         0.005,
+			EnableAFC:           true,
+			EnableChannelFilter: true,
+			EnableEqualizer:     true,
+		})
+	default: // P25 Phase 1
+		demodMode, ok := p25phase1rx.ParseDemodMode(opts.DemodMode)
+		if !ok {
+			return nil, fmt.Errorf("symbolscope: unknown demod mode %q (want c4fm or cqpsk)", opts.DemodMode)
+		}
+		e.symbolRateHz = p25phase1rx.SymbolRate
+		e.isCQPSK = demodMode == p25phase1rx.DemodCQPSK
+		e.rx = p25phase1rx.New(p25phase1rx.Options{
+			SampleRateHz: ddc.OutRateHz(),
+			DeviationHz:  p25DeviationHz,
+			DemodMode:    demodMode,
+			SoftSink:     e.onSoft,
+			SymbolSink:   e.onSymbols,
+			EyeSink:      e.onEye,
+			DibitSink:    e.onDibits,
+		})
+	}
 
 	if opts.MixerEmit != nil {
 		mx, err := newMixerAccum(mixerOptions{
@@ -257,7 +283,11 @@ func (e *Engine) Process(iq []complex64) {
 		return
 	}
 	e.chanBuf = e.ddc.Process(e.chanBuf, iq)
-	e.rx.Process(e.chanBuf)
+	if e.tetraRx != nil {
+		e.tetraRx.Process(e.chanBuf)
+	} else {
+		e.rx.Process(e.chanBuf)
+	}
 	// Feed the Mixer accumulator after the receiver has updated its
 	// carrier-offset estimate, so the "tuned" re-mix uses this chunk's
 	// loop state. chanBuf is consumed synchronously (copied into the
@@ -374,6 +404,13 @@ func (e *Engine) flush(n int) {
 // The getters are demod-specific (Mueller-Müller vs Gardner, AFC vs
 // carrier-recovery), so this routes by the configured demod mode.
 func (e *Engine) stampMetrics(f *Frame) {
+	if e.tetraRx != nil {
+		// TETRA exposes its residual carrier offset; the other loop getters
+		// (AGC/clock) aren't surfaced by the receiver, so they stay zero — the
+		// constellation, offset, and dibits are the useful TETRA scope views.
+		f.CarrierOffsetHz = e.tetraRx.CarrierOffsetHz()
+		return
+	}
 	if e.rx == nil {
 		return
 	}
@@ -397,6 +434,9 @@ func (e *Engine) stampMetrics(f *Frame) {
 // CQPSK). The Mixer plot uses it to re-mix the raw baseband onto centre
 // for the "tuned" view; it mirrors the routing stampMetrics uses.
 func (e *Engine) carrierOffsetHz() float64 {
+	if e.tetraRx != nil {
+		return e.tetraRx.CarrierOffsetHz()
+	}
 	if e.rx == nil {
 		return 0
 	}

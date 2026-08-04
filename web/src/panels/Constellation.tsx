@@ -62,6 +62,7 @@ const PROTOS: { value: string; label: string }[] = [
   { value: "auto", label: "Auto" },
   { value: "p25-cqpsk", label: "P25 CQPSK" },
   { value: "p25-c4fm", label: "P25 C4FM" },
+  { value: "tetra", label: "TETRA" },
 ];
 
 // Reference markers (ideal post-normalisation cluster centres) drawn as

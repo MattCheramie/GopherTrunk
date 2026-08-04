@@ -370,6 +370,15 @@ func (c *ControlChannel) classifyParties(g *VoiceGrant, m MACResource, msg CMCEM
 		// individual so a later PDU addressed to it is classified correctly.
 		g.SourceSSI = msg.PartySSI
 		c.noteIndividual(msg.PartySSI)
+		// Party == addressed SSI means the PDU is addressed to the transmitting
+		// radio itself: this is an INDIVIDUAL (point-to-point) call, not a group —
+		// you can't call yourself. Flag it and drop the impossible self-source so
+		// the call is not surfaced as "group X, source X" (the tg==src the operator
+		// reported). The counterparty isn't in this PDU, so the source is unknown.
+		if g.SourceSSI == g.DestSSI {
+			g.Individual = true
+			g.SourceSSI = 0
+		}
 		return
 	}
 
