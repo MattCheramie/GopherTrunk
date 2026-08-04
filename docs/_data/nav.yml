@@ -163,10 +163,14 @@ groups:
         url: /blog/category/solution-postmortem/
   - label: Hardware
     items:
-      - title: Best police scanners (buyer's guide)
-        url: /best-police-scanners/
-      - title: Police scanner vs GopherTrunk
+      - heading: Start here
+      - title: What hardware do I need?
+        url: /what-do-i-need-for-gophertrunk/
+      - title: Police scanner vs GopherTrunk (SDR)
         url: /police-scanner-vs-sdr/
+      - heading: Police scanners
+      - title: Best police scanners
+        url: /best-police-scanners/
       - title: How police scanners work
         url: /how-police-scanners-work/
       - title: Scanner encryption explained
@@ -177,22 +181,34 @@ groups:
         url: /scanner-frequencies/
       - title: How to program a scanner
         url: /how-to-program-a-police-scanner/
-      - title: Best scanner antennas
-        url: /best-scanner-antenna/
-      - title: "Scanner hardware (Field Guide)"
+      - title: "All scanner models (Field Guide)"
         url: /reference/#consumer-scanners
+      - heading: SDRs & receivers
       - title: Best SDR for GopherTrunk
         url: /best-sdr-for-gophertrunk/
-      - title: What hardware do I need?
-        url: /what-do-i-need-for-gophertrunk/
       - title: Best RTL-SDR
         url: /best-rtl-sdr/
+      - title: Best HF SDR
+        url: /best-hf-sdr/
+      - title: "All SDR devices (Field Guide)"
+        url: /reference/#sdr-devices
+      - heading: Antennas & accessories
+      - title: Best scanner antennas
+        url: /best-scanner-antenna/
       - title: Best SDR antenna
         url: /best-sdr-antenna/
       - title: SDR cables & connectors
         url: /sdr-cables-and-connectors/
-      - title: "SDR devices (Field Guide)"
-        url: /reference/#sdr-devices
+      - title: LNAs & filters
+        url: /best-sdr-lna/
+      - heading: Computers
+      - title: Best single-board computer
+        url: /best-single-board-computer-for-gophertrunk/
+      - title: Run GopherTrunk on a Raspberry Pi
+        url: /raspberry-pi-sdr-scanner/
+      - title: "All SBCs (Field Guide)"
+        url: /reference/#hw-sbc
+      - heading: Setup
       - title: SDR hardware setup
         url: /hardware.html
   - label: Install

@@ -79,6 +79,7 @@ The receivers, antennas, cables, and accessories to run GopherTrunk, with honest
 - [Run GopherTrunk on a Raspberry Pi]({{ '/raspberry-pi-sdr-scanner/' | absolute_url }}): 24/7 headless decoding.
 - [Best SDR for P25 trunking]({{ '/best-sdr-for-p25-trunking/' | absolute_url }}) and [multi-dongle setups]({{ '/multi-dongle-sdr-setup/' | absolute_url }}): single-site vs wideband multi-site.
 - [Cheapest way to scan digital radio]({{ '/cheap-sdr-scanner/' | absolute_url }}): a $30 SDR beats a $380 digital scanner.
+- [Best single-board computer for GopherTrunk]({{ '/best-single-board-computer-for-gophertrunk/' | absolute_url }}): Raspberry Pi 5/4/Zero 2 W, Orange Pi 5, Radxa Rock 5B, ODROID, and Le Potato compared as GopherTrunk hosts.
 
 ## Technical docs
 - [Architecture]({{ '/architecture.html' | absolute_url }}): how the engine is built.
