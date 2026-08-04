@@ -105,16 +105,27 @@ func AssembleEmbeddedField(e EMB, frag []byte) []byte {
 // any fragment is the wrong length, the BPTC/CRC check fails, or the FLC
 // cannot be parsed.
 func ReassembleEmbeddedLC(frags [4][]byte) (FLC, bool) {
+	_, flc, ok := ReassembleEmbeddedLCInfo(frags)
+	return flc, ok
+}
+
+// ReassembleEmbeddedLCInfo is ReassembleEmbeddedLC but also returns the
+// raw 9-octet recovered info block. Callers that need the payload octets
+// verbatim — e.g. the talker-alias fragment parser, whose octets 2..8 are
+// alias text rather than the ServiceOptions/address fields ParseFLC
+// assumes — use this to read the bits before the generic FLC view
+// reinterprets them.
+func ReassembleEmbeddedLCInfo(frags [4][]byte) ([]byte, FLC, bool) {
 	channel := make([]byte, 0, framing.EmbChannelBits)
 	for _, f := range frags {
 		if len(f) != framing.EmbeddedFragmentBits {
-			return FLC{}, false
+			return nil, FLC{}, false
 		}
 		channel = append(channel, f...)
 	}
 	lcBits, corrected := framing.DecodeEmbeddedLC(channel)
 	if corrected < 0 {
-		return FLC{}, false
+		return nil, FLC{}, false
 	}
 	info := make([]byte, framing.EmbLCBits/8) // 9 octets
 	for i := 0; i < framing.EmbLCBits; i++ {
@@ -124,7 +135,7 @@ func ReassembleEmbeddedLC(frags [4][]byte) (FLC, bool) {
 	}
 	flc, err := ParseFLC(info)
 	if err != nil {
-		return FLC{}, false
+		return nil, FLC{}, false
 	}
-	return flc, true
+	return info, flc, true
 }

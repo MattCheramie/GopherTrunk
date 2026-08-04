@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **DMR talker alias decode.** A DMR radio's display name — carried in the
+  voice superframe's embedded Link Control as a header (FLCO 0x04) plus up to
+  three continuation blocks (0x05-0x07) — is now reassembled and published as a
+  `talker.alias` event, the same surface P25 already uses, so the affiliation
+  tracker, decoded-message log, API, and TUI attribute the name to the calling
+  radio on DMR too. All four data formats (7-bit packed, 8-bit ISO 8859-1,
+  UTF-8, UTF-16BE) decode; the header text-bit boundary follows ETSI
+  TS 102 361-2 §7.2.18 cross-checked against the ok-dmrlib reference and is a
+  working model pending on-air capture validation.
 - **Event API reference docs (`docs/api-events.md`).** A stable-contract reference
   for the real-time telemetry surface: the SSE (`/api/v1/events`) and WebSocket
   (`/api/v1/events/ws`) transports and shared event envelope, the full JSON payload
