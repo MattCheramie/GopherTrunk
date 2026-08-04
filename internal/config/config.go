@@ -533,6 +533,12 @@ type BasebandAutoRecordConfig struct {
 	OnEncrypted bool `yaml:"on_encrypted"`
 	// OnEmergency fires on an emergency-flagged grant.
 	OnEmergency bool `yaml:"on_emergency"`
+	// OnCCSyncLoss fires when a locked control channel suddenly loses sync
+	// (events.KindCCLost, which only fires after a genuine lock — never for a
+	// hunt that never locked). It captures the seconds AFTER the loss, i.e. the
+	// re-acquisition attempt, which is exactly the raw IQ needed to debug
+	// sync-loss and slow warm-up-lock episodes. Most useful with the "ddc" tap.
+	OnCCSyncLoss bool `yaml:"on_cc_sync_loss"`
 	// Tap selects what IQ is captured, mirroring BasebandRecordConfig.Tap:
 	//   "wideband" (default) — the control SDR's full-rate raw IQ (the historical
 	//     behaviour; large files, e.g. ~50 MB per 30 s at 2.5 MS/s).
