@@ -120,3 +120,29 @@ confirmation before any close-as-completed.
     though a global-RMS normalise gives the full win). A divergence guard re-seeds
     the tracking filter to pass-through if a normalisation transient / deep fade
     blows the taps up, so one bad patch cannot poison later snapshots.
+- **TETRA control-channel sync loss = RF degradation the CC equalizer now
+  recovers, not compute starvation.** A reporter's 1-hour session showed ~210
+  `control_channel_transitions` and 11 hard CC sync losses (auto-captured by
+  `on_cc_sync_loss`). Each loss is preceded by `bsch_fail` climbing / `sb_bursts`
+  collapsing, then repeated `tetra: dsp resync (signal-time decode drought)`, then
+  the 5 s stale watchdog → `MarkLost` → re-hunt (and a post-relock #815 carrier
+  warning). **Do not chase a compute fix:** all 11 losses occurred with ~0
+  concurrent voice follows and the `decode_overruns` (704) were one bursty event —
+  zero correlation with call/CPU load, so the signal-time resync design (immune to
+  starvation) is correct and untouched. The captures are weak (peak −44 dBFS, no
+  clipping, ~−3 kHz offset) and split cleanly by in-channel SNR: a healthy
+  `concurrent` capture measures ~**18 dB** and replays at BSCH 147/0 (100%); a
+  `cc_sync_loss` capture measures ~**10 dB**, LOCKS, but decodes only ~**22%** of
+  its BSCH with a destructive-resync storm — the marginal regime that drops lock.
+  The constellation is ISI-smeared, and the primary single-channel `newTETRAPipeline`
+  was the one TETRA CC path **not** running `SnapshotCMA` (the voice composer and
+  `widebandt2/tetra.go` already did; the latter's comment even claimed it mirrored
+  the ccdecoder settings). Enabling it there lifts the marginal fixture from ~12% to
+  ~100% CRC-clean BSCH — pinned by `internal/scanner/ccdecoder/pipelines_tetra_equalizer_test.go`
+  against `testdata/tetra_cc_sync_loss_2s_144k.cs16`. `EnableDCBlock` stays **off**
+  the CC path (voice-only per `receiver.go`). Gotcha: the equalizer's blind CMA is
+  well-defined only against a noise floor, so the synthetic `TestDaemonCCDecodesTETRA`
+  now adds 40 dB AWGN — a literally noise-free constant-modulus input is a degenerate
+  case (same reason `receiver_equalizer_test.go`'s clean-channel test adds 30 dB).
+  The residual −44 dBFS weak front end is an RF/gain/antenna condition (the #764
+  lesson) the equalizer mitigates but does not replace — raise the signal level too.
