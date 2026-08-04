@@ -5,10 +5,15 @@ import (
 	"math"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
+	"github.com/MattCheramie/GopherTrunk/internal/events"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
 	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // dmrVoiceIntermediateHz is the rate the wideband IQ is decimated to
@@ -50,6 +55,29 @@ func newDMRVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 		}
 	}
 	return newDecimatingFIR(iqHz, dmrVoiceIntermediateHz, chanBW, filterAtUnity)
+}
+
+// aliasPrintable reports whether a reassembled talker alias looks like a
+// clean decode: it holds at least one printable character and no C0/C1
+// control characters or Unicode replacement runes (the hallmark of a
+// bit-error-corrupted or wrong-format decode). Unlike the P25 ASCII-only
+// cleaner it tolerates accented / non-Latin names, since DMR aliases carry
+// a UTF-8 / UTF-16 format bit. Mirrors the trunking.TalkerAlias.Unreliable
+// contract (#711).
+func aliasPrintable(s string) bool {
+	if s == "" {
+		return false
+	}
+	printable := false
+	for _, r := range s {
+		if r == utf8.RuneError || r < 0x20 || (r >= 0x7F && r < 0xA0) {
+			return false
+		}
+		if !unicode.IsSpace(r) {
+			printable = true
+		}
+	}
+	return printable
 }
 
 // rawFrameSink is the subset of voice.Recorder the DMR voice chain
@@ -171,7 +199,7 @@ func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 	return false
 }
 
-func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved bool, done chan<- struct{}) {
+func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved bool, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-dmr:"+serial, nil)
 
@@ -207,6 +235,31 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 		voiceDec = dmrvoice.NewInterleavedDecoder()
 		router = newSlotRouter(groupID)
 	}
+	// Talker-alias reassembly. The alias header/block embedded LCs carry no
+	// source address, so the alias is keyed and published under the most
+	// recent SourceID seen from a group-voice embedded LC on this call.
+	aliasAsm := dmr.NewTalkerAliasAssembler(nil)
+	var aliasSrc uint32
+	publishAlias := func(src uint32, alias string) {
+		if src == 0 || alias == "" || c.bus == nil {
+			return
+		}
+		unreliable := !aliasPrintable(alias)
+		c.log.Info("composer: dmr talker alias",
+			"system", system, "serial", serial, "src", src, "alias", alias,
+			"unreliable", unreliable)
+		c.bus.Publish(events.Event{
+			Kind: events.KindTalkerAlias,
+			Payload: trunking.TalkerAlias{
+				System:     system,
+				Protocol:   "dmr",
+				SourceID:   src,
+				Alias:      alias,
+				Unreliable: unreliable,
+				At:         time.Now(),
+			},
+		})
+	}
 	// superframes counts DMR voice superframes the receiver delivered —
 	// i.e. real voice activity. The touch ticker (below) only refreshes
 	// the engine's LastHeardAt when this counter has advanced since the
@@ -236,6 +289,18 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				if sf.HasLC {
 					lcSuperframes.Add(1)
+					if gv, ok := sf.LC.AsGroupVoiceUser(); ok && gv.SourceID != 0 {
+						aliasSrc = gv.SourceID
+					}
+				}
+				// Talker-alias header/block embedded LC: reassemble the display
+				// name across superframes and publish it once complete. Runs on
+				// every superframe (both slots) — it is call-metadata, not this
+				// slot's audio, so it is intentionally before the slot-router gate.
+				if sf.HasTalkerAlias {
+					if alias, done := aliasAsm.Add(aliasSrc, sf.TalkerAlias); done {
+						publishAlias(aliasSrc, alias)
+					}
 				}
 				if router != nil && !router.accept(sf) {
 					// A superframe from the other timeslot (or an
