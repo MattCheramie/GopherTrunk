@@ -43,6 +43,12 @@ groups:
         url: /learn/dsp/
       - title: "Module: Containers & Deployment"
         url: /learn/deployment/
+      - title: "Module: Databases & Data"
+        url: /learn/databases/
+      - title: "Module: Web Development"
+        url: /learn/web-dev/
+      - title: "Module: Scanning & Monitoring"
+        url: /learn/scanning/
   - label: Field Guide
     items:
       - title: Field Guide overview
