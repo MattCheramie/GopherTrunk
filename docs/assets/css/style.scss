@@ -265,6 +265,24 @@ button { font: inherit; cursor: pointer; }
   color: var(--accent);
   font-weight: 600;
 }
+/* Long dropdowns (e.g. Hardware) stay inside the viewport and scroll. */
+.nav-group__items { max-height: min(78vh, 44rem); overflow-y: auto; }
+/* Section headings inside a dropdown, grouping a long item list. */
+.nav-group__heading {
+  padding: 0.5rem 0.65rem 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+.nav-group__heading + li a { margin-top: 0; }
+li.nav-group__heading:not(:first-child) {
+  margin-top: 0.3rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
 
 .site-nav__external a {
   display: inline-flex;
@@ -356,6 +374,8 @@ button { font: inherit; cursor: pointer; }
     min-width: 0;
     background: transparent;
     display: none;
+    max-height: none;
+    overflow: visible;
   }
   // On touch/mobile the submenu is driven solely by the JS-toggled
   // .is-open class. Hover/focus-within are deliberately excluded here:
