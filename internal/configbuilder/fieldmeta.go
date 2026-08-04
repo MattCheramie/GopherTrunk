@@ -407,6 +407,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandAutoRecordConfig.OnNoVoiceDevice":   {Label: "On no voice device", Help: "Fire when a grant arrives but every voice tuner is busy."},
 	"BasebandAutoRecordConfig.OnEncrypted":       {Label: "On encrypted", Help: "Fire on a grant flagged encrypted."},
 	"BasebandAutoRecordConfig.OnEmergency":       {Label: "On emergency", Help: "Fire on an emergency-flagged grant."},
+	"BasebandAutoRecordConfig.OnCCSyncLoss":      {Label: "On CC sync loss", Help: "Fire when a locked control channel suddenly loses sync — captures the re-acquisition IQ, ideal for debugging sync-loss / slow warm-up lock. Pair with the ddc tap for small files."},
 	"BasebandAutoRecordConfig.Tap":               {Help: "What IQ to capture: wideband (default, full-rate SDR — large files) or ddc (narrowband channelised stream at the pipeline rate, e.g. 144 kHz for TETRA — far smaller and directly replayable).", Options: opts("", "wideband (default)", "ddc", "ddc")},
 
 	// ---- Paging ------------------------------------------------------------

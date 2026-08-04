@@ -56,6 +56,7 @@ var webRoundTripAllow = map[string][]string{
 	"BasebandAutoRecordConfig": {
 		"Enabled", "Dir", "Format", "Seconds", "Cooldown",
 		"OnConcurrentCalls", "OnNoVoiceDevice", "OnEncrypted", "OnEmergency",
+		"OnCCSyncLoss",
 	},
 }
 
