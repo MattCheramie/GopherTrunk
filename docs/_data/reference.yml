@@ -219,6 +219,7 @@ domains:
           - { slug: bit-rate-vs-baud, title: Bit rate vs baud, type: term }
           - { slug: amplitude-phase-shift-keying, title: Amplitude and phase-shift keying (APSK), type: technology }
           - { slug: modulation-and-coding-scheme, title: Modulation and coding scheme (MCS), type: concept }
+          - { slug: p25-phase-2-hdqpsk, title: P25 Phase 2 H-DQPSK, type: term }
 
       - id: sdr-dsp
         label: SDR & DSP
@@ -267,6 +268,7 @@ domains:
           - { slug: power-spectral-density, title: Power spectral density (PSD), type: term }
           - { slug: spectrogram, title: Spectrogram, type: term }
           - { slug: waterfall-display, title: Waterfall display, type: term }
+          - { slug: tetra-receiver-chain, title: TETRA receiver chain, type: term }
 
       - id: filtering-multirate
         label: Filtering & multirate DSP
@@ -294,6 +296,13 @@ domains:
           - { slug: early-late-gate, title: Early-late gate timing recovery, type: algorithm }
           - { slug: zero-crossing-detection, title: Zero-crossing detection, type: algorithm }
           - { slug: differential-decoding, title: Differential decoding, type: algorithm }
+          - { slug: dmr-sync-patterns, title: DMR sync patterns, type: term }
+          - { slug: dpmr-frame-sync, title: dPMR Frame Sync, type: term }
+          - { slug: nxdn-fsw, title: NXDN Frame Sync Word, type: term }
+          - { slug: p25-frame-sync-word, title: P25 frame sync word, type: term }
+          - { slug: p25-phase-2-sync-word, title: P25 Phase 2 sync word, type: term }
+          - { slug: tetra-burst-formats, title: TETRA burst formats, type: term }
+          - { slug: tetra-training-sequences, title: TETRA training sequences, type: term }
 
       - id: equalization
         label: Equalization
@@ -351,6 +360,23 @@ domains:
           - { slug: puncturing, title: Puncturing, type: algorithm }
           - { slug: gray-code, title: Gray code, type: algorithm }
           - { slug: scrambling, title: Scrambling (whitening), type: algorithm }
+          - { slug: crc-16-ccitt, title: CRC-16/CCITT, type: algorithm }
+          - { slug: dmr-csbk-crc, title: DMR CSBK CRC, type: term }
+          - { slug: dmr-embedded-lc, title: DMR embedded LC, type: algorithm }
+          - { slug: dmr-rs-12-9, title: "DMR RS(12,9)", type: algorithm }
+          - { slug: dpmr-channel-coding, title: dPMR Channel Coding, type: term }
+          - { slug: lora-diagonal-interleaver, title: LoRa diagonal interleaver, type: algorithm }
+          - { slug: lora-whitening, title: LoRa whitening, type: algorithm }
+          - { slug: p25-hamming-10-6, title: "P25 Hamming(10,6,3)", type: algorithm }
+          - { slug: p25-phase-2-mac-interleaver, title: P25 Phase 2 MAC interleaver, type: algorithm }
+          - { slug: p25-reed-solomon, title: P25 Reed-Solomon codes, type: algorithm }
+          - { slug: p25-trellis-code, title: P25 trellis code, type: algorithm }
+          - { slug: p25-tsbk-interleaver, title: P25 TSBK interleaver, type: algorithm }
+          - { slug: pn44-scrambler, title: PN44 scrambler, type: algorithm }
+          - { slug: tetra-block-interleaver, title: TETRA block interleaver, type: algorithm }
+          - { slug: tetra-rcpc-code, title: TETRA RCPC code, type: algorithm }
+          - { slug: tetra-rm-30-14, title: "TETRA RM(30,14)", type: algorithm }
+          - { slug: tetra-scrambler, title: TETRA scrambler, type: algorithm }
 
       - id: spread-spectrum
         label: Spread spectrum & multiple access
@@ -418,6 +444,13 @@ domains:
           - { slug: rolling-code, title: Rolling code, type: algorithm }
           - { slug: tetra-tea, title: TETRA TEA ciphers, type: algorithm }
           - { slug: p25-des-xl, title: P25 DES-XL / ADP, type: algorithm }
+          - { slug: dmr-encryption, title: DMR encryption, type: algorithm }
+          - { slug: lorawan-mic, title: LoRaWAN MIC, type: algorithm }
+          - { slug: motorola-talker-alias-cipher, title: Motorola talker-alias cipher, type: algorithm }
+          - { slug: nxdn-scrambler, title: NXDN Scrambler, type: algorithm }
+          - { slug: p25-algorithm-id, title: P25 Algorithm ID (ALGID), type: term }
+          - { slug: p25-encryption-sync, title: P25 Encryption Sync (ES), type: term }
+          - { slug: p25-encryption, title: P25 encryption keystream generators, type: algorithm }
 
       - id: trunked-radio
         label: Trunked radio
@@ -456,6 +489,51 @@ domains:
           - { slug: failsoft, title: Failsoft, type: term }
           - { slug: roaming, title: Roaming, type: term }
           - { slug: neighbor-site, title: Neighbor site, type: term }
+          - { slug: dmr-bandplan, title: DMR band plan, type: term }
+          - { slug: dmr-burst, title: DMR burst, type: term }
+          - { slug: dmr-cach, title: DMR CACH, type: term }
+          - { slug: dmr-csbk-payloads, title: DMR CSBK payloads, type: term }
+          - { slug: dmr-emb, title: DMR EMB, type: term }
+          - { slug: dmr-full-link-control, title: DMR Full Link Control, type: term }
+          - { slug: dmr-mbc, title: DMR Multi-Block Control, type: term }
+          - { slug: dmr-reverse-channel, title: DMR Reverse Channel, type: term }
+          - { slug: dmr-slot-type, title: DMR slot type, type: term }
+          - { slug: dmr-vendor-fid, title: DMR vendor FID, type: term }
+          - { slug: dmr-voice-superframe, title: DMR voice superframe, type: term }
+          - { slug: dpmr-csbk, title: dPMR CSBK, type: term }
+          - { slug: edacs-control-channel-word, title: EDACS Control Channel Word, type: term }
+          - { slug: ltr-word-format, title: LTR word format, type: term }
+          - { slug: motorola-osw, title: Motorola OSW, type: term }
+          - { slug: mpt-1327-codeword, title: MPT 1327 codeword, type: term }
+          - { slug: nxdn-cac, title: NXDN CAC, type: algorithm }
+          - { slug: nxdn-facch, title: NXDN FACCH, type: term }
+          - { slug: nxdn-frame-structure, title: NXDN Frame Structure, type: term }
+          - { slug: nxdn-lich, title: NXDN LICH, type: term }
+          - { slug: nxdn-sacch, title: NXDN SACCH, type: term }
+          - { slug: p25-header-data-unit, title: P25 Header Data Unit, type: term }
+          - { slug: p25-identifier-update, title: P25 Identifier Update (IDEN_UP), type: term }
+          - { slug: p25-isch, title: P25 ISCH, type: term }
+          - { slug: p25-link-control-word, title: P25 Link Control Word, type: term }
+          - { slug: p25-logical-data-unit, title: P25 Logical Data Unit, type: term }
+          - { slug: p25-mac-pdu, title: P25 MAC PDU, type: term }
+          - { slug: p25-mac-vendor, title: P25 vendor MAC opcodes, type: term }
+          - { slug: p25-nid-duid, title: P25 NID & DUID, type: algorithm }
+          - { slug: p25-packet-data-unit, title: P25 Packet Data Unit (PDU), type: term }
+          - { slug: p25-phase-2-superframe, title: P25 Phase 2 superframe, type: term }
+          - { slug: p25-sacch-facch, title: P25 SACCH & FACCH, type: term }
+          - { slug: p25-status-symbols, title: P25 status symbols, type: term }
+          - { slug: p25-talker-alias, title: P25 talker alias (Motorola), type: term }
+          - { slug: p25-terminator-data-unit, title: P25 Terminator Data Unit, type: term }
+          - { slug: p25-tsbk-opcodes, title: P25 TSBK opcodes, type: term }
+          - { slug: p25-tsbk-vendor-opcodes, title: P25 TSBK vendor opcodes, type: term }
+          - { slug: tetra-aach, title: TETRA AACH, type: term }
+          - { slug: tetra-cmce-mle-pdu, title: TETRA CMCE & MLE PDUs, type: term }
+          - { slug: tetra-dmo, title: TETRA DMO, type: term }
+          - { slug: tetra-extended-colour-code, title: TETRA extended colour code, type: term }
+          - { slug: tetra-llc, title: TETRA LLC, type: term }
+          - { slug: tetra-logical-channels, title: TETRA logical channels, type: term }
+          - { slug: tetra-mac-pdu, title: TETRA MAC PDU, type: term }
+          - { slug: tetra-traffic-slot-mapping, title: TETRA traffic slot mapping, type: term }
 
       - id: land-mobile-trunking
         label: Land mobile & trunking
@@ -531,6 +609,8 @@ domains:
           - { slug: rfid-rf, title: RFID (RF layer), type: protocol }
           - { slug: tpms, title: TPMS, type: protocol }
           - { slug: remote-keyless-entry, title: Remote keyless entry, type: protocol }
+          - { slug: aprs-mic-e, title: APRS Mic-E, type: term }
+          - { slug: nmea-0183, title: NMEA 0183, type: term }
 
       - id: satellite-gnss
         label: Satellite & GNSS
@@ -598,6 +678,8 @@ domains:
           - { slug: identification-friend-or-foe, title: Identification friend or foe (IFF), type: technology }
           - { slug: sitor, title: SITOR, type: protocol }
           - { slug: solas, title: SOLAS, type: concept }
+          - { slug: dsc-message-format, title: DSC message format, type: term }
+          - { slug: mode-s-beast, title: Mode-S Beast protocol, type: term }
 
       - id: paging-data
         label: Paging & data
@@ -611,6 +693,9 @@ domains:
           - { slug: packet-radio, title: Packet radio, type: protocol }
           - { slug: kiss-tnc, title: KISS TNC, type: technology }
           - { slug: mdc1200, title: MDC-1200, type: protocol }
+          - { slug: flex-protocol-coding, title: FLEX protocol coding, type: algorithm }
+          - { slug: mdc1200-frame, title: MDC1200 frame, type: term }
+          - { slug: pocsag-codeword, title: POCSAG codeword, type: algorithm }
 
       - id: amateur-digital
         label: Amateur digital modes
@@ -635,6 +720,9 @@ domains:
           - { slug: winlink, title: Winlink, type: technology }
           - { slug: pactor, title: Pactor, type: protocol }
           - { slug: vara, title: VARA, type: protocol }
+          - { slug: dstar-header-fec, title: D-STAR header FEC, type: algorithm }
+          - { slug: m17-link-information, title: M17 Link Information, type: term }
+          - { slug: ysf-fich, title: YSF FICH, type: algorithm }
 
       - id: voice-coding
         label: Voice coding
@@ -663,6 +751,24 @@ domains:
           - { slug: evrc, title: EVRC, type: technology }
           - { slug: gsm-fr-hr-efr, title: GSM FR / HR / EFR, type: technology }
           - { slug: advanced-audio-coding, title: Advanced Audio Coding (AAC), type: technology }
+          - { slug: acelp-codebooks, title: ACELP adaptive & algebraic codebooks, type: term }
+          - { slug: acelp-gain-quantization, title: ACELP gain quantization, type: term }
+          - { slug: acelp-lsp-codebooks, title: ACELP LSP codebooks, type: term }
+          - { slug: acelp-post-process, title: ACELP Post_Process, type: term }
+          - { slug: ambe-3003-packet, title: AMBE-3003 packet, type: term }
+          - { slug: ambe-plus-2-codebooks, title: AMBE+2 codebooks, type: term }
+          - { slug: ambe-plus-2-fec, title: AMBE+2 on-air FEC, type: algorithm }
+          - { slug: ambe-plus-2-tones, title: AMBE+2 tones, type: term }
+          - { slug: etsi-g191-basic-operators, title: G.191 basic operators, type: term }
+          - { slug: imbe-channel-coding, title: IMBE channel coding, type: algorithm }
+          - { slug: imbe-interleaver, title: IMBE interleaver, type: algorithm }
+          - { slug: imbe-parameter-quantization, title: IMBE parameter quantization, type: term }
+          - { slug: imbe-scrambler, title: IMBE scrambler, type: algorithm }
+          - { slug: mbe-adaptive-smoothing, title: MBE adaptive smoothing, type: term }
+          - { slug: mbe-spectral-enhancement, title: MBE spectral-amplitude enhancement, type: term }
+          - { slug: mbe-unvoiced-synthesis, title: MBE unvoiced synthesis, type: term }
+          - { slug: mbe-voiced-synthesis, title: MBE voiced synthesis, type: term }
+          - { slug: tetra-tchs-speech-coding, title: TETRA TCH/S speech coding, type: algorithm }
 
       - id: sdr-devices
         label: SDR devices
