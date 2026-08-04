@@ -7,14 +7,32 @@ description: A whip antenna is a flexible single-rod monopole, usually a quarter
 keywords: whip antenna, flexible whip, telescopic antenna, monopole, mobile antenna, rubber duck, quarter-wave whip, vehicle antenna
 aka: [whip, flexible whip, telescopic whip, rubber duck]
 autolink: true
+affiliate: true
+product:
+  name: "Nagoya NA-771 telescopic whip antenna (SMA-Female)"
+  brand: Nagoya
+  category: Portable whip antenna
+  lowPrice: "15"
+  highPrice: "21"
+  url: https://www.amazon.com/dp/B00KC4PWQQ?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Flexible monopole }
   - { label: Length, value: ~λ/4 (often shortened/loaded) }
   - { label: Pattern, value: Omnidirectional, vertical }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B00KC4PWQQ?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [monopole-antenna, ground-plane-antenna, dipole-antenna, rtl-sdr, polarization]
 cite_urls:
   - https://en.wikipedia.org/wiki/Whip_antenna
   - https://en.wikipedia.org/wiki/Monopole_antenna
+faq:
+  - q: "Which whip antenna should I buy for a handheld SDR?"
+    a: "For portable SDR and scanner use the Nagoya NA-771 (around $18) is a popular telescopic/whip upgrade. Make sure you get the SMA-Female version to mate with most SDR dongles, whose antenna port is an SMA jack — check the connector before ordering, since the NA-771 also ships in SMA-Male and BNC variants."
+  - q: "Will a Nagoya whip beat the antenna that came with my dongle?"
+    a: "For portable use, usually yes — a full-length telescopic whip you can extend to a quarter wave for the band hears better than a short, poorly grounded rubber duck. The biggest single gain still comes from a real ground plane; a magnetic-mount ground plane or a couple of counterpoise wires under any whip adds several dB."
+  - q: "How long should I extend a telescopic whip?"
+    a: "To about a quarter wavelength for your target frequency: length in cm ≈ 7125 / f(MHz). A collapsed whip sits far off resonance and hears poorly, so extend it to match the band you are scanning."
+  - q: "Does a whip need a ground plane?"
+    a: "A quarter-wave whip works against a ground plane — on a handheld the body, your hand, and the coax shield form an imperfect one, which is why rubber ducks are lossy. A half-wave whip (like many NA-771-class antennas at some bands) needs no ground plane and keeps a stable pattern on a poor mount."
 ---
 
 A **whip antenna** is a [monopole](/reference/monopole-antenna/) built from a single
@@ -82,6 +100,21 @@ and NXDN signals, so a well-mounted vertical whip already suits the traffic GT t
   distant sites.
 - **Give it a ground.** A magnetic-mount ground plane or a couple of counterpoise wires
   dramatically improves a handheld whip.
+
+## Where to buy
+
+For portable SDR and scanner use, the **Nagoya NA-771** (around $18) is a common
+telescopic/whip upgrade over the tiny rubber duck bundled with a dongle. Get the
+**SMA-Female** version to mate with most SDR antenna ports, and extend it toward a
+quarter wave for the band you are scanning.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B00KC4PWQQ?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For dipoles, discones, and ground-plane options that outperform a handheld whip at a
+fixed location, see the [best SDR antenna guide](/best-sdr-antenna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

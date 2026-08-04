@@ -7,6 +7,14 @@ description: "Nooelec NESDR is a family of purpose-built RTL-SDR receivers with 
 keywords: NESDR, Nooelec NESDR, NESDR SMArt, NESDR Nano, NESDR SMArTee, NESDR XTR, RTL-SDR variant, RTL2832U, R820T2, TCXO, bias tee
 aka: [NESDR, Nooelec NESDR, NooElec NESDR]
 autolink: true
+affiliate: true
+product:
+  name: "NooElec NESDR SMArt v5"
+  brand: NooElec
+  category: Software-defined radio
+  lowPrice: "30"
+  highPrice: "40"
+  url: https://www.amazon.com/dp/B01HA642SW?tag=gophertrunk-20
 infobox:
   - { label: Type, value: USB SDR receiver (RTL-SDR) }
   - { label: Vendor, value: Nooelec }
@@ -16,10 +24,20 @@ infobox:
   - { label: Range, value: "~100 kHz – 1.75 GHz" }
   - { label: TX, value: No (receive only) }
   - { label: Typical price, value: "$25 – $45" }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B01HA642SW?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [rtl-sdr, rtl2832u, r820t-tuner, e4000-tuner, bias-tee, software-defined-radio]
 cite_urls:
   - https://en.wikipedia.org/wiki/RTL-SDR
   - https://www.nooelec.com/store/sdr/sdr-receivers.html
+faq:
+  - q: "Which NESDR should I buy for GopherTrunk?"
+    a: "The NESDR SMArt v5 for most people — it is the mainstream 'just buy this' RTL-SDR, an R820T2/R860 dongle with a 0.5 ppm TCXO in an aluminium case, and it's essentially always in stock. Get the SMArTee v2 instead if you need an always-on bias tee to power an inline LNA or active antenna, the Nano 3 for a tiny embedded build, or the SMArt XTR (E4000) if you need tuning up toward ~2.2 GHz."
+  - q: "Is a NESDR better than a generic RTL-SDR dongle?"
+    a: "Yes, for a small premium. A NESDR is functionally an RTL-SDR — same 8-bit RTL2832U and ~2.4 MHz of bandwidth — but the board around the chips fixes a generic stick's worst faults: a 0.5 ppm TCXO holds frequency as it warms up instead of drifting tens of kHz, plus better shielding, ESD protection and a proper SMA connector. That stability means steadier control-channel lock for long trunk-tracking sessions."
+  - q: "Does GopherTrunk need Zadig or extra drivers for a NESDR?"
+    a: "On Windows you bind the driver with Zadig once, exactly as for any RTL-SDR. On Linux it works with the standard librtlsdr-style raw-IQ interface. GopherTrunk then drives it like any other RTL-SDR, including in a pool of several dongles to cover channels spread across a band."
+  - q: "Can a NESDR decode encrypted or trunked police traffic?"
+    a: "It decodes clear P25/DMR/NXDN/TETRA trunked systems in software with GopherTrunk, which is receive-only. No RTL-SDR — and no scanner — can decode AES-encrypted transmissions."
 ---
 
 **Nooelec NESDR** is a family of purpose-built [RTL-SDR](/reference/rtl-sdr/) receivers
@@ -49,6 +67,22 @@ a generic no-name stick at only a small price premium.
 </svg>
 <figcaption>A NESDR is a well-built RTL-SDR: the same two chips, plus a 0.5 ppm TCXO for stable tuning, in a metal case.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B01HA642SW?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**The mainstream "just buy this" [RTL-SDR](/reference/rtl-sdr/).** A NooElec NESDR is a
+purpose-built RTL-SDR — same 8-bit [RTL2832U](/reference/rtl2832u/) and
+[R820T2](/reference/r820t-tuner/)/R860 tuner as any dongle, but with a **0.5 ppm TCXO**,
+a metal case and a proper SMA connector that fix a generic stick's drift and shielding
+faults. The **SMArt v5** is the model to get for a first GopherTrunk radio — cheap
+(~$35) and reliably in stock. Variants add a bias tee (SMArTee v2), a tiny body
+(Nano 3) or extended range (SMArt XTR). **Receive-only;** it decodes clear
+[P25](/reference/project-25/)/[DMR](/reference/dmr/)/[NXDN](/reference/nxdn/) but no
+dongle can decode [AES encryption](/police-scanner-encryption/). See
+[best SDR for GopherTrunk](/best-sdr-for-gophertrunk/).
+</div>
 
 ## Overview
 
@@ -95,6 +129,31 @@ a **pool** of several dongles to cover channels spread across a band, and on Win
 bind the driver with Zadig first. For a first radio, an R820T2/R860-class NESDR SMArt v5
 is a strong choice. See the [hardware guide](/hardware.html) for GopherTrunk's tested
 devices.
+
+## Where to buy
+
+The **NESDR SMArt v5** is the one to buy for a first GopherTrunk radio; the other
+NESDRs cover specific needs (an always-on bias tee, a tiny body, or extended range).
+All are widely stocked on Amazon.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B01HA642SW?tag=gophertrunk-20" rel="nofollow sponsored noopener">NESDR SMArt v5 on Amazon &rarr;</a>
+
+| Model | Tuner | Best for | Amazon |
+|-------|-------|----------|--------|
+| **NESDR SMArt v5** | R820T2/R860 | The mainstream pick — buy this first (~$35) | <a href="https://www.amazon.com/dp/B01HA642SW?tag=gophertrunk-20" rel="nofollow sponsored noopener">product</a> |
+| **NESDR SMArt v5** (3-antenna bundle) | R820T2/R860 | Same dongle with a set of antennas | <a href="https://www.amazon.com/dp/B01GDN1T4S?tag=gophertrunk-20" rel="nofollow sponsored noopener">product</a> |
+| **NESDR SMArTee v2** (bias tee) | R820T2 | Powering an inline LNA / active antenna | <a href="https://www.amazon.com/dp/B079C3FHPG?tag=gophertrunk-20" rel="nofollow sponsored noopener">product</a> |
+| **NESDR Nano 3** (tiny) | R820T2 | Embedded / portable builds | <a href="https://www.amazon.com/dp/B073JZ8CC2?tag=gophertrunk-20" rel="nofollow sponsored noopener">product</a> |
+| **NESDR SMArt XTR** (extended range) | E4000 | Tuning up toward ~2.2 GHz | <a href="https://www.amazon.com/dp/B06Y1HKLHY?tag=gophertrunk-20" rel="nofollow sponsored noopener">product</a> |
+
+Comparing radios? See [best SDR for GopherTrunk](/best-sdr-for-gophertrunk/), the
+[RTL-SDR](/reference/rtl-sdr/) family overview, or step up to an
+[Airspy](/reference/airspy/) for tougher RF. Weighing a handheld instead? Read
+[police scanner vs SDR](/police-scanner-vs-sdr/). Then grab the software from the
+[downloads page](/downloads.html).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

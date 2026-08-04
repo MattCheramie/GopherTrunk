@@ -7,14 +7,32 @@ description: A discone is an extremely wideband vertical antenna, a disc over a 
 keywords: discone antenna, disc cone antenna, wideband antenna, scanner antenna, omnidirectional vertical, decade bandwidth, biconical
 aka: [discone, disc-cone antenna]
 autolink: true
+affiliate: true
+product:
+  name: "Discone D3000 wideband antenna (25–3000 MHz)"
+  brand: Tram / generic
+  category: Wideband scanner antenna
+  lowPrice: "34"
+  highPrice: "46"
+  url: https://www.amazon.com/dp/B0CL5ZBN94?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Wideband vertical }
   - { label: Bandwidth, value: Up to ~10:1 (a decade) }
   - { label: Pattern, value: Omnidirectional, vertical }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B0CL5ZBN94?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [biconical-antenna, monopole-antenna, ground-plane-antenna, bandwidth, radiation-pattern]
 cite_urls:
   - https://en.wikipedia.org/wiki/Discone_antenna
   - https://en.wikipedia.org/wiki/Biconical_antenna
+faq:
+  - q: "Which discone should I buy for SDR scanning?"
+    a: "A wideband discone like the D3000 (25–3000 MHz, around $40) is the classic all-round scanner and SDR antenna: one feedline covers VHF, UHF, and beyond, so you can sweep aviation, marine, public-safety trunking, and business bands without swapping hardware. Mount it high with a clear horizon for the best results."
+  - q: "Is a discone good for trunked P25/DMR scanning?"
+    a: "Yes, as a do-everything antenna. Its omnidirectional pattern hears every trunking site at once and its vertical polarization matches land-mobile traffic, which suits GopherTrunk's multi-protocol, multi-band nature. For a single weak, distant site a directional Yagi or a band-cut antenna will hear better, but for 'one antenna, everything,' the discone is hard to beat."
+  - q: "How high should I mount a discone?"
+    a: "As high and clear as practical. A discone is vertically polarized and radiates toward the horizon with a null overhead, so height and an unobstructed sky view matter more than aiming — there is nothing to aim, since it is omnidirectional."
+  - q: "Discone or dipole for a scanner?"
+    a: "A discone trades gain for sheer bandwidth — one antenna covers a decade of frequency. A dipole cut for a target band has more gain there but only over a narrow range. Choose a discone when you monitor many bands at once; choose a dipole when you focus on one band and want the extra signal."
 ---
 
 A **discone antenna** is an ultra-wideband vertical [antenna](/reference/antenna/) formed
@@ -77,6 +95,21 @@ connected while monitoring different systems across the spectrum. The cost is mo
 for a weak, distant single site, a directional [Yagi](/reference/yagi-uda-antenna/) or a
 band-optimized [ground-plane](/reference/ground-plane-antenna/) will hear better, but for
 "one antenna, everything," the discone is hard to beat.
+
+## Where to buy
+
+For general SDR and scanner use, a wideband **Discone D3000** (25–3000 MHz, around
+$40) is the classic single-antenna answer: one feedline covers VHF, UHF, and beyond,
+so you can leave it connected while GopherTrunk monitors different systems across the
+spectrum. Mount it high with a clear horizon.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0CL5ZBN94?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For dipoles, band-cut antennas, and how the discone compares, see the
+[best SDR antenna guide](/best-sdr-antenna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

@@ -7,16 +7,34 @@ description: A bias tee injects DC power onto the coax feeding an antenna-mounte
 keywords: bias tee, bias-T, DC injection, LNA power, phantom power, coax, mast-mounted amplifier, inductor capacitor network
 aka: [bias tee, bias-T]
 autolink: true
+affiliate: true
+product:
+  name: "NooElec NESDR SMArTee v2"
+  brand: NooElec
+  category: RTL-SDR with built-in bias tee
+  lowPrice: "34"
+  highPrice: "46"
+  url: https://www.amazon.com/dp/B079C3FHPG?tag=gophertrunk-20
 infobox:
   - { label: Type, value: RF/DC combining network }
   - { label: Function, value: DC power up the coax, RF through }
   - { label: Powers, value: Antenna-mounted LNA / active antenna }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B079C3FHPG?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [low-noise-amplifier, preamplifier, coaxial-cable, antenna, rtl-sdr, sma-connector]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 cite_urls:
   - https://en.wikipedia.org/wiki/Bias_tee
   - https://en.wikipedia.org/wiki/Inductor
+faq:
+  - q: "What does a bias tee do on an SDR?"
+    a: "It injects DC power up the coax to run an antenna-mounted device — usually a low-noise amplifier or active antenna — while passing the received RF straight through to the receiver. A series capacitor blocks the DC from the SDR's input and a shunt inductor feeds the voltage to the amplifier, so one cable carries both signal and power."
+  - q: "Do I need a separate bias tee, or is one built in?"
+    a: "Many SDRs already include a software-switchable bias tee, so you may not need a separate module. The RTL-SDR Blog V3/V4 and the NooElec NESDR SMArTee v2 (around $40, an always-on 4.5 V feed) can power an inline LNA directly. Buy a standalone inline bias tee only when the amplifier needs more current or a different voltage."
+  - q: "Which SDR has the best built-in bias tee for a mast LNA?"
+    a: "For SDR scanning, the NESDR SMArTee v2 is a convenient pick because its bias tee is always on and needs no software toggle, so a masthead LNA powers up the moment the dongle is plugged in. The RTL-SDR Blog V3/V4 offer a software-enabled bias tee if you prefer to switch it on only when needed."
+  - q: "Can a bias tee damage my SDR?"
+    a: "It can if misused. Never enable a bias tee into a device not expecting DC — a passive antenna, a DC-grounded filter input, or a splitter can short the supply and, at worst, damage the SDR. Check the current rating against the LNA's draw and confirm the connector polarity first."
 ---
 
 A **bias tee** is a small three-port network that injects **DC power onto the coax**
@@ -83,6 +101,20 @@ for ADS-B, satellite, and weak-signal work. GopherTrunk itself is purely a decod
 not toggle bias-tee hardware, but the practice it enables — a low-noise amplifier at the
 antenna over a single feedline — directly improves the [SNR](/reference/signal-to-noise-ratio/)
 of the [IQ](/reference/iq-data/) stream GopherTrunk decodes.
+
+## Where to buy
+
+The easiest way to get a bias tee for SDR use is to buy a dongle that already has
+one. For scanner use the **NooElec NESDR SMArTee v2** (around $40) is the standard
+pick — an RTL-SDR with an always-on 4.5 V bias tee, so a mast-mounted
+[LNA](/reference/low-noise-amplifier/) powers up with no software toggle. The
+[RTL-SDR Blog V3/V4](/reference/rtl-sdr/) offer a software-switchable bias tee
+instead if you'd rather enable it only when needed.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B079C3FHPG?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

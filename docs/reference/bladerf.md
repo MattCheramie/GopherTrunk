@@ -7,6 +7,14 @@ description: "BladeRF is Nuand's line of USB 3.0 full-duplex transceiver SDRs bu
 keywords: BladeRF, bladeRF 2.0 micro, Nuand, FPGA SDR, LMS6002D, AD9361, Cyclone IV, Cyclone V, full duplex transceiver, USB 3.0 SDR, xA4, xA9
 aka: [BladeRF, blade RF, bladeRF 2.0 micro]
 autolink: true
+affiliate: true
+product:
+  name: "bladeRF 2.0 micro"
+  brand: Nuand
+  category: Software-defined radio
+  lowPrice: "480"
+  highPrice: "720"
+  url: https://www.amazon.com/s?k=bladeRF+2.0&tag=gophertrunk-20
 infobox:
   - { label: Type, value: USB full-duplex transceiver SDR }
   - { label: Vendor, value: Nuand }
@@ -15,11 +23,22 @@ infobox:
   - { label: Range, value: "47 MHz – 6 GHz (2.0 micro)" }
   - { label: Bandwidth, value: up to ~56 MHz }
   - { label: TX, value: Yes (full duplex) }
+  - { label: With GopherTrunk, value: Network only (SoapySDR/rtl_tcp bridge) }
   - { label: Typical price, value: "$480 – $720" }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=bladeRF+2.0&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [software-defined-radio, field-programmable-gate-array, hackrf, usrp-ettus, limesdr, rtl-sdr]
 cite_urls:
   - https://en.wikipedia.org/wiki/BladeRF
   - https://www.nuand.com/bladerf-2-0-micro/
+faq:
+  - q: "Does GopherTrunk support the bladeRF?"
+    a: "Yes, but network only. GopherTrunk's pure-Go USB drivers cover RTL-SDR, HackRF, and Airspy — not Nuand's libbladeRF stack. You drive the bladeRF over the network via a SoapySDRServer/SoapyRemote (or rtl_tcp) bridge: run the Soapy module and server on the machine it's plugged into, then mount it over TCP. See the hardware guide."
+  - q: "Does GopherTrunk use the bladeRF's FPGA or transmit path?"
+    a: "No. GopherTrunk is a receive-only decoder and treats the bladeRF as a plain wideband IQ source over the bridge — it loads no custom FPGA images and never keys the transmitter. The FPGA and TX chain are the bladeRF's strengths for other projects, not for trunk-tracking."
+  - q: "Is a bladeRF worth it just for scanning?"
+    a: "For most users, no. At $480–$720 it is many times the price of an RTL-SDR, and its 12-bit front end and wide capture bandwidth — while capable of channelising several control channels at once — are more radio than trunk-tracking needs. If you already own one it makes a capable capture front end; if you're buying for scanning, an RTL-SDR pool or an Airspy is cheaper and better matched."
+  - q: "bladeRF x40 or bladeRF 2.0 micro for GopherTrunk?"
+    a: "The 2.0 micro (AD9361, Cyclone V) is the current generation, covering ~47 MHz–6 GHz with up to ~56 MHz bandwidth — the one to get for VHF/UHF trunking coverage. Either way it feeds GopherTrunk only through the SoapySDR/rtl_tcp bridge, not as a direct USB device."
 ---
 
 **BladeRF** is a line of USB 3.0
@@ -51,6 +70,28 @@ custom real-time DSP in fabric before samples ever reach the host.
 </svg>
 <figcaption>An RF transceiver front end feeds an on-board FPGA that can process samples before they cross USB 3.0 to the host.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=bladeRF+2.0&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**FPGA-equipped full-duplex transceiver — overkill for scanning.** Nuand's bladeRF pairs a
+12-bit front end with an on-board [FPGA](/reference/field-programmable-gate-array/) and true
+transmit/receive; the 2.0 micro covers ~47 MHz–6 GHz with up to ~56 MHz of bandwidth.
+GopherTrunk uses none of the FPGA or TX capability — just its wideband IQ. **GopherTrunk
+support is network only:** it drives the bladeRF over a
+[SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge, not as a direct USB
+device, because the pure-Go USB drivers cover only RTL-SDR, HackRF, and Airspy. At
+**$480–$720** it's far more radio than trunk-tracking needs. Like every receiver, it can't
+decode [AES encryption](/police-scanner-encryption/).
+</div>
+
+> **GopherTrunk support: network only.** GopherTrunk drives the bladeRF over the network via
+> SoapySDRServer/SoapyRemote (or an `rtl_tcp`-style bridge), not as a direct USB device —
+> you run the `libbladeRF`-backed [SoapySDR](/reference/soapysdr/) module and server on the
+> machine it's plugged into and mount it over TCP. GopherTrunk's pure-Go USB drivers cover
+> only RTL-SDR, HackRF, and Airspy. See the [hardware guide](/hardware.html) and
+> [rtl_tcp](/reference/rtl-tcp/) notes.
 
 ## Overview
 
@@ -104,6 +145,21 @@ and wide capture bandwidth can channelise several control channels at once, much
 BladeRF is more radio than trunk-tracking needs — an RTL-SDR pool or an Airspy is the
 cheaper, better-matched tool — but if you already own one, it is a capable capture front
 end. See the [hardware guide](/hardware.html) for GopherTrunk's tested devices.
+
+## Where to buy
+
+The bladeRF is sold by Nuand and its distributors, and listed on Amazon. Before buying one
+for GopherTrunk, note the integration path: it is supported **over the network only**,
+through a [SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge rather than
+GopherTrunk's direct USB drivers — see the [hardware guide](/hardware.html). For pure
+trunk-tracking a [RTL-SDR](/reference/rtl-sdr/) pool or an [Airspy](/reference/airspy/) is
+the cheaper, better-matched tool; the bladeRF earns its keep on FPGA and transmit projects,
+and doubles as a capable capture front end if you already own one.
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=bladeRF+2.0&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

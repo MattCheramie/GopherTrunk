@@ -7,16 +7,34 @@ description: "An RF filter is a frequency-selective network (low-pass, high-pass
 keywords: RF filter, low-pass filter, high-pass filter, band-pass filter, notch filter, preselector, front-end selectivity, LPF, HPF, BPF, insertion loss, stopband
 aka: [RF filter, "radio-frequency filter", preselector]
 autolink: true
+affiliate: true
+product:
+  name: "RTL-SDR Blog Flamingo+ FM broadcast notch filter"
+  brand: RTL-SDR Blog
+  category: FM broadcast notch filter
+  lowPrice: "21"
+  highPrice: "29"
+  url: https://www.amazon.com/dp/B07XKY8YKB?tag=gophertrunk-20
 infobox:
   - { label: Type, value: "Passive/active frequency-selective network" }
   - { label: Responses, value: "Low-pass, high-pass, band-pass, notch" }
   - { label: Key spec, value: "Insertion loss, stopband rejection, shape factor" }
   - { label: TX, value: "Yes (power-rated types)" }
   - { label: Typical price, value: "$2–$50 (module)" }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B07XKY8YKB?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [saw-filter, cavity-filter, crystal-filter, helical-filter, digital-filter, low-noise-amplifier]
 cite_urls:
   - https://en.wikipedia.org/wiki/Electronic_filter
   - https://en.wikipedia.org/wiki/Band-pass_filter
+faq:
+  - q: "Which RF filter fixes SDR overload from strong FM stations?"
+    a: "A broadcast FM notch (band-stop) filter. The RTL-SDR Blog Flamingo+ FM (around $25) rejects the 88–108 MHz FM band while passing everything else, which stops strong local FM transmitters from overloading a wideband dongle and spraying spurious products across your scanning range. For strong AM broadcast interference the Flamingo AM notch does the same below the medium-wave band."
+  - q: "Notch filter or band-pass filter — which do I need?"
+    a: "Use a notch (band-stop) filter to kill one strong offender, such as the FM or AM broadcast band, while keeping the rest of the spectrum. Use a band-pass filter when you only care about one service and want to reject everything else — a preselector cut for your target VHF/UHF band. Notches are the common first fix for broadcast-band overload."
+  - q: "Will a filter hurt my weak signals?"
+    a: "A little. Every filter has some passband insertion loss — a fraction of a dB for a good part. That trade is usually worth it: by restoring dynamic range and lowering intermodulation, a well-chosen preselector recovers far more than the small loss it costs when strong out-of-band signals are present."
+  - q: "Does GopherTrunk need an RF filter?"
+    a: "GopherTrunk is pure software and contains no physical filter — that job belongs to the analog hardware ahead of the SDR. Its digital filters cannot undo an overloaded ADC, so on a site crowded with strong FM, pager, or cellular signals an analog notch or band-pass filter is often what turns an unusable spectrum into a clean control-channel lock."
 ---
 
 An **RF filter** is a frequency-selective network that passes signals inside a
@@ -98,6 +116,23 @@ why a good analog RF filter and clean gain staging remain essential for reliable
 trunking decodes. In practice, users running RTL-SDR or Airspy dongles for P25 or
 DMR often add an inexpensive band-pass module for the target VHF/UHF band to keep
 strong nearby transmitters from desensitising the receiver.
+
+## Where to buy
+
+For the most common SDR problem — a wideband dongle overloaded by strong local FM
+broadcast stations — a notch filter is the fix. The **RTL-SDR Blog Flamingo+ FM**
+(around $25) rejects the 88–108 MHz FM band while passing everything else. For strong
+AM broadcast interference the **Flamingo AM** notch does the same below the
+medium-wave band.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B07XKY8YKB?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B079CMB44V?tag=gophertrunk-20" rel="nofollow sponsored noopener">AM notch on Amazon &rarr;</a>
+
+For band-pass preselectors and a fuller rundown of front-end filtering, see the
+[SDR filters guide](/sdr-filters/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

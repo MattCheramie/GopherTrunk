@@ -7,6 +7,14 @@ description: SDRplay RSP1A is a 14-bit, 1 kHz–2 GHz receive-only software-defi
 keywords: SDRplay RSP1A, RSP1A, MSi001, MSi2500, 14-bit SDR receiver, wideband receiver, 1 kHz 2 GHz, SoapySDR
 aka: [RSP1A, SDRplay RSP1A]
 autolink: true
+affiliate: true
+product:
+  name: "SDRplay RSP1A"
+  brand: SDRplay
+  category: Software-defined radio
+  lowPrice: "110"
+  highPrice: "130"
+  url: https://www.amazon.com/s?k=SDRplay+RSP1A&tag=gophertrunk-20
 infobox:
   - { label: Type, value: Receive-only SDR }
   - { label: Vendor/Chip, value: "SDRplay, MSi001 + MSi2500" }
@@ -14,11 +22,22 @@ infobox:
   - { label: Range, value: 1 kHz – 2 GHz }
   - { label: Bandwidth, value: up to ~10 MHz }
   - { label: TX, value: No }
+  - { label: With GopherTrunk, value: Network only (SoapySDR/rtl_tcp bridge) }
   - { label: Typical price, value: ~US$120 }
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=SDRplay+RSP1A&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
 see_also: [software-defined-radio, soapysdr, msi001-tuner, rtl-sdr, airspy]
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio
   - https://www.sdrplay.com/rsp1a/
+faq:
+  - q: "Does GopherTrunk support the SDRplay RSP1A?"
+    a: "Yes, but network only. GopherTrunk's pure-Go USB drivers cover RTL-SDR, HackRF, and Airspy — not the RSP's closed API/service. You drive the RSP1A over the network via a SoapySDRServer/SoapyRemote (or rtl_tcp) bridge: run SDRplay's service and the Soapy server on the machine the RSP1A is plugged into, then mount it over TCP. See the hardware guide."
+  - q: "Is the RSP1A a good SDR for scanning trunked systems?"
+    a: "As RF hardware, yes — its 14-bit ADC, continuous 1 kHz–2 GHz coverage, and front-end preselection give it far more dynamic range than an 8-bit RTL-SDR, and its ~10 MHz span can cover a system's control and voice channels in one capture. The only caveat is the integration path: it runs over a network bridge, not as a plug-and-play USB device."
+  - q: "Why can't GopherTrunk open the RSP1A directly over USB?"
+    a: "The RSP line is not libusb-generic. SDRplay ships a closed API/service that applications must talk to, so there is no pure-Go USB path the way there is for RTL-SDR, HackRF, and Airspy. The supported route is the vendor service plus a SoapySDR module, mounted over the network."
+  - q: "RSP1A or an RTL-SDR / Airspy for GopherTrunk?"
+    a: "If you want the simplest setup, a directly-supported RTL-SDR or Airspy plugs in and works with no bridge. Choose the RSP1A when you specifically want its 14-bit dynamic range and continuous HF-through-UHF coverage and don't mind running a SoapySDR server for it."
 ---
 
 **SDRplay RSP1A** is a low-cost, receive-only
@@ -38,6 +57,28 @@ similar price class.[^sdrplay]
 </svg>
 <figcaption>The RSP1A covers everything from VLF through UHF with one antenna port and a 14-bit converter.</figcaption>
 </figure>
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=SDRplay+RSP1A&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**14-bit, continuous 1 kHz–2 GHz, receive-only.** The RSP1A gives you far more
+[dynamic range](/reference/dynamic-range/) and real front-end
+[preselection](/reference/rf-filter/) than an 8-bit [RTL-SDR](/reference/rtl-sdr/), with a
+~10 MHz span that can capture a trunked system's control and voice channels at once.
+**GopherTrunk support is network only:** it drives the RSP1A over a
+[SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge, not as a direct USB
+device — SDRplay's closed API/service rules out the pure-Go USB path used for RTL-SDR,
+HackRF, and Airspy. **Around $120.** Like every receiver, it can't decode
+[AES encryption](/police-scanner-encryption/).
+</div>
+
+> **GopherTrunk support: network only.** GopherTrunk drives the RSP1A over the network via
+> SoapySDRServer/SoapyRemote (or an `rtl_tcp`-style bridge), not as a direct USB device —
+> you run SDRplay's API service and a [SoapySDR](/reference/soapysdr/) server on the machine
+> it's plugged into and mount it over TCP. GopherTrunk's pure-Go USB drivers cover only
+> RTL-SDR, HackRF, and Airspy. See the [hardware guide](/hardware.html) and
+> [rtl_tcp](/reference/rtl-tcp/) notes.
 
 ## Overview
 
@@ -93,6 +134,20 @@ RSP1A with GopherTrunk therefore hinges on a SoapySDR/RSP bridge rather than a n
 backend — check the project status before assuming turn-key support. As a receiver the
 hardware is well suited to the task; the integration path, not the RF, is the limiting
 factor.
+
+## Where to buy
+
+The RSP1A is sold by SDRplay and its distributors, and listed on Amazon. Before you buy it
+for GopherTrunk, remember the integration path: it is supported **over the network only**,
+through a [SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge rather than
+GopherTrunk's direct USB drivers — see the [hardware guide](/hardware.html). If you want a
+plug-and-play device, a [RTL-SDR](/reference/rtl-sdr/) or [Airspy](/reference/airspy/) is
+the simpler pick.
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=SDRplay+RSP1A&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

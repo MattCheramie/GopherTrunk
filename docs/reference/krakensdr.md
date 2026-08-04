@@ -19,6 +19,15 @@ see_also: [rtl-sdr, music-algorithm, beamforming, multilateration, rtl2832u, sof
 cite_urls:
   - https://en.wikipedia.org/wiki/RTL-SDR
   - https://www.krakenrf.com/
+faq:
+  - q: "Does GopherTrunk support the KrakenSDR?"
+    a: "Yes, in the sense that each of its five channels is an ordinary R820T2/RTL2832U RTL-SDR, which GopherTrunk drives natively over USB with its pure-Go driver — so you can treat a KrakenSDR as up to five plain RTL-SDR IQ sources. GopherTrunk does not use the array's phase-coherence or direction-finding features; there is no reason to buy a KrakenSDR just for decoding."
+  - q: "Can GopherTrunk do radio direction finding with a KrakenSDR?"
+    a: "No. GopherTrunk is a trunking decoder, not a DF platform — it does not use the coherent array or the MUSIC direction-of-arrival math. Direction finding and passive radar require KrakenRF's own open-source software, which is the reason to own the hardware."
+  - q: "Is a KrakenSDR worth it for scanning trunked systems?"
+    a: "Not on its own merits. It is five 8-bit RTL-SDRs priced for a DF niche; for decoding, a single good RTL-SDR or an Airspy is cheaper and simpler. Buy a KrakenSDR when you actually want direction finding or passive radar."
+  - q: "Where do I buy a KrakenSDR?"
+    a: "Direct from KrakenRF (krakenrf.com) and via Crowd Supply — it is not sold on Amazon. Beware third-party listings claiming otherwise."
 ---
 
 **KrakenSDR** is a **five-channel, phase-coherent** [RTL-SDR](/reference/rtl-sdr/)
@@ -52,6 +61,19 @@ arrival** of a signal using array-processing algorithms.
 </svg>
 <figcaption>Five coherent channels plus a switched noise source for phase calibration let the array compute a signal's bearing.</figcaption>
 </figure>
+
+<div class="tldr" markdown="1">
+<span class="tldr__label">Key takeaways</span>
+**Five phase-coherent RTL-SDRs built for direction finding.** KrakenSDR shares one reference
+clock across five [R820T2](/reference/rtl2832u/) tuners plus a switched noise source, so it
+can run the [MUSIC](/reference/music-algorithm/) direction-of-arrival math and passive radar
+that independent dongles can't. **With GopherTrunk** each channel is just a plain
+[RTL-SDR](/reference/rtl-sdr/) it drives natively over USB — you can use it as up to five IQ
+sources — but GopherTrunk uses **none** of the coherent-array or DF features, so there's no
+reason to buy one purely for decoding. **Direction finding needs KrakenRF's own software.**
+**Sold direct** from KrakenRF / Crowd Supply — **not on Amazon**. Like every RTL-SDR, it's
+8-bit and can't decode [AES encryption](/police-scanner-encryption/).
+</div>
 
 ## Overview
 
@@ -102,6 +124,17 @@ or an [Airspy](/reference/airspy/) is the right tool. KrakenSDR is worth knowing
 canonical example of how cheap coherent receivers bring array signal processing —
 direction finding, [MUSIC](/reference/music-algorithm/), passive radar — within hobbyist
 reach.
+
+## Where to buy
+
+The KrakenSDR is sold **direct from [KrakenRF](https://www.krakenrf.com/)**
+and through Crowd Supply — it is **not** available on Amazon, so treat any Amazon listing
+claiming to be a KrakenSDR with suspicion. With GopherTrunk it works simply as **five
+individual [RTL-SDRs](/reference/rtl-sdr/)** (each driven natively over USB), which is all
+GopherTrunk needs from it; its **direction-finding and passive-radar features require
+KrakenRF's own open-source software**, not GopherTrunk. If you only want to decode trunked
+systems, a single [RTL-SDR](/reference/rtl-sdr/) or an [Airspy](/reference/airspy/) is the
+cheaper, simpler choice — see the [hardware guide](/hardware.html).
 
 ## Sources
 
