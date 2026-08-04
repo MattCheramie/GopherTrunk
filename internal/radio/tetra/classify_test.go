@@ -53,6 +53,29 @@ func TestClassifyPartiesGroupAndIndividual(t *testing.T) {
 	}
 }
 
+// TestClassifyPartiesIndividualSelfCall pins the fix for the "call source update
+// tg==src" a TETRA operator reported: when the CMCE calling/transmitting party
+// equals the addressed SSI, the PDU is addressed to the transmitting radio itself
+// — an INDIVIDUAL call, not a group (you can't call yourself). It must be flagged
+// Individual with no self-source, instead of surfaced as "group X, source X".
+func TestClassifyPartiesIndividualSelfCall(t *testing.T) {
+	cc := New(Options{FrequencyHz: 467_913_000})
+	const radio = 1005499 // the reporter's ISSI
+	var g VoiceGrant
+	cc.classifyParties(&g,
+		MACResource{Address: MACAddress{Type: addrSSI, SSI: radio}},
+		CMCEMessage{Type: CMCETypeDConnect, CallIdentifier: 42, PartySSI: radio}, true)
+	if !g.Individual {
+		t.Errorf("self-addressed call not flagged Individual: %+v", g)
+	}
+	if g.SourceSSI == g.DestSSI {
+		t.Errorf("individual call left with source==dest (%d): a radio cannot call itself", g.SourceSSI)
+	}
+	if g.SourceSSI != 0 {
+		t.Errorf("SourceSSI = %d, want 0 (counterparty unknown from a self-addressed PDU)", g.SourceSSI)
+	}
+}
+
 // TestClassifyPartiesUnknownStaysGroup guards the conservative default: an SSI
 // never seen as a party (and no CMCE party on this PDU) is left as a talkgroup —
 // the MAC address type cannot distinguish a GSSI from an ISSI, so we never guess

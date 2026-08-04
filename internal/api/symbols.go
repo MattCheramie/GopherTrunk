@@ -92,6 +92,7 @@ type SymbolProvider interface {
 var symbolProtos = map[string]bool{
 	"p25-c4fm":  true,
 	"p25-cqpsk": true,
+	"tetra":     true,
 }
 
 // handleSymbolStream answers WS /api/v1/diag/symbols?device=...&proto=...&offset=....
@@ -115,7 +116,7 @@ func (s *Server) handleSymbolStream(w http.ResponseWriter, r *http.Request) {
 		proto = "p25-c4fm"
 	}
 	if !symbolProtos[proto] {
-		s.writeError(w, http.StatusBadRequest, "unsupported proto (want p25-c4fm or p25-cqpsk)")
+		s.writeError(w, http.StatusBadRequest, "unsupported proto (want p25-c4fm, p25-cqpsk, or tetra)")
 		return
 	}
 	offset := int32(parseIntQuery(q, "offset", 0, -30_000_000, 30_000_000))

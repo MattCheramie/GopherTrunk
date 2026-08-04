@@ -947,6 +947,20 @@ type afcReporter interface {
 	AFCOffsetHz() float64
 }
 
+// autotuneApplier marks the pipelines whose measured carrier error is actually
+// consumed by the autotune subsystem — the P25 Phase 1 control channel feeds the
+// per-dongle autotune Manager that the P25 Phase 1 voice composer reads to
+// pre-rotate voice IQ toward lock. Only these protocols should sample + log
+// autotune. A protocol like TETRA implements afcReporter (for the issue #815
+// carrier-offset WARN) but has NO autotune consumer, so sampling it just
+// measured and logged a correction it never applied — every second, at debug
+// level — the "autotune spam" a TETRA operator reported. sampleAutotuneLocked
+// gates on this marker; checkCarrierOffsetLocked still uses afcReporter so the
+// #815 WARN keeps working for every protocol.
+type autotuneApplier interface {
+	appliesAutotune()
+}
+
 // ccHealthReporter is the optional capability a pipeline exposes when it can
 // report cumulative TSBK decode success/failure counts. Today only the P25
 // Phase 1 pipeline implements it; the decoder uses it to nudge the operator
@@ -1058,6 +1072,13 @@ func (d *Decoder) sampleAutotuneLocked() {
 	}
 	rep, ok := d.active.(afcReporter)
 	if !ok {
+		return
+	}
+	// Only sample + log for a protocol that actually consumes the correction
+	// (P25 Phase 1). TETRA implements afcReporter for the #815 offset WARN but
+	// has no autotune consumer, so measuring/logging it every second was dead
+	// work that flooded the debug console.
+	if _, applies := d.active.(autotuneApplier); !applies {
 		return
 	}
 	now := time.Now()

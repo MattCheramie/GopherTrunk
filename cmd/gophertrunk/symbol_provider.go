@@ -47,6 +47,9 @@ func symbolProtoToReceiver(proto string) (trunking.Protocol, string, error) {
 		return trunking.ProtocolP25, "c4fm", nil
 	case "p25-cqpsk":
 		return trunking.ProtocolP25, "cqpsk", nil
+	case "tetra":
+		// π/4-DQPSK; demod mode is unused by the TETRA receiver.
+		return trunking.ProtocolTETRA, "", nil
 	default:
 		return trunking.ProtocolUnknown, "", fmt.Errorf("symbol: unsupported proto %q", proto)
 	}

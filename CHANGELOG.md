@@ -15,6 +15,11 @@ for tagged releases.
   affiliation, registration, unit.request, patch, DMR grant/bandplan), the per-call
   and per-grant webhook payloads, config keys, and reliability caveats (no stream
   auth, no server-side filtering, slow-subscriber drop). Refs #268.
+- **TETRA in the live Signals/DSP scopes.** The Constellation / Symbol / Histogram
+  / Tuning / Mixer scopes gain a **TETRA** mode, plotting the π/4-DQPSK
+  constellation (the four ±45°/±135° clusters) and dibits from the TETRA receiver's
+  existing soft tap. The offline Signal Lab's deep visuals (EVM/eye/rotation) stay
+  P25-only for now.
 - **TETRA on the wideband multi-system path.** A `role: wideband` SDR can now
   follow multiple TETRA control channels alongside DMR/P25, so several TETRA
   sites/systems share one dongle. The blocker was never the protocol allowlist —
@@ -285,6 +290,18 @@ for tagged releases.
   rather than a fixed slot 1 — the building block for issue #925.
 
 ### Fixed
+- **Autotune measure/log spam on TETRA.** At debug level a TETRA control channel
+  emitted the autotune measurement + "suggested error" lines every second, always
+  with `applied_hz=0` — the correction is only consumed by the P25 Phase 1 path, so
+  measuring and logging it for TETRA was dead work. The sampler now gates on a
+  narrower marker (only P25 Phase 1), leaving the #815 carrier-offset WARN intact.
+- **TETRA individual calls reported as "tg == src".** A point-to-point (individual)
+  call was surfaced as a phantom talkgroup whose ID equalled the transmitting
+  radio's — "calling yourself." TETRA's MAC can't distinguish a group SSI from an
+  individual SSI, so a call addressed to a subscriber ISSI was misread as a group.
+  Using the invariant that a party can never equal the call's own identity, such
+  calls are now flagged Individual with no self-source, and the self-referential
+  talker update is suppressed.
 - **DC spur leaked into TETRA voice under heavy multislot traffic.** Same-carrier
   TETRA voice rides the control carrier at 0 Hz offset, so the zero-IF front end's
   DC spur (worsened by ADC-clipping/IMD as concurrent-call power rises) sat on the
