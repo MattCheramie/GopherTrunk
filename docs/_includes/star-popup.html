@@ -1,0 +1,52 @@
+{%- comment -%}
+  First-visit "Star the repo" promo — the first instance of the promo system
+  (assets/js/promos.js). Rendered site-wide by default.html, hidden until the
+  engine reveals it. The engine shows it ONCE per browser, after the visitor is
+  either 2 minutes in (data-promo-trigger-time) OR a quarter of the way down the
+  page (data-promo-trigger-scroll), whichever comes first. Impressions, closes,
+  and the star click are all reported through the shared metrics module, the
+  same tracking the site's CTAs use.
+
+  To add another pop-up / pop-in / fly-out later, copy this markup shape into a
+  new include with its own data-promo id and variant — no JS changes needed.
+{%- endcomment -%}
+<div class="gt-promo gt-promo--popup" id="gt-promo-star" hidden tabindex="-1"
+     role="dialog" aria-modal="true" aria-labelledby="gt-promo-star-title"
+     aria-describedby="gt-promo-star-body"
+     data-promo="star-repo" data-promo-variant="popup"
+     data-promo-trigger-time="120000" data-promo-trigger-scroll="0.25"
+     data-promo-frequency="once">
+  <div class="gt-promo__backdrop" data-promo-close data-promo-close-method="backdrop"></div>
+  <div class="gt-promo__card" role="document">
+    <button type="button" class="gt-promo__close" aria-label="Close"
+            data-promo-close data-promo-close-method="close_button">&times;</button>
+    <div class="gt-promo__icon" aria-hidden="true">{% include icons/github.svg %}</div>
+    <h2 class="gt-promo__title" id="gt-promo-star-title">Enjoying GopherTrunk? Give it a star ⭐</h2>
+    <p class="gt-promo__body" id="gt-promo-star-body">
+      GopherTrunk is free and open source, built in the open by a tiny team. A
+      GitHub star costs you one click, helps other scanner operators find it, and
+      keeps the project moving. Would you drop one?
+    </p>
+    <div class="gt-promo__actions">
+      {%- comment -%}
+        Official GitHub star widget: buttons.github.io upgrades this anchor into
+        a live iframe that stars in place and shows the count. If the script is
+        blocked, the raw anchor still links to the repo, so the ask degrades
+        gracefully. The branded fallback button below always works and carries
+        the CTA tracking hook.
+      {%- endcomment -%}
+      <a class="github-button" href="https://github.com/MattCheramie/GopherTrunk"
+         data-color-scheme="no-preference: light; light: light; dark: dark;"
+         data-icon="octicon-star" data-size="large" data-show-count="true"
+         aria-label="Star MattCheramie/GopherTrunk on GitHub">Star</a>
+      <a class="btn btn--primary" href="https://github.com/MattCheramie/GopherTrunk"
+         target="_blank" rel="noopener" data-cta-event="cta_star_github">
+        {% include icons/github.svg %}
+        <span>View on GitHub</span>
+      </a>
+    </div>
+    <button type="button" class="gt-promo__later"
+            data-promo-close data-promo-close-method="maybe_later">Maybe later</button>
+  </div>
+</div>
+<script async defer src="https://buttons.github.io/buttons.js"></script>
