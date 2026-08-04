@@ -149,6 +149,10 @@ func TestControlChannelPublishesTVGrant(t *testing.T) {
 			if g.Encrypted || g.Emergency {
 				t.Errorf("flags = enc=%v emer=%v, want both false", g.Encrypted, g.Emergency)
 			}
+			// A talkgroup-voice grant is not an individual call.
+			if g.Individual {
+				t.Error("TV grant wrongly marked Individual")
+			}
 			// payload bit 12 set → CSBK TS2 (0-based 1) → 1-based Timeslot 2.
 			if g.Timeslot != 2 {
 				t.Errorf("Timeslot = %d, want 2 (TS2)", g.Timeslot)
@@ -233,6 +237,12 @@ func TestControlChannelPublishesPVGrant(t *testing.T) {
 			// payload bit 12 clear → CSBK TS1 (0-based 0) → 1-based Timeslot 1.
 			if g.Timeslot != 1 {
 				t.Errorf("Timeslot = %d, want 1 (TS1)", g.Timeslot)
+			}
+			// A private (unit-to-unit) call: GroupID is a destination
+			// subscriber, not a talkgroup, so the grant must be marked
+			// Individual — otherwise discovery lists the dst RID as a TG.
+			if !g.Individual {
+				t.Error("PV grant not marked Individual")
 			}
 			return
 		case <-deadline:
