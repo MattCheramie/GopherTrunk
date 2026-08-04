@@ -54,6 +54,15 @@ func TestDaemonCCDecodesTETRA(t *testing.T) {
 
 	dibits := buildTETRASCHHDStream(burstRepeats, colourCode, locationArea)
 	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/4)
+	// Add a thermal noise floor (40 dB SNR — far cleaner than any real
+	// capture) so the signal is a realistic on-air waveform rather than a
+	// mathematically perfect one. The production CC pipeline now runs the
+	// blind SnapshotCMA equalizer, whose constant-modulus adaptation is
+	// well-defined only against a signal with a noise floor; a literally
+	// noise-free constant-modulus input is a degenerate case that never
+	// occurs over the air. This mirrors receiver.TestReceiverEqualizerClean-
+	// ChannelNoHarm, which adds the same light noise for the same reason.
+	iq = demod.ApplyImpairments(iq, sampleRate, demod.Impairments{SNRdB: 40, Seed: 3})
 
 	dir := t.TempDir()
 	iqPath := filepath.Join(dir, "tetra-cc.cfile")

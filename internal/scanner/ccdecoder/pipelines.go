@@ -644,6 +644,20 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// filter. The channel-select filter rejects them — measured to
 		// cut the on-air symbol error rate by ~10x (issue #553).
 		EnableChannelFilter: true,
+		// Blind SnapshotCMA equalizer between symbol timing and the
+		// differential decoder, inverting the multipath / ISI / band-edge
+		// group delay that smears the π/4-DQPSK constellation on real
+		// captures. Already enabled on the voice composer and wideband-T2
+		// CC paths (widebandt2/tetra.go: "mirror the ccdecoder pipeline's
+		// on-air settings") — this closes the gap where the primary live
+		// CC path alone lacked it. On the reporter's ~10 dB re-acquisition
+		// capture it lifts CRC-clean BSCH yield from ~12% to ~100%, which
+		// is the difference between riding through a marginal dip and
+		// dropping lock → re-hunt (the ~210 CC transitions/hour symptom).
+		// Differential-decoder-safe (frozen snapshot) and a near-noop on
+		// already-clean signals. EnableDCBlock stays OFF — reserved for the
+		// voice receivers; it must not disturb steady-state CC decode.
+		EnableEqualizer: true,
 	})
 	return &tetraPipeline{
 		rx:     rx,
