@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Event API reference docs (`docs/api-events.md`).** A stable-contract reference
+  for the real-time telemetry surface: the SSE (`/api/v1/events`) and WebSocket
+  (`/api/v1/events/ws`) transports and shared event envelope, the full JSON payload
+  schema for the ten curated event DTOs (grant, call.start/end, encryption,
+  affiliation, registration, unit.request, patch, DMR grant/bandplan), the per-call
+  and per-grant webhook payloads, config keys, and reliability caveats (no stream
+  auth, no server-side filtering, slow-subscriber drop). Refs #268.
 - **Baseband auto-record trigger on control-channel sync loss
   (`baseband.auto_record.on_cc_sync_loss`).** Fires an IQ capture when a locked
   control channel suddenly loses sync (`cc.lost`, which only fires after a genuine
