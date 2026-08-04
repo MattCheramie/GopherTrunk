@@ -95,6 +95,33 @@ scanner. **No host decodes [AES encryption](/police-scanner-encryption/).**
 > accelerator is wasted on scanning. Spend on RAM and CPU cores if you'll run a
 > [multi-SDR pool](/multi-dongle-sdr-setup/), not on a Jetson.
 
+## What GopherTrunk needs from an SBC
+
+GopherTrunk is deliberately light on its host — it's a **[pure-Go](/downloads.html)** static
+binary with no vendor toolchain, so "will it run?" almost always answers itself. What
+matters is how much you ask of it:
+
+- **Architecture.** GopherTrunk ships **ARM64, ARMv7, and amd64** builds. Nearly every
+  modern SBC is ARM64 — drop the binary on 64-bit Linux and it runs.
+- **CPU.** Following **one** trunked system with one [RTL-SDR](/reference/rtl-sdr/) is light
+  real-time DSP — a quad-A53 (Pi Zero 2 W, Le Potato) handles it. A
+  [multi-SDR pool](/multi-dongle-sdr-setup/) or **wideband** channelizing of several control
+  channels wants more cores and clock — a Pi 5 or an RK3588 board.
+- **RAM.** ~**512 MB** covers a single channel; **2–8 GB** is comfortable once you add the
+  [web console](/web.html), call **recording**, and several systems at once.
+- **USB.** One free **USB 2.0+** port per dongle. RTL-SDR's ~2.4 MS/s is trivial; a wideband
+  [Airspy](/reference/airspy/) capture pushes real USB bandwidth, and multiple dongles want a
+  **powered hub**. USB 3 ports (Pi 4/5, RK3588) give the most headroom.
+- **Storage.** An **SD card** is fine to start; **eMMC or NVMe** (Pi 5, Rock 5B) is faster
+  and more durable for 24/7 recording and the call database.
+- **Power & heat.** Low draw suits an always-on box by the antenna; **RK3588** boards run hot
+  under load and want a heatsink/fan.
+- **Networking.** Ethernet or Wi-Fi lets you run it **headless** and reach the
+  [web console](/web.html) from your phone or laptop.
+
+In short: **one dongle, one channel → any SBC.** Recording, several systems, or wideband
+multi-site → **more cores, more RAM, USB 3, and faster storage.**
+
 ## How to choose
 
 - **Want the easy, best-supported path?** [Raspberry Pi 5](/reference/raspberry-pi/) (or a
