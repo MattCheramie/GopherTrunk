@@ -676,16 +676,40 @@ domains:
           - { slug: nesdr, title: Nooelec NESDR, type: hardware }
           - { slug: hackrf, title: HackRF One, type: hardware }
           - { slug: airspy, title: Airspy, type: hardware }
+          - { slug: hydrasdr, title: HydraSDR RFOne, type: hardware }
           - { slug: airspy-hf-plus, title: Airspy HF+, type: hardware }
           - { slug: sdrplay-rsp1a, title: SDRplay RSP1A, type: hardware }
           - { slug: sdrplay-rspdx, title: SDRplay RSPdx, type: hardware }
           - { slug: sdrplay-rspduo, title: SDRplay RSPduo, type: hardware }
           - { slug: limesdr, title: LimeSDR, type: hardware }
           - { slug: usrp-ettus, title: USRP (Ettus), type: hardware }
+          - { slug: usrp-b210, title: USRP B210, type: hardware }
           - { slug: plutosdr, title: ADALM-Pluto (PlutoSDR), type: hardware }
           - { slug: bladerf, title: BladeRF, type: hardware }
           - { slug: krakensdr, title: KrakenSDR, type: hardware }
           - { slug: funcube-dongle, title: FUNcube Dongle, type: hardware }
+
+      - id: consumer-scanners
+        label: Scanner hardware & receivers
+        blurb: Off-the-shelf police/public-safety scanner radios you can buy today — the consumer alternative to an SDR + GopherTrunk.
+        entries:
+          - { slug: police-scanner, title: Police scanner, type: concept }
+          - { slug: trunking-scanner, title: Trunking scanner, type: concept }
+          - { slug: uniden-sds200, title: Uniden SDS200, type: hardware }
+          - { slug: uniden-sds100, title: Uniden SDS100, type: hardware }
+          - { slug: uniden-sds150, title: Uniden SDS150, type: hardware }
+          - { slug: uniden-bcd536hp, title: Uniden BCD536HP, type: hardware }
+          - { slug: uniden-bcd436hp, title: Uniden BCD436HP, type: hardware }
+          - { slug: uniden-bcd996p2, title: Uniden BCD996P2, type: hardware }
+          - { slug: uniden-bcd325p2, title: Uniden BCD325P2, type: hardware }
+          - { slug: uniden-home-patrol-2, title: Uniden HomePatrol-2, type: hardware }
+          - { slug: uniden-sr30c, title: Uniden SR30C, type: hardware }
+          - { slug: uniden-bc125at, title: Uniden BC125AT, type: hardware }
+          - { slug: uniden-bc75xlt, title: Uniden BC75XLT, type: hardware }
+          - { slug: uniden-bearcat-bct15x, title: Uniden BearTracker BCT15X, type: hardware }
+          - { slug: whistler-trx-1, title: Whistler TRX-1, type: hardware }
+          - { slug: whistler-trx-2, title: Whistler TRX-2, type: hardware }
+          - { slug: whistler-ws1065, title: Whistler WS1065, type: hardware }
 
       - id: rf-front-end
         label: RF front-end & components
@@ -703,6 +727,7 @@ domains:
           - { slug: duplexer, title: Duplexer, type: hardware }
           - { slug: diplexer, title: Diplexer, type: hardware }
           - { slug: rf-filter, title: RF filter, type: hardware }
+          - { slug: fm-broadcast-filter, title: FM broadcast notch filter, type: hardware }
           - { slug: saw-filter, title: SAW filter, type: hardware }
           - { slug: cavity-filter, title: Cavity filter, type: hardware }
           - { slug: helical-filter, title: Helical filter, type: hardware }

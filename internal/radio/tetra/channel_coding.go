@@ -278,3 +278,19 @@ func DecodeAACH(type5 []byte, colourCode uint32) ([]byte, int) {
 	type4 := framing.DescrambleTetra(type5, colourCode)
 	return framing.DecodeRM3014Tetra(type4)
 }
+
+// DecodeAACHSoft is the soft-decision counterpart of DecodeAACH: given 30 soft
+// type-5 LLRs (the softType5FromDiffs convention: positive ⇒ bit 0), it applies
+// the same colour-code descramble in the soft domain and runs the soft (30,14) RM
+// maximum-likelihood decoder. It recovers the AACH usage marker on marginal bursts
+// the hard decoder mis-corrects, so more concurrent-call bursts route by marker
+// instead of being dropped. Returns the 14 type-1 bits, the winning codeword's
+// Hamming distance to the hard-sliced input (a confidence gate, mirroring
+// DecodeAACH's errs), and the soft correlation margin in [0,1].
+func DecodeAACHSoft(type5Soft []float32, colourCode uint32) ([]byte, int, float64) {
+	if len(type5Soft) != 30 {
+		return nil, -1, 0
+	}
+	type4 := framing.DescrambleTetraSoft(type5Soft, colourCode)
+	return framing.DecodeRM3014TetraSoft(type4)
+}

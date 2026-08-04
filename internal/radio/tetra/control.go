@@ -126,6 +126,17 @@ type ControlChannel struct {
 	// dropped on release. Guarded by mu.
 	callGroups map[uint16]uint32
 
+	// grantSeen deduplicates the voice grants TETRA rebroadcasts on the control
+	// channel every multiframe while a call is up. publishGrant fires one
+	// KindGrant (and a debug line) per decoded grant PDU, so a single call emitted
+	// ~3-4 grant events — the "CC spam" a field report flagged. An entry records
+	// the last-published grant content for a given (group, carrier, timeslot); an
+	// IDENTICAL re-publish within grantDedupWindow is suppressed, but a grant that
+	// carries new information (a source SSI backfilled from a reassembled fragment,
+	// an emergency flag, a changed frequency) still publishes. Entries are dropped
+	// on the call's release and pruned by age. Lazily built; guarded by mu.
+	grantSeen map[grantKey]grantSnapshot
+
 	// fragTMSDU accumulates a TM-SDU that spans a start-fragment MAC-RESOURCE and
 	// one or more following MAC-FRAG / MAC-END PDUs (§21.4.3.3/.4). fragResource
 	// is the start fragment's MAC-RESOURCE context (address + channel allocation),
@@ -431,6 +442,58 @@ type TopologyConfig struct {
 	UplinkHz    uint32
 }
 
+// TopologySnapshot renders the decoded single-cell identity as the protocol-
+// neutral trunking.TopologySnapshot the SiteTracker stores per system, so the
+// live systems API can surface TETRA identity (MCC/MNC/Location Area + colour
+// code) the same way it surfaces P25 WACN/SysID/RFSS/Site. TETRA advertises no
+// adjacent cells, so there are no neighbours. Mirrors the offline
+// tetraPipeline.TopologySnapshot. Returns nil-safe zero when nothing is decoded.
+func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
+	t := c.Topology()
+	snap := &trunking.TopologySnapshot{
+		SystemName:   c.systemName,
+		Protocol:     "tetra",
+		MCC:          t.MCC,
+		MNC:          t.MNC,
+		LocationArea: t.LocationArea,
+		// The ETSI 6-bit colour code is the low 6 bits of the 30-bit extended
+		// colour code (MCC<<20 | MNC<<6 | CC); masking wider would drag in MNC bits.
+		ColorCode: uint8(t.ColourCode & 0x3F),
+	}
+	if t.DownlinkHz != 0 {
+		snap.PrimaryCC = &trunking.TopoChannelRef{
+			ChannelNumber: t.MainCarrier,
+			FrequencyHz:   t.DownlinkHz,
+			UplinkHz:      t.UplinkHz,
+		}
+	}
+	return snap
+}
+
+// publishSiteIdentity emits a KindSiteUpdate carrying the decoded TETRA identity
+// so the SiteTracker records it per system (topo map) and the live systems API
+// can render it. TETRA has no RFSS/Site, so those are left zero — the same shape
+// a P25 system with only a voted System ID publishes. No-op without a bus or
+// before any identity is decoded.
+func (c *ControlChannel) publishSiteIdentity() {
+	if c.bus == nil {
+		return
+	}
+	topo := c.TopologySnapshot()
+	if topo.Empty() {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindSiteUpdate,
+		Payload: trunking.SiteUpdate{
+			System:           c.systemName,
+			ControlChannelHz: c.freqHz,
+			Topology:         topo,
+			At:               c.now(),
+		},
+	})
+}
+
 // Topology returns the accumulated single-cell identity. Safe for concurrent
 // use (reads the lock state + colour code under the control-channel mutex).
 func (c *ControlChannel) Topology() TopologyConfig {
@@ -675,6 +738,45 @@ func (c *ControlChannel) cellFrequencies() (downlinkHz, uplinkHz uint32, downlin
 	return uint32(dl), 0, true, false
 }
 
+// grantKey identifies a distinct voice grant for dedup: the destination group
+// (or individual) SSI plus the physical channel it was granted on. A repeat with
+// the same key inside grantDedupWindow is the same call's rebroadcast.
+type grantKey struct {
+	dst      uint32
+	carrier  uint16
+	timeslot uint8
+}
+
+// grantSnapshot is the last-published content for a grantKey. `at` times the
+// dedup window; the remaining fields are the grant payload details that can
+// legitimately change mid-call (so a re-publish carrying new info is NOT
+// suppressed as a rebroadcast). The key fields (dst/carrier/timeslot) are not
+// repeated here.
+type grantSnapshot struct {
+	at         time.Time
+	src        uint32
+	freq       uint32
+	usage      uint8
+	encrypted  bool
+	emergency  bool
+	individual bool
+}
+
+// sameContent reports whether two snapshots describe the same grant, ignoring
+// when it was published.
+func (s grantSnapshot) sameContent(o grantSnapshot) bool {
+	return s.src == o.src && s.freq == o.freq && s.usage == o.usage &&
+		s.encrypted == o.encrypted && s.emergency == o.emergency &&
+		s.individual == o.individual
+}
+
+// grantDedupWindow is how long a repeated identical voice grant is suppressed
+// after it was last published. TETRA rebroadcasts the grant roughly every
+// multiframe (~1.02 s) for the life of the call, so a few seconds collapses the
+// steady-state rebroadcasts to one event while still re-announcing a genuinely
+// new call promptly (its entry is also dropped on release).
+const grantDedupWindow = 5 * time.Second
+
 func (c *ControlChannel) publishGrant(g VoiceGrant) {
 	if c.bus == nil {
 		return
@@ -716,6 +818,35 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			return
 		}
 	}
+	// Suppress the rebroadcast spam: TETRA re-announces an active call's grant
+	// every multiframe, so an IDENTICAL (group, carrier, timeslot) grant with the
+	// same content is published only once per grantDedupWindow. A re-publish that
+	// carries new info (backfilled source SSI, emergency, changed frequency) is
+	// not identical and still publishes. The entry is dropped on release
+	// (evictGrantSeen), so a genuinely new call for the same target re-announces.
+	now := c.now()
+	snap := grantSnapshot{
+		at: now, src: g.SourceSSI, freq: freq, usage: g.UsageMarker,
+		encrypted: g.Encrypted, emergency: g.Emergency, individual: g.Individual,
+	}
+	c.mu.Lock()
+	if c.grantSeen == nil {
+		c.grantSeen = make(map[grantKey]grantSnapshot)
+	}
+	key := grantKey{dst: g.DestSSI, carrier: g.CarrierNumber, timeslot: g.Timeslot}
+	if prev, seen := c.grantSeen[key]; seen && now.Sub(prev.at) < grantDedupWindow && prev.sameContent(snap) {
+		c.mu.Unlock()
+		return
+	}
+	c.grantSeen[key] = snap
+	// Opportunistic age-prune so the map can't grow unbounded on a busy site.
+	for k, s := range c.grantSeen {
+		if now.Sub(s.at) >= grantDedupWindow {
+			delete(c.grantSeen, k)
+		}
+	}
+	c.mu.Unlock()
+
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
@@ -885,6 +1016,23 @@ func (c *ControlChannel) publishRelease(gssi uint32, cause uint8) {
 	})
 	c.log.Debug("tetra: call release",
 		"system", c.systemName, "group", gssi, "cause", cause)
+	c.evictGrantSeen(gssi)
+}
+
+// evictGrantSeen drops the dedup entries for a released group so the next grant
+// addressed to it (a genuinely new call) is announced immediately rather than
+// being swallowed as a rebroadcast of the call that just ended.
+func (c *ControlChannel) evictGrantSeen(dst uint32) {
+	if dst == 0 {
+		return
+	}
+	c.mu.Lock()
+	for k := range c.grantSeen {
+		if k.dst == dst {
+			delete(c.grantSeen, k)
+		}
+	}
+	c.mu.Unlock()
 }
 
 // publishTalker emits a KindCallTalker so the engine backfills the current
@@ -934,12 +1082,11 @@ func (c *ControlChannel) CheckStale(now time.Time, timeout time.Duration) {
 }
 
 // NeedsResync reports whether the control-channel heartbeat is older than
-// timeout, i.e. no sync burst / SYSINFO / grant has decoded for that long. It is
-// the trigger the pipeline uses to force a fast DSP re-acquire (reset the symbol
-// timing to centre) after a noise burst wanders the loops off-lock — the
-// steady-state Gardner loop at the production gain re-converges only very slowly,
-// so from-centre reacquisition (~one AFC block) is far faster than waiting it
-// out.
+// timeout, i.e. no sync burst / SYSINFO / grant has decoded for that long — a
+// wall-clock heartbeat-age predicate. The pipeline's DSP re-acquire no longer
+// triggers off wall-clock age (it uses a processed-signal budget in
+// tetraPipeline.checkResync, immune to CPU starvation); this predicate is retained
+// as a tested heartbeat-age helper.
 //
 // Like CheckStale it is a lock-free atomic read of the heartbeat and is a no-op
 // before the first decode (lastActivity==0). Deliberately independent of the
@@ -969,8 +1116,8 @@ func (c *ControlChannel) LastActivityNano() int64 {
 func (c *ControlChannel) maybeLock(s LockState) {
 	c.noteActivity()
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.locked && c.last == s {
+		c.mu.Unlock()
 		return
 	}
 	// Preserve previously-learned MCC/MNC/LA if the new state has none.
@@ -979,6 +1126,7 @@ func (c *ControlChannel) maybeLock(s LockState) {
 		s.MNC = c.last.MNC
 		s.LocationArea = c.last.LocationArea
 		if c.last == s {
+			c.mu.Unlock()
 			return
 		}
 	}
@@ -988,6 +1136,13 @@ func (c *ControlChannel) maybeLock(s LockState) {
 	c.log.Info("tetra cc locked",
 		"freq", s.FrequencyHz, "mcc", s.MCC, "mnc", s.MNC,
 		"la", s.LocationArea, "system", c.systemName)
+	c.mu.Unlock()
+
+	// Surface the decoded single-cell identity (MCC/MNC/LA + colour) to the live
+	// systems API, mirroring P25's publishSiteUpdate. Published after releasing mu
+	// because TopologySnapshot takes the lock itself. Edge-triggered like the lock
+	// transition above, so a steady lock publishes once per identity change.
+	c.publishSiteIdentity()
 }
 
 // MarkLost publishes cc.lost and resets the locked flag. CheckStale calls this

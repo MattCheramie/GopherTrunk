@@ -130,7 +130,7 @@ That is the entire list. GopherTrunk uses `purego` for every system call it make
 
 > **On Linux and want to actually receive with an SDR after building?** USB
 > device permissions are a separate, one-time setup step. See
-> [Installing on Linux]({{ '/install-linux/' | relative_url }}) for the udev rule
+> [Installing on Linux]({{ '/install-linux.html' | relative_url }}) for the udev rule
 > and `modprobe` blacklist that let GopherTrunk claim your dongle without
 > `sudo`.
 
@@ -240,8 +240,8 @@ your hardware:
 ```
 
 That enumerates attached SDR devices. (On Linux, if nothing shows up, revisit the
-USB permissions in [Installing on Linux]({{ '/install-linux/' | relative_url }}).)
-For a guided first run, the [Launcher]({{ '/launcher/' | relative_url }}) and the
+USB permissions in [Installing on Linux]({{ '/install-linux.html' | relative_url }}).)
+For a guided first run, the [Launcher]({{ '/launcher.html' | relative_url }}) and the
 TUI walkthrough take it from here.
 
 ## 5. Install on your PATH
@@ -333,7 +333,7 @@ probably on the wrong branch, or the fix is on a branch you haven't fetched. Run
 a specific branch down.
 
 **The binary builds but `sdr list` is empty** — that's a USB permissions issue,
-not a build problem. See [Installing on Linux]({{ '/install-linux/' | relative_url }}).
+not a build problem. See [Installing on Linux]({{ '/install-linux.html' | relative_url }}).
 
 ## FAQ
 

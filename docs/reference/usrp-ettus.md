@@ -68,8 +68,9 @@ well. That common driver — not any one board — is the real ecosystem.
 
 ## Variants
 
-- **B200 / B210** — bus-powered USB 3.0, single (B200) or dual (B210) channel, AD9361-class
-  front end; the affordable research entry.
+- **[B200 / B210](/reference/usrp-b210/)** — bus-powered USB 3.0, single (B200) or dual
+  (B210) channel, AD9361-class front end; the affordable research entry, and the model with
+  widely-sold low-cost clones.
 - **N-series (N200/N210, N3xx)** — Ethernet-connected, daughterboard or integrated front
   ends, suited to fixed installations and multi-unit synchronisation.
 - **X-series (X300/X310, X4xx)** — the widest bandwidth and highest channel counts, 10 GbE

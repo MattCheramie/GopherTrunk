@@ -455,6 +455,12 @@ button { font: inherit; cursor: pointer; }
   border-color: var(--accent);
 }
 .btn--forum:hover { color: var(--accent-fg); background: var(--link-hover); border-color: var(--link-hover); }
+.btn--buy {
+  background: #ff9900;
+  color: #111;
+  border-color: #e88a00;
+}
+.btn--buy:hover { color: #111; background: #ffad33; border-color: #ff9900; }
 .btn svg { width: 16px; height: 16px; }
 
 /* ---------- Hero community callout ---------- */
@@ -610,6 +616,53 @@ button { font: inherit; cursor: pointer; }
 .download-card__note code {
   font-size: 0.82rem;
 }
+
+/* ---------- Affiliate / hardware buyer pages ---------- */
+.affiliate-note {
+  font-size: 0.86rem;
+  color: var(--fg-muted);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 3px solid #ff9900;
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.95rem;
+  margin: 0 0 1.5rem;
+}
+.affiliate-note code { font-size: 0.8rem; }
+.pick-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 2.5rem;
+}
+.pick-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+.pick-card--top {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.pick-card__badge {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  margin-bottom: 0.6rem;
+}
+.pick-card h3 { margin: 0 0 0.3rem; font-size: 1.1rem; border-bottom: none; padding-bottom: 0; }
+.pick-card__price { color: var(--fg-muted); font-size: 0.9rem; margin: 0 0 0.7rem; }
+.pick-card__note { margin: auto 0 0; padding-top: 0.7rem; font-size: 0.85rem; color: var(--fg-muted); border-top: 1px solid var(--border); }
+.pick-card .btn { margin-top: 0.4rem; align-self: flex-start; }
 
 /* ---------- Footer ---------- */
 .site-footer {

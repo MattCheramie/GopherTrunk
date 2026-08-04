@@ -68,7 +68,7 @@ A common trap is to assume "conventional" means old analog FM. It doesn't.
 
 A P25 conventional channel is still one frequency you can tune to; it just carries a
 [digital voice](/learn/rf-sdr/digital-voice/) signal that needs a
-[vocoder](voice-to-bits-vocoders/) to turn back into audio. So "is it digital?" and "is it
+[vocoder](/learn/digital-trunking/voice-to-bits-vocoders/) to turn back into audio. So "is it digital?" and "is it
 trunked?" are two **independent** questions. A system can be analog-conventional,
 digital-conventional, analog-trunked, or digital-trunked.
 
@@ -79,7 +79,7 @@ shared across many groups, and a **controller** hands out a free channel for the
 of each call, then reclaims it. Coordination rides on a dedicated
 [control channel](/learn/digital-trunking/the-control-channel/) — one frequency that carries *data*, announcing where
 each call goes. Members of a group hear each other through their
-[talkgroup](talkgroups-ids-affiliation/), regardless of which voice channel the system
+[talkgroup](/learn/digital-trunking/talkgroups-ids-affiliation/), regardless of which voice channel the system
 picked.
 
 This is far more spectrum-efficient: ten shared channels can serve forty groups, because
@@ -127,4 +127,4 @@ control channel rather than the voice channels.
 - To follow a trunked group you decode the **control channel**, not a voice frequency.
 
 Next, we look at the identities a trunked system tracks — [talkgroups, radio IDs and
-affiliation](talkgroups-ids-affiliation/) — the virtual channels you actually follow.
+affiliation](/learn/digital-trunking/talkgroups-ids-affiliation/) — the virtual channels you actually follow.

@@ -51,6 +51,14 @@ const (
 	// it in produces the runaway kHz corrections this guard prevents. ~1.5 kHz
 	// is ≈3.3 PPM at 450 MHz — comfortably above any correction worth making.
 	MaxAbsErrorHz = 1500
+	// StatusLogChangeHz is how far the running-average correction must move
+	// since the last surfaced Info line for the next status to be worth an Info
+	// line rather than Debug. The control decoder samples autotune ~once a second
+	// while locked; emitting that status at Info flooded the console with a
+	// near-constant "AutoTune: …Hz" line (the "autotune freq spam" field report).
+	// The per-tick status now goes to Debug and an Info line is surfaced only when
+	// the correction has drifted by at least this much — a rare, meaningful event.
+	StatusLogChangeHz = 200
 )
 
 // Manager accumulates carrier-error measurements for one SDR source and serves
@@ -60,10 +68,12 @@ type Manager struct {
 	log    *slog.Logger
 	serial string
 
-	mu      sync.Mutex
-	history []int // most-recent-first; capped at MaxHistory
-	avg     int   // cached running average, in Hz
-	samples int   // count of accepted measurements (for warm-up gating)
+	mu            sync.Mutex
+	history       []int // most-recent-first; capped at MaxHistory
+	avg           int   // cached running average, in Hz
+	samples       int   // count of accepted measurements (for warm-up gating)
+	lastLoggedAvg int   // running average when an Info status line was last surfaced
+	loggedOnce    bool  // whether an Info status line has been surfaced at all
 }
 
 // NewManager returns a Manager labelled with the dongle serial for logging. A
@@ -198,6 +208,24 @@ func (m *Manager) StatusString(centerFreqHz uint32, initialErrorHz int) string {
 	suggestedPPM := float64(suggested) / (float64(centerFreqHz) / 1e6)
 	return fmt.Sprintf("AutoTune: %+d Hz, suggested error: %+d Hz (ppm %+.1f)",
 		correction, suggested, suggestedPPM)
+}
+
+// LogWorthy reports whether the running-average correction has moved by at least
+// StatusLogChangeHz since the last time LogWorthy returned true, recording the new
+// value when it does. It lets a caller sampling autotune on a fast cadence (the
+// control decoder does so ~1/s while locked) emit an Info status line only on a
+// material change, keeping the per-tick detail at Debug instead of flooding the
+// console. The first call is always worthy, so the initial correction is surfaced
+// once. Safe for concurrent use.
+func (m *Manager) LogWorthy() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.loggedOnce || abs(m.avg-m.lastLoggedAvg) >= StatusLogChangeHz {
+		m.lastLoggedAvg = m.avg
+		m.loggedOnce = true
+		return true
+	}
+	return false
 }
 
 // Reset clears the measurement history. Port of AutotuneManager::reset. The

@@ -472,8 +472,15 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 			}
 			observed := int(math.Round(rx.AFCOffsetHz()))
 			atManager.AddErrorMeasurement(observed, atApplied, 0)
-			c.log.Info("composer: p25p1 "+atManager.StatusString(0, 0),
-				"serial", serial, "observed_hz", observed, "applied_hz", atApplied)
+			// Per-call status at Debug; surface an Info line only when the
+			// correction has drifted materially, so a busy system does not print an
+			// autotune line for every call (matches the CC path's spam fix).
+			status := "composer: p25p1 " + atManager.StatusString(0, 0)
+			logStatus := c.log.Debug
+			if atManager.LogWorthy() {
+				logStatus = c.log.Info
+			}
+			logStatus(status, "serial", serial, "observed_hz", observed, "applied_hz", atApplied)
 		}()
 	}
 

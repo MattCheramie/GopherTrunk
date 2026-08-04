@@ -521,6 +521,15 @@ func New(opts Options) (*Engine, error) {
 	}
 
 	strategy, tag := pickStrategy(opts.TunerStrategy, len(opts.Channels))
+	// A TETRA channel needs a 144 kHz tap; the polyphase channelizer emits one
+	// bank-global rate and can't, so force the per-tap DDC strategy when any TETRA
+	// channel is present. Warn when this overrides a polyphase choice so the CPU
+	// trade-off (per-tap DDC is heavier at high channel counts) isn't silent.
+	if anyTETRA(opts.Channels, systemsByName) && strategy != "ddc" {
+		log.Warn("widebandt2: forcing DDC tuner strategy — a TETRA channel needs a 144 kHz tap the polyphase channelizer cannot emit; per-tap DDC costs more CPU at high channel counts",
+			"serial", opts.Serial, "channels", len(opts.Channels), "requested_strategy", tag)
+		strategy, tag = "ddc", "ddc(tetra-forced)"
+	}
 	var bank tuner.Bank
 	switch strategy {
 	case "ddc":
@@ -560,7 +569,15 @@ func New(opts Options) (*Engine, error) {
 				ch.FrequencyHz, ch.SystemName)
 		}
 		offset := offsets[i]
-		ec, err := buildChannel(sys, ch, bank.OutputRateHz(), opts.Bus, log, opts.Now)
+		// Per-tap output rate: the DDC bank gives each channel its protocol's rate
+		// (144 kHz TETRA vs 48 kHz DMR/P25) so mixed protocols share one SDR. The
+		// channelizer path (no TETRA present here) has a single bank-global rate.
+		outRateHz := bank.OutputRateHz()
+		ddc, isDDC := bank.(*tuner.DDCBank)
+		if isDDC {
+			outRateHz = ddc.ActualRateFor(channelOutRateHz(sys.Protocol))
+		}
+		ec, err := buildChannel(sys, ch, outRateHz, opts.Bus, log, opts.Now)
 		if err != nil {
 			return nil, err
 		}
@@ -573,7 +590,12 @@ func New(opts Options) (*Engine, error) {
 				ec.receiver.Process(out)
 			}
 		}(ec)
-		if err := bank.AddTap(offset, sink); err != nil {
+		if isDDC {
+			if _, err := ddc.AddTapAtRate(offset, channelOutRateHz(sys.Protocol), sink); err != nil {
+				return nil, fmt.Errorf("widebandt2: AddTapAtRate freq=%d offset=%.0f Hz: %w",
+					ch.FrequencyHz, offset, err)
+			}
+		} else if err := bank.AddTap(offset, sink); err != nil {
 			return nil, fmt.Errorf("widebandt2: AddTap freq=%d offset=%.0f Hz: %w",
 				ch.FrequencyHz, offset, err)
 		}
@@ -770,9 +792,12 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase2", processor: cc, receiver: rx,
 			decoded: func() uint64 { return cc.DecodedFrames() }}, nil
 
+	case trunking.ProtocolTETRA:
+		return buildTETRAChannel(sys, ch, outRateHz, bus, log, now)
+
 	default:
 		return nil, fmt.Errorf(
-			"widebandt2: system %q has protocol %q; wideband supports dmr-tier2, dmr, p25, and p25-phase2",
+			"widebandt2: system %q has protocol %q; wideband supports dmr-tier2, dmr, p25, p25-phase2, and tetra",
 			sys.Name, sys.Protocol.String())
 	}
 }

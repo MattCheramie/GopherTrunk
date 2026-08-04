@@ -217,6 +217,17 @@ func (s *Server) overlayTopology(dto *SystemDTO) {
 	if snap, ok := tp.Topology(dto.Name); ok {
 		dto.Neighbors = neighborsFromTopology(snap)
 		dto.FrequencyBands = bandPlanFromTopology(snap)
+		// TETRA has no WACN/RFSS/Site; its live identity (MCC/MNC/Location Area +
+		// colour code) rides the same topology snapshot. Surface it so the Systems
+		// panel can render a protocol-appropriate identity block instead of four
+		// forever-empty P25 fields. MCC is always present once identity is decoded.
+		if snap.MCC != 0 {
+			dto.TETRAMCC = snap.MCC
+			dto.TETRAMNC = snap.MNC
+			dto.TETRALocationArea = snap.LocationArea
+			dto.TETRADecodedColourCode = snap.ColorCode
+			dto.HasTETRAIdentity = true
+		}
 	}
 }
 

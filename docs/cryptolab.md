@@ -1,3 +1,10 @@
+---
+layout: page
+title: cryptolab — optional RF cryptographic-research toolkit
+description: cryptolab is GopherTrunk's optional, byte-oriented cryptographic-research toolkit for security-testing RF encryption — statistical triage, a NIST SP 800-22 randomness battery, keystream-reuse analysis, and a RESISTANT/PARTIAL/BROKEN grade. For authorized testing only.
+nav_group: Operate
+---
+
 # cryptolab — optional RF cryptographic-research toolkit
 
 `cryptolab` is a byte-oriented cryptographic-research toolkit that ships

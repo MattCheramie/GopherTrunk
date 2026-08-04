@@ -42,7 +42,7 @@ is more than just "read the symbols."
 ## Framing: structure and sync
 
 Bits are organised into **frames** (and, in time-slotted systems,
-[bursts](tdma-vs-fdma/)) — fixed-length packages with defined fields for voice, for
+[bursts](/learn/digital-trunking/tdma-vs-fdma/)) — fixed-length packages with defined fields for voice, for
 signalling, and for housekeeping. The receiver has to know *where* each frame begins,
 and it finds out from a **sync pattern**: a known, fixed sequence of symbols placed at
 the frame boundary. The decoder slides along the incoming symbols looking for that
@@ -127,7 +127,7 @@ Stack it up and the picture is clear. Where analog lets noise leak straight into
 audio, digital wraps voice in **sync, FEC, interleaving, and CRC** so the receiver can
 reconstruct the **exact original bits** even after the channel mangles them. As long as
 the damage stays under the codes' limits, the recovered voice is *perfect* — and the
-moment it exceeds them, you hit the [digital cliff](analog-vs-digital-voice/) from two
+moment it exceeds them, you hit the [digital cliff](/learn/digital-trunking/analog-vs-digital-voice/) from two
 lessons back. All of this is unwound inside the
 [demodulation pipeline](/learn/rf-sdr/demodulation-pipeline/), downstream of the
 [clock recovery](/learn/rf-sdr/clock-recovery/) that finds the symbols in the first
@@ -155,4 +155,4 @@ place.
   the cliff.
 
 Next, we see how a single channel can carry more than one call at once:
-[TDMA vs. FDMA](tdma-vs-fdma/).
+[TDMA vs. FDMA](/learn/digital-trunking/tdma-vs-fdma/).

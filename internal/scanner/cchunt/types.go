@@ -68,4 +68,11 @@ type SystemStatus struct {
 	DecodeQuality   string `json:"decode_quality,omitempty"`
 	CarrierOffsetHz int32  `json:"carrier_offset_hz,omitempty"`
 	HasDecodeHealth bool   `json:"has_decode_health,omitempty"`
+	// SignalDbFS is the last-window mean channel power (dBFS) of the locked
+	// carrier — the raw front-end level an operator aims an antenna / trims LNA
+	// gain against, a different axis from DecodeQuality. HasSignal distinguishes a
+	// real reading from "no data" (a genuine level is always negative dBFS, so 0
+	// alone is ambiguous). Present as soon as the CC locks, before DecodeQuality.
+	SignalDbFS float64 `json:"signal_dbfs,omitempty"`
+	HasSignal  bool    `json:"has_signal,omitempty"`
 }

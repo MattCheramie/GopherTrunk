@@ -1800,6 +1800,57 @@ func TestIQHealthPartialSamples(t *testing.T) {
 	}
 }
 
+// TestSignalDbFSReportsLockedLevel pins the cockpit signal-strength read-out:
+// once the CC is locked and a full IQ-power window has been observed for the
+// active system, SignalDbFS returns that window's mean dBFS. It must gate on
+// active+locked (a different or unlocked system reports nothing) but, unlike
+// DecodeHealth, must NOT gate on a frame-count — the level is available before
+// any decode quality is.
+func TestSignalDbFSReportsLockedLevel(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.active = &recordingPipeline{}
+	setActiveSystem(d, "Sys")
+	d.locked.Store(true)
+
+	// No window observed yet → no reading.
+	if _, ok := d.SignalDbFS("Sys"); ok {
+		t.Fatal("SignalDbFS before any window ok = true, want false")
+	}
+
+	// Drive one full window of a known level (~-57 dBFS) so lastDbfs persists.
+	chunk := make([]complex64, 128)
+	for i := range chunk {
+		chunk[i] = complex(0.001, 0.001)
+	}
+	d.observeIQPower(chunk) // primes pwWindowAt
+	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
+	d.observeIQPower(chunk) // window elapses → persists lastDbfs
+
+	dbfs, ok := d.SignalDbFS("Sys")
+	if !ok {
+		t.Fatal("SignalDbFS(Sys) ok = false after a window, want true")
+	}
+	if dbfs > -20 || dbfs < -90 {
+		t.Errorf("SignalDbFS = %.2f dBFS, want a plausible negative level", dbfs)
+	}
+
+	// A different system reports nothing (snapshot belongs to "Sys").
+	if _, ok := d.SignalDbFS("Other"); ok {
+		t.Error("SignalDbFS(Other) ok = true, want false")
+	}
+
+	// Unlocked → no reading even for the active system.
+	d.locked.Store(false)
+	if _, ok := d.SignalDbFS("Sys"); ok {
+		t.Error("SignalDbFS while unlocked ok = true, want false")
+	}
+}
+
 // TestForwardIQDecouplesIngestFromDecode pins the issue-#402 live-path
 // fix: the forwarder drains the SDR channel into the decode queue,
 // preserves order, drops only when the queue is full (and counts each

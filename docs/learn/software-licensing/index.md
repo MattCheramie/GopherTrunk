@@ -45,4 +45,4 @@ attribution — to keep things concrete. One thing to keep in mind as you read:
 this is **educational material, not legal advice**, and decisions that carry
 real risk deserve a qualified attorney. Mark lessons complete as you go; your
 progress is saved in your browser.
-**[Start with lesson 1: What is a software license?](what-is-a-software-license/)**
+**[Start with lesson 1: What is a software license?](/learn/software-licensing/what-is-a-software-license/)**

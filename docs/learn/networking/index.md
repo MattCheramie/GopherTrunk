@@ -28,4 +28,4 @@ command-line tools that turn "it won't connect" into an answer, and how to run,
 secure, and reach your own service — including [GopherTrunk]({{ '/' | relative_url }})'s
 web interface across your network. Mark lessons complete as you go — your
 progress is saved in your browser. New here? **[Start with lesson 1: What is a
-network?](what-is-a-network/)**
+network?](/learn/networking/what-is-a-network/)**

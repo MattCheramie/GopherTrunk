@@ -116,3 +116,87 @@ func TestRM3014TetraParityMatrixSanity(t *testing.T) {
 		}
 	}
 }
+
+// bitsEqual reports whether two bit slices are identical.
+func bitsEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i]&1 != b[i]&1 {
+			return false
+		}
+	}
+	return true
+}
+
+// TestRM3014SoftRoundTripCleanCodeword checks the soft decoder recovers the info
+// from clean, high-confidence LLRs (positive ⇒ bit 0), with distance 0 and a full
+// confidence margin — it must agree with the hard decoder on a clean word.
+func TestRM3014SoftRoundTripCleanCodeword(t *testing.T) {
+	info := []byte{1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1}
+	cw := EncodeRM3014Tetra(info)
+	llr := make([]float32, 30)
+	for i := 0; i < 30; i++ {
+		if cw[i] == 0 {
+			llr[i] = 6
+		} else {
+			llr[i] = -6
+		}
+	}
+	got, dist, margin := DecodeRM3014TetraSoft(llr)
+	if !bitsEqual(got, info) {
+		t.Fatalf("soft decode of a clean codeword: got %v, want %v", got, info)
+	}
+	if dist != 0 {
+		t.Errorf("clean codeword: dist = %d, want 0", dist)
+	}
+	if margin <= 0 {
+		t.Errorf("clean codeword: margin = %g, want > 0", margin)
+	}
+}
+
+// TestRM3014SoftBeatsHardUnderNoise is the fail-first guard for the soft AACH
+// recovery: over many deterministic (seeded) noisy trials at a moderate SNR the
+// soft maximum-likelihood decoder must recover strictly more codewords than the
+// hard minimum-Hamming-distance decoder, because it weighs each bit by its LLR
+// magnitude. If DecodeRM3014TetraSoft ignored the magnitudes (i.e. behaved like
+// the hard decoder) the two counts would match and this assertion would fail.
+func TestRM3014SoftBeatsHardUnderNoise(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	const (
+		trials = 150
+		sigma  = 1.3 // noise σ on a ±1 nominal LLR — a marginal AACH SNR
+	)
+	softOK, hardOK := 0, 0
+	for n := 0; n < trials; n++ {
+		var info [14]byte
+		for i := range info {
+			info[i] = byte(rng.Intn(2))
+		}
+		cw := EncodeRM3014Tetra(info[:])
+		llr := make([]float32, 30)
+		hard := make([]byte, 30)
+		for i := 0; i < 30; i++ {
+			nominal := 1.0 // positive ⇒ bit 0
+			if cw[i] == 1 {
+				nominal = -1.0
+			}
+			v := nominal + rng.NormFloat64()*sigma
+			llr[i] = float32(v)
+			if v < 0 {
+				hard[i] = 1
+			}
+		}
+		if hi, _ := DecodeRM3014Tetra(hard); bitsEqual(hi, info[:]) {
+			hardOK++
+		}
+		if si, _, _ := DecodeRM3014TetraSoft(llr); bitsEqual(si, info[:]) {
+			softOK++
+		}
+	}
+	if softOK <= hardOK {
+		t.Fatalf("soft decoder did not beat hard under noise: soft=%d hard=%d of %d trials", softOK, hardOK, trials)
+	}
+	t.Logf("recovered codewords: soft=%d hard=%d of %d (σ=%.1f)", softOK, hardOK, trials, sigma)
+}

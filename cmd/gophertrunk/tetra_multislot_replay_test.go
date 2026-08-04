@@ -145,6 +145,13 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 			dibitsFed = base + len(d)
 			extractor.Process(d, base)
 		},
+		// Feed the per-symbol differentials so the extractor's soft-decision paths
+		// (soft AACH usage-marker recovery, soft TCH/S) run — mirroring the live
+		// voice chain, which always stashes soft. SoftSink fires just before the
+		// matching DibitSink, so StashSoft lands before Process consumes it.
+		SoftSink: func(diffs []complex64, base int) {
+			extractor.StashSoft(diffs, base)
+		},
 		ClockMode:           tetrarx.ClockGardner,
 		GardnerGain:         0.005,
 		EnableAFC:           true,

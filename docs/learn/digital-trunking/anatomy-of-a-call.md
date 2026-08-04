@@ -40,7 +40,7 @@ is exactly how a follower knows where every call goes.
 
 </div>
 
-You now know the [identities](talkgroups-ids-affiliation/) a trunked system tracks. This
+You now know the [identities](/learn/digital-trunking/talkgroups-ids-affiliation/) a trunked system tracks. This
 lesson stitches them together into a single call, from the moment a user presses the
 push-to-talk to the moment the channel returns to the pool.
 
@@ -50,10 +50,10 @@ A trunked call moves through four phases, all coordinated on the control channel
 
 1. **Request.** A user keys up. Their radio sends a **channel request** on the
    [control channel](/learn/digital-trunking/the-control-channel/), naming its talkgroup (and carrying its
-   [radio ID](talkgroups-ids-affiliation/)).
+   [radio ID](/learn/digital-trunking/talkgroups-ids-affiliation/)).
 2. **Grant.** The system computer finds a **free voice channel** and broadcasts a **grant**
    on the control channel: "talkgroup 101 → channel 3." Every radio
-   [affiliated](talkgroups-ids-affiliation/) to talkgroup 101 hears that data message.
+   [affiliated](/learn/digital-trunking/talkgroups-ids-affiliation/) to talkgroup 101 hears that data message.
 3. **Conversation.** Those radios **retune** to channel 3 and the call happens there. While
    it's active, the system periodically re-sends a **grant update** so radios that arrive
    late can still find the channel.
@@ -140,4 +140,4 @@ the first grant.
 - After traffic stops, **hang-time** holds the channel briefly, then it's **released**.
 
 Next, we open up the control channel itself and read [what the data
-says](control-channel-signaling/) — the full vocabulary of trunking messages.
+says](/learn/digital-trunking/control-channel-signaling/) — the full vocabulary of trunking messages.

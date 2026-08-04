@@ -36,6 +36,11 @@ type IQHealthProvider interface {
 // via an interface so the supervisor doesn't import the decoder.
 type CCHealthProvider interface {
 	DecodeHealth(system string) (quality string, offsetHz int32, ok bool)
+	// SignalDbFS reports the last-window mean channel power (dBFS) for a locked,
+	// active system — the raw front-end level for antenna/LNA aiming, distinct
+	// from the DecodeHealth error-rate bucket. ok is false when the system is not
+	// the active locked pipeline or no IQ-power window has been observed yet.
+	SignalDbFS(system string) (dbfs float64, ok bool)
 }
 
 // noIQDiagnosis is published when the decoder reports no observations
@@ -728,6 +733,13 @@ func (s *Supervisor) Snapshot() []SystemStatus {
 				out[i].DecodeQuality = q
 				out[i].CarrierOffsetHz = off
 				out[i].HasDecodeHealth = true
+			}
+			// Signal level is reported independently of the decode-quality gate:
+			// a freshly-locked system has a dBFS reading before enough frames
+			// have decoded to bucket its error rate.
+			if dbfs, ok := h.SignalDbFS(out[i].Name); ok {
+				out[i].SignalDbFS = dbfs
+				out[i].HasSignal = true
 			}
 		}
 	}

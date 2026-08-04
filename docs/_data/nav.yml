@@ -161,6 +161,30 @@ groups:
         url: /blog/series/crypto-lab/
       - title: Solution Postmortem
         url: /blog/category/solution-postmortem/
+  - label: Hardware
+    items:
+      - title: Best police scanners (buyer's guide)
+        url: /best-police-scanners/
+      - title: Police scanner vs GopherTrunk
+        url: /police-scanner-vs-sdr/
+      - title: How police scanners work
+        url: /how-police-scanners-work/
+      - title: Scanner encryption explained
+        url: /police-scanner-encryption/
+      - title: Is a police scanner legal?
+        url: /police-scanner-legal/
+      - title: Scanner frequencies by service
+        url: /scanner-frequencies/
+      - title: How to program a scanner
+        url: /how-to-program-a-police-scanner/
+      - title: Best scanner antennas
+        url: /best-scanner-antenna/
+      - title: "Scanner hardware (Field Guide)"
+        url: /reference/#consumer-scanners
+      - title: "SDR devices (Field Guide)"
+        url: /reference/#sdr-devices
+      - title: SDR hardware setup
+        url: /hardware.html
   - label: Install
     items:
       - title: Downloads

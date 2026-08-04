@@ -470,3 +470,46 @@ func BenchmarkDDCBankProcess10MHz4Taps(b *testing.B) {
 		bank.Process(chunk)
 	}
 }
+
+// TestDDCBankPerTapRates pins the mixed-rate support that lets one wideband SDR
+// host a 144 kHz TETRA tap alongside 48 kHz DMR/P25 taps: two taps on one bank,
+// each requesting its own rate via AddTapAtRate, emit at that rate independently.
+func TestDDCBankPerTapRates(t *testing.T) {
+	const inRate = 2_400_000.0
+	b := NewDDCBank(inRate, 48_000.0, 0.05) // bank default 48 kHz
+
+	// ActualRateFor is exact for these integer ratios.
+	if got := b.ActualRateFor(48_000); math.Abs(got-48_000) > 1 {
+		t.Fatalf("ActualRateFor(48k) = %.1f, want 48000", got)
+	}
+	if got := b.ActualRateFor(144_000); math.Abs(got-144_000) > 1 {
+		t.Fatalf("ActualRateFor(144k) = %.1f, want 144000", got)
+	}
+
+	var got48, got144 int
+	if a, err := b.AddTapAtRate(-150_000, 48_000, func(out []complex64) { got48 += len(out) }); err != nil || math.Abs(a-48_000) > 1 {
+		t.Fatalf("AddTapAtRate(48k) = %.1f, %v", a, err)
+	}
+	if a, err := b.AddTapAtRate(+320_000, 144_000, func(out []complex64) { got144 += len(out) }); err != nil || math.Abs(a-144_000) > 1 {
+		t.Fatalf("AddTapAtRate(144k) = %.1f, %v", a, err)
+	}
+
+	const inSamples = 4096 * 32
+	gen := newToneGen(inRate, 0.2, -150_000, +320_000)
+	for produced := 0; produced < inSamples; produced += 4096 {
+		b.Process(gen.Next(4096))
+	}
+
+	// Each tap emits ~ inSamples * rate/inRate; the 144 kHz tap emits ~3x the 48 kHz tap.
+	want48 := float64(inSamples) * 48_000 / inRate
+	want144 := float64(inSamples) * 144_000 / inRate
+	if d := math.Abs(float64(got48)-want48) / want48; d > 0.05 {
+		t.Errorf("48 kHz tap emitted %d samples, want ~%.0f (%.0f%% off)", got48, want48, d*100)
+	}
+	if d := math.Abs(float64(got144)-want144) / want144; d > 0.05 {
+		t.Errorf("144 kHz tap emitted %d samples, want ~%.0f (%.0f%% off)", got144, want144, d*100)
+	}
+	if ratio := float64(got144) / float64(got48); math.Abs(ratio-3) > 0.15 {
+		t.Errorf("144k/48k sample ratio = %.2f, want ~3", ratio)
+	}
+}

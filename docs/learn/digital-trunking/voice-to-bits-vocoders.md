@@ -162,5 +162,5 @@ cleanest result.
   and **GopherTrunk includes a vocoder** to produce that audio.
 
 Next, we move from the bits to how they ride the air:
-[digital modulation for trunking](digital-modulation-for-trunking/) — C4FM, π/4-DQPSK,
+[digital modulation for trunking](/learn/digital-trunking/digital-modulation-for-trunking/) — C4FM, π/4-DQPSK,
 and CQPSK.

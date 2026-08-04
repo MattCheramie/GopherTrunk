@@ -42,10 +42,10 @@ signaling is Phase 1 and only the *traffic* is TDMA. For a decoder, the new job 
 **tracking two time slots per frequency**, recovering slot timing from the **ISCH**.
 </div>
 
-[P25 Phase 1](p25-phase-1/) gave each call its own 12.5 kHz frequency. That is clean but
+[P25 Phase 1](/learn/digital-trunking/p25-phase-1/) gave each call its own 12.5 kHz frequency. That is clean but
 spectrum-hungry, and busy metropolitan systems ran out of channels. **Phase 2** is the
 answer: keep the same frequencies, but fit two calls on each traffic channel using
-[TDMA](tdma-vs-fdma/).
+[TDMA](/learn/digital-trunking/tdma-vs-fdma/).
 
 ## The capacity idea: two calls, one frequency
 
@@ -84,7 +84,7 @@ shared TDMA channel demands.
 
 The important subtlety: in nearly all deployments the **control channel stays a Phase 1
 C4FM channel**. A Phase 2 system is therefore *Phase 1 signaling with Phase 2 traffic* —
-the same [TSBK](control-channel-signaling/) grants you already know, but the channels they
+the same [TSBK](/learn/digital-trunking/control-channel-signaling/) grants you already know, but the channels they
 point to are TDMA. This is also why Phase 2 systems remain compatible with the wider P25
 world and why a follower's control-channel logic is essentially unchanged.
 
@@ -156,4 +156,4 @@ TSBK grants. The traffic side is where Phase 2 demands more:
   each as its own stream.
 
 Next we cross to the other dominant digital standard, with its own three-tier story:
-[DMR Tier II & Tier III](dmr-tier-2-3/).
+[DMR Tier II & Tier III](/learn/digital-trunking/dmr-tier-2-3/).

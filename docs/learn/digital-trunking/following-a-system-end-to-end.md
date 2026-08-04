@@ -33,7 +33,7 @@ gophertrunk_links:
 
 <div class="tldr" markdown="1">
 <span class="tldr__label">Key takeaways</span>
-With the [control channel locked](finding-the-control-channel/), GopherTrunk runs a
+With the [control channel locked](/learn/digital-trunking/finding-the-control-channel/), GopherTrunk runs a
 continuous loop. It **decodes the control channel**, sees a **talkgroup grant**, **tunes
 a receiver** to the assigned **voice channel**, **demodulates and decodes** it, feeds the
 **[vocoder](/learn/rf-sdr/vocoders/)** frames to a speech decoder, and **plays and
@@ -50,8 +50,8 @@ control channel to a labelled recording on disk.
 
 ## Stage 1 — the control channel is decoded continuously
 
-GopherTrunk is locked to the [control channel](the-control-channel/) and reading its
-[signalling](control-channel-signaling/) stream every moment. Affiliations,
+GopherTrunk is locked to the [control channel](/learn/digital-trunking/the-control-channel/) and reading its
+[signalling](/learn/digital-trunking/control-channel-signaling/) stream every moment. Affiliations,
 registrations, and — the part we care about — **channel grants** flow past. This
 decoding never pauses; it's the running map of the system, and you can watch it scroll
 in the **[CC Activity](/cc-activity.html)** panel.
@@ -62,7 +62,7 @@ A user keys up. Their radio requests a channel, the system finds a free one, and
 control channel broadcasts a **grant**: *"talkgroup 101 → voice channel 3."* GopherTrunk
 reads it, notes the talkgroup, the voice-channel frequency, and the transmitting
 **[radio ID](/radio-ids.html)**. This is the moment a call is born — the
-[anatomy-of-a-call](anatomy-of-a-call/) request-and-grant arc, seen from the decoder's
+[anatomy-of-a-call](/learn/digital-trunking/anatomy-of-a-call/) request-and-grant arc, seen from the decoder's
 side.
 
 ## Stage 3 — the voice channel is tuned and decoded
@@ -150,4 +150,4 @@ stage *doesn't* light up, this table doubles as a troubleshooting starting point
 
 Next, we tackle the hardest real-world case: a system spread across multiple sites and
 simulcast transmitters, in [multi-site & simulcast in
-practice](multisite-and-simulcast-in-practice/).
+practice](/learn/digital-trunking/multisite-and-simulcast-in-practice/).

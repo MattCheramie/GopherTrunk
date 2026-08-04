@@ -13,14 +13,17 @@ import (
 )
 
 // boundaryTracker is the protocol-agnostic recording-boundary controller
-// shared by every voice chain (FM, DMR, P25 Phase 1 / 2). It centralises
-// the universal call-boundary behaviour so hangtime + split/conversation
-// grouping work identically across protocols:
+// shared by every voice chain (FM, DMR, P25 Phase 1 / 2, TETRA). It
+// centralises the universal call-boundary behaviour so hangtime +
+// split/conversation grouping work identically across protocols:
 //
 //   - Hangtime end-of-call: once voice has been decoding, the call is
 //     ended VoiceHangtime after the last decoded voice frame, instead of
 //     waiting out the engine's much longer call-timeout watchdog. This
-//     keeps recordings tightly bounded to the actual transmission.
+//     keeps recordings tightly bounded to the actual transmission. It
+//     controls teardown timing only — for digital protocols the audio is
+//     exactly the decoded voice frames, so hangtime never extends a
+//     recording's length.
 //   - Talkgroup gating (digital protocols that decode an in-band TG):
 //     audio whose talkgroup differs from the granted talkgroup is not
 //     written, and a sustained foreign talkgroup ends the call — fixing

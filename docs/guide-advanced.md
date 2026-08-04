@@ -76,13 +76,15 @@ depends on the path:
 - **One control channel per SDR (classic path).** Each `system` in your config is
   followed by its own control receiver, so following *N* systems — or *N* sites of
   the same network, since each site is added as its own `system` with its own
-  control-channel frequency — needs *N* SDRs with `role: control`. This is the path
-  **TETRA** uses today: **multiple TETRA sites on a single SDR is not yet
-  supported**, even when they fall inside one dongle's bandwidth.
+  control-channel frequency — needs *N* SDRs with `role: control`.
 - **Many systems on one wideband SDR.** A `role: wideband` device can follow
-  several carriers (control channels and their voice grants) at once from a single
-  dongle, as long as they all fit in its IQ band. This wideband multi-system path
-  currently covers **DMR (Tier II/III) and P25 (Phase 1/2)** — not TETRA.
+  several carriers at once from a single dongle, as long as they all fit in its IQ
+  band. This wideband multi-system path covers **DMR (Tier II/III)**, **P25 (Phase
+  1/2)**, and **TETRA** control channels — so multiple TETRA sites/systems can now
+  share one wideband SDR. Note the boundary: the wideband path multiplexes
+  **control channels**; a TETRA channel is channelized to its own 144 kHz tap
+  (DMR/P25 use 48 kHz), and TETRA **voice** grants still follow on a `role: voice`
+  SDR (or its own control SDR's same-carrier voice), not on a wideband voice tap.
 
 Either way, when the same call is heard on several networked or simulcast sites,
 **cross-site call deduplication** saves it once instead of once per site: enable

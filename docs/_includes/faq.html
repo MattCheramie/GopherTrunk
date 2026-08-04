@@ -1,0 +1,33 @@
+{%- comment -%}
+  Renders a page's `faq:` list ([{q, a}]) as an accessible <details> accordion
+  AND emits FAQPage JSON-LD for rich results / AI answer engines. Reuses the
+  lesson FAQ styling (.lesson__faq*). Used by the `page` and `reference` layouts.
+  Lesson pages render their own accordion (lesson.html) + schema (learn-schema.html)
+  and must NOT also include this, to avoid a duplicate FAQPage entity.
+{%- endcomment -%}
+{%- if page.faq and page.faq.size > 0 -%}
+<section class="lesson__faq" aria-label="Frequently asked questions">
+  <h2 id="faq">Frequently asked questions</h2>
+  {%- for qa in page.faq -%}
+    <details class="lesson__faq-item">
+      <summary>{{ qa.q }}</summary>
+      <div class="lesson__faq-answer">{{ qa.a | markdownify }}</div>
+    </details>
+  {%- endfor -%}
+</section>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {%- for qa in page.faq -%}
+    {
+      "@type": "Question",
+      "name": {{ qa.q | jsonify }},
+      "acceptedAnswer": { "@type": "Answer", "text": {{ qa.a | markdownify | strip_html | normalize_whitespace | jsonify }} }
+    }{%- unless forloop.last -%},{%- endunless -%}
+    {%- endfor -%}
+  ]
+}
+</script>
+{%- endif -%}

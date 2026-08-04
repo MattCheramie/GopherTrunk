@@ -13,6 +13,8 @@ on:
       - "README.md"
       - ".github/workflows/docs-check.yml"
       - ".github/scripts/check_site_pages.py"
+      - ".github/scripts/check_internal_links.py"
+      - ".github/scripts/synthesize_home.sh"
 
 permissions:
   contents: read
@@ -23,18 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Mirror pages.yml so the built site matches production (the homepage is
-      # synthesized from README.md, so / exists and lands in sitemap.xml).
+      # Use the exact same synthesis pages.yml deploys with, so the built site
+      # matches production (the homepage is synthesized from README.md, so /
+      # exists and lands in sitemap.xml). Sharing the script keeps the two
+      # pipelines from drifting — a PR must build the homepage prod serves.
       - name: Synthesize landing page from README.md
-        run: |
-          {
-            printf -- '---\nlayout: home\n---\n\n'
-            sed -E \
-              -e 's|docs/assets/|/assets/|g' \
-              -e 's|\]\(docs/([a-z0-9_-]+)\.md(#[^)]*)?\)|](/\1.html\2)|g' \
-              README.md \
-              | sed '0,/^---$/d'
-          } > docs/index.md
+        run: .github/scripts/synthesize_home.sh README.md docs/index.md
 
       - uses: actions/jekyll-build-pages@v1
         with:
@@ -43,3 +39,6 @@ jobs:
 
       - name: Verify every page is in the site map
         run: python3 .github/scripts/check_site_pages.py _site
+
+      - name: Verify every internal link resolves
+        run: python3 .github/scripts/check_internal_links.py _site

@@ -48,6 +48,8 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 				DecodeQuality:   ss.DecodeQuality,
 				CarrierOffsetHz: ss.CarrierOffsetHz,
 				HasDecodeHealth: ss.HasDecodeHealth,
+				SignalDbFS:      ss.SignalDbFS,
+				HasSignal:       ss.HasSignal,
 			})
 		}
 	}

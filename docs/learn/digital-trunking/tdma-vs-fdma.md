@@ -40,7 +40,7 @@ channel plan, and how you decode it.
 
 **FDMA** is the straightforward approach: every call gets its **own frequency** for its
 duration. A trunked FDMA system still shares frequencies *over time* — the
-[control channel](the-control-channel/) hands a free one to each call and reclaims it
+[control channel](/learn/digital-trunking/the-control-channel/) hands a free one to each call and reclaims it
 afterward — but at any single moment, one frequency carries exactly one conversation.
 **P25 Phase 1** and **NXDN** are FDMA.
 
@@ -111,7 +111,7 @@ can be entirely different calls**, with different talkgroups and radio IDs. Foll
 wrong slot and you'd splice two conversations together.
 
 Practically, this means a TDMA channel grant from the
-[control channel](the-control-channel/) specifies not just a frequency but a **slot**,
+[control channel](/learn/digital-trunking/the-control-channel/) specifies not just a frequency but a **slot**,
 and the decoder honours both. GopherTrunk handles this internally when it follows a
 DMR or P25 Phase 2 call — it locks the right frequency *and* the right slot — but it's
 worth knowing it's happening, because a system that decodes on one slot and not the
@@ -139,4 +139,4 @@ other is a slot-tracking symptom, not a tuning one.
 - A channel grant on TDMA names both a **frequency and a slot**.
 
 Next, we meet the channel that coordinates all of this:
-[the control channel](the-control-channel/), the system's heartbeat.
+[the control channel](/learn/digital-trunking/the-control-channel/), the system's heartbeat.

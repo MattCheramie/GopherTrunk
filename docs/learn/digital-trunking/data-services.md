@@ -33,10 +33,10 @@ gophertrunk_links:
 A trunked system is a **data network that also carries voice**. Radios constantly send
 **registration/affiliation** to say who they are and which talkgroup they want; many
 also send **location/GPS** reports, **short data** and text messages, and some carry
-bearer **packet data**. Small data rides the [control channel](the-control-channel/)
+bearer **packet data**. Small data rides the [control channel](/learn/digital-trunking/the-control-channel/)
 alongside call grants; heavy data gets its own channel like a voice call. Much of it a
 monitor can *see happening* even when the payload is opaque — building on
-[talkgroups, IDs & affiliation](talkgroups-ids-affiliation/).
+[talkgroups, IDs & affiliation](/learn/digital-trunking/talkgroups-ids-affiliation/).
 </div>
 
 It is easy to picture a trunked radio system as a telephone exchange for voice calls.
@@ -59,14 +59,14 @@ system doing plenty of data work.
 
 ## Registration & affiliation data
 
-You met these in [talkgroups, IDs & affiliation](talkgroups-ids-affiliation/); here they
+You met these in [talkgroups, IDs & affiliation](/learn/digital-trunking/talkgroups-ids-affiliation/); here they
 matter as *data traffic*. When a radio powers on or roams onto a site it **registers** —
 it tells the system "unit 12345 is here." When the user selects a talkgroup, the radio
 **affiliates** — "unit 12345 wants group 101." Neither involves speech; both are short,
 structured data messages.
 
 This is exactly the kind of traffic a monitor sees on the control channel. In the
-vocabulary of [control-channel signaling](control-channel-signaling/), registration and
+vocabulary of [control-channel signaling](/learn/digital-trunking/control-channel-signaling/), registration and
 affiliation are their own message families, decoded right next to the call grants. Watch
 a control channel for a minute and most of what scrolls past is this housekeeping data,
 not voice.
@@ -115,7 +115,7 @@ The dividing line is size and duration:
   is. The radio tunes to the granted channel, moves its data, and releases it.
 
 Which mechanism a system leans on depends on its design; the [trunking
-flavors](trunking-flavors/) lesson covers how different systems assign channels.
+flavors](/learn/digital-trunking/trunking-flavors/) lesson covers how different systems assign channels.
 
 ## What it looks like to GopherTrunk
 
@@ -128,8 +128,8 @@ only ever send data.
 
 Some payloads are **opaque**. A data-call grant tells you a unit is moving data on an
 assigned channel, but the contents may be a vendor format or **encrypted** — see
-[encryption & authentication](encryption-and-authentication/) and
-[OTAR & key management](otar-key-management/). As with encrypted voice, the *metadata*
+[encryption & authentication](/learn/digital-trunking/encryption-and-authentication/) and
+[OTAR & key management](/learn/digital-trunking/otar-key-management/). As with encrypted voice, the *metadata*
 (who, when, how often, which channel) is usually still readable even when the payload is
 not.
 
@@ -139,13 +139,13 @@ Brief and standard-specific:
 
 - **P25** — carries control-channel data in TSBKs and defines a full **packet data**
   service built from PDUs; registration, affiliation, and status all have defined message
-  types. See [P25 Phase 1](p25-phase-1/).
+  types. See [P25 Phase 1](/learn/digital-trunking/p25-phase-1/).
 - **DMR** — Tier II and Tier III both support data; Tier III (trunked) uses CSBKs for
   signaling. Location and registration are often handled by **vendor protocols** (for
   example an **ARS**, *automatic registration service*, plus a GPS/telemetry protocol)
-  layered on DMR's data frames. See [DMR Tier II & III](dmr-tier-2-3/).
+  layered on DMR's data frames. See [DMR Tier II & III](/learn/digital-trunking/dmr-tier-2-3/).
 - **NXDN** and others — likewise define short data and status messaging alongside voice,
-  with location and registration commonly vendor-specific. See [NXDN](nxdn/).
+  with location and registration commonly vendor-specific. See [NXDN](/learn/digital-trunking/nxdn/).
 
 Across all of them the pattern holds: standardized signaling for registration and
 affiliation, plus a mix of standard and vendor-specific formats for location, status, and

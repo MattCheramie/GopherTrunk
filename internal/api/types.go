@@ -124,6 +124,19 @@ type SystemDTO struct {
 	RFSSHex     string `json:"rfss_hex,omitempty"`
 	SiteHex     string `json:"site_hex,omitempty"`
 
+	// TETRA network identity decoded live from the control channel
+	// (MLE-SYSINFO / D-NWRK-BROADCAST), overlaid from the SiteTracker topology —
+	// the TETRA analogue of WACN/SystemID/RFSS/Site. TETRA has no WACN/RFSS/Site
+	// concept, so those P25 fields stay zero for a TETRA system; the UI shows
+	// these instead. MCC+MNC form the Mobile Network Identity (MNI). Zero until
+	// the CC locks and broadcasts identity; HasTETRAIdentity distinguishes a
+	// decoded value from "not yet" (colour code / LA can legitimately be 0).
+	TETRAMCC               uint16 `json:"tetra_mcc,omitempty"`
+	TETRAMNC               uint16 `json:"tetra_mnc,omitempty"`
+	TETRALocationArea      uint16 `json:"tetra_location_area,omitempty"`
+	TETRADecodedColourCode uint8  `json:"tetra_decoded_colour_code,omitempty"`
+	HasTETRAIdentity       bool   `json:"has_tetra_identity,omitempty"`
+
 	// Per-protocol FEC opt-out surface. Empty strings indicate the
 	// new spec-correct default is active (channel coding / FEC on
 	// for every protocol). Non-empty values that parse to "off" /

@@ -30,4 +30,4 @@ way to choose — usually a *combination* of platforms — for a real project.
 Examples lean on **GopherTrunk**, software-defined-radio software that can live
 on anything from a laptop to a Raspberry Pi by the antenna, so abstract
 trade-offs stay concrete. Mark lessons complete as you go; your progress is saved
-in your browser. New here? **[Start with lesson 1: What is computer hardware?](what-is-hardware/)**
+in your browser. New here? **[Start with lesson 1: What is computer hardware?](/learn/intro-hardware/what-is-hardware/)**
