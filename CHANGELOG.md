@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Event API reference docs (`docs/api-events.md`).** A stable-contract reference
+  for the real-time telemetry surface: the SSE (`/api/v1/events`) and WebSocket
+  (`/api/v1/events/ws`) transports and shared event envelope, the full JSON payload
+  schema for the ten curated event DTOs (grant, call.start/end, encryption,
+  affiliation, registration, unit.request, patch, DMR grant/bandplan), the per-call
+  and per-grant webhook payloads, config keys, and reliability caveats (no stream
+  auth, no server-side filtering, slow-subscriber drop). Refs #268.
 - **Push grant webhook (`broadcast.grant_webhook`).** A new outbound sink POSTs
   one JSON object per control-channel grant the moment GopherTrunk decodes it —
   the push counterpart to the pollable `GET /api/v1/grants` and the live
