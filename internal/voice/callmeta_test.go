@@ -81,10 +81,9 @@ func TestRecorderWritesCallJSON(t *testing.T) {
 		t.Fatalf("no wav recorded in %s (entries: %v)", tgDir, entries)
 	}
 	jsonPath := strings.TrimSuffix(wav, ".wav") + ".json"
-	b, err := os.ReadFile(jsonPath)
-	if err != nil {
-		t.Fatalf("expected .json sidecar next to %s: %v", wav, err)
-	}
+	// The sidecar is written off-lock just after the session is removed (what
+	// waitSession(false) observes), so poll rather than race that write.
+	b := waitForSidecar(t, jsonPath)
 
 	var m callMeta
 	if err := json.Unmarshal(b, &m); err != nil {
@@ -121,6 +120,27 @@ func TestRecorderWritesCallJSON(t *testing.T) {
 		if !strings.Contains(string(b), "\""+key+"\"") {
 			t.Errorf("sidecar missing required key %q", key)
 		}
+	}
+}
+
+// waitForSidecar polls up to ~2s for the .json sidecar at path and returns its
+// contents. handleEnd/handleSegment remove the session from the map (what
+// waitSession(false) observes) BEFORE writing the sidecar off-lock, so a test
+// that reads it the instant the session is gone can race the write; the recorder
+// publishes KindCallComplete only after the write, so a correct run always
+// produces the file within the deadline (a genuine miss still fails on timeout).
+func waitForSidecar(t *testing.T, path string) []byte {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		b, err := os.ReadFile(path)
+		if err == nil {
+			return b
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for sidecar %s: %v", path, err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -183,17 +203,31 @@ func TestRecorderCallJSONSrcListSpansTransmissions(t *testing.T) {
 	waitSession(t, r, "V1", false)
 
 	// The second transmission's file is named from talker B; its sidecar must
-	// carry BOTH talkers in order.
+	// carry BOTH talkers in order. handleEnd removes the session from the map
+	// (what waitSession(false) observes) BEFORE it writes the .json sidecar
+	// off-lock, so poll for the sidecar rather than racing that write — the
+	// recorder publishes KindCallComplete only after the write, so a correct run
+	// always produces the file; a genuine "never written" bug still fails on the
+	// deadline below.
 	tgDir := filepath.Join(dir, "Ostankino", "OPS-1")
-	entries, err := os.ReadDir(tgDir)
-	if err != nil {
-		t.Fatalf("read tg dir: %v", err)
-	}
 	var secondJSON string
-	for _, e := range entries {
-		if strings.Contains(e.Name(), "src145000") && strings.HasSuffix(e.Name(), ".json") {
-			secondJSON = filepath.Join(tgDir, e.Name())
+	var entries []os.DirEntry
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		entries, err = os.ReadDir(tgDir)
+		if err != nil {
+			t.Fatalf("read tg dir: %v", err)
 		}
+		secondJSON = ""
+		for _, e := range entries {
+			if strings.Contains(e.Name(), "src145000") && strings.HasSuffix(e.Name(), ".json") {
+				secondJSON = filepath.Join(tgDir, e.Name())
+			}
+		}
+		if secondJSON != "" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	if secondJSON == "" {
 		t.Fatalf("no second-transmission .json (src145000) found in %v", entries)
