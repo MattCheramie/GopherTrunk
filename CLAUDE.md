@@ -146,3 +146,33 @@ confirmation before any close-as-completed.
   case (same reason `receiver_equalizer_test.go`'s clean-channel test adds 30 dB).
   The residual −44 dBFS weak front end is an RF/gain/antenna condition (the #764
   lesson) the equalizer mitigates but does not replace — raise the signal level too.
+- **TETRA sensitivity vs SDRTrunk / "other software decodes it" — the demod-loop
+  levers don't transfer; the equalizer is the win.** Recurring reports say other SDR
+  software (users say "SDRTrunk") decodes weak signals GT calls too weak. Findings, so
+  the next investigation doesn't re-chase them: stock **SDRTrunk has no TETRA decoder**;
+  its transferable analog is its π/4-DQPSK DMR / P25-LSM demod, which is sensitive via a
+  **coherent decision-directed Costas PLL** (`dsp/psk/pll/CostasLoop.java`), an
+  **adaptive wide→narrow loop bandwidth** (`PLLBandwidth.fromSyncCount`) and a
+  **unity-envelope AGC** — all ahead of a *coherent* slicer. GT's TETRA path is
+  **differential (phase-only)** with an **angle-based block AFC** and **soft-decision
+  RCPC Viterbi** (GT is actually *ahead* on FEC — SDRTrunk's Viterbi is hard-decision),
+  so those front-end levers do **not** transfer. Both were implemented and measured on
+  the reporter's captures, and both **failed a failing-first test and were reverted**:
+  - **Pre-Gardner AGC** (the P25 #275 pattern, `p25/phase1/receiver/cqpsk.go`): a level
+    sweep (IQ ×1 … ×0.0003) shows the TETRA path is **already amplitude-invariant** (BSCH
+    yield flat with the AGC off) and the AGC is neutral-to-**harmful** — a feed-forward
+    AGC on a low-SNR *differential* signal just AM-modulates it with the noise envelope.
+    The #275 mechanism only helps a *coherent* slicer / CMA-FSE whose error terms depend
+    on amplitude; TETRA's phase-only decision does not.
+  - **Per-symbol Costas carrier loop** (`sync.QPSKCostas`, wired coarse-AFC + post-eq loop
+    exactly like P25 P1): **neutral** on real captures and **neutral-to-worse** under
+    synthetic carrier drift (±400…±2000 Hz) across loop BW 40–225 Hz. A continuously-
+    adapting loop ahead of a differential decoder adds a time-varying phase that does not
+    cancel in `s·conj(last)` — the same streaming-vs-differential rule that forces the
+    equalizer to apply *frozen* snapshots. The block-coarse AFC + `SnapshotCMA` already
+    absorb the residual carrier/ISI, so there is nothing left for the loop to win.
+  Net: the demonstrated sensitivity win for TETRA is the **`SnapshotCMA` equalizer** (now
+  on the CC path, 22%→100% CRC-clean BSCH on the ~10 dB capture) — which SDRTrunk does not
+  have. Any residual gap after the equalizer is RF/signal-limited (the #764 / #1001
+  conclusion) and is fixed RF-side (gain / antenna / feedline / lower-noise front end),
+  **not** by bolting SDRTrunk-style coherent loops onto a differential receiver.
