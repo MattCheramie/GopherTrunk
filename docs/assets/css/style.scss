@@ -1820,6 +1820,9 @@ a.category-chip:hover {
   position: absolute;
   top: 0.4rem;
   right: 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 2rem;
   height: 2rem;
   padding: 0;
@@ -1831,6 +1834,10 @@ a.category-chip:hover {
   line-height: 1;
 }
 .gt-promo__close:hover { color: var(--fg); background: var(--bg-code); }
+/* Comfortable 44px+ tap target on touch devices without bloating it on desktop. */
+@media (pointer: coarse) {
+  .gt-promo__close { width: 2.75rem; height: 2.75rem; top: 0.25rem; right: 0.25rem; }
+}
 .gt-promo__icon {
   display: flex;
   align-items: center;
@@ -1862,18 +1869,30 @@ a.category-chip:hover {
 }
 .gt-promo__later:hover { color: var(--fg); }
 
-/* Modal pop-up: centered, backdrop, above the nav (nav z-index is 1000). */
+/* Modal pop-up: centered, backdrop, above the nav (nav z-index is 1000).
+   The overlay itself scrolls (overflow-y:auto) and the card is centered with
+   margin:auto — this pair keeps the card reachable when it is taller than the
+   viewport (short/landscape phones, large text, browser zoom), where plain
+   flex-centering would clip the top and bottom out of reach. Padding honours
+   the safe-area insets on notched devices. */
 .gt-promo--popup {
   position: fixed;
   inset: 0;
   z-index: 1200;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 1rem;
+  padding:
+    max(1rem, env(safe-area-inset-top))
+    max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
 }
+/* Fixed so it always covers the viewport even while the overlay scrolls. */
 .gt-promo__backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.55);
 }
@@ -1881,6 +1900,7 @@ a.category-chip:hover {
 .gt-promo--popup .gt-promo__card {
   position: relative;
   z-index: 1;
+  margin: auto;
   width: 100%;
   max-width: 26rem;
   animation: gt-promo-pop 0.22s ease-out both;
