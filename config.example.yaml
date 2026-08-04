@@ -1349,6 +1349,10 @@ broadcast:
 #     on_no_voice_device: true   # fire when a grant found no free voice tuner
 #     on_encrypted: true         # fire on an encrypted grant
 #     on_emergency: true         # fire on an emergency grant
+#     on_cc_sync_loss: true      # fire when a locked control channel suddenly
+#                                #   loses sync — captures the re-acquisition IQ,
+#                                #   ideal for debugging sync-loss / slow warm-up
+#                                #   lock (pair with tap: ddc for small files)
 
 # User-interface tabs. Every navigation tab shows by default in both the
 # web UI and the terminal TUI. If you run GopherTrunk for one main task
