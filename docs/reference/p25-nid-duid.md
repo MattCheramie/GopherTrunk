@@ -10,7 +10,7 @@ autolink: true
 infobox:
   - { label: Size, value: 64 bits after the FSW }
   - { label: Carries, value: NAC (12) + DUID (4) }
-  - { label: FEC, value: BCH(63,16,11) + 1 flag bit }
+  - { label: FEC, value: "BCH(63,16,11) + 1 flag bit" }
   - { label: Spec, value: TIA-102.BAAA §6.2 }
 see_also: [p25-frame-sync-word, network-access-code, bch-code, tsbk, p25-logical-data-unit, p25-phase-1]
 related_reading:
