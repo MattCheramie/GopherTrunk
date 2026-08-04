@@ -235,11 +235,11 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 		voiceDec = dmrvoice.NewInterleavedDecoder()
 		router = newSlotRouter(groupID)
 	}
-	// Talker-alias reassembly. The alias header/block embedded LCs carry no
-	// source address, so the alias is keyed and published under the most
-	// recent SourceID seen from a group-voice embedded LC on this call.
+	// Talker-alias reassembly and GPS Info both ride the embedded LC, which
+	// carries no source address, so both are attributed to the most recent
+	// SourceID seen from a group-voice embedded LC on this call.
 	aliasAsm := dmr.NewTalkerAliasAssembler(nil)
-	var aliasSrc uint32
+	var callSrc uint32
 	publishAlias := func(src uint32, alias string) {
 		if src == 0 || alias == "" || c.bus == nil {
 			return
@@ -257,6 +257,34 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 				Alias:      alias,
 				Unreliable: unreliable,
 				At:         time.Now(),
+			},
+		})
+	}
+	// lastGPS dedupes repeated identical fixes — a stationary radio rebroadcasts
+	// the same GPS Info LC, and one row per superframe would flood the log.
+	var lastGPS dmr.GPSInfo
+	var haveGPS bool
+	publishGPS := func(src uint32, g dmr.GPSInfo) {
+		if src == 0 || c.bus == nil || !g.Valid() {
+			return
+		}
+		if haveGPS && g == lastGPS {
+			return
+		}
+		lastGPS, haveGPS = g, true
+		c.log.Info("composer: dmr gps",
+			"system", system, "serial", serial, "src", src,
+			"lat", g.Latitude, "lon", g.Longitude)
+		c.bus.Publish(events.Event{
+			Kind: events.KindLocation,
+			Payload: trunking.Location{
+				System:    system,
+				Protocol:  "dmr",
+				RadioID:   src,
+				Talkgroup: groupID,
+				Latitude:  g.Latitude,
+				Longitude: g.Longitude,
+				At:        time.Now(),
 			},
 		})
 	}
@@ -290,17 +318,19 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 				if sf.HasLC {
 					lcSuperframes.Add(1)
 					if gv, ok := sf.LC.AsGroupVoiceUser(); ok && gv.SourceID != 0 {
-						aliasSrc = gv.SourceID
+						callSrc = gv.SourceID
 					}
 				}
-				// Talker-alias header/block embedded LC: reassemble the display
-				// name across superframes and publish it once complete. Runs on
-				// every superframe (both slots) — it is call-metadata, not this
-				// slot's audio, so it is intentionally before the slot-router gate.
+				// Talker-alias header/block and GPS Info embedded LCs are
+				// call-metadata, not this slot's audio, so they run on every
+				// superframe (both slots) before the slot-router gate.
 				if sf.HasTalkerAlias {
-					if alias, done := aliasAsm.Add(aliasSrc, sf.TalkerAlias); done {
-						publishAlias(aliasSrc, alias)
+					if alias, done := aliasAsm.Add(callSrc, sf.TalkerAlias); done {
+						publishAlias(callSrc, alias)
 					}
+				}
+				if sf.HasGPS {
+					publishGPS(callSrc, sf.GPS)
 				}
 				if router != nil && !router.accept(sf) {
 					// A superframe from the other timeslot (or an

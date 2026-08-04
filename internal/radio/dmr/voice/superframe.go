@@ -53,6 +53,12 @@ type VoiceSuperframe struct {
 	// interpretation, which does not apply to an alias LC.
 	HasTalkerAlias bool
 	TalkerAlias    dmr.TalkerAliasFragment
+	// HasGPS reports that this superframe's embedded Full LC was a GPS Info
+	// PDU (FLCO 0x08). GPS then holds the decoded position; the voice chain
+	// binds it to the call's source radio (the LC carries no address) and
+	// publishes it on the location bus.
+	HasGPS bool
+	GPS    dmr.GPSInfo
 }
 
 // voiceSyncs are the sync words that frame burst A of a voice
@@ -342,6 +348,12 @@ func (d *Decoder) sliceAt(start, step int, syncName string) VoiceSuperframe {
 		if frag, ok := dmr.ParseTalkerAliasFragment(info); ok {
 			sf.HasTalkerAlias = true
 			sf.TalkerAlias = frag
+		}
+		// GPS Info reuses the Full LC framing too — its payload is a position
+		// fix, not the group/source addresses the generic LC view reads.
+		if gps, ok := dmr.ParseGPSInfo(info); ok {
+			sf.HasGPS = true
+			sf.GPS = gps
 		}
 	}
 	return sf
