@@ -45,6 +45,14 @@ type VoiceSuperframe struct {
 	// capture-pending FEC posture.
 	HasRC bool
 	RC    dmr.ReverseChannel
+	// HasTalkerAlias reports that this superframe's embedded Full LC was a
+	// talker-alias header or block (FLCO 0x04-0x07). TalkerAlias then holds
+	// the parsed fragment; the voice chain feeds it to a
+	// dmr.TalkerAliasAssembler to reassemble the radio's display name across
+	// the header + block superframes. Independent of HasLC's group-voice
+	// interpretation, which does not apply to an alias LC.
+	HasTalkerAlias bool
+	TalkerAlias    dmr.TalkerAliasFragment
 }
 
 // voiceSyncs are the sync words that frame burst A of a voice
@@ -324,9 +332,17 @@ func (d *Decoder) sliceAt(start, step int, syncName string) VoiceSuperframe {
 			}
 		}
 	}
-	if lc, ok := dmr.ReassembleEmbeddedLC(frags); ok {
+	if info, lc, ok := dmr.ReassembleEmbeddedLCInfo(frags); ok {
 		sf.HasLC = true
 		sf.LC = lc
+		// A talker-alias header/block reuses the Full LC framing but its
+		// octets 2..8 are alias text, not the group/source addresses the
+		// generic LC view reads. Surface the parsed fragment so the voice
+		// chain can reassemble the display name across superframes.
+		if frag, ok := dmr.ParseTalkerAliasFragment(info); ok {
+			sf.HasTalkerAlias = true
+			sf.TalkerAlias = frag
+		}
 	}
 	return sf
 }
