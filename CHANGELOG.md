@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **DMR GPS position decode → live map.** A DMR radio's GPS Info embedded
+  Link Control (FLCO 0x08) is now decoded — a 25-bit two's-complement
+  longitude and 24-bit two's-complement latitude per ETSI TS 102 361-2,
+  cross-checked against the ok-dmrlib reference — and published as a
+  `location` event bound to the call's source radio. The existing
+  `location_log` storage and web map surface it, so a DMR subscriber's
+  position appears on the map alongside P25 the same way. Stationary radios
+  that rebroadcast an unchanged fix produce one row, not one per superframe.
+  The wire layout is a working model pending on-air capture validation.
 - **DMR talker alias decode.** A DMR radio's display name — carried in the
   voice superframe's embedded Link Control as a header (FLCO 0x04) plus up to
   three continuation blocks (0x05-0x07) — is now reassembled and published as a
