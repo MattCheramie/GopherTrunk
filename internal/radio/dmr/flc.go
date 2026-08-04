@@ -137,3 +137,30 @@ func (f FLC) AsGroupVoiceUser() (GroupVoiceChannelUser, bool) {
 		Encrypted:    f.ServiceOptions&0x40 != 0,
 	}, true
 }
+
+// UnitToUnitVoiceChannelUser is the structured shape of an FLC whose FLCO
+// is FLCOUnitToUnitVoice — a private (unit-to-unit) call. DestinationID is
+// the called subscriber's 24-bit ID, not a talkgroup.
+type UnitToUnitVoiceChannelUser struct {
+	DestinationID uint32 // 24-bit called subscriber
+	SourceID      uint32 // 24-bit calling subscriber
+	Encrypted     bool
+	Emergency     bool
+}
+
+// AsUnitToUnitVoice decodes the FLC into the typed private-voice payload
+// when its FLCO matches; otherwise (zero, false). ServiceOptions bits are
+// the same emergency/privacy layout as the group-voice LC (§7.2.1
+// Table 7.13); the only difference is the destination is a subscriber, not
+// a talkgroup.
+func (f FLC) AsUnitToUnitVoice() (UnitToUnitVoiceChannelUser, bool) {
+	if f.FLCO != FLCOUnitToUnitVoice {
+		return UnitToUnitVoiceChannelUser{}, false
+	}
+	return UnitToUnitVoiceChannelUser{
+		DestinationID: f.DstAddr,
+		SourceID:      f.SrcAddr,
+		Emergency:     f.ServiceOptions&0x80 != 0,
+		Encrypted:     f.ServiceOptions&0x40 != 0,
+	}, true
+}
