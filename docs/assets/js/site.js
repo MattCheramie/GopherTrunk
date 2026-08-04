@@ -48,28 +48,13 @@
     }
   }
 
-  // CTA interaction memory (localStorage). We record which call-to-action
-  // "families" a visitor has already acted on so we can adapt later pages:
-  // someone who has downloaded sees the Support ask promoted, and vice-versa.
-  var CTA_KEY = 'gt-cta';
+  // CTA interaction memory now lives in the shared metrics module
+  // (assets/js/analytics.js, window.GTMetrics), loaded before this file, so
+  // promos and CTAs record through the same path. Read state through it, with a
+  // safe fallback if GTMetrics somehow failed to load.
   var readCtaState = function () {
-    try { return JSON.parse(localStorage.getItem(CTA_KEY)) || {}; }
-    catch (e) { return {}; }
-  };
-  var rememberCta = function (family) {
-    if (!family) return;
-    try {
-      var s = readCtaState();
-      s[family] = true;
-      localStorage.setItem(CTA_KEY, JSON.stringify(s));
-    } catch (e) {}
-  };
-  var ctaFamily = function (id) {
-    if (!id) return null;
-    if (id === 'cta_try_download') return 'try';
-    if (id.indexOf('cta_support_') === 0) return 'support';
-    if (id.indexOf('cta_join_') === 0) return 'join';
-    return null;
+    if (window.GTMetrics && window.GTMetrics.readCtaState) return window.GTMetrics.readCtaState();
+    return {};
   };
 
   // In-content CTAs: relocate the "try" / "support" call-outs into the
@@ -123,15 +108,13 @@
     }
   }
 
-  // CTA clicks: remember the family in localStorage (for adaptive ordering)
-  // and fire a gtag event so we can measure whether these CTAs convert.
+  // CTA clicks: delegate to the shared metrics module, which remembers the
+  // family in localStorage (for adaptive ordering) and fires the gtag event.
   document.addEventListener('click', function (e) {
     var link = e.target.closest && e.target.closest('[data-cta-event]');
     if (!link) return;
-    var id = link.getAttribute('data-cta-event');
-    rememberCta(ctaFamily(id));
-    if (typeof window.gtag === 'function') {
-      window.gtag('event', 'cta_click', { cta_id: id, page_path: location.pathname });
+    if (window.GTMetrics && window.GTMetrics.cta) {
+      window.GTMetrics.cta(link.getAttribute('data-cta-event'));
     }
   });
 

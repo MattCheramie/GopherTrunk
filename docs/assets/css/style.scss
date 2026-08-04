@@ -1800,6 +1800,147 @@ a.category-chip:hover {
   .join-cta__actions .btn { flex: 1 1 auto; justify-content: center; }
 }
 
+/* ---------- Promos (pop-ups / pop-ins / fly-outs) ---------- */
+/* Reusable system driven by assets/js/promos.js. A `.gt-promo` is hidden until
+   the engine reveals it; the `--popup / --popin / --flyout` modifier controls
+   only presentation. All variants share the card styling and theme tokens. */
+.gt-promo[hidden] { display: none; }
+
+.gt-promo__card {
+  position: relative;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.75rem 1.5rem 1.25rem;
+  text-align: center;
+}
+.gt-promo__close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.55rem;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.gt-promo__close:hover { color: var(--fg); background: var(--bg-code); }
+.gt-promo__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.gt-promo__icon svg { width: 1.6rem; height: 1.6rem; }
+.gt-promo__title { margin: 0 0 0.5rem; font-size: 1.3rem; }
+.gt-promo__body { margin: 0 0 1.1rem; color: var(--fg-muted); }
+.gt-promo__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.gt-promo__later {
+  margin-top: 0.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+  text-decoration: underline;
+}
+.gt-promo__later:hover { color: var(--fg); }
+
+/* Modal pop-up: centered, backdrop, above the nav (nav z-index is 1000). */
+.gt-promo--popup {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.gt-promo__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+}
+:root.dark .gt-promo__backdrop { background: rgba(0, 0, 0, 0.65); }
+.gt-promo--popup .gt-promo__card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 26rem;
+  animation: gt-promo-pop 0.22s ease-out both;
+}
+body.gt-promo-open { overflow: hidden; }
+
+/* Pop-in: small card anchored bottom-right, no backdrop / no scroll lock. */
+.gt-promo--popin {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1100;
+  width: min(22rem, calc(100vw - 2rem));
+}
+.gt-promo--popin .gt-promo__card {
+  text-align: left;
+  animation: gt-promo-rise 0.24s ease-out both;
+}
+
+/* Fly-out: edge-anchored panel that slides in from the right. */
+.gt-promo--flyout {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  width: min(24rem, 100vw);
+}
+.gt-promo--flyout .gt-promo__card {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  text-align: left;
+  animation: gt-promo-slide 0.26s ease-out both;
+}
+
+@keyframes gt-promo-pop {
+  from { opacity: 0; transform: translateY(0.5rem) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes gt-promo-rise {
+  from { opacity: 0; transform: translateY(1rem); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes gt-promo-slide {
+  from { transform: translateX(100%); }
+  to   { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gt-promo--popup .gt-promo__card,
+  .gt-promo--popin .gt-promo__card,
+  .gt-promo--flyout .gt-promo__card { animation: none; }
+}
+@media (max-width: 600px) {
+  .gt-promo__actions { width: 100%; }
+  .gt-promo__actions .btn { flex: 1 1 auto; justify-content: center; }
+}
+
 /* ---------- Lab Bench blog series: figures, charts & persona callouts ---------- */
 /* Used by the Signal Lab / RF Scope / Crypto Lab tutorial series. Charts are
    rendered by assets/js/labcharts.js into <canvas class="lab-chart">. */
