@@ -96,6 +96,18 @@ type errAwareRawSink interface {
 	WriteRawFrameWithErrors(deviceSerial string, frame []byte, correctedBits int) error
 }
 
+// drainCoordinator is the optional recorder capability that lets the composer
+// tell the recorder when a voice call's chain has fully drained its buffered
+// audio, so the recorder finalizes the recording only AFTER the tail frames
+// have been written — closing the finalize race that dropped the last speech
+// frames of a transmission. The recorder implements it; sinks that don't (test
+// stubs, analog-only callers) skip coordination and the recorder finalizes on
+// CallEnd as before.
+type drainCoordinator interface {
+	EnableDrainCoordination()
+	NotifyDrainComplete(deviceSerial string)
+}
+
 // callAwareRawSink is the richest sink: it carries the per-frame FEC
 // corrected-bit count AND the call identity (Grant.CallID) the frame was
 // decoded for, so the recorder can reject a stale frame from the call that

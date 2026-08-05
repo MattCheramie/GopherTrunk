@@ -117,9 +117,24 @@ type Recorder struct {
 	// call (handleStart), appended on a talker change (backfillSessionGrant), read at
 	// finalize, and cleared when the call ends. Guarded by mu.
 	callTalkers map[string][]srcEvent
-	sub         *events.Subscription
-	runDone     chan struct{}
-	closeOnce   sync.Once
+
+	// drainCoordinated is set (via EnableDrainCoordination) when a composer that
+	// signals NotifyDrainComplete is wired to this recorder. When true, handleEnd
+	// does NOT finalize a call immediately on KindCallEnd; it defers until the
+	// composer signals its voice chain has drained (or a safety timeout fires),
+	// so the transmission-tail frames the chain writes during teardown land in
+	// the recording instead of on an already-deleted session. When false the
+	// recorder finalizes on CallEnd exactly as before (standalone use, tests).
+	drainCoordinated bool
+	// pendingFinalize holds calls awaiting drain coordination, keyed by device
+	// serial. A call finalizes once BOTH its KindCallEnd (handleEnd) and the
+	// composer's NotifyDrainComplete have arrived — in either order — or the
+	// safety timer fires. Guarded by mu.
+	pendingFinalize map[string]*pendingFinalize
+
+	sub       *events.Subscription
+	runDone   chan struct{}
+	closeOnce sync.Once
 
 	// decodedTap, when set, receives the PCM decoded from digital
 	// vocoder frames in WriteRawFrame — the live consumers (web
@@ -400,6 +415,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		dedupSeen:          make(map[dedupKey]dedupEntry),
 		sessions:           make(map[string]*recordingSession),
 		callTalkers:        make(map[string][]srcEvent),
+		pendingFinalize:    make(map[string]*pendingFinalize),
 		runDone:            make(chan struct{}),
 	}
 	r.sub = opts.Bus.Subscribe()
@@ -520,6 +536,10 @@ func (r *Recorder) Close() error {
 // Run drains CallStart/CallEnd events until ctx cancels.
 func (r *Recorder) Run(ctx context.Context) error {
 	defer close(r.runDone)
+	// On teardown, finalize any calls still deferred for drain coordination so a
+	// pending recording is flushed to disk rather than left open until its safety
+	// timer fires (or lost if the process exits first).
+	defer r.flushPendingFinalize()
 	for {
 		select {
 		case <-ctx.Done():
@@ -1276,7 +1296,157 @@ func (r *Recorder) voiceStatsFor(s *recordingSession) (VoiceStats, bool) {
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
+// drainFinalizeTimeout bounds how long a drain-coordinated call waits for the
+// composer's NotifyDrainComplete after its KindCallEnd before finalizing anyway.
+// It is a safety backstop for the rare case where the composer never signals —
+// e.g. the event bus dropped the composer's copy of KindCallEnd under
+// backpressure (Bus.Publish drops for slow subscribers), so the composer never
+// tears down that chain. The normal path finalizes immediately on the signal
+// (drains are milliseconds), so this timeout only ever fires on a lost signal;
+// it is generous so it never pre-empts a legitimately in-progress drain (which
+// would re-introduce the tail-drop it exists to prevent).
+const drainFinalizeTimeout = 3 * time.Second
+
+// pendingFinalize tracks one call deferred for drain coordination. It finalizes
+// when both haveCE (KindCallEnd seen) and drained (NotifyDrainComplete seen) are
+// true, or when timer fires. Guarded by Recorder.mu.
+type pendingFinalize struct {
+	ce      trunking.CallEnd
+	haveCE  bool
+	drained bool
+	timer   *time.Timer
+}
+
+// EnableDrainCoordination switches the recorder into drain-coordinated finalize:
+// handleEnd defers a call's finalize until the composer signals the call's voice
+// chain has drained (NotifyDrainComplete), closing the race where the recorder
+// deleted the session before the chain wrote the transmission tail. Called once
+// by the composer at construction when it is wired to this recorder. Idempotent.
+func (r *Recorder) EnableDrainCoordination() {
+	r.mu.Lock()
+	r.drainCoordinated = true
+	r.mu.Unlock()
+}
+
+// NotifyDrainComplete tells the recorder that the composer has finished draining
+// the named call's voice chain (all tail frames written). If the call's
+// KindCallEnd has already been seen, the call finalizes now; otherwise the drain
+// is recorded and finalize happens when handleEnd runs. A serial with no open
+// session and no pending CallEnd is ignored (nothing to finalize).
+func (r *Recorder) NotifyDrainComplete(deviceSerial string) {
+	r.mu.Lock()
+	if !r.drainCoordinated {
+		r.mu.Unlock()
+		return
+	}
+	st := r.pendingFinalize[deviceSerial]
+	if st == nil {
+		// Drain signal arrived before handleEnd. Only track it if a session is
+		// still open (a CallEnd for it is therefore still coming); otherwise
+		// there is nothing to finalize and tracking it would leak.
+		if _, hasSession := r.sessions[deviceSerial]; !hasSession {
+			r.mu.Unlock()
+			return
+		}
+		st = &pendingFinalize{}
+		r.pendingFinalize[deviceSerial] = st
+	}
+	st.drained = true
+	if !st.haveCE {
+		r.mu.Unlock()
+		return // wait for handleEnd to supply the CallEnd
+	}
+	ce := st.ce
+	if st.timer != nil {
+		st.timer.Stop()
+	}
+	delete(r.pendingFinalize, deviceSerial)
+	r.mu.Unlock()
+	r.finalizeCall(ce)
+}
+
+// finalizeOnDrainTimeout is the safety backstop: it finalizes a deferred call
+// whose drain signal never arrived within drainFinalizeTimeout.
+func (r *Recorder) finalizeOnDrainTimeout(deviceSerial string) {
+	r.mu.Lock()
+	st := r.pendingFinalize[deviceSerial]
+	if st == nil {
+		r.mu.Unlock()
+		return // already finalized by NotifyDrainComplete
+	}
+	ce := st.ce
+	delete(r.pendingFinalize, deviceSerial)
+	r.mu.Unlock()
+	r.log.Warn("recorder: drain signal missing; finalizing call on timeout",
+		"device", deviceSerial, "timeout", drainFinalizeTimeout)
+	r.finalizeCall(ce)
+}
+
 func (r *Recorder) handleEnd(ce trunking.CallEnd) {
+	if !r.drainCoordinated {
+		r.finalizeCall(ce)
+		return
+	}
+	// Drain-coordinated: keep the session alive until the composer signals the
+	// call's voice chain has drained, so the tail frames it writes during
+	// teardown are not dropped onto a deleted session. Finalize when both this
+	// CallEnd and the drain signal have arrived, or when the safety timer fires.
+	serial := ce.DeviceSerial
+	r.mu.Lock()
+	if _, hasSession := r.sessions[serial]; !hasSession {
+		// No session to keep alive (skipped/dead call): finalizeCall is a cheap
+		// no-op cleanup — run it now rather than wait for a drain signal.
+		r.mu.Unlock()
+		r.finalizeCall(ce)
+		return
+	}
+	st := r.pendingFinalize[serial]
+	if st == nil {
+		st = &pendingFinalize{}
+		r.pendingFinalize[serial] = st
+	}
+	st.ce = ce
+	st.haveCE = true
+	if st.drained {
+		if st.timer != nil {
+			st.timer.Stop()
+		}
+		delete(r.pendingFinalize, serial)
+		r.mu.Unlock()
+		r.finalizeCall(ce)
+		return
+	}
+	if st.timer == nil {
+		st.timer = time.AfterFunc(drainFinalizeTimeout, func() { r.finalizeOnDrainTimeout(serial) })
+	}
+	r.mu.Unlock()
+}
+
+// flushPendingFinalize finalizes every call still awaiting drain coordination.
+// Called on Run teardown so nothing is left dangling.
+func (r *Recorder) flushPendingFinalize() {
+	r.mu.Lock()
+	pend := r.pendingFinalize
+	r.pendingFinalize = make(map[string]*pendingFinalize)
+	ends := make([]trunking.CallEnd, 0, len(pend))
+	for _, st := range pend {
+		if st.timer != nil {
+			st.timer.Stop()
+		}
+		if st.haveCE {
+			ends = append(ends, st.ce)
+		}
+	}
+	r.mu.Unlock()
+	for _, ce := range ends {
+		r.finalizeCall(ce)
+	}
+}
+
+// finalizeCall closes and finalizes the recording for a completed call. It is
+// the terminal step for both the immediate (uncoordinated) and drain-coordinated
+// paths.
+func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 	r.mu.Lock()
 	s, ok := r.sessions[ce.DeviceSerial]
 	if ok {

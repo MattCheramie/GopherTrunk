@@ -262,6 +262,15 @@ type Composer struct {
 	autotune   *autotune.Registry
 	cryptoSink cryptocap.Sink
 
+	// drainCoord, when the sink supports it (the recorder does), lets the
+	// composer tell the recorder that a call's voice chain has fully drained
+	// its buffered audio, so the recorder finalizes the recording only AFTER
+	// the transmission-tail frames have been written. Cached once at New so the
+	// hot teardown path does no type-assert. nil for sinks that don't support
+	// coordination (test stubs, analog-only callers) — the recorder then
+	// finalizes on CallEnd as before.
+	drainCoord drainCoordinator
+
 	sub       *events.Subscription
 	runDone   chan struct{}
 	closeOnce sync.Once
@@ -370,6 +379,14 @@ func New(opts Options) (*Composer, error) {
 		chains:       make(map[string]*chain),
 		tetraDemuxes: make(map[string]*tetraSlotDemux),
 		runDone:      make(chan struct{}),
+	}
+	// Enable drain coordination when the sink (the recorder) supports it: the
+	// composer will signal NotifyDrainComplete once each call's chain has
+	// drained, and the recorder defers finalize until that signal (or a safety
+	// timeout) so the transmission tail is not dropped by the finalize race.
+	if dc, ok := c.sink.(drainCoordinator); ok && dc != nil {
+		c.drainCoord = dc
+		dc.EnableDrainCoordination()
 	}
 	c.sub = opts.Bus.Subscribe()
 	return c, nil
@@ -559,11 +576,22 @@ func (c *Composer) handleEnd(ce trunking.CallEnd) {
 	ch := c.chains[ce.DeviceSerial]
 	delete(c.chains, ce.DeviceSerial)
 	c.mu.Unlock()
-	if ch == nil {
-		return
+	if ch != nil {
+		ch.cancel()
+		// Block until the chain goroutine has fully drained and written every
+		// tail frame (drainTETRAIQ / the same-carrier owner worker for TETRA,
+		// the in-line teardown for DMR/P25/FM). Only after this returns are all
+		// of the call's frames guaranteed written to the recorder.
+		<-ch.done
 	}
-	ch.cancel()
-	<-ch.done
+	// Tell the recorder the drain is complete so it can finalize the recording.
+	// Fired for EVERY CallEnd — including calls with no chain — so a
+	// drain-coordinated recorder never blocks waiting for a signal that will
+	// not come. Ordering (this vs the recorder's own CallEnd handling) is
+	// arbitrary; the recorder finalizes once both have arrived.
+	if c.drainCoord != nil {
+		c.drainCoord.NotifyDrainComplete(ce.DeviceSerial)
+	}
 }
 
 func (c *Composer) cancelAll() {

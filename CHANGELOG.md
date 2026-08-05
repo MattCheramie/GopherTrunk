@@ -17,6 +17,18 @@ for tagged releases.
   call.
 
 ### Fixed
+- **Trailing voice frames dropped at the end of a transmission.** When a call
+  ended, the recorder finalized and deleted the recording session on
+  `CallEnd` while the composer's voice chain was still draining its buffered
+  audio in parallel (two independent event-bus subscribers, no ordering) — so
+  the last speech frames the chain wrote during teardown landed on an
+  already-deleted session and were silently dropped. This was most visible on
+  TETRA same-carrier calls, whose shared-demux owner worker could still be
+  draining queued bursts when the chain reported done. The recorder now defers
+  finalize until the composer signals the chain has fully drained (with a
+  safety timeout so a dropped `CallEnd` can't hang a recording), and the
+  same-carrier chain waits for its owner worker to finish draining before
+  reporting done. Digital voice (TETRA/DMR/P25/ProVoice) keeps its full tail.
 - **DMR Tier III private-voice grants were mislabelled as talkgroups.** The
   shared grant path never set `Individual`, so a Tier III private
   (unit-to-unit) call's destination subscriber was published as if it were a
