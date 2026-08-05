@@ -29,6 +29,14 @@ for tagged releases.
   DMR voice chain now backfills them (plus the source RID) from the embedded
   voice LC via the in-call `CallSourceUpdate` path the P25 Phase 2 chain
   already uses — so an encrypted Tier III call is now recorded as encrypted.
+- **Mid-call emergency / priority was still dropped at the call record.**
+  The engine backfills a followed call's Emergency and Priority (decoded on
+  the traffic channel, since a DMR Tier III / P25 Phase 2 grant carries no
+  Service Options) onto the bound grant, but the call-log end update only
+  persisted the backfilled encrypted flag and source RID — so an emergency
+  Tier III call was still written non-emergency at priority 0. The end update
+  now latches emergency on and takes a non-zero priority, the same
+  never-downgrade discipline it already applied to encrypted.
 
 ### Added
 - **`gophertrunk replay -record-voice -out-dir <dir> -freq <Hz>`** decodes and
