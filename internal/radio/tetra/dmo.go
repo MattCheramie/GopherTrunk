@@ -1,5 +1,7 @@
 package tetra
 
+import "github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
+
 // DMO (Direct Mode Operation) radio-layer framing — ETSI EN 300 396-2 (part 2:
 // radio aspects). DMO is TETRA's infrastructure-less peer-to-peer mode: a
 // transmitting MS sends a Direct Mode Synchronisation Burst (DSB) to let the
@@ -122,7 +124,7 @@ type DMBurst struct {
 // baseIdx is the absolute dibit index of dibits[0], carried into DMBurst.Lead so
 // callers can order bursts across calls; pass 0 for a one-shot slice.
 func ExtractDMBursts(dibits []uint8, baseIdx int) []DMBurst {
-	return extractDMBursts(dibits, nil, baseIdx)
+	return extractDMBursts(dibits, nil, baseIdx, nil)
 }
 
 // ExtractDMBurstsSoft is the soft-decision-capable twin of ExtractDMBursts: it
@@ -136,23 +138,61 @@ func ExtractDMBurstsSoft(dibits []uint8, diffs []complex64, baseIdx int) []DMBur
 	if len(diffs) != len(dibits) {
 		diffs = nil
 	}
-	return extractDMBursts(dibits, diffs, baseIdx)
+	return extractDMBursts(dibits, diffs, baseIdx, nil)
 }
 
-func extractDMBursts(dibits []uint8, diffs []complex64, baseIdx int) []DMBurst {
+// ExtractDMBurstsEqualized is ExtractDMBurstsSoft plus per-burst training-sequence
+// equalization of each DNB's TCH/S soft blocks (issue #1001's LMS lever applied to
+// Direct Mode). symbols is the receiver's raw pre-differential symbol stream
+// (SymbolSink output), parallel to and the same length as dibits; when it is
+// parallel each rotation-0 DNB's SoftBKN1/SoftBKN2 are re-derived from the
+// equalized symbols (see dmEqualizeDNBSoft) instead of the raw differentials. When
+// symbols is nil or a length mismatch it degrades to ExtractDMBurstsSoft. taps <= 0
+// uses defaultLMSTaps; passes <= 0 uses defaultLMSPasses.
+func ExtractDMBurstsEqualized(dibits []uint8, diffs, symbols []complex64, baseIdx, taps, passes int) []DMBurst {
+	if len(diffs) != len(dibits) {
+		diffs = nil
+	}
+	var eqx *dmEqualizeCtx
+	if len(symbols) == len(dibits) {
+		if taps <= 0 {
+			taps = defaultLMSTaps
+		}
+		if passes <= 0 {
+			passes = defaultLMSPasses
+		}
+		eqx = &dmEqualizeCtx{
+			symbols: symbols,
+			eq:      equalizer.NewSnapshotLMS(taps, defaultLMSStep),
+			taps:    taps,
+			passes:  passes,
+		}
+	}
+	return extractDMBursts(dibits, diffs, baseIdx, eqx)
+}
+
+// dmEqualizeCtx carries the raw symbols and the reusable per-burst equalizer for
+// ExtractDMBurstsEqualized. nil ⇒ no equalization (the raw soft path).
+type dmEqualizeCtx struct {
+	symbols      []complex64
+	eq           *equalizer.SnapshotLMS
+	taps, passes int
+}
+
+func extractDMBursts(dibits []uint8, diffs []complex64, baseIdx int, eqx *dmEqualizeCtx) []DMBurst {
 	var out []DMBurst
 
 	// DSB: correlate the 19-dibit synchronisation training sequence (shared with
 	// TMO's SB). Threshold 3 matches processSB / TrafficExtractor.
 	sts := SyncTrainingDibits()
 	out = appendDMBursts(out, dibits, diffs, baseIdx, DMBurstSync, sts, 3,
-		dmDSBBKN1Start, dmSCHSDibits, dmDSBBKN2Start, dmBlockDibits)
+		dmDSBBKN1Start, dmSCHSDibits, dmDSBBKN2Start, dmBlockDibits, nil)
 
 	// DNB: correlate either 11-dibit normal training sequence. Threshold 2 matches
 	// TrafficExtractor's normal-burst detectors.
 	for _, nts := range [][]uint8{NormalSyncDibits(), NormalSyncDibits2()} {
 		out = appendDMBursts(out, dibits, diffs, baseIdx, DMBurstNormal, nts, 2,
-			dmDNBBKN1Start, dmBlockDibits, dmDNBBKN2Start, dmBlockDibits)
+			dmDNBBKN1Start, dmBlockDibits, dmDNBBKN2Start, dmBlockDibits, eqx)
 	}
 	return out
 }
@@ -163,7 +203,7 @@ func extractDMBursts(dibits []uint8, diffs []complex64, baseIdx int) []DMBurst {
 // for a DNB both blocks are 108-dibit (placed in BKN1/BKN2). De-duplicates a lead
 // that correlates under more than one rotation (keeps the first).
 func appendDMBursts(out []DMBurst, dibits []uint8, diffs []complex64, baseIdx int, kind DMBurstKind,
-	pattern []uint8, tol, b1Start, b1Len, b2Start, b2Len int) []DMBurst {
+	pattern []uint8, tol, b1Start, b1Len, b2Start, b2Len int, eqx *dmEqualizeCtx) []DMBurst {
 	n := len(pattern)
 	seen := map[int]struct{}{}
 	for rot := uint8(0); rot < 4; rot++ {
@@ -196,6 +236,15 @@ func appendDMBursts(out []DMBurst, dibits []uint8, diffs []complex64, baseIdx in
 				b.SoftBKN2 = cloneDiffs(diffs[b2From:b2To])
 				if kind == DMBurstNormal {
 					b.SoftBKN1 = cloneDiffs(diffs[b1From:b1To])
+				}
+			}
+			// Training-sequence equalization of the DNB soft blocks (opt-in, rotation
+			// 0 only): re-derive SoftBKN1/SoftBKN2 from the equalized raw symbols. A
+			// nil result (rot != 0, span off-buffer, no symbols) leaves the raw diffs
+			// above in place, so it can only help.
+			if eqx != nil && kind == DMBurstNormal && rot == 0 {
+				if s1, s2 := dmEqualizeDNBSoft(eqx.symbols, baseIdx, lead, pattern, eqx.eq, eqx.taps, eqx.passes); s1 != nil && s2 != nil {
+					b.SoftBKN1, b.SoftBKN2 = s1, s2
 				}
 			}
 			out = append(out, b)

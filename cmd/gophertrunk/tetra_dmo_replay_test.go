@@ -82,7 +82,9 @@ func TestTETRADMOReplay(t *testing.T) {
 	// order keeps allDiffs strictly parallel to allDibits.
 	var allDibits []uint8
 	var allDiffs []complex64
+	var allSymbols []complex64
 	enableEQ := os.Getenv("GT_TETRA_DMO_EQ") == "1" || os.Getenv("GT_TETRA_DMO_EQ") == "true"
+	enableLMS := os.Getenv("GT_TETRA_DMO_LMS") == "1" || os.Getenv("GT_TETRA_DMO_LMS") == "true"
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: outRate,
 		DibitSink: func(d []uint8, _ int) {
@@ -90,6 +92,10 @@ func TestTETRADMOReplay(t *testing.T) {
 		},
 		SoftSink: func(diffs []complex64, _ int) {
 			allDiffs = append(allDiffs, diffs...)
+		},
+		// Raw symbols for the per-burst training-sequence equalizer (GT_TETRA_DMO_LMS).
+		SymbolSink: func(syms []complex64, _ int) {
+			allSymbols = append(allSymbols, syms...)
 		},
 		ClockMode:           tetrarx.ClockGardner,
 		GardnerGain:         0.005,
@@ -113,8 +119,15 @@ func TestTETRADMOReplay(t *testing.T) {
 	// Soft-capable extraction: carry the differentials so DMBurstTCHSpeechSoft can
 	// recover corrupted TCH/S bursts the hard path drops (the #1001 ~2× lever).
 	// Falls back to the hard ExtractDMBursts geometry if the soft stream didn't
-	// stay parallel (length mismatch).
-	bursts := tetra.ExtractDMBurstsSoft(allDibits, allDiffs, 0)
+	// stay parallel (length mismatch). GT_TETRA_DMO_LMS=1 additionally trains a
+	// per-burst equalizer on each rotation-0 DNB's midamble and re-derives the soft
+	// blocks from the equalized symbols (#1001's LMS lever for Direct Mode).
+	var bursts []tetra.DMBurst
+	if enableLMS {
+		bursts = tetra.ExtractDMBurstsEqualized(allDibits, allDiffs, allSymbols, 0, 0, 0)
+	} else {
+		bursts = tetra.ExtractDMBurstsSoft(allDibits, allDiffs, 0)
+	}
 
 	var dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly int
 	var syncSecs []int           // seconds carrying a CRC-valid SCH/S (transmission starts)
@@ -155,8 +168,8 @@ func TestTETRADMOReplay(t *testing.T) {
 		}
 	}
 
-	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs colour=%#x eq=%v",
-		inRate, outRate, len(iq), float64(len(iq))/inRate, colour, enableEQ)
+	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs colour=%#x eq=%v lms=%v",
+		inRate, outRate, len(iq), float64(len(iq))/inRate, colour, enableEQ, enableLMS)
 	t.Logf("bursts: dsb_total=%d dsb_schs_crc=%d dnb_total=%d tch_crc=%d (soft_only=%d)",
 		dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly)
 	sort.Ints(syncSecs)
@@ -175,7 +188,7 @@ func TestTETRADMOReplay(t *testing.T) {
 	t.Logf("speech active seconds (>=2 CRC bursts): %v", speechSecs)
 
 	if len(speechFrames) == 0 {
-		t.Logf("no CRC-valid TCH/S speech recovered — if the capture is a known-good DMO voice call, try GT_TETRA_DMO_COLOUR (the DM colour code) or GT_TETRA_DMO_EQ=1")
+		t.Logf("no CRC-valid TCH/S speech recovered — if the capture is a known-good DMO voice call, try GT_TETRA_DMO_COLOUR (the DM colour code), GT_TETRA_DMO_EQ=1 (blind CMA) or GT_TETRA_DMO_LMS=1 (training-sequence equalizer)")
 		return
 	}
 
