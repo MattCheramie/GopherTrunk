@@ -7,6 +7,12 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **TETRA call priority is now surfaced.** The CMCE parser already decoded
+  the mandatory 4-bit Call priority (and derived the emergency flag from it);
+  the value now reaches `Grant.Priority` and the call log, extending on-air
+  call-priority metadata to TETRA alongside P25 and DMR.
+
 ### Fixed
 - **Encrypted / emergency DMR Tier III calls were logged clear.** A DMR
   Tier III channel-grant CSBK carries no service-options octet, so a

@@ -128,6 +128,39 @@ func TestGrantForeignCarrierRejected(t *testing.T) {
 	}
 }
 
+// TestGrantCarriesCallPriority pins the VoiceGrant.Priority → trunking.Grant
+// plumbing: the 4-bit CMCE Call priority the parser already decodes now
+// reaches the published grant as call metadata.
+func TestGrantCarriesCallPriority(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Sys", FrequencyHz: 467_912_500})
+	cc.learnMainCarrier(2716)
+	cc.publishGrant(VoiceGrant{DestSSI: 1020543, CarrierNumber: 2716, Timeslot: 1, Priority: 6})
+
+	var grant *trunking.Grant
+	for drained := false; !drained; {
+		select {
+		case ev := <-sub.C:
+			if g, ok := ev.Payload.(trunking.Grant); ok && ev.Kind == events.KindGrant {
+				gg := g
+				grant = &gg
+			}
+		default:
+			drained = true
+		}
+	}
+	if grant == nil {
+		t.Fatal("no grant published")
+	}
+	if grant.Priority != 6 {
+		t.Errorf("grant priority = %d, want 6", grant.Priority)
+	}
+}
+
 // TestCarrierFrequencyDerivation checks that a grant carrier number resolves to
 // Hz relative to the cell's own carrier (learned from SYSINFO) at 25 kHz
 // spacing, with no configured band plan.

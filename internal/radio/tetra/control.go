@@ -760,6 +760,7 @@ type grantSnapshot struct {
 	encrypted  bool
 	emergency  bool
 	individual bool
+	priority   uint8
 }
 
 // sameContent reports whether two snapshots describe the same grant, ignoring
@@ -767,7 +768,7 @@ type grantSnapshot struct {
 func (s grantSnapshot) sameContent(o grantSnapshot) bool {
 	return s.src == o.src && s.freq == o.freq && s.usage == o.usage &&
 		s.encrypted == o.encrypted && s.emergency == o.emergency &&
-		s.individual == o.individual
+		s.individual == o.individual && s.priority == o.priority
 }
 
 // grantDedupWindow is how long a repeated identical voice grant is suppressed
@@ -828,6 +829,7 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 	snap := grantSnapshot{
 		at: now, src: g.SourceSSI, freq: freq, usage: g.UsageMarker,
 		encrypted: g.Encrypted, emergency: g.Emergency, individual: g.Individual,
+		priority: g.Priority,
 	}
 	c.mu.Lock()
 	if c.grantSeen == nil {
@@ -863,6 +865,7 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			Timeslot:         g.Timeslot + 1,
 			Encrypted:        g.Encrypted,
 			Emergency:        g.Emergency,
+			Priority:         g.Priority,
 			Individual:       g.Individual,
 			TETRAColourExt:   colourExt,
 			TETRAUsageMarker: g.UsageMarker,

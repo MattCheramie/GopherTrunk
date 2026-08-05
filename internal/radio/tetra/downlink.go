@@ -342,6 +342,9 @@ func (c *ControlChannel) publishGrantFromMAC(m MACResource, msg CMCEMessage, hav
 	}
 	if haveCMCE {
 		g.Emergency = msg.Emergency
+		if msg.HasPriority {
+			g.Priority = msg.Priority
+		}
 	}
 	c.classifyParties(&g, m, msg, haveCMCE)
 	c.publishGrant(g)
