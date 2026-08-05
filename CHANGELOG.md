@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **DMR Tier II conventional calls end promptly on the Terminator.** The
+  decoder now publishes a `call.release` when it sees the explicit
+  Terminator-with-LC burst, so the engine tears the call down at once
+  instead of waiting out the composer's hangtime / no-voice timers — the
+  same prompt-teardown TETRA already drives from D-RELEASE. Recorded call
+  durations match the air more closely.
 - **DMR private (unit-to-unit) calls route and attribute correctly on
   interleaved carriers.** The 2-slot `slotRouter` now binds a private call's
   timeslot from its unit-to-unit embedded LC (by called subscriber), instead
