@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **DMR private (unit-to-unit) calls route and attribute correctly on
+  interleaved carriers.** The 2-slot `slotRouter` now binds a private call's
+  timeslot from its unit-to-unit embedded LC (by called subscriber), instead
+  of only recording it via the phase fallback, and the voice chain learns the
+  call's source radio from a unit-to-unit LC too — so talker-alias / GPS
+  metadata is attributed to the caller on private calls, not just group calls.
+  Completes the unit-to-unit voice-follow work.
 - **DMR private (unit-to-unit) calls are now followed.** A Tier II
   conventional channel dropped any non-group Voice LC Header, so DMR private
   calls were invisible — no grant, never followed, never recorded. The
