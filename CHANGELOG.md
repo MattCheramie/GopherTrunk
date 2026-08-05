@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Call history now shows who was talking, not just the RID number.** Each
+  call record carries a `source_alpha` field resolving the source radio's
+  alias/name — preferring the operator-curated RID catalogue (`rid_alias_file`)
+  and falling back to the most-recently-decoded over-the-air talker alias. The
+  alias is persisted to the call log and returned by the `/api/v1/calls`
+  history endpoint alongside the existing talkgroup alias, and is re-resolved
+  at call end so a compressed grant whose source RID is backfilled mid-call
+  still lands with a name.
 - **TETRA call priority is now surfaced.** The CMCE parser already decoded
   the mandatory 4-bit Call priority (and derived the emergency flag from it);
   the value now reaches `Grant.Priority` and the call log, extending on-air

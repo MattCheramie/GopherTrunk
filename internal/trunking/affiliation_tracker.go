@@ -237,6 +237,18 @@ func (t *AffiliationTracker) Snapshot() []UnitActivity {
 	return out
 }
 
+// Lookup returns the tracked activity for a radio ID (a copy, safe to
+// retain), and false when the unit is not currently tracked. Used to
+// resolve a radio's most-recently-decoded talker alias.
+func (t *AffiliationTracker) Lookup(radioID uint32) (UnitActivity, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if u, ok := t.units[radioID]; ok {
+		return *u, true
+	}
+	return UnitActivity{}, false
+}
+
 // UnitsOnTalkgroup returns the radio IDs currently associated with the
 // given talkgroup.
 func (t *AffiliationTracker) UnitsOnTalkgroup(talkgroup uint32) []uint32 {
