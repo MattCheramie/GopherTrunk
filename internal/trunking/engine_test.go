@@ -1109,6 +1109,8 @@ func TestEngineHandleCallSourceUpdateBackfillsActiveCall(t *testing.T) {
 		DeviceSerial: dev,
 		SourceID:     315203, // @er-imagery's example MMR radio
 		Encrypted:    true,
+		Emergency:    true,
+		Priority:     5,
 		At:           time.Now(),
 	})
 
@@ -1119,6 +1121,10 @@ func TestEngineHandleCallSourceUpdateBackfillsActiveCall(t *testing.T) {
 	if updated[0].Grant.SourceID != 315203 || !updated[0].Grant.Encrypted {
 		t.Errorf("backfill did not land on Grant: src=%d enc=%v",
 			updated[0].Grant.SourceID, updated[0].Grant.Encrypted)
+	}
+	if !updated[0].Grant.Emergency || updated[0].Grant.Priority != 5 {
+		t.Errorf("emergency/priority not backfilled: emer=%v prio=%d",
+			updated[0].Grant.Emergency, updated[0].Grant.Priority)
 	}
 
 	select {

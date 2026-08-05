@@ -459,7 +459,7 @@ func (p *VoicePool) UpdateEncryption(serial string, algID uint8, keyID uint16) (
 // never the other way (the spec doesn't define mid-call
 // decryption). Returns a copy of the updated Grant + ok=true when
 // a matching call was found.
-func (p *VoicePool) UpdateSource(serial string, sourceID uint32, encrypted bool) (Grant, bool) {
+func (p *VoicePool) UpdateSource(serial string, sourceID uint32, encrypted, emergency bool, priority uint8) (Grant, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	ac, ok := p.active[serial]
@@ -471,6 +471,12 @@ func (p *VoicePool) UpdateSource(serial string, sourceID uint32, encrypted bool)
 	}
 	if encrypted {
 		ac.Grant.Encrypted = true
+	}
+	if emergency {
+		ac.Grant.Emergency = true
+	}
+	if priority != 0 {
+		ac.Grant.Priority = priority
 	}
 	return ac.Grant, true
 }

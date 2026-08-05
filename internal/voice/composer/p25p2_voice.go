@@ -365,6 +365,8 @@ func (c *Composer) publishP25Phase2CallSource(serial string, u p25p2.GroupVoiceC
 			DeviceSerial: serial,
 			SourceID:     u.SourceID,
 			Encrypted:    so.Encrypted(),
+			Emergency:    so.Emergency(),
+			Priority:     so.Priority(),
 			At:           time.Now().UTC(),
 		},
 	})
