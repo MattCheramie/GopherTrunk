@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -123,6 +124,25 @@ type Config struct {
 	// a discard logger (the engine never wants a nil *slog.Logger reaching a
 	// factory that does not nil-guard it).
 	Log *slog.Logger
+
+	// Bus, when non-nil, is the event bus the decode pipeline publishes grants
+	// / decode errors to (and the internal collector subscribes to). Supplying
+	// one lets a caller wire additional subscribers — e.g. a trunking engine +
+	// voice composer + recorder that turn grants into recordings (replay
+	// -record-voice). nil ⇒ the engine creates and closes its own bus (the
+	// default; grants are only collected into the Result).
+	Bus *events.Bus
+
+	// OnChannelIQ, when non-nil, is called with each post-DDC channelized IQ
+	// chunk (the exact complex stream the receiver decodes, at the DDC output
+	// rate) as it is produced. The slice is reused after the call returns, so
+	// an implementation that keeps the samples MUST copy them. This is the
+	// live counterpart of RecordDDCPath: it feeds a same-carrier voice source
+	// so replay can decode voice off the control carrier's own IQ. A slow
+	// consumer paces the decode (the call is synchronous), which is what keeps
+	// a fast file replay from overrunning the real-time voice chain. rateHz is
+	// the DDC output (channelized) rate the samples are at.
+	OnChannelIQ func(iq []complex64, rateHz float64)
 }
 
 const defaultChunkSamples = 8192

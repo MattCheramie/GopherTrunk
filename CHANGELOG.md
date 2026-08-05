@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`gophertrunk replay -record-voice -out-dir <dir> -freq <Hz>`** decodes and
+  records voice from a capture, not just control-channel locks/grants. It wires
+  the production voice path (trunking engine → voice composer → recorder) onto
+  the replay decode: grants bind a same-carrier voice source fed by the decode's
+  own channelized IQ, and each followed call is written as `.wav`/`.raw`/`.json`.
+  Best for conventional systems whose voice rides the decoded carrier (DMR
+  Tier II / IPSC, TETRA) — it's the offline way to validate that a capture
+  produces audio, and the reproduction vehicle for #1036. Requires `-freq` (a
+  grant with frequency 0 is dropped) and does not support `-auto-tune` (use
+  `-tune-hz`). Backed by a new siglab `Config.Bus` / `Config.OnChannelIQ` seam.
 - **DMR private (unit-to-unit) calls are now followed.** A Tier II
   conventional channel dropped any non-group Voice LC Header, so DMR private
   calls were invisible — no grant, never followed, never recorded. The

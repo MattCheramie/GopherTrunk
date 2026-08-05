@@ -304,7 +304,15 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		}()
 	}
 
-	bus := events.NewBus(1024)
+	// Use the caller's bus when supplied (replay -record-voice wires an engine +
+	// composer + recorder onto it), else create and own one. Only close a bus we
+	// created — the caller manages the lifetime of one it passed in.
+	bus := cfg.Bus
+	ownBus := false
+	if bus == nil {
+		bus = events.NewBus(1024)
+		ownBus = true
+	}
 	sub := bus.Subscribe()
 
 	// Optional protocol-agnostic analyzer + raw-IQ imbalance corrector.
@@ -370,7 +378,9 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	bundle, err := buildBundle(cfg, bus, logger, receiverRate, symbolTap, softTap, constTap, pduTap)
 	if err != nil {
 		sub.Close()
-		bus.Close()
+		if ownBus {
+			bus.Close()
+		}
 		return nil, err
 	}
 	if bundle.closeFn != nil {
@@ -439,6 +449,14 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			if iqTap != nil {
 				iqTap.observeIQ(feed)
 			}
+			// Offer the channelized IQ to a voice source BEFORE decoding it, so a
+			// grant this chunk produces is published to a subscriber that is already
+			// receiving the carrier's IQ. The call is synchronous, so a slow voice
+			// consumer paces the decode (prevents a fast file replay from overrunning
+			// the real-time voice chain).
+			if cfg.OnChannelIQ != nil {
+				cfg.OnChannelIQ(feed, receiverRate)
+			}
 			bundle.proc.Process(feed)
 			totalSamples += int64(pairs)
 
@@ -478,10 +496,15 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		}
 	}
 
-	// Release the drainer and wait for it so totals are complete.
-	bus.Close()
-	<-done
+	// Release the drainer and wait for it so totals are complete. Close the bus
+	// only if we own it; a caller-supplied bus (replay -record-voice) stays open
+	// so its engine/composer/recorder can finalize before the caller closes it.
+	// Closing our subscription ends the collector's range loop either way.
+	if ownBus {
+		bus.Close()
+	}
 	sub.Close()
+	<-done
 	if readErr != nil {
 		return nil, readErr
 	}

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
@@ -48,6 +50,9 @@ func runReplay(args []string) {
 	recordDDC := fs.String("record-ddc", "", "also write the post-DDC narrowband IQ (the exact channelized stream the receiver decodes) to this 2-channel 16-bit baseband WAV — shrinks a fat 2.5/10 MS/s capture into a small shareable fixture that `replay -format wav` decodes identically")
 	outFormat := fs.String("out-format", "text", "output format: text | json | jsonl | yaml | csv | csv-events")
 	out := fs.String("out", "", "write structured output to this file (default: stdout for non-text)")
+	recordVoice := fs.Bool("record-voice", false, "decode and record voice for the capture's grants, writing .wav/.raw/.json under -out-dir. Wires the production voice path (engine → composer → recorder) onto the decode, following each grant on the decoded (same) carrier. Best for conventional systems (DMR Tier II / IPSC, TETRA) whose voice rides the decoded carrier.")
+	outDir := fs.String("out-dir", "", "recordings directory for -record-voice (required with it)")
+	voiceHangtimeMs := fs.Int("voice-hangtime-ms", 3500, "end-of-transmission hangtime for -record-voice, in ms")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk replay — decode a raw IQ capture file offline (any protocol).
 
@@ -129,6 +134,34 @@ FLAGS:`)
 		Log:                  logger,
 	}
 
+	// Optional voice recording: wire the production voice path (engine → composer
+	// → recorder) onto the decode's grant bus + channelized-IQ tap, so grants
+	// become .wav/.raw/.json recordings. -auto-tune runs several candidate decodes
+	// internally, which would each drive the voice rig, so it is disallowed here —
+	// use -tune-hz for a fixed offset.
+	var voiceRig *replayVoiceRig
+	if *recordVoice {
+		if *outDir == "" {
+			rep.Fatalf(2, "-record-voice requires -out-dir")
+		}
+		if *autoTune {
+			rep.Fatalf(2, "-record-voice does not support -auto-tune; use -tune-hz for a fixed offset")
+		}
+		if *freq == 0 {
+			rep.Fatalf(2, "-record-voice requires -freq (the carrier frequency in Hz): grants carry the decode frequency, and a grant with freq 0 is dropped by the engine (nothing records)")
+		}
+		ddcRate := *sampleRate
+		if target := ccdecoder.DDCTargetForProtocol(proto); *sampleRate != target {
+			ddcRate = target
+		}
+		voiceRig, err = setupReplayVoice(*outDir, ddcRate, time.Duration(*voiceHangtimeMs)*time.Millisecond, logger)
+		if err != nil {
+			rep.Fatal(1, err)
+		}
+		cfg.Bus = voiceRig.bus
+		cfg.OnChannelIQ = voiceRig.onChannelIQ
+	}
+
 	// Under -auto-tune, try the ranked carrier candidates and keep the best
 	// lock — so a control channel that is off-centre and not the loudest carrier
 	// in a wideband capture is still found (a single dominant-carrier estimate
@@ -138,6 +171,12 @@ FLAGS:`)
 		res, err = siglab.RunAutoTuneMulti(*in, cfg, 0)
 	} else {
 		res, err = siglab.Run(*in, cfg)
+	}
+	if voiceRig != nil {
+		// Let in-flight calls reach hangtime end + finalize their recordings,
+		// then tear the rig down. Done regardless of the decode error so a
+		// partial capture still flushes what it recorded.
+		voiceRig.finalize()
 	}
 	if err != nil {
 		rep.Fatal(1, err)
