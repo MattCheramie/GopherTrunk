@@ -998,7 +998,7 @@ func (e *Engine) handleCallSourceUpdate(c CallSourceUpdate) {
 	if c.System != "" {
 		return
 	}
-	g, ok := e.pool.UpdateSource(c.DeviceSerial, c.SourceID, c.Encrypted)
+	g, ok := e.pool.UpdateSource(c.DeviceSerial, c.SourceID, c.Encrypted, c.Emergency, c.Priority)
 	if !ok {
 		e.mu.Lock()
 		if ac, sok := e.synthetic[c.DeviceSerial]; sok {
@@ -1007,6 +1007,12 @@ func (e *Engine) handleCallSourceUpdate(c CallSourceUpdate) {
 			}
 			if c.Encrypted {
 				ac.Grant.Encrypted = true
+			}
+			if c.Emergency {
+				ac.Grant.Emergency = true
+			}
+			if c.Priority != 0 {
+				ac.Grant.Priority = c.Priority
 			}
 			g = ac.Grant
 			ok = true
@@ -1025,6 +1031,8 @@ func (e *Engine) handleCallSourceUpdate(c CallSourceUpdate) {
 		GroupID:      g.GroupID,
 		SourceID:     g.SourceID,
 		Encrypted:    g.Encrypted,
+		Emergency:    g.Emergency,
+		Priority:     g.Priority,
 		At:           c.At,
 	}
 	e.bus.Publish(events.Event{

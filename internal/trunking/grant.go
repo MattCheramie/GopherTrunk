@@ -380,7 +380,15 @@ type CallSourceUpdate struct {
 	GroupID      uint32 // filled in by the engine on republish from the bound Grant
 	SourceID     uint32
 	Encrypted    bool
-	At           time.Time
+	// Emergency and Priority carry the in-call Service Options a followed
+	// call reveals on the traffic channel but whose grant lacked them — a
+	// DMR Tier III channel-grant CSBK has no service-options octet, so an
+	// encrypted / emergency / prioritised Tier III call would otherwise be
+	// logged clear / non-emergency / priority-0. Backfilled additively (an
+	// unset field never clears an already-set one).
+	Emergency bool
+	Priority  uint8
+	At        time.Time
 }
 
 // CallRelease is the payload of an events.KindCallRelease event. A
