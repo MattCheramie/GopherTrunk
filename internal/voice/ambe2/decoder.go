@@ -41,6 +41,44 @@ const (
 	DMRWarmVocoderName = "ambe2-dmr-warm"
 )
 
+// Call-startup acquisition squelch (opt-in via EnableStartupSquelch; off in
+// the raw decoder so unit tests stay byte-identical). Ports the P25 IMBE
+// squelch (internal/voice/imbe/decoder.go) to AMBE+2/DMR: while a receiver is
+// still acquiring symbol lock at the start of a transmission, the FEC layer
+// resolves the marginal dibit stream to random-but-VALID AMBE+2 parameters
+// that synthesise as a loud "startup scratch" burst (the DMR "DJ Scratchy"
+// onset). There is no error signal to key off, so the squelch gates on the
+// SPEECH signature: real voice opens with a sustained run of stable-pitch
+// voiced frames, whereas acquisition garbage is idle/unvoiced/pitch-jumping.
+// Output is muted until that run appears, then released for the rest of the
+// segment; a failsafe releases after acqMaxMuteFrames so a call is never
+// over-muted. Re-armed per call by the recorder building a fresh vocoder.
+const (
+	// acqRunFrames is how many consecutive stable-pitch voiced frames confirm
+	// real speech (each 20 ms). 4 keeps the leaked onset under ~80 ms; the
+	// first 3 frames are always muted (the run cannot latch sooner).
+	acqRunFrames = 4
+	// acqVoicedFracMin is the minimum voiced-harmonic fraction for a frame to
+	// count as a speech candidate — excludes fully-unvoiced acquisition noise
+	// while still catching a real voiced onset.
+	acqVoicedFracMin = 0.1
+	// acqMaxW0Jump is the largest frame-to-frame fundamental-frequency change
+	// (rad/sample) still counted as "stable". W0 is used instead of the raw
+	// AMBE+2 b0 index because it is unit-consistent with the IMBE port. Tuned
+	// against four real DMR captures (the committed dmr-voice.raw plus three
+	// Fire-dept calls from issue reporting): real voiced speech there glides by
+	// up to ~0.07 rad/sample/frame on marginal captures, while acquisition
+	// garbage jumps ~0.1+. 0.08 is the smallest value that lets every real
+	// call acquire on its true speech onset instead of falling through to the
+	// failsafe (a tighter 0.04–0.06 over-muted one capture to the full ~2 s);
+	// it still rejects the garbage onset (those captures' pre-speech bursts
+	// never form a 4-frame stable run at 0.08).
+	acqMaxW0Jump = 0.08
+	// acqMaxMuteFrames is the failsafe: never squelch more than this many
+	// frames (~2 s), so a pathological call can't be fully muted.
+	acqMaxMuteFrames = 100
+)
+
 // phaseRngSeedOffset offsets the §6.3 voiced-phase-dispersion source from
 // the unvoiced-noise source so the two deterministic streams don't march
 // in lockstep. Any fixed non-zero value works; this one matches imbe.
@@ -133,6 +171,19 @@ type Decoder struct {
 	unpack func([]byte) (Params, error)
 	// name is the registry key this decoder reports from Name().
 	name string
+
+	// Call-startup acquisition squelch state (see acqRunFrames). squelchEnabled
+	// is opt-in via EnableStartupSquelch (the recorder turns it on per call);
+	// off by default so the raw decoder and unit tests stay byte-identical.
+	// acquired latches once real speech is confirmed; acqRun counts the current
+	// stable-pitch voiced run; acqFrames drives the failsafe; acqLastVoicedW0
+	// (-1 = none) holds the previous qualifying frame's fundamental for the
+	// pitch-stability test.
+	squelchEnabled  bool
+	acquired        bool
+	acqRun          int
+	acqFrames       int
+	acqLastVoicedW0 float64
 }
 
 // New returns a fresh Decoder. The unvoiced-excitation noise
@@ -164,6 +215,10 @@ func NewWithConfig(seed int64, cfg mbe.AGCConfig) *Decoder {
 		agc:      mbe.NewAGC(cfg),
 		unpack:   UnpackParams,
 		name:     VocoderName,
+		// Arm the startup squelch's pitch-stability sentinel. The squelch only
+		// acts when EnableStartupSquelch has been called; a fresh vocoder per
+		// call (buildSession) is what re-arms it, so no Reset wiring is needed.
+		acqLastVoicedW0: -1,
 	}
 }
 
@@ -257,6 +312,42 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	muteByER := d.smoother.UpdateErrorRate(correctedBits)
 
 	p, err := d.unpack(info)
+
+	// Call-startup acquisition squelch (see acqRunFrames): advance the
+	// stable-pitch voiced run and confirm real speech before un-muting. Runs
+	// for every frame before the disposition switch so idle/bad/silent frames
+	// break the run; applyOutput (called on every return path) zeroes the
+	// output while !acquired, so the mute covers all dispositions uniformly.
+	// Mirrors imbe.Decoder's gate, using p.Tone for IMBE's IdleTone and p.W0
+	// (rad/sample) for the pitch-stability test.
+	if d.squelchEnabled && !d.acquired {
+		voiceCand := err == nil && !p.Silent && !p.Tone
+		vf := 0.0
+		if voiceCand && p.L > 0 {
+			vc := 0
+			for l := 1; l <= p.L; l++ {
+				if p.Vl[l] == 1 {
+					vc++
+				}
+			}
+			vf = float64(vc) / float64(p.L)
+		}
+		if voiceCand && vf >= acqVoicedFracMin {
+			if d.acqLastVoicedW0 >= 0 && math.Abs(p.W0-d.acqLastVoicedW0) <= acqMaxW0Jump {
+				d.acqRun++
+			} else {
+				d.acqRun = 1
+			}
+			d.acqLastVoicedW0 = p.W0
+		} else {
+			d.acqRun = 0
+			d.acqLastVoicedW0 = -1
+		}
+		d.acqFrames++
+		if d.acqRun >= acqRunFrames || d.acqFrames >= acqMaxMuteFrames {
+			d.acquired = true
+		}
+	}
 
 	switch {
 	case err != nil && d.lastGoodParams.L > 0 && d.badFrameCount < mbe.MaxBadFrames:
@@ -585,7 +676,23 @@ func (d *Decoder) applyOutput(pcm []float64, out []int16, freezeEnvelope bool) {
 	// Optional opt-in enhancement chain (nil = pass-through).
 	d.enhancer.Process(pcm)
 	d.agc.Apply(pcm, out, freezeEnvelope)
+	// Call-startup acquisition squelch: zero the output (but keep the AGC
+	// envelope tracking above, so the level is right the instant we release)
+	// until real speech is confirmed. Zeroing rather than dropping preserves
+	// the recording length. No-op unless EnableStartupSquelch was called.
+	if d.squelchEnabled && !d.acquired {
+		for i := range out {
+			out[i] = 0
+		}
+	}
 }
+
+// EnableStartupSquelch turns on the call-startup acquisition squelch (see the
+// acqRunFrames block) for this decoder. It is opt-in — the recorder calls it
+// per DMR call via the voice.StartupSquelchable interface — so the raw decoder
+// and unit tests keep byte-identical faithful output. Idempotent; call once
+// after construction, before decoding.
+func (d *Decoder) EnableStartupSquelch() { d.squelchEnabled = true }
 
 // SetVoiceEnhancer installs (or clears) the optional output enhancement
 // chain on this decoder and, when enabled, raises the AGC peak target so
