@@ -1695,6 +1695,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 			NAC:                nac,
 			Encrypted:          so.Encrypted(),
 			Emergency:          so.Emergency(),
+			Priority:           so.Priority(),
 			DataCall:           g.dataCall,
 			Individual:         g.individual,
 			P25Phase1DemodMode: c.p25Phase1DemodMode,
