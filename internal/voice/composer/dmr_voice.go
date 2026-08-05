@@ -315,6 +315,26 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 			},
 		})
 	}
+	// publishSource backfills the call's source + encryption / emergency /
+	// priority from the embedded voice LC. A DMR Tier III channel-grant CSBK
+	// carries no service-options octet, so without this an encrypted / emergency
+	// Tier III call is logged clear — the voice LC is where those bits actually
+	// arrive. Deduped so a repeated LC does not spam the bus; the engine's
+	// backfill is additive, so re-sending unchanged values is also harmless.
+	var lastSrcUpd trunking.CallSourceUpdate
+	var haveSrcUpd bool
+	publishSource := func(src uint32, enc, emer bool, prio uint8) {
+		if src == 0 || c.bus == nil {
+			return
+		}
+		upd := trunking.CallSourceUpdate{DeviceSerial: serial, SourceID: src, Encrypted: enc, Emergency: emer, Priority: prio}
+		if haveSrcUpd && upd == lastSrcUpd {
+			return
+		}
+		lastSrcUpd, haveSrcUpd = upd, true
+		upd.At = time.Now().UTC()
+		c.bus.Publish(events.Event{Kind: events.KindCallSourceUpdate, Payload: upd})
+	}
 	// Terminator detection: end the call at once when the followed traffic
 	// channel carries a valid Terminator-with-LC for this call's group,
 	// rather than waiting out the boundary tracker's hangtime. Publish once —
@@ -380,11 +400,15 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 					lcSuperframes.Add(1)
 					// Learn the call's source radio from either a group-voice or a
 					// unit-to-unit voice LC, so talker-alias / GPS metadata (which
-					// carry no address of their own) is attributed on private calls too.
+					// carry no address of their own) is attributed on private calls too,
+					// and backfill the call's source + service-options (encrypted /
+					// emergency / priority) — a Tier III grant carries none of these.
 					if gv, ok := sf.LC.AsGroupVoiceUser(); ok && gv.SourceID != 0 {
 						callSrc = gv.SourceID
+						publishSource(gv.SourceID, gv.Encrypted, gv.Emergency, gv.Priority)
 					} else if uu, ok := sf.LC.AsUnitToUnitVoice(); ok && uu.SourceID != 0 {
 						callSrc = uu.SourceID
+						publishSource(uu.SourceID, uu.Encrypted, uu.Emergency, uu.Priority)
 					}
 				}
 				// Talker-alias header/block and GPS Info embedded LCs are
