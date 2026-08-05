@@ -4410,6 +4410,30 @@ func (f fanoutSink) WriteRawFrameForCall(serial string, callID uint64, frame []b
 	return nil
 }
 
+// EnableDrainCoordination and NotifyDrainComplete forward the composer's voice-
+// chain drain coordination to the contained recorder. fanoutSink MUST implement
+// these: the composer discovers coordination via `c.sink.(drainCoordinator)` and
+// the daemon hands it a fanoutSink whenever more than one sink is configured
+// (tone-out, live player, audio publisher). Without forwarding, the assertion
+// fails against the fanoutSink, the recorder finalizes on CallEnd as before, and
+// the transmission-tail frames the chain writes during teardown are dropped in
+// the daemon even though the unit tests (which call the recorder directly) pass.
+func (f fanoutSink) EnableDrainCoordination() {
+	for _, s := range f {
+		if dc, ok := s.(interface{ EnableDrainCoordination() }); ok {
+			dc.EnableDrainCoordination()
+		}
+	}
+}
+
+func (f fanoutSink) NotifyDrainComplete(serial string) {
+	for _, s := range f {
+		if dc, ok := s.(interface{ NotifyDrainComplete(string) }); ok {
+			dc.NotifyDrainComplete(serial)
+		}
+	}
+}
+
 // toneProfilesFromConfig converts the YAML config shape into the
 // internal toneout.Profile shape, parsing duration strings.
 func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {

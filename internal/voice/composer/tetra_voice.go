@@ -648,13 +648,27 @@ func (c *Composer) runTETRASameCarrierChain(ctx context.Context, d *tetraSlotDem
 	}
 	// Start the vocoder worker BEFORE registering the owner, so a burst routed the
 	// instant addOwner returns already has a draining consumer. The worker exits
-	// (after draining) when ctx is cancelled at call end.
-	go c.tetraOwnerWorker(ctx, o)
+	// (after draining) when ctx is cancelled at call end. workerDone closes when
+	// the worker has finished draining its queued jobs and written the last
+	// speech frame.
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		c.tetraOwnerWorker(ctx, o)
+	}()
 	d.addOwner(o)
 	c.log.Info("composer: tetra voice follow started (shared demux) — TCH/S decode + ACELP vocoder",
 		"serial", serial, "group", groupID, "timeslot", grantSlot, "usage_marker", usageMarker)
 	defer func() {
+		// Stop new bursts routing to this owner, then WAIT for the worker to
+		// drain the bursts already queued (the transmission tail) and write
+		// their speech frames. This must complete before runTETRASameCarrierChain
+		// returns and closes done: composer.handleEnd signals the recorder to
+		// finalize right after <-ch.done, so a worker still draining here would
+		// otherwise land the tail frames on an already-finalized (deleted)
+		// session and drop them (the "missing trailing voice frames" report).
 		d.removeOwner(o)
+		<-workerDone
 		c.log.Info("composer: tetra voice follow ended",
 			"serial", serial, "bursts", o.bursts.Load(), "speech_frames", o.speech.Load(),
 			"vocoder_drops", o.vocoderDrops.Load())
