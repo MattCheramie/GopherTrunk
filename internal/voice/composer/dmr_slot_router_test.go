@@ -19,6 +19,37 @@ func sfNoLC(phase uint8) dmrvoice.VoiceSuperframe {
 	return dmrvoice.VoiceSuperframe{Phase: phase}
 }
 
+// sfWithU2ULC is sfWithLC for a unit-to-unit (private) call: the embedded
+// LC's destination is the called subscriber, which is the private grant's
+// GroupID.
+func sfWithU2ULC(phase uint8, dest uint32) dmrvoice.VoiceSuperframe {
+	return dmrvoice.VoiceSuperframe{
+		Phase: phase,
+		HasLC: true,
+		LC:    dmr.FLC{FLCO: dmr.FLCOUnitToUnitVoice, DstAddr: dest, SrcAddr: 9},
+	}
+}
+
+// TestSlotRouterRoutesUnitToUnitLC confirms a private call's embedded LC
+// binds the slot by its destination subscriber, exactly like a group LC
+// binds by talkgroup — otherwise a private call on an interleaved carrier
+// would only ever record via the phase fallback.
+func TestSlotRouterRoutesUnitToUnitLC(t *testing.T) {
+	r := newSlotRouter(0x00ABCD) // grant GroupID = called subscriber
+
+	if !r.accept(sfWithU2ULC(1, 0x00ABCD)) {
+		t.Fatal("rejected our own unit-to-unit LC")
+	}
+	// The other slot carries a group call for a different TG.
+	if r.accept(sfWithLC(0, 200)) {
+		t.Error("accepted the other slot's group LC")
+	}
+	// Bound to phase 1: an LC-less phase-1 superframe is ours.
+	if !r.accept(sfNoLC(1)) {
+		t.Error("rejected a bound-phase superframe missing its LC")
+	}
+}
+
 func TestSlotRouterRoutesByEmbeddedLC(t *testing.T) {
 	r := newSlotRouter(100)
 

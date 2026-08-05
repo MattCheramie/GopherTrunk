@@ -158,6 +158,21 @@ func newSlotRouter(groupID uint32) *slotRouter {
 	return &slotRouter{groupID: groupID, bound: -1}
 }
 
+// lcCallDestination returns the destination address a voice embedded LC
+// names — a talkgroup for a group call or the called subscriber for a
+// unit-to-unit (private) call — so a call's slot can be bound by its
+// grant's GroupID regardless of call type. ok is false for any other FLCO
+// (talker alias, GPS, terminator, …), which carries no call destination.
+func lcCallDestination(lc dmr.FLC) (uint32, bool) {
+	if gv, ok := lc.AsGroupVoiceUser(); ok {
+		return gv.GroupAddress, true
+	}
+	if uu, ok := lc.AsUnitToUnitVoice(); ok {
+		return uu.DestinationID, true
+	}
+	return 0, false
+}
+
 // accept reports whether sf belongs to this call's timeslot. An embedded LC
 // naming this call's talkgroup is authoritative and binds (or re-binds) the
 // phase. Absent a usable LC, once a phase is bound we route by it; while still
@@ -165,14 +180,14 @@ func newSlotRouter(groupID uint32) *slotRouter {
 // the active slot's phase so the call still records rather than dropping it.
 func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 	if sf.HasLC {
-		if gv, ok := sf.LC.AsGroupVoiceUser(); ok {
-			if gv.GroupAddress == r.groupID {
+		if dest, ok := lcCallDestination(sf.LC); ok {
+			if dest == r.groupID {
 				r.bound = int(sf.Phase)
 				r.byFallback = false
 				return true
 			}
-			// LC names a different talkgroup — this phase is positively the
-			// other slot, so never fall back onto it later.
+			// LC names a different destination (talkgroup or called unit) — this
+			// phase is positively the other slot, so never fall back onto it.
 			r.foreignPhaseMask |= 1 << (sf.Phase & 1)
 			return false
 		}
@@ -317,8 +332,13 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				if sf.HasLC {
 					lcSuperframes.Add(1)
+					// Learn the call's source radio from either a group-voice or a
+					// unit-to-unit voice LC, so talker-alias / GPS metadata (which
+					// carry no address of their own) is attributed on private calls too.
 					if gv, ok := sf.LC.AsGroupVoiceUser(); ok && gv.SourceID != 0 {
 						callSrc = gv.SourceID
+					} else if uu, ok := sf.LC.AsUnitToUnitVoice(); ok && uu.SourceID != 0 {
+						callSrc = uu.SourceID
 					}
 				}
 				// Talker-alias header/block and GPS Info embedded LCs are
