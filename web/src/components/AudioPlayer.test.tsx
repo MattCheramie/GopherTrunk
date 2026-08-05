@@ -1,15 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
-// Capture every stream the player opens so we can assert the URL it
-// filtered to. start/stop/setVolume/setMuted are inert.
+// Capture how the player is pointed at streams. The component must build the
+// player (and its single AudioContext) ONCE and then re-point it with
+// reconnect() as it follows calls — building a fresh player per switch is the
+// leak that silenced Chrome. `built` counts createStreamPlayer calls; `opened`
+// records every URL the stream is pointed at (initial + each reconnect).
+const built: number[] = [];
 const opened: string[] = [];
 vi.mock("../audio/streamPlayer", () => ({
   createStreamPlayer: (opts: { url: string }) => {
+    built.push(1);
     opened.push(opts.url);
     return {
       start: vi.fn(),
       stop: vi.fn(),
+      reconnect: (url: string) => opened.push(url),
       setVolume: vi.fn(),
       setMuted: vi.fn(),
     };
@@ -30,6 +36,7 @@ function call(serial: string, startedAt: string): ActiveCallDTO {
 
 describe("AudioPlayer live-audio follow", () => {
   beforeEach(() => {
+    built.length = 0;
     opened.length = 0;
     useShared.setState({
       serverURL: "http://localhost:8080",
@@ -38,7 +45,7 @@ describe("AudioPlayer live-audio follow", () => {
     });
   });
 
-  it("opens the stream filtered to the primary call and follows the newest", async () => {
+  it("holds the current call to completion, then follows the next", async () => {
     useShared.setState({ activeCalls: [call("VOICE-1", "2026-01-01T00:00:00Z")] });
 
     render(<AudioPlayer />);
@@ -48,7 +55,9 @@ describe("AudioPlayer live-audio follow", () => {
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(opened[0]).toContain("device=VOICE-1");
 
-    // A newer call on a different device → follow it (one call at a time).
+    // A newer call appears while VOICE-1 is STILL active → we must NOT cut
+    // VOICE-1 off. This is the "eating conversations" regression: the stream
+    // stays on VOICE-1.
     act(() => {
       useShared.setState({
         activeCalls: [
@@ -57,8 +66,22 @@ describe("AudioPlayer live-audio follow", () => {
         ],
       });
     });
+    // Give the follow effect a chance to (wrongly) fire.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(opened).toHaveLength(1); // still only VOICE-1
+
+    // VOICE-1 ends (drops out of the active set) → advance to VOICE-2.
+    act(() => {
+      useShared.setState({
+        activeCalls: [call("VOICE-2", "2026-01-01T00:00:05Z")],
+      });
+    });
     await waitFor(() => expect(opened).toHaveLength(2));
     expect(opened[1]).toContain("device=VOICE-2");
+
+    // The whole point of the leak fix: one player/context, re-pointed — not a
+    // fresh one per switch.
+    expect(built).toHaveLength(1);
   });
 
   it("opens unfiltered when no call is active", async () => {
