@@ -74,6 +74,7 @@ type grantWebhookPayload struct {
 	Timeslot      uint8  `json:"timeslot,omitempty"`
 	Encrypted     bool   `json:"encrypted,omitempty"`
 	Emergency     bool   `json:"emergency,omitempty"`
+	Priority      uint8  `json:"priority,omitempty"`
 	DataCall      bool   `json:"data_call,omitempty"`
 	Individual    bool   `json:"individual,omitempty"`
 	AlgorithmID   uint8  `json:"algorithm_id,omitempty"`
@@ -98,6 +99,7 @@ func grantWebhookPayloadFrom(g trunking.Grant, at time.Time, loc *time.Location)
 		Timeslot:      g.Timeslot,
 		Encrypted:     g.Encrypted,
 		Emergency:     g.Emergency,
+		Priority:      g.Priority,
 		DataCall:      g.DataCall,
 		Individual:    g.Individual,
 		AlgorithmID:   g.AlgorithmID,

@@ -99,7 +99,7 @@ func TestGrantWebhookPostsDecodedGrant(t *testing.T) {
 	bus.Publish(events.Event{Kind: events.KindGrant, Payload: trunking.Grant{
 		System: "MMR", Protocol: "p25", GroupID: 20001, SourceID: 202419,
 		FrequencyHz: 422612500, RFSSID: 1, SiteID: 9, NAC: 359,
-		Encrypted: true, AlgorithmID: 0x84, KeyID: 3,
+		Encrypted: true, AlgorithmID: 0x84, KeyID: 3, Priority: 4,
 	}})
 	sink.waitFor(t, 1)
 
@@ -133,6 +133,9 @@ func TestGrantWebhookPostsDecodedGrant(t *testing.T) {
 	}
 	if g["algorithm_id"].(float64) != 0x84 {
 		t.Errorf("algorithm_id = %v, want 132", g["algorithm_id"])
+	}
+	if g["priority"].(float64) != 4 {
+		t.Errorf("priority = %v, want 4 surfaced", g["priority"])
 	}
 	if g["at"] != "2026-08-01T12:00:00Z" {
 		t.Errorf("at = %v, want the stamped decode time", g["at"])
