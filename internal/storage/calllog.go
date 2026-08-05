@@ -145,9 +145,12 @@ func (c *CallLog) recordEnd(ce trunking.CallEnd) error {
 	//
 	// The guards mirror the voice pool's never-downgrade semantics
 	// (UpdateSource / UpdateEncryption): COALESCE(NULLIF(?, 0), col) keeps a
-	// legitimate start-time value when the end grant is still zero, and the
-	// CASE only ever upgrades encrypted (the spec defines no mid-call
-	// decryption).
+	// legitimate start-time value when the end grant is still zero (source_id,
+	// algorithm_id, key_id, priority), and the CASE only ever latches
+	// encrypted / emergency on (never off). A DMR Tier III / P25 Phase 2 grant
+	// carries no Service Options, so the emergency + priority bits arrive only
+	// on the traffic channel (UpdateSource) and must be persisted here, the
+	// same way encrypted already is.
 	// signal_dbfs uses COALESCE(?, signal_dbfs) with a NULL-valued bind
 	// when the call carried no measurement, so a non-composer end (watchdog
 	// timeout, preemption, shutdown) never clobbers a value an earlier
@@ -173,8 +176,10 @@ UPDATE call_log
        end_reason = ?,
        source_id    = COALESCE(NULLIF(?, 0), source_id),
        encrypted    = CASE WHEN ? != 0 THEN 1 ELSE encrypted END,
+       emergency    = CASE WHEN ? != 0 THEN 1 ELSE emergency END,
        algorithm_id = COALESCE(NULLIF(?, 0), algorithm_id),
        key_id       = COALESCE(NULLIF(?, 0), key_id),
+       priority     = COALESCE(NULLIF(?, 0), priority),
        source_alpha = COALESCE(NULLIF(?, ''), source_alpha),
        signal_dbfs  = COALESCE(?, signal_dbfs),
        evm_pct      = COALESCE(?, evm_pct),
@@ -186,8 +191,10 @@ UPDATE call_log
 		ce.Reason.String(),
 		ce.Grant.SourceID,
 		boolToInt(ce.Grant.Encrypted),
+		boolToInt(ce.Grant.Emergency),
 		ce.Grant.AlgorithmID,
 		ce.Grant.KeyID,
+		ce.Grant.Priority,
 		// Re-resolve from the end grant's SourceID: a compressed grant's RID is
 		// backfilled mid-call, so the source alias may only be resolvable now.
 		c.sourceAlpha(ce.Grant.SourceID),

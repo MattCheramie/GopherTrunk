@@ -486,6 +486,48 @@ func TestCallLogBackfillsEncryptionOnEnd(t *testing.T) {
 	}
 }
 
+// TestCallLogBackfillsEmergencyPriorityOnEnd models a DMR Tier III / P25
+// Phase 2 call whose grant carries no Service Options: the Emergency /
+// Priority bits only arrive on the traffic channel (GROUP_VOICE_CHANNEL_USER
+// → CallSourceUpdate → VoicePool.UpdateSource), so the start grant is clear
+// and recordEnd must persist the values the engine backfilled onto the bound
+// grant — the same discipline recordEnd already applies to Encrypted.
+func TestCallLogBackfillsEmergencyPriorityOnEnd(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	startGrant := trunking.Grant{
+		System: "T3", Protocol: "dmr", GroupID: 100, SourceID: 42,
+		FrequencyHz: 851_000_000, Emergency: false, Priority: 0,
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: startGrant, DeviceSerial: "VOICE-EP", StartedAt: startedAt,
+	}})
+	waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool { return len(r) == 1 })
+
+	// The embedded voice LC backfills Emergency + Priority onto the bound grant.
+	endGrant := startGrant
+	endGrant.Emergency = true
+	endGrant.Priority = 5
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant:        endGrant,
+		DeviceSerial: "VOICE-EP",
+		StartedAt:    startedAt,
+		EndedAt:      startedAt.Add(time.Second),
+		Reason:       trunking.EndReasonNormal,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].Emergency
+	})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if r := rows[0]; !r.Emergency || r.Priority != 5 {
+		t.Errorf("row = {emergency:%v priority:%d}, want {true 5}", r.Emergency, r.Priority)
+	}
+}
+
 // TestCallLogEndDoesNotDowngrade confirms the never-downgrade guards: a
 // known start-time RID survives a zero-source end grant, and a call that
 // started encrypted stays encrypted even if the end grant reports clear.
@@ -496,6 +538,7 @@ func TestCallLogEndDoesNotDowngrade(t *testing.T) {
 	startGrant := trunking.Grant{
 		System: "Alpha", Protocol: "p25", GroupID: 1, SourceID: 5150,
 		FrequencyHz: 851_000_000, Encrypted: true, AlgorithmID: 0x84, KeyID: 3,
+		Emergency: true, Priority: 7,
 	}
 	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
 		Grant: startGrant, DeviceSerial: "VOICE-3", StartedAt: startedAt,
@@ -523,6 +566,10 @@ func TestCallLogEndDoesNotDowngrade(t *testing.T) {
 	if !r.Encrypted || r.AlgorithmID != 0x84 || r.KeyID != 3 {
 		t.Errorf("identity downgraded: {enc:%v alg:%#x key:%d}, want {true 0x84 3}",
 			r.Encrypted, r.AlgorithmID, r.KeyID)
+	}
+	if !r.Emergency || r.Priority != 7 {
+		t.Errorf("flags downgraded: {emergency:%v priority:%d}, want {true 7}",
+			r.Emergency, r.Priority)
 	}
 }
 
