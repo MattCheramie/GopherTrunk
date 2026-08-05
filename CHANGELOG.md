@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Unit-to-unit / private calls are now flagged in call history.** The
+  `Individual` grant flag (the call's `group_id` is a target radio address,
+  not a talkgroup) already reached the live-grant API but was dropped from the
+  call record, so a followed private call was indistinguishable from a group
+  call in history and its 24-bit target rendered as a phantom talkgroup. Each
+  call record now carries an `individual` field (persisted at call start and
+  latched on at call end for TETRA, which cannot flag a unit-to-unit
+  destination on first sighting), returned by the `/api/v1/calls` endpoint.
 - **Call history now shows who was talking, not just the RID number.** Each
   call record carries a `source_alpha` field resolving the source radio's
   alias/name — preferring the operator-curated RID catalogue (`rid_alias_file`)
