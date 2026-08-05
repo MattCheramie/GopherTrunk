@@ -50,11 +50,34 @@ func Run(path string, cfg Config) (*Result, error) {
 	return RunStream(path, cfg, nil)
 }
 
+// openCapture opens the capture at path for a single streaming decode pass,
+// treating "-" as standard input so a raw IQ stream can be piped in — e.g.
+// `openwebrx-iq-source | gophertrunk replay -in - -format f32 -sample-rate …`
+// (issue #314). The returned source name is the path, or "stdin" for "-". stdin
+// is wrapped in a no-op Closer so the caller's defer Close does not close the
+// process's real standard input.
+func openCapture(path string) (io.ReadCloser, string, error) {
+	if path == "-" {
+		return io.NopCloser(os.Stdin), "stdin", nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("open %s: %w", path, err)
+	}
+	return f, path, nil
+}
+
 // RunAutoTuneMulti opens the capture at path and decodes cfg.Protocol against
 // each detected carrier candidate, returning the strongest lock (see
 // RunReaderAutoTuneMulti). It is the file-path entry the replay/analyze
 // subcommands use for multi-candidate -auto-tune.
 func RunAutoTuneMulti(path string, cfg Config, maxCandidates int) (*Result, error) {
+	if path == "-" {
+		// Auto-tune reads a prefix then rewinds to decode from the start, so it
+		// needs a seekable source; stdin is a one-way pipe. Fail clearly instead
+		// of letting os.Open("-") produce a confusing "no such file".
+		return nil, fmt.Errorf("siglab: auto-tune cannot read from stdin (it needs to seek the capture); pipe to a file, or use -tune-hz for a fixed offset")
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -68,12 +91,12 @@ func RunAutoTuneMulti(path string, cfg Config, maxCandidates int) (*Result, erro
 // It backs the JSONL exporter and the TUI's live event feed. The full
 // Result is still returned at EOF.
 func RunStream(path string, cfg Config, onEvent func(EventRecord)) (*Result, error) {
-	f, err := os.Open(path)
+	f, source, err := openCapture(path)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		return nil, err
 	}
 	defer f.Close()
-	return RunReaderStream(f, path, cfg, onEvent)
+	return RunReaderStream(f, source, cfg, onEvent)
 }
 
 // RunReader decodes the capture read from r through the production pipeline

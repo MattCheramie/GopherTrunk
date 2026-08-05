@@ -32,7 +32,7 @@ import (
 func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
-	in := fs.String("in", "", "raw IQ input file (required)")
+	in := fs.String("in", "", "raw IQ input file, or - for standard input (required). Piping stdin lets an external IQ source feed the decoder, e.g. `iq-source | gophertrunk replay -in - -format f32 -sample-rate 2400000` (issue #314). stdin is a one-way stream, so -auto-tune (which must seek) is not supported with -in -; use -tune-hz.")
 	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32) | wav (2-channel 16-bit baseband WAV — SDRtrunk/SDR++/GopherTrunk narrowband recording; sample rate is read from the header)")
 	sampleRate := fs.Float64("sample-rate", 2_400_000, "IQ sample rate in Hz")
 	demod := fs.String("demod", "c4fm", "P25 Phase 1 demod mode: c4fm | cqpsk")
@@ -64,6 +64,11 @@ USAGE:
 EXAMPLES:
   # rtl_sdr capture of a P25 control channel, with the deep demod report
   gophertrunk replay -in mt_anakie.bin -sample-rate 2048000 -demod c4fm -diag
+
+  # Decode a raw IQ stream piped in on stdin (e.g. from OpenWebRX+ / rtl_sdr -),
+  # emitting decoded events to stdout as JSONL
+  iq-source | gophertrunk replay -in - -format f32 -sample-rate 2400000 \
+                    -protocol p25p1 -tune-hz -12500 -out-format jsonl
 
   # Wideband cfile whose control channel is off-centre: auto-tune to 0 Hz
   gophertrunk replay -in mmr-s9.cfile -format f32 -sample-rate 2400000 -auto-tune
