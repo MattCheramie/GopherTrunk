@@ -129,6 +129,14 @@ func TestRdioScannerUpload(t *testing.T) {
 		if r.FormValue("talkgroup") != "4321" {
 			t.Errorf("talkgroup = %q", r.FormValue("talkgroup"))
 		}
+		// The tag/group enrichment: RdioScanner shows GopherTrunk's own
+		// talkgroup tag/group instead of falling back to its static config.
+		if r.FormValue("talkgroupTag") != "Fire Dispatch" {
+			t.Errorf("talkgroupTag = %q", r.FormValue("talkgroupTag"))
+		}
+		if r.FormValue("talkgroupGroup") != "Fire" {
+			t.Errorf("talkgroupGroup = %q", r.FormValue("talkgroupGroup"))
+		}
 		f, _, err := r.FormFile("audio")
 		if err != nil {
 			t.Errorf("audio part missing: %v", err)
@@ -150,11 +158,40 @@ func TestRdioScannerUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRdioScanner: %v", err)
 	}
-	if err := be.Send(context.Background(), testCall(t)); err != nil {
+	c := testCall(t)
+	c.TalkgroupTag = "Fire Dispatch"
+	c.TalkgroupGroup = "Fire"
+	if err := be.Send(context.Background(), c); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if !ok {
 		t.Fatal("server did not receive a well-formed upload")
+	}
+}
+
+// TestRdioScannerOmitsEmptyTagGroup pins that the optional tag/group fields are
+// absent (not sent as empty strings) when the talkgroup has no tag/group, so
+// RdioScanner keeps its own values rather than being overwritten with blanks.
+func TestRdioScannerOmitsEmptyTagGroup(t *testing.T) {
+	var sawTag, sawGroup bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
+			t.Errorf("parse multipart: %v", err)
+			return
+		}
+		_, sawTag = r.MultipartForm.Value["talkgroupTag"]
+		_, sawGroup = r.MultipartForm.Value["talkgroupGroup"]
+		io.WriteString(w, "Call imported successfully.")
+	}))
+	defer srv.Close()
+
+	be, _ := NewRdioScanner(RdioScannerConfig{URL: srv.URL, APIKey: "K", SystemID: 1}, srv.Client())
+	c := testCall(t) // no tag/group set
+	if err := be.Send(context.Background(), c); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if sawTag || sawGroup {
+		t.Errorf("empty tag/group should be omitted: sawTag=%v sawGroup=%v", sawTag, sawGroup)
 	}
 }
 

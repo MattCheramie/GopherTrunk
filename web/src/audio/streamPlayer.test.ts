@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   parseWavHeader,
   int16ToFloat32,
@@ -7,6 +7,7 @@ import {
   createAudioContext,
   STREAM_SAMPLE_RATE,
   WorkletSink,
+  createStreamPlayer,
 } from "./streamPlayer";
 
 // Build a canonical 44-byte RIFF/WAVE header byte-for-byte the way the
@@ -236,5 +237,91 @@ describe("WorkletSink", () => {
     const pushed = posts.filter((p) => p.type === "push");
     expect(pushed.length).toBe(1);
     expect(Array.from(pushed[0].samples!)).toEqual(Array.from(input));
+  });
+});
+
+// Regression for the silence bug: following a new call must REUSE the one
+// AudioContext, not build a fresh one per switch. Building a context per
+// follow-switch accumulated suspended contexts until Chrome's ~6-per-page cap
+// threw and playback went permanently silent (macOS Chrome first). We stand in
+// for that ceiling by counting how many contexts the player constructs.
+describe("createStreamPlayer AudioContext lifecycle", () => {
+  const origFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = origFetch;
+  });
+
+  // A minimal AudioContext stub. audioWorklet is absent so the player takes the
+  // LegacySink path (no worklet module to load), and fetch resolves with no
+  // body so run() returns immediately without touching the network.
+  function makeFakeContext() {
+    return {
+      sampleRate: 48000,
+      currentTime: 0,
+      destination: {},
+      audioWorklet: undefined,
+      createGain: () => ({
+        gain: { setTargetAtTime: () => {} },
+        connect: () => {},
+      }),
+      resume: vi.fn(() => Promise.resolve()),
+      suspend: vi.fn(() => Promise.resolve()),
+      close: vi.fn(() => Promise.resolve()),
+    } as unknown as AudioContext;
+  }
+
+  it("builds exactly one context across many follow-switches", () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, body: null } as Response),
+    );
+    const contexts: AudioContext[] = [];
+    const player = createStreamPlayer({
+      url: "https://d/api/v1/audio/stream",
+      token: null,
+      onError: () => {},
+      onStateChange: () => {},
+      contextFactory: () => {
+        const c = makeFakeContext();
+        contexts.push(c);
+        return c;
+      },
+    });
+
+    player.start();
+    for (let i = 0; i < 10; i++) {
+      player.reconnect(`https://d/api/v1/audio/stream?device=dev-${i}`);
+    }
+
+    // The whole point: one context, not eleven.
+    expect(contexts.length).toBe(1);
+    expect((contexts[0].close as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it("closes the context on stop and rebuilds on the next start", () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, body: null } as Response),
+    );
+    const contexts: AudioContext[] = [];
+    const player = createStreamPlayer({
+      url: "https://d/api/v1/audio/stream",
+      token: null,
+      onError: () => {},
+      onStateChange: () => {},
+      contextFactory: () => {
+        const c = makeFakeContext();
+        contexts.push(c);
+        return c;
+      },
+    });
+
+    player.start();
+    player.stop();
+    expect(contexts.length).toBe(1);
+    expect(contexts[0].close as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+
+    // A fresh start must build a new context (the old one was closed, not
+    // suspended-and-leaked).
+    player.start();
+    expect(contexts.length).toBe(2);
   });
 });

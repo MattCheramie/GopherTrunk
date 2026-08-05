@@ -92,6 +92,17 @@ func (b *rdioScannerBackend) Send(ctx context.Context, c *Call) error {
 	if c.TalkgroupLabel != "" {
 		fields = append(fields, multipartField{Name: "talkgroupLabel", Value: c.TalkgroupLabel})
 	}
+	// Forward the talkgroup's tag (department/category) and top-level group so
+	// RdioScanner's console shows GopherTrunk's own metadata instead of falling
+	// back to its static per-system config. RdioScanner's call-upload API has
+	// no protocol/type field, so this does NOT set the system-type label the
+	// console renders (e.g. "P25") — that stays a RdioScanner-side config value.
+	if c.TalkgroupTag != "" {
+		fields = append(fields, multipartField{Name: "talkgroupTag", Value: c.TalkgroupTag})
+	}
+	if c.TalkgroupGroup != "" {
+		fields = append(fields, multipartField{Name: "talkgroupGroup", Value: c.TalkgroupGroup})
+	}
 	if c.System != "" {
 		fields = append(fields, multipartField{Name: "systemLabel", Value: c.System})
 	}

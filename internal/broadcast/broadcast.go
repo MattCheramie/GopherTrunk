@@ -39,6 +39,14 @@ type Call struct {
 	Protocol       string
 	Talkgroup      uint32
 	TalkgroupLabel string
+	// TalkgroupTag / TalkgroupGroup carry the talkgroup's department/category
+	// and top-level group. Aggregators that show per-call tag/group columns
+	// (RdioScanner's talkgroupTag / talkgroupGroup) render these; without them
+	// the console falls back to its own static per-system config, which is
+	// where a stale label like a wrong protocol type comes from. Both empty
+	// until the talkgroup is resolved/tagged.
+	TalkgroupTag   string
+	TalkgroupGroup string
 	Source         uint32
 	FrequencyHz    uint32
 	// ChannelID / RFSS / Site / NAC / Timeslot carry the P25 site
@@ -167,6 +175,8 @@ func callFromEvent(cc trunking.CallComplete) *Call {
 	}
 	if cc.Talkgroup != nil {
 		c.TalkgroupLabel = cc.Talkgroup.AlphaTag
+		c.TalkgroupTag = cc.Talkgroup.Tag
+		c.TalkgroupGroup = cc.Talkgroup.Group
 	}
 	return c
 }

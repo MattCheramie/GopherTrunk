@@ -4,6 +4,7 @@ import { createStreamPlayer, type StreamPlayer } from "../audio/streamPlayer";
 import { writes } from "../api/write";
 import { selectClientConfig, useShared } from "../store/shared";
 import { useActiveCallsPoll } from "../hooks/useActiveCallsPoll";
+import { pickFollowSerial } from "../audio/followSelect";
 import { prefs } from "../store/prefs";
 
 // AudioPlayer is a floating, dismissable mini-player that streams
@@ -45,19 +46,17 @@ export function AudioPlayer() {
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
 
-  // The single call live audio follows: the most recently started active
-  // call. Playing one call at a time (standard scanner behaviour) is what
-  // stops concurrent talkgroups from overlapping into one garbled stream —
-  // the daemon's /audio/stream supports a ?device= filter, the WebUI just
-  // never used it. null when nothing is up (stream stays unfiltered so the
-  // first call is still audible before the poll narrows onto it).
-  const primarySerial = useMemo(() => {
-    if (activeCalls.length === 0) return null;
-    const newest = activeCalls.reduce((a, b) =>
-      b.started_at > a.started_at ? b : a,
-    );
-    return newest.device_serial;
-  }, [activeCalls]);
+  // The single call live audio follows. Playing one call at a time (standard
+  // scanner behaviour) is what stops concurrent talkgroups from overlapping
+  // into one garbled stream — the daemon's /audio/stream supports a ?device=
+  // filter. pickFollowSerial HOLDS the current call until its device stops
+  // transmitting, then advances to the newest — so a call plays to completion
+  // instead of being cut off the moment a newer grant lands ("eating
+  // conversations"). null when nothing is up.
+  const primarySerial = useMemo(
+    () => pickFollowSerial(activeCalls, playerSerialRef.current),
+    [activeCalls],
+  );
 
   // Reflect the daemon's current audio state into the local toggles.
   const daemonAudio = useShared((s) => s.audio);
@@ -94,16 +93,25 @@ export function AudioPlayer() {
     };
   }, [cfg]);
 
-  // startPlayer (re)opens the stream filtered to one call's device serial.
-  // Stable across volume/mute changes (those read refs) so following a new
-  // call is the only thing that tears down and reopens the stream.
+  // startPlayer points the stream at one call's device serial. On the first
+  // call it builds the player (and its single AudioContext, inside the user
+  // gesture from enable()); every later call REUSES that player via
+  // reconnect() rather than tearing down and rebuilding a context. Building a
+  // fresh AudioContext per follow-switch leaked contexts until Chrome's
+  // ~6-per-page cap threw and playback went silent (macOS Chrome first).
+  // Stable across volume/mute changes (those read refs).
   const startPlayer = useCallback(
     (serial: string | null) => {
       if (!cfg.baseURL) return;
       setError(null);
-      playerRef.current?.stop();
+      const url = audioStreamURL(cfg, serial ? { device: serial } : {});
+      if (playerRef.current) {
+        playerSerialRef.current = serial;
+        playerRef.current.reconnect(url);
+        return;
+      }
       const player = createStreamPlayer({
-        url: audioStreamURL(cfg, serial ? { device: serial } : {}),
+        url,
         token: cfg.token,
         onError: (msg) => {
           setError(msg);

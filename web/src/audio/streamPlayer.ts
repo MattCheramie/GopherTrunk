@@ -125,12 +125,24 @@ export interface StreamPlayerOptions {
   token: string | null;
   onError: (msg: string) => void;
   onStateChange: (state: PlayerState) => void;
+  /** Factory for the AudioContext. Defaults to the browser's native
+   *  constructor at the hardware rate. Injectable so tests can count how
+   *  many contexts a player builds (the follow-switch leak that caused
+   *  Chrome's ~6-context ceiling — and the resulting silence — to trip). */
+  contextFactory?: () => AudioContext;
 }
 
 export interface StreamPlayer {
   /** Must be invoked synchronously from a user-gesture handler so the
    *  AudioContext resume isn't rejected by the autoplay policy. */
   start(): void;
+  /** Re-point the running stream at a new URL (following a new call)
+   *  WITHOUT tearing down the AudioContext/worklet. Reusing the one
+   *  context is what keeps the WebUI under Chrome's per-page context
+   *  limit — building a fresh context per call switch is what leaked to
+   *  silence. Safe to call outside a user gesture: the context is already
+   *  running from the initial start(). */
+  reconnect(url: string): void;
   stop(): void;
   setVolume(v: number): void;
   setMuted(muted: boolean): void;
@@ -294,6 +306,9 @@ export function createStreamPlayer(
   let muted = false;
   let userStopped = false;
   let reconnectTimer: number | null = null;
+  // The stream URL is mutable so following a new call can re-point the fetch
+  // (see reconnect) while keeping the same AudioContext/worklet alive.
+  let url = opts.url;
 
   const applyGain = () => {
     if (gain && ctx) {
@@ -303,13 +318,17 @@ export function createStreamPlayer(
 
   const ensureGraph = (): boolean => {
     if (ctx === null) {
-      const Ctor = resolveAudioContext();
-      if (Ctor === null) {
-        opts.onError("Web Audio is not supported in this browser");
-        opts.onStateChange("error");
-        return false;
+      if (opts.contextFactory) {
+        ctx = opts.contextFactory();
+      } else {
+        const Ctor = resolveAudioContext();
+        if (Ctor === null) {
+          opts.onError("Web Audio is not supported in this browser");
+          opts.onStateChange("error");
+          return false;
+        }
+        ctx = createAudioContext(Ctor);
       }
-      ctx = createAudioContext(Ctor);
     }
     if (gain === null) {
       gain = ctx.createGain();
@@ -359,7 +378,7 @@ export function createStreamPlayer(
     opts.onStateChange("connecting");
     let res: Response;
     try {
-      res = await fetch(opts.url, {
+      res = await fetch(url, {
         headers: opts.token
           ? { Authorization: `Bearer ${opts.token}` }
           : {},
@@ -446,6 +465,31 @@ export function createStreamPlayer(
       void getSink();
       void run();
     },
+    reconnect(newURL: string) {
+      // Follow a new call by swapping the fetch URL and re-running on the
+      // SAME context/gain/worklet. Building a fresh AudioContext per switch
+      // (the old behaviour) leaked contexts until Chrome's ~6-per-page cap
+      // threw and playback went silent. Here nothing is torn down: abort the
+      // in-flight read, drop its buffered tail, and reopen.
+      userStopped = false;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (url === newURL && abort) return; // already following this call
+      url = newURL;
+      // No context yet (reconnect raced ahead of the initial start): just
+      // remember the URL; start() will open it inside the user gesture.
+      if (ctx === null) return;
+      abort?.abort();
+      abort = null;
+      // Keep the context live and drop the previous call's buffered audio so
+      // the new call doesn't start behind stale frames. The worklet's fade
+      // envelope smooths the seam.
+      void ctx?.resume();
+      void sinkPromise?.then((sink) => sink.reset());
+      void run();
+    },
     stop() {
       userStopped = true;
       if (reconnectTimer !== null) {
@@ -454,9 +498,14 @@ export function createStreamPlayer(
       }
       abort?.abort();
       abort = null;
-      // Drop buffered audio so a later resume doesn't replay stale frames.
+      // Close (not just suspend) and drop the graph so no AudioContext
+      // lingers past teardown — suspend-only accumulation past Chrome's
+      // per-page limit was the silence bug. start() rebuilds from scratch.
       void sinkPromise?.then((sink) => sink.reset());
-      void ctx?.suspend();
+      void ctx?.close();
+      ctx = null;
+      gain = null;
+      sinkPromise = null;
       opts.onStateChange("stopped");
     },
     setVolume(v: number) {
