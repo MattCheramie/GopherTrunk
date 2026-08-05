@@ -17,6 +17,16 @@ for tagged releases.
   call.
 
 ### Fixed
+- **Conventional DMR (Tier II / IPSC) voice never recorded (#1036).** A
+  conventional DMR repeater carries voice on the *same* carrier it emits Voice
+  LC Headers on, but the daemon's same-carrier voice tap was gated to TETRA
+  only — on the assumption that "for P25/DMR voice is always on a different
+  carrier," which holds for trunked Tier III but not conventional Tier II/I. So
+  a single-SDR conventional DMR system had no voice source: the grant fired,
+  found no voice device, was dropped, and nothing recorded (the decode itself
+  was fine end to end). Same-carrier voice taps are now registered for
+  `dmr-tier2`/`dmr-tier1` too (two, for the 2-slot carrier). Trunked Tier III
+  and P25 still register none, so their "no voice SDR" diagnostic is preserved.
 - **Trailing voice frames dropped at the end of a transmission.** When a call
   ended, the recorder finalized and deleted the recording session on
   `CallEnd` while the composer's voice chain was still draining its buffered
