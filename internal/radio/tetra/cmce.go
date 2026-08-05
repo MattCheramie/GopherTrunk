@@ -71,6 +71,10 @@ type VoiceGrant struct {
 	Individual bool
 	Emergency  bool
 	Encrypted  bool
+	// Priority is the 4-bit CMCE Call priority (EN 300 392-2 Table 14.46;
+	// 0 = lowest, 0xF = pre-emptive priority 4 / emergency). Emergency is
+	// derived from it. Zero when no CMCE priority element was decoded.
+	Priority uint8
 }
 
 // Voice grants and call teardown are decoded bit-accurately from the MAC layer
