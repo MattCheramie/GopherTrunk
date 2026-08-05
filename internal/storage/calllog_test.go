@@ -247,6 +247,50 @@ func TestCallLogPersistsPriority(t *testing.T) {
 	}
 }
 
+// TestCallLogPersistsIndividual pins the Grant.Individual → call_log
+// round-trip: a unit-to-unit / private call must be distinguishable in
+// history from a group call, since its GroupID is a target radio address
+// rather than a talkgroup and would otherwise render as a phantom talkgroup.
+func TestCallLogPersistsIndividual(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	// A TETRA unit-to-unit call: GroupID is the target radio (ISSI).
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "TET", Protocol: "tetra",
+			GroupID: 1005372, SourceID: 1020545, FrequencyHz: 467_912_500, Individual: true,
+		},
+		DeviceSerial: "VOICE-IND", StartedAt: startedAt,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].Individual
+	})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if !rows[0].Individual {
+		t.Errorf("Individual = false, want true for a unit-to-unit call")
+	}
+
+	// A group call in the same table must stay Individual=false.
+	group := time.Now().UTC().Truncate(time.Microsecond)
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "TET", Protocol: "tetra",
+			GroupID: 1020545, SourceID: 7, FrequencyHz: 467_912_500,
+		},
+		DeviceSerial: "VOICE-GRP", StartedAt: group,
+	}})
+	all := waitHistory(t, db, HistoryFilter{Limit: 2}, func(r []CallRow) bool { return len(r) == 2 })
+	for _, r := range all {
+		if r.DeviceSerial == "VOICE-GRP" && r.Individual {
+			t.Errorf("group call flagged Individual")
+		}
+	}
+}
+
 func TestCallLogIdempotentStart(t *testing.T) {
 	db := openTestDB(t)
 	bus := events.NewBus(8)
@@ -486,6 +530,48 @@ func TestCallLogBackfillsEncryptionOnEnd(t *testing.T) {
 	}
 }
 
+// TestCallLogBackfillsEmergencyPriorityOnEnd models a DMR Tier III / P25
+// Phase 2 call whose grant carries no Service Options: the Emergency /
+// Priority bits only arrive on the traffic channel (GROUP_VOICE_CHANNEL_USER
+// → CallSourceUpdate → VoicePool.UpdateSource), so the start grant is clear
+// and recordEnd must persist the values the engine backfilled onto the bound
+// grant — the same discipline recordEnd already applies to Encrypted.
+func TestCallLogBackfillsEmergencyPriorityOnEnd(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	startGrant := trunking.Grant{
+		System: "T3", Protocol: "dmr", GroupID: 100, SourceID: 42,
+		FrequencyHz: 851_000_000, Emergency: false, Priority: 0,
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: startGrant, DeviceSerial: "VOICE-EP", StartedAt: startedAt,
+	}})
+	waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool { return len(r) == 1 })
+
+	// The embedded voice LC backfills Emergency + Priority onto the bound grant.
+	endGrant := startGrant
+	endGrant.Emergency = true
+	endGrant.Priority = 5
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant:        endGrant,
+		DeviceSerial: "VOICE-EP",
+		StartedAt:    startedAt,
+		EndedAt:      startedAt.Add(time.Second),
+		Reason:       trunking.EndReasonNormal,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].Emergency
+	})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if r := rows[0]; !r.Emergency || r.Priority != 5 {
+		t.Errorf("row = {emergency:%v priority:%d}, want {true 5}", r.Emergency, r.Priority)
+	}
+}
+
 // TestCallLogEndDoesNotDowngrade confirms the never-downgrade guards: a
 // known start-time RID survives a zero-source end grant, and a call that
 // started encrypted stays encrypted even if the end grant reports clear.
@@ -496,6 +582,7 @@ func TestCallLogEndDoesNotDowngrade(t *testing.T) {
 	startGrant := trunking.Grant{
 		System: "Alpha", Protocol: "p25", GroupID: 1, SourceID: 5150,
 		FrequencyHz: 851_000_000, Encrypted: true, AlgorithmID: 0x84, KeyID: 3,
+		Emergency: true, Priority: 7,
 	}
 	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
 		Grant: startGrant, DeviceSerial: "VOICE-3", StartedAt: startedAt,
@@ -523,6 +610,10 @@ func TestCallLogEndDoesNotDowngrade(t *testing.T) {
 	if !r.Encrypted || r.AlgorithmID != 0x84 || r.KeyID != 3 {
 		t.Errorf("identity downgraded: {enc:%v alg:%#x key:%d}, want {true 0x84 3}",
 			r.Encrypted, r.AlgorithmID, r.KeyID)
+	}
+	if !r.Emergency || r.Priority != 7 {
+		t.Errorf("flags downgraded: {emergency:%v priority:%d}, want {true 7}",
+			r.Emergency, r.Priority)
 	}
 }
 
@@ -750,6 +841,9 @@ CREATE TABLE call_log (
 	}
 	if rows[0].Timeslot != 0 {
 		t.Errorf("migrated row: timeslot=%d, want 0 (column added with default)", rows[0].Timeslot)
+	}
+	if rows[0].Individual {
+		t.Errorf("migrated row: individual=true, want false (column added with default 0)")
 	}
 	if rows[0].SignalDbFS != nil {
 		t.Errorf("migrated row: signal_dbfs=%v, want nil (nullable column added, old row NULL)", *rows[0].SignalDbFS)

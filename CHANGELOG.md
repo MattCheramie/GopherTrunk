@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Unit-to-unit / private calls are now flagged in call history.** The
+  `Individual` grant flag (the call's `group_id` is a target radio address,
+  not a talkgroup) already reached the live-grant API but was dropped from the
+  call record, so a followed private call was indistinguishable from a group
+  call in history and its 24-bit target rendered as a phantom talkgroup. Each
+  call record now carries an `individual` field (persisted at call start and
+  latched on at call end for TETRA, which cannot flag a unit-to-unit
+  destination on first sighting), returned by the `/api/v1/calls` endpoint.
 - **Call history now shows who was talking, not just the RID number.** Each
   call record carries a `source_alpha` field resolving the source radio's
   alias/name — preferring the operator-curated RID catalogue (`rid_alias_file`)
@@ -29,6 +37,14 @@ for tagged releases.
   DMR voice chain now backfills them (plus the source RID) from the embedded
   voice LC via the in-call `CallSourceUpdate` path the P25 Phase 2 chain
   already uses — so an encrypted Tier III call is now recorded as encrypted.
+- **Mid-call emergency / priority was still dropped at the call record.**
+  The engine backfills a followed call's Emergency and Priority (decoded on
+  the traffic channel, since a DMR Tier III / P25 Phase 2 grant carries no
+  Service Options) onto the bound grant, but the call-log end update only
+  persisted the backfilled encrypted flag and source RID — so an emergency
+  Tier III call was still written non-emergency at priority 0. The end update
+  now latches emergency on and takes a non-zero priority, the same
+  never-downgrade discipline it already applied to encrypted.
 
 ### Added
 - **`gophertrunk replay -record-voice -out-dir <dir> -freq <Hz>`** decodes and
