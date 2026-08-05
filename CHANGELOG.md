@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`gophertrunk replay -record-voice -out-dir <dir> -freq <Hz>`** decodes and
+  records voice from a capture, not just control-channel locks/grants. It wires
+  the production voice path (trunking engine → voice composer → recorder) onto
+  the replay decode: grants bind a same-carrier voice source fed by the decode's
+  own channelized IQ, and each followed call is written as `.wav`/`.raw`/`.json`.
+  Best for conventional systems whose voice rides the decoded carrier (DMR
+  Tier II / IPSC, TETRA) — it's the offline way to validate that a capture
+  produces audio, and the reproduction vehicle for #1036. Requires `-freq` (a
+  grant with frequency 0 is dropped) and does not support `-auto-tune` (use
+  `-tune-hz`). Backed by a new siglab `Config.Bus` / `Config.OnChannelIQ` seam.
 - **On-air call priority is decoded and surfaced.** The call's signalled
   priority level — the low 3 bits of the P25 / DMR Service Options octet —
   is now carried on the grant (`Grant.Priority`), persisted to the call log,
@@ -48,6 +58,16 @@ for tagged releases.
   call.
 
 ### Fixed
+- **Conventional DMR (Tier II / IPSC) voice never recorded (#1036).** A
+  conventional DMR repeater carries voice on the *same* carrier it emits Voice
+  LC Headers on, but the daemon's same-carrier voice tap was gated to TETRA
+  only — on the assumption that "for P25/DMR voice is always on a different
+  carrier," which holds for trunked Tier III but not conventional Tier II/I. So
+  a single-SDR conventional DMR system had no voice source: the grant fired,
+  found no voice device, was dropped, and nothing recorded (the decode itself
+  was fine end to end). Same-carrier voice taps are now registered for
+  `dmr-tier2`/`dmr-tier1` too (two, for the 2-slot carrier). Trunked Tier III
+  and P25 still register none, so their "no voice SDR" diagnostic is preserved.
 - **Trailing voice frames dropped at the end of a transmission.** When a call
   ended, the recorder finalized and deleted the recording session on
   `CallEnd` while the composer's voice chain was still draining its buffered

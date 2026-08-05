@@ -162,6 +162,29 @@ const lowManualGainTenthDB = 150
 // its granted timeslot (see internal/voice/composer/tetra_voice.go).
 const tetraSameCarrierTaps = 4
 
+// dmrSameCarrierTaps is how many same-carrier voice taps are registered for a
+// conventional DMR (Tier II / Tier I) system. A conventional DMR repeater carries
+// voice on the SAME carrier the state machine decodes (unlike trunked Tier III,
+// whose voice hops to a separate traffic channel), and the carrier is 2-slot TDMA,
+// so up to two concurrent calls can run — one per timeslot. Each tap's DMR voice
+// chain routes to its call's talkgroup (the slotRouter in dmr_voice.go).
+const dmrSameCarrierTaps = 2
+
+// sameCarrierVoiceTaps reports how many same-carrier voice taps a system's protocol
+// needs, or 0 for protocols whose voice is never on the control/decoded carrier
+// (trunked DMR Tier III, P25) — those must bind a real role:voice SDR or a wideband
+// tap, and a same-carrier tap would only mask the "no voice SDR" diagnostic.
+func sameCarrierVoiceTaps(proto trunking.Protocol) int {
+	switch proto {
+	case trunking.ProtocolTETRA:
+		return tetraSameCarrierTaps
+	case trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1:
+		return dmrSameCarrierTaps
+	default:
+		return 0
+	}
+}
+
 // gainLooksTooLow reports whether a manual (non-auto) gain is below the
 // digital-decode floor but above the tenths-of-dB-mistake band that
 // gainLooksLikeDBMistake already covers. The two checks partition the
@@ -1124,24 +1147,32 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		return nil, err
 	}
 	// Same-carrier voice tap: reuse the control decoder's own channelised IQ so
-	// a grant on the control carrier (a TETRA SCBS keeps voice on other timeslots
-	// of the control carrier) is followed without a second SDR or a retune. The
-	// control decoder is built below (after the voice pool), so resolve it lazily.
-	// Gated to TETRA systems: for P25/DMR (voice always on a different carrier) it
-	// would never bind but would mask the "no voice SDR" diagnostic, so skip it.
+	// a grant on the control/decoded carrier is followed without a second SDR or a
+	// retune. The control decoder is built below (after the voice pool), so resolve
+	// it lazily. Registered for protocols whose voice rides the SAME carrier the
+	// state machine decodes: a TETRA SCBS keeps voice on other timeslots of the
+	// control carrier, and a conventional DMR (Tier II / Tier I) repeater keeps
+	// voice on the same repeater carrier it emits Voice LC Headers on (issue #1036).
+	// Trunked protocols (DMR Tier III, P25) whose voice hops to a different carrier
+	// register nothing here — a same-carrier tap would never bind for them but
+	// would mask the "no voice SDR" diagnostic. CCVoiceSource.CanTune binds only a
+	// grant whose freq == the decoder's current carrier, so an off-carrier grant
+	// (or a nil/idle decoder) still falls through to a real role:voice SDR.
 	for _, sys := range cfg.Trunking.Systems {
-		if strings.EqualFold(sys.Protocol, "tetra") {
-			// One tap per TDMA timeslot: a TETRA carrier has four slots, so up
-			// to four calls can run at once on the control carrier. Each tap
-			// subscribes to the control decoder's voice-IQ fan-out independently
-			// and the per-slot voice chain keeps only its granted timeslot.
-			for i := 1; i <= tetraSameCarrierTaps; i++ {
-				d.ccVoiceSources = append(d.ccVoiceSources, ccdecoder.NewCCVoiceSource(
-					func() *ccdecoder.Decoder { return d.ccDecoder },
-					fmt.Sprintf("cc:same-carrier:%d", i)))
-			}
-			break
+		proto, perr := trunking.ParseProtocol(sys.Protocol)
+		if perr != nil {
+			continue
 		}
+		taps := sameCarrierVoiceTaps(proto)
+		if taps == 0 {
+			continue
+		}
+		for i := 1; i <= taps; i++ {
+			d.ccVoiceSources = append(d.ccVoiceSources, ccdecoder.NewCCVoiceSource(
+				func() *ccdecoder.Decoder { return d.ccDecoder },
+				fmt.Sprintf("cc:same-carrier:%d", i)))
+		}
+		break
 	}
 
 	// Metrics — constructed early so downstream components (notably
