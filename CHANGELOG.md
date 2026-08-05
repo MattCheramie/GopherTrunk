@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **On-air call priority is decoded and surfaced.** The call's signalled
+  priority level — the low 3 bits of the P25 / DMR Service Options octet —
+  is now carried on the grant (`Grant.Priority`), persisted to the call log,
+  and returned by the `/api/v1/calls` history endpoint, so an operator can
+  see which calls the radios flagged as high-priority alongside the existing
+  emergency / encrypted metadata. Decoded from P25 Phase 1, P25 Phase 2, and
+  DMR (group and unit-to-unit voice LCs). This is the calling radio's
+  requested priority (distinct from a talkgroup's operator-configured
+  priority); engine preemption is unchanged.
 - **Followed DMR calls (Tier III / Tier I) end promptly on the Terminator.**
   The voice chain now detects the Terminator-with-LC burst on the followed
   traffic channel — reusing the trusted control-path FEC chain (slot-type
