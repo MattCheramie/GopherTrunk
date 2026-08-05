@@ -48,15 +48,16 @@ type Grant struct {
 	Timeslot  uint8
 	Encrypted bool
 	Emergency bool
-	// Priority is the call's on-air signalled priority level, the low 3
-	// bits of the P25 / DMR Service Options octet (0 = lowest, 7 = highest;
-	// 0 also when no priority is signalled). It is the priority the calling
-	// radio requested, distinct from a talkgroup's operator-configured
-	// priority; the engine's preemption still keys off the configured
-	// talkgroup priority, so this is surfaced as call metadata (call log +
-	// API) rather than driving preemption. Zero on protocols/grants whose
-	// signalling carries no service-options octet (e.g. the DMR Tier III
-	// channel-grant CSBK).
+	// Priority is the call's on-air signalled priority level, on a
+	// protocol-specific scale: the low 3 bits of the P25 / DMR Service
+	// Options octet (0..7), or the 4-bit TETRA CMCE Call priority (0..15,
+	// 0xF = pre-emptive/emergency). 0 = lowest, and also when no priority is
+	// signalled. It is the priority the calling radio requested, distinct
+	// from a talkgroup's operator-configured priority; the engine's
+	// preemption still keys off the configured talkgroup priority, so this is
+	// surfaced as call metadata (call log + API) rather than driving
+	// preemption. Zero on grants whose signalling carries no priority element
+	// (e.g. the DMR Tier III channel-grant CSBK).
 	Priority uint8
 	// DMRInterleavedVoice mirrors the system-level
 	// trunking.System.DMRInterleavedVoice opt-in onto the grant so the
