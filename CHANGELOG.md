@@ -39,6 +39,25 @@ for tagged releases.
   as the reference — the same validity gate the voice path already applied —
   so a protected grant with no valid sync reports encrypted with alg/key 0
   rather than smearing garbage keys. (#924)
+- **WebUI live-audio playback: silence, PTT clicks, and dropped calls.** The
+  cockpit's live-audio player rebuilt a fresh `AudioContext` every time it
+  followed a new call, and on teardown only suspended (never closed) it — so on
+  a busy system it hit Chrome's ~6-context-per-page ceiling and went silently
+  dead (worst on macOS Chrome). It now reuses a single context and re-points the
+  stream in place. A short fade envelope in the ring-buffer worklet removes the
+  broadband "DC-spike" click at PTT-in / PTT-out and mid-stream call seams, and a
+  follow-hold policy plays the current call to completion before advancing to the
+  newest — instead of cutting it off the instant a newer grant appears ("eating
+  conversations"). No theme or layout changes.
+- **DMR call-startup "scratch" is now squelched.** The AMBE+2/DMR decoder gained
+  the same call-startup acquisition squelch the P25 IMBE decoder already had:
+  while the receiver is acquiring lock, the FEC resolves the marginal dibit
+  stream to random-but-valid AMBE+2 parameters that synthesise as a loud burst at
+  the start of a transmission. Output is now muted until a sustained run of
+  stable-pitch voiced frames confirms real speech (failsafe-released after ~2 s),
+  removing the per-PTT onset scratch. Opt-in and enabled per call by the
+  recorder; the raw decode path stays byte-identical. (The residual synthetic
+  timbre of software AMBE+2 across a whole call is intrinsic to software decode.)
 - **Encrypted / emergency DMR Tier III calls were logged clear.** A DMR
   Tier III channel-grant CSBK carries no service-options octet, so a
   followed call's encrypted / emergency / priority state never reached the
@@ -56,6 +75,11 @@ for tagged releases.
   never-downgrade discipline it already applied to encrypted.
 
 ### Added
+- **rdio-scanner uploads forward the talkgroup tag and group.** The RdioScanner
+  broadcast backend now sends `talkgroupTag` / `talkgroupGroup` when known, so the
+  console shows GopherTrunk's own tag/group instead of falling back to its static
+  per-system config. (The console's system-type label — e.g. "P25" — is not
+  settable: the call-upload API has no protocol/type field.)
 - **`gophertrunk replay -record-voice -out-dir <dir> -freq <Hz>`** decodes and
   records voice from a capture, not just control-channel locks/grants. It wires
   the production voice path (trunking engine → voice composer → recorder) onto
