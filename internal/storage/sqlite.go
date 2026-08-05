@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS call_log (
     timeslot        INTEGER NOT NULL DEFAULT 0,  -- DMR TDMA slot: 0=n/a, 1=TS1, 2=TS2
     priority        INTEGER NOT NULL DEFAULT 0,  -- on-air signalled call priority (service-options low 3 bits)
     device_serial   TEXT    NOT NULL,
+    source_alpha    TEXT,  -- resolved alias/name of the source radio (RID); NULL = unresolved
     started_at      INTEGER NOT NULL,  -- unix nanoseconds
     ended_at        INTEGER,
     duration_ms     INTEGER,
@@ -380,6 +381,7 @@ func (d *DB) ensureCallLogColumns() error {
 		{"key_id", `ALTER TABLE call_log ADD COLUMN key_id INTEGER NOT NULL DEFAULT 0`},
 		{"timeslot", `ALTER TABLE call_log ADD COLUMN timeslot INTEGER NOT NULL DEFAULT 0`},
 		{"priority", `ALTER TABLE call_log ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`},
+		{"source_alpha", `ALTER TABLE call_log ADD COLUMN source_alpha TEXT`},
 		// Nullable (no DEFAULT) so a row with no measurement reads NULL —
 		// "unset" is distinct from a legitimate 0 dBFS reading.
 		{"signal_dbfs", `ALTER TABLE call_log ADD COLUMN signal_dbfs REAL`},

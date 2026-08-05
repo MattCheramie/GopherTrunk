@@ -150,6 +150,63 @@ func TestCallLogPersistsTimeslot(t *testing.T) {
 	}
 }
 
+// TestCallLogPersistsSourceAlias pins the source-radio alias resolution:
+// the call record carries "who was talking", resolved from the RID via the
+// injected resolver, and re-resolved at CallEnd when a compressed grant's
+// RID is only backfilled mid-call.
+func TestCallLogPersistsSourceAlias(t *testing.T) {
+	db := openTestDB(t)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cl, err := NewCallLog(db, bus, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl.SetRIDResolver(func(id uint32) string {
+		if id == 4242 {
+			return "DISPATCH-1"
+		}
+		return ""
+	})
+	defer cl.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	start := time.Now().UTC()
+	// A compressed grant: source unknown at start, backfilled by CallEnd.
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant:        trunking.Grant{System: "P25A", Protocol: "p25", GroupID: 100, SourceID: 0, FrequencyHz: 851_000_000},
+		DeviceSerial: "VOICE-9",
+		StartedAt:    start,
+	}})
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant:        trunking.Grant{System: "P25A", Protocol: "p25", GroupID: 100, SourceID: 4242, FrequencyHz: 851_000_000},
+		DeviceSerial: "VOICE-9",
+		StartedAt:    start,
+		EndedAt:      start.Add(3 * time.Second),
+		Reason:       trunking.EndReasonReleased,
+	}})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1}); len(rows) == 1 && rows[0].EndedAt.After(start) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if rows[0].SourceID != 4242 {
+		t.Fatalf("source_id = %d, want 4242 (backfilled)", rows[0].SourceID)
+	}
+	if rows[0].SourceAlpha != "DISPATCH-1" {
+		t.Errorf("source_alpha = %q, want DISPATCH-1", rows[0].SourceAlpha)
+	}
+}
+
 // TestCallLogPersistsPriority pins the Grant.Priority → call_log round-trip
 // so the on-air call priority surfaces in history and the REST API.
 func TestCallLogPersistsPriority(t *testing.T) {

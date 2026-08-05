@@ -28,6 +28,25 @@ type CallLog struct {
 	sub       *events.Subscription
 	runDone   chan struct{}
 	closeOnce sync.Once
+	// ridAlias resolves a source radio ID to its human alias/name (from the
+	// operator RID catalogue + live-decoded talker aliases). Optional — nil
+	// leaves source_alpha unresolved. Set via SetRIDResolver.
+	ridAlias func(radioID uint32) string
+}
+
+// SetRIDResolver installs the source-radio alias resolver used to stamp
+// source_alpha onto call records — "who was talking", not just the RID.
+// Safe to call once before Run. A nil fn (or nil resolver) leaves
+// source_alpha NULL.
+func (c *CallLog) SetRIDResolver(fn func(radioID uint32) string) { c.ridAlias = fn }
+
+// sourceAlpha resolves the source radio's alias, or "" when no resolver is
+// set or the radio is unknown / anonymous (id 0).
+func (c *CallLog) sourceAlpha(radioID uint32) string {
+	if c.ridAlias == nil || radioID == 0 {
+		return ""
+	}
+	return c.ridAlias(radioID)
 }
 
 // NewCallLog wires the call log to the bus. It subscribes immediately
@@ -102,14 +121,14 @@ func (c *CallLog) recordStart(cs trunking.CallStart) error {
 INSERT OR REPLACE INTO call_log (
     system, protocol, group_id, source_id, frequency_hz,
     encrypted, algorithm_id, key_id, emergency, data_call, timeslot, priority,
-    device_serial, started_at, talkgroup_alpha
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    device_serial, started_at, talkgroup_alpha, source_alpha
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := c.db.sql.Exec(q,
 		cs.Grant.System, cs.Grant.Protocol, cs.Grant.GroupID, cs.Grant.SourceID, cs.Grant.FrequencyHz,
 		boolToInt(cs.Grant.Encrypted), cs.Grant.AlgorithmID, cs.Grant.KeyID,
 		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall), cs.Grant.Timeslot, cs.Grant.Priority,
 		cs.DeviceSerial, cs.StartedAt.UnixNano(),
-		alpha,
+		alpha, c.sourceAlpha(cs.Grant.SourceID),
 	)
 	return err
 }
@@ -156,6 +175,7 @@ UPDATE call_log
        encrypted    = CASE WHEN ? != 0 THEN 1 ELSE encrypted END,
        algorithm_id = COALESCE(NULLIF(?, 0), algorithm_id),
        key_id       = COALESCE(NULLIF(?, 0), key_id),
+       source_alpha = COALESCE(NULLIF(?, ''), source_alpha),
        signal_dbfs  = COALESCE(?, signal_dbfs),
        evm_pct      = COALESCE(?, evm_pct),
        snr_db       = COALESCE(?, snr_db)
@@ -168,6 +188,9 @@ UPDATE call_log
 		boolToInt(ce.Grant.Encrypted),
 		ce.Grant.AlgorithmID,
 		ce.Grant.KeyID,
+		// Re-resolve from the end grant's SourceID: a compressed grant's RID is
+		// backfilled mid-call, so the source alias may only be resolvable now.
+		c.sourceAlpha(ce.Grant.SourceID),
 		sig,
 		evm,
 		snr,
@@ -211,6 +234,10 @@ type CallRow struct {
 	DurationMs     int64     `json:"duration_ms,omitempty"`
 	EndReason      string    `json:"end_reason,omitempty"`
 	TalkgroupAlpha string    `json:"talkgroup_alpha,omitempty"`
+	// SourceAlpha is the resolved alias/name of the source radio (RID), from
+	// the operator RID catalogue + live-decoded talker aliases; "" when
+	// unresolved.
+	SourceAlpha string `json:"source_alpha,omitempty"`
 	// SignalDbFS is the call's mean received channel power in dBFS
 	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
 	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`
@@ -227,7 +254,7 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	q := `SELECT id, system, protocol, group_id, source_id, frequency_hz,
 	             encrypted, algorithm_id, key_id, emergency, data_call, timeslot, priority,
 	             device_serial, started_at, ended_at, duration_ms,
-	             end_reason, talkgroup_alpha, signal_dbfs, evm_pct, snr_db
+	             end_reason, talkgroup_alpha, source_alpha, signal_dbfs, evm_pct, snr_db
 	      FROM call_log WHERE 1=1`
 	args := []any{}
 	if f.System != "" {
@@ -270,13 +297,13 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		var endNs sql.NullInt64
 		var durMs sql.NullInt64
 		var reason sql.NullString
-		var alpha sql.NullString
+		var alpha, srcAlpha sql.NullString
 		var sig, evm, snr sql.NullFloat64
 		var enc, emer, data, algID, keyID, slot, prio int
 		if err := rows.Scan(
 			&r.ID, &r.System, &r.Protocol, &r.GroupID, &r.SourceID, &r.FrequencyHz,
 			&enc, &algID, &keyID, &emer, &data, &slot, &prio, &r.DeviceSerial,
-			&startNs, &endNs, &durMs, &reason, &alpha, &sig, &evm, &snr,
+			&startNs, &endNs, &durMs, &reason, &alpha, &srcAlpha, &sig, &evm, &snr,
 		); err != nil {
 			return nil, err
 		}
@@ -299,6 +326,9 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		}
 		if alpha.Valid {
 			r.TalkgroupAlpha = alpha.String
+		}
+		if srcAlpha.Valid {
+			r.SourceAlpha = srcAlpha.String
 		}
 		if sig.Valid {
 			v := sig.Float64
