@@ -120,13 +120,14 @@ func (c *CallLog) recordStart(cs trunking.CallStart) error {
 	const q = `
 INSERT OR REPLACE INTO call_log (
     system, protocol, group_id, source_id, frequency_hz,
-    encrypted, algorithm_id, key_id, emergency, data_call, timeslot, priority,
+    encrypted, algorithm_id, key_id, emergency, data_call, individual, timeslot, priority,
     device_serial, started_at, talkgroup_alpha, source_alpha
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := c.db.sql.Exec(q,
 		cs.Grant.System, cs.Grant.Protocol, cs.Grant.GroupID, cs.Grant.SourceID, cs.Grant.FrequencyHz,
 		boolToInt(cs.Grant.Encrypted), cs.Grant.AlgorithmID, cs.Grant.KeyID,
-		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall), cs.Grant.Timeslot, cs.Grant.Priority,
+		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall), boolToInt(cs.Grant.Individual),
+		cs.Grant.Timeslot, cs.Grant.Priority,
 		cs.DeviceSerial, cs.StartedAt.UnixNano(),
 		alpha, c.sourceAlpha(cs.Grant.SourceID),
 	)
@@ -147,10 +148,12 @@ func (c *CallLog) recordEnd(ce trunking.CallEnd) error {
 	// (UpdateSource / UpdateEncryption): COALESCE(NULLIF(?, 0), col) keeps a
 	// legitimate start-time value when the end grant is still zero (source_id,
 	// algorithm_id, key_id, priority), and the CASE only ever latches
-	// encrypted / emergency on (never off). A DMR Tier III / P25 Phase 2 grant
-	// carries no Service Options, so the emergency + priority bits arrive only
-	// on the traffic channel (UpdateSource) and must be persisted here, the
-	// same way encrypted already is.
+	// encrypted / emergency / individual on (never off). A DMR Tier III / P25
+	// Phase 2 grant carries no Service Options, so the emergency + priority bits
+	// arrive only on the traffic channel (UpdateSource) and must be persisted
+	// here, the same way encrypted already is. individual latches on too: a
+	// TETRA unit-to-unit destination cannot be flagged on first sighting, so a
+	// call can be recognised as individual after its start row is written.
 	// signal_dbfs uses COALESCE(?, signal_dbfs) with a NULL-valued bind
 	// when the call carried no measurement, so a non-composer end (watchdog
 	// timeout, preemption, shutdown) never clobbers a value an earlier
@@ -177,6 +180,7 @@ UPDATE call_log
        source_id    = COALESCE(NULLIF(?, 0), source_id),
        encrypted    = CASE WHEN ? != 0 THEN 1 ELSE encrypted END,
        emergency    = CASE WHEN ? != 0 THEN 1 ELSE emergency END,
+       individual   = CASE WHEN ? != 0 THEN 1 ELSE individual END,
        algorithm_id = COALESCE(NULLIF(?, 0), algorithm_id),
        key_id       = COALESCE(NULLIF(?, 0), key_id),
        priority     = COALESCE(NULLIF(?, 0), priority),
@@ -192,6 +196,7 @@ UPDATE call_log
 		ce.Grant.SourceID,
 		boolToInt(ce.Grant.Encrypted),
 		boolToInt(ce.Grant.Emergency),
+		boolToInt(ce.Grant.Individual),
 		ce.Grant.AlgorithmID,
 		ce.Grant.KeyID,
 		ce.Grant.Priority,
@@ -230,6 +235,9 @@ type CallRow struct {
 	KeyID       uint16 `json:"key_id"`
 	Emergency   bool   `json:"emergency"`
 	DataCall    bool   `json:"data_call"`
+	// Individual is true for a unit-to-unit / private call, where GroupID is a
+	// target radio address rather than a talkgroup. Omitted for group calls.
+	Individual bool `json:"individual,omitempty"`
 	// Timeslot is the 1-based DMR TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
 	Timeslot uint8 `json:"timeslot,omitempty"`
 	// Priority is the call's on-air signalled priority (service-options low
@@ -259,7 +267,7 @@ type CallRow struct {
 // History queries the call_log with the supplied filter, newest-first.
 func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	q := `SELECT id, system, protocol, group_id, source_id, frequency_hz,
-	             encrypted, algorithm_id, key_id, emergency, data_call, timeslot, priority,
+	             encrypted, algorithm_id, key_id, emergency, data_call, individual, timeslot, priority,
 	             device_serial, started_at, ended_at, duration_ms,
 	             end_reason, talkgroup_alpha, source_alpha, signal_dbfs, evm_pct, snr_db
 	      FROM call_log WHERE 1=1`
@@ -306,10 +314,10 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		var reason sql.NullString
 		var alpha, srcAlpha sql.NullString
 		var sig, evm, snr sql.NullFloat64
-		var enc, emer, data, algID, keyID, slot, prio int
+		var enc, emer, data, indiv, algID, keyID, slot, prio int
 		if err := rows.Scan(
 			&r.ID, &r.System, &r.Protocol, &r.GroupID, &r.SourceID, &r.FrequencyHz,
-			&enc, &algID, &keyID, &emer, &data, &slot, &prio, &r.DeviceSerial,
+			&enc, &algID, &keyID, &emer, &data, &indiv, &slot, &prio, &r.DeviceSerial,
 			&startNs, &endNs, &durMs, &reason, &alpha, &srcAlpha, &sig, &evm, &snr,
 		); err != nil {
 			return nil, err
@@ -319,6 +327,7 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		r.KeyID = uint16(keyID)
 		r.Emergency = emer != 0
 		r.DataCall = data != 0
+		r.Individual = indiv != 0
 		r.Timeslot = uint8(slot)
 		r.Priority = uint8(prio)
 		r.StartedAt = time.Unix(0, startNs).UTC()

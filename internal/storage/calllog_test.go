@@ -247,6 +247,50 @@ func TestCallLogPersistsPriority(t *testing.T) {
 	}
 }
 
+// TestCallLogPersistsIndividual pins the Grant.Individual → call_log
+// round-trip: a unit-to-unit / private call must be distinguishable in
+// history from a group call, since its GroupID is a target radio address
+// rather than a talkgroup and would otherwise render as a phantom talkgroup.
+func TestCallLogPersistsIndividual(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	// A TETRA unit-to-unit call: GroupID is the target radio (ISSI).
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "TET", Protocol: "tetra",
+			GroupID: 1005372, SourceID: 1020545, FrequencyHz: 467_912_500, Individual: true,
+		},
+		DeviceSerial: "VOICE-IND", StartedAt: startedAt,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].Individual
+	})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if !rows[0].Individual {
+		t.Errorf("Individual = false, want true for a unit-to-unit call")
+	}
+
+	// A group call in the same table must stay Individual=false.
+	group := time.Now().UTC().Truncate(time.Microsecond)
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "TET", Protocol: "tetra",
+			GroupID: 1020545, SourceID: 7, FrequencyHz: 467_912_500,
+		},
+		DeviceSerial: "VOICE-GRP", StartedAt: group,
+	}})
+	all := waitHistory(t, db, HistoryFilter{Limit: 2}, func(r []CallRow) bool { return len(r) == 2 })
+	for _, r := range all {
+		if r.DeviceSerial == "VOICE-GRP" && r.Individual {
+			t.Errorf("group call flagged Individual")
+		}
+	}
+}
+
 func TestCallLogIdempotentStart(t *testing.T) {
 	db := openTestDB(t)
 	bus := events.NewBus(8)
@@ -797,6 +841,9 @@ CREATE TABLE call_log (
 	}
 	if rows[0].Timeslot != 0 {
 		t.Errorf("migrated row: timeslot=%d, want 0 (column added with default)", rows[0].Timeslot)
+	}
+	if rows[0].Individual {
+		t.Errorf("migrated row: individual=true, want false (column added with default 0)")
 	}
 	if rows[0].SignalDbFS != nil {
 		t.Errorf("migrated row: signal_dbfs=%v, want nil (nullable column added, old row NULL)", *rows[0].SignalDbFS)

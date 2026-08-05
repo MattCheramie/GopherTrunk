@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS call_log (
     key_id          INTEGER NOT NULL DEFAULT 0,
     emergency       INTEGER NOT NULL DEFAULT 0,
     data_call       INTEGER NOT NULL DEFAULT 0,
+    individual      INTEGER NOT NULL DEFAULT 0,  -- 1 = unit-to-unit / private call (group_id is a target radio, not a talkgroup)
     timeslot        INTEGER NOT NULL DEFAULT 0,  -- DMR TDMA slot: 0=n/a, 1=TS1, 2=TS2
     priority        INTEGER NOT NULL DEFAULT 0,  -- on-air signalled call priority (service-options low 3 bits)
     device_serial   TEXT    NOT NULL,
@@ -389,6 +390,7 @@ func (d *DB) ensureCallLogColumns() error {
 		// call's chain fed no demod taps (every protocol but P25 Phase 1).
 		{"evm_pct", `ALTER TABLE call_log ADD COLUMN evm_pct REAL`},
 		{"snr_db", `ALTER TABLE call_log ADD COLUMN snr_db REAL`},
+		{"individual", `ALTER TABLE call_log ADD COLUMN individual INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range adds {
 		if have[a.name] {
