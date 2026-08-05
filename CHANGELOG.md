@@ -18,6 +18,37 @@ for tagged releases.
   produces audio, and the reproduction vehicle for #1036. Requires `-freq` (a
   grant with frequency 0 is dropped) and does not support `-auto-tune` (use
   `-tune-hz`). Backed by a new siglab `Config.Bus` / `Config.OnChannelIQ` seam.
+- **On-air call priority is decoded and surfaced.** The call's signalled
+  priority level — the low 3 bits of the P25 / DMR Service Options octet —
+  is now carried on the grant (`Grant.Priority`), persisted to the call log,
+  and returned by the `/api/v1/calls` history endpoint, so an operator can
+  see which calls the radios flagged as high-priority alongside the existing
+  emergency / encrypted metadata. Decoded from P25 Phase 1, P25 Phase 2, and
+  DMR (group and unit-to-unit voice LCs). This is the calling radio's
+  requested priority (distinct from a talkgroup's operator-configured
+  priority); engine preemption is unchanged.
+- **Followed DMR calls (Tier III / Tier I) end promptly on the Terminator.**
+  The voice chain now detects the Terminator-with-LC burst on the followed
+  traffic channel — reusing the trusted control-path FEC chain (slot-type
+  Hamming, BPTC, RS(12,9) terminator seed) so a garbled data burst can't
+  forge an end-of-call — and publishes a `call.release` for the matching
+  group, so the engine tears the call down at once instead of waiting out
+  the hangtime. Extends the Tier II conventional prompt-release to followed
+  calls; strictly additive (the hangtime path still ends a call whose
+  terminator never decodes).
+- **DMR Tier II conventional calls end promptly on the Terminator.** The
+  decoder now publishes a `call.release` when it sees the explicit
+  Terminator-with-LC burst, so the engine tears the call down at once
+  instead of waiting out the composer's hangtime / no-voice timers — the
+  same prompt-teardown TETRA already drives from D-RELEASE. Recorded call
+  durations match the air more closely.
+- **DMR private (unit-to-unit) calls route and attribute correctly on
+  interleaved carriers.** The 2-slot `slotRouter` now binds a private call's
+  timeslot from its unit-to-unit embedded LC (by called subscriber), instead
+  of only recording it via the phase fallback, and the voice chain learns the
+  call's source radio from a unit-to-unit LC too — so talker-alias / GPS
+  metadata is attributed to the caller on private calls, not just group calls.
+  Completes the unit-to-unit voice-follow work.
 - **DMR private (unit-to-unit) calls are now followed.** A Tier II
   conventional channel dropped any non-group Voice LC Header, so DMR private
   calls were invisible — no grant, never followed, never recorded. The

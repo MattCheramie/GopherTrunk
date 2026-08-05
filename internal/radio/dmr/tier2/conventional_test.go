@@ -94,7 +94,7 @@ func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 	flc := dmr.FLC{
 		FLCO:           dmr.FLCOGroupVoiceUser,
 		FID:            0x00,
-		ServiceOptions: 0xC0, // emergency + encrypted
+		ServiceOptions: 0xC5, // emergency + encrypted + priority 5
 		DstAddr:        0x000064,
 		SrcAddr:        0x100200,
 	}
@@ -126,6 +126,9 @@ func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 			}
 			if !g.Encrypted || !g.Emergency {
 				t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
+			}
+			if g.Priority != 5 {
+				t.Errorf("priority = %d, want 5", g.Priority)
 			}
 			if g.Individual {
 				t.Error("group grant wrongly marked Individual")
@@ -325,6 +328,48 @@ DrainCSBK:
 			t.Errorf("unexpected event for CSBK burst: %s", ev.Kind)
 		case <-timeout:
 			break DrainCSBK
+		}
+	}
+}
+
+// TestConventionalPublishesReleaseOnTerminator confirms an explicit
+// Terminator-with-LC ends the call promptly: the decoder publishes a
+// KindCallRelease keyed to the active call's talkgroup, rather than
+// leaving the engine to wait out the hangtime timers.
+func TestConventionalPublishesReleaseOnTerminator(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "TestRepeater",
+		FrequencyHz: 451_000_000,
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+	// A group call opens (Voice LC Header), then a Terminator ends it.
+	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x000064, SrcAddr: 0x100200}
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 5, DataType: dmr.DTVoiceLCHeader})
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 5, DataType: dmr.DTTerminatorWithLC})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindCallRelease {
+				continue
+			}
+			r := ev.Payload.(trunking.CallRelease)
+			if r.System != "TestRepeater" || r.GroupID != 0x64 {
+				t.Fatalf("release identity = %s/%X, want TestRepeater/64", r.System, r.GroupID)
+			}
+			if r.Reason != trunking.EndReasonReleased {
+				t.Errorf("reason = %v, want Released", r.Reason)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no KindCallRelease on Terminator")
 		}
 	}
 }

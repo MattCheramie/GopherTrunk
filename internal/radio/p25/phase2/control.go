@@ -857,6 +857,7 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 			NAC:             nac,
 			Encrypted:       so.Encrypted(),
 			Emergency:       so.Emergency(),
+			Priority:        so.Priority(),
 			AlgorithmID:     algID,
 			KeyID:           keyID,
 			P25Phase2Decode: dec,

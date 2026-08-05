@@ -120,6 +120,7 @@ type GroupVoiceChannelUser struct {
 	SourceID     uint32 // 24-bit
 	Encrypted    bool
 	Emergency    bool
+	Priority     uint8 // ServiceOptions bits 2..0 (§7.2.1 Table 7.13)
 }
 
 // AsGroupVoiceUser decodes the FLC into the typed group-voice payload
@@ -135,6 +136,7 @@ func (f FLC) AsGroupVoiceUser() (GroupVoiceChannelUser, bool) {
 		SourceID:     f.SrcAddr,
 		Emergency:    f.ServiceOptions&0x80 != 0,
 		Encrypted:    f.ServiceOptions&0x40 != 0,
+		Priority:     f.ServiceOptions & 0x07,
 	}, true
 }
 
@@ -146,6 +148,7 @@ type UnitToUnitVoiceChannelUser struct {
 	SourceID      uint32 // 24-bit calling subscriber
 	Encrypted     bool
 	Emergency     bool
+	Priority      uint8 // ServiceOptions bits 2..0 (§7.2.1 Table 7.13)
 }
 
 // AsUnitToUnitVoice decodes the FLC into the typed private-voice payload
@@ -162,5 +165,6 @@ func (f FLC) AsUnitToUnitVoice() (UnitToUnitVoiceChannelUser, bool) {
 		SourceID:      f.SrcAddr,
 		Emergency:     f.ServiceOptions&0x80 != 0,
 		Encrypted:     f.ServiceOptions&0x40 != 0,
+		Priority:      f.ServiceOptions & 0x07,
 	}, true
 }

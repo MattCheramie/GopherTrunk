@@ -170,6 +170,21 @@ func newSlotRouter(groupID uint32) *slotRouter {
 	return &slotRouter{groupID: groupID, bound: -1}
 }
 
+// lcCallDestination returns the destination address a voice embedded LC
+// names — a talkgroup for a group call or the called subscriber for a
+// unit-to-unit (private) call — so a call's slot can be bound by its
+// grant's GroupID regardless of call type. ok is false for any other FLCO
+// (talker alias, GPS, terminator, …), which carries no call destination.
+func lcCallDestination(lc dmr.FLC) (uint32, bool) {
+	if gv, ok := lc.AsGroupVoiceUser(); ok {
+		return gv.GroupAddress, true
+	}
+	if uu, ok := lc.AsUnitToUnitVoice(); ok {
+		return uu.DestinationID, true
+	}
+	return 0, false
+}
+
 // accept reports whether sf belongs to this call's timeslot. An embedded LC
 // naming this call's talkgroup is authoritative and binds (or re-binds) the
 // phase. Absent a usable LC, once a phase is bound we route by it; while still
@@ -177,14 +192,14 @@ func newSlotRouter(groupID uint32) *slotRouter {
 // the active slot's phase so the call still records rather than dropping it.
 func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 	if sf.HasLC {
-		if gv, ok := sf.LC.AsGroupVoiceUser(); ok {
-			if gv.GroupAddress == r.groupID {
+		if dest, ok := lcCallDestination(sf.LC); ok {
+			if dest == r.groupID {
 				r.bound = int(sf.Phase)
 				r.byFallback = false
 				return true
 			}
-			// LC names a different talkgroup — this phase is positively the
-			// other slot, so never fall back onto it later.
+			// LC names a different destination (talkgroup or called unit) — this
+			// phase is positively the other slot, so never fall back onto it.
 			r.foreignPhaseMask |= 1 << (sf.Phase & 1)
 			return false
 		}
@@ -300,6 +315,34 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 			},
 		})
 	}
+	// Terminator detection: end the call at once when the followed traffic
+	// channel carries a valid Terminator-with-LC for this call's group,
+	// rather than waiting out the boundary tracker's hangtime. Publish once —
+	// the engine's release handling is idempotent, and a stationary end may
+	// repeat the terminator. Only a terminator whose LC destination matches
+	// this call's groupID ends it, so the other timeslot of an interleaved
+	// carrier never tears this call down; if no terminator ever decodes (real
+	// embedded/data-burst FEC is capture-pending, #644) the hangtime path
+	// still ends the call, so this is strictly additive.
+	termDet := dmrvoice.NewTerminatorDetector()
+	var released bool
+	publishRelease := func() {
+		if released || c.bus == nil || groupID == 0 {
+			return
+		}
+		released = true
+		c.log.Debug("composer: dmr terminator — releasing call",
+			"system", system, "serial", serial, "group", groupID)
+		c.bus.Publish(events.Event{
+			Kind: events.KindCallRelease,
+			Payload: trunking.CallRelease{
+				System:  system,
+				GroupID: groupID,
+				Reason:  trunking.EndReasonReleased,
+				At:      time.Now(),
+			},
+		})
+	}
 	// superframes counts DMR voice superframes the receiver delivered —
 	// i.e. real voice activity. The touch ticker (below) only refreshes
 	// the engine's LastHeardAt when this counter has advanced since the
@@ -326,11 +369,22 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 		DeviationHz: 1944.0,
 		ClockGain:   0.025,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			// End the call promptly on an explicit Terminator for this group.
+			for _, flc := range termDet.Process(dibits, baseIdx) {
+				if dest, ok := lcCallDestination(flc); ok && dest == groupID {
+					publishRelease()
+				}
+			}
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				if sf.HasLC {
 					lcSuperframes.Add(1)
+					// Learn the call's source radio from either a group-voice or a
+					// unit-to-unit voice LC, so talker-alias / GPS metadata (which
+					// carry no address of their own) is attributed on private calls too.
 					if gv, ok := sf.LC.AsGroupVoiceUser(); ok && gv.SourceID != 0 {
 						callSrc = gv.SourceID
+					} else if uu, ok := sf.LC.AsUnitToUnitVoice(); ok && uu.SourceID != 0 {
+						callSrc = uu.SourceID
 					}
 				}
 				// Talker-alias header/block and GPS Info embedded LCs are

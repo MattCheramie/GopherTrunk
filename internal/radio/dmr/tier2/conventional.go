@@ -289,11 +289,12 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 	// difference to the engine is Grant.Individual, which keeps a private
 	// call's destination RID out of the talkgroup list.
 	var dest, src uint32
+	var prio uint8
 	var enc, emer, individual bool
 	if gv, ok := flc.AsGroupVoiceUser(); ok {
-		dest, src, enc, emer = gv.GroupAddress, gv.SourceID, gv.Encrypted, gv.Emergency
+		dest, src, enc, emer, prio = gv.GroupAddress, gv.SourceID, gv.Encrypted, gv.Emergency, gv.Priority
 	} else if uu, ok := flc.AsUnitToUnitVoice(); ok {
-		dest, src, enc, emer, individual = uu.DestinationID, uu.SourceID, uu.Encrypted, uu.Emergency, true
+		dest, src, enc, emer, individual, prio = uu.DestinationID, uu.SourceID, uu.Encrypted, uu.Emergency, true, uu.Priority
 	} else {
 		c.log.Debug("dmr/tier2: non-voice FLCO ignored", "flco", flc.FLCO)
 		return
@@ -317,6 +318,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 			ChannelID:   slot.ColorCode,
 			Encrypted:   enc,
 			Emergency:   emer,
+			Priority:    prio,
 			At:          c.now(),
 		},
 	})
@@ -329,6 +331,22 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 func (c *ConventionalChannel) handleTerminator() {
 	if !c.inCall {
 		return
+	}
+	// A Terminator with LC is the explicit end of the transmission. Publish a
+	// call release so the engine ends the call at once, rather than waiting out
+	// the composer's hangtime / no-voice timers — the same prompt-teardown path
+	// TETRA's D-RELEASE drives. Keyed by (System, GroupID); a no-match release
+	// is a harmless no-op.
+	if c.bus != nil && c.lastTG != 0 {
+		c.bus.Publish(events.Event{
+			Kind: events.KindCallRelease,
+			Payload: trunking.CallRelease{
+				System:  c.systemName,
+				GroupID: c.lastTG,
+				Reason:  trunking.EndReasonReleased,
+				At:      c.now(),
+			},
+		})
 	}
 	c.inCall = false
 	c.lastTG = 0

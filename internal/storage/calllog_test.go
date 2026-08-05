@@ -150,6 +150,46 @@ func TestCallLogPersistsTimeslot(t *testing.T) {
 	}
 }
 
+// TestCallLogPersistsPriority pins the Grant.Priority → call_log round-trip
+// so the on-air call priority surfaces in history and the REST API.
+func TestCallLogPersistsPriority(t *testing.T) {
+	db := openTestDB(t)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cl, err := NewCallLog(db, bus, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "P25A", Protocol: "p25",
+			GroupID: 100, SourceID: 7, FrequencyHz: 851_000_000, Priority: 6,
+		},
+		DeviceSerial: "VOICE-3",
+		StartedAt:    time.Now().UTC(),
+	}})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1}); len(rows) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if rows[0].Priority != 6 {
+		t.Errorf("Priority = %d, want 6", rows[0].Priority)
+	}
+}
+
 func TestCallLogIdempotentStart(t *testing.T) {
 	db := openTestDB(t)
 	bus := events.NewBus(8)
