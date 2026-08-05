@@ -30,6 +30,15 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **P25 Phase 2 grants could carry a garbage encryption Algorithm ID.** A
+  bit-errored MAC Encryption Sync decodes to an Algorithm ID outside the
+  TIA-102 registry; the control channel stored any decoded sync and attached
+  it to every subsequent encrypted grant, so a single mis-decode leaked a
+  plausible-but-wrong `algorithm_id` + `key_id` onto grants (and downstream
+  onto the call record / webhook). It now refuses to store an out-of-set sync
+  as the reference — the same validity gate the voice path already applied —
+  so a protected grant with no valid sync reports encrypted with alg/key 0
+  rather than smearing garbage keys. (#924)
 - **Encrypted / emergency DMR Tier III calls were logged clear.** A DMR
   Tier III channel-grant CSBK carries no service-options octet, so a
   followed call's encrypted / emergency / priority state never reached the
