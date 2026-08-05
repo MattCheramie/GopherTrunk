@@ -3,6 +3,7 @@ package tetra
 import (
 	"math"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
@@ -102,6 +103,32 @@ type TrafficExtractor struct {
 	pendingSoft     []complex64
 	pendingSoftBase int
 
+	// symBuf holds the RAW pre-differential complex symbols (the receiver's
+	// SymbolSink output) strictly parallel to buf, so a burst can be re-equalized
+	// in the linear-channel domain before the soft decode. Same lockstep contract
+	// as softBuf: either empty (no symbol data supplied — the path used by tests /
+	// any caller that never StashSymbols) or exactly len(buf). Only consulted when
+	// the training-sequence equalizer is enabled (EnableLMSEqualizer). pendingSym
+	// carries the symbols stashed for the NEXT Process call (StashSymbols).
+	symBuf         []complex64
+	pendingSym     []complex64
+	pendingSymBase int
+
+	// lms is the per-burst training-sequence-aided channel equalizer (nil until
+	// EnableLMSEqualizer). When set, softFrame trains it on each burst's known
+	// normal training sequence (the midamble) from the raw symBuf symbols, freezes
+	// the taps, equalizes BKN1+BKN2, and re-derives the soft LLRs from the
+	// equalized symbols — inverting the linear channel / ISI that closes the
+	// π/4-DQPSK eye on a same-carrier site (issue #1001). Off by default: with no
+	// symBuf, or on a burst whose span is not fully buffered, softFrame falls back
+	// to the raw receiver differentials, so the extractor is byte-identical when
+	// the equalizer is not enabled.
+	lms       *equalizer.SnapshotLMS
+	lmsTaps   int
+	lmsPasses int
+	lmsSpan   []complex64 // reused Equalize output scratch
+	lmsDiffs  []complex64 // reused per-burst differential scratch
+
 	// sbAnchor is the absolute dibit index of the most recent SB
 	// synchronisation-training-sequence leading dibit (TN1), pinning the
 	// 255-dibit slot grid; haveAnchor is false until the first SB is seen.
@@ -162,6 +189,18 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 		te.softBuf = te.softBuf[:0]
 	}
 	te.pendingSoft = nil
+	// Keep symBuf strictly parallel to buf under the same lockstep contract as
+	// softBuf (append the stashed symbols only when they match this block and the
+	// buffer is already in lockstep; otherwise drop the symbol path rather than
+	// risk a misalignment). Copies the values in, so the receiver may reuse its
+	// symbol backing array for the next call.
+	if te.pendingSym != nil && te.pendingSymBase == baseIdx &&
+		len(te.pendingSym) == len(dibits) && len(te.symBuf) == len(te.buf) {
+		te.symBuf = append(te.symBuf, te.pendingSym...)
+	} else {
+		te.symBuf = te.symBuf[:0]
+	}
+	te.pendingSym = nil
 	te.buf = append(te.buf, dibits...)
 
 	// Anchor the slot grid on the synchronisation burst. The SB's STS is
@@ -230,6 +269,12 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 		} else {
 			te.softBuf = te.softBuf[:0]
 		}
+		// Same for symBuf.
+		if len(te.symBuf) >= drop {
+			te.symBuf = append(te.symBuf[:0], te.symBuf[drop:]...)
+		} else {
+			te.symBuf = te.symBuf[:0]
+		}
 		te.bufBase += drop
 	}
 }
@@ -243,6 +288,52 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 func (te *TrafficExtractor) StashSoft(diffs []complex64, baseIdx int) {
 	te.pendingSoft = diffs
 	te.pendingSoftBase = baseIdx
+}
+
+// Default training-sequence equalizer parameters (see EnableLMSEqualizer). The
+// TETRA normal training sequence is only 11 dibits, so the equalizer is kept
+// short (a handful of taps) and swept several times over that midamble so the
+// least-mean-squares estimate converges on so few reference symbols. Validated
+// against the synthetic-multipath regression in traffic_lms_test.go.
+const (
+	defaultLMSTaps   = 5
+	defaultLMSPasses = 80
+	defaultLMSStep   = float32(0.02)
+)
+
+// EnableLMSEqualizer turns on per-burst training-sequence-aided equalization of
+// the soft (LLR) decode path. Once enabled, and once the caller feeds the raw
+// symbols via StashSymbols (receiver.Options.SymbolSink), softFrame trains an
+// equalizer.SnapshotLMS on each burst's known normal training sequence, freezes
+// the taps, equalizes BKN1+BKN2, and re-derives the soft LLRs from the equalized
+// symbols — inverting the linear channel / ISI that garbles same-carrier TCH/S
+// (issue #1001). taps <= 0 uses defaultLMSTaps; passes <= 0 uses defaultLMSPasses.
+//
+// It changes only the soft LLR stream; the hard frame is untouched, and with no
+// StashSymbols data (or on a burst whose symbol span is not fully buffered) the
+// soft path falls back to the raw receiver differentials — so a caller that never
+// enables it, or never stashes symbols, is byte-identical to before.
+func (te *TrafficExtractor) EnableLMSEqualizer(taps, passes int) {
+	if taps <= 0 {
+		taps = defaultLMSTaps
+	}
+	if passes <= 0 {
+		passes = defaultLMSPasses
+	}
+	te.lmsTaps = taps
+	te.lmsPasses = passes
+	te.lms = equalizer.NewSnapshotLMS(taps, defaultLMSStep)
+}
+
+// StashSymbols hands the extractor the raw pre-differential complex symbols (the
+// receiver's SymbolSink output) for the dibits the NEXT Process call will
+// deliver, keyed by the same baseIdx — the symbol analog of StashSoft. Only
+// consulted when the training-sequence equalizer is enabled (EnableLMSEqualizer);
+// a caller that never StashSymbols leaves the equalizer inert (soft path
+// unchanged).
+func (te *TrafficExtractor) StashSymbols(syms []complex64, baseIdx int) {
+	te.pendingSym = syms
+	te.pendingSymBase = baseIdx
 }
 
 // emit slices BKN1 and BKN2 around the training sequence leading at L and
@@ -274,6 +365,30 @@ func (te *TrafficExtractor) softFrame(L int) []float32 {
 	if len(te.softBuf) != len(te.buf) {
 		return nil
 	}
+	// Prefer the training-sequence-equalized differentials when the equalizer is
+	// enabled and this burst's raw symbol span is fully buffered; otherwise use the
+	// receiver's raw differentials (the pre-#1001 path). equalizedBurstDiffs returns
+	// nil whenever the equalizer is off or the span is unavailable, so this is a
+	// no-op unless EnableLMSEqualizer + StashSymbols are both in play.
+	diffs := te.equalizedBurstDiffs(L)
+	if diffs == nil {
+		diffs = te.rawBurstDiffs(L)
+	}
+	if diffs == nil {
+		return nil
+	}
+	llr := softType5FromDiffs(diffs, 0)
+	if te.colourCode != 0 {
+		llr = framing.DescrambleTetraSoft(llr, te.colourCode)
+	}
+	return llr
+}
+
+// rawBurstDiffs concatenates the receiver's raw per-symbol differentials for
+// BKN1 then BKN2 around the training sequence leading at L, or nil when the soft
+// buffer does not cover the burst. This is the original (pre-equalizer) soft
+// source.
+func (te *TrafficExtractor) rawBurstDiffs(L int) []complex64 {
 	block := func(off int) []complex64 {
 		s := L + off - te.bufBase
 		if s < 0 || s+ndbBlockDibits > len(te.softBuf) {
@@ -289,11 +404,128 @@ func (te *TrafficExtractor) softFrame(L int) []float32 {
 	diffs := make([]complex64, 0, TrafficFrameDibits)
 	diffs = append(diffs, b1...)
 	diffs = append(diffs, b2...)
-	llr := softType5FromDiffs(diffs, 0)
-	if te.colourCode != 0 {
-		llr = framing.DescrambleTetraSoft(llr, te.colourCode)
+	return diffs
+}
+
+// equalizedBurstDiffs trains the per-burst SnapshotLMS on the burst's known
+// normal training sequence (the midamble), equalizes the raw symbols spanning
+// BKN1..BKN2, and returns the 216 re-derived complex differentials (BKN1 then
+// BKN2) the soft decode consumes. Returns nil — so softFrame falls back to the
+// raw differentials — when the equalizer is disabled, no raw symbols are
+// buffered, or the burst's symbol span (with FIR warm-up) is not fully present.
+//
+// Design (mirrors equalizer.SnapshotLMS's proven usage): train on the midamble
+// symbols against the ideal reference, freeze the taps, apply them across the
+// whole burst, then differential-decode consecutive equalized symbols. A frozen
+// filter imposes only a constant phase/scale, which cancels in the differential
+// decode; the training pins the true channel inverse (phase and all), which blind
+// CMA cannot on so short a reference.
+func (te *TrafficExtractor) equalizedBurstDiffs(L int) []complex64 {
+	if te.lms == nil || len(te.symBuf) != len(te.buf) {
+		return nil
 	}
-	return llr
+	ntsLen := len(NormalSyncDibits()) // 11
+	// Ideal reference symbols for this burst's midamble (anchor + 11), plus the
+	// aligned received symbols to train on.
+	ref := te.midambleRef(L, ntsLen)
+	if ref == nil {
+		return nil
+	}
+	m0 := L - 1 - te.bufBase // anchor symbol one before the first midamble differential
+	if m0 < 0 || m0+ntsLen+1 > len(te.symBuf) {
+		return nil
+	}
+	rx := te.symBuf[m0 : m0+ntsLen+1]
+
+	// Equalize a span that starts warm taps before BKN1's differential anchor, so
+	// the FIR delay line is full before the first BKN1 symbol, and runs through the
+	// end of BKN2. spanStart is the absolute index of the first equalized symbol.
+	warm := te.lmsTaps
+	spanStart := L + ndbBKN1Start - 1 - warm // one before BKN1 start, minus FIR warm-up
+	spanEnd := L + ndbBKN2Start + ndbBlockDibits
+	s0 := spanStart - te.bufBase
+	s1 := spanEnd - te.bufBase
+	if s0 < 0 || s1 > len(te.symBuf) {
+		return nil
+	}
+
+	te.lms.Reset()
+	te.lms.Train(rx, ref, te.lmsPasses)
+	span := te.lms.Equalize(te.lmsSpan[:0], te.symBuf[s0:s1])
+	te.lmsSpan = span
+
+	// Differential for the burst dibit at absolute index m is span[i]·conj(span[i-1])
+	// with i = m - spanStart. warm ensures i-1 >= warm-1 for the first BKN1 dibit,
+	// past the FIR transient.
+	diffAt := func(m int) complex64 {
+		i := m - spanStart
+		a, b := span[i], span[i-1]
+		return complex(real(a)*real(b)+imag(a)*imag(b), imag(a)*real(b)-real(a)*imag(b))
+	}
+	diffs := te.lmsDiffs[:0]
+	for m := L + ndbBKN1Start; m < L+ndbBKN1Start+ndbBlockDibits; m++ {
+		diffs = append(diffs, diffAt(m))
+	}
+	for m := L + ndbBKN2Start; m < L+ndbBKN2Start+ndbBlockDibits; m++ {
+		diffs = append(diffs, diffAt(m))
+	}
+	te.lmsDiffs = diffs
+	return diffs
+}
+
+// midambleRef builds the ideal reference symbols for the burst's normal training
+// sequence: the anchor symbol plus n midamble symbols (n+1 total), the SnapshotLMS
+// training reference. The burst may carry NTS1 or NTS2, so it picks whichever the
+// buffered hard dibits at [L, L+n) match more closely (the receiver's AFC locks
+// the constellation to rotation 0, the same assumption softFrame/usageOf rely on).
+// Returns nil when the midamble dibits are not buffered.
+func (te *TrafficExtractor) midambleRef(L, n int) []complex64 {
+	off := L - te.bufBase
+	if off < 0 || off+n > len(te.buf) {
+		return nil
+	}
+	rxd := te.buf[off : off+n]
+	nts1 := NormalSyncDibits()
+	nts2 := NormalSyncDibits2()
+	var d1, d2 int
+	for i := 0; i < n; i++ {
+		if rxd[i] != nts1[i] {
+			d1++
+		}
+		if rxd[i] != nts2[i] {
+			d2++
+		}
+	}
+	ref := nts1
+	if d2 < d1 {
+		ref = nts2
+	}
+	// Differentially encode the ideal dibits from a unit anchor: for unit-modulus
+	// symbols the differential d = s·conj(prev) gives s[k] = prev·d[k]. The anchor
+	// phase is arbitrary — a constant rotation cancels in the differential decode.
+	out := make([]complex64, n+1)
+	out[0] = 1
+	for k, dv := range ref {
+		out[k+1] = out[k] * idealDiff(dv)
+	}
+	return out
+}
+
+// idealDiff is the ideal π/4-DQPSK differential (unit modulus) for a dibit value,
+// matching the demod's dibit→phase mapping (0:+π/4, 1:+3π/4, 2:−3π/4, 3:−π/4) and
+// softType5FromDiffs's rotation-0 convention.
+func idealDiff(v uint8) complex64 {
+	const s = math.Sqrt2 / 2
+	switch v & 3 {
+	case 0:
+		return complex(s, s)
+	case 1:
+		return complex(-s, s)
+	case 2:
+		return complex(-s, -s)
+	default:
+		return complex(s, -s)
+	}
 }
 
 // usageOf recovers the AACH downlink usage marker of the burst leading at L. The

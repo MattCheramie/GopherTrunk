@@ -79,9 +79,9 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 	}
 	usage := map[uint8]*usageAcc{}
 
-	var totalBursts, anchoredBursts, trafficMarked, trafficMarkedCRC int
+	var totalBursts, anchoredBursts, trafficMarked, trafficMarkedCRC, trafficMarkedCRCSoft int
 	errsHist := map[string]int{}
-	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, _ []float32, slot, mark uint8) {
+	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, softType5 []float32, slot, mark uint8) {
 		totalBursts++
 		if slot != 0 {
 			anchoredBursts++
@@ -90,6 +90,12 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 			trafficMarked++
 			if len(tetra.TCHSpeechFrames(frame)) > 0 {
 				trafficMarkedCRC++
+			}
+			// Soft-path CRC yield: this is the stream the LMS equalizer (GT_TETRA_LMS)
+			// conditions, so A/B it via this counter (the hard trafficMarkedCRC above
+			// is unaffected by the soft equalizer).
+			if softType5 != nil && len(tetra.TCHSpeechFramesSoft(softType5)) > 0 {
+				trafficMarkedCRCSoft++
 			}
 		}
 		if _, _, _, errs, ok := tetra.DecodeTCHS(frame); ok {
@@ -135,10 +141,18 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		s.activeSec[int(tSec)]++
 	})
 
-	// GT_TETRA_EQ=1 enables the adaptive channel equalizer (issue #1001), so the
-	// same capture can be A/B'd with and without it — compare the total_bursts /
-	// traffic_marked_crc / errs_hist lines and the per-slot crc_bursts counts.
+	// GT_TETRA_EQ=1 enables the blind CMA channel equalizer in the receiver (issue
+	// #1001); GT_TETRA_LMS=1 enables the per-burst training-sequence LMS equalizer
+	// in the extractor's soft path. Either can be A/B'd against the same capture:
+	// compare traffic_marked_crc (hard, moves with CMA) and traffic_marked_crc_soft
+	// (soft, moves with LMS) plus the per-slot crc_bursts counts.
 	enableEQ := os.Getenv("GT_TETRA_EQ") == "1" || os.Getenv("GT_TETRA_EQ") == "true"
+	enableLMS := os.Getenv("GT_TETRA_LMS") == "1" || os.Getenv("GT_TETRA_LMS") == "true"
+	if enableLMS {
+		// Train on each burst's known midamble and equalize BKN1/BKN2 before the
+		// soft TCH/S decode. Requires the raw symbols (SymbolSink → StashSymbols).
+		extractor.EnableLMSEqualizer(0, 0)
+	}
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: outRate,
 		DibitSink: func(d []uint8, base int) {
@@ -152,13 +166,19 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		SoftSink: func(diffs []complex64, base int) {
 			extractor.StashSoft(diffs, base)
 		},
+		// Feed the raw pre-differential symbols the LMS equalizer trains/applies on.
+		// Fires just before the matching DibitSink, so StashSymbols lands before
+		// Process consumes the block. Harmless (buffered, never read) when LMS is off.
+		SymbolSink: func(syms []complex64, base int) {
+			extractor.StashSymbols(syms, base)
+		},
 		ClockMode:           tetrarx.ClockGardner,
 		GardnerGain:         0.005,
 		EnableAFC:           true,
 		EnableChannelFilter: true,
 		EnableEqualizer:     enableEQ,
 	})
-	t.Logf("equalizer=%v (set GT_TETRA_EQ=1 to enable)", enableEQ)
+	t.Logf("cma_equalizer=%v (GT_TETRA_EQ=1) lms_equalizer=%v (GT_TETRA_LMS=1)", enableEQ, enableLMS)
 
 	const chunk = 65536
 	var scratch []complex64
@@ -172,7 +192,7 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 	}
 
 	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs", inRate, outRate, len(iq), float64(len(iq))/inRate)
-	t.Logf("total_bursts=%d anchored=%d traffic_marked=%d traffic_marked_crc=%d errs_hist=%v", totalBursts, anchoredBursts, trafficMarked, trafficMarkedCRC, errsHist)
+	t.Logf("total_bursts=%d anchored=%d traffic_marked=%d traffic_marked_crc=%d traffic_marked_crc_soft=%d errs_hist=%v", totalBursts, anchoredBursts, trafficMarked, trafficMarkedCRC, trafficMarkedCRCSoft, errsHist)
 	outDir := os.Getenv("GT_TETRA_OUT")
 	for tn := 1; tn <= 4; tn++ {
 		s := slots[tn]

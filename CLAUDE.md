@@ -146,3 +146,23 @@ confirmation before any close-as-completed.
   case (same reason `receiver_equalizer_test.go`'s clean-channel test adds 30 dB).
   The residual −44 dBFS weak front end is an RF/gain/antenna condition (the #764
   lesson) the equalizer mitigates but does not replace — raise the signal level too.
+- **TETRA training-sequence equalizer (`equalizer.SnapshotLMS`) is now wired into the
+  per-burst traffic path** (#1001 follow-up). The blind `SnapshotCMA` lives in the
+  *receiver* (continuous, framing-free stream); the trained `SnapshotLMS` lives in
+  the *extractor* (`TrafficExtractor.EnableLMSEqualizer`), because only the extractor
+  knows where each burst's midamble sits. The linear channel is a clean convolution
+  only in the **raw symbol** domain, not the differential domain (`s·conj(prev)` is a
+  nonlinear product) — so the extractor carries the raw symbols down parallel to its
+  dibit/diff buffers via the receiver's new `SymbolSink → StashSymbols` (the symbol
+  analog of `SoftSink → StashSoft`). Per burst, softFrame trains on the known NTS1/NTS2
+  midamble from the raw symbols, freezes the taps, equalizes a BKN1..BKN2 span (with a
+  taps-long FIR warm-up so the first BKN1 differential is past the transient), and
+  **re-derives the soft LLRs from the equalized symbols** — hard frame untouched. It is
+  soft-path only and opt-in: no `StashSymbols`/`EnableLMSEqualizer` ⇒ byte-identical to
+  before. The reference is built by differentially encoding the ideal midamble from a
+  unit anchor (arbitrary start phase; the constant rotation cancels in the differential
+  decode, the same property that makes a frozen snapshot safe). Pinned by
+  `traffic_lms_test.go` (synthetic multipath through the real extractor: raw 13% → 0%
+  payload bit-error, no-harm on clean). Production composer still runs CMA only; flip
+  LMS on there once the capture A/B validates it. A/B on captures with `GT_TETRA_LMS=1`
+  in `TestTETRAMultiSlotReplay` (compare `traffic_marked_crc_soft`).

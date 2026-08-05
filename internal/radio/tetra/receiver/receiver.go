@@ -128,6 +128,16 @@ type Options struct {
 	// LLRs are Im and Re of the differential). Emitted just before the
 	// matching DibitSink call. nil ⇒ no soft emission, zero overhead.
 	SoftSink func(diffs []complex64, baseIdx int)
+	// SymbolSink, when non-nil, receives the RAW post-timing/AFC/equalizer
+	// complex symbols (before the differential decode), aligned 1:1 with the
+	// dibits emitted to DibitSink and carrying the same baseIdx. Unlike the
+	// SoftSink differential (a nonlinear product s·conj(last), in which the
+	// channel is no longer a clean convolution), the symbol stream is where a
+	// linear channel IS a convolution — so it is the input a training-sequence
+	// equalizer (tetra.TrafficExtractor.EnableLMSEqualizer / equalizer.SnapshotLMS)
+	// must train on and equalize per burst. Emitted just before the matching
+	// DibitSink call. nil ⇒ no symbol emission, zero overhead. See issue #1001.
+	SymbolSink func(symbols []complex64, baseIdx int)
 	// EnableDCBlock inserts a first-order complex DC-removal high-pass at the
 	// very top of Process, ahead of the channel filter, to strip the front-end
 	// DC spur that sits on a same-carrier TETRA voice channel (0 Hz offset) and
@@ -202,15 +212,16 @@ type Receiver struct {
 	dibitBase int
 	rxOffset  int
 
-	clockMode ClockMode
-	gardner   *sync.Gardner
-	afc       *carrierAFC
-	chanFilt  *filter.FIR
-	softSink  func(diffs []complex64, baseIdx int)
-	eq        *equalizer.SnapshotCMA
-	equalized []complex64
-	dcBlk     *dcBlock
-	dcBuf     []complex64
+	clockMode  ClockMode
+	gardner    *sync.Gardner
+	afc        *carrierAFC
+	chanFilt   *filter.FIR
+	softSink   func(diffs []complex64, baseIdx int)
+	symbolSink func(symbols []complex64, baseIdx int)
+	eq         *equalizer.SnapshotCMA
+	equalized  []complex64
+	dcBlk      *dcBlock
+	dcBuf      []complex64
 
 	matched   []complex64
 	filtered  []complex64
@@ -243,11 +254,12 @@ func New(opts Options) *Receiver {
 		alpha = RolloffAlpha
 	}
 	r := &Receiver{
-		dq:        demod.NewPiOver4DQPSK(int(sps+0.5), span, alpha, Rotation),
-		sps:       int(sps + 0.5),
-		dibitSink: opts.DibitSink,
-		softSink:  opts.SoftSink,
-		clockMode: opts.ClockMode,
+		dq:         demod.NewPiOver4DQPSK(int(sps+0.5), span, alpha, Rotation),
+		sps:        int(sps + 0.5),
+		dibitSink:  opts.DibitSink,
+		softSink:   opts.SoftSink,
+		symbolSink: opts.SymbolSink,
+		clockMode:  opts.ClockMode,
 	}
 	if r.clockMode == ClockGardner {
 		gain := opts.GardnerGain
@@ -373,6 +385,15 @@ func (r *Receiver) Process(iq []complex64) {
 		r.softSink(r.diffs, r.dibitBase)
 	} else {
 		r.dibits = r.dq.Decode(r.dibits, r.symbols)
+	}
+	if r.symbolSink != nil {
+		// Emit the raw pre-differential symbols (the linear-channel domain a
+		// training-sequence equalizer works in), aligned 1:1 with the dibits and
+		// keyed by the same base. DecodeBoth/Decode do not mutate r.symbols, so it
+		// is still the symbol stream that produced these dibits. Fired before the
+		// DibitSink so the extractor's StashSymbols lands before Process consumes
+		// the matching dibit block.
+		r.symbolSink(r.symbols, r.dibitBase)
 	}
 	r.dibitSink(r.dibits, r.dibitBase)
 	r.dibitBase += len(r.dibits)
