@@ -2340,6 +2340,25 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			db.Close()
 			return nil, fmt.Errorf("daemon: call log: %w", err)
 		}
+		// Resolve the source radio's alias/name onto each call record so call
+		// history shows "who was talking", not just the RID number. Prefer the
+		// operator-curated RID catalogue (rid_alias_file); fall back to the
+		// most-recently-decoded over-the-air talker alias.
+		if d.rids != nil || d.affiliations != nil {
+			cl.SetRIDResolver(func(id uint32) string {
+				if d.rids != nil {
+					if r := d.rids.Lookup(id); r != nil && r.Alias != "" {
+						return r.Alias
+					}
+				}
+				if d.affiliations != nil {
+					if u, ok := d.affiliations.Lookup(id); ok {
+						return u.TalkerAlias
+					}
+				}
+				return ""
+			})
+		}
 		d.callLog = cl
 
 		ll, err := storage.NewLocationLog(db, d.bus, log)
