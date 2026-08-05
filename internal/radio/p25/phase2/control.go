@@ -654,7 +654,13 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 		c.bandPlan.Apply(u)
 		c.mu.Unlock()
 	}
-	if es, ok := p.AsEncryptionSync(); ok {
+	if es, ok := p.AsEncryptionSync(); ok && p25.AlgorithmKnown(es.AlgorithmID) {
+		// Validity gate (#924): a bit-errored MAC Encryption Sync decodes to an
+		// Algorithm ID outside the TIA-102 registry (the field-observed smear
+		// across 0x00-0xFF, one Key ID per call). Refusing to store an out-of-set
+		// sync keeps a single mis-decode from poisoning lastEncSync and being
+		// attached to every subsequent encrypted grant in publishGrant — the
+		// same gate the voice composer applies before publishing CallEncryption.
 		c.mu.Lock()
 		c.lastEncSync = es
 		c.hasEncSync = true

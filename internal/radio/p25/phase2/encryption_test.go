@@ -134,6 +134,39 @@ func TestControlChannelClearGrantNotEncrypted(t *testing.T) {
 	}
 }
 
+// TestEncryptedGrantDropsOutOfSetAlgID confirms an Encryption Sync whose
+// decoded Algorithm ID is outside the TIA-102 registry (a bit-error smear,
+// issue #924) never becomes the stored crypto reference: a later protected
+// grant flags Encrypted but carries alg/key 0 rather than the garbage algid,
+// so downstream cannot mistake a mis-decode for a real key.
+func TestEncryptedGrantDropsOutOfSetAlgID(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "p2", FrequencyHz: 851_000_000})
+
+	// 0x42 is not a registered TIA-102 Algorithm ID — a mis-decoded sync.
+	cc.Ingest(EncodeEncryptionSync(EncryptionSync{AlgorithmID: 0x42, KeyID: 0x9ABC}))
+
+	g := grantPDU(0xABCD, 0x00ABCD, 0x1, 0x005)
+	g.Payload[0] = 0x40 // protected, no emergency
+	cc.Ingest(g)
+
+	grants := countGrants(sub)
+	if len(grants) != 1 {
+		t.Fatalf("expected 1 grant, got %d", len(grants))
+	}
+	if !grants[0].Encrypted {
+		t.Error("protected grant not flagged Encrypted")
+	}
+	if grants[0].AlgorithmID != 0 || grants[0].KeyID != 0 {
+		t.Errorf("out-of-set algid leaked onto grant: alg/key = %#x/%#x, want 0/0",
+			grants[0].AlgorithmID, grants[0].KeyID)
+	}
+}
+
 // TestEncryptedGrantWithoutSyncDegrades confirms a protected grant with
 // no Encryption Sync seen yet still flags Encrypted, with alg/key 0.
 func TestEncryptedGrantWithoutSyncDegrades(t *testing.T) {
