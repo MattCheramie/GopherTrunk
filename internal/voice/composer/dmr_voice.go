@@ -315,6 +315,34 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 			},
 		})
 	}
+	// Terminator detection: end the call at once when the followed traffic
+	// channel carries a valid Terminator-with-LC for this call's group,
+	// rather than waiting out the boundary tracker's hangtime. Publish once —
+	// the engine's release handling is idempotent, and a stationary end may
+	// repeat the terminator. Only a terminator whose LC destination matches
+	// this call's groupID ends it, so the other timeslot of an interleaved
+	// carrier never tears this call down; if no terminator ever decodes (real
+	// embedded/data-burst FEC is capture-pending, #644) the hangtime path
+	// still ends the call, so this is strictly additive.
+	termDet := dmrvoice.NewTerminatorDetector()
+	var released bool
+	publishRelease := func() {
+		if released || c.bus == nil || groupID == 0 {
+			return
+		}
+		released = true
+		c.log.Debug("composer: dmr terminator — releasing call",
+			"system", system, "serial", serial, "group", groupID)
+		c.bus.Publish(events.Event{
+			Kind: events.KindCallRelease,
+			Payload: trunking.CallRelease{
+				System:  system,
+				GroupID: groupID,
+				Reason:  trunking.EndReasonReleased,
+				At:      time.Now(),
+			},
+		})
+	}
 	// superframes counts DMR voice superframes the receiver delivered —
 	// i.e. real voice activity. The touch ticker (below) only refreshes
 	// the engine's LastHeardAt when this counter has advanced since the
@@ -341,6 +369,12 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 		DeviationHz: 1944.0,
 		ClockGain:   0.025,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			// End the call promptly on an explicit Terminator for this group.
+			for _, flc := range termDet.Process(dibits, baseIdx) {
+				if dest, ok := lcCallDestination(flc); ok && dest == groupID {
+					publishRelease()
+				}
+			}
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				if sf.HasLC {
 					lcSuperframes.Add(1)

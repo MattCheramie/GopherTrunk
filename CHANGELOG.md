@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Followed DMR calls (Tier III / Tier I) end promptly on the Terminator.**
+  The voice chain now detects the Terminator-with-LC burst on the followed
+  traffic channel — reusing the trusted control-path FEC chain (slot-type
+  Hamming, BPTC, RS(12,9) terminator seed) so a garbled data burst can't
+  forge an end-of-call — and publishes a `call.release` for the matching
+  group, so the engine tears the call down at once instead of waiting out
+  the hangtime. Extends the Tier II conventional prompt-release to followed
+  calls; strictly additive (the hangtime path still ends a call whose
+  terminator never decodes).
 - **DMR Tier II conventional calls end promptly on the Terminator.** The
   decoder now publishes a `call.release` when it sees the explicit
   Terminator-with-LC burst, so the engine tears the call down at once
