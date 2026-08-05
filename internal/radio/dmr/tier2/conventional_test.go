@@ -127,9 +127,62 @@ func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 			if !g.Encrypted || !g.Emergency {
 				t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
 			}
+			if g.Individual {
+				t.Error("group grant wrongly marked Individual")
+			}
 			return
 		case <-deadline:
 			t.Fatal("no grant event")
+		}
+	}
+}
+
+// TestConventionalPublishesUnitToUnitGrant confirms a private
+// (unit-to-unit) Voice LC Header now yields a grant marked Individual,
+// rather than being dropped as a "non-group FLCO" — DMR private calls were
+// previously invisible on a Tier II conventional channel.
+func TestConventionalPublishesUnitToUnitGrant(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "TestRepeater",
+		FrequencyHz: 451_000_000,
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+	flc := dmr.FLC{
+		FLCO:    dmr.FLCOUnitToUnitVoice,
+		DstAddr: 0x00ABCD, // called subscriber, NOT a talkgroup
+		SrcAddr: 0x001234,
+	}
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 3, DataType: dmr.DTVoiceLCHeader})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCCLocked {
+				continue
+			}
+			if ev.Kind != events.KindGrant {
+				t.Fatalf("kind = %s", ev.Kind)
+			}
+			g := ev.Payload.(trunking.Grant)
+			if !g.Individual {
+				t.Error("unit-to-unit grant not marked Individual")
+			}
+			if g.GroupID != 0x00ABCD || g.SourceID != 0x001234 {
+				t.Errorf("dst/src = %X/%X", g.GroupID, g.SourceID)
+			}
+			if g.Protocol != "dmr-tier2" {
+				t.Errorf("protocol = %s", g.Protocol)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no unit-to-unit grant event (private call dropped?)")
 		}
 	}
 }
@@ -276,22 +329,22 @@ DrainCSBK:
 	}
 }
 
-func TestConventionalIgnoresNonGroupFLCO(t *testing.T) {
+func TestConventionalIgnoresTerminatorFLCO(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
 
 	cc := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 1})
-	// Unit-to-unit calls are intentionally not republished as grants
-	// in this PR; the engine's grant model is talkgroup-keyed. They
-	// still trigger cc.locked because the burst itself is valid.
-	flc := dmr.FLC{FLCO: dmr.FLCOUnitToUnitVoice, DstAddr: 0x100, SrcAddr: 0x200}
+	// A non-voice FLCO (e.g. Terminator) carries no call, so it yields no
+	// grant — but a valid Voice LC Header burst still locks the channel.
+	// (Group- and unit-to-unit voice LCs DO grant; see the dedicated tests.)
+	flc := dmr.FLC{FLCO: dmr.FLCOTerminator, DstAddr: 0x100, SrcAddr: 0x200}
 	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 1, DataType: dmr.DTVoiceLCHeader})
 
 	timeout := time.After(50 * time.Millisecond)
 	var sawLock bool
-DrainU2U:
+DrainTerm:
 	for {
 		select {
 		case ev := <-sub.C:
@@ -300,12 +353,12 @@ DrainU2U:
 				continue
 			}
 			if ev.Kind == events.KindGrant {
-				t.Errorf("unit-to-unit FLCO produced a grant event")
+				t.Errorf("Terminator FLCO produced a grant event")
 				continue
 			}
-			t.Errorf("unexpected event for unit-to-unit FLCO: %s", ev.Kind)
+			t.Errorf("unexpected event for Terminator FLCO: %s", ev.Kind)
 		case <-timeout:
-			break DrainU2U
+			break DrainTerm
 		}
 	}
 	if !sawLock {

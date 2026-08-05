@@ -8,6 +8,20 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **DMR private (unit-to-unit) calls are now followed.** A Tier II
+  conventional channel dropped any non-group Voice LC Header, so DMR private
+  calls were invisible — no grant, never followed, never recorded. The
+  conventional decoder now publishes a grant for a unit-to-unit voice LC
+  (marked `Individual` so the called subscriber isn't listed as a
+  talkgroup), and the call is followed on the tuned frequency like a group
+  call.
+
+### Fixed
+- **DMR Tier III private-voice grants were mislabelled as talkgroups.** The
+  shared grant path never set `Individual`, so a Tier III private
+  (unit-to-unit) call's destination subscriber was published as if it were a
+  talkgroup — polluting talkgroup discovery. Private-voice grants (standard
+  and vendor) now carry `Individual=true`.
 - **DMR GPS position decode → live map.** A DMR radio's GPS Info embedded
   Link Control (FLCO 0x08) is now decoded — a 25-bit two's-complement
   longitude and 24-bit two's-complement latitude per ETSI TS 102 361-2,

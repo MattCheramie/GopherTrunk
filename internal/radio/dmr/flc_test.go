@@ -66,6 +66,30 @@ func TestFLCAsGroupVoiceUser(t *testing.T) {
 	}
 }
 
+func TestFLCAsUnitToUnitVoice(t *testing.T) {
+	f := FLC{
+		FLCO:           FLCOUnitToUnitVoice,
+		ServiceOptions: 0x40, // encrypted only
+		DstAddr:        0x00ABCD,
+		SrcAddr:        0x001234,
+	}
+	uu, ok := f.AsUnitToUnitVoice()
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if uu.DestinationID != 0x00ABCD || uu.SourceID != 0x001234 {
+		t.Errorf("addresses = %x/%x", uu.DestinationID, uu.SourceID)
+	}
+	if uu.Emergency || !uu.Encrypted {
+		t.Errorf("flags = emer=%v enc=%v, want emer=false enc=true", uu.Emergency, uu.Encrypted)
+	}
+
+	// A group-voice FLC is not a unit-to-unit call.
+	if _, ok := (FLC{FLCO: FLCOGroupVoiceUser}).AsUnitToUnitVoice(); ok {
+		t.Error("group-voice FLC reported as unit-to-unit")
+	}
+}
+
 func TestFLCOStringCoversKnownAndUnknown(t *testing.T) {
 	cases := map[FLCO]string{
 		FLCOGroupVoiceUser:  "GroupVoiceChannelUser",

@@ -270,7 +270,12 @@ func (c *ControlChannel) handleBroadcast(cc uint8, b BroadcastAnnouncement) {
 // DMR call's slot becomes part of the engine's (frequency, timeslot)
 // call identity — both slots of a 12.5 kHz carrier carry independent
 // calls.
-func (c *ControlChannel) publishGrant(cc uint8, lcn uint16, slot uint8, group, source uint32) (uint32, bool) {
+//
+// individual marks a private (unit-to-unit) call: its group argument is a
+// destination subscriber, not a talkgroup, so the grant carries
+// Individual=true and discovery never lists the destination as a TG. The
+// shared TV/PV grant callers pass false/true respectively.
+func (c *ControlChannel) publishGrant(cc uint8, lcn uint16, slot uint8, group, source uint32, individual bool) (uint32, bool) {
 	// Observe the granted LCN before resolution so the autoconfig learner
 	// sees it even when no band plan is configured yet (the very case it
 	// exists to fix). Additive: success/no-bandplan behaviour is unchanged.
@@ -298,6 +303,7 @@ func (c *ControlChannel) publishGrant(cc uint8, lcn uint16, slot uint8, group, s
 			Protocol:            "dmr-tier3",
 			GroupID:             group,
 			SourceID:            source,
+			Individual:          individual,
 			FrequencyHz:         freq,
 			ChannelID:           cc,
 			ChannelNum:          lcn,
@@ -313,7 +319,7 @@ func (c *ControlChannel) publishGrant(cc uint8, lcn uint16, slot uint8, group, s
 }
 
 func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID, false)
 	if !ok {
 		return
 	}
@@ -323,7 +329,7 @@ func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
 }
 
 func (c *ControlChannel) publishPVGrant(cc uint8, g PVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID, true)
 	if !ok {
 		return
 	}

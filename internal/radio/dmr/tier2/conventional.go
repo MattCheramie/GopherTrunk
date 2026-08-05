@@ -283,38 +283,47 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		c.log.Debug("dmr/tier2: FLC parse failed", "err", err)
 		return
 	}
-	gv, ok := flc.AsGroupVoiceUser()
-	if !ok {
-		// Unit-to-unit and other opcodes are out of scope for this
-		// pass — the engine's grant model is talkgroup-keyed.
-		c.log.Debug("dmr/tier2: non-group FLCO ignored", "flco", flc.FLCO)
+	// A Voice LC Header names either a group call (destination is a
+	// talkgroup) or a private unit-to-unit call (destination is a
+	// subscriber). Both are followed on the tuned frequency; the only
+	// difference to the engine is Grant.Individual, which keeps a private
+	// call's destination RID out of the talkgroup list.
+	var dest, src uint32
+	var enc, emer, individual bool
+	if gv, ok := flc.AsGroupVoiceUser(); ok {
+		dest, src, enc, emer = gv.GroupAddress, gv.SourceID, gv.Encrypted, gv.Emergency
+	} else if uu, ok := flc.AsUnitToUnitVoice(); ok {
+		dest, src, enc, emer, individual = uu.DestinationID, uu.SourceID, uu.Encrypted, uu.Emergency, true
+	} else {
+		c.log.Debug("dmr/tier2: non-voice FLCO ignored", "flco", flc.FLCO)
 		return
 	}
-	if c.inCall && c.lastTG == gv.GroupAddress && c.lastSrc == gv.SourceID {
+	if c.inCall && c.lastTG == dest && c.lastSrc == src {
 		// Same call's repeated Voice LC Header — dedupe.
 		return
 	}
 	c.inCall = true
-	c.lastTG = gv.GroupAddress
-	c.lastSrc = gv.SourceID
+	c.lastTG = dest
+	c.lastSrc = src
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
 			System:      c.systemName,
 			Protocol:    c.protocolTag,
-			GroupID:     gv.GroupAddress,
-			SourceID:    gv.SourceID,
+			GroupID:     dest,
+			SourceID:    src,
+			Individual:  individual,
 			FrequencyHz: c.freqHz,
 			ChannelID:   slot.ColorCode,
-			Encrypted:   gv.Encrypted,
-			Emergency:   gv.Emergency,
+			Encrypted:   enc,
+			Emergency:   emer,
 			At:          c.now(),
 		},
 	})
 	c.log.Debug("dmr/tier2: grant",
 		"system", c.systemName, "freq_hz", c.freqHz,
-		"cc", slot.ColorCode, "tg", gv.GroupAddress, "src", gv.SourceID,
-		"enc", gv.Encrypted, "emer", gv.Emergency)
+		"cc", slot.ColorCode, "dst", dest, "src", src,
+		"individual", individual, "enc", enc, "emer", emer)
 }
 
 func (c *ConventionalChannel) handleTerminator() {

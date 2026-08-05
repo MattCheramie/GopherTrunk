@@ -96,7 +96,7 @@ func (c *ControlChannel) handleVendorCSBK(vendor Vendor, cc uint8, csbk CSBK) {
 // layer, not the voice codec, so the engine / recorder / vocoder paths
 // are unaffected.
 func (c *ControlChannel) publishVendorTVGrant(vendor Vendor, cc uint8, g TVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID, false)
 	if !ok {
 		return
 	}
@@ -107,7 +107,7 @@ func (c *ControlChannel) publishVendorTVGrant(vendor Vendor, cc uint8, g TVGrant
 
 // publishVendorPVGrant emits a private voice grant from a vendor CSBK.
 func (c *ControlChannel) publishVendorPVGrant(vendor Vendor, cc uint8, g PVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID, true)
 	if !ok {
 		return
 	}
