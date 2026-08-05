@@ -332,8 +332,13 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				if sf.HasLC {
 					lcSuperframes.Add(1)
+					// Learn the call's source radio from either a group-voice or a
+					// unit-to-unit voice LC, so talker-alias / GPS metadata (which
+					// carry no address of their own) is attributed on private calls too.
 					if gv, ok := sf.LC.AsGroupVoiceUser(); ok && gv.SourceID != 0 {
 						callSrc = gv.SourceID
+					} else if uu, ok := sf.LC.AsUnitToUnitVoice(); ok && uu.SourceID != 0 {
+						callSrc = uu.SourceID
 					}
 				}
 				// Talker-alias header/block and GPS Info embedded LCs are
