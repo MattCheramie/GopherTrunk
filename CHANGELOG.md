@@ -7,6 +7,15 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **Encrypted / emergency DMR Tier III calls were logged clear.** A DMR
+  Tier III channel-grant CSBK carries no service-options octet, so a
+  followed call's encrypted / emergency / priority state never reached the
+  call record even though those bits are decoded on the traffic channel. The
+  DMR voice chain now backfills them (plus the source RID) from the embedded
+  voice LC via the in-call `CallSourceUpdate` path the P25 Phase 2 chain
+  already uses — so an encrypted Tier III call is now recorded as encrypted.
+
 ### Added
 - **On-air call priority is decoded and surfaced.** The call's signalled
   priority level — the low 3 bits of the P25 / DMR Service Options octet —
