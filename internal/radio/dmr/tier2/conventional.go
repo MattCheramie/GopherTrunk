@@ -289,11 +289,12 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 	// difference to the engine is Grant.Individual, which keeps a private
 	// call's destination RID out of the talkgroup list.
 	var dest, src uint32
+	var prio uint8
 	var enc, emer, individual bool
 	if gv, ok := flc.AsGroupVoiceUser(); ok {
-		dest, src, enc, emer = gv.GroupAddress, gv.SourceID, gv.Encrypted, gv.Emergency
+		dest, src, enc, emer, prio = gv.GroupAddress, gv.SourceID, gv.Encrypted, gv.Emergency, gv.Priority
 	} else if uu, ok := flc.AsUnitToUnitVoice(); ok {
-		dest, src, enc, emer, individual = uu.DestinationID, uu.SourceID, uu.Encrypted, uu.Emergency, true
+		dest, src, enc, emer, individual, prio = uu.DestinationID, uu.SourceID, uu.Encrypted, uu.Emergency, true, uu.Priority
 	} else {
 		c.log.Debug("dmr/tier2: non-voice FLCO ignored", "flco", flc.FLCO)
 		return
@@ -317,6 +318,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 			ChannelID:   slot.ColorCode,
 			Encrypted:   enc,
 			Emergency:   emer,
+			Priority:    prio,
 			At:          c.now(),
 		},
 	})
