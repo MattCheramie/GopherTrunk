@@ -260,7 +260,7 @@ func TestControlChannelAppliesIdentifierUpdateAndPublishesGrant(t *testing.T) {
 	})
 
 	grantPayload := [8]byte{
-		0xC0,                  // service options: emergency + encrypted
+		0xC3,                  // service options: emergency + encrypted + priority 3
 		(1 << 4) | 0x00, 0x10, // channel = ID 1, number 0x010 (=16)
 		0x12, 0x34, // group address 0x1234
 		0xAB, 0xCD, 0xEF, // source ID 0xABCDEF
@@ -307,6 +307,9 @@ func TestControlChannelAppliesIdentifierUpdateAndPublishesGrant(t *testing.T) {
 	}
 	if !got.Encrypted || !got.Emergency {
 		t.Errorf("flags = enc=%v emer=%v, want both", got.Encrypted, got.Emergency)
+	}
+	if got.Priority != 3 {
+		t.Errorf("priority = %d, want 3 (service-options low bits)", got.Priority)
 	}
 	if got.At.Unix() != 1_700_000_000 {
 		t.Errorf("At = %v, want injected Now", got.At)

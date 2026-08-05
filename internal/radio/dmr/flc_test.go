@@ -59,6 +59,15 @@ func TestFLCAsGroupVoiceUser(t *testing.T) {
 	if !g.Emergency || g.Encrypted {
 		t.Errorf("flags = emer=%v enc=%v, want emer=true enc=false", g.Emergency, g.Encrypted)
 	}
+	if g.Priority != 0 {
+		t.Errorf("priority = %d, want 0 (none signalled)", g.Priority)
+	}
+
+	// ServiceOptions low 3 bits carry the call priority (§7.2.1 Table 7.13).
+	g5, _ := (FLC{FLCO: FLCOGroupVoiceUser, ServiceOptions: 0x85}).AsGroupVoiceUser()
+	if g5.Priority != 5 || !g5.Emergency {
+		t.Errorf("priority/emergency = %d/%v, want 5/true", g5.Priority, g5.Emergency)
+	}
 
 	// Wrong opcode → no group-voice projection.
 	if _, ok := (FLC{FLCO: FLCOTerminator}).AsGroupVoiceUser(); ok {

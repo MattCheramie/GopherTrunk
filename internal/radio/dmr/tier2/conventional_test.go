@@ -94,7 +94,7 @@ func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 	flc := dmr.FLC{
 		FLCO:           dmr.FLCOGroupVoiceUser,
 		FID:            0x00,
-		ServiceOptions: 0xC0, // emergency + encrypted
+		ServiceOptions: 0xC5, // emergency + encrypted + priority 5
 		DstAddr:        0x000064,
 		SrcAddr:        0x100200,
 	}
@@ -126,6 +126,9 @@ func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 			}
 			if !g.Encrypted || !g.Emergency {
 				t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
+			}
+			if g.Priority != 5 {
+				t.Errorf("priority = %d, want 5", g.Priority)
 			}
 			if g.Individual {
 				t.Error("group grant wrongly marked Individual")
