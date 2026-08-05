@@ -101,13 +101,13 @@ func (c *CallLog) recordStart(cs trunking.CallStart) error {
 	const q = `
 INSERT OR REPLACE INTO call_log (
     system, protocol, group_id, source_id, frequency_hz,
-    encrypted, algorithm_id, key_id, emergency, data_call, timeslot,
+    encrypted, algorithm_id, key_id, emergency, data_call, timeslot, priority,
     device_serial, started_at, talkgroup_alpha
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := c.db.sql.Exec(q,
 		cs.Grant.System, cs.Grant.Protocol, cs.Grant.GroupID, cs.Grant.SourceID, cs.Grant.FrequencyHz,
 		boolToInt(cs.Grant.Encrypted), cs.Grant.AlgorithmID, cs.Grant.KeyID,
-		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall), cs.Grant.Timeslot,
+		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall), cs.Grant.Timeslot, cs.Grant.Priority,
 		cs.DeviceSerial, cs.StartedAt.UnixNano(),
 		alpha,
 	)
@@ -201,7 +201,10 @@ type CallRow struct {
 	Emergency   bool   `json:"emergency"`
 	DataCall    bool   `json:"data_call"`
 	// Timeslot is the 1-based DMR TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
-	Timeslot       uint8     `json:"timeslot,omitempty"`
+	Timeslot uint8 `json:"timeslot,omitempty"`
+	// Priority is the call's on-air signalled priority (service-options low
+	// 3 bits, 0 = none/lowest). Distinct from a talkgroup's configured priority.
+	Priority       uint8     `json:"priority,omitempty"`
 	DeviceSerial   string    `json:"device_serial"`
 	StartedAt      time.Time `json:"started_at"`
 	EndedAt        time.Time `json:"ended_at,omitempty"` // zero if call still active
@@ -222,7 +225,7 @@ type CallRow struct {
 // History queries the call_log with the supplied filter, newest-first.
 func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	q := `SELECT id, system, protocol, group_id, source_id, frequency_hz,
-	             encrypted, algorithm_id, key_id, emergency, data_call, timeslot,
+	             encrypted, algorithm_id, key_id, emergency, data_call, timeslot, priority,
 	             device_serial, started_at, ended_at, duration_ms,
 	             end_reason, talkgroup_alpha, signal_dbfs, evm_pct, snr_db
 	      FROM call_log WHERE 1=1`
@@ -269,10 +272,10 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		var reason sql.NullString
 		var alpha sql.NullString
 		var sig, evm, snr sql.NullFloat64
-		var enc, emer, data, algID, keyID, slot int
+		var enc, emer, data, algID, keyID, slot, prio int
 		if err := rows.Scan(
 			&r.ID, &r.System, &r.Protocol, &r.GroupID, &r.SourceID, &r.FrequencyHz,
-			&enc, &algID, &keyID, &emer, &data, &slot, &r.DeviceSerial,
+			&enc, &algID, &keyID, &emer, &data, &slot, &prio, &r.DeviceSerial,
 			&startNs, &endNs, &durMs, &reason, &alpha, &sig, &evm, &snr,
 		); err != nil {
 			return nil, err
@@ -283,6 +286,7 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		r.Emergency = emer != 0
 		r.DataCall = data != 0
 		r.Timeslot = uint8(slot)
+		r.Priority = uint8(prio)
 		r.StartedAt = time.Unix(0, startNs).UTC()
 		if endNs.Valid {
 			r.EndedAt = time.Unix(0, endNs.Int64).UTC()
