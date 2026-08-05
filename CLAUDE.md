@@ -166,3 +166,17 @@ confirmation before any close-as-completed.
   payload bit-error, no-harm on clean). Production composer still runs CMA only; flip
   LMS on there once the capture A/B validates it. A/B on captures with `GT_TETRA_LMS=1`
   in `TestTETRAMultiSlotReplay` (compare `traffic_marked_crc_soft`).
+- **The same training-sequence LMS lever is wired into the DMO (Direct Mode) path**
+  (#1003 follow-up). `ExtractDMBurstsEqualized` (`dmo.go` → `dmo_equalizer.go`) re-derives
+  each **rotation-0** DNB's `SoftBKN1/SoftBKN2` from equalized raw symbols, so the
+  existing `DMBurstTCHSpeechSoft` decodes it unchanged. Two DMO-specific points vs the
+  TMO wiring: the DNB geometry differs (BKN1 `[L-108,L)`, BKN2 `[L+11,L+119)`,
+  `dmDNB*Start`), and it **only equalizes rotation-0 bursts** — a frozen constant-tap
+  filter cannot invert the per-symbol phase ramp of a non-zero residual rotation, and
+  at rotation 0 the soft decode's `(4-Rotation)&3` de-rotation is a no-op so the
+  rotation-0-trained differentials slot straight in. Opt-in via `ExtractDMBurstsEqualized`
+  (needs the `SymbolSink`); `ExtractDMBursts`/`ExtractDMBurstsSoft` are byte-identical.
+  Pinned by `dmo_equalizer_test.go` (raw 12% → 0% DNB payload bit-error, no-harm on
+  clean, byte-identical without symbols). A/B on captures with `GT_TETRA_DMO_LMS=1` in
+  `TestTETRADMOReplay`. Note the whole DMO path is still unverified on air (#1003), so
+  this is a lever staged for that validation, not a confirmed win.
