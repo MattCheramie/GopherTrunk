@@ -1806,6 +1806,9 @@ a.category-chip:hover {
    only presentation. All variants share the card styling and theme tokens. */
 .gt-promo[hidden] { display: none; }
 
+/* Multi-step promos: only the active step is in the DOM flow. */
+.gt-promo__step[hidden] { display: none; }
+
 .gt-promo__card {
   position: relative;
   background: var(--bg-elev);
@@ -1906,6 +1909,48 @@ a.category-chip:hover {
   animation: gt-promo-pop 0.22s ease-out both;
 }
 body.gt-promo-open { overflow: hidden; }
+
+/* Inline fallback: when a content/ad blocker suppresses the modal, the engine
+   reclasses the card to this variant and relocates it to a clean block boundary
+   at the page midpoint (see assets/js/promos.js). It renders in the normal
+   content flow — no backdrop, no scroll lock — with hairline separators so the
+   two page halves read as cleanly divided, and expands open from that point. */
+.gt-promo--inline {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  margin: 2.5rem 0;
+  padding: 0;
+  /* Collapsed until .is-open; a generous max-height covers the tallest step. */
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.32s ease-out, opacity 0.32s ease-out;
+}
+.gt-promo--inline.is-open {
+  max-height: 60rem;
+  opacity: 1;
+}
+.gt-promo--inline .gt-promo__card {
+  margin: 0 auto;
+  max-width: 34rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 1.75rem 1.5rem;
+  animation: none;
+}
+/* Modal-only chrome has no place in the in-flow section. */
+.gt-promo--inline .gt-promo__backdrop,
+.gt-promo--inline .gt-promo__close { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .gt-promo--inline { transition: none; }
+}
 
 /* Pop-in: small card anchored bottom-right, no backdrop / no scroll lock. */
 .gt-promo--popin {
