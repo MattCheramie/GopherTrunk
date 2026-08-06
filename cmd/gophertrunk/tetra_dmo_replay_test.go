@@ -83,7 +83,13 @@ func TestTETRADMOReplay(t *testing.T) {
 	var allDibits []uint8
 	var allDiffs []complex64
 	var allSymbols []complex64
-	enableEQ := os.Getenv("GT_TETRA_DMO_EQ") == "1" || os.Getenv("GT_TETRA_DMO_EQ") == "true"
+	// The receiver blind-CMA equalizer is REQUIRED, not optional, for DMO: on the
+	// reporter's 438.9 MHz capture it lifts CRC-valid SCH/S from 6 → 64 (the whole
+	// transmission) by inverting the ISI/multipath that smears the π/4-DQPSK
+	// constellation — the same lever the live TMO CC path already runs by default
+	// (pipelines.go newTETRAPipeline). So it is ON by default here; set
+	// GT_TETRA_DMO_EQ=0 to A/B the raw (un-equalized) receiver.
+	enableEQ := os.Getenv("GT_TETRA_DMO_EQ") != "0" && os.Getenv("GT_TETRA_DMO_EQ") != "false"
 	enableLMS := os.Getenv("GT_TETRA_DMO_LMS") == "1" || os.Getenv("GT_TETRA_DMO_LMS") == "true"
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: outRate,
@@ -134,6 +140,14 @@ func TestTETRADMOReplay(t *testing.T) {
 	speechBySec := map[int]int{} // CRC-valid TCH/S bursts per second
 	var speechFrames [][]byte    // ordered speech frames for the vocoder
 	seenSyncSec := map[int]struct{}{}
+	// SYNC-PDU state read from the CRC-valid SCH/S. The DMO DM-SYNC PDU reuses the
+	// TMO SYNC-PDU field layout (osmo-tetra-dmo does the same), so ParseSyncPDU
+	// decodes it: colour@4-9, TN@10-11, FN@12-16, MN@17-22. A monotonically
+	// advancing frame counter across the transmission is the proof the sync is
+	// real (not a lone chance-CRC hit).
+	var firstSync tetra.SyncPDU
+	haveSync := false
+	fnSeen := map[uint8]struct{}{}
 
 	for i := range bursts {
 		b := bursts[i]
@@ -141,8 +155,14 @@ func TestTETRADMOReplay(t *testing.T) {
 		switch b.Kind {
 		case tetra.DMBurstSync:
 			dsbTotal++
-			if _, ok := tetra.DecodeDMSCHS(b); ok {
+			if type1, ok := tetra.DecodeDMSCHS(b); ok {
 				dsbCRC++
+				if pdu, pok := tetra.ParseSyncPDU(type1); pok {
+					fnSeen[pdu.FN] = struct{}{}
+					if !haveSync {
+						firstSync, haveSync = pdu, true
+					}
+				}
 				if _, dup := seenSyncSec[sec]; !dup {
 					seenSyncSec[sec] = struct{}{}
 					syncSecs = append(syncSecs, sec)
@@ -174,6 +194,26 @@ func TestTETRADMOReplay(t *testing.T) {
 		dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly)
 	sort.Ints(syncSecs)
 	t.Logf("sync (SCH/S CRC-valid) at seconds: %v", syncSecs)
+	if haveSync {
+		// The SYNC PDU decoded from the (colour-0-scrambled) SCH/S. distinct_fn > 1
+		// proves the frame counter advances across the transmission — a genuine DMO
+		// lock, not a chance CRC.
+		t.Logf("SYNC PDU: colour=%d TN=%d FN=%d MN=%d MCC=%d MNC=%d (distinct FN across DSBs=%d)",
+			firstSync.ColourCode, firstSync.TN, firstSync.FN, firstSync.MN,
+			firstSync.MCC, firstSync.MNC, len(fnSeen))
+	}
+
+	// Signalling-vs-traffic verdict. DMO SCH/S is scrambled with colour 0 (like the
+	// TMO BSCH) and decodes clear whenever the RF is receivable; TCH/S traffic is
+	// scrambled with the DM colour code AND, if the call is protected, air-interface
+	// encrypted. A capture that decodes SCH/S well (dsb_schs_crc high, distinct FN)
+	// but yields TCH/S CRC only near the ~1/256 chance floor across the whole
+	// transmission is the signature of ENCRYPTED voice on clear signalling — not a
+	// decoder defect (the geometry/scramble/interleave were exhausted in #1003).
+	if dsbCRC >= 8 && dnbTotal > 0 && tchCRC*20 < dnbTotal {
+		t.Logf("VERDICT: DMO SIGNALLING decodes (dsb_schs_crc=%d, distinct FN=%d) but TCH/S is at the chance floor (tch_crc=%d/%d) — the voice is most likely air-interface ENCRYPTED. Validate voice against a known-CLEAR DMO call.",
+			dsbCRC, len(fnSeen), tchCRC, dnbTotal)
+	}
 
 	// Seconds with >=2 CRC-valid speech bursts = real activity, not a lone
 	// chance-CRC hit. On the reporter's capture these should cluster on the two
