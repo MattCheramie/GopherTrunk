@@ -19,6 +19,7 @@ func p25SiteCall(t *testing.T) *Call {
 	c.Site = 9
 	c.NAC = 359
 	c.Emergency = true
+	c.Priority = 6
 	c.PatchedGroups = []uint32{201, 212}
 	return c
 }
@@ -68,6 +69,9 @@ func TestWebhookPostsJSONMetadata(t *testing.T) {
 	}
 	if !got.Emergency {
 		t.Error("emergency flag not surfaced")
+	}
+	if got.Priority != 6 {
+		t.Errorf("priority = %d, want 6 surfaced", got.Priority)
 	}
 	if len(got.PatchedGroups) != 2 || got.PatchedGroups[0] != 201 {
 		t.Errorf("patched_groups = %v, want [201 212]", got.PatchedGroups)

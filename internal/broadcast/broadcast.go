@@ -74,9 +74,16 @@ type Call struct {
 	// DataCall a data (non-voice) grant. They let a metadata sink emit a
 	// call_type so a downstream consumer doesn't mistake a unit's target RID
 	// for a talkgroup (issue #897). Both false for an ordinary group call.
-	Individual    bool
-	DataCall      bool
-	Emergency     bool
+	Individual bool
+	DataCall   bool
+	Emergency  bool
+	// Priority is the call's on-air signalled priority level (the low 3 bits
+	// of the P25 / DMR Service Options octet, or the 4-bit TETRA CMCE Call
+	// priority; 0 = none/lowest). It is the priority the radio requested,
+	// distinct from a talkgroup's operator-configured priority. A metadata
+	// sink surfaces it alongside emergency so a consumer can rank calls the
+	// way the call log and REST API already do.
+	Priority      uint8
 	PatchedGroups []uint32
 	StartedAt     time.Time
 	EndedAt       time.Time
@@ -167,6 +174,7 @@ func callFromEvent(cc trunking.CallComplete) *Call {
 		Individual:    cc.Grant.Individual,
 		DataCall:      cc.Grant.DataCall,
 		Emergency:     cc.Grant.Emergency,
+		Priority:      cc.Grant.Priority,
 		PatchedGroups: cc.Grant.PatchedGroups,
 		StartedAt:     cc.StartedAt,
 		EndedAt:       cc.EndedAt,

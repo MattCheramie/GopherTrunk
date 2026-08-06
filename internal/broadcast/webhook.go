@@ -123,6 +123,7 @@ type webhookPayload struct {
 	AlgorithmID   uint8    `json:"algorithm_id,omitempty"`
 	KeyID         uint16   `json:"key_id,omitempty"`
 	Emergency     bool     `json:"emergency"`
+	Priority      uint8    `json:"priority,omitempty"`
 	PatchedGroups []uint32 `json:"patched_groups,omitempty"`
 	StartedAt     string   `json:"started_at"` // RFC3339 UTC
 	EndedAt       string   `json:"ended_at"`   // RFC3339 UTC
@@ -154,6 +155,7 @@ func (b *webhookBackend) Send(ctx context.Context, c *Call) error {
 		AlgorithmID:   c.AlgorithmID,
 		KeyID:         c.KeyID,
 		Emergency:     c.Emergency,
+		Priority:      c.Priority,
 		PatchedGroups: c.PatchedGroups,
 		StartedAt:     rfc3339In(c.StartedAt, b.loc),
 		EndedAt:       rfc3339In(c.EndedAt, b.loc),

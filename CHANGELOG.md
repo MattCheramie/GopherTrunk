@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **On-air call priority now reaches the webhook sinks.** The completed-call
+  and grant `broadcast.webhook` payloads already carried the emergency flag but
+  not the signalled priority level (the low 3 bits of the P25 / DMR Service
+  Options octet, or the TETRA CMCE Call priority); both now include a `priority`
+  field, matching what the call log and `/api/v1/calls` already surface, so a
+  webhook consumer can rank calls the way the local UI does.
 - **Unit-to-unit / private calls are now flagged in call history.** The
   `Individual` grant flag (the call's `group_id` is a target radio address,
   not a talkgroup) already reached the live-grant API but was dropped from the
