@@ -6,6 +6,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -39,6 +40,110 @@ func burstWithFLC(f dmr.FLC) *dmr.Burst {
 			(channel[2*(dmr.HalfPayloadDibits+i)] << 1) | channel[2*(dmr.HalfPayloadDibits+i)+1]
 	}
 	return &b
+}
+
+// burstWithInfo96 builds a DMR burst whose 196-bit BPTC channel payload
+// carries the supplied 12-byte (96-bit) information block — the generic
+// form of burstWithFLC, used to inject a CSBK beacon block.
+func burstWithInfo96(info []byte) *dmr.Burst {
+	if len(info) != 12 {
+		panic("burstWithInfo96 requires a 12-byte info block")
+	}
+	bits := make([]byte, 96)
+	for i := 0; i < 96; i++ {
+		bits[i] = (info[i>>3] >> uint(7-(i&7))) & 1
+	}
+	channel := framing.EncodeBPTC196_96(bits)
+
+	var b dmr.Burst
+	for i := 0; i < dmr.HalfPayloadDibits; i++ {
+		b.Dibits[i] = (channel[2*i] << 1) | channel[2*i+1]
+	}
+	for i := 0; i < dmr.HalfPayloadDibits; i++ {
+		b.Dibits[dmr.BurstDibits-dmr.HalfPayloadDibits+i] =
+			(channel[2*(dmr.HalfPayloadDibits+i)] << 1) | channel[2*(dmr.HalfPayloadDibits+i)+1]
+	}
+	return &b
+}
+
+// TestConventionalCSBKBeaconMarksSiteAlive pins issue #1036: a CRC-valid
+// CSBK burst on a parked conventional/IPSC channel is recognised as a
+// "site alive" beacon — the Beacons counter increments — instead of being
+// ignored or surfaced as a decode error. Before the DTCSBK handler, CSBK
+// bursts fell straight through IngestBurst's switch and Beacons stayed 0.
+func TestConventionalCSBKBeaconMarksSiteAlive(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "IPSCConv",
+		FrequencyHz: 451_012_500,
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+
+	// A Preamble CSBK is a canonical conventional/IPSC idle beacon.
+	info := tier3.AssembleCSBK(tier3.CSBK{Opcode: tier3.OpPreamble, FID: 0x00})
+	cc.IngestBurst(burstWithInfo96(info), dmr.SlotType{ColorCode: 3, DataType: dmr.DTCSBK})
+
+	if got := cc.Counters().Beacons; got != 1 {
+		t.Fatalf("Beacons = %d, want 1 (CRC-valid CSBK beacon should mark the site alive)", got)
+	}
+	if got := cc.Counters().FECFail; got != 0 {
+		t.Errorf("FECFail = %d, want 0 (a valid beacon must not count as a FEC failure)", got)
+	}
+	// A beacon must not forge a grant or a decode error.
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				t.Fatalf("beacon wrongly published a grant: %+v", ev.Payload)
+			}
+			if ev.Kind == events.KindDecodeError {
+				t.Fatalf("beacon wrongly published a decode error: %+v", ev.Payload)
+			}
+		default:
+			return
+		}
+	}
+}
+
+// TestConventionalCSBKNoiseIsSilent pins the anti-spam half of #1036: a
+// CSBK-shaped burst whose CRC does not check (between-beacon noise on a
+// parked channel) must NOT increment Beacons and must NOT publish a
+// decode error — surfacing those gaps as corrupt data is the reported
+// symptom.
+func TestConventionalCSBKNoiseIsSilent(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "IPSCConv",
+		FrequencyHz: 451_012_500,
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+
+	// Valid CSBK bytes with the CRC trailer corrupted so ParseCSBK's
+	// CRC check fails after a clean BPTC decode.
+	info := tier3.AssembleCSBK(tier3.CSBK{Opcode: tier3.OpPreamble, FID: 0x00})
+	info[11] ^= 0xFF // break the stored CRC
+	cc.IngestBurst(burstWithInfo96(info), dmr.SlotType{ColorCode: 3, DataType: dmr.DTCSBK})
+
+	if got := cc.Counters().Beacons; got != 0 {
+		t.Fatalf("Beacons = %d, want 0 (a CRC-failing CSBK is noise, not a beacon)", got)
+	}
+	select {
+	case ev := <-sub.C:
+		if ev.Kind == events.KindDecodeError {
+			t.Fatalf("between-beacon noise wrongly published a decode error: %+v", ev.Payload)
+		}
+	default:
+	}
 }
 
 // TestConventionalProtocolTagDirectMode pins the Tier I direct-mode
