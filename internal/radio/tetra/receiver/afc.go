@@ -26,12 +26,44 @@ type carrierAFC struct {
 	omega   float64     // most recent per-symbol offset estimate (for OffsetHz)
 	buf     []complex64 // oversampled matched-filter samples awaiting a full block
 	wideBuf []complex64 // parallel pre-matched (channel-filtered) samples for the coarse stage
+
+	// omegaEMA slow-tracks the per-block net estimate (coarse+fine); omegaPrimed
+	// guards its first-block seed. The feed-forward estimate re-derived each
+	// ~1024-symbol block is noisy: under multipath/ISI the constellation is
+	// smeared, so both stages jitter block-to-block (a real reporter saw a
+	// fully-locked, calm control channel report carrier_off_hz swinging −1492 →
+	// +616 Hz, and the symbol-scope constellation "drift" that a
+	// continuous-tracking reference demod does not show). The true carrier
+	// offset drifts only slowly (tuner/TCXO), so we derotate by — and report —
+	// the smoothed estimate: this strips the per-block jitter without moving the
+	// tracked mean, so the differential decode is unaffected while the scope and
+	// the status line go steady. A block whose raw estimate jumps by more than
+	// the fine window (an ISI-induced ±f_sym/4 alias) is treated as an outlier:
+	// the mean holds and the block is derotated by the smoothed value, so one
+	// bad block cannot poison the track.
+	omegaEMA    float64
+	omegaPrimed bool
 }
 
 // afcBlockSymbols is the feed-forward re-estimation window in symbols.
 // ~1024 symbols (~57 ms at 18 kBd) averages out the data in the 4×Δφ
 // mean while still following drift.
 const afcBlockSymbols = 1024
+
+// omegaEMAAlpha is the per-block smoothing weight for the net offset estimate.
+// Small enough to strip the block-to-block jitter yet large enough to follow
+// real (slow) carrier drift — a block is ~57 ms, so α=0.08 is a ~0.7 s time
+// constant, far faster than tuner/TCXO drift. The EMA is seeded from the first
+// block, so a genuine multi-kHz offset (issue #940) is acquired immediately
+// regardless of α, and only the residual jitter is smoothed.
+const omegaEMAAlpha = 0.08
+
+// omegaAliasReject is the per-block jump above which the raw estimate is treated
+// as an ISI-induced alias outlier: the smoothed mean holds rather than tracking
+// it. Set at the fine estimator's unambiguous half-window (π/4 ≈ f_sym/8); a
+// real carrier cannot slew that far in one ~57 ms block, so only alias jumps and
+// gross transients are rejected.
+const omegaAliasReject = math.Pi / 4
 
 func newCarrierAFC(sps int) *carrierAFC {
 	if sps < 1 {
@@ -142,13 +174,29 @@ func (a *carrierAFC) Process(dst, matched, wide []complex64) []complex64 {
 		if haveWide {
 			coarse = coarseOmega(a.wideBuf[:blockSamples], a.sps)
 		}
-		// Bring the block within the fine estimator's unambiguous window, then
-		// refine. Total offset = coarse + fine; both derotations are absolute
-		// from phase 0, so per-block errors never accumulate.
+		// Bring the block within the fine estimator's unambiguous window and
+		// refine to the raw per-block net estimate. derotate(coarse) is applied
+		// only to let the fine estimator measure the residual; the block's final
+		// correction below is the *smoothed* net, which composes additively with
+		// the coarse already removed (all derotations are absolute from phase 0).
 		a.derotate(block, coarse)
 		fine := estimateOmega(block, a.sps)
-		a.derotate(block, fine)
-		a.omega = coarse + fine
+		rawOmega := coarse + fine
+
+		// Smooth the net estimate across blocks: strip the per-block jitter that
+		// spins the constellation and swings the reported offset, while the mean
+		// (seeded from the first block, so a real multi-kHz offset is acquired at
+		// once) still follows slow carrier drift. Reject alias-sized outliers.
+		if !a.omegaPrimed {
+			a.omegaEMA = rawOmega
+			a.omegaPrimed = true
+		} else if math.Abs(rawOmega-a.omegaEMA) < omegaAliasReject {
+			a.omegaEMA += omegaEMAAlpha * (rawOmega - a.omegaEMA)
+		}
+		// Finish derotating the block to the smoothed net (coarse is already
+		// removed, so apply the remainder).
+		a.derotate(block, a.omegaEMA-coarse)
+		a.omega = a.omegaEMA
 
 		dst = append(dst, block...)
 		a.buf = append(a.buf[:0], a.buf[blockSamples:]...)
@@ -166,6 +214,8 @@ func (a *carrierAFC) Reset() {
 	a.omega = 0
 	a.buf = a.buf[:0]
 	a.wideBuf = a.wideBuf[:0]
+	a.omegaEMA = 0
+	a.omegaPrimed = false
 }
 
 func conjf(c complex64) complex64 { return complex(real(c), -imag(c)) }
