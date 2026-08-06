@@ -60,9 +60,23 @@ export function useDataPoll<T>({
   const lastSerialized = useRef<string | null>(null);
   const tick = useRef(0);
 
+  // Guards state updates that a still-in-flight fetch would otherwise apply
+  // after the component unmounted — the setState-after-unmount that made a
+  // late poll throw "window is not defined" during test teardown (an
+  // unhandled rejection that failed the web CI job even though every test
+  // passed). Set false on unmount; every setter below is gated on it.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const run = useCallback(async () => {
     try {
       const data = await fetcherRef.current();
+      if (!mountedRef.current) return;
       const serialized = JSON.stringify(data);
       if (serialized !== lastSerialized.current) {
         lastSerialized.current = serialized;
@@ -72,13 +86,14 @@ export function useDataPoll<T>({
       setStale(false);
       setLastUpdated(Date.now());
     } catch (e: unknown) {
+      if (!mountedRef.current) return;
       const msg = e instanceof Error ? e.message : "request failed";
       setError(msg);
       // Only "stale" if we already showed good data; otherwise it's a
       // plain initial-load error.
       setStale(lastSerialized.current !== null);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, []);
 
