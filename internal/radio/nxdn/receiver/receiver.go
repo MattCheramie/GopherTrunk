@@ -5,8 +5,10 @@
 //
 //	IQ samples
 //	  → FM discriminator (internal/dsp/demod.FM)
-//	  → RRC matched filter + 4-level slicer (internal/dsp/demod.C4FM)
+//	  → RRC matched filter (internal/dsp/demod.C4FM)
 //	  → Mueller-Müller symbol clock recovery (internal/dsp/sync.MuellerMuller)
+//	  → symbol AGC: level normalisation (c4fmSymbolAGC, local)
+//	  → 4-level slicer (internal/dsp/demod.C4FM)
 //	  → 4-level symbol → 0..3 dibit (SymbolToDibit, local)
 //	  → nxdn.DibitSink
 //
@@ -16,6 +18,18 @@
 // the downstream framing (192-dibit / 80 ms frames, 8-dibit FSW,
 // LICH / SACCH / Info field layout) differs and lives in the parent
 // nxdn package.
+//
+// The symbol-AGC stage is what lets the receiver decode a real SDR
+// capture rather than only zero-offset, level-matched synthesized
+// fixtures. The RRC matched filter is normalised to unit *energy*, so it
+// has a DC gain of ~3.1: on a real FM-discriminator stream the matched
+// filter leaves the 4-level symbol centres well above the slicer's fixed
+// thresholds, the slicer collapses the inner (±1) symbols onto the outer
+// (±3) rails, and every payload comes back uncorrectable while the coarser
+// sync/FSW still matches. The AGC renormalises the running mean|x| to the
+// level a balanced 4-level stream should sit at so the slicer decides
+// correctly, mirroring the same calibration the P25 Phase 1 and DMR C4FM
+// receivers run (issue #275).
 //
 // The receiver is stateful and not safe for concurrent Process
 // calls. Instantiate one per tuned frequency / per call chain.
@@ -75,6 +89,7 @@ type Receiver struct {
 	fm        *demod.FM
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
+	agc       c4fmSymbolAGC
 	dibitSink nxdn.DibitSink
 	dibitBase int
 
@@ -121,11 +136,38 @@ func New(opts Options) *Receiver {
 	}
 
 	return &Receiver{
-		fm:        demod.NewFM(),
-		mf:        demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
-		clock:     sync.NewMuellerMuller(sps, gain),
+		fm:    demod.NewFM(),
+		mf:    demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
+		clock: sync.NewMuellerMuller(sps, gain),
+		// Symbol-AGC bridges the level mismatch between the unit-energy
+		// RRC matched filter and the 4-level slicer's fixed thresholds.
+		// The RRC has a DC gain of ~3.1 (it is normalised to unit
+		// energy, not unit DC), so on a real (rectangular, non-RRC-shaped)
+		// signal the matched-filter symbol centres land well above
+		// slicerScale and the fixed slicer collapses inner (±1) symbols
+		// onto the outer (±3) rails — every payload then comes back
+		// uncorrectable while the coarser sync/FSW still matches. The AGC
+		// normalises the running mean|x| to the level a balanced 4-level
+		// stream should sit at (slicerScale·2/3), so the slicer decides
+		// correctly regardless of the absolute matched-filter level. Same
+		// calibration the P25 Phase 1 and DMR C4FM receivers run (issue
+		// #275). Disabled on the legacy DeviationHz<=0 path (slicerScale
+		// == 1.0) so pre-scaled fixtures stay byte-identical.
+		agc: c4fmSymbolAGC{
+			target: float32(agcTargetFor(slicerScale, opts.DeviationHz)),
+			rate:   1.0 / 256.0,
+		},
 		dibitSink: opts.DibitSink,
 	}
+}
+
+// agcTargetFor returns the symbol-AGC target mean|x|, or 0 to disable
+// the AGC on the legacy pre-scaled-fixture path (DeviationHz unset).
+func agcTargetFor(slicerScale, deviationHz float64) float64 {
+	if deviationHz <= 0 {
+		return 0
+	}
+	return slicerScale * 2.0 / 3.0
 }
 
 // Process pushes one chunk of complex64 IQ samples through the chain.
@@ -141,6 +183,11 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
+	// Normalise the symbol level to the slicer's expected scale before
+	// slicing, so the unit-energy matched filter's ~3.1× DC gain doesn't
+	// push the 4-level eye past the slicer's fixed thresholds (no-op on
+	// the legacy DeviationHz<=0 path where target==0). See package doc.
+	r.agc.process(r.symbols)
 	r.sliced = r.mf.SliceMany(r.sliced, r.symbols)
 	if cap(r.dibits) < len(r.sliced) {
 		r.dibits = make([]uint8, len(r.sliced))
@@ -157,6 +204,57 @@ func (r *Receiver) Process(iq []complex64) {
 // Reset returns the receiver to its initial state.
 func (r *Receiver) Reset() {
 	r.dibitBase = 0
+	r.agc.reset()
+}
+
+// c4fmSymbolAGC tracks a running estimate of mean|x| over the
+// per-symbol matched-filter output and scales each symbol so the
+// estimate matches a target reference. The 4-level slicer's fixed
+// thresholds are designed against a specific signal level; the AGC
+// reconciles that with whatever level the upstream RRC matched filter
+// actually produces. Ported from the P25 Phase 1 / DMR C4FM receivers
+// (issue #275); the loop is feed-forward (each output is the input
+// scaled by the current estimate), so an occasional near-zero sample
+// cannot drive the gain unbounded the way a feedback loop would.
+type c4fmSymbolAGC struct {
+	target float32 // desired mean|x| in the output stream; <=0 disables
+	rate   float32 // single-pole EMA coefficient
+	level  float32 // current mean|x| estimate of the input
+	seeded bool
+}
+
+// process scales symbols in place so the running mean|x| matches target.
+// Seeds the EMA from the first non-trivial sample's |x| so the recovered
+// stream is independent of how the IQ is chunked. A no-op when target<=0
+// (the legacy pre-scaled-fixture path).
+func (a *c4fmSymbolAGC) process(symbols []float32) {
+	if a.target <= 0 {
+		return
+	}
+	for i, x := range symbols {
+		ax := x
+		if ax < 0 {
+			ax = -ax
+		}
+		if !a.seeded {
+			if ax > 1e-12 {
+				a.level = ax
+				a.seeded = true
+			} else {
+				continue
+			}
+		} else {
+			a.level += a.rate * (ax - a.level)
+		}
+		if a.level > 1e-12 {
+			symbols[i] = x * (a.target / a.level)
+		}
+	}
+}
+
+func (a *c4fmSymbolAGC) reset() {
+	a.level = 0
+	a.seeded = false
 }
 
 // SymbolToDibit maps a C4FM slicer output ({-3, -1, +1, +3}) to a
