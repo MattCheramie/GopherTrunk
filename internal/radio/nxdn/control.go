@@ -3,8 +3,10 @@ package nxdn
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // LockState is the payload of cc.locked / cc.lost events emitted by the
@@ -45,6 +47,18 @@ type ControlChannel struct {
 	locked bool
 	last   LockState
 	topo   topologyModel
+
+	// systemName labels published grants so the trunking engine can
+	// match them to the configured trunking.System. Empty until set
+	// by the connector via SetSystemName.
+	systemName string
+	// bandPlan resolves a VCALL_ASSGN traffic-channel number to a
+	// downlink frequency. nil until set via SetBandPlan; while nil,
+	// voice grants are dropped (they have no frequency to tune).
+	bandPlan Resolver
+	// now returns the current time for grant timestamps; overridable
+	// in tests. Defaults to time.Now.
+	now func() time.Time
 
 	// proc is the cross-call dibit / sync state the Process
 	// adapter uses (see process.go). Lazily constructed on the
@@ -149,8 +163,18 @@ func NewControlChannel(bus *events.Bus, log *slog.Logger, freqHz uint32, rate Ba
 	if log == nil {
 		log = slog.Default()
 	}
-	return &ControlChannel{bus: bus, log: log, freqHz: freqHz, rate: rate}
+	return &ControlChannel{bus: bus, log: log, freqHz: freqHz, rate: rate, now: time.Now}
 }
+
+// SetSystemName sets the system name stamped on published grants so the
+// trunking engine can match them to the configured trunking.System.
+func (c *ControlChannel) SetSystemName(name string) { c.systemName = name }
+
+// SetBandPlan installs the resolver that maps a VCALL_ASSGN
+// traffic-channel number to a downlink frequency. Pass nil (the
+// default) to keep dropping voice grants for want of a frequency.
+// Build one with ResolverFromPlan(system.NXDNBandPlan).
+func (c *ControlChannel) SetBandPlan(r Resolver) { c.bandPlan = r }
 
 // IngestFrame consumes one decoded NXDN frame. The caller must have
 // already extracted and parsed the LICH and CAC fields.
@@ -168,7 +192,48 @@ func (c *ControlChannel) IngestFrame(lich LICH, cac *CACMessage) {
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, BaudRate: c.rate, SiteID: s.SiteID, SystemID: s.SystemID})
 	case RCCHCCH:
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, BaudRate: c.rate})
+	case RCCHVCALLASGN:
+		c.publishGrant(ParseVCallAssign(cac.Payload))
 	}
+}
+
+// publishGrant resolves a VCALL_ASSGN's traffic-channel number to a
+// downlink frequency and publishes a protocol-neutral voice grant on
+// the bus so the trunking engine tunes a Voice device to the call.
+// Drops the grant (no publish) when no band plan is configured or the
+// channel is outside it — mirrors the DMR Tier III "no-bandplan ⇒ drop"
+// behaviour, since a grant with no frequency cannot be followed.
+func (c *ControlChannel) publishGrant(a VCallAssignPayload) {
+	if c.bandPlan == nil {
+		c.log.Warn("nxdn: voice grant dropped; no band plan configured",
+			"system", c.systemName, "group", a.GroupAddress, "channel", a.Channel)
+		return
+	}
+	freq, err := c.bandPlan.Frequency(a.Channel)
+	if err != nil {
+		c.log.Warn("nxdn: voice grant dropped; channel outside band plan",
+			"system", c.systemName, "group", a.GroupAddress, "channel", a.Channel, "err", err)
+		return
+	}
+	now := c.now
+	if now == nil {
+		now = time.Now
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindGrant,
+		Payload: trunking.Grant{
+			System:      c.systemName,
+			Protocol:    "nxdn",
+			GroupID:     uint32(a.GroupAddress),
+			SourceID:    uint32(a.SourceID),
+			FrequencyHz: freq,
+			ChannelNum:  a.Channel,
+			At:          now(),
+		},
+	})
+	c.log.Debug("nxdn: voice grant",
+		"system", c.systemName, "group", a.GroupAddress, "src", a.SourceID,
+		"channel", a.Channel, "freq_hz", freq)
 }
 
 func (c *ControlChannel) maybeLock(s LockState) {

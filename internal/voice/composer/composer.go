@@ -465,10 +465,14 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	// sidecar (TCH/S FEC + ACELP vocoder are follow-ups — see
 	// runTETRAVoiceChain), like the DMR/P25 raw-frame paths.
 	isTETRAVoice := proto == "tetra"
-	if !isFM && !isDMRVoice && !isP25P2Voice && !isP25P1Voice && !isTETRAVoice {
-		// Remaining digital protocols (NXDN, dPMR, YSF, D-STAR, EDACS
-		// ProVoice) have no composer voice chain yet — their voice bursts
-		// are not decoded into PCM here.
+	// NXDN follows the traffic channel with the same receiver the CC
+	// uses; Stage 1 wires the follow+tune+chain lifecycle, the VCH
+	// voice-channel decoder is a follow-up (see runNXDNVoiceChain).
+	isNXDNVoice := proto == "nxdn"
+	if !isFM && !isDMRVoice && !isP25P2Voice && !isP25P1Voice && !isTETRAVoice && !isNXDNVoice {
+		// Remaining digital protocols (dPMR, YSF, D-STAR, EDACS ProVoice)
+		// have no composer voice chain yet — their voice bursts are not
+		// decoded into PCM here.
 		c.log.Info("composer: digital protocol not yet decoded; chain bypassed",
 			"device", cs.DeviceSerial, "protocol", proto,
 			"group", cs.Grant.GroupID)
@@ -564,6 +568,8 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	case isTETRAVoice:
 		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, ch.done)
+	case isNXDNVoice:
+		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	default:
 		// Analog FM has no symbol clock to drift, so the rounded integer
 		// rate is fine; keep its uint32 signature unchanged.

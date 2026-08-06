@@ -1644,6 +1644,15 @@ type SystemConfig struct {
 	// LCN→Hz list). Ignored for non-dmr protocols.
 	DMRBandPlan *DMRBandPlanConfig `yaml:"dmr_band_plan"`
 
+	// NXDNBandPlan maps the traffic-channel number carried in each NXDN
+	// VCALL_ASSGN message to a downlink frequency. Required for NXDN
+	// voice follow — NXDN grants reference a channel by number, not an
+	// absolute frequency, so without this plan every voice grant is
+	// dropped. Provide exactly one of `linear` (regular base+spacing
+	// grid) or `table` (explicit channel→Hz list). Ignored for non-nxdn
+	// protocols.
+	NXDNBandPlan *NXDNBandPlanConfig `yaml:"nxdn_band_plan"`
+
 	// EncryptionKeys lists operator-supplied decryption keys for this
 	// system. GopherTrunk decrypts only with keys the operator
 	// already holds and is authorized to use — it performs no key
@@ -1701,6 +1710,31 @@ type DMRLinearBandPlanConfig struct {
 type DMRBandPlanTableEntryConfig struct {
 	LCN    uint16 `yaml:"lcn"`
 	FreqHz uint32 `yaml:"freq_hz"`
+}
+
+// NXDNBandPlanConfig is the operator-supplied NXDN traffic-channel →
+// frequency band plan for a system. Exactly one of Linear or Table
+// must be set (enforced by Config.Validate). See
+// internal/radio/nxdn/bandplan.go for the resolution math.
+type NXDNBandPlanConfig struct {
+	Linear *NXDNLinearBandPlanConfig      `yaml:"linear"`
+	Table  []NXDNBandPlanTableEntryConfig `yaml:"table"`
+}
+
+// NXDNLinearBandPlanConfig lays channels out on a regular grid:
+// freq = base_hz + (channel - offset) × spacing_hz. Set offset=1 for
+// sites that number channels from 1.
+type NXDNLinearBandPlanConfig struct {
+	BaseHz    uint32 `yaml:"base_hz"`
+	SpacingHz uint32 `yaml:"spacing_hz"`
+	Offset    int8   `yaml:"offset"`
+}
+
+// NXDNBandPlanTableEntryConfig is one explicit channel→downlink-frequency
+// mapping for sites whose channels don't fall on a regular grid.
+type NXDNBandPlanTableEntryConfig struct {
+	Channel uint16 `yaml:"channel"`
+	FreqHz  uint32 `yaml:"freq_hz"`
 }
 
 // EncryptionKeyConfig is one operator-supplied decryption key for a
@@ -2471,6 +2505,36 @@ func validateSystem(i int, s SystemConfig) error {
 					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: duplicate lcn %d (also at table[%d])", i, k, e.LCN, prev)
 				}
 				seenLCN[e.LCN] = k
+			}
+		}
+	}
+	if bp := s.NXDNBandPlan; bp != nil {
+		hasLinear := bp.Linear != nil
+		hasTable := len(bp.Table) > 0
+		switch {
+		case hasLinear && hasTable:
+			return fmt.Errorf("trunking.systems[%d].nxdn_band_plan: set either linear or table, not both", i)
+		case !hasLinear && !hasTable:
+			return fmt.Errorf("trunking.systems[%d].nxdn_band_plan: one of linear or table is required", i)
+		}
+		if hasLinear {
+			if bp.Linear.SpacingHz == 0 {
+				return fmt.Errorf("trunking.systems[%d].nxdn_band_plan.linear: spacing_hz required (nonzero)", i)
+			}
+			if bp.Linear.BaseHz == 0 {
+				return fmt.Errorf("trunking.systems[%d].nxdn_band_plan.linear: base_hz required (nonzero)", i)
+			}
+		}
+		if hasTable {
+			seenCh := make(map[uint16]int, len(bp.Table))
+			for k, e := range bp.Table {
+				if e.FreqHz == 0 {
+					return fmt.Errorf("trunking.systems[%d].nxdn_band_plan.table[%d]: freq_hz required (nonzero)", i, k)
+				}
+				if prev, dup := seenCh[e.Channel]; dup {
+					return fmt.Errorf("trunking.systems[%d].nxdn_band_plan.table[%d]: duplicate channel %d (also at table[%d])", i, k, e.Channel, prev)
+				}
+				seenCh[e.Channel] = k
 			}
 		}
 	}

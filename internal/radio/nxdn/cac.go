@@ -127,6 +127,35 @@ func ParseVCall(p [8]byte) VCallPayload {
 	}
 }
 
+// VCallAssignPayload represents the payload of a VCALL_ASSGN (RCCH
+// 0x04) message — the channel-assignment that grants a voice call a
+// traffic channel. The group + source identify the call and Channel is
+// the assigned traffic-channel number the band plan resolves to a
+// downlink frequency (see bandplan.go).
+//
+// Like VCallPayload, the exact bit layout depends on the NXDN service
+// variant; the offsets below match the common Type-C trunked variant
+// (ServiceOptions, group, source, then the assigned channel). They are
+// structural and not yet validated against an on-air capture — keep
+// them easy to correct once a capture lands.
+type VCallAssignPayload struct {
+	ServiceOptions uint8
+	GroupAddress   uint16
+	SourceID       uint16
+	Channel        uint16
+}
+
+// ParseVCallAssign extracts the VCALL_ASSGN fields from the 8-byte
+// payload.
+func ParseVCallAssign(p [8]byte) VCallAssignPayload {
+	return VCallAssignPayload{
+		ServiceOptions: p[0],
+		GroupAddress:   binary.BigEndian.Uint16(p[1:3]),
+		SourceID:       binary.BigEndian.Uint16(p[3:5]),
+		Channel:        binary.BigEndian.Uint16(p[5:7]),
+	}
+}
+
 // SiteInfoPayload represents the SITE_INFO message used by the trunked
 // variant for site identification broadcasts.
 type SiteInfoPayload struct {

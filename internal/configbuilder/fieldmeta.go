@@ -171,6 +171,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.RIDAliasFile":    {Label: "RID alias file", Help: "Optional CSV/JSON catalogue of radio-ID (subscriber) aliases for this system."},
 	"SystemConfig.P25BandPlan":     {Label: "P25 band plan", Help: "Static IDEN_UP slot seeds for P25 Phase 1 sites that route grants through an unannounced channel ID. P25 Phase 1 only."},
 	"SystemConfig.DMRBandPlan":     {Label: "DMR band plan", Help: "LCN→frequency map REQUIRED for DMR Tier III voice grants. Pick linear (grid) or table (explicit list). DMR only."},
+	"SystemConfig.NXDNBandPlan":    {Label: "NXDN band plan", Help: "Channel→frequency map REQUIRED for NXDN voice grants (VCALL_ASSGN references a channel number). Pick linear (grid) or table (explicit list). NXDN only."},
 	"SystemConfig.EncryptionKeys":  {Help: "Operator-held decryption keys (today DMR RC4 'Enhanced Privacy'). No key recovery is performed."},
 	"SystemConfig.EncryptedCalls":  {Help: "How scarce voice SDRs are allocated to encrypted calls on this system, so encrypted traffic can't starve clear calls (issue #711)."},
 	// SystemConfig advanced protocol knobs (edited under the Advanced group).
@@ -210,6 +211,14 @@ var fieldMetas = map[string]FieldMeta{
 	"DMRLinearBandPlanConfig.Offset":     {Help: "LCN the grid starts numbering from. Set 1 for sites that number LCNs from 1."},
 	"DMRBandPlanTableEntryConfig.LCN":    {Label: "LCN", Help: "12-bit Logical (Physical) Channel Number from the grant CSBK."},
 	"DMRBandPlanTableEntryConfig.FreqHz": {Label: "Frequency", Hz: true, Help: "Downlink frequency this LCN maps to."},
+
+	"NXDNBandPlanConfig.Linear":            {Help: "Regular base+spacing grid: freq = base + (channel − offset) × spacing."},
+	"NXDNBandPlanConfig.Table":             {Help: "Explicit channel→frequency list for sites that don't fall on a regular grid."},
+	"NXDNLinearBandPlanConfig.BaseHz":      {Label: "Base frequency", Hz: true, Help: "Downlink frequency of the first channel."},
+	"NXDNLinearBandPlanConfig.SpacingHz":   {Label: "Spacing", Hz: true, Help: "Frequency step between consecutive channels."},
+	"NXDNLinearBandPlanConfig.Offset":      {Help: "Channel the grid starts numbering from. Set 1 for sites that number channels from 1."},
+	"NXDNBandPlanTableEntryConfig.Channel": {Label: "Channel", Help: "Traffic-channel number from the VCALL_ASSGN message."},
+	"NXDNBandPlanTableEntryConfig.FreqHz":  {Label: "Frequency", Hz: true, Help: "Downlink frequency this channel maps to."},
 
 	"EncryptionKeyConfig.KeyID":     {Label: "Key ID", Help: "Key identifier the radios carry in the privacy header, so a system that rotates keys still resolves."},
 	"EncryptionKeyConfig.Algorithm": {Help: "Decryption algorithm. Today only DMR RC4 (Enhanced Privacy).", Options: opts("rc4", "rc4 (DMR Enhanced Privacy)")},

@@ -1176,6 +1176,12 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.NXDNViterbiMode)
 	}
 	cc.SetViterbiMode(viterbiMode)
+	// Wire the system name + band plan so VCALL_ASSGN voice grants
+	// resolve a traffic-channel number to a downlink frequency and the
+	// engine follows the call. With no band plan configured, grants are
+	// dropped (logged) — the control channel still locks and decodes.
+	cc.SetSystemName(opts.SystemName)
+	cc.SetBandPlan(nxdn.ResolverFromPlan(opts.System.NXDNBandPlan))
 	// NXDN spec peak deviation per the Common Air Interface (same
 	// value P25 Phase 1 uses). Calibrates the slicer thresholds
 	// against the FM-discriminator output level so live captures

@@ -475,8 +475,8 @@ func TestComposerSkipsDigitalProtocol(t *testing.T) {
 	bus.Publish(events.Event{
 		Kind: events.KindCallStart,
 		Payload: trunking.CallStart{
-			// NXDN has no composer voice chain yet — it must be bypassed.
-			Grant:        trunking.Grant{Protocol: "nxdn", GroupID: 1, FrequencyHz: 851_000_000},
+			// dPMR still has no composer voice chain — it must be bypassed.
+			Grant:        trunking.Grant{Protocol: "dpmr", GroupID: 1, FrequencyHz: 851_000_000},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
 		},
@@ -490,6 +490,34 @@ func TestComposerSkipsDigitalProtocol(t *testing.T) {
 	if sink.total("VOICE-1") != 0 {
 		t.Errorf("digital grant produced PCM samples")
 	}
+}
+
+// TestComposerRunsNXDNVoiceChain confirms an NXDN grant is no longer
+// bypassed — Stage 1 wires the follow+tune+chain lifecycle (the VCH
+// voice-channel decoder is a follow-up). The chain must launch for the
+// device even though it produces no PCM until Stage 2.
+func TestComposerRunsNXDNVoiceChain(t *testing.T) {
+	src := newFakeSource()
+	c, bus, _, _, teardown := mkComposer(t, src)
+	defer teardown()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant:        trunking.Grant{Protocol: "nxdn", GroupID: 1, FrequencyHz: 851_000_000},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, time.Second, func() bool {
+		for _, s := range c.ActiveChains() {
+			if s == "VOICE-1" {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func TestComposerRunsFMChainForAnalogTrunking(t *testing.T) {

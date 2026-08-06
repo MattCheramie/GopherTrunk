@@ -149,6 +149,37 @@ type DMRBandPlanTableEntry struct {
 	FreqHz uint32
 }
 
+// NXDNBandPlan maps the traffic-channel number carried in an NXDN
+// VCALL_ASSGN message to its downlink frequency. Like DMR Tier III,
+// NXDN voice grants reference a channel by number rather than an
+// absolute frequency, so the decoder cannot follow a voice call
+// without this plan — see internal/radio/nxdn (Resolver /
+// nxdn.ResolverFromPlan). The shape mirrors DMRBandPlan (the trunking
+// package keeps its own channel→Hz type rather than importing the
+// radio package). Exactly one of Linear or Table is populated
+// (enforced by config validation).
+type NXDNBandPlan struct {
+	Linear *NXDNLinearBandPlan      // regular base+spacing grid
+	Table  []NXDNBandPlanTableEntry // irregular hand-coded channel→Hz map
+}
+
+// NXDNLinearBandPlan lays channels out on a regular grid:
+// freq = BaseHz + (Channel - Offset) × SpacingHz. Offset lets sites
+// that number channels from 1 pin BaseHz to the channel-1 downlink —
+// set Offset=1 there.
+type NXDNLinearBandPlan struct {
+	BaseHz    uint32
+	SpacingHz uint32
+	Offset    int8
+}
+
+// NXDNBandPlanTableEntry is one explicit channel→downlink-frequency
+// mapping for sites whose channels don't fall on a regular grid.
+type NXDNBandPlanTableEntry struct {
+	Channel uint16
+	FreqHz  uint32
+}
+
 // ConfiguredSite is an operator-supplied name for a P25 site, keyed by
 // its RFSS and Site IDs. It carries no decoding role — GET /api/v1/sites
 // merges the Name onto the matching discovered site (issue #698).
@@ -242,6 +273,12 @@ type System struct {
 	// grant is dropped with decode.error stage=no-bandplan. Ignored
 	// for non-DMR-Tier-III protocols.
 	DMRBandPlan *DMRBandPlan
+
+	// NXDNBandPlan resolves the traffic-channel number in NXDN
+	// VCALL_ASSGN grants to a downlink frequency. Required for NXDN
+	// voice follow — without it a granted call has no frequency to
+	// tune and the grant is dropped. Ignored for non-NXDN protocols.
+	NXDNBandPlan *NXDNBandPlan
 
 	// DMRInterleavedVoice opts the system into the experimental 2-slot
 	// interleaved voice decoder (mirrors config.System.DMRInterleavedVoice).
