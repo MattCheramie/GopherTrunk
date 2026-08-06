@@ -21,9 +21,16 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// beaconLogInterval rate-limits the operator-facing "site alive" Info log
+// so a repeater whose idle beacon fires every few seconds announces
+// itself once, then stays quiet — the Beacons counter keeps the exact
+// count. See handleCSBK.
+const beaconLogInterval = 30 * time.Second
 
 // LockState is the payload of cc.locked / cc.lost events emitted by
 // the Tier II per-repeater state machine. DMR Tier II is conventional
@@ -55,6 +62,7 @@ type Counters struct {
 	FECPass  uint64 // Voice LC Header with BPTC + RS both valid
 	FECFail  uint64 // Voice LC Header BPTC uncorrectable or RS mismatch
 	Locks    uint64 // cc.locked declarations (lifetime)
+	Beacons  uint64 // CRC-valid CSBK "site alive" bursts (issue #1036)
 }
 
 // LockedFrequencyHz / LockedNAC make LockState satisfy
@@ -112,7 +120,12 @@ type ConventionalChannel struct {
 		fecPass  atomic.Uint64
 		fecFail  atomic.Uint64
 		locks    atomic.Uint64
+		beacons  atomic.Uint64
 	}
+
+	// beaconLogAt is the last time handleCSBK emitted an Info "site alive"
+	// line; guarded by mu and used only to rate-limit that log.
+	beaconLogAt time.Time
 }
 
 // Counters returns a snapshot of this channel's decode-activity
@@ -124,6 +137,7 @@ func (c *ConventionalChannel) Counters() Counters {
 		FECPass:  c.cnt.fecPass.Load(),
 		FECFail:  c.cnt.fecFail.Load(),
 		Locks:    c.cnt.locks.Load(),
+		Beacons:  c.cnt.beacons.Load(),
 	}
 }
 
@@ -177,8 +191,10 @@ func New(opts Options) *ConventionalChannel {
 // then nothing". Instead the lock is gated on a FEC-validated Voice LC
 // Header inside handleVoiceHeader (BPTC + RS both pass), mirroring Tier
 // III's lock-only-after-CRC discipline. Voice payload bursts (B-F)
-// don't carry a fresh FLC and CSBK bursts belong to Tier III, so they
-// fall through untouched.
+// don't carry a fresh FLC, so they fall through untouched. CSBK bursts
+// are routed to handleCSBK: on a conventional/IPSC repeater the periodic
+// idle "beacon" is a CSBK, and a CRC-valid one is surfaced as a "site
+// alive" signal (issue #1036) rather than being ignored.
 func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 	c.cnt.bursts.Add(1)
 	switch slot.DataType {
@@ -186,6 +202,61 @@ func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 		c.handleVoiceHeader(b, slot)
 	case dmr.DTTerminatorWithLC:
 		c.handleTerminator()
+	case dmr.DTCSBK:
+		c.handleCSBK(b, slot)
+	}
+}
+
+// handleCSBK processes a Control Signaling Block burst on the parked
+// conventional frequency. Issue #1036 asks for conventional DMR / IPSC
+// monitoring where the repeater drops to silence between calls and emits
+// periodic idle "beacons" — short transmissions that carry valid sync +
+// colour code but no voice — so the scanner can log the site as alive
+// instead of flagging the gaps as corrupt data. On DMR that beacon is a
+// CSBK (typically a Preamble or C_BCAST). Tier III owns CSBK *trunking*
+// semantics (grants, aloha); here we only need the keep-alive fact, so a
+// CRC-valid CSBK bumps the Beacons counter and (rate-limited) logs "site
+// alive".
+//
+// The gate is CRC-strict, mirroring handleVoiceHeader's FEC discipline:
+// a noise burst that false-syncs would have to survive BPTC(196,96)
+// correction *and* match the 16-bit CSBK CRC (mask 0x5A5A) to count, so
+// it cannot forge a beacon the way a bare slot-type decode could (the
+// "instalock cc=15" trap this package already guards against). A
+// BPTC-uncorrectable or CRC-failing CSBK is dropped at Debug and,
+// deliberately, is NOT published as a KindDecodeError: between-beacon
+// noise on a parked conventional channel is expected, and surfacing it as
+// a decode error is exactly the "treated as failed/corrupted data"
+// symptom #1036 reports.
+func (c *ConventionalChannel) handleCSBK(b *dmr.Burst, slot dmr.SlotType) {
+	payload := b.PayloadBits()
+	bits, errs := framing.DecodeBPTC196_96(payload)
+	if errs < 0 {
+		c.log.Debug("dmr/tier2: CSBK BPTC uncorrectable (between-beacon noise)", "cc", slot.ColorCode)
+		return
+	}
+	csbk, err := tier3.ParseCSBK(infoBitsToBytes(bits))
+	if err != nil {
+		c.log.Debug("dmr/tier2: CSBK CRC mismatch (between-beacon noise)", "cc", slot.ColorCode)
+		return
+	}
+	c.cnt.beacons.Add(1)
+
+	// Rate-limit the operator-facing Info line so a fast beacon interval
+	// doesn't flood the log; the counter still records every beacon.
+	c.mu.Lock()
+	now := c.now()
+	due := c.beaconLogAt.IsZero() || now.Sub(c.beaconLogAt) >= beaconLogInterval
+	if due {
+		c.beaconLogAt = now
+	}
+	c.mu.Unlock()
+	if due {
+		c.log.Info("dmr/tier2 site alive (beacon)",
+			"freq", c.freqHz, "cc", slot.ColorCode,
+			"csbk", csbk.Opcode.String(), "system", c.systemName)
+	} else {
+		c.log.Debug("dmr/tier2: beacon", "cc", slot.ColorCode, "csbk", csbk.Opcode.String())
 	}
 }
 

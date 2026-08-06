@@ -1191,6 +1191,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 					"bursts", c.Bursts-ec.lastCnt.Bursts,
 					"fec_pass", fecPassDelta,
 					"fec_fail", c.FECFail-ec.lastCnt.FECFail,
+					"beacons", c.Beacons-ec.lastCnt.Beacons,
 					"locks_total", c.Locks)
 			}
 			ec.lastCnt = c
