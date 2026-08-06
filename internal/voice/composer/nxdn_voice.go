@@ -7,6 +7,8 @@ import (
 	"time"
 
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 )
 
@@ -46,19 +48,19 @@ func newNXDNVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 }
 
 // runNXDNVoiceChain consumes IQ for one NXDN voice call: it decimates
-// the wideband IQ to a 4-FSK-friendly rate and recovers the dibit
-// stream with the NXDN receiver (the same receiver the control channel
-// uses, with the symbol-AGC that lets it decode real captures).
+// the wideband IQ to a 4-FSK-friendly rate, recovers the dibit stream
+// with the NXDN receiver (the same receiver the control channel uses,
+// with the symbol-AGC that lets it decode real captures), and routes the
+// dibits through an nxdn.TrafficChannel that carves the VCH voice frames
+// out of each traffic frame's Information field, FEC-decodes their
+// AMBE+2 payloads, and hands 7-byte frames to the recorder — which maps
+// "nxdn" → the "ambe2-dmr" vocoder and renders them to PCM.
 //
-// STAGE 1 (this commit) wires the follow → tune → chain lifecycle: the
-// grant is followed, a Voice device is tuned, and this chain runs the
-// receiver over the traffic channel. The VCH voice-channel decoder that
-// turns traffic frames into 7-byte AMBE+2 payloads is Stage 2; until it
-// lands, extractVoiceFrames returns nothing and the chain produces no
-// audio (the recorder still maps "nxdn" → the "ambe2" vocoder, so once
-// Stage 2 feeds 7-byte frames through rs.WriteRawFrame they render to
-// PCM with no further wiring). Kept structurally identical to
-// runP25Phase2VoiceChain so Stage 2 is a drop-in of the extractor.
+// ⚠️ UNVERIFIED ON AIR. The VCH carve + AMBE FEC + codebook are
+// transcribed from spec/reference and validated only by synthetic
+// round-trip (internal/radio/nxdn/voice_ambe.go, voice.go, traffic.go);
+// a real NXDN VCH capture is needed to confirm them. Treat live NXDN
+// audio as experimental until then.
 func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-nxdn:"+serial, nil)
@@ -69,37 +71,45 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 	bt := c.newBoundaryTracker(serial, 0, nil)
 	go bt.run(ctx)
 
-	c.log.Info("composer: nxdn voice chain started (stage 1: follow+tune; VCH decode is a follow-up)",
+	c.log.Info("composer: nxdn voice chain started (VCH decode is unverified on air — experimental)",
 		"serial", serial, "system", system, "group", groupID)
 
 	fe := newNXDNVoiceFrontEnd(iqHz, c.bw)
 	symbolHz := fe.OutRateHz()
 
 	rs, _ := c.sink.(rawFrameSink)
-
-	// extractVoiceFrames is the Stage 2 hook: the NXDN VCH voice
-	// channel-coding decoder (deinterleave + AMBE FEC → 7-byte AMBE+2
-	// payloads). Stage 1 ships an empty extractor so the chain exercises
-	// the receiver + lifecycle without yet producing audio.
-	extractVoiceFrames := func(dibits []uint8, baseIdx int) [][]byte { return nil }
+	ers, _ := c.sink.(errAwareRawSink)
 
 	var voiceFrames atomic.Uint64
+	// TrafficChannel carves the VCH voice frames out of each RFChTraffic
+	// frame and FEC-decodes their 49-bit AMBE+2 payloads. The sink packs
+	// each payload MSB-first to 7 bytes and writes it to the recorder,
+	// whose "ambe2-dmr" vocoder renders PCM (WriteRawFrameWithErrors when
+	// the sink is error-aware, so the FEC corrected-bit count drives the
+	// vocoder's adaptive smoothing — mirrors dmr_voice.go).
+	tc := nxdn.NewTrafficChannel(func(frames []nxdn.VCHFrame) {
+		for _, vf := range frames {
+			packed := framing.PackBitsMSB(vf.Payload)
+			voiceFrames.Add(1)
+			bt.onVoice(0)
+			var werr error
+			switch {
+			case ers != nil:
+				werr = ers.WriteRawFrameWithErrors(serial, packed, vf.Errors)
+			case rs != nil:
+				werr = rs.WriteRawFrame(serial, packed)
+			}
+			if werr != nil {
+				c.log.Warn("composer: nxdn raw-frame write failed", "serial", serial, "err", werr)
+			}
+		}
+	})
+
 	rx := nxdnrx.New(nxdnrx.Options{
 		SampleRateHz: symbolHz,
 		DeviationHz:  nxdnVoiceDeviationHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
-			for _, f := range extractVoiceFrames(dibits, baseIdx) {
-				if f == nil {
-					continue
-				}
-				voiceFrames.Add(1)
-				bt.onVoice(0)
-				if rs != nil {
-					if err := rs.WriteRawFrame(serial, f); err != nil {
-						c.log.Warn("composer: nxdn raw-frame write failed", "serial", serial, "err", err)
-					}
-				}
-			}
+			tc.Process(dibits, baseIdx)
 		},
 	})
 

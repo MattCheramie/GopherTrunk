@@ -338,7 +338,14 @@ func DefaultVocoderForProtocol() map[string]string {
 		"dmr-tier1":  "ambe2-dmr", // DMR Tier I direct-mode — AMBE+2 3600x2450
 		"dmr-tier2":  "ambe2-dmr", // DMR Tier II — AMBE+2 3600x2450
 		"dmr-tier3":  "ambe2-dmr", // DMR Tier III — AMBE+2 3600x2450
-		"nxdn":       "ambe2",
+		// NXDN VCH voice is AMBE+2 "Enhanced Half Rate" (3600x2450), the
+		// same codebook DMR uses — and the composer's NXDN voice chain
+		// FEC-decodes 49-bit frames with the 3600x2450 C0/C1 Golay +
+		// descramble (internal/radio/nxdn/voice_ambe.go), so it renders
+		// through the 3600x2450 decoder, not the 3600x2400 "ambe2".
+		// (Unverified on air — the 2450-vs-2400 codebook is one of the
+		// things an NXDN voice capture confirms; see voice_ambe.go.)
+		"nxdn":       "ambe2-dmr", // NXDN VCH — AMBE+2 3600x2450 (EHR)
 		"dpmr":       "ambe2",       // dPMR Mode 3 (digital)
 		"tetra":      "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
 	}
