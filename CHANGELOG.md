@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Conventional DMR / IPSC repeaters now report "site alive" from their idle
+  beacons.** On a `dmr-tier2` channel that parks on a fixed carrier with no
+  control channel, the periodic idle beacon a repeater emits between calls (a
+  CSBK Preamble / broadcast burst carrying valid sync + colour code but no
+  voice) is now recognised: a CRC-valid CSBK marks the site alive, is counted
+  in the wideband engine's per-channel diagnostics (`beacons`), and logs a
+  rate-limited status line — instead of being ignored or, worse, surfaced as a
+  decode error. Between-beacon noise on the parked channel stays silent. Groundwork
+  for conventional/IPSC monitoring (issue #1036).
 - **On-air call priority now reaches the webhook sinks.** The completed-call
   and grant `broadcast.webhook` payloads already carried the emergency flag but
   not the signalled priority level (the low 3 bits of the P25 / DMR Service
@@ -36,6 +45,15 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **macOS: RTL-SDR (R820T) dongles failed to open with "no supported tuner
+  detected."** On Apple silicon the tuner's first I²C-bridge burst write could
+  STALL the USB control pipe (IOKit `kIOUSBPipeStalled`, `kern_return
+  0xe000404f`); unlike the Linux (`EPIPE`) and Windows (`ERROR_GEN_FAILURE`)
+  backends, the macOS backend didn't recognise this as the recoverable stall it
+  is, so the existing R820T cold-boot burst-write retry never fired and tuner
+  init aborted — leaving a plainly-present dongle reported as having no tuner.
+  The macOS backend now maps the IOKit stall to the shared retry path, matching
+  the other platforms. (#1038)
 - **P25 Phase 2 grants could carry a garbage encryption Algorithm ID.** A
   bit-errored MAC Encryption Sync decodes to an Algorithm ID outside the
   TIA-102 registry; the control channel stored any decoded sync and attached
