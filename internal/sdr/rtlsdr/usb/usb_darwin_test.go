@@ -3,9 +3,40 @@
 package usb
 
 import (
+	"errors"
 	"testing"
 	"unsafe"
 )
+
+// TestTranslateIOReturn_PipeStalledMapsToErrPipeStalled pins the fix for
+// issue #1038: on macOS a NESDR/R820T tuner init failed with
+//
+//	tuner init: r82xx init: burst write: rtl2832u: I2CWrite addr=0x34:
+//	usb: DeviceRequest OUT: usb: IOKit kern_return 0xe000404f
+//
+// 0xe000404f is kIOUSBPipeStalled — the recoverable I²C-bridge STALL
+// that surfaces as syscall.EPIPE on Linux and ERROR_GEN_FAILURE on
+// Windows. The R820T cold-boot burst-write recovery (issue #248) keys
+// off usb.ErrPipeStalled via isI2CBurstStall, so translateIOReturn must
+// map the IOKit stall to that shared sentinel or the retry never fires
+// and tuner detection reports "no supported tuner detected". This is the
+// macOS analog of TestWinErr_GenFailureMapsToPipeStalled.
+func TestTranslateIOReturn_PipeStalledMapsToErrPipeStalled(t *testing.T) {
+	got := translateIOReturn(kIOUSBPipeStalled)
+	if !errors.Is(got, ErrPipeStalled) {
+		t.Fatalf("translateIOReturn(0x%08x) = %v, want errors.Is(err, ErrPipeStalled) so the R820T burst-write stall recovery fires on macOS", uint32(kIOUSBPipeStalled), got)
+	}
+}
+
+// TestKIOUSBPipeStalledValue guards the constant against a typo: the
+// value is Apple's iokit_usb_err(0x4f) and the whole fix hinges on it
+// exactly matching the kern_return the host controller returns.
+func TestKIOUSBPipeStalledValue(t *testing.T) {
+	const want = 0xE000404F // sys_iokit | sub_iokit_usb | 0x4f
+	if kIOUSBPipeStalled != want {
+		t.Fatalf("kIOUSBPipeStalled = 0x%08x, want 0x%08x", uint32(kIOUSBPipeStalled), uint32(want))
+	}
+}
 
 // These tests pin compile-time invariants (UUIDs, struct sizes,
 // vtable indices) that don't depend on IOKit actually loading at

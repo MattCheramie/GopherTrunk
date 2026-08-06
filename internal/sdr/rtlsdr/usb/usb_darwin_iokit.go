@@ -52,6 +52,19 @@ const (
 	kIOReturnTimeout       = 0xE00002D6
 	kIOReturnExclusive     = 0xE00002C5 // already opened by another process
 	kIOReturnNotResponding = 0xE00002ED
+
+	// kIOUSBPipeStalled is the USB-family IOReturn the host controller
+	// raises when the device STALLs a pipe — "pipe has stalled, error
+	// needs to be cleared". Value from IOKit/usb/IOUSBLib.h:
+	// iokit_usb_err(0x4f) = sys_iokit(0xE0000000) | sub_iokit_usb(0x4000)
+	// | 0x4f = 0xE000404F. This is the macOS analog of the recoverable
+	// I²C-bridge stall that surfaces as syscall.EPIPE on Linux and
+	// ERROR_GEN_FAILURE on Windows/WinUSB; translateIOReturn maps all
+	// three to usb.ErrPipeStalled so the R820T cold-boot burst-write
+	// recovery (issue #248) fires identically across the OS matrix
+	// (issue #1038: NESDR/R820T tuner-init failed on macOS because this
+	// stall fell through as a raw kern_return the retry couldn't match).
+	kIOUSBPipeStalled = 0xE000404F
 )
 
 // CFNumberType for CFNumberGetValue. Only kCFNumberSInt32Type is
@@ -326,6 +339,11 @@ func translateIOReturn(rc uintptr) error {
 		return ErrDeviceGone
 	case kIOReturnTimeout:
 		return ErrTimeout
+	case kIOUSBPipeStalled:
+		// Recoverable pipe STALL — same class as Linux EPIPE / Windows
+		// ERROR_GEN_FAILURE. Surfacing the shared sentinel lets the
+		// tuner burst-write retry (isI2CBurstStall) recover on macOS.
+		return ErrPipeStalled
 	case kIOReturnAborted:
 		return ErrBulkInactive
 	case kIOReturnExclusive:
