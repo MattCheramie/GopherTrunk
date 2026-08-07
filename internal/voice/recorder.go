@@ -345,9 +345,9 @@ func DefaultVocoderForProtocol() map[string]string {
 		// through the 3600x2450 decoder, not the 3600x2400 "ambe2".
 		// (Unverified on air — the 2450-vs-2400 codebook is one of the
 		// things an NXDN voice capture confirms; see voice_ambe.go.)
-		"nxdn":       "ambe2-dmr", // NXDN VCH — AMBE+2 3600x2450 (EHR)
-		"dpmr":       "ambe2",       // dPMR Mode 3 (digital)
-		"tetra":      "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
+		"nxdn":  "ambe2-dmr",   // NXDN VCH — AMBE+2 3600x2450 (EHR)
+		"dpmr":  "ambe2",       // dPMR Mode 3 (digital)
+		"tetra": "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
 	}
 }
 
