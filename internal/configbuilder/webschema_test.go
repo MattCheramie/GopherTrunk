@@ -39,8 +39,17 @@ var webRoundTripAllow = map[string][]string{
 	// through the SystemConfig index signature and the whole Sites array
 	// (each a SiteConfig) is preserved as unknown JSON. Editable in the TUI
 	// and raw YAML; a bespoke web editor is a follow-up.
-	"SystemConfig": {"Sites"},
+	"SystemConfig": {"Sites", "NXDNBandPlan"},
 	"SiteConfig":   {"RFSS", "Site", "Name"},
+
+	// NXDN channel→frequency band plan (WS2a). Required for NXDN voice
+	// grants (VCALL_ASSGN references a channel number, not a frequency).
+	// Round-trips through the SystemConfig index signature and is fully
+	// editable in the TUI and raw YAML; a bespoke web editor (mirroring
+	// the DMR band plan section) is a follow-up.
+	"NXDNBandPlanConfig":           {"Linear", "Table"},
+	"NXDNLinearBandPlanConfig":     {"BaseHz", "SpacingHz", "Offset"},
+	"NXDNBandPlanTableEntryConfig": {"Channel", "FreqHz"},
 
 	// Research/offline cryptolab crypto-frame capture path, and cross-site
 	// duplicate-recording suppression (recordings.dedup) — both round-trip via

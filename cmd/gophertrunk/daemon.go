@@ -838,6 +838,30 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			log.Warn("daemon: dmr Tier III system has no dmr_band_plan; voice grants will be dropped (no-bandplan)",
 				"system", sys.Name)
 		}
+		var nxdnBandPlan *trunking.NXDNBandPlan
+		if bp := sys.NXDNBandPlan; bp != nil {
+			nxdnBandPlan = &trunking.NXDNBandPlan{}
+			if bp.Linear != nil {
+				nxdnBandPlan.Linear = &trunking.NXDNLinearBandPlan{
+					BaseHz:    bp.Linear.BaseHz,
+					SpacingHz: bp.Linear.SpacingHz,
+					Offset:    bp.Linear.Offset,
+				}
+			}
+			for _, e := range bp.Table {
+				nxdnBandPlan.Table = append(nxdnBandPlan.Table, trunking.NXDNBandPlanTableEntry{
+					Channel: e.Channel,
+					FreqHz:  e.FreqHz,
+				})
+			}
+		} else if proto == trunking.ProtocolNXDN {
+			// NXDN VCALL_ASSGN grants reference channels by number;
+			// without a band plan the decoder cannot resolve a downlink
+			// frequency and every voice grant is dropped. CC monitoring
+			// still works, so warn rather than fail the load.
+			log.Warn("daemon: nxdn system has no nxdn_band_plan; voice grants will be dropped (no-bandplan)",
+				"system", sys.Name)
+		}
 		var sites []trunking.ConfiguredSite
 		for _, sc := range sys.Sites {
 			sites = append(sites, trunking.ConfiguredSite{RFSS: sc.RFSS, Site: sc.Site, Name: sc.Name})
@@ -864,6 +888,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Sites:                   sites,
 			P25BandPlan:             p25BandPlan,
 			DMRBandPlan:             dmrBandPlan,
+			NXDNBandPlan:            nxdnBandPlan,
 			DMRInterleavedVoice:     resolveDMRInterleavedVoice(proto, sys.DMRInterleavedVoice),
 			TETRAColourCode:         sys.TETRAColourCode,
 			TETRAChannel:            sys.TETRAChannel,

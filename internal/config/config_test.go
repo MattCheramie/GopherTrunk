@@ -116,6 +116,12 @@ func TestValidate(t *testing.T) {
 		{"dmr band_plan linear zero base", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Linear: &DMRLinearBandPlanConfig{BaseHz: 0, SpacingHz: 1}}}}}}, true},
 		{"dmr band_plan table zero freq", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 0}}}}}}}, true},
 		{"dmr band_plan table duplicate lcn", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 1}, {LCN: 1, FreqHz: 2}}}}}}}, true},
+		{"nxdn band_plan linear ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Linear: &NXDNLinearBandPlanConfig{BaseHz: 461_000_000, SpacingHz: 12_500, Offset: 1}}}}}}, false},
+		{"nxdn band_plan table ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Table: []NXDNBandPlanTableEntryConfig{{Channel: 1, FreqHz: 461_000_000}, {Channel: 2, FreqHz: 461_012_500}}}}}}}, false},
+		{"nxdn band_plan both linear and table", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Linear: &NXDNLinearBandPlanConfig{BaseHz: 1, SpacingHz: 1}, Table: []NXDNBandPlanTableEntryConfig{{Channel: 1, FreqHz: 1}}}}}}}, true},
+		{"nxdn band_plan empty", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{}}}}}, true},
+		{"nxdn band_plan linear zero spacing", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Linear: &NXDNLinearBandPlanConfig{BaseHz: 1, SpacingHz: 0}}}}}}, true},
+		{"nxdn band_plan table duplicate channel", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Table: []NXDNBandPlanTableEntryConfig{{Channel: 1, FreqHz: 1}, {Channel: 1, FreqHz: 2}}}}}}}, true},
 		// wideband role: pin a dongle to a centre frequency and list
 		// per-repeater carriers inside its IQ bandwidth. Stage 2 added
 		// DMR Tier II conventional; Stage 3 added DMR Tier III trunked
