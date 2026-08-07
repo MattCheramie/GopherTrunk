@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **DMR now auto-corrects a small residual tuner carrier offset.** The
+  narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
+  the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz
+  even a fraction of a ppm exceeds that. The receiver now runs the same coarse
+  AFC the P25 Phase 1 decoder already used (issue #275), recentring the symbol
+  eye, so a lightly-mistuned dongle (up to roughly ±2 ppm) decodes without
+  hand-setting `sdr.ppm`. Grossly-mistuned dongles still want a measured
+  `sdr.ppm`; automatic correction of large offsets is a follow-up.
 - **Conventional DMR / IPSC repeaters now report "site alive" from their idle
   beacons.** On a `dmr-tier2` channel that parks on a fixed carrier with no
   control channel, the periodic idle beacon a repeater emits between calls (a
