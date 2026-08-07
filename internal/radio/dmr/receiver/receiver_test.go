@@ -5,6 +5,118 @@ import (
 	"testing"
 )
 
+// dibitToSymbol is the inverse of SymbolToDibit — used by the test
+// modulator to turn a dibit stream back into C4FM symbol deviations.
+func dibitToSymbol(d uint8) int {
+	switch d {
+	case 0:
+		return +1
+	case 1:
+		return +3
+	case 2:
+		return -1
+	case 3:
+		return -3
+	}
+	return 0
+}
+
+// makeC4FMIQWithOffset modulates a dibit stream to 48 kHz / 10 sps C4FM
+// IQ (unfiltered NRFM, same shape as makePhaseRampIQ) and rotates the
+// whole buffer by a constant carrier offset in Hz — the exact impairment
+// an uncorrected tuner ppm error imposes (issue #836).
+func makeC4FMIQWithOffset(dibits []uint8, offsetHz float64) []complex64 {
+	const sampleRate = 48_000.0
+	const sps = 10
+	const deviation = 1944.0
+	iq := make([]complex64, len(dibits)*sps)
+	phase := 0.0
+	for i, d := range dibits {
+		dphi := 2 * math.Pi * float64(dibitToSymbol(d)) * deviation / 3.0 / sampleRate
+		base := i * sps
+		for k := 0; k < sps; k++ {
+			iq[base+k] = complex(float32(math.Cos(phase)), float32(math.Sin(phase)))
+			phase += dphi
+		}
+	}
+	if offsetHz != 0 {
+		for n := range iq {
+			th := 2 * math.Pi * offsetHz * float64(n) / sampleRate
+			iq[n] *= complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		}
+	}
+	return iq
+}
+
+// balancedStream builds a deterministic, zero-mean dibit stream long
+// enough for the CoarseAFC to converge and be measured over a steady-state
+// tail.
+func balancedStream(n int) []uint8 {
+	// A period-4 walk visits every symbol equally (mean 0) and a
+	// period-7 twist breaks the trivial repetition so the comparison
+	// exercises all four decision regions rather than one steady rail.
+	out := make([]uint8, n)
+	for i := range out {
+		out[i] = uint8((i%4 + i/7) % 4)
+	}
+	return out
+}
+
+// decodeDibits runs one IQ buffer through a DeviationHz-calibrated DMR
+// receiver and returns the recovered dibit stream.
+func decodeDibits(iq []complex64) []uint8 {
+	var got []uint8
+	r := New(Options{
+		SampleRateHz: 48_000,
+		DeviationHz:  1944.0,
+		DibitSink:    func(dibits []uint8, baseIdx int) { got = append(got, dibits...) },
+	})
+	r.Process(iq)
+	return got
+}
+
+// TestReceiverIsCarrierOffsetInvariant pins issue #836: a narrowband DMR
+// C4FM signal carrying an uncorrected tuner carrier offset far beyond the
+// slicer's ~±75 Hz tolerance must decode to the SAME dibit stream as the
+// zero-offset signal, because the receiver's CoarseAFC removes the
+// offset's constant DC bias from the symbols before the slicer sees them.
+// The offset is the only difference between the two inputs, so after the
+// AFC converges the two recovered streams must agree. Without the AFC the
+// shifted 4-level eye mis-slices and the streams diverge (verified
+// failing-first by disabling the AFC stage: agreement collapses ~0.99 →
+// ~0.79 at this offset).
+func TestReceiverIsCarrierOffsetInvariant(t *testing.T) {
+	const offsetHz = 400.0 // >5× the ~±75 Hz decode cliff
+	stream := balancedStream(600)
+
+	ref := decodeDibits(makeC4FMIQWithOffset(stream, 0))
+	off := decodeDibits(makeC4FMIQWithOffset(stream, offsetHz))
+
+	n := len(ref)
+	if len(off) < n {
+		n = len(off)
+	}
+	// Skip a warm-up region so the measurement is over the AFC's
+	// steady state, not its convergence transient.
+	const warmup = 250
+	if n <= warmup {
+		t.Fatalf("recovered only %d dibits, need > %d", n, warmup)
+	}
+	agree := 0
+	for i := warmup; i < n; i++ {
+		if ref[i] == off[i] {
+			agree++
+		}
+	}
+	frac := float64(agree) / float64(n-warmup)
+	// With the AFC on this sits ~0.99; disabling it drops it to ~0.79
+	// (the shifted eye mis-slices). 0.95 cleanly separates the two while
+	// leaving margin for the coarse AFC's small steady-state residual.
+	if frac < 0.95 {
+		t.Fatalf("offset-vs-baseline dibit agreement = %.3f over %d symbols, want >=0.95 — CoarseAFC should make decode invariant to a %.0f Hz carrier offset (issue #836)", frac, n-warmup, offsetHz)
+	}
+}
+
 func TestReceiverConstructsAndProcessesSilence(t *testing.T) {
 	r := New(Options{
 		SampleRateHz: 48_000,

@@ -98,6 +98,7 @@ type Receiver struct {
 	fm        *demod.FM
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
+	afc       *demod.CoarseAFC
 	agc       c4fmSymbolAGC
 	dibitSink dmr.DibitSink
 	dibitBase int
@@ -145,10 +146,40 @@ func New(opts Options) *Receiver {
 		slicerScale = 2.0 * math.Pi * opts.DeviationHz / opts.SampleRateHz
 	}
 
+	// Coarse carrier-offset correction (issue #836). An uncorrected tuner
+	// ppm error leaves the FM discriminator as a constant DC bias that
+	// slides the 4-level eye off the slicer's fixed thresholds; the
+	// narrowband DMR demod tolerates only ~±75 Hz before decode collapses.
+	// CoarseAFC tracks and subtracts that bias, recentring the eye — the
+	// same primitive the P25 Phase 1 C4FM receiver runs (issue #275), which
+	// DMR was the one 4800-baud C4FM receiver to skip.
+	//
+	// Unlike P25, DMR applies the correction on the recovered SYMBOL stream
+	// (post-clock, pre-slicer), not on the pre-clock matched-filter stream.
+	// The offset's DC bias is present identically in both domains, but the
+	// coarse open-loop estimate wanders by a few Hz as it chases the data
+	// mean, and feeding that time-varying bias into the Mueller-Müller
+	// timing loop destabilises symbol timing on a clean signal (verified:
+	// it drove synthetic-decode sync to zero). Correcting on the symbols
+	// recentres the eye for the fixed-threshold slicer while leaving the
+	// timing loop's input untouched. That keeps large offsets (where the
+	// clock itself needs help) bounded to the timing loop's own pull-in
+	// range — a P25-style before-clock/freeze stage is the follow-up for
+	// grossly-mistuned dongles, which still want sdr.ppm today.
+	//
+	// sps=1: the symbol stream is one sample per symbol, so the 64-symbol
+	// time constant is NewCoarseAFC(1). Allocated only on the calibrated
+	// DeviationHz>0 path so legacy pre-scaled fixtures stay byte-identical.
+	var afc *demod.CoarseAFC
+	if opts.DeviationHz > 0 {
+		afc = demod.NewCoarseAFC(1)
+	}
+
 	return &Receiver{
 		fm:    demod.NewFM(),
 		mf:    demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
 		clock: sync.NewMuellerMuller(sps, gain),
+		afc:   afc,
 		// Symbol-AGC bridges the level mismatch between the unit-energy
 		// RRC matched filter and the 4-level slicer's fixed thresholds.
 		// The RRC has a DC gain of ~3.1 (it is normalised to unit
@@ -192,6 +223,16 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
+	// Subtract the residual carrier-offset DC bias from the recovered
+	// symbols before slicing, so a real tuner's frequency error doesn't
+	// shift the 4-level eye off the slicer's fixed thresholds and stop the
+	// decode (issue #836). Applied here (post-clock) rather than before the
+	// timing loop so its small, data-driven wander can't destabilise symbol
+	// timing; nil (no-op) on the legacy DeviationHz<=0 path. Runs before the
+	// AGC so the level normalisation sees a centred eye.
+	if r.afc != nil {
+		r.afc.Process(r.symbols)
+	}
 	// Normalise the symbol level to the slicer's expected scale before
 	// slicing, so the unit-energy matched filter's ~3.1× DC gain doesn't
 	// push the 4-level eye past the slicer's fixed thresholds (no-op on
@@ -216,6 +257,9 @@ func (r *Receiver) Process(iq []complex64) {
 func (r *Receiver) Reset() {
 	r.dibitBase = 0
 	r.agc.reset()
+	if r.afc != nil {
+		r.afc.Reset()
+	}
 }
 
 // c4fmSymbolAGC tracks a running estimate of mean|x| over the
