@@ -146,6 +146,74 @@ func TestAutoRecordDDCTapMetadata(t *testing.T) {
 	}
 }
 
+// TestAutoRecordSameSecondCapturesDoNotOverwrite pins that two captures triggered
+// within the same wall-clock second get distinct files. autoRecordFilename stamps
+// the name to 1-second resolution, and autoRecordMaxInFlight allows concurrent
+// captures by design, so before the per-capture path reservation two same-second
+// triggers built the identical <system>_<ts>_<reason>_<freq>_<rate>hz.cs16 name
+// and the second os.Create truncated/raced the first — the operator's observed
+// "two captures, same path" overwrite.
+func TestAutoRecordSameSecondCapturesDoNotOverwrite(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "iq", "auto")
+	cfg := config.BasebandAutoRecordConfig{
+		Enabled: true, Dir: dir, Seconds: 1, Format: "cs16", Tap: "ddc",
+	}
+	a := newIQAutoRecorder(cfg, "250_013", "tetra", "AIRSPY", nil, nil, nil)
+	if a == nil {
+		t.Fatal("newIQAutoRecorder returned nil")
+	}
+
+	// Stub the actuation: record each path handed to a capture and write a couple
+	// of bytes there, so a collision manifests as one file instead of two.
+	var mu sync.Mutex
+	var paths []string
+	a.capture = func(_ context.Context, path string, _ siglab.SampleFormat, _ int) (int64, uint64, error) {
+		mu.Lock()
+		paths = append(paths, path)
+		mu.Unlock()
+		if err := os.WriteFile(path, []byte("iq"), 0o644); err != nil {
+			return 0, 0, err
+		}
+		return 1, 0, nil
+	}
+
+	// Both triggers land in the same UTC second (the reported collision second).
+	at := time.Date(2026, 8, 7, 10, 9, 23, 0, time.UTC)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.runCapture(context.Background(), "concurrent", "250_013", "tetra", at)
+		}()
+	}
+	wg.Wait()
+
+	mu.Lock()
+	got := append([]string(nil), paths...)
+	mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 capture invocations, got %d", len(got))
+	}
+	if got[0] == got[1] {
+		t.Fatalf("both captures wrote the same path %q — they overwrite each other", got[0])
+	}
+
+	var cs16 int
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".cs16") {
+			cs16++
+		}
+	}
+	if cs16 != 2 {
+		t.Fatalf("found %d .cs16 files, want 2 — same-second captures overwrote each other", cs16)
+	}
+}
+
 // fakeClock is a manually-advanced clock for deterministic cooldown tests.
 type fakeClock struct {
 	mu sync.Mutex
