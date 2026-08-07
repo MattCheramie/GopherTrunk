@@ -1450,6 +1450,14 @@ type SystemConfig struct {
 	// protocols.
 	TETRAChannelCoding string `yaml:"tetra_channel_coding"`
 
+	// TETRAStatusIntervalSecs sets how often (seconds) the throttled
+	// "tetra: decode status" DEBUG line is emitted, and therefore the
+	// window its per-interval counters (sb_bursts, bsch_ok/fail,
+	// sysinfo, sch_pdus/sch_pdus_fail, grants) accumulate over. 0 or
+	// unset ⇒ the 5 s default. Debug-only diagnostics; has no effect
+	// unless the log level is debug. Ignored for non-TETRA protocols.
+	TETRAStatusIntervalSecs float64 `yaml:"tetra_status_interval_secs"`
+
 	// LTRFCSMode enables the CRC-7 FCS check on the LTR Status
 	// Ingest path. Recognised values: "" / "on" / "true" / "1"
 	// (the new default — drop Status words whose FCS trailer

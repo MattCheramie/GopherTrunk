@@ -383,6 +383,11 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 				if sb.MCC != 0 {
 					ls.MCC, ls.MNC = sb.MCC, sb.MNC
 				}
+				// Count a SYSINFO decoded off the sync-burst BNCH as a byte-aligned
+				// L3 System Broadcast. On real air this rarely matches (real BNCH
+				// SYSINFO is a bit-packed MAC PDU counted via learnSysInfo instead),
+				// but it keeps the sync-burst decode-health signal for fixtures that
+				// carry it and adds nothing spurious on air.
 				c.addStat(&c.stats.SysInfo, 1)
 			}
 			if c.fecObserver != nil {
@@ -560,7 +565,10 @@ func (c *ControlChannel) dispatchSlice(slice []uint8, mode ChannelCodingMode, ch
 	}
 	if len(info) >= 1 {
 		if pdu, err := ParsePDU(info); err == nil {
-			c.addStat(&c.stats.SCHPDUs, 1)
+			// SCHPDUs is now counted on the real NCDB path (decodeDownlinkSlot),
+			// not here: this legacy fixed-slice slice only decodes the synthetic
+			// in-package fixtures (a block placed contiguously after the training
+			// sequence), never a real NCDB burst, so counting it reported 0 on air.
 			c.Ingest(pdu)
 		}
 	}

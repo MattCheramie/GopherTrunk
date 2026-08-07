@@ -211,29 +211,90 @@ func TestSyncBurstDebugLines(t *testing.T) {
 	})
 }
 
-// TestDrainStatsCountsSCHPDU confirms the SCHPDUs counter tracks signalling
-// PDUs recovered off the normal-sync path (dispatchSlice), the other decode
-// route alongside the synchronisation burst.
-func TestDrainStatsCountsSCHPDU(t *testing.T) {
+// buildNCDBStream assembles one Normal Continuous Downlink Burst as a hard dibit
+// stream with the real on-air geometry: BKN1 look-back headroom, BKN1(108),
+// AACH-half-1(7), the normal training sequence, AACH-half-2(8), BKN2(108), then a
+// look-ahead tail. Mirrors the layout in TestProcessDecodesGrantFromNCDB and the
+// ndb* geometry constants. aach1/aach2 may be nil (left as fill, so the AACH does
+// not decode and the slot falls back to trying all rotations).
+func buildNCDBStream(bkn1, aach1, aach2, bkn2 []uint8) []uint8 {
+	if aach1 == nil {
+		aach1 = make([]uint8, ndbAACH1Len)
+	}
+	if aach2 == nil {
+		aach2 = make([]uint8, ndbAACH2Len)
+	}
+	var s []uint8
+	s = append(s, make([]uint8, 24)...) // priming / BKN1 look-back headroom
+	s = append(s, bkn1...)
+	s = append(s, aach1...)
+	s = append(s, NormalSyncDibits()...)
+	s = append(s, aach2...)
+	s = append(s, bkn2...)
+	s = append(s, make([]uint8, 8)...) // look-ahead tail
+	return s
+}
+
+// TestDrainStatsCountsSCHPDUFromNCDB confirms SCHPDUs tracks CRC-clean signalling
+// blocks recovered off a *real* NCDB slot (the decodeDownlinkSlot path), not the
+// legacy fixed-slice dispatchSlice path — which never fired on air and left the
+// counter stuck at 0. Fail-first: before SCHPDUs was re-homed onto the NCDB path
+// this stayed 0.
+func TestDrainStatsCountsSCHPDUFromNCDB(t *testing.T) {
+	const colour = 0x1234
 	cc, bus := debugCC(t, io.Discard, slog.LevelDebug)
 	defer bus.Close()
-	cc.SetExpectedChannel(ChannelSCHHD)
-	cc.SetColourCode(0x12345)
+	cc.SetColourCode(colour)
 
-	pdu := PDU{Disc: DiscMLE, Type: uint8(MLESystemInfo), Payload: []byte{0x00, 0x40, 0x00, 0x00, 0x00}}
-	info := pduToType1Bits(pdu, 124)
-	if info == nil {
-		t.Fatal("PDU too large for SCH/HD 124 type-1 bits")
-	}
-	dibits := TetraBitsToDibits(EncodeSCHHD(info, 0x12345))
-
-	stream := make([]uint8, 30)
-	stream = append(stream, NormalSyncDibits()...)
-	stream = append(stream, dibits...)
-	cc.Process(stream, 0)
+	// A real MAC-RESOURCE SCH/F type-1 payload (same capture as
+	// TestProcessDecodesGrantFromNCDB) laid into BKN1+BKN2.
+	info := hexToBits(t, "20760f572c3c83d538c90a1fe305009e0f92813c83d538c91e1fe301304a1eae5880")[:268]
+	dibits := TetraBitsToDibits(EncodeSCHF(info, colour)) // 216 dibits
+	cc.Process(buildNCDBStream(dibits[:108], nil, nil, dibits[108:]), 0)
 
 	if got := cc.DrainStats(); got.SCHPDUs < 1 {
-		t.Errorf("SCHPDUs = %d, want >= 1 (normal-sync SCH/HD PDU)", got.SCHPDUs)
+		t.Errorf("SCHPDUs = %d, want >= 1 (CRC-clean SCH/F off a real NCDB slot)", got.SCHPDUs)
+	}
+}
+
+// TestDrainStatsCountsSCHPDUFail confirms SCHPDUsFail counts an AACH-confirmed
+// control slot that yields no CRC-clean SCH block — a real signalling-payload
+// decode failure — while leaving SCHPDUs at 0. The AACH decodes as common control
+// (Header 0), but the BKN blocks are fill, so neither SCH/F nor SCH/HD passes CRC.
+func TestDrainStatsCountsSCHPDUFail(t *testing.T) {
+	const colour = 0x1234
+	cc, bus := debugCC(t, io.Discard, slog.LevelDebug)
+	defer bus.Close()
+	cc.SetColourCode(colour)
+
+	// A valid ACCESS-ASSIGN whose header (0) marks the downlink as common control.
+	aachDibits := TetraBitsToDibits(EncodeAACH(make([]byte, 14), colour)) // 15 dibits
+	aach1, aach2 := aachDibits[:ndbAACH1Len], aachDibits[ndbAACH1Len:]
+	// Fill BKN blocks so no SCH/F or SCH/HD decodes CRC-clean.
+	bkn1, bkn2 := make([]uint8, ndbBlockDibits), make([]uint8, ndbBlockDibits)
+	cc.Process(buildNCDBStream(bkn1, aach1, aach2, bkn2), 0)
+
+	got := cc.DrainStats()
+	if got.SCHPDUsFail < 1 {
+		t.Errorf("SCHPDUsFail = %d, want >= 1 (control slot with no CRC-clean SCH block)", got.SCHPDUsFail)
+	}
+	if got.SCHPDUs != 0 {
+		t.Errorf("SCHPDUs = %d, want 0 (no block should have decoded)", got.SCHPDUs)
+	}
+}
+
+// TestDrainStatsCountsSysInfo confirms SysInfo counts SYSINFO MAC broadcast PDUs
+// decoded off the real NCDB/MAC path (learnSysInfo), not the byte-aligned L3
+// AsSystemBroadcast gate that rarely matched real bit-packed MAC SYSINFO and left
+// the counter at 0 on air. Fail-first: before the re-home this stayed 0.
+func TestDrainStatsCountsSysInfo(t *testing.T) {
+	cc, bus := debugCC(t, io.Discard, slog.LevelDebug)
+	defer bus.Close()
+	// A real recovered SYSINFO MAC broadcast (same capture as
+	// TestGrantPublishesResolvedFrequency).
+	cc.ingestMAC(hexToBits(t, "8a9c4c0e928eec8bd0c0041cffffd700"))
+	if got := cc.DrainStats(); got.SysInfo < 1 {
+		t.Errorf("SysInfo = %d, want >= 1 (SYSINFO MAC broadcast via learnSysInfo)", got.SysInfo)
 	}
 }
 
