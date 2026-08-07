@@ -82,16 +82,30 @@ const TrafficFrameBytes = (2 * ndbBlockDibits * 2) / 8 // 54
 // look-ahead to BKN2 around each detected normal training sequence.
 //
 // Not safe for concurrent use; construct one per followed call.
+// pendingHit is one training-sequence detection awaiting enough look-ahead to
+// emit: its leading dibit index L and whether it matched the *second* normal
+// training sequence (NTS2) — the on-air flag for a stolen half-slot (STCH).
+type pendingHit struct {
+	L      int
+	stolen bool
+}
+
 type TrafficExtractor struct {
 	dets       []*SyncDetector // NTS1 + NTS2, each under all four constellation rotations
+	detStolen  []bool          // parallel to dets: true for the NTS2 (stolen-slot) detectors
 	stsDets    []*SyncDetector // synchronisation training sequence, all four rotations (slot-1 anchor)
 	scratch    []int
 	stsScratch []int
 	buf        []uint8
 	bufBase    int
-	pending    []int // training-sequence leading indices awaiting look-ahead
+	pending    []pendingHit // training-sequence hits awaiting look-ahead
 	colourCode uint32
 	onBurst    func(frame []byte, softType5 []float32, slot, usage uint8)
+
+	// stolenBursts counts emitted bursts whose training sequence was NTS2 — a
+	// stolen half-slot (STCH) carrying urgent signalling in place of speech.
+	// Telemetry only; touched solely on the Process goroutine (see StolenBursts).
+	stolenBursts uint64
 
 	// softBuf holds the per-dibit complex differentials (the receiver's soft
 	// info) strictly parallel to buf, so emit can build a soft-decision type-5
@@ -154,9 +168,10 @@ func NewTrafficExtractor(colourCode uint32, onBurst func(frame []byte, softType5
 	// π/4-DQPSK leaves a constant 0..3 dibit rotation (residual CFO), so
 	// correlate the training sequence under all four rotations of the
 	// pattern — the same trick processSB uses for the sync burst.
-	for _, base := range [][]uint8{NormalSyncDibits(), NormalSyncDibits2()} {
+	for bi, base := range [][]uint8{NormalSyncDibits(), NormalSyncDibits2()} {
 		for r := uint8(0); r < 4; r++ {
 			te.dets = append(te.dets, NewSyncDetector(rotateDibits(base, r), 2))
+			te.detStolen = append(te.detStolen, bi == 1) // NTS2 ⇒ stolen half-slot
 		}
 	}
 	// Synchronisation-training-sequence detectors (all four rotations) pin
@@ -215,44 +230,51 @@ func (te *TrafficExtractor) Process(dibits []uint8, baseIdx int) {
 	}
 
 	ntsLen := len(NormalSyncDibits()) // 11
-	for _, det := range te.dets {
+	for di, det := range te.dets {
 		var hits []int
 		hits, _ = det.Process(te.scratch[:0], dibits, baseIdx)
+		stolen := te.detStolen[di]
 		for _, trailing := range hits {
 			L := trailing - (ntsLen - 1)
 			dup := false
-			for _, q := range te.pending {
-				if q == L {
+			for i := range te.pending {
+				if te.pending[i].L == L {
 					dup = true
+					// A stolen (NTS2) match on an L already pending as NTS1 wins:
+					// the same burst can correlate weakly under the other sequence,
+					// but the stolen flag is the decision that matters downstream.
+					if stolen {
+						te.pending[i].stolen = true
+					}
 					break
 				}
 			}
 			if !dup {
-				te.pending = append(te.pending, L)
+				te.pending = append(te.pending, pendingHit{L: L, stolen: stolen})
 			}
 		}
 	}
 
 	bufEnd := te.bufBase + len(te.buf)
-	kept := make([]int, 0, len(te.pending))
-	for _, L := range te.pending {
-		needStart := L + ndbBKN1Start
-		needEnd := L + ndbBKN2Start + ndbBlockDibits
+	kept := make([]pendingHit, 0, len(te.pending))
+	for _, p := range te.pending {
+		needStart := p.L + ndbBKN1Start
+		needEnd := p.L + ndbBKN2Start + ndbBlockDibits
 		if needStart < te.bufBase {
 			continue // look-back already trimmed; give up on this hit
 		}
 		if needEnd > bufEnd {
-			kept = append(kept, L) // not enough look-ahead yet
+			kept = append(kept, p) // not enough look-ahead yet
 			continue
 		}
-		te.emit(L)
+		te.emit(p.L, p.stolen)
 	}
 	te.pending = kept
 
 	// Trim, keeping the trailing margin plus any unresolved hit's look-back.
 	keepFrom := bufEnd - ndbTrimMargin
-	for _, L := range te.pending {
-		if ns := L + ndbBKN1Start; ns < keepFrom {
+	for _, p := range te.pending {
+		if ns := p.L + ndbBKN1Start; ns < keepFrom {
 			keepFrom = ns
 		}
 	}
@@ -336,10 +358,20 @@ func (te *TrafficExtractor) StashSymbols(syms []complex64, baseIdx int) {
 	te.pendingSymBase = baseIdx
 }
 
+// StolenBursts returns the cumulative count of emitted bursts whose training
+// sequence was NTS2 — the on-air flag for a stolen half-slot (STCH) carrying
+// urgent signalling in place of speech (ETSI EN 300 392-2). Telemetry for the
+// composer's voice-path summary; single-goroutine (mutated only under Process),
+// so read it after the IQ stream has ended.
+func (te *TrafficExtractor) StolenBursts() uint64 { return te.stolenBursts }
+
 // emit slices BKN1 and BKN2 around the training sequence leading at L and
 // forwards the concatenated raw type-5 frame, tagged with the burst's TDMA slot
-// and its AACH downlink usage marker.
-func (te *TrafficExtractor) emit(L int) {
+// and its AACH downlink usage marker. stolen marks an NTS2 (STCH) burst.
+func (te *TrafficExtractor) emit(L int, stolen bool) {
+	if stolen {
+		te.stolenBursts++
+	}
 	block := func(off int) []uint8 {
 		s := L + off - te.bufBase
 		return te.buf[s : s+ndbBlockDibits]

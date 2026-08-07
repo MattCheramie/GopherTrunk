@@ -869,6 +869,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			TETRAChannel:            sys.TETRAChannel,
 			TETRAChannelCoding:      sys.TETRAChannelCoding,
 			TETRAClockMode:          sys.TETRAClockMode,
+			TETRAStatusIntervalSecs: sys.TETRAStatusIntervalSecs,
 			LTRFCSMode:              sys.LTRFCSMode,
 			LTRManchesterMode:       sys.LTRManchesterMode,
 			P25Phase1DemodMode:      sys.P25Phase1DemodMode,

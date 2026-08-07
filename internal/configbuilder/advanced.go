@@ -13,6 +13,7 @@ var AdvancedFields = map[string][]string{
 	"SystemConfig": {
 		// TETRA
 		"TETRAColourCode", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode",
+		"TETRAStatusIntervalSecs",
 		// LTR
 		"LTRFCSMode", "LTRManchesterMode",
 		// P25 Phase 1

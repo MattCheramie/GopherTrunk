@@ -659,13 +659,21 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// voice receivers; it must not disturb steady-state CC decode.
 		EnableEqualizer: true,
 	})
+	// Emission cadence of the decode-status line, operator-configurable via
+	// tetra_status_interval_secs; falls back to the 5 s default when unset or
+	// non-positive.
+	statusInterval := tetraStatusInterval
+	if s := opts.System.TETRAStatusIntervalSecs; s > 0 {
+		statusInterval = time.Duration(s * float64(time.Second))
+	}
 	return &tetraPipeline{
-		rx:     rx,
-		cc:     cc,
-		log:    opts.Log,
-		system: opts.SystemName,
-		rateHz: opts.SampleRateHz,
-		now:    time.Now,
+		rx:             rx,
+		cc:             cc,
+		log:            opts.Log,
+		system:         opts.SystemName,
+		rateHz:         opts.SampleRateHz,
+		now:            time.Now,
+		statusInterval: statusInterval,
 		// Gate the periodic decode-status line on debug once, up front, so a
 		// production (info-level) decode does no per-chunk clock reads. The
 		// control channel gates its own counter accumulation the same way.
@@ -673,10 +681,11 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	}, nil
 }
 
-// tetraStatusInterval throttles the aggregate "tetra: decode status" debug
-// line so a long capture emits a compact health summary a few times a minute
-// rather than once per IQ chunk. Mirrors the ~1 s AFC-status throttle in
-// decoder.go.
+// tetraStatusInterval is the DEFAULT throttle for the aggregate "tetra: decode
+// status" debug line so a long capture emits a compact health summary a few
+// times a minute rather than once per IQ chunk. Mirrors the ~1 s AFC-status
+// throttle in decoder.go. Operators can override the cadence per system via
+// tetra_status_interval_secs (see newTETRAPipeline / tetraPipeline.statusInterval).
 const tetraStatusInterval = 5 * time.Second
 
 // tetraLockStaleTimeout is how long a locked TETRA control channel may decode
@@ -724,15 +733,16 @@ const (
 const tetraResyncTimeout = 1500 * time.Millisecond
 
 type tetraPipeline struct {
-	rx        *tetrarx.Receiver
-	cc        *tetra.ControlChannel
-	log       *slog.Logger
-	system    string
-	debug     bool
-	rateHz    float64          // post-DDC channel rate; converts the resync window into a sample budget
-	now       func() time.Time // injectable for tests; set to time.Now at construction
-	lastLog   time.Time        // wall clock of the previous status line (zero ⇒ not primed)
-	lastStale time.Time        // wall clock of the previous lock-staleness check
+	rx             *tetrarx.Receiver
+	cc             *tetra.ControlChannel
+	log            *slog.Logger
+	system         string
+	debug          bool
+	rateHz         float64          // post-DDC channel rate; converts the resync window into a sample budget
+	now            func() time.Time // injectable for tests; set to time.Now at construction
+	statusInterval time.Duration    // decode-status emission cadence (tetra_status_interval_secs; default 5 s)
+	lastLog        time.Time        // wall clock of the previous status line (zero ⇒ not primed)
+	lastStale      time.Time        // wall clock of the previous lock-staleness check
 	// Signal-time DSP-resync trigger: the receiver must PROCESS a full
 	// tetraResyncTimeout-worth of post-DDC samples with no CRC-clean CC decode
 	// before a destructive reset-to-centre is allowed. Counting processed signal
@@ -850,7 +860,7 @@ func (p *tetraPipeline) maybeLogStatus() {
 		return
 	}
 	elapsed := now.Sub(p.lastLog)
-	if elapsed < tetraStatusInterval {
+	if elapsed < p.statusInterval {
 		return
 	}
 	p.lastLog = now
@@ -868,6 +878,7 @@ func (p *tetraPipeline) maybeLogStatus() {
 		"bsch_fail", st.BSCHFail,
 		"sysinfo", st.SysInfo,
 		"sch_pdus", st.SCHPDUs,
+		"sch_pdus_fail", st.SCHPDUsFail,
 		"grants", st.Grants,
 		"colour_code", p.cc.Topology().ColourCode&0x3F,
 	)

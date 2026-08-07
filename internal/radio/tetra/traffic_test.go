@@ -59,6 +59,38 @@ func TestTrafficExtractorSingleBurst(t *testing.T) {
 // non-zero colour code the emitted frame is the raw type-5 bits descrambled
 // with the cell's extended colour code — the input the TCH/S channel decoder
 // expects — not the still-scrambled bits.
+// TestTrafficExtractorStolenBurst confirms StolenBursts counts a burst whose
+// training sequence is NTS2 — the STCH stolen-half-slot flag — while a normal
+// NTS1 burst leaves the count at 0. Both still emit exactly one frame: the stolen
+// flag is telemetry only and must not change the extracted payload.
+func TestTrafficExtractorStolenBurst(t *testing.T) {
+	bkn1 := rampDibits(ndbBlockDibits, 0)
+	bkn2 := rampDibits(ndbBlockDibits, 2)
+
+	build := func(t *testing.T, nts []uint8) *TrafficExtractor {
+		t.Helper()
+		stream := make([]uint8, 600)
+		L := 200
+		copy(stream[L:], nts)
+		copy(stream[L+ndbBKN1Start:], bkn1)
+		copy(stream[L+ndbBKN2Start:], bkn2)
+		var n int
+		te := NewTrafficExtractor(0, func(_ []byte, _ []float32, _, _ uint8) { n++ })
+		te.Process(stream, 0)
+		if n != 1 {
+			t.Fatalf("emitted %d frames, want 1", n)
+		}
+		return te
+	}
+
+	if te := build(t, NormalSyncDibits2()); te.StolenBursts() != 1 {
+		t.Errorf("NTS2 (stolen) burst StolenBursts = %d, want 1", te.StolenBursts())
+	}
+	if te := build(t, NormalSyncDibits()); te.StolenBursts() != 0 {
+		t.Errorf("NTS1 (normal) burst StolenBursts = %d, want 0", te.StolenBursts())
+	}
+}
+
 func TestTrafficExtractorDescrambles(t *testing.T) {
 	bkn1 := rampDibits(ndbBlockDibits, 0)
 	bkn2 := rampDibits(ndbBlockDibits, 2)

@@ -75,9 +75,9 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 	symbolHz := fe.OutRateHz()
 
 	rs, _ := c.sink.(rawFrameSink)
-	var bursts, speech, offSlot atomic.Uint64
+	var bursts, speech, offSlot, bfi atomic.Uint64
 	extractor := tetra.NewTrafficExtractor(colourExt, func(frame []byte, softType5 []float32, slot, usage uint8) {
-		c.onTETRATrafficBurst(bt, rs, serial, frame, softType5, usage, usageMarker, &bursts, &speech, &offSlot)
+		c.onTETRATrafficBurst(bt, rs, serial, frame, softType5, usage, usageMarker, &bursts, &speech, &offSlot, &bfi)
 	})
 
 	rx := tetrarx.New(tetrarx.Options{
@@ -98,7 +98,9 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 
 	defer func() {
 		c.log.Info("composer: tetra voice follow ended",
-			"serial", serial, "bursts", bursts.Load(), "speech_frames", speech.Load(),
+			"serial", serial, "bursts", bursts.Load(),
+			"speech_frames", speech.Load(), "tch_frames", speech.Load(),
+			"stch_bursts", extractor.StolenBursts(), "bfi_count", bfi.Load(),
 			"other_call_bursts", offSlot.Load())
 	}()
 
@@ -187,7 +189,7 @@ func drainTETRAIQ(ch <-chan []complex64, process func([]complex64)) {
 // behave like every other protocol — the call ends hangtime after its last
 // decoded speech frame (or via the no-voice startup timeout when a grant never
 // decodes any speech).
-func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, softType5 []float32, burstUsage, grantUsage uint8, bursts, speech, offSlot *atomic.Uint64) {
+func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, softType5 []float32, burstUsage, grantUsage uint8, bursts, speech, offSlot, bfi *atomic.Uint64) {
 	bursts.Add(1)
 	// Drop bursts that carry a different call's AACH usage marker. Only when both
 	// markers are known (>= DLUsageTraffic) — an unknown marker on either side
@@ -196,7 +198,11 @@ func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, ser
 		offSlot.Add(1)
 		return
 	}
-	c.decodeTETRASpeech(bt, rs, serial, frame, softType5, speech)
+	// A burst accepted for this call that yields no speech is a Bad Frame
+	// Indication (corrupt/encrypted → concealment); count it.
+	if c.decodeTETRASpeech(bt, rs, serial, frame, softType5, speech) == 0 {
+		bfi.Add(1)
+	}
 }
 
 // decodeTETRASpeech TCH/S-decodes one traffic frame for an owning call: it
@@ -205,7 +211,10 @@ func (c *Composer) onTETRATrafficBurst(bt *boundaryTracker, rs rawFrameSink, ser
 // `.raw` sidecar (the ACELP vocoder renders it to PCM downstream). A non-TCH/S
 // burst (signalling, encrypted, or corrupt) yields no frames and does not touch
 // liveness. Shared by the solo traffic tap and the same-carrier slot demux.
-func (c *Composer) decodeTETRASpeech(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, softType5 []float32, speech *atomic.Uint64) {
+// Returns the number of CRC-valid 137-bit speech frames recovered: 0 for a burst
+// that yielded no speech (a Bad Frame Indication the callers count toward
+// bfi_count), a positive count for real speech (feeds tch_frames).
+func (c *Composer) decodeTETRASpeech(bt *boundaryTracker, rs rawFrameSink, serial string, frame []byte, softType5 []float32, speech *atomic.Uint64) int {
 	// Prefer soft-decision TCH/S when the extractor supplied the burst's LLRs:
 	// the soft Viterbi's ~2 dB coding gain recovers real speech bursts the
 	// hard-decision gate drops on a marginal same-carrier signal (the fix for
@@ -218,13 +227,15 @@ func (c *Composer) decodeTETRASpeech(bt *boundaryTracker, rs rawFrameSink, seria
 		frames = tetra.TCHSpeechFrames(frame)
 	}
 	if len(frames) == 0 {
-		// Not the granted call's speech — do NOT touch call liveness.
-		return
+		// Not the granted call's speech — do NOT touch call liveness. A burst
+		// routed to an owner that yields nothing here is a Bad Frame Indication
+		// (the caller counts it).
+		return 0
 	}
 	// CRC-valid speech: keep the call alive and reset the hangtime timer.
 	bt.onVoice(0)
 	if rs == nil {
-		return
+		return len(frames)
 	}
 	// Emit each recovered 137-bit speech frame to the recorder, which renders it
 	// with the ACELP vocoder and appends it to the `.raw` sidecar.
@@ -236,6 +247,7 @@ func (c *Composer) decodeTETRASpeech(bt *boundaryTracker, rs rawFrameSink, seria
 			c.log.Warn("composer: TETRA speech-frame write failed", "serial", serial, "err", err)
 		}
 	}
+	return len(frames)
 }
 
 // --- Shared per-carrier TETRA voice demultiplexer --------------------------
@@ -295,6 +307,15 @@ type tetraSlotDemux struct {
 	// another slot's speech into the sole recording bled calls together.
 	concurrencySuppressed atomic.Uint64
 
+	// Voice-path decode telemetry, aggregated across all owners on this carrier
+	// and logged at demux teardown (the voice analogue of the CC decode-status
+	// line). tchFrames = CRC-valid speech frames routed to the ACELP vocoder;
+	// bfiFrames = bursts routed to an owner that yielded no speech (Bad Frame
+	// Indication → concealment). Stolen-slot (STCH) bursts are counted by the
+	// TrafficExtractor and read from it directly at teardown.
+	tchFrames atomic.Uint64
+	bfiFrames atomic.Uint64
+
 	// slotRing is a sliding window of the physical TDMA slot (1..4) of recent
 	// traffic-marked bursts, used only to decide whether the carrier is currently
 	// running concurrent calls. Unlike the AACH usage marker (which decodes on a
@@ -350,7 +371,8 @@ type tetraDecodeJob struct {
 // from onVoice's (lastMatch/foreignRun/…), so the two goroutines do not race.
 type tetraSlotOwner struct {
 	serial         string
-	marker         uint8 // grant usage marker; 0 = wildcard until it claims one
+	marker         uint8           // grant usage marker; 0 = wildcard until it claims one
+	d              *tetraSlotDemux // owning carrier demux, for aggregate voice telemetry (nil in the solo tap)
 	bt             *boundaryTracker
 	rs             rawFrameSink
 	bursts, speech atomic.Uint64
@@ -378,6 +400,23 @@ func (o *tetraSlotOwner) enqueue(frame []byte, softType5 []float32) {
 	}
 }
 
+// decode runs one queued burst through decodeTETRASpeech and folds the outcome
+// into the carrier demux's aggregate voice telemetry: CRC-valid speech frames
+// into tch_frames, a burst that yielded no speech into bfi_count (a Bad Frame
+// Indication — this burst was routed to the owner as its slot but could not be
+// turned into speech, so it is concealed).
+func (o *tetraSlotOwner) decode(c *Composer, job tetraDecodeJob) {
+	n := c.decodeTETRASpeech(o.bt, o.rs, o.serial, job.frame, job.softType5, &o.speech)
+	if o.d == nil {
+		return
+	}
+	if n > 0 {
+		o.d.tchFrames.Add(uint64(n))
+	} else {
+		o.d.bfiFrames.Add(1)
+	}
+}
+
 // tetraOwnerWorker is the single per-owner goroutine that runs the CPU-heavy
 // TCH/S channel decode + ACELP synthesis for one call, off the shared demux
 // goroutine. On ctx cancel (call end) it drains whatever bursts are already
@@ -390,13 +429,13 @@ func (c *Composer) tetraOwnerWorker(ctx context.Context, o *tetraSlotOwner) {
 			for {
 				select {
 				case job := <-o.jobs:
-					c.decodeTETRASpeech(o.bt, o.rs, o.serial, job.frame, job.softType5, &o.speech)
+					o.decode(c, job)
 				default:
 					return
 				}
 			}
 		case job := <-o.jobs:
-			c.decodeTETRASpeech(o.bt, o.rs, o.serial, job.frame, job.softType5, &o.speech)
+			o.decode(c, job)
 		}
 	}
 }
@@ -427,6 +466,9 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 		"key", d.key, "colour_code", d.colour&0x3F, "rate_hz", symbolHz)
 	defer func() {
 		d.c.log.Info("composer: tetra shared voice demux ended", "key", d.key,
+			"tch_frames", d.tchFrames.Load(),
+			"stch_bursts", extractor.StolenBursts(),
+			"bfi_count", d.bfiFrames.Load(),
 			"undecoded_drops", d.undecodedDrops.Load(),
 			"ownerless_drops", d.ownerlessDrops.Load(),
 			"crc_fallbacks", d.crcFallbacks.Load(),
@@ -643,7 +685,7 @@ func (c *Composer) runTETRASameCarrierChain(ctx context.Context, d *tetraSlotDem
 	rs, _ := c.sink.(rawFrameSink)
 
 	o := &tetraSlotOwner{
-		serial: serial, marker: usageMarker, bt: bt, rs: rs,
+		serial: serial, marker: usageMarker, d: d, bt: bt, rs: rs,
 		jobs: make(chan tetraDecodeJob, tetraVocoderQueueDepth),
 	}
 	// Start the vocoder worker BEFORE registering the owner, so a burst routed the

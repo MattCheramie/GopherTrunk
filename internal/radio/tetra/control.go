@@ -518,13 +518,14 @@ func (c *ControlChannel) Topology() TopologyConfig {
 // fields are cumulative counts over the drain window except Dibits, which is
 // the symbol count used to estimate the effective baud.
 type Stats struct {
-	Dibits   int64 // symbols (dibits) processed — effective-baud numerator
-	SBBursts int64 // synchronisation-burst candidates entering the SB decoder
-	BSCHOK   int64 // BSCH blocks recovered CRC-clean
-	BSCHFail int64 // SB candidates whose BSCH did not decode under any rotation
-	SysInfo  int64 // BNCH SYSINFO PDUs decoded off the synchronisation burst
-	SCHPDUs  int64 // signalling PDUs parsed off the normal-sync path
-	Grants   int64 // voice grants published
+	Dibits      int64 // symbols (dibits) processed — effective-baud numerator
+	SBBursts    int64 // synchronisation-burst candidates entering the SB decoder
+	BSCHOK      int64 // BSCH blocks recovered CRC-clean
+	BSCHFail    int64 // SB candidates whose BSCH did not decode under any rotation
+	SysInfo     int64 // SYSINFO PDUs decoded: sync-burst BNCH (L3) or downlink NCDB broadcast (MAC, the real-air path)
+	SCHPDUs     int64 // signalling channel (SCH/F, SCH/HD) blocks recovered CRC-clean off a real NCDB slot
+	SCHPDUsFail int64 // AACH-confirmed control slots that yielded no CRC-clean SCH block
+	Grants      int64 // voice grants published
 }
 
 // addStat adds n to a decode-health counter when debug telemetry is on. A
@@ -703,6 +704,11 @@ func (c *ControlChannel) learnSysInfo(si SysInfo) {
 	c.mainCarrier = si.MainCarrier
 	c.mainCarrierSet = true
 	c.mu.Unlock()
+	// Count every SYSINFO MAC broadcast we decode this window. This is the real
+	// on-air path (bit-packed MAC PDU via ParseSysInfo), unlike the byte-aligned
+	// L3 AsSystemBroadcast that the sync-burst BNCH rarely matches — so the
+	// decode-status line's sysinfo now moves on a locked carrier.
+	c.addStat(&c.stats.SysInfo, 1)
 	if first {
 		dl := tetraDLCarrierHz(si.FreqBand, si.MainCarrier, si.Offset)
 		ul, ulOK := tetraULCarrierHz(dl, si.FreqBand, si.DuplexSpacing, si.ReverseOper)

@@ -203,6 +203,11 @@ type System struct {
 	// Forwarded into tetra.ControlChannel.SetChannelCoding by the
 	// ccdecoder connector after parsing via tetra.ParseChannelCoding.
 	TETRAChannelCoding string
+	// TETRAStatusIntervalSecs sets the emission cadence (seconds) of the
+	// throttled "tetra: decode status" debug line — and thus the window
+	// its per-interval counters accumulate over. 0/unset ⇒ 5 s default.
+	// Consumed by newTETRAPipeline. Ignored for non-TETRA protocols.
+	TETRAStatusIntervalSecs float64
 
 	// LTRFCSMode enables CRC-7 FCS verification on the LTR Status
 	// Ingest path (per DSheirer/sdrtrunk's CRCLTR.java layout).

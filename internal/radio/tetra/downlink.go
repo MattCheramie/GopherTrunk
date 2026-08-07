@@ -173,13 +173,18 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bk
 
 	// The AACH is present in every downlink slot and decodes ~100% on a locked
 	// carrier, so it pins the rotation cheaply; fall back to trying all four
-	// only when it does not decode (e.g. a synthesised slot with no AACH).
+	// only when it does not decode (e.g. a synthesised slot with no AACH). The
+	// parsed ACCESS-ASSIGN also classifies the slot (control vs traffic), which
+	// gates the SCHPDUsFail counter below.
 	rots := []uint8{0, 1, 2, 3}
+	var aa AccessAssign
+	var aachOK bool
 	aachDi := append(append([]uint8{}, aach1...), aach2...)
 	for r := uint8(0); r < 4; r++ {
 		rec, errs := DecodeAACH(derot(aachDi, r), colour)
 		if errs >= 0 {
-			if _, ok := ParseAccessAssign(rec); ok {
+			if parsed, ok := ParseAccessAssign(rec); ok {
+				aa, aachOK = parsed, true
 				rots = []uint8{r}
 				break
 			}
@@ -193,35 +198,59 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bk
 	// and hard use the identical rotation. CRC gates both, so no double-count.
 	haveF := bkn1Diffs != nil && bkn2Diffs != nil && len(bkn1Diffs) == len(bkn1) && len(bkn2Diffs) == len(bkn2)
 
+	recovered := 0
 	for _, r := range rots {
 		full := append(append([]uint8{}, bkn1...), bkn2...)
 		if haveF {
 			fullDiffs := append(append([]complex64{}, bkn1Diffs...), bkn2Diffs...)
 			if rec, ok := DecodeSCHFSoft(softType5FromDiffs(fullDiffs, (4-r)&3), colour); ok {
 				c.ingestMAC(rec)
+				recovered++
 			} else if rec, ok := DecodeSCHF(derot(full, r), colour); ok {
 				c.ingestMAC(rec)
+				recovered++
 			}
 		} else if rec, ok := DecodeSCHF(derot(full, r), colour); ok {
 			c.ingestMAC(rec)
+			recovered++
 		}
-		c.decodeDownlinkHalf(bkn1, bkn1Diffs, r, derot, colour)
-		c.decodeDownlinkHalf(bkn2, bkn2Diffs, r, derot, colour)
+		if c.decodeDownlinkHalf(bkn1, bkn1Diffs, r, derot, colour) {
+			recovered++
+		}
+		if c.decodeDownlinkHalf(bkn2, bkn2Diffs, r, derot, colour) {
+			recovered++
+		}
+	}
+
+	// Decode-health telemetry (debug-gated). SCHPDUs counts CRC-clean signalling
+	// blocks off the real NCDB slot — one for a full-slot SCH/F, up to two for a
+	// two-half SCH/HD slot — the metric that stayed 0 on air when it was bolted to
+	// the legacy fixed-slice path. SCHPDUsFail counts a slot the AACH confirms is
+	// carrying control that yielded no CRC-clean block: a real signalling-payload
+	// decode failure. The AACH gate keeps same-carrier traffic (TCH) slots and
+	// correlator noise (AACH itself fails to decode) out of the failure count.
+	if recovered > 0 {
+		c.addStat(&c.stats.SCHPDUs, int64(recovered))
+	} else if aachOK && aa.IsControlChannel() {
+		c.addStat(&c.stats.SCHPDUsFail, 1)
 	}
 }
 
 // decodeDownlinkHalf decodes one SCH/HD half-slot under rotation r, soft-first
-// (when the per-symbol differentials are available and aligned) then hard.
-func (c *ControlChannel) decodeDownlinkHalf(bkn []uint8, diffs []complex64, r uint8, derot func([]uint8, uint8) []byte, colour uint32) {
+// (when the per-symbol differentials are available and aligned) then hard. It
+// reports whether a CRC-clean block was recovered so the caller can count it.
+func (c *ControlChannel) decodeDownlinkHalf(bkn []uint8, diffs []complex64, r uint8, derot func([]uint8, uint8) []byte, colour uint32) bool {
 	if diffs != nil && len(diffs) == len(bkn) {
 		if rec, ok := DecodeSCHHDSoft(softType5FromDiffs(diffs, (4-r)&3), colour); ok {
 			c.ingestMAC(rec)
-			return
+			return true
 		}
 	}
 	if rec, ok := DecodeSCHHD(derot(bkn, r), colour); ok {
 		c.ingestMAC(rec)
+		return true
 	}
+	return false
 }
 
 // ingestMAC demultiplexes a recovered logical-channel block (type-1 bits) at the

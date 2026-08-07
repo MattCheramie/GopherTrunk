@@ -178,6 +178,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.TETRAChannel":            {Label: "TETRA channel", Help: "Which TETRA logical channel each burst carries (sch/hd, sch/f, sch/hu, bsch, aach). Empty = sch/hd. TETRA only."},
 	"SystemConfig.TETRAChannelCoding":      {Label: "TETRA channel coding", Help: "Gate the full ETSI channel-coding chain. on (default, live captures) or off (raw-dibit fixtures). TETRA only."},
 	"SystemConfig.TETRAClockMode":          {Label: "TETRA clock mode", Help: "Symbol-timing recovery: gardner (default, live SDR) or naive (sample-aligned fixtures). TETRA only."},
+	"SystemConfig.TETRAStatusIntervalSecs": {Label: "TETRA status interval (s)", Help: "How often the debug 'tetra: decode status' line is emitted, and the window its counters accumulate over. 0 = 5 s default. Debug diagnostics only. TETRA only."},
 	"SystemConfig.LTRFCSMode":              {Label: "LTR FCS mode", Help: "CRC-7 FCS check on LTR Status words. on (default) or off (un-populated fixtures). LTR only."},
 	"SystemConfig.LTRManchesterMode":       {Label: "LTR Manchester mode", Help: "LTR sub-audible decode: soft (default), strict, or off/nrz. LTR only."},
 	"SystemConfig.P25Phase1DemodMode":      {Label: "P25 Ph1 demod mode", Help: "Phase 1 symbol recovery: c4fm/fm (default, correct for most systems including most simulcast) or cqpsk/lsm (only for systems that actually transmit linear/LSM modulation). Simulcast alone does not require cqpsk. P25 Phase 1 only."},

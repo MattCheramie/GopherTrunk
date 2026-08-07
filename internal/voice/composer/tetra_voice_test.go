@@ -187,7 +187,7 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
 	bt := c.newBoundaryTracker("VOICE-1", 0, nil)
 	rs := &recordingSink{}
-	var bursts, speech, offSlot atomic.Uint64
+	var bursts, speech, offSlot, bfi atomic.Uint64
 
 	// Case A: a deterministic non-TCH/S 54-byte burst. Guard that the CRC gate
 	// rejects it (it does for this fixed vector), then confirm it leaves the
@@ -199,7 +199,7 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	if tetra.TCHSpeechFrames(junk) != nil {
 		t.Fatalf("test vector precondition: junk frame unexpectedly passed the TCH/S CRC gate")
 	}
-	c.onTETRATrafficBurst(bt, rs, "VOICE-1", junk, nil, 0, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", junk, nil, 0, 0, &bursts, &speech, &offSlot, &bfi)
 	if bt.sawVoice.Load() {
 		t.Error("non-speech burst set sawVoice — liveness not gated on CRC-valid speech")
 	}
@@ -215,11 +215,14 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	if got := bursts.Load(); got != 1 {
 		t.Errorf("bursts = %d after one call, want 1", got)
 	}
+	if got := bfi.Load(); got != 1 {
+		t.Errorf("non-speech burst bfi_count = %d, want 1 (concealment)", got)
+	}
 
 	// Case B: a CRC-valid TCH/S burst carrying two 137-bit speech frames. It must
 	// mark voice activity and emit both speech frames to the recorder.
 	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
-	c.onTETRATrafficBurst(bt, rs, "VOICE-1", frame, nil, 0, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-1", frame, nil, 0, 0, &bursts, &speech, &offSlot, &bfi)
 	if !bt.sawVoice.Load() {
 		t.Error("CRC-valid TCH/S burst did not set sawVoice")
 	}
@@ -235,6 +238,9 @@ func TestTETRATrafficBurstLivenessGatedByCRC(t *testing.T) {
 	if got := bursts.Load(); got != 2 {
 		t.Errorf("bursts = %d after two calls, want 2", got)
 	}
+	if got := bfi.Load(); got != 1 {
+		t.Errorf("bfi_count = %d after a valid speech burst, want 1 (unchanged)", got)
+	}
 }
 
 // TestTETRATrafficBurstUsageMarkerFilter is the regression for concurrent
@@ -249,14 +255,14 @@ func TestTETRATrafficBurstUsageMarkerFilter(t *testing.T) {
 	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
 	bt := c.newBoundaryTracker("VOICE-2", 0, nil)
 	rs := &recordingSink{}
-	var bursts, speech, offSlot atomic.Uint64
+	var bursts, speech, offSlot, bfi atomic.Uint64
 
 	// A CRC-valid TCH/S frame (belongs to whichever call it arrives on).
 	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
 	const grantUsage uint8 = 20 // this call's downlink usage marker
 
 	// Another call's slot (marker 19 != granted 20): dropped off-call, no decode.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, 19, grantUsage, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, 19, grantUsage, &bursts, &speech, &offSlot, &bfi)
 	if got := offSlot.Load(); got != 1 {
 		t.Errorf("foreign-call burst offSlot = %d, want 1", got)
 	}
@@ -268,7 +274,7 @@ func TestTETRATrafficBurstUsageMarkerFilter(t *testing.T) {
 	}
 
 	// Granted marker (20 == granted 20): decoded and written.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, grantUsage, grantUsage, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, grantUsage, grantUsage, &bursts, &speech, &offSlot, &bfi)
 	if n := len(rs.rawFrames("VOICE-2")); n != 2 {
 		t.Errorf("granted-marker burst wrote %d frames, want 2", n)
 	}
@@ -278,7 +284,7 @@ func TestTETRATrafficBurstUsageMarkerFilter(t *testing.T) {
 
 	// Undecoded AACH (marker 0): CRC-gated fallback still processes it — an AACH
 	// miss must not drop the granted call's own speech.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, 0, grantUsage, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-2", frame, nil, 0, grantUsage, &bursts, &speech, &offSlot, &bfi)
 	if n := len(rs.rawFrames("VOICE-2")); n != 4 {
 		t.Errorf("undecoded-AACH burst wrote total %d frames, want 4", n)
 	}
@@ -295,12 +301,12 @@ func TestTETRATrafficBurstNoGrantMarkerFallback(t *testing.T) {
 	c, _, _ := mkBoundaryComposer(t, false, 50*time.Millisecond)
 	bt := c.newBoundaryTracker("VOICE-3", 0, nil)
 	rs := &recordingSink{}
-	var bursts, speech, offSlot atomic.Uint64
+	var bursts, speech, offSlot, bfi atomic.Uint64
 	frame := tetra.EncodeTCHS(make([]byte, 137), make([]byte, 137))
 
 	// Grant marker 0 (unknown): a burst with any marker is decoded, none dropped.
-	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, nil, 19, 0, &bursts, &speech, &offSlot)
-	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, nil, 0, 0, &bursts, &speech, &offSlot)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, nil, 19, 0, &bursts, &speech, &offSlot, &bfi)
+	c.onTETRATrafficBurst(bt, rs, "VOICE-3", frame, nil, 0, 0, &bursts, &speech, &offSlot, &bfi)
 	if n := len(rs.rawFrames("VOICE-3")); n != 4 {
 		t.Errorf("no-grant-marker fallback wrote %d frames, want 4 (accept all CRC-valid speech)", n)
 	}
