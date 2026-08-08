@@ -958,6 +958,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				PPM:              dev.PPM,
 				BiasTee:          dev.BiasTee,
 				NarrowbandFilter: dev.NarrowbandFilter,
+				FPGADCBlock:      dev.FPGADCBlock,
 				ForceBlogV4:      dev.BlogV4,
 				ForceBlogV4Lite:  dev.BlogV4Lite,
 			}

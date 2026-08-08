@@ -266,6 +266,11 @@ sdr:
                            # channel rejection on narrowband voice (e.g. P25),
                            # trading usable bandwidth. Ignored, with a warning,
                            # on a HackRF One or any board without the filter.
+      # fpga_dc_block: true # HackRF Pro only: strip the zero-IF DC-offset spike
+                           # in the FPGA before samples leave the device — a
+                           # hardware alternative to the P25 voice path's
+                           # software DC-block that also cleans the control
+                           # channel. Ignored, with a warning, on other boards.
       # dc_avoid: true     # control role only: tune the LO off-channel and mix
                            # the channel back to baseband in the down-converter,
                            # off the front-end DC spur, 1/f noise and the I/Q

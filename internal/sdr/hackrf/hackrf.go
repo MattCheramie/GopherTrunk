@@ -48,6 +48,13 @@ const (
 	reqSetLNAGain          uint8 = 19
 	reqSetVGAGain          uint8 = 20
 	reqAntennaEnable       uint8 = 23
+	// reqFPGAWriteReg / reqFPGAReadReg access the HackRF Pro gateware's
+	// registers over the FPGA SPI interface (libhackrf
+	// HACKRF_VENDOR_REQUEST_FPGA_WRITE_REG / _READ_REG). Write carries
+	// the value in wValue and the register number in wIndex; read
+	// carries the register in wIndex and returns one byte. Pro-only.
+	reqFPGAWriteReg uint8 = 49
+	reqFPGAReadReg  uint8 = 50
 	// reqSetNarrowbandFilter toggles the HackRF Pro's switchable
 	// narrowband anti-alias filter (libhackrf
 	// HACKRF_VENDOR_REQUEST_SET_NARROWBAND_FILTER). Pro-only: older
@@ -59,6 +66,19 @@ const (
 // firmware reports via reqBoardIDRead. It gates the Pro-only vendor
 // requests (e.g. the narrowband filter).
 const boardIDPraline uint8 = 5
+
+// HackRF Pro gateware control register. The Pro's default (8-bit) RX
+// gateware exposes a control register at index 1 whose bit 0 enables an
+// FPGA-side DC-offset blocker — the zero-IF LO self-mixing spike that
+// otherwise sits dead-centre in the passband and corrupts an on-channel-
+// tuned C4FM eye. Confirmed on hardware: enabling it drops the measured
+// |DC| of the raw IQ stream from several counts to zero. Other bits in
+// the register (e.g. a TX trigger enable) are left untouched via a
+// read-modify-write.
+const (
+	gatewareRegControl     uint8 = 1
+	gatewareCtrlDCBlockBit uint8 = 1 << 0
+)
 
 // pidProductNames maps each known HackRF USB PID to the canonical
 // product label we surface in sdr.Info. USB descriptor strings vary
@@ -495,6 +515,56 @@ func (d *Device) SetNarrowbandFilter(enable bool) error {
 		v = 1
 	}
 	return d.t.ControlOut(reqSetNarrowbandFilter, v, 0, nil, controlTimeoutMs)
+}
+
+// fpgaReadRegister reads one HackRF Pro gateware register over the FPGA
+// SPI interface (vendor request 50: register in wIndex, one byte back).
+func (d *Device) fpgaReadRegister(reg uint8) (uint8, error) {
+	buf, err := d.t.ControlIn(reqFPGAReadReg, 0, uint16(reg), 1, controlTimeoutMs)
+	if err != nil {
+		return 0, err
+	}
+	if len(buf) < 1 {
+		return 0, fmt.Errorf("hackrf: FPGA read reg %d: short read (%d bytes)", reg, len(buf))
+	}
+	return buf[0], nil
+}
+
+// fpgaWriteRegister writes one HackRF Pro gateware register over the FPGA
+// SPI interface (vendor request 49: value in wValue, register in wIndex).
+func (d *Device) fpgaWriteRegister(reg, value uint8) error {
+	return d.t.ControlOut(reqFPGAWriteReg, uint16(value), uint16(reg), nil, controlTimeoutMs)
+}
+
+// SetFPGADCBlock toggles the HackRF Pro's FPGA-side DC-offset blocker
+// (sdr.FPGADCBlocker) — the gateware control register's bit 0. It
+// removes the zero-IF DC spike in hardware, before the sample stream
+// even leaves the device, which clears an on-channel-tuned C4FM eye that
+// the centre spur would otherwise corrupt. A read-modify-write preserves
+// the register's other bits. It is Pro-only: the gateware register space
+// doesn't exist on other boards, so this errors there rather than
+// writing to a register that isn't the one it names.
+func (d *Device) SetFPGADCBlock(enable bool) error {
+	if d.isClosed() {
+		return usb.ErrClosed
+	}
+	if !d.isPro {
+		return fmt.Errorf("hackrf: FPGA DC blocker requires a HackRF Pro (board ID %d); this device is %q", boardIDPraline, d.info.Product)
+	}
+	cur, err := d.fpgaReadRegister(gatewareRegControl)
+	if err != nil {
+		return fmt.Errorf("hackrf: read gateware control register: %w", err)
+	}
+	next := cur
+	if enable {
+		next |= gatewareCtrlDCBlockBit
+	} else {
+		next &^= gatewareCtrlDCBlockBit
+	}
+	if next == cur {
+		return nil
+	}
+	return d.fpgaWriteRegister(gatewareRegControl, next)
 }
 
 // StreamIQ flips the HackRF into receive mode and reaps bulk-IN URBs,
