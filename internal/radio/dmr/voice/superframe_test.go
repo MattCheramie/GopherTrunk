@@ -575,6 +575,61 @@ func TestInterleavedDecoderDoesNotLockOnGarbledFrames(t *testing.T) {
 	}
 }
 
+// TestInterleavedDecoderLCOverridesWrongProvisionalCadence is the reopened-#644
+// guard for a wrong cadence GUESS that later signalling contradicts. A call can
+// open on a section whose embedded LC never decodes, where the AMBE-FEC quality
+// metric picks — and provisionally locks — the wrong same-slot stride (here a
+// CACH-free 264 preamble locks 264). When the real 288-cadence traffic then
+// arrives carrying a CRC-valid embedded LC, an authoritative LC must OVERRIDE the
+// provisional guess and re-lock 288. The old decoder froze the first lock forever
+// and, slicing every later burst at the wrong 264 stride, could never reassemble
+// the LC that would fix it — so the whole rest of the call garbled ("sounds
+// encrypted"). This drives the two phases through one decoder and asserts it
+// recovers.
+func TestInterleavedDecoderLCOverridesWrongProvisionalCadence(t *testing.T) {
+	// Phase 1: a CACH-free (264) codeword section with NO embedded LC. The FEC
+	// metric locks 264 — provisionally, since no LC confirmed it.
+	pre, _, _ := buildInterleavedStreamNoLC(t, 1, 0, 0, true)
+
+	d := NewInterleavedDecoder()
+	d.Process(pre, 0)
+	if d.lockedStep != 2*dmr.BurstDibits {
+		t.Fatalf("phase 1: lockedStep = %d, want %d (264 FEC guess)", d.lockedStep, 2*dmr.BurstDibits)
+	}
+	if d.lockedByLC {
+		t.Fatalf("phase 1: lockedByLC = true, want false (an FEC guess is provisional)")
+	}
+
+	// Phase 2: the real call is 288-cadence and carries a CRC-valid embedded LC.
+	aLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 1001, SrcAddr: 55}
+	bLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 2002, SrcAddr: 66}
+	call, aFrames, bFrames := buildInterleavedStreamWithLC(t, aLC, bLC, cachDibits)
+
+	got := d.Process(call, len(pre))
+
+	// The authoritative LC must have overridden the wrong 264 guess.
+	if d.lockedStep != 2*(dmr.BurstDibits+cachDibits) || !d.lockedByLC {
+		t.Fatalf("phase 2: lockedStep=%d lockedByLC=%v, want %d and true (LC overrides the wrong provisional cadence)",
+			d.lockedStep, d.lockedByLC, 2*(dmr.BurstDibits+cachDibits))
+	}
+	// And the slots must decode cleanly at the corrected 288 stride: their own
+	// LC-named talkgroups and their own AMBE frames, not the garbled 264 splice.
+	var a, b *VoiceSuperframe
+	for i := range got {
+		switch {
+		case got[i].HasLC && got[i].LC.DstAddr == 1001:
+			a = &got[i]
+		case got[i].HasLC && got[i].LC.DstAddr == 2002:
+			b = &got[i]
+		}
+	}
+	if a == nil || b == nil {
+		t.Fatalf("phase 2: recovered LC slots a=%v b=%v, want both talkgroups (1001,2002) decoded after the override", a != nil, b != nil)
+	}
+	checkFrames(t, *a, aFrames, 0)
+	checkFrames(t, *b, bFrames, 0)
+}
+
 // TestDecoderSuperframeNoLCWhenAbsent confirms a superframe whose B–E
 // bursts carry no valid embedded LC (the plain single-slot synth) leaves
 // HasLC false rather than surfacing a garbage talkgroup.
