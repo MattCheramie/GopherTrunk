@@ -53,6 +53,19 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **DMR 2-slot voice: a wrong same-slot cadence guess could garble a whole
+  call and never recover (reopened #644).** When a call opens on a section
+  whose embedded Link Control doesn't decode, the interleaved decoder picks
+  the same-slot stride (264 vs 288 dibits) by AMBE Golay-FEC quality. That
+  guess was frozen for the rest of the call — and because a wrong stride
+  slices every later burst across the timeslot boundary, the CRC-valid LC
+  that would correct it can never reassemble, so one confident-but-wrong
+  guess produced persistent "sounds-encrypted / DJ-scratch" garble. An
+  FEC-quality lock is now **provisional**: a later CRC-valid embedded LC (or
+  a later clear FEC winner at a different stride) overrides it and re-locks
+  the correct cadence, after which the LC lock is authoritative. Single-slot
+  (Tier I) decoding is unchanged. Pinned by
+  `TestInterleavedDecoderLCOverridesWrongProvisionalCadence`.
 - **macOS: RTL-SDR (R820T) dongles failed to open with "no supported tuner
   detected."** On Apple silicon the tuner's first I²C-bridge burst write could
   STALL the USB control pipe (IOKit `kIOUSBPipeStalled`, `kern_return

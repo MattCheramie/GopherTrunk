@@ -121,6 +121,17 @@ type Decoder struct {
 	// picks the candidate whose bursts B–E reassemble a CRC-valid embedded
 	// Link Control (sliceAt → HasLC); a wrong cadence cannot.
 	lockedStep int
+	// lockedByLC records HOW lockedStep was set: true once a CRC-valid embedded
+	// Link Control confirmed the cadence (authoritative — nothing overrides it),
+	// false while the lock is only a provisional AMBE-FEC-quality guess. A
+	// provisional lock stays re-checkable every superframe so a wrong early
+	// heuristic guess can be corrected by a later CRC-valid LC (or a later clear
+	// FEC winner at a different stride) — without this a single confident-but-
+	// wrong lock garbles the whole rest of the call and can never self-correct,
+	// because a wrong slice never reassembles the LC that would fix it (#644).
+	// Set true for a single-cadence (single-slot) decoder: its one stride is not
+	// a guess, so its decode path is unchanged.
+	lockedByLC bool
 	// maxSpan is the dibit span of a full A–F superframe at the LARGEST
 	// candidate stride. The Process gate waits for this many dibits past an
 	// anchor before slicing, so every candidate is fully buffered when
@@ -150,9 +161,12 @@ func newDecoder(candidates []int) *Decoder {
 		// the trailing bursts being trimmed out from under them.
 		bufKeep: 2*maxSpan + dmr.BurstDibits,
 	}
-	// A single-cadence decoder has nothing to detect: lock immediately.
+	// A single-cadence decoder has nothing to detect: lock immediately, and
+	// authoritatively (its one stride is not a guess) so its decode path is
+	// unchanged by the provisional-lock re-checking below.
 	if len(candidates) == 1 {
 		d.lockedStep = candidates[0]
+		d.lockedByLC = true
 	}
 	return d
 }
@@ -255,26 +269,38 @@ func ambeErrorScore(sf VoiceSuperframe) int {
 	return score
 }
 
-// resolveAndSlice produces the superframe anchored at start. A decoder with
-// a locked cadence slices at it directly; an undetected interleaved decoder
-// tries each candidate cadence. A bursts-B–E CRC-valid embedded Link Control
-// is authoritative and locks immediately. Absent any LC, it scores each
-// candidate by AMBE FEC quality (ambeErrorScore) and locks the clearly-best
-// one — so a real carrier whose embedded LC never decodes still finds its
-// cadence (issue #644). With no clear winner it falls back to the smallest
-// candidate without locking, so a later LC-bearing or cleaner superframe can
-// still detect. The caller has guaranteed maxSpan dibits past start are
-// buffered, so every candidate is sliceable.
+// resolveAndSlice produces the superframe anchored at start.
+//
+// A CRC-valid embedded Link Control is authoritative: once one confirms the
+// cadence (lockedByLC) the decoder slices at that stride for the rest of the
+// call. Absent any authoritative lock — undetected, or only a provisional
+// AMBE-FEC-quality guess — it re-scores every candidate this superframe and:
+//   - a bursts-B–E CRC-valid LC on any candidate locks it authoritatively;
+//   - otherwise the clearly-best candidate by AMBE FEC quality (ambeErrorScore)
+//     becomes a PROVISIONAL lock, so a real carrier whose LC never decodes
+//     still finds its cadence (issue #644);
+//   - with no clear winner it falls back to the smallest candidate.
+//
+// Re-scoring while the lock is only provisional is what lets a wrong early FEC
+// guess be corrected — by a later CRC-valid LC, or by a later clear FEC winner
+// at a different stride. Without it a single confident-but-wrong lock would
+// garble the whole rest of the call and could never self-correct, since a wrong
+// slice never reassembles the LC that would fix it (the reopened #644 garble).
+// The caller has guaranteed maxSpan dibits past start are buffered, so every
+// candidate is sliceable.
 func (d *Decoder) resolveAndSlice(start int, syncName string) VoiceSuperframe {
-	if d.lockedStep != 0 {
+	// An LC-confirmed cadence is authoritative — slice at it directly.
+	if d.lockedStep != 0 && d.lockedByLC {
 		return d.sliceAt(start, d.lockedStep, syncName)
 	}
+
 	bestIdx, bestScore, secondScore := -1, math.MaxInt, math.MaxInt
 	var bestSF VoiceSuperframe
 	for i, step := range d.cadenceCandidates {
 		sf := d.sliceAt(start, step, syncName)
 		if sf.HasLC {
-			d.lockedStep = step
+			// Authoritative: a CRC-valid LC overrides any provisional lock.
+			d.lockedStep, d.lockedByLC = step, true
 			return sf
 		}
 		switch s := ambeErrorScore(sf); {
@@ -285,9 +311,22 @@ func (d *Decoder) resolveAndSlice(start int, syncName string) VoiceSuperframe {
 			secondScore = s
 		}
 	}
-	if bestIdx >= 0 && bestScore <= ambeCadenceLockCeiling &&
-		bestScore*2+ambeCadenceLockMargin <= secondScore {
-		d.lockedStep = d.cadenceCandidates[bestIdx]
+
+	clearWinner := bestIdx >= 0 && bestScore <= ambeCadenceLockCeiling &&
+		bestScore*2+ambeCadenceLockMargin <= secondScore
+
+	if d.lockedStep != 0 {
+		// Provisionally (FEC-)locked. Keep the current stride unless the data
+		// now clearly favours a different one — then move the provisional lock.
+		if clearWinner && d.cadenceCandidates[bestIdx] != d.lockedStep {
+			d.lockedStep = d.cadenceCandidates[bestIdx]
+			return bestSF
+		}
+		return d.sliceAt(start, d.lockedStep, syncName)
+	}
+
+	if clearWinner {
+		d.lockedStep = d.cadenceCandidates[bestIdx] // provisional — lockedByLC stays false
 		return bestSF
 	}
 	return d.sliceAt(start, d.cadenceCandidates[0], syncName)

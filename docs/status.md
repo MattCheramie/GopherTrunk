@@ -129,7 +129,12 @@ The inner FEC layers still pending real-air validation:
   a phase binds to a concrete talkgroup — the absolute TS1/TS2 label the
   identical BS-sourced burst-A sync cannot give. The chain is unit-tested
   against synthetic interleaved + embedded-LC vectors at **both** cadences
-  (`TestInterleavedDecoderAutoDetects{CACH,NoCACH}Cadence`).
+  (`TestInterleavedDecoderAutoDetects{CACH,NoCACH}Cadence`). A cadence chosen
+  only by FEC quality (no LC yet) is held **provisionally**: a later CRC-valid
+  LC — or a clear FEC winner at a different stride — overrides a wrong early
+  guess and re-locks the correct cadence, so one bad guess no longer garbles
+  the rest of the call
+  (`TestInterleavedDecoderLCOverridesWrongProvisionalCadence`).
   The interleaved + LC path is the **default for DMR Tier II conventional
   and Tier III** (#644, extended to Tier II after a field report of garbled
   "DJ-scratch" audio on a `dmr-tier2` site — the same single-slot/2-slot
