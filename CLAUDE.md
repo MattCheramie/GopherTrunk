@@ -213,3 +213,14 @@ confirmation before any close-as-completed.
     capture is encrypted. Per the #764/#771 rule (a green synthetic ≠ on-air correct),
     the fix stays deferred until a clear capture can verify it rather than flip a
     convention on both sides for a green-either-way test.
+  - **Second real DMO capture set is ALSO air-interface encrypted (TEA).** A Motorola
+    two-radio DMO recording (known IDs: sender ISSI 2010039, MCC 250, MNC 1, TG 3, cs16
+    @ 144 kHz) decodes SCH/S cleanly (51/63 and 37/39 CRC-valid, distinct advancing FN,
+    SYNC colour=0/MCC=0/MNC=0 via the TMO `ParseSyncPDU`) but TCH/S stays at the ~1/256
+    chance floor across **128 descramble seeds** (raw colour 0–63, max 8/393;
+    `ExtendedColourCode(250,1,0..63)`, max 9/393; plus seed-0 PN and the raw MNI seeds) —
+    the same clear-signalling / encrypted-voice plateau as the first capture. So the
+    colour-0 descramble fix is STILL unverifiable; DMO voice needs a capture with **Air
+    Interface Encryption disabled in the Motorola CPS** for the DMO group. The confirmed-
+    working DMO signalling chain is now pinned against real air by the non-skip
+    `TestTETRADMOSignallingRealCapture` (`cmd/gophertrunk/testdata/tetra_dmo_sig_2s_144k.cs16`).
