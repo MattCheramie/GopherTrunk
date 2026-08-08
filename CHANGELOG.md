@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **HackRF Pro is now identified as such, and its narrowband filter is
+  configurable.** GopherTrunk reads the firmware's board ID at open, so a HackRF
+  Pro (board ID 5, *Praline*) now reports `HackRF Pro` — and a HackRF One R9
+  (board ID 4) `HackRF One R9` — in `gophertrunk sdr list`, the Devices panel,
+  and the startup log, instead of being lumped in with the original HackRF One.
+  A new per-device `narrowband_filter: true` engages the Pro's switchable
+  narrowband anti-alias filter, tightening adjacent-channel rejection for
+  narrowband voice (e.g. P25) at the cost of usable bandwidth; it is ignored,
+  with a startup warning, on any board without the filter. The Pro's 16-bit
+  extended-precision mode and FPGA DC-spike canceller are not wired yet — they
+  have no host-side command in the public HackRF API as of 2026.01.
 - **DMR now auto-corrects a small residual tuner carrier offset.** The
   narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
   the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz

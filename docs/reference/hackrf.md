@@ -150,6 +150,7 @@ sdr:
       role: control          # or voice / wideband
       gain: auto             # or tenths-of-dB, e.g. "320" for 32.0 dB
       bias_tee: false
+      # narrowband_filter: true   # HackRF Pro only — see below
 ```
 
 Copy the serial straight from `gophertrunk sdr list`. The match is
@@ -163,6 +164,40 @@ full serial so each entry pins exactly one device.
 > string — the leading 16 digits are a constant prefix (commonly all zeros) and
 > the trailing digits are the unique part. `gophertrunk sdr list` prints the
 > whole string, matching `hackrf_info`'s "Serial number".
+
+## HackRF Pro
+
+GopherTrunk identifies the board from the firmware's `board_id` readback at
+open, so a **HackRF Pro** (board ID 5, codename *Praline*) reports `HackRF Pro`
+as its product name in `gophertrunk sdr list`, the **Devices** panel, and the
+startup log — distinct from the original `HackRF One` (board ID 2) and the
+`HackRF One R9` (board ID 4). No configuration is needed for detection.
+
+The Pro adds a **switchable narrowband anti-alias filter** in its RF front end.
+Engaging it tightens adjacent-channel rejection, which can lift a marginal
+decode on a crowded band where a strong neighbour is spilling into a narrowband
+voice channel (e.g. 12.5 kHz P25). The trade-off is reduced usable bandwidth, so
+it is off by default; enable it per device:
+
+```yaml
+sdr:
+  devices:
+    - serial: "…"
+      role: voice
+      narrowband_filter: true   # HackRF Pro only
+```
+
+The option is ignored — with a one-line startup warning — on any board that
+lacks the filter, including the original HackRF One, so it is safe to leave in a
+shared config.
+
+> **Pro-only features not yet wired.** The Pro also advertises a 16-bit
+> *extended-precision* sample mode and an FPGA-based DC-spike canceller. Neither
+> has a host-side command in the public libhackrf/firmware API as of the
+> 2026.01 release, so GopherTrunk does not drive them yet — doing so reliably
+> needs the vendor register map Great Scott Gadgets has not published. GopherTrunk
+> already removes the residual DC offset in software on the voice path (the P25
+> DC-block), which covers the same failure mode the FPGA canceller targets.
 
 ## Where to buy
 

@@ -48,7 +48,17 @@ const (
 	reqSetLNAGain          uint8 = 19
 	reqSetVGAGain          uint8 = 20
 	reqAntennaEnable       uint8 = 23
+	// reqSetNarrowbandFilter toggles the HackRF Pro's switchable
+	// narrowband anti-alias filter (libhackrf
+	// HACKRF_VENDOR_REQUEST_SET_NARROWBAND_FILTER). Pro-only: older
+	// boards stall the request, so callers must gate it behind isPro.
+	reqSetNarrowbandFilter uint8 = 53
 )
+
+// boardIDPraline is the hackrf_board_id value the HackRF Pro ("Praline")
+// firmware reports via reqBoardIDRead. It gates the Pro-only vendor
+// requests (e.g. the narrowband filter).
+const boardIDPraline uint8 = 5
 
 // pidProductNames maps each known HackRF USB PID to the canonical
 // product label we surface in sdr.Info. USB descriptor strings vary
@@ -68,6 +78,8 @@ var boardIDNames = map[uint8]string{
 	1:   "HackRF Jawbreaker",
 	2:   "HackRF One",
 	3:   "Rad1o",
+	4:   "HackRF One R9",
+	5:   "HackRF Pro",
 	255: "Invalid",
 }
 
@@ -219,10 +231,12 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	// firmware — fall through to the PID-derived product name and a
 	// plain TunerName when that happens.
 	product := productForPID(desc.PID, desc.Product)
+	isPro := false
 	if bid, err := readBoardID(t); err == nil {
 		if name, ok := boardIDNames[bid]; ok && name != "" {
 			product = name
 		}
+		isPro = bid == boardIDPraline
 	}
 	tuner := "MAX2839+MAX5864"
 	if version, err := readVersionString(t); err == nil && version != "" {
@@ -232,7 +246,8 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		tuner = fmt.Sprintf("MAX2839+MAX5864 (fw %s)", version)
 	}
 	return &Device{
-		t: t,
+		t:     t,
+		isPro: isPro,
 		info: sdr.Info{
 			Driver:       driverName,
 			Index:        idx,
@@ -313,6 +328,10 @@ type Device struct {
 	// (#686). Non-nil whenever streaming is true.
 	streamDone chan struct{}
 	sampleRate uint32
+	// isPro is set when the firmware reports board ID 5 (Praline /
+	// HackRF Pro). It gates Pro-only vendor requests such as the
+	// narrowband filter, which older boards would stall.
+	isPro bool
 }
 
 // Info implements sdr.Device.
@@ -389,7 +408,11 @@ func (d *Device) SetGain(tenthDB int) error {
 // multiple of 2.
 func splitGain(tenthDB int) (lna, vga int, amp bool) {
 	if tenthDB < 0 {
-		return defaultLNAGainDB, defaultVGAGainDB, false
+		// "auto": enable the front-end RF amp (like SDRTrunk's default
+		// amplifierEnabled:true). The amp sets the noise figure for weak
+		// signals; without it, voice channels on a modest antenna decode
+		// at a much lower SNR and time out with no frames.
+		return defaultLNAGainDB, defaultVGAGainDB, true
 	}
 	target := tenthDB / 10
 	lna = (target / 8) * 8
@@ -451,6 +474,27 @@ func (d *Device) SetBiasTee(enable bool) error {
 		v = 1
 	}
 	return d.t.ControlOut(reqAntennaEnable, v, 0, nil, controlTimeoutMs)
+}
+
+// SetNarrowbandFilter toggles the HackRF Pro's switchable narrowband
+// anti-alias filter (sdr.NarrowbandFilterer). Engaging it tightens
+// adjacent-channel rejection for narrowband signals — e.g. 12.5 kHz P25
+// voice channels — at the cost of usable RF bandwidth. It is Pro-only:
+// on any other board the request would stall the control endpoint, so
+// this returns an error there rather than sending it, letting the pool
+// warn that the operator asked for a filter the hardware doesn't have.
+func (d *Device) SetNarrowbandFilter(enable bool) error {
+	if d.isClosed() {
+		return usb.ErrClosed
+	}
+	if !d.isPro {
+		return fmt.Errorf("hackrf: narrowband filter requires a HackRF Pro (board ID %d); this device is %q", boardIDPraline, d.info.Product)
+	}
+	v := uint16(0)
+	if enable {
+		v = 1
+	}
+	return d.t.ControlOut(reqSetNarrowbandFilter, v, 0, nil, controlTimeoutMs)
 }
 
 // StreamIQ flips the HackRF into receive mode and reaps bulk-IN URBs,

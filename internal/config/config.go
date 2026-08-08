@@ -1179,6 +1179,14 @@ type DeviceConfig struct {
 	// either way.
 	BiasTee bool `yaml:"bias_tee"`
 
+	// NarrowbandFilter engages the HackRF Pro's switchable narrowband
+	// anti-alias filter. It tightens adjacent-channel rejection for
+	// narrowband voice channels (e.g. 12.5 kHz P25) at the cost of
+	// usable RF bandwidth, which can lift a marginal decode on a crowded
+	// band. HackRF Pro only — ignored, with a startup warning, on any
+	// other device (including the original HackRF One). Off by default.
+	NarrowbandFilter bool `yaml:"narrowband_filter"`
+
 	// BlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz reference crystal +
 	// per-band HF/VHF/UHF input routing) regardless of the dongle's USB
 	// iManufacturer/iProduct strings. Use it when a V4's EEPROM strings
