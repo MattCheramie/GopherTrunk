@@ -1187,6 +1187,14 @@ type DeviceConfig struct {
 	// other device (including the original HackRF One). Off by default.
 	NarrowbandFilter bool `yaml:"narrowband_filter"`
 
+	// FPGADCBlock engages the HackRF Pro's FPGA-side DC-offset blocker,
+	// which strips the zero-IF DC spike in the gateware before the
+	// samples leave the device. It's a hardware alternative to the P25
+	// voice path's software DC-block and, unlike that block, also cleans
+	// the control channel. HackRF Pro only — ignored, with a startup
+	// warning, on any other device. Off by default.
+	FPGADCBlock bool `yaml:"fpga_dc_block"`
+
 	// BlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz reference crystal +
 	// per-band HF/VHF/UHF input routing) regardless of the dongle's USB
 	// iManufacturer/iProduct strings. Use it when a V4's EEPROM strings

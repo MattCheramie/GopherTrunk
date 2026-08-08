@@ -151,6 +151,7 @@ sdr:
       gain: auto             # or tenths-of-dB, e.g. "320" for 32.0 dB
       bias_tee: false
       # narrowband_filter: true   # HackRF Pro only — see below
+      # fpga_dc_block: true       # HackRF Pro only — see below
 ```
 
 Copy the serial straight from `gophertrunk sdr list`. The match is
@@ -191,13 +192,32 @@ The option is ignored — with a one-line startup warning — on any board that
 lacks the filter, including the original HackRF One, so it is safe to leave in a
 shared config.
 
-> **Pro-only features not yet wired.** The Pro also advertises a 16-bit
-> *extended-precision* sample mode and an FPGA-based DC-spike canceller. Neither
-> has a host-side command in the public libhackrf/firmware API as of the
-> 2026.01 release, so GopherTrunk does not drive them yet — doing so reliably
-> needs the vendor register map Great Scott Gadgets has not published. GopherTrunk
-> already removes the residual DC offset in software on the voice path (the P25
-> DC-block), which covers the same failure mode the FPGA canceller targets.
+The Pro can also strip the zero-IF **DC-offset spike in its FPGA**, before the
+samples ever leave the device. This is the same spur GopherTrunk's P25 voice
+path removes in software (a first-order DC-block), but doing it in the gateware
+is cheaper and — unlike the software block, which only sits on the voice decode
+path — it also cleans the control channel. Measured on hardware, engaging it
+drops the raw stream's DC magnitude from several counts to zero. Enable it per
+device with `fpga_dc_block: true`:
+
+```yaml
+sdr:
+  devices:
+    - serial: "…"
+      role: control
+      fpga_dc_block: true       # HackRF Pro only
+```
+
+Both options are ignored — with a startup warning — on any board without the
+hardware, so they are safe to leave in a shared config.
+
+> **Extended precision not wired yet.** The Pro additionally offers a 16-bit
+> *extended-precision* RX mode (FPGA down-conversion + decimation, ~9–11 ENOB).
+> The host commands for it exist (`hackrf_set_fpga_bitstream`), but it changes
+> the sample stream from 8-bit to 16-bit I/Q and pre-decimates in the FPGA, so
+> it needs a separate decode path in the driver rather than a single init call.
+> That's a larger change tracked as a follow-up; detection, the narrowband
+> filter, and the FPGA DC-block above are the pieces wired today.
 
 ## Where to buy
 

@@ -367,6 +367,52 @@ func TestSetNarrowbandFilterNonProErrors(t *testing.T) {
 	}
 }
 
+func TestSetFPGADCBlockPro(t *testing.T) {
+	dev, mt := withDevice(t)
+	dev.isPro = true
+	// Read-modify-write: read control reg (0x00), set bit 0, write 0x01.
+	mt.Script = []usb.CtrlExchange{
+		{In: true, BRequest: reqFPGAReadReg, WIndex: uint16(gatewareRegControl), Reply: []byte{0x00}, N: 1},
+		{BRequest: reqFPGAWriteReg, WValue: 0x01, WIndex: uint16(gatewareRegControl)},
+	}
+	if err := dev.SetFPGADCBlock(true); err != nil {
+		t.Fatalf("SetFPGADCBlock(on): %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v", mt.Err)
+	}
+	if mt.Step != len(mt.Script) {
+		t.Fatalf("issued %d/%d scripted transfers", mt.Step, len(mt.Script))
+	}
+}
+
+func TestSetFPGADCBlockPreservesOtherBits(t *testing.T) {
+	dev, mt := withDevice(t)
+	dev.isPro = true
+	// Control reg already has bit 7 set (e.g. a TX trigger enable): the
+	// read-modify-write must OR in bit 0 without clearing bit 7 → 0x81.
+	mt.Script = []usb.CtrlExchange{
+		{In: true, BRequest: reqFPGAReadReg, WIndex: uint16(gatewareRegControl), Reply: []byte{0x80}, N: 1},
+		{BRequest: reqFPGAWriteReg, WValue: 0x81, WIndex: uint16(gatewareRegControl)},
+	}
+	if err := dev.SetFPGADCBlock(true); err != nil {
+		t.Fatalf("SetFPGADCBlock(on): %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v", mt.Err)
+	}
+}
+
+func TestSetFPGADCBlockNonProErrors(t *testing.T) {
+	dev, mt := withDevice(t) // isPro defaults to false
+	if err := dev.SetFPGADCBlock(true); err == nil {
+		t.Fatal("SetFPGADCBlock on a non-Pro board: want error, got nil")
+	}
+	if mt.Step != 0 {
+		t.Fatalf("non-Pro SetFPGADCBlock issued %d control transfer(s); want 0", mt.Step)
+	}
+}
+
 func TestDecodeInt8IQ(t *testing.T) {
 	// Three samples: (+127, -127), (0, 0), (-128, +64).
 	buf := []byte{127, 0xFF - 126, 0, 0, 0x80, 64}
