@@ -250,6 +250,11 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		SampleRateHz: symbolHz,
 		DeviationHz:  p25p1DeviationHz,
 		DemodMode:    mode,
+		// Strip the front-end zero-IF DC spur that sits on the on-channel-tuned
+		// voice signal. Without it, a tuner with a large centre spike (the
+		// HackRF especially) corrupts the FM discriminator and yields zero LDU
+		// frames even on a strong clear call (see receiver/dcblock.go).
+		EnableDCBlock: true,
 		// Feed the demod symbol taps into the boundary tracker's per-call
 		// EVM/SNR accumulator. C4FM populates SoftSink (the 4-level soft eye);
 		// the CQPSK/LSM path populates SymbolSink (the complex constellation).

@@ -66,6 +66,12 @@ type Config struct {
 	// EnableAdaptiveSlicer opts the C4FM path into the adaptive slicer
 	// (issue #402; off in production).
 	EnableAdaptiveSlicer bool
+	// EnableDCBlock inserts the pre-discriminator complex DC-removal high-pass
+	// on the P25 C4FM path — strips the static zero-IF DC spur (e.g. the HackRF
+	// centre spike) that otherwise collapses voice decode. Off by default; the
+	// production voice composer enables it unconditionally, this exposes it for
+	// diagnosing/decoding on-channel HackRF captures via replay.
+	EnableDCBlock bool
 	// EnableSoftSync opts the P25 control channel into the wider FSW-fallback
 	// tolerance: sync words carrying 5–8 symbol errors are decoded if the
 	// frame's TSBK CRC corroborates the NID, extending lock reach into
@@ -189,7 +195,7 @@ func (c Config) wantP25Deep() bool {
 		return false
 	}
 	return c.CollectIQDiag || c.CollectReceiverState || c.CollectPDUs ||
-		c.NIDSearchSpan > 0 || c.EnableDDA || c.EnableAdaptiveSlicer ||
+		c.NIDSearchSpan > 0 || c.EnableDDA || c.EnableAdaptiveSlicer || c.EnableDCBlock ||
 		c.EnableSoftSync || c.DemodMode != ""
 }
 
