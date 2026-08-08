@@ -53,6 +53,21 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **DMR 2-slot voice: weak repeater carriers decoded at the wrong cadence,
+  producing a rhythmic "helicopter" chop (reopened #644).** On a weak signal a
+  real repeater's embedded Link Control never fully decodes AND the AMBE Golay-FEC
+  cadence metric can't tell the 264- from the 288-dibit same-slot stride apart
+  (both sit at the covering-radius floor), so the decoder fell back to the wrong
+  stride and sliced every burst B–F progressively off — a 360 ms (one-superframe)
+  amplitude chop the reporter heard as a helicopter. The interleaved decoder now
+  detects the cadence from the **embedded-signalling structure** — the stride at
+  which bursts B–E show a consistent colour code and the Full-LC LCSS progression
+  (First/Cont/Cont/Last). That needs only the robust 16-bit EMB headers (not the
+  fragile 128-bit embedded LC), so it works where the full-LC decode and the FEC
+  metric both fail, and it works for a single active slot. Pinned by
+  `TestInterleavedDecoderLocksCadenceFromEmbeddedHeaders`. (A very weak site can
+  still starve even the headers — raising the front-end gain, e.g. `gain: auto`
+  on a shared wideband dongle, remains the first-order fix.)
 - **DMR 2-slot voice: a wrong same-slot cadence guess could garble a whole
   call and never recover (reopened #644).** When a call opens on a section
   whose embedded Link Control doesn't decode, the interleaved decoder picks

@@ -59,6 +59,16 @@ type VoiceSuperframe struct {
 	// publishes it on the location bus.
 	HasGPS bool
 	GPS    dmr.GPSInfo
+
+	// embB2E holds the decoded 16-bit EMB headers of bursts B, C, D, E (indices
+	// 0..3) as read at this slice's stride, and embB2ESet counts how many were
+	// populated (4 for a full A–F slice). embCadenceConsistent uses them to
+	// detect the true same-slot cadence from the embedded-signalling STRUCTURE —
+	// a robust discriminator that survives the weak signal / lc_superframes=0
+	// regime where both the full embedded-LC decode and the AMBE-FEC metric fail
+	// (issue #644). Unexported: an internal decode aid, not part of the PDU.
+	embB2E    [4]dmr.EMB
+	embB2ESet int
 }
 
 // voiceSyncs are the sync words that frame burst A of a voice
@@ -269,6 +279,53 @@ func ambeErrorScore(sf VoiceSuperframe) int {
 	return score
 }
 
+// embCadenceMinConsistent is how many of the four bursts B–E must agree for the
+// embedded-signalling cadence check to fire: ≥3 of 4 sharing a colour code AND
+// ≥3 of 4 carrying the expected Full-LC LCSS. Tolerating one mismatched burst
+// keeps it firing on a weak signal (~3.6% BER ⇒ ~0.87 per superframe) while a
+// wrong-stride slice — random EMB headers — has only ~5e-4 chance of passing
+// both, so the true cadence is found within a superframe or two.
+const embCadenceMinConsistent = 3
+
+// embFullLCProgression is the LCSS a Full LC spreads across bursts B, C, D, E.
+var embFullLCProgression = [4]dmr.LCSS{dmr.LCSSFirst, dmr.LCSSCont, dmr.LCSSCont, dmr.LCSSLast}
+
+// embCadenceConsistent reports whether a slice's bursts B–E carry coherent
+// embedded-LC signalling: a single dominant colour code AND the Full-LC LCSS
+// progression (First, Cont, Cont, Last), each in ≥embCadenceMinConsistent of the
+// four bursts. Real embedded signalling only lines up this way at the TRUE
+// same-slot stride — a wrong stride reads AMBE payload into the EMB position and
+// yields random headers. It needs only the 16-bit EMB headers, so it survives
+// weak signals that defeat the full 128-bit embedded-LC BPTC+CRC (the
+// lc_superframes=0 regime, #644), and because it tests structure at the sliced
+// position it works for a single active slot (where burst-spacing cadence
+// inference is ambiguous). BS-Data filler in a synthetic stream carries four
+// identical LCSS, which cannot match the progression, so it never fires there.
+func embCadenceConsistent(sf VoiceSuperframe) bool {
+	if sf.embB2ESet < 4 {
+		return false
+	}
+	modal := 0
+	for i := 0; i < 4; i++ {
+		n := 0
+		for j := 0; j < 4; j++ {
+			if sf.embB2E[j].ColorCode == sf.embB2E[i].ColorCode {
+				n++
+			}
+		}
+		if n > modal {
+			modal = n
+		}
+	}
+	lcss := 0
+	for i := 0; i < 4; i++ {
+		if sf.embB2E[i].LCSS == embFullLCProgression[i] {
+			lcss++
+		}
+	}
+	return modal >= embCadenceMinConsistent && lcss >= embCadenceMinConsistent
+}
+
 // resolveAndSlice produces the superframe anchored at start.
 //
 // A CRC-valid embedded Link Control is authoritative: once one confirms the
@@ -296,12 +353,21 @@ func (d *Decoder) resolveAndSlice(start int, syncName string) VoiceSuperframe {
 
 	bestIdx, bestScore, secondScore := -1, math.MaxInt, math.MaxInt
 	var bestSF VoiceSuperframe
+	embIdx, embMultiple := -1, false
+	var embSF VoiceSuperframe
 	for i, step := range d.cadenceCandidates {
 		sf := d.sliceAt(start, step, syncName)
 		if sf.HasLC {
 			// Authoritative: a CRC-valid LC overrides any provisional lock.
 			d.lockedStep, d.lockedByLC = step, true
 			return sf
+		}
+		if embCadenceConsistent(sf) {
+			if embIdx >= 0 {
+				embMultiple = true
+			} else {
+				embIdx, embSF = i, sf
+			}
 		}
 		switch s := ambeErrorScore(sf); {
 		case s < bestScore:
@@ -310,6 +376,18 @@ func (d *Decoder) resolveAndSlice(start int, syncName string) VoiceSuperframe {
 		case s < secondScore:
 			secondScore = s
 		}
+	}
+
+	// Embedded-signalling cadence lock: when exactly one candidate carries
+	// coherent embedded-LC headers (consistent colour code + Full-LC LCSS
+	// progression), that stride is the real cadence — a far stronger, weak-signal-
+	// robust discriminator than the AMBE-FEC metric, and the fix for the reopened
+	// #644 "helicopter" where lc_superframes=0 leaves the FEC metric blind and the
+	// decoder falls back to the wrong stride. Provisional (lockedByLC stays false)
+	// so a later CRC-valid full LC can still upgrade it to authoritative.
+	if embIdx >= 0 && !embMultiple {
+		d.lockedStep = d.cadenceCandidates[embIdx]
+		return embSF
 	}
 
 	clearWinner := bestIdx >= 0 && bestScore <= ambeCadenceLockCeiling &&
@@ -364,6 +442,8 @@ func (d *Decoder) sliceAt(start, step int, syncName string) VoiceSuperframe {
 		if b >= 1 && b <= 4 {
 			emb, frag := dmr.SplitEmbeddedField(dibitsToBits(burst.Sync()))
 			frags[b-1] = frag
+			sf.embB2E[b-1] = emb
+			sf.embB2ESet++
 			// A single-fragment (LCSS==Single) embedded field is not part of
 			// the four-fragment Full LC: it carries either a Reverse Channel
 			// word or the null idle. Decode the first RC seen in the

@@ -134,7 +134,13 @@ The inner FEC layers still pending real-air validation:
   LC — or a clear FEC winner at a different stride — overrides a wrong early
   guess and re-locks the correct cadence, so one bad guess no longer garbles
   the rest of the call
-  (`TestInterleavedDecoderLCOverridesWrongProvisionalCadence`).
+  (`TestInterleavedDecoderLCOverridesWrongProvisionalCadence`). On a **weak**
+  carrier where neither the full LC nor the FEC metric can pick the stride, the
+  cadence is recovered from the **embedded-signalling structure** — the stride at
+  which bursts B–E carry a consistent colour code and the Full-LC LCSS
+  progression (only the robust 16-bit EMB headers are needed, so this survives
+  the `lc_superframes=0` regime and a single active slot)
+  (`TestInterleavedDecoderLocksCadenceFromEmbeddedHeaders`).
   The interleaved + LC path is the **default for DMR Tier II conventional
   and Tier III** (#644, extended to Tier II after a field report of garbled
   "DJ-scratch" audio on a `dmr-tier2` site — the same single-slot/2-slot

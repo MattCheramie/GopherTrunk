@@ -630,6 +630,83 @@ func TestInterleavedDecoderLCOverridesWrongProvisionalCadence(t *testing.T) {
 	checkFrames(t, *b, bFrames, 0)
 }
 
+// buildInterleavedStreamEmbNoLC weaves a 2-slot stream whose bursts B–E carry
+// valid EMB HEADERS (a consistent colour code + the Full-LC LCSS progression)
+// but a CORRUPT 32-bit LC fragment, so the full embedded-LC BPTC+CRC fails
+// (HasLC stays false) while the 16-bit headers still decode. AMBE frames are
+// NON-codewords so the AMBE-FEC metric can't lock either. This models the
+// reporter's weak-signal, lc_superframes=0 regime (#644), where only the header
+// structure survives to reveal the true cadence. cach dibits of filler set the
+// cadence (12 ⇒ 288, 0 ⇒ 264).
+func buildInterleavedStreamEmbNoLC(t *testing.T, cach int, cc uint8) (stream []uint8, aFrames, bFrames [][]byte) {
+	t.Helper()
+	const bSeedOffset = 10000
+	for f := 0; f < FramesPerSuperframe; f++ {
+		aFrames = append(aFrames, mkFrame(f))
+		bFrames = append(bFrames, mkFrame(f+bSeedOffset))
+	}
+	// A 32-bit fragment that is not a valid embedded-LC codeword, so the four
+	// reassembled fragments fail DecodeEmbeddedLC's BPTC + 5-bit CRC.
+	garble := func(seed int) []byte {
+		frag := make([]byte, framing.EmbeddedFragmentBits)
+		for i := range frag {
+			frag[i] = byte((seed*13 + i*7) & 1)
+		}
+		return frag
+	}
+	cachFiller := make([]uint8, cach)
+	for b := 0; b < BurstsPerSuperframe; b++ {
+		aSync, bSync := dmr.BSData.Dibits, dmr.BSData.Dibits
+		switch {
+		case b == 0:
+			aSync, bSync = dmr.BSVoice.Dibits, dmr.BSVoice.Dibits
+		case b >= 1 && b <= 4:
+			aSync = embeddedSync(dmr.EMB{ColorCode: cc, LCSS: burstLCSS(b)}, garble(b))
+			bSync = embeddedSync(dmr.EMB{ColorCode: cc, LCSS: burstLCSS(b)}, garble(b+100))
+		}
+		base := b * FramesPerBurst
+		stream = append(stream, cachFiller...)
+		stream = append(stream, makeVoiceBurst(aFrames[base:base+FramesPerBurst], aSync)...)
+		stream = append(stream, cachFiller...)
+		stream = append(stream, makeVoiceBurst(bFrames[base:base+FramesPerBurst], bSync)...)
+	}
+	stream = append(stream, make([]uint8, interleaveTail)...)
+	return stream, aFrames, bFrames
+}
+
+// TestInterleavedDecoderLocksCadenceFromEmbeddedHeaders is the reopened-#644
+// guard for the reporter's live symptom: a weak BS repeater carrier where the
+// embedded LC never fully decodes (lc_superframes=0) and the AMBE-FEC metric
+// can't tell 264 from 288 (both slices sit at the Golay covering-radius floor),
+// so the old decoder fell back to the wrong 264 and produced a 360 ms /
+// one-superframe "helicopter" chop. The decoder must instead lock the true 288
+// cadence from the embedded-signalling STRUCTURE (consistent colour code +
+// Full-LC LCSS progression across bursts B–E), which survives when the full LC
+// and the AMBE FEC do not.
+func TestInterleavedDecoderLocksCadenceFromEmbeddedHeaders(t *testing.T) {
+	stream, aFrames, bFrames := buildInterleavedStreamEmbNoLC(t, cachDibits, 5)
+
+	d := NewInterleavedDecoder()
+	got := d.Process(stream, 0)
+	if len(got) != 2 {
+		t.Fatalf("got %d superframes, want 2 (one per timeslot)", len(got))
+	}
+	// The full embedded LC must NOT decode — this test exercises the header-only
+	// cadence path, not the authoritative HasLC lock.
+	for _, sf := range got {
+		if sf.HasLC {
+			t.Fatalf("HasLC true — the corrupt fragment should fail the full-LC BPTC+CRC")
+		}
+	}
+	if d.lockedStep != 2*(dmr.BurstDibits+cachDibits) {
+		t.Fatalf("lockedStep = %d, want %d (288 CACH cadence from embedded headers)",
+			d.lockedStep, 2*(dmr.BurstDibits+cachDibits))
+	}
+	// And the emitted frames are the correct 288 slice, not the garbled 264 fallback.
+	checkFrames(t, got[0], aFrames, 0)
+	checkFrames(t, got[1], bFrames, 0)
+}
+
 // TestDecoderSuperframeNoLCWhenAbsent confirms a superframe whose B–E
 // bursts carry no valid embedded LC (the plain single-slot synth) leaves
 // HasLC false rather than surfacing a garbage talkgroup.
