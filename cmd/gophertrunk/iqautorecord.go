@@ -84,6 +84,7 @@ type iqAutoRecorder struct {
 	seen     map[string]time.Time // observed-call key -> last grant time
 	lastAuto time.Time            // last automatic (non-manual) trigger, for cooldown
 	inFlight int
+	reserved map[string]struct{} // capture paths handed out, so concurrent/same-second captures never collide
 }
 
 // newIQAutoRecorder builds an auto-recorder for the control SDR's broker.
@@ -127,6 +128,7 @@ func newIQAutoRecorder(cfg config.BasebandAutoRecordConfig, system, protocol, se
 		now:      time.Now,
 		baseCtx:  context.Background(),
 		seen:     make(map[string]time.Time),
+		reserved: make(map[string]struct{}),
 	}
 	a.capture = a.defaultCapture
 	return a
@@ -401,7 +403,7 @@ func (a *iqAutoRecorder) runCapture(ctx context.Context, reason, system, protoco
 		a.log.Warn("iq-autorecord: could not create capture dir", "reason", reason, "dir", a.dir, "err", err)
 		return
 	}
-	path := filepath.Join(a.dir, autoRecordFilename(system, reason, at, centerHz, rateHz, a.format))
+	path := a.reserveCapturePath(autoRecordFilename(system, reason, at, centerHz, rateHz, a.format))
 
 	a.log.Info("iq-autorecord: capturing", "reason", reason, "path", path,
 		"seconds", a.seconds, "center_hz", centerHz, "rate_hz", rateHz)
@@ -424,6 +426,39 @@ func (a *iqAutoRecorder) runCapture(ctx context.Context, reason, system, protoco
 	}
 	a.log.Info("iq-autorecord: captured", "reason", reason, "path", path,
 		"samples", samples, "drops", drops)
+}
+
+// reserveCapturePath turns a capture name into a collision-free path under
+// a.dir. autoRecordFilename is only unique to the second, and autoRecordMaxInFlight
+// permits concurrent captures by design, so two triggers in the same second (or
+// the same nanosecond) would otherwise build the same name and the second
+// os.Create would truncate/race the first. On a name that is already handed out
+// this session (a.reserved) or already present on disk (surviving a restart), a
+// -2, -3, … counter is inserted before the extension until the path is free; the
+// winner is recorded so a second concurrent caller skips past it. Held under a.mu
+// so the two runCapture goroutines serialise. Entries are never released: once a
+// file is written its name must never be reused, and the disk check would catch
+// it anyway; growth is one small string per capture (cooldown-throttled).
+func (a *iqAutoRecorder) reserveCapturePath(name string) string {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for n := 1; ; n++ {
+		candidate := name
+		if n > 1 {
+			candidate = fmt.Sprintf("%s-%d%s", stem, n, ext)
+		}
+		path := filepath.Join(a.dir, candidate)
+		if _, taken := a.reserved[path]; taken {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			continue // already on disk (e.g. from a previous run)
+		}
+		a.reserved[path] = struct{}{}
+		return path
+	}
 }
 
 // autoRecordFilename builds a self-describing capture name:
