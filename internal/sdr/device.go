@@ -75,6 +75,16 @@ type Device interface {
 	Close() error
 }
 
+// NarrowbandFilterer is an optional Device extension implemented by the
+// HackRF Pro, whose RF front-end carries a switchable narrowband
+// anti-alias filter. Callers type-assert for it (like TunerDiagnoser)
+// so backends without the filter need not implement it. Enabling it
+// tightens adjacent-channel rejection for narrowband voice channels at
+// the cost of usable bandwidth.
+type NarrowbandFilterer interface {
+	SetNarrowbandFilter(enable bool) error
+}
+
 // TunerDiagnoser is an optional Device extension that surfaces tuner
 // detection state for boot-time diagnostics. Callers type-assert for it
 // (like ActualSampleRate / SettleAfterRetune) so backends that don't

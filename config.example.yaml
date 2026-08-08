@@ -261,6 +261,11 @@ sdr:
                            # HackRF One 0–560 (~0–56 dB). HackRF has no true AGC,
                            # so "auto" maps to a fixed LNA 16 / VGA 20 dB split.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      # narrowband_filter: true  # HackRF Pro only: engage the Pro's switchable
+                           # narrowband anti-alias filter for tighter adjacent-
+                           # channel rejection on narrowband voice (e.g. P25),
+                           # trading usable bandwidth. Ignored, with a warning,
+                           # on a HackRF One or any board without the filter.
       # dc_avoid: true     # control role only: tune the LO off-channel and mix
                            # the channel back to baseband in the down-converter,
                            # off the front-end DC spur, 1/f noise and the I/Q

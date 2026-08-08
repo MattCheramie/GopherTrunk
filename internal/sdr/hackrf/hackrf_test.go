@@ -286,20 +286,21 @@ func TestSplitGain(t *testing.T) {
 	cases := []struct {
 		tenthDB          int
 		wantLNA, wantVGA int
+		wantAmp          bool
 	}{
-		{-1, defaultLNAGainDB, defaultVGAGainDB},
-		{0, 0, 0},
-		{160, 16, 0},   // 16 dB → all in LNA
-		{180, 16, 2},   // 16 dB LNA + 2 dB VGA
-		{300, 24, 6},   // 24 + 6 = 30 dB
-		{900, 40, 50},  // clamped: 40 dB LNA, 50 dB VGA
-		{1500, 40, 62}, // both saturated
+		{-1, defaultLNAGainDB, defaultVGAGainDB, true}, // "auto" enables the front-end RF amp
+		{0, 0, 0, false},
+		{160, 16, 0, false},   // 16 dB → all in LNA
+		{180, 16, 2, false},   // 16 dB LNA + 2 dB VGA
+		{300, 24, 6, false},   // 24 + 6 = 30 dB
+		{900, 40, 50, false},  // clamped: 40 dB LNA, 50 dB VGA
+		{1500, 40, 62, false}, // both saturated
 	}
 	for _, c := range cases {
 		lna, vga, amp := splitGain(c.tenthDB)
-		if lna != c.wantLNA || vga != c.wantVGA || amp {
-			t.Errorf("splitGain(%d) = (%d,%d,%v), want (%d,%d,false)",
-				c.tenthDB, lna, vga, amp, c.wantLNA, c.wantVGA)
+		if lna != c.wantLNA || vga != c.wantVGA || amp != c.wantAmp {
+			t.Errorf("splitGain(%d) = (%d,%d,%v), want (%d,%d,%v)",
+				c.tenthDB, lna, vga, amp, c.wantLNA, c.wantVGA, c.wantAmp)
 		}
 	}
 }
@@ -307,7 +308,7 @@ func TestSplitGain(t *testing.T) {
 func TestSetGainIssuesAMPLNAVGA(t *testing.T) {
 	dev, mt := withDevice(t)
 	mt.Script = []usb.CtrlExchange{
-		{BRequest: reqAmpEnable, WValue: 0},
+		{BRequest: reqAmpEnable, WValue: 1}, // "auto" (-1) enables the front-end amp
 		{In: true, BRequest: reqSetLNAGain, WIndex: 16, Reply: []byte{1}, N: 1},
 		{In: true, BRequest: reqSetVGAGain, WIndex: 20, Reply: []byte{1}, N: 1},
 	}
@@ -333,6 +334,36 @@ func TestSetBiasTeeRoundTrips(t *testing.T) {
 	}
 	if mt.Err != nil {
 		t.Fatalf("transport: %v", mt.Err)
+	}
+}
+
+func TestSetNarrowbandFilterPro(t *testing.T) {
+	dev, mt := withDevice(t)
+	dev.isPro = true // board ID 5 (Praline) — Pro-only request is allowed
+	mt.Script = []usb.CtrlExchange{
+		{BRequest: reqSetNarrowbandFilter, WValue: 1},
+		{BRequest: reqSetNarrowbandFilter, WValue: 0},
+	}
+	if err := dev.SetNarrowbandFilter(true); err != nil {
+		t.Fatalf("SetNarrowbandFilter(on): %v", err)
+	}
+	if err := dev.SetNarrowbandFilter(false); err != nil {
+		t.Fatalf("SetNarrowbandFilter(off): %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v", mt.Err)
+	}
+}
+
+func TestSetNarrowbandFilterNonProErrors(t *testing.T) {
+	dev, mt := withDevice(t) // isPro defaults to false
+	dev.info.Product = "HackRF One"
+	if err := dev.SetNarrowbandFilter(true); err == nil {
+		t.Fatal("SetNarrowbandFilter on a non-Pro board: want error, got nil")
+	}
+	// The request must never reach the wire on a board that would stall it.
+	if mt.Step != 0 {
+		t.Fatalf("non-Pro SetNarrowbandFilter issued %d control transfer(s); want 0", mt.Step)
 	}
 }
 
