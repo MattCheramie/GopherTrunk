@@ -232,6 +232,14 @@ type Options struct {
 	// and for A/B experimentation. Ignored when DeviationHz <= 0 or when
 	// DemodMode == DemodCQPSK.
 	EnableAdaptiveC4FMSlicer bool
+	// EnableDCBlock inserts a first-order complex DC-removal high-pass at
+	// the very top of Process, ahead of the FM discriminator, to strip the
+	// static zero-IF DC spur that sits on an on-channel-tuned voice signal
+	// (the HackRF's centre spike is large enough to collapse P25 voice
+	// decode to zero — see dcblock.go). Off by default and intended for the
+	// VOICE receivers only; never the control-channel DDC path. Safe for
+	// C4FM: the ~12 Hz corner is decades below the ±600/±1800 Hz C4FM tones.
+	EnableDCBlock bool
 	// SoftSink, when non-nil, receives the per-symbol soft samples
 	// produced by the matched filter + symbol-clock recovery, just
 	// before slicing. The C4FM path emits the FM-discriminator +
@@ -283,6 +291,8 @@ type Receiver struct {
 	// Process for the bootstrap-then-refine choreography.
 	fm               *demod.FM
 	mf               *demod.C4FM
+	dcBlk            *dcBlock       // optional pre-discriminator complex DC-removal (voice), nil = off
+	dcbuf            []complex64    // scratch for dcBlk.process
 	slicer           *demod.AdaptiveC4FMSlicer // adaptive 4-level slicer; nil on the legacy pre-scaled-fixture path
 	afc              *demod.CoarseAFC
 	dda              *demod.DecisionDirectedAFC
@@ -397,6 +407,9 @@ func New(opts Options) *Receiver {
 			r.slicer = demod.NewAdaptiveC4FMSlicer(slicerScale)
 		}
 		r.afc = demod.NewCoarseAFC(sps)
+		if opts.EnableDCBlock {
+			r.dcBlk = &dcBlock{}
+		}
 		r.clock = sync.NewMuellerMuller(sps, gain)
 		// Symbol-AGC bridges the level mismatch between the spec-
 		// faithful matched filter on a real P25 transmission and the
@@ -486,6 +499,14 @@ func New(opts Options) *Receiver {
 func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
+	}
+	// Strip the static zero-IF DC spur (e.g. the HackRF centre spike) before
+	// anything else. A constant IQ bias corrupts the FM discriminator's phase
+	// differences and collapses C4FM voice decode; the ~12 Hz high-pass leaves
+	// the modulation untouched. Voice-receiver opt-in; nil on the CC path.
+	if r.dcBlk != nil {
+		r.dcbuf = r.dcBlk.process(r.dcbuf, iq)
+		iq = r.dcbuf
 	}
 	if r.demodMode == DemodCQPSK {
 		// cq.process returns its internal dibit buffer; we hand
@@ -868,6 +889,9 @@ func (r *Receiver) Reset() {
 	}
 	if r.afc != nil {
 		r.afc.Reset()
+	}
+	if r.dcBlk != nil {
+		r.dcBlk.Reset()
 	}
 	if r.dda != nil {
 		r.dda.Reset()
