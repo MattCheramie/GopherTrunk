@@ -211,13 +211,21 @@ sdr:
 Both options are ignored — with a startup warning — on any board without the
 hardware, so they are safe to leave in a shared config.
 
-> **Extended precision not wired yet.** The Pro additionally offers a 16-bit
-> *extended-precision* RX mode (FPGA down-conversion + decimation, ~9–11 ENOB).
-> The host commands for it exist (`hackrf_set_fpga_bitstream`), but it changes
-> the sample stream from 8-bit to 16-bit I/Q and pre-decimates in the FPGA, so
-> it needs a separate decode path in the driver rather than a single init call.
-> That's a larger change tracked as a follow-up; detection, the narrowband
-> filter, and the FPGA DC-block above are the pieces wired today.
+> **Extended precision is blocked in firmware, not here.** The Pro advertises a
+> 16-bit *extended-precision* RX mode (FPGA down-conversion + decimation, ~9–11
+> ENOB). The host command to select the bitstream exists
+> (`hackrf_set_fpga_bitstream`), and the gateware itself is complete, but the
+> coordinated mode is **not implemented in the released Pro firmware**: as of
+> `master` (Aug 2026) `fpga_init()` only programs the standard bitstream's
+> registers (`// TODO support the other bitstreams`), the `RADIO_CONFIG_EXT_PRECISION_RX`
+> path is dead code, and the MCU's SGPIO capture stays hardwired to the standard
+> 2-byte sample format with no host request to change it. So loading bitstream 2
+> from the host produces an incoherent stream — this is a Great Scott Gadgets
+> firmware to-do, not something a host driver can work around. When GSG ships the
+> mode switch, the driver side is well-understood (interleaved int16 LE I/Q,
+> 4 bytes/pair carrying a sign-extended 12-bit value; decimation register = log2
+> of 16×–128×). Detection, the narrowband filter, and the FPGA DC-block above are
+> the Pro pieces that work today.
 
 ## Where to buy
 
