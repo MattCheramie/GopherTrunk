@@ -20,9 +20,11 @@ for tagged releases.
   Pro's FPGA before samples leave the device — a hardware alternative to the P25
   voice path's software DC-block that also cleans the control channel (measured
   on hardware: raw-stream DC magnitude drops to zero). Both are ignored, with a
-  startup warning, on any board without the hardware. The Pro's 16-bit
-  extended-precision RX mode is a larger, separate change (8-bit → 16-bit stream
-  format) tracked as a follow-up.
+  startup warning, on any board without the hardware. (The Pro's 16-bit
+  extended-precision RX mode is not included: it's unimplemented in the released
+  Pro firmware — `fpga_init` only programs the standard bitstream and the SGPIO
+  capture is hardwired to the 2-byte format — so it can't be driven from the host
+  yet.)
 - **DMR now auto-corrects a small residual tuner carrier offset.** The
   narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
   the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz
