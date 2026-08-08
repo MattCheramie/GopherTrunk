@@ -389,7 +389,11 @@ func (d *Device) SetGain(tenthDB int) error {
 // multiple of 2.
 func splitGain(tenthDB int) (lna, vga int, amp bool) {
 	if tenthDB < 0 {
-		return defaultLNAGainDB, defaultVGAGainDB, false
+		// "auto": enable the front-end RF amp (like SDRTrunk's default
+		// amplifierEnabled:true). The amp sets the noise figure for weak
+		// signals; without it, voice channels on a modest antenna decode
+		// at a much lower SNR and time out with no frames.
+		return defaultLNAGainDB, defaultVGAGainDB, true
 	}
 	target := tenthDB / 10
 	lna = (target / 8) * 8
