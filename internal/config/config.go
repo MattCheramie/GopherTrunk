@@ -1284,20 +1284,31 @@ type DeviceConfig struct {
 	// Equivalent to the replay subcommand's -conjugate flag (issue #264).
 	IQInvert bool `yaml:"iq_invert"`
 
-	// DCAvoid enables live LO-offset (DC-spike-avoidance) tuning on a
-	// control-role SDR (issue #402): the hardware LO is tuned below the
-	// control-channel frequency and the channel is mixed back to baseband in
-	// the down-converter, off the front-end DC spur, 1/f noise and the
+	// DCAvoid enables live LO-offset (DC-spike-avoidance) tuning (issue #402):
+	// the hardware LO is tuned below the target frequency and the channel is
+	// mixed back to baseband, off the front-end DC spur, 1/f noise and the
 	// channel's own I/Q-imbalance image (all of which corrupt a C4FM channel
-	// sitting at zero-IF on an RTL-SDR). This is the same offset tuning
-	// SDRTrunk/OP25 apply. Off by default; enable per control device and
-	// confirm the tsbk-crc/nid-bch rates drop while the channel stays locked.
+	// sitting at zero-IF on a HackRF / RTL-SDR). This is the same offset tuning
+	// SDRTrunk/OP25 apply by channelising every carrier off-DC.
+	//
+	// Applies to BOTH roles:
+	//   - control: the ccdecoder down-converter mixes the control channel back.
+	//   - voice: each granted call is offset-tuned and mixed back per-call (the
+	//     composer sees an on-channel stream). On a zero-IF dongle a granted
+	//     voice carrier tuned exactly on-channel sits on the DC spike, which
+	//     leaves a good average EVM but corrupts frame-sync so voice decodes
+	//     zero LDUs — this is the fix. Strongly recommended for a role:voice
+	//     HackRF/RTL following a simulcast/marginal system.
+	//
+	// Off by default; enable per device and confirm the tsbk-crc / nid-bch
+	// rates drop (control) or voice grants start decoding LDUs (voice).
 	DCAvoid bool `yaml:"dc_avoid"`
 
 	// DCAvoidOffsetHz pins the LO offset in Hz used when DCAvoid is set.
 	// 0 (the default) auto-selects sample_rate/4. Must be < sample_rate/2;
-	// ignored when DCAvoid is false, for non-control roles, or when the
-	// delivered sample rate is at/below the channel rate (no room to offset).
+	// ignored when DCAvoid is false or when the delivered sample rate is
+	// at/below the channel rate (no room to offset). Applies to control and
+	// voice roles alike.
 	DCAvoidOffsetHz int `yaml:"dc_avoid_offset_hz"`
 }
 

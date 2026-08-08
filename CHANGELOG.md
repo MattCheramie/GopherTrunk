@@ -25,6 +25,23 @@ for tagged releases.
   Pro firmware — `fpga_init` only programs the standard bitstream and the SGPIO
   capture is hardwired to the 2-byte format — so it can't be driven from the host
   yet.)
+- **`dc_avoid` now also protects voice grants, not just the control channel.**
+  On a zero-IF dongle (HackRF, RTL-SDR) a granted voice carrier tuned exactly
+  on-channel sits directly on the front-end DC spur / LO self-mixing / I/Q
+  image. That corruption leaves a healthy *average* EVM but biases the specific
+  symbol decisions the frame-sync word rides on, so the sync correlator misses
+  and voice grants decode zero LDUs while the short, heavily-FEC'd control
+  channel still limps through — a system that locks its CC but never produces
+  audio. `dc_avoid: true` on a `role: voice` device now offset-tunes each
+  granted call's LO (by `dc_avoid_offset_hz`, default `sample_rate/4`) and mixes
+  the carrier back to baseband before the composer sees it, the same technique
+  SDRTrunk/OP25 apply by channelising every carrier off-DC — extending the
+  existing control-only offset tuning (issue #402) to the per-grant voice path.
+  Measured on a HackRF Pro against a marginal simulcast P25 system: an
+  on-channel capture demods at ~21 % EVM with 0 frame-sync hits (0 LDUs), while
+  the same signal offset-tuned lands ~10 % EVM and locks (66 NIDs); on the air,
+  voice went from never decoding to clean IMBE audio. The composer is unchanged
+  — the offset is fully encapsulated in a per-device tuner wrapper.
 - **DMR now auto-corrects a small residual tuner carrier offset.** The
   narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
   the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz
