@@ -126,6 +126,17 @@ type ControlChannel struct {
 	// dropped on release. Guarded by mu.
 	callGroups map[uint16]uint32
 
+	// lastTalker records the last-logged transmitting party (src SSI) per group
+	// (GSSI). D-TX-GRANTED is rebroadcast every few seconds for the same talker —
+	// and keeps coming after GT's voice-follow drops on hangtime while the group
+	// is still live on air — so the "tetra: call talker" debug line otherwise
+	// repeats for an unchanged talker (the "hanging call talker" a field report
+	// flagged). The KindCallTalker event still fires every time (the engine's
+	// backfill is idempotent and its split-tx roll is guarded on a source change),
+	// so this only dedups the LOG: a line is emitted when the talker changes, not
+	// on every rebroadcast. Cleared for a group on release. Lazily built; mu.
+	lastTalker map[uint32]uint32
+
 	// grantSeen deduplicates the voice grants TETRA rebroadcasts on the control
 	// channel every multiframe while a call is up. publishGrant fires one
 	// KindGrant (and a debug line) per decoded grant PDU, so a single call emitted
@@ -1030,7 +1041,9 @@ func (c *ControlChannel) publishRelease(gssi uint32, cause uint8) {
 
 // evictGrantSeen drops the dedup entries for a released group so the next grant
 // addressed to it (a genuinely new call) is announced immediately rather than
-// being swallowed as a rebroadcast of the call that just ended.
+// being swallowed as a rebroadcast of the call that just ended. The talker-log
+// dedup for that group is cleared alongside, so the next call's first talker is
+// logged even if it happens to be the same source SSI.
 func (c *ControlChannel) evictGrantSeen(dst uint32) {
 	if dst == 0 {
 		return
@@ -1041,6 +1054,7 @@ func (c *ControlChannel) evictGrantSeen(dst uint32) {
 			delete(c.grantSeen, k)
 		}
 	}
+	delete(c.lastTalker, dst)
 	c.mu.Unlock()
 }
 
@@ -1073,8 +1087,21 @@ func (c *ControlChannel) publishTalker(gssi, src uint32) {
 			At:       c.now(),
 		},
 	})
-	c.log.Debug("tetra: call talker",
-		"system", c.systemName, "group", gssi, "src", src)
+	// Log only on a talker change, not on every D-TX-GRANTED rebroadcast — the
+	// event above already fired for the engine. See lastTalker.
+	c.mu.Lock()
+	changed := c.lastTalker[gssi] != src
+	if changed {
+		if c.lastTalker == nil {
+			c.lastTalker = make(map[uint32]uint32)
+		}
+		c.lastTalker[gssi] = src
+	}
+	c.mu.Unlock()
+	if changed {
+		c.log.Debug("tetra: call talker",
+			"system", c.systemName, "group", gssi, "src", src)
+	}
 }
 
 // noteActivity stamps the control-channel heartbeat with the current time.

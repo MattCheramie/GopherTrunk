@@ -1,6 +1,9 @@
 package tetra
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -130,6 +133,65 @@ func TestHandleCMCETxGrantedSuppressesSelfTalker(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+// TestHandleCMCETxGrantedDedupsTalkerLog: TETRA rebroadcasts D-TX-GRANTED for the
+// same talker every few seconds (and keeps doing so after a voice-follow drops on
+// hangtime while the group is still up), so the "tetra: call talker" debug line
+// used to repeat for an unchanged talker — the "hanging call talker" a field
+// report flagged. The dedup logs on a talker *change* only, while the
+// KindCallTalker event still fires on every rebroadcast (the engine backfill is
+// idempotent). Pre-fix this logs one line per rebroadcast; after, one per change.
+func TestHandleCMCETxGrantedDedupsTalkerLog(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	cc := New(Options{Bus: bus, SystemName: "Sys", FrequencyHz: 467_913_000, Log: log})
+
+	const (
+		gssi    = 0x0ABCDE
+		talkerA = 0x00CAFE
+		talkerB = 0x00BEEF
+	)
+	tx := func(party uint32) {
+		cc.handleCMCE(
+			MACResource{Address: MACAddress{Type: addrSSI, SSI: gssi}},
+			CMCEMessage{Type: CMCETypeDTxGranted, CallIdentifier: 0x66, PartySSI: party},
+		)
+	}
+	// Same talker rebroadcast four times, then a genuine talker change.
+	tx(talkerA)
+	tx(talkerA)
+	tx(talkerA)
+	tx(talkerA)
+	tx(talkerB)
+
+	// The event fires on every rebroadcast — the dedup is log-only.
+	got := 0
+drain:
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallTalker {
+				got++
+			}
+		default:
+			break drain
+		}
+	}
+	if got != 5 {
+		t.Errorf("KindCallTalker events = %d, want 5 (the event must not be deduped)", got)
+	}
+
+	// The log collapses the four identical talkers to one line, plus one for the
+	// change — two, not five.
+	if n := strings.Count(buf.String(), "tetra: call talker"); n != 2 {
+		t.Fatalf(`"tetra: call talker" log lines = %d, want 2 (4 identical rebroadcasts collapse to 1, +1 for the changed talker); pre-fix this is 5`, n)
 	}
 }
 
