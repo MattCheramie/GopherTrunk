@@ -45,6 +45,12 @@ SKIP_PARSE_URLS = {"/404.html"}
 
 HREF_RE = re.compile(r'(?:href|src)\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
 REFRESH_RE = re.compile(r'http-equiv=["\']?refresh', re.IGNORECASE)
+# Sample markup shown *inside* a code block is not a navigable link — a prose
+# example like `<audio src="…/audio/stream">` renders as escaped text within
+# <code>/<pre>, keeping its literal src="…" attribute, which HREF_RE would
+# otherwise mis-read as a real (and broken) internal link. Strip these regions
+# before scanning so example snippets never register as links.
+CODE_BLOCK_RE = re.compile(r"<(pre|code)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
 POST_FILENAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-(?P<slug>.+)\.(?:md|markdown|html)$")
 
 
@@ -170,7 +176,9 @@ def main():
             html = open(fpath, encoding="utf-8", errors="replace").read()
             if REFRESH_RE.search(html):   # redirect stub — nothing to check
                 continue
-            for href in HREF_RE.findall(html):
+            # Ignore href/src that appear inside code samples (see CODE_BLOCK_RE).
+            scan_html = CODE_BLOCK_RE.sub("", html)
+            for href in HREF_RE.findall(scan_html):
                 href = href.strip()
                 if not href or href.startswith("#") or is_external(href):
                     continue
