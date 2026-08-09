@@ -466,6 +466,9 @@ export interface CallRow {
   key_id?: number;
   emergency?: boolean;
   data_call?: boolean;
+  // Individual (unit-to-unit / private) call: group_id is a target radio's
+  // SSI, not a talkgroup. Rendered as an individual call, not a talkgroup.
+  individual?: boolean;
   // TDMA timeslot, 1-based (1 = TS1, 2 = TS2; absent for non-slotted).
   timeslot?: number;
   device_serial?: string;

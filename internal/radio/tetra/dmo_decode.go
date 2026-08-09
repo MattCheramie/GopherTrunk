@@ -92,16 +92,23 @@ func dmDNBType5(b DMBurst) []byte {
 // vocoder — or nil when the class-2 CRC fails (a non-speech burst, a signalling
 // slot, or a corrupted slot), exactly like the TMO TCHSpeechFrames gate. colour
 // is the 30-bit DM colour code the traffic is scrambled with (§8.2.5.2); pass 0
-// for the spec default / common radio-to-radio DMO, matching the way the TMO
-// traffic path treats colour 0 as "no descramble".
+// for the spec default / common radio-to-radio DMO.
+//
+// The descramble is UNCONDITIONAL — including at colour 0. TETRA scrambling is
+// non-identity at colour 0 (NewScramblerTetra(0) seeds the LFSR to 0xC0000000,
+// §8.2.5.2 eq. 8.42), so a clear (TEA0) colour-0 DMO transmitter still scrambles
+// TCH/S with that seed, exactly as the DSB signalling is scrambled with colour 0
+// and DecodeDMSCHS/DecodeBSCH always descramble it. The earlier `if colour != 0`
+// skip (copied from TMO traffic.go, where the extended colour code is never 0)
+// left a real colour-0 DNB scrambled going into the Viterbi/CRC — the uniform
+// ~1/256 "half-wrong" metric the #1003 investigation measured and misread as
+// air-interface encryption. Descrambling with 0 is the fix (issue #1003).
 func DMBurstTCHSpeech(b DMBurst, colour uint32) [][]byte {
 	type5 := dmDNBType5(b)
 	if type5 == nil {
 		return nil
 	}
-	if colour != 0 {
-		type5 = framing.DescrambleTetra(type5, colour)
-	}
+	type5 = framing.DescrambleTetra(type5, colour)
 	return TCHSpeechFrames(framing.PackBitsMSB(type5))
 }
 
@@ -127,9 +134,9 @@ func DMBurstTCHSpeechSoft(b DMBurst, colour uint32) [][]byte {
 	diffs = append(diffs, b.SoftBKN1...)
 	diffs = append(diffs, b.SoftBKN2...)
 	llr := softType5FromDiffs(diffs, (4-b.Rotation)&3)
-	if colour != 0 {
-		llr = framing.DescrambleTetraSoft(llr, colour)
-	}
+	// Descramble unconditionally, including at colour 0 (seed 0xC0000000 is
+	// non-identity) — the soft twin of the DMBurstTCHSpeech fix (issue #1003).
+	llr = framing.DescrambleTetraSoft(llr, colour)
 	return TCHSpeechFramesSoft(llr)
 }
 

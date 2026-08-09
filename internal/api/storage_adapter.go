@@ -62,6 +62,34 @@ type storageHistory struct {
 	db *storage.DB
 }
 
+// RIDSummaries delegates to storage.DB.RIDSummaries, mapping the storage row
+// type to the api one. This makes storageHistory a RIDSummaryProvider, so the
+// Radio IDs list is backed by the persisted call log.
+func (s *storageHistory) RIDSummaries(ctx context.Context, f RIDSummaryFilter) ([]RIDSummary, error) {
+	rows, err := s.db.RIDSummaries(ctx, storage.RIDSummaryFilter{
+		System:   f.System,
+		SourceID: f.SourceID,
+		Limit:    f.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RIDSummary, len(rows))
+	for i, r := range rows {
+		out[i] = RIDSummary{
+			SourceID:      r.SourceID,
+			System:        r.System,
+			Protocol:      r.Protocol,
+			LastTalkgroup: r.LastTalkgroup,
+			CallCount:     r.CallCount,
+			FirstSeen:     r.FirstSeen,
+			LastSeen:      r.LastSeen,
+			SourceAlpha:   r.SourceAlpha,
+		}
+	}
+	return out, nil
+}
+
 func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	rows, err := s.db.History(ctx, storage.HistoryFilter{
 		System:    f.System,
@@ -87,6 +115,7 @@ func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRo
 			Encrypted:      r.Encrypted,
 			Emergency:      r.Emergency,
 			DataCall:       r.DataCall,
+			Individual:     r.Individual,
 			Timeslot:       r.Timeslot,
 			DeviceSerial:   r.DeviceSerial,
 			StartedAt:      r.StartedAt,

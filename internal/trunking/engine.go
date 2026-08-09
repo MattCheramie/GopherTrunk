@@ -598,6 +598,19 @@ func (e *Engine) HandleGrant(g Grant) {
 	if g.Individual {
 		e.noteRadio(g.GroupID, g.System)
 	}
+	// If the grant is addressed to an SSI already known to be a subscriber radio
+	// (seen transmitting, or previously flagged individual), its "talkgroup" is
+	// really a unit-to-unit destination — reclassify so the call is recorded and
+	// surfaced as an INDIVIDUAL call, not filed under a phantom talkgroup named
+	// after the radio ID (the leaked "fake TG" recordings the operator reported:
+	// on-disk under recordings/<system>/<radioID>/ while the WebUI talkgroup list
+	// never shows them). knownRadios is durable across control-channel re-locks —
+	// unlike the control channel's per-lock learned set, which is wiped on every
+	// re-hunt — so this catches radios learned anywhere in the session. GSSIs and
+	// ISSIs never overlap on TETRA, so a known radio is never a real talkgroup.
+	if !g.Individual && g.GroupID != 0 && e.isKnownRadio(g.GroupID) {
+		g.Individual = true
+	}
 	// Cancel a parked TETRA notification hold on this channel the moment any
 	// authoritative (source-bearing) grant for the same physical channel arrives —
 	// the real group grant has landed, so the notification must not spawn its ghost

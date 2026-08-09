@@ -1499,6 +1499,14 @@ func (r *Recorder) directoryFor(cs trunking.CallStart) string {
 	if system == "" {
 		system = "unknown-system"
 	}
+	// A unit-to-unit / private (individual) call: GroupID is a target radio
+	// address, not a talkgroup. File it under an "individual" subtree keyed by the
+	// target SSI so these recordings never masquerade as phantom talkgroups — a
+	// radio-ID-named directory alongside real talkgroups that the WebUI talkgroup
+	// list never shows (the leaked "fake TG" recordings the operator reported).
+	if cs.Grant.Individual {
+		return filepath.Join(r.outDir, system, "individual", fmt.Sprintf("%d", cs.Grant.GroupID))
+	}
 	tgDir := fmt.Sprintf("%d", cs.Grant.GroupID)
 	if cs.Talkgroup != nil && cs.Talkgroup.AlphaTag != "" {
 		tgDir = sanitize(cs.Talkgroup.AlphaTag)

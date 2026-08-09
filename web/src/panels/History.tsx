@@ -95,9 +95,16 @@ export function History() {
       {
         key: "tg",
         header: "TG",
-        render: (r) => (
-          <span className="font-mono text-accent">{r.group_id}</span>
-        ),
+        render: (r) =>
+          r.individual ? (
+            // Individual (unit-to-unit) call: group_id is a target radio's SSI,
+            // not a talkgroup — label it as a radio ID so it is never read as a TG.
+            <span className="font-mono text-muted" title="Individual (unit-to-unit) call — this is a radio ID, not a talkgroup">
+              →{r.group_id}
+            </span>
+          ) : (
+            <span className="font-mono text-accent">{r.group_id}</span>
+          ),
         sort: (a, b) => a.group_id - b.group_id,
       },
       {
@@ -150,6 +157,11 @@ export function History() {
             )}
             {r.emergency && <span className="pill-err">emerg</span>}
             {r.data_call && <span className="pill">data</span>}
+            {r.individual && (
+              <span className="pill" title="Unit-to-unit / private call (not a talkgroup)">
+                individual
+              </span>
+            )}
           </div>
         ),
       },

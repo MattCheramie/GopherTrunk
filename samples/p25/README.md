@@ -24,6 +24,37 @@ Two captures are most valuable, and you can drop either or both:
   most noise-fragile), and
 - an **LSM / CQPSK simulcast** site (the linear path).
 
+## Weak-signal voice (LDU) captures — the priority ask
+
+The captures above are control-channel recordings. The open **weak-signal voice**
+investigation needs the other kind: a **P25 Phase 1 C4FM voice-channel** recording
+of a *marginal* call — the scenario where a hardware radio (e.g. an Astro Spectra)
+decodes clean audio but GopherTrunk recovers only a handful of IMBE frames on the
+same antenna.
+
+Why this specific capture matters: the default C4FM voice receiver has **no channel
+equalizer and no soft-decision FEC** (a blind CMA/FSE equalizer exists only on the
+opt-in `cqpsk`/LSM path). Those are the two levers that roughly doubled TETRA yield
+on ISI-smeared / weak captures. Before porting either onto the C4FM path, we need a
+real weak call to (a) measure the baseline pre-FEC EVM / SNR / LDU yield and (b) A/B
+the change against — per the project rule that a green synthetic is not proof of an
+on-air fix.
+
+What to capture:
+
+- Tune the **voice channel** (the granted frequency), not the control channel, during
+  a call that is **weak / multipath-degraded** (the condition that fails today). A
+  clean, strong call will not exercise the missing equalizer.
+- C4FM (the FM-discriminator path). If the site is LSM/CQPSK, capture that too and set
+  `demod_mode: "cqpsk"`.
+- Include the same call decoded by the reference radio if possible (note it in
+  `tool_cross_check`) so "hardware decodes, GT doesn't" is anchored to one signal.
+- Set `"expected": { "demod_mode": "c4fm" }` and leave the quality bounds out at first
+  (report-only); the harness logs EVM/SNR/LDU yield as the baseline to improve on.
+
+Drop it here as `*.cfile` + `*.metadata.json` (same format as below); the binary is
+git-ignored, the metadata sidecar is committed.
+
 ## Capture format
 
 | Property | Expected value |

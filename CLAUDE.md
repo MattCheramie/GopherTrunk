@@ -180,36 +180,58 @@ confirmation before any close-as-completed.
   clean, byte-identical without symbols). A/B on captures with `GT_TETRA_DMO_LMS=1` in
   `TestTETRADMOReplay`. Note the whole DMO path is still unverified on air (#1003), so
   this is a lever staged for that validation, not a confirmed win.
-- **DMO on-air, first real capture (#1003): signalling decodes, the reporter's voice is
-  air-interface ENCRYPTED — do NOT re-chase it as a decode bug.** Against the first real
-  DMO capture (`tetra_dmo_test2_20sec_cs16_144k`, a 438.9 MHz single-transmission cs16 at
-  144 kHz), the outcome splits cleanly and is pinned by `TestTETRADMOReplay`:
-  - **Sync + signalling fully decode.** With the receiver blind-CMA equalizer (now the
-    harness default — it lifts CRC-valid SCH/S from **6 → 64** by inverting the ISI that
-    smears the constellation, exactly like the live TMO CC path), `DecodeDMSCHS` gives
-    64/68 CRC-valid SCH/S spanning the whole transmission and `DecodeDMSCHH` 62/68. The
-    **DMO DM-SYNC PDU reuses the TMO SYNC-PDU field layout**, so the existing
-    `ParseSyncPDU` decodes it (colour@4-9=0, TN@10-11, FN@12-16, MN@17-22, MCC/MNC=0) with
-    a monotonically advancing frame counter — proof of a genuine lock, not chance CRC.
-  - **DNB geometry `-108/+11` (`dmDNB*Start`) is CONFIRMED correct** — it is the sharp
-    TCH/S-CRC optimum; osmo-tetra-dmo's TMO-copied `-115/+19` is measurably worse.
-  - **TCH/S voice does NOT decode, and it's not a code bug.** Every decode-side variable
-    was exhausted against the capture — geometry sweep, colour 0-63, ExtendedColourCode,
-    block-order swap, per-block vs concat-432 descramble, with/without a colour-0
-    descramble — and the Viterbi metric stays **uniformly ~35-40 (half-wrong)** with
-    CRC-valid bursts never above ~10/201 (≈ the 1/256 chance floor). A wrong
-    geometry/scramble gives a *sharp* dip; a uniform plateau while signalling is clean is
-    the signature of **air-interface-encrypted voice on clear signalling**. osmo-tetra-dmo
-    (the only DMO reference) doesn't decode DMO voice either, and ETSI EN 300 396-2 is
-    network-blocked in the agent env, so an undocumented coding detail can't be *proven*
-    excluded — but every reachable lever is. **DMO voice validation needs a known-CLEAR
-    (unencrypted) DMO capture; the `TestTETRADMOReplay` VERDICT line flags the encrypted
-    signature automatically.**
-  - **Latent bug spotted, deliberately NOT fixed (unverifiable):** `DMBurstTCHSpeech`/
-    `DMBurstTCHSpeechSoft` skip descrambling when `colour==0`, but the TETRA colour-0
-    scramble is non-identity (it's what BSCH uses; `DecodeBSCH` always descrambles). On
-    real clear colour-0 DMO this would matter — but the synthetic round-trips scramble
-    *and* descramble consistently at colour 0, so they pass either way, and the only real
-    capture is encrypted. Per the #764/#771 rule (a green synthetic ≠ on-air correct),
-    the fix stays deferred until a clear capture can verify it rather than flip a
-    convention on both sides for a green-either-way test.
+- **DMO on-air (#1003): the "encrypted" conclusion was WRONG — it was the colour-0
+  descramble skip, now fixed.** The reporter confirmed their DMO radios are **TEA0 (clear,
+  no encryption)**, colour code 0 (CPS codeplug: `DMO_438.900/.800`, Security Class 1,
+  `NO_KG`). That is the known-clear evidence the earlier note said was required, and it
+  overturns the "air-interface encrypted" reading. What still holds from the first capture
+  (`tetra_dmo_test2_20sec_cs16_144k`, 438.9 MHz cs16 at 144 kHz), pinned by
+  `TestTETRADMOReplay`:
+  - **Sync + signalling fully decode.** With the receiver blind-CMA equalizer (harness
+    default — lifts CRC-valid SCH/S from **6 → 64** by inverting ISI, like the live TMO CC
+    path), `DecodeDMSCHS` gives 64/68 SCH/S and `DecodeDMSCHH` 62/68. The **DMO DM-SYNC PDU
+    reuses the TMO SYNC-PDU field layout**, so `ParseSyncPDU` decodes it (colour 0, TN, FN,
+    MN, MCC/MNC=0) with a monotonically advancing frame counter — a genuine lock.
+  - **DNB geometry `-108/+11` (`dmDNB*Start`) is CONFIRMED correct** — the sharp TCH/S-CRC
+    optimum; osmo-tetra-dmo's TMO-copied `-115/+19` is measurably worse.
+  - **The real cause of "TCH/S doesn't decode": `DMBurstTCHSpeech`/`DMBurstTCHSpeechSoft`
+    skipped descrambling at `colour==0`.** TETRA scrambling is non-identity at colour 0 —
+    `NewScramblerTetra(0)` seeds the LFSR to `0xC0000000` (§8.2.5.2 eq. 8.42), which is
+    exactly why `DecodeBSCH`/`DecodeDMSCHS` *always* descramble and the DSB signalling
+    decodes. The voice path inherited TMO `traffic.go`'s `if colour != 0` shortcut (safe
+    there only because a TMO extended colour code is never 0) and so left a clear colour-0
+    DNB scrambled going into the Viterbi/CRC — producing the uniform ~1/256 chance-floor
+    metric that was misread as encryption. The `#1003` fix removes the guard on both DMO
+    TCH/S paths (`dmo_decode.go`): descramble UNCONDITIONALLY with the DM colour code.
+  - **Why the earlier "with/without a colour-0 descramble" sweep didn't catch it:** the
+    synthetic round-trips scrambled *and* descrambled consistently at colour 0, so they
+    passed either way and hid the asymmetry (the #764/#771 self-consistent-synthetic trap).
+    `dmo_decode_test.go` now scrambles the encode side UNCONDITIONALLY (real-air behaviour),
+    so the colour-0 iterations are the failing-first regression — they fail against the old
+    skip and pass with the fix (verified: old code → `DMBurstTCHSpeech` returns 0 frames at
+    colour 0; fixed → 2 CRC-valid frames).
+  - **Still to verify ON AIR (operator loop, not yet closed):** a green synthetic ≠ on-air
+    correct (#764/#771). The operator must replay their clear 438.9 MHz capture through
+    `TestTETRADMOReplay` (`GT_TETRA_DMO_IQ`) and confirm `tch_crc` rises off the chance
+    floor. `GT_TETRA_DMO_CLEAR=1` flips the VERDICT line: on a capture asserted clear, a
+    persistent chance floor is now a *decode* defect to keep chasing (next suspects: DNB
+    geometry, the DM colour code via `GT_TETRA_DMO_COLOUR`), NOT encryption. Do not mark
+    #1003 verified until that A/B lands.
+- **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
+  fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
+  P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.
+  Root cause is structural, not a bug: the default **C4FM** voice receiver
+  (`internal/radio/p25/phase1/receiver/receiver.go`, C4FM branch) is FM-discriminator →
+  fixed matched filter → CoarseAFC → Mueller-Müller timing → AGC → 4-level slicer → **hard**
+  Golay/Hamming IMBE FEC — with **no channel equalizer and no soft-decision FEC**. A blind
+  CMA/FSE equalizer exists only on the opt-in `DemodCQPSK`/LSM path (`cqpsk.go`, the `fse`
+  field), and P25 Phase 2 wires one too — P25 P1 C4FM is the odd path without either. These
+  are the same two levers that ~2×'d TETRA yield on ISI/weak captures (`SnapshotCMA` +
+  soft TCH/S). ("4-5 frames" also brushes `minAutotuneLDUs=5` in `composer/p25p1_voice.go`,
+  which treats a <5-LDU call as too short to trust.) **The fix is unverifiable without a
+  capture** (#764/#771): drop a raw C4FM Phase-1 **voice** IQ recording into `samples/p25/`
+  (+ `.metadata.json`), baseline it with `TestReplayP25RealCaptureMetrics`
+  (`cmd/gophertrunk/p25_realcapture_metrics_test.go`, tag `integration`; pre-FEC EVM/SNR/
+  FSW-margin/LDU yield), then either port the `cqpsk.go` CMA/FSE equalizer onto the C4FM
+  path or add soft-decision to the IMBE FEC, and A/B LDU/IMBE yield against the capture. No
+  change lands without that capture. See `samples/p25/README.md` (weak-signal voice section).

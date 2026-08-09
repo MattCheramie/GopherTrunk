@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -18,8 +20,8 @@ import (
 // Configured rows always appear; live-only rows (over-the-air radios
 // without an operator-configured alias) appear when the affiliation
 // tracker has seen them since the last sweep.
-func (s *Server) handleListRIDs(w http.ResponseWriter, _ *http.Request) {
-	dtos := s.mergedRIDList()
+func (s *Server) handleListRIDs(w http.ResponseWriter, r *http.Request) {
+	dtos := s.mergedRIDList(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"rids": dtos})
 }
 
@@ -38,10 +40,20 @@ func (s *Server) handleGetRID(w http.ResponseWriter, r *http.Request) {
 	if s.rids != nil {
 		dto = ridToDTO(s.rids.Lookup(id))
 	}
+	// Durable base from the persisted call log, so a radio that has aged out of
+	// the live tracker (or predates a restart) is still found.
+	if p, ok := s.history.(RIDSummaryProvider); ok {
+		if sums, err := p.RIDSummaries(r.Context(), RIDSummaryFilter{SourceID: id, Limit: 1}); err != nil {
+			s.log.Warn("api: rid summary query failed", "err", err, "rid", id)
+		} else if len(sums) > 0 {
+			allTime := sums[0]
+			dto = mergeRIDSummary(dto, allTime)
+		}
+	}
 	if s.affiliations != nil {
 		for _, u := range s.affiliations.Affiliations() {
 			if u.RadioID == id {
-				dto = mergeRIDLive(dto, u)
+				dto = mergeRIDLiveKeepAllTime(dto, u)
 				break
 			}
 		}
@@ -196,19 +208,34 @@ func (s *Server) handleUpdateRID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dto)
 }
 
-// mergedRIDList walks both the static RIDDB and the live affiliation
-// tracker, merging by RadioID. The output is sorted by ID for a
-// stable list ordering — the UI applies its own sort on top.
-func (s *Server) mergedRIDList() []*RIDDTO {
+// mergedRIDList merges three sources by RadioID, in increasing order of
+// freshness: the static RIDDB (operator catalogue), the persisted call-log
+// aggregate (durable, all-time observations), then the live affiliation tracker
+// (the most recent in-window observation). The call-log layer is what makes the
+// list durable — a radio no longer drops out once the tracker's 30-minute idle
+// TTL sweeps it, which is what made the list look like it "reset after each CC
+// lock" (the re-hunt gaps let the TTL expire every radio, with nothing behind
+// it). The output is sorted by ID for a stable list ordering — the UI applies
+// its own sort on top.
+func (s *Server) mergedRIDList(ctx context.Context) []*RIDDTO {
 	byID := map[uint32]*RIDDTO{}
 	if s.rids != nil {
 		for _, r := range s.rids.All() {
 			byID[r.ID] = ridToDTO(r)
 		}
 	}
+	if p, ok := s.history.(RIDSummaryProvider); ok {
+		if sums, err := p.RIDSummaries(ctx, RIDSummaryFilter{}); err != nil {
+			s.log.Warn("api: rid summaries query failed", "err", err)
+		} else {
+			for _, sum := range sums {
+				byID[sum.SourceID] = mergeRIDSummary(byID[sum.SourceID], sum)
+			}
+		}
+	}
 	if s.affiliations != nil {
 		for _, u := range s.affiliations.Affiliations() {
-			byID[u.RadioID] = mergeRIDLive(byID[u.RadioID], u)
+			byID[u.RadioID] = mergeRIDLiveKeepAllTime(byID[u.RadioID], u)
 		}
 	}
 	out := make([]*RIDDTO, 0, len(byID))
@@ -217,4 +244,25 @@ func (s *Server) mergedRIDList() []*RIDDTO {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// mergeRIDLiveKeepAllTime overlays the live tracker's fresh observation onto a
+// DTO that may already carry the durable call-log aggregate, without letting the
+// live counters clobber the all-time ones: CallCount keeps the larger value and
+// FirstSeen the earlier, since the live tracker only counts calls seen since it
+// (re)added the unit after its last idle sweep, whereas the call log is all-time.
+func mergeRIDLiveKeepAllTime(dto *RIDDTO, u trunking.UnitActivity) *RIDDTO {
+	allTimeCalls := uint64(0)
+	var firstSeen time.Time
+	if dto != nil {
+		allTimeCalls, firstSeen = dto.CallCount, dto.FirstSeen
+	}
+	dto = mergeRIDLive(dto, u)
+	if allTimeCalls > dto.CallCount {
+		dto.CallCount = allTimeCalls
+	}
+	if !firstSeen.IsZero() && (dto.FirstSeen.IsZero() || firstSeen.Before(dto.FirstSeen)) {
+		dto.FirstSeen = firstSeen
+	}
+	return dto
 }
