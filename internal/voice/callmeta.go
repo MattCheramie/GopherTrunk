@@ -37,6 +37,12 @@ type callMeta struct {
 	CallLength           int             `json:"call_length"`
 	CallLengthMs         int64           `json:"call_length_ms"`
 	Talkgroup            uint32          `json:"talkgroup"`
+	// Individual is a GopherTrunk extension (not in the trunk-recorder schema, so
+	// TR parsers ignore it): true marks a unit-to-unit / private call, where
+	// `talkgroup` is the target radio's SSI rather than a real talkgroup. Lets a
+	// consumer render the recording as an individual call instead of mistaking the
+	// radio ID for a talkgroup. Omitted (false) for ordinary group calls.
+	Individual           bool            `json:"individual,omitempty"`
 	TalkgroupTag         string          `json:"talkgroup_tag"`
 	TalkgroupDescription string          `json:"talkgroup_description"`
 	TalkgroupGroupTag    string          `json:"talkgroup_group_tag"`
@@ -120,6 +126,7 @@ func buildCallMeta(cs trunking.CallStart, startedAt, endedAt time.Time, callNum 
 		CallLength:   int(dur.Seconds()),
 		CallLengthMs: dur.Milliseconds(),
 		Talkgroup:    g.GroupID,
+		Individual:   g.Individual,
 		ColorCode:    -1, // trunk-recorder "unknown" sentinel
 		AudioType:    audioType,
 		ShortName:    g.System,

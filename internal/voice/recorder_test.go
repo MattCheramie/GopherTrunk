@@ -31,6 +31,41 @@ func mkRecorder(t *testing.T, writeRaw bool) (*Recorder, *events.Bus, string) {
 	return r, bus, dir
 }
 
+// TestRecorderFilesIndividualCallsSeparately pins the "fake TG" recording fix:
+// a unit-to-unit / individual call (GroupID is a target radio ISSI, not a
+// talkgroup) is filed under <system>/individual/<ssi>/ so it never masquerades as
+// a phantom talkgroup directory alongside real talkgroups, and the call metadata
+// carries the individual flag. A group call is unaffected.
+func TestRecorderFilesIndividualCallsSeparately(t *testing.T) {
+	r, bus, dir := mkRecorder(t, false)
+	defer bus.Close()
+
+	group := trunking.CallStart{Grant: trunking.Grant{System: "Metro", GroupID: 1020545}}
+	if got, want := r.directoryFor(group), filepath.Join(dir, "Metro", "1020545"); got != want {
+		t.Errorf("group call dir = %q, want %q", got, want)
+	}
+
+	indiv := trunking.CallStart{Grant: trunking.Grant{System: "Metro", GroupID: 1009267, Individual: true}}
+	if got, want := r.directoryFor(indiv), filepath.Join(dir, "Metro", "individual", "1009267"); got != want {
+		t.Errorf("individual call dir = %q, want %q (must not be filed as a talkgroup)", got, want)
+	}
+
+	// The metadata sidecar marks the call individual so a consumer renders it as
+	// an individual call, not a talkgroup.
+	start := time.Unix(1_700_000_000, 0)
+	m := buildCallMeta(indiv, start, start.Add(3*time.Second), 1, true, nil, nil)
+	if !m.Individual {
+		t.Errorf("call meta Individual = false, want true")
+	}
+	if m.Talkgroup != 1009267 {
+		t.Errorf("call meta Talkgroup = %d, want 1009267 (the target ISSI)", m.Talkgroup)
+	}
+	gm := buildCallMeta(group, start, start.Add(3*time.Second), 2, true, nil, nil)
+	if gm.Individual {
+		t.Errorf("group call meta Individual = true, want false")
+	}
+}
+
 // TestRecorderCrossSiteDedup pins cross-site duplicate suppression: the same
 // call (talkgroup + source) heard on a second monitored system within the
 // window is skipped, a re-key on the same system is not, a different source on

@@ -608,6 +608,10 @@ type CallRow struct {
 	Encrypted   bool   `json:"encrypted"`
 	Emergency   bool   `json:"emergency"`
 	DataCall    bool   `json:"data_call"`
+	// Individual is true for a unit-to-unit / private call, where GroupID is a
+	// target radio's SSI rather than a talkgroup — so the WebUI can render the
+	// call as individual instead of mistaking the radio ID for a talkgroup.
+	Individual bool `json:"individual,omitempty"`
 	// Timeslot is the 1-based DMR TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
 	Timeslot       uint8     `json:"timeslot,omitempty"`
 	DeviceSerial   string    `json:"device_serial"`

@@ -187,6 +187,57 @@ func TestEngineRetractsRadioIDLeakedAsTalkgroup(t *testing.T) {
 	}
 }
 
+// TestEngineReclassifiesKnownRadioGrantAsIndividual pins the "fake TG" recording
+// fix: a call addressed to an SSI already known to be a subscriber radio (seen
+// transmitting) is reclassified as an INDIVIDUAL call, so the recorder files it
+// as individual rather than under a phantom talkgroup named after the radio ID.
+// The reporter's captures showed hundreds of such src-bearing unit-to-unit grants
+// (GroupID in the radio-ID range) filed as fake talkgroups on disk while the
+// WebUI never listed them.
+func TestEngineReclassifiesKnownRadioGrantAsIndividual(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 2)
+	defer bus.Close()
+
+	// Reveal 1009267 as a transmitting radio in a group call → durable known radio.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1020545, SourceID: 1009267,
+		FrequencyHz: 467_912_500, Timeslot: 1})
+	if !e.isKnownRadio(1009267) {
+		t.Fatalf("precondition: 1009267 should be a known radio after being a call source")
+	}
+
+	// Subscribe AFTER the reveal so the collector only sees the second call.
+	sub := bus.Subscribe()
+	defer sub.Close()
+	collector := &testBusCollector{}
+	done := make(chan struct{})
+	go func() { collector.drain(sub, 1, 500*time.Millisecond); close(done) }()
+
+	// A later grant ADDRESSED to that radio (GroupID = the radio ISSI) arriving as
+	// a plain group grant (Individual=false) with a caller — must be reclassified.
+	e.HandleGrant(Grant{System: "X", Protocol: "tetra", GroupID: 1009267, SourceID: 1005000,
+		FrequencyHz: 468_000_000, Timeslot: 2})
+	<-done
+
+	var cs *CallStart
+	for _, ev := range collector.snapshot() {
+		if ev.Kind == events.KindCallStart {
+			c := ev.Payload.(CallStart)
+			if c.Grant.GroupID == 1009267 {
+				cs = &c
+			}
+		}
+	}
+	if cs == nil {
+		t.Fatalf("no CallStart for the call to known radio 1009267; events=%+v", collector.snapshot())
+	}
+	if !cs.Grant.Individual {
+		t.Errorf("grant to known radio 1009267 not reclassified Individual: %+v", cs.Grant)
+	}
+	if e.talkgroups.Lookup(1009267) != nil {
+		t.Errorf("radio 1009267 must not be catalogued as a talkgroup")
+	}
+}
+
 // engineHasCallForTG reports whether any active (pool-bound) or observed
 // (control-only) call is labelled with talkgroup tg — the union the Active Calls
 // UI renders.
