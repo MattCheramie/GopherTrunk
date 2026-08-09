@@ -217,3 +217,21 @@ confirmation before any close-as-completed.
     persistent chance floor is now a *decode* defect to keep chasing (next suspects: DNB
     geometry, the DM colour code via `GT_TETRA_DMO_COLOUR`), NOT encryption. Do not mark
     #1003 verified until that A/B lands.
+- **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
+  fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
+  P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.
+  Root cause is structural, not a bug: the default **C4FM** voice receiver
+  (`internal/radio/p25/phase1/receiver/receiver.go`, C4FM branch) is FM-discriminator →
+  fixed matched filter → CoarseAFC → Mueller-Müller timing → AGC → 4-level slicer → **hard**
+  Golay/Hamming IMBE FEC — with **no channel equalizer and no soft-decision FEC**. A blind
+  CMA/FSE equalizer exists only on the opt-in `DemodCQPSK`/LSM path (`cqpsk.go`, the `fse`
+  field), and P25 Phase 2 wires one too — P25 P1 C4FM is the odd path without either. These
+  are the same two levers that ~2×'d TETRA yield on ISI/weak captures (`SnapshotCMA` +
+  soft TCH/S). ("4-5 frames" also brushes `minAutotuneLDUs=5` in `composer/p25p1_voice.go`,
+  which treats a <5-LDU call as too short to trust.) **The fix is unverifiable without a
+  capture** (#764/#771): drop a raw C4FM Phase-1 **voice** IQ recording into `samples/p25/`
+  (+ `.metadata.json`), baseline it with `TestReplayP25RealCaptureMetrics`
+  (`cmd/gophertrunk/p25_realcapture_metrics_test.go`, tag `integration`; pre-FEC EVM/SNR/
+  FSW-margin/LDU yield), then either port the `cqpsk.go` CMA/FSE equalizer onto the C4FM
+  path or add soft-decision to the IMBE FEC, and A/B LDU/IMBE yield against the capture. No
+  change lands without that capture. See `samples/p25/README.md` (weak-signal voice section).
