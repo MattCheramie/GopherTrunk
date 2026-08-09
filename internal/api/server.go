@@ -483,6 +483,38 @@ type HistoryQuery interface {
 	History(ctx context.Context, f HistoryFilter) ([]CallRow, error)
 }
 
+// RIDSummary is the durable per-radio aggregate the Radio IDs list falls back to
+// (mirrors storage.RIDSummary in the api layer). It is derived from the
+// persisted call_log, so a radio stays in the list after the live affiliation
+// tracker's 30-minute idle TTL sweeps it — the fix for the RID list appearing to
+// "reset after each CC lock" (it was really the TTL expiring during re-hunt gaps
+// with no persistence behind it).
+type RIDSummary struct {
+	SourceID      uint32
+	System        string
+	Protocol      string
+	LastTalkgroup uint32
+	CallCount     uint64
+	FirstSeen     time.Time
+	LastSeen      time.Time
+	SourceAlpha   string
+}
+
+// RIDSummaryFilter narrows RIDSummaries (mirrors storage.RIDSummaryFilter).
+type RIDSummaryFilter struct {
+	System   string
+	SourceID uint32
+	Limit    int
+}
+
+// RIDSummaryProvider is the optional capability a HistoryQuery may implement to
+// supply the durable, all-time per-radio aggregates from the persisted call log.
+// The storage-backed adapter implements it; test fakes may omit it, in which
+// case the Radio IDs list degrades to the static catalogue + live tracker only.
+type RIDSummaryProvider interface {
+	RIDSummaries(ctx context.Context, f RIDSummaryFilter) ([]RIDSummary, error)
+}
+
 // LocationFix is one geographic fix returned by GET /api/v1/locations.
 type LocationFix struct {
 	System     string  `json:"system"`

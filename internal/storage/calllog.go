@@ -363,6 +363,116 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	return out, rows.Err()
 }
 
+// RIDSummary is one aggregated per-radio (source_id) row derived from the
+// persisted call_log. It is the durable, all-time view of a radio the Radio IDs
+// list falls back to when the in-memory affiliation tracker has swept the radio
+// out of its 30-minute idle window (issue: RID list "reset after each CC lock").
+type RIDSummary struct {
+	SourceID uint32
+	System   string // system of the most recent call
+	Protocol string // protocol of the most recent call
+	// LastTalkgroup is the group_id of the most recent GROUP call (individual=0)
+	// this radio was heard on; 0 when the radio has only ever made individual /
+	// unit-to-unit calls (whose group_id is a target radio, not a talkgroup).
+	LastTalkgroup uint32
+	CallCount     uint64
+	FirstSeen     time.Time
+	LastSeen      time.Time
+	// SourceAlpha is the resolved alias from the most recent call, "" if none.
+	SourceAlpha string
+}
+
+// RIDSummaryFilter narrows RIDSummaries.
+type RIDSummaryFilter struct {
+	System   string // "" = all systems
+	SourceID uint32 // 0 = all radios (filters call_log.source_id)
+	Limit    int    // <= 0 = all radios
+}
+
+// RIDSummaries aggregates the call_log by source_id (radio ID) into a durable
+// per-radio view: total call count, first/last-seen, and the system, protocol,
+// alias and last GROUP talkgroup of the most recent call. Rows with source_id 0
+// (unknown source) are excluded. Ordered by most-recently-seen first.
+//
+// This is the persisted basis for the Radio IDs list, so an observed radio no
+// longer collapses out of the list once the live affiliation tracker's 30-minute
+// idle TTL sweeps it — the list reflects every radio seen over the daemon's
+// lifetime and survives control-channel re-locks and restarts.
+func (d *DB) RIDSummaries(ctx context.Context, f RIDSummaryFilter) ([]RIDSummary, error) {
+	// agg supplies count/first/last per radio; the outer join pulls the most
+	// recent call's system/protocol/alias by matching its started_at, and a
+	// correlated subquery picks the last GROUP call's talkgroup (skipping
+	// individual calls, whose group_id is a target radio rather than a TG). The
+	// optional system / single-source filters appear once per block; args are
+	// bound in the order the blocks appear in the statement text (correlated
+	// subquery c2, then agg, then outer c).
+	filt := func(col string) (string, []any) {
+		frag := ""
+		var a []any
+		if f.System != "" {
+			frag += " AND " + col + "system = ?"
+			a = append(a, f.System)
+		}
+		if f.SourceID != 0 {
+			frag += " AND " + col + "source_id = ?"
+			a = append(a, f.SourceID)
+		}
+		return frag, a
+	}
+	c2Frag, c2Args := filt("c2.")
+	aggFrag, aggArgs := filt("")
+	outerFrag, outerArgs := filt("c.")
+	q := `SELECT c.source_id, agg.cnt, agg.first_seen, agg.last_seen,
+	             c.system, c.protocol, c.source_alpha,
+	             (SELECT c2.group_id FROM call_log c2
+	                WHERE c2.source_id = c.source_id AND c2.individual = 0` + c2Frag + `
+	                ORDER BY c2.started_at DESC LIMIT 1) AS last_tg
+	      FROM call_log c
+	      JOIN (SELECT source_id, COUNT(*) AS cnt,
+	                   MIN(started_at) AS first_seen, MAX(started_at) AS last_seen
+	              FROM call_log
+	              WHERE source_id != 0` + aggFrag + `
+	              GROUP BY source_id) agg
+	        ON agg.source_id = c.source_id AND agg.last_seen = c.started_at
+	      WHERE c.source_id != 0` + outerFrag + `
+	      GROUP BY c.source_id
+	      ORDER BY agg.last_seen DESC`
+	args := []any{}
+	args = append(args, c2Args...)
+	args = append(args, aggArgs...)
+	args = append(args, outerArgs...)
+	if f.Limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", f.Limit)
+	}
+
+	rows, err := d.sql.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("storage: query rid summaries: %w", err)
+	}
+	defer rows.Close()
+	var out []RIDSummary
+	for rows.Next() {
+		var s RIDSummary
+		var firstNs, lastNs int64
+		var srcAlpha sql.NullString
+		var lastTG sql.NullInt64
+		if err := rows.Scan(&s.SourceID, &s.CallCount, &firstNs, &lastNs,
+			&s.System, &s.Protocol, &srcAlpha, &lastTG); err != nil {
+			return nil, err
+		}
+		s.FirstSeen = time.Unix(0, firstNs).UTC()
+		s.LastSeen = time.Unix(0, lastNs).UTC()
+		if srcAlpha.Valid {
+			s.SourceAlpha = srcAlpha.String
+		}
+		if lastTG.Valid {
+			s.LastTalkgroup = uint32(lastTG.Int64)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

@@ -444,6 +444,29 @@ func ridToDTO(r *trunking.RID) *RIDDTO {
 	}
 }
 
+// mergeRIDSummary applies the durable, call-log-derived aggregate fields to the
+// DTO. If dto is nil a fresh, non-Configured DTO is returned for the persisted
+// row (a radio seen over the air but not in the static catalogue). Applied
+// BENEATH mergeRIDLive: the live tracker, when it still holds the radio, wins for
+// the most-recent columns; this fills them in for radios the tracker has swept.
+func mergeRIDSummary(dto *RIDDTO, s RIDSummary) *RIDDTO {
+	if dto == nil {
+		dto = &RIDDTO{ID: s.SourceID, Watch: true}
+	}
+	dto.System = s.System
+	dto.Protocol = s.Protocol
+	if s.LastTalkgroup != 0 {
+		dto.LastTalkgroup = s.LastTalkgroup
+	}
+	if s.SourceAlpha != "" && dto.TalkerAlias == "" {
+		dto.TalkerAlias = s.SourceAlpha
+	}
+	dto.CallCount = s.CallCount
+	dto.FirstSeen = s.FirstSeen
+	dto.LastSeen = s.LastSeen
+	return dto
+}
+
 // mergeRIDLive applies the live UnitActivity fields to the DTO. If
 // dto is nil a fresh, non-Configured DTO is returned for the live row.
 func mergeRIDLive(dto *RIDDTO, u trunking.UnitActivity) *RIDDTO {

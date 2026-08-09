@@ -22,16 +22,26 @@ far easier than scrolling raw `source_id` numbers.
 
 ## What you get
 
-- A merged view of two RID sources, keyed by radio ID:
+- A merged view of three RID sources, keyed by radio ID, in
+  increasing order of freshness:
   - **Configured** rows from a per-system `rid_alias_file` (CSV or
     JSON) — operator-assigned `alias`, `description`, `tag`,
     `group`, `owner`, `priority`, `lockout`, `watch`, `icon`.
-  - **Live** rows from the affiliation tracker — `last_seen`,
-    `first_seen`, `last_talkgroup`, observed over-the-air
-    `talker_alias`, and a `call_count` for "how recurring is this
-    radio."
-- Configured + live overlap is merged on `id`; either source can
-  contribute a row by itself.
+  - **Persisted** rows aggregated from the call log — the durable,
+    all-time `call_count`, `first_seen`, `last_seen`, and last
+    **group** `last_talkgroup` for every radio ever recorded. This
+    is what keeps a radio in the list after the live tracker's
+    idle TTL sweeps it: the list reflects the daemon's whole
+    lifetime and survives control-channel re-locks and restarts,
+    rather than collapsing to the configured catalogue during a
+    re-hunt gap.
+  - **Live** rows from the affiliation tracker — the freshest
+    in-window `last_seen`, `last_talkgroup`, and observed
+    over-the-air `talker_alias`. The tracker holds a radio for a
+    30-minute idle window; its per-window `call_count` never
+    shrinks the all-time total the persisted layer supplies.
+- Overlapping rows are merged on `id`; any source can contribute a
+  row by itself.
 - Detail modal with the last 50 calls observed for the RID
   (queried from the persisted call log by `source_id`).
 - Write-mode edits to the in-memory catalogue (alias / watch /
