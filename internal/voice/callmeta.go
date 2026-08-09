@@ -16,27 +16,27 @@ import (
 // trunk-recorder's own "unknown" conventions (signal/noise = 999, color_code =
 // -1) or a best-effort 0 so a strict parser never trips on a missing key.
 type callMeta struct {
-	CallNum              int             `json:"call_num"`
-	Freq                 uint32          `json:"freq"`
-	FreqError            int             `json:"freq_error"`
-	Signal               int             `json:"signal"`
-	Noise                int             `json:"noise"`
-	SourceNum            int             `json:"source_num"`
-	RecorderNum          int             `json:"recorder_num"`
-	TDMASlot             int             `json:"tdma_slot"`
-	Phase2TDMA           int             `json:"phase2_tdma"`
-	StartTime            int64           `json:"start_time"`
-	StopTime             int64           `json:"stop_time"`
-	StartTimeMs          int64           `json:"start_time_ms"`
-	StopTimeMs           int64           `json:"stop_time_ms"`
-	Emergency            int             `json:"emergency"`
-	Priority             int             `json:"priority"`
-	Mode                 int             `json:"mode"`
-	Duplex               int             `json:"duplex"`
-	Encrypted            int             `json:"encrypted"`
-	CallLength           int             `json:"call_length"`
-	CallLengthMs         int64           `json:"call_length_ms"`
-	Talkgroup            uint32          `json:"talkgroup"`
+	CallNum      int    `json:"call_num"`
+	Freq         uint32 `json:"freq"`
+	FreqError    int    `json:"freq_error"`
+	Signal       int    `json:"signal"`
+	Noise        int    `json:"noise"`
+	SourceNum    int    `json:"source_num"`
+	RecorderNum  int    `json:"recorder_num"`
+	TDMASlot     int    `json:"tdma_slot"`
+	Phase2TDMA   int    `json:"phase2_tdma"`
+	StartTime    int64  `json:"start_time"`
+	StopTime     int64  `json:"stop_time"`
+	StartTimeMs  int64  `json:"start_time_ms"`
+	StopTimeMs   int64  `json:"stop_time_ms"`
+	Emergency    int    `json:"emergency"`
+	Priority     int    `json:"priority"`
+	Mode         int    `json:"mode"`
+	Duplex       int    `json:"duplex"`
+	Encrypted    int    `json:"encrypted"`
+	CallLength   int    `json:"call_length"`
+	CallLengthMs int64  `json:"call_length_ms"`
+	Talkgroup    uint32 `json:"talkgroup"`
 	// Individual is a GopherTrunk extension (not in the trunk-recorder schema, so
 	// TR parsers ignore it): true marks a unit-to-unit / private call, where
 	// `talkgroup` is the target radio's SSI rather than a real talkgroup. Lets a

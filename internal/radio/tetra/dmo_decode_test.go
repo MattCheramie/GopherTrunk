@@ -109,7 +109,7 @@ func TestDMTCHSpeechRoundTrip(t *testing.T) {
 		type4 := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits) // 432 type-4 bits
 		onair := framing.ScrambleTetra(type4, colour)                            // scrambled like real air, incl. colour 0
 		block1 := onair[:dmBlockDibits*2]                                        // first 216 bits → BKN1
-		block2 := onair[dmBlockDibits*2:] // last 216 bits → BKN2
+		block2 := onair[dmBlockDibits*2:]                                        // last 216 bits → BKN2
 
 		bursts := ExtractDMBursts(buildDNB(block1, block2), 0)
 		dnb := findBurst(bursts, DMBurstNormal)
