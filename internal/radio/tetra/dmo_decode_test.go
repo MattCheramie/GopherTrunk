@@ -93,17 +93,22 @@ func TestDMSCHSRoundTrip(t *testing.T) {
 // split into a DNB's two blocks → ExtractDMBursts → DMBurstTCHSpeech recovers
 // the exact speech frames, CRC-valid. Runs at colour 0 (the default) and a
 // non-zero DM colour code to exercise the descramble seed.
+//
+// The colour-0 iteration is the failing-first regression for issue #1003: the
+// encode side scrambles UNCONDITIONALLY (a real DMO transmitter scrambles TCH/S
+// with the DM colour code even at colour 0 — seed 0xC0000000, §8.2.5.2), so a
+// decoder that skipped descramble at colour 0 leaves the block scrambled and the
+// class-2 CRC fails. Before this test scrambled encode-side only when colour!=0,
+// mirroring the decoder's skip, so the round-trip passed either way and hid the
+// bug (the #764/#771 self-consistent-synthetic trap).
 func TestDMTCHSpeechRoundTrip(t *testing.T) {
 	for _, colour := range []uint32{0, 0x0AB1F} {
 		frameA := seqBits(7, tchSpeechFrameBits)
 		frameB := seqBits(9, tchSpeechFrameBits)
 
-		descrambled := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits) // 432 type-4 bits
-		onair := descrambled
-		if colour != 0 {
-			onair = framing.ScrambleTetra(descrambled, colour)
-		}
-		block1 := onair[:dmBlockDibits*2] // first 216 bits → BKN1
+		type4 := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits) // 432 type-4 bits
+		onair := framing.ScrambleTetra(type4, colour)                            // scrambled like real air, incl. colour 0
+		block1 := onair[:dmBlockDibits*2]                                        // first 216 bits → BKN1
 		block2 := onair[dmBlockDibits*2:] // last 216 bits → BKN2
 
 		bursts := ExtractDMBursts(buildDNB(block1, block2), 0)
@@ -131,7 +136,8 @@ func TestDMTCHSpeechRoundTrip(t *testing.T) {
 func TestDMTCHSpeechRotation(t *testing.T) {
 	frameA := seqBits(3, tchSpeechFrameBits)
 	frameB := seqBits(11, tchSpeechFrameBits)
-	onair := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits)
+	// Scrambled with colour 0 like real air (seed 0xC0000000), decoded with 0.
+	onair := framing.ScrambleTetra(framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits), 0)
 	base := buildDNB(onair[:dmBlockDibits*2], onair[dmBlockDibits*2:])
 
 	for rot := uint8(1); rot < 4; rot++ {
@@ -200,11 +206,8 @@ func TestDMTCHSpeechSoftRoundTripClean(t *testing.T) {
 	for _, colour := range []uint32{0, 0x0AB1F} {
 		frameA := seqBits(7, tchSpeechFrameBits)
 		frameB := seqBits(9, tchSpeechFrameBits)
-		descrambled := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits)
-		onair := descrambled
-		if colour != 0 {
-			onair = framing.ScrambleTetra(descrambled, colour)
-		}
+		// Scrambled like real air at every colour, incl. 0 (seed 0xC0000000).
+		onair := framing.ScrambleTetra(framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits), colour)
 
 		// Build a DNB and its parallel ideal differentials (sigma 0), then run the
 		// soft-capable extractor over the correlated stream so the soft fields come
@@ -250,7 +253,8 @@ func TestDMTCHSpeechSoftRoundTripClean(t *testing.T) {
 func TestDMTCHSpeechSoftOutperformsHardUnderNoise(t *testing.T) {
 	frameA := seqBits(7, tchSpeechFrameBits)
 	frameB := seqBits(9, tchSpeechFrameBits)
-	onair := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits) // colour 0
+	// colour 0, scrambled like real air (seed 0xC0000000); both paths descramble.
+	onair := framing.ScrambleTetra(framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits), 0)
 
 	rng := rand.New(rand.NewSource(42))
 	const (

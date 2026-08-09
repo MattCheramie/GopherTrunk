@@ -205,14 +205,28 @@ func TestTETRADMOReplay(t *testing.T) {
 
 	// Signalling-vs-traffic verdict. DMO SCH/S is scrambled with colour 0 (like the
 	// TMO BSCH) and decodes clear whenever the RF is receivable; TCH/S traffic is
-	// scrambled with the DM colour code AND, if the call is protected, air-interface
-	// encrypted. A capture that decodes SCH/S well (dsb_schs_crc high, distinct FN)
-	// but yields TCH/S CRC only near the ~1/256 chance floor across the whole
-	// transmission is the signature of ENCRYPTED voice on clear signalling — not a
-	// decoder defect (the geometry/scramble/interleave were exhausted in #1003).
+	// scrambled with the DM colour code (now descrambled UNCONDITIONALLY, incl. at
+	// colour 0 — the issue #1003 fix in dmo_decode.go) and, only if the call is
+	// protected, additionally air-interface encrypted.
+	//
+	// A capture that decodes SCH/S well (dsb_schs_crc high, distinct FN) but yields
+	// TCH/S CRC only near the ~1/256 chance floor has TWO possible causes, no longer
+	// just one:
+	//   - the call is genuinely air-interface ENCRYPTED, or
+	//   - a remaining clear-voice DECODE defect (geometry / interleave / colour code).
+	// The reporter confirmed their radios are TEA0 (clear, colour 0), and the
+	// colour-0 descramble asymmetry that produced this exact chance-floor signature
+	// in #1003 is now fixed. So on a capture KNOWN to be clear, a persistent chance
+	// floor is a decode bug to keep chasing — NOT proof of encryption. Set
+	// GT_TETRA_DMO_CLEAR=1 to assert the capture is clear and flip the verdict.
 	if dsbCRC >= 8 && dnbTotal > 0 && tchCRC*20 < dnbTotal {
-		t.Logf("VERDICT: DMO SIGNALLING decodes (dsb_schs_crc=%d, distinct FN=%d) but TCH/S is at the chance floor (tch_crc=%d/%d) — the voice is most likely air-interface ENCRYPTED. Validate voice against a known-CLEAR DMO call.",
-			dsbCRC, len(fnSeen), tchCRC, dnbTotal)
+		if os.Getenv("GT_TETRA_DMO_CLEAR") == "1" {
+			t.Logf("VERDICT: DMO SIGNALLING decodes (dsb_schs_crc=%d, distinct FN=%d) but TCH/S is at the chance floor (tch_crc=%d/%d) on a capture asserted CLEAR (TEA0) — this is a clear-voice DECODE defect to keep chasing (geometry/interleave/colour), NOT encryption. The colour-0 descramble is already fixed (#1003); next suspects are DNB geometry and the DM colour code (GT_TETRA_DMO_COLOUR).",
+				dsbCRC, len(fnSeen), tchCRC, dnbTotal)
+		} else {
+			t.Logf("VERDICT: DMO SIGNALLING decodes (dsb_schs_crc=%d, distinct FN=%d) but TCH/S is at the chance floor (tch_crc=%d/%d) — either air-interface ENCRYPTED voice or a remaining clear-voice decode defect. If the call is known CLEAR (TEA0), set GT_TETRA_DMO_CLEAR=1; otherwise validate against a known-CLEAR DMO call.",
+				dsbCRC, len(fnSeen), tchCRC, dnbTotal)
+		}
 	}
 
 	// Seconds with >=2 CRC-valid speech bursts = real activity, not a lone
