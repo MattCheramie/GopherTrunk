@@ -150,7 +150,19 @@ sdr:
       role: control          # or voice / wideband
       gain: auto             # or tenths-of-dB, e.g. "320" for 32.0 dB
       bias_tee: false
+      # rf_amp: true              # front-end RF amp on the "auto" preset — see below
+      # narrowband_filter: true   # HackRF Pro only — see below
+      # fpga_dc_block: true       # HackRF Pro only — see below
 ```
+
+The HackRF has no true AGC, so `gain: auto` maps to a fixed LNA 16 / VGA 20 dB
+split with the front-end **RF amplifier off**. Set `rf_amp: true` to turn the
+amp on for that preset: it lowers the noise figure by ~14 dB and can recover a
+weak-signal site, but because it adds gain ahead of everything it can overload
+the front end near a strong transmitter — so it is opt-in and off by default.
+(SDRTrunk defaults the amp on but likewise lets you disable it.) A manual
+tenths-of-dB `gain:` value is unaffected by `rf_amp`; `rf_amp` is ignored, with
+a one-line startup warning, on a device that has no switchable amplifier.
 
 Copy the serial straight from `gophertrunk sdr list`. The match is
 case-insensitive and tolerant of a partial serial — a distinctive tail like
@@ -163,6 +175,67 @@ full serial so each entry pins exactly one device.
 > string — the leading 16 digits are a constant prefix (commonly all zeros) and
 > the trailing digits are the unique part. `gophertrunk sdr list` prints the
 > whole string, matching `hackrf_info`'s "Serial number".
+
+## HackRF Pro
+
+GopherTrunk identifies the board from the firmware's `board_id` readback at
+open, so a **HackRF Pro** (board ID 5, codename *Praline*) reports `HackRF Pro`
+as its product name in `gophertrunk sdr list`, the **Devices** panel, and the
+startup log — distinct from the original `HackRF One` (board ID 2) and the
+`HackRF One R9` (board ID 4). No configuration is needed for detection.
+
+The Pro adds a **switchable narrowband anti-alias filter** in its RF front end.
+Engaging it tightens adjacent-channel rejection, which can lift a marginal
+decode on a crowded band where a strong neighbour is spilling into a narrowband
+voice channel (e.g. 12.5 kHz P25). The trade-off is reduced usable bandwidth, so
+it is off by default; enable it per device:
+
+```yaml
+sdr:
+  devices:
+    - serial: "…"
+      role: voice
+      narrowband_filter: true   # HackRF Pro only
+```
+
+The option is ignored — with a one-line startup warning — on any board that
+lacks the filter, including the original HackRF One, so it is safe to leave in a
+shared config.
+
+The Pro can also strip the zero-IF **DC-offset spike in its FPGA**, before the
+samples ever leave the device. This is the same spur GopherTrunk's P25 voice
+path removes in software (a first-order DC-block), but doing it in the gateware
+is cheaper and — unlike the software block, which only sits on the voice decode
+path — it also cleans the control channel. Measured on hardware, engaging it
+drops the raw stream's DC magnitude from several counts to zero. Enable it per
+device with `fpga_dc_block: true`:
+
+```yaml
+sdr:
+  devices:
+    - serial: "…"
+      role: control
+      fpga_dc_block: true       # HackRF Pro only
+```
+
+Both options are ignored — with a startup warning — on any board without the
+hardware, so they are safe to leave in a shared config.
+
+> **Extended precision is blocked in firmware, not here.** The Pro advertises a
+> 16-bit *extended-precision* RX mode (FPGA down-conversion + decimation, ~9–11
+> ENOB). The host command to select the bitstream exists
+> (`hackrf_set_fpga_bitstream`), and the gateware itself is complete, but the
+> coordinated mode is **not implemented in the released Pro firmware**: as of
+> `master` (Aug 2026) `fpga_init()` only programs the standard bitstream's
+> registers (`// TODO support the other bitstreams`), the `RADIO_CONFIG_EXT_PRECISION_RX`
+> path is dead code, and the MCU's SGPIO capture stays hardwired to the standard
+> 2-byte sample format with no host request to change it. So loading bitstream 2
+> from the host produces an incoherent stream — this is a Great Scott Gadgets
+> firmware to-do, not something a host driver can work around. When GSG ships the
+> mode switch, the driver side is well-understood (interleaved int16 LE I/Q,
+> 4 bytes/pair carrying a sign-extended 12-bit value; decimation register = log2
+> of 16×–128×). Detection, the narrowband filter, and the FPGA DC-block above are
+> the Pro pieces that work today.
 
 ## Where to buy
 

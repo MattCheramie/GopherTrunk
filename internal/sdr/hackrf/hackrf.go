@@ -48,6 +48,36 @@ const (
 	reqSetLNAGain          uint8 = 19
 	reqSetVGAGain          uint8 = 20
 	reqAntennaEnable       uint8 = 23
+	// reqFPGAWriteReg / reqFPGAReadReg access the HackRF Pro gateware's
+	// registers over the FPGA SPI interface (libhackrf
+	// HACKRF_VENDOR_REQUEST_FPGA_WRITE_REG / _READ_REG). Write carries
+	// the value in wValue and the register number in wIndex; read
+	// carries the register in wIndex and returns one byte. Pro-only.
+	reqFPGAWriteReg uint8 = 49
+	reqFPGAReadReg  uint8 = 50
+	// reqSetNarrowbandFilter toggles the HackRF Pro's switchable
+	// narrowband anti-alias filter (libhackrf
+	// HACKRF_VENDOR_REQUEST_SET_NARROWBAND_FILTER). Pro-only: older
+	// boards stall the request, so callers must gate it behind isPro.
+	reqSetNarrowbandFilter uint8 = 53
+)
+
+// boardIDPraline is the hackrf_board_id value the HackRF Pro ("Praline")
+// firmware reports via reqBoardIDRead. It gates the Pro-only vendor
+// requests (e.g. the narrowband filter).
+const boardIDPraline uint8 = 5
+
+// HackRF Pro gateware control register. The Pro's default (8-bit) RX
+// gateware exposes a control register at index 1 whose bit 0 enables an
+// FPGA-side DC-offset blocker — the zero-IF LO self-mixing spike that
+// otherwise sits dead-centre in the passband and corrupts an on-channel-
+// tuned C4FM eye. Confirmed on hardware: enabling it drops the measured
+// |DC| of the raw IQ stream from several counts to zero. Other bits in
+// the register (e.g. a TX trigger enable) are left untouched via a
+// read-modify-write.
+const (
+	gatewareRegControl     uint8 = 1
+	gatewareCtrlDCBlockBit uint8 = 1 << 0
 )
 
 // pidProductNames maps each known HackRF USB PID to the canonical
@@ -68,6 +98,8 @@ var boardIDNames = map[uint8]string{
 	1:   "HackRF Jawbreaker",
 	2:   "HackRF One",
 	3:   "Rad1o",
+	4:   "HackRF One R9",
+	5:   "HackRF Pro",
 	255: "Invalid",
 }
 
@@ -219,10 +251,12 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	// firmware — fall through to the PID-derived product name and a
 	// plain TunerName when that happens.
 	product := productForPID(desc.PID, desc.Product)
+	isPro := false
 	if bid, err := readBoardID(t); err == nil {
 		if name, ok := boardIDNames[bid]; ok && name != "" {
 			product = name
 		}
+		isPro = bid == boardIDPraline
 	}
 	tuner := "MAX2839+MAX5864"
 	if version, err := readVersionString(t); err == nil && version != "" {
@@ -232,7 +266,8 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		tuner = fmt.Sprintf("MAX2839+MAX5864 (fw %s)", version)
 	}
 	return &Device{
-		t: t,
+		t:     t,
+		isPro: isPro,
 		info: sdr.Info{
 			Driver:       driverName,
 			Index:        idx,
@@ -313,6 +348,15 @@ type Device struct {
 	// (#686). Non-nil whenever streaming is true.
 	streamDone chan struct{}
 	sampleRate uint32
+	// isPro is set when the firmware reports board ID 5 (Praline /
+	// HackRF Pro). It gates Pro-only vendor requests such as the
+	// narrowband filter, which older boards would stall.
+	isPro bool
+	// rfAmp records the opt-in rf_amp device option (sdr.RFAmper). When set,
+	// the "auto" gain preset enables the front-end RF amp; default off so a
+	// front end near a strong transmitter is not overloaded. Applied
+	// immediately by SetRFAmp and re-asserted by SetGain's auto path.
+	rfAmp bool
 }
 
 // Info implements sdr.Device.
@@ -375,6 +419,15 @@ func (d *Device) SetGain(tenthDB int) error {
 		return usb.ErrClosed
 	}
 	lna, vga, amp := splitGain(tenthDB)
+	// On the "auto" preset the front-end RF amp follows the opt-in rf_amp
+	// device option (default off). The amp lowers the noise figure for weak
+	// signals but adds ~14 dB ahead of everything, so it is off by default to
+	// avoid overloading a front end near a strong transmitter (the SDRTrunk
+	// default is amp-on, but it is toggleable there too). Manual (positive)
+	// gain targets keep the amp off, matching the pre-rf_amp behaviour.
+	if tenthDB < 0 && d.rfAmp {
+		amp = true
+	}
 	if err := d.amp(amp); err != nil {
 		return err
 	}
@@ -437,6 +490,20 @@ func (d *Device) amp(on bool) error {
 	return d.t.ControlOut(reqAmpEnable, v, 0, nil, controlTimeoutMs)
 }
 
+// SetRFAmp toggles the HackRF's front-end RF amplifier and records the
+// choice (sdr.RFAmper) so the "auto" gain preset re-asserts it on a later
+// retune. It applies the state immediately, independent of SetGain
+// ordering at pool setup. The amp lowers the noise figure for weak signals
+// at the cost of ~14 dB of gain ahead of everything, so it is opt-in via
+// the rf_amp device option and off by default.
+func (d *Device) SetRFAmp(enable bool) error {
+	if d.isClosed() {
+		return usb.ErrClosed
+	}
+	d.rfAmp = enable
+	return d.amp(enable)
+}
+
 // SetPPM is a no-op for HackRF — the Si5351C reference clock is
 // internally trimmed and the protocol carries no PPM correction.
 func (d *Device) SetPPM(int) error { return nil }
@@ -451,6 +518,77 @@ func (d *Device) SetBiasTee(enable bool) error {
 		v = 1
 	}
 	return d.t.ControlOut(reqAntennaEnable, v, 0, nil, controlTimeoutMs)
+}
+
+// SetNarrowbandFilter toggles the HackRF Pro's switchable narrowband
+// anti-alias filter (sdr.NarrowbandFilterer). Engaging it tightens
+// adjacent-channel rejection for narrowband signals — e.g. 12.5 kHz P25
+// voice channels — at the cost of usable RF bandwidth. It is Pro-only:
+// on any other board the request would stall the control endpoint, so
+// this returns an error there rather than sending it, letting the pool
+// warn that the operator asked for a filter the hardware doesn't have.
+func (d *Device) SetNarrowbandFilter(enable bool) error {
+	if d.isClosed() {
+		return usb.ErrClosed
+	}
+	if !d.isPro {
+		return fmt.Errorf("hackrf: narrowband filter requires a HackRF Pro (board ID %d); this device is %q", boardIDPraline, d.info.Product)
+	}
+	v := uint16(0)
+	if enable {
+		v = 1
+	}
+	return d.t.ControlOut(reqSetNarrowbandFilter, v, 0, nil, controlTimeoutMs)
+}
+
+// fpgaReadRegister reads one HackRF Pro gateware register over the FPGA
+// SPI interface (vendor request 50: register in wIndex, one byte back).
+func (d *Device) fpgaReadRegister(reg uint8) (uint8, error) {
+	buf, err := d.t.ControlIn(reqFPGAReadReg, 0, uint16(reg), 1, controlTimeoutMs)
+	if err != nil {
+		return 0, err
+	}
+	if len(buf) < 1 {
+		return 0, fmt.Errorf("hackrf: FPGA read reg %d: short read (%d bytes)", reg, len(buf))
+	}
+	return buf[0], nil
+}
+
+// fpgaWriteRegister writes one HackRF Pro gateware register over the FPGA
+// SPI interface (vendor request 49: value in wValue, register in wIndex).
+func (d *Device) fpgaWriteRegister(reg, value uint8) error {
+	return d.t.ControlOut(reqFPGAWriteReg, uint16(value), uint16(reg), nil, controlTimeoutMs)
+}
+
+// SetFPGADCBlock toggles the HackRF Pro's FPGA-side DC-offset blocker
+// (sdr.FPGADCBlocker) — the gateware control register's bit 0. It
+// removes the zero-IF DC spike in hardware, before the sample stream
+// even leaves the device, which clears an on-channel-tuned C4FM eye that
+// the centre spur would otherwise corrupt. A read-modify-write preserves
+// the register's other bits. It is Pro-only: the gateware register space
+// doesn't exist on other boards, so this errors there rather than
+// writing to a register that isn't the one it names.
+func (d *Device) SetFPGADCBlock(enable bool) error {
+	if d.isClosed() {
+		return usb.ErrClosed
+	}
+	if !d.isPro {
+		return fmt.Errorf("hackrf: FPGA DC blocker requires a HackRF Pro (board ID %d); this device is %q", boardIDPraline, d.info.Product)
+	}
+	cur, err := d.fpgaReadRegister(gatewareRegControl)
+	if err != nil {
+		return fmt.Errorf("hackrf: read gateware control register: %w", err)
+	}
+	next := cur
+	if enable {
+		next |= gatewareCtrlDCBlockBit
+	} else {
+		next &^= gatewareCtrlDCBlockBit
+	}
+	if next == cur {
+		return nil
+	}
+	return d.fpgaWriteRegister(gatewareRegControl, next)
 }
 
 // StreamIQ flips the HackRF into receive mode and reaps bulk-IN URBs,

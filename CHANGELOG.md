@@ -8,6 +8,49 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **HackRF Pro is now identified as such, and its narrowband filter is
+  configurable.** GopherTrunk reads the firmware's board ID at open, so a HackRF
+  Pro (board ID 5, *Praline*) now reports `HackRF Pro` — and a HackRF One R9
+  (board ID 4) `HackRF One R9` — in `gophertrunk sdr list`, the Devices panel,
+  and the startup log, instead of being lumped in with the original HackRF One.
+  Two new per-device options expose the Pro's RF-path features: `narrowband_filter:
+  true` engages the Pro's switchable narrowband anti-alias filter (tighter
+  adjacent-channel rejection for narrowband voice like P25, at the cost of usable
+  bandwidth), and `fpga_dc_block: true` strips the zero-IF DC-offset spike in the
+  Pro's FPGA before samples leave the device — a hardware alternative to the P25
+  voice path's software DC-block that also cleans the control channel (measured
+  on hardware: raw-stream DC magnitude drops to zero). Both are ignored, with a
+  startup warning, on any board without the hardware. (The Pro's 16-bit
+  extended-precision RX mode is not included: it's unimplemented in the released
+  Pro firmware — `fpga_init` only programs the standard bitstream and the SGPIO
+  capture is hardwired to the 2-byte format — so it can't be driven from the host
+  yet.)
+- **`dc_avoid` now also protects voice grants, not just the control channel.**
+  On a zero-IF dongle (HackRF, RTL-SDR) a granted voice carrier tuned exactly
+  on-channel sits directly on the front-end DC spur / LO self-mixing / I/Q
+  image. That corruption leaves a healthy *average* EVM but biases the specific
+  symbol decisions the frame-sync word rides on, so the sync correlator misses
+  and voice grants decode zero LDUs while the short, heavily-FEC'd control
+  channel still limps through — a system that locks its CC but never produces
+  audio. `dc_avoid: true` on a `role: voice` device now offset-tunes each
+  granted call's LO (by `dc_avoid_offset_hz`, default `sample_rate/4`) and mixes
+  the carrier back to baseband before the composer sees it, the same technique
+  SDRTrunk/OP25 apply by channelising every carrier off-DC — extending the
+  existing control-only offset tuning (issue #402) to the per-grant voice path.
+  Measured on a HackRF Pro against a marginal simulcast P25 system: an
+  on-channel capture demods at ~21 % EVM with 0 frame-sync hits (0 LDUs), while
+  the same signal offset-tuned lands ~10 % EVM and locks (66 NIDs); on the air,
+  voice went from never decoding to clean IMBE audio. The composer is unchanged
+  — the offset is fully encapsulated in a per-device tuner wrapper.
+- **The HackRF front-end RF amplifier is now configurable via `rf_amp`.** The
+  HackRF has no true AGC, so `gain: auto` uses a fixed LNA/VGA split with the
+  front-end amp off. Setting `rf_amp: true` on a device turns the amp on for the
+  auto preset, lowering the noise figure by ~14 dB to recover a weak-signal site
+  (matching SDRTrunk's amp-on default) — but because it adds gain ahead of
+  everything it can overload a front end near a strong transmitter, so it is
+  opt-in and off by default. Manual (positive) `gain:` values are unaffected, and
+  the option is ignored, with a startup warning, on a device without a switchable
+  amp.
 - **DMR now auto-corrects a small residual tuner carrier offset.** The
   narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
   the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz

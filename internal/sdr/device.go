@@ -75,6 +75,35 @@ type Device interface {
 	Close() error
 }
 
+// NarrowbandFilterer is an optional Device extension implemented by the
+// HackRF Pro, whose RF front-end carries a switchable narrowband
+// anti-alias filter. Callers type-assert for it (like TunerDiagnoser)
+// so backends without the filter need not implement it. Enabling it
+// tightens adjacent-channel rejection for narrowband voice channels at
+// the cost of usable bandwidth.
+type NarrowbandFilterer interface {
+	SetNarrowbandFilter(enable bool) error
+}
+
+// FPGADCBlocker is an optional Device extension implemented by the
+// HackRF Pro, whose gateware can strip the zero-IF DC-offset spike in
+// the FPGA before the samples leave the device. Callers type-assert for
+// it (like NarrowbandFilterer). Enabling it is an alternative to the
+// software DC-block on the decode path — cheaper, and it also cleans the
+// control channel, which the software block doesn't touch.
+type FPGADCBlocker interface {
+	SetFPGADCBlock(enable bool) error
+}
+
+// RFAmper is an optional Device extension implemented by backends with a
+// switchable front-end RF amplifier (the HackRF). Callers type-assert for
+// it (like FPGADCBlocker) so backends without an amp need not implement it.
+// Enabling it lowers the noise figure for weak signals at the cost of ~14 dB
+// of gain ahead of the front end, so it is opt-in per device.
+type RFAmper interface {
+	SetRFAmp(enable bool) error
+}
+
 // TunerDiagnoser is an optional Device extension that surfaces tuner
 // detection state for boot-time diagnostics. Callers type-assert for it
 // (like ActualSampleRate / SettleAfterRetune) so backends that don't

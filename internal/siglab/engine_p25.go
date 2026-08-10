@@ -62,6 +62,7 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 		DemodMode:                 demodMode,
 		EnableDecisionDirectedAFC: cfg.EnableDDA,
 		EnableAdaptiveC4FMSlicer:  cfg.EnableAdaptiveSlicer,
+		EnableDCBlock:             cfg.EnableDCBlock,
 		SoftSink:                  softTap,
 		// The CQPSK path fires SymbolSink with the post-carrier-recovery
 		// complex constellation points; the C4FM path leaves it uncalled

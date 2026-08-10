@@ -490,6 +490,15 @@ type Daemon struct {
 	// voice pool via collectVoiceDevices and into the composer via
 	// poolDevices.virtualMap. See internal/sdr/wbvoice.
 	virtualVoiceTuners []*wbvoice.VirtualTuner
+	// dcAvoidVoiceTuners holds one offset-tuning wrapper per physical
+	// role:voice SDR that set dc_avoid in config. Each implements both
+	// trunking.Tuner (voice pool) and composer.IQSource (composer), tuning
+	// the LO off-channel and mixing the carrier back to baseband so a
+	// zero-IF dongle stops parking granted voice on its DC spike (issue
+	// #402, extended from the control path). Keyed by device serial; built
+	// by buildDCAvoidVoiceTuners, surfaced via collectVoiceDevices +
+	// virtualVoiceMap. See voice_dcavoid.go.
+	dcAvoidVoiceTuners map[string]*dcAvoidVoiceTuner
 	// ccVoiceSource is the same-carrier voice tap: it reuses the control
 	// decoder's own channelised IQ for a grant on the control carrier (a TETRA
 	// SCBS keeps voice on other timeslots of the control carrier), so no second
@@ -953,12 +962,15 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		var hints []sdr.Hint
 		for _, dev := range cfg.SDR.Devices {
 			h := sdr.Hint{
-				Serial:          dev.Serial,
-				Role:            sdr.ParseRole(dev.Role),
-				PPM:             dev.PPM,
-				BiasTee:         dev.BiasTee,
-				ForceBlogV4:     dev.BlogV4,
-				ForceBlogV4Lite: dev.BlogV4Lite,
+				Serial:           dev.Serial,
+				Role:             sdr.ParseRole(dev.Role),
+				PPM:              dev.PPM,
+				BiasTee:          dev.BiasTee,
+				NarrowbandFilter: dev.NarrowbandFilter,
+				FPGADCBlock:      dev.FPGADCBlock,
+				RFAmp:            dev.RFAmp,
+				ForceBlogV4:      dev.BlogV4,
+				ForceBlogV4Lite:  dev.BlogV4Lite,
 			}
 			// Always resolve a gain hint so the pool applies it explicitly:
 			// an empty/omitted `gain:` parses to -1 (auto/AGC), matching the
@@ -1224,6 +1236,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// signal that distinguishes a live-path overrun (replay never drops)
 	// from an RF problem.
 	d.installIQDropObserver(log)
+
+	// Build the per-voice-device DC-spike-avoidance offset tuners (dc_avoid on
+	// a role:voice SDR) before the voice pool + composer wire, so both route a
+	// granted call through the wrapper instead of the bare on-channel device.
+	d.buildDCAvoidVoiceTuners(cfg, log)
 
 	// Voice device list from the pool; empty when no SDRs.
 	d.voicePool = trunking.NewVoicePool(d.collectVoiceDevices())
@@ -4292,8 +4309,14 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 	var voices []*trunking.VoiceDevice
 	if d.pool != nil {
 		for _, e := range d.pool.AllByRole(sdr.RoleVoice) {
+			// Route through the DC-spike-avoidance wrapper when dc_avoid is set
+			// on this voice device; otherwise tune the bare SDR on-channel.
+			var tuner trunking.Tuner = e.Device
+			if w := d.dcAvoidVoiceTuners[e.Info.Serial]; w != nil {
+				tuner = w
+			}
 			voices = append(voices, &trunking.VoiceDevice{
-				Tuner:  e.Device,
+				Tuner:  tuner,
 				Serial: e.Info.Serial,
 			})
 		}
@@ -4326,15 +4349,21 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 // poolDevices uses to resolve a virtual tuner. Returns nil when no
 // virtual tuners are configured so the lookup is a no-op.
 func (d *Daemon) virtualVoiceMap() map[string]composer.IQSource {
-	if len(d.virtualVoiceTuners) == 0 && len(d.ccVoiceSources) == 0 {
+	if len(d.virtualVoiceTuners) == 0 && len(d.ccVoiceSources) == 0 && len(d.dcAvoidVoiceTuners) == 0 {
 		return nil
 	}
-	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+len(d.ccVoiceSources))
+	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+len(d.ccVoiceSources)+len(d.dcAvoidVoiceTuners))
 	for _, vt := range d.virtualVoiceTuners {
 		out[vt.Serial()] = vt
 	}
 	for _, cc := range d.ccVoiceSources {
 		out[cc.Serial()] = cc
+	}
+	// Physical voice devices with dc_avoid: the composer must read their
+	// offset-mixed stream (not the bare on-channel device), so register the
+	// wrapper here — poolDevices.FindBySerial consults this map first.
+	for serial, w := range d.dcAvoidVoiceTuners {
+		out[serial] = w
 	}
 	return out
 }

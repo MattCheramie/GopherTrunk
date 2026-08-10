@@ -92,6 +92,18 @@ type Hint struct {
 	PPM     int
 	Gain    int // tenths of dB; negative = auto
 	BiasTee bool
+	// NarrowbandFilter engages the HackRF Pro's switchable narrowband
+	// anti-alias filter after open. Ignored (with a warning) on devices
+	// that don't implement NarrowbandFilterer.
+	NarrowbandFilter bool
+	// FPGADCBlock engages the HackRF Pro's FPGA-side DC-offset blocker
+	// after open. Ignored (with a warning) on devices that don't
+	// implement FPGADCBlocker.
+	FPGADCBlock bool
+	// RFAmp engages the front-end RF amplifier after open (the HackRF's
+	// amp on the "auto" gain preset). Ignored (with a warning) on devices
+	// that don't implement RFAmper.
+	RFAmp bool
 	// ForceBlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz crystal +
 	// HF/VHF/UHF input routing) on a device whose USB strings don't
 	// auto-identify it as a V4, so the R828D stops mistuning by ~1.8×
@@ -531,6 +543,39 @@ func (p *Pool) applyHintSettings(dev Device, info Info, h Hint) {
 	if h.BiasTee {
 		if err := dev.SetBiasTee(true); err != nil {
 			p.log.Warn("set bias_tee failed", "serial", info.Serial, "err", err)
+		}
+	}
+	if h.NarrowbandFilter {
+		if nf, ok := dev.(NarrowbandFilterer); !ok {
+			p.log.Warn("narrowband_filter requested but this driver has no switchable filter (HackRF Pro only)",
+				"serial", info.Serial)
+		} else if err := nf.SetNarrowbandFilter(true); err != nil {
+			p.log.Warn("set narrowband_filter failed", "serial", info.Serial, "err", err)
+		} else {
+			p.log.Info("sdr: narrowband anti-alias filter engaged (HackRF Pro)",
+				"serial", info.Serial, "role", h.Role.String())
+		}
+	}
+	if h.FPGADCBlock {
+		if b, ok := dev.(FPGADCBlocker); !ok {
+			p.log.Warn("fpga_dc_block requested but this driver has no FPGA DC blocker (HackRF Pro only)",
+				"serial", info.Serial)
+		} else if err := b.SetFPGADCBlock(true); err != nil {
+			p.log.Warn("set fpga_dc_block failed", "serial", info.Serial, "err", err)
+		} else {
+			p.log.Info("sdr: FPGA DC-offset blocker engaged (HackRF Pro)",
+				"serial", info.Serial, "role", h.Role.String())
+		}
+	}
+	if h.RFAmp {
+		if a, ok := dev.(RFAmper); !ok {
+			p.log.Warn("rf_amp requested but this driver has no switchable RF amplifier",
+				"serial", info.Serial)
+		} else if err := a.SetRFAmp(true); err != nil {
+			p.log.Warn("set rf_amp failed", "serial", info.Serial, "err", err)
+		} else {
+			p.log.Info("sdr: front-end RF amplifier engaged",
+				"serial", info.Serial, "role", h.Role.String())
 		}
 	}
 }
