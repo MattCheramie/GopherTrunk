@@ -238,7 +238,7 @@ type Options struct {
 	// (the HackRF's centre spike is large enough to collapse P25 voice
 	// decode to zero — see dcblock.go). Off by default and intended for the
 	// VOICE receivers only; never the control-channel DDC path. Safe for
-	// C4FM: the ~12 Hz corner is decades below the ±600/±1800 Hz C4FM tones.
+	// C4FM: the ~1 Hz corner is decades below the ±600/±1800 Hz C4FM tones.
 	EnableDCBlock bool
 	// SoftSink, when non-nil, receives the per-symbol soft samples
 	// produced by the matched filter + symbol-clock recovery, just
@@ -379,6 +379,14 @@ func New(opts Options) *Receiver {
 		symbolSink: opts.SymbolSink,
 		eyeSink:    opts.EyeSink,
 	}
+	// The DC blocker runs at the very top of Process, before the demod-mode
+	// split, so it must be initialised for BOTH the C4FM and CQPSK paths — the
+	// voice composer enables it for every P25 Phase 1 voice chain regardless of
+	// mode (an LSM/simulcast site resolves to DemodCQPSK). Keep it out of the
+	// mode-specific switch below.
+	if opts.EnableDCBlock {
+		r.dcBlk = &dcBlock{}
+	}
 	switch opts.DemodMode {
 	case DemodCQPSK:
 		r.cq = newCQPSKDemod(opts.SampleRateHz, int(sps+0.5), span, alpha, opts.GardnerGain)
@@ -407,9 +415,6 @@ func New(opts Options) *Receiver {
 			r.slicer = demod.NewAdaptiveC4FMSlicer(slicerScale)
 		}
 		r.afc = demod.NewCoarseAFC(sps)
-		if opts.EnableDCBlock {
-			r.dcBlk = &dcBlock{}
-		}
 		r.clock = sync.NewMuellerMuller(sps, gain)
 		// Symbol-AGC bridges the level mismatch between the spec-
 		// faithful matched filter on a real P25 transmission and the
@@ -502,7 +507,7 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 	// Strip the static zero-IF DC spur (e.g. the HackRF centre spike) before
 	// anything else. A constant IQ bias corrupts the FM discriminator's phase
-	// differences and collapses C4FM voice decode; the ~12 Hz high-pass leaves
+	// differences and collapses C4FM voice decode; the ~1 Hz high-pass leaves
 	// the modulation untouched. Voice-receiver opt-in; nil on the CC path.
 	if r.dcBlk != nil {
 		r.dcbuf = r.dcBlk.process(r.dcbuf, iq)

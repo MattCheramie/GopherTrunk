@@ -51,6 +51,27 @@ func TestDCBlockRemovesConstantOffset(t *testing.T) {
 	}
 }
 
+// TestEnableDCBlockInitialisedForBothDemodModes guards the regression where the
+// DC blocker was initialised only inside New's C4FM branch. Process applies the
+// blocker before the demod-mode split, and the voice composer requests it for
+// every P25 Phase 1 voice chain — including an LSM/simulcast site that resolves
+// to DemodCQPSK. If the init is mode-gated, a CQPSK voice receiver silently
+// drops the block it asked for. Both modes must end up with r.dcBlk != nil.
+func TestEnableDCBlockInitialisedForBothDemodModes(t *testing.T) {
+	for _, mode := range []DemodMode{DemodC4FM, DemodCQPSK} {
+		r := New(Options{
+			SampleRateHz:  48000,
+			DeviationHz:   1800.0,
+			DemodMode:     mode,
+			EnableDCBlock: true,
+			DibitSink:     func([]uint8, int) {},
+		})
+		if r.dcBlk == nil {
+			t.Errorf("DemodMode %v: EnableDCBlock set but r.dcBlk is nil (block silently dropped)", mode)
+		}
+	}
+}
+
 // TestDCBlockReset clears the filter memory so a re-sync starts clean.
 func TestDCBlockReset(t *testing.T) {
 	var d dcBlock

@@ -17,7 +17,8 @@ package receiver
 // needs the spur stripped here instead.
 //
 // Safety for C4FM: the difference equation's pole (dcBlockPole) puts the −3 dB
-// corner at ~8–12 Hz over the P25 voice sample rates (48–78 kHz). C4FM's four
+// corner near ~1 Hz over the P25 voice sample rates (≈0.8 Hz at 48 kHz, ≈1.2 Hz
+// at 78 kHz; fc ≈ (1−a)/(2π)·Fs). C4FM's four
 // signalling tones ride at ±600 / ±1800 Hz off the carrier, decades above that
 // corner, so the passband — and therefore the modulation — is untouched; only
 // the static DC pedestal is removed. This mirrors the TETRA voice receiver's
@@ -35,8 +36,8 @@ type dcBlock struct {
 	prevY complex64
 }
 
-// dcBlockPole is the feedback coefficient. 0.999 puts the −3 dB corner near
-// ~12 Hz at 78 kHz (fc ≈ (1−a)/(2π)·Fs) — deep enough to kill the DC pedestal,
+// dcBlockPole is the feedback coefficient. 0.9999 puts the −3 dB corner near
+// ~1.2 Hz at 78 kHz (fc ≈ (1−a)/(2π)·Fs) — deep enough to kill the DC pedestal,
 // far below the C4FM tones so the passband is untouched.
 const dcBlockPole = 0.9999
 
