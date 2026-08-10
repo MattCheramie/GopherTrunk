@@ -88,6 +88,11 @@ cover many repeaters spread across a wide band, add one `role: wideband` dongle 
 sample is a worked "a bunch of repeaters, different CCs and slots" config; for a
 single carrier see
 [`dmr-simplex`](https://github.com/MattCheramie/GopherTrunk/tree/main/samples/dmr-simplex).
+For a **linked "IPSC pseudo-trunk"** system — several repeaters on one Color Code that
+radios roam by RSSI — see
+[`dmr-ipsc`](https://github.com/MattCheramie/GopherTrunk/tree/main/samples/dmr-ipsc),
+which adds an optional `color_code:` filter (drop other Color Codes sharing the
+passband) and keeps the log quiet for idle repeaters between calls.
 For trunked DMR, see [Tier III](/reference/dmr-tier-3/). See [Status](/status.html).
 
 ## Sources

@@ -1,0 +1,4 @@
+Decimal,Alpha Tag,Description,Mode,Tag,Group
+22,TG 22,Dispatch,D,Talkgroup,Fire
+29,TG 29,Tac 1,D,Talkgroup,Fire
+9,Local,Local Repeater Wide,D,Talkgroup,Local

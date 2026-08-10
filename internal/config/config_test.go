@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+func u8ptr(v uint8) *uint8 { return &v }
+
 func TestLoadDefault(t *testing.T) {
 	cfg, err := Load("")
 	if err != nil {
@@ -116,6 +118,13 @@ func TestValidate(t *testing.T) {
 		{"dmr band_plan linear zero base", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Linear: &DMRLinearBandPlanConfig{BaseHz: 0, SpacingHz: 1}}}}}}, true},
 		{"dmr band_plan table zero freq", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 0}}}}}}}, true},
 		{"dmr band_plan table duplicate lcn", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 1}, {LCN: 1, FreqHz: 2}}}}}}}, true},
+		// color_code: conventional DMR (IPSC / linked-repeater) colour-code
+		// hard filter. Valid 0..15 on dmr-tier2/dmr-tier1 only.
+		{"color_code on dmr-tier2 ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr-tier2", DMRColorCode: u8ptr(12)}}}}, false},
+		{"color_code on dmr-tier1 ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr-tier1", DMRColorCode: u8ptr(0)}}}}, false},
+		{"color_code out of range", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr-tier2", DMRColorCode: u8ptr(16)}}}}, true},
+		{"color_code on trunked dmr rejected", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRColorCode: u8ptr(1), DMRBandPlan: &DMRBandPlanConfig{Linear: &DMRLinearBandPlanConfig{BaseHz: 1, SpacingHz: 1}}}}}}, true},
+		{"color_code on p25 rejected", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", DMRColorCode: u8ptr(1)}}}}, true},
 		{"nxdn band_plan linear ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Linear: &NXDNLinearBandPlanConfig{BaseHz: 461_000_000, SpacingHz: 12_500, Offset: 1}}}}}}, false},
 		{"nxdn band_plan table ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Table: []NXDNBandPlanTableEntryConfig{{Channel: 1, FreqHz: 461_000_000}, {Channel: 2, FreqHz: 461_012_500}}}}}}}, false},
 		{"nxdn band_plan both linear and table", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", NXDNBandPlan: &NXDNBandPlanConfig{Linear: &NXDNLinearBandPlanConfig{BaseHz: 1, SpacingHz: 1}, Table: []NXDNBandPlanTableEntryConfig{{Channel: 1, FreqHz: 1}}}}}}}, true},

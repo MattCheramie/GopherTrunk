@@ -1541,6 +1541,16 @@ type SystemConfig struct {
 	// An explicit true/false forces interleaved on or off for that system.
 	// Ignored for non-DMR systems.
 	DMRInterleavedVoice *bool `yaml:"dmr_interleaved_voice,omitempty"`
+	// DMRColorCode pins a conventional DMR (Tier II / Tier I) system to a
+	// single colour code (0..15). When set, any burst whose decoded colour
+	// code differs is dropped before it can grant, lock, or raise a decode
+	// error — the "list of frequencies for one Colour Code" IPSC /
+	// linked-repeater profile, which keeps a co-channel system on a different
+	// colour code (bleeding into the shared wideband passband) out of the call
+	// log. It is a tri-state: nil (unset) accepts every colour code (the
+	// historical default — GT reports whatever it reads off air). Ignored for
+	// non-conventional-DMR protocols.
+	DMRColorCode *uint8 `yaml:"color_code,omitempty"`
 	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
 	// decoder on the P25 Phase 2 MAC PDU window. Recognised values:
 	// "" / "on" / "true" / "1" (the new default — 146 channel
@@ -2503,8 +2513,18 @@ func validateSystem(i int, s SystemConfig) error {
 	if s.Name == "" {
 		return fmt.Errorf("trunking.systems[%d]: name required", i)
 	}
-	if _, err := trunking.ParseProtocol(s.Protocol); err != nil {
+	proto, err := trunking.ParseProtocol(s.Protocol)
+	if err != nil {
 		return fmt.Errorf("trunking.systems[%d]: %w", i, err)
+	}
+	if s.DMRColorCode != nil {
+		if *s.DMRColorCode > 15 {
+			return fmt.Errorf("trunking.systems[%d].color_code: %d outside 0..15", i, *s.DMRColorCode)
+		}
+		if proto != trunking.ProtocolDMRTier2 && proto != trunking.ProtocolDMRTier1 {
+			return fmt.Errorf("trunking.systems[%d].color_code: only valid for conventional DMR "+
+				"(protocol dmr-tier2 or dmr-tier1), not %q", i, s.Protocol)
+		}
 	}
 	seenBandPlanIDs := make(map[uint8]int, len(s.P25BandPlan))
 	for k, e := range s.P25BandPlan {

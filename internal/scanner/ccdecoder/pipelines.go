@@ -1091,10 +1091,11 @@ func (p *dmrPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 // (BPTC(196,96) + RS(12,9,4) parity check) for call setup.
 func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := tier2.New(tier2.Options{
-		Bus:         opts.Bus,
-		Log:         opts.Log,
-		SystemName:  opts.SystemName,
-		FrequencyHz: opts.FrequencyHz,
+		Bus:             opts.Bus,
+		Log:             opts.Log,
+		SystemName:      opts.SystemName,
+		FrequencyHz:     opts.FrequencyHz,
+		ColorCodeFilter: opts.System.DMRColorCode,
 	})
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
@@ -1141,11 +1142,12 @@ func (p *dmrTier2Pipeline) Close() error           { return nil }
 // transmission start exactly as in Tier II conventional.
 func newDMRTier1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := tier2.New(tier2.Options{
-		Bus:         opts.Bus,
-		Log:         opts.Log,
-		SystemName:  opts.SystemName,
-		FrequencyHz: opts.FrequencyHz,
-		ProtocolTag: "dmr-tier1",
+		Bus:             opts.Bus,
+		Log:             opts.Log,
+		SystemName:      opts.SystemName,
+		FrequencyHz:     opts.FrequencyHz,
+		ProtocolTag:     "dmr-tier1",
+		ColorCodeFilter: opts.System.DMRColorCode,
 		SyncPatterns: []dmr.SyncPattern{
 			dmr.DMVoice1, dmr.DMVoice2, dmr.DMData1, dmr.DMData2,
 		},

@@ -899,6 +899,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			DMRBandPlan:             dmrBandPlan,
 			NXDNBandPlan:            nxdnBandPlan,
 			DMRInterleavedVoice:     resolveDMRInterleavedVoice(proto, sys.DMRInterleavedVoice),
+			DMRColorCode:            sys.DMRColorCode,
 			TETRAColourCode:         sys.TETRAColourCode,
 			TETRAChannel:            sys.TETRAChannel,
 			TETRAChannelCoding:      sys.TETRAChannelCoding,

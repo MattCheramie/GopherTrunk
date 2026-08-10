@@ -393,6 +393,14 @@ type engineChannel struct {
 	lastCnt tier2.Counters
 	// pwLowLogAt throttles the "iq power very low" WARN for this channel.
 	pwLowLogAt time.Time
+	// lowPowerWarned records that the "iq power very low" WARN has fired at
+	// least once for this channel. Used only for conventional-DMR channels
+	// (tier2Cnt != nil): a repeater that has never decoded is warned about
+	// ONCE (genuine mistune / dead carrier) rather than every
+	// lowPowerWarnInterval, because an idle conventional carrier that simply
+	// isn't transmitting is normal, not a fault — unlike an always-on trunked
+	// control channel. See maybeLogDiagnostics.
+	lowPowerWarned bool
 
 	// strongNoSyncWindows counts consecutive diagnostics windows in which
 	// this channel carried a strong signal yet produced zero sync/FEC — the
@@ -667,11 +675,12 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 
 	case trunking.ProtocolDMRTier2:
 		cc := tier2.New(tier2.Options{
-			Bus:         bus,
-			Log:         log.With("system", sys.Name, "freq_hz", freqHz, "tier", 2),
-			SystemName:  sys.Name,
-			FrequencyHz: freqHz,
-			Now:         now,
+			Bus:             bus,
+			Log:             log.With("system", sys.Name, "freq_hz", freqHz, "tier", 2),
+			SystemName:      sys.Name,
+			FrequencyHz:     freqHz,
+			Now:             now,
+			ColorCodeFilter: sys.DMRColorCode,
 		})
 		rx := dmrrx.New(dmrrx.Options{
 			SampleRateHz: outRateHz,
@@ -1147,7 +1156,26 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 		}
 
 		if dbfs < iqpower.LowPowerThresholdDbFS {
-			if now.Sub(ec.pwLowLogAt) >= lowPowerWarnInterval {
+			// Conventional-DMR carriers (tier2Cnt != nil) legitimately drop to
+			// no carrier between transmissions — an idle repeater is normal,
+			// not a mistune. Treating each idle window like a failed always-on
+			// control channel produced the field-reported log flood (a parked
+			// or unused listed frequency warning every lowPowerWarnInterval
+			// forever). So for a conventional channel: stay silent once it has
+			// ever decoded (FEC-valid header or CRC-valid beacon), and warn at
+			// most ONCE for a channel that has never decoded (a genuinely dead
+			// or wrong carrier still surfaces, but only once). Control-channel
+			// protocols keep the repeating WARN — persistent low power there is
+			// an ongoing fault worth repeating.
+			suppressLowPower := false
+			if ec.tier2Cnt != nil {
+				cc := ec.tier2Cnt.Counters()
+				everDecoded := cc.FECPass > 0 || cc.Beacons > 0
+				if everDecoded || ec.lowPowerWarned {
+					suppressLowPower = true
+				}
+			}
+			if !suppressLowPower && now.Sub(ec.pwLowLogAt) >= lowPowerWarnInterval {
 				hint := "check antenna, gain, USB cable"
 				switch {
 				case wbOverloaded:
@@ -1168,6 +1196,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 					"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
 					"dbfs", dbfs, "wideband_input_dbfs", wbDbFS)
 				ec.pwLowLogAt = now
+				ec.lowPowerWarned = true
 			}
 		} else if debug {
 			e.log.Debug("widebandt2: channel iq power",

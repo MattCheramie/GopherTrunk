@@ -146,6 +146,70 @@ func TestConventionalCSBKNoiseIsSilent(t *testing.T) {
 	}
 }
 
+// TestConventionalColorCodeFilterDropsOtherCC pins the DMR IPSC /
+// linked-repeater colour-code hard filter: a channel pinned to one colour
+// code drops a FEC-valid Voice LC Header on any other colour code before it
+// can grant, lock, or count as a FEC pass — the DroppedOffCC counter records
+// it — while a header on the matching colour code decodes normally. Without
+// the filter (the historical default) every colour code grants; this test
+// fails against that behaviour and passes with it.
+func TestConventionalColorCodeFilterDropsOtherCC(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	want := uint8(12)
+	cc := New(Options{
+		Bus:             bus,
+		SystemName:      "IPSC",
+		FrequencyHz:     443_237_500,
+		Now:             func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+		ColorCodeFilter: &want,
+	})
+
+	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x42, SrcAddr: 0x100}
+
+	// A perfectly valid header on colour code 7 (a co-channel system bleeding
+	// into the shared passband) must be dropped by the filter.
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 7, DataType: dmr.DTVoiceLCHeader})
+	if got := cc.Counters().DroppedOffCC; got != 1 {
+		t.Fatalf("DroppedOffCC = %d, want 1 (off-colour-code burst should be dropped)", got)
+	}
+	if got := cc.Counters().FECPass; got != 0 {
+		t.Fatalf("FECPass = %d, want 0 (a dropped burst must not reach FEC)", got)
+	}
+	select {
+	case ev := <-sub.C:
+		t.Fatalf("off-colour-code burst wrongly published %s: %+v", ev.Kind, ev.Payload)
+	default:
+	}
+
+	// The same header on the configured colour code 12 must decode and grant.
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 12, DataType: dmr.DTVoiceLCHeader})
+	if got := cc.Counters().FECPass; got != 1 {
+		t.Fatalf("FECPass = %d, want 1 (matching-colour-code header should decode)", got)
+	}
+	sawGrant := false
+	for done := false; !done; {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				g := ev.Payload.(trunking.Grant)
+				if g.ChannelID != 12 {
+					t.Errorf("grant colour code = %d, want 12", g.ChannelID)
+				}
+				sawGrant = true
+			}
+		default:
+			done = true
+		}
+	}
+	if !sawGrant {
+		t.Fatal("matching-colour-code header produced no grant")
+	}
+}
+
 // TestConventionalProtocolTagDirectMode pins the Tier I direct-mode
 // parameterization: a ConventionalChannel constructed with
 // ProtocolTag="dmr-tier1" must publish grants tagged "dmr-tier1" (the wire

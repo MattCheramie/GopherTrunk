@@ -63,6 +63,12 @@ type Counters struct {
 	FECFail  uint64 // Voice LC Header BPTC uncorrectable or RS mismatch
 	Locks    uint64 // cc.locked declarations (lifetime)
 	Beacons  uint64 // CRC-valid CSBK "site alive" bursts (issue #1036)
+	// DroppedOffCC counts bursts discarded because a configured colour-code
+	// filter (Options.ColorCodeFilter) did not match the burst's decoded
+	// colour code. Zero unless the operator pinned a colour code (the DMR
+	// IPSC / linked-repeater profile) to ignore other systems sharing the
+	// wideband passband.
+	DroppedOffCC uint64
 }
 
 // LockedFrequencyHz / LockedNAC make LockState satisfy
@@ -98,6 +104,15 @@ type ConventionalChannel struct {
 	// base-station traffic.
 	syncPatterns []dmr.SyncPattern
 
+	// colorFilter, when non-nil, restricts this channel to a single DMR
+	// colour code: any burst whose decoded slot-type colour code differs is
+	// dropped before it can grant, lock, or raise a decode error. This is the
+	// "list of frequencies for one Colour Code" IPSC / linked-repeater profile
+	// — it keeps a co-channel system on a different colour code (bleeding into
+	// the shared wideband passband) from polluting the call log. nil ⇒ accept
+	// every colour code (the historical default).
+	colorFilter *uint8
+
 	// proc is the cross-call dibit / sync state the Process adapter
 	// uses (see process.go). Lazily constructed on the first
 	// Process call.
@@ -115,12 +130,13 @@ type ConventionalChannel struct {
 	// Counters(). Incremented on the existing hot paths with atomic
 	// adds so any goroutine can snapshot them without taking c.mu.
 	cnt struct {
-		syncHits atomic.Uint64
-		bursts   atomic.Uint64
-		fecPass  atomic.Uint64
-		fecFail  atomic.Uint64
-		locks    atomic.Uint64
-		beacons  atomic.Uint64
+		syncHits     atomic.Uint64
+		bursts       atomic.Uint64
+		fecPass      atomic.Uint64
+		fecFail      atomic.Uint64
+		locks        atomic.Uint64
+		beacons      atomic.Uint64
+		droppedOffCC atomic.Uint64
 	}
 
 	// beaconLogAt is the last time handleCSBK emitted an Info "site alive"
@@ -132,12 +148,13 @@ type ConventionalChannel struct {
 // counters. Safe to call concurrently with the decode path.
 func (c *ConventionalChannel) Counters() Counters {
 	return Counters{
-		SyncHits: c.cnt.syncHits.Load(),
-		Bursts:   c.cnt.bursts.Load(),
-		FECPass:  c.cnt.fecPass.Load(),
-		FECFail:  c.cnt.fecFail.Load(),
-		Locks:    c.cnt.locks.Load(),
-		Beacons:  c.cnt.beacons.Load(),
+		SyncHits:     c.cnt.syncHits.Load(),
+		Bursts:       c.cnt.bursts.Load(),
+		FECPass:      c.cnt.fecPass.Load(),
+		FECFail:      c.cnt.fecFail.Load(),
+		Locks:        c.cnt.locks.Load(),
+		Beacons:      c.cnt.beacons.Load(),
+		DroppedOffCC: c.cnt.droppedOffCC.Load(),
 	}
 }
 
@@ -154,6 +171,11 @@ type Options struct {
 	// SyncPatterns restricts the burst-sync detector to these sync words.
 	// nil ⇒ all 9 ETSI syncs (Tier II). Tier I passes the direct-mode set.
 	SyncPatterns []dmr.SyncPattern
+	// ColorCodeFilter, when non-nil, pins this channel to a single DMR colour
+	// code (0..15): bursts on any other colour code are dropped before grant /
+	// lock / decode-error. nil ⇒ accept every colour code. See the colorFilter
+	// field on ConventionalChannel.
+	ColorCodeFilter *uint8
 }
 
 // New constructs a ConventionalChannel.
@@ -178,6 +200,7 @@ func New(opts Options) *ConventionalChannel {
 		now:          now,
 		protocolTag:  tag,
 		syncPatterns: opts.SyncPatterns,
+		colorFilter:  opts.ColorCodeFilter,
 	}
 }
 
@@ -197,6 +220,19 @@ func New(opts Options) *ConventionalChannel {
 // alive" signal (issue #1036) rather than being ignored.
 func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 	c.cnt.bursts.Add(1)
+	// Colour-code hard filter (IPSC / linked-repeater profile). The slot
+	// type's colour code is Hamming(20,8)-corrected, so it is reliable enough
+	// to reject a co-channel system on a different colour code before it can
+	// grant, lock, or raise a decode error — which is exactly the noise the
+	// profile exists to suppress. A rare slot-type FEC miscorrection can flip
+	// the colour code on an otherwise-valid burst; dropping that one burst is
+	// acceptable for an opt-in filter, and the next header on the same call
+	// re-decodes cleanly. The filter is off (nil) by default, so the shared
+	// off-air-colour-code path is byte-for-byte unchanged.
+	if c.colorFilter != nil && slot.ColorCode != *c.colorFilter {
+		c.cnt.droppedOffCC.Add(1)
+		return
+	}
 	switch slot.DataType {
 	case dmr.DTVoiceLCHeader:
 		c.handleVoiceHeader(b, slot)
