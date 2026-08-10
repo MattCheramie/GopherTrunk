@@ -53,6 +53,24 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **TETRA radio IDs still leaked into recordings as phantom talkgroups when a
+  group grant was missed.** On a same-carrier site a group call's first
+  control-channel message is a source-less notification (`SourceID==0`, `dst=` the
+  calling radio's own SSI); the engine holds it 500 ms for the authoritative group
+  grant (`src=SSI dst=GSSI`) to supersede it. Under marginal RF that grant is
+  sometimes never decoded, so the hold flushed into a recording filed under the
+  radio ID as if it were a talkgroup (`recordings/<sys>/<radioID>/…`). The prior
+  safety only dropped the flush when the SSI was already a *known* radio — which
+  missed a radio never heard transmitting, and fired too late for one learned only
+  after the call opened (the retraction cleans the Talkgroups/observed lists but
+  never a live recording). A source-less TETRA notification is addressed to the
+  paged radio's own SSI, so a never-superseded one is now flushed as an
+  **individual** call to that SSI: filed under `recordings/<sys>/individual/<SSI>/`
+  with `"individual": true`, never masquerading as a talkgroup, and no longer
+  dropped (the voiced audio is preserved). No group is guessed; a call whose group
+  grant was entirely missed keeps the honest individual-call label rather than a
+  fabricated talkgroup, so its `srcList` reflects that (reconstructing the full
+  multi-talker list would require attributing the call to a group GT never decoded).
 - **DMR 2-slot voice: a wrong same-slot cadence guess could garble a whole
   call and never recover (reopened #644).** When a call opens on a section
   whose embedded Link Control doesn't decode, the interleaved decoder picks
