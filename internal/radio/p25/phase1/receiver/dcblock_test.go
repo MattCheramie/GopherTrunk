@@ -16,8 +16,8 @@ func TestDCBlockRemovesConstantOffset(t *testing.T) {
 		n    = 200_000 // long enough for the ~1.2 Hz-corner high-pass to settle
 		fs   = 78125.0
 		tone = 1800.0 // a C4FM outer-symbol tone; well above the block's corner
-		amp  = 0.16    // representative signal level (mean|x| of a real capture)
-		dc   = 0.10    // static DC spur — >0.05 zeroes real P25 voice decode
+		amp  = 0.16   // representative signal level (mean|x| of a real capture)
+		dc   = 0.10   // static DC spur — >0.05 zeroes real P25 voice decode
 	)
 	src := make([]complex64, n)
 	for i := range src {

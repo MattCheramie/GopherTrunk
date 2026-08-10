@@ -291,8 +291,8 @@ type Receiver struct {
 	// Process for the bootstrap-then-refine choreography.
 	fm               *demod.FM
 	mf               *demod.C4FM
-	dcBlk            *dcBlock       // optional pre-discriminator complex DC-removal (voice), nil = off
-	dcbuf            []complex64    // scratch for dcBlk.process
+	dcBlk            *dcBlock                  // optional pre-discriminator complex DC-removal (voice), nil = off
+	dcbuf            []complex64               // scratch for dcBlk.process
 	slicer           *demod.AdaptiveC4FMSlicer // adaptive 4-level slicer; nil on the legacy pre-scaled-fixture path
 	afc              *demod.CoarseAFC
 	dda              *demod.DecisionDirectedAFC
