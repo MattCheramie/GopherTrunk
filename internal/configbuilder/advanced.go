@@ -9,6 +9,7 @@ package configbuilder
 var AdvancedFields = map[string][]string{
 	"DeviceConfig": {
 		"BlogV4", "BlogV4Lite", "IQCorrect", "IQInvert", "DCAvoid", "DCAvoidOffsetHz",
+		"NarrowbandFilter", "FPGADCBlock", "RFAmp",
 	},
 	"SystemConfig": {
 		// TETRA
