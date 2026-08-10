@@ -352,6 +352,11 @@ type Device struct {
 	// HackRF Pro). It gates Pro-only vendor requests such as the
 	// narrowband filter, which older boards would stall.
 	isPro bool
+	// rfAmp records the opt-in rf_amp device option (sdr.RFAmper). When set,
+	// the "auto" gain preset enables the front-end RF amp; default off so a
+	// front end near a strong transmitter is not overloaded. Applied
+	// immediately by SetRFAmp and re-asserted by SetGain's auto path.
+	rfAmp bool
 }
 
 // Info implements sdr.Device.
@@ -414,6 +419,15 @@ func (d *Device) SetGain(tenthDB int) error {
 		return usb.ErrClosed
 	}
 	lna, vga, amp := splitGain(tenthDB)
+	// On the "auto" preset the front-end RF amp follows the opt-in rf_amp
+	// device option (default off). The amp lowers the noise figure for weak
+	// signals but adds ~14 dB ahead of everything, so it is off by default to
+	// avoid overloading a front end near a strong transmitter (the SDRTrunk
+	// default is amp-on, but it is toggleable there too). Manual (positive)
+	// gain targets keep the amp off, matching the pre-rf_amp behaviour.
+	if tenthDB < 0 && d.rfAmp {
+		amp = true
+	}
 	if err := d.amp(amp); err != nil {
 		return err
 	}
@@ -428,11 +442,7 @@ func (d *Device) SetGain(tenthDB int) error {
 // multiple of 2.
 func splitGain(tenthDB int) (lna, vga int, amp bool) {
 	if tenthDB < 0 {
-		// "auto": enable the front-end RF amp (like SDRTrunk's default
-		// amplifierEnabled:true). The amp sets the noise figure for weak
-		// signals; without it, voice channels on a modest antenna decode
-		// at a much lower SNR and time out with no frames.
-		return defaultLNAGainDB, defaultVGAGainDB, true
+		return defaultLNAGainDB, defaultVGAGainDB, false
 	}
 	target := tenthDB / 10
 	lna = (target / 8) * 8
@@ -478,6 +488,20 @@ func (d *Device) amp(on bool) error {
 		v = 1
 	}
 	return d.t.ControlOut(reqAmpEnable, v, 0, nil, controlTimeoutMs)
+}
+
+// SetRFAmp toggles the HackRF's front-end RF amplifier and records the
+// choice (sdr.RFAmper) so the "auto" gain preset re-asserts it on a later
+// retune. It applies the state immediately, independent of SetGain
+// ordering at pool setup. The amp lowers the noise figure for weak signals
+// at the cost of ~14 dB of gain ahead of everything, so it is opt-in via
+// the rf_amp device option and off by default.
+func (d *Device) SetRFAmp(enable bool) error {
+	if d.isClosed() {
+		return usb.ErrClosed
+	}
+	d.rfAmp = enable
+	return d.amp(enable)
 }
 
 // SetPPM is a no-op for HackRF — the Si5351C reference clock is

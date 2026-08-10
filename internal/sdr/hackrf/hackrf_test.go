@@ -288,7 +288,7 @@ func TestSplitGain(t *testing.T) {
 		wantLNA, wantVGA int
 		wantAmp          bool
 	}{
-		{-1, defaultLNAGainDB, defaultVGAGainDB, true}, // "auto" enables the front-end RF amp
+		{-1, defaultLNAGainDB, defaultVGAGainDB, false}, // "auto": amp off by default (opt-in via rf_amp)
 		{0, 0, 0, false},
 		{160, 16, 0, false},   // 16 dB → all in LNA
 		{180, 16, 2, false},   // 16 dB LNA + 2 dB VGA
@@ -308,7 +308,7 @@ func TestSplitGain(t *testing.T) {
 func TestSetGainIssuesAMPLNAVGA(t *testing.T) {
 	dev, mt := withDevice(t)
 	mt.Script = []usb.CtrlExchange{
-		{BRequest: reqAmpEnable, WValue: 1}, // "auto" (-1) enables the front-end amp
+		{BRequest: reqAmpEnable, WValue: 0}, // "auto" (-1): amp off by default
 		{In: true, BRequest: reqSetLNAGain, WIndex: 16, Reply: []byte{1}, N: 1},
 		{In: true, BRequest: reqSetVGAGain, WIndex: 20, Reply: []byte{1}, N: 1},
 	}
@@ -317,6 +317,32 @@ func TestSetGainIssuesAMPLNAVGA(t *testing.T) {
 	}
 	if mt.Err != nil {
 		t.Fatalf("transport error: %v", mt.Err)
+	}
+}
+
+// TestSetRFAmpThenAutoGainEnablesAmp verifies the opt-in rf_amp path: after
+// SetRFAmp(true) the "auto" (-1) gain preset issues reqAmpEnable=1, whereas by
+// default it issues 0 (see TestSetGainIssuesAMPLNAVGA). SetRFAmp itself also
+// applies the amp immediately so pool setup order (gain before hints) is safe.
+func TestSetRFAmpThenAutoGainEnablesAmp(t *testing.T) {
+	dev, mt := withDevice(t)
+	mt.Script = []usb.CtrlExchange{
+		{BRequest: reqAmpEnable, WValue: 1}, // SetRFAmp(true) applies immediately
+		{BRequest: reqAmpEnable, WValue: 1}, // auto gain re-asserts amp on
+		{In: true, BRequest: reqSetLNAGain, WIndex: 16, Reply: []byte{1}, N: 1},
+		{In: true, BRequest: reqSetVGAGain, WIndex: 20, Reply: []byte{1}, N: 1},
+	}
+	if err := dev.SetRFAmp(true); err != nil {
+		t.Fatalf("SetRFAmp: %v", err)
+	}
+	if err := dev.SetGain(-1); err != nil {
+		t.Fatalf("SetGain: %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport error: %v", mt.Err)
+	}
+	if mt.Step != len(mt.Script) {
+		t.Fatalf("issued %d/%d scripted transfers", mt.Step, len(mt.Script))
 	}
 }
 

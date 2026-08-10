@@ -95,6 +95,15 @@ type FPGADCBlocker interface {
 	SetFPGADCBlock(enable bool) error
 }
 
+// RFAmper is an optional Device extension implemented by backends with a
+// switchable front-end RF amplifier (the HackRF). Callers type-assert for
+// it (like FPGADCBlocker) so backends without an amp need not implement it.
+// Enabling it lowers the noise figure for weak signals at the cost of ~14 dB
+// of gain ahead of the front end, so it is opt-in per device.
+type RFAmper interface {
+	SetRFAmp(enable bool) error
+}
+
 // TunerDiagnoser is an optional Device extension that surfaces tuner
 // detection state for boot-time diagnostics. Callers type-assert for it
 // (like ActualSampleRate / SettleAfterRetune) so backends that don't

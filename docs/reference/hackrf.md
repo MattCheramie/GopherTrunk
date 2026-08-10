@@ -150,9 +150,19 @@ sdr:
       role: control          # or voice / wideband
       gain: auto             # or tenths-of-dB, e.g. "320" for 32.0 dB
       bias_tee: false
+      # rf_amp: true              # front-end RF amp on the "auto" preset — see below
       # narrowband_filter: true   # HackRF Pro only — see below
       # fpga_dc_block: true       # HackRF Pro only — see below
 ```
+
+The HackRF has no true AGC, so `gain: auto` maps to a fixed LNA 16 / VGA 20 dB
+split with the front-end **RF amplifier off**. Set `rf_amp: true` to turn the
+amp on for that preset: it lowers the noise figure by ~14 dB and can recover a
+weak-signal site, but because it adds gain ahead of everything it can overload
+the front end near a strong transmitter — so it is opt-in and off by default.
+(SDRTrunk defaults the amp on but likewise lets you disable it.) A manual
+tenths-of-dB `gain:` value is unaffected by `rf_amp`; `rf_amp` is ignored, with
+a one-line startup warning, on a device that has no switchable amplifier.
 
 Copy the serial straight from `gophertrunk sdr list`. The match is
 case-insensitive and tolerant of a partial serial — a distinctive tail like

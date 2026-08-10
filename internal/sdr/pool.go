@@ -100,6 +100,10 @@ type Hint struct {
 	// after open. Ignored (with a warning) on devices that don't
 	// implement FPGADCBlocker.
 	FPGADCBlock bool
+	// RFAmp engages the front-end RF amplifier after open (the HackRF's
+	// amp on the "auto" gain preset). Ignored (with a warning) on devices
+	// that don't implement RFAmper.
+	RFAmp bool
 	// ForceBlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz crystal +
 	// HF/VHF/UHF input routing) on a device whose USB strings don't
 	// auto-identify it as a V4, so the R828D stops mistuning by ~1.8×
@@ -560,6 +564,17 @@ func (p *Pool) applyHintSettings(dev Device, info Info, h Hint) {
 			p.log.Warn("set fpga_dc_block failed", "serial", info.Serial, "err", err)
 		} else {
 			p.log.Info("sdr: FPGA DC-offset blocker engaged (HackRF Pro)",
+				"serial", info.Serial, "role", h.Role.String())
+		}
+	}
+	if h.RFAmp {
+		if a, ok := dev.(RFAmper); !ok {
+			p.log.Warn("rf_amp requested but this driver has no switchable RF amplifier",
+				"serial", info.Serial)
+		} else if err := a.SetRFAmp(true); err != nil {
+			p.log.Warn("set rf_amp failed", "serial", info.Serial, "err", err)
+		} else {
+			p.log.Info("sdr: front-end RF amplifier engaged",
 				"serial", info.Serial, "role", h.Role.String())
 		}
 	}

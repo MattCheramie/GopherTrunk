@@ -42,6 +42,15 @@ for tagged releases.
   the same signal offset-tuned lands ~10 % EVM and locks (66 NIDs); on the air,
   voice went from never decoding to clean IMBE audio. The composer is unchanged
   — the offset is fully encapsulated in a per-device tuner wrapper.
+- **The HackRF front-end RF amplifier is now configurable via `rf_amp`.** The
+  HackRF has no true AGC, so `gain: auto` uses a fixed LNA/VGA split with the
+  front-end amp off. Setting `rf_amp: true` on a device turns the amp on for the
+  auto preset, lowering the noise figure by ~14 dB to recover a weak-signal site
+  (matching SDRTrunk's amp-on default) — but because it adds gain ahead of
+  everything it can overload a front end near a strong transmitter, so it is
+  opt-in and off by default. Manual (positive) `gain:` values are unaffected, and
+  the option is ignored, with a startup warning, on a device without a switchable
+  amp.
 - **DMR now auto-corrects a small residual tuner carrier offset.** The
   narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
   the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz

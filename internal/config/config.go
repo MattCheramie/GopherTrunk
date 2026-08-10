@@ -1195,6 +1195,15 @@ type DeviceConfig struct {
 	// warning, on any other device. Off by default.
 	FPGADCBlock bool `yaml:"fpga_dc_block"`
 
+	// RFAmp engages the front-end RF amplifier on the "auto" gain preset
+	// (the HackRF's ~14 dB amp). It lowers the noise figure for weak
+	// signals but adds gain ahead of everything, so a front end near a
+	// strong transmitter can overload — leave it off unless a weak-signal
+	// site needs it. Applies to devices with a switchable amp (the HackRF);
+	// ignored, with a startup warning, on devices without one. Off by
+	// default. Manual (positive) `gain:` targets are unaffected.
+	RFAmp bool `yaml:"rf_amp"`
+
 	// BlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz reference crystal +
 	// per-band HF/VHF/UHF input routing) regardless of the dongle's USB
 	// iManufacturer/iProduct strings. Use it when a V4's EEPROM strings

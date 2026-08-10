@@ -261,6 +261,12 @@ sdr:
                            # HackRF One 0–560 (~0–56 dB). HackRF has no true AGC,
                            # so "auto" maps to a fixed LNA 16 / VGA 20 dB split.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      # rf_amp: true       # engage the front-end RF amplifier on the "auto"
+                           # gain preset (the HackRF's ~14 dB amp). Lowers the
+                           # noise figure for weak signals but can overload a
+                           # front end near a strong transmitter, so it is off
+                           # by default. Manual (positive) gain is unaffected;
+                           # ignored, with a warning, on devices without an amp.
       # narrowband_filter: true  # HackRF Pro only: engage the Pro's switchable
                            # narrowband anti-alias filter for tighter adjacent-
                            # channel rejection on narrowband voice (e.g. P25),
@@ -271,13 +277,15 @@ sdr:
                            # hardware alternative to the P25 voice path's
                            # software DC-block that also cleans the control
                            # channel. Ignored, with a warning, on other boards.
-      # dc_avoid: true     # control role only: tune the LO off-channel and mix
-                           # the channel back to baseband in the down-converter,
-                           # off the front-end DC spur, 1/f noise and the I/Q
-                           # image (the offset tuning SDRTrunk/OP25 use). Helps a
-                           # marginal control site; off by default. Confirm the
-                           # tsbk-crc/nid-bch error rates drop while the channel
-                           # stays locked (issue #402).
+      # dc_avoid: true     # control OR voice role: tune the LO off-channel and
+                           # mix the channel back to baseband, off the front-end
+                           # DC spur, 1/f noise and the I/Q image (the offset
+                           # tuning SDRTrunk/OP25 use). On control it moves the
+                           # control channel; on voice each granted call is
+                           # offset-tuned and mixed back per-call. Off by
+                           # default. Confirm the tsbk-crc/nid-bch error rates
+                           # drop (control) or voice grants decode LDUs (voice)
+                           # while the channel stays locked (issue #402).
       # dc_avoid_offset_hz: 0  # LO offset in Hz for dc_avoid; 0 auto-selects
                            # sample_rate/4. Must be < sample_rate/2; ignored when
                            # dc_avoid is false or the delivered rate is at/below
