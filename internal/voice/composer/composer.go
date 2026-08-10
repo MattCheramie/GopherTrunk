@@ -457,7 +457,12 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	// sidecar rather than FM-demodulated into garbage.
 	isAnalogTrunk := proto == "motorola" || proto == "ltr" || proto == "mpt1327" ||
 		(proto == "edacs" && !cs.Grant.ProVoice)
-	isFM := proto == "" || proto == "fm" || proto == "analog" || isAnalogTrunk
+	// The conventional scanner tags its analog channels "fm-conv"
+	// (internal/scanner/conventional/scanner.go). Like the analog-trunk voice
+	// channels above, there is no digital sync to decode — the channel is
+	// FM-demodulated continuously straight into the recorder, so it routes
+	// through the same runFMChain path.
+	isFM := proto == "" || proto == "fm" || proto == "fm-conv" || proto == "analog" || isAnalogTrunk
 	isDMRVoice := proto == "dmr-tier1" || proto == "dmr-tier2" || proto == "dmr-tier3"
 	isP25P2Voice := proto == "p25-phase2"
 	isP25P1Voice := proto == "p25"

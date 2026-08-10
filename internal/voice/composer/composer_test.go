@@ -546,6 +546,34 @@ func TestComposerRunsFMChainForAnalogTrunking(t *testing.T) {
 	}
 }
 
+// TestComposerRunsFMChainForConventional pins the #1075 regression: a
+// conventional analog channel (tagged "fm-conv" by the conventional scanner)
+// must build the FM passthrough chain rather than hit the digital-protocol
+// bypass. Before the fix "fm-conv" was absent from the isFM set, so these
+// grants were logged as "digital protocol not yet decoded; chain bypassed",
+// no chain was spawned, no PCM reached the recorder, and no WAV was written.
+func TestComposerRunsFMChainForConventional(t *testing.T) {
+	src := newFakeSource()
+	c, bus, _, _, teardown := mkComposer(t, src)
+	defer teardown()
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant:        trunking.Grant{Protocol: "fm-conv", GroupID: 0x80000000, FrequencyHz: 146_670_000},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+	waitFor(t, time.Second, func() bool {
+		for _, s := range c.ActiveChains() {
+			if s == "VOICE-1" {
+				return true
+			}
+		}
+		return false
+	})
+}
+
 func TestComposerBypassesEDACSProVoice(t *testing.T) {
 	src := newFakeSource()
 	c, bus, _, _, teardown := mkComposer(t, src)
