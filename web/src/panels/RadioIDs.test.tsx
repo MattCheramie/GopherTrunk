@@ -12,6 +12,7 @@ vi.mock("../api/client", async () => {
     api: {
       rids: vi.fn(),
       ridHistory: vi.fn(),
+      systems: vi.fn().mockResolvedValue([]),
     },
   };
 });
@@ -117,6 +118,35 @@ describe("RadioIDs panel", () => {
     expect(screen.queryByText("CHIEF")).not.toBeInTheDocument();
     expect(screen.queryByText("PATROL")).not.toBeInTheDocument();
     expect(screen.getByText("300")).toBeInTheDocument();
+  });
+
+  it("filters by system via the dropdown and re-fetches scoped", async () => {
+    vi.mocked(api.rids).mockResolvedValue([
+      { id: 100, alias: "CHIEF", configured: true, watch: true, system: "Metro" },
+    ]);
+    vi.mocked(api.systems).mockResolvedValue([
+      { name: "Metro", protocol: "tetra" },
+      { name: "Harbor", protocol: "dmr-tier2" },
+    ] as never);
+
+    renderPanel();
+    // First load is unscoped.
+    await waitFor(() => {
+      expect(api.rids).toHaveBeenCalledWith(expect.anything(), {});
+    });
+    // Dropdown is populated from api.systems.
+    const select = await screen.findByLabelText("Filter by system");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Harbor" })).toBeInTheDocument();
+    });
+
+    await userEvent.selectOptions(select, "Harbor");
+    // Selecting a system re-fetches scoped to it.
+    await waitFor(() => {
+      expect(api.rids).toHaveBeenCalledWith(expect.anything(), {
+        system: "Harbor",
+      });
+    });
   });
 
   it("opens a detail modal and fetches recent calls when a row is clicked", async () => {

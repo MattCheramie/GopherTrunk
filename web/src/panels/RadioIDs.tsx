@@ -4,6 +4,7 @@ import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { PageHeader } from "../components/ui/PageHeader";
+import { Select } from "../components/ui/Select";
 import type { CallRow, RIDDTO } from "../api/types";
 import {
   selectCanMutate,
@@ -29,13 +30,17 @@ export function RadioIDs() {
   const [history, setHistory] = useState<CallRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Selected system filter ("" = all systems). Populates the ?system= query so
+  // a large multi-system RID roster stays legible.
+  const [system, setSystem] = useState("");
+  const [systemNames, setSystemNames] = useState<string[]>([]);
 
-  // Poll the merged list.
+  // Poll the merged list, scoped to the selected system.
   useEffect(() => {
     let cancel = false;
     const refresh = async () => {
       try {
-        const data = await api.rids(cfg);
+        const data = await api.rids(cfg, system ? { system } : {});
         if (!cancel) setRIDs(data);
       } catch {
         // Keep the previous snapshot — a transient fetch failure
@@ -48,7 +53,35 @@ export function RadioIDs() {
       cancel = true;
       window.clearInterval(t);
     };
-  }, [cfg, setRIDs]);
+  }, [cfg, setRIDs, system]);
+
+  // Fetch the configured system list once for the filter dropdown (independent
+  // of the current filter, so the options stay stable while scoped).
+  useEffect(() => {
+    let cancel = false;
+    api
+      .systems(cfg)
+      .then((s) => {
+        if (!cancel) setSystemNames(s.map((sys) => sys.name).filter(Boolean));
+      })
+      .catch(() => {
+        // Non-fatal: the dropdown falls back to systems seen in the RID rows.
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [cfg]);
+
+  // Dropdown options: configured systems ∪ systems seen in the current rows ∪
+  // the active selection (so a discovered-only or just-selected system never
+  // vanishes from the list).
+  const systemOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const n of systemNames) if (n) set.add(n);
+    for (const r of rids) if (r.system) set.add(r.system);
+    if (system) set.add(system);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [systemNames, rids, system]);
 
   // Fetch per-RID call history when the detail modal opens.
   useEffect(() => {
@@ -182,17 +215,44 @@ export function RadioIDs() {
         rowKey={(r) => String(r.id)}
         defaultSortKey="id"
         tableId="rids"
+        pageSize={50}
         searchable
         searchAccessor={(r) =>
-          [r.id, r.alias, r.talker_alias, r.description, r.tag, r.group, r.owner]
+          [
+            r.id,
+            r.alias,
+            r.talker_alias,
+            r.description,
+            r.tag,
+            r.group,
+            r.owner,
+            r.system,
+          ]
             .filter(Boolean)
             .join(" ")
         }
         searchPlaceholder="Search by id, alias, talker alias, group, owner…"
+        toolbar={
+          <Select
+            className="w-auto"
+            aria-label="Filter by system"
+            value={system}
+            onChange={(e) => setSystem(e.target.value)}
+          >
+            <option value="">All systems</option>
+            {systemOptions.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </Select>
+        }
         onRowClick={(r) => setSelected(r)}
         emptyMessage={
           rids.length === 0
-            ? "No radio IDs observed yet — load an rid_alias_file or wait for the affiliation tracker to surface live IDs."
+            ? system
+              ? `No radio IDs on system “${system}” yet.`
+              : "No radio IDs observed yet — load an rid_alias_file or wait for the affiliation tracker to surface live IDs."
             : "No radio IDs match the search."
         }
       />
