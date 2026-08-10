@@ -551,12 +551,16 @@ func (e *Engine) dropHeldNotification(key channelKey) {
 }
 
 // flushHeldGrant handles a notification whose hold window expired with no
-// authoritative group grant to supersede it. If the destination is a known radio
-// SSI, this was a wakeup page for a call whose group grant we never saw — recording
-// under the radio ID is the leak the hold exists to prevent, so it is discarded.
-// Otherwise the destination is a real talkgroup (GSSI) or a genuinely-unknown
-// target, so it allocates (heldFromWakeup skips the hold on re-entry). Runs on the
-// Run goroutine via heldFlush. A no-op if the notification was already cancelled.
+// authoritative group grant to supersede it. A source-less TETRA notification is
+// addressed to the paged radio's own SSI (the calling party), so its GroupID is a
+// subscriber ISSI, never a talkgroup — regardless of whether that SSI has been
+// learned yet. Recording it under the raw ID is exactly the leak the hold exists
+// to prevent (a radio-ID-named "talkgroup" directory), and simply dropping it
+// loses the voiced audio the over actually carried. So flush it as an INDIVIDUAL
+// call to that SSI: recorder.dirFor files it under recordings/<sys>/individual/
+// <SSI>/ with individual=true, and it never masquerades as a phantom talkgroup.
+// Runs on the Run goroutine via heldFlush. A no-op if the notification was already
+// cancelled.
 func (e *Engine) flushHeldGrant(key channelKey) {
 	e.mu.Lock()
 	h := e.held[key]
@@ -568,15 +572,14 @@ func (e *Engine) flushHeldGrant(key channelKey) {
 		return
 	}
 	g := h.grant
-	if e.isKnownRadio(g.GroupID) {
-		// Destination is a learned radio ID — a notification whose group grant was
-		// missed/too-late. Do NOT record under the radio ID (that is the leak).
-		e.log.Debug("tetra: dropping held notification to a known radio (no group grant superseded it)",
-			"grant", g.String())
-		return
-	}
+	// heldFromWakeup skips the re-entry hold; Individual routes the recording to the
+	// individual subtree, skips the talkgroup discovery/catalogue guard, and (via
+	// noteRadio on the Individual dst) retracts any phantom talkgroup already
+	// catalogued for this SSI. No group is guessed — the call is honestly labelled a
+	// call to the addressed radio.
 	g.heldFromWakeup = true
-	e.log.Debug("tetra: flushing held notification grant (no group grant superseded it)",
+	g.Individual = true
+	e.log.Debug("tetra: flushing source-less notification as an individual call (no group grant superseded it)",
 		"grant", g.String())
 	e.HandleGrant(g)
 }

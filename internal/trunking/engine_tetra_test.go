@@ -135,11 +135,13 @@ func TestEngineTETRANotificationDoesNotDiscoverTalkgroup(t *testing.T) {
 	}
 }
 
-// TestEngineTETRANotificationToKnownRadioDropped guards that a held notification
-// targeting a KNOWN radio SSI that no group grant ever supersedes is DROPPED at
-// flush, not recorded under the radio ID — recording under a radio ID is exactly
-// the leak the hold exists to prevent.
-func TestEngineTETRANotificationToKnownRadioDropped(t *testing.T) {
+// TestEngineTETRANotificationToKnownRadioRecordsIndividual: a held notification
+// targeting a KNOWN radio SSI that no group grant ever supersedes is recorded as an
+// INDIVIDUAL call to that SSI at flush — filed under recordings/<sys>/individual/
+// <SSI>/, never under a phantom talkgroup named after the radio ID (the leak the
+// hold exists to prevent). It is NOT dropped: dropping lost the voiced audio the
+// over actually carried, which the operator wants preserved.
+func TestEngineTETRANotificationToKnownRadioRecordsIndividual(t *testing.T) {
 	e, pool, bus, _ := mkEngine(t, 2)
 	defer bus.Close()
 	e.afterFunc = noFireAfterFunc
@@ -156,28 +158,42 @@ func TestEngineTETRANotificationToKnownRadioDropped(t *testing.T) {
 		t.Fatalf("active calls after notification = %d, want 0 (held)", n)
 	}
 
-	// Flush with no group grant: destination is a known radio → dropped, not recorded.
+	// Flush with no group grant: recorded as an individual call to the SSI, never a TG.
 	e.flushHeldGrant(channelKeyOf(page))
-	if n := len(pool.Active()); n != 0 {
-		t.Fatalf("active calls after flush = %d, want 0 (notification to a known radio must not record)", n)
+	act := pool.Active()
+	if len(act) != 1 {
+		t.Fatalf("active calls after flush = %d, want 1 (individual call must record)", len(act))
+	}
+	if !act[0].Grant.Individual {
+		t.Errorf("flushed call Individual = false, want true (must not masquerade as a talkgroup)")
+	}
+	if got := act[0].Grant.GroupID; got != issi {
+		t.Errorf("flushed call GroupID = %d, want %d (the addressed radio SSI)", got, issi)
+	}
+	if tg := e.talkgroups.Lookup(issi); tg != nil {
+		t.Errorf("radio SSI %d catalogued as a talkgroup: %+v", issi, tg)
 	}
 }
 
-// TestEngineTETRANotificationToTalkgroupFlushes guards the legitimate case: a
-// source-less notification addressed to a real talkgroup (not a known radio) that
-// no group grant supersedes still records under that talkgroup once the window
-// expires — the hold must not silently drop a real (if unattributed) group call.
-func TestEngineTETRANotificationToTalkgroupFlushes(t *testing.T) {
+// TestEngineTETRANotificationToUnknownSSIRecordsIndividual is the failing-first
+// regression for the exact leak the operator reported (RID 1005497 / 1005557): a
+// source-less notification whose dst was NEVER seen transmitting (so it is not yet
+// a known radio) and that no group grant supersedes was recorded under the raw
+// radio ID as a phantom talkgroup ("recordings/<sys>/1005497/…", Individual=false).
+// A source-less TETRA notification is always addressed to the paged radio's own
+// SSI, so even an as-yet-unknown dst is a radio, never a real talkgroup. It must now
+// flush to an INDIVIDUAL call. (Old code: Individual=false → fails here.)
+func TestEngineTETRANotificationToUnknownSSIRecordsIndividual(t *testing.T) {
 	e, pool, bus, _ := mkEngine(t, 2)
 	defer bus.Close()
 	e.afterFunc = noFireAfterFunc
 
 	const (
 		freq = uint32(467_912_500)
-		ts   = uint8(1)
-		gssi = uint32(1020545) // a talkgroup — never learned as a radio
+		ts   = uint8(2)
+		issi = uint32(1005497) // reported leak: a radio never seen transmitting
 	)
-	page := Grant{System: "X", Protocol: "tetra", GroupID: gssi, FrequencyHz: freq, Timeslot: ts}
+	page := Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: ts}
 	e.HandleGrant(page)
 	if n := len(pool.Active()); n != 0 {
 		t.Fatalf("active calls after notification = %d, want 0 (held)", n)
@@ -186,10 +202,16 @@ func TestEngineTETRANotificationToTalkgroupFlushes(t *testing.T) {
 	e.flushHeldGrant(channelKeyOf(page))
 	act := pool.Active()
 	if len(act) != 1 {
-		t.Fatalf("active calls after flush = %d, want 1 (talkgroup call must record)", len(act))
+		t.Fatalf("active calls after flush = %d, want 1 (individual call must record)", len(act))
 	}
-	if got := act[0].Grant.GroupID; got != gssi {
-		t.Errorf("flushed call talkgroup = %d, want %d", got, gssi)
+	if !act[0].Grant.Individual {
+		t.Errorf("flushed call Individual = false, want true (RID must not become a phantom talkgroup)")
+	}
+	if got := act[0].Grant.GroupID; got != issi {
+		t.Errorf("flushed call GroupID = %d, want %d", got, issi)
+	}
+	if tg := e.talkgroups.Lookup(issi); tg != nil {
+		t.Errorf("RID %d catalogued as a phantom talkgroup: %+v", issi, tg)
 	}
 }
 
