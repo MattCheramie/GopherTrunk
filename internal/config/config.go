@@ -1967,6 +1967,26 @@ type RecordingsConfig struct {
 	// per-talker srcList / freqList so the existing trunk-recorder parsers work
 	// unchanged. Tri-state: unset (nil) defaults ON; set false to disable.
 	WriteCallJSON *bool `yaml:"write_call_json,omitempty"`
+	// FilenameTemplate customises the recording basename (no extension). Tokens
+	// in braces are substituted per call: {date} (YYYYMMDD), {time} (HHMMSS),
+	// {datetime} (YYYYMMDDTHHMMSS), {year} {month} {day}, {tg} (talkgroup/dest
+	// id), {alpha} (talkgroup alpha tag, else id), {freq} (Hz), {src} (source
+	// radio id), {ts} (timeslot), {proto}, {system}, {callid} (per-run serial).
+	// All rendered in the display timezone. Empty selects the default
+	// "{date}_{time}_{tg}" — e.g. 20260810_230041_1005479 — which drops the
+	// timezone offset, source, and timeslot the older scheme put in every name
+	// (they remain in the .json sidecar). Two calls that resolve to the same
+	// basename (concurrent DMR TS1/TS2 on one talkgroup and second) are made
+	// unique with a -2/-3 suffix, so a template need not include a disambiguator.
+	FilenameTemplate string `yaml:"filename_template"`
+	// PathTemplate customises the per-call directory tree under `dir`, using the
+	// same tokens as FilenameTemplate plus "/" as the separator — e.g.
+	// "{system}/{year}/{month}/{day}" for a trunk-recorder-style date tree.
+	// Empty keeps the default layout: <system>/<talkgroup>/ for group calls and
+	// <system>/individual/<dest-id>/ for individual calls. When set, the template
+	// is used verbatim for every call (group and individual alike), so include
+	// whatever grouping you want; the individual/group flag is still in the .json.
+	PathTemplate string `yaml:"path_template"`
 	// VoiceTapBufferChunks sizes the per-consumer buffer on the same-carrier
 	// voice tap — the queue of post-DDC IQ chunks the control decoder fans to
 	// each followed TETRA call. A deeper buffer absorbs more scheduling jitter
@@ -2656,10 +2676,59 @@ func (c Config) validateRecordings() []error {
 	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
 		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}
+	if err := validateNamingTemplate("recordings.filename_template", c.Recordings.FilenameTemplate, false); err != nil {
+		return []error{err}
+	}
+	if err := validateNamingTemplate("recordings.path_template", c.Recordings.PathTemplate, true); err != nil {
+		return []error{err}
+	}
 	switch c.Recordings.Normalize.ApplyTo {
 	case "", "recording", "distributed", "both":
 	default:
 		return []error{fmt.Errorf("recordings.normalize.apply_to %q invalid (use recording, distributed, or both)", c.Recordings.Normalize.ApplyTo)}
+	}
+	return nil
+}
+
+// namingTemplateTokens are the substitutions recognised in
+// recordings.filename_template / path_template. Mirrored in
+// internal/voice/recorder.go's expandNameTemplate — keep the two in sync.
+var namingTemplateTokens = map[string]struct{}{
+	"date": {}, "time": {}, "datetime": {}, "year": {}, "month": {}, "day": {},
+	"tg": {}, "alpha": {}, "freq": {}, "src": {}, "ts": {}, "proto": {},
+	"system": {}, "callid": {},
+}
+
+// validateNamingTemplate rejects a recording naming template that uses an
+// unknown {token} (a typo that would otherwise render literally), a path
+// separator in a filename template, or an absolute path template.
+func validateNamingTemplate(field, tmpl string, allowSep bool) error {
+	if tmpl == "" {
+		return nil
+	}
+	if allowSep {
+		if strings.HasPrefix(tmpl, "/") || filepath.IsAbs(tmpl) {
+			return fmt.Errorf("%s: must be a relative path, got %q", field, tmpl)
+		}
+	} else if strings.ContainsAny(tmpl, `/\`) {
+		return fmt.Errorf("%s: is a filename, not a path — remove the separator in %q", field, tmpl)
+	}
+	for i := 0; i < len(tmpl); {
+		open := strings.IndexByte(tmpl[i:], '{')
+		if open < 0 {
+			break
+		}
+		open += i
+		end := strings.IndexByte(tmpl[open:], '}')
+		if end < 0 {
+			return fmt.Errorf("%s: unterminated '{' in %q", field, tmpl)
+		}
+		end += open
+		tok := tmpl[open+1 : end]
+		if _, ok := namingTemplateTokens[tok]; !ok {
+			return fmt.Errorf("%s: unknown token {%s} in %q (valid: date, time, datetime, year, month, day, tg, alpha, freq, src, ts, proto, system, callid)", field, tok, tmpl)
+		}
+		i = end + 1
 	}
 	return nil
 }

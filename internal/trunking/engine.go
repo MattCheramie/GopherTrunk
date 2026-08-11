@@ -551,16 +551,29 @@ func (e *Engine) dropHeldNotification(key channelKey) {
 }
 
 // flushHeldGrant handles a notification whose hold window expired with no
-// authoritative group grant to supersede it. A source-less TETRA notification is
-// addressed to the paged radio's own SSI (the calling party), so its GroupID is a
-// subscriber ISSI, never a talkgroup — regardless of whether that SSI has been
-// learned yet. Recording it under the raw ID is exactly the leak the hold exists
-// to prevent (a radio-ID-named "talkgroup" directory), and simply dropping it
-// loses the voiced audio the over actually carried. So flush it as an INDIVIDUAL
-// call to that SSI: recorder.dirFor files it under recordings/<sys>/individual/
-// <SSI>/ with individual=true, and it never masquerades as a phantom talkgroup.
-// Runs on the Run goroutine via heldFlush. A no-op if the notification was already
-// cancelled.
+// authoritative group grant to supersede it. The destination-address type is not
+// on the wire (a TETRA SSI is a GSSI or an ISSI ambiguously), so the classifier
+// leaves a source-less notification's decoded Individual flag alone (usually
+// false = group). We resolve it here from the ONE reliable local signal — whether
+// the destination SSI has been seen transmitting (a known radio):
+//
+//   - dst is a KNOWN RADIO → it is a subscriber ISSI, so the notification is a
+//     unit-addressed (individual) call. Flush Individual=true, filing it under
+//     recordings/<sys>/individual/<SSI>/, exactly as before.
+//   - dst is NOT a known radio → treat it as a group short subscriber identity
+//     (GSSI) and flush the call AS DECODED (group). Force-flipping these to
+//     individual was the reported bug: a group grant whose calling party simply
+//     wasn't decoded this instant (SourceID==0) — a CRC-dropped/late D-SETUP —
+//     matches the source-less "notification" shape and was mis-filed under
+//     individual/<GSSI> (operator's tetra_11aug: dst 1005479/1005704/1009091 are
+//     real group calls; 1005704 and 1009091 are even seen transmitting on OTHER
+//     group calls later, confirming they are radios but that these grants are
+//     group calls addressed under a GSSI, not calls TO those radios).
+//
+// The talkgroup-discovery guard still defers cataloguing a one-off group SSI
+// until a second sighting, so a stray GSSI never leaks into the Talkgroups list.
+// heldFromWakeup skips the re-entry hold. Runs on the Run goroutine via heldFlush.
+// A no-op if the notification was already cancelled.
 func (e *Engine) flushHeldGrant(key channelKey) {
 	e.mu.Lock()
 	h := e.held[key]
@@ -572,15 +585,18 @@ func (e *Engine) flushHeldGrant(key channelKey) {
 		return
 	}
 	g := h.grant
-	// heldFromWakeup skips the re-entry hold; Individual routes the recording to the
-	// individual subtree, skips the talkgroup discovery/catalogue guard, and (via
-	// noteRadio on the Individual dst) retracts any phantom talkgroup already
-	// catalogued for this SSI. No group is guessed — the call is honestly labelled a
-	// call to the addressed radio.
 	g.heldFromWakeup = true
-	g.Individual = true
-	e.log.Debug("tetra: flushing source-less notification as an individual call (no group grant superseded it)",
-		"grant", g.String())
+	if e.isKnownRadio(g.GroupID) {
+		// Unit-addressed call to a subscriber we've seen transmit.
+		g.Individual = true
+		e.log.Debug("tetra: flushing source-less notification as an individual call (destination is a known radio, no group grant superseded it)",
+			"grant", g.String())
+	} else {
+		// Destination is a GSSI: flush the group call as decoded rather than
+		// mislabelling it individual.
+		e.log.Debug("tetra: flushing source-less notification as a group call (no calling party decoded, destination is not a known radio)",
+			"grant", g.String())
+	}
 	e.HandleGrant(g)
 }
 
