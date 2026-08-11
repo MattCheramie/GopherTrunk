@@ -14,7 +14,8 @@ const (
 	kindNumber
 	kindHz
 	kindBool
-	kindBoolPtr // *bool tri-state (default/true/false)
+	kindBoolPtr   // *bool tri-state (default/true/false)
+	kindNumberPtr // *int/*uint tri-state (unset/value), e.g. *uint8 color_code
 	kindStringList
 	kindFreqList
 	kindList        // []struct → drill into a list view
@@ -125,6 +126,12 @@ func kindOf(f reflect.StructField, m fieldMeta) rowKind {
 	case reflect.Ptr:
 		if ft.Elem().Kind() == reflect.Bool {
 			return kindBoolPtr
+		}
+		switch ft.Elem().Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+			reflect.Float32, reflect.Float64:
+			return kindNumberPtr // e.g. *uint8 color_code (nil = unset)
 		}
 		if ft.Elem().Kind() == reflect.Struct {
 			return kindPtr
