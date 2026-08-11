@@ -227,22 +227,43 @@ confirmation before any close-as-completed.
     colours 0-15 stay at the floor; LMS `GT_TETRA_DMO_LMS=1` doesn't help, 35→32). So the
     signal is NOT weak/encrypted (signalling decodes at the same RF) — it is a real clear-voice
     decode that only needs the correct DM colour code for the TCH/S descramble
-    (`DescrambleTetra(type5, colour)` in `dmo_decode.go`). GT parses the DM-SYNC PDU colour as
-    **0** (`ParseSyncPDU` reuses the TMO SYNC-PDU field layout), so the true DM colour code (3)
-    is never recovered and never reaches the traffic descramble — the prime suspect is a
-    DM-SYNC (EN 300 396-3) colour-code field offset that differs from the TMO SYNC PDU, or a
-    scrambler-seed mapping. Reproduce:
-    `GT_TETRA_DMO_IQ=<10aug .raw> GT_TETRA_DMO_RATE=144000 GT_TETRA_DMO_COLOUR=3 GT_TETRA_DMO_CLEAR=1
+    (`DescrambleTetra(type5, colour)` in `dmo_decode.go`).
+  - **Colour recovery LANDED (C1, capture-verified).** The DM colour is NOT recoverable from
+    the SCH/S (always colour-0-scrambled — reads 0). It IS in the DSB SCH/H (DM-SYNC SYSINFO,
+    EN 300 396-3), but on a single capture colour 3 lights only the field's two LSBs so its
+    exact bit offset is ambiguous — hardcoding it is the #764/#771 self-consistent trap
+    (empirically confirmed: a colour-field scan found no unique 6-bit window). So instead
+    `tetra.RecoverDMColourCode(bursts)` (`dmo_decode.go`) picks the colour (0..63) that
+    maximises CRC-valid TCH/S — the correct one wins by a wide margin (measured 35 vs ≤3),
+    with a confidence gate rejecting a chance-floor winner. `TestTETRADMOReplay` now
+    auto-recovers the colour when `GT_TETRA_DMO_COLOUR` is UNSET: on the 10aug capture it
+    recovers **colour 3 → tch_crc=35, 70 speech frames, 2.1 s PCM, NO manual override**.
+    Pinned synthetic: `TestRecoverDMColourCode`. Reproduce:
+    `GT_TETRA_DMO_IQ=<10aug .raw> GT_TETRA_DMO_RATE=144000 GT_TETRA_DMO_CLEAR=1
     go test ./cmd/gophertrunk -run TestTETRADMOReplay -v`.
-  - **There is still NO production DMO decode pipeline.** `internal/scanner/ccdecoder/pipelines.go`
-    has one TETRA factory (`newTETRAPipeline`, the TMO CC state machine); a DMO capture runs
-    through it and every SCH burst fails because TMO NCDB geometry (`-115/+19`) ≠ DMO DNB
-    (`-108/+11`) — while BSCH still "locks" (DMO DSB SCH/S is colour-0-scrambled like TMO BSCH),
-    which is exactly the operator's live symptom (`sch_pdus=0`, constant `sync gap` / `dsp
-    resync`). The `ExtractDMBursts*`/`DecodeDMSCHS/H`/`DMBurstTCHSpeech*` decoders exist only in
-    `TestTETRADMOReplay`. Getting live DMO voice is a **feature**: wire a DMO pipeline (DMO
-    geometry + frame/sync-gap/resync timing + colour-code recovery, reusing the receiver's
-    `EnableEqualizer`/`SoftSink`) — design-first, its own commit, on-air A/B before closing #1003.
+  - **Remaining: NO production DMO decode pipeline (C2, design-first, on-air A/B gates #1003).**
+    `internal/scanner/ccdecoder/pipelines.go` has one TETRA factory (`newTETRAPipeline`, the TMO
+    CC state machine); a DMO capture runs through it and every SCH burst fails because TMO NCDB
+    geometry (`-115/+19`) ≠ DMO DNB (`-108/+11`) — while BSCH still "locks" (DMO DSB SCH/S is
+    colour-0-scrambled like TMO BSCH), the operator's live symptom (`sch_pdus=0`, constant
+    `sync gap` / `dsp resync`). The `ExtractDMBursts*`/`DecodeDMSCHS/H`/`DMBurstTCHSpeech*`
+    decoders + `RecoverDMColourCode` now exist and are validated offline (`TestTETRADMOReplay`),
+    but are not wired into the daemon. Execution-ready plan:
+    1. **Register** `ProtocolTETRADMO` (`tetra-dmo`) in `internal/trunking/site.go` (enum,
+       `String()`, `ParseProtocol`, error strings) + a `factories` entry in `pipelines.go`.
+    2. **`newTETRADMOPipeline`** mirroring `newTETRAPipeline`'s receiver (`EnableEqualizer` +
+       `SoftSink` + AFC + channel filter), but buffering dibits/diffs and, on a cadence,
+       `ExtractDMBurstsSoft` (DNB `-108/+11`) → `DecodeDMSCHS` (sync → `KindCCLocked` + SYNC-PDU
+       FN-advance liveness) → `RecoverDMColourCode` (once, then lock) → `DMBurstTCHSpeechSoft`.
+       Needs DMO sync-gap/resync timing (TMO's `tetraResyncTimeout`/`tetraLockStaleTimeout` are
+       CC-cadence; DMO is bursty PTT — retune).
+    3. **Composer voice chain**: DMO voice rides the SAME carrier (no grant→tap split), so add a
+       `proto == "tetra-dmo"` branch in `internal/voice/composer/composer.go` (dispatch at
+       `runVoiceChain`, ~line 466) → a `runTETRADMOVoiceChain` that decodes DMO bursts → ACELP →
+       PCM to the recorder. This is the architectural piece (TMO uses the traffic extractor; DMO
+       is self-contained) and the main risk.
+    4. **On-air A/B** on the operator's capture through the full daemon (recording lands, audio
+       intelligible) before marking #1003 verified. A green offline decode ≠ on-air correct.
 - **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
   fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
   P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.
