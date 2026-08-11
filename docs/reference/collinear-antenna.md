@@ -7,14 +7,32 @@ description: A collinear antenna stacks several in-phase vertical elements along
 keywords: collinear antenna, colinear, stacked dipole, phased vertical, omnidirectional gain, coco antenna, high-gain vertical, base station antenna
 aka: [collinear array, colinear antenna, stacked dipole]
 autolink: true
+affiliate: true
+product:
+  name: "Tram 1477 dual-band fiberglass high-gain base vertical antenna"
+  brand: Tram
+  category: High-gain omnidirectional base vertical antenna
+  lowPrice: "55"
+  highPrice: "75"
+  url: https://www.amazon.com/dp/B07K9V35VZ?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Stacked in-phase vertical array }
   - { label: Elements, value: Multiple λ/2 sections, co-phased }
   - { label: Pattern, value: Omnidirectional, low-angle }
-see_also: [monopole-antenna, ground-plane-antenna, antenna-gain, radiation-pattern, dipole-antenna]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B07K9V35VZ?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [monopole-antenna, ground-plane-antenna, antenna-gain, radiation-pattern, dipole-antenna, base-scanner-antenna]
 cite_urls:
   - https://en.wikipedia.org/wiki/Collinear_antenna_array
   - https://en.wikipedia.org/wiki/Antenna_gain
+faq:
+  - q: "Which collinear antenna should I buy for scanning?"
+    a: "For a fixed VHF/UHF station a fiberglass gain vertical such as the Tram 1477 (around $65) is the classic high-gain omnidirectional collinear: stacked in-phase sections squeeze the pattern toward the horizon for more range while still hearing every direction at once. It is pre-tuned for 2 m/70 cm but works fine receive-only across nearby VHF/UHF trunking bands, and its vertical polarization matches land-mobile traffic."
+  - q: "Collinear versus a plain ground-plane vertical?"
+    a: "A collinear stacks several elements to add gain over a single quarter-wave ground plane — typically a few dB — which pulls in weaker distant sites near the horizon. The trade is a narrower vertical beam: a high-gain collinear aimed flat can actually miss a very close, high-angle signal up a nearby hill. For most fixed stations the extra range is worth it."
+  - q: "Collinear or discone for a scanner?"
+    a: "A collinear gives more gain but only across its design band (VHF/UHF); a discone gives far more bandwidth at lower gain. If you concentrate on regional VHF/UHF trunking and want range, the collinear wins; if you sweep everything from air band to 800 MHz, a discone is more flexible. See the base scanner antenna page to choose one outdoor antenna."
+  - q: "Do I need to mount a collinear high up?"
+    a: "Yes — its gain comes from a low-angle pattern aimed at the horizon, so height and a clear view matter more than for any other antenna type. Mount it as high as practical on a mast and keep the feedline short and low-loss so cable loss does not eat the gain."
 ---
 
 A **collinear antenna** is an array of several radiating elements arranged end-to-end
@@ -83,6 +101,26 @@ are the usual ones: a [discone](/reference/discone-antenna/) covers far more ban
 lower gain, and a [Yagi](/reference/yagi-uda-antenna/) gives more gain but only in one
 direction. A collinear occupies the middle ground — band-limited, omnidirectional, and
 higher-gain than a single vertical.
+
+## Where to buy
+
+When you want more range without giving up omnidirectional coverage, a fiberglass gain
+vertical like the **Tram 1477** (around $65) is the standard high-gain collinear for a
+fixed VHF/UHF station: stacked in-phase sections concentrate the pattern toward the
+horizon to pull in weak distant [trunking sites](/reference/trunking-site/) while still
+hearing every bearing at once. Mount it **high** with a clear horizon and feed it with
+short, low-loss [coax](/reference/coaxial-cable/) — the low-angle gain is wasted from a
+short mast or through a long thin cable.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B07K9V35VZ?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+More gain still means nothing against [encryption](/police-scanner-encryption/) — no
+antenna decodes AES. For a wideband alternative or the single outdoor pick, see the
+[base scanner antenna](/reference/base-scanner-antenna/) page and the
+[best scanner antenna guide](/best-scanner-antenna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

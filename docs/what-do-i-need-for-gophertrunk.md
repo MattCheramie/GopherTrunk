@@ -49,7 +49,16 @@ kit), ④ an **[SMA adapter/cable](/sdr-cables-and-connectors/)**. **Optional:**
 | 4 | **Adapter/cable** | Connects antenna to dongle | [SMA adapter kit](/sdr-cables-and-connectors/) | ~$13 |
 | + | **LNA** (optional) | Boosts weak signals | [RTL-SDR Blog Wideband LNA](/best-sdr-lna/) | ~$30 |
 | + | **Filter** (optional) | Fixes FM/AM overload | [Broadcast notch filter](/sdr-filters/) | ~$25 |
-| + | **USB extension** (optional) | Antenna near a window, PC elsewhere | [Active shielded USB cable](https://www.amazon.com/dp/B00BWK9VZ2?tag=gophertrunk-20) | ~$15 |
+| + | **USB extension** (optional) | Antenna near a window, PC elsewhere | [Active shielded USB cable](/reference/usb-extension-cable/) | ~$15 |
+
+> **Want the exact parts list for your setup?** The
+> [GopherTrunk build lists](/gophertrunk-build-lists/) turn this checklist into a
+> complete, itemized shopping list for each configuration — a
+> [PC/laptop build](/gophertrunk-pc-build/), an always-on
+> [Raspberry Pi / SBC build](/gophertrunk-sbc-build/), a serious
+> [outdoor base-station build](/gophertrunk-outdoor-base-build/) (antenna, mast,
+> feedline, grounding), a [portable/field build](/gophertrunk-portable-build/), and a
+> [multi-dongle build](/gophertrunk-multi-dongle-build/).
 
 ## 1. A computer
 

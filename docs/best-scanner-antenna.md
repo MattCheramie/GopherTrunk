@@ -96,15 +96,21 @@ Different jobs want different antennas. Match the antenna to how you listen.
 
 ## Recommended antennas to buy
 
-We don't have a single ASIN to push here — antenna choice depends on your bands
-and mounting — so these are honest tagged searches for the right *category*, not a
-staged review.
+Antenna choice depends on your bands and mounting, so pick by job. Each link goes
+to a dedicated guide with a specific pick and current pricing:
 
-- **Wideband base (discone).** The best general-purpose scanner antenna for a
-  base station.
-  <a href="https://www.amazon.com/s?k=scanner+discone+antenna&tag=gophertrunk-20" rel="nofollow sponsored noopener">Shop discone antennas on Amazon &rarr;</a>
-- **Mobile / mag-mount.** For a vehicle or a quick outdoor mount.
-  <a href="https://www.amazon.com/s?k=scanner+mobile+antenna&tag=gophertrunk-20" rel="nofollow sponsored noopener">Shop mobile scanner antennas on Amazon &rarr;</a>
+- **Wideband base ([discone](/reference/discone-antenna/) / [base scanner antenna](/reference/base-scanner-antenna/)).**
+  The best general-purpose scanner antenna for a base station — one feedline covers
+  25 MHz to well past 1 GHz.
+- **Outdoor vertical ([ground-plane](/reference/ground-plane-antenna/) / [collinear](/reference/collinear-antenna/)).**
+  A band-matched vertical or high-gain collinear when you mostly monitor VHF/UHF or
+  one 700/800 MHz system.
+- **Vehicle ([mobile mag-mount](/reference/mobile-scanner-antenna/)).** A
+  magnetic-mount whip on the roof for scanning on the move.
+- **Handheld ([handheld scanner antenna](/reference/handheld-scanner-antenna/)).**
+  A full-size whip to replace the stock rubber duck on a portable.
+- **Directional ([Yagi](/reference/yagi-uda-antenna/) / [log-periodic](/reference/log-periodic-antenna/)).**
+  Point extra gain at a single weak, distant site.
 
 > **Pick for your bands.** If you mostly monitor an 800 MHz trunked system, a
 > band-matched 800 MHz vertical will outperform a do-everything discone on that
@@ -122,8 +128,11 @@ higher you go in frequency.
   **SMA** (see [SMA connector](/reference/sma-connector/)). Get the correct
   antenna connector or a quality adapter — cheap adapters add loss and
   intermittents.
-- **Ground and protect outdoor installs.** A rooftop antenna should be grounded
-  and ideally fitted with lightning/surge protection. Follow local codes.
+- **Ground and protect outdoor installs.** A rooftop antenna should be
+  [grounded](/reference/grounding-kit/) and ideally fitted with a
+  [lightning/surge arrestor](/reference/lightning-arrestor/). See the
+  [masts, mounts & mounting hardware guide](/antenna-mast-and-mounting-guide/) for
+  the mast, brackets, and grounding stack, and follow local codes.
 
 ## Same antenna, better SDR
 

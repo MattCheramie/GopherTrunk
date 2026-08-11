@@ -7,14 +7,32 @@ description: A Yagi-Uda antenna is a directional array of a driven element plus 
 keywords: yagi antenna, yagi-uda, beam antenna, directional antenna, parasitic array, reflector, director, driven element, antenna gain, boom
 aka: [yagi, yagi-uda, beam antenna]
 autolink: true
+affiliate: true
+product:
+  name: "HYS dual-band VHF/UHF Yagi beam antenna (144/430 MHz)"
+  brand: HYS
+  category: Directional VHF/UHF Yagi antenna
+  lowPrice: "45"
+  highPrice: "60"
+  url: https://www.amazon.com/dp/B086YTJLSH?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Parasitic directional array }
   - { label: Elements, value: Reflector + driven + directors }
   - { label: Pattern, value: Unidirectional, high gain }
-see_also: [antenna-gain, radiation-pattern, front-to-back-ratio, log-periodic-antenna, dipole-antenna]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B086YTJLSH?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [antenna-gain, radiation-pattern, front-to-back-ratio, log-periodic-antenna, collinear-antenna, dipole-antenna]
 cite_urls:
   - https://en.wikipedia.org/wiki/Yagi%E2%80%93Uda_antenna
   - https://en.wikipedia.org/wiki/Parasitic_element_(electrical_networks)
+faq:
+  - q: "Which Yagi should I buy to pull in one weak, distant trunking site?"
+    a: "A dual-band VHF/UHF Yagi such as the HYS 144/430 MHz beam (around $50) is the practical pick: several dB of forward gain aimed at the site plus strong rear rejection to knock down interference and multipath from other directions. Mount it on a mast, point the boom at the tower, and feed it with short low-loss coax. It only helps in the direction you aim it, so it suits fixed monitoring of a known site, not scanning a whole region."
+  - q: "Yagi or discone for scanning?"
+    a: "Opposite tools. A discone is omnidirectional and hears every site at once across a huge band; a Yagi hears one direction with real gain and rejects the rest. Use a discone or a vertical to survey a region, and add a Yagi when one specific distant site is too weak to lock. Many operators keep both and switch."
+  - q: "Does a Yagi need to be pointed accurately?"
+    a: "Reasonably — a high-gain Yagi has a narrow forward lobe, so being 20–30 degrees off can cost you signal, and the deep rear null means a site behind the beam nearly vanishes. For a fixed distant site that is exactly the point: aim it once, and the front-to-back ratio cleans up co-channel interference before the SDR ever sees it."
+  - q: "Vertical or horizontal for a scanning Yagi?"
+    a: "Mount it with the elements vertical. Land-mobile P25, DMR, and NXDN signals are vertically polarized, so a horizontally mounted beam suffers a large cross-polarization loss. Rotate the whole antenna so the driven and parasitic elements stand vertically."
 ---
 
 A **Yagi-Uda antenna** (usually just "Yagi") is a directional
@@ -84,6 +102,26 @@ Where omnidirectional coverage matters, a [ground-plane](/reference/ground-plane
 or [collinear](/reference/collinear-antenna/) vertical is the better match, and a
 [log-periodic](/reference/log-periodic-antenna/) trades some Yagi gain for far wider
 bandwidth.
+
+## Where to buy
+
+When one weak, distant [trunking site](/reference/trunking-site/) will not lock, a
+directional beam is the fix. A dual-band VHF/UHF Yagi like the **HYS 144/430 MHz beam**
+(around $50) adds several dB of forward gain and uses its narrow lobe and rear null to
+reject interference from other bearings — cleaning up the constellation before the
+demodulator sees it. Mount it with the elements **vertical** to match land-mobile
+[polarization](/reference/polarization/), aim the boom at the tower, and keep the
+[coax](/reference/coaxial-cable/) run short.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B086YTJLSH?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+A Yagi only fixes weak signal, not [encryption](/police-scanner-encryption/) — no antenna
+decodes AES. For a wideband directional alternative see the
+[log-periodic antenna](/reference/log-periodic-antenna/), and for omnidirectional coverage
+the [best scanner antenna guide](/best-scanner-antenna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

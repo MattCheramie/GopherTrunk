@@ -7,14 +7,32 @@ description: A J-pole is an end-fed half-wave vertical matched by a quarter-wave
 keywords: j-pole antenna, j pole, end-fed half wave, matching stub, quarter-wave stub, slim jim, groundplane-free vertical, twin-lead antenna
 aka: [j-pole, j antenna, end-fed half-wave with stub]
 autolink: true
+affiliate: true
+product:
+  name: "Dual-band VHF/UHF J-pole / Slim Jim base antenna"
+  brand: Various
+  category: Dual-band J-pole antenna
+  lowPrice: "25"
+  highPrice: "40"
+  url: https://www.amazon.com/s?k=dual+band+j-pole+slim+jim+antenna&tag=gophertrunk-20
 infobox:
   - { label: Type, value: End-fed half-wave vertical }
   - { label: Matching, value: λ/4 parallel (J) stub }
   - { label: Pattern, value: Omnidirectional, vertical }
-see_also: [dipole-antenna, monopole-antenna, ground-plane-antenna, standing-wave-ratio, feedpoint-impedance]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=dual+band+j-pole+slim+jim+antenna&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">Search on Amazon &rarr;</a>" }
+see_also: [dipole-antenna, monopole-antenna, ground-plane-antenna, collinear-antenna, standing-wave-ratio, feedpoint-impedance]
 cite_urls:
   - https://en.wikipedia.org/wiki/J-pole_antenna
   - https://en.wikipedia.org/wiki/Zeppelin_antenna
+faq:
+  - q: "Which J-pole should I buy for scanning?"
+    a: "A dual-band VHF/UHF J-pole or its flat cousin the Slim Jim (roughly $25–$40) is a cheap, ground-plane-free vertical that beats a stock whip for fixed monitoring. A rollable twin-lead Slim Jim hangs indoors, in an attic, or off a tree branch and packs away small; a rigid copper-pipe J-pole clamps to a mast for a permanent install. Listings vary a lot, so we point to a current Amazon search rather than a single part number — cut or buy one for the band you care about most."
+  - q: "J-pole or ground plane for a base antenna?"
+    a: "Both are omnidirectional vertical antennas with similar performance. The J-pole's advantage is that it needs no radials or ground plane — the matching stub does the work — so it is tidy to mount indoors or on a thin mast. A ground-plane vertical is a touch more predictable but has radials sticking out. For most scanning listeners the choice is about mounting convenience."
+  - q: "What is a Slim Jim and is it as good as a J-pole?"
+    a: "A Slim Jim is a folded J-pole built from a single length of 300 Ω twin-lead — the 'J Integrated Match.' It has essentially the same omnidirectional vertical pattern as a rigid J-pole but rolls up flat, which makes it a favourite portable and attic antenna. For fixed base use either works; the Slim Jim just packs smaller."
+  - q: "Does a J-pole need a ground plane or radials?"
+    a: "No. That is the whole point of the design — the quarter-wave matching stub replaces the ground plane a quarter-wave monopole would need, so the antenna is electrically complete on its own and mounts anywhere with a single support."
 ---
 
 A **J-pole antenna** is a vertical, omnidirectional [antenna](/reference/antenna/)
@@ -81,6 +99,25 @@ GopherTrunk is a receive-only decoder and needs no special antenna; a well-tuned
 simply raises the signal-to-noise reaching the front end. Like any single-band resonant
 vertical it is narrower in coverage than a [discone](/reference/discone-antenna/), so cut
 it for the band you care about most.
+
+## Where to buy
+
+A dual-band **J-pole or Slim Jim** (roughly $25–$40) is one of the cheapest ground-plane-free
+upgrades over the stock [whip](/reference/whip-antenna/) that ships with a dongle or scanner.
+A rollable twin-lead Slim Jim hangs indoors or in an attic and packs away flat; a rigid
+copper-pipe J-pole clamps to a mast for a permanent base. Because listings and sellers change
+constantly, we point to a live Amazon search rather than a single part number, so it always
+resolves to current dual-band J-pole and Slim Jim options.
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=dual+band+j-pole+slim+jim+antenna&tag=gophertrunk-20" rel="nofollow sponsored noopener">Search on Amazon &rarr;</a>
+
+A better antenna raises signal-to-noise but never defeats
+[encryption](/police-scanner-encryption/) — no antenna decodes AES. For comparisons with
+verticals, discones, and directional beams, see the
+[best scanner antenna guide](/best-scanner-antenna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

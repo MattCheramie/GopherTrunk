@@ -7,6 +7,14 @@ description: SDRplay RSPduo is a 14-bit, 1 kHz–2 GHz dual-tuner receive-only S
 keywords: SDRplay RSPduo, RSPduo, dual tuner SDR, diversity reception, coherent receiver, 14-bit receiver, two independent streams, SoapySDR
 aka: [RSPduo, SDRplay RSPduo]
 autolink: true
+affiliate: true
+product:
+  name: "SDRplay RSPduo"
+  brand: SDRplay
+  category: Software-defined radio
+  lowPrice: "260"
+  highPrice: "300"
+  url: https://www.amazon.com/s?k=SDRplay+RSPduo&tag=gophertrunk-20
 infobox:
   - { label: Type, value: Dual-tuner receive-only SDR }
   - { label: Vendor/Chip, value: "SDRplay, dual Mirics tuners" }
@@ -14,11 +22,22 @@ infobox:
   - { label: Range, value: 1 kHz – 2 GHz }
   - { label: Bandwidth, value: 2 × ~2 MHz (dual) }
   - { label: TX, value: No }
+  - { label: With GopherTrunk, value: Network only (SoapySDR/rtl_tcp bridge) }
   - { label: Typical price, value: ~US$280 }
-see_also: [sdrplay-rsp1a, antenna-diversity, software-defined-radio, soapysdr, sdrplay-rspdx]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=SDRplay+RSPduo&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [sdrplay-rsp1a, sdrplay-rsp1b, sdrplay-rspdx, antenna-diversity, software-defined-radio, soapysdr, rtl-sdr]
 cite_urls:
   - https://en.wikipedia.org/wiki/Software-defined_radio
   - https://www.sdrplay.com/rspduo/
+faq:
+  - q: "Does GopherTrunk support the SDRplay RSPduo?"
+    a: "Yes, but network only — like the rest of the RSP line. GopherTrunk's pure-Go USB drivers cover RTL-SDR, HackRF, and Airspy, not SDRplay's closed API/service. You run SDRplay's service and a SoapySDR server (or an rtl_tcp bridge) on the machine the RSPduo is plugged into and mount it over TCP. See the hardware guide."
+  - q: "What can the RSPduo's two tuners do for scanning?"
+    a: "Two independent ~2 MHz receivers at once: one could sit on a control channel while the other tracks a separated band, or the pair can run coherently for antenna diversity against multipath and fading. The catch is the ~2 MHz per-tuner cap in dual mode — narrower than an Airspy's single wide capture — plus the SoapySDR bridge requirement."
+  - q: "RSPduo, RSP1B, or an Airspy for GopherTrunk?"
+    a: "For plug-and-play trunking, a directly-supported RTL-SDR or Airspy is simpler. Choose an RSP1B if you want a single 14-bit receiver over a bridge; choose the RSPduo only if you specifically need two simultaneous tuners or diversity and don't mind running a SoapySDR server."
+  - q: "Does the RSPduo decode encrypted channels?"
+    a: "No. Two tuners don't change the encryption wall — like every SDR, the RSPduo cannot decode AES-encrypted traffic. It only receives clear signals for the host to demodulate."
 ---
 
 **SDRplay RSPduo** is a **dual-tuner** receive-only
@@ -100,6 +119,24 @@ As with every RSP, GopherTrunk has no native RSPduo driver — the hardware need
 closed API/service, reachable only through a SoapySDR bridge rather than GopherTrunk's
 direct USB backends for RTL-SDR, HackRF, and Airspy. The receiver is capable; integration
 is the open question, so confirm current support before designing around it.
+
+## Where to buy
+
+The RSPduo is sold by SDRplay and its distributors, and listed on Amazon — stock is often
+third-party, so the button is a tagged search that resolves to current listings. Before you
+buy it for GopherTrunk, weigh two things: it is supported **over the network only**, through a
+[SoapySDR](/reference/soapysdr/)/[rtl_tcp](/reference/rtl-tcp/) bridge rather than
+GopherTrunk's direct USB drivers (see the [hardware guide](/hardware.html)); and its second
+tuner only earns its price if you actually need two simultaneous receivers or
+[antenna diversity](/reference/antenna-diversity/). If you want a single 14-bit receiver, the
+[RSP1B](/reference/sdrplay-rsp1b/) or [RSP1A](/reference/sdrplay-rsp1a/) is cheaper; for
+plug-and-play trunking, an [RTL-SDR](/reference/rtl-sdr/) or [Airspy](/reference/airspy/) is
+simpler still. Compare radios in [best SDR for GopherTrunk](/best-sdr-for-gophertrunk/).
+
+<a class="btn btn--buy" href="https://www.amazon.com/s?k=SDRplay+RSPduo&tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra cost
+to you. It never changes what we recommend.*
 
 ## Sources
 

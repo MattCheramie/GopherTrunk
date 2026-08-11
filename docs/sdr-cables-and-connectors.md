@@ -63,7 +63,7 @@ junction costs a little signal** — minimize them.
 <p class="pick-card__price">around $13</p>
 <p>SMA to/from BNC, UHF, N, and F in both genders. Covers almost any SDR-to-antenna mismatch you will hit — the one thing to buy if unsure.</p>
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B07PXCC5G2?tag=gophertrunk-20" rel="nofollow sponsored noopener">Adapter kit on Amazon &rarr;</a>
-<p class="pick-card__note"><a href="/reference/sma-connector/">SMA details</a></p>
+<p class="pick-card__note"><a href="/reference/sma-adapter-kit/">Adapter kit details</a></p>
 </div>
 <div class="pick-card">
 <span class="pick-card__badge">Flexible pigtails</span>
@@ -71,7 +71,7 @@ junction costs a little signal** — minimize them.
 <p class="pick-card__price">around $15</p>
 <p>Short flexible RG316 pigtails with SMA and common terminations — perfect for connecting a dongle to a fixed antenna or feedline without stress on the jack.</p>
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B0132N1DM0?tag=gophertrunk-20" rel="nofollow sponsored noopener">Pigtail kit on Amazon &rarr;</a>
-<p class="pick-card__note"><a href="/reference/coaxial-cable/">coax details</a></p>
+<p class="pick-card__note"><a href="/reference/coax-pigtail/">pigtail details</a></p>
 </div>
 <div class="pick-card">
 <span class="pick-card__badge">Cable assortment</span>
@@ -98,9 +98,11 @@ frequency rises. That matters because trunked public-safety systems sit at UHF
 Rules of thumb that keep signal on the wire:
 
 - **Short is better than good.** The cheapest way to cut loss is a shorter run.
-  Put the SDR near the antenna and send USB or network the long way, not RF.
-- **Match the cable to the distance.** RG316 for a foot or two; RG58/RG8X for
-  anything across a room or up a mast.
+  Put the SDR near the antenna and send USB the long way with an
+  [active USB extension](/reference/usb-extension-cable/), not RF.
+- **Match the cable to the distance.** An [RG316 pigtail](/reference/coax-pigtail/)
+  for a foot or two; a low-loss [RG8X/LMR feedline](/reference/coax-feedline/) for
+  anything across a room or up a [mast](/antenna-mast-and-mounting-guide/).
 - **Fewer junctions.** Each adapter adds a little loss and a possible bad contact.
   One clean adapter is fine; a tower of six is not.
 - **Long run? Amplify at the antenna.** If distance is unavoidable, a mast-mounted

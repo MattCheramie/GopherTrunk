@@ -7,15 +7,33 @@ description: "The N-type is a rugged, weatherproof threaded 50Ω coaxial connect
 keywords: N-type connector, N connector, Type N, 50 ohm, 75 ohm, weatherproof coaxial connector, low loss, base station, LMR-400, outdoor antenna
 aka: [N connector, "Type N", "N-type"]
 autolink: true
+affiliate: true
+product:
+  name: "SMA to N-type adapter kit (4 gender combinations)"
+  brand: onelinkmore
+  category: N-to-SMA coaxial adapter kit
+  lowPrice: "9"
+  highPrice: "14"
+  url: https://www.amazon.com/dp/B06XPDWBPR?tag=gophertrunk-20
 infobox:
   - { label: Type, value: "Threaded coaxial connector" }
   - { label: Impedance, value: "50 Ω (75 Ω variant)" }
   - { label: Range, value: "DC to ~11 GHz" }
   - { label: Coupling, value: "5/8-24 threaded, gasket-sealed" }
   - { label: TX, value: "Yes (medium/high power)" }
-see_also: [coaxial-cable, sma-connector, bnc-connector, antenna, low-noise-amplifier]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B06XPDWBPR?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [coaxial-cable, sma-connector, bnc-connector, uhf-connector-pl259, coax-feedline, low-noise-amplifier]
 cite_urls:
   - https://en.wikipedia.org/wiki/N_connector
+faq:
+  - q: "Which N-to-SMA adapter should I buy for an SDR?"
+    a: "An SMA-to-N adapter kit that covers all four gender combinations (around $12) is the pick, because an outdoor antenna feedline almost always ends in N while the dongle's port is SMA. Buying the small kit means you have the right gender on hand whether the feedline presents an N plug or an N jack, rather than discovering the mismatch on the roof."
+  - q: "Why do outdoor antennas use N instead of SMA?"
+    a: "N is weatherproof and low-loss. Its gasketed, threaded shell keeps water out of the joint for years on a mast, its part-air dielectric adds only a fraction of a dB across VHF/UHF, and it handles far more power than the miniature SMA. SMA is chosen for size on a crowded dongle edge, not for a rooftop — so a good install runs N up the mast and adapts down to SMA only in the last few centimetres."
+  - q: "Where should the N-to-SMA transition go in the chain?"
+    a: "As close to the receiver as practical. Keep the low-loss N-terminated coax running all the way from the antenna, then step down to the dongle's SMA (or to a mast-mounted LNA) with a single adapter or short pigtail. Adapting to a lossy miniature connector at the top of the mast, before the long cable, throws away signal you cannot get back."
+  - q: "Is 50 Ω or 75 Ω N right for scanning?"
+    a: "Use 50 Ω N — it matches your SDR, antennas, and coax. A 75 Ω N (from broadcast/cable plant) has a different centre-pin diameter, and forcing a 75 Ω plug into a 50 Ω jack can spread and damage the contact, so the two are genuinely not interchangeable."
 ---
 
 **N-type** (Type N) is a medium-size, threaded [coaxial](/reference/coaxial-cable/)
@@ -84,6 +102,24 @@ is decode software and never touches hardware, but its results ride on that feed
 well-made, sealed N joint on low-loss [coax](/reference/coaxial-cable/) preserves the
 signal-to-noise ratio that the decoder ultimately depends on, while a corroded or
 water-ingressed N connector degrades every capture no matter how the DSP is tuned.
+
+## Where to buy
+
+For a fixed listening post, run **N-terminated** low-loss
+[coax](/reference/coax-feedline/) all the way from the rooftop antenna and step down to
+the dongle's **[SMA](/reference/sma-connector/)** port only at the very end. The cheap
+enabler is an **SMA-to-N adapter kit** covering all four gender combinations (around $12),
+so you have the right part whether the feedline ends in an N plug or an N jack. If you also
+juggle BNC or UHF gear, the all-in-one **[SMA adapter kit](/reference/sma-adapter-kit/)**
+bundles those too.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B06XPDWBPR?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For the outdoor feedline itself and a mast-mounted [LNA](/best-sdr-lna/), see the
+[SDR cables and connectors guide](/sdr-cables-and-connectors/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 
