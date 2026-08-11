@@ -675,12 +675,13 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 
 	case trunking.ProtocolDMRTier2:
 		cc := tier2.New(tier2.Options{
-			Bus:             bus,
-			Log:             log.With("system", sys.Name, "freq_hz", freqHz, "tier", 2),
-			SystemName:      sys.Name,
-			FrequencyHz:     freqHz,
-			Now:             now,
-			ColorCodeFilter: sys.DMRColorCode,
+			Bus:              bus,
+			Log:              log.With("system", sys.Name, "freq_hz", freqHz, "tier", 2),
+			SystemName:       sys.Name,
+			FrequencyHz:      freqHz,
+			Now:              now,
+			ColorCodeFilter:  sys.DMRColorCode,
+			InterleavedVoice: sys.DMRInterleavedVoice,
 		})
 		rx := dmrrx.New(dmrrx.Options{
 			SampleRateHz: outRateHz,

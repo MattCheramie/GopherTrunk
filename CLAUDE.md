@@ -264,6 +264,42 @@ confirmation before any close-as-completed.
        is self-contained) and the main risk.
     4. **On-air A/B** on the operator's capture through the full daemon (recording lands, audio
        intelligible) before marking #1003 verified. A green offline decode ≠ on-air correct.
+- **Conventional DMR (Tier II / IPSC) now decodes a repeater's TWO timeslots as two calls.**
+  A base-station DMR repeater carries TS1 and TS2 interleaved on one carrier, each able to hold
+  a separate simultaneous talkgroup. The conventional path (`internal/radio/dmr/tier2`) used to
+  collapse both: two symptoms — "DJ scratchy" audio (both slots' AMBE frames sliced into one
+  superframe) and two talkgroups ping-ponging into one call. Root cause was NOT the DSP: (1) the
+  composer picks single-slot vs interleaved decode from `Grant.DMRInterleavedVoice`, which Tier III
+  stamped but Tier II never did — `dmr_interleaved_voice: true` in config was computed
+  (`resolveDMRInterleavedVoice`, `daemon.go`) but dropped on the floor because `tier2.Options` had
+  no such field; (2) grants carried `Timeslot 0` with scalar `inCall/lastTG/lastSrc` state, so the
+  engine's `(freq, timeslot)` identity folded both slots. Fix wires `InterleavedVoice` through
+  `tier2.Options` + both constructors (`ccdecoder/pipelines.go`, `widebandt2/engine.go`; Tier I
+  direct mode stays single-slot), and replaces the scalar state with a per-destination map that
+  assigns each concurrent call a **synthetic** Timeslot (1/2) — an engine-identity token only; the
+  base-station wire format does NOT label a burst's physical slot (both slots share the BS sync
+  words and the slot-type field carries only colour+datatype), and the composer's `slotRouter`
+  routes audio by the embedded-LC talkgroup, not by this field. The Terminator-with-LC destination
+  is now decoded (RS seed `RS129SeedTerminatorLC`) so a TS1 terminator releases only its own call;
+  a lone active call still tears down promptly on an undecodable terminator, but with two concurrent
+  calls an undecodable terminator defers to per-chain hangtime rather than cross-tear the other slot.
+  Concurrent two-slot recording rides the pre-existing `dmrSameCarrierTaps = 2` taps (distinct
+  serials → no composer per-serial collision). Pinned by `conventional_twoslot_test.go` (failing-first).
+  **NOT yet on-air-verified (#764/#771 discipline):** the operator's only IQ grab
+  (`dmr_ipsc_60sec_bw25k_cs16.raw`, 25 kHz cs16) is a dead capture — ~−75 dBFS RMS, carrier at
+  −11.35 kHz, no frame sync — so the two-slot audio A/B still needs a decodable capture (a wideband
+  `.raw`, or a properly-gained single-channel one). The synthetic regressions + the operator's own
+  `debug.log` (interleaved never reaching the decoder; per-superframe log spam) corroborate the bug.
+  Sharp edge to watch on air: if the embedded LC never decodes (#644), both same-carrier taps'
+  `slotRouter`s fall back to phase parity and could bind the same phase (one slot recorded twice).
+- **DMR group calls are no longer relabeled "individual."** The engine's known-radio →
+  individual reclassification (`HandleGrant`, `internal/trunking/engine.go`) and `noteRadio`'s
+  talkgroup retraction rest on a TETRA-only invariant (GSSIs and ISSIs never overlap). DMR shares
+  one 24-bit space for talkgroup and radio IDs, so ungated it flipped DMR group calls whose TG
+  equalled some radio ID — mis-filing recordings under `individual/<TG>/` and corrupting the
+  `individual` column that backs the Radio IDs roster (its `LastTalkgroup` SQL excludes
+  `individual=1` rows). The whole mechanism is now scoped to `g.Protocol == "tetra"`; DMR's FLCO
+  classification is authoritative. Pinned by `engine_dmr_classify_test.go`.
 - **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
   fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
   P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.

@@ -1091,11 +1091,12 @@ func (p *dmrPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 // (BPTC(196,96) + RS(12,9,4) parity check) for call setup.
 func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := tier2.New(tier2.Options{
-		Bus:             opts.Bus,
-		Log:             opts.Log,
-		SystemName:      opts.SystemName,
-		FrequencyHz:     opts.FrequencyHz,
-		ColorCodeFilter: opts.System.DMRColorCode,
+		Bus:              opts.Bus,
+		Log:              opts.Log,
+		SystemName:       opts.SystemName,
+		FrequencyHz:      opts.FrequencyHz,
+		ColorCodeFilter:  opts.System.DMRColorCode,
+		InterleavedVoice: opts.System.DMRInterleavedVoice,
 	})
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,

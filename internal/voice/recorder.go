@@ -716,6 +716,10 @@ func (r *Recorder) WriteRawFrameWithErrors(deviceSerial string, frame []byte, co
 	return r.writeRawFrame(deviceSerial, 0, frame, correctedBits, true)
 }
 
+// isPowerOfTwo reports whether n is 1, 2, 4, 8, … — used to rate-limit a
+// repeated log to milestone counts (1st, 2nd, 4th, 8th, … occurrence).
+func isPowerOfTwo(n int) bool { return n > 0 && n&(n-1) == 0 }
+
 func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byte, correctedBits int, haveErrs bool) error {
 	s := r.sessionForWrite(deviceSerial, callID)
 	if s == nil {
@@ -751,8 +755,16 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 		}
 		samples, err := s.vocoder.Decode(frame)
 		if err != nil {
-			r.log.Warn("recorder: vocoder decode failed; dropping frame from PCM",
-				"device", deviceSerial, "vocoder", s.vocoder.Name(), "err", err)
+			// Rate-limit: log the first drop and then only at power-of-two
+			// milestones. A garbled call can reject many frames in a row, and at
+			// debug level a per-frame Warn buried the log (the operator's DMR
+			// spam report). The exact drop total is carried in the milestone line.
+			s.vocoderDrops++
+			if isPowerOfTwo(s.vocoderDrops) {
+				r.log.Debug("recorder: vocoder decode failed; dropping frame(s) from PCM",
+					"device", deviceSerial, "vocoder", s.vocoder.Name(),
+					"drops", s.vocoderDrops, "err", err)
+			}
 			return nil
 		}
 		if n := len(samples); n > 0 {
@@ -1718,7 +1730,12 @@ type recordingSession struct {
 	// too-short digital recording is visible without cross-referencing the
 	// composer's follow-ended log.
 	rawFrames int
-	startedAt time.Time
+	// vocoderDrops counts frames the vocoder rejected (undecodable) for this
+	// session; used to rate-limit the per-drop log so a burst of bad frames
+	// summarises to one line per power-of-two milestone instead of one Warn
+	// each (which flooded at debug level on a garbled call).
+	vocoderDrops int
+	startedAt    time.Time
 	// callID is the Grant.CallID of the call this session records. Frames
 	// arriving via WriteRawFrameForCall with a different non-zero callID are
 	// dropped (see sessionForWrite) so a reused tap serial can't bleed the
