@@ -113,6 +113,12 @@ type ConventionalChannel struct {
 	// every colour code (the historical default).
 	colorFilter *uint8
 
+	// interleavedVoice is stamped onto every grant as Grant.DMRInterleavedVoice
+	// (see Options.InterleavedVoice) so the voice composer runs the two-slot
+	// interleaved decoder rather than slicing both timeslots into one garbled
+	// stream.
+	interleavedVoice bool
+
 	// proc is the cross-call dibit / sync state the Process adapter
 	// uses (see process.go). Lazily constructed on the first
 	// Process call.
@@ -122,9 +128,23 @@ type ConventionalChannel struct {
 	locked bool
 	last   LockState
 
-	inCall  bool
-	lastTG  uint32
-	lastSrc uint32
+	// calls tracks the in-progress calls on this repeater, keyed by decoded
+	// destination (the talkgroup for a group call, the called subscriber for a
+	// private call). A conventional DMR repeater carries two independent
+	// timeslots (TS1/TS2), each able to hold a separate simultaneous call, so a
+	// single scalar "current call" collapsed two concurrent talkgroups into one
+	// — the two Voice LC Headers alternate and ping-pong the state, and both
+	// grants carried Timeslot 0 so the engine folded them onto one (freq, 0)
+	// channel. Keying by destination lets the two calls coexist; each is given a
+	// synthetic Timeslot (see assignSlot) so the engine's (freq, timeslot) call
+	// identity keeps them apart. The base-station wire format does not label a
+	// burst's physical slot (both slots share the BS sync words), and the voice
+	// composer routes audio by the embedded-LC talkgroup rather than this field,
+	// so the synthetic slot is purely an engine-identity token and never
+	// mis-routes audio. Touched only on the single decode goroutine (like the
+	// scalar state it replaces), so it needs no lock; Counters() reads only the
+	// atomic cnt below.
+	calls map[uint32]*convCall
 
 	// cnt holds the lock-free decode-activity counters exposed via
 	// Counters(). Incremented on the existing hot paths with atomic
@@ -176,6 +196,15 @@ type Options struct {
 	// lock / decode-error. nil ⇒ accept every colour code. See the colorFilter
 	// field on ConventionalChannel.
 	ColorCodeFilter *uint8
+	// InterleavedVoice stamps Grant.DMRInterleavedVoice so the voice composer
+	// runs the two-slot interleaved AMBE decoder instead of the single-slot one.
+	// A base-station repeater carries TS1 and TS2 interleaved on one carrier, so
+	// the single-slot decoder slices straight through both slots and produces
+	// garbled ("DJ scratchy") audio; the interleaved decoder + slotRouter route
+	// each slot's superframes by their embedded-LC talkgroup. Resolved per
+	// system (true for conventional Tier II, false for Tier I direct mode, which
+	// is genuinely single-slot). Mirrors tier3.Options.InterleavedVoice.
+	InterleavedVoice bool
 }
 
 // New constructs a ConventionalChannel.
@@ -193,14 +222,15 @@ func New(opts Options) *ConventionalChannel {
 		tag = "dmr-tier2"
 	}
 	return &ConventionalChannel{
-		bus:          opts.Bus,
-		log:          log,
-		systemName:   opts.SystemName,
-		freqHz:       opts.FrequencyHz,
-		now:          now,
-		protocolTag:  tag,
-		syncPatterns: opts.SyncPatterns,
-		colorFilter:  opts.ColorCodeFilter,
+		bus:              opts.Bus,
+		log:              log,
+		systemName:       opts.SystemName,
+		freqHz:           opts.FrequencyHz,
+		now:              now,
+		protocolTag:      tag,
+		syncPatterns:     opts.SyncPatterns,
+		colorFilter:      opts.ColorCodeFilter,
+		interleavedVoice: opts.InterleavedVoice,
 	}
 }
 
@@ -237,7 +267,7 @@ func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 	case dmr.DTVoiceLCHeader:
 		c.handleVoiceHeader(b, slot)
 	case dmr.DTTerminatorWithLC:
-		c.handleTerminator()
+		c.handleTerminator(b, slot)
 	case dmr.DTCSBK:
 		c.handleCSBK(b, slot)
 	}
@@ -406,27 +436,46 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		c.log.Debug("dmr/tier2: non-voice FLCO ignored", "flco", flc.FLCO)
 		return
 	}
-	if c.inCall && c.lastTG == dest && c.lastSrc == src {
-		// Same call's repeated Voice LC Header — dedupe.
-		return
+	// Assign or refresh this call's synthetic timeslot. Concurrent calls on the
+	// repeater's two slots carry distinct destinations, so key by dest: a
+	// repeated header for the same (dest, src) is a dedupe; a header for a dest
+	// already in call whose source changed is a talker change on the same slot;
+	// a new dest claims the lowest free synthetic slot.
+	now := c.now()
+	if c.calls == nil {
+		c.calls = make(map[uint32]*convCall)
 	}
-	c.inCall = true
-	c.lastTG = dest
-	c.lastSrc = src
+	var ts uint8
+	if existing, ok := c.calls[dest]; ok {
+		existing.lastAt = now
+		if existing.src == src {
+			// Same call's repeated Voice LC Header — dedupe.
+			return
+		}
+		// Same destination, new talker: keep the slot, republish with the new
+		// source so the engine surfaces the talker change.
+		existing.src = src
+		ts = existing.slot
+	} else {
+		ts = c.assignSlot(now)
+		c.calls[dest] = &convCall{src: src, slot: ts, lastAt: now}
+	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
-			System:      c.systemName,
-			Protocol:    c.protocolTag,
-			GroupID:     dest,
-			SourceID:    src,
-			Individual:  individual,
-			FrequencyHz: c.freqHz,
-			ChannelID:   slot.ColorCode,
-			Encrypted:   enc,
-			Emergency:   emer,
-			Priority:    prio,
-			At:          c.now(),
+			System:              c.systemName,
+			Protocol:            c.protocolTag,
+			GroupID:             dest,
+			SourceID:            src,
+			Individual:          individual,
+			FrequencyHz:         c.freqHz,
+			ChannelID:           slot.ColorCode,
+			Timeslot:            ts,
+			DMRInterleavedVoice: c.interleavedVoice,
+			Encrypted:           enc,
+			Emergency:           emer,
+			Priority:            prio,
+			At:                  c.now(),
 		},
 	})
 	c.log.Debug("dmr/tier2: grant",
@@ -435,30 +484,123 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		"individual", individual, "enc", enc, "emer", emer)
 }
 
-func (c *ConventionalChannel) handleTerminator() {
-	if !c.inCall {
+func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) {
+	if len(c.calls) == 0 {
 		return
 	}
+	// Resolve which of the (up to two) concurrent calls this terminator ends
+	// from its own Full LC destination, so a TS1 terminator cannot tear down the
+	// TS2 call. The Terminator-with-LC carries the same FLC as the Voice LC
+	// Header — group talkgroup or unit-to-unit destination — protected by
+	// BPTC(196,96) + RS(12,9) with the terminator parity seed.
+	dest, ok := c.terminatorDest(b)
+	if !ok {
+		// The terminator's Full LC did not decode. With a single call active the
+		// terminator is unambiguous, so end that call (preserving the prompt
+		// teardown Tier II has always done). With two concurrent calls it is
+		// ambiguous — releasing by a guess could cross-tear the other slot — so
+		// release nothing and let each voice chain's own terminator detector +
+		// hangtime end its call.
+		if len(c.calls) != 1 {
+			c.log.Debug("dmr/tier2: ambiguous terminator (LC undecodable, two calls active); leaving to hangtime",
+				"cc", slot.ColorCode)
+			return
+		}
+		for d := range c.calls {
+			dest = d
+		}
+	}
+	cc, tracked := c.calls[dest]
+	if !tracked {
+		// Terminator for a call we aren't tracking (already ended, or its header
+		// was never decoded) — harmless no-op.
+		return
+	}
+	delete(c.calls, dest)
 	// A Terminator with LC is the explicit end of the transmission. Publish a
 	// call release so the engine ends the call at once, rather than waiting out
 	// the composer's hangtime / no-voice timers — the same prompt-teardown path
-	// TETRA's D-RELEASE drives. Keyed by (System, GroupID); a no-match release
-	// is a harmless no-op.
-	if c.bus != nil && c.lastTG != 0 {
+	// TETRA's D-RELEASE drives. Keyed by (System, GroupID), which uniquely names
+	// this call among the concurrent slots.
+	if c.bus != nil && dest != 0 {
 		c.bus.Publish(events.Event{
 			Kind: events.KindCallRelease,
 			Payload: trunking.CallRelease{
 				System:  c.systemName,
-				GroupID: c.lastTG,
+				GroupID: dest,
 				Reason:  trunking.EndReasonReleased,
 				At:      c.now(),
 			},
 		})
 	}
-	c.inCall = false
-	c.lastTG = 0
-	c.lastSrc = 0
-	c.log.Debug("dmr/tier2: terminator")
+	c.log.Debug("dmr/tier2: terminator", "dst", dest, "slot", cc.slot)
+}
+
+// terminatorDest decodes a Terminator-with-LC burst's Full LC and returns the
+// call destination it names (talkgroup or called subscriber), or ok=false if
+// the embedded LC fails FEC. It mirrors handleVoiceHeader's BPTC + RS(12,9)
+// pipeline but with the terminator parity seed.
+func (c *ConventionalChannel) terminatorDest(b *dmr.Burst) (uint32, bool) {
+	bits, errs := framing.DecodeBPTC196_96(b.PayloadBits())
+	if errs < 0 {
+		return 0, false
+	}
+	infoBytes := infoBitsToBytes(bits)
+	if !framing.VerifyRS12_9(infoBytes, framing.RS129SeedTerminatorLC) {
+		return 0, false
+	}
+	flc, err := dmr.ParseFLC(infoBytes)
+	if err != nil {
+		return 0, false
+	}
+	if gv, ok := flc.AsGroupVoiceUser(); ok {
+		return gv.GroupAddress, true
+	}
+	if uu, ok := flc.AsUnitToUnitVoice(); ok {
+		return uu.DestinationID, true
+	}
+	return 0, false
+}
+
+// convCall is one in-progress conventional-DMR call. slot is the synthetic
+// timeslot (1 or 2) assigned to keep concurrent calls apart in the engine's
+// (frequency, timeslot) call identity; lastAt tracks liveness for slot reuse.
+type convCall struct {
+	src    uint32
+	slot   uint8
+	lastAt time.Time
+}
+
+// assignSlot returns a synthetic timeslot (1 then 2) for a new concurrent call.
+// A conventional DMR carrier runs at most two calls (one per TDMA slot); if
+// both synthetic slots are already in use — only possible when a prior call's
+// terminator was missed and its state went stale — the stalest call is evicted
+// and its slot reused. The engine's own call timeout reaps the evicted call.
+func (c *ConventionalChannel) assignSlot(now time.Time) uint8 {
+	var used1, used2 bool
+	var stalestDest uint32
+	var stalestAt time.Time
+	first := true
+	for dest, cc := range c.calls {
+		switch cc.slot {
+		case 1:
+			used1 = true
+		case 2:
+			used2 = true
+		}
+		if first || cc.lastAt.Before(stalestAt) {
+			stalestDest, stalestAt, first = dest, cc.lastAt, false
+		}
+	}
+	if !used1 {
+		return 1
+	}
+	if !used2 {
+		return 2
+	}
+	slot := c.calls[stalestDest].slot
+	delete(c.calls, stalestDest)
+	return slot
 }
 
 // infoBitsToBytes packs a 96-bit slice (each entry 0/1, MSB-first)
