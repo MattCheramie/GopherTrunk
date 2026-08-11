@@ -126,6 +126,10 @@ domains:
           - { slug: magnetic-loop-antenna, title: Magnetic loop antenna, type: term }
           - { slug: biconical-antenna, title: Biconical antenna, type: term }
           - { slug: phased-array-antenna, title: Phased-array antenna, type: term }
+          - { slug: base-scanner-antenna, title: Base scanner antenna, type: hardware }
+          - { slug: handheld-scanner-antenna, title: Handheld scanner antenna, type: hardware }
+          - { slug: mobile-scanner-antenna, title: Mobile scanner antenna, type: hardware }
+          - { slug: adsb-antenna, title: ADS-B antenna (1090 MHz), type: hardware }
           - { slug: mimo, title: MIMO, type: term }
           - { slug: antenna-gain, title: Antenna gain, type: term }
           - { slug: radiation-pattern, title: Radiation pattern, type: term }
@@ -139,6 +143,19 @@ domains:
           - { slug: antenna-tuner, title: Antenna tuner (ATU), type: term }
           - { slug: near-field-far-field, title: Near field & far field, type: term }
           - { slug: radials-counterpoise, title: Radials & counterpoise, type: term }
+
+      - id: mounting
+        label: Masts, mounts & hardware
+        blurb: The masts, brackets, grounding, and fastening hardware that get a scanner antenna up high and safely into the weather.
+        entries:
+          - { slug: antenna-mast, title: Antenna mast, type: hardware }
+          - { slug: tripod-mount, title: Antenna tripod mount, type: hardware }
+          - { slug: eave-mount, title: Eave / J-mount bracket, type: hardware }
+          - { slug: chimney-mount, title: Chimney mount kit, type: hardware }
+          - { slug: mounting-hardware, title: Antenna mounting hardware, type: hardware }
+          - { slug: grounding-kit, title: Antenna grounding kit, type: hardware }
+          - { slug: lightning-arrestor, title: Coax lightning arrestor, type: hardware }
+          - { slug: guy-wire-kit, title: Guy wire kit, type: hardware }
 
       - id: propagation
         label: Propagation
@@ -851,6 +868,10 @@ domains:
           - { slug: bnc-connector, title: BNC connector, type: hardware }
           - { slug: n-type-connector, title: N-type connector, type: hardware }
           - { slug: uhf-connector-pl259, title: UHF connector (PL-259), type: hardware }
+          - { slug: sma-adapter-kit, title: SMA adapter kit, type: hardware }
+          - { slug: coax-pigtail, title: Coax pigtail, type: hardware }
+          - { slug: coax-feedline, title: Coax feedline, type: hardware }
+          - { slug: usb-extension-cable, title: USB extension cable, type: hardware }
           - { slug: tcxo, title: TCXO, type: hardware }
           - { slug: ocxo, title: OCXO, type: hardware }
           - { slug: gpsdo, title: GPSDO, type: hardware }

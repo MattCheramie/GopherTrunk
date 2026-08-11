@@ -7,14 +7,32 @@ description: A log-periodic dipole array is a wideband directional antenna whose
 keywords: log-periodic antenna, LPDA, log periodic dipole array, wideband directional antenna, frequency independent antenna, scaled elements, active region
 aka: [log-periodic dipole array, LPDA, log periodic]
 autolink: true
+affiliate: true
+product:
+  name: "Antenna World COM-072708LP wideband log-periodic antenna (700–2700 MHz, 9 dBi)"
+  brand: Antenna World
+  category: Wideband log-periodic (LPDA) directional antenna
+  lowPrice: "39"
+  highPrice: "55"
+  url: https://www.amazon.com/dp/B01N2TJB87?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Wideband directional array }
   - { label: Elements, value: Scaled dipoles, alternating feed }
   - { label: Pattern, value: Unidirectional, near-constant gain }
-see_also: [yagi-uda-antenna, antenna-gain, radiation-pattern, dipole-antenna, bandwidth]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B01N2TJB87?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [yagi-uda-antenna, antenna-gain, radiation-pattern, dipole-antenna, collinear-antenna, bandwidth]
 cite_urls:
   - https://en.wikipedia.org/wiki/Log-periodic_antenna
   - https://en.wikipedia.org/wiki/Frequency-independent_antenna
+faq:
+  - q: "Which log-periodic antenna should I buy for wideband scanning?"
+    a: "A wideband LPDA such as the Antenna World COM-072708LP (700–2700 MHz, ~9 dBi, around $45) gives directional gain and rear rejection across many bands from one feedpoint — useful for aiming at a distant 700/800 MHz P25 or trunking site without retuning or swapping antennas. Sold for cellular use, these panels double as scanner beams; the higher UHF bands they cover are exactly where P25 Phase 1/2 and much trunking lives."
+  - q: "Log-periodic or Yagi for a distant site?"
+    a: "A Yagi gives more gain on the one frequency it is cut for; an LPDA gives a bit less gain but holds that gain and pattern across a huge band. If you chase a single known channel, a Yagi wins; if you want one directional antenna that stays useful from UHF up through 800 MHz as you move between systems, the log-periodic is the practical choice."
+  - q: "Will a 700–2700 MHz cellular LPDA work for VHF scanning?"
+    a: "No — those panels start around 700 MHz, so they cover UHF and 800/900 MHz trunking but not the 136–174 MHz VHF band. If you need VHF directivity, use a VHF/UHF Yagi instead. Match the antenna's band to the systems you actually monitor."
+  - q: "How do I mount and aim a log-periodic?"
+    a: "Fix it to a mast with the elements vertical (to match land-mobile polarization) and point the short front end of the boom at the site — an LPDA fires off its shortest elements. Keep the coax short and low-loss, especially at 800 MHz where cable loss is high."
 ---
 
 A **log-periodic antenna**, most often a **log-periodic dipole array (LPDA)**, is a
@@ -83,6 +101,25 @@ directivity is fixed by where the boom points, exactly as with a Yagi. Where an 
 is that its broadband nature keeps the same beam usable across the many bands GT can
 decode, from low-VHF LTR up through 800 MHz P25. For maximum gain on one known frequency a
 [Yagi](/reference/yagi-uda-antenna/) still beats it; for coverage, the log-periodic wins.
+
+## Where to buy
+
+For directional gain that stays usable across many bands, a wideband **LPDA like the
+Antenna World COM-072708LP** (700–2700 MHz, ~9 dBi, around $45) points at a distant
+UHF/700/800 MHz [trunking site](/reference/trunking-site/) and keeps its beam as you move
+between systems — no retuning, no antenna swap. Sold as a cellular panel, it doubles as a
+scanner beam across exactly the bands where P25 and 800 MHz trunking live. Mount the
+elements vertical and aim the short end of the boom at the tower.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B01N2TJB87?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+Note the band: these panels do not cover 136–174 MHz VHF — use a
+[Yagi](/reference/yagi-uda-antenna/) there. And directivity fixes weak signal, not
+[encryption](/police-scanner-encryption/). See the
+[best scanner antenna guide](/best-scanner-antenna/) for the full antenna line-up.
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

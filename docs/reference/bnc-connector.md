@@ -7,15 +7,33 @@ description: "BNC is a quick-connect bayonet coaxial connector for RF and video 
 keywords: BNC connector, bayonet Neill-Concelman, 50 ohm, 75 ohm, bayonet coupling, coaxial connector, scanner antenna port, oscilloscope
 aka: [BNC, "Bayonet Neill-Concelman"]
 autolink: true
+affiliate: true
+product:
+  name: "SMA to BNC adapter kit (8-piece, both genders)"
+  brand: Generic
+  category: BNC-to-SMA coaxial adapter kit
+  lowPrice: "8"
+  highPrice: "13"
+  url: https://www.amazon.com/dp/B078K5563Y?tag=gophertrunk-20
 infobox:
   - { label: Type, value: "Bayonet coaxial connector" }
   - { label: Impedance, value: "50 Ω or 75 Ω" }
   - { label: Range, value: "DC to ~4 GHz" }
   - { label: Coupling, value: "Quarter-turn bayonet" }
   - { label: TX, value: "Yes (low power)" }
-see_also: [sma-connector, n-type-connector, coaxial-cable, antenna, standing-wave-ratio]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B078K5563Y?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [sma-connector, n-type-connector, uhf-connector-pl259, coaxial-cable, sma-adapter-kit, coax-pigtail]
 cite_urls:
   - https://en.wikipedia.org/wiki/BNC_connector
+faq:
+  - q: "Which BNC-to-SMA adapter should I buy for an SDR?"
+    a: "A small SMA-to-BNC adapter kit (8 pieces, both genders, around $10) is the safe pick because it covers every direction — BNC male or female to SMA male or female — so a BNC scanner antenna, jumper, or piece of test gear can reach the SMA jack on your dongle no matter which way the pins run. If you already know the exact genders, a single BNC-female-to-SMA-male adapter is a couple of dollars."
+  - q: "Does a BNC-to-SMA adapter lose signal?"
+    a: "Barely, at the frequencies scanning uses. Each adapter adds a small insertion loss and a tiny reflection, but at the VHF/UHF land-mobile bands where P25, DMR, and NXDN live — well under 1 GHz — a good BNC joint is essentially transparent. Stacking several cheap adapters on a long thin cable is what actually costs signal; one clean adapter does not."
+  - q: "Is BNC 50 Ω or 75 Ω, and does it matter for scanning?"
+    a: "Both exist and look identical. Buy the 50 Ω version for radio work — it matches your SDR and antennas. A 75 Ω BNC (from video/CCTV gear) mates mechanically and is usually harmless at VHF, but raises reflections as frequency climbs, so keep 75 Ω parts out of a UHF trunking feedline."
+  - q: "BNC or SMA for a scanner antenna?"
+    a: "BNC is the traditional quick-connect port on handheld scanners and wideband whips; SMA is the near-universal SDR port. Neither is better electrically below 1 GHz — you simply adapt whichever your antenna uses to the SMA jack on the dongle with one cheap adapter."
 ---
 
 **BNC** (Bayonet Neill-Concelman) is a [coaxial](/reference/coaxial-cable/) connector with a
@@ -86,7 +104,28 @@ DMR, and NXDN live — well under 1 GHz — a good BNC joint is essentially tran
 convenience often outweighs the loss. GopherTrunk itself is decode software and never sees a
 connector, yet the feedline chain that ends in a BNC sets the signal quality reaching the
 receiver: a worn or cross-impedance BNC quietly costs signal-to-noise before any sample is
-ever captured.
+ever captured. And because no receiver can recover
+[AES-encrypted](/police-scanner-encryption/) traffic, the connector chain only ever
+determines *how cleanly* the clear traffic arrives — never whether encrypted traffic can
+be decoded.
+
+## Where to buy
+
+Most people do not need a BNC-specific part — they need to get a **BNC** antenna or
+jumper onto the **[SMA](/reference/sma-connector/)** jack the SDR actually uses. A small
+**SMA-to-BNC adapter kit** (8 pieces, both genders, around $10) does that in every
+direction for a few dollars, so you are never stuck on the wrong pin. If you already own
+several mismatched antennas, the broader **[SMA adapter kit](/reference/sma-adapter-kit/)**
+adds UHF, N, and F in the same box; for a flexible lead rather than a rigid barrel, use an
+RG316 **[coax pigtail](/reference/coax-pigtail/)**.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B078K5563Y?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For the full connector map and which coax to run, see the
+[SDR cables and connectors guide](/sdr-cables-and-connectors/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

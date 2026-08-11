@@ -7,14 +7,32 @@ description: A magnetic loop is a small tuned loop resonated by a capacitor, giv
 keywords: magnetic loop antenna, small tuned loop, high Q loop, STL, resonant loop capacitor, low noise receive antenna, portable HF antenna, indoor antenna
 aka: [small tuned loop, STL, mag loop]
 autolink: true
+affiliate: true
+product:
+  name: "MLA-30+ active receive magnetic loop antenna (0.5–30 MHz)"
+  brand: MLA-30+
+  category: HF/low-band receive magnetic loop antenna
+  lowPrice: "32"
+  highPrice: "45"
+  url: https://www.amazon.com/dp/B095K89WND?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Small resonant tuned loop }
   - { label: Q, value: Very high (narrow band) }
   - { label: Strength, value: Low-noise, compact RX }
-see_also: [loop-antenna, q-factor, antenna, resonance, polarization, dynamic-range]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B095K89WND?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [loop-antenna, q-factor, antenna, resonance, low-noise-amplifier, dynamic-range]
 cite_urls:
   - https://en.wikipedia.org/wiki/Loop_antenna
   - https://en.wikipedia.org/wiki/Q_factor
+faq:
+  - q: "Which magnetic loop antenna should I buy for SDR listening?"
+    a: "For low-band and HF reception in a small space, the MLA-30+ active loop (around $38) is the popular budget pick: a broadband receive loop with a built-in low-noise amplifier that covers roughly 0.5–30 MHz, mounts on a balcony or rooftop, and stays quiet against local electric noise. It is a receive-only, active (amplified) loop, so it trades a tuned loop's razor selectivity for no-retune convenience. Note it is an HF/MW antenna, not a VHF/UHF scanning antenna."
+  - q: "Is a magnetic loop useful for GopherTrunk trunking?"
+    a: "Not directly. GopherTrunk decodes VHF/UHF land-mobile trunking (P25, DMR, NXDN, TETRA), where wavelengths are short and simple verticals work well, and a high-Q loop would need constant retuning. Mag loops shine at HF/MW shortwave listening on an SDR, where they act as a low-noise, compact antenna and a tracking preselector. For scanning, use a vertical, discone, or Yagi instead."
+  - q: "Why use a magnetic loop instead of a long wire?"
+    a: "Two reasons: size and noise. A tuned or active loop a fraction of a wavelength across fits on a balcony where a full-size wire cannot go, and because it responds to the magnetic field it stays quieter against the local electric noise that swamps HF in a city — often a bigger win than raw gain. A tuned loop's high Q also preselects, protecting the SDR's front-end dynamic range."
+  - q: "Passive tuned loop or active (amplified) loop?"
+    a: "A passive tuned loop like the classic small transmitting/receiving loop has the highest selectivity and the best preselection, but you must retune it every time you move in frequency. An active broadband loop such as the MLA-30+ drops the tuning and adds a low-noise amplifier, so it is plug-and-play across the whole HF band at the cost of some out-of-band rejection. For casual SDR listening the active loop is far more convenient."
 ---
 
 A **magnetic loop antenna** (small tuned loop, or "mag loop") is a
@@ -95,6 +113,24 @@ are easy, and high-Q retuning would be a nuisance, so mag loops are not part of 
 GopherTrunk station. The antenna is documented here as the practical, tuned member of the
 [loop](/reference/loop-antenna/) family and a textbook example of trading bandwidth for
 selectivity via Q.
+
+## Where to buy
+
+For low-band and HF reception in a small space, an active loop like the **MLA-30+**
+(around $38) is the popular budget pick: a broadband receive loop with a built-in
+[low-noise amplifier](/reference/low-noise-amplifier/) covering roughly 0.5–30 MHz, quiet
+against local electric noise and small enough for a balcony. It is receive-only and
+amplified, trading a tuned loop's razor selectivity for no-retune convenience.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B095K89WND?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+This is an **HF/MW listening** antenna, not a scanning antenna — GopherTrunk's VHF/UHF
+trunking wants a vertical, [discone](/reference/discone-antenna/), or
+[Yagi](/reference/yagi-uda-antenna/) instead. See the
+[best SDR antenna guide](/best-sdr-antenna/) for the scanning line-up.
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 

@@ -174,6 +174,19 @@ groups:
         url: /what-do-i-need-for-gophertrunk/
       - title: Police scanner vs GopherTrunk (SDR)
         url: /police-scanner-vs-sdr/
+      - heading: Build lists
+      - title: All GopherTrunk build lists
+        url: /gophertrunk-build-lists/
+      - title: PC / laptop build
+        url: /gophertrunk-pc-build/
+      - title: Raspberry Pi / SBC build
+        url: /gophertrunk-sbc-build/
+      - title: Outdoor base station build
+        url: /gophertrunk-outdoor-base-build/
+      - title: Portable / field build
+        url: /gophertrunk-portable-build/
+      - title: Multi-dongle build
+        url: /gophertrunk-multi-dongle-build/
       - heading: Police scanners
       - title: Best police scanners
         url: /best-police-scanners/
@@ -205,6 +218,8 @@ groups:
         url: /best-sdr-antenna/
       - title: SDR cables & connectors
         url: /sdr-cables-and-connectors/
+      - title: Masts, mounts & mounting hardware
+        url: /antenna-mast-and-mounting-guide/
       - title: LNAs & filters
         url: /best-sdr-lna/
       - heading: Computers

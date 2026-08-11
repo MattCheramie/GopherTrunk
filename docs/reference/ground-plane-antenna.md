@@ -7,14 +7,32 @@ description: A ground-plane antenna is a quarter-wave monopole given an artifici
 keywords: ground plane antenna, ground-plane, quarter-wave vertical, radials, monopole, counterpoise, GPA, omnidirectional vertical
 aka: [ground plane antenna, ground-plane vertical, GPA]
 autolink: true
+affiliate: true
+product:
+  name: "Diamond X50NA dual-band VHF/UHF base vertical antenna"
+  brand: Diamond
+  category: VHF/UHF base vertical antenna
+  lowPrice: "79"
+  highPrice: "99"
+  url: https://www.amazon.com/dp/B0FNQDTR34?tag=gophertrunk-20
 infobox:
   - { label: Type, value: Monopole with artificial ground }
   - { label: Element, value: λ/4 vertical + 3–4 radials }
   - { label: Pattern, value: Omnidirectional, vertically polarized }
-see_also: [monopole-antenna, radials-counterpoise, whip-antenna, dipole-antenna, antenna-gain]
+  - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B0FNQDTR34?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
+see_also: [monopole-antenna, radials-counterpoise, collinear-antenna, discone-antenna, whip-antenna, base-scanner-antenna]
 cite_urls:
   - https://en.wikipedia.org/wiki/Ground_plane
   - https://en.wikipedia.org/wiki/Monopole_antenna
+faq:
+  - q: "Which ground-plane or base vertical antenna should I buy for scanning?"
+    a: "For a fixed VHF/UHF scanning station the Diamond X50NA (around $85) is a solid, self-contained base vertical: an elevated gain vertical with its own decoupling section, so it hears every trunking site at once without needing a rooftop full of radials. It is vertically polarized to match land-mobile P25, DMR, and NXDN traffic. If you want the widest possible frequency coverage instead of band-optimized gain, a discone or the outdoor pick on the base scanner antenna page is the alternative."
+  - q: "Ground plane versus discone for a scanner?"
+    a: "A ground-plane or gain vertical is optimized for one band (or a dual band) and gives more signal there; a discone trades gain for sheer bandwidth and covers a decade of frequency from one feedline. If you mostly watch one region's VHF or UHF trunking, a base vertical hears better; if you sweep everything from air band to 800 MHz, a discone is more flexible."
+  - q: "Do I still need to lay out radials with a commercial base vertical?"
+    a: "No. A packaged base vertical like the X50NA supplies its own artificial ground — a decoupling sleeve or an integrated radial set at the base — so you just clamp it to a mast. A home-brew quarter-wave ground plane, by contrast, needs three or four radials about a quarter wavelength long to work against."
+  - q: "How high should I mount a ground-plane antenna?"
+    a: "As high and clear as practical. A ground-plane vertical is omnidirectional and radiates toward the horizon, so height and an unobstructed sky view matter more than aiming. Keep the feedline short and low-loss — a long thin coax run can throw away the gain you just paid for."
 ---
 
 A **ground-plane antenna** is a [monopole](/reference/monopole-antenna/) — a
@@ -85,6 +103,26 @@ the stock telescopic [whip](/reference/whip-antenna/) that ships with an
 - **Slope radials for match.** Horizontal ≈ 37 Ω; ~45° droop ≈ 50 Ω for a clean match.
 - **More radials, diminishing returns.** Four beats three; beyond about four the gain is
   marginal for an elevated ground-plane.
+
+## Where to buy
+
+For a fixed VHF/UHF scanning station, a commercial base vertical like the **Diamond
+X50NA** (around $85) is the easy upgrade over a stock [whip](/reference/whip-antenna/):
+an elevated, self-contained gain vertical with its own decoupling section, so it mounts
+to a mast with no radial field to lay out and hears every
+[trunking site](/reference/trunking-site/) at once. Its vertical
+[polarization](/reference/polarization/) matches land-mobile traffic, and no antenna —
+this one included — can recover [AES-encrypted](/police-scanner-encryption/) audio; the
+antenna only decides how well the signal reaches the SDR.
+
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0FNQDTR34?tag=gophertrunk-20" rel="nofollow sponsored noopener">Check price on Amazon &rarr;</a>
+
+For a wideband alternative, a higher-gain [collinear](/reference/collinear-antenna/), or
+the single outdoor pick, see the [base scanner antenna](/reference/base-scanner-antenna/)
+page and the [best scanner antenna guide](/best-scanner-antenna/).
+
+*As an Amazon Associate, GopherTrunk earns from qualifying purchases — at no extra
+cost to you. It never changes what we recommend.*
 
 ## Sources
 
