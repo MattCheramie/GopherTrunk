@@ -799,9 +799,13 @@ domains:
           - { slug: nesdr, title: Nooelec NESDR, type: hardware }
           - { slug: hackrf, title: HackRF One, type: hardware }
           - { slug: airspy, title: Airspy, type: hardware }
+          - { slug: airspy-mini, title: Airspy Mini, type: hardware }
+          - { slug: airspy-r2, title: Airspy R2, type: hardware }
           - { slug: hydrasdr, title: HydraSDR RFOne, type: hardware }
           - { slug: airspy-hf-plus, title: Airspy HF+, type: hardware }
+          - { slug: airspy-hf-plus-discovery, title: Airspy HF+ Discovery, type: hardware }
           - { slug: sdrplay-rsp1a, title: SDRplay RSP1A, type: hardware }
+          - { slug: sdrplay-rsp1b, title: SDRplay RSP1B, type: hardware }
           - { slug: sdrplay-rspdx, title: SDRplay RSPdx, type: hardware }
           - { slug: sdrplay-rspduo, title: SDRplay RSPduo, type: hardware }
           - { slug: limesdr, title: LimeSDR, type: hardware }
@@ -824,6 +828,7 @@ domains:
           - { slug: uniden-bcd536hp, title: Uniden BCD536HP, type: hardware }
           - { slug: uniden-bcd436hp, title: Uniden BCD436HP, type: hardware }
           - { slug: uniden-bcd996p2, title: Uniden BCD996P2, type: hardware }
+          - { slug: uniden-bcd996xt, title: Uniden BCD996XT, type: hardware }
           - { slug: uniden-bcd325p2, title: Uniden BCD325P2, type: hardware }
           - { slug: uniden-home-patrol-2, title: Uniden HomePatrol-2, type: hardware }
           - { slug: uniden-sr30c, title: Uniden SR30C, type: hardware }
@@ -832,7 +837,9 @@ domains:
           - { slug: uniden-bearcat-bct15x, title: Uniden BearTracker BCT15X, type: hardware }
           - { slug: whistler-trx-1, title: Whistler TRX-1, type: hardware }
           - { slug: whistler-trx-2, title: Whistler TRX-2, type: hardware }
+          - { slug: whistler-ws1088, title: Whistler WS1088, type: hardware }
           - { slug: whistler-ws1065, title: Whistler WS1065, type: hardware }
+          - { slug: whistler-ws1040, title: Whistler WS1040, type: hardware }
 
       - id: rf-front-end
         label: RF front-end & components
@@ -1300,6 +1307,9 @@ domains:
           - { slug: orange-pi, title: Orange Pi, type: hardware }
           - { slug: odroid, title: ODROID, type: hardware }
           - { slug: rock-pi, title: Rock Pi (Radxa), type: hardware }
+          - { slug: radxa, title: Radxa (ROCK 5), type: hardware }
+          - { slug: khadas, title: Khadas (VIM), type: hardware }
+          - { slug: pine64, title: PINE64, type: hardware }
           - { slug: banana-pi, title: Banana Pi, type: hardware }
           - { slug: google-coral, title: Google Coral, type: hardware }
           - { slug: libre-computer, title: Libre Computer, type: hardware }
