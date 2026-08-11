@@ -129,6 +129,70 @@ func TestDMTCHSpeechRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRecoverDMColourCode pins the on-air colour-code recovery (#1003): a DMO
+// transmission scrambled with a non-default colour code is decoded by picking
+// the colour that maximises CRC-valid TCH/S, with no configured colour. Several
+// DNBs scrambled at colour 3 (plus a couple of pure-noise DNBs) are handed to
+// RecoverDMColourCode, which must return 3 confidently — where the pre-#1003
+// path could only decode a colour known ahead of time. It fails without the
+// function (recovery is the new capability) and models the real 10aug capture,
+// where colour 3 uniquely lifts TCH/S off the ~1/256 chance floor.
+func TestRecoverDMColourCode(t *testing.T) {
+	const want = uint32(3)
+	rng := rand.New(rand.NewSource(1))
+	var bursts []DMBurst
+	// Eight real TCH/S DNBs scrambled with colour 3 (distinct speech content so
+	// the recovery can't win on a single lucky frame).
+	for i := 0; i < 8; i++ {
+		frameA := seqBits(7+i, tchSpeechFrameBits)
+		frameB := seqBits(9+i, tchSpeechFrameBits)
+		type4 := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits)
+		onair := framing.ScrambleTetra(type4, want)
+		dnb := findBurst(ExtractDMBursts(buildDNB(onair[:dmBlockDibits*2], onair[dmBlockDibits*2:]), 0), DMBurstNormal)
+		if dnb == nil {
+			t.Fatalf("burst %d: no DNB detected", i)
+		}
+		bursts = append(bursts, *dnb)
+	}
+	// A couple of pure-noise DNBs (no colour descrambles them) as distractors.
+	for i := 0; i < 2; i++ {
+		noise := make([]byte, tchType3Bits)
+		for j := range noise {
+			noise[j] = byte(rng.Intn(2))
+		}
+		dnb := findBurst(ExtractDMBursts(buildDNB(noise[:dmBlockDibits*2], noise[dmBlockDibits*2:]), 0), DMBurstNormal)
+		if dnb != nil {
+			bursts = append(bursts, *dnb)
+		}
+	}
+
+	colour, n, confident := RecoverDMColourCode(bursts)
+	if !confident {
+		t.Fatalf("recovery not confident (colour=%d crc=%d) — expected a clear win at colour %d", colour, n, want)
+	}
+	if colour != want {
+		t.Fatalf("recovered colour = %d, want %d (crc=%d)", colour, want, n)
+	}
+	if n < 8 {
+		t.Errorf("recovered crc count = %d, want >= 8 (all clean DNBs)", n)
+	}
+
+	// An all-noise set must NOT confidently claim any colour.
+	var noiseOnly []DMBurst
+	for i := 0; i < 6; i++ {
+		noise := make([]byte, tchType3Bits)
+		for j := range noise {
+			noise[j] = byte(rng.Intn(2))
+		}
+		if dnb := findBurst(ExtractDMBursts(buildDNB(noise[:dmBlockDibits*2], noise[dmBlockDibits*2:]), 0), DMBurstNormal); dnb != nil {
+			noiseOnly = append(noiseOnly, *dnb)
+		}
+	}
+	if _, _, ok := RecoverDMColourCode(noiseOnly); ok {
+		t.Error("recovery falsely confident on all-noise DNBs (chance-floor winner must be rejected)")
+	}
+}
+
 // TestDMTCHSpeechRotation proves the reported burst rotation de-rotates the
 // speech blocks back to the transmitted values through the full decode: the same
 // four-rotation robustness the DSB slicer test covers, but carried all the way

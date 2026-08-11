@@ -29,10 +29,13 @@ import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 // (framing.ScrambleTetra); only the seed differs — DMO seeds it from the 30-bit
 // DM colour code, versus TMO's MCC/MNC/colour extended code. For the DSB
 // signalling the seed is 0 (the rule above), and for the DNB traffic it is the
-// DM colour code. The DM colour code itself is signalled in the SYNC PDU that
-// rides in SCH/S, whose message layout is EN 300 396-3 (a separate spec); until
-// that PDU parser lands, callers pass the colour code explicitly (0 is both the
-// spec default for the DSB blocks and the common radio-to-radio DMO value).
+// DM colour code. The DM colour code is carried in the DM-SYNC SYSINFO
+// (EN 300 396-3, recovered in the DSB SCH/H), but a single capture's colour
+// value can't pin that field's exact bit offset without risking a
+// self-consistent mis-parse, so RecoverDMColourCode instead learns the traffic
+// colour by picking the one that maximises CRC-valid TCH/S. Callers that already
+// know the colour (configuration) pass it explicitly (0 is both the spec default
+// for the DSB blocks and a common radio-to-radio DMO value).
 //
 // Both a hard-decision path (DMBurstTCHSpeech, off the sliced dibits) and a
 // soft-decision path (DMBurstTCHSpeechSoft, off the per-symbol differentials
@@ -138,6 +141,67 @@ func DMBurstTCHSpeechSoft(b DMBurst, colour uint32) [][]byte {
 	// non-identity) — the soft twin of the DMBurstTCHSpeech fix (issue #1003).
 	llr = framing.DescrambleTetraSoft(llr, colour)
 	return TCHSpeechFramesSoft(llr)
+}
+
+// Confidence gate for RecoverDMColourCode: the winning colour must clear this
+// many CRC-valid TCH/S bursts AND beat the runner-up by this factor. Both are
+// comfortably met on real air — the correct colour descrambles the class-2
+// protected speech while every wrong colour sits at the ~1/256 chance floor,
+// so the true colour wins by a wide margin (measured ≈35 vs ≤3 on the #1003
+// 10aug capture) — while an encrypted or unreceivable call clears neither.
+const (
+	dmColourMinCRC    = 6
+	dmColourDominance = 3
+)
+
+// RecoverDMColourCode determines the DM colour code the TCH/S traffic bursts are
+// scrambled with, when it is not known from configuration. This is the missing
+// piece for on-air DMO voice (#1003): the DSB SCH/S is always colour-0 scrambled
+// and decodes regardless of the traffic colour, so it cannot reveal it, and the
+// DM-SYNC SYSINFO field that carries it (EN 300 396-3, recovered in the DSB
+// SCH/H) cannot be pinned to an exact bit offset from a single capture without
+// risking a self-consistent mis-parse. Instead this picks the colour (0..63)
+// that yields the most CRC-valid speech frames across the given DNBs, using the
+// same soft-with-hard-fallback decode the production path uses: the correct
+// colour descrambles the class-2 protected TCH/S while any wrong colour leaves
+// it at the ~1/256 chance floor, so the true colour wins by a wide margin.
+//
+// Returns the best colour, its CRC-valid TCH/S count, and whether that result
+// is trustworthy (clears dmColourMinCRC and dominates the runner-up). When not
+// confident — an encrypted call, an unreceivable capture, or no traffic — the
+// caller should keep its configured/default colour rather than trust a
+// chance-floor winner.
+func RecoverDMColourCode(bursts []DMBurst) (colour uint32, crcCount int, confident bool) {
+	var counts [64]int
+	for c := 0; c < 64; c++ {
+		n := 0
+		for i := range bursts {
+			b := bursts[i]
+			if b.Kind != DMBurstNormal {
+				continue
+			}
+			if len(DMBurstTCHSpeechSoft(b, uint32(c))) == 2 || len(DMBurstTCHSpeech(b, uint32(c))) == 2 {
+				n++
+			}
+		}
+		counts[c] = n
+	}
+	best, second, bestC := -1, -1, 0
+	for c, n := range counts {
+		if n > best {
+			second, best, bestC = best, n, c
+		} else if n > second {
+			second = n
+		}
+	}
+	if best < 0 {
+		best = 0
+	}
+	if second < 0 {
+		second = 0
+	}
+	confident = best >= dmColourMinCRC && best >= dmColourDominance*max(second, 1)
+	return uint32(bestC), best, confident
 }
 
 // DecodeDMSCHF decodes a DNB carrying SCH/F short-data signalling (the full-slot
