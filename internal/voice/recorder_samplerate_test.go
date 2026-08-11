@@ -102,7 +102,7 @@ func TestRecorderForcesVocoderNativeRate(t *testing.T) {
 	}})
 	waitForSession(t, r, "VOICE-1", false)
 
-	wav := filepath.Join(dir, "S", "FIRE", "20260529T172502Z_src42.wav")
+	wav := filepath.Join(dir, "S", "FIRE", "20260529_172502_7.wav")
 	if got := wavHeaderRate(t, wav); got != pcmHzDefault {
 		t.Errorf("decoded-call WAV header rate = %d, want %d", got, pcmHzDefault)
 	}
@@ -153,7 +153,7 @@ func TestRecorderAnalogKeepsConfiguredRate(t *testing.T) {
 	}})
 	waitForSession(t, r, "VOICE-2", false)
 
-	wav := filepath.Join(dir, "S", "ANALOG", "20260529T173012Z_src1.wav")
+	wav := filepath.Join(dir, "S", "ANALOG", "20260529_173012_9.wav")
 	if got := wavHeaderRate(t, wav); got != 16000 {
 		t.Errorf("analog WAV header rate = %d, want 16000", got)
 	}

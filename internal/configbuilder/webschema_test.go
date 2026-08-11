@@ -55,7 +55,7 @@ var webRoundTripAllow = map[string][]string{
 	// duplicate-recording suppression (recordings.dedup) — both round-trip via
 	// the RecordingsConfig index signature; editable in the TUI, raw YAML, and
 	// the web builder's generic editor. A bespoke web editor is a follow-up.
-	"RecordingsConfig": {"CryptoCapturePath", "Dedup"},
+	"RecordingsConfig": {"CryptoCapturePath", "Dedup", "FilenameTemplate", "PathTemplate"},
 	"DedupConfig":      {"Enabled", "WindowSeconds"},
 
 	// Event-driven raw-IQ auto-record (baseband.auto_record) — a debug/research

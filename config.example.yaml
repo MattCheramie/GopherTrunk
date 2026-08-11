@@ -180,6 +180,17 @@ storage:
 recordings:
   dir: "../recordings"
   sample_rate: 8000
+  # Recording name + folder layout. Both are optional {token} templates.
+  # filename_template builds the basename (no extension); empty uses the default
+  # "{date}_{time}_{tg}" — e.g. 20260810_230041_1005479 — which drops the
+  # timezone offset, source, and timeslot (all still in the .json sidecar).
+  # path_template builds the per-call folder tree under `dir`; empty keeps
+  # <system>/<talkgroup>/ (and <system>/individual/<id>/ for private calls).
+  # Tokens: {date} {time} {datetime} {year} {month} {day} {tg} {alpha} {freq}
+  # {src} {ts} {proto} {system} {callid}. Concurrent same-second, same-talkgroup
+  # calls get a -2 suffix automatically, so no disambiguator token is required.
+  # filename_template: "{date}_{time}_{tg}_{freq}"   # P25-friendly, adds the freq
+  # path_template: "{system}/{year}/{month}/{day}"    # trunk-recorder-style date tree
   # Opt-in "sound-good" voice enhancement. When enabled, decoded digital
   # voice is band-limited to the telephone band, warmed, run to a louder
   # AGC target, and (optionally) compressed — shaping BOTH recordings and

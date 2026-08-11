@@ -47,15 +47,20 @@ type StartupSquelchable interface {
 // samples in via WritePCM (analog protocols) and raw vocoder frames
 // in via WriteRawFrame (digital protocols), keyed by device serial.
 //
-// Layout under OutDir (Trunk-Recorder-style):
+// Default layout under OutDir:
 //
-//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_freq<Hz>_src<src>.wav
-//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_freq<Hz>_src<src>.raw
+//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<YYYYMMDD>_<HHMMSS>_<tg>.wav
+//	<OutDir>/<system>/individual/<dest-id>/<YYYYMMDD>_<HHMMSS>_<dest>.wav
 //
-// (The _freq<Hz> tag carries the RF voice-channel frequency; it is
-// omitted when the grant frequency is unknown. A _ts<slot> tag is
-// appended for slotted protocols. When per-transmission recording is
-// enabled, each over rolls to a new file with a fresh timestamp.)
+// The basename and the directory tree are both operator-configurable via
+// {token} templates (RecorderOptions.FilenameTemplate / PathTemplate; see
+// expandNameTemplate). The default basename drops the timezone offset, source,
+// and timeslot the earlier scheme carried — all of which remain in the .json
+// sidecar — so a template need not repeat them; two calls that would share a
+// basename (concurrent DMR TS1/TS2 on one talkgroup and second) get a -2 suffix
+// (ensureUniqueBase). The .raw and .json sidecars share the .wav basename. When
+// per-transmission recording is enabled, each over rolls to a new file with a
+// fresh timestamp.
 //
 // The raw sidecar is appended once per WriteRawFrame call. It is
 // intentionally a flat concatenation of frames so users can BYO decoder
@@ -166,6 +171,12 @@ type Recorder struct {
 	// timestamps (display.timezone). Never nil after NewRecorder; defaults
 	// to time.UTC when the caller leaves it unset (the prior behaviour).
 	displayLoc *time.Location
+
+	// filenameTmpl / pathTmpl are the operator's optional {token} templates for
+	// the recording basename and directory tree (recordings.filename_template /
+	// path_template). Empty selects the built-in defaults. See expandNameTemplate.
+	filenameTmpl string
+	pathTmpl     string
 
 	// dedup configures cross-site duplicate-recording suppression; dedupSeen is
 	// the recently-recorded (talkgroup, source) → (system, time) index it keys
@@ -315,6 +326,14 @@ type RecorderOptions struct {
 	// Dedup opts into cross-site duplicate-recording suppression (off by
 	// default). See DedupConfig / Recorder.dedupSuppress.
 	Dedup DedupConfig
+
+	// FilenameTemplate customises the recording basename (no extension) via
+	// {token} substitution; empty selects the default "{date}_{time}_{tg}".
+	// PathTemplate customises the per-call directory tree under OutDir; empty
+	// keeps the <system>/<talkgroup>/ (+ individual/) layout. See
+	// config.RecordingsConfig and expandNameTemplate for the token set.
+	FilenameTemplate string
+	PathTemplate     string
 }
 
 // DefaultVocoderForProtocol returns the Protocol → vocoder-name
@@ -417,6 +436,8 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		enhance:            opts.Enhance,
 		vocoderForProtocol: vocoderMap,
 		displayLoc:         loc,
+		filenameTmpl:       opts.FilenameTemplate,
+		pathTmpl:           opts.PathTemplate,
 		decodeOnly:         decodeOnly,
 		dedup:              opts.Dedup,
 		dedupSeen:          make(map[dedupKey]dedupEntry),
@@ -937,7 +958,7 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 	dir := r.directoryFor(cs)
 	nameCS := cs
 	nameCS.StartedAt = startedAt
-	base := r.basenameFor(nameCS)
+	base := r.ensureUniqueBase(dir, r.basenameFor(nameCS))
 	s := &recordingSession{startedAt: startedAt, cs: cs, callID: cs.Grant.CallID}
 	// Seed the trunk-recorder freqList / srcList accumulators. The frequency is
 	// always known; the source may not be yet (a call that opens before the
@@ -1494,7 +1515,70 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 	}
 }
 
+// defaultFilenameTemplate is the basename used when recordings.filename_template
+// is unset: local date + time + talkgroup/dest id, e.g. 20260810_230041_1005479.
+// It deliberately omits the timezone offset, source, and timeslot the older
+// scheme put in every name — all of which remain in the .json sidecar — and
+// relies on the -N collision suffix (ensureUniqueBase) for the rare concurrent
+// same-second, same-talkgroup case (DMR Tier III TS1/TS2).
+const defaultFilenameTemplate = "{date}_{time}_{tg}"
+
+// expandNameTemplate substitutes the {token} set into a recording filename or
+// path template, rendering time tokens in the display timezone. The token set is
+// mirrored in config.namingTemplateTokens (validated at load) — keep them in
+// sync. Path separators in the result are the caller's concern: sanitizeBasename
+// strips them for a filename; sanitizePathTemplate keeps them for a directory.
+func (r *Recorder) expandNameTemplate(tmpl string, cs trunking.CallStart, t time.Time) string {
+	loc := r.displayLoc
+	if loc == nil {
+		loc = time.UTC
+	}
+	if t.IsZero() {
+		t = time.Now()
+	}
+	lt := t.In(loc)
+	tgID := fmt.Sprintf("%d", cs.Grant.GroupID)
+	alpha := tgID
+	if cs.Talkgroup != nil && cs.Talkgroup.AlphaTag != "" {
+		alpha = sanitize(cs.Talkgroup.AlphaTag)
+	}
+	system := sanitize(cs.Grant.System)
+	if system == "" {
+		system = "unknown-system"
+	}
+	return strings.NewReplacer(
+		"{datetime}", lt.Format("20060102T150405"),
+		"{date}", lt.Format("20060102"),
+		"{time}", lt.Format("150405"),
+		"{year}", lt.Format("2006"),
+		"{month}", lt.Format("01"),
+		"{day}", lt.Format("02"),
+		"{tg}", tgID,
+		"{alpha}", alpha,
+		"{freq}", fmt.Sprintf("%d", cs.Grant.FrequencyHz),
+		"{src}", fmt.Sprintf("%d", cs.Grant.SourceID),
+		"{ts}", fmt.Sprintf("%d", cs.Grant.Timeslot),
+		"{proto}", sanitize(cs.Grant.Protocol),
+		"{system}", system,
+		"{callid}", fmt.Sprintf("%d", cs.Grant.CallID),
+	).Replace(tmpl)
+}
+
 func (r *Recorder) directoryFor(cs trunking.CallStart) string {
+	// Operator-supplied directory tree (recordings.path_template) is used verbatim
+	// for every call — the individual/group split is left to the template author
+	// (the flag is still in the .json). Each path segment is sanitised so a token
+	// value can't inject "..", an empty segment, or a control character.
+	if r.pathTmpl != "" {
+		rel := r.expandNameTemplate(r.pathTmpl, cs, cs.StartedAt)
+		parts := []string{r.outDir}
+		for _, seg := range strings.Split(rel, "/") {
+			if s := sanitize(seg); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		return filepath.Join(parts...)
+	}
 	system := sanitize(cs.Grant.System)
 	if system == "" {
 		system = "unknown-system"
@@ -1515,38 +1599,56 @@ func (r *Recorder) directoryFor(cs trunking.CallStart) string {
 }
 
 func (r *Recorder) basenameFor(cs trunking.CallStart) string {
-	loc := r.displayLoc
-	if loc == nil {
-		loc = time.UTC
+	tmpl := r.filenameTmpl
+	if tmpl == "" {
+		tmpl = defaultFilenameTemplate
 	}
-	t := cs.StartedAt
-	if t.IsZero() {
-		t = time.Now()
-	}
-	// Render in the configured display timezone so the filename matches the
-	// local wall-clock the rest of the app shows, rather than always UTC.
-	// The Z0700 zone token keeps the stamp self-documenting and
-	// filename-safe (no colon): UTC still formats as a literal "Z", other
-	// zones as a numeric offset like "+1000".
-	stamp := t.In(loc).Format("20060102T150405Z0700")
-	// Tag the RF voice-channel frequency (Hz) into the name. Voice
-	// frequencies are shared across talkgroups on a trunked system, so
-	// having the frequency on each file makes it easy to tell which
-	// physical channel a recording came from. Omitted when unknown (0).
-	base := stamp
-	if cs.Grant.FrequencyHz != 0 {
-		base = fmt.Sprintf("%s_freq%d", base, cs.Grant.FrequencyHz)
-	}
-	base = fmt.Sprintf("%s_src%d", base, cs.Grant.SourceID)
-	// A DMR Tier III carrier runs two concurrent calls (TS1 + TS2); when
-	// they share a talkgroup (same directory) and a start second, the
-	// stamp+src basename would collide. Tag the slot so each slot's WAV
-	// is distinct on disk and self-labelling. Omitted for non-slotted
-	// protocols (Timeslot 0).
-	if cs.Grant.Timeslot != 0 {
-		base = fmt.Sprintf("%s_ts%d", base, cs.Grant.Timeslot)
+	base := sanitize(r.expandNameTemplate(tmpl, cs, cs.StartedAt))
+	if base == "" {
+		// A template that renders empty (e.g. all-unknown tokens) would create
+		// "<dir>/.wav"; fall back to the start-second stamp so a file is still named.
+		t := cs.StartedAt
+		if t.IsZero() {
+			t = time.Now()
+		}
+		loc := r.displayLoc
+		if loc == nil {
+			loc = time.UTC
+		}
+		base = t.In(loc).Format("20060102_150405")
 	}
 	return base
+}
+
+// ensureUniqueBase returns base, or base with a -2/-3/… suffix, such that
+// <dir>/<base>.wav collides with neither an on-disk file nor an active session.
+// The default scheme drops the source/timeslot that used to disambiguate, so two
+// concurrent same-talkgroup, same-second calls (DMR Tier III TS1/TS2) would
+// otherwise land on one path and overwrite each other. Caller holds r.mu; the
+// active-session scan is race-free because grant processing is single-goroutine
+// and each session is registered before the next is built.
+func (r *Recorder) ensureUniqueBase(dir, base string) string {
+	candidate := base
+	for n := 2; ; n++ {
+		if !r.wavPathClaimed(filepath.Join(dir, candidate+".wav")) {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s-%d", base, n)
+	}
+}
+
+// wavPathClaimed reports whether a WAV path already exists on disk or is held by
+// an active recording session.
+func (r *Recorder) wavPathClaimed(wav string) bool {
+	if _, err := os.Stat(wav); err == nil {
+		return true
+	}
+	for _, s := range r.sessions {
+		if s != nil && s.wavPath == wav {
+			return true
+		}
+	}
+	return false
 }
 
 // fadeTail returns an n-sample linear ramp from `from` down toward zero,

@@ -2,7 +2,6 @@ package voice
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -163,7 +162,7 @@ func TestRecorderWritesPerCallWav(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	want := filepath.Join(dir, "TestSystem", "FIRE-DISP", "20260505T123045Z_src56789.wav")
+	want := filepath.Join(dir, "TestSystem", "FIRE-DISP", "20260505_123045_1234.wav")
 	st, err := os.Stat(want)
 	if err != nil {
 		t.Fatalf("expected wav at %s: %v", want, err)
@@ -174,10 +173,10 @@ func TestRecorderWritesPerCallWav(t *testing.T) {
 }
 
 // TestRecorderBasenameTimezone confirms the recording filename timestamp
-// renders in the configured display timezone (not always UTC), matching
-// the rest of the app. The Z0700 zone token keeps UTC as a literal "Z"
-// (the prior behaviour, so existing names are unchanged) while a
-// non-UTC zone gets a filename-safe numeric offset.
+// renders in the configured display timezone (not always UTC), matching the
+// rest of the app — the local wall-clock shifts with the zone. The default
+// scheme drops the numeric offset the old names carried (it lives in the .json);
+// the zone still moves the date/time, which is what this pins.
 func TestRecorderBasenameTimezone(t *testing.T) {
 	bus := events.NewBus(1)
 	defer bus.Close()
@@ -188,7 +187,7 @@ func TestRecorderBasenameTimezone(t *testing.T) {
 		StartedAt:    time.Date(2026, 5, 5, 12, 30, 45, 0, time.UTC),
 	}
 
-	// A configured +05:00 zone shifts the wall-clock and tags the offset.
+	// A configured +05:00 zone shifts the wall-clock (12:30 → 17:30), no offset token.
 	r, err := NewRecorder(RecorderOptions{
 		Bus:        bus,
 		OutDir:     t.TempDir(),
@@ -198,11 +197,11 @@ func TestRecorderBasenameTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := r.basenameFor(cs), "20260505T173045+0500_src7"; got != want {
+	if got, want := r.basenameFor(cs), "20260505_173045_1"; got != want {
 		t.Fatalf("basenameFor with +5h zone = %q, want %q", got, want)
 	}
 
-	// No DisplayLoc keeps the prior UTC + literal "Z" form.
+	// No DisplayLoc renders the UTC wall-clock.
 	rDef, err := NewRecorder(RecorderOptions{
 		Bus:        bus,
 		OutDir:     t.TempDir(),
@@ -211,17 +210,18 @@ func TestRecorderBasenameTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := rDef.basenameFor(cs), "20260505T123045Z_src7"; got != want {
+	if got, want := rDef.basenameFor(cs), "20260505_123045_1"; got != want {
 		t.Fatalf("default basenameFor = %q, want %q", got, want)
 	}
 }
 
-// TestRecorderTimeslotInWavName confirms a DMR Tier III carrier's two
-// concurrent calls (same system + talkgroup, one per TDMA slot, served
-// by two voice devices) land in the same directory as distinct WAVs
-// tagged by slot — so the stamp+src basenames don't collide and each
-// file is self-labelling.
-func TestRecorderTimeslotInWavName(t *testing.T) {
+// TestRecorderConcurrentSlotsDoNotCollide confirms a DMR Tier III carrier's two
+// calls on the same system + talkgroup + start-second (one per TDMA slot) land
+// as two DISTINCT WAVs in the same directory. The default naming drops the
+// source/timeslot that used to disambiguate, so the collision guard
+// (ensureUniqueBase) must add a -2 suffix rather than let the second overwrite
+// the first.
+func TestRecorderConcurrentSlotsDoNotCollide(t *testing.T) {
 	r, bus, dir := mkRecorder(t, false)
 	defer r.Close()
 	defer bus.Close()
@@ -271,12 +271,15 @@ func TestRecorderTimeslotInWavName(t *testing.T) {
 		}
 	}
 
-	for _, slot := range []int{1, 2} {
-		want := filepath.Join(dir, "TestSystem", "FIRE-DISP",
-			fmt.Sprintf("20260505T123045Z_freq460000000_src56789_ts%d.wav", slot))
-		if _, err := os.Stat(want); err != nil {
-			t.Errorf("expected per-slot wav at %s: %v", want, err)
+	tgDir := filepath.Join(dir, "TestSystem", "FIRE-DISP")
+	for _, name := range []string{"20260505_123045_1234.wav", "20260505_123045_1234-2.wav"} {
+		if _, err := os.Stat(filepath.Join(tgDir, name)); err != nil {
+			t.Errorf("expected distinct wav at %s: %v", name, err)
 		}
+	}
+	// Exactly two WAVs — neither call overwrote the other.
+	if got := wavFiles(t, tgDir); len(got) != 2 {
+		t.Errorf("wav count = %d (%v), want 2 distinct files", len(got), got)
 	}
 }
 
@@ -421,7 +424,7 @@ func TestRecorderRawFrameSidecar(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	rawPath := filepath.Join(dir, "S", "99", "20260505T000000Z_src7.raw")
+	rawPath := filepath.Join(dir, "S", "99", "20260505_000000_99.raw")
 	data, err := os.ReadFile(rawPath)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
@@ -481,7 +484,7 @@ func TestRecorderProVoiceForcesRawSidecar(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	rawPath := filepath.Join(dir, "EDACS-Site", "17185", "20260505T010203Z_src12.raw")
+	rawPath := filepath.Join(dir, "EDACS-Site", "17185", "20260505_010203_17185.raw")
 	data, err := os.ReadFile(rawPath)
 	if err != nil {
 		t.Fatalf("expected .raw sidecar at %s: %v", rawPath, err)
@@ -533,7 +536,7 @@ func TestRecorderNonProVoiceSkipsRawWhenDisabled(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	rawPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src1.raw")
+	rawPath := filepath.Join(dir, "S", "7", "20260505_000000_7.raw")
 	if _, err := os.Stat(rawPath); !os.IsNotExist(err) {
 		t.Errorf(".raw sidecar should not exist (WriteRaw=false, non-ProVoice): err=%v", err)
 	}
@@ -703,7 +706,7 @@ func TestRecorderWriteRawFrameDecodesIntoWav(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	wavPath := filepath.Join(dir, "S", "1", "20260505T000000Z_src2.wav")
+	wavPath := filepath.Join(dir, "S", "1", "20260505_000000_1.wav")
 	st, err := os.Stat(wavPath)
 	if err != nil {
 		t.Fatalf("wav at %s: %v", wavPath, err)

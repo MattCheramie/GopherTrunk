@@ -12,12 +12,24 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-// TestRecorderFrequencyInFilename confirms the RF voice-channel
-// frequency is tagged into the recording filename.
+// TestRecorderFrequencyInFilename confirms the {freq} filename-template token
+// tags the RF voice-channel frequency into the recording name (the default
+// scheme omits it — it lives in the .json — but operators who want the
+// P25-friendly YMD_HMS_TG_freq name get it via the template).
 func TestRecorderFrequencyInFilename(t *testing.T) {
-	r, bus, dir := mkRecorder(t, false)
-	defer r.Close()
+	bus := events.NewBus(8)
 	defer bus.Close()
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:              bus,
+		OutDir:           dir,
+		SampleRate:       8000,
+		FilenameTemplate: "{date}_{time}_{tg}_{freq}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go r.Run(ctx)
@@ -41,7 +53,7 @@ func TestRecorderFrequencyInFilename(t *testing.T) {
 	}})
 	waitSession(t, r, "V1", false)
 
-	want := filepath.Join(dir, "S", "5", "20260608T010203Z_freq451287500_src9.wav")
+	want := filepath.Join(dir, "S", "5", "20260608_010203_5_451287500.wav")
 	if _, err := os.Stat(want); err != nil {
 		t.Fatalf("expected freq-tagged wav at %s: %v", want, err)
 	}

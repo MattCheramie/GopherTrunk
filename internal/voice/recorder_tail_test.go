@@ -106,7 +106,7 @@ func TestRecorderFadesDigitalTailToZero(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	samples := readWAVSamples(t, filepath.Join(dir, "S", "1", "20260505T000000Z_src3.wav"))
+	samples := readWAVSamples(t, filepath.Join(dir, "S", "1", "20260505_000000_1.wav"))
 	if len(samples) < 200 {
 		t.Fatalf("too few samples decoded: %d", len(samples))
 	}

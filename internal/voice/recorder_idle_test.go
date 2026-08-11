@@ -121,7 +121,7 @@ func TestRecorderSuppressesAllIdleRecording(t *testing.T) {
 	}})
 	waitSession(t, r, "VOICE-1", false)
 
-	wavPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src9.wav")
+	wavPath := filepath.Join(dir, "S", "7", "20260505_000000_7.wav")
 	if _, err := os.Stat(wavPath); !os.IsNotExist(err) {
 		t.Errorf("all-idle WAV %s should have been removed; stat err = %v", wavPath, err)
 	}
@@ -183,8 +183,8 @@ func TestRecorderNoAudioLeavesNoFiles(t *testing.T) {
 	waitSession(t, r, "VOICE-1", true)
 
 	// No frames written at all, then the call ends.
-	wavPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src9.wav")
-	rawPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src9.raw")
+	wavPath := filepath.Join(dir, "S", "7", "20260505_000000_7.wav")
+	rawPath := filepath.Join(dir, "S", "7", "20260505_000000_7.raw")
 	if _, err := os.Stat(wavPath); !os.IsNotExist(err) {
 		t.Errorf("WAV %s must not exist before any audio is written; stat err = %v", wavPath, err)
 	}

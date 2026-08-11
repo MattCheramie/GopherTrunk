@@ -149,7 +149,7 @@ func TestLDUEndToEndIntoRecorder(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	wavPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src42.wav")
+	wavPath := filepath.Join(dir, "S", "7", "20260505_000000_7.wav")
 	wavBytes, err := os.ReadFile(wavPath)
 	if err != nil {
 		t.Fatalf("read wav: %v", err)

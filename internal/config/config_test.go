@@ -71,6 +71,13 @@ func TestValidate(t *testing.T) {
 		{"normalize apply_to both ok", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true, ApplyTo: "both"}}}, false},
 		{"normalize apply_to empty ok", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true}}}, false},
 		{"normalize apply_to invalid", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true, ApplyTo: "stream"}}}, true},
+		// recordings naming templates.
+		{"filename_template ok", Config{Recordings: RecordingsConfig{FilenameTemplate: "{date}_{time}_{tg}_{freq}"}}, false},
+		{"filename_template unknown token", Config{Recordings: RecordingsConfig{FilenameTemplate: "{date}_{tgid}"}}, true},
+		{"filename_template with separator", Config{Recordings: RecordingsConfig{FilenameTemplate: "{tg}/{date}"}}, true},
+		{"path_template ok", Config{Recordings: RecordingsConfig{PathTemplate: "{system}/{year}/{month}/{day}"}}, false},
+		{"path_template unknown token", Config{Recordings: RecordingsConfig{PathTemplate: "{system}/{quarter}"}}, true},
+		{"path_template absolute", Config{Recordings: RecordingsConfig{PathTemplate: "/abs/{system}"}}, true},
 		{"bad sample rate", Config{SDR: SDRConfig{SampleRate: 100}}, true},
 		// Wideband soapy_remote sources (issue #550): rates above the RTL
 		// 3.2 MHz hardware cap are valid config, bounded at 20 MHz.

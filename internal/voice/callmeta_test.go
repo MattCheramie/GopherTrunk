@@ -202,43 +202,43 @@ func TestRecorderCallJSONSrcListSpansTransmissions(t *testing.T) {
 	}})
 	waitSession(t, r, "V1", false)
 
-	// The second transmission's file is named from talker B; its sidecar must
-	// carry BOTH talkers in order. handleEnd removes the session from the map
-	// (what waitSession(false) observes) BEFORE it writes the .json sidecar
-	// off-lock, so poll for the sidecar rather than racing that write — the
-	// recorder publishes KindCallComplete only after the write, so a correct run
-	// always produces the file; a genuine "never written" bug still fails on the
-	// deadline below.
+	// The second transmission's sidecar must carry BOTH talkers in order. The
+	// default filename no longer encodes the source, so identify the second
+	// sidecar by its content: it is the .json whose srcList spans both talkers
+	// (the first transmission's sidecar has only talker A). handleEnd removes the
+	// session from the map (what waitSession(false) observes) BEFORE it writes the
+	// .json sidecar off-lock, so poll for it rather than racing that write.
 	tgDir := filepath.Join(dir, "Ostankino", "OPS-1")
-	var secondJSON string
+	var m callMeta
 	var entries []os.DirEntry
+	found := false
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	for time.Now().Before(deadline) && !found {
 		entries, err = os.ReadDir(tgDir)
 		if err != nil {
 			t.Fatalf("read tg dir: %v", err)
 		}
-		secondJSON = ""
 		for _, e := range entries {
-			if strings.Contains(e.Name(), "src145000") && strings.HasSuffix(e.Name(), ".json") {
-				secondJSON = filepath.Join(tgDir, e.Name())
+			if !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			b, rerr := os.ReadFile(filepath.Join(tgDir, e.Name()))
+			if rerr != nil {
+				continue
+			}
+			var cm callMeta
+			if json.Unmarshal(b, &cm) == nil && len(cm.SrcList) == 2 {
+				m = cm
+				found = true
+				break
 			}
 		}
-		if secondJSON != "" {
-			break
+		if !found {
+			time.Sleep(5 * time.Millisecond)
 		}
-		time.Sleep(5 * time.Millisecond)
 	}
-	if secondJSON == "" {
-		t.Fatalf("no second-transmission .json (src145000) found in %v", entries)
-	}
-	b, err := os.ReadFile(secondJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m callMeta
-	if err := json.Unmarshal(b, &m); err != nil {
-		t.Fatalf("second sidecar is not valid JSON: %v", err)
+	if !found {
+		t.Fatalf("no second-transmission .json with a 2-talker srcList found in %v", entries)
 	}
 	if len(m.SrcList) != 2 || m.SrcList[0].Src != talkerA || m.SrcList[1].Src != talkerB {
 		t.Fatalf("second-transmission srcList = %+v, want the call-complete [%d, %d]", m.SrcList, talkerA, talkerB)
