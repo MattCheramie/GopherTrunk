@@ -175,15 +175,23 @@ func TestEngineTETRANotificationToKnownRadioRecordsIndividual(t *testing.T) {
 	}
 }
 
-// TestEngineTETRANotificationToUnknownSSIRecordsIndividual is the failing-first
-// regression for the exact leak the operator reported (RID 1005497 / 1005557): a
-// source-less notification whose dst was NEVER seen transmitting (so it is not yet
-// a known radio) and that no group grant supersedes was recorded under the raw
-// radio ID as a phantom talkgroup ("recordings/<sys>/1005497/…", Individual=false).
-// A source-less TETRA notification is always addressed to the paged radio's own
-// SSI, so even an as-yet-unknown dst is a radio, never a real talkgroup. It must now
-// flush to an INDIVIDUAL call. (Old code: Individual=false → fails here.)
-func TestEngineTETRANotificationToUnknownSSIRecordsIndividual(t *testing.T) {
+// TestEngineTETRANotificationToUnknownSSIRecordsGroup is the failing-first
+// regression for the operator's tetra_11aug report: a source-less notification
+// whose dst is NOT a known radio and that no group grant supersedes is a GROUP
+// call whose calling party simply wasn't decoded this instant (SourceID==0, a
+// CRC-dropped/late D-SETUP) — dst 1005479/1005704/1009091 are real group calls,
+// audibly group conversations, not unit-to-unit. It must flush AS DECODED (group,
+// Individual=false), NOT be force-flipped to individual and filed under
+// recordings/<sys>/individual/<SSI>/.
+//
+// This reverses the earlier "flush unknown-SSI as individual" rule: that rule
+// existed only to stop the raw SSI leaking into the Talkgroups list, and the
+// TETRA discovery CORROBORATION guard (a group SSI must be seen twice before it is
+// catalogued — TestEngineTETRANotificationDoesNotDiscoverTalkgroup) now prevents
+// that leak independently. So the flush no longer needs to lie about the call
+// type: a single group flush still does NOT catalogue the SSI as a talkgroup.
+// (Old code: Individual=true → fails the Individual assertion here.)
+func TestEngineTETRANotificationToUnknownSSIRecordsGroup(t *testing.T) {
 	e, pool, bus, _ := mkEngine(t, 2)
 	defer bus.Close()
 	e.afterFunc = noFireAfterFunc
@@ -191,9 +199,9 @@ func TestEngineTETRANotificationToUnknownSSIRecordsIndividual(t *testing.T) {
 	const (
 		freq = uint32(467_912_500)
 		ts   = uint8(2)
-		issi = uint32(1005497) // reported leak: a radio never seen transmitting
+		gssi = uint32(1005479) // operator's flagged file: a real group call, dst not a known radio
 	)
-	page := Grant{System: "X", Protocol: "tetra", GroupID: issi, FrequencyHz: freq, Timeslot: ts}
+	page := Grant{System: "X", Protocol: "tetra", GroupID: gssi, FrequencyHz: freq, Timeslot: ts}
 	e.HandleGrant(page)
 	if n := len(pool.Active()); n != 0 {
 		t.Fatalf("active calls after notification = %d, want 0 (held)", n)
@@ -202,16 +210,18 @@ func TestEngineTETRANotificationToUnknownSSIRecordsIndividual(t *testing.T) {
 	e.flushHeldGrant(channelKeyOf(page))
 	act := pool.Active()
 	if len(act) != 1 {
-		t.Fatalf("active calls after flush = %d, want 1 (individual call must record)", len(act))
+		t.Fatalf("active calls after flush = %d, want 1 (the group call must record)", len(act))
 	}
-	if !act[0].Grant.Individual {
-		t.Errorf("flushed call Individual = false, want true (RID must not become a phantom talkgroup)")
+	if act[0].Grant.Individual {
+		t.Errorf("flushed call Individual = true, want false (a source-less group call must not be mislabelled individual)")
 	}
-	if got := act[0].Grant.GroupID; got != issi {
-		t.Errorf("flushed call GroupID = %d, want %d", got, issi)
+	if got := act[0].Grant.GroupID; got != gssi {
+		t.Errorf("flushed call GroupID = %d, want %d", got, gssi)
 	}
-	if tg := e.talkgroups.Lookup(issi); tg != nil {
-		t.Errorf("RID %d catalogued as a phantom talkgroup: %+v", issi, tg)
+	// The corroboration guard still prevents a single group flush from leaking the
+	// SSI into the Talkgroups list.
+	if tg := e.talkgroups.Lookup(gssi); tg != nil {
+		t.Errorf("single group flush catalogued SSI %d as a talkgroup: %+v", gssi, tg)
 	}
 }
 
