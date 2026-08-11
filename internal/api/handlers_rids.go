@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -21,7 +22,11 @@ import (
 // without an operator-configured alias) appear when the affiliation
 // tracker has seen them since the last sweep.
 func (s *Server) handleListRIDs(w http.ResponseWriter, r *http.Request) {
-	dtos := s.mergedRIDList(r.Context())
+	// Optional ?system= scopes the list to radios whose most-recent (or live)
+	// activity is on that system — the RID roster grows large across many
+	// systems, so the UI offers a per-system selector. Empty = every system.
+	system := r.URL.Query().Get("system")
+	dtos := s.mergedRIDList(r.Context(), system)
 	writeJSON(w, http.StatusOK, map[string]any{"rids": dtos})
 }
 
@@ -217,25 +222,50 @@ func (s *Server) handleUpdateRID(w http.ResponseWriter, r *http.Request) {
 // lock" (the re-hunt gaps let the TTL expire every radio, with nothing behind
 // it). The output is sorted by ID for a stable list ordering — the UI applies
 // its own sort on top.
-func (s *Server) mergedRIDList(ctx context.Context) []*RIDDTO {
+func (s *Server) mergedRIDList(ctx context.Context, system string) []*RIDDTO {
 	byID := map[uint32]*RIDDTO{}
-	if s.rids != nil {
+	// The static operator catalogue carries no system association, so it is
+	// only included in the unfiltered ("all systems") view. When a system is
+	// selected, a static alias still surfaces for any RID that has call-log or
+	// live activity on that system — the merge below seeds the alias for those
+	// rows — so scoping to a system never hides an operator-named radio that
+	// actually appears on it.
+	if s.rids != nil && system == "" {
 		for _, r := range s.rids.All() {
 			byID[r.ID] = ridToDTO(r)
 		}
 	}
+	// aliasFor returns the static-catalogue DTO for a RID (nil if none),
+	// used to seed a filtered row so it keeps the operator's alias/tag.
+	aliasFor := func(id uint32) *RIDDTO {
+		if system == "" || s.rids == nil {
+			return nil
+		}
+		return ridToDTO(s.rids.Lookup(id))
+	}
 	if p, ok := s.history.(RIDSummaryProvider); ok {
-		if sums, err := p.RIDSummaries(ctx, RIDSummaryFilter{}); err != nil {
+		if sums, err := p.RIDSummaries(ctx, RIDSummaryFilter{System: system}); err != nil {
 			s.log.Warn("api: rid summaries query failed", "err", err)
 		} else {
 			for _, sum := range sums {
-				byID[sum.SourceID] = mergeRIDSummary(byID[sum.SourceID], sum)
+				dto := byID[sum.SourceID]
+				if dto == nil {
+					dto = aliasFor(sum.SourceID)
+				}
+				byID[sum.SourceID] = mergeRIDSummary(dto, sum)
 			}
 		}
 	}
 	if s.affiliations != nil {
 		for _, u := range s.affiliations.Affiliations() {
-			byID[u.RadioID] = mergeRIDLiveKeepAllTime(byID[u.RadioID], u)
+			if system != "" && !strings.EqualFold(u.System, system) {
+				continue
+			}
+			dto := byID[u.RadioID]
+			if dto == nil {
+				dto = aliasFor(u.RadioID)
+			}
+			byID[u.RadioID] = mergeRIDLiveKeepAllTime(dto, u)
 		}
 	}
 	out := make([]*RIDDTO, 0, len(byID))

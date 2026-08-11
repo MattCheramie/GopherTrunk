@@ -155,8 +155,16 @@ export const api = {
       "GET",
       "/api/v1/talkgroups",
     ).then((r) => r.talkgroups),
-  rids: (c: ClientConfig) =>
-    request<{ rids: RIDDTO[] }>(c, "GET", "/api/v1/rids").then((r) => r.rids),
+  rids: (c: ClientConfig, opts: { system?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.system) q.set("system", opts.system);
+    const qs = q.toString();
+    return request<{ rids: RIDDTO[] }>(
+      c,
+      "GET",
+      `/api/v1/rids${qs ? `?${qs}` : ""}`,
+    ).then((r) => r.rids);
+  },
   ridHistory: (
     c: ClientConfig,
     id: number,

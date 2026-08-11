@@ -170,7 +170,7 @@ func (m Model) updateStructForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) activateRow(r formRow, key string) (tea.Model, tea.Cmd) {
 	fv := m.cur().FieldByName(r.field)
 	switch r.kind {
-	case kindText, kindNumber, kindHz, kindFreqList, kindStringList:
+	case kindText, kindNumber, kindNumberPtr, kindHz, kindFreqList, kindStringList:
 		m.editing = true
 		m.editRow = r
 		m.input.SetValue(editText(fv, r))

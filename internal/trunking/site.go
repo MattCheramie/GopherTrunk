@@ -295,6 +295,14 @@ type System struct {
 	// docs/status.md. Ignored for non-DMR protocols.
 	DMRInterleavedVoice bool
 
+	// DMRColorCode pins a conventional DMR (Tier II / Tier I) system to a
+	// single colour code (mirrors config.SystemConfig.DMRColorCode). When
+	// non-nil, the wideband engine passes it to each repeater's Tier II state
+	// machine as a hard filter: bursts on any other colour code are dropped
+	// before grant / lock / decode-error. nil accepts every colour code (the
+	// historical default). Ignored for non-conventional-DMR protocols.
+	DMRColorCode *uint8
+
 	// P25Phase1DemodMode selects the symbol-recovery path for the
 	// P25 Phase 1 receiver. Recognised values (case-insensitive):
 	// "" / "c4fm" / "fm" → DemodC4FM (the default — FM

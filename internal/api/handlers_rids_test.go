@@ -447,6 +447,89 @@ func TestGetRIDBackedByCallLogWhenSwept(t *testing.T) {
 	}
 }
 
+// TestListRIDsFilteredBySystem pins the ?system= scope the RID roster UI uses:
+// only radios with call-log or live activity on the named system are returned,
+// the static-only catalogue rows (which carry no system) are excluded while a
+// filter is active, and the unfiltered list still returns everything.
+func TestListRIDsFilteredBySystem(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+
+	base := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
+	db := seedCallLog(t, bus, []trunking.Grant{
+		{System: "Metro", Protocol: "tetra", GroupID: 50, SourceID: 4242},
+		{System: "Harbor", Protocol: "dmr-tier2", GroupID: 22, SourceID: 7777},
+	}, base)
+
+	// A static-only catalogue row (no system) and a live affiliation on Metro.
+	riddb := trunking.NewRIDDB()
+	riddb.Add(&trunking.RID{ID: 100, Alias: "CHIEF", Watch: true})
+	live := &fakeAffiliationProvider{units: []trunking.UnitActivity{
+		{RadioID: 300, System: "Metro", Protocol: "tetra", Talkgroup: 50,
+			CallCount: 1, LastSeen: time.Now().UTC()},
+		{RadioID: 400, System: "Harbor", Protocol: "dmr-tier2", Talkgroup: 22,
+			CallCount: 1, LastSeen: time.Now().UTC()},
+	}}
+
+	srv, teardown := mkServer(t, ServerOptions{
+		Bus: bus, RIDs: riddb, Affiliations: live, History: HistoryFromStorage(db),
+	})
+	defer teardown()
+
+	ids := func(url string) map[uint32]bool {
+		t.Helper()
+		resp, err := http.Get(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("status = %d for %s", resp.StatusCode, url)
+		}
+		var body struct {
+			RIDs []RIDDTO `json:"rids"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		out := map[uint32]bool{}
+		for _, r := range body.RIDs {
+			out[r.ID] = true
+		}
+		return out
+	}
+
+	// Unfiltered: everything (static 100, live 300/400, call-log 4242/7777).
+	all := ids(srv + "/api/v1/rids")
+	for _, id := range []uint32{100, 300, 400, 4242, 7777} {
+		if !all[id] {
+			t.Errorf("unfiltered list missing RID %d: %v", id, all)
+		}
+	}
+
+	// Metro: call-log 4242 + live 300; NOT Harbor (7777/400) and NOT static 100.
+	metro := ids(srv + "/api/v1/rids?system=Metro")
+	if !metro[4242] || !metro[300] {
+		t.Errorf("Metro filter missing 4242/300: %v", metro)
+	}
+	for _, id := range []uint32{100, 400, 7777} {
+		if metro[id] {
+			t.Errorf("Metro filter wrongly included RID %d: %v", id, metro)
+		}
+	}
+
+	// Harbor: call-log 7777 + live 400 only.
+	harbor := ids(srv + "/api/v1/rids?system=Harbor")
+	if !harbor[7777] || !harbor[400] {
+		t.Errorf("Harbor filter missing 7777/400: %v", harbor)
+	}
+	for _, id := range []uint32{100, 300, 4242} {
+		if harbor[id] {
+			t.Errorf("Harbor filter wrongly included RID %d: %v", id, harbor)
+		}
+	}
+}
+
 func TestRIDHistory503WithoutHistoryWired(t *testing.T) {
 	bus := events.NewBus(4)
 	defer bus.Close()

@@ -17,11 +17,12 @@ import (
 // Operation (DMO) voice decode — the acceptance criterion of issue #1003. Skip
 // unless GT_TETRA_DMO_IQ points at a cs16 (interleaved int16) IQ file of a DMO
 // transmission; GT_TETRA_DMO_RATE gives its sample rate (default 150000, the
-// reporter's Tetra_DMO_Two_TX_cs16_30sec_bw150.raw), GT_TETRA_DMO_COLOUR sets the
-// DM colour code the TCH/S traffic is scrambled with (default 0 — the spec
-// default for DSB signalling and the common radio-to-radio value; the SYNC-PDU
-// parser that would learn it live is EN 300 396-3, a follow-up), and
-// GT_TETRA_DMO_OUT optionally names a dir for the decoded WAV.
+// reporter's Tetra_DMO_Two_TX_cs16_30sec_bw150.raw), GT_TETRA_DMO_COLOUR pins the
+// DM colour code the TCH/S traffic is scrambled with — but when it is UNSET the
+// harness now auto-recovers the colour via tetra.RecoverDMColourCode (the colour
+// that maximises CRC-valid TCH/S), so a clear DMO call decodes with no manual
+// override (on the 10aug capture it recovers colour 3). GT_TETRA_DMO_OUT
+// optionally names a dir for the decoded WAV.
 //
 // It resamples to the 144 kHz TETRA channel rate, runs the shared π/4-DQPSK
 // receiver, accumulates the whole dibit stream, then:
@@ -53,12 +54,14 @@ func TestTETRADMOReplay(t *testing.T) {
 		inRate = f
 	}
 	var colour uint32
+	colourSet := false
 	if v := os.Getenv("GT_TETRA_DMO_COLOUR"); v != "" {
 		c, err := strconv.ParseUint(v, 0, 32)
 		if err != nil {
 			t.Fatalf("bad GT_TETRA_DMO_COLOUR: %v", err)
 		}
 		colour = uint32(c)
+		colourSet = true
 	}
 
 	raw, err := os.ReadFile(path)
@@ -133,6 +136,21 @@ func TestTETRADMOReplay(t *testing.T) {
 		bursts = tetra.ExtractDMBurstsEqualized(allDibits, allDiffs, allSymbols, 0, 0, 0)
 	} else {
 		bursts = tetra.ExtractDMBurstsSoft(allDibits, allDiffs, 0)
+	}
+
+	// Recover the DM colour code the TCH/S is scrambled with when it was not
+	// pinned via GT_TETRA_DMO_COLOUR (#1003). The DSB SCH/S is always colour-0
+	// scrambled and can't reveal the traffic colour, so RecoverDMColourCode
+	// learns it by maximising CRC-valid TCH/S. On the 10aug clear capture this
+	// auto-selects colour 3 (the value that lifts TCH/S off the chance floor)
+	// with no manual override — the C1 acceptance signal.
+	if !colourSet {
+		if rc, n, ok := tetra.RecoverDMColourCode(bursts); ok {
+			colour = rc
+			t.Logf("recovered DM colour code=%d (crc-valid TCH/S=%d) — no GT_TETRA_DMO_COLOUR set", rc, n)
+		} else {
+			t.Logf("DM colour code not recovered (no colour cleared the chance floor); using default %d", colour)
+		}
 	}
 
 	var dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly int

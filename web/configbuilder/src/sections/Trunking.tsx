@@ -36,7 +36,7 @@ const PROTOCOLS = [
 // enforced by config.Validate, so a free JSON editor is lossless.
 const PROTOCOL_KNOBS: (keyof SystemConfig)[] = [
   "TETRAColourCode", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode", "TETRAStatusIntervalSecs",
-  "LTRFCSMode", "LTRManchesterMode", "P25Phase1DemodMode", "DMRInterleavedVoice",
+  "LTRFCSMode", "LTRManchesterMode", "P25Phase1DemodMode", "DMRInterleavedVoice", "DMRColorCode",
   "P25Phase2TrellisMode", "P25Phase2RSMode", "P25Phase2InterleaveMode",
   "P25Phase2ScramblerMode", "P25Phase2SoftDecision", "P25Phase2ClockMode", "NXDNViterbiMode",
   "NXDNDeviationHz", "EDACSBCHMode", "MPT1327BCHMode", "MPT1327CWSCTolerance",

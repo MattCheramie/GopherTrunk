@@ -1,0 +1,108 @@
+# Monitor a linked ("IPSC pseudo-trunk") conventional DMR system with one
+# RTL-SDR: several repeaters carrying the SAME traffic, linked over the
+# Internet, that your radio roams between by best RSSI for one Colour Code.
+#
+# ─── What this profile is for ─────────────────────────────────────────────
+#
+# A lot of budget-conscious fleets in the US run "linked conventional" DMR
+# instead of real trunking: repeaters are joined over an IP back-haul, every
+# repeater uses the SAME Colour Code, and each radio is programmed with a LIST
+# of repeater frequencies. The radio keys up on whichever repeater has the
+# best signal (helped by the repeaters' idle beacons). There is NO control
+# channel — this is conventional DMR Tier II, just spread across a few linked
+# carriers. GopherTrunk decodes it exactly as conventional DMR; this file is
+# the clean, quiet way to point it at such a system.
+#
+# ─── The two things that make this profile "IPSC-friendly" ────────────────
+#
+#  1. `color_code:` below pins the whole system to ONE Colour Code. Any DMR
+#     burst on a different Colour Code (a co-channel system bleeding into the
+#     wideband passband) is dropped before it can log a call. Leave it unset
+#     to accept every Colour Code (GT still reads and reports it per call).
+#
+#  2. An idle repeater is NORMAL here — between calls a conventional carrier
+#     drops to no signal, unlike an always-on trunked control channel. So GT
+#     does NOT flood the log with "iq power very low" every few seconds for a
+#     quiet or unused listed frequency; a genuinely dead/mistuned carrier is
+#     still called out ONCE.
+#
+# Colour Code, Time Slot (TS1/TS2), and Talkgroup are otherwise read straight
+# off the air and reported per call — you only tell GT WHERE to listen (the
+# repeater output frequencies) and WHICH Colour Code. The talkgroups CSV just
+# maps decoded TG numbers to names.
+#
+# ─── Fitting the repeaters into one dongle ────────────────────────────────
+#
+# DMR is decoded by GopherTrunk's wideband channelizer: one `role: wideband`
+# dongle is tuned to a centre frequency and split into a per-repeater decoder.
+# At 2.4 MS/s one dongle sees ~±1.08 MHz around its centre. List only
+# repeaters that fall inside that window; for carriers spread wider, add a
+# second `role: wideband` dongle pointing at the SAME system name (channels
+# are unioned across dongles). See samples/dmr-tier2-multi-repeater for the
+# multi-dongle layout.
+#
+# PATHS below (storage, recordings, talkgroup CSV) resolve RELATIVE TO THIS
+# FILE's folder.
+
+log:
+  level: info       # bump to "debug" if nothing decodes and you want detail
+  format: text
+
+api:
+  http_addr: "127.0.0.1:8080"   # web UI / REST / SSE
+  auth:
+    mode: auto                  # loopback is trusted; no token needed locally
+
+storage:
+  path: "data/calls.db"
+  cc_cache_file: "data/cc-cache.json"
+
+recordings:
+  dir: "recordings"
+  sample_rate: 8000
+
+sdr:
+  sample_rate: 2_400_000
+  devices:
+    - serial: "REPLACE_WITH_SERIAL"   # run `gophertrunk sdr list` and paste yours
+      role: wideband
+      # Centre the dongle so none of the repeater carriers sits on the
+      # RTL-SDR's DC spike. Here the three carriers span 442.3875–443.2375 MHz,
+      # so a centre of 442.8 MHz keeps them all within ±1.08 MHz and off DC.
+      center_freq_hz: 442_800_000
+      tuner_strategy: auto              # auto: DDC for ≤6 channels, polyphase above
+      gain: "auto"                      # AGC is the safe start on a shared front end
+      # ppm: a single DMR carrier is only ~12.5 kHz wide and the 4-level slicer
+      # tolerates only ~±100 Hz of residual carrier offset. A cheap RTL-SDR is
+      # often tens of ppm off — enough to stop decoding while SDR++ still makes
+      # the "helicopter" FM sound. If GT logs "strong in-channel signal but no
+      # sync", measure your dongle's error and set it here.
+      ppm: 0
+      # voice_taps carves per-grant voice tuners from this dongle's IQ so voice
+      # decodes (audio + recordings) with no separate role: voice SDR. A linked
+      # system can key both timeslots at once and across repeaters — give it a
+      # few so concurrent calls are all followed. Omit and GT auto-enables a
+      # couple.
+      voice_taps: 4
+      channels:
+        - { frequency_hz: 442_387_500, system: "linked-dmr" }
+        - { frequency_hz: 443_237_500, system: "linked-dmr" }
+        # Add every linked repeater that fits this dongle's window, same system:
+        # - { frequency_hz: 442_637_500, system: "linked-dmr" }
+
+trunking:
+  systems:
+    - name: "linked-dmr"
+      protocol: dmr-tier2
+      # Colour Code for THIS linked system (0..15). Pins the decoder to it and
+      # drops other Colour Codes sharing the passband. Comment out to accept
+      # every Colour Code (GT still reports whatever it reads per call).
+      color_code: 12
+      # Both timeslots are followed automatically: each transmission (on TS1 or
+      # TS2) starts with its own Voice LC Header, which GT turns into its own
+      # call/grant, so a busy repeater's two slots record as two calls. Give the
+      # dongle enough voice_taps (above) to follow them at once.
+      # NOTE: no `control_channels:` — Tier II is conventional. GT derives the
+      # carrier list from the wideband `channels:` above that reference this
+      # system, so each repeater is listed exactly once.
+      talkgroup_file: "talkgroups-dmr.csv"

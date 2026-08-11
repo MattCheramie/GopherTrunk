@@ -46,6 +46,11 @@ func displayValue(fv reflect.Value, r formRow) string {
 			return "yes"
 		}
 		return "no"
+	case kindNumberPtr:
+		if fv.IsNil() {
+			return "(unset)"
+		}
+		return scalarString(fv.Elem())
 	case kindStringList:
 		n := fv.Len()
 		if n == 0 {
@@ -93,6 +98,11 @@ func editText(fv reflect.Value, r formRow) string {
 		return strings.Join(stringSlice(fv), ", ")
 	case kindNumber:
 		return scalarString(fv)
+	case kindNumberPtr:
+		if fv.IsNil() {
+			return ""
+		}
+		return scalarString(fv.Elem())
 	default:
 		return fv.String()
 	}
@@ -130,6 +140,18 @@ func commitText(fv reflect.Value, r formRow, text string) error {
 		}
 	case kindNumber:
 		return setNumber(fv, text)
+	case kindNumberPtr:
+		// Empty clears to nil (unset); otherwise parse into a fresh element and
+		// point at it, so the tri-state (unset vs a concrete value incl. 0) round-trips.
+		if strings.TrimSpace(text) == "" {
+			fv.Set(reflect.Zero(fv.Type()))
+			return nil
+		}
+		elem := reflect.New(fv.Type().Elem())
+		if err := setNumber(elem.Elem(), text); err != nil {
+			return err
+		}
+		fv.Set(elem)
 	}
 	return nil
 }
