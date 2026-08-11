@@ -83,8 +83,10 @@ tag. Anything failing means the tag isn't ready.
 
 - Update `README.md`'s Quick Start `VERSION=v…` snippet to the new
   tag.
-- Bump anything under `docs/downloads.md` that hard-codes a
-  version.
+- Bump the hardcoded fallback version in
+  `docs/_includes/latest-version.html` (`downloads.md` is fully
+  `{{ ver }}`-templated and reads the version from that include, so
+  the fallback constant is the only spot left to update by hand).
 - Sanity-check the published `gophertrunk-<ver>-windows-amd64-setup.exe`
   on a real Windows 11 machine — install, run Zadig from the Start
   Menu, run `gophertrunk sdr list`, uninstall and confirm the

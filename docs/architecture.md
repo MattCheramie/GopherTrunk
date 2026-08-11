@@ -67,7 +67,7 @@ daemon behaves like a high-end digital-trunking police scanner end-to-end.
 ```
               ┌────────────────────────────────────────────┐
               │  cmd/gophertrunk  ── daemon + sdr list CLI │
-              │                  ── TUI cockpit (10 panels)│
+              │                  ── TUI cockpit (11 panels)│
               └───────────────┬────────────────────────────┘
                               │
        ┌──────────────────────┼──────────────────────────┐
@@ -119,13 +119,13 @@ daemon behaves like a high-end digital-trunking police scanner end-to-end.
                               ▼ events.Bus
 ┌──────────────────────────────────────────────────────────────┐
 │  internal/voice         recorder · composer · vocoder plugin │
-│                         · imbe (pure-Go) · ambe2 (pure-Go) · │
-│                         mbe (shared MBE synthesis) · toneout │
+│                         · imbe · ambe2 · acelp (all pure-Go) │
+│                         · mbe (shared MBE synth) · toneout   │
 │  internal/api           HTTP/SSE/WebSocket + gRPC servers    │
-│                         (mutations gated by allow_mutations) │
+│                         (mutations gated by api.auth)        │
 │  internal/storage       SQLite call log · retention sweeper  │
 │  internal/metrics       Prometheus exporter                  │
-│  internal/tui           bubbletea cockpit (10 panels) over   │
+│  internal/tui           bubbletea cockpit (11 panels) over   │
 │                         REST + SSE                           │
 └──────────────────────────────────────────────────────────────┘
 ```

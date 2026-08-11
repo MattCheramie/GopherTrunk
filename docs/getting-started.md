@@ -51,7 +51,7 @@ everything else is a view onto the same running daemon.
 | Part | What it is | Reach it with |
 |------|------------|---------------|
 | **Headless daemon** | The engine — owns the SDR pool, decoders, recorder, and APIs. Runs silent (systemd, Docker, Windows service). | `gophertrunk -headless` |
-| **TUI cockpit** | In-process [Bubbletea](tui.html) terminal console with 12 panels (dashboard, active calls, scanner, history, …). | `gophertrunk -tui` |
+| **TUI cockpit** | In-process [Bubbletea](tui.html) terminal console with 11 panels (dashboard, active calls, scanner, history, …). | `gophertrunk -tui` |
 | **Web console** | Bundled browser SPA served by the daemon — the same panels in a browser. | `gophertrunk -web` |
 | **Interactive launcher** | What plain `gophertrunk` shows on a TTY: pick **[1] TUI**, **[2] Web**, or **[3] Headless**. | `gophertrunk` |
 | **Config Builder** | Standalone guided editor for `config.yaml` — add systems, talkgroups, and feeds without hand-writing YAML. Comes as both a terminal app and a browser app. | `gophertrunk config` / `config serve` |

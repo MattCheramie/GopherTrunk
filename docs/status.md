@@ -21,7 +21,8 @@ pulls IQ → PCM, the recorder writes a WAV (digital-voice protocols
 decode through the right vocoder via
 `voice.DefaultVocoderForProtocol`), the call is logged to SQLite,
 and the API + TUI surfaces all light up. Pure-Go IMBE / AMBE+2
-produce intelligible audio. The CC Hunter supervisor and the
+and the clean-room TETRA ACELP vocoder produce intelligible
+audio. The CC Hunter supervisor and the
 conventional FM scanner are constructed by `cmd/gophertrunk` and
 expose their state through `/api/v1/scanner` and the TUI cockpit
 panel.
@@ -55,10 +56,13 @@ scope for the zero-CGO build.
 
 ### Digital-voice composer chains
 
-FM (incl. analog trunking), DMR, and P25 Phase 1 / 2 decode to
-audio. NXDN, dPMR, TETRA, YSF, and D-STAR voice chains, plus
-EDACS ProVoice, are still bypassed — their calls are followed
-and logged but not yet turned into PCM.
+FM (incl. analog trunking), DMR, P25 Phase 1 / 2, TETRA (clean-room
+ACELP), and NXDN decode to audio. TETRA voice is verified bit-exact
+against the ETSI EN 300 395-2 reference codec; NXDN is wired
+end-to-end through the composer but not yet verified on air. dPMR,
+YSF, and D-STAR voice chains, plus EDACS ProVoice, are still
+bypassed — their calls are followed and logged but not yet turned
+into PCM.
 
 ### Per-protocol on-air FEC inner layers
 
@@ -163,7 +167,7 @@ The inner FEC layers still pending real-air validation:
 - **AMBE+2 synthesis parity with IMBE (#644 follow-up).** Once the
   timeslot fix made DMR speech intelligible it sounded metallic ("tin
   can") — the buzz from fully phase-coherent voiced synthesis. The
-  AMBE+2 decoder (DMR plus P25 Phase 2 / NXDN / dPMR / TETRA) now runs
+  AMBE+2 decoder (DMR plus P25 Phase 2 / NXDN / dPMR) now runs
   the same three post-synthesis stages the IMBE decoder already had:
   §6.3 voiced-phase regeneration (`mbe.SynthVoicedDispersed`, the
   de-buzz, scaled by the unvoiced-harmonic fraction), a DC-removal
