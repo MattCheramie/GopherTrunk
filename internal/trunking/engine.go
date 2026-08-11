@@ -608,27 +608,41 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.log.Warn("dropping grant with zero frequency", "grant", g.String())
 		return
 	}
-	// Learn subscriber radios this grant reveals and retract any phantom
-	// talkgroup previously catalogued for one. A calling/transmitting party is
-	// always a radio; an Individual grant's destination is a subscriber address.
-	// This both cleans up radio IDs already leaked into the Talkgroups list and
-	// primes the discovery guard below.
-	e.noteRadio(g.SourceID, g.System)
-	if g.Individual {
-		e.noteRadio(g.GroupID, g.System)
-	}
-	// If the grant is addressed to an SSI already known to be a subscriber radio
-	// (seen transmitting, or previously flagged individual), its "talkgroup" is
-	// really a unit-to-unit destination — reclassify so the call is recorded and
-	// surfaced as an INDIVIDUAL call, not filed under a phantom talkgroup named
-	// after the radio ID (the leaked "fake TG" recordings the operator reported:
-	// on-disk under recordings/<system>/<radioID>/ while the WebUI talkgroup list
-	// never shows them). knownRadios is durable across control-channel re-locks —
-	// unlike the control channel's per-lock learned set, which is wiped on every
-	// re-hunt — so this catches radios learned anywhere in the session. GSSIs and
-	// ISSIs never overlap on TETRA, so a known radio is never a real talkgroup.
-	if !g.Individual && g.GroupID != 0 && e.isKnownRadio(g.GroupID) {
-		g.Individual = true
+	// The radio/talkgroup disambiguation below rests on a TETRA-specific
+	// invariant: GSSIs (talkgroups) and ISSIs (subscriber radios) occupy
+	// disjoint address ranges, so a value ever seen acting as a radio can never
+	// be a real talkgroup. That does NOT hold for DMR (nor for other protocols),
+	// where talkgroup and radio IDs share one 24-bit space and routinely
+	// coincide — a fleet talkgroup number can equal some subscriber's radio ID.
+	// Running this for DMR flipped genuine group calls to "individual" whenever a
+	// talkgroup happened to match a previously-heard radio ID, mis-filing the
+	// recording (recordings/<system>/individual/<TG>/) and corrupting the
+	// individual flag that backs the Radio IDs roster. DMR's own FLCO group/unit
+	// classification is authoritative, so scope this whole mechanism to TETRA and
+	// leave every other protocol's decoded classification untouched.
+	if g.Protocol == "tetra" {
+		// Learn subscriber radios this grant reveals and retract any phantom
+		// talkgroup previously catalogued for one. A calling/transmitting party is
+		// always a radio; an Individual grant's destination is a subscriber
+		// address. This both cleans up radio IDs already leaked into the
+		// Talkgroups list and primes the discovery guard below.
+		e.noteRadio(g.SourceID, g.System)
+		if g.Individual {
+			e.noteRadio(g.GroupID, g.System)
+		}
+		// If the grant is addressed to an SSI already known to be a subscriber
+		// radio (seen transmitting, or previously flagged individual), its
+		// "talkgroup" is really a unit-to-unit destination — reclassify so the
+		// call is recorded and surfaced as an INDIVIDUAL call, not filed under a
+		// phantom talkgroup named after the radio ID (the leaked "fake TG"
+		// recordings the operator reported: on-disk under
+		// recordings/<system>/<radioID>/ while the WebUI talkgroup list never
+		// shows them). knownRadios is durable across control-channel re-locks —
+		// unlike the control channel's per-lock learned set, which is wiped on
+		// every re-hunt — so this catches radios learned anywhere in the session.
+		if !g.Individual && g.GroupID != 0 && e.isKnownRadio(g.GroupID) {
+			g.Individual = true
+		}
 	}
 	// Cancel a parked TETRA notification hold on this channel the moment any
 	// authoritative (source-bearing) grant for the same physical channel arrives —
