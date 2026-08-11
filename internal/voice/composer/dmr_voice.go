@@ -381,6 +381,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 		// by embedded signalling or by the phase fallback (issue #644).
 		lcSuperframes  atomic.Uint64
 		loggedFallback bool
+		loggedRC       bool
 	)
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: symbolHz,
@@ -437,11 +438,14 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 				}
 				superframes.Add(1)
 				bt.onVoice(0)
-				if sf.HasRC {
+				if sf.HasRC && !loggedRC {
 					// In-call Reverse Channel signalling — control-plane
 					// visibility only (see dmr/rc.go); it does not affect the
-					// audio path.
-					c.log.Debug("composer: DMR reverse channel",
+					// audio path. Log once per call: it recurs every superframe
+					// on a carrier that uses the reverse channel and otherwise
+					// floods the log.
+					loggedRC = true
+					c.log.Debug("composer: DMR reverse channel present",
 						"serial", serial, "rc_info", sf.RC.Info, "phase", sf.Phase)
 				}
 				if rs == nil {
@@ -453,9 +457,10 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 						corrErrBits.Add(uint64(errBits))
 					}
 					if err != nil {
+						// Counted only; a per-frame log floods (up to 18 frames
+						// per superframe) and the total surfaces in the rolling
+						// "dmr decode quality" line via uncorrectableFrames.
 						uncorrectableFrames.Add(1)
-						c.log.Debug("composer: DMR AMBE FEC decode failed",
-							"serial", serial, "err", err)
 						continue
 					}
 					packed := packBits(info)
@@ -487,7 +492,10 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 			return
 		}
 		lastQualityLogSuperframes = n
-		c.log.Info("composer: dmr decode quality",
+		// Debug (not Info): this fires every ~9 s for every active call, so at
+		// Info it was steady per-call noise. The counters remain available at
+		// debug level for weak-signal diagnosis (issue #356).
+		c.log.Debug("composer: dmr decode quality",
 			"serial", serial,
 			"superframes", n, "uncorrectable_frames", uncorrectableFrames.Load(),
 			"corrected_bit_errs", corrErrBits.Load(),
