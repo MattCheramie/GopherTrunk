@@ -287,12 +287,24 @@ export interface EncryptionKey {
   Key: string;
 }
 
+// SiteConfig names one trunked site by its RFSS/Site IDs and, optionally,
+// carries its geographic position (decimal degrees) so the console can plot it
+// on a map. Coordinates are filled in automatically by RadioReference import.
+export interface SiteConfig {
+  RFSS: number;
+  Site: number;
+  Name: string;
+  Latitude?: number;
+  Longitude?: number;
+}
+
 export interface SystemConfig {
   Name: string;
   Protocol: string;
   ControlChannels: number[] | null;
   TalkgroupFile: string;
   RIDAliasFile?: string;
+  Sites?: SiteConfig[] | null;
   P25BandPlan?: P25BandPlanEntry[] | null;
   DMRBandPlan?: DMRBandPlan | null;
   EncryptionKeys?: EncryptionKey[] | null;

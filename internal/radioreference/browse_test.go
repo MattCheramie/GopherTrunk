@@ -90,6 +90,31 @@ func TestParseSites(t *testing.T) {
 	}
 }
 
+// TestParseSitesCoordinates confirms RadioReference site coordinates
+// (siteLat/siteLng) are captured, and a missing/invalid leaf degrades to 0.
+func TestParseSitesCoordinates(t *testing.T) {
+	raw := []byte(`
+	<siteList>
+	  <rfss>1</rfss><siteNumber>3</siteNumber><siteDescr>Downtown</siteDescr>
+	  <siteLat>30.2672</siteLat><siteLng>-97.7431</siteLng>
+	  <siteFreq><freq>851.0125</freq><use>d</use></siteFreq>
+	</siteList>
+	<siteList>
+	  <rfss>1</rfss><siteNumber>4</siteNumber><siteDescr>NoGeo</siteDescr>
+	  <siteFreq><freq>852.0125</freq><use>d</use></siteFreq>
+	</siteList>`)
+	sites := parseSites(raw)
+	if len(sites) != 2 {
+		t.Fatalf("expected 2 sites, got %d", len(sites))
+	}
+	if sites[0].Latitude != 30.2672 || sites[0].Longitude != -97.7431 {
+		t.Errorf("site0 coords = (%v,%v), want (30.2672,-97.7431)", sites[0].Latitude, sites[0].Longitude)
+	}
+	if sites[1].Latitude != 0 || sites[1].Longitude != 0 {
+		t.Errorf("site1 (no geo) coords = (%v,%v), want (0,0)", sites[1].Latitude, sites[1].Longitude)
+	}
+}
+
 func TestParseTalkgroups(t *testing.T) {
 	raw := []byte(`
 	<tgList><tgDec>101</tgDec><tgAlpha>PD Disp</tgAlpha><tgDescr>Police Dispatch</tgDescr><tag>Law Dispatch</tag><mode>D</mode><enc>0</enc></tgList>

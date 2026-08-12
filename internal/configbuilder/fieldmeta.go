@@ -229,10 +229,12 @@ var fieldMetas = map[string]FieldMeta{
 	"EncryptionKeyConfig.Algorithm": {Help: "Decryption algorithm. Today only DMR RC4 (Enhanced Privacy).", Options: opts("rc4", "rc4 (DMR Enhanced Privacy)")},
 	"EncryptionKeyConfig.Key":       {Help: "Raw key, hex-encoded. Spaces and a 0x prefix are tolerated."},
 
-	"SystemConfig.Sites": {Label: "Sites", Help: "Optional human-readable names for the P25 sites of this system, keyed by RFSS/Site. Presentation metadata only — surfaced via GET /api/v1/sites. P25 only."},
-	"SiteConfig.RFSS":    {Label: "RFSS ID", Help: "RF Sub-System ID of the site (from the control channel's RFSS Status Broadcast)."},
-	"SiteConfig.Site":    {Label: "Site ID", Help: "Site ID within the RFSS (from the control channel's RFSS Status Broadcast)."},
-	"SiteConfig.Name":    {Label: "Name", Help: "Human-readable site name shown in GET /api/v1/sites, e.g. \"Mt Anakie\"."},
+	"SystemConfig.Sites":   {Label: "Sites", Help: "Optional human-readable names for the P25 sites of this system, keyed by RFSS/Site. Presentation metadata only — surfaced via GET /api/v1/sites. P25 only."},
+	"SiteConfig.RFSS":      {Label: "RFSS ID", Help: "RF Sub-System ID of the site (from the control channel's RFSS Status Broadcast)."},
+	"SiteConfig.Site":      {Label: "Site ID", Help: "Site ID within the RFSS (from the control channel's RFSS Status Broadcast)."},
+	"SiteConfig.Name":      {Label: "Name", Help: "Human-readable site name shown in GET /api/v1/sites, e.g. \"Mt Anakie\"."},
+	"SiteConfig.Latitude":  {Label: "Latitude", Help: "Site latitude in decimal degrees (WGS84), e.g. -37.85. Filled in automatically by RadioReference import; set by hand to plot a site RR doesn't geolocate. Leave 0 for no map position."},
+	"SiteConfig.Longitude": {Label: "Longitude", Help: "Site longitude in decimal degrees (WGS84), e.g. 144.20. Filled in automatically by RadioReference import; set by hand to plot a site RR doesn't geolocate. Leave 0 for no map position."},
 
 	// ---- API & Web ---------------------------------------------------------
 	"APIConfig.HTTPAddr":            {Label: "HTTP address", Help: "TCP listen address for REST/SSE/WebSocket, e.g. 127.0.0.1:8080. Empty disables it."},

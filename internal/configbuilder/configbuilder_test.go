@@ -98,3 +98,26 @@ func TestRRToSystemConfig(t *testing.T) {
 		t.Fatalf("talkgroups: %+v", rows)
 	}
 }
+
+// TestRRToSystemConfigSites confirms named RR sites become SiteConfig entries
+// carrying name + coordinates (so an imported system maps its sites), and a
+// site with no description is skipped.
+func TestRRToSystemConfigSites(t *testing.T) {
+	full := radioreference.FullSystem{
+		Name:     "Metro",
+		Protocol: "p25",
+		Sites: []radioreference.SiteDetail{
+			{RFSS: 1, SiteNumber: 3, Description: "Downtown", Latitude: 30.27, Longitude: -97.74,
+				ControlChannels: []uint32{851_037_500}},
+			{RFSS: 1, SiteNumber: 4, Description: "", ControlChannels: []uint32{851_062_500}}, // no name → skipped
+		},
+	}
+	sys, _ := RRToSystemConfig(full)
+	if len(sys.Sites) != 1 {
+		t.Fatalf("expected 1 named site, got %+v", sys.Sites)
+	}
+	s := sys.Sites[0]
+	if s.RFSS != 1 || s.Site != 3 || s.Name != "Downtown" || s.Latitude != 30.27 || s.Longitude != -97.74 {
+		t.Errorf("site config = %+v", s)
+	}
+}

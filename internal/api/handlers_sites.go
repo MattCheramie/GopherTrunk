@@ -53,13 +53,17 @@ func (s *Server) handleListSites(w http.ResponseWriter, _ *http.Request) {
 			k := key{sys.Name, cs.RFSS, cs.Site}
 			if dto, ok := byKey[k]; ok {
 				dto.Name = cs.Name
+				dto.Latitude = cs.Latitude
+				dto.Longitude = cs.Longitude
 				continue
 			}
 			byKey[k] = &SiteDTO{
-				System: sys.Name,
-				RFSSID: cs.RFSS,
-				SiteID: cs.Site,
-				Name:   cs.Name,
+				System:    sys.Name,
+				RFSSID:    cs.RFSS,
+				SiteID:    cs.Site,
+				Name:      cs.Name,
+				Latitude:  cs.Latitude,
+				Longitude: cs.Longitude,
 			}
 		}
 	}

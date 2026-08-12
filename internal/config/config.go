@@ -1435,6 +1435,14 @@ type SiteConfig struct {
 	RFSS uint8  `yaml:"rfss"`
 	Site uint8  `yaml:"site"`
 	Name string `yaml:"name"`
+	// Latitude / Longitude are the site's optional geographic position
+	// (decimal degrees, WGS84). When set they are merged into
+	// GET /api/v1/sites so the web console can plot the site on a map.
+	// Both zero means "no position" (the console hides such sites from the
+	// map). RadioReference import fills these in automatically; operators can
+	// also set them by hand for a site RR doesn't geolocate.
+	Latitude  float64 `yaml:"latitude"`
+	Longitude float64 `yaml:"longitude"`
 }
 
 type SystemConfig struct {
@@ -2657,6 +2665,12 @@ func validateSystem(i int, s SystemConfig) error {
 			return fmt.Errorf("trunking.systems[%d].sites[%d]: duplicate rfss %d / site %d (also at sites[%d])", i, k, st.RFSS, st.Site, prev)
 		}
 		seenSites[key] = k
+		if st.Latitude < -90 || st.Latitude > 90 {
+			return fmt.Errorf("trunking.systems[%d].sites[%d].latitude: %g outside -90..90", i, k, st.Latitude)
+		}
+		if st.Longitude < -180 || st.Longitude > 180 {
+			return fmt.Errorf("trunking.systems[%d].sites[%d].longitude: %g outside -180..180", i, k, st.Longitude)
+		}
 	}
 	switch s.EncryptedCalls.Mode {
 	case "", "follow", "metadata", "ignore":

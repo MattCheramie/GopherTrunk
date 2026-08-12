@@ -92,6 +92,55 @@ func TestListSitesUnionAndNameMerge(t *testing.T) {
 	}
 }
 
+// TestListSitesCoordinates verifies configured site coordinates reach the
+// SiteDTO through both join branches — a discovered site merged with a
+// configured name+position, and a configured-but-unseen site — so the web
+// console can plot them. A site with no configured position omits lat/lon.
+func TestListSitesCoordinates(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+
+	discovered := fakeSites{sites: []trunking.SiteInfo{
+		{System: "MMR", RFSSID: 1, SiteID: 1, ControlChannelHz: 420012500},
+	}}
+	systems := []trunking.System{{
+		Name: "MMR",
+		Sites: []trunking.ConfiguredSite{
+			{RFSS: 1, Site: 1, Name: "Mt Anakie", Latitude: -37.85, Longitude: 144.2},
+			{RFSS: 2, Site: 9, Name: "Murradoc Hill", Latitude: -38.2, Longitude: 144.6},
+			{RFSS: 3, Site: 3, Name: "No GPS"}, // no position
+		},
+	}}
+
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Systems: systems, Sites: discovered})
+	defer teardown()
+
+	resp := mustGet(t, base+"/api/v1/sites")
+	defer resp.Body.Close()
+	var body struct {
+		Sites []SiteDTO `json:"sites"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	byID := map[[2]uint8]SiteDTO{}
+	for _, s := range body.Sites {
+		byID[[2]uint8{s.RFSSID, s.SiteID}] = s
+	}
+	// Discovered + configured: coordinates merged onto the live row.
+	if s := byID[[2]uint8{1, 1}]; s.Latitude != -37.85 || s.Longitude != 144.2 {
+		t.Errorf("merged site coords = (%v,%v), want (-37.85,144.2)", s.Latitude, s.Longitude)
+	}
+	// Configured-only row also carries them.
+	if s := byID[[2]uint8{2, 9}]; s.Latitude != -38.2 || s.Longitude != 144.6 {
+		t.Errorf("configured-only site coords = (%v,%v), want (-38.2,144.6)", s.Latitude, s.Longitude)
+	}
+	// No position → zero (omitted in JSON).
+	if s := byID[[2]uint8{3, 3}]; s.Latitude != 0 || s.Longitude != 0 {
+		t.Errorf("positionless site coords = (%v,%v), want (0,0)", s.Latitude, s.Longitude)
+	}
+}
+
 // fakeSitesTopo is a SitesProvider that also implements NetworkTopologyProvider,
 // returning discovered rows plus one system's topology snapshot.
 type fakeSitesTopo struct {
