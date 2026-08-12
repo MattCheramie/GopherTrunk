@@ -177,6 +177,7 @@ skipped — same non-essential treatment as `paging.pocsag` and
   The current parser handles the single-slot variants; the
   multi-slot path needs a per-MMSI buffer plus the channel-A /
   channel-B re-orderer.
+
 ## Live map
 
 Position-bearing rows (Class A / B position reports, base

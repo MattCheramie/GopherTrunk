@@ -277,9 +277,11 @@ false-positive coverage but **not blocking**.
   FEC is on by default with no outstanding capture.
 
 ### Separate from captures: digital-voice composer chains
-NXDN, dPMR, TETRA, YSF, D-STAR voice (plus EDACS ProVoice) are followed
-and logged but **not yet turned into PCM** — that's an *implementation*
-gap (vocoder/composer wiring), not something a capture unblocks.
+dPMR, YSF, D-STAR voice (plus EDACS ProVoice) are followed and logged
+but **not yet turned into PCM** — that's an *implementation* gap
+(vocoder/composer wiring), not something a capture unblocks. (TETRA
+and NXDN voice now decode to PCM — TETRA verified bit-exact against
+the ETSI EN 300 395-2 reference, NXDN wired but unverified on air.)
 
 ---
 

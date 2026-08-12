@@ -262,7 +262,7 @@ Silicon and Intel. Full per-OS recipes at
   capture and a replay driver that mounts captures back into the
   SDR pool as virtual tuners. Looping replay simulates a
   continuous source.
-- **Operator surfaces** — Bubbletea TUI cockpit with 12 panels,
+- **Operator surfaces** — Bubbletea TUI cockpit with 11 panels,
   pure-browser React SPA web console, runtime config editing via
   `PATCH /api/v1/settings`, RadioReference PDF / CSV importer with
   a config-builder wizard.
@@ -298,9 +298,12 @@ log, per-talkgroup policy) all ship.
 
 **Remaining gaps:**
 
-- **Digital-voice composer chains.** FM, DMR, P25 Phase 1 / 2 decode
-  to audio. NXDN, dPMR, TETRA, YSF, D-STAR voice (plus EDACS
-  ProVoice) are followed and logged but not yet turned into PCM.
+- **Digital-voice composer chains.** FM, DMR, P25 Phase 1 / 2, TETRA
+  (clean-room ACELP), and NXDN decode to audio — TETRA verified
+  bit-exact against the ETSI EN 300 395-2 reference codec, NXDN wired
+  end-to-end but not yet verified on air. dPMR, YSF, D-STAR voice
+  (plus EDACS ProVoice) are followed and logged but not yet turned
+  into PCM.
 - **DMR 2-slot interleaved voice + embedded-LC labelling.** Both
   timeslots of a carrier are tracked, recorded, and logged as separate
   calls; a stride-2 interleaved superframe decoder
@@ -404,7 +407,7 @@ community support. If it's useful to you, please consider chipping
 in:
 
 - [Sponsor on GitHub](https://github.com/sponsors/MattCheramie)
-- [Tip on Ko-fi](https://buymeacoffee.com/Mrcheramie)
+- [Tip on Ko-fi](https://ko-fi.com/Mrcheramie)
 
 More ways to help: [docs/support.md](docs/support.md).
 

@@ -171,6 +171,7 @@ skipped — same non-essential treatment as `paging.pocsag`.
   the standard `latitude` / `longitude` columns. Surfacing the
   rich fields needs an `aprs_log` schema bump + REST DTO + a
   new column on `/aprs`.
+
 ## Live map
 
 Position-bearing rows (uncompressed positions, Mic-E) light up

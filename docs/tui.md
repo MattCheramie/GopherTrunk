@@ -11,9 +11,9 @@ A full-screen operator console over the daemon's REST + SSE API.
 The TUI ships in the same binary as the daemon — no separate
 install — and points at a running daemon over HTTP. Eleven panels
 cover every read surface; the Scanner cockpit, talkgroup table,
-and a curated set of mutations are interactive when the daemon is
-started with `api.allow_mutations: true` and the TUI with
-`--write`.
+and a curated set of mutations are interactive when the daemon
+permits mutations under `api.auth` (wide open by default on a
+loopback bind) and the TUI is started with `--write`.
 
 ## Quick start
 
@@ -41,7 +41,7 @@ gophertrunk tui -server https://radio.example.com -insecure
 | `-insecure` | `false` | skip TLS certificate verification (for self-signed test daemons) |
 | `-timeout DURATION` | `5s` | per-request timeout; SSE streams are unaffected |
 | `-no-color` | `false` | strip ANSI colour, useful when piping or on a monochrome terminal |
-| `-write` | `false` | surface mutation keybindings; daemon must also have `api.allow_mutations: true` |
+| `-write` | `false` | surface mutation keybindings; the daemon must also permit mutations via `api.auth` (default `disabled` allows them on a loopback bind) |
 
 ## Panels
 
@@ -205,19 +205,27 @@ The TUI drives a curated set of operator actions when both sides
 opt in:
 
 ```bash
-# Daemon side: enable in config.yaml.
+# Daemon side (config.yaml). On a loopback bind the default
+# api.auth.mode ("" → disabled) already permits mutations; on a LAN
+# bind, use "auto" or "required" with a token instead.
 api:
   http_addr: 127.0.0.1:8080   # bind to loopback if you can
-  allow_mutations: true
+  auth:
+    mode: disabled            # default; or "auto" / "required" (+ token_file) on a LAN bind
 
 # TUI side: pass --write to surface the keybindings.
 gophertrunk tui --write
 ```
 
-Both ends are gated separately on purpose. The daemon's HTTP API
-has no authentication today, so any host that can reach the
-listener can call mutations once the gate is open — bind to
-`127.0.0.1` and trust the operator before flipping it on.
+Both ends are gated separately on purpose. Mutation endpoints are
+gated by `api.auth.mode` (see
+[hardening.md](hardening.md#api-authentication)): the default
+`disabled` leaves them wide open — fine on a loopback bind — while
+`auto` requires a bearer token on non-loopback binds and `required`
+requires one everywhere. Bind to `127.0.0.1` and trust the operator,
+or configure a token before exposing the listener. The legacy
+`api.allow_mutations: true` still works as a deprecated alias for
+`auth.mode: disabled`.
 
 | Panel | Key | Action | Confirm? |
 | --- | --- | --- | --- |
@@ -273,9 +281,13 @@ route (older build), the TUI assumes mutations are off and
 | `POST` | `/api/v1/retention/sweep` | — | Synchronous; 503 if no call-log persistence configured. |
 | `POST` | `/api/v1/devices/{serial}/tone-reset` | — | 503 if the tone-out detector isn't wired. |
 
-Every mutation endpoint returns `403 Forbidden` with
-`{"error":"mutations disabled (set api.allow_mutations: true to enable)"}`
-when the daemon was started without the gate.
+Under the default `auth.mode: disabled`, mutations are not gated.
+With `auth.mode: auto` or `required`, a request without a valid
+token is rejected: `401 Unauthorized`
+(`{"error":"auth: missing Authorization: Bearer header"}` or
+`auth: invalid token`), or `403 Forbidden`
+(`{"error":"auth: no token configured (set api.auth.token or api.auth.token_file)"}`)
+when the daemon itself has no token configured.
 
 ## Troubleshooting
 

@@ -7,8 +7,8 @@ nav_group: Reference
 
 # Voice decoder calibration
 
-GopherTrunk's pure-Go IMBE (P25 P1) and AMBE+2 (DMR, NXDN, dPMR,
-D-STAR) decoders produce intelligible end-to-end audio. The remaining
+GopherTrunk's pure-Go IMBE (P25 P1) and AMBE+2 (DMR, NXDN)
+decoders produce intelligible end-to-end audio. The remaining
 polish work is **absolute-level calibration**: tune the AGC `TargetPeak`
 in [`internal/voice/mbe/agc.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/mbe/agc.go) so the
 in-tree decoders' loudness matches the reference output from
@@ -54,8 +54,8 @@ recordings:
   write_raw: true
 ```
 
-Tune the daemon to a P25 P1 system (for IMBE) or a DMR / NXDN / dPMR
-/ D-STAR system (for AMBE+2). Record a 5+ second voice call:
+Tune the daemon to a P25 P1 system (for IMBE) or a DMR / NXDN
+system (for AMBE+2). Record a 5+ second voice call:
 
 ```sh
 ./bin/gophertrunk run -config config.yaml

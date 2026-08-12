@@ -21,7 +21,8 @@ TUI. Two delivery paths:
   and operate. Useful when you don't want to (re)build the daemon
   binary alongside the SPA.
 
-Every Bubbletea TUI panel has a browser counterpart:
+Every Bubbletea TUI panel has a browser counterpart, plus a few
+browser-only panels (e.g. Radio IDs, Import):
 
 | Panel       | What it does                                                    |
 | ----------- | --------------------------------------------------------------- |

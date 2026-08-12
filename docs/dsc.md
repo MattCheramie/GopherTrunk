@@ -11,7 +11,7 @@ GopherTrunk decodes **Digital Selective Calling** messages —
 the SOLAS-mandated digital signalling that triggers distress /
 urgency / safety / routine calls on marine VHF channel 70
 (156.525 MHz) and the medium / high-frequency DSC channels
-(2.187.5, 8.414.5, 12.577, 16.804.5 kHz). DSC is what fires every
+(2187.5, 8414.5, 12577, 16804.5 kHz). DSC is what fires every
 GMDSS distress alert; the routine calls broadcast the working
 voice channel two stations are about to switch to. A coast-guard
 MMSI lighting up the channel-70 stream is near-instant visibility
@@ -148,6 +148,7 @@ IQ → FM demod → resample to 9600 sps → FFSK discriminator
   multi-recipient calls). The single-frame parser covers the
   operational majority; the multi-frame path needs a per-MMSI
   buffer plus a sequence reassembler.
+
 ## Live map
 
 Distress alerts that included a position render as red,

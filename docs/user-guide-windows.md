@@ -1381,9 +1381,10 @@ vocoders.
 
 ## 18. Vocoders and voice calibration
 
-GopherTrunk ships pure-Go IMBE (P25 Phase 1) and AMBE+2 (P25 Phase
-2, DMR Tier II/III, NXDN, dPMR, D-STAR voice) decoders. Both are
-on by default; AMBE+2 is **patent-encumbered** in some
+GopherTrunk ships pure-Go IMBE (P25 Phase 1), AMBE+2 (P25 Phase
+2, DMR Tier II/III, NXDN, dPMR), and TETRA ACELP (TETRA full-rate
+voice) decoders. All are on by default; AMBE+2 is
+**patent-encumbered** in some
 jurisdictions (DVSI IPR portfolio), and the legal responsibility
 for operating it falls on the deployer — see
 [`vocoders.md`]({{ '/vocoders.html' | relative_url }}) §"Patent
@@ -1393,7 +1394,8 @@ posture".
 | --- | --- | --- | --- |
 | `null` (silence) | none | yes | Always available |
 | `imbe` (pure-Go) | none | yes | P25 Phase 1 LDU1 / LDU2 |
-| `ambe2` (pure-Go) | none | yes | P25 Phase 2 / DMR / NXDN / dPMR / D-STAR |
+| `ambe2` (pure-Go) | none | yes | P25 Phase 2 / DMR / NXDN / dPMR |
+| `tetra-acelp` (pure-Go) | none | yes | TETRA full-rate voice (ETSI EN 300 395-2) |
 | `dvsi` (USB-3000 chip) | `-tags dvsi` | no | Wire protocol shipping; USB transport stub |
 
 Live-pipeline auto-decode maps `Grant.Protocol` to a vocoder per

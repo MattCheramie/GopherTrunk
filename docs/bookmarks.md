@@ -41,7 +41,7 @@ normal backup workflow (just back up `storage.path`).
 | `DELETE` | `/api/v1/bookmarks/{id}` | mutation-gated | Removes the row. Idempotent — second delete returns 404 but doesn't error. |
 
 The mutation gate is the same one every other write endpoint uses;
-see [hardening.md](hardening.md#api-auth-bearer-token) for the
+see [hardening.md](hardening.md#api-authentication) for the
 options.
 
 ## JSON shape

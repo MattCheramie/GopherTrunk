@@ -57,6 +57,7 @@ type Vocoder interface {
 | `null` (silence)         | none         | yes      | Always available                                |
 | `imbe` (pure-Go, P25 P1) | none         | yes      | Producing intelligible audio; level calibration pending reference data ([voice-calibration.md](voice-calibration.md)) |
 | `ambe2` (pure-Go)        | none         | yes      | Producing audio; level calibration pending reference data; DTMF tones synthesise, knox tones via `ambe2.SetKnoxTone` or stay silent |
+| `tetra-acelp` (pure-Go)  | none         | yes      | Producing audio; TETRA full-rate voice (ETSI EN 300 395-2), verified bit-exact against the reference codec; up to 4 concurrent same-carrier timeslots |
 | `dvsi` (USB-3000 chip)   | `-tags dvsi` | **no**   | Wire-protocol + Vocoder scaffolding shipping; USB transport stub (returns `ErrNoDevice`) — hardware integration follows in a separate PR |
 
 ### Live-pipeline auto-decode
