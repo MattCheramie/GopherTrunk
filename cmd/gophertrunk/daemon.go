@@ -1645,325 +1645,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 	}
 
-	// POCSAG paging receivers — one per configured paging.pocsag
-	// entry. Constructed here; the run loop spawns them with the
-	// iqtap broker subscription. Per-entry validation lives in
-	// the receiver.New constructor; entries that fail validation
-	// surface as a startup warning and are skipped (their slot
-	// is preserved as nil to keep slice indexing simple).
-	for _, pc := range cfg.Paging.POCSAG {
-		spec := pocsagSpec{serial: pc.Serial, freq: pc.FrequencyHz}
-		if pc.Serial == "" || pc.FrequencyHz == 0 {
-			d.addWarning(fmt.Sprintf(
-				"paging.pocsag: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
-				pc.Serial, pc.FrequencyHz))
-			d.pocsagReceivers = append(d.pocsagReceivers, nil)
-			d.pocsagSpecs = append(d.pocsagSpecs, spec)
-			continue
-		}
-		rcv, err := pocsagrx.New(pocsagrx.Options{
-			InputRateHz: cfg.SDR.SampleRate,
-			BaudHz:      pc.BaudHz,
-			SourceName:  pc.Serial,
-			Bus:         d.bus,
-			Log:         log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("paging.pocsag[%s]: %v — skipped", pc.Serial, err))
-			d.pocsagReceivers = append(d.pocsagReceivers, nil)
-			d.pocsagSpecs = append(d.pocsagSpecs, spec)
-			continue
-		}
-		d.pocsagReceivers = append(d.pocsagReceivers, rcv)
-		d.pocsagSpecs = append(d.pocsagSpecs, spec)
-	}
-
-	// FLEX paging receivers — one per configured paging.flex entry.
-	// Same construction shape as POCSAG above; decoded pages share the
-	// pager_log table / panel, tagged protocol="flex".
-	for _, fc := range cfg.Paging.FLEX {
-		spec := flexSpec{serial: fc.Serial, freq: fc.FrequencyHz}
-		if fc.Serial == "" || fc.FrequencyHz == 0 {
-			d.addWarning(fmt.Sprintf(
-				"paging.flex: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
-				fc.Serial, fc.FrequencyHz))
-			d.flexReceivers = append(d.flexReceivers, nil)
-			d.flexSpecs = append(d.flexSpecs, spec)
-			continue
-		}
-		rcv, err := flexrx.New(flexrx.Options{
-			InputRateHz: cfg.SDR.SampleRate,
-			SourceName:  fc.Serial,
-			Bus:         d.bus,
-			Log:         log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("paging.flex[%s]: %v — skipped", fc.Serial, err))
-			d.flexReceivers = append(d.flexReceivers, nil)
-			d.flexSpecs = append(d.flexSpecs, spec)
-			continue
-		}
-		d.flexReceivers = append(d.flexReceivers, rcv)
-		d.flexSpecs = append(d.flexSpecs, spec)
-	}
-
-	// Wideband paging groups — one DDC bank per configured
-	// paging.wideband entry sharing a single SDR across several paging
-	// channels. Constructed here; the Run loop tunes the dongle to the
-	// group's center, builds the tuner.DDCBank, and feeds each tap into
-	// the receiver built below. Same skip-with-warning policy as the
-	// single-frequency paging loops: a bad group is logged and dropped
-	// without disturbing the rest of the pipeline.
-	for _, wg := range cfg.Paging.Wideband {
-		if group := d.buildWidebandPagingGroup(wg, cfg.SDR.SampleRate, log); group != nil {
-			d.pagingGroups = append(d.pagingGroups, *group)
-		}
-	}
-
-	// Paging decodes only persist / surface via the API when storage is
-	// wired; warn the operator at load time if they configured paging but
-	// no storage.path (issue #565).
-	d.warnPagingNeedsStorage(cfg)
-
-	// M17 link-layer receivers — one per configured m17.channels entry.
-	// Same construction shape as the paging receivers above; decoded
-	// link metadata publishes on KindM17LinkSetup.
-	for _, mc := range cfg.M17.Channels {
-		spec := m17Spec{serial: mc.Serial, freq: mc.FrequencyHz}
-		if mc.Serial == "" || mc.FrequencyHz == 0 {
-			d.addWarning(fmt.Sprintf(
-				"m17.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
-				mc.Serial, mc.FrequencyHz))
-			d.m17Receivers = append(d.m17Receivers, nil)
-			d.m17Specs = append(d.m17Specs, spec)
-			continue
-		}
-		rcv, err := m17rx.New(m17rx.Options{
-			InputRateHz: cfg.SDR.SampleRate,
-			SourceName:  mc.Serial,
-			Bus:         d.bus,
-			Log:         log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("m17.channels[%s]: %v — skipped", mc.Serial, err))
-			d.m17Receivers = append(d.m17Receivers, nil)
-			d.m17Specs = append(d.m17Specs, spec)
-			continue
-		}
-		d.m17Receivers = append(d.m17Receivers, rcv)
-		d.m17Specs = append(d.m17Specs, spec)
-	}
-
-	// APRS / AX.25 Bell-202 AFSK receivers — one per configured
-	// aprs.channels entry. Same construction shape as POCSAG above:
-	// per-entry validation in the receiver, failures surface as a
-	// startup warning and skip the entry (nil slot preserved for
-	// stable indexing).
-	for _, ac := range cfg.APRS.Channels {
-		spec := aprsSpec{serial: ac.Serial, freq: ac.FrequencyHz}
-		if ac.Serial == "" || ac.FrequencyHz == 0 {
-			d.addWarning(fmt.Sprintf(
-				"aprs.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
-				ac.Serial, ac.FrequencyHz))
-			d.aprsReceivers = append(d.aprsReceivers, nil)
-			d.aprsSpecs = append(d.aprsSpecs, spec)
-			continue
-		}
-		rcv, err := aprsafsk.New(aprsafsk.Options{
-			InputRateHz: cfg.SDR.SampleRate,
-			SourceName:  ac.Serial,
-			Bus:         d.bus,
-			DropBadFCS:  ac.DropBadFCS,
-			DropNonUI:   ac.DropNonUI,
-			Log:         log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("aprs.channels[%s]: %v — skipped", ac.Serial, err))
-			d.aprsReceivers = append(d.aprsReceivers, nil)
-			d.aprsSpecs = append(d.aprsSpecs, spec)
-			continue
-		}
-		d.aprsReceivers = append(d.aprsReceivers, rcv)
-		d.aprsSpecs = append(d.aprsSpecs, spec)
-	}
-
-	// AIS GMSK receivers — one per configured ais.channels entry.
-	// Same construction shape as POCSAG / APRS above: per-entry
-	// validation in the receiver, failures surface as a startup
-	// warning and skip the entry (nil slot preserved for stable
-	// indexing).
-	for _, ac := range cfg.AIS.Channels {
-		spec := aisSpec{serial: ac.Serial, freq: ac.FrequencyHz}
-		if ac.Serial == "" || ac.FrequencyHz == 0 {
-			d.addWarning(fmt.Sprintf(
-				"ais.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
-				ac.Serial, ac.FrequencyHz))
-			d.aisReceivers = append(d.aisReceivers, nil)
-			d.aisSpecs = append(d.aisSpecs, spec)
-			continue
-		}
-		rcv, err := aisgmsk.New(aisgmsk.Options{
-			InputRateHz:     cfg.SDR.SampleRate,
-			SourceName:      ac.Serial,
-			Bus:             d.bus,
-			DropBadFCS:      ac.DropBadFCS,
-			DropNonPosition: ac.DropNonPosition,
-			Log:             log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("ais.channels[%s]: %v — skipped", ac.Serial, err))
-			d.aisReceivers = append(d.aisReceivers, nil)
-			d.aisSpecs = append(d.aisSpecs, spec)
-			continue
-		}
-		d.aisReceivers = append(d.aisReceivers, rcv)
-		d.aisSpecs = append(d.aisSpecs, spec)
-	}
-
-	// LoRa wide-band receivers — one per configured lora.channels entry.
-	// Each pins an SDR to a centre frequency and channelizes its IQ band
-	// into parallel LoRa sub-channels (the receiver owns the tuner bank).
-	// Per-entry validation: a malformed entry surfaces as a startup warning
-	// and a nil slot keeps indexing stable.
-	for _, lc := range cfg.LoRa.Channels {
-		spec := loraSpec{serial: lc.Serial, freq: lc.CenterHz}
-		rcv, err := buildLoRaReceiver(cfg.SDR.SampleRate, lc, d.bus, log)
-		if err != nil {
-			d.addWarning(fmt.Sprintf("lora.channels[%s]: %v — skipped", lc.Serial, err))
-			d.loraReceivers = append(d.loraReceivers, nil)
-			d.loraSpecs = append(d.loraSpecs, spec)
-			continue
-		}
-		d.loraReceivers = append(d.loraReceivers, rcv)
-		d.loraSpecs = append(d.loraSpecs, spec)
-	}
-
-	// DSC FFSK receivers — one per configured dsc.channels entry.
-	// Same construction shape as AIS / MDC1200 above: per-entry
-	// validation in the receiver, failures surface as a startup
-	// warning and skip the entry (nil slot preserved for stable
-	// indexing).
-	for _, dc := range cfg.DSC.Channels {
-		spec := dscSpec{serial: dc.Serial, freq: dc.FrequencyHz}
-		if dc.Serial == "" || dc.FrequencyHz == 0 {
-			d.addWarning(fmt.Sprintf(
-				"dsc.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
-				dc.Serial, dc.FrequencyHz))
-			d.dscReceivers = append(d.dscReceivers, nil)
-			d.dscSpecs = append(d.dscSpecs, spec)
-			continue
-		}
-		rcv, err := dscffsk.New(dscffsk.Options{
-			InputRateHz: cfg.SDR.SampleRate,
-			SourceName:  dc.Serial,
-			Bus:         d.bus,
-			DropBadFCS:  dc.DropBadFCS,
-			Log:         log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("dsc.channels[%s]: %v — skipped", dc.Serial, err))
-			d.dscReceivers = append(d.dscReceivers, nil)
-			d.dscSpecs = append(d.dscSpecs, spec)
-			continue
-		}
-		d.dscReceivers = append(d.dscReceivers, rcv)
-		d.dscSpecs = append(d.dscSpecs, spec)
-	}
-
-	// MDC1200 FFSK receivers — one per configured mdc1200.channels
-	// entry. Same construction shape as APRS / AIS above: per-entry
-	// validation in the receiver, failures surface as a startup
-	// warning and skip the entry (nil slot preserved for stable
-	// indexing).
-	for _, mc := range cfg.MDC1200.Channels {
-		spec := mdc1200Spec{serial: mc.Serial, freq: mc.FrequencyHz}
-		if mc.Serial == "" || mc.FrequencyHz == 0 {
-			d.addWarning(fmt.Sprintf(
-				"mdc1200.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
-				mc.Serial, mc.FrequencyHz))
-			d.mdc1200Receivers = append(d.mdc1200Receivers, nil)
-			d.mdc1200Specs = append(d.mdc1200Specs, spec)
-			continue
-		}
-		rcv, err := mdc1200afsk.New(mdc1200afsk.Options{
-			InputRateHz: cfg.SDR.SampleRate,
-			SourceName:  mc.Serial,
-			Bus:         d.bus,
-			DropBadCRC:  mc.DropBadCRC,
-			Log:         log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("mdc1200.channels[%s]: %v — skipped", mc.Serial, err))
-			d.mdc1200Receivers = append(d.mdc1200Receivers, nil)
-			d.mdc1200Specs = append(d.mdc1200Specs, spec)
-			continue
-		}
-		d.mdc1200Receivers = append(d.mdc1200Receivers, rcv)
-		d.mdc1200Specs = append(d.mdc1200Specs, spec)
-	}
-
-	// ADS-B BEAST upstreams — one client per configured
-	// adsb.beast_upstreams entry. Each opens a TCP connection
-	// to a dump1090 / readsb BEAST output port, decodes the
-	// Mode-S frames, runs them through the CPR pair-tracker,
-	// and publishes KindAircraftReport. Validation failures
-	// surface as startup warnings.
-	for _, bc := range cfg.ADSB.BeastUpstreams {
-		if bc.Addr == "" {
-			d.addWarning(fmt.Sprintf(
-				"adsb.beast_upstreams: entry missing addr (name=%q) — skipped",
-				bc.Name))
-			continue
-		}
-		name := bc.Name
-		if name == "" {
-			name = bc.Addr
-		}
-		client, err := adsbbeast.New(adsbbeast.Options{
-			Addr:       bc.Addr,
-			Bus:        d.bus,
-			SourceName: name,
-			Log:        log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("adsb.beast_upstreams[%s]: %v — skipped", name, err))
-			continue
-		}
-		d.adsbBeastClients = append(d.adsbBeastClients, client)
-		d.adsbBeastNames = append(d.adsbBeastNames, name)
-	}
-
-	// ADS-B native PPM receivers — one per configured adsb.channels
-	// entry. Each pins an SDR to 1090 MHz and demodulates Mode-S
-	// straight off the air, publishing the same KindAircraftReport the
-	// BEAST clients do. Same construction shape as the AIS receivers.
-	for _, ac := range cfg.ADSB.Channels {
-		freq := ac.FrequencyHz
-		if freq == 0 {
-			freq = 1_090_000_000 // 1090 MHz default
-		}
-		spec := adsbPPMSpec{serial: ac.Serial, freq: freq}
-		if ac.Serial == "" {
-			d.addWarning("adsb.channels: entry missing serial — skipped")
-			d.adsbPPMReceivers = append(d.adsbPPMReceivers, nil)
-			d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
-			continue
-		}
-		rcv, err := adsbppm.New(adsbppm.Options{
-			InputRateHz: cfg.SDR.SampleRate,
-			SourceName:  ac.Serial,
-			Bus:         d.bus,
-			Log:         log,
-		})
-		if err != nil {
-			d.addWarning(fmt.Sprintf("adsb.channels[%s]: %v — skipped", ac.Serial, err))
-			d.adsbPPMReceivers = append(d.adsbPPMReceivers, nil)
-			d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
-			continue
-		}
-		d.adsbPPMReceivers = append(d.adsbPPMReceivers, rcv)
-		d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
-	}
+	d.buildPeripheralReceivers(cfg, log)
 
 	// Storage / call log / retention — optional.
 	if cfg.Storage.Path != "" {
@@ -2088,232 +1770,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 	}
 
-	// HTTP API — optional.
-	if cfg.API.HTTPAddr != "" {
-		authMode, ok := api.ParseAuthMode(cfg.API.Auth.Mode)
-		if !ok {
-			return nil, fmt.Errorf("daemon: api.auth.mode: unrecognised value %q (expected auto / required / disabled)", cfg.API.Auth.Mode)
-		}
-		opts := api.ServerOptions{
-			Addr:           cfg.API.HTTPAddr,
-			Bus:            d.bus,
-			Engine:         d.engine,
-			Mutator:        d.engine,
-			Talkgroups:     d.talkgroups,
-			RIDs:           d.rids,
-			Systems:        d.systems,
-			Log:            log,
-			Version:        version,
-			BundleRoot:     cfg.Recordings.Dir,
-			Diagnostics:    d.newDiagCollector(),
-			VerboseErrors:  cfg.Diagnostics.VerboseErrors,
-			DisplayLoc:     d.displayLoc,
-			AllowMutations: cfg.API.AllowMutations,
-			Auth: api.AuthConfig{
-				Mode:            authMode,
-				Token:           cfg.API.Auth.Token,
-				TokenFile:       cfg.API.Auth.TokenFile,
-				TrustedNetworks: cfg.API.Auth.TrustedNetworks,
-			},
-			CORS: api.CORSConfig{
-				AllowedOrigins: cfg.API.CORS.AllowedOrigins,
-			},
-			AudioPublisher: d.audioPub,
-			TLSCert:        cfg.API.TLSCert,
-			TLSKey:         cfg.API.TLSKey,
-		}
-		if len(d.iqBrokers) > 0 {
-			opts.Spectrum = newSpectrumProvider(d.pool, d.iqBrokers, d.systems, log)
-			opts.Diag = newDiagProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
-			opts.Symbols = newSymbolProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
-			opts.Mixer = newMixerProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
-			opts.Capture = newCaptureProvider(d.pool, d.iqBrokers, log)
-		}
-		// Event-driven raw-IQ auto-recorder (baseband.auto_record). Constructed
-		// here so the API server can expose a manual trigger; subscribed to the
-		// bus now so it doesn't miss events before the run phase spawns Run.
-		if cfg.Baseband.AutoRecord.Enabled && d.controlSerial != "" {
-			if br := d.iqBrokers[d.controlSerial]; br != nil {
-				sysName, proto := primaryControlSystem(cfg)
-				// Lazy control-decoder accessor for the "ddc" tap (nil interface
-				// until the decoder is built, mirroring the same-carrier voice tap).
-				ddcTap := func() ddcVoiceTap {
-					if d.ccDecoder == nil {
-						return nil
-					}
-					return d.ccDecoder
-				}
-				d.iqAutoRec = newIQAutoRecorder(cfg.Baseband.AutoRecord, sysName, proto, d.controlSerial, br, ddcTap, log)
-				if d.iqAutoRec != nil {
-					d.iqAutoRecSub = d.bus.Subscribe()
-					opts.AutoRecord = autoRecordTrigger{rec: d.iqAutoRec}
-				}
-			} else {
-				log.Warn("daemon: baseband.auto_record enabled but no IQ broker for the control SDR; auto-record disabled",
-					"control_serial", d.controlSerial)
-			}
-		}
-		if d.bookmarks != nil {
-			opts.Bookmarks = bookmarkProvider{store: d.bookmarks}
-		}
-		if d.pagerLog != nil {
-			opts.Pager = pagerProvider{log: d.pagerLog}
-		}
-		if d.aprsLog != nil {
-			opts.APRS = aprsProvider{log: d.aprsLog}
-		}
-		if d.vesselLog != nil {
-			opts.AIS = aisProvider{log: d.vesselLog}
-		}
-		if d.dscLog != nil {
-			opts.DSC = dscProvider{log: d.dscLog}
-		}
-		if d.m17Log != nil {
-			opts.M17 = m17Provider{log: d.m17Log}
-		}
-		if d.loraLog != nil {
-			opts.LoRa = loraProvider{log: d.loraLog}
-		}
-		if d.aircraftLog != nil {
-			opts.ADSB = adsbProvider{log: d.aircraftLog}
-		}
-		if d.mdc1200Log != nil {
-			opts.MDC1200 = mdc1200Provider{log: d.mdc1200Log}
-		}
-		if d.db != nil {
-			opts.History = api.HistoryFromStorage(d.db)
-		}
-		if d.locationLog != nil {
-			opts.Locations = api.LocationsFromStorage(d.locationLog, d.displayLoc)
-		}
-		if d.affiliations != nil {
-			opts.Affiliations = affiliationProvider{d.affiliations}
-		}
-		if d.siteTracker != nil {
-			opts.Sites = sitesProvider{d.siteTracker}
-		}
-		if d.grantTracker != nil {
-			opts.Grants = grantsProvider{d.grantTracker}
-		}
-		if d.metrics != nil {
-			opts.MetricsHandler = d.metrics.Handler()
-		}
-		if d.retention != nil {
-			opts.Retention = d.retention
-		}
-		if d.toneout != nil {
-			opts.Tones = d.toneout
-		}
-		if d.pool != nil {
-			opts.Devices = d.pool
-		}
-		opts.Scanner = scannerCockpit{
-			cchunt:     d.cchuntSup,
-			conv:       d.convScan,
-			engine:     d.engine,
-			talkgroups: d.talkgroups,
-		}
-		// Live system-discovery ("hunt") manager: operator-triggered blind
-		// spectrum sweep that shares the radio via spare-SDR-else-borrow
-		// acquisition. Constructed whenever an IQ broker exists so a live hunt
-		// is possible; the REST/TUI/web cockpit drives it.
-		if d.pool != nil && len(d.iqBrokers) > 0 {
-			if mgr, err := hunt.NewManager(hunt.ManagerOptions{
-				Acquire:   d.buildHuntAcquirer(),
-				Bus:       d.bus,
-				Log:       log,
-				SurveyDir: huntSurveyDir(cfg.Storage.Path),
-			}); err != nil {
-				log.Warn("daemon: hunt manager not started", "err", err)
-			} else {
-				d.huntMgr = mgr
-				opts.Hunt = huntCockpit{mgr: mgr, cfgPath: d.cfgPath, rrAuth: radioreference.ResolveAuth(radioreference.Auth{
-					AppKey:   firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_KEY"), cfg.RadioReference.APIKey),
-					Username: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_USER"), cfg.RadioReference.Username),
-					Password: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_PASS"), cfg.RadioReference.Password),
-				})}
-			}
-		}
-		if d.player != nil || d.recorder != nil {
-			opts.Audio = audioCockpit{player: d.player, recorder: d.recorder}
-		}
-		if d.broadcast != nil {
-			opts.Broadcast = broadcastStatus{d.broadcast}
-		}
-		cfgCopy := cfg
-		opts.Runtime = &runtimeSnapshot{
-			cfg:     &cfgCopy,
-			version: version,
-			metrics: cfg.Metrics.Enabled,
-			daemon:  d,
-		}
-		// Live settings editing — only enabled when the daemon was
-		// started with a -config (otherwise there's no file to write
-		// back to).
-		if d.writer != nil {
-			// Pass the daemon itself as the writer (not the concrete
-			// d.writer) so a config hot-swap that re-points the writer is
-			// reflected by later settings edits.
-			opts.ConfigWriter = d
-			opts.SettingsApplier = newDaemonSettingsApplier(d, version)
-			opts.Importer = newDaemonImporter(d)
-		}
-		// Config hot-swap (reload/restart) from the web Config Builder.
-		// Wired unconditionally so a daemon started on built-in defaults
-		// can still load a freshly-created config file (restart mode
-		// re-execs with -config; reload mode installs the writer).
-		opts.ConfigActivator = d
-		// Embed the SPA when the build linked in real assets
-		// (see web/embed.go). HasAssets is false for fresh
-		// checkouts without `make web-build` — the launcher falls
-		// back to filesystem discovery in that case.
-		if gtweb.HasAssets() {
-			opts.WebAssets = gtweb.Assets()
-		}
-		// Offline signal-analysis API (the siglab web console talks to
-		// these routes). Enabled on the daemon too so an operator can
-		// analyze captures without spinning up a separate `siglab serve`.
-		// Mount the Signal Lab SPA at /siglab/ when it was bundled so the
-		// console is reachable from the main UI (and so the Crypto Lab's
-		// Signal Lab link resolves).
-		siglabOpts := api.SiglabOptions{Enabled: true}
-		if siglabweb.HasAssets() {
-			siglabOpts.Assets = siglabweb.Assets()
-		}
-		opts.Siglab = siglabOpts
-		// RF Scope — offline protocol-agnostic RF-analysis console. Wire the
-		// /api/v1/rfscope/* routes and, when the SPA was bundled, the console
-		// at /rfscope/ so it is reachable from the main UI in a new tab.
-		rfscopeOpts := api.RFScopeOptions{Enabled: true}
-		if rfscopeweb.HasAssets() {
-			rfscopeOpts.Assets = rfscopeweb.Assets()
-		}
-		opts.RFScope = rfscopeOpts
-		// Web Config Builder/Editor — link the editor SPA at /config/ and
-		// the /api/v1/config/* routes so the operator can edit config from
-		// the main web UI in a new tab. Saves are constrained to the live
-		// config's directory (or the standard discovery dirs when started
-		// without -config). RR credentials: env overrides config.
-		cbOpts := api.ConfigBuilderOptions{
-			Enabled: true,
-			RadioReference: radioreference.ResolveAuth(radioreference.Auth{
-				AppKey:   firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_KEY"), cfg.RadioReference.APIKey),
-				Username: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_USER"), cfg.RadioReference.Username),
-				Password: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_PASS"), cfg.RadioReference.Password),
-			}),
-		}
-		if d.cfgPath != "" {
-			cbOpts.ConfigDir = filepath.Dir(d.cfgPath)
-		}
-		if configbuilderweb.HasAssets() {
-			cbOpts.Assets = configbuilderweb.Assets()
-		}
-		opts.ConfigBuilder = cbOpts
-		srv, err := api.NewServer(opts)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: http api: %w", err)
-		}
-		d.httpAPI = srv
+	if err := d.buildAPIServer(cfg, version, log); err != nil {
+		return nil, err
 	}
 
 	// rigctld TCP server — optional. Exposes the control SDR's
@@ -2849,6 +2307,569 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 			return fmt.Errorf("daemon: composer: %w", err)
 		}
 		d.composer = comp
+	}
+	return nil
+}
+
+// buildPeripheralReceivers constructs the auxiliary (non-trunking) protocol
+// receivers — POCSAG/FLEX/wideband paging, M17, APRS, AIS, LoRa, DSC, MDC1200
+// and ADS-B (BEAST upstreams + native PPM) — appending each to its
+// index-aligned d.*Receivers/d.*Specs slices. Bad entries are skipped with a
+// startup warning (never a hard error), so this returns nothing. Extracted
+// verbatim from NewDaemonWithPath.
+func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
+	// POCSAG paging receivers — one per configured paging.pocsag
+	// entry. Constructed here; the run loop spawns them with the
+	// iqtap broker subscription. Per-entry validation lives in
+	// the receiver.New constructor; entries that fail validation
+	// surface as a startup warning and are skipped (their slot
+	// is preserved as nil to keep slice indexing simple).
+	for _, pc := range cfg.Paging.POCSAG {
+		spec := pocsagSpec{serial: pc.Serial, freq: pc.FrequencyHz}
+		if pc.Serial == "" || pc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"paging.pocsag: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				pc.Serial, pc.FrequencyHz))
+			d.pocsagReceivers = append(d.pocsagReceivers, nil)
+			d.pocsagSpecs = append(d.pocsagSpecs, spec)
+			continue
+		}
+		rcv, err := pocsagrx.New(pocsagrx.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			BaudHz:      pc.BaudHz,
+			SourceName:  pc.Serial,
+			Bus:         d.bus,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("paging.pocsag[%s]: %v — skipped", pc.Serial, err))
+			d.pocsagReceivers = append(d.pocsagReceivers, nil)
+			d.pocsagSpecs = append(d.pocsagSpecs, spec)
+			continue
+		}
+		d.pocsagReceivers = append(d.pocsagReceivers, rcv)
+		d.pocsagSpecs = append(d.pocsagSpecs, spec)
+	}
+
+	// FLEX paging receivers — one per configured paging.flex entry.
+	// Same construction shape as POCSAG above; decoded pages share the
+	// pager_log table / panel, tagged protocol="flex".
+	for _, fc := range cfg.Paging.FLEX {
+		spec := flexSpec{serial: fc.Serial, freq: fc.FrequencyHz}
+		if fc.Serial == "" || fc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"paging.flex: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				fc.Serial, fc.FrequencyHz))
+			d.flexReceivers = append(d.flexReceivers, nil)
+			d.flexSpecs = append(d.flexSpecs, spec)
+			continue
+		}
+		rcv, err := flexrx.New(flexrx.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  fc.Serial,
+			Bus:         d.bus,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("paging.flex[%s]: %v — skipped", fc.Serial, err))
+			d.flexReceivers = append(d.flexReceivers, nil)
+			d.flexSpecs = append(d.flexSpecs, spec)
+			continue
+		}
+		d.flexReceivers = append(d.flexReceivers, rcv)
+		d.flexSpecs = append(d.flexSpecs, spec)
+	}
+
+	// Wideband paging groups — one DDC bank per configured
+	// paging.wideband entry sharing a single SDR across several paging
+	// channels. Constructed here; the Run loop tunes the dongle to the
+	// group's center, builds the tuner.DDCBank, and feeds each tap into
+	// the receiver built below. Same skip-with-warning policy as the
+	// single-frequency paging loops: a bad group is logged and dropped
+	// without disturbing the rest of the pipeline.
+	for _, wg := range cfg.Paging.Wideband {
+		if group := d.buildWidebandPagingGroup(wg, cfg.SDR.SampleRate, log); group != nil {
+			d.pagingGroups = append(d.pagingGroups, *group)
+		}
+	}
+
+	// Paging decodes only persist / surface via the API when storage is
+	// wired; warn the operator at load time if they configured paging but
+	// no storage.path (issue #565).
+	d.warnPagingNeedsStorage(cfg)
+
+	// M17 link-layer receivers — one per configured m17.channels entry.
+	// Same construction shape as the paging receivers above; decoded
+	// link metadata publishes on KindM17LinkSetup.
+	for _, mc := range cfg.M17.Channels {
+		spec := m17Spec{serial: mc.Serial, freq: mc.FrequencyHz}
+		if mc.Serial == "" || mc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"m17.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				mc.Serial, mc.FrequencyHz))
+			d.m17Receivers = append(d.m17Receivers, nil)
+			d.m17Specs = append(d.m17Specs, spec)
+			continue
+		}
+		rcv, err := m17rx.New(m17rx.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  mc.Serial,
+			Bus:         d.bus,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("m17.channels[%s]: %v — skipped", mc.Serial, err))
+			d.m17Receivers = append(d.m17Receivers, nil)
+			d.m17Specs = append(d.m17Specs, spec)
+			continue
+		}
+		d.m17Receivers = append(d.m17Receivers, rcv)
+		d.m17Specs = append(d.m17Specs, spec)
+	}
+
+	// APRS / AX.25 Bell-202 AFSK receivers — one per configured
+	// aprs.channels entry. Same construction shape as POCSAG above:
+	// per-entry validation in the receiver, failures surface as a
+	// startup warning and skip the entry (nil slot preserved for
+	// stable indexing).
+	for _, ac := range cfg.APRS.Channels {
+		spec := aprsSpec{serial: ac.Serial, freq: ac.FrequencyHz}
+		if ac.Serial == "" || ac.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"aprs.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				ac.Serial, ac.FrequencyHz))
+			d.aprsReceivers = append(d.aprsReceivers, nil)
+			d.aprsSpecs = append(d.aprsSpecs, spec)
+			continue
+		}
+		rcv, err := aprsafsk.New(aprsafsk.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  ac.Serial,
+			Bus:         d.bus,
+			DropBadFCS:  ac.DropBadFCS,
+			DropNonUI:   ac.DropNonUI,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("aprs.channels[%s]: %v — skipped", ac.Serial, err))
+			d.aprsReceivers = append(d.aprsReceivers, nil)
+			d.aprsSpecs = append(d.aprsSpecs, spec)
+			continue
+		}
+		d.aprsReceivers = append(d.aprsReceivers, rcv)
+		d.aprsSpecs = append(d.aprsSpecs, spec)
+	}
+
+	// AIS GMSK receivers — one per configured ais.channels entry.
+	// Same construction shape as POCSAG / APRS above: per-entry
+	// validation in the receiver, failures surface as a startup
+	// warning and skip the entry (nil slot preserved for stable
+	// indexing).
+	for _, ac := range cfg.AIS.Channels {
+		spec := aisSpec{serial: ac.Serial, freq: ac.FrequencyHz}
+		if ac.Serial == "" || ac.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"ais.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				ac.Serial, ac.FrequencyHz))
+			d.aisReceivers = append(d.aisReceivers, nil)
+			d.aisSpecs = append(d.aisSpecs, spec)
+			continue
+		}
+		rcv, err := aisgmsk.New(aisgmsk.Options{
+			InputRateHz:     cfg.SDR.SampleRate,
+			SourceName:      ac.Serial,
+			Bus:             d.bus,
+			DropBadFCS:      ac.DropBadFCS,
+			DropNonPosition: ac.DropNonPosition,
+			Log:             log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("ais.channels[%s]: %v — skipped", ac.Serial, err))
+			d.aisReceivers = append(d.aisReceivers, nil)
+			d.aisSpecs = append(d.aisSpecs, spec)
+			continue
+		}
+		d.aisReceivers = append(d.aisReceivers, rcv)
+		d.aisSpecs = append(d.aisSpecs, spec)
+	}
+
+	// LoRa wide-band receivers — one per configured lora.channels entry.
+	// Each pins an SDR to a centre frequency and channelizes its IQ band
+	// into parallel LoRa sub-channels (the receiver owns the tuner bank).
+	// Per-entry validation: a malformed entry surfaces as a startup warning
+	// and a nil slot keeps indexing stable.
+	for _, lc := range cfg.LoRa.Channels {
+		spec := loraSpec{serial: lc.Serial, freq: lc.CenterHz}
+		rcv, err := buildLoRaReceiver(cfg.SDR.SampleRate, lc, d.bus, log)
+		if err != nil {
+			d.addWarning(fmt.Sprintf("lora.channels[%s]: %v — skipped", lc.Serial, err))
+			d.loraReceivers = append(d.loraReceivers, nil)
+			d.loraSpecs = append(d.loraSpecs, spec)
+			continue
+		}
+		d.loraReceivers = append(d.loraReceivers, rcv)
+		d.loraSpecs = append(d.loraSpecs, spec)
+	}
+
+	// DSC FFSK receivers — one per configured dsc.channels entry.
+	// Same construction shape as AIS / MDC1200 above: per-entry
+	// validation in the receiver, failures surface as a startup
+	// warning and skip the entry (nil slot preserved for stable
+	// indexing).
+	for _, dc := range cfg.DSC.Channels {
+		spec := dscSpec{serial: dc.Serial, freq: dc.FrequencyHz}
+		if dc.Serial == "" || dc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"dsc.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				dc.Serial, dc.FrequencyHz))
+			d.dscReceivers = append(d.dscReceivers, nil)
+			d.dscSpecs = append(d.dscSpecs, spec)
+			continue
+		}
+		rcv, err := dscffsk.New(dscffsk.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  dc.Serial,
+			Bus:         d.bus,
+			DropBadFCS:  dc.DropBadFCS,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("dsc.channels[%s]: %v — skipped", dc.Serial, err))
+			d.dscReceivers = append(d.dscReceivers, nil)
+			d.dscSpecs = append(d.dscSpecs, spec)
+			continue
+		}
+		d.dscReceivers = append(d.dscReceivers, rcv)
+		d.dscSpecs = append(d.dscSpecs, spec)
+	}
+
+	// MDC1200 FFSK receivers — one per configured mdc1200.channels
+	// entry. Same construction shape as APRS / AIS above: per-entry
+	// validation in the receiver, failures surface as a startup
+	// warning and skip the entry (nil slot preserved for stable
+	// indexing).
+	for _, mc := range cfg.MDC1200.Channels {
+		spec := mdc1200Spec{serial: mc.Serial, freq: mc.FrequencyHz}
+		if mc.Serial == "" || mc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"mdc1200.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				mc.Serial, mc.FrequencyHz))
+			d.mdc1200Receivers = append(d.mdc1200Receivers, nil)
+			d.mdc1200Specs = append(d.mdc1200Specs, spec)
+			continue
+		}
+		rcv, err := mdc1200afsk.New(mdc1200afsk.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  mc.Serial,
+			Bus:         d.bus,
+			DropBadCRC:  mc.DropBadCRC,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("mdc1200.channels[%s]: %v — skipped", mc.Serial, err))
+			d.mdc1200Receivers = append(d.mdc1200Receivers, nil)
+			d.mdc1200Specs = append(d.mdc1200Specs, spec)
+			continue
+		}
+		d.mdc1200Receivers = append(d.mdc1200Receivers, rcv)
+		d.mdc1200Specs = append(d.mdc1200Specs, spec)
+	}
+
+	// ADS-B BEAST upstreams — one client per configured
+	// adsb.beast_upstreams entry. Each opens a TCP connection
+	// to a dump1090 / readsb BEAST output port, decodes the
+	// Mode-S frames, runs them through the CPR pair-tracker,
+	// and publishes KindAircraftReport. Validation failures
+	// surface as startup warnings.
+	for _, bc := range cfg.ADSB.BeastUpstreams {
+		if bc.Addr == "" {
+			d.addWarning(fmt.Sprintf(
+				"adsb.beast_upstreams: entry missing addr (name=%q) — skipped",
+				bc.Name))
+			continue
+		}
+		name := bc.Name
+		if name == "" {
+			name = bc.Addr
+		}
+		client, err := adsbbeast.New(adsbbeast.Options{
+			Addr:       bc.Addr,
+			Bus:        d.bus,
+			SourceName: name,
+			Log:        log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("adsb.beast_upstreams[%s]: %v — skipped", name, err))
+			continue
+		}
+		d.adsbBeastClients = append(d.adsbBeastClients, client)
+		d.adsbBeastNames = append(d.adsbBeastNames, name)
+	}
+
+	// ADS-B native PPM receivers — one per configured adsb.channels
+	// entry. Each pins an SDR to 1090 MHz and demodulates Mode-S
+	// straight off the air, publishing the same KindAircraftReport the
+	// BEAST clients do. Same construction shape as the AIS receivers.
+	for _, ac := range cfg.ADSB.Channels {
+		freq := ac.FrequencyHz
+		if freq == 0 {
+			freq = 1_090_000_000 // 1090 MHz default
+		}
+		spec := adsbPPMSpec{serial: ac.Serial, freq: freq}
+		if ac.Serial == "" {
+			d.addWarning("adsb.channels: entry missing serial — skipped")
+			d.adsbPPMReceivers = append(d.adsbPPMReceivers, nil)
+			d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
+			continue
+		}
+		rcv, err := adsbppm.New(adsbppm.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  ac.Serial,
+			Bus:         d.bus,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("adsb.channels[%s]: %v — skipped", ac.Serial, err))
+			d.adsbPPMReceivers = append(d.adsbPPMReceivers, nil)
+			d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
+			continue
+		}
+		d.adsbPPMReceivers = append(d.adsbPPMReceivers, rcv)
+		d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
+	}
+}
+
+// buildAPIServer constructs the optional HTTP API server (auth, CORS, TLS,
+// the diagnostics/spectrum/symbol/mixer/capture providers when IQ brokers
+// exist, and the embedded config-builder). Extracted verbatim from
+// NewDaemonWithPath.
+func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Logger) error {
+	// HTTP API — optional.
+	if cfg.API.HTTPAddr != "" {
+		authMode, ok := api.ParseAuthMode(cfg.API.Auth.Mode)
+		if !ok {
+			return fmt.Errorf("daemon: api.auth.mode: unrecognised value %q (expected auto / required / disabled)", cfg.API.Auth.Mode)
+		}
+		opts := api.ServerOptions{
+			Addr:           cfg.API.HTTPAddr,
+			Bus:            d.bus,
+			Engine:         d.engine,
+			Mutator:        d.engine,
+			Talkgroups:     d.talkgroups,
+			RIDs:           d.rids,
+			Systems:        d.systems,
+			Log:            log,
+			Version:        version,
+			BundleRoot:     cfg.Recordings.Dir,
+			Diagnostics:    d.newDiagCollector(),
+			VerboseErrors:  cfg.Diagnostics.VerboseErrors,
+			DisplayLoc:     d.displayLoc,
+			AllowMutations: cfg.API.AllowMutations,
+			Auth: api.AuthConfig{
+				Mode:            authMode,
+				Token:           cfg.API.Auth.Token,
+				TokenFile:       cfg.API.Auth.TokenFile,
+				TrustedNetworks: cfg.API.Auth.TrustedNetworks,
+			},
+			CORS: api.CORSConfig{
+				AllowedOrigins: cfg.API.CORS.AllowedOrigins,
+			},
+			AudioPublisher: d.audioPub,
+			TLSCert:        cfg.API.TLSCert,
+			TLSKey:         cfg.API.TLSKey,
+		}
+		if len(d.iqBrokers) > 0 {
+			opts.Spectrum = newSpectrumProvider(d.pool, d.iqBrokers, d.systems, log)
+			opts.Diag = newDiagProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
+			opts.Symbols = newSymbolProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
+			opts.Mixer = newMixerProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
+			opts.Capture = newCaptureProvider(d.pool, d.iqBrokers, log)
+		}
+		// Event-driven raw-IQ auto-recorder (baseband.auto_record). Constructed
+		// here so the API server can expose a manual trigger; subscribed to the
+		// bus now so it doesn't miss events before the run phase spawns Run.
+		if cfg.Baseband.AutoRecord.Enabled && d.controlSerial != "" {
+			if br := d.iqBrokers[d.controlSerial]; br != nil {
+				sysName, proto := primaryControlSystem(cfg)
+				// Lazy control-decoder accessor for the "ddc" tap (nil interface
+				// until the decoder is built, mirroring the same-carrier voice tap).
+				ddcTap := func() ddcVoiceTap {
+					if d.ccDecoder == nil {
+						return nil
+					}
+					return d.ccDecoder
+				}
+				d.iqAutoRec = newIQAutoRecorder(cfg.Baseband.AutoRecord, sysName, proto, d.controlSerial, br, ddcTap, log)
+				if d.iqAutoRec != nil {
+					d.iqAutoRecSub = d.bus.Subscribe()
+					opts.AutoRecord = autoRecordTrigger{rec: d.iqAutoRec}
+				}
+			} else {
+				log.Warn("daemon: baseband.auto_record enabled but no IQ broker for the control SDR; auto-record disabled",
+					"control_serial", d.controlSerial)
+			}
+		}
+		if d.bookmarks != nil {
+			opts.Bookmarks = bookmarkProvider{store: d.bookmarks}
+		}
+		if d.pagerLog != nil {
+			opts.Pager = pagerProvider{log: d.pagerLog}
+		}
+		if d.aprsLog != nil {
+			opts.APRS = aprsProvider{log: d.aprsLog}
+		}
+		if d.vesselLog != nil {
+			opts.AIS = aisProvider{log: d.vesselLog}
+		}
+		if d.dscLog != nil {
+			opts.DSC = dscProvider{log: d.dscLog}
+		}
+		if d.m17Log != nil {
+			opts.M17 = m17Provider{log: d.m17Log}
+		}
+		if d.loraLog != nil {
+			opts.LoRa = loraProvider{log: d.loraLog}
+		}
+		if d.aircraftLog != nil {
+			opts.ADSB = adsbProvider{log: d.aircraftLog}
+		}
+		if d.mdc1200Log != nil {
+			opts.MDC1200 = mdc1200Provider{log: d.mdc1200Log}
+		}
+		if d.db != nil {
+			opts.History = api.HistoryFromStorage(d.db)
+		}
+		if d.locationLog != nil {
+			opts.Locations = api.LocationsFromStorage(d.locationLog, d.displayLoc)
+		}
+		if d.affiliations != nil {
+			opts.Affiliations = affiliationProvider{d.affiliations}
+		}
+		if d.siteTracker != nil {
+			opts.Sites = sitesProvider{d.siteTracker}
+		}
+		if d.grantTracker != nil {
+			opts.Grants = grantsProvider{d.grantTracker}
+		}
+		if d.metrics != nil {
+			opts.MetricsHandler = d.metrics.Handler()
+		}
+		if d.retention != nil {
+			opts.Retention = d.retention
+		}
+		if d.toneout != nil {
+			opts.Tones = d.toneout
+		}
+		if d.pool != nil {
+			opts.Devices = d.pool
+		}
+		opts.Scanner = scannerCockpit{
+			cchunt:     d.cchuntSup,
+			conv:       d.convScan,
+			engine:     d.engine,
+			talkgroups: d.talkgroups,
+		}
+		// Live system-discovery ("hunt") manager: operator-triggered blind
+		// spectrum sweep that shares the radio via spare-SDR-else-borrow
+		// acquisition. Constructed whenever an IQ broker exists so a live hunt
+		// is possible; the REST/TUI/web cockpit drives it.
+		if d.pool != nil && len(d.iqBrokers) > 0 {
+			if mgr, err := hunt.NewManager(hunt.ManagerOptions{
+				Acquire:   d.buildHuntAcquirer(),
+				Bus:       d.bus,
+				Log:       log,
+				SurveyDir: huntSurveyDir(cfg.Storage.Path),
+			}); err != nil {
+				log.Warn("daemon: hunt manager not started", "err", err)
+			} else {
+				d.huntMgr = mgr
+				opts.Hunt = huntCockpit{mgr: mgr, cfgPath: d.cfgPath, rrAuth: radioreference.ResolveAuth(radioreference.Auth{
+					AppKey:   firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_KEY"), cfg.RadioReference.APIKey),
+					Username: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_USER"), cfg.RadioReference.Username),
+					Password: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_PASS"), cfg.RadioReference.Password),
+				})}
+			}
+		}
+		if d.player != nil || d.recorder != nil {
+			opts.Audio = audioCockpit{player: d.player, recorder: d.recorder}
+		}
+		if d.broadcast != nil {
+			opts.Broadcast = broadcastStatus{d.broadcast}
+		}
+		cfgCopy := cfg
+		opts.Runtime = &runtimeSnapshot{
+			cfg:     &cfgCopy,
+			version: version,
+			metrics: cfg.Metrics.Enabled,
+			daemon:  d,
+		}
+		// Live settings editing — only enabled when the daemon was
+		// started with a -config (otherwise there's no file to write
+		// back to).
+		if d.writer != nil {
+			// Pass the daemon itself as the writer (not the concrete
+			// d.writer) so a config hot-swap that re-points the writer is
+			// reflected by later settings edits.
+			opts.ConfigWriter = d
+			opts.SettingsApplier = newDaemonSettingsApplier(d, version)
+			opts.Importer = newDaemonImporter(d)
+		}
+		// Config hot-swap (reload/restart) from the web Config Builder.
+		// Wired unconditionally so a daemon started on built-in defaults
+		// can still load a freshly-created config file (restart mode
+		// re-execs with -config; reload mode installs the writer).
+		opts.ConfigActivator = d
+		// Embed the SPA when the build linked in real assets
+		// (see web/embed.go). HasAssets is false for fresh
+		// checkouts without `make web-build` — the launcher falls
+		// back to filesystem discovery in that case.
+		if gtweb.HasAssets() {
+			opts.WebAssets = gtweb.Assets()
+		}
+		// Offline signal-analysis API (the siglab web console talks to
+		// these routes). Enabled on the daemon too so an operator can
+		// analyze captures without spinning up a separate `siglab serve`.
+		// Mount the Signal Lab SPA at /siglab/ when it was bundled so the
+		// console is reachable from the main UI (and so the Crypto Lab's
+		// Signal Lab link resolves).
+		siglabOpts := api.SiglabOptions{Enabled: true}
+		if siglabweb.HasAssets() {
+			siglabOpts.Assets = siglabweb.Assets()
+		}
+		opts.Siglab = siglabOpts
+		// RF Scope — offline protocol-agnostic RF-analysis console. Wire the
+		// /api/v1/rfscope/* routes and, when the SPA was bundled, the console
+		// at /rfscope/ so it is reachable from the main UI in a new tab.
+		rfscopeOpts := api.RFScopeOptions{Enabled: true}
+		if rfscopeweb.HasAssets() {
+			rfscopeOpts.Assets = rfscopeweb.Assets()
+		}
+		opts.RFScope = rfscopeOpts
+		// Web Config Builder/Editor — link the editor SPA at /config/ and
+		// the /api/v1/config/* routes so the operator can edit config from
+		// the main web UI in a new tab. Saves are constrained to the live
+		// config's directory (or the standard discovery dirs when started
+		// without -config). RR credentials: env overrides config.
+		cbOpts := api.ConfigBuilderOptions{
+			Enabled: true,
+			RadioReference: radioreference.ResolveAuth(radioreference.Auth{
+				AppKey:   firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_KEY"), cfg.RadioReference.APIKey),
+				Username: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_USER"), cfg.RadioReference.Username),
+				Password: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_PASS"), cfg.RadioReference.Password),
+			}),
+		}
+		if d.cfgPath != "" {
+			cbOpts.ConfigDir = filepath.Dir(d.cfgPath)
+		}
+		if configbuilderweb.HasAssets() {
+			cbOpts.Assets = configbuilderweb.Assets()
+		}
+		opts.ConfigBuilder = cbOpts
+		srv, err := api.NewServer(opts)
+		if err != nil {
+			return fmt.Errorf("daemon: http api: %w", err)
+		}
+		d.httpAPI = srv
 	}
 	return nil
 }
