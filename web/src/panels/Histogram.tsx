@@ -19,6 +19,7 @@ import {
   type SpectrumDevice,
 } from "../api/spectrum";
 import { openSymbolStream, type SymbolFrame } from "../api/symbols";
+import { computeQuality, WINDOW_SYMBOLS } from "../lib/signalQuality";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 import { useActiveCallsPoll } from "../hooks/useActiveCallsPoll";
@@ -40,9 +41,6 @@ ChartJS.register(
 // single-dominant bin. For C4FM the soft samples also give a per-level
 // mean/spread and an MER-like SNR estimate (a "level meter").
 
-const WINDOW_SYMBOLS = 4000;
-const CARDINALITY = 4;
-
 const PROTOS: { value: string; label: string }[] = [
   { value: "p25-c4fm", label: "P25 C4FM" },
   { value: "p25-cqpsk", label: "P25 CQPSK" },
@@ -50,57 +48,6 @@ const PROTOS: { value: string; label: string }[] = [
 ];
 
 type ConnState = "connecting" | "open" | "closed";
-
-interface Quality {
-  pct: number[]; // % per dibit bin
-  total: number;
-  balanceDev: number; // max |bin% − ideal%|
-  snrDb: number | null; // MER-like estimate (C4FM soft only)
-  levels: { mean: number; std: number }[] | null;
-}
-
-function computeQuality(dibits: number[], soft: number[]): Quality {
-  const cnt = new Array(CARDINALITY).fill(0);
-  for (const d of dibits) if (d >= 0 && d < CARDINALITY) cnt[d]++;
-  const total = dibits.length;
-  const pct = cnt.map((c) => (total > 0 ? (100 * c) / total : 0));
-  const ideal = 100 / CARDINALITY;
-  const balanceDev = pct.reduce((m, p) => Math.max(m, Math.abs(p - ideal)), 0);
-
-  // Per-level soft stats + MER-like SNR, when the soft track is aligned.
-  let snrDb: number | null = null;
-  let levels: { mean: number; std: number }[] | null = null;
-  if (soft.length > 0 && soft.length === dibits.length) {
-    const sum = new Array(CARDINALITY).fill(0);
-    const sumsq = new Array(CARDINALITY).fill(0);
-    for (let i = 0; i < dibits.length; i++) {
-      const d = dibits[i];
-      if (d < 0 || d >= CARDINALITY) continue;
-      sum[d] += soft[i];
-      sumsq[d] += soft[i] * soft[i];
-    }
-    levels = [];
-    let grandSum = 0;
-    let noise = 0;
-    let signal = 0;
-    for (let d = 0; d < CARDINALITY; d++) {
-      const c = cnt[d];
-      const mean = c > 0 ? sum[d] / c : 0;
-      const varr = c > 0 ? Math.max(0, sumsq[d] / c - mean * mean) : 0;
-      levels.push({ mean, std: Math.sqrt(varr) });
-      grandSum += sum[d];
-      noise += c * varr;
-    }
-    const mu = total > 0 ? grandSum / total : 0;
-    for (let d = 0; d < CARDINALITY; d++) {
-      signal += cnt[d] * (levels[d].mean - mu) * (levels[d].mean - mu);
-    }
-    if (total > 0 && noise > 0) {
-      snrDb = 10 * Math.log10(signal / noise);
-    }
-  }
-  return { pct, total, balanceDev, snrDb, levels };
-}
 
 export function Histogram() {
   const cfg = useShared(selectClientConfig);
