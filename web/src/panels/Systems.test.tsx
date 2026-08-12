@@ -9,7 +9,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { ReactElement } from "react";
 
 vi.mock("../api/client", () => ({
-  api: { systems: vi.fn(), scanner: vi.fn() },
+  api: { systems: vi.fn(), scanner: vi.fn(), sites: vi.fn().mockResolvedValue([]) },
 }));
 
 import { api } from "../api/client";

@@ -4,7 +4,9 @@ import { api } from "../api/client";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { PageHeader } from "../components/ui/PageHeader";
+import { Section } from "../components/ui/Section";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { PositionMap, type MapPoint } from "../components/PositionMap";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { formatIdNumber } from "../lib/idFormat";
 import type {
@@ -13,6 +15,7 @@ import type {
   DMRBandPlanLearnedDTO,
   EventDTO,
   NeighborDTO,
+  SiteDTO,
   SystemDTO,
   SystemHuntStatusDTO,
 } from "../api/types";
@@ -119,15 +122,17 @@ export function Systems() {
   const events = useShared((s) => s.events);
   const idBase = useShared((s) => s.idBase);
   const [selected, setSelected] = useState<SystemDTO | null>(null);
+  const [sites, setSites] = useState<SiteDTO[]>([]);
 
   // Poll the scanner snapshot alongside systems so the detail modal can
   // translate empty WACN/SystemID/RFSS/Site into a hunt-state hint even
-  // when the Scanner panel isn't mounted.
+  // when the Scanner panel isn't mounted. Sites ride along for the map.
   const { stale, lastUpdated } = useDataPoll({
     fetcher: async () => {
-      const [sysRes, scanRes] = await Promise.allSettled([
+      const [sysRes, scanRes, siteRes] = await Promise.allSettled([
         api.systems(cfg),
         api.scanner(cfg),
+        api.sites(cfg),
       ]);
       if (sysRes.status === "rejected" && scanRes.status === "rejected") {
         throw sysRes.reason;
@@ -135,15 +140,38 @@ export function Systems() {
       return {
         systems: sysRes.status === "fulfilled" ? sysRes.value : null,
         scanner: scanRes.status === "fulfilled" ? scanRes.value : null,
+        sites: siteRes.status === "fulfilled" ? siteRes.value : null,
       };
     },
     onData: (d) => {
       if (d.systems) setSystems(d.systems);
       if (d.scanner) setScanner(d.scanner);
+      if (d.sites) setSites(d.sites);
     },
     intervalMs: POLL_INTERVAL_MS,
     resetKey: cfg.baseURL,
   });
+
+  // Sites with a known position become map markers, one per (system, rfss,
+  // site). Sites without coordinates (most, until configured or RR-imported)
+  // are simply omitted, so the map hides entirely when none are located.
+  const sitePoints = useMemo<MapPoint[]>(() => {
+    return sites
+      .filter(
+        (s) =>
+          typeof s.latitude === "number" &&
+          typeof s.longitude === "number" &&
+          (s.latitude !== 0 || s.longitude !== 0),
+      )
+      .map((s) => ({
+        id: `${s.system}-${s.rfss_id}-${s.site_id}`,
+        latitude: s.latitude as number,
+        longitude: s.longitude as number,
+        kind: "site" as const,
+        label: s.name || `RFSS ${s.rfss_id} / Site ${s.site_id}`,
+        detail: `${s.system}${s.control_channel_hz ? ` · ${(s.control_channel_hz / 1e6).toFixed(4)} MHz` : ""}`,
+      }));
+  }, [sites]);
 
   const columns: Column<SystemDTO>[] = useMemo(
     () => [
@@ -222,6 +250,16 @@ export function Systems() {
           </>
         }
       />
+
+      {sitePoints.length > 0 && (
+        <Section
+          id="site-map"
+          title={`Site map (${sitePoints.length})`}
+          description="Located trunked sites (from config or RadioReference import). Sites without coordinates are listed below but not mapped."
+        >
+          <PositionMap points={sitePoints} heightPx={320} />
+        </Section>
+      )}
 
       <DataTable
         rows={systems}

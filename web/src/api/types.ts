@@ -648,6 +648,20 @@ export interface EventDTO {
   payload?: unknown;
 }
 
+// SiteDTO is one trunked-system site from GET /api/v1/sites — a fixed RF site
+// (not a moving radio). latitude/longitude are the operator-configured or
+// RadioReference-imported position; absent when the site has no known location
+// (the console maps only the ones that do).
+export interface SiteDTO {
+  system: string;
+  rfss_id: number;
+  site_id: number;
+  name?: string;
+  control_channel_hz?: number;
+  latitude?: number;
+  longitude?: number;
+}
+
 // LocationFix is one over-the-air position report from a subscriber radio
 // (DMR LRRP / Motorola Unit GPS / L3Harris Talker GPS), returned by
 // GET /api/v1/locations. This is a moving radio's own position — the LRRP
