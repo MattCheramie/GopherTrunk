@@ -2,7 +2,6 @@ package composer
 
 import (
 	"context"
-	"math"
 	"sync/atomic"
 	"time"
 	"unicode"
@@ -45,16 +44,7 @@ const dmrVoiceChannelSelectHz = 6250.0
 // ±min(bw, dmrVoiceChannelSelectHz) before the FM discriminator. Factored out
 // so the selectivity is unit-testable.
 func newDMRVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
-	chanBW := float64(bw)
-	decim := int(math.Round(iqHz)) / dmrVoiceIntermediateHz
-	filterAtUnity := false
-	if decim <= 1 {
-		filterAtUnity = true
-		if chanBW > dmrVoiceChannelSelectHz {
-			chanBW = dmrVoiceChannelSelectHz
-		}
-	}
-	return newDecimatingFIR(iqHz, dmrVoiceIntermediateHz, chanBW, filterAtUnity)
+	return newVoiceFrontEnd(iqHz, bw, dmrVoiceIntermediateHz, dmrVoiceChannelSelectHz)
 }
 
 // aliasPrintable reports whether a reassembled talker alias looks like a

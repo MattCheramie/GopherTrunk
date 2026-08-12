@@ -51,19 +51,7 @@ const p25p1ChannelSelectHz = 6250.0
 // discriminator so adjacent channels can't leak in. Factored out so the
 // selectivity is unit-testable without the full IQ → LDU pipeline.
 func newP25P1VoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
-	chanBW := float64(bw)
-	// decim mirrors newDecimatingFIR's own computation: decim==1 is the
-	// pass-through (wideband tap / pre-channelised) case that historically
-	// skipped filtering entirely.
-	decim := int(math.Round(iqHz)) / p25p1VoiceIntermediateHz
-	filterAtUnity := false
-	if decim <= 1 {
-		filterAtUnity = true
-		if chanBW > p25p1ChannelSelectHz {
-			chanBW = p25p1ChannelSelectHz
-		}
-	}
-	return newDecimatingFIR(iqHz, p25p1VoiceIntermediateHz, chanBW, filterAtUnity)
+	return newVoiceFrontEnd(iqHz, bw, p25p1VoiceIntermediateHz, p25p1ChannelSelectHz)
 }
 
 // resolveP25Phase1DemodMode parses the system-level

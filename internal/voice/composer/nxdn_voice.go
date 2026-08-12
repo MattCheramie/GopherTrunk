@@ -2,7 +2,6 @@ package composer
 
 import (
 	"context"
-	"math"
 	"sync/atomic"
 	"time"
 
@@ -35,16 +34,7 @@ const nxdnVoiceDeviationHz = 1800.0
 // intermediate rate) it channel-selects to ±min(bw, nxdnChannelSelectHz)
 // before the receiver.
 func newNXDNVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
-	chanBW := float64(bw)
-	decim := int(math.Round(iqHz)) / nxdnVoiceIntermediateHz
-	filterAtUnity := false
-	if decim <= 1 {
-		filterAtUnity = true
-		if chanBW > nxdnChannelSelectHz {
-			chanBW = nxdnChannelSelectHz
-		}
-	}
-	return newDecimatingFIR(iqHz, nxdnVoiceIntermediateHz, chanBW, filterAtUnity)
+	return newVoiceFrontEnd(iqHz, bw, nxdnVoiceIntermediateHz, nxdnChannelSelectHz)
 }
 
 // runNXDNVoiceChain consumes IQ for one NXDN voice call: it decimates

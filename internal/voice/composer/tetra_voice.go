@@ -2,7 +2,6 @@ package composer
 
 import (
 	"context"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,16 +30,7 @@ const tetraVoiceChannelSelectHz = 12_500.0
 // already at the intermediate rate (decim==1) is band-limited to a single
 // 25 kHz channel; a higher-rate tap is decimated with the anti-alias FIR.
 func newTETRAVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
-	chanBW := float64(bw)
-	decim := int(math.Round(iqHz)) / tetraVoiceIntermediateHz
-	filterAtUnity := false
-	if decim <= 1 {
-		filterAtUnity = true
-		if chanBW > tetraVoiceChannelSelectHz {
-			chanBW = tetraVoiceChannelSelectHz
-		}
-	}
-	return newDecimatingFIR(iqHz, tetraVoiceIntermediateHz, chanBW, filterAtUnity)
+	return newVoiceFrontEnd(iqHz, bw, tetraVoiceIntermediateHz, tetraVoiceChannelSelectHz)
 }
 
 // runTETRAVoiceChain consumes IQ for one TETRA traffic-channel call on a SOLO tap
