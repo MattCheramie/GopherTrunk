@@ -211,6 +211,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolLTR:       newLTRPipeline,
 	trunking.ProtocolMPT1327:   newMPT1327Pipeline,
 	trunking.ProtocolTETRA:     newTETRAPipeline,
+	trunking.ProtocolTETRADMO:  newTETRADMOPipeline,
 	trunking.ProtocolYSF:       newYSFPipeline,
 	trunking.ProtocolDStar:     newDStarPipeline,
 	trunking.ProtocolDMRTier2:  newDMRTier2Pipeline,
