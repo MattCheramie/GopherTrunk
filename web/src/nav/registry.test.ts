@@ -10,11 +10,17 @@ import {
 } from "./registry";
 import { useShared } from "../store/shared";
 
-// Every route mounted by App.tsx must have a registry entry, otherwise
-// it becomes unreachable by navigation (the pre-overhaul bug, where six
-// DSP panels were orphaned). Keep this list in sync with the <Route>
-// table in App.tsx; the dynamic /plots/:tab, the "/" redirect, and the
-// "*" catch-all are intentionally excluded.
+// Every top-level route mounted by App.tsx must have a registry entry,
+// otherwise it becomes unreachable by navigation (the pre-overhaul bug,
+// where six DSP panels were orphaned). Keep this list in sync with the
+// <Route> table in App.tsx; the dynamic /plots/:tab, the "/" redirect,
+// and the "*" catch-all are intentionally excluded — and so are the six
+// per-signal scope routes (/constellation, /symbols, /eye, /mixer,
+// /tuning, /histogram), which are now tabs *inside* the Plots hub rather
+// than standalone nav items. Their routes still resolve for deep links;
+// their reachability is guarded by the "Plots hub carries the scope
+// search terms" test below.
+const SCOPE_PATHS = ["/constellation", "/symbols", "/eye", "/mixer", "/tuning", "/histogram"];
 const ROUTED_PATHS = [
   "/dashboard",
   "/active",
@@ -22,12 +28,6 @@ const ROUTED_PATHS = [
   "/hunt",
   "/spectrum",
   "/plots",
-  "/constellation",
-  "/symbols",
-  "/eye",
-  "/mixer",
-  "/tuning",
-  "/histogram",
   "/bookmarks",
   "/systems",
   "/talkgroups",
@@ -61,14 +61,18 @@ describe("nav registry", () => {
     }
   });
 
-  it("exposes exactly four mobile bottom-nav primaries", () => {
+  it("exposes exactly four mobile bottom-nav primaries — the two core workflows included", () => {
+    // Scan AND Hunt are the primary trunking mission, so both sit in the
+    // 4-slot bottom nav. Settings moved out (still reachable via the
+    // sidebar, drawer, and ⌘K palette).
     expect(PRIMARY_ITEMS).toHaveLength(4);
     expect(PRIMARY_ITEMS.map((i) => i.to)).toEqual([
       "/dashboard",
       "/active",
       "/scanner",
-      "/settings",
+      "/hunt",
     ]);
+    expect(PRIMARY_ITEMS.map((i) => i.to)).not.toContain("/settings");
   });
 
   it("has no duplicate route targets", () => {
@@ -85,17 +89,20 @@ describe("nav registry", () => {
     );
   });
 
-  it("includes the previously-orphaned DSP panels", () => {
+  it("consolidates the per-signal scopes under the Plots hub (not standalone nav items)", () => {
+    // The six DSP scopes are tabs inside Plots now, so they must NOT appear
+    // as their own top-level nav items…
     const registered = new Set(NAV_ITEMS.map((i) => i.to));
-    for (const p of [
-      "/constellation",
-      "/symbols",
-      "/eye",
-      "/mixer",
-      "/tuning",
-      "/histogram",
-    ]) {
-      expect(registered).toContain(p);
+    for (const p of SCOPE_PATHS) {
+      expect(registered, `${p} should not be a standalone nav item`).not.toContain(p);
+    }
+    // …but the Plots hub must still be reachable and carry each scope's
+    // search terms so ⌘K keeps finding them (no discoverability regression).
+    const plots = NAV_ITEMS.find((i) => i.to === "/plots");
+    expect(plots, "Plots hub missing from nav").toBeDefined();
+    const kw = new Set(plots?.keywords ?? []);
+    for (const term of ["constellation", "symbol", "eye", "mixer", "tuning", "histogram"]) {
+      expect(kw, `Plots keywords missing "${term}"`).toContain(term);
     }
   });
 

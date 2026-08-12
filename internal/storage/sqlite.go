@@ -391,6 +391,10 @@ func (d *DB) ensureCallLogColumns() error {
 		{"evm_pct", `ALTER TABLE call_log ADD COLUMN evm_pct REAL`},
 		{"snr_db", `ALTER TABLE call_log ADD COLUMN snr_db REAL`},
 		{"individual", `ALTER TABLE call_log ADD COLUMN individual INTEGER NOT NULL DEFAULT 0`},
+		// Absolute path of the finished recording (WAV), stamped from the
+		// recorder's KindCallComplete event. NULL until (and unless) the call
+		// was recorded, so a non-recording daemon leaves it unset.
+		{"recording_path", `ALTER TABLE call_log ADD COLUMN recording_path TEXT`},
 	}
 	for _, a := range adds {
 		if have[a.name] {

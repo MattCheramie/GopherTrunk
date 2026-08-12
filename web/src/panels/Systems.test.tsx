@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  render as rtlRender,
+  screen,
+  waitFor,
+  fireEvent,
+} from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import type { ReactElement } from "react";
 
 vi.mock("../api/client", () => ({
   api: { systems: vi.fn(), scanner: vi.fn() },
@@ -8,6 +15,12 @@ vi.mock("../api/client", () => ({
 import { api } from "../api/client";
 import { useShared } from "../store/shared";
 import { Systems } from "./Systems";
+
+// The Systems detail modal contains react-router <Link>s (cross-links to
+// filtered call history), so every render needs a Router context.
+function render(ui: ReactElement) {
+  return rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 function resetStore() {
   useShared.setState({

@@ -477,6 +477,20 @@ export interface CallRow {
   duration_ms?: number;
   end_reason?: string;
   talkgroup_alpha?: string;
+  // Resolved alias/name of the source radio (RID), from the operator RID
+  // catalogue + live-decoded talker aliases; absent when unresolved.
+  source_alpha?: string;
+  // Mean received channel power in dBFS (front-end level, not calibrated
+  // RSSI/SNR); absent when unmeasured.
+  signal_dbfs?: number;
+  // Demod quality: RMS error-vector magnitude (%) and estimated symbol SNR
+  // (dB). Absent when unmeasured (only P25 Phase 1 chains measure them).
+  // These are the true decode-quality figures, unlike signal_dbfs.
+  evm_pct?: number;
+  snr_db?: number;
+  // True when a finished recording exists for this call. Play it via
+  // GET /api/v1/calls/{id}/audio — the filesystem path is never exposed.
+  has_recording?: boolean;
 }
 
 // CallEncryptionEvent is the SSE payload published as `call.encryption`
@@ -632,6 +646,22 @@ export interface EventDTO {
   kind: string;
   timestamp: string;
   payload?: unknown;
+}
+
+// LocationFix is one over-the-air position report from a subscriber radio
+// (DMR LRRP / Motorola Unit GPS / L3Harris Talker GPS), returned by
+// GET /api/v1/locations. This is a moving radio's own position — the LRRP
+// map layer — not a fixed trunked-site location.
+export interface LocationFix {
+  system: string;
+  protocol: string;
+  radio_id: number;
+  talkgroup: number;
+  latitude: number;
+  longitude: number;
+  speed_knots: number;
+  heading_deg: number;
+  reported_at: string;
 }
 
 export interface ToneAlertDTO {

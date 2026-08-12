@@ -95,6 +95,15 @@ func (c *CallLog) Run(ctx context.Context) error {
 						c.log.Warn("calllog: update end failed", "err", err, "device", ce.DeviceSerial)
 					}
 				}
+			case events.KindCallComplete:
+				// The recorder finished writing the WAV; stamp its path onto the
+				// row so History can offer playback. Fired after CallEnd, keyed by
+				// the same (device_serial, started_at).
+				if cc, ok := ev.Payload.(trunking.CallComplete); ok {
+					if err := c.recordComplete(cc); err != nil {
+						c.log.Warn("calllog: update recording path failed", "err", err, "device", cc.DeviceSerial)
+					}
+				}
 			}
 		}
 	}
@@ -211,6 +220,24 @@ UPDATE call_log
 	return err
 }
 
+// recordComplete stamps the finished recording's path onto the matching call
+// row. Keyed by (device_serial, started_at) exactly like recordEnd. The
+// COALESCE(NULLIF(...)) update keeps an empty path from clobbering a value
+// already written, mirroring the never-downgrade discipline elsewhere in this
+// file. A CallComplete with no matching row (a recording without a persisted
+// call, e.g. replay tooling) updates nothing and is not an error.
+func (c *CallLog) recordComplete(cc trunking.CallComplete) error {
+	if cc.AudioPath == "" {
+		return nil
+	}
+	const q = `
+UPDATE call_log
+   SET recording_path = COALESCE(NULLIF(?, ''), recording_path)
+ WHERE device_serial = ? AND started_at = ?`
+	_, err := c.db.sql.Exec(q, cc.AudioPath, cc.DeviceSerial, cc.StartedAt.UnixNano())
+	return err
+}
+
 // HistoryFilter narrows a History query.
 type HistoryFilter struct {
 	System    string
@@ -262,6 +289,10 @@ type CallRow struct {
 	// figures to compare against another decoder, unlike SignalDbFS.
 	EVMPct *float64 `json:"evm_pct,omitempty"`
 	SNRDb  *float64 `json:"snr_db,omitempty"`
+	// HasRecording is true when a finished recording is on disk for this call
+	// (recording_path is set). The path itself is deliberately not serialised —
+	// the UI plays via GET /api/v1/calls/{id}/audio, not a filesystem path.
+	HasRecording bool `json:"has_recording,omitempty"`
 }
 
 // History queries the call_log with the supplied filter, newest-first.
@@ -269,7 +300,8 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	q := `SELECT id, system, protocol, group_id, source_id, frequency_hz,
 	             encrypted, algorithm_id, key_id, emergency, data_call, individual, timeslot, priority,
 	             device_serial, started_at, ended_at, duration_ms,
-	             end_reason, talkgroup_alpha, source_alpha, signal_dbfs, evm_pct, snr_db
+	             end_reason, talkgroup_alpha, source_alpha, signal_dbfs, evm_pct, snr_db,
+	             recording_path
 	      FROM call_log WHERE 1=1`
 	args := []any{}
 	if f.System != "" {
@@ -312,16 +344,18 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		var endNs sql.NullInt64
 		var durMs sql.NullInt64
 		var reason sql.NullString
-		var alpha, srcAlpha sql.NullString
+		var alpha, srcAlpha, recPath sql.NullString
 		var sig, evm, snr sql.NullFloat64
 		var enc, emer, data, indiv, algID, keyID, slot, prio int
 		if err := rows.Scan(
 			&r.ID, &r.System, &r.Protocol, &r.GroupID, &r.SourceID, &r.FrequencyHz,
 			&enc, &algID, &keyID, &emer, &data, &indiv, &slot, &prio, &r.DeviceSerial,
 			&startNs, &endNs, &durMs, &reason, &alpha, &srcAlpha, &sig, &evm, &snr,
+			&recPath,
 		); err != nil {
 			return nil, err
 		}
+		r.HasRecording = recPath.Valid && recPath.String != ""
 		r.Encrypted = enc != 0
 		r.AlgorithmID = uint8(algID)
 		r.KeyID = uint16(keyID)
@@ -361,6 +395,26 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// RecordingPathByID returns the on-disk recording path for one call row, or
+// "" when the call has no recording (or the id is unknown). The audio endpoint
+// resolves a call id to a file this way so the filesystem path is never exposed
+// to the client.
+func (d *DB) RecordingPathByID(ctx context.Context, id int64) (string, error) {
+	var p sql.NullString
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT recording_path FROM call_log WHERE id = ?`, id).Scan(&p)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("storage: recording path for call %d: %w", id, err)
+	}
+	if !p.Valid {
+		return "", nil
+	}
+	return p.String, nil
 }
 
 // RIDSummary is one aggregated per-radio (source_id) row derived from the

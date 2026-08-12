@@ -35,7 +35,7 @@ describe("AppShell navigation", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens the drawer from More and exposes every panel — including the previously-orphaned DSP panels", async () => {
+  it("opens the drawer from More and exposes every registry panel", async () => {
     const user = userEvent.setup();
     renderShell();
 
@@ -61,9 +61,11 @@ describe("AppShell navigation", () => {
         `drawer missing ${item.label}`,
       ).toBeInTheDocument();
     }
-    // The headline regression: these were unreachable everywhere before.
-    expect(within(drawer).getByText("Constellation")).toBeInTheDocument();
-    expect(within(drawer).getByText("Histogram")).toBeInTheDocument();
+    // The per-signal scopes (Constellation, Eye, Histogram, …) are tabs
+    // inside the Plots hub now, not standalone drawer items — so the
+    // headline reachability guarantee is that the Plots hub is present.
+    expect(within(drawer).getByText("Plots")).toBeInTheDocument();
+    expect(within(drawer).queryByText("Constellation")).toBeNull();
   });
 
   it("closes the drawer on Escape", async () => {
@@ -87,10 +89,13 @@ describe("AppShell navigation", () => {
     });
 
     const input = within(palette).getByRole("textbox");
+    // "histog" no longer matches a standalone Histogram item — the scope is a
+    // Plots tab now, and its search term is carried on the Plots hub's keywords,
+    // so the palette resolves it to Plots.
     await user.type(input, "histog");
     const options = within(palette).getAllByRole("option");
     expect(options).toHaveLength(1);
-    expect(options[0]).toHaveTextContent("Histogram");
+    expect(options[0]).toHaveTextContent("Plots");
   });
 
   it("reflects the live connection status in the top bar", () => {

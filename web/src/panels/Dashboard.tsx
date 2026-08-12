@@ -1,46 +1,59 @@
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Badge } from "../components/ui/Badge";
+import { RIDLink } from "../components/RIDLink";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
+import type { EventDTO } from "../api/types";
 
-// Dashboard: top-line counts + a peek at the last few events. The
-// fuller dashboard (with charts) is a follow-up PR; this one
-// proves the live-update wiring works end-to-end.
+// Dashboard — the operations landing. Trunking scanners lead with the two
+// core tasks (scan / hunt) and a live "who's talking now" roster, not a
+// spectrum or a wall of stats. This mirrors that: prominent Scan/Hunt entry
+// points, the active-call roster as the hero, top-line health, and a
+// recent-activity feed that actually says what happened.
 export function Dashboard() {
   const cfg = useShared(selectClientConfig);
+  const navigate = useNavigate();
   const setHealth = useShared((s) => s.setHealth);
   const setActiveCalls = useShared((s) => s.setActiveCalls);
   const setDevices = useShared((s) => s.setDevices);
-  const setAudio = useShared((s) => s.setAudio);
+  const setSystems = useShared((s) => s.setSystems);
 
   const health = useShared((s) => s.health);
   const activeCalls = useShared((s) => s.activeCalls);
   const devices = useShared((s) => s.devices);
-  const audio = useShared((s) => s.audio);
+  const systems = useShared((s) => s.systems);
   const events = useShared((s) => s.events);
   const wsStatus = useShared((s) => s.wsStatus);
 
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(t);
+  }, []);
+
   useDataPoll({
     fetcher: async () => {
-      const [h, calls, devs, aud] = await Promise.allSettled([
+      const [h, calls, devs, sys] = await Promise.allSettled([
         api.health(cfg),
         api.activeCalls(cfg),
         api.devices(cfg),
-        api.audio(cfg),
+        api.systems(cfg),
       ]);
       return {
         health: h.status === "fulfilled" ? h.value : null,
         calls: calls.status === "fulfilled" ? calls.value : null,
         devices: devs.status === "fulfilled" ? devs.value : null,
-        audio: aud.status === "fulfilled" ? aud.value : null,
+        systems: sys.status === "fulfilled" ? sys.value : null,
       };
     },
     onData: (d) => {
       if (d.health) setHealth(d.health);
       if (d.calls) setActiveCalls(d.calls);
       if (d.devices) setDevices(d.devices);
-      if (d.audio) setAudio(d.audio);
+      if (d.systems) setSystems(d.systems);
     },
     intervalMs: 3_000,
     resetKey: cfg.baseURL,
@@ -49,7 +62,7 @@ export function Dashboard() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Dashboard"
+        title="Operations"
         actions={
           <Badge
             tone={
@@ -69,19 +82,26 @@ export function Dashboard() {
         }
       />
 
+      {/* The two core trunking workflows, front and center. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <TaskCard
+          to="/scanner"
+          icon="≋"
+          title="Scan known systems"
+          desc="Follow talkgroups on your configured trunked and conventional systems."
+        />
+        <TaskCard
+          to="/hunt"
+          icon="🔍"
+          title="Hunt for new systems"
+          desc="Discover, identify and map unknown control channels and sites."
+        />
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Active calls" value={activeCalls.length} />
+        <StatCard label="Systems" value={systems.length} />
         <StatCard label="Devices attached" value={devices.length} />
-        <StatCard
-          label="Audio backend"
-          value={
-            audio
-              ? audio.backend_enabled
-                ? `${(audio.sample_rate / 1000).toFixed(1)} kHz`
-                : "off"
-              : "—"
-          }
-        />
         <StatCard
           label="Daemon"
           value={health?.status ?? "unknown"}
@@ -89,8 +109,69 @@ export function Dashboard() {
         />
       </div>
 
+      {/* Hero: who's talking right now. */}
       <section className="panel p-4">
-        <h3 className="panel-title mb-2">Recent events</h3>
+        <div className="flex items-baseline justify-between mb-2">
+          <h3 className="panel-title">Active calls</h3>
+          <Link to="/active" className="text-xs text-accent hover:underline">
+            Open Active →
+          </Link>
+        </div>
+        {activeCalls.length === 0 ? (
+          <p className="text-muted text-sm">
+            No calls right now. Grants appear here the moment the daemon
+            allocates a voice device.
+          </p>
+        ) : (
+          <ul className="divide-y divide-panel">
+            {activeCalls.slice(0, 8).map((c) => (
+              <li
+                key={`${c.device_serial}-${c.grant.system}-${c.grant.group_id}-${c.started_at}`}
+                className="py-2 flex items-center gap-3 cursor-pointer hover:bg-panel/40 -mx-2 px-2 rounded"
+                onClick={() => navigate("/active")}
+              >
+                <span className="font-mono text-accent shrink-0">
+                  TG {c.grant.group_id}
+                </span>
+                <span className="text-sm truncate">
+                  {c.talkgroup?.alpha_tag ?? c.grant.system}
+                </span>
+                {c.grant.source_id ? (
+                  <span className="text-xs text-muted shrink-0">
+                    from <RIDLink rid={c.grant.source_id} className="text-accent hover:underline" />
+                  </span>
+                ) : null}
+                <span className="ml-auto flex items-center gap-1 shrink-0">
+                  {c.grant.encrypted && <span className="pill-warn">enc</span>}
+                  {c.grant.emergency && <span className="pill-err">emerg</span>}
+                  {c.following === false && (
+                    <span className="pill" title="Announced on the control channel; no voice tuner is following it">
+                      observed
+                    </span>
+                  )}
+                  <span className="font-mono text-xs tabular-nums text-muted">
+                    {elapsed(c.started_at, now)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {activeCalls.length > 8 && (
+          <p className="text-xs text-muted mt-2">
+            +{activeCalls.length - 8} more — open Active for the full list.
+          </p>
+        )}
+      </section>
+
+      {/* Recent activity — actually says what happened, not just the kind. */}
+      <section className="panel p-4">
+        <div className="flex items-baseline justify-between mb-2">
+          <h3 className="panel-title">Recent activity</h3>
+          <Link to="/cc" className="text-xs text-accent hover:underline">
+            Open CC Activity →
+          </Link>
+        </div>
         {events.length === 0 ? (
           <p className="text-muted text-sm">
             No events yet. The stream connects automatically.
@@ -98,46 +179,72 @@ export function Dashboard() {
         ) : (
           <ul className="space-y-1 text-xs font-mono max-h-72 overflow-auto">
             {events
-              .slice(-50)
+              .slice(-40)
               .reverse()
               .map((ev, i) => (
                 <li key={`${ev.timestamp}-${i}`} className="flex gap-3">
                   <span className="text-muted shrink-0">
                     {ev.timestamp.replace("T", " ").replace(/\..*$/, "")}
                   </span>
-                  <span className="text-accent shrink-0">{ev.kind}</span>
+                  <span className="text-accent shrink-0 w-28 truncate">
+                    {ev.kind}
+                  </span>
+                  <span className="truncate text-fg/80">
+                    {summarizeEvent(ev)}
+                  </span>
                 </li>
               ))}
           </ul>
         )}
       </section>
-
-      <section className="panel p-4">
-        <h3 className="panel-title mb-2">Active calls</h3>
-        {activeCalls.length === 0 ? (
-          <p className="text-muted text-sm">No calls right now.</p>
-        ) : (
-          <ul className="divide-y divide-panel">
-            {activeCalls.map((c) => (
-              <li
-                key={`${c.device_serial}-${c.started_at}`}
-                className="py-2 flex items-baseline gap-3"
-              >
-                <span className="font-mono text-accent">
-                  TG {c.grant.group_id}
-                </span>
-                <span className="text-sm">
-                  {c.talkgroup?.alpha_tag ?? c.grant.system}
-                </span>
-                <span className="ml-auto text-xs text-muted">
-                  {c.device_serial}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
+  );
+}
+
+// summarizeEvent renders a compact one-line summary from an event payload —
+// TG / source radio / system / frequency for the common trunking kinds — so
+// the feed says what happened instead of only naming the event kind. Reads
+// defensively (payload is typed unknown on the wire).
+function summarizeEvent(ev: EventDTO): string {
+  const p = ev.payload;
+  if (!p || typeof p !== "object") return "";
+  const o = p as Record<string, unknown>;
+  const parts: string[] = [];
+  const tg = o.group_id ?? o.talkgroup;
+  if (typeof tg === "number") parts.push(`TG ${tg}`);
+  const src = o.source_id ?? o.source ?? o.radio_id;
+  if (typeof src === "number" && src !== 0) parts.push(`← ${src}`);
+  if (typeof o.system === "string" && o.system) parts.push(o.system);
+  const freq = o.frequency_hz ?? o.freq_hz ?? o.frequency;
+  if (typeof freq === "number" && freq > 0)
+    parts.push(`${(freq / 1e6).toFixed(4)} MHz`);
+  return parts.join(" · ");
+}
+
+function TaskCard({
+  to,
+  icon,
+  title,
+  desc,
+}: {
+  to: string;
+  icon: string;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="panel p-4 flex items-start gap-3 hover:bg-panel/50 transition-colors"
+    >
+      <span className="text-2xl leading-none shrink-0" aria-hidden>
+        {icon}
+      </span>
+      <span>
+        <span className="block font-semibold">{title}</span>
+        <span className="block text-sm text-muted">{desc}</span>
+      </span>
+    </Link>
   );
 }
 
@@ -153,13 +260,18 @@ function StatCard({
   return (
     <div className="panel p-4">
       <p className="panel-title">{label}</p>
-      <p
-        className={
-          ok === false ? "stat-value text-err" : "stat-value"
-        }
-      >
+      <p className={ok === false ? "stat-value text-err" : "stat-value"}>
         {value}
       </p>
     </div>
   );
+}
+
+function elapsed(startedAt: string, now: number): string {
+  const startMs = Date.parse(startedAt);
+  if (Number.isNaN(startMs)) return "—";
+  const totalSeconds = Math.max(0, Math.floor((now - startMs) / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }

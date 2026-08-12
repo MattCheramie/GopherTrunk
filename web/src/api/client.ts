@@ -8,6 +8,7 @@ import type {
   ActiveCallDTO,
   AudioStatusDTO,
   CallRow,
+  LocationFix,
   ConfigListResponse,
   DeviceDTO,
   Health,
@@ -165,6 +166,12 @@ export const api = {
       `/api/v1/rids${qs ? `?${qs}` : ""}`,
     ).then((r) => r.rids);
   },
+  // Fetch one merged RID row by id. Used to open the /rids/:id deep link
+  // (e.g. a source-radio click in CC Activity / call history) even when the
+  // radio isn't in the currently-filtered list. Returns the RIDDTO directly
+  // (the endpoint is unwrapped, unlike the list route).
+  rid: (c: ClientConfig, id: number) =>
+    request<RIDDTO>(c, "GET", `/api/v1/rids/${id}`),
   ridHistory: (
     c: ClientConfig,
     id: number,
@@ -185,6 +192,18 @@ export const api = {
       "GET",
       "/api/v1/calls/active",
     ).then((r) => r.calls),
+  // Recent subscriber-radio position fixes (DMR LRRP / unit GPS) for the
+  // unit-location map. Optionally scoped by radio_id client-side.
+  locations: (c: ClientConfig, opts: { limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.limit != null) q.set("limit", String(opts.limit));
+    const qs = q.toString();
+    return request<{ locations: LocationFix[] }>(
+      c,
+      "GET",
+      `/api/v1/locations${qs ? `?${qs}` : ""}`,
+    ).then((r) => r.locations ?? []);
+  },
   history: (
     c: ClientConfig,
     opts: { limit?: number; system?: string; group_id?: number } = {},

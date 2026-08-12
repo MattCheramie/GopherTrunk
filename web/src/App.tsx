@@ -196,6 +196,7 @@ export function App() {
           <Route path="/systems" element={<Systems />} />
           <Route path="/talkgroups" element={<Talkgroups />} />
           <Route path="/rids" element={<RadioIDs />} />
+          <Route path="/rids/:id" element={<RadioIDs />} />
           <Route path="/history" element={<History />} />
           <Route path="/events" element={<Events />} />
           <Route path="/cc" element={<CCActivity />} />

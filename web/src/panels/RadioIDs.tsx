@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { PageHeader } from "../components/ui/PageHeader";
+import { Section } from "../components/ui/Section";
 import { Select } from "../components/ui/Select";
-import type { CallRow, RIDDTO } from "../api/types";
+import { PositionMap, type MapPoint } from "../components/PositionMap";
+import type { CallRow, LocationFix, RIDDTO } from "../api/types";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -25,6 +28,11 @@ export function RadioIDs() {
   const notify = useShared((s) => s.notify);
   const rids = useShared((s) => s.rids);
   const setRIDs = useShared((s) => s.setRIDs);
+  // Deep-link support: /rids/:id opens the detail modal for that radio,
+  // so a source-radio click in CC Activity / call history lands on the
+  // radio (issue: the link previously fell through to the dashboard).
+  const { id: routeId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const [selected, setSelected] = useState<RIDDTO | null>(null);
   const [history, setHistory] = useState<CallRow[]>([]);
@@ -34,6 +42,8 @@ export function RadioIDs() {
   // a large multi-system RID roster stays legible.
   const [system, setSystem] = useState("");
   const [systemNames, setSystemNames] = useState<string[]>([]);
+  // Recent subscriber-radio position fixes (DMR LRRP / unit GPS) for the map.
+  const [locations, setLocations] = useState<LocationFix[]>([]);
 
   // Poll the merged list, scoped to the selected system.
   useEffect(() => {
@@ -72,6 +82,52 @@ export function RadioIDs() {
     };
   }, [cfg]);
 
+  // Poll recent position fixes for the unit-location map. Empty (no LRRP/GPS
+  // decoded, or the subsystem is off) simply hides the map.
+  useEffect(() => {
+    let cancel = false;
+    const refresh = async () => {
+      try {
+        const fixes = await api.locations(cfg, { limit: 500 });
+        if (!cancel) setLocations(fixes);
+      } catch {
+        // Non-fatal — keep the previous fixes.
+      }
+    };
+    refresh();
+    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
+    return () => {
+      cancel = true;
+      window.clearInterval(t);
+    };
+  }, [cfg]);
+
+  // Map the newest fix per radio to a marker, labelled by alias when the RID
+  // roster resolves one. Keeping only the latest fix per radio avoids stacking
+  // a trail of markers on one unit.
+  const mapPoints = useMemo<MapPoint[]>(() => {
+    const aliasByID = new Map<number, string>();
+    for (const r of rids) if (r.alias) aliasByID.set(r.id, r.alias);
+    const latest = new Map<number, LocationFix>();
+    for (const f of locations) {
+      if (!Number.isFinite(f.latitude) || !Number.isFinite(f.longitude)) continue;
+      const prev = latest.get(f.radio_id);
+      if (!prev || f.reported_at > prev.reported_at) latest.set(f.radio_id, f);
+    }
+    return [...latest.values()].map((f) => {
+      const alias = aliasByID.get(f.radio_id);
+      const speed = f.speed_knots > 0 ? ` · ${f.speed_knots.toFixed(0)} kn` : "";
+      return {
+        id: String(f.radio_id),
+        latitude: f.latitude,
+        longitude: f.longitude,
+        kind: "unit" as const,
+        label: alias ? `${alias} (${f.radio_id})` : `RID ${f.radio_id}`,
+        detail: `${f.system}${f.talkgroup ? ` · TG ${f.talkgroup}` : ""}${speed}`,
+      };
+    });
+  }, [locations, rids]);
+
   // Dropdown options: configured systems ∪ systems seen in the current rows ∪
   // the active selection (so a discovered-only or just-selected system never
   // vanishes from the list).
@@ -82,6 +138,42 @@ export function RadioIDs() {
     if (system) set.add(system);
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [systemNames, rids, system]);
+
+  // Open the detail modal for the /rids/:id route param. Prefer a row
+  // already in the loaded list; otherwise fetch the single RID directly so a
+  // deep link (or a radio filtered out by the current system scope) still
+  // opens. An unknown id drops back to the list URL rather than stranding the
+  // user on a dead link.
+  useEffect(() => {
+    if (!routeId) return;
+    const idNum = Number(routeId);
+    if (!Number.isFinite(idNum)) return;
+    if (selected?.id === idNum) return;
+    const inList = rids.find((r) => r.id === idNum);
+    if (inList) {
+      setSelected(inList);
+      return;
+    }
+    let cancel = false;
+    api
+      .rid(cfg, idNum)
+      .then((r) => {
+        if (!cancel) setSelected(r);
+      })
+      .catch(() => {
+        if (!cancel) navigate("/rids", { replace: true });
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [routeId, rids, cfg, selected, navigate]);
+
+  // Close the detail modal, restoring the /rids list URL when the modal was
+  // opened via a /rids/:id deep link.
+  function closeDetail() {
+    setSelected(null);
+    if (routeId) navigate("/rids");
+  }
 
   // Fetch per-RID call history when the detail modal opens.
   useEffect(() => {
@@ -209,6 +301,16 @@ export function RadioIDs() {
         }
       />
 
+      {mapPoints.length > 0 && (
+        <Section
+          id="rid-map"
+          title={`Unit locations (${mapPoints.length})`}
+          description="Latest GPS / LRRP position per radio. Secondary to the roster — collapse if not needed."
+        >
+          <PositionMap points={mapPoints} heightPx={320} />
+        </Section>
+      )}
+
       <DataTable
         rows={rids}
         columns={columns}
@@ -247,7 +349,12 @@ export function RadioIDs() {
             ))}
           </Select>
         }
-        onRowClick={(r) => setSelected(r)}
+        onRowClick={(r) => {
+          // Open immediately (works regardless of the route) and reflect the
+          // selection in the URL so it is shareable / back-button friendly.
+          setSelected(r);
+          navigate(`/rids/${r.id}`);
+        }}
         emptyMessage={
           rids.length === 0
             ? system
@@ -265,7 +372,7 @@ export function RadioIDs() {
             `RID ${selected.id}`
           }
           subtitle={`RID ${selected.id}${selected.configured ? "" : " · live only"}`}
-          onClose={() => setSelected(null)}
+          onClose={closeDetail}
         >
           <DetailField label="Description" value={selected.description} />
           <div className="grid grid-cols-2 gap-3">

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>(
@@ -11,8 +11,10 @@ vi.mock("../api/client", async () => {
     ...actual,
     api: {
       rids: vi.fn(),
+      rid: vi.fn(),
       ridHistory: vi.fn(),
       systems: vi.fn().mockResolvedValue([]),
+      locations: vi.fn().mockResolvedValue([]),
     },
   };
 });
@@ -46,6 +48,19 @@ function renderPanel() {
   return render(
     <MemoryRouter>
       <RadioIDs />
+    </MemoryRouter>,
+  );
+}
+
+// renderAt mounts RadioIDs under both /rids and /rids/:id (mirroring App.tsx)
+// starting at the given URL, so the deep-link behaviour can be exercised.
+function renderAt(path: string) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/rids" element={<RadioIDs />} />
+        <Route path="/rids/:id" element={<RadioIDs />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -196,6 +211,44 @@ describe("RadioIDs panel", () => {
     // Modal renders the alpha tag of one of the call rows.
     await waitFor(() => {
       expect(screen.getByText(/FIRE-DISP/)).toBeInTheDocument();
+    });
+  });
+
+  // Regression: a /rids/:id deep link (e.g. a source-radio click in CC
+  // Activity or call history) must open that radio's detail modal. The route
+  // used to be unregistered, so such links fell through to the dashboard.
+  it("opens the detail modal from a /rids/:id deep link (row already loaded)", async () => {
+    const rows: RIDDTO[] = [{ id: 777, alias: "DEEPLINK", configured: true }];
+    // Seed the store so the row is present on the first render (the effect
+    // resolves it from the list rather than racing the poll into a fetch).
+    useShared.setState({ rids: rows });
+    vi.mocked(api.rids).mockResolvedValue(rows);
+    vi.mocked(api.ridHistory).mockResolvedValue([]);
+    renderAt("/rids/777");
+
+    // The modal subtitle "RID 777" appears without any click.
+    await waitFor(() => {
+      expect(screen.getByText(/RID 777/)).toBeInTheDocument();
+    });
+    // It resolved from the loaded list, so no single-RID fetch was needed.
+    expect(api.rid).not.toHaveBeenCalled();
+  });
+
+  it("fetches a /rids/:id deep link that is not in the current list", async () => {
+    vi.mocked(api.rids).mockResolvedValue([]); // filtered/empty list
+    vi.mocked(api.ridHistory).mockResolvedValue([]);
+    vi.mocked(api.rid).mockResolvedValue({
+      id: 999,
+      alias: "OFFLIST",
+      configured: false,
+    });
+    renderAt("/rids/999");
+
+    await waitFor(() => {
+      expect(api.rid).toHaveBeenCalledWith(expect.anything(), 999);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("OFFLIST")).toBeInTheDocument();
     });
   });
 });

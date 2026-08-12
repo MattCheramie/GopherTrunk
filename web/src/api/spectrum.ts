@@ -38,6 +38,22 @@ export function defaultSymbolDevice(
   return list.find((d) => d.role === "control") ?? list[0];
 }
 
+// initialDeviceSerial picks which SDR a signal-plot panel selects on first
+// load. When a `?device=<serial>` deep link names a device that is actually
+// in the pool, that wins — this is how a "signal detail" link from a live
+// call or a scanner hit lands the scope on the right SDR instead of the
+// enumeration default. Otherwise it falls back to the panel's normal default
+// (`fallback`, e.g. defaultSymbolDevice or list[0]). Returns null for an
+// empty pool.
+export function initialDeviceSerial(
+  list: SpectrumDevice[],
+  wanted: string | null | undefined,
+  fallback: (l: SpectrumDevice[]) => SpectrumDevice | null,
+): string | null {
+  if (wanted && list.some((d) => d.serial === wanted)) return wanted;
+  return fallback(list)?.serial ?? null;
+}
+
 // parentSerial resolves a wideband virtual voice-tap serial back to its
 // parent wideband device. The wbvoice manager registers taps as
 // "wb:<parent>:tap-N" (internal/sdr/wbvoice), and active calls on a wideband
