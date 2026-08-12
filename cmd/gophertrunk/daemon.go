@@ -1647,127 +1647,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 
 	d.buildPeripheralReceivers(cfg, log)
 
-	// Storage / call log / retention — optional.
-	if cfg.Storage.Path != "" {
-		db, err := storage.Open(cfg.Storage.Path)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: storage: %w", err)
-		}
-		d.db = db
-		cl, err := storage.NewCallLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: call log: %w", err)
-		}
-		// Resolve the source radio's alias/name onto each call record so call
-		// history shows "who was talking", not just the RID number. Prefer the
-		// operator-curated RID catalogue (rid_alias_file); fall back to the
-		// most-recently-decoded over-the-air talker alias.
-		if d.rids != nil || d.affiliations != nil {
-			cl.SetRIDResolver(func(id uint32) string {
-				if d.rids != nil {
-					if r := d.rids.Lookup(id); r != nil && r.Alias != "" {
-						return r.Alias
-					}
-				}
-				if d.affiliations != nil {
-					if u, ok := d.affiliations.Lookup(id); ok {
-						return u.TalkerAlias
-					}
-				}
-				return ""
-			})
-		}
-		d.callLog = cl
-
-		ll, err := storage.NewLocationLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: location log: %w", err)
-		}
-		d.locationLog = ll
-
-		bs, err := storage.NewBookmarkStore(db, d.bus)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: bookmarks: %w", err)
-		}
-		d.bookmarks = bs
-
-		pl, err := storage.NewPagerLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: pager log: %w", err)
-		}
-		d.pagerLog = pl
-
-		al, err := storage.NewAPRSLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: aprs log: %w", err)
-		}
-		d.aprsLog = al
-
-		vl, err := storage.NewVesselLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: vessel log: %w", err)
-		}
-		d.vesselLog = vl
-
-		dl, err := storage.NewDSCLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: dsc log: %w", err)
-		}
-		d.dscLog = dl
-
-		ml, err := storage.NewM17Log(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: m17 log: %w", err)
-		}
-		d.m17Log = ml
-
-		lrl, err := storage.NewLoRaLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: lora log: %w", err)
-		}
-		d.loraLog = lrl
-
-		acl, err := storage.NewAircraftLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: aircraft log: %w", err)
-		}
-		d.aircraftLog = acl
-
-		mdl, err := storage.NewMDC1200Log(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: mdc1200 log: %w", err)
-		}
-		d.mdc1200Log = mdl
-
-		if cfg.Retention.CallLogDays > 0 || cfg.Retention.LogDays > 0 || cfg.Retention.FilesDays > 0 {
-			interval, err := retentionInterval(cfg.Retention.Interval)
-			if err != nil {
-				return nil, fmt.Errorf("daemon: retention.interval: %w", err)
-			}
-			r, err := storage.NewRetention(storage.RetentionOptions{
-				DB:            db,
-				FilesRoot:     cfg.Recordings.Dir,
-				CallRowMaxAge: time.Duration(cfg.Retention.CallLogDays) * 24 * time.Hour,
-				FilesMaxAge:   time.Duration(cfg.Retention.FilesDays) * 24 * time.Hour,
-				Interval:      interval,
-				Log:           log,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("daemon: retention: %w", err)
-			}
-			d.retention = r
-		}
+	if err := d.buildStorage(cfg, log); err != nil {
+		return nil, err
 	}
 
 	if err := d.buildAPIServer(cfg, version, log); err != nil {
@@ -2870,6 +2751,135 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 			return fmt.Errorf("daemon: http api: %w", err)
 		}
 		d.httpAPI = srv
+	}
+	return nil
+}
+
+// buildStorage opens the optional SQLite store and wires the call log (with
+// RID-alias resolution), the per-domain event logs, the bookmark store and the
+// retention manager. Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildStorage(cfg config.Config, log *slog.Logger) error {
+	// Storage / call log / retention — optional.
+	if cfg.Storage.Path != "" {
+		db, err := storage.Open(cfg.Storage.Path)
+		if err != nil {
+			return fmt.Errorf("daemon: storage: %w", err)
+		}
+		d.db = db
+		cl, err := storage.NewCallLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: call log: %w", err)
+		}
+		// Resolve the source radio's alias/name onto each call record so call
+		// history shows "who was talking", not just the RID number. Prefer the
+		// operator-curated RID catalogue (rid_alias_file); fall back to the
+		// most-recently-decoded over-the-air talker alias.
+		if d.rids != nil || d.affiliations != nil {
+			cl.SetRIDResolver(func(id uint32) string {
+				if d.rids != nil {
+					if r := d.rids.Lookup(id); r != nil && r.Alias != "" {
+						return r.Alias
+					}
+				}
+				if d.affiliations != nil {
+					if u, ok := d.affiliations.Lookup(id); ok {
+						return u.TalkerAlias
+					}
+				}
+				return ""
+			})
+		}
+		d.callLog = cl
+
+		ll, err := storage.NewLocationLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: location log: %w", err)
+		}
+		d.locationLog = ll
+
+		bs, err := storage.NewBookmarkStore(db, d.bus)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: bookmarks: %w", err)
+		}
+		d.bookmarks = bs
+
+		pl, err := storage.NewPagerLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: pager log: %w", err)
+		}
+		d.pagerLog = pl
+
+		al, err := storage.NewAPRSLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: aprs log: %w", err)
+		}
+		d.aprsLog = al
+
+		vl, err := storage.NewVesselLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: vessel log: %w", err)
+		}
+		d.vesselLog = vl
+
+		dl, err := storage.NewDSCLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: dsc log: %w", err)
+		}
+		d.dscLog = dl
+
+		ml, err := storage.NewM17Log(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: m17 log: %w", err)
+		}
+		d.m17Log = ml
+
+		lrl, err := storage.NewLoRaLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: lora log: %w", err)
+		}
+		d.loraLog = lrl
+
+		acl, err := storage.NewAircraftLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: aircraft log: %w", err)
+		}
+		d.aircraftLog = acl
+
+		mdl, err := storage.NewMDC1200Log(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: mdc1200 log: %w", err)
+		}
+		d.mdc1200Log = mdl
+
+		if cfg.Retention.CallLogDays > 0 || cfg.Retention.LogDays > 0 || cfg.Retention.FilesDays > 0 {
+			interval, err := retentionInterval(cfg.Retention.Interval)
+			if err != nil {
+				return fmt.Errorf("daemon: retention.interval: %w", err)
+			}
+			r, err := storage.NewRetention(storage.RetentionOptions{
+				DB:            db,
+				FilesRoot:     cfg.Recordings.Dir,
+				CallRowMaxAge: time.Duration(cfg.Retention.CallLogDays) * 24 * time.Hour,
+				FilesMaxAge:   time.Duration(cfg.Retention.FilesDays) * 24 * time.Hour,
+				Interval:      interval,
+				Log:           log,
+			})
+			if err != nil {
+				return fmt.Errorf("daemon: retention: %w", err)
+			}
+			d.retention = r
+		}
 	}
 	return nil
 }
