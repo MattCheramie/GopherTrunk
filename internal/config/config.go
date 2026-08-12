@@ -1969,4 +1969,3 @@ func (c *Config) resolvePaths(base string) {
 		c.Trunking.Systems[i].RIDAliasFile = resolve(c.Trunking.Systems[i].RIDAliasFile)
 	}
 }
-

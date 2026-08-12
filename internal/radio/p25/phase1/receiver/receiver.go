@@ -917,4 +917,3 @@ func (r *Receiver) Reset() {
 	// next sample it processes will produce one slightly-wrong
 	// derivative, which the matched filter smooths out.
 }
-

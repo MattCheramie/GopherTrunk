@@ -136,4 +136,3 @@ func (v *VesselLog) Recent(limit int) ([]AISMessage, error) {
 	}
 	return out, rows.Err()
 }
-

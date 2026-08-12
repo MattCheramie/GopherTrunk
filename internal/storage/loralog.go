@@ -126,4 +126,3 @@ func (l *LoRaLog) Recent(limit int) ([]LoRaFrame, error) {
 	}
 	return out, rows.Err()
 }
-

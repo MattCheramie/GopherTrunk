@@ -29,7 +29,7 @@ type eventLog[T any] struct {
 	runDone   chan struct{}
 	closeOnce sync.Once
 	kind      events.Kind
-	name      string       // log prefix, e.g. "aprslog"
+	name      string // log prefix, e.g. "aprslog"
 	insert    func(T) error
 }
 

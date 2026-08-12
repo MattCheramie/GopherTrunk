@@ -98,4 +98,3 @@ func (m *M17Log) Recent(limit int) ([]M17LinkSetup, error) {
 	}
 	return out, rows.Err()
 }
-

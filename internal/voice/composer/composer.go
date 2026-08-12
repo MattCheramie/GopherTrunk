@@ -462,9 +462,9 @@ const (
 	// MPT 1327, and EDACS unless it is digital ProVoice), which all decode
 	// through runFMChain.
 	voiceKindFM
-	voiceKindDMR   // dmr-tier1/2/3
-	voiceKindP25P1 // p25
-	voiceKindP25P2 // p25-phase2
+	voiceKindDMR      // dmr-tier1/2/3
+	voiceKindP25P1    // p25
+	voiceKindP25P2    // p25-phase2
 	voiceKindTETRA    // tetra
 	voiceKindTETRADMO // tetra-dmo (Direct Mode)
 	voiceKindNXDN     // nxdn

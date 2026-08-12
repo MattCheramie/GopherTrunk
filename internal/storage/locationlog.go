@@ -89,4 +89,3 @@ func (l *LocationLog) Recent(limit int) ([]LocationRow, error) {
 	}
 	return out, rows.Err()
 }
-
