@@ -366,7 +366,8 @@ func DefaultVocoderForProtocol() map[string]string {
 		// things an NXDN voice capture confirms; see voice_ambe.go.)
 		"nxdn":  "ambe2-dmr",   // NXDN VCH — AMBE+2 3600x2450 (EHR)
 		"dpmr":  "ambe2",       // dPMR Mode 3 (digital)
-		"tetra": "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
+		"tetra":     "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
+		"tetra-dmo": "tetra-acelp", // TETRA DMO (Direct Mode) — same TCH/S ACELP speech frames
 	}
 }
 
