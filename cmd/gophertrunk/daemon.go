@@ -1265,79 +1265,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		})
 	}
 
-	// Build the system -> configured key-ID set the engine uses to exempt
-	// decryptable calls from the encrypted-call policy (issue #711). The
-	// raw key material stays in config; only the presence of a matching
-	// KeyID matters for the policy decision.
-	configuredKeysBySystem := func(systems []config.SystemConfig) map[string]map[uint16]bool {
-		var out map[string]map[uint16]bool
-		for _, s := range systems {
-			if len(s.EncryptionKeys) == 0 {
-				continue
-			}
-			ids := make(map[uint16]bool, len(s.EncryptionKeys))
-			for _, k := range s.EncryptionKeys {
-				ids[k.KeyID] = true
-			}
-			if out == nil {
-				out = make(map[string]map[uint16]bool)
-			}
-			out[s.Name] = ids
-		}
-		return out
+	if err := d.buildEngine(cfg, log); err != nil {
+		return nil, err
 	}
-
-	// Build the per-system encrypted-call policy maps the engine resolves
-	// by grant System name (trunking.systems[].encrypted_calls). A system
-	// with no override is simply absent and defaults to follow / the engine
-	// default window. Issue #711.
-	encryptedModesBySystem := func(systems []config.SystemConfig) map[string]trunking.EncryptedMode {
-		var out map[string]trunking.EncryptedMode
-		for _, s := range systems {
-			m := trunking.ParseEncryptedMode(s.EncryptedCalls.Mode)
-			if m == trunking.EncryptedFollow {
-				continue // default — no entry needed
-			}
-			if out == nil {
-				out = make(map[string]trunking.EncryptedMode)
-			}
-			out[s.Name] = m
-		}
-		return out
-	}
-	encryptedFollowsBySystem := func(systems []config.SystemConfig) map[string]time.Duration {
-		var out map[string]time.Duration
-		for _, s := range systems {
-			if s.EncryptedCalls.MetadataFollowMs <= 0 {
-				continue // use engine default
-			}
-			if out == nil {
-				out = make(map[string]time.Duration)
-			}
-			out[s.Name] = time.Duration(s.EncryptedCalls.MetadataFollowMs) * time.Millisecond
-		}
-		return out
-	}
-
-	engine, err := trunking.NewEngine(trunking.EngineOptions{
-		Bus:              d.bus,
-		Log:              log,
-		VoicePool:        d.voicePool,
-		Talkgroups:       d.talkgroups,
-		ScanMode:         trunking.ParseScanMode(cfg.Scanner.ScanMode),
-		CallTimeout:      time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
-		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
-		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
-		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
-		// Same per-transmission grouping the voice composer uses (below): lets the
-		// engine roll a TETRA recording on a talker change so each over is
-		// attributed to its own source.
-		SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("daemon: engine: %w", err)
-	}
-	d.engine = engine
 
 	// Recorder is optional; needs a target directory.
 	if cfg.Recordings.Dir != "" {
@@ -1429,175 +1359,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	}
 	d.displayLoc = dispLoc
 
-	// Outbound call-streaming manager — optional. Subscribes to the
-	// bus at construction so calls completed before Run starts are
-	// not lost. Built only when at least one feed is enabled.
-	{
-		bcastRate := int(cfg.Recordings.SampleRate)
-		if bcastRate == 0 {
-			bcastRate = 8000
-		}
-		mgr, err := buildBroadcastManager(cfg.Broadcast, cfg.Recordings.Normalize, bcastRate, d.bus, dispLoc, log)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: broadcast: %w", err)
-		}
-		if mgr != nil {
-			d.broadcast = mgr
-			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
-		}
+	if err := d.buildOutboundFeeds(cfg, log, dispLoc); err != nil {
+		return nil, err
 	}
 
-	// Push grant-webhook sinks — optional. Each POSTs one JSON object per
-	// decoded control-channel grant (the push form of GET /api/v1/grants,
-	// issue #915 / #268). Subscribes to the bus at construction so grants
-	// decoded before Run starts are not lost. Built only when at least one
-	// feed is enabled.
-	{
-		hooks, err := buildGrantWebhooks(cfg.Broadcast, d.bus, dispLoc, log)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: grant webhook: %w", err)
-		}
-		if len(hooks) > 0 {
-			d.grantHooks = hooks
-			log.Info("grant webhook sinks enabled", "count", len(hooks))
-		}
+	if err := d.buildLogsTrackersAndSinks(cfg, log, dispLoc); err != nil {
+		return nil, err
 	}
-
-	// Decoded-message log — optional. Subscribes to the bus and writes
-	// a human-readable text log of every trunking event.
-	if cfg.Log.MessageLog.Enabled && cfg.Log.MessageLog.Path != "" {
-		ml, err := gtlog.NewMessageLog(gtlog.MessageLogOptions{
-			Bus:       d.bus,
-			Path:      cfg.Log.MessageLog.Path,
-			MaxSizeMB: cfg.Log.MessageLog.MaxSizeMB,
-			Loc:       dispLoc,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: message log: %w", err)
-		}
-		d.messageLog = ml
-	}
-
-	// Power log — optional. Subscribes to the bus and writes a
-	// decode-activity-gated, per-channel IQ-power log (low-power windows
-	// only by default; every active window when all_windows is set).
-	if cfg.Log.PowerLog.Enabled && cfg.Log.PowerLog.Path != "" {
-		pl, err := gtlog.NewPowerLog(gtlog.PowerLogOptions{
-			Bus:        d.bus,
-			Path:       cfg.Log.PowerLog.Path,
-			MaxSizeMB:  cfg.Log.PowerLog.MaxSizeMB,
-			AllWindows: cfg.Log.PowerLog.AllWindows,
-			Loc:        dispLoc,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: power log: %w", err)
-		}
-		d.powerLog = pl
-	}
-
-	// Event log — optional. Subscribes to the bus and writes every event as
-	// one JSON line (JSONL/NDJSON), using the same wire envelope as the SSE/WS
-	// streams so a recorded session matches what the web UI consumes. Captures
-	// ALL event kinds, so it's the artifact to hand to support when a decode
-	// looks wrong but there's no raw IQ to replay.
-	if cfg.Log.EventLog.Enabled && cfg.Log.EventLog.Path != "" {
-		el, err := gtlog.NewEventLog(gtlog.EventLogOptions{
-			Bus:       d.bus,
-			Path:      cfg.Log.EventLog.Path,
-			MaxSizeMB: cfg.Log.EventLog.MaxSizeMB,
-			Encode: func(ev events.Event) ([]byte, error) {
-				return json.Marshal(api.EventToDTO(ev))
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: event log: %w", err)
-		}
-		d.eventLog = el
-	}
-
-	// Affiliation tracker — always on. Subscribes to the bus and
-	// maintains the protocol-agnostic unit-activity table surfaced at
-	// GET /api/v1/affiliations.
-	{
-		at, err := trunking.NewAffiliationTracker(trunking.AffiliationTrackerOptions{Bus: d.bus})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: affiliation tracker: %w", err)
-		}
-		d.affiliations = at
-	}
-
-	// Site tracker — always on. Subscribes to the bus and accumulates
-	// the P25 sites discovered from the control channel, surfaced at
-	// GET /api/v1/sites.
-	{
-		st, err := trunking.NewSiteTracker(trunking.SiteTrackerOptions{Bus: d.bus})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: site tracker: %w", err)
-		}
-		d.siteTracker = st
-	}
-
-	// Grant tracker — always on. Subscribes to the bus and retains a
-	// bounded, most-recent-first log of decoded control-channel grants,
-	// surfaced at GET /api/v1/grants (the pollable form of the KindGrant
-	// SSE stream, issue #915).
-	{
-		gt, err := trunking.NewGrantTracker(trunking.GrantTrackerOptions{Bus: d.bus})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: grant tracker: %w", err)
-		}
-		d.grantTracker = gt
-	}
-
-	// Tone-out detector — optional. Built before the composer so it can
-	// share the composer's PCM sink via fanoutSink.
-	if len(cfg.ToneOut.Profiles) > 0 {
-		profiles, err := toneProfilesFromConfig(cfg.ToneOut.Profiles)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: tone-out: %w", err)
-		}
-		det, err := toneout.New(toneout.Options{
-			Bus:        d.bus,
-			Profiles:   profiles,
-			SampleRate: cfg.Recordings.SampleRate,
-			Log:        log,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: tone-out: %w", err)
-		}
-		d.toneout = det
-	}
-
-	// Live audio player — optional. Independent of the composer; if
-	// enabled, we feed it as one fan-out arm alongside the recorder.
-	// Defaults to disabled so headless servers stay quiet.
-	playerSampleRate := cfg.Audio.SampleRate
-	if playerSampleRate == 0 {
-		playerSampleRate = cfg.Recordings.SampleRate
-	}
-	pl, err := player.New(player.Config{
-		Enabled:    cfg.Audio.Enabled,
-		Device:     cfg.Audio.Device,
-		SampleRate: playerSampleRate,
-		BufferMs:   cfg.Audio.BufferMs,
-		Volume:     cfg.Audio.Volume,
-		Muted:      cfg.Audio.Muted,
-	}, log)
-	if err != nil {
-		return nil, fmt.Errorf("daemon: player: %w", err)
-	}
-	d.player = pl
-
-	// Audio publisher — fans decoded PCM out to gRPC StreamAudio
-	// subscribers. Constructed unconditionally so the gRPC server
-	// can register the RPC; if no composer is wired downstream
-	// the publisher just sits idle (no producers, no consumers
-	// matter). Run is spawned by Daemon.Run.
-	audioPub, err := api.NewAudioPublisher(d.bus, log)
-	if err != nil {
-		return nil, fmt.Errorf("daemon: audio publisher: %w", err)
-	}
-	d.audioPub = audioPub
 
 	// Composer is wired when we have a Voice device pool to source IQ
 	// from + a voice decoder to feed PCM into. Without an SDR pool there's
@@ -2799,6 +2567,268 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 // zero values are left zero here and backfilled from
 // mbe.DefaultEnhancerConfig downstream (WithDefaults), so an operator who
 // only sets `enabled: true` gets the full default chain.
+
+// buildLogsTrackersAndSinks constructs the optional message/power/event logs,
+// the always-on affiliation/site/grant trackers, and the tone-out / live-player /
+// audio-publisher PCM sinks. Extracted verbatim from NewDaemonWithPath so the
+// constructor reads as a sequence of subsystem builders.
+func (d *Daemon) buildLogsTrackersAndSinks(cfg config.Config, log *slog.Logger, dispLoc *time.Location) error {
+	// Decoded-message log — optional. Subscribes to the bus and writes
+	// a human-readable text log of every trunking event.
+	if cfg.Log.MessageLog.Enabled && cfg.Log.MessageLog.Path != "" {
+		ml, err := gtlog.NewMessageLog(gtlog.MessageLogOptions{
+			Bus:       d.bus,
+			Path:      cfg.Log.MessageLog.Path,
+			MaxSizeMB: cfg.Log.MessageLog.MaxSizeMB,
+			Loc:       dispLoc,
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: message log: %w", err)
+		}
+		d.messageLog = ml
+	}
+
+	// Power log — optional. Subscribes to the bus and writes a
+	// decode-activity-gated, per-channel IQ-power log (low-power windows
+	// only by default; every active window when all_windows is set).
+	if cfg.Log.PowerLog.Enabled && cfg.Log.PowerLog.Path != "" {
+		pl, err := gtlog.NewPowerLog(gtlog.PowerLogOptions{
+			Bus:        d.bus,
+			Path:       cfg.Log.PowerLog.Path,
+			MaxSizeMB:  cfg.Log.PowerLog.MaxSizeMB,
+			AllWindows: cfg.Log.PowerLog.AllWindows,
+			Loc:        dispLoc,
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: power log: %w", err)
+		}
+		d.powerLog = pl
+	}
+
+	// Event log — optional. Subscribes to the bus and writes every event as
+	// one JSON line (JSONL/NDJSON), using the same wire envelope as the SSE/WS
+	// streams so a recorded session matches what the web UI consumes. Captures
+	// ALL event kinds, so it's the artifact to hand to support when a decode
+	// looks wrong but there's no raw IQ to replay.
+	if cfg.Log.EventLog.Enabled && cfg.Log.EventLog.Path != "" {
+		el, err := gtlog.NewEventLog(gtlog.EventLogOptions{
+			Bus:       d.bus,
+			Path:      cfg.Log.EventLog.Path,
+			MaxSizeMB: cfg.Log.EventLog.MaxSizeMB,
+			Encode: func(ev events.Event) ([]byte, error) {
+				return json.Marshal(api.EventToDTO(ev))
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: event log: %w", err)
+		}
+		d.eventLog = el
+	}
+
+	// Affiliation tracker — always on. Subscribes to the bus and
+	// maintains the protocol-agnostic unit-activity table surfaced at
+	// GET /api/v1/affiliations.
+	{
+		at, err := trunking.NewAffiliationTracker(trunking.AffiliationTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return fmt.Errorf("daemon: affiliation tracker: %w", err)
+		}
+		d.affiliations = at
+	}
+
+	// Site tracker — always on. Subscribes to the bus and accumulates
+	// the P25 sites discovered from the control channel, surfaced at
+	// GET /api/v1/sites.
+	{
+		st, err := trunking.NewSiteTracker(trunking.SiteTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return fmt.Errorf("daemon: site tracker: %w", err)
+		}
+		d.siteTracker = st
+	}
+
+	// Grant tracker — always on. Subscribes to the bus and retains a
+	// bounded, most-recent-first log of decoded control-channel grants,
+	// surfaced at GET /api/v1/grants (the pollable form of the KindGrant
+	// SSE stream, issue #915).
+	{
+		gt, err := trunking.NewGrantTracker(trunking.GrantTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return fmt.Errorf("daemon: grant tracker: %w", err)
+		}
+		d.grantTracker = gt
+	}
+
+	// Tone-out detector — optional. Built before the composer so it can
+	// share the composer's PCM sink via fanoutSink.
+	if len(cfg.ToneOut.Profiles) > 0 {
+		profiles, err := toneProfilesFromConfig(cfg.ToneOut.Profiles)
+		if err != nil {
+			return fmt.Errorf("daemon: tone-out: %w", err)
+		}
+		det, err := toneout.New(toneout.Options{
+			Bus:        d.bus,
+			Profiles:   profiles,
+			SampleRate: cfg.Recordings.SampleRate,
+			Log:        log,
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: tone-out: %w", err)
+		}
+		d.toneout = det
+	}
+
+	// Live audio player — optional. Independent of the composer; if
+	// enabled, we feed it as one fan-out arm alongside the recorder.
+	// Defaults to disabled so headless servers stay quiet.
+	playerSampleRate := cfg.Audio.SampleRate
+	if playerSampleRate == 0 {
+		playerSampleRate = cfg.Recordings.SampleRate
+	}
+	pl, err := player.New(player.Config{
+		Enabled:    cfg.Audio.Enabled,
+		Device:     cfg.Audio.Device,
+		SampleRate: playerSampleRate,
+		BufferMs:   cfg.Audio.BufferMs,
+		Volume:     cfg.Audio.Volume,
+		Muted:      cfg.Audio.Muted,
+	}, log)
+	if err != nil {
+		return fmt.Errorf("daemon: player: %w", err)
+	}
+	d.player = pl
+
+	// Audio publisher — fans decoded PCM out to gRPC StreamAudio
+	// subscribers. Constructed unconditionally so the gRPC server
+	// can register the RPC; if no composer is wired downstream
+	// the publisher just sits idle (no producers, no consumers
+	// matter). Run is spawned by Daemon.Run.
+	audioPub, err := api.NewAudioPublisher(d.bus, log)
+	if err != nil {
+		return fmt.Errorf("daemon: audio publisher: %w", err)
+	}
+	d.audioPub = audioPub
+	return nil
+}
+
+// buildEngine constructs the trunking engine and the per-system
+// encryption-policy / configured-key maps it resolves grants against.
+// Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildEngine(cfg config.Config, log *slog.Logger) error {
+	// Build the system -> configured key-ID set the engine uses to exempt
+	// decryptable calls from the encrypted-call policy (issue #711). The
+	// raw key material stays in config; only the presence of a matching
+	// KeyID matters for the policy decision.
+	configuredKeysBySystem := func(systems []config.SystemConfig) map[string]map[uint16]bool {
+		var out map[string]map[uint16]bool
+		for _, s := range systems {
+			if len(s.EncryptionKeys) == 0 {
+				continue
+			}
+			ids := make(map[uint16]bool, len(s.EncryptionKeys))
+			for _, k := range s.EncryptionKeys {
+				ids[k.KeyID] = true
+			}
+			if out == nil {
+				out = make(map[string]map[uint16]bool)
+			}
+			out[s.Name] = ids
+		}
+		return out
+	}
+
+	// Build the per-system encrypted-call policy maps the engine resolves
+	// by grant System name (trunking.systems[].encrypted_calls). A system
+	// with no override is simply absent and defaults to follow / the engine
+	// default window. Issue #711.
+	encryptedModesBySystem := func(systems []config.SystemConfig) map[string]trunking.EncryptedMode {
+		var out map[string]trunking.EncryptedMode
+		for _, s := range systems {
+			m := trunking.ParseEncryptedMode(s.EncryptedCalls.Mode)
+			if m == trunking.EncryptedFollow {
+				continue // default — no entry needed
+			}
+			if out == nil {
+				out = make(map[string]trunking.EncryptedMode)
+			}
+			out[s.Name] = m
+		}
+		return out
+	}
+	encryptedFollowsBySystem := func(systems []config.SystemConfig) map[string]time.Duration {
+		var out map[string]time.Duration
+		for _, s := range systems {
+			if s.EncryptedCalls.MetadataFollowMs <= 0 {
+				continue // use engine default
+			}
+			if out == nil {
+				out = make(map[string]time.Duration)
+			}
+			out[s.Name] = time.Duration(s.EncryptedCalls.MetadataFollowMs) * time.Millisecond
+		}
+		return out
+	}
+
+	engine, err := trunking.NewEngine(trunking.EngineOptions{
+		Bus:              d.bus,
+		Log:              log,
+		VoicePool:        d.voicePool,
+		Talkgroups:       d.talkgroups,
+		ScanMode:         trunking.ParseScanMode(cfg.Scanner.ScanMode),
+		CallTimeout:      time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
+		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
+		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
+		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
+		// Same per-transmission grouping the voice composer uses (below): lets the
+		// engine roll a TETRA recording on a talker change so each over is
+		// attributed to its own source.
+		SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
+	})
+	if err != nil {
+		return fmt.Errorf("daemon: engine: %w", err)
+	}
+	d.engine = engine
+	return nil
+}
+
+// buildOutboundFeeds constructs the optional outbound call-streaming manager
+// and the optional grant-webhook sinks. Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildOutboundFeeds(cfg config.Config, log *slog.Logger, dispLoc *time.Location) error {
+	// Outbound call-streaming manager — optional. Subscribes to the
+	// bus at construction so calls completed before Run starts are
+	// not lost. Built only when at least one feed is enabled.
+	{
+		bcastRate := int(cfg.Recordings.SampleRate)
+		if bcastRate == 0 {
+			bcastRate = 8000
+		}
+		mgr, err := buildBroadcastManager(cfg.Broadcast, cfg.Recordings.Normalize, bcastRate, d.bus, dispLoc, log)
+		if err != nil {
+			return fmt.Errorf("daemon: broadcast: %w", err)
+		}
+		if mgr != nil {
+			d.broadcast = mgr
+			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
+		}
+	}
+
+	// Push grant-webhook sinks — optional. Each POSTs one JSON object per
+	// decoded control-channel grant (the push form of GET /api/v1/grants,
+	// issue #915 / #268). Subscribes to the bus at construction so grants
+	// decoded before Run starts are not lost. Built only when at least one
+	// feed is enabled.
+	{
+		hooks, err := buildGrantWebhooks(cfg.Broadcast, d.bus, dispLoc, log)
+		if err != nil {
+			return fmt.Errorf("daemon: grant webhook: %w", err)
+		}
+		if len(hooks) > 0 {
+			d.grantHooks = hooks
+			log.Info("grant webhook sinks enabled", "count", len(hooks))
+		}
+	}
+	return nil
+}
 func enhancerConfigFromYAML(c config.EnhanceConfig) mbe.EnhancerConfig {
 	return mbe.EnhancerConfig{
 		Enabled:   c.Enabled,
