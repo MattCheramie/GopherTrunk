@@ -28,6 +28,7 @@ const (
 	ProtocolDStar              // D-STAR (GMSK 4800 bps, amateur — header-only repeater protocol; config "dstar")
 	ProtocolDMRTier2           // DMR Tier II conventional (per-repeater; config "dmr-tier2")
 	ProtocolDMRTier1           // DMR Tier I direct-mode (license-free simplex; config "dmr-tier1")
+	ProtocolTETRADMO           // TETRA DMO / Direct Mode Operation (ETSI EN 300 396; config "tetra-dmo")
 )
 
 func (p Protocol) String() string {
@@ -60,6 +61,8 @@ func (p Protocol) String() string {
 		return "dmr-tier2"
 	case ProtocolDMRTier1:
 		return "dmr-tier1"
+	case ProtocolTETRADMO:
+		return "tetra-dmo"
 	default:
 		return "unknown"
 	}
@@ -98,9 +101,11 @@ func ParseProtocol(s string) (Protocol, error) {
 		return ProtocolDMRTier2, nil
 	case "dmr-tier1", "dmr_tier1", "dmr-t1", "dmrtier1":
 		return ProtocolDMRTier1, nil
+	case "tetra-dmo", "tetra_dmo", "tetradmo", "dmo":
+		return ProtocolTETRADMO, nil
 	default:
 		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q "+
-			"(want p25|p25-phase2|dmr|dmr-tier2|dmr-tier1|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar)", s)
+			"(want p25|p25-phase2|dmr|dmr-tier2|dmr-tier1|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|tetra-dmo|ysf|dstar)", s)
 	}
 }
 
@@ -470,7 +475,7 @@ func (s System) Validate() error {
 		return errors.New("trunking: system name is required")
 	}
 	if s.Protocol == ProtocolUnknown {
-		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|dmr-tier2|dmr-tier1|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar")
+		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|dmr-tier2|dmr-tier1|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|tetra-dmo|ysf|dstar")
 	}
 	if len(s.ControlChannels) == 0 {
 		return errors.New("trunking: at least one control_channel frequency is required")

@@ -41,9 +41,11 @@ const tetraDDCTargetRateHz = 144000.0
 // converter decimates to for a protocol. The 4800-baud C4FM family
 // (P25 / DMR / NXDN / dPMR / YSF / D-STAR) and the other ≤9600-baud
 // protocols all channelize to ddcTargetRateHz; TETRA's 18000-baud
-// π/4-DQPSK needs a wider channel, so it gets tetraDDCTargetRateHz.
+// π/4-DQPSK needs a wider channel, so it gets tetraDDCTargetRateHz —
+// including TETRA DMO (Direct Mode), which shares the same 18000-baud
+// physical layer as TMO.
 func ddcTargetForProtocol(p trunking.Protocol) float64 {
-	if p == trunking.ProtocolTETRA {
+	if p == trunking.ProtocolTETRA || p == trunking.ProtocolTETRADMO {
 		return tetraDDCTargetRateHz
 	}
 	return ddcTargetRateHz
