@@ -49,6 +49,12 @@ type SiteDetail struct {
 	County          string   `json:"county,omitempty"`
 	ControlChannels []uint32 `json:"control_channels"`
 	Frequencies     []uint32 `json:"frequencies"`
+	// Latitude / Longitude are the site's geographic position in decimal
+	// degrees (RadioReference siteLat / siteLng), zero when RR did not
+	// geolocate the site. Carried through import so a discovered site can be
+	// plotted on the console map.
+	Latitude  float64 `json:"latitude,omitempty"`
+	Longitude float64 `json:"longitude,omitempty"`
 }
 
 // TalkgroupDetail is one talkgroup of a trunked system, shaped to match
@@ -274,12 +280,14 @@ func (c *Client) getTrsTalkgroups(ctx context.Context, sid int) ([]TalkgroupDeta
 func parseSites(raw []byte) []SiteDetail {
 	var sites []SiteDetail
 	for _, block := range blocks(raw, "siteList") {
-		leaves := firstLeaves(block, "rfss", "siteNumber", "siteDescr", "siteCounty", "cName")
+		leaves := firstLeaves(block, "rfss", "siteNumber", "siteDescr", "siteCounty", "cName", "siteLat", "siteLng")
 		site := SiteDetail{
 			RFSS:        atoiDefault(leaves["rfss"], 0),
 			SiteNumber:  atoiDefault(leaves["siteNumber"], 0),
 			Description: leaves["siteDescr"],
 			County:      firstNonEmpty(leaves["siteCounty"], leaves["cName"]),
+			Latitude:    parseDegrees(leaves["siteLat"]),
+			Longitude:   parseDegrees(leaves["siteLng"]),
 		}
 		for _, fb := range blocks(block, "siteFreq") {
 			fl := firstLeaves(fb, "freq", "use")
@@ -401,6 +409,22 @@ func mhzToHz(s string) uint32 {
 		return 0
 	}
 	return uint32(hz)
+}
+
+// parseDegrees parses a decimal-degrees coordinate string, returning 0 for an
+// empty/unparseable value or one outside the valid ±180 range (a longitude's
+// bound; latitude is a tighter subset). Tolerant like the other RR parsers so a
+// missing/renamed leaf degrades to "no position" rather than an error.
+func parseDegrees(s string) float64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f < -180 || f > 180 {
+		return 0
+	}
+	return f
 }
 
 // firstNonEmpty returns the first non-empty string of its arguments.

@@ -873,7 +873,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		var sites []trunking.ConfiguredSite
 		for _, sc := range sys.Sites {
-			sites = append(sites, trunking.ConfiguredSite{RFSS: sc.RFSS, Site: sc.Site, Name: sc.Name})
+			sites = append(sites, trunking.ConfiguredSite{
+				RFSS: sc.RFSS, Site: sc.Site, Name: sc.Name,
+				Latitude: sc.Latitude, Longitude: sc.Longitude,
+			})
 		}
 		// Conventional DMR (Tier II / Tier I) has no real control channel —
 		// the operator lists each repeater/simplex carrier in the

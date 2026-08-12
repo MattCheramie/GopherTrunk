@@ -571,8 +571,14 @@ type SiteDTO struct {
 	// number. Empty when there is no TSBK data yet. See decodeQuality.
 	ControlChannelDecodeQuality string `json:"control_channel_decode_quality,omitempty"`
 	Name                        string `json:"name"`
-	WACN                        uint32 `json:"wacn,omitempty"`
-	SystemID                    uint16 `json:"system_id,omitempty"`
+	// Latitude / Longitude are the operator-configured (or RadioReference-
+	// imported) site position in decimal degrees, merged from the matching
+	// ConfiguredSite. Omitted when unset, so the web console plots only the
+	// sites that have a known location.
+	Latitude  float64 `json:"latitude,omitempty"`
+	Longitude float64 `json:"longitude,omitempty"`
+	WACN      uint32  `json:"wacn,omitempty"`
+	SystemID  uint16  `json:"system_id,omitempty"`
 	// Hex renderings of the identity numbers, alongside the decimal fields.
 	WACNHex     string `json:"wacn_hex,omitempty"`
 	SystemIDHex string `json:"system_id_hex,omitempty"`

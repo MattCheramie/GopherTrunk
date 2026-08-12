@@ -32,9 +32,27 @@ func RRToSystemConfig(full radioreference.FullSystem) (config.SystemConfig, []Ta
 			Mode:        tg.Mode,
 		})
 	}
+	// Carry each site's name + position into SiteConfig so the imported system
+	// reads sites as named places and the console can map the ones RR
+	// geolocated. A site needs a usable RFSS/Site and a name (its RR
+	// description) to be worth an entry; positionless sites still get a name.
+	var sites []config.SiteConfig
+	for _, site := range full.Sites {
+		if site.Description == "" {
+			continue
+		}
+		sites = append(sites, config.SiteConfig{
+			RFSS:      uint8(site.RFSS),
+			Site:      uint8(site.SiteNumber),
+			Name:      site.Description,
+			Latitude:  site.Latitude,
+			Longitude: site.Longitude,
+		})
+	}
 	return config.SystemConfig{
 		Name:            full.Name,
 		Protocol:        full.Protocol,
 		ControlChannels: ccs,
+		Sites:           sites,
 	}, rows
 }

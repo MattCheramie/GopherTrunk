@@ -187,6 +187,11 @@ type ConfiguredSite struct {
 	RFSS uint8
 	Site uint8
 	Name string
+	// Latitude / Longitude are the site's optional position (decimal degrees).
+	// Both zero means "no position". Merged into GET /api/v1/sites so the web
+	// console can plot the site on a map.
+	Latitude  float64
+	Longitude float64
 }
 
 // System describes one trunked radio system the engine should track.

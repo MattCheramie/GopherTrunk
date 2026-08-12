@@ -22,6 +22,7 @@ import type {
   ParsedSystemDTO,
   RRGeoRef,
   RRSearchHit,
+  SiteConfig,
   SystemConfig,
   TalkgroupCSVRow,
   TrunkingConfig,
@@ -208,6 +209,27 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
           help="CSV/JSON of radio-ID aliases, relative to the config file."
         />
       </div>
+
+      <Fieldset legend="Sites (names & map positions)">
+        <ListEditor<SiteConfig>
+          label="Sites"
+          items={sys.Sites}
+          onChange={(x) => onChange({ ...sys, Sites: x })}
+          makeNew={() => ({ RFSS: 0, Site: 0, Name: "" })}
+          itemTitle={(e) => e.Name || `RFSS ${e.RFSS} / Site ${e.Site}`}
+          emptyHint="Optional. Names sites in GET /api/v1/sites; coordinates plot them on the console map. RadioReference import fills these in automatically."
+          renderItem={(e, set) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <NumberField label="RFSS ID" value={e.RFSS} onChange={(v) => set({ ...e, RFSS: v })} />
+              <NumberField label="Site ID" value={e.Site} onChange={(v) => set({ ...e, Site: v })} />
+              <TextField label="Name" value={e.Name} onChange={(v) => set({ ...e, Name: v })} />
+              <div />
+              <NumberField label="Latitude (°)" value={e.Latitude ?? 0} onChange={(v) => set({ ...e, Latitude: v })} />
+              <NumberField label="Longitude (°)" value={e.Longitude ?? 0} onChange={(v) => set({ ...e, Longitude: v })} />
+            </div>
+          )}
+        />
+      </Fieldset>
 
       <Fieldset legend="P25 band plan (manual IDEN_UP override)">
         <ListEditor<P25BandPlanEntry>

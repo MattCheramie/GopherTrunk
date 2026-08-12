@@ -9,6 +9,7 @@ import type {
   AudioStatusDTO,
   CallRow,
   LocationFix,
+  SiteDTO,
   ConfigListResponse,
   DeviceDTO,
   Health,
@@ -149,6 +150,10 @@ export const api = {
   systems: (c: ClientConfig) =>
     request<{ systems: SystemDTO[] }>(c, "GET", "/api/v1/systems").then(
       (r) => r.systems,
+    ),
+  sites: (c: ClientConfig) =>
+    request<{ sites: SiteDTO[] }>(c, "GET", "/api/v1/sites").then(
+      (r) => r.sites ?? [],
     ),
   talkgroups: (c: ClientConfig) =>
     request<{ talkgroups: TalkgroupDTO[] }>(

@@ -82,9 +82,11 @@ vi.mock("./api/client", () => {
       mutations: ok({ allow_mutations: false }),
       runtime: ok({}),
       systems: ok([]),
+      sites: ok([]),
       talkgroups: ok([]),
       activeCalls: ok([]),
       history: ok([]),
+      locations: ok([]),
       devices: ok([]),
       scanner: ok({
         scan_mode: "idle",
