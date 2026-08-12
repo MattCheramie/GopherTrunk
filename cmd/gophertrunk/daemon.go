@@ -4411,10 +4411,13 @@ func watchdogInterval(ms int) time.Duration {
 type fanoutSink []composer.PCMSink
 
 func (f fanoutSink) WritePCM(serial string, samples []int16) error {
+	var errs []error
 	for _, s := range f {
-		_ = s.WritePCM(serial, samples)
+		if err := s.WritePCM(serial, samples); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WritePCMForCall fans decoded PCM plus the call's CallID out to the contained
@@ -4432,16 +4435,19 @@ func (f fanoutSink) WritePCM(serial string, samples []int16) error {
 // across calls, so the tone-out/analog path is correct-by-construction without
 // a CallID and intentionally stays on WritePCM.
 func (f fanoutSink) WritePCMForCall(serial string, callID uint64, samples []int16) error {
+	var errs []error
 	for _, s := range f {
 		if cs, ok := s.(interface {
 			WritePCMForCall(string, uint64, []int16) error
 		}); ok {
-			_ = cs.WritePCMForCall(serial, callID, samples)
-		} else {
-			_ = s.WritePCM(serial, samples)
+			if err := cs.WritePCMForCall(serial, callID, samples); err != nil {
+				errs = append(errs, err)
+			}
+		} else if err := s.WritePCM(serial, samples); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WriteRawFrame fans raw IMBE / AMBE frames out to every contained
@@ -4454,14 +4460,17 @@ func (f fanoutSink) WritePCMForCall(serial string, callID uint64, samples []int1
 // producing healthy-looking call lifecycle logs alongside 0-byte
 // .raw and 44-byte (header-only) .wav files. Issue #356 root cause.
 func (f fanoutSink) WriteRawFrame(serial string, frame []byte) error {
+	var errs []error
 	for _, s := range f {
 		if rs, ok := s.(interface {
 			WriteRawFrame(string, []byte) error
 		}); ok {
-			_ = rs.WriteRawFrame(serial, frame)
+			if err := rs.WriteRawFrame(serial, frame); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WriteRawFrameWithErrors fans a raw frame plus its channel-FEC
@@ -4478,19 +4487,24 @@ func (f fanoutSink) WriteRawFrame(serial string, frame []byte) error {
 // it stays inert in the daemon (high-error frames squeak through) even
 // though the unit tests, which call the recorder directly, exercise it.
 func (f fanoutSink) WriteRawFrameWithErrors(serial string, frame []byte, correctedBits int) error {
+	var errs []error
 	for _, s := range f {
 		switch rs := s.(type) {
 		case interface {
 			WriteRawFrameWithErrors(string, []byte, int) error
 		}:
-			_ = rs.WriteRawFrameWithErrors(serial, frame, correctedBits)
+			if err := rs.WriteRawFrameWithErrors(serial, frame, correctedBits); err != nil {
+				errs = append(errs, err)
+			}
 		case interface {
 			WriteRawFrame(string, []byte) error
 		}:
-			_ = rs.WriteRawFrame(serial, frame)
+			if err := rs.WriteRawFrame(serial, frame); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WriteRawFrameForCall fans a raw frame plus its FEC corrected-bit count
@@ -4502,23 +4516,30 @@ func (f fanoutSink) WriteRawFrameWithErrors(serial string, frame []byte, correct
 // daemon. Sinks that only speak the older shapes still get the frame, just
 // without the CallID guard.
 func (f fanoutSink) WriteRawFrameForCall(serial string, callID uint64, frame []byte, correctedBits int) error {
+	var errs []error
 	for _, s := range f {
 		switch rs := s.(type) {
 		case interface {
 			WriteRawFrameForCall(string, uint64, []byte, int) error
 		}:
-			_ = rs.WriteRawFrameForCall(serial, callID, frame, correctedBits)
+			if err := rs.WriteRawFrameForCall(serial, callID, frame, correctedBits); err != nil {
+				errs = append(errs, err)
+			}
 		case interface {
 			WriteRawFrameWithErrors(string, []byte, int) error
 		}:
-			_ = rs.WriteRawFrameWithErrors(serial, frame, correctedBits)
+			if err := rs.WriteRawFrameWithErrors(serial, frame, correctedBits); err != nil {
+				errs = append(errs, err)
+			}
 		case interface {
 			WriteRawFrame(string, []byte) error
 		}:
-			_ = rs.WriteRawFrame(serial, frame)
+			if err := rs.WriteRawFrame(serial, frame); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // EnableDrainCoordination and NotifyDrainComplete forward the composer's voice-
