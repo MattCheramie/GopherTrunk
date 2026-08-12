@@ -103,8 +103,11 @@ function QualityVerdict() {
         </span>
       )}
       {quality && quality.total > 0 && (
-        <span className="font-mono text-xs text-muted">
-          {quality.total} symbols
+        <span
+          className="font-mono text-xs text-muted"
+          title="Symbols in the rolling signal-quality window — not the symbol rate (see the constellation subtitle for sym/s)"
+        >
+          {quality.total} sym analysed
         </span>
       )}
       <span className="ml-auto text-xs text-muted">

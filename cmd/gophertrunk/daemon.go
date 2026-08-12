@@ -178,12 +178,23 @@ func sameCarrierVoiceTaps(proto trunking.Protocol) int {
 	switch proto {
 	case trunking.ProtocolTETRA:
 		return tetraSameCarrierTaps
+	case trunking.ProtocolTETRADMO:
+		// TETRA DMO (Direct Mode) rides voice on the SAME carrier the pipeline
+		// decodes (there is no separate traffic channel), and only one PTT
+		// transmission is on the channel at a time, so a single same-carrier tap
+		// serves the voice chain (composer.runTETRADMOVoiceChain).
+		return tetraDMOSameCarrierTaps
 	case trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1:
 		return dmrSameCarrierTaps
 	default:
 		return 0
 	}
 }
+
+// tetraDMOSameCarrierTaps is how many same-carrier voice taps a TETRA DMO system
+// registers. DMO is half-duplex peer-to-peer: one MS transmits at a time, so a
+// single tap on the decoded carrier serves the (one) active call.
+const tetraDMOSameCarrierTaps = 1
 
 // gainLooksTooLow reports whether a manual (non-auto) gain is below the
 // digital-decode floor but above the tenths-of-dB-mistake band that

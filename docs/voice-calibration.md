@@ -120,7 +120,11 @@ A failing PeakXcorr (with a clean RMSRatio) means the synthesis
 path itself is producing a different waveform. That's deeper than a
 gain knob — check the spectral envelope decoder
 ([`internal/voice/mbe/synth.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/mbe/synth.go))
-and the prediction-residual gain path.
+and the prediction-residual gain path. For DMR (AMBE+2) specifically —
+especially rough **female** voices — see
+[DMR voice quality](dmr-voice-quality.md), which documents a mbelib
+reconciliation review and a §6.2 spectral-enhancement divergence that
+this same PeakXcorr A/B is the gate for.
 
 ## Reading P25 Phase 1 decode quality
 

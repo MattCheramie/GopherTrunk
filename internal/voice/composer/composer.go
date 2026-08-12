@@ -465,8 +465,9 @@ const (
 	voiceKindDMR   // dmr-tier1/2/3
 	voiceKindP25P1 // p25
 	voiceKindP25P2 // p25-phase2
-	voiceKindTETRA // tetra
-	voiceKindNXDN  // nxdn
+	voiceKindTETRA    // tetra
+	voiceKindTETRADMO // tetra-dmo (Direct Mode)
+	voiceKindNXDN     // nxdn
 )
 
 // classifyVoiceKind maps a grant to its voiceKind. Digital protocols are matched
@@ -482,6 +483,8 @@ func classifyVoiceKind(cs trunking.CallStart) voiceKind {
 		return voiceKindP25P2
 	case "tetra":
 		return voiceKindTETRA
+	case "tetra-dmo":
+		return voiceKindTETRADMO
 	case "nxdn":
 		return voiceKindNXDN
 	}
@@ -593,6 +596,8 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	case voiceKindTETRA:
 		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, ch.done)
+	case voiceKindTETRADMO:
+		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, ch.done)
 	case voiceKindNXDN:
 		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	default:
