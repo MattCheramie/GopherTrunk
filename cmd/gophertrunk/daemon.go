@@ -1269,82 +1269,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		return nil, err
 	}
 
-	// Recorder is optional; needs a target directory.
-	if cfg.Recordings.Dir != "" {
-		// Default protocol→vocoder map, optionally swapping DMR to the
-		// opt-in "warm" decoder (gentle high-shelf, issue #644).
-		var vocoderMap map[string]string
-		if cfg.Recordings.WarmDMRAudio {
-			vocoderMap = voice.DefaultVocoderForProtocol()
-			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
-				vocoderMap[proto] = ambe2.DMRWarmVocoderName
-			}
-		}
-		rec, err := voice.NewRecorder(voice.RecorderOptions{
-			Bus:           d.bus,
-			Log:           log,
-			OutDir:        cfg.Recordings.Dir,
-			SampleRate:    cfg.Recordings.SampleRate,
-			WriteRaw:      cfg.Recordings.WriteRaw,
-			SkipEncrypted: cfg.Recordings.SkipEncrypted,
-			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
-			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,
-			VocoderForProtocol: vocoderMap,
-			// Same display timezone the logs/TUI/API use, so WAV filenames
-			// carry the local wall-clock rather than UTC. Resolved here
-			// directly (d.displayLoc is assigned a few lines below, after
-			// this block) via the idempotent Location() helper.
-			DisplayLoc:       cfg.Display.Location(),
-			FilenameTemplate: cfg.Recordings.FilenameTemplate,
-			PathTemplate:     cfg.Recordings.PathTemplate,
-			Normalize: voice.NormalizeConfig{
-				Enabled:      cfg.Recordings.Normalize.AppliesToRecording(),
-				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,
-				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
-				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
-			},
-			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
-			Dedup: voice.DedupConfig{
-				Enabled: cfg.Recordings.Dedup.Enabled,
-				Window:  cfg.Recordings.Dedup.Window(),
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: recorder: %w", err)
-		}
-		d.recorder = rec
-	}
-
-	// Voice decoder for live audio. When recording is configured the file
-	// recorder above doubles as the decoder; otherwise — as long as there's a
-	// pool to source voice from — build a decode-only recorder (empty OutDir,
-	// writes no files) so digital calls are still decoded and fanned to the web
-	// stream. Without this, live audio silently required recordings.dir: no
-	// recorder meant no composer and no decoded PCM ever reached the browser.
-	d.voiceDecoder = d.recorder
-	if d.voiceDecoder == nil && d.pool != nil {
-		var vocoderMap map[string]string
-		if cfg.Recordings.WarmDMRAudio {
-			vocoderMap = voice.DefaultVocoderForProtocol()
-			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
-				vocoderMap[proto] = ambe2.DMRWarmVocoderName
-			}
-		}
-		dec, err := voice.NewRecorder(voice.RecorderOptions{
-			Bus:                d.bus,
-			Log:                log,
-			OutDir:             "", // decode-only: decode + live tap, no files
-			SampleRate:         cfg.Recordings.SampleRate,
-			VocoderForProtocol: vocoderMap,
-			DisplayLoc:         cfg.Display.Location(),
-			// Voice enhancement operates on decoded PCM, so it applies to the
-			// live stream too; loudness/normalize are file-only and omitted.
-			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: voice decoder: %w", err)
-		}
-		d.voiceDecoder = dec
+	if err := d.buildRecorderAndVoiceDecoder(cfg, log); err != nil {
+		return nil, err
 	}
 
 	// Displayed-timestamp timezone for human-facing output — the logs, the TUI,
@@ -2826,6 +2752,91 @@ func (d *Daemon) buildOutboundFeeds(cfg config.Config, log *slog.Logger, dispLoc
 			d.grantHooks = hooks
 			log.Info("grant webhook sinks enabled", "count", len(hooks))
 		}
+	}
+	return nil
+}
+
+// buildRecorderAndVoiceDecoder constructs the optional file recorder and the
+// voice decoder (the file recorder when recording is configured, otherwise a
+// decode-only recorder so digital voice still reaches the live stream).
+// Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logger) error {
+	// Recorder is optional; needs a target directory.
+	if cfg.Recordings.Dir != "" {
+		// Default protocol→vocoder map, optionally swapping DMR to the
+		// opt-in "warm" decoder (gentle high-shelf, issue #644).
+		var vocoderMap map[string]string
+		if cfg.Recordings.WarmDMRAudio {
+			vocoderMap = voice.DefaultVocoderForProtocol()
+			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
+				vocoderMap[proto] = ambe2.DMRWarmVocoderName
+			}
+		}
+		rec, err := voice.NewRecorder(voice.RecorderOptions{
+			Bus:           d.bus,
+			Log:           log,
+			OutDir:        cfg.Recordings.Dir,
+			SampleRate:    cfg.Recordings.SampleRate,
+			WriteRaw:      cfg.Recordings.WriteRaw,
+			SkipEncrypted: cfg.Recordings.SkipEncrypted,
+			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
+			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,
+			VocoderForProtocol: vocoderMap,
+			// Same display timezone the logs/TUI/API use, so WAV filenames
+			// carry the local wall-clock rather than UTC. Resolved here
+			// directly (d.displayLoc is assigned a few lines below, after
+			// this block) via the idempotent Location() helper.
+			DisplayLoc:       cfg.Display.Location(),
+			FilenameTemplate: cfg.Recordings.FilenameTemplate,
+			PathTemplate:     cfg.Recordings.PathTemplate,
+			Normalize: voice.NormalizeConfig{
+				Enabled:      cfg.Recordings.Normalize.AppliesToRecording(),
+				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,
+				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
+				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
+			},
+			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			Dedup: voice.DedupConfig{
+				Enabled: cfg.Recordings.Dedup.Enabled,
+				Window:  cfg.Recordings.Dedup.Window(),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: recorder: %w", err)
+		}
+		d.recorder = rec
+	}
+
+	// Voice decoder for live audio. When recording is configured the file
+	// recorder above doubles as the decoder; otherwise — as long as there's a
+	// pool to source voice from — build a decode-only recorder (empty OutDir,
+	// writes no files) so digital calls are still decoded and fanned to the web
+	// stream. Without this, live audio silently required recordings.dir: no
+	// recorder meant no composer and no decoded PCM ever reached the browser.
+	d.voiceDecoder = d.recorder
+	if d.voiceDecoder == nil && d.pool != nil {
+		var vocoderMap map[string]string
+		if cfg.Recordings.WarmDMRAudio {
+			vocoderMap = voice.DefaultVocoderForProtocol()
+			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
+				vocoderMap[proto] = ambe2.DMRWarmVocoderName
+			}
+		}
+		dec, err := voice.NewRecorder(voice.RecorderOptions{
+			Bus:                d.bus,
+			Log:                log,
+			OutDir:             "", // decode-only: decode + live tap, no files
+			SampleRate:         cfg.Recordings.SampleRate,
+			VocoderForProtocol: vocoderMap,
+			DisplayLoc:         cfg.Display.Location(),
+			// Voice enhancement operates on decoded PCM, so it applies to the
+			// live stream too; loudness/normalize are file-only and omitted.
+			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: voice decoder: %w", err)
+		}
+		d.voiceDecoder = dec
 	}
 	return nil
 }
