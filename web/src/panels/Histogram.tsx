@@ -10,9 +10,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bar } from "react-chartjs-2";
 import { PageHeader } from "../components/ui/PageHeader";
+import { useSearchParams } from "react-router-dom";
 import {
   fetchSpectrumDevices,
   defaultSymbolDevice,
+  initialDeviceSerial,
   parentSerial,
   type SpectrumDevice,
 } from "../api/spectrum";
@@ -109,6 +111,9 @@ export function Histogram() {
   useActiveCallsPoll();
   const [devices, setDevices] = useState<SpectrumDevice[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // A "signal detail" link from a call / scanner hit can name the SDR to
+  // scope via ?device=; honoured on first load, else the panel default.
+  const targetDevice = useSearchParams()[0].get("device");
   const [conn, setConn] = useState<ConnState>("closed");
   const [latest, setLatest] = useState<SymbolFrame | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -135,8 +140,8 @@ export function Histogram() {
         setDevices(list);
         setError(null);
         if (selected == null) {
-          const def = defaultSymbolDevice(list);
-          if (def) setSelected(def.serial);
+          const s = initialDeviceSerial(list, targetDevice, defaultSymbolDevice);
+          if (s) setSelected(s);
         }
       } catch (e) {
         if (cancel) return;
@@ -146,7 +151,7 @@ export function Histogram() {
     return () => {
       cancel = true;
     };
-  }, [cfg, selected]);
+  }, [cfg, selected, targetDevice]);
 
   const device = useMemo(
     () => devices.find((d) => d.serial === selected) ?? null,

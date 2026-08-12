@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { ConfirmModal } from "../components/ConfirmModal";
@@ -89,6 +90,9 @@ export function Scanner() {
         subtitle={`${scanner.tg_scan_count} of ${scanner.tg_total} talkgroups eligible`}
         actions={
           <div className="flex items-center gap-2 text-xs">
+            <Link to="/plots/constellation" className="text-accent hover:underline">
+              Signal scopes →
+            </Link>
             <span className="text-muted uppercase tracking-wider">scan_mode</span>
             <span className="font-mono">{scanner.scan_mode}</span>
             {canMutate && (

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { parentSerial } from "../api/spectrum";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
@@ -299,6 +301,14 @@ export function Active() {
               />
               <DetailField label="Mode" value={selected.talkgroup.mode} />
             </div>
+          )}
+          {selected.following !== false && selected.device_serial && (
+            <Link
+              to={`/plots/constellation?device=${encodeURIComponent(parentSerial(selected.device_serial))}`}
+              className="inline-block text-sm text-accent hover:underline pt-1"
+            >
+              Signal detail — open the scopes on this SDR →
+            </Link>
           )}
           {selected.following === false ? (
             <p className="text-xs text-muted pt-2">

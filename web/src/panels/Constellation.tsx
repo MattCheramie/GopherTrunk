@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/ui/PageHeader";
 import {
   fetchSpectrumDevices,
+  initialDeviceSerial,
   parentSerial,
   type SpectrumDevice,
 } from "../api/spectrum";
@@ -129,6 +131,9 @@ export function Constellation() {
   useActiveCallsPoll();
   const [devices, setDevices] = useState<SpectrumDevice[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // A "signal detail" link from a call / scanner hit can name the SDR to scope
+  // via ?device=; honoured on first load, else the enumeration default.
+  const targetDevice = useSearchParams()[0].get("device");
   const [conn, setConn] = useState<ConnState>("closed");
   const [latest, setLatest] = useState<IQFrame | null>(null);
   const [symLatest, setSymLatest] = useState<SymbolFrame | null>(null);
@@ -249,7 +254,11 @@ export function Constellation() {
         if (cancel) return;
         setDevices(list);
         setError(null);
-        if (list.length > 0 && selected == null) setSelected(list[0].serial);
+        if (list.length > 0 && selected == null) {
+          setSelected(
+            initialDeviceSerial(list, targetDevice, (l) => l[0] ?? null),
+          );
+        }
       } catch (e) {
         if (cancel) return;
         setError(e instanceof Error ? e.message : String(e));
@@ -258,7 +267,7 @@ export function Constellation() {
     return () => {
       cancel = true;
     };
-  }, [cfg, selected]);
+  }, [cfg, selected, targetDevice]);
 
   // Newest active call on the selected SDR, and the view offset (kHz)
   // that would centre it. This is the "last locked channel" the issue

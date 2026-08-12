@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   defaultSymbolDevice,
+  initialDeviceSerial,
   parentSerial,
   type SpectrumDevice,
 } from "./spectrum";
@@ -38,6 +39,32 @@ describe("defaultSymbolDevice", () => {
   it("returns the sole device regardless of role", () => {
     const list = [dev("only", "voice")];
     expect(defaultSymbolDevice(list)?.serial).toBe("only");
+  });
+});
+
+describe("initialDeviceSerial", () => {
+  const list = [dev("voice-1", "voice"), dev("ctrl-1", "control")];
+
+  it("honours a ?device= target that is present in the pool", () => {
+    // A "signal detail" link named voice-1; it wins over the control default.
+    expect(initialDeviceSerial(list, "voice-1", defaultSymbolDevice)).toBe(
+      "voice-1",
+    );
+  });
+
+  it("falls back to the panel default when the target is absent/unknown", () => {
+    expect(initialDeviceSerial(list, null, defaultSymbolDevice)).toBe("ctrl-1");
+    expect(initialDeviceSerial(list, "not-in-pool", defaultSymbolDevice)).toBe(
+      "ctrl-1",
+    );
+  });
+
+  it("supports a list[0] fallback (the Constellation panel)", () => {
+    expect(initialDeviceSerial(list, null, (l) => l[0] ?? null)).toBe("voice-1");
+  });
+
+  it("returns null for an empty pool", () => {
+    expect(initialDeviceSerial([], "x", defaultSymbolDevice)).toBeNull();
   });
 });
 
