@@ -75,3 +75,15 @@ func (a *C4FMSymbolAGC) Level() float32 { return a.level }
 
 // Seeded reports whether the EMA has been seeded by a non-trivial sample yet.
 func (a *C4FMSymbolAGC) Seeded() bool { return a.seeded }
+
+// C4FMAGCTarget is the mean|x| target a C4FM symbol AGC normalises to: two
+// thirds of the outer-symbol slicer scale (a balanced ±1/±3 four-level stream
+// sits at slicerScale·2/3), or 0 to disable calibration on the legacy
+// pre-scaled-fixture path (deviationHz <= 0). Shared by the DMR and NXDN C4FM
+// receivers, which previously each carried an identical agcTargetFor.
+func C4FMAGCTarget(slicerScale, deviationHz float64) float64 {
+	if deviationHz <= 0 {
+		return 0
+	}
+	return slicerScale * 2.0 / 3.0
+}

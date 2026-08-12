@@ -154,20 +154,11 @@ func New(opts Options) *Receiver {
 		// #275). Disabled on the legacy DeviationHz<=0 path (slicerScale
 		// == 1.0) so pre-scaled fixtures stay byte-identical.
 		agc: demod.C4FMSymbolAGC{
-			Target: float32(agcTargetFor(slicerScale, opts.DeviationHz)),
+			Target: float32(demod.C4FMAGCTarget(slicerScale, opts.DeviationHz)),
 			Rate:   1.0 / 256.0,
 		},
 		dibitSink: opts.DibitSink,
 	}
-}
-
-// agcTargetFor returns the symbol-AGC target mean|x|, or 0 to disable
-// the AGC on the legacy pre-scaled-fixture path (DeviationHz unset).
-func agcTargetFor(slicerScale, deviationHz float64) float64 {
-	if deviationHz <= 0 {
-		return 0
-	}
-	return slicerScale * 2.0 / 3.0
 }
 
 // Process pushes one chunk of complex64 IQ samples through the chain.

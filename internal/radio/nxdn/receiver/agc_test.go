@@ -3,6 +3,8 @@ package receiver
 import (
 	"math"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 )
 
 // makeRunC4FMIQ synthesises a 48 kHz / 10 sps IQ buffer whose
@@ -142,8 +144,8 @@ func TestReceiverDecodesOverScaledC4FM(t *testing.T) {
 // stays byte-identical to its pre-AGC behaviour — the opt-in discipline the
 // roadmap requires for every new DSP stage.
 func TestReceiverLegacyFixturePathUnchanged(t *testing.T) {
-	agc := agcTargetFor(1.0, 0) // DeviationHz == 0 → legacy path
+	agc := demod.C4FMAGCTarget(1.0, 0) // DeviationHz == 0 → legacy path
 	if agc != 0 {
-		t.Errorf("agcTargetFor with DeviationHz=0 = %v, want 0 (AGC must stay disabled on the legacy path)", agc)
+		t.Errorf("C4FMAGCTarget with DeviationHz=0 = %v, want 0 (AGC must stay disabled on the legacy path)", agc)
 	}
 }
