@@ -2,7 +2,6 @@ package composer
 
 import (
 	"context"
-	"math"
 	"sync/atomic"
 	"time"
 
@@ -44,16 +43,7 @@ const p25p2ChannelSelectHz = 6250.0
 // NO filter at all, so this channel-selects to ±min(bw, p25p2ChannelSelectHz)
 // before the receiver. Factored out so the selectivity is unit-testable.
 func newP25P2VoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
-	chanBW := float64(bw)
-	decim := int(math.Round(iqHz)) / p25p2VoiceIntermediateHz
-	filterAtUnity := false
-	if decim <= 1 {
-		filterAtUnity = true
-		if chanBW > p25p2ChannelSelectHz {
-			chanBW = p25p2ChannelSelectHz
-		}
-	}
-	return newDecimatingFIR(iqHz, p25p2VoiceIntermediateHz, chanBW, filterAtUnity)
+	return newVoiceFrontEnd(iqHz, bw, p25p2VoiceIntermediateHz, p25p2ChannelSelectHz)
 }
 
 // p25p2VoiceGardnerGain matches the value newP25Phase2Pipeline settled

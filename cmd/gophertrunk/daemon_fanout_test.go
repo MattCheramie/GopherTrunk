@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"sync"
 	"testing"
 )
@@ -176,6 +177,46 @@ func TestFanoutSinkSatisfiesErrAwareShape(t *testing.T) {
 	}); !ok {
 		t.Fatal("fanoutSink does not implement WriteRawFrameWithErrors — " +
 			"the voice chains' errAwareRawSink assertion will fail and adaptive smoothing will be inert in the daemon")
+	}
+}
+
+// failingRawSink is a stub whose raw-frame writes always fail, standing in
+// for a recorder that can't write to disk (full volume, permissions, a
+// closed file). It also implements WritePCM so it is a valid PCMSink member
+// of a fanout.
+type failingRawSink struct{ err error }
+
+func (s failingRawSink) WritePCM(string, []int16) error { return s.err }
+func (s failingRawSink) WriteRawFrame(string, []byte) error {
+	return s.err
+}
+
+// TestFanoutSinkPropagatesWriteError is the regression guard for the
+// error-swallowing fix: fanoutSink used to `_ =` every inner write, so a
+// recorder failing to write a frame (the issue #356 failure mode: silent
+// 0-byte .raw / header-only .wav) surfaced no error to the composer chains,
+// whose `if err != nil` warning never fired. The fanout now joins inner
+// errors and returns them, so the chains log the failure.
+func TestFanoutSinkPropagatesWriteError(t *testing.T) {
+	boom := errors.New("disk write failed")
+	bad := failingRawSink{err: boom}
+	good := newRawFrameRecorder()
+	fanout := fanoutSink{bad, good}
+
+	frame := []byte{0xde, 0xad, 0xbe, 0xef}
+	err := fanout.WriteRawFrame("VOICE-1", frame)
+	if err == nil || !errors.Is(err, boom) {
+		t.Fatalf("WriteRawFrame error = %v, want it to surface %v", err, boom)
+	}
+	// The healthy sink still received the frame — one failing sink does not
+	// stop the fanout reaching the others.
+	if got := good.framesFor("VOICE-1"); len(got) != 1 || string(got[0]) != string(frame) {
+		t.Errorf("healthy sink frames = %x, want one frame %x", got, frame)
+	}
+
+	// PCM path propagates too.
+	if err := (fanoutSink{bad}).WritePCM("VOICE-1", []int16{1, 2}); !errors.Is(err, boom) {
+		t.Errorf("WritePCM error = %v, want %v", err, boom)
 	}
 }
 

@@ -447,42 +447,60 @@ func (c *Composer) ActiveChains() []string {
 	return out
 }
 
-func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
+// voiceKind classifies a grant's protocol into the composer voice chain that
+// decodes it. It is computed once per call in handleStart, replacing the fan of
+// per-protocol booleans (isFM/isDMRVoice/…) that used to be recomputed for the
+// bypass check, the same-carrier TETRA special-case, and the dispatch switch.
+type voiceKind int
+
+const (
+	// voiceKindUnsupported has no composer voice chain yet (dPMR, YSF, D-STAR,
+	// EDACS ProVoice) — its voice bursts are not decoded into PCM here.
+	voiceKindUnsupported voiceKind = iota
+	// voiceKindFM is analog narrowband FM: conventional channels ("", fm,
+	// fm-conv, analog) and the analog-trunk voice channels (Motorola/LTR/
+	// MPT 1327, and EDACS unless it is digital ProVoice), which all decode
+	// through runFMChain.
+	voiceKindFM
+	voiceKindDMR      // dmr-tier1/2/3
+	voiceKindP25P1    // p25
+	voiceKindP25P2    // p25-phase2
+	voiceKindTETRA    // tetra
+	voiceKindTETRADMO // tetra-dmo (Direct Mode)
+	voiceKindNXDN     // nxdn
+)
+
+// classifyVoiceKind maps a grant to its voiceKind. Digital protocols are matched
+// first; everything analog (incl. the analog-trunk protocols, and EDACS when it
+// is not ProVoice) is voiceKindFM; anything else is voiceKindUnsupported.
+func classifyVoiceKind(cs trunking.CallStart) voiceKind {
+	switch cs.Grant.Protocol {
+	case "dmr-tier1", "dmr-tier2", "dmr-tier3":
+		return voiceKindDMR
+	case "p25":
+		return voiceKindP25P1
+	case "p25-phase2":
+		return voiceKindP25P2
+	case "tetra":
+		return voiceKindTETRA
+	case "tetra-dmo":
+		return voiceKindTETRADMO
+	case "nxdn":
+		return voiceKindNXDN
+	}
 	proto := cs.Grant.Protocol
-	// Motorola Type II / SmartZone, EDACS, LTR and MPT 1327 are analog
-	// FM trunking — their voice channels carry plain narrowband FM, so
-	// they decode through the same chain as a conventional FM call.
-	// EDACS ProVoice is the exception: it is digital and patent-
-	// encumbered, so a ProVoice grant is left to the recorder's .raw
-	// sidecar rather than FM-demodulated into garbage.
 	isAnalogTrunk := proto == "motorola" || proto == "ltr" || proto == "mpt1327" ||
 		(proto == "edacs" && !cs.Grant.ProVoice)
-	// The conventional scanner tags its analog channels "fm-conv"
-	// (internal/scanner/conventional/scanner.go). Like the analog-trunk voice
-	// channels above, there is no digital sync to decode — the channel is
-	// FM-demodulated continuously straight into the recorder, so it routes
-	// through the same runFMChain path.
-	isFM := proto == "" || proto == "fm" || proto == "fm-conv" || proto == "analog" || isAnalogTrunk
-	isDMRVoice := proto == "dmr-tier1" || proto == "dmr-tier2" || proto == "dmr-tier3"
-	isP25P2Voice := proto == "p25-phase2"
-	isP25P1Voice := proto == "p25"
-	// TETRA follows the traffic channel and lays down a raw full-slot
-	// sidecar (TCH/S FEC + ACELP vocoder are follow-ups — see
-	// runTETRAVoiceChain), like the DMR/P25 raw-frame paths.
-	isTETRAVoice := proto == "tetra"
-	// TETRA DMO (Direct Mode): voice rides the SAME carrier the DMO pipeline
-	// decodes (no separate traffic channel), so it binds a same-carrier tap and
-	// decodes DNB TCH/S itself — see runTETRADMOVoiceChain. Distinct from the TMO
-	// same-carrier demux (no TDMA usage markers; a single PTT call at a time).
-	isTETRADMOVoice := proto == "tetra-dmo"
-	// NXDN follows the traffic channel with the same receiver the CC
-	// uses; Stage 1 wires the follow+tune+chain lifecycle, the VCH
-	// voice-channel decoder is a follow-up (see runNXDNVoiceChain).
-	isNXDNVoice := proto == "nxdn"
-	if !isFM && !isDMRVoice && !isP25P2Voice && !isP25P1Voice && !isTETRAVoice && !isTETRADMOVoice && !isNXDNVoice {
-		// Remaining digital protocols (dPMR, YSF, D-STAR, EDACS ProVoice)
-		// have no composer voice chain yet — their voice bursts are not
-		// decoded into PCM here.
+	if proto == "" || proto == "fm" || proto == "fm-conv" || proto == "analog" || isAnalogTrunk {
+		return voiceKindFM
+	}
+	return voiceKindUnsupported
+}
+
+func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
+	proto := cs.Grant.Protocol
+	kind := classifyVoiceKind(cs)
+	if kind == voiceKindUnsupported {
 		c.log.Info("composer: digital protocol not yet decoded; chain bypassed",
 			"device", cs.DeviceSerial, "protocol", proto,
 			"group", cs.Grant.GroupID)
@@ -509,7 +527,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	// hangtime marker-reuse leaks. Non-same-carrier TETRA (a dedicated retuned voice
 	// SDR — one call per tap) and every other protocol fall through to the per-call
 	// StreamIQ path below.
-	if isTETRAVoice {
+	if kind == voiceKindTETRA {
 		if scs, ok := src.(sameCarrierSource); ok {
 			if key := scs.CarrierKey(); key != "" {
 				c.followTETRASameCarrier(parent, src, key, cs)
@@ -552,8 +570,8 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	c.chains[cs.DeviceSerial] = ch
 	c.mu.Unlock()
 
-	switch {
-	case isDMRVoice:
+	switch kind {
+	case voiceKindDMR:
 		if cs.Grant.Encrypted {
 			// Surface encryption clearly: the .raw sidecar will hold
 			// encrypted AMBE+2 frames and the WAV will be unintelligible
@@ -563,7 +581,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 				"group", cs.Grant.GroupID)
 		}
 		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, ch.done)
-	case isP25P2Voice:
+	case voiceKindP25P2:
 		macCfg := p25p2.MACDecodeConfig{
 			Trellis:      p25p2.TrellisMode(cs.Grant.P25Phase2Decode.Trellis),
 			RS:           p25p2.RSMode(cs.Grant.P25Phase2Decode.RS),
@@ -574,13 +592,13 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 			Equalizer:    cs.Grant.P25Phase2Decode.Equalizer,
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
-	case isP25P1Voice:
+	case voiceKindP25P1:
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
-	case isTETRAVoice:
+	case voiceKindTETRA:
 		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, ch.done)
-	case isTETRADMOVoice:
+	case voiceKindTETRADMO:
 		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, ch.done)
-	case isNXDNVoice:
+	case voiceKindNXDN:
 		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	default:
 		// Analog FM has no symbol clock to drift, so the rounded integer

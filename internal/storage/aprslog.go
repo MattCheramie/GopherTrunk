@@ -4,11 +4,9 @@
 package storage
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -34,15 +32,12 @@ type APRSPacket struct {
 	FCSOK      bool      `json:"fcs_ok"`
 }
 
-// APRSLog drains KindAPRSPacket events until ctx cancels or the bus
-// closes.
+// APRSLog drains KindAPRSPacket events to the aprs_log table. The bus
+// subscription / drain / close lifecycle is the shared eventLog[APRSPacket];
+// this type adds only the APRS-specific insert and Recent.
 type APRSLog struct {
-	db        *DB
-	bus       *events.Bus
-	log       *slog.Logger
-	sub       *events.Subscription
-	runDone   chan struct{}
-	closeOnce sync.Once
+	*eventLog[APRSPacket]
+	db *DB
 }
 
 // NewAPRSLog wires the log to the bus. Subscription happens at
@@ -51,41 +46,13 @@ func NewAPRSLog(db *DB, bus *events.Bus, logger *slog.Logger) (*APRSLog, error) 
 	if db == nil {
 		return nil, errors.New("storage/aprslog: DB is required")
 	}
-	if bus == nil {
-		return nil, errors.New("storage/aprslog: events.Bus is required")
+	a := &APRSLog{db: db}
+	el, err := newEventLog[APRSPacket](bus, logger, events.KindAPRSPacket, "aprslog", a.insert)
+	if err != nil {
+		return nil, err
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	a := &APRSLog{db: db, bus: bus, log: logger, runDone: make(chan struct{})}
-	a.sub = bus.Subscribe()
+	a.eventLog = el
 	return a, nil
-}
-
-// Run drains KindAPRSPacket events until ctx cancels or the bus
-// closes.
-func (a *APRSLog) Run(ctx context.Context) error {
-	defer close(a.runDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case ev, ok := <-a.sub.C:
-			if !ok {
-				return nil
-			}
-			if ev.Kind != events.KindAPRSPacket {
-				continue
-			}
-			p, ok := ev.Payload.(APRSPacket)
-			if !ok {
-				continue
-			}
-			if err := a.insert(p); err != nil {
-				a.log.Error("aprslog: insert failed", "err", err)
-			}
-		}
-	}
 }
 
 func (a *APRSLog) insert(p APRSPacket) error {
@@ -140,16 +107,4 @@ func (a *APRSLog) Recent(limit int) ([]APRSPacket, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
-}
-
-// Close releases the bus subscription and waits for Run to drain.
-func (a *APRSLog) Close() error {
-	a.closeOnce.Do(func() {
-		a.sub.Close()
-		select {
-		case <-a.runDone:
-		case <-time.After(time.Second):
-		}
-	})
-	return nil
 }

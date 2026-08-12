@@ -1,21 +1,24 @@
-package receiver
+package demod
 
 import (
 	"math"
 	"testing"
 )
 
-// TestC4FMSymbolAGCNormalisesLevel pins the symbol-AGC that lets the
-// receiver decode real captures: the RRC matched filter is unit-energy
-// (DC gain ~3.1), so on a real FM-discriminator stream the 4-level
-// symbol centres land well above the slicer's fixed thresholds and the
-// inner symbols collapse onto the outer rails. The AGC must pull the
-// running mean|x| back to its target (slicerScale·2/3) regardless of the
-// absolute input level, while preserving the relative 4-level structure
-// the slicer decides on.
+// TestC4FMSymbolAGCNormalisesLevel pins the symbol-AGC that lets the C4FM-family
+// receivers decode real captures: the RRC matched filter is unit-energy (DC gain
+// ~3.1), so on a real FM-discriminator stream the 4-level symbol centres land
+// well above the slicer's fixed thresholds and the inner symbols collapse onto
+// the outer rails. The AGC must pull the running mean|x| back to its target
+// (slicerScale·2/3) regardless of the absolute input level, while preserving the
+// relative 4-level structure the slicer decides on.
+//
+// This is the shared test for the AGC that used to be copy-pasted per receiver
+// (P25 Phase 1 / DMR / NXDN); each receiver's own end-to-end decode tests still
+// exercise it in situ.
 func TestC4FMSymbolAGCNormalisesLevel(t *testing.T) {
 	const target = 0.17
-	a := c4fmSymbolAGC{target: target, rate: 1.0 / 256.0}
+	a := C4FMSymbolAGC{Target: target, Rate: 1.0 / 256.0}
 
 	// A balanced 4-level stream at ~3.1× the level the slicer expects —
 	// the over-scale a real matched-filter output carries.
@@ -25,7 +28,7 @@ func TestC4FMSymbolAGCNormalisesLevel(t *testing.T) {
 	for i := range buf {
 		buf[i] = levels[i%4]
 	}
-	a.process(buf)
+	a.Process(buf)
 
 	// After the EMA settles, mean|x| over the tail should track target.
 	var sum float64
@@ -49,12 +52,12 @@ func TestC4FMSymbolAGCNormalisesLevel(t *testing.T) {
 }
 
 // TestC4FMSymbolAGCDisabled confirms the legacy pre-scaled-fixture path
-// (target<=0) is a no-op so existing fixtures stay byte-identical.
+// (Target<=0) is a no-op so existing fixtures stay byte-identical.
 func TestC4FMSymbolAGCDisabled(t *testing.T) {
-	a := c4fmSymbolAGC{target: 0}
+	a := C4FMSymbolAGC{Target: 0}
 	buf := []float32{0.5, -0.3, 1.2, -0.9}
 	want := append([]float32(nil), buf...)
-	a.process(buf)
+	a.Process(buf)
 	for i := range buf {
 		if buf[i] != want[i] {
 			t.Errorf("buf[%d] = %v, want %v (disabled AGC must be a no-op)", i, buf[i], want[i])

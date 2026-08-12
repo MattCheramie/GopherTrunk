@@ -3,6 +3,8 @@ package receiver
 import (
 	"math"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 )
 
 // makeRunC4FMIQ synthesises a 48 kHz / 10 sps IQ buffer whose
@@ -133,68 +135,17 @@ func TestReceiverDecodesOverScaledC4FM(t *testing.T) {
 	}
 }
 
-// TestC4FMSymbolAGCNormalisesLevel pins the symbol-AGC that lets the
-// receiver decode real captures: the RRC matched filter is unit-energy
-// (DC gain ~3.1), so on a real FM-discriminator stream the 4-level
-// symbol centres land well above the slicer's fixed thresholds and the
-// inner symbols collapse onto the outer rails. The AGC must pull the
-// running mean|x| back to its target (slicerScale·2/3) regardless of the
-// absolute input level, while preserving the relative 4-level structure
-// the slicer decides on.
-func TestC4FMSymbolAGCNormalisesLevel(t *testing.T) {
-	const target = 0.17
-	a := c4fmSymbolAGC{target: target, rate: 1.0 / 256.0}
-
-	// A balanced 4-level stream at ~3.1× the level the slicer expects —
-	// the over-scale a real matched-filter output carries.
-	const scale = 3.1
-	levels := []float32{scale * target, scale * target / 3, -scale * target / 3, -scale * target}
-	buf := make([]float32, 4096)
-	for i := range buf {
-		buf[i] = levels[i%4]
-	}
-	a.process(buf)
-
-	// After the EMA settles, mean|x| over the tail should track target.
-	var sum float64
-	tail := buf[len(buf)-1024:]
-	for _, x := range tail {
-		sum += math.Abs(float64(x))
-	}
-	got := sum / float64(len(tail))
-	if math.Abs(got-target) > 0.02*target {
-		t.Errorf("settled mean|x| = %.4f, want ≈ %.4f (AGC not normalising)", got, target)
-	}
-
-	// Relative structure preserved: outer/inner magnitude ratio stays 3:1.
-	outer := math.Abs(float64(tail[0]))
-	inner := math.Abs(float64(tail[1]))
-	if r := outer / inner; math.Abs(r-3.0) > 0.05 {
-		t.Errorf("outer/inner ratio = %.3f, want ≈ 3.0 (AGC distorted the eye)", r)
-	}
-}
-
-// TestC4FMSymbolAGCDisabled confirms the legacy pre-scaled-fixture path
-// (target<=0) is a no-op so existing fixtures stay byte-identical.
-func TestC4FMSymbolAGCDisabled(t *testing.T) {
-	a := c4fmSymbolAGC{target: 0}
-	buf := []float32{0.5, -0.3, 1.2, -0.9}
-	want := append([]float32(nil), buf...)
-	a.process(buf)
-	for i := range buf {
-		if buf[i] != want[i] {
-			t.Errorf("buf[%d] = %v, want %v (disabled AGC must be a no-op)", i, buf[i], want[i])
-		}
-	}
-}
+// The symbol-AGC's own unit tests (level normalisation + disabled no-op) live
+// with the shared type in internal/dsp/demod (TestC4FMSymbolAGC*); the tests
+// here exercise it in situ through the NXDN receiver.
 
 // TestReceiverLegacyFixturePathUnchanged confirms that with DeviationHz
 // unset (the pre-scaled-fixture path) the AGC is disabled, so the receiver
 // stays byte-identical to its pre-AGC behaviour — the opt-in discipline the
 // roadmap requires for every new DSP stage.
 func TestReceiverLegacyFixturePathUnchanged(t *testing.T) {
-	agc := agcTargetFor(1.0, 0) // DeviationHz == 0 → legacy path
+	agc := demod.C4FMAGCTarget(1.0, 0) // DeviationHz == 0 → legacy path
 	if agc != 0 {
-		t.Errorf("agcTargetFor with DeviationHz=0 = %v, want 0 (AGC must stay disabled on the legacy path)", agc)
+		t.Errorf("C4FMAGCTarget with DeviationHz=0 = %v, want 0 (AGC must stay disabled on the legacy path)", agc)
 	}
 }
