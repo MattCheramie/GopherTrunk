@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
@@ -216,6 +217,12 @@ export function Talkgroups() {
               value={selected.lockout ? "locked out" : "active"}
             />
           </div>
+          <Link
+            to={`/history?group_id=${selected.id}`}
+            className="inline-block text-sm text-accent hover:underline"
+          >
+            View calls on this talkgroup →
+          </Link>
           {canMutate ? (
             <div className="pt-3 border-t border-panel space-y-3">
               <p className="text-xs uppercase tracking-wider text-muted flex items-center gap-2">

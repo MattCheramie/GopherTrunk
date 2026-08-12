@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
@@ -253,6 +254,12 @@ export function Systems() {
                 : null
             }
           />
+          <Link
+            to={`/history?system=${encodeURIComponent(selected.name)}`}
+            className="inline-block text-sm text-accent hover:underline"
+          >
+            View calls on this system →
+          </Link>
           {(() => {
             const hunt = scanner?.systems?.find((h) => h.name === selected.name);
             // TETRA has no WACN/RFSS/Site; it identifies a cell by MNI (MCC/MNC),

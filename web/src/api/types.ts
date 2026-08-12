@@ -477,6 +477,17 @@ export interface CallRow {
   duration_ms?: number;
   end_reason?: string;
   talkgroup_alpha?: string;
+  // Resolved alias/name of the source radio (RID), from the operator RID
+  // catalogue + live-decoded talker aliases; absent when unresolved.
+  source_alpha?: string;
+  // Mean received channel power in dBFS (front-end level, not calibrated
+  // RSSI/SNR); absent when unmeasured.
+  signal_dbfs?: number;
+  // Demod quality: RMS error-vector magnitude (%) and estimated symbol SNR
+  // (dB). Absent when unmeasured (only P25 Phase 1 chains measure them).
+  // These are the true decode-quality figures, unlike signal_dbfs.
+  evm_pct?: number;
+  snr_db?: number;
 }
 
 // CallEncryptionEvent is the SSE payload published as `call.encryption`

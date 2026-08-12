@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { RIDLink } from "../components/RIDLink";
+import { CallHealth } from "../components/SignalHealth";
 import { PageHeader } from "../components/ui/PageHeader";
 import type { CallRow } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
@@ -27,16 +30,29 @@ export function History() {
   const [error, setError] = useState<string | null>(null);
   const [confirmSweep, setConfirmSweep] = useState(false);
 
+  // Cross-links from Talkgroups / Systems seed the filter via query params
+  // (?system=, ?group_id=) so "view this TG's / system's calls" lands here
+  // pre-filtered — the cross-selection trunking operators expect.
+  const [searchParams] = useSearchParams();
+  const initSystem = searchParams.get("system") ?? "";
+  const initGroup = searchParams.get("group_id") ?? "";
+
   // Form fields kept separate from the "submitted" filter object so
   // typing into the inputs doesn't trigger a fetch on every keystroke.
   const [limitInput, setLimitInput] = useState("200");
-  const [systemInput, setSystemInput] = useState("");
-  const [groupInput, setGroupInput] = useState("");
+  const [systemInput, setSystemInput] = useState(initSystem);
+  const [groupInput, setGroupInput] = useState(initGroup);
   const [filter, setFilter] = useState<{
     limit?: number;
     system?: string;
     group_id?: number;
-  }>({ limit: 200 });
+  }>(() => {
+    const f: { limit?: number; system?: string; group_id?: number } = { limit: 200 };
+    if (initSystem) f.system = initSystem;
+    const g = parseInt(initGroup, 10);
+    if (Number.isFinite(g)) f.group_id = g;
+    return f;
+  });
 
   const [selected, setSelected] = useState<CallRow | null>(null);
 
@@ -119,12 +135,50 @@ export function History() {
           (a.talkgroup_alpha ?? "").localeCompare(b.talkgroup_alpha ?? ""),
       },
       {
+        // The transmitting radio, alias-resolved when known — "who was
+        // talking", scannable in the row rather than hidden in the modal.
+        key: "source",
+        header: "Source",
+        render: (r) =>
+          r.source_id ? (
+            <RIDLink
+              rid={r.source_id}
+              alias={r.source_alpha}
+              className="text-xs text-accent hover:underline"
+            />
+          ) : (
+            <span className="text-muted text-xs">—</span>
+          ),
+        sort: (a, b) =>
+          (a.source_alpha ?? String(a.source_id ?? "")).localeCompare(
+            b.source_alpha ?? String(b.source_id ?? ""),
+          ),
+        className: "hidden md:table-cell",
+        headerClassName: "hidden md:table-cell",
+      },
+      {
         key: "system",
         header: "System",
         render: (r) => <span className="text-xs">{r.system}</span>,
         sort: (a, b) => a.system.localeCompare(b.system),
-        className: "hidden md:table-cell",
-        headerClassName: "hidden md:table-cell",
+        className: "hidden lg:table-cell",
+        headerClassName: "hidden lg:table-cell",
+      },
+      {
+        // Per-call decode health from the figures the daemon already stamps on
+        // the call (SNR / EVM / level). Lets an operator judge a recording's
+        // quality without opening a scope.
+        key: "signal",
+        header: "Signal",
+        render: (r) => (
+          <CallHealth
+            evmPct={r.evm_pct}
+            snrDb={r.snr_db}
+            signalDbfs={r.signal_dbfs}
+          />
+        ),
+        className: "hidden lg:table-cell",
+        headerClassName: "hidden lg:table-cell",
       },
       {
         key: "duration",
@@ -279,7 +333,11 @@ export function History() {
             <DetailField
               label="Source"
               mono
-              value={selected.source_id ?? null}
+              value={
+                selected.source_id ? (
+                  <RIDLink rid={selected.source_id} alias={selected.source_alpha} />
+                ) : null
+              }
             />
             <DetailField
               label="Frequency"
@@ -287,6 +345,20 @@ export function History() {
               value={formatHz(selected.frequency_hz)}
             />
           </div>
+          {(selected.snr_db != null ||
+            selected.evm_pct != null ||
+            selected.signal_dbfs != null) && (
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted mb-1">
+                Signal
+              </p>
+              <CallHealth
+                evmPct={selected.evm_pct}
+                snrDb={selected.snr_db}
+                signalDbfs={selected.signal_dbfs}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <DetailField
               label="Started"

@@ -4,6 +4,7 @@ import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { RIDLink } from "../components/RIDLink";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { PageHeader } from "../components/ui/PageHeader";
 import type { ActiveCallDTO } from "../api/types";
@@ -88,6 +89,21 @@ export function Active() {
         header: "System",
         render: (r) => <span className="text-xs">{r.grant.system}</span>,
         sort: (a, b) => a.grant.system.localeCompare(b.grant.system),
+        className: "hidden md:table-cell",
+        headerClassName: "hidden md:table-cell",
+      },
+      {
+        // Who is keyed up — the transmitting radio. A trunking operator scans
+        // this at a glance, so it belongs in the row, not just the modal.
+        key: "source",
+        header: "Source",
+        render: (r) =>
+          r.grant.source_id ? (
+            <RIDLink rid={r.grant.source_id} className="font-mono text-xs text-accent hover:underline" />
+          ) : (
+            <span className="text-muted text-xs">—</span>
+          ),
+        sort: (a, b) => (a.grant.source_id ?? 0) - (b.grant.source_id ?? 0),
         className: "hidden md:table-cell",
         headerClassName: "hidden md:table-cell",
       },
@@ -193,7 +209,11 @@ export function Active() {
             <DetailField
               label="Source"
               mono
-              value={selected.grant.source_id ?? null}
+              value={
+                selected.grant.source_id ? (
+                  <RIDLink rid={selected.grant.source_id} />
+                ) : null
+              }
             />
             <DetailField
               label="Frequency"

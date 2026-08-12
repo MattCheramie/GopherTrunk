@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { useShared } from "../store/shared";
 import { groupEvents } from "../lib/groupEvents";
 import type { EventDTO, TalkgroupDTO } from "../api/types";
 import { PageHeader } from "../components/ui/PageHeader";
+import { RIDLink } from "../components/RIDLink";
 import { formatClock } from "../lib/formatTime";
 
 // CC Activity panel — a focused view of the trunked control-channel
@@ -51,17 +51,10 @@ interface Row {
 
 // ridLink renders an inline link to the per-RID detail page, styled
 // like the surrounding mono text but underlined on hover so it reads
-// as actionable in the CC Activity feed.
+// as actionable in the CC Activity feed. Thin wrapper over the shared
+// RIDLink so the call sites below read unchanged.
 function ridLink(rid: number) {
-  return (
-    <Link
-      to={`/rids/${rid}`}
-      className="font-mono text-accent hover:underline"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {rid}
-    </Link>
-  );
+  return <RIDLink rid={rid} />;
 }
 
 export function CCActivity() {

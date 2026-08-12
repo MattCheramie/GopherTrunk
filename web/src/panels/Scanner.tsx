@@ -6,6 +6,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
+import { SignalQualityChip, SignalLevelBar } from "../components/SignalHealth";
 import type {
   ConvChannelStatusDTO,
   SystemHuntStatusDTO,
@@ -538,66 +539,6 @@ function StatePill({ state }: { state: string }) {
           ? "err"
           : "neutral";
   return <Badge tone={tone}>{state}</Badge>;
-}
-
-// SignalQualityChip is the simple control-channel signal indicator: a
-// clean/marginal/poor pill (green/amber/red), with the measured carrier offset in
-// its tooltip. Backed by the decoder's live TSBK (P25) / BSCH (TETRA) frame-error
-// rate, so it works across protocols — not just TETRA.
-function SignalQualityChip({
-  quality,
-  offsetHz,
-}: {
-  quality: string;
-  offsetHz?: number;
-}) {
-  const tone =
-    quality === "clean" ? "ok" : quality === "marginal" ? "warn" : "err";
-  const offset =
-    offsetHz != null ? ` · offset ${offsetHz > 0 ? "+" : ""}${offsetHz} Hz` : "";
-  return (
-    <span title={`control-channel signal: ${quality}${offset}`}>
-      <Badge tone={tone}>signal: {quality}</Badge>
-    </span>
-  );
-}
-
-// SignalLevelBar renders the locked carrier's raw front-end level (mean channel
-// power in dBFS) as a numeric read-out plus a small level bar, so an operator can
-// aim an antenna or trim LNA gain against a live number instead of just the
-// clean/marginal/poor pill. This is signal STRENGTH, not decode quality — a strong
-// bar with a red quality chip means "plenty of signal, but something else (offset,
-// overload, wrong colour code) is hurting the decode".
-//
-// The bar maps the useful SDR range −90…−20 dBFS to 0…100%. Colour is by level:
-// green ≥ −45 dBFS, amber −45…−60, red below −60.
-function SignalLevelBar({ dbfs }: { dbfs: number }) {
-  const floorDb = -90;
-  const ceilDb = -20;
-  const pct = Math.max(
-    0,
-    Math.min(100, ((dbfs - floorDb) / (ceilDb - floorDb)) * 100),
-  );
-  const color = dbfs >= -45 ? "#34d399" : dbfs >= -60 ? "#fbbf24" : "#f87171";
-  return (
-    <span
-      className="inline-flex items-center gap-1.5"
-      title={`signal level ${dbfs.toFixed(1)} dBFS (mean channel power) — aim antenna / trim LNA gain to maximise`}
-    >
-      <span
-        className="inline-block h-1.5 w-12 rounded-full bg-panel overflow-hidden"
-        aria-hidden
-      >
-        <span
-          className="block h-full rounded-full"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-      </span>
-      <span className="font-mono text-xs text-muted">
-        {dbfs.toFixed(1)} dBFS
-      </span>
-    </span>
-  );
 }
 
 function timeOnly(ts: string): string {

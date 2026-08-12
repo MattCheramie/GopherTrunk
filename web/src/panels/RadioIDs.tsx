@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
@@ -25,6 +26,11 @@ export function RadioIDs() {
   const notify = useShared((s) => s.notify);
   const rids = useShared((s) => s.rids);
   const setRIDs = useShared((s) => s.setRIDs);
+  // Deep-link support: /rids/:id opens the detail modal for that radio,
+  // so a source-radio click in CC Activity / call history lands on the
+  // radio (issue: the link previously fell through to the dashboard).
+  const { id: routeId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const [selected, setSelected] = useState<RIDDTO | null>(null);
   const [history, setHistory] = useState<CallRow[]>([]);
@@ -82,6 +88,42 @@ export function RadioIDs() {
     if (system) set.add(system);
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [systemNames, rids, system]);
+
+  // Open the detail modal for the /rids/:id route param. Prefer a row
+  // already in the loaded list; otherwise fetch the single RID directly so a
+  // deep link (or a radio filtered out by the current system scope) still
+  // opens. An unknown id drops back to the list URL rather than stranding the
+  // user on a dead link.
+  useEffect(() => {
+    if (!routeId) return;
+    const idNum = Number(routeId);
+    if (!Number.isFinite(idNum)) return;
+    if (selected?.id === idNum) return;
+    const inList = rids.find((r) => r.id === idNum);
+    if (inList) {
+      setSelected(inList);
+      return;
+    }
+    let cancel = false;
+    api
+      .rid(cfg, idNum)
+      .then((r) => {
+        if (!cancel) setSelected(r);
+      })
+      .catch(() => {
+        if (!cancel) navigate("/rids", { replace: true });
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [routeId, rids, cfg, selected, navigate]);
+
+  // Close the detail modal, restoring the /rids list URL when the modal was
+  // opened via a /rids/:id deep link.
+  function closeDetail() {
+    setSelected(null);
+    if (routeId) navigate("/rids");
+  }
 
   // Fetch per-RID call history when the detail modal opens.
   useEffect(() => {
@@ -247,7 +289,12 @@ export function RadioIDs() {
             ))}
           </Select>
         }
-        onRowClick={(r) => setSelected(r)}
+        onRowClick={(r) => {
+          // Open immediately (works regardless of the route) and reflect the
+          // selection in the URL so it is shareable / back-button friendly.
+          setSelected(r);
+          navigate(`/rids/${r.id}`);
+        }}
         emptyMessage={
           rids.length === 0
             ? system
@@ -265,7 +312,7 @@ export function RadioIDs() {
             `RID ${selected.id}`
           }
           subtitle={`RID ${selected.id}${selected.configured ? "" : " · live only"}`}
-          onClose={() => setSelected(null)}
+          onClose={closeDetail}
         >
           <DetailField label="Description" value={selected.description} />
           <div className="grid grid-cols-2 gap-3">

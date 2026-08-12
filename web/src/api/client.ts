@@ -165,6 +165,12 @@ export const api = {
       `/api/v1/rids${qs ? `?${qs}` : ""}`,
     ).then((r) => r.rids);
   },
+  // Fetch one merged RID row by id. Used to open the /rids/:id deep link
+  // (e.g. a source-radio click in CC Activity / call history) even when the
+  // radio isn't in the currently-filtered list. Returns the RIDDTO directly
+  // (the endpoint is unwrapped, unlike the list route).
+  rid: (c: ClientConfig, id: number) =>
+    request<RIDDTO>(c, "GET", `/api/v1/rids/${id}`),
   ridHistory: (
     c: ClientConfig,
     id: number,
