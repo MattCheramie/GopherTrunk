@@ -1293,114 +1293,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		return nil, err
 	}
 
-	// Composer is wired when we have a Voice device pool to source IQ
-	// from + a voice decoder to feed PCM into. Without an SDR pool there's
-	// nothing to demod. The decoder is the file recorder when recording is
-	// configured, otherwise a decode-only recorder — either way it decodes
-	// digital voice and taps PCM to the live stream.
-	if d.pool != nil && d.voiceDecoder != nil {
-		// Fan PCM to the decoder + tone-out (if configured) + live player + gRPC publisher.
-		sinks := []composer.PCMSink{d.voiceDecoder}
-		if d.toneout != nil {
-			sinks = append(sinks, d.toneout)
-		}
-		if d.player != nil {
-			sinks = append(sinks, playerSink{p: d.player, engine: d.engine})
-		}
-		sinks = append(sinks, d.audioPub)
-
-		// Digital protocols (P25, DMR, NXDN, …) reach the composer as
-		// raw vocoder frames and fan out only to the recorder — the
-		// lone decoder. Tap the PCM the recorder decodes and forward it
-		// to the live STREAM consumers — the network publisher
-		// (WebUI/gRPC) and the tone-out detector — so digital calls are
-		// heard live, not just analog FM (issue #598).
-		//
-		// The host speaker player is deliberately EXCLUDED from this
-		// tap: routing decoded digital PCM there plays the call on the
-		// local speaker while the WebUI streams the same PCM, and on one
-		// machine the two offset playbacks echo / comb-filter (issue
-		// #598 follow-up). Analog FM still reaches the host player via
-		// the composer's main `sinks` fanout below; digital
-		// host-speaker playback is out of scope. The recorder itself is
-		// also excluded (it already wrote the WAV from its own decode).
-		var liveSinks []composer.PCMSink
-		if d.toneout != nil {
-			liveSinks = append(liveSinks, d.toneout)
-		}
-		// Optionally level the decoded digital PCM before it reaches the
-		// network stream so live loudness tracks the loudness-normalized
-		// recordings (audio.live_loudness, default off). Decoded vocoder
-		// audio is always 8 kHz. The tone-out detector is left on the raw
-		// PCM — its Goertzel matched filters key off absolute tone levels.
-		var liveStreamSink composer.PCMSink = d.audioPub
-		if cfg.Audio.LiveLoudness {
-			lls := newLiveLoudnessSink(d.audioPub, 8000, d.bus, log)
-			d.liveLoudness = lls
-			liveStreamSink = lls
-			log.Info("audio: live-loudness AGC enabled for digital stream")
-		}
-		liveSinks = append(liveSinks, liveStreamSink)
-		d.voiceDecoder.SetDecodedPCMSink(fanoutSink(liveSinks))
-		// Raw vocoder frames fan straight to the publisher (the only raw
-		// consumer): include_raw subscribers get the un-decoded IMBE / AMBE
-		// bytes. This path bypasses live-loudness — that AGC only makes sense
-		// on decoded PCM, not on un-decoded codec frames.
-		d.voiceDecoder.SetRawFrameSink(d.audioPub)
-
-		var sink composer.PCMSink = d.voiceDecoder
-		if len(sinks) > 1 {
-			sink = fanoutSink(sinks)
-			// Surface the fanout wiring at startup so operators can
-			// confirm from logs that the raw-frame path is in place.
-			// Before the fanoutSink.WriteRawFrame fix (issue #356), a
-			// multi-sink config silently dropped every IMBE / AMBE
-			// frame and there was nothing in the logs to tell the
-			// operator the audio path was broken.
-			log.Info("composer: sink fanout configured",
-				"count", len(sinks), "raw_frames_supported", true)
-		} else {
-			log.Info("composer: sink direct configured")
-		}
-		// Optional cryptolab crypto-frame capture: when configured, the
-		// composer hands each encrypted P25 Phase 1 superframe's MI +
-		// encrypted voice frames to this sink (JSONL consumed by
-		// `gophertrunk cryptolab ks`). Nil when unset, so the voice path
-		// runs unchanged.
-		var cryptoSink cryptocap.Sink
-		if path := cfg.Recordings.CryptoCapturePath; path != "" {
-			cw, err := cryptocap.NewFileWriter(path)
-			if err != nil {
-				return nil, fmt.Errorf("daemon: crypto capture: %w", err)
-			}
-			d.cryptoCap = cw
-			cryptoSink = cw
-			log.Info("daemon: cryptolab crypto-frame capture enabled", "path", path)
-		}
-		comp, err := composer.New(composer.Options{
-			Bus:           d.bus,
-			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap()},
-			Sink:          sink,
-			Engine:        d.engine,
-			Autotune:      d.autotune,
-			CryptoSink:    cryptoSink,
-			Log:           log,
-			IQSampleRate:  cfg.SDR.SampleRate,
-			PCMSampleRate: cfg.Recordings.SampleRate,
-			VoiceHangtime: time.Duration(cfg.Trunking.VoiceHangtimeMs) * time.Millisecond,
-			// Default ("" / "transmission") splits one file per over;
-			// "conversation" keeps same-talkgroup overs together.
-			SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
-			Equalizer: composer.EqualizerConfig{
-				Enabled:  cfg.Recordings.Equalizer.Enabled,
-				Taps:     cfg.Recordings.Equalizer.Taps,
-				StepSize: cfg.Recordings.Equalizer.StepSize,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: composer: %w", err)
-		}
-		d.composer = comp
+	if err := d.buildComposer(cfg, log); err != nil {
+		return nil, err
 	}
 
 	// CC cache — JSON file used by the hunter to bias retunes toward
@@ -2837,6 +2731,124 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			return fmt.Errorf("daemon: voice decoder: %w", err)
 		}
 		d.voiceDecoder = dec
+	}
+	return nil
+}
+
+// buildComposer wires the voice composer when there is a device pool to
+// source IQ from and a voice decoder to feed PCM into: it assembles the
+// PCM/raw sink fan-out (recorder + tone-out + player + audio publisher, with
+// the digital live-stream tap and optional live-loudness AGC) and the optional
+// cryptolab capture sink. Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
+	// Composer is wired when we have a Voice device pool to source IQ
+	// from + a voice decoder to feed PCM into. Without an SDR pool there's
+	// nothing to demod. The decoder is the file recorder when recording is
+	// configured, otherwise a decode-only recorder — either way it decodes
+	// digital voice and taps PCM to the live stream.
+	if d.pool != nil && d.voiceDecoder != nil {
+		// Fan PCM to the decoder + tone-out (if configured) + live player + gRPC publisher.
+		sinks := []composer.PCMSink{d.voiceDecoder}
+		if d.toneout != nil {
+			sinks = append(sinks, d.toneout)
+		}
+		if d.player != nil {
+			sinks = append(sinks, playerSink{p: d.player, engine: d.engine})
+		}
+		sinks = append(sinks, d.audioPub)
+
+		// Digital protocols (P25, DMR, NXDN, …) reach the composer as
+		// raw vocoder frames and fan out only to the recorder — the
+		// lone decoder. Tap the PCM the recorder decodes and forward it
+		// to the live STREAM consumers — the network publisher
+		// (WebUI/gRPC) and the tone-out detector — so digital calls are
+		// heard live, not just analog FM (issue #598).
+		//
+		// The host speaker player is deliberately EXCLUDED from this
+		// tap: routing decoded digital PCM there plays the call on the
+		// local speaker while the WebUI streams the same PCM, and on one
+		// machine the two offset playbacks echo / comb-filter (issue
+		// #598 follow-up). Analog FM still reaches the host player via
+		// the composer's main `sinks` fanout below; digital
+		// host-speaker playback is out of scope. The recorder itself is
+		// also excluded (it already wrote the WAV from its own decode).
+		var liveSinks []composer.PCMSink
+		if d.toneout != nil {
+			liveSinks = append(liveSinks, d.toneout)
+		}
+		// Optionally level the decoded digital PCM before it reaches the
+		// network stream so live loudness tracks the loudness-normalized
+		// recordings (audio.live_loudness, default off). Decoded vocoder
+		// audio is always 8 kHz. The tone-out detector is left on the raw
+		// PCM — its Goertzel matched filters key off absolute tone levels.
+		var liveStreamSink composer.PCMSink = d.audioPub
+		if cfg.Audio.LiveLoudness {
+			lls := newLiveLoudnessSink(d.audioPub, 8000, d.bus, log)
+			d.liveLoudness = lls
+			liveStreamSink = lls
+			log.Info("audio: live-loudness AGC enabled for digital stream")
+		}
+		liveSinks = append(liveSinks, liveStreamSink)
+		d.voiceDecoder.SetDecodedPCMSink(fanoutSink(liveSinks))
+		// Raw vocoder frames fan straight to the publisher (the only raw
+		// consumer): include_raw subscribers get the un-decoded IMBE / AMBE
+		// bytes. This path bypasses live-loudness — that AGC only makes sense
+		// on decoded PCM, not on un-decoded codec frames.
+		d.voiceDecoder.SetRawFrameSink(d.audioPub)
+
+		var sink composer.PCMSink = d.voiceDecoder
+		if len(sinks) > 1 {
+			sink = fanoutSink(sinks)
+			// Surface the fanout wiring at startup so operators can
+			// confirm from logs that the raw-frame path is in place.
+			// Before the fanoutSink.WriteRawFrame fix (issue #356), a
+			// multi-sink config silently dropped every IMBE / AMBE
+			// frame and there was nothing in the logs to tell the
+			// operator the audio path was broken.
+			log.Info("composer: sink fanout configured",
+				"count", len(sinks), "raw_frames_supported", true)
+		} else {
+			log.Info("composer: sink direct configured")
+		}
+		// Optional cryptolab crypto-frame capture: when configured, the
+		// composer hands each encrypted P25 Phase 1 superframe's MI +
+		// encrypted voice frames to this sink (JSONL consumed by
+		// `gophertrunk cryptolab ks`). Nil when unset, so the voice path
+		// runs unchanged.
+		var cryptoSink cryptocap.Sink
+		if path := cfg.Recordings.CryptoCapturePath; path != "" {
+			cw, err := cryptocap.NewFileWriter(path)
+			if err != nil {
+				return fmt.Errorf("daemon: crypto capture: %w", err)
+			}
+			d.cryptoCap = cw
+			cryptoSink = cw
+			log.Info("daemon: cryptolab crypto-frame capture enabled", "path", path)
+		}
+		comp, err := composer.New(composer.Options{
+			Bus:           d.bus,
+			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap()},
+			Sink:          sink,
+			Engine:        d.engine,
+			Autotune:      d.autotune,
+			CryptoSink:    cryptoSink,
+			Log:           log,
+			IQSampleRate:  cfg.SDR.SampleRate,
+			PCMSampleRate: cfg.Recordings.SampleRate,
+			VoiceHangtime: time.Duration(cfg.Trunking.VoiceHangtimeMs) * time.Millisecond,
+			// Default ("" / "transmission") splits one file per over;
+			// "conversation" keeps same-talkgroup overs together.
+			SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
+			Equalizer: composer.EqualizerConfig{
+				Enabled:  cfg.Recordings.Equalizer.Enabled,
+				Taps:     cfg.Recordings.Equalizer.Taps,
+				StepSize: cfg.Recordings.Equalizer.StepSize,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: composer: %w", err)
+		}
+		d.composer = comp
 	}
 	return nil
 }
