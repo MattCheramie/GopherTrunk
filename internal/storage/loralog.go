@@ -4,11 +4,9 @@
 package storage
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -44,12 +42,8 @@ type LoRaFrame struct {
 
 // LoRaLog drains KindLoRaFrame events until ctx cancels or the bus closes.
 type LoRaLog struct {
-	db        *DB
-	bus       *events.Bus
-	log       *slog.Logger
-	sub       *events.Subscription
-	runDone   chan struct{}
-	closeOnce sync.Once
+	*eventLog[LoRaFrame]
+	db *DB
 }
 
 // NewLoRaLog wires the log to the bus. Subscription happens at construction
@@ -58,40 +52,13 @@ func NewLoRaLog(db *DB, bus *events.Bus, logger *slog.Logger) (*LoRaLog, error) 
 	if db == nil {
 		return nil, errors.New("storage/loralog: DB is required")
 	}
-	if bus == nil {
-		return nil, errors.New("storage/loralog: events.Bus is required")
+	l := &LoRaLog{db: db}
+	el, err := newEventLog[LoRaFrame](bus, logger, events.KindLoRaFrame, "loralog", l.insert)
+	if err != nil {
+		return nil, err
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	l := &LoRaLog{db: db, bus: bus, log: logger, runDone: make(chan struct{})}
-	l.sub = bus.Subscribe()
+	l.eventLog = el
 	return l, nil
-}
-
-// Run drains KindLoRaFrame events until ctx cancels or the bus closes.
-func (l *LoRaLog) Run(ctx context.Context) error {
-	defer close(l.runDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case ev, ok := <-l.sub.C:
-			if !ok {
-				return nil
-			}
-			if ev.Kind != events.KindLoRaFrame {
-				continue
-			}
-			f, ok := ev.Payload.(LoRaFrame)
-			if !ok {
-				continue
-			}
-			if err := l.insert(f); err != nil {
-				l.log.Error("loralog: insert failed", "err", err)
-			}
-		}
-	}
 }
 
 func b2i(b bool) int {
@@ -160,14 +127,3 @@ func (l *LoRaLog) Recent(limit int) ([]LoRaFrame, error) {
 	return out, rows.Err()
 }
 
-// Close releases the bus subscription and waits for Run to drain.
-func (l *LoRaLog) Close() error {
-	l.closeOnce.Do(func() {
-		l.sub.Close()
-		select {
-		case <-l.runDone:
-		case <-time.After(time.Second):
-		}
-	})
-	return nil
-}

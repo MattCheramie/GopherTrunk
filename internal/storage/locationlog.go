@@ -1,11 +1,9 @@
 package storage
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -15,12 +13,8 @@ import (
 // LocationLog persists geographic fixes to the SQLite location_log
 // table by subscribing to events.KindLocation on the shared bus.
 type LocationLog struct {
-	db        *DB
-	bus       *events.Bus
-	log       *slog.Logger
-	sub       *events.Subscription
-	runDone   chan struct{}
-	closeOnce sync.Once
+	*eventLog[trunking.Location]
+	db *DB
 }
 
 // LocationRow is one persisted fix, returned by Recent.
@@ -43,40 +37,13 @@ func NewLocationLog(db *DB, bus *events.Bus, logger *slog.Logger) (*LocationLog,
 	if db == nil {
 		return nil, errors.New("storage/locationlog: DB is required")
 	}
-	if bus == nil {
-		return nil, errors.New("storage/locationlog: events.Bus is required")
+	l := &LocationLog{db: db}
+	el, err := newEventLog[trunking.Location](bus, logger, events.KindLocation, "locationlog", l.insert)
+	if err != nil {
+		return nil, err
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	l := &LocationLog{db: db, bus: bus, log: logger, runDone: make(chan struct{})}
-	l.sub = bus.Subscribe()
+	l.eventLog = el
 	return l, nil
-}
-
-// Run drains KindLocation events until ctx cancels or the bus closes.
-func (l *LocationLog) Run(ctx context.Context) error {
-	defer close(l.runDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case ev, ok := <-l.sub.C:
-			if !ok {
-				return nil
-			}
-			if ev.Kind != events.KindLocation {
-				continue
-			}
-			loc, ok := ev.Payload.(trunking.Location)
-			if !ok {
-				continue
-			}
-			if err := l.insert(loc); err != nil {
-				l.log.Error("locationlog: insert failed", "err", err)
-			}
-		}
-	}
 }
 
 func (l *LocationLog) insert(loc trunking.Location) error {
@@ -123,14 +90,3 @@ func (l *LocationLog) Recent(limit int) ([]LocationRow, error) {
 	return out, rows.Err()
 }
 
-// Close releases the bus subscription and waits for Run to drain.
-func (l *LocationLog) Close() error {
-	l.closeOnce.Do(func() {
-		l.sub.Close()
-		select {
-		case <-l.runDone:
-		case <-time.After(time.Second):
-		}
-	})
-	return nil
-}

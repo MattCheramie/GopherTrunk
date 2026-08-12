@@ -4,11 +4,9 @@
 package storage
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -30,12 +28,8 @@ type M17LinkSetup struct {
 // M17Log drains KindM17LinkSetup events until ctx cancels or the bus
 // closes.
 type M17Log struct {
-	db        *DB
-	bus       *events.Bus
-	log       *slog.Logger
-	sub       *events.Subscription
-	runDone   chan struct{}
-	closeOnce sync.Once
+	*eventLog[M17LinkSetup]
+	db *DB
 }
 
 // NewM17Log wires the log to the bus. Subscription happens at
@@ -44,40 +38,13 @@ func NewM17Log(db *DB, bus *events.Bus, logger *slog.Logger) (*M17Log, error) {
 	if db == nil {
 		return nil, errors.New("storage/m17log: DB is required")
 	}
-	if bus == nil {
-		return nil, errors.New("storage/m17log: events.Bus is required")
+	m := &M17Log{db: db}
+	el, err := newEventLog[M17LinkSetup](bus, logger, events.KindM17LinkSetup, "m17log", m.insert)
+	if err != nil {
+		return nil, err
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	m := &M17Log{db: db, bus: bus, log: logger, runDone: make(chan struct{})}
-	m.sub = bus.Subscribe()
+	m.eventLog = el
 	return m, nil
-}
-
-// Run drains KindM17LinkSetup events until ctx cancels or the bus closes.
-func (m *M17Log) Run(ctx context.Context) error {
-	defer close(m.runDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case ev, ok := <-m.sub.C:
-			if !ok {
-				return nil
-			}
-			if ev.Kind != events.KindM17LinkSetup {
-				continue
-			}
-			ls, ok := ev.Payload.(M17LinkSetup)
-			if !ok {
-				continue
-			}
-			if err := m.insert(ls); err != nil {
-				m.log.Error("m17log: insert failed", "err", err)
-			}
-		}
-	}
 }
 
 func (m *M17Log) insert(ls M17LinkSetup) error {
@@ -132,14 +99,3 @@ func (m *M17Log) Recent(limit int) ([]M17LinkSetup, error) {
 	return out, rows.Err()
 }
 
-// Close releases the bus subscription and waits for Run to drain.
-func (m *M17Log) Close() error {
-	m.closeOnce.Do(func() {
-		m.sub.Close()
-		select {
-		case <-m.runDone:
-		case <-time.After(time.Second):
-		}
-	})
-	return nil
-}
