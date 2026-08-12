@@ -67,7 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "discovery",
     label: "Discovery",
     items: [
-      { to: "/hunt", label: "Hunt", icon: "🔍", keywords: ["discover", "sweep", "spectrum", "survey"] },
+      { to: "/hunt", label: "Hunt", icon: "🔍", primary: true, keywords: ["discover", "sweep", "spectrum", "survey"] },
       { to: "/import", label: "Import", icon: "↗", keywords: ["radioreference", "rr", "csv", "pdf"] },
     ],
   },
@@ -76,21 +76,34 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Signals & DSP",
     items: [
       { to: "/spectrum", label: "Spectrum", icon: "≈", keywords: ["waterfall", "fft"] },
-      { to: "/plots", label: "Plots", icon: "✦", keywords: ["dsp", "charts"] },
-      { to: "/constellation", label: "Constellation", icon: "✲", keywords: ["iq", "scatter", "psk"] },
-      { to: "/symbols", label: "Symbol Scope", icon: "⋮", keywords: ["dsp", "demod", "slicer"] },
-      { to: "/eye", label: "Eye Diagram", icon: "◉", keywords: ["dsp", "c4fm", "quality"] },
-      { to: "/mixer", label: "Mixer", icon: "⊞", keywords: ["dsp", "baseband", "spectrum"] },
-      { to: "/tuning", label: "Tuning", icon: "⊹", keywords: ["dsp", "receiver", "afc"] },
-      { to: "/histogram", label: "Histogram", icon: "▥", keywords: ["dsp", "symbol", "levels"] },
+      // The Plots hub tabs the per-signal scopes (constellation, symbols, eye,
+      // mixer, tuning, histogram) — they are one screen, opened in context, not
+      // six separate always-listed panels. Their standalone routes still resolve
+      // for deep links; their search terms are carried here so ⌘K still finds them.
+      {
+        to: "/plots",
+        label: "Plots",
+        icon: "✦",
+        keywords: [
+          "dsp", "charts", "constellation", "iq", "scatter", "psk",
+          "symbol", "symbols", "slicer", "eye", "c4fm", "mixer", "baseband",
+          "tuning", "receiver", "afc", "histogram", "levels", "quality",
+        ],
+      },
     ],
   },
   {
-    id: "decoders",
-    label: "Decoders & Logs",
+    id: "logs",
+    label: "Logs",
     items: [
       { to: "/events", label: "Events", icon: "≣", keywords: ["log", "stream"] },
       { to: "/tones", label: "Tones", icon: "♪", keywords: ["tone out", "two tone", "qcii"] },
+    ],
+  },
+  {
+    id: "receivers",
+    label: "Other Receivers",
+    items: [
       { to: "/pagers", label: "Pagers", icon: "✉", keywords: ["pocsag", "flex", "messages"] },
       { to: "/aprs", label: "APRS", icon: "⛯", keywords: ["packet", "position", "ax25"] },
       { to: "/ais", label: "AIS", icon: "⚓", keywords: ["vessel", "marine", "ship"] },
@@ -114,7 +127,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "system",
     label: "System",
     items: [
-      { to: "/settings", label: "Settings", icon: "⚙", primary: true, keywords: ["preferences", "theme", "config"] },
+      { to: "/settings", label: "Settings", icon: "⚙", keywords: ["preferences", "theme", "config"] },
       { to: "/devices", label: "Devices", icon: "⌗", keywords: ["sdr", "pool", "rtl", "dongle"] },
       { to: "/metrics", label: "Metrics", icon: "▰", keywords: ["prometheus", "stats", "graphs"] },
       {
