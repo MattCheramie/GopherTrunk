@@ -221,10 +221,10 @@ UPDATE call_log
 }
 
 // recordComplete stamps the finished recording's path onto the matching call
-// row. Keyed by (device_serial, started_at) exactly like recordEnd. Uses
-// COALESCE(NULLIF(?, ''), recording_path) so an empty path never clobbers a
-// value already written, mirroring the never-downgrade discipline elsewhere in
-// this file. A CallComplete with no matching row (recording without a persisted
+// row. Keyed by (device_serial, started_at) exactly like recordEnd. The
+// COALESCE(NULLIF(...)) update keeps an empty path from clobbering a value
+// already written, mirroring the never-downgrade discipline elsewhere in this
+// file. A CallComplete with no matching row (a recording without a persisted
 // call, e.g. replay tooling) updates nothing and is not an error.
 func (c *CallLog) recordComplete(cc trunking.CallComplete) error {
 	if cc.AudioPath == "" {
