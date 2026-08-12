@@ -5,8 +5,10 @@ import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { PageHeader } from "../components/ui/PageHeader";
+import { Section } from "../components/ui/Section";
 import { Select } from "../components/ui/Select";
-import type { CallRow, RIDDTO } from "../api/types";
+import { PositionMap, type MapPoint } from "../components/PositionMap";
+import type { CallRow, LocationFix, RIDDTO } from "../api/types";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -40,6 +42,8 @@ export function RadioIDs() {
   // a large multi-system RID roster stays legible.
   const [system, setSystem] = useState("");
   const [systemNames, setSystemNames] = useState<string[]>([]);
+  // Recent subscriber-radio position fixes (DMR LRRP / unit GPS) for the map.
+  const [locations, setLocations] = useState<LocationFix[]>([]);
 
   // Poll the merged list, scoped to the selected system.
   useEffect(() => {
@@ -77,6 +81,52 @@ export function RadioIDs() {
       cancel = true;
     };
   }, [cfg]);
+
+  // Poll recent position fixes for the unit-location map. Empty (no LRRP/GPS
+  // decoded, or the subsystem is off) simply hides the map.
+  useEffect(() => {
+    let cancel = false;
+    const refresh = async () => {
+      try {
+        const fixes = await api.locations(cfg, { limit: 500 });
+        if (!cancel) setLocations(fixes);
+      } catch {
+        // Non-fatal — keep the previous fixes.
+      }
+    };
+    refresh();
+    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
+    return () => {
+      cancel = true;
+      window.clearInterval(t);
+    };
+  }, [cfg]);
+
+  // Map the newest fix per radio to a marker, labelled by alias when the RID
+  // roster resolves one. Keeping only the latest fix per radio avoids stacking
+  // a trail of markers on one unit.
+  const mapPoints = useMemo<MapPoint[]>(() => {
+    const aliasByID = new Map<number, string>();
+    for (const r of rids) if (r.alias) aliasByID.set(r.id, r.alias);
+    const latest = new Map<number, LocationFix>();
+    for (const f of locations) {
+      if (!Number.isFinite(f.latitude) || !Number.isFinite(f.longitude)) continue;
+      const prev = latest.get(f.radio_id);
+      if (!prev || f.reported_at > prev.reported_at) latest.set(f.radio_id, f);
+    }
+    return [...latest.values()].map((f) => {
+      const alias = aliasByID.get(f.radio_id);
+      const speed = f.speed_knots > 0 ? ` · ${f.speed_knots.toFixed(0)} kn` : "";
+      return {
+        id: String(f.radio_id),
+        latitude: f.latitude,
+        longitude: f.longitude,
+        kind: "unit" as const,
+        label: alias ? `${alias} (${f.radio_id})` : `RID ${f.radio_id}`,
+        detail: `${f.system}${f.talkgroup ? ` · TG ${f.talkgroup}` : ""}${speed}`,
+      };
+    });
+  }, [locations, rids]);
 
   // Dropdown options: configured systems ∪ systems seen in the current rows ∪
   // the active selection (so a discovered-only or just-selected system never
@@ -250,6 +300,16 @@ export function RadioIDs() {
           <span className="text-xs text-muted">{rids.length} total</span>
         }
       />
+
+      {mapPoints.length > 0 && (
+        <Section
+          id="rid-map"
+          title={`Unit locations (${mapPoints.length})`}
+          description="Latest GPS / LRRP position per radio. Secondary to the roster — collapse if not needed."
+        >
+          <PositionMap points={mapPoints} heightPx={320} />
+        </Section>
+      )}
 
       <DataTable
         rows={rids}

@@ -645,6 +645,22 @@ export interface EventDTO {
   payload?: unknown;
 }
 
+// LocationFix is one over-the-air position report from a subscriber radio
+// (DMR LRRP / Motorola Unit GPS / L3Harris Talker GPS), returned by
+// GET /api/v1/locations. This is a moving radio's own position — the LRRP
+// map layer — not a fixed trunked-site location.
+export interface LocationFix {
+  system: string;
+  protocol: string;
+  radio_id: number;
+  talkgroup: number;
+  latitude: number;
+  longitude: number;
+  speed_knots: number;
+  heading_deg: number;
+  reported_at: string;
+}
+
 export interface ToneAlertDTO {
   profile: string;
   alpha_tag?: string;

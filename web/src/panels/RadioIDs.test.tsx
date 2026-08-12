@@ -14,6 +14,7 @@ vi.mock("../api/client", async () => {
       rid: vi.fn(),
       ridHistory: vi.fn(),
       systems: vi.fn().mockResolvedValue([]),
+      locations: vi.fn().mockResolvedValue([]),
     },
   };
 });

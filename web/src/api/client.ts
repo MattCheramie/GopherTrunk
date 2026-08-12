@@ -8,6 +8,7 @@ import type {
   ActiveCallDTO,
   AudioStatusDTO,
   CallRow,
+  LocationFix,
   ConfigListResponse,
   DeviceDTO,
   Health,
@@ -191,6 +192,18 @@ export const api = {
       "GET",
       "/api/v1/calls/active",
     ).then((r) => r.calls),
+  // Recent subscriber-radio position fixes (DMR LRRP / unit GPS) for the
+  // unit-location map. Optionally scoped by radio_id client-side.
+  locations: (c: ClientConfig, opts: { limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.limit != null) q.set("limit", String(opts.limit));
+    const qs = q.toString();
+    return request<{ locations: LocationFix[] }>(
+      c,
+      "GET",
+      `/api/v1/locations${qs ? `?${qs}` : ""}`,
+    ).then((r) => r.locations ?? []);
+  },
   history: (
     c: ClientConfig,
     opts: { limit?: number; system?: string; group_id?: number } = {},

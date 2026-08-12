@@ -27,7 +27,7 @@ export interface MapPoint {
 
   // Color category — one of the spec colours below. Maps to a
   // CircleMarker fillColor + outline.
-  kind: "aprs" | "ais" | "adsb" | "dsc-distress" | "default";
+  kind: "aprs" | "ais" | "adsb" | "dsc-distress" | "unit" | "default";
 
   // Tooltip body. Rendered as bold first line + optional
   // additional details lines.
@@ -52,6 +52,7 @@ const KIND_COLOR: Record<MapPoint["kind"], string> = {
   ais: "#06b6d4",           // cyan — marine vessel
   adsb: "#a855f7",          // purple — aircraft
   "dsc-distress": "#ef4444",// red — distress alert
+  unit: "#22c55e",          // green — trunked subscriber radio (LRRP/GPS)
   default: "#6b7280",       // grey — fallback
 };
 
@@ -60,6 +61,7 @@ const KIND_RADIUS: Record<MapPoint["kind"], number> = {
   ais: 5,
   adsb: 6,
   "dsc-distress": 8, // emphasise distress
+  unit: 5,
   default: 4,
 };
 
