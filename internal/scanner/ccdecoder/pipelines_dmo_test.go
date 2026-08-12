@@ -82,7 +82,7 @@ func buildDMODibitStream(colour uint32, nDNB int) []uint8 {
 func TestTETRADMOPipelineLocksAndGrants(t *testing.T) {
 	const (
 		sampleRate = 144_000.0 // ddcTargetForProtocol(ProtocolTETRADMO)
-		sps        = 8          // 144000 / 18000
+		sps        = 8         // 144000 / 18000
 		span       = 8
 		alpha      = 0.35
 		freqHz     = 438_900_000

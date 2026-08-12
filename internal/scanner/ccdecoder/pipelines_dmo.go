@@ -135,11 +135,11 @@ type tetraDMOPipeline struct {
 
 	// Colour recovery: 0 = auto-recover via RecoverDMColourCode; a non-zero
 	// tetra_colour_code overrides.
-	configColour  uint32
-	colour        uint32
-	colourKnown   bool
-	colourCand    []tetra.DMBurst
-	colourTries   int
+	configColour uint32
+	colour       uint32
+	colourKnown  bool
+	colourCand   []tetra.DMBurst
+	colourTries  int
 
 	// Lock + liveness.
 	locked bool
