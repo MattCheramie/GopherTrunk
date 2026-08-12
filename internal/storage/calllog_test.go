@@ -108,6 +108,86 @@ func TestCallLogRecordsStartAndEnd(t *testing.T) {
 	}
 }
 
+// TestCallLogRecordsRecordingPath verifies the recorder's KindCallComplete
+// event stamps the finished WAV onto the matching call row, so History reports
+// HasRecording and the audio endpoint can resolve the file. Fails against the
+// pre-fix code, which ignored KindCallComplete entirely.
+func TestCallLogRecordsRecordingPath(t *testing.T) {
+	db := openTestDB(t)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cl, err := NewCallLog(db, bus, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "Alpha", Protocol: "p25", GroupID: 700, SourceID: 42,
+			FrequencyHz: 851_000_000,
+		},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    startedAt,
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+
+	waitRows := func(f HistoryFilter) []CallRow {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			rows, _ := db.History(context.Background(), f)
+			if len(rows) == 1 {
+				return rows
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		rows, _ := db.History(context.Background(), f)
+		return rows
+	}
+	if rows := waitRows(HistoryFilter{Limit: 1}); len(rows) != 1 || rows[0].HasRecording {
+		t.Fatalf("before complete: rows=%d hasRecording=%v", len(rows), len(rows) == 1 && rows[0].HasRecording)
+	}
+
+	const wav = "/var/lib/gophertrunk/recordings/Alpha/700-42.wav"
+	bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: trunking.CallComplete{
+		Grant:        cs.Grant,
+		DeviceSerial: cs.DeviceSerial,
+		StartedAt:    startedAt,
+		EndedAt:      startedAt.Add(2 * time.Second),
+		AudioPath:    wav,
+	}})
+
+	// Wait for the recording path to land.
+	deadline := time.Now().Add(time.Second)
+	var id int64
+	for time.Now().Before(deadline) {
+		rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1})
+		if len(rows) == 1 && rows[0].HasRecording {
+			id = rows[0].ID
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if id == 0 {
+		t.Fatal("HasRecording never became true after KindCallComplete")
+	}
+	got, err := db.RecordingPathByID(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != wav {
+		t.Errorf("RecordingPathByID = %q, want %q", got, wav)
+	}
+	// Unknown id yields "" without error.
+	if p, err := db.RecordingPathByID(context.Background(), 999999); err != nil || p != "" {
+		t.Errorf("unknown id: path=%q err=%v", p, err)
+	}
+}
+
 // TestCallLogPersistsTimeslot verifies the DMR TDMA slot survives the
 // CallStart → call_log round-trip, so a carrier's two concurrent calls
 // (TS1 + TS2) are distinguishable in history.

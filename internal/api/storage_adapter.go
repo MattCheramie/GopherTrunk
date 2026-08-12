@@ -126,7 +126,15 @@ func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRo
 			SignalDbFS:     r.SignalDbFS,
 			EVMPct:         r.EVMPct,
 			SNRDb:          r.SNRDb,
+			HasRecording:   r.HasRecording,
 		}
 	}
 	return out, nil
+}
+
+// RecordingPathByID delegates to storage.DB so the audio endpoint can resolve a
+// call id to a file. Presence of this method makes storageHistory a
+// RecordingProvider (see server.go).
+func (s *storageHistory) RecordingPathByID(ctx context.Context, id int64) (string, error) {
+	return s.db.RecordingPathByID(ctx, id)
 }

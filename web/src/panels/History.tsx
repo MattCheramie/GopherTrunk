@@ -216,6 +216,11 @@ export function History() {
                 individual
               </span>
             )}
+            {r.has_recording && (
+              <span className="pill-ok" title="A recording is available — open the call to play it">
+                ▶ rec
+              </span>
+            )}
           </div>
         ),
       },
@@ -422,6 +427,26 @@ export function History() {
             mono
             value={selected.device_serial ?? null}
           />
+          {selected.has_recording && (
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted mb-1">
+                Recording
+              </p>
+              <audio
+                controls
+                preload="none"
+                className="w-full"
+                src={`${cfg.baseURL}/api/v1/calls/${selected.id}/audio`}
+              />
+              <a
+                className="inline-block text-xs text-accent hover:underline mt-1"
+                href={`${cfg.baseURL}/api/v1/calls/${selected.id}/audio`}
+                download
+              >
+                Download recording
+              </a>
+            </div>
+          )}
         </DetailModal>
       )}
 

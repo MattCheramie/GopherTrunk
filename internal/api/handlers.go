@@ -2,7 +2,10 @@ package api
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
@@ -359,6 +362,67 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 		rows = []CallRow{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"calls": rows})
+}
+
+// handleCallAudio streams the finished recording for one call so the web UI
+// can play a past transmission (the call-history "play" button). The call id
+// is resolved to a path through the RecordingProvider capability — the
+// filesystem path is never exposed to the client — and the file is served with
+// range support (http.ServeContent) so the browser can seek.
+//
+//	GET /api/v1/calls/{id}/audio
+func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
+	if s.history == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")
+		return
+	}
+	prov, ok := s.history.(RecordingProvider)
+	if !ok {
+		s.writeError(w, http.StatusNotImplemented, "recording playback is not available")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		s.writeError(w, http.StatusBadRequest, "invalid call id")
+		return
+	}
+	path, err := prov.RecordingPathByID(r.Context(), id)
+	if err != nil {
+		s.log.Warn("api: recording path lookup failed", "err", err, "call", id)
+		s.writeError(w, http.StatusInternalServerError, "recording lookup failed")
+		return
+	}
+	if path == "" {
+		s.writeError(w, http.StatusNotFound, "no recording for this call")
+		return
+	}
+	// The path is daemon-generated, but validate defensively before opening:
+	// an absolute audio file, no traversal, actually a regular file. This keeps
+	// the endpoint from ever serving a non-recording even if the row is bad.
+	ext := strings.ToLower(filepath.Ext(path))
+	if !filepath.IsAbs(path) || strings.Contains(path, "..") ||
+		(ext != ".wav" && ext != ".mp3") {
+		s.writeError(w, http.StatusNotFound, "recording unavailable")
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		// Retention may have deleted it, or the volume moved.
+		s.writeError(w, http.StatusNotFound, "recording file is gone")
+		return
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || fi.IsDir() {
+		s.writeError(w, http.StatusNotFound, "recording unavailable")
+		return
+	}
+	if ext == ".mp3" {
+		w.Header().Set("Content-Type", "audio/mpeg")
+	} else {
+		w.Header().Set("Content-Type", "audio/wav")
+	}
+	http.ServeContent(w, r, filepath.Base(path), fi.ModTime(), f)
 }
 
 // handleListDevices returns the SDR pool snapshot — every opened

@@ -488,6 +488,9 @@ export interface CallRow {
   // These are the true decode-quality figures, unlike signal_dbfs.
   evm_pct?: number;
   snr_db?: number;
+  // True when a finished recording exists for this call. Play it via
+  // GET /api/v1/calls/{id}/audio — the filesystem path is never exposed.
+  has_recording?: boolean;
 }
 
 // CallEncryptionEvent is the SSE payload published as `call.encryption`

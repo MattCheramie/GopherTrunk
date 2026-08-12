@@ -515,6 +515,14 @@ type RIDSummaryProvider interface {
 	RIDSummaries(ctx context.Context, f RIDSummaryFilter) ([]RIDSummary, error)
 }
 
+// RecordingProvider is the optional capability a HistoryQuery may implement to
+// resolve a call id to its on-disk recording path, backing
+// GET /api/v1/calls/{id}/audio. Optional so a HistoryQuery fake without
+// recordings simply yields no audio.
+type RecordingProvider interface {
+	RecordingPathByID(ctx context.Context, id int64) (string, error)
+}
+
 // LocationFix is one geographic fix returned by GET /api/v1/locations.
 type LocationFix struct {
 	System     string  `json:"system"`
@@ -628,6 +636,9 @@ type CallRow struct {
 	// against another decoder. nil when unmeasured (P25 Phase 1 only).
 	EVMPct *float64 `json:"evm_pct,omitempty"`
 	SNRDb  *float64 `json:"snr_db,omitempty"`
+	// HasRecording is true when a finished WAV exists for this call. The path
+	// is not exposed; the UI plays via GET /api/v1/calls/{id}/audio.
+	HasRecording bool `json:"has_recording,omitempty"`
 }
 
 // ServerOptions configure a new Server.
@@ -1140,6 +1151,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/talkgroups/{id}", s.handleGetTalkgroup)
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
+	mux.HandleFunc("GET /api/v1/calls/{id}/audio", s.handleCallAudio)
 	mux.HandleFunc("GET /api/v1/locations", s.handleLocations)
 	mux.HandleFunc("GET /api/v1/affiliations", s.handleAffiliations)
 	mux.HandleFunc("GET /api/v1/grants", s.handleGrants)
