@@ -608,10 +608,20 @@ type Daemon struct {
 	// claim concurrently from their spawn goroutines.
 	iqPrimaryMu sync.Mutex
 	iqPrimary   map[string]bool
-	metrics     *metrics.Metrics
-	httpAPI     *api.Server
-	grpcAPI     *api.GRPCServer
-	rigctld     *rigctld.Server
+	// scannerBrokers maps a conventional-scanner voice SDR's serial to the
+	// iqtap broker the scanner drives as its primary StreamIQ consumer. The
+	// composer's poolDevices consults it so a conventional (fm-conv) call's FM
+	// voice chain Subscribes to the scanner's fan-out instead of opening a
+	// second StreamIQ on the same physical device — the latter fails with
+	// "stream already active" because the scanner already holds the device's
+	// single-consumer stream for the whole dwell (issue #1075). Populated at
+	// scanner construction and shared by reference with poolDevices, which
+	// reads it lazily at call time (after the scanner has registered).
+	scannerBrokers map[string]*iqtap.Broker
+	metrics        *metrics.Metrics
+	httpAPI        *api.Server
+	grpcAPI        *api.GRPCServer
+	rigctld        *rigctld.Server
 
 	// startupWarnings collects non-fatal observations from
 	// NewDaemon / preflight (missing talkgroup CSV, SDR enumeration
@@ -778,7 +788,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		bus:       events.NewBus(64),
 		ready:     make(chan struct{}),
 		iqPrimary: make(map[string]bool),
-		autotune:  autotune.NewRegistry(cfg.SDR.Autotune, log),
+		// Allocated here (before the composer's poolDevices captures it and
+		// before the scanner populates it) so the reference the two share is
+		// non-nil in both places — issue #1075.
+		scannerBrokers: make(map[string]*iqtap.Broker),
+		autotune:       autotune.NewRegistry(cfg.SDR.Autotune, log),
 	}
 	if cfg.SDR.Autotune {
 		log.Info("autotune: enabled — tracking per-dongle carrier error and applying digital correction (P25 Phase 1 control + voice)")
@@ -1685,7 +1699,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,
-			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap()},
+			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap(), scannerBrokers: d.scannerBrokers},
 			Sink:          sink,
 			Engine:        d.engine,
 			Autotune:      d.autotune,
@@ -1950,10 +1964,28 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if d.player != nil {
 				convRec = convFanoutRecorder{d.recorder, playerSink{p: d.player, engine: d.engine}}
 			}
+			// Drive the scanner through the device's iqtap broker (not the raw
+			// device) so it becomes the broker's primary StreamIQ consumer. A
+			// conventional (fm-conv) call's FM voice chain then Subscribes to
+			// the same broker via convScanVoiceSource instead of opening a
+			// second StreamIQ on the underlying device — the collision that
+			// produced "composer: StreamIQ failed … stream already active" and
+			// no recorded audio (issue #1075). Register the serial so the
+			// composer's poolDevices resolves it to the Subscribe source. Fall
+			// back to the bare device if no broker exists (defensive — every
+			// pool entry is wrapped by wrapIQBrokers, so this is unreachable
+			// while d.pool != nil).
+			var convTuner conventional.Tuner = convEntry.Device
+			var convIQ conventional.IQSource = convEntry.Device
+			if br := d.iqBrokers[convEntry.Info.Serial]; br != nil {
+				convTuner = br
+				convIQ = br
+				d.scannerBrokers[convEntry.Info.Serial] = br
+			}
 			cs, err := conventional.New(conventional.Options{
 				Log:          log,
-				Tuner:        convEntry.Device,
-				IQ:           convEntry.Device,
+				Tuner:        convTuner,
+				IQ:           convIQ,
 				Engine:       d.engine,
 				Recorder:     convRec,
 				DeviceSerial: convEntry.Info.Serial,
@@ -4885,11 +4917,25 @@ type poolDevices struct {
 	pool       *sdr.Pool
 	rateHz     uint32
 	virtualMap map[string]composer.IQSource
+	// scannerBrokers is the daemon's live serial → iqtap.Broker map for
+	// conventional-scanner voice SDRs. Shared by reference with the daemon
+	// and read here at call time. A serial present in it resolves to a
+	// Subscribe-based source (convScanVoiceSource) so the FM voice chain
+	// fans out from the scanner's stream rather than opening a colliding
+	// second StreamIQ on the same physical device (issue #1075).
+	scannerBrokers map[string]*iqtap.Broker
 }
 
 func (p *poolDevices) FindBySerial(serial string) composer.IQSource {
 	if src, ok := p.virtualMap[serial]; ok {
 		return src
+	}
+	// A conventional-scanner voice SDR: the scanner is the broker's primary
+	// StreamIQ consumer (it holds the stream open for the whole dwell/call),
+	// so the composer must Subscribe to the fan-out — a second StreamIQ on the
+	// underlying device fails with "stream already active" (issue #1075).
+	if br := p.scannerBrokers[serial]; br != nil {
+		return &convScanVoiceSource{broker: br, serial: serial, rate: p.rateHz}
 	}
 	if p.pool == nil {
 		return nil
@@ -4899,6 +4945,32 @@ func (p *poolDevices) FindBySerial(serial string) composer.IQSource {
 		return nil
 	}
 	return deviceWithRate{Device: e.Device, rate: p.rateHz}
+}
+
+// convScanVoiceSource adapts a conventional-scanner SDR's iqtap broker into a
+// composer.IQSource by Subscribing to the broker's fan-out. The scanner drives
+// the broker's single primary StreamIQ for the entire dwell — including the
+// synthetic call — so during a conventional (fm-conv) call the fan-out is live
+// and delivers copies of the exact IQ the scanner is already reading. Opening a
+// second StreamIQ on the same physical device instead (the pre-fix behaviour)
+// fails with "stream already active" and no audio is ever produced (issue
+// #1075). The subscription self-closes on ctx cancel, ending the chain's read
+// loop when the call ends.
+type convScanVoiceSource struct {
+	broker *iqtap.Broker
+	serial string
+	rate   uint32
+}
+
+func (s *convScanVoiceSource) SampleRateHz() uint32 { return s.rate }
+
+func (s *convScanVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	sub := s.broker.Subscribe()
+	go func() {
+		<-ctx.Done()
+		sub.Close() // closes sub.C, ending the composer's read loop
+	}()
+	return sub.C, nil
 }
 
 // deviceWithRate makes an sdr.Device satisfy composer.IQSource by
