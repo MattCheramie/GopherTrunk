@@ -81,10 +81,11 @@ func (f *fakeIQ) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 }
 
 type fakeEngine struct {
-	mu      sync.Mutex
-	starts  []trunking.Grant
-	ends    []string
-	touches int
+	mu         sync.Mutex
+	starts     []trunking.Grant
+	ends       []string
+	endReasons []trunking.EndReason
+	touches    int
 }
 
 func (e *fakeEngine) HandleSyntheticCall(g trunking.Grant, deviceSerial string) {
@@ -96,6 +97,7 @@ func (e *fakeEngine) EndSyntheticCall(deviceSerial string, reason trunking.EndRe
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.ends = append(e.ends, deviceSerial)
+	e.endReasons = append(e.endReasons, reason)
 	return true
 }
 func (e *fakeEngine) Touch(deviceSerial string) {
@@ -112,6 +114,28 @@ func (e *fakeEngine) endCount() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return len(e.ends)
+}
+
+// normalEndCount reports how many calls ended on hangtime silence
+// (EndReasonNormal), as opposed to ctx cancel / stream error
+// (EndReasonError) which fires on test-context teardown regardless.
+func (e *fakeEngine) normalEndCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	n := 0
+	for _, r := range e.endReasons {
+		if r == trunking.EndReasonNormal {
+			n++
+		}
+	}
+	return n
+}
+func (e *fakeEngine) endReasonsCopy() []trunking.EndReason {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]trunking.EndReason, len(e.endReasons))
+	copy(out, e.endReasons)
+	return out
 }
 
 type fakeRecorder struct{}
@@ -331,6 +355,64 @@ func TestConvScannerBreaksSquelchAndEndsOnHangtime(t *testing.T) {
 	}
 	if eng.starts[0].Protocol != "fm-conv" {
 		t.Errorf("protocol = %q, want fm-conv", eng.starts[0].Protocol)
+	}
+}
+
+// TestConvScannerBriefBlipsDoNotHoldSquelchOpen is the regression for
+// issue #1090. A channel opens squelch, then goes near-silent with a
+// single above-threshold IQ chunk (a ~2 ms blip — carrier tail,
+// impulse noise, intermod) recurring well inside the hangtime window.
+//
+// The old beginDwell zeroed the hangtime countdown on ANY single
+// above-threshold chunk, so a blip recurring faster than Hangtime
+// meant the countdown could never accumulate and the call stayed open
+// indefinitely — releasing only on ctx teardown (EndReasonError), never
+// on hangtime (EndReasonNormal). With the sustained-activity debounce a
+// lone blip can't reset the countdown, so the call closes normally.
+func TestConvScannerBriefBlipsDoNotHoldSquelchOpen(t *testing.T) {
+	tuner := &fakeTuner{}
+	const hangtime = 300 * time.Millisecond
+	// Open with a loud chunk (squelch break), then repeat
+	// [29 silent, 1 loud]. At the fake source's 2 ms cadence that is a
+	// single-chunk blip roughly every 60 ms — far inside the 300 ms
+	// hangtime, so the buggy reset-on-any-chunk logic can never count
+	// down to release. The queue is long enough not to drain (and fall
+	// back to pure silence) within the test window.
+	queue := [][]complex64{loudChunk(256)}
+	for r := 0; r < 80; r++ {
+		for i := 0; i < 29; i++ {
+			queue = append(queue, make([]complex64, 256)) // silence
+		}
+		queue = append(queue, loudChunk(256)) // 1-chunk blip
+	}
+	iq := &fakeIQ{
+		tuner:  tuner,
+		chunks: map[uint32][][]complex64{200_000_000: queue},
+	}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-BLIP",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "B", FrequencyHz: 200_000_000, SquelchDbFS: -10, Hangtime: hangtime},
+		},
+		MinDwellPerChannel: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = s.Run(ctx)
+
+	if eng.startCount() == 0 {
+		t.Fatal("squelch never opened (no HandleSyntheticCall)")
+	}
+	if eng.normalEndCount() == 0 {
+		t.Fatalf("call never released on hangtime despite only brief single-chunk blips; "+
+			"end reasons = %v (issue #1090: a lone above-threshold chunk must not reset the hangtime countdown)",
+			eng.endReasonsCopy())
 	}
 }
 

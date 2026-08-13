@@ -222,6 +222,8 @@ export interface ConvChannelConfig {
   Mode: string; // "" | fm | nfm
   SquelchDbFS: number;
   HangtimeMs: number;
+  ActivityDebounceMs: number;
+  SquelchHysteresisDb: number;
   Priority: number;
   Tone: ConvToneConfig;
 }
