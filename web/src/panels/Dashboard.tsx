@@ -4,7 +4,14 @@ import { api } from "../api/client";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { RIDLink } from "../components/RIDLink";
+import { SignalSummary } from "../components/SignalHealth";
 import { useDataPoll } from "../hooks/useDataPoll";
+import { useSignalQuality } from "../hooks/useSignalQuality";
+import { useLockedSystemSignal } from "../hooks/useLockedSystemSignal";
+import {
+  useLingeringActiveCalls,
+  callDuration,
+} from "../hooks/useLingeringActiveCalls";
 import { selectClientConfig, useShared } from "../store/shared";
 import type { EventDTO } from "../api/types";
 
@@ -33,6 +40,16 @@ export function Dashboard() {
     const t = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(t);
   }, []);
+
+  // Signal health belongs on the operations landing (we're monitoring a locked
+  // system), not buried in the Scanner/hunter tab. Show both axes: the locked
+  // system's decode health (GET /api/v1/scanner) and the live symbol SNR/eye.
+  const { quality: symbolQuality, status: symbolStatus } = useSignalQuality();
+  const lockedSignal = useLockedSystemSignal();
+
+  // Freeze just-ended calls briefly so the roster shows a final duration +
+  // "observed" marker rather than the row blinking out.
+  const callRows = useLingeringActiveCalls(activeCalls);
 
   useDataPoll({
     fetcher: async () => {
@@ -109,6 +126,17 @@ export function Dashboard() {
         />
       </div>
 
+      {/* Signal health for the locked system — both axes, labelled. */}
+      <SignalSummary
+        decodeQuality={
+          lockedSignal?.has_decode_health ? lockedSignal.decode_quality : null
+        }
+        offsetHz={lockedSignal?.carrier_offset_hz}
+        signalDbfs={lockedSignal?.has_signal ? lockedSignal.signal_dbfs : null}
+        symbolQuality={symbolQuality}
+        status={symbolStatus}
+      />
+
       {/* Hero: who's talking right now. */}
       <section className="panel p-4">
         <div className="flex items-baseline justify-between mb-2">
@@ -117,14 +145,14 @@ export function Dashboard() {
             Open Active →
           </Link>
         </div>
-        {activeCalls.length === 0 ? (
+        {callRows.length === 0 ? (
           <p className="text-muted text-sm">
             No calls right now. Grants appear here the moment the daemon
             allocates a voice device.
           </p>
         ) : (
           <ul className="divide-y divide-panel">
-            {activeCalls.slice(0, 8).map((c) => (
+            {callRows.slice(0, 8).map((c) => (
               <li
                 key={`${c.device_serial}-${c.grant.system}-${c.grant.group_id}-${c.started_at}`}
                 className="py-2 flex items-center gap-3 cursor-pointer hover:bg-panel/40 -mx-2 px-2 rounded"
@@ -144,22 +172,28 @@ export function Dashboard() {
                 <span className="ml-auto flex items-center gap-1 shrink-0">
                   {c.grant.encrypted && <span className="pill-warn">enc</span>}
                   {c.grant.emergency && <span className="pill-err">emerg</span>}
-                  {c.following === false && (
-                    <span className="pill" title="Announced on the control channel; no voice tuner is following it">
+                  {c._ended ? (
+                    <span className="pill" title="This call has ended; still shown briefly before it clears">
                       observed
                     </span>
+                  ) : (
+                    c.following === false && (
+                      <span className="pill" title="Announced on the control channel; no voice tuner is following it">
+                        untuned
+                      </span>
+                    )
                   )}
                   <span className="font-mono text-xs tabular-nums text-muted">
-                    {elapsed(c.started_at, now)}
+                    {callDuration(c.started_at, c._endMs, now)}
                   </span>
                 </span>
               </li>
             ))}
           </ul>
         )}
-        {activeCalls.length > 8 && (
+        {callRows.length > 8 && (
           <p className="text-xs text-muted mt-2">
-            +{activeCalls.length - 8} more — open Active for the full list.
+            +{callRows.length - 8} more — open Active for the full list.
           </p>
         )}
       </section>
@@ -267,11 +301,3 @@ function StatCard({
   );
 }
 
-function elapsed(startedAt: string, now: number): string {
-  const startMs = Date.parse(startedAt);
-  if (Number.isNaN(startMs)) return "—";
-  const totalSeconds = Math.max(0, Math.floor((now - startMs) / 1000));
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-}

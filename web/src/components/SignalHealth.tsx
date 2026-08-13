@@ -1,4 +1,5 @@
 import { Badge } from "./ui/Badge";
+import { qualityVerdict, type Quality } from "../lib/signalQuality";
 
 // SignalHealth — shared signal-quality readouts so an operator sees signal
 // health in context (on the Scanner cockpit, in a live call, in call
@@ -6,16 +7,24 @@ import { Badge } from "./ui/Badge";
 // UI shows an inline "is it healthy" cue next to the call/channel; these are
 // GopherTrunk's.
 //
-// Three primitives:
-//   - SignalQualityChip — the decoder's clean/marginal/poor verdict pill.
-//   - SignalLevelBar    — raw front-end level (dBFS) as a bar + number.
-//   - CallHealth        — a per-call badge row (SNR / EVM / level) built from
-//                         the measured figures the daemon stamps on a call.
+// Two things get called "signal quality" and they measure DIFFERENT axes, so
+// each chip says which one it is (an operator was rightly confused seeing the
+// Scanner read "clean" and the Plots hub read "poor" for the same carrier):
+//   - SignalQualityChip — DECODE health: the decoder's live TSBK (P25) / BSCH
+//     (TETRA) frame-error rate. A locked, well-decoding control channel reads
+//     "decode: clean" even at a modest raw SNR.
+//   - SymbolQualityChip — SYMBOL quality: the raw recovered-symbol SNR / eye
+//     from the live symbol stream. An ISI-smeared constellation reads
+//     "symbol: poor" even while the control channel still decodes cleanly.
+//   - SignalLevelBar    — raw front-end level (dBFS), a third orthogonal axis.
+//   - SignalSummary     — a combined banner showing all of the above together.
+//   - CallHealth        — a per-call badge row (SNR / EVM / level).
 
-// SignalQualityChip is the simple control-channel signal indicator: a
-// clean/marginal/poor pill (green/amber/red), with the measured carrier offset
-// in its tooltip. Backed by the decoder's live TSBK (P25) / BSCH (TETRA)
-// frame-error rate, so it works across protocols — not just TETRA.
+// SignalQualityChip is the DECODE-health indicator: a clean/marginal/poor pill
+// (green/amber/red), with the measured carrier offset in its tooltip. Backed by
+// the decoder's live TSBK (P25) / BSCH (TETRA) frame-error rate, so it works
+// across protocols — not just TETRA. This is decode SUCCESS, a different axis
+// from the raw symbol SNR (SymbolQualityChip) and the front-end level.
 export function SignalQualityChip({
   quality,
   offsetHz,
@@ -28,8 +37,42 @@ export function SignalQualityChip({
   const offset =
     offsetHz != null ? ` · offset ${offsetHz > 0 ? "+" : ""}${offsetHz} Hz` : "";
   return (
-    <span title={`control-channel signal: ${quality}${offset}`}>
-      <Badge tone={tone}>signal: {quality}</Badge>
+    <span
+      title={`control-channel decode health (frame-error rate): ${quality}${offset} — a different axis from raw symbol SNR`}
+    >
+      <Badge tone={tone}>decode: {quality}</Badge>
+    </span>
+  );
+}
+
+// SymbolQualityChip is the SYMBOL-quality indicator: the clean/marginal/poor
+// verdict from the raw recovered-symbol distribution (MER-like SNR on the C4FM
+// soft track, level balance otherwise). It reads the constellation/eye the DSP
+// actually sees, so it can say "poor" while the control channel still decodes
+// cleanly (decode: clean) — the two are deliberately distinct axes.
+export function SymbolQualityChip({ quality }: { quality: Quality | null }) {
+  const verdict = qualityVerdict(quality);
+  const tone =
+    verdict === "clean"
+      ? "ok"
+      : verdict === "marginal"
+        ? "warn"
+        : verdict === "poor"
+          ? "err"
+          : "neutral";
+  const detail =
+    quality?.snrDb != null
+      ? ` — SNR ${quality.snrDb.toFixed(1)} dB`
+      : quality
+        ? ` — balance ±${quality.balanceDev.toFixed(1)}%`
+        : "";
+  return (
+    <span
+      title={`recovered-symbol quality (raw constellation SNR / eye${detail}) — a different axis from control-channel decode health`}
+    >
+      <Badge tone={tone}>
+        symbol: {verdict === "unknown" ? "acquiring…" : verdict}
+      </Badge>
     </span>
   );
 }
@@ -108,5 +151,62 @@ export function CallHealth({
       )}
       {hasLevel && <SignalLevelBar dbfs={signalDbfs!} />}
     </span>
+  );
+}
+
+// SignalSummary is the combined at-a-glance banner: DECODE health, SYMBOL
+// quality, and front-end LEVEL side by side and clearly labelled, so the same
+// carrier reads consistently across the Dashboard, Scanner, and Plots hub
+// instead of one page saying "clean" and another "poor" for what are actually
+// two different measurements. Feed it the locked system's decode fields (from
+// GET /api/v1/scanner) and the live symbol Quality (useSignalQuality).
+export function SignalSummary({
+  decodeQuality,
+  offsetHz,
+  signalDbfs,
+  symbolQuality,
+  status,
+}: {
+  decodeQuality?: string | null;
+  offsetHz?: number;
+  signalDbfs?: number | null;
+  symbolQuality: Quality | null;
+  status?: "connecting" | "open" | "closed" | "idle";
+}) {
+  const hasLevel = signalDbfs != null && Number.isFinite(signalDbfs);
+  return (
+    <div className="panel flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+      <span className="text-muted text-xs uppercase tracking-wider">Signal</span>
+      {decodeQuality ? (
+        <SignalQualityChip quality={decodeQuality} offsetHz={offsetHz} />
+      ) : (
+        <span title="No locked control channel decoding yet">
+          <Badge tone="neutral">decode: —</Badge>
+        </span>
+      )}
+      <SymbolQualityChip quality={symbolQuality} />
+      {symbolQuality?.snrDb != null && (
+        <span className="font-mono text-xs text-muted">
+          SNR {symbolQuality.snrDb.toFixed(1)} dB
+        </span>
+      )}
+      {symbolQuality && (
+        <span className="font-mono text-xs text-muted">
+          balance ±{symbolQuality.balanceDev.toFixed(1)}%
+        </span>
+      )}
+      {hasLevel && <SignalLevelBar dbfs={signalDbfs!} />}
+      {status && (
+        <span className="ml-auto text-xs text-muted">
+          {status === "open"
+            ? "live"
+            : status === "connecting"
+              ? "connecting…"
+              : status === "closed"
+                ? "offline"
+                : "idle"}
+        </span>
+      )}
+    </div>
   );
 }
