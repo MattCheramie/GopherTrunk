@@ -40,7 +40,7 @@ export function Active() {
   const [now, setNow] = useState(() => Date.now());
 
   // Keep just-ended calls on screen (frozen) for a few seconds so the log shows
-  // a final "call duration" and an "observed" marker instead of the row
+  // a final "call duration" and an "ended" marker instead of the row
   // vanishing the instant the call drops from the poll.
   const rows = useLingeringActiveCalls(activeCalls);
 
@@ -145,7 +145,7 @@ export function Active() {
                 className="pill"
                 title="This call has ended; still shown briefly with its final duration before it clears from the log"
               >
-                observed
+                ended
               </span>
             ) : (
               r.following === false && (

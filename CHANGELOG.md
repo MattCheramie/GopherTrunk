@@ -155,6 +155,16 @@ for tagged releases.
   daemon now reports a protocol-aware `symbol_proto` per device and the panels use
   it, which also stops an extra, wrong receiver being spun up per open panel. The
   symbol-quality tooltip now names which measurement produced its verdict.
+- **One talkgroup is one row in Active calls.** The same talkgroup could occupy
+  three rows at once — because the roster keyed rows on source, timeslot and
+  frequency while the daemon reports followed and control-channel-observed calls
+  from two separate maps — and the "Active calls" stat tile could read `0` above a
+  visible call row, because the tile counted the raw poll response while the
+  roster rendered the linger-augmented list. Rows are now de-duplicated per
+  talkgroup (preferring a live, followed call) and the tile counts the rows
+  actually shown. The client-side chip for a just-ended call is now labelled
+  `ended` rather than `observed`, which collided with the daemon's own meaning of
+  "observed" (announced on the control channel but not tuned — shown as `untuned`).
 - **Conventional DMR (IPSC) and other camp-on-idle systems no longer spam
   "hunt failed" while simply idle.** A conventional DMR / IPSC repeater has no
   continuous control channel — it sits silent between transmissions — but the
