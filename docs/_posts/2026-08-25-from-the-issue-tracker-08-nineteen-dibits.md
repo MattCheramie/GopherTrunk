@@ -31,6 +31,26 @@ best-argued wrong hypotheses the tracker has ever seen.*
 > survives hard limiting, which is also why the FFT looked clean. The fix was
 > counter-intuitive: a **fixed low gain** of 20 dB.
 
+## Cheat sheet
+
+| | |
+|---|---|
+| Issue | [#881](https://github.com/MattCheramie/GopherTrunk/issues/881) — clustered wideband plan "starves" the P25 demod |
+| Symptom | four clustered VHF control channels in 225 kHz: zero TSBKs; a second device, same build/rate, 1.75 MHz span: 13,000+ |
+| Wrong theory | DDC chunks of ~19 dibits can't hold the 24-dibit frame sync word |
+| Why it failed | the sync detector buffers 24 dibits across chunks; both plans chunk byte-identically; the log line only fires while unlocked |
+| Real cause | AGC-driven front-end saturation — ~50% of raw u8 samples on the ADC rails (24.9% at 0, 24.9% at 255), raw IQ RMS ≈ +1.3 dBFS |
+| Fix | `gain: "200"` (20 dB fixed, no AGC); zero DSP changes |
+| Rule that survives | histogram the raw samples before trusting the spectrum; on a hot band, more gain makes it worse |
+
+## In this post
+
+- **The report** — two identical devices, one clustered plan, zero TSBKs, and a smoking-gun log line.
+- **Dismantling the hypothesis** — three code-and-test facts that take the chunk theory apart.
+- **The capture that settled it** — a sample-value histogram finds half the ADC pinned to the rails.
+- **The counter-intuitive fix** — fixed low gain on an overloading front end.
+- **What we keep** — log guards, raw histograms, constant-envelope blind spots, and gain discipline.
+
 ## The report
 
 As bug reports go, this one was a gift. Two `role: wideband` RTL dongles on the
@@ -198,7 +218,43 @@ any DSP conversation.
   capture that found the truth. The fastest route out was through the raw IQ:
   when a live device fails but the numbers argue, get the `.cfile`.
 
+## FAQ
+
+**If the front end was saturated, how did the capture still decode three control channels?**
+Because C4FM is constant-envelope: the information lives in phase and frequency,
+which survive hard amplitude limiting. Offline replay of the rail-pinned capture
+locked 3 of 4 channels and produced 396/396/72 TSBKs — saturation shows up first
+as marginal taps dying and live instability, not as total silence.
+
+**Why did `iq_clip_ratio` read 0 on a device that was 50% rail-pinned?**
+It was measured after the DDC. Filtering and decimation smear the clipped
+waveform into something that no longer touches full scale, so a post-DDC clip
+metric can read clean while the raw ADC is saturated. Only the raw sample
+histogram sees the rails.
+
+**Why is AGC the wrong choice on a strong-signal band?**
+Tuner AGC on a band thick with strong signals drives the front end into
+saturation and holds it there. The reporter's own gain sweep showed the tell:
+input level frozen at −14.18 dBFS whether gain was commanded to 14.4 dB, auto,
+or 40 dB — the AGC owned the knob. A fixed low gain keeps the ADC in its linear
+region; see [SDR gain and overload]({{ '/reference/sdr-gain-overload/' | relative_url }}).
+
+**What should I check first when a wideband device decodes nothing?**
+The `wideband front end overloaded` warning, then a raw capture's sample-value
+histogram. Two spikes at the u8 rails (0 and 255) end the investigation before
+it starts — and an FFT will *not* show it on constant-envelope signals. The
+signatures are catalogued in
+[signal signatures]({{ '/reference/signal-signatures/' | relative_url }}).
+
+**Can a chunk ever be too small for frame sync?**
+Not in GopherTrunk's P25 path: `p25phase1.SyncDetector` keeps a 24-dibit history
+across `Process` calls precisely so a sync word split across chunk boundaries
+still correlates — behavior added and pinned by test in
+[#275](https://github.com/MattCheramie/GopherTrunk/issues/275).
+
 ## Series navigation
 
-**Part 8** · ←
-[Part 7: The LSM Myth]({{ '/blog/solution-postmortem/from-the-issue-tracker-07-lsm-myth/' | relative_url }})
+**Part 8 of 22** · ←
+[Part 7: The LSM Myth — When Your Own Docs Are the Bug]({{ '/blog/solution-postmortem/from-the-issue-tracker-07-lsm-myth/' | relative_url }})
+· Next →
+[Part 9: Broken Pipe — Six Rounds of Traces for One USB Write]({{ '/blog/solution-postmortem/from-the-issue-tracker-09-broken-pipe/' | relative_url }})

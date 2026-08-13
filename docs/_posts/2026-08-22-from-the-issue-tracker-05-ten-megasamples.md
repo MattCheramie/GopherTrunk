@@ -32,6 +32,28 @@ required decimating a capture with a resampler that wasn't ours.*
 > noise at the Airspy's native 10 MS/s rate. Not our DSP. Also fixed along the
 > way: this project's issue-closing discipline.
 
+## Cheat sheet
+
+| Fact | Detail |
+|---|---|
+| Issues | [#764](https://github.com/MattCheramie/GopherTrunk/issues/764) (live daemon), [#771](https://github.com/MattCheramie/GopherTrunk/issues/771) (replay follow-up) |
+| Symptom | At 2.5 MS/s only the tap nearest center decoded; at 10 MS/s all four taps went dark — including the previously strong one |
+| Real bugs fixed | Per-tap full-rate resampling on one goroutine (USB ring overrun); channelizer bin count hardcoded to 16 |
+| Red herring | "AGC stuck 10× above target" — the *working* capture shows the identical `agc_level≈1.47` |
+| The decisive experiment | Decimate the 10 MS/s capture 4:1 with an independent Kaiser resampler, feed the proven 2.5 MS/s path — same 9.5 dB SNR |
+| Verdict | The ~10 dB in-channel deficit is baked into the samples: sampling-clock phase noise at the R2's native 10 MS/s rate |
+| Process fallout | The issue was closed twice unverified — the project's issue-closing policy exists because of this thread |
+
+## In this post
+
+- **The report** — the elimination already done: RF present, no clipping, band wider than 2.5 MS/s delivers.
+- **Two real bugs** — the per-tap CPU blowup and the hardcoded channelizer bins.
+- **Offline replay, and a process failure** — the symptom survives with no live component; the double-close.
+- **The red herring: "AGC stuck 10× high"** — check the alarming metric in the passing case.
+- **The experiment that settled it** — an independent resampler as the ultimate control, plus the rule-outs.
+- **Carrier-clean, modulation-degraded** — the phase-noise signature and the hardware verdict.
+- **What we keep** — the durable rules and their Field Guide entries.
+
 ## The report
 
 The setup: an Airspy R2 in wideband role at 420.9 MHz center, four MMR
@@ -102,7 +124,11 @@ Second, a subtler confusion: the merged fix changed the multi-tap wideband
 the single-channel `ccdecoder.Downconverter` (`internal/scanner/ccdecoder/ddc.go`),
 a separate path the fix never touched. The "fix doesn't work" replay result was
 **structurally impossible to be about that fix**. Two code paths that look like
-one is a trap that recurred in later issues; now it's documented.
+one is a trap that recurred in later issues — the adjacent-carrier warning of
+[#815](https://github.com/MattCheramie/GopherTrunk/issues/815) lives in the
+daemon's decoder and never fires in replay, for the same reason — and it's now
+documented so the next investigation starts by naming which path the repro
+actually exercises.
 
 ## The red herring: "AGC stuck 10× high"
 
@@ -143,10 +169,18 @@ touched them. That exonerates the DDC, the AGC, and the decode path in one move 
 and a regression test (`TestDownconverterSNRInvariantAcrossRate`) now pins the
 invariant so a rate-dependent gain-staging bug can't sneak back in silently.
 
-Alongside it, the systematic rule-outs: band-limiting the 10 MS/s input first
-(no change — not aliasing of out-of-band neighbors), float32 vs float64
-(bit-identical — not precision), channel-filter width swept 24 kHz down to
-6.25 kHz (<0.5 dB — not filtering).
+Alongside it, the systematic rule-outs — each a specific mechanism with a
+specific test, so the exoneration is checkable rather than asserted:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| Aliasing of strong neighbors beyond ±1.25 MHz (present at 10 MS/s, absent at 2.5) | Band-limit the 10 MS/s input *before* decimation, then decode | No change — not aliasing |
+| float32 precision loss in the recursive NCO or the ~2,500-tap polyphase filter | Recompute both in float64 and compare | Bit-identical output — not precision |
+| Channel-filter width admitting extra noise at the higher rate | Sweep the filter from 24 kHz down to 6.25 kHz | <0.5 dB change in post-discriminator SNR — not filtering |
+
+Three plausible rate-dependent mechanisms, three clean negatives — which is what
+gave the independent-resampler result its weight: by the time it ran, it was the
+last variable standing.
 
 ## Carrier-clean, modulation-degraded
 
@@ -208,3 +242,46 @@ right call on this hardware.
   the symptom was live. The policy that came out of it — failing-first test,
   reporter confirmation, address the latest follow-up — is why later postmortems
   in this series are shorter.
+
+## FAQ
+
+**If the data was bad all along, did the two code fixes matter?**
+Yes. The per-tap CPU blowup and the hardcoded channelizer bin count were real,
+rate-dependent defects that would have broken *any* wideband rate raise, clean
+clock or not — the shared decimation stage is what makes higher capture rates
+viable at all. They just weren't the whole story, which is exactly why closing
+on them without verifying the symptom was the process failure.
+
+**How can the carrier look cleaner at 10 MS/s while decode is worse?**
+The wideband FFT measures carrier power against the broadband floor; decode
+depends on in-channel modulation quality. Reciprocal mixing — clock phase noise
+convolved onto the signal — smears the modulation while leaving apparent carrier
+strength intact, so FFT SNR *rose* (33.1 → 36.2 dB) while demod SNR fell ~10 dB.
+The two metrics answer different questions.
+
+**Why is 2.5 MS/s cleaner when it comes from the same ADC?**
+The R2's 2.5 MS/s output is the FPGA's decimate-by-4 of the same 10 MS/s ADC
+path — and that averaging suppresses the clock phase noise that dominates at
+the native rate. The top native rate is the one regime with no decimation gain
+to hide behind.
+
+**Could more (or less) gain have rescued the 10 MS/s capture?**
+No — that was the point of the gain-independence test. Gain 600 gave EVM 22.5% /
+SNR 9.5 dB; gain 300 gave 22.7% / 9.4 dB despite ~6 dB less capture power. A
+deficit that doesn't track gain isn't compression or intermod; it's fixed to the
+clock path, and no gain setting touches it.
+
+**Should Airspy owners avoid the high rates entirely?**
+Not categorically — qualify empirically. Capture the same channel at 2.4 MS/s
+and the rate under test, replay both with `-diag`, and compare the EVM/SNR line;
+the recipe is in
+[Airspy rate selection]({{ '/reference/airspy-rate-selection/' | relative_url }}).
+The Airspy Mini's 6 MS/s ceiling is the same untested top-rate regime on a
+different clock — measure before building a site plan on it.
+
+## Series navigation
+
+**Part 5 of 22** · ←
+[Part 4: The Dongle That Heard Nothing — One Line in a Register Table]({{ '/blog/solution-postmortem/from-the-issue-tracker-04-blog-v4-register-table/' | relative_url }})
+· Next →
+[Part 6: CQPSK in Four Acts — Fixing the Linear Path One Layer at a Time]({{ '/blog/solution-postmortem/from-the-issue-tracker-06-cqpsk-four-acts/' | relative_url }})

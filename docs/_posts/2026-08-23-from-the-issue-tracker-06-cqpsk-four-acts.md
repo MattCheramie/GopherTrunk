@@ -31,6 +31,29 @@ uncovered the next problem underneath it.*
 > surfaced as multi-second stalls. Locks on the reporter's eight real captures
 > went 0/8 → 3/8 → 8/8.
 
+## Cheat sheet
+
+| Fact | Detail |
+|---|---|
+| Issue | [#492](https://github.com/MattCheramie/GopherTrunk/issues/492) |
+| Symptom | Same capture: C4FM 100% TSBK; CQPSK 74% CRC, ~0% live lock — and replay ran 8× slower |
+| Broken instrument | `mm_sps=0.00` — a C4FM gauge read on the CQPSK path, which uses a Gardner loop, not Mueller-Müller |
+| Act one (#497) | The CQPSK path had no carrier-frequency recovery at all — coarse seed + NCO + Costas loop added |
+| Act two (#529) | Simulcast multipath poisons the autocorrelation seed — modulus-CV gate + Costas anti-windup |
+| Act three (#532) | T/2 fractionally-spaced equalizer replaces the symbol-spaced CMA |
+| Act four | Brute-force BCH decoder (104 decodes per FSW hit) surfaced as 10–15 s stalls — 26 ns clean fast path |
+| Score | Locks on eight real captures: 0/8 → 3/8 → 8/8 |
+
+## In this post
+
+- **The symptom** — one path perfect, the other losing a quarter of its TSBKs.
+- **The smoking gun that was a broken instrument** — `mm_sps=0.00` measured the wrong demodulator.
+- **Act one: the missing carrier recovery** — differential decoding forgives phase, never frequency.
+- **Act two: multipath poisons the seed** — gating an estimator that can't be hardened.
+- **Act three: the fractionally-spaced equalizer** — sub-symbol problems need sub-symbol taps.
+- **Act four: the hot path that locking uncovered** — the dormant O(65,536) decoder.
+- **What we keep** — the durable rules and their Field Guide entries.
+
 ## The symptom
 
 The report was unusually well instrumented from the first message. The reporter
@@ -284,9 +307,46 @@ curtain.
   that can't fail. When and why to force each demod mode is covered in
   [P25 demod mode selection]({{ '/reference/p25-demod-mode-selection/' | relative_url }}).
 
+## FAQ
+
+**Why is CQPSK so much more sensitive to carrier offset than TETRA's π/4-DQPSK?**
+Both cancel constant phase in the differential decode, but a frequency offset
+survives as a per-symbol rotation of `2π·Δf/baud` — and P25 runs 4800 baud
+against TETRA's 18,000. The same tuner offset rotates each P25 symbol ~3.75×
+further, which is exactly why the TETRA path had gotten away without carrier
+recovery and the CQPSK path could not.
+
+**Why couldn't the existing CMA equalizer open the failing captures?**
+It was symbol-spaced — one sample per symbol — and the C4FM-versus-RRC pulse
+mismatch is a *sub-symbol* phenomenon. The fractional-delay structure an
+equalizer needs to synthesize lives between the samples a T-spaced CMA ever
+sees; no amount of adaptation reaches it. The T/2 fractionally-spaced equalizer
+sees two samples per symbol and synthesizes the receive matched filter
+implicitly.
+
+**Was the 127-second replay time from the first message ever explained?**
+Yes — retroactively, in act four. The brute-force BCH decoder cost ~1 ms per
+call and the CQPSK NID search ran it up to 104 times per FSW hit (4 rotations
+versus C4FM's 2), with false hits during noisy stretches each triggering the
+full 65,536-candidate worst case. The first message's oddity was the fourth
+act's evidence, filed 127 seconds at a time.
+
+**If C4FM decodes these captures at 100%, why keep the CQPSK path at all?**
+Because some transmitters really are linear (LSM), and the linear path is the
+right receiver for them — once it works. But *which* sites should use it turned
+out to be its own bug: the project's guidance said "simulcast means CQPSK," and
+that was wrong. That story is the next part in this series.
+
+**Why couldn't a synthetic regression test pin the equalizer fix?**
+Synthetic C4FM generated at the 48 kHz channel rate collapses ~94% of its
+samples onto one point — already constant-modulus, a degenerate constellation no
+CMA can open or fail on. Only real captures, roughed up by a real front end and
+the DDC, exercise what the equalizer actually does. Some fixes can only be
+proven against air.
+
 ## Series navigation
 
-**Part 6** · ←
-[Part 5: Ten Megasamples]({{ '/blog/solution-postmortem/from-the-issue-tracker-05-ten-megasamples/' | relative_url }})
+**Part 6 of 22** · ←
+[Part 5: Ten Megasamples — When the Bug Is in the Samples Themselves]({{ '/blog/solution-postmortem/from-the-issue-tracker-05-ten-megasamples/' | relative_url }})
 · Next →
-[Part 7: The LSM Myth]({{ '/blog/solution-postmortem/from-the-issue-tracker-07-lsm-myth/' | relative_url }})
+[Part 7: The LSM Myth — When Your Own Docs Are the Bug]({{ '/blog/solution-postmortem/from-the-issue-tracker-07-lsm-myth/' | relative_url }})

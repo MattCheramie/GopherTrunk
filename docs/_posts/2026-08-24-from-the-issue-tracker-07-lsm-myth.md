@@ -32,6 +32,26 @@ DSP. It was in what we had taught our users to believe.*
 > docs, config comments, and UI labels — which had all taught "simulcast ⇒
 > CQPSK."
 
+## Cheat sheet
+
+| | |
+|---|---|
+| Issue | [#935](https://github.com/MattCheramie/GopherTrunk/issues/935) — per-site P25 Phase 1 demod mode |
+| Symptom | `control_channel_decode_quality: poor` for weeks on the network's strongest site, on an Airspy R2 and an RTL-SDR alike |
+| Plausible theory | urban sites are simulcast ⇒ LSM ⇒ need the CQPSK demodulator (backed by ACMA emission designators) |
+| Real cause | gain entered as dB in a tenths-of-a-dB field — a starving front end; the simulcast site transmits plain C4FM |
+| Fix | `gain: "363"` (≈36 dB) locked the site; per-channel `p25_phase1_demod_mode` shipped anyway ([#942](https://github.com/MattCheramie/GopherTrunk/pull/942)); guidance corrected everywhere ([#958](https://github.com/MattCheramie/GopherTrunk/pull/958), [#971](https://github.com/MattCheramie/GopherTrunk/pull/971)) |
+| Rule that survives | choose `cqpsk` empirically — never infer it from "the site is simulcast" or from licensing data |
+
+## In this post
+
+- **The request** — a well-sourced feature ask built on licensing data and a plausible theory.
+- **Shipping the feature — and why it's keyed by frequency** — the chicken-and-egg that rules out site-ID keying.
+- **The reversal** — the reporter disproves their own premise on air: simulcast ≠ CQPSK.
+- **The real problem was gain, in tenths of a dB** — the unit convention behind weeks of "poor."
+- **Unwinding our own documentation** — auditing every surface the myth had leaked into.
+- **What we keep** — durable rules for demod selection, gain units, and load-bearing docs.
+
 ## The request
 
 The feature request was a model of its kind. The reporter operates against a
@@ -191,9 +211,40 @@ themselves.
   configs, UI labels, help text, articles — because it will have drifted into
   all of them.
 
+## FAQ
+
+**Does a simulcast P25 site need the CQPSK demodulator?**
+No. LSM/simulcast is transmitter coordination — timing and phase alignment
+across towers — not a modulation. Melbourne CBD is genuinely three-tower
+simulcast and transmits C4FM; forcing CQPSK there kills the decode entirely.
+Some systems do transmit CQPSK, but simulcast deployment doesn't predict it.
+
+**How do I decide between `c4fm` and `cqpsk` for a site?**
+Empirically. Start in C4FM — correct for most systems, including most simulcast
+ones. Switch that channel to `cqpsk` only when a strong, clean carrier refuses
+to lock in C4FM, and confirm the switch actually fixes it. The full procedure is
+in [P25 demod mode selection]({{ '/reference/p25-demod-mode-selection/' | relative_url }}).
+
+**Can I read the modulation off a license database?**
+No. The emission designator `10K1D7W` covers both C4FM and CQPSK — it describes
+occupied bandwidth and emission class, not which of two 4800-baud P25
+modulations is on the air. Only the signal itself can answer.
+
+**Why is the demod override keyed by control-channel frequency instead of site ID?**
+Because the demodulator must be chosen *before* a control channel can lock —
+the right symbol-recovery path is what makes lock possible — while RFSS and
+site ID are only decoded *after* lock. The wideband `channels:` list is the one
+place a site's identity exists at configuration time.
+
+**What does `gain: "300"` actually set?**
+30 dB. GopherTrunk expresses SDR gain in tenths of a dB, so `"363"` is 36.3 dB
+and a bare `"36"` is 3.6 dB — a translated-not-converted value starved this
+network's strongest site for weeks. See
+[SDR gain and overload]({{ '/reference/sdr-gain-overload/' | relative_url }}).
+
 ## Series navigation
 
-**Part 7** · ←
-[Part 6: CQPSK in Four Acts]({{ '/blog/solution-postmortem/from-the-issue-tracker-06-cqpsk-four-acts/' | relative_url }})
+**Part 7 of 22** · ←
+[Part 6: CQPSK in Four Acts — Fixing the Linear Path One Layer at a Time]({{ '/blog/solution-postmortem/from-the-issue-tracker-06-cqpsk-four-acts/' | relative_url }})
 · Next →
-[Part 8: Nineteen Dibits]({{ '/blog/solution-postmortem/from-the-issue-tracker-08-nineteen-dibits/' | relative_url }})
+[Part 8: Nineteen Dibits — A Perfect Hypothesis Meets a Rail-Pinned ADC]({{ '/blog/solution-postmortem/from-the-issue-tracker-08-nineteen-dibits/' | relative_url }})

@@ -241,3 +241,46 @@ configuration that reached it.
 - **Reporters fix bugs.** The decisive read of `r82xx_tables.go` came from the
   person with the hardware on their desk. Make the source approachable; it pays
   for itself.
+
+## FAQ
+
+**How can a dongle tune "successfully" and hear nothing?**
+Because tuner registers accept any write. With the wrong VCO power reference, the
+fine-tune step nudged the mixer divider the wrong way and parked the LO out of
+band — no error is returned, samples keep flowing, and the passband contains
+only the front end's own noise. "No error" from a register write proves the bus
+works, not that the radio is where you asked.
+
+**What does "pure complex white noise" actually prove?**
+The first V4 capture measured I/Q correlation ≈ 0.0001 with a flat power
+spectral density — no carrier anywhere in the ±1.1 MHz passband. A blocked or
+under-gained front end still shows a *weak* copy of a strong carrier; total
+absence means the LO is tuned somewhere else entirely. That single measurement
+converts "the signal is weak" theories into "the tuning is wrong" theories.
+
+**Why couldn't the decoder detect the inverted spectrum on its own?**
+DMR's nine sync words are closed under the `(dibit+2) mod 4` polarity flip — an
+inverted *data* sync is byte-identical to a clean *voice* sync, so the sync
+correlator structurally cannot tell inversion from truth. Only the FEC-protected
+payload can, which is why the dual-polarity decode is gated by the FEC chain.
+
+**Why did fixing the crystal cause `setPLL: nint=78 overflows`?**
+The overflow guard capped `nint` at 76, derived from the `ni` field's 6 bits
+alone — but the register encoding is `nint = 13 + 4·ni + si`, true cap 268. At
+28.8 MHz `nint` stays near 67, so the wrong guard was latent on every dongle
+ever tested; halving the reference to 16 MHz roughly doubled `nint` and tripped
+a limit that had never been exercised. The guard was always wrong; the crystal
+change was merely the first configuration to reach it.
+
+**Which upstream should an RTL-SDR driver port follow?**
+The fork the hardware actually ships against. Three of the V4's failures —
+crystal frequency, input routing, VCO power reference — were divergences between
+osmocom librtlsdr and the rtlsdr-blog fork. A port inherits its upstream's blind
+spots, and the V4's upstream was never osmocom.
+
+## Series navigation
+
+**Part 4 of 22** · ←
+[Part 3: Encrypted, Says Who — Four Layers Between a Flag and Its Metadata]({{ '/blog/solution-postmortem/from-the-issue-tracker-03-phase2-encryption-metadata/' | relative_url }})
+· Next →
+[Part 5: Ten Megasamples — When the Bug Is in the Samples Themselves]({{ '/blog/solution-postmortem/from-the-issue-tracker-05-ten-megasamples/' | relative_url }})
