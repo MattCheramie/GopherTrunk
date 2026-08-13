@@ -111,6 +111,40 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **TETRA DMO no longer grants and opens a recording on an idle channel, and now
+  grants for every real transmission.** On air, `protocol: tetra-dmo` started a
+  call and a recording session about 230 ms after the daemon came up — before any
+  control-channel lock, with nobody transmitting — and then never granted again,
+  so an operator's actual 10 s PTT produced no recording at all. Both symptoms
+  were the same root cause: a DNB was detected purely by an 11-dibit
+  training-sequence correlation at tolerance 2 under eight matched filters, which
+  fires roughly **18 times a second on noise**, and a DMO channel is silent
+  between transmissions. Four of those false detections were enough to grant, and
+  the steady rain of them meant the "traffic drought" that re-arms the grant edge
+  could never elapse. Every DNB is now qualified against the 255-dibit TETRA
+  timeslot grid before it counts as traffic: a real transmission comes from one
+  radio on one clock, so all of its bursts share one slot residue, while
+  correlator false alarms spread uniformly across all 255. The grant additionally
+  requires a real DSB lock, and the drought is evaluated on the IQ stream rather
+  than only when a burst arrives, so silence actually re-arms it. The decode
+  status line now reports `dnb_qualified` alongside the raw `dnb_total`, so the
+  false-alarm rate stays visible. Trade-off: a grant now lands ~0.5 s into a
+  transmission rather than instantly. (Refs #1003)
+- **A TETRA DMO call no longer burns CPU brute-forcing the colour code, starving
+  its own audio.** The voice chain re-ran the full 64-colour `RecoverDMColourCode`
+  search over its entire, still-growing burst buffer on *every* arriving burst —
+  roughly 450 000 Viterbi decodes per call, on exactly the calls (encrypted or too
+  weak) that cannot be recovered anyway. That is enough to stall the same-carrier
+  IQ tap feeding the chain, which then logged `same-carrier voice tap dropped IQ
+  to a lagging voice consumer`. Recovery now runs at most six passes over a
+  bounded scoring window, matching the control pipeline's existing budget, while
+  still keeping every buffered burst so the start of the transmission is decoded
+  retroactively into the recording.
+- **The DMO end-of-call log no longer claims a colour code it never recovered.**
+  A call that decoded nothing reported `colour=0 colour_known=true`, which reads
+  as "recovered colour 0" and sends the investigation after the wrong thing. The
+  fallback that picks colour 0 in order to decode *something* is now distinct from
+  a recovery that actually cleared the confidence gate (`colour_recovered`).
 - **Conventional DMR (IPSC) and other camp-on-idle systems no longer spam
   "hunt failed" while simply idle.** A conventional DMR / IPSC repeater has no
   continuous control channel — it sits silent between transmissions — but the

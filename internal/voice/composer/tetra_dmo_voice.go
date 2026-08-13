@@ -40,12 +40,15 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 	rs, _ := c.sink.(rawFrameSink)
 
 	dec := &dmoVoiceDecoder{
-		c:           c,
-		serial:      serial,
-		bt:          bt,
-		rs:          rs,
-		colour:      colourHint,
-		colourKnown: colourHint != 0,
+		c:      c,
+		serial: serial,
+		bt:     bt,
+		rs:     rs,
+		colour: colourHint,
+		// A non-zero hint from the grant is the pipeline's already-recovered colour
+		// (or the operator's tetra_colour_code override), so it counts as recovered.
+		colourKnown:     colourHint != 0,
+		colourRecovered: colourHint != 0,
 	}
 	ext := tetra.NewDMStreamExtractor(dec.onBurst)
 
@@ -72,7 +75,8 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 		c.log.Info("composer: tetra DMO voice follow ended",
 			"serial", serial, "dnb_bursts", dec.dnb.Load(),
 			"speech_frames", dec.speech.Load(), "bfi_count", dec.bfi.Load(),
-			"colour", dec.colour, "colour_known", dec.colourKnown)
+			"colour", dec.colour, "colour_recovered", dec.colourRecovered,
+			"colour_attempts", dec.colourTries)
 	}()
 
 	process := func(iq []complex64) {
@@ -106,6 +110,18 @@ const (
 	// confidence gate, decode the buffer at colour 0 (a clear radio-to-radio call) and
 	// stop buffering — an encrypted/unrecoverable call then simply yields no speech.
 	dmoVoiceColourMax = 120
+	// dmoVoiceColourMaxAttempts caps how many recovery passes to run, mirroring the
+	// control pipeline's dmoColourMaxAttempts.
+	//
+	// RecoverDMColourCode is a 64-colour brute force and each candidate is a full
+	// soft-Viterbi TCH/S decode over every buffered burst, plus a hard decode on the
+	// (usually failing) fallback path. Retrying it on EVERY arriving burst from buffer
+	// size 20 up to 120 is 64·Σ(20..120) ≈ 450 000 Viterbi decodes per call, crammed
+	// into the few seconds it takes to accumulate them — enough to starve the
+	// same-carrier IQ tap feeding this very chain ("voice tap dropped IQ to a lagging
+	// voice consumer"). Attempting only at batch boundaries, over a decimated buffer,
+	// brings it to the ~10k the control pipeline already budgets for.
+	dmoVoiceColourMaxAttempts = 6
 )
 
 // dmoVoiceDecoder holds the streaming DMO voice decode state for one call. All methods
@@ -120,9 +136,46 @@ type dmoVoiceDecoder struct {
 
 	colour      uint32
 	colourKnown bool
-	buffer      []tetra.DMBurst // DNBs awaiting colour recovery
+	// colourRecovered distinguishes "RecoverDMColourCode cleared its confidence
+	// gate" from "we gave up and fell back to colour 0", which colourKnown alone
+	// conflates — the end-of-call log used to claim colour_known=true colour=0 on a
+	// call where nothing was ever recovered.
+	colourRecovered bool
+	buffer          []tetra.DMBurst // DNBs awaiting colour recovery
+	// colourTries counts recovery passes run, capped at dmoVoiceColourMaxAttempts.
+	// sinceTry is how many bursts have arrived since the last pass, so the brute
+	// force runs once per batch instead of once per burst.
+	colourTries int
+	sinceTry    int
 
 	dnb, speech, bfi atomic.Uint64
+}
+
+// tryRecoverColour runs one capped colour-recovery pass and reports whether the
+// confidence gate was cleared.
+//
+// It scores only the FRESHEST dmoVoiceColourBatch bursts, not the whole buffer: the
+// gate needs a couple of dozen bursts to separate the true colour from the ~1/256
+// chance floor, so scoring more costs linearly more Viterbi work for no extra
+// discrimination. The full buffer is deliberately left intact — unlike the control
+// pipeline, which only wants the colour and can decimate, this chain must still
+// decode every buffered burst retroactively once the colour lands, or the start of
+// the transmission is lost from the recording.
+func (d *dmoVoiceDecoder) tryRecoverColour() bool {
+	d.colourTries++
+	d.sinceTry = 0
+	scored := d.buffer
+	if len(scored) > dmoVoiceColourBatch {
+		scored = scored[len(scored)-dmoVoiceColourBatch:]
+	}
+	c, _, ok := tetra.RecoverDMColourCode(scored)
+	if !ok {
+		return false
+	}
+	d.colour, d.colourKnown, d.colourRecovered = c, true, true
+	d.c.log.Info("composer: tetra DMO colour code recovered",
+		"serial", d.serial, "colour", c, "attempt", d.colourTries)
+	return true
 }
 
 // onBurst handles one streamed DMO burst. DSBs carry no speech (signalling only), so
@@ -139,17 +192,23 @@ func (d *dmoVoiceDecoder) onBurst(b tetra.DMBurst) {
 		return
 	}
 	d.buffer = append(d.buffer, b)
+	d.sinceTry++
 	if len(d.buffer) < dmoVoiceColourBatch {
 		return
 	}
-	if c, _, ok := tetra.RecoverDMColourCode(d.buffer); ok {
-		d.colour, d.colourKnown = c, true
-		d.c.log.Info("composer: tetra DMO colour code recovered", "serial", d.serial, "colour", c)
-	} else if len(d.buffer) >= dmoVoiceColourMax {
+	// Attempt only once per batch of fresh bursts, and only up to the attempt cap —
+	// re-running the 64-colour brute force on every arriving burst is what made this
+	// chain starve its own IQ tap.
+	canTry := d.colourTries < dmoVoiceColourMaxAttempts &&
+		(d.colourTries == 0 || d.sinceTry >= dmoVoiceColourBatch)
+	switch {
+	case canTry && d.tryRecoverColour():
+		// Recovered; fall through and flush the buffer.
+	case len(d.buffer) >= dmoVoiceColourMax || d.colourTries >= dmoVoiceColourMaxAttempts:
 		// Give up recovering; assume clear colour 0. A genuinely encrypted call then
 		// yields no CRC-valid speech (bfi), which the hangtime ends normally.
 		d.colour, d.colourKnown = 0, true
-	} else {
+	default:
 		return // keep buffering
 	}
 	buf := d.buffer
@@ -183,16 +242,20 @@ func (d *dmoVoiceDecoder) emit(b tetra.DMBurst) {
 }
 
 // flush decodes any DNBs still buffered awaiting colour recovery at end-of-call. If the
-// colour never cleared the confidence gate, it makes a final best-effort attempt over
-// the whole buffer, then falls back to colour 0 so a short clear call is not dropped.
+// colour never cleared the confidence gate, it makes a final best-effort attempt, then
+// falls back to colour 0 so a short clear call is not dropped.
+//
+// The fallback sets colourKnown (the buffer is about to be decoded at SOME colour) but
+// deliberately NOT colourRecovered, so the end-of-call log distinguishes "recovered
+// colour 0" from "never recovered anything". Setting the flag unconditionally is what
+// made a call that decoded nothing report `colour=0 colour_known=true`, which reads as
+// a successful recovery.
 func (d *dmoVoiceDecoder) flush() {
 	if len(d.buffer) == 0 {
 		return
 	}
 	if !d.colourKnown {
-		if c, _, ok := tetra.RecoverDMColourCode(d.buffer); ok {
-			d.colour = c
-		}
+		d.tryRecoverColour()
 		d.colourKnown = true
 	}
 	buf := d.buffer
