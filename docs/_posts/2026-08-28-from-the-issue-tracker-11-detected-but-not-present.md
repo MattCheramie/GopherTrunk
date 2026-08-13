@@ -32,20 +32,54 @@ between them.*
 > keyed on platform-specific errors silently doesn't exist on the platform you
 > forgot.
 
+## Cheat sheet
+
+| | |
+|---|---|
+| Issue | [#1038](https://github.com/MattCheramie/GopherTrunk/issues/1038) — macOS/Apple silicon: open fails though the device is detected |
+| Symptom | diagnostics list the dongle (`dongles : 1 detected`); the daemon warns `configured SDR not present on the bus` |
+| Wrong theories | cables/hubs/`lsusb`; the `blog_v4` config flag; "this dongle brand isn't 100% compatible" |
+| Real cause | IOKit `kern_return 0xe000404f` (`kIOUSBPipeStalled`) fell through untranslated, so the existing stall recovery never ran |
+| Fix | one `translateIOReturn` entry mapping the stall to `usb.ErrPipeStalled` |
+| Verified | v0.9.1 on the reporter's Apple-silicon Mac — R820T2 probe with the full 29-entry gain table, cold boots included |
+| Rule that survives | a recovery keyed on platform sentinels doesn't exist on any platform whose backend never translates into them |
+
+## In this post
+
+- **The symptom: the device that was both there and not** — one log screenful contradicting itself.
+- **The one probe line** — `sdr list --probe` surfaces the deepest failing operation verbatim.
+- **The recovery that already existed** — the cross-platform stall ladder, and the untranslated error that hid from it.
+- **Why "works in SDR++" doesn't exonerate your backend** — libusb's silent courtesies.
+- **The fix** — one translation entry, tested on the platforms that can test each half.
+- **What we keep** — error translation, inherited lies, and retry-versus-reset.
+
 ## The symptom: the device that was both there and not
 
 The report's title captured the contradiction: "open device failed although device
-is detected." macOS saw the dongle — enumeration listed it, serial and all — but the
-daemon refused to run with it:
+is detected." A day-one user on an Apple-silicon Mac (v0.8.8, `darwin/arm64`) got a
+startup log that disagreed with itself inside a single screenful — the daemon's own
+diagnostics banner *listed* the dongle it had just declared missing:
 
 ```text
-configured SDR not present on the bus
+level=WARN msg="configured SDR not present on the bus; check the cable / dmesg / lsusb"
+  serial=77771111153705700
+level=WARN msg="daemon: SDR pool open failed" err="no SDR devices opened"
+...
+level=INFO msg=diagnostics banner="GopherTrunk diagnostics
+  ...
+  dongles : 1 detected
+    - rtlsdr[0] serial=77771111153705700 product=RTL2832U"
 ```
 
-That message points an operator at cables, hubs, and `lsusb`-style checks. The
-reporter dutifully chased all of them. Nothing helped, because the message was
-wrong: the device was on the bus, enumerated, and answering. What had actually
-failed was much deeper and much more specific.
+That WARN points an operator at cables, hubs, and `lsusb`-style checks. The
+reporter dutifully chased all of them. Community triage then reached for the
+usual config suspects — `blog_v4` was toggled both ways with no change, which
+makes sense in hindsight because that flag addresses the RTL-SDR Blog V4's
+crystal and input routing, a *tuning* concern, and this failure was in
+*bring-up*. A "this brand of dongle isn't 100% compatible with generic RTL-SDRs"
+theory got an airing too. Nothing helped, because the message was wrong: the
+device was on the bus, enumerated, and answering. What had actually failed was
+much deeper and much more specific.
 
 ## The one probe line
 
@@ -53,9 +87,15 @@ failed was much deeper and much more specific.
 bring-up on each and reports the failure verbatim. One line cracked the case:
 
 ```text
-tuner init: r82xx init: burst write: rtl2832u: I2CWrite addr=0x34:
-  usb: DeviceRequest OUT: usb: IOKit kern_return 0xe000404f
+probe rtlsdr[0]: rtlsdr: tuner init: r82xx init: burst write: rtl2832u:
+  I2CWrite addr=0x34: usb: DeviceRequest OUT: usb: IOKit kern_return 0xe000404f
+DRIVER  IDX  SERIAL             TUNER  PRODUCT   gains(0.1 dB)
+rtlsdr  0    77771111153705700         RTL2832U  []
 ```
+
+The device row underneath tells the same story in table form: product identified,
+serial read — and the `TUNER` column empty with a bare `[]` where 29 gain entries
+should be. The dongle answered everything except the one transfer that matters.
 
 Readers of Part 9 will recognize everything up to the last clause: the R820T's
 first I²C-bridge burst write during tuner bring-up, the exact transfer that stalled
@@ -78,15 +118,32 @@ means "pipe stalled" on each platform:
 | Windows | `ERROR_GEN_FAILURE` | yes — recovery runs |
 | macOS | IOKit `kern_return 0xe000404f` | **no — raw code fell through** |
 
-The macOS USB backend returned the kern_return wrapped but untranslated. The
-recovery ladder's `errors.Is` checks matched nothing, the first stalled chunk
-aborted tuner init, and the failure cascaded upward: probe failed → tuner detection
-concluded no tuner present → device filtered out → "configured SDR not present on
-the bus." Each layer's conclusion was locally reasonable and globally misleading.
-The thread also burned exchanges on a plausible-but-wrong hardware theory — that
-this brand of dongle "isn't 100% compatible" — which the probe line refuted:
-incompatible silicon doesn't fail with a *transient stall* code on an otherwise
-clean bring-up.
+Why does macOS need translating at all? GopherTrunk's macOS backend is pure Go —
+no CGO, IOKit and CoreFoundation loaded at runtime — so USB failures don't arrive
+as friendly POSIX errno values. They arrive as raw IOKit `kern_return` codes, an
+error space of its own, and a translation layer (`translateIOReturn`) is the
+bridge that maps the handful of codes the driver must *act on* into the portable
+sentinels the cross-platform logic checks. The stall code wasn't in the map. The
+kern_return came back wrapped — visible in the error string, as the probe line
+shows — but untranslated, so the recovery ladder's `errors.Is` checks matched
+nothing, and the first stalled chunk aborted tuner init.
+
+From there the failure cascaded upward, each layer's conclusion locally reasonable
+and globally misleading:
+
+| Layer | What it saw | What it concluded |
+|---|---|---|
+| USB backend | raw `kern_return 0xe000404f` | unrecognized error — fail the write |
+| Tuner init | first I²C burst failed | R820T bring-up failed |
+| Tuner detection | probe returned no tuner | no supported tuner present |
+| Device pool | no usable tuner | filter the device out |
+| Daemon | configured serial not in pool | "configured SDR not present on the bus" |
+
+The same stall class had already surfaced on other OS fronts (#753, #922 are its
+siblings) — this was simply the macOS spelling of a known failure arriving at a
+backend that didn't speak it. And the "isn't 100% compatible" hardware theory is
+refuted by the probe line itself: incompatible silicon doesn't fail with a
+*transient stall* code on an otherwise clean bring-up.
 
 ## Why "works in SDR++" doesn't exonerate your backend
 
@@ -106,12 +163,32 @@ deliberately, per platform, or it doesn't exist.
 ## The fix
 
 One entry in the macOS backend's error translation: `translateIOReturn` now maps
-`0xe000404f` to the portable `usb.ErrPipeStalled`, which the existing recovery
-ladder already handles. No new recovery logic, no macOS-specific retry code — just
-the missing translation that lets the cross-platform machinery see the stall.
+`0xe000404f` to the portable `usb.ErrPipeStalled`, mirroring the Windows
+`ERROR_GEN_FAILURE` mapping, which the existing recovery ladder already handles.
+No new recovery logic, no macOS-specific retry code — just the missing translation
+that lets the cross-platform machinery see the stall.
 
-Verified in v0.9.1 on the reporter's hardware: the probe reports an R820T2 with the
-full 29-entry gain table, cold boots included.
+The regression coverage is split the way the bug was: a darwin-gated test asserts
+the IOKit stall code maps to `ErrPipeStalled` (the macOS analog of the existing
+Windows mapping test), while the Linux-runnable
+`TestR82xx_InitBurst_ErrPipeStalled*` tests already pinned the other half of the
+chain — that a recognized stall actually triggers the burst-write retry. Each
+platform tests the half it can run; together they cover the seam this bug lived
+in.
+
+Verified in v0.9.1 on the reporter's hardware, and the closing log is the opening
+log's negative image — the same probe, now with a tuner and 29 gain entries where
+the empty brackets were:
+
+```text
+DRIVER  IDX  SERIAL             TUNER   PRODUCT   gains(0.1 dB)
+rtlsdr  0    77771111153705700  R820T2  RTL2832U  [0 9 14 27 37 77 87 125 ... 480 496]
+
+level=INFO msg="device opened" driver=rtlsdr serial=77771111153705700 role=control rate_hz=2400000
+level=INFO msg="sdr tuner detected" serial=77771111153705700 product=RTL2832U tuner=R820T2
+```
+
+The reporter confirmed cold boots included, and closed the issue themselves.
 
 ## What we keep
 
@@ -137,3 +214,46 @@ full 29-entry gain table, cold boots included.
 *Next: [Part 12]({{ '/blog/solution-postmortem/from-the-issue-tracker-12-seventy-eight-degrees/' | relative_url }})
 leaves the RTL family for the Airspy R2 — a device that opened perfectly and decoded
 nothing, until one phase measurement named the bug.*
+
+## FAQ
+
+**What is `kern_return 0xe000404f`?**
+IOKit's `kIOUSBPipeStalled` — "pipe has stalled, error needs to be cleared." It's
+the macOS spelling of the same condition Linux reports as `syscall.EPIPE` and
+Windows as `ERROR_GEN_FAILURE`: a USB control-pipe stall, transient and common on
+an R820T's first I²C burst during a cold-boot bring-up.
+
+**Why did the daemon claim the SDR wasn't on the bus when the OS clearly listed it?**
+Because the conclusion was inherited through three layers. The probe's tuner init
+failed on the unrecognized stall, tuner detection therefore concluded no
+supported tuner existed, the device was filtered from the pool, and the daemon —
+finding the configured serial absent from the pool — reported it "not present on
+the bus." Every layer reasoned correctly from its input; only the bottom input
+was wrong.
+
+**Why did the same dongle work in SDR++ and SDRTrunk on the same Mac?**
+Those applications reach the dongle through libusb, which clears endpoint stalls
+automatically as part of its transfer handling. The stall happens to everyone;
+libusb users never see it. "Works in other SDR apps" therefore tells you libusb's
+recovery works — not that your own backend does.
+
+**Why is retrying the same request the correct recovery rather than resetting the device?**
+A control-pipe (EP0) stall is cleared by the host controller on the next SETUP
+packet, so re-sending the identical request succeeds — that's the reasoning the
+Linux and Windows paths already relied on, now shared by macOS. A full device
+reset also works but costs seconds and re-runs the entire bring-up for a
+condition that clears in milliseconds.
+
+**Was the dongle brand ever part of the problem?**
+No. The affected unit was a 2016-era R820T stick, but the stall is a chip-family
+cold-boot behavior GopherTrunk already recovered from on other platforms, and the
+same hardware probed perfectly once the translation landed. "Brand X isn't fully
+compatible" was the thread's plausible-but-wrong theory; the probe line's
+transient stall code is what refuted it.
+
+## Series navigation
+
+**Part 11 of 22** · ←
+[Part 10: Faster Than libusb — When the Second Write Outruns the First]({{ '/blog/solution-postmortem/from-the-issue-tracker-10-faster-than-libusb/' | relative_url }})
+· Next →
+[Part 12: Seventy-Eight Degrees — The Phase Angle That Named the Bug]({{ '/blog/solution-postmortem/from-the-issue-tracker-12-seventy-eight-degrees/' | relative_url }})

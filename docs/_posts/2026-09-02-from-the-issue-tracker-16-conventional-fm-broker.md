@@ -27,6 +27,27 @@ second was the more interesting of the pair.*
 > single-consumer device. The fix made the scanner the device's one true consumer
 > behind an IQ fan-out broker everyone else subscribes to.
 
+## Cheat sheet
+
+| | Bug one | Bug two |
+|---|---|---|
+| Symptom | activity detected, `recorder: call started wav=…`, directory stays empty | same empty directory, now with `composer: StreamIQ failed … rtlsdr: stream already active` on every call |
+| Reachable when | always — every conventional call | only after bug one was fixed and the FM chain finally ran |
+| Cause | composer's chain selection gated on decoding a digital protocol sync; `fm-conv` has nothing to decode | `runFMChain` opened a second `StreamIQ` on the device the scanner was already monitoring — single-consumer API, same device, same frequency |
+| Why it never bit before | trunked digital systems always decode a sync | trunked voice records on a *separate retuned voice SDR*; conventional scanning has no monitor/record separation |
+| Fix | `fm-conv` skips the digital gate and builds an FM chain directly | scanner becomes the broker's primary consumer; the FM chain **subscribes** to the IQ fan-out ([#1089](https://github.com/MattCheramie/GopherTrunk/issues/1089)) |
+| Key tell | named WAV path + empty directory = no PCM ever arrived | `stream already active` on a device nothing else uses = self-contention |
+
+## In this post
+
+- **The symptom: activity without audio** — and the one log line that rules out the filesystem.
+- **Bug one: the gate that only opened for digital** — a condition `fm-conv` could never meet.
+- **Bug two: "stream already active"** — the collision that was unreachable until bug one died, and the topology that guarantees it.
+- **The fix: one consumer, many subscribers** — the IQ fan-out broker.
+- **Inside the broker** — bounded subscribers, zero-copy primary, and surviving USB reacquire.
+- **The verification round** — WAV files, intelligible audio, and a new unrelated ticket.
+- **What we keep** — the durable lessons.
+
 ## The symptom: activity without audio
 
 The reporter configured a handful of conventional analog FM channels — no trunking,
@@ -72,17 +93,28 @@ builds an FM demodulation chain directly. Ship it, watch the recordings appear?
 
 ## Bug two: "stream already active"
 
-No. Fixing bug one produced a new failure, 100% reproducible:
+No. Fixing bug one produced a new failure, 100% reproducible. The reporter came
+back with a follow-up so precise it read like the postmortem's first draft:
 
 ```
-rtlsdr: stream already active
+synthetic call started  device=SDRV4-03 grant="scanner/fm-conv tg=2147483648 src=0 freq=146670000"
+composer: StreamIQ failed  serial=SDRV4-03 err="rtlsdr: stream already active"
+recorder: call started  device=SDRV4-03 wav=/opt/gophertrunk/recordings/scanner/2147483648/20260811_110603_2147483648.wav
+synthetic call ended  device=SDRV4-03 reason=normal
 ```
+
+Same named WAV path, same empty directory — but now with the cause printed one
+line above it, on every call, on both configured channels. And the reporter had
+already ruled out the obvious external explanation: the device was dedicated to
+this scanner, with nothing else streaming from it. This was self-contention.
 
 The freshly-unblocked FM chain (`runFMChain`) did what every voice chain had always
 done: it opened its own IQ stream on the device it needed. And the device said no,
 because the scanner already held the stream — it was, after all, *monitoring that
-channel for activity*. The device API is single-consumer: one `StreamIQ`, one
-reader, by design.
+channel for activity*; continuous IQ from the device is how a squelch opening gets
+detected and a "synthetic call" gets started at all. The device API is
+single-consumer: one `StreamIQ`, one reader, by design — a second caller would
+conflict at the USB/driver layer.
 
 Here's why this had never bitten anyone before, and it's the architectural heart of
 the issue. On a trunked system, monitoring and recording are physically separate:
@@ -102,6 +134,12 @@ topology arrived in which monitor and consumer are the same physical stream.
 | Trunked analog voice | scanner, on the control channel | voice SDR, retuned | no — same reason |
 | Conventional FM | scanner, on the channel | the same channel, same device | **yes — by construction** |
 
+The reporter's working theory in that follow-up named all of this — the monitor
+stream, the second `StreamIQ`, the trunked-versus-conventional separation — and
+asked the exact right question: should the FM chain consume the scanner's existing
+stream, or should the monitor yield the device for the duration of the call? The
+answer was the first, via a piece of machinery the codebase already had.
+
 ## The fix: one consumer, many subscribers
 
 The resolution (landed as the follow-up,
@@ -117,6 +155,65 @@ That shape should look familiar if you've read the wideband posts: it's the same
 move GopherTrunk makes when many DDC taps share one wideband dongle. The insight of
 #1075 is that even a plain, narrowband, single-channel configuration needs it the
 moment monitoring and consuming converge on one device.
+
+## Inside the broker
+
+The broker (`internal/sdr/iqtap`) predates this bug — it already fanned IQ out to
+trunking-adjacent observers like the live spectrum view, paging decoders, the
+rtl_tcp server, and signal-domain diagnostics. The #1089 fix promoted it from
+"optional observers on the side" to the ownership answer for conventional
+scanning. Its design constraints are worth spelling out, because each one is a
+failure mode it prevents:
+
+- **The primary keeps its contract.** The broker wraps the device and exposes the
+  same interface; the primary consumer calls `StreamIQ` and gets one channel,
+  exactly as before, with a single extra goroutine hop. Nothing about the scanner
+  had to change to sit behind it.
+- **Subscribers are bounded and non-blocking.** Each `Subscribe` gets its own
+  bounded channel (default 16 chunks — about 60 ms at 2.048 MS/s), and delivery
+  never blocks: a slow subscriber's chunks are dropped and *counted*, not queued
+  behind. A wedged FM chain can never back-pressure the squelch monitor that
+  detects the next call.
+- **The primary path stays zero-copy; subscribers get copies.** Secondaries
+  receive freshly-allocated slices they can hold or mutate without corrupting the
+  primary or each other — the classic shared-buffer aliasing bug is designed out
+  rather than policed.
+- **Subscriptions survive device replacement.** A subscriber channel stays alive
+  across `StreamIQ` sessions, and after a USB disconnect the daemon points the
+  broker at the reacquired handle (`SetInner`) — the FM chain doesn't need to know
+  the physical device bounced mid-call.
+- **A small handoff buffer protects the driver.** A two-chunk handoff between the
+  fan-out goroutine and the primary keeps a momentarily-busy consumer from
+  stalling the drain of the driver's bounded ring — which would otherwise force
+  whole-chunk IQ drops at the USB layer.
+
+Answering the reporter's architectural question directly: `runFMChain` now
+consumes the scanner's existing stream via a broker subscription. The alternative
+— having the monitor release the device for each call and reacquire after — would
+have deafened the scanner to every *other* channel for the duration of every call.
+
+## The verification round
+
+The collision reproduced faithfully in a unit test (a fake single-consumer device
+that rejects a second stream; the fix delivers IQ to both consumers concurrently),
+but a green synthetic test isn't proof of on-air audio — so the issue stayed open
+until the reporter ran the fix against the same two channels, 146.670 MHz NFM and
+442.100 MHz NFM with CTCSS:
+
+```
+synthetic call started  device=SDRV4-03 grant="scanner/fm-conv tg=2147483648 src=0 freq=146670000"
+recorder: call started  device=SDRV4-03 wav=…/20260813_095829_2147483648.wav
+synthetic call ended    device=SDRV4-03 reason=normal
+recorder: call ended    device=SDRV4-03 wav=…/20260813_095829_2147483648.wav duration=6.844s reason=normal
+broadcast: call streamed  backend=iaxs01-Rdio system=scanner tg=2147483648 attempt=1
+```
+
+No `StreamIQ failed`, a real file at the named path, intelligible audio on
+playback, and the call flowing on into the broadcast backend. The same test round
+also surfaced a squelch-hangtime debounce problem — recordings occasionally
+running past the end of a transmission — which the reporter filed as its own
+ticket rather than folding into this one: unrelated mechanism, separate issue,
+exactly how a tracker stays navigable.
 
 ## What we keep
 
@@ -140,7 +237,44 @@ moment monitoring and consuming converge on one device.
   subscribers, copies for everyone — the same pattern at 25 kHz that the wideband
   path uses at 10 MS/s.
 
+## FAQ
+
+**Why did the log say a WAV was started if no file was ever created?**
+`recorder: call started wav=<path>` names the path the recorder *intends* to use;
+the file is only created when the first PCM arrives, so that calls which never
+produce audio don't litter the disk with empty WAVs. The pairing of a named path
+with an empty directory is therefore diagnostic gold: it localizes the failure to
+"upstream of the recorder" in one glance.
+
+**Nothing else was using the device — how could its stream be "already active"?**
+Because the scanner itself was the other user. Conventional scanning requires a
+continuous IQ stream just to detect a squelch opening, so by the time a call
+started, the monitor already owned the device's single `StreamIQ`. The collision
+was GopherTrunk contending with itself — which is why it was 100% reproducible
+rather than a race.
+
+**Why not just have the monitor release the device while a call records?**
+On a multi-channel conventional setup, releasing the stream for the duration of a
+call would blind the scanner to every other channel until the call ended — turning
+one active channel into a blackout of the rest. The broker keeps the monitor
+running and gives the voice chain a copy, so detection and recording proceed
+concurrently on one physical stream.
+
+**Does the broker add risk to the monitoring path it sits in front of?**
+It's designed not to: the primary path is zero-copy with a single goroutine hop,
+subscribers get bounded channels with non-blocking delivery, and a slow or wedged
+subscriber shows up as a drop counter rather than back-pressure. The scanner reads
+exactly the stream it always read.
+
+**Was the two-bug structure avoidable?**
+Only by testing the conventional path end to end before shipping it — the second
+bug was unreachable while the first blocked every FM chain, so no amount of
+staring at bug one's fix would have revealed it. The durable habit is to treat a
+*new* error after a fix as the next layer speaking up, and budget for it.
+
 ## Series navigation
 
-← [Part 15: the silent MP3]({{ '/blog/solution-postmortem/from-the-issue-tracker-15-silent-mp3/' | relative_url }})
-· Next → [Part 17: placeholder constants]({{ '/blog/solution-postmortem/from-the-issue-tracker-17-placeholder-constants/' | relative_url }})
+**Part 16 of 22** · ←
+[Part 15: The Silent MP3 — Three Encoder Bugs and a Test That Checked One Frame]({{ '/blog/solution-postmortem/from-the-issue-tracker-15-silent-mp3/' | relative_url }})
+· Next →
+[Part 17: Placeholder Constants — The TETRA Sync That Never Existed]({{ '/blog/solution-postmortem/from-the-issue-tracker-17-placeholder-constants/' | relative_url }})

@@ -30,12 +30,42 @@ to the one that had just succeeded.*
 > the race. Fix: a 10 ms settle between warmup and baseband init, plus eagerly
 > seeding the control endpoint's timeout policy the way libusb does.
 
+## Cheat sheet
+
+| | |
+|---|---|
+| Issue | [#395](https://github.com/MattCheramie/GopherTrunk/issues/395) — Windows 10, `ERROR_GEN_FAILURE` at baseband init step 0 |
+| Symptom | the warmup write succeeds; the byte-identical step-0 write fails — every attempt, cold boots, reboots, every port |
+| Wrong theory | wedged clone firmware needing a wider reset-and-retry envelope |
+| Why it failed | the fault sits *between two transfers inside one attempt*; between-attempt hygiene can't reach it by construction |
+| Real cause | direct `WinUsb_ControlTransfer` is hundreds of microseconds faster than libusb's stack; the second write outruns the clone's firmware |
+| Fix | 10 ms settle (`warmupSettleDuration`) between warmup and baseband init + eagerly seed `PIPE_TRANSFER_TIMEOUT=0` the way libusb does |
+| Rule that survives | match the reference stack's *pace* and endpoint policy, not just its bytes |
+
+## In this post
+
+- **The symptom: the same bytes, accepted then refused** — a healthy dongle rejects a write it just accepted.
+- **The theory that couldn't work** — the widened retry envelope, and the three-sentence reply that killed it.
+- **The real cause: we removed the stack that was the delay** — counting the layers, and what each one costs.
+- **The fix** — one settle at one boundary, plus libusb's endpoint policy.
+- **What we keep** — failure position, undocumented timing, and the pacing tell.
+
 ## The symptom: the same bytes, accepted then refused
 
 The Windows report looked at first like a cousin of Part 9's EPIPE: device
 enumerates, interface claims, then bring-up dies — this time with Windows'
 maximally unhelpful `ERROR_GEN_FAILURE` (0x1F), the WinUSB way of saying "the
 device did not like that."
+
+```text
+rtlsdr: init baseband: init baseband step 0 ... ERROR_GEN_FAILURE
+```
+
+Everything the user could check had checked out. `sdr list` showed the dongle.
+`sdr doctor` reported the WinUSB binding OK. The dongle worked in other SDR
+software on the same machine. The report (against v0.2.4) even called the
+jurisdiction correctly: this fails at the first USB write to the chip, so
+"there's nothing on the user side left to try." They were right.
 
 The detail that mattered was *where* it died: baseband init, step 0. And step 0 is
 not an exotic transfer. GopherTrunk's open path had just executed the warmup probe
@@ -51,12 +81,27 @@ A vendor-OUT the chip just accepted, re-sent moments later, refused.
 ## The theory that couldn't work
 
 The first fix read the symptom as "clone firmware wedged by a previous session" —
-Part 9 had made chip-state theories respectable — and widened the open path's
-reset-and-retry envelope: more attempts, longer backoff, a device rebind between
-tries.
+Part 9 had made chip-state theories respectable, and GopherTrunk already carried a
+recovery path for exactly that on Windows. So the first round widened it,
+concretely and conservatively:
 
-It changed nothing, and a second look at the failure showed it never could have.
-The dongle wasn't arriving wedged: it *accepted the first write of every attempt*.
+- Open-time retries: **3 attempts → 5**, with exponential backoff
+  (200 / 400 / 800 / 1200 ms in place of the old 100 / 200 ms).
+- The WinUSB `Reset()` settle: **50 ms → 150 ms**, on the reasoning that libusb's
+  50 ms is calibrated for clean closes, not wedged-firmware recovery.
+- A sharper terminal error, telling the operator to unplug the dongle for ten
+  seconds — the one action that physically clears firmware state.
+
+Healthy hardware still opened on attempt zero with no delay; only a dongle that
+actually needed recovery paid the new cost, about 2.6 seconds worst case. A
+defensible change, built on a real failure class from other reports — and
+completely beside the point.
+
+The reporter's follow-up was three sentences and worth more than the whole round:
+cold starts, reboots, different ports, no hub — and the dongle worked fine in
+SDRTrunk and OP25 on the same machine. That killed the wedged-firmware theory on
+its own terms, because a genuinely wedged dongle fails the *warmup* write too.
+This one wasn't arriving wedged: it *accepted the first write of every attempt*.
 Each retry ran warmup (success) then step 0 (failure), identically, every time. A
 failure that reproduces at the same point *within* each attempt lives between two
 transfers inside the attempt — no amount of between-attempt hygiene can reach it.
@@ -77,16 +122,34 @@ GopherTrunk:  procWinUsbControlTransfer.Call    → winusb.dll → WinUsb.sys �
 
 librtlsdr pays libusb's transfer bookkeeping, its internal locking, and a
 user-mode round trip on every single write — hundreds of microseconds of incidental
-latency between consecutive transfers. GopherTrunk's pure-Go driver invokes the
-WinUSB entry point directly and issues back-to-back writes with almost no gap.
+latency between consecutive transfers. That overhead isn't one thing; it's a tax
+collected at every layer. libusb allocates and tracks a transfer object per
+request, serializes access to the device handle behind its own locks, and crosses
+from `libusb-1.0.dll`'s abstractions into `winusb.dll`'s before the kernel
+transition into `WinUsb.sys` ever happens. GopherTrunk's pure-Go driver invokes
+the WinUSB entry point directly — one `procWinUsbControlTransfer.Call` — and
+issues back-to-back writes with almost no gap.
 
 On well-behaved silicon that's free performance. On this clone, the firmware needs
 a moment after acknowledging one vendor request before it can accept the next; land
 the second write inside that window and it NAKs, which WinUSB surfaces as
 `ERROR_GEN_FAILURE`. Every libusb-based program on the same machine kept working —
 not because it did anything differently, but because its overhead *was* the settle
-time. We also checked the boring alternative: there is no relevant WinUSB API
-difference between Windows 10 and 11 to blame. The variable was the stack we had
+time.
+
+We also checked the boring alternative the reporter had asked about directly: is
+this a Windows 10 problem? No. The WinUSB surface is the same on Windows 10 and
+11 — same `WinUsb_ControlTransfer` semantics, same control-endpoint behavior, and
+the same pipe-policy defaults:
+
+| WinUSB pipe policy | Default (Win10 and Win11) |
+|---|---|
+| `PIPE_TRANSFER_TIMEOUT` | 5000 ms |
+| `AUTO_CLEAR_STALL` | false |
+| `RAW_IO` | false |
+
+The dongle would almost certainly reproduce this on Windows 11 too; the OS version
+in the report's title was incidental. The variable was the stack we had
 deliberately made thinner.
 
 This is Part 9's lesson with the sign flipped. There, byte-identical writes weren't
@@ -98,16 +161,32 @@ calls. Here, the same discovery on Windows: matching the reference implementatio
 
 Two changes, both small:
 
-- **A 10 ms settle between the USB warmup write and baseband init.** Placed once at
-  the boundary the trace identified, not sprinkled defensively. It bounds the cost
-  at open time and gives the slowest firmware observed comfortable margin.
-- **Eagerly seed `PIPE_TRANSFER_TIMEOUT = 0` on the control endpoint.** libusb's
-  `winusbx_configure_endpoints` sets pipe policy on claim; GopherTrunk had left the
-  defaults in place. Matching it removes one more silent difference between our
-  WinUSB usage and the one every dongle firmware has been de facto validated
-  against.
+- **A 10 ms settle between the USB warmup write and baseband init** —
+  `warmupSettleDuration` in `internal/sdr/rtlsdr/purego/driver.go`. Placed once at
+  the boundary the evidence identified, not sprinkled defensively. It bounds the
+  cost at open time and gives the slowest firmware observed comfortable margin.
+- **Eagerly seed `PIPE_TRANSFER_TIMEOUT = 0` on the control endpoint** — in
+  `internal/sdr/rtlsdr/usb/usb_windows.go`, matching what libusb's
+  `winusbx_configure_endpoints` does on claim; GopherTrunk had left the defaults
+  in place. This is parity hardening rather than the root cause, but it removes
+  one more silent difference between our WinUSB usage and the one every dongle
+  firmware has been de facto validated against.
 
-The reporter's dongle opened cleanly with both in place.
+The widened retry envelope from round one stayed in the tree — it was aimed at a
+real failure class from other reports, just not this one — and the settle came
+with a falsifiable follow-up plan. The debug trace is the ground truth for
+whether 10 ms is the right number:
+
+```powershell
+$env:RTLSDR_DEBUG_USB="1"
+gophertrunk sdr list --probe
+```
+
+If step 0 still failed with the settle in place, the value needed widening. If
+step 0 succeeded and the failure *moved* to step 1 or later, that would mean the
+gap wasn't warmup-specific and `InitBaseband` needed per-step settles instead.
+Neither escalation was needed: the reporter's dongle opened cleanly with both
+changes in place.
 
 ## What we keep
 
@@ -131,3 +210,46 @@ The reporter's dongle opened cleanly with both in place.
 *Next: [Part 11]({{ '/blog/solution-postmortem/from-the-issue-tracker-11-detected-but-not-present/' | relative_url }})
 moves to macOS, where the recovery for exactly this family of stalls already
 existed — and one untranslated error code kept it from ever running.*
+
+## FAQ
+
+**Why did the dongle work in SDRTrunk and OP25 on the same machine?**
+Both reach the chip through libusb, whose per-transfer overhead — transfer
+objects, locking, an extra DLL boundary — adds hundreds of microseconds between
+consecutive writes. That incidental latency *is* the settle time the clone's
+firmware needs. Clone firmware is de facto validated against libusb's pace, never
+against a specification.
+
+**Was this a Windows 10 problem?**
+No. The WinUSB API surface, control-endpoint semantics, and pipe-policy defaults
+(`PIPE_TRANSFER_TIMEOUT=5000`, `AUTO_CLEAR_STALL=false`, `RAW_IO=false`) are the
+same on Windows 10 and 11. The same dongle would almost certainly reproduce the
+race on either; a fast machine and a slow clone were the actual ingredients.
+
+**Why didn't the wider retry envelope help at all?**
+Because the failure lived *inside* one attempt — between the warmup write and
+step 0 — and every retry re-ran that same gap at the same pace. Between-attempt
+remedies (more attempts, longer backoff, device rebinds) can only fix state that
+persists *across* attempts, and the dongle demonstrably arrived healthy each
+time, accepting the first write.
+
+**How was 10 ms chosen, and what if it isn't enough on some other dongle?**
+It was chosen with comfortable margin over the observed pattern, at a cost paid
+once per open. The `RTLSDR_DEBUG_USB=1` trace is the arbiter: a still-failing
+step 0 means widen the settle; a failure that moves to a later init step means
+the gap isn't warmup-specific and `InitBaseband` needs per-step settles. The
+ladder lives in [RTL-SDR USB recovery]({{ '/reference/rtlsdr-usb-recovery/' | relative_url }}).
+
+**If direct WinUSB causes this, why not just use libusb?**
+The pure-Go, CGO-free driver is what makes GopherTrunk a single static binary
+with no driver-library dependencies — that's worth keeping. The price is that
+every incidental behavior libusb ships — its pacing, its endpoint policy, its
+stall clearing ([Part 11]({{ '/blog/solution-postmortem/from-the-issue-tracker-11-detected-but-not-present/' | relative_url }}))
+— must be identified and reimplemented deliberately.
+
+## Series navigation
+
+**Part 10 of 22** · ←
+[Part 9: Broken Pipe — Six Rounds of Traces for One USB Write]({{ '/blog/solution-postmortem/from-the-issue-tracker-09-broken-pipe/' | relative_url }})
+· Next →
+[Part 11: Detected but Not Present — One Hex Code from a Fix That Already Existed]({{ '/blog/solution-postmortem/from-the-issue-tracker-11-detected-but-not-present/' | relative_url }})

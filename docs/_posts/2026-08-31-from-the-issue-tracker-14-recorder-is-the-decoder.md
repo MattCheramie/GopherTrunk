@@ -28,6 +28,30 @@ precisely because its one healthy path was the one nobody was listening to.*
 > and nothing after it — was the measurement that cracked it. The lasting lesson is
 > a coupling that survived the fix: live digital audio rides the recording path.
 
+## Cheat sheet
+
+| | |
+|---|---|
+| Symptom | "Tap to enable audio" does nothing; recordings perfect; dashboard shows live calls |
+| Wrong theory 1 | Safari needs HTTP Range/`206 Partial Content` — real bug class, fix shipped, user was on Chrome |
+| Wrong theory 2 | Publisher grant-cache race dropping `CallStart` under load — real, fixed, symptom survived |
+| The probe | `curl -sN …/api/v1/audio/stream \| head -c 4000 \| wc -c` hangs at **44 bytes** — WAV header, zero PCM |
+| The counters | `stream_subscribers: 1`, `stream_tracked_grants: 1`, `stream_drops_total: 0` — a listener and a call, nothing delivered |
+| Real cause | Digital calls arrive as raw vocoder frames; only the recorder decodes them to PCM; every live consumer is PCM-only and silently skipped |
+| Fix | The recording path's decoded PCM is fanned out to the web stream, host speaker, and tone-out detector |
+| Lasting coupling | Live digital audio rides the recording path — a no-record talkgroup has no live audio |
+
+## In this post
+
+- **The symptom: perfect recordings, dead speakers** — why "recordings work" misled everyone.
+- **Wrong theory one: Safari and Range requests** — a true bug class on the wrong browser.
+- **Wrong theory two: the grant-cache race** — a real race, a real fix, and the diagnostics that outlived it.
+- **The 44-byte probe** — measuring the stream with no browser in the loop.
+- **Two kinds of audio, one privileged consumer** — the vocoder-frame vs PCM topology underneath it all.
+- **The real cause: only the recorder decodes** — how the one healthy path hid the four broken ones.
+- **The fix — and the coupling that stays** — live audio as a beneficiary of the recording path.
+- **What we keep** — the durable lessons.
+
 ## The symptom: perfect recordings, dead speakers
 
 The report was clean and maddening. The web UI's "tap to enable audio" button did
@@ -47,21 +71,41 @@ browser, where the symptom was visible.
 Streaming audio into browsers has a genuinely notorious failure mode: Safari
 requires HTTP Range support and `206 Partial Content` responses for media elements,
 and a server that answers `200` with the whole stream plays silence on Apple
-devices. That is a real bug class, the fix is worth having, and it shipped.
+devices. That is a real bug class, the fix is worth having, and it shipped: the
+stream endpoint learned to answer Safari's two characteristic requests — a small
+size probe (`Range: bytes=0-1`) served from the WAV header, and the open-ended
+`bytes=N-` request that streams live PCM with a matching `Content-Range`. The
+frontend player was even rewritten from a bare `<audio>` element to a fetch + Web
+Audio pipeline in the same round, and playback failures started getting logged
+instead of dying in a swallowed promise rejection.
 
-It was also irrelevant. The reporter was on Chrome. A theory can be true in general
-and still be the wrong theory for the ticket in front of you — the fix changed
-nothing for the user who filed the issue.
+It was also irrelevant. The reporter came back with the disproof already run: they
+were on Chrome on macOS, and their own `curl -sD -` showed the new `206 Partial
+Content` with `Accept-Ranges: bytes` working exactly as designed — during an
+active call, with the tap pressed, and still no sound. A theory can be true in
+general and still be the wrong theory for the ticket in front of you — the fix
+changed nothing for the user who filed the issue.
 
 ## Wrong theory two: the grant-cache race
 
 Theory two moved server-side: the audio publisher tracks active grants so it can
-label and route stream audio, and there was a plausible race in that cache — a call
-could start before the publisher had the grant, leaving audio unattributed. Also
-real, also fixed, also not it. The symptom survived both patches intact.
+label and route stream audio, and there was a plausible race in that cache. The
+publisher only emitted PCM for a call once it had cached that call's grant — the
+talkgroup and system context arriving via a `CallStart` on an internal event
+subscription — and under load that subscription can drop an event. Drop the
+`CallStart` and every PCM chunk for that call was silently discarded. It even fit
+the reporter's environment: they were running *several* voice taps, and more
+simultaneous calls means more event traffic and better odds of losing the one
+event the stream needed. Also real, also fixed — the publisher stopped depending
+on winning that race and now streams as soon as a call is decoding. Also not it.
+The symptom survived both patches intact.
 
-Two shipped fixes with zero user-visible change is usually the tracker's way of
-saying you're patching downstream of the actual break.
+The round did leave one thing behind that turned out to matter more than the fix:
+`GET /api/v1/audio` grew diagnostic counters — `stream_subscribers`,
+`stream_drops_total`, `stream_tracked_grants` — added so the next theory could be
+*measured* instead of argued. Two shipped fixes with zero user-visible change is
+usually the tracker's way of saying you're patching downstream of the actual
+break; the counters were about to prove exactly where the break was.
 
 ## The 44-byte probe
 
@@ -84,7 +128,39 @@ curl -s http://host:port/api/v1/audio | \
 
 which showed `stream_subscribers: 1`, `stream_tracked_grants: 1`,
 `stream_drops_total: 0` — a listener connected, a call tracked, nothing dropped.
-The publisher wasn't failing to deliver audio. It was never handed any.
+The publisher wasn't failing to deliver audio. It was never handed any. The
+reporter's one-line summary of their own output was the whole diagnosis:
+"Looks like problem is that stream actually never happens."
+
+## Two kinds of audio, one privileged consumer
+
+To see why nothing upstream had ever handed the publisher audio, you have to look
+at what "audio" means at the seam where a call's voice chain meets its consumers —
+because there are two different currencies in circulation.
+
+**Analog audio is PCM from birth.** A conventional or trunked FM voice channel is
+demodulated straight to PCM samples; anything downstream can play it as-is.
+
+**Digital audio is vocoder frames until someone decodes it.** P25 Phase 1 and 2,
+DMR, and NXDN carry voice as compressed vocoder frames — IMBE, AMBE+2 — and a
+frame is not sound; it's an instruction set for a synthesizer. In the composer,
+that difference is two distinct sink interfaces: every voice chain can write PCM
+through the common `PCMSink` (`WritePCM`), but the digital chains hand their raw
+frames through a second, narrower interface (`rawFrameSink`, `WriteRawFrame`) that
+the chain discovers with a type assertion on the sink. Exactly one component
+implemented the raw-frame side and owned a vocoder: the recorder, which decodes
+frames to PCM as part of writing the WAV.
+
+| Consumer | Input it understands | Digital calls before the fix |
+|---|---|---|
+| Recorder | vocoder frames (decodes itself) | works — files perfect |
+| Web stream publisher | PCM | silently skipped |
+| Host speaker | PCM | silently skipped |
+| Tone-out detector | PCM | silently skipped |
+
+That table is the entire bug. The digital voice path forked at the sink: raw
+frames went to the one consumer that could use them, and the PCM-only consumers
+were never in the delivery at all.
 
 ## The real cause: only the recorder decodes
 
@@ -100,21 +176,17 @@ those consumers weren't handed garbage; they were **silently skipped**. No error
 log line, no counter. The recorder was on a privileged path and nobody knew it,
 because analog FM produces PCM directly and so analog audio worked everywhere. That
 is exactly why the bug wore a browser-codec costume: the one case people spot-check
-casually (analog) worked, and the failing case (digital) failed only off-disk.
-
-| Consumer | Input it understands | Digital calls before the fix |
-|---|---|---|
-| Recorder | vocoder frames (decodes itself) | works — files perfect |
-| Web stream publisher | PCM | silently skipped |
-| Host speaker | PCM | silently skipped |
-| Tone-out detector | PCM | silently skipped |
+casually (analog) worked, and the failing case (digital) failed only off-disk. It
+even explains the reporter's multi-tap instinct — those taps were carrying P25
+digital calls, which is precisely the broken path.
 
 ## The fix — and the coupling that stays
 
 The fix moved the decoded PCM to where the consumers are: the vocoder output that
 the recording path produces is now fanned out to the live consumers as well, so the
 web stream, speaker, and tone-out detector all receive the same PCM the WAV file
-does.
+does — decoded once, duplicated nowhere. Live audio and the recording are now
+bit-identical by construction, because they are the same decode.
 
 But note what that fix *is*: it makes live audio a beneficiary of the recording
 path, not an independent one. The recorder is still the decoder. Which leaves a
@@ -145,10 +217,47 @@ hidden.
   break. Stop patching and start measuring — the
   [diagnostic playbook]({{ '/reference/diagnostic-playbook/' | relative_url }})
   starts there.
+- **Ship diagnostics with every failed fix.** The counters added alongside wrong
+  theory two (`stream_subscribers`, `stream_drops_total`) are what made round
+  three a measurement instead of a fourth guess.
 - **Know the coupling:** live digital audio rides the recording path. No-record
   talkgroups have no live audio, by construction.
 
+## FAQ
+
+**Why were the recordings perfect if the audio pipeline was broken?**
+Because the recorder was the one consumer that received vocoder frames *and* owned
+a vocoder to decode them. Its path — frames in, PCM out, WAV on disk — was
+complete and healthy. Every other consumer needed PCM it was never given. The
+pipeline wasn't broken so much as it only had one working lane.
+
+**Does the fix decode every call twice — once for the file, once for the stream?**
+No. The vocoder runs once, on the recording path, and the resulting PCM is fanned
+out to the live consumers. That's why live audio is identical to the recording —
+and why live audio depends on the call being recordable at all.
+
+**Why not give the live consumers their own vocoder instead of coupling them to
+the recorder?**
+It would decouple the paths at the cost of running every digital call through the
+vocoder twice and maintaining two decode points that must agree. The coupling was
+judged acceptable, made explicit, and documented — the failure mode changed from
+"silent skip nobody knew about" to "known rule operators can reason about."
+
+**How do I verify live audio is actually flowing on my instance?**
+During an active call, `curl -sN http://host:port/api/v1/audio/stream | head -c
+4000 | wc -c` should return 4000 quickly — hanging at 44 means header-only. Then
+`curl -s http://host:port/api/v1/audio` should show `stream_subscribers >= 1` with
+your tab open. Those two checks isolate server-side delivery from browser-side
+playback in under a minute.
+
+**I set a talkgroup not to record and its live audio stopped. Is that a bug?**
+No — it's the documented coupling. Digital live audio is produced by the recording
+path's decode, so a call that will never be recorded is never decoded. Make the
+talkgroup recordable to hear it live.
+
 ## Series navigation
 
-← [Part 13: the SoapyRemote handshake]({{ '/blog/solution-postmortem/from-the-issue-tracker-13-soapyremote-handshake/' | relative_url }})
-· Next → [Part 15: the silent MP3]({{ '/blog/solution-postmortem/from-the-issue-tracker-15-silent-mp3/' | relative_url }})
+**Part 14 of 22** · ←
+[Part 13: The SoapyRemote Handshake — Three Wrong Root Causes and a Server That Says Nothing First]({{ '/blog/solution-postmortem/from-the-issue-tracker-13-soapyremote-handshake/' | relative_url }})
+· Next →
+[Part 15: The Silent MP3 — Three Encoder Bugs and a Test That Checked One Frame]({{ '/blog/solution-postmortem/from-the-issue-tracker-15-silent-mp3/' | relative_url }})

@@ -67,6 +67,14 @@ streamed samples from the same dongle seconds later. The reporter then reproduce
 on a *second* NESDR v5. Two units failing identically while three other programs
 succeed is the signature of a systematic software difference, not broken hardware.
 
+It's worth flagging this transfer's reputation now, because the series keeps
+returning to it: the R820T's first I²C-bridge burst write is the most
+temperamental single transfer in RTL-SDR bring-up. It's the write this issue's
+whole recovery ladder was built around, and the same transfer later turns out to
+stall on macOS cold boots — where the ladder built here would have handled it,
+if one error code had been translated
+([Part 11]({{ '/blog/solution-postmortem/from-the-issue-tracker-11-detected-but-not-present/' | relative_url }})).
+
 ## Rounds one through three: parity fixes that didn't take
 
 The obvious theory was drift from librtlsdr, so the first three rounds were
@@ -202,3 +210,44 @@ changes, one regression, and the load-bearing line is a `time.Sleep`.
 *Next: [Part 10]({{ '/blog/solution-postmortem/from-the-issue-tracker-10-faster-than-libusb/' | relative_url }})
 takes the same lesson to Windows, where being thinner than libusb's stack outran a
 clone dongle's firmware.*
+
+## FAQ
+
+**Why did `rtl_test` work when GopherTrunk sent byte-identical transfers?**
+Latency. librtlsdr reaches the chip through libusb's queueing, syscall layers,
+and its own call overhead, which add incidental delay between every transfer.
+GopherTrunk's pure-Go driver issues the repeater-arm write and the 17-byte burst
+back-to-back, and NESDR v5 silicon needs a moment between them. Every other
+program had been paying that moment by accident.
+
+**Was the USB endpoint stalled?**
+No — and the trace proved it rather than assuming it. Immediately after the
+EPIPE, the deferred repeater-off write and a commit read both succeeded on the
+same control pipe. A halted endpoint fails everything until a clear-halt, so
+`libusb_clear_halt` was ruled out by evidence instead of applied on faith.
+
+**Why 5 ms?**
+Enough margin over the observed failure window at negligible cost — it runs once,
+at tuner bring-up. The same round also shipped a chunk-size-halving fallback
+(16 → 8 → 4) in case the effective FIFO depth was the real limit; the trace shows
+its marker string never appears. The settle alone carries it.
+
+**How do I capture the paired traces on my own hardware?**
+`RTLSDR_DEBUG_USB=1 ./gophertrunk sdr list --probe 2> gt.log` and
+`LIBUSB_DEBUG=4 rtl_test -t 2> ref.log`, same dongle, same session — then diff
+the control transfers. The play is written up in the
+[diagnostic playbook]({{ '/reference/diagnostic-playbook/' | relative_url }}).
+
+**Did this bug class ever come back?**
+As a family, yes. The same too-thin-stack timing class reappeared on Windows in
+[Part 10]({{ '/blog/solution-postmortem/from-the-issue-tracker-10-faster-than-libusb/' | relative_url }}),
+and the recovery ladder built here turned out to be exactly what macOS needed —
+once a single missing error translation let it run
+([Part 11]({{ '/blog/solution-postmortem/from-the-issue-tracker-11-detected-but-not-present/' | relative_url }})).
+
+## Series navigation
+
+**Part 9 of 22** · ←
+[Part 8: Nineteen Dibits — A Perfect Hypothesis Meets a Rail-Pinned ADC]({{ '/blog/solution-postmortem/from-the-issue-tracker-08-nineteen-dibits/' | relative_url }})
+· Next →
+[Part 10: Faster Than libusb — When the Second Write Outruns the First]({{ '/blog/solution-postmortem/from-the-issue-tracker-10-faster-than-libusb/' | relative_url }})

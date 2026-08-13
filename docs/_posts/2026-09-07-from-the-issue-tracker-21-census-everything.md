@@ -32,6 +32,26 @@ unconditionally, with denominators.*
 > and an error message that described the exact opposite of the truth
 > ([#379](https://github.com/MattCheramie/GopherTrunk/issues/379)).
 
+## Cheat sheet
+
+| Issue | The silent or deceptive instrument | The census (or its lesson) |
+|---|---|---|
+| [#813](https://github.com/MattCheramie/GopherTrunk/issues/813) | success-only `composer: p25p2 mac pdu` line | unconditional per-call `superframes=… mac_pdus=…` + slot histogram |
+| [#376](https://github.com/MattCheramie/GopherTrunk/issues/376) | three transport theories, no data either way | per-(opcode, MFID) unhandled-TSBK census, payload hex, 8 samples capped |
+| [#345](https://github.com/MattCheramie/GopherTrunk/issues/345) | grants dropped with no counter, retry loop ended by a bare error | `stage=`-tagged drop accounting + `%w`-wrapped, layer-named errors |
+| [#881](https://github.com/MattCheramie/GopherTrunk/issues/881) | `no FSW hits in chunk` line gated on lock state | fired only while unlocked — a confounder, not an instrument |
+| [#379](https://github.com/MattCheramie/GopherTrunk/issues/379) | "voice pool full but no actives" — the opposite of the truth | one-shot actionable warning + `(engine bug)` downgrade |
+
+## In this post
+
+- **The problem with silence** — why zero lines disambiguates nothing.
+- **The census that cracked #813** — one unconditional line, three hypotheses split — and the false lead it retired.
+- **Proving a negative: the #376 opcode census** — counting everything, including the questions not yet asked.
+- **Counting the black hole: #345** — stage-tagged drops and layer-named errors.
+- **The diagnostic that lied by omission: #881** — a lock-state artifact read as evidence.
+- **The message that was backwards: #379** — the floor for diagnostic quality.
+- **The lesson shape** — three rules, and the cost argument.
+
 ## The problem with silence
 
 Consider the P25 Phase 2 voice chain: superframe sync → ISCH classification →
@@ -77,6 +97,20 @@ Two properties made it work:
   `mac_subframes=10 mac_pdus=7` is a 70% decode rate. Numerators without
   denominators are how "some lines appeared" gets mistaken for health.
 
+The carrier-recovery detour shows exactly what the census replaced. Inside the
+silence, a real defect had been found by code reading: the Phase 2 receiver ran
+matched filter → timing recovery → differential decode with **no carrier
+recovery at all**, and a differential decoder cancels constant carrier phase
+but not per-symbol rotation — at Phase 2's 6,000 baud, ~750 Hz of offset
+rotates a full symbol quadrant. The circumstantial evidence even correlated:
+the control channel (decoded by an Airspy, which has a TCXO) worked while
+voice (an RTL-SDR, which doesn't) failed. It was a genuine bug, worth fixing —
+and irrelevant to the field symptom, which the census then proved in one
+stroke: the reporter swapped the Airspy R2 in as the voice follower and the
+census still read `superframes=0`. A low-offset source failing identically
+retired the entire theory in a single retest. Without the census, that retest
+would have produced only more silence to argue about.
+
 ## Proving a negative: the #376 opcode census
 
 The talker-alias hunt ([#376](https://github.com/MattCheramie/GopherTrunk/issues/376))
@@ -88,11 +122,19 @@ channel itself: an Info-level count per (opcode, MFID) pair of every TSBK the
 decoder did *not* handle, with the raw payload hex attached, capped at 8
 samples per pair so it could run indefinitely without flooding.
 
+Two implementation details earned their keep. The census logs opcodes
+numerically, because Go's generated stringer mislabels vendor opcodes with
+standard names — vendor opcode `0x15` printed as `UnitToUnitAnswerRequest`, a
+fictional pedigree that had already misdirected a round of reading. And the raw
+payload hex is what let the negative be *proven*: cross-checking the samples
+against known radio IDs showed none of the unhandled traffic carried
+alias-shaped data.
+
 It answered the question by exhaustion: with every unhandled opcode enumerated
-and their payloads cross-checked against known radio IDs, the alias was
-provably *not* on the control channel — the search moved to the traffic
-channel's signalling, where the aliases actually live. And the census paid a
-dividend on the way: two of the unhandled vendor opcodes turned out to be
+and their payloads cross-checked, the alias was provably *not* on the control
+channel — the search moved to the traffic channel's signalling, where the
+aliases actually live. And the census paid a dividend on the way: two of the
+unhandled vendor opcodes (MFID `0x90`, opcodes `0x02`/`0x03`) turned out to be
 patch-group voice grants, whose calls GopherTrunk had been silently dropping.
 Counting everything found a bug nobody was looking for.
 
@@ -141,6 +183,20 @@ states. (The sync detector keeps a 24-dibit history across chunks precisely so
 short chunks cannot prevent sync; the real culprit, found by capturing raw IQ,
 was a hard-saturated front end — about half the samples pinned to the rails.)
 
+The raw capture that settled it deserves its numbers, because they carry two
+counter-intuitive facts. The failing device's IQ was rail-pinned in earnest —
+24.9% of unsigned-8-bit samples at exactly 0 and 24.9% at exactly 255, raw RMS
+at +1.3 dBFS — yet the *same saturated capture* still decoded three of four
+control channels offline, because C4FM is constant-envelope: the information
+lives in phase, which survives hard limiting. That is how clean-looking FFT
+carriers and a dead live device coexisted. And the cure ran against instinct:
+on an overloading front end, *more* gain makes it worse — the fix was fixed
+low gain (`gain: "200"`, 20 dB), not AGC. The daemon's own
+`wideband front end overloaded` warning had been firing on exactly the failing
+device the whole time, and a quieter tell had been sitting in the theory
+itself: the isolated tap at +100 kHz, with no adjacent channel at all, failed
+alongside the clustered ones — which no channelizer-crowding story explains.
+
 A diagnostic whose firing condition correlates with the thing under study is
 not an instrument; it is a confounder with a timestamp. If the line had been an
 unconditional per-second census — `chunks=N fsw_hits=N locked=bool` — the two
@@ -169,7 +225,13 @@ Across all five, the same three rules fall out:
 1. **Log denominators, not just numerators.** `uncorrectable_ldus=1622` was
    only diagnosable because `ldus=1622` sat next to it — *exactly* 100% is a
    structural bug, ~90% is signal quality. A rate needs both halves. Every
-   counter you emit should answer "out of how many?"
+   counter you emit should answer "out of how many?" The tracker's other
+   standing example is the SDR layer's unconditional drop counter: when
+   `sdr: dropping live IQ chunks; consumer can't keep up … dropped_since_last=140`
+   appeared during that same LDU investigation, the arithmetic (~293 chunks/s
+   at 2.4 MS/s) showed 25–48% of the IQ stream being discarded and pulled the
+   diagnosis toward allocation-driven GC pauses — a second, independent bug an
+   always-on counter surfaced for free.
 2. **Make diagnostics fire unconditionally, once per unit of work.** Pick the
    unit — a call, a chunk, a scan pass — and report at its boundary no matter
    what happened, with zero as a first-class value. Anything gated on success,
@@ -207,3 +269,38 @@ the bugs are.
 closes the series with the third grand pattern: two parallel code paths, one
 contract, and the drift between them that turned "the fix didn't work" into a
 recurring genre of bug report.
+
+## FAQ
+
+**Doesn't unconditional census logging flood production logs?**
+Not if it is bounded by construction: aggregate per unit of work (one line per
+call in #813, not one per frame) and cap raw samples (8 per opcode pair in
+#376). Both censuses run indefinitely in production at Info level. The cost is
+bounded; the cost of silent failure is not.
+
+**How is a census different from a Prometheus counter?**
+Complementary, not competing. Metrics aggregate across time and fleet and are
+ideal for alerting; the census line travels *with the report* — a user pasting
+thirty log lines hands you the full stage breakdown with no dashboard access —
+and it carries per-unit context (this call, this opcode, this payload) that a
+scrape-time aggregate flattens away.
+
+**How do I pick the "unit of work" for a census?**
+Use the boundary the investigation will ask about: a call (#813), a TSBK
+(#376), a grant (#345), a chunk or a second's worth of chunks (#881's
+counterfactual). The test is whether zero at that boundary is meaningful — a
+census whose zero means nothing is counting the wrong unit.
+
+**Can a census itself mislead?**
+Yes, in exactly two ways this post catalogs: if its firing is gated (in #881,
+gating on lock state made identical data look different on two devices) or if
+it emits numerators without denominators (`mac_pdus=7` alone says nothing).
+The two rules — fire unconditionally, carry both halves of every rate — are
+what promote counts to evidence.
+
+## Series navigation
+
+**Part 21 of 22** · ←
+[Part 20: The Self-Consistent Trap — Round-Trip Tests That Validate Their Own Bugs]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
+· Next →
+[Part 22: Two Pipelines, One Symptom — When Parallel Code Paths Drift]({{ '/blog/solution-postmortem/from-the-issue-tracker-22-two-pipelines/' | relative_url }})
