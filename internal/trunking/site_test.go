@@ -18,6 +18,24 @@ func TestParseProtocol(t *testing.T) {
 	}
 }
 
+func TestProtocolCampsWhenIdle(t *testing.T) {
+	camp := []Protocol{ProtocolDMRTier2, ProtocolDMRTier1, ProtocolTETRADMO}
+	for _, p := range camp {
+		if !p.CampsWhenIdle() {
+			t.Errorf("CampsWhenIdle(%s) = false, want true", p)
+		}
+	}
+	// Trunked protocols (continuous control channel) must NOT camp — an
+	// idle hunt round is a real failure for them.
+	trunked := []Protocol{ProtocolP25, ProtocolP25Phase2, ProtocolDMR, ProtocolNXDN,
+		ProtocolTETRA, ProtocolMotorola, ProtocolEDACS, ProtocolLTR, ProtocolMPT1327}
+	for _, p := range trunked {
+		if p.CampsWhenIdle() {
+			t.Errorf("CampsWhenIdle(%s) = true, want false", p)
+		}
+	}
+}
+
 func TestSystemValidate(t *testing.T) {
 	good := System{Name: "Test", Protocol: ProtocolP25, ControlChannels: []uint32{851_000_000}}
 	if err := good.Validate(); err != nil {

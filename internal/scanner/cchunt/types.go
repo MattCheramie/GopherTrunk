@@ -15,6 +15,13 @@
 // list and report failed; that's intentional, not a bug. See the
 // README "Roadmap" / "Known gaps" sections for the broader
 // IQ-domain decoder dependency.
+//
+// Exception: conventional / direct-mode protocols (Protocol.CampsWhenIdle
+// — conventional DMR, DMR Tier I, TETRA DMO) have no continuous control
+// channel, so a hunt round that exhausts without a lock means the channel
+// is idle, not that acquisition failed. Those systems camp (StateCamped)
+// on the frequency and re-dwell promptly instead of backing off. Issue
+// #1036.
 package cchunt
 
 import "time"
@@ -37,6 +44,14 @@ const (
 	// StateFailed means the last hunt round exhausted without a
 	// lock; the supervisor is in backoff before retrying.
 	StateFailed HuntState = "failed"
+	// StateCamped means the system runs a conventional / direct-mode
+	// protocol (Protocol.CampsWhenIdle — conventional DMR, DMR Tier I,
+	// TETRA DMO) whose channel legitimately sits silent between
+	// transmissions. A hunt round that ended without a lock is not a
+	// failure here: the supervisor camps on the frequency and keeps
+	// re-dwelling (no backoff, no KindHuntFailed) so the decoder catches
+	// the next transmission. Issue #1036.
+	StateCamped HuntState = "camped"
 	// StateHeld means the operator pinned the supervisor on its
 	// current lock (or on its current failed state) — retunes are
 	// suppressed until Resume.

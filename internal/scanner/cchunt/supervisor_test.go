@@ -102,6 +102,73 @@ func TestSupervisorFailsClosedWhenNothingLocks(t *testing.T) {
 	}
 }
 
+// TestSupervisorCampsIdleConventionalDMR is the regression for issue
+// #1036. A conventional DMR (IPSC) repeater has no continuous control
+// channel — it sits silent until someone keys up. The supervisor must
+// camp on such a channel and wait, NOT treat an idle (no-lock) hunt
+// round as a failure. The old path ran markFailed → KindHuntFailed WARN
+// + StateFailed + exponential backoff, which is exactly the "hunt failure
+// with no control-channel lock" symptom operators reported.
+func TestSupervisorCampsIdleConventionalDMR(t *testing.T) {
+	bus := events.NewBus(32)
+	defer bus.Close()
+	tuner := &fakeTuner{}
+	sys := trunking.System{
+		Name:            "ConvDMR",
+		Protocol:        trunking.ProtocolDMRTier2,
+		ControlChannels: []uint32{451_000_000},
+	}
+	sup, err := New(Options{
+		Bus:            bus,
+		Tuner:          tuner,
+		Systems:        []trunking.System{sys},
+		Dwell:          40 * time.Millisecond,
+		InitialBackoff: 40 * time.Millisecond,
+		MaxBackoff:     160 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = sup.Run(ctx) }()
+
+	// The channel never locks (no cc.locked is injected). Success = the
+	// system reaches StateCamped and keeps re-dwelling, with NO
+	// KindHuntFailed ever fired for it. Reaching StateCamped is itself
+	// proof of the fix (the old code only ever produced StateFailed here).
+	deadline := time.After(2 * time.Second)
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	sawCamped := false
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindHuntFailed {
+				if f, ok := ev.Payload.(trunking.HuntFailed); ok && f.System == "ConvDMR" {
+					t.Fatalf("idle conventional DMR emitted KindHuntFailed; want camped (issue #1036)")
+				}
+			}
+		case <-poll.C:
+			if sup.Snapshot()[0].State == StateCamped {
+				sawCamped = true
+			}
+			// Require several dwells' worth of quiet camping so a stray
+			// HuntFailed (or a backoff stall) would have surfaced.
+			if sawCamped && len(tuner.tuned()) >= 3 {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("conventional DMR never camped: state=%q tunes=%d (issue #1036)",
+				sup.Snapshot()[0].State, len(tuner.tuned()))
+		}
+	}
+}
+
 func TestSupervisorLocksAndParks(t *testing.T) {
 	bus := events.NewBus(32)
 	defer bus.Close()

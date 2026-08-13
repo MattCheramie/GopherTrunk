@@ -440,7 +440,7 @@ func (p *ScannerPanel) renderSystems(width int, s *state.SharedState) string {
 			stateStyle = dashWarn
 		case "failed":
 			stateStyle = dashErr
-		case "held":
+		case "held", "camped":
 			stateStyle = dashDim
 		}
 		freq := "—"
@@ -452,6 +452,12 @@ func (p *ScannerPanel) renderSystems(width int, s *state.SharedState) string {
 				sys.AttemptIndex+1, sys.TotalCandidates)
 		case "failed":
 			freq = fmt.Sprintf("retry in %s", formatBackoff(sys.BackoffMs))
+		case "camped":
+			// Conventional/direct channel parked and idle, waiting for
+			// traffic (issue #1036). Show the frequency it's camped on.
+			if sys.AttemptedFreqHz != 0 {
+				freq = client.FormatFreqMHz(sys.AttemptedFreqHz) + " (idle)"
+			}
 		}
 		grantAge := "—"
 		if !sys.LastGrantAt.IsZero() {

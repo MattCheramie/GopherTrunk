@@ -68,6 +68,23 @@ func (p Protocol) String() string {
 	}
 }
 
+// CampsWhenIdle reports whether this protocol runs on a fixed channel
+// that legitimately sits silent between transmissions, with no
+// continuous control channel to acquire — conventional DMR (Tier II /
+// IPSC), DMR Tier I direct mode, and TETRA DMO. For these, a
+// control-channel hunt round that ends without a lock means the channel
+// is simply idle, not that acquisition failed; the cchunt supervisor
+// camps on the frequency and waits for traffic rather than emitting a
+// hunt-failure warning and backing off. Issue #1036.
+func (p Protocol) CampsWhenIdle() bool {
+	switch p {
+	case ProtocolDMRTier2, ProtocolDMRTier1, ProtocolTETRADMO:
+		return true
+	default:
+		return false
+	}
+}
+
 // ParseProtocol maps a string ("p25", "dmr", "nxdn", "dpmr",
 // "edacs", "motorola", "ltr", "mpt1327", "p25-phase2", "tetra") to
 // a Protocol value.
