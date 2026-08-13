@@ -79,6 +79,29 @@ and active talkgroups of a system that the operator can then verify and submit b
 database. See the [finding & identifying systems](/learn/rf-sdr/finding-systems/) lesson for how
 to combine RadioReference lookups with on-air discovery.
 
+## Gotchas when consuming RadioReference data
+
+Three quirks of RadioReference's exports and API have each cost an importer real debugging
+time:
+
+- **Sentinel expiry strings.** Feed Provider and Admin accounts carry premium access, but
+  the API's `getUserData` returns no expiry date for them — instead the literal string
+  `Never - Feed Provider` (or `Never - Admin`). A subscription check that only parses real
+  dates reads that as "no active premium subscription" even though the login succeeded
+  ([#723](https://github.com/MattCheramie/GopherTrunk/issues/723)).
+- **PDF text encoding varies by vintage.** Older RR PDFs use a font subset that shifts
+  glyphs 27 below real ASCII, so extracted text needs a +27 un-shift — but modern PDF
+  libraries decode newer RR PDFs via the font's CMap and return already-correct UTF-8,
+  which an unconditional un-shift then corrupts (`S`→`n`, `M`→`h`). The reliable
+  discriminator is sniffing for anchor strings like `System Name` or
+  `Sites and Frequencies`, which only survive in already-decoded text
+  ([#271](https://github.com/MattCheramie/GopherTrunk/issues/271)).
+- **The parenthesised alt-SiteID is hex.** In site rows like `2-010 (2-A)`, the value in
+  parentheses is the **hexadecimal** form of the decimal SiteID (`010` ↔ `A`). An
+  all-digits pattern silently fails on sites 010–015 — and worse than skipping them, the
+  unmatched rows can be folded into the *previous* site's channel list as continuation
+  lines ([#278](https://github.com/MattCheramie/GopherTrunk/issues/278)).
+
 ## Sources
 
 [^home]: [RadioReference.com](https://www.radioreference.com/) — the official RadioReference site, the community database of radio systems, frequencies, and talkgroups, plus its forums and live feeds.

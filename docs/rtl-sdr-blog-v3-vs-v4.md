@@ -97,6 +97,29 @@ production, so they are the safer bet if you are buying several for a
 [multi-dongle pool](/multi-dongle-sdr-setup/) or want to standardise on something
 you can re-order.
 
+## Software has to know the V4
+
+One practical caveat: the V4 is not "just an RTL-SDR with a different tuner." Its
+**R828D** needs V4-aware driver support, and software carrying only the classic
+R820T/R820T2 init will tune it wrong and hear **only noise** — exactly what
+GopherTrunk's own bring-up hit in
+[#264](https://github.com/MattCheramie/GopherTrunk/issues/264). Three things make
+the V4 special:
+
+- The V4 keeps the family's **28.8 MHz crystal**, while other R828D designs run
+  16 MHz — assume the wrong one and every tuned frequency is off by 1.8×.
+- The R828D wants a different **VCO power reference** (1, not the osmocom
+  default 2) or the LO mistunes; see the
+  [R820T tuner](/reference/r820t-tuner/) entry for the register details.
+- The V4's **switched HF/VHF/UHF input bank** must be routed per band. Stock
+  R828D init leaves every input off — the board routes no RF at all — so the
+  driver has to switch inputs (plus the notch filters and the HF upconverter
+  relay) as it tunes.
+
+Current GopherTrunk handles all of this, as do up-to-date builds of the usual SDR
+suites. If a V4 "hears nothing" while a V3 works, suspect stale software before
+suspecting the dongle.
+
 ## Which should you buy?
 
 <div class="pick-cards" markdown="0">

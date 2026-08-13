@@ -24,7 +24,7 @@ infobox:
   - { label: TX, value: No (receive only) }
   - { label: Price, value: around $99–130 }
   - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=Airspy+Mini+SDR&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
-see_also: [airspy, airspy-r2, airspy-hf-plus-discovery, rtl-sdr, sdrplay-rsp1b, software-defined-radio, dynamic-range]
+see_also: [airspy, airspy-r2, airspy-hf-plus-discovery, airspy-rate-selection, rtl-sdr, sdrplay-rsp1b, software-defined-radio, dynamic-range]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 related_reading:
@@ -116,6 +116,20 @@ sensitivity and [dynamic range](/reference/dynamic-range/) than an
 single busy [P25](/reference/project-25/)/[DMR](/reference/dmr/) system, a congested band, or a
 couple of nearby [control channels](/reference/control-channel/) out of one capture. It remains
 a receiver only, so it decodes clear and scrambled traffic, never keyed encryption.
+
+## Choosing a sample rate
+
+Like the R2, the Mini is a **real-sampling** device: the firmware streams bare ADC samples
+and the host converts them to complex baseband
+([#454](https://github.com/MattCheramie/GopherTrunk/issues/454)), and its firmware rate
+table is expressed in **IQ output rates**, not raw ADC rates — the distinction behind an
+R2 half-rate driver regression ([#851](https://github.com/MattCheramie/GopherTrunk/issues/851)).
+On the R2 the lower native rate proved measurably *cleaner* than the higher one, because
+it is an FPGA decimation of the same ADC stream
+([#764](https://github.com/MattCheramie/GopherTrunk/issues/764),
+[#771](https://github.com/MattCheramie/GopherTrunk/issues/771)) — so on any Airspy,
+prefer the lowest native rate that covers what you need. Details and the diagnostic recipe
+are in [Airspy sample-rate selection](/reference/airspy-rate-selection/).
 
 ## Where to buy
 

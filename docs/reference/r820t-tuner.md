@@ -94,6 +94,25 @@ All share the same ~24 MHz–1.766 GHz reach and low-IF architecture. The altern
 Elonics [E4000](/reference/e4000-tuner/) reaches higher (past 2 GHz) but is noisier and
 long discontinued, which is why the R820T2/R860 dominates.
 
+## R828D register quirks
+
+The R828D is *not* a drop-in R820T2 at the register level, and driver code ported from
+osmocom librtlsdr inherits three traps — all found the hard way in
+[#264](https://github.com/MattCheramie/GopherTrunk/issues/264), where an R828D-based
+dongle produced pure noise while an R820T2 on the same antenna decoded fine:
+
+- **VCO power reference.** Osmocom hardcodes the value 2 for the whole family; the
+  rtlsdr-blog fork overrides it to **1 for the R828D**. With 2, the VCO fine-tune
+  nudges the mixer divider the wrong way and the LO mistunes — the wanted carrier
+  lands out of band, so the receiver hears broadband noise rather than a weak signal.
+- **Crystal frequency.** Most R828D boards run a **16 MHz** crystal instead of the
+  family's usual 28.8 MHz (the RTL-SDR Blog V4 is the exception — it keeps 28.8 MHz).
+  Assume the wrong one and every LO lands off by a factor of 1.8.
+- **PLL `nint` cap.** The integer divider is encoded as `nint = 13 + 4*ni + si`, with
+  `si` in bits 6–7 of register 0x14 — so the true overflow cap is **268**, not the 76
+  implied by the 6-bit `ni` field alone. A guard derived from `ni` alone stays latent
+  at 28.8 MHz (where `nint` tops out around 67) and only trips at 16 MHz.
+
 ## Relevance to SDR
 
 The tuner is the single component that most shapes an RTL-SDR's usefulness: it sets the

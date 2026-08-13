@@ -79,6 +79,26 @@ The `m2` loop finds the multiplicative inverse of `accum | 1` modulo 256 (odd va
 units mod 256), and `m1` mixes the table output with the high byte of the accumulator. The
 decoded byte stream is then read as UTF-16 BE and rendered to printable ASCII.
 
+## How the encoded alias travels
+
+The transport was itself hard-won knowledge — per GopherTrunk issue
+[#376](https://github.com/MattCheramie/GopherTrunk/issues/376), three plausible transports
+(standard TIA voice LCOs, a control-channel vendor TSBK, a speculative Phase 2 opcode) were
+implemented and disproven against field data before the real ones were confirmed:
+
+- **Phase 1** carries the alias on the **TDULC terminator**, not LDU1: an MFID `0x90`
+  link-control word with **LCO `0x15`** as the header and N× **LCO `0x17`** continuation
+  blocks.
+- **Phase 2** carries it on **FACCH-S during call hangtime**, as a header plus data
+  blocks; the header carries the **source RID inline**, so the alias→RID binding is
+  self-contained in the fragment stream.
+
+Both transports wrap the same frame around the ciphered bytes:
+`WACN(20) | System(12) | RadioID(24) | encoded alias | CRC-16`, with the decoded alias
+read as UTF-16 BE. Because this alias link control rides the signalling, **outside the
+encrypted voice payload**, aliases decode even on AES-encrypted calls — which is why other
+decoders show names for traffic they cannot play.
+
 ## Verification status — read this
 
 The **SUID framing** around the cipher (the WACN / System / [Radio ID](/reference/radio-id/)

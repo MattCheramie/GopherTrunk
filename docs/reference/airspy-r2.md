@@ -25,7 +25,7 @@ infobox:
   - { label: TX, value: No (receive only) }
   - { label: Price, value: around $150–185 }
   - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/s?k=Airspy+R2+SDR&tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
-see_also: [airspy, airspy-mini, airspy-hf-plus-discovery, rtl-sdr, sdrplay-rsp1b, hydrasdr, software-defined-radio, dynamic-range]
+see_also: [airspy, airspy-mini, airspy-hf-plus-discovery, airspy-rate-selection, rtl-sdr, sdrplay-rsp1b, hydrasdr, software-defined-radio, dynamic-range]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 related_reading:
@@ -133,6 +133,20 @@ RF, not the DDC:
   [FM broadcast notch filter](/reference/fm-broadcast-filter/) inline is often the cheapest fix.
 - **A genuinely weak/distant site** may not survive a capture optimised for a stronger one.
   Give it a dedicated dongle if it matters.
+
+## Choosing a sample rate
+
+The R2 exposes exactly **two native rates: 10 and 2.5 MS/s** (both IQ output rates — the
+firmware's rate table is in IQ rates, not raw ADC rates, a distinction that once caused a
+half-rate driver regression, [#851](https://github.com/MattCheramie/GopherTrunk/issues/851)).
+Counter-intuitively, **2.5 MS/s is the cleaner path**: it is the FPGA's decimate-by-4 of
+the 10 MS/s ADC stream, and captures made at the native 10 MS/s rate measured about 10 dB
+worse in-channel than the same signal at 2.5 MS/s
+([#764](https://github.com/MattCheramie/GopherTrunk/issues/764),
+[#771](https://github.com/MattCheramie/GopherTrunk/issues/771)). The R2 is also a
+**real-sampling** device — the host converts the bare ADC stream to complex baseband
+([#454](https://github.com/MattCheramie/GopherTrunk/issues/454)). The full story, with the
+diagnostic recipe, is in [Airspy sample-rate selection](/reference/airspy-rate-selection/).
 
 ## Where to buy
 
