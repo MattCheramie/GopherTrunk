@@ -126,11 +126,11 @@ The chunk-boundary theme repeated up the DSP chain like a drumbeat:
   A feed-forward AGC on the matched-filter output restored scale invariance, guarded
   by a regression test across a 0.05–20× amplitude range.
 
-Rungs 4–7 also mark where the process changed. Every earlier fix had been verified
-against *ideal* synthesized IQ in large blocks. #299 added a harness that drives the
-real receiver chain against deliberately impaired IQ — carrier offset, DC spike, IQ
-imbalance, AWGN — in RTL-realistic small chunks. The Gardner bug fell out of that
-harness on day one.
+Rungs 4–7 also mark where the process changed: #299 added a harness driving the real
+receiver chain against deliberately impaired IQ — carrier offset, DC spike, IQ
+imbalance, AWGN — in RTL-realistic small chunks, replacing the ideal large-block
+synthesis every earlier fix had been verified against. The Gardner bug fell out of
+that harness on day one.
 
 ## Rungs 8–9: the spec the code had never read
 
@@ -170,17 +170,15 @@ one stage they shared.
   only rotations 0 and 2 correspond to real signal symmetries. Both "signals" were
   the search machinery talking to itself; #326 widened the span to ±6 and restricted
   C4FM rotations to {0, 2}, and the phantom convergence vanished.
-- **Two retest cycles were wasted on stale builds.** One retest ran a binary eight
-  commits older than the fix it was testing; another carried a `-dirty` suffix that
-  blocked fast-forward pulls. The countermeasures outlived the bug: the pipeline
-  startup line now advertises `demod / rotations / nid_search_span / build=`, and
-  `internal/version` falls back to `runtime/debug.ReadBuildInfo()` so even a bare
-  `go build` produces a self-identifying binary.
-- **The first capture was mislabeled.** A shared IQ file's symbol clock measured ~160
-  samples per symbol — inconsistent with the stated 2.048 MS/s — and decoded to
-  nothing through every demodulator at every plausible rate. The lesson became a
-  feature: the `replay` tool now reports effective baud at EOF, so a mislabeled file
-  diagnoses itself.
+- **Two retest cycles were wasted on stale builds** — one binary was eight commits
+  older than the fix it was testing. The countermeasures outlived the bug: the
+  pipeline startup line now advertises `demod / rotations / nid_search_span /
+  build=`, and `internal/version` falls back to `runtime/debug.ReadBuildInfo()` so
+  even a bare `go build` produces a self-identifying binary.
+- **The first capture was mislabeled.** Its symbol clock measured ~160 samples per
+  symbol — inconsistent with the stated 2.048 MS/s — and decoded to nothing at every
+  plausible rate. The lesson became a feature: the `replay` tool now reports
+  effective baud at EOF, so a mislabeled file diagnoses itself.
 
 ## The capture that ended the guessing
 
