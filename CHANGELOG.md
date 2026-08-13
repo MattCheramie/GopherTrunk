@@ -96,6 +96,17 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **Conventional scanner channels now record audio.** A `scanner.conventional`
+  (analog FM) channel detected activity, opened a synthetic call, and named a WAV
+  path, but no file was ever written. The scanner holds the voice SDR's
+  single-consumer IQ stream open for the whole dwell (to watch squelch/tone), so
+  when the composer's FM voice chain tried to open a *second* `StreamIQ` on the
+  same physical device the driver rejected it with `rtlsdr: stream already
+  active`; the chain never started and no PCM reached the recorder. The scanner
+  now streams through the device's iqtap broker and the composer's FM chain
+  Subscribes to that fan-out instead of opening a colliding second stream, so it
+  receives copies of the exact IQ the scanner is already reading during the call.
+  (issue #1075)
 - **TETRA radio IDs still leaked into recordings as phantom talkgroups when a
   group grant was missed.** On a same-carrier site a group call's first
   control-channel message is a source-less notification (`SourceID==0`, `dst=` the
