@@ -13,7 +13,7 @@ import {
   type IQPoint,
 } from "../api/diag";
 import {
-  demodModeToProto,
+  autoProtoFor,
   openSymbolStream,
   type SymbolFrame,
 } from "../api/symbols";
@@ -172,7 +172,7 @@ export function Constellation() {
   // falling back to C4FM when unknown; an explicit choice is used as-is.
   // The symbol stream and ideal-cluster markers both key off this.
   const effectiveProto = useMemo(
-    () => (proto === "auto" ? demodModeToProto(device?.p25_modulation) : proto),
+    () => (proto === "auto" ? autoProtoFor(device) : proto),
     [proto, device],
   );
 

@@ -40,12 +40,29 @@ export interface SymbolFrame {
   cma_error: number;
 }
 
+// autoProtoFor picks the symbol-stream receiver for a device in the panels'
+// "Auto" mode. It prefers the daemon's protocol-aware symbol_proto and only
+// falls back to inferring one from p25_modulation for a daemon too old to send
+// it.
+//
+// The distinction matters: p25_modulation is populated only for P25 Phase 1
+// systems, so on a TETRA, TETRA DMO or DMR rig it is absent and the fallback
+// yields p25-c4fm. That opens a 4-level C4FM receiver on a π/4-DQPSK carrier,
+// whose soft track is meaningless but non-empty — which is what made the
+// symbol-quality chip compute an MER around 9 dB and read "symbol: poor"
+// permanently while the decode chip correctly read "decode: clean".
+export function autoProtoFor(
+  device: { symbol_proto?: string; p25_modulation?: string } | null | undefined,
+): string {
+  return device?.symbol_proto || demodModeToProto(device?.p25_modulation);
+}
+
 // Map a device's reported P25 demod mode (from SpectrumDevice
 // .p25_modulation — the daemon's canonical "c4fm"/"cqpsk", with the
 // other ParseDemodMode spellings tolerated) to the symbol-stream proto
 // selector. Unknown / empty falls back to C4FM, matching the receiver's
-// default. Used by the panels' "Auto" mode to pick the receiver from the
-// system the SDR is actually decoding.
+// default. Prefer autoProtoFor, which consults the protocol-aware
+// symbol_proto first.
 export function demodModeToProto(mod: string | undefined | null): string {
   switch ((mod ?? "").toLowerCase()) {
     case "cqpsk":

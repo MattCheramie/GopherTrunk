@@ -72,6 +72,7 @@ func (p *spectrumProvider) Devices() []api.SpectrumDevice {
 			CenterHz:         centerHz,
 			SampleRateHz:     sampleRateHz,
 			P25Modulation:    p25ModulationFor(p.systems, centerHz, sampleRateHz),
+			SymbolProto:      symbolProtoFor(p.systems, centerHz, sampleRateHz),
 			ControlChannelHz: controlChannelFor(p.systems, centerHz, sampleRateHz),
 		})
 	}
@@ -159,6 +160,74 @@ func controlChannelFor(systems []trunking.System, centerHz, sampleRateHz uint32)
 func demodModeName(cfg string) string {
 	mode, _ := p25phase1rx.ParseDemodMode(cfg)
 	return mode.String()
+}
+
+// symbolProtoFor reports which symbol-scope receiver the device at
+// (centerHz, sampleRateHz) should be demodulated with — one of the
+// selectors WS /api/v1/diag/symbols accepts ("p25-c4fm", "p25-cqpsk",
+// "tetra", "dmr") — or "" when no configured system matches, in which
+// case the panels keep their existing default.
+//
+// This exists because p25ModulationFor only inspects P25 Phase 1
+// systems, so a TETRA-, DMO- or DMR-only rig reported "" and the web
+// panels' "Auto" mode fell back to p25-c4fm. That opened a full P25
+// C4FM receiver on a π/4-DQPSK carrier: the 4-level soft track it
+// produces there is meaningless, but it is non-empty, so the symbol
+// panels computed an MER-like SNR from it (~9 dB on a healthy TETRA
+// control channel) and latched "symbol: poor" permanently while the
+// decode-health chip correctly read "decode: clean". It also burned a
+// whole extra receiver per open panel.
+//
+// Matching follows p25ModulationFor: a system matches when one of its
+// control channels falls inside the device passband, with a fallback to
+// the sole configured system when exactly one exists.
+func symbolProtoFor(systems []trunking.System, centerHz, sampleRateHz uint32) string {
+	proto := func(s trunking.System) string {
+		switch s.Protocol {
+		case trunking.ProtocolP25:
+			// P25 Phase 1 voice shares the CC's modulation, so one value
+			// covers both the control channel and any followed call.
+			if demodModeName(s.P25Phase1DemodMode) == "cqpsk" {
+				return "p25-cqpsk"
+			}
+			return "p25-c4fm"
+		case trunking.ProtocolTETRA, trunking.ProtocolTETRADMO:
+			// DMO reuses the TMO physical layer (π/4-DQPSK at 18 ksym/s),
+			// so the same receiver applies.
+			return "tetra"
+		case trunking.ProtocolDMR, trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1:
+			return "dmr"
+		default:
+			// NXDN, MPT1327, EDACS, … have no symbol-scope receiver yet;
+			// "" leaves the panel on its default rather than asserting a
+			// wrong one.
+			return ""
+		}
+	}
+
+	var only *trunking.System
+	count := 0
+	for i := range systems {
+		if proto(systems[i]) == "" {
+			continue
+		}
+		count++
+		only = &systems[i]
+		half := int64(sampleRateHz) / 2
+		for _, cc := range systems[i].ControlChannels {
+			delta := int64(cc) - int64(centerHz)
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta <= half {
+				return proto(systems[i])
+			}
+		}
+	}
+	if count == 1 {
+		return proto(*only)
+	}
+	return ""
 }
 
 // Tune programs the named SDR's centre frequency. Routes through

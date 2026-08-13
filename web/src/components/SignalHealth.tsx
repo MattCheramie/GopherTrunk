@@ -60,15 +60,19 @@ export function SymbolQualityChip({ quality }: { quality: Quality | null }) {
         : verdict === "poor"
           ? "err"
           : "neutral";
+  // Say WHICH measurement produced the verdict. The MER-like SNR only exists on
+  // a 4-level (C4FM) soft track; on TETRA / π-4-DQPSK there is no such track and
+  // the verdict comes from level balance instead. Naming it avoids the confusion
+  // of a "poor" chip with no visible reason next to a clean decode.
   const detail =
     quality?.snrDb != null
-      ? ` — SNR ${quality.snrDb.toFixed(1)} dB`
+      ? ` from level SNR (MER) ${quality.snrDb.toFixed(1)} dB`
       : quality
-        ? ` — balance ±${quality.balanceDev.toFixed(1)}%`
+        ? ` from level balance ±${quality.balanceDev.toFixed(1)}% (no 4-level soft track on this modulation)`
         : "";
   return (
     <span
-      title={`recovered-symbol quality (raw constellation SNR / eye${detail}) — a different axis from control-channel decode health`}
+      title={`recovered-symbol quality${detail} — a different axis from control-channel decode health`}
     >
       <Badge tone={tone}>
         symbol: {verdict === "unknown" ? "acquiring…" : verdict}

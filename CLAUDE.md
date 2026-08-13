@@ -341,6 +341,30 @@ confirmation before any close-as-completed.
   `individual` column that backs the Radio IDs roster (its `LastTalkgroup` SQL excludes
   `individual=1` rows). The whole mechanism is now scoped to `g.Protocol == "tetra"`; DMR's FLCO
   classification is authoritative. Pinned by `engine_dmr_classify_test.go`.
+- **The web symbol panels pick their receiver from the SYSTEM's protocol, not the P25 demod
+  mode.** An operator on a TETRA rig saw a permanent `symbol: poor` badge next to a correct
+  `decode: clean`. The two chips are deliberately different axes (frame-error rate vs raw
+  constellation), but this was not that: `p25ModulationFor` (`cmd/gophertrunk/spectrum_provider.go`)
+  only inspects `ProtocolP25` systems, so a TETRA/DMO/DMR-only config reported `""`, the web
+  `demodModeToProto("")` fell back to `p25-c4fm`, and the panels opened a **P25 C4FM receiver on a
+  π/4-DQPSK carrier**. Its 4-level soft track is meaningless there but *non-empty*, so
+  `computeQuality` took the MER branch, measured ~9 dB, and `qualityVerdict` bucketed `<10 dB` as
+  "poor" for ever. (Tell-tale: the Histogram panel with Mode manually set to TETRA showed
+  `SNR (MER) —` and `balance ±5.7%`, which grades *clean* — two panels running different
+  receivers on the same carrier.) Fix: `symbolProtoFor` + `SpectrumDevice.SymbolProto`
+  (`symbol_proto`) resolve the actual `/diag/symbols` selector per protocol, and the web
+  `autoProtoFor` prefers it. This also removes a whole wrong receiver per open panel.
+  **Watch the CPU angle:** every `/diag/symbols` subscriber builds its own `Downconverter` from
+  the FULL input rate plus a receiver (`internal/scanner/symbolscope/scope.go`), nothing is
+  pooled, and Dashboard + Scanner + Plots each mount `useSignalQuality` while Histogram opens a
+  fourth. Several open tabs = several full DSP chains. Pooling them is still open work.
+- **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
+  `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
+  a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ
+  discontinuity mid-queue. `internal/sdr/soapyremote/` has not been modified since the repo
+  import, so when this fires, look at what got slower on the decode side (the DMO colour brute
+  force above was one such cause) — and check for the companion
+  `ccdecoder: decode can't keep up with real time` WARN, which confirms CPU rather than network.
 - **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
   fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
   P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.

@@ -145,6 +145,16 @@ for tagged releases.
   as "recovered colour 0" and sends the investigation after the wrong thing. The
   fallback that picks colour 0 in order to decode *something* is now distinct from
   a recovery that actually cleared the confidence gate (`colour_recovered`).
+- **"symbol: poor" no longer latches permanently on TETRA, TETRA DMO and DMR
+  systems.** The web panels' "Auto" mode resolved the symbol-stream receiver from
+  a field that is only ever populated for P25 Phase 1 systems, so a non-P25 rig
+  fell back to a **P25 C4FM** receiver. Demodulating a π/4-DQPSK carrier that way
+  produces a meaningless — but non-empty — 4-level soft track, from which the
+  panels computed an MER-like SNR around 9 dB and bucketed the symbol quality as
+  "poor" for ever, sitting confusingly next to a correct "decode: clean". The
+  daemon now reports a protocol-aware `symbol_proto` per device and the panels use
+  it, which also stops an extra, wrong receiver being spun up per open panel. The
+  symbol-quality tooltip now names which measurement produced its verdict.
 - **Conventional DMR (IPSC) and other camp-on-idle systems no longer spam
   "hunt failed" while simply idle.** A conventional DMR / IPSC repeater has no
   continuous control channel — it sits silent between transmissions — but the

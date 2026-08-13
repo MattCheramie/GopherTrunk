@@ -6,7 +6,7 @@ import {
   initialDeviceSerial,
   type SpectrumDevice,
 } from "../api/spectrum";
-import { demodModeToProto, openSymbolStream } from "../api/symbols";
+import { autoProtoFor, openSymbolStream } from "../api/symbols";
 import {
   computeQuality,
   WINDOW_SYMBOLS,
@@ -63,7 +63,7 @@ export function useSignalQuality(): SignalQualityState {
     () => devices.find((d) => d.serial === selected) ?? null,
     [devices, selected],
   );
-  const proto = demodModeToProto(device?.p25_modulation);
+  const proto = autoProtoFor(device);
   const offset =
     device?.control_channel_hz && device.center_hz
       ? device.control_channel_hz - device.center_hz

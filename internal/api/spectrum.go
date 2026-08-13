@@ -27,6 +27,15 @@ type SpectrumDevice struct {
 	// instead of asking the operator to pick it. Empty when no P25
 	// Phase 1 system matches (e.g. a DMR-only device).
 	P25Modulation string `json:"p25_modulation,omitempty"`
+	// SymbolProto is the WS /api/v1/diag/symbols receiver selector for
+	// the system this SDR is decoding — "p25-c4fm", "p25-cqpsk",
+	// "tetra" or "dmr" — or empty when no configured system matches.
+	// P25Modulation only ever describes P25 Phase 1 systems, so on a
+	// TETRA/DMO/DMR rig the web panels' "Auto" mode fell back to
+	// p25-c4fm and demodulated the carrier with the wrong receiver;
+	// this field is protocol-aware so they pick the right one. Kept
+	// separate from P25Modulation, which older clients still read.
+	SymbolProto string `json:"symbol_proto,omitempty"`
 	// ControlChannelHz is the configured control-channel frequency that
 	// falls inside this SDR's passband (the one closest to centre when
 	// several are in band), or 0 when none matches. The web Plots panels
