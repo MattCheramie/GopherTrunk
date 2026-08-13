@@ -297,7 +297,7 @@ type Receiver struct {
 	afc              *demod.CoarseAFC
 	dda              *demod.DecisionDirectedAFC
 	clock            *sync.MuellerMuller
-	agc              c4fmSymbolAGC
+	agc              demod.C4FMSymbolAGC
 	ddaNominal       [4]float32 // post-AGC nominal value for sliced ±1, ±3
 	ddaResidMeanGate float64    // max |AcceptedResidualMean| for handoff (slicerScale units)
 	ddaMaxDrift      float64    // max |DDA − handoff estimate| before re-arm (rad/sample)
@@ -439,9 +439,9 @@ func New(opts Options) *Receiver {
 		// follows real signal-level changes (channel fades, AGC
 		// settling on the front-end) within a frame's worth of
 		// symbols.
-		r.agc = c4fmSymbolAGC{
-			target: float32(slicerScale * 2.0 / 3.0),
-			rate:   1.0 / 256.0,
+		r.agc = demod.C4FMSymbolAGC{
+			Target: float32(slicerScale * 2.0 / 3.0),
+			Rate:   1.0 / 256.0,
 		}
 		// Decision-directed AFC: issue #402. Layered on top of
 		// CoarseAFC. After warmup the receiver folds afc.Offset()
@@ -538,7 +538,7 @@ func (r *Receiver) Process(iq []complex64) {
 		// here, before the CoarseAFC step, so the freeze takes effect
 		// from the first learning batch. Issue #402.
 		if r.dda != nil && !r.ddaActive && !r.ddaLearning &&
-			r.agc.seeded && r.agc.target > 0 && r.c4fmSymbolsTotal >= r.ddaWarmupDoneAt {
+			r.agc.Seeded() && r.agc.Target > 0 && r.c4fmSymbolsTotal >= r.ddaWarmupDoneAt {
 			r.ddaLearning = true
 		}
 		// Coarse AFC: track and subtract the residual carrier-offset
@@ -564,7 +564,7 @@ func (r *Receiver) Process(iq []complex64) {
 		// scaled against (process mutates level per sample), so the
 		// DDA's un-normalisation matches the gain its residuals were
 		// formed under rather than the next sample's gain. Issue #402.
-		agcLevel := r.agc.process(r.symbols)
+		agcLevel := r.agc.Process(r.symbols)
 		if r.softSink != nil {
 			r.softSink(r.symbols)
 		}
@@ -576,8 +576,8 @@ func (r *Receiver) Process(iq []complex64) {
 		// buffer here — MuellerMuller.Process reads it read-only.
 		if r.eyeSink != nil && r.eyeSPS > 0 && len(r.matched) > 0 {
 			g := float32(1)
-			if r.agc.target > 0 && agcLevel > 0 {
-				g = r.agc.target / float32(agcLevel)
+			if r.agc.Target > 0 && agcLevel > 0 {
+				g = r.agc.Target / float32(agcLevel)
 			}
 			if cap(r.eyeBuf) < len(r.matched) {
 				r.eyeBuf = make([]float32, len(r.matched))
@@ -620,8 +620,8 @@ func (r *Receiver) Process(iq []complex64) {
 		//   - r.dda non-nil: skipped on the CQPSK / legacy-fixture
 		//     paths the receiver doesn't allocate it on.
 		r.c4fmSymbolsTotal += len(r.sliced)
-		if r.dda != nil && r.c4fmSymbolsTotal >= r.ddaWarmupDoneAt && r.agc.seeded && r.agc.target > 0 && agcLevel > 0 {
-			agcUnscale := float32(agcLevel) / r.agc.target
+		if r.dda != nil && r.c4fmSymbolsTotal >= r.ddaWarmupDoneAt && r.agc.Seeded() && r.agc.Target > 0 && agcLevel > 0 {
+			agcUnscale := float32(agcLevel) / r.agc.Target
 			for i, sym := range r.sliced {
 				idx := (sym + 3) / 2 // -3,-1,+1,+3 → 0,1,2,3
 				if r.dda.Update(r.symbols[i], r.ddaNominal[idx], agcUnscale) {
@@ -761,13 +761,13 @@ func (r *Receiver) AFCOffsetHz() float64 {
 // diverges far from target after CC lock (or oscillates) points at an
 // AGC misbehaviour on the live signal. Returns 0 on the CQPSK path
 // (no symbol-AGC stage). Issue #402 diagnostic.
-func (r *Receiver) AGCLevel() float64 { return float64(r.agc.level) }
+func (r *Receiver) AGCLevel() float64 { return float64(r.agc.Level()) }
 
 // AGCTarget returns the C4FM symbol-AGC's target mean|x|, calibrated
 // at construction from the configured DeviationHz / SampleRateHz so
 // the matched-filter output lands on the slicer's fixed thresholds.
 // Returns 0 on the CQPSK path or when DeviationHz was unset.
-func (r *Receiver) AGCTarget() float64 { return float64(r.agc.target) }
+func (r *Receiver) AGCTarget() float64 { return float64(r.agc.Target) }
 
 // SlicerLevels returns the adaptive 4-level slicer's current tracked
 // symbol levels in −3,−1,+1,+3 order (post-AGC soft units). On a clean
@@ -912,79 +912,8 @@ func (r *Receiver) Reset() {
 	r.afcAtHandoff = 0
 	r.ddaRearms = 0
 	r.c4fmSymbolsTotal = 0
-	r.agc.reset()
+	r.agc.Reset()
 	// FM discriminator's `last` is harmless to leave alone — the
 	// next sample it processes will produce one slightly-wrong
 	// derivative, which the matched filter smooths out.
-}
-
-// c4fmSymbolAGC tracks a running estimate of mean|x| over the
-// per-symbol matched-filter output and scales each symbol so the
-// estimate matches a target reference. The C4FM slicer's fixed
-// thresholds are designed against a specific signal level; the AGC
-// reconciles that with whatever level the upstream filter actually
-// produces (issue #275 Phase B).
-//
-// State is a single EMA scalar — the loop is feed-forward (each
-// output is the input scaled by the current estimate), so an
-// occasional near-zero sample cannot drive the gain unbounded the
-// way a feedback loop would.
-type c4fmSymbolAGC struct {
-	target float32 // desired mean|x| in the output stream
-	rate   float32 // single-pole EMA coefficient (rate-of-tracking)
-	level  float32 // current mean|x| estimate of the input
-	seeded bool
-}
-
-// process scales symbols in place so the running mean|x| matches
-// target. Seeds the EMA from the first non-trivial sample's |x| (not
-// the first batch's mean) so the recovered stream is byte-identical
-// regardless of how the IQ is chunked — the chunk-boundary
-// determinism the Mueller-Müller fix already guarantees on the
-// clock side (TestHarnessC4FMChunkBoundary, issue #275).
-//
-// Returns the mean level the batch was scaled against (the mean of the
-// per-sample EMA estimate). The DDA un-normalises its residuals by
-// level/target, so it needs the gain *this* batch saw, not the
-// post-batch level a later sample will see. Returns 0 when calibration
-// is disabled or no sample seeded the loop. Issue #402.
-func (a *c4fmSymbolAGC) process(symbols []float32) float64 {
-	if a.target <= 0 {
-		return 0 // calibration disabled (legacy DeviationHz=0 path)
-	}
-	var levelSum float64
-	var levelN int
-	for i, x := range symbols {
-		ax := x
-		if ax < 0 {
-			ax = -ax
-		}
-		if !a.seeded {
-			if ax > 1e-12 {
-				a.level = ax
-				a.seeded = true
-			} else {
-				continue
-			}
-		} else {
-			a.level += a.rate * (ax - a.level)
-		}
-		if a.level > 1e-12 {
-			g := a.target / a.level
-			symbols[i] = x * g
-			levelSum += float64(a.level)
-			levelN++
-		}
-	}
-	if levelN == 0 {
-		return 0
-	}
-	return levelSum / float64(levelN)
-}
-
-// reset clears the level estimate so a stream re-sync starts from a
-// fresh seed.
-func (a *c4fmSymbolAGC) reset() {
-	a.level = 0
-	a.seeded = false
 }

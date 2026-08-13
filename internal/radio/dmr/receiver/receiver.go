@@ -115,7 +115,7 @@ type Receiver struct {
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
 	afc       *demod.CoarseAFC
-	agc       c4fmSymbolAGC
+	agc       demod.C4FMSymbolAGC
 	dibitSink dmr.DibitSink
 	dibitBase int
 
@@ -216,9 +216,9 @@ func New(opts Options) *Receiver {
 		// Same calibration the P25 Phase 1 C4FM receiver runs (issue
 		// #275). Disabled on the legacy DeviationHz<=0 path (slicerScale
 		// == 1.0) so pre-scaled fixtures stay byte-identical.
-		agc: c4fmSymbolAGC{
-			target: float32(agcTargetFor(slicerScale, opts.DeviationHz)),
-			rate:   1.0 / 256.0,
+		agc: demod.C4FMSymbolAGC{
+			Target: float32(demod.C4FMAGCTarget(slicerScale, opts.DeviationHz)),
+			Rate:   1.0 / 256.0,
 		},
 		dibitSink:  opts.DibitSink,
 		softSink:   opts.SoftSink,
@@ -226,15 +226,6 @@ func New(opts Options) *Receiver {
 		eyeSink:    opts.EyeSink,
 		eyeSPS:     int(sps + 0.5),
 	}
-}
-
-// agcTargetFor returns the symbol-AGC target mean|x|, or 0 to disable
-// the AGC on the legacy pre-scaled-fixture path (DeviationHz unset).
-func agcTargetFor(slicerScale, deviationHz float64) float64 {
-	if deviationHz <= 0 {
-		return 0
-	}
-	return slicerScale * 2.0 / 3.0
 }
 
 // Process pushes one chunk of complex64 IQ samples through the chain.
@@ -264,7 +255,7 @@ func (r *Receiver) Process(iq []complex64) {
 	// slicing, so the unit-energy matched filter's ~3.1× DC gain doesn't
 	// push the 4-level eye past the slicer's fixed thresholds (no-op on
 	// the legacy DeviationHz<=0 path where target==0). See package doc.
-	agcLevel := r.agc.process(r.symbols)
+	agcLevel := r.agc.Process(r.symbols)
 	// Diagnostic taps (symbol scope). The soft track is the post-AFC/AGC
 	// 1/symbol waveform — aligned with the dibit batch fired below. The eye
 	// is the oversampled matched buffer the clock loop read read-only,
@@ -278,8 +269,8 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 	if r.eyeSink != nil && r.eyeSPS > 0 && len(r.matched) > 0 {
 		g := float32(1)
-		if r.agc.target > 0 && agcLevel > 0 {
-			g = r.agc.target / float32(agcLevel)
+		if r.agc.Target > 0 && agcLevel > 0 {
+			g = r.agc.Target / float32(agcLevel)
 		}
 		off := float32(0)
 		if r.afc != nil {
@@ -313,84 +304,23 @@ func (r *Receiver) Process(iq []complex64) {
 // the DibitSink baseIdx restarts at 0.
 func (r *Receiver) Reset() {
 	r.dibitBase = 0
-	r.agc.reset()
+	r.agc.Reset()
 	if r.afc != nil {
 		r.afc.Reset()
 	}
 }
 
-// AGCLevel and AGCTarget expose the symbol-AGC's running mean|x| estimate and
-// its target, for the diagnostic Tuning panel. Both are 0 on the legacy
-// pre-scaled-fixture path (AGC disabled).
-func (r *Receiver) AGCLevel() float64  { return float64(r.agc.level) }
-func (r *Receiver) AGCTarget() float64 { return float64(r.agc.target) }
+// AGCLevel and AGCTarget expose the shared symbol-AGC's running mean|x|
+// estimate and its target, for the diagnostic Tuning panel. Both are 0 on the
+// legacy pre-scaled-fixture path (AGC disabled).
+func (r *Receiver) AGCLevel() float64  { return float64(r.agc.Level()) }
+func (r *Receiver) AGCTarget() float64 { return float64(r.agc.Target) }
 
 // MMClockMu and MMClockSPS expose the Mueller-Müller timing loop's fractional
 // interpolation index and samples-per-symbol estimate, mirroring the P25
 // Phase 1 C4FM receiver's getters so the symbol scope reads them identically.
 func (r *Receiver) MMClockMu() float64  { return r.clock.Mu() }
 func (r *Receiver) MMClockSPS() float64 { return r.clock.SPS() }
-
-// c4fmSymbolAGC tracks a running estimate of mean|x| over the
-// per-symbol matched-filter output and scales each symbol so the
-// estimate matches a target reference. The 4-level slicer's fixed
-// thresholds are designed against a specific signal level; the AGC
-// reconciles that with whatever level the upstream RRC matched filter
-// actually produces. Ported from the P25 Phase 1 C4FM receiver (issue
-// #275); the loop is feed-forward (each output is the input scaled by
-// the current estimate), so an occasional near-zero sample cannot drive
-// the gain unbounded the way a feedback loop would.
-type c4fmSymbolAGC struct {
-	target float32 // desired mean|x| in the output stream; <=0 disables
-	rate   float32 // single-pole EMA coefficient
-	level  float32 // current mean|x| estimate of the input
-	seeded bool
-}
-
-// process scales symbols in place so the running mean|x| matches target.
-// Seeds the EMA from the first non-trivial sample's |x| so the recovered
-// stream is independent of how the IQ is chunked. A no-op when target<=0
-// (the legacy pre-scaled-fixture path).
-// process returns the batch-mean gain level the symbols were scaled
-// against (0 when calibration is disabled or the batch is empty), so the
-// eye tap can un-normalise r.matched by the same gain its symbols carry.
-func (a *c4fmSymbolAGC) process(symbols []float32) float64 {
-	if a.target <= 0 {
-		return 0
-	}
-	var levelSum float64
-	var levelN int
-	for i, x := range symbols {
-		ax := x
-		if ax < 0 {
-			ax = -ax
-		}
-		if !a.seeded {
-			if ax > 1e-12 {
-				a.level = ax
-				a.seeded = true
-			} else {
-				continue
-			}
-		} else {
-			a.level += a.rate * (ax - a.level)
-		}
-		if a.level > 1e-12 {
-			symbols[i] = x * (a.target / a.level)
-			levelSum += float64(a.level)
-			levelN++
-		}
-	}
-	if levelN == 0 {
-		return 0
-	}
-	return levelSum / float64(levelN)
-}
-
-func (a *c4fmSymbolAGC) reset() {
-	a.level = 0
-	a.seeded = false
-}
 
 // SymbolToDibit maps a C4FM slicer output ({-3, -1, +1, +3}) to a
 // dibit value (0..3). Uses the same Gray-coded convention as

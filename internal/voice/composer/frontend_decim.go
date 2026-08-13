@@ -76,6 +76,30 @@ func newDecimatingFIR(inRateHz, targetHz, bwHz float64, filterAtUnity bool) *dec
 	return f
 }
 
+// newVoiceFrontEnd builds the channel-select + decimation front end shared by
+// every digital-voice chain. Each protocol differs only in its intermediate
+// rate (intermediateHz, e.g. 48 kHz for the 4800-baud C4FM family, 144 kHz for
+// TETRA) and the narrowband channel-select bandwidth applied on the
+// dedicated-tuner / already-channelised (decim ≤ 1) path (channelSelectHz).
+// The per-protocol newXVoiceFrontEnd wrappers just bind those two constants, so
+// the decimation/anti-alias behaviour stays identical across protocols and can
+// only change in one place.
+func newVoiceFrontEnd(iqHz float64, bw uint32, intermediateHz int, channelSelectHz float64) *decimatingFIR {
+	chanBW := float64(bw)
+	// decim mirrors newDecimatingFIR's own computation: decim==1 is the
+	// pass-through (wideband tap / pre-channelised) case that historically
+	// skipped filtering entirely.
+	decim := int(math.Round(iqHz)) / intermediateHz
+	filterAtUnity := false
+	if decim <= 1 {
+		filterAtUnity = true
+		if chanBW > channelSelectHz {
+			chanBW = channelSelectHz
+		}
+	}
+	return newDecimatingFIR(iqHz, float64(intermediateHz), chanBW, filterAtUnity)
+}
+
 // OutRateHz returns the achieved narrowband output rate (inRateHz/decim;
 // equals inRateHz in pass-through mode). The receiver's SampleRateHz is
 // built from this so matched-filter / symbol-clock sizing matches the

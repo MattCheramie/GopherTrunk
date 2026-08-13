@@ -1276,162 +1276,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		})
 	}
 
-	// Build the system -> configured key-ID set the engine uses to exempt
-	// decryptable calls from the encrypted-call policy (issue #711). The
-	// raw key material stays in config; only the presence of a matching
-	// KeyID matters for the policy decision.
-	configuredKeysBySystem := func(systems []config.SystemConfig) map[string]map[uint16]bool {
-		var out map[string]map[uint16]bool
-		for _, s := range systems {
-			if len(s.EncryptionKeys) == 0 {
-				continue
-			}
-			ids := make(map[uint16]bool, len(s.EncryptionKeys))
-			for _, k := range s.EncryptionKeys {
-				ids[k.KeyID] = true
-			}
-			if out == nil {
-				out = make(map[string]map[uint16]bool)
-			}
-			out[s.Name] = ids
-		}
-		return out
+	if err := d.buildEngine(cfg, log); err != nil {
+		return nil, err
 	}
 
-	// Build the per-system encrypted-call policy maps the engine resolves
-	// by grant System name (trunking.systems[].encrypted_calls). A system
-	// with no override is simply absent and defaults to follow / the engine
-	// default window. Issue #711.
-	encryptedModesBySystem := func(systems []config.SystemConfig) map[string]trunking.EncryptedMode {
-		var out map[string]trunking.EncryptedMode
-		for _, s := range systems {
-			m := trunking.ParseEncryptedMode(s.EncryptedCalls.Mode)
-			if m == trunking.EncryptedFollow {
-				continue // default — no entry needed
-			}
-			if out == nil {
-				out = make(map[string]trunking.EncryptedMode)
-			}
-			out[s.Name] = m
-		}
-		return out
-	}
-	encryptedFollowsBySystem := func(systems []config.SystemConfig) map[string]time.Duration {
-		var out map[string]time.Duration
-		for _, s := range systems {
-			if s.EncryptedCalls.MetadataFollowMs <= 0 {
-				continue // use engine default
-			}
-			if out == nil {
-				out = make(map[string]time.Duration)
-			}
-			out[s.Name] = time.Duration(s.EncryptedCalls.MetadataFollowMs) * time.Millisecond
-		}
-		return out
-	}
-
-	engine, err := trunking.NewEngine(trunking.EngineOptions{
-		Bus:              d.bus,
-		Log:              log,
-		VoicePool:        d.voicePool,
-		Talkgroups:       d.talkgroups,
-		ScanMode:         trunking.ParseScanMode(cfg.Scanner.ScanMode),
-		CallTimeout:      time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
-		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
-		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
-		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
-		// Same per-transmission grouping the voice composer uses (below): lets the
-		// engine roll a TETRA recording on a talker change so each over is
-		// attributed to its own source.
-		SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("daemon: engine: %w", err)
-	}
-	d.engine = engine
-
-	// Recorder is optional; needs a target directory.
-	if cfg.Recordings.Dir != "" {
-		// Default protocol→vocoder map, optionally swapping DMR to the
-		// opt-in "warm" decoder (gentle high-shelf, issue #644).
-		var vocoderMap map[string]string
-		if cfg.Recordings.WarmDMRAudio {
-			vocoderMap = voice.DefaultVocoderForProtocol()
-			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
-				vocoderMap[proto] = ambe2.DMRWarmVocoderName
-			}
-		}
-		rec, err := voice.NewRecorder(voice.RecorderOptions{
-			Bus:           d.bus,
-			Log:           log,
-			OutDir:        cfg.Recordings.Dir,
-			SampleRate:    cfg.Recordings.SampleRate,
-			WriteRaw:      cfg.Recordings.WriteRaw,
-			SkipEncrypted: cfg.Recordings.SkipEncrypted,
-			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
-			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,
-			VocoderForProtocol: vocoderMap,
-			// Same display timezone the logs/TUI/API use, so WAV filenames
-			// carry the local wall-clock rather than UTC. Resolved here
-			// directly (d.displayLoc is assigned a few lines below, after
-			// this block) via the idempotent Location() helper.
-			DisplayLoc:       cfg.Display.Location(),
-			FilenameTemplate: cfg.Recordings.FilenameTemplate,
-			PathTemplate:     cfg.Recordings.PathTemplate,
-			Normalize: voice.NormalizeConfig{
-				Enabled:      cfg.Recordings.Normalize.AppliesToRecording(),
-				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,
-				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
-				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
-			},
-			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
-			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
-			// defaults ON. Applies to the recorded WAV and the live fan-out.
-			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
-			Dedup: voice.DedupConfig{
-				Enabled: cfg.Recordings.Dedup.Enabled,
-				Window:  cfg.Recordings.Dedup.Window(),
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: recorder: %w", err)
-		}
-		d.recorder = rec
-	}
-
-	// Voice decoder for live audio. When recording is configured the file
-	// recorder above doubles as the decoder; otherwise — as long as there's a
-	// pool to source voice from — build a decode-only recorder (empty OutDir,
-	// writes no files) so digital calls are still decoded and fanned to the web
-	// stream. Without this, live audio silently required recordings.dir: no
-	// recorder meant no composer and no decoded PCM ever reached the browser.
-	d.voiceDecoder = d.recorder
-	if d.voiceDecoder == nil && d.pool != nil {
-		var vocoderMap map[string]string
-		if cfg.Recordings.WarmDMRAudio {
-			vocoderMap = voice.DefaultVocoderForProtocol()
-			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
-				vocoderMap[proto] = ambe2.DMRWarmVocoderName
-			}
-		}
-		dec, err := voice.NewRecorder(voice.RecorderOptions{
-			Bus:                d.bus,
-			Log:                log,
-			OutDir:             "", // decode-only: decode + live tap, no files
-			SampleRate:         cfg.Recordings.SampleRate,
-			VocoderForProtocol: vocoderMap,
-			DisplayLoc:         cfg.Display.Location(),
-			// Voice enhancement operates on decoded PCM, so it applies to the
-			// live stream too; loudness/normalize are file-only and omitted.
-			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
-			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
-			// defaults ON. Live decode-only path (no files).
-			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: voice decoder: %w", err)
-		}
-		d.voiceDecoder = dec
+	if err := d.buildRecorderAndVoiceDecoder(cfg, log); err != nil {
+		return nil, err
 	}
 
 	// Displayed-timestamp timezone for human-facing output — the logs, the TUI,
@@ -1446,284 +1296,16 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	}
 	d.displayLoc = dispLoc
 
-	// Outbound call-streaming manager — optional. Subscribes to the
-	// bus at construction so calls completed before Run starts are
-	// not lost. Built only when at least one feed is enabled.
-	{
-		bcastRate := int(cfg.Recordings.SampleRate)
-		if bcastRate == 0 {
-			bcastRate = 8000
-		}
-		mgr, err := buildBroadcastManager(cfg.Broadcast, cfg.Recordings.Normalize, bcastRate, d.bus, dispLoc, log)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: broadcast: %w", err)
-		}
-		if mgr != nil {
-			d.broadcast = mgr
-			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
-		}
+	if err := d.buildOutboundFeeds(cfg, log, dispLoc); err != nil {
+		return nil, err
 	}
 
-	// Push grant-webhook sinks — optional. Each POSTs one JSON object per
-	// decoded control-channel grant (the push form of GET /api/v1/grants,
-	// issue #915 / #268). Subscribes to the bus at construction so grants
-	// decoded before Run starts are not lost. Built only when at least one
-	// feed is enabled.
-	{
-		hooks, err := buildGrantWebhooks(cfg.Broadcast, d.bus, dispLoc, log)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: grant webhook: %w", err)
-		}
-		if len(hooks) > 0 {
-			d.grantHooks = hooks
-			log.Info("grant webhook sinks enabled", "count", len(hooks))
-		}
+	if err := d.buildLogsTrackersAndSinks(cfg, log, dispLoc); err != nil {
+		return nil, err
 	}
 
-	// Decoded-message log — optional. Subscribes to the bus and writes
-	// a human-readable text log of every trunking event.
-	if cfg.Log.MessageLog.Enabled && cfg.Log.MessageLog.Path != "" {
-		ml, err := gtlog.NewMessageLog(gtlog.MessageLogOptions{
-			Bus:       d.bus,
-			Path:      cfg.Log.MessageLog.Path,
-			MaxSizeMB: cfg.Log.MessageLog.MaxSizeMB,
-			Loc:       dispLoc,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: message log: %w", err)
-		}
-		d.messageLog = ml
-	}
-
-	// Power log — optional. Subscribes to the bus and writes a
-	// decode-activity-gated, per-channel IQ-power log (low-power windows
-	// only by default; every active window when all_windows is set).
-	if cfg.Log.PowerLog.Enabled && cfg.Log.PowerLog.Path != "" {
-		pl, err := gtlog.NewPowerLog(gtlog.PowerLogOptions{
-			Bus:        d.bus,
-			Path:       cfg.Log.PowerLog.Path,
-			MaxSizeMB:  cfg.Log.PowerLog.MaxSizeMB,
-			AllWindows: cfg.Log.PowerLog.AllWindows,
-			Loc:        dispLoc,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: power log: %w", err)
-		}
-		d.powerLog = pl
-	}
-
-	// Event log — optional. Subscribes to the bus and writes every event as
-	// one JSON line (JSONL/NDJSON), using the same wire envelope as the SSE/WS
-	// streams so a recorded session matches what the web UI consumes. Captures
-	// ALL event kinds, so it's the artifact to hand to support when a decode
-	// looks wrong but there's no raw IQ to replay.
-	if cfg.Log.EventLog.Enabled && cfg.Log.EventLog.Path != "" {
-		el, err := gtlog.NewEventLog(gtlog.EventLogOptions{
-			Bus:       d.bus,
-			Path:      cfg.Log.EventLog.Path,
-			MaxSizeMB: cfg.Log.EventLog.MaxSizeMB,
-			Encode: func(ev events.Event) ([]byte, error) {
-				return json.Marshal(api.EventToDTO(ev))
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: event log: %w", err)
-		}
-		d.eventLog = el
-	}
-
-	// Affiliation tracker — always on. Subscribes to the bus and
-	// maintains the protocol-agnostic unit-activity table surfaced at
-	// GET /api/v1/affiliations.
-	{
-		at, err := trunking.NewAffiliationTracker(trunking.AffiliationTrackerOptions{Bus: d.bus})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: affiliation tracker: %w", err)
-		}
-		d.affiliations = at
-	}
-
-	// Site tracker — always on. Subscribes to the bus and accumulates
-	// the P25 sites discovered from the control channel, surfaced at
-	// GET /api/v1/sites.
-	{
-		st, err := trunking.NewSiteTracker(trunking.SiteTrackerOptions{Bus: d.bus})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: site tracker: %w", err)
-		}
-		d.siteTracker = st
-	}
-
-	// Grant tracker — always on. Subscribes to the bus and retains a
-	// bounded, most-recent-first log of decoded control-channel grants,
-	// surfaced at GET /api/v1/grants (the pollable form of the KindGrant
-	// SSE stream, issue #915).
-	{
-		gt, err := trunking.NewGrantTracker(trunking.GrantTrackerOptions{Bus: d.bus})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: grant tracker: %w", err)
-		}
-		d.grantTracker = gt
-	}
-
-	// Tone-out detector — optional. Built before the composer so it can
-	// share the composer's PCM sink via fanoutSink.
-	if len(cfg.ToneOut.Profiles) > 0 {
-		profiles, err := toneProfilesFromConfig(cfg.ToneOut.Profiles)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: tone-out: %w", err)
-		}
-		det, err := toneout.New(toneout.Options{
-			Bus:        d.bus,
-			Profiles:   profiles,
-			SampleRate: cfg.Recordings.SampleRate,
-			Log:        log,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: tone-out: %w", err)
-		}
-		d.toneout = det
-	}
-
-	// Live audio player — optional. Independent of the composer; if
-	// enabled, we feed it as one fan-out arm alongside the recorder.
-	// Defaults to disabled so headless servers stay quiet.
-	playerSampleRate := cfg.Audio.SampleRate
-	if playerSampleRate == 0 {
-		playerSampleRate = cfg.Recordings.SampleRate
-	}
-	pl, err := player.New(player.Config{
-		Enabled:    cfg.Audio.Enabled,
-		Device:     cfg.Audio.Device,
-		SampleRate: playerSampleRate,
-		BufferMs:   cfg.Audio.BufferMs,
-		Volume:     cfg.Audio.Volume,
-		Muted:      cfg.Audio.Muted,
-	}, log)
-	if err != nil {
-		return nil, fmt.Errorf("daemon: player: %w", err)
-	}
-	d.player = pl
-
-	// Audio publisher — fans decoded PCM out to gRPC StreamAudio
-	// subscribers. Constructed unconditionally so the gRPC server
-	// can register the RPC; if no composer is wired downstream
-	// the publisher just sits idle (no producers, no consumers
-	// matter). Run is spawned by Daemon.Run.
-	audioPub, err := api.NewAudioPublisher(d.bus, log)
-	if err != nil {
-		return nil, fmt.Errorf("daemon: audio publisher: %w", err)
-	}
-	d.audioPub = audioPub
-
-	// Composer is wired when we have a Voice device pool to source IQ
-	// from + a voice decoder to feed PCM into. Without an SDR pool there's
-	// nothing to demod. The decoder is the file recorder when recording is
-	// configured, otherwise a decode-only recorder — either way it decodes
-	// digital voice and taps PCM to the live stream.
-	if d.pool != nil && d.voiceDecoder != nil {
-		// Fan PCM to the decoder + tone-out (if configured) + live player + gRPC publisher.
-		sinks := []composer.PCMSink{d.voiceDecoder}
-		if d.toneout != nil {
-			sinks = append(sinks, d.toneout)
-		}
-		if d.player != nil {
-			sinks = append(sinks, playerSink{p: d.player, engine: d.engine})
-		}
-		sinks = append(sinks, d.audioPub)
-
-		// Digital protocols (P25, DMR, NXDN, …) reach the composer as
-		// raw vocoder frames and fan out only to the recorder — the
-		// lone decoder. Tap the PCM the recorder decodes and forward it
-		// to the live STREAM consumers — the network publisher
-		// (WebUI/gRPC) and the tone-out detector — so digital calls are
-		// heard live, not just analog FM (issue #598).
-		//
-		// The host speaker player is deliberately EXCLUDED from this
-		// tap: routing decoded digital PCM there plays the call on the
-		// local speaker while the WebUI streams the same PCM, and on one
-		// machine the two offset playbacks echo / comb-filter (issue
-		// #598 follow-up). Analog FM still reaches the host player via
-		// the composer's main `sinks` fanout below; digital
-		// host-speaker playback is out of scope. The recorder itself is
-		// also excluded (it already wrote the WAV from its own decode).
-		var liveSinks []composer.PCMSink
-		if d.toneout != nil {
-			liveSinks = append(liveSinks, d.toneout)
-		}
-		// Optionally level the decoded digital PCM before it reaches the
-		// network stream so live loudness tracks the loudness-normalized
-		// recordings (audio.live_loudness, default off). Decoded vocoder
-		// audio is always 8 kHz. The tone-out detector is left on the raw
-		// PCM — its Goertzel matched filters key off absolute tone levels.
-		var liveStreamSink composer.PCMSink = d.audioPub
-		if cfg.Audio.LiveLoudness {
-			lls := newLiveLoudnessSink(d.audioPub, 8000, d.bus, log)
-			d.liveLoudness = lls
-			liveStreamSink = lls
-			log.Info("audio: live-loudness AGC enabled for digital stream")
-		}
-		liveSinks = append(liveSinks, liveStreamSink)
-		d.voiceDecoder.SetDecodedPCMSink(fanoutSink(liveSinks))
-		// Raw vocoder frames fan straight to the publisher (the only raw
-		// consumer): include_raw subscribers get the un-decoded IMBE / AMBE
-		// bytes. This path bypasses live-loudness — that AGC only makes sense
-		// on decoded PCM, not on un-decoded codec frames.
-		d.voiceDecoder.SetRawFrameSink(d.audioPub)
-
-		var sink composer.PCMSink = d.voiceDecoder
-		if len(sinks) > 1 {
-			sink = fanoutSink(sinks)
-			// Surface the fanout wiring at startup so operators can
-			// confirm from logs that the raw-frame path is in place.
-			// Before the fanoutSink.WriteRawFrame fix (issue #356), a
-			// multi-sink config silently dropped every IMBE / AMBE
-			// frame and there was nothing in the logs to tell the
-			// operator the audio path was broken.
-			log.Info("composer: sink fanout configured",
-				"count", len(sinks), "raw_frames_supported", true)
-		} else {
-			log.Info("composer: sink direct configured")
-		}
-		// Optional cryptolab crypto-frame capture: when configured, the
-		// composer hands each encrypted P25 Phase 1 superframe's MI +
-		// encrypted voice frames to this sink (JSONL consumed by
-		// `gophertrunk cryptolab ks`). Nil when unset, so the voice path
-		// runs unchanged.
-		var cryptoSink cryptocap.Sink
-		if path := cfg.Recordings.CryptoCapturePath; path != "" {
-			cw, err := cryptocap.NewFileWriter(path)
-			if err != nil {
-				return nil, fmt.Errorf("daemon: crypto capture: %w", err)
-			}
-			d.cryptoCap = cw
-			cryptoSink = cw
-			log.Info("daemon: cryptolab crypto-frame capture enabled", "path", path)
-		}
-		comp, err := composer.New(composer.Options{
-			Bus:           d.bus,
-			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap()},
-			Sink:          sink,
-			Engine:        d.engine,
-			Autotune:      d.autotune,
-			CryptoSink:    cryptoSink,
-			Log:           log,
-			IQSampleRate:  cfg.SDR.SampleRate,
-			PCMSampleRate: cfg.Recordings.SampleRate,
-			VoiceHangtime: time.Duration(cfg.Trunking.VoiceHangtimeMs) * time.Millisecond,
-			// Default ("" / "transmission") splits one file per over;
-			// "conversation" keeps same-talkgroup overs together.
-			SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
-			Equalizer: composer.EqualizerConfig{
-				Enabled:  cfg.Recordings.Equalizer.Enabled,
-				Taps:     cfg.Recordings.Equalizer.Taps,
-				StepSize: cfg.Recordings.Equalizer.StepSize,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("daemon: composer: %w", err)
-		}
-		d.composer = comp
+	if err := d.buildComposer(cfg, log); err != nil {
+		return nil, err
 	}
 
 	// CC cache — JSON file used by the hunter to bias retunes toward
@@ -2074,6 +1656,566 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 	}
 
+	d.buildPeripheralReceivers(cfg, log)
+
+	if err := d.buildStorage(cfg, log); err != nil {
+		return nil, err
+	}
+
+	if err := d.buildAPIServer(cfg, version, log); err != nil {
+		return nil, err
+	}
+
+	// rigctld TCP server — optional. Exposes the control SDR's
+	// frequency to external Hamlib clients (loggers, sat trackers).
+	// Wired only when an SDR is in the pool *and* the operator opted
+	// in via api.rigctld in the YAML; otherwise stays off so a daemon
+	// without a tuner doesn't pretend to be a controllable rig.
+	if cfg.API.Rigctld != "" && d.pool != nil {
+		ctrlEntry := d.pool.FirstByRole(sdr.RoleControl)
+		if ctrlEntry == nil {
+			log.Warn("daemon: rigctld configured but no control SDR in pool; skipping")
+		} else {
+			var rigCtrl rigctld.Controller
+			if br := d.iqBrokers[ctrlEntry.Info.Serial]; br != nil {
+				rigCtrl = brokerRigController{serial: ctrlEntry.Info.Serial, broker: br}
+			} else {
+				rigCtrl = &poolRigController{serial: ctrlEntry.Info.Serial, dev: ctrlEntry.Device}
+			}
+			rs, err := rigctld.New(cfg.API.Rigctld, rigCtrl, log)
+			if err != nil {
+				return nil, fmt.Errorf("daemon: rigctld: %w", err)
+			}
+			d.rigctld = rs
+		}
+	}
+
+	// gRPC — optional.
+	if cfg.API.GRPCAddr != "" {
+		grpcOpts := api.GRPCServerOptions{
+			Addr:          cfg.API.GRPCAddr,
+			Systems:       d.systems,
+			Talkgroups:    d.talkgroups,
+			RIDs:          d.rids,
+			Engine:        d.engine,
+			Audio:         d.audioPub,
+			Log:           log,
+			Diagnostics:   d.newDiagCollector(),
+			VerboseErrors: cfg.Diagnostics.VerboseErrors,
+			TLSCert:       cfg.API.TLSCert,
+			TLSKey:        cfg.API.TLSKey,
+			DisplayLoc:    d.displayLoc,
+		}
+		if d.affiliations != nil {
+			grpcOpts.Affiliations = affiliationProvider{d.affiliations}
+		}
+		if d.db != nil {
+			grpcOpts.History = api.HistoryFromStorage(d.db)
+		}
+		gsrv, err := api.NewGRPCServer(grpcOpts)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: grpc api: %w", err)
+		}
+		d.grpcAPI = gsrv
+	}
+
+	return d, nil
+}
+
+// Run starts every long-lived goroutine and blocks until ctx cancels
+// (or an essential component fails). Each component returns its own
+// error; non-essential errors land on the log, essential errors
+// cancel the daemon's internal context so the launcher / TUI doesn't
+// keep running against a half-dead daemon.
+//
+// Run also closes d.Ready() once the spawned components have settled.
+// "Settled" today is conservative — a brief 250 ms timer after every
+// spawn call has fired — but ensures the HTTP listener bound (so the
+// launcher's TUI/web flow can reach it) before the prompt appears.
+// enhancerConfigFromYAML projects the YAML recordings.enhance block into
+// the runtime mbe.EnhancerConfig the recorder/decoders consume. Numeric
+// zero values are left zero here and backfilled from
+// mbe.DefaultEnhancerConfig downstream (WithDefaults), so an operator who
+// only sets `enabled: true` gets the full default chain.
+
+// buildLogsTrackersAndSinks constructs the optional message/power/event logs,
+// the always-on affiliation/site/grant trackers, and the tone-out / live-player /
+// audio-publisher PCM sinks. Extracted verbatim from NewDaemonWithPath so the
+// constructor reads as a sequence of subsystem builders.
+func (d *Daemon) buildLogsTrackersAndSinks(cfg config.Config, log *slog.Logger, dispLoc *time.Location) error {
+	// Decoded-message log — optional. Subscribes to the bus and writes
+	// a human-readable text log of every trunking event.
+	if cfg.Log.MessageLog.Enabled && cfg.Log.MessageLog.Path != "" {
+		ml, err := gtlog.NewMessageLog(gtlog.MessageLogOptions{
+			Bus:       d.bus,
+			Path:      cfg.Log.MessageLog.Path,
+			MaxSizeMB: cfg.Log.MessageLog.MaxSizeMB,
+			Loc:       dispLoc,
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: message log: %w", err)
+		}
+		d.messageLog = ml
+	}
+
+	// Power log — optional. Subscribes to the bus and writes a
+	// decode-activity-gated, per-channel IQ-power log (low-power windows
+	// only by default; every active window when all_windows is set).
+	if cfg.Log.PowerLog.Enabled && cfg.Log.PowerLog.Path != "" {
+		pl, err := gtlog.NewPowerLog(gtlog.PowerLogOptions{
+			Bus:        d.bus,
+			Path:       cfg.Log.PowerLog.Path,
+			MaxSizeMB:  cfg.Log.PowerLog.MaxSizeMB,
+			AllWindows: cfg.Log.PowerLog.AllWindows,
+			Loc:        dispLoc,
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: power log: %w", err)
+		}
+		d.powerLog = pl
+	}
+
+	// Event log — optional. Subscribes to the bus and writes every event as
+	// one JSON line (JSONL/NDJSON), using the same wire envelope as the SSE/WS
+	// streams so a recorded session matches what the web UI consumes. Captures
+	// ALL event kinds, so it's the artifact to hand to support when a decode
+	// looks wrong but there's no raw IQ to replay.
+	if cfg.Log.EventLog.Enabled && cfg.Log.EventLog.Path != "" {
+		el, err := gtlog.NewEventLog(gtlog.EventLogOptions{
+			Bus:       d.bus,
+			Path:      cfg.Log.EventLog.Path,
+			MaxSizeMB: cfg.Log.EventLog.MaxSizeMB,
+			Encode: func(ev events.Event) ([]byte, error) {
+				return json.Marshal(api.EventToDTO(ev))
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: event log: %w", err)
+		}
+		d.eventLog = el
+	}
+
+	// Affiliation tracker — always on. Subscribes to the bus and
+	// maintains the protocol-agnostic unit-activity table surfaced at
+	// GET /api/v1/affiliations.
+	{
+		at, err := trunking.NewAffiliationTracker(trunking.AffiliationTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return fmt.Errorf("daemon: affiliation tracker: %w", err)
+		}
+		d.affiliations = at
+	}
+
+	// Site tracker — always on. Subscribes to the bus and accumulates
+	// the P25 sites discovered from the control channel, surfaced at
+	// GET /api/v1/sites.
+	{
+		st, err := trunking.NewSiteTracker(trunking.SiteTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return fmt.Errorf("daemon: site tracker: %w", err)
+		}
+		d.siteTracker = st
+	}
+
+	// Grant tracker — always on. Subscribes to the bus and retains a
+	// bounded, most-recent-first log of decoded control-channel grants,
+	// surfaced at GET /api/v1/grants (the pollable form of the KindGrant
+	// SSE stream, issue #915).
+	{
+		gt, err := trunking.NewGrantTracker(trunking.GrantTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return fmt.Errorf("daemon: grant tracker: %w", err)
+		}
+		d.grantTracker = gt
+	}
+
+	// Tone-out detector — optional. Built before the composer so it can
+	// share the composer's PCM sink via fanoutSink.
+	if len(cfg.ToneOut.Profiles) > 0 {
+		profiles, err := toneProfilesFromConfig(cfg.ToneOut.Profiles)
+		if err != nil {
+			return fmt.Errorf("daemon: tone-out: %w", err)
+		}
+		det, err := toneout.New(toneout.Options{
+			Bus:        d.bus,
+			Profiles:   profiles,
+			SampleRate: cfg.Recordings.SampleRate,
+			Log:        log,
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: tone-out: %w", err)
+		}
+		d.toneout = det
+	}
+
+	// Live audio player — optional. Independent of the composer; if
+	// enabled, we feed it as one fan-out arm alongside the recorder.
+	// Defaults to disabled so headless servers stay quiet.
+	playerSampleRate := cfg.Audio.SampleRate
+	if playerSampleRate == 0 {
+		playerSampleRate = cfg.Recordings.SampleRate
+	}
+	pl, err := player.New(player.Config{
+		Enabled:    cfg.Audio.Enabled,
+		Device:     cfg.Audio.Device,
+		SampleRate: playerSampleRate,
+		BufferMs:   cfg.Audio.BufferMs,
+		Volume:     cfg.Audio.Volume,
+		Muted:      cfg.Audio.Muted,
+	}, log)
+	if err != nil {
+		return fmt.Errorf("daemon: player: %w", err)
+	}
+	d.player = pl
+
+	// Audio publisher — fans decoded PCM out to gRPC StreamAudio
+	// subscribers. Constructed unconditionally so the gRPC server
+	// can register the RPC; if no composer is wired downstream
+	// the publisher just sits idle (no producers, no consumers
+	// matter). Run is spawned by Daemon.Run.
+	audioPub, err := api.NewAudioPublisher(d.bus, log)
+	if err != nil {
+		return fmt.Errorf("daemon: audio publisher: %w", err)
+	}
+	d.audioPub = audioPub
+	return nil
+}
+
+// buildEngine constructs the trunking engine and the per-system
+// encryption-policy / configured-key maps it resolves grants against.
+// Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildEngine(cfg config.Config, log *slog.Logger) error {
+	// Build the system -> configured key-ID set the engine uses to exempt
+	// decryptable calls from the encrypted-call policy (issue #711). The
+	// raw key material stays in config; only the presence of a matching
+	// KeyID matters for the policy decision.
+	configuredKeysBySystem := func(systems []config.SystemConfig) map[string]map[uint16]bool {
+		var out map[string]map[uint16]bool
+		for _, s := range systems {
+			if len(s.EncryptionKeys) == 0 {
+				continue
+			}
+			ids := make(map[uint16]bool, len(s.EncryptionKeys))
+			for _, k := range s.EncryptionKeys {
+				ids[k.KeyID] = true
+			}
+			if out == nil {
+				out = make(map[string]map[uint16]bool)
+			}
+			out[s.Name] = ids
+		}
+		return out
+	}
+
+	// Build the per-system encrypted-call policy maps the engine resolves
+	// by grant System name (trunking.systems[].encrypted_calls). A system
+	// with no override is simply absent and defaults to follow / the engine
+	// default window. Issue #711.
+	encryptedModesBySystem := func(systems []config.SystemConfig) map[string]trunking.EncryptedMode {
+		var out map[string]trunking.EncryptedMode
+		for _, s := range systems {
+			m := trunking.ParseEncryptedMode(s.EncryptedCalls.Mode)
+			if m == trunking.EncryptedFollow {
+				continue // default — no entry needed
+			}
+			if out == nil {
+				out = make(map[string]trunking.EncryptedMode)
+			}
+			out[s.Name] = m
+		}
+		return out
+	}
+	encryptedFollowsBySystem := func(systems []config.SystemConfig) map[string]time.Duration {
+		var out map[string]time.Duration
+		for _, s := range systems {
+			if s.EncryptedCalls.MetadataFollowMs <= 0 {
+				continue // use engine default
+			}
+			if out == nil {
+				out = make(map[string]time.Duration)
+			}
+			out[s.Name] = time.Duration(s.EncryptedCalls.MetadataFollowMs) * time.Millisecond
+		}
+		return out
+	}
+
+	engine, err := trunking.NewEngine(trunking.EngineOptions{
+		Bus:              d.bus,
+		Log:              log,
+		VoicePool:        d.voicePool,
+		Talkgroups:       d.talkgroups,
+		ScanMode:         trunking.ParseScanMode(cfg.Scanner.ScanMode),
+		CallTimeout:      time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
+		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
+		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
+		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
+		// Same per-transmission grouping the voice composer uses (below): lets the
+		// engine roll a TETRA recording on a talker change so each over is
+		// attributed to its own source.
+		SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
+	})
+	if err != nil {
+		return fmt.Errorf("daemon: engine: %w", err)
+	}
+	d.engine = engine
+	return nil
+}
+
+// buildOutboundFeeds constructs the optional outbound call-streaming manager
+// and the optional grant-webhook sinks. Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildOutboundFeeds(cfg config.Config, log *slog.Logger, dispLoc *time.Location) error {
+	// Outbound call-streaming manager — optional. Subscribes to the
+	// bus at construction so calls completed before Run starts are
+	// not lost. Built only when at least one feed is enabled.
+	{
+		bcastRate := int(cfg.Recordings.SampleRate)
+		if bcastRate == 0 {
+			bcastRate = 8000
+		}
+		mgr, err := buildBroadcastManager(cfg.Broadcast, cfg.Recordings.Normalize, bcastRate, d.bus, dispLoc, log)
+		if err != nil {
+			return fmt.Errorf("daemon: broadcast: %w", err)
+		}
+		if mgr != nil {
+			d.broadcast = mgr
+			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
+		}
+	}
+
+	// Push grant-webhook sinks — optional. Each POSTs one JSON object per
+	// decoded control-channel grant (the push form of GET /api/v1/grants,
+	// issue #915 / #268). Subscribes to the bus at construction so grants
+	// decoded before Run starts are not lost. Built only when at least one
+	// feed is enabled.
+	{
+		hooks, err := buildGrantWebhooks(cfg.Broadcast, d.bus, dispLoc, log)
+		if err != nil {
+			return fmt.Errorf("daemon: grant webhook: %w", err)
+		}
+		if len(hooks) > 0 {
+			d.grantHooks = hooks
+			log.Info("grant webhook sinks enabled", "count", len(hooks))
+		}
+	}
+	return nil
+}
+
+// buildRecorderAndVoiceDecoder constructs the optional file recorder and the
+// voice decoder (the file recorder when recording is configured, otherwise a
+// decode-only recorder so digital voice still reaches the live stream).
+// Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logger) error {
+	// Recorder is optional; needs a target directory.
+	if cfg.Recordings.Dir != "" {
+		// Default protocol→vocoder map, optionally swapping DMR to the
+		// opt-in "warm" decoder (gentle high-shelf, issue #644).
+		var vocoderMap map[string]string
+		if cfg.Recordings.WarmDMRAudio {
+			vocoderMap = voice.DefaultVocoderForProtocol()
+			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
+				vocoderMap[proto] = ambe2.DMRWarmVocoderName
+			}
+		}
+		rec, err := voice.NewRecorder(voice.RecorderOptions{
+			Bus:           d.bus,
+			Log:           log,
+			OutDir:        cfg.Recordings.Dir,
+			SampleRate:    cfg.Recordings.SampleRate,
+			WriteRaw:      cfg.Recordings.WriteRaw,
+			SkipEncrypted: cfg.Recordings.SkipEncrypted,
+			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
+			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,
+			VocoderForProtocol: vocoderMap,
+			// Same display timezone the logs/TUI/API use, so WAV filenames
+			// carry the local wall-clock rather than UTC. Resolved here
+			// directly (d.displayLoc is assigned a few lines below, after
+			// this block) via the idempotent Location() helper.
+			DisplayLoc:       cfg.Display.Location(),
+			FilenameTemplate: cfg.Recordings.FilenameTemplate,
+			PathTemplate:     cfg.Recordings.PathTemplate,
+			Normalize: voice.NormalizeConfig{
+				Enabled:      cfg.Recordings.Normalize.AppliesToRecording(),
+				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,
+				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
+				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
+			},
+			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
+			// defaults ON. Applies to the recorded WAV and the live fan-out.
+			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
+			Dedup: voice.DedupConfig{
+				Enabled: cfg.Recordings.Dedup.Enabled,
+				Window:  cfg.Recordings.Dedup.Window(),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: recorder: %w", err)
+		}
+		d.recorder = rec
+	}
+
+	// Voice decoder for live audio. When recording is configured the file
+	// recorder above doubles as the decoder; otherwise — as long as there's a
+	// pool to source voice from — build a decode-only recorder (empty OutDir,
+	// writes no files) so digital calls are still decoded and fanned to the web
+	// stream. Without this, live audio silently required recordings.dir: no
+	// recorder meant no composer and no decoded PCM ever reached the browser.
+	d.voiceDecoder = d.recorder
+	if d.voiceDecoder == nil && d.pool != nil {
+		var vocoderMap map[string]string
+		if cfg.Recordings.WarmDMRAudio {
+			vocoderMap = voice.DefaultVocoderForProtocol()
+			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
+				vocoderMap[proto] = ambe2.DMRWarmVocoderName
+			}
+		}
+		dec, err := voice.NewRecorder(voice.RecorderOptions{
+			Bus:                d.bus,
+			Log:                log,
+			OutDir:             "", // decode-only: decode + live tap, no files
+			SampleRate:         cfg.Recordings.SampleRate,
+			VocoderForProtocol: vocoderMap,
+			DisplayLoc:         cfg.Display.Location(),
+			// Voice enhancement operates on decoded PCM, so it applies to the
+			// live stream too; loudness/normalize are file-only and omitted.
+			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
+			// defaults ON. Live decode-only path (no files).
+			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: voice decoder: %w", err)
+		}
+		d.voiceDecoder = dec
+	}
+	return nil
+}
+
+// buildComposer wires the voice composer when there is a device pool to
+// source IQ from and a voice decoder to feed PCM into: it assembles the
+// PCM/raw sink fan-out (recorder + tone-out + player + audio publisher, with
+// the digital live-stream tap and optional live-loudness AGC) and the optional
+// cryptolab capture sink. Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
+	// Composer is wired when we have a Voice device pool to source IQ
+	// from + a voice decoder to feed PCM into. Without an SDR pool there's
+	// nothing to demod. The decoder is the file recorder when recording is
+	// configured, otherwise a decode-only recorder — either way it decodes
+	// digital voice and taps PCM to the live stream.
+	if d.pool != nil && d.voiceDecoder != nil {
+		// Fan PCM to the decoder + tone-out (if configured) + live player + gRPC publisher.
+		sinks := []composer.PCMSink{d.voiceDecoder}
+		if d.toneout != nil {
+			sinks = append(sinks, d.toneout)
+		}
+		if d.player != nil {
+			sinks = append(sinks, playerSink{p: d.player, engine: d.engine})
+		}
+		sinks = append(sinks, d.audioPub)
+
+		// Digital protocols (P25, DMR, NXDN, …) reach the composer as
+		// raw vocoder frames and fan out only to the recorder — the
+		// lone decoder. Tap the PCM the recorder decodes and forward it
+		// to the live STREAM consumers — the network publisher
+		// (WebUI/gRPC) and the tone-out detector — so digital calls are
+		// heard live, not just analog FM (issue #598).
+		//
+		// The host speaker player is deliberately EXCLUDED from this
+		// tap: routing decoded digital PCM there plays the call on the
+		// local speaker while the WebUI streams the same PCM, and on one
+		// machine the two offset playbacks echo / comb-filter (issue
+		// #598 follow-up). Analog FM still reaches the host player via
+		// the composer's main `sinks` fanout below; digital
+		// host-speaker playback is out of scope. The recorder itself is
+		// also excluded (it already wrote the WAV from its own decode).
+		var liveSinks []composer.PCMSink
+		if d.toneout != nil {
+			liveSinks = append(liveSinks, d.toneout)
+		}
+		// Optionally level the decoded digital PCM before it reaches the
+		// network stream so live loudness tracks the loudness-normalized
+		// recordings (audio.live_loudness, default off). Decoded vocoder
+		// audio is always 8 kHz. The tone-out detector is left on the raw
+		// PCM — its Goertzel matched filters key off absolute tone levels.
+		var liveStreamSink composer.PCMSink = d.audioPub
+		if cfg.Audio.LiveLoudness {
+			lls := newLiveLoudnessSink(d.audioPub, 8000, d.bus, log)
+			d.liveLoudness = lls
+			liveStreamSink = lls
+			log.Info("audio: live-loudness AGC enabled for digital stream")
+		}
+		liveSinks = append(liveSinks, liveStreamSink)
+		d.voiceDecoder.SetDecodedPCMSink(fanoutSink(liveSinks))
+		// Raw vocoder frames fan straight to the publisher (the only raw
+		// consumer): include_raw subscribers get the un-decoded IMBE / AMBE
+		// bytes. This path bypasses live-loudness — that AGC only makes sense
+		// on decoded PCM, not on un-decoded codec frames.
+		d.voiceDecoder.SetRawFrameSink(d.audioPub)
+
+		var sink composer.PCMSink = d.voiceDecoder
+		if len(sinks) > 1 {
+			sink = fanoutSink(sinks)
+			// Surface the fanout wiring at startup so operators can
+			// confirm from logs that the raw-frame path is in place.
+			// Before the fanoutSink.WriteRawFrame fix (issue #356), a
+			// multi-sink config silently dropped every IMBE / AMBE
+			// frame and there was nothing in the logs to tell the
+			// operator the audio path was broken.
+			log.Info("composer: sink fanout configured",
+				"count", len(sinks), "raw_frames_supported", true)
+		} else {
+			log.Info("composer: sink direct configured")
+		}
+		// Optional cryptolab crypto-frame capture: when configured, the
+		// composer hands each encrypted P25 Phase 1 superframe's MI +
+		// encrypted voice frames to this sink (JSONL consumed by
+		// `gophertrunk cryptolab ks`). Nil when unset, so the voice path
+		// runs unchanged.
+		var cryptoSink cryptocap.Sink
+		if path := cfg.Recordings.CryptoCapturePath; path != "" {
+			cw, err := cryptocap.NewFileWriter(path)
+			if err != nil {
+				return fmt.Errorf("daemon: crypto capture: %w", err)
+			}
+			d.cryptoCap = cw
+			cryptoSink = cw
+			log.Info("daemon: cryptolab crypto-frame capture enabled", "path", path)
+		}
+		comp, err := composer.New(composer.Options{
+			Bus:           d.bus,
+			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap()},
+			Sink:          sink,
+			Engine:        d.engine,
+			Autotune:      d.autotune,
+			CryptoSink:    cryptoSink,
+			Log:           log,
+			IQSampleRate:  cfg.SDR.SampleRate,
+			PCMSampleRate: cfg.Recordings.SampleRate,
+			VoiceHangtime: time.Duration(cfg.Trunking.VoiceHangtimeMs) * time.Millisecond,
+			// Default ("" / "transmission") splits one file per over;
+			// "conversation" keeps same-talkgroup overs together.
+			SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
+			Equalizer: composer.EqualizerConfig{
+				Enabled:  cfg.Recordings.Equalizer.Enabled,
+				Taps:     cfg.Recordings.Equalizer.Taps,
+				StepSize: cfg.Recordings.Equalizer.StepSize,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("daemon: composer: %w", err)
+		}
+		d.composer = comp
+	}
+	return nil
+}
+
+// buildPeripheralReceivers constructs the auxiliary (non-trunking) protocol
+// receivers — POCSAG/FLEX/wideband paging, M17, APRS, AIS, LoRa, DSC, MDC1200
+// and ADS-B (BEAST upstreams + native PPM) — appending each to its
+// index-aligned d.*Receivers/d.*Specs slices. Bad entries are skipped with a
+// startup warning (never a hard error), so this returns nothing. Extracted
+// verbatim from NewDaemonWithPath.
+func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 	// POCSAG paging receivers — one per configured paging.pocsag
 	// entry. Constructed here; the run loop spawns them with the
 	// iqtap broker subscription. Per-entry validation lives in
@@ -2393,135 +2535,18 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.adsbPPMReceivers = append(d.adsbPPMReceivers, rcv)
 		d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
 	}
+}
 
-	// Storage / call log / retention — optional.
-	if cfg.Storage.Path != "" {
-		db, err := storage.Open(cfg.Storage.Path)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: storage: %w", err)
-		}
-		d.db = db
-		cl, err := storage.NewCallLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: call log: %w", err)
-		}
-		// Resolve the source radio's alias/name onto each call record so call
-		// history shows "who was talking", not just the RID number. Prefer the
-		// operator-curated RID catalogue (rid_alias_file); fall back to the
-		// most-recently-decoded over-the-air talker alias.
-		if d.rids != nil || d.affiliations != nil {
-			cl.SetRIDResolver(func(id uint32) string {
-				if d.rids != nil {
-					if r := d.rids.Lookup(id); r != nil && r.Alias != "" {
-						return r.Alias
-					}
-				}
-				if d.affiliations != nil {
-					if u, ok := d.affiliations.Lookup(id); ok {
-						return u.TalkerAlias
-					}
-				}
-				return ""
-			})
-		}
-		d.callLog = cl
-
-		ll, err := storage.NewLocationLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: location log: %w", err)
-		}
-		d.locationLog = ll
-
-		bs, err := storage.NewBookmarkStore(db, d.bus)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: bookmarks: %w", err)
-		}
-		d.bookmarks = bs
-
-		pl, err := storage.NewPagerLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: pager log: %w", err)
-		}
-		d.pagerLog = pl
-
-		al, err := storage.NewAPRSLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: aprs log: %w", err)
-		}
-		d.aprsLog = al
-
-		vl, err := storage.NewVesselLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: vessel log: %w", err)
-		}
-		d.vesselLog = vl
-
-		dl, err := storage.NewDSCLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: dsc log: %w", err)
-		}
-		d.dscLog = dl
-
-		ml, err := storage.NewM17Log(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: m17 log: %w", err)
-		}
-		d.m17Log = ml
-
-		lrl, err := storage.NewLoRaLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: lora log: %w", err)
-		}
-		d.loraLog = lrl
-
-		acl, err := storage.NewAircraftLog(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: aircraft log: %w", err)
-		}
-		d.aircraftLog = acl
-
-		mdl, err := storage.NewMDC1200Log(db, d.bus, log)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("daemon: mdc1200 log: %w", err)
-		}
-		d.mdc1200Log = mdl
-
-		if cfg.Retention.CallLogDays > 0 || cfg.Retention.LogDays > 0 || cfg.Retention.FilesDays > 0 {
-			interval, err := retentionInterval(cfg.Retention.Interval)
-			if err != nil {
-				return nil, fmt.Errorf("daemon: retention.interval: %w", err)
-			}
-			r, err := storage.NewRetention(storage.RetentionOptions{
-				DB:            db,
-				FilesRoot:     cfg.Recordings.Dir,
-				CallRowMaxAge: time.Duration(cfg.Retention.CallLogDays) * 24 * time.Hour,
-				FilesMaxAge:   time.Duration(cfg.Retention.FilesDays) * 24 * time.Hour,
-				Interval:      interval,
-				Log:           log,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("daemon: retention: %w", err)
-			}
-			d.retention = r
-		}
-	}
-
+// buildAPIServer constructs the optional HTTP API server (auth, CORS, TLS,
+// the diagnostics/spectrum/symbol/mixer/capture providers when IQ brokers
+// exist, and the embedded config-builder). Extracted verbatim from
+// NewDaemonWithPath.
+func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Logger) error {
 	// HTTP API — optional.
 	if cfg.API.HTTPAddr != "" {
 		authMode, ok := api.ParseAuthMode(cfg.API.Auth.Mode)
 		if !ok {
-			return nil, fmt.Errorf("daemon: api.auth.mode: unrecognised value %q (expected auto / required / disabled)", cfg.API.Auth.Mode)
+			return fmt.Errorf("daemon: api.auth.mode: unrecognised value %q (expected auto / required / disabled)", cfg.API.Auth.Mode)
 		}
 		opts := api.ServerOptions{
 			Addr:           cfg.API.HTTPAddr,
@@ -2740,82 +2765,141 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		opts.ConfigBuilder = cbOpts
 		srv, err := api.NewServer(opts)
 		if err != nil {
-			return nil, fmt.Errorf("daemon: http api: %w", err)
+			return fmt.Errorf("daemon: http api: %w", err)
 		}
 		d.httpAPI = srv
 	}
-
-	// rigctld TCP server — optional. Exposes the control SDR's
-	// frequency to external Hamlib clients (loggers, sat trackers).
-	// Wired only when an SDR is in the pool *and* the operator opted
-	// in via api.rigctld in the YAML; otherwise stays off so a daemon
-	// without a tuner doesn't pretend to be a controllable rig.
-	if cfg.API.Rigctld != "" && d.pool != nil {
-		ctrlEntry := d.pool.FirstByRole(sdr.RoleControl)
-		if ctrlEntry == nil {
-			log.Warn("daemon: rigctld configured but no control SDR in pool; skipping")
-		} else {
-			var rigCtrl rigctld.Controller
-			if br := d.iqBrokers[ctrlEntry.Info.Serial]; br != nil {
-				rigCtrl = brokerRigController{serial: ctrlEntry.Info.Serial, broker: br}
-			} else {
-				rigCtrl = &poolRigController{serial: ctrlEntry.Info.Serial, dev: ctrlEntry.Device}
-			}
-			rs, err := rigctld.New(cfg.API.Rigctld, rigCtrl, log)
-			if err != nil {
-				return nil, fmt.Errorf("daemon: rigctld: %w", err)
-			}
-			d.rigctld = rs
-		}
-	}
-
-	// gRPC — optional.
-	if cfg.API.GRPCAddr != "" {
-		grpcOpts := api.GRPCServerOptions{
-			Addr:          cfg.API.GRPCAddr,
-			Systems:       d.systems,
-			Talkgroups:    d.talkgroups,
-			RIDs:          d.rids,
-			Engine:        d.engine,
-			Audio:         d.audioPub,
-			Log:           log,
-			Diagnostics:   d.newDiagCollector(),
-			VerboseErrors: cfg.Diagnostics.VerboseErrors,
-			TLSCert:       cfg.API.TLSCert,
-			TLSKey:        cfg.API.TLSKey,
-			DisplayLoc:    d.displayLoc,
-		}
-		if d.affiliations != nil {
-			grpcOpts.Affiliations = affiliationProvider{d.affiliations}
-		}
-		if d.db != nil {
-			grpcOpts.History = api.HistoryFromStorage(d.db)
-		}
-		gsrv, err := api.NewGRPCServer(grpcOpts)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: grpc api: %w", err)
-		}
-		d.grpcAPI = gsrv
-	}
-
-	return d, nil
+	return nil
 }
 
-// Run starts every long-lived goroutine and blocks until ctx cancels
-// (or an essential component fails). Each component returns its own
-// error; non-essential errors land on the log, essential errors
-// cancel the daemon's internal context so the launcher / TUI doesn't
-// keep running against a half-dead daemon.
-//
-// Run also closes d.Ready() once the spawned components have settled.
-// "Settled" today is conservative — a brief 250 ms timer after every
-// spawn call has fired — but ensures the HTTP listener bound (so the
-// launcher's TUI/web flow can reach it) before the prompt appears.
-// enhancerConfigFromYAML projects the YAML recordings.enhance block into
-// the runtime mbe.EnhancerConfig the recorder/decoders consume. Numeric
-// zero values are left zero here and backfilled from
-// mbe.DefaultEnhancerConfig downstream (WithDefaults), so an operator who
-// only sets `enabled: true` gets the full default chain.
+// buildStorage opens the optional SQLite store and wires the call log (with
+// RID-alias resolution), the per-domain event logs, the bookmark store and the
+// retention manager. Extracted verbatim from NewDaemonWithPath.
+func (d *Daemon) buildStorage(cfg config.Config, log *slog.Logger) error {
+	// Storage / call log / retention — optional.
+	if cfg.Storage.Path != "" {
+		db, err := storage.Open(cfg.Storage.Path)
+		if err != nil {
+			return fmt.Errorf("daemon: storage: %w", err)
+		}
+		d.db = db
+		cl, err := storage.NewCallLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: call log: %w", err)
+		}
+		// Resolve the source radio's alias/name onto each call record so call
+		// history shows "who was talking", not just the RID number. Prefer the
+		// operator-curated RID catalogue (rid_alias_file); fall back to the
+		// most-recently-decoded over-the-air talker alias.
+		if d.rids != nil || d.affiliations != nil {
+			cl.SetRIDResolver(func(id uint32) string {
+				if d.rids != nil {
+					if r := d.rids.Lookup(id); r != nil && r.Alias != "" {
+						return r.Alias
+					}
+				}
+				if d.affiliations != nil {
+					if u, ok := d.affiliations.Lookup(id); ok {
+						return u.TalkerAlias
+					}
+				}
+				return ""
+			})
+		}
+		d.callLog = cl
+
+		ll, err := storage.NewLocationLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: location log: %w", err)
+		}
+		d.locationLog = ll
+
+		bs, err := storage.NewBookmarkStore(db, d.bus)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: bookmarks: %w", err)
+		}
+		d.bookmarks = bs
+
+		pl, err := storage.NewPagerLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: pager log: %w", err)
+		}
+		d.pagerLog = pl
+
+		al, err := storage.NewAPRSLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: aprs log: %w", err)
+		}
+		d.aprsLog = al
+
+		vl, err := storage.NewVesselLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: vessel log: %w", err)
+		}
+		d.vesselLog = vl
+
+		dl, err := storage.NewDSCLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: dsc log: %w", err)
+		}
+		d.dscLog = dl
+
+		ml, err := storage.NewM17Log(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: m17 log: %w", err)
+		}
+		d.m17Log = ml
+
+		lrl, err := storage.NewLoRaLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: lora log: %w", err)
+		}
+		d.loraLog = lrl
+
+		acl, err := storage.NewAircraftLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: aircraft log: %w", err)
+		}
+		d.aircraftLog = acl
+
+		mdl, err := storage.NewMDC1200Log(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: mdc1200 log: %w", err)
+		}
+		d.mdc1200Log = mdl
+
+		if cfg.Retention.CallLogDays > 0 || cfg.Retention.LogDays > 0 || cfg.Retention.FilesDays > 0 {
+			interval, err := retentionInterval(cfg.Retention.Interval)
+			if err != nil {
+				return fmt.Errorf("daemon: retention.interval: %w", err)
+			}
+			r, err := storage.NewRetention(storage.RetentionOptions{
+				DB:            db,
+				FilesRoot:     cfg.Recordings.Dir,
+				CallRowMaxAge: time.Duration(cfg.Retention.CallLogDays) * 24 * time.Hour,
+				FilesMaxAge:   time.Duration(cfg.Retention.FilesDays) * 24 * time.Hour,
+				Interval:      interval,
+				Log:           log,
+			})
+			if err != nil {
+				return fmt.Errorf("daemon: retention: %w", err)
+			}
+			d.retention = r
+		}
+	}
+	return nil
+}
 func enhancerConfigFromYAML(c config.EnhanceConfig) mbe.EnhancerConfig {
 	return mbe.EnhancerConfig{
 		Enabled:   c.Enabled,
@@ -4428,10 +4512,13 @@ func watchdogInterval(ms int) time.Duration {
 type fanoutSink []composer.PCMSink
 
 func (f fanoutSink) WritePCM(serial string, samples []int16) error {
+	var errs []error
 	for _, s := range f {
-		_ = s.WritePCM(serial, samples)
+		if err := s.WritePCM(serial, samples); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WritePCMForCall fans decoded PCM plus the call's CallID out to the contained
@@ -4449,16 +4536,19 @@ func (f fanoutSink) WritePCM(serial string, samples []int16) error {
 // across calls, so the tone-out/analog path is correct-by-construction without
 // a CallID and intentionally stays on WritePCM.
 func (f fanoutSink) WritePCMForCall(serial string, callID uint64, samples []int16) error {
+	var errs []error
 	for _, s := range f {
 		if cs, ok := s.(interface {
 			WritePCMForCall(string, uint64, []int16) error
 		}); ok {
-			_ = cs.WritePCMForCall(serial, callID, samples)
-		} else {
-			_ = s.WritePCM(serial, samples)
+			if err := cs.WritePCMForCall(serial, callID, samples); err != nil {
+				errs = append(errs, err)
+			}
+		} else if err := s.WritePCM(serial, samples); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WriteRawFrame fans raw IMBE / AMBE frames out to every contained
@@ -4471,14 +4561,17 @@ func (f fanoutSink) WritePCMForCall(serial string, callID uint64, samples []int1
 // producing healthy-looking call lifecycle logs alongside 0-byte
 // .raw and 44-byte (header-only) .wav files. Issue #356 root cause.
 func (f fanoutSink) WriteRawFrame(serial string, frame []byte) error {
+	var errs []error
 	for _, s := range f {
 		if rs, ok := s.(interface {
 			WriteRawFrame(string, []byte) error
 		}); ok {
-			_ = rs.WriteRawFrame(serial, frame)
+			if err := rs.WriteRawFrame(serial, frame); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WriteRawFrameWithErrors fans a raw frame plus its channel-FEC
@@ -4495,19 +4588,24 @@ func (f fanoutSink) WriteRawFrame(serial string, frame []byte) error {
 // it stays inert in the daemon (high-error frames squeak through) even
 // though the unit tests, which call the recorder directly, exercise it.
 func (f fanoutSink) WriteRawFrameWithErrors(serial string, frame []byte, correctedBits int) error {
+	var errs []error
 	for _, s := range f {
 		switch rs := s.(type) {
 		case interface {
 			WriteRawFrameWithErrors(string, []byte, int) error
 		}:
-			_ = rs.WriteRawFrameWithErrors(serial, frame, correctedBits)
+			if err := rs.WriteRawFrameWithErrors(serial, frame, correctedBits); err != nil {
+				errs = append(errs, err)
+			}
 		case interface {
 			WriteRawFrame(string, []byte) error
 		}:
-			_ = rs.WriteRawFrame(serial, frame)
+			if err := rs.WriteRawFrame(serial, frame); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // WriteRawFrameForCall fans a raw frame plus its FEC corrected-bit count
@@ -4519,23 +4617,30 @@ func (f fanoutSink) WriteRawFrameWithErrors(serial string, frame []byte, correct
 // daemon. Sinks that only speak the older shapes still get the frame, just
 // without the CallID guard.
 func (f fanoutSink) WriteRawFrameForCall(serial string, callID uint64, frame []byte, correctedBits int) error {
+	var errs []error
 	for _, s := range f {
 		switch rs := s.(type) {
 		case interface {
 			WriteRawFrameForCall(string, uint64, []byte, int) error
 		}:
-			_ = rs.WriteRawFrameForCall(serial, callID, frame, correctedBits)
+			if err := rs.WriteRawFrameForCall(serial, callID, frame, correctedBits); err != nil {
+				errs = append(errs, err)
+			}
 		case interface {
 			WriteRawFrameWithErrors(string, []byte, int) error
 		}:
-			_ = rs.WriteRawFrameWithErrors(serial, frame, correctedBits)
+			if err := rs.WriteRawFrameWithErrors(serial, frame, correctedBits); err != nil {
+				errs = append(errs, err)
+			}
 		case interface {
 			WriteRawFrame(string, []byte) error
 		}:
-			_ = rs.WriteRawFrame(serial, frame)
+			if err := rs.WriteRawFrame(serial, frame); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // EnableDrainCoordination and NotifyDrainComplete forward the composer's voice-
