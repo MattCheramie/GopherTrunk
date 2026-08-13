@@ -77,21 +77,20 @@ hardware because librtlsdr's `rtlsdr_open()` ends with a default
 `rtlsdr_set_sample_rate` call; GopherTrunk's pure-Go driver had no such safety net.
 
 The fix (#281) also closed the diagnostic black hole: the P25 `Process` paths now
-throttle-log `no FSW hits in chunk` instead of staying silent, and a new
-`gophertrunk_sdr_iq_power_dbfs` gauge (#282) let the reporter confirm healthy IQ
-(~−18 dBFS) before the decoder was even involved. From here on, every failure at
-least left a fingerprint.
+throttle-log `no FSW hits in chunk` instead of staying silent, and a new IQ-power
+gauge (#282) let the reporter confirm healthy IQ (~−18 dBFS) before the decoder was
+even involved. From here on, every failure at least left a fingerprint.
 
 ## Rungs 2–3: channelize, then let frames cross chunks
 
 With the rate fixed, the decoder was still being fed the full un-channelized 2.048
-MHz swath — roughly 427 samples per symbol against a ±1 MHz window. The symbol clock
-produced dibits at about the right *rate*, but the values were noise. A digital
-down-converter (#289) now decimates every per-protocol pipeline to the narrowband
-rate its matched filter expects (~48 kHz for the 4800-baud C4FM family). A negative
-result from that PR is worth keeping: an IQ-domain DC blocker was rejected, because
-C4FM carries real energy at 0 Hz — a complex DC block measured over 60% RMS error on
-a round-tripped stream.
+MHz swath — roughly 427 samples per symbol against a ±1 MHz window: dibits at about
+the right *rate*, with values that were noise. A digital down-converter (#289) now
+decimates every per-protocol pipeline to the narrowband rate its matched filter
+expects (~48 kHz for the 4800-baud C4FM family). A negative result from that PR is
+worth keeping: an IQ-domain DC blocker was rejected, because C4FM carries real
+energy at 0 Hz — a complex DC block measured over 60% RMS error on a round-tripped
+stream.
 
 Then the shape of real USB delivery bit. An RTL-SDR hands over IQ in 16 KiB
 transfers — about **19 P25 symbols per decoder call**. The control-channel state
