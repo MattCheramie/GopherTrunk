@@ -2072,6 +2072,9 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
 			},
 			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
+			// defaults ON. Applies to the recorded WAV and the live fan-out.
+			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
 			Dedup: voice.DedupConfig{
 				Enabled: cfg.Recordings.Dedup.Enabled,
 				Window:  cfg.Recordings.Dedup.Window(),
@@ -2108,6 +2111,9 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			// Voice enhancement operates on decoded PCM, so it applies to the
 			// live stream too; loudness/normalize are file-only and omitted.
 			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
+			// defaults ON. Live decode-only path (no files).
+			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
 		})
 		if err != nil {
 			return fmt.Errorf("daemon: voice decoder: %w", err)

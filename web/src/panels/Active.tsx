@@ -13,6 +13,11 @@ import type { ActiveCallDTO } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
 import { useDataPoll } from "../hooks/useDataPoll";
 import {
+  useLingeringActiveCalls,
+  callDuration,
+  type LingeringCall,
+} from "../hooks/useLingeringActiveCalls";
+import {
   selectCanMutate,
   selectClientConfig,
   useShared,
@@ -30,9 +35,14 @@ export function Active() {
   const notify = useShared((s) => s.notify);
   const activeCalls = useShared((s) => s.activeCalls);
   const setActiveCalls = useShared((s) => s.setActiveCalls);
-  const [selected, setSelected] = useState<ActiveCallDTO | null>(null);
+  const [selected, setSelected] = useState<LingeringCall | null>(null);
   const [confirmEnd, setConfirmEnd] = useState<ActiveCallDTO | null>(null);
   const [now, setNow] = useState(() => Date.now());
+
+  // Keep just-ended calls on screen (frozen) for a few seconds so the log shows
+  // a final "call duration" and an "observed" marker instead of the row
+  // vanishing the instant the call drops from the poll.
+  const rows = useLingeringActiveCalls(activeCalls);
 
   const { stale, lastUpdated, refresh } = useDataPoll({
     fetcher: () => api.activeCalls(cfg),
@@ -63,7 +73,7 @@ export function Active() {
     return () => window.clearInterval(t);
   }, []);
 
-  const columns: Column<ActiveCallDTO>[] = useMemo(
+  const columns: Column<LingeringCall>[] = useMemo(
     () => [
       {
         key: "tg",
@@ -130,23 +140,32 @@ export function Active() {
             )}
             {r.grant.emergency && <span className="pill-err">emerg</span>}
             {r.grant.data_call && <span className="pill">data</span>}
-            {r.following === false && (
+            {r._ended ? (
               <span
                 className="pill"
-                title="Announced on the control channel; no voice tuner is following it (add voice_taps or a voice SDR to decode more calls at once)"
+                title="This call has ended; still shown briefly with its final duration before it clears from the log"
               >
                 observed
               </span>
+            ) : (
+              r.following === false && (
+                <span
+                  className="pill"
+                  title="Announced on the control channel; no voice tuner is following it (add voice_taps or a voice SDR to decode more calls at once)"
+                >
+                  untuned
+                </span>
+              )
             )}
           </div>
         ),
       },
       {
-        key: "elapsed",
-        header: "Elapsed",
+        key: "duration",
+        header: "Duration",
         render: (r) => (
           <span className="font-mono text-xs tabular-nums">
-            {elapsed(r.started_at, now)}
+            {callDuration(r.started_at, r._endMs, now)}
           </span>
         ),
         sort: (a, b) => a.started_at.localeCompare(b.started_at),
@@ -182,12 +201,12 @@ export function Active() {
       />
 
       <DataTable
-        rows={activeCalls}
+        rows={rows}
         columns={columns}
         rowKey={(r) =>
           `${r.device_serial}-${r.grant.system}-${r.grant.group_id}-${r.grant.timeslot ?? 0}-${r.started_at}`
         }
-        defaultSortKey="elapsed"
+        defaultSortKey="duration"
         defaultSortDirection="desc"
         searchable
         searchAccessor={(r) =>
@@ -285,9 +304,9 @@ export function Active() {
               value={selected.started_at.replace("T", " ").replace(/\..*$/, "")}
             />
             <DetailField
-              label="Elapsed"
+              label="Duration"
               mono
-              value={elapsed(selected.started_at, now)}
+              value={callDuration(selected.started_at, selected._endMs, now)}
             />
           </div>
           {selected.talkgroup && (
@@ -347,16 +366,6 @@ export function Active() {
       )}
     </div>
   );
-}
-
-function elapsed(startedAt: string, now: number): string {
-  const startMs = Date.parse(startedAt);
-  if (Number.isNaN(startMs)) return "—";
-  const ms = Math.max(0, now - startMs);
-  const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
 function formatHz(hz: number): string {

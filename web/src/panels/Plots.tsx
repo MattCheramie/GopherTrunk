@@ -5,9 +5,9 @@ import { EyeDiagram } from "./EyeDiagram";
 import { Mixer } from "./Mixer";
 import { Tuning } from "./Tuning";
 import { Histogram } from "./Histogram";
-import { Badge } from "../components/ui/Badge";
+import { SignalSummary } from "../components/SignalHealth";
 import { useSignalQuality } from "../hooks/useSignalQuality";
-import { qualityVerdict } from "../lib/signalQuality";
+import { useLockedSystemSignal } from "../hooks/useLockedSystemSignal";
 
 // Plots hub — a single tabbed home for the signal-plot family, mirroring
 // OP25's Plots tabs. Each sub-tab is the standalone panel rendered inline;
@@ -70,56 +70,24 @@ export function Plots() {
   );
 }
 
-// QualityVerdict is the at-a-glance signal-health banner atop the Plots hub:
-// one clean/marginal/poor pill plus the SNR / balance numbers, from a single
-// symbol stream on the control SDR — so an operator sees whether the signal is
-// healthy without opening the Histogram or Tuning tab. The scopes below explain
-// *why*.
+// QualityVerdict is the at-a-glance signal-health banner atop the Plots hub. It
+// shows BOTH axes side by side — the backend control-channel decode health
+// (frame-error rate) and the live symbol-domain SNR/eye from the control SDR —
+// so the reading is consistent with the Scanner and Dashboard rather than
+// contradicting them ("decode: clean" alongside "symbol: poor" is the normal,
+// legible state of an ISI-smeared but still-decoding carrier). The scopes below
+// explain *why* the symbol quality is what it is.
 function QualityVerdict() {
   const { quality, status } = useSignalQuality();
-  const verdict = qualityVerdict(quality);
-  const tone =
-    verdict === "clean"
-      ? "ok"
-      : verdict === "marginal"
-        ? "warn"
-        : verdict === "poor"
-          ? "err"
-          : "neutral";
+  const locked = useLockedSystemSignal();
   return (
-    <div className="panel flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
-      <span className="text-muted text-xs uppercase tracking-wider">Signal</span>
-      <Badge tone={tone}>
-        {verdict === "unknown" ? "acquiring…" : verdict}
-      </Badge>
-      {quality?.snrDb != null && (
-        <span className="font-mono text-xs text-muted">
-          SNR {quality.snrDb.toFixed(1)} dB
-        </span>
-      )}
-      {quality && (
-        <span className="font-mono text-xs text-muted">
-          balance ±{quality.balanceDev.toFixed(1)}%
-        </span>
-      )}
-      {quality && quality.total > 0 && (
-        <span
-          className="font-mono text-xs text-muted"
-          title="Symbols in the rolling signal-quality window — not the symbol rate (see the constellation subtitle for sym/s)"
-        >
-          {quality.total} sym analysed
-        </span>
-      )}
-      <span className="ml-auto text-xs text-muted">
-        {status === "open"
-          ? "live"
-          : status === "connecting"
-            ? "connecting…"
-            : status === "closed"
-              ? "offline"
-              : "idle"}
-      </span>
-    </div>
+    <SignalSummary
+      decodeQuality={locked?.has_decode_health ? locked.decode_quality : null}
+      offsetHz={locked?.carrier_offset_hz}
+      signalDbfs={locked?.has_signal ? locked.signal_dbfs : null}
+      symbolQuality={quality}
+      status={status}
+    />
   );
 }
 

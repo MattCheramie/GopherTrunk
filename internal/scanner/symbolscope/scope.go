@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"time"
 
+	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
@@ -36,6 +37,11 @@ import (
 // the slicer-scale the production pipeline calibrates against. Mirrors
 // the siglab deep-path constant.
 const p25DeviationHz = 1800.0
+
+// dmrDeviationHz is the DMR nominal peak deviation at symbol ±3 (ETSI TS
+// 102 361-1 §6.3), the slicer-scale the DMR receiver calibrates against —
+// the same value the production DMR pipeline passes.
+const dmrDeviationHz = 1944.0
 
 // defaultFrameSymbols batches recovered symbols into one Frame so the WS
 // write cost stays reasonable — ~256 symbols is ~53 ms at 4800 baud,
@@ -150,6 +156,7 @@ type Engine struct {
 	// which is non-nil.
 	rx           *p25phase1rx.Receiver
 	tetraRx      *tetrarx.Receiver
+	dmrRx        *dmrrx.Receiver
 	symbolRateHz float64
 	centerHz     uint32
 	offsetHz     int32
@@ -192,8 +199,9 @@ func New(opts Options) (*Engine, error) {
 	if opts.InRateHz <= 0 {
 		return nil, errors.New("symbolscope: InRateHz must be > 0")
 	}
-	if opts.Protocol != trunking.ProtocolP25 && opts.Protocol != trunking.ProtocolTETRA {
-		return nil, fmt.Errorf("symbolscope: protocol %s is not supported (P25 Phase 1 and TETRA only)", opts.Protocol)
+	if opts.Protocol != trunking.ProtocolP25 && opts.Protocol != trunking.ProtocolTETRA &&
+		opts.Protocol != trunking.ProtocolDMR {
+		return nil, fmt.Errorf("symbolscope: protocol %s is not supported (P25 Phase 1, DMR, and TETRA only)", opts.Protocol)
 	}
 
 	frameSymbols := opts.FrameSymbols
@@ -240,6 +248,21 @@ func New(opts Options) (*Engine, error) {
 			EnableChannelFilter: true,
 			EnableEqualizer:     true,
 		})
+	case trunking.ProtocolDMR:
+		// DMR is the same 4800-baud 4-level C4FM as P25 Phase 1, so it emits
+		// the identical soft/eye/dibit shape — the soft track aligned with the
+		// dibits and an oversampled eye. SymbolSink is wired for parity but
+		// never fires (pure C4FM has no CQPSK constellation), so SymI/SymQ
+		// stay empty and flush() renders the 4-level soft/eye view.
+		e.symbolRateHz = dmrrx.SymbolRate
+		e.dmrRx = dmrrx.New(dmrrx.Options{
+			SampleRateHz: ddc.OutRateHz(),
+			DeviationHz:  dmrDeviationHz,
+			SoftSink:     e.onSoft,
+			SymbolSink:   e.onSymbols,
+			EyeSink:      e.onEye,
+			DibitSink:    e.onDibits,
+		})
 	default: // P25 Phase 1
 		demodMode, ok := p25phase1rx.ParseDemodMode(opts.DemodMode)
 		if !ok {
@@ -283,9 +306,12 @@ func (e *Engine) Process(iq []complex64) {
 		return
 	}
 	e.chanBuf = e.ddc.Process(e.chanBuf, iq)
-	if e.tetraRx != nil {
+	switch {
+	case e.tetraRx != nil:
 		e.tetraRx.Process(e.chanBuf)
-	} else {
+	case e.dmrRx != nil:
+		e.dmrRx.Process(e.chanBuf)
+	default:
 		e.rx.Process(e.chanBuf)
 	}
 	// Feed the Mixer accumulator after the receiver has updated its
@@ -409,6 +435,18 @@ func (e *Engine) stampMetrics(f *Frame) {
 		// (AGC/clock) aren't surfaced by the receiver, so they stay zero — the
 		// constellation, offset, and dibits are the useful TETRA scope views.
 		f.CarrierOffsetHz = e.tetraRx.CarrierOffsetHz()
+		return
+	}
+	if e.dmrRx != nil {
+		// DMR surfaces the scale-independent AGC/clock loop state. Its AFC
+		// runs on the symbol stream through a unit-energy RRC (a DC gain the
+		// P25 AFCOffsetHz formula doesn't share), so CarrierOffsetHz is left
+		// at 0 rather than reported in the wrong scale — the constellation,
+		// eye, and dibits are the useful DMR scope views.
+		f.AGCLevel = e.dmrRx.AGCLevel()
+		f.AGCTarget = e.dmrRx.AGCTarget()
+		f.ClockMu = e.dmrRx.MMClockMu()
+		f.ClockSPS = e.dmrRx.MMClockSPS()
 		return
 	}
 	if e.rx == nil {

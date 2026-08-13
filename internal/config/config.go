@@ -1691,6 +1691,18 @@ type RecordingsConfig struct {
 	// software decoding (only a DVSI hardware vocoder removes it). Off by
 	// default; affects DMR only.
 	WarmDMRAudio bool `yaml:"warm_dmr_audio"`
+	// SpecAmplitudeEnhance toggles the spec-faithful §6.2 spectral-amplitude
+	// enhancement for the software MBE-family vocoders (DMR AMBE+2 + P25 IMBE).
+	// The spec-faithful form restores the π/ω₀ factor from TIA-102.BABA §6.2 /
+	// mbelib's mbe_spectralAmpEnhance that the legacy form dropped, lifting the
+	// high-band harmonic weights off the attenuate clamp (worst on small-L /
+	// higher-pitched voices). Tri-state pointer: nil (unset) defaults ON, so
+	// recorded + live audio gets the corrected envelope out of the box; set to
+	// false to fall back to the legacy formula for an A/B comparison. Unlike
+	// warm_dmr_audio this is a codec-correctness fix, not a tone preference, and
+	// it affects DMR and P25 alike. On-air quality sign-off is still owed via
+	// internal/voice/calibrate once reference WAVs are supplied.
+	SpecAmplitudeEnhance *bool `yaml:"spec_amplitude_enhance"`
 	// WriteCallJSON writes a trunk-recorder-compatible <basename>.json metadata
 	// sidecar next to each recording (per WAV / per-transmission segment). It
 	// carries the call's talkgroup, source, frequency, timing, flags, and the

@@ -151,6 +151,11 @@ export interface ActiveCallDTO {
   device_serial: string;
   started_at: string;
   ended_at?: string;
+  // Wall-clock of the most recent voice/grant activity on this call. It stops
+  // advancing when the call goes quiet, so it is the freeze point for a "call
+  // duration" that stops on end (vs an elapsed timer that keeps ticking from
+  // started_at). Emitted by GET /api/v1/calls/active.
+  last_heard_at?: string;
   // true when a voice tuner is decoding this call; false for a call the
   // control channel announced but no tuner is following (every voice device
   // busy). An unfollowed call has an empty device_serial.

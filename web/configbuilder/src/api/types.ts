@@ -186,6 +186,7 @@ export interface RecordingsConfig {
   Equalizer: EqualizerConfig;
   Normalize: NormalizeConfig;
   WarmDMRAudio?: boolean;
+  SpecAmplitudeEnhance?: boolean;
   WriteCallJSON?: boolean;
   VoiceTapBufferChunks?: number;
 }

@@ -7,7 +7,12 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
-import { SignalQualityChip, SignalLevelBar } from "../components/SignalHealth";
+import {
+  SignalQualityChip,
+  SignalLevelBar,
+  SymbolQualityChip,
+} from "../components/SignalHealth";
+import { useSignalQuality } from "../hooks/useSignalQuality";
 import type {
   ConvChannelStatusDTO,
   SystemHuntStatusDTO,
@@ -177,6 +182,10 @@ function Hunt({
   onConfirm: (c: ConfirmRequest) => void;
 }) {
   const cfg = useShared(selectClientConfig);
+  // One symbol stream on the control SDR gives the SYMBOL-quality axis
+  // (raw SNR/eye) to sit alongside each locked system's DECODE-health chip,
+  // so the Scanner shows the same two labelled metrics as the Plots hub.
+  const { quality: symbolQuality } = useSignalQuality();
 
   return (
     <Card title="Trunked-system hunter">
@@ -197,6 +206,9 @@ function Hunt({
                     quality={sys.decode_quality}
                     offsetHz={sys.carrier_offset_hz}
                   />
+                )}
+                {sys.state === "locked" && (
+                  <SymbolQualityChip quality={symbolQuality} />
                 )}
                 {sys.has_signal && sys.signal_dbfs != null && (
                   <SignalLevelBar dbfs={sys.signal_dbfs} />

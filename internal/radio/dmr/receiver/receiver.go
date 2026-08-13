@@ -90,6 +90,22 @@ type Options struct {
 	// slicerScale = 1.0 — back-compat with fixtures that pre-scale
 	// their FM levels.
 	DeviationHz float64
+
+	// SoftSink, when set, receives the post-AFC/AGC 1-sample-per-symbol
+	// soft waveform (the 4-level C4FM soft track) each batch, aligned with
+	// the DibitSink batch fired on the same Process call. Optional; used by
+	// the diagnostic symbol scope. Signature matches the P25 Phase 1 C4FM
+	// receiver so the scope routes DMR and P25 identically.
+	SoftSink func(softSamples []float32)
+	// SymbolSink is stored for API parity with the P25 receiver but is
+	// never fired on the DMR path (pure C4FM has no complex CQPSK symbol
+	// domain; the soft track is surfaced via SoftSink). Optional.
+	SymbolSink func(symbols []complex64)
+	// EyeSink, when set, receives the oversampled matched-filter output
+	// (sps samples/symbol) scaled to the soft-level units and recentred for
+	// the residual carrier offset, so folding sps samples reconstructs the
+	// 4-level eye. Optional; used by the diagnostic symbol scope.
+	EyeSink func(oversampled []float32, sps int)
 }
 
 // Receiver is the composed IQ → dibit pipeline. Process is the only
@@ -102,6 +118,13 @@ type Receiver struct {
 	agc       demod.C4FMSymbolAGC
 	dibitSink dmr.DibitSink
 	dibitBase int
+
+	// Optional diagnostic taps (symbol scope). nil = no-op.
+	softSink   func([]float32)
+	symbolSink func([]complex64) // parity only; never fired (pure C4FM)
+	eyeSink    func([]float32, int)
+	eyeSPS     int
+	eyeBuf     []float32
 
 	disc    []float32
 	matched []float32
@@ -197,7 +220,11 @@ func New(opts Options) *Receiver {
 			Target: float32(demod.C4FMAGCTarget(slicerScale, opts.DeviationHz)),
 			Rate:   1.0 / 256.0,
 		},
-		dibitSink: opts.DibitSink,
+		dibitSink:  opts.DibitSink,
+		softSink:   opts.SoftSink,
+		symbolSink: opts.SymbolSink,
+		eyeSink:    opts.EyeSink,
+		eyeSPS:     int(sps + 0.5),
 	}
 }
 
@@ -228,7 +255,37 @@ func (r *Receiver) Process(iq []complex64) {
 	// slicing, so the unit-energy matched filter's ~3.1× DC gain doesn't
 	// push the 4-level eye past the slicer's fixed thresholds (no-op on
 	// the legacy DeviationHz<=0 path where target==0). See package doc.
-	r.agc.Process(r.symbols)
+	agcLevel := r.agc.Process(r.symbols)
+	// Diagnostic taps (symbol scope). The soft track is the post-AFC/AGC
+	// 1/symbol waveform — aligned with the dibit batch fired below. The eye
+	// is the oversampled matched buffer the clock loop read read-only,
+	// scaled by this batch's AGC gain so its rails line up with the soft
+	// levels. Unlike P25, DMR runs the AFC on the post-clock symbol stream
+	// (issue #836), so r.matched here is NOT AFC-corrected — subtract the
+	// AFC's DC offset (identical bias in the oversampled and decimated
+	// domains) to recentre the eye. nil sinks are no-ops.
+	if r.softSink != nil {
+		r.softSink(r.symbols)
+	}
+	if r.eyeSink != nil && r.eyeSPS > 0 && len(r.matched) > 0 {
+		g := float32(1)
+		if r.agc.Target > 0 && agcLevel > 0 {
+			g = r.agc.Target / float32(agcLevel)
+		}
+		off := float32(0)
+		if r.afc != nil {
+			off = float32(r.afc.Offset())
+		}
+		if cap(r.eyeBuf) < len(r.matched) {
+			r.eyeBuf = make([]float32, len(r.matched))
+		} else {
+			r.eyeBuf = r.eyeBuf[:len(r.matched)]
+		}
+		for i, x := range r.matched {
+			r.eyeBuf[i] = (x - off) * g
+		}
+		r.eyeSink(r.eyeBuf, r.eyeSPS)
+	}
 	r.sliced = r.mf.SliceMany(r.sliced, r.symbols)
 	if cap(r.dibits) < len(r.sliced) {
 		r.dibits = make([]uint8, len(r.sliced))
@@ -252,6 +309,18 @@ func (r *Receiver) Reset() {
 		r.afc.Reset()
 	}
 }
+
+// AGCLevel and AGCTarget expose the shared symbol-AGC's running mean|x|
+// estimate and its target, for the diagnostic Tuning panel. Both are 0 on the
+// legacy pre-scaled-fixture path (AGC disabled).
+func (r *Receiver) AGCLevel() float64  { return float64(r.agc.Level()) }
+func (r *Receiver) AGCTarget() float64 { return float64(r.agc.Target) }
+
+// MMClockMu and MMClockSPS expose the Mueller-Müller timing loop's fractional
+// interpolation index and samples-per-symbol estimate, mirroring the P25
+// Phase 1 C4FM receiver's getters so the symbol scope reads them identically.
+func (r *Receiver) MMClockMu() float64  { return r.clock.Mu() }
+func (r *Receiver) MMClockSPS() float64 { return r.clock.SPS() }
 
 // SymbolToDibit maps a C4FM slicer output ({-3, -1, +1, +3}) to a
 // dibit value (0..3). Uses the same Gray-coded convention as

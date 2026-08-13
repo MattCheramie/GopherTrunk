@@ -114,7 +114,7 @@ describe("Scanner panel", () => {
 
     render(<Scanner />);
 
-    const chip = await screen.findByText(/signal: marginal/i);
+    const chip = await screen.findByText(/decode: marginal/i);
     expect(chip).toBeInTheDocument();
     expect(chip.closest("[title]")?.getAttribute("title")).toContain("offset -958 Hz");
   });
@@ -132,6 +132,6 @@ describe("Scanner panel", () => {
     render(<Scanner />);
 
     await waitFor(() => expect(screen.getByText("Tetra1")).toBeInTheDocument());
-    expect(screen.queryByText(/signal:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/decode:/i)).not.toBeInTheDocument();
   });
 });
