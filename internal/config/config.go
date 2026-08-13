@@ -527,7 +527,16 @@ type ConvChannelConfig struct {
 	Mode        string  `yaml:"mode"`         // "fm" | "nfm"
 	SquelchDbFS float64 `yaml:"squelch_dbfs"` // default -50
 	HangtimeMs  int     `yaml:"hangtime_ms"`  // default 1500
-	Priority    int     `yaml:"priority"`     // 1..10, 0 = unset
+	// ActivityDebounceMs is the minimum sustained above-threshold time
+	// that counts as renewed activity resetting the hangtime countdown.
+	// De-bounces the trailing edge so a brief blip can't hold squelch
+	// open indefinitely (issue #1090). Default 50 ms; 0 = default.
+	ActivityDebounceMs int `yaml:"activity_debounce_ms"`
+	// SquelchHysteresisDb is the close-side level margin below
+	// squelch_dbfs before a chunk counts as inactive during a call.
+	// Default 3 dB; 0 = default.
+	SquelchHysteresisDb float64 `yaml:"squelch_hysteresis_db"`
+	Priority            int     `yaml:"priority"` // 1..10, 0 = unset
 	// Tone is the optional CTCSS / DCS sub-audible squelch gate.
 	// Zero / "none" disables tone gating (default).
 	Tone ConvToneConfig `yaml:"tone"`

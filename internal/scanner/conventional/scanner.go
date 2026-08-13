@@ -11,6 +11,17 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
+const (
+	// defaultActivityDebounce is the sustained-activity window applied
+	// when a channel leaves ActivityDebounce unset. 50 ms is ~30 chunks
+	// at the default DwellChunkLen / 2.4 MS/s — comfortably above a
+	// single-chunk blip and below the shortest real syllable.
+	defaultActivityDebounce = 50 * time.Millisecond
+	// defaultSquelchHysteresisDb is the close-side level margin applied
+	// when a channel leaves SquelchHysteresisDb unset.
+	defaultSquelchHysteresisDb = 3.0
+)
+
 // Channel is one entry in the conventional scan list.
 type Channel struct {
 	Label       string
@@ -27,6 +38,26 @@ type Channel struct {
 	// 1500 ms keeps the scanner from clipping the tail of normal
 	// FM transmissions.
 	Hangtime time.Duration
+	// ActivityDebounce is the minimum time carrier (and tone, when
+	// gated) must be continuously present before it counts as renewed
+	// activity that resets the hangtime countdown. It de-bounces the
+	// trailing edge: a single momentary above-threshold IQ chunk
+	// (carrier tail, impulse noise, intermod, a brief tone dropout's
+	// recovery) no longer zeroes the countdown, so a channel peppered
+	// with brief blips still releases on time instead of hanging open
+	// indefinitely (issue #1090). Default 50 ms — well above a single
+	// chunk, well below the shortest real syllable. Set below one
+	// chunk's duration to effectively disable.
+	ActivityDebounce time.Duration
+	// SquelchHysteresisDb is the level margin below SquelchDbFS that
+	// power must drop to before a chunk counts as "inactive" while
+	// dwelling. The squelch OPENS at SquelchDbFS (unchanged) but only
+	// starts/continues the hangtime countdown once power falls to
+	// SquelchDbFS - SquelchHysteresisDb, so a signal sitting right at
+	// the threshold and flickering across it doesn't chatter the
+	// countdown. Default 3 dB. Zero uses the default; a tiny value
+	// disables the margin.
+	SquelchHysteresisDb float64
 	// Priority is forwarded to the synthetic talkgroup so the
 	// engine's preemption logic respects it relative to other
 	// conv-scanner channels.
@@ -222,6 +253,12 @@ func New(opts Options) (*Scanner, error) {
 		}
 		if ch.Hangtime <= 0 {
 			ch.Hangtime = 1500 * time.Millisecond
+		}
+		if ch.ActivityDebounce <= 0 {
+			ch.ActivityDebounce = defaultActivityDebounce
+		}
+		if ch.SquelchHysteresisDb <= 0 {
+			ch.SquelchHysteresisDb = defaultSquelchHysteresisDb
 		}
 		if ch.Mode == "" {
 			ch.Mode = "fm"
@@ -494,7 +531,21 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	// the CTCSS tone (e.g. switching to a different talkgroup on
 	// the same repeater) hangs up just like a true carrier drop.
 	det := s.detectorFor(idx)
+	// keepAlive is the power a chunk must clear to count as carrier
+	// present while dwelling. Squelch already OPENED at SquelchDbFS in
+	// scanWindow; here we require power to fall a hysteresis margin
+	// below that before the chunk counts as inactive, so a signal
+	// hovering at the threshold doesn't flicker the countdown.
+	keepAlive := ch.SquelchDbFS - ch.SquelchHysteresisDb
+	// belowSince marks the start of the current below-threshold run
+	// (zero => currently active). aboveSince marks the start of a run
+	// of above-threshold chunks seen *during* a countdown — it is the
+	// de-bounce accumulator: only once activity has been continuously
+	// present for ActivityDebounce do we treat it as real and reset the
+	// countdown. A lone blip sets aboveSince, then the next inactive
+	// chunk clears it, so belowSince (and the elapsed silence) survives.
 	belowSince := time.Time{}
+	aboveSince := time.Time{}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -509,18 +560,30 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 				s.endDwell(idx, trunking.EndReasonError)
 				return
 			}
-			power := PowerDbFS(iq)
-			active := power >= ch.SquelchDbFS
+			active := PowerDbFS(iq) >= keepAlive
 			if active && det != nil {
 				active = det.Process(iq)
 			}
+			now := s.opts.Now()
 			if active {
-				belowSince = time.Time{}
-			} else if belowSince.IsZero() {
-				belowSince = s.opts.Now()
-			} else if s.opts.Now().Sub(belowSince) >= ch.Hangtime {
-				s.endDwell(idx, trunking.EndReasonNormal)
-				return
+				if aboveSince.IsZero() {
+					aboveSince = now
+				}
+				// Reset the countdown only when activity has been
+				// sustained past the de-bounce window, or when we were
+				// not counting down at all (call still live). A brief
+				// blip inside the window leaves belowSince untouched.
+				if belowSince.IsZero() || now.Sub(aboveSince) >= ch.ActivityDebounce {
+					belowSince = time.Time{}
+				}
+			} else {
+				aboveSince = time.Time{}
+				if belowSince.IsZero() {
+					belowSince = now
+				} else if now.Sub(belowSince) >= ch.Hangtime {
+					s.endDwell(idx, trunking.EndReasonNormal)
+					return
+				}
 			}
 		}
 	}
@@ -694,6 +757,12 @@ func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 	}
 	if ch.Hangtime <= 0 {
 		ch.Hangtime = 1500 * time.Millisecond
+	}
+	if ch.ActivityDebounce <= 0 {
+		ch.ActivityDebounce = defaultActivityDebounce
+	}
+	if ch.SquelchHysteresisDb <= 0 {
+		ch.SquelchHysteresisDb = defaultSquelchHysteresisDb
 	}
 	if ch.Mode == "" {
 		ch.Mode = "fm"

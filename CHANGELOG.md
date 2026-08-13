@@ -111,6 +111,19 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **Conventional scanner recordings no longer run long or hang open on brief
+  noise.** A `scanner.conventional` channel released a call only after `hangtime_ms`
+  of continuous below-squelch silence, but the trailing-edge logic let a *single*
+  above-threshold IQ chunk (~2 ms — a carrier tail, impulse noise, intermod, or a
+  momentary tone-detector dropout's recovery) zero the whole countdown. On a
+  channel where such blips recur faster than the hangtime, the countdown could
+  never complete and the recording stayed open indefinitely, ending only on some
+  unrelated event. The scanner now de-bounces renewed activity: carrier (and tone,
+  when gated) must be present for a sustained window — new `activity_debounce_ms`,
+  default 50 ms — before it resets the countdown, and a new `squelch_hysteresis_db`
+  margin (default 3 dB) keeps a signal hovering at the threshold from chattering
+  the countdown. Both are per-channel with sane defaults, so existing configs need
+  no changes. (issue #1090)
 - **Conventional scanner channels now record audio.** A `scanner.conventional`
   (analog FM) channel detected activity, opened a synthetic call, and named a WAV
   path, but no file was ever written. The scanner holds the voice SDR's

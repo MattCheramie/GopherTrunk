@@ -558,6 +558,12 @@ func validateConvChannel(i int, ch ConvChannelConfig) error {
 	default:
 		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm", i)
 	}
+	if ch.ActivityDebounceMs < 0 {
+		return fmt.Errorf("scanner.conventional[%d]: activity_debounce_ms must be ≥ 0", i)
+	}
+	if ch.SquelchHysteresisDb < 0 {
+		return fmt.Errorf("scanner.conventional[%d]: squelch_hysteresis_db must be ≥ 0", i)
+	}
 	switch ch.Tone.Mode {
 	case "", "none":
 	case "ctcss":

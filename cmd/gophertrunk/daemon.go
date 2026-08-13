@@ -1551,7 +1551,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Mode:        ch.Mode,
 					SquelchDbFS: ch.SquelchDbFS,
 					Hangtime:    msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
-					Priority:    ch.Priority,
+					// 0 => let the scanner apply its own defaults
+					// (50 ms debounce / 3 dB hysteresis) in one place.
+					ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
+					SquelchHysteresisDb: ch.SquelchHysteresisDb,
+					Priority:            ch.Priority,
 					Tone: conventional.ToneConfig{
 						Mode:    ch.Tone.Mode,
 						CTCSSHz: ch.Tone.CTCSSHz,
