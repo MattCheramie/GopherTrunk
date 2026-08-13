@@ -392,6 +392,10 @@ func TestValidate(t *testing.T) {
 		{"soapy args remote:mtu mixed rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "antenna=RX1,remote:mtu=8000"}}}}, true},
 		// UHD frame-size make() args are legitimate and stay allowed.
 		{"soapy args recv_frame_size ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "num_recv_frames=512,recv_frame_size=16384"}}}}, false},
+		// soapy_remote diversity (issue #1062): "" / "mrc" ok, anything else rejected.
+		{"soapy diversity mrc ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc"}}}}, false},
+		{"soapy diversity empty ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: ""}}}}, false},
+		{"soapy diversity bad rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "selection"}}}}, true},
 		// soapy_remote stream_mtu: 0 = default; a real MTU is fine; out-of-range fails.
 		{"soapy stream_mtu zero ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1"}}}}, false},
 		{"soapy stream_mtu valid", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 8192}}}}, false},

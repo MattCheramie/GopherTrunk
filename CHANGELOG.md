@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **SoapyRemote: experimental phase-coherent MRC diversity over two RX channels.**
+  A new `diversity: mrc` option on a `soapy_remote` source opens RX channels 0
+  and 1 and phase-coherently maximal-ratio-combines them into one maximised-SNR
+  stream, for shared-LO front-ends (USRP B210 / AD9361 and clones) whose RX0↔RX1
+  phase relationship is a constant per tune. It reuses the existing
+  `dsp/diversity.StaticCalibrator`: a one-time phase calibration is taken on the
+  first signal-bearing window after each tune (no per-sample tracking), and the
+  combined stream feeds the normal decode pipeline unchanged. Default (unset) is
+  the ordinary single-channel stream — byte-identical to before. **Experimental
+  (issue #1062):** the 2-channel wire de-interleave and the calibration trigger
+  are validated in unit tests but not yet confirmed against a live dual-RX
+  server; the feature is opt-in and cannot affect single-channel users.
 - **TETRA DMO (Direct Mode Operation) now decodes in the daemon.** A new
   `protocol: tetra-dmo` (aliases `dmo` / `tetra_dmo`) camps a direct-mode
   frequency, locks on the Direct Mode Synchronisation Burst (DSB), auto-recovers

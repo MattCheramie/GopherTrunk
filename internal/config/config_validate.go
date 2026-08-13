@@ -238,6 +238,11 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 	default:
 		return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
 	}
+	switch strings.ToLower(strings.TrimSpace(s.Diversity)) {
+	case "", "none", "off", "mrc":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: diversity must be mrc or empty", i)
+	}
 	// stream_mtu is in bytes; 0 means SoapyRemote's default (1500). Reject
 	// values that can't be a real endpoint MTU — too small to hold a useful
 	// frame, or above the driver's 4 MiB per-transfer read guard.

@@ -121,7 +121,7 @@ export function SDRSection() {
           label="soapy_remote endpoints"
           items={cfg.SoapyRemote}
           onChange={(x) => set({ ...cfg, SoapyRemote: x })}
-          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", StreamMTU: 0, StreamWindow: 0, PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0 })}
+          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", StreamMTU: 0, StreamWindow: 0, PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0, Diversity: "" })}
           itemTitle={(s) => s.Addr || "soapy_remote"}
           emptyHint="SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, …)."
           renderItem={(s, set) => (
@@ -157,6 +157,15 @@ export function SDRSection() {
               <NumberField label="PPM" value={s.PPM} onChange={(v) => set({ ...s, PPM: v })} />
               <NumberField label="Connect timeout (ms)" value={s.ConnectTimeoutMs} onChange={(v) => set({ ...s, ConnectTimeoutMs: v })} />
               <BoolField label="Bias-tee" value={s.BiasTee} onChange={(v) => set({ ...s, BiasTee: v })} />
+              <SelectField
+                label="Diversity (experimental)"
+                value={s.Diversity}
+                onChange={(v) => set({ ...s, Diversity: v })}
+                options={[
+                  { value: "", label: "(none)" },
+                  { value: "mrc", label: "mrc (RX0+RX1, shared-LO)" },
+                ]}
+              />
             </div>
           )}
         />
