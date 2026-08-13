@@ -3,9 +3,21 @@ slug: encrypted-call-handling
 title: Encrypted-call handling
 entry_type: term
 category: fn-config
-description: "How GopherTrunk allocates voice tuners to encrypted calls via the per-system encrypted_calls policy, when encryption is actually detectable, and the skip_encrypted and metadata-mode traps worth knowing in advance."
+description: "Encrypted-call handling is GopherTrunk's per-system encrypted_calls policy for spending scarce voice SDRs on encrypted traffic, shaped by when encryption is actually detectable and by the skip_encrypted and metadata-mode traps worth knowing in advance."
 keywords: encrypted_calls, skip_encrypted, metadata_follow_ms, encryption policy, algorithm id, key id, talker alias, webhook, p25 encryption
+aka: [encrypted_calls policy, encryption policy, metadata follow mode]
+infobox:
+  - { label: Type, value: Config policy }
+  - { label: Modes, value: follow / metadata / ignore }
+  - { label: Scope, value: "Per system, on each trunking.systems entry" }
+  - { label: Key fact, value: Encryption is often only revealed mid-call }
 see_also: [p25-encryption, p25-algorithm-id, key-id-algid, encryption, p25-talker-alias, p25-encryption-sync, p25-phase-2, wideband-voice-taps]
+related_reading:
+  - { title: "From the Issue Tracker, Part 3: Encrypted, Says Who — Four Layers Between a Flag and Its Metadata", url: /blog/solution-postmortem/from-the-issue-tracker-03-phase2-encryption-metadata/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/711
+  - https://github.com/MattCheramie/GopherTrunk/issues/897
+  - https://github.com/MattCheramie/GopherTrunk/issues/813
 ---
 
 **Encrypted-call handling** is the per-system policy for how scarce voice SDRs are spent on

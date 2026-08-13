@@ -3,9 +3,22 @@ slug: p25-demod-mode-selection
 title: P25 demod-mode selection
 entry_type: term
 category: fn-config
-description: "How to choose between the C4FM and CQPSK demodulation paths for a P25 Phase 1 system, why 'the site is simulcast' is the wrong reason to pick CQPSK, and the empirical rule that actually works."
+description: "P25 demod-mode selection is the choice between GopherTrunk's C4FM and CQPSK Phase 1 demodulation paths, made empirically — never from 'the site is simulcast', which is a transmitter-coordination fact that does not imply LSM modulation."
 keywords: p25_phase1_demod_mode, c4fm, cqpsk, lsm, linear simulcast modulation, simulcast, demod mode, emission designator, p25 phase 1
+aka: [p25_phase1_demod_mode, C4FM vs CQPSK, LSM mode selection]
+infobox:
+  - { label: Type, value: Config decision }
+  - { label: Choices, value: c4fm (default) / cqpsk }
+  - { label: Key rule, value: "Choose cqpsk only empirically — a strong, clean signal that refuses to lock in C4FM" }
+  - { label: Trap, value: Simulcast does not imply LSM/CQPSK }
 see_also: [c4fm, cqpsk, simulcast, p25-phase-1, wideband-voice-taps, control-channel, sdr-gain-overload]
+related_reading:
+  - { title: "From the Issue Tracker, Part 7: The LSM Myth — When Your Own Docs Are the Bug", url: /blog/solution-postmortem/from-the-issue-tracker-07-lsm-myth/ }
+  - { title: "From the Issue Tracker, Part 6: CQPSK in Four Acts — Fixing the Linear Path One Layer at a Time", url: /blog/solution-postmortem/from-the-issue-tracker-06-cqpsk-four-acts/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/935
+  - https://github.com/MattCheramie/GopherTrunk/issues/492
+  - https://github.com/MattCheramie/GopherTrunk/issues/297
 ---
 
 **P25 demod-mode selection** is the choice between GopherTrunk's two P25 Phase 1

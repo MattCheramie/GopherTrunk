@@ -3,9 +3,22 @@ slug: tetra-lock-facts
 title: TETRA lock facts
 entry_type: term
 category: fn-protocol
-description: "Hard-won facts for getting a TETRA demodulator to lock and decode: training-sequence bit lengths, the Gray dibit mapping, the 4th-power AFC's ±2250 Hz aliasing limit, and why colour code 0 still scrambles."
+description: "TETRA lock facts are the protocol and DSP truths that separate a TETRA demodulator that locks real air from one that only passes its own tests — training-sequence bit lengths, the Gray dibit mapping, the 4th-power AFC's ±2250 Hz alias limit, and why colour code 0 still scrambles."
 keywords: tetra, training sequence, nts, ets, sts, bsch, gray mapping, pi/4-dqpsk, afc, frequency offset, aliasing, colour code, scrambler, dmo, frame cadence, etsi en 300 392-2
+aka: [TETRA bring-up facts, TETRA sync gotchas]
+infobox:
+  - { label: Type, value: Protocol + DSP facts }
+  - { label: Key rule, value: Training sequences are counted in bits (22/30/38) }
+  - { label: Trap, value: Colour code 0 still scrambles (LFSR seed 0xC0000000) }
+  - { label: Proof of sync, value: Correlation hits at exactly 1020-dibit frame cadence }
 see_also: [tetra, tetra-training-sequences, tetra-scrambler, tetra-extended-colour-code, pi-4-dqpsk, gray-code, automatic-frequency-control, dibit, dmr-grant-field-gotchas, signal-signatures]
+related_reading:
+  - { title: "From the Issue Tracker, Part 17: Placeholder Constants — The TETRA Sync That Never Existed", url: /blog/solution-postmortem/from-the-issue-tracker-17-placeholder-constants/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/553
+  - https://github.com/MattCheramie/GopherTrunk/issues/940
+  - https://github.com/MattCheramie/GopherTrunk/issues/648
+  - https://github.com/MattCheramie/GopherTrunk/issues/1003
 ---
 
 **TETRA lock facts** are the small set of protocol and DSP truths that separate a

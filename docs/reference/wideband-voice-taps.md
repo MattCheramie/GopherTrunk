@@ -5,7 +5,20 @@ entry_type: term
 category: fn-config
 description: "Wideband voice taps let a single SDR decode a trunked control channel and record its voice grants at once, with a usable-window rule, an init-ordering history, and several misleading log lines worth knowing."
 keywords: wideband, voice_taps, role wideband, ddc tap, voice pool, no voice device available, trellis=0, per-channel demod mode, single sdr trunking
+aka: [voice_taps, wideband DDC taps, virtual voice tuners]
+infobox:
+  - { label: Type, value: Config feature }
+  - { label: Applies to, value: "SDRs with role: wideband" }
+  - { label: Key rule, value: "Every tapped frequency must sit inside center ± rate/2 with a 5% edge guard" }
+  - { label: Enables, value: One SDR decoding a control channel and its voice grants }
 see_also: [p25-demod-mode-selection, encrypted-call-handling, digital-down-converter, channelizer, control-channel, channel-grant, sdr-gain-overload]
+related_reading:
+  - { title: "From the Issue Tracker, Part 22: Two Pipelines, One Symptom — When Parallel Code Paths Drift", url: /blog/solution-postmortem/from-the-issue-tracker-22-two-pipelines/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/379
+  - https://github.com/MattCheramie/GopherTrunk/issues/422
+  - https://github.com/MattCheramie/GopherTrunk/issues/882
+  - https://github.com/MattCheramie/GopherTrunk/issues/935
 ---
 
 **Wideband voice taps** are per-call [digital down-converter](/reference/digital-down-converter/)

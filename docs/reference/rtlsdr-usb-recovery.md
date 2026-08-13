@@ -3,9 +3,25 @@ slug: rtlsdr-usb-recovery
 title: RTL-SDR USB stall recovery
 entry_type: term
 category: fn-hardware
-description: "A per-OS symptom table for RTL-SDR USB stalls at tuner init — Linux broken pipe, Windows access denied and general failure, macOS IOKit pipe stall — plus the recovery facts and the traps that misdirect the diagnosis."
+description: "RTL-SDR USB stall recovery is the collected fix-lore for tuner-init USB stalls — Linux broken pipe, Windows access denied and general failure, macOS IOKit pipe stall — with the per-OS recovery facts and the traps that misdirect the diagnosis."
 keywords: rtl-sdr, usb, epipe, broken pipe, error_gen_failure, access denied, iokit, 0xe000404f, pipe stall, winusb, libusb, dmesg, tuner init, nesdr
+aka: [RTL-SDR broken pipe, EPIPE at tuner init, USB pipe stall recovery]
+infobox:
+  - { label: Type, value: Failure family + fixes }
+  - { label: Applies to, value: RTL2832U / R820T dongles }
+  - { label: Symptom, value: "OS-specific USB error on the first tuner-init I²C burst" }
+  - { label: Key rule, value: A dongle that works in libusb tools proves nothing about the thin pure-Go path }
 see_also: [rtl-sdr, rtl2832u, r820t-tuner, nesdr, usb, zadig, sdr-gain-overload, airspy-rate-selection, diagnostic-playbook, signal-signatures]
+related_reading:
+  - { title: "From the Issue Tracker, Part 9: Broken Pipe — Six Rounds of Traces for One USB Write", url: /blog/solution-postmortem/from-the-issue-tracker-09-broken-pipe/ }
+  - { title: "From the Issue Tracker, Part 10: Faster Than libusb — When the Second Write Outruns the First", url: /blog/solution-postmortem/from-the-issue-tracker-10-faster-than-libusb/ }
+  - { title: "From the Issue Tracker, Part 11: Detected but Not Present — One Hex Code from a Fix That Already Existed", url: /blog/solution-postmortem/from-the-issue-tracker-11-detected-but-not-present/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/248
+  - https://github.com/MattCheramie/GopherTrunk/issues/395
+  - https://github.com/MattCheramie/GopherTrunk/issues/333
+  - https://github.com/MattCheramie/GopherTrunk/issues/1038
+  - https://github.com/MattCheramie/GopherTrunk/issues/345
 ---
 
 **RTL-SDR USB stall recovery** is the collected fix-lore for one failure family: the

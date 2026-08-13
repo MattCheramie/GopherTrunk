@@ -3,9 +3,21 @@ slug: carrier-offset-adjacent-lock
 title: Carrier offset & adjacent-channel lock
 entry_type: term
 category: fn-diagnostics
-description: "GopherTrunk locks any compatible carrier inside the channel passband and reports the configured frequency, so a carrier offset near the channel spacing means the decoded data belongs to an adjacent site."
+description: "Adjacent-channel lock is the failure mode where GopherTrunk locks a compatible carrier inside the channel passband while reporting the configured frequency, so a carrier offset near the channel spacing means the decoded data belongs to an adjacent site."
 keywords: carrier offset, adjacent channel, offset_hz, wrong site, 12.5 khz, carrier_offset_warn_hz, control channel, afc, decode quality, tsbk error rate
+aka: [adjacent-channel lock, wrong-site lock, offset_hz fingerprint]
+infobox:
+  - { label: Type, value: Failure mode }
+  - { label: Fingerprint, value: "offset_hz near the channel spacing — ±12.5 kHz for narrowband P25" }
+  - { label: Detection, value: sdr.carrier_offset_warn_hz (default 4000 Hz) }
+  - { label: Consequence, value: Decoded site identity belongs to the neighbour }
 see_also: [signal-signatures, diagnostic-playbook, automatic-frequency-control, control-channel, c4fm, bit-error-rate, dbfs]
+related_reading:
+  - { title: "From the Issue Tracker, Part 22: Two Pipelines, One Symptom — When Parallel Code Paths Drift", url: /blog/solution-postmortem/from-the-issue-tracker-22-two-pipelines/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/815
+  - https://github.com/MattCheramie/GopherTrunk/pull/866
+  - https://github.com/MattCheramie/GopherTrunk/issues/858
 ---
 
 **Adjacent-channel lock** is the failure mode where GopherTrunk decodes a

@@ -3,9 +3,25 @@ slug: airspy-rate-selection
 title: Airspy sample-rate selection
 entry_type: term
 category: fn-hardware
-description: "Why GopherTrunk recommends 2.5 MS/s on the Airspy R2, how the firmware's IQ-rate table caused a half-rate regression, and a capture-and-compare recipe for qualifying any untested rate."
+description: "Airspy sample-rate selection covers why GopherTrunk recommends 2.5 MS/s on the Airspy R2, how the firmware's IQ-rate table caused a half-rate regression, and the capture-and-compare recipe for qualifying any untested rate."
 keywords: airspy, airspy r2, airspy mini, sample rate, 10 msps, 2.5 msps, phase noise, real sampling, hilbert, evm, snr, replay
+aka: [Airspy sample rate, 10 MS/s vs 2.5 MS/s, Airspy R2 rate choice]
+infobox:
+  - { label: Type, value: Hardware field notes }
+  - { label: Applies to, value: Airspy R2 / Mini }
+  - { label: Key rule, value: "Run the R2 at 2.5 MS/s; qualify any other rate by capture-and-compare" }
+  - { label: Signature, value: Carrier-clean but modulation-degraded at 10 MS/s }
 see_also: [airspy, airspy-r2, airspy-mini, sample-rate, phase-noise, sdr-gain-overload, rtlsdr-usb-recovery, signal-signatures, diagnostic-playbook, c4fm]
+related_reading:
+  - { title: "From the Issue Tracker, Part 5: Ten Megasamples — When the Bug Is in the Samples Themselves", url: /blog/solution-postmortem/from-the-issue-tracker-05-ten-megasamples/ }
+  - { title: "From the Issue Tracker, Part 12: Seventy-Eight Degrees — The Phase Angle That Named the Bug", url: /blog/solution-postmortem/from-the-issue-tracker-12-seventy-eight-degrees/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/764
+  - https://github.com/MattCheramie/GopherTrunk/issues/771
+  - https://github.com/MattCheramie/GopherTrunk/issues/851
+  - https://github.com/MattCheramie/GopherTrunk/issues/454
+  - https://github.com/MattCheramie/GopherTrunk/issues/270
+  - https://github.com/MattCheramie/GopherTrunk/issues/550
 ---
 
 **Airspy sample-rate selection** matters more than it looks: on the

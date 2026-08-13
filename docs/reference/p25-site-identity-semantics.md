@@ -3,9 +3,23 @@ slug: p25-site-identity-semantics
 title: P25 site-identity semantics
 entry_type: term
 category: fn-protocol
-description: "What P25 site identity actually means on air: why a grant's site is not a radio's location, why the NAC cannot key a site, and how network identity, neighbor lists, and hybrid Phase 2 systems are decoded."
+description: "P25 site-identity semantics cover what a site's RFSS and site IDs actually mean on air — why a grant's site is not a radio's location, why the NAC cannot key a site, and how network identity, neighbor lists, and hybrid Phase 2 systems are decoded."
 keywords: p25, site identity, rfss, site id, nac, wacn, system id, grant, registration, affiliation, neighbor sites, adjacent status broadcast, rfss status, network status, hybrid phase 2, tdma identifier update
+aka: [P25 site identity, RFSS and site ID semantics]
+infobox:
+  - { label: Type, value: Protocol semantics }
+  - { label: Key rule, value: "Key sites on (rfss_id, site_id), never the NAC" }
+  - { label: Source, value: "Network and RFSS Status Broadcasts (0x3B, 0x3A) — decoded, never configured" }
+  - { label: Trap, value: A grant's site is not the radio's location }
 see_also: [rfss, system-id, wacn, network-access-code, neighbor-site, trunking-site, multisite-trunking, roaming, registration, affiliation, p25-tsbk-opcodes, p25-identifier-update, p25-nid-duid, p25-onair-constants, p25-demod-mode-selection]
+related_reading:
+  - { title: "From the Issue Tracker, Part 2: The Talker-Alias Hunt — Three Wrong Transports and an Architectural Gate", url: /blog/solution-postmortem/from-the-issue-tracker-02-talker-alias-hunt/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/698
+  - https://github.com/MattCheramie/GopherTrunk/issues/673
+  - https://github.com/MattCheramie/GopherTrunk/issues/864
+  - https://github.com/MattCheramie/GopherTrunk/issues/376
+  - https://github.com/MattCheramie/GopherTrunk/issues/345
 ---
 
 **P25 site identity** is the pair of identifiers — [RFSS](/reference/rfss/) ID plus site ID —

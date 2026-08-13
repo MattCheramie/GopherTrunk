@@ -3,9 +3,21 @@ slug: dmr-grant-field-gotchas
 title: DMR grant-field gotchas
 entry_type: term
 category: fn-protocol
-description: "Field-verified corrections to common DMR grant-parsing assumptions: the Tier III 12-bit LPCN layout, data grants that must not be voice-followed, the non-CSBK reverse channel, and sync words that cannot reveal spectrum inversion."
+description: "DMR grant-field gotchas are field-verified corrections to common DMR Tier III grant-parsing assumptions — the 12-bit LPCN layout, data grants that must not be voice-followed, the non-CSBK reverse channel, and sync words that cannot reveal spectrum inversion."
 keywords: dmr, tier iii, csbk, channel grant, lpcn, lcn, logical channel number, pd_grant, td_grant, btv_grant, mbc, reverse channel, sync word, spectrum inversion, hytera xpt, etsi ts 102 361-4
+aka: [DMR CSBK grant parsing, LPCN vs LCN, Tier III grant traps]
+infobox:
+  - { label: Type, value: Protocol gotchas }
+  - { label: Applies to, value: DMR Tier III channel-grant CSBKs }
+  - { label: Key rule, value: "The grant leads with a 12-bit LPCN — there is no trailing 7-bit LCN" }
+  - { label: Blind spot, value: Sync words cannot detect spectrum inversion }
 see_also: [dmr-tier-3, dmr-csbk-payloads, dmr-sync-patterns, dmr-full-link-control, dibit, p25-onair-constants, tetra-lock-facts, signal-signatures]
+related_reading:
+  - { title: "From the Issue Tracker, Part 20: The Self-Consistent Trap — Round-Trip Tests That Validate Their Own Bugs", url: /blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/639
+  - https://github.com/MattCheramie/GopherTrunk/issues/626
+  - https://github.com/MattCheramie/GopherTrunk/issues/264
 ---
 
 **DMR grant-field gotchas** are the places where a reasonable reading of a

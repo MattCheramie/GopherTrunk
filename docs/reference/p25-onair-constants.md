@@ -3,9 +3,21 @@ slug: p25-onair-constants
 title: P25 on-air constants
 entry_type: term
 category: fn-protocol
-description: "The P25 constants that only real on-air signal validates: the NID's BCH generator and bit 64, the TSBK trailer CRC variant, status symbols, C4FM pulse shaping, the Phase 2 sync word, and rotation-recovery sign."
+description: "P25 on-air constants are the protocol values only real on-air signal validates — the NID's BCH generator and bit 64, the TSBK trailer CRC variant, status symbols, C4FM pulse shaping, the Phase 2 sync word, and the rotation-recovery sign."
 keywords: p25, bch generator, nid, duid, crc-ccitt, tsbk trailer, status symbols, c4fm, inverse sinc, raised cosine, phase 2 sync word, dibit remap, rotation recovery, tia-102
+infobox:
+  - { label: Type, value: Protocol constants }
+  - { label: Validated by, value: "Real captures or independent implementations, never round-trip tests" }
+  - { label: Examples, value: "BCH generator 0xCD930BDD3B2B, Phase 2 sync 0x575D57F7FF" }
+  - { label: Meta-lesson, value: A self-consistent test validates its own bug }
 see_also: [bch-code, crc-16-ccitt, p25-frame-sync-word, p25-nid-duid, p25-status-symbols, p25-phase-2-sync-word, p25-tsbk-opcodes, p25-trellis-code, dibit, p25-site-identity-semantics, p25-demod-mode-selection, signal-signatures, encrypted-call-handling]
+related_reading:
+  - { title: "From the Issue Tracker, Part 1: The First P25 Lock — Eleven Fixes Between 'Trying' and 'Locked'", url: /blog/solution-postmortem/from-the-issue-tracker-01-first-p25-lock/ }
+  - { title: "From the Issue Tracker, Part 3: Encrypted, Says Who — Four Layers Between a Flag and Its Metadata", url: /blog/solution-postmortem/from-the-issue-tracker-03-phase2-encryption-metadata/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/275
+  - https://github.com/MattCheramie/GopherTrunk/issues/813
+  - https://github.com/MattCheramie/GopherTrunk/issues/297
 ---
 
 **P25 on-air constants** are the handful of protocol values a decoder can get *almost* right

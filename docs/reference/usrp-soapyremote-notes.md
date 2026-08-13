@@ -3,9 +3,20 @@ slug: usrp-soapyremote-notes
 title: USRP & SoapyRemote field notes
 entry_type: term
 category: fn-hardware
-description: "Field-tested facts for running USRP hardware through GopherTrunk's pure-Go SoapyRemote driver: silently-ignored stream args, the macOS loopback MTU cap, UHD rate coercion, and the wire-protocol behaviors behind zero-sample streams."
+description: "USRP & SoapyRemote field notes cover the traps of running USRP hardware through GopherTrunk's pure-Go SoapyRemote driver: silently-ignored stream args, the macOS loopback MTU cap, UHD rate coercion, and the wire-protocol behaviors behind zero-sample streams."
 keywords: usrp, b210, x310, twinrx, soapyremote, soapysdr, soapysdrserver, stream_mtu, mtu, uhd, master clock rate, rate coercion, flow control, rfnoc, agc, gain
+aka: [SoapyRemote field notes, USRP over SoapyRemote, SoapySDRServer notes]
+infobox:
+  - { label: Type, value: Hardware field notes }
+  - { label: Applies to, value: USRP B210 / X310 / N310 via SoapyRemote }
+  - { label: Transport, value: Pure-Go SoapyRemote wire client — no native UHD backend }
+  - { label: Key fact, value: "SETUP_STREAM is two-phase and two-socket; TCP still needs the flow-control ACK" }
 see_also: [soapyremote, soapysdr, usrp-b210, usrp-ettus, sdr-gain-overload, sample-rate, automatic-gain-control, dbfs, airspy-rate-selection, diagnostic-playbook]
+related_reading:
+  - { title: "From the Issue Tracker, Part 13: The SoapyRemote Handshake — Three Wrong Root Causes and a Server That Says Nothing First", url: /blog/solution-postmortem/from-the-issue-tracker-13-soapyremote-handshake/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/876
+  - https://github.com/MattCheramie/GopherTrunk/issues/542
 ---
 
 **USRP & SoapyRemote field notes** cover the traps found while field-testing Ettus

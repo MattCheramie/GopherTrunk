@@ -3,9 +3,21 @@ slug: sdr-gain-overload
 title: SDR gain & front-end overload
 entry_type: term
 category: fn-hardware
-description: "GopherTrunk gain values are tenths of a decibel, and an overloaded front end has a specific signature — rail-pinned samples with a deceptively clean FFT — that AGC makes worse and fixed low gain fixes."
+description: "SDR gain & front-end overload covers the trap that GopherTrunk gain values are tenths of a decibel, plus the overload signature — rail-pinned samples behind a deceptively clean FFT — that AGC makes worse and fixed low gain fixes."
 keywords: gain, tenths of db, agc, overload, saturation, clipping, rail-pinned, dbfs, histogram, c4fm, front end, intermodulation, wideband
+aka: [gain in tenths of a dB, front-end overload, ADC saturation]
+infobox:
+  - { label: Type, value: Config + RF trap }
+  - { label: Key rule, value: "gain is tenths of a decibel — 300 means 30 dB" }
+  - { label: Signature, value: Rail-pinned sample histogram behind a clean-looking FFT }
+  - { label: Fix, value: "Fixed low gain, not AGC" }
 see_also: [automatic-gain-control, dbfs, intermodulation, c4fm, rtl-sdr, airspy-rate-selection, rtlsdr-usb-recovery, usrp-soapyremote-notes, signal-signatures, diagnostic-playbook]
+related_reading:
+  - { title: "From the Issue Tracker, Part 8: Nineteen Dibits — A Perfect Hypothesis Meets a Rail-Pinned ADC", url: /blog/solution-postmortem/from-the-issue-tracker-08-nineteen-dibits/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/881
+  - https://github.com/MattCheramie/GopherTrunk/issues/935
+  - https://github.com/MattCheramie/GopherTrunk/issues/876
 ---
 
 **SDR gain and front-end overload** cause two of the most common "nothing decodes"

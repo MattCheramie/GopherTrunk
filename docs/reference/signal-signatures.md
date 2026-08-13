@@ -5,7 +5,25 @@ entry_type: term
 category: fn-diagnostics
 description: "Signal-quality signatures are the recurring measurement patterns from GopherTrunk's issue tracker that identify a fault class on sight — overload, misalignment, phase noise, adjacent-channel lock — before any code is read."
 keywords: signal quality, symptom table, image rejection, slicer collapse, uncorrectable frames, overload, rail-pinned, phase noise, evm trap, carrier offset, diagnosis
+aka: [signal fingerprints, symptom signatures, diagnostic fingerprints]
+infobox:
+  - { label: Type, value: Diagnostic catalog }
+  - { label: Format, value: "Numeric fingerprint → what it looks like → what it actually means" }
+  - { label: Examples, value: "Rail-pinned histogram, +78° phase imbalance, ±12.5 kHz offset" }
 see_also: [diagnostic-playbook, carrier-offset-adjacent-lock, sdr-gain-overload, airspy-rate-selection, error-vector-magnitude, iq-imbalance, image-rejection, cma-equalizer]
+related_reading:
+  - { title: "From the Issue Tracker, Part 12: Seventy-Eight Degrees — The Phase Angle That Named the Bug", url: /blog/solution-postmortem/from-the-issue-tracker-12-seventy-eight-degrees/ }
+  - { title: "From the Issue Tracker, Part 8: Nineteen Dibits — A Perfect Hypothesis Meets a Rail-Pinned ADC", url: /blog/solution-postmortem/from-the-issue-tracker-08-nineteen-dibits/ }
+  - { title: "From the Issue Tracker, Part 5: Ten Megasamples — When the Bug Is in the Samples Themselves", url: /blog/solution-postmortem/from-the-issue-tracker-05-ten-megasamples/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/454
+  - https://github.com/MattCheramie/GopherTrunk/issues/275
+  - https://github.com/MattCheramie/GopherTrunk/issues/489
+  - https://github.com/MattCheramie/GopherTrunk/issues/881
+  - https://github.com/MattCheramie/GopherTrunk/issues/764
+  - https://github.com/MattCheramie/GopherTrunk/issues/553
+  - https://github.com/MattCheramie/GopherTrunk/issues/815
+  - https://github.com/MattCheramie/GopherTrunk/issues/1001
 ---
 
 **Signal-quality signatures** are measurement patterns that recur in GopherTrunk's

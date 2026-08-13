@@ -5,7 +5,24 @@ entry_type: term
 category: fn-diagnostics
 description: "The diagnostic playbook is GopherTrunk's escalation ladder for decode failures: verify the build, probe the hardware, capture ground truth, replay offline, census the decoder, and only then suspect the OS or the DSP."
 keywords: diagnostics, troubleshooting, escalation ladder, replay, capture, spectrum, census logging, usb trace, sdr probe, ground truth, offline decode
+aka: [escalation ladder, decode-failure triage]
+infobox:
+  - { label: Type, value: Troubleshooting procedure }
+  - { label: Rungs, value: "9 (0–8), from build check to independent cross-check" }
+  - { label: Principle, value: Each rung replaces a guess with a measurement }
+  - { label: First step, value: Confirm the build before interpreting any result }
 see_also: [signal-signatures, audio-pipeline-tells, carrier-offset-adjacent-lock, rtlsdr-usb-recovery, sdr-gain-overload, airspy-rate-selection, iq-recording-playback, error-vector-magnitude]
+related_reading:
+  - { title: "From the Issue Tracker, Part 21: Census Everything — The Silence of a Success-Only Log Line Carries No Information", url: /blog/solution-postmortem/from-the-issue-tracker-21-census-everything/ }
+  - { title: "From the Issue Tracker, Part 1: The First P25 Lock — Eleven Fixes Between 'Trying' and 'Locked'", url: /blog/solution-postmortem/from-the-issue-tracker-01-first-p25-lock/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/275
+  - https://github.com/MattCheramie/GopherTrunk/issues/376
+  - https://github.com/MattCheramie/GopherTrunk/issues/813
+  - https://github.com/MattCheramie/GopherTrunk/issues/248
+  - https://github.com/MattCheramie/GopherTrunk/issues/764
+  - https://github.com/MattCheramie/GopherTrunk/issues/345
+  - https://github.com/MattCheramie/GopherTrunk/issues/598
 ---
 
 The **diagnostic playbook** is the escalation ladder that GopherTrunk's hardest

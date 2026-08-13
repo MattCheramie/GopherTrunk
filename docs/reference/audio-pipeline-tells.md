@@ -5,7 +5,21 @@ entry_type: term
 category: fn-diagnostics
 description: "Audio-pipeline tells are the specific observations that localize a silent-audio fault in GopherTrunk: the 44-byte stream, the empty recording directory behind a logged WAV path, and MP3s whose bitrate is illegal for their sample rate."
 keywords: audio, silent audio, wav header, 44 bytes, live stream, recorder, vocoder frames, pcm, mp3 bitrate, mpeg-2.5, rdio scanner, ffmpeg, curl probe
+aka: [silent-audio diagnosis, 44-byte stream tell]
+infobox:
+  - { label: Type, value: Diagnostic catalog }
+  - { label: Applies to, value: "Live audio, recordings, and uploads" }
+  - { label: Key fact, value: The recorder is the only vocoder-frame decoder }
+  - { label: Signature tell, value: A WAV stream that stalls at exactly 44 bytes }
 see_also: [diagnostic-playbook, signal-signatures, vocoder, imbe, talkgroup, sample-rate]
+related_reading:
+  - { title: "From the Issue Tracker, Part 14: The Recorder Is the Decoder — Perfect Recordings, Silent Speakers", url: /blog/solution-postmortem/from-the-issue-tracker-14-recorder-is-the-decoder/ }
+  - { title: "From the Issue Tracker, Part 15: The Silent MP3 — Three Encoder Bugs and a Test That Checked One Frame", url: /blog/solution-postmortem/from-the-issue-tracker-15-silent-mp3/ }
+  - { title: "From the Issue Tracker, Part 16: The Channel That Was Its Own Voice Channel — Conventional FM and the IQ Broker", url: /blog/solution-postmortem/from-the-issue-tracker-16-conventional-fm-broker/ }
+cite_urls:
+  - https://github.com/MattCheramie/GopherTrunk/issues/598
+  - https://github.com/MattCheramie/GopherTrunk/issues/1075
+  - https://github.com/MattCheramie/GopherTrunk/issues/874
 ---
 
 **Audio-pipeline tells** are the handful of concrete observations that localize a
