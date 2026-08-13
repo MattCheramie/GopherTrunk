@@ -260,6 +260,15 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			}
 			continue
 		}
+		// A conventional / direct-mode system (CampsWhenIdle) has no
+		// continuous control channel, so a hunt round that ends without a
+		// lock means the channel is idle — not a failure. Camp on it and
+		// re-dwell promptly instead of the WARN + KindHuntFailed +
+		// exponential backoff a trunked no-lock triggers. Issue #1036.
+		if rt.sys.Protocol.CampsWhenIdle() {
+			s.markCamped(name)
+			continue
+		}
 		s.markFailed(name)
 	}
 }
@@ -329,6 +338,32 @@ func (s *Supervisor) SetIQHealthProvider(p IQHealthProvider) {
 	s.mu.Lock()
 	s.iqHealth = p
 	s.mu.Unlock()
+}
+
+// markCamped records that a conventional / direct-mode system's hunt
+// round ended without a lock. Unlike markFailed this is not an error
+// condition — the channel is simply idle — so it keeps the backoff
+// window at its floor (the next round re-dwells promptly, camping on the
+// frequency to catch the next transmission) and publishes no
+// KindHuntFailed event. A single Info log fires only on the transition
+// into camped, so a quiet channel doesn't spam the log every round.
+// Issue #1036.
+func (s *Supervisor) markCamped(name string) {
+	s.mu.Lock()
+	rt := s.states[name]
+	if rt == nil {
+		s.mu.Unlock()
+		return
+	}
+	transitioned := rt.state != StateCamped
+	rt.state = StateCamped
+	rt.backoffWindow = s.initBO // never grow — camp, don't back off
+	s.mu.Unlock()
+
+	if transitioned {
+		s.log.Info("cchunt: camped on conventional channel — idle, waiting for traffic",
+			"system", name)
+	}
 }
 
 func (s *Supervisor) markFailed(name string) {

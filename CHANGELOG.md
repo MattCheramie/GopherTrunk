@@ -111,6 +111,19 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **Conventional DMR (IPSC) and other camp-on-idle systems no longer spam
+  "hunt failed" while simply idle.** A conventional DMR / IPSC repeater has no
+  continuous control channel — it sits silent between transmissions — but the
+  control-channel supervisor treated a dwell that ended without a lock as a
+  failure: it logged `cchunt: hunt failed — no control-channel lock`, published a
+  `cchunt.failed` event, and backed off exponentially (up to 60 s), so the
+  channel was often retuned away right when someone keyed up. Protocols that
+  legitimately camp on a fixed idle channel — conventional DMR (`dmr-tier2`),
+  DMR Tier I (`dmr-tier1`), and TETRA DMO (`tetra-dmo`) — now enter a new
+  **`camped`** hunt state instead: the supervisor keeps re-dwelling on the
+  frequency (no backoff, no failure event) so the decoder catches the next burst
+  and locks. Trunked systems (P25, DMR Tier III, TETRA TMO, …) are unchanged — an
+  idle hunt is still a real failure for them. (issue #1036)
 - **Conventional scanner recordings no longer run long or hang open on brief
   noise.** A `scanner.conventional` channel released a call only after `hangtime_ms`
   of continuous below-squelch silence, but the trailing-edge logic let a *single*
