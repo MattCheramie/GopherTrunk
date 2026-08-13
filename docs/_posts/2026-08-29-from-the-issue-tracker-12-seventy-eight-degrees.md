@@ -1,6 +1,6 @@
 ---
 title: "From the Issue Tracker, Part 12: Seventy-Eight Degrees — The Phase Angle That Named the Bug"
-description: An Airspy R2 that refused to open because its opcode table was systematically shifted, then opened and decoded nothing at all. One diagnostic triplet — EVM 22.7%, phase imbalance +78.1°, image rejection 3.3 dB — read as a sentence, named the bug: a real-sampling stream misread as interleaved I/Q.
+description: "An Airspy R2 that refused to open because its opcode table was systematically shifted, then opened and decoded nothing at all. One diagnostic triplet — EVM 22.7%, phase imbalance +78.1°, image rejection 3.3 dB — read as a sentence, named the bug: a real-sampling stream misread as interleaved I/Q."
 category: solution-postmortem
 keywords: airspy r2, opcode table, protocol error, real sampling, hilbert transform, iq imbalance, image rejection, evm, fs/4 translation, host-side conversion
 tags: [from-the-issue-tracker, airspy, usb, drivers, dsp, debugging, postmortem]
