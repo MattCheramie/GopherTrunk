@@ -50,6 +50,10 @@ func symbolProtoToReceiver(proto string) (trunking.Protocol, string, error) {
 	case "tetra":
 		// π/4-DQPSK; demod mode is unused by the TETRA receiver.
 		return trunking.ProtocolTETRA, "", nil
+	case "dmr":
+		// 4800-baud 4-level C4FM (same modulation as P25 Phase 1 C4FM);
+		// demod mode is unused by the DMR receiver.
+		return trunking.ProtocolDMR, "", nil
 	default:
 		return trunking.ProtocolUnknown, "", fmt.Errorf("symbol: unsupported proto %q", proto)
 	}
