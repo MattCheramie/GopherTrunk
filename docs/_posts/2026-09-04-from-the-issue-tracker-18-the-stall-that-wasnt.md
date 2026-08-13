@@ -175,7 +175,7 @@ control-channel survey tool with its own, more complete TSBK parsing. Pointed at
 the same site, it printed the full band plan almost immediately:
 
 ```
-420.08750 MHz  WACN BEE00  SYS 164
+420.08750 MHz  WACN BEE00  SYS 164  NAC 164
 RFSS / Site:  2 / 7
 Band plan:    16 entries
   iden 8:  base 467.51250 MHz, step 6.25 kHz, offset -10 MHz [FDMA]
@@ -183,8 +183,8 @@ Band plan:    16 entries
   ...
 ```
 
-(The survey prints identifiers in hex-adjacent site notation and the NAC as hex —
-its `164` is the daemon's `nac=356`.) Sixteen entries, and the pattern was the
+(The survey prints the NAC in hex — its `164` is the daemon's decimal `nac=356`.)
+Sixteen entries, and the pattern was the
 tell: eight FDMA idens — precisely the ones the daemon had been logging — and
 eight TDMA×2 twins (ids 0, 1, 5, 9, 10, 11, 12, 13) it had never once mentioned.
 Id 10 is the TDMA×2 twin of FDMA id 8: same 467.5125 MHz base, same −10 MHz
