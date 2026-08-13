@@ -8,6 +8,21 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **TETRA DMO (Direct Mode Operation) now decodes in the daemon.** A new
+  `protocol: tetra-dmo` (aliases `dmo` / `tetra_dmo`) camps a direct-mode
+  frequency, locks on the Direct Mode Synchronisation Burst (DSB), auto-recovers
+  the DM colour code, and decodes the Direct Mode Normal Burst (DNB) TCH/S speech
+  train to voice on the same carrier — no separate traffic channel. Previously a
+  DMO capture had to run through the TMO control-channel pipeline, whose burst
+  geometry does not match DMO, so it appeared to "lock" (the DSB SCH/S is
+  colour-0-scrambled like a TMO BSCH) but produced no grants and no audio. The
+  new pipeline reuses the offline-validated DMO decoders behind a bounded
+  streaming burst extractor. Configure with `protocol: tetra-dmo` +
+  `control_channels: [<freq>]` (optional `tetra_colour_code` overrides colour
+  recovery). The DM call-control protocol (EN 300 396-3 source/destination SSI,
+  group) is not yet decoded, so a DMO call records without a talkgroup identity
+  (filed under group `0`); and this path is validated offline/synthetically but
+  not yet A/B'd against a real on-air DMO capture (see docs/reference/tetra-dmo.md).
 - **HackRF Pro is now identified as such, and its narrowband filter is
   configurable.** GopherTrunk reads the firmware's board ID at open, so a HackRF
   Pro (board ID 5, *Praline*) now reports `HackRF Pro` — and a HackRF One R9
@@ -96,6 +111,12 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **The Plots signal-quality banner no longer reads like a bogus symbol rate.**
+  The banner's "N symbols" figure is the count of symbols in the rolling
+  signal-quality analysis window (capped at 4000), but sitting directly above the
+  constellation's "18000 sym/s" it looked like the symbol rate stuck at 4000. It
+  is now labelled "N sym analysed" with a tooltip clarifying it is the analysis
+  window, not the rate.
 - **TETRA radio IDs still leaked into recordings as phantom talkgroups when a
   group grant was missed.** On a same-carrier site a group call's first
   control-channel message is a source-less notification (`SourceID==0`, `dst=` the

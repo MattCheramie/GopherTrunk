@@ -241,29 +241,36 @@ confirmation before any close-as-completed.
     Pinned synthetic: `TestRecoverDMColourCode`. Reproduce:
     `GT_TETRA_DMO_IQ=<10aug .raw> GT_TETRA_DMO_RATE=144000 GT_TETRA_DMO_CLEAR=1
     go test ./cmd/gophertrunk -run TestTETRADMOReplay -v`.
-  - **Remaining: NO production DMO decode pipeline (C2, design-first, on-air A/B gates #1003).**
-    `internal/scanner/ccdecoder/pipelines.go` has one TETRA factory (`newTETRAPipeline`, the TMO
-    CC state machine); a DMO capture runs through it and every SCH burst fails because TMO NCDB
-    geometry (`-115/+19`) ≠ DMO DNB (`-108/+11`) — while BSCH still "locks" (DMO DSB SCH/S is
-    colour-0-scrambled like TMO BSCH), the operator's live symptom (`sch_pdus=0`, constant
-    `sync gap` / `dsp resync`). The `ExtractDMBursts*`/`DecodeDMSCHS/H`/`DMBurstTCHSpeech*`
-    decoders + `RecoverDMColourCode` now exist and are validated offline (`TestTETRADMOReplay`),
-    but are not wired into the daemon. Execution-ready plan:
-    1. **Register** `ProtocolTETRADMO` (`tetra-dmo`) in `internal/trunking/site.go` (enum,
-       `String()`, `ParseProtocol`, error strings) + a `factories` entry in `pipelines.go`.
-    2. **`newTETRADMOPipeline`** mirroring `newTETRAPipeline`'s receiver (`EnableEqualizer` +
-       `SoftSink` + AFC + channel filter), but buffering dibits/diffs and, on a cadence,
-       `ExtractDMBurstsSoft` (DNB `-108/+11`) → `DecodeDMSCHS` (sync → `KindCCLocked` + SYNC-PDU
-       FN-advance liveness) → `RecoverDMColourCode` (once, then lock) → `DMBurstTCHSpeechSoft`.
-       Needs DMO sync-gap/resync timing (TMO's `tetraResyncTimeout`/`tetraLockStaleTimeout` are
-       CC-cadence; DMO is bursty PTT — retune).
-    3. **Composer voice chain**: DMO voice rides the SAME carrier (no grant→tap split), so add a
-       `proto == "tetra-dmo"` branch in `internal/voice/composer/composer.go` (dispatch at
-       `runVoiceChain`, ~line 466) → a `runTETRADMOVoiceChain` that decodes DMO bursts → ACELP →
-       PCM to the recorder. This is the architectural piece (TMO uses the traffic extractor; DMO
-       is self-contained) and the main risk.
-    4. **On-air A/B** on the operator's capture through the full daemon (recording lands, audio
-       intelligible) before marking #1003 verified. A green offline decode ≠ on-air correct.
+  - **Production DMO decode pipeline is now WIRED (C2 done); only on-air A/B remains to close
+    #1003.** The offline decoders are now driven by a real daemon pipeline, so a DMO capture no
+    longer runs the wrong TMO CC path (the operator's `sch_pdus=0` / `sync gap` / `dsp resync`
+    symptom). What landed:
+    1. **`ProtocolTETRADMO` (`tetra-dmo`/`dmo`)** registered in `internal/trunking/site.go`
+       (enum, `String()`, `ParseProtocol`, `Validate`) + `internal/scanner/ccdecoder/ddc.go`
+       (`ddcTargetForProtocol` → 144 kHz) + the `factories` map in `pipelines.go`.
+    2. **`newTETRADMOPipeline`** (`internal/scanner/ccdecoder/pipelines_dmo.go`): the TMO
+       receiver knobs (`EnableEqualizer` blind CMA + `SoftSink` + AFC + channel filter) feeding a
+       new **`tetra.DMStreamExtractor`** (`internal/radio/tetra/dmo_stream.go`) — a bounded
+       sliding-window streaming adapter over the stateless `ExtractDMBurstsSoft` (emits each DSB/
+       DNB once, in lead order, deduped). Decodes `DecodeDMSCHS` → **sticky** `KindCCLocked`
+       (no cc.lost on inter-PTT silence, so a camped DMO channel isn't re-hunted) + SYNC-PDU FN
+       liveness, `RecoverDMColourCode` once, and an **edge-triggered** `tetra-dmo` `KindGrant`
+       on a DNB traffic train (re-armed after a `dmoGrantRearm` drought).
+    3. **`runTETRADMOVoiceChain`** (`internal/voice/composer/tetra_dmo_voice.go`): a
+       self-contained same-carrier chain (one same-carrier tap — `sameCarrierVoiceTaps` in
+       `daemon.go`) that re-runs the extractor → `DMBurstTCHSpeechSoft` (recovers the colour
+       independently, since the grant fires before the pipeline's recovery, decoding its buffer
+       retroactively so no leading speech is lost) → ACELP (`tetra-dmo`→`tetra-acelp` in
+       `recorder.go`). Dispatched from `composer.handleStart` on `proto == "tetra-dmo"`.
+    - Pinned by `pipelines_dmo_test.go` (modulated-IQ lock+colour-3+grant), `dmo_stream_test.go`
+      (chunk-invariance + soft decode), `tetra_dmo_voice_test.go` (colour recovery + retroactive
+      emit), and `integration_cc_tetra_dmo_test.go` (full-daemon lock, `make integration`).
+    4. **STILL OPEN — on-air A/B (the #1003 gate).** A green synthetic/offline decode ≠ on-air
+      correct (#764/#771): the operator must replay a clear 438.9 MHz DMO capture through the
+      full daemon (`protocol: tetra-dmo`) and confirm a recording lands with intelligible audio.
+      Watch on air: the DMO grant carries **no talkgroup** (`GroupID 0`, EN 300 396-3 call-control
+      not decoded), so recordings file under group `0`; and colour recovery needs ~20 DNBs, so a
+      very short first PTT may grant before the colour is known (the voice chain re-recovers it).
 - **Conventional DMR (Tier II / IPSC) now decodes a repeater's TWO timeslots as two calls.**
   A base-station DMR repeater carries TS1 and TS2 interleaved on one carrier, each able to hold
   a separate simultaneous talkgroup. The conventional path (`internal/radio/dmr/tier2`) used to

@@ -82,25 +82,48 @@ SCH/F short-data signalling — a receiver tells them apart by which decode's CR
 block boundaries relative to the training-sequence lead dibit are *not* the same as TMO's NDB,
 so DMO needs its own slicer.
 
+## Configuring a DMO system
+
+A DMO channel is decoded by setting a system's `protocol: tetra-dmo` (aliases `dmo` /
+`tetra_dmo`) and pointing `control_channels` at the direct-mode frequency — the daemon *camps*
+that frequency rather than hunting, locks on the first DSB, auto-recovers the DM colour code,
+and records the DNB voice train. An optional `tetra_colour_code` overrides the auto-recovery
+when the traffic colour is known.
+
+```yaml
+trunking:
+  systems:
+    - name: DMO
+      protocol: tetra-dmo
+      control_channels: [438900000]
+      # tetra_colour_code: 3   # optional; 0/omitted = auto-recover the DM colour
+```
+
 ## Scope and honesty
 
-GopherTrunk's DMO support is burst detection and block slicing plus the reused channel decode:
-it turns a demodulated DMO dibit stream into per-burst BKN1/BKN2 type-5 blocks and, for a DNB,
-decodes TCH/S speech both hard- and soft-decision (the same ~2× same-carrier yield lever the
-TMO traffic path gets). The DM call-control *protocol* that rides in SCH/S / SCH/F — source
-and destination SSI, group, call type — is EN 300 396-3, a separate specification, and is not
-yet wired. Nothing here has been validated against a real DMO capture, which is a prerequisite
-before DMO voice can be attributed and recorded, per the standing lesson that synthetic
-round-trips can pass while on-air decode fails.
+GopherTrunk decodes DMO end to end in the daemon: `newTETRADMOPipeline`
+(`internal/scanner/ccdecoder/pipelines_dmo.go`) locks on the DSB SCH/S, recovers the DM colour
+code, and grants; a same-carrier voice chain (`runTETRADMOVoiceChain`,
+`internal/voice/composer/tetra_dmo_voice.go`) decodes the DNB TCH/S speech — both hard- and
+soft-decision (the same ~2× yield lever the TMO traffic path gets) — through the clean-room
+ACELP vocoder to a recording. The DM call-control *protocol* that rides in SCH/S / SCH/F —
+source and destination SSI, group, call type — is EN 300 396-3, a separate specification, and
+is **not** yet decoded, so a DMO call is recorded without a talkgroup/party identity (it files
+under group `0`). And while the decode chain is validated offline (synthetic round-trips +
+`TestTETRADMOReplay` on captures) and with a synthetic full-daemon lock test, it has **not**
+yet been A/B'd against a real on-air DMO capture through the full daemon — the standing lesson
+(#764/#771) is that synthetic round-trips can pass while on-air decode fails, so treat DMO
+voice as functional-but-unverified-on-air until that A/B lands.
 
 ## Relevance to SDR
 
 `internal/radio/tetra/dmo.go` defines the `DMBurstKind` (DSB/DNB), the burst geometry, and the
 `ExtractDMBursts` / `ExtractDMBurstsSoft` slicers that correlate the training sequences under
-all four residual π/4-DQPSK rotations. `dmo_decode.go` maps the sliced blocks onto the shared
+all four residual π/4-DQPSK rotations; `dmo_stream.go` wraps them in a bounded sliding-window
+`DMStreamExtractor` for the live daemon. `dmo_decode.go` maps the sliced blocks onto the shared
 decoders — `DecodeDMSCHS` (via the BSCH chain), `DecodeDMSCHH` (via SCH/HD), `DecodeDMSCHF`,
 and `DMBurstTCHSpeech` / `DMBurstTCHSpeechSoft` (via the TCH/S chain) — de-rotating and
-descrambling with the DM colour code before each decode.
+descrambling with the DM colour code (recovered by `RecoverDMColourCode`) before each decode.
 
 ## Sources
 
