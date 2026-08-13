@@ -6,11 +6,9 @@
 package storage
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -33,12 +31,8 @@ type PagerMessage struct {
 // PagerLog drains KindPagerMessage off the bus and writes one row
 // per page. Mirrors LocationLog's Run/Close lifecycle.
 type PagerLog struct {
-	db        *DB
-	bus       *events.Bus
-	log       *slog.Logger
-	sub       *events.Subscription
-	runDone   chan struct{}
-	closeOnce sync.Once
+	*eventLog[PagerMessage]
+	db *DB
 }
 
 // NewPagerLog wires the log to the bus. The bus subscription happens
@@ -48,41 +42,13 @@ func NewPagerLog(db *DB, bus *events.Bus, logger *slog.Logger) (*PagerLog, error
 	if db == nil {
 		return nil, errors.New("storage/pagerlog: DB is required")
 	}
-	if bus == nil {
-		return nil, errors.New("storage/pagerlog: events.Bus is required")
+	p := &PagerLog{db: db}
+	el, err := newEventLog[PagerMessage](bus, logger, events.KindPagerMessage, "pagerlog", p.insert)
+	if err != nil {
+		return nil, err
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	p := &PagerLog{db: db, bus: bus, log: logger, runDone: make(chan struct{})}
-	p.sub = bus.Subscribe()
+	p.eventLog = el
 	return p, nil
-}
-
-// Run drains KindPagerMessage events until ctx cancels or the bus
-// closes.
-func (p *PagerLog) Run(ctx context.Context) error {
-	defer close(p.runDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case ev, ok := <-p.sub.C:
-			if !ok {
-				return nil
-			}
-			if ev.Kind != events.KindPagerMessage {
-				continue
-			}
-			msg, ok := ev.Payload.(PagerMessage)
-			if !ok {
-				continue
-			}
-			if err := p.insert(msg); err != nil {
-				p.log.Error("pagerlog: insert failed", "err", err)
-			}
-		}
-	}
 }
 
 func (p *PagerLog) insert(m PagerMessage) error {
@@ -133,16 +99,4 @@ func (p *PagerLog) Recent(limit int) ([]PagerMessage, error) {
 		out = append(out, m)
 	}
 	return out, rows.Err()
-}
-
-// Close releases the bus subscription and waits for Run to drain.
-func (p *PagerLog) Close() error {
-	p.closeOnce.Do(func() {
-		p.sub.Close()
-		select {
-		case <-p.runDone:
-		case <-time.After(time.Second):
-		}
-	})
-	return nil
 }

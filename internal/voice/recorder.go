@@ -364,9 +364,10 @@ func DefaultVocoderForProtocol() map[string]string {
 		// through the 3600x2450 decoder, not the 3600x2400 "ambe2".
 		// (Unverified on air — the 2450-vs-2400 codebook is one of the
 		// things an NXDN voice capture confirms; see voice_ambe.go.)
-		"nxdn":  "ambe2-dmr",   // NXDN VCH — AMBE+2 3600x2450 (EHR)
-		"dpmr":  "ambe2",       // dPMR Mode 3 (digital)
-		"tetra": "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
+		"nxdn":      "ambe2-dmr",   // NXDN VCH — AMBE+2 3600x2450 (EHR)
+		"dpmr":      "ambe2",       // dPMR Mode 3 (digital)
+		"tetra":     "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
+		"tetra-dmo": "tetra-acelp", // TETRA DMO (Direct Mode) — same TCH/S ACELP speech frames
 	}
 }
 
@@ -618,10 +619,17 @@ func (r *Recorder) WritePCM(deviceSerial string, samples []int16) error {
 	if s == nil {
 		return nil
 	}
+	// Take the session lock for the file write so a frame in flight on this
+	// chain goroutine cannot race the Run goroutine finalizing/closing the
+	// session (see recordingSession.mu). A write that arrives after close is
+	// dropped rather than hitting a closed WAV.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	// Decode-only sessions never open a WAV. Analog PCM still reaches the live
 	// stream via the composer's direct audioPub fanout, so there is nothing to
-	// do here but drop it.
-	if s.wav == nil {
+	// do here but drop it. A closed session (finalized while this frame was in
+	// flight) also drops.
+	if s.closed || s.wav == nil {
 		return nil
 	}
 	return s.wav.WriteSamples(samples)
@@ -725,12 +733,27 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 	if s == nil {
 		return nil
 	}
+
+	// First critical section: the .raw sidecar write and the fields the raw
+	// tap reads, under s.mu so a frame in flight on this chain goroutine can't
+	// race the Run goroutine closing the session (see recordingSession.mu). A
+	// frame arriving after close is dropped rather than hitting a closed file.
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
 	s.rawFrames++
 	if s.raw != nil {
 		if _, err := s.raw.Write(frame); err != nil {
+			s.mu.Unlock()
 			return err
 		}
 	}
+	sessCallID := s.callID
+	vocName := s.vocoderName
+	s.mu.Unlock()
+
 	// Fan the verbatim raw frame to the live raw tap (the gRPC audio
 	// publisher's include_raw subscribers) before any decode. Fires for
 	// every protocol with an open session — including ProVoice / encrypted
@@ -739,62 +762,72 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 	// sink so the live raw stream is fenced by the same identity the WAV and
 	// decoded tap use, closing the cross-call bleed window on a reused tap
 	// serial (the frame already passed sessionForWrite's CallID check, so
-	// s.callID is authoritative for this audio).
+	// s.callID is authoritative for this audio). Runs outside s.mu so the tap
+	// is free to take its own locks.
 	if r.rawTap != nil {
 		if cs, ok := r.rawTap.(RawFrameCallSink); ok {
-			_ = cs.WriteRawFrameForCall(deviceSerial, s.callID, s.vocoderName, frame)
+			_ = cs.WriteRawFrameForCall(deviceSerial, sessCallID, vocName, frame)
 		} else {
-			_ = r.rawTap.WriteRawFrame(deviceSerial, s.vocoderName, frame)
+			_ = r.rawTap.WriteRawFrame(deviceSerial, vocName, frame)
 		}
 	}
-	if s.vocoder != nil {
-		if haveErrs {
-			if ea, ok := s.vocoder.(ErrorAware); ok {
-				ea.SetFrameErrors(correctedBits)
-			}
+
+	// Second critical section: vocoder decode + WAV write + decoded-PCM stats,
+	// again under s.mu. A dropped-decode or closed session returns before the
+	// live decoded fan-out below.
+	s.mu.Lock()
+	if s.closed || s.vocoder == nil {
+		s.mu.Unlock()
+		return nil
+	}
+	if haveErrs {
+		if ea, ok := s.vocoder.(ErrorAware); ok {
+			ea.SetFrameErrors(correctedBits)
 		}
-		samples, err := s.vocoder.Decode(frame)
-		if err != nil {
-			// Rate-limit: log the first drop and then only at power-of-two
-			// milestones. A garbled call can reject many frames in a row, and at
-			// debug level a per-frame Warn buried the log (the operator's DMR
-			// spam report). The exact drop total is carried in the milestone line.
-			s.vocoderDrops++
-			if isPowerOfTwo(s.vocoderDrops) {
-				r.log.Debug("recorder: vocoder decode failed; dropping frame(s) from PCM",
-					"device", deviceSerial, "vocoder", s.vocoder.Name(),
-					"drops", s.vocoderDrops, "err", err)
-			}
-			return nil
+	}
+	samples, err := s.vocoder.Decode(frame)
+	if err != nil {
+		// Rate-limit: log the first drop and then only at power-of-two
+		// milestones. A garbled call can reject many frames in a row, and at
+		// debug level a per-frame Warn buried the log (the operator's DMR
+		// spam report). The exact drop total is carried in the milestone line.
+		s.vocoderDrops++
+		drops := s.vocoderDrops
+		s.mu.Unlock()
+		if isPowerOfTwo(drops) {
+			r.log.Debug("recorder: vocoder decode failed; dropping frame(s) from PCM",
+				"device", deviceSerial, "vocoder", vocName,
+				"drops", drops, "err", err)
 		}
-		if n := len(samples); n > 0 {
-			s.lastSample = samples[n-1]
+		return nil
+	}
+	if n := len(samples); n > 0 {
+		s.lastSample = samples[n-1]
+	}
+	// Decode-only sessions have no WAV — skip the file write but still fan
+	// the decoded PCM to the live tap below so browser audio works without
+	// a recordings directory.
+	if s.wav != nil {
+		if err := s.wav.WriteSamples(samples); err != nil {
+			s.mu.Unlock()
+			return err
 		}
-		// Decode-only sessions have no WAV — skip the file write but still fan
-		// the decoded PCM to the live tap below so browser audio works without
-		// a recordings directory.
-		if s.wav != nil {
-			if err := s.wav.WriteSamples(samples); err != nil {
-				return err
-			}
-		}
-		// Fan the freshly-decoded PCM to the live consumers (web
-		// stream, host player, tone-out). For digital protocols this
-		// is the only point where PCM exists — the composer never
-		// calls WritePCM for them — so without this the live audio
-		// path is silent while recordings play fine (issue #598). Runs
-		// outside r.mu (sessionForWrite released it), so the tap is
-		// free to take its own locks. Hand the session's CallID to a
-		// call-aware sink so the live stream is fenced by the same identity
-		// the WAV used — closing the cross-call bleed window when a tap
-		// serial is reused (the samples already passed sessionForWrite's
-		// CallID check, so s.callID is authoritative for this audio).
-		if r.decodedTap != nil {
-			if cs, ok := r.decodedTap.(DecodedPCMCallSink); ok {
-				_ = cs.WritePCMForCall(deviceSerial, s.callID, samples)
-			} else {
-				_ = r.decodedTap.WritePCM(deviceSerial, samples)
-			}
+	}
+	s.mu.Unlock()
+
+	// Fan the freshly-decoded PCM to the live consumers (web stream, host
+	// player, tone-out). For digital protocols this is the only point where
+	// PCM exists — the composer never calls WritePCM for them — so without
+	// this the live audio path is silent while recordings play fine (issue
+	// #598). Runs outside s.mu so the tap is free to take its own locks. Hand
+	// the session's CallID to a call-aware sink so the live stream is fenced
+	// by the same identity the WAV used — closing the cross-call bleed window
+	// when a tap serial is reused.
+	if r.decodedTap != nil {
+		if cs, ok := r.decodedTap.(DecodedPCMCallSink); ok {
+			_ = cs.WritePCMForCall(deviceSerial, sessCallID, samples)
+		} else {
+			_ = r.decodedTap.WritePCM(deviceSerial, samples)
 		}
 	}
 	return nil
@@ -1137,11 +1170,18 @@ func (r *Recorder) normalizeIfEnabled(wavPath string) {
 // (both nil when the recording is discarded). The caller writes the JSON and
 // publishes after releasing r.mu.
 func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt time.Time, reason trunking.EndReason) (*trunking.CallComplete, *callMeta) {
+	// Hold the session lock across the tail-fade write and close so a frame
+	// still draining on a composer chain goroutine can't race this finalize
+	// (see recordingSession.mu). The caller already holds r.mu, so the order is
+	// r.mu ⊃ s.mu — writers take only s.mu, so there is no cycle. close() would
+	// re-lock s.mu, so the two close paths here use closeLocked().
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	// Callers only reach here with an open WAV (handleEnd/handleSegment guard on
 	// s.wav != nil); a decode-only session has no file to finalize. Guard anyway
 	// so a future caller can't panic on the nil writer.
 	if s.wav == nil {
-		_ = s.close()
+		_ = s.closeLocked()
 		return nil, nil
 	}
 	dataBytes := s.wav.DataBytes()
@@ -1202,7 +1242,7 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 			}
 		}
 	}
-	if err := s.close(); err != nil {
+	if err := s.closeLocked(); err != nil {
 		r.log.Error("recorder: close session", "err", err)
 	}
 	// A vocoder-decoded call that produced no real speech (every frame was
@@ -1755,9 +1795,40 @@ type recordingSession struct {
 	// srcList / freqList in the .json sidecar at finalize.
 	srcs  []srcEvent
 	freqs []freqEvent
+
+	// mu guards the session's file writers (wav, raw), vocoder and the
+	// per-session counters/lastSample against the write-after-close race: the
+	// composer voice chains call WritePCM/WriteRawFrame* on their own
+	// goroutines (sessionForWrite releases r.mu before they touch these
+	// fields), while the recorder's Run goroutine finalizes and closes the
+	// session. r.mu only guards the sessions map, not the per-session writers,
+	// so without this a late frame could write to a WAV the finalizer is
+	// closing. Lock order is r.mu ⊃ s.mu: the Run side takes r.mu then s.mu
+	// (finalizeLocked / close), writers take only s.mu, so there is no cycle.
+	// This makes the recorder race-free without depending on the opt-in
+	// EnableDrainCoordination ordering.
+	mu     sync.Mutex
+	closed bool
 }
 
+// close closes the session's outputs; safe to call from any goroutine and
+// idempotent. It takes the session lock so it cannot interleave with a
+// concurrent chain-goroutine write. finalizeLocked, which already holds the
+// lock, calls closeLocked instead.
 func (s *recordingSession) close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closeLocked()
+}
+
+// closeLocked is close with s.mu already held. After it returns, closed is set
+// so any later write from a still-draining chain is dropped rather than hitting
+// a closed file.
+func (s *recordingSession) closeLocked() error {
+	if s.closed {
+		return nil
+	}
+	s.closed = true
 	var firstErr error
 	if s.vocoder != nil {
 		if err := s.vocoder.Close(); err != nil {

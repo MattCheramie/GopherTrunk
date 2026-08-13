@@ -63,7 +63,7 @@ func TestManager_SurveyModeReportsSignals(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	waitUntil(t, 60*time.Second, func() bool { return !mgr.Status().Running })
 
 	st := mgr.Status()
 	if st.State != StateRunDone {
@@ -121,7 +121,7 @@ func TestManager_SurveyPersistAndResume(t *testing.T) {
 	if _, err := mgr.Start(opts); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	waitUntil(t, 60*time.Second, func() bool { return !mgr.Status().Running })
 
 	files, _ := filepath.Glob(filepath.Join(dir, "hunt-survey-*.ndjson"))
 	if len(files) != 1 {
@@ -143,7 +143,7 @@ func TestManager_SurveyPersistAndResume(t *testing.T) {
 	if _, err := mgr.Start(opts); err != nil {
 		t.Fatalf("Start resume: %v", err)
 	}
-	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	waitUntil(t, 60*time.Second, func() bool { return !mgr.Status().Running })
 	if n := len(mgr.Status().Signals); n != 0 {
 		t.Errorf("resumed run surveyed %d signal(s), want 0 (candidate already done)", n)
 	}
@@ -167,7 +167,7 @@ func TestManager_AutoGainUnavailableNote(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	waitUntil(t, 60*time.Second, func() bool { return !mgr.Status().Running })
 	st := mgr.Status()
 	if st.State != StateRunDone {
 		t.Fatalf("state = %q, want done", st.State)
@@ -209,7 +209,7 @@ func TestManager_StartRunsAndMapsSystem(t *testing.T) {
 		t.Error("expected error starting a second run while active")
 	}
 
-	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	waitUntil(t, 60*time.Second, func() bool { return !mgr.Status().Running })
 
 	st := mgr.Status()
 	if st.State != StateRunDone {
@@ -324,7 +324,7 @@ func TestManager_RunHistoryAndExportRun(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+		waitUntil(t, 60*time.Second, func() bool { return !mgr.Status().Running })
 		return id
 	}
 

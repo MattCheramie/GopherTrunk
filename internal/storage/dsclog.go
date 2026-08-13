@@ -4,11 +4,9 @@
 package storage
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -38,12 +36,8 @@ type DSCMessage struct {
 // DSCLog drains KindDSCMessage events until ctx cancels or the bus
 // closes.
 type DSCLog struct {
-	db        *DB
-	bus       *events.Bus
-	log       *slog.Logger
-	sub       *events.Subscription
-	runDone   chan struct{}
-	closeOnce sync.Once
+	*eventLog[DSCMessage]
+	db *DB
 }
 
 // NewDSCLog wires the log to the bus. Subscription happens at
@@ -52,41 +46,13 @@ func NewDSCLog(db *DB, bus *events.Bus, logger *slog.Logger) (*DSCLog, error) {
 	if db == nil {
 		return nil, errors.New("storage/dsclog: DB is required")
 	}
-	if bus == nil {
-		return nil, errors.New("storage/dsclog: events.Bus is required")
+	d := &DSCLog{db: db}
+	el, err := newEventLog[DSCMessage](bus, logger, events.KindDSCMessage, "dsclog", d.insert)
+	if err != nil {
+		return nil, err
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	d := &DSCLog{db: db, bus: bus, log: logger, runDone: make(chan struct{})}
-	d.sub = bus.Subscribe()
+	d.eventLog = el
 	return d, nil
-}
-
-// Run drains KindDSCMessage events until ctx cancels or the bus
-// closes.
-func (d *DSCLog) Run(ctx context.Context) error {
-	defer close(d.runDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case ev, ok := <-d.sub.C:
-			if !ok {
-				return nil
-			}
-			if ev.Kind != events.KindDSCMessage {
-				continue
-			}
-			m, ok := ev.Payload.(DSCMessage)
-			if !ok {
-				continue
-			}
-			if err := d.insert(m); err != nil {
-				d.log.Error("dsclog: insert failed", "err", err)
-			}
-		}
-	}
 }
 
 func (d *DSCLog) insert(m DSCMessage) error {
@@ -146,16 +112,4 @@ func (d *DSCLog) Recent(limit int) ([]DSCMessage, error) {
 		out = append(out, m)
 	}
 	return out, rows.Err()
-}
-
-// Close releases the bus subscription and waits for Run to drain.
-func (d *DSCLog) Close() error {
-	d.closeOnce.Do(func() {
-		d.sub.Close()
-		select {
-		case <-d.runDone:
-		case <-time.After(time.Second):
-		}
-	})
-	return nil
 }
