@@ -16,7 +16,7 @@ func TestEnhanceAmplitudesSilentNoOp(t *testing.T) {
 		M[l] = float64(l) * 0.1
 	}
 	want := M
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 	if M != want {
 		t.Errorf("Silent: M mutated; got %v want %v", M, want)
 	}
@@ -30,7 +30,7 @@ func TestEnhanceAmplitudesZeroLNoOp(t *testing.T) {
 		M[l] = 1.0
 	}
 	want := M
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 	if M != want {
 		t.Errorf("L=0: M mutated; got %v want %v", M, want)
 	}
@@ -43,7 +43,7 @@ func TestEnhanceAmplitudesAllZeroNoOp(t *testing.T) {
 	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	want := M
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 	if M != want {
 		t.Errorf("All-zero M: mutated; got %v want %v", M, want)
 	}
@@ -73,7 +73,7 @@ func TestEnhanceAmplitudesEnergyPreserved(t *testing.T) {
 	M[12] = 0.7
 	rm0Before := FrameEnergy(&M, p.L)
 
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 	rm0After := FrameEnergy(&M, p.L)
 
 	if math.Abs(rm0Before-rm0After) > 1e-9 {
@@ -95,7 +95,7 @@ func TestEnhanceAmplitudesUniformBoundedAndNonzero(t *testing.T) {
 		M[l] = 1.0
 	}
 
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 
 	for l := 1; l <= p.L; l++ {
 		if M[l] <= 0 {
@@ -125,7 +125,7 @@ func TestEnhanceAmplitudesLowBandUntouchedBeforeRescale(t *testing.T) {
 	M[1] = 0.7
 	M[2] = 0.3
 
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 
 	// Ratio M[1] / M[2] should still be 0.7 / 0.3 since both got
 	// the same global rescale and no per-harmonic weight (W = 1 for
@@ -149,7 +149,7 @@ func TestEnhanceAmplitudesPreservesMidbandHarmonicCount(t *testing.T) {
 	for l := 1; l <= p.L; l++ {
 		M[l] = math.Pow(2, -float64(l)/3) // M[1]=0.79, M[22]=6e-3
 	}
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 	for l := 1; l <= p.L; l++ {
 		if M[l] <= 0 {
 			t.Errorf("M[%d] = %v after enhancement; should stay positive",
@@ -174,7 +174,7 @@ func TestEnhanceWMinMaxBound(t *testing.T) {
 	}
 	rm0Before := FrameEnergy(&M, p.L)
 
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 
 	rm0After := FrameEnergy(&M, p.L)
 	if math.Abs(rm0Before-rm0After) > 1e-6 {
@@ -206,7 +206,7 @@ func TestEnhanceAmplitudesAtOrPastClampHigh(t *testing.T) {
 		var orig [57]float64
 		copy(orig[:], M[:])
 
-		EnhanceAmplitudes(p, &M)
+		EnhanceAmplitudes(p, &M, false)
 
 		// Each harmonic ratio M[l] / M_orig[l] is W_l × global_scale.
 		// The largest and smallest ratios across l differ by at most
@@ -262,7 +262,7 @@ func TestEnhanceClosedFormSmallCase(t *testing.T) {
 	M[3] = 1.0
 	M[4] = 0.5
 
-	EnhanceAmplitudes(p, &M)
+	EnhanceAmplitudes(p, &M, false)
 
 	// W₁ and W₃ should be identical (same closed-form inputs).
 	r1 := M[1] / 1.0
@@ -285,5 +285,56 @@ func TestEnhanceClosedFormSmallCase(t *testing.T) {
 	if r2 >= r1 || r2 >= r4 {
 		t.Errorf("W₂ should be smallest (clamped): r1=%v r2=%v r4=%v",
 			r1, r2, r4)
+	}
+}
+
+// TestEnhanceSpecFaithfulLiftsHighBand pins the §6.2 fix: the spec-faithful
+// form (π/ω₀ restored) lifts the high-band harmonic weight off the attenuate
+// clamp where the legacy factor-less form leaves it. For a low ω₀ (a
+// higher-pitched voice with many harmonics in the 8·l > L band) the π/ω₀
+// multiplier is large, so the divergence is pronounced.
+//
+// Trick: a low-band harmonic (l where 8·l ≤ L) keeps W = 1 and only gets the
+// global energy rescale, so the ratio M[high]/M[low] equals W_high exactly —
+// the global scale cancels — letting the test read the effective high-band
+// weight directly from the two decode passes.
+func TestEnhanceSpecFaithfulLiftsHighBand(t *testing.T) {
+	// L = 16, ω₀ = π/30 ≈ 0.105 rad ⇒ π/ω₀ ≈ 30. l=1 is low band (8·1 ≤ 16);
+	// l=16 is deep in the enhancement band (8·16 > 16).
+	newFrame := func() (Params, [57]float64) {
+		p := Params{Header: Header{W0: math.Pi / 30, L: 16}}
+		var M [57]float64
+		for l := 1; l <= p.L; l++ {
+			M[l] = 1.0
+		}
+		return p, M
+	}
+
+	pLegacy, mLegacy := newFrame()
+	EnhanceAmplitudes(pLegacy, &mLegacy, false)
+	wLegacy := mLegacy[16] / mLegacy[1] // W_16 under the legacy formula
+
+	pSpec, mSpec := newFrame()
+	EnhanceAmplitudes(pSpec, &mSpec, true)
+	wSpec := mSpec[16] / mSpec[1] // W_16 under the spec-faithful formula
+
+	// The legacy form attenuates the high band (W < 1, near the 0.5 floor);
+	// the spec-faithful form boosts it (W > 1, toward the 1.2 ceiling).
+	if wLegacy >= 1.0 {
+		t.Errorf("legacy high-band weight W₁₆=%.4f; expected attenuation (<1)", wLegacy)
+	}
+	if wSpec <= wLegacy {
+		t.Errorf("spec-faithful did not lift the high band: legacy=%.4f spec=%.4f",
+			wLegacy, wSpec)
+	}
+	if wSpec <= 1.0 {
+		t.Errorf("spec-faithful high-band weight W₁₆=%.4f; expected boost (>1)", wSpec)
+	}
+	// Energy preservation must hold for both forms.
+	for _, m := range [][57]float64{mLegacy, mSpec} {
+		mm := m
+		if got := FrameEnergy(&mm, 16); math.Abs(got-16.0) > 1e-6 {
+			t.Errorf("energy not preserved: got %.6f want 16", got)
+		}
 	}
 }

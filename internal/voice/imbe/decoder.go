@@ -169,6 +169,13 @@ type Decoder struct {
 	// across frames, reset only on stream re-sync via Reset.
 	enhancer *mbe.VoiceEnhancer
 
+	// specAmplitude selects the spec-faithful §6.2 spectral-amplitude
+	// enhancement (restores the π/ω₀ factor). false (the default) keeps the
+	// legacy factor-less form so raw-decoder unit-test goldens stay
+	// byte-identical; the recorder enables it per call (SetSpecAmplitudeEnhance)
+	// so the live/recording path gets the corrected envelope by default.
+	specAmplitude bool
+
 	// smoother holds the IMBE adaptive-smoothing memory (running channel
 	// error rate + local energy). frameErrs is the FEC corrected-bit count
 	// for the next Decode, supplied via SetFrameErrors (voice.ErrorAware);
@@ -549,7 +556,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 
 	var M [mbe.MaxL + 1]float64
 	mbe.AmplitudesFromLog2Ml(&log2M, m.L, &M)
-	mbe.EnhanceAmplitudes(m, &M)
+	mbe.EnhanceAmplitudes(m, &M, d.specAmplitude)
 
 	// IMBE adaptive smoothing: on a degraded channel, cap error-induced
 	// amplitude spikes and reclaim obviously-voiced harmonics (modifies M and
@@ -689,6 +696,14 @@ func (d *Decoder) SetVoiceEnhancer(cfg mbe.EnhancerConfig) {
 		d.agc.SetTargetPeak(cfg.WithDefaults().AGCTarget)
 	}
 }
+
+// SetSpecAmplitudeEnhance selects the spec-faithful §6.2 spectral-amplitude
+// enhancement (true restores the π/ω₀ factor per TIA-102.BABA §6.2 / mbelib;
+// false is the legacy factor-less form). The raw decoder defaults to false so
+// unit-test goldens stay byte-identical; the recorder calls this with true per
+// call (unless recordings.spec_amplitude_enhance is disabled). Call once after
+// construction, before decoding; implements voice.SpecAmplitudeConfigurable.
+func (d *Decoder) SetSpecAmplitudeEnhance(on bool) { d.specAmplitude = on }
 
 // accumStats folds the just-applied frame's AGC telemetry and output
 // samples into the per-call stats. Call immediately after agc.Apply on

@@ -40,6 +40,17 @@ type StartupSquelchable interface {
 	EnableStartupSquelch()
 }
 
+// SpecAmplitudeConfigurable is the optional interface a software MBE-family
+// vocoder implements to accept the spec-faithful §6.2 spectral-amplitude
+// enhancement toggle (recordings.spec_amplitude_enhance). The recorder sets it
+// on every decoded call so BOTH the recorded WAV and the live fan-out get the
+// corrected envelope by default; the raw decoders leave it off so unit-test
+// goldens stay byte-identical. The imbe (P25) and ambe2 (DMR/NXDN) decoders
+// implement it; a hardware backend that doesn't simply decodes unchanged.
+type SpecAmplitudeConfigurable interface {
+	SetSpecAmplitudeEnhance(on bool)
+}
+
 // Recorder writes per-call audio + raw-frame files. It subscribes to
 // events.KindCallStart and events.KindCallEnd from the trunking engine,
 // opens a WAV (and optional raw-frame sidecar) for each new call, and
@@ -110,6 +121,13 @@ type Recorder struct {
 	// fresh vocoder), which is the live-edit granularity for this feature.
 	enhanceMu sync.RWMutex
 	enhance   mbe.EnhancerConfig
+
+	// specAmplitude enables the spec-faithful §6.2 spectral-amplitude
+	// enhancement (recordings.spec_amplitude_enhance) on every decoded call.
+	// Set once at construction from RecorderOptions; read in buildSession. It
+	// defaults ON so production DMR + P25 audio gets the corrected envelope
+	// out of the box (the raw decoders stay legacy for test byte-identity).
+	specAmplitude bool
 
 	mu       sync.Mutex
 	sessions map[string]*recordingSession // by device serial
@@ -303,6 +321,13 @@ type RecorderOptions struct {
 	// vocoder. Disabled by default (faithful, byte-identical output).
 	Enhance mbe.EnhancerConfig
 
+	// SpecAmplitudeEnhance enables the spec-faithful §6.2 spectral-amplitude
+	// enhancement (restores the π/ω₀ factor per TIA-102.BABA §6.2 / mbelib)
+	// on every decoded call. The daemon resolves recordings.spec_amplitude_enhance
+	// (tri-state, defaults ON) into this bool. Off by default at the struct
+	// level so recorder callers that don't set it (unit tests) stay legacy.
+	SpecAmplitudeEnhance bool
+
 	// VocoderForProtocol maps a Grant.Protocol value to a vocoder
 	// registry name used to decode raw frames into PCM that's
 	// written to the call's WAV. nil means "use the package
@@ -435,6 +460,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		writeCallJSON:      opts.WriteCallJSON,
 		normalize:          opts.Normalize,
 		enhance:            opts.Enhance,
+		specAmplitude:      opts.SpecAmplitudeEnhance,
 		vocoderForProtocol: vocoderMap,
 		displayLoc:         loc,
 		filenameTmpl:       opts.FilenameTemplate,
@@ -999,6 +1025,12 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 			// SetVoiceEnhance take effect on the next call.
 			if enh, ok := v.(VoiceEnhanceable); ok {
 				enh.SetVoiceEnhancer(r.VoiceEnhance())
+			}
+			// Enable the spec-faithful §6.2 spectral-amplitude enhancement on
+			// the live/recording path (default ON; the raw decoder leaves it
+			// off so unit tests are unaffected).
+			if sa, ok := v.(SpecAmplitudeConfigurable); ok {
+				sa.SetSpecAmplitudeEnhance(r.specAmplitude)
 			}
 			// Suppress the receiver-acquisition "startup scratch" on the
 			// recording/live path (opt-in on the vocoder; off in the raw

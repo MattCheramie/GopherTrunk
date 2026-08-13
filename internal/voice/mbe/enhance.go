@@ -57,13 +57,27 @@ const (
 //	    den = R_M0 · (R_M0² − R_M1²)
 //	    if den ≤ 0:    W_l = 1.0          (degenerate frame: skip)
 //	    else:
-//	        ξ = 0.96 · num / den
+//	        ξ = 0.96 · num / den                 (legacy)
+//	        ξ = 0.96 · π · num / (ω₀ · den)      (specFaithful)
 //	        W_l = ξ^0.25
 //	        clamped to [EnhanceWMin, EnhanceWMax]
 //
+// specFaithful selects the ξ scaling. The legacy form (false) drops the
+// π/ω₀ factor that TIA-102.BABA §6.2 and mbelib's mbe_spectralAmpEnhance
+// both carry; because ω₀ ∈ (0, ~0.5] rad, π/ω₀ ≳ 6, so the legacy ξ is
+// many-fold too small and the high-band weights collapse onto the
+// EnhanceWMin attenuate clamp where the spec would push toward the
+// EnhanceWMax boost clamp — a female-voice-biased timbre dulling (small L
+// ⇒ most harmonics fall in the 8·l > L band). Passing true restores the
+// spec factor. The raw decoders default to false (byte-identical to prior
+// releases so unit-test goldens hold); the recorder/live path enables the
+// spec-faithful form per call (see internal/voice/recorder.go), so
+// production DMR + P25 audio gets the corrected envelope by default while
+// remaining togglable via recordings.spec_amplitude_enhance.
+//
 // Silent + zero-L frames + degenerate (R_M0 ≤ 0) frames are no-ops
 // so callers can invoke unconditionally on the synthesis path.
-func EnhanceAmplitudes(p Params, M *[57]float64) {
+func EnhanceAmplitudes(p Params, M *[57]float64, specFaithful bool) {
 	if p.Silent || p.L == 0 {
 		return
 	}
@@ -97,7 +111,13 @@ func EnhanceAmplitudes(p Params, M *[57]float64) {
 		if den > 0 {
 			c := math.Cos(p.W0 * float64(l))
 			num := rm0Sq + rm1Sq - 2*rm0*rm1*c
+			// Legacy drops the π/ω₀ factor; the spec-faithful form restores
+			// it (guarding W0 > 0, always true for L > 0 frames but kept
+			// explicit so a degenerate header falls back rather than /0).
 			xi := 0.96 * num / den
+			if specFaithful && p.W0 > 0 {
+				xi = 0.96 * math.Pi * num / (p.W0 * den)
+			}
 			if xi > 0 {
 				w = math.Pow(xi, 0.25)
 				if w < EnhanceWMin {
