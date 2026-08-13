@@ -29,6 +29,32 @@ day they were written.*
 > encoder/decoder round-trip tests agreeing with each other. Fifteen seconds of real
 > IQ from the reporter's antenna was what finally broke the spell.
 
+## Cheat sheet
+
+| Fact | Detail |
+|---|---|
+| Issue | [#275](https://github.com/MattCheramie/GopherTrunk/issues/275) — 49 comments, five days, eleven fixes |
+| Symptom | `cc-hunt: trying` forever, nothing downstream; SDRTrunk / OP25 lock the same site in ~5 s |
+| First wrong theory | PPM drift — the cheapest of many |
+| Real causes | Unset sample rate, no channelizer, four chunk-boundary/timing bugs, wrong receive filter, unstripped status symbols, collapsed slicer — and a wrong BCH(63,16,11) generator plus the wrong CRC-CCITT variant |
+| The diagnostic | 30 s of captured IQ + offline `gophertrunk replay -diag` |
+| Why tests never caught it | Encoder/decoder round-trips shared every wrong constant and every generous assumption |
+| Verified by | 92 TSBKs and 2 grants decoded from the capture, then `cc-hunt: locked` on air |
+
+## In this post
+
+- **The report** — the ideal bug report: same hardware, other decoders lock in seconds.
+- **The ladder** — all eleven fixes, in the order the failures surfaced.
+- **Rung 1: the radio was never told its sample rate** — the pool programmed everything but the resampler.
+- **Rungs 2–3: channelize, then let frames cross chunks** — 427 samples per symbol, then 19-symbol USB transfers.
+- **Rungs 4–7: the same bug class, one stage at a time** — Gardner, coarse AFC, scale invariance, Mueller-Müller.
+- **Rungs 8–9: the spec the code had never read** — the sinc receive filter and status symbols.
+- **The wrong turns, named honestly** — CQPSK pushed twice, phantom search convergence, stale builds.
+- **The capture that ended the guessing** — replay turns each hypothesis into a measurement.
+- **The bottom of the ladder: two constants** — the BCH generator polynomial and the augmented CRC.
+- **The meta-lesson** — why a self-consistent system can only be falsified from outside.
+- **What we keep** — the durable rules and their Field Guide entries.
+
 ## The report
 
 The issue arrived as close to ideal as bug reports get. Two NESDR SMArt v5 dongles, a
@@ -302,7 +328,43 @@ the outside, for a radio decoder, is 15 seconds of IQ from somebody's antenna.
   feature was *no logs at all*. Every stage that can produce nothing now says so, at
   a throttled cadence.
 
+## FAQ
+
+**Why did SDRTrunk and OP25 lock the same hardware in seconds?**
+Their receive chains had met real signals for years. librtlsdr sets a default
+sample rate as part of opening the device, their DSP tolerates real USB transfer
+sizes, and their filters follow the TIA-102 pulse shapes. GopherTrunk's chain had
+only ever been validated against its own synthetic output, so every divergence
+from real air was invisible until a real antenna was attached.
+
+**How can eleven distinct bugs hide behind one symptom?**
+Because they were stacked: each rung fully masked everything below it. With the
+sample rate unprogrammed, the channelizer gap couldn't surface; with the slicer
+collapsed, the wrong BCH polynomial couldn't surface. Stacked failures are only
+ever visible one at a time, which is why the thread reads as a ladder rather than
+a list.
+
+**What is the "augmented codeword" CRC-CCITT, exactly?**
+Same 0x1021 polynomial as CRC-CCITT/FALSE, different procedure: initial value 0,
+MSB-first, final XOR 0xFFFF, evaluated over all 12 TSBK bytes including the
+trailer, expecting a result of 0. On the same bytes the two variants produce
+different answers — which is how a trellis decode with `metric=0` (zero channel
+bit errors) can still "fail CRC" for 195 of 197 frames.
+
+**Did any of this help other protocols?**
+Yes. The Mueller-Müller look-back fix repaired the same latent chunk-boundary bug
+in the DMR, NXDN, YSF, and dPMR receivers for free, and the `replay` tooling with
+`-diag` histograms became the standard investigation workflow for every
+postmortem that follows in this series.
+
+**What would have caught these bugs before a user did?**
+External ground truth — a reference implementation's vectors or a captured on-air
+frame — used as the test input instead of the project's own encoder. The two
+constants at the bottom of the ladder are now pinned by regression tests built
+from the capture's actual on-air bytes, so they can never again be "verified" by
+a round trip against themselves.
+
 ## Series navigation
 
-**Part 1** · Next →
-[Part 2: The Talker-Alias Hunt]({{ '/blog/solution-postmortem/from-the-issue-tracker-02-talker-alias-hunt/' | relative_url }})
+**Part 1 of 22** · Next →
+[Part 2: The Talker-Alias Hunt — Three Wrong Transports and an Architectural Gate]({{ '/blog/solution-postmortem/from-the-issue-tracker-02-talker-alias-hunt/' | relative_url }})

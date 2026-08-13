@@ -31,6 +31,28 @@ inherited wrong.*
 > crystal constant reversed twice, a missing V4 input-routing block, and a latent
 > PLL cap bug that only a correct crystal could expose.
 
+## Cheat sheet
+
+| Fact | Detail |
+|---|---|
+| Issue | [#264](https://github.com/MattCheramie/GopherTrunk/issues/264) |
+| Symptom | Blog V4 enumerated, tuned without errors, produced samples — and received only noise; a NooElec R820T2 on the same antenna decoded fine |
+| Wrong theories (all shipped) | PPM not reaching the tuner LO; spectrum-inverted IQ; mixer-AGC gain polarity; input-bank misrouting via the Lite flag |
+| The diagnostic | Raw IQ captures — pure complex white noise means the LO is *elsewhere*, not attenuated |
+| Real cause | `r82xxVCOPowerRef` must be **1** on the R828D; the osmocom-derived port hardcoded 2 |
+| Found by | The reporter, reading line 56 of `r82xx_tables.go` |
+| Also fixed | The V4's 28.8 MHz crystal (reversed twice), V4 input routing, the `setPLL` nint cap (76 → 268), and the pool's device allowlist |
+
+## In this post
+
+- **The symptom ladder** — from I²C EPIPE at init to "works, but hears nothing".
+- **The pool that claimed everything** — why `ppm: -4` looked ignored: it was applied to the wrong dongle.
+- **Four confident wrong diagnoses** — each shipped, each explained the symptom, none fixed it.
+- **The captures that kept everyone honest** — white noise as a hard diagnosis, and the crystal that reversed twice.
+- **The reporter reads the table** — the one constant the port inherited wrong.
+- **The latent bug the correct crystal exposed** — a wrong guard waiting for its first exercise.
+- **What we keep** — the durable rules and their Field Guide entries.
+
 ## The symptom ladder
 
 The report opened simply: GopherTrunk 0.1.5 doesn't detect the Blog V4; every
@@ -56,6 +78,28 @@ it. Each fix revealed the next rung:
 Rung 4 is the interesting one, because from here the V4 *looked* alive. It
 enumerated, tuned without errors, and produced samples. It just never produced
 signal.
+
+## The pool that claimed everything
+
+Rung 3 deserves its own telling, because it's the kind of bug that poisons every
+experiment run while it exists. The reporter had three dongles on the bus — the
+V4 under test plus two working sticks — and configured only the V4 in
+`sdr.devices`, with `ppm: -4` measured for it. Two confusions followed. The
+daemon appeared to grab *all three* dongles, and the PPM correction appeared to
+have no effect at all.
+
+Both were one bug: `Pool.Open` enumerated and opened **every** USB SDR it could
+see, regardless of the `sdr.devices` allowlist. Role assignment then worked on a
+first-come basis — the first opened device without an explicit role hint claimed
+`RoleControl`. In this topology that was the NooElec, so the control-channel
+hunt silently ran on a dongle the config never mentioned, while the configured
+`ppm: -4` landed on the V4 — which wasn't doing the tuning. Every "did the fix
+work?" test until this was fixed (PR #417) was potentially measuring the wrong
+radio.
+
+The transferable lesson: when a config value "isn't being adopted," first prove
+*which device* it was applied to. A device-identity bug wears a tuning bug's
+clothes.
 
 ## Four confident wrong diagnoses
 
@@ -107,9 +151,11 @@ crystal is fatal arithmetic: every LO lands at 28.8/16 = 1.8× the requested
 frequency, listening near 276 MHz when asked for 153. The follow-up (PR
 [#506](https://github.com/MattCheramie/GopherTrunk/pull/506)) restored 28.8 MHz
 for the V4 and added the second missing piece: the V4's **switched HF/VHF/UHF
-input bank**. Stock R828D init leaves both Cable-1 and Air-In switched *off* — the
-V4 routes no RF at all without per-band switching on registers `0x05`/`0x06`, the
-notch on `0x17`, and the GPIO5 upconverter relay for HF.
+input bank**. Stock R828D init writes `reg 0x05 = 0x83`, which leaves both the
+Cable-1 (`0x40`) and Air-In (`0x20`) input switches *off* — the V4 routes no RF
+at all without per-band switching on registers `0x05`/`0x06` (a VHF tune sets
+`0x05 → 0xE3`), the notch filter on `0x17`, the GPIO5 relay that engages the HF
+upconverter, and the HF tracking-filter bypass on `0x1A`/`0x1B`.
 
 After #506 the captures changed character: real signal energy, a 28 dB
 peak-to-floor. Progress — the front end was finally connected to the antenna. But

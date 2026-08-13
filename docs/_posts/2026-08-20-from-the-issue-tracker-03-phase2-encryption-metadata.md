@@ -32,6 +32,29 @@ line that fires even when there is nothing to say.*
 > a validity gate that refuses to publish an algorithm ID the standard has never
 > heard of.
 
+## Cheat sheet
+
+| Fact | Detail |
+|---|---|
+| Issue | [#813](https://github.com/MattCheramie/GopherTrunk/issues/813) |
+| Symptom | 66/66 encrypted Phase 2 calls flagged `encrypted: true`; `algorithm_id` / `key_id` never populate |
+| Wrong theory | Missing carrier recovery — a real defect, genuinely fixed, and not this bug (a TCXO source failed identically) |
+| Real causes | Fictional `OpEncryptionSync = 0x70`; a 48-bit sync constant truncated into a 40-bit field; a missing 2↔3 dibit remap |
+| The diagnostic | Unconditional per-call census — stage counters logged even at zero |
+| Field numbers | Phase 1: 89% of encrypted calls resolved a valid ALGID; Phase 2: 0.5%, and those were a bit-error smear |
+| Last line of defense | `p25.AlgorithmKnown(id)` validity gate at the composer — absent beats wrong |
+
+## In this post
+
+- **The symptom as reported** — the flag is right; the metadata is structurally impossible.
+- **Stage zero: the opcode that never existed** — `0x70` was a working model, unit-tested against itself.
+- **The census: a log line that fires at zero** — the three-way stage disambiguator.
+- **The plausible wrong theory: carrier recovery** — the right bug class, the wrong bug.
+- **Root cause one: a 48-bit constant in a 40-bit field** — hunting for a sync word never transmitted.
+- **Root cause two: the 2↔3 remap** — superframes lock while every payload decodes to garbage.
+- **The numbers, and the gate** — 89% vs 0.5%, and refusing to publish nonsense.
+- **What we keep** — the durable rules and their Field Guide entries.
+
 ## The symptom as reported
 
 The reporter's setup was deliberately clean: an Airspy on the control channel, a
@@ -185,6 +208,15 @@ brutal and the residual honest:
 | P25 Phase 1 | 2,739 | 2,432 (AES-256) | **89%** |
 | P25 Phase 2 | 3,107 | 15 | **0.5%** |
 
+The Phase 1 column is the control group, and it explains why the asymmetry went
+unnoticed for so long: Phase 1 recovers ALGID and key ID from the LDU2
+encryption-sync fields mid-call, a decode path verified on air long before this
+issue — so anyone spot-checking "does encryption metadata work?" against a Phase
+1 call saw it working. The Phase 2 path had never produced a correct value, and
+even after these fixes, the mid-call `KindCallSourceUpdate` that backfills a
+Phase 2 call's source and encrypted flag carries no algorithm or key — those
+arrive only through the MAC_PTT chain this post walked.
+
 Worse than "omitted": the Phase 2 fields were populating with **bit-error
 values** — a uniform algorithm-ID smear across 0x00–0xFF, a different key ID
 every call. A wrong value published confidently is worse than an absent one.
@@ -225,3 +257,46 @@ reporter's own air. Host captures somewhere plain; it matters.
   identically) is as valuable as the fix.
 - **Never publish a value you can't validate.** The registry gate turns a bit-error
   smear back into honest absence, at the one choke point every consumer shares.
+
+## FAQ
+
+**How can `encrypted: true` be reliable while the algorithm ID never arrives?**
+Because they come from different places. The flag is the grant's ServiceOptions
+"protected" bit, decoded on the control channel — a path that worked. The
+algorithm and key IDs must be recovered from the voice channel's MAC layer,
+which had never worked. A flag and its metadata can have entirely different
+truth values.
+
+**The carrier-recovery theory fit perfectly — what disproved it?**
+The hardware split (Airspy TCXO decoded, RTL-SDR didn't) matched the theory, the
+fix measurably repaired synthetic offsets, and the field census still read
+`superframes=0`. The clincher was the reporter re-running with the Airspy — a
+low-offset TCXO source — as the voice follower and failing identically. When a
+low-offset source fails the same way as a high-offset one, carrier recovery is
+exonerated, and so is the hardware.
+
+**Why didn't unit tests catch the truncated sync constant?**
+Every round-trip test injected sync from the same wrong constant it decoded
+with, so encoder and decoder agreed perfectly. The regression test that pinned
+the fix synthesizes the sync word independently of the project's own modulator —
+the only kind of test that can expose a bad shared constant.
+
+**What does the validity gate actually block?**
+Any algorithm ID outside the TIA-102 registry (0x80–0x86, 0x89, 0x9F, 0xAA). An
+out-of-set value is provably a mis-decode and is dropped at the composer, the
+one point both the recorder and the engine draw from. It deliberately does not
+whitelist the classified Type-1 block (0x00–0x41): admitting 66 low values would
+let a large slice of the bit-error smear straight through.
+
+**Is a wrong published value really worse than an absent one?**
+Yes. An absent field says "unknown"; a smeared field says "algorithm 0x75, key
+0x555d" with full confidence to every webhook, API consumer, and UI panel
+downstream — and no consumer can tell it from a real decode. Honest absence is
+recoverable; confident garbage propagates.
+
+## Series navigation
+
+**Part 3 of 22** · ←
+[Part 2: The Talker-Alias Hunt — Three Wrong Transports and an Architectural Gate]({{ '/blog/solution-postmortem/from-the-issue-tracker-02-talker-alias-hunt/' | relative_url }})
+· Next →
+[Part 4: The Dongle That Heard Nothing — One Line in a Register Table]({{ '/blog/solution-postmortem/from-the-issue-tracker-04-blog-v4-register-table/' | relative_url }})

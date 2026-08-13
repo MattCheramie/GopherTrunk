@@ -30,6 +30,29 @@ in another program, blank in ours, for a month
 > signalling-only follower that decodes traffic-channel signalling without
 > following the call as voice.
 
+## Cheat sheet
+
+| Fact | Detail |
+|---|---|
+| Issue | [#376](https://github.com/MattCheramie/GopherTrunk/issues/376) — 31 comments, a month of theories |
+| Symptom | RIDs populate; `talker_alias` blank for every radio, while SDRTrunk shows aliases on the same system — even on encrypted calls |
+| Wrong theories | Standard voice LCOs 0x15/0x16/0x17 → Motorola voice-LC + a control-channel vendor TSBK → a speculative Phase 2 opcode 0x82 |
+| The diagnostic | Per-(opcode, MFID) census with capped raw payload dumps, then SDRTrunk decode logs as ground truth |
+| Real transports | Phase 1: TDULC terminator (MFID 0x90, LCO 0x15 header + 0x17 blocks); Phase 2: FACCH-S during call hangtime |
+| Real root cause | Alias decode lived inside the voice composer — it only ran when a call won a voice tuner |
+| Fix | PR #762: `internal/sigfollow`, a signalling-only follower on wideband DDC taps, no voice path required |
+
+## In this post
+
+- **The report** — a modest feature request becomes a month-long hunt.
+- **Three wrong transports** — three shipped decoders for messages that don't exist on air.
+- **Detours that paid rent** — the fictional `OpMACPTT` and the dead Phase 2 path.
+- **The diagnostic that cracked it: a census, then the bytes** — instrumenting instead of guessing.
+- **Ground truth from another decoder** — SDRTrunk's logs pin both real transports.
+- **The real root cause was architectural** — metadata welded to media capture.
+- **The fix: a signalling-only follower** — decoding signalling without following voice.
+- **What we keep** — the durable rules and their Field Guide entries.
+
 ## The report
 
 The issue opened modestly: source RIDs were showing up in grant payloads
@@ -236,7 +259,42 @@ column the issue opened about fills in with no further wiring.
   found dead code twice. Grep patterns belong in the fix announcement, so the field
   tester can report absence as sharply as presence.
 
+## FAQ
+
+**Why could SDRTrunk see aliases GopherTrunk couldn't?**
+It harvests them from the traffic channel's signalling stream without following
+the call as voice. GopherTrunk's alias decode was gated behind winning a voice
+tuner — a gate that a busy multi-site system keeps closed for most grants, and
+that the encrypted-call teardown slams shut before hangtime, which is exactly
+when the alias is transmitted.
+
+**Why do talker aliases work on encrypted calls at all?**
+The alias link control rides outside the AES voice payload. Encryption protects
+the speech; the signalling around it — including the Motorola alias header and
+data blocks — stays decodable, which is why SDRTrunk showed aliases on encrypted
+ambulance talkgroups.
+
+**Why did three plausible transport theories all miss?**
+All three described what the alias *might* look like with no captured bytes
+saying what it *did* look like. The standard TIA forms aren't what Motorola
+systems transmit; the vendor form doesn't ride LDU1 or the control channel. The
+Phase 1 alias rides the *terminator* (TDULC) and the Phase 2 alias rides FACCH-S
+during hangtime — neither of which the shipped decoders ever looked at.
+
+**What did the census find besides ruling out the control channel?**
+Two real bugs. Motorola MFID 0x90 opcodes 0x02/0x03 decoded as patch-group voice
+grants that GopherTrunk had been silently dropping, and the payload dumps
+exposed that Go's stringer was mislabeling vendor opcodes with standard-namespace
+names — which is why the census prints numeric opcodes.
+
+**Does the follower double-decode channels that are already being recorded?**
+No. Per-frequency dedupe plus a voice-call skip mean a channel already followed
+as voice isn't tapped twice, and `signalling_taps: N` bounds the total cost per
+wideband device.
+
 ## Series navigation
 
-**Part 2** · ←
-[Part 1: The First P25 Lock]({{ '/blog/solution-postmortem/from-the-issue-tracker-01-first-p25-lock/' | relative_url }})
+**Part 2 of 22** · ←
+[Part 1: The First P25 Lock — Eleven Fixes Between 'Trying' and 'Locked']({{ '/blog/solution-postmortem/from-the-issue-tracker-01-first-p25-lock/' | relative_url }})
+· Next →
+[Part 3: Encrypted, Says Who — Four Layers Between a Flag and Its Metadata]({{ '/blog/solution-postmortem/from-the-issue-tracker-03-phase2-encryption-metadata/' | relative_url }})
