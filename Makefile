@@ -16,7 +16,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
+.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
 
 all: build
 
@@ -147,6 +147,13 @@ integration-cc-motorola:
 # exercise the π/4-DQPSK modulator primitive shipped alongside this PR.
 integration-cc-tetra:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesTETRA ./cmd/gophertrunk/...
+
+# integration-cc-tetra-dmo boots the daemon with synthesized TETRA DMO IQ (a DSB
+# + DNB burst train at 18000 sym/s) and asserts the production tetra-dmo pipeline
+# (protocol parse -> 144 kHz DDC -> newTETRADMOPipeline -> cchunt supervisor)
+# locks on the DSB SCH/S. The voice/recording half is on-air A/B gated (#1003).
+integration-cc-tetra-dmo:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonDecodesTETRADMO ./cmd/gophertrunk/...
 
 # integration-cc-p25p2 boots the daemon with synthesized H-DQPSK IQ
 # (6000 sym/s, α = 0.20, π/8 rotation) carrying a 20-dibit outbound sync
