@@ -1432,3 +1432,39 @@ domains:
           - { slug: tsmc, title: TSMC, type: organization }
           - { slug: ieee, title: IEEE, type: organization }
           - { slug: jedec, title: JEDEC, type: organization }
+
+  - id: field-notes
+    label: "Field Notes"
+    blurb: Hard-won knowledge from GopherTrunk's issue tracker — hardware quirks, configuration gotchas, diagnostic signatures, and protocol facts the specs hide.
+    categories:
+      - id: fn-hardware
+        label: Hardware quirks
+        blurb: Device-specific facts that cost real debugging time — sample-rate rules, USB stall recovery, gain and overload behaviour, and remote-SDR wiring.
+        entries:
+          - { slug: airspy-rate-selection, title: Airspy sample-rate selection, type: term }
+          - { slug: rtlsdr-usb-recovery, title: RTL-SDR USB stall recovery, type: term }
+          - { slug: sdr-gain-overload, title: SDR gain & front-end overload, type: term }
+          - { slug: usrp-soapyremote-notes, title: USRP & SoapyRemote field notes, type: term }
+      - id: fn-config
+        label: Configuration gotchas
+        blurb: Settings whose defaults or interactions are not obvious until they bite — wideband voice taps, demod-mode selection, and encrypted-call handling.
+        entries:
+          - { slug: wideband-voice-taps, title: Wideband voice taps, type: term }
+          - { slug: p25-demod-mode-selection, title: P25 demod-mode selection, type: term }
+          - { slug: encrypted-call-handling, title: Encrypted-call handling, type: term }
+      - id: fn-diagnostics
+        label: Diagnostic signatures & playbook
+        blurb: Symptom-to-cause lookup tables and the measurement ladder that turns guess-and-retest into diagnosis.
+        entries:
+          - { slug: diagnostic-playbook, title: Diagnostic playbook, type: term }
+          - { slug: signal-signatures, title: Signal-quality signatures, type: term }
+          - { slug: audio-pipeline-tells, title: Audio-pipeline tells, type: term }
+          - { slug: carrier-offset-adjacent-lock, title: Carrier offset & adjacent-channel lock, type: term }
+      - id: fn-protocol
+        label: Protocol facts the specs hide
+        blurb: On-air realities that standards documents omit, bury, or state ambiguously — validated the hard way against real captures.
+        entries:
+          - { slug: p25-site-identity-semantics, title: P25 site-identity semantics, type: term }
+          - { slug: p25-onair-constants, title: P25 on-air constants, type: term }
+          - { slug: dmr-grant-field-gotchas, title: DMR grant-field gotchas, type: term }
+          - { slug: tetra-lock-facts, title: TETRA lock facts, type: term }

@@ -115,6 +115,16 @@ groups:
         url: /reference/#hw-people
       - title: Organizations & makers
         url: /reference/#hw-organizations
+      - title: "Field Notes"
+        url: /reference/#domain-field-notes
+      - title: Hardware quirks
+        url: /reference/#fn-hardware
+      - title: Configuration gotchas
+        url: /reference/#fn-config
+      - title: Diagnostic signatures & playbook
+        url: /reference/#fn-diagnostics
+      - title: Protocol facts the specs hide
+        url: /reference/#fn-protocol
   - label: About
     items:
       - title: The Story of GopherTrunk
@@ -167,6 +177,8 @@ groups:
         url: /blog/series/crypto-lab/
       - title: Solution Postmortem
         url: /blog/category/solution-postmortem/
+      - title: "Series: From the Issue Tracker"
+        url: /blog/series/from-the-issue-tracker/
   - label: Hardware
     items:
       - heading: Start here
