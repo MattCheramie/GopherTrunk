@@ -27,6 +27,28 @@ transfers, and "works in every other SDR app" is the least helpful clue you'll g
 > settle between arming the I²C repeater and the first burst write. The wire bytes
 > were byte-identical to librtlsdr's all along; the *timing* wasn't.
 
+## Cheat sheet
+
+| | |
+|---|---|
+| Issue | [#248](https://github.com/MattCheramie/GopherTrunk/issues/248) — NESDR SMArt v5 tuner init fails with EPIPE |
+| Symptom | `I2CWrite addr=0x34: broken pipe` on two separate dongles; `rtl_test`, SDRTrunk, and p25survey all fine on the same host |
+| Wrong theories | librtlsdr parity drift (three rounds of it — all real, none sufficient); a halted endpoint; firmware needing a device reset |
+| Self-inflicted detour | an "optimization" whose cache guard ate the `SetI2CRepeater(true)` wire write the silicon needed (PR #260, reverted in #262) |
+| Real cause | timing — the arm write and the burst landed back-to-back; NESDR v5 silicon needs settle time libusb provides by accident |
+| Fix | a 5 ms settle between repeater-on and the first burst write, plus a chunk-halving fallback that never fires (six rounds: PRs #255, #258, #260, #262, #263, #265) |
+| Diagnostic | paired traces — `RTLSDR_DEBUG_USB=1` vs `LIBUSB_DEBUG=4` — diffed transfer by transfer |
+
+## In this post
+
+- **The symptom: works everywhere but here** — two dongles, one EPIPE, three working reference apps.
+- **Rounds one through three: parity fixes that didn't take** — real librtlsdr drift, none of it the bug.
+- **The diagnostic: two traces of the same conversation** — the paired-trace diff that ended the guessing.
+- **The regression we shipped ourselves** — a cache guard that ate a wire write.
+- **What the next trace ruled out** — no halt, no secret recovery ritual, no reset that helps.
+- **Five milliseconds** — the settle that carried it, and why libusb users never needed one.
+- **What we keep** — paired traces, wrapper strings, and caches over wires.
+
 ## The symptom: works everywhere but here
 
 The report was as clean as they come: Ubuntu 24.04, a NESDR SMArt v5, and one line
@@ -55,6 +77,14 @@ line-for-line audits of our open path against `rtlsdr_open`:
 | 1 | librtlsdr's defensive dummy write (`USB_SYSCTL = 0x09`, reset on failure) before baseband init | Still fails |
 | 2 | Chunk the 27-byte R820T init flood at librtlsdr's `NMAX_WRITES = 16` | Still fails |
 | 3 | The missing R820T demod-prep sequence (disable Zero-IF, in-phase ADC only, 3.57 MHz IF, spectrum inversion) | Still fails |
+
+Round three's parity gap deserves spelling out, because it's invisible until you
+diff against librtlsdr register by register. Before first touching the tuner,
+librtlsdr programs the RTL2832U demod for an R820T-family part: `0xB1 = 0x1A`
+(disable Zero-IF mode), `0x08 = 0x4D` (use the in-phase ADC input only), an IF of
+3.57 MHz (`R820T_IF_FREQ`), and `0x15 = 0x01` (spectrum inversion). GopherTrunk
+had skipped the entire sequence — parity that matters for correct reception
+downstream, and that still didn't move the EPIPE by an inch.
 
 Each was real librtlsdr parity work, independently correct, and none of it moved the
 symptom. But the error *wrapper strings* were quietly doing diagnostic work each
