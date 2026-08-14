@@ -30,7 +30,7 @@ Rad1o), Airspy R2 / Mini, and Airspy HF+ dongles, has no C
 dependencies at build or runtime (no `librtlsdr` / `libhackrf` /
 `libairspy` / `libairspyhf` / `libusb` / `libasound2` /
 `libmp3lame`), and ships as a single ~10 MB static binary for Linux,
-macOS, and Windows.
+macOS (12 & above), and Windows.
 
 Completed calls stream to Broadcastify Calls, RdioScanner, OpenMHz,
 and live Icecast / ShoutCast mountpoints out of the box. Why does
