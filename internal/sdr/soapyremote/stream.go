@@ -123,6 +123,35 @@ func (f sampleFormat) convert(buf []byte) []complex64 {
 	return convertCS16(buf)
 }
 
+// deinterleave splits one multi-channel stream payload into one []complex64 per
+// channel. The datagram header's elems field is the sample count *per channel*,
+// so an n-channel payload holds n equal, channel-contiguous blocks laid out as
+// [ch0: elems samples][ch1: elems samples]…, matching SoapyRemote's
+// SoapyStreamEndpoint (each SoapySDR per-channel buffer maps to a contiguous
+// region of the transfer). channels<=1 is exactly convert().
+//
+// ASSUMPTION flagged for on-air validation (issue #1062): the per-channel block
+// layout (contiguous blocks, ch0 first) is transcribed from the SoapyRemote
+// endpoint convention and has NOT yet been confirmed against a live dual-RX
+// server. If a real B210 A/B shows the branches transposed or sample-interleaved,
+// this function is the single place to change — nothing downstream depends on the
+// layout. A ragged tail (payload not a whole multiple of channels·bytesPerSample)
+// is dropped so the branches stay sample-aligned.
+func (f sampleFormat) deinterleave(buf []byte, channels int) [][]complex64 {
+	if channels <= 1 {
+		return [][]complex64{f.convert(buf)}
+	}
+	bps := f.bytesPerSample()
+	perCh := (len(buf) / bps) / channels // whole samples per channel
+	blockBytes := perCh * bps
+	out := make([][]complex64, channels)
+	for c := 0; c < channels; c++ {
+		start := c * blockBytes
+		out[c] = f.convert(buf[start : start+blockBytes])
+	}
+	return out
+}
+
 // convertCS16 maps interleaved little-endian int16 I,Q to complex64.
 // Mirrors baseband.decodeIQ16 / rtltcp.convertU8 normalization.
 func convertCS16(buf []byte) []complex64 {

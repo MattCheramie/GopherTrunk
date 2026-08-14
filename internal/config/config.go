@@ -778,6 +778,14 @@ type SoapyRemoteConfig struct {
 	// ConnectTimeoutMs caps the TCP dial in milliseconds. Zero picks the
 	// driver default (3000).
 	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
+	// Diversity selects a spatial-diversity combiner over a multi-channel RX
+	// stream. "" / "none" (default) streams a single channel. "mrc" opens RX
+	// channels 0 and 1 and phase-coherently combines them into one maximised-SNR
+	// stream — for shared-LO front-ends only (USRP B210 / AD9361 and clones),
+	// whose RX0↔RX1 phase relationship is a constant per tune. EXPERIMENTAL
+	// (issue #1062): the 2-channel wire de-interleave is not yet confirmed on a
+	// live dual-RX server.
+	Diversity string `yaml:"diversity"`
 }
 
 // parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument

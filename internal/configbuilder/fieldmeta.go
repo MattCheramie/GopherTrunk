@@ -147,6 +147,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SoapyRemoteConfig.Gain":             {Help: "Tuner gain: 'auto'/empty for AGC, else tenths of a dB."},
 	"SoapyRemoteConfig.BiasTee":          {Label: "Bias-tee", Help: "Toggle the remote device's bias-tee (best-effort)."},
 	"SoapyRemoteConfig.ConnectTimeoutMs": {Help: "TCP dial timeout in ms. 0 = driver default (3000)."},
+	"SoapyRemoteConfig.Diversity":        {Help: "Spatial diversity combiner. Empty = single channel. 'mrc' opens RX0+RX1 and phase-coherently combines them (shared-LO front-ends only, e.g. USRP B210). Experimental.", Options: opts("", "(none)", "mrc", "mrc")},
 
 	"Ka9qRadioConfig.Addr":             {Label: "Address", Help: "ka9q-radio status+command multicast group: an mDNS name like hf.local (or hf.local:5006), or a literal 239.x.x.x:5006. Missing port defaults to 5006. Required."},
 	"Ka9qRadioConfig.SSRC":             {Label: "SSRC", Help: "Channel's RTP SSRC within the radiod instance (e.g. 162550). Required, non-zero."},

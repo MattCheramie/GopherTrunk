@@ -96,6 +96,12 @@ type Spec struct {
 	StreamWindow int
 	// ConnectTimeout overrides DefaultConnectTimeout when non-zero.
 	ConnectTimeout time.Duration
+	// Diversity selects a spatial-diversity combiner over a multi-channel RX
+	// stream. "" / "none" (default) is the ordinary single-channel stream.
+	// "mrc" opens RX channels 0 and 1 and phase-coherently combines them into
+	// one stream (shared-LO front-ends only, e.g. USRP B210 / AD9361). See
+	// mrc.go. EXPERIMENTAL — issue #1062.
+	Diversity string
 }
 
 // Driver implements sdr.Driver over a set of SoapySDRServer endpoints.
@@ -157,6 +163,10 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	if proto != "tcp" {
 		return nil, fmt.Errorf("soapyremote: stream_protocol %q not supported (only \"tcp\")", proto)
 	}
+	diversity, err := parseDiversity(spec.Diversity)
+	if err != nil {
+		return nil, err
+	}
 	timeout := spec.ConnectTimeout
 	if timeout <= 0 {
 		timeout = DefaultConnectTimeout
@@ -191,6 +201,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		window:     window,
 		windowSeqs: windowSeqs,
 		ackTrigger: windowSeqs / streamNumBuffs,
+		diversity:  diversity,
 		info: sdr.Info{
 			Driver:    DriverName,
 			Index:     idx,
@@ -199,6 +210,9 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 			TunerName: deviceArgKey(spec.DeviceArgs),
 			Gains:     genericGainLadder(),
 		},
+	}
+	if diversity {
+		dev.mrc = newMRCCombiner(format)
 	}
 	// Create the remote device.
 	if err := dev.rpcVoid(func(p *packer) {
@@ -215,7 +229,12 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	d.log.Info("soapyremote: connected",
 		"addr", addr,
 		"format", format.soapyName(),
-		"proto", proto)
+		"proto", proto,
+		"diversity", diversity)
+	if diversity {
+		d.log.Info("soapyremote: MRC diversity enabled — RX0+RX1 phase-coherent combine (experimental, shared-LO only)",
+			"addr", addr)
+	}
 	return dev, nil
 }
 
@@ -238,12 +257,43 @@ type device struct {
 	windowSeqs uint32
 	ackTrigger uint32
 
+	// diversity is true when this device runs phase-coherent MRC over RX0+RX1;
+	// mrc is then the combiner that turns the 2-channel stream into one. Both
+	// are set once at Open and read-only thereafter. mrc is nil in the ordinary
+	// single-channel case. Issue #1062.
+	diversity bool
+	mrc       *mrcCombiner
+
 	mu         sync.Mutex
 	conn       net.Conn // RPC control socket
 	dataConn   net.Conn // stream data socket (set in StreamIQ)
 	statusConn net.Conn // stream status socket (the server requires it; we drain it)
 	streamID   int32
 	closed     bool
+}
+
+// rxChannelCount is the number of RX channels the stream requests: 1 normally,
+// diversityChannels (2) under MRC diversity.
+func (d *device) rxChannelCount() int {
+	if d.diversity {
+		return diversityChannels
+	}
+	return 1
+}
+
+// perRXChannel issues an RPC once per active RX channel — channel 0 only in the
+// single-channel default, channels 0 and 1 under MRC diversity so the shared-LO
+// second receiver is tuned/rated identically to the reference. Stops at the
+// first error. (Gain is deliberately left channel-0-only: the MRC calibration
+// estimates a complex gain, so a per-channel amplitude difference is absorbed.)
+func (d *device) perRXChannel(build func(p *packer, ch int32)) error {
+	for ch := 0; ch < d.rxChannelCount(); ch++ {
+		ch := int32(ch)
+		if err := d.rpcVoid(func(p *packer) { build(p, ch) }); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *device) Info() sdr.Info { return d.info }
@@ -285,20 +335,28 @@ func (d *device) rpcBestEffort(what string, build func(*packer)) error {
 }
 
 func (d *device) SetCenterFreq(hz uint32) error {
-	return d.rpcVoid(func(p *packer) {
+	if err := d.perRXChannel(func(p *packer, ch int32) {
 		p.call(callSetFrequency)
 		p.char(dirRX)
-		p.i32(0)
+		p.i32(ch)
 		p.f64(float64(hz))
 		p.kwargs(nil)
-	})
+	}); err != nil {
+		return err
+	}
+	// A retune is a new LO lock, so the frozen RX0↔RX1 phase constant is stale.
+	// Re-arm calibration; the next combined window re-estimates it.
+	if d.mrc != nil {
+		d.mrc.requestRecalibrate()
+	}
+	return nil
 }
 
 func (d *device) SetSampleRate(hz uint32) error {
-	return d.rpcVoid(func(p *packer) {
+	return d.perRXChannel(func(p *packer, ch int32) {
 		p.call(callSetSampleRate)
 		p.char(dirRX)
-		p.i32(0)
+		p.i32(ch)
 		p.f64(float64(hz))
 	})
 }
@@ -496,6 +554,11 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	rate, _ := d.ActualSampleRate()
 	samplesPerChunk := (d.mtu - streamHeaderSize) / d.format.bytesPerSample()
 	out := make(chan []complex64, streamBufferDepth(rate, samplesPerChunk))
+	// Re-arm the MRC calibration for this fresh stream so it re-estimates the
+	// phase constant rather than reusing a stale one from a prior stream.
+	if d.mrc != nil {
+		d.mrc.requestRecalibrate()
+	}
 	go d.streamLoop(ctx, dataConn, streamID, out)
 	return out, nil
 }
@@ -527,7 +590,13 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	p.call(callSetupStream)
 	p.char(dirRX)
 	p.str(d.format.soapyName())
-	p.sizeList([]int{0})
+	// Channel list: [0] normally, [0,1] under MRC diversity so the server
+	// streams both RX channels interleaved for phase-coherent combining.
+	chans := []int{0}
+	if d.diversity {
+		chans = []int{0, 1}
+	}
+	p.sizeList(chans)
 	// Stream args. remote:mtu / remote:window are only sent when configured to
 	// a non-default value, keeping the default setup frame byte-identical to
 	// before.
@@ -793,7 +862,14 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 		if payloadLen == 0 {
 			continue
 		}
-		samples := d.format.convert(payload)
+		var samples []complex64
+		if d.mrc != nil {
+			// MRC diversity: de-interleave RX0/RX1, phase-coherently combine
+			// into one branch. Emits the reference branch until calibrated.
+			samples = d.mrc.combine(payload)
+		} else {
+			samples = d.format.convert(payload)
+		}
 		if len(samples) == 0 {
 			continue
 		}

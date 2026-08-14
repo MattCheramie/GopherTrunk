@@ -32,6 +32,9 @@ type fakeSoapyServer struct {
 	// setupKwargs records the stream args the client sent in SETUP_STREAM
 	// (e.g. "remote:prot", "remote:mtu"), captured on the last setup call.
 	setupKwargs map[string]string
+	// setupChannels records the RX channel list the client requested in
+	// SETUP_STREAM ([0] normally, [0,1] under MRC diversity).
+	setupChannels []int
 
 	// samples streamed per datagram once activated.
 	streamSamples []complex64
@@ -102,49 +105,60 @@ func (s *fakeSoapyServer) recordedSetupKwargs() map[string]string {
 	return out
 }
 
+func (s *fakeSoapyServer) recordedSetupChannels() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]int, len(s.setupChannels))
+	copy(out, s.setupChannels)
+	return out
+}
+
 // readSetupStreamKwargs parses a SETUP_STREAM request body (positioned just
-// past the call id) and returns its stream args. The layout mirrors the
-// client's setupStreamTCP packer: char(dir), str(format), sizeList(channels),
-// kwargs(streamArgs), str, str.
-func readSetupStreamKwargs(u *unpacker) (map[string]string, error) {
+// past the call id) and returns the requested RX channel list plus stream args.
+// The layout mirrors the client's setupStreamTCP packer: char(dir), str(format),
+// sizeList(channels), kwargs(streamArgs), str, str.
+func readSetupStreamKwargs(u *unpacker) ([]int, map[string]string, error) {
 	if _, err := u.char(); err != nil { // direction
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := u.str(); err != nil { // format
-		return nil, err
+		return nil, nil, err
 	}
 	if err := u.expect(tSizeList); err != nil { // channel list
-		return nil, err
+		return nil, nil, err
 	}
 	n, err := u.i32()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	channels := make([]int, 0, n)
 	for i := int32(0); i < n; i++ {
-		if _, err := u.i32(); err != nil {
-			return nil, err
+		ch, err := u.i32()
+		if err != nil {
+			return nil, nil, err
 		}
+		channels = append(channels, int(ch))
 	}
 	if err := u.expect(tKwargs); err != nil { // stream args
-		return nil, err
+		return nil, nil, err
 	}
 	kn, err := u.i32()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m := make(map[string]string, kn)
 	for i := int32(0); i < kn; i++ {
 		k, err := u.str()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		v, err := u.str()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		m[k] = v
 	}
-	return m, nil
+	return channels, m, nil
 }
 
 func (s *fakeSoapyServer) sawCall(id int32) bool {
@@ -227,9 +241,10 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			}
 		case callSetupStream:
 			twoPhaseSetup = true
-			if kw, err := readSetupStreamKwargs(u); err == nil {
+			if chans, kw, err := readSetupStreamKwargs(u); err == nil {
 				s.mu.Lock()
 				s.setupKwargs = kw
+				s.setupChannels = chans
 				s.mu.Unlock()
 			}
 		case callActivateStream:
@@ -573,6 +588,11 @@ func TestStreamIQ(t *testing.T) {
 		t.Errorf("default setup kwargs = %v, want only remote:prot=tcp", kw)
 	}
 
+	// The default (non-diversity) path requests a single RX channel.
+	if chans := srv.recordedSetupChannels(); len(chans) != 1 || chans[0] != 0 {
+		t.Errorf("default SETUP_STREAM channels = %v, want [0]", chans)
+	}
+
 	// Cancelling the context must close the channel.
 	cancel()
 	drain := time.After(2 * time.Second)
@@ -585,6 +605,58 @@ func TestStreamIQ(t *testing.T) {
 		case <-drain:
 			t.Fatal("stream channel not closed after ctx cancel")
 		}
+	}
+}
+
+// TestStreamIQDiversity drives the end-to-end MRC diversity path: with
+// Diversity="mrc" the client must request a 2-channel stream ([0,1]) and emit a
+// single combined branch. The fake server streams two contiguous per-channel
+// blocks in one datagram; here ch1 == ch0, so the coherent combine recovers ch0
+// exactly and the emitted chunk is one branch (half the datagram's samples).
+//
+// NOTE: this validates the plumbing (2-channel request → de-interleave →
+// combine → single stream), not the SoapyRemote wire-format assumption — the
+// fake interleaves channels the same way deinterleave() reads them. The block
+// layout still needs on-air confirmation against a real dual-RX server (#1062).
+func TestStreamIQDiversity(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	ch := []complex64{complex(0.5, -0.5), complex(0.25, 0.25), complex(-0.3, 0.4)}
+	// One datagram = [ch0 block][ch1 block], ch1 == ch0.
+	srv.streamSamples = append(append([]complex64{}, ch...), ch...)
+
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+
+	select {
+	case got, ok := <-out:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+		if len(got) != len(ch) {
+			t.Fatalf("combined chunk len = %d, want %d (one branch)", len(got), len(ch))
+		}
+		for i, want := range ch {
+			if absDiff(got[i], want) > 2e-3 {
+				t.Errorf("combined sample %d = %v, want ~%v (ch1==ch0 ⇒ recover ch0)", i, got[i], want)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for combined IQ")
+	}
+
+	if chans := srv.recordedSetupChannels(); len(chans) != 2 || chans[0] != 0 || chans[1] != 1 {
+		t.Errorf("SETUP_STREAM channels = %v, want [0 1]", chans)
 	}
 }
 
