@@ -297,6 +297,12 @@ export function RecordingsSection() {
         onChange={(x) => set({ ...cfg, WriteRaw: x })}
       />
       <BoolField
+        label="dsd-fme MBE files"
+        value={!!cfg.MBEFiles}
+        onChange={(x) => set({ ...cfg, MBEFiles: x })}
+        help="Also write a dsd-fme-playable sidecar per call (.imb for P25 Phase 1, .amb for DMR/NXDN/P25p2) so recordings decode offline with dsd-fme -r. TETRA/ProVoice/analog produce no file."
+      />
+      <BoolField
         label="Skip encrypted calls"
         value={cfg.SkipEncrypted}
         onChange={(x) => set({ ...cfg, SkipEncrypted: x })}

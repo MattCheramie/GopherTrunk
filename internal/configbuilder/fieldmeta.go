@@ -265,6 +265,7 @@ var fieldMetas = map[string]FieldMeta{
 	"RecordingsConfig.Dir":                  {Label: "Directory", Help: "Output directory for per-call WAV recordings."},
 	"RecordingsConfig.SampleRate":           {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
 	"RecordingsConfig.WriteRaw":             {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
+	"RecordingsConfig.MBEFiles":             {Label: "dsd-fme MBE files", Help: "Also write a dsd-fme-playable MBE sidecar per call — .imb for P25 Phase 1 IMBE, .amb for DMR/NXDN/P25 Phase 2 AMBE+2 — so recordings decode offline with `dsd-fme -r <file>`. Protocols dsd-fme can't play (TETRA, ProVoice, analog) produce no file."},
 	"RecordingsConfig.SkipEncrypted":        {Label: "Skip encrypted", Help: "Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."},
 	"RecordingsConfig.CryptoCapturePath":    {Label: "Crypto capture path", Help: "Research/offline: append each encrypted P25 Phase 1 superframe's Message Indicator + encrypted voice frames as JSONL for `gophertrunk cryptolab assess`, the security-test harness that attempts decryption by every applicable method and grades the cipher's resistance. Empty disables."},
 	"RecordingsConfig.Equalizer":            {Help: "Per-call CMA blind equalizer in the FM voice chain — useful on simulcast systems."},
