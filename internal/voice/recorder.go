@@ -97,6 +97,7 @@ type Recorder struct {
 	outDir             string
 	sampleRate         uint32
 	writeRaw           bool
+	writeMBE           bool
 	skipEncrypted      bool
 	writeCallJSON      bool
 	normalize          NormalizeConfig
@@ -293,6 +294,14 @@ type RecorderOptions struct {
 	OutDir     string
 	SampleRate uint32 // 8000 typical
 	WriteRaw   bool   // emit a .raw sidecar alongside each .wav
+	// WriteMBE emits a dsd-fme-playable MBE sidecar next to each recording
+	// for protocols dsd-fme can play offline: <basename>.imb for P25 Phase 1
+	// IMBE, <basename>.amb for DMR / NXDN / P25 Phase 2 AMBE+2. The file is
+	// dsd-fme's own container (4-byte cookie + per-frame records; see
+	// mbe_sidecar.go), so `dsd-fme -r <file>` decodes it with a standard
+	// toolchain — no GopherTrunk-specific parsing. Protocols dsd-fme cannot
+	// play (TETRA ACELP, ProVoice, analog) produce no MBE file.
+	WriteMBE bool
 	// WriteCallJSON emits a trunk-recorder-compatible <basename>.json metadata
 	// sidecar next to each recording (per WAV / segment).
 	WriteCallJSON bool
@@ -456,6 +465,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		outDir:             opts.OutDir,
 		sampleRate:         opts.SampleRate,
 		writeRaw:           opts.WriteRaw,
+		writeMBE:           opts.WriteMBE,
 		skipEncrypted:      opts.SkipEncrypted,
 		writeCallJSON:      opts.WriteCallJSON,
 		normalize:          opts.Normalize,
@@ -776,6 +786,16 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 			return err
 		}
 	}
+	if s.mbe != nil {
+		// Repack into the dsd-fme record; a frame whose size doesn't match the
+		// container is skipped so it can't desync the fixed-size record stream.
+		if rec := mbeRecord(s.mbeCookie, frame); rec != nil {
+			if _, err := s.mbe.Write(rec); err != nil {
+				s.mu.Unlock()
+				return err
+			}
+		}
+	}
 	sessCallID := s.callID
 	vocName := s.vocoderName
 	s.mu.Unlock()
@@ -999,7 +1019,7 @@ func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
 		r.log.Warn("recorder: closing aborted encrypted session",
 			"device", deviceSerial, "err", err)
 	}
-	for _, p := range []string{s.wavPath, s.rawPath} {
+	for _, p := range []string{s.wavPath, s.rawPath, s.mbePath} {
 		if p == "" {
 			continue
 		}
@@ -1098,6 +1118,15 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 		s.rawPath = filepath.Join(dir, base+".raw")
 		s.rawWanted = true
 	}
+	// Optional dsd-fme-playable sidecar (recordings.mbe_files) for protocols
+	// dsd-fme's offline player can decode; the cookie doubles as extension.
+	if r.writeMBE {
+		if cookie, ok := mbeCookieForProtocol(cs.Grant.Protocol); ok {
+			s.mbePath = filepath.Join(dir, base+cookie)
+			s.mbeCookie = cookie
+			s.mbeWanted = true
+		}
+	}
 	// The on-disk files are NOT opened here — they are created lazily on the
 	// first write (openSessionFiles). A grant that never yields audio (a
 	// dead-key, an immediately-aborted encrypted call, or a tap that never
@@ -1139,6 +1168,19 @@ func (r *Recorder) openSessionFiles(s *recordingSession) error {
 			r.log.Error("recorder: open raw", "path", s.rawPath, "err", err)
 		} else {
 			s.raw = raw
+		}
+	}
+	if s.mbeWanted && s.mbe == nil {
+		mbe, err := os.Create(s.mbePath)
+		if err != nil {
+			r.log.Error("recorder: open mbe sidecar", "path", s.mbePath, "err", err)
+		} else if _, err := mbe.WriteString(s.mbeCookie); err != nil {
+			// A sidecar without its cookie is unreadable by dsd-fme; drop it.
+			r.log.Error("recorder: write mbe cookie", "path", s.mbePath, "err", err)
+			_ = mbe.Close()
+			_ = os.Remove(s.mbePath)
+		} else {
+			s.mbe = mbe
 		}
 	}
 	return nil
@@ -1316,6 +1358,13 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 			srcs = ct
 		}
 		meta = buildCallMeta(s.cs, s.startedAt, endedAt, int(r.callNum.Add(1)), s.vocoder != nil, srcs, s.freqs)
+		// Label the vocoder + .raw frame size so the flat raw sidecar is
+		// self-describing (GT extension fields; trunk-recorder parsers
+		// ignore unknown keys).
+		if s.vocoder != nil {
+			meta.Vocoder = s.vocoderName
+			meta.FrameBytes = s.vocoder.FrameSize()
+		}
 	}
 	return cc, meta
 }
@@ -1325,7 +1374,7 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 // idle-only call) so it doesn't spam the recordings tree. The session must
 // already be closed. Mirrors the removal in handleEncryptionUpdate.
 func (r *Recorder) removeSessionFiles(s *recordingSession) {
-	for _, p := range []string{s.wavPath, s.rawPath} {
+	for _, p := range []string{s.wavPath, s.rawPath, s.mbePath} {
 		if p == "" {
 			continue
 		}
@@ -1796,6 +1845,15 @@ type recordingSession struct {
 	// first frame (openSessionFiles), so a call with no audio never leaves a
 	// 0-byte .raw behind.
 	rawWanted bool
+	// mbe* mirror raw* for the optional dsd-fme-playable MBE sidecar
+	// (recordings.mbe_files): mbeCookie is ".imb"/".amb" (doubling as the
+	// file extension and the 4-byte header dsd-fme identifies the container
+	// by), and the file is created lazily alongside the .raw so an audio-less
+	// call leaves nothing behind. See mbe_sidecar.go.
+	mbe       *os.File
+	mbePath   string
+	mbeCookie string
+	mbeWanted bool
 	// rawFrames counts vocoder frames delivered to this session (each ~one
 	// speech frame, e.g. 30 ms for TETRA ACELP). Surfaced in the
 	// "recording shorter than call span" diagnostic so the frame yield of a
@@ -1876,6 +1934,11 @@ func (s *recordingSession) closeLocked() error {
 	}
 	if s.raw != nil {
 		if err := s.raw.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if s.mbe != nil {
+		if err := s.mbe.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

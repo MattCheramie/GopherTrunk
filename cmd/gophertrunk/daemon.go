@@ -2059,6 +2059,7 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			OutDir:        cfg.Recordings.Dir,
 			SampleRate:    cfg.Recordings.SampleRate,
 			WriteRaw:      cfg.Recordings.WriteRaw,
+			WriteMBE:      cfg.Recordings.MBEFiles,
 			SkipEncrypted: cfg.Recordings.SkipEncrypted,
 			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
 			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,

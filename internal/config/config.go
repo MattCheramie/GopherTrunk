@@ -1659,6 +1659,14 @@ type RecordingsConfig struct {
 	// byte-identical when disabled. Listed high so it's easy to find.
 	Enhance  EnhanceConfig `yaml:"enhance"`
 	WriteRaw bool          `yaml:"write_raw"`
+	// MBEFiles additionally writes a dsd-fme-playable MBE sidecar per call
+	// for protocols dsd-fme can play offline: <basename>.imb (P25 Phase 1
+	// IMBE) / <basename>.amb (DMR / NXDN / P25 Phase 2 AMBE+2), in dsd-fme's
+	// own cookie-headed container so `dsd-fme -r <file>` decodes it directly.
+	// Unlike the flat .raw (write_raw), these need no external knowledge of
+	// the frame size or protocol. TETRA ACELP / ProVoice / analog calls
+	// produce no MBE file (dsd-fme has no playback mode for them).
+	MBEFiles bool `yaml:"mbe_files"`
 	// SkipEncrypted, when true, suppresses recording of calls flagged
 	// encrypted. A call whose grant already signals encryption is never
 	// opened; a call whose encryption is only discovered mid-stream has

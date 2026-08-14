@@ -42,16 +42,24 @@ type callMeta struct {
 	// `talkgroup` is the target radio's SSI rather than a real talkgroup. Lets a
 	// consumer render the recording as an individual call instead of mistaking the
 	// radio ID for a talkgroup. Omitted (false) for ordinary group calls.
-	Individual           bool            `json:"individual,omitempty"`
-	TalkgroupTag         string          `json:"talkgroup_tag"`
-	TalkgroupDescription string          `json:"talkgroup_description"`
-	TalkgroupGroupTag    string          `json:"talkgroup_group_tag"`
-	TalkgroupGroup       string          `json:"talkgroup_group"`
-	ColorCode            int             `json:"color_code"`
-	AudioType            string          `json:"audio_type"`
-	ShortName            string          `json:"short_name"`
-	FreqList             []callFreqEntry `json:"freqList"`
-	SrcList              []callSrcEntry  `json:"srcList"`
+	Individual           bool   `json:"individual,omitempty"`
+	TalkgroupTag         string `json:"talkgroup_tag"`
+	TalkgroupDescription string `json:"talkgroup_description"`
+	TalkgroupGroupTag    string `json:"talkgroup_group_tag"`
+	TalkgroupGroup       string `json:"talkgroup_group"`
+	ColorCode            int    `json:"color_code"`
+	AudioType            string `json:"audio_type"`
+	ShortName            string `json:"short_name"`
+	// Vocoder / FrameBytes are GopherTrunk extensions (TR parsers ignore
+	// them): the registry name of the vocoder that decoded this call (e.g.
+	// "imbe", "ambe2-dmr") and the fixed byte size of one frame in the .raw
+	// sidecar. Together they make the flat .raw self-describing — filesize /
+	// FrameBytes = frame count, no config cross-reference needed. Omitted for
+	// analog calls and protocols with no in-process vocoder.
+	Vocoder    string          `json:"vocoder,omitempty"`
+	FrameBytes int             `json:"frame_bytes,omitempty"`
+	FreqList   []callFreqEntry `json:"freqList"`
+	SrcList    []callSrcEntry  `json:"srcList"`
 }
 
 // callFreqEntry mirrors trunk-recorder's freqList element. error_count /
