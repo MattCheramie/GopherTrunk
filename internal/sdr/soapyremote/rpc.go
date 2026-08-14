@@ -77,11 +77,17 @@ const (
 	callSetFrequency           int32 = 800
 	callSetSampleRate          int32 = 900
 	callGetSampleRate          int32 = 901
+	callGetHardwareTime        int32 = 1101
 	callWriteSetting           int32 = 1400
 )
 
 // dirRX is SoapySDR's SOAPY_SDR_RX direction (TX is 0).
 const dirRX byte = 1
+
+// soapyFlagHasTime is SoapySDR's SOAPY_SDR_HAS_TIME stream flag: the timeNs
+// argument of ACTIVATE_STREAM carries a valid hardware timestamp, so the
+// remote driver schedules the stream start instead of starting immediately.
+const soapyFlagHasTime int32 = 1 << 2
 
 // dblMantDig mirrors C's DBL_MANT_DIG used in the frexp/ldexp double codec.
 const dblMantDig = 53
