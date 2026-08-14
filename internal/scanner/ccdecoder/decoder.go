@@ -415,6 +415,14 @@ type Decoder struct {
 	// in New. A no-op on the hot path when nothing is subscribed.
 	voiceFan *voiceFanout
 
+	// dmoColour is the DM traffic colour code the active TETRA DMO pipeline
+	// has recovered (or was configured with), encoded colour<<1|1 so an
+	// unrecovered state (0) is distinguishable from a recovered colour 0.
+	// Written by the pipeline via PipelineOptions.TETRADMOColourSink on the
+	// decode goroutine, cleared in clearActiveLocked, read lock-free by voice
+	// chains via Decoder.TETRADMOColour (voicetap.go).
+	dmoColour atomic.Uint64
+
 	// sub is the bus subscription the Decoder uses to learn about
 	// KindHuntProgress retunes. Subscribed in New so the
 	// subscription is alive before any other goroutine
@@ -549,8 +557,11 @@ func New(opts Options) (*Decoder, error) {
 		metrics:      opts.Metrics,
 		fec:          opts.FEC,
 		autotune:     opts.Autotune,
-		voiceFan:     newVoiceFanout(log, opts.VoiceTapBufferChunks),
 	}
+	// Wired after the literal so the fanout's auto-sizing can read the
+	// decoder's pipeline rate at subscribe time (the rate is unknown until
+	// the first acquisition builds the DDC).
+	d.voiceFan = newVoiceFanout(log, opts.VoiceTapBufferChunks, d.PipelineRateHz)
 	empty := ""
 	d.activeSystem.Store(&empty)
 	if opts.IQCorrect {
@@ -791,6 +802,11 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 		// autotune off this is always 0, so the published value is unchanged
 		// (issue #815).
 		CarrierBiasHz: func() float64 { return float64(d.autotuneApplied.Load()) },
+		// Publish the DMO pipeline's recovered DM colour so a same-carrier
+		// voice chain that started before recovery completed can adopt it
+		// (see Decoder.TETRADMOColour). Encoded known-bit-in-LSB so an
+		// unrecovered state is distinguishable from colour 0.
+		TETRADMOColourSink: func(c uint32) { d.dmoColour.Store(uint64(c)<<1 | 1) },
 	}
 	if d.fec != nil {
 		// Bind the system name so the pipeline reports a per-burst FEC
@@ -835,6 +851,9 @@ func (d *Decoder) clearActiveLocked() {
 		_ = d.active.Close()
 		d.active = nil
 	}
+	// A torn-down/retuned system's recovered DM colour must not leak into the
+	// next acquisition (a different DMO network may use a different colour).
+	d.dmoColour.Store(0)
 	// Drop the issue #402 zero-IF health window so the next pipeline
 	// re-baselines against its own fresh TSBK counters instead of
 	// diffing against the torn-down pipeline's totals.

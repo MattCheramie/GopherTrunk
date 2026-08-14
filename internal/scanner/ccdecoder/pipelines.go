@@ -96,6 +96,15 @@ type PipelineOptions struct {
 	// instead of the residual-only value that drops toward 0 once autotune
 	// re-centres the carrier (issue #815). Nil ⇒ residual only.
 	CarrierBiasHz func() float64
+
+	// TETRADMOColourSink, when non-nil, receives the DM traffic colour code
+	// the moment the DMO pipeline knows it (tetra_colour_code override at
+	// construction, or a confident RecoverDMColourCode). The decoder stores
+	// it and exposes it via Decoder.TETRADMOColour so an already-running
+	// same-carrier voice chain — whose grant structurally fired before
+	// recovery could complete — can adopt the colour instead of brute-forcing
+	// its own. Only newTETRADMOPipeline calls it. nil ⇒ zero overhead.
+	TETRADMOColourSink func(colour uint32)
 }
 
 // tapDibits / tapBits forward a recovered-symbol chunk to SymbolTap when

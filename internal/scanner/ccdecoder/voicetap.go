@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
 )
@@ -26,17 +27,56 @@ type voiceFanout struct {
 	subs map[int]*voiceSub
 	next int
 	log  *slog.Logger
-	// bufDepth is the per-subscriber channel capacity: how many post-DDC IQ
-	// chunks may queue before a lagging consumer starts dropping (issue #402).
-	// Configurable via recordings.voice_tap_buffer_chunks; 0 uses the default.
+	// bufDepth is the explicit per-subscriber channel capacity override
+	// (recordings.voice_tap_buffer_chunks); 0 auto-sizes each subscription
+	// from the pipeline rate at subscribe time (voiceTapBudget).
 	bufDepth int
+	// rateHz reports the channelised pipeline rate for auto-sizing. May be
+	// nil (tests); called OUTSIDE f.mu because the production getter
+	// (Decoder.PipelineRateHz) takes the decoder lock.
+	rateHz func() float64
 }
 
-// defaultVoiceTapBufferChunks is the per-subscriber buffer depth when none is
-// configured. Concurrent same-carrier calls share one tap consumer, so the
-// memory cost is a single buffer per active carrier — a depth well above the
-// original 64 buys jitter headroom for a few tens of KB.
+// defaultVoiceTapBufferChunks is the per-subscriber buffer depth floor.
+// Concurrent same-carrier calls share one tap consumer, so the memory cost is
+// a single buffer per active carrier — a depth well above the original 64
+// buys jitter headroom for a few tens of KB.
 const defaultVoiceTapBufferChunks = 128
+
+// Voice-tap auto-sizing. A fixed chunk COUNT is the wrong unit for this buffer
+// — the exact defect decodeQueueBudget already fixed for the decode queue
+// (decoder.go): SoapyRemote hands a remote SDR ~369-sample datagrams, which
+// decimate to ~53-sample post-DDC chunks, so 128 chunks was only ~47 ms at
+// 144 kHz. The DMO voice chain runs multi-tens-of-ms work bursts (colour
+// recovery Viterbi sweeps) on its drain goroutine, so every burst overflowed
+// the tap and starved the call's decode (the operator's dropped_chunks≈240
+// per call). Size from wall-clock instead: voiceTapSeconds of IQ at the
+// pipeline rate, assuming pessimistically small chunks so the slot count is
+// never the limiter.
+const (
+	voiceTapSeconds             = 1.0
+	voiceTapAssumedChunkSamples = 32
+	maxVoiceTapChunks           = 16384
+)
+
+// voiceTapBudget converts the channelised pipeline rate into a subscriber
+// buffer depth covering voiceTapSeconds, clamped to
+// [defaultVoiceTapBufferChunks, maxVoiceTapChunks]. An unknown rate (0 —
+// subscriber attached before the first pipeline built the DDC) falls back to
+// the floor.
+func voiceTapBudget(rateHz float64) int {
+	if rateHz <= 0 {
+		return defaultVoiceTapBufferChunks
+	}
+	depth := int(math.Ceil(voiceTapSeconds * rateHz / voiceTapAssumedChunkSamples))
+	if depth < defaultVoiceTapBufferChunks {
+		return defaultVoiceTapBufferChunks
+	}
+	if depth > maxVoiceTapChunks {
+		return maxVoiceTapChunks
+	}
+	return depth
+}
 
 // voiceSub is one subscriber's channel plus its dropped-chunk counter. A drop
 // is a gap of missing IQ delivered to the followed call's voice chain, which
@@ -48,14 +88,14 @@ type voiceSub struct {
 	drops atomic.Uint64
 }
 
-func newVoiceFanout(log *slog.Logger, bufDepth int) *voiceFanout {
+func newVoiceFanout(log *slog.Logger, bufDepth int, rateHz func() float64) *voiceFanout {
 	if log == nil {
 		log = slog.Default()
 	}
-	if bufDepth <= 0 {
-		bufDepth = defaultVoiceTapBufferChunks
+	if bufDepth < 0 {
+		bufDepth = 0
 	}
-	return &voiceFanout{subs: map[int]*voiceSub{}, log: log, bufDepth: bufDepth}
+	return &voiceFanout{subs: map[int]*voiceSub{}, log: log, bufDepth: bufDepth, rateHz: rateHz}
 }
 
 // subscribe registers a voice subscriber and returns its IQ channel plus an
@@ -64,7 +104,18 @@ func newVoiceFanout(log *slog.Logger, bufDepth int) *voiceFanout {
 // that wants the count — e.g. a triggered DDC capture reporting whether the grab
 // has gaps — can read it; callers that don't care simply ignore the return.
 func (f *voiceFanout) subscribe() (<-chan []complex64, func() uint64) {
-	sub := &voiceSub{ch: make(chan []complex64, f.bufDepth)}
+	depth := f.bufDepth
+	if depth <= 0 {
+		// Auto-size from the pipeline rate, resolved OUTSIDE f.mu (the getter
+		// takes the decoder lock). By subscribe time the DDC exists, so the
+		// rate is real; a 0 rate clamps to the floor.
+		var rate float64
+		if f.rateHz != nil {
+			rate = f.rateHz()
+		}
+		depth = voiceTapBudget(rate)
+	}
+	sub := &voiceSub{ch: make(chan []complex64, depth)}
 	f.mu.Lock()
 	id := f.next
 	f.next++
@@ -141,6 +192,20 @@ func (d *Decoder) PipelineRateHz() float64 {
 	return d.pipelineRateHz
 }
 
+// TETRADMOColour reports the DM traffic colour code the active TETRA DMO
+// pipeline knows (config override or a confident RecoverDMColourCode), and
+// whether one is known at all. Lock-free; safe from any goroutine. A voice
+// chain whose grant fired before recovery completed polls this to adopt the
+// pipeline's colour instead of brute-forcing its own (see
+// composer.runTETRADMOVoiceChain).
+func (d *Decoder) TETRADMOColour() (uint32, bool) {
+	v := d.dmoColour.Load()
+	if v&1 == 0 {
+		return 0, false
+	}
+	return uint32(v >> 1), true
+}
+
 // CCVoiceSource adapts a control-channel Decoder into a voice device that
 // streams the control carrier's own IQ for a same-carrier grant — no second
 // SDR, no retune. It satisfies the voice composer's IQSource, the trunking
@@ -192,6 +257,17 @@ func (s *CCVoiceSource) CanTune(hz uint32) bool {
 	}
 	cc := dec.CenterFreqHz()
 	return cc != 0 && hz == cc
+}
+
+// TETRADMOColour delegates to the backing Decoder's recovered DM colour;
+// (0, false) while no decoder exists or nothing is known. The composer
+// type-asserts for this so a dedicated voice SDR (no CC decoder) simply
+// lacks the capability.
+func (s *CCVoiceSource) TETRADMOColour() (uint32, bool) {
+	if dec := s.get(); dec != nil {
+		return dec.TETRADMOColour()
+	}
+	return 0, false
 }
 
 func (s *CCVoiceSource) SampleRateHz() uint32 {

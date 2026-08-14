@@ -96,12 +96,16 @@ func newTETRADMOPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		rateHz:       opts.SampleRateHz,
 		now:          time.Now,
 		configColour: opts.System.TETRAColourCode,
+		colourSink:   opts.TETRADMOColourSink,
 		fnSeen:       map[uint8]struct{}{},
 		debug:        log.Enabled(context.Background(), slog.LevelDebug),
 	}
 	if p.configColour != 0 {
 		p.colour = p.configColour
 		p.colourKnown = true
+		if p.colourSink != nil {
+			p.colourSink(p.colour)
+		}
 	}
 	p.ext = tetra.NewDMStreamExtractor(p.onBurst)
 	p.grid = tetra.NewDMSlotGrid()
@@ -159,6 +163,13 @@ type tetraDMOPipeline struct {
 	colourKnown  bool
 	colourCand   []tetra.DMBurst
 	colourTries  int
+	// colourSink, when non-nil, is told the DM colour the moment it is known
+	// (config override at construction, or a confident recovery). The decoder
+	// exposes it to the same-carrier voice chain, which typically starts
+	// before recovery completes (the grant fires at dmoGrantMinDNB=4 bursts,
+	// recovery needs dmoColourBatch=20) and would otherwise brute-force the
+	// colour all over again — or fail to, on a noisy tap.
+	colourSink func(colour uint32)
 
 	// Lock + liveness.
 	locked bool
@@ -218,8 +229,10 @@ func (p *tetraDMOPipeline) onBurst(b tetra.DMBurst) {
 		// chain does the real decode). This is a full Viterbi pass per burst (two when
 		// the soft decode fails and the hard fallback runs), which was unbounded while
 		// noise detections reached here; qualified bursts cap it at the ~17/s a real
-		// transmission produces, and only while one is in progress.
-		if p.colourKnown {
+		// transmission produces, and only while one is in progress. Debug-gated: the
+		// counter only feeds the debug status line, so at INFO level the decode is
+		// pure waste on the control decode goroutine.
+		if p.debug && p.colourKnown {
 			if len(tetra.DMBurstTCHSpeechSoft(b, p.colour)) == 2 ||
 				len(tetra.DMBurstTCHSpeech(b, p.colour)) == 2 {
 				p.tchCRC++
@@ -242,6 +255,15 @@ func (p *tetraDMOPipeline) maybeRearmGrant(now time.Time) {
 	p.dnbSinceLock = 0
 	p.lastDNB = time.Time{}
 	p.grid.Reset()
+	// A drought ends the transmission, so the colour-recovery attempt budget is
+	// per-transmission, not per-process: without this, six failed attempts (a
+	// weak first PTT, or noise-diluted early batches) disabled recovery for the
+	// daemon's lifetime — the operator's run showed colour_known=false forever
+	// while hundreds of later, perfectly decodable qualified DNBs arrived.
+	// Buffered candidates are stale for the same reason: bursts carried across
+	// a transmission boundary dilute the next attempt's dominance gate.
+	p.colourTries = 0
+	p.colourCand = p.colourCand[:0]
 }
 
 // maybeLock publishes cc.locked once, on the first CRC-valid SCH/S with a parseable
@@ -275,6 +297,9 @@ func (p *tetraDMOPipeline) recoverColour(b tetra.DMBurst) {
 		p.colour = c
 		p.colourKnown = true
 		p.log.Info("tetra dmo colour code recovered", "colour", c, "crc_valid_tchs", n, "system", p.system)
+		if p.colourSink != nil {
+			p.colourSink(c)
+		}
 	}
 	// Keep only the freshest half so the next attempt reflects current channel
 	// conditions rather than re-scoring stale bursts.
@@ -363,6 +388,11 @@ func (p *tetraDMOPipeline) Reset() {
 	p.lastDNB = time.Time{}
 	p.pendingSoft = nil
 	p.lastLog = time.Time{}
+	// Buffered colour candidates predate the re-anchor and the attempt budget is
+	// per-transmission (see maybeRearmGrant); a recovered/configured colour itself
+	// stays — the DM colour is a network constant, not receiver state.
+	p.colourTries = 0
+	p.colourCand = p.colourCand[:0]
 }
 
 func (p *tetraDMOPipeline) Close() error { return nil }
