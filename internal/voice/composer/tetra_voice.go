@@ -94,9 +94,14 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 			"other_call_bursts", offSlot.Load())
 	}()
 
+	// feBuf is the reused front-end output scratch — fe.Process(nil, …)
+	// allocated a fresh slice per chunk (~2700/s on SoapyRemote's small
+	// datagrams), pure GC pressure on the tap-drain goroutine.
+	var feBuf []complex64
 	process := func(iq []complex64) {
 		bt.observe(iq)
-		rx.Process(fe.Process(nil, iq))
+		feBuf = fe.Process(feBuf[:0], iq)
+		rx.Process(feBuf)
 	}
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()

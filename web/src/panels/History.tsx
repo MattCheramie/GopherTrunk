@@ -328,7 +328,7 @@ export function History() {
 
       {selected && (
         <DetailModal
-          title={selected.talkgroup_alpha ?? `TG ${selected.group_id}`}
+          title={selected.talkgroup_alpha || `TG ${selected.group_id}`}
           subtitle={`${selected.system} · ${selected.protocol}`}
           onClose={() => setSelected(null)}
         >

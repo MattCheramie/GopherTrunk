@@ -1,6 +1,8 @@
 package ccdecoder
 
 import (
+	"io"
+	"log/slog"
 	"math"
 	"math/rand"
 	"sync"
@@ -167,7 +169,10 @@ func TestTETRADMOPipelineLocksAndGrants(t *testing.T) {
 	}()
 
 	pl, err := newTETRADMOPipeline(PipelineOptions{
-		Bus:          bus,
+		Bus: bus,
+		// Debug logger: the tch_crc telemetry decode this test asserts on is
+		// debug-gated (it only feeds the debug status line in production).
+		Log:          slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		SystemName:   "DMO",
 		FrequencyHz:  freqHz,
 		SampleRateHz: sampleRate,
@@ -378,6 +383,173 @@ func TestTETRADMOPipelineGrantsOnlyAfterLock(t *testing.T) {
 	}
 	if w.preLock != 0 {
 		t.Errorf("%d grant(s) published before cc.locked", w.preLock)
+	}
+}
+
+// buildDMOUndecodableDibitStream mirrors buildDMODibitStream — a lock-worthy DSB
+// followed by slot-aligned, correctly-trained DNBs — but the DNB payload blocks are
+// filler, not TCH/S codewords at any colour. The shape of an encrypted or
+// unreceivably-weak transmission: the grid qualifies every burst, but
+// RecoverDMColourCode's confidence gate can never clear.
+// dmoRandDibits returns n pseudo-random dibits (LCG-mixed). The periodic
+// dmoFiller pattern is fine as inter-burst guard, but as a 108-dibit payload it
+// modulates to a strong tone that upsets timing recovery / the CMA equalizer
+// and most bursts go undetected — random payload keeps the receiver honest.
+func dmoRandDibits(seed, n int) []uint8 {
+	s := uint32(seed)*2654435761 + 12345
+	out := make([]uint8, n)
+	for i := range out {
+		s = s*1664525 + 1013904223
+		out[i] = uint8(s >> 30)
+	}
+	return out
+}
+
+func buildDMOUndecodableDibitStream(nDNB int) []uint8 {
+	b2d := tetra.TetraBitsToDibits
+	schs := b2d(tetra.EncodeBSCH(dmoSeqBits(1, 60)))
+	schh := b2d(tetra.EncodeSCHHD(dmoSeqBits(2, 124), 0))
+
+	var out []uint8
+	out = append(out, dmoFiller(0, 4*dmoTestSlotDibits)...)
+	out = append(out, dmoSlot(1,
+		dmoFiller(3, dmoTestDSBLead-dmoTestBurstStart-60),
+		schs,
+		tetra.SyncTrainingDibits(),
+		schh,
+	)...)
+	for i := 0; i < nDNB; i++ {
+		out = append(out, dmoSlot(11+i,
+			dmoRandDibits(211+i*7, 108),
+			tetra.NormalSyncDibits(),
+			dmoRandDibits(509+i*13, 108),
+		)...)
+	}
+	out = append(out, dmoFiller(99, 3*dmoTestSlotDibits)...)
+	return out
+}
+
+// TestTETRADMOPipelineRecoversColourAfterRearm is the regression for the operator's
+// run where colour_known stayed false for the daemon's whole life: colourTries was
+// never reset, so six failed attempts on an early undecodable transmission disabled
+// colour recovery permanently — hundreds of later, perfectly decodable qualified DNBs
+// arrived with recovery already switched off. The attempt budget is per-transmission
+// now: a re-arm (traffic drought) clears colourTries and the stale candidate buffer,
+// so the next PTT recovers. Fails against the old code (colour never recovered on the
+// second transmission).
+func TestTETRADMOPipelineRecoversColourAfterRearm(t *testing.T) {
+	bus := events.NewBus(256)
+	defer bus.Close()
+	w := dmoWatch(bus)
+	clock := time.Unix(1_760_000_000, 0)
+	p := dmoTestPipeline(t, bus, &clock)
+
+	// First transmission: undecodable payload, long enough (~90 qualified DNBs) to
+	// burn all dmoColourMaxAttempts recovery attempts.
+	dmoFeed(p, dmoModulate(buildDMOUndecodableDibitStream(90), 7))
+	if p.colourKnown {
+		t.Fatalf("recovered a colour from undecodable payload (colour=%d)", p.colour)
+	}
+	if p.colourTries < dmoColourMaxAttempts {
+		t.Fatalf("burned %d attempts, want %d — the scenario is not exercising the cap",
+			p.colourTries, dmoColourMaxAttempts)
+	}
+
+	// Silence past the re-arm drought: the attempt budget must reset with the grid.
+	gap := dmoNoiseIQ(1, 99)
+	for i := 0; i < 5; i++ {
+		clock = clock.Add(time.Second)
+		dmoFeed(p, gap)
+	}
+	if p.colourTries != 0 {
+		t.Errorf("colourTries = %d after the re-arm drought, want 0", p.colourTries)
+	}
+	if len(p.colourCand) != 0 {
+		t.Errorf("%d stale colour candidates survived the re-arm, want 0", len(p.colourCand))
+	}
+
+	// Second transmission: clean colour-3 traffic must now recover.
+	clock = clock.Add(time.Second)
+	dmoFeed(p, dmoModulate(buildDMODibitStream(3, 40), 11))
+	if !p.colourKnown {
+		t.Fatalf("colour not recovered on a clean transmission after re-arm (tries=%d, qualified=%d)",
+			p.colourTries, p.dnbQualified)
+	}
+	if p.colour != 3 {
+		t.Errorf("recovered colour=%d, want 3", p.colour)
+	}
+
+	bus.Close()
+	<-w.drainEnd
+}
+
+// TestTETRADMOPipelinePublishesColourToSink pins the colour hand-off to the decoder:
+// the pipeline must call TETRADMOColourSink when recovery lands (and immediately for
+// a tetra_colour_code override), because the same-carrier voice chain's grant
+// structurally fires before recovery completes and polls the decoder for the answer.
+func TestTETRADMOPipelinePublishesColourToSink(t *testing.T) {
+	bus := events.NewBus(256)
+	defer bus.Close()
+	w := dmoWatch(bus)
+
+	var got []uint32
+	pl, err := newTETRADMOPipeline(PipelineOptions{
+		Bus:                bus,
+		SystemName:         "DMO",
+		FrequencyHz:        dmoTestFreqHz,
+		SampleRateHz:       dmoTestSampleRate,
+		System:             trunking.System{Protocol: trunking.ProtocolTETRADMO},
+		TETRADMOColourSink: func(c uint32) { got = append(got, c) },
+	})
+	if err != nil {
+		t.Fatalf("newTETRADMOPipeline: %v", err)
+	}
+	dmoFeed(pl, dmoModulate(buildDMODibitStream(3, 40), 7))
+	if len(got) != 1 || got[0] != 3 {
+		t.Errorf("colour sink calls = %v, want exactly [3]", got)
+	}
+
+	// A configured colour publishes at construction, before any IQ.
+	got = nil
+	_, err = newTETRADMOPipeline(PipelineOptions{
+		Bus:                bus,
+		SystemName:         "DMO",
+		FrequencyHz:        dmoTestFreqHz,
+		SampleRateHz:       dmoTestSampleRate,
+		System:             trunking.System{Protocol: trunking.ProtocolTETRADMO, TETRAColourCode: 44},
+		TETRADMOColourSink: func(c uint32) { got = append(got, c) },
+	})
+	if err != nil {
+		t.Fatalf("newTETRADMOPipeline (override): %v", err)
+	}
+	if len(got) != 1 || got[0] != 44 {
+		t.Errorf("override colour sink calls = %v, want exactly [44]", got)
+	}
+
+	bus.Close()
+	<-w.drainEnd
+}
+
+// TestDecoderTETRADMOColourRoundTrip pins the decoder-side store the sink writes
+// into: unknown until stored (distinguishing "colour 0" from "nothing known"), and
+// cleared when the active pipeline is torn down so one system's colour cannot leak
+// into the next acquisition.
+func TestDecoderTETRADMOColourRoundTrip(t *testing.T) {
+	d := &Decoder{}
+	if c, known := d.TETRADMOColour(); known || c != 0 {
+		t.Fatalf("fresh decoder colour = (%d, %v), want (0, false)", c, known)
+	}
+	d.dmoColour.Store(0<<1 | 1) // a recovered colour of literally 0 is still known
+	if c, known := d.TETRADMOColour(); !known || c != 0 {
+		t.Fatalf("stored colour 0 reads (%d, %v), want (0, true)", c, known)
+	}
+	d.dmoColour.Store(44<<1 | 1)
+	if c, known := d.TETRADMOColour(); !known || c != 44 {
+		t.Fatalf("stored colour 44 reads (%d, %v), want (44, true)", c, known)
+	}
+	d.clearActiveLocked()
+	if c, known := d.TETRADMOColour(); known || c != 0 {
+		t.Fatalf("colour after clearActiveLocked = (%d, %v), want (0, false)", c, known)
 	}
 }
 

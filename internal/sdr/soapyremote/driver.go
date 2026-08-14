@@ -532,14 +532,7 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		return nil, fmt.Errorf("soapyremote: initial stream ack: %w", err)
 	}
 
-	// ACTIVATE_STREAM (streamId, flags=0, timeNs=0, numElems=0).
-	if err := d.rpcVoid(func(p *packer) {
-		p.call(callActivateStream)
-		p.i32(streamID)
-		p.i32(0)
-		p.i64(0)
-		p.i32(0)
-	}); err != nil {
+	if err := d.activateStream(streamID); err != nil {
 		d.clearStreamConns()
 		return nil, err
 	}
@@ -561,6 +554,63 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	}
 	go d.streamLoop(ctx, dataConn, streamID, out)
 	return out, nil
+}
+
+// activateStream issues ACTIVATE_STREAM. A single-channel stream starts
+// immediately (flags=0, timeNs=0). A multi-channel (MRC diversity) stream must
+// instead start at a scheduled device timestamp: UHD rejects an immediate
+// start on a multi-channel streamer ("Invalid recv stream command - stream now
+// on multiple channels in a single streamer will fail to time align") because
+// the two receive chains can only be sample-aligned by starting both at the
+// same hardware time. So under diversity we read the remote hardware clock and
+// schedule the start diversityActivateLead in the future (SOAPY_SDR_HAS_TIME).
+// Remotes without a hardware clock — or that reject the timed form — fall back
+// to the immediate start, preserving the single-channel behaviour.
+func (d *device) activateStream(streamID int32) error {
+	if d.rxChannelCount() > 1 {
+		hw, err := d.getHardwareTime()
+		if err == nil {
+			err = d.rpcVoid(func(p *packer) {
+				p.call(callActivateStream)
+				p.i32(streamID)
+				p.i32(soapyFlagHasTime)
+				p.i64(hw + diversityActivateLead.Nanoseconds())
+				p.i32(0)
+			})
+			if err == nil {
+				return nil
+			}
+		}
+		if errors.Is(err, errClosed) {
+			return err
+		}
+		d.log.Debug("soapyremote: timed multi-channel stream start unavailable; falling back to immediate start",
+			"addr", d.addr, "err", err)
+	}
+	return d.rpcVoid(func(p *packer) {
+		p.call(callActivateStream)
+		p.i32(streamID)
+		p.i32(0)
+		p.i64(0)
+		p.i32(0)
+	})
+}
+
+// getHardwareTime queries the remote device's hardware clock in nanoseconds
+// (GET_HARDWARE_TIME with no clock qualifier). Not every SoapySDR driver keeps
+// a hardware clock; callers treat an error as "no time source".
+func (d *device) getHardwareTime() (int64, error) {
+	u, err := d.rpc(func(p *packer) {
+		p.call(callGetHardwareTime)
+		p.str("")
+	})
+	if err != nil {
+		return 0, err
+	}
+	if err := u.checkException(); err != nil {
+		return 0, err
+	}
+	return u.i64()
 }
 
 // setupStreamTCP performs SoapyRemote's two-phase TCP stream setup. The wire

@@ -214,6 +214,10 @@ recordings:
       release_ms: 80     # envelope release (default 80)
       makeup_db: 0       # fixed post-compression gain (default 0)
   write_raw: true   # also append a .raw sidecar with the vocoder frames
+  mbe_files: false  # also write a dsd-fme-playable sidecar per call (.imb for
+                    # P25 Phase 1, .amb for DMR/NXDN/P25p2) so recordings can be
+                    # decoded offline with `dsd-fme -r <file>`; TETRA/ProVoice/
+                    # analog have no dsd-fme playback mode and produce none
   skip_encrypted: false  # don't write files for calls flagged encrypted.
                          # NOTE: true also suppresses the completed-call
                          # broadcast backends (webhook/rdioscanner) for

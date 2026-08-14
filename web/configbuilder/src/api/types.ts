@@ -183,6 +183,7 @@ export interface RecordingsConfig {
   SampleRate: number;
   Enhance: EnhanceConfig;
   WriteRaw: boolean;
+  MBEFiles?: boolean;
   SkipEncrypted: boolean;
   Equalizer: EqualizerConfig;
   Normalize: NormalizeConfig;

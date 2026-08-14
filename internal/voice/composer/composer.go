@@ -93,6 +93,19 @@ type exactRateSource interface {
 	SampleRateExactHz() float64
 }
 
+// dmoColourSource is the optional capability a voice IQ source implements when
+// it can report the DM traffic colour code the control-side TETRA DMO pipeline
+// has recovered (ccdecoder.CCVoiceSource delegates to the decoder's atomic).
+// A DMO grant structurally fires before the pipeline finishes recovering the
+// colour (grant at 4 qualified DNBs, recovery needs 20), so the grant's colour
+// hint is almost always 0; the running voice chain polls this instead, adopting
+// the pipeline's answer the moment it lands rather than brute-forcing 64
+// colours on its own IQ goroutine. A dedicated voice SDR has no CC decoder and
+// simply lacks the capability.
+type dmoColourSource interface {
+	TETRADMOColour() (colour uint32, known bool)
+}
+
 // Devices resolves a Voice-role IQ source by its serial. The daemon
 // supplies a wrapper around sdr.Pool; tests use a map.
 type Devices interface {
@@ -597,7 +610,11 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	case voiceKindTETRA:
 		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, ch.done)
 	case voiceKindTETRADMO:
-		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, ch.done)
+		var liveColour func() (uint32, bool)
+		if dcs, ok := src.(dmoColourSource); ok {
+			liveColour = dcs.TETRADMOColour
+		}
+		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, liveColour, ch.done)
 	case voiceKindNXDN:
 		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	default:

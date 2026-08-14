@@ -12,7 +12,7 @@ import (
 // TestVoiceFanoutDeliversCopies verifies subscribers get their own copy of each
 // broadcast chunk and that a broadcast with no subscribers is a no-op.
 func TestVoiceFanoutDeliversCopies(t *testing.T) {
-	f := newVoiceFanout(nil, 0)
+	f := newVoiceFanout(nil, 0, nil)
 	f.broadcast([]complex64{1, 2, 3}) // no subscribers: must not panic/block
 
 	ch, unsub := f.subscribe()
@@ -42,7 +42,7 @@ func TestVoiceFanoutDeliversCopies(t *testing.T) {
 // starvation diagnostic) rather than lost silently.
 func TestVoiceFanoutDropsWhenFull(t *testing.T) {
 	var logs bytes.Buffer
-	f := newVoiceFanout(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})), 0)
+	f := newVoiceFanout(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})), 0, nil)
 	_, unsub := f.subscribe()
 	for i := 0; i < 1000; i++ {
 		f.broadcast([]complex64{complex(float32(i), 0)}) // never blocks despite full buffer
@@ -63,7 +63,7 @@ func TestVoiceFanoutDropsWhenFull(t *testing.T) {
 // logs nothing at unsubscribe (no false starvation warnings).
 func TestVoiceFanoutNoDropWarningWhenDrained(t *testing.T) {
 	var logs bytes.Buffer
-	f := newVoiceFanout(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})), 0)
+	f := newVoiceFanout(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})), 0, nil)
 	ch, unsub := f.subscribe()
 	done := make(chan struct{})
 	go func() {
@@ -89,7 +89,7 @@ func TestVoiceFanoutNoDropWarningWhenDrained(t *testing.T) {
 // zero drops.
 func TestVoiceFanoutHonoursConfiguredDepth(t *testing.T) {
 	const depth = 4
-	f := newVoiceFanout(nil, depth)
+	f := newVoiceFanout(nil, depth, nil)
 	_, unsub := f.subscribe() // never drained
 
 	// The first `depth` chunks fit; each subsequent one drops.
@@ -102,6 +102,40 @@ func TestVoiceFanoutHonoursConfiguredDepth(t *testing.T) {
 	f.broadcast([]complex64{complex(99, 0)}) // (depth+1)th: must drop
 	if got := unsub(); got != 1 {
 		t.Fatalf("dropped %d chunks after exceeding depth %d, want exactly 1", got, depth)
+	}
+}
+
+// TestVoiceTapAutoDepthCoversOneSecond is the regression for the DMO
+// starvation half of issue #1003's on-air failure: with no explicit depth
+// configured, the tap must auto-size from the pipeline rate to at least
+// voiceTapSeconds of IQ at SoapyRemote's observed ~53-sample post-DDC chunks
+// — the old fixed 128-chunk buffer held only ~47 ms at 144 kHz, so every
+// colour-recovery Viterbi sweep on the chain goroutine overflowed it and
+// starved the call it was serving.
+func TestVoiceTapAutoDepthCoversOneSecond(t *testing.T) {
+	const rateHz = 144_000.0
+	const observedChunkSamples = 53
+	f := newVoiceFanout(nil, 0, func() float64 { return rateHz })
+	ch, unsub := f.subscribe()
+	defer unsub()
+	if got := float64(cap(ch) * observedChunkSamples); got < rateHz {
+		t.Fatalf("auto depth %d chunks ≈ %.0f samples at %d samples/chunk, want ≥ %.0f (1 s at %.0f Hz)",
+			cap(ch), got, observedChunkSamples, rateHz, rateHz)
+	}
+
+	// An unknown rate (pre-acquisition) falls back to the floor, and an
+	// explicit configured depth still wins over auto-sizing.
+	fUnknown := newVoiceFanout(nil, 0, func() float64 { return 0 })
+	chU, unsubU := fUnknown.subscribe()
+	defer unsubU()
+	if cap(chU) != defaultVoiceTapBufferChunks {
+		t.Errorf("unknown-rate depth = %d, want floor %d", cap(chU), defaultVoiceTapBufferChunks)
+	}
+	fExplicit := newVoiceFanout(nil, 7, func() float64 { return rateHz })
+	chE, unsubE := fExplicit.subscribe()
+	defer unsubE()
+	if cap(chE) != 7 {
+		t.Errorf("explicit depth = %d, want 7 (config override beats auto)", cap(chE))
 	}
 }
 
@@ -119,7 +153,7 @@ func unsubDropCount(f *voiceFanout) uint64 {
 // TestCCVoiceSourceSameCarrierGate checks the tap binds only the CC's current
 // carrier and streams until the context ends.
 func TestCCVoiceSourceSameCarrierGate(t *testing.T) {
-	d := &Decoder{voiceFan: newVoiceFanout(nil, 0), activeFreqHz: 467_913_000, pipelineRateHz: 144_000}
+	d := &Decoder{voiceFan: newVoiceFanout(nil, 0, nil), activeFreqHz: 467_913_000, pipelineRateHz: 144_000}
 	src := NewCCVoiceSource(func() *Decoder { return d }, "cc:SDR1")
 
 	// A nil decoder (before startup / after teardown) stays inert.

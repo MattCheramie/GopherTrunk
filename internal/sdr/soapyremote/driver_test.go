@@ -50,13 +50,25 @@ type fakeSoapyServer struct {
 	// GET_SAMPLE_RATE echoes lastSetRateHz (an exact-divisor device).
 	lastSetRateHz   float64
 	getSampleRateHz float64
+
+	// hardwareTimeNs is served on GET_HARDWARE_TIME; failHardwareTime makes the
+	// call reply with a remote exception (a driver with no hardware clock).
+	hardwareTimeNs   int64
+	failHardwareTime bool
+
+	// rejectImmediateMultiChannel mimics UHD: an ACTIVATE_STREAM without
+	// SOAPY_SDR_HAS_TIME on a multi-channel stream is rejected with the
+	// "stream now on multiple channels" exception (issue: MRC on X310).
+	rejectImmediateMultiChannel bool
 }
 
 type recordedCall struct {
-	id       int32
-	freqHz   float64
-	gainDB   float64
-	gainAuto bool
+	id        int32
+	freqHz    float64
+	gainDB    float64
+	gainAuto  bool
+	actFlags  int32
+	actTimeNs int64
 }
 
 func newFakeSoapyServer(t *testing.T) *fakeSoapyServer {
@@ -161,6 +173,18 @@ func readSetupStreamKwargs(u *unpacker) ([]int, map[string]string, error) {
 	return channels, m, nil
 }
 
+// recordedActivates returns the ACTIVATE_STREAM calls seen so far, with their
+// parsed flags/timeNs.
+func (s *fakeSoapyServer) recordedActivates() []recordedCall {
+	var out []recordedCall
+	for _, c := range s.recorded() {
+		if c.id == callActivateStream {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func (s *fakeSoapyServer) sawCall(id int32) bool {
 	for _, c := range s.recorded() {
 		if c.id == id {
@@ -249,7 +273,35 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			}
 		case callActivateStream:
 			_, _ = u.i32() // streamId (int)
-			doActivate = true
+			rec.actFlags, _ = u.i32()
+			rec.actTimeNs, _ = u.i64()
+			_, _ = u.i32() // numElems
+			s.mu.Lock()
+			multi := len(s.setupChannels) > 1
+			reject := s.rejectImmediateMultiChannel
+			s.mu.Unlock()
+			if reject && multi && rec.actFlags&soapyFlagHasTime == 0 {
+				reply = func(p *packer) {
+					p.raw8(tException)
+					p.str("RuntimeError: Invalid recv stream command - stream now on multiple channels in a single streamer will fail to time align.")
+				}
+			} else {
+				doActivate = true
+			}
+		case callGetHardwareTime:
+			_, _ = u.str() // clock qualifier ("")
+			s.mu.Lock()
+			hw := s.hardwareTimeNs
+			fail := s.failHardwareTime
+			s.mu.Unlock()
+			if fail {
+				reply = func(p *packer) {
+					p.raw8(tException)
+					p.str("RuntimeError: get_time_now(): this device has no hardware clock")
+				}
+			} else {
+				reply = func(p *packer) { p.i64(hw) }
+			}
 		default:
 			// MAKE, DEACTIVATE, CLOSE, WRITE_SETTING, FREQ_CORRECTION, ...
 		}
@@ -657,6 +709,141 @@ func TestStreamIQDiversity(t *testing.T) {
 
 	if chans := srv.recordedSetupChannels(); len(chans) != 2 || chans[0] != 0 || chans[1] != 1 {
 		t.Errorf("SETUP_STREAM channels = %v, want [0 1]", chans)
+	}
+}
+
+// TestStreamIQDiversityTimedActivate is the regression for MRC on a UHD X310:
+// a multi-channel streamer rejects an immediate start ("Invalid recv stream
+// command - stream now on multiple channels in a single streamer will fail to
+// time align"), so under diversity the client must activate with
+// SOAPY_SDR_HAS_TIME and a start time scheduled after the remote hardware
+// clock. The fake enforces the UHD rejection, so this test fails against the
+// old flags=0 activate.
+func TestStreamIQDiversityTimedActivate(t *testing.T) {
+	const hwNow = int64(5_000_000_000) // 5 s on the device clock
+	srv := newFakeSoapyServer(t)
+	srv.hardwareTimeNs = hwNow
+	srv.rejectImmediateMultiChannel = true
+	ch := []complex64{complex(0.5, -0.5), complex(0.25, 0.25)}
+	srv.streamSamples = append(append([]complex64{}, ch...), ch...)
+
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ with diversity on a timed-start-only server: %v", err)
+	}
+	select {
+	case _, ok := <-out:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for IQ")
+	}
+
+	acts := srv.recordedActivates()
+	if len(acts) == 0 {
+		t.Fatal("server saw no ACTIVATE_STREAM")
+	}
+	last := acts[len(acts)-1]
+	if last.actFlags&soapyFlagHasTime == 0 {
+		t.Errorf("diversity activate flags = %#x, want SOAPY_SDR_HAS_TIME set", last.actFlags)
+	}
+	if last.actTimeNs <= hwNow {
+		t.Errorf("diversity activate timeNs = %d, want > hardware time %d (a future start)", last.actTimeNs, hwNow)
+	}
+	if lead := last.actTimeNs - hwNow; lead > int64(2*time.Second) {
+		t.Errorf("diversity activate lead = %s, unreasonably far in the future", time.Duration(lead))
+	}
+}
+
+// TestStreamIQSingleChannelImmediateActivate pins that the single-channel path
+// is untouched by the timed-start logic: no GET_HARDWARE_TIME RPC, activate
+// with flags=0/timeNs=0 as before.
+func TestStreamIQSingleChannelImmediateActivate(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	srv.hardwareTimeNs = 123456789
+	srv.streamSamples = []complex64{complex(0.5, -0.5)}
+
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	select {
+	case _, ok := <-out:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for IQ")
+	}
+
+	if srv.sawCall(callGetHardwareTime) {
+		t.Error("single-channel stream queried GET_HARDWARE_TIME; immediate start needs no clock")
+	}
+	acts := srv.recordedActivates()
+	if len(acts) == 0 {
+		t.Fatal("server saw no ACTIVATE_STREAM")
+	}
+	if a := acts[len(acts)-1]; a.actFlags != 0 || a.actTimeNs != 0 {
+		t.Errorf("single-channel activate = flags %#x timeNs %d, want 0/0", a.actFlags, a.actTimeNs)
+	}
+}
+
+// TestStreamIQDiversityNoHardwareClock covers the fallback: a remote whose
+// driver has no hardware clock (GET_HARDWARE_TIME raises) must still stream
+// under diversity via the immediate start, as before the timed path existed.
+func TestStreamIQDiversityNoHardwareClock(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	srv.failHardwareTime = true
+	ch := []complex64{complex(0.5, -0.5), complex(0.25, 0.25)}
+	srv.streamSamples = append(append([]complex64{}, ch...), ch...)
+
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ with diversity on a clockless server: %v", err)
+	}
+	select {
+	case _, ok := <-out:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for IQ")
+	}
+
+	acts := srv.recordedActivates()
+	if len(acts) == 0 {
+		t.Fatal("server saw no ACTIVATE_STREAM")
+	}
+	if a := acts[len(acts)-1]; a.actFlags != 0 {
+		t.Errorf("fallback activate flags = %#x, want 0 (immediate start)", a.actFlags)
 	}
 }
 

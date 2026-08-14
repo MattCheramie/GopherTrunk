@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/diversity"
 )
@@ -26,6 +27,12 @@ func parseDiversity(mode string) (bool, error) {
 // diversityChannels is the RX channel count for phase-coherent MRC diversity: a
 // shared-LO front-end's RX0 (reference) + RX1. Only 2-branch MRC is supported.
 const diversityChannels = 2
+
+// diversityActivateLead is how far in the future (relative to the remote
+// hardware clock) a multi-channel stream start is scheduled. It only needs to
+// cover the RPC round-trip plus the radio's command latency; UHD's own
+// examples use ~100 ms, and being generous costs one-time startup delay only.
+const diversityActivateLead = 200 * time.Millisecond
 
 // mrcCalFloorDbFS is the reference-branch mean-power floor (dBFS, 0 = unit
 // amplitude) above which the combiner takes its one-time phase calibration.
