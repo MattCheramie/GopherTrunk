@@ -6,7 +6,7 @@ nav_group: Install
 hide_ctas: true
 ---
 
-# Installing GopherTrunk on macOS
+# Installing GopherTrunk on macOS (12 & above)
 
 Five minutes from a fresh download to a working `gophertrunk sdr list`.
 GopherTrunk on macOS is a single static binary that talks to RTL-SDR
