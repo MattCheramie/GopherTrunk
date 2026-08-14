@@ -1,7 +1,10 @@
 package cchunt
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -138,13 +141,22 @@ func TestSupervisorCampsIdleConventionalDMR(t *testing.T) {
 	go func() { _ = sup.Run(ctx) }()
 
 	// The channel never locks (no cc.locked is injected). Success = the
-	// system reaches StateCamped and keeps re-dwelling, with NO
-	// KindHuntFailed ever fired for it. Reaching StateCamped is itself
+	// system reaches StateCamped and STAYS there while it keeps re-dwelling,
+	// with NO KindHuntFailed ever fired for it. Reaching StateCamped is itself
 	// proof of the fix (the old code only ever produced StateFailed here).
+	//
+	// The durability half matters as much as reaching it. startRound used to
+	// overwrite StateCamped with StateHunting at the top of every round, so the
+	// state was set for microseconds out of each ~40 ms dwell: the operator-facing
+	// "camped" badge never rendered, markCamped's transitioned guard logged every
+	// round instead of once, and a level-sampling test like this one lost the race
+	// the majority of the time under load. Sampling once is therefore not enough —
+	// require the state to still read camped across several further rounds.
+	const wantCampedRounds = 3
 	deadline := time.After(2 * time.Second)
 	poll := time.NewTicker(10 * time.Millisecond)
 	defer poll.Stop()
-	sawCamped := false
+	campedAtTunes := -1
 	for {
 		select {
 		case ev := <-sub.C:
@@ -154,12 +166,22 @@ func TestSupervisorCampsIdleConventionalDMR(t *testing.T) {
 				}
 			}
 		case <-poll.C:
-			if sup.Snapshot()[0].State == StateCamped {
-				sawCamped = true
+			state := sup.Snapshot()[0].State
+			tunes := len(tuner.tuned())
+			if campedAtTunes < 0 {
+				if state == StateCamped {
+					campedAtTunes = tunes
+				}
+				continue
 			}
-			// Require several dwells' worth of quiet camping so a stray
-			// HuntFailed (or a backoff stall) would have surfaced.
-			if sawCamped && len(tuner.tuned()) >= 3 {
+			// Camped once — it must not fall back to hunting while it keeps
+			// re-dwelling on the same idle channel.
+			if state != StateCamped {
+				t.Fatalf("camped system reverted to %q after %d further tunes; "+
+					"StateCamped must persist across camped re-dwells (issue #1036)",
+					state, tunes-campedAtTunes)
+			}
+			if tunes-campedAtTunes >= wantCampedRounds {
 				return
 			}
 		case <-deadline:
@@ -167,6 +189,97 @@ func TestSupervisorCampsIdleConventionalDMR(t *testing.T) {
 				sup.Snapshot()[0].State, len(tuner.tuned()))
 		}
 	}
+}
+
+// TestSupervisorCampedStateSurvivesNextRound is the direct, timing-free
+// regression for the state-clobber half of issue #1036: startRound wrote
+// StateHunting unconditionally, so the StateCamped that markCamped had just set
+// was gone before the next dwell began. Driving the two calls in sequence pins
+// the ordering without depending on the scheduler.
+func TestSupervisorCampedStateSurvivesNextRound(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sup, err := New(Options{
+		Bus:   bus,
+		Tuner: &fakeTuner{},
+		Systems: []trunking.System{{
+			Name:            "ConvDMR",
+			Protocol:        trunking.ProtocolDMRTier2,
+			ControlChannels: []uint32{451_000_000},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First round: genuinely acquiring, so it reports hunting.
+	sup.startRound("ConvDMR")
+	if got := sup.Snapshot()[0].State; got != StateHunting {
+		t.Fatalf("first round state = %q, want %q", got, StateHunting)
+	}
+
+	sup.markCamped("ConvDMR")
+	if got := sup.Snapshot()[0].State; got != StateCamped {
+		t.Fatalf("state after markCamped = %q, want %q", got, StateCamped)
+	}
+
+	// The next re-dwell IS the camp — it must not reset the state.
+	sup.startRound("ConvDMR")
+	if got := sup.Snapshot()[0].State; got != StateCamped {
+		t.Fatalf("state after the next round = %q, want %q to persist (issue #1036)", got, StateCamped)
+	}
+}
+
+// TestSupervisorMarkCampedLogsOnce pins the de-spam guard in markCamped. It
+// computes transitioned := rt.state != StateCamped so a quiet channel logs on
+// entry only; because startRound reset the state between every pair of calls,
+// that was always true and an idle conventional channel emitted the INFO line
+// every dwell — roughly 25 lines a second, forever.
+func TestSupervisorMarkCampedLogsOnce(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	var buf lockedBuffer
+	sup, err := New(Options{
+		Bus:   bus,
+		Tuner: &fakeTuner{},
+		Log:   slog.New(slog.NewTextHandler(&buf, nil)),
+		Systems: []trunking.System{{
+			Name:            "ConvDMR",
+			Protocol:        trunking.ProtocolDMRTier2,
+			ControlChannels: []uint32{451_000_000},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Five camped rounds, each preceded by the round start the hunt loop runs.
+	for i := 0; i < 5; i++ {
+		sup.startRound("ConvDMR")
+		sup.markCamped("ConvDMR")
+	}
+
+	if n := strings.Count(buf.String(), "camped on conventional channel"); n != 1 {
+		t.Errorf("logged the camp line %d times across 5 camped rounds, want 1 (issue #1036)", n)
+	}
+}
+
+// lockedBuffer is a concurrency-safe io.Writer for capturing slog output.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func TestSupervisorLocksAndParks(t *testing.T) {

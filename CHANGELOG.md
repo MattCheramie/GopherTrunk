@@ -165,6 +165,17 @@ for tagged releases.
   actually shown. The client-side chip for a just-ended call is now labelled
   `ended` rather than `observed`, which collided with the daemon's own meaning of
   "observed" (announced on the control channel but not tuned — shown as `untuned`).
+- **A camped conventional / direct-mode system now actually reports itself as
+  camped.** The camp-on-idle state added for conventional DMR, DMR Tier I and TETRA
+  DMO was overwritten at the top of every hunt round, so it survived only the few
+  microseconds between being set and the next dwell starting — against a whole dwell
+  spent reporting `hunting`. Three things fell out of that: the Scanner panel's
+  `camped` badge (with the frequency it is parked on) never rendered, the log line
+  that is deliberately de-spammed to fire once on entry fired on *every* dwell
+  instead — roughly 25 INFO lines a second on a quiet channel — and the regression
+  test for the feature was left sampling a state that is almost never true, so it
+  failed under CI load. Camping is now durable: a re-dwell on an idle channel is the
+  camp, not a fresh acquisition attempt. (Refs #1036)
 - **Conventional DMR (IPSC) and other camp-on-idle systems no longer spam
   "hunt failed" while simply idle.** A conventional DMR / IPSC repeater has no
   continuous control channel — it sits silent between transmissions — but the
