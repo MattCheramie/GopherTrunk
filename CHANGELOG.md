@@ -7,6 +7,15 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Security
+- **Bumped the Go toolchain to 1.25.13 and `golang.org/x/net` to v0.55.0** to
+  clear the CVEs govulncheck reports against the pinned toolchain: seven Go
+  standard-library advisories fixed in go1.25.13 (`net/url` GO-2026-6218,
+  `html/template` GO-2026-6091, `crypto/tls` GO-2026-6090, `net/http`
+  GO-2026-6089, `encoding/xml` GO-2026-6088, `encoding/asn1` GO-2026-5972) and
+  the `x/net/idna` Punycode advisory GO-2026-5026. Toolchain/dependency bump
+  only — no code changes.
+
 ### Added
 - **SoapyRemote: experimental phase-coherent MRC diversity over two RX channels.**
   A new `diversity: mrc` option on a `soapy_remote` source opens RX channels 0
