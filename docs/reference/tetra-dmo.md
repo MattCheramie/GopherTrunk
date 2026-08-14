@@ -120,7 +120,23 @@ voice as functional-but-unverified-on-air until that A/B lands.
 `internal/radio/tetra/dmo.go` defines the `DMBurstKind` (DSB/DNB), the burst geometry, and the
 `ExtractDMBursts` / `ExtractDMBurstsSoft` slicers that correlate the training sequences under
 all four residual π/4-DQPSK rotations; `dmo_stream.go` wraps them in a bounded sliding-window
-`DMStreamExtractor` for the live daemon. `dmo_decode.go` maps the sliced blocks onto the shared
+`DMStreamExtractor` for the live daemon.
+
+A DNB detection on its own is **not** evidence of traffic, and treating it as such is a trap
+worth understanding. The DNB training sequence is only 11 dibits and is matched at tolerance 2
+under eight filters (two sequences × four rotations), so the number of sequences that match by
+chance is `Σ_{k≤2} C(11,k)·3^k = 529` out of `4^11`, giving ≈1.0 × 10⁻³ per dibit position
+across the eight — about **18 false DNBs per second** at the 18 kdibit/s symbol rate. Since a
+DMO channel is silent between transmissions, that is what the detector reports almost all of
+the time. `dmo_grid.go`'s `DMSlotGrid` is the discriminator: a real transmission comes from one
+radio on one clock, so every one of its bursts lands on the 255-dibit timeslot grid and all its
+DNB leads share a single residue mod 255, whereas false alarms are uniform across all 255. The
+residue is *learned* from the stream rather than derived from a hardcoded burst offset, so a
+wrong constant cannot silently stop DMO from granting; the latch is dropped when the burst
+train ends so the next transmission re-votes. The 19-dibit DSB detector needs no such gate —
+its false-alarm rate is ~0.007/s and it must still pass the SCH/S CRC.
+
+`dmo_decode.go` maps the sliced blocks onto the shared
 decoders — `DecodeDMSCHS` (via the BSCH chain), `DecodeDMSCHH` (via SCH/HD), `DecodeDMSCHF`,
 and `DMBurstTCHSpeech` / `DMBurstTCHSpeechSoft` (via the TCH/S chain) — de-rotating and
 descrambling with the DM colour code (recovered by `RecoverDMColourCode`) before each decode.

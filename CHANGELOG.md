@@ -132,6 +132,71 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **TETRA DMO no longer grants and opens a recording on an idle channel, and now
+  grants for every real transmission.** On air, `protocol: tetra-dmo` started a
+  call and a recording session about 230 ms after the daemon came up — before any
+  control-channel lock, with nobody transmitting — and then never granted again,
+  so an operator's actual 10 s PTT produced no recording at all. Both symptoms
+  were the same root cause: a DNB was detected purely by an 11-dibit
+  training-sequence correlation at tolerance 2 under eight matched filters, which
+  fires roughly **18 times a second on noise**, and a DMO channel is silent
+  between transmissions. Four of those false detections were enough to grant, and
+  the steady rain of them meant the "traffic drought" that re-arms the grant edge
+  could never elapse. Every DNB is now qualified against the 255-dibit TETRA
+  timeslot grid before it counts as traffic: a real transmission comes from one
+  radio on one clock, so all of its bursts share one slot residue, while
+  correlator false alarms spread uniformly across all 255. The grant additionally
+  requires a real DSB lock, and the drought is evaluated on the IQ stream rather
+  than only when a burst arrives, so silence actually re-arms it. The decode
+  status line now reports `dnb_qualified` alongside the raw `dnb_total`, so the
+  false-alarm rate stays visible. Trade-off: a grant now lands ~0.5 s into a
+  transmission rather than instantly. (Refs #1003)
+- **A TETRA DMO call no longer burns CPU brute-forcing the colour code, starving
+  its own audio.** The voice chain re-ran the full 64-colour `RecoverDMColourCode`
+  search over its entire, still-growing burst buffer on *every* arriving burst —
+  roughly 450 000 Viterbi decodes per call, on exactly the calls (encrypted or too
+  weak) that cannot be recovered anyway. That is enough to stall the same-carrier
+  IQ tap feeding the chain, which then logged `same-carrier voice tap dropped IQ
+  to a lagging voice consumer`. Recovery now runs at most six passes over a
+  bounded scoring window, matching the control pipeline's existing budget, while
+  still keeping every buffered burst so the start of the transmission is decoded
+  retroactively into the recording.
+- **The DMO end-of-call log no longer claims a colour code it never recovered.**
+  A call that decoded nothing reported `colour=0 colour_known=true`, which reads
+  as "recovered colour 0" and sends the investigation after the wrong thing. The
+  fallback that picks colour 0 in order to decode *something* is now distinct from
+  a recovery that actually cleared the confidence gate (`colour_recovered`).
+- **"symbol: poor" no longer latches permanently on TETRA, TETRA DMO and DMR
+  systems.** The web panels' "Auto" mode resolved the symbol-stream receiver from
+  a field that is only ever populated for P25 Phase 1 systems, so a non-P25 rig
+  fell back to a **P25 C4FM** receiver. Demodulating a π/4-DQPSK carrier that way
+  produces a meaningless — but non-empty — 4-level soft track, from which the
+  panels computed an MER-like SNR around 9 dB and bucketed the symbol quality as
+  "poor" for ever, sitting confusingly next to a correct "decode: clean". The
+  daemon now reports a protocol-aware `symbol_proto` per device and the panels use
+  it, which also stops an extra, wrong receiver being spun up per open panel. The
+  symbol-quality tooltip now names which measurement produced its verdict.
+- **One talkgroup is one row in Active calls.** The same talkgroup could occupy
+  three rows at once — because the roster keyed rows on source, timeslot and
+  frequency while the daemon reports followed and control-channel-observed calls
+  from two separate maps — and the "Active calls" stat tile could read `0` above a
+  visible call row, because the tile counted the raw poll response while the
+  roster rendered the linger-augmented list. Rows are now de-duplicated per
+  talkgroup (preferring a live, followed call) and the tile counts the rows
+  actually shown. The client-side chip for a just-ended call is now labelled
+  `ended` rather than `observed`, which collided with the daemon's own meaning of
+  "observed" (announced on the control channel but not tuned — shown as `untuned`).
+- **A camped conventional / direct-mode system now actually reports itself as
+  camped.** The camp-on-idle state added for conventional DMR, DMR Tier I and TETRA
+  DMO was overwritten at the top of every hunt round, so it survived only the few
+  microseconds between being set and the next dwell starting — against a whole dwell
+  spent reporting `hunting`. Three things fell out of that: the Scanner panel's
+  `camped` badge (with the frequency it is parked on) never rendered, the log line
+  that is deliberately de-spammed to fire once on entry fired on *every* dwell
+  instead — roughly 25 INFO lines a second on a quiet channel — and the regression
+  test for the feature was left sampling a state that is almost never true, so it
+  failed under CI load. Camping is now durable: a re-dwell on an idle channel is the
+  camp, not a fresh acquisition attempt. (Refs #1036)
 - **Conventional DMR (IPSC) and other camp-on-idle systems no longer spam
   "hunt failed" while simply idle.** A conventional DMR / IPSC repeater has no
   continuous control channel — it sits silent between transmissions — but the

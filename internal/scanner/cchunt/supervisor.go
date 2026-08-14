@@ -325,9 +325,24 @@ func (s *Supervisor) runtime(name string) *systemRuntime {
 func (s *Supervisor) startRound(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if rt := s.states[name]; rt != nil {
-		rt.state = StateHunting
+	rt := s.states[name]
+	if rt == nil {
+		return
 	}
+	// A camped conventional / direct-mode system stays camped across its
+	// re-dwells: sitting on the frequency waiting for the next transmission IS
+	// the camp, not a fresh acquisition attempt. Overwriting it here left
+	// StateCamped set only for the few microseconds between markCamped
+	// returning and the next round starting, against a whole dwell of
+	// StateHunting — about a 0.1% duty cycle. Three things fell out of that:
+	// the TUI's "camped" badge (panels/scanner.go) never rendered, markCamped's
+	// transitioned guard logged every round instead of once (~25 INFO lines a
+	// second on a quiet channel), and TestSupervisorCampsIdleConventionalDMR
+	// was left racing a transient it usually lost. Issue #1036.
+	if rt.state == StateCamped {
+		return
+	}
+	rt.state = StateHunting
 }
 
 // SetIQHealthProvider wires an optional IQ-health source the supervisor

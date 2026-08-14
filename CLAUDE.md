@@ -265,12 +265,46 @@ confirmation before any close-as-completed.
     - Pinned by `pipelines_dmo_test.go` (modulated-IQ lock+colour-3+grant), `dmo_stream_test.go`
       (chunk-invariance + soft decode), `tetra_dmo_voice_test.go` (colour recovery + retroactive
       emit), and `integration_cc_tetra_dmo_test.go` (full-daemon lock, `make integration`).
-    4. **STILL OPEN — on-air A/B (the #1003 gate).** A green synthetic/offline decode ≠ on-air
+    4. **FIRST on-air run found the grant path was driven by NOISE, now fixed.** The operator's
+      first live DMO run granted + opened a recording ~230 ms after startup on a silent channel,
+      then never granted again — their real 10 s PTT (which *did* lock, `dsb_schs_crc=46/54`)
+      produced nothing. One root cause: **a raw DNB detection is not evidence of traffic.** The
+      DNB correlator is an 11-dibit training match at tolerance 2 under 8 filters (2 sequences ×
+      4 rotations), so `Σ_{k≤2} C(11,k)·3^k = 529` of `4^11` match by chance ⇒ ~1.0e-3 per dibit
+      position ⇒ **~18 false DNBs/s** at 18 kdibit/s. The operator's own log is the proof:
+      `dnb_total` climbed 1076→4541 in 185 s (**18.7/s**) while `dsb_schs_crc` sat frozen at 46.
+      `dmoGrantMinDNB=4` therefore tripped in ~0.22 s, `maybeGrant` never checked `p.locked`
+      despite the counter being named `dnbSinceLock`, and the 3 s re-arm drought could never
+      elapse against a 55 ms mean inter-arrival — *and* was only evaluated inside the DNB branch,
+      so on a truly silent channel it could not fire at all. Fix: `tetra.DMSlotGrid`
+      (`internal/radio/tetra/dmo_grid.go`) votes DNB leads onto the **255-dibit timeslot grid** —
+      one radio on one clock puts every burst on one residue mod 255; noise is uniform over all
+      255. The residue is **learned, never hardcoded** (a wrong spec-derived DSB→DNB lead offset
+      would silently stop DMO granting, which is worse than over-granting), the latch is centred
+      on the agreeing leads and tracks symbol slips, and it is **dropped when the train ends**
+      (`dmGridTrainGap`) — without that, the ~0.2/s of noise landing on the latched residue keeps
+      a finished transmission "alive" and the grant latches anyway. The grant now also requires
+      `p.locked`, and the drought is evaluated from `Process`. Pinned failing-first by
+      `TestTETRADMOPipelineIgnoresIdleChannel` / `GrantsOnlyAfterLock` / `RearmsBetweenTransmissions`
+      (all three fail against the old code) plus `dmo_grid_test.go`. Note `buildDMODibitStream`
+      now lays bursts on a true 255-dibit slot grid — the old arbitrary-filler layout was not a
+      faithful transmitter and would not have caught this.
+      Related, same run: the voice chain re-ran the 64-colour `RecoverDMColourCode` over its whole
+      growing buffer on **every** burst (≈450k Viterbi decodes/call, `64·Σ(20..120)`), which
+      starved its own same-carrier IQ tap (`dropped_chunks=5904`); it is now capped at 6 passes
+      over a bounded scoring window, while still keeping the full buffer so leading speech is
+      still decoded retroactively. And `flush()` set `colourKnown = true` outside the confidence
+      gate, so a call that decoded nothing logged `colour=0 colour_known=true` — read as
+      "recovered colour 0" and sends you after the wrong thing; `colourRecovered` is now separate.
+    5. **STILL OPEN — on-air A/B (the #1003 gate).** A green synthetic/offline decode ≠ on-air
       correct (#764/#771): the operator must replay a clear 438.9 MHz DMO capture through the
       full daemon (`protocol: tetra-dmo`) and confirm a recording lands with intelligible audio.
       Watch on air: the DMO grant carries **no talkgroup** (`GroupID 0`, EN 300 396-3 call-control
-      not decoded), so recordings file under group `0`; and colour recovery needs ~20 DNBs, so a
-      very short first PTT may grant before the colour is known (the voice chain re-recovers it).
+      not decoded), so recordings file under group `0`; colour recovery needs ~20 DNBs, so a
+      very short first PTT may grant before the colour is known (the voice chain re-recovers it);
+      and the grant now lands ~0.5 s into a transmission (grid latch + 4 qualified DNBs) rather
+      than instantly. `dnb_qualified` in the decode-status line is the number that means traffic —
+      `dnb_total` is a noise meter, and a large gap between them is normal, not a fault.
 - **Conventional DMR (Tier II / IPSC) now decodes a repeater's TWO timeslots as two calls.**
   A base-station DMR repeater carries TS1 and TS2 interleaved on one carrier, each able to hold
   a separate simultaneous talkgroup. The conventional path (`internal/radio/dmr/tier2`) used to
@@ -307,6 +341,30 @@ confirmation before any close-as-completed.
   `individual` column that backs the Radio IDs roster (its `LastTalkgroup` SQL excludes
   `individual=1` rows). The whole mechanism is now scoped to `g.Protocol == "tetra"`; DMR's FLCO
   classification is authoritative. Pinned by `engine_dmr_classify_test.go`.
+- **The web symbol panels pick their receiver from the SYSTEM's protocol, not the P25 demod
+  mode.** An operator on a TETRA rig saw a permanent `symbol: poor` badge next to a correct
+  `decode: clean`. The two chips are deliberately different axes (frame-error rate vs raw
+  constellation), but this was not that: `p25ModulationFor` (`cmd/gophertrunk/spectrum_provider.go`)
+  only inspects `ProtocolP25` systems, so a TETRA/DMO/DMR-only config reported `""`, the web
+  `demodModeToProto("")` fell back to `p25-c4fm`, and the panels opened a **P25 C4FM receiver on a
+  π/4-DQPSK carrier**. Its 4-level soft track is meaningless there but *non-empty*, so
+  `computeQuality` took the MER branch, measured ~9 dB, and `qualityVerdict` bucketed `<10 dB` as
+  "poor" for ever. (Tell-tale: the Histogram panel with Mode manually set to TETRA showed
+  `SNR (MER) —` and `balance ±5.7%`, which grades *clean* — two panels running different
+  receivers on the same carrier.) Fix: `symbolProtoFor` + `SpectrumDevice.SymbolProto`
+  (`symbol_proto`) resolve the actual `/diag/symbols` selector per protocol, and the web
+  `autoProtoFor` prefers it. This also removes a whole wrong receiver per open panel.
+  **Watch the CPU angle:** every `/diag/symbols` subscriber builds its own `Downconverter` from
+  the FULL input rate plus a receiver (`internal/scanner/symbolscope/scope.go`), nothing is
+  pooled, and Dashboard + Scanner + Plots each mount `useSignalQuality` while Histogram opens a
+  fourth. Several open tabs = several full DSP chains. Pooling them is still open work.
+- **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
+  `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
+  a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ
+  discontinuity mid-queue. `internal/sdr/soapyremote/` has not been modified since the repo
+  import, so when this fires, look at what got slower on the decode side (the DMO colour brute
+  force above was one such cause) — and check for the companion
+  `ccdecoder: decode can't keep up with real time` WARN, which confirms CPU rather than network.
 - **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
   fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
   P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.

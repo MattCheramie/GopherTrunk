@@ -401,3 +401,93 @@ func TestControlChannelFor(t *testing.T) {
 		})
 	}
 }
+
+// TestSymbolProtoFor is the regression for the permanent "symbol: poor" badge on a
+// non-P25 rig. p25ModulationFor only inspects P25 Phase 1 systems, so a TETRA, TETRA
+// DMO or DMR deployment reported "" and the web panels' "Auto" mode fell back to
+// p25-c4fm — demodulating a π/4-DQPSK carrier with a 4-level C4FM receiver, whose
+// meaningless soft track then produced an MER-like SNR around 9 dB and latched the
+// symbol-quality verdict at "poor" while decode health correctly read "clean".
+func TestSymbolProtoFor(t *testing.T) {
+	const sr = 2_048_000 // ±1.024 MHz passband
+
+	c4fm := trunking.System{
+		Name: "P25-C4FM", Protocol: trunking.ProtocolP25,
+		ControlChannels: []uint32{851_000_000}, P25Phase1DemodMode: "c4fm",
+	}
+	lsm := trunking.System{
+		Name: "P25-LSM", Protocol: trunking.ProtocolP25,
+		ControlChannels: []uint32{770_000_000}, P25Phase1DemodMode: "cqpsk",
+	}
+	tmo := trunking.System{
+		Name: "TETRA", Protocol: trunking.ProtocolTETRA,
+		ControlChannels: []uint32{467_912_500},
+	}
+	dmo := trunking.System{
+		Name: "DMO", Protocol: trunking.ProtocolTETRADMO,
+		ControlChannels: []uint32{438_900_000},
+	}
+	dmr := trunking.System{
+		Name: "DMR", Protocol: trunking.ProtocolDMR,
+		ControlChannels: []uint32{451_000_000},
+	}
+	nxdn := trunking.System{
+		Name: "NXDN", Protocol: trunking.ProtocolNXDN,
+		ControlChannels: []uint32{157_000_000},
+	}
+
+	tests := []struct {
+		name     string
+		systems  []trunking.System
+		centerHz uint32
+		want     string
+	}{
+		{"TETRA DMO device — the reported case", []trunking.System{dmo}, 438_900_000, "tetra"},
+		{"TETRA TMO device", []trunking.System{tmo}, 467_912_500, "tetra"},
+		{"DMR device", []trunking.System{dmr}, 451_000_000, "dmr"},
+		{"P25 C4FM device", []trunking.System{c4fm, lsm}, 851_000_000, "p25-c4fm"},
+		{"P25 LSM device", []trunking.System{c4fm, lsm}, 770_000_000, "p25-cqpsk"},
+		{
+			name:    "mixed rig picks the system in this device's passband",
+			systems: []trunking.System{c4fm, dmo}, centerHz: 438_900_000, want: "tetra",
+		},
+		{
+			name:    "sole configured system wins even off its control channel",
+			systems: []trunking.System{dmo}, centerHz: 400_000_000, want: "tetra",
+		},
+		{
+			name:    "no symbol receiver for this protocol leaves the panel default",
+			systems: []trunking.System{nxdn}, centerHz: 157_000_000, want: "",
+		},
+		{"no systems", nil, 851_000_000, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := symbolProtoFor(tt.systems, tt.centerHz, sr); got != tt.want {
+				t.Errorf("symbolProtoFor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSymbolProtoForMatchesHandlerSelectors pins symbolProtoFor's output against the
+// set WS /api/v1/diag/symbols actually accepts — a value the handler rejects would
+// leave the panel with no symbol stream at all, which is worse than the wrong one.
+func TestSymbolProtoForMatchesHandlerSelectors(t *testing.T) {
+	protocols := []trunking.Protocol{
+		trunking.ProtocolP25, trunking.ProtocolTETRA, trunking.ProtocolTETRADMO,
+		trunking.ProtocolDMR, trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1,
+	}
+	for _, proto := range protocols {
+		sys := trunking.System{Name: proto.String(), Protocol: proto, ControlChannels: []uint32{450_000_000}}
+		got := symbolProtoFor([]trunking.System{sys}, 450_000_000, 2_048_000)
+		if got == "" {
+			t.Errorf("%s: symbolProtoFor returned empty", proto)
+			continue
+		}
+		if _, _, err := symbolProtoToReceiver(got); err != nil {
+			t.Errorf("%s: symbolProtoFor returned %q, which the symbols handler rejects: %v",
+				proto, got, err)
+		}
+	}
+}

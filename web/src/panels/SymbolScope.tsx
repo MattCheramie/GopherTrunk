@@ -9,7 +9,7 @@ import {
   type SpectrumDevice,
 } from "../api/spectrum";
 import {
-  demodModeToProto,
+  autoProtoFor,
   openSymbolStream,
   type SymbolFrame,
 } from "../api/symbols";
@@ -106,7 +106,7 @@ export function SymbolScope() {
   // selected SDR's system is decoding (device.p25_modulation, C4FM when
   // unknown); an explicit choice is used verbatim.
   const effectiveProto = useMemo(
-    () => (proto === "auto" ? demodModeToProto(device?.p25_modulation) : proto),
+    () => (proto === "auto" ? autoProtoFor(device) : proto),
     [proto, device],
   );
 

@@ -17,6 +17,12 @@ export interface SpectrumDevice {
   // applies. The symbol/constellation panels' "Auto" mode reads this to
   // pick the receiver without operator input.
   p25_modulation?: string;
+  // Symbol-stream receiver selector for the system this SDR is decoding
+  // ("p25-c4fm" | "p25-cqpsk" | "tetra" | "dmr"), or absent when no
+  // configured system matches. Protocol-aware, unlike p25_modulation,
+  // which only ever describes P25 Phase 1 systems — on a TETRA/DMO/DMR
+  // rig that was absent and "Auto" fell back to a P25 C4FM receiver.
+  symbol_proto?: string;
   // Configured control-channel frequency in this SDR's passband (Hz), or
   // absent when none matches. The Plots panels rest their view here so
   // they default off the centre DC spike onto a decodable channel. (#557)

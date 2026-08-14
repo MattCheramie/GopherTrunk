@@ -11,6 +11,7 @@ import { useLockedSystemSignal } from "../hooks/useLockedSystemSignal";
 import {
   useLingeringActiveCalls,
   callDuration,
+  liveCallCount,
 } from "../hooks/useLingeringActiveCalls";
 import { selectClientConfig, useShared } from "../store/shared";
 import type { EventDTO } from "../api/types";
@@ -48,7 +49,7 @@ export function Dashboard() {
   const lockedSignal = useLockedSystemSignal();
 
   // Freeze just-ended calls briefly so the roster shows a final duration +
-  // "observed" marker rather than the row blinking out.
+  // "ended" marker rather than the row blinking out.
   const callRows = useLingeringActiveCalls(activeCalls);
 
   useDataPoll({
@@ -116,7 +117,7 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Active calls" value={activeCalls.length} />
+        <StatCard label="Active calls" value={liveCallCount(callRows)} />
         <StatCard label="Systems" value={systems.length} />
         <StatCard label="Devices attached" value={devices.length} />
         <StatCard
@@ -173,12 +174,12 @@ export function Dashboard() {
                   {c.grant.encrypted && <span className="pill-warn">enc</span>}
                   {c.grant.emergency && <span className="pill-err">emerg</span>}
                   {c._ended ? (
-                    <span className="pill" title="This call has ended; still shown briefly before it clears">
-                      observed
+                    <span className="pill" title="This call has ended; still shown briefly with its final duration before it clears">
+                      ended
                     </span>
                   ) : (
                     c.following === false && (
-                      <span className="pill" title="Announced on the control channel; no voice tuner is following it">
+                      <span className="pill" title="Announced on the control channel, but no voice tuner is following it — no audio is being recorded. Add voice_taps or a voice SDR to decode more calls at once.">
                         untuned
                       </span>
                     )
