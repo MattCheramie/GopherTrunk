@@ -163,7 +163,9 @@ export function Dashboard() {
                   TG {c.grant.group_id}
                 </span>
                 <span className="text-sm truncate">
-                  {c.talkgroup?.alpha_tag ?? c.grant.system}
+                  {/* || not ??: auto-discovered talkgroups carry alpha_tag "" (present,
+                      not null), which must still fall back to the system name. */}
+                  {c.talkgroup?.alpha_tag || c.grant.system}
                 </span>
                 {c.grant.source_id ? (
                   <span className="text-xs text-muted shrink-0">

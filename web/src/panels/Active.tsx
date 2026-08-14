@@ -88,7 +88,7 @@ export function Active() {
         header: "Alpha tag",
         render: (r) => (
           <span className="font-medium">
-            {r.talkgroup?.alpha_tag ?? <em className="text-muted">—</em>}
+            {r.talkgroup?.alpha_tag || <em className="text-muted">—</em>}
           </span>
         ),
         sort: (a, b) =>
@@ -221,7 +221,7 @@ export function Active() {
 
       {selected && (
         <DetailModal
-          title={selected.talkgroup?.alpha_tag ?? `TG ${selected.grant.group_id}`}
+          title={selected.talkgroup?.alpha_tag || `TG ${selected.grant.group_id}`}
           subtitle={`${selected.grant.system} · ${selected.grant.protocol}`}
           onClose={() => setSelected(null)}
         >

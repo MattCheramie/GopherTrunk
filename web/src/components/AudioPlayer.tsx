@@ -77,7 +77,7 @@ export function AudioPlayer() {
     }
     navigator.mediaSession.metadata = new MediaMetadata({
       title:
-        top.talkgroup?.alpha_tag ?? `TG ${top.grant.group_id}`,
+        top.talkgroup?.alpha_tag || `TG ${top.grant.group_id}`,
       artist: top.grant.system,
       album: top.talkgroup?.group ?? "",
     });
