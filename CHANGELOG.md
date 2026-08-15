@@ -17,6 +17,16 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **The macOS minimum version is now documented: macOS 12 (Monterey) or later.**
+  The release binaries are built with a Go toolchain whose `crypto/x509` imports
+  `SecTrustCopyCertificateChain` from `Security.framework` to read the system
+  trust store; that symbol is macOS 12.0+, so on macOS 11 and earlier the binary
+  aborts at dyld load with `Symbol not found: _SecTrustCopyCertificateChain`
+  before printing anything. The floor is set by the toolchain, not by a
+  GopherTrunk build flag. The README, downloads page, and macOS install guide
+  now state it, and the install guide shows the exact error so the crash is
+  searchable. Thanks to @TheButterZone for the report (#1096) and the fix
+  (#1097). No code change — behaviour on macOS 12+ is unaffected.
 - **SoapyRemote: experimental phase-coherent MRC diversity over two RX channels.**
   A new `diversity: mrc` option on a `soapy_remote` source opens RX channels 0
   and 1 and phase-coherently maximal-ratio-combines them into one maximised-SNR

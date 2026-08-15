@@ -13,6 +13,23 @@ GopherTrunk on macOS is a single static binary that talks to RTL-SDR
 dongles through IOKit — no kext, no `librtlsdr`, no Homebrew formula
 to chase.
 
+> **Requires macOS 12 (Monterey) or later**, on both Apple Silicon and
+> Intel. On macOS 11 and earlier the binary aborts the moment it loads,
+> before printing anything:
+>
+> ```
+> dyld: Symbol not found: _SecTrustCopyCertificateChain
+>   Referenced from: .../gophertrunk (which was built for Mac OS X 12.0)
+>   Expected in: /System/Library/Frameworks/Security.framework/Versions/A/Security
+> ```
+>
+> That symbol is macOS 12.0+. It comes from the Go standard library's
+> `crypto/x509`, which imports it from `Security.framework` to read the
+> system trust store, so it is a floor set by the Go toolchain the
+> release binaries are built with — not something a GopherTrunk build
+> flag can lower. Running on an older macOS means building from source
+> with an older Go toolchain yourself.
+
 ## 1. Download the tarball
 
 Go to the **[GopherTrunk releases page]** and grab the asset matching

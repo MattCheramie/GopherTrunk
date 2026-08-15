@@ -41,7 +41,7 @@ variables persist into this page's scope after the include.
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-arm64.tar.gz">Apple Silicon (.tar.gz)</a>
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-amd64.tar.gz">Intel (.tar.gz)</a>
     </div>
-    <p class="download-card__note">Full walkthrough: <a href="{{ '/install-macos.html' | relative_url }}">macOS install guide</a>. Builds are unsigned — right-click → Open the first time, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
+    <p class="download-card__note">Requires macOS 12 (Monterey) or later. Full walkthrough: <a href="{{ '/install-macos.html' | relative_url }}">macOS install guide</a>. Builds are unsigned — right-click → Open the first time, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
   </div>
 
   <div class="download-card" data-platform="windows">
@@ -112,6 +112,11 @@ cp config.example.yaml config.yaml
 ```
 
 RTL-SDR on macOS uses the bundled IOKit driver — no kext or driver swap required.
+
+Requires **macOS 12 (Monterey) or later**. On macOS 11 and earlier the binary
+aborts at load with `dyld: Symbol not found: _SecTrustCopyCertificateChain` —
+a floor set by the Go toolchain the release builds use. See the
+[macOS install guide]({{ '/install-macos.html' | relative_url }}) for details.
 
 ### Windows 11
 
