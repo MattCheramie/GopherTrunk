@@ -76,7 +76,11 @@ export function DetailField({
   return (
     <div>
       <p className="text-xs uppercase tracking-wider text-muted">{label}</p>
-      <p className={`text-sm mt-0.5 ${mono && !empty ? "font-mono" : ""}`}>
+      {/* whitespace-pre-line: several callers pass \n-joined lists (control
+          channels, neighbors, frequency bands) as one value — without this
+          the browser collapses every newline to a space and they render as an
+          unreadable single run of text. */}
+      <p className={`text-sm mt-0.5 whitespace-pre-line ${mono && !empty ? "font-mono" : ""}`}>
         {empty ? (
           emptyHint != null ? (
             <span className="text-muted italic">{emptyHint}</span>

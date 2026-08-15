@@ -1246,6 +1246,11 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 			"base_hz", u.BaseHz, "spacing_hz", u.SpacingHz,
 			"tx_offset_hz", u.TxOffsetHz)
 		c.drainPendingGrants(u.ChannelID, nac)
+		// A newly-applied band lets a neighbour on it resolve its downlink
+		// frequency; republish topology so the site table / API pick it up
+		// (symmetric with drainPendingGrants for the grant side). No-op until
+		// the site is otherwise identified (publishSiteUpdate's guard).
+		c.publishSiteUpdate()
 	case OpIdentifierUpdateVUHF:
 		u := ParseIdentifierUpdateVUHF(t.Payload)
 		c.bandPlan.Apply(u)
@@ -1255,6 +1260,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 			"tx_offset_hz", u.TxOffsetHz,
 			"bandwidth_hz", u.BandwidthHz)
 		c.drainPendingGrants(u.ChannelID, nac)
+		c.publishSiteUpdate()
 	case OpIdentifierUpdateTDMA:
 		u := ParseIdentifierUpdateTDMA(t.Payload)
 		c.bandPlan.Apply(u)
@@ -1264,6 +1270,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 			"tx_offset_hz", u.TxOffsetHz,
 			"bandwidth_hz", u.BandwidthHz)
 		c.drainPendingGrants(u.ChannelID, nac)
+		c.publishSiteUpdate()
 	case OpGroupVoiceChannelGrant:
 		c.publishGroupGrant(ParseGroupVoiceChannelGrant(t.Payload), nac)
 	case OpGroupVoiceChannelUpdate:
