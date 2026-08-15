@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -176,10 +177,18 @@ func TestDMRIPSCReplay(t *testing.T) {
 		t.Logf("  embedded-LC group_address=%d count=%d", tg, n)
 	}
 
-	// The harness is a diagnostic: it must always surface *something* (a grant or
-	// a decoded superframe) or the capture/rate/tune is wrong. A silent pass on a
-	// live capture would hide exactly the failure #1036 is about.
+	// The harness is a diagnostic. On a signal-bearing capture it should surface
+	// a grant or a superframe, and zero of both usually means a wrong rate/tune.
+	// But a genuinely weak-signal capture that decodes NOTHING is itself a valid
+	// baseline measurement (the 0/0 floor the equalizer work is measured
+	// against), so GT_DMR_ALLOW_EMPTY=1 downgrades the hard failure to a logged
+	// warning. Default stays strict so an accidental mistune is still caught.
 	if len(grants) == 0 && superframes == 0 {
-		t.Fatalf("no grants and no voice superframes decoded — check GT_DMR_IQ_RATE (%v) / tuning / capture", inRate)
+		msg := fmt.Sprintf("no grants and no voice superframes decoded — check GT_DMR_IQ_RATE (%v) / tuning / capture", inRate)
+		if os.Getenv("GT_DMR_ALLOW_EMPTY") == "1" {
+			t.Logf("WARNING: %s (GT_DMR_ALLOW_EMPTY=1: treating as a weak-signal 0/0 baseline)", msg)
+		} else {
+			t.Fatalf("%s", msg)
+		}
 	}
 }

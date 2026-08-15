@@ -33,7 +33,7 @@ func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	in := fs.String("in", "", "raw IQ input file, or - for standard input (required). Piping stdin lets an external IQ source feed the decoder, e.g. `iq-source | gophertrunk replay -in - -format f32 -sample-rate 2400000` (issue #314). stdin is a one-way stream, so -auto-tune (which must seek) is not supported with -in -; use -tune-hz.")
-	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32) | wav (2-channel 16-bit baseband WAV — SDRtrunk/SDR++/GopherTrunk narrowband recording; sample rate is read from the header)")
+	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32) | cs16/sc16 (interleaved little-endian int16 IQ, the .raw/.cs16 SDR capture format) | wav (2-channel 16-bit baseband WAV — SDRtrunk/SDR++/GopherTrunk narrowband recording; sample rate is read from the header)")
 	sampleRate := fs.Float64("sample-rate", 2_400_000, "IQ sample rate in Hz")
 	demod := fs.String("demod", "c4fm", "P25 Phase 1 demod mode: c4fm | cqpsk")
 	protocolFlag := fs.String("protocol", "p25p1", "decoder to run: p25p1 | p25-phase2 | dmr | dmr-tier2 | nxdn | dpmr | edacs | motorola | ltr | mpt1327 | tetra | ysf | dstar (aliases: dmr-tier3)")
