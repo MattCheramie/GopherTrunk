@@ -24,7 +24,11 @@
 // a fake server in the tests; validate against live hardware before release.
 //
 // Limitations:
-//   - Single channel (channel 0), receive only.
+//   - Receive only. One RX channel (channel 0) by default; `diversity: mrc`
+//     opens channels 0 and 1 and combines them into one stream (see mrc.go).
+//     Every per-channel setting (frequency, rate, gain, frequency correction)
+//     is programmed on both — an unconfigured second receiver is a branch that
+//     contributes nothing (issue #1062).
 //   - SetPPM / SetBiasTee are best-effort: SoapySDR has no universal call for
 //     either, so they map to setFrequencyCorrection / writeSetting and silently
 //     no-op when the underlying driver doesn't support them.
@@ -298,9 +302,8 @@ func (d *device) rxChannelCount() int {
 
 // perRXChannel issues an RPC once per active RX channel — channel 0 only in the
 // single-channel default, channels 0 and 1 under MRC diversity so the shared-LO
-// second receiver is tuned/rated identically to the reference. Stops at the
-// first error. (Gain is deliberately left channel-0-only: the MRC calibration
-// estimates a complex gain, so a per-channel amplitude difference is absorbed.)
+// second receiver is configured identically to the reference. Stops at the first
+// error.
 func (d *device) perRXChannel(build func(p *packer, ch int32)) error {
 	for ch := 0; ch < d.rxChannelCount(); ch++ {
 		ch := int32(ch)
@@ -309,6 +312,24 @@ func (d *device) perRXChannel(build func(p *packer, ch int32)) error {
 		}
 	}
 	return nil
+}
+
+// perSecondaryRXChannel runs fn for every diversity branch past the reference
+// (nothing at all in the single-channel default). A failure on a secondary
+// branch is reported but not fatal: the reference receiver still works, and
+// downgrading one branch beats refusing to tune at all. It is logged at WARN
+// rather than swallowed — an unconfigured second receiver is precisely the
+// silent failure behind issue #1062.
+func (d *device) perSecondaryRXChannel(what string, fn func(ch int32) error) {
+	for ch := 1; ch < d.rxChannelCount(); ch++ {
+		if err := fn(int32(ch)); err != nil {
+			if errors.Is(err, errClosed) {
+				return
+			}
+			d.log.Warn("soapyremote: diversity branch not fully configured — that receiver will contribute little or nothing to the combine",
+				"addr", d.addr, "channel", ch, "setting", what, "err", err)
+		}
+	}
 }
 
 func (d *device) Info() sdr.Info { return d.info }
@@ -430,13 +451,30 @@ func (d *device) ActualSampleRate() (uint32, error) {
 	return uint32(math.Round(rate)), nil
 }
 
+// SetGain programs the gain on every active RX channel. Under MRC diversity the
+// second receiver must be gained too: a SoapySDR RX channel comes up at the
+// driver's default (0 dB on a UHD device), so leaving RX1 alone left it tens of
+// dB below RX0 — far enough down that the maximal-ratio weight |h|² made it
+// contribute nothing, which reads on air as "RX1 is dark" (issue #1062). The
+// combiner's complex-gain estimate absorbs a *small* branch imbalance; it cannot
+// conjure signal out of a receiver that was never gained.
 func (d *device) SetGain(tenthDB int) error {
+	if err := d.applyGain(0, tenthDB); err != nil {
+		return err
+	}
+	d.perSecondaryRXChannel("gain", func(ch int32) error { return d.applyGain(ch, tenthDB) })
+	return nil
+}
+
+// applyGain programs one RX channel's gain: AGC when tenthDB is negative,
+// otherwise manual gain in dB.
+func (d *device) applyGain(ch int32, tenthDB int) error {
 	if tenthDB < 0 {
 		// Automatic gain control.
 		return d.rpcVoid(func(p *packer) {
 			p.call(callSetGainMode)
 			p.char(dirRX)
-			p.i32(0)
+			p.i32(ch)
 			p.boolean(true)
 		})
 	}
@@ -449,24 +487,34 @@ func (d *device) SetGain(tenthDB int) error {
 	_ = d.rpcBestEffort("disable agc", func(p *packer) {
 		p.call(callSetGainMode)
 		p.char(dirRX)
-		p.i32(0)
+		p.i32(ch)
 		p.boolean(false)
 	})
 	return d.rpcVoid(func(p *packer) {
 		p.call(callSetGain)
 		p.char(dirRX)
-		p.i32(0)
+		p.i32(ch)
 		p.f64(float64(tenthDB) / 10.0) // GopherTrunk tenths-dB → SoapySDR dB
 	})
 }
 
+// SetPPM applies the frequency correction to every active RX channel. Both
+// branches share one LO, but SoapySDR's correction is a per-channel setting, so
+// correcting only channel 0 would leave the branches tuned to different
+// frequencies — a slow relative rotation the frozen phase constant cannot track.
 func (d *device) SetPPM(ppm int) error {
-	return d.rpcBestEffort("ppm", func(p *packer) {
-		p.call(callSetFrequencyCorrection)
-		p.char(dirRX)
-		p.i32(0)
-		p.f64(float64(ppm))
-	})
+	for ch := 0; ch < d.rxChannelCount(); ch++ {
+		ch := int32(ch)
+		if err := d.rpcBestEffort("ppm", func(p *packer) {
+			p.call(callSetFrequencyCorrection)
+			p.char(dirRX)
+			p.i32(ch)
+			p.f64(float64(ppm))
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *device) SetBiasTee(enable bool) error {
@@ -582,7 +630,9 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	// device_overflows=0. Size from the delivered rate (best-effort probe; 0 on
 	// failure → default depth) and the samples-per-datagram the MTU/format imply.
 	rate, _ := d.ActualSampleRate()
-	samplesPerChunk := (d.mtu - streamHeaderSize) / d.format.bytesPerSample()
+	// Per-channel samples: a multi-channel datagram splits the same MTU across
+	// the branches, and the combiner emits one branch's worth downstream.
+	samplesPerChunk := (d.mtu - streamHeaderSize) / (d.format.bytesPerSample() * d.rxChannelCount())
 	out := make(chan []complex64, streamBufferDepth(rate, samplesPerChunk))
 	// Re-arm the MRC calibration for this fresh stream so it re-estimates the
 	// phase constant rather than reusing a stale one from a prior stream.
@@ -887,6 +937,7 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 
 	throttle := newOverrunThrottle(d.log, d.addr)
 	defer throttle.maybeWarn(true) // flush any trailing counts on teardown
+	health := newDiversityReporter(d.log, d.addr)
 
 	hdr := make([]byte, streamHeaderSize)
 	// Flow-control state: lastRecv tracks the next sequence we expect; lastAck
@@ -953,7 +1004,10 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 		if d.mrc != nil {
 			// MRC diversity: de-interleave RX0/RX1, phase-coherently combine
 			// into one branch. Emits the reference branch until calibrated.
-			samples = d.mrc.combine(payload)
+			// h.elems is the valid sample count per channel — the block stride
+			// is derived from it (see deinterleave).
+			samples = d.mrc.combine(payload, int(h.elems))
+			health.observe(d.mrc)
 		} else {
 			samples = d.format.convert(payload)
 		}

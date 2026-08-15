@@ -36,8 +36,15 @@ type fakeSoapyServer struct {
 	// SETUP_STREAM ([0] normally, [0,1] under MRC diversity).
 	setupChannels []int
 
-	// samples streamed per datagram once activated.
+	// samples streamed per datagram once activated. Under a multi-channel
+	// stream this is the whole payload — one contiguous block per channel, in
+	// channel order — and streamElems is the count of VALID samples per channel
+	// (the datagram header's elems field). Upstream always sends the first N-1
+	// channels as full stride-sized blocks and shortens only the last one, so
+	// streamElems < the per-channel stride models a short transfer. Zero means
+	// single-channel: elems = len(streamSamples).
 	streamSamples []complex64
+	streamElems   int
 
 	// failGainMode makes SET_GAIN_MODE reply with a remote exception, mimicking
 	// a UHD front-end with no AGC ("set_rx_agc() is not supported"). Issue #542.
@@ -72,11 +79,25 @@ type antennaSet struct {
 
 type recordedCall struct {
 	id        int32
+	ch        int32 // RX channel the call addressed
 	freqHz    float64
 	gainDB    float64
 	gainAuto  bool
+	ppm       float64
 	actFlags  int32
 	actTimeNs int64
+}
+
+// channelsFor returns, in call order, the RX channels the server saw a given
+// call addressed to. Used to pin that a setting reaches every diversity branch.
+func (s *fakeSoapyServer) channelsFor(id int32) []int32 {
+	var out []int32
+	for _, c := range s.recorded() {
+		if c.id == id {
+			out = append(out, c.ch)
+		}
+	}
+	return out
 }
 
 func newFakeSoapyServer(t *testing.T) *fakeSoapyServer {
@@ -233,11 +254,15 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 		switch id {
 		case callSetFrequency:
 			_, _ = u.char()
-			_, _ = u.i32()
+			rec.ch, _ = u.i32()
 			rec.freqHz, _ = u.f64()
+		case callSetFrequencyCorrection:
+			_, _ = u.char()
+			rec.ch, _ = u.i32()
+			rec.ppm, _ = u.f64()
 		case callSetSampleRate:
 			_, _ = u.char()
-			_, _ = u.i32()
+			rec.ch, _ = u.i32()
 			rec.freqHz, _ = u.f64()
 			s.mu.Lock()
 			s.lastSetRateHz = rec.freqHz
@@ -254,11 +279,11 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			reply = func(p *packer) { p.f64(rate) }
 		case callSetGain:
 			_, _ = u.char()
-			_, _ = u.i32()
+			rec.ch, _ = u.i32()
 			rec.gainDB, _ = u.f64()
 		case callSetGainMode:
 			_, _ = u.char()
-			_, _ = u.i32()
+			rec.ch, _ = u.i32()
 			rec.gainAuto, _ = u.boolean()
 			if s.failGainMode {
 				reply = func(p *packer) {
@@ -409,10 +434,14 @@ func (s *fakeSoapyServer) startDataServer(activate <-chan struct{}) (string, <-c
 		seq := uint32(0)
 		for {
 			payload := encodeCS16(s.streamSamples)
+			elems := s.streamElems
+			if elems == 0 {
+				elems = len(s.streamSamples)
+			}
 			hdr := encodeStreamHeader(streamHeader{
 				bytes:    uint32(streamHeaderSize + len(payload)),
 				sequence: seq,
-				elems:    int32(len(s.streamSamples)),
+				elems:    int32(elems),
 			})
 			if _, err := streamConn.Write(append(hdr, payload...)); err != nil {
 				return
@@ -527,6 +556,104 @@ func TestOpenAndSetters(t *testing.T) {
 	}
 	if !sawGainAuto {
 		t.Error("SET_GAIN_MODE(auto=true) not recorded")
+	}
+}
+
+// TestSetGainReachesEveryDiversityChannel is the root-cause regression for the
+// #1062 field report ("RX2B stays dark; pull the RX2A antenna and everything
+// drops to the noise floor"). Gain used to be programmed on channel 0 only, on
+// the theory that the MRC calibration's complex gain absorbs a branch
+// imbalance. It does not absorb an *unconfigured* receiver: a SoapySDR RX
+// channel comes up at the driver default (0 dB on UHD), leaving RX1 tens of dB
+// down, which the |h|² maximal-ratio weight then discards entirely. Every RX
+// channel in the stream must be gained.
+func TestSetGainReachesEveryDiversityChannel(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	if err := dev.SetGain(400); err != nil { // 40.0 dB
+		t.Fatalf("SetGain: %v", err)
+	}
+	gained := map[int32]bool{}
+	for _, c := range srv.recorded() {
+		if c.id == callSetGain && c.gainDB == 40.0 {
+			gained[c.ch] = true
+		}
+	}
+	for ch := int32(0); ch < diversityChannels; ch++ {
+		if !gained[ch] {
+			t.Errorf("SET_GAIN(40 dB) never reached RX channel %d (channels gained: %v) — that branch stays at the device default and contributes nothing", ch, srv.channelsFor(callSetGain))
+		}
+	}
+
+	// AGC must likewise be armed on both receivers.
+	if err := dev.SetGain(-1); err != nil {
+		t.Fatalf("SetGain(AGC): %v", err)
+	}
+	auto := map[int32]bool{}
+	for _, c := range srv.recorded() {
+		if c.id == callSetGainMode && c.gainAuto {
+			auto[c.ch] = true
+		}
+	}
+	for ch := int32(0); ch < diversityChannels; ch++ {
+		if !auto[ch] {
+			t.Errorf("SET_GAIN_MODE(auto) never reached RX channel %d", ch)
+		}
+	}
+}
+
+// TestSetGainSingleChannelStaysChannelZero pins that the per-channel fan-out is
+// diversity-only: an ordinary single-channel device must still see exactly one
+// gain call, on channel 0.
+func TestSetGainSingleChannelStaysChannelZero(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	if err := dev.SetGain(400); err != nil {
+		t.Fatalf("SetGain: %v", err)
+	}
+	if got := srv.channelsFor(callSetGain); len(got) != 1 || got[0] != 0 {
+		t.Errorf("single-channel SET_GAIN channels = %v, want [0]", got)
+	}
+}
+
+// TestSetPPMReachesEveryDiversityChannel: SoapySDR's frequency correction is a
+// per-channel setting even on a shared-LO front end, so correcting only channel
+// 0 leaves the branches tuned apart — a slow relative rotation that a frozen
+// phase constant cannot track.
+func TestSetPPMReachesEveryDiversityChannel(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	if err := dev.SetPPM(3); err != nil {
+		t.Fatalf("SetPPM: %v", err)
+	}
+	corrected := map[int32]bool{}
+	for _, c := range srv.recorded() {
+		if c.id == callSetFrequencyCorrection && c.ppm == 3 {
+			corrected[c.ch] = true
+		}
+	}
+	for ch := int32(0); ch < diversityChannels; ch++ {
+		if !corrected[ch] {
+			t.Errorf("SET_FREQUENCY_CORRECTION never reached RX channel %d (channels: %v)", ch, srv.channelsFor(callSetFrequencyCorrection))
+		}
 	}
 }
 
@@ -716,6 +843,7 @@ func TestStreamIQDiversity(t *testing.T) {
 	ch := []complex64{complex(0.5, -0.5), complex(0.25, 0.25), complex(-0.3, 0.4)}
 	// One datagram = [ch0 block][ch1 block], ch1 == ch0.
 	srv.streamSamples = append(append([]complex64{}, ch...), ch...)
+	srv.streamElems = len(ch) // valid samples per channel
 
 	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
 	dev, err := drv.Open(0)
@@ -753,6 +881,109 @@ func TestStreamIQDiversity(t *testing.T) {
 	}
 }
 
+// TestStreamIQDiversityRecoversWhenRX0IsDead is the end-to-end regression for
+// the #1062 field symptom: "disconnect the antenna from RX2A and the signal
+// drops entirely to the noise floor despite a secondary antenna fully connected
+// to RX2B." StaticCalibrator anchors its phase estimate on branch 0, and the
+// first cut hardwired branch 0 as the reference — so a silent RX0 never cleared
+// the calibration floor, the combiner stayed in passthrough, and it emitted
+// RX0's noise while RX1 carried a perfectly good signal. The reference must be
+// whichever branch is actually receiving.
+func TestStreamIQDiversityRecoversWhenRX0IsDead(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	// RX0: disconnected antenna — noise floor at ~-60 dBFS, well under the
+	// calibration floor. RX1: a real signal.
+	dead := []complex64{complex(1e-3, -1e-3), complex(-1e-3, 1e-3), complex(1e-3, 1e-3)}
+	live := []complex64{complex(0.5, -0.5), complex(0.25, 0.25), complex(-0.3, 0.4)}
+	srv.streamSamples = append(append([]complex64{}, dead...), live...)
+	srv.streamElems = len(live)
+
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+
+	select {
+	case got, ok := <-out:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+		if len(got) != len(live) {
+			t.Fatalf("combined chunk len = %d, want %d (one branch)", len(got), len(live))
+		}
+		// The combined stream must carry RX1's signal, not RX0's noise. Compare
+		// power: the old behaviour emitted the dead branch verbatim (~-60 dBFS).
+		if p := refPowerDbFS(got); p < mrcCalFloorDbFS {
+			t.Errorf("combined power = %.1f dBFS with a dead RX0 and a live RX1; want the live branch (≥ %.1f dBFS). The combiner is still anchored on RX0.", p, mrcCalFloorDbFS)
+		}
+		for i, want := range live {
+			if absDiff(got[i], want) > 2e-2 {
+				t.Errorf("combined sample %d = %v, want ~%v (the live branch)", i, got[i], want)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for combined IQ")
+	}
+}
+
+// TestStreamIQDiversityShortLastChannel pins the datagram layout against
+// upstream (common/SoapyStreamEndpoint.cpp): the per-channel blocks are
+// contiguous but NOT equal — the first N-1 channels are always full _buffSize
+// blocks and only the LAST channel is shortened to the header's elems count. A
+// naive N-equal-blocks split slides branch 1 into the tail of branch 0 on every
+// short transfer, so the branches stop being time-aligned and the phase
+// calibration anchors on garbage. Here ch0's block has a stale trailing sample
+// past the 3 valid ones; both branches carry the same signal, so a correct
+// split recovers it exactly and a misaligned one does not.
+func TestStreamIQDiversityShortLastChannel(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	sig := []complex64{complex(0.5, -0.5), complex(0.25, 0.25), complex(-0.3, 0.4)}
+	stale := complex64(complex(-0.9, 0.9)) // buffer tail past the valid samples
+	// [ch0: 3 valid + 1 stale][ch1: 3 valid], elems = 3.
+	srv.streamSamples = append(append(append([]complex64{}, sig...), stale), sig...)
+	srv.streamElems = len(sig)
+
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+
+	select {
+	case got, ok := <-out:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+		if len(got) != len(sig) {
+			t.Fatalf("combined chunk len = %d, want %d (elems per channel)", len(got), len(sig))
+		}
+		for i, want := range sig {
+			if absDiff(got[i], want) > 2e-3 {
+				t.Errorf("combined sample %d = %v, want ~%v — the branches are not time-aligned, so the block stride is being read wrong", i, got[i], want)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for combined IQ")
+	}
+}
+
 // TestStreamIQDiversityTimedActivate is the regression for MRC on a UHD X310:
 // a multi-channel streamer rejects an immediate start ("Invalid recv stream
 // command - stream now on multiple channels in a single streamer will fail to
@@ -767,6 +998,7 @@ func TestStreamIQDiversityTimedActivate(t *testing.T) {
 	srv.rejectImmediateMultiChannel = true
 	ch := []complex64{complex(0.5, -0.5), complex(0.25, 0.25)}
 	srv.streamSamples = append(append([]complex64{}, ch...), ch...)
+	srv.streamElems = len(ch) // valid samples per channel
 
 	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
 	dev, err := drv.Open(0)
@@ -856,6 +1088,7 @@ func TestStreamIQDiversityNoHardwareClock(t *testing.T) {
 	srv.failHardwareTime = true
 	ch := []complex64{complex(0.5, -0.5), complex(0.25, 0.25)}
 	srv.streamSamples = append(append([]complex64{}, ch...), ch...)
+	srv.streamElems = len(ch) // valid samples per channel
 
 	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc"}}, testLogger())
 	dev, err := drv.Open(0)

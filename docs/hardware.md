@@ -845,6 +845,24 @@ needs, RX1 on channel 0 and RX2 on channel 1:
 (only one RX channel is opened otherwise). Setting both `antennas:` and
 `antenna=` in `args` is rejected — pick one.
 
+**Checking that both diversity branches are alive.** Under `diversity: mrc`
+GopherTrunk logs a per-branch line when the stream starts and every 30 s
+afterwards:
+
+```
+soapyremote: MRC diversity branches addr=… branch_dbfs="ch0=-31.2 ch1=-33.8" reference_branch=0 calibrated=true
+```
+
+Both branches should sit within a few dB of each other. If one is far down, the
+line becomes a WARN naming the dead branch — that is an antenna, connector, or
+per-channel-gain problem on that receiver, not a decode problem. A WARN about
+receiving fewer channels than requested means the remote streamed only one
+channel despite the 2-channel request: check the device really has a second RX
+channel and that the `SoapySDRServer` accepted the request (its debug log is in
+the diagnostics note below). Note that the second receiver is gained
+automatically — `gain:` is applied to every open RX channel, so a diversity
+branch is never left at the driver default.
+
 Two operational notes from that deployment:
 
 - **Prefer a manually chosen gain over AGC.** On UHD front ends, dial in the
@@ -866,7 +884,8 @@ classifies every carrier, and streams the inventory to
 
 **Limitations:**
 
-- Receive only, single channel (channel 0).
+- Receive only. One RX channel (channel 0), or channels 0 and 1 combined into
+  one stream with `diversity: mrc`.
 - The IQ stream uses SoapyRemote's in-order **TCP** transport
   (`stream_protocol: tcp`), which opens two sockets to the server (a stream
   socket and a status socket, matching `SoapySDRServer`'s setup). UDP

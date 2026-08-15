@@ -132,6 +132,28 @@ for tagged releases.
   call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+- **SoapyRemote MRC diversity now actually uses the second receiver.** On a real
+  USRP B210 the first cut streamed only RX0: RX1 stayed dark, and disconnecting
+  RX0's antenna dropped the whole stream to the noise floor even with a good
+  antenna on RX1 (issue #1062). Three defects, all in the diversity path only:
+  **(1)** gain and frequency correction were programmed on channel 0 only, on the
+  theory that the phase calibration's complex gain absorbs a branch imbalance —
+  it does not absorb an *unconfigured* receiver, which comes up at the driver
+  default (0 dB on UHD) and is then discarded by the maximal-ratio |h|² weight.
+  Every open RX channel is now gained and corrected. **(2)** The phase
+  calibration was hardwired to anchor on branch 0, so a silent RX0 never cleared
+  the calibration floor and the combiner sat in passthrough emitting RX0's noise;
+  it now anchors on whichever branch is actually receiving, so one live receiver
+  is enough. **(3)** The datagram was split into equal per-channel blocks, but
+  SoapyRemote sends the first N-1 channels as full-stride blocks and shortens
+  only the last one to the header's `elems` count — on any short transfer that
+  slid branch 1 into the tail of branch 0, de-aligning the branches and anchoring
+  the calibration on garbage. The stride is now derived from the header. Also
+  new: a per-branch level line at stream start and every 30 s, which turns into a
+  WARN when a branch is dead or the remote delivers fewer channels than
+  requested, so a dark receiver is visible in GopherTrunk's own log instead of
+  requiring `SoapySDRServer`'s UHD debug output. Single-channel streams are
+  unaffected. Still experimental pending an on-air A/B.
 - **TETRA DMO no longer grants and opens a recording on an idle channel, and now
   grants for every real transmission.** On air, `protocol: tetra-dmo` started a
   call and a recording session about 230 ms after the daemon came up — before any

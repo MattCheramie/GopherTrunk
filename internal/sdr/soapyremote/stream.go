@@ -124,25 +124,67 @@ func (f sampleFormat) convert(buf []byte) []complex64 {
 }
 
 // deinterleave splits one multi-channel stream payload into one []complex64 per
-// channel. The datagram header's elems field is the sample count *per channel*,
-// so an n-channel payload holds n equal, channel-contiguous blocks laid out as
-// [ch0: elems samples][ch1: elems samples]…, matching SoapyRemote's
-// SoapyStreamEndpoint (each SoapySDR per-channel buffer maps to a contiguous
-// region of the transfer). channels<=1 is exactly convert().
+// channel, given the header's elems field. channels<=1 is exactly convert().
 //
-// ASSUMPTION flagged for on-air validation (issue #1062): the per-channel block
-// layout (contiguous blocks, ch0 first) is transcribed from the SoapyRemote
-// endpoint convention and has NOT yet been confirmed against a live dual-RX
-// server. If a real B210 A/B shows the branches transposed or sample-interleaved,
-// this function is the single place to change — nothing downstream depends on the
-// layout. A ragged tail (payload not a whole multiple of channels·bytesPerSample)
-// is dropped so the branches stay sample-aligned.
-func (f sampleFormat) deinterleave(buf []byte, channels int) [][]complex64 {
+// Layout (common/SoapyStreamEndpoint.cpp, confirmed against upstream). Each
+// channel occupies its own contiguous block at
+//
+//	offset_c = HEADER_SIZE + c·_buffSize·elemSize
+//
+// so the blocks are channel-contiguous and ch0 comes first — but they are NOT
+// equal-length in general. The endpoint always sends the first N-1 channels as
+// FULL _buffSize blocks and shortens only the LAST channel to the sample count
+// actually read, which is the count the header carries:
+//
+//	totalElems = (numChans-1)·_buffSize + elems
+//
+// So elems is the number of VALID samples in every channel (readStream returns
+// the same count for all of them) and _buffSize is the block stride; the tail of
+// each earlier block past elems is stale buffer, not IQ. That makes the stride
+// derivable from the payload without knowing the negotiated MTU:
+//
+//	stride = (totalElems - elems) / (numChans - 1)
+//
+// Splitting the payload into N equal blocks instead (the pre-#1062-fix
+// behaviour) is only correct while every transfer is full; on any short
+// transfer it slides branch 1 into the tail of branch 0, so the two branches
+// stop being time-aligned and the phase calibration anchors on garbage.
+//
+// Degenerate payloads are reported honestly rather than force-split, so the
+// caller can surface them instead of combining nonsense:
+//   - totalElems == elems under a multi-channel request means the server
+//     delivered a SINGLE channel; one branch is returned (the payload is a
+//     valid single-channel time series).
+//   - any other unresolvable shape falls back to the equal split, which at
+//     least preserves the branch count.
+//
+// Callers detect both cases by comparing len(result) against the channel count
+// and the returned branch length against elems.
+func (f sampleFormat) deinterleave(buf []byte, channels, elems int) [][]complex64 {
 	if channels <= 1 {
 		return [][]complex64{f.convert(buf)}
 	}
 	bps := f.bytesPerSample()
-	perCh := (len(buf) / bps) / channels // whole samples per channel
+	total := len(buf) / bps
+	if elems > 0 && elems <= total {
+		if elems == total {
+			// Only one channel's worth of samples arrived.
+			return [][]complex64{f.convert(buf[:elems*bps])}
+		}
+		if rest := total - elems; rest%(channels-1) == 0 {
+			if stride := rest / (channels - 1); stride >= elems {
+				out := make([][]complex64, channels)
+				for c := 0; c < channels; c++ {
+					start := c * stride * bps
+					out[c] = f.convert(buf[start : start+elems*bps])
+				}
+				return out
+			}
+		}
+	}
+	// Unresolvable shape: equal blocks, dropping any ragged tail so the
+	// branches stay the same length.
+	perCh := total / channels
 	blockBytes := perCh * bps
 	out := make([][]complex64, channels)
 	for c := 0; c < channels; c++ {
