@@ -166,6 +166,18 @@ export function SDRSection() {
                   { value: "mrc", label: "mrc (RX0+RX1, shared-LO)" },
                 ]}
               />
+              <TextField
+                label="RX antennas (per channel)"
+                value={(s.Antennas ?? []).join(", ")}
+                onChange={(v) => {
+                  const list = v
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter((x) => x !== "");
+                  set({ ...s, Antennas: list.length ? list : undefined });
+                }}
+                placeholder="e.g. RX1, RX2 (X310 under mrc)"
+              />
             </div>
           )}
         />

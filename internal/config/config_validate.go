@@ -238,10 +238,39 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 	default:
 		return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
 	}
+	diversityMRC := false
 	switch strings.ToLower(strings.TrimSpace(s.Diversity)) {
-	case "", "none", "off", "mrc":
+	case "", "none", "off":
+	case "mrc":
+		diversityMRC = true
 	default:
 		return fmt.Errorf("sdr.soapy_remote[%d]: diversity must be mrc or empty", i)
+	}
+	// antennas[] selects an RX antenna per channel. At most two (RX0, RX1), and
+	// more than one only makes sense under mrc (a single-channel stream opens
+	// only channel 0). No empty entries — an empty string is a silent no-op that
+	// reads like an intentional default and hides a typo.
+	if len(s.Antennas) > 2 {
+		return fmt.Errorf("sdr.soapy_remote[%d]: antennas has %d entries (max 2: RX channel 0 and 1)", i, len(s.Antennas))
+	}
+	if len(s.Antennas) > 1 && !diversityMRC {
+		return fmt.Errorf("sdr.soapy_remote[%d]: antennas has %d entries but only one RX channel is opened without diversity: mrc", i, len(s.Antennas))
+	}
+	for j, a := range s.Antennas {
+		if strings.TrimSpace(a) == "" {
+			return fmt.Errorf("sdr.soapy_remote[%d]: antennas[%d] is empty", i, j)
+		}
+	}
+	// An antenna= left in the flat args string reaches make() but does NOT set a
+	// per-channel antenna the way antennas[] does (make() args can't carry a
+	// comma-separated multi-value), so a config with both is ambiguous — point
+	// at the field that actually applies per channel.
+	if len(s.Antennas) > 0 {
+		if args, err := s.DeviceArgs(); err == nil {
+			if _, ok := args["antenna"]; ok {
+				return fmt.Errorf("sdr.soapy_remote[%d]: set the antenna via the antennas: list, not antenna= in args (the args value applies to make() only, not per RX channel)", i)
+			}
+		}
 	}
 	// stream_mtu is in bytes; 0 means SoapyRemote's default (1500). Reject
 	// values that can't be a real endpoint MTU — too small to hold a useful

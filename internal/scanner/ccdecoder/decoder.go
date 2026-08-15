@@ -631,9 +631,18 @@ func (d *Decoder) Run(ctx context.Context) error {
 			}
 			switch ev.Kind {
 			case events.KindCCLocked:
+				// The bus is shared with every other decoder/protocol in the
+				// process, so honour only lock edges for THIS decoder's active
+				// carrier — a foreign system's lock (or, below, its cc.lost)
+				// must not drive our locked flag, which gates autotune and (via
+				// DecodeHealth) the dashboard decode-quality chip. Both P25 and
+				// TETRA lock payloads carry the frequency; an unrecognised
+				// payload falls through to the old behaviour (accept the edge).
+				if !d.lockEventMatchesActive(ev.Payload) {
+					continue
+				}
 				// Gate autotune sampling on a real lock — the AFC estimate
-				// only means anything once the FSW is correlating. Payload
-				// shape is per-protocol, so we only read the lock edge.
+				// only means anything once the FSW is correlating.
 				d.locked.Store(true)
 				// Re-arm the issue #402 dc_avoid nudge for this lock session,
 				// so a fresh acquisition gets one clean measurement window.
@@ -643,6 +652,9 @@ func (d *Decoder) Run(ctx context.Context) error {
 				d.mu.Unlock()
 				continue
 			case events.KindCCLost:
+				if !d.lockEventMatchesActive(ev.Payload) {
+					continue
+				}
 				d.locked.Store(false)
 				continue
 			case events.KindHuntProgress:
@@ -835,6 +847,24 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	// previous channel doesn't bleed into the freshly-tuned one.
 	d.ddc.Reset()
 	d.mu.Unlock()
+}
+
+// lockEventMatchesActive reports whether a cc.locked/cc.lost payload belongs to
+// this decoder's currently-active carrier. Both the P25 and TETRA lock payloads
+// implement trunking.LockedPayload (LockedFrequencyHz); a lock edge for another
+// system on the shared bus is rejected so it can't flip our locked flag. An
+// unrecognised payload (no frequency) is accepted, preserving the pre-filter
+// behaviour rather than dropping a lock we can't attribute.
+func (d *Decoder) lockEventMatchesActive(payload any) bool {
+	lp, ok := payload.(trunking.LockedPayload)
+	if !ok {
+		return true
+	}
+	d.mu.Lock()
+	active := d.activeFreqHz
+	d.mu.Unlock()
+	// Before any acquisition (activeFreqHz 0) there is nothing to protect.
+	return active == 0 || lp.LockedFrequencyHz() == active
 }
 
 func (d *Decoder) clearActive() {

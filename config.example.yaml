@@ -603,6 +603,15 @@ sdr:
   #     gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
   #     bias_tee: false             # best-effort (driver-dependent)
   #     connect_timeout_ms: 3000
+  #     diversity: ""               # "" (single channel) or "mrc" — opens RX0+RX1
+  #                                 #  and phase-coherently combines them into one
+  #                                 #  maximised-SNR stream. Shared-LO front-ends
+  #                                 #  only (USRP B210 / AD9361). Experimental.
+  #     antennas: []                # RX antenna port per channel, in order, e.g.
+  #                                 #  [RX1, RX2] for a USRP X310 under diversity:
+  #                                 #  mrc. Use this instead of antenna= in args —
+  #                                 #  a comma-separated antenna can't live in the
+  #                                 #  flat args string. Empty = device default.
 
   # ka9q-radio channels. radiod (https://github.com/ka9q/ka9q-radio)
   # runs fast-convolution downconverters on a front end (RX888, Airspy,

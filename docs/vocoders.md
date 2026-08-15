@@ -139,6 +139,30 @@ consumers (web UIs, batch processors, post-mortem analysis tools)
 can reuse the same decode path without spawning a binary. See
 `internal/voice/streamdecode.go`.
 
+### DSD-FME-playable sidecars (`recordings.mbe_files`)
+
+With `recordings.mbe_files: true` the recorder additionally writes a
+DSD-FME-native container next to each recording, for the protocols
+DSD-FME can play offline: `<name>.imb` for P25 Phase 1 IMBE and
+`<name>.amb` for DMR / NXDN / P25 Phase 2 AMBE+2. These are DSD-FME's
+own cookie-headed format, so they decode directly:
+
+```sh
+dsd-fme -f1 -w out.wav -r call.imb    # P25 Phase 1 IMBE
+dsd-fme -fs -w out.wav -r call.amb    # DMR AMBE+2
+```
+
+TETRA ACELP and EDACS ProVoice have no DSD-FME playback mode, so they
+produce no MBE sidecar (the flat `.raw` remains the escape hatch).
+
+**Note on DSD-FME's `-w` output rate.** DSD-FME's `-w single.wav`
+writer stamps an 8 kHz header on synthesis it produces at 12 kHz, so
+the file plays ~1.5× slow / low-pitched. This is an upstream DSD-FME
+quirk, not a GopherTrunk one — the `.amb`/`.imb` frame counts match
+GopherTrunk's own decode exactly. Use DSD-FME's per-call output
+(`-P`) or live audio (`-o pulse`) to hear it at the right rate, or
+re-label the `-w` WAV to 12 kHz.
+
 ## Implementation notes
 
 - `internal/voice/mbe/` is the shared MBE-family synthesis core:

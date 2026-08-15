@@ -2580,3 +2580,30 @@ func TestDecoderPublishesTotalCarrierOffsetWithAutotune(t *testing.T) {
 			siteOffset, appliedBias)
 	}
 }
+
+// TestLockEventMatchesActiveFiltersForeignSystem pins the fix for a P25 (or any)
+// decoder showing decode: — on the dashboard: d.locked is driven off the shared
+// event bus, so a cc.lost from ANOTHER system in the same process used to latch
+// this decoder's locked flag false and blank its DecodeHealth. Lock edges are
+// now filtered to the decoder's active carrier.
+func TestLockEventMatchesActiveFiltersForeignSystem(t *testing.T) {
+	d := &Decoder{activeFreqHz: 450_125_000}
+
+	// A lock/lost for our own carrier is honoured.
+	if !d.lockEventMatchesActive(tetra.LockState{FrequencyHz: 450_125_000}) {
+		t.Error("own-carrier lock event was rejected")
+	}
+	// A foreign system's carrier is rejected.
+	if d.lockEventMatchesActive(tetra.LockState{FrequencyHz: 851_012_500}) {
+		t.Error("foreign-carrier lock event was accepted (would flip our locked flag)")
+	}
+	// An unattributable payload (no frequency) is accepted (pre-filter behaviour).
+	if !d.lockEventMatchesActive(struct{}{}) {
+		t.Error("payload without a frequency should be accepted")
+	}
+	// Before any acquisition there is nothing to protect.
+	idle := &Decoder{activeFreqHz: 0}
+	if !idle.lockEventMatchesActive(tetra.LockState{FrequencyHz: 851_012_500}) {
+		t.Error("idle decoder should accept any lock edge")
+	}
+}

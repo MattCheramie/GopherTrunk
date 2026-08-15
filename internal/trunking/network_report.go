@@ -3,6 +3,7 @@ package trunking
 import (
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -229,10 +230,26 @@ func ReportFromTopology(t *TopologySnapshot) NetworkReport {
 		return NetworkReport{}
 	}
 	offsets := make(map[uint8]int64, len(t.BandPlan))
+	bands := make(map[uint8]TopoBandPlanSlot, len(t.BandPlan))
 	for _, b := range t.BandPlan {
 		offsets[b.ChannelID] = b.TxOffsetHz
+		bands[b.ChannelID] = b
 	}
 	conv := func(id uint8, num uint16, downHz, upHz uint32) ReportChannel {
+		// Resolve the downlink from the band plan when the protocol didn't carry
+		// an explicit frequency. A P25 neighbour (ADJ_STS_BCST) is reported as a
+		// (channel id, channel number) pair, not a frequency, so its downlink is
+		// base + number*spacing from the matching IDEN_UP — the same computation
+		// voice-grant channels use (identifier.BandPlan.Frequency). Without this a
+		// neighbour whose band arrived after it stays at 0 Hz forever, which is
+		// what left the web "Neighbor sites" downlink blank (SDRtrunk shows it).
+		if downHz == 0 && num != 0 {
+			if b, ok := bands[id]; ok && b.BaseHz != 0 && b.SpacingHz != 0 {
+				if hz := b.BaseHz + uint64(num)*uint64(b.SpacingHz); hz > 0 && hz <= math.MaxUint32 {
+					downHz = uint32(hz)
+				}
+			}
+		}
 		c := ReportChannel{ChannelID: id, ChannelNumber: num, DownlinkHz: downHz}
 		switch {
 		case upHz != 0:

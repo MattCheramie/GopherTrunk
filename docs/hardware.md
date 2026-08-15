@@ -810,14 +810,40 @@ sdr:
       # are fine too). But remote:mtu / remote:window are SoapyRemote STREAM
       # args — set the MTU under stream_mtu below, not in args (config load
       # rejects remote:* here).
-      args: "addr=10.110.162.17,rx_subdev_spec=A:0,antenna=RX1,clock_source=gpsdo,time_source=gpsdo,enable_bias_tee=1"
+      args: "addr=10.110.162.17,rx_subdev_spec=A:0,antenna=RX1,clock_source=gpsdo,time_source=gpsdo"
       format: "CS16"
       role: "auto"
       gain: "750"                     # 75.0 dB, set manually — see gain note below
-      bias_tee: true
+      bias_tee: true                  # do NOT also put enable_bias_tee=1 in args (duplicate)
       stream_mtu: 8192                 # jumbo-frame link; sizes SETUP_STREAM + window
       connect_timeout_ms: 20000
 ```
+
+**Per-channel antenna selection (`antennas:`).** A single antenna can go in
+`args` as `antenna=RX1`, but a comma inside a flat `key=value` args string
+splits arguments, so a *multi-value* antenna (one per RX channel) can't be
+expressed there — SoapySDR's own kwargs parser has the same limitation. Use the
+dedicated `antennas:` list instead, applied in channel order via SoapySDR
+`setAntenna` after the device opens. This is what an X310 in **MRC diversity**
+needs, RX1 on channel 0 and RX2 on channel 1:
+
+```yaml
+  soapy_remote:
+    - addr: "10.110.162.1:23313"
+      driver: "uhd"
+      # Two RX channels: A:0 B:0 (a space inside a value is fine here — args
+      # only split on commas). clock/time_source stay in args (real UHD
+      # make() kwargs). Do NOT put antenna= in args when antennas: is set.
+      args: "addr=10.110.162.17,rx_subdev_spec=A:0 B:0,clock_source=gpsdo,time_source=gpsdo"
+      diversity: mrc                  # opens RX0+RX1, phase-coherent combine
+      antennas: [RX1, RX2]            # RX1→channel 0, RX2→channel 1
+      format: "CS16"
+      gain: "750"
+```
+
+`antennas:` accepts at most two entries; more than one requires `diversity: mrc`
+(only one RX channel is opened otherwise). Setting both `antennas:` and
+`antenna=` in `args` is rejected — pick one.
 
 Two operational notes from that deployment:
 

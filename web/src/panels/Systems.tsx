@@ -46,7 +46,14 @@ function formatNeighbor(n: NeighborDTO, idBase: "hex" | "dec"): string {
   const rfss = formatIdNumber(n.rfss, idBase) ?? String(n.rfss);
   const site = formatIdNumber(n.site, idBase) ?? String(n.site);
   let s = `RFSS ${rfss} / Site ${site}`;
-  if (n.downlink_hz) s += ` → ${(n.downlink_hz / 1e6).toFixed(6)} MHz`;
+  if (n.downlink_hz) {
+    s += ` → ${(n.downlink_hz / 1e6).toFixed(6)} MHz`;
+  } else if (n.channel_id != null && n.channel_number != null) {
+    // No resolved frequency yet (the neighbour's band plan hasn't been heard):
+    // show the raw channel coordinates like SDRtrunk's "CHANNEL:2-1754" so the
+    // row isn't blank while the IDEN_UP for that band is still awaited.
+    s += ` → CHANNEL ${n.channel_id}-${n.channel_number}`;
+  }
   return s;
 }
 

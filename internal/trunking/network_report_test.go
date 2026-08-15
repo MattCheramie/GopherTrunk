@@ -112,6 +112,34 @@ func TestReportFromTopologyMapsFieldsAndUplink(t *testing.T) {
 	}
 }
 
+// TestReportFromTopologyResolvesNeighbourDownlinkFromBandPlan is the regression
+// for the blank "Neighbor sites" downlink: a P25 ADJ_STS_BCST reports a neighbour
+// as a (channel id, channel number) pair with NO frequency, so the report must
+// compute the downlink from the matching IDEN_UP band plan (base + number *
+// spacing) — the same math a voice grant uses. Fails before the fix (downlink 0).
+func TestReportFromTopologyResolvesNeighbourDownlinkFromBandPlan(t *testing.T) {
+	snap := &TopologySnapshot{
+		SystemName: "Main Site",
+		Protocol:   "p25",
+		BandPlan:   []TopoBandPlanSlot{{ChannelID: 2, BaseHz: 450_000_000, SpacingHz: 12_500, TxOffsetHz: 10_000_000}},
+		// FrequencyHz deliberately 0 — the neighbour's band hadn't resolved when
+		// the ADJ_STS was heard; the report must fill it in from the band plan.
+		Neighbors: []TopoNeighborRef{{RFSS: 1, Site: 7, ChannelID: 2, ChannelNumber: 77}},
+	}
+	r := ReportFromTopology(snap)
+	if len(r.Sites) != 1 || len(r.Sites[0].Neighbors) != 1 {
+		t.Fatalf("expected one neighbour: %+v", r.Sites)
+	}
+	// downlink = 450_000_000 + 77*12_500 = 450_962_500; uplink = +10 MHz.
+	n := r.Sites[0].Neighbors[0].Channel
+	if n.DownlinkHz != 450_962_500 {
+		t.Errorf("neighbour downlink = %d, want 450962500 (base + number*spacing)", n.DownlinkHz)
+	}
+	if n.UplinkHz != 460_962_500 {
+		t.Errorf("neighbour uplink = %d, want 460962500 (downlink + tx offset)", n.UplinkHz)
+	}
+}
+
 // TestReportFromTopologyDirectUplink covers a protocol (TETRA) that resolves the
 // uplink directly from its own duplex spacing, with no band plan: the explicit
 // TopoChannelRef.UplinkHz must flow through to the report and the rendered

@@ -41,7 +41,20 @@ func TestTETRAMultiSlotReplay(t *testing.T) {
 		}
 		inRate = f
 	}
-	const colourExt = 262144876 // the reporter's cell
+	// The extended colour code (MCC|MNC|colour) the TCH/S is scrambled with —
+	// cell-specific, so on any capture other than the original reporter's it
+	// must be overridden or the TCH/S descramble is wrong and the CRC counts
+	// sit at the ~1/256 chance floor (indistinguishable from a weak signal).
+	// GT_TETRA_COLOUR overrides it (decimal or 0x-hex); default is the
+	// reporter's cell.
+	var colourExt uint32 = 262144876
+	if v := os.Getenv("GT_TETRA_COLOUR"); v != "" {
+		c, err := strconv.ParseUint(v, 0, 32)
+		if err != nil {
+			t.Fatalf("bad GT_TETRA_COLOUR: %v", err)
+		}
+		colourExt = uint32(c)
+	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
