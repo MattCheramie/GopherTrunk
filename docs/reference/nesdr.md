@@ -25,7 +25,7 @@ infobox:
   - { label: TX, value: No (receive only) }
   - { label: Typical price, value: "$25 – $45" }
   - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B01HA642SW?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
-see_also: [rtl-sdr, rtl2832u, r820t-tuner, e4000-tuner, bias-tee, software-defined-radio]
+see_also: [rtl-sdr, rtl2832u, r820t-tuner, e4000-tuner, bias-tee, software-defined-radio, rtlsdr-usb-recovery]
 cite_urls:
   - https://en.wikipedia.org/wiki/RTL-SDR
   - https://www.nooelec.com/store/sdr/sdr-receivers.html
@@ -118,6 +118,18 @@ that remain are inherent to the [RTL2832U](/reference/rtl2832u/): the 8-bit ADC'
 dynamic range (set [gain](/reference/automatic-gain-control/) carefully to avoid
 overload) and the ~2.4 MHz capture width. For HF below the tuner's reach it relies on
 direct sampling, with the usual Nyquist fold, or an external upconverter.
+
+One SMArt v5 quirk is worth knowing if you write or debug driver code: the v5's silicon
+needs about a **5 ms settle** between enabling the RTL2832U's I²C repeater and the first
+multi-byte tuner write during init. Without it, the very first tuner burst can fail with
+`I2CWrite addr=0x34: broken pipe` — a reproducible failure GopherTrunk hit on two separate
+v5 dongles (while `rtl_test` and other libusb-based tools worked, their extra per-transfer
+latency incidentally providing the settle time). The fix was that settle delay plus a
+per-chunk retry on the pipe error
+([#248](https://github.com/MattCheramie/GopherTrunk/issues/248)); current GopherTrunk
+includes both. If a NESDR still fails at init, see
+[RTL-SDR USB stall recovery](/reference/rtlsdr-usb-recovery/) for the per-OS symptom
+table.
 
 ## Relevance to GopherTrunk
 
