@@ -786,6 +786,15 @@ type SoapyRemoteConfig struct {
 	// (issue #1062): the 2-channel wire de-interleave is not yet confirmed on a
 	// live dual-RX server.
 	Diversity string `yaml:"diversity"`
+	// Antennas selects the RX antenna port per channel (SoapySDR setAntenna),
+	// applied in channel order after the device opens — antennas[0] to RX
+	// channel 0, antennas[1] to channel 1. A multi-value antenna cannot be
+	// expressed in the flat "key=value" args string (a comma there splits
+	// arguments), so a USRP X310 in MRC diversity that needs RX1 on channel 0
+	// and RX2 on channel 1 uses this list instead of args. Empty leaves the
+	// device default. More than one entry requires diversity: mrc (only one RX
+	// channel is opened otherwise).
+	Antennas []string `yaml:"antennas"`
 }
 
 // parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument

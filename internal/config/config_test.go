@@ -396,6 +396,13 @@ func TestValidate(t *testing.T) {
 		{"soapy diversity mrc ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc"}}}}, false},
 		{"soapy diversity empty ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: ""}}}}, false},
 		{"soapy diversity bad rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "selection"}}}}, true},
+		// antennas[]: one is fine single-channel; two require mrc; >2 and empties rejected.
+		{"soapy antennas single ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antennas: []string{"RX2"}}}}}, false},
+		{"soapy antennas two with mrc ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", Antennas: []string{"RX1", "RX2"}}}}}, false},
+		{"soapy antennas two without mrc rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antennas: []string{"RX1", "RX2"}}}}}, true},
+		{"soapy antennas three rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", Antennas: []string{"RX1", "RX2", "RX3"}}}}}, true},
+		{"soapy antennas empty entry rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antennas: []string{""}}}}}, true},
+		{"soapy antennas conflict with args rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "antenna=RX1", Antennas: []string{"RX2"}}}}}, true},
 		// soapy_remote stream_mtu: 0 = default; a real MTU is fine; out-of-range fails.
 		{"soapy stream_mtu zero ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1"}}}}, false},
 		{"soapy stream_mtu valid", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 8192}}}}, false},

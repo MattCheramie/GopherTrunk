@@ -60,6 +60,14 @@ type fakeSoapyServer struct {
 	// SOAPY_SDR_HAS_TIME on a multi-channel stream is rejected with the
 	// "stream now on multiple channels" exception (issue: MRC on X310).
 	rejectImmediateMultiChannel bool
+
+	// antennas records (channel, name) pairs seen on SET_ANTENNA.
+	antennas []antennaSet
+}
+
+type antennaSet struct {
+	ch   int32
+	name string
 }
 
 type recordedCall struct {
@@ -288,6 +296,13 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			} else {
 				doActivate = true
 			}
+		case callSetAntenna:
+			_, _ = u.char() // direction
+			ch, _ := u.i32()
+			name, _ := u.str()
+			s.mu.Lock()
+			s.antennas = append(s.antennas, antennaSet{ch: ch, name: name})
+			s.mu.Unlock()
 		case callGetHardwareTime:
 			_, _ = u.str() // clock qualifier ("")
 			s.mu.Lock()
@@ -420,6 +435,32 @@ func encodeCS16(samples []complex64) []byte {
 		buf = append(buf, b[:]...)
 	}
 	return buf
+}
+
+// TestOpenAppliesPerChannelAntennas pins that Spec.Antennas applies a
+// SET_ANTENNA per RX channel at Open, in channel order (the X310 RX1/RX2 MRC
+// case). An empty entry is skipped (leaves the device default).
+func TestOpenAppliesPerChannelAntennas(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc", Antennas: []string{"RX1", "RX2"}}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	srv.mu.Lock()
+	got := append([]antennaSet(nil), srv.antennas...)
+	srv.mu.Unlock()
+	want := []antennaSet{{0, "RX1"}, {1, "RX2"}}
+	if len(got) != len(want) {
+		t.Fatalf("SET_ANTENNA calls = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("antenna[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
 }
 
 func TestOpenAndSetters(t *testing.T) {

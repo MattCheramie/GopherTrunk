@@ -71,6 +71,7 @@ const (
 	callActivateStream         int32 = 302
 	callDeactivateStream       int32 = 303
 	callGetNativeStreamFormat  int32 = 305
+	callSetAntenna             int32 = 600
 	callSetFrequencyCorrection int32 = 504
 	callSetGainMode            int32 = 701
 	callSetGain                int32 = 703

@@ -117,6 +117,7 @@ export interface SoapyRemoteConfig {
   BiasTee: boolean;
   ConnectTimeoutMs: number;
   Diversity: string;
+  Antennas?: string[];
 }
 
 export interface Ka9qRadioConfig {

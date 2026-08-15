@@ -102,6 +102,13 @@ type Spec struct {
 	// one stream (shared-LO front-ends only, e.g. USRP B210 / AD9361). See
 	// mrc.go. EXPERIMENTAL — issue #1062.
 	Diversity string
+	// Antennas selects the RX antenna port per channel (SoapySDR setAntenna),
+	// applied in channel order after MAKE: Antennas[0] to RX channel 0,
+	// Antennas[1] to channel 1 (the diversity second receiver). Empty leaves the
+	// device default. A comma-separated multi-antenna value cannot be expressed
+	// in the flat DeviceArgs kwargs string, so per-channel antenna routing (e.g.
+	// an X310's RX1/RX2 under MRC) goes here instead of args.
+	Antennas []string
 }
 
 // Driver implements sdr.Driver over a set of SoapySDRServer endpoints.
@@ -222,6 +229,14 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		conn.Close()
 		return nil, fmt.Errorf("soapyremote: make device: %w", err)
 	}
+	// Apply per-channel RX antennas (X310 RX1/RX2 under MRC, etc.) now that the
+	// device exists and its RX channels are known. An explicitly configured
+	// antenna that the remote rejects is a real misconfiguration, so this is
+	// rpcVoid (loud), not best-effort.
+	if err := dev.applyAntennas(spec.Antennas); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("soapyremote: set antenna: %w", err)
+	}
 	// Best-effort: learn the native format for diagnostics.
 	if native, ok := dev.nativeStreamFormat(); ok {
 		dev.info.TunerName = native
@@ -330,6 +345,28 @@ func (d *device) rpcBestEffort(what string, build func(*packer)) error {
 			return err
 		}
 		d.log.Debug("soapyremote: "+what+" not applied", "addr", d.addr, "err", err)
+	}
+	return nil
+}
+
+// applyAntennas sets the RX antenna port for channel i to antennas[i] via
+// SET_ANTENNA (SoapySDR setAntenna). Channels past len(antennas) keep the
+// device default. Called once at Open, after MAKE.
+func (d *device) applyAntennas(antennas []string) error {
+	for ch, name := range antennas {
+		if name == "" {
+			continue
+		}
+		ch := int32(ch)
+		if err := d.rpcVoid(func(p *packer) {
+			p.call(callSetAntenna)
+			p.char(dirRX)
+			p.i32(ch)
+			p.str(name)
+		}); err != nil {
+			return fmt.Errorf("channel %d antenna %q: %w", ch, name, err)
+		}
+		d.log.Info("soapyremote: rx antenna set", "addr", d.addr, "channel", ch, "antenna", name)
 	}
 	return nil
 }
