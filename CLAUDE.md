@@ -305,6 +305,46 @@ confirmation before any close-as-completed.
       and the grant now lands ~0.5 s into a transmission (grid latch + 4 qualified DNBs) rather
       than instantly. `dnb_qualified` in the decode-status line is the number that means traffic —
       `dnb_total` is a noise meter, and a large gap between them is normal, not a fault.
+    6. **On-air A/B ran (15aug): the ceiling is RF/model, NOT colour recovery — and colour
+      recovery is behaving CORRECTLY.** The operator's purpose-built capture
+      (`dmo_test_15aug/25sec_ptt_then_off_30sec_cs16_144khz.raw`, 25 s clear colour-0 silent PTT,
+      144 kHz cs16) decodes DSB SCH/S at ~90% (105/117) but TCH/S sits near the chance floor at
+      **every** DM colour. `TestTETRADMOColourScan` (`GT_TETRA_DMO_SCAN=1`, the new diagnostic)
+      sweeps all 64 colours: several rise modestly at once (28→140, 57→74, 30→46 of 831 DNBs)
+      rather than one dominating — which one radio scrambling with one label cannot produce, and
+      which is why `RecoverDMColourCode`'s dominance gate (best ≥ 3×runner-up) correctly REFUSES
+      to pick one (140 < 3×74). That refusal is the operator's "colour guessing problem": not a
+      broken guesser but a marginal signal with no dominant colour. The SYNC PDU is self-consistent
+      with MNI=0/colour=0 (extended colour 0, matching osmo-tetra-dmo's `tetra_scramb_get_init`
+      offsets — GT's `ParseSyncPDU` bit offsets are identical), so the extended-colour path is not
+      the gap here. The blind CMA equalizer (already on by default) lifts DSB 77→105 and TCH 80→140;
+      LMS does not move it — so the receiver is already doing the right thing. NEXT: need a cleaner,
+      KNOWN-colour (from the CPS codeplug), actually-TALKING DMO capture — the 25 s silent PTT is a
+      poor vector (comfort-noise/DTX frames, and the sweep winners are partial keystream artifacts
+      of a marginal signal). Do NOT change the descramble to fit a 33%-yield non-dominant colour
+      (the #764/#771 self-consistency trap). The colour→colour_map is preserved in the diagnostic.
+- **Vocoder "sounds awful" is a MEASURED, LOCALIZED AMBE+2 3600×2450 (DMR) high-band deficit —
+  NOT RF, NOT post-processing.** Using the operator's DSD-FME (mbelib) decode of the SAME `.amb`
+  frames as ground truth (`err=[0]`, identical frame count), GopherTrunk's `ambe2-dmr` decode has
+  4–10× less energy above 1 kHz: octave band fractions (0-300/300-1k/1-2k/2-3k/3-4k) are
+  mbelib `0.200/0.513/0.181/0.073/0.033` vs GT-raw-`ambe2-dmr` `0.405/0.540/0.041/0.008/0.005`.
+  Content matches (envelope corr 0.69 — same speech, crushed highs). Isolation: the base `ambe2`
+  (3600×2400) decoder shares the exact same synthesis + §6.2 `EnhanceAmplitudes` and gives
+  mbelib-like highs (`0.121/0.053/0.020`), so the deficit is purely in `unpackParams2450`
+  (`internal/voice/ambe2/params2450.go` + `tables2450.go`) — the 3600×2450 spectral-amplitude
+  quantization reconstruction produces systematically low high-`l` amplitudes. NOT fixed this
+  round: this is conformance-pinned table code, so the fix needs a frame-by-frame diff against a
+  wired mbelib 2450 reference (an objective band-energy regression target), not a speculative table
+  change. Config note: the operator's `warm_dmr_audio: true` + `enhance` LPF only make it worse
+  (they cut highs further); the synthesis is the cause. Reproduce:
+  `gophertrunk decode -in <dmr>.raw -out gt.wav -vocoder ambe2-dmr` and compare octave-band
+  fractions to the DSD-FME decode of the paired `.amb`. IMBE (P25) shows the same direction, milder.
+- **DSD-FME `.imb`/`.amb` interop VERIFIED (frame-exact); the "slow/pitch" playback is an upstream
+  DSD-FME quirk.** `recordings.mbe_files` writes DSD-FME's native cookie-headed container and
+  DSD-FME decodes it cleanly (`err=[0]`). DSD-FME's `-w single.wav` writer stamps an 8 kHz header
+  on 12 kHz synthesis (file plays ~1.5× slow) — envelope correlation is 0.69 after a 1.5× time
+  correction, proving content parity. Not a GT bug; use DSD-FME `-P` (per-call) or `-o pulse`, or
+  relabel the `-w` WAV to 12 kHz. Documented in `docs/vocoders.md`.
 - **Conventional DMR (Tier II / IPSC) now decodes a repeater's TWO timeslots as two calls.**
   A base-station DMR repeater carries TS1 and TS2 interleaved on one carrier, each able to hold
   a separate simultaneous talkgroup. The conventional path (`internal/radio/dmr/tier2`) used to
