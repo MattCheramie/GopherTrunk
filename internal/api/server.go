@@ -614,6 +614,10 @@ type CallRow struct {
 	SourceID    uint32 `json:"source_id"`
 	FrequencyHz uint32 `json:"frequency_hz"`
 	Encrypted   bool   `json:"encrypted"`
+	// AlgorithmID / KeyID identify the encryption the call was carried under.
+	// Only meaningful when Encrypted; the UI renders them as "enc <alg> key <id>".
+	AlgorithmID uint8  `json:"algorithm_id,omitempty"`
+	KeyID       uint16 `json:"key_id,omitempty"`
 	Emergency   bool   `json:"emergency"`
 	DataCall    bool   `json:"data_call"`
 	// Individual is true for a unit-to-unit / private call, where GroupID is a
@@ -628,6 +632,11 @@ type CallRow struct {
 	DurationMs     int64     `json:"duration_ms,omitempty"`
 	EndReason      string    `json:"end_reason,omitempty"`
 	TalkgroupAlpha string    `json:"talkgroup_alpha,omitempty"`
+	// SourceAlpha is the resolved alias/name of the transmitting radio, from
+	// the operator RID catalogue and live-decoded talker aliases; "" when
+	// unresolved. Snapshotted onto the row at call time, so renaming a radio
+	// later does not retro-fix history.
+	SourceAlpha string `json:"source_alpha,omitempty"`
 	// SignalDbFS is the call's mean received channel power in dBFS
 	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
 	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`

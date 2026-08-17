@@ -189,6 +189,77 @@ func TestCallHistoryEndpointFiltersByGroupID(t *testing.T) {
 	}
 }
 
+// call_log carries the encryption identifiers and the resolved source-radio
+// alias, but the api DTO used to drop all three — so the History table's
+// Source column and its "enc <alg> key <id>" badge could never populate no
+// matter what the decoder wrote.
+func TestCallHistoryEndpointCarriesEncryptionAndSourceAlias(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	db, _ := storage.Open(":memory:")
+	defer db.Close()
+	cl, _ := storage.NewCallLog(db, bus, nil)
+	defer cl.Close()
+	cl.SetRIDResolver(func(id uint32) string {
+		if id == 1005736 {
+			return "CPL-SMITH"
+		}
+		return ""
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "Alpha", Protocol: "p25", GroupID: 4242,
+				SourceID: 1005736, FrequencyHz: 851_000_000,
+				Encrypted: true, AlgorithmID: 0x84, KeyID: 0x1234,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC().Truncate(time.Microsecond),
+		},
+	})
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		rows, _ := db.History(context.Background(), storage.HistoryFilter{Limit: 1})
+		if len(rows) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	base, teardown := mkServer(t, ServerOptions{
+		Bus:     bus,
+		History: HistoryFromStorage(db),
+	})
+	defer teardown()
+
+	resp := mustGet(t, base+"/api/v1/calls/history")
+	defer resp.Body.Close()
+	var body struct {
+		Calls []CallRow `json:"calls"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(body.Calls))
+	}
+	got := body.Calls[0]
+	if got.AlgorithmID != 0x84 {
+		t.Errorf("algorithm_id = %#x, want 0x84", got.AlgorithmID)
+	}
+	if got.KeyID != 0x1234 {
+		t.Errorf("key_id = %#x, want 0x1234", got.KeyID)
+	}
+	if got.SourceAlpha != "CPL-SMITH" {
+		t.Errorf("source_alpha = %q, want CPL-SMITH", got.SourceAlpha)
+	}
+}
+
 func TestCallHistoryEndpointReturns503WithoutHistory(t *testing.T) {
 	bus := events.NewBus(4)
 	defer bus.Close()
