@@ -521,14 +521,41 @@ func TestDiversityReporterStaysQuietWhileCalibrationKeepsUpdating(t *testing.T) 
 }
 
 // TestMRCTrackAlphaMatchesDocumentedTimeConstant pins that the loop bandwidth is
-// derived from the window and the stated time constant rather than hardcoded, so
-// changing the window cannot silently move it.
+// derived from the ACTUAL window duration and the stated time constant rather
+// than hardcoded, so neither changing the window nor the min-samples clamp can
+// silently move it.
 func TestMRCTrackAlphaMatchesDocumentedTimeConstant(t *testing.T) {
-	if got, want := mrcTrackAlpha(diversityMRCTracking), mrcCalWindowMs/mrcTrackTauMs; got != want {
+	// Unclamped rate: 2 MHz gives a 4096-sample window ≈ the nominal 2 ms, so
+	// alpha stays at the historical 0.01.
+	rate := 2_048_000.0
+	if got, want := mrcTrackAlpha(diversityMRCTracking, mrcCalWindowSamples(rate), rate), mrcCalWindowMs/mrcTrackTauMs; got != want {
 		t.Errorf("tracking alpha = %v, want %v", got, want)
 	}
-	if got := mrcTrackAlpha(diversityMRCStatic); got != 0 {
+	if got := mrcTrackAlpha(diversityMRCStatic, mrcCalWindowSamples(rate), rate); got != 0 {
 		t.Errorf("static alpha = %v, want 0 (one-shot)", got)
+	}
+}
+
+// TestMRCTrackAlphaHonorsClampedWindow is the low-rate regression (operator's
+// 250 kHz narrow TETRA capture): the min-samples clamp stretches the 2 ms
+// window to 4096 samples = 16.384 ms, and alpha must follow the ACTUAL
+// duration or the loop's 1/e time silently becomes ~1.6 s instead of the
+// documented 200 ms. Fails against the old nominal-constant derivation
+// (which returned 0.01 here).
+func TestMRCTrackAlphaHonorsClampedWindow(t *testing.T) {
+	const rate = 250_000.0
+	window := mrcCalWindowSamples(rate)
+	if window != mrcCalWindowMinSamples {
+		t.Fatalf("expected the min-samples clamp to engage at %v Hz, got window %d", rate, window)
+	}
+	got := mrcTrackAlpha(diversityMRCTracking, window, rate)
+	want := float64(window) / rate * 1000 / mrcTrackTauMs // ≈ 0.0819
+	if got != want {
+		t.Errorf("tracking alpha at %v Hz = %v, want %v (actual window duration / tau)", rate, got, want)
+	}
+	// Unknown rate: fall back to the nominal derivation rather than guessing.
+	if got, want := mrcTrackAlpha(diversityMRCTracking, mrcCalWindowDefaultSamples, 0), mrcCalWindowMs/mrcTrackTauMs; got != want {
+		t.Errorf("unknown-rate alpha = %v, want nominal %v", got, want)
 	}
 }
 

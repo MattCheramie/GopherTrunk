@@ -93,7 +93,7 @@ func TestWriteConfigFile(t *testing.T) {
 
 	// Invalid config is never written.
 	bad := Default()
-	bad.SDR.SampleRate = 100 // below the 225 kHz floor
+	bad.SDR.SampleRate = 100 // below the 200 kHz floor
 	if _, err := WriteConfigFile(filepath.Join(dir, "bad.yaml"), bad, 0, true); err == nil {
 		t.Fatalf("expected validation error for bad config")
 	}

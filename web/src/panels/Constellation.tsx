@@ -196,11 +196,14 @@ export function Constellation() {
         : "symbols";
 
   // Ideal cluster markers depend on the active source: clusters on the
-  // diagonals for CQPSK symbols, levels on the real axis for the C4FM
-  // soft-level view, none for the raw vector scope / IQ ring.
+  // diagonals for CQPSK/π4-DQPSK symbols, levels on the real axis for the
+  // 4-level-FSK protocols (C4FM soft-level view, DMR), none for the raw
+  // vector scope / IQ ring.
   const markers = useMemo<IQPoint[]>(() => {
     if (source !== "symbols") return [];
-    return effectiveProto === "p25-c4fm" ? C4FM_MARKERS : CQPSK_MARKERS;
+    return effectiveProto === "p25-c4fm" || effectiveProto === "dmr"
+      ? C4FM_MARKERS
+      : CQPSK_MARKERS;
   }, [source, effectiveProto]);
   const optsRef = useRef<RenderOpts>({
     dcBlock,
@@ -499,7 +502,14 @@ export function Constellation() {
             </select>
             {proto === "auto" && (
               <span className="text-muted">
-                ·&nbsp;{effectiveProto === "p25-c4fm" ? "C4FM" : "CQPSK"}
+                ·&nbsp;
+                {effectiveProto === "p25-c4fm"
+                  ? "C4FM"
+                  : effectiveProto === "tetra"
+                    ? "π/4-DQPSK"
+                    : effectiveProto === "dmr"
+                      ? "4FSK"
+                      : "CQPSK"}
               </span>
             )}
           </label>

@@ -606,7 +606,7 @@ type PowerLogConfig struct {
 
 type SDRConfig struct {
 	// SampleRate is the IQ rate (Hz) every tuner is programmed to.
-	// Default 2_400_000 (2.4 MS/s). Valid range 225_000..20_000_000; the
+	// Default 2_400_000 (2.4 MS/s). Valid range 200_000..20_000_000; the
 	// RTL2832U quantizes to its 28.4 fixed-point divisor so the streamed
 	// rate may differ slightly (see Device.ActualSampleRate). Note that
 	// RTL2832U hardware still caps at 3.2 MHz at the device level (the
@@ -2098,5 +2098,19 @@ func (c *Config) resolvePaths(base string) {
 	for i := range c.Trunking.Systems {
 		c.Trunking.Systems[i].TalkgroupFile = resolve(c.Trunking.Systems[i].TalkgroupFile)
 		c.Trunking.Systems[i].RIDAliasFile = resolve(c.Trunking.Systems[i].RIDAliasFile)
+	}
+	for i := range c.SDR.SoapyRemote {
+		p := c.SDR.SoapyRemote[i].DiversityCapture
+		if p == "" {
+			continue
+		}
+		r := resolve(p)
+		// filepath.Join strips a trailing separator, but the branch recorder
+		// uses it to tell "directory to drop timestamped captures into" from
+		// "filename prefix" — keep the operator's intent visible.
+		if strings.HasSuffix(p, "/") || strings.HasSuffix(p, string(os.PathSeparator)) {
+			r += string(os.PathSeparator)
+		}
+		c.SDR.SoapyRemote[i].DiversityCapture = r
 	}
 }

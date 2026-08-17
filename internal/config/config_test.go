@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -79,6 +80,11 @@ func TestValidate(t *testing.T) {
 		{"path_template unknown token", Config{Recordings: RecordingsConfig{PathTemplate: "{system}/{quarter}"}}, true},
 		{"path_template absolute", Config{Recordings: RecordingsConfig{PathTemplate: "/abs/{system}"}}, true},
 		{"bad sample rate", Config{SDR: SDRConfig{SampleRate: 100}}, true},
+		// Narrow captures from wideband sources: 200 kHz is the floor
+		// (issue: operator's 200 MHz/1000 exact-decimation TETRA capture);
+		// RTL dongles enforce their own 225 001 Hz floor at open instead.
+		{"narrow sample rate 200k", Config{SDR: SDRConfig{SampleRate: 200_000}}, false},
+		{"sample rate below 200k", Config{SDR: SDRConfig{SampleRate: 199_999}}, true},
 		// Wideband soapy_remote sources (issue #550): rates above the RTL
 		// 3.2 MHz hardware cap are valid config, bounded at 20 MHz.
 		{"wideband sample rate 10M", Config{SDR: SDRConfig{SampleRate: 10_000_000}}, false},
@@ -600,4 +606,32 @@ func TestWebConfigIDBase(t *testing.T) {
 
 func writeFile(path, data string) error {
 	return writeFileImpl(path, []byte(data))
+}
+
+// TestResolvePathsDiversityCapture pins two properties of the
+// sdr.soapy_remote[].diversity_capture prefix: it is anchored to the config
+// file's directory like every other output path (it used to be the one path
+// resolved against the daemon's CWD), and a trailing separator — the
+// operator's "drop captures into this directory" spelling — survives
+// resolution so the branch recorder can still tell directory from filename
+// prefix (filepath.Join would silently strip it).
+func TestResolvePathsDiversityCapture(t *testing.T) {
+	c := Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{
+		{DiversityCapture: "mrc_autocaptures/"},
+		{DiversityCapture: "captures/cap1"},
+		{DiversityCapture: ""},
+	}}}
+	c.resolvePaths(filepath.Join("/", "etc", "gt"))
+
+	want0 := filepath.Join("/", "etc", "gt", "mrc_autocaptures") + string(os.PathSeparator)
+	if got := c.SDR.SoapyRemote[0].DiversityCapture; got != want0 {
+		t.Errorf("trailing-separator prefix resolved to %q, want %q", got, want0)
+	}
+	want1 := filepath.Join("/", "etc", "gt", "captures", "cap1")
+	if got := c.SDR.SoapyRemote[1].DiversityCapture; got != want1 {
+		t.Errorf("file prefix resolved to %q, want %q", got, want1)
+	}
+	if got := c.SDR.SoapyRemote[2].DiversityCapture; got != "" {
+		t.Errorf("empty prefix became %q", got)
+	}
 }

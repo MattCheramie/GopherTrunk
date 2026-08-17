@@ -91,7 +91,7 @@ var fieldMetas = map[string]FieldMeta{
 	"RadioReferenceConfig.Password": {Help: "Your RadioReference.com account password (required with username for premium browse/import/verify). Can come from GOPHERTRUNK_RR_PASS instead — prefer the env var to keeping the secret in config.yaml."},
 
 	// ---- SDR ---------------------------------------------------------------
-	"SDRConfig.SampleRate":          {Label: "Sample rate", Hz: true, Help: "IQ rate every tuner is programmed to (225 kHz–20 MHz). RTL dongles cap ~3.2 MHz; higher needs a wideband soapy_remote source. Primary CPU-load lever."},
+	"SDRConfig.SampleRate":          {Label: "Sample rate", Hz: true, Help: "IQ rate every tuner is programmed to (200 kHz–20 MHz). RTL dongles enforce their own ~225 kHz floor and cap ~3.2 MHz; higher needs a wideband soapy_remote source. Primary CPU-load lever."},
 	"SDRConfig.Devices":             {Help: "Locally-attached USB SDR dongles, selected by serial."},
 	"SDRConfig.RTLTCP":              {Label: "rtl_tcp sources", Help: "Remote rtl_tcp endpoints mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
 	"SDRConfig.SoapyRemote":         {Label: "SoapyRemote sources", Help: "Remote SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, RTL) mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
