@@ -167,6 +167,10 @@ groups:
         url: /blog/series/operator-cockpit/
       - title: "Series: Running It For Real"
         url: /blog/series/running-it-for-real/
+      - title: "Series: TETRA End to End"
+        url: /blog/series/tetra-end-to-end/
+      - title: "Series: Weak-Signal Engineering"
+        url: /blog/series/weak-signal-engineering/
       - title: Tutorials
         url: /blog/category/tutorials/
       - title: "Series: Signal Lab"
@@ -175,6 +179,8 @@ groups:
         url: /blog/series/rf-scope/
       - title: "Series: Crypto Lab"
         url: /blog/series/crypto-lab/
+      - title: "Series: The Analog Edge"
+        url: /blog/series/analog-edge/
       - title: Solution Postmortem
         url: /blog/category/solution-postmortem/
       - title: "Series: From the Issue Tracker"
