@@ -123,6 +123,20 @@ export interface SoapyRemoteConfig {
   VerboseDebug: boolean;
 }
 
+export interface SidecarConfig {
+  Transport: string;
+  DataAddr: string;
+  ControlAddr: string;
+  Format: string;
+  SampleRateHz: number;
+  FreqMinHz: number;
+  FreqMaxHz: number;
+  Serial: string;
+  Role: string;
+  Gain: string;
+  ConnectTimeoutMs: number;
+}
+
 export interface Ka9qRadioConfig {
   Addr: string;
   SSRC: number;
@@ -140,6 +154,7 @@ export interface SDRConfig {
   Devices: DeviceConfig[];
   RTLTCP?: RTLTCPConfig[] | null;
   SoapyRemote?: SoapyRemoteConfig[] | null;
+  Sidecar?: SidecarConfig[] | null;
   Ka9qRadio?: Ka9qRadioConfig[] | null;
   [k: string]: unknown;
 }

@@ -666,6 +666,14 @@ type SDRConfig struct {
 	// group, and resolves `.local` instance names via mDNS. Plaintext
 	// multicast like rtl_tcp / soapy_remote — use on trusted LANs (issue #765).
 	Ka9qRadio []Ka9qRadioConfig `yaml:"ka9q_radio"`
+	// Sidecar lists external IQ producers to mount as virtual tuners. A
+	// sidecar is any process that owns a radio and writes raw IQ to a pipe or
+	// socket — a UHD/RFNoC program, a GNU Radio flowgraph, a hardware-specific
+	// tool with no SoapySDR support — steered by a small datagram control
+	// channel. It keeps hardware and DSP that would need CGO out of
+	// GopherTrunk's process while still giving it a real tuner. See
+	// docs/reference/sdr-sidecar.md for the wire format.
+	Sidecar []SidecarConfig `yaml:"sidecar"`
 	// WatchdogIntervalMs governs the periodic USB-disconnect
 	// watchdog that the SDR pool runs while the daemon is up. It
 	// polls the registered drivers, surfaces serials that vanish
@@ -826,6 +834,52 @@ type SoapyRemoteConfig struct {
 	// that conversation. Off by default, and per endpoint so a multi-radio
 	// config can follow one server. Needs log.level: debug to be visible.
 	VerboseDebug bool `yaml:"verbose_debug"`
+}
+
+// SidecarConfig describes one external IQ producer mounted as a virtual tuner.
+//
+// The contract is deliberately small: the sidecar streams raw interleaved IQ
+// one way, and GopherTrunk sends 5-byte tuning commands the other way. Both
+// halves are documented in docs/reference/sdr-sidecar.md, and the control
+// opcodes match rtl_tcp's so an existing rtl_tcp-shaped tool works unmodified.
+type SidecarConfig struct {
+	// Transport selects how the IQ arrives: "unix_pipe" (a FIFO path),
+	// "tcp" (GopherTrunk dials the sidecar) or "udp" (GopherTrunk binds and
+	// the sidecar sends datagrams). Defaults to "tcp".
+	Transport string `yaml:"transport"`
+	// DataAddr is the FIFO path for unix_pipe, or host:port for tcp/udp.
+	// Required.
+	DataAddr string `yaml:"data_addr"`
+	// ControlAddr is the sidecar's UDP command socket, host:port. Empty means
+	// the sidecar owns tuning: GopherTrunk's setters become no-ops, which is
+	// correct for a fixed-frequency feed but means it cannot follow a
+	// trunked system's voice grants.
+	ControlAddr string `yaml:"control_addr"`
+	// Format is the wire sample format: "cs16" (16-bit signed I/Q, default) or
+	// "complex64" (32-bit float I/Q, native Go layout, no conversion cost
+	// locally but twice the bytes over a network).
+	Format string `yaml:"format"`
+	// SampleRateHz is the rate the sidecar delivers. GopherTrunk cannot probe
+	// for it, and every downstream filter is sized from it, so a wrong value
+	// mis-tunes every channel. Required.
+	SampleRateHz uint32 `yaml:"sample_rate_hz"`
+	// FreqMinHz / FreqMaxHz declare the tuning range for the whole-device hunt
+	// sweep. Both zero leaves the range unknown, and a sweep that needs one
+	// must be given an explicit band.
+	FreqMinHz uint32 `yaml:"freq_min_hz"`
+	FreqMaxHz uint32 `yaml:"freq_max_hz"`
+	// Serial is the virtual device serial the pool reports. Empty derives one
+	// from the data address.
+	Serial string `yaml:"serial"`
+	// Role hints the pool's role assignment: "control" | "voice" | "auto".
+	Role string `yaml:"role"`
+	// Gain is passed to the sidecar on open: "auto"/empty for AGC, else tenths
+	// of a dB. What it means is the sidecar's business.
+	Gain string `yaml:"gain"`
+	// ConnectTimeoutMs bounds the TCP dial and the FIFO open. Zero uses the
+	// driver default (3000). A FIFO open blocks until a writer attaches, so
+	// this is what keeps a sidecar that never starts from hanging the daemon.
+	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
 }
 
 // parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument

@@ -15,6 +15,7 @@ import type {
   DeviceConfig,
   RTLTCPConfig,
   SDRConfig,
+  SidecarConfig,
   SoapyRemoteConfig,
 } from "../api/types";
 
@@ -196,6 +197,51 @@ export function SDRSection() {
                 value={s.VerboseDebug}
                 onChange={(v) => set({ ...s, VerboseDebug: v })}
               />
+            </div>
+          )}
+        />
+      </Fieldset>
+
+      <Fieldset legend="Sidecar sources">
+        <ListEditor<SidecarConfig>
+          label="sidecar endpoints"
+          items={cfg.Sidecar}
+          onChange={(x) => set({ ...cfg, Sidecar: x })}
+          makeNew={() => ({ Transport: "tcp", DataAddr: "", ControlAddr: "", Format: "cs16", SampleRateHz: 0, FreqMinHz: 0, FreqMaxHz: 0, Serial: "", Role: "", Gain: "auto", ConnectTimeoutMs: 0 })}
+          itemTitle={(s) => s.DataAddr || "sidecar"}
+          emptyHint="An external process that owns a radio and streams raw IQ to GopherTrunk (UHD/RFNoC, GNU Radio, a vendor tool with no SoapySDR support)."
+          renderItem={(s, set) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SelectField
+                label="Transport"
+                value={s.Transport}
+                onChange={(v) => set({ ...s, Transport: v })}
+                options={[
+                  { value: "", label: "(default: tcp)" },
+                  { value: "unix_pipe", label: "unix_pipe (FIFO, POSIX only)" },
+                  { value: "tcp", label: "tcp" },
+                  { value: "udp", label: "udp" },
+                ]}
+              />
+              <TextField label="Data address" value={s.DataAddr} onChange={(v) => set({ ...s, DataAddr: v })} placeholder="/tmp/iq.fifo or 127.0.0.1:5001" />
+              <TextField label="Control address" value={s.ControlAddr} onChange={(v) => set({ ...s, ControlAddr: v })} placeholder="127.0.0.1:4001 (empty = sidecar owns tuning)" />
+              <SelectField
+                label="Sample format"
+                value={s.Format}
+                onChange={(v) => set({ ...s, Format: v })}
+                options={[
+                  { value: "", label: "(default: cs16)" },
+                  { value: "cs16", label: "cs16" },
+                  { value: "complex64", label: "complex64" },
+                ]}
+              />
+              <NumberField label="Sample rate (Hz)" value={s.SampleRateHz} onChange={(v) => set({ ...s, SampleRateHz: v })} placeholder="required — the stream carries no metadata" />
+              <TextField label="Serial" value={s.Serial} onChange={(v) => set({ ...s, Serial: v })} />
+              <SelectField label="Role" value={s.Role} onChange={(v) => set({ ...s, Role: v })} options={REMOTE_ROLES} />
+              <TextField label="Gain" value={s.Gain} onChange={(v) => set({ ...s, Gain: v })} placeholder="auto or tenths-dB" />
+              <NumberField label="Min frequency (Hz)" value={s.FreqMinHz} onChange={(v) => set({ ...s, FreqMinHz: v })} placeholder="0 = unknown" />
+              <NumberField label="Max frequency (Hz)" value={s.FreqMaxHz} onChange={(v) => set({ ...s, FreqMaxHz: v })} placeholder="0 = unknown" />
+              <NumberField label="Connect timeout (ms)" value={s.ConnectTimeoutMs} onChange={(v) => set({ ...s, ConnectTimeoutMs: v })} placeholder="0 = default 3000" />
             </div>
           )}
         />

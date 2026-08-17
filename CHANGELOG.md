@@ -8,6 +8,11 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **A config whose only SDR source is a network one now has a radio.** Pool
+  construction was gated on `sdr.devices`, `baseband.replay` and `sdr.rtl_tcp`
+  only, and the network drivers are registered inside that block — so a config
+  with just `sdr.soapy_remote` or just `sdr.ka9q_radio` registered no driver at
+  all and the daemon started quietly with nothing to demodulate.
 - **Ctrl-C no longer takes 30 seconds.** `Daemon.Close` stops the HTTP server
   first, and `http.Server.Shutdown` waits for active non-hijacked requests
   without cancelling them — so an attached SSE / live-audio / siglab subscriber
@@ -42,6 +47,13 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **`sdr.sidecar` mounts an external IQ producer as a virtual tuner.** A sidecar
+  is any process that owns a radio and streams raw IQ over a FIFO, TCP or UDP —
+  a UHD/RFNoC program, a GNU Radio flowgraph, a vendor tool with no SoapySDR
+  support — steered by a 5-byte UDP command protocol whose opcodes are
+  `rtl_tcp`'s, so a tool that already speaks those works unmodified. It keeps
+  hardware and DSP that would need CGO out of GopherTrunk's process while it
+  still sees a real tuner. See `docs/reference/sdr-sidecar.md`.
 - **Diversity: an offline instrument for deciding what to ship, and an MMSE-IRC
   combiner to feed it.** `TestDiversityCombinerReplay` now measures coherence
   BOTH on the wideband stream and after the per-channel DDC — the number that

@@ -52,6 +52,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/ka9qradio"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/sidecar"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/soapyremote"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/wbvoice"
 	"github.com/MattCheramie/GopherTrunk/internal/sigfollow"
@@ -986,7 +987,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// fall through gracefully when the pool is empty. The pool is
 	// also constructed when only baseband replay recordings are
 	// configured, so an offline capture can be decoded with no radio.
-	if len(cfg.SDR.Devices) > 0 || len(cfg.Baseband.Replay) > 0 || len(cfg.SDR.RTLTCP) > 0 {
+	//
+	// EVERY source list has to be named here: the network drivers are
+	// registered INSIDE this block, so a source missing from the condition is
+	// not merely unpooled, it is never registered at all — the daemon starts,
+	// logs nothing, and finds no SDR.
+	if len(cfg.SDR.Devices) > 0 || len(cfg.Baseband.Replay) > 0 ||
+		len(cfg.SDR.RTLTCP) > 0 || len(cfg.SDR.SoapyRemote) > 0 ||
+		len(cfg.SDR.Ka9qRadio) > 0 || len(cfg.SDR.Sidecar) > 0 {
 		d.pool = sdr.NewPool(log)
 		d.pool.SetBus(d.bus)
 		var hints []sdr.Hint
@@ -1181,6 +1189,45 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if len(kspecs) > 0 {
 				sdr.Register(ka9qradio.New(kspecs, log))
 				log.Info("ka9q_radio channels mounted", "count", len(kspecs))
+			}
+		}
+		if len(cfg.SDR.Sidecar) > 0 {
+			var sdspecs []sidecar.Spec
+			for _, sc := range cfg.SDR.Sidecar {
+				if sc.DataAddr == "" {
+					continue
+				}
+				sdspecs = append(sdspecs, sidecar.Spec{
+					Transport:      sc.Transport,
+					DataAddr:       sc.DataAddr,
+					ControlAddr:    sc.ControlAddr,
+					Format:         sc.Format,
+					SampleRateHz:   sc.SampleRateHz,
+					FreqMinHz:      sc.FreqMinHz,
+					FreqMaxHz:      sc.FreqMaxHz,
+					Serial:         sc.Serial,
+					Role:           sc.Role,
+					ConnectTimeout: time.Duration(sc.ConnectTimeoutMs) * time.Millisecond,
+				})
+				if sc.Serial != "" {
+					h := sdr.Hint{Serial: sc.Serial, Role: sdr.ParseRole(sc.Role)}
+					if sc.Gain != "" {
+						gain, ok := parseGain(sc.Gain)
+						if !ok {
+							log.Warn("daemon: ignoring unparseable sidecar gain",
+								"serial", sc.Serial, "gain", sc.Gain)
+						} else {
+							warnGainUnits(log, sc.Serial, sc.Gain, gain)
+							warnLowGain(log, sc.Serial, h.Role, sc.Gain, gain)
+							h = h.WithGain(gain)
+						}
+					}
+					hints = append(hints, h)
+				}
+			}
+			if len(sdspecs) > 0 {
+				sdr.Register(sidecar.New(sdspecs, log))
+				log.Info("sidecar endpoints mounted", "count", len(sdspecs))
 			}
 		}
 		if err := d.pool.OpenWith(sdr.PoolOpenOptions{
