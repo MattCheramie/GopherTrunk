@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Conventional/analog scanner recordings no longer end in a loud multi-second
+  noise tail** (issue #1090). The scanner-side hangtime debounce (#1091) fixed
+  when a call *ends*, but for the whole hangtime window the composer's FM chain
+  kept demodulating carrier-less receiver noise — loud out of an FM
+  discriminator regardless of RF level — and the audio AGC amplified it toward
+  full scale. The scanner now publishes its live, debounced squelch decision and
+  the FM chain follows it: while squelch is closed the audio AGC freezes and the
+  recorded/streamed PCM fades to silence within ~10 ms, resuming when real
+  activity returns. No config changes; analog-trunk voice channels
+  (Motorola/LTR/MPT 1327) are unaffected.
 - **A config whose only SDR source is a network one now has a radio.** Pool
   construction was gated on `sdr.devices`, `baseband.replay` and `sdr.rtl_tcp`
   only, and the network drivers are registered inside that block — so a config

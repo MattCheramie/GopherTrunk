@@ -1654,6 +1654,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				return nil, fmt.Errorf("daemon: conv scanner: %w", err)
 			}
 			d.convScan = cs
+			// Gate the composer's FM chain on the scanner's live squelch
+			// decision so the hangtime tail records as silence instead of
+			// AGC-boosted receiver noise (issue #1090). Set here (not in
+			// buildComposer's Options) because the composer is built
+			// before the scanner exists.
+			if d.composer != nil {
+				d.composer.SetSquelchState(cs)
+			}
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -209,6 +210,52 @@ type Scanner struct {
 	// scanner state changes (hold / resume) but not across daemon
 	// restarts.
 	lockedOut map[int]bool
+	// squelchState publishes beginDwell's live per-chunk squelch
+	// decision for SquelchOpen (one of the squelch* constants).
+	// Atomic because the composer's FM chain polls it from its own
+	// goroutine on every IQ chunk.
+	squelchState atomic.Int32
+}
+
+// squelchState values published by beginDwell and read by SquelchOpen.
+const (
+	// squelchNoDwell: no dwell in progress — there is no live squelch
+	// decision to report (SquelchOpen returns ok=false).
+	squelchNoDwell int32 = iota
+	// squelchClosed: dwelling, and the hangtime countdown is running —
+	// the channel is squelch-closed (only receiver noise on the air).
+	squelchClosed
+	// squelchOpenState: dwelling with activity present (carrier + tone
+	// where gated), i.e. real audio is expected on the channel.
+	squelchOpenState
+)
+
+// SquelchOpen reports the scanner's live per-chunk squelch decision for
+// its device, so the composer's FM voice chain can gate audio on it
+// (issue #1090 follow-up). beginDwell's hangtime debounce only decides
+// when the call ENDS; during the hangtime window the FM chain used to
+// keep demodulating pure receiver noise — and the audio AGC actively
+// amplified it toward full scale — producing the loud audible tail the
+// reporter measured. The published state follows the same debounced
+// decision the countdown uses, so a brief blip that cannot reset the
+// countdown cannot pop through the recording either.
+//
+// ok=false means there is no live decision for this serial (not this
+// scanner's device, or no dwell in progress). Callers must treat that
+// as "no gating available" — never as "squelch closed" — so every
+// non-conventional analog chain stays ungated.
+func (s *Scanner) SquelchOpen(deviceSerial string) (open, ok bool) {
+	if deviceSerial != s.opts.DeviceSerial {
+		return false, false
+	}
+	switch s.squelchState.Load() {
+	case squelchOpenState:
+		return true, true
+	case squelchClosed:
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // New constructs a Scanner. Channels may be empty when the operator
@@ -495,6 +542,11 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 // publishing CallEnd.
 func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, streamCtx context.Context, cancel context.CancelFunc) {
 	defer cancel()
+	// Squelch just broke in scanWindow, so the dwell starts open; every
+	// exit path (hangtime, stream error, ctx cancel) clears the
+	// published state so SquelchOpen reports ok=false between dwells.
+	s.squelchState.Store(squelchOpenState)
+	defer s.squelchState.Store(squelchNoDwell)
 
 	now := s.opts.Now()
 	s.mu.Lock()
@@ -584,6 +636,16 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 					s.endDwell(idx, trunking.EndReasonNormal)
 					return
 				}
+			}
+			// Publish the debounced decision for the composer's FM
+			// chain: open exactly while the countdown is NOT running.
+			// A blip inside the debounce window leaves belowSince set,
+			// so it can't unmute the recording any more than it can
+			// reset the countdown.
+			if belowSince.IsZero() {
+				s.squelchState.Store(squelchOpenState)
+			} else {
+				s.squelchState.Store(squelchClosed)
 			}
 		}
 	}

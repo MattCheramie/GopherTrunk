@@ -416,6 +416,105 @@ func TestConvScannerBriefBlipsDoNotHoldSquelchOpen(t *testing.T) {
 	}
 }
 
+// TestConvScannerPublishesSquelchState pins the SquelchOpen feed the
+// composer's FM chain gates on (issue #1090 follow-up): ok=false
+// outside a dwell and for foreign serials; open while activity is
+// present; closed — never flickering open — through a blip-peppered
+// hangtime tail (the published state must follow the debounced
+// decision, or a lone blip would pop through the recording); and back
+// to ok=false once the call releases.
+func TestConvScannerPublishesSquelchState(t *testing.T) {
+	tuner := &fakeTuner{}
+	const hangtime = 300 * time.Millisecond
+	// ~60 ms of sustained loud (squelch open), then the same
+	// [29 silent, 1 loud] blip cadence as the debounce regression
+	// above: the countdown runs, blips can't reset it, and the gate
+	// must stay closed until release.
+	queue := [][]complex64{}
+	for i := 0; i < 30; i++ {
+		queue = append(queue, loudChunk(256))
+	}
+	for r := 0; r < 80; r++ {
+		for i := 0; i < 29; i++ {
+			queue = append(queue, make([]complex64, 256)) // silence
+		}
+		queue = append(queue, loudChunk(256)) // 1-chunk blip
+	}
+	iq := &fakeIQ{
+		tuner:  tuner,
+		chunks: map[uint32][][]complex64{200_000_000: queue},
+	}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-SQ",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "B", FrequencyHz: 200_000_000, SquelchDbFS: -10, Hangtime: hangtime},
+		},
+		MinDwellPerChannel: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := s.SquelchOpen("CONV-SQ"); ok {
+		t.Error("SquelchOpen reported ok=true before any dwell")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = s.Run(ctx) }()
+
+	poll := func(deadline time.Duration, fn func() bool) bool {
+		end := time.Now().Add(deadline)
+		for time.Now().Before(end) {
+			if fn() {
+				return true
+			}
+			time.Sleep(time.Millisecond)
+		}
+		return false
+	}
+
+	// Phase 1: sustained signal — the gate must read open.
+	if !poll(2*time.Second, func() bool {
+		open, ok := s.SquelchOpen("CONV-SQ")
+		return ok && open
+	}) {
+		t.Fatal("SquelchOpen never reported open during sustained signal")
+	}
+	if open, ok := s.SquelchOpen("OTHER-SERIAL"); open || ok {
+		t.Error("SquelchOpen for a foreign serial must report (false, false)")
+	}
+
+	// Phase 2: the blip-peppered tail — closed, and NEVER open again
+	// (a lone blip inside the debounce window must not unmute) until
+	// the dwell releases on hangtime (ok=false).
+	if !poll(2*time.Second, func() bool {
+		open, ok := s.SquelchOpen("CONV-SQ")
+		return ok && !open
+	}) {
+		t.Fatal("SquelchOpen never reported closed once the signal dropped")
+	}
+	sawOpenDuringTail := false
+	if !poll(2*time.Second, func() bool {
+		open, ok := s.SquelchOpen("CONV-SQ")
+		if ok && open {
+			sawOpenDuringTail = true
+		}
+		return !ok
+	}) {
+		t.Fatal("dwell never released (SquelchOpen still ok=true after hangtime)")
+	}
+	if sawOpenDuringTail {
+		t.Error("gate re-opened on a single-chunk blip during the hangtime tail; must follow the debounced decision")
+	}
+	if eng.normalEndCount() == 0 {
+		t.Error("call never released on hangtime")
+	}
+}
+
 func TestConvScannerHoldAndResume(t *testing.T) {
 	s, err := New(Options{
 		Tuner: &fakeTuner{}, IQ: &fakeIQ{tuner: &fakeTuner{}}, Engine: &fakeEngine{}, Recorder: fakeRecorder{},
