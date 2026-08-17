@@ -144,6 +144,38 @@ jobs:
         run: npm test
         working-directory: web
 
+  # web-typecheck runs `tsc --noEmit` over every SPA in web/. Vitest
+  # transpiles with esbuild and never typechecks, so web-test above is
+  # green on code that `npm run build` (tsc --noEmit && vite build)
+  # rejects — which is how three TS6133 errors in
+  # web/src/api/reconnectingSocket.test.ts reached main and broke
+  # `make web-build` for operators. The only job that caught them was
+  # "Windows installer (PR)", which isn't a required check, so the PR
+  # merged red and the breakage looked like CI had passed.
+  #
+  # Matrixed per SPA: each has its own package.json/tsconfig, and
+  # rfscope/cryptolab are built by NO workflow at all (release.yml and
+  # installer.yml build only web, configbuilder and siglab), so this is
+  # their sole CI coverage. `npm install`, not `npm ci` — rfscope has no
+  # package-lock.json.
+  web-typecheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        spa: [web, web/configbuilder, web/siglab, web/rfscope, web/cryptolab]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+        working-directory: ${{ matrix.spa }}
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: ${{ matrix.spa }}
+
   # govulncheck enumerates known CVEs that affect the direct +
   # transitive dependency graph. Failing this job blocks merge — a
   # known-vulnerable dep means the operator has to either upgrade

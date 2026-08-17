@@ -512,3 +512,17 @@ confirmation before any close-as-completed.
   setting it once and never revisiting. `web/src/api/reconnectingSocket.ts` now owns the logic
   the four clients had each copied — including the `onerror`+`onclose` double-bind that
   scheduled two timers per failure while remembering only one handle.
+- **A green `ci.yml` does not mean the web console builds.** `npm test` (vitest) transpiles
+  with esbuild and never typechecks, so the SPA jobs in `ci.yml` pass on code that
+  `npm run build` (`tsc --noEmit && vite build`, i.e. `make web-build`/`make dist`) rejects.
+  Three `TS6133` unused-parameter errors in `web/src/api/reconnectingSocket.test.ts` landed on
+  main that way and broke the build for an operator. The only job that caught them was
+  **"Windows installer (PR)"** — which is not a required check, so the PR merged red and it
+  read as "CI passed". Two things follow: **when a web change is in the diff, run
+  `cd web && npm run typecheck` (or `make web-build`) before pushing** — `npm test` alone is
+  not sufficient evidence; and check a PR's non-required jobs, not just the required ones.
+  `ci.yml`'s `web-typecheck` job now runs `tsc --noEmit` across all five SPAs (`web`,
+  `configbuilder`, `siglab`, `rfscope`, `cryptolab` — the last two are built by no other
+  workflow). Note `tsconfig.json` sets `noUnusedLocals`/`noUnusedParameters`, so an unused
+  parameter needs a leading underscore (`_fn`), and test files are inside `include: ["src"]`
+  and are typechecked like production code.

@@ -50,7 +50,7 @@ describe("openReconnectingSocket", () => {
     const waits: number[] = [];
     const spy = vi
       .spyOn(window, "setTimeout")
-      .mockImplementation(((fn: () => void, ms?: number) => {
+      .mockImplementation(((_fn: () => void, ms?: number) => {
         waits.push(ms ?? 0);
         return 0 as unknown as number;
       }) as typeof window.setTimeout);
@@ -91,7 +91,7 @@ describe("openReconnectingSocket", () => {
     const waits: number[] = [];
     const spy = vi
       .spyOn(window, "setTimeout")
-      .mockImplementation(((fn: () => void, ms?: number) => {
+      .mockImplementation(((_fn: () => void, ms?: number) => {
         waits.push(ms ?? 0);
         return 0 as unknown as number;
       }) as typeof window.setTimeout);
@@ -125,7 +125,7 @@ describe("openReconnectingSocket", () => {
     const waits: number[] = [];
     const spy = vi
       .spyOn(window, "setTimeout")
-      .mockImplementation(((fn: () => void, ms?: number) => {
+      .mockImplementation(((_fn: () => void, ms?: number) => {
         waits.push(ms ?? 0);
         return 0 as unknown as number;
       }) as typeof window.setTimeout);
