@@ -203,6 +203,10 @@ type mrcCombiner struct {
 	window   int // samples per branch per estimation window
 	rearm    atomic.Bool
 
+	// rec, when non-nil, dumps the pre-combine per-branch IQ. nil is the
+	// ordinary case; a nil *branchRecorder's write is a no-op.
+	rec *branchRecorder
+
 	// refIdx is the branch anchoring the phase, -1 until the first live window.
 	// ordered is the scratch permutation handed to the calibrator
 	// (ordered[0] == branches[refIdx]).
@@ -362,6 +366,9 @@ func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 		m.refDeadWindows = 0
 	}
 	branches := m.format.deinterleave(payload, m.channels, elems)
+	// Tap the branches BEFORE anything is done to them, so a capture is exactly
+	// what the combiner saw and can be replayed through a different one.
+	m.rec.write(branches)
 	m.gotBranch = len(branches)
 	for i := range m.powDbFS {
 		m.powDbFS[i] = math.Inf(-1)

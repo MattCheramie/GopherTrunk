@@ -1,0 +1,234 @@
+package soapyremote
+
+import (
+	"encoding/binary"
+	"encoding/json"
+	"math"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// readCS16 decodes a headerless cs16 branch file back to complex64.
+func readCS16(t *testing.T, path string) []complex64 {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if len(raw)%4 != 0 {
+		t.Fatalf("%s: %d bytes is not a whole number of cs16 samples", path, len(raw))
+	}
+	out := make([]complex64, len(raw)/4)
+	for i := range out {
+		iv := int16(binary.LittleEndian.Uint16(raw[4*i:]))
+		qv := int16(binary.LittleEndian.Uint16(raw[4*i+2:]))
+		out[i] = complex(float32(iv)/32768, float32(qv)/32768)
+	}
+	return out
+}
+
+func readBranchMeta(t *testing.T, prefix string) branchCaptureMeta {
+	t.Helper()
+	raw, err := os.ReadFile(prefix + ".diversity.json")
+	if err != nil {
+		t.Fatalf("read sidecar: %v", err)
+	}
+	var m branchCaptureMeta
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("parse sidecar: %v", err)
+	}
+	return m
+}
+
+// TestBranchRecorderWritesBothBranches pins the basic contract: the capture is
+// the pre-combine per-branch IQ, sample-for-sample, one file per receiver.
+func TestBranchRecorderWritesBothBranches(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "cap")
+	rng := rand.New(rand.NewSource(1))
+	ch0 := mrcSignal(rng, 512, 0.4)
+	ch1 := scaleC(ch0, complex(0, 1))
+
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	if err != nil {
+		t.Fatalf("newBranchRecorder: %v", err)
+	}
+	m.rec = rec
+
+	const rounds = 4
+	for i := 0; i < rounds; i++ {
+		m.combine(twoBranchPayload(ch0, ch1), len(ch0))
+	}
+	rec.finish()
+
+	got0 := readCS16(t, prefix+".br0.cs16")
+	got1 := readCS16(t, prefix+".br1.cs16")
+	if len(got0) != rounds*len(ch0) || len(got1) != rounds*len(ch1) {
+		t.Fatalf("branch lengths = %d/%d, want %d each", len(got0), len(got1), rounds*len(ch0))
+	}
+	if !approxEqualC(got0[:len(ch0)], ch0, 2e-4) {
+		t.Error("branch 0 file does not carry the branch-0 samples")
+	}
+	if !approxEqualC(got1[:len(ch1)], ch1, 2e-4) {
+		t.Error("branch 1 file does not carry the branch-1 samples")
+	}
+
+	meta := readBranchMeta(t, prefix)
+	if meta.SamplesPerBranch != int64(rounds*len(ch0)) {
+		t.Errorf("sidecar samples_per_branch = %d, want %d", meta.SamplesPerBranch, rounds*len(ch0))
+	}
+	if meta.Datagrams != rounds || meta.DroppedDatagrams != 0 {
+		t.Errorf("sidecar datagrams = %d, dropped = %d, want %d/0", meta.Datagrams, meta.DroppedDatagrams, rounds)
+	}
+	if meta.Branches != 2 || meta.Format != "cs16" {
+		t.Errorf("sidecar = %+v, want 2 cs16 branches", meta)
+	}
+}
+
+// TestBranchCaptureSidecarWireNames pins the JSON key names the sidecar emits.
+// The offline harness (cmd/gophertrunk/diversity_replay_test.go) declares its
+// own struct with these same names, so a rename here would silently produce
+// zero-valued fields there — a capture that loads but reports nothing. Both
+// sides assert against these literals rather than against each other.
+func TestBranchCaptureSidecarWireNames(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "cap")
+	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	if err != nil {
+		t.Fatalf("newBranchRecorder: %v", err)
+	}
+	rec.meta.Addr = "10.0.0.1:23313"
+	rec.meta.SampleRateHz = 1e6
+	rec.meta.DiversityMode = "tracking"
+	rec.write([][]complex64{{complex(0.1, 0.1)}, {complex(0.2, 0.2)}})
+	rec.finish()
+
+	raw, err := os.ReadFile(prefix + ".diversity.json")
+	if err != nil {
+		t.Fatalf("read sidecar: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("parse sidecar: %v", err)
+	}
+	for _, key := range []string{
+		"addr", "sample_rate_hz", "format", "diversity_mode",
+		"branches", "branch_files", "samples_per_branch",
+		"datagrams", "dropped_datagrams",
+	} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("sidecar is missing key %q", key)
+		}
+	}
+	if files, ok := got["branch_files"].([]any); !ok || len(files) != 2 {
+		t.Errorf("branch_files = %v, want two entries", got["branch_files"])
+	}
+}
+
+// TestBranchRecorderKeepsBranchesAligned is the invariant that makes the
+// capture usable at all: sample i of one file must be simultaneous with sample
+// i of the other. A datagram that did not carry every branch is dropped from
+// BOTH files rather than written short — writing it would silently desynchronise
+// them, and every conclusion drawn from the capture afterwards would be wrong
+// with nothing to show for it.
+func TestBranchRecorderKeepsBranchesAligned(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "cap")
+	rng := rand.New(rand.NewSource(2))
+	ch0 := mrcSignal(rng, 256, 0.4)
+	ch1 := scaleC(ch0, complex(0, 1))
+	single := mrcSignal(rng, 256, 0.4)
+
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	if err != nil {
+		t.Fatalf("newBranchRecorder: %v", err)
+	}
+	m.rec = rec
+
+	m.combine(twoBranchPayload(ch0, ch1), len(ch0))
+	// A payload the server delivered only one channel of: deinterleave reports
+	// a single branch, and it must not reach either file.
+	m.combine(encodeCS16(single), len(single))
+	m.combine(twoBranchPayload(ch0, ch1), len(ch0))
+	rec.finish()
+
+	got0 := readCS16(t, prefix+".br0.cs16")
+	got1 := readCS16(t, prefix+".br1.cs16")
+	if len(got0) != len(got1) {
+		t.Fatalf("branch files desynchronised: %d vs %d samples", len(got0), len(got1))
+	}
+	if len(got0) != 2*len(ch0) {
+		t.Errorf("wrote %d samples/branch, want %d (the degenerate datagram must be dropped)", len(got0), 2*len(ch0))
+	}
+	if meta := readBranchMeta(t, prefix); meta.DroppedDatagrams != 1 {
+		t.Errorf("sidecar dropped_datagrams = %d, want 1", meta.DroppedDatagrams)
+	}
+}
+
+// TestBranchRecorderStopsAtBudget pins that the dump is one-shot and bounded,
+// and — more importantly — that the stream keeps flowing unchanged once it
+// stops. A diagnostic tap that perturbs the signal path is worse than none.
+func TestBranchRecorderStopsAtBudget(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "cap")
+	rng := rand.New(rand.NewSource(3))
+	ch0 := mrcSignal(rng, 100, 0.4)
+	ch1 := scaleC(ch0, complex(0, 1))
+
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	rec, err := newBranchRecorder(prefix, 2, 250, testLogger()) // 2.5 datagrams
+	if err != nil {
+		t.Fatalf("newBranchRecorder: %v", err)
+	}
+	m.rec = rec
+
+	for i := 0; i < 20; i++ {
+		out := m.combine(twoBranchPayload(ch0, ch1), len(ch0))
+		if len(out) != len(ch0) {
+			t.Fatalf("round %d: combined chunk len = %d, want %d — the capture is disturbing the stream",
+				i, len(out), len(ch0))
+		}
+	}
+
+	got0 := readCS16(t, prefix+".br0.cs16")
+	got1 := readCS16(t, prefix+".br1.cs16")
+	if len(got0) != 250 || len(got1) != 250 {
+		t.Errorf("branch lengths = %d/%d, want 250 each (budget)", len(got0), len(got1))
+	}
+	if meta := readBranchMeta(t, prefix); meta.SamplesPerBranch != 250 {
+		t.Errorf("sidecar samples_per_branch = %d, want 250", meta.SamplesPerBranch)
+	}
+}
+
+// TestBranchRecorderNilIsNoOp pins that the ordinary (uncaptured) path costs
+// nothing and cannot panic.
+func TestBranchRecorderNilIsNoOp(t *testing.T) {
+	rng := rand.New(rand.NewSource(4))
+	ch0 := mrcSignal(rng, 64, 0.4)
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	if m.rec != nil {
+		t.Fatal("a combiner without a configured capture must have no recorder")
+	}
+	m.combine(twoBranchPayload(ch0, ch0), len(ch0)) // must not panic
+}
+
+// TestEncodeCS16IntoRoundTrips pins the encoder against the driver's own
+// decoder, including the clamp — a combined sample can exceed full scale and
+// must saturate rather than wrap to the opposite rail.
+func TestEncodeCS16IntoRoundTrips(t *testing.T) {
+	in := []complex64{
+		complex(0.5, -0.5), complex(0, 0), complex(-0.25, 0.75),
+		complex(2.0, -2.0), // beyond full scale: must clamp, not wrap
+	}
+	buf := make([]byte, len(in)*4)
+	encodeCS16Into(buf, in)
+	got := convertCS16(buf)
+	for i := 0; i < 3; i++ {
+		if math.Abs(float64(real(got[i]-in[i]))) > 2e-4 || math.Abs(float64(imag(got[i]-in[i]))) > 2e-4 {
+			t.Errorf("sample %d = %v, want %v", i, got[i], in[i])
+		}
+	}
+	if real(got[3]) < 0.99 || imag(got[3]) > -0.99 {
+		t.Errorf("over-scale sample = %v, want saturation near (+1,-1)", got[3])
+	}
+}

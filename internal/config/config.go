@@ -805,6 +805,19 @@ type SoapyRemoteConfig struct {
 	// device default. More than one entry requires diversity: mrc (only one RX
 	// channel is opened otherwise).
 	Antennas []string `yaml:"antennas"`
+	// DiversityCapture, when non-empty, is a path PREFIX under which the driver
+	// writes a one-shot raw dump of the PRE-COMBINE per-branch IQ streams:
+	// <prefix>.br0.cs16, <prefix>.br1.cs16 and a <prefix>.diversity.json
+	// sidecar. Every other IQ tap in GopherTrunk sits downstream of the
+	// combiner, so a capture taken anywhere else has already had one particular
+	// combiner applied and cannot be replayed through a different one — this is
+	// the only tap that can answer "would a different combiner have done
+	// better on this signal?" offline. Requires diversity: mrc or mrc-static.
+	DiversityCapture string `yaml:"diversity_capture"`
+	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s. Two CS16 branches
+	// at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short. A 1 GiB
+	// per-branch cap applies regardless.
+	DiversityCaptureSeconds int `yaml:"diversity_capture_seconds"`
 }
 
 // parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument

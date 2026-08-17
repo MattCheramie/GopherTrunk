@@ -121,7 +121,7 @@ export function SDRSection() {
           label="soapy_remote endpoints"
           items={cfg.SoapyRemote}
           onChange={(x) => set({ ...cfg, SoapyRemote: x })}
-          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", StreamMTU: 0, StreamWindow: 0, PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0, Diversity: "" })}
+          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", StreamMTU: 0, StreamWindow: 0, PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0, Diversity: "", DiversityCapture: "", DiversityCaptureSeconds: 0 })}
           itemTitle={(s) => s.Addr || "soapy_remote"}
           emptyHint="SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, …)."
           renderItem={(s, set) => (
@@ -163,7 +163,8 @@ export function SDRSection() {
                 onChange={(v) => set({ ...s, Diversity: v })}
                 options={[
                   { value: "", label: "(none)" },
-                  { value: "mrc", label: "mrc (RX0+RX1, shared-LO)" },
+                  { value: "mrc", label: "mrc (RX0+RX1, tracking)" },
+                  { value: "mrc-static", label: "mrc-static (one-shot gain)" },
                 ]}
               />
               <TextField
@@ -177,6 +178,18 @@ export function SDRSection() {
                   set({ ...s, Antennas: list.length ? list : undefined });
                 }}
                 placeholder="e.g. RX1, RX2 (X310 under mrc)"
+              />
+              <TextField
+                label="Diversity capture (path prefix)"
+                value={s.DiversityCapture}
+                onChange={(v) => set({ ...s, DiversityCapture: v })}
+                placeholder="pre-combine per-branch IQ, e.g. iq/mrc/x310"
+              />
+              <NumberField
+                label="Diversity capture seconds"
+                value={s.DiversityCaptureSeconds}
+                onChange={(v) => set({ ...s, DiversityCaptureSeconds: v })}
+                placeholder="0 = 5 s (1..60)"
               />
             </div>
           )}

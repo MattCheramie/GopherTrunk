@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -270,6 +271,26 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 			if _, ok := args["antenna"]; ok {
 				return fmt.Errorf("sdr.soapy_remote[%d]: set the antenna via the antennas: list, not antenna= in args (the args value applies to make() only, not per RX channel)", i)
 			}
+		}
+	}
+	// diversity_capture taps the pre-combine branches, which only exist under a
+	// multi-channel (MRC) stream.
+	if s.DiversityCapture != "" && !diversityMRC {
+		return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture needs diversity: mrc (there are no separate branches to capture on a single-channel stream)", i)
+	}
+	if s.DiversityCaptureSeconds != 0 {
+		if s.DiversityCapture == "" {
+			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds set without diversity_capture", i)
+		}
+		if s.DiversityCaptureSeconds < 1 || s.DiversityCaptureSeconds > 60 {
+			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..60; two CS16 branches are tens of MB/s)", i, s.DiversityCaptureSeconds)
+		}
+	}
+	if s.DiversityCapture != "" {
+		// Fail at config load, not several hundred MB into a stream.
+		dir := filepath.Dir(s.DiversityCapture)
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture directory %q does not exist", i, dir)
 		}
 	}
 	// stream_mtu is in bytes; 0 means SoapyRemote's default (1500). Reject

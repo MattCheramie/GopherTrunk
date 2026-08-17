@@ -115,6 +115,13 @@ type Spec struct {
 	// in the flat DeviceArgs kwargs string, so per-channel antenna routing (e.g.
 	// an X310's RX1/RX2 under MRC) goes here instead of args.
 	Antennas []string
+	// DiversityCapture is a path prefix under which the driver dumps the
+	// PRE-COMBINE per-branch IQ once per stream (see branchcapture.go). Empty
+	// disables it. Only meaningful with Diversity set.
+	DiversityCapture string
+	// DiversityCaptureSeconds bounds that dump; <=0 selects
+	// defaultDiversityCaptureSeconds.
+	DiversityCaptureSeconds int
 }
 
 // Driver implements sdr.Driver over a set of SoapySDRServer endpoints.
@@ -229,6 +236,8 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		// the rate. It is not programmed yet at Open; StreamIQ re-sizes the window
 		// once the delivered rate is known.
 		dev.mrc = newMRCCombiner(format, divMode, 0)
+		dev.capturePrefix = spec.DiversityCapture
+		dev.captureSeconds = spec.DiversityCaptureSeconds
 	}
 	// Create the remote device.
 	if err := dev.rpcVoid(func(p *packer) {
@@ -287,6 +296,11 @@ type device struct {
 	// case. Issue #1062.
 	diversity diversityMode
 	mrc       *mrcCombiner
+
+	// capturePrefix/captureSeconds configure the one-shot pre-combine branch
+	// dump; empty prefix disables it. Set once at Open.
+	capturePrefix  string
+	captureSeconds int
 
 	mu         sync.Mutex
 	conn       net.Conn // RPC control socket
@@ -703,6 +717,7 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	if d.mrc != nil {
 		d.mrc.setSampleRate(float64(rate))
 		d.mrc.requestRecalibrate()
+		d.startBranchCapture(float64(rate))
 	}
 	go d.streamLoop(ctx, dataConn, streamID, out)
 	return out, nil
