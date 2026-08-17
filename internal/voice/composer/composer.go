@@ -112,6 +112,22 @@ type Devices interface {
 	FindBySerial(serial string) IQSource
 }
 
+// SquelchState is the optional live squelch feed the conventional
+// scanner exposes (issue #1090). The analog FM chain polls it per IQ
+// chunk: while the scanner reports the channel squelch-closed (the
+// hangtime tail — carrier gone, countdown running) the chain freezes
+// the audio AGC and mutes its PCM output, instead of demodulating pure
+// receiver noise and AGC-boosting it into the recording as a loud
+// multi-second squelch crash.
+type SquelchState interface {
+	// SquelchOpen reports the current squelch decision for deviceSerial.
+	// ok=false means the provider has no live decision for this serial
+	// (not a conventional-scanner dwell); the chain must then stay
+	// ungated — analog-trunk voice channels (Motorola/LTR/MPT 1327)
+	// share runFMChain but have no scanner-side squelch.
+	SquelchOpen(deviceSerial string) (open, ok bool)
+}
+
 // PCMSink is the subset of voice.Recorder we touch. Recorder.WritePCM
 // matches this signature exactly.
 type PCMSink interface {
@@ -211,6 +227,13 @@ type Options struct {
 	// analysis. Nil (default) disables the capture at zero cost — no frame
 	// extraction runs for it. See internal/voice/cryptocap.
 	CryptoSink cryptocap.Sink
+	// Squelch, when non-nil, gates the analog FM chain's audio on the
+	// conventional scanner's live squelch decision (issue #1090). The
+	// daemon builds the composer before the scanner, so it wires this
+	// via SetSquelchState instead; the option exists for callers (and
+	// tests) that have the provider up front. Nil leaves every chain
+	// ungated — identical to the pre-gate behavior.
+	Squelch SquelchState
 }
 
 // DeEmphasisConfig holds runtime knobs for the post-FM-demod
@@ -274,6 +297,11 @@ type Composer struct {
 	resampCfg  AudioResamplerConfig
 	autotune   *autotune.Registry
 	cryptoSink cryptocap.Sink
+	// squelch is the optional conventional-scanner squelch feed for the
+	// FM chain (issue #1090). Guarded by mu: the daemon sets it after
+	// construction (SetSquelchState) and each chain reads it once at
+	// start.
+	squelch SquelchState
 
 	// drainCoord, when the sink supports it (the recorder does), lets the
 	// composer tell the recorder that a call's voice chain has fully drained
@@ -389,6 +417,7 @@ func New(opts Options) (*Composer, error) {
 		resampCfg:    opts.AudioResampler,
 		autotune:     opts.Autotune,
 		cryptoSink:   opts.CryptoSink,
+		squelch:      opts.Squelch,
 		chains:       make(map[string]*chain),
 		tetraDemuxes: make(map[string]*tetraSlotDemux),
 		runDone:      make(chan struct{}),
@@ -403,6 +432,20 @@ func New(opts Options) (*Composer, error) {
 	}
 	c.sub = opts.Bus.Subscribe()
 	return c, nil
+}
+
+// SetSquelchState wires the conventional scanner's live squelch
+// decision into the analog FM chain after construction (issue #1090) —
+// the daemon builds the composer before the scanner, so it cannot pass
+// the provider through Options. Each chain reads the provider once at
+// start, so calls made before the chain's CallStart take effect;
+// in the daemon both happen during single-threaded construction,
+// before Run delivers any event. A nil provider (or one reporting
+// ok=false for a serial) leaves chains ungated.
+func (c *Composer) SetSquelchState(sq SquelchState) {
+	c.mu.Lock()
+	c.squelch = sq
+	c.mu.Unlock()
 }
 
 // Run drains CallStart / CallEnd events until ctx cancels, spawning /
@@ -884,6 +927,22 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 	// (issue #492 footprint reduction).
 	var eqScratch []complex64
 
+	// Squelch-tail gate (issue #1090). While the conventional scanner
+	// reports the channel squelch-closed (hangtime countdown running,
+	// only receiver noise on the air), the chain keeps running — the
+	// decimators/filters stay warm and the PCM timeline stays continuous
+	// for the recorder and live stream — but the audio AGC is frozen
+	// (adapting on demodulated noise is what rode the gain up to the
+	// loud audible tail) and the written PCM is replaced by a short
+	// fade-out into silence. muteFade/muteStep carry the fade across
+	// chunk boundaries: PCM chunks here are ~a dozen samples, well
+	// under the ~10 ms ramp.
+	c.mu.Lock()
+	squelch := c.squelch
+	c.mu.Unlock()
+	var muteFade, muteStep float32
+	squelchWasOpen := true
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -896,6 +955,12 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			if !ok {
 				emitTail()
 				return
+			}
+			squelchOpen := true
+			if squelch != nil {
+				if open, ok := squelch.SquelchOpen(serial); ok {
+					squelchOpen = open
+				}
 			}
 			bt.observe(iq)
 			decimated := fe.Process(nil, iq)
@@ -917,7 +982,11 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			if audioLPF != nil {
 				audio = audioLPF.Process(audio, audio)
 			}
-			if agc != nil {
+			// Freeze the AGC while squelch-closed: its output is about
+			// to be muted anyway, and letting the envelope follower
+			// adapt on demodulated noise poisons the level estimate for
+			// the next over inside the hangtime window.
+			if agc != nil && squelchOpen {
 				audio = agc.Process(audio, audio)
 			}
 			var pcm []int16
@@ -929,6 +998,29 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			} else {
 				pcm = decimateAndConvert(audio, decim2)
 			}
+			if !squelchOpen {
+				if squelchWasOpen {
+					// Entering the tail: fade from the last written
+					// sample to zero over ~10 ms — an abrupt mute
+					// clicks just like the chain-end cut emitTail
+					// covers.
+					muteFade = float32(lastSample)
+					n := int(c.pcmHz / 100)
+					if n < 8 {
+						n = 8
+					}
+					muteStep = muteFade / float32(n)
+				}
+				for i := range pcm {
+					muteFade -= muteStep
+					if muteFade*muteStep <= 0 {
+						// Reached (or crossed) zero: hold silence.
+						muteFade, muteStep = 0, 0
+					}
+					pcm[i] = int16(muteFade)
+				}
+			}
+			squelchWasOpen = squelchOpen
 			if c.sink != nil && len(pcm) > 0 {
 				// Plain WritePCM (no CallID fence) is correct here: an
 				// analog FM chain keys on a stable per-channel physical

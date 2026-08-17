@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -95,6 +96,14 @@ func (r *recordingSink) total(serial string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.pcm[serial])
+}
+
+func (r *recordingSink) pcmCopy(serial string) []int16 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]int16, len(r.pcm[serial]))
+	copy(out, r.pcm[serial])
+	return out
 }
 
 func (r *recordingSink) rawFrames(serial string) [][]byte {
@@ -464,6 +473,173 @@ func TestComposerTailFadeOnCallEnd(t *testing.T) {
 	// Final sample must be 0 (linear ramp ends at zero).
 	if pcm[len(pcm)-1] != 0 {
 		t.Errorf("tail final sample = %d, want 0", pcm[len(pcm)-1])
+	}
+}
+
+// stubSquelch is a settable SquelchState for FM-chain gating tests.
+type stubSquelch struct {
+	mu   sync.Mutex
+	open bool
+	ok   bool
+}
+
+func (s *stubSquelch) SquelchOpen(string) (bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.open, s.ok
+}
+
+func (s *stubSquelch) set(open, ok bool) {
+	s.mu.Lock()
+	s.open = open
+	s.ok = ok
+	s.mu.Unlock()
+}
+
+// noiseChunk models what the receiver delivers during the squelch
+// tail: carrier-less wideband noise. Its in-band portion survives the
+// chain's front-end LPF with a random phase walk, and an FM
+// discriminator turns random phase into LOUD audio no matter how weak
+// the RF is (phase steps don't scale with amplitude) — which is
+// exactly why the un-gated tail was audible. Deterministic via the
+// caller's seeded rng; amplitude 0.01 ≈ -40 dBFS, far below any real
+// carrier.
+func noiseChunk(n int, rng *rand.Rand) []complex64 {
+	out := make([]complex64, n)
+	for i := range out {
+		out[i] = complex(float32(rng.NormFloat64())*0.01, float32(rng.NormFloat64())*0.01)
+	}
+	return out
+}
+
+func maxAbsPCM(pcm []int16) int {
+	m := 0
+	for _, v := range pcm {
+		a := int(v)
+		if a < 0 {
+			a = -a
+		}
+		if a > m {
+			m = a
+		}
+	}
+	return m
+}
+
+// mkComposerSquelch builds a composer with the audio AGC enabled (the
+// stage that rode the gain up on tail noise) and the given squelch
+// provider wired via Options.
+func mkComposerSquelch(t *testing.T, src *fakeSource, sq SquelchState) (*events.Bus, *recordingSink, func()) {
+	t.Helper()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        &fakeEngine{},
+		IQSampleRate:  2_400_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+		AudioAGC:      AudioAGCConfig{Enabled: true},
+		Squelch:       sq,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	teardown := func() {
+		cancel()
+		c.Close()
+		bus.Close()
+	}
+	return bus, sink, teardown
+}
+
+// TestComposerFMChainMutesSquelchClosedTail is the regression for issue
+// #1090's real audible mechanism. The scanner-side hangtime debounce
+// (#1091) only decides when the call ENDS; for the whole hangtime
+// window runFMChain kept demodulating carrier-less receiver noise —
+// which is loud out of an FM discriminator no matter how weak the RF —
+// and the audio AGC actively amplified it, so every recording ended in
+// a multi-second squelch crash. With the gate, the same noise input
+// records as silence (after a short fade) while the scanner reports
+// squelch-closed. The open-gate phase in the middle is the
+// counterfactual that proves the muted phase's input would otherwise
+// have been loud.
+func TestComposerFMChainMutesSquelchClosedTail(t *testing.T) {
+	src := newFakeSource()
+	sq := &stubSquelch{open: true, ok: true}
+	bus, sink, teardown := mkComposerSquelch(t, src, sq)
+	defer teardown()
+
+	publishStartFM(bus, "VOICE-1")
+	waitFor(t, time.Second, func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return len(src.chs) > 0
+	})
+	rng := rand.New(rand.NewSource(1090))
+
+	// Phase 1 (squelch open): demodulated noise is LOUD — this is
+	// the ungated behavior the reporter measured during the tail.
+	for range 5 {
+		src.SendIQ(noiseChunk(4096, rng))
+	}
+	waitFor(t, time.Second, func() bool { return sink.total("VOICE-1") >= 40 })
+	openEnd := sink.total("VOICE-1")
+	if got := maxAbsPCM(sink.pcmCopy("VOICE-1")[:openEnd]); got < 1000 {
+		t.Fatalf("open-gate demodulated noise peaked at %d; expected loud (>1000) — test signal too quiet to prove the gate matters", got)
+	}
+
+	// Phase 2 (squelch closed): identical input must now record as
+	// silence once the ~10 ms fade (80 samples at 8 kHz) has run out.
+	sq.set(false, true)
+	for range 40 {
+		src.SendIQ(noiseChunk(4096, rng))
+		time.Sleep(2 * time.Millisecond)
+	}
+	waitFor(t, 2*time.Second, func() bool { return sink.total("VOICE-1") >= openEnd+300 })
+	pcm := sink.pcmCopy("VOICE-1")
+	// Skip the fade window plus slack for open-gate chunks that were
+	// already in flight when the gate flipped.
+	tail := pcm[openEnd+160:]
+	if got := maxAbsPCM(tail); got != 0 {
+		t.Fatalf("squelch-closed tail is audible: peak |pcm| = %d over %d samples, want 0 (issue #1090: the FM chain must mute while the scanner reports squelch closed)", got, len(tail))
+	}
+	// The fade must actually decay — the first muted samples may be
+	// non-zero, but nothing in the tail may exceed the last open-gate
+	// level.
+	if got, lim := maxAbsPCM(pcm[openEnd:openEnd+160]), maxAbsPCM(pcm[:openEnd]); got > lim {
+		t.Errorf("mute fade overshoots: peak %d exceeds open-gate peak %d", got, lim)
+	}
+}
+
+// TestComposerFMChainIgnoresSquelchWithoutDecision pins the ok=false
+// contract: a provider with no live decision for the serial (any
+// non-conventional analog chain — Motorola/LTR/MPT 1327 voice — or a
+// scanner between dwells) must leave the chain ungated and the audio
+// flowing.
+func TestComposerFMChainIgnoresSquelchWithoutDecision(t *testing.T) {
+	src := newFakeSource()
+	sq := &stubSquelch{open: false, ok: false} // closed-looking, but no decision
+	bus, sink, teardown := mkComposerSquelch(t, src, sq)
+	defer teardown()
+
+	publishStartFM(bus, "VOICE-1")
+	waitFor(t, time.Second, func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return len(src.chs) > 0
+	})
+	rng := rand.New(rand.NewSource(1090))
+	for range 5 {
+		src.SendIQ(noiseChunk(4096, rng))
+	}
+	waitFor(t, time.Second, func() bool { return sink.total("VOICE-1") >= 40 })
+	if got := maxAbsPCM(sink.pcmCopy("VOICE-1")); got < 1000 {
+		t.Fatalf("chain muted on ok=false: peak |pcm| = %d, want ungated loud audio (>1000)", got)
 	}
 }
 
