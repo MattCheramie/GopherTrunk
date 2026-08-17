@@ -85,11 +85,16 @@ type branchCaptureMeta struct {
 // defaultDiversityCaptureSeconds bounds a capture when none is configured.
 const defaultDiversityCaptureSeconds = 5
 
-// startBranchCapture arms the one-shot pre-combine dump for a fresh stream.
+// startBranchCapture arms the pre-combine dump. It is one-shot per DEVICE, not
+// per stream: a control-channel hunt re-opens the stream repeatedly, and
+// re-arming would truncate the files on every cycle and leave the operator with
+// whatever the last few seconds happened to be. Once a recorder exists — running
+// or finished — the capture stays as it was.
+//
 // A failure to open the files is logged and otherwise ignored: a diagnostic tap
 // must never keep the radio from streaming.
 func (d *device) startBranchCapture(rateHz float64) {
-	if d.capturePrefix == "" || d.mrc == nil {
+	if d.capturePrefix == "" || d.mrc == nil || d.mrc.rec != nil {
 		return
 	}
 	secs := d.captureSeconds

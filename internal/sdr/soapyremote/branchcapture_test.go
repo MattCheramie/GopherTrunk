@@ -232,3 +232,37 @@ func TestEncodeCS16IntoRoundTrips(t *testing.T) {
 		t.Errorf("over-scale sample = %v, want saturation near (+1,-1)", got[3])
 	}
 }
+
+// TestBranchCaptureArmsOncePerDevice pins that a re-opened stream does not
+// truncate an existing capture. A control-channel hunt re-opens the stream every
+// few seconds, so re-arming would leave the operator with whatever the last
+// cycle happened to catch instead of the transmission they were recording.
+func TestBranchCaptureArmsOncePerDevice(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "cap")
+	rng := rand.New(rand.NewSource(5))
+	ch0 := mrcSignal(rng, 128, 0.4)
+	ch1 := scaleC(ch0, complex(0, 1))
+
+	d := &device{
+		log:           testLogger(),
+		capturePrefix: prefix,
+		diversity:     diversityMRCTracking,
+		mrc:           newMRCCombiner(formatCS16, diversityMRCTracking, 0),
+	}
+	d.startBranchCapture(48000)
+	first := d.mrc.rec
+	if first == nil {
+		t.Fatal("capture did not arm")
+	}
+	d.mrc.combine(twoBranchPayload(ch0, ch1), len(ch0))
+
+	// A second stream on the same device must not replace the recorder.
+	d.startBranchCapture(48000)
+	if d.mrc.rec != first {
+		t.Error("re-opening the stream re-armed the capture, truncating the files")
+	}
+	d.mrc.rec.finish()
+	if got := readCS16(t, prefix+".br0.cs16"); len(got) != len(ch0) {
+		t.Errorf("captured %d samples, want %d", len(got), len(ch0))
+	}
+}
