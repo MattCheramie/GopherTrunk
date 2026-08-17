@@ -449,6 +449,77 @@ func TestDiversityReporterWarnsWhenBranchesNeverCorrelate(t *testing.T) {
 	}
 }
 
+// TestDiversityReporterWarnsWhenCalibrationGoesStale covers the gap an
+// operator's hour-long X310 capture exposed: the combiner locked once, then
+// every window for the next eleven minutes failed the coherence gate — updates
+// frozen while holds climbed by ~6000 per interval — and the health line kept
+// reporting INFO because "calibrated" was still true. The combine was applying
+// a gain measured eleven minutes earlier and nothing said so.
+func TestDiversityReporterWarnsWhenCalibrationGoesStale(t *testing.T) {
+	rng := rand.New(rand.NewSource(21))
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	// Lock on a coherent pair.
+	for i := 0; i < 2; i++ {
+		a := mrcSignal(rng, mrcTestWindow, 0.3)
+		b := scaleC(a, complex(0.9, 0.4))
+		m.combine(twoBranchPayload(a, b), len(a))
+	}
+	if !m.cal.Calibrated() {
+		t.Fatal("fixture did not calibrate")
+	}
+
+	var buf bytes.Buffer
+	now := time.Unix(1700000000, 0)
+	r := newDiversityReporter(slog.New(slog.NewTextHandler(&buf, nil)), "10.0.0.5:55132")
+	r.now = func() time.Time { return now }
+	r.observe(m)
+
+	// Then feed uncorrelated branches, so every further window is held.
+	for interval := 0; interval <= mrcStaleUpdateIntervals; interval++ {
+		for i := 0; i < 2; i++ {
+			a := mrcSignal(rng, mrcTestWindow, 0.3)
+			b := mrcSignal(rng, mrcTestWindow, 0.3)
+			m.combine(twoBranchPayload(a, b), len(a))
+		}
+		now = now.Add(mrcHealthInterval)
+		buf.Reset()
+		r.observe(m)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "level=WARN") || !strings.Contains(got, "stale gain") {
+		t.Errorf("report = %q, want a WARN about a stale calibration", got)
+	}
+	if !strings.Contains(got, "wideband") {
+		t.Errorf("report = %q, want it to name the wideband-combine limitation", got)
+	}
+}
+
+// A healthy combiner that keeps accepting windows must NOT trip the stale
+// warning, or the signal is worthless.
+func TestDiversityReporterStaysQuietWhileCalibrationKeepsUpdating(t *testing.T) {
+	rng := rand.New(rand.NewSource(22))
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	var buf bytes.Buffer
+	now := time.Unix(1700000000, 0)
+	r := newDiversityReporter(slog.New(slog.NewTextHandler(&buf, nil)), "10.0.0.5:55132")
+	r.now = func() time.Time { return now }
+
+	for interval := 0; interval <= mrcStaleUpdateIntervals+2; interval++ {
+		for i := 0; i < 2; i++ {
+			a := mrcSignal(rng, mrcTestWindow, 0.3)
+			b := scaleC(a, complex(0.9, 0.4))
+			m.combine(twoBranchPayload(a, b), len(a))
+		}
+		now = now.Add(mrcHealthInterval)
+		buf.Reset()
+		r.observe(m)
+	}
+	if got := buf.String(); strings.Contains(got, "stale gain") {
+		t.Errorf("healthy combiner reported a stale calibration: %q", got)
+	}
+}
+
 // TestMRCTrackAlphaMatchesDocumentedTimeConstant pins that the loop bandwidth is
 // derived from the window and the stated time constant rather than hardcoded, so
 // changing the window cannot silently move it.

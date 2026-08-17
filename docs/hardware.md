@@ -922,10 +922,32 @@ GT_DIVERSITY_TUNE_HZ=-87500 \
   go test ./cmd/gophertrunk -run TestDiversityCombinerReplay -v
 ```
 
-That prints a windowed coherence/gain/phase trace and decodes four arms — each
-branch alone, static combine, tracking combine — scored by CRC-clean BSCH count.
-Decode yield is the verdict; do not conclude anything from EVM or from how the
-constellation looks.
+That prints two coherence traces and decodes eight arms, all scored by
+CRC-clean BSCH count. Decode yield is the verdict; do not conclude anything from
+EVM or from how the constellation looks.
+
+**The two coherence traces are the important part.** The first is measured on
+the wideband stream — what the driver's combiner actually sees. The second is
+measured after each branch goes through the per-channel DDC. If narrowband
+coherence is high where wideband coherence is low, the branches *do* agree on
+the target channel and the single wideband gain is the limitation, exactly as
+the note under Limitations predicts for widely separated antennas; no amount of
+tracking will rescue it, and the `nb-*` arms are the ones to look at. If
+narrowband coherence is also low, the two receivers are not seeing the same
+signal at all and no combiner will help.
+
+The arms:
+
+| Arm | What it is |
+| --- | --- |
+| `branch0-only`, `branch1-only` | each receiver alone — the baseline any combiner has to beat |
+| `wb-static`, `wb-tracking` | today's driver behaviour: one complex gain for the whole span, frozen or tracked |
+| `wb-irc-blind` | MMSE-IRC on the wideband stream. Expected to match `wb-tracking`: without a training sequence the channel estimate is a power-weighted blend of every signal in the span, so the null is steered at a mixture. Carried so that claim is checked against real air rather than assumed |
+| `nb-static`, `nb-tracking` | one gain per narrowband channel, combined **after** the DDC — the per-channel combining the wideband limitation calls for, not built into the daemon |
+| `nb-branch0-only` | the narrowband baseline the `nb-*` arms have to beat |
+
+Nothing here changes what the daemon does. These are measurements; a combiner
+becomes a default only after a capture says it earns it.
 
 Two operational notes from that deployment:
 

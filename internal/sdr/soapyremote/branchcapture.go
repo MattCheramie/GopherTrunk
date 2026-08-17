@@ -114,6 +114,15 @@ func (d *device) startBranchCapture(rateHz float64) {
 	rec.meta.SampleRateHz = rateHz
 	rec.meta.DiversityMode = d.diversity.String()
 	rec.meta.StreamMTU = d.mtu
+	// Without these a replay cannot work out which channel to tune to, or what
+	// hardware and antenna ports produced the branches — which is most of what
+	// makes a capture reproducible.
+	rec.meta.DeviceArgs = d.deviceArgs
+	rec.meta.Antennas = append([]string(nil), d.antennas...)
+	d.mu.Lock()
+	rec.meta.CenterFreqHz = d.centerHz
+	rec.meta.GainTenthDB = d.gainTenth
+	d.mu.Unlock()
 	d.mrc.rec = rec
 	d.log.Info("soapyremote: diversity capture armed — dumping pre-combine per-branch IQ",
 		"prefix", d.capturePrefix, "seconds", secs, "branches", d.rxChannelCount())

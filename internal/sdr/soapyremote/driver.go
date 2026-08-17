@@ -249,6 +249,8 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		dev.capturePrefix = spec.DiversityCapture
 		dev.captureSeconds = spec.DiversityCaptureSeconds
 	}
+	dev.deviceArgs = formatDeviceArgs(spec.DeviceArgs)
+	dev.antennas = append([]string(nil), spec.Antennas...)
 	if spec.VerboseDebug {
 		dev.tracer = newRPCTracer(d.log, addr)
 		d.log.Info("soapyremote: verbose RPC debug enabled — every control-channel "+
@@ -321,7 +323,15 @@ type device struct {
 	// Set once at Open, read-only thereafter, and nil-safe at every call site.
 	tracer *rpcTracer
 
+	// deviceArgs / antennas are kept only so a diversity capture's sidecar can
+	// record what the branches were: replaying one without knowing which
+	// antenna ports and device it came from is guesswork.
+	deviceArgs string
+	antennas   []string
+
 	mu         sync.Mutex
+	centerHz   uint32   // last programmed centre frequency, for the capture sidecar
+	gainTenth  int      // last programmed gain, likewise
 	conn       net.Conn // RPC control socket
 	dataConn   net.Conn // stream data socket (set in StreamIQ)
 	statusConn net.Conn // stream status socket (the server requires it; we drain it)
@@ -498,6 +508,9 @@ func (d *device) SetCenterFreq(hz uint32) error {
 	}); err != nil {
 		return err
 	}
+	d.mu.Lock()
+	d.centerHz = hz
+	d.mu.Unlock()
 	// A retune is a new LO lock, so the frozen RX0↔RX1 phase constant is stale.
 	// Re-arm calibration; the next combined window re-estimates it.
 	if d.mrc != nil {
@@ -558,6 +571,9 @@ func (d *device) SetGain(tenthDB int) error {
 	if err := d.applyGain(0, tenthDB); err != nil {
 		return err
 	}
+	d.mu.Lock()
+	d.gainTenth = tenthDB
+	d.mu.Unlock()
 	d.perSecondaryRXChannel("gain", func(ch int32) error { return d.applyGain(ch, tenthDB) })
 	return nil
 }
@@ -1207,6 +1223,25 @@ func sanitizeAddr(addr string) string {
 
 // deviceArgKey returns the SoapySDR driver key for display, defaulting to the
 // driver name when no kwargs were given.
+// formatDeviceArgs renders the MAKE kwargs back into the flat "k=v,k=v" form
+// the operator wrote in config, so a capture sidecar records which device it
+// came from rather than leaving the field blank.
+func formatDeviceArgs(args map[string]string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+args[k])
+	}
+	return strings.Join(parts, ",")
+}
+
 func deviceArgKey(args map[string]string) string {
 	if d, ok := args["driver"]; ok && d != "" {
 		return d

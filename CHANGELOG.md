@@ -42,6 +42,26 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **Diversity: an offline instrument for deciding what to ship, and an MMSE-IRC
+  combiner to feed it.** `TestDiversityCombinerReplay` now measures coherence
+  BOTH on the wideband stream and after the per-channel DDC — the number that
+  says whether the wideband single-gain combine is the limitation on a given
+  pair of antennas — and scores eight arms instead of four, including
+  per-channel (post-DDC) combining and blind IRC. `internal/dsp/diversity` gains
+  `IRCCalibrator`, which steers a spatial null at a directional interferer that
+  MRC amplifies: +23.6 dB on the synthetic co-channel scene **given a training
+  sequence**, and measurably nothing without one, because a blind channel
+  estimate returns a power-weighted blend of every signal present. That is why
+  it is not offered as a driver mode — the driver combines the wideband stream,
+  where no training sequence exists. Nothing changes by default.
+- **The MRC health line reports a calibration that has gone stale.** A combiner
+  that locks once and then fails the coherence gate on every window afterwards
+  keeps applying a gain measured minutes ago; the line reported that as healthy
+  because `calibrated` was still true. It now WARNs after three quiet intervals
+  and names the wideband-combine limitation as the likely cause.
+- **The diversity capture sidecar records the device args, antenna ports, centre
+  frequency and gain.** All four were declared and never written, so a replay
+  could not tell which channel to tune to or what hardware produced the branches.
 - **Name radios and talkgroups from the web console, and keep the names.**
   The Radio IDs and Talkgroups detail panels now carry Name / Description
   fields (and Owner for a radio), committed on blur or Enter. A radio or
