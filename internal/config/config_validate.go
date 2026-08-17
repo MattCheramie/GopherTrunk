@@ -89,8 +89,15 @@ func (c Config) ValidateSection(section string) []error {
 
 func (c Config) validateSDR() []error {
 	var errs []error
-	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 225_000 || c.SDR.SampleRate > 20_000_000) {
-		errs = append(errs, errors.New("sdr.sample_rate must be between 225 kHz and 20 MHz"))
+	// The 200 kHz floor is for the config layer only — narrow single-channel
+	// captures from wideband sources (USRP/Lime/…, e.g. 200 MHz/1000 exact
+	// decimation) are legitimate. RTL dongles still enforce their own
+	// hardware floor (225 001 Hz, rtl2832u.MinSampleRateHz) at open. For
+	// TETRA note 240/256/288/300 kHz hit the 144 kHz DDC target exactly,
+	// while 250 kHz lands on the approximate 53/92 ratio (144 021.7 Hz,
+	// +0.015% — proven fine on air).
+	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 200_000 || c.SDR.SampleRate > 20_000_000) {
+		errs = append(errs, errors.New("sdr.sample_rate must be between 200 kHz and 20 MHz"))
 	}
 	seenSerials := make(map[string]int, len(c.SDR.Devices))
 	for i, d := range c.SDR.Devices {

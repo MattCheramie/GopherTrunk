@@ -25,7 +25,7 @@ func Sections() []SectionMeta {
 			"The trunked radio networks to follow. Each system needs a unique name, a protocol, and at least one control-channel frequency. Add systems by hand, by browsing RadioReference.com, or by importing a RadioReference PDF/CSV.",
 			"Trunking Systems", docsBase + "hunt.html"},
 		{"sdr", "SDR", "SDR",
-			"Sample rate (225 kHz–20 MHz) every tuner is programmed to, plus local devices and remote (rtl_tcp / SoapySDR) sources. P25 trunking needs separate control and voice dongles (distinct serials).",
+			"Sample rate (200 kHz–20 MHz) every tuner is programmed to, plus local devices and remote (rtl_tcp / SoapySDR) sources. P25 trunking needs separate control and voice dongles (distinct serials).",
 			"SDR Hardware", docsBase + "hardware.html"},
 		{"api", "API", "API & Web",
 			"HTTP/gRPC listen addresses and access control. allow_mutations lets the web UI write changes (talkgroup edits, settings, this builder's saves).",

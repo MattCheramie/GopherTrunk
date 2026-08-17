@@ -79,6 +79,11 @@ func TestValidate(t *testing.T) {
 		{"path_template unknown token", Config{Recordings: RecordingsConfig{PathTemplate: "{system}/{quarter}"}}, true},
 		{"path_template absolute", Config{Recordings: RecordingsConfig{PathTemplate: "/abs/{system}"}}, true},
 		{"bad sample rate", Config{SDR: SDRConfig{SampleRate: 100}}, true},
+		// Narrow captures from wideband sources: 200 kHz is the floor
+		// (issue: operator's 200 MHz/1000 exact-decimation TETRA capture);
+		// RTL dongles enforce their own 225 001 Hz floor at open instead.
+		{"narrow sample rate 200k", Config{SDR: SDRConfig{SampleRate: 200_000}}, false},
+		{"sample rate below 200k", Config{SDR: SDRConfig{SampleRate: 199_999}}, true},
 		// Wideband soapy_remote sources (issue #550): rates above the RTL
 		// 3.2 MHz hardware cap are valid config, bounded at 20 MHz.
 		{"wideband sample rate 10M", Config{SDR: SDRConfig{SampleRate: 10_000_000}}, false},

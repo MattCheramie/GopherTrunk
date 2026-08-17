@@ -606,7 +606,7 @@ type PowerLogConfig struct {
 
 type SDRConfig struct {
 	// SampleRate is the IQ rate (Hz) every tuner is programmed to.
-	// Default 2_400_000 (2.4 MS/s). Valid range 225_000..20_000_000; the
+	// Default 2_400_000 (2.4 MS/s). Valid range 200_000..20_000_000; the
 	// RTL2832U quantizes to its 28.4 fixed-point divisor so the streamed
 	// rate may differ slightly (see Device.ActualSampleRate). Note that
 	// RTL2832U hardware still caps at 3.2 MHz at the device level (the
