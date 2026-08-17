@@ -496,6 +496,29 @@ confirmation before any close-as-completed.
   real work, in °/s) and decodes four arms — each branch alone, static, tracking — scored by
   CRC-clean BSCH. **Yield is the verdict, never EVM.** Tracking-as-default is NOT yet verified
   on air; that A/B on the operator's own capture is the gate.
+- **MMSE-IRC cannot work blind, and that is a property of the estimator, not of one
+  formula.** The reporter's #1062 RFC proposes IRC to null a directional interferer that MRC
+  amplifies. Two separate problems, and only the first is fixable inside the algorithm. (1) The
+  RFC's residual `e_k = x_k − h_k·x_0` is degenerate: `h` is estimated by least squares against
+  `x_0`, so `h_0 = 1` by construction and `e_0 ≡ 0`, `R_nn`'s reference row and column are zero,
+  the diagonal-loading constant alone sets the reference weight and no null can form. Taking the
+  residual against the MRC output instead fixes that. (2) The channel estimate itself is
+  contaminated: with a co-channel interferer `cov(x_k,x_0) = h_wanted·P_signal + h_interf·P_interf`,
+  so LS returns a POWER-WEIGHTED BLEND — measured, a true 0.95∠40° reads back as 0.32∠1°, and the
+  null is steered at a mixture. Blind IRC measures **0.0 dB** over MRC on the synthetic
+  co-channel scene; the same code given a training sequence measures **+23.6 dB**
+  (`internal/dsp/diversity/irc_test.go`). A training sequence exists only AFTER the per-channel
+  DDC — which is also where the per-channel combining the wideband limitation calls for has to
+  go, so both roads lead past the DDC. `IRCCalibrator` is therefore an offline harness arm, not
+  a driver mode.
+- **The replay harness now measures narrowband coherence too, and that is the number that
+  decides the architecture.** `TestDiversityCombinerReplay` traces coherence on the wideband
+  stream AND after each branch's own DDC, then scores eight arms (add `wb-irc-blind`, `nb-static`,
+  `nb-tracking`, `nb-branch0-only`). High narrowband against low wideband is direct proof that the
+  single wideband gain is the limitation on that hardware. A calibration that locks once and then
+  holds every window afterwards now WARNs after three health intervals — the operator's 17 Aug
+  X310 log had `updates` frozen at 6682 for eleven minutes while `holds` climbed ~6000 per
+  interval, and the line said INFO the whole time because `calibrated` was still true.
 - **`branch_phase_deg` in the MRC log line is the no-capture field instrument.** Constant ⇒
   shared-LO front end; walking ⇒ independent PLLs. It tells an operator which hardware class
   they have, and therefore whether `mrc` or `mrc-static` is right, before anyone records
@@ -512,3 +535,45 @@ confirmation before any close-as-completed.
   setting it once and never revisiting. `web/src/api/reconnectingSocket.ts` now owns the logic
   the four clients had each copied — including the `onerror`+`onclose` double-bind that
   scheduled two timers per failure while remembering only one handle.
+- **A graceful-shutdown window is a lie unless something tells the handlers to leave.**
+  Ctrl-C took a fixed 30 s. `Daemon.Close` stops the HTTP server FIRST, and
+  `http.Server.Shutdown` waits for active non-hijacked requests without cancelling their
+  `r.Context()` — while the `bus.Close()` that would end `handleSSE` runs at the very END of
+  Close, ~90 lines later. So any attached SSE / live-audio / siglab subscriber pinned the whole
+  window, then `Shutdown` returned `context.DeadlineExceeded`, which `daemon.spawn` counts as a
+  clean exit. Completely silent. The window had already been widened 5 s → 30 s "to cut
+  user-visible connection drops", which made the pause 6× longer without making anything drain —
+  the reason this kept coming back. `api.Server` now closes a `stopStreams` channel at the top of
+  `shutdown()` and the long-lived handlers select on it; the 30 s is a CAP for a handler that
+  misses the signal, and reaching it WARNs. Two more teardown stalls hid behind it:
+  `GRPCServer.Stop` was an unbounded `GracefulStop` (an open `StreamAudio` waits forever), and
+  the soapyremote/rtl_tcp read loops checked `ctx.Done()` only BETWEEN reads and then parked in
+  `io.ReadFull` behind a 30 s deadline — a quiet server is the normal state at shutdown, so both
+  added their own 30 s tail. Watch for this shape anywhere: a bounded wait whose exit condition
+  is satisfied later in the same teardown.
+- **`cmd/gophertrunk/integration_test.go` used to give `Run` 3 s and then move on silently**,
+  which is why a 30 s shutdown stall never failed CI. A cleanup that swallows a timeout is not a
+  test. It asserts now.
+- **Every SDR source list has to be named in the pool-construction gate at `daemon.go`.** The
+  gate read `SDR.Devices || Baseband.Replay || SDR.RTLTCP` and the network drivers are registered
+  INSIDE that block — so a config with only `sdr.soapy_remote` (or only `ka9q_radio`) registered
+  no driver at all and the daemon started quietly with no radio. Adding a new source type means
+  adding it to that condition; `TestRemoteOnlySDRConfigsRegisterTheirDriver` pins it, asserting on
+  REGISTRATION rather than on `d.pool` because the pool is set to nil whenever it fails to open.
+- **The SPA client's response-envelope keys are unchecked and fail silently.** The call-history
+  client read `r.rows` where the daemon sends `{"calls":[…]}`, with a `?? []` fallback — so the
+  History panel rendered "No calls in the daemon's call log for this filter" for every query
+  since the file was written, and it read as "search by talkgroup is broken" while the handler,
+  the filter and the SQL were all correct. `?? []` on a mistyped key is indistinguishable from an
+  empty result. Panels without a test are where this hides; History had none.
+- **Operator-applied names live in a `labels` table, layered over the alias files at startup.**
+  `PATCH /api/v1/rids/{id}` used to 404 for a radio absent from `rid_alias_file` — i.e. exactly
+  the radios worth naming, since one showing up live is by definition not in a file yet — and
+  `PATCH /api/v1/talkgroups/{id}` had no name field at all. Both now create the catalogue entry,
+  using the CSV loaders' own defaults so a synthesised row behaves like a loaded one. A
+  synthesised talkgroup must NOT be tagged `Discovered`: `DeleteDiscovered` would sweep away the
+  operator's name behind their back. The label wins over the file (it is the operator's most
+  recent explicit act) and logs a WARN when they disagree. Keyed `(kind, system, target_id)`
+  because `talkgroup_file` / `rid_alias_file` are per-system config keys and the CSV export has
+  to be able to emit one file per system. Only the naming fields persist; priority / lockout /
+  watch / scan stay in memory as before.
