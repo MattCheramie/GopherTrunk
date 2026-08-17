@@ -241,7 +241,7 @@ func (p *spectrumProvider) Tune(serial string, centerHz uint32) error {
 	}
 	br, ok := p.brokers[serial]
 	if !ok {
-		return fmt.Errorf("spectrum: serial %q is not a known SDR", serial)
+		return fmt.Errorf("spectrum: serial %q is not a known SDR: %w", serial, api.ErrUnknownDevice)
 	}
 	if err := br.SetCenterFreq(centerHz); err != nil {
 		return fmt.Errorf("spectrum: tune %s to %d Hz: %w", serial, centerHz, err)
@@ -260,7 +260,7 @@ func (p *spectrumProvider) OpenStream(ctx context.Context, serial string, fftSiz
 	}
 	br, ok := p.brokers[serial]
 	if !ok {
-		return nil, nil, fmt.Errorf("spectrum: serial %q is not a known SDR", serial)
+		return nil, nil, fmt.Errorf("spectrum: serial %q is not a known SDR: %w", serial, api.ErrUnknownDevice)
 	}
 	prod, err := spectrum.New(spectrum.Options{
 		FFTSize:      fftSize,

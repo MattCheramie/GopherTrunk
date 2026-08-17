@@ -46,7 +46,7 @@ func (p *mixerProvider) OpenMixerStream(ctx context.Context, serial, proto strin
 	}
 	br, ok := p.brokers[serial]
 	if !ok {
-		return nil, nil, fmt.Errorf("mixer: serial %q is not a known SDR", serial)
+		return nil, nil, fmt.Errorf("mixer: serial %q is not a known SDR: %w", serial, api.ErrUnknownDevice)
 	}
 	protocol, demod, err := symbolProtoToReceiver(proto)
 	if err != nil {

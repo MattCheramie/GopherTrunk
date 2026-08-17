@@ -47,7 +47,7 @@ func (p *captureProvider) CaptureStream(ctx context.Context, serial string, seco
 	}
 	br, ok := p.brokers[serial]
 	if !ok {
-		return 0, 0, fmt.Errorf("capture: serial %q is not a known SDR", serial)
+		return 0, 0, fmt.Errorf("capture: serial %q is not a known SDR: %w", serial, api.ErrUnknownDevice)
 	}
 	rate := br.SampleRateHz()
 	if rate == 0 {

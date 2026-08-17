@@ -35,7 +35,9 @@ const PROTOS: { value: string; label: string }[] = [
   { value: "dmr", label: "DMR" },
 ];
 
-type ConnState = "connecting" | "open" | "closed";
+// Mirrors SocketStatus from api/reconnectingSocket. "gone" is terminal: the
+// stream stopped retrying because the device is not coming back.
+type ConnState = "connecting" | "open" | "closed" | "gone";
 
 export function Mixer() {
   const cfg = useShared(selectClientConfig);
@@ -45,6 +47,11 @@ export function Mixer() {
   // call ("following call" forever, single freq) when opened directly.
   useActiveCallsPoll();
   const [devices, setDevices] = useState<SpectrumDevice[]>([]);
+  // Bumped when an open stream gives up on the selected serial, forcing a
+  // device re-enumeration. Without it the selection was set once and never
+  // reconciled, so after a daemon restart with different hardware the panel
+  // kept asking for a device that no longer existed.
+  const [deviceEpoch, setDeviceEpoch] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   // A "signal detail" link from a call / scanner hit can name the SDR to
   // scope via ?device=; honoured on first load, else the panel default.
@@ -70,7 +77,9 @@ export function Mixer() {
         if (cancel) return;
         setDevices(list);
         setError(null);
-        if (selected == null) {
+        // Re-pick when nothing is selected yet, or when the selection is no
+        // longer one of the daemon's devices.
+        if (selected == null || !list.some((d) => d.serial === selected)) {
           const s = initialDeviceSerial(list, targetDevice, defaultSymbolDevice);
           if (s) setSelected(s);
         }
@@ -82,7 +91,7 @@ export function Mixer() {
     return () => {
       cancel = true;
     };
-  }, [cfg, selected, targetDevice]);
+  }, [cfg, selected, targetDevice, deviceEpoch]);
 
   const device = useMemo(
     () => devices.find((d) => d.serial === selected) ?? null,
@@ -155,6 +164,7 @@ export function Mixer() {
         renderFftLine(tunedRef.current, f.tuned_bins, f.sample_rate_hz, 0);
       },
       onStatus: setConn,
+      onGone: () => setDeviceEpoch((n) => n + 1),
     });
     return () => stream.close();
   }, [cfg, selected, proto, clampedOffsetKHz]);

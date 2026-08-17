@@ -49,7 +49,7 @@ func (p *diagProvider) OpenIQStream(ctx context.Context, serial string, targetRa
 	}
 	br, ok := p.brokers[serial]
 	if !ok {
-		return nil, nil, fmt.Errorf("diag: serial %q is not a known SDR", serial)
+		return nil, nil, fmt.Errorf("diag: serial %q is not a known SDR: %w", serial, api.ErrUnknownDevice)
 	}
 	inputRate := br.SampleRateHz()
 	if inputRate == 0 {

@@ -112,7 +112,9 @@ const POINT_RGB = "56, 189, 248";
 // muted slate tokens used elsewhere.
 const GRID_RGB = "148, 163, 184";
 
-type ConnState = "connecting" | "open" | "closed";
+// Mirrors SocketStatus from api/reconnectingSocket. "gone" is terminal: the
+// stream stopped retrying because the device is not coming back.
+type ConnState = "connecting" | "open" | "closed" | "gone";
 
 interface RenderOpts {
   dcBlock: boolean;
@@ -131,6 +133,11 @@ export function Constellation() {
   // call ("following call" forever, single freq) when opened directly.
   useActiveCallsPoll();
   const [devices, setDevices] = useState<SpectrumDevice[]>([]);
+  // Bumped when an open stream gives up on the selected serial, forcing a
+  // device re-enumeration. Without it the selection was set once and never
+  // reconciled, so after a daemon restart with different hardware the panel
+  // kept asking for a device that no longer existed.
+  const [deviceEpoch, setDeviceEpoch] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   // A "signal detail" link from a call / scanner hit can name the SDR to scope
   // via ?device=; honoured on first load, else the enumeration default.
@@ -255,7 +262,11 @@ export function Constellation() {
         if (cancel) return;
         setDevices(list);
         setError(null);
-        if (list.length > 0 && selected == null) {
+        // Re-pick when nothing is selected yet, or when the selection is no
+        // longer one of the daemon's devices.
+        const stale =
+          selected != null && !list.some((d) => d.serial === selected);
+        if (list.length > 0 && (selected == null || stale)) {
           setSelected(
             initialDeviceSerial(list, targetDevice, (l) => l[0] ?? null),
           );
@@ -268,7 +279,7 @@ export function Constellation() {
     return () => {
       cancel = true;
     };
-  }, [cfg, selected, targetDevice]);
+  }, [cfg, selected, targetDevice, deviceEpoch]);
 
   // Newest active call on the selected SDR, and the view offset (kHz)
   // that would centre it. This is the "last locked channel" the issue
@@ -364,6 +375,7 @@ export function Constellation() {
         pushPoints(f.points);
       },
       onStatus: setConn,
+      onGone: () => setDeviceEpoch((n) => n + 1),
     });
     return () => stream.close();
     // Re-subscribe when the offset changes so the server re-mixes.
@@ -394,6 +406,7 @@ export function Constellation() {
         pushPoints(pts);
       },
       onStatus: setConn,
+      onGone: () => setDeviceEpoch((n) => n + 1),
     });
     return () => stream.close();
   }, [cfg, selected, source, effectiveProto, clampedOffsetKHz]);

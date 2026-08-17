@@ -80,6 +80,13 @@ func (s *Server) handleMixerStream(w http.ResponseWriter, r *http.Request) {
 			return ok
 		}
 	}
+	// Resolve the device BEFORE the upgrade. An unknown serial must be an HTTP
+	// status, not a successful handshake followed by a close: browser clients
+	// reset their reconnect backoff on `onopen`, so a handshake that always
+	// succeeds makes the backoff dead code and a stale tab reconnects forever.
+	if s.rejectUnknownDevice(w, serial) {
+		return
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.log.Debug("api: mixer WS upgrade failed", "err", err)

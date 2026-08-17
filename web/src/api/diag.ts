@@ -3,6 +3,10 @@
 // (api/spectrum.ts) uses.
 
 import { type ClientConfig } from "./client";
+import {
+  openReconnectingSocket,
+  type SocketStatus,
+} from "./reconnectingSocket";
 
 export interface IQPoint {
   i: number;
@@ -18,7 +22,7 @@ export interface IQFrame {
 }
 
 export type FrameHandler = (f: IQFrame) => void;
-export type StatusHandler = (s: "connecting" | "open" | "closed") => void;
+export type StatusHandler = (s: SocketStatus) => void;
 
 export interface IQStream {
   close(): void;
@@ -31,12 +35,11 @@ export interface IQOptions {
   // baseband before decimation. Lets the operator pull an off-centre
   // locked channel out from under the centre DC spike. Default 0.
   offset?: number;
+  /** Fired once when the stream gives up on this device; re-enumerate. */
+  onGone?: () => void;
   onFrame: FrameHandler;
   onStatus?: StatusHandler;
 }
-
-const INITIAL_BACKOFF = 500;
-const MAX_BACKOFF = 30_000;
 
 export function diagWebSocketURL(cfg: ClientConfig, opts: IQOptions): string {
   const params = new URLSearchParams({ device: opts.serial });
@@ -51,67 +54,23 @@ export function diagWebSocketURL(cfg: ClientConfig, opts: IQOptions): string {
   return u.toString();
 }
 
-export function openIQStream(cfg: ClientConfig, opts: IQOptions): IQStream {
-  let closed = false;
-  let ws: WebSocket | null = null;
-  let backoff = INITIAL_BACKOFF;
-  let reconnectTimer: number | undefined;
-
-  const setStatus = (s: "connecting" | "open" | "closed") => {
-    if (!closed) opts.onStatus?.(s);
-  };
-
-  const jittered = (base: number) => base / 2 + Math.random() * (base / 2);
-
-  const connect = () => {
-    if (closed) return;
-    setStatus("connecting");
-    const url = diagWebSocketURL(cfg, opts);
-    ws = new WebSocket(url);
-
-    ws.onopen = () => {
-      backoff = INITIAL_BACKOFF;
-      setStatus("open");
-    };
-
-    ws.onmessage = (ev) => {
-      if (closed) return;
+export function openIQStream(
+  cfg: ClientConfig,
+  opts: IQOptions,
+): IQStream {
+  return openReconnectingSocket({
+    url: () => diagWebSocketURL(cfg, opts),
+    onStatus: opts.onStatus,
+    onGone: opts.onGone,
+    onMessage: (data) => {
       try {
-        const frame = JSON.parse(ev.data) as IQFrame;
+        const frame = JSON.parse(data) as IQFrame;
         if (frame && Array.isArray(frame.points)) {
           opts.onFrame(frame);
         }
       } catch {
         // Drop malformed.
       }
-    };
-
-    const onDown = () => {
-      if (closed) return;
-      ws = null;
-      setStatus("closed");
-      const wait = jittered(backoff);
-      backoff = Math.min(backoff * 2, MAX_BACKOFF);
-      reconnectTimer = window.setTimeout(connect, wait);
-    };
-    ws.onerror = onDown;
-    ws.onclose = onDown;
-  };
-
-  connect();
-
-  return {
-    close() {
-      closed = true;
-      setStatus("closed");
-      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-      if (ws) {
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-      }
     },
-  };
+  });
 }

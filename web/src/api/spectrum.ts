@@ -4,6 +4,10 @@
 // message; see internal/api/spectrum.go for the server side.
 
 import { type ClientConfig, joinURL } from "./client";
+import {
+  openReconnectingSocket,
+  type SocketStatus,
+} from "./reconnectingSocket";
 
 export interface SpectrumDevice {
   serial: string;
@@ -81,7 +85,7 @@ export interface SpectrumFrame {
 }
 
 export type FrameHandler = (f: SpectrumFrame) => void;
-export type StatusHandler = (s: "connecting" | "open" | "closed") => void;
+export type StatusHandler = (s: SocketStatus) => void;
 
 export interface SpectrumStream {
   close(): void;
@@ -91,12 +95,11 @@ export interface SpectrumOptions {
   serial: string;
   bins?: number; // FFT size, power of two, 64..16384, default 2048
   fps?: number; // 1..30, default 10
+  /** Fired once when the stream gives up on this device; re-enumerate. */
+  onGone?: () => void;
   onFrame: FrameHandler;
   onStatus?: StatusHandler;
 }
-
-const INITIAL_BACKOFF = 500;
-const MAX_BACKOFF = 30_000;
 
 export function streamWebSocketURL(cfg: ClientConfig, opts: SpectrumOptions): string {
   const params = new URLSearchParams({ device: opts.serial });
@@ -114,68 +117,21 @@ export function openSpectrumStream(
   cfg: ClientConfig,
   opts: SpectrumOptions,
 ): SpectrumStream {
-  let closed = false;
-  let ws: WebSocket | null = null;
-  let backoff = INITIAL_BACKOFF;
-  let reconnectTimer: number | undefined;
-
-  const setStatus = (s: "connecting" | "open" | "closed") => {
-    if (!closed) opts.onStatus?.(s);
-  };
-
-  const jittered = (base: number) => base / 2 + Math.random() * (base / 2);
-
-  const connect = () => {
-    if (closed) return;
-    setStatus("connecting");
-    const url = streamWebSocketURL(cfg, opts);
-    ws = new WebSocket(url);
-
-    ws.onopen = () => {
-      backoff = INITIAL_BACKOFF;
-      setStatus("open");
-    };
-
-    ws.onmessage = (ev) => {
-      if (closed) return;
+  return openReconnectingSocket({
+    url: () => streamWebSocketURL(cfg, opts),
+    onStatus: opts.onStatus,
+    onGone: opts.onGone,
+    onMessage: (data) => {
       try {
-        const frame = JSON.parse(ev.data) as SpectrumFrame;
+        const frame = JSON.parse(data) as SpectrumFrame;
         if (frame && Array.isArray(frame.bins)) {
           opts.onFrame(frame);
         }
       } catch {
-        // Drop malformed frame quietly.
-      }
-    };
-
-    const onDown = () => {
-      if (closed) return;
-      ws = null;
-      setStatus("closed");
-      const wait = jittered(backoff);
-      backoff = Math.min(backoff * 2, MAX_BACKOFF);
-      reconnectTimer = window.setTimeout(connect, wait);
-    };
-    ws.onerror = onDown;
-    ws.onclose = onDown;
-  };
-
-  connect();
-
-  return {
-    close() {
-      closed = true;
-      setStatus("closed");
-      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-      if (ws) {
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
+        // Drop malformed.
       }
     },
-  };
+  });
 }
 
 export async function fetchSpectrumDevices(

@@ -33,11 +33,18 @@ const DB_CEIL = 0;
 // streak in the waterfall below.
 const ANALYZER_H = 160;
 
-type ConnState = "connecting" | "open" | "closed";
+// Mirrors SocketStatus from api/reconnectingSocket. "gone" is terminal: the
+// stream stopped retrying because the device is not coming back.
+type ConnState = "connecting" | "open" | "closed" | "gone";
 
 export function Spectrum() {
   const cfg = useShared(selectClientConfig);
   const [devices, setDevices] = useState<SpectrumDevice[]>([]);
+  // Bumped when an open stream gives up on the selected serial, forcing a
+  // device re-enumeration. Without it the selection was set once and never
+  // reconciled, so after a daemon restart with different hardware the panel
+  // kept asking for a device that no longer existed.
+  const [deviceEpoch, setDeviceEpoch] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [latest, setLatest] = useState<SpectrumFrame | null>(null);
   const [conn, setConn] = useState<ConnState>("closed");
@@ -61,7 +68,13 @@ export function Spectrum() {
         if (cancel) return;
         setDevices(list);
         setError(null);
-        if (list.length > 0 && selected == null) setSelected(list[0].serial);
+        // Re-pick when nothing is selected yet, or when the selection is no
+        // longer one of the daemon's devices.
+        const stale =
+          selected != null && !list.some((d) => d.serial === selected);
+        if (list.length > 0 && (selected == null || stale)) {
+          setSelected(list[0].serial);
+        }
       } catch (e) {
         if (cancel) return;
         setError(e instanceof Error ? e.message : String(e));
@@ -70,8 +83,9 @@ export function Spectrum() {
     return () => {
       cancel = true;
     };
-    // Re-fetch whenever the connection identity changes.
-  }, [cfg, selected]);
+    // Re-fetch whenever the connection identity changes, and when an open
+    // stream gives up on the selected serial.
+  }, [cfg, selected, deviceEpoch]);
 
   // Fetch bookmarks for the click-to-tune + marker overlay. Refresh
   // on a long interval; SSE refresh is a follow-up.
@@ -137,6 +151,7 @@ export function Spectrum() {
         );
       },
       onStatus: setConn,
+      onGone: () => setDeviceEpoch((n) => n + 1),
     });
     return () => stream.close();
   }, [cfg, selected]);
