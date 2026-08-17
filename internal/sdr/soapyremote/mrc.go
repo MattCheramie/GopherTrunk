@@ -120,20 +120,33 @@ const (
 const mrcTrackTauMs = 200.0
 
 // mrcTrackAlpha is the one-pole coefficient implied by the window and the time
-// constant. Deriving it keeps the two constants honest: change the window and
-// the loop bandwidth stays where the comment says it is.
-func mrcTrackAlpha(mode diversityMode) float64 {
+// constant. It must be derived from the ACTUAL window duration — window
+// samples over the stream rate — not the nominal mrcCalWindowMs: at low
+// stream rates the min-samples clamp stretches the window (250 kHz → 4096
+// samples = 16.4 ms), and an alpha still assuming 2 ms would make the loop's
+// 1/e time ~1.6 s instead of the documented 200 ms — 8× too slow, exactly on
+// the narrow-capture rigs whose independently-locked PLLs need the tracking.
+func mrcTrackAlpha(mode diversityMode, window int, rateHz float64) float64 {
 	if mode == diversityMRCStatic {
 		return 0 // one-shot: freeze the first accepted window
 	}
-	return mrcCalWindowMs / mrcTrackTauMs
+	windowMs := mrcCalWindowMs
+	if rateHz > 0 && window > 0 {
+		windowMs = float64(window) / rateHz * 1000
+	}
+	alpha := windowMs / mrcTrackTauMs
+	if alpha > 1 {
+		alpha = 1
+	}
+	return alpha
 }
 
-// mrcCalOptions builds the calibrator options for a mode and window.
-func mrcCalOptions(mode diversityMode, window int) diversity.TrackingOptions {
+// mrcCalOptions builds the calibrator options for a mode and window. rateHz is
+// the stream rate the window was sized for (0 = unknown, nominal alpha).
+func mrcCalOptions(mode diversityMode, window int, rateHz float64) diversity.TrackingOptions {
 	return diversity.TrackingOptions{
 		WindowSamples:  window,
-		Alpha:          mrcTrackAlpha(mode),
+		Alpha:          mrcTrackAlpha(mode, window, rateHz),
 		LockCoherence:  mrcCoherenceLockGate,
 		TrackCoherence: mrcCoherenceTrackGate,
 		MinBranchPower: mrcBranchFloorPower,
@@ -257,7 +270,7 @@ func newMRCCombiner(format sampleFormat, mode diversityMode, rateHz float64) *mr
 	window := mrcCalWindowSamples(rateHz)
 	return &mrcCombiner{
 		window:   window,
-		cal:      diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(mode, window)),
+		cal:      diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(mode, window, rateHz)),
 		mode:     mode,
 		format:   format,
 		channels: diversityChannels,
@@ -354,7 +367,7 @@ func (m *mrcCombiner) setSampleRate(rateHz float64) {
 		return
 	}
 	m.window = want
-	m.cal = diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(m.mode, want))
+	m.cal = diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(m.mode, want, rateHz))
 	m.refIdx = -1
 	m.refDeadDatagrams = 0
 }
