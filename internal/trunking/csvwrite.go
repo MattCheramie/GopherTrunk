@@ -16,15 +16,19 @@ import (
 // lock-in. Round-trip tests pin every column against the matching LoadCSV, so
 // a column that stops loading fails here first.
 
-// talkgroupCSVHeader matches what the import writer emits, so a file exported
-// from a running daemon is interchangeable with one produced by `import`.
-var talkgroupCSVHeader = []string{
+// TalkgroupCSVHeader is the Trunk-Recorder-style column order LoadCSV reads.
+// Exported because `gophertrunk import` writes the same file from a different
+// source type: sharing the header is what keeps a file exported from a running
+// daemon interchangeable with one the importer produced. Two copies of this
+// list can drift apart silently — the wire format is only checkable against
+// LoadCSV, which accepts either.
+var TalkgroupCSVHeader = []string{
 	"Decimal", "Hex", "Mode", "Alpha Tag", "Description", "Tag", "Group",
 	"Priority", "Lockout", "Scan",
 }
 
-// ridCSVHeader lists the columns RIDDB.LoadCSV reads, in catalogue order.
-var ridCSVHeader = []string{
+// RIDCSVHeader lists the columns RIDDB.LoadCSV reads, in catalogue order.
+var RIDCSVHeader = []string{
 	"Decimal", "Alias", "Description", "Tag", "Group", "Owner",
 	"Priority", "Lockout", "Watch", "Icon",
 }
@@ -34,7 +38,7 @@ var ridCSVHeader = []string{
 // zero-length.
 func WriteTalkgroupCSV(w io.Writer, tgs []*TalkGroup) error {
 	cw := csv.NewWriter(w)
-	if err := cw.Write(talkgroupCSVHeader); err != nil {
+	if err := cw.Write(TalkgroupCSVHeader); err != nil {
 		return fmt.Errorf("trunking: write talkgroup csv header: %w", err)
 	}
 	sorted := sortedByID(tgs, func(tg *TalkGroup) uint32 { return tg.ID })
@@ -62,7 +66,7 @@ func WriteTalkgroupCSV(w io.Writer, tgs []*TalkGroup) error {
 // WriteRIDCSV writes rids as a rid_alias_file, sorted by id.
 func WriteRIDCSV(w io.Writer, rids []*RID) error {
 	cw := csv.NewWriter(w)
-	if err := cw.Write(ridCSVHeader); err != nil {
+	if err := cw.Write(RIDCSVHeader); err != nil {
 		return fmt.Errorf("trunking: write rid csv header: %w", err)
 	}
 	sorted := sortedByID(rids, func(r *RID) uint32 { return r.ID })

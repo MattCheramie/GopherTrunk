@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"gopkg.in/yaml.v3"
 )
 
@@ -236,13 +237,17 @@ func collapseTrailingDuplicateWord(name string) string {
 }
 
 // buildTalkgroupCSV produces the Trunk-Recorder-style CSV that the
-// daemon's internal/trunking.TalkgroupDB.LoadCSV understands. Column
-// order matches the loader's case-insensitive lookups.
+// daemon's internal/trunking.TalkgroupDB.LoadCSV understands.
+//
+// The column order comes from trunking.TalkgroupCSVHeader, shared with the
+// label exporter that writes the same file shape from the live catalogue. A
+// second copy of the list here would drift silently: LoadCSV matches columns
+// by name, so it keeps accepting both spellings and nothing fails until an
+// operator diffs two files that should have been interchangeable.
 func buildTalkgroupCSV(sys parsedSystem) ([]byte, error) {
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
-	headers := []string{"Decimal", "Hex", "Mode", "Alpha Tag", "Description", "Tag", "Group", "Priority", "Lockout", "Scan"}
-	if err := w.Write(headers); err != nil {
+	if err := w.Write(trunking.TalkgroupCSVHeader); err != nil {
 		return nil, err
 	}
 	for _, tg := range sys.Talkgroups {

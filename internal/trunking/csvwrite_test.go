@@ -82,7 +82,12 @@ func TestWriteRIDCSVRoundTripsThroughLoadCSV(t *testing.T) {
 
 // The header has to match what `gophertrunk import` writes, or a file exported
 // from a running daemon is not interchangeable with an imported one.
-func TestTalkgroupCSVHeaderMatchesTheImporter(t *testing.T) {
+// The header is the file's contract with LoadCSV, which matches columns by
+// name and would silently keep accepting a renamed one. `gophertrunk import`
+// writes the same shape from its own parsed type and now shares
+// TalkgroupCSVHeader rather than keeping a second copy, so this literal is the
+// one place the spelling is pinned for both.
+func TestTalkgroupCSVHeaderIsTheTrunkRecorderSpelling(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteTalkgroupCSV(&buf, nil); err != nil {
 		t.Fatal(err)
