@@ -43,7 +43,9 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -373,12 +375,28 @@ func (d *device) rpcBestEffort(what string, build func(*packer)) error {
 // applyAntennas sets the RX antenna port for channel i to antennas[i] via
 // SET_ANTENNA (SoapySDR setAntenna). Channels past len(antennas) keep the
 // device default. Called once at Open, after MAKE.
+//
+// Each channel is checked against the device's own LIST_ANTENNAS before the set
+// and read back with GET_ANTENNA after it. Port names are device-specific and
+// do not transfer between radios — a B210 offers "TX/RX" and "RX2" while a
+// TwinRX offers "RX1" and "RX2" — so a config moved between rigs names a port
+// that does not exist, and the failure has to say which names do. The read-back
+// exists because the log line used to assert what GopherTrunk had asked for
+// rather than what the device did.
 func (d *device) applyAntennas(antennas []string) error {
 	for ch, name := range antennas {
 		if name == "" {
 			continue
 		}
 		ch := int32(ch)
+		avail, err := d.listAntennas(ch)
+		if err != nil {
+			return fmt.Errorf("channel %d list antennas: %w", ch, err)
+		}
+		if len(avail) > 0 && !slices.Contains(avail, name) {
+			return fmt.Errorf("channel %d antenna %q is not a port on this device (available: %s)",
+				ch, name, strings.Join(avail, ", "))
+		}
 		if err := d.rpcVoid(func(p *packer) {
 			p.call(callSetAntenna)
 			p.char(dirRX)
@@ -387,9 +405,50 @@ func (d *device) applyAntennas(antennas []string) error {
 		}); err != nil {
 			return fmt.Errorf("channel %d antenna %q: %w", ch, name, err)
 		}
-		d.log.Info("soapyremote: rx antenna set", "addr", d.addr, "channel", ch, "antenna", name)
+		got, err := d.getAntenna(ch)
+		if err != nil {
+			return fmt.Errorf("channel %d antenna %q read back: %w", ch, name, err)
+		}
+		if got != name {
+			return fmt.Errorf("channel %d antenna set to %q but device reports %q", ch, name, got)
+		}
+		d.log.Info("soapyremote: rx antenna set", "addr", d.addr, "channel", ch, "antenna", got)
 	}
 	return nil
+}
+
+// listAntennas returns the RX antenna port names the device advertises for a
+// channel. A driver that reports none yields an empty list, which callers treat
+// as "cannot validate" rather than "nothing is valid".
+func (d *device) listAntennas(ch int32) ([]string, error) {
+	u, err := d.rpc(func(p *packer) {
+		p.call(callListAntennas)
+		p.char(dirRX)
+		p.i32(ch)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := u.checkException(); err != nil {
+		return nil, err
+	}
+	return u.strList()
+}
+
+// getAntenna returns the RX antenna port a channel is currently on.
+func (d *device) getAntenna(ch int32) (string, error) {
+	u, err := d.rpc(func(p *packer) {
+		p.call(callGetAntenna)
+		p.char(dirRX)
+		p.i32(ch)
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := u.checkException(); err != nil {
+		return "", err
+	}
+	return u.str()
 }
 
 func (d *device) SetCenterFreq(hz uint32) error {

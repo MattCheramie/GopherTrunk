@@ -59,6 +59,20 @@ const (
 )
 
 // SoapyRemoteCalls — the subset of RPC call IDs this client issues.
+//
+// These are POSITIONS IN AN UPSTREAM ENUM, not values GopherTrunk gets to
+// choose: the wire carries no schema, so a wrong ID silently invokes a
+// different server handler whose argument shape happens to start the same way.
+// The authority is pothosware/SoapyRemote common/SoapyRemoteDefs.hpp — check
+// any change against it, and note that a unit test using GopherTrunk's own
+// fake server cannot catch a drift here (both sides would read the same wrong
+// constant).
+//
+// This bit us once: callSetAntenna was 600, which is HAS_DC_OFFSET_MODE. Its
+// handler unpacks only (char direction, int channel) and returns a bool, so
+// setAntenna was never called on the device, the leftover antenna-name string
+// made the server log "~SoapyRPCUnpacker: Unconsumed payload bytes 9", and the
+// bool reply passed rpcVoid's exception check as success.
 const (
 	callFind                   int32 = 0
 	callMake                   int32 = 1
@@ -71,7 +85,9 @@ const (
 	callActivateStream         int32 = 302
 	callDeactivateStream       int32 = 303
 	callGetNativeStreamFormat  int32 = 305
-	callSetAntenna             int32 = 600
+	callListAntennas           int32 = 500
+	callSetAntenna             int32 = 501
+	callGetAntenna             int32 = 502
 	callSetFrequencyCorrection int32 = 504
 	callSetGainMode            int32 = 701
 	callSetGain                int32 = 703
@@ -143,6 +159,17 @@ func (p *packer) str(s string) {
 	p.raw8(tString)
 	p.taggedI32(int32(len(s)))
 	p.buf = append(p.buf, s...)
+}
+
+// strList is the mirror of unpacker.strList: the tag, a tagged int32 count,
+// then each string. Only a server packs one, so this is exercised by the fake
+// server that stands in for SoapySDRServer in the tests.
+func (p *packer) strList(v []string) {
+	p.raw8(tStringList)
+	p.taggedI32(int32(len(v)))
+	for _, s := range v {
+		p.str(s)
+	}
 }
 
 func (p *packer) sizeList(v []int) {
@@ -313,6 +340,66 @@ func (u *unpacker) str() (string, error) {
 	u.off += int(n)
 	return s, nil
 }
+
+// strList reads a STRING_LIST value: the tag, a tagged int32 count, then that
+// many strings (SoapyRPCPacker::operator&(const std::vector<std::string> &)).
+func (u *unpacker) strList() ([]string, error) {
+	if err := u.expect(tStringList); err != nil {
+		return nil, err
+	}
+	n, err := u.i32()
+	if err != nil {
+		return nil, err
+	}
+	if n < 0 || int(n) > len(u.buf)-u.off {
+		// Each element costs at least a tag, so a count larger than the
+		// remaining bytes is a malformed frame, not a huge list.
+		return nil, errShortResponse
+	}
+	out := make([]string, 0, n)
+	for i := int32(0); i < n; i++ {
+		s, err := u.str()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// kwargs is the mirror of packer.kwargs. Only a server unpacks one, so this is
+// exercised by the fake server in the tests.
+func (u *unpacker) kwargs() (map[string]string, error) {
+	if err := u.expect(tKwargs); err != nil {
+		return nil, err
+	}
+	n, err := u.i32()
+	if err != nil {
+		return nil, err
+	}
+	if n < 0 || int(n) > len(u.buf)-u.off {
+		return nil, errShortResponse
+	}
+	m := make(map[string]string, n)
+	for i := int32(0); i < n; i++ {
+		k, err := u.str()
+		if err != nil {
+			return nil, err
+		}
+		v, err := u.str()
+		if err != nil {
+			return nil, err
+		}
+		m[k] = v
+	}
+	return m, nil
+}
+
+// remaining is how many payload bytes are still unread. The real server checks
+// this in ~SoapyRPCUnpacker and logs "Unconsumed payload bytes N"; the fake
+// server asserts on it so a client/upstream wire-shape disagreement fails a
+// test instead of a distant operator's log.
+func (u *unpacker) remaining() int { return len(u.buf) - u.off }
 
 // checkException returns a non-nil error if the response leads with a
 // SOAPY_REMOTE_EXCEPTION value (the server's way of reporting a failed call).
