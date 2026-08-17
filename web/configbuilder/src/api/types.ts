@@ -120,6 +120,7 @@ export interface SoapyRemoteConfig {
   Antennas?: string[];
   DiversityCapture: string;
   DiversityCaptureSeconds: number;
+  VerboseDebug: boolean;
 }
 
 export interface Ka9qRadioConfig {

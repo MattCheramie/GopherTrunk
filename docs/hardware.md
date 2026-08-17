@@ -1044,6 +1044,46 @@ opens but never streams, or when the server crashes on a client connect.
 > still reproduce a server crash, please report it upstream at
 > <https://github.com/pothosware/SoapyRemote/issues> with the server-side log.
 
+### Tracing the RPC conversation from GopherTrunk's side
+
+The SoapyRemote wire carries no schema: a message is a call id followed by bare
+tagged values, and the server dispatches on the id alone. When it logs
+
+```text
+[ERROR] ~SoapyRPCUnpacker: Unconsumed payload bytes 9
+```
+
+it is saying "the handler I dispatched to wanted fewer arguments than arrived" —
+and it does not say which call, so from the server log alone you are guessing.
+That guessing is how `SET_ANTENNA` sat on opcode 600 (`HAS_DC_OFFSET_MODE`)
+through a release: the server logged unconsumed bytes, replied with a bool, and
+the bool passed as success while no antenna was ever set.
+
+`verbose_debug` on a `soapy_remote` source logs the other half of the
+conversation — every request and response, decoded, plus the raw frame:
+
+```yaml
+log:
+  level: debug              # the trace is emitted at DEBUG
+sdr:
+  soapy_remote:
+    - addr: 10.110.162.1:23313
+      verbose_debug: true   # diagnostic only; leave off for normal operation
+```
+
+```text
+level=DEBUG msg="soapyremote: rpc >" addr=10.110.162.1:23313 seq=7
+  call=SET_ANTENNA(501) args="call SET_ANTENNA(501), char 0x01, i32 0, str \"RX1\""
+  bytes=41 hex="53 52 50 43 ..."
+level=DEBUG msg="soapyremote: rpc <" addr=10.110.162.1:23313 seq=7
+  call=SET_ANTENNA(501) args="void" bytes=1 hex="0e"
+```
+
+The decoded `args` are the useful part: line them up against the matching
+handler in upstream's `common/ClientHandler.cpp` and an argument-shape or
+opcode mismatch is visible directly. The `seq` pairs a request with its reply.
+It is per endpoint, so a multi-radio config can trace one server at a time.
+
 ## USB disconnect recovery
 
 A dongle that physically disconnects from the USB bus mid-run (flaky

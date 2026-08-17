@@ -7,6 +7,31 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **Ctrl-C no longer takes 30 seconds.** `Daemon.Close` stops the HTTP server
+  first, and `http.Server.Shutdown` waits for active non-hijacked requests
+  without cancelling them — so an attached SSE / live-audio / siglab subscriber
+  held the whole 30 s drain window open, while the bus that would have ended
+  those handlers is closed at the very end of teardown. The server now signals
+  its streaming handlers at the top of shutdown; the 30 s is a cap for a handler
+  that misses the signal, and reaching it logs a WARN instead of passing as a
+  clean exit. `GRPCServer.Stop` is bounded too (an open `StreamAudio` made
+  `GracefulStop` wait forever), and each teardown stage that owns goroutines,
+  sockets or hardware now names itself in the log when it runs slow.
+- **The SoapyRemote and rtl_tcp stream read loops honour ctx cancel.** Both
+  checked `ctx.Done()` only between reads and then parked in `io.ReadFull`
+  behind a 30 s deadline, so a cancel arriving while the server was quiet — the
+  normal state at shutdown — was not seen until that deadline expired.
+- **Call history search by talkgroup returns rows.** The web client read the
+  wrong key off the `/api/v1/calls/history` response (`rows` instead of
+  `calls`) and fell back to an empty list, so the History panel had rendered
+  "No calls in the daemon's call log for this filter" for every query since the
+  file was written. The daemon, the filter and the SQL were all correct.
+- **Call-history rows carry `algorithm_id`, `key_id` and `source_alpha`.** The
+  storage row held them and the SPA already declared them, but the API DTO
+  dropped all three, so the History table's Source column and its encryption
+  badge could never populate.
+
 ### Security
 - **Bumped the Go toolchain to 1.25.13 and `golang.org/x/net` to v0.55.0** to
   clear the CVEs govulncheck reports against the pinned toolchain: seven Go
@@ -17,6 +42,13 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **`sdr.soapy_remote[].verbose_debug` traces the RPC conversation.** Logs every
+  control-channel request and response to that server — decoded call name and
+  arguments plus a hex dump of the frame — at DEBUG. The SoapyRemote wire
+  carries no schema, so a server-side `~SoapyRPCUnpacker: Unconsumed payload
+  bytes N` never says WHICH call was mis-shaped; this is the other half of that
+  conversation, and the decoded arguments line up directly against upstream's
+  `ClientHandler.cpp`. Per endpoint, off by default, needs `log.level: debug`.
 - **SoapyRemote: experimental phase-coherent MRC diversity over two RX channels.**
   A new `diversity: mrc` option on a `soapy_remote` source opens RX channels 0
   and 1 and phase-coherently maximal-ratio-combines them into one maximised-SNR

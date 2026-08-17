@@ -818,6 +818,14 @@ type SoapyRemoteConfig struct {
 	// at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short. A 1 GiB
 	// per-branch cap applies regardless.
 	DiversityCaptureSeconds int `yaml:"diversity_capture_seconds"`
+	// VerboseDebug logs every control-channel RPC exchanged with this
+	// SoapySDRServer — decoded call name and arguments plus a hex dump of the
+	// frame — at DEBUG level. The SoapyRemote wire carries no schema, so when
+	// the server reports "~SoapyRPCUnpacker: Unconsumed payload bytes N" it
+	// does not say which call was mis-shaped; this trace is the other half of
+	// that conversation. Off by default, and per endpoint so a multi-radio
+	// config can follow one server. Needs log.level: debug to be visible.
+	VerboseDebug bool `yaml:"verbose_debug"`
 }
 
 // parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument

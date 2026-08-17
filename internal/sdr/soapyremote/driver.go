@@ -127,6 +127,11 @@ type Spec struct {
 	// DiversityCaptureSeconds bounds that dump; <=0 selects
 	// defaultDiversityCaptureSeconds.
 	DiversityCaptureSeconds int
+	// VerboseDebug logs every control-channel RPC request and response —
+	// decoded arguments plus a hex dump of the frame — at DEBUG. Off by
+	// default; the trace is per endpoint so a multi-radio config can follow
+	// one server. See rpcdebug.go.
+	VerboseDebug bool
 }
 
 // Driver implements sdr.Driver over a set of SoapySDRServer endpoints.
@@ -244,6 +249,11 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		dev.capturePrefix = spec.DiversityCapture
 		dev.captureSeconds = spec.DiversityCaptureSeconds
 	}
+	if spec.VerboseDebug {
+		dev.tracer = newRPCTracer(d.log, addr)
+		d.log.Info("soapyremote: verbose RPC debug enabled — every control-channel "+
+			"frame is logged at DEBUG (needs log.level: debug)", "addr", addr)
+	}
 	// Create the remote device.
 	if err := dev.rpcVoid(func(p *packer) {
 		p.call(callMake)
@@ -307,6 +317,10 @@ type device struct {
 	capturePrefix  string
 	captureSeconds int
 
+	// tracer logs every RPC frame when Spec.VerboseDebug is set; nil otherwise.
+	// Set once at Open, read-only thereafter, and nil-safe at every call site.
+	tracer *rpcTracer
+
 	mu         sync.Mutex
 	conn       net.Conn // RPC control socket
 	dataConn   net.Conn // stream data socket (set in StreamIQ)
@@ -365,12 +379,13 @@ func (d *device) rpc(build func(*packer)) (*unpacker, error) {
 	if d.closed || d.conn == nil {
 		return nil, errClosed
 	}
-	p := newPacker()
+	p := newTracedPacker(d.tracer)
 	build(p)
+	id := p.callID()
 	if err := p.writeTo(d.conn, d.timeout); err != nil {
 		return nil, err
 	}
-	return readResponse(d.conn, d.timeout)
+	return readResponseTraced(d.conn, d.timeout, d.tracer, p.seq, id)
 }
 
 // rpcVoid issues a call whose only meaningful response is success/exception.
@@ -808,7 +823,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 
 	// (1) SETUP_STREAM. clientBindPort/statusBindPort are unused in TCP mode
 	// (the client dials the server), so "0" is sent for both.
-	p := newPacker()
+	p := newTracedPacker(d.tracer)
 	p.call(callSetupStream)
 	p.char(dirRX)
 	p.str(d.format.soapyName())
@@ -837,7 +852,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	}
 
 	// (2) Reply #1: the server's bound data port.
-	u, err := readResponse(d.conn, streamSetupTimeout)
+	u, err := readResponseTraced(d.conn, streamSetupTimeout, d.tracer, p.seq, callSetupStream)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -868,7 +883,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	}
 
 	// (4) Reply #2: the int stream id (and a repeated port string we ignore).
-	u2, err := readResponse(d.conn, streamSetupTimeout)
+	u2, err := readResponseTraced(d.conn, streamSetupTimeout, d.tracer, p.seq, callSetupStream)
 	if err != nil {
 		dataConn.Close()
 		statusConn.Close()

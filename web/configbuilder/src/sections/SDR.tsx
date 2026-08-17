@@ -121,7 +121,7 @@ export function SDRSection() {
           label="soapy_remote endpoints"
           items={cfg.SoapyRemote}
           onChange={(x) => set({ ...cfg, SoapyRemote: x })}
-          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", StreamMTU: 0, StreamWindow: 0, PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0, Diversity: "", DiversityCapture: "", DiversityCaptureSeconds: 0 })}
+          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", StreamMTU: 0, StreamWindow: 0, PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0, Diversity: "", DiversityCapture: "", DiversityCaptureSeconds: 0, VerboseDebug: false })}
           itemTitle={(s) => s.Addr || "soapy_remote"}
           emptyHint="SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, …)."
           renderItem={(s, set) => (
@@ -190,6 +190,11 @@ export function SDRSection() {
                 value={s.DiversityCaptureSeconds}
                 onChange={(v) => set({ ...s, DiversityCaptureSeconds: v })}
                 placeholder="0 = 5 s (1..60)"
+              />
+              <BoolField
+                label="Verbose RPC debug"
+                value={s.VerboseDebug}
+                onChange={(v) => set({ ...s, VerboseDebug: v })}
               />
             </div>
           )}

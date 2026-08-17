@@ -1119,6 +1119,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 
 					DiversityCapture:        s.DiversityCapture,
 					DiversityCaptureSeconds: s.DiversityCaptureSeconds,
+					VerboseDebug:            s.VerboseDebug,
 				})
 				if s.Serial != "" {
 					h := sdr.Hint{

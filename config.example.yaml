@@ -633,6 +633,15 @@ sdr:
   #                                 #  through a different combiner. Needs mrc.
   #     diversity_capture_seconds: 0 # length of that dump, 1..60 (0 = 5 s). Two
   #                                 #  CS16 branches run to tens of MB/s.
+  #     verbose_debug: false        # log every control-channel RPC to this
+  #                                 #  server — decoded call name and arguments
+  #                                 #  plus a hex dump of the frame — at DEBUG.
+  #                                 #  The SoapyRemote wire carries no schema, so
+  #                                 #  a server-side "~SoapyRPCUnpacker:
+  #                                 #  Unconsumed payload bytes N" never says
+  #                                 #  WHICH call was mis-shaped; this is the
+  #                                 #  other half of that conversation. Needs
+  #                                 #  log.level: debug. Diagnostic only.
 
   # ka9q-radio channels. radiod (https://github.com/ka9q/ka9q-radio)
   # runs fast-convolution downconverters on a front end (RX888, Airspy,
