@@ -160,6 +160,10 @@ func TestSpectrumStreamRejects503WhenNotWired(t *testing.T) {
 
 func TestSpectrumStreamDeliversFrames(t *testing.T) {
 	prov := &fakeSpectrumProvider{
+		// The handler resolves the device before upgrading, so the fake has to
+		// advertise the serial the test dials — as a real provider does, since
+		// Devices() and the stream lookup read the same broker map.
+		devices: []SpectrumDevice{{Serial: "any"}},
 		frames: []SpectrumFrame{
 			{TimestampNs: 1, CenterHz: 100, SampleRateHz: 200, Bins: []float32{-50, -40, -30}},
 			{TimestampNs: 2, CenterHz: 100, SampleRateHz: 200, Bins: []float32{-45, -35, -25}},

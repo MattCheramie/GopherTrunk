@@ -781,10 +781,20 @@ type SoapyRemoteConfig struct {
 	// Diversity selects a spatial-diversity combiner over a multi-channel RX
 	// stream. "" / "none" (default) streams a single channel. "mrc" opens RX
 	// channels 0 and 1 and phase-coherently combines them into one maximised-SNR
-	// stream — for shared-LO front-ends only (USRP B210 / AD9361 and clones),
-	// whose RX0↔RX1 phase relationship is a constant per tune. EXPERIMENTAL
-	// (issue #1062): the 2-channel wire de-interleave is not yet confirmed on a
-	// live dual-RX server.
+	// stream, re-estimating the branch gain from the stream and smoothing it, so
+	// it suits both a shared-LO front-end (USRP B210 / AD9361, where the branch
+	// phase really is a constant) and two receivers on separate daughterboards
+	// with independent PLLs (a USRP X310 with two TwinRX cards), whose relative
+	// phase is random at each lock and walks afterwards.
+	//
+	// "mrc-static" is the escape hatch: the same combine with a ONE-SHOT frozen
+	// gain, for comparing against the pre-tracking behaviour on hardware where
+	// the constant is genuinely constant.
+	//
+	// Whether the combine helps at all is reported as "coherence" in the
+	// periodic MRC log line — |rho| between the branches, which is independent
+	// of RF gain. Raising gain to make diversity engage is never the answer.
+	// EXPERIMENTAL (issue #1062).
 	Diversity string `yaml:"diversity"`
 	// Antennas selects the RX antenna port per channel (SoapySDR setAntenna),
 	// applied in channel order after the device opens — antennas[0] to RX
@@ -795,6 +805,19 @@ type SoapyRemoteConfig struct {
 	// device default. More than one entry requires diversity: mrc (only one RX
 	// channel is opened otherwise).
 	Antennas []string `yaml:"antennas"`
+	// DiversityCapture, when non-empty, is a path PREFIX under which the driver
+	// writes a one-shot raw dump of the PRE-COMBINE per-branch IQ streams:
+	// <prefix>.br0.cs16, <prefix>.br1.cs16 and a <prefix>.diversity.json
+	// sidecar. Every other IQ tap in GopherTrunk sits downstream of the
+	// combiner, so a capture taken anywhere else has already had one particular
+	// combiner applied and cannot be replayed through a different one — this is
+	// the only tap that can answer "would a different combiner have done
+	// better on this signal?" offline. Requires diversity: mrc or mrc-static.
+	DiversityCapture string `yaml:"diversity_capture"`
+	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s. Two CS16 branches
+	// at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short. A 1 GiB
+	// per-branch cap applies regardless.
+	DiversityCaptureSeconds int `yaml:"diversity_capture_seconds"`
 }
 
 // parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument

@@ -43,7 +43,9 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +115,13 @@ type Spec struct {
 	// in the flat DeviceArgs kwargs string, so per-channel antenna routing (e.g.
 	// an X310's RX1/RX2 under MRC) goes here instead of args.
 	Antennas []string
+	// DiversityCapture is a path prefix under which the driver dumps the
+	// PRE-COMBINE per-branch IQ once per stream (see branchcapture.go). Empty
+	// disables it. Only meaningful with Diversity set.
+	DiversityCapture string
+	// DiversityCaptureSeconds bounds that dump; <=0 selects
+	// defaultDiversityCaptureSeconds.
+	DiversityCaptureSeconds int
 }
 
 // Driver implements sdr.Driver over a set of SoapySDRServer endpoints.
@@ -174,7 +183,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	if proto != "tcp" {
 		return nil, fmt.Errorf("soapyremote: stream_protocol %q not supported (only \"tcp\")", proto)
 	}
-	diversity, err := parseDiversity(spec.Diversity)
+	divMode, err := parseDiversity(spec.Diversity)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +221,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		window:     window,
 		windowSeqs: windowSeqs,
 		ackTrigger: windowSeqs / streamNumBuffs,
-		diversity:  diversity,
+		diversity:  divMode,
 		info: sdr.Info{
 			Driver:    DriverName,
 			Index:     idx,
@@ -222,8 +231,13 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 			Gains:     genericGainLadder(),
 		},
 	}
-	if diversity {
-		dev.mrc = newMRCCombiner(format)
+	if divMode.enabled() {
+		// The calibration window is sized from stream time, so the combiner needs
+		// the rate. It is not programmed yet at Open; StreamIQ re-sizes the window
+		// once the delivered rate is known.
+		dev.mrc = newMRCCombiner(format, divMode, 0)
+		dev.capturePrefix = spec.DiversityCapture
+		dev.captureSeconds = spec.DiversityCaptureSeconds
 	}
 	// Create the remote device.
 	if err := dev.rpcVoid(func(p *packer) {
@@ -249,10 +263,10 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		"addr", addr,
 		"format", format.soapyName(),
 		"proto", proto,
-		"diversity", diversity)
-	if diversity {
-		d.log.Info("soapyremote: MRC diversity enabled — RX0+RX1 phase-coherent combine (experimental, shared-LO only)",
-			"addr", addr)
+		"diversity", divMode.String())
+	if divMode.enabled() {
+		d.log.Info("soapyremote: MRC diversity enabled — RX0+RX1 phase-coherent combine (experimental)",
+			"addr", addr, "mode", divMode.String())
 	}
 	return dev, nil
 }
@@ -276,12 +290,17 @@ type device struct {
 	windowSeqs uint32
 	ackTrigger uint32
 
-	// diversity is true when this device runs phase-coherent MRC over RX0+RX1;
-	// mrc is then the combiner that turns the 2-channel stream into one. Both
-	// are set once at Open and read-only thereafter. mrc is nil in the ordinary
-	// single-channel case. Issue #1062.
-	diversity bool
+	// diversity selects phase-coherent MRC over RX0+RX1; mrc is then the
+	// combiner that turns the 2-channel stream into one. Both are set once at
+	// Open and read-only thereafter. mrc is nil in the ordinary single-channel
+	// case. Issue #1062.
+	diversity diversityMode
 	mrc       *mrcCombiner
+
+	// capturePrefix/captureSeconds configure the one-shot pre-combine branch
+	// dump; empty prefix disables it. Set once at Open.
+	capturePrefix  string
+	captureSeconds int
 
 	mu         sync.Mutex
 	conn       net.Conn // RPC control socket
@@ -294,7 +313,7 @@ type device struct {
 // rxChannelCount is the number of RX channels the stream requests: 1 normally,
 // diversityChannels (2) under MRC diversity.
 func (d *device) rxChannelCount() int {
-	if d.diversity {
+	if d.diversity.enabled() {
 		return diversityChannels
 	}
 	return 1
@@ -373,12 +392,28 @@ func (d *device) rpcBestEffort(what string, build func(*packer)) error {
 // applyAntennas sets the RX antenna port for channel i to antennas[i] via
 // SET_ANTENNA (SoapySDR setAntenna). Channels past len(antennas) keep the
 // device default. Called once at Open, after MAKE.
+//
+// Each channel is checked against the device's own LIST_ANTENNAS before the set
+// and read back with GET_ANTENNA after it. Port names are device-specific and
+// do not transfer between radios — a B210 offers "TX/RX" and "RX2" while a
+// TwinRX offers "RX1" and "RX2" — so a config moved between rigs names a port
+// that does not exist, and the failure has to say which names do. The read-back
+// exists because the log line used to assert what GopherTrunk had asked for
+// rather than what the device did.
 func (d *device) applyAntennas(antennas []string) error {
 	for ch, name := range antennas {
 		if name == "" {
 			continue
 		}
 		ch := int32(ch)
+		avail, err := d.listAntennas(ch)
+		if err != nil {
+			return fmt.Errorf("channel %d list antennas: %w", ch, err)
+		}
+		if len(avail) > 0 && !slices.Contains(avail, name) {
+			return fmt.Errorf("channel %d antenna %q is not a port on this device (available: %s)",
+				ch, name, strings.Join(avail, ", "))
+		}
 		if err := d.rpcVoid(func(p *packer) {
 			p.call(callSetAntenna)
 			p.char(dirRX)
@@ -387,9 +422,50 @@ func (d *device) applyAntennas(antennas []string) error {
 		}); err != nil {
 			return fmt.Errorf("channel %d antenna %q: %w", ch, name, err)
 		}
-		d.log.Info("soapyremote: rx antenna set", "addr", d.addr, "channel", ch, "antenna", name)
+		got, err := d.getAntenna(ch)
+		if err != nil {
+			return fmt.Errorf("channel %d antenna %q read back: %w", ch, name, err)
+		}
+		if got != name {
+			return fmt.Errorf("channel %d antenna set to %q but device reports %q", ch, name, got)
+		}
+		d.log.Info("soapyremote: rx antenna set", "addr", d.addr, "channel", ch, "antenna", got)
 	}
 	return nil
+}
+
+// listAntennas returns the RX antenna port names the device advertises for a
+// channel. A driver that reports none yields an empty list, which callers treat
+// as "cannot validate" rather than "nothing is valid".
+func (d *device) listAntennas(ch int32) ([]string, error) {
+	u, err := d.rpc(func(p *packer) {
+		p.call(callListAntennas)
+		p.char(dirRX)
+		p.i32(ch)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := u.checkException(); err != nil {
+		return nil, err
+	}
+	return u.strList()
+}
+
+// getAntenna returns the RX antenna port a channel is currently on.
+func (d *device) getAntenna(ch int32) (string, error) {
+	u, err := d.rpc(func(p *packer) {
+		p.call(callGetAntenna)
+		p.char(dirRX)
+		p.i32(ch)
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := u.checkException(); err != nil {
+		return "", err
+	}
+	return u.str()
 }
 
 func (d *device) SetCenterFreq(hz uint32) error {
@@ -635,9 +711,13 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	samplesPerChunk := (d.mtu - streamHeaderSize) / (d.format.bytesPerSample() * d.rxChannelCount())
 	out := make(chan []complex64, streamBufferDepth(rate, samplesPerChunk))
 	// Re-arm the MRC calibration for this fresh stream so it re-estimates the
-	// phase constant rather than reusing a stale one from a prior stream.
+	// gain rather than reusing a stale one from a prior stream, and size its
+	// estimation window from the rate now that one is known (the window is
+	// specified in stream time, so it must not depend on the MTU).
 	if d.mrc != nil {
+		d.mrc.setSampleRate(float64(rate))
 		d.mrc.requestRecalibrate()
+		d.startBranchCapture(float64(rate))
 	}
 	go d.streamLoop(ctx, dataConn, streamID, out)
 	return out, nil
@@ -730,7 +810,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	// Channel list: [0] normally, [0,1] under MRC diversity so the server
 	// streams both RX channels interleaved for phase-coherent combining.
 	chans := []int{0}
-	if d.diversity {
+	if d.diversity.enabled() {
 		chans = []int{0, 1}
 	}
 	p.sizeList(chans)

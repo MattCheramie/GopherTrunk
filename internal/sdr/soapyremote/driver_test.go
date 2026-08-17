@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -70,6 +72,30 @@ type fakeSoapyServer struct {
 
 	// antennas records (channel, name) pairs seen on SET_ANTENNA.
 	antennas []antennaSet
+	// availAntennas is what LIST_ANTENNAS reports for every channel, and the
+	// set SET_ANTENNA accepts. Empty means the default TwinRX-style pair.
+	availAntennas []string
+	// curAntenna is the per-channel state GET_ANTENNA reads back.
+	curAntenna map[int32]string
+
+	// protocolErrs records requests the server could not account for: an
+	// unrecognised call id, or a body with bytes left over after the handler
+	// parsed its arguments. The real SoapySDRServer reports the latter from
+	// ~SoapyRPCUnpacker ("Unconsumed payload bytes N") and otherwise carries on.
+	//
+	// This catches ARGUMENT-SHAPE drift — a call packing fields its handler does
+	// not take. It cannot catch OPCODE drift on its own: this fake switches on
+	// the same constants the client packs, so if a constant is wrong both sides
+	// move together and agree. That is exactly how SET_ANTENNA=600 survived a
+	// release. Opcodes are pinned separately, against upstream literals, in
+	// TestOpenSetAntennaUsesUpstreamOpcode.
+	protocolErrs []protocolErr
+}
+
+type protocolErr struct {
+	id        int32
+	leftover  int
+	unknownID bool
 }
 
 type antennaSet struct {
@@ -109,6 +135,9 @@ func newFakeSoapyServer(t *testing.T) *fakeSoapyServer {
 	s := &fakeSoapyServer{t: t, ln: ln}
 	go s.acceptLoop()
 	t.Cleanup(func() { _ = ln.Close() })
+	// Every test that drives the fake server gets the wire-shape check for
+	// free, so a new or edited call has to account for its own bytes.
+	t.Cleanup(func() { s.assertCleanProtocol(t) })
 	return s
 }
 
@@ -199,7 +228,55 @@ func readSetupStreamKwargs(u *unpacker) ([]int, map[string]string, error) {
 		}
 		m[k] = v
 	}
+	if _, err := u.str(); err != nil { // clientBindPort
+		return nil, nil, err
+	}
+	if _, err := u.str(); err != nil { // statusBindPort
+		return nil, nil, err
+	}
 	return channels, m, nil
+}
+
+// antennaPorts is what the fake device advertises and accepts. Defaults to the
+// TwinRX pair; a test can set availAntennas to model a different front-end
+// (a B210 reports "TX/RX" and "RX2", so a name that is valid on one radio is
+// rejected on the other).
+func (s *fakeSoapyServer) antennaPorts() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.availAntennas) == 0 {
+		return []string{"RX1", "RX2"}
+	}
+	return append([]string(nil), s.availAntennas...)
+}
+
+func (s *fakeSoapyServer) noteProtocolErr(e protocolErr) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.protocolErrs = append(s.protocolErrs, e)
+}
+
+// protocolErrors returns every request the server could not fully account for.
+// A passing driver test must leave this empty.
+func (s *fakeSoapyServer) protocolErrors() []protocolErr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]protocolErr(nil), s.protocolErrs...)
+}
+
+// assertCleanProtocol fails the test if the server saw an unknown call id or a
+// request body with unconsumed bytes.
+func (s *fakeSoapyServer) assertCleanProtocol(t *testing.T) {
+	t.Helper()
+	for _, e := range s.protocolErrors() {
+		if e.unknownID {
+			t.Errorf("server saw unknown call id %d", e.id)
+			continue
+		}
+		t.Errorf("call id %d left %d unconsumed payload bytes — the client packed "+
+			"arguments this call does not take (check the id against upstream "+
+			"SoapyRemoteDefs.hpp)", e.id, e.leftover)
+	}
 }
 
 // recordedActivates returns the ACTIVATE_STREAM calls seen so far, with their
@@ -256,6 +333,7 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			_, _ = u.char()
 			rec.ch, _ = u.i32()
 			rec.freqHz, _ = u.f64()
+			_, _ = u.kwargs() // tune args
 		case callSetFrequencyCorrection:
 			_, _ = u.char()
 			rec.ch, _ = u.i32()
@@ -292,6 +370,8 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 				}
 			}
 		case callGetNativeStreamFormat:
+			_, _ = u.char() // direction
+			_, _ = u.i32()  // channel
 			reply = func(p *packer) {
 				p.str("CS16")
 				p.f64(1.0)
@@ -325,9 +405,36 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			_, _ = u.char() // direction
 			ch, _ := u.i32()
 			name, _ := u.str()
+			if !slices.Contains(s.antennaPorts(), name) {
+				reply = func(p *packer) {
+					p.raw8(tException)
+					p.str("RuntimeError: setAntenna(" + name + "): unknown antenna name")
+				}
+				break
+			}
 			s.mu.Lock()
 			s.antennas = append(s.antennas, antennaSet{ch: ch, name: name})
+			if s.curAntenna == nil {
+				s.curAntenna = map[int32]string{}
+			}
+			s.curAntenna[ch] = name
 			s.mu.Unlock()
+		case callListAntennas:
+			_, _ = u.char() // direction
+			_, _ = u.i32()  // channel
+			ports := s.antennaPorts()
+			reply = func(p *packer) { p.strList(ports) }
+		case callGetAntenna:
+			_, _ = u.char() // direction
+			ch, _ := u.i32()
+			s.mu.Lock()
+			cur, ok := s.curAntenna[ch]
+			s.mu.Unlock()
+			if !ok {
+				// Driver default before anything set it, as a real device reports.
+				cur = s.antennaPorts()[0]
+			}
+			reply = func(p *packer) { p.str(cur) }
 		case callGetHardwareTime:
 			_, _ = u.str() // clock qualifier ("")
 			s.mu.Lock()
@@ -342,8 +449,27 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			} else {
 				reply = func(p *packer) { p.i64(hw) }
 			}
+		case callMake:
+			_, _ = u.kwargs()
+		case callWriteSetting:
+			_, _ = u.str() // key
+			_, _ = u.str() // value
+		case callDeactivateStream:
+			_, _ = u.i32() // streamId
+			_, _ = u.i32() // flags
+			_, _ = u.i64() // timeNs
+		case callCloseStream:
+			_, _ = u.i32() // streamId
 		default:
-			// MAKE, DEACTIVATE, CLOSE, WRITE_SETTING, FREQ_CORRECTION, ...
+			s.noteProtocolErr(protocolErr{id: id, unknownID: true})
+		}
+
+		// Every request the client sends must be fully accounted for, exactly as
+		// the real server's ~SoapyRPCUnpacker checks. A leftover means the client
+		// packed arguments this call id does not take — i.e. it is talking to a
+		// different handler than it thinks.
+		if left := u.remaining(); left > 0 {
+			s.noteProtocolErr(protocolErr{id: id, leftover: left})
 		}
 
 		// Record before responding (and before signalling activate) so the
@@ -489,6 +615,79 @@ func TestOpenAppliesPerChannelAntennas(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("antenna[%d] = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// TestOpenSetAntennaUsesUpstreamOpcode is the failing-first regression for the
+// wire-id bug: SET_ANTENNA was 600 (HAS_DC_OFFSET_MODE), whose handler takes
+// only (direction, channel). The antenna name string was left unconsumed, the
+// real server logged "~SoapyRPCUnpacker: Unconsumed payload bytes 9" once per
+// channel, and setAntenna never ran — so the radio silently kept its default
+// port. Both halves are asserted: the numeric opcode against upstream, and
+// that the server accounted for every byte the client sent.
+func TestOpenSetAntennaUsesUpstreamOpcode(t *testing.T) {
+	// Values from pothosware/SoapyRemote common/SoapyRemoteDefs.hpp. Written as
+	// literals on purpose: comparing the constant to itself proves nothing.
+	for _, tc := range []struct {
+		name string
+		got  int32
+		want int32
+	}{
+		{"LIST_ANTENNAS", callListAntennas, 500},
+		{"SET_ANTENNA", callSetAntenna, 501},
+		{"GET_ANTENNA", callGetAntenna, 502},
+		{"SET_FREQUENCY_CORRECTION", callSetFrequencyCorrection, 504},
+		{"SET_GAIN_MODE", callSetGainMode, 701},
+		{"SET_GAIN", callSetGain, 703},
+		{"SET_FREQUENCY", callSetFrequency, 800},
+		{"SET_SAMPLE_RATE", callSetSampleRate, 900},
+		{"GET_SAMPLE_RATE", callGetSampleRate, 901},
+		{"GET_HARDWARE_TIME", callGetHardwareTime, 1101},
+		{"WRITE_SETTING", callWriteSetting, 1400},
+		{"SETUP_STREAM", callSetupStream, 300},
+		{"CLOSE_STREAM", callCloseStream, 301},
+		{"ACTIVATE_STREAM", callActivateStream, 302},
+		{"DEACTIVATE_STREAM", callDeactivateStream, 303},
+		{"GET_NATIVE_STREAM_FORMAT", callGetNativeStreamFormat, 305},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s opcode = %d, want %d (upstream SoapyRemoteDefs.hpp)", tc.name, tc.got, tc.want)
+		}
+	}
+
+	srv := newFakeSoapyServer(t)
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc", Antennas: []string{"RX1", "RX2"}}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+}
+
+// TestOpenRejectsAntennaNotOnDevice pins that a port name the device does not
+// advertise fails Open with the available names. Port names do not transfer
+// between radios — "RX1" is a TwinRX port and does not exist on a B210, which
+// offers "TX/RX" and "RX2" — so a config moved between rigs must say so rather
+// than silently receive on the wrong connector.
+func TestOpenRejectsAntennaNotOnDevice(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	srv.availAntennas = []string{"TX/RX", "RX2"} // a B210 front-end
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", Diversity: "mrc", Antennas: []string{"RX1", "RX2"}}}, testLogger())
+	dev, err := drv.Open(0)
+	if err == nil {
+		dev.Close()
+		t.Fatal("Open succeeded with an antenna the device does not have")
+	}
+	for _, want := range []string{"RX1", "TX/RX", "RX2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Open error %q does not mention %q", err, want)
+		}
+	}
+	srv.mu.Lock()
+	n := len(srv.antennas)
+	srv.mu.Unlock()
+	if n != 0 {
+		t.Errorf("SET_ANTENNA issued %d times for a rejected name, want 0", n)
 	}
 }
 
@@ -922,8 +1121,11 @@ func TestStreamIQDiversityRecoversWhenRX0IsDead(t *testing.T) {
 		}
 		// The combined stream must carry RX1's signal, not RX0's noise. Compare
 		// power: the old behaviour emitted the dead branch verbatim (~-60 dBFS).
-		if p := refPowerDbFS(got); p < mrcCalFloorDbFS {
-			t.Errorf("combined power = %.1f dBFS with a dead RX0 and a live RX1; want the live branch (≥ %.1f dBFS). The combiner is still anchored on RX0.", p, mrcCalFloorDbFS)
+		// -40 dBFS is a literal here, not a shared constant: it is just a level
+		// comfortably between the dead branch (~-60) and the live one (~-6).
+		const liveFloorDbFS = -40.0
+		if p := refPowerDbFS(got); p < liveFloorDbFS {
+			t.Errorf("combined power = %.1f dBFS with a dead RX0 and a live RX1; want the live branch (≥ %.1f dBFS). The combiner is still anchored on RX0.", p, liveFloorDbFS)
 		}
 		for i, want := range live {
 			if absDiff(got[i], want) > 2e-2 {

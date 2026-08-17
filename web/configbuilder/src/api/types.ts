@@ -118,6 +118,8 @@ export interface SoapyRemoteConfig {
   ConnectTimeoutMs: number;
   Diversity: string;
   Antennas?: string[];
+  DiversityCapture: string;
+  DiversityCaptureSeconds: number;
 }
 
 export interface Ka9qRadioConfig {

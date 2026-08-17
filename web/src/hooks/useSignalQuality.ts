@@ -37,7 +37,13 @@ export function useSignalQuality(): SignalQualityState {
   const dibitsRef = useRef<number[]>([]);
   const softRef = useRef<number[]>([]);
 
-  // Enumerate SDRs once and pick one (control-role default, or ?device=).
+  // Enumerate SDRs and pick one (control-role default, or ?device=).
+  //
+  // `epoch` forces a re-enumeration when the open stream gives up on the
+  // selected serial. Without it, `selected` was set once and never reconciled:
+  // after a daemon restart with different hardware the panel kept asking for a
+  // device that no longer existed, forever.
+  const [epoch, setEpoch] = useState(0);
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -45,7 +51,11 @@ export function useSignalQuality(): SignalQualityState {
         const list = await fetchSpectrumDevices(cfg);
         if (cancel) return;
         setDevices(list);
-        if (selected == null) {
+        // Re-pick when nothing is selected yet, or when the selection is no
+        // longer one of the daemon's devices.
+        const stale =
+          selected != null && !list.some((d) => d.serial === selected);
+        if (selected == null || stale) {
           setSelected(
             initialDeviceSerial(list, targetDevice, defaultSymbolDevice),
           );
@@ -57,7 +67,7 @@ export function useSignalQuality(): SignalQualityState {
     return () => {
       cancel = true;
     };
-  }, [cfg, selected, targetDevice]);
+  }, [cfg, selected, targetDevice, epoch]);
 
   const device = useMemo(
     () => devices.find((d) => d.serial === selected) ?? null,
@@ -79,7 +89,10 @@ export function useSignalQuality(): SignalQualityState {
       serial: selected,
       proto,
       offset,
-      onStatus: setStatus,
+      onStatus: (s) => setStatus(s === "gone" ? "closed" : s),
+      // The stream gave up on this serial; go re-read the device list and pick
+      // whatever the daemon is actually running now.
+      onGone: () => setEpoch((n) => n + 1),
       onFrame: (f) => {
         const sb = softRef.current.concat(f.soft ?? []);
         const db = dibitsRef.current.concat(f.dibits ?? []);

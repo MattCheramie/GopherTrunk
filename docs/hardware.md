@@ -845,29 +845,95 @@ needs, RX1 on channel 0 and RX2 on channel 1:
 (only one RX channel is opened otherwise). Setting both `antennas:` and
 `antenna=` in `args` is rejected — pick one.
 
+Port names are device-specific and do **not** transfer between radios: a B210
+offers `TX/RX` and `RX2`, a TwinRX offers `RX1` and `RX2`. GopherTrunk checks the
+requested name against the device's own `listAntennas` and fails to open naming
+the ports that exist, then reads the antenna back after setting it — so the log
+line reports what the radio did, not what was asked for.
+
 **Checking that both diversity branches are alive.** Under `diversity: mrc`
 GopherTrunk logs a per-branch line when the stream starts and every 30 s
 afterwards:
 
 ```
-soapyremote: MRC diversity branches addr=… branch_dbfs="ch0=-31.2 ch1=-33.8" reference_branch=0 calibrated=true
+soapyremote: MRC diversity branches addr=… branch_dbfs="ch0=-31.2 ch1=-33.8" \
+  reference_branch=0 calibrated=true coherence=0.93 branch_gain_db=-1.8 \
+  branch_phase_deg=41.2 mode=tracking updates=812 holds=3
 ```
 
-Both branches should sit within a few dB of each other. If one is far down, the
-line becomes a WARN naming the dead branch — that is an antenna, connector, or
-per-channel-gain problem on that receiver, not a decode problem. A WARN about
-receiving fewer channels than requested means the remote streamed only one
-channel despite the 2-channel request: check the device really has a second RX
-channel and that the `SoapySDRServer` accepted the request (its debug log is in
-the diagnostics note below). Note that the second receiver is gained
-automatically — `gain:` is applied to every open RX channel, so a diversity
-branch is never left at the driver default.
+Read it in this order:
+
+- **`coherence`** is the one that matters. It is |rho| between the two branches
+  — normalised, so it is **independent of RF gain** — and it answers "are these
+  two receivers seeing the same signal?". Roughly, |rho| = SNR/(1+SNR), so 0.5 is
+  0 dB and 0.9 is about 10 dB. Below the lock gate the combiner passes the
+  reference receiver through and says so at WARN. **Raising gain will not move
+  this number**; if it sits low, the antennas are seeing different things (wrong
+  band, wrong polarisation, or far enough apart that each carrier arrives with
+  its own phase — see the limitation below).
+- **`branch_dbfs`** — both branches should sit within a few dB of each other. If
+  one is far down the line becomes a WARN naming the dead branch: an antenna,
+  connector or per-channel-gain problem on that receiver, not a decode problem.
+  The second receiver is gained automatically (`gain:` is applied to every open
+  RX channel), so a branch is never left at the driver default.
+- **`branch_phase_deg`** tells you which kind of front end you have, with no
+  capture needed. On a shared-LO single-chip radio (B210/AD9361) it is a
+  constant. On two receivers with independent PLLs — an X310 with two TwinRX
+  cards, `rx_subdev_spec=A:0 B:0` — it walks, because they are frequency-locked
+  to a common reference but their relative phase is random at each lock. That
+  walk is why `mrc` re-estimates and smooths rather than freezing a constant.
+- **`holds`** climbing while `updates` stays flat means windows are being
+  rejected by the coherence gate — the same story as a low `coherence`.
+
+A WARN about receiving fewer channels than requested means the remote streamed
+only one channel despite the 2-channel request: check the device really has a
+second RX channel and that the `SoapySDRServer` accepted the request (its debug
+log is in the diagnostics note below).
+
+**`diversity: mrc-static`** is an escape hatch that estimates the branch gain
+once and freezes it — the pre-tracking behaviour. Use it to A/B the update policy
+in isolation on hardware where the phase really is constant.
+
+**Capturing the branches for offline work (`diversity_capture`).** Every other IQ
+tap in GopherTrunk sits *downstream* of the combiner, so an ordinary capture has
+already had one combiner applied and cannot be replayed through a different one.
+`diversity_capture` is the only tap that sees the branches before they are
+combined:
+
+```yaml
+  soapy_remote:
+    - addr: "10.110.162.1:23313"
+      diversity: mrc
+      diversity_capture: "iq/mrc/x310"   # path PREFIX
+      diversity_capture_seconds: 5       # 1..60; two CS16 branches are tens of MB/s
+```
+
+It writes `x310.br0.cs16`, `x310.br1.cs16` and `x310.diversity.json` once per
+stream. Each branch file is a plain headerless cs16 capture, so it plays through
+`gophertrunk replay -format cs16` on its own. A datagram that did not carry both
+branches is dropped from *both* files and counted in the sidecar, so sample *i*
+of one file is always simultaneous with sample *i* of the other.
+
+Replay it to compare combiners and measure the phase drift directly:
+
+```
+GT_DIVERSITY_CAPTURE=iq/mrc/x310.diversity.json \
+GT_DIVERSITY_TUNE_HZ=-87500 \
+  go test ./cmd/gophertrunk -run TestDiversityCombinerReplay -v
+```
+
+That prints a windowed coherence/gain/phase trace and decodes four arms — each
+branch alone, static combine, tracking combine — scored by CRC-clean BSCH count.
+Decode yield is the verdict; do not conclude anything from EVM or from how the
+constellation looks.
 
 Two operational notes from that deployment:
 
 - **Prefer a manually chosen gain over AGC.** On UHD front ends, dial in the
   gain with a familiar SDR app first (e.g. SDR++), then set that value here in
-  tenths of a dB (`gain: "750"` = 75 dB). `gain: "auto"` requests the device's
+  tenths of a dB — a bare integer is ALWAYS tenths, so `gain: "750"` is 75.0 dB
+  and `gain: "820"` is 82.0 dB (write it as `"82.0"` if you prefer whole dB).
+  `gain: "auto"` requests the device's
   AGC where it exists, but a fixed, known-good gain is more predictable for
   survey work where you want comparable signal levels run to run.
 - **`SoapySDRServer` can be unstable.** Independent of GopherTrunk, the server
@@ -886,6 +952,12 @@ classifies every carrier, and streams the inventory to
 
 - Receive only. One RX channel (channel 0), or channels 0 and 1 combined into
   one stream with `diversity: mrc`.
+- MRC combines the **wideband** stream, so the single complex gain it estimates
+  maximises SNR across the whole span rather than for one channel. That is exact
+  only when the branches differ by a frequency-flat constant. Two antennas metres
+  apart give each carrier its own phase difference, which one scalar cannot align
+  — the symptom is a `coherence` stuck around 0.3-0.5 that no amount of tracking
+  improves. Co-located, co-polarised antennas are the intended case.
 - The IQ stream uses SoapyRemote's in-order **TCP** transport
   (`stream_protocol: tcp`), which opens two sockets to the server (a stream
   socket and a status socket, matching `SoapySDRServer`'s setup). UDP
@@ -897,6 +969,15 @@ classifies every carrier, and streams the inventory to
   kwarg, it cannot be expressed via `args`. Leave it `0` for SoapyRemote's
   default of 1500; raise it (e.g. `8192`) on jumbo-frame or high-throughput
   links.
+- `stream_window` is worth setting explicitly on macOS servers. Left at `0`,
+  GopherTrunk does not send `remote:window` and the **server** picks its own
+  default socket-buffer size — which is host-dependent. `SoapySDRUtil --probe`
+  reports it: one operator's Linux host defaulted to ~44 MB while their macOS
+  host defaulted to **16 KiB**, and `SoapySDRServer` duly logged
+  `Configured sender endpoint: … window=16 KiB`. At 1 MS/s CS16 over two
+  diversity channels that is about 2 ms of buffer, so any scheduling hiccup on
+  the server stalls its sender. If the probe shows a small window, set
+  `stream_window` (e.g. `8388608`) rather than relying on the default.
 - `args` passes extra SoapySDR device kwargs to the remote `make()` as a
   `"key=value,key2=value2"` string, merged with `driver` (an explicit
   `driver=` in `args` wins). Use it for server-side device selection and

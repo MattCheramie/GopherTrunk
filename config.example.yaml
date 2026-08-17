@@ -605,13 +605,34 @@ sdr:
   #     connect_timeout_ms: 3000
   #     diversity: ""               # "" (single channel) or "mrc" — opens RX0+RX1
   #                                 #  and phase-coherently combines them into one
-  #                                 #  maximised-SNR stream. Shared-LO front-ends
-  #                                 #  only (USRP B210 / AD9361). Experimental.
+  #                                 #  maximised-SNR stream, re-estimating the
+  #                                 #  branch gain from the stream so it suits a
+  #                                 #  shared-LO front end (B210) and separate
+  #                                 #  daughterboards with independent PLLs (X310
+  #                                 #  + 2x TwinRX) alike. "mrc-static" freezes
+  #                                 #  the gain after one estimate (the
+  #                                 #  pre-tracking behaviour), for A/B.
+  #                                 #  Whether it is doing anything shows up as
+  #                                 #  "coherence" in the periodic MRC log line —
+  #                                 #  that figure is independent of RF gain, so
+  #                                 #  raising gain to make diversity engage is
+  #                                 #  never the answer. Experimental.
   #     antennas: []                # RX antenna port per channel, in order, e.g.
   #                                 #  [RX1, RX2] for a USRP X310 under diversity:
-  #                                 #  mrc. Use this instead of antenna= in args —
-  #                                 #  a comma-separated antenna can't live in the
+  #                                 #  mrc. Port names are device-specific (a B210
+  #                                 #  has TX/RX and RX2; a TwinRX has RX1 and
+  #                                 #  RX2) and are checked against the device.
+  #                                 #  Use this instead of antenna= in args — a
+  #                                 #  comma-separated antenna can't live in the
   #                                 #  flat args string. Empty = device default.
+  #     diversity_capture: ""       # path PREFIX for a one-shot dump of the
+  #                                 #  PRE-combine per-branch IQ: <prefix>.br0.cs16,
+  #                                 #  <prefix>.br1.cs16, <prefix>.diversity.json.
+  #                                 #  Every other IQ tap is post-combine, so this
+  #                                 #  is the only capture that can be replayed
+  #                                 #  through a different combiner. Needs mrc.
+  #     diversity_capture_seconds: 0 # length of that dump, 1..60 (0 = 5 s). Two
+  #                                 #  CS16 branches run to tens of MB/s.
 
   # ka9q-radio channels. radiod (https://github.com/ka9q/ka9q-radio)
   # runs fast-convolution downconverters on a front end (RX888, Airspy,

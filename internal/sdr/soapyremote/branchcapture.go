@@ -1,0 +1,274 @@
+package soapyremote
+
+import (
+	"bufio"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
+)
+
+// branchRecorder dumps the PRE-COMBINE per-branch IQ of a diversity stream.
+//
+// Every other IQ tap in GopherTrunk — baseband.auto_record, the iqtap brokers,
+// the scope taps — sits downstream of the combiner, so a capture taken anywhere
+// else has already had one particular combiner applied to it and cannot be used
+// to evaluate a different one. This is the only tap that can answer "would
+// tracking have beaten static on this signal?", or "is the second antenna
+// contributing anything?", offline and reproducibly.
+//
+// Layout: one headerless CS16 file per branch plus a JSON sidecar.
+//
+//	<prefix>.br0.cs16
+//	<prefix>.br1.cs16
+//	<prefix>.diversity.json
+//
+// Separate files rather than one interleaved blob, because each branch file is
+// then immediately playable by everything that already exists — `gophertrunk
+// replay -format cs16`, `analyze`, siglab — so an operator can sanity-check each
+// receiver on its own before anyone writes combiner code, and the offline
+// harness is a plain pair of reads. A bespoke container would buy nothing and
+// cost a parser plus a tool that understands it.
+//
+// ALIGNMENT INVARIANT: the two files are only meaningful if sample i of one is
+// simultaneous with sample i of the other. A datagram that did not carry every
+// branch is therefore dropped from BOTH files and counted, never written short
+// — a single short write would silently desynchronise them and quietly
+// invalidate every conclusion drawn afterwards.
+//
+// Stream goroutine only. Any write error disables the recorder rather than
+// disturbing the stream: a capture that induces the overruns it is meant to
+// diagnose is worse than no capture.
+type branchRecorder struct {
+	log      *slog.Logger
+	prefix   string
+	branches int
+
+	files   []*os.File
+	bufs    []*bufio.Writer
+	scratch []byte
+
+	budgetSamples int64
+	written       int64
+	dropped       int64
+	datagrams     int64
+	done          bool
+	failed        bool
+
+	meta branchCaptureMeta
+}
+
+// branchCaptureMeta is the JSON sidecar. It is a capture-provenance record, not
+// a decode-acceptance contract, so it deliberately does not reuse
+// siglab.Metadata (which requires protocol/expected fields that mean nothing
+// here).
+type branchCaptureMeta struct {
+	Addr             string   `json:"addr"`
+	DeviceArgs       string   `json:"device_args,omitempty"`
+	Antennas         []string `json:"antennas,omitempty"`
+	SampleRateHz     float64  `json:"sample_rate_hz"`
+	CenterFreqHz     uint32   `json:"center_freq_hz,omitempty"`
+	GainTenthDB      int      `json:"gain_tenth_db,omitempty"`
+	Format           string   `json:"format"`
+	DiversityMode    string   `json:"diversity_mode"`
+	Branches         int      `json:"branches"`
+	BranchFiles      []string `json:"branch_files"`
+	SamplesPerBranch int64    `json:"samples_per_branch"`
+	Datagrams        int64    `json:"datagrams"`
+	DroppedDatagrams int64    `json:"dropped_datagrams"`
+	StreamMTU        int      `json:"stream_mtu,omitempty"`
+}
+
+// defaultDiversityCaptureSeconds bounds a capture when none is configured.
+const defaultDiversityCaptureSeconds = 5
+
+// startBranchCapture arms the pre-combine dump. It is one-shot per DEVICE, not
+// per stream: a control-channel hunt re-opens the stream repeatedly, and
+// re-arming would truncate the files on every cycle and leave the operator with
+// whatever the last few seconds happened to be. Once a recorder exists — running
+// or finished — the capture stays as it was.
+//
+// A failure to open the files is logged and otherwise ignored: a diagnostic tap
+// must never keep the radio from streaming.
+func (d *device) startBranchCapture(rateHz float64) {
+	if d.capturePrefix == "" || d.mrc == nil || d.mrc.rec != nil {
+		return
+	}
+	secs := d.captureSeconds
+	if secs <= 0 {
+		secs = defaultDiversityCaptureSeconds
+	}
+	budget := int64(0)
+	if rateHz > 0 {
+		budget = int64(rateHz) * int64(secs)
+	}
+	rec, err := newBranchRecorder(d.capturePrefix, d.rxChannelCount(), budget, d.log)
+	if err != nil {
+		d.log.Warn("soapyremote: diversity capture not started", "err", err)
+		return
+	}
+	rec.meta.Addr = d.addr
+	rec.meta.SampleRateHz = rateHz
+	rec.meta.DiversityMode = d.diversity.String()
+	rec.meta.StreamMTU = d.mtu
+	d.mrc.rec = rec
+	d.log.Info("soapyremote: diversity capture armed — dumping pre-combine per-branch IQ",
+		"prefix", d.capturePrefix, "seconds", secs, "branches", d.rxChannelCount())
+}
+
+// branchCaptureMaxBytes caps a capture independently of the configured seconds,
+// so a mis-set rate cannot fill a disk. Two CS16 branches at 6.25 MS/s is about
+// 50 MB/s.
+const branchCaptureMaxBytes = 1 << 30 // 1 GiB per branch
+
+// newBranchRecorder opens the per-branch files under prefix. budgetSamples
+// bounds the capture per branch; <=0 means the byte cap alone applies.
+func newBranchRecorder(prefix string, branches int, budgetSamples int64, log *slog.Logger) (*branchRecorder, error) {
+	if branches < 1 {
+		return nil, fmt.Errorf("soapyremote: branch capture needs at least one branch")
+	}
+	r := &branchRecorder{
+		log:           log,
+		prefix:        prefix,
+		branches:      branches,
+		budgetSamples: budgetSamples,
+	}
+	for i := 0; i < branches; i++ {
+		name := prefix + ".br" + strconv.Itoa(i) + ".cs16"
+		f, err := os.Create(name)
+		if err != nil {
+			r.closeFiles()
+			return nil, fmt.Errorf("soapyremote: branch capture %s: %w", name, err)
+		}
+		r.files = append(r.files, f)
+		r.bufs = append(r.bufs, bufio.NewWriterSize(f, 1<<20))
+		r.meta.BranchFiles = append(r.meta.BranchFiles, filepath.Base(name))
+	}
+	r.meta.Branches = branches
+	r.meta.Format = "cs16"
+	return r, nil
+}
+
+// write records one datagram's branches. Call immediately after de-interleaving
+// and before any combining, so the capture is byte-for-byte what the combiner
+// saw.
+func (r *branchRecorder) write(branches [][]complex64) {
+	if r == nil || r.done || r.failed {
+		return
+	}
+	r.datagrams++
+	if len(branches) != r.branches {
+		// Degenerate datagram: writing it would desynchronise the files.
+		r.dropped++
+		return
+	}
+	n := len(branches[0])
+	for _, b := range branches {
+		if len(b) != n {
+			r.dropped++
+			return
+		}
+	}
+	if n == 0 {
+		return
+	}
+	if r.budgetSamples > 0 && r.written+int64(n) > r.budgetSamples {
+		n = int(r.budgetSamples - r.written)
+		if n <= 0 {
+			r.finish()
+			return
+		}
+	}
+	need := n * 4
+	if cap(r.scratch) < need {
+		r.scratch = make([]byte, need)
+	}
+	buf := r.scratch[:need]
+	for i, b := range branches {
+		encodeCS16Into(buf, b[:n])
+		if _, err := r.bufs[i].Write(buf); err != nil {
+			r.fail(err)
+			return
+		}
+	}
+	r.written += int64(n)
+	if (r.budgetSamples > 0 && r.written >= r.budgetSamples) || r.written*4 >= branchCaptureMaxBytes {
+		r.finish()
+	}
+}
+
+// finish flushes, writes the sidecar, and logs the paths. Idempotent.
+func (r *branchRecorder) finish() {
+	if r == nil || r.done {
+		return
+	}
+	r.done = true
+	for _, b := range r.bufs {
+		if err := b.Flush(); err != nil && !r.failed {
+			r.fail(err)
+		}
+	}
+	r.closeFiles()
+	if r.failed {
+		return
+	}
+	r.meta.SamplesPerBranch = r.written
+	r.meta.Datagrams = r.datagrams
+	r.meta.DroppedDatagrams = r.dropped
+	path := r.prefix + ".diversity.json"
+	blob, err := json.MarshalIndent(&r.meta, "", "  ")
+	if err == nil {
+		err = os.WriteFile(path, append(blob, '\n'), 0o644)
+	}
+	if err != nil {
+		r.log.Warn("soapyremote: diversity capture sidecar not written", "path", path, "err", err)
+		return
+	}
+	r.log.Info("soapyremote: diversity capture complete — replay it with GT_DIVERSITY_CAPTURE to A/B combiners offline",
+		"sidecar", path,
+		"samples_per_branch", r.written,
+		"dropped_datagrams", r.dropped)
+}
+
+// fail disables the recorder after a write error, warning once. The stream is
+// never disturbed: a capture that induces overruns is worse than no capture.
+func (r *branchRecorder) fail(err error) {
+	if r.failed {
+		return
+	}
+	r.failed = true
+	r.done = true
+	r.closeFiles()
+	r.log.Warn("soapyremote: diversity capture disabled after a write error", "prefix", r.prefix, "err", err)
+}
+
+func (r *branchRecorder) closeFiles() {
+	for _, f := range r.files {
+		_ = f.Close()
+	}
+	r.files = nil
+	r.bufs = nil
+}
+
+// encodeCS16Into writes iq as interleaved little-endian int16 I,Q — the inverse
+// of convertCS16, and the same layout every other cs16 capture in the repo uses.
+// dst must hold at least len(iq)*4 bytes.
+func encodeCS16Into(dst []byte, iq []complex64) {
+	for i, z := range iq {
+		binary.LittleEndian.PutUint16(dst[4*i:], uint16(clampInt16(real(z)*32768)))
+		binary.LittleEndian.PutUint16(dst[4*i+2:], uint16(clampInt16(imag(z)*32768)))
+	}
+}
+
+func clampInt16(v float32) int16 {
+	if v > 32767 {
+		return 32767
+	}
+	if v < -32768 {
+		return -32768
+	}
+	return int16(v)
+}
