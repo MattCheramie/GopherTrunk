@@ -127,6 +127,68 @@ func TestCallHistoryEndpointFiltersBySystem(t *testing.T) {
 	}
 }
 
+// The talkgroup filter is what the History page's GROUP ID box sends, and
+// what a "view calls on this talkgroup" cross-link seeds. Only the rejection
+// of a malformed group_id was covered before, so a filter that silently
+// matched nothing would not have failed anything.
+func TestCallHistoryEndpointFiltersByGroupID(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	db, _ := storage.Open(":memory:")
+	defer db.Close()
+	cl, _ := storage.NewCallLog(db, bus, nil)
+	defer cl.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	for i, tg := range []uint32{1020545, 900, 1020545} {
+		bus.Publish(events.Event{
+			Kind: events.KindCallStart,
+			Payload: trunking.CallStart{
+				Grant:        trunking.Grant{System: "250_013", GroupID: tg, FrequencyHz: 467_912_500},
+				DeviceSerial: "TETRA-" + string(rune('A'+i)),
+				StartedAt:    startedAt.Add(time.Duration(i) * time.Second),
+			},
+		})
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		rows, _ := db.History(context.Background(), storage.HistoryFilter{Limit: 10})
+		if len(rows) == 3 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	base, teardown := mkServer(t, ServerOptions{
+		Bus:     bus,
+		History: HistoryFromStorage(db),
+	})
+	defer teardown()
+
+	resp := mustGet(t, base+"/api/v1/calls/history?system=250_013&group_id=1020545")
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var body struct {
+		Calls []CallRow `json:"calls"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Calls) != 2 {
+		t.Fatalf("group-filtered rows = %d, want 2", len(body.Calls))
+	}
+	for _, r := range body.Calls {
+		if r.GroupID != 1020545 {
+			t.Errorf("row group_id = %d, want 1020545", r.GroupID)
+		}
+	}
+}
+
 func TestCallHistoryEndpointReturns503WithoutHistory(t *testing.T) {
 	bus := events.NewBus(4)
 	defer bus.Close()
