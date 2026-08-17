@@ -127,6 +127,10 @@ func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.closing():
+			// See handleSSE: Shutdown waits on this request without
+			// cancelling it, so the server's stop signal is what ends it.
+			return
 		case frame, ok := <-sub.ch:
 			if !ok {
 				return

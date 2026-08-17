@@ -471,9 +471,37 @@ type Server struct {
 	// renders in. Never nil after construction; mirrors display.timezone.
 	displayLoc *time.Location
 
+	// stopStreams is closed at the top of shutdown so the long-lived
+	// plain-HTTP handlers (SSE, the live audio stream, siglab progress)
+	// return of their own accord. http.Server.Shutdown waits for active
+	// non-hijacked requests and does NOT cancel their r.Context(), so
+	// without this signal a single attached subscriber pins the whole
+	// teardown until the shutdown context expires. Written once in
+	// NewServer and never reassigned, so handlers read it without the mutex.
+	stopStreams chan struct{}
+
 	mu     sync.Mutex
 	srv    *http.Server
 	closed bool
+}
+
+// closing returns the channel that is closed when the server begins shutting
+// down. Long-lived handlers select on it alongside r.Context().Done().
+func (s *Server) closing() <-chan struct{} { return s.stopStreams }
+
+// streamCtx derives a context that is cancelled either with the parent (the
+// client hung up) or when the server begins shutting down. For handlers that
+// hand a context to a long-running callee rather than looping themselves.
+func (s *Server) streamCtx(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	go func() {
+		select {
+		case <-s.closing():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
 }
 
 // HistoryQuery is the subset of storage.DB the history endpoint needs.
@@ -972,6 +1000,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		configBuilderSvc = svc
 	}
 	return &Server{
+		stopStreams:    make(chan struct{}),
 		addr:           opts.Addr,
 		bus:            opts.Bus,
 		engine:         opts.Engine,
@@ -1110,14 +1139,25 @@ func (s *Server) BoundAddr() string {
 	return s.boundAddr
 }
 
+// shutdownWindow caps how long the HTTP server waits for in-flight requests
+// after the streaming handlers have been told to leave. Reaching it means a
+// handler ignored the stop signal, which is worth a WARN rather than a wait.
+const shutdownWindow = 30 * time.Second
+
 func (s *Server) shutdown(ctx context.Context) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed || s.srv == nil {
 		s.closed = true
+		s.mu.Unlock()
 		return nil
 	}
 	s.closed = true
+	srv := s.srv
+	// Tell the long-lived handlers to leave before asking the HTTP server to
+	// drain: Shutdown waits on them but never interrupts them, so a single
+	// attached SSE / audio-stream subscriber would otherwise hold the whole
+	// window open. Closed under the mutex, guarded by s.closed, so exactly once.
+	close(s.stopStreams)
 	// Tear down the siglab subsystem: stop the TTL sweeper and remove the
 	// temp directory (and any staged captures) the service owns.
 	if s.siglab != nil {
@@ -1137,14 +1177,26 @@ func (s *Server) shutdown(ctx context.Context) error {
 		_ = s.rfscopeCloser.Close()
 		s.rfscopeCloser = nil
 	}
-	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
-	// get up to 30 s to drain rather than the 5 s the old bound gave
-	// them. Cuts user-visible connection drops on a clean restart.
-	// Static HTTP requests complete in milliseconds either way; the
-	// extra headroom only matters for long-lived streams.
-	shutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	s.mu.Unlock()
+
+	// The 30 s window is a CAP for a handler that misses the stop signal,
+	// not the expected cost — with stopStreams closed above, a clean
+	// shutdown finishes in milliseconds. Shutdown runs outside the mutex so
+	// a second caller (Run's ctx path racing Daemon.Close) is not parked
+	// behind it.
+	shutCtx, cancel := context.WithTimeout(ctx, shutdownWindow)
 	defer cancel()
-	return s.srv.Shutdown(shutCtx)
+	start := time.Now()
+	err := srv.Shutdown(shutCtx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		// Silent before: Run returns this into daemon.spawn, which counts
+		// DeadlineExceeded as a clean exit — so a blown window looked like a
+		// mysterious 30 s gap between two log lines and nothing else.
+		s.log.Warn("api: graceful shutdown window expired — a streaming handler "+
+			"did not exit; the daemon's teardown was held up by it",
+			"window", shutdownWindow, "elapsed", time.Since(start).Round(time.Millisecond))
+	}
+	return err
 }
 
 func (s *Server) routes() *http.ServeMux {

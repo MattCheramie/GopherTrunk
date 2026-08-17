@@ -3684,45 +3684,64 @@ func (d *Daemon) takeFatal() error {
 
 // Close releases every component. Idempotent and safe to call
 // concurrently with Run.
+// slowCloseStage is how long a single teardown stage may take before it is
+// worth naming in the log. Everything here should finish in milliseconds; a
+// stage that doesn't is the reason a stop looks hung, and an operator
+// otherwise sees only a silent gap between "shutdown initiated" and
+// "shutdown complete".
+const slowCloseStage = time.Second
+
+// closeStage runs one teardown step and logs it when it drags. Applied to the
+// stages that own goroutines, sockets or hardware — the plain file-backed log
+// writers below flush and return, and wrapping them would be noise.
+func (d *Daemon) closeStage(name string, fn func()) {
+	start := time.Now()
+	fn()
+	if elapsed := time.Since(start); elapsed >= slowCloseStage {
+		d.log.Warn("daemon: slow shutdown stage", "stage", name,
+			"took", elapsed.Round(time.Millisecond))
+	}
+}
+
 func (d *Daemon) Close() {
 	d.closeOnce.Do(func() {
 		if d.httpAPI != nil {
-			_ = d.httpAPI.Close()
+			d.closeStage("http", func() { _ = d.httpAPI.Close() })
 		}
 		if d.rigctld != nil {
-			_ = d.rigctld.Close()
+			d.closeStage("rigctld", func() { _ = d.rigctld.Close() })
 		}
 		if d.grpcAPI != nil {
-			d.grpcAPI.Stop()
+			d.closeStage("grpc", d.grpcAPI.Stop)
 		}
 		if d.ccDecoder != nil {
-			_ = d.ccDecoder.Close()
+			d.closeStage("ccdecoder", func() { _ = d.ccDecoder.Close() })
 		}
 		if d.composer != nil {
-			_ = d.composer.Close()
+			d.closeStage("composer", func() { _ = d.composer.Close() })
 		}
 		if d.cryptoCap != nil {
 			_ = d.cryptoCap.Close()
 		}
 		if d.audioPub != nil {
-			_ = d.audioPub.Close()
+			d.closeStage("audio-publisher", func() { _ = d.audioPub.Close() })
 		}
 		if d.liveLoudness != nil {
 			_ = d.liveLoudness.Close()
 		}
 		if d.player != nil {
-			_ = d.player.Close()
+			d.closeStage("audio-player", func() { _ = d.player.Close() })
 		}
 		if d.broadcast != nil {
-			_ = d.broadcast.Close()
+			d.closeStage("broadcast", func() { _ = d.broadcast.Close() })
 		}
 		for _, h := range d.grantHooks {
-			_ = h.Close()
+			d.closeStage("grant-hook", func() { _ = h.Close() })
 		}
 		// Closes the file recorder or the decode-only recorder (same object
 		// when recording; voiceDecoder is a superset of recorder).
 		if d.voiceDecoder != nil {
-			_ = d.voiceDecoder.Close()
+			d.closeStage("voice-decoder", func() { _ = d.voiceDecoder.Close() })
 		}
 		if d.callLog != nil {
 			_ = d.callLog.Close()
@@ -3776,15 +3795,15 @@ func (d *Daemon) Close() {
 			_ = d.metrics.Close()
 		}
 		if d.engine != nil {
-			d.engine.Close()
+			d.closeStage("engine", d.engine.Close)
 		}
 		if d.db != nil {
-			_ = d.db.Close()
+			d.closeStage("storage", func() { _ = d.db.Close() })
 		}
 		if d.pool != nil {
-			_ = d.pool.Close()
+			d.closeStage("sdr-pool", func() { _ = d.pool.Close() })
 		}
-		d.bus.Close()
+		d.closeStage("bus", d.bus.Close)
 	})
 }
 
