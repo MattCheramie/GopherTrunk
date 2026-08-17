@@ -119,6 +119,27 @@ const (
 // independently-locked front-end PLLs.
 const mrcTrackTauMs = 200.0
 
+// mrcTrackAlpha is the one-pole coefficient implied by the window and the time
+// constant. Deriving it keeps the two constants honest: change the window and
+// the loop bandwidth stays where the comment says it is.
+func mrcTrackAlpha(mode diversityMode) float64 {
+	if mode == diversityMRCStatic {
+		return 0 // one-shot: freeze the first accepted window
+	}
+	return mrcCalWindowMs / mrcTrackTauMs
+}
+
+// mrcCalOptions builds the calibrator options for a mode and window.
+func mrcCalOptions(mode diversityMode, window int) diversity.TrackingOptions {
+	return diversity.TrackingOptions{
+		WindowSamples:  window,
+		Alpha:          mrcTrackAlpha(mode),
+		LockCoherence:  mrcCoherenceLockGate,
+		TrackCoherence: mrcCoherenceTrackGate,
+		MinBranchPower: mrcBranchFloorPower,
+	}
+}
+
 // mrcCalWindowSamples converts the window from stream time to samples for a
 // given rate, clamped. A zero/unknown rate takes the default.
 func mrcCalWindowSamples(rateHz float64) int {
@@ -233,20 +254,10 @@ type mrcCombiner struct {
 const mrcRefDeadWindows = 4
 
 func newMRCCombiner(format sampleFormat, mode diversityMode, rateHz float64) *mrcCombiner {
-	alpha := diversity.TrackingDefaultAlpha
-	if mode == diversityMRCStatic {
-		alpha = 0 // one-shot: freeze the first accepted window
-	}
 	window := mrcCalWindowSamples(rateHz)
 	return &mrcCombiner{
-		window: window,
-		cal: diversity.NewTrackingCalibrator(diversityChannels, diversity.TrackingOptions{
-			WindowSamples:  window,
-			Alpha:          alpha,
-			LockCoherence:  mrcCoherenceLockGate,
-			TrackCoherence: mrcCoherenceTrackGate,
-			MinBranchPower: mrcBranchFloorPower,
-		}),
+		window:   window,
+		cal:      diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(mode, window)),
 		mode:     mode,
 		format:   format,
 		channels: diversityChannels,
@@ -333,18 +344,8 @@ func (m *mrcCombiner) setSampleRate(rateHz float64) {
 	if want == m.window {
 		return
 	}
-	alpha := diversity.TrackingDefaultAlpha
-	if m.mode == diversityMRCStatic {
-		alpha = 0
-	}
 	m.window = want
-	m.cal = diversity.NewTrackingCalibrator(diversityChannels, diversity.TrackingOptions{
-		WindowSamples:  want,
-		Alpha:          alpha,
-		LockCoherence:  mrcCoherenceLockGate,
-		TrackCoherence: mrcCoherenceTrackGate,
-		MinBranchPower: mrcBranchFloorPower,
-	})
+	m.cal = diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(m.mode, want))
 	m.refIdx = -1
 	m.refDeadWindows = 0
 }
@@ -527,11 +528,15 @@ func (r *diversityReporter) observe(m *mrcCombiner) {
 	case h.deadBranch >= 0:
 		r.log.Warn("soapyremote: MRC diversity branch is dead — it sits more than "+strconv.Itoa(int(mrcBranchDeadMarginDb))+" dB below the reference receiver and contributes nothing to the combine. Check that antenna's connection, and that this RX channel is gained (sdr.soapy_remote[].antennas selects its port).",
 			append(attrs, "dead_branch", h.deadBranch)...)
-	case !h.calibrated:
+	case !h.calibrated && h.updates+h.holds > 0:
 		// Both branches are alive but they do not correlate, so there is nothing
 		// for a single complex gain to align and the combiner is passing the
 		// reference receiver through. This is NOT a gain problem — the gate is
 		// scale-invariant — so say what it actually is.
+		//
+		// Gated on a window having actually completed: the first datagram of a
+		// stream always reports, and "not coherent" before anything has been
+		// measured would be a lie that sends the operator after the wrong thing.
 		r.log.Warn("soapyremote: MRC diversity branches are not coherent — the two receivers are not seeing the same signal through a constant complex gain, so there is no diversity gain and the reference branch is being passed through. Check both antennas are on the same band and polarisation and are co-located (widely separated antennas give each carrier its own phase, which one wideband complex gain cannot align), and that the front-end is frequency-locked (clock_source/time_source). Raising RF gain will NOT help: this gate is independent of level.",
 			append(attrs, "lock_gate", mrcCoherenceLockGate)...)
 	default:

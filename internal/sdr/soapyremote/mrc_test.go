@@ -391,3 +391,72 @@ func TestMRCCombinerStaticModeFreezes(t *testing.T) {
 		t.Errorf("static updates = %d, want exactly 1", u)
 	}
 }
+
+// TestDiversityReporterDoesNotCryIncoherentBeforeMeasuring pins that the
+// first-datagram report — which always fires so an operator sees both branch
+// levels immediately — cannot claim the branches are incoherent before a single
+// estimation window has completed. Saying so at t=0 would send them after the
+// antennas when nothing has been measured yet.
+func TestDiversityReporterDoesNotCryIncoherentBeforeMeasuring(t *testing.T) {
+	rng := rand.New(rand.NewSource(11))
+	// One short datagram: well under a window, so no estimate is possible.
+	ch0 := mrcSignal(rng, 256, 0.4)
+	ch1 := scaleC(ch0, complex(0, 1))
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	m.combine(twoBranchPayload(ch0, ch1), len(ch0))
+
+	var buf bytes.Buffer
+	r := newDiversityReporter(slog.New(slog.NewTextHandler(&buf, nil)), "10.0.0.5:55132")
+	r.now = func() time.Time { return time.Unix(1700000000, 0) }
+	r.observe(m)
+
+	got := buf.String()
+	if strings.Contains(got, "not coherent") {
+		t.Errorf("reported incoherence before any window completed: %q", got)
+	}
+	if !strings.Contains(got, "coherence=") {
+		t.Errorf("report = %q, want the coherence attribute present", got)
+	}
+}
+
+// TestDiversityReporterWarnsWhenBranchesNeverCorrelate is the other half: once
+// windows HAVE been measured and none passed the gate, the operator is told —
+// and told that raising gain is not the fix, since the gate is scale-invariant.
+func TestDiversityReporterWarnsWhenBranchesNeverCorrelate(t *testing.T) {
+	rng := rand.New(rand.NewSource(12))
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	// Two loud but unrelated receivers, long enough to complete windows.
+	for i := 0; i < 3; i++ {
+		a := mrcSignal(rng, mrcTestWindow, 0.3)
+		b := mrcSignal(rng, mrcTestWindow, 0.3)
+		m.combine(twoBranchPayload(a, b), len(a))
+	}
+	if _, holds := m.cal.Counters(); holds == 0 {
+		t.Fatal("fixture completed no windows")
+	}
+
+	var buf bytes.Buffer
+	r := newDiversityReporter(slog.New(slog.NewTextHandler(&buf, nil)), "10.0.0.5:55132")
+	r.now = func() time.Time { return time.Unix(1700000000, 0) }
+	r.observe(m)
+
+	got := buf.String()
+	if !strings.Contains(got, "level=WARN") || !strings.Contains(got, "not coherent") {
+		t.Errorf("report = %q, want a WARN about incoherent branches", got)
+	}
+	if !strings.Contains(got, "Raising RF gain will NOT help") {
+		t.Errorf("report = %q, want it to say gain is not the fix", got)
+	}
+}
+
+// TestMRCTrackAlphaMatchesDocumentedTimeConstant pins that the loop bandwidth is
+// derived from the window and the stated time constant rather than hardcoded, so
+// changing the window cannot silently move it.
+func TestMRCTrackAlphaMatchesDocumentedTimeConstant(t *testing.T) {
+	if got, want := mrcTrackAlpha(diversityMRCTracking), mrcCalWindowMs/mrcTrackTauMs; got != want {
+		t.Errorf("tracking alpha = %v, want %v", got, want)
+	}
+	if got := mrcTrackAlpha(diversityMRCStatic); got != 0 {
+		t.Errorf("static alpha = %v, want 0 (one-shot)", got)
+	}
+}
