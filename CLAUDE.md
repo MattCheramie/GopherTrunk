@@ -496,6 +496,27 @@ confirmation before any close-as-completed.
   real work, in °/s) and decodes four arms — each branch alone, static, tracking — scored by
   CRC-clean BSCH. **Yield is the verdict, never EVM.** Tracking-as-default is NOT yet verified
   on air; that A/B on the operator's own capture is the gate.
+- **The A/B ran on the operator's first pre-combine capture (17 Aug, X310 `rx_subdev_spec=B:0
+  A:0`, internal clock, TETRA CC 467.9125 MHz, 250 kS/s, 30 s, 0 dropped datagrams) — the X310
+  dual-daughterboard stream over SoapyRemote IS coherent, no external oscillator sync needed.**
+  Wideband coherence median 0.658, narrowband (post-DDC 144 k) 0.713; branch phase ~145° walking
+  only −0.22°/s (frozen constant decays over minutes, so tracking is right, but static is fine
+  over any one calibration). Decode arms: branch0 885 / branch1 896 / wb-static 898 /
+  wb-tracking 898 / nb arms 896 CRC-clean BSCH — MRC ≥ best branch (no harm) but this capture
+  sits at its ~96% BSCH ceiling, so it CANNOT demonstrate a real gain; a weak-signal capture
+  (BSCH well below ceiling on each branch alone) is what closes the tracking-as-default gate.
+  Two calibrated readings of the same capture disagree by design, don't chase them: the live
+  health line logged coherence 0.28–0.55 / branch_gain −11..−17 dB where the offline harness
+  measures 0.66 / −6.4 dB power ratio — the driver's per-window LS estimate is biased low by
+  noise (the logged gain IS the MRC weight, ∝ ρ·√(P₀/P₁), not a power ratio). Related bug found
+  and fixed in the same pass: `mrcTrackAlpha` derived the loop coefficient from the NOMINAL 2 ms
+  window while `mrcCalWindowSamples` clamps to ≥4096 samples, so at 250 kHz (16.4 ms windows)
+  the tracking 1/e time was silently ~1.6 s instead of the documented 200 ms — alpha now follows
+  the actual window duration (`TestMRCTrackAlphaHonorsClampedWindow`). Operator-visible symptom
+  ruled OUT as a regression: the "bad" web constellation at 250 kHz is the honest π/4-DQPSK
+  symbol plot (the `symbol_proto` fix stopped TETRA rigs drawing the flattering raw-IQ ring of a
+  wrong P25 receiver) of a marginal signal plus ~400 Hz carrier offset (≈8° differential
+  rotation); the same run decoded ~96% BSCH and recorded voice.
 - **MMSE-IRC cannot work blind, and that is a property of the estimator, not of one
   formula.** The reporter's #1062 RFC proposes IRC to null a directional interferer that MRC
   amplifies. Two separate problems, and only the first is fixable inside the algorithm. (1) The
