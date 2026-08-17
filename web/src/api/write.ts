@@ -16,6 +16,13 @@ import type {
 } from "./types";
 
 export interface TalkgroupPatch {
+  // alpha_tag / description / tag / group are the operator-applied name and
+  // its descriptive fields; they persist when the daemon has a label store,
+  // unlike the policy fields below.
+  alpha_tag?: string;
+  description?: string;
+  tag?: string;
+  group?: string;
   priority?: number;
   lockout?: boolean;
   scan?: boolean;
@@ -39,15 +46,33 @@ export interface AudioPatch {
   recording_enabled?: boolean;
 }
 
+function systemQuery(system?: string): string {
+  return system ? `?system=${encodeURIComponent(system)}` : "";
+}
+
 export const writes = {
   endCall: (c: ClientConfig, deviceSerial: string) =>
     request<void>(c, "POST", `/api/v1/calls/${encodeURIComponent(deviceSerial)}/end`),
 
-  updateTalkgroup: (c: ClientConfig, id: number, patch: TalkgroupPatch) =>
-    request<TalkgroupDTO>(c, "PATCH", `/api/v1/talkgroups/${id}`, patch),
+  // system, when given, scopes a persisted label to one trunking system —
+  // talkgroup_file / rid_alias_file are per-system config keys, so an export
+  // has to be able to emit one file per system. Omitted, the name applies
+  // wherever the id is seen.
+  updateTalkgroup: (
+    c: ClientConfig,
+    id: number,
+    patch: TalkgroupPatch,
+    system?: string,
+  ) =>
+    request<TalkgroupDTO>(
+      c,
+      "PATCH",
+      `/api/v1/talkgroups/${id}${systemQuery(system)}`,
+      patch,
+    ),
 
-  updateRID: (c: ClientConfig, id: number, patch: RIDPatch) =>
-    request<RIDDTO>(c, "PATCH", `/api/v1/rids/${id}`, patch),
+  updateRID: (c: ClientConfig, id: number, patch: RIDPatch, system?: string) =>
+    request<RIDDTO>(c, "PATCH", `/api/v1/rids/${id}${systemQuery(system)}`, patch),
 
   sweepRetention: (c: ClientConfig) =>
     request<void>(c, "POST", "/api/v1/retention/sweep"),

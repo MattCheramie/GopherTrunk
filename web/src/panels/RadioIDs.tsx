@@ -4,6 +4,8 @@ import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { NameField } from "../components/NameField";
+import { labelExportURL } from "../api/labels";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Section } from "../components/ui/Section";
 import { Select } from "../components/ui/Select";
@@ -201,11 +203,22 @@ export function RadioIDs() {
 
   async function patch(
     id: number,
-    body: { alias?: string; watch?: boolean; lockout?: boolean; priority?: number },
+    body: {
+      alias?: string;
+      description?: string;
+      owner?: string;
+      watch?: boolean;
+      lockout?: boolean;
+      priority?: number;
+    },
   ) {
     setBusy(true);
     try {
-      const updated = await writes.updateRID(cfg, id, body);
+      // The system scopes the persisted label. Prefer the panel's filter, then
+      // the radio's own last-seen system, so a name applied from an unfiltered
+      // roster still lands on the right system's export.
+      const scope = system || selected?.system || undefined;
+      const updated = await writes.updateRID(cfg, id, body, scope);
       setRIDs(rids.map((r) => (r.id === id ? { ...r, ...updated } : r)));
       setSelected((s) => (s && s.id === id ? { ...s, ...updated } : s));
       notify("success", `Updated radio ID ${id}`);
@@ -297,7 +310,18 @@ export function RadioIDs() {
       <PageHeader
         title="Radio IDs"
         actions={
-          <span className="text-xs text-muted">{rids.length} total</span>
+          <>
+            <a
+              className="text-xs text-accent hover:underline"
+              href={labelExportURL(cfg, "rid", {
+                system: system || undefined,
+              })}
+              title="Download the radios you have named as a CSV that loads into rid_alias_file"
+            >
+              Export names → CSV
+            </a>
+            <span className="text-xs text-muted">{rids.length} total</span>
+          </>
         }
       />
 
@@ -448,11 +472,30 @@ export function RadioIDs() {
             )}
           </div>
 
-          {canMutate && selected.configured ? (
+          {canMutate ? (
             <div className="pt-3 border-t border-panel space-y-3">
               <p className="text-xs uppercase tracking-wider text-muted">
                 Mutations
               </p>
+              <NameField
+                label="Name"
+                value={selected.alias ?? ""}
+                disabled={busy}
+                placeholder="e.g. CPL-SMITH"
+                onCommit={(v) => patch(selected.id, { alias: v })}
+              />
+              <NameField
+                label="Description"
+                value={selected.description ?? ""}
+                disabled={busy}
+                onCommit={(v) => patch(selected.id, { description: v })}
+              />
+              <NameField
+                label="Owner"
+                value={selected.owner ?? ""}
+                disabled={busy}
+                onCommit={(v) => patch(selected.id, { owner: v })}
+              />
               <label className="flex items-center gap-3 text-sm">
                 <input
                   type="checkbox"
@@ -492,17 +535,19 @@ export function RadioIDs() {
                   }}
                 />
               </label>
+              {!selected.configured && (
+                <p className="text-xs text-muted">
+                  This radio was observed over the air and is in no system's
+                  rid_alias_file. Naming it here adds it to the daemon's
+                  catalogue and, when a call log database is configured, keeps
+                  the name across restarts.
+                </p>
+              )}
             </div>
-          ) : !selected.configured ? (
-            <p className="text-xs text-muted pt-2">
-              This RID was observed over the air but is not in any
-              system's rid_alias_file. Add it to the file (and reload
-              the daemon) to assign an alias, owner, or watch flag.
-            </p>
           ) : (
             <p className="text-xs text-muted pt-2">
-              Enable write mode in Settings to edit watch / lockout /
-              priority from this browser.
+              Enable write mode in Settings to name this radio or edit its
+              watch / lockout / priority from this browser.
             </p>
           )}
         </DetailModal>

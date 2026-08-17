@@ -173,6 +173,12 @@ const (
 	KindBookmarkCreated Kind = "bookmark.created"
 	KindBookmarkUpdated Kind = "bookmark.updated"
 	KindBookmarkDeleted Kind = "bookmark.deleted"
+	// KindLabelUpserted / KindLabelDeleted fire when an operator names a
+	// radio or a talkgroup from a UI. Payload is a storage.Label. Surfaced
+	// over SSE / WS so other open consoles pick the name up without a
+	// reload — a label is usually applied while watching live traffic.
+	KindLabelUpserted Kind = "label.upserted"
+	KindLabelDeleted  Kind = "label.deleted"
 	// KindPagerMessage fires when the POCSAG decoder finishes
 	// reassembling one page (address codeword + 0..N message
 	// codewords, terminated by an idle or next address). Payload

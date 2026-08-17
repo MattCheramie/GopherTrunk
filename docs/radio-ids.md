@@ -106,11 +106,30 @@ live RIDs.
 | `GET`   | `/api/v1/rids`                  | open           | Merged list (configured ∪ live). |
 | `GET`   | `/api/v1/rids/{id}`             | open           | Single merged row. |
 | `GET`   | `/api/v1/rids/{id}/history`     | open           | `call_log` filtered by `source_id`. Same query params as `/api/v1/calls/history` (`limit`, `only_ended`, `system`). |
-| `PATCH` | `/api/v1/rids/{id}`             | mutation-gated | Edit alias / description / tag / group / owner / priority / lockout / watch / icon. Only works on rows backed by the static catalogue — live-only rows return 404 with a hint to add the RID to `rid_alias_file` first. |
+| `PATCH` | `/api/v1/rids/{id}`             | mutation-gated | Edit alias / description / tag / group / owner / priority / lockout / watch / icon. A radio with no catalogue row is **created**, so a radio seen only over the air can be named without editing a file first. Optional `?system=` scopes the persisted name to one system. |
+| `GET`   | `/api/v1/labels`                | open           | The persisted operator-applied names. `?kind=rid\|talkgroup`, `?system=`. 503 without `storage.path`. |
+| `GET`   | `/api/v1/labels/export`         | open           | Those names as a CSV that loads into `rid_alias_file` / `talkgroup_file`. `?kind=` (required), `?system=`, `?scope=labels\|all`. |
+| `DELETE`| `/api/v1/labels/{kind}/{id}`    | mutation-gated | Forget one persisted name. The in-memory catalogue keeps it until the next restart. |
 
-PATCH mutations live in memory only — the on-disk `rid_alias_file`
-is not rewritten, matching the talkgroup behaviour. Restarting the
-daemon reloads from disk.
+## Naming a radio from the web console
+
+Open a radio in **Radio IDs**, enable write mode, and type a name. This works
+for radios that appear in no `rid_alias_file` at all — which is most of the ones
+worth naming, since they are the ones showing up live.
+
+The on-disk `rid_alias_file` is never rewritten. When `storage.path` is set the
+name/description/tag/group/owner/icon are saved to a `labels` table in that
+SQLite database and re-applied over the alias files at every startup, so the
+name survives a restart; a stored name that disagrees with the file's logs a
+WARN naming both. The policy fields (priority, lockout, watch) stay in memory,
+as before.
+
+Without `storage.path` the rename still works, but only until the daemon stops.
+
+**Export names → CSV** on the panel downloads what you have named in the alias
+file's own format, so operator-applied names can be folded back into a
+hand-maintained file whenever you want. `scope=all` exports the whole merged
+catalogue instead of just the named rows.
 
 ## gRPC surface
 

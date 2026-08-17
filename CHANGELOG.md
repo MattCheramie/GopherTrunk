@@ -42,6 +42,18 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **Name radios and talkgroups from the web console, and keep the names.**
+  The Radio IDs and Talkgroups detail panels now carry Name / Description
+  fields (and Owner for a radio), committed on blur or Enter. A radio or
+  talkgroup that appears in no `rid_alias_file` / `talkgroup_file` is created
+  rather than rejected — previously `PATCH /api/v1/rids/{id}` returned 404 for
+  exactly the radios worth naming, since a radio showing up live is by
+  definition not in a file yet, and `PATCH /api/v1/talkgroups/{id}` had no name
+  field at all. With `storage.path` set the names persist to a new `labels`
+  table and are re-applied over the alias files at startup; without it they
+  stay in memory as before. The on-disk files are never rewritten — an
+  **Export names → CSV** link on each panel downloads them in the alias file's
+  own format so they can be folded back in by hand.
 - **`sdr.soapy_remote[].verbose_debug` traces the RPC conversation.** Logs every
   control-channel request and response to that server — decoded call name and
   arguments plus a hex dump of the frame — at DEBUG. The SoapyRemote wire

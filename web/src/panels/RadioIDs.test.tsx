@@ -19,7 +19,12 @@ vi.mock("../api/client", async () => {
   };
 });
 
+vi.mock("../api/write", () => ({
+  writes: { updateRID: vi.fn() },
+}));
+
 import { api } from "../api/client";
+import { writes } from "../api/write";
 import { useShared } from "../store/shared";
 import { RadioIDs } from "./RadioIDs";
 import type { RIDDTO } from "../api/types";
@@ -250,5 +255,42 @@ describe("RadioIDs panel", () => {
     await waitFor(() => {
       expect(screen.getByText("OFFLIST")).toBeInTheDocument();
     });
+  });
+
+  // The operator's case: a radio seen on the air and in no rid_alias_file.
+  // Naming it used to be impossible — the panel showed a dead end telling
+  // them to edit a file and reload the daemon, and the PATCH 404'd anyway.
+  it("lets an operator name a radio that is in no alias file", async () => {
+    useShared.setState({ writeMode: true, mutations: { allow_mutations: true } });
+    const rows: RIDDTO[] = [{ id: 1005736, configured: false, call_count: 2012 }];
+    vi.mocked(api.rids).mockResolvedValue(rows);
+    vi.mocked(api.ridHistory).mockResolvedValue([]);
+    vi.mocked(writes.updateRID).mockResolvedValue({
+      id: 1005736,
+      alias: "CPL-SMITH",
+    });
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(await screen.findByText("1005736"));
+    const input = await screen.findByRole("textbox", { name: "Name" });
+    await user.type(input, "CPL-SMITH{Enter}");
+
+    await waitFor(() => {
+      expect(writes.updateRID).toHaveBeenCalled();
+    });
+    const [, id, patch] = vi.mocked(writes.updateRID).mock.calls[0];
+    expect(id).toBe(1005736);
+    expect(patch).toMatchObject({ alias: "CPL-SMITH" });
+    // The old dead-end copy told operators to edit a file and reload.
+    expect(screen.queryByText(/Add it to the file/)).toBeNull();
+  });
+
+  it("offers a CSV export of the names", async () => {
+    vi.mocked(api.rids).mockResolvedValue([]);
+    renderPanel();
+    const link = await screen.findByText(/Export names/);
+    expect(link.getAttribute("href")).toContain("/api/v1/labels/export");
+    expect(link.getAttribute("href")).toContain("kind=rid");
   });
 });

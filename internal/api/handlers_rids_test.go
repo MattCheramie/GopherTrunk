@@ -602,16 +602,19 @@ func TestUpdateRIDRejectsEmptyBody(t *testing.T) {
 	}
 }
 
-func TestUpdateRIDLiveOnlyReturns404(t *testing.T) {
-	// A RID only seen over the air (no static catalogue row) cannot
-	// be patched — operators must add it to the alias file first.
+// A radio only seen over the air used to 404 here: operators were told to add
+// it to rid_alias_file and restart first. That inverts the workflow — the
+// radios worth naming are the ones showing up live, which by definition are
+// not in the file yet — so the patch now creates the catalogue entry.
+func TestUpdateRIDLiveOnlyCreatesCatalogueEntry(t *testing.T) {
 	bus := events.NewBus(4)
 	defer bus.Close()
 	live := &fakeAffiliationProvider{units: []trunking.UnitActivity{
 		{RadioID: 5, Talkgroup: 1},
 	}}
+	rids := trunking.NewRIDDB()
 	base, teardown := mkServer(t, ServerOptions{
-		Bus: bus, RIDs: trunking.NewRIDDB(), Affiliations: live, AllowMutations: true,
+		Bus: bus, RIDs: rids, Affiliations: live, AllowMutations: true,
 	})
 	defer teardown()
 
@@ -623,7 +626,26 @@ func TestUpdateRIDLiveOnlyReturns404(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var dto RIDDTO
+	if err := json.NewDecoder(resp.Body).Decode(&dto); err != nil {
+		t.Fatal(err)
+	}
+	if dto.Alias != "NEW" {
+		t.Errorf("alias = %q, want NEW", dto.Alias)
+	}
+	rec := rids.Lookup(5)
+	if rec == nil {
+		t.Fatal("catalogue entry was not created")
+	}
+	if rec.Alias != "NEW" {
+		t.Errorf("catalogue alias = %q, want NEW", rec.Alias)
+	}
+	// Watch defaults true on every loader, so a synthesised record has to
+	// match one read from a file or the radio silently drops off a watch list.
+	if !rec.Watch {
+		t.Error("synthesised RID has Watch=false, want the loader default true")
 	}
 }

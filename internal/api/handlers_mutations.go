@@ -101,28 +101,54 @@ func parseEndReason(s string) trunking.EndReason {
 // pointers so JSON-omitted fields aren't accidentally zeroed: only
 // supplied fields are applied.
 type updateTalkgroupRequest struct {
-	Priority *int    `json:"priority"`
-	Lockout  *bool   `json:"lockout"`
-	Scan     *bool   `json:"scan"`
-	Stream   *bool   `json:"stream"`
-	Record   *bool   `json:"record"`
-	Mute     *bool   `json:"mute"`
-	Icon     *string `json:"icon"`
+	// AlphaTag / Description / Tag / Group are the operator-applied name and
+	// its descriptive fields. Unlike the policy fields below they are
+	// persisted when a label store is wired, so a name applied while watching
+	// live traffic survives a restart.
+	AlphaTag    *string `json:"alpha_tag"`
+	Description *string `json:"description"`
+	Tag         *string `json:"tag"`
+	Group       *string `json:"group"`
+	Priority    *int    `json:"priority"`
+	Lockout     *bool   `json:"lockout"`
+	Scan        *bool   `json:"scan"`
+	Stream      *bool   `json:"stream"`
+	Record      *bool   `json:"record"`
+	Mute        *bool   `json:"mute"`
+	Icon        *string `json:"icon"`
 }
 
-// handleUpdateTalkgroup updates a talkgroup's mutable policy fields
-// (priority and/or lockout). The full updated record is returned.
+// empty reports whether the request carries no fields at all.
+func (r updateTalkgroupRequest) empty() bool {
+	return r.AlphaTag == nil && r.Description == nil && r.Tag == nil &&
+		r.Group == nil && r.Priority == nil && r.Lockout == nil &&
+		r.Scan == nil && r.Stream == nil && r.Record == nil &&
+		r.Mute == nil && r.Icon == nil
+}
+
+// handleUpdateTalkgroup updates a talkgroup's operator-applied name and its
+// mutable policy fields. The full updated record is returned.
 //
-//	PATCH /api/v1/talkgroups/42
+//	PATCH /api/v1/talkgroups/42?system=250_013
 //	Content-Type: application/json
-//	{"priority":3,"lockout":false}
+//	{"alpha_tag":"TAC-1","priority":3}
+//
+// A talkgroup that is not in the catalogue is CREATED rather than 404'd: an
+// operator naming a talkgroup they can see on the air should not first have to
+// add it to a file and restart the daemon. The optional ?system= scopes the
+// persisted label to one system; omitted, the name applies wherever the id is
+// seen, matching the daemon's single merged catalogue.
 //
 // Responses:
 //
 //	200 with the updated TalkgroupDTO
 //	400 if the id can't be parsed or the body is malformed
-//	404 if no such talkgroup exists
+//	503 if no talkgroup catalogue is wired
 func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
+	if s.talkgroups == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "talkgroup catalogue not wired")
+		return
+	}
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
@@ -134,12 +160,24 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	if req.Priority == nil && req.Lockout == nil && req.Scan == nil &&
-		req.Stream == nil && req.Record == nil && req.Mute == nil && req.Icon == nil {
-		s.writeError(w, http.StatusBadRequest, "supply at least one of priority, lockout, scan, stream, record, mute, icon")
+	if req.empty() {
+		s.writeError(w, http.StatusBadRequest,
+			"supply at least one of alpha_tag, description, tag, group, priority, lockout, scan, stream, record, mute, icon")
 		return
 	}
-	ok := s.talkgroups.UpdateFields(uint32(id), func(tg *trunking.TalkGroup) {
+	apply := func(tg *trunking.TalkGroup) {
+		if req.AlphaTag != nil {
+			tg.AlphaTag = *req.AlphaTag
+		}
+		if req.Description != nil {
+			tg.Description = *req.Description
+		}
+		if req.Tag != nil {
+			tg.Tag = *req.Tag
+		}
+		if req.Group != nil {
+			tg.Group = *req.Group
+		}
 		if req.Priority != nil {
 			tg.Priority = *req.Priority
 		}
@@ -161,12 +199,18 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		if req.Icon != nil {
 			tg.Icon = *req.Icon
 		}
-	})
-	if !ok {
-		s.writeError(w, http.StatusNotFound, "talkgroup not found")
-		return
+	}
+	if !s.talkgroups.UpdateFields(uint32(id), apply) {
+		// Not catalogued: synthesise a record with the CSV loader's defaults
+		// so the row behaves like a loaded one. Deliberately NOT tagged
+		// Discovered — DeleteDiscovered would then silently retract the
+		// operator's name.
+		tg := &trunking.TalkGroup{ID: uint32(id), Scan: true, Stream: true, Record: true}
+		apply(tg)
+		s.talkgroups.Add(tg)
 	}
 	tg := s.talkgroups.Lookup(uint32(id))
+	s.persistTalkgroupLabel(r.URL.Query().Get("system"), tg)
 	writeJSON(w, http.StatusOK, talkgroupToDTO(tg))
 }
 

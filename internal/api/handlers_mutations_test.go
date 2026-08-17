@@ -233,11 +233,15 @@ func TestUpdateTalkgroup_AppliesScan(t *testing.T) {
 	}
 }
 
-func TestUpdateTalkgroup_NotFound(t *testing.T) {
+// An unknown talkgroup used to 404 here. It is now created instead, so an
+// operator can name or set policy on a talkgroup they can see on the air
+// without first editing talkgroup_file and restarting.
+func TestUpdateTalkgroup_UnknownIDIsCreated(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
+	tgs := trunking.NewTalkgroupDB()
 	base, teardown := mkServer(t, ServerOptions{
-		Bus: bus, AllowMutations: true, Talkgroups: trunking.NewTalkgroupDB(),
+		Bus: bus, AllowMutations: true, Talkgroups: tgs,
 	})
 	defer teardown()
 
@@ -249,8 +253,15 @@ func TestUpdateTalkgroup_NotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 404 {
-		t.Errorf("status=%d, want 404", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	tg := tgs.Lookup(999)
+	if tg == nil {
+		t.Fatal("talkgroup was not created")
+	}
+	if tg.Priority != 1 {
+		t.Errorf("priority = %d, want 1", tg.Priority)
 	}
 }
 

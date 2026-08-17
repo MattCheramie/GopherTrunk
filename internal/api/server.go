@@ -342,6 +342,12 @@ type Server struct {
 	// daemon over storage.BookmarkStore.
 	bookmarks BookmarkProvider
 
+	// labels is the optional provider that persists operator-applied names
+	// for radios and talkgroups. nil keeps renames in memory only (and the
+	// /api/v1/labels routes returning 503), which is the behaviour a daemon
+	// without storage.path has always had.
+	labels LabelProvider
+
 	// diag is the optional provider backing /api/v1/diag/...
 	// routes (decimated-IQ stream for the Constellation panel).
 	// nil disables the routes (503). Implemented by the daemon
@@ -831,6 +837,10 @@ type ServerOptions struct {
 	// returning 503. Wired by the daemon over the SQLite-backed
 	// storage.BookmarkStore.
 	Bookmarks BookmarkProvider
+	// Labels, when non-nil, persists operator-applied radio / talkgroup
+	// names so a rename survives a daemon restart. The daemon wires it over
+	// the SQLite-backed storage.LabelStore; nil keeps renames in memory.
+	Labels LabelProvider
 	// Diag, when non-nil, enables the
 	// WS /api/v1/diag/iq decimated-IQ live stream that backs the
 	// web Constellation panel. The daemon implements this over
@@ -1041,6 +1051,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		capture:        opts.Capture,
 		autoRecord:     opts.AutoRecord,
 		bookmarks:      opts.Bookmarks,
+		labels:         opts.Labels,
 		diag:           opts.Diag,
 		symbols:        opts.Symbols,
 		mixer:          opts.Mixer,
@@ -1329,6 +1340,14 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/bookmarks", s.gate(s.handleCreateBookmark))
 	mux.HandleFunc("PATCH /api/v1/bookmarks/{id}", s.gate(s.handleUpdateBookmark))
 	mux.HandleFunc("DELETE /api/v1/bookmarks/{id}", s.gate(s.handleDeleteBookmark))
+
+	// Operator-applied radio / talkgroup names. Writes go through the
+	// existing PATCH /api/v1/rids/{id} and /api/v1/talkgroups/{id}; these
+	// routes read the persisted rows back and export them as a CSV that
+	// loads into rid_alias_file / talkgroup_file.
+	mux.HandleFunc("GET /api/v1/labels", s.handleListLabels)
+	mux.HandleFunc("GET /api/v1/labels/export", s.handleExportLabels)
+	mux.HandleFunc("DELETE /api/v1/labels/{kind}/{id}", s.gate(s.handleDeleteLabel))
 
 	// Diagnostic IQ stream — feeds the web Constellation panel.
 	// Read-only; the daemon doesn't expose any way to inject IQ

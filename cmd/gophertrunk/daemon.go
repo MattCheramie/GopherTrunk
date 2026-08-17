@@ -449,6 +449,7 @@ type Daemon struct {
 	callLog      *storage.CallLog
 	locationLog  *storage.LocationLog
 	bookmarks    *storage.BookmarkStore
+	labels       *storage.LabelStore
 	pagerLog     *storage.PagerLog
 	aprsLog      *storage.APRSLog
 	vesselLog    *storage.VesselLog
@@ -2653,6 +2654,9 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 		if d.bookmarks != nil {
 			opts.Bookmarks = bookmarkProvider{store: d.bookmarks}
 		}
+		if d.labels != nil {
+			opts.Labels = labelProvider{store: d.labels}
+		}
 		if d.pagerLog != nil {
 			opts.Pager = pagerProvider{log: d.pagerLog}
 		}
@@ -2865,6 +2869,27 @@ func (d *Daemon) buildStorage(cfg config.Config, log *slog.Logger) error {
 			return fmt.Errorf("daemon: bookmarks: %w", err)
 		}
 		d.bookmarks = bs
+
+		ls, err := storage.NewLabelStore(db, d.bus)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: labels: %w", err)
+		}
+		d.labels = ls
+		// Layered over the alias files, which the per-system loop above has
+		// already read, so an operator's name wins over the file's.
+		applyCtx, applyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		applied, created, err := applyLabels(applyCtx, ls, d.rids, d.talkgroups, log)
+		applyCancel()
+		if err != nil {
+			// A label that cannot be read is not worth refusing to start over:
+			// the alias files are still loaded and the daemon runs without the
+			// operator's names, which is visible and recoverable.
+			log.Warn("daemon: operator labels not applied", "err", err)
+		} else if applied+created > 0 {
+			log.Info("daemon: operator labels applied",
+				"updated", applied, "created", created)
+		}
 
 		pl, err := storage.NewPagerLog(db, d.bus, log)
 		if err != nil {
@@ -5222,6 +5247,122 @@ func (p bookmarkProvider) DeleteBookmark(id int64) error {
 	ctx, cancel := p.ctx()
 	defer cancel()
 	return p.store.Delete(ctx, id)
+}
+
+// labelProvider adapts storage.LabelStore into api.LabelProvider, on the same
+// request-scoped-context pattern as bookmarkProvider.
+type labelProvider struct{ store *storage.LabelStore }
+
+func (p labelProvider) ctx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
+func (p labelProvider) ListLabels(kind storage.LabelKind, system string) ([]storage.Label, error) {
+	ctx, cancel := p.ctx()
+	defer cancel()
+	return p.store.List(ctx, kind, system)
+}
+
+func (p labelProvider) UpsertLabel(l storage.Label) (storage.Label, error) {
+	ctx, cancel := p.ctx()
+	defer cancel()
+	return p.store.Upsert(ctx, l)
+}
+
+func (p labelProvider) DeleteLabel(kind storage.LabelKind, system string, id uint32) error {
+	ctx, cancel := p.ctx()
+	defer cancel()
+	return p.store.Delete(ctx, kind, system, id)
+}
+
+// applyLabels layers the persisted operator names over the file-loaded
+// catalogues. The label wins over the alias file: it is the operator's most
+// recent explicit act, and the only one they can perform without a restart.
+//
+// An id with no catalogue entry is CREATED with the CSV loaders' defaults —
+// that is the whole point, since a radio worth naming is usually one that
+// showed up on the air and is in no file yet. A synthesised talkgroup is
+// deliberately not tagged Discovered, or DeleteDiscovered would silently
+// retract the operator's name.
+func applyLabels(ctx context.Context, store *storage.LabelStore,
+	rids *trunking.RIDDB, tgs *trunking.TalkgroupDB, log *slog.Logger) (applied, created int, err error) {
+	if store == nil {
+		return 0, 0, nil
+	}
+	rows, err := store.List(ctx, "", "")
+	if err != nil {
+		return 0, 0, fmt.Errorf("daemon: load operator labels: %w", err)
+	}
+	for _, l := range rows {
+		switch l.Kind {
+		case storage.LabelKindRID:
+			if rids == nil {
+				continue
+			}
+			if existing := rids.Lookup(l.TargetID); existing != nil {
+				warnLabelDivergence(log, "rid", l, existing.Alias)
+				rids.UpdateFields(l.TargetID, func(r *trunking.RID) { applyRIDLabel(r, l) })
+				applied++
+				continue
+			}
+			r := &trunking.RID{ID: l.TargetID, Watch: true}
+			applyRIDLabel(r, l)
+			rids.Add(r)
+			created++
+		case storage.LabelKindTalkgroup:
+			if tgs == nil {
+				continue
+			}
+			if existing := tgs.Lookup(l.TargetID); existing != nil {
+				warnLabelDivergence(log, "talkgroup", l, existing.AlphaTag)
+				tgs.UpdateFields(l.TargetID, func(tg *trunking.TalkGroup) { applyTalkgroupLabel(tg, l) })
+				applied++
+				continue
+			}
+			tg := &trunking.TalkGroup{ID: l.TargetID, Scan: true, Stream: true, Record: true}
+			applyTalkgroupLabel(tg, l)
+			tgs.Add(tg)
+			created++
+		}
+	}
+	return applied, created, nil
+}
+
+// warnLabelDivergence flags a stored name that disagrees with the alias file's,
+// so an operator who later folds labels back into their CSV is not surprised by
+// which one the daemon has been using.
+func warnLabelDivergence(log *slog.Logger, kind string, l storage.Label, fileName string) {
+	if log == nil || l.Name == "" || fileName == "" || l.Name == fileName {
+		return
+	}
+	log.Warn("daemon: operator label overrides the alias file's name",
+		"kind", kind, "id", l.TargetID, "file", fileName, "label", l.Name)
+}
+
+// applyRIDLabel copies the non-empty label fields onto a radio record. Empty
+// fields are left alone so a label that only sets a name does not blank out an
+// owner or tag the alias file supplied.
+func applyRIDLabel(r *trunking.RID, l storage.Label) {
+	setIfNotEmpty(&r.Alias, l.Name)
+	setIfNotEmpty(&r.Description, l.Description)
+	setIfNotEmpty(&r.Tag, l.Tag)
+	setIfNotEmpty(&r.Group, l.Group)
+	setIfNotEmpty(&r.Owner, l.Owner)
+	setIfNotEmpty(&r.Icon, l.Icon)
+}
+
+func applyTalkgroupLabel(tg *trunking.TalkGroup, l storage.Label) {
+	setIfNotEmpty(&tg.AlphaTag, l.Name)
+	setIfNotEmpty(&tg.Description, l.Description)
+	setIfNotEmpty(&tg.Tag, l.Tag)
+	setIfNotEmpty(&tg.Group, l.Group)
+	setIfNotEmpty(&tg.Icon, l.Icon)
+}
+
+func setIfNotEmpty(dst *string, v string) {
+	if v != "" {
+		*dst = v
+	}
 }
 
 // pagerProvider adapts storage.PagerLog into the api.PagerProvider

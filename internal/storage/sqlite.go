@@ -136,6 +136,32 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 CREATE INDEX IF NOT EXISTS idx_bookmarks_freq  ON bookmarks(freq_hz);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_group ON bookmarks(grouping, name);
 
+-- Operator-applied names for radios and talkgroups, layered over the
+-- per-system talkgroup_file / rid_alias_file catalogues at startup. This is
+-- what lets an operator name a radio they are watching right now, including
+-- one that appears in no alias file at all, and have the name survive a
+-- restart. Keyed by system as well as id because those catalogue files are
+-- per-system config keys, so the CSV export has to be able to emit one file
+-- per system; system = '' means "applies wherever this id is seen", which
+-- matches the merged, id-keyed catalogue the daemon holds in memory today.
+CREATE TABLE IF NOT EXISTS labels (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT    NOT NULL,             -- 'rid' | 'talkgroup'
+    system      TEXT    NOT NULL DEFAULT '',
+    target_id   INTEGER NOT NULL,             -- bare RID / talkgroup id
+    name        TEXT    NOT NULL DEFAULT '',  -- RID alias / talkgroup alpha tag
+    description TEXT    NOT NULL DEFAULT '',
+    tag         TEXT    NOT NULL DEFAULT '',
+    grouping    TEXT    NOT NULL DEFAULT '',  -- GROUP is reserved in SQL
+    owner       TEXT    NOT NULL DEFAULT '',  -- radios only
+    icon        TEXT    NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL,             -- unix nanoseconds
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_key  ON labels(kind, system, target_id);
+CREATE INDEX        IF NOT EXISTS idx_labels_kind ON labels(kind, target_id);
+
 -- POCSAG pager messages persisted from the decoder pipeline. Each
 -- row is one fully-reassembled page (address codeword + N message
 -- codewords). The function field is the 2-bit code from the

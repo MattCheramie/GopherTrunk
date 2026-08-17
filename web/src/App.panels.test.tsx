@@ -109,6 +109,9 @@ vi.mock("./api/client", () => {
     },
     request: vi.fn(),
     audioStreamURL: () => "http://test/stream",
+    // Panels that build a download link (the labels CSV export) call joinURL
+    // at render time, so the partial mock has to carry it.
+    joinURL: (base: string, path: string) => `${base}${path}`,
   };
 });
 
