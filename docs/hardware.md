@@ -969,6 +969,15 @@ classifies every carrier, and streams the inventory to
   kwarg, it cannot be expressed via `args`. Leave it `0` for SoapyRemote's
   default of 1500; raise it (e.g. `8192`) on jumbo-frame or high-throughput
   links.
+- `stream_window` is worth setting explicitly on macOS servers. Left at `0`,
+  GopherTrunk does not send `remote:window` and the **server** picks its own
+  default socket-buffer size — which is host-dependent. `SoapySDRUtil --probe`
+  reports it: one operator's Linux host defaulted to ~44 MB while their macOS
+  host defaulted to **16 KiB**, and `SoapySDRServer` duly logged
+  `Configured sender endpoint: … window=16 KiB`. At 1 MS/s CS16 over two
+  diversity channels that is about 2 ms of buffer, so any scheduling hiccup on
+  the server stalls its sender. If the probe shows a small window, set
+  `stream_window` (e.g. `8388608`) rather than relying on the default.
 - `args` passes extra SoapySDR device kwargs to the remote `make()` as a
   `"key=value,key2=value2"` string, merged with `driver` (an explicit
   `driver=` in `args` wins). Use it for server-side device selection and
