@@ -34,6 +34,22 @@ func preflight(cfg config.Config) ([]string, error) {
 		{"storage.path (parent)", parentDir(cfg.Storage.Path)},
 		{"storage.cc_cache_file (parent)", parentDir(cfg.Storage.CCCacheFile)},
 	}
+	for i, s := range cfg.SDR.SoapyRemote {
+		if s.DiversityCapture == "" {
+			continue
+		}
+		// The value is a filename prefix; a trailing separator means the
+		// operator named the directory itself (the branch recorder then
+		// generates a timestamped basename inside it).
+		dir := parentDir(s.DiversityCapture)
+		if strings.HasSuffix(s.DiversityCapture, string(os.PathSeparator)) || strings.HasSuffix(s.DiversityCapture, "/") {
+			dir = filepath.Clean(s.DiversityCapture)
+		}
+		dirs = append(dirs, struct {
+			label string
+			path  string
+		}{fmt.Sprintf("sdr.soapy_remote[%d].diversity_capture (parent)", i), dir})
+	}
 	for _, d := range dirs {
 		if d.path == "" {
 			continue

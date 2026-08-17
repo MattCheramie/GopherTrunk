@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -357,13 +356,10 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..60; two CS16 branches are tens of MB/s)", i, s.DiversityCaptureSeconds)
 		}
 	}
-	if s.DiversityCapture != "" {
-		// Fail at config load, not several hundred MB into a stream.
-		dir := filepath.Dir(s.DiversityCapture)
-		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture directory %q does not exist", i, dir)
-		}
-	}
+	// diversity_capture's directory is auto-created (preflight up front, and
+	// the branch recorder lazily for non-daemon entrypoints) like every other
+	// output directory in the config, so a missing directory is not an error
+	// here. Validation must stay side-effect free, so no MkdirAll either.
 	// stream_mtu is in bytes; 0 means SoapyRemote's default (1500). Reject
 	// values that can't be a real endpoint MTU — too small to hold a useful
 	// frame, or above the driver's 4 MiB per-transfer read guard.

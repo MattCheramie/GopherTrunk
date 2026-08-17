@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // branchRecorder dumps the PRE-COMBINE per-branch IQ of a diversity stream.
@@ -125,7 +126,7 @@ func (d *device) startBranchCapture(rateHz float64) {
 	d.mu.Unlock()
 	d.mrc.rec = rec
 	d.log.Info("soapyremote: diversity capture armed — dumping pre-combine per-branch IQ",
-		"prefix", d.capturePrefix, "seconds", secs, "branches", d.rxChannelCount())
+		"prefix", rec.prefix, "seconds", secs, "branches", d.rxChannelCount())
 }
 
 // branchCaptureMaxBytes caps a capture independently of the configured seconds,
@@ -133,11 +134,40 @@ func (d *device) startBranchCapture(rateHz float64) {
 // 50 MB/s.
 const branchCaptureMaxBytes = 1 << 30 // 1 GiB per branch
 
+// resolveCapturePrefix turns a directory-style prefix — trailing separator, or
+// naming an existing directory — into a timestamped file prefix inside that
+// directory. Without this, "mrc_autocaptures/" + ".br0.cs16" produces HIDDEN
+// dot-files (an operator shipped a capture nobody could see with plain ls).
+// A plain filename prefix passes through untouched.
+func resolveCapturePrefix(prefix string, now time.Time) string {
+	isDir := os.IsPathSeparator(prefix[len(prefix)-1])
+	if !isDir {
+		if fi, err := os.Stat(prefix); err == nil && fi.IsDir() {
+			isDir = true
+		}
+	}
+	if !isDir {
+		return prefix
+	}
+	return filepath.Join(prefix, "diversity_"+now.UTC().Format("20060102T150405Z"))
+}
+
 // newBranchRecorder opens the per-branch files under prefix. budgetSamples
 // bounds the capture per branch; <=0 means the byte cap alone applies.
 func newBranchRecorder(prefix string, branches int, budgetSamples int64, log *slog.Logger) (*branchRecorder, error) {
 	if branches < 1 {
 		return nil, fmt.Errorf("soapyremote: branch capture needs at least one branch")
+	}
+	if prefix == "" {
+		return nil, fmt.Errorf("soapyremote: branch capture needs a file prefix")
+	}
+	prefix = resolveCapturePrefix(prefix, time.Now())
+	// Auto-create the directory like every other output path (the config
+	// validator no longer hard-fails on a missing one). Cheap and idempotent.
+	if dir := filepath.Dir(prefix); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("soapyremote: branch capture dir %s: %w", dir, err)
+		}
 	}
 	r := &branchRecorder{
 		log:           log,

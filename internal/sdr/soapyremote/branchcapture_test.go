@@ -7,7 +7,9 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // readCS16 decodes a headerless cs16 branch file back to complex64.
@@ -264,5 +266,74 @@ func TestBranchCaptureArmsOncePerDevice(t *testing.T) {
 	d.mrc.rec.finish()
 	if got := readCS16(t, prefix+".br0.cs16"); len(got) != len(ch0) {
 		t.Errorf("captured %d samples, want %d", len(got), len(ch0))
+	}
+}
+
+// TestBranchRecorderCreatesMissingDirectory pins the auto-create contract: the
+// config validator no longer hard-fails on a missing diversity_capture
+// directory, so the recorder must create it like every other output path.
+// Fails against the old code with "no such file or directory".
+func TestBranchRecorderCreatesMissingDirectory(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "does", "not", "exist", "cap")
+	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	if err != nil {
+		t.Fatalf("newBranchRecorder: %v", err)
+	}
+	rec.finish()
+	if _, err := os.Stat(prefix + ".br0.cs16"); err != nil {
+		t.Errorf("branch file not created under auto-created dir: %v", err)
+	}
+}
+
+// TestBranchRecorderDirectoryPrefixIsNotHidden pins the operator-visible
+// naming: a diversity_capture value that names a DIRECTORY (trailing slash, or
+// an existing dir) must produce a timestamped basename inside it — not
+// prefix+".br0.cs16", which yields hidden dot-files. An operator shipped a
+// capture as ".br0.cs16"/".br1.cs16"/".diversity.json" that plain ls could not
+// see; this fails against the old code.
+func TestBranchRecorderDirectoryPrefixIsNotHidden(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		prefix func(dir string) string
+	}{
+		{"trailing separator", func(dir string) string { return dir + string(os.PathSeparator) }},
+		{"existing directory", func(dir string) string { return dir }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			rec, err := newBranchRecorder(tc.prefix(dir), 2, 0, testLogger())
+			if err != nil {
+				t.Fatalf("newBranchRecorder: %v", err)
+			}
+			rec.finish()
+			ents, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ents) == 0 {
+				t.Fatal("no capture files written into the directory")
+			}
+			for _, e := range ents {
+				if strings.HasPrefix(e.Name(), ".") {
+					t.Errorf("hidden capture file %q — directory prefix must get a generated basename", e.Name())
+				}
+				if !strings.HasPrefix(e.Name(), "diversity_") {
+					t.Errorf("capture file %q does not carry the generated diversity_<timestamp> basename", e.Name())
+				}
+			}
+		})
+	}
+}
+
+// TestResolveCapturePrefixPassthrough: a plain filename prefix is untouched, so
+// existing configs keep their exact output names.
+func TestResolveCapturePrefixPassthrough(t *testing.T) {
+	now := time.Date(2026, 8, 17, 20, 23, 23, 0, time.UTC)
+	if got := resolveCapturePrefix("captures/cap1", now); got != "captures/cap1" {
+		t.Errorf("plain prefix rewritten to %q", got)
+	}
+	want := filepath.Join("captures", "diversity_20260817T202323Z")
+	if got := resolveCapturePrefix("captures"+string(os.PathSeparator), now); got != want {
+		t.Errorf("directory prefix resolved to %q, want %q", got, want)
 	}
 }

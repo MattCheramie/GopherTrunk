@@ -2099,4 +2099,18 @@ func (c *Config) resolvePaths(base string) {
 		c.Trunking.Systems[i].TalkgroupFile = resolve(c.Trunking.Systems[i].TalkgroupFile)
 		c.Trunking.Systems[i].RIDAliasFile = resolve(c.Trunking.Systems[i].RIDAliasFile)
 	}
+	for i := range c.SDR.SoapyRemote {
+		p := c.SDR.SoapyRemote[i].DiversityCapture
+		if p == "" {
+			continue
+		}
+		r := resolve(p)
+		// filepath.Join strips a trailing separator, but the branch recorder
+		// uses it to tell "directory to drop timestamped captures into" from
+		// "filename prefix" — keep the operator's intent visible.
+		if strings.HasSuffix(p, "/") || strings.HasSuffix(p, string(os.PathSeparator)) {
+			r += string(os.PathSeparator)
+		}
+		c.SDR.SoapyRemote[i].DiversityCapture = r
+	}
 }
