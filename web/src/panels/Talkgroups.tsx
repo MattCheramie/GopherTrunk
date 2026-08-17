@@ -19,9 +19,9 @@ import {
 
 const POLL_INTERVAL_MS = 15_000;
 
-// Talkgroups is read-only in this PR. Priority / lockout / scan
-// mutations (PATCH /api/v1/talkgroups/{id}) land in the mutation pass
-// that introduces the daemon-write capability gate UI.
+// Mutations (PATCH /api/v1/talkgroups/{id}) are gated on the daemon's
+// write capability: naming fields persist to the labels table, while
+// priority / lockout / scan stay in the daemon's memory until restart.
 export function Talkgroups() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);

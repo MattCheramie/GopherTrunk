@@ -17,8 +17,8 @@ import {
 } from "../store/shared";
 
 // History reads /api/v1/calls/history with the same filter shape the
-// daemon accepts: limit, system, group_id. Read-only in this pass;
-// retention-sweep button lands in the mutation pass.
+// daemon accepts: limit, system, group_id. The response envelope is
+// {"calls":[...]} — reading any other key yields a silently empty table.
 export function History() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
