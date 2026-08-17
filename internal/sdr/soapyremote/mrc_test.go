@@ -460,3 +460,32 @@ func TestMRCTrackAlphaMatchesDocumentedTimeConstant(t *testing.T) {
 		t.Errorf("static alpha = %v, want 0 (one-shot)", got)
 	}
 }
+
+// TestMRCCombinerHealthFlagsADeadReference pins a gap the sticky anchor opened.
+// The reference used to be the argmax by construction, so it could never be the
+// dead branch and comparing everything to it was safe. Now that the anchor is
+// latched and held, the REFERENCE receiver can go dark mid-session — an antenna
+// falling off the primary — and a reference-relative comparison would report
+// nothing at all, which is the one case an operator most needs told about.
+func TestMRCCombinerHealthFlagsADeadReference(t *testing.T) {
+	rng := rand.New(rand.NewSource(13))
+	live := mrcSignal(rng, 512, 0.4)
+	weak := scaleC(live, complex(1e-3, 0)) // 60 dB down
+
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	// Latch the anchor on branch 0 while it is the loud one.
+	m.combine(twoBranchPayload(live, weak), len(live))
+	if h := m.health(); h.refIdx != 0 {
+		t.Fatalf("reference branch = %d, want 0", h.refIdx)
+	}
+
+	// Branch 0's antenna falls off: it is now the weak one, but the anchor holds.
+	m.combine(twoBranchPayload(weak, live), len(live))
+	h := m.health()
+	if h.refIdx != 0 {
+		t.Fatalf("reference moved to %d on one datagram; the anchor must be sticky", h.refIdx)
+	}
+	if h.deadBranch != 0 {
+		t.Errorf("deadBranch = %d, want 0 — a dead REFERENCE must still be reported", h.deadBranch)
+	}
+}

@@ -156,8 +156,8 @@ func mrcCalWindowSamples(rateHz float64) int {
 	return n
 }
 
-// mrcBranchDeadMarginDb is how far below the reference branch a diversity
-// branch may sit before it is reported as dead. A branch this far down
+// mrcBranchDeadMarginDb is how far below the loudest branch a diversity branch
+// may sit before it is reported as dead. A branch this far down
 // contributes essentially nothing to a maximal-ratio combine (MRC weights by
 // |h|²), so it is almost always a disconnected antenna, an unset per-channel
 // gain, or a front-end that never digitised the second receiver — all operator-
@@ -196,7 +196,7 @@ const mrcBranchDeadMarginDb = 20.0
 // noise while a perfectly good RX1 was ignored: exactly the "pull the RX2A
 // antenna and everything drops to the noise floor" report in #1062. The
 // reference is now picked from the first window that carries any live branch and
-// then held (see mrcRefDeadWindows), the branches being handed to the calibrator
+// then held (see mrcRefDeadDatagrams), the branches being handed to the calibrator
 // permuted so the chosen reference is its index 0.
 //
 // KNOWN LIMITATION. The combine happens on the WIDEBAND stream, so one complex
@@ -234,9 +234,9 @@ type mrcCombiner struct {
 	refIdx  int
 	ordered [][]complex64
 
-	// refDeadWindows counts consecutive windows in which the incumbent
-	// reference looked dead relative to a challenger; see mrcRefDeadWindows.
-	refDeadWindows int
+	// refDeadDatagrams counts consecutive datagrams in which the incumbent
+	// reference looked dead relative to a challenger; see mrcRefDeadDatagrams.
+	refDeadDatagrams int
 
 	// Diagnostics, refreshed every combine(): per-branch mean power and how the
 	// last payload split. See health().
@@ -244,14 +244,14 @@ type mrcCombiner struct {
 	gotBranch int
 }
 
-// mrcRefDeadWindows is how many consecutive windows the reference branch must
-// look dead before the anchor moves. Moving the anchor is a phase discontinuity
+// mrcRefDeadDatagrams is how many consecutive datagrams the reference branch
+// must look dead before the anchor moves. Moving the anchor is a phase discontinuity
 // by construction — a different receiver down a different LO path — so it is
 // reserved for a genuinely dead reference and never for a marginal power
 // difference. The predecessor recomputed argmax on EVERY datagram while
 // uncalibrated, so an ordinary ~1 dB crossover between two healthy branches
 // flipped the anchor and handed the demodulator an arbitrary phase step.
-const mrcRefDeadWindows = 4
+const mrcRefDeadDatagrams = 4
 
 func newMRCCombiner(format sampleFormat, mode diversityMode, rateHz float64) *mrcCombiner {
 	window := mrcCalWindowSamples(rateHz)
@@ -321,12 +321,21 @@ func (m *mrcCombiner) health() mrcHealth {
 	if m.gotBranch != m.channels || m.refIdx < 0 || m.refIdx >= len(m.powDbFS) {
 		return h
 	}
-	ref := m.powDbFS[m.refIdx]
+	// A branch is dead if it sits mrcBranchDeadMarginDb below the loudest one.
+	//
+	// This deliberately compares against the LOUDEST branch, not the reference.
+	// The reference used to be the argmax by construction, so it could never be
+	// the dead one; now that it is latched and held (see selectReference), the
+	// reference itself can go dark mid-session — an antenna falling off the
+	// primary receiver — and comparing everything to the reference would make
+	// exactly that case invisible, which is the one an operator most needs told.
+	loudest := argmaxFloat(m.powDbFS)
+	top := m.powDbFS[loudest]
 	for i, p := range m.powDbFS {
-		if i == m.refIdx {
+		if i == loudest {
 			continue
 		}
-		if ref-p > mrcBranchDeadMarginDb {
+		if top-p > mrcBranchDeadMarginDb {
 			h.deadBranch = i
 			break
 		}
@@ -347,7 +356,7 @@ func (m *mrcCombiner) setSampleRate(rateHz float64) {
 	m.window = want
 	m.cal = diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(m.mode, want))
 	m.refIdx = -1
-	m.refDeadWindows = 0
+	m.refDeadDatagrams = 0
 }
 
 // requestRecalibrate arms a calibration reset to be applied by the next
@@ -364,7 +373,7 @@ func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 	if m.rearm.Swap(false) {
 		m.cal.Reset()
 		m.refIdx = -1
-		m.refDeadWindows = 0
+		m.refDeadDatagrams = 0
 	}
 	branches := m.format.deinterleave(payload, m.channels, elems)
 	// Tap the branches BEFORE anything is done to them, so a capture is exactly
@@ -419,18 +428,18 @@ func (m *mrcCombiner) selectReference() {
 	}
 	if m.refIdx < 0 {
 		m.refIdx = best
-		m.refDeadWindows = 0
+		m.refDeadDatagrams = 0
 		return
 	}
 	// Only a persistently dead incumbent moves the anchor.
 	if best == m.refIdx || m.powDbFS[best]-m.powDbFS[m.refIdx] <= mrcBranchDeadMarginDb {
-		m.refDeadWindows = 0
+		m.refDeadDatagrams = 0
 		return
 	}
-	m.refDeadWindows++
-	if m.refDeadWindows >= mrcRefDeadWindows {
+	m.refDeadDatagrams++
+	if m.refDeadDatagrams >= mrcRefDeadDatagrams {
 		m.refIdx = best
-		m.refDeadWindows = 0
+		m.refDeadDatagrams = 0
 		m.cal.Reset() // the anchor changed; the old estimate means nothing
 	}
 }
