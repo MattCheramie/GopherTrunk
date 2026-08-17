@@ -260,18 +260,34 @@ func (s *Server) handleSiglabJobStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	cursor := 0
-	// Watcher goroutine wakes the cond when the client disconnects so the
-	// main loop doesn't block forever in cond.Wait after a hangup.
+	// Watcher goroutine wakes the cond when the client disconnects — or when
+	// the daemon starts shutting down, since Shutdown waits for this request
+	// without cancelling it — so the main loop doesn't block forever in
+	// cond.Wait.
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-s.closing():
+		}
 		job.mu.Lock()
 		job.cond.Broadcast()
 		job.mu.Unlock()
 	}()
+	leaving := func() bool {
+		if ctx.Err() != nil {
+			return true
+		}
+		select {
+		case <-s.closing():
+			return true
+		default:
+			return false
+		}
+	}
 
 	for {
 		job.mu.Lock()
-		for cursor >= len(job.events) && job.state == "running" && ctx.Err() == nil {
+		for cursor >= len(job.events) && job.state == "running" && !leaving() {
 			job.cond.Wait()
 		}
 		pending := append([]siglab.EventRecord(nil), job.events[cursor:]...)
@@ -279,7 +295,7 @@ func (s *Server) handleSiglabJobStream(w http.ResponseWriter, r *http.Request) {
 		state, errMsg := job.state, job.errMsg
 		job.mu.Unlock()
 
-		if ctx.Err() != nil {
+		if leaving() {
 			return
 		}
 		for _, ev := range pending {

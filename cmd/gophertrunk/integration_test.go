@@ -88,10 +88,14 @@ func TestDaemonEndToEnd(t *testing.T) {
 	runErrCh := make(chan error, 1)
 	go func() { runErrCh <- d.Run(ctx) }()
 	t.Cleanup(func() {
+		// Assert, don't shrug: this used to move on silently after 3 s, which
+		// is why a shutdown that sat out the HTTP server's whole 30 s drain
+		// window never failed anything in CI.
 		cancel()
 		select {
 		case <-runErrCh:
-		case <-time.After(3 * time.Second):
+		case <-time.After(5 * time.Second):
+			t.Error("daemon did not shut down within 5 s of ctx cancel")
 		}
 	})
 

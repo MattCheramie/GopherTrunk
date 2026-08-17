@@ -342,6 +342,12 @@ type Server struct {
 	// daemon over storage.BookmarkStore.
 	bookmarks BookmarkProvider
 
+	// labels is the optional provider that persists operator-applied names
+	// for radios and talkgroups. nil keeps renames in memory only (and the
+	// /api/v1/labels routes returning 503), which is the behaviour a daemon
+	// without storage.path has always had.
+	labels LabelProvider
+
 	// diag is the optional provider backing /api/v1/diag/...
 	// routes (decimated-IQ stream for the Constellation panel).
 	// nil disables the routes (503). Implemented by the daemon
@@ -471,9 +477,37 @@ type Server struct {
 	// renders in. Never nil after construction; mirrors display.timezone.
 	displayLoc *time.Location
 
+	// stopStreams is closed at the top of shutdown so the long-lived
+	// plain-HTTP handlers (SSE, the live audio stream, siglab progress)
+	// return of their own accord. http.Server.Shutdown waits for active
+	// non-hijacked requests and does NOT cancel their r.Context(), so
+	// without this signal a single attached subscriber pins the whole
+	// teardown until the shutdown context expires. Written once in
+	// NewServer and never reassigned, so handlers read it without the mutex.
+	stopStreams chan struct{}
+
 	mu     sync.Mutex
 	srv    *http.Server
 	closed bool
+}
+
+// closing returns the channel that is closed when the server begins shutting
+// down. Long-lived handlers select on it alongside r.Context().Done().
+func (s *Server) closing() <-chan struct{} { return s.stopStreams }
+
+// streamCtx derives a context that is cancelled either with the parent (the
+// client hung up) or when the server begins shutting down. For handlers that
+// hand a context to a long-running callee rather than looping themselves.
+func (s *Server) streamCtx(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	go func() {
+		select {
+		case <-s.closing():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
 }
 
 // HistoryQuery is the subset of storage.DB the history endpoint needs.
@@ -614,6 +648,10 @@ type CallRow struct {
 	SourceID    uint32 `json:"source_id"`
 	FrequencyHz uint32 `json:"frequency_hz"`
 	Encrypted   bool   `json:"encrypted"`
+	// AlgorithmID / KeyID identify the encryption the call was carried under.
+	// Only meaningful when Encrypted; the UI renders them as "enc <alg> key <id>".
+	AlgorithmID uint8  `json:"algorithm_id,omitempty"`
+	KeyID       uint16 `json:"key_id,omitempty"`
 	Emergency   bool   `json:"emergency"`
 	DataCall    bool   `json:"data_call"`
 	// Individual is true for a unit-to-unit / private call, where GroupID is a
@@ -628,6 +666,11 @@ type CallRow struct {
 	DurationMs     int64     `json:"duration_ms,omitempty"`
 	EndReason      string    `json:"end_reason,omitempty"`
 	TalkgroupAlpha string    `json:"talkgroup_alpha,omitempty"`
+	// SourceAlpha is the resolved alias/name of the transmitting radio, from
+	// the operator RID catalogue and live-decoded talker aliases; "" when
+	// unresolved. Snapshotted onto the row at call time, so renaming a radio
+	// later does not retro-fix history.
+	SourceAlpha string `json:"source_alpha,omitempty"`
 	// SignalDbFS is the call's mean received channel power in dBFS
 	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
 	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`
@@ -794,6 +837,10 @@ type ServerOptions struct {
 	// returning 503. Wired by the daemon over the SQLite-backed
 	// storage.BookmarkStore.
 	Bookmarks BookmarkProvider
+	// Labels, when non-nil, persists operator-applied radio / talkgroup
+	// names so a rename survives a daemon restart. The daemon wires it over
+	// the SQLite-backed storage.LabelStore; nil keeps renames in memory.
+	Labels LabelProvider
 	// Diag, when non-nil, enables the
 	// WS /api/v1/diag/iq decimated-IQ live stream that backs the
 	// web Constellation panel. The daemon implements this over
@@ -963,6 +1010,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		configBuilderSvc = svc
 	}
 	return &Server{
+		stopStreams:    make(chan struct{}),
 		addr:           opts.Addr,
 		bus:            opts.Bus,
 		engine:         opts.Engine,
@@ -1003,6 +1051,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		capture:        opts.Capture,
 		autoRecord:     opts.AutoRecord,
 		bookmarks:      opts.Bookmarks,
+		labels:         opts.Labels,
 		diag:           opts.Diag,
 		symbols:        opts.Symbols,
 		mixer:          opts.Mixer,
@@ -1101,14 +1150,25 @@ func (s *Server) BoundAddr() string {
 	return s.boundAddr
 }
 
+// shutdownWindow caps how long the HTTP server waits for in-flight requests
+// after the streaming handlers have been told to leave. Reaching it means a
+// handler ignored the stop signal, which is worth a WARN rather than a wait.
+const shutdownWindow = 30 * time.Second
+
 func (s *Server) shutdown(ctx context.Context) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed || s.srv == nil {
 		s.closed = true
+		s.mu.Unlock()
 		return nil
 	}
 	s.closed = true
+	srv := s.srv
+	// Tell the long-lived handlers to leave before asking the HTTP server to
+	// drain: Shutdown waits on them but never interrupts them, so a single
+	// attached SSE / audio-stream subscriber would otherwise hold the whole
+	// window open. Closed under the mutex, guarded by s.closed, so exactly once.
+	close(s.stopStreams)
 	// Tear down the siglab subsystem: stop the TTL sweeper and remove the
 	// temp directory (and any staged captures) the service owns.
 	if s.siglab != nil {
@@ -1128,14 +1188,26 @@ func (s *Server) shutdown(ctx context.Context) error {
 		_ = s.rfscopeCloser.Close()
 		s.rfscopeCloser = nil
 	}
-	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
-	// get up to 30 s to drain rather than the 5 s the old bound gave
-	// them. Cuts user-visible connection drops on a clean restart.
-	// Static HTTP requests complete in milliseconds either way; the
-	// extra headroom only matters for long-lived streams.
-	shutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	s.mu.Unlock()
+
+	// The 30 s window is a CAP for a handler that misses the stop signal,
+	// not the expected cost — with stopStreams closed above, a clean
+	// shutdown finishes in milliseconds. Shutdown runs outside the mutex so
+	// a second caller (Run's ctx path racing Daemon.Close) is not parked
+	// behind it.
+	shutCtx, cancel := context.WithTimeout(ctx, shutdownWindow)
 	defer cancel()
-	return s.srv.Shutdown(shutCtx)
+	start := time.Now()
+	err := srv.Shutdown(shutCtx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		// Silent before: Run returns this into daemon.spawn, which counts
+		// DeadlineExceeded as a clean exit — so a blown window looked like a
+		// mysterious 30 s gap between two log lines and nothing else.
+		s.log.Warn("api: graceful shutdown window expired — a streaming handler "+
+			"did not exit; the daemon's teardown was held up by it",
+			"window", shutdownWindow, "elapsed", time.Since(start).Round(time.Millisecond))
+	}
+	return err
 }
 
 func (s *Server) routes() *http.ServeMux {
@@ -1268,6 +1340,14 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/bookmarks", s.gate(s.handleCreateBookmark))
 	mux.HandleFunc("PATCH /api/v1/bookmarks/{id}", s.gate(s.handleUpdateBookmark))
 	mux.HandleFunc("DELETE /api/v1/bookmarks/{id}", s.gate(s.handleDeleteBookmark))
+
+	// Operator-applied radio / talkgroup names. Writes go through the
+	// existing PATCH /api/v1/rids/{id} and /api/v1/talkgroups/{id}; these
+	// routes read the persisted rows back and export them as a CSV that
+	// loads into rid_alias_file / talkgroup_file.
+	mux.HandleFunc("GET /api/v1/labels", s.handleListLabels)
+	mux.HandleFunc("GET /api/v1/labels/export", s.handleExportLabels)
+	mux.HandleFunc("DELETE /api/v1/labels/{kind}/{id}", s.gate(s.handleDeleteLabel))
 
 	// Diagnostic IQ stream — feeds the web Constellation panel.
 	// Read-only; the daemon doesn't expose any way to inject IQ

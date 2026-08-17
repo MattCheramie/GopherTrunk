@@ -136,7 +136,6 @@ func TestDiversityCombinerReplay(t *testing.T) {
 			"hardware and tracking is doing real work.", span)
 	}
 
-	// ---- 2. Four decode arms ------------------------------------------------
 	tuneHz := 0.0
 	if v := os.Getenv("GT_DIVERSITY_TUNE_HZ"); v != "" {
 		f, err := strconv.ParseFloat(v, 64)
@@ -146,20 +145,97 @@ func TestDiversityCombinerReplay(t *testing.T) {
 		tuneHz = f
 	}
 
+	// ---- 1b. The same trace AFTER the per-channel DDC ------------------------
+	//
+	// The combiner in the driver runs on the WIDEBAND stream, so one complex
+	// scalar has to fit every carrier in the span at once. That is exact only
+	// if the branches differ by a frequency-flat constant; two antennas metres
+	// apart give each carrier its own phase difference set by geometry and
+	// direction of arrival (mrc.go's KNOWN LIMITATION). This is the measurement
+	// that says whether that is what is happening on THIS hardware: if
+	// narrowband coherence is high where wideband coherence is low, the
+	// wideband scalar cannot be rescued by any amount of tracking and the fix
+	// is combining after the DDC, one gain per channel.
+	nb0 := downconvert(br0, meta.SampleRateHz, tuneHz)
+	nb1 := downconvert(br1, meta.SampleRateHz, tuneHz)
+	nbRate := 144_000.0
+	nbWin := int(nbRate * windowMs / 1000)
+	if nbWin < 1024 {
+		nbWin = 1024
+	}
+	var nbRhos []float64
+	for pos := 0; pos+nbWin <= len(nb0); pos += nbWin {
+		var s diversity.CrossStats
+		s.Accumulate(nb0[pos:pos+nbWin], nb1[pos:pos+nbWin])
+		nbRhos = append(nbRhos, s.Coherence())
+	}
+	if len(nbRhos) > 0 {
+		wbMed := medianOf(rhos)
+		nbMed := medianOf(nbRhos)
+		t.Logf("narrowband (post-DDC, %.0f kHz) coherence over %d x %.0f ms windows: "+
+			"min=%.3f median=%.3f max=%.3f", nbRate/1000, len(nbRhos), windowMs,
+			minOf(nbRhos), nbMed, maxOf(nbRhos))
+		switch {
+		case nbMed > wbMed+0.2:
+			t.Logf("VERDICT: narrowband coherence (%.3f) is well above wideband (%.3f) — "+
+				"the branches DO agree on the target channel and the wideband scalar is "+
+				"the limitation. Per-channel (post-DDC) combining is the fix; compare the "+
+				"nb-* arms below.", nbMed, wbMed)
+		case nbMed < 0.2:
+			t.Logf("VERDICT: narrowband coherence is %.3f — the two receivers barely agree "+
+				"even on the target channel, so no combiner will help. Check antennas, "+
+				"gain staging and that both branches are actually receiving.", nbMed)
+		default:
+			t.Logf("VERDICT: narrowband coherence (%.3f) is close to wideband (%.3f) — "+
+				"the wideband scalar is not the bottleneck on this capture.", nbMed, wbMed)
+		}
+	}
+
+	// ---- 2. Decode arms -----------------------------------------------------
+
 	window := int(meta.SampleRateHz * 2 / 1000) // the driver's 2 ms window
 	if window < 4096 {
 		window = 4096
 	}
+	// A narrowband window has to be longer in SAMPLES to hold the same estimate
+	// quality: the driver's 2 ms is 288 samples at 144 kHz, far too few for a
+	// trustworthy phase estimate. 20 ms of channel-rate stream is 2880.
+	nbWindow := int(nbRate * 20 / 1000)
+
+	// Wideband arms are combined then down-converted; narrowband arms are
+	// down-converted per branch and combined at the channel rate. Both are
+	// scored by the identical decoder so the combiner is the only variable.
 	arms := []struct {
 		name string
 		iq   []complex64
+		rate float64
+		tune float64
 	}{
-		{"branch0-only", br0},
-		{"branch1-only", br1},
-		{"static-combine", combineWith(t, br0, br1,
-			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window, Alpha: 0}))},
-		{"tracking-combine", combineWith(t, br0, br1,
-			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window}))},
+		{"branch0-only", br0, meta.SampleRateHz, tuneHz},
+		{"branch1-only", br1, meta.SampleRateHz, tuneHz},
+		{"wb-static", combineWith(t, br0, br1,
+			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window, Alpha: 0})),
+			meta.SampleRateHz, tuneHz},
+		{"wb-tracking", combineWith(t, br0, br1,
+			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window})),
+			meta.SampleRateHz, tuneHz},
+		// Blind IRC on the wideband stream. Expected to measure the same as
+		// wb-tracking: without a training sequence the channel estimate is a
+		// power-weighted blend of every signal in the span, so the null is
+		// steered at a mixture (see internal/dsp/diversity/irc.go). Carried as
+		// an arm so that claim is checked against real air rather than assumed.
+		{"wb-irc-blind", combineWith(t, br0, br1,
+			diversity.NewIRCCalibrator(2, diversity.TrackingOptions{WindowSamples: window})),
+			meta.SampleRateHz, tuneHz},
+		// The arms that matter for the wideband-limitation question: one gain
+		// per narrowband channel instead of one for the whole span.
+		{"nb-static", combineWith(t, nb0, nb1,
+			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: nbWindow, Alpha: 0})),
+			nbRate, 0},
+		{"nb-tracking", combineWith(t, nb0, nb1,
+			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: nbWindow})),
+			nbRate, 0},
+		{"nb-branch0-only", nb0, nbRate, 0},
 	}
 
 	type result struct {
@@ -168,7 +244,7 @@ func TestDiversityCombinerReplay(t *testing.T) {
 	}
 	var results []result
 	for _, arm := range arms {
-		ok, bad := decodeTETRABSCH(t, arm.iq, meta.SampleRateHz, tuneHz)
+		ok, bad := decodeTETRABSCH(t, arm.iq, arm.rate, arm.tune)
 		results = append(results, result{arm.name, ok, bad})
 		t.Logf("%-18s BSCH ok=%d fail=%d", arm.name, ok, bad)
 	}
@@ -184,14 +260,21 @@ func TestDiversityCombinerReplay(t *testing.T) {
 		"constellation appearance: a combiner can tidy a constellation while decoding nothing.")
 
 	// Weak assertion only: this is an instrument, not a gate.
-	if results[3].ok == 0 && results[0].ok == 0 && results[1].ok == 0 {
+	if best.ok == 0 {
 		t.Log("no arm decoded any BSCH — check GT_DIVERSITY_TUNE_HZ points at the control channel")
 	}
 }
 
 // combineWith runs the two branches through a calibrator exactly as the driver
 // does — Observe then Combine, in windows — and returns the combined stream.
-func combineWith(t *testing.T, br0, br1 []complex64, cal *diversity.TrackingCalibrator) []complex64 {
+// windowedCalibrator is the shape every combiner in this package shares, so an
+// arm can be swapped without the harness caring which one it is.
+type windowedCalibrator interface {
+	Observe(branches [][]complex64) diversity.ObserveResult
+	Combine(branches [][]complex64) ([]complex64, error)
+}
+
+func combineWith(t *testing.T, br0, br1 []complex64, cal windowedCalibrator) []complex64 {
 	t.Helper()
 	const chunk = 4096
 	out := make([]complex64, 0, len(br0))
@@ -214,6 +297,12 @@ func combineWith(t *testing.T, br0, br1 []complex64, cal *diversity.TrackingCali
 // combiner is the only variable.
 func decodeTETRABSCH(t *testing.T, iq []complex64, rateHz, tuneHz float64) (ok, bad int64) {
 	t.Helper()
+	// A stream already at the channel rate (the nb-* arms) needs no second
+	// down-conversion; running one anyway would filter it twice and make those
+	// arms incomparable with the wideband ones.
+	if rateHz == 144_000 && tuneHz == 0 {
+		return decodeTETRABSCHAtChannelRate(t, iq)
+	}
 	ddc := ccdecoder.NewDownconverterWithOffset(rateHz, 144_000, tuneHz)
 
 	bus := events.NewBus(8)
@@ -244,6 +333,53 @@ func decodeTETRABSCH(t *testing.T, iq []complex64, rateHz, tuneHz float64) (ok, 
 			rx.Process(dec)
 		}
 		scratch = dec[:0]
+	}
+	return cc.BSCHCounts()
+}
+
+// downconvert runs one branch through the same per-channel DDC the decoder
+// uses, so the nb-* arms combine exactly what a per-channel combiner would see.
+func downconvert(iq []complex64, rateHz, tuneHz float64) []complex64 {
+	ddc := ccdecoder.NewDownconverterWithOffset(rateHz, 144_000, tuneHz)
+	const chunk = 65536
+	var out []complex64
+	var scratch []complex64
+	for pos := 0; pos < len(iq); pos += chunk {
+		end := min(pos+chunk, len(iq))
+		dec := ddc.Process(scratch, iq[pos:end])
+		out = append(out, dec...)
+		scratch = dec[:0]
+	}
+	return out
+}
+
+// decodeTETRABSCHAtChannelRate scores a stream that is already at the 144 kHz
+// channel rate, feeding the identical receiver + control decoder the
+// wideband arms get.
+func decodeTETRABSCHAtChannelRate(t *testing.T, iq []complex64) (ok, bad int64) {
+	t.Helper()
+	bus := events.NewBus(8)
+	t.Cleanup(bus.Close)
+	cc := tetra.New(tetra.Options{SystemName: "divreplay", Bus: bus})
+	cc.SetChannelCoding(tetra.ChannelCodingOn)
+	ch, _ := tetra.ParseChannelType("")
+	cc.SetExpectedChannel(ch)
+	cc.SetColourCode(0)
+
+	rx := tetrarx.New(tetrarx.Options{
+		SampleRateHz:        144_000,
+		DibitSink:           func(d []uint8, base int) { cc.Process(d, base) },
+		SoftSink:            func(diffs []complex64, base int) { cc.StashSoft(diffs, base) },
+		ClockMode:           tetrarx.ClockGardner,
+		GardnerGain:         0.005,
+		EnableAFC:           true,
+		EnableChannelFilter: true,
+		EnableEqualizer:     true,
+	})
+	const chunk = 65536
+	for pos := 0; pos < len(iq); pos += chunk {
+		end := min(pos+chunk, len(iq))
+		rx.Process(iq[pos:end])
 	}
 	return cc.BSCHCounts()
 }

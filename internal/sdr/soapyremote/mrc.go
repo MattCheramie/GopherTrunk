@@ -502,7 +502,21 @@ type diversityReporter struct {
 	now      func() time.Time
 
 	last time.Time
+	// lastUpdates / staleIntervals detect a calibration that locked once and
+	// has been held ever since: the combine keeps running on a gain estimated
+	// minutes ago, which is a real degradation that the plain INFO line
+	// reported as healthy. An operator's hour-long capture showed exactly this
+	// — updates frozen at 6682 while holds climbed by ~6000 every interval —
+	// and nothing said so.
+	lastUpdates    uint64
+	staleIntervals int
 }
+
+// mrcStaleUpdateIntervals is how many consecutive health intervals may pass
+// with no accepted calibration window before it is worth a WARN. Three
+// intervals is 90 s: long enough that a quiet moment or a brief fade does not
+// trip it, short enough to catch a combiner that has actually given up.
+const mrcStaleUpdateIntervals = 3
 
 func newDiversityReporter(log *slog.Logger, addr string) *diversityReporter {
 	return &diversityReporter{log: log, addr: addr, interval: mrcHealthInterval, now: time.Now}
@@ -518,6 +532,12 @@ func (r *diversityReporter) observe(m *mrcCombiner) {
 	}
 	r.last = now
 	h := m.health()
+	if h.updates == r.lastUpdates {
+		r.staleIntervals++
+	} else {
+		r.staleIntervals = 0
+	}
+	r.lastUpdates = h.updates
 	attrs := []any{
 		"addr", r.addr,
 		"branch_dbfs", formatBranchPowers(h.powDbFS),
@@ -548,6 +568,22 @@ func (r *diversityReporter) observe(m *mrcCombiner) {
 		// measured would be a lie that sends the operator after the wrong thing.
 		r.log.Warn("soapyremote: MRC diversity branches are not coherent — the two receivers are not seeing the same signal through a constant complex gain, so there is no diversity gain and the reference branch is being passed through. Check both antennas are on the same band and polarisation and are co-located (widely separated antennas give each carrier its own phase, which one wideband complex gain cannot align), and that the front-end is frequency-locked (clock_source/time_source). Raising RF gain will NOT help: this gate is independent of level.",
 			append(attrs, "lock_gate", mrcCoherenceLockGate)...)
+	case h.calibrated && r.staleIntervals >= mrcStaleUpdateIntervals:
+		// Locked once, then every window since has failed the coherence gate.
+		// The combine is still running — a rejected window HOLDS rather than
+		// dropping to passthrough, deliberately, because falling back mid-stream
+		// is itself a phase step — but it is applying a gain measured minutes
+		// ago to branches that no longer agree.
+		r.log.Warn("soapyremote: MRC diversity has not accepted a calibration window in "+
+			strconv.Itoa(int(float64(r.staleIntervals)*r.interval.Seconds()))+
+			"s — the combine is running on a stale gain because every window since has "+
+			"failed the coherence gate. Two receivers whose coherence stays low across a "+
+			"wide span is the wideband-combine limitation: one complex gain cannot align "+
+			"every carrier at once when the antennas are metres apart. Co-locate them, or "+
+			"try diversity: mrc-static to freeze the estimate deliberately. Raising RF gain "+
+			"will NOT help: this gate is independent of level.",
+			append(attrs, "track_gate", mrcCoherenceTrackGate,
+				"stale_intervals", r.staleIntervals)...)
 	default:
 		r.log.Info("soapyremote: MRC diversity branches", attrs...)
 	}

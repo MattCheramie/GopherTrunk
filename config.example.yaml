@@ -633,6 +633,48 @@ sdr:
   #                                 #  through a different combiner. Needs mrc.
   #     diversity_capture_seconds: 0 # length of that dump, 1..60 (0 = 5 s). Two
   #                                 #  CS16 branches run to tens of MB/s.
+  #     verbose_debug: false        # log every control-channel RPC to this
+  #                                 #  server — decoded call name and arguments
+  #                                 #  plus a hex dump of the frame — at DEBUG.
+  #                                 #  The SoapyRemote wire carries no schema, so
+  #                                 #  a server-side "~SoapyRPCUnpacker:
+  #                                 #  Unconsumed payload bytes N" never says
+  #                                 #  WHICH call was mis-shaped; this is the
+  #                                 #  other half of that conversation. Needs
+  #                                 #  log.level: debug. Diagnostic only.
+
+  # Sidecar endpoints: an external process that owns a radio and streams raw
+  # IQ to GopherTrunk. Anything can be a sidecar — a UHD/RFNoC program, a GNU
+  # Radio flowgraph, a vendor tool with no SoapySDR support — which is the
+  # point: hardware and DSP that would need CGO stay out of GopherTrunk's
+  # process while it still sees a real tuner. The stream is bare interleaved
+  # IQ (exactly what `gophertrunk replay -format cs16` reads), and tuning goes
+  # the other way as 5-byte UDP commands whose opcodes are rtl_tcp's, so a
+  # tool that already speaks rtl_tcp works unmodified. See
+  # docs/reference/sdr-sidecar.md for the wire format.
+  #
+  # sidecar:
+  #   - transport: "tcp"            # unix_pipe | tcp | udp (default tcp).
+  #                                 #  unix_pipe is POSIX-only.
+  #     data_addr: "127.0.0.1:5001" # FIFO path for unix_pipe, host:port
+  #                                 #  for tcp/udp. Required.
+  #     control_addr: "127.0.0.1:4001" # the sidecar's UDP command socket.
+  #                                 #  Empty = the sidecar owns tuning and
+  #                                 #  GopherTrunk's setters do nothing, so a
+  #                                 #  trunked system cannot follow grants.
+  #     format: "cs16"              # cs16 (default) | complex64
+  #     sample_rate_hz: 2400000     # REQUIRED — the stream carries no
+  #                                 #  metadata, so a wrong value mis-sizes
+  #                                 #  every filter and mis-tunes every channel.
+  #     freq_min_hz: 70000000       # tuning range, for the hunt sweep.
+  #     freq_max_hz: 6000000000     #  Both 0 = unknown.
+  #     serial: "uhd-b210-sidecar"  # virtual serial; empty derives one.
+  #     role: "auto"                # control | voice | auto
+  #     gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
+  #     connect_timeout_ms: 3000    # TCP dial / FIFO open bound. A FIFO open
+  #                                 #  blocks until a writer attaches, so this
+  #                                 #  is what stops a sidecar that never
+  #                                 #  starts from hanging the daemon.
 
   # ka9q-radio channels. radiod (https://github.com/ka9q/ka9q-radio)
   # runs fast-convolution downconverters on a front end (RX888, Airspy,

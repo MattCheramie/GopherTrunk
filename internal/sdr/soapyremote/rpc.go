@@ -113,10 +113,26 @@ const dblMantDig = 53
 // for the header (filled in by writeTo); values append after.
 type packer struct {
 	buf []byte
+	// tr traces the finished frame in writeTo when verbose_debug is on; nil
+	// otherwise, which is the ordinary path.
+	tr *rpcTracer
+	// seq pairs this request's trace line with its response's.
+	seq uint64
 }
 
 func newPacker() *packer {
 	return &packer{buf: make([]byte, rpcHeaderSize, 128)}
+}
+
+// newTracedPacker builds a packer whose frame is logged as it goes out. tr may
+// be nil, in which case this is newPacker.
+func newTracedPacker(tr *rpcTracer) *packer {
+	p := newPacker()
+	if tr != nil {
+		p.tr = tr
+		p.seq = tr.next()
+	}
+	return p
 }
 
 func (p *packer) raw8(b byte)     { p.buf = append(p.buf, b) }
@@ -129,7 +145,8 @@ func (p *packer) taggedI32(v int32) { p.raw8(tInt32); p.rawU32(uint32(v)) }
 func (p *packer) taggedI64(v int64) { p.raw8(tInt64); p.rawU64(uint64(v)) }
 
 func (p *packer) call(id int32) { p.raw8(tCall); p.taggedI32(id) }
-func (p *packer) char(c byte)   { p.raw8(tChar); p.raw8(c) }
+
+func (p *packer) char(c byte) { p.raw8(tChar); p.raw8(c) }
 
 func (p *packer) boolean(b bool) {
 	p.raw8(tBool)
@@ -197,6 +214,21 @@ func (p *packer) kwargs(m map[string]string) {
 	}
 }
 
+// callID reports the id of the leading CALL value this packer has built, or -1
+// when it does not start with one. Used to label the matching response in a
+// verbose trace without every call site repeating its own opcode.
+func (p *packer) callID() int32 {
+	u := &unpacker{buf: p.buf[rpcHeaderSize:]}
+	if t, ok := u.peekTag(); !ok || t != tCall {
+		return -1
+	}
+	id, err := u.call()
+	if err != nil {
+		return -1
+	}
+	return id
+}
+
 // writeTo finalizes the message (length + trailer) and writes it to conn under
 // the given deadline.
 func (p *packer) writeTo(conn net.Conn, timeout time.Duration) error {
@@ -209,6 +241,9 @@ func (p *packer) writeTo(conn net.Conn, timeout time.Duration) error {
 		_ = conn.SetWriteDeadline(time.Now().Add(timeout))
 		defer conn.SetWriteDeadline(time.Time{})
 	}
+	// Traced before the write so a frame that fails to send is still visible;
+	// p.buf is exactly what goes on the wire at this point.
+	p.tr.request(p.seq, p.buf)
 	if _, err := conn.Write(p.buf); err != nil {
 		return fmt.Errorf("soapyremote: write rpc: %w", err)
 	}
@@ -444,4 +479,16 @@ func readResponse(conn net.Conn, timeout time.Duration) (*unpacker, error) {
 		return nil, fmt.Errorf("soapyremote: rpc trailer %#08x, want %#08x", trailer, rpcTrailerWord)
 	}
 	return &unpacker{buf: body[:len(body)-rpcTrailerSize]}, nil
+}
+
+// readResponseTraced is readResponse plus a trace line pairing the reply with
+// the request that carried seq. tr may be nil.
+func readResponseTraced(conn net.Conn, timeout time.Duration, tr *rpcTracer, seq uint64, callID int32) (*unpacker, error) {
+	u, err := readResponse(conn, timeout)
+	if err != nil {
+		tr.response(seq, callID, nil, err)
+		return nil, err
+	}
+	tr.response(seq, callID, u.buf, nil)
+	return u, nil
 }

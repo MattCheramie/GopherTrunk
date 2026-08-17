@@ -4,6 +4,8 @@ import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { NameField } from "../components/NameField";
+import { labelExportURL } from "../api/labels";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Badge } from "../components/ui/Badge";
@@ -38,7 +40,16 @@ export function Talkgroups() {
     resetKey: cfg.baseURL,
   });
 
-  async function patch(id: number, body: { priority?: number; lockout?: boolean; scan?: boolean }) {
+  async function patch(
+    id: number,
+    body: {
+      alpha_tag?: string;
+      description?: string;
+      priority?: number;
+      lockout?: boolean;
+      scan?: boolean;
+    },
+  ) {
     setBusy(true);
     try {
       const updated = await writes.updateTalkgroup(cfg, id, body);
@@ -138,6 +149,13 @@ export function Talkgroups() {
                 Hide auto-discovered ({discoveredCount})
               </label>
             )}
+            <a
+              className="text-xs text-accent hover:underline"
+              href={labelExportURL(cfg, "talkgroup")}
+              title="Download the talkgroups you have named as a CSV that loads into talkgroup_file"
+            >
+              Export names → CSV
+            </a>
             <span className="text-xs text-muted">
               {visibleTalkgroups.length} shown
             </span>
@@ -233,6 +251,19 @@ export function Talkgroups() {
                   </span>
                 )}
               </p>
+              <NameField
+                label="Alpha tag"
+                value={selected.alpha_tag ?? ""}
+                disabled={busy}
+                placeholder="e.g. TAC-1"
+                onCommit={(v) => patch(selected.id, { alpha_tag: v })}
+              />
+              <NameField
+                label="Description"
+                value={selected.description ?? ""}
+                disabled={busy}
+                onCommit={(v) => patch(selected.id, { description: v })}
+              />
               <label className="flex items-center gap-3 text-sm">
                 <input
                   type="checkbox"
@@ -273,8 +304,8 @@ export function Talkgroups() {
             </div>
           ) : (
             <p className="text-xs text-muted pt-2">
-              Enable write mode in Settings to edit scan / lockout /
-              priority from this browser.
+              Enable write mode in Settings to name this talkgroup or edit its
+              scan / lockout / priority from this browser.
             </p>
           )}
         </DetailModal>

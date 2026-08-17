@@ -186,7 +186,11 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		return enc.Write(chunk)
 	}
 
-	gotRate, gotCenter, capErr := s.capture.CaptureStream(r.Context(), req.Serial, req.Seconds, sink)
+	// A capture runs for up to req.Seconds and Shutdown would wait it out, so
+	// a daemon stop cancels it the same way a client hangup does.
+	capCtx, capCancel := s.streamCtx(r.Context())
+	defer capCancel()
+	gotRate, gotCenter, capErr := s.capture.CaptureStream(capCtx, req.Serial, req.Seconds, sink)
 	flushErr := bw.Flush()
 	if cerr := f.Close(); cerr != nil && flushErr == nil {
 		flushErr = cerr

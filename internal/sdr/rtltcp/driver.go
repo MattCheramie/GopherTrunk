@@ -81,6 +81,11 @@ const (
 // configured and a fast failure is more useful than a hang.
 const DefaultConnectTimeout = 3 * time.Second
 
+// streamReadIdleTimeout is the backstop for a server that goes quiet without
+// closing the socket. It is NOT the shutdown path — a watcher in StreamIQ
+// expires the deadline on ctx cancel — so it can stay generous.
+const streamReadIdleTimeout = 30 * time.Second
+
 // Spec names one rtl_tcp endpoint to expose as a virtual tuner.
 type Spec struct {
 	// Addr is the host:port pair the rtl_tcp server is listening on,
@@ -302,16 +307,28 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		// stream close (→ ccdecoder retry) instead of crashing the
 		// whole daemon with no log line (issue #492).
 		defer gtlog.Recover(d.log, "rtltcp-stream", nil)
+
+		// ctx.Done is only checked between reads, so a cancel arriving while
+		// the server is quiet would not be seen until the read deadline
+		// expired — a 30 s tail on every daemon shutdown. Expiring the
+		// deadline on cancel unblocks the in-flight read at once.
+		stopWatch := make(chan struct{})
+		defer close(stopWatch)
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = conn.SetReadDeadline(time.Now())
+			case <-stopWatch:
+			}
+		}()
+
 		buf := make([]byte, chunkSamples*2)
 		for {
-			// Allow ctx to interrupt a stalled read.
-			if dl, ok := ctx.Deadline(); ok {
-				_ = conn.SetReadDeadline(dl)
-			}
-			// Use a long deadline so a wedged server can be torn down by
-			// ctx cancel without blocking forever; ctx.Done is checked
-			// after every read.
-			_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			// Backstop for a server that stops sending without closing the
+			// socket; ctx cancel is handled by the watcher above. (The old
+			// ctx.Deadline() branch here was overwritten by this line on the
+			// very next statement, so it never took effect.)
+			_ = conn.SetReadDeadline(time.Now().Add(streamReadIdleTimeout))
 			n, err := io.ReadFull(conn, buf)
 			if err != nil {
 				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {

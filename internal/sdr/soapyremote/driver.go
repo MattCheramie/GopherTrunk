@@ -67,6 +67,11 @@ const DefaultConnectTimeout = 3 * time.Second
 // inside the server's setupStream before it replies (issue #542).
 const streamSetupTimeout = 30 * time.Second
 
+// streamReadIdleTimeout is the backstop for a server that goes quiet without
+// closing the socket. It is NOT the shutdown path — a watcher in streamLoop
+// expires the deadline on ctx cancel — so it can stay generous.
+const streamReadIdleTimeout = 30 * time.Second
+
 // maxTransfer bounds a single stream transfer so a corrupt length field can't
 // trigger a huge allocation.
 const maxTransfer = 1 << 22 // 4 MiB
@@ -122,6 +127,11 @@ type Spec struct {
 	// DiversityCaptureSeconds bounds that dump; <=0 selects
 	// defaultDiversityCaptureSeconds.
 	DiversityCaptureSeconds int
+	// VerboseDebug logs every control-channel RPC request and response —
+	// decoded arguments plus a hex dump of the frame — at DEBUG. Off by
+	// default; the trace is per endpoint so a multi-radio config can follow
+	// one server. See rpcdebug.go.
+	VerboseDebug bool
 }
 
 // Driver implements sdr.Driver over a set of SoapySDRServer endpoints.
@@ -239,6 +249,13 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		dev.capturePrefix = spec.DiversityCapture
 		dev.captureSeconds = spec.DiversityCaptureSeconds
 	}
+	dev.deviceArgs = formatDeviceArgs(spec.DeviceArgs)
+	dev.antennas = append([]string(nil), spec.Antennas...)
+	if spec.VerboseDebug {
+		dev.tracer = newRPCTracer(d.log, addr)
+		d.log.Info("soapyremote: verbose RPC debug enabled — every control-channel "+
+			"frame is logged at DEBUG (needs log.level: debug)", "addr", addr)
+	}
 	// Create the remote device.
 	if err := dev.rpcVoid(func(p *packer) {
 		p.call(callMake)
@@ -302,7 +319,19 @@ type device struct {
 	capturePrefix  string
 	captureSeconds int
 
+	// tracer logs every RPC frame when Spec.VerboseDebug is set; nil otherwise.
+	// Set once at Open, read-only thereafter, and nil-safe at every call site.
+	tracer *rpcTracer
+
+	// deviceArgs / antennas are kept only so a diversity capture's sidecar can
+	// record what the branches were: replaying one without knowing which
+	// antenna ports and device it came from is guesswork.
+	deviceArgs string
+	antennas   []string
+
 	mu         sync.Mutex
+	centerHz   uint32   // last programmed centre frequency, for the capture sidecar
+	gainTenth  int      // last programmed gain, likewise
 	conn       net.Conn // RPC control socket
 	dataConn   net.Conn // stream data socket (set in StreamIQ)
 	statusConn net.Conn // stream status socket (the server requires it; we drain it)
@@ -360,12 +389,13 @@ func (d *device) rpc(build func(*packer)) (*unpacker, error) {
 	if d.closed || d.conn == nil {
 		return nil, errClosed
 	}
-	p := newPacker()
+	p := newTracedPacker(d.tracer)
 	build(p)
+	id := p.callID()
 	if err := p.writeTo(d.conn, d.timeout); err != nil {
 		return nil, err
 	}
-	return readResponse(d.conn, d.timeout)
+	return readResponseTraced(d.conn, d.timeout, d.tracer, p.seq, id)
 }
 
 // rpcVoid issues a call whose only meaningful response is success/exception.
@@ -478,6 +508,9 @@ func (d *device) SetCenterFreq(hz uint32) error {
 	}); err != nil {
 		return err
 	}
+	d.mu.Lock()
+	d.centerHz = hz
+	d.mu.Unlock()
 	// A retune is a new LO lock, so the frozen RX0↔RX1 phase constant is stale.
 	// Re-arm calibration; the next combined window re-estimates it.
 	if d.mrc != nil {
@@ -538,6 +571,9 @@ func (d *device) SetGain(tenthDB int) error {
 	if err := d.applyGain(0, tenthDB); err != nil {
 		return err
 	}
+	d.mu.Lock()
+	d.gainTenth = tenthDB
+	d.mu.Unlock()
 	d.perSecondaryRXChannel("gain", func(ch int32) error { return d.applyGain(ch, tenthDB) })
 	return nil
 }
@@ -803,7 +839,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 
 	// (1) SETUP_STREAM. clientBindPort/statusBindPort are unused in TCP mode
 	// (the client dials the server), so "0" is sent for both.
-	p := newPacker()
+	p := newTracedPacker(d.tracer)
 	p.call(callSetupStream)
 	p.char(dirRX)
 	p.str(d.format.soapyName())
@@ -832,7 +868,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	}
 
 	// (2) Reply #1: the server's bound data port.
-	u, err := readResponse(d.conn, streamSetupTimeout)
+	u, err := readResponseTraced(d.conn, streamSetupTimeout, d.tracer, p.seq, callSetupStream)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -863,7 +899,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	}
 
 	// (4) Reply #2: the int stream id (and a repeated port string we ignore).
-	u2, err := readResponse(d.conn, streamSetupTimeout)
+	u2, err := readResponseTraced(d.conn, streamSetupTimeout, d.tracer, p.seq, callSetupStream)
 	if err != nil {
 		dataConn.Close()
 		statusConn.Close()
@@ -1019,6 +1055,21 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 	defer throttle.maybeWarn(true) // flush any trailing counts on teardown
 	health := newDiversityReporter(d.log, d.addr)
 
+	// The ctx check below only runs BETWEEN reads, so a cancel that arrives
+	// while the server is quiet would not be seen until the read deadline
+	// expired. Expiring the deadline on cancel unblocks the in-flight read
+	// immediately while leaving the deferred teardown to run normally —
+	// closing the socket here would race that teardown.
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = dataConn.SetReadDeadline(time.Now())
+		case <-stopWatch:
+		}
+	}()
+
 	hdr := make([]byte, streamHeaderSize)
 	// Flow-control state: lastRecv tracks the next sequence we expect; lastAck
 	// is the sequence carried by our most recent ACK. The initial ACK (seq 0)
@@ -1030,8 +1081,9 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 			return
 		default:
 		}
-		// Bounded deadline so a wedged server is torn down on ctx cancel.
-		_ = dataConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		// Backstop for a server that stops sending without closing the socket;
+		// ctx cancel is handled by the watcher above, not by this expiring.
+		_ = dataConn.SetReadDeadline(time.Now().Add(streamReadIdleTimeout))
 		if _, err := io.ReadFull(dataConn, hdr); err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 				d.log.Debug("soapyremote: stream header read", "addr", d.addr, "err", err)
@@ -1171,6 +1223,25 @@ func sanitizeAddr(addr string) string {
 
 // deviceArgKey returns the SoapySDR driver key for display, defaulting to the
 // driver name when no kwargs were given.
+// formatDeviceArgs renders the MAKE kwargs back into the flat "k=v,k=v" form
+// the operator wrote in config, so a capture sidecar records which device it
+// came from rather than leaving the field blank.
+func formatDeviceArgs(args map[string]string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+args[k])
+	}
+	return strings.Join(parts, ",")
+}
+
 func deviceArgKey(args map[string]string) string {
 	if d, ok := args["driver"]; ok && d != "" {
 		return d

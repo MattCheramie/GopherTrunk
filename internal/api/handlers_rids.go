@@ -140,10 +140,16 @@ type updateRIDRequest struct {
 //	Content-Type: application/json
 //	{"alias":"CPL-SMITH","watch":true}
 //
-// Behaviour mirrors the talkgroup PATCH: mutations live in memory
-// only; the on-disk rid_alias_file is not rewritten. RIDs only seen
-// over the air (no static catalogue entry) cannot be patched and
-// return 404 — operators must add the radio to the alias file first.
+// A radio that is not in the catalogue is CREATED rather than 404'd. Requiring
+// an operator to edit rid_alias_file and restart the daemon before they can
+// name a radio defeats the point: the radios worth naming are the ones showing
+// up live, which by definition are not in the file yet.
+//
+// The on-disk rid_alias_file is never rewritten. When a label store is wired
+// the name/description/tag/group/owner/icon are persisted to it instead, and
+// re-applied over the file-loaded catalogue at startup; the policy fields
+// (priority, lockout, watch) stay in-memory as before. The optional ?system=
+// scopes the persisted label to one system.
 func (s *Server) handleUpdateRID(w http.ResponseWriter, r *http.Request) {
 	if s.rids == nil {
 		s.writeError(w, http.StatusServiceUnavailable, "rid catalogue not wired")
@@ -168,7 +174,7 @@ func (s *Server) handleUpdateRID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := uint32(id64)
-	ok := s.rids.UpdateFields(id, func(rec *trunking.RID) {
+	apply := func(rec *trunking.RID) {
 		if req.Alias != nil {
 			rec.Alias = *req.Alias
 		}
@@ -196,12 +202,17 @@ func (s *Server) handleUpdateRID(w http.ResponseWriter, r *http.Request) {
 		if req.Icon != nil {
 			rec.Icon = *req.Icon
 		}
-	})
-	if !ok {
-		s.writeError(w, http.StatusNotFound, "rid not found in static catalogue (add to rid_alias_file first)")
-		return
 	}
-	dto := ridToDTO(s.rids.Lookup(id))
+	if !s.rids.UpdateFields(id, apply) {
+		// Watch defaults true on every loader (rid.go), so a synthesised
+		// record matches one read from a file.
+		rec := &trunking.RID{ID: id, Watch: true}
+		apply(rec)
+		s.rids.Add(rec)
+	}
+	rec := s.rids.Lookup(id)
+	s.persistRIDLabel(r.URL.Query().Get("system"), rec)
+	dto := ridToDTO(rec)
 	if s.affiliations != nil {
 		for _, u := range s.affiliations.Affiliations() {
 			if u.RadioID == id {

@@ -380,6 +380,22 @@ func TestValidate(t *testing.T) {
 		// fine; an unknown key is rejected so typos surface at load.
 		{"web tabs known ok", Config{Web: WebConfig{Tabs: map[string]bool{"pagers": false, "metrics": true}}}, false},
 		{"web tabs unknown key", Config{Web: WebConfig{Tabs: map[string]bool{"pagerz": false}}}, true},
+		// sidecar: an opaque external IQ producer, so the rate must be declared
+		// (nothing can probe for it) and the transport/format must be ones the
+		// driver actually implements.
+		{"sidecar ok", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{DataAddr: "127.0.0.1:5001", SampleRateHz: 2_400_000}}}}, false},
+		{"sidecar fifo ok", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{Transport: "unix_pipe", DataAddr: "/tmp/iq.fifo", SampleRateHz: 2_400_000}}}}, false},
+		{"sidecar complex64 ok", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{DataAddr: "h:1", Format: "complex64", SampleRateHz: 1}}}}, false},
+		{"sidecar missing data_addr rejected", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{SampleRateHz: 1}}}}, true},
+		{"sidecar missing sample rate rejected", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{DataAddr: "h:1"}}}}, true},
+		{"sidecar bad transport rejected", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{DataAddr: "h:1", Transport: "smoke-signal", SampleRateHz: 1}}}}, true},
+		{"sidecar bad format rejected", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{DataAddr: "h:1", Format: "u8", SampleRateHz: 1}}}}, true},
+		{"sidecar bad role rejected", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{DataAddr: "h:1", Role: "listener", SampleRateHz: 1}}}}, true},
+		{"sidecar inverted freq range rejected", Config{SDR: SDRConfig{Sidecar: []SidecarConfig{{DataAddr: "h:1", SampleRateHz: 1, FreqMinHz: 900_000_000, FreqMaxHz: 100_000_000}}}}, true},
+		{"sidecar serial collides with devices", Config{SDR: SDRConfig{
+			Devices: []DeviceConfig{{Serial: "dup"}},
+			Sidecar: []SidecarConfig{{DataAddr: "h:1", SampleRateHz: 1, Serial: "dup"}},
+		}}, true},
 		// soapy_remote args: SoapySDR make() kwargs as "k=v,k=v" (issue #542).
 		{"soapy args ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0,antenna=RX1"}}}}, false},
 		{"soapy args malformed", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec"}}}}, true},

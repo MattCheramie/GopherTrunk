@@ -18,6 +18,34 @@ for tagged releases.
   recorded/streamed PCM fades to silence within ~10 ms, resuming when real
   activity returns. No config changes; analog-trunk voice channels
   (Motorola/LTR/MPT 1327) are unaffected.
+- **A config whose only SDR source is a network one now has a radio.** Pool
+  construction was gated on `sdr.devices`, `baseband.replay` and `sdr.rtl_tcp`
+  only, and the network drivers are registered inside that block — so a config
+  with just `sdr.soapy_remote` or just `sdr.ka9q_radio` registered no driver at
+  all and the daemon started quietly with nothing to demodulate.
+- **Ctrl-C no longer takes 30 seconds.** `Daemon.Close` stops the HTTP server
+  first, and `http.Server.Shutdown` waits for active non-hijacked requests
+  without cancelling them — so an attached SSE / live-audio / siglab subscriber
+  held the whole 30 s drain window open, while the bus that would have ended
+  those handlers is closed at the very end of teardown. The server now signals
+  its streaming handlers at the top of shutdown; the 30 s is a cap for a handler
+  that misses the signal, and reaching it logs a WARN instead of passing as a
+  clean exit. `GRPCServer.Stop` is bounded too (an open `StreamAudio` made
+  `GracefulStop` wait forever), and each teardown stage that owns goroutines,
+  sockets or hardware now names itself in the log when it runs slow.
+- **The SoapyRemote and rtl_tcp stream read loops honour ctx cancel.** Both
+  checked `ctx.Done()` only between reads and then parked in `io.ReadFull`
+  behind a 30 s deadline, so a cancel arriving while the server was quiet — the
+  normal state at shutdown — was not seen until that deadline expired.
+- **Call history search by talkgroup returns rows.** The web client read the
+  wrong key off the `/api/v1/calls/history` response (`rows` instead of
+  `calls`) and fell back to an empty list, so the History panel had rendered
+  "No calls in the daemon's call log for this filter" for every query since the
+  file was written. The daemon, the filter and the SQL were all correct.
+- **Call-history rows carry `algorithm_id`, `key_id` and `source_alpha`.** The
+  storage row held them and the SPA already declared them, but the API DTO
+  dropped all three, so the History table's Source column and its encryption
+  badge could never populate.
 
 ### Security
 - **Bumped the Go toolchain to 1.25.13 and `golang.org/x/net` to v0.55.0** to
@@ -29,6 +57,52 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **`sdr.sidecar` mounts an external IQ producer as a virtual tuner.** A sidecar
+  is any process that owns a radio and streams raw IQ over a FIFO, TCP or UDP —
+  a UHD/RFNoC program, a GNU Radio flowgraph, a vendor tool with no SoapySDR
+  support — steered by a 5-byte UDP command protocol whose opcodes are
+  `rtl_tcp`'s, so a tool that already speaks those works unmodified. It keeps
+  hardware and DSP that would need CGO out of GopherTrunk's process while it
+  still sees a real tuner. See `docs/reference/sdr-sidecar.md`.
+- **Diversity: an offline instrument for deciding what to ship, and an MMSE-IRC
+  combiner to feed it.** `TestDiversityCombinerReplay` now measures coherence
+  BOTH on the wideband stream and after the per-channel DDC — the number that
+  says whether the wideband single-gain combine is the limitation on a given
+  pair of antennas — and scores eight arms instead of four, including
+  per-channel (post-DDC) combining and blind IRC. `internal/dsp/diversity` gains
+  `IRCCalibrator`, which steers a spatial null at a directional interferer that
+  MRC amplifies: +23.6 dB on the synthetic co-channel scene **given a training
+  sequence**, and measurably nothing without one, because a blind channel
+  estimate returns a power-weighted blend of every signal present. That is why
+  it is not offered as a driver mode — the driver combines the wideband stream,
+  where no training sequence exists. Nothing changes by default.
+- **The MRC health line reports a calibration that has gone stale.** A combiner
+  that locks once and then fails the coherence gate on every window afterwards
+  keeps applying a gain measured minutes ago; the line reported that as healthy
+  because `calibrated` was still true. It now WARNs after three quiet intervals
+  and names the wideband-combine limitation as the likely cause.
+- **The diversity capture sidecar records the device args, antenna ports, centre
+  frequency and gain.** All four were declared and never written, so a replay
+  could not tell which channel to tune to or what hardware produced the branches.
+- **Name radios and talkgroups from the web console, and keep the names.**
+  The Radio IDs and Talkgroups detail panels now carry Name / Description
+  fields (and Owner for a radio), committed on blur or Enter. A radio or
+  talkgroup that appears in no `rid_alias_file` / `talkgroup_file` is created
+  rather than rejected — previously `PATCH /api/v1/rids/{id}` returned 404 for
+  exactly the radios worth naming, since a radio showing up live is by
+  definition not in a file yet, and `PATCH /api/v1/talkgroups/{id}` had no name
+  field at all. With `storage.path` set the names persist to a new `labels`
+  table and are re-applied over the alias files at startup; without it they
+  stay in memory as before. The on-disk files are never rewritten — an
+  **Export names → CSV** link on each panel downloads them in the alias file's
+  own format so they can be folded back in by hand.
+- **`sdr.soapy_remote[].verbose_debug` traces the RPC conversation.** Logs every
+  control-channel request and response to that server — decoded call name and
+  arguments plus a hex dump of the frame — at DEBUG. The SoapyRemote wire
+  carries no schema, so a server-side `~SoapyRPCUnpacker: Unconsumed payload
+  bytes N` never says WHICH call was mis-shaped; this is the other half of that
+  conversation, and the decoded arguments line up directly against upstream's
+  `ClientHandler.cpp`. Per endpoint, off by default, needs `log.level: debug`.
 - **SoapyRemote: experimental phase-coherent MRC diversity over two RX channels.**
   A new `diversity: mrc` option on a `soapy_remote` source opens RX channels 0
   and 1 and phase-coherently maximal-ratio-combines them into one maximised-SNR

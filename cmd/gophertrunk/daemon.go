@@ -52,6 +52,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/ka9qradio"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/sidecar"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/soapyremote"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/wbvoice"
 	"github.com/MattCheramie/GopherTrunk/internal/sigfollow"
@@ -449,6 +450,7 @@ type Daemon struct {
 	callLog      *storage.CallLog
 	locationLog  *storage.LocationLog
 	bookmarks    *storage.BookmarkStore
+	labels       *storage.LabelStore
 	pagerLog     *storage.PagerLog
 	aprsLog      *storage.APRSLog
 	vesselLog    *storage.VesselLog
@@ -985,7 +987,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// fall through gracefully when the pool is empty. The pool is
 	// also constructed when only baseband replay recordings are
 	// configured, so an offline capture can be decoded with no radio.
-	if len(cfg.SDR.Devices) > 0 || len(cfg.Baseband.Replay) > 0 || len(cfg.SDR.RTLTCP) > 0 {
+	//
+	// EVERY source list has to be named here: the network drivers are
+	// registered INSIDE this block, so a source missing from the condition is
+	// not merely unpooled, it is never registered at all — the daemon starts,
+	// logs nothing, and finds no SDR.
+	if len(cfg.SDR.Devices) > 0 || len(cfg.Baseband.Replay) > 0 ||
+		len(cfg.SDR.RTLTCP) > 0 || len(cfg.SDR.SoapyRemote) > 0 ||
+		len(cfg.SDR.Ka9qRadio) > 0 || len(cfg.SDR.Sidecar) > 0 {
 		d.pool = sdr.NewPool(log)
 		d.pool.SetBus(d.bus)
 		var hints []sdr.Hint
@@ -1119,6 +1128,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 
 					DiversityCapture:        s.DiversityCapture,
 					DiversityCaptureSeconds: s.DiversityCaptureSeconds,
+					VerboseDebug:            s.VerboseDebug,
 				})
 				if s.Serial != "" {
 					h := sdr.Hint{
@@ -1179,6 +1189,45 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if len(kspecs) > 0 {
 				sdr.Register(ka9qradio.New(kspecs, log))
 				log.Info("ka9q_radio channels mounted", "count", len(kspecs))
+			}
+		}
+		if len(cfg.SDR.Sidecar) > 0 {
+			var sdspecs []sidecar.Spec
+			for _, sc := range cfg.SDR.Sidecar {
+				if sc.DataAddr == "" {
+					continue
+				}
+				sdspecs = append(sdspecs, sidecar.Spec{
+					Transport:      sc.Transport,
+					DataAddr:       sc.DataAddr,
+					ControlAddr:    sc.ControlAddr,
+					Format:         sc.Format,
+					SampleRateHz:   sc.SampleRateHz,
+					FreqMinHz:      sc.FreqMinHz,
+					FreqMaxHz:      sc.FreqMaxHz,
+					Serial:         sc.Serial,
+					Role:           sc.Role,
+					ConnectTimeout: time.Duration(sc.ConnectTimeoutMs) * time.Millisecond,
+				})
+				if sc.Serial != "" {
+					h := sdr.Hint{Serial: sc.Serial, Role: sdr.ParseRole(sc.Role)}
+					if sc.Gain != "" {
+						gain, ok := parseGain(sc.Gain)
+						if !ok {
+							log.Warn("daemon: ignoring unparseable sidecar gain",
+								"serial", sc.Serial, "gain", sc.Gain)
+						} else {
+							warnGainUnits(log, sc.Serial, sc.Gain, gain)
+							warnLowGain(log, sc.Serial, h.Role, sc.Gain, gain)
+							h = h.WithGain(gain)
+						}
+					}
+					hints = append(hints, h)
+				}
+			}
+			if len(sdspecs) > 0 {
+				sdr.Register(sidecar.New(sdspecs, log))
+				log.Info("sidecar endpoints mounted", "count", len(sdspecs))
 			}
 		}
 		if err := d.pool.OpenWith(sdr.PoolOpenOptions{
@@ -2660,6 +2709,9 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 		if d.bookmarks != nil {
 			opts.Bookmarks = bookmarkProvider{store: d.bookmarks}
 		}
+		if d.labels != nil {
+			opts.Labels = labelProvider{store: d.labels}
+		}
 		if d.pagerLog != nil {
 			opts.Pager = pagerProvider{log: d.pagerLog}
 		}
@@ -2872,6 +2924,27 @@ func (d *Daemon) buildStorage(cfg config.Config, log *slog.Logger) error {
 			return fmt.Errorf("daemon: bookmarks: %w", err)
 		}
 		d.bookmarks = bs
+
+		ls, err := storage.NewLabelStore(db, d.bus)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: labels: %w", err)
+		}
+		d.labels = ls
+		// Layered over the alias files, which the per-system loop above has
+		// already read, so an operator's name wins over the file's.
+		applyCtx, applyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		applied, created, err := applyLabels(applyCtx, ls, d.rids, d.talkgroups, log)
+		applyCancel()
+		if err != nil {
+			// A label that cannot be read is not worth refusing to start over:
+			// the alias files are still loaded and the daemon runs without the
+			// operator's names, which is visible and recoverable.
+			log.Warn("daemon: operator labels not applied", "err", err)
+		} else if applied+created > 0 {
+			log.Info("daemon: operator labels applied",
+				"updated", applied, "created", created)
+		}
 
 		pl, err := storage.NewPagerLog(db, d.bus, log)
 		if err != nil {
@@ -3692,45 +3765,64 @@ func (d *Daemon) takeFatal() error {
 
 // Close releases every component. Idempotent and safe to call
 // concurrently with Run.
+// slowCloseStage is how long a single teardown stage may take before it is
+// worth naming in the log. Everything here should finish in milliseconds; a
+// stage that doesn't is the reason a stop looks hung, and an operator
+// otherwise sees only a silent gap between "shutdown initiated" and
+// "shutdown complete".
+const slowCloseStage = time.Second
+
+// closeStage runs one teardown step and logs it when it drags. Applied to the
+// stages that own goroutines, sockets or hardware — the plain file-backed log
+// writers below flush and return, and wrapping them would be noise.
+func (d *Daemon) closeStage(name string, fn func()) {
+	start := time.Now()
+	fn()
+	if elapsed := time.Since(start); elapsed >= slowCloseStage {
+		d.log.Warn("daemon: slow shutdown stage", "stage", name,
+			"took", elapsed.Round(time.Millisecond))
+	}
+}
+
 func (d *Daemon) Close() {
 	d.closeOnce.Do(func() {
 		if d.httpAPI != nil {
-			_ = d.httpAPI.Close()
+			d.closeStage("http", func() { _ = d.httpAPI.Close() })
 		}
 		if d.rigctld != nil {
-			_ = d.rigctld.Close()
+			d.closeStage("rigctld", func() { _ = d.rigctld.Close() })
 		}
 		if d.grpcAPI != nil {
-			d.grpcAPI.Stop()
+			d.closeStage("grpc", d.grpcAPI.Stop)
 		}
 		if d.ccDecoder != nil {
-			_ = d.ccDecoder.Close()
+			d.closeStage("ccdecoder", func() { _ = d.ccDecoder.Close() })
 		}
 		if d.composer != nil {
-			_ = d.composer.Close()
+			d.closeStage("composer", func() { _ = d.composer.Close() })
 		}
 		if d.cryptoCap != nil {
 			_ = d.cryptoCap.Close()
 		}
 		if d.audioPub != nil {
-			_ = d.audioPub.Close()
+			d.closeStage("audio-publisher", func() { _ = d.audioPub.Close() })
 		}
 		if d.liveLoudness != nil {
 			_ = d.liveLoudness.Close()
 		}
 		if d.player != nil {
-			_ = d.player.Close()
+			d.closeStage("audio-player", func() { _ = d.player.Close() })
 		}
 		if d.broadcast != nil {
-			_ = d.broadcast.Close()
+			d.closeStage("broadcast", func() { _ = d.broadcast.Close() })
 		}
 		for _, h := range d.grantHooks {
-			_ = h.Close()
+			d.closeStage("grant-hook", func() { _ = h.Close() })
 		}
 		// Closes the file recorder or the decode-only recorder (same object
 		// when recording; voiceDecoder is a superset of recorder).
 		if d.voiceDecoder != nil {
-			_ = d.voiceDecoder.Close()
+			d.closeStage("voice-decoder", func() { _ = d.voiceDecoder.Close() })
 		}
 		if d.callLog != nil {
 			_ = d.callLog.Close()
@@ -3784,15 +3876,15 @@ func (d *Daemon) Close() {
 			_ = d.metrics.Close()
 		}
 		if d.engine != nil {
-			d.engine.Close()
+			d.closeStage("engine", d.engine.Close)
 		}
 		if d.db != nil {
-			_ = d.db.Close()
+			d.closeStage("storage", func() { _ = d.db.Close() })
 		}
 		if d.pool != nil {
-			_ = d.pool.Close()
+			d.closeStage("sdr-pool", func() { _ = d.pool.Close() })
 		}
-		d.bus.Close()
+		d.closeStage("bus", d.bus.Close)
 	})
 }
 
@@ -5210,6 +5302,122 @@ func (p bookmarkProvider) DeleteBookmark(id int64) error {
 	ctx, cancel := p.ctx()
 	defer cancel()
 	return p.store.Delete(ctx, id)
+}
+
+// labelProvider adapts storage.LabelStore into api.LabelProvider, on the same
+// request-scoped-context pattern as bookmarkProvider.
+type labelProvider struct{ store *storage.LabelStore }
+
+func (p labelProvider) ctx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
+func (p labelProvider) ListLabels(kind storage.LabelKind, system string) ([]storage.Label, error) {
+	ctx, cancel := p.ctx()
+	defer cancel()
+	return p.store.List(ctx, kind, system)
+}
+
+func (p labelProvider) UpsertLabel(l storage.Label) (storage.Label, error) {
+	ctx, cancel := p.ctx()
+	defer cancel()
+	return p.store.Upsert(ctx, l)
+}
+
+func (p labelProvider) DeleteLabel(kind storage.LabelKind, system string, id uint32) error {
+	ctx, cancel := p.ctx()
+	defer cancel()
+	return p.store.Delete(ctx, kind, system, id)
+}
+
+// applyLabels layers the persisted operator names over the file-loaded
+// catalogues. The label wins over the alias file: it is the operator's most
+// recent explicit act, and the only one they can perform without a restart.
+//
+// An id with no catalogue entry is CREATED with the CSV loaders' defaults —
+// that is the whole point, since a radio worth naming is usually one that
+// showed up on the air and is in no file yet. A synthesised talkgroup is
+// deliberately not tagged Discovered, or DeleteDiscovered would silently
+// retract the operator's name.
+func applyLabels(ctx context.Context, store *storage.LabelStore,
+	rids *trunking.RIDDB, tgs *trunking.TalkgroupDB, log *slog.Logger) (applied, created int, err error) {
+	if store == nil {
+		return 0, 0, nil
+	}
+	rows, err := store.List(ctx, "", "")
+	if err != nil {
+		return 0, 0, fmt.Errorf("daemon: load operator labels: %w", err)
+	}
+	for _, l := range rows {
+		switch l.Kind {
+		case storage.LabelKindRID:
+			if rids == nil {
+				continue
+			}
+			if existing := rids.Lookup(l.TargetID); existing != nil {
+				warnLabelDivergence(log, "rid", l, existing.Alias)
+				rids.UpdateFields(l.TargetID, func(r *trunking.RID) { applyRIDLabel(r, l) })
+				applied++
+				continue
+			}
+			r := &trunking.RID{ID: l.TargetID, Watch: true}
+			applyRIDLabel(r, l)
+			rids.Add(r)
+			created++
+		case storage.LabelKindTalkgroup:
+			if tgs == nil {
+				continue
+			}
+			if existing := tgs.Lookup(l.TargetID); existing != nil {
+				warnLabelDivergence(log, "talkgroup", l, existing.AlphaTag)
+				tgs.UpdateFields(l.TargetID, func(tg *trunking.TalkGroup) { applyTalkgroupLabel(tg, l) })
+				applied++
+				continue
+			}
+			tg := &trunking.TalkGroup{ID: l.TargetID, Scan: true, Stream: true, Record: true}
+			applyTalkgroupLabel(tg, l)
+			tgs.Add(tg)
+			created++
+		}
+	}
+	return applied, created, nil
+}
+
+// warnLabelDivergence flags a stored name that disagrees with the alias file's,
+// so an operator who later folds labels back into their CSV is not surprised by
+// which one the daemon has been using.
+func warnLabelDivergence(log *slog.Logger, kind string, l storage.Label, fileName string) {
+	if log == nil || l.Name == "" || fileName == "" || l.Name == fileName {
+		return
+	}
+	log.Warn("daemon: operator label overrides the alias file's name",
+		"kind", kind, "id", l.TargetID, "file", fileName, "label", l.Name)
+}
+
+// applyRIDLabel copies the non-empty label fields onto a radio record. Empty
+// fields are left alone so a label that only sets a name does not blank out an
+// owner or tag the alias file supplied.
+func applyRIDLabel(r *trunking.RID, l storage.Label) {
+	setIfNotEmpty(&r.Alias, l.Name)
+	setIfNotEmpty(&r.Description, l.Description)
+	setIfNotEmpty(&r.Tag, l.Tag)
+	setIfNotEmpty(&r.Group, l.Group)
+	setIfNotEmpty(&r.Owner, l.Owner)
+	setIfNotEmpty(&r.Icon, l.Icon)
+}
+
+func applyTalkgroupLabel(tg *trunking.TalkGroup, l storage.Label) {
+	setIfNotEmpty(&tg.AlphaTag, l.Name)
+	setIfNotEmpty(&tg.Description, l.Description)
+	setIfNotEmpty(&tg.Tag, l.Tag)
+	setIfNotEmpty(&tg.Group, l.Group)
+	setIfNotEmpty(&tg.Icon, l.Icon)
+}
+
+func setIfNotEmpty(dst *string, v string) {
+	if v != "" {
+		*dst = v
+	}
 }
 
 // pagerProvider adapts storage.PagerLog into the api.PagerProvider

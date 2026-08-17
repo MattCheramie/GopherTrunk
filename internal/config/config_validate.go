@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -182,7 +183,70 @@ func (c Config) validateSDR() []error {
 		}
 		seenSerials[k.Serial] = i
 	}
+	// Validate sidecar endpoints. Same serial-collision rule; the transport
+	// and format must be ones the driver implements, and the sample rate is
+	// required because nothing can probe an opaque external producer for it.
+	for i, sc := range c.SDR.Sidecar {
+		if err := validateSidecarFields(i, sc); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if sc.Serial == "" {
+			continue
+		}
+		if prev, dup := seenSerials[sc.Serial]; dup {
+			errs = append(errs, fmt.Errorf(
+				"sdr.sidecar[%d]: serial %q collides with sdr.devices[%d]",
+				i, sc.Serial, prev))
+			continue
+		}
+		seenSerials[sc.Serial] = i
+	}
 	return errs
+}
+
+func validateSidecarFields(i int, sc SidecarConfig) error {
+	if sc.DataAddr == "" {
+		return fmt.Errorf("sdr.sidecar[%d]: data_addr is required "+
+			"(a FIFO path for unix_pipe, or host:port for tcp/udp)", i)
+	}
+	switch sc.Transport {
+	case "", "tcp", "udp":
+	case "unix_pipe":
+		if runtime.GOOS == "windows" {
+			return fmt.Errorf("sdr.sidecar[%d]: transport unix_pipe is not supported on "+
+				"Windows (its named pipes are a different namespace) — use tcp", i)
+		}
+	default:
+		return fmt.Errorf("sdr.sidecar[%d]: transport %q must be unix_pipe, tcp or udp",
+			i, sc.Transport)
+	}
+	switch sc.Format {
+	case "", "cs16", "CS16", "complex64", "cf32", "CF32":
+	default:
+		return fmt.Errorf("sdr.sidecar[%d]: format %q must be cs16 or complex64",
+			i, sc.Format)
+	}
+	switch sc.Role {
+	case "", "auto", "control", "voice":
+	default:
+		return fmt.Errorf("sdr.sidecar[%d]: role %q must be control, voice or auto",
+			i, sc.Role)
+	}
+	// A sidecar's stream carries no metadata, so a wrong or missing rate
+	// mis-sizes every downstream filter and silently mis-tunes every channel.
+	if sc.SampleRateHz == 0 {
+		return fmt.Errorf("sdr.sidecar[%d]: sample_rate_hz is required — the stream "+
+			"carries no metadata, so GopherTrunk cannot discover the rate", i)
+	}
+	if sc.FreqMinHz != 0 && sc.FreqMaxHz != 0 && sc.FreqMinHz >= sc.FreqMaxHz {
+		return fmt.Errorf("sdr.sidecar[%d]: freq_min_hz (%d) must be below freq_max_hz (%d)",
+			i, sc.FreqMinHz, sc.FreqMaxHz)
+	}
+	if sc.ConnectTimeoutMs < 0 {
+		return fmt.Errorf("sdr.sidecar[%d]: connect_timeout_ms must not be negative", i)
+	}
+	return nil
 }
 
 func validateKa9qFields(i int, k Ka9qRadioConfig) error {

@@ -241,15 +241,35 @@ func (g *GRPCServer) Run(ctx context.Context) error {
 	go func() { errCh <- g.srv.Serve(listener) }()
 	select {
 	case <-ctx.Done():
-		g.srv.GracefulStop()
+		g.Stop()
 		return nil
 	case err := <-errCh:
 		return err
 	}
 }
 
-// Stop gracefully halts the gRPC server.
-func (g *GRPCServer) Stop() { g.srv.GracefulStop() }
+// gracefulStopWindow bounds how long Stop waits for in-flight RPCs. Unbounded
+// before: GracefulStop waits for every open stream, and StreamAudio never ends
+// on its own, so one live audio client hung the daemon's teardown for good.
+const gracefulStopWindow = 2 * time.Second
+
+// Stop halts the gRPC server, draining in-flight RPCs when they finish
+// promptly and hard-stopping the stragglers.
+func (g *GRPCServer) Stop() {
+	done := make(chan struct{})
+	go func() {
+		g.srv.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(gracefulStopWindow):
+		g.log.Warn("api: gRPC graceful stop timed out — closing open streams",
+			"window", gracefulStopWindow)
+		g.srv.Stop()
+		<-done
+	}
+}
 
 // --- SystemService ---
 

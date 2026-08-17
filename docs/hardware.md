@@ -922,10 +922,32 @@ GT_DIVERSITY_TUNE_HZ=-87500 \
   go test ./cmd/gophertrunk -run TestDiversityCombinerReplay -v
 ```
 
-That prints a windowed coherence/gain/phase trace and decodes four arms — each
-branch alone, static combine, tracking combine — scored by CRC-clean BSCH count.
-Decode yield is the verdict; do not conclude anything from EVM or from how the
-constellation looks.
+That prints two coherence traces and decodes eight arms, all scored by
+CRC-clean BSCH count. Decode yield is the verdict; do not conclude anything from
+EVM or from how the constellation looks.
+
+**The two coherence traces are the important part.** The first is measured on
+the wideband stream — what the driver's combiner actually sees. The second is
+measured after each branch goes through the per-channel DDC. If narrowband
+coherence is high where wideband coherence is low, the branches *do* agree on
+the target channel and the single wideband gain is the limitation, exactly as
+the note under Limitations predicts for widely separated antennas; no amount of
+tracking will rescue it, and the `nb-*` arms are the ones to look at. If
+narrowband coherence is also low, the two receivers are not seeing the same
+signal at all and no combiner will help.
+
+The arms:
+
+| Arm | What it is |
+| --- | --- |
+| `branch0-only`, `branch1-only` | each receiver alone — the baseline any combiner has to beat |
+| `wb-static`, `wb-tracking` | today's driver behaviour: one complex gain for the whole span, frozen or tracked |
+| `wb-irc-blind` | MMSE-IRC on the wideband stream. Expected to match `wb-tracking`: without a training sequence the channel estimate is a power-weighted blend of every signal in the span, so the null is steered at a mixture. Carried so that claim is checked against real air rather than assumed |
+| `nb-static`, `nb-tracking` | one gain per narrowband channel, combined **after** the DDC — the per-channel combining the wideband limitation calls for, not built into the daemon |
+| `nb-branch0-only` | the narrowband baseline the `nb-*` arms have to beat |
+
+Nothing here changes what the daemon does. These are measurements; a combiner
+becomes a default only after a capture says it earns it.
 
 Two operational notes from that deployment:
 
@@ -1043,6 +1065,46 @@ opens but never streams, or when the server crashes on a client connect.
 > flow-control ACKs are byte-matched to SoapyRemote (issue #542). If you can
 > still reproduce a server crash, please report it upstream at
 > <https://github.com/pothosware/SoapyRemote/issues> with the server-side log.
+
+### Tracing the RPC conversation from GopherTrunk's side
+
+The SoapyRemote wire carries no schema: a message is a call id followed by bare
+tagged values, and the server dispatches on the id alone. When it logs
+
+```text
+[ERROR] ~SoapyRPCUnpacker: Unconsumed payload bytes 9
+```
+
+it is saying "the handler I dispatched to wanted fewer arguments than arrived" —
+and it does not say which call, so from the server log alone you are guessing.
+That guessing is how `SET_ANTENNA` sat on opcode 600 (`HAS_DC_OFFSET_MODE`)
+through a release: the server logged unconsumed bytes, replied with a bool, and
+the bool passed as success while no antenna was ever set.
+
+`verbose_debug` on a `soapy_remote` source logs the other half of the
+conversation — every request and response, decoded, plus the raw frame:
+
+```yaml
+log:
+  level: debug              # the trace is emitted at DEBUG
+sdr:
+  soapy_remote:
+    - addr: 10.110.162.1:23313
+      verbose_debug: true   # diagnostic only; leave off for normal operation
+```
+
+```text
+level=DEBUG msg="soapyremote: rpc >" addr=10.110.162.1:23313 seq=7
+  call=SET_ANTENNA(501) args="call SET_ANTENNA(501), char 0x01, i32 0, str \"RX1\""
+  bytes=41 hex="53 52 50 43 ..."
+level=DEBUG msg="soapyremote: rpc <" addr=10.110.162.1:23313 seq=7
+  call=SET_ANTENNA(501) args="void" bytes=1 hex="0e"
+```
+
+The decoded `args` are the useful part: line them up against the matching
+handler in upstream's `common/ClientHandler.cpp` and an argument-shape or
+opcode mismatch is visible directly. The `seq` pairs a request with its reply.
+It is per endpoint, so a multi-radio config can trace one server at a time.
 
 ## USB disconnect recovery
 

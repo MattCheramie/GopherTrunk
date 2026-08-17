@@ -44,6 +44,11 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.closing():
+			// Shutdown waits for this handler but never cancels its request
+			// context, so leaving on the server's own signal is what keeps a
+			// daemon stop from sitting out the whole shutdown window.
+			return
 		case ev, ok := <-sub.C:
 			if !ok {
 				return

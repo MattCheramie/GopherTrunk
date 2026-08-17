@@ -359,6 +359,44 @@ loop:
 	}
 }
 
+// A quiet server is the normal state at shutdown, and the read loop only
+// checked ctx BETWEEN reads — so a cancel arriving mid-read was not seen until
+// the read deadline expired, putting a 30 s tail on every daemon stop that had
+// an rtl_tcp source attached.
+func TestStreamIQStopsPromptlyOnContextCancelWhileServerIsQuiet(t *testing.T) {
+	srv := newFakeServer(t)
+	d := newDriver(t, srv.Addr())
+	dev, err := d.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	// Give the reader a moment to block in ReadFull on a server that will
+	// never send anything.
+	time.Sleep(50 * time.Millisecond)
+
+	start := time.Now()
+	cancel()
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("unexpected samples from a quiet server")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not close within 5 s of ctx cancel — the read is " +
+			"blocked until its deadline expires")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("stream took %v to close after cancel, want < 1s", elapsed)
+	}
+}
+
 func TestSetterAfterCloseFailsCleanly(t *testing.T) {
 	srv := newFakeServer(t)
 	d := newDriver(t, srv.Addr())
