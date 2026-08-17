@@ -423,3 +423,92 @@ confirmation before any close-as-completed.
   FSW-margin/LDU yield), then either port the `cqpsk.go` CMA/FSE equalizer onto the C4FM
   path or add soft-decision to the IMBE FEC, and A/B LDU/IMBE yield against the capture. No
   change lands without that capture. See `samples/p25/README.md` (weak-signal voice section).
+- **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
+  `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
+  (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the
+  wrong id silently invoked a different handler whose first two arguments happened to match:
+  `antennas: [RX1, RX2]` did nothing, every radio kept its driver default (which is why an
+  X310 and a B210 behaved differently on one config), the leftover string produced the
+  operator-visible `~SoapyRPCUnpacker: Unconsumed payload bytes 9` once per channel, and the
+  `bool` reply carried no exception so `rpcVoid` logged "rx antenna set" for a call that never
+  happened. **The unit tests could not catch this**: `driver_test.go`'s fake server switched on
+  the same constant, so both sides moved together — the #764/#771 self-consistent-synthetic
+  trap in a new dress. Two nets now, and they catch different things: the fake asserts every
+  request body is FULLY CONSUMED (mirroring the real `~SoapyRPCUnpacker`, wired into
+  `newFakeSoapyServer` so every test gets it) which catches ARGUMENT-SHAPE drift and found two
+  more calls the fake had not been parsing; and `TestOpenSetAntennaUsesUpstreamOpcode` pins the
+  numeric opcodes against upstream LITERALS, which is the only thing that can catch OPCODE
+  drift. `applyAntennas` now validates against `LIST_ANTENNAS` (500) and reads back with
+  `GET_ANTENNA` (502) — port names are device-specific (B210: `TX/RX`, `RX2`; TwinRX: `RX1`,
+  `RX2`) so a config moved between rigs must fail loudly.
+- **Never gate a DSP decision on absolute dBFS — gate on coherence.** MRC calibration was
+  gated on the reference branch clearing −40 dBFS, so an operator raised front-end gain from
+  65.0 → 82.0 dB purely to push a number past a software constant (they landed at −39.8 dBFS,
+  clearing it by 0.2 dB). Any absolute-power gate is a gain-staging trap that re-fires on the
+  next front end. The scale-invariant question is the normalised cross-correlation
+  `|rho| = |Σ x1·conj(x0)| / sqrt(Σ|x0|²·Σ|x1|²)` (`diversity.CrossStats`), which is also what
+  actually decides whether a gain estimate is trustworthy. `|rho| = γ/(1+γ)` for equal
+  per-branch SNR γ makes thresholds interpretable (0.50 ≈ 0 dB, 0.35 ≈ −2.7 dB) against a
+  noise-only floor near `sqrt(π/4N)`. Absolute power survives only as a digitally-dead-branch
+  reject at −100 dBFS. **DC removal in the correlator is load-bearing, not hygiene**: both
+  receivers of a front end share LO leakage, and an UNCENTRED correlator on two branches of
+  independent noise plus a common DC reports `|rho| → 1` and freezes `h = dc1/dc0` — confidently
+  calibrating on nothing, in exactly the weak-signal regime the gate protects. Pinned by
+  `TestCrossStatsRejectsCommonDCOffset`.
+- **Tracking MRC is safe ahead of a differential decoder; CMA was not — and the difference is
+  structural, not a tuning choice.** `diversity.TrackingCalibrator` re-estimates the branch
+  gain per 2 ms window and smooths one-pole (τ ≈ 200 ms), because a frozen constant is only
+  right for a shared-LO single-chip front end. The reporter's `rx_subdev_spec=B:0 A:0` puts the
+  branches on separate TwinRX daughterboards with independent PLLs — frequency-locked to a
+  common reference, but random relative phase per lock and walking after it — so a constant
+  decays. The SnapshotCMA lesson does not transfer: CMA's cost is rotation-invariant so nothing
+  constrains its absolute output phase, whereas here `h_0` is pinned to exactly `1+0j`, so the
+  output phase is ANCHORED to the reference branch's own and only the estimate ERROR can move
+  it (`arg(y/x0) ≈ −ε·|h|²/(1+|h|²)`, zero at convergence). That claim is measured, not
+  asserted: `TestTrackingCalibratorIsDifferentialSafe` bounds the per-window output phase step
+  against the 45° π/4-DQPSK decision spacing. A rejected window **holds** the previous gains and
+  never drops back to passthrough — falling back mid-stream is itself a large phase step, the
+  exact failure class being avoided. `mrc-static` (α = 0) is the one-shot escape hatch; the
+  first accepted window is snapped, not smoothed, so it is bit-identical to a one-shot LS
+  calibration and both modes start the same way. Also fixed: the reference branch was
+  re-chosen by `argmax` on EVERY datagram while uncalibrated, so an ordinary ~1 dB crossover
+  between two healthy receivers swapped the phase anchor mid-stream.
+- **MRC combines the WIDEBAND stream, so one complex scalar optimises whole-band SNR, not the
+  target channel's.** That is exact only if the branches differ by a frequency-flat constant.
+  Two antennas metres apart give each carrier its own phase difference set by geometry and
+  direction of arrival; a scalar aligns whichever is loudest and partially cancels the rest.
+  The signature is a wideband `coherence` stuck around 0.3–0.5 that no amount of tracking
+  improves, and the fix for that regime is combining AFTER the per-channel DDC (one gain per
+  narrowband channel) — a much larger change, not built. The coherence figure in the health
+  line is what makes this visible instead of silent, which is arguably a bigger contribution
+  than the gain-independence.
+- **Diversity captures must be PRE-combine, or they answer nothing.** The combiner lives in the
+  driver, so `baseband.auto_record`, the `iqtap` brokers and the scope taps are all downstream
+  of it — a capture from any of them has one combiner already baked in and cannot be replayed
+  through another. `sdr.soapy_remote[].diversity_capture` taps the branches straight after
+  de-interleave, writing one headerless cs16 file per branch (each independently playable via
+  `replay -format cs16`) plus a sidecar. **Alignment is the invariant**: a datagram that did not
+  carry every branch is dropped from BOTH files and counted, never written short, because one
+  short write silently desynchronises them and every later conclusion is wrong with nothing to
+  show for it. A/B with `GT_DIVERSITY_CAPTURE=<prefix>.diversity.json go test ./cmd/gophertrunk
+  -run TestDiversityCombinerReplay -v`: it prints a windowed coherence/gain/**phase** trace
+  (flat phase ⇒ the frozen constant was fine on that hardware; walking phase ⇒ tracking is doing
+  real work, in °/s) and decodes four arms — each branch alone, static, tracking — scored by
+  CRC-clean BSCH. **Yield is the verdict, never EVM.** Tracking-as-default is NOT yet verified
+  on air; that A/B on the operator's own capture is the gate.
+- **`branch_phase_deg` in the MRC log line is the no-capture field instrument.** Constant ⇒
+  shared-LO front end; walking ⇒ independent PLLs. It tells an operator which hardware class
+  they have, and therefore whether `mrc` or `mrc-static` is right, before anyone records
+  anything.
+- **A WebSocket handler that upgrades before validating cannot be backed off from.** The
+  symbol/spectrum/diag/mixer handlers resolved the SDR serial AFTER `upgrader.Upgrade`, so an
+  unknown device produced a successful 101 followed by a 1011 close. Browser clients reset
+  their reconnect backoff in `onopen`, so a handshake that always succeeds makes `MAX_BACKOFF`
+  dead code: one stale tab across a daemon restart with different hardware reconnected 2–4×/s
+  forever, across six mount sites. Fixes, all three needed: resolve the device BEFORE the
+  upgrade and return **404** (`api.ErrUnknownDevice`, `rejectUnknownDevice`); reset the client
+  backoff only once a frame actually ARRIVES (or the socket held open past a grace period), not
+  on `onopen`; and reconcile the selected serial against a refreshed device list instead of
+  setting it once and never revisiting. `web/src/api/reconnectingSocket.ts` now owns the logic
+  the four clients had each copied — including the `onerror`+`onclose` double-bind that
+  scheduled two timers per failure while remembering only one handle.
