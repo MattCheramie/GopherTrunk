@@ -52,6 +52,13 @@ type fakeSoapyServer struct {
 	// a UHD front-end with no AGC ("set_rx_agc() is not supported"). Issue #542.
 	failGainMode bool
 
+	// quietStream holds the data socket open after activation without ever
+	// sending a datagram — a server that has gone silent, which is also the
+	// normal state at daemon shutdown once the device stops producing.
+	// quietDone releases that hold at test cleanup.
+	quietStream bool
+	quietDone   chan struct{}
+
 	// lastSetRateHz is the most recent rate the client programmed via
 	// SET_SAMPLE_RATE. getSampleRateHz, when non-zero, overrides what
 	// GET_SAMPLE_RATE reports — modelling a USRP that coerces a non-divisor
@@ -132,9 +139,10 @@ func newFakeSoapyServer(t *testing.T) *fakeSoapyServer {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	s := &fakeSoapyServer{t: t, ln: ln}
+	s := &fakeSoapyServer{t: t, ln: ln, quietDone: make(chan struct{})}
 	go s.acceptLoop()
 	t.Cleanup(func() { _ = ln.Close() })
+	t.Cleanup(func() { close(s.quietDone) })
 	// Every test that drives the fake server gets the wire-shape check for
 	// free, so a new or edited call has to account for its own bytes.
 	t.Cleanup(func() { s.assertCleanProtocol(t) })
@@ -556,6 +564,13 @@ func (s *fakeSoapyServer) startDataServer(activate <-chan struct{}) (string, <-c
 				s.recordACK(decodeStreamHeader(buf))
 			}
 		}()
+
+		if s.quietStream {
+			// Hold the socket open, send nothing, and let the test drive
+			// teardown through ctx.
+			<-s.quietDone
+			return
+		}
 
 		seq := uint32(0)
 		for {
@@ -1024,6 +1039,46 @@ func TestStreamIQ(t *testing.T) {
 		case <-drain:
 			t.Fatal("stream channel not closed after ctx cancel")
 		}
+	}
+}
+
+// TestStreamIQ cancels against a server that is actively streaming, so the
+// read returns on its own and the between-reads ctx check is enough. A server
+// that has gone QUIET is the interesting case — and the normal one at
+// shutdown: the loop was then parked inside io.ReadFull until the read
+// deadline expired, adding a 30 s tail to the daemon's teardown behind the
+// HTTP server's own window.
+func TestStreamIQStopsPromptlyOnContextCancelWhileServerIsQuiet(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	srv.quietStream = true
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	// Let the reader settle into ReadFull on a socket that will stay silent.
+	time.Sleep(100 * time.Millisecond)
+
+	start := time.Now()
+	cancel()
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("unexpected samples from a quiet server")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream channel not closed within 5 s of ctx cancel — the read " +
+			"is blocked until its deadline expires")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("stream took %v to close after cancel, want < 1s", elapsed)
 	}
 }
 

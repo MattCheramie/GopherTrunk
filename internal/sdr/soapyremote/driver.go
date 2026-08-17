@@ -67,6 +67,11 @@ const DefaultConnectTimeout = 3 * time.Second
 // inside the server's setupStream before it replies (issue #542).
 const streamSetupTimeout = 30 * time.Second
 
+// streamReadIdleTimeout is the backstop for a server that goes quiet without
+// closing the socket. It is NOT the shutdown path — a watcher in streamLoop
+// expires the deadline on ctx cancel — so it can stay generous.
+const streamReadIdleTimeout = 30 * time.Second
+
 // maxTransfer bounds a single stream transfer so a corrupt length field can't
 // trigger a huge allocation.
 const maxTransfer = 1 << 22 // 4 MiB
@@ -1019,6 +1024,21 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 	defer throttle.maybeWarn(true) // flush any trailing counts on teardown
 	health := newDiversityReporter(d.log, d.addr)
 
+	// The ctx check below only runs BETWEEN reads, so a cancel that arrives
+	// while the server is quiet would not be seen until the read deadline
+	// expired. Expiring the deadline on cancel unblocks the in-flight read
+	// immediately while leaving the deferred teardown to run normally —
+	// closing the socket here would race that teardown.
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = dataConn.SetReadDeadline(time.Now())
+		case <-stopWatch:
+		}
+	}()
+
 	hdr := make([]byte, streamHeaderSize)
 	// Flow-control state: lastRecv tracks the next sequence we expect; lastAck
 	// is the sequence carried by our most recent ACK. The initial ACK (seq 0)
@@ -1030,8 +1050,9 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 			return
 		default:
 		}
-		// Bounded deadline so a wedged server is torn down on ctx cancel.
-		_ = dataConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		// Backstop for a server that stops sending without closing the socket;
+		// ctx cancel is handled by the watcher above, not by this expiring.
+		_ = dataConn.SetReadDeadline(time.Now().Add(streamReadIdleTimeout))
 		if _, err := io.ReadFull(dataConn, hdr); err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 				d.log.Debug("soapyremote: stream header read", "addr", d.addr, "err", err)
