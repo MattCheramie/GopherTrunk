@@ -781,10 +781,20 @@ type SoapyRemoteConfig struct {
 	// Diversity selects a spatial-diversity combiner over a multi-channel RX
 	// stream. "" / "none" (default) streams a single channel. "mrc" opens RX
 	// channels 0 and 1 and phase-coherently combines them into one maximised-SNR
-	// stream — for shared-LO front-ends only (USRP B210 / AD9361 and clones),
-	// whose RX0↔RX1 phase relationship is a constant per tune. EXPERIMENTAL
-	// (issue #1062): the 2-channel wire de-interleave is not yet confirmed on a
-	// live dual-RX server.
+	// stream, re-estimating the branch gain from the stream and smoothing it, so
+	// it suits both a shared-LO front-end (USRP B210 / AD9361, where the branch
+	// phase really is a constant) and two receivers on separate daughterboards
+	// with independent PLLs (a USRP X310 with two TwinRX cards), whose relative
+	// phase is random at each lock and walks afterwards.
+	//
+	// "mrc-static" is the escape hatch: the same combine with a ONE-SHOT frozen
+	// gain, for comparing against the pre-tracking behaviour on hardware where
+	// the constant is genuinely constant.
+	//
+	// Whether the combine helps at all is reported as "coherence" in the
+	// periodic MRC log line — |rho| between the branches, which is independent
+	// of RF gain. Raising gain to make diversity engage is never the answer.
+	// EXPERIMENTAL (issue #1062).
 	Diversity string `yaml:"diversity"`
 	// Antennas selects the RX antenna port per channel (SoapySDR setAntenna),
 	// applied in channel order after the device opens — antennas[0] to RX

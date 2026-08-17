@@ -396,6 +396,10 @@ func TestValidate(t *testing.T) {
 		{"soapy diversity mrc ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc"}}}}, false},
 		{"soapy diversity empty ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: ""}}}}, false},
 		{"soapy diversity bad rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "selection"}}}}, true},
+		{"soapy diversity mrc-static ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc-static"}}}}, false},
+		// The escape hatch still opens two RX channels, so a per-channel antenna
+		// pair must stay legal under it.
+		{"soapy antennas pair ok under mrc-static", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc-static", Antennas: []string{"RX1", "RX2"}}}}}, false},
 		// antennas[]: one is fine single-channel; two require mrc; >2 and empties rejected.
 		{"soapy antennas single ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antennas: []string{"RX2"}}}}}, false},
 		{"soapy antennas two with mrc ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", Antennas: []string{"RX1", "RX2"}}}}}, false},

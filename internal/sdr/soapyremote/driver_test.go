@@ -1121,8 +1121,11 @@ func TestStreamIQDiversityRecoversWhenRX0IsDead(t *testing.T) {
 		}
 		// The combined stream must carry RX1's signal, not RX0's noise. Compare
 		// power: the old behaviour emitted the dead branch verbatim (~-60 dBFS).
-		if p := refPowerDbFS(got); p < mrcCalFloorDbFS {
-			t.Errorf("combined power = %.1f dBFS with a dead RX0 and a live RX1; want the live branch (≥ %.1f dBFS). The combiner is still anchored on RX0.", p, mrcCalFloorDbFS)
+		// -40 dBFS is a literal here, not a shared constant: it is just a level
+		// comfortably between the dead branch (~-60) and the live one (~-6).
+		const liveFloorDbFS = -40.0
+		if p := refPowerDbFS(got); p < liveFloorDbFS {
+			t.Errorf("combined power = %.1f dBFS with a dead RX0 and a live RX1; want the live branch (≥ %.1f dBFS). The combiner is still anchored on RX0.", p, liveFloorDbFS)
 		}
 		for i, want := range live {
 			if absDiff(got[i], want) > 2e-2 {

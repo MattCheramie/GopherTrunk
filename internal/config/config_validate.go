@@ -241,10 +241,10 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 	diversityMRC := false
 	switch strings.ToLower(strings.TrimSpace(s.Diversity)) {
 	case "", "none", "off":
-	case "mrc":
+	case "mrc", "mrc-static", "mrc_static":
 		diversityMRC = true
 	default:
-		return fmt.Errorf("sdr.soapy_remote[%d]: diversity must be mrc or empty", i)
+		return fmt.Errorf("sdr.soapy_remote[%d]: diversity must be mrc, mrc-static or empty", i)
 	}
 	// antennas[] selects an RX antenna per channel. At most two (RX0, RX1), and
 	// more than one only makes sense under mrc (a single-channel stream opens

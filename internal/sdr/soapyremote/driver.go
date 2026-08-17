@@ -176,7 +176,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	if proto != "tcp" {
 		return nil, fmt.Errorf("soapyremote: stream_protocol %q not supported (only \"tcp\")", proto)
 	}
-	diversity, err := parseDiversity(spec.Diversity)
+	divMode, err := parseDiversity(spec.Diversity)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		window:     window,
 		windowSeqs: windowSeqs,
 		ackTrigger: windowSeqs / streamNumBuffs,
-		diversity:  diversity,
+		diversity:  divMode,
 		info: sdr.Info{
 			Driver:    DriverName,
 			Index:     idx,
@@ -224,8 +224,11 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 			Gains:     genericGainLadder(),
 		},
 	}
-	if diversity {
-		dev.mrc = newMRCCombiner(format)
+	if divMode.enabled() {
+		// The calibration window is sized from stream time, so the combiner needs
+		// the rate. It is not programmed yet at Open; StreamIQ re-sizes the window
+		// once the delivered rate is known.
+		dev.mrc = newMRCCombiner(format, divMode, 0)
 	}
 	// Create the remote device.
 	if err := dev.rpcVoid(func(p *packer) {
@@ -251,10 +254,10 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		"addr", addr,
 		"format", format.soapyName(),
 		"proto", proto,
-		"diversity", diversity)
-	if diversity {
-		d.log.Info("soapyremote: MRC diversity enabled — RX0+RX1 phase-coherent combine (experimental, shared-LO only)",
-			"addr", addr)
+		"diversity", divMode.String())
+	if divMode.enabled() {
+		d.log.Info("soapyremote: MRC diversity enabled — RX0+RX1 phase-coherent combine (experimental)",
+			"addr", addr, "mode", divMode.String())
 	}
 	return dev, nil
 }
@@ -278,11 +281,11 @@ type device struct {
 	windowSeqs uint32
 	ackTrigger uint32
 
-	// diversity is true when this device runs phase-coherent MRC over RX0+RX1;
-	// mrc is then the combiner that turns the 2-channel stream into one. Both
-	// are set once at Open and read-only thereafter. mrc is nil in the ordinary
-	// single-channel case. Issue #1062.
-	diversity bool
+	// diversity selects phase-coherent MRC over RX0+RX1; mrc is then the
+	// combiner that turns the 2-channel stream into one. Both are set once at
+	// Open and read-only thereafter. mrc is nil in the ordinary single-channel
+	// case. Issue #1062.
+	diversity diversityMode
 	mrc       *mrcCombiner
 
 	mu         sync.Mutex
@@ -296,7 +299,7 @@ type device struct {
 // rxChannelCount is the number of RX channels the stream requests: 1 normally,
 // diversityChannels (2) under MRC diversity.
 func (d *device) rxChannelCount() int {
-	if d.diversity {
+	if d.diversity.enabled() {
 		return diversityChannels
 	}
 	return 1
@@ -694,8 +697,11 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	samplesPerChunk := (d.mtu - streamHeaderSize) / (d.format.bytesPerSample() * d.rxChannelCount())
 	out := make(chan []complex64, streamBufferDepth(rate, samplesPerChunk))
 	// Re-arm the MRC calibration for this fresh stream so it re-estimates the
-	// phase constant rather than reusing a stale one from a prior stream.
+	// gain rather than reusing a stale one from a prior stream, and size its
+	// estimation window from the rate now that one is known (the window is
+	// specified in stream time, so it must not depend on the MTU).
 	if d.mrc != nil {
+		d.mrc.setSampleRate(float64(rate))
 		d.mrc.requestRecalibrate()
 	}
 	go d.streamLoop(ctx, dataConn, streamID, out)
@@ -789,7 +795,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	// Channel list: [0] normally, [0,1] under MRC diversity so the server
 	// streams both RX channels interleaved for phase-coherent combining.
 	chans := []int{0}
-	if d.diversity {
+	if d.diversity.enabled() {
 		chans = []int{0, 1}
 	}
 	p.sizeList(chans)
