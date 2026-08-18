@@ -1,0 +1,18 @@
+{
+  "_readme": [
+    "Documented risk acceptances for the CI vulncheck gate (ci.yml policy:",
+    "upgrade the dependency, substitute it, or accept the risk with a",
+    "documented justification). scripts/vulncheck.sh runs govulncheck and",
+    "internal/tools/vulngate enforces this file: a symbol-level finding not",
+    "listed here — or listed but past its review_by date — fails the check.",
+    "Every entry needs id, a written reason, added, and review_by."
+  ],
+  "accepted": [
+    {
+      "id": "GO-2026-6115",
+      "reason": "DoS-only (OOM / infinite loop / stack overflow on malformed input) in github.com/ledongthuc/pdf, reached solely from extractPDFRows in the operator-initiated `gophertrunk import` CLI parsing an operator-supplied channel-list PDF — no daemon or network surface. No fixed release exists in rsc.io/pdf or any fork (upstream hardening PR ledongthuc/pdf#78 still open), so there is nothing to upgrade to. The advisory was withdrawn upstream on 2026-08-18 pending Go-CNA CVE processing and is expected to return under a formal CVE; this entry covers both the stale-database window and the re-published advisory. At review: check for a fixed release or a merged ledongthuc/pdf#78, else re-justify or replace the parser.",
+      "added": "2026-08-18",
+      "review_by": "2026-11-18"
+    }
+  ]
+}

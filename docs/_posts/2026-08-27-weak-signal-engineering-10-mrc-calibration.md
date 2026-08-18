@@ -172,6 +172,16 @@ know how much coherence is "none" for any window length
 least-squares gain `h = cov(x,ref)/var(ref)`, so the gate and the estimate it
 gates come from one measurement of one window.
 
+> **Update (18 Aug):** the thresholds themselves are no longer fixed
+> constants. Wideband |rho| is diluted by noise-only bandwidth around the
+> coherent carrier, so a fixed 0.5 turned out to be a bandwidth-staging trap
+> of the same species as the −40 dBFS gate below — an operator raised RF gain
+> 5 dB purely to clear it. The gates now bound the estimate's projected phase
+> error `sqrt((1−ρ²)/(2Nρ²))`, which puts the minimum |rho| at ~8× (lock) /
+> ~5× (track) the sqrt(π/4N) floor for whatever window length the stream
+> runs. The figure below still shows the γ/(1+γ) mapping with the original
+> fixed thresholds for illustration.
+
 <figure class="lab-figure">
 <svg viewBox="0 0 680 220" width="680" height="220" role="img" aria-label="A curve of coherence magnitude rho against per-branch SNR in dB, rising from near zero through 0.35 at about minus 2.7 dB and 0.5 at 0 dB toward 1 at high SNR. Two horizontal threshold lines mark the track gate at 0.35 and the lock gate at 0.5, and a shaded band near the bottom marks the noise-only floor around square root of pi over 4N.">
   <line x1="60" y1="20" x2="60" y2="180" stroke="var(--fg-muted)"/>

@@ -214,15 +214,17 @@ tidy:
 	$(GO) mod tidy
 
 # vulncheck runs golang.org/x/vuln/cmd/govulncheck against the
-# project's direct + transitive dependencies. CI runs this on every
-# PR; the binary lives at $(go env GOBIN)/govulncheck after
+# project's direct + transitive dependencies, gated by the documented
+# risk acceptances in vulncheck-accepted.json (scripts/vulncheck.sh +
+# internal/tools/vulngate). CI runs the same script on every PR; the
+# binary lives at $(go env GOBIN)/govulncheck after
 #   go install golang.org/x/vuln/cmd/govulncheck@latest
 vulncheck:
 	@command -v govulncheck >/dev/null || { \
 	  echo "govulncheck not installed; run: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
 	  exit 1; \
 	}
-	govulncheck ./...
+	./scripts/vulncheck.sh
 
 # licenses regenerates the machine-readable transitive-deps inventory
 # (THIRD_PARTY_LICENSES.csv) using google/go-licenses. The

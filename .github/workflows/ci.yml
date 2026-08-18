@@ -180,7 +180,12 @@ jobs:
   # transitive dependency graph. Failing this job blocks merge — a
   # known-vulnerable dep means the operator has to either upgrade
   # the dep, accept the risk with a documented justification, or
-  # find a non-vulnerable substitute.
+  # find a non-vulnerable substitute. The "documented justification"
+  # path is vulncheck-accepted.json: scripts/vulncheck.sh runs the
+  # scan and internal/tools/vulngate fails any symbol-level finding
+  # not listed there with a written reason and an unexpired
+  # review_by date (time-boxed so accepted never decays into
+  # forgotten).
   vulncheck:
     runs-on: ubuntu-latest
     steps:
@@ -191,7 +196,7 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Scan
-        run: govulncheck ./...
+        run: ./scripts/vulncheck.sh
 
   # licenses regenerates the transitive-deps inventory and confirms
   # no new dependency landed under an incompatible license. The

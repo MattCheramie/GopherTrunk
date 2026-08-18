@@ -202,6 +202,25 @@ func TestDiversityCombinerReplay(t *testing.T) {
 	// trustworthy phase estimate. 20 ms of channel-rate stream is 2880.
 	nbWindow := int(nbRate * 20 / 1000)
 
+	// Mirror the driver's reference selection: the live combiner anchors on the
+	// loudest branch, and the anchor decides both the pre-lock passthrough and
+	// the least-squares gain's noise bias. The arms used to anchor on branch 0
+	// by file order — on the 18 Aug 2026 captures, whose branch 0 was the weak
+	// receiver, every combined arm degenerated to the WEAK branch's passthrough
+	// whenever the calibrator held, and the arm scores said nothing about what
+	// the driver would actually do.
+	wbRef, wbOther, refName := br0, br1, "branch0"
+	if meanPowerOf(br1) > meanPowerOf(br0) {
+		wbRef, wbOther, refName = br1, br0, "branch1"
+	}
+	nbRef, nbOther := nb0, nb1
+	if meanPowerOf(nb1) > meanPowerOf(nb0) {
+		nbRef, nbOther = nb1, nb0
+	}
+	t.Logf("combined arms anchor on %s (the louder branch), mirroring the driver's reference selection", refName)
+	t.Logf("driver-equivalent coherence gates at this rate (%d-sample windows): lock >= %.3f, track >= %.3f",
+		window, diversity.TrackingOptions{}.LockGate(window), diversity.TrackingOptions{}.TrackGate(window))
+
 	// Wideband arms are combined then down-converted; narrowband arms are
 	// down-converted per branch and combined at the channel rate. Both are
 	// scored by the identical decoder so the combiner is the only variable.
@@ -213,10 +232,10 @@ func TestDiversityCombinerReplay(t *testing.T) {
 	}{
 		{"branch0-only", br0, meta.SampleRateHz, tuneHz},
 		{"branch1-only", br1, meta.SampleRateHz, tuneHz},
-		{"wb-static", combineWith(t, br0, br1,
+		{"wb-static", combineWith(t, wbRef, wbOther,
 			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window, Alpha: 0})),
 			meta.SampleRateHz, tuneHz},
-		{"wb-tracking", combineWith(t, br0, br1,
+		{"wb-tracking", combineWith(t, wbRef, wbOther,
 			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window})),
 			meta.SampleRateHz, tuneHz},
 		// Blind IRC on the wideband stream. Expected to measure the same as
@@ -224,15 +243,15 @@ func TestDiversityCombinerReplay(t *testing.T) {
 		// power-weighted blend of every signal in the span, so the null is
 		// steered at a mixture (see internal/dsp/diversity/irc.go). Carried as
 		// an arm so that claim is checked against real air rather than assumed.
-		{"wb-irc-blind", combineWith(t, br0, br1,
+		{"wb-irc-blind", combineWith(t, wbRef, wbOther,
 			diversity.NewIRCCalibrator(2, diversity.TrackingOptions{WindowSamples: window})),
 			meta.SampleRateHz, tuneHz},
 		// The arms that matter for the wideband-limitation question: one gain
 		// per narrowband channel instead of one for the whole span.
-		{"nb-static", combineWith(t, nb0, nb1,
+		{"nb-static", combineWith(t, nbRef, nbOther,
 			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: nbWindow, Alpha: 0})),
 			nbRate, 0},
-		{"nb-tracking", combineWith(t, nb0, nb1,
+		{"nb-tracking", combineWith(t, nbRef, nbOther,
 			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: nbWindow})),
 			nbRate, 0},
 		{"nb-branch0-only", nb0, nbRate, 0},
@@ -429,6 +448,20 @@ func loadCS16File(t *testing.T, path string) []complex64 {
 		out[i] = complex(float32(re)/32768, float32(im)/32768)
 	}
 	return out
+}
+
+// meanPowerOf is the mean sample power of one branch, the driver's reference-
+// selection metric (refPowerDbFS without the dB).
+func meanPowerOf(x []complex64) float64 {
+	if len(x) == 0 {
+		return 0
+	}
+	var acc float64
+	for _, z := range x {
+		r, i := float64(real(z)), float64(imag(z))
+		acc += r*r + i*i
+	}
+	return acc / float64(len(x))
 }
 
 // divWindow is one analysis window's summary of the branch relationship.

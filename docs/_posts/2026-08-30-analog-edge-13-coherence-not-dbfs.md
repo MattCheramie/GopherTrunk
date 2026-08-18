@@ -33,6 +33,19 @@ replacement is the most transferable idea this series has to offer.*
 > Inside the correlator, **DC removal is load-bearing, not hygiene**; absolute
 > power survives only as a −100 dBFS digitally-dead-branch reject.
 
+> **Update (18 Aug):** a fixed `|rho|` threshold turned out to be a staging
+> trap of its own — a *bandwidth*-staging trap. Wideband `|rho|` is diluted by
+> every hertz of noise-only bandwidth around the coherent carrier
+> (`rho_wb ≈ rho_ch·sqrt(f0·f1)` for in-channel power fractions), and an X310
+> operator raised RF gain 5 dB purely to push wideband coherence past the 0.50
+> constant while their phase estimate had been accurate to ~4° all along. The
+> gates now bound the estimate's projected **phase error**
+> `sqrt((1−ρ²)/(2Nρ²))` instead (`diversity.TrackingOptions.LockPhaseSigmaRad`
+> / `TrackPhaseSigmaRad`, defaults 0.10/0.16 rad): the minimum `|rho|` falls as
+> `1/sqrt(N)` yet stays ~8×/~5× above the `sqrt(π/4N)` noise floor, so noise
+> still cannot lock. The principle of this post stands — gate on evidence, not
+> level — the evidence was just one derivative sharper than `|rho|` itself.
+
 **Key takeaways**
 
 - **An absolute dBFS gate makes operators tune the radio to the software.**
@@ -57,7 +70,7 @@ replacement is the most transferable idea this series has to offer.*
 |---|---|---|
 | The statistic | DC-removed normalised cross-correlation over a window | `internal/dsp/diversity/crossstats.go` (`CrossStats.Coherence`) |
 | The gain beside it | least-squares branch gain from the same sums | `CrossStats.Gain` (`h = cov(x,ref)/var(ref)`) |
-| Thresholds | lock 0.50 (≈0 dB), track 0.35 (≈−2.7 dB) | `internal/sdr/soapyremote/mrc.go` (`mrcCoherenceLockGate`, `mrcCoherenceTrackGate`) |
+| Thresholds | phase-error bounds 0.10/0.16 rad ⇒ `|rho| ≥ 1/sqrt(1+2Nσ²)` (see the Update above) | `internal/sdr/soapyremote/mrc.go` (`mrcLockPhaseSigmaRad`, `mrcTrackPhaseSigmaRad`) |
 | DC-removal proof | common DC must not read as correlation | `TestCrossStatsRejectsCommonDCOffset` (`crossstats_test.go`) |
 | The power floor that remains | reject a digitally dead branch only | `MinBranchPower` 1e-10 ≈ −100 dBFS (`tracking.go`) |
 | Operator surface | `coherence` in the 30 s MRC health line | `diversityReporter` (`mrc.go`), [Part 11]({{ '/blog/tutorials/analog-edge-11-diversity-mrc/' | relative_url }}) |
@@ -135,10 +148,12 @@ common signal in independent noise at equal per-branch SNR γ,
 So 0.50 is γ=1 — **0 dB** per-branch SNR. 0.35 is about **−2.7 dB**. And two
 branches of pure independent noise over N samples don't read zero — they read
 near `sqrt(π/4N)`, about **0.03 at N=1000**: the floor any threshold must
-clear. GopherTrunk's gates sit exactly on this scale: the *first* estimate (a
-one-shot calibration lives with it forever) must clear **0.50**; subsequent
-tracking updates, whose errors average away, need only **0.35**
-(`mrcCoherenceLockGate`, `mrcCoherenceTrackGate`).
+clear. GopherTrunk's gates originally sat right on this scale — lock at
+**0.50**, track at **0.35** — until an operator's 18 Aug captures showed the
+fixed constants were a *bandwidth*-staging trap (see the Update in the TL;DR):
+the gates now bound the estimate's phase error, which puts the minimum `|rho|`
+at ~8× (lock) and ~5× (track) the `sqrt(π/4N)` floor for whatever window the
+stream is running (`mrcLockPhaseSigmaRad`, `mrcTrackPhaseSigmaRad`).
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 210" width="680" height="210" role="img" aria-label="Coherence magnitude rho plotted against per-branch SNR in decibels, following the curve gamma over one plus gamma: rho rises from near zero at minus ten decibels through 0.35 at about minus 2.7 decibels and 0.5 at zero decibels, saturating toward one above ten decibels. The two gate thresholds at 0.35 and 0.5 are marked with horizontal dashed lines, and the noise-only floor near 0.03 is marked along the bottom.">
