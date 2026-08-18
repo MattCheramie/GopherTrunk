@@ -91,6 +91,123 @@ func TestTrackingCalibratorFollowsDriftingPhase(t *testing.T) {
 	}
 }
 
+// genNarrowband returns a unit-magnitude carrier at normalised frequency f0
+// (cycles per sample) whose phase also takes a small random walk — a proxy for
+// one modulated channel occupying a small slice of a wideband stream.
+func genNarrowband(rng *rand.Rand, n int, f0, walk float64) []complex64 {
+	s := make([]complex64, n)
+	th := 0.0
+	for i := range s {
+		th += 2*math.Pi*f0 + rng.NormFloat64()*walk
+		s[i] = complex(float32(math.Cos(th)), float32(math.Sin(th)))
+	}
+	return s
+}
+
+// TestTrackingCalibratorLocksOnBandwidthDilutedCoherence is the failing-first
+// regression for the 18 Aug 2026 X310 report: MRC refused to calibrate at
+// 200/250 kHz until the operator raised RF gain 5 dB purely to push wideband
+// coherence past the fixed 0.5 lock constant. |rho| on the WIDEBAND stream is
+// diluted by every hertz of noise-only bandwidth around the coherent carrier —
+// rho_wb ~ rho_ch*sqrt(f0*f1) for in-channel power fractions f_k — so a fixed
+// rho threshold is a bandwidth-staging trap, the direct sibling of the
+// -40 dBFS gain-staging trap the coherence gate replaced. On those captures the
+// per-window rho sat at ~0.16 while the branch phase was measurable to ~4
+// degrees; the gate, not the estimate, was the blocker.
+//
+// The fixture reproduces that regime: a narrowband common carrier in a wide
+// noise floor, the second branch ~9 dB down with its own broadband noise, so
+// wideband coherence sits well below BOTH old fixed gates (0.5 lock, 0.35
+// track) while the phase estimate is accurate. The calibrator must lock, keep
+// updating, and recover the true branch phase.
+func TestTrackingCalibratorLocksOnBandwidthDilutedCoherence(t *testing.T) {
+	const n = 1 << 17
+	const window = 8192
+	const theta = 1.1 // true branch phase, rad
+	rng := rand.New(rand.NewSource(909))
+
+	carrier := genNarrowband(rng, n, 0.11, 0.02)
+	// Reference branch: carrier-dominated (the operator's br1: 96% in-channel).
+	ref := addNoise(rng, carrier, 0.1)
+	// Other branch: the same carrier 16.5 dB down in amplitude under a
+	// broadband floor (the operator's br0: 14% in-channel power fraction).
+	x := addNoise(rng, rotate(scale(carrier, 0.15), theta), 0.5)
+
+	// Fixture sanity: the wideband coherence really is below both old fixed
+	// gates, or this test is not exercising the dilution regime at all.
+	var s CrossStats
+	s.Accumulate(ref[:window], x[:window])
+	if rho := s.Coherence(); rho >= 0.35 || rho < 0.10 {
+		t.Fatalf("fixture wideband coherence %.3f, want the diluted regime [0.10, 0.35)", rho)
+	}
+
+	// Alpha as the driver would derive it for a ~20 ms window (mrcTrackAlpha).
+	c := NewTrackingCalibrator(2, TrackingOptions{WindowSamples: window, Alpha: 0.1})
+	feed(t, c, ref, x, window)
+
+	if !c.Calibrated() {
+		t.Fatalf("did not calibrate on a bandwidth-diluted but phase-measurable pair "+
+			"(coherence %.3f, lock gate %.3f)", c.Coherence(), TrackingOptions{}.LockGate(window))
+	}
+	updates, _ := c.Counters()
+	if updates < 2 {
+		t.Errorf("updates = %d, want tracking to keep accepting windows in this regime", updates)
+	}
+	g := c.Gains()[1]
+	got := math.Atan2(float64(imag(g)), float64(real(g)))
+	if d := math.Abs(wrapPi(got - theta)); d > 5*math.Pi/180 {
+		t.Errorf("recovered branch phase %.1f deg, want %.1f deg within 5 deg",
+			got*180/math.Pi, theta*180/math.Pi)
+	}
+}
+
+// TestTrackingCalibratorNeverLocksOnIndependentNoise pins the other side of the
+// relaxed gate: two branches of pure independent noise must never calibrate,
+// however many windows they are given. Their coherence sits at the
+// sqrt(pi/4N) estimation floor, which the lock gate clears by ~8x.
+func TestTrackingCalibratorNeverLocksOnIndependentNoise(t *testing.T) {
+	const window = 4096
+	rng := rand.New(rand.NewSource(1010))
+	c := NewTrackingCalibrator(2, TrackingOptions{WindowSamples: window})
+	for i := 0; i < 200; i++ {
+		a := addNoise(rng, make([]complex64, window), 1)
+		b := addNoise(rng, make([]complex64, window), 1)
+		if res := c.Observe([][]complex64{a, b}); res.Updated {
+			t.Fatalf("window %d: locked on independent noise (coherence %.4f)", i, res.Coherence)
+		}
+	}
+	if c.Calibrated() {
+		t.Fatal("calibrated on independent noise")
+	}
+}
+
+// TestTrackingGatesScaleWithWindow pins the gate math: the minimum acceptable
+// |rho| follows the estimate quality, so it falls as 1/sqrt(N) — a long window
+// may trust a small coherence — and the lock bar stays strictly above the
+// track bar and well above the noise-only floor at every window length.
+func TestTrackingGatesScaleWithWindow(t *testing.T) {
+	var o TrackingOptions
+	if got := o.LockGate(4096); math.Abs(got-0.1098) > 0.002 {
+		t.Errorf("LockGate(4096) = %.4f, want ~0.110", got)
+	}
+	for _, n := range []int{4096, 8192, 65536, 262144} {
+		lock, track := o.LockGate(n), o.TrackGate(n)
+		if track >= lock {
+			t.Errorf("TrackGate(%d) = %.4f >= LockGate(%d) = %.4f", n, track, n, lock)
+		}
+		floor := math.Sqrt(math.Pi / (4 * float64(n)))
+		if lock < 7*floor {
+			t.Errorf("LockGate(%d) = %.4f is under 7x the noise floor %.4f — noise could lock", n, lock, floor)
+		}
+		if bigger := o.LockGate(4 * n); math.Abs(bigger-lock/2) > lock*0.05 {
+			t.Errorf("LockGate(%d) = %.4f, want ~half of LockGate(%d) = %.4f", 4*n, bigger, n, lock)
+		}
+	}
+	if got := o.LockGate(0); got != 1 {
+		t.Errorf("LockGate(0) = %.4f, want 1 (an empty window can justify nothing)", got)
+	}
+}
+
 // TestTrackingCalibratorIsDifferentialSafe is the guard CLAUDE.md mandates for
 // anything upstream of a differential decoder. The combiner's own contribution
 // to s·conj(prev) must be negligible: the output phase is anchored to the

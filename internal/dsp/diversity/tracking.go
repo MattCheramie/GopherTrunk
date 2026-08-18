@@ -27,7 +27,41 @@ const (
 	// so intra-burst phase is effectively constant, and far faster than the
 	// relative drift of two independently-locked front-end PLLs.
 	TrackingDefaultAlpha = 0.01
+
+	// DefaultLockPhaseSigmaRad (~5.7 deg) and DefaultTrackPhaseSigmaRad
+	// (~9.2 deg) are the default estimate-quality bounds. Via LockGate/TrackGate
+	// they put the minimum acceptable |rho| at ~8x and ~5x the noise-only
+	// coherence floor sqrt(pi/4N): the chance of two INDEPENDENT branches
+	// clearing them is exp(-N*rho^2) — about e^-50 and 3e-9 per window — so
+	// noise cannot lock and can produce at most one freak (damped, clamped)
+	// tracking update a year, while a genuinely coherent pair passes however
+	// much noise-only bandwidth surrounds its carrier.
+	DefaultLockPhaseSigmaRad  = 0.10
+	DefaultTrackPhaseSigmaRad = 0.16
 )
+
+// coherenceGateFor converts a phase-error bound into the minimum |rho| an
+// n-sample window must reach: sigma^2 ~ (1-rho^2)/(2N rho^2) inverted for rho.
+// An empty window can justify nothing, so n <= 0 gates at 1.
+func coherenceGateFor(sigmaRad float64, n int) float64 {
+	if n <= 0 || sigmaRad <= 0 {
+		return 1
+	}
+	return 1 / math.Sqrt(1+2*float64(n)*sigmaRad*sigmaRad)
+}
+
+// LockGate is the minimum |rho| an n-sample window needs for a FIRST estimate
+// under these options (defaults applied). Exposed so an operator-facing health
+// line can print the actual bar a stream is being held to.
+func (o TrackingOptions) LockGate(n int) float64 {
+	return coherenceGateFor(o.withDefaults().LockPhaseSigmaRad, n)
+}
+
+// TrackGate is the minimum |rho| an n-sample window needs for a subsequent
+// tracking update under these options (defaults applied).
+func (o TrackingOptions) TrackGate(n int) float64 {
+	return coherenceGateFor(o.withDefaults().TrackPhaseSigmaRad, n)
+}
 
 // TrackingOptions configures a TrackingCalibrator. Zero fields take defaults.
 type TrackingOptions struct {
@@ -41,14 +75,27 @@ type TrackingOptions struct {
 	// never revisited, which is the classic static-calibration behaviour for a
 	// shared-LO front-end whose branch phase offset really is a constant.
 	Alpha float64
-	// LockCoherence is the |rho| required for the FIRST estimate, and
-	// TrackCoherence the |rho| required for each subsequent one. The first lock
-	// is what a one-shot calibration lives with forever, so it is held to a
-	// stricter bar than a tracking update, whose error averages away over ~1/Alpha
-	// windows. |rho| = gamma/(1+gamma) for equal per-branch SNR gamma, so 0.5 is
-	// 0 dB and 0.35 is about -2.7 dB.
-	LockCoherence  float64
-	TrackCoherence float64
+	// LockPhaseSigmaRad / TrackPhaseSigmaRad bound the PROJECTED PHASE ERROR of
+	// a window's least-squares gain estimate, sigma ~ sqrt((1-rho^2)/(2N rho^2)),
+	// which is what actually decides whether an estimate is safe to apply. The
+	// lock bound is stricter because a one-shot calibration lives with its first
+	// estimate forever; a tracking update's error averages away over ~1/Alpha
+	// windows and is clamped besides.
+	//
+	// These deliberately replace a fixed |rho| threshold. |rho| measured on a
+	// WIDEBAND stream is diluted by every hertz of noise-only bandwidth around
+	// the coherent carrier (rho_wb ~ rho_ch*sqrt(f0*f1) for in-channel power
+	// fractions f_k), so a fixed rho constant makes calibration depend on the
+	// configured capture bandwidth and on each branch's noise floor — a
+	// bandwidth-staging trap, sibling of the -40 dBFS gain-staging trap the
+	// coherence gate replaced. An operator with an X310 raised RF gain 70 -> 75 dB
+	// purely to push wideband rho past 0.5 while their phase estimate had been
+	// accurate to ~4 degrees all along. Bounding the phase error instead makes the
+	// minimum rho fall as 1/sqrt(N) (see LockGate/TrackGate), so a long window may
+	// trust a small coherence, and the gate answers the only question it owns:
+	// "is this estimate trustworthy?"
+	LockPhaseSigmaRad  float64
+	TrackPhaseSigmaRad float64
 	// MinBranchPower is a linear AC-power floor that rejects a DIGITALLY DEAD
 	// branch — all zeros, or a receiver that never digitised — where |rho| is
 	// 0/0. It is deliberately far below any signal level: it is not a
@@ -64,11 +111,11 @@ func (o TrackingOptions) withDefaults() TrackingOptions {
 	if o.Alpha < 0 || o.Alpha > 1 {
 		o.Alpha = TrackingDefaultAlpha
 	}
-	if o.LockCoherence <= 0 {
-		o.LockCoherence = 0.5
+	if o.LockPhaseSigmaRad <= 0 {
+		o.LockPhaseSigmaRad = DefaultLockPhaseSigmaRad
 	}
-	if o.TrackCoherence <= 0 {
-		o.TrackCoherence = 0.35
+	if o.TrackPhaseSigmaRad <= 0 {
+		o.TrackPhaseSigmaRad = DefaultTrackPhaseSigmaRad
 	}
 	if o.MinBranchPower <= 0 {
 		o.MinBranchPower = 1e-10 // -100 dBFS; one CS16 LSB is -90.3 dBFS
@@ -209,9 +256,13 @@ func (c *TrackingCalibrator) estimate() bool {
 		return false
 	}
 
-	gate := c.opts.TrackCoherence
+	// The gate is derived from the window's actual sample count, so the same
+	// options hold every stream to the same ESTIMATE quality regardless of
+	// sample rate or how far a chunk overshot the nominal window.
+	n := c.stats[0].Samples()
+	gate := coherenceGateFor(c.opts.TrackPhaseSigmaRad, n)
 	if !c.calibrated {
-		gate = c.opts.LockCoherence
+		gate = coherenceGateFor(c.opts.LockPhaseSigmaRad, n)
 	}
 
 	// The window's coherence is the weakest branch's: one incoherent branch is

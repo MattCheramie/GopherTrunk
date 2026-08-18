@@ -65,7 +65,7 @@ MRC survives that rule — and the claim is measured, not asserted.*
 |---|---|---|
 | Tracking loop | window estimate → gate → one-pole → clamp | `internal/dsp/diversity/tracking.go` (`TrackingCalibrator.Observe`) |
 | Phase anchor | reference weight pinned to `1+0j` | `tracking.go` (`estimate`, `applied[0]`) |
-| Gates | lock 0.5, track 0.35, dead branch −100 dBFS | `tracking.go` (`TrackingOptions.withDefaults`) |
+| Gates | phase-error bounds 0.10/0.16 rad (|rho| ≥ 1/sqrt(1+2Nσ²)), dead branch −100 dBFS | `tracking.go` (`TrackingOptions.LockGate`/`TrackGate`) |
 | Step clamp | ≤ 0.05 rad (~2.9°) phase, ≤ 1.25× magnitude per update | `tracking.go` (`clampStep`, `trackingMaxStepRad`) |
 | Differential safety | per-window output phase step ≤ 1° measured | `tracking_test.go` (`TestTrackingCalibratorIsDifferentialSafe`) |
 | One-shot mode | α = 0 snaps the first window, then freezes | `tracking.go` (`estimate`), `mrc.go` in `internal/sdr/soapyremote` (`mrc-static`) |
@@ -159,9 +159,10 @@ degree against a 45° decision spacing — four orders of magnitude of margin.
 
 ```go
 // internal/dsp/diversity/tracking.go (shape) — estimate
-gate := c.opts.TrackCoherence          // 0.35 once calibrated…
+n := c.stats[0].Samples()
+gate := coherenceGateFor(c.opts.TrackPhaseSigmaRad, n) // once calibrated…
 if !c.calibrated {
-    gate = c.opts.LockCoherence        // …0.5 for the FIRST estimate
+    gate = coherenceGateFor(c.opts.LockPhaseSigmaRad, n) // …stricter FIRST
 }
 /* … per branch: reject dead power, reject non-finite / out-of-bounds h,
    take worst-branch coherence … */
@@ -182,11 +183,17 @@ for k := 1; k < c.branches; k++ {
 }
 ```
 
-Every constant earns its value. The **lock gate is stricter than the track
-gate** (0.5 vs 0.35) because the first estimate is what a one-shot
-calibration lives with forever, while a tracking update's error averages away
-over ~1/α windows. The **window is 8192 samples**, not one datagram, because
-at |rho| = 0.35 a 184-sample window estimates phase to about 9.5° while an
+Every constant earns its value. The gates bound the estimate's projected
+**phase error** `sqrt((1−ρ²)/(2Nρ²))` rather than |rho| itself — wideband
+|rho| is diluted by noise-only bandwidth around the carrier, and an 18 Aug
+operator A/B showed a fixed |rho| constant forcing gain-staging games the
+same way the old −40 dBFS gate did — so the minimum |rho| falls as
+`1/sqrt(N)` while staying ~8× (lock) / ~5× (track) above the `sqrt(π/4N)`
+noise-only floor. The **lock bound is stricter than the track bound**
+(0.10 vs 0.16 rad) because the first estimate is what a one-shot calibration
+lives with forever, while a tracking update's error averages away over ~1/α
+windows. The **window is 8192 samples**, not one datagram, because a
+184-sample window estimates phase to about 9.5° at |rho| = 0.35 while an
 8192-sample window gets ~1.2°. The **time constant τ ≈ 200 ms** sits far
 above one TETRA burst (14 ms, so intra-burst phase is effectively constant)
 and far below the drift rate of two independently-locked PLLs. The

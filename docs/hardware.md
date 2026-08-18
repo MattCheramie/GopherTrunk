@@ -863,14 +863,20 @@ soapyremote: MRC diversity branches addr=… branch_dbfs="ch0=-31.2 ch1=-33.8" \
 
 Read it in this order:
 
-- **`coherence`** is the one that matters. It is |rho| between the two branches
-  — normalised, so it is **independent of RF gain** — and it answers "are these
-  two receivers seeing the same signal?". Roughly, |rho| = SNR/(1+SNR), so 0.5 is
-  0 dB and 0.9 is about 10 dB. Below the lock gate the combiner passes the
-  reference receiver through and says so at WARN. **Raising gain will not move
-  this number**; if it sits low, the antennas are seeing different things (wrong
-  band, wrong polarisation, or far enough apart that each carrier arrives with
-  its own phase — see the limitation below).
+- **`coherence`** is the one that matters. It is |rho| between the two branches,
+  measured on the whole wideband stream, and it answers "are these two receivers
+  seeing the same signal?". Roughly, |rho| = SNR/(1+SNR) for the whole span, so
+  it is diluted by every kHz of noise-only bandwidth around your carrier — a
+  narrow strong channel in a wide quiet span reads low even when it decodes
+  perfectly. That is fine: the lock gate scales with the estimation window (the
+  WARN prints the actual `lock_gate`), so the combiner calibrates whenever the
+  estimate is trustworthy, not when the number looks impressive. If coherence
+  sits at the gate's floor, the antennas are seeing different things (wrong band,
+  wrong polarisation, far enough apart that each carrier arrives with its own
+  phase — see the limitation below) — or one branch is buried under its own
+  front-end noise floor: check `branch_dbfs`, and if one branch sits far below
+  the other, fix that branch's gain staging (raising ITS gain genuinely helps in
+  that case, because a converter floor does not scale with RF gain).
 - **`branch_dbfs`** — both branches should sit within a few dB of each other. If
   one is far down the line becomes a WARN naming the dead branch: an antenna,
   connector or per-channel-gain problem on that receiver, not a decode problem.

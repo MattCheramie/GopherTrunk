@@ -177,9 +177,10 @@ func (c *IRCCalibrator) estimateTrained() bool {
 	if c.calibrated && c.opts.Alpha == 0 {
 		return false
 	}
-	gate := c.opts.TrackCoherence
+	n := c.refStats[0].Samples()
+	gate := coherenceGateFor(c.opts.TrackPhaseSigmaRad, n)
 	if !c.calibrated {
-		gate = c.opts.LockCoherence
+		gate = coherenceGateFor(c.opts.LockPhaseSigmaRad, n)
 	}
 
 	var h [2]complex128
@@ -252,9 +253,10 @@ func (c *IRCCalibrator) estimate() bool {
 	if c.calibrated && c.opts.Alpha == 0 {
 		return false
 	}
-	gate := c.opts.TrackCoherence
+	n := c.stats.Samples()
+	gate := coherenceGateFor(c.opts.TrackPhaseSigmaRad, n)
 	if !c.calibrated {
-		gate = c.opts.LockCoherence
+		gate = coherenceGateFor(c.opts.LockPhaseSigmaRad, n)
 	}
 
 	rho := c.stats.Coherence()

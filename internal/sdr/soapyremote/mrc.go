@@ -78,18 +78,32 @@ const diversityActivateLead = 200 * time.Millisecond
 // seeing the same signal through a constant complex gain? — and is invariant to
 // how much gain is in front of them. See diversity.CrossStats.
 //
-// For a common signal in independent noise at equal per-branch SNR gamma,
-// |rho| = gamma/(1+gamma): 0.50 is 0 dB, 0.35 is about -2.7 dB. Two independent
-// noise branches over N samples sit near sqrt(pi/4N), ~0.01 at N=8192, so these
-// cannot clear on luck.
+// And they are thresholds on the ESTIMATE'S QUALITY, not on |rho| itself,
+// because a fixed |rho| constant turned out to be a staging trap of its own.
+// |rho| measured on the wideband stream is diluted by every hertz of
+// noise-only bandwidth around the coherent carrier (rho_wb ~
+// rho_ch*sqrt(f0*f1) for in-channel power fractions f_k), so a fixed 0.5 bar
+// made calibration depend on the configured capture bandwidth and on each
+// branch's own noise floor. An X310 operator's 18 Aug 2026 A/B proved it: at
+// 200/250 kHz and 70 dB gain the wideband |rho| sat at ~0.16 — while the
+// control channel decoded at 1425 CRC-clean BSCH and the branch phase was
+// measurable to ~4 degrees — and MRC never calibrated until they raised RF
+// gain 5 dB purely to push the number past the constant (their weak branch's
+// floor did not scale with gain, so the +5 dB lifted its in-channel fraction
+// and with it the diluted rho). The gates below bound the projected PHASE
+// ERROR of the window's least-squares estimate instead, which makes the
+// minimum rho fall as 1/sqrt(window) while staying ~8x/~5x above the
+// noise-only floor sqrt(pi/4N) — noise still cannot clear them on luck (the
+// odds are exp(-N*rho^2), about e^-50 for lock). See
+// diversity.TrackingOptions.
 const (
-	// mrcCoherenceLockGate is the |rho| required for the first estimate. A
-	// one-shot calibration lives with its first estimate forever, so the lock
-	// bar is stricter than the tracking bar.
-	mrcCoherenceLockGate = 0.50
-	// mrcCoherenceTrackGate is the |rho| required for each subsequent update,
-	// whose error averages away over ~1/alpha windows.
-	mrcCoherenceTrackGate = 0.35
+	// mrcLockPhaseSigmaRad bounds the phase error of the FIRST estimate
+	// (~5.7 deg). A one-shot calibration lives with its first estimate forever,
+	// so the lock bar is stricter than the tracking bar.
+	mrcLockPhaseSigmaRad = diversity.DefaultLockPhaseSigmaRad
+	// mrcTrackPhaseSigmaRad bounds each subsequent update (~9.2 deg), whose
+	// error averages away over ~1/alpha windows and is slew-clamped besides.
+	mrcTrackPhaseSigmaRad = diversity.DefaultTrackPhaseSigmaRad
 	// mrcBranchFloorPower is a linear AC-power floor that rejects a DIGITALLY
 	// DEAD branch — all zeros, or a receiver that never digitised — where the
 	// correlation is 0/0. -100 dBFS; one CS16 LSB is -90.3 dBFS, so a
@@ -145,11 +159,11 @@ func mrcTrackAlpha(mode diversityMode, window int, rateHz float64) float64 {
 // the stream rate the window was sized for (0 = unknown, nominal alpha).
 func mrcCalOptions(mode diversityMode, window int, rateHz float64) diversity.TrackingOptions {
 	return diversity.TrackingOptions{
-		WindowSamples:  window,
-		Alpha:          mrcTrackAlpha(mode, window, rateHz),
-		LockCoherence:  mrcCoherenceLockGate,
-		TrackCoherence: mrcCoherenceTrackGate,
-		MinBranchPower: mrcBranchFloorPower,
+		WindowSamples:      window,
+		Alpha:              mrcTrackAlpha(mode, window, rateHz),
+		LockPhaseSigmaRad:  mrcLockPhaseSigmaRad,
+		TrackPhaseSigmaRad: mrcTrackPhaseSigmaRad,
+		MinBranchPower:     mrcBranchFloorPower,
 	}
 }
 
@@ -235,6 +249,10 @@ type mrcCombiner struct {
 	format   sampleFormat
 	channels int
 	window   int // samples per branch per estimation window
+	// lockGate is the minimum window |rho| the calibrator will lock on at this
+	// window length, kept for the health line so the operator sees the actual
+	// bar their stream is held to rather than a constant from a doc.
+	lockGate float64
 	rearm    atomic.Bool
 
 	// rec, when non-nil, dumps the pre-combine per-branch IQ. nil is the
@@ -268,9 +286,11 @@ const mrcRefDeadDatagrams = 4
 
 func newMRCCombiner(format sampleFormat, mode diversityMode, rateHz float64) *mrcCombiner {
 	window := mrcCalWindowSamples(rateHz)
+	opts := mrcCalOptions(mode, window, rateHz)
 	return &mrcCombiner{
 		window:   window,
-		cal:      diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(mode, window, rateHz)),
+		lockGate: opts.LockGate(window),
+		cal:      diversity.NewTrackingCalibrator(diversityChannels, opts),
 		mode:     mode,
 		format:   format,
 		channels: diversityChannels,
@@ -304,6 +324,9 @@ type mrcHealth struct {
 	mode     string
 	updates  uint64
 	holds    uint64
+	// lockGate is the effective minimum window |rho| for a first lock at the
+	// stream's window length (see mrcCombiner.lockGate).
+	lockGate float64
 }
 
 // health snapshots the last combine() for logging. Stream goroutine only.
@@ -321,6 +344,7 @@ func (m *mrcCombiner) health() mrcHealth {
 		mode:       m.mode.String(),
 		updates:    updates,
 		holds:      holds,
+		lockGate:   m.lockGate,
 	}
 	if g := m.cal.Gains(); len(g) > 1 {
 		mag := math.Hypot(float64(real(g[1])), float64(imag(g[1])))
@@ -367,7 +391,9 @@ func (m *mrcCombiner) setSampleRate(rateHz float64) {
 		return
 	}
 	m.window = want
-	m.cal = diversity.NewTrackingCalibrator(diversityChannels, mrcCalOptions(m.mode, want, rateHz))
+	opts := mrcCalOptions(m.mode, want, rateHz)
+	m.lockGate = opts.LockGate(want)
+	m.cal = diversity.NewTrackingCalibrator(diversityChannels, opts)
 	m.refIdx = -1
 	m.refDeadDatagrams = 0
 }
@@ -571,16 +597,18 @@ func (r *diversityReporter) observe(m *mrcCombiner) {
 		r.log.Warn("soapyremote: MRC diversity branch is dead — it sits more than "+strconv.Itoa(int(mrcBranchDeadMarginDb))+" dB below the reference receiver and contributes nothing to the combine. Check that antenna's connection, and that this RX channel is gained (sdr.soapy_remote[].antennas selects its port).",
 			append(attrs, "dead_branch", h.deadBranch)...)
 	case !h.calibrated && h.updates+h.holds > 0:
-		// Both branches are alive but they do not correlate, so there is nothing
-		// for a single complex gain to align and the combiner is passing the
-		// reference receiver through. This is NOT a gain problem — the gate is
-		// scale-invariant — so say what it actually is.
+		// Both branches are alive but their measured coherence is down at the
+		// estimation noise floor, so there is nothing for a single complex gain
+		// to align and the combiner is passing the reference receiver through.
+		// The gate itself scales with the window (lock_gate names the actual
+		// bar), so this no longer fires just because the capture bandwidth is
+		// wide — when it fires, the branches genuinely share (almost) no signal.
 		//
 		// Gated on a window having actually completed: the first datagram of a
 		// stream always reports, and "not coherent" before anything has been
 		// measured would be a lie that sends the operator after the wrong thing.
-		r.log.Warn("soapyremote: MRC diversity branches are not coherent — the two receivers are not seeing the same signal through a constant complex gain, so there is no diversity gain and the reference branch is being passed through. Check both antennas are on the same band and polarisation and are co-located (widely separated antennas give each carrier its own phase, which one wideband complex gain cannot align), and that the front-end is frequency-locked (clock_source/time_source). Raising RF gain will NOT help: this gate is independent of level.",
-			append(attrs, "lock_gate", mrcCoherenceLockGate)...)
+		r.log.Warn("soapyremote: MRC diversity branches are not coherent — the two receivers are not seeing the same signal through a constant complex gain, so there is no diversity gain and the reference branch is being passed through. Check both antennas are on the same band and polarisation and are co-located (widely separated antennas give each carrier its own phase, which one wideband complex gain cannot align), and that the front-end is frequency-locked (clock_source/time_source). If one branch_dbfs sits far below the other, that branch may be buried under its own front-end noise floor — fix ITS gain staging (a per-branch gain or attenuator), not the overall level.",
+			append(attrs, "lock_gate", round2(h.lockGate))...)
 	case h.calibrated && r.staleIntervals >= mrcStaleUpdateIntervals:
 		// Locked once, then every window since has failed the coherence gate.
 		// The combine is still running — a rejected window HOLDS rather than
@@ -593,10 +621,8 @@ func (r *diversityReporter) observe(m *mrcCombiner) {
 			"failed the coherence gate. Two receivers whose coherence stays low across a "+
 			"wide span is the wideband-combine limitation: one complex gain cannot align "+
 			"every carrier at once when the antennas are metres apart. Co-locate them, or "+
-			"try diversity: mrc-static to freeze the estimate deliberately. Raising RF gain "+
-			"will NOT help: this gate is independent of level.",
-			append(attrs, "track_gate", mrcCoherenceTrackGate,
-				"stale_intervals", r.staleIntervals)...)
+			"try diversity: mrc-static to freeze the estimate deliberately.",
+			append(attrs, "stale_intervals", r.staleIntervals)...)
 	default:
 		r.log.Info("soapyremote: MRC diversity branches", attrs...)
 	}

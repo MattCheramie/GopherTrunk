@@ -800,9 +800,13 @@ type SoapyRemoteConfig struct {
 	// the constant is genuinely constant.
 	//
 	// Whether the combine helps at all is reported as "coherence" in the
-	// periodic MRC log line — |rho| between the branches, which is independent
-	// of RF gain. Raising gain to make diversity engage is never the answer.
-	// EXPERIMENTAL (issue #1062).
+	// periodic MRC log line — |rho| between the branches. The calibration gate
+	// scales with the estimation window, so nobody should ever need to raise a
+	// gain or narrow a bandwidth just to make diversity engage; if the WARN
+	// says the branches are not coherent, believe it and check the antennas —
+	// or a branch whose branch_dbfs sits far below the other, which may be
+	// buried under its own front-end noise floor (there, raising THAT branch's
+	// gain genuinely helps). EXPERIMENTAL (issue #1062).
 	Diversity string `yaml:"diversity"`
 	// Antennas selects the RX antenna port per channel (SoapySDR setAntenna),
 	// applied in channel order after the device opens — antennas[0] to RX

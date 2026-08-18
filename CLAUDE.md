@@ -544,6 +544,38 @@ confirmation before any close-as-completed.
   shared-LO front end; walking ⇒ independent PLLs. It tells an operator which hardware class
   they have, and therefore whether `mrc` or `mrc-static` is right, before anyone records
   anything.
+- **A fixed coherence threshold was a BANDWIDTH-staging trap — the MRC gates now bound the
+  ESTIMATE'S phase error, not |rho|.** Wideband |rho| is diluted by every hertz of noise-only
+  bandwidth around the coherent carrier (`rho_wb ≈ rho_ch·sqrt(f0·f1)` for in-channel power
+  fractions f_k), so the fixed 0.50 lock constant made calibration depend on the configured
+  capture bandwidth and each branch's own noise floor. Proven by the operator's 18 Aug X310
+  A/B (three 30 s pre-combine captures): at 200/250 kS/s + 70 dB gain the CC decoded 1425
+  CRC-clean BSCH off branch 1 while wideband |rho| sat at ~0.16 (phase measurable to ~4° per
+  4096-sample window, walking only −7°/s) and MRC NEVER calibrated — `updates=0`, WARN "check
+  antennas/clock, raising RF gain will NOT help" — until +5 dB of gain pushed the number past
+  the constant (their branch 0 is ~9 dB down with a gain-independent floor, so +5 dB lifted
+  its in-channel fraction 0.14→0.37 and the diluted rho with it: the WARN's claim was
+  exactly wrong in that regime, and the text now points at per-branch gain staging instead).
+  The gates (`diversity.TrackingOptions.LockPhaseSigmaRad/TrackPhaseSigmaRad`, defaults
+  0.10/0.16 rad) accept a window when the LS estimate's projected phase error
+  `sqrt((1−ρ²)/(2Nρ²))` is bounded, i.e. `ρ ≥ 1/sqrt(1+2Nσ²)` — falls as 1/√N yet stays
+  ~8×/~5× above the noise-only floor `sqrt(π/4N)` (false accept ~e^−50 / 3e−9 per window; noise
+  still can NEVER lock, pinned by `TestTrackingCalibratorNeverLocksOnIndependentNoise`). The
+  health/WARN line logs the effective `lock_gate` for the stream's window. Pinned failing-first
+  by `TestTrackingCalibratorLocksOnBandwidthDilutedCoherence` +
+  `TestMRCCombinerCalibratesOnBandwidthDilutedCoherence` (fixture ρ≈0.2 locks, recovers the
+  true phase to <5°; under a 0.5-equivalent bound it never locks). Post-fix replay of all
+  three captures: every arm calibrates on every run and wb-tracking matches the best branch
+  within 1 BSCH (run1 1424 vs 1425, run2 401 vs 402, run3 1591 vs 1591 — no harm, and no gain
+  is expected while branch 0 is floor-limited), and the harness arms now anchor on the LOUDER
+  branch like the driver —
+  they used to anchor on file-order branch 0, so on these captures (weak br0) every combined
+  arm degenerated to the weak branch's passthrough and measured nothing. Two things the gate
+  change does NOT alter: a genuinely dominant-carrier-misaligned rig (antennas metres apart)
+  is still the wideband-scalar KNOWN LIMITATION — per-bin cross-phase on these captures shows
+  distinct per-carrier phases (−157°/−87°/+20°) but the camped CC carries 71–94% of the
+  cross-power so the scalar aligns it — and MRC on a 9 dB-down floor-limited branch is ~no-gain
+  either way (the honest fix for run1/run2 is raising branch 0's gain, which run3 proved).
 - **A WebSocket handler that upgrades before validating cannot be backed off from.** The
   symbol/spectrum/diag/mixer handlers resolved the SDR serial AFTER `upgrader.Upgrade`, so an
   unknown device produced a successful 101 followed by a 1011 close. Browser clients reset

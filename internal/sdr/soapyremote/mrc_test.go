@@ -139,6 +139,45 @@ func TestMRCCombinerCalibratesWeakButCoherentBranches(t *testing.T) {
 	}
 }
 
+// TestMRCCombinerCalibratesOnBandwidthDilutedCoherence is the failing-first
+// regression for the 18 Aug 2026 X310 report — the fixed-|rho| successor to the
+// -40 dBFS trap above. The common signal is strong in the reference branch but
+// sits ~16 dB down in the other branch under that branch's own broadband floor,
+// so the whole-stream coherence measures ~0.25: under the old fixed 0.5 lock
+// gate (and the 0.35 track gate) this NEVER calibrated, and the operator raised
+// RF gain 5 dB purely to push the number past the constant. The estimate
+// itself is accurate to a few degrees over a full window, which is the only
+// thing the gate is entitled to demand.
+func TestMRCCombinerCalibratesOnBandwidthDilutedCoherence(t *testing.T) {
+	rng := rand.New(rand.NewSource(4))
+	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
+	theta := 0.9
+	rot := complex(float32(math.Cos(theta)), float32(math.Sin(theta)))
+	var rho float64
+	for i := 0; i < 3; i++ {
+		common := mrcSignal(rng, mrcTestWindow, 0.2)
+		ch0 := mrcNoise(rng, common, 0.02)
+		ch1 := mrcNoise(rng, scaleC(common, complex(0.03/0.2, 0)*rot), 0.07)
+		m.combine(twoBranchPayload(ch0, ch1), len(ch0))
+		rho = m.health().coherence
+	}
+	// Fixture sanity: genuinely in the diluted regime, below both old gates.
+	if rho >= 0.35 || rho < 0.1 {
+		t.Fatalf("fixture coherence %.3f, want the diluted regime [0.1, 0.35)", rho)
+	}
+	if !m.cal.Calibrated() {
+		t.Fatalf("did not calibrate at coherence %.3f — the lock gate is still a fixed "+
+			"constant rather than scaling with the estimate quality (gate %.3f)",
+			rho, m.lockGate)
+	}
+	g := m.cal.Gains()[1]
+	got := math.Atan2(float64(imag(g)), float64(real(g)))
+	if d := math.Abs(got - theta); d > 6*math.Pi/180 {
+		t.Errorf("recovered branch phase %.1f deg, want %.1f deg within 6 deg",
+			got*180/math.Pi, theta*180/math.Pi)
+	}
+}
+
 // TestMRCCombinerRefusesIncoherentLoudBranches is the other half: two loud but
 // UNRELATED receivers must not calibrate. A power gate cannot tell this case
 // apart from a good one — it would freeze a meaningless gain and combine two
@@ -421,7 +460,11 @@ func TestDiversityReporterDoesNotCryIncoherentBeforeMeasuring(t *testing.T) {
 
 // TestDiversityReporterWarnsWhenBranchesNeverCorrelate is the other half: once
 // windows HAVE been measured and none passed the gate, the operator is told —
-// and told that raising gain is not the fix, since the gate is scale-invariant.
+// with the actual (window-scaled) lock bar in the line, and guidance that names
+// a branch buried under its own front-end floor as a cause. (The line used to
+// claim "raising RF gain will NOT help"; an operator's 18 Aug 2026 A/B proved
+// that wrong — their weak branch's floor did not scale with gain, so +5 dB
+// lifted its in-channel fraction and coherence with it.)
 func TestDiversityReporterWarnsWhenBranchesNeverCorrelate(t *testing.T) {
 	rng := rand.New(rand.NewSource(12))
 	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
@@ -444,8 +487,11 @@ func TestDiversityReporterWarnsWhenBranchesNeverCorrelate(t *testing.T) {
 	if !strings.Contains(got, "level=WARN") || !strings.Contains(got, "not coherent") {
 		t.Errorf("report = %q, want a WARN about incoherent branches", got)
 	}
-	if !strings.Contains(got, "Raising RF gain will NOT help") {
-		t.Errorf("report = %q, want it to say gain is not the fix", got)
+	if !strings.Contains(got, "gain staging") {
+		t.Errorf("report = %q, want it to point at per-branch gain staging", got)
+	}
+	if !strings.Contains(got, "lock_gate=") {
+		t.Errorf("report = %q, want the effective lock gate in the line", got)
 	}
 }
 
