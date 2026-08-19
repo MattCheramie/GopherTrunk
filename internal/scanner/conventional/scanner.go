@@ -564,6 +564,7 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 		System:      s.opts.SystemName,
 		Protocol:    "fm-conv",
 		GroupID:     gid,
+		GroupLabel:  ch.Label, // #1105: surface the channel's configured name to scan consumers
 		SourceID:    0,
 		FrequencyHz: ch.FrequencyHz,
 		At:          now,

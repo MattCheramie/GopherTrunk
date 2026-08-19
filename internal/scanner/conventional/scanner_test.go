@@ -356,6 +356,14 @@ func TestConvScannerBreaksSquelchAndEndsOnHangtime(t *testing.T) {
 	if eng.starts[0].Protocol != "fm-conv" {
 		t.Errorf("protocol = %q, want fm-conv", eng.starts[0].Protocol)
 	}
+	// #1105: the grant carries the channel's configured label and the
+	// positional synthetic GID (channel B is index 1 -> 0x80000000|1).
+	if eng.starts[0].GroupLabel != "B" {
+		t.Errorf("group label = %q, want B", eng.starts[0].GroupLabel)
+	}
+	if eng.starts[0].GroupID != 0x80000001 {
+		t.Errorf("group id = %#x, want 0x80000001", eng.starts[0].GroupID)
+	}
 }
 
 // TestConvScannerBriefBlipsDoNotHoldSquelchOpen is the regression for

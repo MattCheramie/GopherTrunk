@@ -57,6 +57,15 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **Conventional scanner channels upload under their configured name.** A
+  `scanner.conventional` channel's `label:` now travels on the call grant to
+  Rdio Scanner and the other scan-type consumers (OpenMHz, Broadcastify Calls),
+  so it appears as the talkgroup label instead of the opaque positional
+  synthetic ID (`0x80000000|idx`). The per-channel label takes precedence over
+  the numeric-ID `talkgroup_file` roster lookup, so no CSV entry is needed — and
+  a pure conventional-scanner deployment with no trunked system gets readable
+  channel names too. No config changes; channels with no `label:` are unchanged
+  (issue #1105).
 - **`sdr.sidecar` mounts an external IQ producer as a virtual tuner.** A sidecar
   is any process that owns a radio and streams raw IQ over a FIFO, TCP or UDP —
   a UHD/RFNoC program, a GNU Radio flowgraph, a vendor tool with no SoapySDR

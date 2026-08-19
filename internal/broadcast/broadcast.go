@@ -186,6 +186,13 @@ func callFromEvent(cc trunking.CallComplete) *Call {
 		c.TalkgroupTag = cc.Talkgroup.Tag
 		c.TalkgroupGroup = cc.Talkgroup.Group
 	}
+	// A label carried on the grant itself (e.g. the conventional
+	// scanner's per-channel label, #1105) takes precedence over the
+	// numeric-ID roster lookup: it's the operator's explicit name for
+	// this channel and needs no talkgroup_file entry.
+	if cc.Grant.GroupLabel != "" {
+		c.TalkgroupLabel = cc.Grant.GroupLabel
+	}
 	return c
 }
 

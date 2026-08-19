@@ -14,9 +14,19 @@ import (
 // IdentifierUpdate band-plan TSBKs, DMR/NXDN from the configured System).
 // If FrequencyHz is zero, the engine logs and drops the grant.
 type Grant struct {
-	System      string // System name, matches trunking.System.Name
-	Protocol    string // "p25" / "dmr" / "nxdn"
-	GroupID     uint32 // talkgroup or destination subscriber address
+	System   string // System name, matches trunking.System.Name
+	Protocol string // "p25" / "dmr" / "nxdn"
+	GroupID  uint32 // talkgroup or destination subscriber address
+	// GroupLabel is an optional human-readable name for the call's
+	// talkgroup/destination, set at grant time by sources that already
+	// know it (e.g. the conventional scanner's per-channel label, issue
+	// #1105). When non-empty it takes precedence over the numeric-ID
+	// talkgroup-roster lookup on the broadcast/upload path, so a
+	// conventional channel surfaces under its configured label instead
+	// of the opaque synthetic 0x80000000|idx GroupID in Rdio Scanner and
+	// other scan-type consumers. Empty on grants whose label (if any)
+	// comes only from the roster.
+	GroupLabel  string
 	SourceID    uint32 // originator (subscriber unit)
 	FrequencyHz uint32 // voice channel frequency
 	ChannelID   uint8  // raw channel ID (P25 band-plan ID, DMR LCN high)
