@@ -94,6 +94,15 @@ type ControlChannel struct {
 	// one crosses colourConfirmThreshold. See LearnColourCode.
 	colourConfirmed bool
 	colourTally     map[uint32]int
+	// pendingLock/pendingLockVotes gate an identity CHANGE on an already-locked
+	// channel behind lockIdentityConfirmThreshold consecutive agreeing BSCH
+	// decodes, exactly like the colour code's confirmation above: BSCH FEC can
+	// mis-correct a marginal burst to a valid-but-wrong codeword, and a single
+	// such burst used to rewrite MCC/MNC/LA wholesale, publish cc.locked and
+	// push a bogus site identity (19 Aug field log: four one-burst flaps to
+	// mcc=996/mnc=3941 and friends). See maybeLock.
+	pendingLock      LockState
+	pendingLockVotes int
 	// mainCarrier is the cell's own carrier number, learned from the
 	// broadcast SYSINFO. With the tuned control-channel frequency it lets a
 	// grant's carrier number resolve to Hz relative to this carrier, without a
@@ -1193,10 +1202,20 @@ func (c *ControlChannel) LastActivityNano() int64 {
 	return c.lastActivityNano.Load()
 }
 
+// lockIdentityConfirmThreshold is how many CONSECUTIVE BSCH decodes must agree
+// on a changed cell identity before an already-locked channel adopts it. Same
+// rationale as colourConfirmThreshold: the BSCH FEC can mis-correct a marginal
+// burst to a valid-but-wrong codeword, and MCC/MNC come from the same 60-bit
+// payload — one such burst must not rewrite the site identity. The first lock
+// stays immediate (there is nothing to protect yet), and a genuine identity
+// change (e.g. an LA rehome) confirms in ~2 s at the ~1/s BSCH cadence.
+const lockIdentityConfirmThreshold = 2
+
 func (c *ControlChannel) maybeLock(s LockState) {
 	c.noteActivity()
 	c.mu.Lock()
 	if c.locked && c.last == s {
+		c.pendingLockVotes = 0 // agreement with the active identity breaks any pending streak
 		c.mu.Unlock()
 		return
 	}
@@ -1206,9 +1225,28 @@ func (c *ControlChannel) maybeLock(s LockState) {
 		s.MNC = c.last.MNC
 		s.LocationArea = c.last.LocationArea
 		if c.last == s {
+			c.pendingLockVotes = 0
 			c.mu.Unlock()
 			return
 		}
+	}
+	// An identity CHANGE on a locked channel needs consecutive corroboration;
+	// a single CRC-passing but FEC-mis-corrected BSCH must not rewrite it.
+	if c.locked {
+		if c.pendingLock == s && c.pendingLockVotes > 0 {
+			c.pendingLockVotes++
+		} else {
+			c.pendingLock = s
+			c.pendingLockVotes = 1
+		}
+		if c.pendingLockVotes < lockIdentityConfirmThreshold {
+			c.log.Debug("tetra: cc identity change pending confirmation",
+				"freq", s.FrequencyHz, "mcc", s.MCC, "mnc", s.MNC, "la", s.LocationArea,
+				"active_mcc", c.last.MCC, "active_mnc", c.last.MNC, "system", c.systemName)
+			c.mu.Unlock()
+			return
+		}
+		c.pendingLockVotes = 0
 	}
 	c.locked = true
 	c.last = s
@@ -1236,6 +1274,9 @@ func (c *ControlChannel) MarkLost() {
 		return
 	}
 	c.locked = false
+	// A stale pending identity must not corroborate a burst decoded after the
+	// loss; a fresh first lock adopts immediately anyway.
+	c.pendingLockVotes = 0
 	c.bus.Publish(events.Event{Kind: events.KindCCLost, Payload: c.last})
 }
 
