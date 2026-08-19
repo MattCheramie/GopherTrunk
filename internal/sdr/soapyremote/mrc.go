@@ -269,6 +269,12 @@ type mrcCombiner struct {
 	// reference looked dead relative to a challenger; see mrcRefDeadDatagrams.
 	refDeadDatagrams int
 
+	// log, when non-nil, reports anchor changes. Every refIdx change is a phase
+	// discontinuity into the downstream differential decoder, so it must be
+	// visible in the log rather than only inferable from the 30 s health line
+	// (the 19 Aug field flip was silent). Nil in tests that don't care.
+	log *slog.Logger
+
 	// Diagnostics, refreshed every combine(): per-branch mean power and how the
 	// last payload split. See health().
 	powDbFS   []float64
@@ -394,7 +400,9 @@ func (m *mrcCombiner) setSampleRate(rateHz float64) {
 	opts := mrcCalOptions(m.mode, want, rateHz)
 	m.lockGate = opts.LockGate(want)
 	m.cal = diversity.NewTrackingCalibrator(diversityChannels, opts)
-	m.refIdx = -1
+	// A window re-size drops the gain estimate but, like the rearm path in
+	// combine(), deliberately KEEPS the anchor: the stream rate says nothing
+	// about which antenna is better, and moving the anchor is a phase step.
 	m.refDeadDatagrams = 0
 }
 
@@ -410,8 +418,16 @@ func (m *mrcCombiner) requestRecalibrate() { m.rearm.Store(true) }
 // force-split into fake branches.
 func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 	if m.rearm.Swap(false) {
+		// A retune invalidates the GAIN estimate (new LO lock ⇒ new relative
+		// phase), so the calibrator restarts — but it does NOT change which
+		// antenna is the better anchor, so refIdx is deliberately KEPT. The old
+		// code un-latched it to -1 here, and the next datagram's bare argmax
+		// re-pick handed the differential decoder an unlogged anchor flip
+		// (±180° phase + several dB amplitude step) on every cc-hunt retune —
+		// observed in the 19 Aug field log at the 08:58 sync loss. A kept
+		// anchor that is genuinely dead still escapes via the uncalibrated
+		// dead-incumbent path in selectReference.
 		m.cal.Reset()
-		m.refIdx = -1
 		m.refDeadDatagrams = 0
 	}
 	branches := m.format.deinterleave(payload, m.channels, elems)
@@ -430,11 +446,16 @@ func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 	if len(branches) != m.channels {
 		// The server did not deliver every channel (see deinterleave). Emitting
 		// the payload verbatim keeps the stream a valid single-receiver time
-		// series; the health line reports the shortfall.
+		// series; the health line reports the shortfall. A held anchor is NOT
+		// rewritten by one short payload — that would be a silent anchor move
+		// (see the rearm comment above); it is only seeded when nothing was
+		// anchored yet.
 		if len(branches) == 0 {
 			return nil
 		}
-		m.refIdx = 0
+		if m.refIdx < 0 {
+			m.refIdx = 0
+		}
 		return branches[0]
 	}
 	m.selectReference()
@@ -468,6 +489,10 @@ func (m *mrcCombiner) selectReference() {
 	if m.refIdx < 0 {
 		m.refIdx = best
 		m.refDeadDatagrams = 0
+		if m.log != nil {
+			m.log.Info("soapyremote: MRC phase anchor latched",
+				"reference_branch", best, "branch_dbfs", formatBranchPowers(m.powDbFS))
+		}
 		return
 	}
 	// Only a persistently dead incumbent moves the anchor.
@@ -477,6 +502,11 @@ func (m *mrcCombiner) selectReference() {
 	}
 	m.refDeadDatagrams++
 	if m.refDeadDatagrams >= mrcRefDeadDatagrams {
+		if m.log != nil {
+			m.log.Info("soapyremote: MRC phase anchor moved off a dead reference — expect one decode discontinuity",
+				"old_reference", m.refIdx, "reference_branch", best,
+				"branch_dbfs", formatBranchPowers(m.powDbFS))
+		}
 		m.refIdx = best
 		m.refDeadDatagrams = 0
 		m.cal.Reset() // the anchor changed; the old estimate means nothing
