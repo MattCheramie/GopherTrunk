@@ -377,6 +377,11 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		if !ok {
 			continue
 		}
+		// Payload heartbeat: the BNCH is SCH/HD-coded, so a CRC-clean decode
+		// here proves the SCH chain exactly like an NDB-slot block does — and
+		// fails with it under a wrong AFC alias latch (the differential residual
+		// that BSCH's heavier FEC survives).
+		c.notePayloadActivity()
 		if pdu, err := ParsePDU(framing.PackBitsMSB(recovered)); err == nil {
 			if sb, ok := pdu.AsSystemBroadcast(); ok {
 				ls.LocationArea = sb.LocationArea

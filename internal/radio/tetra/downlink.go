@@ -231,6 +231,10 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bk
 	// correlator noise (AACH itself fails to decode) out of the failure count.
 	if recovered > 0 {
 		c.addStat(&c.stats.SCHPDUs, int64(recovered))
+		// Payload heartbeat: a CRC-clean SCH block is what distinguishes a
+		// genuinely decoding channel from the BSCH-only "locked but deaf" state
+		// (wrong AFC alias latch) the payload-drought check escapes.
+		c.notePayloadActivity()
 	} else if aachOK && aa.IsControlChannel() {
 		c.addStat(&c.stats.SCHPDUsFail, 1)
 	}

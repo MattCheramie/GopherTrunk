@@ -26,6 +26,14 @@ const (
 	tetraResyncTimeout      = 1500 * time.Millisecond
 	tetraLockStaleTimeout   = 5 * time.Second
 	tetraStaleCheckInterval = 1 * time.Second
+	// Payload-drought escape, mirrored from ccdecoder (see that package's
+	// tetraPayloadResyncTimeout for the full rationale): a locked channel
+	// decoding sync bursts but zero CRC-clean SCH payload for this much signal
+	// is "locked but deaf" (e.g. a wrong AFC alias latch) and gets the same
+	// destructive reset; after tetraPayloadResyncMaxAttempts fruitless resets
+	// the lock is declared lost so the supervisor re-hunts.
+	tetraPayloadResyncTimeout     = 12 * time.Second
+	tetraPayloadResyncMaxAttempts = 3
 )
 
 // channelOutRateHz is the per-tap output rate a channel's protocol needs. TETRA
@@ -68,11 +76,18 @@ type tetraChannelReceiver struct {
 	samplesSinceDecode int64
 	lastSeenActivity   int64
 	lastStale          time.Time
+
+	// Payload-drought trigger, mirrored from ccdecoder.tetraPipeline (the
+	// "locked but deaf" escape — sync bursts decoding, zero SCH payload).
+	samplesSincePayload int64
+	lastSeenPayload     int64
+	payloadResyncStreak int
 }
 
 func (t *tetraChannelReceiver) Process(iq []complex64) {
 	t.rx.Process(iq)
 	t.checkResync(len(iq))
+	t.checkPayloadResync(len(iq))
 	t.checkLockStale()
 }
 
@@ -98,11 +113,56 @@ func (t *tetraChannelReceiver) checkResync(n int) {
 		return
 	}
 	t.samplesSinceDecode = 0
+	// The DSP was just reset, so the payload drought (if any) restarts too.
+	t.samplesSincePayload = 0
 	t.rx.Reset()
 	t.cc.ResyncReset()
 	if t.log != nil {
 		t.log.Debug("widebandt2: tetra dsp resync (signal-time decode drought; reacquiring symbol timing from centre)",
 			"system", t.system)
+	}
+}
+
+// checkPayloadResync mirrors ccdecoder.tetraPipeline.checkPayloadResync: the
+// escape from the "locked but deaf" state where sync bursts keep the ordinary
+// heartbeat fed while every SCH payload block fails CRC (a wrong AFC alias
+// latch). Signal-time budget; escalates to MarkLost after
+// tetraPayloadResyncMaxAttempts fruitless resets so the supervisor re-hunts.
+func (t *tetraChannelReceiver) checkPayloadResync(n int) {
+	pay := t.cc.LastPayloadNano()
+	if pay != t.lastSeenPayload {
+		t.lastSeenPayload = pay
+		t.samplesSincePayload = 0
+		t.payloadResyncStreak = 0
+		return
+	}
+	if !t.cc.Locked() {
+		t.samplesSincePayload = 0
+		return
+	}
+	if t.rateHz <= 0 {
+		return
+	}
+	t.samplesSincePayload += int64(n)
+	if t.samplesSincePayload < int64(tetraPayloadResyncTimeout.Seconds()*t.rateHz) {
+		return
+	}
+	t.samplesSincePayload = 0
+	t.payloadResyncStreak++
+	if t.payloadResyncStreak >= tetraPayloadResyncMaxAttempts {
+		t.payloadResyncStreak = 0
+		if t.log != nil {
+			t.log.Warn("widebandt2: tetra payload drought persists across resyncs (sync bursts decoding, no SCH payload) — declaring lock lost to force a re-hunt",
+				"system", t.system, "attempts", tetraPayloadResyncMaxAttempts)
+		}
+		t.cc.MarkLost()
+		return
+	}
+	t.rx.Reset()
+	t.cc.ResyncReset()
+	if t.log != nil {
+		t.log.Debug("widebandt2: tetra dsp resync (payload drought; sync bursts still decoding but no SCH payload)",
+			"system", t.system, "attempt", t.payloadResyncStreak)
 	}
 }
 

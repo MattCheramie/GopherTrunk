@@ -174,6 +174,18 @@ type ControlChannel struct {
 	// lost when the carrier goes silent. Atomic so the decode hot path
 	// (noteActivity) never contends on mu. Zero until the first decode.
 	lastActivityNano atomic.Int64
+
+	// lastPayloadNano is the Unix-nanos timestamp of the most recent CRC-clean
+	// SCH payload block (SCH/F or SCH/HD, including the sync burst's BNCH) — a
+	// SECOND, stricter heartbeat alongside lastActivityNano. The distinction
+	// matters because the two decode chains fail independently: the SB burst's
+	// BSCH survives a wrong AFC alias latch (4-rotation search + heavy FEC)
+	// while every SCH block fails CRC, so a channel can look "alive" to
+	// lastActivityNano for minutes while decoding nothing useful (the 19 Aug
+	// field log: bsch_ok ~100%, sch_pdus=0 for 12 min). The pipeline's
+	// payload-drought check watches this stamp to force a resync/re-hunt out
+	// of that state. Zero until the first payload decode.
+	lastPayloadNano atomic.Int64
 }
 
 // StashSoft records the soft per-symbol differentials for the dibit
@@ -1110,6 +1122,24 @@ func (c *ControlChannel) publishTalker(gssi, src uint32) {
 // Lock-free (atomic) so it adds no contention to the hot path.
 func (c *ControlChannel) noteActivity() {
 	c.lastActivityNano.Store(c.now().UnixNano())
+}
+
+// notePayloadActivity stamps the payload heartbeat: a CRC-clean SCH block
+// proves the whole SCH decode chain (AFC residual, colour code, FEC, CRC) is
+// healthy, which a surviving BSCH alone does not (see lastPayloadNano). A
+// payload decode is also ordinary activity, so the plain heartbeat is stamped
+// too.
+func (c *ControlChannel) notePayloadActivity() {
+	c.lastPayloadNano.Store(c.now().UnixNano())
+	c.noteActivity()
+}
+
+// LastPayloadNano returns the Unix-nano timestamp of the most recent
+// CRC-clean SCH payload decode, or 0 before the first. A lock-free atomic
+// read for the pipeline's payload-drought check (the "locked but deaf"
+// escape: sync bursts decoding, zero SCH for a long budget).
+func (c *ControlChannel) LastPayloadNano() int64 {
+	return c.lastPayloadNano.Load()
 }
 
 // CheckStale declares the control channel lost (publishes cc.lost via MarkLost)
