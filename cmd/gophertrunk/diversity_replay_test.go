@@ -49,11 +49,15 @@ type diversityCaptureMeta struct {
 //     the frozen constant was fine on this hardware and mrc-static is correct;
 //     walking phase gives the drift rate in degrees per second.
 //
-//  2. FOUR DECODE ARMS through identical downstream wiring — branch 0 alone,
-//     branch 1 alone, static combine, tracking combine — scored by CRC-clean
-//     BSCH count. Decode yield is the verdict, never EVM: a combiner can improve
-//     a constellation's look while decoding nothing, which this repo has
-//     measured before.
+//  2. EIGHT DECODE ARMS through identical downstream wiring — each branch
+//     alone, wideband static / tracking / blind-IRC combines, per-channel
+//     narrowband static / tracking combines, and a narrowband single-branch
+//     baseline — scored by CRC-clean BSCH count. Decode yield is the verdict,
+//     never EVM: a combiner can improve a constellation's look while decoding
+//     nothing, which this repo has measured before. The tracking arms pass the
+//     driver-derived alpha EXPLICITLY: TrackingOptions{Alpha: 0} means
+//     one-shot, so an omitted alpha silently measures static (which is what
+//     the 17/18 Aug 2026 A/B "tracking" verdicts actually did).
 //
 // GT_DIVERSITY_TUNE_HZ offsets the down-conversion onto the control channel.
 // Assertions are deliberately weak — this is a measurement instrument, and the
@@ -221,6 +225,42 @@ func TestDiversityCombinerReplay(t *testing.T) {
 	t.Logf("driver-equivalent coherence gates at this rate (%d-sample windows): lock >= %.3f, track >= %.3f",
 		window, diversity.TrackingOptions{}.LockGate(window), diversity.TrackingOptions{}.TrackGate(window))
 
+	// The tracking arms MUST pass the driver-derived alpha explicitly: a
+	// TrackingOptions with Alpha left at zero is ONE-SHOT (withDefaults keeps 0
+	// as the mrc-static freeze), so an "Alpha omitted" tracking arm silently
+	// measures static — which is exactly what the 17/18 Aug A/B verdicts did.
+	// Mirror of soapyremote's mrcTrackAlpha: actual window duration over the
+	// 200 ms tau.
+	const trackTauMs = 200.0
+	wbAlpha := float64(window) / meta.SampleRateHz * 1000 / trackTauMs
+	nbAlpha := float64(nbWindow) / nbRate * 1000 / trackTauMs
+	if wbAlpha <= 0 || nbAlpha <= 0 {
+		t.Fatalf("derived tracking alphas wb=%g nb=%g — zero would silently freeze the tracking arms into static", wbAlpha, nbAlpha)
+	}
+	if wbAlpha > 1 {
+		wbAlpha = 1
+	}
+	if nbAlpha > 1 {
+		nbAlpha = 1
+	}
+	t.Logf("tracking-arm alphas (tau %.0f ms): wb=%.4f nb=%.4f", trackTauMs, wbAlpha, nbAlpha)
+
+	// ---- Inter-branch timing skew ------------------------------------------
+	// A scalar MRC weight assumes the branches are TIME-ALIGNED. A constant
+	// inter-branch delay (start-of-stream skew, differing DDC group delay)
+	// makes the sum a comb filter: band-average power still looks fine, the
+	// per-frequency coherence is high, but the broadband |rho| is diluted and
+	// the combined SYMBOLS are smeared — on the 19 Aug 2026 X310 capture a
+	// 2.65-sample skew cost every combined arm ~22% of its CRC-clean BSCH
+	// versus the best branch alone. Measure it, report it, and run an aligned
+	// arm so the recoverable gain is a number instead of a suspicion.
+	lag, lagRho := interBranchLagSamples(wbRef, wbOther)
+	frac := interBranchFractionalDelay(wbRef, wbOther, lag, meta.SampleRateHz)
+	t.Logf("inter-branch delay: other lags ref by %d%+.2f samples (peak |rho|=%.3f at the integer lag) — "+
+		"a scalar combiner cannot represent a delay; wb-aligned-static shows what alignment recovers",
+		lag, frac, lagRho)
+	wbOtherAligned := shiftBranchFractional(wbOther, lag, frac)
+
 	// Wideband arms are combined then down-converted; narrowband arms are
 	// down-converted per branch and combined at the channel rate. Both are
 	// scored by the identical decoder so the combiner is the only variable.
@@ -236,7 +276,7 @@ func TestDiversityCombinerReplay(t *testing.T) {
 			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window, Alpha: 0})),
 			meta.SampleRateHz, tuneHz},
 		{"wb-tracking", combineWith(t, wbRef, wbOther,
-			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window})),
+			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window, Alpha: wbAlpha})),
 			meta.SampleRateHz, tuneHz},
 		// Blind IRC on the wideband stream. Expected to measure the same as
 		// wb-tracking: without a training sequence the channel estimate is a
@@ -244,7 +284,13 @@ func TestDiversityCombinerReplay(t *testing.T) {
 		// steered at a mixture (see internal/dsp/diversity/irc.go). Carried as
 		// an arm so that claim is checked against real air rather than assumed.
 		{"wb-irc-blind", combineWith(t, wbRef, wbOther,
-			diversity.NewIRCCalibrator(2, diversity.TrackingOptions{WindowSamples: window})),
+			diversity.NewIRCCalibrator(2, diversity.TrackingOptions{WindowSamples: window, Alpha: wbAlpha})),
+			meta.SampleRateHz, tuneHz},
+		// Static combine with the measured inter-branch delay removed first.
+		// The one new variable versus wb-static is the alignment, so the score
+		// difference IS the cost of the skew.
+		{"wb-aligned-static", combineWith(t, wbRef, wbOtherAligned,
+			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: window, Alpha: 0})),
 			meta.SampleRateHz, tuneHz},
 		// The arms that matter for the wideband-limitation question: one gain
 		// per narrowband channel instead of one for the whole span.
@@ -252,7 +298,7 @@ func TestDiversityCombinerReplay(t *testing.T) {
 			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: nbWindow, Alpha: 0})),
 			nbRate, 0},
 		{"nb-tracking", combineWith(t, nbRef, nbOther,
-			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: nbWindow})),
+			diversity.NewTrackingCalibrator(2, diversity.TrackingOptions{WindowSamples: nbWindow, Alpha: nbAlpha})),
 			nbRate, 0},
 		{"nb-branch0-only", nb0, nbRate, 0},
 	}
@@ -291,6 +337,110 @@ func TestDiversityCombinerReplay(t *testing.T) {
 type windowedCalibrator interface {
 	Observe(branches [][]complex64) diversity.ObserveResult
 	Combine(branches [][]complex64) ([]complex64, error)
+}
+
+// interBranchLagSamples scans integer lags for the delay of `other` relative
+// to `ref` (positive = other lags), returning the |rho|-maximising lag. Uses
+// the first ~5 s so a 30 s capture stays cheap; a start-of-stream or DDC group
+// delay skew is constant, so any span measures it.
+func interBranchLagSamples(ref, other []complex64) (bestLag int, bestRho float64) {
+	n := len(ref)
+	if len(other) < n {
+		n = len(other)
+	}
+	if n > 1<<20 {
+		n = 1 << 20
+	}
+	r, o := ref[:n], other[:n]
+	var pr, po float64
+	for i := 0; i < n; i++ {
+		pr += float64(real(r[i]))*float64(real(r[i])) + float64(imag(r[i]))*float64(imag(r[i]))
+		po += float64(real(o[i]))*float64(real(o[i])) + float64(imag(o[i]))*float64(imag(o[i]))
+	}
+	norm := math.Sqrt(pr * po)
+	if norm == 0 {
+		return 0, 0
+	}
+	const maxLag = 16
+	for lag := -maxLag; lag <= maxLag; lag++ {
+		var cr, ci float64
+		for i := 0; i < n-maxLag; i++ {
+			var a, b complex64
+			if lag >= 0 {
+				a, b = r[i], o[i+lag]
+			} else {
+				a, b = r[i-lag], o[i]
+			}
+			// conj(a)·b
+			cr += float64(real(a))*float64(real(b)) + float64(imag(a))*float64(imag(b))
+			ci += float64(real(a))*float64(imag(b)) - float64(imag(a))*float64(real(b))
+		}
+		if rho := math.Hypot(cr, ci) / norm; rho > bestRho {
+			bestRho, bestLag = rho, lag
+		}
+	}
+	return bestLag, bestRho
+}
+
+// interBranchFractionalDelay refines the integer lag with the residual
+// fractional delay, estimated from the cross-correlation magnitudes at the
+// neighbouring lags via parabolic interpolation. rateHz is unused beyond
+// documentation; the return is in samples, in (-1, 1).
+func interBranchFractionalDelay(ref, other []complex64, lag int, _ float64) float64 {
+	rhoAt := func(l int) float64 {
+		n := len(ref)
+		if len(other) < n {
+			n = len(other)
+		}
+		if n > 1<<20 {
+			n = 1 << 20
+		}
+		var cr, ci float64
+		const guard = 20
+		for i := 0; i < n-guard; i++ {
+			var a, b complex64
+			if l >= 0 {
+				a, b = ref[i], other[i+l]
+			} else {
+				a, b = ref[i-l], other[i]
+			}
+			cr += float64(real(a))*float64(real(b)) + float64(imag(a))*float64(imag(b))
+			ci += float64(real(a))*float64(imag(b)) - float64(imag(a))*float64(real(b))
+		}
+		return math.Hypot(cr, ci)
+	}
+	ym, y0, yp := rhoAt(lag-1), rhoAt(lag), rhoAt(lag+1)
+	den := ym - 2*y0 + yp
+	if den == 0 {
+		return 0
+	}
+	f := 0.5 * (ym - yp) / den
+	if f > 0.99 || f < -0.99 || math.IsNaN(f) {
+		return 0
+	}
+	return f
+}
+
+// shiftBranchFractional advances `x` by lag+frac samples (positive = x lagged
+// and is pulled earlier), using linear interpolation for the fractional part —
+// adequate here because the channel occupies ≲6% of the stream rate. The
+// result keeps len(x); the tail is zero-padded.
+func shiftBranchFractional(x []complex64, lag int, frac float64) []complex64 {
+	out := make([]complex64, len(x))
+	f := float32(frac)
+	for i := range out {
+		j := i + lag
+		if f >= 0 {
+			if j >= 0 && j+1 < len(x) {
+				out[i] = x[j]*(1-complex(f, 0)) + x[j+1]*complex(f, 0)
+			}
+		} else {
+			if j-1 >= 0 && j < len(x) {
+				out[i] = x[j]*(1+complex(f, 0)) - x[j-1]*complex(f, 0)
+			}
+		}
+	}
+	return out
 }
 
 func combineWith(t *testing.T, br0, br1 []complex64, cal windowedCalibrator) []complex64 {
