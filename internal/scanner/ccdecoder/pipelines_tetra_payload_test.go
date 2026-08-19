@@ -3,7 +3,18 @@ package ccdecoder
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+// pinPipelineClock freezes the pipeline's wall clock at the heartbeat's own
+// timestamp so the 5 s CheckStale watchdog never fires during a long feed —
+// these tests simulate BSCH liveness by rewinding lastSeenActivity, which
+// keeps checkResync fed but does not refresh the REAL heartbeat timestamp,
+// and under -race a multi-second feed would otherwise cross the wall-clock
+// stale timeout and MarkLost mid-test.
+func pinPipelineClock(p *tetraPipeline) {
+	p.now = func() time.Time { return time.Unix(0, p.cc.LastActivityNano()) }
+}
 
 // feedNoDecodeBSCHAlive drives n samples of undecodable signal while keeping
 // the ORDINARY activity heartbeat looking fresh — the 19 Aug field condition:
@@ -38,6 +49,7 @@ func payloadBudget(p *tetraPipeline) int64 {
 // (the field log sat in this state for 12 minutes at a stretch).
 func TestTETRAPayloadDroughtForcesResync(t *testing.T) {
 	p, buf, _ := newResyncTestPipeline(t)
+	pinPipelineClock(p)
 	budget := payloadBudget(p)
 
 	// Just under the budget: nothing may fire (neither the ordinary resync —
@@ -65,6 +77,7 @@ func TestTETRAPayloadDroughtForcesResync(t *testing.T) {
 // stucks at ~36 s.
 func TestTETRAPayloadDroughtEscalatesToLost(t *testing.T) {
 	p, buf, _ := newResyncTestPipeline(t)
+	pinPipelineClock(p)
 	budget := payloadBudget(p)
 
 	// Feed in 100k chunks, so each firing consumes up to one chunk of
@@ -92,6 +105,7 @@ func TestTETRAPayloadDroughtEscalatesToLost(t *testing.T) {
 // last saw) clears both the accumulated budget and the resync streak.
 func TestTETRAPayloadDecodeClearsBudgetAndStreak(t *testing.T) {
 	p, _, _ := newResyncTestPipeline(t)
+	pinPipelineClock(p)
 	budget := payloadBudget(p)
 
 	feedNoDecodeBSCHAlive(p, budget-1)
@@ -117,6 +131,7 @@ func TestTETRAPayloadDecodeClearsBudgetAndStreak(t *testing.T) {
 // helps nothing).
 func TestTETRAPayloadBudgetHeldWhileUnlocked(t *testing.T) {
 	p, buf, _ := newResyncTestPipeline(t)
+	pinPipelineClock(p)
 	p.cc.MarkLost()
 	buf.Reset()
 

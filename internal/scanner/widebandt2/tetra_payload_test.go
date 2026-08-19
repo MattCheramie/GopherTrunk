@@ -61,7 +61,12 @@ func TestWidebandTETRAPayloadDroughtForcesResyncAndEscalates(t *testing.T) {
 	})
 	rcv := &tetraChannelReceiver{
 		rx: rx, cc: cc, log: logger, system: "Test",
-		rateHz: tetraChannelRateHz, now: time.Now,
+		rateHz: tetraChannelRateHz,
+		// Pin the wall clock to the heartbeat's own timestamp so the 5 s
+		// CheckStale watchdog never fires during a long feed (under -race the
+		// budget feed takes multiple wall-clock seconds while the REAL
+		// heartbeat timestamp is never refreshed).
+		now: func() time.Time { return time.Unix(0, cc.LastActivityNano()) },
 	}
 
 	cc.Process(buildArmingSBDibits(), 0)
