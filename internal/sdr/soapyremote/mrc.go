@@ -270,6 +270,11 @@ type mrcCombiner struct {
 	refIdx  int
 	ordered [][]complex64
 
+	// align removes the constant inter-branch timing skew a scalar gain cannot
+	// represent (see branchAligner). Measured once per stream/retune, before
+	// the calibrator sees any samples of the aligned stream.
+	align *branchAligner
+
 	// refDeadDatagrams counts consecutive datagrams in which the incumbent
 	// reference looked dead relative to a challenger; see mrcRefDeadDatagrams.
 	refDeadDatagrams int
@@ -308,6 +313,7 @@ func newMRCCombiner(format sampleFormat, mode diversityMode, rateHz float64) *mr
 		refIdx:   -1,
 		ordered:  make([][]complex64, diversityChannels),
 		powDbFS:  make([]float64, diversityChannels),
+		align:    newBranchAligner(),
 	}
 }
 
@@ -408,7 +414,10 @@ func (m *mrcCombiner) setSampleRate(rateHz float64) {
 	// A window re-size drops the gain estimate but, like the rearm path in
 	// combine(), deliberately KEEPS the anchor: the stream rate says nothing
 	// about which antenna is better, and moving the anchor is a phase step.
+	// The delay alignment IS re-measured — a fresh stream has a fresh
+	// start-of-stream skew.
 	m.refDeadDatagrams = 0
+	m.align.reset()
 }
 
 // requestRecalibrate arms a calibration reset to be applied by the next
@@ -431,9 +440,13 @@ func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 		// (±180° phase + several dB amplitude step) on every cc-hunt retune —
 		// observed in the 19 Aug field log at the 08:58 sync loss. A kept
 		// anchor that is genuinely dead still escapes via the uncalibrated
-		// dead-incumbent path in selectReference.
+		// dead-incumbent path in selectReference. The delay alignment is
+		// re-measured (cheap: ~0.65 s of passthrough-equivalent combining at
+		// 200 kS/s) in case the hardware re-times its DSP chain on an LO
+		// change; the anchor is NOT.
 		m.cal.Reset()
 		m.refDeadDatagrams = 0
+		m.align.reset()
 	}
 	branches := m.format.deinterleave(payload, m.channels, elems)
 	// Tap the branches BEFORE anything is done to them, so a capture is exactly
@@ -462,6 +475,23 @@ func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 			m.refIdx = 0
 		}
 		return branches[0]
+	}
+	// Remove the constant inter-branch timing skew BEFORE the calibrator sees
+	// the samples: a scalar gain cannot represent a delay, and combining
+	// skewed branches decodes WORSE than the best branch alone (19 Aug field
+	// capture: 2.60 samples of skew cost ~22% of CRC-clean BSCH; aligned, the
+	// combine matched the best branch). The capture tap above stays RAW so an
+	// offline replay can re-derive the skew independently.
+	if latched, delay, rho := m.align.process(branches); latched {
+		// Any gain locked during the measurement was estimated on the SKEWED
+		// stream; restart calibration so both tracking and static modes lock
+		// on the aligned one. The reset coincides with the alignment's own
+		// one-time timeline step, so it adds no extra discontinuity.
+		m.cal.Reset()
+		if m.log != nil {
+			m.log.Info("soapyremote: MRC inter-branch delay measured — delaying the early branch to align the combine",
+				"delay_samples", round2(delay), "peak_rho", round2(rho))
+		}
 	}
 	m.selectReference()
 	if m.refIdx < 0 {
