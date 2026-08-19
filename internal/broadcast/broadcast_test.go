@@ -162,3 +162,38 @@ func TestCallFromEvent(t *testing.T) {
 		t.Fatalf("duration = %v, want ~3s", c.Duration())
 	}
 }
+
+// TestCallFromEventGrantLabel covers #1105: a label carried on the grant
+// itself (e.g. the conventional scanner's per-channel label) becomes the
+// upload's talkgroupLabel even when no talkgroup-roster entry exists, and
+// takes precedence over a roster entry when both are present.
+func TestCallFromEventGrantLabel(t *testing.T) {
+	// No roster entry: the synthetic conventional GID resolves to no
+	// TalkGroup, so before #1105 the label was empty. It must now come
+	// from the grant.
+	noRoster := callFromEvent(trunking.CallComplete{
+		Grant: trunking.Grant{
+			System:     "Scanner",
+			Protocol:   "fm-conv",
+			GroupID:    0x80000000,
+			GroupLabel: "KP4-DH",
+		},
+	})
+	if noRoster.TalkgroupLabel != "KP4-DH" {
+		t.Fatalf("grant label (no roster): got %q, want KP4-DH", noRoster.TalkgroupLabel)
+	}
+
+	// Roster entry present too: the per-grant label wins.
+	withRoster := callFromEvent(trunking.CallComplete{
+		Grant: trunking.Grant{
+			System:     "Scanner",
+			Protocol:   "fm-conv",
+			GroupID:    0x80000001,
+			GroupLabel: "V2M Simplex",
+		},
+		Talkgroup: &trunking.TalkGroup{ID: 0x80000001, AlphaTag: "Roster Name"},
+	})
+	if withRoster.TalkgroupLabel != "V2M Simplex" {
+		t.Fatalf("grant label (with roster): got %q, want V2M Simplex", withRoster.TalkgroupLabel)
+	}
+}
