@@ -302,7 +302,15 @@ func (c *TrackingCalibrator) estimate() bool {
 			continue
 		}
 		target := smoothGain(c.applied[k], proposed[k], c.opts.Alpha)
-		c.applied[k] = clampStep(c.applied[k], target)
+		// The divergence bounds at line ~284 gate only the per-window PROPOSAL;
+		// the smoothed APPLIED gain is a vector blend, so a run of proposals with
+		// adverse phase can random-walk its magnitude toward zero even though
+		// every proposal was in-bounds (a 19 Aug field log showed the applied
+		// weight at −34 dB with calibrated=true — the combiner had silently
+		// degenerated to single-branch). Clamp the applied magnitude into the
+		// same bounds, preserving phase; the floor deliberately overrides the
+		// per-step ratio clamp when recovering from below it.
+		c.applied[k] = clampMagnitude(clampStep(c.applied[k], target))
 	}
 	for k := 0; k < c.branches; k++ {
 		c.mrc.SetGain(k, c.applied[k])
@@ -382,6 +390,30 @@ func smoothGain(cur, target complex64, a float64) complex64 {
 		real(cur)*(1-ar)+real(target)*ar,
 		imag(cur)*(1-ar)+imag(target)*ar,
 	)
+}
+
+// clampMagnitude bounds |h| into the divergence window
+// [√trackingDivergeFloorSq, √trackingDivergeCeilSq] (±30.1 dB), preserving
+// phase. Applied to the smoothed gain only — the snap path stays bit-identical
+// to a one-shot least-squares calibration (whose proposal already passed
+// finiteWithin).
+func clampMagnitude(h complex64) complex64 {
+	magSq := float64(real(h))*float64(real(h)) + float64(imag(h))*float64(imag(h))
+	if magSq >= trackingDivergeFloorSq && magSq <= trackingDivergeCeilSq {
+		return h
+	}
+	mag := math.Sqrt(magSq)
+	if mag == 0 {
+		// No phase to preserve; seed at the floor on the real axis so the next
+		// smoothed update can move it.
+		return complex(float32(math.Sqrt(trackingDivergeFloorSq)), 0)
+	}
+	want := math.Sqrt(trackingDivergeFloorSq)
+	if magSq > trackingDivergeCeilSq {
+		want = math.Sqrt(trackingDivergeCeilSq)
+	}
+	s := float32(want / mag)
+	return complex(real(h)*s, imag(h)*s)
 }
 
 // clampStep bounds how far one update may move the applied gain: at most

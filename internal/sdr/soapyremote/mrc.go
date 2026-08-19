@@ -127,10 +127,15 @@ const (
 	mrcCalWindowDefaultSamples = 8192
 )
 
-// mrcTrackTauMs is the tracking loop's 1/e time constant. 200 ms is roughly 14
-// TETRA bursts: far slower than one burst, so the phase a burst sees is
-// effectively constant, and far faster than the relative drift of two
-// independently-locked front-end PLLs.
+// mrcTrackTauMs is the tracking loop's 1/e time constant: far faster than the
+// relative drift of two independently-locked front-end PLLs, slow enough that
+// the per-window applied-phase step stays deep inside the π/4-DQPSK decision
+// margin. NOTE the per-burst-constancy argument is per-STEP, not per-tau: at a
+// clamped low-rate window (200 kHz → 4096 samples = 20.48 ms) one window is
+// ~1.5 TETRA bursts and alpha reaches ~0.10, so what protects a burst is the
+// bounded per-window step (α × the gated estimate error, hard-clamped by
+// trackingMaxStepRad) — pinned by TestTrackingCalibratorIsDifferentialSafe's
+// driver200kHzAlpha subtest in internal/dsp/diversity.
 const mrcTrackTauMs = 200.0
 
 // mrcTrackAlpha is the one-pole coefficient implied by the window and the time

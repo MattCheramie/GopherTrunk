@@ -214,35 +214,51 @@ func TestTrackingGatesScaleWithWindow(t *testing.T) {
 // reference branch by h_0 == 1, so a weight update may only perturb it by the
 // (damped, clamped) estimate error.
 func TestTrackingCalibratorIsDifferentialSafe(t *testing.T) {
-	const n = 1 << 18
-	const window = 4096
-	rng := rand.New(rand.NewSource(202))
-	ref := genSignal(rng, n)
-	// Constant channel: any residual output-phase motion is the loop's own.
-	x := addNoise(rng, rotate(ref, 1.05), 0.3)
-	refN := addNoise(rng, ref, 0.3)
-
-	c := NewTrackingCalibrator(2, TrackingOptions{WindowSamples: window, Alpha: TrackingDefaultAlpha})
-	y := feed(t, c, refN, x, window)
-
-	// Per-window residual phase relative to the reference branch. The step
-	// between consecutive windows is what a differential decode actually sees.
-	var prev float64
-	var maxStep float64
-	first := true
-	for i := window * 2; i+window <= n; i += window { // skip the lock window
-		cur := residualPhaseDeg(y[i:i+window], refN[i:i+window])
-		if !first {
-			if d := math.Abs(cur - prev); d > maxStep {
-				maxStep = d
-			}
-		}
-		prev, first = cur, false
+	// The soapyremote driver derives alpha from the ACTUAL window duration
+	// against a 200 ms tau (mrcTrackAlpha; this package cannot import the
+	// driver). At a 200 kHz stream the window clamps to 4096 samples = 20.48 ms
+	// ⇒ alpha = 0.1024 — 10× the package default, and the alpha the 19 Aug
+	// field run actually ran. Differential safety must hold at both.
+	cases := []struct {
+		name  string
+		alpha float64
+	}{
+		{"defaultAlpha", TrackingDefaultAlpha},
+		{"driver200kHzAlpha", 0.1024},
 	}
-	// pi/4-DQPSK decisions are 45° apart. Anything approaching a degree here
-	// would already be suspicious; the design budget is hundredths.
-	if maxStep > 1.0 {
-		t.Errorf("max per-window output phase step %.3f°, want <=1° (45° decision spacing)", maxStep)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			const n = 1 << 18
+			const window = 4096
+			rng := rand.New(rand.NewSource(202))
+			ref := genSignal(rng, n)
+			// Constant channel: any residual output-phase motion is the loop's own.
+			x := addNoise(rng, rotate(ref, 1.05), 0.3)
+			refN := addNoise(rng, ref, 0.3)
+
+			c := NewTrackingCalibrator(2, TrackingOptions{WindowSamples: window, Alpha: tc.alpha})
+			y := feed(t, c, refN, x, window)
+
+			// Per-window residual phase relative to the reference branch. The step
+			// between consecutive windows is what a differential decode actually sees.
+			var prev float64
+			var maxStep float64
+			first := true
+			for i := window * 2; i+window <= n; i += window { // skip the lock window
+				cur := residualPhaseDeg(y[i:i+window], refN[i:i+window])
+				if !first {
+					if d := math.Abs(cur - prev); d > maxStep {
+						maxStep = d
+					}
+				}
+				prev, first = cur, false
+			}
+			// pi/4-DQPSK decisions are 45° apart. Anything approaching a degree here
+			// would already be suspicious; the design budget is hundredths.
+			if maxStep > 1.0 {
+				t.Errorf("alpha=%g: max per-window output phase step %.3f°, want <=1° (45° decision spacing)", tc.alpha, maxStep)
+			}
+		})
 	}
 }
 
