@@ -72,6 +72,12 @@ Amateur radio transceivers ranked with an honest rubric — no star ratings — 
 - [Best mobile ham radios]({{ '/best-mobile-ham-radios/' | absolute_url }}): the 10 best vehicle-mount rigs ranked, from budget dual-banders to the Yaesu FTM-500DR, including discontinued do-everything classics.
 - [Best handheld ham radios]({{ '/best-handheld-ham-radios/' | absolute_url }}): the 10 best HTs ranked, from the Baofeng UV-5R to the Kenwood TH-D75A, including used-market classics.
 
+## Consumer two-way radio buyer's guides
+FRS/GMRS walkie-talkies, GMRS mobile rigs, and CB radios ranked with the same honest rubric — no star ratings. GMRS takes a $35 no-test FCC license; FRS and CB are license-free.
+- [Best walkie-talkies]({{ '/best-walkie-talkies/' | absolute_url }}): the 10 best FRS and GMRS handhelds ranked, from the Baofeng GM-15 Pro to the Rocky Talkie 5 Watt, including discontinued classics.
+- [Best GMRS mobile radios]({{ '/best-gmrs-mobile-radios/' | absolute_url }}): the 10 best GMRS mobile and base rigs ranked, from the Radioddity DB20-G to the Midland MXT575 and Wouxun KG-1000G Plus.
+- [Best CB radios]({{ '/best-cb-radios/' | absolute_url }}): the 10 best CB radios ranked, from the Uniden PRO505XL to the Bearcat 880 and President McKinley, including collector classics.
+
 ## SDR hardware for GopherTrunk (buyer's guides)
 The receivers, antennas, cables, and accessories to run GopherTrunk, with honest picks and Amazon links.
 - [Best SDR for GopherTrunk]({{ '/best-sdr-for-gophertrunk/' | absolute_url }}): RTL-SDR, NESDR, Airspy, and HackRF compared for P25/DMR/NXDN decoding.

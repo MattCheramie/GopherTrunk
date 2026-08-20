@@ -229,6 +229,15 @@ groups:
         url: /best-handheld-ham-radios/
       - title: "All ham radios (Field Guide)"
         url: /reference/#ham-radios
+      - heading: Two-way radios
+      - title: Best walkie-talkies
+        url: /best-walkie-talkies/
+      - title: Best GMRS mobile radios
+        url: /best-gmrs-mobile-radios/
+      - title: Best CB radios
+        url: /best-cb-radios/
+      - title: "All two-way radios (Field Guide)"
+        url: /reference/#two-way-radios
       - heading: SDRs & receivers
       - title: Best SDR for GopherTrunk
         url: /best-sdr-for-gophertrunk/
