@@ -160,7 +160,7 @@ func TestCaptureEncoderDecimates(t *testing.T) {
 		chunkLen = 4096
 	)
 	// Decimated Nyquist is baseRate/factor/2 = 100 kHz.
-	inBandHz := 20_000.0  // passes
+	inBandHz := 20_000.0   // passes
 	outBandHz := 300_000.0 // rejected (> 100 kHz)
 
 	run := func(toneHz float64) (writtenSamples int, meanMag float64) {
