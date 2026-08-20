@@ -166,7 +166,7 @@ func TestRecoverDMColourCode(t *testing.T) {
 		}
 	}
 
-	colour, n, confident := RecoverDMColourCode(bursts)
+	colour, n, confident := RecoverDMColourCode(bursts, 0)
 	if !confident {
 		t.Fatalf("recovery not confident (colour=%d crc=%d) — expected a clear win at colour %d", colour, n, want)
 	}
@@ -188,8 +188,65 @@ func TestRecoverDMColourCode(t *testing.T) {
 			noiseOnly = append(noiseOnly, *dnb)
 		}
 	}
-	if _, _, ok := RecoverDMColourCode(noiseOnly); ok {
+	if _, _, ok := RecoverDMColourCode(noiseOnly, 0); ok {
 		t.Error("recovery falsely confident on all-noise DNBs (chance-floor winner must be rejected)")
+	}
+}
+
+// TestRecoverDMColourCodeNonZeroMNI is the failing-first regression for the
+// non-zero-MNI DMO decode defect (#1003 follow-up). The reporter's Motorola
+// MTP8500Ex runs a DMO network at MCC 250 / MNC 1, so its TCH/S traffic is
+// scrambled with the FULL extended colour code ExtendedColourCode(250, 1,
+// colour) — NOT the bare colour. A recovery that only searches the 6-bit colour
+// (base MNI 0, the historical behaviour) therefore never reaches the true seed:
+// every candidate sits at the ~1/256 chance floor and no colour dominates —
+// exactly the "several colours rise, none dominant" 15aug field symptom. Folding
+// the known MNI into the search (baseMNI = ExtendedColourCode(250, 1, 0)) makes
+// the true colour win by the usual wide margin.
+//
+// The seed derivation (MCC<<20 | MNC<<6 | colour) is the ETSI EN 300 392-2
+// §8.2.5.2 / osmo-tetra-dmo tetra_scramb_get_init formula — an independent
+// reference, not GT's own decoder — so this is not a self-consistent-synthetic
+// round-trip: it demonstrates that GT's MNI-0-only recovery is structurally
+// blind to a real MNI-bearing network, and that passing the network MNI fixes it.
+func TestRecoverDMColourCodeNonZeroMNI(t *testing.T) {
+	const (
+		mcc    = uint16(250)
+		mnc    = uint16(1)
+		colour = uint8(7)
+	)
+	seed := ExtendedColourCode(mcc, mnc, colour) // the true 30-bit traffic seed
+	base := ExtendedColourCode(mcc, mnc, 0)      // MNI half, colour bits 0
+
+	var bursts []DMBurst
+	for i := 0; i < 8; i++ {
+		frameA := seqBits(7+i, tchSpeechFrameBits)
+		frameB := seqBits(9+i, tchSpeechFrameBits)
+		type4 := framing.UnpackBitsMSB(EncodeTCHS(frameA, frameB), tchType3Bits)
+		onair := framing.ScrambleTetra(type4, seed)
+		dnb := findBurst(ExtractDMBursts(buildDNB(onair[:dmBlockDibits*2], onair[dmBlockDibits*2:]), 0), DMBurstNormal)
+		if dnb == nil {
+			t.Fatalf("burst %d: no DNB detected", i)
+		}
+		bursts = append(bursts, *dnb)
+	}
+
+	// FAILING-FIRST: the MNI-0-only search (historical behaviour) cannot find the
+	// seed on a non-zero-MNI network — no colour clears the confidence gate.
+	if got, n, ok := RecoverDMColourCode(bursts, 0); ok {
+		t.Fatalf("MNI-0 search falsely recovered seed=%#x crc=%d — a non-zero-MNI network must NOT decode with base 0", got, n)
+	}
+
+	// WITH THE FIX: folding the network MNI in recovers the exact traffic seed.
+	got, n, ok := RecoverDMColourCode(bursts, base)
+	if !ok {
+		t.Fatalf("recovery not confident with base MNI (crc=%d) — expected a clear win at seed %#x", n, seed)
+	}
+	if got != seed {
+		t.Fatalf("recovered seed=%#x, want %#x (crc=%d)", got, seed, n)
+	}
+	if n < 8 {
+		t.Errorf("recovered crc count=%d, want >= 8 (all clean DNBs)", n)
 	}
 }
 

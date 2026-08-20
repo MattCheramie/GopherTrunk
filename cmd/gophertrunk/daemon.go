@@ -49,6 +49,7 @@ import (
 	pocsagrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/pocsag/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/decimate"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/ka9qradio"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
@@ -273,6 +274,31 @@ func warnFixedGainOnSharedWideband(log *slog.Logger, serial string, role sdr.Rol
 // deliver exactly the configured rate, so the requested value is returned
 // unchanged. A WARN fires only when the delivered rate actually differs, so a
 // correct exact-divisor config (2.4 / 0.96 MS/s) stays quiet.
+// sdrInputDecimator returns a Pool.WrapDevice hook that installs the
+// sdr.input_sample_rate pre-decimation stage on every opened device, or nil when
+// the operator did not configure a distinct (higher) native rate. When set, the
+// hardware is programmed at the native input rate and the wrapper streams an
+// integer-decimated result at cfg.SDR.SampleRate, so every downstream consumer —
+// down-converter bank, demods, recording taps, auto-IQ capture, spectrum — runs
+// at the decode rate. Config validation already guarantees an exact integer
+// ratio; this recomputes it defensively and no-ops on a bad/absent value.
+func sdrInputDecimator(cfg config.Config, log *slog.Logger) func(sdr.Device) sdr.Device {
+	decode := cfg.SDR.SampleRate
+	if decode == 0 {
+		decode = sdr.DefaultSampleRateHz
+	}
+	native := cfg.SDR.InputSampleRate
+	if native <= decode || decode == 0 || native%decode != 0 {
+		return nil
+	}
+	m := int(native / decode)
+	log.Info("sdr: input pre-decimation enabled",
+		"input_sample_rate_hz", native, "sample_rate_hz", decode, "factor", m)
+	return func(dev sdr.Device) sdr.Device {
+		return decimate.New(dev, m)
+	}
+}
+
 func effectiveStreamRate(log *slog.Logger, dev sdr.Device, serial string, requested uint32) uint32 {
 	ar, ok := dev.(interface{ ActualSampleRate() (uint32, error) })
 	if !ok {
@@ -931,6 +957,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			DMRInterleavedVoice:     resolveDMRInterleavedVoice(proto, sys.DMRInterleavedVoice),
 			DMRColorCode:            sys.DMRColorCode,
 			TETRAColourCode:         sys.TETRAColourCode,
+			TETRAMCC:                sys.TETRAMCC,
+			TETRAMNC:                sys.TETRAMNC,
 			TETRAChannel:            sys.TETRAChannel,
 			TETRAChannelCoding:      sys.TETRAChannelCoding,
 			TETRAClockMode:          sys.TETRAClockMode,
@@ -1232,6 +1260,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		if err := d.pool.OpenWith(sdr.PoolOpenOptions{
 			SampleRateHz: cfg.SDR.SampleRate,
+			WrapDevice:   sdrInputDecimator(cfg, log),
 			Hints:        hints,
 			// Strict mode: when the operator has listed devices in
 			// sdr.devices, treat that list as an allowlist. Devices

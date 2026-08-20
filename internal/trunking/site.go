@@ -243,6 +243,22 @@ type System struct {
 	// channel coding on produces garbage. Bits 30..31 are silently
 	// ignored downstream.
 	TETRAColourCode uint32
+	// TETRAMCC / TETRAMNC are the network's Mobile Country Code (10-bit)
+	// and Mobile Network Code (14-bit) — the MNI half of the 30-bit
+	// extended colour code (ExtendedColourCode(MCC, MNC, colour)). They
+	// exist for TETRA DMO (Direct Mode): the DSB SCH/S is always colour-0
+	// scrambled and does not carry the network MNI on air, but the TCH/S
+	// voice traffic is scrambled with the FULL extended code, so on a
+	// network with a non-zero MNI the traffic seed is
+	// ExtendedColourCode(MCC, MNC, colour) and a colour-only search never
+	// reaches it (#1003 follow-up: the reporter's Motorola MTP8500Ex runs
+	// MCC 250 / MNC 1). Set these to the network's MNI so the DMO colour
+	// recovery folds it into every candidate and the descramble works;
+	// the colour code itself is still auto-recovered (or set explicitly via
+	// TETRAColourCode as a full packed override). Zero (the default) means
+	// a radio-to-radio DMO with MNI 0. Ignored outside TETRA DMO.
+	TETRAMCC uint16
+	TETRAMNC uint16
 	// TETRAChannel selects which TETRA logical channel lives in each
 	// burst window under ChannelCodingOn. Recognised values:
 	// "sch/hd" | "sch/f" | "sch/hu" | "bsch" | "aach" (case-insensitive,

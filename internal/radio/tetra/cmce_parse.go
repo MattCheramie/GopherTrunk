@@ -66,6 +66,64 @@ type CMCEMessage struct {
 	PartySSI uint32 // Calling / Transmitting party SSI (24-bit); 0 = absent
 
 	DisconnectCause uint8 // D-RELEASE only (5-bit)
+
+	// Basic service information sub-fields (D-SETUP only), decomposed from the
+	// 8-bit element per the ETSI ASN.1 layout confirmed against Wireshark's
+	// generated dissector (Basic_service_information_sequence): circuit mode (3) +
+	// encryption (1) + communication type (2) + slots/speech (2). HasBasicSvc is
+	// false when the element was not read (a non-D-SETUP PDU).
+	HasBasicSvc bool
+	CircuitMode uint8 // 3-bit circuit-mode type (0 = speech TCH/S, 1..7 = data TCH rates)
+	BasicSvcEnc bool  // CMCE-level encryption flag inside basic service information
+	// CommsType is the 2-bit communication-type sub-field (bits 29..30 of the PDU).
+	// Per EN 300 392-2 this is the point-to-point vs point-to-multipoint indicator,
+	// but NO open decoder (sq5bpf, tetra-kit, Wireshark) names the enum values, so
+	// the value→meaning mapping (0 = point-to-point, 1 = point-to-multipoint,
+	// 2 = point-to-multipoint acknowledged, 3 = broadcast) is spec-derived and NOT
+	// yet capture-confirmed. It is surfaced for that empirical confirmation (see
+	// commsTypeString); it must NOT drive call classification until a real
+	// individual-call capture pins the mapping (the #764/#771 discipline).
+	CommsType uint8
+}
+
+// Communication-type values per EN 300 392-2 (SPEC-DERIVED, not capture-confirmed
+// — see CMCEMessage.CommsType). Kept as named constants so the day a capture
+// confirms the mapping, wiring them into classification is a one-line change.
+const (
+	CommsPointToPoint         uint8 = 0
+	CommsPointToMultipoint    uint8 = 1
+	CommsPointToMultipointAck uint8 = 2
+	CommsBroadcast            uint8 = 3
+)
+
+// commsTypeString renders the spec-derived communication-type label for debug
+// logging. The "?" suffix is a standing reminder that the enum mapping is
+// unconfirmed until a real individual-call capture validates it.
+func commsTypeString(v uint8) string {
+	switch v {
+	case CommsPointToPoint:
+		return "p2p?"
+	case CommsPointToMultipoint:
+		return "p2mp?"
+	case CommsPointToMultipointAck:
+		return "p2mp-ack?"
+	case CommsBroadcast:
+		return "broadcast?"
+	}
+	return "?"
+}
+
+// readBasicService reads the 8-bit basic service information element and
+// decomposes it into its ASN.1 sub-fields (circuit mode 3, encryption 1,
+// communication type 2, slots/speech 2 — MSB-first), setting the corresponding
+// CMCEMessage fields. It consumes exactly 8 bits, identical to the prior opaque
+// r.u(8), so no downstream framing changes.
+func (m *CMCEMessage) readBasicService(r *bitReader) {
+	m.HasBasicSvc = true
+	m.CircuitMode = uint8(r.u(3))
+	m.BasicSvcEnc = r.u(1) == 1
+	m.CommsType = uint8(r.u(2))
+	r.u(2) // slots-per-frame / speech service (not used yet)
 }
 
 // ParseCMCE decodes a downlink CMCE PDU from the TM-SDU bit slice
@@ -95,12 +153,12 @@ func ParseCMCE(bits []byte) (CMCEMessage, bool) {
 			return CMCEMessage{}, false
 		}
 		msg.CallIdentifier = uint16(r.u(14))
-		r.u(4) // call time-out
-		r.u(1) // hook method
-		r.u(1) // simplex/duplex
-		r.u(8) // basic service information
-		r.u(2) // transmission grant
-		r.u(1) // transmission request permission
+		r.u(4)                  // call time-out
+		r.u(1)                  // hook method
+		r.u(1)                  // simplex/duplex
+		msg.readBasicService(r) // basic service information (8 bits, decomposed)
+		r.u(2)                  // transmission grant
+		r.u(1)                  // transmission request permission
 		msg.setPriority(uint8(r.u(4)))
 		// Optional type-2 chain: Notification indicator(6), Temporary address(24),
 		// Calling party type identifier(2) + conditional Calling party SSI.

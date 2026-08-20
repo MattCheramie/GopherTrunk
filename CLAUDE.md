@@ -323,6 +323,54 @@ confirmation before any close-as-completed.
       poor vector (comfort-noise/DTX frames, and the sweep winners are partial keystream artifacts
       of a marginal signal). Do NOT change the descramble to fit a 33%-yield non-dominant colour
       (the #764/#771 self-consistency trap). The colour→colour_map is preserved in the diagnostic.
+  7. **The 15aug "no dominant colour" was the MNI-0 BLIND SPOT, root-caused: the reporter's radios
+      run a NON-ZERO MNI (Motorola MTP8500Ex, MCC 250 / MNC 1), and GT's colour recovery only ever
+      searched the 6-bit colour with MNI 0.** TETRA seeds the scrambler from the FULL 30-bit extended
+      colour code `get_init(mcc,mnc,colour)` (EN 300 392-2 §8.2.5.2 / osmo-tetra-dmo `tetra_scramb_get_init`;
+      cross-checked against ctn008/TetraDMO-Receiver + lkurkela/osmo-tetra-dmo — GT's `ParseSyncPDU`
+      offsets and `ExtendedColourCode` seed match osmo byte-for-byte). So on an MNI≠0 network the TCH/S
+      traffic seed is `ExtendedColourCode(250,1,colour)`, and `RecoverDMColourCode`'s `uint32(c)` sweep over
+      0..63 (= MNI 0) can NEVER reach it — every candidate sits at the chance floor and several rise
+      modestly with none dominant, which is EXACTLY the 15aug signature (the earlier note read it as
+      "marginal signal / partial keystream", but the real cause was the wrong MNI in the seed). The DSB
+      SCH/S is always colour-0 scrambled and carries MNI 0 on air (both refs agree; it is NOT a parse
+      bug — reading MCC/MNC=0 from the SCH/S is correct), so the network MNI must come from config.
+      Fix (`RecoverDMColourCode(bursts, baseMNI)` + `tetra_mcc`/`tetra_mnc` system config, threaded
+      through the DMO pipeline → grant `TETRADMOBaseMNI` → voice chain): fold the configured MNI into
+      every colour candidate (`baseMNI | c`) and the clear-fallback seed. Pinned failing-first by
+      `TestRecoverDMColourCodeNonZeroMNI` (scramble with `ExtendedColourCode(250,1,7)` from the
+      independent osmo formula → the MNI-0 search finds nothing, the MNI-folded search recovers the exact
+      seed). **STILL ON-AIR-GATED (#764/#771):** synthetic ≠ on-air. The operator must A/B their 438.9 MHz
+      250/1 capture: `GT_TETRA_DMO_IQ=<cap> GT_TETRA_DMO_RATE=144000 GT_TETRA_DMO_MCC=250 GT_TETRA_DMO_MNC=1
+      go test ./cmd/gophertrunk -run TestTETRADMOReplay -v` (and `-run TestTETRADMOColourScan` with
+      `GT_TETRA_DMO_SCAN=1` + the same MCC/MNC to see whether a colour now dominates). If a colour
+      dominates with MNI 250/1 where none did at MNI 0, that is the confirmation; if it still doesn't,
+      the next suspect is the MNI value itself or DNB geometry — NOT encryption (the radios are TEA0).
+- **TETRA individual/private-call SRC is restored across mid-call PDUs via a callID→source
+  binding; cold-start group-vs-individual classification stays capture-gated.** ETSI compresses
+  the SSIs out of mid-call and traffic-channel signalling (§14): once a call is set up, a
+  D-CONNECT or a follow-on `MAC-RESOURCE` addressed only by call identifier carries NO party
+  element, so the source went blank after the setup burst (the reporter's "missing SRC on private
+  calls"). Fix mirrors the existing `callGroups` (callID→GSSI) map with `callSrc` (callID→calling/
+  transmitting party ISSI), learned from D-SETUP's calling party and D-TX-GRANTED's transmitting
+  party, dropped on release; `classifyParties` backfills a blank grant source from it (guarded
+  against a `dest==src` self-source), and it flows to `trunking.Grant.SourceID` (the grant-dedup
+  snapshot already keys on `src`, so a grant that GAINS a source re-publishes). Pinned by
+  `TestCallSourceRestoredMidCall`. **What is NOT done, and why:** correctly flagging the FIRST PDU
+  of an unseen private call as individual (vs surfacing the called ISSI as a phantom talkgroup)
+  needs a single-PDU group/individual discriminator. Three independent decoders (sq5bpf, tetra-kit,
+  Wireshark) confirm the D-SETUP layout and that the discriminator is the 2-bit **communication
+  type** sub-field of Basic Service Information (bits 29..30 — GT now decodes it via
+  `readBasicService` into `CMCEMessage.CommsType`, alongside circuit mode + the service encryption
+  flag). BUT no decoder NAMES the enum values, and none of them classify from it — they defer to
+  the downstream ecosystem (telive), primarily on temporary-address presence. So the mapping
+  (0=p2p, 1=p2mp, 2=p2mp-ack, 3=broadcast) is spec-derived and capture-UNCONFIRMED. Per #764/#771
+  it is NOT wired into `classifyParties`; instead the value is logged on D-SETUP (`comms_type_raw`
+  in `tetra: d-setup basic service`, debug) so an operator's KNOWN individual-vs-group capture can
+  confirm the split empirically. Only then does `CommsType` earn a place in classification — the
+  named `Comms*` constants are staged for that one-line wiring. Downlink D-SETUP carries NO
+  called-party element (only U-SETUP uplink does), confirming the dest must come from the MAC
+  address, as GT does.
 - **Vocoder "sounds awful" is a MEASURED, LOCALIZED AMBE+2 3600×2450 (DMR) high-band deficit —
   NOT RF, NOT post-processing.** Using the operator's DSD-FME (mbelib) decode of the SAME `.amb`
   frames as ground truth (`err=[0]`, identical frame count), GopherTrunk's `ambe2-dmr` decode has
@@ -405,6 +453,21 @@ confirmation before any close-as-completed.
   import, so when this fires, look at what got slower on the decode side (the DMO colour brute
   force above was one such cause) — and check for the companion
   `ccdecoder: decode can't keep up with real time` WARN, which confirms CPU rather than network.
+- **`sdr.input_sample_rate` is a systemwide pre-decimation stage at the Device boundary.** When
+  set (and an exact integer multiple of `sdr.sample_rate`), the hardware runs at the higher NATIVE
+  rate and `internal/sdr/decimate.Device` integer-decimates (polyphase anti-alias FIR,
+  `dsp.NewResampler(1, M, …)`) down to `sample_rate` BEFORE anything downstream — DDC bank, demods,
+  recording taps, `baseband.auto_record`/iqtap, spectrum. It is wired via `Pool.WrapDevice`
+  (`sdrInputDecimator` in `daemon.go`) so it applies in `OpenWith` AND survives `Reacquire`; the
+  wrapper programs the inner device at `sample_rate*M` and streams the M:1 result, so `sample_rate`
+  stays the DECODE rate every existing `cfg.SDR.SampleRate` reader sees (zero downstream audit — the
+  whole reason it wraps at the Device boundary rather than threading a native/effective split
+  through the daemon). Two things it deliberately does NOT touch: the pre-combine `diversity_capture`
+  tap lives INSIDE the soapyremote driver, below the wrapper, so it still records native branches
+  (correct — a diversity A/B needs native); and it does NOT fix front-end degradation baked into a
+  high native-rate capture (#764 — decimating 10→2.5 MS/s does not recover the Airspy's native-clock
+  phase noise). It is a load/recording-size lever, not an RF fix. Pinned by
+  `internal/sdr/decimate/decimate_test.go` (rate math, ActualSampleRate÷M, anti-alias rejection).
 - **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
   fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
   P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.

@@ -34,7 +34,7 @@ import (
 // ~half noise, which is why the dominance gate never cleared on air and all six
 // attempts burned. This is #1003 work: on-air A/B still gates it (a green synthetic
 // decode is not proof — #764/#771).
-func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, colourHint uint32, liveColour func() (uint32, bool), done chan<- struct{}) {
+func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, colourHint, baseMNI uint32, liveColour func() (uint32, bool), done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-tetra-dmo:"+serial, nil)
 
@@ -51,6 +51,7 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 		bt:         bt,
 		rs:         rs,
 		colour:     colourHint,
+		baseMNI:    baseMNI &^ 0x3F,
 		liveColour: liveColour,
 		grid:       tetra.NewDMSlotGrid(),
 		// A non-zero hint from the grant is the pipeline's already-recovered colour
@@ -157,7 +158,12 @@ type dmoVoiceDecoder struct {
 	bt     *boundaryTracker
 	rs     rawFrameSink
 
-	colour      uint32
+	colour uint32
+	// baseMNI is the DMO network MNI (ExtendedColourCode(MCC, MNC, 0)) from the
+	// grant's tetra_mcc/tetra_mnc, folded into colour recovery so a non-zero-MNI
+	// network decodes, and used as the clear-fallback seed (base | colour 0)
+	// instead of a bare 0. Zero on an MNI-0 radio-to-radio DMO.
+	baseMNI     uint32
 	colourKnown bool
 	// colourRecovered distinguishes "a colour cleared verification (local brute
 	// force or an adopted pipeline hint)" from "we gave up and fell back to
@@ -215,7 +221,7 @@ func (d *dmoVoiceDecoder) tryRecoverColour() bool {
 			scored = scored[len(scored)-dmoVoiceColourBatch:]
 		}
 	}
-	c, _, ok := tetra.RecoverDMColourCode(scored)
+	c, _, ok := tetra.RecoverDMColourCode(scored, d.baseMNI)
 	if !ok {
 		return false
 	}
@@ -305,9 +311,10 @@ func (d *dmoVoiceDecoder) onBurst(b tetra.DMBurst) {
 	case canBrute && d.tryRecoverColour():
 		// Recovered locally; fall through and flush.
 	case len(d.buffer) >= dmoVoiceColourMax || d.colourTries >= dmoVoiceColourMaxAttempts:
-		// Give up recovering; assume clear colour 0. A genuinely encrypted call then
+		// Give up recovering; assume clear colour 0 on top of the known MNI
+		// (baseMNI | 0 — plain 0 when MNI is 0). A genuinely encrypted call then
 		// yields no CRC-valid speech (bfi), which the hangtime ends normally.
-		d.colour, d.colourKnown = 0, true
+		d.colour, d.colourKnown = d.baseMNI, true
 	default:
 		return // keep buffering
 	}
@@ -366,6 +373,11 @@ func (d *dmoVoiceDecoder) flush() {
 	if !d.colourKnown {
 		if !d.tryAdoptLiveColour() {
 			d.tryRecoverColour()
+		}
+		if !d.colourRecovered {
+			// Nothing cleared the gate — fall back to clear colour 0 on top of the
+			// known MNI (baseMNI | 0) so a short clear call still decodes.
+			d.colour = d.baseMNI
 		}
 		d.colourKnown = true
 	}

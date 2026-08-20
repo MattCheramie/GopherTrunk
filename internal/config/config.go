@@ -621,6 +621,27 @@ type SDRConfig struct {
 	// work. Running fewer simultaneous dongles on a weak CPU has the same
 	// effect.
 	SampleRate uint32 `yaml:"sample_rate"`
+	// InputSampleRate, when non-zero, is the NATIVE rate (Hz) each tuner is
+	// programmed to, and the daemon integer-decimates that wideband stream
+	// down to SampleRate with an anti-alias filter BEFORE it reaches any
+	// down-converter, demodulator, recording tap, or auto-IQ capture — a
+	// systemwide pre-decimation stage. Use it when the front end must run
+	// faster than you want to decode/record at: an Airspy pinned to 10 MS/s,
+	// or any SDR whose useful signal is a narrow slice of a wide capture.
+	// SampleRate then stays the rate everything downstream sees (the DDC bank,
+	// the symbol clocks, auto_record/iqtap files, spectrum), so those files
+	// are the decode rate and not multi-gigabyte native-rate captures.
+	//
+	// Must be an exact integer multiple of SampleRate (the decimation factor
+	// M = InputSampleRate / SampleRate); a non-integer ratio is rejected at
+	// config load. Zero (the default) or a value equal to SampleRate disables
+	// the stage — the hardware runs at SampleRate exactly as before. The
+	// anti-alias FIR is a real per-chunk cost at the native rate, so this is a
+	// trade: cheaper downstream decode/recording for one wideband filter pass.
+	// Applies to every source that streams complex IQ (RTL, soapy_remote,
+	// ka9q, replay); the pre-combine diversity_capture tap sits below it and
+	// still records the native branches.
+	InputSampleRate uint32 `yaml:"input_sample_rate"`
 	// Autotune enables per-dongle carrier-error tracking and digital
 	// frequency correction (ported from trunk-recorder's autotune). When
 	// on, the daemon watches each source's locked carrier offset (P25
@@ -1315,6 +1336,21 @@ type SystemConfig struct {
 	// colour code or descrambling produces garbage. Ignored for
 	// non-TETRA protocols.
 	TETRAColourCode uint32 `yaml:"tetra_colour_code"`
+	// TETRAMCC / TETRAMNC give the network's Mobile Country Code
+	// (10-bit, 0..1023) and Mobile Network Code (14-bit, 0..16383) —
+	// the MNI half of the 30-bit extended colour code that seeds the
+	// TETRA scrambler (ExtendedColourCode(MCC, MNC, colour)). They exist
+	// for TETRA DMO (Direct Mode): the sync burst is always colour-0
+	// scrambled and carries no MNI on air, but the voice traffic (TCH/S)
+	// is scrambled with the FULL extended code, so on a network with a
+	// non-zero MNI the traffic seed is ExtendedColourCode(MCC, MNC,
+	// colour) and DMO decode fails unless the MNI is known. Set these to
+	// the network's MNI (e.g. a Motorola DMO codeplug's MCC 250 / MNC 1)
+	// so the DMO colour recovery folds it into every candidate; the
+	// colour code itself is still auto-recovered. Zero (the default) is a
+	// radio-to-radio DMO with MNI 0. Ignored for non-DMO / non-TETRA.
+	TETRAMCC uint16 `yaml:"tetra_mcc"`
+	TETRAMNC uint16 `yaml:"tetra_mnc"`
 	// TETRAChannel selects which TETRA logical channel lives in
 	// each burst window under ChannelCodingOn. Recognised values:
 	// "sch/hd" | "sch/f" | "sch/hu" | "bsch" | "aach". Empty

@@ -125,6 +125,55 @@ func TestParseCMCE_DSetupNonEmergency(t *testing.T) {
 	}
 }
 
+// TestParseCMCE_DSetupBasicService pins the decomposition of the 8-bit basic
+// service information element into its ASN.1 sub-fields (circuit mode 3,
+// encryption 1, communication type 2, slots 2 — MSB-first), at the bit offset
+// confirmed against sq5bpf / tetra-kit / Wireshark. It asserts the DECODE only,
+// not the communication-type enum meaning, which is spec-derived and still
+// capture-unconfirmed (see CMCEMessage.CommsType). The 8-bit consumption must
+// stay exact so nothing downstream reframes.
+func TestParseCMCE_DSetupBasicService(t *testing.T) {
+	// circuit_mode=5 (101), enc=1 (1), comms=2 (10), slots=1 (01) → 1011 1001 = 0xB9.
+	const basic = 0xB9
+	w := &cmceBitWriter{}
+	w.header(CMCETypeDSetup)
+	w.u(0x2000&0x3FFF, 14)    // call id
+	w.u(0, 4)                 // call time-out
+	w.u(0, 1)                 // hook
+	w.u(0, 1)                 // simplex/duplex
+	w.u(basic, 8)             // basic service information
+	w.u(0, 2)                 // transmission grant
+	w.u(0, 1)                 // transmission request permission
+	w.u(0x2, 4)               // call priority (non-emergency)
+	w.u(1, 1)                 // O-bit present
+	w.opt(false, 0, 6)        // notification indicator absent
+	w.opt(true, 0x0ABCDE, 24) // temporary address present — proves the 8-bit basic
+	//                           read left the stream aligned for the GSSI
+	w.pbit(false) // no calling party
+
+	msg, ok := ParseCMCE(w.bits)
+	if !ok {
+		t.Fatal("ParseCMCE ok=false on a valid D-SETUP")
+	}
+	if !msg.HasBasicSvc {
+		t.Fatal("HasBasicSvc = false, want true")
+	}
+	if msg.CircuitMode != 5 {
+		t.Errorf("CircuitMode = %d, want 5", msg.CircuitMode)
+	}
+	if !msg.BasicSvcEnc {
+		t.Error("BasicSvcEnc = false, want true")
+	}
+	if msg.CommsType != 2 {
+		t.Errorf("CommsType = %d, want 2", msg.CommsType)
+	}
+	// The GSSI reading past the basic-service element proves the 8-bit consumption
+	// stayed exact (a mis-sized basic-service read would corrupt this).
+	if msg.GroupSSI != 0x0ABCDE {
+		t.Errorf("GroupSSI = %#x, want 0xABCDE (basic-service read mis-aligned the stream?)", msg.GroupSSI)
+	}
+}
+
 func TestParseCMCE_DConnectOptionalPriorityAndGSSI(t *testing.T) {
 	const gssi = 0x0ABCDE
 	w := &cmceBitWriter{}

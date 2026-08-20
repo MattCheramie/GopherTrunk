@@ -414,6 +414,14 @@ func TestValidate(t *testing.T) {
 		{"soapy args remote:mtu mixed rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "antenna=RX1,remote:mtu=8000"}}}}, true},
 		// UHD frame-size make() args are legitimate and stay allowed.
 		{"soapy args recv_frame_size ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "num_recv_frames=512,recv_frame_size=16384"}}}}, false},
+		// sdr.input_sample_rate pre-decimation: must be an exact integer multiple
+		// of sample_rate; 0 / equal disables it.
+		{"input rate exact multiple ok", Config{SDR: SDRConfig{SampleRate: 2_500_000, InputSampleRate: 10_000_000}}, false},
+		{"input rate zero ok", Config{SDR: SDRConfig{SampleRate: 2_500_000, InputSampleRate: 0}}, false},
+		{"input rate equal ok", Config{SDR: SDRConfig{SampleRate: 2_500_000, InputSampleRate: 2_500_000}}, false},
+		{"input rate non-integer rejected", Config{SDR: SDRConfig{SampleRate: 2_400_000, InputSampleRate: 10_000_000}}, true},
+		{"input rate below sample rate rejected", Config{SDR: SDRConfig{SampleRate: 2_500_000, InputSampleRate: 1_000_000}}, true},
+		{"input rate above 20 MHz rejected", Config{SDR: SDRConfig{SampleRate: 1_000_000, InputSampleRate: 24_000_000}}, true},
 		// soapy_remote diversity (issue #1062): "" / "mrc" ok, anything else rejected.
 		{"soapy diversity mrc ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc"}}}}, false},
 		{"soapy diversity empty ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: ""}}}}, false},

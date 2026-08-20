@@ -24,7 +24,7 @@ var webRoundTripAllow = map[string][]string{
 	// Rarely-tuned SDR watchdog interval + the autotune enable flag; the web
 	// SDR section doesn't render a bespoke editor for either (they round-trip
 	// via the SDRConfig index signature). Editable in the TUI and raw YAML.
-	"SDRConfig": {"WatchdogIntervalMs", "Autotune", "CarrierOffsetWarnHz"},
+	"SDRConfig": {"WatchdogIntervalMs", "Autotune", "CarrierOffsetWarnHz", "InputSampleRate"},
 
 	// The LoRa section round-trips through the web Config Builder's generic
 	// index-signature editor; a bespoke typed editor in types.ts is a
