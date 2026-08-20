@@ -75,6 +75,20 @@ a channel to baseband, the signal is low-pass filtered and decimated down to the
 channel rate (48 kHz for 4800-baud C4FM, 144 kHz for TETRA), so the demodulator always runs
 at a fixed, low rate regardless of the capture rate.
 
+The same down-converter also decimates **captures** on demand, so a long recording need not be
+stored at the radio's full rate. Some SDRs cannot stream a low rate at all — the USRP B210's
+hardware sample-rate floor is ~1 MS/s, far above what a single narrowband channel needs — so
+GopherTrunk records at the hardware rate and decimates in software:
+
+- `gophertrunk capture -decimate N` records the full band at `sample-rate / N` (or
+  `-bandwidth <hz>` to carve a narrowband slice).
+- `--iq-capture …,decimate=N` decimates a live-daemon grab and writes a metadata sidecar with
+  the reduced rate.
+- `baseband.auto_record: { tap: wideband, decimate: N }` decimates event-triggered captures.
+
+Each anti-alias filters before downsampling, so a 1 MS/s B210 stream becomes an alias-free
+200 kS/s file at `decimate: 5` — one fifth the size, still wide enough to replay and debug.
+
 ## Relevance to SDR
 
 Decimation is what makes running [many channels](/reference/digital-down-converter/) from one

@@ -785,6 +785,15 @@ func (c Config) validateBaseband() []error {
 		default:
 			errs = append(errs, fmt.Errorf("baseband.auto_record: tap must be wideband|ddc, got %q", a.Tap))
 		}
+		if a.Decimate < 0 {
+			errs = append(errs, fmt.Errorf("baseband.auto_record: decimate must not be negative"))
+		}
+		if a.Decimate > 1 && a.TapDDC() {
+			// The ddc tap is already channelised to the pipeline rate
+			// (48/144 kHz); decimating it further would break the recorded
+			// channel's samples-per-symbol. Decimation is a wideband-tap lever.
+			errs = append(errs, fmt.Errorf("baseband.auto_record: decimate is only valid with tap: wideband (the ddc tap is already narrowband)"))
+		}
 		if _, err := a.CooldownDuration(); err != nil {
 			errs = append(errs, fmt.Errorf("baseband.auto_record: cooldown %q: %w", a.Cooldown, err))
 		}

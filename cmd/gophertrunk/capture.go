@@ -43,6 +43,7 @@ func runCapture(args []string) {
 	format := fs.String("format", "f32", "capture sample format: u8 | f32 | cs16 (f32 = GNU Radio cfile; cs16 = headerless 16-bit raw)")
 	centerHz := fs.Uint("center", 0, "narrowband slice centre in Hz (default: -freq); with -bandwidth, carves a channel from the captured wideband without retuning")
 	bandwidthHz := fs.Uint("bandwidth", 0, "narrowband slice bandwidth in Hz; when > 0 the capture is decimated to ~this rate around -center (must fit inside -freq ± sample-rate/2)")
+	decimate := fs.Uint("decimate", 0, "integer software-decimation factor: record the full band anti-alias decimated to sample-rate/decimate (a manageable long capture off a source like the USRP B210 whose hardware rate floor is ~1 MS/s). Mutually exclusive with -bandwidth")
 	protocol := fs.String("protocol", "", "protocol name written to the metadata sidecar (enables `test`; see `gophertrunk gen -list`)")
 	source := fs.String("source", "", "free-text provenance written to the metadata sidecar")
 	tune := fs.Float64("tune", 0, "fine software tune offset in Hz written to the metadata sidecar")
@@ -72,6 +73,11 @@ EXAMPLES:
   # a 2.4 MS/s grab centred there — a shareable .raw a fraction of the full size
   gophertrunk capture -freq 467913000 -sample-rate 2400000 -seconds 30 \
     -center 467913000 -bandwidth 50000 -format cs16 -out cc.raw
+
+  # USRP B210 (hardware rate floor ~1 MS/s): record the full band but software-
+  # decimate ×5 → an alias-free 200 kS/s file, a fifth the size, still replayable
+  gophertrunk capture -freq 467913000 -sample-rate 1000000 -seconds 60 \
+    -decimate 5 -format cs16 -protocol tetra -out cc.raw
 
   # List the SDRs this binary can capture from
   gophertrunk capture -list
@@ -164,7 +170,18 @@ FLAGS:`)
 	var ddc *ccdecoder.Downconverter
 	recRate := float64(*sampleRate)
 	recCenter := uint32(*freq)
-	if *bandwidthHz > 0 {
+	if *bandwidthHz > 0 && *decimate > 1 {
+		rep.Fatalf(2, "-bandwidth and -decimate are mutually exclusive (both decimate; pick one)")
+	}
+	if *decimate > 1 {
+		// Full-band integer decimation: keep the whole captured span, just at
+		// a lower rate. Same down-converter as the -bandwidth slice, targeted
+		// at sample-rate/decimate with no tuning offset (centre stays -freq).
+		ddc = ccdecoder.NewDownconverter(float64(*sampleRate), float64(*sampleRate)/float64(*decimate))
+		recRate = ddc.OutRateHz()
+		fmt.Printf("capture: software decimation ×%d → %.1f kHz effective rate\n",
+			*decimate, recRate/1e3)
+	} else if *bandwidthHz > 0 {
 		center := uint32(*centerHz)
 		if center == 0 {
 			center = uint32(*freq)

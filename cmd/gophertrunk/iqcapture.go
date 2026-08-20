@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
@@ -27,6 +30,15 @@ type iqCaptureSpec struct {
 	Path    string
 	Seconds int
 	Format  string // "f32", "u8", or "cs16"
+	// Decimate is the integer software-decimation factor applied to the
+	// recorded stream: the capture is anti-alias filtered and written at
+	// SDR-rate / Decimate, cutting the file size (and effective bandwidth)
+	// by the same factor. 0 or 1 records the full SDR rate (the historical
+	// behaviour). This is the remedy for a source like the USRP B210 whose
+	// hardware sample-rate floor (~1 MS/s) is far above the bandwidth a
+	// single narrowband channel needs — record at the floor, decimate in
+	// software to a manageable long capture.
+	Decimate int
 }
 
 // parseIQCaptureSpec parses "serial=<s>,path=<file>,seconds=<n>[,format=u8|f32]".
@@ -67,6 +79,12 @@ func parseIQCaptureSpec(s string) (iqCaptureSpec, error) {
 			default:
 				return iqCaptureSpec{}, fmt.Errorf("iq-capture: format must be u8, f32, or cs16, got %q", v)
 			}
+		case "decimate":
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				return iqCaptureSpec{}, fmt.Errorf("iq-capture: decimate must be an integer >= 1, got %q", v)
+			}
+			spec.Decimate = n
 		default:
 			return iqCaptureSpec{}, fmt.Errorf("iq-capture: unknown key %q", k)
 		}
@@ -89,6 +107,12 @@ func parseIQCaptureSpec(s string) (iqCaptureSpec, error) {
 // counter and surfaced once at the end so the operator knows the
 // capture is incomplete — drops are NOT retried (the primary IQ
 // stream is what the daemon needs unimpeded). Issue #402 diagnostic.
+//
+// When spec.Decimate > 1 the recorded stream is anti-alias decimated to
+// SDR-rate / Decimate before it hits disk, and a self-describing
+// `.metadata.json` sidecar is written next to the capture (carrying the
+// reduced rate + centre) so the smaller file replays correctly without the
+// operator having to remember the decimation factor.
 func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec, log *slog.Logger) error {
 	if broker == nil {
 		return fmt.Errorf("iq-capture: no broker for serial %q", spec.Serial)
@@ -98,11 +122,52 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 	if err != nil {
 		return fmt.Errorf("iq-capture: %w", err)
 	}
+
+	// Build the software decimator from the SDR rate the broker is streaming.
+	// A factor of 0/1 is a no-op (nil ddc = byte-identical to the old path).
+	baseRate := broker.SampleRateHz()
+	ddc := newCaptureDecimator(baseRate, spec.Decimate)
+	recRate := baseRate
+	if ddc != nil {
+		recRate = uint32(ddc.OutRateHz() + 0.5)
+	}
+
 	log.Info("iq-capture: started",
 		"serial", spec.Serial, "path", spec.Path,
-		"seconds", spec.Seconds, "format", spec.Format)
-	samples, bytesPerSample, drops, capErr := captureIQToFile(ctx, broker, spec.Path, format, spec.Seconds)
+		"seconds", spec.Seconds, "format", spec.Format,
+		"decimate", max(spec.Decimate, 1), "record_rate_hz", recRate)
+	samples, bytesPerSample, drops, capErr := captureIQToFile(ctx, broker, spec.Path, format, spec.Seconds, ddc)
+	if capErr == nil && ddc != nil {
+		// Only decimated captures get a sidecar: their on-disk rate differs
+		// from the configured sdr.sample_rate, so the file is unusable for
+		// replay without it. A full-rate capture keeps the historical
+		// no-sidecar behaviour (the operator supplies metadata explicitly).
+		meta := &siglab.Metadata{
+			Source:       fmt.Sprintf("gophertrunk iq-capture (decimate %d)", spec.Decimate),
+			SampleRateHz: float64(recRate),
+			CenterFreqHz: broker.CenterHz(),
+			Format:       format.String(),
+		}
+		metaPath := strings.TrimSuffix(spec.Path, filepath.Ext(spec.Path)) + ".metadata.json"
+		if werr := siglab.WriteMetadata(metaPath, meta); werr != nil {
+			log.Warn("iq-capture: metadata sidecar write failed", "path", metaPath, "err", werr)
+		}
+	}
 	return finishIQCapture(log, spec, samples, bytesPerSample, drops, capErr)
+}
+
+// newCaptureDecimator returns a down-converter that anti-alias decimates a
+// baseRateHz stream by an integer factor, or nil when no decimation is wanted
+// (factor <= 1, or an unknown base rate). It reuses ccdecoder.Downconverter —
+// the same rational-resample path the `gophertrunk capture -bandwidth` slice
+// and the live receiver DDC use — so a decimated capture has the identical
+// >60 dB anti-alias shaping and no third DDC implementation is introduced
+// (CLAUDE.md #764/#771: keep the DDC paths from diverging).
+func newCaptureDecimator(baseRateHz uint32, factor int) *ccdecoder.Downconverter {
+	if factor <= 1 || baseRateHz == 0 {
+		return nil
+	}
+	return ccdecoder.NewDownconverter(float64(baseRateHz), float64(baseRateHz)/float64(factor))
 }
 
 // captureIQToFile owns the full lifecycle of one raw-IQ capture: create the
@@ -114,7 +179,11 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 //
 // Shared by the `--iq-capture` CLI flag (runIQCapture) and the event-driven
 // IQ auto-recorder, so both produce byte-identical captures.
-func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, format siglab.SampleFormat, seconds int) (samples int64, bytesPerSample int, drops uint64, err error) {
+//
+// A non-nil ddc anti-alias decimates every chunk before it is encoded, so the
+// file lands at the down-converter's output rate (software decimation). A nil
+// ddc is a byte-identical pass-through of the historical full-rate path.
+func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, format siglab.SampleFormat, seconds int, ddc *ccdecoder.Downconverter) (samples int64, bytesPerSample int, drops uint64, err error) {
 	_, bytesPerSample = format.Decoder()
 	f, err := os.Create(path)
 	if err != nil {
@@ -123,7 +192,7 @@ func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, for
 
 	sub := broker.Subscribe()
 	defer sub.Close()
-	enc := siglab.NewCaptureWriter(f, format)
+	enc := newCaptureEncoder(f, format, ddc)
 
 	// Safety timer as an explicit select arm: the broker pauses fan-out when no
 	// primary StreamIQ session is running, so a receive-then-check deadline
@@ -144,10 +213,11 @@ func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, for
 				if !ok {
 					return errors.New("iq-capture: broker closed before capture finished")
 				}
-				if werr := enc.Write(chunk); werr != nil {
+				n, werr := enc.write(chunk)
+				if werr != nil {
 					return fmt.Errorf("write: %w", werr)
 				}
-				samples += int64(len(chunk))
+				samples += int64(n)
 				if time.Now().After(deadline) {
 					return nil
 				}
@@ -162,6 +232,42 @@ func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, for
 		streamErr = closeErr
 	}
 	return samples, bytesPerSample, sub.Dropped(), streamErr
+}
+
+// captureEncoder streams complex64 chunks to disk in a chosen sample format,
+// optionally anti-alias decimating each chunk first so a capture can be
+// recorded at a fraction of the SDR rate. A nil ddc makes write a
+// pass-through: byte-identical to encoding through siglab.CaptureWriter
+// directly, so an undecimated capture is unchanged.
+type captureEncoder struct {
+	enc     *siglab.CaptureWriter
+	ddc     *ccdecoder.Downconverter // nil ⇒ no decimation
+	scratch []complex64              // reused decimation output buffer
+}
+
+// newCaptureEncoder wraps w with the chosen format and optional decimator.
+func newCaptureEncoder(w io.Writer, format siglab.SampleFormat, ddc *ccdecoder.Downconverter) *captureEncoder {
+	return &captureEncoder{enc: siglab.NewCaptureWriter(w, format), ddc: ddc}
+}
+
+// write encodes one chunk, decimating it first when a down-converter is set,
+// and returns the number of samples actually written (post-decimation, so the
+// caller's running total reflects the on-disk length rather than the input).
+func (c *captureEncoder) write(chunk []complex64) (int, error) {
+	out := chunk
+	if c.ddc != nil {
+		out = c.ddc.Process(c.scratch, chunk)
+		c.scratch = out
+	}
+	if len(out) == 0 {
+		// A short input chunk can leave the polyphase decimator with no
+		// output this round; the samples are carried in its filter history.
+		return 0, nil
+	}
+	if err := c.enc.Write(out); err != nil {
+		return 0, err
+	}
+	return len(out), nil
 }
 
 func finishIQCapture(log *slog.Logger, spec iqCaptureSpec, samples int64, bytesPerSample int, drops uint64, runErr error) error {

@@ -271,6 +271,18 @@ type BasebandAutoRecordConfig struct {
 	//     tap holds all four voice timeslots of the control carrier — exactly the
 	//     channel worth sharing when a hard-to-decode call fires a trigger.
 	Tap string `yaml:"tap"`
+	// Decimate is the integer software-decimation factor applied to the
+	// wideband tap: the capture is anti-alias filtered and written at
+	// SDR-rate / Decimate, cutting the file size (and effective bandwidth) by
+	// the same factor while the metadata sidecar records the reduced rate so
+	// it still replays. 0 or 1 records the full SDR rate (the default). This
+	// is the remedy for a source like the USRP B210 whose hardware
+	// sample-rate floor (~1 MS/s) is far above the bandwidth a single
+	// narrowband channel needs — run the radio at the floor and decimate in
+	// software to a manageable long capture. Only valid with the wideband tap
+	// (the ddc tap is already narrowband); a value > 1 with tap: ddc is
+	// rejected at config load.
+	Decimate int `yaml:"decimate"`
 }
 
 // TapDDC reports whether triggered captures tap the narrowband DDC output rather
