@@ -98,6 +98,25 @@ func (c Config) validateSDR() []error {
 	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 200_000 || c.SDR.SampleRate > 20_000_000) {
 		errs = append(errs, errors.New("sdr.sample_rate must be between 200 kHz and 20 MHz"))
 	}
+	// InputSampleRate (native rate) must be an exact integer multiple of the
+	// decode SampleRate — the pre-decimation stage is integer-only. A value of 0
+	// or == SampleRate means no decimation.
+	if c.SDR.InputSampleRate != 0 {
+		decodeRate := c.SDR.SampleRate
+		if decodeRate == 0 {
+			decodeRate = 2_048_000 // sdr.DefaultSampleRateHz; repeated to avoid an import cycle
+		}
+		switch {
+		case c.SDR.InputSampleRate < decodeRate:
+			errs = append(errs, fmt.Errorf("sdr.input_sample_rate %d must be >= sdr.sample_rate %d (it is the higher native rate decimated down to sample_rate)",
+				c.SDR.InputSampleRate, decodeRate))
+		case c.SDR.InputSampleRate%decodeRate != 0:
+			errs = append(errs, fmt.Errorf("sdr.input_sample_rate %d must be an exact integer multiple of sdr.sample_rate %d (decimation is integer-only)",
+				c.SDR.InputSampleRate, decodeRate))
+		case c.SDR.InputSampleRate > 20_000_000:
+			errs = append(errs, errors.New("sdr.input_sample_rate must be <= 20 MHz"))
+		}
+	}
 	seenSerials := make(map[string]int, len(c.SDR.Devices))
 	for i, d := range c.SDR.Devices {
 		switch d.Role {

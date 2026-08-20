@@ -428,6 +428,21 @@ confirmation before any close-as-completed.
   import, so when this fires, look at what got slower on the decode side (the DMO colour brute
   force above was one such cause) — and check for the companion
   `ccdecoder: decode can't keep up with real time` WARN, which confirms CPU rather than network.
+- **`sdr.input_sample_rate` is a systemwide pre-decimation stage at the Device boundary.** When
+  set (and an exact integer multiple of `sdr.sample_rate`), the hardware runs at the higher NATIVE
+  rate and `internal/sdr/decimate.Device` integer-decimates (polyphase anti-alias FIR,
+  `dsp.NewResampler(1, M, …)`) down to `sample_rate` BEFORE anything downstream — DDC bank, demods,
+  recording taps, `baseband.auto_record`/iqtap, spectrum. It is wired via `Pool.WrapDevice`
+  (`sdrInputDecimator` in `daemon.go`) so it applies in `OpenWith` AND survives `Reacquire`; the
+  wrapper programs the inner device at `sample_rate*M` and streams the M:1 result, so `sample_rate`
+  stays the DECODE rate every existing `cfg.SDR.SampleRate` reader sees (zero downstream audit — the
+  whole reason it wraps at the Device boundary rather than threading a native/effective split
+  through the daemon). Two things it deliberately does NOT touch: the pre-combine `diversity_capture`
+  tap lives INSIDE the soapyremote driver, below the wrapper, so it still records native branches
+  (correct — a diversity A/B needs native); and it does NOT fix front-end degradation baked into a
+  high native-rate capture (#764 — decimating 10→2.5 MS/s does not recover the Airspy's native-clock
+  phase noise). It is a load/recording-size lever, not an RF fix. Pinned by
+  `internal/sdr/decimate/decimate_test.go` (rate math, ActualSampleRate÷M, anti-alias rejection).
 - **P25 Phase 1 weak-signal voice is the under-equipped decode path — diagnosed, NOT yet
   fixed (needs a capture).** An operator whose hardware Astro Spectra decodes a marginal
   P25 Phase 1 voice call cleanly gets only ~4-5 IMBE frames from GT on the same antenna.

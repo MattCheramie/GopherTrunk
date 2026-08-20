@@ -57,6 +57,13 @@ type Pool struct {
 	entries []*PoolEntry
 	log     *slog.Logger
 	bus     *events.Bus
+	// wrapDevice, when set (via PoolOpenOptions.WrapDevice), wraps every device
+	// the moment it is opened — in OpenWith and in Reacquire alike — so a
+	// systemwide stage such as the sdr.input_sample_rate pre-decimator applies to
+	// every source and survives a USB-disconnect reacquire. A func rather than a
+	// concrete type keeps the pool free of a dependency on the wrapper package
+	// (which itself imports this one).
+	wrapDevice func(Device) Device
 }
 
 // NewPool constructs an empty pool. The optional bus is used to publish
@@ -150,6 +157,14 @@ type PoolOpenOptions struct {
 	// that they want only the devices they named, not whatever else
 	// happens to be on the USB bus.
 	Strict bool
+	// WrapDevice, when non-nil, wraps every device the moment it is opened
+	// (before SetSampleRate) — in OpenWith and in every later Reacquire — so a
+	// systemwide Device-boundary stage applies uniformly. Today it carries the
+	// sdr.input_sample_rate pre-decimator: the wrapper programs the inner device
+	// M times faster than the rate passed here and streams the M:1-decimated
+	// result, so SampleRateHz stays the DECODE rate every downstream consumer
+	// sees. nil (the default) opens devices unwrapped, exactly as before.
+	WrapDevice func(Device) Device
 }
 
 // Open is a backwards-compatible shim over OpenWith. It preserves the
@@ -198,6 +213,9 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 	if rate == 0 {
 		rate = DefaultSampleRateHz
 	}
+	// Remember the device wrapper so Reacquire re-wraps a re-opened device the
+	// same way (a systemwide stage must survive a USB-disconnect cycle).
+	p.wrapDevice = opts.WrapDevice
 
 	type discovered struct {
 		drv  Driver
@@ -283,6 +301,9 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 				"serial", d.info.Serial,
 				"err", err)
 			continue
+		}
+		if p.wrapDevice != nil {
+			dev = p.wrapDevice(dev)
 		}
 		if err := dev.SetSampleRate(rate); err != nil {
 			p.log.Error("set sample rate failed",
@@ -715,6 +736,11 @@ func (p *Pool) Reacquire(serial string, sampleRateHz uint32) (*PoolEntry, error)
 	dev, err := drv.Open(freshInfo.Index)
 	if err != nil {
 		return nil, fmt.Errorf("sdr: Reacquire: open serial %q: %w", serial, err)
+	}
+	if p.wrapDevice != nil {
+		// Re-apply the systemwide Device-boundary stage (e.g. input_sample_rate
+		// pre-decimation) to the re-opened device, as OpenWith did originally.
+		dev = p.wrapDevice(dev)
 	}
 	if err := dev.SetSampleRate(rate); err != nil {
 		_ = dev.Close()

@@ -92,6 +92,7 @@ var fieldMetas = map[string]FieldMeta{
 
 	// ---- SDR ---------------------------------------------------------------
 	"SDRConfig.SampleRate":          {Label: "Sample rate", Hz: true, Help: "IQ rate every tuner is programmed to (200 kHz–20 MHz). RTL dongles enforce their own ~225 kHz floor and cap ~3.2 MHz; higher needs a wideband soapy_remote source. Primary CPU-load lever."},
+	"SDRConfig.InputSampleRate":     {Label: "Input sample rate", Hz: true, Help: "Native tuner rate (Hz) integer-decimated down to Sample rate before any decode/record — a systemwide pre-decimation stage for a front end that must run faster than you decode (e.g. an Airspy pinned to 10 MS/s). Must be an exact multiple of Sample rate. 0 or = Sample rate disables it."},
 	"SDRConfig.Devices":             {Help: "Locally-attached USB SDR dongles, selected by serial."},
 	"SDRConfig.RTLTCP":              {Label: "rtl_tcp sources", Help: "Remote rtl_tcp endpoints mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
 	"SDRConfig.SoapyRemote":         {Label: "SoapyRemote sources", Help: "Remote SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, RTL) mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
