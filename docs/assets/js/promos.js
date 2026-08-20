@@ -17,6 +17,12 @@
  *   data-promo-trigger-time="<ms>"                    show after N ms (optional)
  *   data-promo-trigger-scroll="<0..1>"                show at scroll fraction (optional)
  *   data-promo-frequency="once|session|always"        dedup scope (default once)
+ *   data-promo-persist="show|dismiss"                 when the seen flag is
+ *                                                     written: on reveal (default)
+ *                                                     or only on dismissal — for
+ *                                                     notices that must re-appear
+ *                                                     on every page view until
+ *                                                     explicitly acknowledged
  *   data-promo-fallback="inline"                      if the modal is suppressed
  *                                                     (content/ad blocker), relocate
  *                                                     the card to the page midpoint
@@ -98,6 +104,8 @@
     this.scrollAt = parseFloat(el.getAttribute('data-promo-trigger-scroll'));
     this.isModal = this.variant === 'popup';
     this.fallback = el.getAttribute('data-promo-fallback') || '';
+    this.persist = el.getAttribute('data-promo-persist') || 'show';
+    this.debugShown = false;
     this.shown = false;
     this.inlined = false;
     this.closed = false;
@@ -151,9 +159,12 @@
     opts = opts || {};
 
     // Write the seen flag on show (not on interaction) so an ignored or
-    // reloaded promo does not re-appear. The QA override skips this so repeated
-    // debug loads keep working.
-    if (!opts.debug) markSeen(this.id, this.frequency);
+    // reloaded promo does not re-appear. persist="dismiss" promos instead
+    // write it in close() — they re-appear on every page view until the
+    // visitor dismisses them. The QA override skips this so repeated debug
+    // loads keep working.
+    this.debugShown = !!opts.debug;
+    if (!opts.debug && this.persist !== 'dismiss') markSeen(this.id, this.frequency);
 
     var el = this.el;
     el.removeAttribute('hidden');
@@ -322,6 +333,9 @@
   Promo.prototype.close = function (method) {
     if (this.closed || !this.shown) return;
     this.closed = true;
+
+    // persist="dismiss": the dismissal (acknowledgement) is what's remembered.
+    if (this.persist === 'dismiss' && !this.debugShown) markSeen(this.id, this.frequency);
 
     var el = this.el;
     el.setAttribute('hidden', '');
