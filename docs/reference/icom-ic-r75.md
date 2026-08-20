@@ -123,6 +123,12 @@ this well-corroborated a price band, but check current eBay sold listings
 anyway. Serviceability is the best of the classics: enormous production run,
 shared Icom parts, active community.
 
+**Used-market viability:** the best of any classic here. Seventeen years of
+production means deep supply on eBay at any given moment, honest prices, and
+eHam owner reviews that run solidly positive for the money. Where a Drake or
+AOR purchase is a months-long hunt, a good R75 is usually a weeks-long one —
+and if you buy badly, you're out $300, not $1,300.
+
 ## GopherTrunk alternative
 
 The product category the R75 belongs to was ended by software-defined radio:

@@ -131,6 +131,12 @@ listings skew ambitious. **Check eBay sold listings, not asking prices,
 before you pay.** Drake is gone, but the DrakeR8 groups.io community and
 independent techs keep these alive, with parts via donor units.
 
+**Used-market viability:** among the best of any classic. The faults are
+few and specific, the fixes documented, and demand stays deep enough that a
+well-bought R8B has historically held its money — which is also why a
+patient buyer beats an eager one. The VHF converter is the accessory that
+moves price most; confirm whether it's fitted rather than "available".
+
 ## GopherTrunk alternative
 
 SDRs are what killed this product category: a ~$200 HF SDR rivals or beats a

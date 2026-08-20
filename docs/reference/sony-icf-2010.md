@@ -121,6 +121,13 @@ listings median around €120), and collectors pay near $1,000 for sealed
 boxed examples. The hobbyist repair ecosystem is superb — this is one
 classic you can realistically fix yourself.
 
+**Used-market viability:** excellent, with one asterisk. Supply is deep
+(that 17-year production run), the repair ecosystem is the best of any
+radio on our list, and parts kits are a few dollars — but the number of
+blown-front-end units in circulation means the *untested* market is a
+minefield. A seller who answers the 1620 kHz question is selling a radio; a
+seller who won't is selling a lottery ticket.
+
 ## GopherTrunk alternative
 
 The ICF-2010's descendants aren't radios — they're SDRs. A ~$200 HF SDR (or

@@ -117,7 +117,10 @@ recommendation:[^universal]
 3. **Sync lock in both modes** — verify selectable and double sideband both
    lock.
 4. **What's in the box.** The SP-150 speaker, PR-150 preselector, and keypad
-   drive the price; get the inventory in writing.
+   drive the price; get the inventory in writing. A complete station with
+   speaker and preselector is a different purchase — and a different
+   price — from a bare radio, and the late-1997 Europa variant carries its
+   own following.
 
 Price honestly: typical asks run **$250–450**, one new-old-stock example
 asked ~$750 — but the data is thin, supply is mostly UK (radioworld.co.uk
@@ -125,6 +128,12 @@ and similar dealers), and US listings are sparse. **Check eBay sold listings
 and be patient**; the right unit may take months to surface. Serviceability
 is good: a simple, well-understood discrete design, though Lowe itself no
 longer services them.
+
+**Used-market viability:** mechanically the safest classic here — the
+owner-survey reliability record is near-spotless and the discrete design is
+easy to service — but commercially the thinnest after the AR7030. US supply
+is sparse and UK dealers set the tone, so shipping, patience, and a saved
+eBay search are part of the purchase.
 
 ## GopherTrunk alternative
 

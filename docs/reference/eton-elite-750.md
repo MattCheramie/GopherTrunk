@@ -124,6 +124,14 @@ anything, ever.
   used-classic route (or a hybrid like Tecsun's H-501x) becomes the answer —
   our [guide](/best-desktop-shortwave-receivers/) tracks the state of play.
 
+Who is it actually for? Someone who wants a handsome, room-filling radio on
+the shelf, tuned to international broadcasters in the evening, without
+learning a used-market checklist or connecting anything to a computer. For
+that listener it delivers, and the warranty is worth something real. For
+anyone who says "DX", "utility", or "weak signal" in their first sentence,
+it's the wrong radio — and this site would rather tell you that than sell
+you it.
+
 ## GopherTrunk alternative
 
 The Elite 750 exists because some people rightly want a radio that looks and

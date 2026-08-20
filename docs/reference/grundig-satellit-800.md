@@ -127,6 +127,13 @@ are asking prices — condition and vintage swing real value a lot, so **check
 eBay sold listings first**. Serviceability is decent: the SW8 heritage means
 Drake-literate techs can work on it, with parts via donor units.
 
+**Used-market viability:** good, with the lottery caveat. Plenty were sold,
+so supply is steady and prices stay reasonable; the SW8-derived design keeps
+Drake-literate techs in play, and the one killer fault (the 2L41 choke) has
+a documented fix. The variable isn't age so much as birth date — which is
+why the production-date question does more work here than on any other
+classic.
+
 ## GopherTrunk alternative
 
 SDRs ended this product category — a ~$200 HF SDR out-receives the Satellit

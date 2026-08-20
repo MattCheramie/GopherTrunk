@@ -127,6 +127,12 @@ change hands at **$450–700**, but that band is built from asking prices —
 check eBay sold listings before you pay. Working for you: excellent
 documentation and one of the most active repair scenes of any classic.
 
+**Used-market viability:** high maintenance, high support. Every known
+fault has a documented fix, commercial repair exists, and the recap/dot-fix
+knowledge base is deep — so a serviced R-5000 is a safe long-term keeper,
+and an unserviced one is a known-quantity project rather than a mystery.
+Price the difference between the two accordingly; it's real money.
+
 ## GopherTrunk alternative
 
 SDRs ended the tabletop-receiver category: a ~$200 HF SDR outruns the R-5000

@@ -129,6 +129,12 @@ $1,200–2,000 (to ~$3,000 for top examples) are propped up by JRC prestige,
 and confirmed sold prices are thin. **Check eBay sold listings before
 believing any ask.**
 
+**Used-market viability:** good hardware, tricky pricing. The marine-grade
+build and modular boards mean survivors are usually healthy survivors, and
+board swaps from donor units are a realistic repair path. The risk is
+overpaying: prestige asks well above thin sold data make the NRD-545 the
+classic where patience pays the largest dividend.
+
 ## GopherTrunk alternative
 
 Here's the irony: the NRD-545's DSP IF was the road that led straight to the

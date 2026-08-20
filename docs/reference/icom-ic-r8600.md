@@ -120,6 +120,15 @@ Antenna Farm all stock it).[^gigaparts] Two practical points:
 2. **Used units** run about $2,000–2,400 and are low-risk — this is modern
    Icom hardware, not a 30-year-old classic.
 
+Who actually buys one? Three groups, in practice: HF listeners who want
+classic-tabletop operation with modern DSP and none of the used-market
+checklist; monitoring enthusiasts who want one box that covers shortwave in
+the evening and public-safety/aviation VHF-UHF the rest of the day; and
+owners of classic receivers who want a reference-grade modern set beside
+them. For all three, the fact that it's *supported* — firmware, warranty,
+dealers who answer the phone — is worth real money in a category where the
+alternative is a 25-year-old radio and a soldering iron.
+
 ## GopherTrunk alternative
 
 The IC-R8600 *is* an SDR — Icom just built the computer in. That's exactly

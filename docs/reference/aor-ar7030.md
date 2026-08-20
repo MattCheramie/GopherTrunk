@@ -131,6 +131,13 @@ paying anything.** Serviceability is the weakest of the classics: AOR UK is
 gone and a small circle of UK specialists services them — harder to keep
 alive than the Japanese sets.
 
+**Used-market viability:** the trickiest of the classics. Supply is
+UK-skewed, the scarce part (the display) is the failure-prone part, and the
+specialist service base is a small circle rather than a scene. None of that
+argues against ownership — it argues for buying a documented, working,
+remote-complete example at a verified-sold price rather than the first ask
+you see.
+
 ## GopherTrunk alternative
 
 Software-defined radio is what ended this product category — a ~$200 HF SDR
