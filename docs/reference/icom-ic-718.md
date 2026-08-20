@@ -110,6 +110,12 @@ filters, no 6 m, no FM, no tuner, no USB, and a receiver that a strong
 neighboring signal can walk over. Every gripe was forgivable at $600. At $930
 NOS they aren't — which is the honest core of this review.
 
+If you do shop used, the options matter more than cosmetics: a unit with the
+**UT-106 DSP board** (fitted to many later radios) and an optional **CW
+filter** is meaningfully better on the air than a bare one, and those boards
+are harder to source separately than the radios are. Ask specifically; sellers
+often don't know what's inside.
+
 ## Programming &amp; software
 
 CI-V CAT works with the standard ecosystem (WSJT-X, fldigi, loggers) through a

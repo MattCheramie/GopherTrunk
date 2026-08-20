@@ -107,6 +107,14 @@ noise, no native USB audio, and the batch-to-batch firmware/QC variability that
 comes with the price. None of the gripes are surprises; all of them are
 documented in a very large, very active owner community.
 
+The detachable faceplate deserves its own mention: with the head remoted, the
+body tucks under a seat or into a pack frame, which is why G90s turn up as
+truck rigs and bicycle-mobile stations as often as desk radios. Between that,
+the ~8 A draw, and the tuner, it's the rare radio where the "base station"
+label undersells it — it's really a go-anywhere HF station that happens to be
+cheap. Watch Radioddity's coupon churn before paying sticker; the street price
+moves.
+
 ## Programming &amp; software
 
 CAT control uses an Icom-like protocol subset, so most logger/digimode software

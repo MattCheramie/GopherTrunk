@@ -123,7 +123,17 @@ repairability, and prices reward patience. Expect originals toward the **$600**
 end, clean 200 W Mark Vs toward and above **$1,200**, with an $800 like-new
 Mark V Field (with filters) as a recent reference listing — but aggregate
 sold-price data is genuinely thin, so **check current eBay sold listings**
-before anchoring on any number, ours included.
+before anchoring on any number, ours included. Filters move value too: units
+loaded with the optional Collins mechanical filters are worth a real premium,
+because sourcing them separately now is its own treasure hunt.
+
+## Programming &amp; software
+
+Station integration is vintage but workable: Yaesu CAT over **RS-232** is
+still supported by N1MM and Ham Radio Deluxe legacy drivers, so contest
+logging and basic frequency control work with a cheap USB-serial adapter.
+There's no soundcard, no CHIRP support, and no firmware to update — digital
+modes mean an external audio interface, the same as every radio of its era.
 
 ## GopherTrunk alternative
 

@@ -108,6 +108,14 @@ UI**, the **narrow internal tuner range**, **fan noise** on digital modes, and
 the receiver being merely good in an era when similar money buys direct-sampling.
 None of these killed its popularity, because nothing else does its job.
 
+The discontinuation sharpens the used-market question too. Used FT-991As run
+**$900–1,100**, and with production ended that supply is what the "one radio
+for everything" niche will live on — so a new unit at $1,370 with a three-year
+warranty is arguably the better deal than a used one at $1,000, a calculus that
+flips for most radios. If Fusion doesn't matter to you and repeaters are an
+afterthought, though, don't pay the coverage premium at all: the money goes
+further on a dedicated HF rig.
+
 ## Programming &amp; software
 
 The VHF/UHF side gives it real memory-programming needs, and it's covered:

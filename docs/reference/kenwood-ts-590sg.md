@@ -106,6 +106,13 @@ from a small top-firing speaker, and — above all — no panadapter at a price
 where every SDR competitor ships one. Nothing on the gripe list touches
 performance; all of it touches experience.
 
+Value math worth running: used TS-590SGs go for **$1,100–1,300**, and the older
+TS-590S — the 2010 original this radio refines — sells for less still while
+keeping the same fundamental receiver design. For a CW operator on a budget, a
+used 590S is one of the quiet bargains of the hobby; for everyone else, the
+gap between a used SG and a new one is small enough that the warranty usually
+wins.
+
 ## Programming &amp; software
 
 Kenwood's PC ecosystem is free and genuinely good: **ARCP-590G** for control and

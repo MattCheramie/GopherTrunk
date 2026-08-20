@@ -83,6 +83,13 @@ No dealer sells it new; parts are hobbyist and aftermarket (eBay capacitor kits
 are literally a cottage industry). That's not a warning against buying one —
 it's the frame for *how* to buy one, below.
 
+Don't expect modern conveniences: there's no scope, no DSP, and computer
+control exists only through the optional IF-10 serial kit, so logging and
+digital modes mean audio cables and manual frequency entry. Owners who love
+this radio love it *because* of that — operating one is all knobs, meters, and
+receiver — and it pairs naturally with a modern SDR doing the watching (more
+on that below).
+
 **License note:** transmitting requires an FCC amateur license (Part 97,
 Technician minimum, General for most HF privileges). Listening requires none.
 

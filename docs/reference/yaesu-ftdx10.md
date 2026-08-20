@@ -113,6 +113,14 @@ like the IC-7300 there's no separate receive-antenna input for a Beverage or
 loop — a real omission at this level, and one the
 [TS-590SG](/reference/kenwood-ts-590sg/) actually covers.
 
+A word on the "fire sale" chatter: Yaesu's $300 rebate (running through August
+31, 2026) spawned a groups.io thread speculating the FTDX10 is being cleared
+out. We found **no discontinuation announcement** — Yaesu runs rolling rebates
+the way Icom does, and this one simply makes an exceptional receiver cheaper.
+Treat the rumor as a rumor; treat the ~$1,400 net price as the real story. If
+Yaesu ever does replace it, the resale floor on a radio with these measured
+numbers will stay firm — receivers this good don't depreciate like features do.
+
 ## Programming &amp; software
 
 Yaesu CAT over USB drives WSJT-X, N1MM, Win4Yaesu and the rest of the standard

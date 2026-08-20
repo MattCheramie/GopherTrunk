@@ -101,10 +101,9 @@ comparable across all three.
 
 Excellent **RF performance** from the direct-sampling receiver, the best
 **Usability** in the class (touchscreen waterfall, one-cable digital), and
-unbeatable **Value** at ~$1,040 with a decade-deep **Ecosystem** of guides and
-presets. It's in run-out ahead of the IC-7300MK2 — buy the rebated original or
-wait for the MK2's connectivity, but the recommendation stands while new stock
-is real.
+unbeatable **Value** at ~$1,040 with a decade-deep **Ecosystem**. In run-out
+ahead of the IC-7300MK2 — the recommendation stands while new rebated stock is
+real.
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B01M10HJXW?tag=gophertrunk-20" rel="nofollow sponsored noopener">IC-7300 on Amazon &rarr;</a> · [IC-7300 review](/reference/icom-ic-7300/)
 
 ### 2. Yaesu FTDX10 — best receiver under $2,000
@@ -217,8 +216,6 @@ it's still a fine first radio.
 - **Classic-station romantic?** [FT-1000MP](/reference/yaesu-ft-1000mp/) for
   contest iron, [TS-940S](/reference/kenwood-ts-940s/) for analog silk — both
   used-only, both wanting service history.
-- **Not licensed yet?** Listen first:
-  [$30 RTL-SDR + GopherTrunk](/best-sdr-for-gophertrunk/).
 
 ## Bottom line
 
@@ -227,9 +224,8 @@ people in 2026 — even in run-out, nothing near its price matches the whole
 package. The **[FT-991A](/reference/yaesu-ft-991a/)** is the do-everything
 last-call, the **[G90](/reference/xiegu-g90/)** the cheapest real ticket to HF,
 and a clean **[FT-1000MP](/reference/yaesu-ft-1000mp/)** the smart classic.
-Need the rig for the car or the trail instead? See
+Need the rig for the car or the trail instead? Same rubric, same honesty:
 [best mobile ham radios](/best-mobile-ham-radios/) and
-[best handheld ham radios](/best-handheld-ham-radios/) — same rubric, same
-honesty. And whatever you buy, remember the receive side is free: a
-[$30 SDR running GopherTrunk](/best-sdr-for-gophertrunk/) monitors, records,
-and logs your local ham bands — no license, no transceiver, no excuses.
+[best handheld ham radios](/best-handheld-ham-radios/). And the receive side is
+free: a [$30 SDR running GopherTrunk](/best-sdr-for-gophertrunk/) monitors,
+records, and logs your local ham bands — no license, no transceiver required.

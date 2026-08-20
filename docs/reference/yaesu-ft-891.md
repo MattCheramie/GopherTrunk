@@ -102,11 +102,19 @@ Technician minimum; most HF phone comes with General). Listening needs none.
 ## What owners praise and gripe about
 
 Praise: full power in a tiny box, the receiver, the toughness — this is the rig
-that lives in backpacks and truck cabs and keeps working. It's a
-[POTA](/reference/aprs/) -era phenomenon: cheap enough to risk outdoors, good
-enough to win pileups from a picnic table. Gripes: the menus, the screen, the
-missing tuner and USB audio, the fan. The pattern is consistent — everything
-wrong with it is ergonomic, everything right with it is RF.
+that lives in backpacks and truck cabs and keeps working. It's a POTA-era
+phenomenon: cheap enough to risk outdoors, good enough to win pileups from a
+picnic table. Gripes: the menus, the screen, the missing tuner and USB audio,
+the fan. The pattern is consistent — everything wrong with it is ergonomic,
+everything right with it is RF.
+
+Price-wise it's a moving target in a good way: recent US street runs
+$639.95–699.95 (EU ~€725) and Yaesu's frequent rebates regularly shave more
+off. Budget realistically, though — the out-the-door cost of an FT-891
+*station* includes a tuner (~$100–200 unless your antennas are resonant), a
+digital-modes interface if you want FT8, and a 25 A supply. Even fully kitted
+it undercuts everything above it on this list, which is exactly why it stays
+recommended year after year.
 
 ## Programming &amp; software
 

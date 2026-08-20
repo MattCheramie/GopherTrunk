@@ -82,8 +82,16 @@ close-in dynamic range.
 Ergonomics are classic Icom — a big touchscreen plus real knobs — though the menu
 tree runs deeper than the 7300's, and early units went through a firmware
 maturation period. The one recurring community gripe is mundane: the **fan runs
-frequently and audibly** in a quiet shack. Reliability is otherwise regarded as
-good.
+frequently and audibly** in a quiet shack — a persistent eHam theme worth
+knowing if your operating position doubles as a quiet office. Reliability is
+otherwise regarded as good.
+
+On price: R&L had it at $3,499.95 in August 2026, with historical list prices
+reaching ~$3,900 before Icom's rolling rebates — so shop the rebate cycle
+rather than the sticker. The used market runs **$2,600–3,000**, and a clean
+used 7610 is one of the better ways into flagship-class HF: unlike vintage
+iron, it's a current-production radio with ongoing firmware support, so a used
+unit gives up nothing but the warranty.
 
 ## Bands, modes &amp; power
 
