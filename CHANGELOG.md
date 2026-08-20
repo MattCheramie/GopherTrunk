@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Docs
+- **Documented the minimum macOS version (12 Monterey).** macOS binaries link
+  against system APIs that first shipped in macOS 12 (e.g.
+  `SecTrustCopyCertificateChain`), so on macOS 11 and older they abort at launch
+  with `dyld: Symbol not found`. The requirement is now stated in the README,
+  the [macOS install guide](docs/install-macos.md) (a Requirements callout plus
+  a troubleshooting row for the exact `dyld` error), and the
+  [downloads page](docs/downloads.md). Docs only — no behaviour change (issue
+  #1096).
+
 ### Fixed
 - **Conventional/analog scanner recordings no longer end in a loud multi-second
   noise tail** (issue #1090). The scanner-side hangtime debounce (#1091) fixed
