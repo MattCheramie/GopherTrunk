@@ -135,6 +135,18 @@ type ControlChannel struct {
 	// dropped on release. Guarded by mu.
 	callGroups map[uint16]uint32
 
+	// callSrc maps a CMCE 14-bit call identifier to the calling / transmitting
+	// party ISSI (the source radio), learned from any PDU that carries a party
+	// element (D-SETUP's calling party, D-TX-GRANTED's transmitting party). ETSI
+	// aggressively compresses the traffic-channel and mid-call signalling: a
+	// D-CONNECT, a follow-on grant, or a MAC-RESOURCE addressed only by call
+	// identifier carries NO party field, so the source would otherwise be blank
+	// after the setup burst (the individual-call "missing SRC" symptom). This is
+	// the persistent CallIdentifier ↔ Source-ISSI binding that lets classifyParties
+	// restore the caller across the whole call. Lazily built; dropped on release.
+	// Guarded by mu.
+	callSrc map[uint16]uint32
+
 	// lastTalker records the last-logged transmitting party (src SSI) per group
 	// (GSSI). D-TX-GRANTED is rebroadcast every few seconds for the same talker —
 	// and keeps coming after GT's voice-follow drops on hangtime while the group
@@ -948,10 +960,37 @@ func (c *ControlChannel) resolveGroup(callID uint16, addrSSI uint32) uint32 {
 	return addrSSI
 }
 
+// rememberCallSource records the call-identifier → calling/transmitting party
+// (source ISSI) mapping learned from a party-bearing PDU (D-SETUP calling party,
+// D-TX-GRANTED transmitting party), so a later party-less PDU on the same call
+// (a D-CONNECT, a follow-on grant addressed only by call identifier) can restore
+// the source. No-op for a zero SSI.
+func (c *ControlChannel) rememberCallSource(callID uint16, ssi uint32) {
+	if ssi == 0 {
+		return
+	}
+	c.mu.Lock()
+	if c.callSrc == nil {
+		c.callSrc = make(map[uint16]uint32)
+	}
+	c.callSrc[callID] = ssi
+	c.mu.Unlock()
+}
+
+// resolveCallSource returns the calling/transmitting party (source ISSI) learned
+// for a call identifier, or 0 when none is known.
+func (c *ControlChannel) resolveCallSource(callID uint16) uint32 {
+	c.mu.Lock()
+	ssi := c.callSrc[callID]
+	c.mu.Unlock()
+	return ssi
+}
+
 // forgetCall drops a call-identifier mapping once its call has been released.
 func (c *ControlChannel) forgetCall(callID uint16) {
 	c.mu.Lock()
 	delete(c.callGroups, callID)
+	delete(c.callSrc, callID)
 	c.mu.Unlock()
 }
 

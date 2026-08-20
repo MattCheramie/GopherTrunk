@@ -430,6 +430,25 @@ func (c *ControlChannel) classifyParties(g *VoiceGrant, m MACResource, msg CMCEM
 		}
 		g.Individual = true
 	}
+	// This PDU carried no calling/transmitting party, so the source is still
+	// blank — restore it from the call's learned source (bound at D-SETUP /
+	// D-TX-GRANTED). ETSI strips the SSIs from compressed mid-call signalling, so
+	// without this a D-CONNECT / follow-on grant loses the caller after the setup
+	// burst. Guarded against re-stamping the destination as its own source.
+	c.backfillCallSource(g, msg.CallIdentifier)
+}
+
+// backfillCallSource restores a grant's blank source from the persistent
+// call-identifier → source-ISSI binding (rememberCallSource). No-op when the
+// source is already known, the call identifier is absent, or the learned source
+// is the grant's own destination (which would surface a "group X, source X").
+func (c *ControlChannel) backfillCallSource(g *VoiceGrant, callID uint16) {
+	if g.SourceSSI != 0 || callID == 0 {
+		return
+	}
+	if src := c.resolveCallSource(callID); src != 0 && src != g.DestSSI {
+		g.SourceSSI = src
+	}
 }
 
 // handleCMCE acts on a decoded CMCE call-control PDU that rode in a MAC-RESOURCE
@@ -453,6 +472,11 @@ func (c *ControlChannel) handleCMCE(m MACResource, msg CMCEMessage) {
 		if !c.isIndividual(gssi) {
 			c.rememberCall(msg.CallIdentifier, gssi)
 		}
+		// Bind the call identifier to its calling party (D-SETUP carries it) so a
+		// later party-less PDU on this call — a D-CONNECT, a follow-on grant — can
+		// restore the source that ETSI strips from the compressed mid-call
+		// signalling (the individual-call "missing SRC" symptom).
+		c.rememberCallSource(msg.CallIdentifier, msg.PartySSI)
 	case CMCETypeDRelease, CMCETypeDDisconnect:
 		// Both end the call: D-RELEASE from the SwMI, D-DISCONNECT the
 		// infrastructure-initiated disconnect (EN 300 392-2 §14.5.1.3.3).
@@ -463,6 +487,9 @@ func (c *ControlChannel) handleCMCE(m MACResource, msg CMCEMessage) {
 		if msg.PartySSI != 0 {
 			gssi := c.resolveGroup(msg.CallIdentifier, m.Address.SSI)
 			c.publishTalker(gssi, msg.PartySSI)
+			// The transmitting party is the current source for this call; bind it so
+			// a follow-on party-less grant restores it.
+			c.rememberCallSource(msg.CallIdentifier, msg.PartySSI)
 		}
 	case CMCETypeDTxCeased:
 		// Transmission boundary within a call; no engine action today (a

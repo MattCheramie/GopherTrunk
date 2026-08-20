@@ -76,6 +76,70 @@ func TestClassifyPartiesIndividualSelfCall(t *testing.T) {
 	}
 }
 
+// TestCallSourceRestoredMidCall is the failing-first regression for the
+// individual-call "missing SRC" symptom (the TMO private-call Caveat A): ETSI
+// strips the source/destination SSIs out of the compressed mid-call signalling,
+// so a D-CONNECT / follow-on grant that carries only the call identifier has no
+// party field. The persistent call-identifier → source-ISSI binding learned at
+// D-SETUP must restore the caller on that later PDU; before the binding the
+// source is blank after the setup burst.
+func TestCallSourceRestoredMidCall(t *testing.T) {
+	cc := New(Options{FrequencyHz: 467_913_000})
+	const (
+		caller = 1005372 // calling party ISSI
+		called = 1009999 // called party ISSI
+		call   = 4242
+	)
+
+	// D-SETUP binds the call identifier to its calling party (source).
+	cc.handleCMCE(
+		MACResource{Address: MACAddress{Type: addrSSI, SSI: called}},
+		CMCEMessage{Type: CMCETypeDSetup, CallIdentifier: call, PartySSI: caller})
+
+	// A later PDU on the same call carries ONLY the call identifier (no party).
+	// The source must be restored from the learned binding, not left blank.
+	var g VoiceGrant
+	cc.classifyParties(&g,
+		MACResource{Address: MACAddress{Type: addrSSI, SSI: called}},
+		CMCEMessage{Type: CMCETypeDConnect, CallIdentifier: call}, true)
+	if g.SourceSSI != caller {
+		t.Errorf("SourceSSI = %d, want %d (restored from the call's learned source)", g.SourceSSI, caller)
+	}
+	if g.DestSSI != called {
+		t.Errorf("DestSSI = %d, want %d", g.DestSSI, called)
+	}
+
+	// Once the call is released, the binding is dropped: a later reuse of the same
+	// call identifier does not resurrect the stale source.
+	cc.forgetCall(call)
+	var after VoiceGrant
+	cc.classifyParties(&after,
+		MACResource{Address: MACAddress{Type: addrSSI, SSI: 7000001}},
+		CMCEMessage{Type: CMCETypeDConnect, CallIdentifier: call}, true)
+	if after.SourceSSI != 0 {
+		t.Errorf("SourceSSI = %d after release, want 0 (binding must be dropped)", after.SourceSSI)
+	}
+}
+
+// TestBackfillCallSourceNeverSelfSources guards the backfill against surfacing a
+// "dest X, source X": when the only learned source for a call equals the grant's
+// destination, the source stays blank rather than being restored as itself.
+func TestBackfillCallSourceNeverSelfSources(t *testing.T) {
+	cc := New(Options{FrequencyHz: 467_913_000})
+	const (
+		radio = 1005499
+		call  = 77
+	)
+	cc.rememberCallSource(call, radio)
+	var g VoiceGrant
+	cc.classifyParties(&g,
+		MACResource{Address: MACAddress{Type: addrSSI, SSI: radio}},
+		CMCEMessage{Type: CMCETypeDConnect, CallIdentifier: call}, true)
+	if g.SourceSSI == g.DestSSI && g.SourceSSI != 0 {
+		t.Errorf("backfill produced source==dest (%d): a radio cannot be its own source", g.SourceSSI)
+	}
+}
+
 // TestClassifyPartiesUnknownStaysGroup guards the conservative default: an SSI
 // never seen as a party (and no CMCE party on this PDU) is left as a talkgroup —
 // the MAC address type cannot distinguish a GSSI from an ISSI, so we never guess
