@@ -93,7 +93,7 @@ Technician minimum, General for most HF). Listening takes none.
 ## Bands, modes &amp; power
 
 - **TX:** 160–10 m; **100 W** (original/Field), **200 W PEP** (Mark V, with
-  75 W class-A mode). **RX:** 100 kHz–30 MHz.
+  75 W class-A mode). **RX:** 100 kHz–30 MHz.[^rigpix]
 - **Modes:** [SSB](/reference/single-sideband/), [CW](/reference/morse-code/),
   AM, FM, AFSK.
 - **Receivers:** quad-conversion superhet main + genuine sub receiver;

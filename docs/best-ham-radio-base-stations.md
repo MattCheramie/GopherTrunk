@@ -22,13 +22,13 @@ faq:
 # The 10 Best Ham Radio Base Stations (2026 Buyer's Guide)
 
 **The best base station is the one that matches how you'll actually operate** —
-a contester's dream is a ragchewer's overkill, and the "best receiver ever
-measured" is wasted on someone who mostly wants local repeaters. One rule frames
+a contester's dream is a ragchewer's overkill, and the best receiver ever
+measured is wasted on someone who mostly wants local repeaters. One rule frames
 everything below: **transmitting on the ham bands requires an FCC amateur
-license (Part 97 — Technician class minimum; General for most HF), while
-listening requires none** — so if you're not licensed yet, a
-[$30 RTL-SDR running free GopherTrunk](/best-sdr-for-gophertrunk/) lets you
-hear what's active locally before you spend transceiver money.
+license (Part 97 — Technician class minimum; General for most HF); listening
+requires none** — so before spending transceiver money, a
+[$30 RTL-SDR running free GopherTrunk](/best-sdr-for-gophertrunk/) will tell
+you what's active in your area.
 
 <div class="tldr" markdown="1">
 <span class="tldr__label">Key takeaways</span>
@@ -50,7 +50,7 @@ still buyable new right now.
 <span class="pick-card__badge">Best overall</span>
 <h3>Icom IC-7300</h3>
 <p class="pick-card__price">around $1,040 (~$940 after rebate)</p>
-<p>The direct-sampling SDR that redefined the entry-level base station: touchscreen waterfall, built-in tuner, one-cable FT8. In run-out as the MK2 arrives — new stock is real and rebated.</p>
+<p>The direct-sampling SDR that redefined the entry-level base station: touchscreen waterfall, built-in tuner, one-cable FT8. In run-out as the MK2 arrives — new stock is real.</p>
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B01M10HJXW?tag=gophertrunk-20" rel="nofollow sponsored noopener">IC-7300 on Amazon &rarr;</a>
 <p class="pick-card__note"><a href="/reference/icom-ic-7300/">IC-7300 details</a></p>
 </div>
@@ -125,9 +125,9 @@ else.
 ### 4. Yaesu FT-991A — best features for the price
 
 Unmatched **Coverage &amp; modes**: HF to 70 cm, all modes, plus C4FM Fusion —
-no other radio here does repeaters and DX in one box. Middling **RF
-performance** (an average superhet in an SDR era) and its May 2026
-discontinuation keep it off the podium; buy it while sell-through stock lasts.
+no other radio here does repeaters and DX in one box. Average **RF
+performance** and its May 2026 discontinuation keep it off the podium; buy it
+while sell-through stock lasts.
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B01MDU5VYH?tag=gophertrunk-20" rel="nofollow sponsored noopener">FT-991A on Amazon &rarr;</a> · [FT-991A review](/reference/yaesu-ft-991a/)
 
 ### 5. Kenwood TS-590SG — the CW/contest receiver bargain
@@ -158,23 +158,22 @@ support** hold it at #7.
 
 A true second receiver, filter banks, and contest pedigree for ~$600–1,200
 used — **RF performance** and features that still compete, which is why it
-outranks a brand-new IC-718. The caveats are structural: eBay/hamfest only,
-aging caps, lamps, and relays, no factory support, and thin sold-price data —
-verify current listings.
+outranks a brand-new IC-718. The caveats: eBay/hamfest only, aging caps and
+relays, no factory support, and thin sold-price data — verify current listings.
 <a class="btn btn--buy" href="https://www.ebay.com/sch/i.html?_nkw=yaesu+ft-1000mp" rel="nofollow noopener">Find on eBay &rarr;</a> · [FT-1000MP review](/reference/yaesu-ft-1000mp/)
 
 ### 9. Kenwood TS-940S — the classic-station centerpiece
 
-A silky analog receiver, superb audio, and battleship build for ~$400–800 used
-— strong **Value** for a second/classic station. It sits below the FT-1000MP
-on features (single receiver) and on its signature aging faults: power-supply
-recaps and the "dots display" PLL fix are practically assumed.
+A silky analog receiver, superb audio, and battleship build for ~$400–800
+used. It sits below the FT-1000MP on features (single receiver) and on its
+signature aging faults: power-supply recaps and the "dots display" PLL fix are
+practically assumed.
 <a class="btn btn--buy" href="https://www.ebay.com/sch/i.html?_nkw=kenwood+ts-940s" rel="nofollow noopener">Find on eBay &rarr;</a> · [TS-940S review](/reference/kenwood-ts-940s/)
 
 ### 10. Icom IC-718 — the honest budget classic, wrong price
 
 Simple, tough, and beloved — but discontinued, and at ~$930 new-old-stock its
-1999-era receiver, missing 6 m/FM/tuner/USB, is outclassed by a used IC-7300
+1999-era receiver (no 6 m, FM, tuner, or USB) is outclassed by a used IC-7300
 for the same money. **Value** at NOS pricing puts it last; at $400–550 used
 it's still a fine first radio.
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B007G03B5I?tag=gophertrunk-20" rel="nofollow sponsored noopener">IC-718 on Amazon &rarr;</a> · [IC-718 review](/reference/icom-ic-718/)
