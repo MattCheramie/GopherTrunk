@@ -23,12 +23,12 @@ faq:
 
 **The best walkie-talkie is mostly a licensing decision wearing a hardware
 disguise.** Every radio below transmits on the same 22 UHF channels; what
-separates them is which FCC service they're certified under — license-free
+separates them is the FCC service they're certified under — license-free
 **FRS** at 2 W, or **GMRS** at 5 W with repeater access for a **$35,
-no-test license** that covers your whole immediate family. Get that choice
-right and the radio picks itself. And before buying anything: listening is
-free — a [$30 RTL-SDR running free GopherTrunk](/reference/rtl-sdr/) will
-tell you what's actually on the air in your area.
+no-test license** covering your immediate family. Get that choice right
+and the radio picks itself. And listening is free either way — a
+[$30 RTL-SDR running free GopherTrunk](/reference/rtl-sdr/) will tell you
+what's actually on the air near you before you spend a dollar.
 
 <div class="tldr" markdown="1">
 <span class="tldr__label">Key takeaways</span>
@@ -87,20 +87,19 @@ channel frequencies** — so a license-free FRS radio talks directly to a
 GMRS radio on channels 1–22. The differences are power and privileges:
 
 - **FRS (Part 95B)** is **license-free** for anyone: up to 2 W on channels
-  1–7 and 15–22 (0.5 W on 8–14), with a fixed antenna required. The 2017
-  rules raised FRS from 0.5 W to 2 W, which is why a modern FRS radio like
-  the [Rocky Talkie Mountain Radio](/reference/rocky-talkie-mountain-radio/)
+  1–7 and 15–22 (0.5 W on 8–14), fixed antenna required. The 2017 rules
+  raised FRS from 0.5 W to 2 W — why a modern FRS radio like the
+  [Rocky Talkie Mountain Radio](/reference/rocky-talkie-mountain-radio/)
   embarrasses old blister-pack sets.
 - **GMRS (Part 95E)** requires the license — **$35 to the FCC, valid 10
-  years, no test, and one license covers your immediate family** — and buys
-  5 W handhelds (50 W mobiles), removable antennas, and the big one:
-  **repeater use**, where a well-sited machine on the 467 MHz inputs
-  stretches range from a couple of miles to tens.
+  years, no test, one license for your immediate family** — and buys 5 W
+  handhelds (50 W mobiles), removable antennas, and the big one:
+  **repeater use**, which stretches range from a couple of miles to tens.
 - Older "hybrid FRS/GMRS" radios (the
   [Midland GXT1000VP4](/reference/midland-gxt1000vp4/) design era, the used
   [Motorola MR350R](/reference/motorola-talkabout-mr350r/)) were
-  grandfathered; anything new that's over 2 W or repeater-capable is GMRS
-  and needs the license.
+  grandfathered; anything new over 2 W or repeater-capable is GMRS and
+  needs the license.
 
 Two more truths the boxes won't tell you. **"Privacy codes" are
 [CTCSS/DCS squelch tones](/reference/ctcss/)** — they hide other people's
@@ -166,8 +165,8 @@ mid-table; for mountain use it's untouchable.
 
 Absurd **Value**: ~$35 buys honest Part 95E certification, 5 W, repeater
 channels, ~999 memories, scanner receive, a 2500 mAh USB-C battery, and
-CHIRP support. Graded down on **RF performance** (front end overloads near
-strong transmitters) and the Baofeng QC lottery.
+CHIRP support. Graded down on **RF performance** (the front end overloads
+in RF-dense areas) and the Baofeng QC lottery.
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B0D2DJBD3L?tag=gophertrunk-20" rel="nofollow sponsored noopener">UV-5G Plus on Amazon &rarr;</a> · [UV-5G Plus review](/reference/baofeng-uv-5g-plus/)
 
 ### 6. Baofeng GM-15 Pro — most affordable
@@ -180,10 +179,10 @@ buy it anyway.
 
 ### 7. Midland GXT1000VP4 — the family default
 
-Ubiquitous, dead simple, with NOAA alerts and AA fallback — good
-**Usability** for the least technical users. Graded honestly: "36 miles"
-is fantasy, "50 channels" is 22 + presets, measured output falls short of
-5 W, and there are **no repeater channels** — the pre-2017 design shows.
+Ubiquitous, dead simple, NOAA alerts, AA fallback — good **Usability** for
+the least technical users. Graded honestly: "36 miles" is fantasy, "50
+channels" is 22 + presets, measured output falls short of 5 W, and there
+are **no repeater channels** — the pre-2017 design shows.
 <a class="btn btn--buy" href="https://www.amazon.com/dp/B001WMFYH4?tag=gophertrunk-20" rel="nofollow sponsored noopener">GXT1000VP4 on Amazon &rarr;</a> · [GXT1000VP4 review](/reference/midland-gxt1000vp4/)
 
 ### 8. Motorola Talkabout T800 — FRS with a party trick
@@ -228,11 +227,11 @@ everywhere.
 | [Motorola MR350R](/reference/motorola-talkabout-mr350r/) | Basic | Fair | Good | Good | ~$19–30 used |
 
 > **Buy the license before the fifth radio.** The $35 GMRS license costs
-> less than one mid-range handheld, covers your entire immediate family for
-> a decade, and unlocks the only real range multiplier in consumer radio —
-> repeaters. And spend $30 first on an [RTL-SDR](/reference/rtl-sdr/) with
-> free GopherTrunk to hear whether your local repeaters and channels carry
-> any traffic at all. Listening needs no license; only transmitting does.
+> less than one mid-range handheld, covers your immediate family for a
+> decade, and unlocks the only real range multiplier in consumer radio —
+> repeaters. Spend $30 first on an [RTL-SDR](/reference/rtl-sdr/) with free
+> GopherTrunk to hear whether your local repeaters carry any traffic at
+> all. Listening needs no license; only transmitting does.
 
 ## How to choose
 

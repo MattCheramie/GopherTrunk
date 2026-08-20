@@ -85,21 +85,20 @@ below. All ten radios hold genuine **Part 95E** grants.
 Get the physics straight before the shopping. Vehicle-to-vehicle UHF simplex
 is terrain-limited: **roughly 1–5 miles real-world, regardless of wattage** —
 50 W over 15 W buys margin, not miracles. The step change is a **GMRS
-repeater**: a machine on a tower or hilltop that rebroadcasts you, extending
-usable range to **20–50+ miles**. Using one takes three things: a radio with
-the 467 MHz repeater inputs (all ten here have them, with one classic-Midland
-asterisk), programmable [CTCSS](/reference/ctcss/)/[DCS](/reference/dcs/)
-tones — ideally **split tones**, since many club repeaters transmit-encode a
-different tone than they receive-decode, and a radio without split tones is
-locked out — and enough power and antenna to open the input reliably, which
-is where 50 W and a proper roof mount actually earn their money.
+repeater** on a tower or hilltop, which extends usable range to **20–50+
+miles**. Using one takes three things: the 467 MHz repeater inputs (all ten
+radios here have them, with one classic-Midland asterisk), programmable
+[CTCSS](/reference/ctcss/)/[DCS](/reference/dcs/) tones — ideally **split
+tones**, since many club repeaters encode a different tone than they decode,
+and a radio without split tones is locked out — and enough power and antenna
+to open the input reliably, which is where 50 W and a proper roof mount
+actually earn their money.
 
 One more honesty item: **every radio in this guide holds a genuine FCC Part
-95E grant**, imports included. Wouxun, Radioddity, and BTECH are certified
-because their transmit is locked to the GMRS channels; the wide VHF/UHF
-coverage they advertise is receive-only, and that's what keeps the grant
-legal. "Import" does not mean "uncertified" here — but an unlock hack that
-opens transmit does void the certification, and we don't recommend it.
+95E grant**, imports included — Wouxun, Radioddity, and BTECH are certified
+because transmit is locked to the GMRS channels, and their wide VHF/UHF
+coverage is receive-only. "Import" does not mean "uncertified" here. (An
+unlock hack that opens transmit voids the certification; skip it.)
 
 ## How we grade
 
