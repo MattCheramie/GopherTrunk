@@ -1965,6 +1965,56 @@ body.gt-promo-open { overflow: hidden; }
   animation: gt-promo-rise 0.24s ease-out both;
 }
 
+/* Disclosure sheet: full-width panel pinned to the bottom quarter of the
+   viewport, sliding up from the bottom edge. Non-modal — no backdrop, no
+   scroll lock, the page above stays usable — and it carries no close ×: the
+   only dismissal is its acknowledge button (promos.js writes the seen flag on
+   dismiss for data-promo-persist="dismiss", so it returns every page view
+   until acknowledged). min-height keeps the content reachable on short
+   viewports where 25vh would clip it; the card scrolls if it still must. */
+.gt-promo--sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100;
+  height: 25vh;
+  min-height: 14rem;
+}
+.gt-promo--sheet .gt-promo__card {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  text-align: left;
+  padding: 1rem 0;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  animation: gt-promo-slide-up 0.3s ease-out both;
+}
+/* Text beside the acknowledge button on wide screens (so the button stays
+   above the 25vh fold), stacking on narrow ones; margin:auto centers the pair
+   vertically without clipping when the content is taller than the sheet. */
+.gt-promo--sheet .gt-promo__sheet-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  width: 100%;
+  max-width: var(--maxw);
+  margin: auto;
+  padding: 0 1.5rem;
+}
+.gt-promo--sheet .gt-promo__sheet-text { flex: 1 1 34rem; min-width: 0; }
+.gt-promo--sheet .gt-promo__title { font-size: 1.05rem; margin-bottom: 0.35rem; }
+.gt-promo--sheet .gt-promo__body { font-size: 0.88rem; margin-bottom: 0; }
+.gt-promo--sheet .gt-promo__body p { margin: 0 0 0.4rem; }
+.gt-promo--sheet .gt-promo__body p:last-child { margin-bottom: 0; }
+.gt-promo--sheet .gt-promo__actions { justify-content: flex-start; flex: 0 0 auto; }
+
 /* Fly-out: edge-anchored panel that slides in from the right. */
 .gt-promo--flyout {
   position: fixed;
@@ -1996,9 +2046,14 @@ body.gt-promo-open { overflow: hidden; }
   from { transform: translateX(100%); }
   to   { transform: none; }
 }
+@keyframes gt-promo-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .gt-promo--popup .gt-promo__card,
   .gt-promo--popin .gt-promo__card,
+  .gt-promo--sheet .gt-promo__card,
   .gt-promo--flyout .gt-promo__card { animation: none; }
 }
 @media (max-width: 600px) {

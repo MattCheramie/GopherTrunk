@@ -1,0 +1,64 @@
+{%- comment -%}
+  Site-wide disclosures sheet — analytics/usage statistics + affiliate links.
+  Rendered by default.html on every page, hidden until the promo engine
+  (assets/js/promos.js) reveals it. It is a NOTICE, not a consent gate: there
+  is no opt-out and no close ×, only an acknowledgement.
+
+  Behavior, all declarative (see the markup contract in promos.js):
+    - data-promo-trigger-time="0": shows immediately on page load.
+    - data-promo-persist="dismiss": unlike the other promos, the "seen" flag is
+      written only when the visitor clicks "I understand" — so the sheet
+      re-appears on EVERY page view until it is explicitly acknowledged.
+    - variant "sheet": full-width panel pinned to the bottom quarter of the
+      viewport, sliding up from the bottom edge (style.scss). Non-modal: no
+      backdrop, no scroll lock, no focus trap — the page above stays usable.
+
+  Wording notes (kept deliberately industry-standard):
+    - "As an Amazon Associate we earn from qualifying purchases." is the
+      identification statement the Amazon Associates Operating Agreement
+      requires verbatim (or substantially similar).
+    - The analytics sentence follows the common notice pattern: name the tool,
+      state what is collected and why, and an acknowledgement clause.
+  The funding link intentionally has NO data-cta-event: the engine treats any
+  [data-cta-event] click as an action that closes the promo, and following a
+  link must not count as acknowledgement.
+{%- endcomment -%}
+<div class="gt-promo gt-promo--sheet" id="gt-promo-disclosures" hidden
+     role="region" aria-labelledby="gt-promo-disclosures-title"
+     aria-describedby="gt-promo-disclosures-body"
+     data-promo="disclosures" data-promo-variant="sheet"
+     data-promo-trigger-time="0" data-promo-frequency="once"
+     data-promo-persist="dismiss">
+  <div class="gt-promo__card">
+    <div class="gt-promo__sheet-inner">
+      <div class="gt-promo__sheet-text">
+      <h2 class="gt-promo__title" id="gt-promo-disclosures-title">Disclosures</h2>
+      <div class="gt-promo__body" id="gt-promo-disclosures-body">
+        <p>
+          <strong>Analytics.</strong> This site uses Google Analytics to collect
+          site-usage statistics — such as which pages are visited, how long
+          visitors stay, and how they found the site — to measure site
+          performance and help us improve the documentation.
+        </p>
+        <p>
+          <strong>Affiliate links.</strong> As an Amazon Associate we earn from
+          qualifying purchases. Some hardware links on this site are affiliate
+          links: if you buy through them we may earn a commission at no
+          additional cost to you. This never changes which gear we recommend,
+          and the software stays free and open source either way.
+          <a href="{{ '/support.html' | relative_url }}">How GopherTrunk is funded &rarr;</a>
+        </p>
+        <p>
+          By continuing to use this site, you acknowledge these practices.
+        </p>
+      </div>
+      </div>
+      <div class="gt-promo__actions">
+        <button type="button" class="btn btn--primary"
+                data-promo-close data-promo-close-method="acknowledge">
+          I understand
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
