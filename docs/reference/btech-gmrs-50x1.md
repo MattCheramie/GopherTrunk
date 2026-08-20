@@ -84,7 +84,9 @@ the GMRS-50V2's redesigned board exists specifically to fix the 50X1's
 ~40 W on some channels from a good unit; measure if you can.
 
 Where to buy: **Amazon lists it only as a "Renewed" unit** — the button above
-goes there — and **eBay is the other, often cheaper, half of the used
+goes there — and
+**<a href="https://www.ebay.com/sch/i.html?_nkw=BTECH+GMRS-50X1" rel="nofollow noopener">eBay</a>
+is the other, often cheaper, half of the used
 market** (~$80 sold for a used unit with mic; $150–160 typical asks;
 new-old-stock occasionally surfaces around $99–115 at liquidation sellers,
 though those listings can be stale).

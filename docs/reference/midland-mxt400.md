@@ -85,9 +85,10 @@ things had become the line's loudest complaints.
 
 Where to buy is part of the honest story: an Amazon listing for the MXT400
 still exists, but it's residual third-party stock — check it for price
-gouging. **The practical market for this radio is eBay and the used channels**,
-which is also where the $100–180 figure comes from (against an original
-$249.99 MSRP).
+gouging. **The practical market for this radio is
+<a href="https://www.ebay.com/sch/i.html?_nkw=Midland+MXT400" rel="nofollow noopener">eBay</a>
+and the used channels**, which is also where the $100–180 figure comes from
+(against an original $249.99 MSRP).
 
 **License note:** transmitting on GMRS requires a license — $35 to the
 [FCC](/reference/fcc/), valid 10 years, no test, covering your immediate

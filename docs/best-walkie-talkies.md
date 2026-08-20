@@ -238,18 +238,17 @@ everywhere.
 
 - **Backcountry, worst-case weather, gloves?**
   [Rocky Talkie Expedition Radio](/reference/rocky-talkie-5-watt/) — or the
-  license-free [Mountain Radio](/reference/rocky-talkie-mountain-radio/) if
-  the $35 license is a nonstarter.
+  license-free [Mountain Radio](/reference/rocky-talkie-mountain-radio/).
 - **Group coordination with maps and messages?**
   [BTECH GMRS-PRO](/reference/btech-gmrs-pro/) new, or the used
   [Garmin Rino 755t](/reference/garmin-rino-755t/) for full-navigator
   position mapping.
-- **You'll actually work repeaters and want a real receiver?**
+- **Repeater work and a real receiver?**
   [Wouxun KG-935G](/reference/wouxun-kg-935g/).
-- **Tight budget, still want it legal and repeater-capable?**
+- **Tight budget, still legal and repeater-capable?**
   [Baofeng GM-15 Pro](/reference/baofeng-gm-15-pro/), or the
   [UV-5G Plus](/reference/baofeng-uv-5g-plus/) for ~$10 more.
-- **Radios for the least technical family members?**
+- **Least technical family members?**
   [Midland GXT1000VP4](/reference/midland-gxt1000vp4/) — with the range
   honesty above.
 - **A drawer of beaters for camp?** Used
@@ -267,8 +266,8 @@ honest ticket in, and a clean **[Rino
 755t](/reference/garmin-rino-755t/)** is the classic that never got a
 successor. Need range beyond any handheld? A 50 W rig in the truck:
 [best GMRS mobile radios](/best-gmrs-mobile-radios/) — or the license-free
-highway standby, [best CB radios](/best-cb-radios/). And if GMRS starts
-feeling small, the ham ticket is the next step up:
+highway standby, [best CB radios](/best-cb-radios/). Outgrown GMRS? The
+no-code ham ticket is the next step up:
 [best handheld ham radios](/best-handheld-ham-radios/). The listening side
 stays free either way — a
 [$30 SDR running GopherTrunk](/reference/rtl-sdr/) monitors and records it
