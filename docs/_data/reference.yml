@@ -876,6 +876,41 @@ domains:
           - { slug: kenwood-th-f6a, title: Kenwood TH-F6A, type: hardware }
           - { slug: yaesu-vx-8dr, title: Yaesu VX-8DR, type: hardware }
 
+      - id: two-way-radios
+        label: Consumer two-way radios (FRS, GMRS & CB)
+        blurb: Walkie-talkies, GMRS mobile rigs, and CB radios — consumer two-way services that need no exam (GMRS takes a $35 no-test FCC license; FRS and CB are license-free). Listening is free with any of them or an SDR + GopherTrunk.
+        entries:
+          - { slug: rocky-talkie-mountain-radio, title: Rocky Talkie Mountain Radio, type: hardware }
+          - { slug: rocky-talkie-5-watt, title: Rocky Talkie Expedition Radio (5 Watt), type: hardware }
+          - { slug: midland-gxt1000vp4, title: Midland GXT1000VP4, type: hardware }
+          - { slug: motorola-talkabout-t800, title: Motorola Talkabout T800, type: hardware }
+          - { slug: baofeng-uv-5g-plus, title: Baofeng UV-5G Plus, type: hardware }
+          - { slug: baofeng-gm-15-pro, title: Baofeng GM-15 Pro, type: hardware }
+          - { slug: btech-gmrs-pro, title: BTECH GMRS-PRO, type: hardware }
+          - { slug: wouxun-kg-935g, title: Wouxun KG-935G, type: hardware }
+          - { slug: garmin-rino-755t, title: Garmin Rino 755t, type: hardware }
+          - { slug: motorola-talkabout-mr350r, title: Motorola Talkabout MR350R, type: hardware }
+          - { slug: midland-mxt575, title: Midland MXT575, type: hardware }
+          - { slug: midland-mxt500, title: Midland MXT500, type: hardware }
+          - { slug: midland-mxt275, title: Midland MXT275, type: hardware }
+          - { slug: wouxun-kg-1000g-plus, title: Wouxun KG-1000G Plus, type: hardware }
+          - { slug: wouxun-kg-xs20g, title: Wouxun KG-XS20G Plus, type: hardware }
+          - { slug: radioddity-db20-g, title: Radioddity DB20-G, type: hardware }
+          - { slug: btech-gmrs-50pro, title: BTECH GMRS-50PRO, type: hardware }
+          - { slug: midland-mxt115, title: Midland MXT115, type: hardware }
+          - { slug: midland-mxt400, title: Midland MXT400, type: hardware }
+          - { slug: btech-gmrs-50x1, title: BTECH GMRS-50X1, type: hardware }
+          - { slug: cobra-29-lx, title: Cobra 29 LX, type: hardware }
+          - { slug: cobra-29-ltd-classic, title: Cobra 29 LTD Classic, type: hardware }
+          - { slug: uniden-bearcat-880, title: Uniden Bearcat 880FM, type: hardware }
+          - { slug: uniden-bearcat-980ssb, title: Uniden Bearcat 980SSB, type: hardware }
+          - { slug: president-mckinley, title: President McKinley II, type: hardware }
+          - { slug: uniden-pro505xl, title: Uniden PRO505XL, type: hardware }
+          - { slug: cobra-75-all-road, title: Cobra 75 All Road, type: hardware }
+          - { slug: midland-75-822, title: Midland 75-822, type: hardware }
+          - { slug: cobra-2000-gtl, title: Cobra 2000 GTL, type: hardware }
+          - { slug: uniden-grant-xl, title: Uniden Grant XL, type: hardware }
+
       - id: rf-front-end
         label: RF front-end & components
         blurb: The components between the antenna and the receiver — amplifiers, filters, mixers, connectors, and references.
