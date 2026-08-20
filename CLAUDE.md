@@ -346,6 +346,31 @@ confirmation before any close-as-completed.
       `GT_TETRA_DMO_SCAN=1` + the same MCC/MNC to see whether a colour now dominates). If a colour
       dominates with MNI 250/1 where none did at MNI 0, that is the confirmation; if it still doesn't,
       the next suspect is the MNI value itself or DNB geometry — NOT encryption (the radios are TEA0).
+- **TETRA individual/private-call SRC is restored across mid-call PDUs via a callID→source
+  binding; cold-start group-vs-individual classification stays capture-gated.** ETSI compresses
+  the SSIs out of mid-call and traffic-channel signalling (§14): once a call is set up, a
+  D-CONNECT or a follow-on `MAC-RESOURCE` addressed only by call identifier carries NO party
+  element, so the source went blank after the setup burst (the reporter's "missing SRC on private
+  calls"). Fix mirrors the existing `callGroups` (callID→GSSI) map with `callSrc` (callID→calling/
+  transmitting party ISSI), learned from D-SETUP's calling party and D-TX-GRANTED's transmitting
+  party, dropped on release; `classifyParties` backfills a blank grant source from it (guarded
+  against a `dest==src` self-source), and it flows to `trunking.Grant.SourceID` (the grant-dedup
+  snapshot already keys on `src`, so a grant that GAINS a source re-publishes). Pinned by
+  `TestCallSourceRestoredMidCall`. **What is NOT done, and why:** correctly flagging the FIRST PDU
+  of an unseen private call as individual (vs surfacing the called ISSI as a phantom talkgroup)
+  needs a single-PDU group/individual discriminator. Three independent decoders (sq5bpf, tetra-kit,
+  Wireshark) confirm the D-SETUP layout and that the discriminator is the 2-bit **communication
+  type** sub-field of Basic Service Information (bits 29..30 — GT now decodes it via
+  `readBasicService` into `CMCEMessage.CommsType`, alongside circuit mode + the service encryption
+  flag). BUT no decoder NAMES the enum values, and none of them classify from it — they defer to
+  the downstream ecosystem (telive), primarily on temporary-address presence. So the mapping
+  (0=p2p, 1=p2mp, 2=p2mp-ack, 3=broadcast) is spec-derived and capture-UNCONFIRMED. Per #764/#771
+  it is NOT wired into `classifyParties`; instead the value is logged on D-SETUP (`comms_type_raw`
+  in `tetra: d-setup basic service`, debug) so an operator's KNOWN individual-vs-group capture can
+  confirm the split empirically. Only then does `CommsType` earn a place in classification — the
+  named `Comms*` constants are staged for that one-line wiring. Downlink D-SETUP carries NO
+  called-party element (only U-SETUP uplink does), confirming the dest must come from the MAC
+  address, as GT does.
 - **Vocoder "sounds awful" is a MEASURED, LOCALIZED AMBE+2 3600×2450 (DMR) high-band deficit —
   NOT RF, NOT post-processing.** Using the operator's DSD-FME (mbelib) decode of the SAME `.amb`
   frames as ground truth (`err=[0]`, identical frame count), GopherTrunk's `ambe2-dmr` decode has

@@ -477,6 +477,23 @@ func (c *ControlChannel) handleCMCE(m MACResource, msg CMCEMessage) {
 		// restore the source that ETSI strips from the compressed mid-call
 		// signalling (the individual-call "missing SRC" symptom).
 		c.rememberCallSource(msg.CallIdentifier, msg.PartySSI)
+		// Surface the decoded basic-service communication type for empirical
+		// confirmation of the point-to-point/group enum mapping (spec-derived,
+		// capture-unconfirmed — see CMCEMessage.CommsType). On an operator's
+		// known individual-vs-group capture, comms_type_raw should split cleanly
+		// by call nature; only then does it earn a place in classifyParties.
+		if msg.Type == CMCETypeDSetup && msg.HasBasicSvc {
+			c.log.Debug("tetra: d-setup basic service",
+				"system", c.systemName,
+				"call_id", msg.CallIdentifier,
+				"comms_type", commsTypeString(msg.CommsType),
+				"comms_type_raw", msg.CommsType,
+				"circuit_mode", msg.CircuitMode,
+				"svc_enc", msg.BasicSvcEnc,
+				"dst", m.Address.SSI,
+				"src", msg.PartySSI,
+				"group", msg.GroupSSI)
+		}
 	case CMCETypeDRelease, CMCETypeDDisconnect:
 		// Both end the call: D-RELEASE from the SwMI, D-DISCONNECT the
 		// infrastructure-initiated disconnect (EN 300 392-2 §14.5.1.3.3).
