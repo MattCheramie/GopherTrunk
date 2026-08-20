@@ -894,7 +894,7 @@ domains:
           - { slug: midland-mxt500, title: Midland MXT500, type: hardware }
           - { slug: midland-mxt275, title: Midland MXT275, type: hardware }
           - { slug: wouxun-kg-1000g-plus, title: Wouxun KG-1000G Plus, type: hardware }
-          - { slug: wouxun-kg-xs20g, title: Wouxun KG-XS20G, type: hardware }
+          - { slug: wouxun-kg-xs20g, title: Wouxun KG-XS20G Plus, type: hardware }
           - { slug: radioddity-db20-g, title: Radioddity DB20-G, type: hardware }
           - { slug: btech-gmrs-50pro, title: BTECH GMRS-50PRO, type: hardware }
           - { slug: midland-mxt115, title: Midland MXT115, type: hardware }
