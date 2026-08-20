@@ -66,6 +66,12 @@ Consumer scanner hardware (Uniden, Whistler) compared honestly against a free SD
 - [Digital vs analog scanners]({{ '/digital-vs-analog-scanner/' | absolute_url }}): what you can still hear on an analog radio in 2026.
 - [P25 scanners]({{ '/p25-scanner/' | absolute_url }}): what Phase I/II and simulcast mean for buyers.
 
+## Ham radio buyer's guides
+Amateur radio transceivers ranked with an honest rubric — no star ratings — plus classic used-market picks. Transmitting requires an FCC amateur license; listening does not.
+- [Best ham radio base stations]({{ '/best-ham-radio-base-stations/' | absolute_url }}): the 10 best HF base stations ranked, from the Xiegu G90 to the Icom IC-7610, including classic used rigs.
+- [Best mobile ham radios]({{ '/best-mobile-ham-radios/' | absolute_url }}): the 10 best vehicle-mount rigs ranked, from budget dual-banders to the Yaesu FTM-500DR, including discontinued do-everything classics.
+- [Best handheld ham radios]({{ '/best-handheld-ham-radios/' | absolute_url }}): the 10 best HTs ranked, from the Baofeng UV-5R to the Kenwood TH-D75A, including used-market classics.
+
 ## SDR hardware for GopherTrunk (buyer's guides)
 The receivers, antennas, cables, and accessories to run GopherTrunk, with honest picks and Amazon links.
 - [Best SDR for GopherTrunk]({{ '/best-sdr-for-gophertrunk/' | absolute_url }}): RTL-SDR, NESDR, Airspy, and HackRF compared for P25/DMR/NXDN decoding.

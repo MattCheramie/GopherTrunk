@@ -841,6 +841,41 @@ domains:
           - { slug: whistler-ws1065, title: Whistler WS1065, type: hardware }
           - { slug: whistler-ws1040, title: Whistler WS1040, type: hardware }
 
+      - id: ham-radios
+        label: Ham radio transceivers
+        blurb: Amateur radio transceivers — base stations, mobiles, and handhelds — for two-way work on the ham bands. Transmitting takes an FCC license; listening (with these or an SDR + GopherTrunk) does not.
+        entries:
+          - { slug: icom-ic-7300, title: Icom IC-7300, type: hardware }
+          - { slug: yaesu-ftdx10, title: Yaesu FTDX10, type: hardware }
+          - { slug: icom-ic-7610, title: Icom IC-7610, type: hardware }
+          - { slug: yaesu-ft-991a, title: Yaesu FT-991A, type: hardware }
+          - { slug: kenwood-ts-590sg, title: Kenwood TS-590SG, type: hardware }
+          - { slug: icom-ic-718, title: Icom IC-718, type: hardware }
+          - { slug: xiegu-g90, title: Xiegu G90, type: hardware }
+          - { slug: yaesu-ft-891, title: Yaesu FT-891, type: hardware }
+          - { slug: kenwood-ts-940s, title: Kenwood TS-940S, type: hardware }
+          - { slug: yaesu-ft-1000mp, title: Yaesu FT-1000MP, type: hardware }
+          - { slug: yaesu-ftm-500dr, title: Yaesu FTM-500DR, type: hardware }
+          - { slug: yaesu-ftm-300dr, title: Yaesu FTM-300DR, type: hardware }
+          - { slug: icom-id-5100a, title: Icom ID-5100A, type: hardware }
+          - { slug: icom-ic-2730a, title: Icom IC-2730A, type: hardware }
+          - { slug: anytone-at-d578uviii, title: AnyTone AT-D578UVIII Plus, type: hardware }
+          - { slug: btech-uv-25x2, title: BTECH UV-25X2, type: hardware }
+          - { slug: qyt-kt-8900d, title: QYT KT-8900D, type: hardware }
+          - { slug: icom-ic-706mkiig, title: Icom IC-706MkIIG, type: hardware }
+          - { slug: yaesu-ft-857d, title: Yaesu FT-857D, type: hardware }
+          - { slug: kenwood-tm-v71a, title: Kenwood TM-V71A, type: hardware }
+          - { slug: kenwood-th-d75a, title: Kenwood TH-D75A, type: hardware }
+          - { slug: icom-id-52a, title: Icom ID-52A, type: hardware }
+          - { slug: yaesu-ft-5dr, title: Yaesu FT-5DR, type: hardware }
+          - { slug: yaesu-ft-60r, title: Yaesu FT-60R, type: hardware }
+          - { slug: anytone-at-d878uvii-plus, title: AnyTone AT-D878UVII Plus, type: hardware }
+          - { slug: btech-uv-pro, title: BTECH UV-PRO, type: hardware }
+          - { slug: baofeng-bf-f8hp, title: Baofeng BF-F8HP, type: hardware }
+          - { slug: baofeng-uv-5r, title: Baofeng UV-5R, type: hardware }
+          - { slug: kenwood-th-f6a, title: Kenwood TH-F6A, type: hardware }
+          - { slug: yaesu-vx-8dr, title: Yaesu VX-8DR, type: hardware }
+
       - id: rf-front-end
         label: RF front-end & components
         blurb: The components between the antenna and the receiver — amplifiers, filters, mixers, connectors, and references.
