@@ -168,11 +168,11 @@ type tetraDMOPipeline struct {
 	// baseMNI is ExtendedColourCode(MCC, MNC, 0) from tetra_mcc/tetra_mnc — the
 	// network MNI folded into every colour-recovery candidate so a non-zero-MNI
 	// DMO network decodes (its traffic seed is baseMNI | colour). 0 = MNI 0.
-	baseMNI uint32
-	colour       uint32
-	colourKnown  bool
-	colourCand   []tetra.DMBurst
-	colourTries  int
+	baseMNI     uint32
+	colour      uint32
+	colourKnown bool
+	colourCand  []tetra.DMBurst
+	colourTries int
 	// colourSink, when non-nil, is told the DM colour the moment it is known
 	// (config override at construction, or a confident recovery). The decoder
 	// exposes it to the same-carrier voice chain, which typically starts
