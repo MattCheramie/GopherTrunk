@@ -94,7 +94,7 @@ func TestWidebandTETRAPayloadDroughtForcesResyncAndEscalates(t *testing.T) {
 		}
 	}
 
-	feed(2*(budget+chunk))
+	feed(2 * (budget + chunk))
 	if got := strings.Count(buf.String(), "payload drought; sync bursts still decoding"); got != 2 {
 		t.Fatalf("want two payload-drought resyncs, got %d\n%s", got, buf.String())
 	}
