@@ -881,7 +881,7 @@ domains:
         blurb: Walkie-talkies, GMRS mobile rigs, and CB radios — consumer two-way services that need no exam (GMRS takes a $35 no-test FCC license; FRS and CB are license-free). Listening is free with any of them or an SDR + GopherTrunk.
         entries:
           - { slug: rocky-talkie-mountain-radio, title: Rocky Talkie Mountain Radio, type: hardware }
-          - { slug: rocky-talkie-5-watt, title: Rocky Talkie 5 Watt Radio, type: hardware }
+          - { slug: rocky-talkie-5-watt, title: Rocky Talkie Expedition Radio (5 Watt), type: hardware }
           - { slug: midland-gxt1000vp4, title: Midland GXT1000VP4, type: hardware }
           - { slug: motorola-talkabout-t800, title: Motorola Talkabout T800, type: hardware }
           - { slug: baofeng-uv-5g-plus, title: Baofeng UV-5G Plus, type: hardware }
@@ -902,9 +902,9 @@ domains:
           - { slug: btech-gmrs-50x1, title: BTECH GMRS-50X1, type: hardware }
           - { slug: cobra-29-lx, title: Cobra 29 LX, type: hardware }
           - { slug: cobra-29-ltd-classic, title: Cobra 29 LTD Classic, type: hardware }
-          - { slug: uniden-bearcat-880, title: Uniden Bearcat 880, type: hardware }
+          - { slug: uniden-bearcat-880, title: Uniden Bearcat 880FM, type: hardware }
           - { slug: uniden-bearcat-980ssb, title: Uniden Bearcat 980SSB, type: hardware }
-          - { slug: president-mckinley, title: President McKinley USA, type: hardware }
+          - { slug: president-mckinley, title: President McKinley II, type: hardware }
           - { slug: uniden-pro505xl, title: Uniden PRO505XL, type: hardware }
           - { slug: cobra-75-all-road, title: Cobra 75 All Road, type: hardware }
           - { slug: midland-75-822, title: Midland 75-822, type: hardware }
