@@ -931,6 +931,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			DMRInterleavedVoice:     resolveDMRInterleavedVoice(proto, sys.DMRInterleavedVoice),
 			DMRColorCode:            sys.DMRColorCode,
 			TETRAColourCode:         sys.TETRAColourCode,
+			TETRAMCC:                sys.TETRAMCC,
+			TETRAMNC:                sys.TETRAMNC,
 			TETRAChannel:            sys.TETRAChannel,
 			TETRAChannelCoding:      sys.TETRAChannelCoding,
 			TETRAClockMode:          sys.TETRAClockMode,

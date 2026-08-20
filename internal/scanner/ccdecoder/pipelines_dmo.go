@@ -96,9 +96,15 @@ func newTETRADMOPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		rateHz:       opts.SampleRateHz,
 		now:          time.Now,
 		configColour: opts.System.TETRAColourCode,
-		colourSink:   opts.TETRADMOColourSink,
-		fnSeen:       map[uint8]struct{}{},
-		debug:        log.Enabled(context.Background(), slog.LevelDebug),
+		// baseMNI is the network's MNI (MCC<<20 | MNC<<6) — the non-colour half of
+		// the extended colour code. On a DMO network with a non-zero MNI the TCH/S
+		// traffic seed is ExtendedColourCode(MCC, MNC, colour), so colour recovery
+		// must search on top of this base or it never reaches the true seed (the
+		// reporter's Motorola DMO at MCC 250 / MNC 1 — #1003 follow-up).
+		baseMNI:    tetra.ExtendedColourCode(opts.System.TETRAMCC, opts.System.TETRAMNC, 0),
+		colourSink: opts.TETRADMOColourSink,
+		fnSeen:     map[uint8]struct{}{},
+		debug:      log.Enabled(context.Background(), slog.LevelDebug),
 	}
 	if p.configColour != 0 {
 		p.colour = p.configColour
@@ -159,6 +165,10 @@ type tetraDMOPipeline struct {
 	// Colour recovery: 0 = auto-recover via RecoverDMColourCode; a non-zero
 	// tetra_colour_code overrides.
 	configColour uint32
+	// baseMNI is ExtendedColourCode(MCC, MNC, 0) from tetra_mcc/tetra_mnc — the
+	// network MNI folded into every colour-recovery candidate so a non-zero-MNI
+	// DMO network decodes (its traffic seed is baseMNI | colour). 0 = MNI 0.
+	baseMNI uint32
 	colour       uint32
 	colourKnown  bool
 	colourCand   []tetra.DMBurst
@@ -293,7 +303,7 @@ func (p *tetraDMOPipeline) recoverColour(b tetra.DMBurst) {
 		return
 	}
 	p.colourTries++
-	if c, n, confident := tetra.RecoverDMColourCode(p.colourCand); confident {
+	if c, n, confident := tetra.RecoverDMColourCode(p.colourCand, p.baseMNI); confident {
 		p.colour = c
 		p.colourKnown = true
 		p.log.Info("tetra dmo colour code recovered", "colour", c, "crc_valid_tchs", n, "system", p.system)
@@ -328,11 +338,12 @@ func (p *tetraDMOPipeline) maybeGrant() {
 	p.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
-			System:         p.system,
-			Protocol:       "tetra-dmo",
-			FrequencyHz:    p.freqHz,
-			TETRAColourExt: p.colour,
-			At:             p.now(),
+			System:          p.system,
+			Protocol:        "tetra-dmo",
+			FrequencyHz:     p.freqHz,
+			TETRAColourExt:  p.colour,
+			TETRADMOBaseMNI: p.baseMNI,
+			At:              p.now(),
 		},
 	})
 	p.log.Info("tetra dmo grant (traffic detected)",

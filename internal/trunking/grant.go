@@ -81,6 +81,14 @@ type Grant struct {
 	// the scrambler seed the voice chain descrambles the granted call's traffic
 	// frames with. Zero on non-TETRA grants and until the colour code is learned.
 	TETRAColourExt uint32
+	// TETRADMOBaseMNI is the DMO network's MNI half of the extended colour code
+	// (ExtendedColourCode(MCC, MNC, 0)), stamped on a tetra-dmo grant when the
+	// operator configured tetra_mcc/tetra_mnc. The voice chain folds it into its
+	// own colour recovery so a non-zero-MNI DMO network decodes (the traffic seed
+	// is TETRADMOBaseMNI | colour). Distinct from TETRAColourExt, which is the
+	// FULL seed once the colour is known; this is only the search base while the
+	// colour is still unknown. Zero on non-DMO grants and on an MNI-0 network.
+	TETRADMOBaseMNI uint32
 	// TETRAUsageMarker is the call's downlink usage marker (ETSI EN 300 392-2
 	// §21.4.7), the per-slot control-vs-traffic identifier the AACH broadcasts in
 	// every downlink slot. On a same-carrier SCBS it — not the unreliable

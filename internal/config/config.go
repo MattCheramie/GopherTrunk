@@ -1315,6 +1315,21 @@ type SystemConfig struct {
 	// colour code or descrambling produces garbage. Ignored for
 	// non-TETRA protocols.
 	TETRAColourCode uint32 `yaml:"tetra_colour_code"`
+	// TETRAMCC / TETRAMNC give the network's Mobile Country Code
+	// (10-bit, 0..1023) and Mobile Network Code (14-bit, 0..16383) —
+	// the MNI half of the 30-bit extended colour code that seeds the
+	// TETRA scrambler (ExtendedColourCode(MCC, MNC, colour)). They exist
+	// for TETRA DMO (Direct Mode): the sync burst is always colour-0
+	// scrambled and carries no MNI on air, but the voice traffic (TCH/S)
+	// is scrambled with the FULL extended code, so on a network with a
+	// non-zero MNI the traffic seed is ExtendedColourCode(MCC, MNC,
+	// colour) and DMO decode fails unless the MNI is known. Set these to
+	// the network's MNI (e.g. a Motorola DMO codeplug's MCC 250 / MNC 1)
+	// so the DMO colour recovery folds it into every candidate; the
+	// colour code itself is still auto-recovered. Zero (the default) is a
+	// radio-to-radio DMO with MNI 0. Ignored for non-DMO / non-TETRA.
+	TETRAMCC uint16 `yaml:"tetra_mcc"`
+	TETRAMNC uint16 `yaml:"tetra_mnc"`
 	// TETRAChannel selects which TETRA logical channel lives in
 	// each burst window under ChannelCodingOn. Recognised values:
 	// "sch/hd" | "sch/f" | "sch/hu" | "bsch" | "aach". Empty

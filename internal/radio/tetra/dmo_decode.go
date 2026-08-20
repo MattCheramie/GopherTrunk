@@ -154,33 +154,49 @@ const (
 	dmColourDominance = 3
 )
 
-// RecoverDMColourCode determines the DM colour code the TCH/S traffic bursts are
-// scrambled with, when it is not known from configuration. This is the missing
-// piece for on-air DMO voice (#1003): the DSB SCH/S is always colour-0 scrambled
-// and decodes regardless of the traffic colour, so it cannot reveal it, and the
-// DM-SYNC SYSINFO field that carries it (EN 300 396-3, recovered in the DSB
-// SCH/H) cannot be pinned to an exact bit offset from a single capture without
-// risking a self-consistent mis-parse. Instead this picks the colour (0..63)
-// that yields the most CRC-valid speech frames across the given DNBs, using the
-// same soft-with-hard-fallback decode the production path uses: the correct
-// colour descrambles the class-2 protected TCH/S while any wrong colour leaves
-// it at the ~1/256 chance floor, so the true colour wins by a wide margin.
+// RecoverDMColourCode determines the DM traffic scramble seed the TCH/S bursts
+// are scrambled with, when the 6-bit colour code is not known from
+// configuration. This is the missing piece for on-air DMO voice (#1003): the DSB
+// SCH/S is always colour-0 scrambled and decodes regardless of the traffic
+// colour, so it cannot reveal it, and the DM-SYNC SYSINFO field that carries it
+// (EN 300 396-3, recovered in the DSB SCH/H) cannot be pinned to an exact bit
+// offset from a single capture without risking a self-consistent mis-parse.
+// Instead this picks the 6-bit colour (0..63) that yields the most CRC-valid
+// speech frames across the given DNBs, using the same soft-with-hard-fallback
+// decode the production path uses: the correct colour descrambles the class-2
+// protected TCH/S while any wrong colour leaves it at the ~1/256 chance floor,
+// so the true colour wins by a wide margin.
 //
-// Returns the best colour, its CRC-valid TCH/S count, and whether that result
-// is trustworthy (clears dmColourMinCRC and dominates the runner-up). When not
-// confident — an encrypted call, an unreceivable capture, or no traffic — the
-// caller should keep its configured/default colour rather than trust a
-// chance-floor winner.
-func RecoverDMColourCode(bursts []DMBurst) (colour uint32, crcCount int, confident bool) {
+// baseMNI is the rest of the 30-bit extended colour code — the network's MNI
+// (MCC<<20 | MNC<<6), with the low 6 colour bits ignored. TETRA scrambling seeds
+// the LFSR from the FULL extended colour code get_init(mcc, mnc, colour)
+// (EN 300 392-2 §8.2.5.2, and osmo-tetra-dmo's tetra_scramb_get_init), so on a
+// network with a non-zero MNI — e.g. the reporter's Motorola DMO at MCC 250 /
+// MNC 1 — the true seed is ExtendedColourCode(250, 1, colour) and a search that
+// only tries the bare colour (baseMNI 0) never reaches it: every candidate sits
+// at the chance floor and no colour dominates. Passing the configured MNI here
+// (tetra_mcc / tetra_mnc) folds it into every candidate so the colour brute
+// force works on a real MNI-bearing network. Pass 0 for a radio-to-radio DMO
+// with MNI 0 (the historical behaviour).
+//
+// Returns the best FULL extended seed (baseMNI | colour, ready to hand to
+// DescrambleTetra), its CRC-valid TCH/S count, and whether that result is
+// trustworthy (clears dmColourMinCRC and dominates the runner-up). When not
+// confident — an encrypted call, an unreceivable capture, the wrong MNI, or no
+// traffic — the caller should keep its configured/default seed rather than trust
+// a chance-floor winner.
+func RecoverDMColourCode(bursts []DMBurst, baseMNI uint32) (colour uint32, crcCount int, confident bool) {
+	base := baseMNI &^ 0x3F
 	var counts [64]int
 	for c := 0; c < 64; c++ {
+		seed := base | uint32(c)
 		n := 0
 		for i := range bursts {
 			b := bursts[i]
 			if b.Kind != DMBurstNormal {
 				continue
 			}
-			if len(DMBurstTCHSpeechSoft(b, uint32(c))) == 2 || len(DMBurstTCHSpeech(b, uint32(c))) == 2 {
+			if len(DMBurstTCHSpeechSoft(b, seed)) == 2 || len(DMBurstTCHSpeech(b, seed)) == 2 {
 				n++
 			}
 		}
@@ -201,7 +217,7 @@ func RecoverDMColourCode(bursts []DMBurst) (colour uint32, crcCount int, confide
 		second = 0
 	}
 	confident = best >= dmColourMinCRC && best >= dmColourDominance*max(second, 1)
-	return uint32(bestC), best, confident
+	return base | uint32(bestC), best, confident
 }
 
 // DecodeDMSCHF decodes a DNB carrying SCH/F short-data signalling (the full-slot

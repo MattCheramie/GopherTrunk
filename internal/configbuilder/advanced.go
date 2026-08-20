@@ -13,7 +13,7 @@ var AdvancedFields = map[string][]string{
 	},
 	"SystemConfig": {
 		// TETRA
-		"TETRAColourCode", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode",
+		"TETRAColourCode", "TETRAMCC", "TETRAMNC", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode",
 		"TETRAStatusIntervalSecs",
 		// LTR
 		"LTRFCSMode", "LTRManchesterMode",

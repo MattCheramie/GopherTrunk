@@ -54,6 +54,26 @@ func TestTETRADMOReplay(t *testing.T) {
 		colourSet = true
 	}
 
+	// baseMNI folds the network's MNI into colour recovery. On a DMO network with
+	// a non-zero MNI (the reporter's Motorola MTP8500Ex runs MCC 250 / MNC 1) the
+	// TCH/S traffic seed is ExtendedColourCode(MCC, MNC, colour), so a colour-only
+	// search never reaches it — every candidate sits at the chance floor and no
+	// colour dominates (exactly the 15aug "no dominant colour" symptom). A/B a
+	// non-zero-MNI capture with GT_TETRA_DMO_MCC=250 GT_TETRA_DMO_MNC=1.
+	var baseMNI uint32
+	if mcc, mnc := os.Getenv("GT_TETRA_DMO_MCC"), os.Getenv("GT_TETRA_DMO_MNC"); mcc != "" || mnc != "" {
+		mv, err := strconv.ParseUint(orZero(mcc), 0, 16)
+		if err != nil {
+			t.Fatalf("bad GT_TETRA_DMO_MCC: %v", err)
+		}
+		nv, err := strconv.ParseUint(orZero(mnc), 0, 16)
+		if err != nil {
+			t.Fatalf("bad GT_TETRA_DMO_MNC: %v", err)
+		}
+		baseMNI = tetra.ExtendedColourCode(uint16(mv), uint16(nv), 0)
+		t.Logf("DMO base MNI set: MCC=%d MNC=%d → baseMNI=%#x", mv, nv, baseMNI)
+	}
+
 	bursts, inRate, outRate, iqLen, enableEQ, enableLMS := loadDMOReplayBursts(t)
 	dibitRate := tetrarx.SymbolRate // 18000 dibits/sec
 
@@ -64,11 +84,12 @@ func TestTETRADMOReplay(t *testing.T) {
 	// auto-selects colour 3 (the value that lifts TCH/S off the chance floor)
 	// with no manual override — the C1 acceptance signal.
 	if !colourSet {
-		if rc, n, ok := tetra.RecoverDMColourCode(bursts); ok {
+		if rc, n, ok := tetra.RecoverDMColourCode(bursts, baseMNI); ok {
 			colour = rc
-			t.Logf("recovered DM colour code=%d (crc-valid TCH/S=%d) — no GT_TETRA_DMO_COLOUR set", rc, n)
+			t.Logf("recovered DM colour code seed=%#x (crc-valid TCH/S=%d) — no GT_TETRA_DMO_COLOUR set", rc, n)
 		} else {
-			t.Logf("DM colour code not recovered (no colour cleared the chance floor); using default %d", colour)
+			colour = baseMNI
+			t.Logf("DM colour code not recovered (no colour cleared the chance floor); using baseMNI %#x", colour)
 		}
 	}
 
@@ -317,6 +338,18 @@ func TestTETRADMOColourScan(t *testing.T) {
 	}
 	bursts, _, _, _, _, _ := loadDMOReplayBursts(t)
 
+	// baseMNI folds the network MNI into every candidate so the scan works on a
+	// non-zero-MNI network (GT_TETRA_DMO_MCC/MNC). Without it a 250/1 capture
+	// shows "several colours rise, none dominant" (the 15aug symptom) because the
+	// true seed baseMNI|colour is never tried.
+	var scanBaseMNI uint32
+	if mcc, mnc := os.Getenv("GT_TETRA_DMO_MCC"), os.Getenv("GT_TETRA_DMO_MNC"); mcc != "" || mnc != "" {
+		mv, _ := strconv.ParseUint(orZero(mcc), 0, 16)
+		nv, _ := strconv.ParseUint(orZero(mnc), 0, 16)
+		scanBaseMNI = tetra.ExtendedColourCode(uint16(mv), uint16(nv), 0)
+		t.Logf("colour scan base MNI: MCC=%d MNC=%d → %#x", mv, nv, scanBaseMNI)
+	}
+
 	// FN anchors from CRC-valid DSBs: (lead, FN).
 	type anchor struct {
 		lead int
@@ -357,7 +390,8 @@ func TestTETRADMOColourScan(t *testing.T) {
 	}
 
 	decodesAt := func(b tetra.DMBurst, c uint32) bool {
-		return len(tetra.DMBurstTCHSpeechSoft(b, c)) == 2 || len(tetra.DMBurstTCHSpeech(b, c)) == 2
+		seed := (scanBaseMNI &^ 0x3F) | c
+		return len(tetra.DMBurstTCHSpeechSoft(b, seed)) == 2 || len(tetra.DMBurstTCHSpeech(b, seed)) == 2
 	}
 
 	// Per-burst colour map + aggregations.
@@ -489,4 +523,14 @@ func iabsDMO(x int) int {
 		return -x
 	}
 	return x
+}
+
+// orZero returns "0" for an empty string, so a missing GT_TETRA_DMO_MCC/MNC
+// half parses cleanly (an MCC with no MNC, or vice versa, means MNI 0 in that
+// half).
+func orZero(s string) string {
+	if s == "" {
+		return "0"
+	}
+	return s
 }

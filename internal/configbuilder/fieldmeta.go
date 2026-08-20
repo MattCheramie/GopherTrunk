@@ -197,6 +197,8 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.EncryptedCalls":  {Help: "How scarce voice SDRs are allocated to encrypted calls on this system, so encrypted traffic can't starve clear calls (issue #711)."},
 	// SystemConfig advanced protocol knobs (edited under the Advanced group).
 	"SystemConfig.TETRAColourCode":         {Label: "TETRA colour code", Help: "30-bit extended colour code seeding the TETRA descrambler. Set to the cell's colour code. TETRA only."},
+	"SystemConfig.TETRAMCC":                {Label: "TETRA MCC", Help: "Mobile Country Code (0..1023) — the MNI half of the extended colour code. Set for DMO so the traffic descramble/colour recovery uses the right network MNI. TETRA DMO only."},
+	"SystemConfig.TETRAMNC":                {Label: "TETRA MNC", Help: "Mobile Network Code (0..16383) — the MNI half of the extended colour code. Set for DMO so the traffic descramble/colour recovery uses the right network MNI. TETRA DMO only."},
 	"SystemConfig.TETRAChannel":            {Label: "TETRA channel", Help: "Which TETRA logical channel each burst carries (sch/hd, sch/f, sch/hu, bsch, aach). Empty = sch/hd. TETRA only."},
 	"SystemConfig.TETRAChannelCoding":      {Label: "TETRA channel coding", Help: "Gate the full ETSI channel-coding chain. on (default, live captures) or off (raw-dibit fixtures). TETRA only."},
 	"SystemConfig.TETRAClockMode":          {Label: "TETRA clock mode", Help: "Symbol-timing recovery: gardner (default, live SDR) or naive (sample-aligned fixtures). TETRA only."},

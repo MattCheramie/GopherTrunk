@@ -657,7 +657,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		if dcs, ok := src.(dmoColourSource); ok {
 			liveColour = dcs.TETRADMOColour
 		}
-		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, liveColour, ch.done)
+		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, cs.Grant.TETRADMOBaseMNI, liveColour, ch.done)
 	case voiceKindNXDN:
 		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	default:
