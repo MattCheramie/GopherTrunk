@@ -220,6 +220,15 @@ groups:
         url: /how-to-program-a-police-scanner/
       - title: "All scanner models (Field Guide)"
         url: /reference/#consumer-scanners
+      - heading: Ham radios
+      - title: Best base stations
+        url: /best-ham-radio-base-stations/
+      - title: Best mobile ham radios
+        url: /best-mobile-ham-radios/
+      - title: Best handheld ham radios
+        url: /best-handheld-ham-radios/
+      - title: "All ham radios (Field Guide)"
+        url: /reference/#ham-radios
       - heading: SDRs & receivers
       - title: Best SDR for GopherTrunk
         url: /best-sdr-for-gophertrunk/

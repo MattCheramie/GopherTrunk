@@ -10,6 +10,8 @@
       lowPrice: "579"                                           # optional, for a range
       highPrice: "699"                                          # optional, for a range
       url: https://www.amazon.com/dp/XXXXXXXXXX?tag=gophertrunk-20   # affiliate offer
+      seller: Amazon                                           # optional, defaults Amazon ("eBay" for aftermarket-only gear)
+      itemCondition: used                                      # optional; "used" marks out-of-production gear sold on the used market
 
   Honesty rule: NO review or aggregateRating is emitted — we do not fabricate
   ratings. Offers carry a real price (or price range) and the affiliate URL only.
@@ -35,10 +37,15 @@
     {%- if pr.price %}"price": {{ pr.price | jsonify }},{% endif %}
     {%- endif -%}
     "priceCurrency": {{ pr.currency | default: "USD" | jsonify }},
+    {%- if pr.itemCondition == "used" -%}
+    "itemCondition": "https://schema.org/UsedCondition",
+    "availability": "https://schema.org/LimitedAvailability"
+    {%- else -%}
     "availability": "https://schema.org/InStock"
+    {%- endif -%}
     {%- if pr.url -%},
     "url": {{ pr.url | jsonify }},
-    "seller": { "@type": "Organization", "name": "Amazon" }
+    "seller": { "@type": "Organization", "name": {{ pr.seller | default: "Amazon" | jsonify }} }
     {%- endif -%}
   }
 }
