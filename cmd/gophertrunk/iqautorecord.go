@@ -68,6 +68,11 @@ type iqAutoRecorder struct {
 	cooldown time.Duration
 	dir      string
 	seconds  int
+	// decimate is the integer software-decimation factor for the wideband
+	// tap: the capture is anti-alias filtered and written at SDR-rate /
+	// decimate. 0/1 records the full rate. Ignored for the ddc tap (already
+	// narrowband; config validation rejects decimate > 1 with tap: ddc).
+	decimate int
 	log      *slog.Logger
 
 	// ddc lazily resolves the control decoder for the "ddc" tap (nil when the
@@ -123,6 +128,7 @@ func newIQAutoRecorder(cfg config.BasebandAutoRecordConfig, system, protocol, se
 		cooldown: cooldown,
 		dir:      cfg.Dir,
 		seconds:  cfg.Seconds,
+		decimate: cfg.Decimate,
 		ddc:      ddc,
 		log:      log.With("component", "iq-autorecord", "serial", serial),
 		now:      time.Now,
@@ -160,7 +166,11 @@ func (a *iqAutoRecorder) defaultCapture(ctx context.Context, path string, format
 	if a.broker == nil {
 		return 0, 0, fmt.Errorf("iq-autorecord: no broker")
 	}
-	samples, _, drops, err := captureIQToFile(ctx, a.broker, path, format, seconds)
+	// Wideband tap: optionally software-decimate to shrink the capture
+	// (SDR-rate / decimate). nil ddc when decimate <= 1 keeps the full-rate
+	// path byte-identical to before.
+	ddc := newCaptureDecimator(a.broker.SampleRateHz(), a.decimate)
+	samples, _, drops, err := captureIQToFile(ctx, a.broker, path, format, seconds, ddc)
 	return samples, drops, err
 }
 
@@ -390,6 +400,11 @@ func (a *iqAutoRecorder) runCapture(ctx context.Context, reason, system, protoco
 	} else if a.broker != nil {
 		centerHz = a.broker.CenterHz()
 		rateHz = a.broker.SampleRateHz()
+		// Software decimation lowers the on-disk rate; stamp the metadata +
+		// filename with the reduced rate so the capture replays correctly.
+		if dec := newCaptureDecimator(rateHz, a.decimate); dec != nil {
+			rateHz = uint32(dec.OutRateHz() + 0.5)
+		}
 	}
 	if system == "" {
 		system = a.system

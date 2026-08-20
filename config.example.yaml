@@ -1449,6 +1449,12 @@ broadcast:
 #                                #   smaller and directly replayable). For a
 #                                #   same-carrier TETRA site the ddc tap holds all
 #                                #   four voice timeslots of the control carrier.
+#     decimate: 5                # wideband tap only: anti-alias decimate the
+#                                #   capture to sdr.sample_rate / N (0/1 = full
+#                                #   rate). The fix for a radio (e.g. USRP B210)
+#                                #   whose hardware rate floor (~1 MS/s) is far
+#                                #   above the bandwidth a channel needs — record
+#                                #   at the floor, decimate to a small long file.
 #     seconds: 8                 # capture length per trigger
 #     cooldown: 10s              # min gap between automatic triggers
 #     on_concurrent_calls: 2     # fire at N+ concurrent calls (0 = off)

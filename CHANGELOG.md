@@ -57,6 +57,19 @@ for tagged releases.
   only — no code changes.
 
 ### Added
+- **Software decimation for IQ captures — record long grabs off a radio whose
+  hardware sample-rate floor is too high.** The USRP B210 cannot stream below
+  ~1 MS/s, so a single narrowband channel could only be captured as a huge
+  full-rate file. Captures can now be anti-alias decimated to `rate / N` on the
+  way to disk, reusing the same down-converter the live decode path uses (no new
+  DSP): `gophertrunk capture -decimate N` (full band, or `-bandwidth` for a
+  narrowband slice), the daemon's `--iq-capture …,decimate=N` (which also writes
+  a metadata sidecar with the reduced rate so the smaller file replays), and
+  `baseband.auto_record: { tap: wideband, decimate: N }`. A B210 at its 1 MS/s
+  floor with `decimate: 5` yields an alias-free 200 kS/s file — one fifth the
+  size, still wide enough to debug. `decimate` is a wideband-tap lever; a value
+  above 1 with `tap: ddc` (already narrowband) is rejected at config load. No
+  change to undecimated captures.
 - **Conventional scanner channels upload under their configured name.** A
   `scanner.conventional` channel's `label:` now travels on the call grant to
   Rdio Scanner and the other scan-type consumers (OpenMHz, Broadcastify Calls),

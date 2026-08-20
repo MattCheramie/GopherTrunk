@@ -449,6 +449,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandAutoRecordConfig.OnEmergency":       {Label: "On emergency", Help: "Fire on an emergency-flagged grant."},
 	"BasebandAutoRecordConfig.OnCCSyncLoss":      {Label: "On CC sync loss", Help: "Fire when a locked control channel suddenly loses sync — captures the re-acquisition IQ, ideal for debugging sync-loss / slow warm-up lock. Pair with the ddc tap for small files."},
 	"BasebandAutoRecordConfig.Tap":               {Help: "What IQ to capture: wideband (default, full-rate SDR — large files) or ddc (narrowband channelised stream at the pipeline rate, e.g. 144 kHz for TETRA — far smaller and directly replayable).", Options: opts("", "wideband (default)", "ddc", "ddc")},
+	"BasebandAutoRecordConfig.Decimate":          {Help: "Software-decimation factor for the wideband tap: record at SDR-rate / N (anti-aliased), shrinking the file by N. 0/1 = full rate. The fix for a radio (e.g. USRP B210) whose hardware sample-rate floor is far above the bandwidth a channel needs. Only valid with tap: wideband."},
 
 	// ---- Paging ------------------------------------------------------------
 	"PagingConfig.POCSAG":               {Label: "POCSAG", Help: "POCSAG channels, each pinning one SDR to a paging frequency."},

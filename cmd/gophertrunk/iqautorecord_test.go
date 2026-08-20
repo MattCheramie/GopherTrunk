@@ -12,6 +12,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -143,6 +144,70 @@ func TestAutoRecordDDCTapMetadata(t *testing.T) {
 	}
 	if m.Format != "cs16" {
 		t.Errorf("metadata format = %q, want cs16", m.Format)
+	}
+}
+
+// TestAutoRecordWidebandDecimateMetadata pins that a wideband tap with
+// decimate: N stamps the reduced rate (SDR-rate / N) into the filename and the
+// metadata sidecar, so the smaller capture replays at the right rate. Without
+// the decimation wiring the metadata carries the full 1 MHz SDR rate and this
+// fails.
+func TestAutoRecordWidebandDecimateMetadata(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.BasebandAutoRecordConfig{
+		Enabled: true, Dir: dir, Seconds: 1, Format: "cs16", Tap: "wideband", Decimate: 5,
+	}
+	// A broker seeded to a 1 MHz SDR rate + centre (the B210-at-its-floor case).
+	broker := iqtap.New(rateOnlyDevice{}, 0, nil)
+	broker.Seed(467_913_000, 1_000_000)
+	a := newIQAutoRecorder(cfg, "SITE", "tetra", "B210", broker, nil, nil)
+	if a == nil {
+		t.Fatal("newIQAutoRecorder returned nil")
+	}
+	// Stub the actuation — this test asserts the runCapture rate math, not the
+	// stream; the transform itself is covered by TestCaptureEncoderDecimates.
+	a.capture = func(_ context.Context, path string, _ siglab.SampleFormat, _ int) (int64, uint64, error) {
+		return 10, 0, os.WriteFile(path, []byte("iq"), 0o644)
+	}
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	a.now = func() time.Time { return now }
+	a.runCapture(context.Background(), "manual", "SITE", "tetra", now)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	var capName, metaPath string
+	for _, e := range entries {
+		switch {
+		case strings.HasSuffix(e.Name(), ".cs16"):
+			capName = e.Name()
+		case strings.HasSuffix(e.Name(), ".metadata.json"):
+			metaPath = filepath.Join(dir, e.Name())
+		}
+	}
+	if capName == "" {
+		t.Fatalf("no capture written; dir has %v", entries)
+	}
+	if !strings.Contains(capName, "200000hz") {
+		t.Errorf("filename %q does not carry the decimated rate 200000hz (1 MHz / 5)", capName)
+	}
+	b, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("read metadata: %v", err)
+	}
+	var m struct {
+		SampleRateHz float64 `json:"sample_rate_hz"`
+		CenterFreqHz uint32  `json:"center_freq_hz"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("parse metadata: %v", err)
+	}
+	if m.SampleRateHz != 200000 {
+		t.Errorf("metadata sample_rate_hz = %v, want 200000 (1 MHz decimated by 5)", m.SampleRateHz)
+	}
+	if m.CenterFreqHz != 467_913_000 {
+		t.Errorf("metadata center_freq_hz = %d, want 467913000", m.CenterFreqHz)
 	}
 }
 

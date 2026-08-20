@@ -462,6 +462,10 @@ func TestValidate(t *testing.T) {
 		{"auto_record tap ddc ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "ddc", OnConcurrentCalls: 2}}}, false},
 		{"auto_record tap wideband ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "wideband"}}}, false},
 		{"auto_record bad tap", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "narrowband"}}}, true},
+		{"auto_record wideband decimate ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "wideband", Decimate: 5, OnConcurrentCalls: 2}}}, false},
+		{"auto_record decimate default tap ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Decimate: 4}}}, false},
+		{"auto_record negative decimate", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Decimate: -1}}}, true},
+		{"auto_record decimate with ddc tap rejected", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "ddc", Decimate: 5}}}, true},
 		{"auto_record bad cooldown", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Cooldown: "soon", OnEncrypted: true}}}, true},
 		{"auto_record negative concurrent", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, OnConcurrentCalls: -1}}}, true},
 	}
