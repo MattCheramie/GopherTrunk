@@ -246,6 +246,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		// the rate. It is not programmed yet at Open; StreamIQ re-sizes the window
 		// once the delivered rate is known.
 		dev.mrc = newMRCCombiner(format, divMode, 0)
+		dev.mrc.log = d.log
 		dev.capturePrefix = spec.DiversityCapture
 		dev.captureSeconds = spec.DiversityCaptureSeconds
 	}
@@ -499,6 +500,17 @@ func (d *device) getAntenna(ch int32) (string, error) {
 }
 
 func (d *device) SetCenterFreq(hz uint32) error {
+	// A retune to the frequency the device is already on needs no RPC and — more
+	// importantly for diversity — no recalibration: the LO does not re-lock, so
+	// the frozen RX0↔RX1 phase constant is still valid. The cc-hunt supervisor
+	// re-issues the same frequency when it re-locks the same carrier; before
+	// this guard each such call reset a perfectly good MRC calibration.
+	d.mu.Lock()
+	same := hz != 0 && d.centerHz == hz
+	d.mu.Unlock()
+	if same {
+		return nil
+	}
 	if err := d.perRXChannel(func(p *packer, ch int32) {
 		p.call(callSetFrequency)
 		p.char(dirRX)

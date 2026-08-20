@@ -576,7 +576,50 @@ confirmation before any close-as-completed.
   distinct per-carrier phases (−157°/−87°/+20°) but the camped CC carries 71–94% of the
   cross-power so the scalar aligns it — and MRC on a 9 dB-down floor-limited branch is ~no-gain
   either way (the honest fix for run1/run2 is raising branch 0's gain, which run3 proved).
-- **A WebSocket handler that upgrades before validating cannot be backed off from.** The
+- **19 Aug X310 field log (10.5 h) — three verified failure modes, all fixed; and the real MRC
+  bottleneck on this rig turned out to be an INTER-BRANCH TIMING SKEW, now aligned in the
+  driver.** The operator swapped the antennas between RX1/RX2 mid-run: the ~5–10 dB branch
+  deficit FOLLOWED the swap ⇒ antenna/feedline, not the TwinRX. Findings, each with a
+  failing-first regression:
+  - **TETRA CC "locked but deaf" ~37 min total (12 min in one stretch, log ends in it): the
+    AFC's EMA can latch the wrong ±f_sym/4 alias bucket.** A decode-drought resync re-primes
+    `omegaEMA` from ONE weak block; `omegaAliasReject` (π/4 = 2250 Hz) then discards every
+    CORRECT estimate forever. BSCH survives the constant ~17°/sym residual (4-rotation search +
+    heavy FEC) while all SCH fails ⇒ `bsch_ok` ~100%, `sch_pdus=0` — and every BSCH stamps the
+    ONE activity heartbeat both the 1.5 s resync and 5 s CheckStale feed on, so no recovery
+    could fire (the #815 WARN is advisory). Fixes: (1) `carrierAFC.track` re-primes after 3
+    consecutive rejects that agree with each other (`afc_reprime_test.go`); (2) a second
+    payload heartbeat (`LastPayloadNano`, stamped on CRC-clean SCH/F, SCH/HD, or the SB's
+    SCH/HD-coded BNCH) drives `checkPayloadResync`: 12 s of signal with a live lock and no
+    payload forces a resync, 3 fruitless resyncs escalate to `MarkLost` → re-hunt (mirrored in
+    `widebandt2/tetra.go`). Also: a single mis-corrected BSCH could rewrite the locked MCC/MNC
+    (4 bogus "tetra cc locked" flaps, mcc=996 etc.) — identity CHANGES now need 2 consecutive
+    agreeing decodes, mirroring `colourConfirmThreshold`.
+  - **The MRC anchor flipped mid-stream on the 08:58 cc-hunt retune** (rearm set `refIdx=-1` →
+    bare argmax re-pick), and the applied gain random-walked to −34 dB with `calibrated=true`
+    (divergence bounds gated only the proposal). Fixes: rearm/`setSampleRate`/short-payloads
+    KEEP the anchor (dead-incumbent escape still works), every anchor change is logged,
+    `SetCenterFreq` short-circuits same-frequency retunes, and `clampMagnitude` floors the
+    APPLIED gain (smoothed branch only — the snap/mrc-static equivalence pin is untouched).
+    Differential safety is now also pinned at the driver's real α=0.1024 (200 kHz clamped
+    window; the τ comment claimed windows ≪ a burst — false at low rates, corrected).
+  - **The replay harness's "tracking" arms were silently STATIC** (`TrackingOptions{Alpha: 0}`
+    = one-shot), so the 17/18 Aug "tracking matches best branch" verdicts compared static to
+    static. Arms now derive α like `mrcTrackAlpha` and fatal on α=0.
+  - **The big one: branch 0 lagged branch 1 by a CONSTANT 2.60 samples (13 µs at 200 kS/s).**
+    Per-frequency coherence 0.99 with broadband ρ diluted to 0.78 is the signature of a pure
+    delay — it is why this rig's wideband coherence never exceeded ~0.8 in ANY session. A
+    scalar gain cannot represent a delay, so combining skewed branches decoded 22% FEWER BSCH
+    than the best branch alone (886 vs 1142 on the 19 Aug capture) — MRC was HURTING; the
+    identical combine after alignment scored exactly 1142/0. `soapyremote.branchAligner` now
+    measures the skew per stream/retune (0.65 s buffer, ±16-lag scan + parabolic fraction,
+    DC-removed, ρ≥0.1 latch gate) and delays the EARLY branch through an interpolating delay
+    line, resetting the calibrator on latch so it locks on the aligned stream. The harness
+    measures/reports the skew and carries a `wb-aligned-static` arm. Diagnose with
+    `TestDiversityCombinerReplay`: "inter-branch delay: other lags ref by N±f samples".
+    Open question for the next capture: whether the skew is per-stream (start skew) or fixed
+    (DDC group delay) — the aligner re-measures per stream either way. A post-fix long run
+    from the operator is still the on-air gate (#764/#771 discipline). The
   symbol/spectrum/diag/mixer handlers resolved the SDR serial AFTER `upgrader.Upgrade`, so an
   unknown device produced a successful 101 followed by a 1011 close. Browser clients reset
   their reconnect backoff in `onopen`, so a handshake that always succeeds makes `MAX_BACKOFF`

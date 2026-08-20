@@ -94,6 +94,15 @@ type ControlChannel struct {
 	// one crosses colourConfirmThreshold. See LearnColourCode.
 	colourConfirmed bool
 	colourTally     map[uint32]int
+	// pendingLock/pendingLockVotes gate an identity CHANGE on an already-locked
+	// channel behind lockIdentityConfirmThreshold consecutive agreeing BSCH
+	// decodes, exactly like the colour code's confirmation above: BSCH FEC can
+	// mis-correct a marginal burst to a valid-but-wrong codeword, and a single
+	// such burst used to rewrite MCC/MNC/LA wholesale, publish cc.locked and
+	// push a bogus site identity (19 Aug field log: four one-burst flaps to
+	// mcc=996/mnc=3941 and friends). See maybeLock.
+	pendingLock      LockState
+	pendingLockVotes int
 	// mainCarrier is the cell's own carrier number, learned from the
 	// broadcast SYSINFO. With the tuned control-channel frequency it lets a
 	// grant's carrier number resolve to Hz relative to this carrier, without a
@@ -174,6 +183,18 @@ type ControlChannel struct {
 	// lost when the carrier goes silent. Atomic so the decode hot path
 	// (noteActivity) never contends on mu. Zero until the first decode.
 	lastActivityNano atomic.Int64
+
+	// lastPayloadNano is the Unix-nanos timestamp of the most recent CRC-clean
+	// SCH payload block (SCH/F or SCH/HD, including the sync burst's BNCH) — a
+	// SECOND, stricter heartbeat alongside lastActivityNano. The distinction
+	// matters because the two decode chains fail independently: the SB burst's
+	// BSCH survives a wrong AFC alias latch (4-rotation search + heavy FEC)
+	// while every SCH block fails CRC, so a channel can look "alive" to
+	// lastActivityNano for minutes while decoding nothing useful (the 19 Aug
+	// field log: bsch_ok ~100%, sch_pdus=0 for 12 min). The pipeline's
+	// payload-drought check watches this stamp to force a resync/re-hunt out
+	// of that state. Zero until the first payload decode.
+	lastPayloadNano atomic.Int64
 }
 
 // StashSoft records the soft per-symbol differentials for the dibit
@@ -1112,6 +1133,24 @@ func (c *ControlChannel) noteActivity() {
 	c.lastActivityNano.Store(c.now().UnixNano())
 }
 
+// notePayloadActivity stamps the payload heartbeat: a CRC-clean SCH block
+// proves the whole SCH decode chain (AFC residual, colour code, FEC, CRC) is
+// healthy, which a surviving BSCH alone does not (see lastPayloadNano). A
+// payload decode is also ordinary activity, so the plain heartbeat is stamped
+// too.
+func (c *ControlChannel) notePayloadActivity() {
+	c.lastPayloadNano.Store(c.now().UnixNano())
+	c.noteActivity()
+}
+
+// LastPayloadNano returns the Unix-nano timestamp of the most recent
+// CRC-clean SCH payload decode, or 0 before the first. A lock-free atomic
+// read for the pipeline's payload-drought check (the "locked but deaf"
+// escape: sync bursts decoding, zero SCH for a long budget).
+func (c *ControlChannel) LastPayloadNano() int64 {
+	return c.lastPayloadNano.Load()
+}
+
 // CheckStale declares the control channel lost (publishes cc.lost via MarkLost)
 // when it is locked but has decoded nothing for longer than timeout. This is the
 // watchdog the cchunt supervisor needs to leave StateLocked and re-hunt when the
@@ -1163,10 +1202,20 @@ func (c *ControlChannel) LastActivityNano() int64 {
 	return c.lastActivityNano.Load()
 }
 
+// lockIdentityConfirmThreshold is how many CONSECUTIVE BSCH decodes must agree
+// on a changed cell identity before an already-locked channel adopts it. Same
+// rationale as colourConfirmThreshold: the BSCH FEC can mis-correct a marginal
+// burst to a valid-but-wrong codeword, and MCC/MNC come from the same 60-bit
+// payload — one such burst must not rewrite the site identity. The first lock
+// stays immediate (there is nothing to protect yet), and a genuine identity
+// change (e.g. an LA rehome) confirms in ~2 s at the ~1/s BSCH cadence.
+const lockIdentityConfirmThreshold = 2
+
 func (c *ControlChannel) maybeLock(s LockState) {
 	c.noteActivity()
 	c.mu.Lock()
 	if c.locked && c.last == s {
+		c.pendingLockVotes = 0 // agreement with the active identity breaks any pending streak
 		c.mu.Unlock()
 		return
 	}
@@ -1176,9 +1225,28 @@ func (c *ControlChannel) maybeLock(s LockState) {
 		s.MNC = c.last.MNC
 		s.LocationArea = c.last.LocationArea
 		if c.last == s {
+			c.pendingLockVotes = 0
 			c.mu.Unlock()
 			return
 		}
+	}
+	// An identity CHANGE on a locked channel needs consecutive corroboration;
+	// a single CRC-passing but FEC-mis-corrected BSCH must not rewrite it.
+	if c.locked {
+		if c.pendingLock == s && c.pendingLockVotes > 0 {
+			c.pendingLockVotes++
+		} else {
+			c.pendingLock = s
+			c.pendingLockVotes = 1
+		}
+		if c.pendingLockVotes < lockIdentityConfirmThreshold {
+			c.log.Debug("tetra: cc identity change pending confirmation",
+				"freq", s.FrequencyHz, "mcc", s.MCC, "mnc", s.MNC, "la", s.LocationArea,
+				"active_mcc", c.last.MCC, "active_mnc", c.last.MNC, "system", c.systemName)
+			c.mu.Unlock()
+			return
+		}
+		c.pendingLockVotes = 0
 	}
 	c.locked = true
 	c.last = s
@@ -1206,6 +1274,9 @@ func (c *ControlChannel) MarkLost() {
 		return
 	}
 	c.locked = false
+	// A stale pending identity must not corroborate a burst decoded after the
+	// loss; a fresh first lock adopts immediately anyway.
+	c.pendingLockVotes = 0
 	c.bus.Publish(events.Event{Kind: events.KindCCLost, Payload: c.last})
 }
 

@@ -742,6 +742,33 @@ const (
 // storm) is no longer needed and has been removed.
 const tetraResyncTimeout = 1500 * time.Millisecond
 
+// tetraPayloadResyncTimeout is the SIGNAL-TIME budget for the second, stricter
+// drought check: how long a LOCKED control channel may keep decoding sync
+// bursts while producing zero CRC-clean SCH payload blocks before the pipeline
+// treats the decode chain itself as wedged and forces the same destructive
+// reset-to-centre as checkResync. The two droughts are distinct failure
+// classes: checkResync fires when NOTHING decodes (off-lock), while this fires
+// on the "locked but deaf" state the 19 Aug field log sat in for ~37 minutes —
+// a wrong AFC alias latch leaves a constant differential residual that the
+// SB burst's heavily-coded BSCH survives (feeding the activity heartbeat, so
+// checkResync and CheckStale can never fire) while every SCH block fails CRC.
+// A real TETRA control channel carries SYSINFO/signalling continuously (a BNCH
+// on every sync burst, SCH on the NDB slots), so 12 s of BSCH-alive/SCH-dead
+// is always pathological, yet the budget is long enough (8× the ordinary
+// resync window) that a marginal #1001-class signal decoding even one SCH
+// block per 12 s never trips it.
+//
+// tetraPayloadResyncMaxAttempts caps the escape: if this many consecutive
+// payload-forced resyncs each burn a full budget without a single payload
+// decode, the reset alone is not fixing it (e.g. the re-primed AFC keeps
+// re-latching the same wrong alias on a weak carrier) — declare the lock lost
+// so the cchunt supervisor re-hunts and retunes, which re-acquires from cold.
+// ~36-48 s worst case to a re-hunt, against the field's 12-minute stucks.
+const (
+	tetraPayloadResyncTimeout     = 12 * time.Second
+	tetraPayloadResyncMaxAttempts = 3
+)
+
 type tetraPipeline struct {
 	rx             *tetrarx.Receiver
 	cc             *tetra.ControlChannel
@@ -760,11 +787,19 @@ type tetraPipeline struct {
 	// clock without advancing the sample count. See tetraResyncTimeout.
 	samplesSinceDecode int64
 	lastSeenActivity   int64 // cc heartbeat nano last observed; a change ⇒ a decode landed since
+	// Payload-drought trigger (the "locked but deaf" escape): like the pair
+	// above but watching the stricter payload heartbeat, with an attempt
+	// counter that escalates to MarkLost when resets alone don't recover.
+	// See tetraPayloadResyncTimeout.
+	samplesSincePayload int64
+	lastSeenPayload     int64
+	payloadResyncStreak int
 }
 
 func (p *tetraPipeline) Process(iq []complex64) {
 	p.rx.Process(iq)
 	p.checkResync(len(iq))
+	p.checkPayloadResync(len(iq))
 	p.checkLockStale()
 	p.maybeLogStatus()
 }
@@ -822,11 +857,64 @@ func (p *tetraPipeline) checkResync(n int) {
 	// Reset the budget first so the next reset needs another full window (throttle
 	// + reacquire window), then reacquire the symbol timing from centre.
 	p.samplesSinceDecode = 0
+	// The DSP was just reset, so the payload drought (if any) restarts too —
+	// the two checks must never both fire on one window.
+	p.samplesSincePayload = 0
 	p.rx.Reset()
 	p.cc.ResyncReset()
 	if p.log != nil {
 		p.log.Debug("tetra: dsp resync (signal-time decode drought; reacquiring symbol timing from centre)",
 			"system", p.system)
+	}
+}
+
+// checkPayloadResync is the escape from the "locked but deaf" state: the
+// control channel keeps decoding sync bursts (so checkResync and CheckStale
+// stay satisfied) while producing zero CRC-clean SCH payload for a full
+// tetraPayloadResyncTimeout of processed signal. Same signal-time discipline
+// as checkResync (immune to CPU starvation), watching the stricter payload
+// heartbeat. Each firing forces the same destructive reset-to-centre (which
+// re-primes the AFC — see the 19 Aug alias-latch field failure); after
+// tetraPayloadResyncMaxAttempts consecutive fruitless resets it declares the
+// lock lost so the cchunt supervisor re-hunts and retunes from cold.
+func (p *tetraPipeline) checkPayloadResync(n int) {
+	pay := p.cc.LastPayloadNano()
+	if pay != p.lastSeenPayload {
+		// A payload block decoded since the last check: the chain is healthy.
+		p.lastSeenPayload = pay
+		p.samplesSincePayload = 0
+		p.payloadResyncStreak = 0
+		return
+	}
+	if !p.cc.Locked() {
+		// Unlocked channels are the hunt supervisor's problem; accumulating here
+		// would just pile destructive resets onto a channel with no signal.
+		p.samplesSincePayload = 0
+		return
+	}
+	if p.rateHz <= 0 {
+		return
+	}
+	p.samplesSincePayload += int64(n)
+	if p.samplesSincePayload < int64(tetraPayloadResyncTimeout.Seconds()*p.rateHz) {
+		return
+	}
+	p.samplesSincePayload = 0
+	p.payloadResyncStreak++
+	if p.payloadResyncStreak >= tetraPayloadResyncMaxAttempts {
+		p.payloadResyncStreak = 0
+		if p.log != nil {
+			p.log.Warn("tetra: payload drought persists across resyncs (sync bursts decoding, no SCH payload) — declaring lock lost to force a re-hunt",
+				"system", p.system, "attempts", tetraPayloadResyncMaxAttempts)
+		}
+		p.cc.MarkLost()
+		return
+	}
+	p.rx.Reset()
+	p.cc.ResyncReset()
+	if p.log != nil {
+		p.log.Debug("tetra: dsp resync (payload drought; sync bursts still decoding but no SCH payload)",
+			"system", p.system, "attempt", p.payloadResyncStreak)
 	}
 }
 

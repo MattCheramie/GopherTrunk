@@ -43,6 +43,20 @@ type carrierAFC struct {
 	// bad block cannot poison the track.
 	omegaEMA    float64
 	omegaPrimed bool
+
+	// rejStreak/rejMean track CONSECUTIVE rejected raw estimates that agree
+	// with each other. The outlier reject above has a failure mode the 19 Aug
+	// field log hit for ~37 minutes: after a Reset() the EMA is seeded from a
+	// single block, and a weak-signal seed can land in the wrong ±f_sym/4
+	// alias bucket — after which every CORRECT estimate differs from the EMA
+	// by more than omegaAliasReject and is rejected forever (BSCH still
+	// decodes via the per-burst SB correction, so no watchdog fires). A run of
+	// rejects that cluster tightly with EACH OTHER is the signature of a wrong
+	// latch (or a genuine carrier jump), not of ISI outliers — ISI aliasing is
+	// sporadic and interleaved with accepted blocks — so after
+	// omegaReprimeStreak of them the EMA is re-primed from their mean.
+	rejStreak int
+	rejMean   float64
 }
 
 // afcBlockSymbols is the feed-forward re-estimation window in symbols.
@@ -64,6 +78,18 @@ const omegaEMAAlpha = 0.08
 // real carrier cannot slew that far in one ~57 ms block, so only alias jumps and
 // gross transients are rejected.
 const omegaAliasReject = math.Pi / 4
+
+// omegaRejectClusterTol is how tightly consecutive rejected estimates must
+// agree with each other to count as one cluster (evidence of a wrong EMA
+// latch rather than scattered ISI outliers). Half the reject window: tight
+// enough that noise-scattered aliases restart the cluster, wide enough that
+// the fine estimator's jitter around the true carrier does not.
+const omegaRejectClusterTol = omegaAliasReject / 2
+
+// omegaReprimeStreak is how many consecutive clustered rejects re-prime the
+// EMA (~3 × 57 ms ≈ 170 ms of signal). A single accepted block in between
+// zeroes the streak, so sporadic outliers can never trip it.
+const omegaReprimeStreak = 3
 
 func newCarrierAFC(sps int) *carrierAFC {
 	if sps < 1 {
@@ -186,13 +212,9 @@ func (a *carrierAFC) Process(dst, matched, wide []complex64) []complex64 {
 		// Smooth the net estimate across blocks: strip the per-block jitter that
 		// spins the constellation and swings the reported offset, while the mean
 		// (seeded from the first block, so a real multi-kHz offset is acquired at
-		// once) still follows slow carrier drift. Reject alias-sized outliers.
-		if !a.omegaPrimed {
-			a.omegaEMA = rawOmega
-			a.omegaPrimed = true
-		} else if math.Abs(rawOmega-a.omegaEMA) < omegaAliasReject {
-			a.omegaEMA += omegaEMAAlpha * (rawOmega - a.omegaEMA)
-		}
+		// once) still follows slow carrier drift. Reject alias-sized outliers,
+		// but escape a wrong latch when the rejects agree with each other.
+		a.track(rawOmega)
 		// Finish derotating the block to the smoothed net (coarse is already
 		// removed, so apply the remainder).
 		a.derotate(block, a.omegaEMA-coarse)
@@ -207,6 +229,39 @@ func (a *carrierAFC) Process(dst, matched, wide []complex64) []complex64 {
 	return dst
 }
 
+// track folds one per-block raw estimate into the smoothed EMA. Accepted
+// estimates (within omegaAliasReject of the EMA) update it and clear any
+// reject streak. Rejected estimates accumulate into a cluster while they
+// agree with each other (omegaRejectClusterTol); omegaReprimeStreak
+// consecutive clustered rejects re-prime the EMA from their mean — the
+// escape hatch for a wrong first-block seed that would otherwise reject
+// every correct estimate forever (19 Aug field log: −3630 Hz latched for
+// 12 minutes while BSCH decoded and SCH sat at zero).
+func (a *carrierAFC) track(rawOmega float64) {
+	if !a.omegaPrimed {
+		a.omegaEMA = rawOmega
+		a.omegaPrimed = true
+		a.rejStreak = 0
+		return
+	}
+	if math.Abs(rawOmega-a.omegaEMA) < omegaAliasReject {
+		a.omegaEMA += omegaEMAAlpha * (rawOmega - a.omegaEMA)
+		a.rejStreak = 0
+		return
+	}
+	if a.rejStreak > 0 && math.Abs(rawOmega-a.rejMean) < omegaRejectClusterTol {
+		a.rejStreak++
+		a.rejMean += (rawOmega - a.rejMean) / float64(a.rejStreak)
+	} else {
+		a.rejStreak = 1
+		a.rejMean = rawOmega
+	}
+	if a.rejStreak >= omegaReprimeStreak {
+		a.omegaEMA = a.rejMean
+		a.rejStreak = 0
+	}
+}
+
 // OffsetHz reports the most recent per-symbol offset estimate in Hz.
 func (a *carrierAFC) OffsetHz(symRate float64) float64 { return a.omega * symRate / (2 * math.Pi) }
 
@@ -216,6 +271,8 @@ func (a *carrierAFC) Reset() {
 	a.wideBuf = a.wideBuf[:0]
 	a.omegaEMA = 0
 	a.omegaPrimed = false
+	a.rejStreak = 0
+	a.rejMean = 0
 }
 
 func conjf(c complex64) complex64 { return complex(real(c), -imag(c)) }

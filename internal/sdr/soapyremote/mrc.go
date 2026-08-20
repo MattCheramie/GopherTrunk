@@ -127,10 +127,15 @@ const (
 	mrcCalWindowDefaultSamples = 8192
 )
 
-// mrcTrackTauMs is the tracking loop's 1/e time constant. 200 ms is roughly 14
-// TETRA bursts: far slower than one burst, so the phase a burst sees is
-// effectively constant, and far faster than the relative drift of two
-// independently-locked front-end PLLs.
+// mrcTrackTauMs is the tracking loop's 1/e time constant: far faster than the
+// relative drift of two independently-locked front-end PLLs, slow enough that
+// the per-window applied-phase step stays deep inside the π/4-DQPSK decision
+// margin. NOTE the per-burst-constancy argument is per-STEP, not per-tau: at a
+// clamped low-rate window (200 kHz → 4096 samples = 20.48 ms) one window is
+// ~1.5 TETRA bursts and alpha reaches ~0.10, so what protects a burst is the
+// bounded per-window step (α × the gated estimate error, hard-clamped by
+// trackingMaxStepRad) — pinned by TestTrackingCalibratorIsDifferentialSafe's
+// driver200kHzAlpha subtest in internal/dsp/diversity.
 const mrcTrackTauMs = 200.0
 
 // mrcTrackAlpha is the one-pole coefficient implied by the window and the time
@@ -265,9 +270,20 @@ type mrcCombiner struct {
 	refIdx  int
 	ordered [][]complex64
 
+	// align removes the constant inter-branch timing skew a scalar gain cannot
+	// represent (see branchAligner). Measured once per stream/retune, before
+	// the calibrator sees any samples of the aligned stream.
+	align *branchAligner
+
 	// refDeadDatagrams counts consecutive datagrams in which the incumbent
 	// reference looked dead relative to a challenger; see mrcRefDeadDatagrams.
 	refDeadDatagrams int
+
+	// log, when non-nil, reports anchor changes. Every refIdx change is a phase
+	// discontinuity into the downstream differential decoder, so it must be
+	// visible in the log rather than only inferable from the 30 s health line
+	// (the 19 Aug field flip was silent). Nil in tests that don't care.
+	log *slog.Logger
 
 	// Diagnostics, refreshed every combine(): per-branch mean power and how the
 	// last payload split. See health().
@@ -297,6 +313,7 @@ func newMRCCombiner(format sampleFormat, mode diversityMode, rateHz float64) *mr
 		refIdx:   -1,
 		ordered:  make([][]complex64, diversityChannels),
 		powDbFS:  make([]float64, diversityChannels),
+		align:    newBranchAligner(),
 	}
 }
 
@@ -394,8 +411,13 @@ func (m *mrcCombiner) setSampleRate(rateHz float64) {
 	opts := mrcCalOptions(m.mode, want, rateHz)
 	m.lockGate = opts.LockGate(want)
 	m.cal = diversity.NewTrackingCalibrator(diversityChannels, opts)
-	m.refIdx = -1
+	// A window re-size drops the gain estimate but, like the rearm path in
+	// combine(), deliberately KEEPS the anchor: the stream rate says nothing
+	// about which antenna is better, and moving the anchor is a phase step.
+	// The delay alignment IS re-measured — a fresh stream has a fresh
+	// start-of-stream skew.
 	m.refDeadDatagrams = 0
+	m.align.reset()
 }
 
 // requestRecalibrate arms a calibration reset to be applied by the next
@@ -410,9 +432,21 @@ func (m *mrcCombiner) requestRecalibrate() { m.rearm.Store(true) }
 // force-split into fake branches.
 func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 	if m.rearm.Swap(false) {
+		// A retune invalidates the GAIN estimate (new LO lock ⇒ new relative
+		// phase), so the calibrator restarts — but it does NOT change which
+		// antenna is the better anchor, so refIdx is deliberately KEPT. The old
+		// code un-latched it to -1 here, and the next datagram's bare argmax
+		// re-pick handed the differential decoder an unlogged anchor flip
+		// (±180° phase + several dB amplitude step) on every cc-hunt retune —
+		// observed in the 19 Aug field log at the 08:58 sync loss. A kept
+		// anchor that is genuinely dead still escapes via the uncalibrated
+		// dead-incumbent path in selectReference. The delay alignment is
+		// re-measured (cheap: ~0.65 s of passthrough-equivalent combining at
+		// 200 kS/s) in case the hardware re-times its DSP chain on an LO
+		// change; the anchor is NOT.
 		m.cal.Reset()
-		m.refIdx = -1
 		m.refDeadDatagrams = 0
+		m.align.reset()
 	}
 	branches := m.format.deinterleave(payload, m.channels, elems)
 	// Tap the branches BEFORE anything is done to them, so a capture is exactly
@@ -430,12 +464,34 @@ func (m *mrcCombiner) combine(payload []byte, elems int) []complex64 {
 	if len(branches) != m.channels {
 		// The server did not deliver every channel (see deinterleave). Emitting
 		// the payload verbatim keeps the stream a valid single-receiver time
-		// series; the health line reports the shortfall.
+		// series; the health line reports the shortfall. A held anchor is NOT
+		// rewritten by one short payload — that would be a silent anchor move
+		// (see the rearm comment above); it is only seeded when nothing was
+		// anchored yet.
 		if len(branches) == 0 {
 			return nil
 		}
-		m.refIdx = 0
+		if m.refIdx < 0 {
+			m.refIdx = 0
+		}
 		return branches[0]
+	}
+	// Remove the constant inter-branch timing skew BEFORE the calibrator sees
+	// the samples: a scalar gain cannot represent a delay, and combining
+	// skewed branches decodes WORSE than the best branch alone (19 Aug field
+	// capture: 2.60 samples of skew cost ~22% of CRC-clean BSCH; aligned, the
+	// combine matched the best branch). The capture tap above stays RAW so an
+	// offline replay can re-derive the skew independently.
+	if latched, delay, rho := m.align.process(branches); latched {
+		// Any gain locked during the measurement was estimated on the SKEWED
+		// stream; restart calibration so both tracking and static modes lock
+		// on the aligned one. The reset coincides with the alignment's own
+		// one-time timeline step, so it adds no extra discontinuity.
+		m.cal.Reset()
+		if m.log != nil {
+			m.log.Info("soapyremote: MRC inter-branch delay measured — delaying the early branch to align the combine",
+				"delay_samples", round2(delay), "peak_rho", round2(rho))
+		}
 	}
 	m.selectReference()
 	if m.refIdx < 0 {
@@ -468,6 +524,10 @@ func (m *mrcCombiner) selectReference() {
 	if m.refIdx < 0 {
 		m.refIdx = best
 		m.refDeadDatagrams = 0
+		if m.log != nil {
+			m.log.Info("soapyremote: MRC phase anchor latched",
+				"reference_branch", best, "branch_dbfs", formatBranchPowers(m.powDbFS))
+		}
 		return
 	}
 	// Only a persistently dead incumbent moves the anchor.
@@ -477,6 +537,11 @@ func (m *mrcCombiner) selectReference() {
 	}
 	m.refDeadDatagrams++
 	if m.refDeadDatagrams >= mrcRefDeadDatagrams {
+		if m.log != nil {
+			m.log.Info("soapyremote: MRC phase anchor moved off a dead reference — expect one decode discontinuity",
+				"old_reference", m.refIdx, "reference_branch", best,
+				"branch_dbfs", formatBranchPowers(m.powDbFS))
+		}
 		m.refIdx = best
 		m.refDeadDatagrams = 0
 		m.cal.Reset() // the anchor changed; the old estimate means nothing
