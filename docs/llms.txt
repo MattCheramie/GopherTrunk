@@ -78,6 +78,12 @@ FRS/GMRS walkie-talkies, GMRS mobile rigs, and CB radios ranked with the same ho
 - [Best GMRS mobile radios]({{ '/best-gmrs-mobile-radios/' | absolute_url }}): the 10 best GMRS mobile and base rigs ranked, from the Radioddity DB20-G to the Midland MXT575 and Wouxun KG-1000G Plus.
 - [Best CB radios]({{ '/best-cb-radios/' | absolute_url }}): the 10 best CB radios ranked, from the Uniden PRO505XL to the Bearcat 880 and President McKinley, including collector classics.
 
+## Shortwave & emergency radio buyer's guides
+Portable and desktop shortwave receivers plus emergency crank/solar radios, ranked with the same honest rubric — all listen-only, no license ever.
+- [Best shortwave radios]({{ '/best-shortwave-radios/' | absolute_url }}): the 10 best portable shortwave receivers ranked, from the Tecsun PL-330 to the PL-990 and Sangean ATS-909X2, including discontinued classics.
+- [Best emergency radios]({{ '/best-emergency-radios/' | absolute_url }}): the 10 best crank/solar emergency radios ranked, with honest notes on tone alerts vs NOAA SAME and real crank runtimes.
+- [Best desktop shortwave receivers]({{ '/best-desktop-shortwave-receivers/' | absolute_url }}): the classic tabletop receivers worth buying used — Drake R8B, Icom IC-R75 — plus the few still made new.
+
 ## SDR hardware for GopherTrunk (buyer's guides)
 The receivers, antennas, cables, and accessories to run GopherTrunk, with honest picks and Amazon links.
 - [Best SDR for GopherTrunk]({{ '/best-sdr-for-gophertrunk/' | absolute_url }}): RTL-SDR, NESDR, Airspy, and HackRF compared for P25/DMR/NXDN decoding.

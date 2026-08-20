@@ -911,6 +911,41 @@ domains:
           - { slug: cobra-2000-gtl, title: Cobra 2000 GTL, type: hardware }
           - { slug: uniden-grant-xl, title: Uniden Grant XL, type: hardware }
 
+      - id: shortwave-radios
+        label: Shortwave & emergency radios
+        blurb: Portable and desktop shortwave receivers plus emergency crank/solar radios — all listen-only, no license ever. The same listen-first philosophy GopherTrunk applies to VHF/UHF, on the HF bands.
+        entries:
+          - { slug: tecsun-pl-990, title: Tecsun PL-990, type: hardware }
+          - { slug: tecsun-pl-880, title: Tecsun PL-880, type: hardware }
+          - { slug: tecsun-pl-330, title: Tecsun PL-330, type: hardware }
+          - { slug: sangean-ats-909x2, title: Sangean ATS-909X2, type: hardware }
+          - { slug: xhdata-d-808, title: XHDATA D-808, type: hardware }
+          - { slug: cc-skywave-ssb-2, title: C.Crane CC Skywave SSB 2, type: hardware }
+          - { slug: eton-elite-executive, title: Eton Elite Executive, type: hardware }
+          - { slug: qodosen-dx-286, title: Qodosen DX-286, type: hardware }
+          - { slug: sony-icf-sw7600gr, title: Sony ICF-SW7600GR, type: hardware }
+          - { slug: tecsun-pl-660, title: Tecsun PL-660, type: hardware }
+          - { slug: midland-er310, title: Midland ER310, type: hardware }
+          - { slug: midland-er210, title: Midland ER210, type: hardware }
+          - { slug: kaito-ka500, title: Kaito KA500, type: hardware }
+          - { slug: eton-frx3-plus, title: "Eton FRX3+", type: hardware }
+          - { slug: sangean-mmr-88, title: Sangean MMR-88, type: hardware }
+          - { slug: fospower-a1, title: FosPower A1, type: hardware }
+          - { slug: runningsnail-md-092, title: RunningSnail MD-092, type: hardware }
+          - { slug: eton-scorpion-ii, title: Eton Scorpion II, type: hardware }
+          - { slug: eton-fr500, title: Eton FR500 Solarlink, type: hardware }
+          - { slug: grundig-fr200, title: Grundig FR200, type: hardware }
+          - { slug: drake-r8b, title: Drake R8B, type: hardware }
+          - { slug: icom-ic-r75, title: Icom IC-R75, type: hardware }
+          - { slug: aor-ar7030, title: AOR AR7030, type: hardware }
+          - { slug: jrc-nrd-545, title: JRC NRD-545, type: hardware }
+          - { slug: kenwood-r-5000, title: Kenwood R-5000, type: hardware }
+          - { slug: sony-icf-2010, title: Sony ICF-2010, type: hardware }
+          - { slug: lowe-hf-150, title: Lowe HF-150, type: hardware }
+          - { slug: grundig-satellit-800, title: Grundig Satellit 800, type: hardware }
+          - { slug: icom-ic-r8600, title: Icom IC-R8600, type: hardware }
+          - { slug: eton-elite-750, title: Eton Elite 750, type: hardware }
+
       - id: rf-front-end
         label: RF front-end & components
         blurb: The components between the antenna and the receiver — amplifiers, filters, mixers, connectors, and references.
