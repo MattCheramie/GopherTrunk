@@ -238,6 +238,15 @@ groups:
         url: /best-cb-radios/
       - title: "All two-way radios (Field Guide)"
         url: /reference/#two-way-radios
+      - heading: Shortwave & emergency
+      - title: Best shortwave radios
+        url: /best-shortwave-radios/
+      - title: Best emergency radios
+        url: /best-emergency-radios/
+      - title: Best desktop shortwave receivers
+        url: /best-desktop-shortwave-receivers/
+      - title: "All shortwave radios (Field Guide)"
+        url: /reference/#shortwave-radios
       - heading: SDRs & receivers
       - title: Best SDR for GopherTrunk
         url: /best-sdr-for-gophertrunk/
