@@ -104,7 +104,7 @@ treat crank and solar as the deep-reserve tier they are.
 
 An SDR needs a computer and wall power — the ER310's entire reason to exist is
 working without either, so free software isn't a substitute here. Where
-[GopherTrunk](/) and a [$30 RTL-SDR](/reference/rtl-sdr/) *do* fit emergency
+GopherTrunk and a [$30 RTL-SDR](/reference/rtl-sdr/) *do* fit emergency
 preparedness is before and after the blackout: scanning your local public-safety,
 utility, and [NOAA weather](/scanner-frequencies/) frequencies so you know what's
 actually happening beyond the forecast loop. Our
