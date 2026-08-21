@@ -13,6 +13,12 @@ GopherTrunk on macOS is a single static binary that talks to RTL-SDR
 dongles through IOKit — no kext, no `librtlsdr`, no Homebrew formula
 to chase.
 
+> **Requirements:** macOS **12 (Monterey) or later**, on Apple Silicon
+> or Intel. The binaries link against system APIs (e.g.
+> `SecTrustCopyCertificateChain`) that first shipped in macOS 12, so
+> earlier releases (Big Sur 11 and older) abort at launch with
+> `dyld: Symbol not found` — see [Troubleshooting](#troubleshooting).
+
 ## 1. Download the tarball
 
 Go to the **[GopherTrunk releases page]** and grab the asset matching
@@ -194,6 +200,7 @@ manually if you want a clean slate.
 | Symptom                                                  | Likely cause                                                                  |
 | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `cannot be opened because the developer cannot be verified` | Quarantine xattr still attached — re-run the `xattr -dr` from step 3, or right-click → Open. |
+| `dyld: Symbol not found: _SecTrustCopyCertificateChain` (then `zsh: abort`) | Your macOS is older than 12 (Monterey). GopherTrunk binaries require **macOS 12 or later** — check with `sw_vers` and update, or run on a supported machine. |
 | `command not found: gophertrunk`                         | Binary isn't on `PATH` — re-check step 2, or run from the install path directly. |
 | `sdr list` prints nothing                                | Another RTL-SDR app (SDR++, GQRX) is holding the device — close it and retry. |
 | `sdr list` still prints nothing with every other SDR app closed | Re-run with `RTLSDR_DEBUG_USB=1 gophertrunk sdr list 2> trace.log`. Attach `trace.log`, `sw_vers`, and `system_profiler SPUSBDataType \| grep -A 10 "Vendor ID"` to a new issue — the trace tells us which IOKit class matched and which properties were readable. |

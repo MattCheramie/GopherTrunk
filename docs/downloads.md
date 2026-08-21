@@ -41,7 +41,7 @@ variables persist into this page's scope after the include.
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-arm64.tar.gz">Apple Silicon (.tar.gz)</a>
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-amd64.tar.gz">Intel (.tar.gz)</a>
     </div>
-    <p class="download-card__note">Full walkthrough: <a href="{{ '/install-macos.html' | relative_url }}">macOS install guide</a>. Builds are unsigned — right-click → Open the first time, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
+    <p class="download-card__note">Requires macOS 12 (Monterey) or later. Full walkthrough: <a href="{{ '/install-macos.html' | relative_url }}">macOS install guide</a>. Builds are unsigned — right-click → Open the first time, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
   </div>
 
   <div class="download-card" data-platform="windows">
@@ -93,6 +93,10 @@ The daemon walks `$GOPHERTRUNK_CONFIG` → `~/.config/gophertrunk/config.yaml` �
 For a systemd-managed install, copy [`gophertrunk.service`](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/gophertrunk.service) to `/etc/systemd/system/` and follow the install header.
 
 ### macOS
+
+Requires **macOS 12 (Monterey) or later** (Apple Silicon or Intel). On
+older releases the binary aborts at launch with `dyld: Symbol not
+found` — see the [macOS install guide]({{ '/install-macos.html' | relative_url }}#troubleshooting).
 
 ```sh
 VERSION={{ ver }}
