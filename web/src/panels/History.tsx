@@ -6,6 +6,7 @@ import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { RIDLink } from "../components/RIDLink";
+import { RecordingPlayer } from "../components/RecordingPlayer";
 import { CallHealth } from "../components/SignalHealth";
 import { PageHeader } from "../components/ui/PageHeader";
 import type { CallRow } from "../api/types";
@@ -432,19 +433,7 @@ export function History() {
               <p className="text-xs uppercase tracking-wider text-muted mb-1">
                 Recording
               </p>
-              <audio
-                controls
-                preload="none"
-                className="w-full"
-                src={`${cfg.baseURL}/api/v1/calls/${selected.id}/audio`}
-              />
-              <a
-                className="inline-block text-xs text-accent hover:underline mt-1"
-                href={`${cfg.baseURL}/api/v1/calls/${selected.id}/audio`}
-                download
-              >
-                Download recording
-              </a>
+              <RecordingPlayer cfg={cfg} callId={selected.id} />
             </div>
           )}
         </DetailModal>

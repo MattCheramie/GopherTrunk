@@ -27,11 +27,18 @@ export function Events() {
   // when running, mirror the live store ring.
   const visible = paused ? (snapshot ?? events) : events;
 
-  // Group identical events (when enabled), then newest (most-recently-active)
-  // first — reverse so the latest is at the top, the mobile-friendly read order.
-  // Search is applied by the DataTable on top of the grouped rows.
+  // Group identical events (when enabled) into representative rows. Ordering is
+  // NOT done here: the DataTable owns it, defaulting to the "ts" column sorted
+  // descending (newest first) below. Relying on the store's arrival order and a
+  // .reverse() was the "13:54 shown above 16:34" bug — a re-emitted or late
+  // event (e.g. an audio.state pushed on a state change) lands at the end of the
+  // arrival ring but carries an older wall-clock timestamp, so reversing arrival
+  // order floated it to the top. Sorting on the representative timestamp instead
+  // keeps the view in true chronological order regardless of arrival order, and
+  // still puts a still-firing grouped event on top (its representative is the
+  // most-recent occurrence, so its timestamp == lastTimestamp).
   const ordered = useMemo<GroupedEvent[]>(() => {
-    const groups = grouped
+    return grouped
       ? groupEvents(visible)
       : visible.map((e) => ({
           event: e,
@@ -39,7 +46,6 @@ export function Events() {
           firstTimestamp: e.timestamp,
           lastTimestamp: e.timestamp,
         }));
-    return groups.slice().reverse();
   }, [visible, grouped]);
 
   const columns: Column<GroupedEvent>[] = useMemo(
@@ -150,6 +156,8 @@ export function Events() {
         rows={ordered}
         columns={columns}
         rowKey={(g, i) => `${contentKey(g.event)}-${i}`}
+        defaultSortKey="ts"
+        defaultSortDirection="desc"
         searchable
         searchAccessor={(g) =>
           `${g.event.kind} ${g.event.timestamp} ${JSON.stringify(g.event.payload ?? "")}`
