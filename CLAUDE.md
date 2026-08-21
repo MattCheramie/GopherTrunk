@@ -346,6 +346,38 @@ confirmation before any close-as-completed.
       `GT_TETRA_DMO_SCAN=1` + the same MCC/MNC to see whether a colour now dominates). If a colour
       dominates with MNI 250/1 where none did at MNI 0, that is the confirmation; if it still doesn't,
       the next suspect is the MNI value itself or DNB geometry — NOT encryption (the radios are TEA0).
+  8. **20aug on-air run — "bogus DMO recordings that end at a timeout, not PTT release" is DIAGNOSED to
+      the composer voice chain, NOT the control pipeline.** The operator's `dmo_test_20aug` run (X310,
+      MRC on / single antenna / no cavity — their own caveat: a poor vector) shows the two DMO decode
+      paths disagree sharply, and the recording symptom is a second-order effect of the voice chain's
+      colour handling — pinned by the run's `debug.log`:
+      - The control **pipeline** (`newTETRADMOPipeline`) decodes fine: locks, `RecoverDMColourCode`
+        → **colour 39**, and `tch_crc` climbs to ~200 CRC-valid TCH/S across one PTT window.
+      - The separate composer **voice chain** (`runTETRADMOVoiceChain`) produced a **silent** recording
+        for that same PTT: grant fired at `colour_hint=0` (before the pipeline finished recovery), the
+        chain buffered 242 DNBs, its buffer hit `dmoVoiceColourMax=120` and the give-up path fell back
+        to **colour 0** (`d.colour = d.baseMNI`) BEFORE it ever adopted the pipeline's 39 — so all 242
+        DNBs decoded as **BFI**, `speech_frames=0 colour_recovered=false`. `tryAdoptLiveColour` never
+        cleared afterward either: its local re-verification (≥2 CRC-valid at the hinted colour on the
+        chain's OWN bursts) kept failing even though the pipeline's bursts decode at 39 — i.e. the voice
+        chain's receiver is producing bursts the pipeline's is not. Prime suspect for the divergence:
+        the voice chain runs `EnableDCBlock: true` while the CC pipeline runs it **off** (`receiver.go`
+        / the CC-path note above) — try `EnableDCBlock:false` in `tetra_dmo_voice.go` and A/B.
+      - **Why it "ends at a timeout":** zero real speech frames ⇒ `boundaryTracker.onVoice` is never
+        called ⇒ the call is torn down by hangtime as `reason=timeout` (~7 s) instead of at PTT release.
+        DMO decodes no explicit release PDU, so even a GOOD DMO call ends on hangtime — but a decoding
+        call keeps refreshing liveness and runs to the real tail; a BFI-only call dies at the first
+        hangtime. So the fix for BOTH the bogus audio and the early cut is the same: make the voice
+        chain actually decode (adopt the pipeline's colour instead of falling back to 0 / re-verifying
+        with a divergent receiver).
+      - **Not fixed this round (on-air-gated, #764/#771):** the calls that started AFTER the pipeline
+        knew the colour (`colour_hint=39`) yielded only 2–4 speech frames, but the pipeline decoded ~0
+        new `tch_crc` in those same windows too — weak for BOTH paths on this contaminated capture, so
+        they don't isolate a voice-chain bug. Needs a clean, known-colour, actually-talking DMO capture
+        (single antenna, MRC OFF, cavity filter) to A/B a voice-chain fix. The web-side symptom (a
+        silent ~0.1 s WAV still published to History) is inherent: the recorder only drops `dataBytes==0`
+        or `StatProvider` zero-voice calls, and ACELP is neither, so a 2-frame call becomes a tiny
+        bogus row. Staged, not shipped.
 - **TETRA individual/private-call SRC is restored across mid-call PDUs via a callID→source
   binding; cold-start group-vs-individual classification stays capture-gated.** ETSI compresses
   the SSIs out of mid-call and traffic-channel signalling (§14): once a call is set up, a

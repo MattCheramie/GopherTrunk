@@ -56,6 +56,24 @@ describe("Events panel", () => {
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
 
+  it("orders rows by event timestamp, not store arrival order", () => {
+    // Regression: an event that ARRIVES late but carries an older wall-clock
+    // timestamp (e.g. an audio.state re-pushed on a state change) used to float
+    // to the top because the panel reverse()d the store's arrival order. It must
+    // sort below the newer-timestamped events instead ("13:54 above 16:34" bug).
+    const newer: EventDTO = { kind: "call.release", timestamp: "2026-08-20T16:34:15Z", payload: { g: 1 } };
+    const staleLateArrival: EventDTO = { kind: "audio.state", timestamp: "2026-08-20T13:54:57Z", payload: { backend_enabled: false } };
+    // Arrival order in the store: the stale-timestamp event arrives LAST.
+    setStore([newer, staleLateArrival]);
+    render(<Events />);
+
+    const kinds = screen
+      .getAllByText(/call\.release|audio\.state/)
+      .map((el) => el.textContent);
+    expect(kinds[0]).toBe("call.release"); // newest timestamp on top
+    expect(kinds[1]).toBe("audio.state"); // stale timestamp sinks below
+  });
+
   it("keeps a manual pause when an expanded event is collapsed", async () => {
     const user = userEvent.setup();
     render(<Events />);
