@@ -155,17 +155,16 @@ func TestMotorolaAliasAssemblerYieldsRID(t *testing.T) {
 	}
 }
 
-// TestMotorolaAliasAssemblerExposesCiphertext pins the chosen-plaintext /
-// known-RID ground-truth record surfaced on completion (#773). The
-// proprietary alias cipher is gated (motorola.CipherVerified == false), so
-// the decoded alias string is unreliable and typically empty — but the
-// reassembled *ciphertext* (the 2n encoded-alias bytes, CRC stripped)
-// paired with the RID and talkgroup is exactly the corpus row the cipher
-// cryptanalysis consumes, and must be surfaced regardless of decode
-// success so an operator can capture it with GopherTrunk alone rather than
-// SDRTrunk. Before this change the completion result carried no ciphertext
-// at all.
-func TestMotorolaAliasAssemblerExposesCiphertext(t *testing.T) {
+// TestMotorolaAliasAssemblerDecodesRealAlias drives the whole Phase-2
+// assembler → decode path on the real #376 SDRTrunk ground truth (Victorian
+// MMR, TG 20208, RADIO:ISSI 781824.356.200062) and asserts the radio's actual
+// alias falls out: "CRIO 0062", reliable, CRC OK. This is the on-air
+// end-to-end proof of the clean-room-recovered cipher plus the self-delimiting
+// CRC framing — the assembler reassembles the nibble-aligned fragments, and
+// motorola.DecodeMessage strips the FACCH zero-pad, decodes the 18-byte cipher
+// region, and validates CRC 0x6A96 over SUID+cipher. The reassembled
+// ciphertext (pad + CRC stripped) is still surfaced for logging.
+func TestMotorolaAliasAssemblerDecodesRealAlias(t *testing.T) {
 	a := NewMotorolaAliasAssembler(nil)
 
 	h, _ := macPDU(t, aliasHeaderMSG...).AsMotorolaAliasHeader()
@@ -184,11 +183,19 @@ func TestMotorolaAliasAssemblerExposesCiphertext(t *testing.T) {
 	if res.TalkgroupID != 20208 {
 		t.Errorf("talkgroup = %d, want 20208", res.TalkgroupID)
 	}
-	// The 2n-byte cipher region of the reassembled SDRTrunk ground-truth
-	// stream (bytes after the 7-byte SUID, before the 2-byte CRC tail).
-	wantHex := "2444f6ff2fa9ac3ec34432fa63cc81c3c5d96a9600000000"
-	gotHex := hex.EncodeToString(res.Encoded)
-	if gotHex != wantHex {
+	if res.Alias != "CRIO 0062" {
+		t.Errorf("alias = %q, want %q", res.Alias, "CRIO 0062")
+	}
+	if !res.Reliable {
+		t.Error("Reliable = false, want true for the clean real-air decode")
+	}
+	if !res.CRCOK {
+		t.Error("CRCOK = false, want true (CRC 0x6A96 over SUID+cipher)")
+	}
+	// The surfaced ciphertext is the 18-byte cipher region — the SUID prefix,
+	// the trailing CRC-16, and the FACCH zero-pad all stripped.
+	wantHex := "2444f6ff2fa9ac3ec34432fa63cc81c3c5d9"
+	if gotHex := hex.EncodeToString(res.Encoded); gotHex != wantHex {
 		t.Errorf("encoded ciphertext = %s, want %s", gotHex, wantHex)
 	}
 }
@@ -227,9 +234,9 @@ func TestMotorolaAliasReassemblesSDRTrunkFragmentStream(t *testing.T) {
 	want := []byte{
 		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, // SUID (RID 200062)
 		0x24, 0x44, 0xF6, 0xFF, 0x2F, 0xA9, 0xAC, 0x3E, 0xC3, 0x44,
-		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, // cipher
-		0x00, 0x00, 0x00, 0x00, // cipher tail
-		0x00, 0x00, // CRC-16
+		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, // 18-byte cipher ("CRIO 0062")
+		0x6A, 0x96, // CRC-16/GSM over SUID+cipher
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // FACCH block zero-pad
 	}
 	if len(got) != len(want) {
 		t.Fatalf("reassembled length = %d, want %d\n got % X\nwant % X",
