@@ -201,6 +201,30 @@ defaults:
       learn_module: scanning
       nav_group: Learn
       permalink: /learn/scanning/:basename/
+  - scope:
+      path: "learn/testing"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: testing
+      nav_group: Learn
+      permalink: /learn/testing/:basename/
+  - scope:
+      path: "learn/apis"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: apis
+      nav_group: Learn
+      permalink: /learn/apis/:basename/
+  - scope:
+      path: "learn/embedded"
+      type: pages
+    values:
+      layout: lesson
+      learn_module: embedded
+      nav_group: Learn
+      permalink: /learn/embedded/:basename/
   # Field Guide articles under /reference/ get the reference layout and nav
   # group automatically. The hub (reference/index.md) overrides to reference-hub.
   - scope:

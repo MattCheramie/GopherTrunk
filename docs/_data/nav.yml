@@ -49,6 +49,12 @@ groups:
         url: /learn/web-dev/
       - title: "Module: Scanning & Monitoring"
         url: /learn/scanning/
+      - title: "Module: Testing & Software Quality"
+        url: /learn/testing/
+      - title: "Module: APIs & Protocols"
+        url: /learn/apis/
+      - title: "Module: Embedded & Single-Board Computers"
+        url: /learn/embedded/
   - label: Field Guide
     items:
       - title: Field Guide overview
