@@ -943,6 +943,7 @@ func (e *Engine) HandleGrant(g Grant) {
 					"grant", g.String())
 			})
 			e.log.Debug("dropping grant: no voice SDR", "grant", g.String())
+			e.setObservedReason(g, unfollowedNoVoiceSDR)
 			return
 		}
 		if !e.pool.HasCapableDevice(g.FrequencyHz) {
@@ -954,6 +955,7 @@ func (e *Engine) HandleGrant(g Grant) {
 					"grant", g.String())
 			})
 			e.log.Debug("dropping grant: no voice device covers frequency", "grant", g.String())
+			e.setObservedReason(g, unfollowedNoCoverage)
 			return
 		}
 		// A capable device exists, none is free (step 1 failed) and
@@ -964,6 +966,7 @@ func (e *Engine) HandleGrant(g Grant) {
 	}
 	if !CanPreempt(victim.Grant, victim.Talkgroup, g, tg) {
 		e.log.Info("no voice device available for grant", "grant", g.String())
+		e.setObservedReason(g, unfollowedTunersBusy)
 		// Signal the overload so the IQ auto-recorder can capture the carrier
 		// at the instant the system had more calls than voice tuners. Payload
 		// is the grant that went unserved.
@@ -1275,6 +1278,30 @@ func (e *Engine) ActiveCalls() []*ActiveCall {
 	return out
 }
 
+// Reasons a control-channel-observed call is not being followed by a voice
+// tuner, recorded on the observed ActiveCall.Unfollowed and surfaced through
+// the API so an operator can tell an unfollowed call from a decode failure
+// (issue #356). Kept short and stable — they're a machine-facing status, not
+// prose.
+const (
+	unfollowedNoVoiceSDR = "no voice SDR configured"
+	unfollowedNoCoverage = "voice frequency outside every voice device's tuning window"
+	unfollowedTunersBusy = "all voice tuners busy with higher-priority calls"
+)
+
+// setObservedReason records on the observed-call entry for g why no voice
+// tuner is following it. No-op when g was never observed (an individual/data
+// grant, or one addressed to a known radio) — those are deliberately absent
+// from the observed tracker.
+func (e *Engine) setObservedReason(g Grant, reason string) {
+	key := observedKey(g)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if ac, ok := e.observed[key]; ok {
+		ac.Unfollowed = reason
+	}
+}
+
 // observeCall upserts the system-activity tracker entry for grant g. Called
 // for every voice grant HandleGrant accepts, whether or not a tuner follows it.
 func (e *Engine) observeCall(g Grant, tg *TalkGroup) {
@@ -1285,6 +1312,10 @@ func (e *Engine) observeCall(g Grant, tg *TalkGroup) {
 		ac.Grant = g
 		ac.Talkgroup = tg
 		ac.LastHeardAt = g.At
+		// Clear any stale unfollowed reason from a previous grant; if this
+		// grant is dropped again, the drop site re-sets it, and if a tuner
+		// now follows the call it correctly reads as followed (#356).
+		ac.Unfollowed = ""
 		return
 	}
 	e.observed[key] = &ActiveCall{

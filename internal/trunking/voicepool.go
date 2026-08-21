@@ -73,6 +73,17 @@ type ActiveCall struct {
 	// Phase 1) populate them. Issue #878 follow-up.
 	EVMPct *float64
 	SNRDb  *float64
+	// Unfollowed, when non-empty, records why a control-channel-observed
+	// call is NOT bound to a voice tuner — no voice SDR configured, the
+	// grant frequency falling outside every voice device's tuning window,
+	// or all capable tuners being busy with higher-priority calls. It is
+	// set on the observed-call entry (Device == nil) at the point the
+	// grant is dropped, and cleared when a tuner does follow the call. It
+	// lets an operator tell an *unfollowed* call apart from a *decode
+	// failure*: on a single wideband SDR whose window doesn't cover the
+	// voice channels, every call surfaces as "observed", which otherwise
+	// reads as "GopherTrunk says the talkgroup has no voice" (issue #356).
+	Unfollowed string
 }
 
 // NewVoicePool returns a pool over the supplied devices. The order of

@@ -835,6 +835,12 @@ type ActiveCallDTO struct {
 	// talkgroups up on the system, not only the ones being decoded. An
 	// unfollowed call has an empty DeviceSerial.
 	Following bool `json:"following"`
+	// UnfollowedReason explains why an unfollowed (Following=false) call has no
+	// voice tuner: no voice SDR configured, the frequency outside every
+	// device's tuning window, or all capable tuners busy. Empty for followed
+	// calls. Lets the operator tell an unfollowed call from a decode failure
+	// (issue #356).
+	UnfollowedReason string `json:"unfollowed_reason,omitempty"`
 }
 
 func activeCallToDTO(ac *trunking.ActiveCall, following bool) ActiveCallDTO {
@@ -842,13 +848,20 @@ func activeCallToDTO(ac *trunking.ActiveCall, following bool) ActiveCallDTO {
 	if ac.Device != nil {
 		serial = ac.Device.Serial
 	}
+	// Only surface the unfollowed reason on unfollowed calls; a followed call
+	// never carries one (and the field is cleared when a tuner binds).
+	reason := ""
+	if !following {
+		reason = ac.Unfollowed
+	}
 	return ActiveCallDTO{
-		Grant:        grantToDTO(ac.Grant),
-		Talkgroup:    talkgroupToDTO(ac.Talkgroup),
-		DeviceSerial: serial,
-		StartedAt:    ac.StartedAt,
-		LastHeardAt:  ac.LastHeardAt,
-		Following:    following,
+		Grant:            grantToDTO(ac.Grant),
+		Talkgroup:        talkgroupToDTO(ac.Talkgroup),
+		DeviceSerial:     serial,
+		StartedAt:        ac.StartedAt,
+		LastHeardAt:      ac.LastHeardAt,
+		Following:        following,
+		UnfollowedReason: reason,
 	}
 }
 
