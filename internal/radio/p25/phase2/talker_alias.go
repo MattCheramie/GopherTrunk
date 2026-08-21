@@ -185,12 +185,12 @@ func cleanAlias(raw []byte) string {
 // SDRTrunk-decoded FRAGMENT fields posted in #376 (the same bytes SDRTrunk
 // concatenates into the message it decodes), so reassembly is no longer a
 // guess — assembleMotorolaAliasMessage reproduces SDRTrunk's stream exactly
-// (see TestMotorolaAliasReassemblesSDRTrunkFragmentStream). What remains
-// air-unverified (#376/#773) is the cipher LUT and hence the final decoded
-// alias *string*: no plaintext fixture for a known RID is committed. A
-// wrong cipher still fails safe — DecodeMessage finds no coherent
-// SUID/length, or DecodeAlias flags the result unreliable, and no alias is
-// published.
+// (see TestMotorolaAliasReassemblesSDRTrunkFragmentStream). The cipher LUT is
+// now recovered and verified too (#376/#773): this same #376 stream decodes
+// end-to-end to RID 200062's real alias "CRIO 0062" with a matching CRC
+// 0x6A96, pinned by TestMotorolaAliasAssemblerDecodesRealAlias. A garbled
+// frame still fails safe — DecodeMessage finds no coherent SUID/length, or
+// DecodeAlias flags the result unreliable, and no alias is published.
 //
 // Header payload layout (after ParseMACPDU strips opcode+MFID), from
 // SDRTrunk MSG 9190114EF002010006BEE00164030D7E24… / FRAGMENT BEE00164030D7E24:
@@ -279,8 +279,9 @@ func (p MACPDU) AsMotorolaAliasData() (MotorolaAliasData, bool) {
 // reassembled; the other fields are meaningful only then.
 type MotorolaAliasResult struct {
 	// Alias is the decoded talker-alias string (best-effort printable
-	// ASCII). While the proprietary cipher is unverified it is typically
-	// empty or garbage — see Reliable.
+	// ASCII). With the cipher now verified it carries the real name for a
+	// clean decode (e.g. "CRIO 0062"); a garbled frame leaves it empty or
+	// unreliable — see Reliable.
 	Alias string
 	// SourceID is the radio (subscriber) ID the alias belongs to,
 	// recovered from the byte-aligned message prefix.
@@ -288,15 +289,15 @@ type MotorolaAliasResult struct {
 	// TalkgroupID is the talkgroup carried in the alias header PDU.
 	TalkgroupID uint16
 	// Encoded is the reassembled cipher region (the 2n encoded-alias
-	// bytes, CRC stripped) — chosen-plaintext / known-RID ground truth
-	// for the cipher cryptanalysis (#773), surfaced regardless of whether
-	// the cipher decodes.
+	// bytes, with the CRC and any FACCH zero-pad stripped). Surfaced for
+	// logging / known-RID ground truth (#773).
 	Encoded []byte
-	// CRCOK reports whether the reassembled message's trailing CRC-16
-	// matched. Advisory (#376).
+	// CRCOK reports whether the reassembled message's trailing CRC-16/GSM
+	// matched — confirmed against the #376 real capture (#376).
 	CRCOK bool
-	// Reliable is true only when the decode is clean printable ASCII AND
-	// the cipher is verified; false while the cipher is gated (#773).
+	// Reliable is true when the decode is clean printable ASCII AND the
+	// cipher is verified; the cipher is verified, so this tracks the
+	// clean-ASCII flag (#773).
 	Reliable bool
 	// Complete is true once a full alias message reassembled.
 	Complete bool
@@ -392,10 +393,10 @@ func (a *MotorolaAliasAssembler) tryComplete() MotorolaAliasResult {
 		return MotorolaAliasResult{}
 	}
 	a.reset()
-	// An empty alias (all-non-printable decode) still completes so the
-	// source RID and the reassembled ciphertext are reported; the publish
-	// path drops the empty alias string, but the ciphertext is surfaced as
-	// cryptanalysis ground truth regardless (#773).
+	// A clean decode yields the real alias string; an empty or unreliable
+	// one (garbled fragments) still completes so the source RID and the
+	// reassembled ciphertext are reported. The publish path drops an empty
+	// alias but always surfaces the RID and ciphertext (#773).
 	return MotorolaAliasResult{
 		Alias:       decoded.Alias,
 		SourceID:    decoded.RadioID,

@@ -133,8 +133,8 @@ func TestDecodeMessagePopulatesAliasReliable(t *testing.T) {
 		t.Fatal("DecodeMessage returned ok=false")
 	}
 	wantAlias, clean := DecodeAlias(DecodeAliasBytes(encoded))
-	// AliasReliable is gated on CipherVerified: clean ASCII alone is not
-	// enough while the cipher is unverified (#773).
+	// AliasReliable is (clean decode AND CipherVerified). The cipher is
+	// verified, so this tracks the clean-ASCII flag directly (#773).
 	wantReliable := clean && CipherVerified
 	if msg.Alias != wantAlias {
 		t.Errorf("Alias = %q, want %q", msg.Alias, wantAlias)
@@ -144,76 +144,89 @@ func TestDecodeMessagePopulatesAliasReliable(t *testing.T) {
 	}
 }
 
-// TestUnverifiedCipherNeverReportedReliable pins the safety gate: while
-// the per-byte cipher is unverified (CipherVerified == false),
-// DecodeMessage must never report an alias as reliable — not even for
-// inputs whose decoded bytes happen to be clean printable ASCII. This is
-// what stops a possibly-wrong substitution table from surfacing a
-// fabricated name as a confirmed alias (#773).
-func TestUnverifiedCipherNeverReportedReliable(t *testing.T) {
-	if CipherVerified {
-		t.Skip("cipher marked verified — reliability gate intentionally lifted")
-	}
+// TestAliasReliableTracksCleanDecode pins the reliability gate now that the
+// cipher is verified: DecodeMessage reports an alias reliable exactly when its
+// decoded bytes are clean printable ASCII (no #711 corruption hallmarks), and
+// never otherwise. This is what keeps a garbled-but-CRC-surviving frame from
+// surfacing a fabricated name.
+func TestAliasReliableTracksCleanDecode(t *testing.T) {
 	suid := []byte{0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E}
 	for n := 0; n < 4096; n++ {
 		enc := []byte{byte(n), byte(n >> 4), byte(n >> 8), byte(n >> 2)}
 		msg := append(append(append([]byte{}, suid...), enc...), 0x00, 0x00)
 		m, ok := DecodeMessage(msg)
-		if ok && m.AliasReliable {
-			t.Fatalf("AliasReliable=true for enc=% X while cipher unverified", enc)
+		if !ok {
+			t.Fatalf("DecodeMessage ok=false for enc=% X", enc)
+		}
+		_, clean := DecodeAlias(DecodeAliasBytes(m.Encoded))
+		if m.AliasReliable != clean {
+			t.Fatalf("AliasReliable=%v but clean-decode=%v for enc=% X",
+				m.AliasReliable, clean, enc)
 		}
 	}
 }
 
-// TestRealSampleYieldsRIDButNoConfidentAlias feeds the real reassembled
-// Phase-2 FACCH-S stream for RID 200062 (the #376 SDRTrunk FRAGMENT
-// dump, pinned byte-for-byte in
-// phase2.TestMotorolaAliasReassemblesSDRTrunkFragmentStream) through the
-// shared decode. GT must recover the verified RID but make NO confident
-// alias claim while the cipher is unverified — the exact state reported
-// on #773.
-func TestRealSampleYieldsRIDButNoConfidentAlias(t *testing.T) {
+// TestRealSampleDecodesAliasWithValidCRC is the on-air ground-truth check:
+// the real reassembled Phase-2 FACCH-S stream for RID 200062 (the #376
+// SDRTrunk FRAGMENT dump, pinned byte-for-byte in
+// phase2.TestMotorolaAliasReassemblesSDRTrunkFragmentStream) must decode to
+// the radio's actual alias "CRIO 0062" with a matching CRC. This validates the
+// recovered cipher AND the self-delimiting CRC framing against genuine air
+// data, not just the synthetic oracle: the 18-byte cipher region decodes to
+// clean ASCII whose "0062" is the tail of RID 200062, and CRC-16/GSM over
+// SUID+cipher reproduces the on-air 0x6A96 — after which the frame is FACCH
+// zero-pad. Feeding that pad in as ciphertext (the pre-fix framing) corrupted
+// the cipher's length-seed and decoded to noise.
+func TestRealSampleDecodesAliasWithValidCRC(t *testing.T) {
 	msg := []byte{
 		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, // SUID (RID 200062)
 		0x24, 0x44, 0xF6, 0xFF, 0x2F, 0xA9, 0xAC, 0x3E, 0xC3, 0x44,
-		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, // encoded alias
-		0x00, 0x00, 0x00, 0x00, // cipher tail
-		0x00, 0x00, // CRC-16
+		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, // 18-byte cipher region
+		0x6A, 0x96, // CRC-16/GSM over SUID+cipher
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // FACCH block zero-pad
 	}
 	m, ok := DecodeMessage(msg)
 	if !ok {
 		t.Fatal("DecodeMessage returned ok=false")
 	}
 	if m.RadioID != 200062 {
-		t.Errorf("RadioID = %d, want 200062 (verified from reassembly)", m.RadioID)
+		t.Errorf("RadioID = %d, want 200062", m.RadioID)
 	}
-	if !CipherVerified && m.AliasReliable {
-		t.Errorf("AliasReliable = true; an unverified cipher must not yield a confident alias (#773)")
+	if m.Alias != "CRIO 0062" {
+		t.Errorf("Alias = %q, want %q", m.Alias, "CRIO 0062")
+	}
+	if !m.AliasReliable {
+		t.Error("AliasReliable = false, want true for a clean real-air decode")
+	}
+	if !m.CRCOK {
+		t.Error("CRCOK = false, want true (crc16GSM(SUID+cipher) = 0x6A96)")
+	}
+	// The cipher region is the 18 pre-CRC bytes — the pad is stripped.
+	if len(m.Encoded) != 18 {
+		t.Errorf("Encoded len = %d, want 18 (pad stripped)", len(m.Encoded))
 	}
 }
 
-// TestDecodeMessageExposesEncodedCiphertext pins the reassembled cipher
-// region on the decoded message (#773). Message.Encoded must be exactly
-// the 2n encoded-alias bytes — the SUID prefix and the trailing CRC-16
-// stripped — so a caller can surface it as chosen-plaintext / known-RID
-// ground truth for the cipher cryptanalysis regardless of whether the
-// cipher itself decodes. Uses the real #376 reassembled stream for RID
-// 200062 (24 cipher bytes between the 7-byte SUID and the 2-byte CRC).
+// TestDecodeMessageExposesEncodedCiphertext pins the cipher region on the
+// decoded message (#773): Message.Encoded is exactly the 2n encoded-alias
+// bytes — the SUID prefix, the trailing CRC-16, and any FACCH zero-pad
+// stripped by the self-delimiting CRC. Uses the real #376 stream for RID
+// 200062, whose cipher region is the 18 bytes before the 0x6A96 CRC.
 func TestDecodeMessageExposesEncodedCiphertext(t *testing.T) {
 	msg := []byte{
 		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, // SUID (RID 200062)
 		0x24, 0x44, 0xF6, 0xFF, 0x2F, 0xA9, 0xAC, 0x3E, 0xC3, 0x44,
-		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, // encoded alias
-		0x00, 0x00, 0x00, 0x00, // cipher tail
-		0x00, 0x00, // CRC-16
+		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, // 18-byte cipher region
+		0x6A, 0x96, // CRC-16/GSM
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // FACCH zero-pad
 	}
 	m, ok := DecodeMessage(msg)
 	if !ok {
 		t.Fatal("DecodeMessage returned ok=false")
 	}
-	want := msg[7:31] // between the 7-byte SUID and the 2-byte CRC tail
+	want := msg[7:25] // the 18 cipher bytes between the SUID and the CRC
 	if len(m.Encoded) != len(want) {
-		t.Fatalf("Encoded len = %d, want %d", len(m.Encoded), len(want))
+		t.Fatalf("Encoded len = %d, want %d (pad + CRC stripped)", len(m.Encoded), len(want))
 	}
 	for i := range want {
 		if m.Encoded[i] != want[i] {

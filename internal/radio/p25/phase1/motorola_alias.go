@@ -1,6 +1,10 @@
 package phase1
 
-import "time"
+import (
+	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/motorola"
+)
 
 // Motorola P25 Phase 1 voice-channel talker-alias reassembly and
 // proprietary-cipher decode.
@@ -89,12 +93,6 @@ const (
 	// motorolaFragmentBits is the bit-width each data block
 	// contributes to the reassembled message.
 	motorolaFragmentBits = 44
-
-	// motorolaSUIDBits = WACN(20) + System(12) + RadioID(24).
-	motorolaSUIDBits = 56
-
-	// motorolaCRCBits is the trailing CRC-16/GSM field.
-	motorolaCRCBits = 16
 )
 
 // MotorolaTalkerAliasBuf reassembles the Motorola voice-channel
@@ -270,34 +268,18 @@ func aliasFingerprint(s string) uint64 {
 	return h
 }
 
-// decodeMotorolaAlias extracts the encoded alias bytes from the
-// reassembled bit stream, runs them through the proprietary per-byte
-// cipher, then renders the decoded UTF-16 BE characters to printable
-// ASCII via decodeAlias. It returns (alias, reliable); reliable is
-// false when the decode holds non-ASCII-printable characters (#711).
-// Empty alias on too-short input or all-non-printable decoded bytes.
+// decodeMotorolaAlias renders the reassembled Motorola alias message to a
+// printable-ASCII string, returning (alias, reliable). It delegates to the
+// shared motorola.DecodeMessage so the voice-channel (LDU1/TDULC) carrier and
+// the Phase 2 FACCH-S carrier run one framing + cipher implementation — the
+// same message shape (SUID | cipher | CRC-16/GSM | pad) with the cipher region
+// self-delimited by its CRC, which strips any trailing block pad before the
+// length-seeded cipher runs. reliable is false on too-short input, a
+// non-ASCII-printable decode (#711), or while the cipher is unverified (#773).
 func decodeMotorolaAlias(bits []byte) (string, bool) {
-	totalBits := len(bits) * 8
-	// Encoded alias starts at bit motorolaSUIDBits (after WACN +
-	// System + Radio ID) and runs until motorolaCRCBits before the
-	// end. Must be byte-aligned and at least 2 bytes (one decoded
-	// character).
-	if totalBits < motorolaSUIDBits+motorolaCRCBits+16 {
+	m, ok := motorola.DecodeMessage(bits)
+	if !ok {
 		return "", false
 	}
-	aliasBits := totalBits - motorolaSUIDBits - motorolaCRCBits
-	if aliasBits%8 != 0 {
-		// Trim to the nearest whole byte; a real header always
-		// produces a byte-aligned alias section, so a non-aligned
-		// bit count signals truncation.
-		aliasBits -= aliasBits % 8
-	}
-	encStart := motorolaSUIDBits / 8 // SUID is exactly 7 bytes
-	encByteLen := aliasBits / 8
-	if encStart+encByteLen > len(bits) {
-		return "", false
-	}
-	encoded := bits[encStart : encStart+encByteLen]
-	decoded := decodeAliasBytes(encoded)
-	return decodeAlias(decoded)
+	return m.Alias, m.AliasReliable
 }
