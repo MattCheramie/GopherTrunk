@@ -1,7 +1,16 @@
 # Chosen-plaintext capture for the Motorola P25 talker-alias cipher (#773)
 
-This is a procedure for someone **with access to a Motorola P25 radio** to help
-finish reverse-engineering the talker-alias obfuscation cipher. Instead of
+> **STATUS UPDATE — the cipher is now fully recovered and verified**
+> (`CipherVerified = true`; see
+> [`p25-talker-alias-cleanroom-provenance.md`](p25-talker-alias-cleanroom-provenance.md)).
+> The recovery used a *chosen-ciphertext* behavioural oracle rather than the
+> radio-side chosen-plaintext capture below. This procedure is **no longer needed
+> to crack the cipher**; it is retained as a way to *broaden* validation with
+> additional real ground truth — e.g. exercising the Phase 1 (voice-channel)
+> carrier or other systems on air.
+
+This is a procedure for someone **with access to a Motorola P25 radio** to
+generate ground truth for the talker-alias obfuscation cipher. Instead of
 guessing the algorithm from random captured callsigns, you choose the plaintext
 (the alias) and capture the resulting ciphertext, exposing the cipher's internal
 state machine one variable at a time.

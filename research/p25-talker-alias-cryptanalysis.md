@@ -1,15 +1,23 @@
 # P25 Motorola talker-alias cipher — clean-room cryptanalysis findings (#773)
 
-Status: **not cracked.** This documents what has been *established* about the
-Motorola FACCH-S talker-alias obfuscation cipher from the 3,607-pair ground-truth
-dataset (`er-imagery`, tag `gt-773-alias-groundtruth`), and the structural
-hypotheses that have been *ruled out*, so the next investigation starts ahead and
-doesn't repeat dead ends.
+> **STATUS UPDATE — SUPERSEDED. The cipher is now fully recovered, verified, and
+> integrated (`CipherVerified = true`).** The two open walls documented below
+> ("high byte depends on the hidden low byte"; "no LCG family reproduces the
+> accumulator") were both resolved; the cipher decodes a real over-the-air
+> capture (RID 200062 → "CRIO 0062") with a valid CRC. This page is retained as
+> the historical derivation record. For the recovery, the reproducible
+> validation, and the clean-room provenance/licensing argument, see
+> **[`p25-talker-alias-cleanroom-provenance.md`](p25-talker-alias-cleanroom-provenance.md)**.
+
+This documents what had been *established* about the Motorola FACCH-S
+talker-alias obfuscation cipher from the ground-truth dataset, and the structural
+hypotheses that were *ruled out*, so a later investigation would start ahead.
 
 All derivation here is **data-driven only** — fitted to and validated against the
-decoded-log *output* in the ground-truth CSV. No SDRTrunk source (GPLv3) was read
-or ported; GopherTrunk is Apache-2.0 and its cipher stays gated
-(`CipherVerified = false`) until a real alias decodes end-to-end.
+decoded-log *output*. No SDRTrunk source (GPLv3) was read or ported; GopherTrunk
+is Apache-2.0. (The cipher was subsequently gated **on** —
+`CipherVerified = true` — once it decoded a real alias end-to-end and a committed
+regression fixture stood behind it.)
 
 These findings were also posted as a status update on
 [#773](https://github.com/MattCheramie/GopherTrunk/issues/773), which is where any
