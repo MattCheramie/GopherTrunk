@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/pathutil"
 )
 
@@ -18,10 +19,24 @@ func ExpandConfigPath(p string) string {
 
 // DefaultConfigPath picks a sensible default config.yaml location:
 //  1. $GOPHERTRUNK_CONFIG (the Windows installer sets this);
-//  2. ./config.yaml when the cwd is writable;
-//  3. <os.UserConfigDir()>/GopherTrunk/config.yaml otherwise.
+//  2. an existing config the daemon would auto-discover — so editing
+//     goes to the file actually in use;
+//  3. ./config.yaml when the cwd is writable;
+//  4. <os.UserConfigDir()>/GopherTrunk/config.yaml otherwise.
+//
+// Step 2 is what keeps `gophertrunk config` in sync with the daemon
+// (issue #1120). Without it the two disagree: on a fresh Windows
+// install the daemon discovers the installer-seeded
+// <Documents>\GopherTrunk\config\config.yaml, while this builder
+// defaulted straight to %APPDATA%\GopherTrunk\config.yaml — so a
+// freshly-built config was written somewhere the daemon never loaded
+// it. Reusing config.Discover here resolves the builder's default to
+// the same file the daemon reads on startup.
 func DefaultConfigPath() string {
 	if p := os.Getenv("GOPHERTRUNK_CONFIG"); p != "" {
+		return p
+	}
+	if p := config.Discover(); p != "" {
 		return p
 	}
 	if cwdWritable() {
