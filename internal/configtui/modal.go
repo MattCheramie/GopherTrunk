@@ -206,11 +206,7 @@ type saveModal struct {
 func newSaveModal(m *Model) modal {
 	ti := textinput.New()
 	ti.Prompt = "path: "
-	def := configbuilder.DefaultConfigPath()
-	if len(m.dirs) > 0 {
-		def = joinPath(m.dirs[0], "config.yaml")
-	}
-	ti.SetValue(def)
+	ti.SetValue(m.defaultSavePath())
 	ti.CursorEnd()
 	ti.Focus()
 	return &saveModal{input: ti}
