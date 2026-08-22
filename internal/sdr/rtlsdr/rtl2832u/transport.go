@@ -24,6 +24,12 @@ type Demod struct {
 	ifHz  int32
 	ppm   int
 	repON bool // last value pushed to SetI2CRepeater
+
+	// stallRetry arms the runtime control-pipe-stall recovery in ctrlOut/
+	// ctrlIn. Off until EnableControlStallRetry is called (post-bring-up),
+	// so the cold-boot bring-up path keeps surfacing a stall to the open-time
+	// reset envelope. Guarded by mu (set under the lock, read under it).
+	stallRetry bool
 }
 
 // New wraps the given transport. The caller is responsible for opening
@@ -73,7 +79,7 @@ func (d *Demod) ReadBlockReg(block uint8, addr uint16, n int) ([]byte, error) {
 
 func (d *Demod) readBlockRegLocked(block uint8, addr uint16, n int) ([]byte, error) {
 	index := uint16(block) << 8
-	out, err := d.t.ControlIn(0, addr, index, n, CtrlTimeoutMs)
+	out, err := d.ctrlIn(0, addr, index, n, CtrlTimeoutMs)
 	if err != nil {
 		return nil, fmt.Errorf("rtl2832u: read block=%d addr=0x%04x: %w", block, addr, err)
 	}
@@ -93,7 +99,7 @@ func (d *Demod) WriteBlockReg(block uint8, addr, val uint16, n int) error {
 func (d *Demod) writeBlockRegLocked(block uint8, addr, val uint16, n int) error {
 	index := uint16(block)<<8 | 0x10
 	data := encodeWriteVal(val, n)
-	if err := d.t.ControlOut(0, addr, index, data, CtrlTimeoutMs); err != nil {
+	if err := d.ctrlOut(0, addr, index, data, CtrlTimeoutMs); err != nil {
 		return fmt.Errorf("rtl2832u: write block=%d addr=0x%04x val=0x%04x: %w", block, addr, val, err)
 	}
 	return nil
@@ -113,7 +119,7 @@ func (d *Demod) ReadDemodReg(page uint8, addr uint16, n int) ([]byte, error) {
 func (d *Demod) readDemodRegLocked(page uint8, addr uint16, n int) ([]byte, error) {
 	wValue := (addr << 8) | 0x20
 	wIndex := uint16(page)
-	out, err := d.t.ControlIn(0, wValue, wIndex, n, CtrlTimeoutMs)
+	out, err := d.ctrlIn(0, wValue, wIndex, n, CtrlTimeoutMs)
 	if err != nil {
 		return nil, fmt.Errorf("rtl2832u: read demod page=%d addr=0x%02x: %w", page, addr, err)
 	}
@@ -136,7 +142,7 @@ func (d *Demod) writeDemodRegLocked(page uint8, addr, val uint16, n int) error {
 	wValue := (addr << 8) | 0x20
 	wIndex := uint16(0x10) | uint16(page)
 	data := encodeWriteVal(val, n)
-	if err := d.t.ControlOut(0, wValue, wIndex, data, CtrlTimeoutMs); err != nil {
+	if err := d.ctrlOut(0, wValue, wIndex, data, CtrlTimeoutMs); err != nil {
 		return fmt.Errorf("rtl2832u: write demod page=%d addr=0x%02x val=0x%04x: %w", page, addr, val, err)
 	}
 	// Commit. Required by the RTL2832U register interface — without it
