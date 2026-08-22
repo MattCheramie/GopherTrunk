@@ -534,7 +534,16 @@ type CCHuntConfig struct {
 
 // ConvChannelConfig is one entry in the conventional scan list.
 type ConvChannelConfig struct {
-	Label       string  `yaml:"label"`
+	Label string `yaml:"label"`
+	// TalkgroupID optionally pins the synthetic talkgroup ID a conventional
+	// channel surfaces under to scan-type consumers (Rdio Scanner, OpenMHz,
+	// Broadcastify Calls) and in the call log. Unset (0) keeps the default
+	// positional value (0x80000000 | list-index), which shifts whenever a
+	// channel is inserted/removed/reordered; setting it explicitly makes the
+	// ID stable across such edits, so a talkgroup_file roster row (or any
+	// downstream mapping) keyed on this ID keeps resolving. Must be unique
+	// across all conventional channels. Issue #1105.
+	TalkgroupID uint32  `yaml:"talkgroup_id"`
 	FrequencyHz uint32  `yaml:"frequency_hz"`
 	Mode        string  `yaml:"mode"`         // "fm" | "nfm"
 	SquelchDbFS float64 `yaml:"squelch_dbfs"` // default -50

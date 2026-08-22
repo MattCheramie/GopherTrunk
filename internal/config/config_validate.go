@@ -682,12 +682,38 @@ func (c Config) validateScanner() []error {
 	default:
 		errs = append(errs, fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\""))
 	}
+	// Reject two conventional channels that would surface under the same
+	// synthetic talkgroup ID — the engine keys a synthetic call on
+	// (system, GroupID), so a collision folds two channels into one call
+	// (#1105). Compare EFFECTIVE ids: an explicit talkgroup_id, else the
+	// positional 0x80000000|idx default, so an explicit value clashing with
+	// another channel's positional id is caught too.
+	seenTGID := make(map[uint32]int, len(c.Scanner.Conventional))
 	for i, ch := range c.Scanner.Conventional {
 		if err := validateConvChannel(i, ch); err != nil {
 			errs = append(errs, err)
 		}
+		gid := convChannelGroupID(i, ch)
+		if prev, dup := seenTGID[gid]; dup {
+			errs = append(errs, fmt.Errorf(
+				"scanner.conventional[%d].talkgroup_id %d (%#x) collides with channel[%d]; each conventional channel needs a unique id",
+				i, gid, gid, prev))
+			continue
+		}
+		seenTGID[gid] = i
 	}
 	return errs
+}
+
+// convChannelGroupID mirrors the conventional scanner's synthetic-ID
+// resolution (internal/scanner/conventional beginDwell): an operator-set
+// talkgroup_id when non-zero, else the positional 0x80000000|idx default.
+// Kept here so validation catches id collisions before the scanner runs.
+func convChannelGroupID(idx int, ch ConvChannelConfig) uint32 {
+	if ch.TalkgroupID != 0 {
+		return ch.TalkgroupID
+	}
+	return uint32(0x80000000) | uint32(idx)
 }
 
 func validateConvChannel(i int, ch ConvChannelConfig) error {

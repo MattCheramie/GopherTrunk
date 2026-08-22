@@ -1630,6 +1630,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			for _, ch := range cfg.Scanner.Conventional {
 				channels = append(channels, conventional.Channel{
 					Label:       ch.Label,
+					TalkgroupID: ch.TalkgroupID, // #1105: optional stable ID override
 					FrequencyHz: ch.FrequencyHz,
 					Mode:        ch.Mode,
 					SquelchDbFS: ch.SquelchDbFS,

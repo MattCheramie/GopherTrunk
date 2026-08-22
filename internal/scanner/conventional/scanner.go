@@ -25,7 +25,12 @@ const (
 
 // Channel is one entry in the conventional scan list.
 type Channel struct {
-	Label       string
+	Label string
+	// TalkgroupID, when non-zero, pins the synthetic talkgroup ID this
+	// channel surfaces under instead of the positional 0x80000000|idx
+	// default, so the ID is stable across channel list edits (issue #1105).
+	// Zero keeps the positional default.
+	TalkgroupID uint32
 	FrequencyHz uint32
 	// Mode is "fm" or "nfm" — the latter narrows the post-demod
 	// audio LPF; both share the IQ-power squelch.
@@ -555,11 +560,16 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	s.lastBreakAt[idx] = now
 	s.mu.Unlock()
 
-	// Synthesize a Grant. GroupID is derived from the channel index
-	// so each conv channel surfaces as a distinct talkgroup in the
-	// API + call log; bit 31 set so it can't collide with a real
-	// trunked GroupID (which are 24/28-bit fields in practice).
+	// Synthesize a Grant. GroupID defaults to the channel index so each
+	// conv channel surfaces as a distinct talkgroup in the API + call
+	// log; bit 31 set so it can't collide with a real trunked GroupID
+	// (which are 24/28-bit fields in practice). An operator-set
+	// TalkgroupID overrides it with a stable value that survives channel
+	// list edits (issue #1105); config validation guarantees uniqueness.
 	gid := uint32(0x80000000) | uint32(idx)
+	if ch.TalkgroupID != 0 {
+		gid = ch.TalkgroupID
+	}
 	g := trunking.Grant{
 		System:      s.opts.SystemName,
 		Protocol:    "fm-conv",

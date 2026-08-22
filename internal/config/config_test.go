@@ -110,6 +110,11 @@ func TestValidate(t *testing.T) {
 		{"bad hex key", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", EncryptionKeys: []EncryptionKeyConfig{{KeyID: 1, Algorithm: "rc4", Key: "xyz"}}}}}}, true},
 		{"empty key", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", EncryptionKeys: []EncryptionKeyConfig{{KeyID: 1, Algorithm: "rc4", Key: ""}}}}}}, true},
 		{"duplicate key_id", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", EncryptionKeys: []EncryptionKeyConfig{{KeyID: 1, Algorithm: "rc4", Key: "ab"}, {KeyID: 1, Algorithm: "rc4", Key: "cd"}}}}}}, true},
+		// conventional-scanner talkgroup_id override (#1105).
+		{"conv default ids ok", Config{Scanner: ScannerConfig{Conventional: []ConvChannelConfig{{FrequencyHz: 100_000_000}, {FrequencyHz: 200_000_000}}}}, false},
+		{"conv explicit ids ok", Config{Scanner: ScannerConfig{Conventional: []ConvChannelConfig{{FrequencyHz: 100_000_000, TalkgroupID: 40001}, {FrequencyHz: 200_000_000, TalkgroupID: 40002}}}}, false},
+		{"conv duplicate explicit id", Config{Scanner: ScannerConfig{Conventional: []ConvChannelConfig{{FrequencyHz: 100_000_000, TalkgroupID: 40001}, {FrequencyHz: 200_000_000, TalkgroupID: 40001}}}}, true},
+		{"conv explicit collides positional", Config{Scanner: ScannerConfig{Conventional: []ConvChannelConfig{{FrequencyHz: 100_000_000}, {FrequencyHz: 200_000_000, TalkgroupID: 0x80000000}}}}, true},
 		{"duplicate sdr serial", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "00000006", Role: "control"}, {Serial: "00000006", Role: "voice"}}}}, true},
 		{"distinct sdr serials ok", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "00000001", Role: "control"}, {Serial: "00000002", Role: "voice"}}}}, false},
 		{"empty sdr serials ok", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Role: "control"}, {Role: "voice"}}}}, false},

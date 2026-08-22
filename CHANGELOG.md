@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Conventional scanner channels can pin a stable talkgroup ID** via a new
+  optional `scanner.conventional[].talkgroup_id`. Conventional channels upload
+  to scan-type consumers (Rdio Scanner, OpenMHz, Broadcastify Calls) under a
+  synthetic talkgroup ID; previously that ID was positional
+  (`0x80000000 | list-index`) and shifted whenever a channel was
+  inserted/removed/reordered, breaking any `talkgroup_file` roster row keyed on
+  it. Setting `talkgroup_id` pins the value so it survives channel-list edits.
+  Unset keeps the positional default; config validation rejects two channels
+  that would resolve to the same ID (issue #1105).
+
 ### Docs
 - **Documented the minimum macOS version (12 Monterey).** macOS binaries link
   against system APIs that first shipped in macOS 12 (e.g.

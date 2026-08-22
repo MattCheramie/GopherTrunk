@@ -366,6 +366,52 @@ func TestConvScannerBreaksSquelchAndEndsOnHangtime(t *testing.T) {
 	}
 }
 
+// TestConvScannerHonorsTalkgroupIDOverride pins that a channel with an
+// explicit TalkgroupID surfaces its synthetic grant under that stable ID
+// rather than the positional 0x80000000|idx default (issue #1105).
+func TestConvScannerHonorsTalkgroupIDOverride(t *testing.T) {
+	tuner := &fakeTuner{}
+	iq := &fakeIQ{
+		tuner: tuner,
+		chunks: map[uint32][][]complex64{
+			200_000_000: {loudChunk(256), loudChunk(256), loudChunk(256)},
+		},
+	}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-1",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "A", FrequencyHz: 100_000_000, SquelchDbFS: -10},
+			// Channel B is list index 1 (positional id would be 0x80000001),
+			// but pins its id to 40001 — the grant must carry 40001.
+			{Label: "B", FrequencyHz: 200_000_000, SquelchDbFS: -10, TalkgroupID: 40001, Hangtime: 50 * time.Millisecond},
+			{Label: "C", FrequencyHz: 300_000_000, SquelchDbFS: -10},
+		},
+		MinDwellPerChannel: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = s.Run(ctx)
+
+	if eng.startCount() == 0 {
+		t.Fatal("squelch never fired (no HandleSyntheticCall)")
+	}
+	if eng.starts[0].FrequencyHz != 200_000_000 {
+		t.Fatalf("first start freq = %d, want 200_000_000", eng.starts[0].FrequencyHz)
+	}
+	if eng.starts[0].GroupID != 40001 {
+		t.Errorf("group id = %#x, want 40001 (explicit talkgroup_id, not positional 0x80000001)", eng.starts[0].GroupID)
+	}
+	if eng.starts[0].GroupLabel != "B" {
+		t.Errorf("group label = %q, want B", eng.starts[0].GroupLabel)
+	}
+}
+
 // TestConvScannerBriefBlipsDoNotHoldSquelchOpen is the regression for
 // issue #1090. A channel opens squelch, then goes near-silent with a
 // single above-threshold IQ chunk (a ~2 ms blip — carrier tail,

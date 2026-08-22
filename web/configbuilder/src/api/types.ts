@@ -239,6 +239,7 @@ export interface ConvToneConfig {
 
 export interface ConvChannelConfig {
   Label: string;
+  TalkgroupID: number; // optional stable scan-upload talkgroup id (0 = positional default)
   FrequencyHz: number;
   Mode: string; // "" | fm | nfm
   SquelchDbFS: number;

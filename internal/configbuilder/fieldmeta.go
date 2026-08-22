@@ -361,6 +361,7 @@ var fieldMetas = map[string]FieldMeta{
 	"CCHuntConfig.BackoffMs":                {Help: "Initial sleep after exhausting a system's CC list. Default 5000 ms; doubles per failure."},
 	"CCHuntConfig.MaxBackoffMs":             {Help: "Cap on the exponential backoff. Default 60000 ms."},
 	"ConvChannelConfig.Label":               {Help: "Display name for this conventional channel."},
+	"ConvChannelConfig.TalkgroupID":         {Label: "Talkgroup ID", Help: "Optional stable talkgroup ID for scan-type uploads (Rdio Scanner, OpenMHz) and the call log. Unset = positional default that shifts when channels are reordered; set to pin it. Must be unique across conventional channels."},
 	"ConvChannelConfig.FrequencyHz":         {Label: "Frequency", Hz: true, Help: "Channel center frequency."},
 	"ConvChannelConfig.Mode":                {Help: "Demodulation: fm (wide) or nfm (narrow).", Options: opts("", "(fm)", "fm", "fm", "nfm", "nfm")},
 	"ConvChannelConfig.SquelchDbFS":         {Label: "Squelch (dBFS)", Help: "Squelch threshold in dBFS. Default -50."},
