@@ -2125,6 +2125,10 @@ func newOffsetTestDecoder(t *testing.T, buf *bytes.Buffer) *Decoder {
 	t.Cleanup(func() { d.Close() })
 	setActiveSystem(d, "Geelong")
 	d.activeFreqHz = 420_075_000
+	// Persistence 0 so the threshold/throttle pins below fire on the first
+	// over-threshold tick; TestDecoderCarrierOffsetWarnRequiresPersistence
+	// covers the persistence gate itself.
+	d.carrierOffsetWarnPersist = 0
 	return d
 }
 
@@ -2313,6 +2317,10 @@ func TestDecoderWarnsOnLargeCarrierOffsetEndToEnd(t *testing.T) {
 			t.Fatalf("New: %v", err)
 		}
 		defer d.Close()
+		// The pump runs in simulated signal time here, so the wall-clock
+		// persistence gate would keep a genuinely sustained offset silent;
+		// zero it to pin the measurement + threshold path.
+		d.carrierOffsetWarnPersist = 0
 		sub := bus.Subscribe()
 		defer sub.Close()
 
@@ -2441,6 +2449,49 @@ func TestDecoderCarrierOffsetWarnThrottled(t *testing.T) {
 	}
 }
 
+// TestDecoderCarrierOffsetWarnRequiresPersistence pins the fix for the "fake
+// triggering of freq offset" field report: the receiver's smoothed AFC estimate
+// can transiently spike one ±f_sym/4 alias bucket off (a TETRA operator's log
+// showed offset_hz=5004 on a carrier really ~500 Hz off, gone within seconds),
+// and the per-chunk instantaneous check turned each blip into a wrong-site
+// WARN. The offset must now sit over threshold continuously for
+// carrierOffsetWarnPersist before the first WARN; dipping under threshold
+// resets the excursion clock.
+func TestDecoderCarrierOffsetWarnRequiresPersistence(t *testing.T) {
+	var buf bytes.Buffer
+	d := newOffsetTestDecoder(t, &buf)
+	d.carrierOffsetWarnPersist = time.Hour // nothing in this test may outlast it
+	pipe := &fakeAFCPipeline{offsetHz: 5004}
+	d.active = pipe
+	d.locked.Store(true)
+
+	// A transient spike: over threshold for a few ticks, then back under.
+	for i := 0; i < 5; i++ {
+		d.checkCarrierOffsetLocked()
+	}
+	if strings.Contains(buf.String(), carrierOffsetWarnMsg) {
+		t.Fatalf("transient spike warned before the persistence window elapsed; log: %q", buf.String())
+	}
+	pipe.offsetHz = 400
+	d.checkCarrierOffsetLocked()
+	if !d.offsetOverWarnSince.IsZero() {
+		t.Fatalf("excursion clock not reset when the offset fell back under threshold")
+	}
+
+	// A genuinely sustained excursion warns once the window has elapsed:
+	// backdate the excursion start rather than sleeping.
+	pipe.offsetHz = 12500
+	d.checkCarrierOffsetLocked() // starts the excursion clock
+	if strings.Contains(buf.String(), carrierOffsetWarnMsg) {
+		t.Fatalf("sustained excursion warned before the persistence window elapsed; log: %q", buf.String())
+	}
+	d.offsetOverWarnSince = time.Now().Add(-2 * time.Hour)
+	d.checkCarrierOffsetLocked()
+	if n := strings.Count(buf.String(), carrierOffsetWarnMsg); n != 1 {
+		t.Fatalf("sustained over-threshold offset past the window: warns = %d, want 1 (log: %q)", n, buf.String())
+	}
+}
+
 // TestDecoderCarrierOffsetWarnHzConfigurable confirms Options.CarrierOffsetWarnHz
 // overrides the default threshold, and that zero falls back to the default.
 func TestDecoderCarrierOffsetWarnHzConfigurable(t *testing.T) {
@@ -2466,6 +2517,7 @@ func TestDecoderCarrierOffsetWarnHzConfigurable(t *testing.T) {
 	}
 	defer d2.Close()
 	setActiveSystem(d2, "Geelong")
+	d2.carrierOffsetWarnPersist = 0
 	d2.active = &fakeAFCPipeline{offsetHz: 12500}
 	d2.locked.Store(true)
 	d2.checkCarrierOffsetLocked()

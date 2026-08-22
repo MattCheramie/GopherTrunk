@@ -57,6 +57,17 @@ type carrierAFC struct {
 	// omegaReprimeStreak of them the EMA is re-primed from their mean.
 	rejStreak int
 	rejMean   float64
+
+	// accSincePrime counts accepted blocks since the EMA was last (re)primed,
+	// saturating at omegaEstablishedBlocks. It is the track's confidence: a
+	// fresh seed (post-Reset, or just after a re-prime) has none, an EMA that
+	// hundreds of accepted estimates have corroborated has earned trust. The
+	// re-prime escape hatch reads it to pick between the fast streak (fresh
+	// track — a wrong one-block seed must be corrected at once) and the slow
+	// one (established track — an alias-class reject cluster is far more
+	// likely a transiently biased coarse stage than a carrier that really
+	// stepped exactly ±n·f_sym/4).
+	accSincePrime int
 }
 
 // afcBlockSymbols is the feed-forward re-estimation window in symbols.
@@ -90,6 +101,31 @@ const omegaRejectClusterTol = omegaAliasReject / 2
 // EMA (~3 × 57 ms ≈ 170 ms of signal). A single accepted block in between
 // zeroes the streak, so sporadic outliers can never trip it.
 const omegaReprimeStreak = 3
+
+// omegaEstablishedBlocks is how many accepted blocks (~16 × 57 ms ≈ 0.9 s)
+// corroborate the EMA before the track counts as established. Below it the
+// escape hatch stays fast — the EMA may still be a wrong one-block seed and
+// omegaReprimeStreak clustered rejects must fix it at once (the 19 Aug latch).
+// At or above it the EMA has real evidence behind it, and an alias-class
+// reject cluster must clear the omegaReprimeStreakEstablished bar instead.
+const omegaEstablishedBlocks = 16
+
+// omegaReprimeStreakEstablished is the reject streak an ALIAS-CLASS cluster
+// (cluster mean ≡ EMA mod π/2 — see aliasClassOffset) needs to re-prime an
+// ESTABLISHED track (~18 × 57 ms ≈ 1 s). An alias-class cluster is ambiguous:
+// it reads the same whether the EMA latched the wrong ±f_sym/4 bucket (rejects
+// are the correct carrier) or a fading neighbour transiently biased the coarse
+// stage past its ±f_sym/8 wrap so the rejects themselves are one bucket off —
+// the failure a reporter filmed as "AFC spikes to -5 kHz" on a locked, centred
+// CC (logged 5004 ≈ 504 + 4500 Hz), where the old unconditional 3-block streak
+// let a ~200 ms transient slam a long-corroborated EMA into the wrong bucket
+// and fail every SCH burst until it re-primed back. Duration disambiguates: a
+// coarse-bias transient passes in well under a second, a genuinely moved
+// carrier does not. Non-alias clusters (a real off-grid jump) and fresh tracks
+// keep the fast streak; and if a slow re-prime ever picks wrong, the fresh
+// track it leaves behind fast-corrects omegaReprimeStreak blocks later, while
+// the payload-drought resync (checkPayloadResync) bounds the true worst case.
+const omegaReprimeStreakEstablished = 18
 
 func newCarrierAFC(sps int) *carrierAFC {
 	if sps < 1 {
@@ -236,17 +272,26 @@ func (a *carrierAFC) Process(dst, matched, wide []complex64) []complex64 {
 // consecutive clustered rejects re-prime the EMA from their mean — the
 // escape hatch for a wrong first-block seed that would otherwise reject
 // every correct estimate forever (19 Aug field log: −3630 Hz latched for
-// 12 minutes while BSCH decoded and SCH sat at zero).
+// 12 minutes while BSCH decoded and SCH sat at zero). The streak the hatch
+// needs scales with the track's earned confidence: on an ESTABLISHED track
+// (accSincePrime full) an alias-class cluster — one that reads as an exact
+// ±f_sym/4 step — must persist omegaReprimeStreakEstablished blocks, so a
+// sub-second coarse-bias transient can no longer spike a corroborated EMA
+// into the wrong bucket ("AFC spikes to -5 kHz" field report).
 func (a *carrierAFC) track(rawOmega float64) {
 	if !a.omegaPrimed {
 		a.omegaEMA = rawOmega
 		a.omegaPrimed = true
 		a.rejStreak = 0
+		a.accSincePrime = 0
 		return
 	}
 	if math.Abs(rawOmega-a.omegaEMA) < omegaAliasReject {
 		a.omegaEMA += omegaEMAAlpha * (rawOmega - a.omegaEMA)
 		a.rejStreak = 0
+		if a.accSincePrime < omegaEstablishedBlocks {
+			a.accSincePrime++
+		}
 		return
 	}
 	if a.rejStreak > 0 && math.Abs(rawOmega-a.rejMean) < omegaRejectClusterTol {
@@ -256,10 +301,31 @@ func (a *carrierAFC) track(rawOmega float64) {
 		a.rejStreak = 1
 		a.rejMean = rawOmega
 	}
-	if a.rejStreak >= omegaReprimeStreak {
+	need := omegaReprimeStreak
+	if a.accSincePrime >= omegaEstablishedBlocks && aliasClassOffset(a.rejMean-a.omegaEMA) {
+		need = omegaReprimeStreakEstablished
+	}
+	if a.rejStreak >= need {
 		a.omegaEMA = a.rejMean
 		a.rejStreak = 0
+		a.accSincePrime = 0
 	}
+}
+
+// aliasClassOffset reports whether an EMA-to-cluster delta is an exact
+// ±f_sym/4 alias step: congruent to 0 modulo π/2 rad/symbol within
+// omegaRejectClusterTol. That is the signature of the fine estimator wrapping
+// (its window is ±π/4) under a coarse-stage bias — as opposed to a carrier
+// that genuinely moved to an off-grid frequency.
+func aliasClassOffset(d float64) bool {
+	const bucket = math.Pi / 2
+	r := math.Mod(d, bucket) // (−π/2, π/2), sign of d
+	if r > bucket/2 {
+		r -= bucket
+	} else if r < -bucket/2 {
+		r += bucket
+	}
+	return math.Abs(r) < omegaRejectClusterTol
 }
 
 // OffsetHz reports the most recent per-symbol offset estimate in Hz.
@@ -273,6 +339,7 @@ func (a *carrierAFC) Reset() {
 	a.omegaPrimed = false
 	a.rejStreak = 0
 	a.rejMean = 0
+	a.accSincePrime = 0
 }
 
 func conjf(c complex64) complex64 { return complex(real(c), -imag(c)) }

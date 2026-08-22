@@ -199,6 +199,19 @@ const zeroIFHealthErrPct = 20
 // iqClipLog / iqDCLog 30 s cadence so a stuck adjacent-channel lock logs steadily.
 const carrierOffsetWarnInterval = 30 * time.Second
 
+// carrierOffsetWarnPersist is how long the total offset must sit continuously
+// over the WARN threshold before the first #815 line is emitted. The condition
+// the WARN diagnoses — locked onto an adjacent site's carrier, or a grossly
+// mistuned oscillator — is persistent by nature, but the sampled AFC estimate
+// is not: a TETRA field report ("fake triggering of freq offset … sometimes AFC
+// spikes to huge numbers like -5 kHz") showed the receiver's smoothed estimate
+// transiently latching one ±f_sym/4 = 4500 Hz alias bucket off (logged
+// offset_hz=5004 on a carrier really ~500 Hz off) for well under a second,
+// and the old per-chunk instantaneous check turned each such blip into a
+// scary wrong-site WARN. 10 s cannot be crossed by an estimator transient,
+// while a genuine adjacent-site lock still warns shortly after acquisition.
+const carrierOffsetWarnPersist = 10 * time.Second
+
 // The decode queue between the lightweight IQ forwarder and the decode goroutine
 // (issue #402) is bounded by a wall-clock SAMPLE BUDGET, not a fixed count of
 // chunks. The SDR driver drops the instant its own delivery channel backs up, so
@@ -374,9 +387,15 @@ type Decoder struct {
 	// WARN to one line per carrierOffsetWarnInterval while the offset stays
 	// over threshold; it resets to zero when the offset falls back under
 	// threshold so a fresh excursion re-warns at once (owned by the pump
-	// goroutine). Issue #815.
-	carrierOffsetWarnHz int
-	lastOffsetWarnAt    time.Time
+	// goroutine). carrierOffsetWarnPersist is how long the offset must stay
+	// continuously over threshold before the first WARN (defaulted from the
+	// const; a field so tests can drive the check without waiting real
+	// seconds), with offsetOverWarnSince marking when the current excursion
+	// began. Issue #815.
+	carrierOffsetWarnHz      int
+	carrierOffsetWarnPersist time.Duration
+	lastOffsetWarnAt         time.Time
+	offsetOverWarnSince      time.Time
 
 	// zeroIF* back the issue #402 dc_avoid nudge: while locked at zero-IF
 	// (loOffsetHz == 0), the decoder measures the TSBK error rate over
@@ -572,6 +591,7 @@ func New(opts Options) (*Decoder, error) {
 	if d.carrierOffsetWarnHz <= 0 {
 		d.carrierOffsetWarnHz = defaultCarrierOffsetWarnHz
 	}
+	d.carrierOffsetWarnPersist = carrierOffsetWarnPersist
 	d.zeroIFHealthWindow = zeroIFHealthWindow
 	d.ddcRec = newDDCRecorder(opts.DDCRecordDir, log)
 	for _, s := range opts.Systems {
@@ -888,6 +908,11 @@ func (d *Decoder) clearActiveLocked() {
 	// re-baselines against its own fresh TSBK counters instead of
 	// diffing against the torn-down pipeline's totals.
 	d.zeroIFHealthAt = time.Time{}
+	// Drop the issue #815 offset-excursion clock too: a stale excursion from
+	// a torn-down lock must not let the next acquisition warn instantly
+	// before its own carrierOffsetWarnPersist has elapsed.
+	d.offsetOverWarnSince = time.Time{}
+	d.lastOffsetWarnAt = time.Time{}
 	if d.activeAt != "" && d.metrics != nil {
 		d.metrics.ClearIQPowerDbFS(d.activeAt)
 		d.metrics.ClearIQDCRatioDb(d.activeAt)
@@ -1158,11 +1183,15 @@ func (d *Decoder) sampleAutotuneLocked() {
 // AFCOffsetHz: with autotune off (the default) applied is 0 and the total is the
 // raw residual; with autotune on, a large genuine offset is folded into applied,
 // so summing the two still catches an adjacent-channel lock autotune would
-// otherwise hide by chasing the wrong carrier (issue #815). Advisory only — it
-// never retunes; it tells the operator the locked carrier sits far from the
-// configured frequency, so the reported site identity may belong to a stronger
-// neighbouring site bleeding through (or the front-end oscillator is mistuned).
-// Caller holds d.mu.
+// otherwise hide by chasing the wrong carrier (issue #815). The offset must sit
+// over threshold continuously for d.carrierOffsetWarnPersist before the first
+// WARN: the condition diagnosed is persistent, but the sampled estimate can
+// transiently spike an alias bucket off (the "-5 kHz AFC spikes" field report),
+// and a per-chunk instantaneous check turned each blip into a wrong-site WARN.
+// Advisory only — it never retunes; it tells the operator the locked carrier
+// sits far from the configured frequency, so the reported site identity may
+// belong to a stronger neighbouring site bleeding through (or the front-end
+// oscillator is mistuned). Caller holds d.mu.
 func (d *Decoder) checkCarrierOffsetLocked() {
 	if !d.locked.Load() {
 		return
@@ -1176,10 +1205,17 @@ func (d *Decoder) checkCarrierOffsetLocked() {
 		total = -total
 	}
 	if total < d.carrierOffsetWarnHz {
-		d.lastOffsetWarnAt = time.Time{} // re-arm so a fresh excursion warns at once
+		d.lastOffsetWarnAt = time.Time{} // re-arm so a fresh excursion warns anew
+		d.offsetOverWarnSince = time.Time{}
 		return
 	}
 	now := time.Now()
+	if d.offsetOverWarnSince.IsZero() {
+		d.offsetOverWarnSince = now
+	}
+	if now.Sub(d.offsetOverWarnSince) < d.carrierOffsetWarnPersist {
+		return
+	}
 	if !d.lastOffsetWarnAt.IsZero() && now.Sub(d.lastOffsetWarnAt) < carrierOffsetWarnInterval {
 		return
 	}
