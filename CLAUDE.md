@@ -690,7 +690,33 @@ confirmation before any close-as-completed.
     `widebandt2/tetra.go`). Also: a single mis-corrected BSCH could rewrite the locked MCC/MNC
     (4 bogus "tetra cc locked" flaps, mcc=996 etc.) — identity CHANGES now need 2 consecutive
     agreeing decodes, mirroring `colourConfirmThreshold`.
-  - **The MRC anchor flipped mid-stream on the 08:58 cc-hunt retune** (rearm set `refIdx=-1` →
+  - **"AFC spikes to −5 kHz" on a locked, centred TETRA CC = the 19 Aug re-prime escape
+  hatch FIRING FALSELY on an alias-class transient — fixed with a confidence gate, and
+  the #815 wrong-site WARN now requires persistence.** A reporter filmed the mixer panel's
+  carrier readout jittering ±400 Hz then spiking to ~−5 kHz; the log's #815 WARN said
+  `offset_hz=5004` on a carrier really ~500 Hz off. 5004 = 504 + 4500 and f_sym/4 = 4500 Hz:
+  the spike is EXACTLY one AFC alias bucket, not a carrier move. Mechanism: the per-block raw
+  estimate is coarse (spectral centroid) + fine (4×Δφ, unambiguous only within ±f_sym/8 =
+  ±2250 Hz), so ANY transient coarse bias > 2250 Hz (a neighbour's skirts through the
+  channel-filter edge while the wanted carrier fades) lands the raw estimate exactly ±4500 Hz
+  off — and three such consecutive blocks (~170 ms) tripped the 19 Aug clustered-reject
+  re-prime, slamming a long-corroborated EMA into the wrong bucket (SCH fails ~100% there;
+  BSCH survives via per-burst SB correction, so the lock looks healthy). The two failure
+  modes are the SAME signature at different ages: a wrong one-block seed (19 Aug) needs a
+  FAST escape, a transient on an established track needs a HOLD. Fix (`afc.go`): `track`
+  counts accepted blocks since the last prime (`accSincePrime`); an alias-class reject
+  cluster (cluster mean ≡ EMA mod π/2, `aliasClassOffset`) on an established track
+  (≥16 accepted blocks) needs `omegaReprimeStreakEstablished`=18 blocks (~1 s) to re-prime,
+  while fresh tracks and non-alias clusters keep the fast 3-block escape; a wrong slow
+  re-prime self-heals fast (it leaves a fresh track) and `checkPayloadResync` bounds the
+  worst case. Pinned failing-first by `afc_alias_transient_test.go` (old code jumps to
+  4950 Hz after exactly 3 alias blocks). Companion fix (`ccdecoder/decoder.go`): the #815
+  WARN diagnosed a persistent condition from ONE per-chunk instantaneous sample, so every
+  sub-second estimator blip produced a scary wrong-site WARN — the "fake triggering of freq
+  offset" report; it now requires the total offset to sit over threshold continuously for
+  `carrierOffsetWarnPersist` (10 s, test-overridable field), with the excursion clock reset
+  on dips and on pipeline teardown. Pinned by `TestDecoderCarrierOffsetWarnRequiresPersistence`.
+- **The MRC anchor flipped mid-stream on the 08:58 cc-hunt retune** (rearm set `refIdx=-1` →
     bare argmax re-pick), and the applied gain random-walked to −34 dB with `calibrated=true`
     (divergence bounds gated only the proposal). Fixes: rearm/`setSampleRate`/short-payloads
     KEEP the anchor (dead-incumbent escape still works), every anchor change is logged,
