@@ -2,6 +2,7 @@ package configtui
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,7 +13,7 @@ import (
 )
 
 func newTestModel() Model {
-	m := New([]string{"/tmp"}, radioreference.Auth{}, nil, "")
+	m := New([]string{"/tmp"}, true, radioreference.Auth{}, nil, "")
 	m.width, m.height = 120, 40
 	return m
 }
@@ -147,7 +148,7 @@ func TestImportModal(t *testing.T) {
 		return config.SystemConfig{Name: "Imp", Protocol: "p25", ControlChannels: []uint32{851_000_000}},
 			[]configbuilder.TalkgroupCSVRow{{Decimal: 7}}, nil
 	}
-	m := New([]string{"/tmp"}, radioreference.Auth{}, parse, "")
+	m := New([]string{"/tmp"}, true, radioreference.Auth{}, parse, "")
 	m.width, m.height = 120, 40
 	m = gotoSection(m, "trunking")
 	m = send(m, "enter") // Systems list
@@ -178,9 +179,62 @@ func TestRRModalNoCreds(t *testing.T) {
 	}
 }
 
+// TestDefaultSavePath_PrefersDiscoveredOverCandidateDir is the #1120
+// regression. Under auto-discovery (no operator -config-dir) the Save-As
+// modal must default to the file the daemon actually loads — resolved via
+// configbuilder.DefaultConfigPath — not to dirs[0], which on Windows is
+// %APPDATA%\GopherTrunk, a location the daemon does not read when the
+// installer seeds the config under <Documents>\GopherTrunk\config.
+//
+// Fails against the old newSaveModal (which unconditionally overrode the
+// default with joinPath(m.dirs[0], "config.yaml")).
+func TestDefaultSavePath_PrefersDiscoveredOverCandidateDir(t *testing.T) {
+	// The file the daemon discovers (highest-precedence discovery input).
+	want := filepath.Join(t.TempDir(), "config.yaml")
+	t.Setenv("GOPHERTRUNK_CONFIG", want)
+
+	// Simulate the auto-discovery candidate list with an AppData-style dir
+	// first, exactly as config.CandidateDirs() yields on Windows.
+	appData := filepath.Join("appdata", "GopherTrunk")
+	m := New([]string{appData, "documents"}, false /* dirExplicit */, radioreference.Auth{}, nil, "")
+
+	if got := (&m).defaultSavePath(); got != want {
+		t.Errorf("defaultSavePath() = %q, want %q (must follow the daemon's discovery, not dirs[0])", got, want)
+	}
+	if got := (&m).defaultSavePath(); got == filepath.Join(appData, "config.yaml") {
+		t.Errorf("defaultSavePath() defaulted to dirs[0] %q — the #1120 override is back", got)
+	}
+}
+
+// TestDefaultSavePath_HonorsExplicitDir keeps an operator-supplied
+// -config-dir winning over discovery.
+func TestDefaultSavePath_HonorsExplicitDir(t *testing.T) {
+	t.Setenv("GOPHERTRUNK_CONFIG", filepath.Join(t.TempDir(), "elsewhere.yaml"))
+	dir := t.TempDir()
+	m := New([]string{dir}, true /* dirExplicit */, radioreference.Auth{}, nil, "")
+	want := filepath.Join(dir, "config.yaml")
+	if got := (&m).defaultSavePath(); got != want {
+		t.Errorf("defaultSavePath() = %q, want %q (explicit -config-dir must win)", got, want)
+	}
+}
+
+// TestDefaultSavePath_SavesBackToOpenFile keeps the open file as the
+// highest-precedence save default.
+func TestDefaultSavePath_SavesBackToOpenFile(t *testing.T) {
+	dir := t.TempDir()
+	open := filepath.Join(dir, "opened.yaml")
+	if _, err := config.WriteConfigFile(open, config.Default(), 0, true); err != nil {
+		t.Fatal(err)
+	}
+	m := New([]string{"appdata"}, false, radioreference.Auth{}, nil, open)
+	if got := (&m).defaultSavePath(); got != open {
+		t.Errorf("defaultSavePath() = %q, want %q (must save back to the open file)", got, open)
+	}
+}
+
 func TestSaveReloadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	m := New([]string{dir}, radioreference.Auth{}, nil, "")
+	m := New([]string{dir}, true, radioreference.Auth{}, nil, "")
 	m.width, m.height = 120, 40
 	m.cfg.Trunking.Systems = []config.SystemConfig{{
 		Name: "Metro", Protocol: "p25", ControlChannels: []uint32{851_037_500},
@@ -201,7 +255,7 @@ func TestSaveReloadRoundTrip(t *testing.T) {
 	}
 
 	// Reload into a fresh model and confirm the system + talkgroups survive.
-	m2 := New([]string{dir}, radioreference.Auth{}, nil, "")
+	m2 := New([]string{dir}, true, radioreference.Auth{}, nil, "")
 	(&m2).loadPath(path)
 	if len(m2.cfg.Trunking.Systems) != 1 || m2.cfg.Trunking.Systems[0].Name != "Metro" {
 		t.Fatalf("system did not round-trip: %+v", m2.cfg.Trunking.Systems)
@@ -217,7 +271,7 @@ func TestOpenModalFileOps(t *testing.T) {
 	if _, err := config.WriteConfigFile(dir+"/a.yaml", config.Default(), 0, true); err != nil {
 		t.Fatal(err)
 	}
-	m := New([]string{dir}, radioreference.Auth{}, nil, "")
+	m := New([]string{dir}, true, radioreference.Auth{}, nil, "")
 	m.width, m.height = 120, 40
 
 	m = send(m, "o") // open modal lists a.yaml

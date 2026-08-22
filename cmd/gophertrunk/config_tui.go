@@ -47,8 +47,10 @@ FLAGS:`)
 	}
 
 	dirs := []string{}
+	dirExplicit := false
 	if d := strings.TrimSpace(*configDir); d != "" {
 		dirs = []string{d}
+		dirExplicit = true
 	} else {
 		dirs = config.CandidateDirs()
 	}
@@ -63,7 +65,7 @@ FLAGS:`)
 	if f := strings.TrimSpace(*cfgFile); f != "" {
 		initial = configbuilder.ExpandConfigPath(f)
 	}
-	m := configtui.New(dirs, rrAuth, importParseFunc(), initial)
+	m := configtui.New(dirs, dirExplicit, rrAuth, importParseFunc(), initial)
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "config tui: %v\n", err)
 		os.Exit(1)

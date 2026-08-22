@@ -35,9 +35,10 @@ type Model struct {
 	talkgroups map[string][]configbuilder.TalkgroupCSVRow
 
 	// injected deps
-	dirs   []string
-	rrAuth radioreference.Auth
-	parse  ParseFunc
+	dirs        []string
+	dirExplicit bool // dirs came from an operator -config-dir, not auto-discovery
+	rrAuth      radioreference.Auth
+	parse       ParseFunc
 
 	width, height int
 	focus         focusZone
@@ -57,21 +58,24 @@ type Model struct {
 	quitting bool
 }
 
-// New builds the model. dirs is the allowed config directories; rrAuth the
-// RadioReference creds; parse the injected import parser; initialPath an
-// optional file to open at start.
-func New(dirs []string, rrAuth radioreference.Auth, parse ParseFunc, initialPath string) Model {
+// New builds the model. dirs is the allowed config directories; dirExplicit
+// says whether they came from an operator-supplied -config-dir (as opposed to
+// the auto-discovery candidate list), which decides where Save-As defaults;
+// rrAuth the RadioReference creds; parse the injected import parser;
+// initialPath an optional file to open at start.
+func New(dirs []string, dirExplicit bool, rrAuth radioreference.Auth, parse ParseFunc, initialPath string) Model {
 	ti := textinput.New()
 	ti.Prompt = "› "
 	m := Model{
-		cfg:        config.Default(),
-		defaults:   config.Default(),
-		talkgroups: map[string][]configbuilder.TalkgroupCSVRow{},
-		dirs:       dirs,
-		rrAuth:     rrAuth,
-		parse:      parse,
-		focus:      zoneSections,
-		input:      ti,
+		cfg:         config.Default(),
+		defaults:    config.Default(),
+		talkgroups:  map[string][]configbuilder.TalkgroupCSVRow{},
+		dirs:        dirs,
+		dirExplicit: dirExplicit,
+		rrAuth:      rrAuth,
+		parse:       parse,
+		focus:       zoneSections,
+		input:       ti,
 	}
 	m.revalidate()
 	if initialPath != "" {
@@ -121,6 +125,28 @@ func (m *Model) revalidate() {
 }
 
 func (m *Model) pushErr(s string) { m.errs = append(m.errs, s) }
+
+// defaultSavePath is the path the Save-As modal proposes. Precedence:
+//
+//  1. the file currently open — save back to what you were editing;
+//  2. an operator-constrained -config-dir → <dir>/config.yaml;
+//  3. configbuilder.DefaultConfigPath() — the file the daemon actually
+//     discovers ($GOPHERTRUNK_CONFIG, then auto-discovery, then cwd).
+//
+// Step 3 is the #1120 fix: without it the builder defaulted to dirs[0],
+// which under auto-discovery is %APPDATA%\GopherTrunk on Windows — a
+// location the daemon does not load when the installer seeds the config
+// under <Documents>\GopherTrunk\config, so a freshly-built config was
+// written somewhere the daemon never read it.
+func (m *Model) defaultSavePath() string {
+	if m.path != "" {
+		return m.path
+	}
+	if m.dirExplicit && len(m.dirs) > 0 {
+		return joinPath(m.dirs[0], "config.yaml")
+	}
+	return configbuilder.DefaultConfigPath()
+}
 
 // loadPath reads + parses a config file into the draft (without Load's
 // validation, so an invalid file can be opened to fix), loads its talkgroup

@@ -18,6 +18,16 @@ for tagged releases.
   #1096).
 
 ### Fixed
+- **`gophertrunk config` (terminal Config Builder) now defaults its Save path to
+  the file the daemon actually loads** (issue #1120). The earlier #1120 fix
+  taught `configbuilder.DefaultConfigPath` to follow the daemon's discovery, but
+  the terminal builder's Save-As modal overrode it with the first auto-discovery
+  candidate directory — `%APPDATA%\GopherTrunk` on Windows — so a freshly-built
+  config was written where the daemon never reads it when the installer seeds the
+  config under `<Documents>\GopherTrunk\config`. Save-As now proposes, in order:
+  the file currently open, an operator-supplied `-config-dir`, then the
+  discovered/`$GOPHERTRUNK_CONFIG` file. No behaviour change when `-config-dir`
+  is set or a file is already open.
 - **Conventional/analog scanner recordings no longer end in a loud multi-second
   noise tail** (issue #1090). The scanner-side hangtime debounce (#1091) fixed
   when a call *ends*, but for the whole hangtime window the composer's FM chain
