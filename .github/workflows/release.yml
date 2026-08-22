@@ -412,7 +412,7 @@ jobs:
 
             **Windows on ARM:** extract `gophertrunk-${{ steps.version.outputs.version }}-windows-arm64.zip` (no installer for arm64 yet — portable ZIP only). The web consoles live in the `gophertrunk-web\` subfolder inside the zip (`siglab\` and `configbuilder\` alongside the standard console).
 
-            **macOS:** extract `gophertrunk-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz` (Apple Silicon) or `gophertrunk-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz` (Intel) and run `./gophertrunk`. Builds are unsigned — right-click → Open the first time to bypass Gatekeeper.
+            **macOS 12 (Monterey) or later** (Apple Silicon or Intel): extract `gophertrunk-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz` (Apple Silicon) or `gophertrunk-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz` (Intel) and run `./gophertrunk`. Builds are unsigned — right-click → Open the first time to bypass Gatekeeper. On macOS 11 or older the binary aborts at launch with `dyld: Symbol not found: _SecTrustCopyCertificateChain` — update to macOS 12+ or run on a supported machine (see the [macOS install guide](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-macos.md)).
 
             **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` (x86_64) or `gophertrunk-${{ steps.version.outputs.version }}-linux-arm64.tar.gz` (aarch64, e.g. Raspberry Pi 4/5) and run `./gophertrunk`. Single static binary; no system dependencies needed.
 

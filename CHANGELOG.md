@@ -13,8 +13,10 @@ for tagged releases.
   `SecTrustCopyCertificateChain`), so on macOS 11 and older they abort at launch
   with `dyld: Symbol not found`. The requirement is now stated in the README,
   the [macOS install guide](docs/install-macos.md) (a Requirements callout plus
-  a troubleshooting row for the exact `dyld` error), and the
-  [downloads page](docs/downloads.md). Docs only — no behaviour change (issue
+  a troubleshooting row for the exact `dyld` error), the
+  [downloads page](docs/downloads.md), and the GitHub **release notes** shown on
+  every release (the download point of contact — the macOS line now states the
+  requirement and the `dyld` symptom). Docs only — no behaviour change (issue
   #1096).
 
 ### Fixed
