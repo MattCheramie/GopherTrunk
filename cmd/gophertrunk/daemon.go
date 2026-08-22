@@ -1152,7 +1152,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					StreamWindow:   s.StreamWindow,
 					ConnectTimeout: time.Duration(s.ConnectTimeoutMs) * time.Millisecond,
 					Diversity:      s.Diversity,
-					Antennas:       s.Antennas,
+					Antennas:       s.EffectiveAntennas(),
 
 					DiversityCapture:        s.DiversityCapture,
 					DiversityCaptureSeconds: s.DiversityCaptureSeconds,

@@ -819,31 +819,44 @@ sdr:
       connect_timeout_ms: 20000
 ```
 
-**Per-channel antenna selection (`antennas:`).** A single antenna can go in
-`args` as `antenna=RX1`, but a comma inside a flat `key=value` args string
-splits arguments, so a *multi-value* antenna (one per RX channel) can't be
-expressed there — SoapySDR's own kwargs parser has the same limitation. Use the
-dedicated `antennas:` list instead, applied in channel order via SoapySDR
-`setAntenna` after the device opens. This is what an X310 in **MRC diversity**
-needs, RX1 on channel 0 and RX2 on channel 1:
+**Per-channel antenna selection (`antenna:`).** Set the RX antenna port with the
+dedicated `antenna:` list, applied in channel order via SoapySDR `setAntenna`
+after the device opens — **not** with `antenna=` in `args`. An `antenna=` in the
+flat args string only reaches the device `make()`, and on drivers like SoapyUHD
+`antenna` is a per-channel *runtime* setting, so the make kwarg is silently
+dropped and the port never changes (an X310 stays on its default RX port
+regardless of what you write). GopherTrunk now rejects `antenna=` in `args` and
+points you here.
+
+Use `antenna:` for both cases — a single receiver and MRC diversity:
 
 ```yaml
   soapy_remote:
+    # Single receiver (non-diversity): pin the one RX channel's port. Pair with
+    # rx_subdev_spec in args to pick the daughterboard (SoapyUHD maps channel 0
+    # onto it); antenna: sets that channel's port.
     - addr: "10.110.162.1:23313"
       driver: "uhd"
-      # Two RX channels: A:0 B:0 (a space inside a value is fine here — args
-      # only split on commas). clock/time_source stay in args (real UHD
-      # make() kwargs). Do NOT put antenna= in args when antennas: is set.
+      args: "addr=10.110.162.17,rx_subdev_spec=A:0,clock_source=gpsdo,time_source=gpsdo"
+      antenna: [RX1]                  # RX1 on the single RX channel
+      format: "CS16"
+      gain: "750"
+
+    # MRC diversity: two RX channels A:0 B:0 (a space inside a value is fine —
+    # args only split on commas). RX1 on channel 0, RX2 on channel 1.
+    - addr: "10.110.162.1:23314"
+      driver: "uhd"
       args: "addr=10.110.162.17,rx_subdev_spec=A:0 B:0,clock_source=gpsdo,time_source=gpsdo"
       diversity: mrc                  # opens RX0+RX1, phase-coherent combine
-      antennas: [RX1, RX2]            # RX1→channel 0, RX2→channel 1
+      antenna: [RX1, RX2]             # RX1→channel 0, RX2→channel 1
       format: "CS16"
       gain: "750"
 ```
 
-`antennas:` accepts at most two entries; more than one requires `diversity: mrc`
-(only one RX channel is opened otherwise). Setting both `antennas:` and
-`antenna=` in `args` is rejected — pick one.
+`antenna:` accepts at most two entries; more than one requires `diversity: mrc`
+(only one RX channel is opened otherwise). `antennas:` (plural) is the legacy
+spelling and still works, but setting both — or putting `antenna=` in `args` — is
+rejected. Pick one.
 
 Port names are device-specific and do **not** transfer between radios: a B210
 offers `TX/RX` and `RX2`, a TwinRX offers `RX1` and `RX2`. GopherTrunk checks the

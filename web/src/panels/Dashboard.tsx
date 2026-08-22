@@ -215,9 +215,18 @@ export function Dashboard() {
           </p>
         ) : (
           <ul className="space-y-1 text-xs font-mono max-h-72 overflow-auto">
-            {events
-              .slice(-40)
-              .reverse()
+            {/*
+              Order by the event's own wall-clock timestamp, newest first —
+              NOT by store arrival order. The events ring is appended in
+              arrival order (store/shared.ts appendEvents), so a late-arriving
+              event that carries an older timestamp (e.g. an audio.state
+              re-pushed on a state change) sits at the end of the ring and a
+              plain .reverse() floated it to the top. Same fix as the Events
+              tab (localeCompare on the ISO timestamp, descending).
+            */}
+            {[...events]
+              .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+              .slice(0, 40)
               .map((ev, i) => (
                 <li key={`${ev.timestamp}-${i}`} className="flex gap-3">
                   <span className="text-muted shrink-0">

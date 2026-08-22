@@ -117,7 +117,8 @@ export interface SoapyRemoteConfig {
   BiasTee: boolean;
   ConnectTimeoutMs: number;
   Diversity: string;
-  Antennas?: string[];
+  Antenna?: string[];
+  Antennas?: string[]; // legacy alias for Antenna, preserved on round-trip
   DiversityCapture: string;
   DiversityCaptureSeconds: number;
   VerboseDebug: boolean;

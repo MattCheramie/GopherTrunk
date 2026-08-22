@@ -68,6 +68,27 @@ describe("Dashboard landing", () => {
     });
   });
 
+  it("orders Recent activity by event timestamp, not store arrival order", () => {
+    // Regression: the feed used to .slice(-40).reverse() the arrival-ordered
+    // ring, so an event that ARRIVES late but carries an older wall-clock
+    // timestamp (e.g. an audio.state re-pushed on a state change) floated to
+    // the top — the "23:24 shown above 02:17" bug. It must sort below the
+    // newer-timestamped events instead. Same fix as the Events tab.
+    useShared.setState({
+      events: [
+        // Arrival order: the stale-timestamp event arrives LAST.
+        { kind: "call.release", timestamp: "2026-08-22T02:17:42Z", payload: {} },
+        { kind: "audio.state", timestamp: "2026-08-21T23:24:13Z", payload: {} },
+      ],
+    });
+    renderDash();
+    const kinds = screen
+      .getAllByText(/call\.release|audio\.state/)
+      .map((el) => el.textContent);
+    expect(kinds[0]).toBe("call.release"); // newest timestamp on top
+    expect(kinds[1]).toBe("audio.state"); // stale timestamp sinks below
+  });
+
   it("shows the active-call roster with the transmitting radio", async () => {
     useShared.setState({
       activeCalls: [
