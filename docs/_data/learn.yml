@@ -116,6 +116,8 @@ learning_paths:
         note: "The signal processing that turns captured samples into usable data."
       - id: intro-hardware
         note: "Computers and devices from the ground up, including SDR front-ends."
+      - id: embedded
+        note: "The small computers that run RF gear in the field — SBCs, GPIO, and 24/7 builds."
       - id: networking
         note: "How RF ultimately carries data across links and networks."
   - id: software-engineering
@@ -130,6 +132,8 @@ learning_paths:
         note: "The craft of building software."
       - id: programming-go
         note: "A real language, end to end — Go, from first program to concurrency."
+      - id: testing
+        note: "Keep it correct — unit tests, regression discipline, CI, and debugging."
       - id: git
         note: "Version control and collaboration."
       - id: linux-cli
@@ -140,6 +144,8 @@ learning_paths:
         note: "Where your application's data lives — SQL, NoSQL, and vector stores."
       - id: web-dev
         note: "The web layer most software meets its users through."
+      - id: apis
+        note: "How your software talks to other software — REST, real-time events, and gRPC."
       - id: deployment
         note: "Containers, CI/CD, and getting your software running in production."
       - id: software-licensing
@@ -204,6 +210,8 @@ learning_paths:
         note: "Apply it — build a station and follow live systems in the field."
       - id: intro-hardware
         note: "The SDR hardware that feeds a scanner."
+      - id: embedded
+        note: "Turn it into an appliance — a single-board computer that scans 24/7."
 
 # ---------------------------------------------------------------------------
 # Learning Modules — the self-contained curricula. Each owns /learn/<id>/.
@@ -4379,6 +4387,732 @@ modules:
       slug: glossary
       title: Glossary of scanning terms
       summary: Plain-language definitions for every term in the module — scanner, SDR, control channel, talkgroup, scan list, lockout, simulcast, multisite, roaming, feed, discone, squelch, close call, and more — cross-linked to the lessons.
+      minutes: 10
+      level: beginner
+      status: full
+
+  - id: testing
+    label: "Testing & Software Quality"
+    title: "Learn Testing & Software Quality — from newbie to expert"
+    tagline: "How real software stays correct — from your first unit test to the failing-first regression discipline GopherTrunk runs on."
+    start_slug: why-software-breaks
+    workload: "PT7H"
+    intro: >
+      A guided path from "why did that break?" to confident quality engineering.
+      Understand what bugs really are and what they cost, write your first unit
+      tests in Go, grow into integration and regression testing, master the
+      tooling that keeps a codebase healthy, learn to debug methodically — and
+      then apply all of it the way GopherTrunk does, where no fix lands without
+      a test that failed first.
+    units:
+      - id: why-quality
+        label: "Unit 1 — Why Software Breaks"
+        blurb: "Bugs, what they cost, and the mindset shift from 'it seems to work' to 'I can show it works.'"
+        lessons:
+          - slug: why-software-breaks
+            title: Why does software break?
+            summary: Software fails because people encode assumptions — complexity, change, and edge cases turn small oversights into visible failures.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: what-is-a-bug
+            title: What is a bug?
+            summary: Mistake, defect, failure — how a wrong line of code becomes a wrong behavior, and why the distinction shapes how you hunt them.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: cost-of-a-bug
+            title: What does a bug cost?
+            summary: The later a bug is found, the more it costs — from a red test on your laptop to a field failure, with famous disasters as waypoints.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: what-is-testing
+            title: What is testing?
+            summary: Manual vs automated testing, verification vs validation, and the test pyramid — the map for everything this module covers.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: the-testing-mindset
+            title: The testing mindset
+            summary: Thinking adversarially about your own code — assume it's wrong, try to break it, and turn "it seems to work" into evidence.
+            minutes: 7
+            level: beginner
+            status: full
+      - id: unit-testing
+        label: "Unit 2 — Unit Testing Fundamentals"
+        blurb: "The smallest, fastest tests — how to write them well in Go and what coverage really tells you."
+        lessons:
+          - slug: what-is-a-unit-test
+            title: What is a unit test?
+            summary: One small piece of code, tested in isolation, fast enough to run thousands of times a day — the foundation of the pyramid.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: anatomy-of-a-test
+            title: Anatomy of a test
+            summary: Arrange, act, assert — the three-part shape of every good test, plus naming and the one-behavior-per-test rule.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: your-first-go-test
+            title: Your first Go test
+            summary: Write a _test.go file, run go test, and read a failure — the complete edit-test loop with nothing but the standard library.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: table-driven-tests
+            title: Table-driven tests
+            summary: Go's signature testing idiom — one test body, a table of cases, and subtests that name each row.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: test-doubles
+            title: Fakes, stubs, and mocks
+            summary: Test doubles stand in for slow or unpredictable dependencies — and Go's interfaces make swapping them in natural.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: code-coverage
+            title: Code coverage
+            summary: What coverage measures, how to read go test -cover, and why 100% is the wrong goal.
+            minutes: 7
+            level: intermediate
+            status: full
+      - id: beyond-unit
+        label: "Unit 3 — Beyond the Unit"
+        blurb: "Integration, end-to-end, regression, and generative testing — proving whole systems, not just pieces."
+        lessons:
+          - slug: integration-tests
+            title: Integration tests
+            summary: Testing real pieces wired together — databases, files, networks — and the trade of realism against speed.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: end-to-end-tests
+            title: End-to-end tests
+            summary: Drive the whole system the way a user would — the most convincing tests, and the most expensive ones.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: regression-tests
+            title: Regression tests & failing first
+            summary: Every bug fix ships with a test that failed before the fix — the discipline that stops bugs from coming back.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: golden-files-and-fixtures
+            title: Golden files & fixtures
+            summary: Recorded inputs and expected outputs — how captured data turns messy real-world behavior into repeatable tests.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: property-based-testing
+            title: Property-based testing
+            summary: Instead of hand-picking examples, state a property that must always hold and let the computer hunt for a counterexample.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: fuzzing
+            title: Fuzzing
+            summary: Throw randomized, mutated inputs at your code until it crashes — Go's built-in fuzzer and why parsers need it most.
+            minutes: 8
+            level: intermediate
+            status: full
+      - id: quality-tooling
+        label: "Unit 4 — Quality Tooling"
+        blurb: "Linters, formatters, code review, and CI — the machinery that keeps a codebase healthy between releases."
+        lessons:
+          - slug: linters-and-static-analysis
+            title: Linters & static analysis
+            summary: Tools that read your code without running it — go vet, staticcheck, and the bug classes they catch for free.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: formatters-and-style
+            title: Formatters & style
+            summary: gofmt ends formatting debates by making one style automatic — and why that's a quality tool, not a cosmetic one.
+            minutes: 6
+            level: beginner
+            status: full
+          - slug: code-review
+            title: Code review
+            summary: A second pair of eyes before code merges — how to review, how to be reviewed, and what review catches that tests can't.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: continuous-integration
+            title: Continuous integration
+            summary: Every push builds and tests automatically — pipelines, checks on pull requests, and why CI is the team's shared safety net.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: flaky-tests
+            title: Flaky tests
+            summary: Tests that pass sometimes are worse than tests that fail always — where flakiness comes from and why "flake" is not a root cause.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: required-checks
+            title: Required checks & branch protection
+            summary: Which CI jobs actually gate a merge — and how a green checkmark can hide a red build in a job nobody made required.
+            minutes: 7
+            level: intermediate
+            status: full
+      - id: debugging
+        label: "Unit 5 — Debugging & Diagnosis"
+        blurb: "When something is broken: reproduce it, read the evidence, and find the real cause."
+        lessons:
+          - slug: reproducing-a-bug
+            title: Reproducing a bug
+            summary: A bug you can reproduce on demand is already half fixed — minimal reproductions and why "works on my machine" is a clue, not a verdict.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: reading-error-messages
+            title: Reading error messages & stack traces
+            summary: Errors and panics are structured evidence — how to read a Go stack trace from the top and find the line that matters.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: print-debugging-and-logging
+            title: Print debugging & logging
+            summary: The humble print statement, done well — and how structured logs turn one-off debugging into a permanent diagnostic instrument.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: using-a-debugger
+            title: Using a debugger
+            summary: Pause a live program, inspect its state, step line by line — Delve for Go, and when a debugger beats prints.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: bisecting-history
+            title: Bisecting history
+            summary: git bisect turns "it broke sometime this month" into the exact commit, in a dozen automatic steps.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: root-cause-analysis
+            title: Root-cause analysis
+            summary: Keep asking why until the answer would have prevented the bug — fixing symptoms leaves the cause free to strike again.
+            minutes: 8
+            level: intermediate
+            status: full
+      - id: testing-gophertrunk
+        label: "Unit 6 — Testing GopherTrunk"
+        blurb: "Apply it all to a real codebase: replay tests, capture-gated verification, and the traps GopherTrunk learned the hard way."
+        lessons:
+          - slug: make-vet-test
+            title: The make vet test gate
+            summary: GopherTrunk's rule that vet plus unit tests must be green before any commit — what runs, and why the gate is non-negotiable.
+            minutes: 7
+            level: intermediate
+            status: full
+          - slug: replay-integration-tests
+            title: "Replay: testing a radio without a radio"
+            summary: Recorded IQ captures let GopherTrunk test a whole radio decoder deterministically — the golden-file idea at system scale.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: the-self-consistent-synthetic-trap
+            title: The self-consistent synthetic trap
+            summary: A test whose encoder and decoder share the same wrong assumption passes while the real world fails — GopherTrunk's most instructive bug pattern.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: capture-gated-verification
+            title: Capture-gated verification
+            summary: A fix isn't verified until it works against real captured data — why GopherTrunk refuses to close a bug on a green synthetic test alone.
+            minutes: 8
+            level: advanced
+            status: full
+          - slug: your-first-regression-test
+            title: Write your first regression test
+            summary: Walk the full failing-first loop on a real bug — reproduce, write the test that fails, fix, watch it pass, and ship both together.
+            minutes: 10
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of testing terms
+      summary: Plain-language definitions for every term in the module — unit test, assertion, fixture, mock, coverage, regression, CI, flaky test, fuzzing, bisect, root cause, and more — cross-linked to the lessons.
+      minutes: 10
+      level: beginner
+      status: full
+
+  - id: apis
+    label: "APIs & Protocols"
+    title: "Learn APIs & Protocols — from newbie to expert"
+    tagline: "How software talks to software — REST, WebSockets, webhooks, and gRPC, all the way to GopherTrunk's own APIs."
+    start_slug: what-is-an-api
+    workload: "PT7H"
+    intro: >
+      A guided path through the interfaces that connect modern software. Start
+      with what an API and a protocol actually are, get comfortable with HTTP
+      and REST, move into real-time push with WebSockets, server-sent events,
+      and webhooks, meet binary RPC with gRPC — then study a working example:
+      the REST, event, and streaming APIs GopherTrunk's own daemon exposes, and
+      build a client against them.
+    units:
+      - id: api-foundations
+        label: "Unit 1 — API Foundations"
+        blurb: "What APIs and protocols are, who talks to whom, and the data formats requests are made of."
+        lessons:
+          - slug: what-is-an-api
+            title: What is an API?
+            summary: An API is a promise about how one piece of software may use another — the contract idea behind every interface in this module.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: what-is-a-protocol
+            title: What is a protocol?
+            summary: Rules two parties agree on so bytes mean the same thing to both — from radio air interfaces to HTTP, it's the same idea.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: clients-and-servers
+            title: Clients and servers
+            summary: Who asks and who answers — the request/response roles that shape almost every API, and where peer-to-peer differs.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: data-formats
+            title: "Data formats: JSON and friends"
+            summary: JSON, YAML, and binary encodings — how structured data is serialized so it survives the trip between programs.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: api-contracts
+            title: API contracts
+            summary: The shape of a request and response is a promise — what breaking it costs, and why contracts outlive implementations.
+            minutes: 7
+            level: beginner
+            status: full
+      - id: http-rest
+        label: "Unit 2 — HTTP & REST"
+        blurb: "The web's workhorse protocol and the REST conventions most APIs are built on."
+        lessons:
+          - slug: anatomy-of-http
+            title: Anatomy of an HTTP request
+            summary: Method, path, headers, body, status line — dissect one request and one response and you've seen them all.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: rest-fundamentals
+            title: REST fundamentals
+            summary: Resources named by URLs, manipulated with a small set of verbs — the convention that makes unfamiliar APIs feel familiar.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: methods-and-status-codes
+            title: Methods & status codes
+            summary: GET, POST, PUT, PATCH, DELETE and the status-code families — what each one promises and when to use which.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: urls-queries-and-bodies
+            title: URLs, query strings, and bodies
+            summary: Where data rides in a request — path segments, query parameters, and JSON bodies, and how to choose among them.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: authentication-basics
+            title: API authentication
+            summary: API keys, tokens, and sessions — how a server knows who's calling, and why keys never belong in a URL.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: api-versioning
+            title: API versioning
+            summary: How APIs evolve without breaking their clients — additive change, version numbers, and deprecation done politely.
+            minutes: 7
+            level: intermediate
+            status: full
+      - id: realtime-apis
+        label: "Unit 3 — Real-Time APIs"
+        blurb: "When request/response isn't enough: pushing events to clients the moment they happen."
+        lessons:
+          - slug: polling-vs-push
+            title: Polling vs push
+            summary: Asking "anything new?" every second vs being told the moment something happens — the trade at the heart of real-time design.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: websockets
+            title: WebSockets
+            summary: One HTTP handshake upgrades to a persistent two-way pipe — the protocol behind live dashboards and chat.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: server-sent-events
+            title: Server-sent events
+            summary: A one-way event stream over plain HTTP — simpler than WebSockets, and enough for most live-update needs.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: webhooks
+            title: Webhooks
+            summary: The server calls you — HTTP callbacks that push events to your endpoint, and the retry and verification care they need.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: streaming-and-backpressure
+            title: Streaming & backpressure
+            summary: What happens when the producer is faster than the consumer — buffering, dropping, and why every real stream needs a plan.
+            minutes: 9
+            level: advanced
+            status: full
+      - id: rpc-binary
+        label: "Unit 4 — RPC & Binary Protocols"
+        blurb: "Calling functions across the network, and the compact binary encodings that make it fast."
+        lessons:
+          - slug: what-is-rpc
+            title: What is RPC?
+            summary: Make a network call look like a function call — the oldest idea in distributed computing, and its sharp edges.
+            minutes: 7
+            level: intermediate
+            status: full
+          - slug: grpc-and-protobuf
+            title: gRPC & Protocol Buffers
+            summary: Define messages and services in a .proto file, generate typed code, stream in both directions — RPC as practiced today.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: text-vs-binary-protocols
+            title: Text vs binary protocols
+            summary: Human-readable JSON vs compact binary framing — what each costs in bytes, speed, and debuggability.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: message-framing
+            title: Message framing
+            summary: A byte stream has no natural boundaries — length prefixes, delimiters, and what goes wrong when framing drifts.
+            minutes: 8
+            level: advanced
+            status: full
+          - slug: schemas-and-codegen
+            title: Schemas & code generation
+            summary: Write the contract once, generate the client and server from it — schemas as the single source of truth.
+            minutes: 7
+            level: intermediate
+            status: full
+      - id: api-design
+        label: "Unit 5 — Designing & Operating APIs"
+        blurb: "Designing interfaces people can use, and keeping them honest in production."
+        lessons:
+          - slug: designing-a-good-api
+            title: Designing a good API
+            summary: Consistency, predictability, and small surface area — the qualities that make an API pleasant, and how to get them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: error-handling
+            title: Error handling
+            summary: Errors are part of the contract — status codes, machine-readable error bodies, and messages that help instead of taunt.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: rate-limiting-and-quotas
+            title: Rate limiting & quotas
+            summary: Protecting a server from its own clients — limits, retry-after, and backing off like a good citizen.
+            minutes: 7
+            level: intermediate
+            status: full
+          - slug: api-documentation
+            title: API documentation
+            summary: An undocumented API might as well not exist — reference docs, examples, and specs that stay true as code changes.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: api-security
+            title: API security
+            summary: Authentication, authorization, TLS, and input validation — the checklist that keeps an exposed endpoint from becoming an incident.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: testing-an-api
+            title: Testing an API
+            summary: Exercise endpoints with curl and Go's httptest, then pin the contract with automated tests so clients never get surprised.
+            minutes: 8
+            level: intermediate
+            status: full
+      - id: gophertrunk-apis
+        label: "Unit 6 — GopherTrunk's APIs"
+        blurb: "A working case study: the REST, event, and streaming interfaces of a real daemon — and a client of your own."
+        lessons:
+          - slug: the-daemon-rest-api
+            title: GopherTrunk's REST API
+            summary: The daemon's HTTP API in practice — talkgroups, radio IDs, call history — and how the web console is just another client.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: live-events-and-webhooks
+            title: Live events & webhooks
+            summary: Server-sent events and webhooks carry every call and system event out of the daemon — subscribe once, react in real time.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: streaming-audio-with-grpc
+            title: Streaming audio with gRPC
+            summary: Live call audio rides a gRPC stream — the binary-RPC lessons of Unit 4 applied to real-time voice.
+            minutes: 8
+            level: advanced
+            status: full
+          - slug: web-console-sockets
+            title: The web console's sockets
+            summary: Spectrum and symbol panels ride WebSockets — and GopherTrunk's own reconnect-backoff bug is a masterclass in real-time client design.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: building-your-own-client
+            title: Build your own client
+            summary: Put the whole module to work — a small program that queries the REST API and follows the live event stream.
+            minutes: 10
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of API & protocol terms
+      summary: Plain-language definitions for every term in the module — API, endpoint, REST, HTTP method, status code, token, WebSocket, SSE, webhook, RPC, protobuf, framing, rate limit, and more — cross-linked to the lessons.
+      minutes: 10
+      level: beginner
+      status: full
+
+  - id: embedded
+    label: "Embedded & Single-Board Computers"
+    title: "Learn Embedded & Single-Board Computers — from newbie to expert"
+    tagline: "Small computers doing real jobs — from your first Raspberry Pi to a 24/7 GopherTrunk scanner appliance."
+    start_slug: what-is-embedded
+    workload: "PT7H"
+    intro: >
+      A guided path into the small computers that run the physical world. Learn
+      what embedded systems and single-board computers are, choose and set up a
+      board of your own, run it headless like a pro, connect it to hardware,
+      keep it alive 24/7 — and finish by building the classic GopherTrunk
+      project: a Raspberry Pi scanner appliance that decodes trunked radio
+      around the clock.
+    units:
+      - id: embedded-foundations
+        label: "Unit 1 — The Small-Computer Landscape"
+        blurb: "Embedded systems, single-board computers, microcontrollers, and the chips inside them."
+        lessons:
+          - slug: what-is-embedded
+            title: What is an embedded system?
+            summary: Computers hidden inside things — what makes a system "embedded," and why most of the computers you own don't look like computers.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: sbc-vs-microcontroller-vs-pc
+            title: SBC vs microcontroller vs PC
+            summary: Raspberry Pi, Arduino, and a desktop solve different problems — the capability ladder and how to pick the right rung.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: arm-and-socs
+            title: ARM and the system-on-chip
+            summary: One chip carrying CPU, GPU, memory controller, and I/O — why ARM SoCs power nearly every small board.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: why-the-raspberry-pi
+            title: Why the Raspberry Pi?
+            summary: Price, community, and software support made the Pi the default SBC — what the ecosystem gives you and where rivals win.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: operating-systems-for-sbcs
+            title: Operating systems for small boards
+            summary: Most boards run real Linux — what a Pi OS image contains, and how it differs from the Linux on a server or laptop.
+            minutes: 7
+            level: beginner
+            status: full
+      - id: choosing-hardware
+        label: "Unit 2 — Choosing Your Hardware"
+        blurb: "Boards, storage, power, and cooling — the buying decisions that make or break a build."
+        lessons:
+          - slug: picking-a-board
+            title: Picking a board
+            summary: RAM, CPU cores, USB bandwidth, and connectivity — matching a board's spec sheet to the job you're actually giving it.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: storage-and-sd-cards
+            title: Storage & SD cards
+            summary: SD cards, USB drives, and SSDs — speed classes, endurance, and why storage is the most common weak link.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: power-supplies
+            title: Power supplies
+            summary: Undervoltage is the classic mystery failure — amps, volts, cable quality, and powering a board that also powers peripherals.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: cases-and-cooling
+            title: Cases & cooling
+            summary: Heatsinks, fans, and airflow — keeping a small board cool enough to run at full speed in a closed box.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: when-you-need-more
+            title: When you need more than a Pi
+            summary: Signs your project has outgrown an SBC — and the step up to mini PCs and small servers when it has.
+            minutes: 7
+            level: beginner
+            status: full
+      - id: headless-linux
+        label: "Unit 3 — Headless Linux on a Board"
+        blurb: "No monitor, no keyboard — flash it, find it, SSH in, and run services like a server."
+        lessons:
+          - slug: flashing-an-os-image
+            title: Flashing an OS image
+            summary: Write an operating system onto an SD card, preconfigure Wi-Fi and SSH, and boot a board you'll never plug a monitor into.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: first-boot-and-ssh
+            title: First boot & SSH
+            summary: Find the board on your network and log in over SSH — the moment your SBC becomes a tiny server.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: users-and-updates
+            title: Users, permissions & updates
+            summary: Change default passwords, create your own user, and keep packages patched — basic hygiene for an always-on device.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: services-with-systemd
+            title: Services with systemd
+            summary: Turn a program into a service that starts at boot and restarts on failure — the unit file every appliance is built on.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: networking-your-board
+            title: Networking your board
+            summary: Static addresses, hostnames, Wi-Fi vs Ethernet, and reaching a headless board reliably from anywhere on your LAN.
+            minutes: 8
+            level: intermediate
+            status: full
+      - id: peripherals
+        label: "Unit 4 — Talking to the Physical World"
+        blurb: "GPIO, USB, serial buses, and add-on boards — where software meets wires."
+        lessons:
+          - slug: gpio-basics
+            title: GPIO basics
+            summary: General-purpose pins you control from code — inputs, outputs, blinking an LED, and reading a button safely.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: usb-and-powered-hubs
+            title: USB & powered hubs
+            summary: USB is how most real peripherals arrive — bus power budgets, powered hubs, and why flaky USB is usually a power story.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: serial-i2c-spi
+            title: Serial, I2C & SPI
+            summary: The three little buses that connect chips to computers — what each is for and how to recognize them on a pinout.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: hats-and-add-ons
+            title: HATs & add-ons
+            summary: Stackable boards that add radios, screens, relays, and sensors — how HATs identify themselves and share the header.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: connecting-an-sdr
+            title: Connecting an SDR
+            summary: An RTL-SDR on a Pi is the classic pairing — drivers, USB bandwidth, and testing your dongle from the command line.
+            minutes: 8
+            level: intermediate
+            status: full
+      - id: reliability
+        label: "Unit 5 — Running 24/7"
+        blurb: "Heat, storage wear, crashes, and remote access — engineering a board you never have to touch."
+        lessons:
+          - slug: thermal-throttling
+            title: Thermal throttling
+            summary: A hot board quietly slows itself down — how to see throttling happening and cool your way back to full speed.
+            minutes: 7
+            level: intermediate
+            status: full
+          - slug: sd-card-wear
+            title: SD-card wear
+            summary: Flash cells wear out with every write — why logging kills cheap cards, and how to make storage last for years.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: watchdogs-and-recovery
+            title: Watchdogs & recovery
+            summary: Design for the crash you can't prevent — hardware watchdogs, service restarts, and boards that heal themselves.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: remote-administration
+            title: Remote administration
+            summary: Managing a board you can't reach — SSH keys, tmux, remote logs, and safe upgrades over the network.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: backups-and-images
+            title: Backups & images
+            summary: An appliance you can re-flash in ten minutes is an appliance you never fear losing — image backups and config exports.
+            minutes: 7
+            level: intermediate
+            status: full
+          - slug: monitoring-your-board
+            title: Monitoring your board
+            summary: Temperature, load, disk, and service health — lightweight monitoring that tells you about trouble before it becomes an outage.
+            minutes: 8
+            level: intermediate
+            status: full
+      - id: gophertrunk-appliance
+        label: "Unit 6 — The GopherTrunk Appliance"
+        blurb: "Put it all together: a Raspberry Pi that decodes trunked radio around the clock."
+        lessons:
+          - slug: installing-gophertrunk-on-a-pi
+            title: Install GopherTrunk on a Pi
+            summary: Get the ARM build running on a Raspberry Pi — install, first config, and your first decoded call on SBC hardware.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: tuning-for-small-cpus
+            title: Tuning for small CPUs
+            summary: Sample rates, channel counts, and decode load — fitting a real-time DSP engine inside an SBC's compute budget.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: usb-sdr-gotchas
+            title: USB SDR gotchas
+            summary: Dropped samples, undervoltage resets, and interference from the Pi itself — the SBC-specific SDR failure modes and their fixes.
+            minutes: 8
+            level: advanced
+            status: full
+          - slug: appliance-networking
+            title: Appliance networking & access
+            summary: Reach the web console from any device in the house, keep the daemon private, and expose it safely if you must.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: a-complete-appliance-build
+            title: A complete appliance build
+            summary: The full recipe end to end — hardware list, OS, service, monitoring, and backups for a scanner that just runs.
+            minutes: 10
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of embedded & SBC terms
+      summary: Plain-language definitions for every term in the module — embedded system, SBC, microcontroller, SoC, ARM, GPIO, I2C, SPI, HAT, headless, systemd, watchdog, thermal throttling, undervoltage, and more — cross-linked to the lessons.
       minutes: 10
       level: beginner
       status: full
