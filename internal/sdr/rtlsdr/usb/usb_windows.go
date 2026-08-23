@@ -230,16 +230,31 @@ func (w *winEnumerator) Open(d Descriptor) (Transport, error) {
 	// WinUSB-capable SDR lives on the Interface 0 (&MI_00) child function node.
 	// Find and open that child before surfacing the bind failure — this lets a
 	// correctly-bound RTL-SDR V4 (and other composite dongles) open without the
-	// user having to chase the right entry in Zadig. Store the child path in the
-	// returned transport's descriptor so Reset() re-opens the child, not the
-	// parent.
-	if _, childPath, derr := findInterfaceZeroChild(d.VID, d.PID); derr == nil && childPath != "" {
-		if ch, cif, cerr := createAndInitWinUSB(childPath); cerr == nil {
+	// user having to chase the right entry in Zadig. The lookup is keyed by
+	// d.Serial as well as VID/PID so two identical dongles each resolve to
+	// their OWN child (issue #1131). Store the child path in the returned
+	// transport's descriptor so Reset() re-opens the child, not the parent.
+	if _, childPath, derr := findInterfaceZeroChild(d.VID, d.PID, d.Serial); derr == nil && childPath != "" {
+		ch, cif, cerr := createAndInitWinUSB(childPath)
+		if cerr == nil {
 			cd := d
 			cd.Path = childPath
 			debugLogf("winusb", "Open child WinUsb_Initialize ok iface=0x%x", cif)
 			return MaybeWrapDebug(&winTransport{fileHandle: ch, ifaceHandle: cif, desc: cd}, cd), nil
 		}
+		// The right child WAS found, so driver binding is not the problem —
+		// surface the child's own failure instead of the misleading
+		// "current driver: usbccgp" verdict below. ERROR_NOT_ENOUGH_MEMORY
+		// from WinUsb_Initialize is how WinUSB reports a second concurrent
+		// open of a device some other handle already owns.
+		if errors.Is(cerr, windows.ERROR_NOT_ENOUGH_MEMORY) {
+			return nil, fmt.Errorf(
+				"winusb: device VID_%04X&PID_%04X serial=%q is already open (WinUsb_Initialize on Interface 0 child returned ERROR_NOT_ENOUGH_MEMORY — WinUSB allows one open handle per device; close the other program or session using this dongle): %w",
+				d.VID, d.PID, d.Serial, cerr)
+		}
+		return nil, fmt.Errorf(
+			"winusb: WinUsb_Initialize failed on Interface 0 child of VID_%04X&PID_%04X serial=%q (path %q): %w",
+			d.VID, d.PID, d.Serial, childPath, cerr)
 	}
 	svc, descr := lookupBoundDriver(d.Path)
 	return nil, fmt.Errorf(

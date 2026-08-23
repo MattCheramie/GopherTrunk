@@ -69,6 +69,77 @@ func TestEffectiveCompositeService(t *testing.T) {
 	}
 }
 
+func TestSerialFromInstanceID(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{`USB\VID_0BDA&PID_2838\90000002`, "90000002"},
+		{`USB\VID_0BDA&PID_2838\7&227E3EE8&0&2`, "7&227E3EE8&0&2"}, // no programmed serial
+		{`no-backslash`, ""},
+		{``, ""},
+	}
+	for _, tt := range tests {
+		if got := serialFromInstanceID(tt.id); got != tt.want {
+			t.Errorf("serialFromInstanceID(%q) = %q, want %q", tt.id, got, tt.want)
+		}
+	}
+}
+
+// TestPickInterfaceZeroChildTwoIdenticalDongles is the issue #1131 regression:
+// two RTL2832U composite dongles share VID/PID, so a first-match child lookup
+// hands every Open the SAME &MI_00 child. The daemon opens dongle A, then
+// Open(serial=B) resolves to A's child again — WinUsb_Initialize on the
+// already-owned handle fails with ERROR_NOT_ENOUGH_MEMORY and the second
+// device never opens, even though both pass `sdr list --probe` (sequential
+// opens never collide). Selection must follow the serial on the parent node.
+func TestPickInterfaceZeroChildTwoIdenticalDongles(t *testing.T) {
+	cands := []compositeChildCandidate{
+		{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&AAAA&0&0000`, ParentInstanceID: `USB\VID_0BDA&PID_2838\90000002`},
+		{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&BBBB&0&0000`, ParentInstanceID: `USB\VID_0BDA&PID_2838\00000001`},
+	}
+	if got := pickInterfaceZeroChild(cands, "00000001"); got != 1 {
+		t.Fatalf("pickInterfaceZeroChild(serial=00000001) = %d, want 1 (issue #1131: first-match opens the wrong dongle)", got)
+	}
+	if got := pickInterfaceZeroChild(cands, "90000002"); got != 0 {
+		t.Fatalf("pickInterfaceZeroChild(serial=90000002) = %d, want 0", got)
+	}
+}
+
+func TestPickInterfaceZeroChild(t *testing.T) {
+	twoDongles := []compositeChildCandidate{
+		{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&AAAA&0&0000`, ParentInstanceID: `USB\VID_0BDA&PID_2838\90000002`},
+		{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&BBBB&0&0000`, ParentInstanceID: `USB\VID_0BDA&PID_2838\00000001`},
+	}
+	tests := []struct {
+		name   string
+		cands  []compositeChildCandidate
+		serial string
+		want   int
+	}{
+		{"no candidates", nil, "00000001", -1},
+		{"no serial keeps first-match behaviour", twoDongles, "", 0},
+		{"case-insensitive serial match", []compositeChildCandidate{
+			{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&AAAA&0&0000`, ParentInstanceID: `USB\VID_0BDA&PID_2838\ABCDEF01`},
+		}, "abcdef01", 0},
+		{"synthesized id (serial-less dongle) matches path serial", []compositeChildCandidate{
+			{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&AAAA&0&0000`, ParentInstanceID: `USB\VID_0BDA&PID_2838\7&227E3EE8&0&2`},
+		}, "7&227e3ee8&0&2", 0},
+		{"no parent resolved anywhere → first (no information)", []compositeChildCandidate{
+			{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&AAAA&0&0000`},
+			{InstanceID: `USB\VID_0BDA&PID_2838&MI_00\7&BBBB&0&0000`},
+		}, "00000001", 0},
+		{"parents resolved but none match → -1, never the wrong dongle", twoDongles, "55555555", -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pickInterfaceZeroChild(tt.cands, tt.serial); got != tt.want {
+				t.Errorf("pickInterfaceZeroChild(serial=%q) = %d, want %d", tt.serial, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFirstInterfaceGUID(t *testing.T) {
 	tests := []struct {
 		name   string

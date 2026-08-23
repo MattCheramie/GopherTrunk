@@ -35,20 +35,26 @@ var errNoWinUSBChild = errors.New("winusb: no Interface 0 child found")
 // exists but is bound to something else (libusbK, the in-box DVB driver, ...)
 // we still return childService (with an empty path) so the doctor can give an
 // accurate hint. Returns errNoWinUSBChild when no &MI_00 child for VID:PID is
-// present.
+// present, or when children exist but all provably belong to OTHER dongles.
 //
-// NOTE: matching is by VID/PID + &MI_00 only; the dongle serial lives on the
-// parent, not the child instance ID. Two *identical* composite dongles would
-// be indistinguishable here — an acceptable limitation today (the pool already
-// disambiguates by serial at the List layer, and the single-interface path is
-// unaffected).
-func findInterfaceZeroChild(vid, pid uint16) (childService, childPath string, err error) {
+// serial disambiguates identical composite dongles (issue #1131): the serial
+// lives on the composite PARENT node, not the child instance ID, so each
+// candidate child is linked to its parent via DEVPKEY_Device_Parent and
+// pickInterfaceZeroChild matches the parent's serial against the caller's.
+// Without that, two identical dongles both resolved to the FIRST &MI_00 child:
+// the daemon held dongle A open, Open(serial=B) re-resolved to A's child, and
+// WinUsb_Initialize failed with ERROR_NOT_ENOUGH_MEMORY — while sequential
+// `sdr list --probe` opens never collided. serial may be "" (first match wins,
+// the old behaviour).
+func findInterfaceZeroChild(vid, pid uint16, serial string) (childService, childPath string, err error) {
 	devSet, err := windows.SetupDiGetClassDevsEx(nil, "USB", 0, windows.DIGCF_PRESENT|windows.DIGCF_ALLCLASSES, 0, "")
 	if err != nil {
 		return "", "", fmt.Errorf("winusb: SetupDiGetClassDevsEx(USB): %w", err)
 	}
 	defer windows.SetupDiDestroyDeviceInfoList(devSet)
 
+	var cands []compositeChildCandidate
+	var infos []*windows.DevInfoData
 	for i := 0; ; i++ {
 		devInfo, e := windows.SetupDiEnumDeviceInfo(devSet, i)
 		if e != nil {
@@ -62,23 +68,57 @@ func findInterfaceZeroChild(vid, pid uint16) (childService, childPath string, er
 		if !hasMI || v != vid || p != pid || !isInterfaceZero(instID) {
 			continue
 		}
-		// Matched the Interface 0 child. Read its bound kernel service.
-		svc := ""
-		if val, e := windows.SetupDiGetDeviceRegistryProperty(devSet, devInfo, windows.SPDRP_SERVICE); e == nil {
-			svc, _ = val.(string)
-		}
-		if !strings.EqualFold(svc, "winusb") {
-			// Child exists but isn't WinUSB-bound: report the service (no
-			// openable path) so the doctor hint is accurate.
-			return svc, "", nil
-		}
-		path, e := childInterfacePath(devSet, devInfo, instID)
-		if e != nil {
-			return svc, "", e
-		}
-		return svc, path, nil
+		cands = append(cands, compositeChildCandidate{
+			InstanceID:       instID,
+			ParentInstanceID: parentInstanceID(devSet, devInfo),
+		})
+		infos = append(infos, devInfo)
 	}
-	return "", "", errNoWinUSBChild
+	idx := pickInterfaceZeroChild(cands, serial)
+	if idx < 0 {
+		return "", "", errNoWinUSBChild
+	}
+	devInfo := infos[idx]
+	// Read the matched child's bound kernel service.
+	svc := ""
+	if val, e := windows.SetupDiGetDeviceRegistryProperty(devSet, devInfo, windows.SPDRP_SERVICE); e == nil {
+		svc, _ = val.(string)
+	}
+	if !strings.EqualFold(svc, "winusb") {
+		// Child exists but isn't WinUSB-bound: report the service (no
+		// openable path) so the doctor hint is accurate.
+		return svc, "", nil
+	}
+	path, e := childInterfacePath(devSet, devInfo, cands[idx].InstanceID)
+	if e != nil {
+		return svc, "", e
+	}
+	return svc, path, nil
+}
+
+// devpkeyDeviceParent is DEVPKEY_Device_Parent from the Windows SDK's
+// devpkey.h — the instance ID of a devnode's parent. x/sys/windows wraps
+// SetupDiGetDeviceProperty but ships no predefined DEVPROPKEYs, so the one
+// key needed here is defined locally.
+var devpkeyDeviceParent = windows.DEVPROPKEY{
+	FmtID: windows.DEVPROPGUID{
+		Data1: 0x4340a6c5, Data2: 0x93fa, Data3: 0x4706,
+		Data4: [8]byte{0x97, 0x2c, 0x7b, 0x64, 0x80, 0x08, 0xa5, 0xa7},
+	},
+	PID: 8,
+}
+
+// parentInstanceID resolves the instance ID of a devnode's parent (for an
+// &MI_00 child function node: the composite parent, whose last path component
+// is the dongle serial). Best-effort — returns "" on any failure and
+// pickInterfaceZeroChild's no-information fallback keeps the old behaviour.
+func parentInstanceID(devSet windows.DevInfo, devInfo *windows.DevInfoData) string {
+	val, err := windows.SetupDiGetDeviceProperty(devSet, devInfo, &devpkeyDeviceParent)
+	if err != nil {
+		return ""
+	}
+	s, _ := val.(string)
+	return s
 }
 
 // childInterfacePath resolves the CreateFile-openable device-interface path for

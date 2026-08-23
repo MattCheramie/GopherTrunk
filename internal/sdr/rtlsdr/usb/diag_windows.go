@@ -109,9 +109,10 @@ func (w *winDriverInspector) Inspect(vid, pid uint16) ([]DriverBinding, error) {
 		// USB composite parent — the SDR's real driver lives on its Interface 0
 		// (&MI_00) child. Report the child's binding so a correctly
 		// WinUSB-bound composite dongle reads OK instead of a false BAD (and a
-		// wrong-driver child still gets an accurate hint).
+		// wrong-driver child still gets an accurate hint). Keyed by serial so
+		// each row of a multi-dongle rig reports its OWN child's binding.
 		if strings.EqualFold(service, "usbccgp") {
-			if childSvc, _, derr := findInterfaceZeroChild(v, p); derr == nil && childSvc != "" {
+			if childSvc, _, derr := findInterfaceZeroChild(v, p, serial); derr == nil && childSvc != "" {
 				service = effectiveCompositeService(service, childSvc, true)
 			}
 		}
