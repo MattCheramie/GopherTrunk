@@ -44,7 +44,7 @@ func (d *Demod) I2CWrite(i2cAddr uint8, data []byte) error {
 
 func (d *Demod) i2cWriteLocked(i2cAddr uint8, data []byte) error {
 	index := uint16(BlockIIC)<<8 | 0x10
-	if err := d.t.ControlOut(0, uint16(i2cAddr), index, data, CtrlTimeoutMs); err != nil {
+	if err := d.ctrlOut(0, uint16(i2cAddr), index, data, CtrlTimeoutMs); err != nil {
 		return fmt.Errorf("rtl2832u: I2CWrite addr=0x%02x: %w", i2cAddr, err)
 	}
 	return nil
@@ -68,7 +68,7 @@ func (d *Demod) I2CRead(i2cAddr uint8, n int) ([]byte, error) {
 
 func (d *Demod) i2cReadLocked(i2cAddr uint8, n int) ([]byte, error) {
 	index := uint16(BlockIIC) << 8
-	out, err := d.t.ControlIn(0, uint16(i2cAddr), index, n, CtrlTimeoutMs)
+	out, err := d.ctrlIn(0, uint16(i2cAddr), index, n, CtrlTimeoutMs)
 	if err != nil {
 		return nil, fmt.Errorf("rtl2832u: I2CRead addr=0x%02x: %w", i2cAddr, err)
 	}

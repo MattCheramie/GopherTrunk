@@ -223,6 +223,12 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		}
 	}
 
+	// Bring-up is complete: arm runtime control-pipe-stall recovery on the
+	// demod control path. Only now — before this, a control-pipe stall is the
+	// cold-boot latch the reset envelope above must handle, so the in-place
+	// settle-and-retry stays off during bring-up (issue #753).
+	demod.EnableControlStallRetry()
+
 	// RTL-SDR Blog V4: the R828D needs its 28.8 MHz crystal and per-band
 	// input switching (issue #264). Detect it from the USB descriptor
 	// strings (the V4 sources these from EEPROM) and arm the V4 path on

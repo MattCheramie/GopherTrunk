@@ -20,8 +20,22 @@ for tagged releases.
   #1096).
 
 ### Fixed
+- **RTL-SDR Blog V4 retunes no longer abort on an intermittent control-pipe
+  stall** (issue #753). The V4's R828D occasionally STALLs a demod control write
+  mid-run — most visibly the `SetI2CRepeater` toggle inside a `SetCenterFreq`
+  retune — surfacing as a raw `broken pipe` (`EPIPE`) on Linux/usbdevfs or
+  `usb: pipe stalled` on Windows/macOS and aborting the whole tune, even though
+  `rtl_test`/SDR++ tune the same dongle cleanly (libusb recovers a stalled
+  control pipe). GopherTrunk's native stack recovered such stalls only on the
+  open-time bring-up path (full device reset) and the tuner burst path; the
+  runtime demod/block/I2C control path had none. It now settles and retries once
+  on a control-pipe stall, armed only after bring-up completes (the cold-boot
+  reset envelope is unchanged) and bounded to a single retry so a persistent
+  stall still surfaces. A full device reset is deliberately not used at runtime —
+  it would tear down the live IQ stream mid-tune. Additive recovery path; no
+  config/behaviour change.
 - **`gophertrunk config` (terminal Config Builder) now defaults its Save path to
-  the file the daemon actually loads** (issue #1120). The earlier #1120 fix
+  the file the daemon actually loads** (issue #1120). The earlier #1120 fix The earlier #1120 fix
   taught `configbuilder.DefaultConfigPath` to follow the daemon's discovery, but
   the terminal builder's Save-As modal overrode it with the first auto-discovery
   candidate directory — `%APPDATA%\GopherTrunk` on Windows — so a freshly-built
