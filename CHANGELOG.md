@@ -20,6 +20,25 @@ for tagged releases.
   #1096).
 
 ### Fixed
+- **Windows: two identical RTL-SDR composite dongles can now open concurrently**
+  (issue #1131). The WinUSB composite-device fallback located the Interface 0
+  (`&MI_00`) child function node by VID/PID only, so with two identical
+  RTL2832U dongles (same `0bda:2838`) every open resolved to the *same* child:
+  the daemon opened the first dongle, and opening the second re-resolved to the
+  first dongle's child — `WinUsb_Initialize` then failed with
+  `ERROR_NOT_ENOUGH_MEMORY` ("Not enough memory resources…", WinUSB's report of
+  a second concurrent open) behind a misleading `current driver: usbccgp`
+  verdict, and the daemon warned `configured SDR not present on the bus`.
+  Sequential opens never collide, which is why both dongles passed
+  `sdr doctor` and `sdr list --probe` and each worked alone. Child selection is
+  now keyed by serial: each `&MI_00` candidate is linked to its composite
+  parent (whose instance ID carries the serial) via `DEVPKEY_Device_Parent`,
+  and the child whose parent matches the descriptor's serial is opened —
+  falling back to the old first-match only when no serial (or no parent link)
+  is available, and refusing to open a provably different dongle otherwise.
+  `sdr doctor`'s per-row composite-child driver verdict is serial-keyed the
+  same way, and an in-use child now surfaces an explicit "device is already
+  open" error instead of blaming the driver binding.
 - **RTL-SDR Blog V4 retunes no longer abort on an intermittent control-pipe
   stall** (issue #753). The V4's R828D occasionally STALLs a demod control write
   mid-run — most visibly the `SetI2CRepeater` toggle inside a `SetCenterFreq`

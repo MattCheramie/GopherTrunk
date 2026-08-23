@@ -72,6 +72,68 @@ func effectiveCompositeService(parentService, childService string, childFound bo
 	return parentService
 }
 
+// compositeChildCandidate is one Interface 0 (&MI_00) child function node
+// found by the composite-device walk, paired with the instance ID of its
+// composite PARENT devnode ("" when the parent could not be resolved). The
+// serial that tells two identical dongles apart lives on the parent — a child
+// instance ID carries only a bus-position discriminator — so the parent link
+// is what makes serial-aware selection possible.
+type compositeChildCandidate struct {
+	InstanceID       string
+	ParentInstanceID string
+}
+
+// serialFromInstanceID returns the final "\"-separated component of a device
+// instance ID. For a USB composite parent ("USB\VID_0BDA&PID_2838\90000002")
+// that is the dongle serial — or the system-synthesized "7&xxxx&0&port"
+// discriminator when no serial is programmed. Either form also appears
+// verbatim (modulo case) as the serial field of the parent's device-interface
+// path, so it compares directly against Descriptor.Serial.
+func serialFromInstanceID(id string) string {
+	if i := strings.LastIndexByte(id, '\\'); i >= 0 {
+		return id[i+1:]
+	}
+	return ""
+}
+
+// pickInterfaceZeroChild selects which &MI_00 child belongs to the dongle
+// with the given serial, returning its index or -1.
+//
+// Policy (issue #1131 — two identical composite dongles on one bus):
+//  1. no serial to match → first candidate (callers without a serial can do
+//     no better; this is the pre-#1131 behaviour);
+//  2. a candidate whose parent's serial matches → that candidate;
+//  3. no candidate's parent resolved → first candidate (zero information —
+//     behave as before rather than break single-dongle rigs on stacks where
+//     the parent lookup fails);
+//  4. otherwise → -1: at least one parent DID resolve and none matched, so
+//     "the first one" is provably some other dongle. Returning it anyway is
+//     the #1131 failure: with that dongle already open, WinUsb_Initialize on
+//     its child fails ERROR_NOT_ENOUGH_MEMORY; with it closed, the caller
+//     silently opens the wrong radio.
+func pickInterfaceZeroChild(cands []compositeChildCandidate, serial string) int {
+	if len(cands) == 0 {
+		return -1
+	}
+	if serial == "" {
+		return 0
+	}
+	anyResolved := false
+	for i, c := range cands {
+		if c.ParentInstanceID == "" {
+			continue
+		}
+		anyResolved = true
+		if strings.EqualFold(serialFromInstanceID(c.ParentInstanceID), serial) {
+			return i
+		}
+	}
+	if !anyResolved {
+		return 0
+	}
+	return -1
+}
+
 // firstInterfaceGUID returns the first non-empty entry from a child node's
 // DeviceInterfaceGUIDs (REG_MULTI_SZ) registry value. Zadig/libwdi normally
 // writes exactly one; we tolerate blank padding entries. ok is false when the
