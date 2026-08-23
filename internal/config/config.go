@@ -841,14 +841,25 @@ type SoapyRemoteConfig struct {
 	// buried under its own front-end noise floor (there, raising THAT branch's
 	// gain genuinely helps). EXPERIMENTAL (issue #1062).
 	Diversity string `yaml:"diversity"`
-	// Antennas selects the RX antenna port per channel (SoapySDR setAntenna),
-	// applied in channel order after the device opens — antennas[0] to RX
-	// channel 0, antennas[1] to channel 1. A multi-value antenna cannot be
-	// expressed in the flat "key=value" args string (a comma there splits
-	// arguments), so a USRP X310 in MRC diversity that needs RX1 on channel 0
-	// and RX2 on channel 1 uses this list instead of args. Empty leaves the
-	// device default. More than one entry requires diversity: mrc (only one RX
-	// channel is opened otherwise).
+	// Antenna selects the RX antenna port per channel (SoapySDR setAntenna),
+	// applied in channel order after the device opens — antenna[0] to RX
+	// channel 0, antenna[1] to channel 1. This is the port selector for BOTH
+	// cases: antenna: [RX1] pins a single (non-diversity) receiver's port, and
+	// antenna: [RX1, RX2] assigns RX1 to channel 0 and RX2 to channel 1 under
+	// diversity: mrc.
+	//
+	// Use this list, NOT antenna= in the args string: an antenna= there only
+	// reaches the device make() and does not select the per-RX-channel antenna
+	// (on e.g. SoapyUHD `antenna` is a per-channel runtime setting, so a make
+	// kwarg is silently dropped, and a comma-separated multi-value can't live
+	// in the flat args string anyway). Empty leaves the device default. More
+	// than one entry requires diversity: mrc (only one RX channel is opened
+	// otherwise).
+	//
+	// Antennas (plural) is the legacy spelling of this field, kept working for
+	// existing configs; setting both is an error. Read the effective value via
+	// EffectiveAntennas().
+	Antenna  []string `yaml:"antenna"`
 	Antennas []string `yaml:"antennas"`
 	// DiversityCapture, when non-empty, is a path PREFIX under which the driver
 	// writes a one-shot raw dump of the PRE-COMBINE per-branch IQ streams:
@@ -994,6 +1005,17 @@ func (s SoapyRemoteConfig) DeviceArgs() (map[string]string, error) {
 		return nil, nil
 	}
 	return args, nil
+}
+
+// EffectiveAntennas returns the per-RX-channel antenna list, preferring the
+// primary antenna: field over the legacy antennas: alias. Validation rejects
+// setting both, so at most one is non-empty and this simply picks whichever
+// the operator wrote.
+func (s SoapyRemoteConfig) EffectiveAntennas() []string {
+	if len(s.Antenna) > 0 {
+		return s.Antenna
+	}
+	return s.Antennas
 }
 
 // Ka9qRadioConfig describes one ka9q-radio `radiod` channel to expose as a

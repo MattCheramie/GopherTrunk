@@ -169,16 +169,25 @@ export function SDRSection() {
                 ]}
               />
               <TextField
-                label="RX antennas (per channel)"
-                value={(s.Antennas ?? []).join(", ")}
+                label="RX antenna (per channel)"
+                // Read the primary antenna: field, falling back to the legacy
+                // antennas: so an older config still shows its port. On change
+                // we write antenna: and clear antennas: (setting both is an
+                // error) — antenna=RX1 in args is silently ignored by make(),
+                // so this list is the only path that selects the RX port.
+                value={(s.Antenna ?? s.Antennas ?? []).join(", ")}
                 onChange={(v) => {
                   const list = v
                     .split(",")
                     .map((x) => x.trim())
                     .filter((x) => x !== "");
-                  set({ ...s, Antennas: list.length ? list : undefined });
+                  set({
+                    ...s,
+                    Antenna: list.length ? list : undefined,
+                    Antennas: undefined,
+                  });
                 }}
-                placeholder="e.g. RX1, RX2 (X310 under mrc)"
+                placeholder="e.g. RX1 (single) or RX1, RX2 (X310 under mrc)"
               />
               <TextField
                 label="Diversity capture (path prefix)"

@@ -618,14 +618,18 @@ sdr:
   #                                 #  that figure is independent of RF gain, so
   #                                 #  raising gain to make diversity engage is
   #                                 #  never the answer. Experimental.
-  #     antennas: []                # RX antenna port per channel, in order, e.g.
-  #                                 #  [RX1, RX2] for a USRP X310 under diversity:
-  #                                 #  mrc. Port names are device-specific (a B210
-  #                                 #  has TX/RX and RX2; a TwinRX has RX1 and
-  #                                 #  RX2) and are checked against the device.
-  #                                 #  Use this instead of antenna= in args — a
-  #                                 #  comma-separated antenna can't live in the
-  #                                 #  flat args string. Empty = device default.
+  #     antenna: []                 # RX antenna port per channel, in order.
+  #                                 #  antenna: [RX1] pins a single (non-diversity)
+  #                                 #  receiver's port; antenna: [RX1, RX2] assigns
+  #                                 #  RX1->channel 0, RX2->channel 1 for a USRP
+  #                                 #  X310 under diversity: mrc. Port names are
+  #                                 #  device-specific (a B210 has TX/RX and RX2; a
+  #                                 #  TwinRX has RX1 and RX2) and are checked
+  #                                 #  against the device. Use this, NOT antenna= in
+  #                                 #  args: an antenna= there only reaches make()
+  #                                 #  and never selects the per-channel port (it is
+  #                                 #  rejected). "antennas:" is the legacy alias.
+  #                                 #  Empty = device default.
   #     diversity_capture: ""       # path PREFIX for a one-shot dump of the
   #                                 #  PRE-combine per-branch IQ: <prefix>.br0.cs16,
   #                                 #  <prefix>.br1.cs16, <prefix>.diversity.json.

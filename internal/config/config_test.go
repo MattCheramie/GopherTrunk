@@ -403,7 +403,10 @@ func TestValidate(t *testing.T) {
 			Sidecar: []SidecarConfig{{DataAddr: "h:1", SampleRateHz: 1, Serial: "dup"}},
 		}}, true},
 		// soapy_remote args: SoapySDR make() kwargs as "k=v,k=v" (issue #542).
-		{"soapy args ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0,antenna=RX1"}}}}, false},
+		{"soapy args ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0"}}}}, false},
+		// antenna= in args reaches make() only and never sets the per-RX-channel
+		// port, so it is rejected with a pointer at the antenna: list.
+		{"soapy antenna in args rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0,antenna=RX1"}}}}, true},
 		{"soapy args malformed", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec"}}}}, true},
 		// soapy_remote args must not carry SoapyRemote stream knobs: GT builds
 		// the SETUP_STREAM frame itself and ignores remote:* in make() args, so
@@ -437,6 +440,14 @@ func TestValidate(t *testing.T) {
 		{"soapy antennas three rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", Antennas: []string{"RX1", "RX2", "RX3"}}}}}, true},
 		{"soapy antennas empty entry rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antennas: []string{""}}}}}, true},
 		{"soapy antennas conflict with args rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "antenna=RX1", Antennas: []string{"RX2"}}}}}, true},
+		// antenna: is the primary spelling and follows the same rules as the
+		// legacy antennas: alias — single ok non-diversity, a pair needs mrc.
+		{"soapy antenna single ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antenna: []string{"RX1"}}}}}, false},
+		{"soapy antenna pair with mrc ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", Antenna: []string{"RX1", "RX2"}}}}}, false},
+		{"soapy antenna pair without mrc rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antenna: []string{"RX1", "RX2"}}}}}, true},
+		{"soapy antenna empty entry rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antenna: []string{""}}}}}, true},
+		// Setting both spellings is ambiguous.
+		{"soapy antenna and antennas both rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Antenna: []string{"RX1"}, Antennas: []string{"RX2"}}}}}, true},
 		// soapy_remote stream_mtu: 0 = default; a real MTU is fine; out-of-range fails.
 		{"soapy stream_mtu zero ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1"}}}}, false},
 		{"soapy stream_mtu valid", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 8192}}}}, false},
@@ -567,6 +578,28 @@ func TestSoapyRemoteDeviceArgs(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("DeviceArgs() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSoapyRemoteEffectiveAntennas(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  SoapyRemoteConfig
+		want []string
+	}{
+		{"neither", SoapyRemoteConfig{}, nil},
+		{"antenna primary", SoapyRemoteConfig{Antenna: []string{"RX1"}}, []string{"RX1"}},
+		{"antennas legacy", SoapyRemoteConfig{Antennas: []string{"RX2"}}, []string{"RX2"}},
+		// Both is rejected by validation; the accessor still prefers the primary
+		// antenna: spelling so behaviour is defined either way.
+		{"antenna wins over antennas", SoapyRemoteConfig{Antenna: []string{"RX1"}, Antennas: []string{"RX2"}}, []string{"RX1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.EffectiveAntennas(); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("EffectiveAntennas() = %v, want %v", got, tc.want)
 			}
 		})
 	}
