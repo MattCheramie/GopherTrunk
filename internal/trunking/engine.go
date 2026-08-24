@@ -943,6 +943,7 @@ func (e *Engine) HandleGrant(g Grant) {
 					"grant", g.String())
 			})
 			e.log.Debug("dropping grant: no voice SDR", "grant", g.String())
+			e.setObservedReason(g, UnfollowedNoVoiceSDR)
 			return
 		}
 		if !e.pool.HasCapableDevice(g.FrequencyHz) {
@@ -954,6 +955,7 @@ func (e *Engine) HandleGrant(g Grant) {
 					"grant", g.String())
 			})
 			e.log.Debug("dropping grant: no voice device covers frequency", "grant", g.String())
+			e.setObservedReason(g, UnfollowedNoCoverage)
 			return
 		}
 		// A capable device exists, none is free (step 1 failed) and
@@ -964,6 +966,7 @@ func (e *Engine) HandleGrant(g Grant) {
 	}
 	if !CanPreempt(victim.Grant, victim.Talkgroup, g, tg) {
 		e.log.Info("no voice device available for grant", "grant", g.String())
+		e.setObservedReason(g, UnfollowedAllBusy)
 		// Signal the overload so the IQ auto-recorder can capture the carrier
 		// at the instant the system had more calls than voice tuners. Payload
 		// is the grant that went unserved.
@@ -1275,6 +1278,27 @@ func (e *Engine) ActiveCalls() []*ActiveCall {
 	return out
 }
 
+// Unfollowed-call reasons surfaced on control-channel-observed calls via
+// ActiveCall.UnfollowedReason / the API's unfollowed_reason field (issue #356).
+// The strings are operator-facing and mirror the corresponding drop-site logs.
+const (
+	UnfollowedNoVoiceSDR = "no voice SDR configured"
+	UnfollowedNoCoverage = "voice frequency outside every voice device's tuning window"
+	UnfollowedAllBusy    = "all voice tuners busy with higher-priority calls"
+)
+
+// setObservedReason stamps (or clears, with reason "") the unfollowed-reason
+// diagnostic on grant g's system-activity tracker entry. A no-op for grants
+// observeCall skipped (data calls, individual calls) — those never surface in
+// ObservedCalls, so they carry no reason.
+func (e *Engine) setObservedReason(g Grant, reason string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if ac, ok := e.observed[observedKey(g)]; ok {
+		ac.UnfollowedReason = reason
+	}
+}
+
 // observeCall upserts the system-activity tracker entry for grant g. Called
 // for every voice grant HandleGrant accepts, whether or not a tuner follows it.
 func (e *Engine) observeCall(g Grant, tg *TalkGroup) {
@@ -1334,6 +1358,10 @@ func (e *Engine) startCall(d *VoiceDevice, g Grant, tg *TalkGroup) {
 	e.mu.Lock()
 	e.calls[d.Serial] = ac
 	e.mu.Unlock()
+	// A tuner is following the call now — clear any stale unfollowed-reason
+	// stamped by an earlier drop of the same call's repeat grants, so the
+	// diagnostic never outlives the condition it described. Issue #356.
+	e.setObservedReason(g, "")
 	e.bus.Publish(events.Event{
 		Kind: events.KindCallStart,
 		// Publish ac.Grant, not the caller's g: Bind stamped it with a

@@ -835,6 +835,12 @@ type ActiveCallDTO struct {
 	// talkgroups up on the system, not only the ones being decoded. An
 	// unfollowed call has an empty DeviceSerial.
 	Following bool `json:"following"`
+	// UnfollowedReason says why no tuner is following this call (issue #356):
+	// "no voice SDR configured", "voice frequency outside every voice
+	// device's tuning window", or "all voice tuners busy with higher-priority
+	// calls". Omitted for followed calls, and empty while a grant is still
+	// being allocated.
+	UnfollowedReason string `json:"unfollowed_reason,omitempty"`
 }
 
 func activeCallToDTO(ac *trunking.ActiveCall, following bool) ActiveCallDTO {
@@ -842,7 +848,7 @@ func activeCallToDTO(ac *trunking.ActiveCall, following bool) ActiveCallDTO {
 	if ac.Device != nil {
 		serial = ac.Device.Serial
 	}
-	return ActiveCallDTO{
+	dto := ActiveCallDTO{
 		Grant:        grantToDTO(ac.Grant),
 		Talkgroup:    talkgroupToDTO(ac.Talkgroup),
 		DeviceSerial: serial,
@@ -850,6 +856,10 @@ func activeCallToDTO(ac *trunking.ActiveCall, following bool) ActiveCallDTO {
 		LastHeardAt:  ac.LastHeardAt,
 		Following:    following,
 	}
+	if !following {
+		dto.UnfollowedReason = ac.UnfollowedReason
+	}
+	return dto
 }
 
 // CallStartDTO / CallEndDTO mirror the trunking event payloads.

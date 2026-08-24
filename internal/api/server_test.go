@@ -271,9 +271,10 @@ func TestActiveCallsReportsEngineSnapshot(t *testing.T) {
 		// A second talkgroup is up on the system but no tuner is following it
 		// (control-channel-observed only, nil Device).
 		observed: []*trunking.ActiveCall{{
-			Grant:     trunking.Grant{System: "Alpha", Protocol: "p25", GroupID: 5678, FrequencyHz: 851_012_500},
-			Talkgroup: &trunking.TalkGroup{ID: 5678, AlphaTag: "PD-DISP"},
-			StartedAt: time.Now().UTC(),
+			Grant:            trunking.Grant{System: "Alpha", Protocol: "p25", GroupID: 5678, FrequencyHz: 851_012_500},
+			Talkgroup:        &trunking.TalkGroup{ID: 5678, AlphaTag: "PD-DISP"},
+			StartedAt:        time.Now().UTC(),
+			UnfollowedReason: trunking.UnfollowedAllBusy,
 		}},
 	}
 	base, teardown := mkServer(t, ServerOptions{Bus: bus, Engine: engine})
@@ -299,6 +300,15 @@ func TestActiveCallsReportsEngineSnapshot(t *testing.T) {
 	observed, ok := byTG[5678]
 	if !ok || observed.Following || observed.DeviceSerial != "" || observed.Talkgroup.AlphaTag != "PD-DISP" {
 		t.Errorf("observed call = %+v, want following=false with empty device", observed)
+	}
+	// #356: the observed call says WHY no tuner is following it; a followed
+	// call never carries the field.
+	if observed.UnfollowedReason != trunking.UnfollowedAllBusy {
+		t.Errorf("observed unfollowed_reason = %q, want %q",
+			observed.UnfollowedReason, trunking.UnfollowedAllBusy)
+	}
+	if followed.UnfollowedReason != "" {
+		t.Errorf("followed unfollowed_reason = %q, want empty", followed.UnfollowedReason)
 	}
 }
 
