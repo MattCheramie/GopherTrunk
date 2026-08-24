@@ -226,6 +226,23 @@ groups:
         url: /how-to-program-a-police-scanner/
       - title: "All scanner models (Field Guide)"
         url: /reference/#consumer-scanners
+      - heading: What's happening near me
+      - title: Why are there sirens near me?
+        url: /sirens-near-me/
+      - title: Police activity near me
+        url: /police-activity-near-me/
+      - title: Fire trucks, but no fire?
+        url: /fire-trucks-near-me/
+      - title: Helicopter circling overhead
+        url: /helicopter-circling-my-neighborhood/
+      - title: What siren sounds mean
+        url: /what-do-siren-sounds-mean/
+      - title: Tornado sirens going off?
+        url: /tornado-sirens-going-off/
+      - title: Listen to scanners online
+        url: /listen-to-police-scanner-online/
+      - title: What happened last night?
+        url: /what-happened-near-me-last-night/
       - heading: Ham radios
       - title: Best base stations
         url: /best-ham-radio-base-stations/

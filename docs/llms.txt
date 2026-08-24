@@ -53,6 +53,17 @@ organizations. Browse: {{ '/reference/' | absolute_url }}
 - [Hardware]({{ '/hardware.html' | absolute_url }}): supported SDR dongles.
 - [Downloads]({{ '/downloads.html' | absolute_url }}): builds for Linux, macOS, and Windows.
 
+## What's happening near me (sirens, lights & incident lookups)
+Practical, honest guides for the moment someone hears sirens or sees emergency lights and wants to know what's going on — every lookup method ranked by speed, with clear notes on coverage gaps, delays, and encryption.
+- [Why are there sirens near me right now?]({{ '/sirens-near-me/' | absolute_url }}): the fastest ways to find out what's happening — scanner feeds, CAD call logs, incident apps — ranked by how quickly they answer.
+- [Police activity near me]({{ '/police-activity-near-me/' | absolute_url }}): live dispatch audio, active-calls pages, crime maps, and public records, with what each one misses.
+- [Fire trucks on my street, but no fire]({{ '/fire-trucks-near-me/' | absolute_url }}): why engines respond to medical calls, alarms, and gas odors, and why so many units show up at once.
+- [Why is a helicopter circling my neighborhood?]({{ '/helicopter-circling-my-neighborhood/' | absolute_url }}): identify the exact aircraft in under a minute with ADS-B Exchange and read its flight pattern.
+- [What different siren sounds mean]({{ '/what-do-siren-sounds-mean/' | absolute_url }}): wail, yelp, phaser, the hi-lo evacuation tone, the fire Q, and the low-frequency Rumbler.
+- [Why are the tornado sirens going off?]({{ '/tornado-sirens-going-off/' | absolute_url }}): outdoor warning siren activations, test schedules, and why silence is not an all-clear.
+- [How to listen to police scanners online free]({{ '/listen-to-police-scanner-online/' | absolute_url }}): Broadcastify and scanner apps, plus the honest limits — coverage, delays, encryption.
+- [What happened near me last night?]({{ '/what-happened-near-me-last-night/' | absolute_url }}): reconstruct an incident after the fact from scanner archives, CAD logs, flight tracks, and records.
+
 ## Police scanner buyer's guides & hardware
 Consumer scanner hardware (Uniden, Whistler) compared honestly against a free SDR + GopherTrunk.
 - [Best police scanners]({{ '/best-police-scanners/' | absolute_url }}): buyer's guide to every scanner worth owning, with an honest SDR comparison.
