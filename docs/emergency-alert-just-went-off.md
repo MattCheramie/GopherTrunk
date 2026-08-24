@@ -86,6 +86,26 @@ The message is terse by design; the depth lives elsewhere:
   happening on my side of town." (Encrypted agencies excepted — [the usual
   caveat](/police-scanner-encryption/).)
 
+## Make sure the next one reaches you
+
+Five minutes of setup, once:
+
+- **Check the toggles:** iPhone — Settings → Notifications → scroll to the
+  bottom for Government Alerts. Android — Settings → search "Wireless
+  emergency alerts." Leave *extreme/severe* on even if you disable Amber
+  or tests.
+- **Turn on notification history** (Android) so a dismissed alert is
+  recoverable next time.
+- **Register for county alerts.** WEA needs no signup, but your county's
+  own system (Everbridge/CodeRED/Nixle-style) — the one that calls
+  evacuations street by street — often reaches cell phones **only if you
+  register**. Search "<county> emergency alerts sign up"; landlines are
+  auto-enrolled, your cell is not.
+- **Cover the 2 a.m. gap:** phones on Do Not Disturb generally let WEAs
+  through, but the belt-and-suspenders answer indoors is a
+  [NOAA SAME weather radio](/best-emergency-radios/) that wakes for your
+  county specifically.
+
 Alert with sirens on top of it? Work the fast lookups in
 [why are there sirens near me](/sirens-near-me/). Curious what it was after
 the fact? [Reconstruct it](/what-happened-near-me-last-night/).

@@ -85,6 +85,23 @@ dispatch](/police-scanner-encryption/), the radio route is closed — check
 [RadioReference](https://www.radioreference.com/) for your agency, and lean on
 the CAD log instead.
 
+## If it was close: two checklists
+
+**What 911 actually needs from you** (worth rehearsing once):
+
+- How many bangs, over how many seconds, and the spacing (even/irregular).
+- Direction and rough distance — "northeast, a block or two" beats "outside."
+- Anything paired with it: vehicles accelerating, voices, breaking glass.
+- Whether you *saw* anything — muzzle flash low to the ground vs fireworks
+  overhead settles it instantly for the call-taker.
+
+**If you think your home or car may have been struck:** don't touch or dig
+anything out — an impact mark and the round behind it are evidence. Photograph
+it, note the time of the bangs, and report it even a day later; a documented
+strike changes how the original call is classified and patrolled. And if a
+window or wall was hit while you were home, report immediately, not in the
+morning.
+
 ## Why this question, more than any other, sells scanners
 
 "Was that gunshots?" is the 1 a.m. question — exactly when nobody's posting,

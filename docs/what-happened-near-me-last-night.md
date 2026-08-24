@@ -82,6 +82,23 @@ and you usually have the entire incident.
 - **Public-records request** for the incident report itself — every state
   allows it; expect fees, a wait, and redactions on open cases.
 
+## When each record appears (and how long it lasts)
+
+| Record | Appears | Sticks around |
+|---|---|---|
+| Dispatch audio (live feed) | Real time | Gone unless archived |
+| Broadcastify archive | Minutes behind live | Days (premium access) |
+| Agency CAD / calls-for-service | Minutes to an hour | 24 hours–30 days, typically |
+| State 511 incident (highway) | Minutes | Hours–days in the archive |
+| Local news | Hours–next day | Major incidents only |
+| Crime maps (CityProtect, SpotCrime…) | 1–3+ days | Months–years |
+| Incident/crash report (records request) | Days–weeks | Permanent public record |
+
+Read it bottom-up when something's missing: a call absent from the crime map
+after a week probably never generated a report (medical, assist, unfounded
+alarm) — the CAD line and the audio are then the only records that ever
+existed, which is why the archive window matters.
+
 ## Next time: have your own archive
 
 Every step above depends on someone else having recorded, logged, or filed

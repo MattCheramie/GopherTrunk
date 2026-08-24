@@ -78,6 +78,25 @@ too — the same identification logic (and limits) as the
 4. **News + base social media** — exercises and flyovers get announced;
    "military jets over [your metro] today" resolves the event-day cases.
 
+## Find out if you live under military airspace
+
+Ten minutes of lookup settles "is this going to keep happening":
+
+- **Pull up a free VFR sectional chart** (skyvector.com shows the FAA
+  charts) and find your house. **Grey lines labeled VR/IR** with numbers
+  are Military Training Routes — IR routes run in any weather, and
+  three-digit route numbers mean segments flown *below* 1,500 ft. A route
+  over your roof means the low passes are scheduled and permanent.
+- **Hatched boxes labeled "MOA"** are Military Operations Areas — the
+  maneuvering/exercise airspace, usually starting a few thousand feet up:
+  circling and formation work, less of the sudden low boom-and-gone.
+- **Find the nearest base or Guard wing's public affairs page** — flying
+  schedules, night-flying notices, and exercise announcements get posted
+  there, and it's also where the noise-complaint process lives.
+- **New-to-you noise with none of the above nearby** usually means a
+  temporary exercise or a deployment cycle at a distant base — the
+  announcements and local reporting catch up within days.
+
 ## The part hobbyists love: hearing it
 
 Military aviation's routine coordination — refueling join-ups, range

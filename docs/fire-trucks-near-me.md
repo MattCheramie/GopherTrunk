@@ -84,6 +84,22 @@ dark**, and the traffic is plain-spoken — call type, address, units, outcome.
   [fire frequencies](/scanner-frequencies/) ·
   [is listening legal?](/police-scanner-legal/) (yes, in the US).
 
+## If they're at your building — or next door
+
+- **Your building's alarm is sounding?** Leave, every time, even the fourth
+  false alarm this month — and don't silence or reset a panel before the
+  crew arrives; they need it displayed to find the triggering device.
+- **Move what blocks them, nothing else.** A car on the hydrant or in the
+  lane matters (crews will go through windows to run a hydrant line);
+  otherwise stay out of the working area and keep kids and dogs in.
+- **Next door with a gas odor?** Stay out of the affected house, don't ring
+  doorbells or flip switches near it, and let the crew's meters decide.
+- **Offer the two useful facts** if you have them, once, to a firefighter
+  who isn't mid-task: whether anyone (or any pet) is inside, and where the
+  resident keeps a key if you hold one.
+- **Medical call at a neighbor's?** The etiquette is its own page:
+  [ambulance at a neighbor's house](/ambulance-at-neighbors-house/).
+
 Hearing sirens without seeing trucks, or police instead of fire? The general
 lookup playbook is at [why are there sirens near me](/sirens-near-me/) and
 [police activity near me](/police-activity-near-me/) — and if it's the siren

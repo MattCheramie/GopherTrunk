@@ -77,6 +77,27 @@ None of this is a knock on Broadcastify — it's a volunteer commons doing
 exactly what it promises. It's just not the same thing as hearing the radio
 yourself.
 
+## First listen: making sense of what you hear
+
+The traffic is terse but learnable in one evening:
+
+- **The shape of a dispatch:** unit number → location → call type →
+  sometimes a caution note. Responders answer with acknowledgments and
+  arrival ("on scene"), then a disposition.
+- **Dispositions worth knowing:** "code 4" (under control, no more units),
+  "GOA/UTL" (gone on arrival / unable to locate), "unfounded" (nothing
+  there), "10-8" (back in service). These closings are usually the answer
+  you were listening for.
+- **Ten-codes vary by agency** — a 10-50 is a crash in one county and
+  something else two counties over — and many agencies have moved to plain
+  language. When in doubt, the context carries you; RadioReference's wiki
+  lists local code sheets.
+- **Quiet is normal.** Dispatch channels idle for long stretches; a silent
+  feed usually means a quiet hour, not a broken stream.
+- **Two etiquette rules that keep the hobby healthy:** never self-dispatch
+  to a scene you heard about, and treat names, plates, and medical details
+  you hear as things you didn't.
+
 ## When you've outgrown feeds
 
 If you keep reaching for a feed — checking [sirens](/sirens-near-me/) and

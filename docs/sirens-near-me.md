@@ -94,6 +94,24 @@ and confirm nothing — someone will eventually post "does anyone know what's
 going on?", and the reply that actually answers it is nearly always from
 someone with a scanner.
 
+## While they're close: the two-minute etiquette
+
+What responders need from you while you're wondering what's going on:
+
+- **Driving?** Pull to the right edge and **stop** — signaled, predictable,
+  out of intersections. Never stop *in* an intersection; clear it first, then
+  pull over. Don't tail a responding unit (many states set a 500-foot
+  minimum), and when you pass a stopped emergency vehicle later, slow down
+  and move over a lane — that's the Move Over law, and it's ticketed.
+- **At home?** Keep the street edge clear of kids, pets, and yourself. If the
+  units stop nearby, resist walking toward the scene — bystanders in the
+  working area are the responders' biggest headache and your fastest way to
+  be told to leave.
+- **Reading the sound:** one siren that swells and fades is a unit passing
+  through. Several sirens from different directions that all *stop* near you
+  mean a scene is being established nearby — that's the moment the lookup
+  methods above earn their keep.
+
 ## If the siren is one long steady tone from everywhere at once
 
 That's not a vehicle. Fixed **outdoor warning sirens** sound across an entire
@@ -124,6 +142,18 @@ their own faster path:
 - **Something in the sky** → [a drone over the
   house](/drone-flying-over-my-house/) · [military
   jets](/military-jets-flying-over-my-house/)
+- **The house just shook** → [did we just have an
+  earthquake?](/did-we-just-have-an-earthquake/)
+- **Police stopping every car** → [checkpoint or
+  roadblock](/police-checkpoint-near-me/)
+- **A knock at your own door** → [why did police knock on my
+  door?](/police-knocked-on-my-door/)
+- **Search lines, dogs, a command post** → [missing-person search
+  near me](/missing-person-search-near-me/)
+- **The school's on lockdown** → [what parents should
+  do](/school-lockdown-near-me/)
+- **No water, or water in the street** → [water main
+  breaks](/water-main-break-near-me/)
 - **Train horns all night** → [why train horns keep
   blowing](/train-horns-blowing/)
 - **Not sure what the siren sound even was** → [what siren sounds

@@ -73,6 +73,26 @@ routine horn noise, the fix is a **Quiet Zone**: an FRA process your city
 applies for after upgrading crossings; engineers still horn at hazards, but
 the every-train pattern stops.
 
+## The sixty-second drill: a car stalled on the tracks
+
+Worth knowing cold, because the instinct (stay and restart) is the fatal one:
+
+1. **Everyone out immediately.** Not after one more crank. A train you can
+   see is closer and faster than it looks, and a freight needs a mile-plus
+   to stop.
+2. **Run toward the oncoming train, angled away from the tracks** (about
+   45°). Debris from the impact flies *forward* along the track — standing
+   downstream of your own car is the classic fatal error.
+3. **Call the blue-sign number** with the crossing ID (it's on the sign),
+   then 911. The railroad dispatcher can set signals and radio trains
+   faster than anyone else on earth.
+4. **Nothing in the car is worth going back for.**
+
+Same logic, smaller stakes: never walk the tracks or use them as a shortcut
+or photo backdrop — it's trespassing everywhere, modern welded rail is far
+quieter than movies suggest, and a second train on the next track is the
+oldest trap in railroading.
+
 ## For the newly curious: the railroad is on the radio, in the clear
 
 Railroads run on **analog, unencrypted VHF radio** (the AAR channels around

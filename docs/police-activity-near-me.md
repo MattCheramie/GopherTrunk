@@ -93,6 +93,26 @@ patrol; units arriving quietly without lights suggests a search or perimeter
 confirms it. If you're only *hearing* it, the [siren
 sound itself](/what-do-siren-sounds-mean/) narrows down who is responding.
 
+## If it's directly outside your house
+
+When the activity is on *your* stretch of street:
+
+- **Stay inside and watch from cover, not the porch.** If anything about the
+  scene looks volatile, put an interior wall between you and it — most calls
+  are mundane, but you can't tell which from the driveway.
+- **Follow any officer instruction immediately** — "back inside, please" is
+  not a conversation opener. You can sort out questions later.
+- **Recording from your own property is lawful**; interfering, approaching,
+  or lighting up the scene with a flashlight is not smart or welcome. Keep
+  distance and doorways clear.
+- **If officers set a perimeter that includes your home**, expect either a
+  knock (evacuate briefly) or an instruction to stay inside — comply first;
+  details come after. The [SWAT-scale version](/swat-team-in-my-neighborhood/)
+  has its own page.
+- **Afterward:** lock cars and outbuildings if the call was a fleeing
+  suspect — post-search neighborhoods see door-handle checks — and note the
+  time in case you want to [look the call up later](/what-happened-near-me-last-night/).
+
 ## What Nextdoor won't tell you
 
 Neighborhood apps and Facebook groups are where the question gets asked, not

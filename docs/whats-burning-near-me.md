@@ -83,6 +83,25 @@ all:
 - **Winter note:** still, cold nights trap neighborhood wood smoke under an
   inversion — everyone smells "fire" because fifty fireplaces are lit.
 
+## Smoke-day survival: protecting your indoor air
+
+When the answer turns out to be "a wildfire two states over, for the next
+week," the useful work is indoors:
+
+- **Close up the house** and run the HVAC on **recirculate** (fan ON, fresh
+  air intake closed) with the best filter it takes — MERV 13 if the system
+  allows.
+- **The $40 trick:** a box fan with a MERV-13 furnace filter strapped to the
+  intake side scrubs a closed room surprisingly well; a true HEPA purifier
+  in the bedroom is better.
+- **Pick one clean room** (bedroom, ideally) rather than fighting for the
+  whole house; keep doors closed and activity low.
+- **Outdoors, an N95 actually fits the problem** — cloth and surgical masks
+  don't stop PM2.5.
+- **Judge by AQI, not smell:** below ~100, sensitive groups take it easy;
+  above 150, everyone limits exertion; above 200, stay in. Your nose
+  acclimates within minutes and stops being a sensor.
+
 ## When to stop looking things up and call 911
 
 A **visible, growing smoke column**, flames anywhere, or that indoor

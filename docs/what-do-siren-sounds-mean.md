@@ -85,6 +85,24 @@ the dispatch radio, in the open, in most of the US:
   the [$30 SDR + free GopherTrunk route](/cheap-sdr-scanner/) that decodes
   digital P25/DMR/NXDN dispatch and records every call.
 
+## When you hear one while driving
+
+The sound's practical meaning behind the wheel:
+
+- **Right and stop** is the universal rule — signal, ease to the right edge,
+  and come to a full stop until the vehicle passes. Predictable beats fast:
+  the worst move is an unsignaled brake-slam or a dart across lanes.
+- **In an intersection?** Clear it first, *then* pull right. Never stop in
+  the box, and never run a red to get out of the way — creep only where
+  legal and safe.
+- **Yelp or phaser bursts right behind you** mean *you* are the obstacle —
+  they need your lane, now.
+- **One passed; expect more.** Fire responses run several vehicles spaced
+  out; check your mirror before pulling back out.
+- **Passing a stopped responder later:** slow down and give a lane — the
+  Move Over law applies to police, fire, EMS, tow trucks, and utility crews
+  in every state.
+
 ## Fixed sirens are a different animal
 
 Everything above moves past you and is gone in a minute. A siren that sounds

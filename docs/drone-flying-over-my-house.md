@@ -84,6 +84,24 @@ response is documentation (video, dates/times, the Remote ID readout showing
 the operator location) and the **police non-emergency line**; identifying a
 registered operator from there is straightforward.
 
+## Sightings worth reporting — and to whom
+
+Most drones are boring. These aren't, and each has a correct destination:
+
+- **Near an airport or under a final-approach path** → the airport's
+  operations line or the FAA's regional office; this is the sighting the
+  system most wants.
+- **Over a wildfire or police air operation** → 911, immediately: one hobby
+  drone grounds every firefighting aircraft on the incident ("If you fly,
+  we can't").
+- **Over crowds, stadiums, or school events** → on-site security or the
+  police non-emergency line.
+- **Reckless flying or repeated harassment/peeping** → police non-emergency
+  with your video, times, and Remote ID readout; persistent cases escalate
+  through state harassment/voyeurism law.
+- **911 is for immediate danger only** — a drone merely annoying you is a
+  non-emergency call, and "I shot at it" turns *you* into the case.
+
 ## The pattern you'll notice
 
 Drone mysteries resolve the same way as [helicopter](/helicopter-circling-my-neighborhood/),

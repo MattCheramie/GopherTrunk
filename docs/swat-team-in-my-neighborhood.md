@@ -84,6 +84,26 @@ during operations, for reasons that don't need explaining.
    release, court records, local reporting, or the
    [reconstruction methods](/what-happened-near-me-last-night/).
 
+## If your home is inside the perimeter
+
+- **The evacuation knock:** you'll have a minute, not an hour. Take phone,
+  charger, keys, wallet/ID, daily medications, and pets — assume you're out
+  for several hours, occasionally overnight. Ask the officer where the
+  staging/reunification point is; that's also where updates land first.
+- **Told to shelter instead:** pick an interior room on the far side from
+  the scene, stay off scene-facing windows, and keep the phone charged and
+  unmuted for the all-clear or a reverse-911 update.
+- **Getting back in:** re-entry runs through a checkpoint — ID with your
+  address (or mail/utility bill on your phone) speeds it up.
+- **If the operation damaged your property** (a perimeter fence, lawn,
+  worse), photograph everything before cleanup and ask the agency for its
+  claims process — one exists, and documented claims filed promptly are the
+  ones that get paid.
+- **Kids and pets:** the honest script ("police are arresting someone up
+  the street; our job is to stay inside") beats both silence and drama, and
+  a leash on the dog *before* the door opens for an officer prevents the
+  worst thirty seconds of the day.
+
 ## The general lesson this event teaches
 
 A SWAT day is the extreme case of every question in this cluster: something

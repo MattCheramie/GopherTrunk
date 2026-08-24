@@ -75,6 +75,25 @@ Scanner listeners learn this etiquette early: medical traffic is the part of
 the hobby you hear and let go. The radio answers "is my street safe, what
 was that commotion" — it is not a tool for researching a neighbor's health.
 
+## If you're the one who called for them
+
+The minutes before the crew arrives are where a neighbor genuinely matters:
+
+- **Address first, then everything else** — 911 location tech is imperfect;
+  the spoken address is still what gets units to the right door.
+- **Stay on the line and do what the call-taker says.** Dispatchers coach
+  CPR, bleeding control, and positioning in real time; you don't need to
+  know anything in advance.
+- **Unlock the door, light the porch, secure the dog** — the three delays
+  crews mention most.
+- **Grab the medication list** (or the pill bottles themselves) — it's the
+  single most useful object you can hand a paramedic.
+
+**And make your own home EMS-ready while you're thinking about it:** house
+numbers visible from the street at night, a current meds/conditions list on
+the fridge (the "File of Life" envelope EMS is trained to look for), and a
+told-to-someone plan for where the spare key lives.
+
 ## What a good neighbor does
 
 During: keep the driveway, doorway, and curb clear; offer help **once** if

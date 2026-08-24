@@ -93,6 +93,26 @@ alerting** that turns itself on for warnings; our
 [emergency radio guide](/best-emergency-radios/) covers which models do this
 properly on battery.
 
+## Your three-minute shelter drill
+
+If the confirmation says tornado warning, this is the whole move:
+
+1. **Lowest floor, most interior room** — bathroom, closet, or hallway; put
+   as many walls as possible between you and outside. No basement? An
+   interior room beats everything else you have.
+2. **Grab as you go:** shoes, phone and battery, and head protection —
+   a bike helmet is the single cheapest injury-preventer in the house.
+   Cover up with a mattress or heavy blankets if you can.
+3. **Pets on leashes or in carriers** — a scared dog bolts at exactly the
+   wrong moment.
+4. **Not shelter:** cars, garages, rooms with wide-span roofs, and windows
+   you're tempted to watch from. A **mobile home is never shelter** — know
+   your community's nearest sturdy building *before* the season and go at
+   the warning, not at the sighting.
+5. **Afterward:** stay put for a few minutes (multiple cells travel in
+   trains), then check for gas odors before flipping anything on, and treat
+   every downed line as [live](/power-outage-near-me/).
+
 ## For the curious: hear the warning system work
 
 During severe weather the most detailed real-time picture isn't on TV — it's

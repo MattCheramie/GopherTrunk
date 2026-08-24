@@ -68,6 +68,23 @@ open-ended. **Don't** call 911 to ask.
 - **Cones and a calendar** → planned work or an event; the city posted it
   somewhere last week.
 
+## Detour rules that keep you out of trouble
+
+- **Never move a barricade or drive around one.** "Road Closed" transfers
+  liability to you the moment you pass it — and the hazard (wires, washout,
+  scene) is usually exactly where you can't see it yet.
+- **Water over the road: turn around.** A foot of moving water floats most
+  cars; barricaded flooding is the single deadliest thing on this page.
+  "Turn Around, Don't Drown" is a rule, not a slogan.
+- **Dark traffic signals = all-way stop.** Outage-darkened intersections
+  ([power outage?](/power-outage-near-me/)) are treated as four-way stops in
+  every state; assume cross traffic doesn't know that.
+- **Don't blindly follow the app.** Detour routing happily sends a hundred
+  cars down a private lane or an unmaintained shortcut; prefer the signed
+  detour, which was chosen to carry the load.
+- **Never tuck in behind an emergency vehicle** to slip through — it's
+  illegal, and the closure point will stop you anyway.
+
 ## The commuter's cheat code
 
 People who drive the same corridor daily eventually notice the pattern:

@@ -92,6 +92,24 @@ leaves when the perimeter collapses or the person is found.
   [ADS-B decoder](/adsb.html) with a live map, so you're not depending on
   anyone's coverage or filtering.
 
+## If the spotlight is working your street
+
+A police search orbit overhead means ground units are sweeping nearby.
+The useful playbook:
+
+- **Go in, lock doors and cars, exterior lights on.** A lit yard is quickly
+  cleared; dark hiding spots are what gets searched twice.
+- **Don't walk the neighborhood to watch** — a person moving through yards
+  is exactly what the camera operator is looking for.
+- **See something real** (a stranger crouched by a fence, a door forced)?
+  Call 911 with the location — that's genuinely helpful. Speculation isn't.
+- **Never point a light or laser at the aircraft.** Lasing an aircraft is a
+  federal felony that's prosecuted regularly, and even a strong flashlight
+  blinds night-vision equipment.
+- **Keep your drone on the ground.** Police air operations and wildfires
+  often carry temporary flight restrictions, and a hobby drone in the orbit
+  grounds the operation ([drone rules](/drone-flying-over-my-house/)).
+
 ## Sirens on the ground too?
 
 Helicopter plus converging sirens means an active ground incident — work

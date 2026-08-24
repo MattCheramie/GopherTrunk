@@ -81,6 +81,23 @@ scanner](#kit). **Gas smell, smoke, or damage → 911.**
    it](/what-happened-near-me-last-night/) from the CAD log and feed
    archives.
 
+## After a very close boom: the five-minute walk-around
+
+If it sounded like it was *on your property*, check before you shrug:
+
+1. **Nose first:** any gas smell at the meter, water heater, or stove means
+   everyone out, then call 911 **from outside** — no switches, no phones
+   indoors, no restarting anything.
+2. **Breaker panel:** a tripped main plus the bang points at an electrical
+   fault — leave it off and have it looked at rather than resetting blind.
+3. **Walk the outside:** scorch marks at the service drop, a hanging line
+   ([treat as live](/power-outage-near-me/)), damaged siding or roof edges,
+   debris in the yard.
+4. **Note the exact time** from your phone or cameras — it lets neighbors,
+   the utility, and the [CAD log](/what-happened-near-me-last-night/)
+   correlate your boom with everyone else's, which is how one-street
+   mysteries actually get solved.
+
 ## When a boom is a 911 call
 
 A gas smell, smoke, debris, damage, or people hurt — call, immediately.

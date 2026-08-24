@@ -68,6 +68,25 @@ re-energizing. Storm nights run on triage: big circuits, hospitals, and
 schools first, single transformers last. Your quiet cul-de-sac's best lever
 is that report you filed in minute one.
 
+## While you wait: food, devices, and the two real dangers
+
+- **Keep the cold in:** an unopened fridge holds safe temps about **4
+  hours**; a full freezer about **48** (half-full, 24). Every peek costs
+  minutes. When in doubt afterward, 40°F/two-hours is the food-safety line.
+- **Generator rule that outranks all others: outdoors only**, 20+ feet from
+  the house, exhaust pointed away — never in a garage, even with the door
+  open. Carbon monoxide from generators kills people in ordinary outages
+  every single year; a battery CO alarm is the companion purchase.
+- **Unplug the sensitive stuff** (TVs, computers, the garage-door board) —
+  restoration can arrive with a surge. Leave one lamp on so you notice the
+  moment power's back.
+- **Check the person, not just the porch light:** a neighbor on oxygen
+  concentrators or powered medical equipment has hours of battery, not
+  days. Utilities run medical-baseline registries for exactly this — worth
+  mentioning to them once the lights are back.
+- **Candles lose to headlamps** on every axis; the house-fire spike during
+  outages is real.
+
 ## The resilience angle (why radio people shrug at outages)
 
 An outage is the one "what's happening?" moment that can take the internet

@@ -84,6 +84,23 @@ scanner-feed archives, and eventually the crash report itself. The full
 method (it works for any incident, not just crashes) is in
 [what happened near me last night](/what-happened-near-me-last-night/).
 
+## If you're close to it — witness, first on scene, or worried
+
+- **First on scene:** stop *beyond* the wreck if safe, hazards on, call 911
+  with location and lane before anything else. Don't move injured people
+  unless fire or traffic makes staying deadly; do turn off a wrecked car's
+  ignition if reachable.
+- **You saw it happen:** offer your name to the officer or call the
+  non-emergency line later — dashcam clips are gold, and fault disputes
+  often hang on the one independent witness who bothered.
+- **Driving past:** slow down, move over a lane, and don't film — secondary
+  crashes in the gawker slowdown are a real, common event.
+- **Worried someone you know was involved?** Don't go to the scene. Call
+  their phone, then the police non-emergency line (they can confirm a name
+  was or wasn't involved once the scene clears), then area hospitals.
+  Serious-injury notifications come from officers in person — no news is
+  usually good news.
+
 ## Why crash-curious neighbors end up with a scanner
 
 Crashes are the single most common "what was that?" event — frequent,
