@@ -5,6 +5,7 @@ description: "Wail, yelp, phaser, hi-lo, air horn, the low Rumbler, the fire tru
 keywords: what do siren sounds mean, different siren sounds, police siren vs ambulance siren, hi-lo siren meaning, fire truck siren, siren types, wail yelp phaser, why do sirens change sound
 permalink: /what-do-siren-sounds-mean/
 nav_group: Hardware
+affiliate: true
 faq:
   - q: "Can you tell police, fire, and ambulance apart by siren sound?"
     a: "Not reliably. In the US all three services use the same electronic siren tones — wail, yelp, phaser — and switch between them freely. The giveaways are the exceptions: a deep mechanical howl that winds up and coasts down is a fire truck's Federal Q siren, a chest-thumping low rumble is a police Rumbler, and loud air-horn blasts layered over the siren are usually fire apparatus."
@@ -90,3 +91,5 @@ Everything above moves past you and is gone in a minute. A siren that sounds
 three minutes or more** is an outdoor warning siren — tornado warning in most
 of the US. That one gets its own guide: [why are the tornado sirens going
 off?](/tornado-sirens-going-off/)
+
+{% include scanner-kit.html %}

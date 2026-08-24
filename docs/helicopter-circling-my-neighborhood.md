@@ -5,6 +5,7 @@ description: "A helicopter circling overhead usually means a police search, a me
 keywords: helicopter circling my neighborhood, why is a helicopter circling, police helicopter near me, helicopter over my house, helicopter circling at night, what is that helicopter doing, track police helicopter
 permalink: /helicopter-circling-my-neighborhood/
 nav_group: Hardware
+affiliate: true
 faq:
   - q: "Why is a helicopter circling my neighborhood?"
     a: "Tight, repeated circles usually mean a police helicopter supporting a ground search — often for a fleeing suspect or a missing person. Other common explanations: a news helicopter holding over an incident, a medevac orbiting before landing, powerline/pipeline patrol flying slow straight lines, or survey and photography work flying a grid."
@@ -98,3 +99,5 @@ me](/sirens-near-me/) and [police activity near
 me](/police-activity-near-me/). If it's the middle of the night and you want
 answers tomorrow, a recording scanner answers
 [what happened last night](/what-happened-near-me-last-night/) on demand.
+
+{% include scanner-kit.html %}

@@ -5,6 +5,7 @@ description: "Fire trucks at a neighbor's house with no smoke, no flames? Why fi
 keywords: fire trucks near me, why are there fire trucks on my street, fire truck at neighbors house, fire truck and ambulance no fire, why do fire trucks come for medical calls, fire trucks in my neighborhood
 permalink: /fire-trucks-near-me/
 nav_group: Hardware
+affiliate: true
 faq:
   - q: "Why is a fire truck at my neighbor's house if there's no fire?"
     a: "Most likely a medical call. In most of the US, fire engines are dispatched alongside ambulances because fire stations are more numerous and often arrive first, and firefighters are trained EMTs. Other common no-fire reasons: automatic fire-alarm activations, gas odors, carbon-monoxide alarms, lift assists, and lock-outs with someone at risk inside."
@@ -87,3 +88,5 @@ lookup playbook is at [why are there sirens near me](/sirens-near-me/) and
 [police activity near me](/police-activity-near-me/) — and if it's the siren
 *sound* you're trying to decode, that's
 [what different siren sounds mean](/what-do-siren-sounds-mean/).
+
+{% include scanner-kit.html %}

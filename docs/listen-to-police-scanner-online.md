@@ -5,6 +5,7 @@ description: "How to listen to police, fire, and EMS scanners online free — Br
 keywords: listen to police scanner online, police scanner online free, live police scanner near me, Broadcastify, scanner radio app, online fire scanner, police scanner app, listen to police radio
 permalink: /listen-to-police-scanner-online/
 nav_group: Hardware
+affiliate: true
 faq:
   - q: "How can I listen to a police scanner online for free?"
     a: "Go to Broadcastify.com, browse to your state and county, and press play on a live feed — free in any browser, no account needed. On a phone, the Scanner Radio app (Android) or 5-0 Radio (iOS) streams the same volunteer-run feeds. Search by county, since most public-safety dispatch is organized at the county level."
@@ -100,3 +101,5 @@ exceptions, and everything on this page respects the same hard boundary:
 [encrypted channels stay closed to everyone](/police-scanner-encryption/).
 Check what's decodable in your area on
 [RadioReference](https://www.radioreference.com/) before spending a dime.
+
+{% include scanner-kit.html %}

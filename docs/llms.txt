@@ -63,6 +63,12 @@ Practical, honest guides for the moment someone hears sirens or sees emergency l
 - [Why are the tornado sirens going off?]({{ '/tornado-sirens-going-off/' | absolute_url }}): outdoor warning siren activations, test schedules, and why silence is not an all-clear.
 - [How to listen to police scanners online free]({{ '/listen-to-police-scanner-online/' | absolute_url }}): Broadcastify and scanner apps, plus the honest limits — coverage, delays, encryption.
 - [What happened near me last night?]({{ '/what-happened-near-me-last-night/' | absolute_url }}): reconstruct an incident after the fact from scanner archives, CAD logs, flight tracks, and records.
+- [Accident near me]({{ '/accident-near-me/' | absolute_url }}): dispatch audio, 511/DOT maps, and traffic apps, and how to read crash severity from the response.
+- [Why is the road closed?]({{ '/road-closed-near-me/' | absolute_url }}): finding the cause and likely duration of a closure, from crashes to wires down to planned events.
+- [Gunshots or fireworks?]({{ '/gunshots-or-fireworks/' | absolute_url }}): the honest by-ear guidance, when to call 911, and how to hear what responding officers actually found.
+- [What's burning near me?]({{ '/whats-burning-near-me/' | absolute_url }}): smoke-investigation dispatch calls, wildfire and air-quality maps, and prescribed-burn schedules.
+- [Power outage near me]({{ '/power-outage-near-me/' | absolute_url }}): outage maps, the radio traffic that names the cause, and staying informed when the Wi-Fi is down.
+- [That loud phone alert]({{ '/emergency-alert-just-went-off/' | absolute_url }}): Wireless Emergency Alerts explained — types, recovering a dismissed alert, and the detail the message leaves out.
 
 ## Police scanner buyer's guides & hardware
 Consumer scanner hardware (Uniden, Whistler) compared honestly against a free SDR + GopherTrunk.

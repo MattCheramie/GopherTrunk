@@ -5,6 +5,7 @@ description: "Police cars on your street and no explanation? Every way to find o
 keywords: police activity near me, police in my neighborhood, why are police on my street, police cars near me, what are police doing near me, police activity in my area now, find out police activity
 permalink: /police-activity-near-me/
 nav_group: Hardware
+affiliate: true
 faq:
   - q: "How do I find out about police activity in my neighborhood right now?"
     a: "Check, in order: a live scanner feed for your county (Broadcastify or the Scanner Radio app) where dispatchers narrate calls in real time; your agency's active calls-for-service (CAD) page; and the Citizen app if you're in a covered metro. Social media and news only cover major incidents, usually well after the fact."
@@ -103,3 +104,5 @@ with zero setup. Start with [how police scanners
 work](/how-police-scanners-work/) — and check
 [RadioReference](https://www.radioreference.com/) first to confirm your
 agency's dispatch is still [in the clear](/police-scanner-encryption/).
+
+{% include scanner-kit.html %}

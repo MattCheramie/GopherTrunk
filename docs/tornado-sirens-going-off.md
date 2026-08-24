@@ -5,6 +5,7 @@ description: "Outdoor warning sirens going off and clear skies? What activation 
 keywords: why are tornado sirens going off, tornado siren but no tornado, outdoor warning siren meaning, siren going off right now, tornado siren test times, civil defense siren, warning siren no storm
 permalink: /tornado-sirens-going-off/
 nav_group: Hardware
+affiliate: true
 faq:
   - q: "Why are the tornado sirens going off right now?"
     a: "Most likely a tornado warning covers part of your county — sirens are usually activated county-wide or by zone even if your sky looks fine. Other triggers, depending on local policy: severe thunderstorm warnings with destructive winds or large hail, a hazardous-materials emergency, or a scheduled test. Confirm in seconds with a weather app, NOAA weather radio, or your county emergency management's social feed."
@@ -105,3 +106,5 @@ weather-focused setup. And if what you heard was a *moving* siren rather than
 a fixed one, that's a vehicle: start at
 [what different siren sounds mean](/what-do-siren-sounds-mean/) or
 [why are there sirens near me](/sirens-near-me/).
+
+{% include scanner-kit.html %}

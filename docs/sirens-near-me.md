@@ -5,6 +5,7 @@ description: "Hearing sirens near you right now? The fastest ways to find out wh
 keywords: sirens near me, why are there sirens near me, sirens near me right now, what's happening near me, sirens in my neighborhood, why do I hear sirens, emergency near me, find out why sirens
 permalink: /sirens-near-me/
 nav_group: Hardware
+affiliate: true
 faq:
   - q: "How can I find out why there are sirens near me right now?"
     a: "The fastest reliable answer is a live police/fire scanner feed for your county (Broadcastify or the Scanner Radio app), because dispatchers describe the incident and address in real time. Back that up with your agency's active-calls (CAD) page, the Citizen or PulsePoint apps where available, and your police/fire department's social media, which usually posts only for major incidents."
@@ -101,6 +102,22 @@ check a weather app or [NOAA weather radio](/best-emergency-radios/), and read
 identify the *sound* itself — wail vs yelp vs hi-lo — see [what different siren
 sounds mean](/what-do-siren-sounds-mean/).
 
+## Match the guide to what you're seeing and hearing
+
+The general playbook above works for everything, but several situations have
+their own faster path:
+
+- **Crash sounds or stopped traffic** → [accident near me](/accident-near-me/)
+  · [why is the road closed?](/road-closed-near-me/)
+- **Bangs you can't place** → [gunshots or fireworks?](/gunshots-or-fireworks/)
+- **Fire trucks, no smoke** → [fire trucks, but no fire](/fire-trucks-near-me/)
+- **Smoke smell or haze** → [what's burning near me?](/whats-burning-near-me/)
+- **Lights just went out** → [power outage near me](/power-outage-near-me/)
+- **Your phone blared an alert** → [that loud phone
+  alert](/emergency-alert-just-went-off/)
+- **Not sure what the siren sound even was** → [what siren sounds
+  mean](/what-do-siren-sounds-mean/)
+
 ## Hearing a helicopter too?
 
 A helicopter circling on top of sirens usually means a police search, a medevac
@@ -128,3 +145,5 @@ know what's happening are the ones listening directly:
 
 Either way, the next time the sirens go past, you won't be searching — you'll
 already know.
+
+{% include scanner-kit.html %}
