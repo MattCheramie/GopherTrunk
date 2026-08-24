@@ -7,6 +7,28 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **`unfollowed_reason` on observed calls** (issue #356). Calls the control
+  channel announces but no voice tuner follows now say *why* in
+  `/api/v1/calls/active`: `no voice SDR configured`, `voice frequency outside
+  every voice device's tuning window`, or `all voice tuners busy with
+  higher-priority calls`. On a single wideband SDR whose IQ window misses the
+  system's voice channels, every call shows as "observed" — which operators
+  read as "the talkgroup has no voice"; the field makes the coverage gap (or
+  tuner shortage) visible instead. Omitted for followed calls. Diagnostic
+  only — grant handling and the decode path are unchanged. *(Re-landed: this
+  was described in PR #1121 but the commit never made it onto the merged
+  branch.)*
+- **`scanner.conventional[].talkgroup_id`** (issue #1105). Optional fixed
+  talkgroup ID a conventional channel surfaces under (API, call log, and
+  scan-type upload consumers — Rdio Scanner, OpenMHz, Broadcastify Calls)
+  instead of the positional synthetic `0x80000000 | list-index` default,
+  which silently shifts when channels are reordered/inserted/removed and
+  breaks `talkgroup_file` roster rows. Config validation rejects two channels
+  resolving to the same effective ID. Unset keeps today's positional
+  behaviour. *(Re-landed: described in PR #1121 but the commit never made it
+  onto the merged branch.)*
+
 ### Docs
 - **Documented the minimum macOS version (12 Monterey).** macOS binaries link
   against system APIs that first shipped in macOS 12 (e.g.

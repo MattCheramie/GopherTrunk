@@ -73,6 +73,16 @@ type ActiveCall struct {
 	// Phase 1) populate them. Issue #878 follow-up.
 	EVMPct *float64
 	SNRDb  *float64
+	// UnfollowedReason says WHY no voice tuner is following this call, for
+	// entries known only from the control channel (Device == nil). Set at the
+	// engine's grant-drop sites (no voice SDR configured / frequency outside
+	// every voice device's tuning window / all tuners busy), cleared the
+	// moment a tuner does follow the call. Diagnostic only — on a single
+	// wideband SDR whose IQ window doesn't cover the voice channels, every
+	// call surfaces as "observed", which operators read as "GopherTrunk says
+	// the talkgroup has no voice"; this field makes the actual cause visible
+	// in the API. Empty for followed calls. Issue #356.
+	UnfollowedReason string
 }
 
 // NewVoicePool returns a pool over the supplied devices. The order of

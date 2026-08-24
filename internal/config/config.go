@@ -549,6 +549,14 @@ type ConvChannelConfig struct {
 	// Default 3 dB; 0 = default.
 	SquelchHysteresisDb float64 `yaml:"squelch_hysteresis_db"`
 	Priority            int     `yaml:"priority"` // 1..10, 0 = unset
+	// TalkgroupID pins the synthetic talkgroup ID this channel surfaces
+	// under (API, call log, scan-type upload consumers such as Rdio
+	// Scanner / OpenMHz / Broadcastify Calls). Unset (0) keeps the
+	// positional default `0x80000000 | list-index`, which silently shifts
+	// when channels are reordered/inserted/removed — set an explicit ID
+	// to make talkgroup_file roster rows durable across list edits.
+	// Issue #1105.
+	TalkgroupID uint32 `yaml:"talkgroup_id"`
 	// Tone is the optional CTCSS / DCS sub-audible squelch gate.
 	// Zero / "none" disables tone gating (default).
 	Tone ConvToneConfig `yaml:"tone"`

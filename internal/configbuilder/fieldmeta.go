@@ -369,6 +369,7 @@ var fieldMetas = map[string]FieldMeta{
 	"ConvChannelConfig.ActivityDebounceMs":  {Label: "Activity debounce (ms)", Help: "Minimum sustained above-squelch time that resets the hangtime countdown, so a brief blip can't hold the channel open. Default 50 ms."},
 	"ConvChannelConfig.SquelchHysteresisDb": {Label: "Squelch hysteresis (dB)", Help: "Level margin below the squelch threshold before a signal counts as gone while a call is active. Default 3 dB."},
 	"ConvChannelConfig.Priority":            {Help: "Scan priority 1–10 (higher wins). 0 = unset."},
+	"ConvChannelConfig.TalkgroupID":         {Label: "Talkgroup ID", Help: "Fixed talkgroup ID this channel surfaces under (API, call log, Rdio Scanner / OpenMHz / Broadcastify uploads). 0 = positional default (0x80000000 | list index), which shifts when the channel list is edited — pin an ID to keep talkgroup_file roster rows durable."},
 	"ConvChannelConfig.Tone":                {Help: "Optional CTCSS/DCS sub-audible squelch gate."},
 	"ConvToneConfig.Mode":                   {Help: "Sub-audible gate: none, ctcss, or dcs.", Options: opts("", "none", "none", "none", "ctcss", "ctcss", "dcs", "dcs")},
 	"ConvToneConfig.CTCSSHz":                {Label: "CTCSS (Hz)", Help: "Target CTCSS frequency (50–300 Hz). Required when mode is ctcss."},
