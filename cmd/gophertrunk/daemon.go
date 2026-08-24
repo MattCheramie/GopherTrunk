@@ -1639,6 +1639,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
 					SquelchHysteresisDb: ch.SquelchHysteresisDb,
 					Priority:            ch.Priority,
+					TalkgroupID:         ch.TalkgroupID,
 					Tone: conventional.ToneConfig{
 						Mode:    ch.Tone.Mode,
 						CTCSSHz: ch.Tone.CTCSSHz,

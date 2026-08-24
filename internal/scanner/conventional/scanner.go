@@ -63,6 +63,12 @@ type Channel struct {
 	// engine's preemption logic respects it relative to other
 	// conv-scanner channels.
 	Priority int
+	// TalkgroupID, when non-zero, is the fixed talkgroup ID this
+	// channel's synthetic calls surface under instead of the
+	// positional 0x80000000|index default — so the ID survives scan-
+	// list reordering and talkgroup_file roster rows stay valid.
+	// Issue #1105.
+	TalkgroupID uint32
 	// Tone is the optional CTCSS / DCS gate. When set, the
 	// scanner only declares "carrier present" while BOTH the
 	// IQ-power squelch is open AND the configured sub-audible
@@ -555,11 +561,16 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	s.lastBreakAt[idx] = now
 	s.mu.Unlock()
 
-	// Synthesize a Grant. GroupID is derived from the channel index
-	// so each conv channel surfaces as a distinct talkgroup in the
+	// Synthesize a Grant. GroupID defaults to a channel-index-derived
+	// value so each conv channel surfaces as a distinct talkgroup in the
 	// API + call log; bit 31 set so it can't collide with a real
-	// trunked GroupID (which are 24/28-bit fields in practice).
-	gid := uint32(0x80000000) | uint32(idx)
+	// trunked GroupID (which are 24/28-bit fields in practice). An
+	// explicit talkgroup_id pins the ID so it survives scan-list
+	// reordering (#1105); config validation rejects collisions.
+	gid := ch.TalkgroupID
+	if gid == 0 {
+		gid = uint32(0x80000000) | uint32(idx)
+	}
 	g := trunking.Grant{
 		System:      s.opts.SystemName,
 		Protocol:    "fm-conv",

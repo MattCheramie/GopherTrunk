@@ -691,6 +691,26 @@ func (c Config) validateScanner() []error {
 			errs = append(errs, err)
 		}
 	}
+	// Two channels resolving to the same effective talkgroup ID would fold
+	// into one synthetic call at the engine, which keys on (system, GroupID)
+	// — reject the collision loudly instead. The effective ID is the explicit
+	// talkgroup_id override, or the positional 0x80000000|index default, so
+	// this also catches an override colliding with another channel's default.
+	// Issue #1105.
+	seen := map[uint32]int{}
+	for i, ch := range c.Scanner.Conventional {
+		gid := ch.TalkgroupID
+		if gid == 0 {
+			gid = 0x80000000 | uint32(i)
+		}
+		if j, dup := seen[gid]; dup {
+			errs = append(errs, fmt.Errorf(
+				"scanner.conventional[%d]: effective talkgroup id %d collides with scanner.conventional[%d] — set distinct talkgroup_id values",
+				i, gid, j))
+			continue
+		}
+		seen[gid] = i
+	}
 	return errs
 }
 

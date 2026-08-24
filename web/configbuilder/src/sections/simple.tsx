@@ -465,6 +465,7 @@ export function ScannerSection() {
             ActivityDebounceMs: 0,
             SquelchHysteresisDb: 0,
             Priority: 0,
+            TalkgroupID: 0,
             Tone: { Mode: "", CTCSSHz: 0, DCSCode: "" },
           })}
           itemTitle={(ch) => ch.Label || "channel"}
@@ -489,6 +490,7 @@ export function ScannerSection() {
                 <NumberField label="Activity debounce (ms)" value={ch.ActivityDebounceMs} onChange={(x) => setCh({ ...ch, ActivityDebounceMs: x })} />
                 <NumberField label="Squelch hysteresis (dB)" step={0.1} value={ch.SquelchHysteresisDb} onChange={(x) => setCh({ ...ch, SquelchHysteresisDb: x })} />
                 <NumberField label="Priority" value={ch.Priority} onChange={(x) => setCh({ ...ch, Priority: x })} />
+                <NumberField label="Talkgroup ID (0 = positional)" value={ch.TalkgroupID} onChange={(x) => setCh({ ...ch, TalkgroupID: x })} />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <SelectField

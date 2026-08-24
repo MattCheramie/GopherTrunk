@@ -1210,6 +1210,12 @@ scanner:
   #     squelch_dbfs: -48
   #     hangtime_ms: 1500
   #     priority: 4
+  #     # Optional fixed talkgroup ID for the API / call log / scan-type
+  #     # upload consumers (Rdio Scanner, OpenMHz, Broadcastify Calls).
+  #     # Unset = a positional synthetic ID (0x80000000 | list index) that
+  #     # SHIFTS when channels are reordered/inserted/removed — pin an
+  #     # explicit ID to keep talkgroup_file roster rows durable (#1105).
+  #     # talkgroup_id: 2147500000
   #     # Optional CTCSS / DCS sub-audible squelch gate. With tone
   #     # gating set the scanner only opens when both the carrier is
   #     # present AND the configured tone is detected, so adjacent-

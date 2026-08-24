@@ -247,6 +247,7 @@ export interface ConvChannelConfig {
   ActivityDebounceMs: number;
   SquelchHysteresisDb: number;
   Priority: number;
+  TalkgroupID: number;
   Tone: ConvToneConfig;
 }
 
