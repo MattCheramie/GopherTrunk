@@ -4,8 +4,9 @@ title: "Power Outage Near Me: What Happened and When Is It Back?"
 description: "Lights just went out? How to find out what caused the power outage near you and when it'll be restored — utility outage maps, the crew radio traffic, transformer bangs, and keeping information flowing when the Wi-Fi is down."
 keywords: power outage near me, why is the power out, power outage in my area right now, when will power be back, loud bang power went out, transformer explosion, outage map, blackout near me
 permalink: /power-outage-near-me/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How do I find out why the power is out in my area?"
     a: "Start with your utility's outage map — search your utility's name plus 'outage map' — which shows the outage footprint, customers affected, cause when known, and a restoration estimate; report your outage there or by text so your address is counted. For the cause in real time, public-safety radio often has it first: wires-down, pole-hit, and transformer calls are dispatched to fire and police immediately."

@@ -4,8 +4,9 @@ title: "What Happened Near Me Last Night? How to Look It Up"
 description: "Woke up to helicopter noise, sirens, or police tape and nothing on the news? How to reconstruct what happened near you last night — scanner archives, CAD logs, crime maps, blotters, records requests — and how to have your own answer next time."
 keywords: what happened near me last night, sirens last night, police in my neighborhood last night, helicopter last night, find out what happened, police blotter lookup, scanner archives, crime near me yesterday
 permalink: /what-happened-near-me-last-night/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How do I find out what happened in my neighborhood last night?"
     a: "Work backward through the records the incident left: Broadcastify's audio archives of your county's scanner feed (paid tier) let you replay the dispatch traffic from the exact time; the agency's calls-for-service or CAD log lists the call type and block; crime maps like CityProtect and SpotCrime plot it once the report posts; and the department's blotter or press release covers anything major."

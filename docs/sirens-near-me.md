@@ -4,8 +4,9 @@ title: "Why Are There Sirens Near Me Right Now? How to Find Out"
 description: "Hearing sirens near you right now? The fastest ways to find out what's happening — live scanner feeds, dispatch call logs, incident apps, flight trackers, and local alerts — ranked by how quickly they'll actually answer."
 keywords: sirens near me, why are there sirens near me, sirens near me right now, what's happening near me, sirens in my neighborhood, why do I hear sirens, emergency near me, find out why sirens
 permalink: /sirens-near-me/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How can I find out why there are sirens near me right now?"
     a: "The fastest reliable answer is a live police/fire scanner feed for your county (Broadcastify or the Scanner Radio app), because dispatchers describe the incident and address in real time. Back that up with your agency's active-calls (CAD) page, the Citizen or PulsePoint apps where available, and your police/fire department's social media, which usually posts only for major incidents."
@@ -110,11 +111,21 @@ their own faster path:
 - **Crash sounds or stopped traffic** → [accident near me](/accident-near-me/)
   · [why is the road closed?](/road-closed-near-me/)
 - **Bangs you can't place** → [gunshots or fireworks?](/gunshots-or-fireworks/)
+  · [what was that loud boom?](/loud-boom-near-me/)
 - **Fire trucks, no smoke** → [fire trucks, but no fire](/fire-trucks-near-me/)
+- **An ambulance next door** → [ambulance at a neighbor's
+  house](/ambulance-at-neighbors-house/)
+- **Armored vehicles / a street locked down** → [SWAT in my
+  neighborhood](/swat-team-in-my-neighborhood/)
 - **Smoke smell or haze** → [what's burning near me?](/whats-burning-near-me/)
 - **Lights just went out** → [power outage near me](/power-outage-near-me/)
 - **Your phone blared an alert** → [that loud phone
   alert](/emergency-alert-just-went-off/)
+- **Something in the sky** → [a drone over the
+  house](/drone-flying-over-my-house/) · [military
+  jets](/military-jets-flying-over-my-house/)
+- **Train horns all night** → [why train horns keep
+  blowing](/train-horns-blowing/)
 - **Not sure what the siren sound even was** → [what siren sounds
   mean](/what-do-siren-sounds-mean/)
 

@@ -4,8 +4,9 @@ title: "That Loud Phone Alert: What It Was and What It Means"
 description: "Your phone just blared an emergency alert — Amber Alert, tornado warning, flash flood, or a test? What Wireless Emergency Alerts are, why every phone in the room went off, how to look up the alert you dismissed too fast, and what to do about each type."
 keywords: emergency alert on phone, why did my phone make that noise, amber alert near me, wireless emergency alert, phone alarm went off loud, emergency alert just went off, what was that alert, EAS test today
 permalink: /emergency-alert-just-went-off/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "Why did my phone just make a loud emergency alert sound?"
     a: "You received a Wireless Emergency Alert (WEA) — a broadcast from cell towers in a targeted area, sent by authorized agencies for imminent threats (tornado, flash flood), Amber Alerts, evacuation orders, or national tests. Every capable phone on those towers sounds at once, which is why the whole restaurant went off together."

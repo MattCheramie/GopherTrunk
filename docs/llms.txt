@@ -69,6 +69,12 @@ Practical, honest guides for the moment someone hears sirens or sees emergency l
 - [What's burning near me?]({{ '/whats-burning-near-me/' | absolute_url }}): smoke-investigation dispatch calls, wildfire and air-quality maps, and prescribed-burn schedules.
 - [Power outage near me]({{ '/power-outage-near-me/' | absolute_url }}): outage maps, the radio traffic that names the cause, and staying informed when the Wi-Fi is down.
 - [That loud phone alert]({{ '/emergency-alert-just-went-off/' | absolute_url }}): Wireless Emergency Alerts explained — types, recovering a dismissed alert, and the detail the message leaves out.
+- [What was that loud boom?]({{ '/loud-boom-near-me/' | absolute_url }}): transformers, sonic booms, blasting, frost quakes — and the dispatch "area check" that settles it.
+- [Ambulance at a neighbor's house]({{ '/ambulance-at-neighbors-house/' | absolute_url }}): what the response pattern means, what stays private and why, and what a good neighbor does.
+- [SWAT in my neighborhood]({{ '/swat-team-in-my-neighborhood/' | absolute_url }}): warrant services vs standoffs, what to do while it's active, and the honest limits of what a scanner can hear.
+- [Drone flying over my house]({{ '/drone-flying-over-my-house/' | absolute_url }}): identify any drone with free Remote ID apps, police drone programs, and the legal lines in both directions.
+- [Military jets flying over]({{ '/military-jets-flying-over-my-house/' | absolute_url }}): training routes, refueling orbits, and why fighters don't show on flight trackers.
+- [Why train horns keep blowing]({{ '/train-horns-blowing/' | absolute_url }}): the required horn pattern, stuck crossing gates and the blue-sign number, and quiet zones.
 
 ## Police scanner buyer's guides & hardware
 Consumer scanner hardware (Uniden, Whistler) compared honestly against a free SDR + GopherTrunk.

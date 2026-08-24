@@ -4,8 +4,9 @@ title: "Accident Near Me? How to Find Out What Happened"
 description: "Just heard a crash, saw a wreck, or hit stopped traffic? How to find out about an accident near you right now — dispatch audio, state DOT maps, traffic apps, CAD logs — and how to get the answer before the map turns red."
 keywords: accident near me, accident near me today, crash near me, what happened on the highway, car accident in my neighborhood, wreck near me now, traffic accident lookup, road accident near me
 permalink: /accident-near-me/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How do I find out about an accident near me right now?"
     a: "The fastest sources, in order: a live police/fire scanner feed for your county, where the crash is dispatched with location and severity within seconds; your state DOT's 511 traffic map, which posts confirmed incidents on highways; Google/Waze incident markers, which appear once drivers report or slow down; and the agency's active-calls page. News coverage arrives only for major crashes, often an hour or more later."

@@ -4,8 +4,9 @@ title: "Why Are There Fire Trucks on My Street (But No Fire)?"
 description: "Fire trucks at a neighbor's house with no smoke, no flames? Why fire engines respond to medical calls, gas leaks, alarms, and lift assists, why so many units show up at once — and how to find out exactly what this call is."
 keywords: fire trucks near me, why are there fire trucks on my street, fire truck at neighbors house, fire truck and ambulance no fire, why do fire trucks come for medical calls, fire trucks in my neighborhood
 permalink: /fire-trucks-near-me/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "Why is a fire truck at my neighbor's house if there's no fire?"
     a: "Most likely a medical call. In most of the US, fire engines are dispatched alongside ambulances because fire stations are more numerous and often arrive first, and firefighters are trained EMTs. Other common no-fire reasons: automatic fire-alarm activations, gas odors, carbon-monoxide alarms, lift assists, and lock-outs with someone at risk inside."

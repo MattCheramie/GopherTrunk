@@ -4,8 +4,9 @@ title: "Why Is the Road Closed? Find Out What's Blocking Traffic"
 description: "Road closed, traffic at a dead stop, police blocking an intersection? How to find out why — dispatch audio, 511/DOT maps, utility and event calendars — and how to tell a ten-minute closure from an all-day one."
 keywords: why is the road closed, road closed near me, why is traffic stopped, police blocking road, road blocked near me, highway shut down, why is the street closed, traffic stopped on highway
 permalink: /road-closed-near-me/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How do I find out why a road is closed near me?"
     a: "Fastest: a live scanner feed for your county — closures are coordinated over police dispatch, with the reason stated plainly. For highways, the state 511/DOT map posts confirmed closures and estimated durations. City public-works or police social accounts cover planned closures; Waze shows the closure but rarely the cause."

@@ -4,8 +4,9 @@ title: "Gunshots or Fireworks? How to Tell — and How to Find Out"
 description: "Heard bangs and can't tell if it was gunshots or fireworks? The audible differences, what to do, and how to find out for sure — whether police were called, what they found, and what was actually said on dispatch."
 keywords: gunshots or fireworks, was that gunshots, gunshots near me, loud bangs near me, fireworks or gunfire, heard gunshots in my neighborhood, popping sounds outside, shots fired near me
 permalink: /gunshots-or-fireworks/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How can I tell gunshots from fireworks?"
     a: "Rules of thumb, not guarantees: gunfire tends to be a sharp, uniform crack in a deliberate or irregular rhythm with no whistle and nothing visible; fireworks tend to vary shot-to-shot, often whistle or crackle, come in celebratory clusters, and may flash above rooflines. Echo off buildings blurs all of it — even experienced ears get it wrong, which is why acoustic gunshot-detection systems exist."

@@ -4,8 +4,9 @@ title: "Smell Smoke? How to Find Out What's Burning Near You"
 description: "Smoke smell in the house, haze outside, or a column on the horizon? How to find out what's burning near you — fire dispatch audio, wildfire maps like Watch Duty and InciWeb, air-quality maps, and when a smoke smell means call 911."
 keywords: what's burning near me, why does it smell like smoke, smoke smell in my neighborhood, fire near me right now, smoke in the air today, wildfire smoke near me, haze outside why, smoke on the horizon
 permalink: /whats-burning-near-me/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How do I find out what's burning near me right now?"
     a: "Check, fastest first: your county's fire dispatch on a live scanner feed — every working fire, brush fire, and 'smoke investigation' call is dispatched with a location; Watch Duty (western US) or your state's wildfire map for wildland fires; PulsePoint where your fire agency participates; and the fire department's social feed for anything major. A 'smoke investigation' call at your block often literally answers your question in real time."

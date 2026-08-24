@@ -4,8 +4,9 @@ title: "Police Activity Near Me: How to Find Out What's Going On"
 description: "Police cars on your street and no explanation? Every way to find out what the police activity near you is — live dispatch audio, active-call CAD logs, crime maps, incident apps, and public records — with honest notes on what each one misses."
 keywords: police activity near me, police in my neighborhood, why are police on my street, police cars near me, what are police doing near me, police activity in my area now, find out police activity
 permalink: /police-activity-near-me/
-nav_group: Hardware
 affiliate: true
+unlisted: true
+search: false
 faq:
   - q: "How do I find out about police activity in my neighborhood right now?"
     a: "Check, in order: a live scanner feed for your county (Broadcastify or the Scanner Radio app) where dispatchers narrate calls in real time; your agency's active calls-for-service (CAD) page; and the Citizen app if you're in a covered metro. Social media and news only cover major incidents, usually well after the fact."

@@ -181,7 +181,3 @@ Match those three abilities to what your county actually runs — start with
 [encryption](/police-scanner-encryption/) stops everyone equally. If you own a PC, a
 [$30 dongle and GopherTrunk](/police-scanner-vs-sdr/) does all of this and records
 every call.
-
-And if what brought you here is sirens or flashing lights outside *right now*,
-skip the theory: [why are there sirens near me?](/sirens-near-me/) walks
-through every fast way to find out what's happening.

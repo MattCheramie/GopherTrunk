@@ -105,7 +105,3 @@ digital scanner alive. But buy on the truth of your own airwaves: check whether
 your PD is [still unencrypted](/police-scanner-encryption/) first, lean on
 [fire/EMS](/fire-ems-scanner/) and neighboring agencies where it isn't, and
 remember that **no scanner decodes AES** — anything promising otherwise is lying.
-While you decide, the free lookup methods in
-[police activity near me](/police-activity-near-me/) and
-[why are there sirens near me](/sirens-near-me/) answer tonight's questions
-without buying anything.
