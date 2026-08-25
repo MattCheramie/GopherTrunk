@@ -131,6 +131,8 @@ func applySystemKnobs(sys *trunking.System, knobs map[string]string) {
 		switch strings.ToLower(strings.TrimSpace(k)) {
 		case "p25_phase1_demod_mode":
 			sys.P25Phase1DemodMode = v
+		case "p25_phase1_soft_decision":
+			sys.P25Phase1SoftDecision = v
 		case "p25_phase2_trellis_mode":
 			sys.P25Phase2TrellisMode = v
 		case "p25_phase2_rs_mode":
@@ -163,6 +165,8 @@ func applySystemKnobs(sys *trunking.System, knobs map[string]string) {
 			sys.TETRAClockMode = v
 		case "nxdn_viterbi_mode":
 			sys.NXDNViterbiMode = v
+		case "nxdn_soft_decision":
+			sys.NXDNSoftDecision = v
 		case "nxdn_deviation_hz":
 			sys.NXDNDeviationHz, _ = strconv.ParseFloat(v, 64)
 		case "edacs_bch_mode":

@@ -98,6 +98,20 @@ type Options struct {
 	// samples reconstructs the 4-level eye. Optional; used by the
 	// diagnostic symbol scope.
 	EyeSink func(oversampled []float32, sps int)
+
+	// SoftDecision enables soft-decision output (nxdn_soft_decision,
+	// mirroring the P25 Phase 2 receiver's contract): alongside the hard
+	// dibits the receiver derives, per dibit, two per-bit log-likelihood
+	// ratios from the 4-level soft symbol's distance to the slicer
+	// thresholds — the MSB's LLR from the sign axis, the LSB's from the
+	// inner/outer magnitude threshold — and emits (dibits, llrs, baseIdx)
+	// via SoftDibitSink so the CAC decode can run a true per-bit soft
+	// Viterbi. Requires SoftDibitSink; the hard DibitSink is not called on
+	// the soft path. Default false ⇒ the hard path runs byte-identically.
+	SoftDecision bool
+	// SoftDibitSink receives the (dibits, soft, baseIdx) stream when
+	// SoftDecision is set. Required in that case.
+	SoftDibitSink nxdn.SoftDibitSink
 }
 
 // Receiver is the composed IQ → dibit pipeline.
@@ -108,6 +122,14 @@ type Receiver struct {
 	agc       demod.C4FMSymbolAGC
 	dibitSink nxdn.DibitSink
 	dibitBase int
+
+	// Soft-decision path (Options.SoftDecision): per-dibit LLRs derived
+	// from the soft symbols against the slicer thresholds. llrThreshold is
+	// the inner/outer magnitude decision boundary (2·slicerScale/3, the
+	// same constant demod.C4FM.Slice decides on).
+	softDibitSink nxdn.SoftDibitSink
+	llrThreshold  float32
+	llrBuf        []float32
 
 	// Optional diagnostic taps (symbol scope). nil = no-op.
 	softSink   func([]float32)
@@ -129,7 +151,11 @@ func New(opts Options) *Receiver {
 	if opts.SampleRateHz <= 0 {
 		panic("receiver: SampleRateHz is required")
 	}
-	if opts.DibitSink == nil {
+	if opts.SoftDecision {
+		if opts.SoftDibitSink == nil {
+			panic("receiver: SoftDibitSink is required when SoftDecision is set")
+		}
+	} else if opts.DibitSink == nil {
 		panic("receiver: DibitSink is required")
 	}
 	sps := opts.SampleRateHz / SymbolRate
@@ -180,11 +206,15 @@ func New(opts Options) *Receiver {
 			Target: float32(demod.C4FMAGCTarget(slicerScale, opts.DeviationHz)),
 			Rate:   1.0 / 256.0,
 		},
-		dibitSink:  opts.DibitSink,
-		softSink:   opts.SoftSink,
-		symbolSink: opts.SymbolSink,
-		eyeSink:    opts.EyeSink,
-		eyeSPS:     int(sps + 0.5),
+		dibitSink:     opts.DibitSink,
+		softSink:      opts.SoftSink,
+		symbolSink:    opts.SymbolSink,
+		eyeSink:       opts.EyeSink,
+		eyeSPS:        int(sps + 0.5),
+		softDibitSink: opts.SoftDibitSink,
+		// The inner/outer decision boundary demod.C4FM.Slice uses; the
+		// sign axis boundary is 0. Anchors the per-bit LLR derivation.
+		llrThreshold: float32(2 * slicerScale / 3),
 	}
 }
 
@@ -239,6 +269,30 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 	for i, sym := range r.sliced {
 		r.dibits[i] = SymbolToDibit(sym)
+	}
+	if r.softDibitSink != nil {
+		// Per-bit LLRs against the slicer's two decision axes, in the
+		// framing convention (LLR > 0 ⇒ bit 0). MSB = sign bit (0 for a
+		// positive symbol): distance from the 0 axis, +y. LSB = magnitude
+		// bit (1 for an outer ±3 symbol): distance from the inner/outer
+		// threshold, t − |y|. The soft Viterbi is scale-invariant so no
+		// normalisation is needed — only consistent relative scaling.
+		if cap(r.llrBuf) < 2*len(r.symbols) {
+			r.llrBuf = make([]float32, 2*len(r.symbols))
+		} else {
+			r.llrBuf = r.llrBuf[:2*len(r.symbols)]
+		}
+		for i, y := range r.symbols {
+			ay := y
+			if ay < 0 {
+				ay = -ay
+			}
+			r.llrBuf[2*i] = y                     // MSB: sign axis
+			r.llrBuf[2*i+1] = r.llrThreshold - ay // LSB: magnitude axis
+		}
+		r.softDibitSink(r.dibits, r.llrBuf, r.dibitBase)
+		r.dibitBase += len(r.dibits)
+		return
 	}
 	r.dibitSink(r.dibits, r.dibitBase)
 	r.dibitBase += len(r.dibits)

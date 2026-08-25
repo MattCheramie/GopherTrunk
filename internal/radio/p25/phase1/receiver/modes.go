@@ -79,6 +79,26 @@ func ParseDemodMode(s string) (DemodMode, bool) {
 	}
 }
 
+// ParseSoftDecision maps a config / user-facing string into the
+// p25_phase1_soft_decision boolean, mirroring the P25 Phase 2 receiver's
+// parser. Recognised values (case-insensitive): "" / "off" / "false" / "0"
+// → false (the default — the hard TSBK trellis, byte-for-byte the
+// historical behaviour); "on" / "true" / "1" → true (the C4FM receiver
+// emits per-bit LLRs via BitLLRSink and the control channel's TSBK trellis
+// runs the true per-bit soft Viterbi). C4FM only — the CQPSK path has no
+// real 4-level soft track and decodes hard regardless. Unknown strings
+// return false with `ok = false` so callers can warn and fall back.
+func ParseSoftDecision(s string) (on bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return false, true
+	case "on", "true", "1":
+		return true, true
+	default:
+		return false, false
+	}
+}
+
 // Clock-mode selection is intentionally not exposed on this
 // receiver. The C4FM path uses Mueller-Müller (proven on Phase 1
 // for years; well-suited to the real-valued FM-discriminator

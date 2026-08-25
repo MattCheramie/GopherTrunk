@@ -1091,6 +1091,8 @@ trunking:
   #     protocol: nxdn
   #     control_channels: [462_212_500]
   #     nxdn_viterbi_mode: "off"        # legacy 44-dibit raw CAC
+  #     # nxdn_soft_decision: "on"      # per-bit soft Viterbi on the spec
+  #     #                               # CAC decode (marginal-signal gain)
   #     # nxdn_deviation_hz: 2400       # override 1800 Hz spec default
   #                                     # for non-spec transmitters (see
   #                                     # samples/nxdn/README.md sweep recipe)
@@ -1111,6 +1113,9 @@ trunking:
   #                                     # through the linear path; without
   #                                     # it voice grants on a CQPSK site
   #                                     # time out with no audio (#356).
+  #     # p25_phase1_soft_decision: "on"  # per-bit soft Viterbi on the
+  #     #                               # C4FM TSBK trellis (marginal-
+  #     #                               # signal gain; C4FM sites only)
   #
   #   - name: "Legacy-P25-Phase2"
   #     protocol: p25

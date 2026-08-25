@@ -772,14 +772,24 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			P25Phase2Equalizer:    p2Equalizer,
 			P25Phase2DCBlock:      p2DCBlock,
 		})
-		rx := p25phase1rx.New(p25phase1rx.Options{
+		p1SoftDecision, p1SoftOK := p25phase1rx.ParseSoftDecision(sys.P25Phase1SoftDecision)
+		if !p1SoftOK {
+			log.Warn("widebandt2: unrecognised p25_phase1_soft_decision; falling back to off",
+				"system", sys.Name, "value", sys.P25Phase1SoftDecision)
+		}
+		p1RxOpts := p25phase1rx.Options{
 			SampleRateHz: outRateHz,
 			DeviationHz:  p25Phase1DeviationHz,
 			DemodMode:    demodMode,
 			DibitSink: p25phase1.DibitSink(func(d []uint8, b int) {
 				cc.Process(d, b)
 			}),
-		})
+		}
+		if p1SoftDecision && demodMode == p25phase1rx.DemodC4FM {
+			// Soft TSBK path, mirroring the ccdecoder pipeline (C4FM only).
+			p1RxOpts.BitLLRSink = cc.StashSoft
+		}
+		rx := p25phase1rx.New(p1RxOpts)
 		// Decode-drought watchdog, mirroring the ccdecoder p25Phase1Pipeline.
 		// The CC's Process handles the non-contiguous dibit index a receiver
 		// reset produces (its buffer resync path), so rx.Reset alone suffices.

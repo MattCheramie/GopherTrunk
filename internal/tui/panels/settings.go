@@ -194,16 +194,16 @@ fecRefresh:
 	// to) the FEC tab — the hash gate keeps the cost negligible.
 	if p.tab == tabFEC {
 		h := hashRows(s.Systems, func(sys client.SystemDTO) string {
-			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%.1f|%s",
+			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%.1f|%s",
 				sys.Name, sys.Protocol,
 				sys.TETRAColourCode, sys.TETRAChannel,
 				sys.TETRAChannelCoding,
 				sys.LTRFCSMode, sys.LTRManchesterMode,
-				sys.P25Phase1DemodMode,
+				sys.P25Phase1DemodMode, sys.P25Phase1SoftDecision,
 				sys.P25Phase2TrellisMode, sys.P25Phase2RSMode,
 				sys.P25Phase2ScramblerMode, sys.P25Phase2SoftDecision,
 				sys.P25Phase2Equalizer, sys.P25Phase2DCBlock,
-				sys.NXDNViterbiMode,
+				sys.NXDNViterbiMode, sys.NXDNSoftDecision,
 				sys.NXDNDeviationHz,
 				sys.EDACSBCHMode)
 		})
@@ -470,6 +470,7 @@ func fecSummary(s client.SystemDTO) string {
 		parts = append(parts, "manchester: "+orDefault(s.LTRManchesterMode, "soft"))
 	case "p25":
 		parts = append(parts, "demod: "+orDefault(s.P25Phase1DemodMode, "c4fm"))
+		parts = append(parts, "soft: "+orDefault(s.P25Phase1SoftDecision, "off"))
 	case "p25-phase2":
 		parts = append(parts, "trellis: "+orDefault(s.P25Phase2TrellisMode, "on"))
 		parts = append(parts, "rs: "+orDefault(s.P25Phase2RSMode, "off"))
@@ -479,6 +480,7 @@ func fecSummary(s client.SystemDTO) string {
 		parts = append(parts, "dc: "+orDefault(s.P25Phase2DCBlock, "off"))
 	case "nxdn":
 		parts = append(parts, "viterbi: "+orDefault(s.NXDNViterbiMode, "spec"))
+		parts = append(parts, "soft: "+orDefault(s.NXDNSoftDecision, "off"))
 		if s.NXDNDeviationHz > 0 {
 			parts = append(parts, fmt.Sprintf("deviation: %.0f Hz", s.NXDNDeviationHz))
 		} else {

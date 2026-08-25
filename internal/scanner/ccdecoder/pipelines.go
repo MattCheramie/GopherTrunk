@@ -353,7 +353,12 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			return off
 		},
 	})
-	rx = p25phase1rx.New(p25phase1rx.Options{
+	p1SoftDecision, p1SoftOK := p25phase1rx.ParseSoftDecision(opts.System.P25Phase1SoftDecision)
+	if !p1SoftOK {
+		log.Warn("ccdecoder: unrecognised p25_phase1_soft_decision; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase1SoftDecision)
+	}
+	rxOpts := p25phase1rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		// P25 Phase 1 nominal peak deviation per TIA-102.BAAA-A
 		// — calibrates the slicer thresholds against the
@@ -375,7 +380,15 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
-	})
+	}
+	if p1SoftDecision && demodMode == p25phase1rx.DemodC4FM {
+		// Soft path (p25_phase1_soft_decision): the receiver emits per-bit
+		// LLRs immediately before each aligned dibit batch; the CC stashes
+		// them so its TSBK trellis runs the true per-bit soft Viterbi
+		// (StashSoft-then-Process, the TETRA contract). C4FM only.
+		rxOpts.BitLLRSink = cc.StashSoft
+	}
+	rx = p25phase1rx.New(rxOpts)
 	// build is the link-time version stamp. Decoder log excerpts are
 	// what issue reporters paste, and a git-describe string there is
 	// the only reliable way to tell which fixes a build contains —
@@ -1393,14 +1406,32 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	if opts.System.NXDNDeviationHz > 0 {
 		deviationHz = opts.System.NXDNDeviationHz
 	}
-	rx := nxdnrx.New(nxdnrx.Options{
+	softDecision, softOK := nxdnrx.ParseSoftDecision(opts.System.NXDNSoftDecision)
+	if !softOK {
+		opts.Log.Warn("ccdecoder: unrecognised nxdn_soft_decision; falling back to off",
+			"system", opts.SystemName, "value", opts.System.NXDNSoftDecision)
+	}
+	rxOpts := nxdnrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  deviationHz,
-		DibitSink: func(dibits []uint8, baseIdx int) {
+	}
+	if softDecision {
+		// Soft path (nxdn_soft_decision): the receiver derives per-bit LLRs
+		// alongside the hard dibits and the CC's ViterbiSpec CAC decode runs
+		// the true per-bit soft Viterbi. The dibit tap still sees the hard
+		// decisions, so /diag consumers are unchanged.
+		rxOpts.SoftDecision = true
+		rxOpts.SoftDibitSink = func(dibits []uint8, soft []float32, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
+			cc.ProcessSoft(dibits, soft, baseIdx)
+		}
+	} else {
+		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
-		},
-	})
+		}
+	}
+	rx := nxdnrx.New(rxOpts)
 	return &nxdnPipeline{
 		rx: rx, cc: cc, deviationHz: deviationHz,
 		log: opts.Log, system: opts.SystemName,

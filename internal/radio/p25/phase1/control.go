@@ -70,6 +70,22 @@ type ControlChannel struct {
 	bufBase int
 	pending []pendingHit
 
+	// Soft-decision TSBK path (p25_phase1_soft_decision). softBuf carries
+	// TWO per-bit LLRs per buffered dibit (MSB then LSB, framing
+	// convention: LLR > 0 ⇒ bit 0), kept in strict lockstep with buf —
+	// appended alongside it, trimmed by the same amount, dropped on any
+	// rebase or misalignment. When lockstep holds, resumeTSBKBlocks runs
+	// the TSBK trellis through DecodeTSBKChannelSoft (true per-bit soft
+	// Viterbi); the moment it doesn't (a receiver without a soft tap, a
+	// stash that skipped a chunk), the decode falls back to the hard path
+	// so soft can never be worse than absent. pendingSoft is the one-call
+	// stash StashSoft fills just before the matching Process(dibits,
+	// baseIdx) call, mirroring the TETRA StashSoft contract.
+	softBuf         []float32
+	pendingSoft     []float32
+	pendingSoftBase int
+	pendingSoftSet  bool
+
 	// aliasAsm reassembles multi-fragment vendor talker-alias TSBKs
 	// into a radio's display name. Self-synchronised (its own mutex).
 	aliasAsm *TalkerAliasAssembler
@@ -691,11 +707,25 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	if len(c.buf) > 0 && baseIdx != c.bufBase+len(c.buf) {
 		c.buf = c.buf[:0]
 		c.pending = c.pending[:0]
+		c.softBuf = c.softBuf[:0]
 	}
 	if len(c.buf) == 0 {
 		c.bufBase = baseIdx
 	}
+	// Keep the soft-LLR buffer in strict lockstep with buf: append the
+	// stashed LLRs only when they belong to exactly this chunk AND the
+	// buffer was in lockstep before the append; anything else drops the
+	// soft track (hard fallback) rather than risking a misaligned decode.
+	softInStep := c.pendingSoftSet && c.pendingSoftBase == baseIdx &&
+		len(c.pendingSoft) == 2*len(dibits) && len(c.softBuf) == 2*len(c.buf)
 	c.buf = append(c.buf, dibits...)
+	if softInStep {
+		c.softBuf = append(c.softBuf, c.pendingSoft...)
+	} else {
+		c.softBuf = c.softBuf[:0]
+	}
+	c.pendingSoftSet = false
+	c.pendingSoft = c.pendingSoft[:0]
 	for i, h := range hits {
 		// margin = fswTol+1 − bestMismatch, so bestMismatch = fswTol+1 − margin.
 		// A hit beyond the strict budget was reachable only via the wider
@@ -881,7 +911,27 @@ func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
 		blockStart := ph.nextStart // absolute dibit index of this TSBK block
 		fswStart := ph.fswStart - c.bufBase
 		tsbkChannel, next := gatherFrameDibits(c.buf, start, 98, fswStart, ph.strip)
-		tsbk, metric, err := DecodeTSBKChannel(rotateDibits(tsbkChannel, ph.rot))
+		var (
+			tsbk   TSBK
+			metric int
+			err    error
+		)
+		// Soft-decision TSBK decode (p25_phase1_soft_decision): when the
+		// receiver stashed per-bit LLRs in lockstep with the dibit stream
+		// and the frame's rotation is expressible on the real soft track,
+		// run the true per-bit soft Viterbi; the TSBK CRC16 still
+		// corroborates either way. Anything else decodes hard, unchanged.
+		if llrs, ok := c.gatherFrameLLRs(start, 98, fswStart, ph.strip, ph.rot); ok {
+			var softMetric float64
+			tsbk, softMetric, err = DecodeTSBKChannelSoft(llrs)
+			// The soft metric is a correlation sum (lower = better, may be
+			// negative) — clamp into the diagnostic int the block report
+			// carries; it is not comparable to the hard corrected-dibit
+			// count and only signals relative confidence.
+			metric = int(softMetric)
+		} else {
+			tsbk, metric, err = DecodeTSBKChannel(rotateDibits(tsbkChannel, ph.rot))
+		}
 		if err != nil {
 			if errors.Is(err, CRCError) {
 				atomic.AddInt64(&c.stats.TSBKCRCFailed, 1)
@@ -1152,9 +1202,63 @@ func (c *ControlChannel) trimBuffer() {
 		}
 	}
 	if keep > 0 {
+		// Trim the soft-LLR buffer by the same amount when it is in
+		// lockstep; otherwise drop it (hard fallback until realigned).
+		if len(c.softBuf) == 2*len(c.buf) {
+			c.softBuf = append(c.softBuf[:0], c.softBuf[2*keep:]...)
+		} else {
+			c.softBuf = c.softBuf[:0]
+		}
 		c.buf = append(c.buf[:0], c.buf[keep:]...)
 		c.bufBase += keep
 	}
+}
+
+// StashSoft hands the ControlChannel the per-bit LLRs for the dibit chunk
+// the receiver is about to deliver via Process(dibits, baseIdx) — the
+// p25_phase1_soft_decision input, mirroring the TETRA StashSoft contract.
+// llrs carries two values per dibit (MSB then LSB, framing convention).
+// Call immediately before the matching Process call, on the same
+// goroutine; a stash whose base or length doesn't match the next Process
+// chunk is discarded and that stretch decodes hard.
+func (c *ControlChannel) StashSoft(llrs []float32, baseIdx int) {
+	c.pendingSoft = append(c.pendingSoft[:0], llrs...)
+	c.pendingSoftBase = baseIdx
+	c.pendingSoftSet = true
+}
+
+// gatherFrameLLRs mirrors gatherFrameDibits over the soft-LLR buffer:
+// count dibits' worth of LLR pairs starting at buffer index start, with
+// the same status-symbol stripping, un-rotated for the frame's FSW
+// rotation hypothesis. Only the C4FM rotations are expressible on the
+// real 4-level soft track: rot 0 is identity and rot 2 (the discriminator
+// polarity flip, +d ↔ −d) negates the sign-axis (MSB) LLR and leaves the
+// magnitude-axis (LSB) LLR untouched. Returns nil, false when the soft
+// buffer is not in lockstep or the rotation is not expressible — the
+// caller then decodes hard.
+func (c *ControlChannel) gatherFrameLLRs(start, count, fswStart int, strip bool, rot uint8) ([]float32, bool) {
+	if len(c.softBuf) != 2*len(c.buf) {
+		return nil, false
+	}
+	if rot != 0 && rot != 2 {
+		return nil, false
+	}
+	out := make([]float32, 0, 2*count)
+	i := start
+	for len(out) < 2*count {
+		if i >= len(c.buf) {
+			return nil, false // defensive; caller checked the dibit span
+		}
+		if !strip || (i-fswStart)%p25StatusStride != p25StatusStride-1 {
+			m, l := c.softBuf[2*i], c.softBuf[2*i+1]
+			if rot == 2 {
+				m = -m
+			}
+			out = append(out, m, l)
+		}
+		i++
+	}
+	return out, true
 }
 
 // rotateDibits returns a copy of src with the FSW-search rotation
@@ -1945,6 +2049,7 @@ func (c *ControlChannel) MarkLost() {
 	// starts from a clean slate.
 	c.buf = c.buf[:0]
 	c.pending = c.pending[:0]
+	c.softBuf = c.softBuf[:0]
 	c.bus.Publish(events.Event{
 		Kind:    events.KindCCLost,
 		Payload: LockState{FrequencyHz: c.freqHz, NAC: c.lastNAC},

@@ -24,9 +24,9 @@ import (
 // 48 kHz C4FM channel rate, run the production NXDN receiver, and feed the
 // recovered dibits to BOTH the ControlChannel state machine (lock + VCALL
 // grants come from here) AND a standalone FSW/CAC slicer that reports raw
-// FSW hits and CAC channel-decode / CRC yields — the numbers an operator
-// compares hard vs soft decision with once GT_NXDN_SOFT lands (the yield
-// this harness prints is the A/B metric).
+// FSW hits and CAC channel-decode / CRC yields. GT_NXDN_SOFT=1 flips the
+// receiver onto the nxdn_soft_decision path and reports hard AND soft CAC
+// CRC yields off the same stream — the opt-in's A/B metric.
 //
 // NXDN captures are the blocker for the whole voice path (deinterleave
 // placeholder, scramble model, CAC structure — all flagged unverified on
@@ -45,6 +45,10 @@ func TestReplayNXDNRealCapture(t *testing.T) {
 		}
 		inRate = f
 	}
+	// GT_NXDN_SOFT=1 runs the nxdn_soft_decision path (per-bit soft Viterbi
+	// on the CAC) and reports BOTH hard and soft CAC CRC yields off the same
+	// dibit/LLR stream — the A/B metric for the opt-in.
+	soft := os.Getenv("GT_NXDN_SOFT") == "1" || os.Getenv("GT_NXDN_SOFT") == "true"
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -110,22 +114,27 @@ func TestReplayNXDNRealCapture(t *testing.T) {
 	const postFSWDibits = 8 + 150
 	det := nxdn.NewSyncDetector([][]uint8{nxdn.FSWDibitsOutbound}, 1)
 	var (
-		fswHits    int
-		cacTotal   int
-		cacCRCok   int
-		cacParsed  int
-		rcchCounts = map[nxdn.RCCHType]int{}
-		remaining  int
-		frame      []uint8
-		matches    []nxdn.Match
+		fswHits      int
+		cacTotal     int
+		cacCRCok     int
+		cacCRCokSoft int
+		cacParsed    int
+		rcchCounts   = map[nxdn.RCCHType]int{}
+		remaining    int
+		frame        []uint8
+		frameSoft    []float32
+		matches      []nxdn.Match
 	)
-	slicer := func(dibits []uint8, baseIdx int) {
+	slicer := func(dibits []uint8, llrs []float32, baseIdx int) {
 		matches, _ = det.Process(matches[:0], dibits, baseIdx)
 		matchIdx := 0
 		for i, d := range dibits {
 			absPos := baseIdx + i
 			if remaining > 0 {
 				frame = append(frame, d)
+				if llrs != nil {
+					frameSoft = append(frameSoft, llrs[2*i], llrs[2*i+1])
+				}
 				remaining--
 				if remaining == 0 {
 					cacTotal++
@@ -145,7 +154,13 @@ func TestReplayNXDNRealCapture(t *testing.T) {
 							}
 						}
 					}
+					if llrs != nil && len(frameSoft) == 2*len(frame) {
+						if _, ok := nxdn.DecodeCACChannelSoft(frameSoft[8*2:]); ok {
+							cacCRCokSoft++
+						}
+					}
 					frame = frame[:0]
+					frameSoft = frameSoft[:0]
 				}
 			}
 			for matchIdx < len(matches) && matches[matchIdx].Index == absPos {
@@ -153,20 +168,30 @@ func TestReplayNXDNRealCapture(t *testing.T) {
 					fswHits++
 					remaining = postFSWDibits
 					frame = frame[:0]
+					frameSoft = frameSoft[:0]
 				}
 				matchIdx++
 			}
 		}
 	}
 
-	rx := nxdnrx.New(nxdnrx.Options{
+	rxOpts := nxdnrx.Options{
 		SampleRateHz: outRate,
 		DeviationHz:  1800.0,
-		DibitSink: func(dibits []uint8, baseIdx int) {
+	}
+	if soft {
+		rxOpts.SoftDecision = true
+		rxOpts.SoftDibitSink = func(dibits []uint8, llrs []float32, baseIdx int) {
+			cc.ProcessSoft(dibits, llrs, baseIdx)
+			slicer(dibits, llrs, baseIdx)
+		}
+	} else {
+		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
-			slicer(dibits, baseIdx)
-		},
-	})
+			slicer(dibits, nil, baseIdx)
+		}
+	}
+	rx := nxdnrx.New(rxOpts)
 
 	const chunk = 65536
 	var scratch []complex64
@@ -186,7 +211,12 @@ func TestReplayNXDNRealCapture(t *testing.T) {
 	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs",
 		inRate, outRate, len(iq), float64(len(iq))/inRate)
 	t.Logf("locks=%d grants=%d", locks, grants)
-	t.Logf("fsw_hits=%d cac_total=%d cac_crc_ok=%d cac_parsed=%d", fswHits, cacTotal, cacCRCok, cacParsed)
+	if soft {
+		t.Logf("fsw_hits=%d cac_total=%d cac_crc_ok=%d cac_crc_ok_soft=%d cac_parsed=%d",
+			fswHits, cacTotal, cacCRCok, cacCRCokSoft, cacParsed)
+	} else {
+		t.Logf("fsw_hits=%d cac_total=%d cac_crc_ok=%d cac_parsed=%d", fswHits, cacTotal, cacCRCok, cacParsed)
+	}
 	for typ, n := range rcchCounts {
 		t.Logf("  rcch %s count=%d", typ, n)
 	}
