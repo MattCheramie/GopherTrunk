@@ -86,6 +86,18 @@ const (
 	// channel passband; a larger residual is a mis-tuned / un-channelised
 	// stream the upstream DDC + PPM correction should have handled.
 	seedClampHz = 6000.0
+	// seedMaxModulusCV is the multipath gate on the coarse seed, ported from
+	// the Phase 1 CQPSK path (issue #492): a simulcast / multipath channel
+	// shifts the autocorrelation angle so the estimator reads a spurious
+	// offset (measured: a near-spectral-null echo reads ~1 kHz on a 0 Hz
+	// carrier), but de-rotating by it and matched-filtering leaves the
+	// H-DQPSK symbol modulus blurred by ISI — which a true carrier offset,
+	// a pure rotation of the constant-modulus constellation, never does.
+	// Above this coefficient of variation the seed is rejected and the NCO
+	// left identity, exactly the existing weak-coherence fallback: the
+	// Costas loop then acquires the (necessarily in-range) true offset.
+	// Same threshold as cqpskSeedMaxModulusCV.
+	seedMaxModulusCV = 0.24
 	// agc* normalise the matched-filter output ahead of the amplitude-
 	// sensitive Gardner timing-error detector (the issue #275 lesson on the
 	// CQPSK path). Same values as the CQPSK path — gain normalisation is
@@ -250,6 +262,8 @@ func ParseClockMode(s string) (ClockMode, bool) {
 type Receiver struct {
 	dq           *demod.PiOver4DQPSK
 	sps          int
+	span         int     // RRC half-span, kept for the seed's multipath gate
+	alpha        float64 // RRC roll-off, kept for the seed's multipath gate
 	dibitSink    phase2.DibitSink
 	softSink     phase2.SoftDibitSink
 	softDecision bool
@@ -321,6 +335,8 @@ func New(opts Options) *Receiver {
 	r := &Receiver{
 		dq:           demod.NewPiOver4DQPSK(int(sps+0.5), span, alpha, Rotation),
 		sps:          int(sps + 0.5),
+		span:         span,
+		alpha:        alpha,
 		dibitSink:    opts.DibitSink,
 		softSink:     opts.SoftSink,
 		softDecision: opts.SoftDecision,
@@ -377,6 +393,16 @@ func (r *Receiver) Process(iq []complex64) {
 			r.seedBuf = append(r.seedBuf, iq...)
 			if len(r.seedBuf) >= seedMinSamples {
 				hz := estimateCarrierSeedHz(r.seedBuf, r.fs, seedMaxLag)
+				// Multipath gate (issue #492, ported from the Phase 1 CQPSK
+				// path): reject a seed whose de-rotation leaves the symbol
+				// modulus ISI-blurred — that offset is channel bias, not a
+				// carrier error, and applying it would spin the stream past
+				// the Costas loop's ±SymbolRate/8 pull-in for good. hz = 0
+				// keeps the NCO identity so the fine loop acquires the true
+				// (in-range) offset, the same fallback weak coherence takes.
+				if hz != 0 && r.seedModulusCV(r.seedBuf, 2*math.Pi*hz/r.fs) > seedMaxModulusCV {
+					hz = 0
+				}
 				if hz > seedClampHz {
 					hz = seedClampHz
 				} else if hz < -seedClampHz {
@@ -593,4 +619,59 @@ func estimateCarrierSeedHz(x []complex64, fs float64, maxLag int) float64 {
 	}
 	slope := num / den
 	return slope * fs / (2 * math.Pi)
+}
+
+// seedModulusCV de-rotates x by the candidate per-sample carrier rotation
+// slopeRadPerSample, runs the H-DQPSK RRC matched filter, decimates at the
+// best of sps timing phases (max mean modulus), and returns the coefficient
+// of variation (std/mean) of the symbol modulus. It is the multipath gate
+// for the coarse carrier seed, mirroring the Phase 1 CQPSK path's
+// seedModulusCV (issue #492): a correct carrier estimate centres the channel
+// and leaves the constant-modulus H-DQPSK symbols at low CV, whereas a
+// multipath-biased estimate leaves the ISI that blurs the modulus (high CV).
+func (r *Receiver) seedModulusCV(x []complex64, slopeRadPerSample float64) float64 {
+	der := make([]complex64, len(x))
+	for n := range x {
+		ph := -slopeRadPerSample * float64(n)
+		cs, sn := math.Cos(ph), math.Sin(ph)
+		xr, xi := float64(real(x[n])), float64(imag(x[n]))
+		der[n] = complex(float32(xr*cs-xi*sn), float32(xr*sn+xi*cs))
+	}
+	mf := demod.NewPiOver4DQPSK(r.sps, r.span, r.alpha, Rotation)
+	y := mf.MatchedFilter(nil, der)
+	if len(y) < r.sps {
+		return 0
+	}
+	bestPhase, bestMean := 0, -1.0
+	for ph := 0; ph < r.sps; ph++ {
+		var sum float64
+		var n int
+		for i := ph; i < len(y); i += r.sps {
+			sum += math.Hypot(float64(real(y[i])), float64(imag(y[i])))
+			n++
+		}
+		if n > 0 && sum/float64(n) > bestMean {
+			bestMean, bestPhase = sum/float64(n), ph
+		}
+	}
+	var sum, sum2 float64
+	var n int
+	for i := bestPhase; i < len(y); i += r.sps {
+		m := math.Hypot(float64(real(y[i])), float64(imag(y[i])))
+		sum += m
+		sum2 += m * m
+		n++
+	}
+	if n == 0 {
+		return 0
+	}
+	mean := sum / float64(n)
+	if mean == 0 {
+		return 0
+	}
+	varr := sum2/float64(n) - mean*mean
+	if varr < 0 {
+		varr = 0
+	}
+	return math.Sqrt(varr) / mean
 }

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
+	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
@@ -42,6 +43,11 @@ const p25DeviationHz = 1800.0
 // 102 361-1 §6.3), the slicer-scale the DMR receiver calibrates against —
 // the same value the production DMR pipeline passes.
 const dmrDeviationHz = 1944.0
+
+// nxdnDeviationHz is the NXDN (9600-baud 4-FSK) nominal peak deviation at
+// symbol ±3 per the Common Air Interface spec — the same value the
+// production NXDN pipeline passes.
+const nxdnDeviationHz = 1800.0
 
 // defaultFrameSymbols batches recovered symbols into one Frame so the WS
 // write cost stays reasonable — ~256 symbols is ~53 ms at 4800 baud,
@@ -157,6 +163,7 @@ type Engine struct {
 	rx           *p25phase1rx.Receiver
 	tetraRx      *tetrarx.Receiver
 	dmrRx        *dmrrx.Receiver
+	nxdnRx       *nxdnrx.Receiver
 	symbolRateHz float64
 	centerHz     uint32
 	offsetHz     int32
@@ -200,8 +207,8 @@ func New(opts Options) (*Engine, error) {
 		return nil, errors.New("symbolscope: InRateHz must be > 0")
 	}
 	if opts.Protocol != trunking.ProtocolP25 && opts.Protocol != trunking.ProtocolTETRA &&
-		opts.Protocol != trunking.ProtocolDMR {
-		return nil, fmt.Errorf("symbolscope: protocol %s is not supported (P25 Phase 1, DMR, and TETRA only)", opts.Protocol)
+		opts.Protocol != trunking.ProtocolDMR && opts.Protocol != trunking.ProtocolNXDN {
+		return nil, fmt.Errorf("symbolscope: protocol %s is not supported (P25 Phase 1, DMR, NXDN, and TETRA only)", opts.Protocol)
 	}
 
 	frameSymbols := opts.FrameSymbols
@@ -263,6 +270,19 @@ func New(opts Options) (*Engine, error) {
 			EyeSink:      e.onEye,
 			DibitSink:    e.onDibits,
 		})
+	case trunking.ProtocolNXDN:
+		// NXDN (9600-baud variant) is the same 4800-baud 4-level C4FM family
+		// as DMR / P25 Phase 1, with the same tap shape: aligned soft track,
+		// oversampled eye, parity-only SymbolSink that never fires.
+		e.symbolRateHz = nxdnrx.SymbolRate
+		e.nxdnRx = nxdnrx.New(nxdnrx.Options{
+			SampleRateHz: ddc.OutRateHz(),
+			DeviationHz:  nxdnDeviationHz,
+			SoftSink:     e.onSoft,
+			SymbolSink:   e.onSymbols,
+			EyeSink:      e.onEye,
+			DibitSink:    e.onDibits,
+		})
 	default: // P25 Phase 1
 		demodMode, ok := p25phase1rx.ParseDemodMode(opts.DemodMode)
 		if !ok {
@@ -311,6 +331,8 @@ func (e *Engine) Process(iq []complex64) {
 		e.tetraRx.Process(e.chanBuf)
 	case e.dmrRx != nil:
 		e.dmrRx.Process(e.chanBuf)
+	case e.nxdnRx != nil:
+		e.nxdnRx.Process(e.chanBuf)
 	default:
 		e.rx.Process(e.chanBuf)
 	}
@@ -447,6 +469,16 @@ func (e *Engine) stampMetrics(f *Frame) {
 		f.AGCTarget = e.dmrRx.AGCTarget()
 		f.ClockMu = e.dmrRx.MMClockMu()
 		f.ClockSPS = e.dmrRx.MMClockSPS()
+		return
+	}
+	if e.nxdnRx != nil {
+		// NXDN runs no AFC, so CarrierOffsetHz stays 0 — the AGC/clock loop
+		// state plus the constellation, eye, and dibits are the useful views,
+		// exactly the DMR posture.
+		f.AGCLevel = e.nxdnRx.AGCLevel()
+		f.AGCTarget = e.nxdnRx.AGCTarget()
+		f.ClockMu = e.nxdnRx.MMClockMu()
+		f.ClockSPS = e.nxdnRx.MMClockSPS()
 		return
 	}
 	if e.rx == nil {

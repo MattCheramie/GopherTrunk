@@ -54,6 +54,10 @@ func symbolProtoToReceiver(proto string) (trunking.Protocol, string, error) {
 		// 4800-baud 4-level C4FM (same modulation as P25 Phase 1 C4FM);
 		// demod mode is unused by the DMR receiver.
 		return trunking.ProtocolDMR, "", nil
+	case "nxdn":
+		// NXDN 9600-baud variant — the same 4800-baud 4-level C4FM
+		// family; demod mode is unused by the NXDN receiver.
+		return trunking.ProtocolNXDN, "", nil
 	default:
 		return trunking.ProtocolUnknown, "", fmt.Errorf("symbol: unsupported proto %q", proto)
 	}
