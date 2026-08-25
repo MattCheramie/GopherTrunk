@@ -42,6 +42,19 @@ for tagged releases.
   #1096).
 
 ### Fixed
+- **macOS: transient RTL-SDR control-transfer aborts during bring-up are now
+  retried instead of failing the open** (issue #1135). On a Mac with two dongles
+  on one bus, a control `DeviceRequest` during device bring-up intermittently
+  returns IOKit `kIOReturnAborted`, so `sdr list --probe` failed on one dongle or
+  the other at random and the daemon skipped `cc_hunt` when the second SDR would
+  not open. Two problems, both fixed: the abort was mapped to the wrong sentinel
+  and surfaced as the misleading `usb: DeviceRequest OUT: usb: bulk-IN not
+  active` (it is now a dedicated `usb: transfer aborted`); and the open-time
+  reset-and-retry envelope did not treat it as recoverable, so a transient killed
+  the open instead of being retried like the existing cold-boot stall/timeout
+  classes. A failure that survives every retry now carries a macOS hint pointing
+  at USB power / bus contention (give each dongle its own powered port). No
+  effect on Linux or Windows.
 - **Windows: two identical RTL-SDR composite dongles can now open concurrently**
   (issue #1131). The WinUSB composite-device fallback located the Interface 0
   (`&MI_00`) child function node by VID/PID only, so with two identical
