@@ -592,6 +592,80 @@ func TestOpenDevice_BringupPipeStalledFiveTimes_ReturnsHintError(t *testing.T) {
 	}
 }
 
+// Regression for issue #1135: on macOS with two RTL-SDR dongles on one
+// bus, a control transfer during bring-up intermittently returns
+// kIOReturnAborted (surfaced as usb.ErrTransferAborted). It is a transient
+// — the same probe/open succeeds on a fresh handle a moment later — so the
+// bring-up envelope must reset and retry it, exactly like the EPIPE /
+// ErrPipeStalled cold-boot classes, instead of surfacing it immediately
+// (which is why the reporter's `sdr list --probe` failed on one dongle or
+// the other at random). Before the fix ErrTransferAborted did not exist:
+// the abort was mislabelled "usb: bulk-IN not active" AND was absent from
+// isBringupResetable, so openDevice returned after pass 1 with zero resets.
+func TestOpenDevice_BringupTransferAborted_TriggersFullReset(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),                    // pass 1: warmup OK
+		warmupUSBSysctlExchange(usb.ErrTransferAborted), // pass 1: InitBaseband step 0 aborts
+		warmupUSBSysctlExchange(nil),                    // pass 2: warmup OK (post-reset)
+		warmupUSBSysctlExchange(usb.ErrClosed),          // pass 2: non-resetable terminator
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-bringup-aborted-retry"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected init-baseband terminator to fail the test")
+	}
+	if !strings.Contains(err.Error(), "init baseband") {
+		t.Errorf("err = %v, want substring \"init baseband\" (proves the retry reached InitBaseband)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (one reset between the two bring-up attempts)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 2 {
+		t.Errorf("ClaimCalls = %d, want 2 (initial claim + post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
+// When the macOS control-transfer abort recurs on every bring-up pass, the
+// surfaced error must carry the multi-dongle / USB-power hint pointing at
+// issue #1135 — and must NOT still read as the misleading "bulk-IN not
+// active". Bounded to four resets per Open call.
+func TestOpenDevice_BringupTransferAbortedFiveTimes_ReturnsHintError(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),
+		warmupUSBSysctlExchange(usb.ErrTransferAborted),
+		warmupUSBSysctlExchange(nil),
+		warmupUSBSysctlExchange(usb.ErrTransferAborted),
+		warmupUSBSysctlExchange(nil),
+		warmupUSBSysctlExchange(usb.ErrTransferAborted),
+		warmupUSBSysctlExchange(nil),
+		warmupUSBSysctlExchange(usb.ErrTransferAborted),
+		warmupUSBSysctlExchange(nil),
+		warmupUSBSysctlExchange(usb.ErrTransferAborted),
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-bringup-aborted-fail"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected ErrTransferAborted-five-times to fail open")
+	}
+	if !errors.Is(err, usb.ErrTransferAborted) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrTransferAborted)", err)
+	}
+	if strings.Contains(err.Error(), "bulk-IN not active") {
+		t.Errorf("err = %v, must not read as \"bulk-IN not active\" — that mislabelled a control-transfer abort (issue #1135)", err)
+	}
+	if !strings.Contains(err.Error(), "issue #1135") {
+		t.Errorf("err = %v, want substring \"issue #1135\" (proves the macOS multi-dongle hint was appended)", err)
+	}
+	if m.ResetCalls != 4 {
+		t.Errorf("ResetCalls = %d, want 4 (bounded envelope: four resets, five attempts)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 5 {
+		t.Errorf("ClaimCalls = %d, want 5 (initial claim + four post-reset re-claims)", m.ClaimCalls)
+	}
+}
+
 // Regression: when ErrTimeout recurs on every bring-up pass (warmup
 // swallowed, then InitBaseband step 0 times out), the surfaced error
 // must carry the Windows-aware hint that points at the WinUSB / Zadig

@@ -405,10 +405,13 @@ func runBringup(demod *rtl2832u.Demod) (tuners.Tuner, error) {
 // write probe" case), ErrDeviceGone (the chip dropped off the bus
 // mid-bringup), ErrTimeout (Windows/WinUSB cold-boot — same root cause
 // as the Linux EPIPE, but WinUsb_ControlTransfer surfaces it as
-// ERROR_SEM_TIMEOUT instead of stalling the pipe), or ErrPipeStalled
+// ERROR_SEM_TIMEOUT instead of stalling the pipe), ErrPipeStalled
 // (Windows/WinUSB clone-dongle cold-boot — the chip latches the first
 // USB_SYSCTL write and then NAKs the next identical write with
-// ERROR_GEN_FAILURE). The retry is bounded to four resets per Open
+// ERROR_GEN_FAILURE), or ErrTransferAborted (macOS/IOKit kIOReturnAborted
+// on a control request — the transient issue #1135 hit during bring-up
+// with two dongles on one Mac, where the same probe/open succeeds on a
+// fresh handle a moment later). The retry is bounded to four resets per Open
 // (200ms + 400ms + 800ms + 1200ms exponential backoff between passes)
 // so even if all four resets are wasted on a non-cold-boot stall the
 // cost is capped at ~2.6s of sleep before the original error surfaces.
@@ -422,7 +425,8 @@ func isBringupResetable(err error) bool {
 	return errors.Is(err, syscall.EPIPE) ||
 		errors.Is(err, usb.ErrDeviceGone) ||
 		errors.Is(err, usb.ErrTimeout) ||
-		errors.Is(err, usb.ErrPipeStalled)
+		errors.Is(err, usb.ErrPipeStalled) ||
+		errors.Is(err, usb.ErrTransferAborted)
 }
 
 // withTransportDiagnostics appends a USB diagnostic dump to err when the
@@ -507,6 +511,16 @@ func tunerBringupHint(err error) string {
 			" `gophertrunk sdr doctor` reports WinUSB bound to interface 0." +
 			" Avoid USB hubs and powered extension cables." +
 			" See https://gophertrunk.org/install-windows.html#troubleshooting)"
+	}
+	if errors.Is(err, usb.ErrTransferAborted) {
+		return " (hint: macOS aborted a USB control transfer mid-bring-up" +
+			" (IOKit kIOReturnAborted) — bring-up already resets and retries" +
+			" this transient (issue #1135), so a failure that survives every" +
+			" retry points at marginal USB power or bus contention. With two" +
+			" or more dongles on one Mac, give each its own powered port" +
+			" (avoid bus-powered hubs and daisy-chained extensions) and" +
+			" retry `gophertrunk sdr list --probe`." +
+			" See https://gophertrunk.org/install-macos.html#troubleshooting)"
 	}
 	return ""
 }
