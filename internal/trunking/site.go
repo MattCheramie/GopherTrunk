@@ -416,6 +416,14 @@ type System struct {
 	// Parsed via p25phase2rx.ParseEqualizer and forwarded through the grant's
 	// P25Phase2Decode to the composer / sigfollow receiver.
 	P25Phase2Equalizer string
+	// P25Phase2DCBlock enables the DC-removal high-pass on the P25 Phase 2
+	// traffic-channel receiver — the zero-IF LO-spur stage the P1 / TETRA
+	// voice receivers run. Recognised values (case-insensitive): "" / "off"
+	// / "false" / "0" → untouched (the default); "on" / "true" / "1" →
+	// strip the static DC spur ahead of the demod. Parsed via
+	// p25phase2rx.ParseDCBlock and forwarded through the grant's
+	// P25Phase2Decode to the composer / sigfollow receiver.
+	P25Phase2DCBlock string
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values (case-
 	// insensitive): "" / "gardner" / "on" → ClockGardner (the new

@@ -646,6 +646,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 			Seed:         cs.Grant.P25Phase2Decode.Seed,
 			SoftDecision: cs.Grant.P25Phase2Decode.SoftDecision,
 			Equalizer:    cs.Grant.P25Phase2Decode.Equalizer,
+			DCBlock:      cs.Grant.P25Phase2Decode.DCBlock,
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case voiceKindP25P1:

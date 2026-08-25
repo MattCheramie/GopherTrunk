@@ -74,6 +74,13 @@ type ControlChannel struct {
 	// into a radio's display name. Self-synchronised (its own mutex).
 	aliasAsm *TalkerAliasAssembler
 
+	// lastActivityNano is the Unix-nanos timestamp of the most recent
+	// CRC-clean TSBK decode — the decode heartbeat the ccdecoder pipeline's
+	// signal-time drought watchdog (resyncGuard) compares across calls, the
+	// same contract as the TETRA ControlChannel's LastActivityNano. Atomic:
+	// stamped on the decode path, read from the pipeline's Process loop.
+	lastActivityNano atomic.Int64
+
 	// netModel accumulates the site's status-broadcast TSBKs into a
 	// queryable system-topology snapshot. Self-synchronised.
 	netModel NetworkModel
@@ -129,6 +136,7 @@ type ControlChannel struct {
 	p25Phase2Interleave uint8
 	p25Phase2Scrambler  uint8
 	p25Phase2Equalizer  bool
+	p25Phase2DCBlock    bool
 	// p25Phase2SoftDecision is stamped onto Phase 2 TDMA voice grants so
 	// the voice composer builds a soft-decision traffic-channel receiver
 	// (issue #915). Default false keeps the hard slicer.
@@ -335,6 +343,15 @@ func (c *ControlChannel) Stats() CCStats {
 	}
 }
 
+// LastActivityNano returns the Unix-nano timestamp of the most recent
+// CRC-clean TSBK decode, or 0 before the first. The ccdecoder pipeline's
+// signal-time drought watchdog compares successive values — any change means
+// a decode landed since the previous check. Same contract as the TETRA
+// ControlChannel's LastActivityNano.
+func (c *ControlChannel) LastActivityNano() int64 {
+	return c.lastActivityNano.Load()
+}
+
 // pendingHit is an FSW match awaiting enough buffered dibits to decode.
 // end is the absolute dibit index of the FSW's last dibit; rot is the
 // cyclic rotation the sync detector matched under.
@@ -457,6 +474,9 @@ type Options struct {
 	// P25Phase2Equalizer mirrors phase2's blind CMA equalizer toggle onto
 	// hybrid Phase 2 TDMA voice grants (issue #915).
 	P25Phase2Equalizer bool
+	// P25Phase2DCBlock mirrors phase2's DC-block toggle onto hybrid Phase 2
+	// TDMA voice grants (p25_phase2_dc_block).
+	P25Phase2DCBlock bool
 
 	// CarrierOffsetHz, when non-nil, reports the demodulator's current carrier
 	// offset (Hz) of the locked control carrier relative to the tuned centre.
@@ -519,6 +539,7 @@ func New(opts Options) *ControlChannel {
 		p25Phase2Scrambler:    opts.P25Phase2Scrambler,
 		p25Phase2SoftDecision: opts.P25Phase2SoftDecision,
 		p25Phase2Equalizer:    opts.P25Phase2Equalizer,
+		p25Phase2DCBlock:      opts.P25Phase2DCBlock,
 	}
 }
 
@@ -1220,6 +1241,7 @@ func InjectControlStatusSymbols(stream []uint8) []uint8 {
 // a busy site emits and would drown signal in noise.
 func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 	atomic.AddInt64(&c.stats.TSBKDecoded, 1)
+	c.lastActivityNano.Store(c.now().UnixNano())
 	// Manufacturer-specific TSBKs are decoded in the vendor's opcode
 	// namespace (Motorola patch/regroup, Harris regroup, talker alias)
 	// — see tsbk_vendor.go. The band-plan and network/site/secondary
@@ -1685,6 +1707,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 			Seed:         seed,
 			SoftDecision: c.p25Phase2SoftDecision,
 			Equalizer:    c.p25Phase2Equalizer,
+			DCBlock:      c.p25Phase2DCBlock,
 		}
 	}
 	c.bus.Publish(events.Event{

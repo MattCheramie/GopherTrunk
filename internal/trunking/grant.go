@@ -193,6 +193,12 @@ type P25Phase2Decode struct {
 	// on the symbol stream ahead of the differential decode (issue #915).
 	// Default false keeps the symbol stream untouched.
 	Equalizer bool
+	// DCBlock mirrors phase2.MACDecodeConfig.DCBlock: when set, the voice
+	// composer / sigfollow build the Phase 2 traffic-channel receiver with
+	// the DC-removal high-pass that strips a zero-IF front end's LO-leakage
+	// spur from the on-channel voice DDC (the P1 / TETRA voice-receiver
+	// stage, ported for parity). Default false leaves the IQ untouched.
+	DCBlock bool
 }
 
 // String renders a one-line summary of a Grant for log output.

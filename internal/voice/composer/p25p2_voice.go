@@ -248,10 +248,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// receiver emits per-symbol soft differentials and the SuperframeDecoder
 	// carries them into Subframe.Soft via ProcessSoft.
 	rxOpts := p25p2rx.Options{
-		SampleRateHz: symbolHz,
-		ClockMode:    p25p2rx.ClockGardner,
-		GardnerGain:  p25p2VoiceGardnerGain,
-		Equalizer:    macCfg.Equalizer,
+		SampleRateHz:  symbolHz,
+		ClockMode:     p25p2rx.ClockGardner,
+		GardnerGain:   p25p2VoiceGardnerGain,
+		Equalizer:     macCfg.Equalizer,
+		EnableDCBlock: macCfg.DCBlock,
 	}
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true

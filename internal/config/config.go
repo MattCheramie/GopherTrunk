@@ -1535,6 +1535,15 @@ type SystemConfig struct {
 	// noisy on a purely AWGN-limited one, so it is opt-in. Ignored for
 	// non-P25-Phase-2 protocols.
 	P25Phase2Equalizer string `yaml:"p25_phase2_equalizer"`
+	// P25Phase2DCBlock enables a first-order DC-removal high-pass on the
+	// P25 Phase 2 traffic-channel receiver — the same zero-IF LO-spur
+	// stage the P25 Phase 1 and TETRA voice receivers run. Recognised
+	// values: "" / "off" / "false" / "0" (the default — the IQ stream is
+	// untouched) or "on" / "true" / "1" (strip the static DC spur a
+	// zero-IF front end leaves on an on-channel voice DDC before the
+	// demod; the ~1 Hz corner leaves the 6000-baud modulation untouched).
+	// Ignored for non-P25-Phase-2 protocols.
+	P25Phase2DCBlock string `yaml:"p25_phase2_dc_block"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
 	// "gardner" / "on" (the new default — non-data-aided Gardner

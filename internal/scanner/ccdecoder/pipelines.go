@@ -316,6 +316,11 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		log.Warn("ccdecoder: unrecognised p25_phase2_equalizer; falling back to off",
 			"system", opts.SystemName, "value", opts.System.P25Phase2Equalizer)
 	}
+	p2DCBlock, p2DCOK := p25phase2rx.ParseDCBlock(opts.System.P25Phase2DCBlock)
+	if !p2DCOK {
+		log.Warn("ccdecoder: unrecognised p25_phase2_dc_block; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2DCBlock)
+	}
 	// rx is forward-declared so the control channel's CarrierOffsetHz provider
 	// can close over it; the closure is only called later, at site-update
 	// publish time, well after rx is assigned below (issue #815).
@@ -334,6 +339,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		P25Phase2Scrambler:    uint8(p2Scrambler),
 		P25Phase2SoftDecision: p2SoftDecision,
 		P25Phase2Equalizer:    p2Equalizer,
+		P25Phase2DCBlock:      p2DCBlock,
 		// Report the TOTAL carrier offset from the configured frequency:
 		// the receiver's residual AFC plus any correction the decoder folded
 		// into the DDC (CarrierBiasHz). Residual-only would drop toward 0
@@ -388,7 +394,10 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		"nid_accept_errs", p25phase1.NIDAcceptErrs,
 		"nid_marginal_max", p25phase1.NIDMarginalMaxErrs,
 		"build", version.String())
-	return &p25Phase1Pipeline{rx: rx, cc: cc}, nil
+	return &p25Phase1Pipeline{
+		rx: rx, cc: cc, log: opts.Log, system: opts.SystemName,
+		guard: resyncGuard{rateHz: opts.SampleRateHz, window: p25Phase1ResyncWindow},
+	}, nil
 }
 
 func demodModeLabel(m p25phase1rx.DemodMode) string {
@@ -401,13 +410,34 @@ func demodModeLabel(m p25phase1rx.DemodMode) string {
 }
 
 type p25Phase1Pipeline struct {
-	rx *p25phase1rx.Receiver
-	cc *p25phase1.ControlChannel
+	rx     *p25phase1rx.Receiver
+	cc     *p25phase1.ControlChannel
+	log    *slog.Logger
+	system string
+	guard  resyncGuard
 }
 
-func (p *p25Phase1Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *p25Phase1Pipeline) Reset()                 { p.rx.Reset() }
-func (p *p25Phase1Pipeline) Close() error           { return nil }
+func (p *p25Phase1Pipeline) Process(iq []complex64) {
+	p.rx.Process(iq)
+	// Signal-time decode-drought watchdog (the TETRA checkResync lever,
+	// generalised — see resyncGuard): a full window of processed signal with
+	// no CRC-clean TSBK forces a fast timing/AFC reacquire from centre. The
+	// CC's Process already handles the non-contiguous dibit index a receiver
+	// reset produces (its buffer resync path).
+	if p.guard.check(len(iq), p.cc.LastActivityNano()) {
+		p.rx.Reset()
+		if p.log != nil {
+			p.log.Debug("p25/phase1: dsp resync (signal-time decode drought; reacquiring from centre)",
+				"system", p.system)
+		}
+	}
+}
+
+func (p *p25Phase1Pipeline) Reset() {
+	p.rx.Reset()
+	p.guard.reset()
+}
+func (p *p25Phase1Pipeline) Close() error { return nil }
 
 // AFCOffsetHz reports the receiver's current estimate of the true carrier
 // offset in Hz, so the decoder's autotune tracker can fold it into the
@@ -517,6 +547,16 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.P25Phase2Equalizer)
 	}
 	cc.SetEqualizer(equalizer)
+	dcBlock, dcOK := p25phase2rx.ParseDCBlock(opts.System.P25Phase2DCBlock)
+	if !dcOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_dc_block; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2DCBlock)
+	}
+	// Voice-receiver knob: like SetSoftDecision/SetEqualizer this only stamps
+	// the flag onto published grants for the composer's traffic-channel
+	// receiver — the CC's own receiver stays DC-untouched (the TETRA/P1
+	// precedent: DC block is a voice-path stage, never the CC path).
+	cc.SetDCBlock(dcBlock)
 	clockMode, clockOK := p25phase2rx.ParseClockMode(opts.System.P25Phase2ClockMode)
 	if !clockOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",
@@ -546,19 +586,41 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// Only applied when ClockMode == ClockGardner.
 		GardnerGain: 0.005,
 	})
-	return &p25Phase2Pipeline{rx: rx, cc: cc, sfDec: sfDec}, nil
+	return &p25Phase2Pipeline{
+		rx: rx, cc: cc, sfDec: sfDec, log: opts.Log, system: opts.SystemName,
+		guard: resyncGuard{rateHz: opts.SampleRateHz, window: p25Phase2ResyncWindow},
+	}, nil
 }
 
 type p25Phase2Pipeline struct {
-	rx    *p25phase2rx.Receiver
-	cc    *p25phase2.ControlChannel
-	sfDec *p25phase2.SuperframeDecoder
+	rx     *p25phase2rx.Receiver
+	cc     *p25phase2.ControlChannel
+	sfDec  *p25phase2.SuperframeDecoder
+	log    *slog.Logger
+	system string
+	guard  resyncGuard
 }
 
-func (p *p25Phase2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *p25Phase2Pipeline) Process(iq []complex64) {
+	p.rx.Process(iq)
+	// Signal-time decode-drought watchdog (see resyncGuard): a full window
+	// of processed signal with no MAC PDU reaching Ingest forces a fast
+	// reacquire — receiver loops to centre plus the superframe decoder's
+	// sync state, the same pair Reset clears.
+	if p.guard.check(len(iq), p.cc.LastActivityNano()) {
+		p.rx.Reset()
+		p.sfDec.Reset()
+		if p.log != nil {
+			p.log.Debug("p25/phase2: dsp resync (signal-time decode drought; reacquiring from centre)",
+				"system", p.system)
+		}
+	}
+}
+
 func (p *p25Phase2Pipeline) Reset() {
 	p.rx.Reset()
 	p.sfDec.Reset()
+	p.guard.reset()
 }
 func (p *p25Phase2Pipeline) Close() error { return nil }
 
@@ -1133,21 +1195,48 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			cc.Process(dibits, baseIdx)
 		},
 	})
-	return &dmrPipeline{rx: rx, cc: cc}, nil
+	return &dmrPipeline{
+		rx: rx, cc: cc, log: opts.Log, system: opts.SystemName,
+		guard: resyncGuard{rateHz: opts.SampleRateHz, window: dmrTier3ResyncWindow},
+	}, nil
 }
 
 type dmrPipeline struct {
-	rx *dmrrx.Receiver
-	cc *tier3.ControlChannel
+	rx     *dmrrx.Receiver
+	cc     *tier3.ControlChannel
+	log    *slog.Logger
+	system string
+	guard  resyncGuard
 }
 
 // dmrPipeline holds dmr import alive for the package-level
 // import-grouping rule; the underlying Receiver type is in dmrrx.
 var _ = dmr.BurstDibits
 
-func (p *dmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *dmrPipeline) Reset()                 { p.rx.Reset() }
-func (p *dmrPipeline) Close() error           { return nil }
+func (p *dmrPipeline) Process(iq []complex64) {
+	p.rx.Process(iq)
+	// Signal-time decode-drought watchdog (see resyncGuard): a full window
+	// of processed signal with no CRC-clean CSBK/MBC forces a fast timing
+	// reacquire. rx.Reset restarts the dibit index at 0, so the CC's
+	// absolute-indexed burst buffer is dropped in step (ResyncReset) —
+	// without that, every post-reset sync match lands below the stale
+	// bufStart and is discarded for ever.
+	if p.guard.check(len(iq), p.cc.LastActivityNano()) {
+		p.rx.Reset()
+		p.cc.ResyncReset()
+		if p.log != nil {
+			p.log.Debug("dmr/tier3: dsp resync (signal-time decode drought; reacquiring from centre)",
+				"system", p.system)
+		}
+	}
+}
+
+func (p *dmrPipeline) Reset() {
+	p.rx.Reset()
+	p.cc.ResyncReset()
+	p.guard.reset()
+}
+func (p *dmrPipeline) Close() error { return nil }
 
 // TopologySnapshot surfaces the DMR Tier III system topology (identity +
 // adjacent sites) the control channel accumulated, mapped to the neutral
@@ -1312,18 +1401,44 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			cc.Process(dibits, baseIdx)
 		},
 	})
-	return &nxdnPipeline{rx: rx, cc: cc, deviationHz: deviationHz}, nil
+	return &nxdnPipeline{
+		rx: rx, cc: cc, deviationHz: deviationHz,
+		log: opts.Log, system: opts.SystemName,
+		guard: resyncGuard{rateHz: opts.SampleRateHz, window: nxdnResyncWindow},
+	}, nil
 }
 
 type nxdnPipeline struct {
 	rx          *nxdnrx.Receiver
 	cc          *nxdn.ControlChannel
 	deviationHz float64
+	log         *slog.Logger
+	system      string
+	guard       resyncGuard
 }
 
-func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *nxdnPipeline) Reset()                 { p.rx.Reset() }
-func (p *nxdnPipeline) Close() error           { return nil }
+func (p *nxdnPipeline) Process(iq []complex64) {
+	p.rx.Process(iq)
+	// Signal-time decode-drought watchdog (see resyncGuard): a full window
+	// of processed signal with no CRC-clean CAC forces a fast timing
+	// reacquire; the CC's sync/partial-frame state is dropped in step so a
+	// stale mid-frame countdown can't splice across the index restart.
+	if p.guard.check(len(iq), p.cc.LastActivityNano()) {
+		p.rx.Reset()
+		p.cc.ResyncReset()
+		if p.log != nil {
+			p.log.Debug("nxdn: dsp resync (signal-time decode drought; reacquiring from centre)",
+				"system", p.system)
+		}
+	}
+}
+
+func (p *nxdnPipeline) Reset() {
+	p.rx.Reset()
+	p.cc.ResyncReset()
+	p.guard.reset()
+}
+func (p *nxdnPipeline) Close() error { return nil }
 
 // TopologySnapshot surfaces the NXDN single-site identity (System/Site/Location)
 // the control channel accumulated. No adjacent sites for NXDN.

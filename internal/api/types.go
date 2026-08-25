@@ -156,6 +156,7 @@ type SystemDTO struct {
 	P25Phase2ScramblerMode string  `json:"p25_phase2_scrambler_mode,omitempty"`
 	P25Phase2SoftDecision  string  `json:"p25_phase2_soft_decision,omitempty"`
 	P25Phase2Equalizer     string  `json:"p25_phase2_equalizer,omitempty"`
+	P25Phase2DCBlock       string  `json:"p25_phase2_dc_block,omitempty"`
 	NXDNViterbiMode        string  `json:"nxdn_viterbi_mode,omitempty"`
 	NXDNDeviationHz        float64 `json:"nxdn_deviation_hz,omitempty"`
 	EDACSBCHMode           string  `json:"edacs_bch_mode,omitempty"`
@@ -334,6 +335,7 @@ func systemToDTO(s trunking.System) SystemDTO {
 		P25Phase2ScramblerMode: s.P25Phase2ScramblerMode,
 		P25Phase2SoftDecision:  s.P25Phase2SoftDecision,
 		P25Phase2Equalizer:     s.P25Phase2Equalizer,
+		P25Phase2DCBlock:       s.P25Phase2DCBlock,
 		NXDNViterbiMode:        s.NXDNViterbiMode,
 		NXDNDeviationHz:        s.NXDNDeviationHz,
 		EDACSBCHMode:           s.EDACSBCHMode,

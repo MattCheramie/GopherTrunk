@@ -972,6 +972,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			P25Phase2ScramblerMode:  sys.P25Phase2ScramblerMode,
 			P25Phase2SoftDecision:   sys.P25Phase2SoftDecision,
 			P25Phase2Equalizer:      sys.P25Phase2Equalizer,
+			P25Phase2DCBlock:        sys.P25Phase2DCBlock,
 			P25Phase2ClockMode:      sys.P25Phase2ClockMode,
 			NXDNViterbiMode:         sys.NXDNViterbiMode,
 			NXDNDeviationHz:         sys.NXDNDeviationHz,

@@ -1127,6 +1127,9 @@ trunking:
   #     # p25_phase2_equalizer: "on"          # blind CMA equalizer: removes
   #     #                              # residual ISI (multipath/timing/RRC)
   #     #                              # ahead of the differential decode (#915)
+  #     # p25_phase2_dc_block: "on"           # strip a zero-IF front end's DC
+  #     #                              # spur on the voice channel (the P1/
+  #     #                              # TETRA voice-receiver stage)
   #     # p25_phase2_clock_mode: "naive"      # decimate; default Gardner
   #
   #   - name: "Legacy-TETRA"

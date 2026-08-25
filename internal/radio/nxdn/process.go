@@ -244,6 +244,19 @@ func (c *ControlChannel) extractCACBytes(frame []uint8) ([]byte, bool) {
 	}
 }
 
+// ResyncReset drops the Process adapter's sync-detection + partial-frame
+// state so a receiver-side Reset (which restarts the dibit index at 0) can
+// reacquire cleanly — a stale mid-frame countdown would otherwise splice
+// pre-reset dibits onto post-reset ones into one garbage frame. Mirrors the
+// TETRA / DMR Tier III ControlChannels' ResyncReset; call from the pipeline
+// whenever the receiver is reset mid-stream.
+//
+// Precondition: called on the same goroutine as Process (from the pipeline,
+// after rx.Process returns), so the proc swap never races a Process call.
+func (c *ControlChannel) ResyncReset() {
+	c.proc = nil
+}
+
 // Reset clears the Process adapter's sync-detection + partial-frame
 // state. The receiver-side Reset rewinds the absolute dibit index;
 // callers that need to clear stream state on retune call this.

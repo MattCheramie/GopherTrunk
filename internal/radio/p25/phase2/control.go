@@ -70,6 +70,11 @@ type ControlChannel struct {
 	// build the traffic-channel receiver with the blind CMA equalizer
 	// (issue #915). Default false leaves the symbol stream untouched.
 	equalizer bool
+	// dcBlock, when set, is stamped onto every published Phase 2 voice
+	// grant (P25Phase2Decode.DCBlock) so the composer / sigfollow build
+	// the traffic-channel receiver with the DC-removal high-pass (the
+	// P1/TETRA voice-receiver stage, ported for parity).
+	dcBlock bool
 	// bandPlan accumulates IdentifierUpdate MAC PDUs so publishGrant
 	// can resolve a voice grant's (ChannelID, ChannelNumber) into a
 	// downlink frequency. Guarded by mu.
@@ -101,6 +106,13 @@ type ControlChannel struct {
 	// exported as an atomic so other goroutines can sample it lock-free.
 	macDecoded atomic.Uint64
 
+	// lastActivityNano is the Unix-nanos timestamp of the most recent MAC
+	// PDU that reached Ingest (i.e. cleared the superframe sync + trellis
+	// chain) — the decode heartbeat the ccdecoder pipeline's signal-time
+	// drought watchdog (resyncGuard) compares across calls, the same
+	// contract as the TETRA ControlChannel's LastActivityNano.
+	lastActivityNano atomic.Int64
+
 	// macCensus counts, per MAC opcode, every PDU that reached Ingest.
 	// It backs the control-channel opcode census (issue #915): the
 	// per-grant DEBUG line only fires for opcodes GT already parses as a
@@ -117,6 +129,15 @@ type ControlChannel struct {
 // FEC + CRC on this channel. It is the protocol-agnostic decode-activity
 // counter the wideband engine polls to gate per-channel power logging.
 func (c *ControlChannel) DecodedFrames() uint64 { return c.macDecoded.Load() }
+
+// LastActivityNano returns the Unix-nano timestamp of the most recent MAC
+// PDU that reached Ingest, or 0 before the first. The ccdecoder pipeline's
+// signal-time drought watchdog compares successive values — any change means
+// a decode landed since the previous check. Same contract as the TETRA
+// ControlChannel's LastActivityNano.
+func (c *ControlChannel) LastActivityNano() int64 {
+	return c.lastActivityNano.Load()
+}
 
 // MACCensus returns a snapshot of the per-opcode PDU counts observed on
 // this control channel since start. Used by tests and available for the
@@ -480,6 +501,17 @@ func (c *ControlChannel) SetEqualizer(on bool) {
 	c.equalizer = on
 }
 
+// SetDCBlock toggles whether published Phase 2 voice grants request the
+// DC-removal high-pass on the traffic-channel demod path (p25_phase2_dc_block
+// — the same zero-IF LO-spur stage the P1 / TETRA voice receivers run). Like
+// SetSoftDecision it does not change the CC's own receiver; it only sets the
+// flag the composer / sigfollow read off the grant.
+func (c *ControlChannel) SetDCBlock(on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dcBlock = on
+}
+
 // ScramblerMode returns the current ScramblerMode.
 func (c *ControlChannel) ScramblerMode() ScramblerMode {
 	c.mu.Lock()
@@ -618,6 +650,7 @@ func New(opts Options) *ControlChannel {
 // against the very first PDUs.
 func (c *ControlChannel) Ingest(p MACPDU) {
 	c.macDecoded.Add(1)
+	c.lastActivityNano.Store(c.now().UnixNano())
 	c.censusObserve(p)
 	c.mu.Lock()
 	strict := c.strictValidation
@@ -845,6 +878,7 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 		Seed:         c.scramblerSeed,
 		SoftDecision: c.softDecision,
 		Equalizer:    c.equalizer,
+		DCBlock:      c.dcBlock,
 	}
 	c.mu.Unlock()
 	rfss, site, nac := c.siteIdentity()

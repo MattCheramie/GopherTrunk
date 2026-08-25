@@ -129,3 +129,17 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	}
 	return baseIdx + len(dibits)
 }
+
+// ResyncReset drops the Process adapter's cross-call dibit buffer and sync
+// state so a receiver-side Reset (which restarts the dibit index at 0) can
+// reacquire cleanly. Without it the adapter's absolute bufStart stays at the
+// pre-reset value while every new sync match arrives at a small index, so
+// each is discarded as "lookback already trimmed" for ever. Mirrors the
+// TETRA ControlChannel's ResyncReset; call from the pipeline whenever the
+// receiver is reset mid-stream.
+//
+// Precondition: called on the same goroutine as Process (from the pipeline,
+// after rx.Process returns), so the proc swap never races a Process call.
+func (c *ControlChannel) ResyncReset() {
+	c.proc = nil
+}

@@ -141,6 +141,10 @@ func applySystemKnobs(sys *trunking.System, knobs map[string]string) {
 			sys.P25Phase2ScramblerMode = v
 		case "p25_phase2_soft_decision":
 			sys.P25Phase2SoftDecision = v
+		case "p25_phase2_equalizer":
+			sys.P25Phase2Equalizer = v
+		case "p25_phase2_dc_block":
+			sys.P25Phase2DCBlock = v
 		case "p25_phase2_clock_mode":
 			sys.P25Phase2ClockMode = v
 		case "wacn":

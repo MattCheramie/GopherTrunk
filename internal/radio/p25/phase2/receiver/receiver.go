@@ -163,6 +163,17 @@ type Options struct {
 	// EqualizerMu overrides the equalizer NLMS/CMA step. <= 0 uses eqDefaultMu.
 	// Only meaningful when Equalizer is set.
 	EqualizerMu float64
+	// EnableDCBlock inserts a first-order complex DC-removal high-pass at the
+	// very top of Process, ahead of the NCO / matched filter — the same stage
+	// the P25 Phase 1 and TETRA voice receivers run. A zero-IF front end's LO
+	// self-mixing leaves a static DC spur at 0 Hz that sits directly on an
+	// on-channel voice DDC; the constant complex bias shifts every absolute
+	// symbol identically, which does NOT cancel in the differential decode
+	// and closes the H-DQPSK decision regions on a weak signal. Corner ≈1 Hz
+	// at 48 kHz, decades below the 6000-baud modulation, so a DC-free stream
+	// is essentially untouched. Default false — opt-in via
+	// p25_phase2_dc_block, voice-receiver only (never the CC path).
+	EnableDCBlock bool
 }
 
 // Equalizer defaults. A modest step keeps CMA's noise enhancement low on a
@@ -238,6 +249,24 @@ func ParseEqualizer(s string) (on bool, ok bool) {
 	}
 }
 
+// ParseDCBlock maps a config / user-facing string into the
+// Options.EnableDCBlock boolean. Recognised values (case-insensitive): "" /
+// "off" / "false" / "0" → false (the default — the IQ stream is untouched);
+// "on" / "true" / "1" → true (first-order DC-removal high-pass ahead of the
+// demod, removing a zero-IF front end's LO leakage spur from an on-channel
+// voice DDC). Unknown strings return false with `ok = false` so callers can
+// warn and fall back.
+func ParseDCBlock(s string) (on bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return false, true
+	case "on", "true", "1":
+		return true, true
+	default:
+		return false, false
+	}
+}
+
 // ParseClockMode maps a config / user-facing string into a
 // ClockMode. Recognised values (case-insensitive): "" / "gardner" /
 // "on" / "true" / "1" → ClockGardner (the new default — Gardner
@@ -280,6 +309,11 @@ type Receiver struct {
 	// symbol stream before the differential decode (ClockGardner only; nil
 	// when Options.Equalizer is unset). See Options.Equalizer and issue #915.
 	eq *sync.LMSEqualizer
+	// dcBlk is the optional DC-removal high-pass applied to the raw IQ at
+	// the top of Process (nil when Options.EnableDCBlock is unset). See
+	// Options.EnableDCBlock.
+	dcBlk *dcBlock
+	dcBuf []complex64 // dcBlk scratch, reused across calls
 
 	// Carrier-frequency recovery (ClockGardner only; nil under ClockNaive).
 	// nco removes the coarse seed from the raw IQ; costas tracks the residual
@@ -367,6 +401,9 @@ func New(opts Options) *Receiver {
 			r.eq = sync.NewLMSEqualizer(taps, mu)
 		}
 	}
+	if opts.EnableDCBlock {
+		r.dcBlk = &dcBlock{}
+	}
 	return r
 }
 
@@ -376,6 +413,13 @@ func New(opts Options) *Receiver {
 func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
+	}
+	// Strip a zero-IF front end's static DC spur first, so every downstream
+	// stage — the coarse-seed accumulator included — sees a DC-free stream.
+	// nil (no-op) unless Options.EnableDCBlock.
+	if r.dcBlk != nil {
+		r.dcBuf = r.dcBlk.process(r.dcBuf, iq)
+		iq = r.dcBuf
 	}
 	r.dibits = r.dibits[:0]
 	r.symbols = r.symbols[:0]
@@ -547,6 +591,9 @@ func (r *Receiver) Reset() {
 	}
 	if r.eq != nil {
 		r.eq.Reset()
+	}
+	if r.dcBlk != nil {
+		r.dcBlk.Reset()
 	}
 	r.seeded = false
 	r.seedHz = 0

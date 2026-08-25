@@ -37,6 +37,14 @@ type MACDecodeConfig struct {
 	// from the grant to the composer / sigfollow receiver setup. Default false
 	// leaves the symbol stream untouched.
 	Equalizer bool
+	// DCBlock requests the DC-removal high-pass on the Phase 2
+	// traffic-channel receiver (receiver.Options.EnableDCBlock): it strips a
+	// zero-IF front end's LO-leakage spur from an on-channel voice DDC, the
+	// same stage the P1 / TETRA voice receivers run. Like SoftDecision this
+	// field is inert to the MAC-decode routines here — it only travels with
+	// the per-channel config from the grant to the composer / sigfollow
+	// receiver setup. Default false leaves the IQ untouched.
+	DCBlock bool
 }
 
 // DecodedMACPDU pairs a decoded MAC PDU with the SlotType of the
