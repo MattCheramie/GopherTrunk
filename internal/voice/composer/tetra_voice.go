@@ -33,6 +33,29 @@ func newTETRAVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 	return newVoiceFrontEnd(iqHz, bw, tetraVoiceIntermediateHz, tetraVoiceChannelSelectHz)
 }
 
+// enableTETRALMS opts a TETRA voice receiver into the per-burst training-sequence
+// LMS equalizer (equalizer.SnapshotLMS) when the composer was built with
+// TETRALMSEqualizer set (config recordings.tetra_lms_equalizer). It carries the
+// raw pre-differential symbols down to the extractor (SymbolSink → StashSymbols)
+// and calls EnableLMSEqualizer, so each burst is equalized against its known
+// NTS1/NTS2 midamble before the soft TCH/S decode — on top of the blind CMA the
+// receiver already runs (EnableEqualizer). This is the production wiring of the
+// lever that was previously only reachable via the GT_TETRA_LMS replay harness;
+// it is capture-gated on the on-air A/B that issue #1001 tracks, so it defaults
+// OFF. When off this is a no-op: no SymbolSink is set, StashSymbols is never
+// called, and the receiver/extractor are byte-identical to before.
+func enableTETRALMS(c *Composer, extractor *tetra.TrafficExtractor, opts *tetrarx.Options) {
+	if c == nil || !c.tetraLMS {
+		return
+	}
+	// Defaults (0, 0) select the extractor's built-in taps/passes.
+	extractor.EnableLMSEqualizer(0, 0)
+	// Feed the raw pre-differential symbols the LMS trains/applies on. Fires just
+	// before the matching DibitSink, so StashSymbols lands before Process consumes
+	// the block — mirrors the SoftSink → StashSoft ordering.
+	opts.SymbolSink = func(syms []complex64, base int) { extractor.StashSymbols(syms, base) }
+}
+
 // runTETRAVoiceChain consumes IQ for one TETRA traffic-channel call on a SOLO tap
 // — a dedicated retuned voice SDR carrying a single call (one call per traffic
 // carrier), NOT a same-carrier SCBS. (Concurrent same-carrier calls go through the
@@ -70,7 +93,7 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		c.onTETRATrafficBurst(bt, rs, serial, frame, softType5, usage, usageMarker, &bursts, &speech, &offSlot, &bfi)
 	})
 
-	rx := tetrarx.New(tetrarx.Options{
+	rxOpts := tetrarx.Options{
 		SampleRateHz:        symbolHz,
 		DibitSink:           func(d []uint8, base int) { extractor.Process(d, base) },
 		SoftSink:            func(diffs []complex64, base int) { extractor.StashSoft(diffs, base) },
@@ -80,7 +103,9 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		EnableChannelFilter: true,
 		EnableEqualizer:     true, // invert linear channel/ISI that garbles TCH/S (#764/#771 follow-up)
 		EnableDCBlock:       true, // strip the front-end DC spur that leaks into same-carrier voice under heavy multislot
-	})
+	}
+	enableTETRALMS(c, extractor, &rxOpts)
+	rx := tetrarx.New(rxOpts)
 
 	c.log.Info("composer: tetra voice follow started — TCH/S decode + ACELP vocoder",
 		"serial", serial, "group", groupID, "timeslot", timeslot,
@@ -446,7 +471,7 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 	fe := newTETRAVoiceFrontEnd(iqHz, d.c.bw)
 	symbolHz := fe.OutRateHz()
 	extractor := tetra.NewTrafficExtractor(d.colour, d.onBurst)
-	rx := tetrarx.New(tetrarx.Options{
+	rxOpts := tetrarx.Options{
 		SampleRateHz:        symbolHz,
 		DibitSink:           func(di []uint8, base int) { extractor.Process(di, base) },
 		SoftSink:            func(diffs []complex64, base int) { extractor.StashSoft(diffs, base) },
@@ -456,7 +481,9 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 		EnableChannelFilter: true,
 		EnableEqualizer:     true, // invert linear channel/ISI that garbles TCH/S (#764/#771 follow-up)
 		EnableDCBlock:       true, // strip the front-end DC spur that leaks into same-carrier voice under heavy multislot
-	})
+	}
+	enableTETRALMS(d.c, extractor, &rxOpts)
+	rx := tetrarx.New(rxOpts)
 	d.c.log.Info("composer: tetra shared voice demux started (usage-marker routing)",
 		"key", d.key, "colour_code", d.colour&0x3F, "rate_hz", symbolHz)
 	defer func() {

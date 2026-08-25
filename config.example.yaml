@@ -227,6 +227,13 @@ recordings:
     enabled: false  # CMA blind equalizer in the FM voice chain (simulcast mitigation)
     taps: 8         # default 8 when enabled
     step_size: 0.0001  # default 1e-4 when enabled
+  # tetra_lms_equalizer opts the TETRA voice chains into the per-burst
+  # training-sequence LMS equalizer (trains on each burst's NTS midamble) on top
+  # of the blind CMA the receiver already runs. Off by default — this is the
+  # capture-gated on-air A/B lever for issue #1001, NOT a confirmed win. Toggle it
+  # and compare recordings on a concurrent-load same-carrier TETRA site before
+  # leaving it on.
+  tetra_lms_equalizer: false
   normalize:
     enabled: false       # EBU R128 loudness-normalize each finished recording
     apply_to: recording  # recording (rewrite WAV) | distributed (MP3 only) | both

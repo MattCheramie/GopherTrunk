@@ -163,9 +163,17 @@ confirmation before any close-as-completed.
   unit anchor (arbitrary start phase; the constant rotation cancels in the differential
   decode, the same property that makes a frozen snapshot safe). Pinned by
   `traffic_lms_test.go` (synthetic multipath through the real extractor: raw 13% → 0%
-  payload bit-error, no-harm on clean). Production composer still runs CMA only; flip
-  LMS on there once the capture A/B validates it. A/B on captures with `GT_TETRA_LMS=1`
-  in `TestTETRAMultiSlotReplay` (compare `traffic_marked_crc_soft`).
+  payload bit-error, no-harm on clean). Production composer runs the blind CMA
+  (`EnableEqualizer`) by default; the trained LMS is now reachable in production as an
+  **opt-in** config lever — `recordings.tetra_lms_equalizer: true` threads through
+  `composer.Options.TETRALMSEqualizer` → `enableTETRALMS` (`tetra_voice.go`), which wires the
+  receiver `SymbolSink → StashSymbols` and calls `EnableLMSEqualizer` on BOTH TETRA voice paths
+  (the solo `runTETRAVoiceChain` and the same-carrier `tetraSlotDemux`). It defaults **OFF**
+  (byte-identical when off, pinned by `tetra_lms_wiring_test.go`) because it is still the
+  capture-gated on-air A/B lever, NOT a confirmed win — the config flag exists so an operator can
+  run that A/B on a live rig, not because LMS is validated. A/B on captures with `GT_TETRA_LMS=1`
+  in `TestTETRAMultiSlotReplay` (compare `traffic_marked_crc_soft`); A/B on air by toggling the
+  config flag and comparing recordings on a concurrent-load same-carrier site.
 - **The same training-sequence LMS lever is wired into the DMO (Direct Mode) path**
   (#1003 follow-up). `ExtractDMBurstsEqualized` (`dmo.go` → `dmo_equalizer.go`) re-derives
   each **rotation-0** DNB's `SoftBKN1/SoftBKN2` from equalized raw symbols, so the

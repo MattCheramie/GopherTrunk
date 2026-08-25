@@ -1871,6 +1871,17 @@ type RecordingsConfig struct {
 	// Off by default; useful when receiving simulcast systems with
 	// multiple transmitters at slightly different arrival delays.
 	Equalizer EqualizerConfig `yaml:"equalizer"`
+	// TETRALMSEqualizer opts the TETRA voice chains into the per-burst
+	// training-sequence-aided LMS equalizer (equalizer.SnapshotLMS) in the
+	// extractor's soft-decision path, on top of the blind CMA already run in
+	// the receiver. It trains on each burst's known NTS1/NTS2 midamble and
+	// equalizes BKN1/BKN2 before the soft TCH/S decode. Off by default: it is
+	// a lever staged for the on-air A/B that issue #1001 is gated on, not a
+	// confirmed win (a green synthetic ≠ on-air correct, per #764/#771). When
+	// off the voice chains are byte-identical to before. Compare recordings
+	// with it on vs off on a same-carrier concurrent-load TETRA capture; keep
+	// it off unless it demonstrably improves your site's yield.
+	TETRALMSEqualizer bool `yaml:"tetra_lms_equalizer"`
 	// Normalize enables per-call EBU R128 / BS.1770 loudness
 	// normalization. When enabled, each finished recording is measured and
 	// rewritten in place to a perceptual loudness target (true-peak

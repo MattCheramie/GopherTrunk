@@ -2329,6 +2329,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 				Taps:     cfg.Recordings.Equalizer.Taps,
 				StepSize: cfg.Recordings.Equalizer.StepSize,
 			},
+			TETRALMSEqualizer: cfg.Recordings.TETRALMSEqualizer,
 		})
 		if err != nil {
 			return fmt.Errorf("daemon: composer: %w", err)

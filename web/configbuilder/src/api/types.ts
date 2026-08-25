@@ -206,6 +206,7 @@ export interface RecordingsConfig {
   MBEFiles?: boolean;
   SkipEncrypted: boolean;
   Equalizer: EqualizerConfig;
+  TETRALMSEqualizer?: boolean;
   Normalize: NormalizeConfig;
   WarmDMRAudio?: boolean;
   SpecAmplitudeEnhance?: boolean;

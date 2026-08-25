@@ -185,6 +185,17 @@ type Options struct {
 	// front-end LPF and the FM demod. Off by default; flip Enabled
 	// to true and tune Taps / StepSize per site.
 	Equalizer EqualizerConfig
+	// TETRALMSEqualizer opts the TETRA voice chains into the per-burst
+	// training-sequence-aided LMS equalizer (equalizer.SnapshotLMS) in the
+	// TrafficExtractor's soft path, on top of the blind CMA already run in the
+	// receiver. When true, the chains stash the raw pre-differential symbols
+	// (receiver SymbolSink → extractor.StashSymbols) and call
+	// extractor.EnableLMSEqualizer, so each burst is equalized against its
+	// known NTS1/NTS2 midamble before the soft TCH/S decode. Off by default:
+	// a lever staged for the on-air A/B that issue #1001 is gated on, not a
+	// confirmed win. When false the chains are byte-identical to before — no
+	// SymbolSink, no StashSymbols, the equalizer inert.
+	TETRALMSEqualizer bool
 	// DeEmphasis configures the post-demod single-pole IIR that
 	// recovers the pre-emphasized treble curve broadcast FM
 	// transmitters apply for SNR. Off by default — set Enabled and
@@ -291,6 +302,7 @@ type Composer struct {
 	hangtime   time.Duration
 	splitTx    bool
 	eqCfg      EqualizerConfig
+	tetraLMS   bool
 	deemphCfg  DeEmphasisConfig
 	lpfCfg     AudioLPFConfig
 	agcCfg     AudioAGCConfig
@@ -411,6 +423,7 @@ func New(opts Options) (*Composer, error) {
 		hangtime:     opts.VoiceHangtime,
 		splitTx:      opts.SplitPerTransmission,
 		eqCfg:        opts.Equalizer,
+		tetraLMS:     opts.TETRALMSEqualizer,
 		deemphCfg:    opts.DeEmphasis,
 		lpfCfg:       opts.AudioLPF,
 		agcCfg:       opts.AudioAGC,
