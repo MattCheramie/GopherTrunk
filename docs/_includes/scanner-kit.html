@@ -1,0 +1,94 @@
+{%- comment -%}
+  "Always-know-first" starter-kit landing block for the what's-happening-near-me
+  cluster pages. A complete dual-RTL-SDR + Orange Pi 5 parts list with Amazon
+  Associates links (tag gophertrunk-20, same rel="nofollow sponsored noopener"
+  convention as the buyer's guides). Pages that include this MUST set
+  `affiliate: true` in front matter so the FTC disclosure renders.
+  The PSU and microSD rows use tagged Amazon search links because the site
+  carries no vetted ASIN for them — do not swap in guessed ASINs.
+{%- endcomment -%}
+<div class="scanner-kit" markdown="0">
+<h2 id="kit">The fix for next time: a scanner that never sleeps, for about $250</h2>
+
+<p>Every lookup method on this page depends on someone else — a feed volunteer, an
+app's coverage map, an agency webmaster. This kit removes the middleman: a silent
+little box on a shelf that decodes your county's digital dispatch <em>directly off
+the air</em>, streams it to any browser in the house, and records every call with
+timestamps. Next time the sirens go past, the answer is already on your phone —
+and free, open-source <a href="/downloads.html">GopherTrunk</a> is the software, so
+the parts below are the entire cost.</p>
+
+<p><strong>Why two receivers:</strong> one dongle stays locked to your police
+trunked system while the second covers fire/EMS or a neighboring system at the
+same time — the two channels a "what's going on?" moment actually needs. That's a
+trick a $500 handheld scanner can't do, and GopherTrunk drives both dongles from
+one Orange Pi.</p>
+
+<div class="pick-cards">
+<div class="pick-card pick-card--top">
+<span class="pick-card__badge">The brain</span>
+<h3>Orange Pi 5</h3>
+<p class="pick-card__price">around $90</p>
+<p>The RK3588 host that runs it all 24/7 — silent, low-power, and strong enough for both dongles with headroom to spare. GopherTrunk ships a native ARM64 Linux build for it.</p>
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0BN15SS83?tag=gophertrunk-20" rel="nofollow sponsored noopener">Orange Pi 5 on Amazon &rarr;</a>
+<p class="pick-card__note"><a href="/reference/orange-pi/">Orange Pi details</a> · <a href="/best-single-board-computer-for-gophertrunk/">other boards compared</a></p>
+</div>
+<div class="pick-card">
+<span class="pick-card__badge">Receiver #1 + antennas</span>
+<h3>RTL-SDR Blog V4 kit</h3>
+<p class="pick-card__price">around $55</p>
+<p>The dongle <em>and</em> the telescopic dipole antenna kit with coax and mounts in one box — this one holds your police system's control channel.</p>
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0CD7558GT?tag=gophertrunk-20" rel="nofollow sponsored noopener">V4 + antenna kit on Amazon &rarr;</a>
+<p class="pick-card__note"><a href="/reference/rtl-sdr/">RTL-SDR details</a> · <a href="/best-rtl-sdr/">why the V4</a></p>
+</div>
+<div class="pick-card">
+<span class="pick-card__badge">Receiver #2</span>
+<h3>RTL-SDR Blog V4 (second dongle)</h3>
+<p class="pick-card__price">around $35</p>
+<p>Covers fire/EMS, a second trunked system, airband, or NOAA weather — simultaneously, not by giving up the first channel.</p>
+<a class="btn btn--buy" href="https://www.amazon.com/dp/B0CD745394?tag=gophertrunk-20" rel="nofollow sponsored noopener">RTL-SDR V4 on Amazon &rarr;</a>
+<p class="pick-card__note"><a href="/gophertrunk-multi-dongle-build/">the multi-dongle build guide</a></p>
+</div>
+</div>
+
+<h3>The complete parts list</h3>
+
+<table>
+<thead><tr><th>Part</th><th>Why it's in the kit</th><th>Approx&nbsp;$</th><th></th></tr></thead>
+<tbody>
+<tr><td><strong>Orange Pi 5</strong></td><td>Always-on host for both dongles</td><td>~$90</td><td><a href="https://www.amazon.com/dp/B0BN15SS83?tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+<tr><td><strong>RTL-SDR Blog V4 + dipole antenna kit</strong></td><td>Receiver #1, antennas, coax, mounts</td><td>~$55</td><td><a href="https://www.amazon.com/dp/B0CD7558GT?tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+<tr><td><strong>RTL-SDR Blog V4 (second)</strong></td><td>Receiver #2 — fire/EMS or a second system</td><td>~$35</td><td><a href="https://www.amazon.com/dp/B0CD745394?tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+<tr><td><strong>Powered USB&nbsp;3.0 hub</strong></td><td>Clean, stable power for two warm dongles</td><td>~$35</td><td><a href="https://www.amazon.com/dp/B0797NZFYP?tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+<tr><td><strong>16-piece SMA adapter kit</strong></td><td>Joins any antenna to any dongle, first try</td><td>~$18</td><td><a href="https://www.amazon.com/dp/B07PXCC5G2?tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+<tr><td><strong>RG316 SMA pigtail kit</strong></td><td>Flexible jumpers between hub, dongles, antennas</td><td>~$15</td><td><a href="https://www.amazon.com/dp/B0132N1DM0?tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+<tr><td><strong>USB-C power supply (5V/4A+)</strong></td><td>The Orange Pi 5 needs solid power for 24/7 duty</td><td>~$15</td><td><a href="https://www.amazon.com/s?k=orange+pi+5+power+supply+5v+4a&amp;tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+<tr><td><strong>microSD card (64GB, A2)</strong></td><td>OS plus months of recorded calls</td><td>~$12</td><td><a href="https://www.amazon.com/s?k=sandisk+extreme+64gb+microsd+a2&amp;tag=gophertrunk-20" rel="nofollow sponsored noopener">Amazon&nbsp;&rarr;</a></td></tr>
+</tbody>
+</table>
+
+<p><strong>Kit total: about $250–275.</strong> Worthwhile upgrade once it's earned a
+permanent shelf: an outdoor
+<a href="https://www.amazon.com/dp/B0CL5ZBN94?tag=gophertrunk-20" rel="nofollow sponsored noopener">discone antenna (~$40)</a>
+that hears everything from 25–3000&nbsp;MHz — see the
+<a href="/best-sdr-antenna/">antenna guide</a>. Prefer a Raspberry&nbsp;Pi&nbsp;5 host
+instead? Same build, swap the board —
+<a href="https://www.amazon.com/dp/B0CK2FCG1K?tag=gophertrunk-20" rel="nofollow sponsored noopener">Pi&nbsp;5 (8GB) on Amazon</a>
+and the <a href="/gophertrunk-sbc-build/">SBC build guide</a>.</p>
+
+<h3>From boxes to first decoded call</h3>
+
+<ol>
+<li><strong>Flash</strong> 64-bit Linux (Debian/Ubuntu image) to the microSD and boot the Orange Pi headless.</li>
+<li><strong>Plug in</strong> the powered hub, both dongles, and the antennas — the adapter kit bridges any connector mismatch.</li>
+<li><strong>Install GopherTrunk</strong> — one free static binary, no dependencies: <a href="/downloads.html">download</a>, then follow <a href="/getting-started-setup.html">the setup guide</a> to point it at your county's system from <a href="https://www.radioreference.com/" rel="noopener">RadioReference</a>.</li>
+<li><strong>Open the web console</strong> from any phone or laptop in the house — live calls, talkgroup names, and a scrollable, replayable recording archive.</li>
+</ol>
+
+<p>Two honest caveats before you spend a dime: check RadioReference that your
+agencies are <a href="/police-scanner-encryption/">not encrypted</a> — no device
+decodes AES — and skim <a href="/police-scanner-legal/">the legality rules for
+your state</a> (listening is legal in the US; a few states restrict use in
+vehicles). Rather have a no-computer, pocketable option instead? That's the
+<a href="/best-police-scanners/">dedicated scanner guide</a>.</p>
+</div>

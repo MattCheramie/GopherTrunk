@@ -53,6 +53,35 @@ organizations. Browse: {{ '/reference/' | absolute_url }}
 - [Hardware]({{ '/hardware.html' | absolute_url }}): supported SDR dongles.
 - [Downloads]({{ '/downloads.html' | absolute_url }}): builds for Linux, macOS, and Windows.
 
+## What's happening near me (sirens, lights & incident lookups)
+Practical, honest guides for the moment someone hears sirens or sees emergency lights and wants to know what's going on — every lookup method ranked by speed, with clear notes on coverage gaps, delays, and encryption.
+- [Why are there sirens near me right now?]({{ '/sirens-near-me/' | absolute_url }}): the fastest ways to find out what's happening — scanner feeds, CAD call logs, incident apps — ranked by how quickly they answer.
+- [Police activity near me]({{ '/police-activity-near-me/' | absolute_url }}): live dispatch audio, active-calls pages, crime maps, and public records, with what each one misses.
+- [Fire trucks on my street, but no fire]({{ '/fire-trucks-near-me/' | absolute_url }}): why engines respond to medical calls, alarms, and gas odors, and why so many units show up at once.
+- [Why is a helicopter circling my neighborhood?]({{ '/helicopter-circling-my-neighborhood/' | absolute_url }}): identify the exact aircraft in under a minute with ADS-B Exchange and read its flight pattern.
+- [What different siren sounds mean]({{ '/what-do-siren-sounds-mean/' | absolute_url }}): wail, yelp, phaser, the hi-lo evacuation tone, the fire Q, and the low-frequency Rumbler.
+- [Why are the tornado sirens going off?]({{ '/tornado-sirens-going-off/' | absolute_url }}): outdoor warning siren activations, test schedules, and why silence is not an all-clear.
+- [How to listen to police scanners online free]({{ '/listen-to-police-scanner-online/' | absolute_url }}): Broadcastify and scanner apps, plus the honest limits — coverage, delays, encryption.
+- [What happened near me last night?]({{ '/what-happened-near-me-last-night/' | absolute_url }}): reconstruct an incident after the fact from scanner archives, CAD logs, flight tracks, and records.
+- [Accident near me]({{ '/accident-near-me/' | absolute_url }}): dispatch audio, 511/DOT maps, and traffic apps, and how to read crash severity from the response.
+- [Why is the road closed?]({{ '/road-closed-near-me/' | absolute_url }}): finding the cause and likely duration of a closure, from crashes to wires down to planned events.
+- [Gunshots or fireworks?]({{ '/gunshots-or-fireworks/' | absolute_url }}): the honest by-ear guidance, when to call 911, and how to hear what responding officers actually found.
+- [What's burning near me?]({{ '/whats-burning-near-me/' | absolute_url }}): smoke-investigation dispatch calls, wildfire and air-quality maps, and prescribed-burn schedules.
+- [Power outage near me]({{ '/power-outage-near-me/' | absolute_url }}): outage maps, the radio traffic that names the cause, and staying informed when the Wi-Fi is down.
+- [That loud phone alert]({{ '/emergency-alert-just-went-off/' | absolute_url }}): Wireless Emergency Alerts explained — types, recovering a dismissed alert, and the detail the message leaves out.
+- [What was that loud boom?]({{ '/loud-boom-near-me/' | absolute_url }}): transformers, sonic booms, blasting, frost quakes — and the dispatch "area check" that settles it.
+- [Ambulance at a neighbor's house]({{ '/ambulance-at-neighbors-house/' | absolute_url }}): what the response pattern means, what stays private and why, and what a good neighbor does.
+- [SWAT in my neighborhood]({{ '/swat-team-in-my-neighborhood/' | absolute_url }}): warrant services vs standoffs, what to do while it's active, and the honest limits of what a scanner can hear.
+- [Drone flying over my house]({{ '/drone-flying-over-my-house/' | absolute_url }}): identify any drone with free Remote ID apps, police drone programs, and the legal lines in both directions.
+- [Military jets flying over]({{ '/military-jets-flying-over-my-house/' | absolute_url }}): training routes, refueling orbits, and why fighters don't show on flight trackers.
+- [Why train horns keep blowing]({{ '/train-horns-blowing/' | absolute_url }}): the required horn pattern, stuck crossing gates and the blue-sign number, and quiet zones.
+- [Why is the school on lockdown?]({{ '/school-lockdown-near-me/' | absolute_url }}): lockdown vs secure vs hold, why not to drive to the school, and reunification.
+- [Water main breaks]({{ '/water-main-break-near-me/' | absolute_url }}): sudden pressure loss, boil-water advisories, brown water, and hydrant flushing false alarms.
+- [Did we just have an earthquake?]({{ '/did-we-just-have-an-earthquake/' | absolute_url }}): the 30-second USGS check, the impostor list, and the drop-cover-hold drill.
+- [Police checkpoint or roadblock]({{ '/police-checkpoint-near-me/' | absolute_url }}): DUI checkpoints vs manhunt perimeters vs closures, and what each expects of a driver.
+- [Why did police knock on my door?]({{ '/police-knocked-on-my-door/' | absolute_url }}): canvassing, welfare checks, wrong addresses — and how to verify a knock is real.
+- [Missing-person search near me]({{ '/missing-person-search-near-me/' | absolute_url }}): how searches work, and the three neighbor actions that actually find people.
+
 ## Police scanner buyer's guides & hardware
 Consumer scanner hardware (Uniden, Whistler) compared honestly against a free SDR + GopherTrunk.
 - [Best police scanners]({{ '/best-police-scanners/' | absolute_url }}): buyer's guide to every scanner worth owning, with an honest SDR comparison.

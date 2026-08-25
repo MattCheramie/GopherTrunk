@@ -21,6 +21,9 @@ Google Search Console.
 {%- for p in pages -%}
   {%- if p.url == "/" -%}{%- continue -%}{%- endif -%}
   {%- if p.sitemap == false -%}{%- continue -%}{%- endif -%}
+  {%- comment -%} `unlisted: true` pages stay in sitemap.xml for search engines
+      but are excluded from every on-site listing surface. {%- endcomment -%}
+  {%- if p.unlisted -%}{%- continue -%}{%- endif -%}
   {%- if p.url contains "/learn/" or p.url contains "/reference/" or p.url contains "/blog/" -%}{%- continue -%}{%- endif -%}
   <li><a href="{{ p.url | relative_url }}">{{ p.title | default: p.name }}</a></li>
 {%- endfor -%}
