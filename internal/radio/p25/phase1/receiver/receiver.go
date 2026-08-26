@@ -339,9 +339,9 @@ type Receiver struct {
 	// llrBuf is its reused scratch.
 	llrThreshold float32
 	llrBuf       []float32
-	eyeSPS     int       // integer samples/symbol for the eye fold (C4FM)
-	eyeBuf     []float32 // scratch for the AGC-scaled oversampled eye output
-	dibitBase  int
+	eyeSPS       int       // integer samples/symbol for the eye fold (C4FM)
+	eyeBuf       []float32 // scratch for the AGC-scaled oversampled eye output
+	dibitBase    int
 
 	// Reusable scratch slices so Process doesn't allocate per call
 	// on the C4FM path.
