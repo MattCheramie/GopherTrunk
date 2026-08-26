@@ -42,6 +42,20 @@ for tagged releases.
   #1096).
 
 ### Fixed
+- **Web History: "recording is unavailable (it may have been swept by
+  retention)" while the WAV was on disk the whole time.** A daemon started with
+  a relative `-config` path (e.g. `gophertrunk -config config.yaml`) resolved
+  `recordings.dir` — and every other config-relative path — against the
+  *relative* config directory, so the call log stored cwd-relative
+  `recording_path` rows and `GET /api/v1/calls/{id}/audio`'s absolute-path
+  guard 404'd every playback of a file that was right there. Three fixes:
+  `config.Load` now absolutizes the resolve base so stored paths are always
+  absolute; the audio endpoint resolves a relative stored path (rows written
+  before the fix) against the daemon's working directory — the directory the
+  recorder wrote it under — before validating; and the web player now surfaces
+  the daemon's own error detail (`no recording for this call` / `recording
+  unavailable` / `recording file is gone`) instead of unconditionally guessing
+  retention, so the next mismatch is diagnosable from the screenshot.
 - **macOS: transient RTL-SDR control-transfer aborts during bring-up are now
   retried instead of failing the open** (issue #1135). On a Mac with two dongles
   on one bus, a control `DeviceRequest` during device bring-up intermittently

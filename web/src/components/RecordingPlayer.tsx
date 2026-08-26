@@ -43,10 +43,22 @@ export function RecordingPlayer({
     })
       .then(async (res) => {
         if (!res.ok) {
+          // Surface the daemon's own {"error": "..."} detail when present:
+          // the server distinguishes "no recording for this call" /
+          // "recording unavailable" / "recording file is gone", and showing
+          // only a guessed retention message hid a path-validation bug where
+          // the file was on disk the whole time.
+          let detail = "";
+          try {
+            const body = (await res.json()) as { error?: string };
+            if (typeof body?.error === "string") detail = body.error;
+          } catch {
+            // non-JSON error body — fall through to the generic message
+          }
           throw new Error(
             res.status === 404
-              ? "recording is unavailable (it may have been swept by retention)"
-              : `recording request failed (${res.status})`,
+              ? `recording is unavailable (${detail || "it may have been swept by retention"})`
+              : `recording request failed (${res.status}${detail ? `: ${detail}` : ""})`,
           );
         }
         const blob = await res.blob();

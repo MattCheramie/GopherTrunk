@@ -2165,7 +2165,18 @@ func Load(path string) (Config, error) {
 	// land under the operator's chosen data root regardless of platform
 	// or current working directory. Absolute and env-expanded-to-absolute
 	// paths pass through untouched (see resolvePaths).
-	cfg.resolvePaths(filepath.Dir(path))
+	//
+	// The base itself must be absolutized first: a relative -config path
+	// (`gophertrunk -config config.yaml`) makes filepath.Dir relative, and
+	// resolving against a relative base leaves every field relative — the
+	// recorder then stores relative recording_path rows, which the audio
+	// endpoint's absolute-path guard rejects (the "recording is unavailable
+	// while the file exists" UI bug).
+	base := filepath.Dir(path)
+	if abs, err := filepath.Abs(base); err == nil {
+		base = abs
+	}
+	cfg.resolvePaths(base)
 	if err := cfg.Validate(); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
 	}
