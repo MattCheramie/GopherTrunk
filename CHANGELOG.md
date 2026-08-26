@@ -8,6 +8,32 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Cross-protocol feature-parity series** (see
+  [`docs/protocol-feature-parity.md`](docs/protocol-feature-parity.md) for the
+  full matrix and A/B recipes). Everything decode-affecting is opt-in and off
+  by default until an operator capture A/B confirms the gain on air:
+  - **`nxdn_soft_decision`** / **`p25_phase1_soft_decision`** — per-bit
+    soft-decision FEC on the NXDN CAC and P25 Phase 1 TSBK decodes, the
+    TETRA yield lever ported (measured on synthetic channels: NXDN CAC CRC
+    26→151/200; P25 TSBK 81→212/300).
+  - **`p25_phase2_dc_block`** — the P1/TETRA zero-IF DC-removal stage on the
+    Phase 2 traffic receiver.
+  - **`nxdn_afc`** — post-clock coarse carrier-offset correction for NXDN
+    rigs with a real tuner ppm error (opt-in unlike DMR/P25: NXDN's
+    unwhitened CAC runs make an always-on tracker drift on clean signals).
+  - **`tetra_traffic_lms`** — production wiring for the midamble-trained
+    TETRA traffic-burst equalizer (formerly harness-only, `GT_TETRA_LMS`).
+  - Always-on hygiene: a signal-time decode-drought watchdog on the P25
+    P1/P2, DMR Tier III and NXDN control-channel pipelines (the TETRA resync
+    design generalised); the P25 Phase 2 carrier seed gains the P1 multipath
+    coherence gate; Phase 2 CCs now report `control_channel_carrier_offset`
+    and the wrong-site/mistune WARN; `tetra-dmo` voice calls get the same
+    `.raw` sidecar as TMO.
+  - Diagnostics: NXDN and P25 Phase 2 receivers in the web symbol panels
+    (an NXDN/P2 rig no longer opens a wrong-protocol receiver); NXDN
+    replay harness (`GT_NXDN_IQ` / `GT_NXDN_SOFT` / `GT_NXDN_AFC`); NXDN
+    control channels on the wideband multi-tap engine (`wideband` role
+    `protocol: nxdn`).
 - **`unfollowed_reason` on observed calls** (issue #356). Calls the control
   channel announces but no voice tuner follows now say *why* in
   `/api/v1/calls/active`: `no voice SDR configured`, `voice frequency outside

@@ -342,6 +342,10 @@ sdr:
     #                           (frequency_hz must be in
     #                           control_channels; respects the
     #                           per-system p25_phase2_* mode keys)
+    #   protocol: nxdn        → NXDN trunked control channel (RCCH)
+    #                           (frequency_hz must be in
+    #                           control_channels; respects the
+    #                           per-system nxdn_* keys)
     #
     # Channels of any supported protocol can mix on the same dongle.
     # Trunked CC channels (dmr / p25 / p25-phase2) decode the control
@@ -1093,6 +1097,10 @@ trunking:
   #     nxdn_viterbi_mode: "off"        # legacy 44-dibit raw CAC
   #     # nxdn_soft_decision: "on"      # per-bit soft Viterbi on the spec
   #     #                               # CAC decode (marginal-signal gain)
+  #     # nxdn_afc: "on"                # post-clock coarse carrier AFC for
+  #     #                               # a rig with a real tuner ppm error
+  #     #                               # (off by default: NXDN's unwhitened
+  #     #                               # CAC runs drift the coarse tracker)
   #     # nxdn_deviation_hz: 2400       # override 1800 Hz spec default
   #                                     # for non-spec transmitters (see
   #                                     # samples/nxdn/README.md sweep recipe)
@@ -1144,6 +1152,9 @@ trunking:
   #     tetra_channel: "sch/hd"         # sch/hd | sch/f | sch/hu | bsch | aach
   #     tetra_channel_coding: "off"     # legacy 48-dibit raw PDU
   #     # tetra_clock_mode: "naive"     # decimate; default Gardner
+  #     # tetra_traffic_lms: "on"       # midamble-trained LMS on the
+  #     #                               # traffic soft path (opt-in until
+  #     #                               # the GT_TETRA_LMS capture A/B)
   #
   #   - name: "Legacy-EDACS"
   #     protocol: edacs

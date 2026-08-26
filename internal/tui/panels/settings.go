@@ -194,17 +194,17 @@ fecRefresh:
 	// to) the FEC tab — the hash gate keeps the cost negligible.
 	if p.tab == tabFEC {
 		h := hashRows(s.Systems, func(sys client.SystemDTO) string {
-			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%.1f|%s",
+			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%.1f|%s",
 				sys.Name, sys.Protocol,
 				sys.TETRAColourCode, sys.TETRAChannel,
-				sys.TETRAChannelCoding,
+				sys.TETRAChannelCoding, sys.TETRATrafficLMS,
 				sys.LTRFCSMode, sys.LTRManchesterMode,
 				sys.P25Phase1DemodMode, sys.P25Phase1SoftDecision,
 				sys.P25Phase2TrellisMode, sys.P25Phase2RSMode,
 				sys.P25Phase2ScramblerMode, sys.P25Phase2SoftDecision,
 				sys.P25Phase2Equalizer, sys.P25Phase2DCBlock,
 				sys.NXDNViterbiMode, sys.NXDNSoftDecision,
-				sys.NXDNDeviationHz,
+				sys.NXDNAFC, sys.NXDNDeviationHz,
 				sys.EDACSBCHMode)
 		})
 		if h != p.lastHash {
@@ -465,6 +465,7 @@ func fecSummary(s client.SystemDTO) string {
 			}
 			parts = append(parts, fmt.Sprintf("channel coding: on (colour=%#x, %s)", s.TETRAColourCode, ch))
 		}
+		parts = append(parts, "traffic lms: "+orDefault(s.TETRATrafficLMS, "off"))
 	case "ltr":
 		parts = append(parts, "fcs: "+orDefault(s.LTRFCSMode, "on"))
 		parts = append(parts, "manchester: "+orDefault(s.LTRManchesterMode, "soft"))
@@ -481,6 +482,7 @@ func fecSummary(s client.SystemDTO) string {
 	case "nxdn":
 		parts = append(parts, "viterbi: "+orDefault(s.NXDNViterbiMode, "spec"))
 		parts = append(parts, "soft: "+orDefault(s.NXDNSoftDecision, "off"))
+		parts = append(parts, "afc: "+orDefault(s.NXDNAFC, "off"))
 		if s.NXDNDeviationHz > 0 {
 			parts = append(parts, fmt.Sprintf("deviation: %.0f Hz", s.NXDNDeviationHz))
 		} else {

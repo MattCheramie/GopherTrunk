@@ -148,6 +148,7 @@ type SystemDTO struct {
 	TETRAColourCode        uint32  `json:"tetra_colour_code,omitempty"`
 	TETRAChannel           string  `json:"tetra_channel,omitempty"`
 	TETRAChannelCoding     string  `json:"tetra_channel_coding,omitempty"`
+	TETRATrafficLMS        string  `json:"tetra_traffic_lms,omitempty"`
 	LTRFCSMode             string  `json:"ltr_fcs_mode,omitempty"`
 	LTRManchesterMode      string  `json:"ltr_manchester_mode,omitempty"`
 	P25Phase1DemodMode     string  `json:"p25_phase1_demod_mode,omitempty"`
@@ -160,6 +161,7 @@ type SystemDTO struct {
 	P25Phase2DCBlock       string  `json:"p25_phase2_dc_block,omitempty"`
 	NXDNViterbiMode        string  `json:"nxdn_viterbi_mode,omitempty"`
 	NXDNSoftDecision       string  `json:"nxdn_soft_decision,omitempty"`
+	NXDNAFC                string  `json:"nxdn_afc,omitempty"`
 	NXDNDeviationHz        float64 `json:"nxdn_deviation_hz,omitempty"`
 	EDACSBCHMode           string  `json:"edacs_bch_mode,omitempty"`
 	MPT1327BCHMode         string  `json:"mpt1327_bch_mode,omitempty"`
@@ -329,6 +331,7 @@ func systemToDTO(s trunking.System) SystemDTO {
 		TETRAColourCode:        s.TETRAColourCode,
 		TETRAChannel:           s.TETRAChannel,
 		TETRAChannelCoding:     s.TETRAChannelCoding,
+		TETRATrafficLMS:        s.TETRATrafficLMS,
 		LTRFCSMode:             s.LTRFCSMode,
 		LTRManchesterMode:      s.LTRManchesterMode,
 		P25Phase1DemodMode:     s.P25Phase1DemodMode,
@@ -341,6 +344,7 @@ func systemToDTO(s trunking.System) SystemDTO {
 		P25Phase2DCBlock:       s.P25Phase2DCBlock,
 		NXDNViterbiMode:        s.NXDNViterbiMode,
 		NXDNSoftDecision:       s.NXDNSoftDecision,
+		NXDNAFC:                s.NXDNAFC,
 		NXDNDeviationHz:        s.NXDNDeviationHz,
 		EDACSBCHMode:           s.EDACSBCHMode,
 		MPT1327BCHMode:         s.MPT1327BCHMode,

@@ -29,6 +29,7 @@ import (
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
+	p25phase2rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2/receiver"
 	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -164,6 +165,7 @@ type Engine struct {
 	tetraRx      *tetrarx.Receiver
 	dmrRx        *dmrrx.Receiver
 	nxdnRx       *nxdnrx.Receiver
+	p25p2Rx      *p25phase2rx.Receiver
 	symbolRateHz float64
 	centerHz     uint32
 	offsetHz     int32
@@ -207,8 +209,9 @@ func New(opts Options) (*Engine, error) {
 		return nil, errors.New("symbolscope: InRateHz must be > 0")
 	}
 	if opts.Protocol != trunking.ProtocolP25 && opts.Protocol != trunking.ProtocolTETRA &&
-		opts.Protocol != trunking.ProtocolDMR && opts.Protocol != trunking.ProtocolNXDN {
-		return nil, fmt.Errorf("symbolscope: protocol %s is not supported (P25 Phase 1, DMR, NXDN, and TETRA only)", opts.Protocol)
+		opts.Protocol != trunking.ProtocolDMR && opts.Protocol != trunking.ProtocolNXDN &&
+		opts.Protocol != trunking.ProtocolP25Phase2 {
+		return nil, fmt.Errorf("symbolscope: protocol %s is not supported (P25 Phase 1/2, DMR, NXDN, and TETRA only)", opts.Protocol)
 	}
 
 	frameSymbols := opts.FrameSymbols
@@ -283,6 +286,26 @@ func New(opts Options) (*Engine, error) {
 			EyeSink:      e.onEye,
 			DibitSink:    e.onDibits,
 		})
+	case trunking.ProtocolP25Phase2:
+		// P25 Phase 2 H-DQPSK: the receiver's soft-decision path emits, per
+		// dibit, the complex differential rotated onto the diagonals — the
+		// true constellation, the same shape as TETRA's π/4-DQPSK view. With
+		// SoftDecision set the hard DibitSink is never called (the receiver
+		// contract), so the one callback feeds both accumulators: symbols
+		// first, then dibits, so the flush pairs them on the same batch.
+		// Gardner clock + the production gain mirror the live pipeline.
+		// No 4-level soft/eye track (linear path).
+		e.symbolRateHz = p25phase2rx.SymbolRate
+		e.p25p2Rx = p25phase2rx.New(p25phase2rx.Options{
+			SampleRateHz: ddc.OutRateHz(),
+			ClockMode:    p25phase2rx.ClockGardner,
+			GardnerGain:  0.005,
+			SoftDecision: true,
+			SoftSink: func(dibits []uint8, soft []complex64, baseIdx int) {
+				e.onSymbols(soft)
+				e.onDibits(dibits, baseIdx)
+			},
+		})
 	default: // P25 Phase 1
 		demodMode, ok := p25phase1rx.ParseDemodMode(opts.DemodMode)
 		if !ok {
@@ -333,6 +356,8 @@ func (e *Engine) Process(iq []complex64) {
 		e.dmrRx.Process(e.chanBuf)
 	case e.nxdnRx != nil:
 		e.nxdnRx.Process(e.chanBuf)
+	case e.p25p2Rx != nil:
+		e.p25p2Rx.Process(e.chanBuf)
 	default:
 		e.rx.Process(e.chanBuf)
 	}
@@ -472,13 +497,24 @@ func (e *Engine) stampMetrics(f *Frame) {
 		return
 	}
 	if e.nxdnRx != nil {
-		// NXDN runs no AFC, so CarrierOffsetHz stays 0 — the AGC/clock loop
-		// state plus the constellation, eye, and dibits are the useful views,
-		// exactly the DMR posture.
+		// The scope's NXDN receiver runs no AFC (the opt-in nxdn_afc stage
+		// is off by default, and even on it reads through a unit-energy RRC
+		// — the same DC-gain scale mismatch as DMR), so CarrierOffsetHz
+		// stays 0 rather than reported in the wrong scale — the AGC/clock
+		// loop state plus the constellation, eye, and dibits are the useful
+		// views, exactly the DMR posture.
 		f.AGCLevel = e.nxdnRx.AGCLevel()
 		f.AGCTarget = e.nxdnRx.AGCTarget()
 		f.ClockMu = e.nxdnRx.MMClockMu()
 		f.ClockSPS = e.nxdnRx.MMClockSPS()
+		return
+	}
+	if e.p25p2Rx != nil {
+		// Phase 2 exposes its carrier-recovery estimate (coarse seed +
+		// Costas residual); the other loop getters aren't surfaced by the
+		// receiver, so they stay zero — the TETRA posture: constellation,
+		// offset, and dibits are the useful views.
+		f.CarrierOffsetHz = e.p25p2Rx.CarrierOffsetHz()
 		return
 	}
 	if e.rx == nil {
@@ -506,6 +542,9 @@ func (e *Engine) stampMetrics(f *Frame) {
 func (e *Engine) carrierOffsetHz() float64 {
 	if e.tetraRx != nil {
 		return e.tetraRx.CarrierOffsetHz()
+	}
+	if e.p25p2Rx != nil {
+		return e.p25p2Rx.CarrierOffsetHz()
 	}
 	if e.rx == nil {
 		return 0

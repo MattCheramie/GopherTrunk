@@ -58,6 +58,39 @@ func TestRegisteredProtocolsConstruct(t *testing.T) {
 	}
 }
 
+// TestP25Phase2PipelineReportsAFCOffset pins the p25Phase2Pipeline's
+// afcReporter shape: it must expose AFCOffsetHz (so the Decoder surfaces
+// control_channel_carrier_offset and the #815 wrong-site WARN for Phase 2,
+// like P1/TETRA) but must NOT carry the appliesAutotune marker — that gate
+// keeps per-chunk autotune sampling and its log traffic P1-only by design.
+func TestP25Phase2PipelineReportsAFCOffset(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+
+	pipe, ok, err := NewPipeline(trunking.ProtocolP25Phase2, PipelineOptions{
+		Bus:          bus,
+		Log:          discardLogger(),
+		SystemName:   "test",
+		FrequencyHz:  851_000_000,
+		SampleRateHz: DDCTargetForProtocol(trunking.ProtocolP25Phase2),
+	})
+	if !ok || err != nil {
+		t.Fatalf("NewPipeline(P25Phase2): ok=%v err=%v", ok, err)
+	}
+	defer pipe.Close()
+
+	rep, isReporter := pipe.(interface{ AFCOffsetHz() float64 })
+	if !isReporter {
+		t.Fatal("p25Phase2Pipeline does not implement AFCOffsetHz (afcReporter)")
+	}
+	if got := rep.AFCOffsetHz(); got != 0 {
+		t.Errorf("fresh pipeline AFCOffsetHz = %g, want 0", got)
+	}
+	if _, autotunes := pipe.(interface{ appliesAutotune() }); autotunes {
+		t.Error("p25Phase2Pipeline claims appliesAutotune; that marker is P1-only")
+	}
+}
+
 // TestNewPipelineUnregistered confirms an unregistered protocol reports
 // ok=false (not an error) so callers can distinguish "not supported yet"
 // from "construction failed".

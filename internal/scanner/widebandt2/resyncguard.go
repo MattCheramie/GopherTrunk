@@ -16,6 +16,7 @@ const (
 	p25Phase1ResyncWindow = 2 * time.Second
 	p25Phase2ResyncWindow = 2 * time.Second
 	dmrTier3ResyncWindow  = 3 * time.Second
+	nxdnResyncWindow      = 2 * time.Second
 )
 
 // droughtGuardReceiver wraps a protocol receiver with the signal-time

@@ -192,11 +192,18 @@ func buildTETRAChannel(sys trunking.System, ch ChannelConfig, outRateHz float64,
 		now = time.Now
 	}
 	clog := log.With("system", sys.Name, "freq_hz", freqHz, "proto", "tetra")
+	trafficLMS, lmsOK := tetra.ParseTrafficLMS(sys.TETRATrafficLMS)
+	if !lmsOK {
+		clog.Warn("widebandt2: unrecognised tetra_traffic_lms; falling back to off", "value", sys.TETRATrafficLMS)
+	}
 	cc := tetra.New(tetra.Options{
 		Bus:         bus,
 		Log:         clog,
 		SystemName:  sys.Name,
 		FrequencyHz: freqHz,
+		// Stamped onto voice grants for the composer's traffic-chain LMS
+		// (tetra_traffic_lms, opt-in) — mirrors the ccdecoder pipeline.
+		TrafficLMS: trafficLMS,
 	})
 	codingMode, ok := tetra.ParseChannelCoding(sys.TETRAChannelCoding)
 	if !ok {

@@ -49,6 +49,11 @@ func TestReplayNXDNRealCapture(t *testing.T) {
 	// on the CAC) and reports BOTH hard and soft CAC CRC yields off the same
 	// dibit/LLR stream — the A/B metric for the opt-in.
 	soft := os.Getenv("GT_NXDN_SOFT") == "1" || os.Getenv("GT_NXDN_SOFT") == "true"
+	// GT_NXDN_AFC=1 enables the opt-in post-clock CoarseAFC (nxdn_afc) —
+	// the A/B lever for a capture with a real tuner ppm error. Off by
+	// default like production (NXDN's unwhitened CAC runs drift the plain
+	// coarse tracker — see the receiver's Options.EnableAFC comment).
+	afc := os.Getenv("GT_NXDN_AFC") == "1" || os.Getenv("GT_NXDN_AFC") == "true"
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -178,6 +183,7 @@ func TestReplayNXDNRealCapture(t *testing.T) {
 	rxOpts := nxdnrx.Options{
 		SampleRateHz: outRate,
 		DeviationHz:  1800.0,
+		EnableAFC:    afc,
 	}
 	if soft {
 		rxOpts.SoftDecision = true

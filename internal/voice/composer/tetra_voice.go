@@ -51,7 +51,7 @@ func newTETRAVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 // call's own speech is never dropped on a guess — which is the common case on a
 // solo tap (one call present). Encrypted calls (TEA1-4) fail the CRC and produce
 // no decoded audio (their raw bursts still exist upstream).
-func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, colourExt uint32, usageMarker uint8, done chan<- struct{}) {
+func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, timeslot uint8, colourExt uint32, usageMarker uint8, trafficLMS bool, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-tetra:"+serial, nil)
 
@@ -70,7 +70,7 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		c.onTETRATrafficBurst(bt, rs, serial, frame, softType5, usage, usageMarker, &bursts, &speech, &offSlot, &bfi)
 	})
 
-	rx := tetrarx.New(tetrarx.Options{
+	rxOpts := tetrarx.Options{
 		SampleRateHz:        symbolHz,
 		DibitSink:           func(d []uint8, base int) { extractor.Process(d, base) },
 		SoftSink:            func(diffs []complex64, base int) { extractor.StashSoft(diffs, base) },
@@ -80,7 +80,16 @@ func (c *Composer) runTETRAVoiceChain(ctx context.Context, serial string, iqCh <
 		EnableChannelFilter: true,
 		EnableEqualizer:     true, // invert linear channel/ISI that garbles TCH/S (#764/#771 follow-up)
 		EnableDCBlock:       true, // strip the front-end DC spur that leaks into same-carrier voice under heavy multislot
-	})
+	}
+	if trafficLMS {
+		// tetra_traffic_lms (opt-in): train the midamble SnapshotLMS per
+		// burst and re-derive the soft TCH/S LLRs from the equalized
+		// symbols. The extractor needs the raw pre-differential symbols —
+		// the harness wiring from tetra_multislot_replay_test.go (GT_TETRA_LMS).
+		extractor.EnableLMSEqualizer(0, 0)
+		rxOpts.SymbolSink = func(syms []complex64, base int) { extractor.StashSymbols(syms, base) }
+	}
+	rx := tetrarx.New(rxOpts)
 
 	c.log.Info("composer: tetra voice follow started — TCH/S decode + ACELP vocoder",
 		"serial", serial, "group", groupID, "timeslot", timeslot,
@@ -272,8 +281,14 @@ type tetraSlotDemux struct {
 	c      *Composer
 	key    string
 	colour uint32
-	cancel context.CancelFunc
-	done   chan struct{}
+	// trafficLMS mirrors the creating grant's TETRATrafficLMS
+	// (tetra_traffic_lms, opt-in): train the midamble SnapshotLMS per burst
+	// and re-derive the soft TCH/S LLRs from the equalized symbols. Fixed at
+	// demux creation — the demux is per-carrier and per-system, so every
+	// grant that reaches it carries the same system-level flag.
+	trafficLMS bool
+	cancel     context.CancelFunc
+	done       chan struct{}
 
 	mu     sync.Mutex
 	owners map[uint8]*tetraSlotOwner // usage marker (>=DLUsageTraffic) -> current owner
@@ -446,7 +461,7 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 	fe := newTETRAVoiceFrontEnd(iqHz, d.c.bw)
 	symbolHz := fe.OutRateHz()
 	extractor := tetra.NewTrafficExtractor(d.colour, d.onBurst)
-	rx := tetrarx.New(tetrarx.Options{
+	rxOpts := tetrarx.Options{
 		SampleRateHz:        symbolHz,
 		DibitSink:           func(di []uint8, base int) { extractor.Process(di, base) },
 		SoftSink:            func(diffs []complex64, base int) { extractor.StashSoft(diffs, base) },
@@ -456,7 +471,14 @@ func (d *tetraSlotDemux) run(ctx context.Context, iqCh <-chan []complex64, iqHz 
 		EnableChannelFilter: true,
 		EnableEqualizer:     true, // invert linear channel/ISI that garbles TCH/S (#764/#771 follow-up)
 		EnableDCBlock:       true, // strip the front-end DC spur that leaks into same-carrier voice under heavy multislot
-	})
+	}
+	if d.trafficLMS {
+		// tetra_traffic_lms (opt-in): same wiring as the solo chain — see
+		// runTETRAVoiceChain.
+		extractor.EnableLMSEqualizer(0, 0)
+		rxOpts.SymbolSink = func(syms []complex64, base int) { extractor.StashSymbols(syms, base) }
+	}
+	rx := tetrarx.New(rxOpts)
 	d.c.log.Info("composer: tetra shared voice demux started (usage-marker routing)",
 		"key", d.key, "colour_code", d.colour&0x3F, "rate_hz", symbolHz)
 	defer func() {

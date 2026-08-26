@@ -99,6 +99,20 @@ type Options struct {
 	// diagnostic symbol scope.
 	EyeSink func(oversampled []float32, sps int)
 
+	// EnableAFC enables the post-clock coarse carrier-offset correction
+	// (nxdn_afc) — the DMR issue #836 CoarseAFC port. OFF by default,
+	// unlike DMR/P25, because plain CoarseAFC drifts onto the data mean
+	// during sustained unbalanced symbol runs (the issue #402 mode) and
+	// NXDN's CAC produces exactly those: a zero-heavy L3 payload
+	// convolutionally encodes to long constant-dibit runs (there is no
+	// mandatory air-interface whitening), so an always-on tracker walks
+	// the eye off the slicer mid-frame and CAC CRC yield collapses —
+	// measured on the repo's own synthetic SITE_INFO fixture. Turn on for
+	// a rig with a real tuner ppm error; the on-air validation capture
+	// (docs/decoder-capture-needs.md) gates any default change. Requires
+	// DeviationHz > 0 (the calibrated-slicer path).
+	EnableAFC bool
+
 	// SoftDecision enables soft-decision output (nxdn_soft_decision,
 	// mirroring the P25 Phase 2 receiver's contract): alongside the hard
 	// dibits the receiver derives, per dibit, two per-bit log-likelihood
@@ -119,6 +133,7 @@ type Receiver struct {
 	fm        *demod.FM
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
+	afc       *demod.CoarseAFC
 	agc       demod.C4FMSymbolAGC
 	dibitSink nxdn.DibitSink
 	dibitBase int
@@ -184,10 +199,34 @@ func New(opts Options) *Receiver {
 		slicerScale = 2.0 * math.Pi * opts.DeviationHz / opts.SampleRateHz
 	}
 
+	// Coarse carrier-offset correction — the DMR issue #836 port. An
+	// uncorrected tuner ppm error leaves the FM discriminator as a constant
+	// DC bias that slides the 4-level eye off the slicer's fixed thresholds;
+	// the narrowband NXDN demod tolerates only tens of Hz before decode
+	// collapses. CoarseAFC tracks and subtracts that bias, recentring the
+	// eye — NXDN was the one 4800-baud C4FM receiver with NO carrier
+	// correction at all.
+	//
+	// Like DMR (and unlike P25), the correction is applied on the recovered
+	// SYMBOL stream (post-clock, pre-slicer/AGC), not on the pre-clock
+	// matched-filter stream: the offset's DC bias is identical in both
+	// domains, but feeding the coarse estimate's data-mean wander into the
+	// Mueller-Müller timing loop destabilises symbol timing on a clean
+	// signal (verified on the DMR port). sps=1 because the symbol stream is
+	// one sample per symbol. Opt-in (Options.EnableAFC — see its comment
+	// for why NXDN, alone in the C4FM family, cannot run this always-on)
+	// and only on the calibrated DeviationHz>0 path, so the default
+	// receiver stays byte-identical.
+	var afc *demod.CoarseAFC
+	if opts.EnableAFC && opts.DeviationHz > 0 {
+		afc = demod.NewCoarseAFC(1)
+	}
+
 	return &Receiver{
 		fm:    demod.NewFM(),
 		mf:    demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
 		clock: sync.NewMuellerMuller(sps, gain),
+		afc:   afc,
 		// Symbol-AGC bridges the level mismatch between the unit-energy
 		// RRC matched filter and the 4-level slicer's fixed thresholds.
 		// The RRC has a DC gain of ~3.1 (it is normalised to unit
@@ -231,18 +270,30 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
+	// Subtract the residual carrier-offset DC bias from the recovered
+	// symbols before slicing, so a real tuner's frequency error doesn't
+	// shift the 4-level eye off the slicer's fixed thresholds (the DMR
+	// issue #836 port). Applied post-clock so its data-driven wander can't
+	// destabilise symbol timing; nil (no-op) on the legacy DeviationHz<=0
+	// path. Runs before the AGC so the level normalisation — and the
+	// soft-decision LLR derivation below — see a centred eye.
+	if r.afc != nil {
+		r.afc.Process(r.symbols)
+	}
 	// Normalise the symbol level to the slicer's expected scale before
 	// slicing, so the unit-energy matched filter's ~3.1× DC gain doesn't
 	// push the 4-level eye past the slicer's fixed thresholds (no-op on
 	// the legacy DeviationHz<=0 path where target==0). See package doc.
 	agcLevel := r.agc.Process(r.symbols)
-	// Diagnostic taps (symbol scope). The soft track is the post-AGC
+	// Diagnostic taps (symbol scope). The soft track is the post-AFC/AGC
 	// 1/symbol waveform — aligned with the dibit batch fired below. The
 	// eye is the oversampled matched buffer the clock loop read
 	// read-only, scaled by this batch's AGC gain so its rails line up
-	// with the soft levels (NXDN runs no AFC yet, so no recentring is
-	// needed). nil sinks are no-ops. Mirrors the DMR receiver's taps so
-	// the scope routes both identically.
+	// with the soft levels; like DMR the AFC runs on the post-clock
+	// symbol stream, so r.matched is NOT AFC-corrected — subtract the
+	// AFC's DC offset (identical bias in the oversampled and decimated
+	// domains) to recentre the eye. nil sinks are no-ops. Mirrors the DMR
+	// receiver's taps so the scope routes both identically.
 	if r.softSink != nil {
 		r.softSink(r.symbols)
 	}
@@ -251,13 +302,17 @@ func (r *Receiver) Process(iq []complex64) {
 		if r.agc.Target > 0 && agcLevel > 0 {
 			g = r.agc.Target / float32(agcLevel)
 		}
+		off := float32(0)
+		if r.afc != nil {
+			off = float32(r.afc.Offset())
+		}
 		if cap(r.eyeBuf) < len(r.matched) {
 			r.eyeBuf = make([]float32, len(r.matched))
 		} else {
 			r.eyeBuf = r.eyeBuf[:len(r.matched)]
 		}
 		for i, x := range r.matched {
-			r.eyeBuf[i] = x * g
+			r.eyeBuf[i] = (x - off) * g
 		}
 		r.eyeSink(r.eyeBuf, r.eyeSPS)
 	}
@@ -302,6 +357,9 @@ func (r *Receiver) Process(iq []complex64) {
 func (r *Receiver) Reset() {
 	r.dibitBase = 0
 	r.agc.Reset()
+	if r.afc != nil {
+		r.afc.Reset()
+	}
 }
 
 // AGCLevel and AGCTarget expose the shared symbol-AGC's running mean|x|

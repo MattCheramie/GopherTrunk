@@ -20,3 +20,19 @@ func ParseSoftDecision(s string) (on bool, ok bool) {
 		return false, false
 	}
 }
+
+// ParseAFC maps a config / user-facing string into the Options.EnableAFC
+// boolean (the nxdn_afc key), same grammar as ParseSoftDecision. Default
+// off — see the Options.EnableAFC comment for why the coarse tracker
+// cannot run always-on against NXDN's unwhitened CAC runs. Unknown strings
+// return false with `ok = false` so callers can warn and fall back.
+func ParseAFC(s string) (on bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return false, true
+	case "on", "true", "1":
+		return true, true
+	default:
+		return false, false
+	}
+}

@@ -13,7 +13,7 @@ var AdvancedFields = map[string][]string{
 	},
 	"SystemConfig": {
 		// TETRA
-		"TETRAColourCode", "TETRAMCC", "TETRAMNC", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode",
+		"TETRAColourCode", "TETRAMCC", "TETRAMNC", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode", "TETRATrafficLMS",
 		"TETRAStatusIntervalSecs",
 		// LTR
 		"LTRFCSMode", "LTRManchesterMode",
@@ -26,7 +26,7 @@ var AdvancedFields = map[string][]string{
 		// DMR
 		"DMRInterleavedVoice", "DMRColorCode",
 		// NXDN
-		"NXDNViterbiMode", "NXDNSoftDecision", "NXDNDeviationHz",
+		"NXDNViterbiMode", "NXDNSoftDecision", "NXDNAFC", "NXDNDeviationHz",
 		// EDACS
 		"EDACSBCHMode",
 		// MPT1327

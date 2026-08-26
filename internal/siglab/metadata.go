@@ -161,12 +161,16 @@ func applySystemKnobs(sys *trunking.System, knobs map[string]string) {
 			sys.TETRAChannel = v
 		case "tetra_channel_coding":
 			sys.TETRAChannelCoding = v
+		case "tetra_traffic_lms":
+			sys.TETRATrafficLMS = v
 		case "tetra_clock_mode":
 			sys.TETRAClockMode = v
 		case "nxdn_viterbi_mode":
 			sys.NXDNViterbiMode = v
 		case "nxdn_soft_decision":
 			sys.NXDNSoftDecision = v
+		case "nxdn_afc":
+			sys.NXDNAFC = v
 		case "nxdn_deviation_hz":
 			sys.NXDNDeviationHz, _ = strconv.ParseFloat(v, 64)
 		case "edacs_bch_mode":
