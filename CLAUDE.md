@@ -3,6 +3,13 @@
 GopherTrunk is a Go SDR trunking scanner/decoder (P25, DMR, NXDN, TETRA, …).
 This file is standing guidance for AI-assisted work in this repo. Keep it short.
 
+## Daily issue review
+
+Open issues are reviewed **daily**. Each pass surfaces new issues and issues
+with new responses since the previous day, and flags what needs work. Scope the
+review to issues **updated since the prior day** unless asked for a full sweep,
+and distinguish maintainer replies from genuine new reporter responses.
+
 ## Build & test
 
 - `make vet test` — vet + unit tests; must be green before any commit.
