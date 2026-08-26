@@ -10,6 +10,15 @@ package nxdn
 // machine on live IQ.
 type DibitSink func(dibits []uint8, baseIdx int)
 
+// SoftDibitSink is the soft-decision sibling of DibitSink (the
+// p25/phase2.SoftDibitSink contract adapted to the real C4FM soft domain):
+// dibits are the hard decisions, soft carries TWO per-bit log-likelihood
+// ratios per dibit — soft[2i] for dibits[i]'s MSB, soft[2i+1] for its LSB,
+// in the framing convention (LLR > 0 ⇒ bit 0, magnitude = reliability) —
+// derived from the 4-level soft symbol's distance to the slicer thresholds.
+// len(soft) == 2*len(dibits), index-aligned. baseIdx as in DibitSink.
+type SoftDibitSink func(dibits []uint8, soft []float32, baseIdx int)
+
 // FSW patterns (16 bits = 8 dibits). These constants follow the NXDN
 // Common Air Interface specification §6.2.1; the exact bit pattern
 // should be cross-checked against the published technical document

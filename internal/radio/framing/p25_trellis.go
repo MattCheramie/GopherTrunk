@@ -156,6 +156,73 @@ func p25TrellisDibitDist(a, b uint8) int {
 	}
 }
 
+// DecodeP25TrellisSoft runs true soft-decision Viterbi over the trellis
+// using per-bit scalar LLRs — the real-valued C4FM form of
+// DecodeP25TrellisSoftC. llr carries TWO values per channel dibit: llr[2i]
+// for channel dibit i's MSB, llr[2i+1] for its LSB, in the soft_tetra.go
+// convention (LLR > 0 ⇒ bit 0, magnitude = reliability, 0 = erasure). On
+// the C4FM path the MSB's LLR is the 4-level soft symbol's distance from
+// the sign axis and the LSB's its distance from the inner/outer threshold —
+// the two decision axes of the slicer. For an expected bit g and received
+// LLR L the branch cost is L·(2g−1), minimised; len(llr) must be 4·stages
+// (two bits × two channel dibits per stage). Returns the info dibits and
+// path metric, exactly as DecodeP25Trellis does.
+func DecodeP25TrellisSoft(llr []float32) ([]uint8, float64) {
+	const inf = 1e30
+	if len(llr) < 4 || len(llr)%4 != 0 {
+		return nil, inf
+	}
+	stages := len(llr) / 4
+
+	pm := [4]float64{0, inf, inf, inf}
+	trace := make([][4]uint8, stages)
+	for s := 0; s < stages; s++ {
+		// Per candidate output dibit value e (0..3), the soft cost against
+		// the received (MSB, LSB) LLR pair of the hi and lo channel dibits.
+		lhM, lhL := float64(llr[4*s]), float64(llr[4*s+1])
+		llM, llL := float64(llr[4*s+2]), float64(llr[4*s+3])
+		var costHi, costLo [4]float64
+		for e := 0; e < 4; e++ {
+			sm := float64(2*((e>>1)&1) - 1)
+			sl := float64(2*(e&1) - 1)
+			costHi[e] = sm*lhM + sl*lhL
+			costLo[e] = sm*llM + sl*llL
+		}
+		var npm [4]float64
+		for i := range npm {
+			npm[i] = inf
+		}
+		for cur := 0; cur < 4; cur++ {
+			if pm[cur] >= inf {
+				continue
+			}
+			for next := 0; next < 4; next++ {
+				idx := p25TrellisStates[cur][next]
+				cost := pm[cur] + costHi[p25TrellisPairs[idx][0]] + costLo[p25TrellisPairs[idx][1]]
+				if cost < npm[next] {
+					npm[next] = cost
+					trace[s][next] = uint8(cur)
+				}
+			}
+		}
+		pm = npm
+	}
+	finalState := 0
+	for s := 1; s < 4; s++ {
+		if pm[s] < pm[finalState] {
+			finalState = s
+		}
+	}
+	finalMetric := pm[finalState]
+	out := make([]uint8, stages)
+	state := finalState
+	for s := stages - 1; s >= 0; s-- {
+		out[s] = uint8(state)
+		state = int(trace[s][state])
+	}
+	return out[:stages-1], finalMetric
+}
+
 // DecodeP25TrellisSoftC runs true soft-decision Viterbi over the trellis using
 // per-channel-dibit complex soft samples. soft[i] is the received differential
 // for channel dibit i, rotated into the diagonal frame where the two on-air

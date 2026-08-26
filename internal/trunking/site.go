@@ -360,6 +360,14 @@ type System struct {
 	// into p25phase1rx.Options.DemodMode by the ccdecoder connector
 	// after parsing via p25phase1rx.ParseDemodMode.
 	P25Phase1DemodMode string
+	// P25Phase1SoftDecision enables the soft-decision TSBK path on the
+	// P25 Phase 1 C4FM control-channel receiver: per-bit LLRs from the
+	// 4-level soft symbols feed a true per-bit soft Viterbi on the TSBK
+	// trellis (CRC still corroborates). Recognised values (case-
+	// insensitive): "" / "off" / "false" / "0" → hard trellis (the
+	// default); "on" / "true" / "1" → soft. C4FM only. Parsed via
+	// p25phase1rx.ParseSoftDecision by the ccdecoder connector.
+	P25Phase1SoftDecision string
 
 	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
 	// decoder on the P25 Phase 2 MAC PDU window. Recognised values
@@ -416,6 +424,14 @@ type System struct {
 	// Parsed via p25phase2rx.ParseEqualizer and forwarded through the grant's
 	// P25Phase2Decode to the composer / sigfollow receiver.
 	P25Phase2Equalizer string
+	// P25Phase2DCBlock enables the DC-removal high-pass on the P25 Phase 2
+	// traffic-channel receiver — the zero-IF LO-spur stage the P1 / TETRA
+	// voice receivers run. Recognised values (case-insensitive): "" / "off"
+	// / "false" / "0" → untouched (the default); "on" / "true" / "1" →
+	// strip the static DC spur ahead of the demod. Parsed via
+	// p25phase2rx.ParseDCBlock and forwarded through the grant's
+	// P25Phase2Decode to the composer / sigfollow receiver.
+	P25Phase2DCBlock string
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values (case-
 	// insensitive): "" / "gardner" / "on" → ClockGardner (the new
@@ -441,6 +457,13 @@ type System struct {
 	// by the ccdecoder connector after parsing via
 	// nxdn.ParseViterbiMode.
 	NXDNViterbiMode string
+	// NXDNSoftDecision enables the soft-decision demod path on the NXDN
+	// receiver (the p25_phase2_soft_decision lever ported for parity).
+	// Recognised values (case-insensitive): "" / "off" / "false" / "0" →
+	// hard slicer (the default); "on" / "true" / "1" → per-bit soft
+	// Viterbi on the spec CAC decode. Parsed via nxdnrx.ParseSoftDecision
+	// by the ccdecoder connector.
+	NXDNSoftDecision string
 	// NXDNDeviationHz overrides the peak frequency deviation (Hz)
 	// the NXDN receiver's slicer is calibrated against. Spec value
 	// is 1800 Hz (matches the FM-discriminator output level so live

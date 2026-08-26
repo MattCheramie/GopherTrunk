@@ -82,6 +82,36 @@ type Options struct {
 	// legacy slicerScale = 1.0 — back-compat with fixtures that
 	// pre-scale their FM levels.
 	DeviationHz float64
+
+	// SoftSink, when set, receives the post-AGC 1-sample-per-symbol soft
+	// waveform (the 4-level C4FM soft track) each batch, aligned with the
+	// DibitSink batch fired on the same Process call. Optional; used by
+	// the diagnostic symbol scope. Signature matches the P25 Phase 1 /
+	// DMR C4FM receivers so the scope routes all three identically.
+	SoftSink func(softSamples []float32)
+	// SymbolSink is stored for API parity with the P25 receiver but is
+	// never fired on the NXDN path (pure C4FM has no complex CQPSK symbol
+	// domain; the soft track is surfaced via SoftSink). Optional.
+	SymbolSink func(symbols []complex64)
+	// EyeSink, when set, receives the oversampled matched-filter output
+	// (sps samples/symbol) scaled to the soft-level units, so folding sps
+	// samples reconstructs the 4-level eye. Optional; used by the
+	// diagnostic symbol scope.
+	EyeSink func(oversampled []float32, sps int)
+
+	// SoftDecision enables soft-decision output (nxdn_soft_decision,
+	// mirroring the P25 Phase 2 receiver's contract): alongside the hard
+	// dibits the receiver derives, per dibit, two per-bit log-likelihood
+	// ratios from the 4-level soft symbol's distance to the slicer
+	// thresholds — the MSB's LLR from the sign axis, the LSB's from the
+	// inner/outer magnitude threshold — and emits (dibits, llrs, baseIdx)
+	// via SoftDibitSink so the CAC decode can run a true per-bit soft
+	// Viterbi. Requires SoftDibitSink; the hard DibitSink is not called on
+	// the soft path. Default false ⇒ the hard path runs byte-identically.
+	SoftDecision bool
+	// SoftDibitSink receives the (dibits, soft, baseIdx) stream when
+	// SoftDecision is set. Required in that case.
+	SoftDibitSink nxdn.SoftDibitSink
 }
 
 // Receiver is the composed IQ → dibit pipeline.
@@ -92,6 +122,21 @@ type Receiver struct {
 	agc       demod.C4FMSymbolAGC
 	dibitSink nxdn.DibitSink
 	dibitBase int
+
+	// Soft-decision path (Options.SoftDecision): per-dibit LLRs derived
+	// from the soft symbols against the slicer thresholds. llrThreshold is
+	// the inner/outer magnitude decision boundary (2·slicerScale/3, the
+	// same constant demod.C4FM.Slice decides on).
+	softDibitSink nxdn.SoftDibitSink
+	llrThreshold  float32
+	llrBuf        []float32
+
+	// Optional diagnostic taps (symbol scope). nil = no-op.
+	softSink   func([]float32)
+	symbolSink func([]complex64) // parity only; never fired (pure C4FM)
+	eyeSink    func([]float32, int)
+	eyeSPS     int
+	eyeBuf     []float32
 
 	disc    []float32
 	matched []float32
@@ -106,7 +151,11 @@ func New(opts Options) *Receiver {
 	if opts.SampleRateHz <= 0 {
 		panic("receiver: SampleRateHz is required")
 	}
-	if opts.DibitSink == nil {
+	if opts.SoftDecision {
+		if opts.SoftDibitSink == nil {
+			panic("receiver: SoftDibitSink is required when SoftDecision is set")
+		}
+	} else if opts.DibitSink == nil {
 		panic("receiver: DibitSink is required")
 	}
 	sps := opts.SampleRateHz / SymbolRate
@@ -157,7 +206,15 @@ func New(opts Options) *Receiver {
 			Target: float32(demod.C4FMAGCTarget(slicerScale, opts.DeviationHz)),
 			Rate:   1.0 / 256.0,
 		},
-		dibitSink: opts.DibitSink,
+		dibitSink:     opts.DibitSink,
+		softSink:      opts.SoftSink,
+		symbolSink:    opts.SymbolSink,
+		eyeSink:       opts.EyeSink,
+		eyeSPS:        int(sps + 0.5),
+		softDibitSink: opts.SoftDibitSink,
+		// The inner/outer decision boundary demod.C4FM.Slice uses; the
+		// sign axis boundary is 0. Anchors the per-bit LLR derivation.
+		llrThreshold: float32(2 * slicerScale / 3),
 	}
 }
 
@@ -178,7 +235,32 @@ func (r *Receiver) Process(iq []complex64) {
 	// slicing, so the unit-energy matched filter's ~3.1× DC gain doesn't
 	// push the 4-level eye past the slicer's fixed thresholds (no-op on
 	// the legacy DeviationHz<=0 path where target==0). See package doc.
-	r.agc.Process(r.symbols)
+	agcLevel := r.agc.Process(r.symbols)
+	// Diagnostic taps (symbol scope). The soft track is the post-AGC
+	// 1/symbol waveform — aligned with the dibit batch fired below. The
+	// eye is the oversampled matched buffer the clock loop read
+	// read-only, scaled by this batch's AGC gain so its rails line up
+	// with the soft levels (NXDN runs no AFC yet, so no recentring is
+	// needed). nil sinks are no-ops. Mirrors the DMR receiver's taps so
+	// the scope routes both identically.
+	if r.softSink != nil {
+		r.softSink(r.symbols)
+	}
+	if r.eyeSink != nil && r.eyeSPS > 0 && len(r.matched) > 0 {
+		g := float32(1)
+		if r.agc.Target > 0 && agcLevel > 0 {
+			g = r.agc.Target / float32(agcLevel)
+		}
+		if cap(r.eyeBuf) < len(r.matched) {
+			r.eyeBuf = make([]float32, len(r.matched))
+		} else {
+			r.eyeBuf = r.eyeBuf[:len(r.matched)]
+		}
+		for i, x := range r.matched {
+			r.eyeBuf[i] = x * g
+		}
+		r.eyeSink(r.eyeBuf, r.eyeSPS)
+	}
 	r.sliced = r.mf.SliceMany(r.sliced, r.symbols)
 	if cap(r.dibits) < len(r.sliced) {
 		r.dibits = make([]uint8, len(r.sliced))
@@ -187,6 +269,30 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 	for i, sym := range r.sliced {
 		r.dibits[i] = SymbolToDibit(sym)
+	}
+	if r.softDibitSink != nil {
+		// Per-bit LLRs against the slicer's two decision axes, in the
+		// framing convention (LLR > 0 ⇒ bit 0). MSB = sign bit (0 for a
+		// positive symbol): distance from the 0 axis, +y. LSB = magnitude
+		// bit (1 for an outer ±3 symbol): distance from the inner/outer
+		// threshold, t − |y|. The soft Viterbi is scale-invariant so no
+		// normalisation is needed — only consistent relative scaling.
+		if cap(r.llrBuf) < 2*len(r.symbols) {
+			r.llrBuf = make([]float32, 2*len(r.symbols))
+		} else {
+			r.llrBuf = r.llrBuf[:2*len(r.symbols)]
+		}
+		for i, y := range r.symbols {
+			ay := y
+			if ay < 0 {
+				ay = -ay
+			}
+			r.llrBuf[2*i] = y                     // MSB: sign axis
+			r.llrBuf[2*i+1] = r.llrThreshold - ay // LSB: magnitude axis
+		}
+		r.softDibitSink(r.dibits, r.llrBuf, r.dibitBase)
+		r.dibitBase += len(r.dibits)
+		return
 	}
 	r.dibitSink(r.dibits, r.dibitBase)
 	r.dibitBase += len(r.dibits)
@@ -197,6 +303,20 @@ func (r *Receiver) Reset() {
 	r.dibitBase = 0
 	r.agc.Reset()
 }
+
+// AGCLevel and AGCTarget expose the shared symbol-AGC's running mean|x|
+// estimate and its target, for the diagnostic Tuning panel. Both are 0 on the
+// legacy pre-scaled-fixture path (AGC disabled). Mirrors the DMR receiver's
+// getters so the symbol scope reads them identically.
+func (r *Receiver) AGCLevel() float64  { return float64(r.agc.Level()) }
+func (r *Receiver) AGCTarget() float64 { return float64(r.agc.Target) }
+
+// MMClockMu and MMClockSPS expose the Mueller-Müller timing loop's fractional
+// interpolation index and samples-per-symbol estimate, mirroring the P25
+// Phase 1 / DMR C4FM receivers' getters so the symbol scope reads them
+// identically.
+func (r *Receiver) MMClockMu() float64  { return r.clock.Mu() }
+func (r *Receiver) MMClockSPS() float64 { return r.clock.SPS() }
 
 // SymbolToDibit maps a C4FM slicer output ({-3, -1, +1, +3}) to a
 // dibit value (0..3). Uses the same Gray-coded convention as the

@@ -39,6 +39,7 @@ const PROTOS: { value: string; label: string }[] = [
   { value: "p25-cqpsk", label: "P25 CQPSK" },
   { value: "tetra", label: "TETRA" },
   { value: "dmr", label: "DMR" },
+  { value: "nxdn", label: "NXDN" },
 ];
 
 // Mirrors SocketStatus from api/reconnectingSocket. "gone" is terminal: the
@@ -263,7 +264,14 @@ export function SymbolScope() {
           </select>
           {proto === "auto" && (
             <span className="text-muted">
-              ·&nbsp;{effectiveProto === "p25-c4fm" ? "C4FM" : "CQPSK"}
+              ·&nbsp;
+              {effectiveProto === "p25-c4fm"
+                ? "C4FM"
+                : effectiveProto === "tetra"
+                  ? "π/4-DQPSK"
+                  : effectiveProto === "dmr" || effectiveProto === "nxdn"
+                    ? "4FSK"
+                    : "CQPSK"}
             </span>
           )}
         </label>

@@ -3,6 +3,7 @@ package nxdn
 import (
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -73,6 +74,22 @@ type ControlChannel struct {
 	// ccdecoder connector (the parser maps an empty config string
 	// to ViterbiSpec). Set via SetViterbiMode.
 	viterbiMode ViterbiMode
+
+	// lastActivityNano is the Unix-nanos timestamp of the most recent
+	// CRC-clean CAC frame reaching IngestFrame — the decode heartbeat the
+	// ccdecoder pipeline's signal-time drought watchdog (resyncGuard)
+	// compares across calls, the same contract as the TETRA
+	// ControlChannel's LastActivityNano.
+	lastActivityNano atomic.Int64
+}
+
+// LastActivityNano returns the Unix-nano timestamp of the most recent
+// CRC-clean CAC decode, or 0 before the first. The ccdecoder pipeline's
+// signal-time drought watchdog compares successive values — any change means
+// a decode landed since the previous check. Same contract as the TETRA
+// ControlChannel's LastActivityNano.
+func (c *ControlChannel) LastActivityNano() int64 {
+	return c.lastActivityNano.Load()
 }
 
 // ViterbiMode selects how the Process adapter interprets the CAC
@@ -185,6 +202,13 @@ func (c *ControlChannel) IngestFrame(lich LICH, cac *CACMessage) {
 	if cac == nil {
 		return
 	}
+	// Reaching here means the CAC cleared its CRC (Process drops CRC-fail
+	// frames before IngestFrame) — stamp the decode heartbeat.
+	now := c.now
+	if now == nil {
+		now = time.Now
+	}
+	c.lastActivityNano.Store(now().UnixNano())
 	switch cac.Type {
 	case RCCHSITEINFO:
 		s := ParseSiteInfo(cac.Payload)

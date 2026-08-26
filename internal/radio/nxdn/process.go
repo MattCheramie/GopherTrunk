@@ -18,6 +18,10 @@ type processState struct {
 	// frame accumulates the post-FSW frame dibits the adapter
 	// slices into LICH wire bits + (skipped) SACCH + CAC info bits.
 	frame []uint8
+	// frameSoft accumulates the per-dibit soft LLRs (2 per dibit,
+	// MSB then LSB) parallel to frame on the ProcessSoft path; empty
+	// on the hard Process path.
+	frameSoft []float32
 	// matchScratch is reused across calls so SyncDetector.Process
 	// doesn't allocate fresh slices.
 	matchScratch []Match
@@ -125,6 +129,95 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	return baseIdx + len(dibits)
 }
 
+// ProcessSoft is the soft-decision sibling of Process (opt-in via
+// nxdn_soft_decision): identical FSW detection and frame slicing on the
+// hard dibits, but each collected frame also carries the per-dibit soft
+// LLRs (2 per dibit) so the ViterbiSpec CAC decode runs the true per-bit
+// soft Viterbi (DecodeCACChannelSoft) instead of hard-slicing first — the
+// coding gain that recovers marginal on-air CAC bursts. len(soft) must be
+// 2*len(dibits) (the SoftDibitSink contract); a mismatched call falls back
+// to the hard path for the whole chunk. Non-ViterbiSpec modes decode hard
+// regardless (their legacy fixture layouts carry no benefit).
+func (c *ControlChannel) ProcessSoft(dibits []uint8, soft []float32, baseIdx int) int {
+	if len(soft) != 2*len(dibits) {
+		return c.Process(dibits, baseIdx)
+	}
+	if c.proc == nil {
+		c.proc = &processState{
+			det:   NewSyncDetector([][]uint8{FSWDibitsOutbound}, 1),
+			frame: make([]uint8, 0, postSyncDibitsViterbi),
+		}
+	}
+	p := c.proc
+	frameLen := postSyncDibits
+	switch c.viterbiMode {
+	case ViterbiOn:
+		frameLen = postSyncDibitsViterbi
+	case ViterbiSpec:
+		frameLen = postSyncDibitsViterbiSpec
+	}
+
+	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
+	matchIdx := 0
+
+	for i, d := range dibits {
+		absPos := baseIdx + i
+		if p.remaining > 0 {
+			p.frame = append(p.frame, d)
+			p.frameSoft = append(p.frameSoft, soft[2*i], soft[2*i+1])
+			p.remaining--
+			if p.remaining == 0 {
+				c.tryIngestFrameSoft(p.frame, p.frameSoft)
+				p.frame = p.frame[:0]
+				p.frameSoft = p.frameSoft[:0]
+			}
+		}
+		for matchIdx < len(p.matchScratch) && p.matchScratch[matchIdx].Index == absPos {
+			if !p.matchScratch[matchIdx].Inbound {
+				p.remaining = frameLen
+				p.frame = p.frame[:0]
+				p.frameSoft = p.frameSoft[:0]
+			}
+			matchIdx++
+		}
+	}
+	return baseIdx + len(dibits)
+}
+
+// tryIngestFrameSoft is tryIngestFrame with the ViterbiSpec CAC decode
+// running soft (DecodeCACChannelSoft over the frame's per-bit LLRs). The
+// LICH stays a hard decode — its (16, 8) wire code is trivially strong at
+// any SNR where the FSW correlates — and non-ViterbiSpec modes fall back to
+// the hard path entirely.
+func (c *ControlChannel) tryIngestFrameSoft(frame []uint8, soft []float32) {
+	if c.viterbiMode != ViterbiSpec || len(frame) != postSyncDibitsViterbiSpec ||
+		len(soft) != 2*len(frame) {
+		c.tryIngestFrame(frame)
+		return
+	}
+	if len(frame) < 8 {
+		return
+	}
+	lichBits := framing.DibitsToBits(frame[0:8])
+	lichByte, _ := DecodeLICHWire(lichBits)
+	lich := ParseLICH(lichByte)
+
+	// CAC LLRs: everything after the 8 LICH dibits (150 dibits = 300 LLRs).
+	info, ok := DecodeCACChannelSoft(soft[8*2:])
+	if !ok {
+		return
+	}
+	block, ok := packCACBlockFromInfo(info)
+	if !ok {
+		return
+	}
+	cac, err := ParseCAC(block)
+	if err != nil {
+		return
+	}
+	c.IngestFrame(lich, &cac)
+}
+
 // tryIngestFrame slices the collected post-sync dibits into LICH +
 // CAC bits, parses each, and forwards the result to IngestFrame.
 // Drops the frame silently on any parse / CRC error — the next
@@ -195,26 +288,7 @@ func (c *ControlChannel) extractCACBytes(frame []uint8) ([]byte, bool) {
 		if !ok {
 			return nil, false
 		}
-		// Layout per §4.5.1.1 step ①: 8 bits SR ‖ 144 bits L3 Data
-		// ‖ 3 Null. The first 8 L3 bits carry the RCCH message
-		// type; the next 64 carry the existing CAC payload. Drop
-		// SR, pack the 72-bit L3 prefix into 9 bytes, and synthesize
-		// the trailing 16-bit inner CRC that the legacy ParseCAC
-		// path expects — the spec's outer CRC has already validated
-		// the whole 155-bit info block, so the inner-CRC sentinel
-		// is a no-op here. Use binary.BigEndian to keep the layout
-		// identical to AssembleCAC.
-		if len(info) < 8+72 {
-			return nil, false
-		}
-		l3 := framing.PackBitsMSB(info[8 : 8+72])
-		if len(l3) < 9 {
-			return nil, false
-		}
-		block := make([]byte, 11)
-		copy(block, l3[:9])
-		binary.BigEndian.PutUint16(block[9:11], framing.CRCCCITT(block[:9]))
-		return block, true
+		return packCACBlockFromInfo(info)
 	case ViterbiOn:
 		if len(frame) != postSyncDibitsViterbi {
 			return nil, false
@@ -242,6 +316,42 @@ func (c *ControlChannel) extractCACBytes(frame []uint8) ([]byte, bool) {
 		}
 		return cacBytes[:11], true
 	}
+}
+
+// packCACBlockFromInfo repacks a CRC-validated 155-bit §4.5.1.1 info block
+// into the 11-byte block the legacy ParseCAC path expects. Layout per step
+// ①: 8 bits SR ‖ 144 bits L3 Data ‖ 3 Null. The first 8 L3 bits carry the
+// RCCH message type; the next 64 carry the existing CAC payload. Drop SR,
+// pack the 72-bit L3 prefix into 9 bytes, and synthesize the trailing
+// 16-bit inner CRC — the spec's outer CRC has already validated the whole
+// info block, so the inner-CRC sentinel is a no-op here. binary.BigEndian
+// keeps the layout identical to AssembleCAC. Shared by the hard
+// (extractCACBytes) and soft (tryIngestFrameSoft) ViterbiSpec paths.
+func packCACBlockFromInfo(info []byte) ([]byte, bool) {
+	if len(info) < 8+72 {
+		return nil, false
+	}
+	l3 := framing.PackBitsMSB(info[8 : 8+72])
+	if len(l3) < 9 {
+		return nil, false
+	}
+	block := make([]byte, 11)
+	copy(block, l3[:9])
+	binary.BigEndian.PutUint16(block[9:11], framing.CRCCCITT(block[:9]))
+	return block, true
+}
+
+// ResyncReset drops the Process adapter's sync-detection + partial-frame
+// state so a receiver-side Reset (which restarts the dibit index at 0) can
+// reacquire cleanly — a stale mid-frame countdown would otherwise splice
+// pre-reset dibits onto post-reset ones into one garbage frame. Mirrors the
+// TETRA / DMR Tier III ControlChannels' ResyncReset; call from the pipeline
+// whenever the receiver is reset mid-stream.
+//
+// Precondition: called on the same goroutine as Process (from the pipeline,
+// after rx.Process returns), so the proc swap never races a Process call.
+func (c *ControlChannel) ResyncReset() {
+	c.proc = nil
 }
 
 // Reset clears the Process adapter's sync-detection + partial-frame

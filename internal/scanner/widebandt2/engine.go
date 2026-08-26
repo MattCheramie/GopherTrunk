@@ -670,7 +670,17 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier3,
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier3", processor: cc, receiver: rx, dmrTier3: cc,
+		// Decode-drought watchdog, mirroring the ccdecoder dmrPipeline: the
+		// CC's burst buffer keys on absolute dibit indices, so the receiver
+		// reset must drop it in step (ResyncReset) or every post-reset sync
+		// match lands below the stale bufStart and is discarded for ever.
+		rcv := &droughtGuardReceiver{
+			rx: rx, activity: cc.LastActivityNano,
+			reacquire: func() { rx.Reset(); cc.ResyncReset() },
+			log:       log, system: sys.Name, label: "dmr-tier3",
+			rateHz: outRateHz, window: dmrTier3ResyncWindow,
+		}
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier3", processor: cc, receiver: rcv, dmrTier3: cc,
 			decoded: func() uint64 { return cc.DecodedFrames() }}, nil
 
 	case trunking.ProtocolDMRTier2:
@@ -739,7 +749,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 		// decode those grants' MAC PDUs; without it every grant carries
 		// TrellisOff / ScramblerOff / zero seed and MAC decode fails.
 		// Parse and forward the same knobs the ccdecoder pipeline does.
-		p2Trellis, p2RS, p2Interleave, p2Scrambler, p2SoftDecision, p2Equalizer := parseP25Phase2FECModes(sys, log)
+		p2Trellis, p2RS, p2Interleave, p2Scrambler, p2SoftDecision, p2Equalizer, p2DCBlock := parseP25Phase2FECModes(sys, log)
 		cc := p25phase1.New(p25phase1.Options{
 			Bus:         bus,
 			Log:         log.With("system", sys.Name, "freq_hz", freqHz, "phase", 1),
@@ -760,16 +770,36 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			P25Phase2Scrambler:    p2Scrambler,
 			P25Phase2SoftDecision: p2SoftDecision,
 			P25Phase2Equalizer:    p2Equalizer,
+			P25Phase2DCBlock:      p2DCBlock,
 		})
-		rx := p25phase1rx.New(p25phase1rx.Options{
+		p1SoftDecision, p1SoftOK := p25phase1rx.ParseSoftDecision(sys.P25Phase1SoftDecision)
+		if !p1SoftOK {
+			log.Warn("widebandt2: unrecognised p25_phase1_soft_decision; falling back to off",
+				"system", sys.Name, "value", sys.P25Phase1SoftDecision)
+		}
+		p1RxOpts := p25phase1rx.Options{
 			SampleRateHz: outRateHz,
 			DeviationHz:  p25Phase1DeviationHz,
 			DemodMode:    demodMode,
 			DibitSink: p25phase1.DibitSink(func(d []uint8, b int) {
 				cc.Process(d, b)
 			}),
-		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase1", processor: cc, receiver: rx,
+		}
+		if p1SoftDecision && demodMode == p25phase1rx.DemodC4FM {
+			// Soft TSBK path, mirroring the ccdecoder pipeline (C4FM only).
+			p1RxOpts.BitLLRSink = cc.StashSoft
+		}
+		rx := p25phase1rx.New(p1RxOpts)
+		// Decode-drought watchdog, mirroring the ccdecoder p25Phase1Pipeline.
+		// The CC's Process handles the non-contiguous dibit index a receiver
+		// reset produces (its buffer resync path), so rx.Reset alone suffices.
+		rcv := &droughtGuardReceiver{
+			rx: rx, activity: cc.LastActivityNano,
+			reacquire: func() { rx.Reset() },
+			log:       log, system: sys.Name, label: "p25-phase1",
+			rateHz: outRateHz, window: p25Phase1ResyncWindow,
+		}
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase1", processor: cc, receiver: rcv,
 			decoded: func() uint64 { return uint64(cc.Stats().TSBKDecoded) }}, nil
 
 	case trunking.ProtocolP25Phase2:
@@ -799,7 +829,15 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			ClockMode:   clockMode,
 			GardnerGain: p25Phase2GardnerGain,
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase2", processor: cc, receiver: rx,
+		// Decode-drought watchdog, mirroring the ccdecoder p25Phase2Pipeline:
+		// the superframe decoder's sync state resets alongside the receiver.
+		rcv := &droughtGuardReceiver{
+			rx: rx, activity: cc.LastActivityNano,
+			reacquire: func() { rx.Reset(); sfDec.Reset() },
+			log:       log, system: sys.Name, label: "p25-phase2",
+			rateHz: outRateHz, window: p25Phase2ResyncWindow,
+		}
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase2", processor: cc, receiver: rcv,
 			decoded: func() uint64 { return cc.DecodedFrames() }}, nil
 
 	case trunking.ProtocolTETRA:
@@ -836,7 +874,7 @@ func requireControlChannel(sys trunking.System, freqHz uint32, label string) err
 // their MAC PDUs (issue #882). Unrecognised values warn then fall back
 // to the same defaults the ccdecoder path uses; an empty per-system
 // value keeps the default (Trellis=on, everything else=off).
-func parseP25Phase2FECModes(sys trunking.System, log *slog.Logger) (trellis, rs, interleave, scrambler uint8, softDecision, equalizer bool) {
+func parseP25Phase2FECModes(sys trunking.System, log *slog.Logger) (trellis, rs, interleave, scrambler uint8, softDecision, equalizer, dcBlock bool) {
 	p2Trellis, ok := p25phase2.ParseTrellisMode(sys.P25Phase2TrellisMode)
 	if !ok {
 		log.Warn("widebandt2: unrecognised p25_phase2_trellis_mode; falling back to on",
@@ -867,7 +905,12 @@ func parseP25Phase2FECModes(sys trunking.System, log *slog.Logger) (trellis, rs,
 		log.Warn("widebandt2: unrecognised p25_phase2_equalizer; falling back to off",
 			"system", sys.Name, "value", sys.P25Phase2Equalizer)
 	}
-	return uint8(p2Trellis), uint8(p2RS), uint8(p2Interleave), uint8(p2Scrambler), p2SoftDecision, p2Equalizer
+	p2DCBlock, dcOK := p25phase2rx.ParseDCBlock(sys.P25Phase2DCBlock)
+	if !dcOK {
+		log.Warn("widebandt2: unrecognised p25_phase2_dc_block; falling back to off",
+			"system", sys.Name, "value", sys.P25Phase2DCBlock)
+	}
+	return uint8(p2Trellis), uint8(p2RS), uint8(p2Interleave), uint8(p2Scrambler), p2SoftDecision, p2Equalizer, p2DCBlock
 }
 
 // applyP25Phase2Modes mirrors newP25Phase2Pipeline's per-system mode
@@ -916,6 +959,12 @@ func applyP25Phase2Modes(cc *p25phase2.ControlChannel, sys trunking.System, log 
 		log.Warn("widebandt2: unrecognised p25_phase2_equalizer; falling back to off",
 			"system", sys.Name, "value", sys.P25Phase2Equalizer)
 	}
+	dcBlock, dcOK := p25phase2rx.ParseDCBlock(sys.P25Phase2DCBlock)
+	if !dcOK {
+		log.Warn("widebandt2: unrecognised p25_phase2_dc_block; falling back to off",
+			"system", sys.Name, "value", sys.P25Phase2DCBlock)
+	}
+	cc.SetDCBlock(dcBlock)
 	cc.SetEqualizer(equalizer)
 }
 

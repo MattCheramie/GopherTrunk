@@ -420,7 +420,7 @@ func dmrVoiceProtocol(protocol string) bool {
 // `.raw` sidecar is always written so the speech frames remain available for
 // out-of-band tools.
 func tetraVoiceProtocol(protocol string) bool {
-	return protocol == "tetra"
+	return protocol == "tetra" || protocol == "tetra-dmo"
 }
 
 // NewRecorder validates options and returns a recorder ready to Run.

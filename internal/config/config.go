@@ -1451,6 +1451,17 @@ type SystemConfig struct {
 	// never decode an LDU on a granted voice call (issue #356
 	// follow-up). Ignored for non-P25-Phase-1 protocols.
 	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
+	// P25Phase1SoftDecision enables the soft-decision TSBK path on the
+	// P25 Phase 1 C4FM control-channel receiver (the p25_phase2_soft_decision
+	// lever ported for parity). Recognised values: "" / "off" / "false" /
+	// "0" (the default — the hard trellis, byte-for-byte the historical
+	// behaviour) or "on" / "true" / "1" (the receiver emits per-bit LLRs
+	// from the 4-level soft symbols and the control channel's TSBK trellis
+	// runs a true per-bit soft Viterbi, recovering the coding gain the hard
+	// slicer discards on marginal signals; the TSBK CRC still corroborates
+	// every block). C4FM only — CQPSK/LSM sites decode hard regardless.
+	// Ignored for non-P25-Phase-1 protocols.
+	P25Phase1SoftDecision string `yaml:"p25_phase1_soft_decision"`
 	// DMRInterleavedVoice overrides the 2-slot interleaved voice decoder.
 	// A DMR carrier is 2-slot TDMA, so the demodulated stream interleaves
 	// both timeslots' bursts; the interleaved decoder pulls each call's own
@@ -1535,6 +1546,15 @@ type SystemConfig struct {
 	// noisy on a purely AWGN-limited one, so it is opt-in. Ignored for
 	// non-P25-Phase-2 protocols.
 	P25Phase2Equalizer string `yaml:"p25_phase2_equalizer"`
+	// P25Phase2DCBlock enables a first-order DC-removal high-pass on the
+	// P25 Phase 2 traffic-channel receiver — the same zero-IF LO-spur
+	// stage the P25 Phase 1 and TETRA voice receivers run. Recognised
+	// values: "" / "off" / "false" / "0" (the default — the IQ stream is
+	// untouched) or "on" / "true" / "1" (strip the static DC spur a
+	// zero-IF front end leaves on an on-channel voice DDC before the
+	// demod; the ~1 Hz corner leaves the 6000-baud modulation untouched).
+	// Ignored for non-P25-Phase-2 protocols.
+	P25Phase2DCBlock string `yaml:"p25_phase2_dc_block"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
 	// "gardner" / "on" (the new default — non-data-aided Gardner
@@ -1554,6 +1574,17 @@ type SystemConfig struct {
 	// "0" (legacy 44-dibit raw-CAC path, opt-out for pre-stripped
 	// fixtures). Ignored for non-NXDN protocols.
 	NXDNViterbiMode string `yaml:"nxdn_viterbi_mode"`
+	// NXDNSoftDecision enables the soft-decision demod path on the NXDN
+	// receiver (feature-parity port of p25_phase2_soft_decision).
+	// Recognised values: "" / "off" / "false" / "0" (the default — the
+	// hard slicer, byte-for-byte the historical behaviour) or "on" /
+	// "true" / "1" (derive per-bit LLRs from the 4-level soft symbols and
+	// run the spec CAC decode through a true per-bit soft Viterbi,
+	// recovering the coding gain the hard slicer discards on marginal
+	// signals). Effective with the default nxdn_viterbi_mode ("spec");
+	// the legacy off/on fixture modes always decode hard. Ignored for
+	// non-NXDN protocols.
+	NXDNSoftDecision string `yaml:"nxdn_soft_decision"`
 	// NXDNDeviationHz overrides the peak frequency deviation (Hz)
 	// the NXDN receiver's slicer is calibrated against. The Common
 	// Air Interface spec value is 1800 Hz (matched against the
