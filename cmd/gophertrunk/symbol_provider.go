@@ -58,6 +58,10 @@ func symbolProtoToReceiver(proto string) (trunking.Protocol, string, error) {
 		// NXDN 9600-baud variant — the same 4800-baud 4-level C4FM
 		// family; demod mode is unused by the NXDN receiver.
 		return trunking.ProtocolNXDN, "", nil
+	case "p25-phase2":
+		// H-DQPSK at 6000 baud; the scope surfaces the soft-decision
+		// path's complex constellation. Demod mode is unused.
+		return trunking.ProtocolP25Phase2, "", nil
 	default:
 		return trunking.ProtocolUnknown, "", fmt.Errorf("symbol: unsupported proto %q", proto)
 	}

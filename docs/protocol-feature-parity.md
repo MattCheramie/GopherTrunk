@@ -18,13 +18,13 @@ Receiver / pipeline capabilities per protocol after the parity series
 
 | Capability | TETRA TMO/DMO | P25 P1 C4FM | P25 P1 CQPSK | P25 P2 | DMR T3 | DMR T1/T2 | NXDN |
 |---|---|---|---|---|---|---|---|
-| Complex equalizer | SnapshotCMA on (rx) + SnapshotLMS (harness) | n/a (nonlinear path) | FSE always-on | CMA opt-in (`p25_phase2_equalizer`) | n/a | n/a | n/a |
+| Complex equalizer | SnapshotCMA on (rx) + SnapshotLMS **opt-in (`tetra_traffic_lms`)** | n/a (nonlinear path) | FSE always-on | CMA opt-in (`p25_phase2_equalizer`) | n/a | n/a | n/a |
 | Soft-decision FEC | full (soft Viterbi RCPC/RM/TCH/S) | **opt-in (`p25_phase1_soft_decision`)** | — | opt-in (`p25_phase2_soft_decision`) | — | — | **opt-in (`nxdn_soft_decision`)** |
-| Carrier recovery | carrierAFC (alias-reject, re-prime) | CoarseAFC (+opt-in DDA) | CV-gated seed + Costas | seed **now CV-gated** + Costas | CoarseAFC (post-clock) | CoarseAFC (post-clock) | none (follow-up) |
+| Carrier recovery | carrierAFC (alias-reject, re-prime) | CoarseAFC (+opt-in DDA) | CV-gated seed + Costas | seed **now CV-gated** + Costas | CoarseAFC (post-clock) | CoarseAFC (post-clock) | **opt-in (`nxdn_afc`, post-clock CoarseAFC)** |
 | DC block | voice paths | voice path | voice path | **opt-in (`p25_phase2_dc_block`)** | — | — | — |
 | Decode-drought resync watchdog | checkResync + payload escalation | **yes (resyncGuard)** | **yes** | **yes** | **yes** | n/a (conventional) | **yes** |
 | Diagnostic taps (soft/eye) | soft (complex diffs) | full | constellation | soft diffs | full | full | **full** |
-| Symbol-scope panel | yes | yes | yes | no (backlog) | yes | yes | **yes (`nxdn`)** |
+| Symbol-scope panel | yes | yes | yes | **yes (`p25-phase2`)** | yes | yes | **yes (`nxdn`)** |
 | Replay harness / GT_ knobs | richest (TMO+DMO) | fixtures + metrics test | — | GT_915_* | GT_DMR_* | GT_DMR_* | **GT_NXDN_*** |
 
 Bold entries landed in the parity series. TETRA-only engine behaviours
@@ -47,7 +47,8 @@ this table — they rest on TETRA's GSSI/ISSI disjointness and are gated to
 - **NXDN replay harness** — `TestReplayNXDNRealCapture`
   (`cmd/gophertrunk/nxdn_realcapture_test.go`): `GT_NXDN_IQ` (cs16),
   `GT_NXDN_IQ_RATE` (default 48000), `GT_NXDN_ALLOW_EMPTY=1` for
-  weak-signal baselines, `GT_NXDN_SOFT=1` for the soft-decision A/B.
+  weak-signal baselines, `GT_NXDN_SOFT=1` for the soft-decision A/B,
+  `GT_NXDN_AFC=1` for the opt-in carrier-AFC A/B.
   Reports FSW hits, CAC channel-decode/CRC yields (hard and soft), lock and
   grant counts. NXDN real-air captures remain the blocker for the whole
   NXDN voice path — see `docs/decoder-capture-needs.md`.
@@ -111,6 +112,50 @@ Both stay **off by default** until an operator capture A/B confirms the
 gain on air — the same posture the TETRA `SnapshotLMS` and P25 Phase 2
 `#915` knobs shipped under.
 
+### Follow-ups from the parity review (second pass)
+
+- **P25 Phase 2 symbol-scope panel** — the web symbol panels gained a
+  `p25-phase2` receiver (`internal/scanner/symbolscope/scope.go`,
+  `symbolProtoFor`, and the five SPA panel lists), driving the true
+  π/8-DQPSK complex constellation from the Phase 2 receiver's
+  `SoftDibitSink`. Diagnostic-only; a P25 Phase 2 rig's panels no longer
+  fall back to the wrong `p25-c4fm` receiver.
+- **NXDN post-clock CoarseAFC (`nxdn_afc`, opt-in)** — the DMR #836
+  design copied exactly (`internal/radio/nxdn/receiver/receiver.go`):
+  applied post-clock/pre-AGC, eye recentred by the tracked offset, ahead
+  of the soft-LLR derivation. Pinned failing-first by
+  `TestReceiverIsCarrierOffsetInvariant` (400 Hz offset: decode agreement
+  collapses without the AFC, ≥0.95 with it). Opt-in **unlike DMR/P25**,
+  and the reason is a finding of this pass, not caution for its own
+  sake: NXDN's CAC carries no air-interface whitening, so a zero-heavy
+  L3 payload convolutionally encodes to long constant-dibit runs, and
+  the plain coarse tracker drifts onto that data mean (the documented
+  issue #402 mode) — an always-on port collapsed CAC CRC yield to zero
+  on the repo's own synthetic SITE_INFO round-trip (the siglab fixture,
+  which now pins the default-off path). Any default change needs a real
+  mistuned NXDN capture and likely the P25-style decision-directed
+  pairing.
+- **NXDN widebandt2 channel** — the multi-tap wideband engine can now
+  build an `nxdn` control-channel tap (`widebandt2/engine.go`), with the
+  same knobs as the single-channel pipeline (Viterbi mode, band plan,
+  deviation, `nxdn_soft_decision`) plus the drought guard and a
+  `DecodedFrames` activity counter on the NXDN control channel. Config
+  validation accepts `nxdn` in the wideband role's CC-required list.
+- **`tetra_traffic_lms`** (opt-in) — the traffic-burst `SnapshotLMS`
+  midamble equalizer, production-wired: per-system config → both pipeline
+  factories → `tetra.Options.TrafficLMS` → `Grant.TETRATrafficLMS` → both
+  composer receiver-build sites (`EnableLMSEqualizer` + the
+  `SymbolSink → StashSymbols` stash the GT_TETRA_LMS harness uses). Off ⇒
+  byte-identical (no symbols stashed). Default-on stays gated on the
+  operator's capture A/B: `GT_TETRA_LMS=1` in `TestTETRAMultiSlotReplay`,
+  comparing `traffic_marked_crc_soft`.
+- **P25 Phase 2 carrier-offset reporter** — `p25Phase2Pipeline` now
+  satisfies the decoder's `afcReporter`, so Phase 2 CCs get the
+  `control_channel_carrier_offset` health stamp and the #815
+  wrong-site/mistune WARN like P1/TETRA. Deliberately does **not** carry
+  the `appliesAutotune` marker (autotune sampling stays P1-only); pinned
+  by `TestP25Phase2PipelineReportsAFCOffset`.
+
 ## Deliberately NOT ported
 
 1. **Complex equalizers (CMA/LMS/FSE/Snapshot\*) onto the C4FM family**
@@ -148,13 +193,17 @@ gain on air — the same posture the TETRA `SnapshotLMS` and P25 Phase 2
 6. **NXDN voice deinterleave / scramble / CAC structural changes.** All
    flagged "UNVERIFIED ON AIR" placeholders; capture-gated. The new
    `GT_NXDN_*` harness is how a contributed capture gets baselined.
-7. **Backlog (new features, not ports):** a P25 Phase 2 symbol-scope
-   panel; NXDN / DMR Tier I / TETRA DMO widebandt2 channels; the NXDN
-   4800-baud BFSK receiver; NXDN AFC (port the DMR post-clock CoarseAFC
-   pattern once an NXDN capture exists to validate against); a DMR
-   pre-clock/freeze AFC stage (the acknowledged follow-up in
-   `dmr/receiver/receiver.go`); production wiring for the TETRA traffic
-   `SnapshotLMS` (on-air-gated per `CLAUDE.md`).
+7. **Backlog (new features, not ports):** DMR Tier I / TETRA DMO
+   widebandt2 channels (DMO's grant/colour machinery is coupled to the
+   daemon path — a refactor, not a port, and DMO is itself on-air-gated);
+   the NXDN 4800-baud BFSK receiver (a second demod variant against a
+   frame layout still unverified on air); a DMR pre-clock/freeze AFC
+   stage (the acknowledged follow-up in `dmr/receiver/receiver.go` —
+   needs a grossly-mistuned capture to validate the freeze design;
+   `sdr.ppm` remains the documented answer). The P25 Phase 2 symbol
+   scope, NXDN AFC, NXDN widebandt2 channel, TETRA traffic-LMS wiring
+   and Phase 2 offset reporter formerly listed here landed in the
+   second-pass follow-ups above.
 
 ## Verifying
 

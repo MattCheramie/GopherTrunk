@@ -435,6 +435,10 @@ func TestSymbolProtoFor(t *testing.T) {
 		Name: "NXDN", Protocol: trunking.ProtocolNXDN,
 		ControlChannels: []uint32{157_000_000},
 	}
+	p2 := trunking.System{
+		Name: "P25-P2", Protocol: trunking.ProtocolP25Phase2,
+		ControlChannels: []uint32{851_006_250},
+	}
 
 	tests := []struct {
 		name     string
@@ -446,6 +450,7 @@ func TestSymbolProtoFor(t *testing.T) {
 		{"TETRA TMO device", []trunking.System{tmo}, 467_912_500, "tetra"},
 		{"DMR device", []trunking.System{dmr}, 451_000_000, "dmr"},
 		{"NXDN device", []trunking.System{nxdn}, 157_000_000, "nxdn"},
+		{"P25 Phase 2 device", []trunking.System{p2}, 851_006_250, "p25-phase2"},
 		{"P25 C4FM device", []trunking.System{c4fm, lsm}, 851_000_000, "p25-c4fm"},
 		{"P25 LSM device", []trunking.System{c4fm, lsm}, 770_000_000, "p25-cqpsk"},
 		{
@@ -482,7 +487,7 @@ func TestSymbolProtoForMatchesHandlerSelectors(t *testing.T) {
 	protocols := []trunking.Protocol{
 		trunking.ProtocolP25, trunking.ProtocolTETRA, trunking.ProtocolTETRADMO,
 		trunking.ProtocolDMR, trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1,
-		trunking.ProtocolNXDN,
+		trunking.ProtocolNXDN, trunking.ProtocolP25Phase2,
 	}
 	for _, proto := range protocols {
 		sys := trunking.System{Name: proto.String(), Protocol: proto, ControlChannels: []uint32{450_000_000}}

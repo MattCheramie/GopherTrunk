@@ -63,6 +63,8 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
+	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
@@ -840,12 +842,67 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase2", processor: cc, receiver: rcv,
 			decoded: func() uint64 { return cc.DecodedFrames() }}, nil
 
+	case trunking.ProtocolNXDN:
+		if err := requireControlChannel(sys, freqHz, "nxdn"); err != nil {
+			return nil, err
+		}
+		clog := log.With("system", sys.Name, "freq_hz", freqHz, "proto", "nxdn")
+		cc := nxdn.NewControlChannel(bus, clog, freqHz, nxdn.Rate9600)
+		viterbiMode, ok := nxdn.ParseViterbiMode(sys.NXDNViterbiMode)
+		if !ok {
+			clog.Warn("widebandt2: unrecognised nxdn_viterbi_mode; falling back to spec",
+				"value", sys.NXDNViterbiMode)
+		}
+		cc.SetViterbiMode(viterbiMode)
+		cc.SetSystemName(sys.Name)
+		cc.SetBandPlan(nxdn.ResolverFromPlan(sys.NXDNBandPlan))
+		deviationHz := 1800.0
+		if sys.NXDNDeviationHz > 0 {
+			deviationHz = sys.NXDNDeviationHz
+		}
+		softDecision, softOK := nxdnrx.ParseSoftDecision(sys.NXDNSoftDecision)
+		if !softOK {
+			clog.Warn("widebandt2: unrecognised nxdn_soft_decision; falling back to off",
+				"value", sys.NXDNSoftDecision)
+		}
+		enableAFC, afcOK := nxdnrx.ParseAFC(sys.NXDNAFC)
+		if !afcOK {
+			clog.Warn("widebandt2: unrecognised nxdn_afc; falling back to off",
+				"value", sys.NXDNAFC)
+		}
+		nxdnRxOpts := nxdnrx.Options{
+			SampleRateHz: outRateHz,
+			DeviationHz:  deviationHz,
+			EnableAFC:    enableAFC,
+		}
+		if softDecision {
+			nxdnRxOpts.SoftDecision = true
+			nxdnRxOpts.SoftDibitSink = func(d []uint8, soft []float32, b int) {
+				cc.ProcessSoft(d, soft, b)
+			}
+		} else {
+			nxdnRxOpts.DibitSink = func(d []uint8, b int) { cc.Process(d, b) }
+		}
+		rx := nxdnrx.New(nxdnRxOpts)
+		// Decode-drought watchdog, mirroring the ccdecoder nxdnPipeline: the
+		// CC's sync/partial-frame state is dropped alongside the receiver
+		// reset so a stale mid-frame countdown can't splice across the
+		// dibit-index restart.
+		rcv := &droughtGuardReceiver{
+			rx: rx, activity: cc.LastActivityNano,
+			reacquire: func() { rx.Reset(); cc.ResyncReset() },
+			log:       log, system: sys.Name, label: "nxdn",
+			rateHz: outRateHz, window: nxdnResyncWindow,
+		}
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "nxdn", processor: cc, receiver: rcv,
+			decoded: cc.DecodedFrames}, nil
+
 	case trunking.ProtocolTETRA:
 		return buildTETRAChannel(sys, ch, outRateHz, bus, log, now)
 
 	default:
 		return nil, fmt.Errorf(
-			"widebandt2: system %q has protocol %q; wideband supports dmr-tier2, dmr, p25, p25-phase2, and tetra",
+			"widebandt2: system %q has protocol %q; wideband supports dmr-tier2, dmr, p25, p25-phase2, nxdn, and tetra",
 			sys.Name, sys.Protocol.String())
 	}
 }

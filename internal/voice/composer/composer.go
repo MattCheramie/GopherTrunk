@@ -652,7 +652,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	case voiceKindP25P1:
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	case voiceKindTETRA:
-		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, ch.done)
+		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, cs.Grant.TETRATrafficLMS, ch.done)
 	case voiceKindTETRADMO:
 		var liveColour func() (uint32, bool)
 		if dcs, ok := src.(dmoColourSource); ok {
@@ -716,7 +716,7 @@ func (c *Composer) cancelAll() {
 // marker and unregisters on call end. The chain does no IQ work of its own — the
 // demux delivers its marker's decoded speech frames.
 func (c *Composer) followTETRASameCarrier(parent context.Context, src IQSource, key string, cs trunking.CallStart) {
-	d := c.ensureTETRADemux(parent, key, src, cs.Grant.TETRAColourExt)
+	d := c.ensureTETRADemux(parent, key, src, cs.Grant.TETRAColourExt, cs.Grant.TETRATrafficLMS)
 	if d == nil {
 		c.log.Warn("composer: could not start TETRA voice demux", "serial", cs.DeviceSerial, "key", key)
 		return
@@ -734,18 +734,19 @@ func (c *Composer) followTETRASameCarrier(parent context.Context, src IQSource, 
 // SB anchor + AACH state stay warm across calls, so a new call never re-anchors
 // from scratch) until Close/cancelAll or the control decoder's IQ stream closes.
 // Only ever called from the single Run goroutine, so the create is race-free.
-func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSource, colourExt uint32) *tetraSlotDemux {
+func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSource, colourExt uint32, trafficLMS bool) *tetraSlotDemux {
 	c.mu.Lock()
 	if d := c.tetraDemuxes[key]; d != nil {
 		c.mu.Unlock()
 		return d
 	}
 	d := &tetraSlotDemux{
-		c:      c,
-		key:    key,
-		colour: colourExt,
-		owners: make(map[uint8]*tetraSlotOwner),
-		done:   make(chan struct{}),
+		c:          c,
+		key:        key,
+		colour:     colourExt,
+		trafficLMS: trafficLMS,
+		owners:     make(map[uint8]*tetraSlotOwner),
+		done:       make(chan struct{}),
 	}
 	c.tetraDemuxes[key] = d
 	c.mu.Unlock()

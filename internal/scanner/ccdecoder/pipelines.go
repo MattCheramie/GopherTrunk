@@ -637,6 +637,14 @@ func (p *p25Phase2Pipeline) Reset() {
 }
 func (p *p25Phase2Pipeline) Close() error { return nil }
 
+// AFCOffsetHz reports the receiver's carrier-recovery estimate (coarse seed +
+// Costas residual; 0 under ClockNaive), so the Decoder surfaces
+// control_channel_carrier_offset and the #815 wrong-site/mistune WARN for
+// Phase 2 exactly as it does for P1/TETRA. Satisfies afcReporter only — the
+// appliesAutotune marker stays P1-only, so this adds no autotune sampling or
+// its log traffic (the TETRA lesson recorded on autotuneApplier).
+func (p *p25Phase2Pipeline) AFCOffsetHz() float64 { return p.rx.CarrierOffsetHz() }
+
 // newTETRAPipeline wires internal/radio/tetra/receiver into
 // tetra.ControlChannel.Process. The receiver's DibitSink forwards
 // π/4-DQPSK dibits into the state machine.
@@ -659,6 +667,11 @@ func (p *p25Phase2Pipeline) Close() error { return nil }
 // pipeline; the legacy ClockNaive path stays callable for
 // in-package tests that synthesize sample-aligned IQ fixtures.
 func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	trafficLMS, lmsOK := tetra.ParseTrafficLMS(opts.System.TETRATrafficLMS)
+	if !lmsOK {
+		opts.Log.Warn("ccdecoder: unrecognised tetra_traffic_lms; falling back to off",
+			"system", opts.SystemName, "value", opts.System.TETRATrafficLMS)
+	}
 	cc := tetra.New(tetra.Options{
 		Bus:         opts.Bus,
 		Log:         opts.Log,
@@ -667,6 +680,10 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// Opt-in FEC correction-depth histogram (metrics.detailed_fec);
 		// nil unless the daemon wired the observer.
 		FECObserver: opts.FECObserver,
+		// Stamped onto voice grants so the composer's traffic chain
+		// enables the midamble-trained LMS equalizer (tetra_traffic_lms,
+		// opt-in). The CC's own decode is unaffected.
+		TrafficLMS: trafficLMS,
 	})
 	codingMode, ok := tetra.ParseChannelCoding(opts.System.TETRAChannelCoding)
 	if !ok {
@@ -1411,9 +1428,18 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		opts.Log.Warn("ccdecoder: unrecognised nxdn_soft_decision; falling back to off",
 			"system", opts.SystemName, "value", opts.System.NXDNSoftDecision)
 	}
+	// nxdn_afc: opt-in, unlike the always-on DMR/P25 CoarseAFC — NXDN's
+	// unwhitened CAC runs make the plain tracker drift (see the receiver's
+	// Options.EnableAFC comment).
+	enableAFC, afcOK := nxdnrx.ParseAFC(opts.System.NXDNAFC)
+	if !afcOK {
+		opts.Log.Warn("ccdecoder: unrecognised nxdn_afc; falling back to off",
+			"system", opts.SystemName, "value", opts.System.NXDNAFC)
+	}
 	rxOpts := nxdnrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  deviationHz,
+		EnableAFC:    enableAFC,
 	}
 	if softDecision {
 		// Soft path (nxdn_soft_decision): the receiver derives per-bit LLRs

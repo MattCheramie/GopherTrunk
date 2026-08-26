@@ -446,6 +446,12 @@ type System struct {
 	// underlying ClockMode enums in the two receivers share the
 	// same name + values but are independent types.
 	TETRAClockMode string
+	// TETRATrafficLMS enables the midamble-trained SnapshotLMS equalizer
+	// on the TETRA traffic-burst soft path. Recognised values (case-
+	// insensitive): "" / "off" / "false" / "0" → off (the default); "on" /
+	// "true" / "1" → on. Parsed via tetra.ParseTrafficLMS and forwarded
+	// through the grant's TETRATrafficLMS to the voice composer.
+	TETRATrafficLMS string
 	// NXDNViterbiMode enables the K=5 ½-rate Viterbi FEC decoder
 	// on the NXDN CAC region. Recognised values (case-insensitive):
 	// "" / "spec" → ViterbiSpec (the new default — full NXDN-TS-1-A
@@ -464,6 +470,14 @@ type System struct {
 	// Viterbi on the spec CAC decode. Parsed via nxdnrx.ParseSoftDecision
 	// by the ccdecoder connector.
 	NXDNSoftDecision string
+	// NXDNAFC enables the post-clock coarse carrier-offset correction on
+	// the NXDN receiver (the DMR issue #836 CoarseAFC, ported OPT-IN:
+	// NXDN's unwhitened CAC runs make the plain tracker drift onto the
+	// data mean — the issue #402 mode — so it cannot run always-on like
+	// DMR/P25). Recognised values (case-insensitive): "" / "off" /
+	// "false" / "0" → off (the default); "on" / "true" / "1" → on.
+	// Parsed via nxdnrx.ParseAFC by the ccdecoder connector.
+	NXDNAFC string
 	// NXDNDeviationHz overrides the peak frequency deviation (Hz)
 	// the NXDN receiver's slicer is calibrated against. Spec value
 	// is 1800 Hz (matches the FM-discriminator output level so live

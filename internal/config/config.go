@@ -1566,6 +1566,15 @@ type SystemConfig struct {
 	// receiver. Recognised values: "" / "gardner" / "on" (the new
 	// default) or "naive" / "off". Ignored for non-TETRA protocols.
 	TETRAClockMode string `yaml:"tetra_clock_mode"`
+	// TETRATrafficLMS enables the midamble-trained SnapshotLMS equalizer
+	// on the TETRA traffic-burst soft path (the #1001 follow-up lever;
+	// the voice composer trains on the known NTS1/NTS2 midamble per burst,
+	// freezes the taps, and re-derives the soft TCH/S LLRs from the
+	// equalized symbols). Recognised values: "" / "off" / "false" / "0"
+	// (the default — byte-for-byte the historical soft path) or "on" /
+	// "true" / "1". Opt-in: per CLAUDE.md the GT_TETRA_LMS capture A/B is
+	// the gate for ever defaulting it on. Ignored for non-TETRA protocols.
+	TETRATrafficLMS string `yaml:"tetra_traffic_lms"`
 	// NXDNViterbiMode enables the K=5 ½-rate Viterbi FEC decoder
 	// on the NXDN CAC region. Recognised values: "" / "spec" (the
 	// new default — full NXDN-TS-1-A §4.5.1.1 outbound CAC chain),
@@ -1585,6 +1594,18 @@ type SystemConfig struct {
 	// the legacy off/on fixture modes always decode hard. Ignored for
 	// non-NXDN protocols.
 	NXDNSoftDecision string `yaml:"nxdn_soft_decision"`
+	// NXDNAFC enables the post-clock coarse carrier-offset correction on
+	// the NXDN receiver (the DMR issue #836 CoarseAFC, ported opt-in).
+	// Recognised values: "" / "off" / "false" / "0" (the default — no
+	// carrier correction, byte-for-byte the historical behaviour) or
+	// "on" / "true" / "1" (track and subtract the tuner-ppm DC bias from
+	// the recovered symbols, recentring the 4-level eye). Off by default
+	// — unlike DMR/P25 — because NXDN's CAC carries no air-interface
+	// whitening, and its long constant-dibit runs make the plain coarse
+	// tracker drift onto the data mean (the issue #402 mode), collapsing
+	// CAC CRC yield on a clean, centred signal. Turn on only for a rig
+	// with a real tuner frequency error. Ignored for non-NXDN protocols.
+	NXDNAFC string `yaml:"nxdn_afc"`
 	// NXDNDeviationHz overrides the peak frequency deviation (Hz)
 	// the NXDN receiver's slicer is calibrated against. The Common
 	// Air Interface spec value is 1800 Hz (matched against the
