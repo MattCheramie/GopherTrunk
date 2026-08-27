@@ -17,23 +17,28 @@
 //	             with linear and table-backed strategies.
 //	control.go   Control-channel state machine ingesting OSWs and
 //	             emitting cc.locked / grant events on the bus.
+//	process.go   Bit-stream adapter: sync correlation, optional
+//	             BCH(64,16,11) OSW FEC (BCHMode, default BCHOn), and
+//	             OSW reassembly feeding the control state machine.
+//
+// The IQ → bit front end lives in the receiver subpackage
+// (internal/radio/motorola/receiver): an FM-discriminator + Gaussian
+// matched-filter MSK demodulator at 3600 baud, wired to this package
+// by ccdecoder.newMotorolaPipeline. So live SmartZone control-channel
+// decode off an SDR is fully wired end to end (IQ → MSK bits →
+// BCH-corrected OSWs → grants); on-air captures generally want the
+// default BCH FEC (motorola_bch_mode: on) rather than the legacy
+// raw-32-bit BCHOff mode.
 //
 // What's NOT yet wired (honest deferrals so a contributor can pick
 // these up):
 //
-//   - The MSK demodulator that turns IQ from a 3600-baud control
-//     channel into the bits this package consumes. The DSP package
-//     has FM / C4FM / H-DQPSK; MSK is a special-case CPFSK that fits
-//     in the same shape.
-//   - BCH(64,16,11) decoder for the OSW FEC. The information-bit
-//     parser here assumes the upstream caller has already corrected
-//     errors.
 //   - Type I sub-band decoding. Type II is the modern variant and
 //     the focus here; Type I support layers on top.
 //   - Vendor-specific opcode coverage. The opcode list focuses on
 //     the SmartZone subset that carries voice grants and system
 //     identification.
 //
-// All of the above slot into the existing engine + recorder + composer
+// Both of the above slot into the existing engine + recorder + composer
 // pipeline through events.KindGrant once they ship.
 package motorola
