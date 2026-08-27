@@ -83,11 +83,15 @@ for tagged releases.
   unavailable` / `recording file is gone`) instead of unconditionally guessing
   retention, so the next mismatch is diagnosable from the screenshot.
 - **macOS: transient RTL-SDR control-transfer aborts during bring-up are now
-  retried instead of failing the open** (issue #1135). On a Mac with two dongles
-  on one bus, a control `DeviceRequest` during device bring-up intermittently
-  returns IOKit `kIOReturnAborted`, so `sdr list --probe` failed on one dongle or
-  the other at random and the daemon skipped `cc_hunt` when the second SDR would
-  not open. Two problems, both fixed: the abort was mapped to the wrong sentinel
+  retried instead of failing the open** (issue #1135; also the macOS variant
+  reported on #1131). On a Mac with two dongles on one bus, a control
+  `DeviceRequest` during device bring-up intermittently returns IOKit
+  `kIOReturnAborted`, so `sdr list --probe` failed on one dongle or the other at
+  random and the daemon skipped `cc_hunt` when the second SDR would not open.
+  This is the macOS analog of the #1131 Windows composite-dongle fix below —
+  same "second identical dongle won't open" symptom, a different root cause
+  (a transient IOKit abort, not the WinUSB VID/PID child-node collision), and
+  `sdr list --probe` reaches it through the same bring-up envelope as the daemon. Two problems, both fixed: the abort was mapped to the wrong sentinel
   and surfaced as the misleading `usb: DeviceRequest OUT: usb: bulk-IN not
   active` (it is now a dedicated `usb: transfer aborted`); and the open-time
   reset-and-retry envelope did not treat it as recoverable, so a transient killed
