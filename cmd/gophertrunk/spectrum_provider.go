@@ -165,7 +165,8 @@ func demodModeName(cfg string) string {
 // symbolProtoFor reports which symbol-scope receiver the device at
 // (centerHz, sampleRateHz) should be demodulated with — one of the
 // selectors WS /api/v1/diag/symbols accepts ("p25-c4fm", "p25-cqpsk",
-// "tetra", "dmr") — or "" when no configured system matches, in which
+// "p25-phase2", "tetra", "dmr", "nxdn") — or "" when no configured system
+// matches, in which
 // case the panels keep their existing default.
 //
 // This exists because p25ModulationFor only inspects P25 Phase 1
@@ -197,9 +198,13 @@ func symbolProtoFor(systems []trunking.System, centerHz, sampleRateHz uint32) st
 			return "tetra"
 		case trunking.ProtocolDMR, trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1:
 			return "dmr"
+		case trunking.ProtocolNXDN:
+			return "nxdn"
+		case trunking.ProtocolP25Phase2:
+			return "p25-phase2"
 		default:
-			// NXDN, MPT1327, EDACS, … have no symbol-scope receiver yet;
-			// "" leaves the panel on its default rather than asserting a
+			// MPT1327, EDACS, … have no symbol-scope receiver yet; ""
+			// leaves the panel on its default rather than asserting a
 			// wrong one.
 			return ""
 		}

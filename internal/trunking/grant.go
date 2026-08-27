@@ -129,6 +129,14 @@ type Grant struct {
 	// it from its PatchRegistry so the call can be attributed to every
 	// member. Empty for an ordinary (non-patched) grant.
 	PatchedGroups []uint32
+	// TETRATrafficLMS mirrors the system-level tetra_traffic_lms setting:
+	// when set, the voice composer's TETRA traffic chain trains the
+	// midamble SnapshotLMS equalizer per burst and re-derives the soft
+	// TCH/S LLRs from the equalized symbols (the #1001 follow-up lever).
+	// Populated by the TETRA control channel when it publishes the grant;
+	// opt-in, default false — the GT_TETRA_LMS capture A/B is the gate for
+	// ever defaulting it on. Ignored for non-TETRA grants.
+	TETRATrafficLMS bool
 	// P25Phase1DemodMode mirrors the system-level
 	// trunking.System.P25Phase1DemodMode setting so the voice composer
 	// can pick the matching symbol-recovery path on grants for the
@@ -193,6 +201,12 @@ type P25Phase2Decode struct {
 	// on the symbol stream ahead of the differential decode (issue #915).
 	// Default false keeps the symbol stream untouched.
 	Equalizer bool
+	// DCBlock mirrors phase2.MACDecodeConfig.DCBlock: when set, the voice
+	// composer / sigfollow build the Phase 2 traffic-channel receiver with
+	// the DC-removal high-pass that strips a zero-IF front end's LO-leakage
+	// spur from the on-channel voice DDC (the P1 / TETRA voice-receiver
+	// stage, ported for parity). Default false leaves the IQ untouched.
+	DCBlock bool
 }
 
 // String renders a one-line summary of a Grant for log output.

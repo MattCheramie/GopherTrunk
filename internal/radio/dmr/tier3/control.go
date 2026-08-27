@@ -96,6 +96,13 @@ type ControlChannel struct {
 	// DecodedFrames; bumped from the IQ-pump goroutine but exported as an
 	// atomic so other goroutines can sample it without a lock.
 	csbkDecoded atomic.Uint64
+
+	// lastActivityNano is the Unix-nanos timestamp of the most recent
+	// CRC-clean control-block decode (CSBK or assembled MBC) — the decode
+	// heartbeat the ccdecoder pipeline's signal-time drought watchdog
+	// (resyncGuard) compares across calls, the same contract as the TETRA
+	// ControlChannel's LastActivityNano.
+	lastActivityNano atomic.Int64
 }
 
 // DecodedFrames reports the cumulative count of control blocks that
@@ -103,6 +110,21 @@ type ControlChannel struct {
 // It is the protocol-agnostic decode-activity counter the wideband
 // engine polls to gate per-channel power logging.
 func (c *ControlChannel) DecodedFrames() uint64 { return c.csbkDecoded.Load() }
+
+// LastActivityNano returns the Unix-nano timestamp of the most recent
+// CRC-clean control-block decode, or 0 before the first. The ccdecoder
+// pipeline's signal-time drought watchdog compares successive values — any
+// change means a decode landed since the previous check. Same contract as
+// the TETRA ControlChannel's LastActivityNano.
+func (c *ControlChannel) LastActivityNano() int64 {
+	return c.lastActivityNano.Load()
+}
+
+// noteActivity stamps the decode heartbeat; called on every CRC-clean CSBK
+// and assembled MBC.
+func (c *ControlChannel) noteActivity() {
+	c.lastActivityNano.Store(c.now().UnixNano())
+}
 
 // Options configure a ControlChannel.
 type Options struct {
@@ -162,6 +184,7 @@ func (c *ControlChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 			return
 		}
 		c.csbkDecoded.Add(1)
+		c.noteActivity()
 		c.handleCSBK(slot.ColorCode, csbk)
 	case dmr.DTMBCHeader, dmr.DTMBCContinuation:
 		// Multi Block Control: a CSBK-opcode message spread across a header

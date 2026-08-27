@@ -38,6 +38,35 @@ func TestKIOUSBPipeStalledValue(t *testing.T) {
 	}
 }
 
+// TestTranslateIOReturn_AbortedMapsToErrTransferAborted pins the fix for
+// issue #1135: on macOS with two RTL-SDR dongles on one bus, a control
+// DeviceRequest during bring-up intermittently returns kIOReturnAborted
+// (0xe00002eb). It used to map to ErrBulkInactive, so the failure surfaced
+// as the misleading "usb: DeviceRequest OUT: usb: bulk-IN not active" AND
+// was not recognised as reset-recoverable by the bring-up envelope
+// (isBringupResetable), so the open aborted instead of retrying the
+// transient. It must now map to the dedicated ErrTransferAborted and must
+// NOT be ErrBulkInactive, whose meaning is "StopBulkIn called with no
+// active stream". This is the macOS analog of the #1038 stall-mapping fix.
+func TestTranslateIOReturn_AbortedMapsToErrTransferAborted(t *testing.T) {
+	got := translateIOReturn(kIOReturnAborted)
+	if !errors.Is(got, ErrTransferAborted) {
+		t.Fatalf("translateIOReturn(0x%08x) = %v, want errors.Is(err, ErrTransferAborted) so the bring-up envelope resets and retries the transient", uint32(kIOReturnAborted), got)
+	}
+	if errors.Is(got, ErrBulkInactive) {
+		t.Fatalf("translateIOReturn(0x%08x) = %v, must not be ErrBulkInactive — a control-transfer abort is not a bulk-IN-inactive condition (issue #1135)", uint32(kIOReturnAborted), got)
+	}
+}
+
+// TestKIOReturnAbortedValue guards the constant against a typo: the whole
+// #1135 fix hinges on it matching the kern_return IOKit actually returns.
+func TestKIOReturnAbortedValue(t *testing.T) {
+	const want = 0xE00002EB // sys_iokit | sub_iokit_common | 0x2eb
+	if kIOReturnAborted != want {
+		t.Fatalf("kIOReturnAborted = 0x%08x, want 0x%08x", uint32(kIOReturnAborted), uint32(want))
+	}
+}
+
 // These tests pin compile-time invariants (UUIDs, struct sizes,
 // vtable indices) that don't depend on IOKit actually loading at
 // runtime. The real IOKit transport's behavior is verified on

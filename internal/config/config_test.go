@@ -358,10 +358,34 @@ func TestValidate(t *testing.T) {
 			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
 				Serial: "00000010", Role: "wideband", CenterFreqHz: 453_500_000,
 				Channels: []DeviceChannelConfig{
+					{FrequencyHz: 453_125_000, System: "edacs-sys"},
+				},
+			}}},
+			Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "edacs-sys", Protocol: "edacs"}}},
+		}, true},
+		{"wideband NXDN ok", Config{
+			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
+				Serial: "00000010", Role: "wideband", CenterFreqHz: 453_500_000,
+				Channels: []DeviceChannelConfig{
 					{FrequencyHz: 453_125_000, System: "nxdn-sys"},
 				},
 			}}},
-			Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "nxdn-sys", Protocol: "nxdn"}}},
+			Trunking: TrunkingConfig{Systems: []SystemConfig{{
+				Name: "nxdn-sys", Protocol: "nxdn",
+				ControlChannels: []uint32{453_125_000},
+			}}},
+		}, false},
+		{"wideband NXDN channel not in CC list", Config{
+			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
+				Serial: "00000010", Role: "wideband", CenterFreqHz: 453_500_000,
+				Channels: []DeviceChannelConfig{
+					{FrequencyHz: 453_125_000, System: "nxdn-sys"},
+				},
+			}}},
+			Trunking: TrunkingConfig{Systems: []SystemConfig{{
+				Name: "nxdn-sys", Protocol: "nxdn",
+				ControlChannels: []uint32{453_775_000},
+			}}},
 		}, true},
 		{"wideband duplicate frequency", Config{
 			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{

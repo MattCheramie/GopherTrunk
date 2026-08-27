@@ -33,6 +33,8 @@ const PROTOS: { value: string; label: string }[] = [
   { value: "p25-cqpsk", label: "P25 CQPSK" },
   { value: "tetra", label: "TETRA" },
   { value: "dmr", label: "DMR" },
+  { value: "nxdn", label: "NXDN" },
+  { value: "p25-phase2", label: "P25 Phase 2" },
 ];
 
 // Mirrors SocketStatus from api/reconnectingSocket. "gone" is terminal: the

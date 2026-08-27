@@ -33,11 +33,14 @@ func TestNewValidates(t *testing.T) {
 	if _, err := New(Options{Emit: emit, Protocol: trunking.ProtocolP25}); err == nil {
 		t.Error("zero InRateHz: want error")
 	}
-	if _, err := New(Options{Emit: emit, InRateHz: 960_000, Protocol: trunking.ProtocolNXDN}); err == nil {
+	if _, err := New(Options{Emit: emit, InRateHz: 960_000, Protocol: trunking.ProtocolMPT1327}); err == nil {
 		t.Error("unsupported protocol: want error")
 	}
 	if _, err := New(Options{Emit: emit, InRateHz: 960_000, Protocol: trunking.ProtocolDMR}); err != nil {
 		t.Errorf("valid DMR options: unexpected error %v", err)
+	}
+	if _, err := New(Options{Emit: emit, InRateHz: 960_000, Protocol: trunking.ProtocolNXDN}); err != nil {
+		t.Errorf("valid NXDN options: unexpected error %v", err)
 	}
 	if _, err := New(Options{Emit: emit, InRateHz: 960_000, Protocol: trunking.ProtocolP25, DemodMode: "bogus"}); err == nil {
 		t.Error("bad demod mode: want error")
@@ -239,6 +242,93 @@ func TestDMRRecoversSoftAndDibits(t *testing.T) {
 	}
 	if last.AGCTarget <= 0 {
 		t.Errorf("DMR AGCTarget = %v, want > 0 (calibrated from DeviationHz)", last.AGCTarget)
+	}
+
+	means := make([]float64, 0, 4)
+	for v := 0; v < 4; v++ {
+		if cnt[v] == 0 {
+			t.Fatalf("dibit value %d never decided — slicer collapsed", v)
+		}
+		means = append(means, sum[v]/float64(cnt[v]))
+	}
+	sort.Float64s(means)
+	spread := means[3] - means[0]
+	if spread <= 0 {
+		t.Fatalf("soft levels not separated: means=%v", means)
+	}
+	for i := 1; i < 4; i++ {
+		if gap := means[i] - means[i-1]; gap < 0.1*spread {
+			t.Errorf("adjacent soft levels too close: means=%v (gap %.4f < 10%% of spread %.4f)", means, gap, spread)
+		}
+	}
+}
+
+// TestNXDNRecoversSoftAndDibits mirrors the DMR headline check for the NXDN
+// mode: NXDN's 9600-baud variant runs the same 4800-baud 4-level C4FM family,
+// so the NXDN receiver's soft/eye taps must produce the same shape — a soft
+// track aligned with the dibits that separates into four levels, an
+// oversampled eye, an empty complex-symbol track, and the 4800-baud rate.
+func TestNXDNRecoversSoftAndDibits(t *testing.T) {
+	dibits := make([]uint8, 6000)
+	for i := range dibits {
+		dibits[i] = uint8((i*7 + 3) & 3)
+	}
+	iq := demod.ModulateP25C4FM(dibits, 960_000, nxdnDeviationHz)
+	for i := range iq {
+		iq[i] *= 100
+	}
+
+	var frames []Frame
+	e, err := New(Options{
+		Emit:         func(f Frame) { frames = append(frames, f) },
+		InRateHz:     960_000,
+		Protocol:     trunking.ProtocolNXDN,
+		FrameSymbols: 64,
+		NowNs:        func() int64 { return 7 },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	e.Process(iq)
+
+	if len(frames) == 0 {
+		t.Fatal("no frames emitted")
+	}
+
+	var sum [4]float64
+	var cnt [4]int
+	var sawEye bool
+	for fi, f := range frames {
+		if len(f.EyeSoft) > 0 {
+			sawEye = true
+		}
+		if len(f.Soft) != len(f.Dibits) {
+			t.Fatalf("frame %d: soft len %d != dibit len %d", fi, len(f.Soft), len(f.Dibits))
+		}
+		if f.SymbolRateHz != 4800 {
+			t.Errorf("frame %d: SymbolRateHz = %v, want 4800", fi, f.SymbolRateHz)
+		}
+		if len(f.SymI) != 0 || len(f.SymQ) != 0 {
+			t.Errorf("frame %d: NXDN C4FM should carry no complex symbol track, got SymI=%d SymQ=%d", fi, len(f.SymI), len(f.SymQ))
+		}
+		for i, d := range f.Dibits {
+			if d > 3 {
+				t.Fatalf("frame %d: dibit %d out of range", fi, d)
+			}
+			sum[d] += float64(f.Soft[i])
+			cnt[d]++
+		}
+	}
+	if !sawEye {
+		t.Error("NXDN path emitted no eye window (EyeSoft empty on every frame)")
+	}
+
+	last := frames[len(frames)-1]
+	if last.ClockSPS <= 0 {
+		t.Errorf("NXDN ClockSPS = %v, want > 0 (Mueller-Müller nominal sps)", last.ClockSPS)
+	}
+	if last.AGCTarget <= 0 {
+		t.Errorf("NXDN AGCTarget = %v, want > 0 (calibrated from DeviationHz)", last.AGCTarget)
 	}
 
 	means := make([]float64, 0, 4)

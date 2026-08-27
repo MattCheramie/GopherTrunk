@@ -75,6 +75,45 @@ trunking:
 	}
 }
 
+// TestLoadAnchorsRelativeConfigPathToAbsolute pins the "recording is
+// unavailable while the file is right there" UI bug: a daemon started with a
+// relative -config path (`gophertrunk -config config.yaml`) resolved
+// config-relative fields against the RELATIVE config dir, so recordings.dir —
+// and therefore every recording_path stored in the call log — stayed relative,
+// and the audio endpoint's absolute-path guard 404'd every playback. The
+// resolve base must itself be absolutized first.
+func TestLoadAnchorsRelativeConfigPathToAbsolute(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll("config", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := `
+recordings:
+  dir: "recordings"
+`
+	if err := writeFile(filepath.Join("config", "config.yaml"), yaml); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(filepath.Join("config", "config.yaml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !filepath.IsAbs(cfg.Recordings.Dir) {
+		t.Fatalf("recordings.dir = %q, want absolute", cfg.Recordings.Dir)
+	}
+	// Anchored under the cwd's config dir (Getwd, not the TempDir string,
+	// so a symlinked temp root compares consistently).
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(cwd, "config", "recordings")
+	if cfg.Recordings.Dir != want {
+		t.Errorf("recordings.dir = %q, want %q", cfg.Recordings.Dir, want)
+	}
+}
+
 // TestLoadExpandsEnvThenAbsolute verifies an env var expanding to an
 // absolute path is NOT re-anchored to the config dir.
 func TestLoadExpandsEnvThenAbsolute(t *testing.T) {

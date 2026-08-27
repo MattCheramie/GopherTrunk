@@ -205,6 +205,7 @@ manually if you want a clean slate.
 | `sdr list` prints nothing                                | Another RTL-SDR app (SDR++, GQRX) is holding the device — close it and retry. |
 | `sdr list` still prints nothing with every other SDR app closed | Re-run with `RTLSDR_DEBUG_USB=1 gophertrunk sdr list 2> trace.log`. Attach `trace.log`, `sw_vers`, and `system_profiler SPUSBDataType \| grep -A 10 "Vendor ID"` to a new issue — the trace tells us which IOKit class matched and which properties were readable. |
 | `usb: claim interface failed`                            | Same — IOKit hands the dongle to whoever opened it first.                     |
+| `usb: bulk-IN not active` / `usb: transfer aborted` during probe or bring-up, especially with two dongles | IOKit aborted a control transfer mid-bring-up (`kIOReturnAborted`). Bring-up now resets and retries this transient automatically; if it survives every retry it's usually marginal USB power or bus contention. Give each dongle its own powered port — avoid bus-powered hubs and daisy-chained extensions — and retry `gophertrunk sdr list --probe`. |
 | Audio plays as silence                                   | `audio.enabled: false` by default — set `true` in config. CoreAudio is the default backend on Darwin. |
 | LaunchAgent says `Load failed: 5: Input/output error`    | plist syntax error — `plutil -lint ~/Library/LaunchAgents/org.gophertrunk.daemon.plist` will show the line. |
 

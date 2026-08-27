@@ -345,7 +345,17 @@ func translateIOReturn(rc uintptr) error {
 		// tuner burst-write retry (isI2CBurstStall) recover on macOS.
 		return ErrPipeStalled
 	case kIOReturnAborted:
-		return ErrBulkInactive
+		// A request the host stack aborted mid-flight. On the bulk-IN
+		// path this is the normal StopBulkIn/AbortPipe cancellation, but
+		// bulkLoop reads the raw rc there and never routes through here —
+		// so every translateIOReturn caller is a control / interface /
+		// reset op. For those an abort is a transient the bring-up
+		// envelope can reset-and-retry, so surface the dedicated
+		// ErrTransferAborted rather than ErrBulkInactive, whose meaning is
+		// "StopBulkIn called with no active stream" (issue #1135 — the
+		// abort used to be mislabelled "usb: bulk-IN not active" on a
+		// control DeviceRequest, and was not treated as resetable).
+		return ErrTransferAborted
 	case kIOReturnExclusive:
 		return fmt.Errorf("usb: device already opened by another process (kIOReturnExclusive)")
 	default:

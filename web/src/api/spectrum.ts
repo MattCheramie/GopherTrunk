@@ -22,7 +22,7 @@ export interface SpectrumDevice {
   // pick the receiver without operator input.
   p25_modulation?: string;
   // Symbol-stream receiver selector for the system this SDR is decoding
-  // ("p25-c4fm" | "p25-cqpsk" | "tetra" | "dmr"), or absent when no
+  // ("p25-c4fm" | "p25-cqpsk" | "p25-phase2" | "tetra" | "dmr" | "nxdn"), or absent when no
   // configured system matches. Protocol-aware, unlike p25_modulation,
   // which only ever describes P25 Phase 1 systems — on a TETRA/DMO/DMR
   // rig that was absent and "Auto" fell back to a P25 C4FM receiver.

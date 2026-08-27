@@ -8,6 +8,32 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Cross-protocol feature-parity series** (see
+  [`docs/protocol-feature-parity.md`](docs/protocol-feature-parity.md) for the
+  full matrix and A/B recipes). Everything decode-affecting is opt-in and off
+  by default until an operator capture A/B confirms the gain on air:
+  - **`nxdn_soft_decision`** / **`p25_phase1_soft_decision`** — per-bit
+    soft-decision FEC on the NXDN CAC and P25 Phase 1 TSBK decodes, the
+    TETRA yield lever ported (measured on synthetic channels: NXDN CAC CRC
+    26→151/200; P25 TSBK 81→212/300).
+  - **`p25_phase2_dc_block`** — the P1/TETRA zero-IF DC-removal stage on the
+    Phase 2 traffic receiver.
+  - **`nxdn_afc`** — post-clock coarse carrier-offset correction for NXDN
+    rigs with a real tuner ppm error (opt-in unlike DMR/P25: NXDN's
+    unwhitened CAC runs make an always-on tracker drift on clean signals).
+  - **`tetra_traffic_lms`** — production wiring for the midamble-trained
+    TETRA traffic-burst equalizer (formerly harness-only, `GT_TETRA_LMS`).
+  - Always-on hygiene: a signal-time decode-drought watchdog on the P25
+    P1/P2, DMR Tier III and NXDN control-channel pipelines (the TETRA resync
+    design generalised); the P25 Phase 2 carrier seed gains the P1 multipath
+    coherence gate; Phase 2 CCs now report `control_channel_carrier_offset`
+    and the wrong-site/mistune WARN; `tetra-dmo` voice calls get the same
+    `.raw` sidecar as TMO.
+  - Diagnostics: NXDN and P25 Phase 2 receivers in the web symbol panels
+    (an NXDN/P2 rig no longer opens a wrong-protocol receiver); NXDN
+    replay harness (`GT_NXDN_IQ` / `GT_NXDN_SOFT` / `GT_NXDN_AFC`); NXDN
+    control channels on the wideband multi-tap engine (`wideband` role
+    `protocol: nxdn`).
 - **`unfollowed_reason` on observed calls** (issue #356). Calls the control
   channel announces but no voice tuner follows now say *why* in
   `/api/v1/calls/active`: `no voice SDR configured`, `voice frequency outside
@@ -42,6 +68,37 @@ for tagged releases.
   #1096).
 
 ### Fixed
+- **Web History: "recording is unavailable (it may have been swept by
+  retention)" while the WAV was on disk the whole time.** A daemon started with
+  a relative `-config` path (e.g. `gophertrunk -config config.yaml`) resolved
+  `recordings.dir` — and every other config-relative path — against the
+  *relative* config directory, so the call log stored cwd-relative
+  `recording_path` rows and `GET /api/v1/calls/{id}/audio`'s absolute-path
+  guard 404'd every playback of a file that was right there. Three fixes:
+  `config.Load` now absolutizes the resolve base so stored paths are always
+  absolute; the audio endpoint resolves a relative stored path (rows written
+  before the fix) against the daemon's working directory — the directory the
+  recorder wrote it under — before validating; and the web player now surfaces
+  the daemon's own error detail (`no recording for this call` / `recording
+  unavailable` / `recording file is gone`) instead of unconditionally guessing
+  retention, so the next mismatch is diagnosable from the screenshot.
+- **macOS: transient RTL-SDR control-transfer aborts during bring-up are now
+  retried instead of failing the open** (issue #1135; also the macOS variant
+  reported on #1131). On a Mac with two dongles on one bus, a control
+  `DeviceRequest` during device bring-up intermittently returns IOKit
+  `kIOReturnAborted`, so `sdr list --probe` failed on one dongle or the other at
+  random and the daemon skipped `cc_hunt` when the second SDR would not open.
+  This is the macOS analog of the #1131 Windows composite-dongle fix below —
+  same "second identical dongle won't open" symptom, a different root cause
+  (a transient IOKit abort, not the WinUSB VID/PID child-node collision), and
+  `sdr list --probe` reaches it through the same bring-up envelope as the daemon. Two problems, both fixed: the abort was mapped to the wrong sentinel
+  and surfaced as the misleading `usb: DeviceRequest OUT: usb: bulk-IN not
+  active` (it is now a dedicated `usb: transfer aborted`); and the open-time
+  reset-and-retry envelope did not treat it as recoverable, so a transient killed
+  the open instead of being retried like the existing cold-boot stall/timeout
+  classes. A failure that survives every retry now carries a macOS hint pointing
+  at USB power / bus contention (give each dongle its own powered port). No
+  effect on Linux or Windows.
 - **Windows: two identical RTL-SDR composite dongles can now open concurrently**
   (issue #1131). The WinUSB composite-device fallback located the Interface 0
   (`&MI_00`) child function node by VID/PID only, so with two identical

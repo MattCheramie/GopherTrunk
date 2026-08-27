@@ -39,15 +39,20 @@ type SystemDTO struct {
 	TETRAColourCode        uint32  `json:"tetra_colour_code,omitempty"`
 	TETRAChannel           string  `json:"tetra_channel,omitempty"`
 	TETRAChannelCoding     string  `json:"tetra_channel_coding,omitempty"`
+	TETRATrafficLMS        string  `json:"tetra_traffic_lms,omitempty"`
 	LTRFCSMode             string  `json:"ltr_fcs_mode,omitempty"`
 	LTRManchesterMode      string  `json:"ltr_manchester_mode,omitempty"`
 	P25Phase1DemodMode     string  `json:"p25_phase1_demod_mode,omitempty"`
+	P25Phase1SoftDecision  string  `json:"p25_phase1_soft_decision,omitempty"`
 	P25Phase2TrellisMode   string  `json:"p25_phase2_trellis_mode,omitempty"`
 	P25Phase2RSMode        string  `json:"p25_phase2_rs_mode,omitempty"`
 	P25Phase2ScramblerMode string  `json:"p25_phase2_scrambler_mode,omitempty"`
 	P25Phase2SoftDecision  string  `json:"p25_phase2_soft_decision,omitempty"`
 	P25Phase2Equalizer     string  `json:"p25_phase2_equalizer,omitempty"`
+	P25Phase2DCBlock       string  `json:"p25_phase2_dc_block,omitempty"`
 	NXDNViterbiMode        string  `json:"nxdn_viterbi_mode,omitempty"`
+	NXDNSoftDecision       string  `json:"nxdn_soft_decision,omitempty"`
+	NXDNAFC                string  `json:"nxdn_afc,omitempty"`
 	NXDNDeviationHz        float64 `json:"nxdn_deviation_hz,omitempty"`
 	EDACSBCHMode           string  `json:"edacs_bch_mode,omitempty"`
 	MPT1327BCHMode         string  `json:"mpt1327_bch_mode,omitempty"`

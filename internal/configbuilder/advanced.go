@@ -13,7 +13,7 @@ var AdvancedFields = map[string][]string{
 	},
 	"SystemConfig": {
 		// TETRA
-		"TETRAColourCode", "TETRAMCC", "TETRAMNC", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode",
+		"TETRAColourCode", "TETRAMCC", "TETRAMNC", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode", "TETRATrafficLMS",
 		"TETRAStatusIntervalSecs",
 		// LTR
 		"LTRFCSMode", "LTRManchesterMode",
@@ -21,11 +21,12 @@ var AdvancedFields = map[string][]string{
 		"P25Phase1DemodMode",
 		// P25 Phase 2
 		"P25Phase2TrellisMode", "P25Phase2RSMode", "P25Phase2InterleaveMode",
-		"P25Phase2ScramblerMode", "P25Phase2SoftDecision", "P25Phase2Equalizer", "P25Phase2ClockMode",
+		"P25Phase1SoftDecision",
+		"P25Phase2ScramblerMode", "P25Phase2SoftDecision", "P25Phase2Equalizer", "P25Phase2DCBlock", "P25Phase2ClockMode",
 		// DMR
 		"DMRInterleavedVoice", "DMRColorCode",
 		// NXDN
-		"NXDNViterbiMode", "NXDNDeviationHz",
+		"NXDNViterbiMode", "NXDNSoftDecision", "NXDNAFC", "NXDNDeviationHz",
 		// EDACS
 		"EDACSBCHMode",
 		// MPT1327

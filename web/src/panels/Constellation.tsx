@@ -66,6 +66,8 @@ const PROTOS: { value: string; label: string }[] = [
   { value: "p25-c4fm", label: "P25 C4FM" },
   { value: "tetra", label: "TETRA" },
   { value: "dmr", label: "DMR" },
+  { value: "nxdn", label: "NXDN" },
+  { value: "p25-phase2", label: "P25 Phase 2" },
 ];
 
 // Reference markers (ideal post-normalisation cluster centres) drawn as
@@ -201,7 +203,9 @@ export function Constellation() {
   // vector scope / IQ ring.
   const markers = useMemo<IQPoint[]>(() => {
     if (source !== "symbols") return [];
-    return effectiveProto === "p25-c4fm" || effectiveProto === "dmr"
+    return effectiveProto === "p25-c4fm" ||
+      effectiveProto === "dmr" ||
+      effectiveProto === "nxdn"
       ? C4FM_MARKERS
       : CQPSK_MARKERS;
   }, [source, effectiveProto]);
@@ -507,9 +511,11 @@ export function Constellation() {
                   ? "C4FM"
                   : effectiveProto === "tetra"
                     ? "π/4-DQPSK"
-                    : effectiveProto === "dmr"
-                      ? "4FSK"
-                      : "CQPSK"}
+                    : effectiveProto === "p25-phase2"
+                      ? "π/8-DQPSK"
+                      : effectiveProto === "dmr" || effectiveProto === "nxdn"
+                        ? "4FSK"
+                        : "CQPSK"}
               </span>
             )}
           </label>

@@ -276,6 +276,19 @@ type Options struct {
 	// default — meant for the web eye-diagram scope. The slice is reused
 	// across calls; the callee must copy what it needs synchronously.
 	EyeSink func(oversampled []float32, sps int)
+	// BitLLRSink, when non-nil, receives per-bit log-likelihood ratios for
+	// each dibit batch on the C4FM path (p25_phase1_soft_decision): TWO
+	// values per dibit — llrs[2i] for dibits[i]'s MSB (the 4-level soft
+	// symbol's signed distance from the sign axis), llrs[2i+1] for its LSB
+	// (its distance from the inner/outer magnitude threshold) — in the
+	// framing convention (LLR > 0 ⇒ bit 0, magnitude = reliability). Fired
+	// immediately BEFORE the DibitSink batch it aligns with, so a consumer
+	// can stash the LLRs and pair them on the Process call (the
+	// ControlChannel.StashSoft contract). The LLRs are derived against the
+	// fixed slicer thresholds regardless of EnableAdaptiveC4FMSlicer. The
+	// CQPSK path never fires it (no real 4-level soft track). Nil by
+	// default; the slice is reused across calls — copy synchronously.
+	BitLLRSink func(llrs []float32, baseIdx int)
 }
 
 // Receiver is the composed IQ → dibit → LDU pipeline. Process is the
@@ -320,9 +333,15 @@ type Receiver struct {
 	softSink   func([]float32)
 	symbolSink func([]complex64)
 	eyeSink    func([]float32, int)
-	eyeSPS     int       // integer samples/symbol for the eye fold (C4FM)
-	eyeBuf     []float32 // scratch for the AGC-scaled oversampled eye output
-	dibitBase  int
+	bitLLRSink func([]float32, int)
+	// llrThreshold is the fixed inner/outer slicer boundary
+	// (2·slicerScale/3) the BitLLRSink derivation measures against;
+	// llrBuf is its reused scratch.
+	llrThreshold float32
+	llrBuf       []float32
+	eyeSPS       int       // integer samples/symbol for the eye fold (C4FM)
+	eyeBuf       []float32 // scratch for the AGC-scaled oversampled eye output
+	dibitBase    int
 
 	// Reusable scratch slices so Process doesn't allocate per call
 	// on the C4FM path.
@@ -378,6 +397,10 @@ func New(opts Options) *Receiver {
 		softSink:   opts.SoftSink,
 		symbolSink: opts.SymbolSink,
 		eyeSink:    opts.EyeSink,
+		bitLLRSink: opts.BitLLRSink,
+		// The fixed inner/outer decision boundary demod.C4FM.Slice uses;
+		// the sign-axis boundary is 0. Anchors the BitLLRSink derivation.
+		llrThreshold: float32(2 * slicerScale / 3),
 	}
 	// The DC blocker runs at the very top of Process, before the demod-mode
 	// split, so it must be initialised for BOTH the C4FM and CQPSK paths — the
@@ -665,6 +688,29 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 	if len(r.dibits) == 0 {
 		return
+	}
+	// Per-bit LLRs for the soft-decision TSBK path (C4FM only — the CQPSK
+	// path has no real 4-level soft track). Derived from the post-AGC soft
+	// symbols against the fixed slicer axes: MSB (sign bit) from the signed
+	// distance to 0, LSB (magnitude bit, 1 ⇔ outer ±3) from the distance to
+	// the inner/outer threshold, in the framing convention (LLR > 0 ⇒ bit
+	// 0). Fired immediately before the aligned DibitSink batch so a
+	// consumer can StashSoft-then-Process on the same call.
+	if r.bitLLRSink != nil && r.demodMode != DemodCQPSK && len(r.symbols) == len(r.dibits) {
+		if cap(r.llrBuf) < 2*len(r.symbols) {
+			r.llrBuf = make([]float32, 2*len(r.symbols))
+		} else {
+			r.llrBuf = r.llrBuf[:2*len(r.symbols)]
+		}
+		for i, y := range r.symbols {
+			ay := y
+			if ay < 0 {
+				ay = -ay
+			}
+			r.llrBuf[2*i] = y // MSB = 0 for a positive symbol ⇒ LLR > 0 there
+			r.llrBuf[2*i+1] = r.llrThreshold - ay
+		}
+		r.bitLLRSink(r.llrBuf, r.dibitBase)
 	}
 	if r.dibitSink != nil {
 		r.dibitSink(r.dibits, r.dibitBase)

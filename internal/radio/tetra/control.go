@@ -55,6 +55,11 @@ type ControlChannel struct {
 	// metrics.detailed_fec is enabled).
 	fecObserver func(channel string, corrections int)
 
+	// trafficLMS mirrors Options.TrafficLMS: stamped onto every published
+	// voice grant so the composer's traffic chain enables the
+	// midamble-trained SnapshotLMS equalizer (tetra_traffic_lms, opt-in).
+	trafficLMS bool
+
 	// proc is the cross-call dibit / sync state the Process
 	// adapter uses (see process.go). Lazily constructed on the
 	// first Process call.
@@ -330,6 +335,26 @@ func ParseChannelType(s string) (ChannelType, bool) {
 		return ChannelAACH, true
 	default:
 		return ChannelSCHHD, false
+	}
+}
+
+// ParseTrafficLMS maps the tetra_traffic_lms config string into the
+// Options.TrafficLMS boolean. Recognised values (case-insensitive): "" /
+// "off" / "false" / "0" → false (the default — the traffic soft path runs
+// exactly as before); "on" / "true" / "1" → true (the voice composer trains
+// the midamble SnapshotLMS equalizer per burst and re-derives the soft LLRs
+// from the equalized symbols — the #1001 follow-up lever, pinned by
+// traffic_lms_test.go, whose default-on promotion is gated on the operator's
+// GT_TETRA_LMS capture A/B per CLAUDE.md). Unknown strings return false with
+// `ok = false` so callers can warn and fall back.
+func ParseTrafficLMS(s string) (on bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return false, true
+	case "on", "true", "1":
+		return true, true
+	default:
+		return false, false
 	}
 }
 
@@ -627,6 +652,14 @@ type Options struct {
 	// connector to the metrics layer only when metrics.detailed_fec is
 	// enabled. nil ⇒ zero overhead.
 	FECObserver func(channel string, corrections int)
+
+	// TrafficLMS, when set, is stamped onto every published voice grant
+	// (Grant.TETRATrafficLMS) so the voice composer enables the
+	// midamble-trained SnapshotLMS equalizer on the traffic-burst soft
+	// path (tetra_traffic_lms — opt-in; the on-air A/B via GT_TETRA_LMS is
+	// the gate for ever defaulting it on). It does not change the CC's own
+	// receiver or decode.
+	TrafficLMS bool
 }
 
 // New constructs a ControlChannel.
@@ -647,6 +680,7 @@ func New(opts Options) *ControlChannel {
 		resolver:    opts.Resolver,
 		now:         now,
 		fecObserver: opts.FECObserver,
+		trafficLMS:  opts.TrafficLMS,
 		debug:       log.Enabled(context.Background(), slog.LevelDebug),
 	}
 }
@@ -919,6 +953,7 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			Individual:       g.Individual,
 			TETRAColourExt:   colourExt,
 			TETRAUsageMarker: g.UsageMarker,
+			TETRATrafficLMS:  c.trafficLMS,
 			At:               c.now(),
 		},
 	})

@@ -1451,6 +1451,17 @@ type SystemConfig struct {
 	// never decode an LDU on a granted voice call (issue #356
 	// follow-up). Ignored for non-P25-Phase-1 protocols.
 	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
+	// P25Phase1SoftDecision enables the soft-decision TSBK path on the
+	// P25 Phase 1 C4FM control-channel receiver (the p25_phase2_soft_decision
+	// lever ported for parity). Recognised values: "" / "off" / "false" /
+	// "0" (the default — the hard trellis, byte-for-byte the historical
+	// behaviour) or "on" / "true" / "1" (the receiver emits per-bit LLRs
+	// from the 4-level soft symbols and the control channel's TSBK trellis
+	// runs a true per-bit soft Viterbi, recovering the coding gain the hard
+	// slicer discards on marginal signals; the TSBK CRC still corroborates
+	// every block). C4FM only — CQPSK/LSM sites decode hard regardless.
+	// Ignored for non-P25-Phase-1 protocols.
+	P25Phase1SoftDecision string `yaml:"p25_phase1_soft_decision"`
 	// DMRInterleavedVoice overrides the 2-slot interleaved voice decoder.
 	// A DMR carrier is 2-slot TDMA, so the demodulated stream interleaves
 	// both timeslots' bursts; the interleaved decoder pulls each call's own
@@ -1535,6 +1546,15 @@ type SystemConfig struct {
 	// noisy on a purely AWGN-limited one, so it is opt-in. Ignored for
 	// non-P25-Phase-2 protocols.
 	P25Phase2Equalizer string `yaml:"p25_phase2_equalizer"`
+	// P25Phase2DCBlock enables a first-order DC-removal high-pass on the
+	// P25 Phase 2 traffic-channel receiver — the same zero-IF LO-spur
+	// stage the P25 Phase 1 and TETRA voice receivers run. Recognised
+	// values: "" / "off" / "false" / "0" (the default — the IQ stream is
+	// untouched) or "on" / "true" / "1" (strip the static DC spur a
+	// zero-IF front end leaves on an on-channel voice DDC before the
+	// demod; the ~1 Hz corner leaves the 6000-baud modulation untouched).
+	// Ignored for non-P25-Phase-2 protocols.
+	P25Phase2DCBlock string `yaml:"p25_phase2_dc_block"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
 	// "gardner" / "on" (the new default — non-data-aided Gardner
@@ -1546,6 +1566,15 @@ type SystemConfig struct {
 	// receiver. Recognised values: "" / "gardner" / "on" (the new
 	// default) or "naive" / "off". Ignored for non-TETRA protocols.
 	TETRAClockMode string `yaml:"tetra_clock_mode"`
+	// TETRATrafficLMS enables the midamble-trained SnapshotLMS equalizer
+	// on the TETRA traffic-burst soft path (the #1001 follow-up lever;
+	// the voice composer trains on the known NTS1/NTS2 midamble per burst,
+	// freezes the taps, and re-derives the soft TCH/S LLRs from the
+	// equalized symbols). Recognised values: "" / "off" / "false" / "0"
+	// (the default — byte-for-byte the historical soft path) or "on" /
+	// "true" / "1". Opt-in: per CLAUDE.md the GT_TETRA_LMS capture A/B is
+	// the gate for ever defaulting it on. Ignored for non-TETRA protocols.
+	TETRATrafficLMS string `yaml:"tetra_traffic_lms"`
 	// NXDNViterbiMode enables the K=5 ½-rate Viterbi FEC decoder
 	// on the NXDN CAC region. Recognised values: "" / "spec" (the
 	// new default — full NXDN-TS-1-A §4.5.1.1 outbound CAC chain),
@@ -1554,6 +1583,29 @@ type SystemConfig struct {
 	// "0" (legacy 44-dibit raw-CAC path, opt-out for pre-stripped
 	// fixtures). Ignored for non-NXDN protocols.
 	NXDNViterbiMode string `yaml:"nxdn_viterbi_mode"`
+	// NXDNSoftDecision enables the soft-decision demod path on the NXDN
+	// receiver (feature-parity port of p25_phase2_soft_decision).
+	// Recognised values: "" / "off" / "false" / "0" (the default — the
+	// hard slicer, byte-for-byte the historical behaviour) or "on" /
+	// "true" / "1" (derive per-bit LLRs from the 4-level soft symbols and
+	// run the spec CAC decode through a true per-bit soft Viterbi,
+	// recovering the coding gain the hard slicer discards on marginal
+	// signals). Effective with the default nxdn_viterbi_mode ("spec");
+	// the legacy off/on fixture modes always decode hard. Ignored for
+	// non-NXDN protocols.
+	NXDNSoftDecision string `yaml:"nxdn_soft_decision"`
+	// NXDNAFC enables the post-clock coarse carrier-offset correction on
+	// the NXDN receiver (the DMR issue #836 CoarseAFC, ported opt-in).
+	// Recognised values: "" / "off" / "false" / "0" (the default — no
+	// carrier correction, byte-for-byte the historical behaviour) or
+	// "on" / "true" / "1" (track and subtract the tuner-ppm DC bias from
+	// the recovered symbols, recentring the 4-level eye). Off by default
+	// — unlike DMR/P25 — because NXDN's CAC carries no air-interface
+	// whitening, and its long constant-dibit runs make the plain coarse
+	// tracker drift onto the data mean (the issue #402 mode), collapsing
+	// CAC CRC yield on a clean, centred signal. Turn on only for a rig
+	// with a real tuner frequency error. Ignored for non-NXDN protocols.
+	NXDNAFC string `yaml:"nxdn_afc"`
 	// NXDNDeviationHz overrides the peak frequency deviation (Hz)
 	// the NXDN receiver's slicer is calibrated against. The Common
 	// Air Interface spec value is 1800 Hz (matched against the
@@ -1871,17 +1923,6 @@ type RecordingsConfig struct {
 	// Off by default; useful when receiving simulcast systems with
 	// multiple transmitters at slightly different arrival delays.
 	Equalizer EqualizerConfig `yaml:"equalizer"`
-	// TETRALMSEqualizer opts the TETRA voice chains into the per-burst
-	// training-sequence-aided LMS equalizer (equalizer.SnapshotLMS) in the
-	// extractor's soft-decision path, on top of the blind CMA already run in
-	// the receiver. It trains on each burst's known NTS1/NTS2 midamble and
-	// equalizes BKN1/BKN2 before the soft TCH/S decode. Off by default: it is
-	// a lever staged for the on-air A/B that issue #1001 is gated on, not a
-	// confirmed win (a green synthetic ≠ on-air correct, per #764/#771). When
-	// off the voice chains are byte-identical to before. Compare recordings
-	// with it on vs off on a same-carrier concurrent-load TETRA capture; keep
-	// it off unless it demonstrably improves your site's yield.
-	TETRALMSEqualizer bool `yaml:"tetra_lms_equalizer"`
 	// Normalize enables per-call EBU R128 / BS.1770 loudness
 	// normalization. When enabled, each finished recording is measured and
 	// rewritten in place to a perceptual loudness target (true-peak
@@ -2145,7 +2186,18 @@ func Load(path string) (Config, error) {
 	// land under the operator's chosen data root regardless of platform
 	// or current working directory. Absolute and env-expanded-to-absolute
 	// paths pass through untouched (see resolvePaths).
-	cfg.resolvePaths(filepath.Dir(path))
+	//
+	// The base itself must be absolutized first: a relative -config path
+	// (`gophertrunk -config config.yaml`) makes filepath.Dir relative, and
+	// resolving against a relative base leaves every field relative — the
+	// recorder then stores relative recording_path rows, which the audio
+	// endpoint's absolute-path guard rejects (the "recording is unavailable
+	// while the file exists" UI bug).
+	base := filepath.Dir(path)
+	if abs, err := filepath.Abs(base); err == nil {
+		base = abs
+	}
+	cfg.resolvePaths(base)
 	if err := cfg.Validate(); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
 	}

@@ -169,6 +169,20 @@ var (
 	// halt via [Transport.Reset] and retry once.
 	ErrPipeStalled = errors.New("usb: pipe stalled")
 
+	// ErrTransferAborted is returned when a control (or interface) request
+	// is aborted by the host stack mid-flight rather than stalled or timed
+	// out. Maps to macOS/IOKit kIOReturnAborted (0xe00002eb) on a
+	// synchronous DeviceRequest — the transient the reporter of issue #1135
+	// hit during bring-up on a Mac with two RTL-SDR dongles, where the same
+	// probe/open succeeds on a fresh handle a moment later. It is transient
+	// and reset-recoverable, so the open-time bring-up envelope resets and
+	// retries on it (see isBringupResetable in purego/driver.go). It is NOT
+	// a bulk-IN condition: StopBulkIn's "no active stream" case stays
+	// ErrBulkInactive, which this used to be conflated with — an abort on a
+	// control transfer then surfaced as the misleading "usb: bulk-IN not
+	// active".
+	ErrTransferAborted = errors.New("usb: transfer aborted")
+
 	// ErrClosed is returned by methods invoked after Close.
 	ErrClosed = errors.New("usb: transport closed")
 )

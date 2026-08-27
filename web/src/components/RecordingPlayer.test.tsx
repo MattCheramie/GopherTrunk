@@ -68,4 +68,29 @@ describe("RecordingPlayer", () => {
     );
     expect(document.querySelector("audio")).not.toBeInTheDocument();
   });
+
+  it("surfaces the daemon's own error detail instead of guessing retention", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 404,
+            json: async () => ({ error: "recording file is gone" }),
+            blob: async () => new Blob(),
+          }) as unknown as Response,
+      ),
+    );
+
+    render(<RecordingPlayer cfg={cfg} callId={9} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /recording file is gone/i,
+      ),
+    );
+    // The speculative retention hint must not override the server's reason.
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/retention/i);
+  });
 });

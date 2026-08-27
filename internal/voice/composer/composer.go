@@ -185,17 +185,6 @@ type Options struct {
 	// front-end LPF and the FM demod. Off by default; flip Enabled
 	// to true and tune Taps / StepSize per site.
 	Equalizer EqualizerConfig
-	// TETRALMSEqualizer opts the TETRA voice chains into the per-burst
-	// training-sequence-aided LMS equalizer (equalizer.SnapshotLMS) in the
-	// TrafficExtractor's soft path, on top of the blind CMA already run in the
-	// receiver. When true, the chains stash the raw pre-differential symbols
-	// (receiver SymbolSink → extractor.StashSymbols) and call
-	// extractor.EnableLMSEqualizer, so each burst is equalized against its
-	// known NTS1/NTS2 midamble before the soft TCH/S decode. Off by default:
-	// a lever staged for the on-air A/B that issue #1001 is gated on, not a
-	// confirmed win. When false the chains are byte-identical to before — no
-	// SymbolSink, no StashSymbols, the equalizer inert.
-	TETRALMSEqualizer bool
 	// DeEmphasis configures the post-demod single-pole IIR that
 	// recovers the pre-emphasized treble curve broadcast FM
 	// transmitters apply for SNR. Off by default — set Enabled and
@@ -302,7 +291,6 @@ type Composer struct {
 	hangtime   time.Duration
 	splitTx    bool
 	eqCfg      EqualizerConfig
-	tetraLMS   bool
 	deemphCfg  DeEmphasisConfig
 	lpfCfg     AudioLPFConfig
 	agcCfg     AudioAGCConfig
@@ -423,7 +411,6 @@ func New(opts Options) (*Composer, error) {
 		hangtime:     opts.VoiceHangtime,
 		splitTx:      opts.SplitPerTransmission,
 		eqCfg:        opts.Equalizer,
-		tetraLMS:     opts.TETRALMSEqualizer,
 		deemphCfg:    opts.DeEmphasis,
 		lpfCfg:       opts.AudioLPF,
 		agcCfg:       opts.AudioAGC,
@@ -659,12 +646,13 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 			Seed:         cs.Grant.P25Phase2Decode.Seed,
 			SoftDecision: cs.Grant.P25Phase2Decode.SoftDecision,
 			Equalizer:    cs.Grant.P25Phase2Decode.Equalizer,
+			DCBlock:      cs.Grant.P25Phase2Decode.DCBlock,
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case voiceKindP25P1:
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	case voiceKindTETRA:
-		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, ch.done)
+		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, cs.Grant.TETRATrafficLMS, ch.done)
 	case voiceKindTETRADMO:
 		var liveColour func() (uint32, bool)
 		if dcs, ok := src.(dmoColourSource); ok {
@@ -728,7 +716,7 @@ func (c *Composer) cancelAll() {
 // marker and unregisters on call end. The chain does no IQ work of its own — the
 // demux delivers its marker's decoded speech frames.
 func (c *Composer) followTETRASameCarrier(parent context.Context, src IQSource, key string, cs trunking.CallStart) {
-	d := c.ensureTETRADemux(parent, key, src, cs.Grant.TETRAColourExt)
+	d := c.ensureTETRADemux(parent, key, src, cs.Grant.TETRAColourExt, cs.Grant.TETRATrafficLMS)
 	if d == nil {
 		c.log.Warn("composer: could not start TETRA voice demux", "serial", cs.DeviceSerial, "key", key)
 		return
@@ -746,18 +734,19 @@ func (c *Composer) followTETRASameCarrier(parent context.Context, src IQSource, 
 // SB anchor + AACH state stay warm across calls, so a new call never re-anchors
 // from scratch) until Close/cancelAll or the control decoder's IQ stream closes.
 // Only ever called from the single Run goroutine, so the create is race-free.
-func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSource, colourExt uint32) *tetraSlotDemux {
+func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSource, colourExt uint32, trafficLMS bool) *tetraSlotDemux {
 	c.mu.Lock()
 	if d := c.tetraDemuxes[key]; d != nil {
 		c.mu.Unlock()
 		return d
 	}
 	d := &tetraSlotDemux{
-		c:      c,
-		key:    key,
-		colour: colourExt,
-		owners: make(map[uint8]*tetraSlotOwner),
-		done:   make(chan struct{}),
+		c:          c,
+		key:        key,
+		colour:     colourExt,
+		trafficLMS: trafficLMS,
+		owners:     make(map[uint8]*tetraSlotOwner),
+		done:       make(chan struct{}),
 	}
 	c.tetraDemuxes[key] = d
 	c.mu.Unlock()

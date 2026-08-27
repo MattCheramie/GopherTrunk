@@ -3,6 +3,7 @@ package nxdn
 import (
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -73,6 +74,32 @@ type ControlChannel struct {
 	// ccdecoder connector (the parser maps an empty config string
 	// to ViterbiSpec). Set via SetViterbiMode.
 	viterbiMode ViterbiMode
+
+	// lastActivityNano is the Unix-nanos timestamp of the most recent
+	// CRC-clean CAC frame reaching IngestFrame — the decode heartbeat the
+	// ccdecoder pipeline's signal-time drought watchdog (resyncGuard)
+	// compares across calls, the same contract as the TETRA
+	// ControlChannel's LastActivityNano.
+	lastActivityNano atomic.Int64
+	// framesDecoded counts CRC-clean CAC frames that reached IngestFrame —
+	// the protocol-agnostic decode-activity counter the wideband engine
+	// polls to gate per-channel power logging (the p25phase2/tier3
+	// DecodedFrames pattern). Atomic so other goroutines sample lock-free.
+	framesDecoded atomic.Uint64
+}
+
+// DecodedFrames reports the cumulative count of CRC-clean CAC frames the
+// channel ingested. It is the protocol-agnostic decode-activity counter the
+// wideband engine polls to gate per-channel power logging.
+func (c *ControlChannel) DecodedFrames() uint64 { return c.framesDecoded.Load() }
+
+// LastActivityNano returns the Unix-nano timestamp of the most recent
+// CRC-clean CAC decode, or 0 before the first. The ccdecoder pipeline's
+// signal-time drought watchdog compares successive values — any change means
+// a decode landed since the previous check. Same contract as the TETRA
+// ControlChannel's LastActivityNano.
+func (c *ControlChannel) LastActivityNano() int64 {
+	return c.lastActivityNano.Load()
 }
 
 // ViterbiMode selects how the Process adapter interprets the CAC
@@ -185,6 +212,15 @@ func (c *ControlChannel) IngestFrame(lich LICH, cac *CACMessage) {
 	if cac == nil {
 		return
 	}
+	// Reaching here means the CAC cleared its CRC (Process drops CRC-fail
+	// frames before IngestFrame) — stamp the decode heartbeat and bump the
+	// decode-activity counter.
+	now := c.now
+	if now == nil {
+		now = time.Now
+	}
+	c.lastActivityNano.Store(now().UnixNano())
+	c.framesDecoded.Add(1)
 	switch cac.Type {
 	case RCCHSITEINFO:
 		s := ParseSiteInfo(cac.Payload)

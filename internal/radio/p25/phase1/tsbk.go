@@ -122,3 +122,40 @@ func DecodeTSBKChannel(channel []uint8) (TSBK, int, error) {
 	tsbk, err := ParseTSBK(info)
 	return tsbk, metric, err
 }
+
+// DecodeTSBKChannelSoft is the soft-decision analog of DecodeTSBKChannel
+// (p25_phase1_soft_decision): the same deinterleave → Viterbi → repack →
+// ParseTSBK pipeline, carrying per-bit log-likelihood ratios instead of
+// sliced dibits. llr holds TWO values per channel dibit — llr[2i] for
+// channel dibit i's MSB, llr[2i+1] for its LSB, in the framing convention
+// (LLR > 0 ⇒ bit 0) — 196 values for the 98-dibit TSBK block. The trellis
+// runs framing.DecodeP25TrellisSoft (true per-bit soft Viterbi), and the
+// TSBK's CRC16 still corroborates, so a soft mis-decode cannot manufacture
+// a grant. The returned metric is the soft path metric (a correlation sum,
+// lower = better — NOT the hard metric's corrected-dibit count).
+func DecodeTSBKChannelSoft(llr []float32) (TSBK, float64, error) {
+	if len(llr) != 2*98 {
+		return TSBK{}, 1e30, fmt.Errorf("p25/phase1: TSBK soft channel must be 196 LLRs, got %d", len(llr))
+	}
+	// Deinterleave the per-dibit LLR pairs with the same permutation the
+	// hard path applies to dibits: coding pair i ← channel pair perm[i].
+	coding := make([]float32, 2*98)
+	for i := 0; i < 98; i++ {
+		j := tsbkDeinterleavePerm[i]
+		coding[2*i] = llr[2*j]
+		coding[2*i+1] = llr[2*j+1]
+	}
+	infoDibits, metric := framing.DecodeP25TrellisSoft(coding)
+	if len(infoDibits) != 48 {
+		return TSBK{}, 1e30, fmt.Errorf("p25/phase1: soft trellis returned %d info dibits, want 48", len(infoDibits))
+	}
+	info := make([]byte, 12)
+	for i := 0; i < 12; i++ {
+		info[i] = (infoDibits[4*i+0] << 6) |
+			(infoDibits[4*i+1] << 4) |
+			(infoDibits[4*i+2] << 2) |
+			infoDibits[4*i+3]
+	}
+	tsbk, err := ParseTSBK(info)
+	return tsbk, metric, err
+}

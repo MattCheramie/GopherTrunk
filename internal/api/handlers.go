@@ -396,6 +396,17 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, "no recording for this call")
 		return
 	}
+	// Rows written while recordings.dir resolved to a relative path (a
+	// relative -config invocation, before config.Load absolutized the resolve
+	// base) store cwd-relative recording paths. The recorder wrote them
+	// relative to the daemon's working directory, so resolving against the
+	// same cwd is exactly what makes the file reachable — without this every
+	// such row 404'd as "unavailable" while the file was on disk.
+	if !filepath.IsAbs(path) {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
 	// The path is daemon-generated, but validate defensively before opening:
 	// an absolute audio file, no traversal, actually a regular file. This keeps
 	// the endpoint from ever serving a non-recording even if the row is bad.
