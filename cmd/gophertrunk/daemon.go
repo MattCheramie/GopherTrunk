@@ -3084,6 +3084,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 		"systems", len(d.systems),
 		"voice_devices", len(d.voicePool.Devices()),
 	)
+	// Effective decode-configuration snapshot so an operator can confirm at a
+	// glance which enhancements (LMS/CMA equalizers, soft-decision, DC block,
+	// AFC, interleaved voice, …) are actually engaged, instead of guessing from
+	// a config.yaml full of "use the default" empty strings.
+	d.logConfigSummary()
 	// Catch the single-SDR-control-only setup early: trunking systems
 	// declared but no `role: voice` SDR means every grant will drop at
 	// HandleGrant. Warn once at startup so the operator sees it before

@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Startup configuration summary** — the daemon now logs an effective-config
+  snapshot at startup (`daemon: config summary` plus one `daemon: system
+  config` line per system) so an operator can confirm at a glance which decode
+  enhancements are actually engaged, instead of guessing from a `config.yaml`
+  full of "use the default" empty strings. Each per-system line lists the
+  enhancements relevant to that protocol (e.g. `traffic_lms`, `cma_equalizer`,
+  `soft_decision`, `dc_block`, `afc`, `interleaved_voice`, `demod`, `clock`)
+  with the on/off/mode resolved through the same parser the decode pipeline
+  uses, so the reported state matches how the receiver was actually built. The
+  global line covers `sample_rate`, input pre-decimation factor, `autotune`,
+  MRC `diversity` per endpoint, and the recording audio-shaping levers.
 - **Cross-protocol feature-parity series** (see
   [`docs/protocol-feature-parity.md`](docs/protocol-feature-parity.md) for the
   full matrix and A/B recipes). Everything decode-affecting is opt-in and off
