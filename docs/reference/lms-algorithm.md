@@ -11,7 +11,7 @@ infobox:
   - { label: Type, value: Stochastic-gradient adaptive algorithm }
   - { label: Update, value: "w += μ·e·x*" }
   - { label: Complexity, value: O(N) per sample }
-see_also: [adaptive-filter, rls-algorithm, cma-equalizer, mmse-equalizer, fir-filter, constellation-diagram]
+see_also: [adaptive-filter, rls-algorithm, cma-equalizer, mmse-equalizer, snapshot-equalization, fir-filter, constellation-diagram]
 cite_urls:
   - https://en.wikipedia.org/wiki/Least_mean_squares_filter
   - https://en.wikipedia.org/wiki/Bernard_Widrow
@@ -84,10 +84,14 @@ cancellers. In a radio receiver an LMS equalizer trims residual
 [SNR](/reference/signal-to-noise-ratio/) at the decision slicer, often running
 decision-directed once a training sequence has pulled it near lock. The blind
 [CMA](/reference/cma-equalizer/) equalizer is an LMS-style stochastic-gradient rule with a
-constant-modulus cost instead of a reference error. GopherTrunk's land-mobile decoders
-(P25, DMR, NXDN) lean on [matched filtering](/reference/matched-filter/) and timing/carrier
-recovery rather than a full LMS equalizer, so LMS is best understood here as the general
-adaptive-filter primitive the wider RF world runs on.
+constant-modulus cost instead of a reference error. GopherTrunk runs LMS in exactly the
+trained role described above: its TETRA traffic path trains a short LMS equalizer on each
+burst's known [midamble](/reference/tetra-training-sequences/) and applies the frozen taps
+to that one burst (`SnapshotLMS` — see
+[snapshot equalization](/reference/snapshot-equalization/)), while the C4FM-family decoders
+(P25, DMR, NXDN) still lean on [matched filtering](/reference/matched-filter/) and
+timing/carrier recovery, whose modest symbol rates keep ISI small enough to skip
+equalization.
 
 ## Sources
 

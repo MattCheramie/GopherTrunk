@@ -11,7 +11,7 @@ infobox:
   - { label: Type, value: Blind adaptive equalizer }
   - { label: Counteracts, value: Multipath / intersymbol interference }
   - { label: Blind, value: No training sequence required }
-see_also: [adaptive-filter, lms-algorithm, decision-feedback-equalizer, costas-loop, multipath-propagation, constellation-diagram]
+see_also: [adaptive-filter, lms-algorithm, decision-feedback-equalizer, snapshot-equalization, fractionally-spaced-equalizer, costas-loop, multipath-propagation, constellation-diagram]
 related_lessons:
   - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
 related_reading:
@@ -89,12 +89,16 @@ phase tracker is run alongside to de-rotate the now-open eye.
 ## Relevance to SDR
 
 Blind equalisation matters in reflective urban and mobile channels — land-mobile trunking
-(P25, DMR, NXDN), broadcast, and microwave links — where echoes smear symbols into
+(P25, DMR, NXDN, TETRA), broadcast, and microwave links — where echoes smear symbols into
 neighbours. Many of these waveforms are constant-envelope or near-constant-modulus, making
-them natural CMA candidates. GopherTrunk targets narrowband C4FM/PSK signals whose symbol
-rates keep intersymbol interference modest, so its decode chain leans on matched filtering
-and timing/carrier recovery rather than a full adaptive equaliser; CMA is the technique you
-would reach for if multipath in a given deployment became severe enough to close the eye.
+them natural CMA candidates. GopherTrunk ships blind CMA in two places: its TETRA receiver
+paths run `SnapshotCMA` — CMA applied as frozen per-burst snapshots so it stays safe ahead
+of the [differential decoder](/reference/differential-decoding/) (see
+[snapshot equalization](/reference/snapshot-equalization/)) — which roughly doubled
+CRC-valid voice frames on marginal captures; and the P25 CQPSK/LSM path runs a T/2 CMA
+[fractionally-spaced equalizer](/reference/fractionally-spaced-equalizer/). The
+C4FM-family decoders, whose symbol rates keep intersymbol interference modest, still lean
+on matched filtering and timing/carrier recovery alone.
 
 ## Sources
 

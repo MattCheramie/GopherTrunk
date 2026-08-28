@@ -12,7 +12,7 @@ infobox:
   - { label: Layout, value: "MCC(10) || MNC(14) || colour(6)" }
   - { label: Learned from, value: BSCH / MAC-SYNC }
   - { label: Spec, value: EN 300 392-2 §8.2.5.2 }
-see_also: [tetra-scrambler, color-code, tetra-logical-channels, tetra-mac-pdu, control-channel, tetra, tetra-burst-formats, tetra-cmce-mle-pdu]
+see_also: [tetra-scrambler, tetra-mobile-network-identity, tetra-sync-pdu, color-code, tetra-logical-channels, tetra-mac-pdu, control-channel, tetra, tetra-burst-formats, tetra-cmce-mle-pdu]
 cite_urls:
   - https://en.wikipedia.org/wiki/Terrestrial_Trunked_Radio
   - https://en.wikipedia.org/wiki/Mobile_country_code

@@ -96,6 +96,7 @@ domains:
           - { slug: receiver-sensitivity, title: Receiver sensitivity (MDS), type: term }
           - { slug: desensitization, title: Desensitization, type: term }
           - { slug: blocking-dynamic-range, title: Blocking, type: term }
+          - { slug: reciprocal-mixing, title: Reciprocal mixing, type: term }
           - { slug: bit-error-rate, title: Bit error rate (BER), type: term }
           - { slug: eb-n0, title: Eb/N0, type: term }
           - { slug: error-vector-magnitude, title: Error vector magnitude (EVM), type: term }
@@ -300,6 +301,7 @@ domains:
           - { slug: polyphase-filter-bank, title: Polyphase filter bank, type: algorithm }
           - { slug: channelizer, title: Channelizer, type: algorithm }
           - { slug: resampler, title: Resampler, type: algorithm }
+          - { slug: fractional-delay-filter, title: Fractional-delay filter, type: algorithm }
 
       - id: synchronization
         label: Synchronization, carrier & timing
@@ -329,6 +331,8 @@ domains:
           - { slug: lms-algorithm, title: Least mean squares (LMS), type: algorithm }
           - { slug: rls-algorithm, title: Recursive least squares (RLS), type: algorithm }
           - { slug: cma-equalizer, title: CMA equalizer, type: algorithm }
+          - { slug: fractionally-spaced-equalizer, title: Fractionally-spaced equalizer (FSE), type: algorithm }
+          - { slug: snapshot-equalization, title: Snapshot equalization, type: algorithm }
           - { slug: zero-forcing-equalizer, title: Zero-forcing equalizer, type: algorithm }
           - { slug: mmse-equalizer, title: MMSE equalizer, type: algorithm }
           - { slug: decision-feedback-equalizer, title: Decision-feedback equalizer (DFE), type: algorithm }
@@ -413,9 +417,13 @@ domains:
         blurb: The algorithms that track parameters, decide whether a signal is present, and locate emitters in space.
         entries:
           - { slug: kalman-filter, title: Kalman filter, type: algorithm }
+          - { slug: channel-estimation, title: Channel estimation, type: term }
+          - { slug: coherence, title: Coherence (normalized cross-correlation), type: term }
           - { slug: energy-detection, title: Energy detection, type: algorithm }
           - { slug: cfar-detection, title: CFAR detection, type: algorithm }
           - { slug: beamforming, title: Beamforming, type: algorithm }
+          - { slug: maximal-ratio-combining, title: Maximal-ratio combining (MRC), type: algorithm }
+          - { slug: interference-rejection-combining, title: Interference rejection combining (IRC), type: algorithm }
           - { slug: music-algorithm, title: MUSIC algorithm, type: algorithm }
           - { slug: esprit-algorithm, title: ESPRIT algorithm, type: algorithm }
           - { slug: multilateration, title: Multilateration (MLAT), type: algorithm }
@@ -550,6 +558,8 @@ domains:
           - { slug: tetra-llc, title: TETRA LLC, type: term }
           - { slug: tetra-logical-channels, title: TETRA logical channels, type: term }
           - { slug: tetra-mac-pdu, title: TETRA MAC PDU, type: term }
+          - { slug: tetra-mobile-network-identity, title: TETRA mobile network identity (MNI), type: term }
+          - { slug: tetra-sync-pdu, title: TETRA SYNC PDU, type: term }
           - { slug: tetra-traffic-slot-mapping, title: TETRA traffic slot mapping, type: term }
 
       - id: land-mobile-trunking
@@ -1073,10 +1083,12 @@ domains:
           - { slug: sigmf, title: SigMF (Signal Metadata Format), type: technology }
           - { slug: iq-file-format, title: IQ file format, type: term }
           - { slug: cfile-format, title: cfile format, type: term }
+          - { slug: cs16-format, title: cs16 format, type: term }
           - { slug: wav-iq-recording, title: WAV IQ recording, type: term }
           - { slug: vita-49, title: VITA 49 (VRT), type: technology }
           - { slug: spyserver-protocol, title: SpyServer protocol, type: technology }
           - { slug: soapyremote, title: SoapyRemote, type: technology }
+          - { slug: ka9q-radio, title: ka9q-radio, type: technology }
           - { slug: network-iq-streaming, title: Network IQ streaming, type: concept }
           - { slug: iq-recording-playback, title: IQ recording & playback, type: concept }
           - { slug: zeromq-sdr, title: ZeroMQ for SDR, type: technology }
@@ -1273,6 +1285,7 @@ domains:
           - { slug: end-to-end-testing, title: End-to-end testing, type: concept }
           - { slug: test-driven-development, title: Test-driven development (TDD), type: concept }
           - { slug: mocking, title: Mocking, type: concept }
+          - { slug: self-consistent-test-trap, title: Self-consistent test trap, type: concept }
           - { slug: code-coverage, title: Code coverage, type: concept }
           - { slug: ci-cd, title: CI/CD, type: concept }
           - { slug: build-systems, title: Build systems, type: concept }
@@ -1565,6 +1578,9 @@ domains:
           - { slug: signal-signatures, title: Signal-quality signatures, type: term }
           - { slug: audio-pipeline-tells, title: Audio-pipeline tells, type: term }
           - { slug: carrier-offset-adjacent-lock, title: Carrier offset & adjacent-channel lock, type: term }
+          - { slug: afc-alias-traps, title: AFC alias traps, type: term }
+          - { slug: equalizer-gotchas, title: Equalizer gotchas, type: term }
+          - { slug: mrc-diversity-gotchas, title: MRC diversity gotchas, type: term }
       - id: fn-protocol
         label: Protocol facts the specs hide
         blurb: On-air realities that standards documents omit, bury, or state ambiguously — validated the hard way against real captures.
@@ -1573,3 +1589,4 @@ domains:
           - { slug: p25-onair-constants, title: P25 on-air constants, type: term }
           - { slug: dmr-grant-field-gotchas, title: DMR grant-field gotchas, type: term }
           - { slug: tetra-lock-facts, title: TETRA lock facts, type: term }
+          - { slug: tetra-dmo-facts, title: TETRA DMO facts, type: term }

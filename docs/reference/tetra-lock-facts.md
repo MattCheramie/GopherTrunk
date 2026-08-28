@@ -11,7 +11,7 @@ infobox:
   - { label: Key rule, value: Training sequences are counted in bits (22/30/38) }
   - { label: Trap, value: Colour code 0 still scrambles (LFSR seed 0xC0000000) }
   - { label: Proof of sync, value: Correlation hits at exactly 1020-dibit frame cadence }
-see_also: [tetra, tetra-training-sequences, tetra-scrambler, tetra-extended-colour-code, pi-4-dqpsk, gray-code, automatic-frequency-control, dibit, dmr-grant-field-gotchas, signal-signatures]
+see_also: [tetra, tetra-training-sequences, tetra-scrambler, tetra-extended-colour-code, pi-4-dqpsk, gray-code, automatic-frequency-control, afc-alias-traps, tetra-dmo-facts, dibit, dmr-grant-field-gotchas, signal-signatures]
 related_reading:
   - { title: "From the Issue Tracker, Part 17: Placeholder Constants — The TETRA Sync That Never Existed", url: /blog/solution-postmortem/from-the-issue-tracker-17-placeholder-constants/ }
 cite_urls:

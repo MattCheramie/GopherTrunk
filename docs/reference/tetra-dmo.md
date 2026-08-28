@@ -12,7 +12,7 @@ infobox:
   - { label: Bursts, value: "DSB (sync) + DNB (normal)" }
   - { label: Physical layer, value: "Reused from TMO (π/4-DQPSK)" }
   - { label: Spec, value: "ETSI EN 300 396-2 §9.4.3" }
-see_also: [tetra, direct-mode-operation, tetra-burst-formats, tetra-logical-channels, tetra-tchs-speech-coding, tetra-scrambler, pi-4-dqpsk, tdma]
+see_also: [tetra, direct-mode-operation, tetra-dmo-facts, tetra-sync-pdu, tetra-mobile-network-identity, tetra-burst-formats, tetra-logical-channels, tetra-tchs-speech-coding, tetra-scrambler, pi-4-dqpsk, tdma]
 cite_urls:
   - https://en.wikipedia.org/wiki/Terrestrial_Trunked_Radio
   - https://en.wikipedia.org/wiki/Direct_mode_operation

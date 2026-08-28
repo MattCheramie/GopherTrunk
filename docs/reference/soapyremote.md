@@ -11,7 +11,7 @@ infobox:
   - { label: Type, value: Network transport for SoapySDR }
   - { label: Exposes, value: Any SoapySDR device as a remote device }
   - { label: Server, value: SoapySDRServer daemon }
-see_also: [soapysdr, network-iq-streaming, rtl-tcp, spyserver-protocol, gnuradio]
+see_also: [soapysdr, network-iq-streaming, rtl-tcp, ka9q-radio, spyserver-protocol, gnuradio]
 cite_urls:
   - https://github.com/pothosware/SoapyRemote/wiki
   - https://github.com/pothosware/SoapySDR/wiki
