@@ -11,7 +11,7 @@ infobox:
   - { label: Type, value: Multi-antenna technique }
   - { label: Combats, value: Multipath / fading dropouts }
   - { label: Methods, value: Selection, switched, EGC, MRC }
-see_also: [mimo, multipath-propagation, rayleigh-fading, rician-fading, beamforming, antenna-gain]
+see_also: [mimo, maximal-ratio-combining, interference-rejection-combining, coherence, multipath-propagation, rayleigh-fading, rician-fading, beamforming, antenna-gain]
 cite_urls:
   - https://en.wikipedia.org/wiki/Antenna_diversity
   - https://en.wikipedia.org/wiki/Diversity_combining
@@ -109,9 +109,13 @@ foundation that [MIMO](/reference/mimo/) generalizes into spatial multiplexing. 
 radio, base-station **voting** receivers are a form of selection diversity across geographically
 separate sites. For an SDR listener, diversity requires multiple coherent (or at least
 independently sampled) front ends; a phase-coherent array such as KrakenSDR can implement MRC in
-software. GopherTrunk is a single-stream decoder — it processes one [I/Q](/reference/iq-data/)
-capture at a time and does not combine multiple antennas — so diversity is relevant to the
-broader RF context and to hardware choices rather than something GT itself performs.
+software. GopherTrunk performs receive diversity itself on dual-channel SoapyRemote devices
+(an X310 with two daughterboards, a B210): `diversity: mrc` opens both RX channels and
+combines them with software
+[maximal-ratio combining](/reference/maximal-ratio-combining/), calibrated from measured
+inter-branch [coherence](/reference/coherence/) rather than signal level. The field lessons
+that came with making that work on real hardware are collected in
+[MRC diversity gotchas](/reference/mrc-diversity-gotchas/).
 
 ## Sources
 

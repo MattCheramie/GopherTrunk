@@ -11,7 +11,7 @@ infobox:
   - { label: Type, value: Raw IQ recording (headerless) }
   - { label: Sample, value: "2× little-endian float32 (I,Q) = 8 bytes" }
   - { label: Origin, value: GNU Radio file sink }
-see_also: [iq-file-format, sample-format, file-source-sink, sigmf, interleaved-iq, iq-recording-playback]
+see_also: [iq-file-format, cs16-format, sample-format, file-source-sink, sigmf, interleaved-iq, iq-recording-playback]
 cite_urls:
   - https://wiki.gnuradio.org/index.php/File_Sink
   - https://en.wikipedia.org/wiki/GNU_Radio

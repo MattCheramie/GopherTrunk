@@ -11,7 +11,7 @@ infobox:
   - { label: Type, value: Frequency-tracking loop }
   - { label: Corrects, value: Residual carrier offset (dynamic) }
   - { label: Symptom it removes, value: Rotating constellation }
-see_also: [ppm-frequency-correction, costas-loop, demodulation, constellation-diagram, frequency-locked-loop, frequency-stability, phase-noise]
+see_also: [ppm-frequency-correction, costas-loop, demodulation, constellation-diagram, frequency-locked-loop, frequency-stability, phase-noise, afc-alias-traps]
 related_lessons:
   - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
 cite_urls:
