@@ -338,3 +338,43 @@ func TestEnhanceSpecFaithfulLiftsHighBand(t *testing.T) {
 		}
 	}
 }
+
+// TestEnhanceSpecFaithfulScaleInvariant pins the sqrt(M_l) amplitude weight in
+// the spec-faithful §6.2 form (mbelib mbe_spectralAmpEnhance). That factor makes
+// the per-harmonic W_l — and therefore the [EnhanceWMin, EnhanceWMax] clamp
+// decision — invariant to a uniform amplitude scaling of the frame: sqrt(M_l)
+// (∝ k^½) cancels the moment ratio's k^−½ (after the ^0.25). Drop it and W_l
+// scales as k^−½, so a pure gain change reshapes the enhanced envelope and the
+// clamp gate depends on the absolute Ml units.
+//
+// Enhancing a frame and a k-scaled copy must give the same high-band/low-band
+// harmonic ratio: the low band keeps W = 1 and the global energy rescale
+// cancels in the ratio, so M[high]/M[low] reads the effective high-band weight
+// directly. This fails without the sqrt(M_l) factor (the k = 1 and k = 1000
+// weights land on opposite sides of the clamp).
+func TestEnhanceSpecFaithfulScaleInvariant(t *testing.T) {
+	// L = 12: l=1 is low band (8·1 ≤ 12, W = 1); l=12 is deep in the
+	// enhancement band (8·12 > 12). Non-uniform amplitudes so sqrt(M_l)
+	// actually varies across l.
+	newFrame := func(k float64) (Params, [57]float64) {
+		p := Params{Header: Header{W0: math.Pi / 20, L: 12}}
+		var M [57]float64
+		for l := 1; l <= p.L; l++ {
+			M[l] = k * (0.5 + 0.1*float64(l))
+		}
+		return p, M
+	}
+
+	pA, mA := newFrame(1.0)
+	EnhanceAmplitudes(pA, &mA, true)
+	ratioA := mA[12] / mA[1]
+
+	pB, mB := newFrame(1000.0)
+	EnhanceAmplitudes(pB, &mB, true)
+	ratioB := mB[12] / mB[1]
+
+	if math.Abs(ratioA-ratioB) > 1e-9 {
+		t.Fatalf("spec-faithful weight not scale-invariant (missing sqrt(M_l)?): "+
+			"k=1 ratio=%.12f k=1000 ratio=%.12f", ratioA, ratioB)
+	}
+}
