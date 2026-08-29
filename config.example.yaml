@@ -1060,8 +1060,9 @@ trunking:
       # inter-burst CACH) and routes it to its call by the embedded Link
       # Control's talkgroup — where the single-slot decoder would splice
       # the two slots into garbled audio (issue #644). Leave UNSET to use
-      # the per-protocol default: on for DMR Tier III, single-slot for
-      # everything else. Set true/false only to force it for this system.
+      # the per-protocol default: on for DMR Tier II conventional and
+      # Tier III, single-slot for Tier I direct-mode and everything else.
+      # Set true/false only to force it for this system.
       # dmr_interleaved_voice: false
 
   # Per-protocol FEC is on by default — every protocol the daemon

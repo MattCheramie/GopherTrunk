@@ -47,22 +47,33 @@ composer's FM chain.
 
 ### Additional SDR hardware
 
-RTL-SDR, HackRF (One / Jawbreaker / Rad1o), Airspy R2 / Mini, and
-Airspy HF+ (Discovery / Dual Port / legacy) are all supported by
-pure-Go drivers; on-air validation of the HackRF / Airspy / HF+
-backends against attached hardware is the documented follow-up.
-SDRPlay / USRP / BladeRF need vendor C libraries and are out of
-scope for the zero-CGO build.
+RTL-SDR, HackRF (One / Jawbreaker / Rad1o / Pro), Airspy R2 / Mini,
+and Airspy HF+ (Discovery / Dual Port / legacy) are all supported by
+pure-Go drivers with mock-transport unit tests. HackRF (Pro board-ID
+detection, `fpga_dc_block`, `dc_avoid`, `rf_amp`) and Airspy (macOS
+async bulk-IN rework, native-rate behaviour) have been exercised and
+fixed against attached hardware in the field, and Airspy has a
+hardware-gated harness (`internal/sdr/airspy/airspy_real_test.go`,
+`GOPHERTRUNK_AIRSPY_REAL`). Remaining: Airspy HF+ has had no
+attached-hardware exercise, and HackRF has no hardware-gated harness.
+SDRPlay / USRP / BladeRF have no local zero-CGO driver (their vendor
+libraries are C), but are reachable over SoapyRemote — USRP X310 and
+B210 rigs are field-tested that way.
 
 ### Digital-voice composer chains
 
-FM (incl. analog trunking), DMR, P25 Phase 1 / 2, TETRA (clean-room
-ACELP), and NXDN decode to audio. TETRA voice is verified bit-exact
-against the ETSI EN 300 395-2 reference codec; NXDN is wired
-end-to-end through the composer but not yet verified on air. dPMR,
-YSF, and D-STAR voice chains, plus EDACS ProVoice, are still
-bypassed — their calls are followed and logged but not yet turned
-into PCM.
+FM (incl. analog trunking), DMR, P25 Phase 1 / 2, TETRA TMO + DMO
+(clean-room ACELP), and NXDN decode to audio. TETRA voice is verified
+bit-exact against the ETSI EN 300 395-2 reference codec (via the
+env-gated harness in `internal/voice/acelp/etsi_reference_test.go` —
+the ETSI vectors are copyrighted and not committed); NXDN is wired
+end-to-end through the composer but not yet verified on air. TETRA
+DMO (direct mode, `protocol: tetra-dmo`) records audio through the
+same ACELP vocoder but is experimental: call source / destination
+identity is not decoded (recordings file under group 0) and the
+chain still awaits its on-air A/B (issue #1003). dPMR, YSF, and
+D-STAR voice chains, plus EDACS ProVoice, are still bypassed — their
+calls are followed and logged but not yet turned into PCM.
 
 ### Per-protocol on-air FEC inner layers
 
@@ -85,10 +96,18 @@ The inner FEC layers still pending real-air validation:
   `cmd/gophertrunk/integration_cc_nxdn_realair_test.go` runs
   acceptance criteria automatically once a contributor drops a
   `.cfile` + `.metadata.json` pair into `samples/nxdn/`.
-- **TETRA on-air recovery margins.** Unit tests round-trip clean
-  fixtures end-to-end; on-air recovery margins (Viterbi
-  correction depth vs. real co-channel + adjacent-channel
-  interference) need a live capture to characterise.
+- **TETRA on-air recovery margins — now characterised (TMO).** A
+  real marginal-signal control-channel capture is committed at
+  `internal/scanner/ccdecoder/testdata/tetra_cc_sync_loss_2s_144k.cs16`
+  and pinned in CI by
+  `internal/scanner/ccdecoder/pipelines_tetra_equalizer_test.go`:
+  the marginal regime (~10 dB in-channel SNR) decodes ~12% of its
+  BSCH without equalization and ~100% with the blind `SnapshotCMA`
+  equalizer, and soft-decision TCH/S decoding lifts CRC-valid voice
+  yield ~1.9× across the reporter's captures. What remains
+  TETRA-side is the **DMO** on-air A/B (issue #1003) and a
+  validating `.metadata.json` sidecar for `samples/tetra/` so the
+  skip-gated TMO real-air harness runs.
 - **P25 Phase 2 traffic-channel MAC descramble (issues #915, #773, #451).**
   The superframe now locks on real air under any dibit rotation (the
   differential-H-DQPSK residual-carrier ambiguity fixed in #943), so the ISCH
@@ -181,10 +200,15 @@ The inner FEC layers still pending real-air validation:
 ### Digital-voice level calibration
 
 Pure-Go IMBE / AMBE+2 emit real audio end-to-end. The comparison
-harness at `internal/voice/calibrate/` is ready; reference data
-(captured P25 P1 / DMR voice exchanges plus DSD-FME / OP25
-decodes at `internal/voice/{imbe,ambe2}/testdata/`) is the
-remaining gap. Knox / call-alert AMBE+2 tones (b₁ ∈ [144, 163])
+harness at `internal/voice/calibrate/` (CLI: `cmd/voice-calibrate`)
+is ready, and the AMBE+2 capture fixture
+(`internal/voice/ambe2/testdata/dmr-voice.raw`) is committed. Still
+missing are the DSD-FME / OP25 **reference WAVs** —
+`internal/voice/imbe/testdata/p25-p1-voice{.raw,-dsdfme.wav}` and
+`internal/voice/ambe2/testdata/dmr-voice-dsdfme.wav` — which also
+gate the final quality sign-off of the default-on spec-faithful
+§6.2 spectral-amplitude enhancement
+(`recordings.spec_amplitude_enhance`). Knox / call-alert AMBE+2 tones (b₁ ∈ [144, 163])
 are vendor-specific and stay silent until per-vendor frequency
 tables land; operators with a curated table register it via
 `ambe2.RegisterPreset`. See [vocoders.md](vocoders.md) for the

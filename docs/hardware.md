@@ -17,11 +17,11 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 | Family | Driver | USB IDs | Status |
 | --- | --- | --- | --- |
 | **RTL-SDR** (RTL2832U / RTL2838U + R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580) | `rtlsdr` | `0x0bda:0x2832` · `0x0bda:0x2838` | Production — on-air-validated across Linux / macOS / Windows. |
-| **HackRF One / Jawbreaker / Rad1o** | `hackrf` | `0x1d50:0x6089` · `0x1d50:0x604b` · `0x1d50:0xcc15` | Wire-protocol-complete; on-air validation against attached hardware is the documented follow-up. |
-| **Airspy R2 / Airspy Mini** | `airspy` | `0x1d50:0x60a1` | Wire-protocol-complete; on-air validation against attached hardware is the documented follow-up. |
+| **HackRF One / Jawbreaker / Rad1o / Pro** | `hackrf` | `0x1d50:0x6089` · `0x1d50:0x604b` · `0x1d50:0xcc15` | Wire-protocol-complete; exercised and fixed against attached hardware in the field (Pro board-ID, `fpga_dc_block`, `dc_avoid`, `rf_amp`). No hardware-gated test harness yet. |
+| **Airspy R2 / Airspy Mini** | `airspy` | `0x1d50:0x60a1` | Wire-protocol-complete; exercised against attached hardware in the field (macOS async bulk-IN, native-rate behaviour), with a hardware-gated harness (`internal/sdr/airspy/airspy_real_test.go`, `GOPHERTRUNK_AIRSPY_REAL`). |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). On-air validation against attached hardware is the documented follow-up. |
 | **rtl_tcp remote** (any librtlsdr-shipped server) | `rtltcp` | TCP | Remote RTL-SDR mounted over the network. See [Remote rtl_tcp SDRs](#remote-rtl_tcp-sdrs). |
-| **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Wire-protocol-complete; on-air validation against a live `SoapySDRServer` is the documented follow-up. See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
+| **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Field-tested on air against USRP X310 and B210 rigs (single-branch; MRC diversity combining is still experimental). See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
 
 The HackRF and Airspy / Airspy HF+ drivers speak the documented
 libhackrf, libairspy, and libairspyhf USB vendor protocols directly
@@ -542,13 +542,17 @@ are disambiguated by a `_ts1` / `_ts2` suffix on the WAV filename, and
 the slot is carried through the call log (`timeslot` column) and the
 REST/SSE/gRPC call APIs.
 
-An experimental per-system `dmr_interleaved_voice: true` additionally
-turns on a 2-slot interleaved voice decoder: rather than relying on the
-tap to isolate one slot, each call decodes its own timeslot from the
-carrier's interleaved burst stream and is routed by the embedded Link
-Control's talkgroup. It defaults off and its on-air constants are still
-pending a real-capture cross-check (see
-[docs/status.md](status.md)) — leave it off for normal operation.
+The 2-slot interleaved voice decoder is the **default** for DMR
+Tier II conventional and Tier III trunked systems: rather than relying
+on the tap to isolate one slot, each call decodes its own timeslot from
+the carrier's interleaved burst stream and is routed by the embedded
+Link Control's talkgroup. DMR Tier I direct-mode is genuinely
+single-slot and stays on the single-slot decoder. The per-system
+`dmr_interleaved_voice` key is a tri-state override — leave it unset
+for the per-protocol default, or set `true` / `false` to force it. A
+few embedded-signalling constants (de-interleave order, EMB FEC, CRC
+polynomial) still await a real-capture cross-check (see
+[docs/status.md](status.md)).
 
 How spillover works: when a grant's frequency lands *outside* the
 wideband IQ window (more common on geographically spread P25 systems
@@ -770,10 +774,11 @@ B210 specifics worth knowing before the first run:
   `args` string as SoapySDR `make()` kwargs (e.g.
   `args: "rx_subdev_spec=A:0,antenna=RX2"`), since there is no dedicated
   `antenna:` key.
-- The SoapyRemote path is wire-protocol-complete and unit-tested against
-  a mock server; **on-air validation against a live `SoapySDRServer` is
-  the documented follow-up** (see the support matrix). Field reports from
-  a real B210 are welcome.
+- The SoapyRemote path is wire-protocol-complete, unit-tested against a
+  mock server, and **field-tested on air against real USRP X310 and B210
+  rigs** (single-branch reception; MRC diversity combining is still
+  experimental pending a broader on-air A/B). Field reports from other
+  SoapySDR-supported radios are welcome.
 
 > **macOS loopback caps the stream MTU — bind to your NIC IP, not
 > `127.0.0.1`.** macOS limits the MTU on the loopback interface (`lo0`),

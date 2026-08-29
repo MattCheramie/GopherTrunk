@@ -67,8 +67,9 @@ Silicon and Intel. Full per-OS recipes at
   TIA-102 chain), DMR Tier II + Tier III (vendor-aware: Capacity
   Plus / Capacity Max grants and rest-channel tracking), NXDN,
   Motorola Type II / SmartZone, EDACS / GE-Marc, LTR, MPT 1327,
-  dPMR Mode 3, TETRA TMO. Amateur-radio: D-STAR and Yaesu System
-  Fusion.
+  dPMR Mode 3, TETRA TMO (plus experimental TETRA DMO / direct-mode
+  monitoring, `protocol: tetra-dmo`). Amateur-radio: D-STAR and
+  Yaesu System Fusion.
 - **POCSAG + FLEX paging** — protocol + DSP for the two dominant
   pager protocols, both decoding straight off the air and sharing
   the `pager_log` table / `/pager` panel (tagged by `protocol`).
@@ -299,36 +300,69 @@ log, per-talkgroup policy) all ship.
 **Remaining gaps:**
 
 - **Digital-voice composer chains.** FM, DMR, P25 Phase 1 / 2, TETRA
-  (clean-room ACELP), and NXDN decode to audio — TETRA verified
-  bit-exact against the ETSI EN 300 395-2 reference codec, NXDN wired
-  end-to-end but not yet verified on air. dPMR, YSF, D-STAR voice
-  (plus EDACS ProVoice) are followed and logged but not yet turned
-  into PCM.
+  TMO + DMO (clean-room ACELP), and NXDN decode to audio — TETRA
+  verified bit-exact against the ETSI EN 300 395-2 reference codec
+  (reproducible via the env-gated harness in
+  `internal/voice/acelp/etsi_reference_test.go`; the ETSI vectors are
+  copyrighted and not committed). NXDN is wired end-to-end but not yet
+  verified on air. TETRA DMO records audio through the same ACELP
+  vocoder but is experimental: call source / destination identity is
+  not decoded (recordings file under group 0) and the chain still
+  awaits its on-air A/B (issue #1003). dPMR, YSF, D-STAR voice (plus
+  EDACS ProVoice) are followed and logged but not yet turned into PCM.
 - **DMR 2-slot interleaved voice + embedded-LC labelling.** Both
   timeslots of a carrier are tracked, recorded, and logged as separate
   calls; a stride-2 interleaved superframe decoder
   (`voice.NewInterleavedDecoder`) separates the two slots and
   reassembles each slot's embedded Link Control (EMB → variable
   BPTC(128,72) → talkgroup/source) so a slot is routed to its call by
-  talkgroup. The whole path is wired through the voice composer behind
-  a per-system opt-in (`dmr_interleaved_voice: true`) and unit-tested
-  end-to-end against synthetic modulated IQ. Each slot's calls are
-  visible per-timeslot in the TUI / web active-call views and in the
-  `gophertrunk_dmr_voice_calls_total{system,timeslot}` metric. It
-  defaults off:
-  confirming the exact on-air dibit cadence (CACH/guard) and the ETSI
-  embedded-signalling interleave / EMB FEC / CRC against a real IQ
-  capture is what's needed before it becomes the production default —
-  see [docs/status.md](docs/status.md).
+  talkgroup. This is the **default** for DMR Tier II conventional and
+  Tier III trunked (Tier I direct-mode is genuinely single-slot and
+  stays on the single-slot decoder); `dmr_interleaved_voice` is a
+  tri-state override to force it on or off per system. The same-slot
+  cadence (264 dibits vs 288 with an inter-burst CACH) is
+  auto-detected per call and re-locks on a later CRC-valid embedded
+  LC. Each slot's calls are visible per-timeslot in the TUI / web
+  active-call views and in the
+  `gophertrunk_dmr_voice_calls_total{system,timeslot}` metric. What
+  still wants a real IQ capture is narrow: cross-checking the exact
+  ETSI embedded-signalling de-interleave order, the EMB QR(16,7) FEC,
+  and the 5-bit CRC polynomial — internally consistent today but not
+  yet validated against captured traffic. Drop a capture into the
+  skip-gated `internal/voice/composer/dmr_2slot_realair_test.go`
+  (`-tags integration`, `GOPHERTRUNK_DMR_2SLOT_CFILE`) — see
+  [docs/status.md](docs/status.md).
 - **Additional SDR validation.** HackRF / Airspy / HF+ drivers
-  exercise the documented USB vendor protocols under unit tests
-  against a mock transport; on-air validation against attached
-  hardware is the documented follow-up.
-- **FEC inner-layer real-air validation.** NXDN per-protocol
-  interleaver and TETRA on-air recovery margins need live captures
-  to characterise.
-- **Vocoder level calibration** awaits reference WAVs in
-  `internal/voice/{imbe,ambe2}/testdata/`.
+  implement the documented USB vendor protocols under unit tests
+  against a mock transport. HackRF (Pro board-ID detection,
+  `fpga_dc_block`, `dc_avoid`, `rf_amp`) and Airspy (macOS async
+  bulk-IN rework, native-rate behaviour) have since been exercised
+  and fixed against attached hardware in the field, and Airspy has a
+  hardware-gated harness (`internal/sdr/airspy/airspy_real_test.go`,
+  `GOPHERTRUNK_AIRSPY_REAL`). The remaining gaps: Airspy **HF+** has
+  had no attached-hardware exercise at all, HackRF has no
+  hardware-gated harness, and MRC diversity combining over
+  SoapyRemote (field-tested on USRP X310 / B210) is still
+  experimental pending a broader on-air A/B.
+- **FEC inner-layer real-air validation.** The NXDN per-protocol
+  interleaver + puncture chain is verified only against synthetic
+  vectors — no real NXDN capture exists in `samples/nxdn/`, so the
+  skip-gated real-air harnesses stay dormant. TETRA TMO on-air
+  recovery margins are now **characterised** against a committed
+  marginal-signal capture
+  (`internal/scanner/ccdecoder/testdata/tetra_cc_sync_loss_2s_144k.cs16`,
+  pinned in CI by the equalizer tests: ~12% → ~100% CRC-clean BSCH
+  with the blind CMA equalizer, ~1.9× TCH/S yield with soft-decision
+  decoding); the remaining TETRA item is the DMO on-air A/B above.
+- **Vocoder level calibration.** The comparison harness
+  (`internal/voice/calibrate/`, CLI: `cmd/voice-calibrate`) and the
+  AMBE+2 capture fixture (`internal/voice/ambe2/testdata/dmr-voice.raw`)
+  ship; still missing are the DSD-FME / OP25 **reference WAVs**
+  (`internal/voice/imbe/testdata/p25-p1-voice{.raw,-dsdfme.wav}` and
+  `internal/voice/ambe2/testdata/dmr-voice-dsdfme.wav`). The
+  spec-faithful §6.2 spectral-amplitude enhancement now ships
+  default-on (`recordings.spec_amplitude_enhance`); the reference
+  WAVs are what gates its final quality sign-off.
 
 The long-form status, per-protocol detail, and shipping-vs-pending
 checklist live in **[docs/status.md](docs/status.md)**. Near-term

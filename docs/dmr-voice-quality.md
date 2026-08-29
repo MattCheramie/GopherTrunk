@@ -19,8 +19,12 @@ is a clean-room Go re-implementation of **mbelib**'s `ambe3600x2450` path. mbeli
 is a reverse-engineered, *approximate* AMBE+2 decoder — it is known to sound
 worse than DVSI silicon, and worst on high-pitched (female) voices. So a large
 part of what you hear is inherent to the algorithm being mirrored, not a discrete
-bug. That said, one genuine divergence from the reference was found (below), and
-it is the prime suspect for the female-voice-specific roughness.
+bug. That said, one genuine divergence from the reference was found (below) —
+the prime suspect for the female-voice-specific roughness — and the corrected,
+spec-faithful form now **ships enabled by default** behind the tri-state
+`recordings.spec_amplitude_enhance` config key (unset = on; set `false` to get
+the legacy envelope back). The calibration harness below remains the gate for
+its final quality sign-off.
 
 ## Why female voices are the hard case
 
@@ -49,58 +53,47 @@ voices hardest.
   with `rand_phase() ∈ [-π, π]`. GT draws `(-1..1)·π · (numUv/L)` for `l > L/4`
   voiced harmonics — the **same** distribution and scaling. Faithful.
 
-### Found — the one genuine divergence (§6.2 spectral-amplitude enhancement)
+### Found — the one genuine divergence (§6.2 spectral-amplitude enhancement), now fixed
 
 [`internal/voice/mbe/enhance.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/mbe/enhance.go)
-`EnhanceAmplitudes` is on the **default** decode path (`ambe2/decoder.go:485`,
-and `imbe/decoder.go:552` for P25). Its per-harmonic weight ξ drops a factor that
-is present in **both** references the code cites (TIA-102.BABA §6.2 *and*
-mbelib's `mbe_spectralAmpEnhance`):
+`EnhanceAmplitudes` is on the **default** decode path (for both AMBE+2/DMR and
+IMBE/P25). Its legacy per-harmonic weight ξ dropped a factor that is present in
+**both** references the code cites (TIA-102.BABA §6.2 *and* mbelib's
+`mbe_spectralAmpEnhance`):
 
 ```
 mbelib / spec:   ξ = 0.96·π·num / ( ω0 · R_M0 · (R_M0² − R_M1²) )
-GopherTrunk:     ξ = 0.96·num   / (       R_M0 · (R_M0² − R_M1²) )
+legacy GT:       ξ = 0.96·num   / (       R_M0 · (R_M0² − R_M1²) )
                                    └─ missing the  π / ω0  factor ─┘
         num = R_M0² + R_M1² − 2·R_M0·R_M1·cos(ω0·l),   W_l = ξ^0.25, clamped [0.5, 1.2]
 ```
 
-For DMR, ω₀ ∈ [~0.05, ~0.31] rad, so `π/ω0 ∈ [~10, ~63]`. GT's ξ is therefore
-10–63× **smaller** than the spec's; after the `^0.25`, GT's high-band weights are
-~1.8–2.8× lower, so they land on the **0.5 (attenuate)** clamp where the spec
-would push toward the **1.2 (boost)** clamp. Because the frame is then
+For DMR, ω₀ ∈ [~0.05, ~0.31] rad, so `π/ω0 ∈ [~10, ~63]`. The legacy ξ is
+therefore 10–63× **smaller** than the spec's; after the `^0.25`, the high-band
+weights are ~1.8–2.8× lower, so they land on the **0.5 (attenuate)** clamp where
+the spec would push toward the **1.2 (boost)** clamp. Because the frame is then
 energy-renormalised (γ = √(R_M0/Σ)), the *relative* spectral tilt shifts energy
 out of the high band into the low band — a duller timbre, and, since small-L
 (female) frames have most of their harmonics in that high band, the effect is
 **strongest on female voices**. This matches the reported symptom.
 
-`enhance.go`'s own header comment flags this as unfinished: *"spec-tuning to
-bit-match mbelib output is part of step 5c (gain calibration)."* So it is a known
-TODO, not a deliberate design choice.
+**Both missing factors are now restored and ship enabled by default.**
+`EnhanceAmplitudes(p, M, specFaithful)` carries a `specFaithful` flag: the
+spec-faithful branch restores the `π/ω₀` factor **and** mbelib's `√M_l`
+amplitude weight (which makes the clamp gate scale-invariant — without it a
+pure gain change reshapes the enhanced envelope). The recorder/live path
+enables it per call for both DMR AMBE+2 and P25 IMBE, governed by the
+tri-state `recordings.spec_amplitude_enhance` key (unset = on; `false`
+restores the legacy envelope, which stays byte-identical to prior releases so
+unit-test goldens hold). See `internal/voice/mbe/enhance.go` and the
+CHANGELOG entry that shipped it.
 
-The one-line correction (restore the spec/mbelib factor) is:
-
-```go
-// internal/voice/mbe/enhance.go, inside EnhanceAmplitudes:
-xi := 0.96 * math.Pi * num / (p.W0 * den)   // was: xi := 0.96 * num / den
-```
-
-**Why this is not shipped as a default change yet.** It is deliberately left for
-the calibration A/B, per this repo's #764/#771 discipline:
-
-1. It cannot be verified to *improve* audio without a reference decode of the
-   same frames — mbelib is itself approximate, and matching its (or the spec's)
-   number is not proof of better perceived quality.
-2. `EnhanceAmplitudes` is shared with the **P25 IMBE** path, so a blind change has
-   blast radius beyond DMR.
-
-The calibrate harness below is the gate: with a real reference WAV in place, the
-`TestCompareAMBE2` cross-correlation will *rise* if this correction helps and
-*fall* if it hurts — decide from that, not from the formula.
-
-> A secondary, lower-confidence note: mbelib additionally multiplies the weight by
-> `√M_l` (`Wl = sqrtf(Ml[l]) · powf(...)`), which the spec closed form does not.
-> GT (correctly, per spec) omits it. Leave it omitted; it is a mbelib artefact,
-> not part of the spec.
+Per this repo's #764/#771 discipline, the *final* quality sign-off is still
+calibration-gated: matching the spec's (or mbelib's) formula is not by itself
+proof of better perceived audio, and `EnhanceAmplitudes` is shared with the
+**P25 IMBE** path. The calibrate harness below is that gate — with a real
+reference WAV in place, the `TestCompareAMBE2` cross-correlation will *rise*
+if the spec-faithful form helps and *fall* if it hurts.
 
 ## Levers you can pull today (no code change)
 
@@ -153,9 +146,12 @@ the hard case — and:
    similarity). A clean RMS but low xcorr is the **synthesis** signature — i.e.
    the §6.2 enhancement above, not a gain knob.
 
-3. **A/B the §6.2 correction.** Note the baseline `PeakXcorr`, apply the one-line
-   `xi` change, re-run. If xcorr rises (and DMR + P25 both hold or improve), ship
-   it; if not, leave the default and keep the correction documented here.
+3. **A/B the §6.2 correction.** The spec-faithful form is the default, so the
+   A/B is a config toggle, not a code change: run once as-is, once with
+   `recordings.spec_amplitude_enhance: false` (the legacy envelope), and compare
+   `PeakXcorr`. If the spec-faithful run scores higher (and DMR + P25 both hold
+   or improve), the default is confirmed; if not, report it — that reference
+   pair is exactly the evidence the sign-off needs.
 
 See [Voice calibration](voice-calibration.md) for the full harness reference
 (the `cmd/voice-calibrate` CLI, the IMBE path, and the AGC `TargetPeak` knob for
