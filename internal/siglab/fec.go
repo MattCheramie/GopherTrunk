@@ -133,16 +133,28 @@ func edacsBCHFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECSt
 
 // motorolaOSWFEC tallies the SmartNet OSW decode (deinterleave →
 // convolutional-parity ECC → CRC-10, motorola.DecodeOSWPayloadDetail)
-// on the 76-bit payload that follows each clean outbound-sync hit. A
-// CRC failure counts as uncorrectable — with only an 8-bit sync, many
-// landscape hits are chance alignments, which the CRC filters here
-// exactly as the live framer does.
+// on the 76-bit payload that follows each outbound-sync hit. The sync
+// is only 8 bits, so payload data produces chance hits; exactly like
+// the live framer (rx_smartnet's sync bracket), a window only counts
+// when the NEXT frame's sync sits 76 bits later — otherwise it is a
+// misalignment, not a frame.
 func motorolaOSWFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
 	st := FECStat{Stage: "SmartNet ECC + CRC-10"}
 	syncLen := land.SyncLen
+	syncBits := motorola.OutboundSyncBits()
 	for _, pos := range land.positions {
 		start := pos + syncLen
-		if start+motorola.PayloadBits > len(stream) {
+		if start+motorola.PayloadBits+syncLen > len(stream) {
+			continue
+		}
+		bracketed := true
+		for i, b := range syncBits {
+			if stream[start+motorola.PayloadBits+i]&1 != b {
+				bracketed = false
+				break
+			}
+		}
+		if !bracketed {
 			continue
 		}
 		_, flips, ok := motorola.DecodeOSWPayloadDetail(stream[start : start+motorola.PayloadBits])
