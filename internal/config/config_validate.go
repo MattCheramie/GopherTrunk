@@ -375,8 +375,8 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 		if s.DiversityCapture == "" {
 			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds set without diversity_capture", i)
 		}
-		if s.DiversityCaptureSeconds < 1 || s.DiversityCaptureSeconds > 60 {
-			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..60; two CS16 branches are tens of MB/s)", i, s.DiversityCaptureSeconds)
+		if s.DiversityCaptureSeconds < 1 || s.DiversityCaptureSeconds > 120 {
+			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..120; two CS16 branches are tens of MB/s at high rates, and a 1 GiB per-branch cap applies regardless)", i, s.DiversityCaptureSeconds)
 		}
 	}
 	// diversity_capture's directory is auto-created (preflight up front, and

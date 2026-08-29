@@ -878,9 +878,11 @@ type SoapyRemoteConfig struct {
 	// the only tap that can answer "would a different combiner have done
 	// better on this signal?" offline. Requires diversity: mrc or mrc-static.
 	DiversityCapture string `yaml:"diversity_capture"`
-	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s. Two CS16 branches
-	// at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short. A 1 GiB
-	// per-branch cap applies regardless.
+	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s, max 120. Two CS16
+	// branches at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short at
+	// high rates — but at narrowband rates (200 kS/s is ~0.8 MB/s per branch) a
+	// long capture is cheap and is what the offline combiner A/B needs. A 1 GiB
+	// per-branch cap applies regardless of the configured seconds.
 	DiversityCaptureSeconds int `yaml:"diversity_capture_seconds"`
 	// VerboseDebug logs every control-channel RPC exchanged with this
 	// SoapySDRServer — decoded call name and arguments plus a hex dump of the
