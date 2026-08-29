@@ -525,6 +525,33 @@ confirmation before any close-as-completed.
   FSW-margin/LDU yield), then either port the `cqpsk.go` CMA/FSE equalizer onto the C4FM
   path or add soft-decision to the IMBE FEC, and A/B LDU/IMBE yield against the capture. No
   change lands without that capture. See `samples/p25/README.md` (weak-signal voice section).
+- **The Motorola Type II / SmartNet framing was FABRICATED and never matched the air interface —
+  rebuilt from OP25/trunk-recorder (#1143), on-air verification still pending.** The original
+  package (24-bit sync `0xA4D7AA`, 32-bit OSW, BCH(64,16,11)) matched no real reference; every
+  synthetic test was green because encoder and decoder shared the invented format (the #764/#771
+  self-consistent trap — same as the SoapyRemote opcode bug below), while no real capture could
+  ever lock (`cchunt: hunt failed`, the reporter's symptom). The real format, ported from OP25
+  `rx_smartnet.cc/h` + trunk-recorder `SmartnetParser` (both proven on air): 8-bit sync `0xAC`,
+  84-bit frames back-to-back (a frame is only trusted when the NEXT sync arrives 76 bits later),
+  76-bit payload → stride-19 deinterleave → (info,parity) pairs with `parity[i]=info[i]^info[i-1]`
+  → 27 data + 10 CRC bits, data INVERTED on the wire (address `^0xCC38`, command `^0x0D5`, CRC
+  complemented); OSW = 16-bit address + group bit + 10-bit command, where a command ≤ the band
+  plan's range IS the voice channel number and grants/sysID span 1-3 consecutive OSWs (no
+  opcodes — `motorola_bch_mode` is now accepted-but-ignored, `motorola_band_plan` selects
+  800_standard/800_rebanded/800_splinter/900). Physical layer: 3600-baud 2-FSK at ±1.2 kHz
+  deviation (NOT MSK/±900 Hz), channelized to an 18 kHz DDC target (5 sps, mirrors
+  trunk-recorder; the old 48 kHz target's ±24 kHz passband also admitted 25 kHz-spaced
+  neighbours into the discriminator), with a slow post-discriminator DC tracker — at ±1.2 kHz
+  deviation a few-hundred-Hz carrier offset is a large slicer bias
+  (`TestReceiverToleratesCarrierOffset`). Pinned by reference-literal tests (sync bits,
+  interleave permutation, XOR masks — the only tests that catch constant drift) +
+  failing-first `TestProcessDecodesRealAirFormat` (real-air stream → old decoder = zero
+  decodes). Per #764/#771: synthetic-green ≠ on-air-verified — the #1143 reporter's 854.5625 MHz
+  capture (Airspy R2, 3 MS/s cfile on Google Drive; unreachable from the dev environment's
+  network policy) is the outstanding verification gate. Their "≈550.3 ppm" capture warning was
+  almost certainly the probe estimator latching a different momentarily-strong carrier in the
+  3 MHz span (the probe is the FIRST 32768 samples ≈ 11 ms, and `capture` never checks
+  `ActualSampleRate` — though sample-count math shows their file really is 3 MS/s).
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the

@@ -13,45 +13,51 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
-// TestDaemonCCDecodesMotorola is the per-protocol sibling of the
-// EDACS integration test (PR #152). Reuses the same GFSK
-// modulator; the differences are framing layer + per-codeword
-// BCH(64, 16, 11) instead of the BCH(40, 28, 2) EDACS uses.
+// TestDaemonCCDecodesMotorola asserts the production daemon chain —
+// mock SDR at a wideband 90 kHz rate → effectiveStreamRate → DDC to
+// the 18 kHz Motorola channel target → FSK receiver → SmartNet framer
+// (8-bit sync-bracketed frames, interleave + parity ECC + CRC-10) →
+// OSW sequencer → supervisor + API + metrics — recovers the two-OSW
+// system-ID broadcast and publishes cc.locked with the system ID.
 //
-// Motorola Type II runs 3600-baud 2-FSK with BT = 0.5 (the
-// SmartZone standard's tighter-bandwidth profile vs EDACS' 0.3).
-// Each OSW is 32 bits (16-bit Address + 16-bit Command); under
-// `motorola_bch_mode: on` each half is wrapped in a 64-bit BCH
-// codeword (16 info + 48 parity) for ±11 bit-error correction
-// per half, so the on-air OSW occupies 128 bits = ~36 ms of
-// channel time.
-//
-// The test asserts the production newMotorolaPipeline + BCH-on
-// opt-in + supervisor + API + metrics chain recovers a
-// CmdSystemID-Extended OSW and publishes cc.locked with the
-// encoded SystemID.
+// The stream is rendered in the REAL air format via
+// motorola.EncodeOSWFrame (constants ported from OP25 rx_smartnet;
+// issue #1143 — the previous fixture used a made-up framing that only
+// its own decoder understood, so this test was green while no real
+// system could ever lock).
 func TestDaemonCCDecodesMotorola(t *testing.T) {
 	const (
-		controlFreqHz = 851_012_500
-		// 27 sps × 3600 symbol rate = 97_200 Hz IQ rate. Picked so
-		// the integer sps matches the receiver's float computation
-		// exactly with no rounding drift.
-		sampleRate  = 97_200.0
-		sps         = 27
-		span        = 4
-		bt          = 0.5
-		deviationHz = 1500.0
-		systemID    = uint16(0x4567)
-		oswRepeats  = 30
+		controlFreqHz = 854_562_500
+		// Wideband input rate: the daemon's DDC must decimate 5:1
+		// to the 18 kHz channel target, as it would from a real SDR.
+		sampleRate = 90_000.0
+		sps        = 25 // 90 kHz / 3600 baud
+		systemID   = uint16(0x4567)
+		repeats    = 12
 	)
 
-	bits := buildMotorolaSystemIDStream(oswRepeats, systemID)
-	iq := demod.ModulateGFSK(bits, sps, span, bt, sampleRate, deviationHz)
+	seq := []motorola.OSW{
+		{Address: systemID, Command: motorola.CmdFirstNormal},
+		{Address: 0x1F00, Command: 0x8E}, // CC broadcast: channel 0x8E = 854.5625 MHz
+		{Address: 0x02F8, Command: motorola.CmdIdle},
+	}
+	var bits []byte
+	for i := 0; i < 200; i++ {
+		bits = append(bits, byte(i&1))
+	}
+	for r := 0; r < repeats; r++ {
+		for _, o := range seq {
+			bits = append(bits, motorola.EncodeOSWFrame(o)...)
+		}
+	}
+	bits = append(bits, motorola.OutboundSyncBits()...)
+
+	// Real SmartNet FSK deviation is ±1.2 kHz.
+	iq := demod.ModulateGFSK(bits, sps, 4, 0.5, sampleRate, 1200.0)
 
 	dir := t.TempDir()
 	iqPath := filepath.Join(dir, "motorola-cc.cfile")
@@ -70,7 +76,6 @@ func TestDaemonCCDecodesMotorola(t *testing.T) {
 			Name:            "MotoSite",
 			Protocol:        "motorola",
 			ControlChannels: []uint32{controlFreqHz},
-			MotorolaBCHMode: "on",
 		},
 	}
 	cfg.API.HTTPAddr = freeAddr(t)
@@ -140,59 +145,4 @@ WaitLoop:
 	// loaded -race CI runner produced.
 	waitForMetric(t, base, "gophertrunk_control_channel_locked{", 2*time.Second)
 	waitForMetric(t, base, `gophertrunk_events_total{kind="cc.locked"} 1`, 2*time.Second)
-}
-
-// buildMotorolaSystemIDStream assembles a Motorola Type II bit
-// stream for the GFSK modulator + receiver chain:
-//
-//   - 200-bit warmup alternating 0/1 so the Mueller-Müller clock
-//     recovery sees a transition every symbol
-//   - `repeats` × (24-bit outbound sync + 128-bit BCH-encoded
-//     OSW + 16 idle bits)
-//   - 100-bit trailer for clean flush
-//
-// Each OSW carries OpSystemIDExtended with Address = systemID,
-// encoded through framing.BCHEncode64_16 (two 64-bit codewords
-// for the two 16-bit halves) so the production receiver's
-// `motorola_bch_mode: on` BCH layer is exercised on the
-// recovered bits.
-func buildMotorolaSystemIDStream(repeats int, systemID uint16) []byte {
-	// Command = (opcode << 4) | LCN_or_class. For OpSystemIDExtended
-	// (0x080), the low nibble is a per-system class — pick 0 since
-	// the test only asserts on SystemID.
-	command := uint16(motorola.OpSystemIDExtended) << 4
-
-	// BCH-encode each 16-bit half into a 64-bit codeword.
-	cw1 := framing.BCHEncode64_16(systemID)
-	cw2 := framing.BCHEncode64_16(command)
-	encoded := make([]byte, 128)
-	for i := 0; i < 64; i++ {
-		if cw1&(uint64(1)<<uint(63-i)) != 0 {
-			encoded[i] = 1
-		}
-	}
-	for i := 0; i < 64; i++ {
-		if cw2&(uint64(1)<<uint(63-i)) != 0 {
-			encoded[64+i] = 1
-		}
-	}
-
-	frame := make([]byte, 0, 24+128)
-	frame = append(frame, motorola.OutboundSyncBits()...)
-	frame = append(frame, encoded...)
-
-	out := make([]byte, 0, 200+repeats*(len(frame)+16)+100)
-	for i := 0; i < 200; i++ {
-		out = append(out, byte(i&1))
-	}
-	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 16; i++ {
-			out = append(out, byte(i&1))
-		}
-	}
-	for i := 0; i < 100; i++ {
-		out = append(out, byte(i&1))
-	}
-	return out
 }

@@ -144,10 +144,13 @@ var fixtures = map[trunking.Protocol]fixture{
 		},
 	},
 	trunking.ProtocolMotorola: {
-		build:       func() []uint8 { return buildMotorolaSystemIDStream(30, 0x4567) },
-		modulate:    func(d []uint8, sr float64) []complex64 { return demod.ModulateGFSK(d, 27, 4, 0.5, sr, 1500.0) },
-		sampleRate:  97_200,
-		systemKnobs: map[string]string{"motorola_bch_mode": "on"},
+		build: func() []uint8 { return buildMotorolaSystemIDStream(30, 0x4567) },
+		// 18 kHz / 5 sps matches the production DDC target (the live
+		// path channelises to 18 kHz), so the synth exercises the same
+		// receiver configuration; ±1.2 kHz is the real SmartNet FSK
+		// deviation (trunk-recorder smartnet_fsk2_demod).
+		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateGFSK(d, 5, 4, 0.5, sr, 1200.0) },
+		sampleRate: 18_000,
 		expected: Acceptance{
 			Lock:       boolPtr(true),
 			LockFields: map[string]any{"system_id": "0x4567"},
@@ -491,43 +494,37 @@ func buildEDACSSystemIDStream(repeats int, systemID uint16) []byte {
 	return out
 }
 
-// buildMotorolaSystemIDStream builds a Motorola Type II control-channel stream
-// (outbound sync + two BCH(64,16) OSW halves). Lifted from
-// integration_cc_motorola_test.go.
+// buildMotorolaSystemIDStream builds a Motorola SmartNet control-channel
+// stream in the real air format (frame.go): back-to-back 84-bit frames
+// (8-bit sync + 76 coded payload bits) carrying the two-OSW system-ID +
+// control-channel broadcast sequence (an 0x308 OSW with the system ID in
+// its address, then the CC's channel-number OSW addressed 0x1F00),
+// padded with idle OSWs so the three-deep sequencer flushes. Shared by
+// the gen fixture and integration_cc_motorola_test.go.
 func buildMotorolaSystemIDStream(repeats int, systemID uint16) []byte {
-	command := uint16(motorola.OpSystemIDExtended) << 4
-
-	cw1 := framing.BCHEncode64_16(systemID)
-	cw2 := framing.BCHEncode64_16(command)
-	encoded := make([]byte, 128)
-	for i := 0; i < 64; i++ {
-		if cw1&(uint64(1)<<uint(63-i)) != 0 {
-			encoded[i] = 1
-		}
-	}
-	for i := 0; i < 64; i++ {
-		if cw2&(uint64(1)<<uint(63-i)) != 0 {
-			encoded[64+i] = 1
-		}
+	// Channel 0x8E = 854.5625 MHz in the 800 MHz standard plan.
+	const ccChannel = 0x8E
+	seq := []motorola.OSW{
+		{Address: systemID, Group: false, Command: motorola.CmdFirstNormal},
+		{Address: 0x1F00, Group: false, Command: ccChannel},
+		{Address: 0x2F8, Group: false, Command: motorola.CmdIdle},
 	}
 
-	frame := make([]byte, 0, 24+128)
-	frame = append(frame, motorola.OutboundSyncBits()...)
-	frame = append(frame, encoded...)
-
-	out := make([]byte, 0, 200+repeats*(len(frame)+16)+100)
+	// 200-bit alternating warmup so the Mueller-Müller clock recovery
+	// sees a transition every symbol (10101010… never matches the
+	// 10101100 sync, so it cannot frame).
+	out := make([]byte, 0, 200+repeats*len(seq)*motorola.FrameBits+motorola.SyncBits)
 	for i := 0; i < 200; i++ {
 		out = append(out, byte(i&1))
 	}
 	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 16; i++ {
-			out = append(out, byte(i&1))
+		for _, o := range seq {
+			out = append(out, motorola.EncodeOSWFrame(o)...)
 		}
 	}
-	for i := 0; i < 100; i++ {
-		out = append(out, byte(i&1))
-	}
+	// The framer only trusts a frame once the NEXT sync arrives, so
+	// close the stream with one trailing sync for the final frame.
+	out = append(out, motorola.OutboundSyncBits()...)
 	return out
 }
 

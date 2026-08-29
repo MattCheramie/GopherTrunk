@@ -7,25 +7,37 @@ import (
 )
 
 func TestTopologyAccumulation(t *testing.T) {
-	bus := events.NewBus(8)
+	bus := events.NewBus(16)
 	defer bus.Close()
-	c := New(Options{Bus: bus, FrequencyHz: 851_000_000})
+	c := New(Options{Bus: bus, FrequencyHz: 854_562_500})
 
-	// System ID Extended (opcode 0x080 = Command>>4): ID 0x2A.
-	c.Ingest(OSW{Address: 0x2A, Command: 0x0800})
-	// Adjacent Site Status (opcode 0x31B): site/LCN in Address/LCN nibble.
-	c.Ingest(OSW{Address: 11, Command: 0x31B4})
-	c.Ingest(OSW{Address: 12, Command: 0x31B5})
-	c.Ingest(OSW{Address: 11, Command: 0x31B4}) // dup → deduped
+	// System ID + alternate CC (channel 0x090), then an adjacent
+	// site's CC (channel 0x0A0), then a duplicate of the first.
+	feed := []OSW{
+		{Address: 0x2A2A, Command: CmdFirstAlternate},
+		{Address: 0x6000 | 0x090, Command: 0x2F8},
+		{Address: 0x2A2A, Command: CmdFirstAlternate},
+		{Address: 0x6000 | 0x0A0, Group: true, Command: 0x2F8},
+		{Address: 0x2A2A, Command: CmdFirstAlternate},
+		{Address: 0x6000 | 0x090, Command: 0x2F8},
+		{Address: 0x02F8, Command: CmdIdle},
+		{Address: 0x02F8, Command: CmdIdle},
+	}
+	for _, o := range feed {
+		c.Ingest(o)
+	}
 
 	topo := c.Topology()
-	if topo.SystemID != 0x2A {
-		t.Errorf("SystemID = %X, want 2A", topo.SystemID)
+	if topo.SystemID != 0x2A2A {
+		t.Errorf("SystemID = %#x, want 0x2A2A", topo.SystemID)
 	}
 	if len(topo.Neighbors) != 2 {
-		t.Fatalf("neighbors = %d, want 2: %+v", len(topo.Neighbors), topo.Neighbors)
+		t.Fatalf("neighbors = %d, want 2 (deduped): %+v", len(topo.Neighbors), topo.Neighbors)
 	}
-	if topo.Neighbors[0].SiteID != 11 || topo.Neighbors[0].LCN != 4 {
-		t.Errorf("neighbor[0] = %+v, want site 11 LCN 4", topo.Neighbors[0])
+	if topo.Neighbors[0].LCN != 0x090 || topo.Neighbors[0].Adjacent {
+		t.Errorf("neighbor[0] = %+v, want LCN 0x090 alternate", topo.Neighbors[0])
+	}
+	if topo.Neighbors[1].LCN != 0x0A0 || !topo.Neighbors[1].Adjacent {
+		t.Errorf("neighbor[1] = %+v, want LCN 0x0A0 adjacent", topo.Neighbors[1])
 	}
 }

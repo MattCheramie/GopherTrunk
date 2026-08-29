@@ -7,6 +7,24 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **Motorola Type II / SmartNet / SmartZone control channels can now actually
+  decode off the air** (#1143). The previous framing (24-bit sync, 32-bit OSW,
+  BCH(64,16,11)) was spec-guessed, matched no real signal, and only decoded its
+  own synthetic fixtures — every live capture failed with `cchunt: hunt failed —
+  no control-channel lock`. The whole layer is rebuilt from the proven OP25 /
+  trunk-recorder implementations: real 84-bit sync-bracketed OSW frames
+  (interleave + convolutional-parity ECC + CRC-10, inverted data), the real
+  27-bit OSW model (16-bit address / group bit / 10-bit command), multi-OSW
+  grant + system-ID sequencing, SmartNet band plans (new `motorola_band_plan`
+  key: `800_standard` default, `800_rebanded`, `800_splinter`, `900`), a 2-FSK
+  receiver at the real ±1.2 kHz deviation with carrier-offset tracking, and an
+  18 kHz channel target. Grants now carry real voice frequencies, source radio
+  IDs and encrypted/emergency flags, so the analog voice recorder engages.
+  `motorola_bch_mode` is obsolete and ignored (the real OSW FEC always runs);
+  existing configs keep loading. On-air verification against a reporter capture
+  is still pending — synthetic-green is not on-air-proven (#764/#771).
+
 ### Added
 - **Startup configuration summary** — the daemon now logs an effective-config
   snapshot at startup (`daemon: config summary` plus one `daemon: system

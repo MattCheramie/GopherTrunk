@@ -60,7 +60,7 @@ var entries = []Entry{
 	{"nxdn", "NXDN", blind.ModFSK4, []string{"4FSK"}, nxdnrx.SymbolRate, 6250, 4, nil, true, ""},
 	{"dpmr", "dPMR", blind.ModFSK4, []string{"4FSK"}, dpmrrx.SymbolRate, 6250, 4, nil, true, ""},
 	{"edacs", "EDACS", blind.ModFSK2, []string{"GFSK"}, edacsrx.SymbolRate, 12500, 2, nil, true, ""},
-	{"motorola", "Motorola Type II", blind.ModFSK2, []string{"GFSK"}, motorx.SymbolRate, 12500, 2, nil, true, ""},
+	{"motorola", "Motorola Type II", blind.ModFSK2, []string{"2FSK"}, motorx.SymbolRate, 12500, 2, nil, true, "±1.2 kHz FSK; 8-bit-sync 84-bit OSW frames"},
 	{"ltr", "LTR", blind.ModFSK2, []string{"sub-audible FSK"}, ltrrx.SymbolRate, 12500, 2, nil, true, ""},
 	{"mpt1327", "MPT-1327", blind.ModFSK2, []string{"FFSK"}, mptrx.SymbolRate, 12500, 2, nil, true, ""},
 	{"tetra", "TETRA", blind.ModPSK, []string{"π/4-DQPSK"}, tetrarx.SymbolRate, 25000, 4, nil, true, ""},
