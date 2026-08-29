@@ -2,23 +2,28 @@ package motorola
 
 import "sync"
 
-// NeighborSite is one adjacent site advertised by an Adjacent Site Status OSW,
-// de-duplicated by SiteID.
+// NeighborSite is one control channel advertised by the OSW stream
+// beyond the one being decoded: an alternate CC of this site
+// (Adjacent=false) or an adjacent site's CC (Adjacent=true).
+// De-duplicated by channel number — SmartNet OSW broadcasts carry no
+// numeric site ID for these, only the channel.
 type NeighborSite struct {
-	SiteID uint16
-	LCN    uint16
+	LCN      uint16
+	Adjacent bool
 }
 
-// TopologyConfig is a snapshot of the Motorola Type II / SmartZone system
-// topology accumulated over a run: the opaque system identifier and the
-// adjacent sites it advertised. Motorola has no RFSS concept.
+// TopologyConfig is a snapshot of the SmartNet / SmartZone system
+// topology accumulated over a run: the system identifier and the
+// alternate / adjacent control channels it advertised. Motorola has
+// no RFSS concept.
 type TopologyConfig struct {
 	SystemID  uint16
 	Neighbors []NeighborSite
 }
 
 // topologyModel is the mutex-guarded accumulator behind TopologyConfig — fed
-// from Ingest (decode goroutine), snapshotted at EOF (engine goroutine).
+// from the OSW sequencer (decode goroutine), snapshotted at EOF (engine
+// goroutine).
 type topologyModel struct {
 	mu  sync.Mutex
 	cfg TopologyConfig
@@ -33,13 +38,13 @@ func (m *topologyModel) applySystemID(id uint16) {
 	}
 }
 
-// applyAdjacent folds an adjacent-site announcement, de-duplicating by SiteID.
-func (m *topologyModel) applyAdjacent(a AdjacentSite) {
+// applyNeighbor folds an advertised control channel, de-duplicating
+// by channel number.
+func (m *topologyModel) applyNeighbor(n NeighborSite) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	n := NeighborSite{SiteID: a.SiteID, LCN: a.LCN}
 	for i := range m.cfg.Neighbors {
-		if m.cfg.Neighbors[i].SiteID == n.SiteID {
+		if m.cfg.Neighbors[i].LCN == n.LCN {
 			m.cfg.Neighbors[i] = n
 			return
 		}

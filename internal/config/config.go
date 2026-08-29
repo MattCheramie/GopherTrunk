@@ -1639,14 +1639,19 @@ type SystemConfig struct {
 	// synthesized fixtures); a decimal integer in [0, 15] for
 	// custom thresholds. Ignored for non-MPT-1327 protocols.
 	MPT1327CWSCTolerance string `yaml:"mpt1327_cwsc_tolerance"`
-	// MotorolaBCHMode enables the BCH(64, 16, 11) FEC layer on the
-	// Motorola Type II OSW. Recognised values: "" / "on" / "true" /
-	// "1" (the new default — two 64-bit BCH(64, 16, 11) codewords
-	// reassembled into the 32-bit OSW with single- through 11-bit-
-	// error correction) or "off" / "false" / "0" (legacy 32-bit
-	// raw-OSW path, opt-out for pre-stripped fixtures). Ignored
-	// for non-Motorola protocols.
+	// MotorolaBCHMode is OBSOLETE and ignored: it gated a
+	// BCH(64,16,11) layer the real SmartNet air interface never had
+	// (issue #1143). The key is still accepted so existing configs
+	// keep loading; the real OSW FEC (interleave + parity ECC +
+	// CRC-10) always runs.
 	MotorolaBCHMode string `yaml:"motorola_bch_mode"`
+	// MotorolaBandPlan selects the SmartNet channel-number →
+	// frequency table for Motorola Type II systems. Recognised
+	// values (case-insensitive): "" / "800" / "800_standard" (the
+	// default — the domestic 800 MHz plan), "800_rebanded" /
+	// "800_reband", "800_splinter", "900". Ignored for non-Motorola
+	// protocols.
+	MotorolaBandPlan string `yaml:"motorola_band_plan"`
 	// DStarFECMode enables the JARL DV-mode header FEC chain on
 	// the D-STAR Process adapter (conv R=1/2 K=5 + PN15 scrambler
 	// + 22×30 block interleaver). Recognised values: "" / "off" /

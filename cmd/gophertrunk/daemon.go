@@ -984,6 +984,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			MPT1327BCHMode:          sys.MPT1327BCHMode,
 			MPT1327CWSCTolerance:    sys.MPT1327CWSCTolerance,
 			MotorolaBCHMode:         sys.MotorolaBCHMode,
+			MotorolaBandPlan:        sys.MotorolaBandPlan,
 			DStarFECMode:            sys.DStarFECMode,
 		}
 		if err := s.Validate(); err != nil {

@@ -4,6 +4,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
@@ -130,31 +131,39 @@ func edacsBCHFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECSt
 	return []FECStat{st}
 }
 
-// motorolaBCHFEC tallies the Motorola BCH(64,16,11) decode on the two 64-bit
-// OSW halves (128 bits) that follow each clean outbound-sync hit. On-wire bit
-// i maps to codeword bit (63−i).
-func motorolaBCHFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
-	st := FECStat{Stage: "BCH(64,16,11)"}
+// motorolaOSWFEC tallies the SmartNet OSW decode (deinterleave →
+// convolutional-parity ECC → CRC-10, motorola.DecodeOSWPayloadDetail)
+// on the 76-bit payload that follows each outbound-sync hit. The sync
+// is only 8 bits, so payload data produces chance hits; exactly like
+// the live framer (rx_smartnet's sync bracket), a window only counts
+// when the NEXT frame's sync sits 76 bits later — otherwise it is a
+// misalignment, not a frame.
+func motorolaOSWFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
+	st := FECStat{Stage: "SmartNet ECC + CRC-10"}
 	syncLen := land.SyncLen
+	syncBits := motorola.OutboundSyncBits()
 	for _, pos := range land.positions {
 		start := pos + syncLen
-		if start+128 > len(stream) {
+		if start+motorola.PayloadBits+syncLen > len(stream) {
 			continue
 		}
-		for half := 0; half < 2; half++ {
-			base := start + half*64
-			var attempts []int
-			for rot := uint8(0); rot < 2; rot++ {
-				var cw uint64
-				for i := 0; i < 64; i++ {
-					if (stream[base+i]+rot)&1 != 0 {
-						cw |= uint64(1) << uint(63-i)
-					}
-				}
-				_, errs := framing.BCHDecode64_16(cw)
-				attempts = append(attempts, errs)
+		bracketed := true
+		for i, b := range syncBits {
+			if stream[start+motorola.PayloadBits+i]&1 != b {
+				bracketed = false
+				break
 			}
-			tallyErrs(&st, bestErrs(attempts))
+		}
+		if !bracketed {
+			continue
+		}
+		_, flips, ok := motorola.DecodeOSWPayloadDetail(stream[start : start+motorola.PayloadBits])
+		if ok {
+			st.CRCPass++
+			tallyErrs(&st, flips)
+		} else {
+			st.CRCFail++
+			tallyErrs(&st, -1)
 		}
 	}
 	return []FECStat{st}

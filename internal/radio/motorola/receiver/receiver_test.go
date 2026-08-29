@@ -3,14 +3,17 @@ package receiver
 import (
 	"math"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 )
 
 func TestReceiverConstructsAndProcessesSilence(t *testing.T) {
 	r := New(Options{
-		SampleRateHz: 48_000,
+		SampleRateHz: 18_000,
 		BitSink:      func(bits []byte, baseIdx int) {},
 	})
-	silence := make([]complex64, 4800)
+	silence := make([]complex64, 1800)
 	for range 4 {
 		r.Process(silence)
 	}
@@ -22,7 +25,7 @@ func TestReceiverConstructorPanicsOnBadParams(t *testing.T) {
 		opts Options
 	}{
 		{"missing sample rate", Options{BitSink: func([]byte, int) {}}},
-		{"missing sink", Options{SampleRateHz: 48_000}},
+		{"missing sink", Options{SampleRateHz: 18_000}},
 		{"sample rate below 2x symbol rate", Options{SampleRateHz: 6000, BitSink: func([]byte, int) {}}},
 	}
 	for _, tc := range cases {
@@ -37,125 +40,72 @@ func TestReceiverConstructorPanicsOnBadParams(t *testing.T) {
 	}
 }
 
-// makeMotorolaMSKIQ synthesises an IQ stream whose FM-discriminator
-// output is a ±NRZ waveform at 3600 baud — a clean approximation of
-// the MSK signal the Motorola Type II control channel emits. The
-// receiver's GFSK matched filter rounds the edges; the slicer at
-// zero pulls the original bit pattern back out.
-func makeMotorolaMSKIQ(bits []int) []complex64 {
-	const sampleRate = 48_000.0
-	const bitRate = 3600.0
-	const fmDeviation = 1_800.0 // MSK uses modulation index 0.5
-
-	// Build the audio waveform (±1 NRZ at the bit rate).
-	totalSamples := int(float64(len(bits)) * sampleRate / bitRate)
-	audio := make([]float32, totalSamples)
-	for i := 0; i < totalSamples; i++ {
-		t := float64(i) / sampleRate
-		bitIdx := int(t * bitRate)
-		if bitIdx >= len(bits) {
-			bitIdx = len(bits) - 1
-		}
-		v := float32(-1)
-		if bits[bitIdx] == 1 {
-			v = +1
-		}
-		audio[i] = v
+// controlStream builds a real-air-format SmartNet bit stream: warmup
+// + repeated [system-ID pair + idle] frames + trailing sync.
+func controlStream(repeats int) []byte {
+	seq := []motorola.OSW{
+		{Address: 0x4567, Command: motorola.CmdFirstNormal},
+		{Address: 0x1F00, Command: 0x8E},
+		{Address: 0x02F8, Command: motorola.CmdIdle},
 	}
-
-	iq := make([]complex64, len(audio))
-	phase := 0.0
-	for i, a := range audio {
-		phase += 2 * math.Pi * float64(a) * fmDeviation / sampleRate
-		iq[i] = complex(float32(math.Cos(phase)), float32(math.Sin(phase)))
+	var out []byte
+	for i := 0; i < 200; i++ {
+		out = append(out, byte(i&1))
 	}
-	return iq
+	for r := 0; r < repeats; r++ {
+		for _, o := range seq {
+			out = append(out, motorola.EncodeOSWFrame(o)...)
+		}
+	}
+	return append(out, motorola.OutboundSyncBits()...)
 }
 
-func TestReceiverEmitsBitsFromMSK(t *testing.T) {
-	bits := []int{1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-		1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0}
-	var batches int
-	r := New(Options{
-		SampleRateHz: 48_000,
-		BitSink:      func(b []byte, baseIdx int) { batches++ },
-	})
-	iq := makeMotorolaMSKIQ(bits)
-	chunk := 4096
-	for i := 0; i < len(iq); i += chunk {
-		end := i + chunk
-		if end > len(iq) {
-			end = len(iq)
-		}
-		r.Process(iq[i:end])
-	}
-	if batches == 0 {
-		t.Errorf("BitSink received zero batches; the chain produced no symbols")
+// TestReceiverDecodesModulatedControlChannel is the IQ-level chain
+// test at the production channel rate (18 kHz, 5 samples/symbol)
+// with the real ±1.2 kHz deviation.
+func TestReceiverDecodesModulatedControlChannel(t *testing.T) {
+	bits := controlStream(10)
+	iq := demod.ModulateGFSK(bits, 5, 4, 0.5, 18_000, DeviationHz)
+
+	got := runChainCountOSWs(t, iq, 18_000, 0)
+	if got < 15 {
+		t.Fatalf("decoded %d OSWs from a clean modulated stream, want >= 15", got)
 	}
 }
 
-func TestReceiverBitSinkBaseIdxMonotonic(t *testing.T) {
-	var baseIdxs []int
-	var batchLens []int
+// TestReceiverToleratesCarrierOffset pins the DC tracker: at
+// ±1.2 kHz deviation a 250 Hz residual carrier offset is a ~21%
+// slicer bias, which the tracker must remove. (The pre-#1143 chain
+// had no offset handling at all.)
+func TestReceiverToleratesCarrierOffset(t *testing.T) {
+	bits := controlStream(10)
+	iq := demod.ModulateGFSK(bits, 5, 4, 0.5, 18_000, DeviationHz)
+
+	got := runChainCountOSWs(t, iq, 18_000, 250)
+	if got < 15 {
+		t.Fatalf("decoded %d OSWs with a 250 Hz carrier offset, want >= 15", got)
+	}
+}
+
+// runChainCountOSWs shifts iq by offsetHz, runs the receiver, frames
+// the emitted bits and counts CRC-clean OSWs.
+func runChainCountOSWs(t *testing.T, iq []complex64, rate, offsetHz float64) int {
+	t.Helper()
+	if offsetHz != 0 {
+		shifted := make([]complex64, len(iq))
+		w := 2 * math.Pi * offsetHz / rate
+		for i, s := range iq {
+			c := complex64(complex(math.Cos(w*float64(i)), math.Sin(w*float64(i))))
+			shifted[i] = s * c
+		}
+		iq = shifted
+	}
+	count := 0
+	framer := motorola.New(motorola.Options{FrequencyHz: 854_562_500, OnOSW: func(motorola.OSW) { count++ }})
 	r := New(Options{
-		SampleRateHz: 48_000,
-		BitSink: func(b []byte, baseIdx int) {
-			baseIdxs = append(baseIdxs, baseIdx)
-			batchLens = append(batchLens, len(b))
-		},
+		SampleRateHz: rate,
+		BitSink:      func(bits []byte, baseIdx int) { framer.Process(bits, baseIdx) },
 	})
-
-	bits := []int{1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1}
-	iq := makeMotorolaMSKIQ(bits)
-	chunk := 4096
-	for i := 0; i < len(iq); i += chunk {
-		end := i + chunk
-		if end > len(iq) {
-			end = len(iq)
-		}
-		r.Process(iq[i:end])
-	}
-
-	if len(baseIdxs) == 0 {
-		t.Fatalf("expected BitSink to receive at least one batch")
-	}
-	if baseIdxs[0] != 0 {
-		t.Errorf("first baseIdx = %d, want 0", baseIdxs[0])
-	}
-	cumulative := 0
-	for i := range baseIdxs {
-		if baseIdxs[i] != cumulative {
-			t.Errorf("baseIdx[%d]=%d, want %d", i, baseIdxs[i], cumulative)
-		}
-		cumulative += batchLens[i]
-	}
-
-	r.Reset()
-	baseIdxs = baseIdxs[:0]
-	batchLens = batchLens[:0]
 	r.Process(iq)
-	if len(baseIdxs) == 0 {
-		t.Fatalf("post-Reset: expected BitSink to receive at least one batch")
-	}
-	if baseIdxs[0] != 0 {
-		t.Errorf("post-Reset: first baseIdx = %d, want 0", baseIdxs[0])
-	}
-}
-
-func TestReceiverEmittedBitsAreBinary(t *testing.T) {
-	var bad int
-	r := New(Options{
-		SampleRateHz: 48_000,
-		BitSink: func(b []byte, baseIdx int) {
-			for _, v := range b {
-				if v > 1 {
-					bad++
-				}
-			}
-		},
-	})
-	r.Process(makeMotorolaMSKIQ([]int{1, 0, 1, 0, 1, 1, 0, 0}))
-	if bad > 0 {
-		t.Errorf("%d bit(s) outside 0..1 range", bad)
-	}
+	return count
 }

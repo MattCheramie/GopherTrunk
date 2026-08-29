@@ -61,7 +61,8 @@ per-system with `<key>: off`.
 | EDACS | `edacs_bch_mode` | `BCHOn` | `off` |
 | MPT 1327 | `mpt1327_bch_mode` | `BCHOn` | `off` |
 | MPT 1327 CWSC tolerance | `mpt1327_cwsc_tolerance` | `2` (Hamming distance against the 16-bit Codeword Synchronisation Code, matches commercial MPT 1327 receivers) | `0` / `exact` / `off` for pre-stripped fixtures; integer in [0, 15] for custom thresholds |
-| Motorola Type II | `motorola_bch_mode` | `BCHOn` | `off` |
+| Motorola Type II | `motorola_bch_mode` | — (obsolete: the key is accepted but ignored; the real SmartNet OSW FEC — deinterleave + convolutional-parity ECC + CRC-10 — always runs, issue #1143) | — |
+| Motorola Type II band plan | `motorola_band_plan` | `800_standard` | `800_rebanded`, `800_splinter`, `900` select the other SmartNet channel tables |
 | D-STAR | `dstar_fec_mode` | `FECOff` (info-bits passthrough) | `on` flips to the JARL DV-mode FEC chain |
 
 The README's [FEC opt-outs section](https://github.com/MattCheramie/GopherTrunk/blob/main/README.md#fec-opt-outs)

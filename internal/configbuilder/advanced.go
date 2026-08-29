@@ -32,7 +32,7 @@ var AdvancedFields = map[string][]string{
 		// MPT1327
 		"MPT1327BCHMode", "MPT1327CWSCTolerance",
 		// Motorola
-		"MotorolaBCHMode",
+		"MotorolaBCHMode", "MotorolaBandPlan",
 		// D-STAR
 		"DStarFECMode",
 	},

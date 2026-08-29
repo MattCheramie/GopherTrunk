@@ -517,16 +517,20 @@ type System struct {
 	// by the ccdecoder connector after parsing via
 	// mpt1327.ParseCWSCTolerance.
 	MPT1327CWSCTolerance string
-	// MotorolaBCHMode enables the BCH(64, 16, 11) FEC layer on the
-	// Motorola Type II OSW. Recognised values (case-insensitive):
-	// "" / "on" / "true" / "1" → BCHOn (the new default — two
-	// 64-bit BCH(64, 16, 11) codewords reassembled into the 32-bit
-	// OSW, with up to 11 bit errors corrected per codeword); "off" /
-	// "false" / "0" → BCHOff (legacy 32-bit raw-OSW path, opt-out
-	// for pre-stripped fixtures). Forwarded into
-	// motorola.ControlChannel.SetBCHMode by the ccdecoder
-	// connector after parsing via motorola.ParseBCHMode.
+	// MotorolaBCHMode is OBSOLETE and ignored: it gated a
+	// BCH(64,16,11) layer the real SmartNet air interface never had
+	// (issue #1143). Accepted so existing configs keep loading; the
+	// ccdecoder connector logs that it is ignored. The real OSW FEC
+	// (interleave + parity ECC + CRC-10) always runs.
 	MotorolaBCHMode string
+	// MotorolaBandPlan selects the SmartNet channel-number →
+	// frequency table for Motorola Type II systems. Recognised
+	// values (case-insensitive): "" / "800" / "800_standard" (the
+	// default), "800_rebanded" / "800_reband", "800_splinter",
+	// "900". Parsed via motorola.ParseBandPlan by the ccdecoder
+	// connector; unknown values warn-log and fall back to the
+	// default.
+	MotorolaBandPlan string
 	// DStarFECMode enables the JARL DV-mode header FEC chain on the
 	// D-STAR Process adapter. Recognised values (case-insensitive):
 	// "" / "off" / "false" / "0" → FECOff (the default — reads 328

@@ -8,275 +8,177 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-func TestOSWAssembleParseRoundTrip(t *testing.T) {
-	in := OSW{Address: 0x1234, Command: 0x308A}
-	bytes := AssembleOSW(in)
-	if len(bytes) != 4 {
-		t.Fatalf("AssembleOSW = %d bytes", len(bytes))
+func TestOSWStatusFlagAccessors(t *testing.T) {
+	// Talkgroup 0xB010 with encrypted flag (0x8) and emergency
+	// option 2 in the low nibble: raw address 0xB01A.
+	o := OSW{Address: 0xB01A, Group: true, Command: 0x8E}
+	if o.Talkgroup() != 0xB010 {
+		t.Errorf("Talkgroup = %#x, want 0xB010", o.Talkgroup())
 	}
-	got, err := ParseOSW(bytes)
-	if err != nil {
-		t.Fatal(err)
+	if !o.Encrypted() {
+		t.Error("Encrypted = false, want true (flag 0x8 set)")
 	}
-	if got != in {
-		t.Errorf("round-trip = %+v, want %+v", got, in)
+	if !o.Emergency() {
+		t.Error("Emergency = false, want true (option 2)")
 	}
-}
-
-func TestOSWFromBitsRoundTrip(t *testing.T) {
-	in := OSW{Address: 0xABCD, Command: 0x080F}
-	bits := OSWBits(in)
-	if len(bits) != 32 {
-		t.Fatalf("OSWBits len = %d", len(bits))
-	}
-	got, err := OSWFromBits(bits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != in {
-		t.Errorf("round-trip = %+v", got)
+	clear := OSW{Address: 0xB010, Group: true}
+	if clear.Encrypted() || clear.Emergency() {
+		t.Error("clean address reported encrypted/emergency")
 	}
 }
 
-func TestOpcodeAndLCN(t *testing.T) {
-	// Command = 0x308A → opcode 0x308 (Group Voice Channel Grant), LCN 0xA
-	o := OSW{Address: 0x1234, Command: 0x308A}
-	if o.Opcode() != OpGroupVoiceChannelGrant {
-		t.Errorf("Opcode = %s, want GroupVoiceChannelGrant", o.Opcode())
-	}
-	if o.LCN() != 0xA {
-		t.Errorf("LCN = %X, want A", o.LCN())
-	}
-}
-
-func TestAsGroupVoiceChannelGrant(t *testing.T) {
-	o := OSW{Address: 0x1234, Command: 0x308A}
-	g, ok := o.AsGroupVoiceChannelGrant()
-	if !ok {
-		t.Fatal("expected grant")
-	}
-	if g.GroupAddress != 0x1234 || g.LCN != 0xA {
-		t.Errorf("grant = %+v", g)
-	}
-
-	// Idle isn't a grant.
-	if _, ok := (OSW{Command: 0x28D0}).AsGroupVoiceChannelGrant(); ok {
-		t.Error("idle OSW reported a grant")
-	}
-}
-
-func TestAsSystemIDAndAdjacent(t *testing.T) {
-	sysOSW := OSW{Address: 0xCAFE, Command: 0x0805}
-	if s, ok := sysOSW.AsSystemID(); !ok || s.ID != 0xCAFE || s.Class != 5 {
-		t.Errorf("system id = %+v ok=%v", s, ok)
-	}
-
-	adjOSW := OSW{Address: 0x0042, Command: 0x31B7}
-	if a, ok := adjOSW.AsAdjacentSite(); !ok || a.SiteID != 0x42 || a.LCN != 7 {
-		t.Errorf("adjacent = %+v ok=%v", a, ok)
-	}
-}
-
-func TestIsIdle(t *testing.T) {
-	for _, c := range []uint16{0x28D0, 0x290F} {
-		if !(OSW{Command: c}).IsIdle() {
-			t.Errorf("Command %04X should be idle", c)
-		}
-	}
-	if (OSW{Command: 0x308A}).IsIdle() {
-		t.Error("voice grant flagged as idle")
-	}
-}
-
-func TestOpcodeString(t *testing.T) {
-	cases := map[Opcode]string{
-		OpGroupVoiceChannelGrant: "GroupVoiceChannelGrant",
-		OpAdjacentSiteStatus:     "AdjacentSiteStatus",
-		OpSystemIDExtended:       "SystemIDExtended",
-		OpIdle1:                  "Idle",
-		Opcode(0x999):            "Opcode(999)",
-	}
-	for op, want := range cases {
-		if got := op.String(); got != want {
-			t.Errorf("Opcode(%X).String() = %s, want %s", uint16(op), got, want)
-		}
-	}
-}
-
-func TestLinearBandPlan(t *testing.T) {
-	bp := LinearBandPlan{BaseHz: 851_000_000, SpacingHz: 25_000, Offset: 0}
-	if hz, _ := bp.Frequency(0); hz != 851_000_000 {
-		t.Errorf("LCN 0 → %d", hz)
-	}
-	if hz, _ := bp.Frequency(10); hz != 851_250_000 {
-		t.Errorf("LCN 10 → %d", hz)
-	}
-	bp2 := LinearBandPlan{BaseHz: 851_000_000, SpacingHz: 25_000, Offset: -3}
-	if _, err := bp2.Frequency(1); err == nil {
-		t.Error("negative effective offset should error")
-	}
-	if _, err := (LinearBandPlan{BaseHz: 1, SpacingHz: 0}).Frequency(1); err == nil {
-		t.Error("zero spacing should error")
-	}
-}
-
-func TestTableBandPlan(t *testing.T) {
-	bp := TableBandPlan{1: 154_115_000, 2: 154_205_000}
-	if hz, _ := bp.Frequency(1); hz != 154_115_000 {
-		t.Errorf("LCN 1 → %d", hz)
-	}
-	if _, err := bp.Frequency(99); err == nil {
-		t.Error("missing LCN should error")
-	}
-}
-
-func TestSyncDetectorMatchesCleanSync(t *testing.T) {
-	det := NewSyncDetector(OutboundSyncBits(), 0)
-	stream := make([]byte, 80)
-	copy(stream[20:], OutboundSyncBits())
-	hits, _ := det.Process(nil, stream, 0)
-	if len(hits) != 1 || hits[0] != 20+SyncBits-1 {
-		t.Errorf("hits = %v, want [%d]", hits, 20+SyncBits-1)
-	}
-}
-
-func TestSyncDetectorTolerance(t *testing.T) {
-	stream := make([]byte, 80)
-	copy(stream[5:], OutboundSyncBits())
-	stream[7] ^= 1
-	stream[15] ^= 1
-
-	det := NewSyncDetector(OutboundSyncBits(), 2)
-	hits, _ := det.Process(nil, stream, 0)
-	if len(hits) != 1 {
-		t.Errorf("hits = %v, want 1 with tolerance 2", hits)
-	}
-
-	det2 := NewSyncDetector(OutboundSyncBits(), 0)
-	hits2, _ := det2.Process(nil, stream, 0)
-	if len(hits2) != 0 {
-		t.Errorf("hits = %v, want 0 with tolerance 0", hits2)
-	}
-}
-
-func TestControlChannelEmitsLockOnSystemID(t *testing.T) {
-	bus := events.NewBus(8)
+// TestSequencerLocksOnSystemIDBroadcast: the two-OSW 0x308 + 0x1F00
+// channel pair is the lock signal, carrying the system ID.
+func TestSequencerLocksOnSystemIDBroadcast(t *testing.T) {
+	bus := events.NewBus(16)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
+	c := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 854_562_500, Now: func() time.Time { return time.Unix(0, 0) }})
 
-	cc := New(Options{
-		Bus:         bus,
-		SystemName:  "TestSys",
-		FrequencyHz: 851_000_000,
-	})
-	cc.Ingest(OSW{Address: 0xCAFE, Command: 0x0800})
+	c.Ingest(OSW{Address: 0x4567, Command: CmdFirstNormal})
+	c.Ingest(OSW{Address: 0x1F00, Command: 0x8E})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
 
-	select {
-	case ev := <-sub.C:
-		if ev.Kind != events.KindCCLocked {
-			t.Fatalf("kind = %s", ev.Kind)
-		}
-		ls, ok := ev.Payload.(LockState)
-		if !ok || ls.SystemID != 0xCAFE || ls.FrequencyHz != 851_000_000 {
-			t.Errorf("lock state = %+v", ev.Payload)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("no event")
+	locked, _ := drainEvents(sub)
+	if len(locked) != 1 {
+		t.Fatalf("locked events = %d, want 1", len(locked))
+	}
+	if locked[0].SystemID != 0x4567 || locked[0].FrequencyHz != 854_562_500 {
+		t.Errorf("LockState = %+v", locked[0])
+	}
+	if topo := c.Topology(); topo.SystemID != 0x4567 {
+		t.Errorf("Topology.SystemID = %#x", topo.SystemID)
 	}
 }
 
-func TestControlChannelPublishesGrant(t *testing.T) {
-	bus := events.NewBus(8)
+// TestSequencerPublishesGroupGrantWithSource: 0x308 pair where the
+// second OSW is a group-addressed channel → grant with source RID,
+// masked talkgroup, band-plan frequency and status flags.
+func TestSequencerPublishesGroupGrantWithSource(t *testing.T) {
+	bus := events.NewBus(16)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
+	c := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 854_562_500})
 
-	cc := New(Options{
-		Bus:         bus,
-		SystemName:  "TestSys",
-		FrequencyHz: 851_000_000,
-		Resolver: LinearBandPlan{
-			BaseHz: 866_000_000, SpacingHz: 25_000, Offset: 0,
-		},
-	})
-	cc.Ingest(OSW{Address: 0x1234, Command: 0x3088}) // grant; LCN=8
+	c.Ingest(OSW{Address: 0x2E9A, Command: CmdFirstNormal})
+	c.Ingest(OSW{Address: 0xB01A, Group: true, Command: 0x8E})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
 
-	select {
-	case ev := <-sub.C:
-		if ev.Kind != events.KindGrant {
-			t.Fatalf("kind = %s", ev.Kind)
-		}
-		g, ok := ev.Payload.(trunking.Grant)
-		if !ok {
-			t.Fatalf("payload type = %T", ev.Payload)
-		}
-		if g.System != "TestSys" || g.Protocol != "motorola" {
-			t.Errorf("grant identity = %+v", g)
-		}
-		if g.GroupID != 0x1234 || g.ChannelNum != 8 {
-			t.Errorf("grant group/lcn = %+v", g)
-		}
-		if g.FrequencyHz != 866_200_000 {
-			t.Errorf("grant freq = %d, want 866_200_000", g.FrequencyHz)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("no grant event")
+	_, grants := drainEvents(sub)
+	if len(grants) != 1 {
+		t.Fatalf("grants = %d, want 1", len(grants))
+	}
+	g := grants[0]
+	if g.Protocol != "motorola" || g.System != "S" {
+		t.Errorf("grant identity = %s/%s", g.Protocol, g.System)
+	}
+	if g.GroupID != 0xB010 {
+		t.Errorf("GroupID = %#x, want 0xB010 (status nibble stripped)", g.GroupID)
+	}
+	if g.SourceID != 0x2E9A {
+		t.Errorf("SourceID = %#x, want 0x2E9A", g.SourceID)
+	}
+	if g.FrequencyHz != 854_562_500 {
+		t.Errorf("FrequencyHz = %d, want 854562500 (channel 0x8E)", g.FrequencyHz)
+	}
+	if !g.Encrypted || !g.Emergency {
+		t.Errorf("flags = enc %v emg %v, want true/true (address 0xB01A)", g.Encrypted, g.Emergency)
+	}
+	if g.ChannelNum != 0x8E {
+		t.Errorf("ChannelNum = %#x, want 0x8E", g.ChannelNum)
 	}
 }
 
-func TestControlChannelGrantWithoutResolverHasZeroFreq(t *testing.T) {
-	bus := events.NewBus(8)
+// TestSequencerPublishesSingleOSWUpdate: a lone group-addressed
+// channel OSW is a voice update (no source) that keeps a call alive.
+func TestSequencerPublishesSingleOSWUpdate(t *testing.T) {
+	bus := events.NewBus(16)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
+	c := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 854_562_500})
 
-	cc := New(Options{Bus: bus, SystemName: "X", FrequencyHz: 1})
-	cc.Ingest(OSW{Address: 0x100, Command: 0x3081})
-	ev := <-sub.C
-	g := ev.Payload.(trunking.Grant)
-	if g.FrequencyHz != 0 {
-		t.Errorf("freq = %d, want 0 (no resolver)", g.FrequencyHz)
+	c.Ingest(OSW{Address: 0xB010, Group: true, Command: 0x8E})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
+
+	_, grants := drainEvents(sub)
+	if len(grants) != 1 {
+		t.Fatalf("grants = %d, want 1", len(grants))
 	}
-	if g.ChannelNum != 1 {
-		t.Errorf("LCN = %d, want 1", g.ChannelNum)
-	}
-}
-
-func TestControlChannelIgnoresIdle(t *testing.T) {
-	bus := events.NewBus(8)
-	defer bus.Close()
-	sub := bus.Subscribe()
-	defer sub.Close()
-
-	cc := New(Options{Bus: bus, SystemName: "X", FrequencyHz: 1})
-	cc.Ingest(OSW{Command: 0x28D0}) // idle
-	cc.Ingest(OSW{Command: 0x290F}) // idle
-
-	select {
-	case ev := <-sub.C:
-		t.Errorf("idle OSW produced an event: %s", ev.Kind)
-	case <-time.After(50 * time.Millisecond):
+	if grants[0].SourceID != 0 || grants[0].GroupID != 0xB010 {
+		t.Errorf("update grant = %+v", grants[0])
 	}
 }
 
-func TestControlChannelMarkLost(t *testing.T) {
-	bus := events.NewBus(8)
+// TestSequencerRecordsAlternateCC: the 0x30B + 0x6000-masked pair
+// advertises an alternate / adjacent control channel for the hunt
+// topology, and its system ID locks.
+func TestSequencerRecordsAlternateCC(t *testing.T) {
+	bus := events.NewBus(16)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
+	c := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 854_562_500})
 
-	cc := New(Options{Bus: bus, SystemName: "X", FrequencyHz: 1})
-	cc.Ingest(OSW{Address: 0x42, Command: 0x0800})
-	<-sub.C // CCLocked
+	c.Ingest(OSW{Address: 0x4567, Command: CmdFirstAlternate})
+	c.Ingest(OSW{Address: 0x6000 | 0x090, Command: 0x2F8}) // alt CC on channel 0x090
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
 
-	cc.MarkLost()
-	select {
-	case ev := <-sub.C:
-		if ev.Kind != events.KindCCLost {
-			t.Errorf("kind = %s, want cc.lost", ev.Kind)
+	locked, _ := drainEvents(sub)
+	if len(locked) != 1 || locked[0].SystemID != 0x4567 {
+		t.Fatalf("alternate-CC broadcast did not lock: %+v", locked)
+	}
+	topo := c.Topology()
+	if len(topo.Neighbors) != 1 || topo.Neighbors[0].LCN != 0x090 {
+		t.Fatalf("neighbors = %+v, want one with LCN 0x090", topo.Neighbors)
+	}
+	if hz, ok := c.NeighborFrequency(0x090); !ok || hz != 854_612_500 {
+		t.Errorf("NeighborFrequency(0x090) = %d, %v; want 854612500", hz, ok)
+	}
+}
+
+// TestMarkLostPublishesCCLost mirrors the other protocols' lost-path
+// contract.
+func TestMarkLostPublishesCCLost(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	c := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 854_562_500})
+
+	c.Ingest(OSW{Address: 0x4567, Command: CmdFirstNormal})
+	c.Ingest(OSW{Address: 0x1F00, Command: 0x8E})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
+	c.Ingest(OSW{Address: 0x02F8, Command: CmdIdle})
+	c.MarkLost()
+
+	var lost bool
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCCLost {
+				lost = true
+			}
+		default:
+			if !lost {
+				t.Fatal("MarkLost published no cc.lost")
+			}
+			return
 		}
-	case <-time.After(time.Second):
-		t.Fatal("no cc.lost")
+	}
+}
+
+// TestLockStateSatisfiesLockedPayload keeps the cchunt supervisor
+// type-assertion contract.
+func TestLockStateSatisfiesLockedPayload(t *testing.T) {
+	var p trunking.LockedPayload = LockState{FrequencyHz: 854_562_500, SystemID: 0x4567}
+	if p.LockedFrequencyHz() != 854_562_500 || p.LockedNAC() != 0x4567 {
+		t.Errorf("LockedPayload = %d/%#x", p.LockedFrequencyHz(), p.LockedNAC())
 	}
 }
