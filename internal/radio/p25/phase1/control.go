@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -51,6 +52,10 @@ type ControlChannel struct {
 	carrierOffsetHz func() float64
 	locked          bool
 	lastNAC         uint16
+	// quietNonControlDUID suppresses the per-frame "non-control DUID"
+	// debug line (Options.QuietNonControlDUID) — an operator-facing log
+	// hygiene knob for busy control channels.
+	quietNonControlDUID bool
 	// lastSiteLog dedupes the concise site-configuration log line so an
 	// established site logs once and re-logs only when its identity / primary
 	// control channel materially changes (see logSiteIdentity).
@@ -222,6 +227,15 @@ type CCStats struct {
 	// resolved but NetStatusSeen == 0 is the normal shape of a system that
 	// names its site via registrations but withholds the WACN-bearing NSB.
 	LocRegSeen int64
+	// MBT (multi-block trunking, DUID 0xC on the CC) outcomes. MBTDecoded
+	// counts complete MBT messages that cleared the header CRC16 + data
+	// CRC32 and reached dispatchMBT; MBTHeaderFailed / MBTDataCRCFailed
+	// split the failure modes. Systems that carry their neighbour list /
+	// WACN only in AMBT form show MBTDecoded > 0 with NetStatusSeen /
+	// AdjacentSeen advancing from the MBT path.
+	MBTDecoded       int64
+	MBTHeaderFailed  int64
+	MBTDataCRCFailed int64
 }
 
 // TSBKErrorRate returns the percentage (0..100) of decode-attempted TSBK
@@ -307,11 +321,23 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 		ref := trunking.TopoNeighborRef{
 			RFSS:          n.RFSS,
 			Site:          n.Site,
+			LRA:           n.LRA,
+			SystemID:      uint32(n.SystemID),
 			ChannelID:     n.ChannelID,
 			ChannelNumber: n.ChannelNumber,
+			StatusFlags:   cfvaString(n.CFVA, n.CFVAKnown),
 		}
 		if hz, err := c.bandPlan.Frequency(n.ChannelID, n.ChannelNumber); err == nil {
 			ref.FrequencyHz = hz
+		}
+		if n.UplinkID != 0 || n.UplinkNumber != 0 {
+			ref.UplinkChannelID, ref.UplinkChannelNumber = n.UplinkID, n.UplinkNumber
+			// An explicit uplink channel number already encodes the uplink
+			// frequency in plain base+spacing terms — no transmit offset is
+			// applied (matches SDRTrunk's AMBT downlink/uplink resolution).
+			if hz, err := c.bandPlan.Frequency(n.UplinkID, n.UplinkNumber); err == nil {
+				ref.UplinkHz = hz
+			}
 		}
 		t.Neighbors = append(t.Neighbors, ref)
 	}
@@ -329,6 +355,32 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 		return nil
 	}
 	return t
+}
+
+// cfvaString renders the adjacent-site CFVA flags as a short summary for
+// the topology snapshot ("" when the flags were never observed; "none"
+// when observed all-clear — a distinction the API keeps visible).
+func cfvaString(cfva uint8, known bool) string {
+	if !known {
+		return ""
+	}
+	var parts []string
+	if cfva&CFVAConventional != 0 {
+		parts = append(parts, "conventional")
+	}
+	if cfva&CFVAFailure != 0 {
+		parts = append(parts, "failure")
+	}
+	if cfva&CFVAValid != 0 {
+		parts = append(parts, "valid")
+	}
+	if cfva&CFVAActive != 0 {
+		parts = append(parts, "active")
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ",")
 }
 
 // channelRef resolves a (band-plan ID, channel number) pair into a
@@ -356,6 +408,9 @@ func (c *ControlChannel) Stats() CCStats {
 		RFSSStatusSeen:    atomic.LoadInt64(&c.stats.RFSSStatusSeen),
 		AdjacentSeen:      atomic.LoadInt64(&c.stats.AdjacentSeen),
 		LocRegSeen:        atomic.LoadInt64(&c.stats.LocRegSeen),
+		MBTDecoded:        atomic.LoadInt64(&c.stats.MBTDecoded),
+		MBTHeaderFailed:   atomic.LoadInt64(&c.stats.MBTHeaderFailed),
+		MBTDataCRCFailed:  atomic.LoadInt64(&c.stats.MBTDataCRCFailed),
 	}
 }
 
@@ -393,6 +448,16 @@ type pendingHit struct {
 	fswStart   int    // absolute index of the frame's first FSW dibit
 	strip      bool   // status-symbol stripping the alignment search chose
 	nac        uint16 // NAC the NID decoded to (for dispatch)
+
+	// PDU (DUID 0xC) continuation state — the multi-block trunking path.
+	// A PDU frame reuses the TSBK block coding (98-dibit trellis blocks),
+	// so blocksDone/nextStart drive it too; pdu selects resumeMBTBlocks
+	// over resumeTSBKBlocks, mbtHeader holds the CRC-validated header once
+	// block 0 decodes, and mbtData accumulates the following data blocks.
+	pdu       bool
+	mbtHave   bool
+	mbtHeader MBTHeader
+	mbtData   []byte
 }
 
 // FSWFallbackToleranceDefault is the wider frame-sync-word tolerance the
@@ -455,6 +520,14 @@ type Options struct {
 	// preserves the C4FM default in the voice chain — and is what the
 	// existing replay / unit tests pass.
 	P25Phase1DemodMode string
+
+	// QuietNonControlDUID suppresses the per-frame "non-control DUID"
+	// debug log line (config `p25_quiet_noncontrol_duid`). On a busy
+	// control channel TDU/PDU frames arrive many times per second and the
+	// line buries a debug log an operator is using to chase something
+	// else. Default false keeps the line (it is genuinely useful when
+	// first identifying an unknown carrier).
+	QuietNonControlDUID bool
 
 	// FSWFallbackTolerance opts the FSW correlator into a wider fallback
 	// tolerance (see FSWFallbackToleranceDefault). Zero (the default, and what
@@ -542,6 +615,7 @@ func New(opts Options) *ControlChannel {
 		bandPlan:              bp,
 		now:                   now,
 		carrierOffsetHz:       opts.CarrierOffsetHz,
+		quietNonControlDUID:   opts.QuietNonControlDUID,
 		fswTol:                fswTol,
 		aliasAsm:              NewTalkerAliasAssembler(now),
 		diagSeen:              make(map[uint32]int),
@@ -742,8 +816,15 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	kept := c.pending[:0]
 	for _, ph := range c.pending {
 		if ph.cont {
-			// Resume the data unit's remaining TSBK blocks (issue #402).
-			if c.resumeTSBKBlocks(&ph) {
+			// Resume the data unit's remaining blocks (issue #402); a PDU
+			// continuation resumes its MBT header/data blocks instead.
+			more := false
+			if ph.pdu {
+				more = c.resumeMBTBlocks(&ph)
+			} else {
+				more = c.resumeTSBKBlocks(&ph)
+			}
+			if more {
 				kept = append(kept, ph)
 			}
 			continue
@@ -816,9 +897,35 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8, req
 			"at_boundary", atSearchBoundary(best.delta, c.nidSearchSpan),
 			"err_pattern", formatErrPattern(best.errPattern))
 	}
+	if best.nid.DUID == DUIDPacketDataUnit {
+		// A PDU on the control channel is (usually) Multi-Block Trunking —
+		// the AMBT carrier of the WACN-bearing Network Status Broadcast and
+		// of Adjacent Status Broadcasts with explicit uplinks. Decode its
+		// blocks with the same trellis machinery as the TSDU path; the
+		// header CRC16 + data CRC32 gate acceptance. It does not lock the
+		// channel — only a TSDU proves a control channel.
+		ph := pendingHit{
+			cont:      true,
+			pdu:       true,
+			rot:       best.rot,
+			strip:     best.strip,
+			nac:       best.nid.NAC,
+			fswStart:  (nidStart + best.delta - len(FrameSyncWord)) + c.bufBase,
+			nextStart: best.tsbkStart + c.bufBase,
+		}
+		if c.resumeMBTBlocks(&ph) {
+			return ph, true
+		}
+		return pendingHit{}, false
+	}
 	if best.nid.DUID != DUIDTrunkingSignaling {
-		// Some non-control DUID — record but don't lock.
-		c.log.Debug("non-control DUID", "duid", best.nid.DUID, "nac", best.nid.NAC)
+		// Some non-control DUID — record but don't lock. The per-frame
+		// debug line is suppressible via Options.QuietNonControlDUID: on a
+		// busy CC these frames arrive many times per second and bury a
+		// debug log an operator is using to chase something else.
+		if !c.quietNonControlDUID {
+			c.log.Debug("non-control DUID", "duid", best.nid.DUID, "nac", best.nid.NAC)
+		}
 		return pendingHit{}, false
 	}
 	if !c.locked || c.lastNAC != best.nid.NAC {
@@ -964,6 +1071,111 @@ func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
 		}
 	}
 	return false // reached maxTSBKBlocks
+}
+
+// resumeMBTBlocks decodes the blocks of a PDU (DUID 0xC) data unit — the
+// Multi-Block Trunking path. Block 0 is the 12-octet PDU header (validated
+// by its CCITT-16 CRC); the following BlocksToFollow blocks are data,
+// validated as a train by their trailing CRC-32, then dispatched. Returns
+// true when blocks remain undecoded for want of buffered dibits, mirroring
+// resumeTSBKBlocks' contract so Process can keep the continuation pending.
+func (c *ControlChannel) resumeMBTBlocks(ph *pendingHit) bool {
+	for {
+		start := ph.nextStart - c.bufBase
+		if start < 0 {
+			return false // buffer trimmed past it (shouldn't happen) — drop
+		}
+		if start+tsbkBlockSpan > len(c.buf) {
+			return true // next block not buffered yet — resume later
+		}
+		fswStart := ph.fswStart - c.bufBase
+		channel, next := gatherFrameDibits(c.buf, start, 98, fswStart, ph.strip)
+		info, metric := DecodeMBTBlockChannel(rotateDibits(channel, ph.rot))
+		if !ph.mbtHave {
+			h, err := ParseMBTHeader(info)
+			if err != nil {
+				atomic.AddInt64(&c.stats.MBTHeaderFailed, 1)
+				c.log.Debug("p25: MBT PDU header failed", "err", err,
+					"metric", metric, "nac", ph.nac)
+				return false
+			}
+			if !h.IsTrunkingControl() {
+				// A genuine (non-trunking) data PDU on this carrier — not
+				// an error, just not signalling. Skip its blocks.
+				c.log.Debug("p25: non-trunking PDU ignored",
+					"sap", h.SAP, "format", h.Format, "nac", ph.nac)
+				return false
+			}
+			if h.BlocksToFollow == 0 || int(h.BlocksToFollow) > maxMBTDataBlocks {
+				c.log.Debug("p25: MBT blocks-to-follow out of range",
+					"blocks", h.BlocksToFollow, "nac", ph.nac)
+				return false
+			}
+			ph.mbtHeader, ph.mbtHave = h, true
+			ph.mbtData = make([]byte, 0, int(h.BlocksToFollow)*12)
+		} else {
+			ph.mbtData = append(ph.mbtData, info...)
+			if len(ph.mbtData) >= int(ph.mbtHeader.BlocksToFollow)*12 {
+				c.dispatchMBT(ph.mbtHeader, ph.mbtData, ph.nac)
+				return false
+			}
+		}
+		ph.blocksDone++
+		ph.nextStart = next + c.bufBase
+	}
+}
+
+// dispatchMBT validates a complete MBT's data-block CRC-32 and routes the
+// AMBT broadcast opcodes into the same network model the TSBK forms feed.
+// data is the concatenation of the message's 12-octet data blocks.
+func (c *ControlChannel) dispatchMBT(h MBTHeader, data []byte, nac uint16) {
+	if err := ValidateMBTData(data); err != nil {
+		atomic.AddInt64(&c.stats.MBTDataCRCFailed, 1)
+		c.log.Debug("p25: MBT data CRC failed",
+			"opcode", h.Opcode, "blocks", h.BlocksToFollow, "nac", nac)
+		return
+	}
+	atomic.AddInt64(&c.stats.MBTDecoded, 1)
+	c.lastActivityNano.Store(c.now().UnixNano())
+	if h.Format != MBTFormatAlternate {
+		// Unconfirmed MBT (0x15) carries its opcode and fields inside the
+		// data blocks with different layouts; census it until a capture
+		// justifies decoding it (#764/#771 discipline: no spec-guessing).
+		c.log.Debug("p25: unconfirmed MBT not decoded",
+			"opcode_raw", data[0]&0x3F, "blocks", h.BlocksToFollow, "nac", nac)
+		return
+	}
+	switch h.Opcode {
+	case OpNetworkStatusBroadcast:
+		atomic.AddInt64(&c.stats.NetStatusSeen, 1)
+		n := ParseMBTNetworkStatusBroadcast(h, data)
+		c.log.Debug("p25: MBT network status broadcast", "nac", nac,
+			"wacn", n.WACN, "sysid", n.SystemID,
+			"channel", fmt.Sprintf("%d-%d", n.ChannelID, n.ChannelNumber),
+			"uplink", fmt.Sprintf("%d-%d", n.UplinkID, n.UplinkNumber))
+		c.netModel.ApplyMBTNetworkStatus(n)
+		c.publishSiteUpdate()
+	case OpRFSSStatusBroadcast:
+		atomic.AddInt64(&c.stats.RFSSStatusSeen, 1)
+		r := ParseMBTRFSSStatusBroadcast(h, data)
+		c.log.Debug("p25: MBT RFSS status broadcast", "nac", nac,
+			"sysid", r.SystemID, "rfss", r.RFSS, "site", r.Site,
+			"channel", fmt.Sprintf("%d-%d", r.ChannelID, r.ChannelNumber))
+		c.netModel.ApplyMBTRFSSStatus(r)
+		c.publishSiteUpdate()
+	case OpAdjacentSiteStatusBroadcast:
+		atomic.AddInt64(&c.stats.AdjacentSeen, 1)
+		a := ParseMBTAdjacentSiteStatusBroadcast(h, data)
+		c.log.Debug("p25: MBT adjacent site broadcast", "nac", nac,
+			"sysid", a.SystemID, "rfss", a.RFSS, "site", a.Site,
+			"channel", fmt.Sprintf("%d-%d", a.ChannelID, a.ChannelNumber),
+			"uplink", fmt.Sprintf("%d-%d", a.UplinkID, a.UplinkNumber))
+		c.netModel.ApplyMBTAdjacentSite(a)
+		c.publishSiteUpdate()
+	default:
+		c.log.Debug("p25: unhandled AMBT opcode",
+			"opcode", h.Opcode, "mfid", h.MFID, "blocks", h.BlocksToFollow, "nac", nac)
+	}
 }
 
 // nidGuess is one evaluated NID-alignment hypothesis: the NID read from

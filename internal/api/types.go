@@ -124,6 +124,20 @@ type SystemDTO struct {
 	RFSSHex     string `json:"rfss_hex,omitempty"`
 	SiteHex     string `json:"site_hex,omitempty"`
 
+	// NAC and LRA of the camped site, decoded live (P25). Zero until heard.
+	NAC    uint16 `json:"nac,omitempty"`
+	NACHex string `json:"nac_hex,omitempty"`
+	LRA    uint8  `json:"lra,omitempty"`
+
+	// PrimaryControlChannel / SecondaryControlChannels are the camped site's
+	// advertised control channels (RFSS/Network Status and Secondary Control
+	// Channel broadcasts), overlaid live from the topology snapshot with the
+	// same band-plan frequency resolution as the network report. Nil/empty
+	// until decoded. Surfaced so the Systems panel matches SDRTrunk's
+	// "Current Site" block instead of showing only the configured frequency.
+	PrimaryControlChannel    *SiteChannelDTO  `json:"primary_control_channel,omitempty"`
+	SecondaryControlChannels []SiteChannelDTO `json:"secondary_control_channels,omitempty"`
+
 	// TETRA network identity decoded live from the control channel
 	// (MLE-SYSINFO / D-NWRK-BROADCAST), overlaid from the SiteTracker topology —
 	// the TETRA analogue of WACN/SystemID/RFSS/Site. TETRA has no WACN/RFSS/Site
@@ -197,12 +211,61 @@ type SystemDTO struct {
 type NeighborDTO struct {
 	RFSS          uint8  `json:"rfss"`
 	Site          uint8  `json:"site"`
+	LRA           uint8  `json:"lra,omitempty"`
 	ChannelID     uint8  `json:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty"`
 	DownlinkHz    uint32 `json:"downlink_hz,omitempty"`
 	UplinkHz      uint32 `json:"uplink_hz,omitempty"`
 	RFSSHex       string `json:"rfss_hex,omitempty"`
 	SiteHex       string `json:"site_hex,omitempty"`
+	// Status is the human-readable CFVA flag summary from the adjacent-status
+	// broadcast (e.g. "valid,active"); empty when never observed, "none" when
+	// observed all-clear.
+	Status string `json:"status,omitempty"`
+}
+
+// SiteChannelDTO is one advertised control channel of the camped site
+// (primary or secondary), with band-plan-resolved frequencies.
+type SiteChannelDTO struct {
+	ChannelID     uint8  `json:"channel_id,omitempty"`
+	ChannelNumber uint16 `json:"channel_number,omitempty"`
+	DownlinkHz    uint32 `json:"downlink_hz,omitempty"`
+	UplinkHz      uint32 `json:"uplink_hz,omitempty"`
+}
+
+// siteChannelsFromTopology extracts the camped site's primary and secondary
+// control channels from a topology snapshot, reusing ReportFromTopology so the
+// frequency resolution matches the network report exactly.
+func siteChannelsFromTopology(snap *trunking.TopologySnapshot) (*SiteChannelDTO, []SiteChannelDTO) {
+	if snap == nil {
+		return nil, nil
+	}
+	r := trunking.ReportFromTopology(snap)
+	if len(r.Sites) == 0 {
+		return nil, nil
+	}
+	site := r.Sites[0]
+	var primary *SiteChannelDTO
+	if p := site.PrimaryCC; p.ChannelID != 0 || p.ChannelNumber != 0 || p.DownlinkHz != 0 {
+		primary = &SiteChannelDTO{
+			ChannelID: p.ChannelID, ChannelNumber: p.ChannelNumber,
+			DownlinkHz: p.DownlinkHz, UplinkHz: p.UplinkHz,
+		}
+	}
+	var secondary []SiteChannelDTO
+	for _, c := range site.SecondaryCC {
+		secondary = append(secondary, SiteChannelDTO{
+			ChannelID: c.ChannelID, ChannelNumber: c.ChannelNumber,
+			DownlinkHz: c.DownlinkHz, UplinkHz: c.UplinkHz,
+		})
+	}
+	sort.Slice(secondary, func(i, j int) bool {
+		if secondary[i].ChannelID != secondary[j].ChannelID {
+			return secondary[i].ChannelID < secondary[j].ChannelID
+		}
+		return secondary[i].ChannelNumber < secondary[j].ChannelNumber
+	})
+	return primary, secondary
 }
 
 // neighborsFromTopology converts a live topology snapshot's neighbours into
@@ -222,12 +285,14 @@ func neighborsFromTopology(snap *trunking.TopologySnapshot) []NeighborDTO {
 		out = append(out, NeighborDTO{
 			RFSS:          n.RFSS,
 			Site:          n.Site,
+			LRA:           n.LRA,
 			ChannelID:     n.Channel.ChannelID,
 			ChannelNumber: n.Channel.ChannelNumber,
 			DownlinkHz:    n.Channel.DownlinkHz,
 			UplinkHz:      n.Channel.UplinkHz,
 			RFSSHex:       trunking.IDHex(uint64(n.RFSS)),
 			SiteHex:       trunking.IDHex(uint64(n.Site)),
+			Status:        n.StatusFlags,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

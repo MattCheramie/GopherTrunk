@@ -53,10 +53,14 @@ type ReportChannel struct {
 func (c ReportChannel) empty() bool { return c == ReportChannel{} }
 
 // ReportNeighbor is an adjacent site advertised by a control channel.
+// StatusFlags is the human-readable CFVA summary from the adjacent-status
+// broadcast ("" when never observed, "none" when observed all-clear).
 type ReportNeighbor struct {
-	RFSS    uint8
-	Site    uint8
-	Channel ReportChannel
+	RFSS        uint8
+	Site        uint8
+	LRA         uint8
+	Channel     ReportChannel
+	StatusFlags string
 }
 
 // ReportBand is one P25 IDEN_UP band-plan slot.
@@ -145,7 +149,11 @@ func renderSite(w io.Writer, s ReportSite) {
 	})
 	for _, n := range neighbors {
 		line := fmt.Sprintf("NEIGHBOR RFSS:%s SITE:%s CHANNEL", hexDec(uint64(n.RFSS)), hexDec(uint64(n.Site)))
-		fmt.Fprintf(w, "  %s\n", channelLine(line, n.Channel))
+		out := channelLine(line, n.Channel)
+		if n.StatusFlags != "" {
+			out += " STATUS:[" + strings.ToUpper(strings.ReplaceAll(n.StatusFlags, ",", " ")) + "]"
+		}
+		fmt.Fprintf(w, "  %s\n", out)
 	}
 }
 
@@ -282,11 +290,25 @@ func ReportFromTopology(t *TopologySnapshot) NetworkReport {
 		site.SecondaryCC = append(site.SecondaryCC, conv(s.ChannelID, s.ChannelNumber, s.FrequencyHz, s.UplinkHz))
 	}
 	for _, n := range t.Neighbors {
+		// An explicit uplink (the P25 AMBT adjacent-status form) wins; a
+		// pair-only explicit uplink resolves via plain base + number*spacing
+		// (no transmit offset — the uplink channel number already encodes the
+		// uplink frequency). Otherwise conv derives it from the band-plan
+		// transmit offset as before.
+		upHz := n.UplinkHz
+		if upHz == 0 && n.UplinkChannelNumber != 0 {
+			if b, ok := bands[n.UplinkChannelID]; ok && b.BaseHz != 0 && b.SpacingHz != 0 {
+				if hz := b.BaseHz + uint64(n.UplinkChannelNumber)*uint64(b.SpacingHz); hz > 0 && hz <= math.MaxUint32 {
+					upHz = uint32(hz)
+				}
+			}
+		}
 		site.Neighbors = append(site.Neighbors, ReportNeighbor{
-			RFSS: n.RFSS,
-			Site: n.Site,
-			// TopoNeighborRef carries no explicit uplink; it comes from the band plan.
-			Channel: conv(n.ChannelID, n.ChannelNumber, n.FrequencyHz, 0),
+			RFSS:        n.RFSS,
+			Site:        n.Site,
+			LRA:         n.LRA,
+			Channel:     conv(n.ChannelID, n.ChannelNumber, n.FrequencyHz, upHz),
+			StatusFlags: n.StatusFlags,
 		})
 	}
 	r.Sites = []ReportSite{site}

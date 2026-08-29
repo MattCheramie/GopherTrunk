@@ -222,6 +222,26 @@ type BasebandConfig struct {
 	// self-describing (`.metadata.json` sidecar) so they drop straight into
 	// `replay`/siglab — the event-driven debugging hook the operator asked for.
 	AutoRecord BasebandAutoRecordConfig `yaml:"auto_record"`
+	// VoiceIQDebug writes each voice call's channelised IQ (exactly the
+	// stream the voice chain decodes) plus a self-describing metadata
+	// sidecar to per-call files — the voice half of the "diagnostic
+	// container" workflow (pair with auto_record.on_voice_grant for the
+	// control-channel half). Off by default; heavy on disk when the voice
+	// taps run at a full SDR rate rather than a channelised 48 kHz.
+	VoiceIQDebug VoiceIQDebugConfig `yaml:"voice_iq_debug"`
+}
+
+// VoiceIQDebugConfig configures per-call voice-channel IQ debug captures.
+type VoiceIQDebugConfig struct {
+	// Enabled turns the per-call voice IQ tee on. When false: zero cost.
+	Enabled bool `yaml:"enabled"`
+	// Dir is the directory per-call captures (and their metadata sidecars)
+	// are written into. Required when Enabled.
+	Dir string `yaml:"dir"`
+	// MaxMB caps one call's capture size in megabytes; the capture stops
+	// (and the sidecar notes truncation) when reached, so a stuck call or a
+	// full-SDR-rate tap cannot fill the disk. 0 defaults to 512 MB.
+	MaxMB int `yaml:"max_mb"`
 }
 
 // BasebandAutoRecordConfig configures event-triggered raw-IQ capture of the
@@ -255,6 +275,13 @@ type BasebandAutoRecordConfig struct {
 	OnEncrypted bool `yaml:"on_encrypted"`
 	// OnEmergency fires on an emergency-flagged grant.
 	OnEmergency bool `yaml:"on_emergency"`
+	// OnVoiceGrant fires a control-channel capture on EVERY voice grant, so a
+	// per-call voice-IQ debug capture (baseband.voice_iq_debug) has a paired
+	// control-channel context capture — the "diagnostic container" workflow:
+	// grant metadata + CC IQ + voice-channel IQ per call. Rate-limited by the
+	// shared Cooldown, so a burst of grants shares one CC capture (the CC
+	// context overlaps anyway).
+	OnVoiceGrant bool `yaml:"on_voice_grant"`
 	// OnCCSyncLoss fires when a locked control channel suddenly loses sync
 	// (events.KindCCLost, which only fires after a genuine lock — never for a
 	// hunt that never locked). It captures the seconds AFTER the loss, i.e. the
@@ -1462,6 +1489,15 @@ type SystemConfig struct {
 	// every block). C4FM only — CQPSK/LSM sites decode hard regardless.
 	// Ignored for non-P25-Phase-1 protocols.
 	P25Phase1SoftDecision string `yaml:"p25_phase1_soft_decision"`
+	// P25QuietNonControlDUID silences the per-frame "non-control DUID"
+	// debug log line on this system's P25 Phase 1 control channel. The
+	// line fires for every TDU (and other non-TSDU) frame the CC decodes —
+	// many times per second on a busy system — and buries a debug log an
+	// operator is using to chase something else. Default false keeps the
+	// line (it is genuinely useful when first identifying an unknown
+	// carrier); set true to quiet it. Diagnostic-log hygiene only: decode
+	// behaviour is unchanged either way.
+	P25QuietNonControlDUID bool `yaml:"p25_quiet_noncontrol_duid"`
 	// DMRInterleavedVoice overrides the 2-slot interleaved voice decoder.
 	// A DMR carrier is 2-slot TDMA, so the demodulated stream interleaves
 	// both timeslots' bursts; the interleaved decoder pulls each call's own

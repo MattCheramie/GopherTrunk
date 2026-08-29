@@ -333,6 +333,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		BandPlan:              bandPlan,
 		Rotations:             rotations,
 		P25Phase1DemodMode:    opts.System.P25Phase1DemodMode,
+		QuietNonControlDUID:   opts.System.P25QuietNonControlDUID,
 		P25Phase2Trellis:      uint8(p2Trellis),
 		P25Phase2RS:           uint8(p2RS),
 		P25Phase2Interleave:   uint8(p2Interleave),

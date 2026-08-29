@@ -824,6 +824,14 @@ func (c Config) validateBaseband() []error {
 		// No automatic trigger set is allowed: it leaves the feature armed for
 		// the manual API trigger only (still a valid, useful configuration).
 	}
+	if v := c.Baseband.VoiceIQDebug; v.Enabled {
+		if v.Dir == "" {
+			errs = append(errs, fmt.Errorf("baseband.voice_iq_debug: dir required when enabled"))
+		}
+		if v.MaxMB < 0 {
+			errs = append(errs, fmt.Errorf("baseband.voice_iq_debug: max_mb must not be negative"))
+		}
+	}
 	return errs
 }
 

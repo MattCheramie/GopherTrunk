@@ -968,6 +968,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			LTRManchesterMode:       sys.LTRManchesterMode,
 			P25Phase1DemodMode:      sys.P25Phase1DemodMode,
 			P25Phase1SoftDecision:   sys.P25Phase1SoftDecision,
+			P25QuietNonControlDUID:  sys.P25QuietNonControlDUID,
 			P25Phase2TrellisMode:    sys.P25Phase2TrellisMode,
 			P25Phase2RSMode:         sys.P25Phase2RSMode,
 			P25Phase2InterleaveMode: sys.P25Phase2InterleaveMode,
@@ -2333,6 +2334,11 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 				Enabled:  cfg.Recordings.Equalizer.Enabled,
 				Taps:     cfg.Recordings.Equalizer.Taps,
 				StepSize: cfg.Recordings.Equalizer.StepSize,
+			},
+			VoiceIQDebug: composer.VoiceIQDebugConfig{
+				Enabled:  cfg.Baseband.VoiceIQDebug.Enabled,
+				Dir:      cfg.Baseband.VoiceIQDebug.Dir,
+				MaxBytes: int64(cfg.Baseband.VoiceIQDebug.MaxMB) << 20,
 			},
 		})
 		if err != nil {

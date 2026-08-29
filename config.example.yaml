@@ -1124,6 +1124,10 @@ trunking:
   #     # p25_phase1_soft_decision: "on"  # per-bit soft Viterbi on the
   #     #                               # C4FM TSBK trellis (marginal-
   #     #                               # signal gain; C4FM sites only)
+  #     # p25_quiet_noncontrol_duid: true # silence the per-frame
+  #     #                               # "non-control DUID" debug line
+  #     #                               # (TDU spam on a busy CC); decode
+  #     #                               # behaviour unchanged
   #
   #   - name: "Legacy-P25-Phase2"
   #     protocol: p25
@@ -1494,6 +1498,26 @@ broadcast:
 #                                #   loses sync — captures the re-acquisition IQ,
 #                                #   ideal for debugging sync-loss / slow warm-up
 #                                #   lock (pair with tap: ddc for small files)
+#     on_voice_grant: true       # fire a CC-context capture on every voice grant
+#                                #   (rate-limited by cooldown) — the control-
+#                                #   channel half of the per-call diagnostic
+#                                #   container; pair with voice_iq_debug below
+#
+#   # Per-call voice-channel IQ debug captures — the voice half of the
+#   # "diagnostic container" workflow. Every voice call writes the exact
+#   # channelised IQ stream its decode chain consumed to
+#   # <dir>/<UTC>_<system>_tg<group>_<freq>_<rate>_voice.cs16 plus a
+#   # .metadata.json sidecar (system/talkgroup/source/frequency/rate), so a
+#   # hopped voice channel's raw samples are on disk the moment a decode
+#   # sounds wrong — replayable directly via `gophertrunk replay` / siglab.
+#   # Concurrent calls each get their own files. Heavy on disk when the
+#   # voice taps run at a full SDR rate (physical voice tuner) rather than
+#   # the channelised 48 kHz of a wideband-derived virtual tap.
+#   voice_iq_debug:
+#     enabled: true
+#     dir: "../iq/voice-debug/"
+#     max_mb: 512                # per-call size cap (0 = default 512 MB);
+#                                #   the sidecar notes truncation when hit
 
 # User-interface tabs. Every navigation tab shows by default in both the
 # web UI and the terminal TUI. If you run GopherTrunk for one main task

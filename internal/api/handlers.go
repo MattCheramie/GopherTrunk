@@ -220,6 +220,14 @@ func (s *Server) overlayTopology(dto *SystemDTO) {
 	if snap, ok := tp.Topology(dto.Name); ok {
 		dto.Neighbors = neighborsFromTopology(snap)
 		dto.FrequencyBands = bandPlanFromTopology(snap)
+		dto.PrimaryControlChannel, dto.SecondaryControlChannels = siteChannelsFromTopology(snap)
+		if snap.NAC != 0 {
+			dto.NAC = snap.NAC
+			dto.NACHex = trunking.IDHex(uint64(snap.NAC))
+		}
+		if snap.LRA != 0 {
+			dto.LRA = snap.LRA
+		}
 		// TETRA has no WACN/RFSS/Site; its live identity (MCC/MNC/Location Area +
 		// colour code) rides the same topology snapshot. Surface it so the Systems
 		// panel can render a protocol-appropriate identity block instead of four

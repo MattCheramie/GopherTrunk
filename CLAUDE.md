@@ -48,6 +48,26 @@ confirmation before any close-as-completed.
 
 ## DSP / replay notes (so the next investigation starts ahead)
 
+- **P25 discovery: a PDU (DUID 0xC) on the control channel is Multi-Block
+  Trunking, not noise — GT now decodes AMBT (`mbt.go`).** The operator's "only 1
+  neighbor site, no WACN" report was this: their system broadcasts Network
+  Status / Adjacent Status (with explicit downlink+uplink channels) only in AMBT
+  form, and GT logged every one as `non-control DUID duid=PDU` and dropped it.
+  MBT blocks reuse the TSBK 98-dibit trellis coding; the header ends in the same
+  augmented CRC-CCITT16 as a TSBK trailer, the data blocks in a CRC-32 (OP25
+  `process_PDU` is the validation reference; SDRTrunk AMBTC* classes the field
+  layouts). An explicit uplink channel resolves as plain base+spacing —
+  NO tx offset (uplink channel numbers already encode the uplink frequency).
+  Also fixed in the same pass: TSBK SCCB (0x39) read channel B one byte early
+  (`p[4:6]` vs the correct `p[5:7]`) and its round-trip test passed because the
+  assembler encoded the same wrong layout — pin parsers with LITERAL byte
+  vectors cross-checked against an independent decoder, not just round-trips.
+- **Never gate a per-channel health WARN on absolute dBFS when decode evidence
+  exists.** The widebandt2 "channel iq power very low" WARN fired every 5 s on a
+  Tier III CC decoding every C_ALOHA at −56 dBFS. Any channel whose decode
+  counter advanced within `lowPowerDecodeGrace` is healthy whatever its power
+  gauge reads. Same family as the MRC dBFS-gate lesson below.
+
 - `gophertrunk replay -tune-hz` uses the single-channel
   `ccdecoder.Downconverter` (`internal/scanner/ccdecoder/ddc.go`), **not** the
   multi-tap wideband `DDCBank` (`internal/dsp/tuner/ddc.go`). They are separate

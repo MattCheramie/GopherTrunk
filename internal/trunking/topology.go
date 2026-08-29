@@ -72,9 +72,21 @@ type TopoChannelRef struct {
 type TopoNeighborRef struct {
 	RFSS          uint8  `json:"rfss" yaml:"rfss"`
 	Site          uint8  `json:"site" yaml:"site"`
+	LRA           uint8  `json:"lra,omitempty" yaml:"lra,omitempty"`
+	SystemID      uint32 `json:"system_id,omitempty" yaml:"system_id,omitempty"`
 	ChannelID     uint8  `json:"channel_id,omitempty" yaml:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty" yaml:"channel_number,omitempty"`
 	FrequencyHz   uint32 `json:"frequency_hz,omitempty" yaml:"frequency_hz,omitempty"`
+	// Uplink* name the neighbour's explicit uplink channel when the broadcast
+	// carried one (the P25 AMBT adjacent-status form); zero otherwise, in
+	// which case the uplink is derived from the band plan's transmit offset.
+	UplinkChannelID     uint8  `json:"uplink_channel_id,omitempty" yaml:"uplink_channel_id,omitempty"`
+	UplinkChannelNumber uint16 `json:"uplink_channel_number,omitempty" yaml:"uplink_channel_number,omitempty"`
+	UplinkHz            uint32 `json:"uplink_hz,omitempty" yaml:"uplink_hz,omitempty"`
+	// StatusFlags is a short human-readable summary of the neighbour's CFVA
+	// flags from the TSBK adjacent-status form (e.g. "valid,active"),
+	// empty when the flags were never observed.
+	StatusFlags string `json:"status_flags,omitempty" yaml:"status_flags,omitempty"`
 }
 
 // TopoBandPlanSlot is one entry of a P25-style band plan (IDEN_UP): a channel

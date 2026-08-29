@@ -169,6 +169,10 @@ type Options struct {
 	// TouchInterval is how often the chain pings Engine.Touch while
 	// audio is flowing (default 1 s).
 	TouchInterval time.Duration
+	// VoiceIQDebug enables per-call voice-channel IQ debug captures (the
+	// diagnostic-container workflow, see voice_iq_debug.go). Off by
+	// default; zero cost when disabled.
+	VoiceIQDebug VoiceIQDebugConfig
 	// VoiceHangtime is the universal end-of-transmission window applied
 	// to every voice chain: once voice has been decoding, the chain ends
 	// the call this long after the last decoded voice frame (rather than
@@ -284,19 +288,20 @@ type Composer struct {
 	engine EngineHooks
 	log    *slog.Logger
 
-	iqHz       uint32
-	pcmHz      uint32
-	bw         uint32
-	touchEvery time.Duration
-	hangtime   time.Duration
-	splitTx    bool
-	eqCfg      EqualizerConfig
-	deemphCfg  DeEmphasisConfig
-	lpfCfg     AudioLPFConfig
-	agcCfg     AudioAGCConfig
-	resampCfg  AudioResamplerConfig
-	autotune   *autotune.Registry
-	cryptoSink cryptocap.Sink
+	iqHz         uint32
+	voiceIQDebug VoiceIQDebugConfig
+	pcmHz        uint32
+	bw           uint32
+	touchEvery   time.Duration
+	hangtime     time.Duration
+	splitTx      bool
+	eqCfg        EqualizerConfig
+	deemphCfg    DeEmphasisConfig
+	lpfCfg       AudioLPFConfig
+	agcCfg       AudioAGCConfig
+	resampCfg    AudioResamplerConfig
+	autotune     *autotune.Registry
+	cryptoSink   cryptocap.Sink
 	// squelch is the optional conventional-scanner squelch feed for the
 	// FM chain (issue #1090). Guarded by mu: the daemon sets it after
 	// construction (SetSquelchState) and each chain reads it once at
@@ -405,6 +410,7 @@ func New(opts Options) (*Composer, error) {
 		engine:       opts.Engine,
 		log:          log,
 		iqHz:         opts.IQSampleRate,
+		voiceIQDebug: opts.VoiceIQDebug,
 		pcmHz:        opts.PCMSampleRate,
 		bw:           opts.VoiceBandwidthHz,
 		touchEvery:   opts.TouchInterval,
@@ -620,6 +626,12 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		if r := exact.SampleRateExactHz(); r > 0 {
 			rateHzF = r
 		}
+	}
+	// Diagnostic-container voice capture: tee the exact IQ stream this
+	// call's chain will decode into a per-call file (voice_iq_debug.go).
+	// Lossless toward the chain; disk side is best-effort.
+	if c.voiceIQDebug.Enabled {
+		iqCh = c.teeVoiceIQ(chainCtx, iqCh, cs, rateHzF)
 	}
 	ch := &chain{cancel: cancel, done: make(chan struct{})}
 	c.mu.Lock()

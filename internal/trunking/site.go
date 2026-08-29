@@ -368,6 +368,11 @@ type System struct {
 	// default); "on" / "true" / "1" → soft. C4FM only. Parsed via
 	// p25phase1rx.ParseSoftDecision by the ccdecoder connector.
 	P25Phase1SoftDecision string
+	// P25QuietNonControlDUID silences the per-frame "non-control DUID"
+	// debug log line on this system's P25 Phase 1 control channel
+	// (mirrors config.SystemConfig.P25QuietNonControlDUID). Log hygiene
+	// only; decode behaviour is unchanged.
+	P25QuietNonControlDUID bool
 
 	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
 	// decoder on the P25 Phase 2 MAC PDU window. Recognised values
