@@ -59,21 +59,31 @@ const (
 //	    else:
 //	        ξ = 0.96 · num / den                 (legacy)
 //	        ξ = 0.96 · π · num / (ω₀ · den)      (specFaithful)
-//	        W_l = ξ^0.25
+//	        W_l = ξ^0.25                         (legacy)
+//	        W_l = sqrt(M_l) · ξ^0.25             (specFaithful)
 //	        clamped to [EnhanceWMin, EnhanceWMax]
 //
-// specFaithful selects the ξ scaling. The legacy form (false) drops the
-// π/ω₀ factor that TIA-102.BABA §6.2 and mbelib's mbe_spectralAmpEnhance
-// both carry; because ω₀ ∈ (0, ~0.5] rad, π/ω₀ ≳ 6, so the legacy ξ is
-// many-fold too small and the high-band weights collapse onto the
-// EnhanceWMin attenuate clamp where the spec would push toward the
-// EnhanceWMax boost clamp — a female-voice-biased timbre dulling (small L
-// ⇒ most harmonics fall in the 8·l > L band). Passing true restores the
-// spec factor. The raw decoders default to false (byte-identical to prior
-// releases so unit-test goldens hold); the recorder/live path enables the
-// spec-faithful form per call (see internal/voice/recorder.go), so
-// production DMR + P25 audio gets the corrected envelope by default while
-// remaining togglable via recordings.spec_amplitude_enhance.
+// specFaithful selects the full TIA-102.BABA §6.2 / mbelib
+// mbe_spectralAmpEnhance closed form. It restores two factors the legacy
+// form drops, both of which mbelib carries:
+//
+//   - The π/ω₀ factor. Because ω₀ ∈ (0, ~0.5] rad, π/ω₀ ≳ 6, so the legacy
+//     ξ is many-fold too small and the high-band weights collapse onto the
+//     EnhanceWMin attenuate clamp where the spec pushes toward the
+//     EnhanceWMax boost clamp (a higher-pitched-voice timbre dulling: small
+//     L ⇒ most harmonics fall in the 8·l > L band).
+//   - The sqrt(M_l) amplitude weight. It makes W_l scale-invariant: sqrt(M_l)
+//     scales as k^½ under a uniform amplitude scaling M_l → k·M_l, cancelling
+//     the moment ratio's k^−½ (after the ^0.25). Without it W_l scales as
+//     k^−½, so whether a harmonic lands on the [EnhanceWMin, EnhanceWMax]
+//     clamp depends on the absolute Ml units and a pure gain change reshapes
+//     the enhanced envelope.
+//
+// The legacy form (false) is byte-identical to prior releases so unit-test
+// goldens hold; the recorder/live path enables the spec-faithful form per
+// call (see internal/voice/recorder.go), so production DMR + P25 audio gets
+// the corrected envelope by default while remaining togglable via
+// recordings.spec_amplitude_enhance.
 //
 // Silent + zero-L frames + degenerate (R_M0 ≤ 0) frames are no-ops
 // so callers can invoke unconditionally on the synthesis path.
@@ -120,6 +130,13 @@ func EnhanceAmplitudes(p Params, M *[57]float64, specFaithful bool) {
 			}
 			if xi > 0 {
 				w = math.Pow(xi, 0.25)
+				if specFaithful && M[l] > 0 {
+					// mbelib mbe_spectralAmpEnhance carries a sqrt(M_l)
+					// amplitude weight alongside the moment ratio; it makes
+					// the clamp gate scale-invariant (see the doc comment).
+					// The legacy form omits it.
+					w *= math.Sqrt(M[l])
+				}
 				if w < EnhanceWMin {
 					w = EnhanceWMin
 				} else if w > EnhanceWMax {

@@ -79,6 +79,17 @@ for tagged releases.
   #1096).
 
 ### Fixed
+- **Vocoder: the spec-faithful §6.2 amplitude enhancement was missing mbelib's
+  `sqrt(M_l)` weight, so the default-on enhancement only carried half the
+  correction.** `mbe_spectralAmpEnhance` (TIA-102.BABA §6.2) uses
+  `W_l = sqrt(M_l)·ξ^0.25`; the enhancer restored the `π/ω₀` factor but dropped
+  the `sqrt(M_l)` amplitude term. Without it the weight is not scale-invariant
+  (it scales as `k^−½` under a uniform amplitude scaling `M_l → k·M_l`), so
+  whether a harmonic lands on the `[0.5, 1.2]` clamp depended on the absolute
+  `Ml` units and a pure gain change reshaped the enhanced envelope. Restored on
+  the spec-faithful path (the legacy `spec_amplitude_enhance: false` form is
+  unchanged as the A/B baseline). Audibly clearer high band on DMR and P25
+  voice, most on higher-pitched speakers.
 - **Web History: "recording is unavailable (it may have been swept by
   retention)" while the WAV was on disk the whole time.** A daemon started with
   a relative `-config` path (e.g. `gophertrunk -config config.yaml`) resolved
