@@ -786,6 +786,30 @@ confirmation before any close-as-completed.
   setting it once and never revisiting. `web/src/api/reconnectingSocket.ts` now owns the logic
   the four clients had each copied — including the `onerror`+`onclose` double-bind that
   scheduled two timers per failure while remembering only one handle.
+- **29 Aug X310 field material (18.5 min debug.log + 60 s pre-combine capture at 200 kS/s) —
+  the 19 Aug fixes HOLD on air, and the skew question is answered: PER-STREAM.** After the
+  operator fixed the weak antenna/feedline (the 19 Aug deficit followed the swap), the branches
+  sit balanced (~−51 dBFS each, branch_gain within ±1.4 dB) and the whole session is clean:
+  wideband coherence 0.95–0.96 every health interval (vs ≤0.8 in every pre-aligner session),
+  `updates` climbing continuously with `holds=0`, no anchor flips, ONE benign WARN in the whole
+  log, CC locked in 0.3 s and never lost (`bsch_fail=0` in every 5 s status line), 0 overruns,
+  3 drought resyncs in 18.5 min, voice flowing (demux total tch_frames=7052, vocoder_drops=0
+  per call). The inter-branch skew measured **0.41 samples** on this stream where 19 Aug
+  measured 2.60 on the same rig — so the skew is a per-stream START skew, not a fixed DDC
+  group delay, and the aligner's re-measure-per-stream/retune design is the right one (latched
+  at peak |rho|=0.94). Offline A/B on the capture (`TestDiversityCombinerReplay`): branch0
+  2589 / branch1 2626 / wb-static 2625 / wb-tracking 2626 / wb-irc-blind 2626 /
+  wb-aligned-static 2625 / nb-static 2625 / nb-tracking 2626 — every combined arm matches the
+  best branch (NO harm, the pre-aligner 22%-loss regime is gone), narrowband coherence (0.958)
+  ≈ wideband (0.945) so the wideband scalar is NOT the bottleneck on this rig, and phase walks
+  −0.11°/s (a frozen constant decays over minutes ⇒ tracking stays the right TwinRX default).
+  What this capture CANNOT close: it decodes at its ~100% BSCH ceiling, so a real MRC gain
+  over the best branch is still undemonstrated — that gate needs a WEAK-signal capture
+  (per-branch BSCH well below ceiling), not a longer one. `diversity_capture_seconds` cap
+  raised 60→120 on the operator's request (at 200 kS/s two CS16 branches are ~1.6 MB/s total;
+  the 1 GiB/branch recorder cap still bounds high rates). The demux teardown counters that look
+  alarming in this log (`undecoded_drops=24784`, `concurrency_suppressed=33125`) are by-design
+  cross-slot-leak protection on a busy multi-slot carrier, not defects.
 - **A green `ci.yml` does not mean the web console builds.** `npm test` (vitest) transpiles
   with esbuild and never typechecks, so the SPA jobs in `ci.yml` pass on code that
   `npm run build` (`tsc --noEmit && vite build`, i.e. `make web-build`/`make dist`) rejects.

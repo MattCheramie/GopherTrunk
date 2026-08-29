@@ -924,7 +924,8 @@ combined:
     - addr: "10.110.162.1:23313"
       diversity: mrc
       diversity_capture: "iq/mrc/x310"   # path PREFIX
-      diversity_capture_seconds: 5       # 1..60; two CS16 branches are tens of MB/s
+      diversity_capture_seconds: 5       # 1..120; two CS16 branches are tens of MB/s
+                                         # at high rates (1 GiB/branch cap regardless)
 ```
 
 It writes `x310.br0.cs16`, `x310.br1.cs16` and `x310.diversity.json` once per

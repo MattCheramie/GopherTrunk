@@ -454,6 +454,16 @@ func TestValidate(t *testing.T) {
 		{"soapy diversity empty ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: ""}}}}, false},
 		{"soapy diversity bad rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "selection"}}}}, true},
 		{"soapy diversity mrc-static ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc-static"}}}}, false},
+		// diversity_capture_seconds allows up to 120 s: at narrowband rates
+		// (200 kS/s ≈ 0.8 MB/s per branch) a long capture is cheap and is what
+		// the offline combiner A/B needs, and the 1 GiB per-branch cap in the
+		// branch recorder bounds high rates regardless. The 90 s case is the
+		// reporter's exact config, rejected under the old 1..60 bound.
+		{"soapy diversity capture 90s ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 90}}}}, false},
+		{"soapy diversity capture 120s ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 120}}}}, false},
+		{"soapy diversity capture 121s rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 121}}}}, true},
+		{"soapy diversity capture negative rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: -5}}}}, true},
+		{"soapy diversity capture seconds without prefix rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCaptureSeconds: 30}}}}, true},
 		// The escape hatch still opens two RX channels, so a per-channel antenna
 		// pair must stay legal under it.
 		{"soapy antennas pair ok under mrc-static", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc-static", Antennas: []string{"RX1", "RX2"}}}}}, false},

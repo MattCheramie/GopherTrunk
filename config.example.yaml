@@ -640,8 +640,9 @@ sdr:
   #                                 #  Every other IQ tap is post-combine, so this
   #                                 #  is the only capture that can be replayed
   #                                 #  through a different combiner. Needs mrc.
-  #     diversity_capture_seconds: 0 # length of that dump, 1..60 (0 = 5 s). Two
-  #                                 #  CS16 branches run to tens of MB/s.
+  #     diversity_capture_seconds: 0 # length of that dump, 1..120 (0 = 5 s). Two
+  #                                 #  CS16 branches run to tens of MB/s at high
+  #                                 #  rates; a 1 GiB/branch cap always applies.
   #     verbose_debug: false        # log every control-channel RPC to this
   #                                 #  server — decoded call name and arguments
   #                                 #  plus a hex dump of the frame — at DEBUG.
