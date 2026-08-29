@@ -217,6 +217,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.P25Phase2Equalizer":      {Label: "P25 Ph2 equalizer", Help: "Blind CMA adaptive equalizer on the traffic-channel symbol stream; removes residual inter-symbol interference (multipath / timing / RRC mismatch) ahead of the differential decode. off (default) or on. Helps ISI-limited channels; neutral on purely AWGN-limited ones. P25 Phase 2 only."},
 	"SystemConfig.P25Phase2DCBlock":        {Label: "P25 Ph2 DC block", Help: "DC-removal high-pass on the traffic-channel receiver; strips a zero-IF front end's LO-leakage spur from an on-channel voice DDC (the same stage the P25 Phase 1 and TETRA voice receivers run). off (default) or on. P25 Phase 2 only."},
 	"SystemConfig.P25Phase1SoftDecision":   {Label: "P25 Ph1 soft decision", Help: "Per-bit soft Viterbi on the control channel's TSBK trellis, driven by the C4FM 4-level soft symbols; recovers coding gain the hard slicer discards on marginal signals (CRC still corroborates every block). off (default) or on. C4FM sites only — CQPSK/LSM decodes hard regardless. P25 Phase 1 only."},
+	"SystemConfig.P25QuietNonControlDUID":  {Label: "P25 quiet non-control DUID", Help: "Silence the per-frame 'non-control DUID' debug log line (TDU spam on a busy control channel). Log hygiene only — decode behaviour is unchanged. P25 Phase 1 only."},
 	"SystemConfig.P25Phase2ClockMode":      {Label: "P25 Ph2 clock", Help: "Symbol-timing recovery: gardner (default, live SDR) or naive (fixtures). P25 Phase 2 only."},
 	"SystemConfig.DMRInterleavedVoice":     {Label: "DMR interleaved voice", Help: "Override the 2-slot interleaved DMR voice decoder. Unset = on for DMR Tier II conventional & Tier III (single-slot only for Tier I direct-mode); set true/false to force. DMR only."},
 	"SystemConfig.DMRColorCode":            {Label: "DMR colour code", Help: "Pin a conventional DMR (IPSC / linked-repeater) system to one colour code (0-15). Bursts on any other colour code are dropped, keeping a co-channel system off the call log. Unset = accept every colour code (read off air). Conventional DMR (dmr-tier2 / dmr-tier1) only."},
@@ -459,8 +460,14 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandAutoRecordConfig.OnEncrypted":       {Label: "On encrypted", Help: "Fire on a grant flagged encrypted."},
 	"BasebandAutoRecordConfig.OnEmergency":       {Label: "On emergency", Help: "Fire on an emergency-flagged grant."},
 	"BasebandAutoRecordConfig.OnCCSyncLoss":      {Label: "On CC sync loss", Help: "Fire when a locked control channel suddenly loses sync — captures the re-acquisition IQ, ideal for debugging sync-loss / slow warm-up lock. Pair with the ddc tap for small files."},
+	"BasebandAutoRecordConfig.OnVoiceGrant":      {Label: "On voice grant", Help: "Fire a control-channel context capture on every voice grant (rate-limited by the cooldown) — the CC half of the per-call diagnostic container; pair with baseband.voice_iq_debug for the voice-channel half."},
 	"BasebandAutoRecordConfig.Tap":               {Help: "What IQ to capture: wideband (default, full-rate SDR — large files) or ddc (narrowband channelised stream at the pipeline rate, e.g. 144 kHz for TETRA — far smaller and directly replayable).", Options: opts("", "wideband (default)", "ddc", "ddc")},
 	"BasebandAutoRecordConfig.Decimate":          {Help: "Software-decimation factor for the wideband tap: record at SDR-rate / N (anti-aliased), shrinking the file by N. 0/1 = full rate. The fix for a radio (e.g. USRP B210) whose hardware sample-rate floor is far above the bandwidth a channel needs. Only valid with tap: wideband."},
+
+	"BasebandConfig.VoiceIQDebug": {Label: "Voice IQ debug", Help: "Per-call voice-channel IQ debug captures: each voice call's exact channelised IQ stream plus a metadata sidecar, written to per-call files — the voice half of the diagnostic-container workflow (pair with auto_record's on_voice_grant)."},
+	"VoiceIQDebugConfig.Enabled":  {Help: "Turn per-call voice-channel IQ captures on. Off costs nothing."},
+	"VoiceIQDebugConfig.Dir":      {Help: "Directory per-call captures (and their .metadata.json sidecars) are written into."},
+	"VoiceIQDebugConfig.MaxMB":    {Label: "Max MB", Help: "Per-call capture size cap in megabytes; the sidecar notes truncation when hit. 0 = default 512 MB."},
 
 	// ---- Paging ------------------------------------------------------------
 	"PagingConfig.POCSAG":               {Label: "POCSAG", Help: "POCSAG channels, each pinning one SDR to a paging frequency."},

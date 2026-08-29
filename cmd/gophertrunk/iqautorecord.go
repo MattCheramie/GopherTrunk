@@ -243,7 +243,7 @@ func (a *iqAutoRecorder) Run(ctx context.Context, sub *events.Subscription) erro
 		"cooldown", a.cooldown, "on_concurrent_calls", a.cfg.OnConcurrentCalls,
 		"on_no_voice_device", a.cfg.OnNoVoiceDevice,
 		"on_encrypted", a.cfg.OnEncrypted, "on_emergency", a.cfg.OnEmergency,
-		"on_cc_sync_loss", a.cfg.OnCCSyncLoss)
+		"on_cc_sync_loss", a.cfg.OnCCSyncLoss, "on_voice_grant", a.cfg.OnVoiceGrant)
 	for {
 		select {
 		case <-ctx.Done():
@@ -346,6 +346,13 @@ func (a *iqAutoRecorder) classify(g trunking.Grant, concurrent int) string {
 		return "encrypted"
 	case a.cfg.OnConcurrentCalls > 0 && concurrent >= a.cfg.OnConcurrentCalls:
 		return "concurrent"
+	case a.cfg.OnVoiceGrant:
+		// Per-grant control-channel context capture — pairs with
+		// baseband.voice_iq_debug's per-call voice capture to form the
+		// diagnostic-container triplet. The shared cooldown keeps a grant
+		// burst from spawning a capture storm; the CC context of
+		// back-to-back grants overlaps anyway.
+		return "voice_grant"
 	default:
 		return ""
 	}

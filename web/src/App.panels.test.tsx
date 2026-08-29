@@ -288,10 +288,11 @@ describe("App panel mounting (issue #290 regression)", () => {
     expect(
       within(dialog).getByText("Network identity (decoded live)"),
     ).toBeInTheDocument();
-    // Four identity fields all share the same hunt-state hint.
+    // All six identity fields (WACN, System ID, RFSS, Site, NAC, LRA)
+    // share the same hunt-state hint.
     expect(
       within(dialog).getAllByText("Hunting control channel"),
-    ).toHaveLength(4);
+    ).toHaveLength(6);
     // No em-dash fallback inside the modal — every empty cell now
     // carries an explanatory hint.
     expect(within(dialog).queryByText("—")).toBeNull();

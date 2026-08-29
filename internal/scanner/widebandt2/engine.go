@@ -419,6 +419,24 @@ type engineChannel struct {
 	// activity (delta > 0). Set per protocol in buildChannel.
 	decoded     func() uint64
 	lastDecoded uint64
+	// lastDecodeAt is when the channel last showed a positive decode delta.
+	// It gates the low-power WARN: a channel with live decode evidence within
+	// lowPowerDecodeGrace is healthy whatever its absolute dBFS reads, so the
+	// "carrier likely outside the passband" WARN must not fire against it.
+	lastDecodeAt time.Time
+
+	// Parked-diagnostics state: the per-window DEBUG lines log immediately on
+	// a state change and otherwise summarise at parkedLogInterval instead of
+	// repeating every window (the IPSC log-spam fix). lastLogCnt is the
+	// counter snapshot at the last EMITTED activity line (deltas in that line
+	// cover everything since, so nothing is lost while parked); activityCls
+	// is the class of that line; pwDebugLogAt/lastLoggedDbFS drive the power
+	// line the same way.
+	lastLogCnt     tier2.Counters
+	activityCls    int
+	activityLogAt  time.Time
+	pwDebugLogAt   time.Time
+	lastLoggedDbFS float64
 }
 
 // fixedGainTenthDB interprets a configured gain string the same way the
@@ -766,6 +784,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			// #356 follow-up). The wideband path previously left this unset,
 			// so grants always defaulted to c4fm regardless of the CC's mode.
 			P25Phase1DemodMode:    demodStr,
+			QuietNonControlDUID:   sys.P25QuietNonControlDUID,
 			P25Phase2Trellis:      p2Trellis,
 			P25Phase2RS:           p2RS,
 			P25Phase2Interleave:   p2Interleave,
@@ -1175,6 +1194,43 @@ const noSyncHintDbFS = -45.0
 // tripping it; a real mistuned transmission holds for seconds.
 const strongNoSyncWindowsNeeded = 3
 
+// lowPowerDecodeGrace suppresses the "iq power very low" WARN for a channel
+// that produced protocol decodes (CSBKs / TSBKs / FEC passes) this recently.
+// Absolute dBFS is a gain-staging number, not a health verdict: a Tier III /
+// P25 control channel decoding every beacon at -56 dBFS is healthy, and
+// warning "carrier likely outside the captured passband" against live decode
+// evidence is exactly the absolute-power trap (never gate on dBFS — gate on
+// decode/coherence). The grace covers short inter-decode gaps so the WARN
+// doesn't flap between beacons.
+const lowPowerDecodeGrace = 15 * time.Second
+
+// parkedLogInterval is the cadence of the per-channel DEBUG diagnostics
+// ("channel iq power" / "channel decode activity") once a channel's state is
+// steady. Both lines used to repeat every iqpower.Window (~1 s) per channel
+// forever, which buried a debug log in identical lines (field report: DMR
+// IPSC "endless spam"). A steady channel now logs a summary at this cadence;
+// any state change (activity class flip, power step) still logs immediately.
+const parkedLogInterval = 30 * time.Second
+
+// parkedPowerStepDb is the change in per-channel power (dB) that counts as a
+// state change and re-triggers an immediate "channel iq power" DEBUG line
+// while parked.
+const parkedPowerStepDb = 3.0
+
+// activityClass buckets a window's decode-activity deltas so the parked
+// DEBUG summary can log immediately on a state transition (idle → syncing →
+// decoding and back) while staying quiet through a steady state.
+func activityClass(syncDelta, fecPassDelta, beaconDelta uint64) int {
+	switch {
+	case fecPassDelta > 0 || beaconDelta > 0:
+		return 2 // decoding
+	case syncDelta > 0:
+		return 1 // sync but no FEC
+	default:
+		return 0 // idle
+	}
+}
+
 // maybeLogDiagnostics flushes per-channel signal-power and decode-activity
 // diagnostics once per iqpower.Window. It runs inline on the Run pump
 // goroutine — the same goroutine that fed the tap sinks this window — so
@@ -1246,6 +1302,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 			total := ec.decoded()
 			if delta := total - ec.lastDecoded; delta > 0 {
 				ec.lastDecoded = total
+				ec.lastDecodeAt = now
 				e.bus.Publish(events.Event{
 					Kind:      events.KindChannelPower,
 					Timestamp: now,
@@ -1261,8 +1318,15 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 				})
 			}
 		}
+		// A channel with recent protocol decodes is healthy whatever its
+		// absolute dBFS says — never warn "outside the passband / mistuned"
+		// against live decode evidence (the Tier III CC field report: WARN
+		// every 5 s at -56 dBFS while decoding every C_ALOHA). Absolute
+		// power is a gain-staging number; decode output is the verdict.
+		decodingRecently := !ec.lastDecodeAt.IsZero() &&
+			now.Sub(ec.lastDecodeAt) <= lowPowerDecodeGrace
 
-		if dbfs < iqpower.LowPowerThresholdDbFS {
+		if dbfs < iqpower.LowPowerThresholdDbFS && !decodingRecently {
 			// Conventional-DMR carriers (tier2Cnt != nil) legitimately drop to
 			// no carrier between transmissions — an idle repeater is normal,
 			// not a mistune. Treating each idle window like a failed always-on
@@ -1306,8 +1370,18 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 				ec.lowPowerWarned = true
 			}
 		} else if debug {
-			e.log.Debug("widebandt2: channel iq power",
-				"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag, "dbfs", dbfs)
+			// Parked power line: a steady channel logs a summary every
+			// parkedLogInterval instead of every window; a real power step
+			// (≥ parkedPowerStepDb) logs immediately. Kills the per-second
+			// identical-line flood while keeping transitions visible.
+			if ec.pwDebugLogAt.IsZero() ||
+				math.Abs(dbfs-ec.lastLoggedDbFS) >= parkedPowerStepDb ||
+				now.Sub(ec.pwDebugLogAt) >= parkedLogInterval {
+				e.log.Debug("widebandt2: channel iq power",
+					"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag, "dbfs", dbfs)
+				ec.pwDebugLogAt = now
+				ec.lastLoggedDbFS = dbfs
+			}
 		}
 
 		// Per-window decode-activity deltas (Tier II conventional / Tier I).
@@ -1321,14 +1395,27 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 			syncDelta := c.SyncHits - ec.lastCnt.SyncHits
 			fecPassDelta := c.FECPass - ec.lastCnt.FECPass
 			if debug {
-				e.log.Debug("widebandt2: channel decode activity",
-					"freq_hz", ec.freqHz, "system", ec.sysName,
-					"sync_hits", syncDelta,
-					"bursts", c.Bursts-ec.lastCnt.Bursts,
-					"fec_pass", fecPassDelta,
-					"fec_fail", c.FECFail-ec.lastCnt.FECFail,
-					"beacons", c.Beacons-ec.lastCnt.Beacons,
-					"locks_total", c.Locks)
+				// Parked activity line: log immediately when the channel's
+				// activity CLASS changes (idle ↔ syncing ↔ decoding), else
+				// summarise at parkedLogInterval with deltas covering
+				// everything since the last emitted line — so a steady
+				// channel is one line per interval, not one per second, and
+				// no counts are lost while parked.
+				cls := activityClass(syncDelta, fecPassDelta, c.Beacons-ec.lastCnt.Beacons)
+				if ec.activityLogAt.IsZero() || cls != ec.activityCls ||
+					now.Sub(ec.activityLogAt) >= parkedLogInterval {
+					e.log.Debug("widebandt2: channel decode activity",
+						"freq_hz", ec.freqHz, "system", ec.sysName,
+						"sync_hits", c.SyncHits-ec.lastLogCnt.SyncHits,
+						"bursts", c.Bursts-ec.lastLogCnt.Bursts,
+						"fec_pass", c.FECPass-ec.lastLogCnt.FECPass,
+						"fec_fail", c.FECFail-ec.lastLogCnt.FECFail,
+						"beacons", c.Beacons-ec.lastLogCnt.Beacons,
+						"locks_total", c.Locks)
+					ec.activityLogAt = now
+					ec.activityCls = cls
+					ec.lastLogCnt = c
+				}
 			}
 			ec.lastCnt = c
 

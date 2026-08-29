@@ -61,12 +61,16 @@ var webRoundTripAllow = map[string][]string{
 	// Event-driven raw-IQ auto-record (baseband.auto_record) — a debug/research
 	// capture hook. Round-trips through the BasebandConfig index signature;
 	// editable in the TUI and raw YAML. A bespoke web editor is a follow-up.
-	"BasebandConfig": {"AutoRecord"},
+	"BasebandConfig": {"AutoRecord", "VoiceIQDebug"},
 	"BasebandAutoRecordConfig": {
 		"Enabled", "Dir", "Format", "Seconds", "Cooldown",
 		"OnConcurrentCalls", "OnNoVoiceDevice", "OnEncrypted", "OnEmergency",
-		"OnCCSyncLoss", "Decimate",
+		"OnCCSyncLoss", "OnVoiceGrant", "Decimate",
 	},
+	// Per-call voice-channel IQ debug captures (baseband.voice_iq_debug) —
+	// same debug/research posture as auto_record: round-trips through the
+	// BasebandConfig index signature; editable in the TUI and raw YAML.
+	"VoiceIQDebugConfig": {"Enabled", "Dir", "MaxMB"},
 }
 
 // TestConfigSchemaCoveredByWebBuilder fails when a config.Config field has no

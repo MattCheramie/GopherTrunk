@@ -26,6 +26,57 @@ for tagged releases.
   is still pending — synthetic-green is not on-air-proven (#764/#771).
 
 ### Added
+- **P25 Multi-Block Trunking (AMBT) decode — full system discovery.** A PDU
+  (DUID 0xC) on the control channel is now decoded as Multi-Block Trunking
+  instead of being dropped as "non-control DUID": the AMBT forms of the
+  Network Status Broadcast (0x3B — the WACN, with explicit downlink AND
+  uplink channels), RFSS Status Broadcast (0x3A) and Adjacent Site Status
+  Broadcast (0x3C — neighbours with explicit uplinks) all feed the same
+  topology model as their TSBK twins. Systems (notably Motorola) that
+  broadcast their neighbour list only in AMBT form went from one neighbour
+  and "No Network Status Broadcast yet" to the full SDRTrunk-equivalent
+  picture. Field layouts cross-checked against SDRTrunk's `AMBTC*` classes
+  and OP25's `process_PDU` (header CRC-CCITT16 + data CRC-32 both enforced).
+- **Systems panel: full site discovery view.** The detail modal now shows
+  NAC and LRA, the camped site's decoded primary + secondary control channels
+  (with uplinks), and neighbour rows carry channel coordinates, downlink AND
+  uplink frequencies, and the CFVA status flags (`[valid,active]`) —
+  matching SDRTrunk's Neighbor Sites output. The `/api/v1/systems` DTO gains
+  `nac`, `lra`, `primary_control_channel`, `secondary_control_channels`, and
+  per-neighbour `lra`/`uplink_hz`/`status`.
+- **Per-call diagnostic IQ containers** (`baseband.voice_iq_debug` +
+  `baseband.auto_record.on_voice_grant`). Every voice call can now write the
+  exact channelised IQ stream its decode chain consumed to a per-call
+  `*_voice.cs16` + `.metadata.json` pair (system/talkgroup/source/frequency/
+  rate; replayable directly), while `on_voice_grant` fires the existing CC
+  auto-recorder for the control-channel context — the metadata + CC-IQ +
+  voice-IQ triplet requested for offline DSP debugging of hopped voice
+  channels. Concurrent calls get independent files; a slow disk truncates
+  the capture (recorded in the sidecar) rather than corrupting it.
+- **`p25_quiet_noncontrol_duid`** per-system config knob silences the
+  per-frame "non-control DUID" debug line (TDU spam on a busy CC). Default
+  off (line keeps firing); log hygiene only.
+
+### Fixed
+- **TSBK Secondary Control Channel Broadcast (0x39) layout.** Channel B was
+  read one byte early (splicing service class A into the channel field),
+  producing a phantom secondary CC; both service classes were dropped. Now
+  matches SDRTrunk's bit offsets, pinned by a literal-vector test.
+- **Adjacent Site Status Broadcast (0x3C)** now captures the CFVA flags and
+  system service class into the decoded struct (previously log-only).
+- **"channel iq power very low" WARN no longer fires against a decoding
+  channel.** A DMR Tier III CC decoding every C_ALOHA at −56 dBFS drew the
+  "carrier likely outside the captured passband" WARN every 5 s — an
+  absolute-dBFS gate contradicting live decode evidence. Any channel whose
+  protocol decode counter advanced recently is healthy whatever its power
+  gauge reads; never-decoding channels keep the repeating WARN.
+- **Wideband per-channel DEBUG diagnostics are parked in steady state.** The
+  per-second "channel decode activity" / "channel iq power" lines (DMR IPSC:
+  one of each per channel per second, forever) now log immediately on a
+  state change and otherwise summarise every 30 s with deltas covering the
+  parked span. Likewise the DMR Tier III per-CSBK debug line: an unchanged
+  repeating Aloha beacon summarises every 10 s with a suppressed-repeat
+  count instead of ~16 identical lines per second.
 - **Startup configuration summary** — the daemon now logs an effective-config
   snapshot at startup (`daemon: config summary` plus one `daemon: system
   config` line per system) so an operator can confirm at a glance which decode

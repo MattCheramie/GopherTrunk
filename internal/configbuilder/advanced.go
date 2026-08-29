@@ -18,7 +18,7 @@ var AdvancedFields = map[string][]string{
 		// LTR
 		"LTRFCSMode", "LTRManchesterMode",
 		// P25 Phase 1
-		"P25Phase1DemodMode",
+		"P25Phase1DemodMode", "P25QuietNonControlDUID",
 		// P25 Phase 2
 		"P25Phase2TrellisMode", "P25Phase2RSMode", "P25Phase2InterleaveMode",
 		"P25Phase1SoftDecision",

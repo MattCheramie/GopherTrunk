@@ -15,6 +15,7 @@ import type {
   DMRBandPlanLearnedDTO,
   EventDTO,
   NeighborDTO,
+  SiteChannelDTO,
   SiteDTO,
   SystemDTO,
   SystemHuntStatusDTO,
@@ -46,13 +47,32 @@ function formatNeighbor(n: NeighborDTO, idBase: "hex" | "dec"): string {
   const rfss = formatIdNumber(n.rfss, idBase) ?? String(n.rfss);
   const site = formatIdNumber(n.site, idBase) ?? String(n.site);
   let s = `RFSS ${rfss} / Site ${site}`;
+  if (n.channel_id || n.channel_number) {
+    s += ` · CH ${n.channel_id ?? 0}-${n.channel_number ?? 0}`;
+  }
   if (n.downlink_hz) {
     s += ` → ${(n.downlink_hz / 1e6).toFixed(6)} MHz`;
-  } else if (n.channel_id != null && n.channel_number != null) {
-    // No resolved frequency yet (the neighbour's band plan hasn't been heard):
-    // show the raw channel coordinates like SDRtrunk's "CHANNEL:2-1754" so the
-    // row isn't blank while the IDEN_UP for that band is still awaited.
-    s += ` → CHANNEL ${n.channel_id}-${n.channel_number}`;
+    if (n.uplink_hz) {
+      s += ` / ↑ ${(n.uplink_hz / 1e6).toFixed(6)} MHz`;
+    }
+  }
+  // CFVA flags from the adjacent-status broadcast — SDRtrunk shows these as
+  // STATUS:[VALID INFORMATION] etc.; "none" means observed all-clear.
+  if (n.status) {
+    s += ` [${n.status}]`;
+  }
+  return s;
+}
+
+// formatSiteChannel renders one advertised control channel of the camped site
+// ("CH 2-1620 → 450.125000 MHz / ↑ 460.687500 MHz").
+function formatSiteChannel(c: SiteChannelDTO): string {
+  let s = `CH ${c.channel_id ?? 0}-${c.channel_number ?? 0}`;
+  if (c.downlink_hz) {
+    s += ` → ${(c.downlink_hz / 1e6).toFixed(6)} MHz`;
+    if (c.uplink_hz) {
+      s += ` / ↑ ${(c.uplink_hz / 1e6).toFixed(6)} MHz`;
+    }
   }
   return s;
 }
@@ -381,10 +401,43 @@ export function Systems() {
                     value={formatIdNumber(selected.site ?? null, idBase)}
                     emptyHint={hint}
                   />
+                  <DetailField
+                    label="NAC"
+                    mono
+                    value={formatIdNumber(selected.nac ?? null, idBase)}
+                    emptyHint={hint}
+                  />
+                  <DetailField
+                    label="LRA"
+                    mono
+                    value={formatIdNumber(selected.lra ?? null, idBase)}
+                    emptyHint={hint}
+                  />
                 </div>
               </div>
             );
           })()}
+          {selected.primary_control_channel ||
+          (selected.secondary_control_channels &&
+            selected.secondary_control_channels.length > 0) ? (
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted mb-2">
+                Site control channels (decoded live)
+              </p>
+              <DetailField
+                label="Primary / secondaries → downlink / uplink"
+                mono
+                value={[
+                  ...(selected.primary_control_channel
+                    ? [`PRI ${formatSiteChannel(selected.primary_control_channel)}`]
+                    : []),
+                  ...(selected.secondary_control_channels ?? []).map(
+                    (c) => `SEC ${formatSiteChannel(c)}`,
+                  ),
+                ].join("\n")}
+              />
+            </div>
+          ) : null}
           {(() => {
             const bp = selected.dmr_band_plan;
             if (!bp) return null;
@@ -424,7 +477,7 @@ export function Systems() {
                 Neighbor sites ({selected.neighbors.length})
               </p>
               <DetailField
-                label="RFSS / Site → downlink"
+                label="RFSS / Site · channel → downlink / uplink"
                 mono
                 value={selected.neighbors
                   .map((n) => formatNeighbor(n, idBase))

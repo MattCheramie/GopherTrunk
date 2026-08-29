@@ -100,3 +100,28 @@ decoder parses it (`ParseUnitToUnitAnswerRequest`) and publishes a
 standard one: a field decode of a Motorola 0x05 with the standard layout
 produced garbage IDs (`src=0`, `target=0x3C0000`), so vendor 0x05 is left
 unhandled until its real layout is reversed.
+
+## Multi-Block Trunking (MBT / AMBT) — PDUs on the control channel
+
+A P25 control channel also carries trunking signalling in **PDU frames**
+(DUID 0xC): a 12-octet PDU header block plus N data blocks, each 196 bits
+with the *same* ½-rate trellis + interleave channel coding as a TSBK block.
+Two formats matter (OP25 `p25p1_fdma::process_PDU` is the validation
+reference; SDRTrunk's `AMBTC*` classes pin the field layouts):
+
+- **AMBT** (Alternate MBT, format `0x17`, SAP 61): the opcode rides in header
+  octet 7, and header octets 3-5 / 8-9 carry message fields. Decoded by
+  `mbt.go` → `dispatchMBT` for `NET_STS_BCST` (0x3B — the WACN, plus explicit
+  downlink *and* uplink channels), `RFSS_STS_BCST` (0x3A) and `ADJ_STS_BCST`
+  (0x3C — neighbours with explicit uplinks). Many systems (notably Motorola)
+  broadcast most or all of their neighbour list **only** this way.
+- **Unconfirmed MBT** (format `0x15`): opcode in data block 0; layouts differ.
+  Recognised and counted, not yet decoded.
+
+Validation: the header ends in the same augmented CRC-CCITT16 as a TSBK
+trailer (`framing.CRCCCITTAugmented(header) == 0`); the concatenated data
+blocks end in a 4-octet CRC-32 (poly 0x04C11DB7, init 0, final XOR — see
+`mbtCRC32`). An **explicit uplink channel number resolves as plain
+base + number × spacing with NO transmit offset** — the uplink channel number
+already encodes the uplink frequency (verified against SDRTrunk output:
+channel 2-3430 on a 440 MHz/6.25 kHz band = 461.4375 MHz).
