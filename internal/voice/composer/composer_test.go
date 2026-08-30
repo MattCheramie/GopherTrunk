@@ -651,8 +651,8 @@ func TestComposerSkipsDigitalProtocol(t *testing.T) {
 	bus.Publish(events.Event{
 		Kind: events.KindCallStart,
 		Payload: trunking.CallStart{
-			// dPMR still has no composer voice chain — it must be bypassed.
-			Grant:        trunking.Grant{Protocol: "dpmr", GroupID: 1, FrequencyHz: 851_000_000},
+			// YSF still has no composer voice chain — it must be bypassed.
+			Grant:        trunking.Grant{Protocol: "ysf", GroupID: 1, FrequencyHz: 851_000_000},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
 		},
@@ -681,6 +681,58 @@ func TestComposerRunsNXDNVoiceChain(t *testing.T) {
 		Kind: events.KindCallStart,
 		Payload: trunking.CallStart{
 			Grant:        trunking.Grant{Protocol: "nxdn", GroupID: 1, FrequencyHz: 851_000_000},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, time.Second, func() bool {
+		for _, s := range c.ActiveChains() {
+			if s == "VOICE-1" {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// TestComposerRunsDPMRVoiceChain / TestComposerRunsDStarVoiceChain
+// confirm the dPMR and D-STAR grants are no longer bypassed: the
+// experimental (unverified-on-air) voice chains must launch for the
+// device. Mirrors TestComposerRunsNXDNVoiceChain.
+func TestComposerRunsDPMRVoiceChain(t *testing.T) {
+	src := newFakeSource()
+	c, bus, _, _, teardown := mkComposer(t, src)
+	defer teardown()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant:        trunking.Grant{Protocol: "dpmr", GroupID: 1, FrequencyHz: 446_100_000},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, time.Second, func() bool {
+		for _, s := range c.ActiveChains() {
+			if s == "VOICE-1" {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func TestComposerRunsDStarVoiceChain(t *testing.T) {
+	src := newFakeSource()
+	c, bus, _, _, teardown := mkComposer(t, src)
+	defer teardown()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant:        trunking.Grant{Protocol: "dstar", GroupID: 1, FrequencyHz: 145_670_000},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
 		},

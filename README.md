@@ -300,16 +300,19 @@ log, per-talkgroup policy) all ship.
 **Remaining gaps:**
 
 - **Digital-voice composer chains.** FM, DMR, P25 Phase 1 / 2, TETRA
-  TMO + DMO (clean-room ACELP), and NXDN decode to audio — TETRA
-  verified bit-exact against the ETSI EN 300 395-2 reference codec
-  (reproducible via the env-gated harness in
+  TMO + DMO (clean-room ACELP), NXDN, dPMR, and D-STAR decode to
+  audio — TETRA verified bit-exact against the ETSI EN 300 395-2
+  reference codec (reproducible via the env-gated harness in
   `internal/voice/acelp/etsi_reference_test.go`; the ETSI vectors are
-  copyrighted and not committed). NXDN is wired end-to-end but not yet
-  verified on air. TETRA DMO records audio through the same ACELP
-  vocoder but is experimental: call source / destination identity is
-  not decoded (recordings file under group 0) and the chain still
-  awaits its on-air A/B (issue #1003). dPMR, YSF, D-STAR voice (plus
-  EDACS ProVoice) are followed and logged but not yet turned into PCM.
+  copyrighted and not committed). NXDN, dPMR, and D-STAR are wired
+  end-to-end but not yet verified on air: each chain's AMBE
+  interleave table is a documented placeholder awaiting a real voice
+  capture (see `internal/radio/{nxdn,dpmr,dstar}/voice_ambe.go`).
+  TETRA DMO records audio through the same ACELP vocoder but is
+  experimental: call source / destination identity is not decoded
+  (recordings file under group 0) and the chain still awaits its
+  on-air A/B (issue #1003). YSF voice (plus EDACS ProVoice) is
+  followed and logged but not yet turned into PCM.
 - **DMR 2-slot interleaved voice + embedded-LC labelling.** Both
   timeslots of a carrier are tracked, recorded, and logged as separate
   calls; a stride-2 interleaved superframe decoder
@@ -337,13 +340,15 @@ log, per-talkgroup policy) all ship.
   against a mock transport. HackRF (Pro board-ID detection,
   `fpga_dc_block`, `dc_avoid`, `rf_amp`) and Airspy (macOS async
   bulk-IN rework, native-rate behaviour) have since been exercised
-  and fixed against attached hardware in the field, and Airspy has a
-  hardware-gated harness (`internal/sdr/airspy/airspy_real_test.go`,
-  `GOPHERTRUNK_AIRSPY_REAL`). The remaining gaps: Airspy **HF+** has
-  had no attached-hardware exercise at all, HackRF has no
-  hardware-gated harness, and MRC diversity combining over
-  SoapyRemote (field-tested on USRP X310 / B210) is still
-  experimental pending a broader on-air A/B.
+  and fixed against attached hardware in the field, and all three
+  backends now have hardware-gated harnesses
+  (`internal/sdr/{airspy,airspyhf,hackrf}/*_real_test.go`, gated on
+  `GOPHERTRUNK_{AIRSPY,AIRSPYHF,HACKRF}_REAL`; `make test-*-real`).
+  The remaining gaps: Airspy **HF+** has had no attached-hardware
+  exercise at all (its harness has never been run against a real
+  unit), and MRC diversity combining over SoapyRemote (field-tested
+  on USRP X310 / B210) is still experimental pending a broader
+  on-air A/B.
 - **FEC inner-layer real-air validation.** The NXDN per-protocol
   interleaver + puncture chain is verified only against synthetic
   vectors — no real NXDN capture exists in `samples/nxdn/`, so the

@@ -127,10 +127,17 @@ You already have the input side: every DMR call the daemon records with
 AMBE+2 frames (7 bytes/frame) next to the `.wav`. Pick a **female-voice** call —
 the hard case — and:
 
-1. **Reference-decode the same `.raw`** through an independent AMBE+2 decoder:
+1. **Reference-decode the same frames** through an independent AMBE+2 decoder.
+   DSD-FME's `-r` reads its own cookie-headed `.amb` container, not the flat
+   `.raw` — enable `recordings.mbe_files: true` so the daemon writes the
+   `.amb` next to the recording, then:
 
    ```sh
-   dsd-fme -r <call>.raw -o reference.wav      # 8 kHz mono 16-bit PCM
+   dsd-fme -fs -w reference12k.wav -r <call>.amb
+   # DSD-FME's -w stamps an 8 kHz header on 12 kHz synthesis (see
+   # docs/vocoders.md) — fix the rate before comparing:
+   tail -c +45 reference12k.wav > ref12k.pcm
+   sox -t raw -r 12000 -e signed -b 16 -c 1 ref12k.pcm -r 8000 reference.wav
    ```
 
 2. **Drop both files in and run the A/B** (the test skips until the reference

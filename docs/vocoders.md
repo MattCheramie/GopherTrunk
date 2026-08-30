@@ -72,12 +72,15 @@ Default mapping (see `voice.DefaultVocoderForProtocol`):
 | Grant.Protocol | Vocoder | Notes                            |
 | -------------- | ------- | -------------------------------- |
 | `p25`          | `imbe`  | P25 Phase 1 LDU1 / LDU2          |
-| `p25-phase2`   | `ambe2` | P25 Phase 2                      |
-| `dmr-tier2`    | `ambe2` | DMR Tier II conventional         |
-| `dmr-tier3`    | `ambe2` | DMR Tier III trunked             |
-| `nxdn`         | `ambe2` |                                  |
-| `dpmr`         | `ambe2` | dPMR Mode 3                      |
+| `p25-phase2`   | `ambe2` | P25 Phase 2 — AMBE+2 3600x2400   |
+| `dmr-tier1`    | `ambe2-dmr` | DMR Tier I direct-mode — AMBE+2 3600x2450 |
+| `dmr-tier2`    | `ambe2-dmr` | DMR Tier II conventional         |
+| `dmr-tier3`    | `ambe2-dmr` | DMR Tier III trunked             |
+| `nxdn`         | `ambe2-dmr` | NXDN VCH — AMBE+2 3600x2450 (EHR); unverified on air |
+| `dpmr`         | `ambe2-dmr` | dPMR Mode 3 — AMBE+2 3600x2450; unverified on air |
+| `dstar`        | `ambe2` | D-STAR DV — original AMBE 3600x2400 (the base decoder's codebook); unverified on air |
 | `tetra`        | `tetra-acelp` | full-rate ACELP; up to 4 concurrent same-carrier timeslots |
+| `tetra-dmo`    | `tetra-acelp` | TETRA Direct Mode — same TCH/S speech frames |
 
 Analog protocols (`motorola`, `edacs`, `ltr`, `mpt1327`, etc.)
 have no entry — for those, the composer's FM chain feeds

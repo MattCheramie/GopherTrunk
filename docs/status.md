@@ -52,10 +52,12 @@ and Airspy HF+ (Discovery / Dual Port / legacy) are all supported by
 pure-Go drivers with mock-transport unit tests. HackRF (Pro board-ID
 detection, `fpga_dc_block`, `dc_avoid`, `rf_amp`) and Airspy (macOS
 async bulk-IN rework, native-rate behaviour) have been exercised and
-fixed against attached hardware in the field, and Airspy has a
-hardware-gated harness (`internal/sdr/airspy/airspy_real_test.go`,
-`GOPHERTRUNK_AIRSPY_REAL`). Remaining: Airspy HF+ has had no
-attached-hardware exercise, and HackRF has no hardware-gated harness.
+fixed against attached hardware in the field, and all three backends
+have hardware-gated harnesses
+(`internal/sdr/{airspy,airspyhf,hackrf}/*_real_test.go`, gated on
+`GOPHERTRUNK_{AIRSPY,AIRSPYHF,HACKRF}_REAL`; `make test-*-real`).
+Remaining: Airspy HF+ has had no attached-hardware exercise — its
+harness has never been run against a real unit.
 SDRPlay / USRP / BladeRF have no local zero-CGO driver (their vendor
 libraries are C), but are reachable over SoapyRemote — USRP X310 and
 B210 rigs are field-tested that way.
@@ -63,17 +65,24 @@ B210 rigs are field-tested that way.
 ### Digital-voice composer chains
 
 FM (incl. analog trunking), DMR, P25 Phase 1 / 2, TETRA TMO + DMO
-(clean-room ACELP), and NXDN decode to audio. TETRA voice is verified
-bit-exact against the ETSI EN 300 395-2 reference codec (via the
-env-gated harness in `internal/voice/acelp/etsi_reference_test.go` —
-the ETSI vectors are copyrighted and not committed); NXDN is wired
-end-to-end through the composer but not yet verified on air. TETRA
-DMO (direct mode, `protocol: tetra-dmo`) records audio through the
-same ACELP vocoder but is experimental: call source / destination
-identity is not decoded (recordings file under group 0) and the
-chain still awaits its on-air A/B (issue #1003). dPMR, YSF, and
-D-STAR voice chains, plus EDACS ProVoice, are still bypassed — their
-calls are followed and logged but not yet turned into PCM.
+(clean-room ACELP), NXDN, dPMR, and D-STAR decode to audio. TETRA
+voice is verified bit-exact against the ETSI EN 300 395-2 reference
+codec (via the env-gated harness in
+`internal/voice/acelp/etsi_reference_test.go` — the ETSI vectors are
+copyrighted and not committed). NXDN, dPMR, and D-STAR are wired
+end-to-end through the composer but not yet verified on air: each
+chain's AMBE interleave table is a documented placeholder awaiting a
+real voice capture (`internal/radio/{nxdn,dpmr,dstar}/voice_ambe.go`
+— dPMR anchors on the FS1/FS2 voice syncs and renders through the
+AMBE+2 3600x2450 "ambe2-dmr" decoder; D-STAR anchors its 96-bit DV
+cadence on the Slow Data sync and renders through the base
+AMBE 3600x2400 "ambe2" decoder). TETRA DMO (direct mode,
+`protocol: tetra-dmo`) records audio through the same ACELP vocoder
+but is experimental: call source / destination identity is not
+decoded (recordings file under group 0) and the chain still awaits
+its on-air A/B (issue #1003). YSF voice and EDACS ProVoice are still
+bypassed — their calls are followed and logged but not yet turned
+into PCM.
 
 ### Per-protocol on-air FEC inner layers
 

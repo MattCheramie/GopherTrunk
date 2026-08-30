@@ -21,20 +21,22 @@ type runtimeSnapshot struct {
 	daemon  *Daemon // for StartupWarnings, ConfigPath, ...
 }
 
-// vocoderProtocolMap is the canonical mapping the daemon hands to
-// each protocol's voice decoder at construction time. Surfaced here
-// so the TUI's Vocoders tab matches what the engine actually loads.
-// Keep in sync with the per-protocol pipeline factories in
-// internal/radio/*/pipeline.go.
+// vocoderProtocolMap is the Protocol → vocoder display mapping the
+// TUI's Vocoders tab shows. Keep in sync with
+// voice.DefaultVocoderForProtocol (internal/voice/recorder.go), which
+// is what the recorder actually loads; "—" marks protocols whose
+// voice is not decoded to PCM (analog FM chains, or digital voice
+// not yet wired).
 var vocoderProtocolMap = map[string]string{
 	"p25":        "imbe",
 	"p25-phase2": "ambe2",
-	"dmr":        "ambe2",
-	"nxdn":       "ambe2",
-	"dpmr":       "ambe2",
-	"tetra":      "ambe2",
-	"ysf":        "ambe2",
-	"edacs":      "ambe2",
+	"dmr":        "ambe2-dmr",
+	"nxdn":       "ambe2-dmr",
+	"dpmr":       "ambe2-dmr",
+	"dstar":      "ambe2",
+	"tetra":      "tetra-acelp",
+	"ysf":        "—",
+	"edacs":      "—",
 	"motorola":   "—",
 	"ltr":        "—",
 	"mpt1327":    "—",

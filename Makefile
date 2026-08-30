@@ -16,7 +16,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
+.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-airspyhf-real test-airspyhf-real-bias test-airspyhf-real-diag test-hackrf-real test-hackrf-real-bias test-hackrf-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
 
 all: build
 
@@ -76,6 +76,46 @@ test-airspy-real-bias:
 # isolating where open-time failures occur.
 test-airspy-real-diag:
 	GOPHERTRUNK_AIRSPY_REAL=1 GOPHERTRUNK_AIRSPY_REAL_DIAG=1 $(GO) test -tags "$(TAGS)" -race -count=1 -run TestRealHardware_ ./internal/sdr/airspy
+
+# test-airspyhf-real runs an opt-in real-hardware probe against an attached
+# Airspy HF+ (Discovery / Dual Port / legacy). The test package skips unless
+# GOPHERTRUNK_AIRSPYHF_REAL=1 is set; this target sets it automatically so
+# accidental invocations fail fast when no device is present.
+test-airspyhf-real:
+	GOPHERTRUNK_AIRSPYHF_REAL=1 $(GO) test -tags "$(TAGS)" -race -count=1 -run TestRealHardware_ ./internal/sdr/airspyhf
+
+# test-airspyhf-real-bias is the same real-hardware suite plus explicit
+# bias-tee toggle validation. Use only when a safe load is connected
+# (Dual Port: bias rides the HF/SMA-1 port only).
+test-airspyhf-real-bias:
+	GOPHERTRUNK_AIRSPYHF_REAL=1 GOPHERTRUNK_AIRSPYHF_REAL_BIAS_TEE=1 $(GO) test -tags "$(TAGS)" -race -count=1 -run TestRealHardware_ ./internal/sdr/airspyhf
+
+# test-airspyhf-real-diag runs a lower-level raw USB control-transfer probe
+# (version string, serial/board-id, samplerate table) in addition to the
+# driver-level real hardware tests, useful for isolating where open-time
+# failures occur.
+test-airspyhf-real-diag:
+	GOPHERTRUNK_AIRSPYHF_REAL=1 GOPHERTRUNK_AIRSPYHF_REAL_DIAG=1 $(GO) test -tags "$(TAGS)" -race -count=1 -run TestRealHardware_ ./internal/sdr/airspyhf
+
+# test-hackrf-real runs an opt-in real-hardware probe against an attached
+# HackRF (One / Jawbreaker / Rad1o / Pro). The test package skips unless
+# GOPHERTRUNK_HACKRF_REAL=1 is set; this target sets it automatically so
+# accidental invocations fail fast when no device is present.
+test-hackrf-real:
+	GOPHERTRUNK_HACKRF_REAL=1 $(GO) test -tags "$(TAGS)" -race -count=1 -run TestRealHardware_ ./internal/sdr/hackrf
+
+# test-hackrf-real-bias is the same real-hardware suite plus explicit
+# bias-tee (+3.3 V ANTENNA_ENABLE) toggle validation. Use only when a safe
+# load is connected.
+test-hackrf-real-bias:
+	GOPHERTRUNK_HACKRF_REAL=1 GOPHERTRUNK_HACKRF_REAL_BIAS_TEE=1 $(GO) test -tags "$(TAGS)" -race -count=1 -run TestRealHardware_ ./internal/sdr/hackrf
+
+# test-hackrf-real-diag runs a lower-level raw USB control-transfer probe
+# (board-id, version string, transceiver-mode-off write) across every known
+# HackRF PID in addition to the driver-level real hardware tests, useful
+# for isolating where open-time failures occur.
+test-hackrf-real-diag:
+	GOPHERTRUNK_HACKRF_REAL=1 GOPHERTRUNK_HACKRF_REAL_DIAG=1 $(GO) test -tags "$(TAGS)" -race -count=1 -run TestRealHardware_ ./internal/sdr/hackrf
 
 # integration boots the wired daemon (no real SDR) end-to-end and asserts
 # the engine + recorder + call log + metrics + API agree on a synthetic

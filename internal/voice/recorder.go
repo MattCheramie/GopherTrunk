@@ -398,8 +398,18 @@ func DefaultVocoderForProtocol() map[string]string {
 		// through the 3600x2450 decoder, not the 3600x2400 "ambe2".
 		// (Unverified on air — the 2450-vs-2400 codebook is one of the
 		// things an NXDN voice capture confirms; see voice_ambe.go.)
-		"nxdn":      "ambe2-dmr",   // NXDN VCH — AMBE+2 3600x2450 (EHR)
-		"dpmr":      "ambe2",       // dPMR Mode 3 (digital)
+		"nxdn": "ambe2-dmr", // NXDN VCH — AMBE+2 3600x2450 (EHR)
+		// dPMR TCH voice is AMBE+2 3600x2450 like DMR / NXDN (ETSI
+		// TS 102 658 specifies the AMBE+2 half-rate codec at
+		// 2450 bps voice + 1150 bps FEC), NOT the 3600x2400 base
+		// codebook this entry used to name. Same unverified-on-air
+		// caveat as NXDN: the 2450-vs-2400 codebook choice is one
+		// of the things a real dPMR voice capture confirms.
+		"dpmr": "ambe2-dmr", // dPMR Mode 3 (digital) — AMBE+2 3600x2450 (EHR)
+		// D-STAR voice is the original AMBE 3600x2400 — exactly the
+		// base "ambe2" decoder (internal/voice/ambe2/params.go is a
+		// port of mbelib's ambe3600x2400.c, the D-STAR variant).
+		"dstar":     "ambe2",       // D-STAR DV — AMBE 3600x2400
 		"tetra":     "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
 		"tetra-dmo": "tetra-acelp", // TETRA DMO (Direct Mode) — same TCH/S ACELP speech frames
 	}

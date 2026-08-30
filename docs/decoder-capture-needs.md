@@ -277,11 +277,15 @@ false-positive coverage but **not blocking**.
   FEC is on by default with no outstanding capture.
 
 ### Separate from captures: digital-voice composer chains
-dPMR, YSF, D-STAR voice (plus EDACS ProVoice) are followed and logged
-but **not yet turned into PCM** — that's an *implementation* gap
-(vocoder/composer wiring), not something a capture unblocks. (TETRA
-and NXDN voice now decode to PCM — TETRA verified bit-exact against
-the ETSI EN 300 395-2 reference, NXDN wired but unverified on air.)
+YSF and EDACS ProVoice voice are followed and logged but **not yet
+turned into PCM** — that's an *implementation* gap (vocoder/composer
+wiring), not something a capture unblocks. (TETRA, NXDN, dPMR, and
+D-STAR voice now decode to PCM — TETRA verified bit-exact against the
+ETSI EN 300 395-2 reference; NXDN, dPMR, and D-STAR wired end-to-end
+but unverified on air: each needs a real voice capture to confirm its
+AMBE interleave table — a documented placeholder in
+`internal/radio/{nxdn,dpmr,dstar}/voice_ambe.go` — plus the frame
+geometry and codebook choice, exactly the #764/#771 gate.)
 
 ---
 
@@ -292,7 +296,10 @@ the ETSI EN 300 395-2 reference, NXDN wired but unverified on air.)
 3. **YSF** DN mode (≥ 10 s IQ, 48 kHz).
 4. **DMR 2-slot** both-timeslots-active call (≥ 10 s `.cfile`).
 5. **IMBE + AMBE+2** voice `.raw` + DSD-FME WAV pairs (level calibration).
-6. POCSAG / FLEX / DSC / APRS / AIS / M17 real-fixture confirmation.
+6. **dPMR / D-STAR voice** (≥ 10 s IQ, 48 kHz, clear voice) — confirms
+   the placeholder AMBE interleave tables + frame geometry behind the
+   new experimental voice chains.
+7. POCSAG / FLEX / DSC / APRS / AIS / M17 real-fixture confirmation.
 
 Every capture needs a `metadata.json` sidecar with `sample_rate_hz`,
 `center_freq_hz`, and the expected decode (SystemID / talkgroup /
