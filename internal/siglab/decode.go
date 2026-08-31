@@ -69,7 +69,10 @@ func ParseSampleFormat(s string) (SampleFormat, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "u8", "":
 		return FormatU8, nil
-	case "f32", "float32", "cfile":
+	case "f32", "float32", "cfile", "cf32", "fc32":
+		// cf32/fc32 are the SoapySDR / OpenWebRX+ spellings of interleaved
+		// little-endian float32 IQ — the format OWRX+ emits when piping a
+		// channelized stream into `replay -in -` (issue #314).
 		return FormatF32, nil
 	case "wav", "sw16", "s16":
 		return FormatWAV, nil
