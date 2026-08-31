@@ -12,18 +12,22 @@
   .term-v { position: absolute; top: 150px; width: 100%; text-align: center;
     font-size: 72px; font-weight: 760; letter-spacing: -0.01em; padding: 0 40px;
     box-sizing: border-box; }
-  .band { position: absolute; top: 420px; left: 0; width: 1080px; height: 608px;
+  .band { position: absolute; top: 390px; left: 0; width: 1080px; height: 756px;
     overflow: hidden; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-  .band iframe { width: 1920px; height: 1080px; border: 0;
-    transform: scale(0.5625); transform-origin: top left; pointer-events: none; }
-  .cap-v { position: absolute; top: 1120px; left: 50%; transform: translateX(-50%);
+  /* scale 0.7 shows the center 1543px of the 1920 stage — every must-read visual
+     is inside that span (slight decorative side-crop only) */
+  .band iframe { width: 1920px; height: 1080px; border: 0; margin-left: -132px;
+    transform: scale(0.7); transform-origin: top left; pointer-events: none; }
+  .cap-v { position: absolute; top: 1230px; left: 50%; transform: translateX(-50%);
     width: 940px; text-align: center; font-size: 52px; font-weight: 650; line-height: 1.3;
     color: var(--text); }
   .cap-v .box { display: inline; background: rgba(22,27,34,.92); padding: 8px 18px;
     border-radius: 12px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   .hook-v { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg);
-    display: flex; align-items: center; justify-content: center; text-align: center;
-    font-size: 88px; font-weight: 780; line-height: 1.15; padding: 0 70px; z-index: 5; }
+    z-index: 5; }
+  .hook-v .inner { position: absolute; top: 50%; left: 70px; right: 70px;
+    transform: translateY(-50%); text-align: center;
+    font-size: 88px; font-weight: 780; line-height: 1.15; }
   .brand-v { position: absolute; bottom: 150px; width: 100%; text-align: center;
     font-family: var(--mono); font-size: 32px; color: var(--accent); }
   .stripe-v { position: absolute; left: 0; right: 0; bottom: 0; height: 12px;
@@ -57,7 +61,7 @@ const OFFSET = 2.0;
 const T = window.TIMELINE, V = window.VCFG;
 const dur = T.duration - OFFSET;
 document.getElementById("term").textContent = V.term;
-document.getElementById("hook").innerHTML = V.hook;
+document.getElementById("hook").innerHTML = `<div class="inner">${V.hook}</div>`;
 const iframe = document.getElementById("scene");
 const lines = T.events.flatMap(e => e.lines || []);
 let frameReady = false;
