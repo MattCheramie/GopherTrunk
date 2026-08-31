@@ -1,0 +1,1004 @@
+1
+00:00:00,600 --> 00:00:13,984
+Right now, the air around you is carrying thousands of conversations — police dispatch, aircraft, weather
+satellites, your neighbor's doorbell — all at once, all invisible, all riding ripples in the electromagnetic field.
+
+2
+00:00:13,904 --> 00:00:29,065
+In the next half hour you'll learn the physics that makes that possible: what a radio wave actually is, the three knobs every
+transmitter turns, why spectrum is priced like real estate, and the one number that decides whether a signal decodes or dies.
+
+3
+00:00:28,985 --> 00:00:32,757
+This is Radio Fundamentals — how signals
+actually work.
+
+4
+00:00:34,130 --> 00:00:34,987
+Welcome.
+
+5
+00:00:34,907 --> 00:00:48,861
+This course is for anyone pointing a software-defined radio at the sky — scanner listeners, new hams, tinkerers with a
+thirty-dollar dongle — and for anyone who's ever nodded along to "megahertz" without being totally sure what it measures.
+
+6
+00:00:48,781 --> 00:00:52,006
+No math beyond arithmetic, no
+prerequisites.
+
+7
+00:00:51,926 --> 00:00:58,089
+Just the mental models underneath every antenna,
+every waterfall display, and every decode.
+
+8
+00:00:58,239 --> 00:01:00,722
+Six chapters, each one idea.
+
+9
+00:01:00,642 --> 00:01:04,135
+First, the radio wave itself — what's
+actually rippling.
+
+10
+00:01:04,055 --> 00:01:07,559
+Then frequency, the address every signal
+lives at.
+
+11
+00:01:07,479 --> 00:01:11,355
+Then modulation — how a wave is made to
+carry a message.
+
+12
+00:01:11,275 --> 00:01:14,617
+Then bandwidth, the width of the road it
+drives on.
+
+13
+00:01:14,537 --> 00:01:22,883
+And finally the measuring tools: the decibel, radio's own arithmetic,
+and signal-to-noise ratio, the number that decides everything.
+
+14
+00:01:23,033 --> 00:01:34,037
+Every chapter stands alone, and each one matches a written Field Guide article at gophertrunk
+dot org — linked below, chapter by chapter, if you want the formulas and the sources.
+
+15
+00:01:33,957 --> 00:01:35,348
+Skip freely.
+
+16
+00:01:35,268 --> 00:01:38,726
+But watched in order, each idea hands off
+to the next.
+
+17
+00:01:38,646 --> 00:01:40,548
+Let's start with the ripple itself.
+
+18
+00:01:43,730 --> 00:01:50,311
+A radio wave is a ripple — not in water, but in
+the electromagnetic field that fills all of space.
+
+19
+00:01:50,231 --> 00:01:53,561
+Drop a stone in a pond and rings spread
+outward.
+
+20
+00:01:53,481 --> 00:02:03,336
+Feed an alternating current into an antenna, and the same thing happens to the
+invisible field around it: a disturbance detaches and races away at the speed of light.
+
+21
+00:02:03,256 --> 00:02:10,534
+Every wireless thing you own — your phone, your car fob,
+a police radio — is throwing stones into that same pond.
+
+22
+00:02:10,684 --> 00:02:20,400
+Formally, a radio wave is electromagnetic radiation in the radio range of the
+spectrum — by convention, about three kilohertz up to three hundred gigahertz.
+
+23
+00:02:20,320 --> 00:02:23,081
+It is the same physical phenomenon as
+light.
+
+24
+00:02:23,001 --> 00:02:29,117
+Radio, microwaves, infrared, visible
+light: one family, different frequencies.
+
+25
+00:02:29,037 --> 00:02:36,187
+Radio just sits at the low, long-wavelength end — the
+part that bends around hills and passes through walls.
+
+26
+00:02:36,337 --> 00:02:37,636
+Here is the mechanism.
+
+27
+00:02:37,556 --> 00:02:41,815
+The accelerating charges in the antenna
+create an oscillating electric field.
+
+28
+00:02:41,735 --> 00:02:46,435
+A changing electric field generates a
+magnetic field at right angles to it.
+
+29
+00:02:46,355 --> 00:02:49,720
+And a changing magnetic field regenerates
+the electric field.
+
+30
+00:02:49,640 --> 00:02:57,486
+The two leapfrog each other, detach from the antenna, and
+self-propagate — no wires, no air, no medium needed at all.
+
+31
+00:02:57,406 --> 00:03:00,795
+That is why radio crosses the vacuum of
+space just fine.
+
+32
+00:03:00,945 --> 00:03:03,811
+Freeze one of those waves and it looks
+like this.
+
+33
+00:03:03,731 --> 00:03:05,993
+Three properties describe it completely.
+
+34
+00:03:05,913 --> 00:03:08,593
+Amplitude — how strong the wave is.
+
+35
+00:03:08,513 --> 00:03:11,773
+Frequency — how many times it cycles each
+second.
+
+36
+00:03:11,693 --> 00:03:15,128
+And phase — where in its cycle it is at a
+given instant.
+
+37
+00:03:15,048 --> 00:03:19,899
+Hold on to those three, because they are the
+only three things a transmitter can manipulate.
+
+38
+00:03:19,819 --> 00:03:32,159
+Every radio scheme ever invented — AM, FM, the digital modulation in a trunked police system
+— is just a different way of wiggling amplitude, frequency, or phase in step with a message.
+
+39
+00:03:32,309 --> 00:03:37,914
+Out in the world, the ripple spreads and weakens
+— power thins out with the square of distance.
+
+40
+00:03:37,834 --> 00:03:45,495
+By the time it reaches a receiving antenna ten miles away,
+the passing field induces a current of just a few microvolts.
+
+41
+00:03:45,415 --> 00:03:49,895
+That whisper is what a receiver amplifies,
+filters, and decodes.
+
+42
+00:03:49,815 --> 00:03:58,567
+Everything in radio engineering — antennas, amplifiers, the decibel math
+coming later in this course — exists to protect that whisper on its trip.
+
+43
+00:03:58,717 --> 00:04:01,501
+And this is where GopherTrunk picks up the
+story.
+
+44
+00:04:01,421 --> 00:04:16,478
+A software-defined radio doesn't decode the wave directly: its front end mixes a slice of spectrum down and digitizes
+it into a stream of IQ samples — complex numbers that capture the wave's amplitude and phase at every instant.
+
+45
+00:04:16,398 --> 00:04:20,215
+From that point on, the physical wave has
+become arithmetic.
+
+46
+00:04:20,135 --> 00:04:25,799
+But every property you just met survives the conversion
+— and recovering the message means tracking all three.
+
+47
+00:04:26,749 --> 00:04:39,402
+So: a radio wave is a self-propagating ripple in the electromagnetic field, it lives between three
+kilohertz and three hundred gigahertz, and it gives a transmitter exactly three knobs to turn.
+
+48
+00:04:39,322 --> 00:04:41,677
+The full write-up is linked below.
+
+49
+00:04:45,330 --> 00:04:48,196
+So a wave is a ripple with three
+properties.
+
+50
+00:04:48,116 --> 00:04:53,896
+The first one — how fast it wiggles — is so
+important it gets a whole chapter: frequency.
+
+51
+00:04:56,460 --> 00:05:00,034
+One hundred sixty-two point five five zero
+megahertz.
+
+52
+00:04:59,954 --> 00:05:05,746
+Tune there, almost anywhere in the United States, and
+you'll hear the robotic voice of a weather station.
+
+53
+00:05:05,666 --> 00:05:13,617
+That number — the one thing everybody knows about a radio signal
+— is its frequency: how many times the wave cycles each second.
+
+54
+00:05:13,537 --> 00:05:15,915
+Get it right and the signal is yours.
+
+55
+00:05:15,835 --> 00:05:18,457
+Get it wrong by a hair and you hear
+nothing at all.
+
+56
+00:05:18,607 --> 00:05:28,392
+Frequency is measured in hertz — one hertz is one cycle per second, named for Heinrich
+Hertz, who first generated and detected radio waves in the eighteen-eighties.
+
+57
+00:05:28,312 --> 00:05:38,666
+It's the inverse of the cycle's duration: a signal at one hundred megahertz
+repeats a hundred million times a second, so each cycle lasts just ten nanoseconds.
+
+58
+00:05:38,816 --> 00:05:41,926
+Picture two waves side by side for one
+second.
+
+59
+00:05:41,846 --> 00:05:50,226
+The low-frequency wave fits a handful of cycles into that
+second; the high-frequency wave packs in thousands of times more.
+
+60
+00:05:50,146 --> 00:05:54,696
+Same speed of travel — always the speed of
+light — just a faster wiggle.
+
+61
+00:05:54,616 --> 00:06:04,436
+And since radio numbers get big fast, we scale the unit: kilohertz for
+thousands, megahertz for millions, gigahertz for billions of cycles per second.
+
+62
+00:06:04,586 --> 00:06:10,621
+Frequency has a twin: wavelength — the
+physical distance one cycle covers in flight.
+
+63
+00:06:10,541 --> 00:06:20,187
+Because every radio wave travels at the same speed, the two are locked
+on a seesaw: wavelength equals the speed of light divided by frequency.
+
+64
+00:06:20,107 --> 00:06:23,101
+Double the frequency and the wavelength
+halves.
+
+65
+00:06:23,021 --> 00:06:34,455
+An FM broadcast station at one hundred megahertz has waves three meters long; a UHF
+public-safety channel near four hundred sixty megahertz, about sixty-five centimeters.
+
+66
+00:06:34,375 --> 00:06:40,932
+That's why antennas come in different sizes — an antenna wants to
+match its wave, and we'll spend a whole chapter on that later.
+
+67
+00:06:41,082 --> 00:06:47,710
+Lay every possible frequency along one axis and you get
+the radio spectrum — and its neighborhoods have names.
+
+68
+00:06:47,630 --> 00:06:52,504
+HF, the shortwave bands that bounce off
+the upper atmosphere and cross oceans.
+
+69
+00:06:52,424 --> 00:06:56,834
+VHF, home of FM broadcast, aircraft, and
+marine radio.
+
+70
+00:06:56,754 --> 00:07:02,464
+UHF, where most trunked public-safety
+systems, cell phones, and Wi-Fi live.
+
+71
+00:07:02,384 --> 00:07:07,990
+A frequency isn't just a number — it's an
+address, with physics and regulations attached.
+
+72
+00:07:08,140 --> 00:07:15,011
+For an SDR, frequency is the first thing you set: it
+decides what slice of spectrum lands in the capture.
+
+73
+00:07:14,931 --> 00:07:21,919
+But here's the catch — cheap tuner hardware runs slightly
+off its dial frequency, by a few parts per million.
+
+74
+00:07:21,839 --> 00:07:33,052
+GopherTrunk, like any serious decoder, applies a correction and then continuously tracks the
+residual error while it decodes, because at these precisions, oscillators drift with temperature.
+
+75
+00:07:32,972 --> 00:07:37,951
+Getting the frequency right, and keeping it
+right, is the first requirement for any decode.
+
+76
+00:07:38,901 --> 00:07:48,419
+So: frequency is cycles per second, it's chained to wavelength through the speed
+of light, and it places every signal into a named neighborhood of the spectrum.
+
+77
+00:07:48,339 --> 00:07:50,207
+Full write-up linked below.
+
+78
+00:07:53,860 --> 00:07:57,097
+You can now find any signal's address on
+the spectrum.
+
+79
+00:07:57,017 --> 00:08:01,416
+But a wave sitting at an address,
+perfectly steady, says nothing at all.
+
+80
+00:08:01,336 --> 00:08:04,120
+Making it talk is next: modulation.
+
+81
+00:08:06,690 --> 00:08:13,201
+Modulation is the answer to an embarrassing question:
+a perfect radio wave says absolutely nothing.
+
+82
+00:08:13,121 --> 00:08:21,525
+A pure, steady carrier is just a hum in the spectrum — endlessly
+repeating, perfectly predictable, carrying zero information.
+
+83
+00:08:21,445 --> 00:08:24,427
+To make a wave say something, you have to
+change it.
+
+84
+00:08:24,347 --> 00:08:32,402
+Modulation is the art of changing a carrier wave in step with a message
+— and every radio scheme in history is a variation on that one move.
+
+85
+00:08:32,552 --> 00:08:42,965
+Remember the three properties from the last chapter's write-up — a sine wave has an
+amplitude, a frequency, and a phase, and those are the only things a transmitter can touch.
+
+86
+00:08:42,885 --> 00:08:45,762
+So there are only three families of
+modulation.
+
+87
+00:08:45,682 --> 00:08:51,044
+Everything from nineteen-twenties broadcasting
+to your phone is built from these three knobs.
+
+88
+00:08:51,194 --> 00:08:59,401
+Turn the amplitude knob and you get AM: the message is written into
+the carrier's height — its envelope literally traces the audio.
+
+89
+00:08:59,321 --> 00:09:05,960
+Simple, but noise also lives in amplitude,
+which is why AM crackles in a thunderstorm.
+
+90
+00:09:05,880 --> 00:09:16,663
+Turn the frequency knob and you get FM: the message speeds up and slows down the carrier's
+wiggle while the height stays constant — so amplitude noise mostly wipes right off.
+
+91
+00:09:16,583 --> 00:09:28,772
+That constant envelope is why FM sounds cleaner than AM, and the third knob, phase, nudges
+the carrier's timing — closely related to FM, and the foundation of almost everything digital.
+
+92
+00:09:28,922 --> 00:09:32,357
+Analog modulation varies the carrier
+continuously.
+
+93
+00:09:32,277 --> 00:09:42,712
+Digital modulation makes one crucial change: it switches the carrier among
+a finite menu of states, called symbols, each standing for one or more bits.
+
+94
+00:09:42,632 --> 00:09:47,739
+Shift between discrete frequencies and
+it's FSK — frequency-shift keying.
+
+95
+00:09:47,659 --> 00:09:49,909
+Discrete phases: PSK.
+
+96
+00:09:49,829 --> 00:09:53,229
+Combine amplitude and phase levels: QAM.
+
+97
+00:09:53,149 --> 00:10:05,047
+Draw the menu as dots on a plane — amplitude out from the center, phase around it — and you get
+the constellation diagram, the map every digital receiver uses to decide which symbol just arrived.
+
+98
+00:10:05,197 --> 00:10:08,377
+And here is the trade that shapes all of
+digital radio.
+
+99
+00:10:08,297 --> 00:10:13,635
+More dots on the map means more bits per
+symbol — faster data in the same bandwidth.
+
+100
+00:10:13,555 --> 00:10:21,147
+But more dots also means the dots sit closer together,
+so it takes less noise to smudge one into its neighbor.
+
+101
+00:10:21,067 --> 00:10:24,246
+Fast-but-fragile, or slow-but-tough.
+
+102
+00:10:24,166 --> 00:10:31,699
+Wi-Fi at close range runs hundreds of points; a police
+radio fighting fades across a whole city runs just four.
+
+103
+00:10:31,849 --> 00:10:35,411
+That's exactly what GopherTrunk spends its
+life demodulating.
+
+104
+00:10:35,331 --> 00:10:53,812
+The land-mobile systems it decodes chose rugged, low-order schemes on purpose: four-level FSK — four frequency steps, two bits
+per symbol — for DMR and NXDN, and a rotating four-phase scheme called pi-over-four DQPSK for TETRA and P25's simulcast flavor.
+
+105
+00:10:53,732 --> 00:11:02,833
+Once the signal is digitized, demodulation is just measuring amplitude,
+frequency, and phase — the same three knobs — and mapping them back to bits.
+
+106
+00:11:03,783 --> 00:11:15,089
+So: modulation turns a mute carrier into a messenger, there are exactly three knobs to
+turn, and digital radio is a menu of symbol states traded off between speed and toughness.
+
+107
+00:11:15,009 --> 00:11:16,981
+Full write-up linked below.
+
+108
+00:11:20,660 --> 00:11:27,787
+Here's the catch modulation doesn't advertise: the moment
+a carrier starts talking, it spreads out and takes up room.
+
+109
+00:11:27,707 --> 00:11:31,617
+How much room — and why that room is so
+expensive — is bandwidth.
+
+110
+00:11:34,190 --> 00:11:39,447
+Radio spectrum is real estate — and bandwidth
+is how much of it a signal occupies.
+
+111
+00:11:39,367 --> 00:11:44,195
+A narrowband voice channel takes about
+twelve and a half kilohertz of road.
+
+112
+00:11:44,115 --> 00:11:49,071
+An FM broadcast station, two hundred
+kilohertz — sixteen times wider.
+
+113
+00:11:48,991 --> 00:11:51,880
+A Wi-Fi channel, tens of megahertz.
+
+114
+00:11:51,800 --> 00:11:59,890
+Bandwidth decides how fast information can flow, how many signals
+fit side by side, and how much spectrum a receiver has to swallow.
+
+115
+00:11:59,810 --> 00:12:02,734
+It may be the most consequential number in
+radio.
+
+116
+00:12:02,884 --> 00:12:08,978
+Formally: bandwidth is the width, in hertz,
+of the frequency range a signal occupies.
+
+117
+00:12:09,128 --> 00:12:11,355
+Why does a signal have width at all?
+
+118
+00:12:11,275 --> 00:12:15,708
+An unmodulated carrier is a single
+spectral line — zero width.
+
+119
+00:12:15,628 --> 00:12:23,114
+The moment you modulate it, energy spreads into sidebands on either
+side, and the faster the message changes, the wider they spread.
+
+120
+00:12:23,034 --> 00:12:24,739
+Information takes room.
+
+121
+00:12:24,659 --> 00:12:27,688
+That's not an engineering flaw; it's
+physics.
+
+122
+00:12:27,608 --> 00:12:38,310
+Regulators then draw lane markings: each service gets a channel of a defined width, with
+guard bands of empty spectrum between lanes to keep neighbors from sideswiping each other.
+
+123
+00:12:38,460 --> 00:12:41,268
+And here's the law that makes bandwidth
+precious.
+
+124
+00:12:41,188 --> 00:12:50,695
+Shannon's theorem sets the ceiling on any channel's data rate: capacity
+equals bandwidth times the log of one plus the signal-to-noise ratio.
+
+125
+00:12:50,615 --> 00:12:52,401
+Look at the shape of that formula.
+
+126
+00:12:52,321 --> 00:12:57,241
+Capacity grows linearly with bandwidth —
+double the width, double the ceiling.
+
+127
+00:12:57,161 --> 00:13:02,384
+But only logarithmically with signal power —
+doubling your SNR buys you a mere fraction more.
+
+128
+00:13:02,304 --> 00:13:09,106
+If you want more data, more bandwidth is the straight road,
+which is exactly why spectrum auctions raise billions.
+
+129
+00:13:09,256 --> 00:13:11,425
+Bandwidth cuts the other way too.
+
+130
+00:13:11,345 --> 00:13:18,750
+Noise power grows with every hertz you listen to — open your receiver's
+filter wider than the signal and all you admit is more hiss.
+
+131
+00:13:18,670 --> 00:13:27,248
+The craft on the receive side is matching the filter to the signal: wide
+enough to pass it undistorted, narrow enough to shut out everything else.
+
+132
+00:13:27,168 --> 00:13:31,334
+Keep that idea — it becomes the star of
+the signal-to-noise chapter.
+
+133
+00:13:31,484 --> 00:13:34,873
+GopherTrunk lives on both sides of this
+trade at once.
+
+134
+00:13:34,793 --> 00:13:44,055
+Its SDR captures a slice several megahertz wide — wide enough to watch a
+trunked system's control channel and all its voice channels simultaneously.
+
+135
+00:13:43,975 --> 00:13:52,391
+Then digital down-converters carve out each narrow twelve-and-a-half-kilohertz
+channel and filter it down to just the bandwidth the decoder needs.
+
+136
+00:13:52,311 --> 00:13:56,280
+Wide capture to see everything; narrow
+channels to decode cleanly.
+
+137
+00:13:56,200 --> 00:13:58,264
+That split is trunk-tracking.
+
+138
+00:13:59,214 --> 00:14:09,127
+So: bandwidth is a signal's footprint on the spectrum, the linear lever in Shannon's
+speed limit, and — on receive — a filter you keep just as narrow as you can.
+
+139
+00:14:09,047 --> 00:14:11,112
+Full write-up linked below.
+
+140
+00:14:14,790 --> 00:14:17,667
+We just compared powers that differ by
+billions.
+
+141
+00:14:17,587 --> 00:14:22,740
+Radio has its own arithmetic for exactly that
+— small numbers you can add in your head.
+
+142
+00:14:22,660 --> 00:14:23,866
+Meet the decibel.
+
+143
+00:14:26,420 --> 00:14:29,959
+Decibels exist because radio numbers are
+ridiculous.
+
+144
+00:14:29,879 --> 00:14:38,097
+The signal your antenna picks up from a repeater ten miles away can be a hundred
+billion times weaker than the signal leaving that repeater's transmitter.
+
+145
+00:14:38,017 --> 00:14:41,080
+Nobody wants to do math with eleven zeros.
+
+146
+00:14:41,000 --> 00:14:46,142
+The decibel is how radio engineers make
+those numbers small, friendly — and addable.
+
+147
+00:14:46,292 --> 00:14:51,224
+A decibel is a logarithmic way of writing
+a ratio between two power levels.
+
+148
+00:14:51,144 --> 00:14:53,255
+Not an amount — a ratio.
+
+149
+00:14:53,175 --> 00:14:56,053
+Ten decibels means ten times the power.
+
+150
+00:14:55,973 --> 00:14:58,653
+Twenty decibels means a hundred times.
+
+151
+00:14:58,573 --> 00:15:00,243
+Thirty means a thousand.
+
+152
+00:15:00,163 --> 00:15:03,946
+Every ten decibels you add multiplies the
+power by another ten.
+
+153
+00:15:04,096 --> 00:15:06,033
+The everyday anchor is a piano.
+
+154
+00:15:05,953 --> 00:15:11,210
+Each octave is the same-sized step to your
+ear, but each one doubles the frequency.
+
+155
+00:15:11,130 --> 00:15:16,028
+Decibels do that for power: equal steps
+that stand for equal multiplications.
+
+156
+00:15:15,948 --> 00:15:22,355
+Your ear and your radio both live on that kind of scale,
+which is why decibels feel natural once they click.
+
+157
+00:15:22,505 --> 00:15:24,860
+Three numbers are worth memorizing.
+
+158
+00:15:24,780 --> 00:15:27,343
+Plus three decibels: double the power.
+
+159
+00:15:27,263 --> 00:15:29,119
+Minus three: half.
+
+160
+00:15:29,039 --> 00:15:31,139
+Plus ten: ten times.
+
+161
+00:15:31,059 --> 00:15:34,099
+That's it — every other value is a
+combination.
+
+162
+00:15:34,019 --> 00:15:35,619
+Sixteen decibels?
+
+163
+00:15:35,539 --> 00:15:41,307
+That's ten plus three plus three: ten times
+two times two — forty times the power.
+
+164
+00:15:41,227 --> 00:15:44,232
+You just did logarithms in your head
+without noticing.
+
+165
+00:15:44,382 --> 00:15:49,326
+And here's the superpower: on a log scale,
+multiplication becomes addition.
+
+166
+00:15:49,246 --> 00:15:59,670
+Follow a signal from transmitter to receiver — every cable loses a few decibels,
+every antenna adds a few, the path between them takes away a hundred or more.
+
+167
+00:15:59,590 --> 00:16:05,765
+Instead of multiplying eleven-digit numbers, you
+just add and subtract small ones down the chain.
+
+168
+00:16:05,685 --> 00:16:11,198
+That running sum is called a link budget, and
+it's how every radio link on Earth is designed.
+
+169
+00:16:11,348 --> 00:16:12,403
+One trap.
+
+170
+00:16:12,323 --> 00:16:17,232
+A plain decibel is always relative — a
+ratio between two things.
+
+171
+00:16:17,152 --> 00:16:31,732
+The moment you see a letter after it, it's become an absolute number, measured against a fixed reference:
+d-B-m means compared to one milliwatt; d-B-F-S means compared to the loudest sample your SDR can represent.
+
+172
+00:16:31,652 --> 00:16:33,659
+Same math, different anchor.
+
+173
+00:16:33,809 --> 00:16:45,695
+You'll see all three flavors in GopherTrunk's dashboard: signal level in d-B-F-S,
+signal-to-noise ratio in plain decibels, and hardware specs quoted in d-B-m.
+
+174
+00:16:45,615 --> 00:16:49,596
+Now they're not three mysteries — they're
+one idea with three anchors.
+
+175
+00:16:50,546 --> 00:17:00,192
+So: decibels turn absurd ratios into small numbers, multiplication
+into addition, and three memorized steps into fluent mental math.
+
+176
+00:17:00,112 --> 00:17:03,593
+The full write-up, with the formulas, is
+linked below.
+
+177
+00:17:07,250 --> 00:17:13,831
+Armed with decibels, you can finally ask radio's
+bottom-line question: how far above the noise is my signal?
+
+178
+00:17:13,751 --> 00:17:16,803
+One last chapter: signal-to-noise ratio.
+
+179
+00:17:19,380 --> 00:17:23,093
+Signal-to-noise ratio is the number that
+decides everything.
+
+180
+00:17:23,013 --> 00:17:36,421
+Every receiver on Earth is listening to a party it can't leave: below every signal hisses a floor of
+noise — thermal noise from physics itself, plus every switching power supply and LED billboard in town.
+
+181
+00:17:36,341 --> 00:17:42,051
+Whether your signal decodes comes down to one
+question: how far does it stand above that floor?
+
+182
+00:17:41,971 --> 00:17:49,202
+That gap is the signal-to-noise ratio — SNR — and it is the
+single best predictor of whether the bits come out clean.
+
+183
+00:17:49,352 --> 00:17:57,965
+The definition is one subtraction: signal power minus
+noise-floor power, both in d-B-m, giving a gap in decibels.
+
+184
+00:17:57,885 --> 00:18:04,083
+A signal at minus eighty-five over a floor at
+minus one-oh-five has twenty decibels of SNR.
+
+185
+00:18:04,003 --> 00:18:15,124
+And because it's a difference, any calibration offset in your receiver cancels out — which is why
+SNR means something even on twenty-five dollar hardware that has no idea what a true d-B-m is.
+
+186
+00:18:15,274 --> 00:18:17,385
+Every mode has a price of admission.
+
+187
+00:18:17,305 --> 00:18:22,121
+Analog FM voice becomes readable around
+ten to twelve decibels of SNR.
+
+188
+00:18:22,041 --> 00:18:31,315
+The digital voice modes GopherTrunk decodes — C4FM, CQPSK — want
+roughly fifteen to twenty at the demodulator for a clean lock.
+
+189
+00:18:31,235 --> 00:18:34,264
+Below the threshold, things don't degrade
+gracefully…
+
+190
+00:18:34,414 --> 00:18:35,956
+…they fall off a cliff.
+
+191
+00:18:35,876 --> 00:18:44,326
+Digital links live on a waterfall curve: a few decibels above
+threshold, the error rate is negligible — the audio is perfect.
+
+192
+00:18:44,246 --> 00:18:47,925
+A few decibels below, the link collapses
+entirely.
+
+193
+00:18:47,845 --> 00:18:53,439
+That's why digital radio never gets static-y
+like analog; it's flawless, then gone.
+
+194
+00:18:53,359 --> 00:19:04,282
+Forward error correction — deliberately sending redundant bits — buys the cliff a few
+decibels of grace, letting a mode decode below the SNR its raw modulation could survive.
+
+195
+00:19:04,432 --> 00:19:10,351
+And here's the payoff of the bandwidth chapter's
+closing idea: the noise floor isn't fixed.
+
+196
+00:19:10,271 --> 00:19:17,026
+Noise power scales with the bandwidth you admit — the floor rises
+about three decibels every time you double your filter width.
+
+197
+00:19:16,946 --> 00:19:26,395
+Narrow the filter to hug the signal's occupied bandwidth and you shut
+noise out while keeping all the signal: free SNR, no new antenna required.
+
+198
+00:19:26,315 --> 00:19:34,614
+It also means an SNR figure only really means something at a stated
+bandwidth — worth remembering when comparing numbers between systems.
+
+199
+00:19:34,764 --> 00:19:44,840
+GopherTrunk reports live demodulator SNR and error-vector magnitude for every
+channel it decodes, in decibels, precisely so you can see how much margin a link has.
+
+200
+00:19:44,760 --> 00:19:52,467
+A failed decode with healthy SNR isn't a weak signal —
+it's something else: overload, wrong tuning, multipath.
+
+201
+00:19:52,387 --> 00:19:54,754
+The number tells you which problem you're
+hunting.
+
+202
+00:19:54,674 --> 00:19:58,921
+When you're improving a station, you are
+really improving one number — and this is it.
+
+203
+00:19:59,871 --> 00:20:12,687
+So: SNR is the gap between your signal and the floor, digital modes live or die on a cliff around
+fifteen to twenty decibels, and the cheapest SNR you'll ever buy is a filter no wider than the signal.
+
+204
+00:20:12,607 --> 00:20:14,532
+Full write-up linked below.
+
+205
+00:20:18,310 --> 00:20:19,783
+And that's the foundation.
+
+206
+00:20:19,703 --> 00:20:41,226
+Here's the whole course in one breath: a radio wave is a self-propagating ripple with three adjustable properties; frequency is its address and wavelength its size; modulation wiggles
+those properties to carry a message; the message takes up bandwidth; decibels let you do the power math in your head; and signal-to-noise ratio decides whether any of it decodes.
+
+207
+00:20:41,146 --> 00:20:49,294
+Every one of those ideas has a full written article — with the
+formulas and sources — in the GopherTrunk Field Guide, linked below.
+
+208
+00:20:49,444 --> 00:20:58,498
+From here, the next course takes these fundamentals and puts real
+hardware on your desk: SDR from Zero — your first software-defined radio.
+
+209
+00:20:58,418 --> 00:21:03,002
+If this one earned it, subscribing is the
+easiest way to catch that release.
+

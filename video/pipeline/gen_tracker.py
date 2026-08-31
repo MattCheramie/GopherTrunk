@@ -25,8 +25,10 @@ def main():
                 yml.setdefault(cur, {})[m.group(1)] = m.group(2)
     for path in sorted(glob.glob(os.path.join(SEGDIR, "scripts", "GT-RF-01.[0-9]*.md"))):
         base = os.path.basename(path)
-        seg = base.split("-", 3)
-        seg_id = "GT-RF-01." + base.split(".")[2].split("-")[0]
+        m = re.match(r"(GT-RF-01\.\d+)", base)
+        seg_id = m.group(1)
+        if seg_id.endswith(".00"):
+            continue  # pillar elements get their own summary row
         head = open(path, encoding="utf-8").read(600)
         slug = (re.search(r"^slug: (\S+)", head, re.M) or [None, ""])[1]
         title = (re.search(r"— (.+)$", head.splitlines()[0]) or [None, ""])[1]

@@ -1,0 +1,45 @@
+# paste into docs/_data/videos.yml once the pillar is uploaded
+pillars:
+  gt-rf-01:
+    youtube_id: "REPLACE"
+    title: "Radio Fundamentals: How Signals Actually Work (Act I)"
+    upload_date: "REPLACE"
+    duration_s: 1284
+
+segments:
+  radio-wave:
+    pillar: gt-rf-01
+    seg_id: "GT-RF-01.01"
+    title: "Radio wave in 3 minutes"
+    start_s: 102
+    end_s: 285
+  frequency:
+    pillar: gt-rf-01
+    seg_id: "GT-RF-01.02"
+    title: "Frequency in 3 minutes"
+    start_s: 294
+    end_s: 473
+  modulation:
+    pillar: gt-rf-01
+    seg_id: "GT-RF-01.03"
+    title: "Modulation in 3 minutes"
+    start_s: 485
+    end_s: 680
+  bandwidth:
+    pillar: gt-rf-01
+    seg_id: "GT-RF-01.04"
+    title: "Bandwidth in 3 minutes"
+    start_s: 692
+    end_s: 854
+  decibel:
+    pillar: gt-rf-01
+    seg_id: "GT-RF-01.05"
+    title: "Decibel (dB) in 3 minutes"
+    start_s: 864
+    end_s: 1027
+  signal-to-noise-ratio:
+    pillar: gt-rf-01
+    seg_id: "GT-RF-01.06"
+    title: "Signal-to-noise ratio (SNR) in 3 minutes"
+    start_s: 1037
+    end_s: 1218

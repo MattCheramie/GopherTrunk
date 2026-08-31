@@ -1,0 +1,24 @@
+seg_id,slug,type,title,script,storyboard,shot,edited,qc,vertical,clips,start_s,end_s,posted_tiktok,posted_shorts,notes
+GT-RF-01.01,radio-wave,term,Radio wave,done,done,done,done,done,,,102,285,,,
+GT-RF-01.02,frequency,term,Frequency,done,done,done,done,done,,,294,473,,,
+GT-RF-01.03,modulation,term,Modulation,done,done,done,done,done,,,485,680,,,
+GT-RF-01.04,bandwidth,term,Bandwidth,done,done,done,done,done,,,692,854,,,
+GT-RF-01.05,decibel,term,Decibel (dB),done,done,done,done,done,,,864,1027,,,
+GT-RF-01.06,signal-to-noise-ratio,term,Signal-to-noise ratio (SNR),done,done,done,done,done,,,1037,1218,,,
+GT-RF-01.07,amplitude,term,Amplitude,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.08,attenuation,term,Attenuation,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.09,link-budget,term,Link budget,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.10,erp-eirp,term,ERP & EIRP,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.11,impedance,term,Impedance (Z),done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.12,reflection-coefficient,term,Reflection Coefficient (Γ),done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.13,s-parameters,term,S-parameters (Scattering Parameters),done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.14,resonance,term,Resonance,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.15,harmonics,term,Harmonics,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.16,intermodulation,term,Intermodulation Distortion (IMD),done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.17,occupied-bandwidth,term,Occupied bandwidth,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.18,duty-cycle,term,Duty Cycle,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.19,crest-factor-papr,term,Crest Factor & PAPR,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.20,group-delay,term,Group Delay,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.21,phase-noise,term,Phase Noise,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.22,shannon-capacity,term,Shannon capacity,done,done,,,,,,,,,,package-only (script+storyboard); not yet rendered
+GT-RF-01.P*,,pillar,cold open + intro + 5 transitions + outro + end slate,done,done,done,done,done,,,,,,,pilot connective tissue (Act I cut)
