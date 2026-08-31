@@ -26,6 +26,24 @@ for tagged releases.
   is still pending — synthetic-green is not on-air-proven (#764/#771).
 
 ### Added
+- **`replay -in -` is now a full live pipeline stage for external IQ sources
+  (OpenWebRX+ hand-off, #314).** Three pieces complete the stdin→stdout
+  integration the offline pipe started: `-out-format jsonl` now **streams each
+  decoded event the moment it happens** (grants, locks, calls) instead of
+  batch-dumping at EOF — so an unbounded live pipe actually produces output —
+  with the trailing summary line still landing at stream end (file-based jsonl
+  output is byte-identical to before); a new **`-audio-out <path|->`** streams
+  decoded voice as continuous raw s16le mono 8 kHz PCM to a file, FIFO, or
+  stdout as calls decode (usable with or without `-record-voice`; wires the
+  production engine→composer→recorder voice path, digital voice included via
+  the recorder's decoded-PCM tap); and `-format` accepts **`cf32`/`fc32`** as
+  aliases for f32 — the SoapySDR/OpenWebRX+ spelling of interleaved float32
+  IQ. A channelized narrowband stream below the protocol's channel rate is
+  interpolated up by the existing DDC, so OWRX+ can hand off at 24/48 kHz.
+  Example:
+  `owrx-iq | gophertrunk replay -in - -format cf32 -sample-rate 48000
+  -protocol dmr-tier2 -freq 438900000 -audio-out - -out-format jsonl -out
+  events.jsonl`.
 - **P25 Multi-Block Trunking (AMBT) decode — full system discovery.** A PDU
   (DUID 0xC) on the control channel is now decoded as Multi-Block Trunking
   instead of being dropped as "non-control DUID": the AMBT forms of the

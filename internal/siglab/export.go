@@ -90,17 +90,58 @@ func WriteResult(w io.Writer, r *Result, f Format) error {
 
 // writeJSONL emits one JSON line per captured event followed by a summary
 // line. The summary reuses the Result with its (already-streamed) Events
-// elided so the trailing object stays compact.
+// elided so the trailing object stays compact. It shares the line encoding
+// with JSONLEventStreamer / WriteJSONLSummary so the batch export and the
+// live per-event stream can never drift apart.
 func writeJSONL(w io.Writer, r *Result) error {
-	enc := json.NewEncoder(w)
+	s := NewJSONLEventStreamer(w)
 	for _, ev := range r.Events {
-		if err := enc.Encode(jsonlLine{Type: "event", Event: &ev}); err != nil {
-			return err
-		}
+		s.OnEvent(ev)
 	}
+	if err := s.Err(); err != nil {
+		return err
+	}
+	return WriteJSONLSummary(w, r)
+}
+
+// JSONLEventStreamer writes captured events as JSONL {"type":"event",…} lines
+// the moment they are observed. Its OnEvent method has the RunStream /
+// RunReaderStream sink signature, so a caller decoding a live, unbounded IQ
+// stream (`replay -in -` fed by an external radio front-end; issue #314) gets
+// each decoded event on the pipe as it happens instead of a batch dump that
+// only appears when the stream finally closes. Events are delivered from the
+// engine's single collector goroutine, so OnEvent needs no locking. The first
+// write error is retained (Err) and later events are dropped — a torn-down
+// downstream pipe must not wedge the decode.
+type JSONLEventStreamer struct {
+	enc *json.Encoder
+	err error
+}
+
+// NewJSONLEventStreamer builds a streamer over w. Pair it with
+// WriteJSONLSummary at EOF for output byte-identical to FormatJSONL's batch
+// export.
+func NewJSONLEventStreamer(w io.Writer) *JSONLEventStreamer {
+	return &JSONLEventStreamer{enc: json.NewEncoder(w)}
+}
+
+// OnEvent encodes one event line. Matches the RunStream onEvent signature.
+func (s *JSONLEventStreamer) OnEvent(ev EventRecord) {
+	if s.err != nil {
+		return
+	}
+	s.err = s.enc.Encode(jsonlLine{Type: "event", Event: &ev})
+}
+
+// Err reports the first write error, if any.
+func (s *JSONLEventStreamer) Err() error { return s.err }
+
+// WriteJSONLSummary writes the trailing {"type":"summary",…} line for r, with
+// the (already-streamed) Events elided so the object stays compact.
+func WriteJSONLSummary(w io.Writer, r *Result) error {
 	summary := *r
 	summary.Events = nil
-	return enc.Encode(jsonlLine{Type: "summary", Summary: &summary})
+	return json.NewEncoder(w).Encode(jsonlLine{Type: "summary", Summary: &summary})
 }
 
 type jsonlLine struct {

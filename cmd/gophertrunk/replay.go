@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"time"
@@ -33,7 +34,7 @@ func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	in := fs.String("in", "", "raw IQ input file, or - for standard input (required). Piping stdin lets an external IQ source feed the decoder, e.g. `iq-source | gophertrunk replay -in - -format f32 -sample-rate 2400000` (issue #314). stdin is a one-way stream, so -auto-tune (which must seek) is not supported with -in -; use -tune-hz.")
-	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32) | cs16/sc16 (interleaved little-endian int16 IQ, the .raw/.cs16 SDR capture format) | wav (2-channel 16-bit baseband WAV — SDRtrunk/SDR++/GopherTrunk narrowband recording; sample rate is read from the header)")
+	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32; aliases cf32/fc32 — the SoapySDR/OpenWebRX+ spelling) | cs16/sc16 (interleaved little-endian int16 IQ, the .raw/.cs16 SDR capture format) | wav (2-channel 16-bit baseband WAV — SDRtrunk/SDR++/GopherTrunk narrowband recording; sample rate is read from the header)")
 	sampleRate := fs.Float64("sample-rate", 2_400_000, "IQ sample rate in Hz")
 	demod := fs.String("demod", "c4fm", "P25 Phase 1 demod mode: c4fm | cqpsk")
 	protocolFlag := fs.String("protocol", "p25p1", "decoder to run: p25p1 | p25-phase2 | dmr | dmr-tier2 | nxdn | dpmr | edacs | motorola | ltr | mpt1327 | tetra | ysf | dstar (aliases: dmr-tier3)")
@@ -53,6 +54,7 @@ func runReplay(args []string) {
 	out := fs.String("out", "", "write structured output to this file (default: stdout for non-text)")
 	recordVoice := fs.Bool("record-voice", false, "decode and record voice for the capture's grants, writing .wav/.raw/.json under -out-dir. Wires the production voice path (engine → composer → recorder) onto the decode, following each grant on the decoded (same) carrier. Best for conventional systems (DMR Tier II / IPSC, TETRA) whose voice rides the decoded carrier.")
 	outDir := fs.String("out-dir", "", "recordings directory for -record-voice (required with it)")
+	audioOut := fs.String("audio-out", "", "stream decoded voice audio as continuous raw signed 16-bit little-endian mono PCM at 8000 Hz to this file/FIFO, or - for stdout — so an external consumer (OpenWebRX+, aplay, sox) plays calls live instead of waiting for per-call WAVs (issue #314). Wires the same voice path as -record-voice (usable with or without it) and shares its constraints: requires -freq, no -auto-tune. With -audio-out -, give -out a file path so the decode result doesn't interleave with the PCM on stdout. Opening a FIFO blocks until a reader attaches.")
 	voiceHangtimeMs := fs.Int("voice-hangtime-ms", 3500, "end-of-transmission hangtime for -record-voice, in ms")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk replay — decode a raw IQ capture file offline (any protocol).
@@ -67,9 +69,16 @@ EXAMPLES:
   gophertrunk replay -in mt_anakie.bin -sample-rate 2048000 -demod c4fm -diag
 
   # Decode a raw IQ stream piped in on stdin (e.g. from OpenWebRX+ / rtl_sdr -),
-  # emitting decoded events to stdout as JSONL
+  # emitting each decoded event to stdout as a JSONL line the moment it happens
   iq-source | gophertrunk replay -in - -format f32 -sample-rate 2400000 \
                     -protocol p25p1 -tune-hz -12500 -out-format jsonl
+
+  # OpenWebRX+ hand-off: a single channelized cf32 stream on stdin (any rate ≥
+  # the protocol's channel rate is decimated, a narrower one is interpolated up),
+  # live voice PCM (s16le mono 8 kHz) on stdout, decoded events to a JSONL file
+  owrx-iq-source | gophertrunk replay -in - -format cf32 -sample-rate 48000 \
+                    -protocol dmr-tier2 -freq 438900000 \
+                    -audio-out - -out-format jsonl -out events.jsonl
 
   # Wideband cfile whose control channel is off-centre: auto-tune to 0 Hz
   gophertrunk replay -in mmr-s9.cfile -format f32 -sample-rate 2400000 -auto-tune
@@ -141,32 +150,77 @@ FLAGS:`)
 		Log:                  logger,
 	}
 
-	// Optional voice recording: wire the production voice path (engine → composer
-	// → recorder) onto the decode's grant bus + channelized-IQ tap, so grants
-	// become .wav/.raw/.json recordings. -auto-tune runs several candidate decodes
-	// internally, which would each drive the voice rig, so it is disallowed here —
-	// use -tune-hz for a fixed offset.
+	// Optional voice recording / live audio streaming: wire the production voice
+	// path (engine → composer → recorder) onto the decode's grant bus +
+	// channelized-IQ tap, so grants become .wav/.raw/.json recordings
+	// (-record-voice) and/or a continuous live PCM stream (-audio-out).
+	// -auto-tune runs several candidate decodes internally, which would each
+	// drive the voice rig, so it is disallowed here — use -tune-hz for a fixed
+	// offset.
 	var voiceRig *replayVoiceRig
-	if *recordVoice {
-		if *outDir == "" {
+	var audioSink *pcmStreamWriter
+	var audioFile *os.File
+	if *recordVoice || *audioOut != "" {
+		if *recordVoice && *outDir == "" {
 			rep.Fatalf(2, "-record-voice requires -out-dir")
 		}
 		if *autoTune {
-			rep.Fatalf(2, "-record-voice does not support -auto-tune; use -tune-hz for a fixed offset")
+			rep.Fatalf(2, "-record-voice/-audio-out do not support -auto-tune; use -tune-hz for a fixed offset")
 		}
 		if *freq == 0 {
-			rep.Fatalf(2, "-record-voice requires -freq (the carrier frequency in Hz): grants carry the decode frequency, and a grant with freq 0 is dropped by the engine (nothing records)")
+			rep.Fatalf(2, "-record-voice/-audio-out require -freq (the carrier frequency in Hz): grants carry the decode frequency, and a grant with freq 0 is dropped by the engine (no voice decodes)")
+		}
+		if *audioOut == "-" && *out == "" {
+			rep.Fatalf(2, "-audio-out - streams raw PCM on stdout, so the decode result needs its own destination: give -out a file path")
+		}
+		if *audioOut != "" {
+			w := os.Stdout
+			if *audioOut != "-" {
+				// os.Create also opens an existing FIFO for writing, blocking
+				// until the consumer attaches — the pipeline shape OWRX+ uses.
+				audioFile, err = os.Create(*audioOut)
+				if err != nil {
+					rep.Fatalf(1, "-audio-out: %v", err)
+				}
+				w = audioFile
+			}
+			audioSink = newPCMStreamWriter(w)
+		}
+		recDir := ""
+		if *recordVoice {
+			recDir = *outDir
 		}
 		ddcRate := *sampleRate
 		if target := ccdecoder.DDCTargetForProtocol(proto); *sampleRate != target {
 			ddcRate = target
 		}
-		voiceRig, err = setupReplayVoice(*outDir, ddcRate, time.Duration(*voiceHangtimeMs)*time.Millisecond, logger)
+		voiceRig, err = setupReplayVoice(recDir, ddcRate, time.Duration(*voiceHangtimeMs)*time.Millisecond, audioSink, logger)
 		if err != nil {
 			rep.Fatal(1, err)
 		}
 		cfg.Bus = voiceRig.bus
 		cfg.OnChannelIQ = voiceRig.onChannelIQ
+	}
+
+	// JSONL streams live: the output is opened up-front and every decoded event
+	// is written the moment it is observed, so an unbounded stdin pipe (an
+	// external IQ source that never EOFs; issue #314) delivers events as they
+	// happen instead of a batch dump when the pipe finally closes. The trailing
+	// summary line still lands at EOF, keeping the output byte-identical to the
+	// batch export for file inputs. -auto-tune stays on the batch path: it runs
+	// several candidate decodes whose failed attempts must not leak event lines.
+	var jsonlStreamer *siglab.JSONLEventStreamer
+	var jsonlOut *os.File
+	if of == siglab.FormatJSONL && !*autoTune {
+		w := os.Stdout
+		if *out != "" {
+			jsonlOut, err = os.Create(*out)
+			if err != nil {
+				rep.Fatalf(1, "create %s: %v", *out, err)
+			}
+			w = jsonlOut
+		}
+		jsonlStreamer = siglab.NewJSONLEventStreamer(w)
 	}
 
 	// Under -auto-tune, try the ranked carrier candidates and keep the best
@@ -176,6 +230,8 @@ FLAGS:`)
 	var res *siglab.Result
 	if *autoTune {
 		res, err = siglab.RunAutoTuneMulti(*in, cfg, 0)
+	} else if jsonlStreamer != nil {
+		res, err = siglab.RunStream(*in, cfg, jsonlStreamer.OnEvent)
 	} else {
 		res, err = siglab.Run(*in, cfg)
 	}
@@ -185,10 +241,32 @@ FLAGS:`)
 		// partial capture still flushes what it recorded.
 		voiceRig.finalize()
 	}
+	if audioFile != nil {
+		_ = audioFile.Close()
+	}
 	if err != nil {
 		rep.Fatal(1, err)
 	}
 
+	if jsonlStreamer != nil {
+		// The event lines already streamed; append the summary line and close.
+		w := io.Writer(os.Stdout)
+		if jsonlOut != nil {
+			w = jsonlOut
+		}
+		if serr := siglab.WriteJSONLSummary(w, res); serr != nil {
+			rep.Fatal(1, serr)
+		}
+		if serr := jsonlStreamer.Err(); serr != nil {
+			rep.Fatal(1, serr)
+		}
+		if jsonlOut != nil {
+			if cerr := jsonlOut.Close(); cerr != nil {
+				rep.Fatal(1, cerr)
+			}
+		}
+		return
+	}
 	if err := emitResult(res, of, *out); err != nil {
 		rep.Fatal(1, err)
 	}
