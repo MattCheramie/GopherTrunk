@@ -1,0 +1,27 @@
+# GT-RF-01.20 — Group Delay
+slug: group-delay
+type: term
+target: ~3:50
+
+**[V: title | "Group Delay" | GT-RF-01.20]**
+
+**[V: stealth-smear — a crisp symbol pulse enters a filter box and emerges spread and ringing; its amplitude meter reads unchanged]** [CLIP c1 start]
+Group delay is the sneakiest way a filter can ruin a signal without ever touching its strength. It's the time by which a system delays the *envelope* of a narrow band of frequencies — defined as the negative slope of phase against angular frequency. And here's the sting: the delay itself is harmless. What hurts is when that delay is *different* at different frequencies across your signal's band, so the frequency components of each symbol arrive at slightly different times. That's a form of phase distortion, and it spreads every symbol into its neighbors — intersymbol interference, without a single decibel of power lost. [CLIP c1 end]
+
+**[V: marching-band — a band files through a corridor; version one: whole band delayed equally, formation intact; version two: trombones held longer than flutes, rows overlap at the exit]**
+Think of a marching band leaving a stadium through one long corridor. If everyone is held up by exactly ten seconds, the band comes out late but intact — same formation, just shifted in time. But if the corridor slows the trombones more than the flutes, the formation that emerges is smeared: rows overlapping rows. A filter with flat group delay is the first corridor. A filter whose delay varies with frequency is the second — and in radio, the overlapping rows are your symbols landing on top of each other.
+
+**[V: delay-curve — the article's figure animates: τ_g versus frequency; the flat dashed "ideal" line across the shaded passband, then the real filter's curve bending sharply upward at both band edges]** [CLIP c2 start]
+Plot group delay against frequency and the ideal is a flat line across the passband. That's what linear phase means: phase changing along a straight line with frequency, and the derivative of a straight line is a constant — so every frequency component is held up by the same amount and the waveform is preserved, merely shifted. A real filter's curve bends sharply upward near the band edges, where the phase bends most: the edge frequencies of your signal are delayed more than the mid-band ones, the reassembled pulse spreads and rings, and the system is called dispersive. Sharp filters are the usual culprit — a steep IIR filter has strongly non-flat group delay near its cutoff. A symmetric FIR filter, though, can be made *exactly* linear-phase: its group delay is a flat constant of half the filter length. That's a major reason FIR structures are favoured in communications, where waveform fidelity matters. [CLIP c2 end]
+
+**[V: numbers-card | "10 µs constant delay → harmless · 2 µs variation across the channel → eye closes"; an eye diagram pinches shut]** [CLIP c3 start]
+The numbers make the point brutally. A constant delay of ten microseconds harms nothing — your whole signal is simply ten microseconds late. But just two microseconds of *variation* across a channel can close an eye diagram and take a link down. Group-delay flatness, not absolute delay, is the specification that matters — and it's a standard line item on filter and cable datasheets for exactly that reason.
+
+**[V: fixes — matched RRC filter pair handshake; an adaptive equalizer block inverting a warped channel response; an EVM readout dropping]**
+So systems either design for flatness or correct for it. A matched pair of root-raised-cosine pulse-shaping filters is chosen to give an overall linear-phase, controlled-interference response right at the sampling instants. Where the channel itself adds dispersion, an adaptive equalizer in the receiver estimates the combined amplitude and group-delay distortion and inverts it. And when flatness is violated, you see it directly: excess variation shows up as a raised error vector magnitude — a dirtier constellation from a signal whose power looks perfectly fine. [CLIP c3 end]
+
+**[V: gt-tie-in — GopherTrunk DSP chain: FIR channelizer and pulse-shaping blocks stamped "linear phase"; upstream, a suspect external filter and long feedline highlighted with a question mark]**
+GopherTrunk does its channel filtering and decimation digitally, and its pulse-shaping and channelizing stages use FIR structures — linear phase by construction, so the decode chain contributes constant group delay and no dispersion of its own. Which turns the concept into a diagnostic tool: when a captured signal decodes poorly despite an otherwise healthy signal-to-noise ratio, group-delay distortion introduced *before* the SDR — a cheap external filter, a long marginal feedline — is one candidate this idea helps you rule in or out. TETRA, P25, and DMR all rely on well-behaved, near-linear-phase filtering to keep their constellations clean; the sharp analog IF filters of older receivers were a classic source of exactly this distortion, and digital FIR filtering is what retired it.
+
+**[V: recap | "Group Delay" | ① τ_g = −dφ/dω — the envelope's transit time | ② Constant delay shifts; varying delay smears (ISI) | ③ Symmetric FIR = exactly linear phase, flat by construction]**
+So: group delay is how long each slice of spectrum spends in transit, a flat delay merely shifts your signal while a varying one smears it, and linear-phase FIR filtering is why a digital decode chain stays clean. The full write-up is linked below.
