@@ -33,3 +33,4 @@ docs/_site/
 # (.github/scripts/synthesize_home.sh), so the file isn't duplicated in the repo.
 docs/index.md
 video/_render/
+__pycache__/
