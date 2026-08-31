@@ -61,7 +61,7 @@ def loudnorm2(src, out, target_i=-14.0):
           f"measured_TP={j['input_tp']}:measured_LRA={j['input_lra']}:"
           f"measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true")
     run([FF, "-y", "-i", src, "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-         "-af", af, "-c:a", "aac", "-b:a", "192k", out])
+         "-af", af, "-ar", "48000", "-c:a", "aac", "-b:a", "192k", out])
     return j
 
 
