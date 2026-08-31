@@ -1,0 +1,24 @@
+1
+00:00:00,600 --> 00:00:02,073
+And that's the foundation.
+
+2
+00:00:01,993 --> 00:00:23,516
+Here's the whole course in one breath: a radio wave is a self-propagating ripple with three adjustable properties; frequency is its address and wavelength its size; modulation wiggles
+those properties to carry a message; the message takes up bandwidth; decibels let you do the power math in your head; and signal-to-noise ratio decides whether any of it decodes.
+
+3
+00:00:23,436 --> 00:00:31,584
+Every one of those ideas has a full written article — with the
+formulas and sources — in the GopherTrunk Field Guide, linked below.
+
+4
+00:00:31,734 --> 00:00:40,788
+From here, the next course takes these fundamentals and puts real
+hardware on your desk: SDR from Zero — your first software-defined radio.
+
+5
+00:00:40,708 --> 00:00:45,292
+If this one earned it, subscribing is the
+easiest way to catch that release.
+

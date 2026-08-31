@@ -1,0 +1,66 @@
+1
+00:00:00,600 --> 00:00:01,457
+Welcome.
+
+2
+00:00:01,377 --> 00:00:15,331
+This course is for anyone pointing a software-defined radio at the sky — scanner listeners, new hams, tinkerers with a
+thirty-dollar dongle — and for anyone who's ever nodded along to "megahertz" without being totally sure what it measures.
+
+3
+00:00:15,251 --> 00:00:18,476
+No math beyond arithmetic, no
+prerequisites.
+
+4
+00:00:18,396 --> 00:00:24,559
+Just the mental models underneath every antenna,
+every waterfall display, and every decode.
+
+5
+00:00:24,709 --> 00:00:27,192
+Six chapters, each one idea.
+
+6
+00:00:27,112 --> 00:00:30,605
+First, the radio wave itself — what's
+actually rippling.
+
+7
+00:00:30,525 --> 00:00:34,029
+Then frequency, the address every signal
+lives at.
+
+8
+00:00:33,949 --> 00:00:37,825
+Then modulation — how a wave is made to
+carry a message.
+
+9
+00:00:37,745 --> 00:00:41,087
+Then bandwidth, the width of the road it
+drives on.
+
+10
+00:00:41,007 --> 00:00:49,353
+And finally the measuring tools: the decibel, radio's own arithmetic,
+and signal-to-noise ratio, the number that decides everything.
+
+11
+00:00:49,503 --> 00:01:00,507
+Every chapter stands alone, and each one matches a written Field Guide article at gophertrunk
+dot org — linked below, chapter by chapter, if you want the formulas and the sources.
+
+12
+00:01:00,427 --> 00:01:01,818
+Skip freely.
+
+13
+00:01:01,738 --> 00:01:05,196
+But watched in order, each idea hands off
+to the next.
+
+14
+00:01:05,116 --> 00:01:07,018
+Let's start with the ripple itself.
+

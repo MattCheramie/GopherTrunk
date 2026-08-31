@@ -1,0 +1,221 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C, div, svg, el, text, sinePath, prepDraw, setDraw, arrowDefs } = Fig;
+const { enter, rise, staged, rel } = Engine;
+
+// ---------- numbers-flying: absurd watt values stream past ----------
+const NUMS = ["0.00000000002 W", "2 W", "0.000000004 W", "50 W", "0.0000000000008 W",
+  "100 W", "0.0000000056 W", "25 W", "0.000000000031 W", "0.5 W", "0.0000000009 W"];
+const numbersFlying = {
+  mount(elx, ev) {
+    this.items = NUMS.map((n, i) => div(elx, "", `position:absolute;font-family:var(--mono);
+      font-weight:${i % 3 ? 400 : 700};font-size:${44 + (i % 4) * 14}px;white-space:nowrap;
+      color:${i % 2 ? C.muted : C.text};opacity:.9;`, n));
+    this.zeros = div(elx, "", `position:absolute;top:820px;width:100%;text-align:center;
+      font-size:40px;color:${C.warn};font-weight:600;opacity:0;`, "eleven zeros.");
+  },
+  seek(elx, tl, ev) {
+    this.items.forEach((d, i) => {
+      const speed = 130 + (i % 5) * 40;
+      const x = 2100 - ((tl * speed + i * 420) % 2800);
+      d.style.transform = `translateX(${x}px)`;
+      d.style.top = (90 + (i * 173) % 760) + "px";
+    });
+    this.zeros.style.opacity = rise(tl, rel(ev, 2), .5);
+  },
+};
+
+// ---------- definition-card ----------
+const definitionCard = {
+  mount(elx, ev) {
+    elx.innerHTML = CV.centerCard("A decibel is a logarithmic way of writing a ratio",
+      `<div class="card-eyebrow">Definition</div>
+       <div class="formula">dB = 10 · log<sub>10</sub>(<span class="hl">P₁ / P₂</span>)</div>
+       <div style="margin-top:22px;font-size:32px;color:${C.muted}">a <b style="color:${C.text}">ratio</b> — not an amount</div>`);
+    this.steps = [];
+    const wrap = div(elx, "", `position:absolute;left:50%;top:74%;transform:translateX(-50%);
+      display:flex;gap:36px;`);
+    [["+10 dB", "×10"], ["+20 dB", "×100"], ["+30 dB", "×1000"]].forEach(([a, b]) => {
+      const c = div(wrap, "", `background:${C.elev};border:1.5px solid ${C.border};border-radius:12px;
+        padding:20px 34px;text-align:center;opacity:0;`);
+      c.innerHTML = `<div style="font-family:var(--mono);font-size:34px;color:${C.accent}">${a}</div>
+        <div style="font-size:30px;color:${C.text};margin-top:6px">${b}</div>`;
+      this.steps.push(c);
+    });
+  },
+  seek(elx, tl, ev) {
+    enter(elx.querySelector(".center-card"), rise(tl, 0.1, .5));
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.3, .5));
+    // ten / twenty / thirty appear with lines 2..4
+    this.steps.forEach((c, i) => enter(c, rise(tl, rel(ev, 2 + i), .4)));
+  },
+};
+
+// ---------- piano: octaves = equal steps, doubling frequency ----------
+const piano = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1250px;height:640px;"), "0 0 1250 640");
+    // 3 octaves of 7 white keys
+    this.keys = []; this.brackets = [];
+    for (let o = 0; o < 3; o++)
+      for (let k = 0; k < 7; k++) {
+        const x = 130 + (o * 7 + k) * 47;
+        this.keys.push(el("rect", { x, y: 300, width: 43, height: 180, rx: 5,
+          fill: "#e6edf3", opacity: 0.92 }, s));
+        if ([0,1,3,4,5].includes(k))
+          el("rect", { x: x + 30, y: 300, width: 26, height: 110, rx: 4, fill: "#161b22" }, s);
+      }
+    for (let o = 0; o < 3; o++) {
+      const x0 = 130 + o * 329, x1 = x0 + 322;
+      const g = el("g", { opacity: 0 }, s);
+      el("path", { d: `M${x0} 270 L${x0} 250 L${x1} 250 L${x1} 270`, stroke: C.accent,
+        "stroke-width": 3.5, fill: "none" }, g);
+      text(g, (x0 + x1) / 2, 236, `octave — frequency ×2`, 27, C.accent);
+      this.brackets.push(g);
+      const lab = text(s, (x0 + x1) / 2, 540, ["220 Hz", "440 Hz", "880 Hz"][o], 30, C.muted, "middle", "JetBrains Mono");
+      lab.setAttribute("opacity", 0); this.brackets.push(lab);
+    }
+    this.cap = div(elx, "", `position:absolute;bottom:110px;width:100%;text-align:center;
+      font-size:36px;color:${C.text};opacity:0;`, `equal steps = equal <b style="color:${C.accent}">multiplications</b>`);
+  },
+  seek(elx, tl, ev) {
+    this.keys.forEach((k, i) => k.setAttribute("opacity", 0.92 * rise(tl, 0.1 + i * 0.02, .3)));
+    this.brackets.forEach((b, i) => b.setAttribute("opacity", rise(tl, rel(ev, 1) + (i >> 1) * 0.5, .5)));
+    this.cap.style.opacity = rise(tl, rel(ev, 2), .5);
+  },
+};
+
+// ---------- db-ladder: +3 ×2 / −3 ½ / +10 ×10, then 16 dB = 10+3+3 ----------
+const dbLadder = {
+  mount(elx, ev) {
+    const wrap = div(elx, "", `position:absolute;left:50%;top:120px;transform:translateX(-50%);
+      display:flex;gap:44px;`);
+    this.cards = [["+3 dB", "×2", C.good], ["−3 dB", "½", C.warn], ["+10 dB", "×10", C.accent]]
+      .map(([a, b, col]) => {
+        const c = div(wrap, "", `background:${C.elev};border:2px solid ${col};border-radius:16px;
+          width:250px;padding:34px 0;text-align:center;opacity:0;`);
+        c.innerHTML = `<div style="font-family:var(--mono);font-size:52px;color:${col}">${a}</div>
+          <div style="font-size:56px;font-weight:700;margin-top:10px">${b}</div>`;
+        return c;
+      });
+    // 16 dB decomposition
+    const dec = div(elx, "", `position:absolute;left:50%;top:520px;transform:translateX(-50%);
+      text-align:center;`);
+    this.q = div(dec, "", `font-size:52px;font-weight:700;opacity:0;`, "16 dB?");
+    this.eq = div(dec, "", `font-family:var(--mono);font-size:46px;margin-top:26px;opacity:0;`,
+      `= <span style="color:${C.accent}">10</span> + <span style="color:${C.good}">3</span> + <span style="color:${C.good}">3</span>
+       &nbsp;→&nbsp; ×10 · ×2 · ×2`);
+    this.ans = div(dec, "", `font-size:64px;font-weight:750;margin-top:26px;color:${C.text};opacity:0;`,
+      `= <span style="color:${C.accent}">×40</span> the power`);
+  },
+  seek(elx, tl, ev) {
+    this.cards.forEach((c, i) => enter(c, rise(tl, 0.15 + i * 0.55, .4)));
+    enter(this.q, rise(tl, rel(ev, 4), .4));
+    enter(this.eq, rise(tl, rel(ev, 5), .4));
+    enter(this.ans, rise(tl, rel(ev, 5) + 1.6, .4));
+  },
+};
+
+// ---------- link-budget chain ----------
+const linkBudget = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1500px;height:700px;"), "0 0 1500 700");
+    arrowDefs(s, "lbarr", C.muted);
+    const stages = [["TX", "+37 dBm", C.text], ["feedline", "−3 dB", C.warn],
+                    ["antenna", "+6 dB", C.good], ["path", "−120 dB", C.bad], ["RX", "−80 dBm", C.accent]];
+    this.groups = stages.map(([name, val, col], i) => {
+      const x = 130 + i * 310;
+      const g = el("g", { opacity: 0 }, s);
+      el("rect", { x: x - 85, y: 260, width: 170, height: 110, rx: 14, fill: C.elev,
+        stroke: i === 4 ? C.accent : C.border, "stroke-width": 2 }, g);
+      text(g, x, 305, name, 30, C.text);
+      text(g, x, 348, val, 30, col, "middle", "JetBrains Mono");
+      if (i) el("line", { x1: x - 210, y1: 315, x2: x - 95, y2: 315, stroke: C.muted,
+        "stroke-width": 2.5, "marker-end": "url(#lbarr)" }, g);
+      return g;
+    });
+    this.sum = div(elx, "", `position:absolute;top:72%;width:100%;text-align:center;
+      font-family:var(--mono);font-size:44px;color:${C.text};opacity:0;`, "");
+    this.cap = div(elx, "", `position:absolute;top:82%;width:100%;text-align:center;
+      font-size:34px;color:${C.muted};opacity:0;`,
+      `just <b style="color:${C.accent}">add and subtract</b> — that running sum is a <b style="color:${C.text}">link budget</b>`);
+  },
+  seek(elx, tl, ev) {
+    const t1 = rel(ev, 1);
+    this.groups.forEach((g, i) => g.setAttribute("opacity", rise(tl, t1 + i * 0.9, .45)));
+    const vals = [37, 34, 40, -80];
+    const step = Math.min(3, Math.max(0, Math.floor((tl - t1 - 0.9) / 0.9)));
+    this.sum.textContent = "running sum: " + (vals[step] > 0 ? "+" : "") + vals[step] + " dBm";
+    this.sum.style.opacity = rise(tl, t1 + 0.9, .4);
+    this.cap.style.opacity = rise(tl, rel(ev, 3), .5);
+  },
+};
+
+// ---------- suffix-card: dB vs dBm vs dBFS ----------
+const suffixCard = {
+  mount(elx, ev) {
+    elx.innerHTML = `<div class="safe-headline" style="position:absolute;top:130px;width:100%;
+      text-align:center;font-size:44px;font-weight:650;">The trap: a letter after dB changes everything</div>`;
+    const wrap = div(elx, "", `position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);
+      display:flex;flex-direction:column;gap:34px;width:1080px;`);
+    this.rows = [["dB", "a ratio between two things", "relative"],
+      ["dBm", "power vs 1 milliwatt", "absolute"],
+      ["dBFS", "level vs digital full scale", "absolute"]].map(([u, d, tag]) => {
+      const r = div(wrap, "", `display:flex;align-items:center;gap:34px;background:${C.elev};
+        border:1.5px solid ${C.border};border-radius:14px;padding:30px 40px;opacity:0;`);
+      r.innerHTML = `<div style="font-family:var(--mono);font-size:52px;color:${C.accent};flex:0 0 220px">${u}</div>
+        <div style="font-size:36px;flex:1">${d}</div>
+        <div style="font-size:26px;color:${tag === "relative" ? C.warn : C.good};border:1.5px solid currentColor;
+          border-radius:999px;padding:6px 18px;">${tag}</div>`;
+      return r;
+    });
+  },
+  seek(elx, tl, ev) {
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.1, .5));
+    this.rows.forEach((r, i) => enter(r, rise(tl, [0.4, rel(ev, 2), rel(ev, 2) + 1.2][i], .45)));
+  },
+};
+
+// ---------- gt-tie-in: dashboard mock with three callouts ----------
+const gtTieIn = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:110px;width:100%;text-align:center;font-size:42px;
+      font-weight:650;`, "One idea, three anchors — live in GopherTrunk");
+    this.rows = CV.gtPanel(elx, [
+      { label: "signal level", color: C.accent, unit: " dBFS", from: -62, to: -38 },
+      { label: "SNR", color: C.good, unit: " dB", from: 8, to: 21 },
+      { label: "hardware spec", color: C.violet, unit: " dBm", from: -110, to: -107, fixed: "max input +10 dBm" },
+    ]);
+  },
+  seek(elx, tl, ev) {
+    this.rows.forEach((r, i) => {
+      const t0 = rel(ev, Math.min(i + 1, ev.lines.length - 1)) * 0.9;
+      enter(r.row, rise(tl, 0.3 + i * 0.8, .45));
+      const p = Engine.easeIO((tl - 1 - i * 0.8) / 6) *
+        (0.72 + 0.1 * Math.sin(tl * 1.7 + i * 2.1));
+      r.fill.style.width = (Math.max(0.04, p) * 100) + "%";
+      const v = r.spec.from + (r.spec.to - r.spec.from) * Math.max(0, Math.min(1, p + 0.15 * Math.sin(tl * 2.3 + i)));
+      r.val.textContent = r.spec.fixed && tl > 6 ? r.spec.fixed : v.toFixed(1) + r.spec.unit;
+    });
+  },
+};
+
+Engine.init({
+  title: CV.title, recap: CV.recap,
+  "numbers-flying": numbersFlying, "definition-card": definitionCard,
+  piano, "db-ladder": dbLadder, "link-budget": linkBudget,
+  "suffix-card": suffixCard, "gt-tie-in": gtTieIn,
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+1
+00:00:00,500 --> 00:00:07,081
+Armed with decibels, you can finally ask radio's
+bottom-line question: how far above the noise is my signal?
+
+2
+00:00:07,001 --> 00:00:10,053
+One last chapter: signal-to-noise ratio.
+

@@ -1,0 +1,14 @@
+1
+00:00:00,500 --> 00:00:03,377
+We just compared powers that differ by
+billions.
+
+2
+00:00:03,297 --> 00:00:08,450
+Radio has its own arithmetic for exactly that
+— small numbers you can add in your head.
+
+3
+00:00:08,370 --> 00:00:09,576
+Meet the decibel.
+

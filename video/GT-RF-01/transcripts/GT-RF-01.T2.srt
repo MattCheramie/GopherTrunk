@@ -1,0 +1,14 @@
+1
+00:00:00,500 --> 00:00:03,737
+You can now find any signal's address on
+the spectrum.
+
+2
+00:00:03,657 --> 00:00:08,056
+But a wave sitting at an address,
+perfectly steady, says nothing at all.
+
+3
+00:00:07,976 --> 00:00:10,760
+Making it talk is next: modulation.
+

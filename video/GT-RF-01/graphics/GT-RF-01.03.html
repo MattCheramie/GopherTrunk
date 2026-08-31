@@ -1,0 +1,231 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C, div, svg, el, text, sinePath, wavePath, prepDraw, setDraw } = Fig;
+const { enter, rise, rel, easeOut, clamp01 } = Engine;
+
+const msg = u => Math.sin(2 * Math.PI * 1.5 * u);   // shared "message" waveform
+
+// ---------- bare-carrier ----------
+const bareCarrier = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:1500px;height:420px;"), "0 0 1500 420");
+    this.wave = el("path", { fill: "none", stroke: C.accent, "stroke-width": 4.5 }, s);
+    this.stamp = div(elx, "", `position:absolute;left:50%;top:64%;transform:translate(-50%,-50%) rotate(-7deg);
+      border:4px solid ${C.bad};color:${C.bad};font-size:52px;font-weight:750;padding:14px 40px;
+      border-radius:10px;opacity:0;letter-spacing:.06em;`, "NO INFORMATION");
+    this.cap = div(elx, "", `position:absolute;bottom:130px;width:100%;text-align:center;font-size:34px;
+      color:${C.muted};opacity:0;`, "endlessly repeating · perfectly predictable");
+  },
+  seek(elx, tl, ev) {
+    this.wave.setAttribute("d", sinePath(40, 210, 1420, 120, 9, -tl * 4.5));
+    this.stamp.style.opacity = rise(tl, rel(ev, 2), .35);
+    this.stamp.style.scale = 1 + 0.5 * (1 - easeOut((tl - rel(ev, 2)) / 0.35));
+    this.cap.style.opacity = rise(tl, rel(ev, 1), .5);
+  },
+};
+
+// ---------- three-knobs ----------
+const threeKnobs = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);width:1400px;height:330px;"), "0 0 1400 330");
+    this.wave = el("path", { fill: "none", stroke: C.accent, "stroke-width": 4 }, s);
+    const wrap = div(elx, "", `position:absolute;left:50%;top:68%;transform:translateX(-50%);display:flex;gap:56px;`);
+    this.knobs = [["AMPLITUDE", C.good], ["FREQUENCY", C.accent], ["PHASE", C.violet]].map(([n, col]) => {
+      const k = div(wrap, "", `text-align:center;opacity:0;`);
+      k.innerHTML = `<svg width="150" height="150" viewBox="0 0 150 150">
+          <circle cx="75" cy="75" r="62" fill="${C.elev}" stroke="${col}" stroke-width="4"/>
+          <line class="pt" x1="75" y1="75" x2="75" y2="22" stroke="${col}" stroke-width="6" stroke-linecap="round"/>
+        </svg>
+        <div style="font-size:27px;font-weight:650;color:${col};margin-top:12px;letter-spacing:.08em">${n}</div>`;
+      return k;
+    });
+    this.cap = div(elx, "", `position:absolute;bottom:88px;width:100%;text-align:center;font-size:32px;
+      color:${C.muted};opacity:0;`, "the only three things a transmitter can touch");
+  },
+  seek(elx, tl, ev) {
+    this.knobs.forEach((k, i) => {
+      enter(k, rise(tl, 0.6 + i * 0.5, .4));
+      k.querySelector(".pt").setAttribute("transform",
+        `rotate(${40 * Math.sin(tl * 1.1 + i * 2)} 75 75)`);
+    });
+    // wave subtly responds to all three knobs
+    const a = 90 + 25 * Math.sin(tl * 1.1), cyc = 8 + 1.5 * Math.sin(tl * 1.1 + 2), ph = 25 * Math.sin(tl * 1.1 + 4);
+    this.wave.setAttribute("d", sinePath(40, 165, 1320, a, cyc, ph * 0.1 - tl * 3));
+    this.cap.style.opacity = rise(tl, rel(ev, 1), .5);
+  },
+};
+
+// ---------- am-fm: the article's 3-trace figure, animated ----------
+const amFm = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);width:1420px;height:720px;"), "0 0 1420 720");
+    this.msgP = el("path", { fill: "none", stroke: C.text, "stroke-width": 3.5, opacity: 0 }, s);
+    this.amP = el("path", { fill: "none", stroke: C.good, "stroke-width": 3.5, opacity: 0 }, s);
+    this.envP = el("path", { fill: "none", stroke: C.good, "stroke-width": 2, "stroke-dasharray": "7 6", opacity: 0 }, s);
+    this.fmP = el("path", { fill: "none", stroke: C.accent, "stroke-width": 3.5, opacity: 0 }, s);
+    this.labels = [
+      text(s, 120, 48, "message", 29, C.text, "start"),
+      text(s, 120, 262, "AM — height follows the message", 29, C.good, "start"),
+      text(s, 120, 502, "FM — spacing follows the message", 29, C.accent, "start"),
+    ];
+    this.labels.forEach(l => l.setAttribute("opacity", 0));
+  },
+  seek(elx, tl, ev) {
+    const t0 = 0.2, tAM = rel(ev, 1), tFM = rel(ev, 3);
+    const scroll = tl * 0.55;
+    const m = u => msg(u + scroll * 0.2);
+    this.msgP.setAttribute("d", wavePath(120, 130, 1240, u => 55, u => Math.PI * 2 * 1.5 * (u + scroll * 0.2) + Math.PI / 2, 4));
+    this.labels[0].setAttribute("opacity", rise(tl, t0, .4));
+    this.msgP.setAttribute("opacity", rise(tl, t0, .4));
+    this.amP.setAttribute("d", wavePath(120, 360, 1240, u => 30 + 42 * (0.5 + 0.5 * m(u)), u => Math.PI * 2 * 26 * u, 2));
+    this.envP.setAttribute("d", wavePath(120, 360, 1240, u => 30 + 42 * (0.5 + 0.5 * m(u)), () => Math.PI / 2, 4));
+    this.amP.setAttribute("opacity", rise(tl, tAM, .5));
+    this.envP.setAttribute("opacity", rise(tl, tAM + 0.6, .5) * 0.8);
+    this.labels[1].setAttribute("opacity", rise(tl, tAM, .5));
+    // FM: integrate frequency along x for a proper spacing change
+    this.fmP.setAttribute("d", (() => {
+      let d = "", phase = 0;
+      for (let x = 0; x <= 1240; x += 2) {
+        const u = x / 1240;
+        phase += (26 + 13 * m(u)) * (2 * Math.PI) * (2 / 1240);
+        const y = 600 - 62 * Math.sin(phase);
+        d += (x === 0 ? "M" : "L") + (120 + x) + " " + y.toFixed(1);
+      }
+      return d;
+    })());
+    this.fmP.setAttribute("opacity", rise(tl, tFM, .5));
+    this.labels[2].setAttribute("opacity", rise(tl, tFM, .5));
+  },
+};
+
+// ---------- symbols: constellation with 4 phase states ----------
+function constellation(parent, size = 560) {
+  const s = svg(div(parent, "", `position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);
+    width:${size}px;height:${size}px;`), "0 0 560 560");
+  el("line", { x1: 30, y1: 280, x2: 530, y2: 280, stroke: C.border, "stroke-width": 2 }, s);
+  el("line", { x1: 280, y1: 30, x2: 280, y2: 530, stroke: C.border, "stroke-width": 2 }, s);
+  el("circle", { cx: 280, cy: 280, r: 170, fill: "none", stroke: C.border, "stroke-width": 1.5, "stroke-dasharray": "5 6" }, s);
+  text(s, 540, 268, "I", 26, C.muted, "end");
+  text(s, 292, 46, "Q", 26, C.muted, "start");
+  return s;
+}
+const symbols = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:110px;width:100%;text-align:center;font-size:42px;font-weight:650;`,
+      "A finite menu of states — symbols");
+    this.s = constellation(elx);
+    this.dots = [45, 135, 225, 315].map((deg, i) => {
+      const g = el("g", { opacity: 0 }, this.s);
+      const x = 280 + 170 * Math.cos(deg * Math.PI / 180), y = 280 - 170 * Math.sin(deg * Math.PI / 180);
+      el("circle", { cx: x, cy: y, r: 16, fill: C.accent }, g);
+      text(g, x, y - 30, ["01", "00", "10", "11"][i], 28, C.text, "middle", "JetBrains Mono");
+      return g;
+    });
+    this.names = div(elx, "", `position:absolute;bottom:95px;width:100%;text-align:center;font-size:32px;
+      color:${C.muted};opacity:0;`,
+      `discrete frequencies = <b style="color:${C.text}">FSK</b> · discrete phases = <b style="color:${C.text}">PSK</b> · amplitude + phase = <b style="color:${C.text}">QAM</b>`);
+  },
+  seek(elx, tl, ev) {
+    this.dots.forEach((d, i) => d.setAttribute("opacity", rise(tl, rel(ev, 1) + i * 0.25, .4)));
+    this.names.style.opacity = rise(tl, rel(ev, 2), .5);
+  },
+};
+
+// ---------- trade: 4 → 16 → 64 points + noise blur ----------
+const trade = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:110px;width:100%;text-align:center;font-size:42px;font-weight:650;`,
+      "More dots = faster, but fragile");
+    this.s = constellation(elx);
+    this.orders = [];
+    const mk = (n, col) => {
+      const g = el("g", { opacity: 0 }, this.s);
+      const side = Math.sqrt(n), pitch = 340 / (side - 1);
+      for (let i = 0; i < side; i++)
+        for (let j = 0; j < side; j++) {
+          el("circle", { cx: 110 + i * pitch, cy: 110 + j * pitch,
+            r: n === 4 ? 15 : n === 16 ? 11 : 7, fill: col, class: "pt" }, g);
+        }
+      return g;
+    };
+    this.orders = [mk(4, C.accent), mk(16, C.good), mk(64, C.violet)];
+    this.tag = div(elx, "", `position:absolute;left:50%;top:52%;transform:translate(-50%,-50%) translateX(480px);
+      font-family:var(--mono);font-size:44px;color:${C.text};`, "");
+    this.cap = div(elx, "", `position:absolute;bottom:95px;width:100%;text-align:center;font-size:32px;
+      color:${C.muted};opacity:0;`,
+      `Wi-Fi up close: hundreds of points · a city-wide police radio: <b style="color:${C.accent}">four</b>`);
+  },
+  seek(elx, tl, ev) {
+    const t16 = rel(ev, 1), t64 = t16 + 1.4, tn = rel(ev, 2);
+    const stage = tl < t16 ? 0 : tl < t64 ? 1 : 2;
+    this.orders.forEach((g, i) => g.setAttribute("opacity", i === stage ? 1 : 0));
+    this.tag.textContent = ["4 pts · 2 bits", "16 pts · 4 bits", "64 pts · 6 bits"][stage];
+    // noise: jitter dot positions deterministically after tn
+    const noise = tl > tn ? Math.min(14, (tl - tn) * 6) : 0;
+    this.orders[stage].querySelectorAll(".pt").forEach((c, k) => {
+      const j1 = Math.sin(k * 12.9898 + Math.floor(tl * 30) * 78.233) * 43758.5453;
+      const j2 = Math.sin(k * 39.425 + Math.floor(tl * 30) * 12.9898) * 24634.6345;
+      c.setAttribute("transform", `translate(${(j1 - Math.floor(j1) - 0.5) * 2 * noise} ${(j2 - Math.floor(j2) - 0.5) * 2 * noise})`);
+    });
+    this.cap.style.opacity = rise(tl, rel(ev, 3), .5);
+  },
+};
+
+// ---------- gt-tie-in: 4FSK eye + π/4-DQPSK constellation ----------
+const gtTieIn = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:105px;width:100%;text-align:center;font-size:42px;font-weight:650;`,
+      "What GopherTrunk demodulates all day");
+    const wrap = div(elx, "", `position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);display:flex;gap:70px;`);
+    const panel = (label) => {
+      const p = div(wrap, "", `background:${C.elev};border:1.5px solid ${C.border};border-radius:14px;
+        padding:26px;opacity:0;text-align:center;`);
+      div(p, "", `font-size:27px;color:${C.muted};margin-bottom:14px;`, label);
+      return p;
+    };
+    const p1 = panel("4-level FSK — DMR · NXDN");
+    this.eye = svg(div(p1, "", "width:520px;height:360px;"), "0 0 520 360");
+    [60, 150, 210, 300].forEach(y =>
+      el("line", { x1: 20, y1: y, x2: 500, y2: y, stroke: C.border, "stroke-width": 1.5, "stroke-dasharray": "4 5" }, this.eye));
+    this.tracks = Array.from({ length: 10 }, (_, i) =>
+      el("path", { fill: "none", stroke: C.accent, "stroke-width": 2, opacity: 0.55 }, this.eye));
+    const p2 = panel("π/4-DQPSK — TETRA · P25 simulcast");
+    this.con = svg(div(p2, "", "width:360px;height:360px;"), "0 0 360 360");
+    el("circle", { cx: 180, cy: 180, r: 130, fill: "none", stroke: C.border, "stroke-width": 1.5, "stroke-dasharray": "4 5" }, this.con);
+    this.cdots = Array.from({ length: 8 }, (_, i) => {
+      const a = i * Math.PI / 4;
+      return el("circle", { cx: 180 + 130 * Math.cos(a), cy: 180 - 130 * Math.sin(a), r: 11, fill: C.violet, opacity: 0 }, this.con);
+    });
+    this.panels = [p1, p2];
+  },
+  seek(elx, tl, ev) {
+    this.panels.forEach((p, i) => enter(p, rise(tl, 0.3 + i * 1.0, .45)));
+    const lv = [60, 150, 210, 300];
+    this.tracks.forEach((tr, i) => {
+      const a = lv[(i * 7 + Math.floor(tl / 2)) % 4], b = lv[(i * 13 + 1 + Math.floor(tl / 2)) % 4];
+      const wob = 6 * Math.sin(tl * 2 + i);
+      tr.setAttribute("d", `M20 ${a + wob} C 180 ${a + wob}, 340 ${b - wob}, 500 ${b - wob}`);
+    });
+    this.cdots.forEach((d, i) => d.setAttribute("opacity",
+      0.25 + 0.75 * (Math.floor(tl * 4.8) % 8 === i ? 1 : 0)));
+  },
+};
+
+Engine.init({
+  title: CV.title, recap: CV.recap,
+  "bare-carrier": bareCarrier, "three-knobs": threeKnobs, "am-fm": amFm,
+  symbols, trade, "gt-tie-in": gtTieIn,
+});
+</script>
+</body>
+</html>

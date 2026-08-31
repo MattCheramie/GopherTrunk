@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="brand.css">
+<style>
+  /* thumbnail-only styles (1280x720 canvas is scaled by the renderer viewport) */
+  body.thumb { width: 1280px; height: 720px; }
+  .thumb-wrap { position: absolute; inset: 0; background: var(--bg); overflow: hidden; }
+  .thumb-wrap .stripe { position: absolute; left: 0; right: 0; bottom: 0; height: 14px;
+    background: linear-gradient(90deg, var(--accent-deep), var(--accent)); }
+  .thumb-term { position: absolute; left: 64px; top: 150px; width: 640px;
+    font-size: 108px; font-weight: 780; letter-spacing: -0.02em; line-height: 1.02; }
+  .thumb-eyebrow { position: absolute; left: 64px; top: 84px; font-size: 26px;
+    font-weight: 650; letter-spacing: 0.2em; color: var(--accent); text-transform: uppercase; }
+  .thumb-sub { position: absolute; left: 64px; bottom: 70px; font-size: 34px;
+    color: var(--muted); font-weight: 550; }
+  .thumb-art { position: absolute; right: 40px; top: 60px; width: 520px; height: 560px; }
+  body.thumb-vert { width: 1080px; height: 1920px; }
+  .tv-hook { position: absolute; top: 140px; left: 60px; width: 960px; text-align: center;
+    font-size: 92px; font-weight: 780; line-height: 1.08; }
+  .tv-art { position: absolute; top: 640px; left: 140px; width: 800px; height: 800px; }
+  .tv-brand { position: absolute; bottom: 120px; width: 100%; text-align: center;
+    font-family: var(--mono); font-size: 36px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script>
+// Deterministic card renderer. Configure via window.CARD before load,
+// or ?cfg=<base64 json> — used by pipeline/render_still.py and by scene files.
+const KINDS = {
+  title(c) { return `
+    <div class="title-card">
+      ${motif()}
+      <div class="eyebrow">${c.eyebrow ?? "GopherTrunk Field Guide"}</div>
+      <div class="term">${c.term}</div>
+      <div class="rule"></div>
+      <div class="segid">${c.segid ?? ""}</div>
+      <div class="stripe"></div>
+      ${bug(c)}
+    </div>`; },
+
+  recap(c) { return `
+    <div class="recap-card">
+      ${motif()}
+      <div class="head">Recap</div>
+      <div class="term">${c.term}</div>
+      <div class="bullets">
+        ${(c.bullets ?? []).map((b, i) => `
+          <div class="bullet"><div class="num">${i + 1}</div><div>${b}</div></div>`).join("")}
+      </div>
+      <div class="footer">Full write-up → <span class="url">${c.url ?? "gophertrunk.org/reference/"}</span></div>
+      ${bug(c)}
+    </div>`; },
+
+  endslate(c) { return `
+    <div class="end-slate">
+      ${motif()}
+      <div class="line1">${c.line1 ?? "Full course on YouTube — GopherTrunk"}</div>
+      <div class="line2">${c.line2 ?? "gophertrunk.org"}</div>
+      ${bug(c)}
+    </div>`; },
+
+  thumb(c) { document.body.className = "thumb"; return `
+    <div class="thumb-wrap">
+      ${motif()}
+      <div class="thumb-eyebrow">${c.eyebrow ?? "GopherTrunk Field Guide"}</div>
+      <div class="thumb-term">${c.term}</div>
+      <div class="thumb-sub">${c.sub ?? ""}</div>
+      <div class="thumb-art">${c.art ?? ""}</div>
+      <div class="stripe"></div>
+    </div>`; },
+
+  thumbvert(c) { document.body.className = "thumb-vert"; return `
+    <div class="thumb-wrap" style="width:1080px;height:1920px">
+      ${motif()}
+      <div class="tv-hook">${c.hook}</div>
+      <div class="tv-art">${c.art ?? ""}</div>
+      <div class="tv-brand">GopherTrunk · Field Guide</div>
+      <div class="stripe"></div>
+    </div>`; },
+};
+
+function motif() {
+  // faint carrier-wave backdrop, deterministic
+  let d = "M -40 540";
+  for (let x = -40; x <= 2000; x += 8) {
+    d += ` L ${x} ${540 + 90 * Math.sin(x / 55) * Math.sin(x / 700)}`;
+  }
+  return `<div class="motif"><svg viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+    <path d="${d}" stroke="#58a6ff" stroke-width="3" fill="none"/></svg></div>`;
+}
+function bug(c) {
+  return c.bug === false ? "" :
+    `<div class="bug"><img src="${c.logo ?? "../../docs/assets/gophertrunk-logo.png"}"></div>`;
+}
+
+function renderCard() {
+  let cfg = window.CARD;
+  const m = location.search.match(/[?&]cfg=([^&]+)/);
+  if (!cfg && m) cfg = JSON.parse(atob(decodeURIComponent(m[1])));
+  if (!cfg) cfg = { kind: "title", term: "Decibel (dB)", segid: "GT-RF-01.05" };
+  document.getElementById("root").innerHTML = KINDS[cfg.kind](cfg);
+  return true;
+}
+window.renderCard = renderCard;
+renderCard();
+window.seek = () => true; // cards are static; engine API compatibility
+</script>
+</body>
+</html>

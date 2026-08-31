@@ -1,0 +1,133 @@
+1
+00:00:02,000 --> 00:00:05,574
+One hundred sixty-two point five five zero
+megahertz.
+
+2
+00:00:05,494 --> 00:00:11,286
+Tune there, almost anywhere in the United States, and
+you'll hear the robotic voice of a weather station.
+
+3
+00:00:11,206 --> 00:00:19,157
+That number — the one thing everybody knows about a radio signal
+— is its frequency: how many times the wave cycles each second.
+
+4
+00:00:19,077 --> 00:00:21,455
+Get it right and the signal is yours.
+
+5
+00:00:21,375 --> 00:00:23,997
+Get it wrong by a hair and you hear
+nothing at all.
+
+6
+00:00:24,147 --> 00:00:33,932
+Frequency is measured in hertz — one hertz is one cycle per second, named for Heinrich
+Hertz, who first generated and detected radio waves in the eighteen-eighties.
+
+7
+00:00:33,852 --> 00:00:44,206
+It's the inverse of the cycle's duration: a signal at one hundred megahertz
+repeats a hundred million times a second, so each cycle lasts just ten nanoseconds.
+
+8
+00:00:44,356 --> 00:00:47,466
+Picture two waves side by side for one
+second.
+
+9
+00:00:47,386 --> 00:00:55,766
+The low-frequency wave fits a handful of cycles into that
+second; the high-frequency wave packs in thousands of times more.
+
+10
+00:00:55,686 --> 00:01:00,236
+Same speed of travel — always the speed of
+light — just a faster wiggle.
+
+11
+00:01:00,156 --> 00:01:09,976
+And since radio numbers get big fast, we scale the unit: kilohertz for
+thousands, megahertz for millions, gigahertz for billions of cycles per second.
+
+12
+00:01:10,126 --> 00:01:16,161
+Frequency has a twin: wavelength — the
+physical distance one cycle covers in flight.
+
+13
+00:01:16,081 --> 00:01:25,727
+Because every radio wave travels at the same speed, the two are locked
+on a seesaw: wavelength equals the speed of light divided by frequency.
+
+14
+00:01:25,647 --> 00:01:28,641
+Double the frequency and the wavelength
+halves.
+
+15
+00:01:28,561 --> 00:01:39,995
+An FM broadcast station at one hundred megahertz has waves three meters long; a UHF
+public-safety channel near four hundred sixty megahertz, about sixty-five centimeters.
+
+16
+00:01:39,915 --> 00:01:46,472
+That's why antennas come in different sizes — an antenna wants to
+match its wave, and we'll spend a whole chapter on that later.
+
+17
+00:01:46,622 --> 00:01:53,250
+Lay every possible frequency along one axis and you get
+the radio spectrum — and its neighborhoods have names.
+
+18
+00:01:53,170 --> 00:01:58,044
+HF, the shortwave bands that bounce off
+the upper atmosphere and cross oceans.
+
+19
+00:01:57,964 --> 00:02:02,374
+VHF, home of FM broadcast, aircraft, and
+marine radio.
+
+20
+00:02:02,294 --> 00:02:08,004
+UHF, where most trunked public-safety
+systems, cell phones, and Wi-Fi live.
+
+21
+00:02:07,924 --> 00:02:13,530
+A frequency isn't just a number — it's an
+address, with physics and regulations attached.
+
+22
+00:02:13,680 --> 00:02:20,551
+For an SDR, frequency is the first thing you set: it
+decides what slice of spectrum lands in the capture.
+
+23
+00:02:20,471 --> 00:02:27,459
+But here's the catch — cheap tuner hardware runs slightly
+off its dial frequency, by a few parts per million.
+
+24
+00:02:27,379 --> 00:02:38,592
+GopherTrunk, like any serious decoder, applies a correction and then continuously tracks the
+residual error while it decodes, because at these precisions, oscillators drift with temperature.
+
+25
+00:02:38,512 --> 00:02:43,491
+Getting the frequency right, and keeping it
+right, is the first requirement for any decode.
+
+26
+00:02:44,441 --> 00:02:53,959
+So: frequency is cycles per second, it's chained to wavelength through the speed
+of light, and it places every signal into a named neighborhood of the spectrum.
+
+27
+00:02:53,879 --> 00:02:55,747
+Full write-up linked below.
+

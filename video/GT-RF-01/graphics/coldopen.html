@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C, div, svg, el, text, sinePath, bumpPath } = Fig;
+const { enter, rise, rel, clamp01, easeOut } = Engine;
+
+// montage: 3 phases — RF rings / AM+FM morph / constellation under noise + SNR gap
+const coldMontage = {
+  mount(elx, ev) {
+    // phase A: rings
+    this.pa = div(elx, "", "position:absolute;inset:0;");
+    const sa = svg(this.pa, "0 0 1920 1080");
+    el("line", { x1: 960, y1: 760, x2: 960, y2: 440, stroke: C.text, "stroke-width": 6 }, sa);
+    el("circle", { cx: 960, cy: 440, r: 10, fill: C.accent }, sa);
+    this.rings = Array.from({ length: 6 }, () =>
+      el("circle", { cx: 960, cy: 440, r: 0, fill: "none", stroke: C.accent, "stroke-width": 4, opacity: 0 }, sa));
+    this.paCap = div(this.pa, "", `position:absolute;bottom:150px;width:100%;text-align:center;
+      font-size:38px;color:${C.muted};`, "thousands of conversations · all invisible");
+    // phase B: waves + constellation
+    this.pb = div(elx, "", "position:absolute;inset:0;opacity:0;");
+    const sb = svg(this.pb, "0 0 1920 1080");
+    this.fm = el("path", { fill: "none", stroke: C.accent, "stroke-width": 4 }, sb);
+    this.am = el("path", { fill: "none", stroke: C.good, "stroke-width": 4 }, sb);
+    this.dots = Array.from({ length: 4 }, (_, i) => {
+      const a = Math.PI / 4 + i * Math.PI / 2;
+      return el("circle", { cx: 1450 + 150 * Math.cos(a), cy: 540 - 150 * Math.sin(a), r: 14, fill: C.violet }, sb);
+    });
+    el("circle", { cx: 1450, cy: 540, r: 150, fill: "none", stroke: C.border, "stroke-width": 2, "stroke-dasharray": "5 6" }, sb);
+    // phase C: SNR gap
+    this.pc = div(elx, "", "position:absolute;inset:0;opacity:0;");
+    const sc = svg(this.pc, "0 0 1920 1080");
+    this.floor = el("path", { fill: "none", stroke: C.bad, "stroke-width": 2.5 }, sc);
+    this.sig = el("path", { fill: C.accent, "fill-opacity": .2, stroke: C.accent, "stroke-width": 4 }, sc);
+    this.pcCap = div(this.pc, "", `position:absolute;bottom:150px;width:100%;text-align:center;
+      font-size:38px;color:${C.muted};`, "one number decides whether it decodes — or dies");
+  },
+  seek(elx, tl, ev) {
+    const tB = rel(ev, 1), tC = rel(ev, 1) + 6.5;
+    this.pa.style.opacity = clamp01((tB - tl) / 0.4);
+    this.pb.style.opacity = clamp01((tl - tB) / 0.4) * clamp01((tC - tl) / 0.4);
+    this.pc.style.opacity = clamp01((tl - tC) / 0.4);
+    this.rings.forEach((r, i) => {
+      const age = tl - i * 0.85;
+      if (age <= 0) return r.setAttribute("opacity", 0);
+      const rr = (age * 260) % 1300;
+      r.setAttribute("r", 24 + rr);
+      r.setAttribute("opacity", Math.max(0, 0.85 - rr / 900));
+    });
+    if (this.pb.style.opacity > 0) {
+      this.fm.setAttribute("d", (() => {
+        let d = "", ph = 0;
+        for (let x = 0; x <= 1000; x += 3) {
+          ph += (20 + 10 * Math.sin(2 * Math.PI * (x / 1000 + tl * 0.15))) * 2 * Math.PI * 3 / 1000;
+          d += (x === 0 ? "M" : "L") + (140 + x) + " " + (400 - 90 * Math.sin(ph)).toFixed(1);
+        }
+        return d;
+      })());
+      this.am.setAttribute("d", Fig.wavePath(140, 700, 1000,
+        u => 30 + 60 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (u * 1.5 + tl * 0.2))),
+        u => 2 * Math.PI * 24 * u, 2));
+      this.dots.forEach((d, i) => d.setAttribute("transform",
+        `translate(${(Math.sin(tl * 7 + i * 9) * 14)} ${(Math.cos(tl * 8 + i * 5) * 14)})`));
+    }
+    if (this.pc.style.opacity > 0) {
+      let d = "";
+      for (let x = 0; x <= 1500; x += 9)
+        d += (x === 0 ? "M" : "L") + (200 + x) + " " + (740 - (Math.sin(x * .13 + Math.floor(tl * 12)) * .5 + Math.sin(x * .047) * .35) * 22).toFixed(1);
+      this.floor.setAttribute("d", d);
+      this.sig.setAttribute("d", bumpPath(950, 0, 70, 330 * clamp01((tl - tC) / 1.2), 738));
+    }
+  },
+};
+
+const pillarTitle = {
+  mount(elx, ev) {
+    elx.innerHTML = `
+      <div class="title-card">
+        <div class="eyebrow">GopherTrunk Field Guide · Course</div>
+        <div class="term">Radio Fundamentals</div>
+        <div class="rule"></div>
+        <div style="position:absolute;top:660px;width:100%;text-align:center;font-size:38px;color:#8b96a3">
+          How Signals Actually Work · Act I</div>
+        <div class="segid">GT-RF-01</div>
+        <div class="stripe"></div>
+        <div class="bug"><img src="../../../docs/assets/gophertrunk-logo.png"></div>
+      </div>`;
+    CV.motif(elx.querySelector(".title-card"));
+  },
+  seek(elx, tl) {
+    enter(elx.querySelector(".term"), rise(tl, 0.05, .6));
+  },
+};
+
+Engine.init({ "cold-montage": coldMontage, "pillar-title": pillarTitle });
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+1
+00:00:00,600 --> 00:00:13,984
+Right now, the air around you is carrying thousands of conversations — police dispatch, aircraft, weather
+satellites, your neighbor's doorbell — all at once, all invisible, all riding ripples in the electromagnetic field.
+
+2
+00:00:13,904 --> 00:00:29,065
+In the next half hour you'll learn the physics that makes that possible: what a radio wave actually is, the three knobs every
+transmitter turns, why spectrum is priced like real estate, and the one number that decides whether a signal decodes or dies.
+
+3
+00:00:28,985 --> 00:00:32,757
+This is Radio Fundamentals — how signals
+actually work.
+

@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+/* One scene serves the course intro, all five transition beats, and the outro.
+ * Behavior keyed on TIMELINE.seg + event index. */
+const { C, div } = Fig;
+const { enter, rise, rel, clamp01 } = Engine;
+
+const SEG = () => window.TIMELINE.seg;
+
+const mapCard = {
+  mount(elx, ev) {
+    elx._nodes = CV.mapCard(elx);
+    const seg = SEG();
+    if (seg.includes("intro")) {
+      const idx = window.TIMELINE.events.indexOf(ev);
+      if (idx === 0) elx._mode = { kind: "intro-dim" };
+      else if (idx === 1) elx._mode = { kind: "intro-light" };
+      else elx._mode = { kind: "all-lit", sub: "each chapter ↔ a Field Guide article · skip freely" };
+    } else if (/\.T(\d)/.test(seg)) {
+      const n = +seg.match(/\.T(\d)/)[1];
+      elx._mode = { kind: "transition", lit: n, pulse: n };  // nodes 0..n-1 lit, node n pulses
+    } else {
+      elx._mode = { kind: "all-lit", sub: "a ripple → an address → a message → a footprint → the math → the verdict" };
+    }
+    if (elx._mode.sub) {
+      elx._sub = div(elx, "", `position:absolute;top:590px;width:100%;text-align:center;
+        font-size:34px;color:${C.text};opacity:0;`, elx._mode.sub);
+    }
+  },
+  seek(elx, tl, ev) {
+    const m = elx._mode, nodes = elx._nodes;
+    if (m.kind === "intro-dim") nodes.forEach(n => CV.setNode(n, "dim"));
+    if (m.kind === "intro-light") {
+      // chapters light with their naming lines (lines 1..5; SNR shares line 5)
+      const lightAt = [rel(ev, 1), rel(ev, 2), rel(ev, 3), rel(ev, 4), rel(ev, 5), rel(ev, 5) + 2.2];
+      nodes.forEach((n, i) => CV.setNode(n, tl >= lightAt[i] ? "lit" : "dim"));
+    }
+    if (m.kind === "all-lit") nodes.forEach(n => CV.setNode(n, "lit"));
+    if (m.kind === "transition")
+      nodes.forEach((n, i) => CV.setNode(n, i < m.lit ? "lit" : i === m.pulse ? "pulse" : "dim", tl));
+    if (elx._sub) elx._sub.style.opacity = rise(tl, 1.2, .6);
+  },
+};
+
+const nextPointer = {
+  mount(elx, ev) {
+    elx.innerHTML = `
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;">
+        <div style="font-size:30px;letter-spacing:.2em;text-transform:uppercase;color:${C.muted};">Next course</div>
+        <div style="font-size:76px;font-weight:750;margin-top:24px;">SDR from Zero</div>
+        <div style="font-size:36px;color:${C.muted};margin-top:18px;">your first software-defined radio</div>
+        <div style="width:140px;height:6px;border-radius:3px;margin:36px auto 0;
+          background:linear-gradient(90deg,#155799,#58a6ff);"></div>
+      </div>`;
+    CV.motif(elx);
+  },
+  seek(elx, tl) {
+    enter(elx.children[0], rise(tl, 0.1, .6));
+  },
+};
+
+Engine.init({ "map-card": mapCard, "next-pointer": nextPointer });
+</script>
+</body>
+</html>

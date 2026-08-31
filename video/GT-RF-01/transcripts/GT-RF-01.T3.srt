@@ -1,0 +1,10 @@
+1
+00:00:00,500 --> 00:00:07,627
+Here's the catch modulation doesn't advertise: the moment
+a carrier starts talking, it spreads out and takes up room.
+
+2
+00:00:07,547 --> 00:00:11,457
+How much room — and why that room is so
+expensive — is bandwidth.
+

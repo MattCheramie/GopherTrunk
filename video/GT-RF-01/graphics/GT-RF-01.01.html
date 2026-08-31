@@ -1,0 +1,251 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C, div, svg, el, text, sinePath, prepDraw, setDraw, arrowDefs } = Fig;
+const { enter, rise, rel, easeOut, clamp01 } = Engine;
+
+// mast + expanding rings, reusable (also used by the cold open montage)
+function ringsRig(parent, cx = 960, cy = 560) {
+  const s = svg(div(parent, "", "position:absolute;inset:0;"), "0 0 1920 1080");
+  const mast = el("g", {}, s);
+  el("line", { x1: cx, y1: cy + 200, x2: cx, y2: cy - 40, stroke: C.text, "stroke-width": 6 }, mast);
+  el("path", { d: `M${cx - 46} ${cy - 40} L${cx} ${cy - 110} L${cx + 46} ${cy - 40} Z`,
+    fill: "none", stroke: C.text, "stroke-width": 5 }, mast);
+  el("circle", { cx, cy: cy - 110, r: 10, fill: C.accent }, mast);
+  const rings = Array.from({ length: 5 }, () =>
+    el("circle", { cx, cy: cy - 110, r: 0, fill: "none", stroke: C.accent, "stroke-width": 4, opacity: 0 }, s));
+  return { s, mast, rings, cx, cy };
+}
+function ringsSeek(rig, tl, speed = 170, period = 1.15) {
+  rig.rings.forEach((r, i) => {
+    const age = tl - i * period;
+    if (age <= 0) { r.setAttribute("opacity", 0); return; }
+    const rr = (age * speed) % (period * 5 * speed);
+    r.setAttribute("r", 30 + rr);
+    r.setAttribute("opacity", Math.max(0, 0.85 - rr / (period * 4.2 * speed)));
+  });
+}
+
+// ---------- ripple: pond rings → RF rings ----------
+const ripple = {
+  mount(elx, ev) {
+    // pond (left phase): concentric ellipses; then antenna rig
+    this.pond = svg(div(elx, "", "position:absolute;inset:0;"), "0 0 1920 1080");
+    el("ellipse", { cx: 960, cy: 620, rx: 620, ry: 150, fill: "none", stroke: C.border, "stroke-width": 2 }, this.pond);
+    this.drops = Array.from({ length: 4 }, () =>
+      el("ellipse", { cx: 960, cy: 620, rx: 0, ry: 0, fill: "none", stroke: C.accent, "stroke-width": 3.5, opacity: 0 }, this.pond));
+    this.rig = ringsRig(elx);
+    this.rig.s.parentElement.style.opacity = 0;
+    this.cap = div(elx, "", `position:absolute;bottom:100px;width:100%;text-align:center;
+      font-size:36px;color:${C.muted};opacity:0;`,
+      `a ripple in the <b style="color:${C.text}">electromagnetic field</b>`);
+  },
+  seek(elx, tl, ev) {
+    const swap = rel(ev, 2);  // "Feed an alternating current…"
+    this.pond.style.opacity = clamp01((swap + 0.6 - tl) / 0.6);
+    this.drops.forEach((d, i) => {
+      const age = (tl - 0.3 - i * 0.9);
+      if (age <= 0) { d.setAttribute("opacity", 0); return; }
+      const p = (age * 190) % 700;
+      d.setAttribute("rx", p); d.setAttribute("ry", p * 0.24);
+      d.setAttribute("opacity", Math.max(0, 0.8 - p / 640));
+    });
+    this.rig.s.parentElement.style.opacity = clamp01((tl - swap) / 0.6);
+    if (tl > swap) ringsSeek(this.rig, tl - swap);
+    this.cap.style.opacity = rise(tl, rel(ev, 3), .5);
+  },
+};
+
+// ---------- definition-card: spectrum strip ----------
+const definitionCard = {
+  mount(elx, ev) {
+    elx.innerHTML = CV.centerCard("Electromagnetic radiation in the radio range", "", "width:1320px;padding:48px 64px;");
+    const card = elx.querySelector(".center-card");
+    card.innerHTML = `<div class="card-eyebrow">The electromagnetic spectrum</div>`;
+    const s = svg(div(card, "", "width:100%;height:270px;"), "0 0 1200 270");
+    const bands = [["radio", 0, 430, C.accent], ["micro&#8203;wave", 430, 180, C.deep],
+      ["IR", 610, 150, "#7d5a3c"], ["visible", 760, 90, C.warn], ["UV", 850, 120, C.violet],
+      ["X / γ", 970, 230, C.muted]];
+    this.bandEls = bands.map(([name, x, w, col]) => {
+      const g = el("g", { opacity: 0 }, s);
+      el("rect", { x, y: 90, width: w - 6, height: 74, rx: 10, fill: col,
+        "fill-opacity": name === "radio" ? 0.85 : 0.3, stroke: col, "stroke-width": 1.5 }, g);
+      text(g, x + w / 2 - 3, 136, name.replace("&#8203;", ""), 26, name === "radio" ? "#08101e" : C.text, "middle", "Inter", 650);
+      return g;
+    });
+    this.rlab = el("g", { opacity: 0 }, s);
+    text(this.rlab, 215, 60, "~3 kHz – 300 GHz", 30, C.accent, "middle", "JetBrains Mono");
+    text(this.rlab, 215, 215, "bends around hills, passes through walls", 24, C.muted);
+    el("line", { x1: 30, y1: 240, x2: 1170, y2: 240, stroke: C.border, "stroke-width": 2 }, s);
+    text(s, 600, 265, "frequency →", 22, C.muted);
+    text(s, 60, 265, "long waves", 22, C.muted, "start");
+    text(s, 1140, 265, "light", 22, C.muted, "end");
+  },
+  seek(elx, tl, ev) {
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.1, .5));
+    enter(elx.querySelector(".center-card"), rise(tl, 0.2, .5));
+    this.bandEls.forEach((b, i) => b.setAttribute("opacity", rise(tl, rel(ev, 1) + i * 0.28, .4)));
+    this.rlab.setAttribute("opacity", rise(tl, 0.6, .5));
+  },
+};
+
+// ---------- leapfrog: E and B regenerate each other ----------
+const leapfrog = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1500px;height:620px;"), "0 0 1500 620");
+    arrowDefs(s, "lfE", C.accent); arrowDefs(s, "lfB", C.good);
+    this.eArrows = []; this.bArrows = [];
+    for (let i = 0; i < 12; i++) {
+      const x = 180 + i * 110;
+      this.eArrows.push(el("line", { x1: x, y1: 310, x2: x, y2: 310, stroke: C.accent,
+        "stroke-width": 5, "marker-end": "url(#lfE)", opacity: 0 }, s));
+      this.bArrows.push(el("line", { x1: x, y1: 310, x2: x, y2: 310, stroke: C.good,
+        "stroke-width": 5, "marker-end": "url(#lfB)", opacity: 0, transform: `rotate(60 ${x} 310)` }, s));
+    }
+    el("line", { x1: 120, y1: 310, x2: 1440, y2: 310, stroke: C.border, "stroke-width": 2 }, s);
+    this.leg = div(elx, "", `position:absolute;bottom:120px;width:100%;text-align:center;font-size:34px;opacity:0;`,
+      `<span style="color:${C.accent}">■</span> electric field&nbsp;&nbsp;&nbsp;
+       <span style="color:${C.good}">■</span> magnetic field&nbsp;&nbsp;&nbsp;
+       <span style="color:${C.muted}">each regenerates the other — no medium needed</span>`);
+  },
+  seek(elx, tl, ev) {
+    const front = (tl - 0.4) * 3.2; // arrows light up left→right as the wave passes
+    this.eArrows.forEach((a, i) => {
+      const local = clamp01(front - i * 0.55);
+      const amp = 130 * Math.sin(Math.PI * 2 * (tl * 0.9 - i * 0.28)) * local;
+      a.setAttribute("y2", 310 - amp);
+      a.setAttribute("opacity", local * 0.95);
+    });
+    this.bArrows.forEach((a, i) => {
+      const local = clamp01(front - i * 0.55 - 0.3);
+      // far-field E and B oscillate IN PHASE, perpendicular to each other
+      const amp = 105 * Math.sin(Math.PI * 2 * (tl * 0.9 - i * 0.28)) * local;
+      a.setAttribute("y2", 310 - amp);
+      a.setAttribute("opacity", local * 0.8);
+    });
+    this.leg.style.opacity = rise(tl, rel(ev, 2), .5);
+  },
+};
+
+// ---------- wave-anatomy: the article's figure, built element by element ----------
+const waveAnatomy = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);width:1400px;height:600px;"), "0 0 1400 600");
+    this.center = el("line", { x1: 60, y1: 300, x2: 1340, y2: 300, stroke: C.muted,
+      "stroke-opacity": 0.4, "stroke-width": 2 }, s);
+    this.wave = el("path", { d: sinePath(60, 300, 1280, 150, 3, 0), fill: "none",
+      stroke: C.accent, "stroke-width": 5 }, s);
+    prepDraw(this.wave);
+    this.lam = el("g", { opacity: 0 }, s);
+    el("path", { d: "M 486 120 L 486 96 L 913 96 L 913 120", stroke: C.text, "stroke-width": 3, fill: "none" }, this.lam);
+    text(this.lam, 700, 80, "wavelength (λ)", 30, C.text);
+    this.amp = el("g", { opacity: 0 }, s);
+    el("line", { x1: 273, y1: 300, x2: 273, y2: 150, stroke: C.text, "stroke-width": 3, "stroke-dasharray": "8 6" }, this.amp);
+    text(this.amp, 289, 220, "amplitude", 30, C.text, "start");
+    this.pha = el("g", { opacity: 0 }, s);
+    el("circle", { cx: 700, cy: 300, r: 13, fill: C.warn }, this.pha);
+    text(this.pha, 700, 360, "phase — where in the cycle", 30, C.warn);
+    this.labels = ["amplitude — strength", "frequency — cycles per second", "phase — position in the cycle"];
+  },
+  seek(elx, tl, ev) {
+    setDraw(this.wave, easeOut((tl - 0.2) / 1.4));
+    this.amp.setAttribute("opacity", rise(tl, rel(ev, 2), .4));
+    this.lam.setAttribute("opacity", rise(tl, rel(ev, 1), .4));
+    // frequency: pulse the wave horizontally after "frequency" line
+    const fT = rel(ev, 3), phT = rel(ev, 4);
+    if (tl > fT) {
+      const wob = tl < phT ? (tl - fT) : 0;
+      this.wave.setAttribute("d", sinePath(60, 300, 1280, 150, 3, wob * 2.2));
+      this.wave.style.strokeDasharray = "none"; this.wave.style.strokeDashoffset = 0;
+    }
+    this.pha.setAttribute("opacity", rise(tl, phT, .4));
+  },
+};
+
+// ---------- journey: TX → fading rings → RX microvolts ----------
+const journey = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;inset:0;"), "0 0 1920 1080");
+    // TX mast left
+    el("line", { x1: 260, y1: 700, x2: 260, y2: 380, stroke: C.text, "stroke-width": 6 }, s);
+    el("circle", { cx: 260, cy: 380, r: 10, fill: C.accent }, s);
+    this.rings = Array.from({ length: 6 }, () =>
+      el("circle", { cx: 260, cy: 380, r: 0, fill: "none", stroke: C.accent, "stroke-width": 3.5, opacity: 0 }, s));
+    // RX mast right (small)
+    el("line", { x1: 1620, y1: 700, x2: 1620, y2: 480, stroke: C.text, "stroke-width": 5 }, s);
+    el("circle", { cx: 1620, cy: 480, r: 8, fill: C.good }, s);
+    this.meter = div(elx, "", `position:absolute;left:1450px;top:700px;width:360px;background:${C.elev};
+      border:1.5px solid ${C.border};border-radius:12px;padding:20px 28px;opacity:0;`);
+    this.meter.innerHTML = `<div style="font-size:24px;color:${C.muted}">induced signal</div>
+      <div class="uv" style="font-family:var(--mono);font-size:40px;color:${C.good};margin-top:6px">0.0 µV</div>`;
+    this.dist = div(elx, "", `position:absolute;left:0;right:0;top:790px;text-align:center;
+      font-size:30px;color:${C.muted};opacity:0;`, "power thins with the square of distance");
+  },
+  seek(elx, tl, ev) {
+    this.rings.forEach((r, i) => {
+      const age = tl - i * 1.0;
+      if (age <= 0) { r.setAttribute("opacity", 0); return; }
+      const rr = (age * 230) % 1500;
+      r.setAttribute("r", 20 + rr);
+      r.setAttribute("opacity", Math.max(0, 0.8 - rr / 1050));
+    });
+    this.dist.style.opacity = rise(tl, rel(ev, 1), .5);
+    this.meter.style.opacity = rise(tl, rel(ev, 1) + 1.2, .5);
+    const uv = this.meter.querySelector(".uv");
+    const p = clamp01((tl - rel(ev, 1) - 1.6) / 3);
+    uv.textContent = (3.2 * p * (1 + 0.13 * Math.sin(tl * 3.1))).toFixed(1) + " µV";
+  },
+};
+
+// ---------- gt-tie-in: wave → IQ numbers pipeline ----------
+const gtTieIn = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:120px;width:100%;text-align:center;font-size:42px;font-weight:650;`,
+      "From physics to arithmetic");
+    const wrap = div(elx, "", `position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);
+      display:flex;align-items:center;gap:26px;`);
+    const stage = (label, inner) => {
+      const d = div(wrap, "gt-stage", `background:${C.elev};border:1.5px solid ${C.border};border-radius:14px;
+        width:280px;height:240px;padding:22px;text-align:center;opacity:0;`);
+      d.innerHTML = `<div style="font-size:25px;color:${C.muted};margin-bottom:14px">${label}</div>${inner}`;
+      return d;
+    };
+    this.stages = [
+      stage("radio wave", `<svg viewBox="0 0 220 130"><path d="${sinePath(5, 65, 210, 45, 4)}" stroke="${C.accent}" stroke-width="3.5" fill="none"/></svg>`),
+      stage("SDR front end", `<svg viewBox="0 0 220 130"><rect x="35" y="25" width="150" height="80" rx="12" fill="none" stroke="${C.text}" stroke-width="3"/><text x="110" y="75" text-anchor="middle" font-size="26" fill="${C.text}" font-family="Inter">mix + digitize</text></svg>`),
+      stage("IQ samples", `<div class="iqs" style="font-family:var(--mono);font-size:23px;color:${C.good};text-align:left;line-height:1.55;margin-left:14px"></div>`),
+      stage("decoded call", `<svg viewBox="0 0 220 130"><rect x="25" y="35" width="170" height="60" rx="10" fill="rgba(88,166,255,.12)" stroke="${C.accent}" stroke-width="2.5"/><text x="110" y="73" text-anchor="middle" font-size="24" fill="${C.text}" font-family="Inter">TG 4201 · voice</text></svg>`),
+    ];
+    // arrows between stages
+    [...wrap.children].forEach((c, i) => { if (i) wrap.insertBefore(div(elx, "", ""), c); });
+    this.iq = this.stages[2].querySelector(".iqs");
+  },
+  seek(elx, tl, ev) {
+    this.stages.forEach((sd, i) => enter(sd, rise(tl, 0.3 + i * 0.9, .45)));
+    const n = Math.floor(Math.max(0, tl - 2.4) * 6);
+    const rows = [];
+    for (let k = Math.max(0, n - 4); k < n; k++) {
+      const i = Math.cos(k * 0.7).toFixed(2), q = Math.sin(k * 0.7).toFixed(2);
+      rows.push(`${i >= 0 ? "+" : ""}${i} ${q >= 0 ? "+" : ""}${q}j`);
+    }
+    this.iq.innerHTML = rows.join("<br>");
+  },
+};
+
+Engine.init({
+  title: CV.title, recap: CV.recap,
+  ripple, "definition-card": definitionCard, leapfrog,
+  "wave-anatomy": waveAnatomy, journey, "gt-tie-in": gtTieIn,
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C } = Fig;
+const { enter, rise } = Engine;
+const endslate = {
+  mount(elx, ev) {
+    elx.innerHTML = `
+      <div class="end-slate">
+        <div class="line1">Full course &amp; Field Guide</div>
+        <div class="line2">gophertrunk.org</div>
+        <div style="position:absolute;top:66%;width:100%;text-align:center;font-size:30px;color:${C.muted}">
+          every chapter has a written article with formulas and sources</div>
+        <div class="stripe" style="position:absolute;left:0;right:0;bottom:0;height:10px;
+          background:linear-gradient(90deg,#155799,#58a6ff)"></div>
+        <div class="bug" style="opacity:.7"><img src="../../../docs/assets/gophertrunk-logo.png"></div>
+      </div>`;
+    CV.motif(elx.querySelector(".end-slate"));
+  },
+  seek(elx, tl) {
+    enter(elx.querySelector(".line1"), rise(tl, 0.2, .8));
+    enter(elx.querySelector(".line2"), rise(tl, 0.7, .8));
+  },
+};
+Engine.init({ endslate });
+</script>
+</body>
+</html>

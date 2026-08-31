@@ -1,0 +1,127 @@
+1
+00:00:02,000 --> 00:00:05,713
+Signal-to-noise ratio is the number that
+decides everything.
+
+2
+00:00:05,633 --> 00:00:19,041
+Every receiver on Earth is listening to a party it can't leave: below every signal hisses a floor of
+noise — thermal noise from physics itself, plus every switching power supply and LED billboard in town.
+
+3
+00:00:18,961 --> 00:00:24,671
+Whether your signal decodes comes down to one
+question: how far does it stand above that floor?
+
+4
+00:00:24,591 --> 00:00:31,822
+That gap is the signal-to-noise ratio — SNR — and it is the
+single best predictor of whether the bits come out clean.
+
+5
+00:00:31,972 --> 00:00:40,585
+The definition is one subtraction: signal power minus
+noise-floor power, both in d-B-m, giving a gap in decibels.
+
+6
+00:00:40,505 --> 00:00:46,703
+A signal at minus eighty-five over a floor at
+minus one-oh-five has twenty decibels of SNR.
+
+7
+00:00:46,623 --> 00:00:57,744
+And because it's a difference, any calibration offset in your receiver cancels out — which is why
+SNR means something even on twenty-five dollar hardware that has no idea what a true d-B-m is.
+
+8
+00:00:57,894 --> 00:01:00,005
+Every mode has a price of admission.
+
+9
+00:00:59,925 --> 00:01:04,741
+Analog FM voice becomes readable around
+ten to twelve decibels of SNR.
+
+10
+00:01:04,661 --> 00:01:13,935
+The digital voice modes GopherTrunk decodes — C4FM, CQPSK — want
+roughly fifteen to twenty at the demodulator for a clean lock.
+
+11
+00:01:13,855 --> 00:01:16,884
+Below the threshold, things don't degrade
+gracefully…
+
+12
+00:01:17,034 --> 00:01:18,576
+…they fall off a cliff.
+
+13
+00:01:18,496 --> 00:01:26,946
+Digital links live on a waterfall curve: a few decibels above
+threshold, the error rate is negligible — the audio is perfect.
+
+14
+00:01:26,866 --> 00:01:30,545
+A few decibels below, the link collapses
+entirely.
+
+15
+00:01:30,465 --> 00:01:36,059
+That's why digital radio never gets static-y
+like analog; it's flawless, then gone.
+
+16
+00:01:35,979 --> 00:01:46,902
+Forward error correction — deliberately sending redundant bits — buys the cliff a few
+decibels of grace, letting a mode decode below the SNR its raw modulation could survive.
+
+17
+00:01:47,052 --> 00:01:52,971
+And here's the payoff of the bandwidth chapter's
+closing idea: the noise floor isn't fixed.
+
+18
+00:01:52,891 --> 00:01:59,646
+Noise power scales with the bandwidth you admit — the floor rises
+about three decibels every time you double your filter width.
+
+19
+00:01:59,566 --> 00:02:09,015
+Narrow the filter to hug the signal's occupied bandwidth and you shut
+noise out while keeping all the signal: free SNR, no new antenna required.
+
+20
+00:02:08,935 --> 00:02:17,234
+It also means an SNR figure only really means something at a stated
+bandwidth — worth remembering when comparing numbers between systems.
+
+21
+00:02:17,384 --> 00:02:27,460
+GopherTrunk reports live demodulator SNR and error-vector magnitude for every
+channel it decodes, in decibels, precisely so you can see how much margin a link has.
+
+22
+00:02:27,380 --> 00:02:35,087
+A failed decode with healthy SNR isn't a weak signal —
+it's something else: overload, wrong tuning, multipath.
+
+23
+00:02:35,007 --> 00:02:37,374
+The number tells you which problem you're
+hunting.
+
+24
+00:02:37,294 --> 00:02:41,541
+When you're improving a station, you are
+really improving one number — and this is it.
+
+25
+00:02:42,491 --> 00:02:55,307
+So: SNR is the gap between your signal and the floor, digital modes live or die on a cliff around
+fifteen to twenty decibels, and the cheapest SNR you'll ever buy is a filter no wider than the signal.
+
+26
+00:02:55,227 --> 00:02:57,152
+Full write-up linked below.
+

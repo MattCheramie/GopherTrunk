@@ -1,0 +1,131 @@
+1
+00:00:02,000 --> 00:00:08,511
+Modulation is the answer to an embarrassing question:
+a perfect radio wave says absolutely nothing.
+
+2
+00:00:08,431 --> 00:00:16,835
+A pure, steady carrier is just a hum in the spectrum — endlessly
+repeating, perfectly predictable, carrying zero information.
+
+3
+00:00:16,755 --> 00:00:19,737
+To make a wave say something, you have to
+change it.
+
+4
+00:00:19,657 --> 00:00:27,712
+Modulation is the art of changing a carrier wave in step with a message
+— and every radio scheme in history is a variation on that one move.
+
+5
+00:00:27,862 --> 00:00:38,275
+Remember the three properties from the last chapter's write-up — a sine wave has an
+amplitude, a frequency, and a phase, and those are the only things a transmitter can touch.
+
+6
+00:00:38,195 --> 00:00:41,072
+So there are only three families of
+modulation.
+
+7
+00:00:40,992 --> 00:00:46,354
+Everything from nineteen-twenties broadcasting
+to your phone is built from these three knobs.
+
+8
+00:00:46,504 --> 00:00:54,711
+Turn the amplitude knob and you get AM: the message is written into
+the carrier's height — its envelope literally traces the audio.
+
+9
+00:00:54,631 --> 00:01:01,270
+Simple, but noise also lives in amplitude,
+which is why AM crackles in a thunderstorm.
+
+10
+00:01:01,190 --> 00:01:11,973
+Turn the frequency knob and you get FM: the message speeds up and slows down the carrier's
+wiggle while the height stays constant — so amplitude noise mostly wipes right off.
+
+11
+00:01:11,893 --> 00:01:24,082
+That constant envelope is why FM sounds cleaner than AM, and the third knob, phase, nudges
+the carrier's timing — closely related to FM, and the foundation of almost everything digital.
+
+12
+00:01:24,232 --> 00:01:27,667
+Analog modulation varies the carrier
+continuously.
+
+13
+00:01:27,587 --> 00:01:38,022
+Digital modulation makes one crucial change: it switches the carrier among
+a finite menu of states, called symbols, each standing for one or more bits.
+
+14
+00:01:37,942 --> 00:01:43,049
+Shift between discrete frequencies and
+it's FSK — frequency-shift keying.
+
+15
+00:01:42,969 --> 00:01:45,219
+Discrete phases: PSK.
+
+16
+00:01:45,139 --> 00:01:48,539
+Combine amplitude and phase levels: QAM.
+
+17
+00:01:48,459 --> 00:02:00,357
+Draw the menu as dots on a plane — amplitude out from the center, phase around it — and you get
+the constellation diagram, the map every digital receiver uses to decide which symbol just arrived.
+
+18
+00:02:00,507 --> 00:02:03,687
+And here is the trade that shapes all of
+digital radio.
+
+19
+00:02:03,607 --> 00:02:08,945
+More dots on the map means more bits per
+symbol — faster data in the same bandwidth.
+
+20
+00:02:08,865 --> 00:02:16,457
+But more dots also means the dots sit closer together,
+so it takes less noise to smudge one into its neighbor.
+
+21
+00:02:16,377 --> 00:02:19,556
+Fast-but-fragile, or slow-but-tough.
+
+22
+00:02:19,476 --> 00:02:27,009
+Wi-Fi at close range runs hundreds of points; a police
+radio fighting fades across a whole city runs just four.
+
+23
+00:02:27,159 --> 00:02:30,721
+That's exactly what GopherTrunk spends its
+life demodulating.
+
+24
+00:02:30,641 --> 00:02:49,122
+The land-mobile systems it decodes chose rugged, low-order schemes on purpose: four-level FSK — four frequency steps, two bits
+per symbol — for DMR and NXDN, and a rotating four-phase scheme called pi-over-four DQPSK for TETRA and P25's simulcast flavor.
+
+25
+00:02:49,042 --> 00:02:58,143
+Once the signal is digitized, demodulation is just measuring amplitude,
+frequency, and phase — the same three knobs — and mapping them back to bits.
+
+26
+00:02:59,093 --> 00:03:10,399
+So: modulation turns a mute carrier into a messenger, there are exactly three knobs to
+turn, and digital radio is a menu of symbol states traded off between speed and toughness.
+
+27
+00:03:10,319 --> 00:03:12,291
+Full write-up linked below.
+

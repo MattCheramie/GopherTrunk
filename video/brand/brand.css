@@ -1,0 +1,190 @@
+/* GopherTrunk video brand kit — tokens + shared card styles.
+   Mirrors docs/assets/css/style.scss site tokens. Video skews dark theme.
+   Fonts are downloaded by the pipeline into video/_render/fonts/ (not committed):
+   Inter (variable) + JetBrains Mono — see gophertrunk-video-pipeline.md §3. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("../_render/fonts/InterVariable.ttf") format("truetype-variations");
+  font-weight: 100 900;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../_render/fonts/fonts/ttf/JetBrainsMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../_render/fonts/fonts/ttf/JetBrainsMono-Medium.ttf") format("truetype");
+  font-weight: 500;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../_render/fonts/fonts/ttf/JetBrainsMono-Bold.ttf") format("truetype");
+  font-weight: 700;
+}
+
+:root {
+  /* site tokens (dark) */
+  --bg: #0d1117;
+  --bg-elev: #161b22;
+  --text: #e6edf3;
+  --muted: #8b96a3;
+  --accent: #58a6ff;
+  --accent-deep: #155799;      /* light-theme accent, used as gradient partner */
+  --accent-soft: rgba(88, 166, 255, 0.12);
+  --border: #30363d;
+  --radius: 12px;              /* 0.5rem site radius scaled for 1080p canvas */
+  /* video-only supporting hues (diagram style sheet) */
+  --good: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --violet: #bc8cff;
+  --sans: "Inter", "DejaVu Sans", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  width: 1920px; height: 1080px;
+  overflow: hidden;
+}
+body.vertical { width: 1080px; height: 1920px; }
+
+/* ---------- stage & 9:16 safe zone ---------- */
+.stage { position: absolute; inset: 0; }
+/* center 9:16 zone on a 16:9 1080p stage: x 656..1264 (608px wide ≈ 1080*(9/16)) —
+   all must-read content lives inside .safe when the layout must survive vertical */
+.safe { position: absolute; left: 656px; width: 608px; top: 0; height: 1080px; }
+
+/* ---------- backdrop motif: faint carrier wave ---------- */
+.motif {
+  position: absolute; inset: 0; opacity: 0.05; pointer-events: none;
+}
+.motif svg { width: 100%; height: 100%; }
+
+/* ---------- title card ---------- */
+.title-card { position: absolute; inset: 0; background: var(--bg); }
+.title-card .eyebrow {
+  position: absolute; top: 400px; width: 100%; text-align: center;
+  font-size: 30px; font-weight: 600; letter-spacing: 0.22em;
+  color: var(--muted); text-transform: uppercase;
+}
+.title-card .term {
+  position: absolute; top: 462px; width: 100%; text-align: center;
+  font-size: 110px; font-weight: 750; letter-spacing: -0.02em;
+  color: var(--text);
+}
+.title-card .term .accent { color: var(--accent); }
+.title-card .rule {
+  position: absolute; top: 620px; left: 50%; transform: translateX(-50%);
+  width: 140px; height: 6px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent-deep), var(--accent));
+}
+.title-card .segid {
+  position: absolute; right: 64px; bottom: 48px;
+  font-family: var(--mono); font-size: 26px; color: var(--muted);
+}
+.title-card .stripe {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 10px;
+  background: linear-gradient(90deg, var(--accent-deep), var(--accent));
+}
+
+/* ---------- recap card ---------- */
+.recap-card { position: absolute; inset: 0; background: var(--bg); }
+.recap-card .head {
+  position: absolute; top: 180px; width: 100%; text-align: center;
+  font-size: 34px; font-weight: 600; letter-spacing: 0.18em;
+  color: var(--muted); text-transform: uppercase;
+}
+.recap-card .term {
+  position: absolute; top: 236px; width: 100%; text-align: center;
+  font-size: 64px; font-weight: 720; color: var(--text);
+}
+.recap-card .bullets {
+  position: absolute; top: 420px; left: 50%; transform: translateX(-50%);
+  width: 1180px; display: flex; flex-direction: column; gap: 44px;
+}
+.recap-card .bullet {
+  display: flex; align-items: flex-start; gap: 28px;
+  font-size: 44px; font-weight: 500; line-height: 1.3;
+}
+.recap-card .bullet .num {
+  flex: 0 0 64px; height: 64px; border-radius: 50%;
+  background: var(--accent-soft); border: 2px solid var(--accent);
+  color: var(--accent); font-weight: 700; font-size: 34px;
+  display: flex; align-items: center; justify-content: center;
+}
+.recap-card .footer {
+  position: absolute; bottom: 90px; width: 100%; text-align: center;
+  font-size: 30px; color: var(--muted);
+}
+.recap-card .footer .url { color: var(--accent); font-family: var(--mono); }
+
+/* ---------- generic content card (definition / formula / numbers) ---------- */
+.card {
+  background: var(--bg-elev);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px 56px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+}
+.card .card-eyebrow {
+  font-size: 24px; font-weight: 600; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 18px;
+}
+.card .formula {
+  font-family: var(--mono); font-size: 56px; font-weight: 500;
+  color: var(--text);
+}
+.card .formula .hl { color: var(--accent); }
+
+/* ---------- lower third ---------- */
+.lower-third {
+  position: absolute; left: 96px; bottom: 96px;
+  background: var(--bg-elev); border: 1.5px solid var(--border);
+  border-left: 8px solid var(--accent);
+  border-radius: 10px; padding: 22px 40px;
+}
+.lower-third .lt-title { font-size: 40px; font-weight: 650; }
+.lower-third .lt-sub { font-size: 26px; color: var(--muted); margin-top: 6px; }
+
+/* ---------- corner bug (outside 9:16 zone — vanishes in vertical crops) ---------- */
+.bug {
+  position: absolute; top: 40px; right: 44px; width: 110px; opacity: 0.5;
+}
+.bug img { width: 100%; }
+
+/* ---------- captions (burned, verticals) ---------- */
+.caption {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: 620px; /* on 1920-tall stage: above platform UI zone */
+  max-width: 900px; padding: 18px 34px; border-radius: 14px;
+  background: rgba(13, 17, 23, 0.85);
+  font-size: 46px; font-weight: 600; line-height: 1.25; text-align: center;
+}
+.caption .kw { color: var(--accent); }
+
+/* ---------- end slate ---------- */
+.end-slate { position: absolute; inset: 0; background: var(--bg); }
+.end-slate .line1 {
+  position: absolute; top: 44%; width: 100%; text-align: center;
+  font-size: 64px; font-weight: 700;
+}
+.end-slate .line2 {
+  position: absolute; top: 55%; width: 100%; text-align: center;
+  font-family: var(--mono); font-size: 40px; color: var(--accent);
+}
+
+/* ---------- diagram style sheet (mirror site inline-SVG figure style) ----------
+   line weight 3px on 1080p canvas; labels 26–32px sans; axis/muted strokes in
+   var(--muted); signal traces in var(--accent); highlights: --good/--warn/--bad;
+   arrowheads: 12px filled triangles; dashed = reference/threshold lines. */
+.fig-label { font-family: var(--sans); font-size: 28px; fill: var(--muted); }
+.fig-value { font-family: var(--mono); font-size: 30px; fill: var(--text); }
+.fig-stroke { stroke: var(--muted); stroke-width: 2.5; fill: none; }
+.fig-signal { stroke: var(--accent); stroke-width: 3.5; fill: none; }

@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../brand/brand.css">
+<style>
+  body { width: 1080px; height: 1920px; background: var(--bg); }
+  .vwrap { position: absolute; inset: 0; overflow: hidden; }
+  .eyebrow-v { position: absolute; top: 96px; width: 100%; text-align: center;
+    font-size: 30px; font-weight: 600; letter-spacing: .2em; color: var(--muted);
+    text-transform: uppercase; }
+  .term-v { position: absolute; top: 150px; width: 100%; text-align: center;
+    font-size: 72px; font-weight: 760; letter-spacing: -0.01em; padding: 0 40px;
+    box-sizing: border-box; }
+  .band { position: absolute; top: 420px; left: 0; width: 1080px; height: 608px;
+    overflow: hidden; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .band iframe { width: 1920px; height: 1080px; border: 0;
+    transform: scale(0.5625); transform-origin: top left; pointer-events: none; }
+  .cap-v { position: absolute; top: 1120px; left: 50%; transform: translateX(-50%);
+    width: 940px; text-align: center; font-size: 52px; font-weight: 650; line-height: 1.3;
+    color: var(--text); }
+  .cap-v .box { display: inline; background: rgba(22,27,34,.92); padding: 8px 18px;
+    border-radius: 12px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .hook-v { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 88px; font-weight: 780; line-height: 1.15; padding: 0 70px; z-index: 5; }
+  .brand-v { position: absolute; bottom: 150px; width: 100%; text-align: center;
+    font-family: var(--mono); font-size: 32px; color: var(--accent); }
+  .stripe-v { position: absolute; left: 0; right: 0; bottom: 0; height: 12px;
+    background: linear-gradient(90deg, var(--accent-deep), var(--accent)); }
+  .slate-v { position: absolute; inset: 0; background: rgba(13,17,23,.94); z-index: 6;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 30px; opacity: 0; }
+  .slate-v .l1 { font-size: 62px; font-weight: 740; }
+  .slate-v .l2 { font-family: var(--mono); font-size: 40px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="vwrap">
+  <div class="eyebrow-v">GopherTrunk Field Guide</div>
+  <div class="term-v" id="term"></div>
+  <div class="band"><iframe id="scene"></iframe></div>
+  <div class="cap-v" id="cap"></div>
+  <div class="brand-v">gophertrunk.org</div>
+  <div class="stripe-v"></div>
+  <div class="hook-v" id="hook"></div>
+  <div class="slate-v" id="slate">
+    <div class="l1">Full course on YouTube</div>
+    <div class="l2">GopherTrunk · gophertrunk.org</div>
+  </div>
+</div>
+<script>
+/* Vertical re-edit wrapper: 16:9 scene as a scaled center band + native chrome,
+ * re-hooked open (skips the 2 s title card), burned captions, 2 s end slate.
+ * The renderer injects window.TIMELINE and window.VCFG {scene, term, hook}. */
+const OFFSET = 2.0;
+const T = window.TIMELINE, V = window.VCFG;
+const dur = T.duration - OFFSET;
+document.getElementById("term").textContent = V.term;
+document.getElementById("hook").innerHTML = V.hook;
+const iframe = document.getElementById("scene");
+const lines = T.events.flatMap(e => e.lines || []);
+let frameReady = false;
+iframe.addEventListener("load", () => { frameReady = true; });
+iframe.src = V.scene;
+
+function wrapCap(s) { return s; }
+
+window.seek = (t) => {
+  const st = t + OFFSET;
+  if (iframe.contentWindow && iframe.contentWindow.seek) iframe.contentWindow.seek(st);
+  // hook overlay for the first ~1.8 s
+  const h = document.getElementById("hook");
+  h.style.opacity = Math.max(0, Math.min(1, (1.8 - t) / 0.35));
+  h.style.visibility = t > 2.2 ? "hidden" : "visible";
+  // captions
+  const cap = document.getElementById("cap");
+  const ln = lines.find(l => st >= l.t0 && st <= l.t1 + 0.35);
+  cap.innerHTML = ln ? `<span class="box">${ln.text}</span>` : "";
+  // end slate: final 2 s
+  const sl = document.getElementById("slate");
+  sl.style.opacity = Math.max(0, Math.min(1, (t - (dur - 2)) / 0.4));
+  return true;
+};
+// ready when the inner scene reports ready
+Object.defineProperty(window, "ready", {
+  get() { return frameReady && iframe.contentWindow && iframe.contentWindow.ready === true; },
+});
+</script>
+</body>
+</html>

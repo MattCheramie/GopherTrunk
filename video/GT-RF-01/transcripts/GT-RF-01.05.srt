@@ -1,0 +1,157 @@
+1
+00:00:02,000 --> 00:00:05,539
+Decibels exist because radio numbers are
+ridiculous.
+
+2
+00:00:05,459 --> 00:00:13,677
+The signal your antenna picks up from a repeater ten miles away can be a hundred
+billion times weaker than the signal leaving that repeater's transmitter.
+
+3
+00:00:13,597 --> 00:00:16,660
+Nobody wants to do math with eleven zeros.
+
+4
+00:00:16,580 --> 00:00:21,722
+The decibel is how radio engineers make
+those numbers small, friendly — and addable.
+
+5
+00:00:21,872 --> 00:00:26,804
+A decibel is a logarithmic way of writing
+a ratio between two power levels.
+
+6
+00:00:26,724 --> 00:00:28,835
+Not an amount — a ratio.
+
+7
+00:00:28,755 --> 00:00:31,633
+Ten decibels means ten times the power.
+
+8
+00:00:31,553 --> 00:00:34,233
+Twenty decibels means a hundred times.
+
+9
+00:00:34,153 --> 00:00:35,823
+Thirty means a thousand.
+
+10
+00:00:35,743 --> 00:00:39,526
+Every ten decibels you add multiplies the
+power by another ten.
+
+11
+00:00:39,676 --> 00:00:41,613
+The everyday anchor is a piano.
+
+12
+00:00:41,533 --> 00:00:46,790
+Each octave is the same-sized step to your
+ear, but each one doubles the frequency.
+
+13
+00:00:46,710 --> 00:00:51,608
+Decibels do that for power: equal steps
+that stand for equal multiplications.
+
+14
+00:00:51,528 --> 00:00:57,935
+Your ear and your radio both live on that kind of scale,
+which is why decibels feel natural once they click.
+
+15
+00:00:58,085 --> 00:01:00,440
+Three numbers are worth memorizing.
+
+16
+00:01:00,360 --> 00:01:02,923
+Plus three decibels: double the power.
+
+17
+00:01:02,843 --> 00:01:04,699
+Minus three: half.
+
+18
+00:01:04,619 --> 00:01:06,719
+Plus ten: ten times.
+
+19
+00:01:06,639 --> 00:01:09,679
+That's it — every other value is a
+combination.
+
+20
+00:01:09,599 --> 00:01:11,199
+Sixteen decibels?
+
+21
+00:01:11,119 --> 00:01:16,887
+That's ten plus three plus three: ten times
+two times two — forty times the power.
+
+22
+00:01:16,807 --> 00:01:19,812
+You just did logarithms in your head
+without noticing.
+
+23
+00:01:19,962 --> 00:01:24,906
+And here's the superpower: on a log scale,
+multiplication becomes addition.
+
+24
+00:01:24,826 --> 00:01:35,250
+Follow a signal from transmitter to receiver — every cable loses a few decibels,
+every antenna adds a few, the path between them takes away a hundred or more.
+
+25
+00:01:35,170 --> 00:01:41,345
+Instead of multiplying eleven-digit numbers, you
+just add and subtract small ones down the chain.
+
+26
+00:01:41,265 --> 00:01:46,778
+That running sum is called a link budget, and
+it's how every radio link on Earth is designed.
+
+27
+00:01:46,928 --> 00:01:47,983
+One trap.
+
+28
+00:01:47,903 --> 00:01:52,812
+A plain decibel is always relative — a
+ratio between two things.
+
+29
+00:01:52,732 --> 00:02:07,312
+The moment you see a letter after it, it's become an absolute number, measured against a fixed reference:
+d-B-m means compared to one milliwatt; d-B-F-S means compared to the loudest sample your SDR can represent.
+
+30
+00:02:07,232 --> 00:02:09,239
+Same math, different anchor.
+
+31
+00:02:09,389 --> 00:02:21,275
+You'll see all three flavors in GopherTrunk's dashboard: signal level in d-B-F-S,
+signal-to-noise ratio in plain decibels, and hardware specs quoted in d-B-m.
+
+32
+00:02:21,195 --> 00:02:25,176
+Now they're not three mysteries — they're
+one idea with three anchors.
+
+33
+00:02:26,126 --> 00:02:35,772
+So: decibels turn absurd ratios into small numbers, multiplication
+into addition, and three memorized steps into fluent mental math.
+
+34
+00:02:35,692 --> 00:02:39,173
+The full write-up, with the formulas, is
+linked below.
+

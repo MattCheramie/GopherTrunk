@@ -1,0 +1,10 @@
+1
+00:00:00,500 --> 00:00:03,366
+So a wave is a ripple with three
+properties.
+
+2
+00:00:03,286 --> 00:00:09,066
+The first one — how fast it wiggles — is so
+important it gets a whole chapter: frequency.
+

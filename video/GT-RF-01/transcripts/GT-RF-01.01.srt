@@ -1,0 +1,151 @@
+1
+00:00:02,000 --> 00:00:08,581
+A radio wave is a ripple — not in water, but in
+the electromagnetic field that fills all of space.
+
+2
+00:00:08,501 --> 00:00:11,831
+Drop a stone in a pond and rings spread
+outward.
+
+3
+00:00:11,751 --> 00:00:21,606
+Feed an alternating current into an antenna, and the same thing happens to the
+invisible field around it: a disturbance detaches and races away at the speed of light.
+
+4
+00:00:21,526 --> 00:00:28,804
+Every wireless thing you own — your phone, your car fob,
+a police radio — is throwing stones into that same pond.
+
+5
+00:00:28,954 --> 00:00:38,670
+Formally, a radio wave is electromagnetic radiation in the radio range of the
+spectrum — by convention, about three kilohertz up to three hundred gigahertz.
+
+6
+00:00:38,590 --> 00:00:41,351
+It is the same physical phenomenon as
+light.
+
+7
+00:00:41,271 --> 00:00:47,387
+Radio, microwaves, infrared, visible
+light: one family, different frequencies.
+
+8
+00:00:47,307 --> 00:00:54,457
+Radio just sits at the low, long-wavelength end — the
+part that bends around hills and passes through walls.
+
+9
+00:00:54,607 --> 00:00:55,906
+Here is the mechanism.
+
+10
+00:00:55,826 --> 00:01:00,085
+The accelerating charges in the antenna
+create an oscillating electric field.
+
+11
+00:01:00,005 --> 00:01:04,705
+A changing electric field generates a
+magnetic field at right angles to it.
+
+12
+00:01:04,625 --> 00:01:07,990
+And a changing magnetic field regenerates
+the electric field.
+
+13
+00:01:07,910 --> 00:01:15,756
+The two leapfrog each other, detach from the antenna, and
+self-propagate — no wires, no air, no medium needed at all.
+
+14
+00:01:15,676 --> 00:01:19,065
+That is why radio crosses the vacuum of
+space just fine.
+
+15
+00:01:19,215 --> 00:01:22,081
+Freeze one of those waves and it looks
+like this.
+
+16
+00:01:22,001 --> 00:01:24,263
+Three properties describe it completely.
+
+17
+00:01:24,183 --> 00:01:26,863
+Amplitude — how strong the wave is.
+
+18
+00:01:26,783 --> 00:01:30,043
+Frequency — how many times it cycles each
+second.
+
+19
+00:01:29,963 --> 00:01:33,398
+And phase — where in its cycle it is at a
+given instant.
+
+20
+00:01:33,318 --> 00:01:38,169
+Hold on to those three, because they are the
+only three things a transmitter can manipulate.
+
+21
+00:01:38,089 --> 00:01:50,429
+Every radio scheme ever invented — AM, FM, the digital modulation in a trunked police system
+— is just a different way of wiggling amplitude, frequency, or phase in step with a message.
+
+22
+00:01:50,579 --> 00:01:56,184
+Out in the world, the ripple spreads and weakens
+— power thins out with the square of distance.
+
+23
+00:01:56,104 --> 00:02:03,765
+By the time it reaches a receiving antenna ten miles away,
+the passing field induces a current of just a few microvolts.
+
+24
+00:02:03,685 --> 00:02:08,165
+That whisper is what a receiver amplifies,
+filters, and decodes.
+
+25
+00:02:08,085 --> 00:02:16,837
+Everything in radio engineering — antennas, amplifiers, the decibel math
+coming later in this course — exists to protect that whisper on its trip.
+
+26
+00:02:16,987 --> 00:02:19,771
+And this is where GopherTrunk picks up the
+story.
+
+27
+00:02:19,691 --> 00:02:34,748
+A software-defined radio doesn't decode the wave directly: its front end mixes a slice of spectrum down and digitizes
+it into a stream of IQ samples — complex numbers that capture the wave's amplitude and phase at every instant.
+
+28
+00:02:34,668 --> 00:02:38,485
+From that point on, the physical wave has
+become arithmetic.
+
+29
+00:02:38,405 --> 00:02:44,069
+But every property you just met survives the conversion
+— and recovering the message means tracking all three.
+
+30
+00:02:45,019 --> 00:02:57,672
+So: a radio wave is a self-propagating ripple in the electromagnetic field, it lives between three
+kilohertz and three hundred gigahertz, and it gives a transmitter exactly three knobs to turn.
+
+31
+00:02:57,592 --> 00:02:59,947
+The full write-up is linked below.
+

@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C, div, svg, el, text, sinePath, prepDraw, setDraw, arrowDefs } = Fig;
+const { enter, rise, rel, easeOut, clamp01, easeIO } = Engine;
+
+// ---------- dial: tuning readout ticking to 162.550 MHz ----------
+const dial = {
+  mount(elx, ev) {
+    this.read = div(elx, "", `position:absolute;left:50%;top:36%;transform:translate(-50%,-50%);
+      font-family:var(--mono);font-size:130px;font-weight:700;color:${C.text};`, "");
+    div(elx, "", `position:absolute;left:50%;top:47%;transform:translateX(-50%);
+      font-size:34px;color:${C.muted};`, "MHz");
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:62%;transform:translateX(-50%);width:1300px;height:260px;"), "0 0 1300 260");
+    this.wave = el("path", { d: "", fill: "none", stroke: C.accent, "stroke-width": 4 }, s);
+    this.lock = div(elx, "", `position:absolute;left:50%;top:88%;transform:translateX(-50%);
+      font-size:30px;color:${C.good};opacity:0;`, "● locked — NOAA weather radio");
+  },
+  seek(elx, tl, ev) {
+    const target = 162.550, t0 = 0.3, dur = 2.6;
+    const p = easeIO((tl - t0) / dur);
+    const f = 88.1 + (target - 88.1) * p + (p < 1 ? 8 * Math.sin(tl * 9) * (1 - p) : 0);
+    this.read.textContent = f.toFixed(3);
+    this.wave.setAttribute("d", sinePath(10, 130, 1280, 70 * clamp01(p + 0.25), 5 + 9 * p, tl * 5));
+    this.lock.style.opacity = rise(tl, t0 + dur + 0.2, .5);
+  },
+};
+
+// ---------- definition-card: f = 1/T ----------
+const definitionCard = {
+  mount(elx, ev) {
+    elx.innerHTML = CV.centerCard("Cycles per second, measured in hertz",
+      `<div class="card-eyebrow">Definition</div>
+       <div class="formula">f = 1 / T</div>
+       <div style="margin-top:20px;font-size:31px;color:${C.muted}">
+         100 MHz → each cycle lasts <span style="color:${C.text};font-family:var(--mono)">10 ns</span></div>`);
+    const units = div(elx, "", `position:absolute;left:50%;top:74%;transform:translateX(-50%);display:flex;gap:34px;`);
+    this.chips = [["kHz", "×10³"], ["MHz", "×10⁶"], ["GHz", "×10⁹"]].map(([u, m]) => {
+      const c = div(units, "", `background:${C.elev};border:1.5px solid ${C.border};border-radius:12px;
+        padding:18px 34px;text-align:center;opacity:0;`);
+      c.innerHTML = `<div style="font-family:var(--mono);font-size:34px;color:${C.accent}">${u}</div>
+        <div style="font-size:26px;color:${C.muted};margin-top:4px">${m} Hz</div>`;
+      return c;
+    });
+  },
+  seek(elx, tl, ev) {
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.1, .5));
+    enter(elx.querySelector(".center-card"), rise(tl, 0.25, .5));
+    this.chips.forEach((c, i) => enter(c, rise(tl, rel(ev, 2) + i * 0.35, .4)));
+  },
+};
+
+// ---------- two-waves: the article's figure + cycle counters ----------
+const twoWaves = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1400px;height:640px;"), "0 0 1400 640");
+    this.low = el("path", { fill: "none", stroke: C.accent, "stroke-width": 4.5 }, s);
+    this.high = el("path", { fill: "none", stroke: C.violet, "stroke-width": 4 }, s);
+    text(s, 90, 120, "low frequency", 30, C.accent, "start");
+    text(s, 90, 420, "high frequency", 30, C.violet, "start");
+    this.cLow = text(s, 1310, 120, "", 34, C.accent, "end", "JetBrains Mono");
+    this.cHigh = text(s, 1310, 420, "", 34, C.violet, "end", "JetBrains Mono");
+    this.cap = div(elx, "", `position:absolute;bottom:105px;width:100%;text-align:center;font-size:34px;
+      color:${C.muted};opacity:0;`, `same speed of travel — just a faster wiggle`);
+  },
+  seek(elx, tl, ev) {
+    const scroll = tl * 1.6;
+    this.low.setAttribute("d", sinePath(80, 200, 1240, 85, 3, -scroll));
+    this.high.setAttribute("d", sinePath(80, 500, 1240, 85, 14, -scroll * 14 / 3));
+    this.cLow.textContent = (tl * 3 / 4).toFixed(0) + " cycles";
+    this.cHigh.textContent = (tl * 14 / 4).toFixed(0) + " cycles";
+    this.cap.style.opacity = rise(tl, rel(ev, 1), .5);
+  },
+};
+
+// ---------- seesaw: λ = c / f ----------
+const seesaw = {
+  mount(elx, ev) {
+    elx.innerHTML = `<div class="safe-headline" style="position:absolute;top:110px;width:100%;text-align:center;
+      font-size:46px;font-weight:650;">λ = c / f</div>
+      <div style="position:absolute;top:180px;width:100%;text-align:center;font-size:30px;color:${C.muted}">
+      frequency up ⇄ wavelength down</div>`;
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:53%;transform:translate(-50%,-50%);width:1300px;height:460px;"), "0 0 1300 460");
+    el("path", { d: "M 610 320 L 650 260 L 690 320 Z", fill: C.elev, stroke: C.border, "stroke-width": 3 }, s);
+    this.beam = el("g", {}, s);
+    el("line", { x1: 240, y1: 260, x2: 1060, y2: 260, stroke: C.text, "stroke-width": 6,
+      "stroke-linecap": "round" }, this.beam);
+    const fEnd = el("g", {}, this.beam), lEnd = el("g", {}, this.beam);
+    el("rect", { x: 190, y: 175, width: 190, height: 62, rx: 10, fill: C.elev, stroke: C.accent, "stroke-width": 2 }, fEnd);
+    text(fEnd, 285, 215, "frequency", 27, C.accent);
+    el("rect", { x: 920, y: 175, width: 210, height: 62, rx: 10, fill: C.elev, stroke: C.violet, "stroke-width": 2 }, lEnd);
+    text(lEnd, 1025, 215, "wavelength", 27, C.violet);
+    this.pairs = [["100 MHz", "3 m", "FM broadcast"], ["460 MHz", "65 cm", "UHF public safety"]];
+    this.rows = this.pairs.map(([f, l, svc], i) => {
+      const d = div(elx, "", `position:absolute;left:50%;top:${76 + i * 9}%;transform:translateX(-50%);
+        font-family:var(--mono);font-size:34px;color:${C.text};opacity:0;`,
+        `<span style="color:${C.accent}">${f}</span> ↔ <span style="color:${C.violet}">${l}</span>
+         <span style="font-family:Inter;font-size:27px;color:${C.muted}">· ${svc}</span>`);
+      return d;
+    });
+  },
+  seek(elx, tl, ev) {
+    const rock = 7 * Math.sin(tl * 0.9);
+    this.beam.setAttribute("transform", `rotate(${rock} 650 260)`);
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.15, .5));
+    this.rows.forEach((r, i) => enter(r, rise(tl, rel(ev, 2) + i * 1.3, .5)));
+  },
+};
+
+// ---------- spectrum-axis: HF / VHF / UHF neighborhoods ----------
+const spectrumAxis = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1500px;height:560px;"), "0 0 1500 560");
+    arrowDefs(s, "sax", C.muted);
+    el("line", { x1: 80, y1: 330, x2: 1430, y2: 330, stroke: C.muted, "stroke-width": 3, "marker-end": "url(#sax)" }, s);
+    text(s, 755, 380, "frequency →", 26, C.muted);
+    const bands = [["HF", 110, 300, "3–30 MHz", "shortwave — bounces off the ionosphere", C.warn],
+      ["VHF", 460, 350, "30–300 MHz", "FM broadcast · aircraft · marine", C.accent],
+      ["UHF", 860, 470, "300 MHz–3 GHz", "trunked systems · cell · Wi-Fi", C.violet]];
+    this.bandEls = bands.map(([n, x, w, f, svc, col]) => {
+      const g = el("g", { opacity: 0 }, s);
+      el("rect", { x, y: 250, width: w, height: 80, rx: 12, fill: col, "fill-opacity": 0.16,
+        stroke: col, "stroke-width": 2.5 }, g);
+      text(g, x + w / 2, 300, n, 40, col, "middle", "Inter", 750);
+      text(g, x + w / 2, 210, f, 26, C.text, "middle", "JetBrains Mono");
+      text(g, x + w / 2, 425, svc, 25, C.muted);
+      return g;
+    });
+    this.cap = div(elx, "", `position:absolute;bottom:100px;width:100%;text-align:center;font-size:33px;
+      color:${C.text};opacity:0;`, `a frequency is an <b style="color:${C.accent}">address</b> — physics and regulations attached`);
+  },
+  seek(elx, tl, ev) {
+    this.bandEls.forEach((b, i) => b.setAttribute("opacity", rise(tl, rel(ev, Math.min(1 + i, ev.lines.length - 1)), .5)));
+    this.cap.style.opacity = rise(tl, rel(ev, ev.lines.length - 1), .5);
+  },
+};
+
+// ---------- gt-tie-in: tuning + PPM correction ----------
+const gtTieIn = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:115px;width:100%;text-align:center;font-size:42px;font-weight:650;`,
+      "Getting the frequency right — and keeping it right");
+    this.rows = CV.gtPanel(elx, [
+      { label: "tuned", color: C.accent, fixedText: "453.5500 MHz" },
+      { label: "PPM correction", color: C.warn, fixedText: "" },
+      { label: "AFC tracking", color: C.good, fixedText: "" },
+    ], "GopherTrunk — tuner");
+  },
+  seek(elx, tl, ev) {
+    const t1 = rel(ev, 1), t2 = rel(ev, 2);
+    this.rows.forEach((r, i) => {
+      enter(r.row, rise(tl, 0.3 + i * 0.9, .45));
+      r.fill.style.width = ["92%", "40%", (55 + 18 * Math.sin(tl * 1.4)) + "%"][i];
+    });
+    this.rows[0].val.textContent = "453.5500 MHz";
+    this.rows[1].val.textContent = (tl > t1 ? "+2.4 ppm applied" : "…");
+    this.rows[2].val.textContent = (tl > t2 ? (0.4 * Math.sin(tl * 1.1) - 0.1).toFixed(2) + " kHz residual" : "…");
+  },
+};
+
+Engine.init({
+  title: CV.title, recap: CV.recap,
+  dial, "definition-card": definitionCard, "two-waves": twoWaves,
+  seesaw, "spectrum-axis": spectrumAxis, "gt-tie-in": gtTieIn,
+});
+</script>
+</body>
+</html>

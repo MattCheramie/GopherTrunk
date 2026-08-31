@@ -1,0 +1,206 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C, div, svg, el, text, bumpPath, arrowDefs } = Fig;
+const { enter, rise, rel, easeOut, clamp01, easeIO } = Engine;
+
+// deterministic noise floor path
+function noisePath(x0, y0, w, rough, seed = 0, step = 9) {
+  let d = "";
+  for (let x = 0; x <= w; x += step) {
+    const n = Math.sin(x * 0.13 + seed) * 0.5 + Math.sin(x * 0.047 + seed * 2.1) * 0.35 +
+              Math.sin(x * 0.29 + seed * 3.7) * 0.15;
+    d += (x === 0 ? "M" : "L") + (x0 + x) + " " + (y0 - n * rough).toFixed(1);
+  }
+  return d;
+}
+
+// ---------- party: floor hisses, signal rises above it ----------
+const party = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1500px;height:640px;"), "0 0 1500 640");
+    this.floor = el("path", { fill: "none", stroke: C.bad, "stroke-width": 2.5, "stroke-opacity": 0.75 }, s);
+    this.floorLab = text(s, 1370, 560, "the noise floor", 28, C.bad, "end");
+    this.sig = el("path", { fill: C.accent, "fill-opacity": 0.22, stroke: C.accent, "stroke-width": 3.5, opacity: 0 }, s);
+    this.gap = el("g", { opacity: 0 }, s);
+    el("line", { x1: 880, y1: 150, x2: 880, y2: 505, stroke: C.good, "stroke-width": 4 }, this.gap);
+    el("path", { d: "M 866 168 L 880 150 L 894 168 M 866 487 L 880 505 L 894 487",
+      stroke: C.good, "stroke-width": 4, fill: "none" }, this.gap);
+    text(this.gap, 905, 335, "the gap", 30, C.good, "start");
+  },
+  seek(elx, tl, ev) {
+    this.floor.setAttribute("d", noisePath(50, 520, 1400, 20, Math.floor(tl * 12)));
+    const t1 = rel(ev, 3);
+    const p = easeIO((tl - t1) / 1.6);
+    this.sig.setAttribute("d", bumpPath(760, 0, 60, 370 * p, 518));
+    this.sig.setAttribute("opacity", p > 0 ? 1 : 0);
+    this.gap.setAttribute("opacity", rise(tl, rel(ev, 4), .5));
+  },
+};
+
+// ---------- definition-card: the article's figure + subtraction ----------
+const definitionCard = {
+  mount(elx, ev) {
+    elx.innerHTML = CV.centerCard("One subtraction", "", "width:1280px;padding:40px 56px;");
+    const card = elx.querySelector(".center-card");
+    card.innerHTML = `<div class="card-eyebrow">Definition</div>
+      <div class="formula" style="font-size:48px">SNR = signal <span class="hl">(dBm)</span> − noise floor <span class="hl">(dBm)</span></div>
+      <div class="worked" style="margin-top:24px;font-family:var(--mono);font-size:38px;color:${C.muted};opacity:0">
+        −85 dBm − (−105 dBm) = <span style="color:${C.good}">20 dB</span></div>
+      <div class="cal" style="margin-top:18px;font-size:29px;color:${C.muted};opacity:0">
+        a <i>difference</i> — calibration offsets cancel, so it works on uncalibrated hardware</div>`;
+  },
+  seek(elx, tl, ev) {
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.1, .5));
+    enter(elx.querySelector(".center-card"), rise(tl, 0.2, .5));
+    elx.querySelector(".worked").style.opacity = rise(tl, rel(ev, 1), .5);
+    elx.querySelector(".cal").style.opacity = rise(tl, rel(ev, 2), .5);
+  },
+};
+
+// ---------- thresholds: vertical SNR meter with mode markers ----------
+const thresholds = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:1150px;height:720px;"), "0 0 1150 720");
+    // meter track
+    el("rect", { x: 530, y: 60, width: 90, height: 600, rx: 16, fill: C.elev, stroke: C.border, "stroke-width": 2 }, s);
+    this.fill = el("rect", { x: 538, y: 652, width: 74, height: 0, rx: 12, fill: C.accent }, s);
+    for (let dB = 0; dB <= 30; dB += 5) {
+      const y = 660 - dB * 20;
+      el("line", { x1: 505, y1: y, x2: 530, y2: y, stroke: C.muted, "stroke-width": 2 }, s);
+      text(s, 495, y + 9, dB + "", 24, C.muted, "end", "JetBrains Mono");
+    }
+    text(s, 440, 360, "SNR (dB)", 26, C.muted, "end");
+    this.marks = [[11, "analog FM readable", C.warn], [17.5, "digital voice locks (C4FM/CQPSK)", C.good]]
+      .map(([dB, lab, col]) => {
+        const y = 660 - dB * 20;
+        const g = el("g", { opacity: 0 }, s);
+        el("line", { x1: 620, y1: y, x2: 680, y2: y, stroke: col, "stroke-width": 4 }, g);
+        el("rect", { x: 690, y: y - 27, width: lab.length * 13.2 + 34, height: 54, rx: 10,
+          fill: C.elev, stroke: col, "stroke-width": 2 }, g);
+        text(g, 706, y + 9, lab, 24, C.text, "start");
+        return g;
+      });
+    this.val = text(s, 575, 40, "", 30, C.text, "middle", "JetBrains Mono");
+  },
+  seek(elx, tl, ev) {
+    const p = easeIO(tl / 6);
+    const dB = 24 * p;
+    this.fill.setAttribute("y", 660 - dB * 20);
+    this.fill.setAttribute("height", dB * 20 - 8);
+    this.val.textContent = dB.toFixed(1) + " dB";
+    this.marks.forEach((m, i) => m.setAttribute("opacity", rise(tl, rel(ev, 1 + i), .5)));
+  },
+};
+
+// ---------- waterfall-curve: the BER cliff ----------
+const waterfallCurve = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1350px;height:660px;"), "0 0 1350 660");
+    arrowDefs(s, "wfx", C.muted); arrowDefs(s, "wfy", C.muted);
+    el("line", { x1: 120, y1: 560, x2: 1280, y2: 560, stroke: C.muted, "stroke-width": 2.5, "marker-end": "url(#wfx)" }, s);
+    el("line", { x1: 120, y1: 560, x2: 120, y2: 70, stroke: C.muted, "stroke-width": 2.5, "marker-end": "url(#wfy)" }, s);
+    text(s, 700, 610, "SNR →", 26, C.muted);
+    text(s, 80, 320, "errors", 26, C.muted, "middle").setAttribute("transform", "rotate(-90 80 320)");
+    // high errors (top, small y) at low SNR; cliff at 0.42; falls to the floor on the right
+    const cliff = x => 490 - 400 / (1 + Math.exp((x - 0.42) * 16));
+    this.curve = el("path", { fill: "none", stroke: C.accent, "stroke-width": 5 }, s);
+    let d = "";
+    for (let x = 0; x <= 1; x += 0.01)
+      d += (x === 0 ? "M" : "L") + (140 + x * 1100) + " " + cliff(x).toFixed(1);
+    this.curve.setAttribute("d", d);
+    Fig.prepDraw(this.curve);
+    this.zones = [
+      text(s, 320, 150, "collapse", 30, C.bad),
+      text(s, 1050, 520, "flawless", 30, C.good),
+    ];
+    this.zones.forEach(z => z.setAttribute("opacity", 0));
+    // FEC shift: second curve moved left
+    this.fec = el("path", { fill: "none", stroke: C.good, "stroke-width": 4, "stroke-dasharray": "12 8", opacity: 0 }, s);
+    let d2 = "";
+    for (let x = 0; x <= 1; x += 0.01)
+      d2 += (x === 0 ? "M" : "L") + (140 + x * 1100) + " " + (490 - 400 / (1 + Math.exp((x - 0.28) * 16))).toFixed(1);
+    this.fec.setAttribute("d", d2);
+    this.fecLab = text(s, 415, 90, "with FEC — the cliff moves left", 27, C.good);
+    this.fecLab.setAttribute("opacity", 0);
+  },
+  seek(elx, tl, ev) {
+    Fig.setDraw(this.curve, easeOut((tl - 0.3) / 1.6));
+    this.zones.forEach((z, i) => z.setAttribute("opacity", rise(tl, rel(ev, 1) + i * 0.5, .5)));
+    this.fec.setAttribute("opacity", rise(tl, rel(ev, 3), .5));
+    this.fecLab.setAttribute("opacity", rise(tl, rel(ev, 3), .5));
+  },
+};
+
+// ---------- bandwidth-link: narrowing filter drops the floor ----------
+const bandwidthLink = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1420px;height:640px;"), "0 0 1420 640");
+    this.floor = el("path", { fill: "none", stroke: C.bad, "stroke-width": 2.5, "stroke-opacity": 0.8 }, s);
+    el("path", { d: bumpPath(710, 0, 62, 330, 518), fill: C.accent, "fill-opacity": 0.22,
+      stroke: C.accent, "stroke-width": 3.5 }, s);
+    this.fl = el("line", { y1: 120, y2: 540, stroke: C.warn, "stroke-width": 4, "stroke-dasharray": "10 7" }, s);
+    this.fr = el("line", { y1: 120, y2: 540, stroke: C.warn, "stroke-width": 4, "stroke-dasharray": "10 7" }, s);
+    this.snr = text(s, 1230, 240, "", 34, C.good, "start", "JetBrains Mono");
+    text(s, 710, 95, "narrow the filter → the floor drops → free SNR", 29, C.warn);
+  },
+  seek(elx, tl, ev) {
+    const t1 = rel(ev, 1);
+    const p = easeIO((tl - t1) / 2.4);
+    const half = 640 - 480 * p;
+    this.fl.setAttribute("x1", 710 - half); this.fl.setAttribute("x2", 710 - half);
+    this.fr.setAttribute("x1", 710 + half); this.fr.setAttribute("x2", 710 + half);
+    // floor level drops 3 dB per halving: render as rising SNR label + floor sag
+    const floorY = 520 + 0 * p;
+    this.floor.setAttribute("d", (() => {
+      let d = "";
+      for (let x = 0; x <= 1400; x += 9) {
+        const inside = Math.abs(50 + x - 710) < half;
+        const rough = (Math.sin(x * 0.13 + Math.floor(tl * 10)) * .5 + Math.sin(x * 0.047) * .35) * 18;
+        d += (x === 0 ? "M" : "L") + (50 + x) + " " + (floorY + 45 * p * (inside ? 0 : 1) - rough - (inside ? 0 : 45 * p)).toFixed(1);
+      }
+      return d;
+    })());
+    this.snr.textContent = "SNR +" + (9 * p).toFixed(1) + " dB";
+  },
+};
+
+// ---------- gt-tie-in: per-channel SNR/EVM, marginal vs healthy ----------
+const gtTieIn = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:105px;width:100%;text-align:center;font-size:42px;font-weight:650;`,
+      "The number that tells you which problem you're hunting");
+    this.rows = CV.gtPanel(elx, [
+      { label: "ch 1 · control", color: C.good },
+      { label: "ch 2 · voice", color: C.good },
+      { label: "ch 3 · voice", color: C.warn },
+    ], "GopherTrunk — per-channel health");
+  },
+  seek(elx, tl, ev) {
+    const snrs = [21.4 + 0.6 * Math.sin(tl * 1.3), 18.2 + 0.8 * Math.sin(tl * 1.7 + 1), 9.6 + 1.4 * Math.sin(tl * 2.1 + 3)];
+    this.rows.forEach((r, i) => {
+      enter(r.row, rise(tl, 0.3 + i * 0.7, .45));
+      r.fill.style.width = (snrs[i] / 30 * 100) + "%";
+      r.fill.style.background = snrs[i] > 15 ? C.good : C.warn;
+      r.val.textContent = snrs[i].toFixed(1) + " dB SNR · EVM " + (32 - snrs[i]).toFixed(0) + "%";
+    });
+  },
+};
+
+Engine.init({
+  title: CV.title, recap: CV.recap,
+  party, "definition-card": definitionCard, thresholds,
+  "waterfall-curve": waterfallCurve, "bandwidth-link": bandwidthLink, "gt-tie-in": gtTieIn,
+});
+</script>
+</body>
+</html>

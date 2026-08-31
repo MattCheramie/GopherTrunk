@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../brand/brand.css">
+</head>
+<body>
+<div id="root" class="stage"></div>
+<script src="../../pipeline/fig.js"></script>
+<script src="../../pipeline/engine.js"></script>
+<script src="../../pipeline/common_visuals.js"></script>
+<script>
+const { C, div, svg, el, text, bumpPath, arrowDefs } = Fig;
+const { enter, rise, rel, easeOut, clamp01, easeIO } = Engine;
+
+// ---------- lanes: signals as road lanes of different widths ----------
+const lanes = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1560px;height:640px;"), "0 0 1560 640");
+    arrowDefs(s, "lax", C.muted);
+    el("line", { x1: 60, y1: 560, x2: 1500, y2: 560, stroke: C.muted, "stroke-width": 3, "marker-end": "url(#lax)" }, s);
+    text(s, 780, 605, "frequency →", 26, C.muted);
+    const lanesDef = [["narrowband voice", 160, 70, "12.5 kHz", C.accent],
+      ["FM broadcast", 420, 260, "200 kHz", C.good],
+      ["Wi-Fi channel", 860, 560, "20 MHz", C.violet]];
+    this.laneEls = lanesDef.map(([n, x, w, bw, col]) => {
+      const g = el("g", { opacity: 0 }, s);
+      el("path", { d: bumpPath(x + w / 2, 0, w / 3.2, 260, 555), fill: col, "fill-opacity": 0.2,
+        stroke: col, "stroke-width": 3 }, g);
+      text(g, x + w / 2, 240, n, 28, C.text);
+      text(g, x + w / 2, 282, bw, 27, col, "middle", "JetBrains Mono");
+      return g;
+    });
+    this.cap = div(elx, "", `position:absolute;top:130px;width:100%;text-align:center;font-size:42px;
+      font-weight:650;opacity:0;`, "Spectrum is real estate");
+  },
+  seek(elx, tl, ev) {
+    this.cap.style.opacity = rise(tl, 0.2, .5);
+    this.laneEls.forEach((l, i) => l.setAttribute("opacity", rise(tl, rel(ev, Math.min(1 + i, 3)), .5)));
+  },
+};
+
+// ---------- definition-card: the article's bump figure ----------
+const definitionCard = {
+  mount(elx, ev) {
+    elx.innerHTML = CV.centerCard("The width of the frequency range a signal occupies", "", "width:1250px;padding:44px 60px;");
+    const card = elx.querySelector(".center-card");
+    card.innerHTML = `<div class="card-eyebrow">Definition</div>`;
+    const s = svg(div(card, "", "width:100%;height:300px;"), "0 0 1130 300");
+    arrowDefs(s, "bwa", C.text);
+    arrowDefs(s, "bwb", C.text);
+    el("line", { x1: 30, y1: 250, x2: 1100, y2: 250, stroke: C.muted, "stroke-opacity": .4, "stroke-width": 2 }, s);
+    this.bump = el("path", { d: bumpPath(565, 0, 150, 185, 248), fill: C.accent,
+      "fill-opacity": 0.16, stroke: C.accent, "stroke-width": 3.5 }, s);
+    this.span = el("g", { opacity: 0 }, s);
+    el("line", { x1: 380, y1: 120, x2: 750, y2: 120, stroke: C.text, "stroke-width": 3,
+      "marker-start": "url(#bwa)", "marker-end": "url(#bwb)" }, this.span);
+    text(this.span, 565, 100, "bandwidth", 30, C.text);
+    text(s, 565, 285, "frequency →", 24, C.muted);
+  },
+  seek(elx, tl, ev) {
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.1, .5));
+    enter(elx.querySelector(".center-card"), rise(tl, 0.2, .5));
+    this.span.setAttribute("opacity", rise(tl, 0.8, .5));
+  },
+};
+
+// ---------- sidebands: spike spreads as modulation speeds up ----------
+const sidebands = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1420px;height:620px;"), "0 0 1420 620");
+    el("line", { x1: 40, y1: 500, x2: 1380, y2: 500, stroke: C.muted, "stroke-opacity": .4, "stroke-width": 2 }, s);
+    this.spike = el("path", { fill: C.accent, "fill-opacity": 0.2, stroke: C.accent, "stroke-width": 3.5 }, s);
+    this.lab = text(s, 710, 90, "", 32, C.text);
+    this.sub = text(s, 710, 570, "", 27, C.muted);
+  },
+  seek(elx, tl, ev) {
+    const t1 = rel(ev, 1), t2 = rel(ev, 2);
+    // width grows: spike → narrow bump → wide bump
+    const p = tl < t1 ? 0 : easeIO((tl - t1) / (t2 - t1 + 2));
+    const halfw = 6 + 240 * p;
+    this.spike.setAttribute("d", bumpPath(710, 0, halfw, 350 * (1 - p * 0.35), 498));
+    this.lab.textContent = p < 0.05 ? "unmodulated carrier — zero width"
+      : "modulated — energy spreads into sidebands";
+    this.sub.textContent = p < 0.05 ? "" : "faster message ⇒ wider sidebands · information takes room";
+  },
+};
+
+// ---------- shannon: C = B log2(1+SNR), linear vs log ----------
+const shannon = {
+  mount(elx, ev) {
+    elx.innerHTML = CV.centerCard("The ceiling on any channel",
+      `<div class="card-eyebrow">Shannon–Hartley</div>
+       <div class="formula">C = <span class="hl bTerm">B</span> · log₂(1 + <span class="snrTerm" style="color:${C.good}">SNR</span>)</div>`,
+      "top:38%;");
+    const wrap = div(elx, "", `position:absolute;left:50%;top:66%;transform:translateX(-50%);
+      display:flex;gap:60px;width:1200px;`);
+    this.rows = [["double the bandwidth", "double the capacity", C.accent, "linear"],
+      ["double the SNR", "a fraction more", C.good, "logarithmic"]].map(([a, b, col, tag]) => {
+      const r = div(wrap, "", `flex:1;background:${C.elev};border:1.5px solid ${C.border};
+        border-radius:14px;padding:30px 36px;text-align:center;opacity:0;`);
+      r.innerHTML = `<div style="font-size:30px;color:${C.text}">${a}</div>
+        <div style="font-size:26px;color:${C.muted};margin:10px 0">→</div>
+        <div style="font-size:32px;font-weight:650;color:${col}">${b}</div>
+        <div style="font-size:24px;color:${C.muted};margin-top:12px">(${tag})</div>`;
+      return r;
+    });
+    this.cap = div(elx, "", `position:absolute;bottom:92px;width:100%;text-align:center;font-size:31px;
+      color:${C.muted};opacity:0;`, "more bandwidth is the straight road — why spectrum auctions raise billions");
+  },
+  seek(elx, tl, ev) {
+    enter(elx.querySelector(".safe-headline"), rise(tl, 0.1, .5));
+    enter(elx.querySelector(".center-card"), rise(tl, 0.3, .5));
+    this.rows.forEach((r, i) => enter(r, rise(tl, rel(ev, 2) + i * 1.0, .5)));
+    this.cap.style.opacity = rise(tl, rel(ev, ev.lines.length - 1), .5);
+  },
+};
+
+// ---------- noise-cut: filter narrows around the signal ----------
+const noiseCut = {
+  mount(elx, ev) {
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1420px;height:620px;"), "0 0 1420 620");
+    // noise slab within filter
+    this.noise = el("rect", { x: 0, y: 430, height: 70, fill: C.bad, "fill-opacity": 0.25 }, s);
+    el("line", { x1: 40, y1: 500, x2: 1380, y2: 500, stroke: C.muted, "stroke-opacity": .4, "stroke-width": 2 }, s);
+    el("path", { d: bumpPath(710, 0, 95, 300, 498), fill: C.accent, "fill-opacity": 0.2,
+      stroke: C.accent, "stroke-width": 3.5 }, s);
+    this.fl = el("line", { y1: 140, y2: 520, stroke: C.warn, "stroke-width": 4, "stroke-dasharray": "10 7" }, s);
+    this.fr = el("line", { y1: 140, y2: 520, stroke: C.warn, "stroke-width": 4, "stroke-dasharray": "10 7" }, s);
+    this.flab = text(s, 710, 110, "receiver filter", 29, C.warn);
+    this.nlab = text(s, 0, 415, "noise admitted", 26, C.bad, "start");
+  },
+  seek(elx, tl, ev) {
+    const t1 = rel(ev, 2);
+    const p = easeIO((tl - t1) / 2.2);
+    const half = 620 - 470 * p;   // 620 → 150 px half-width
+    this.fl.setAttribute("x1", 710 - half); this.fl.setAttribute("x2", 710 - half);
+    this.fr.setAttribute("x1", 710 + half); this.fr.setAttribute("x2", 710 + half);
+    this.noise.setAttribute("x", 710 - half);
+    this.noise.setAttribute("width", 2 * half);
+    this.nlab.setAttribute("x", 710 - half + 12);
+  },
+};
+
+// ---------- gt-tie-in: wideband capture + DDC channels ----------
+const gtTieIn = {
+  mount(elx, ev) {
+    div(elx, "", `position:absolute;top:105px;width:100%;text-align:center;font-size:42px;font-weight:650;`,
+      "Wide capture to see everything · narrow channels to decode");
+    const s = svg(div(elx, "", "position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);width:1500px;height:640px;"), "0 0 1500 640");
+    // wideband capture bracket
+    this.cover = el("rect", { x: 90, y: 90, width: 1320, height: 250, rx: 14, fill: C.accent,
+      "fill-opacity": 0.06, stroke: C.accent, "stroke-width": 2.5, "stroke-dasharray": "10 8", opacity: 0 }, s);
+    this.covLab = text(s, 750, 70, "SDR capture — several MHz wide", 28, C.accent);
+    this.covLab.setAttribute("opacity", 0);
+    // little channel bumps inside
+    this.bumps = Array.from({ length: 9 }, (_, i) => {
+      const cc = i === 4;
+      const g = el("g", {}, s);
+      el("path", { d: bumpPath(180 + i * 143, 0, 26, cc ? 175 : 105 + 45 * Math.sin(i * 2.4), 330),
+        fill: cc ? C.warn : C.accent, "fill-opacity": 0.3,
+        stroke: cc ? C.warn : C.accent, "stroke-width": 2.5 }, g);
+      if (cc) text(g, 180 + i * 143, 135, "control channel", 24, C.warn);
+      return g;
+    });
+    // DDC arrows to narrow decoders
+    this.ddcs = Array.from({ length: 3 }, (_, k) => {
+      const i = [1, 4, 6][k];
+      const g = el("g", { opacity: 0 }, s);
+      el("line", { x1: 180 + i * 143, y1: 345, x2: 320 + k * 400, y2: 440, stroke: C.muted, "stroke-width": 2.5 }, g);
+      el("rect", { x: 210 + k * 400, y: 445, width: 230, height: 90, rx: 12, fill: C.elev,
+        stroke: C.border, "stroke-width": 2 }, g);
+      text(g, 325 + k * 400, 483, k === 1 ? "DDC → control" : "DDC → voice", 24, C.text);
+      text(g, 325 + k * 400, 516, "12.5 kHz @ 48 kS/s", 21, C.muted, "middle", "JetBrains Mono");
+      return g;
+    });
+  },
+  seek(elx, tl, ev) {
+    this.cover.setAttribute("opacity", rise(tl, rel(ev, 1), .5));
+    this.covLab.setAttribute("opacity", rise(tl, rel(ev, 1), .5));
+    this.ddcs.forEach((d, i) => d.setAttribute("opacity", rise(tl, rel(ev, 2) + i * 0.5, .5)));
+  },
+};
+
+Engine.init({
+  title: CV.title, recap: CV.recap,
+  lanes, "definition-card": definitionCard, sidebands,
+  shannon, "noise-cut": noiseCut, "gt-tie-in": gtTieIn,
+});
+</script>
+</body>
+</html>
