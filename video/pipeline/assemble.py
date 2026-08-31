@@ -55,7 +55,8 @@ def loudnorm2(src, out, target_i=-14.0):
     p1 = subprocess.run([FF, "-i", src, "-af",
                          f"loudnorm=I={target_i}:TP=-1.5:LRA=11:print_format=json",
                          "-f", "null", "-"], capture_output=True, text=True)
-    j = json.loads("{" + p1.stderr.rsplit("{", 1)[1])
+    blob = "{" + p1.stderr.rsplit("{", 1)[1]
+    j = json.loads(blob[:blob.index("}") + 1])  # loudnorm JSON is flat; drop trailing ffmpeg chatter
     af = (f"loudnorm=I={target_i}:TP=-1.5:LRA=11:measured_I={j['input_i']}:"
           f"measured_TP={j['input_tp']}:measured_LRA={j['input_lra']}:"
           f"measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true")
