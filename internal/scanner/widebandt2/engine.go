@@ -1021,8 +1021,19 @@ func applyP25Phase2Modes(cc *p25phase2.ControlChannel, sys trunking.System, log 
 			"system", sys.Name)
 	}
 	cc.SetScramblerMode(scramblerMode)
+	// Derive the PN44 seed from (WACN, SystemID, Color Code) per
+	// TIA-102.BBAC-1 §7.2.5 equation (5). The Color Code IS the NAC, not
+	// the site number — using Site here produced a wrong seed on every
+	// system whose NAC differs from its site ID (i.e. essentially all of
+	// them), and Site is a uint8 so it cannot even represent a 12-bit NAC.
+	// Fall back to the old Site-derived value only when no NAC is
+	// configured, so existing configs behave as before.
+	p2ColorCode := sys.NAC & 0x0FFF
+	if p2ColorCode == 0 {
+		p2ColorCode = uint16(sys.Site)
+	}
 	cc.SetScramblerSeed(framing.PN44SeedFromIdentity(
-		sys.WACN, sys.SystemID, uint16(sys.Site),
+		sys.WACN, sys.SystemID, p2ColorCode,
 	))
 	softDecision, softOK := p25phase2rx.ParseSoftDecision(sys.P25Phase2SoftDecision)
 	if !softOK {

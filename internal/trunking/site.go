@@ -225,6 +225,13 @@ type System struct {
 	SystemID        uint16   // 12-bit system identifier (P25 SYSID)
 	RFSS            uint8    // RF SubSystem ID (P25)
 	Site            uint8    // Site ID
+	// NAC is the P25 Network Access Code (12-bit). On Phase 2 it is the
+	// Network Status Broadcast Color Code, and it is the third input to the
+	// PN44 descrambler seed per TIA-102.BBAC-1 §7.2.5 equation (5). It is a
+	// distinct value from Site: a system may run site 57 with NAC 0x1F0.
+	// Needed because a Phase 2 traffic-channel-only capture carries no NSB
+	// to learn it from — the NSB is itself scrambled with this seed.
+	NAC uint16 // 12-bit Network Access Code / Phase 2 Color Code (P25)
 
 	// Sites is the operator's optional catalogue of human-readable site
 	// names, keyed by (RFSS, Site), surfaced through GET /api/v1/sites
