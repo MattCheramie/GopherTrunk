@@ -207,3 +207,29 @@ func equalByteSlice(a, b []byte) bool {
 	}
 	return true
 }
+
+// TestPN44RealAirVector pins the tap convention against a value that can only
+// come from the correct polynomial. The first 44 output bits are just the seed
+// walking out of the register, identical under any tap set, so the vector
+// starts at bit 44 — the first output that depends on the feedback.
+//
+// The convention it pins was established on real air, not from the (paywalled)
+// spec text: with these taps a real Phase 2 traffic-channel capture
+// (WACN 0xBEE00 / SysID 0x1FC / NAC 0x1F0) descrambles to FACCH-S PDUs
+// byte-identical to SDRtrunk's decode of the same file, and every burst lands
+// on the predicted sequence origin. The mirrored taps this decoder shipped
+// before 2026-09-01 recover nothing at any offset — and pass every other test
+// in this file, which is exactly why this vector exists.
+func TestPN44RealAirVector(t *testing.T) {
+	const wantBits44To87 uint64 = 0xB266C11AFF3
+	s := NewPN44Scrambler(PN44SeedFromIdentity(0xBEE00, 0x1FC, 0x1F0))
+	s.Advance(44)
+	var got uint64
+	for i := 0; i < 44; i++ {
+		got = got<<1 | uint64(s.Next())
+	}
+	if got != wantBits44To87 {
+		t.Errorf("PN44 bits 44..87 = 0x%011X, want 0x%011X — the LFSR tap "+
+			"convention changed; see Next()", got, wantBits44To87)
+	}
+}
