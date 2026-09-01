@@ -1,0 +1,29 @@
+id,type,title,slug,also_slugs,duration_s,clip_of,status
+GT-TR-01,pillar,Trunked Radio (pilot pillar),trunked-radio,,~1370,,rendered
+GT-TR-01.00,cold-open,Cold open,,,~45,,rendered
+GT-TR-01.00b,intro,Course intro,,,~56,,rendered
+GT-TR-01.01,segment,Trunked radio,trunked-radio,conventional-radio,~170,,rendered
+GT-TR-01.02,segment,Control channel,control-channel,voice-channel,~165,,rendered
+GT-TR-01.03,segment,Talkgroup,talkgroup,radio-id,~165,,rendered
+GT-TR-01.04,segment,Channel grant,channel-grant,,~165,,rendered
+GT-TR-01.05,segment,FDMA & TDMA,fdma,tdma,~170,,rendered
+GT-TR-01.tr-12,transition,trunked radio → control channel,,,~12,,rendered
+GT-TR-01.tr-23,transition,control channel → talkgroup,,,~12,,rendered
+GT-TR-01.tr-34,transition,talkgroup → channel grant,,,~12,,rendered
+GT-TR-01.tr-45,transition,channel grant → FDMA & TDMA,,,~12,,rendered
+GT-TR-01.99,outro,Outro + end slate,,,~60,,rendered
+GT-TR-01.01v,vertical,Trunked radio (9:16),trunked-radio,,~174,,rendered
+GT-TR-01.02v,vertical,Control channel (9:16),control-channel,,~169,,rendered
+GT-TR-01.03v,vertical,Talkgroup (9:16),talkgroup,,~169,,rendered
+GT-TR-01.04v,vertical,Channel grant (9:16),channel-grant,,~169,,rendered
+GT-TR-01.05v,vertical,FDMA & TDMA (9:16),fdma,,~174,,rendered
+GT-TR-01.01c1,clip,Why 30 radio channels sit silent,trunked-radio,,~37,GT-TR-01.01,rendered
+GT-TR-01.01c2,clip,Radio channels that exist for one call,trunked-radio,,~32,GT-TR-01.01,rendered
+GT-TR-01.02c1,clip,The radio channel that never speaks,control-channel,,~44,GT-TR-01.02,rendered
+GT-TR-01.02c2,clip,Joining a call you never heard start,control-channel,,~40,GT-TR-01.02,rendered
+GT-TR-01.03c1,clip,This radio channel doesn't exist,talkgroup,,~40,GT-TR-01.03,rendered
+GT-TR-01.03c2,clip,Two numbers identify every radio call,talkgroup,,~40,GT-TR-01.03,rendered
+GT-TR-01.04c1,clip,One message moves 100 radios at once,channel-grant,,~40,GT-TR-01.04,rendered
+GT-TR-01.04c2,clip,Inside the message that starts every call,channel-grant,,~25,GT-TR-01.04,rendered
+GT-TR-01.05c1,clip,The simplest way radios share the air,fdma,,~45,GT-TR-01.05,rendered
+GT-TR-01.05c2,clip,How 4 calls fit on one frequency,tdma,,~45,GT-TR-01.05,rendered

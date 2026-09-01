@@ -1,0 +1,233 @@
+{
+ "seg": "GT-TR-01.05",
+ "title": "FDMA & TDMA",
+ "fps": 30,
+ "dur": 165.625,
+ "clips": {
+  "c1": {
+   "end": 52.284,
+   "start": 2.35
+  },
+  "c2": {
+   "end": 101.108,
+   "start": 52.634
+  }
+ },
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 2.0,
+   "visual": "title",
+   "variant": "",
+   "arg": "FDMA & TDMA"
+  },
+  {
+   "b": 1,
+   "t": 2.35,
+   "dur": 8.812,
+   "visual": "fdmastack",
+   "variant": "intro",
+   "arg": "",
+   "text": "FDMA and TDMA are the two answers to the oldest question in radio: how do many conversations share one band without talking over each other?"
+  },
+  {
+   "b": 1,
+   "t": 11.512,
+   "dur": 3.111,
+   "visual": "fdmastack",
+   "variant": "intro",
+   "arg": "",
+   "text": "The first answer is frequency-division multiple access."
+  },
+  {
+   "b": 1,
+   "t": 14.743,
+   "dur": 5.596,
+   "visual": "fdmastack",
+   "variant": "intro",
+   "arg": "",
+   "text": "Slice the band into non-overlapping channels, and give each call its own frequency for the whole duration."
+  },
+  {
+   "b": 1,
+   "t": 20.459,
+   "dur": 5.735,
+   "visual": "fdmastack",
+   "variant": "intro",
+   "arg": "",
+   "text": "Call A on one channel, call B on the next, small guard bands between them so neighbors don't interfere."
+  },
+  {
+   "b": 1,
+   "t": 26.315,
+   "dur": 4.284,
+   "visual": "fdmastack",
+   "variant": "intro",
+   "arg": "",
+   "text": "Capacity scales the obvious way: more conversations means more channels."
+  },
+  {
+   "b": 2,
+   "t": 30.949,
+   "dur": 6.954,
+   "visual": "fdmastack",
+   "variant": "narrowband",
+   "arg": "",
+   "text": "Its virtue is simplicity \u2014 no timing to coordinate, tolerant of distance and delay \u2014 which is why it carried early land-mobile radio."
+  },
+  {
+   "b": 2,
+   "t": 38.023,
+   "dur": 3.692,
+   "visual": "fdmastack",
+   "variant": "narrowband",
+   "arg": "",
+   "text": "Its cost is that a quiet talker still ties up a whole frequency."
+  },
+  {
+   "b": 2,
+   "t": 41.835,
+   "dur": 10.449,
+   "visual": "fdmastack",
+   "variant": "narrowband",
+   "arg": "",
+   "text": "So the industry narrowed the slices instead: twenty-five kilohertz FM became the twelve-and-a-half of P25 Phase 1, and the six-and-a-quarter of NXDN."
+  },
+  {
+   "b": 3,
+   "t": 52.634,
+   "dur": 2.392,
+   "visual": "tdmaslots",
+   "variant": "intro",
+   "arg": "",
+   "text": "The second answer divides time instead."
+  },
+  {
+   "b": 3,
+   "t": 55.146,
+   "dur": 7.326,
+   "visual": "tdmaslots",
+   "variant": "intro",
+   "arg": "",
+   "text": "Time-division multiple access splits one frequency into rapid, repeating timeslots, and calls take turns."
+  },
+  {
+   "b": 3,
+   "t": 62.592,
+   "dur": 10.194,
+   "visual": "tdmaslots",
+   "variant": "intro",
+   "arg": "",
+   "text": "Call one bursts in slot one, call two in slot two, back to call one \u2014 many times per second, fast enough that each conversation sounds perfectly continuous."
+  },
+  {
+   "b": 3,
+   "t": 72.905,
+   "dur": 2.148,
+   "visual": "tdmaslots",
+   "variant": "intro",
+   "arg": "",
+   "text": "One channel now does the work of two."
+  },
+  {
+   "b": 4,
+   "t": 75.403,
+   "dur": 1.184,
+   "visual": "tdmaslots",
+   "variant": "timing",
+   "arg": "",
+   "text": "The price is discipline."
+  },
+  {
+   "b": 4,
+   "t": 76.707,
+   "dur": 10.333,
+   "visual": "tdmaslots",
+   "variant": "timing",
+   "arg": "",
+   "text": "Every radio must burst exactly inside its slot, so bursts are padded with a little guard time, and receivers lock onto a frame-synchronization pattern to learn where the slot boundaries fall."
+  },
+  {
+   "b": 4,
+   "t": 87.16,
+   "dur": 8.777,
+   "visual": "tdmaslots",
+   "variant": "timing",
+   "arg": "",
+   "text": "In exchange, DMR and P25 Phase 2 double the calls per frequency with two slots, and TETRA packs four calls onto one carrier."
+  },
+  {
+   "b": 4,
+   "t": 96.057,
+   "dur": 5.05,
+   "visual": "tdmaslots",
+   "variant": "timing",
+   "arg": "",
+   "text": "A subscriber radio even saves battery by switching its transmitter off between bursts."
+  },
+  {
+   "b": 5,
+   "t": 101.458,
+   "dur": 5.584,
+   "visual": "accesscompare",
+   "variant": "table",
+   "arg": "",
+   "text": "Real systems combine both: FDMA channelizes the band, TDMA time-shares each channel."
+  },
+  {
+   "b": 5,
+   "t": 107.162,
+   "dur": 8.812,
+   "visual": "accesscompare",
+   "variant": "table",
+   "arg": "",
+   "text": "And for trunking, the difference shows up in the grant itself \u2014 on FDMA a grant names a frequency; on TDMA it must name a frequency and a slot."
+  },
+  {
+   "b": 6,
+   "t": 116.324,
+   "dur": 2.438,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "For an SDR, the split is concrete."
+  },
+  {
+   "b": 6,
+   "t": 118.882,
+   "dur": 8.696,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "On FDMA, a granted channel is simply a carrier: GopherTrunk down-converts that frequency from the wideband capture and demodulates it."
+  },
+  {
+   "b": 6,
+   "t": 127.698,
+   "dur": 16.788,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "On TDMA, the same carrier holds two or four unrelated calls, so GopherTrunk must also recover burst timing, sync to the frame, and pull out just the granted slot \u2014 which is exactly what its DMR, P25 Phase 2, and TETRA decode paths do."
+  },
+  {
+   "b": 7,
+   "t": 145.636,
+   "dur": 15.824,
+   "visual": "recap",
+   "variant": "",
+   "arg": "fdma|\u2460 FDMA: one call per frequency \u2461 TDMA: calls share a frequency in timeslots \u2462 TDMA grants add a slot number",
+   "text": "So: FDMA gives each call its own frequency; TDMA lets calls share one frequency in timeslots, doubling or quadrupling capacity at the cost of tight timing \u2014 and on TDMA, every grant names a slot as well as a channel."
+  },
+  {
+   "b": 7,
+   "t": 161.58,
+   "dur": 1.544,
+   "visual": "recap",
+   "variant": "",
+   "arg": "fdma|\u2460 FDMA: one call per frequency \u2461 TDMA: calls share a frequency in timeslots \u2462 TDMA grants add a slot number",
+   "text": "Full write-ups linked below."
+  }
+ ]
+}

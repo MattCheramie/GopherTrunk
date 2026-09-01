@@ -1,0 +1,235 @@
+1
+00:00:02,350 --> 00:00:04,980
+Trunked radio is how hundreds of user
+groups share a handful of frequencies — by
+
+2
+00:00:04,980 --> 00:00:07,609
+never owning any of them.
+
+3
+00:00:07,959 --> 00:00:09,480
+Here is the problem it solves.
+
+4
+00:00:09,600 --> 00:00:13,362
+Under conventional radio, every group gets
+its own fixed frequency.
+
+5
+00:00:13,482 --> 00:00:15,618
+Police dispatch is always on channel A.
+
+6
+00:00:15,738 --> 00:00:17,596
+Fire is always on channel B.
+
+7
+00:00:17,716 --> 00:00:19,864
+Public works is always on channel C.
+
+8
+00:00:19,984 --> 00:00:24,117
+Simple — but wasteful, because most of the
+time, most of those channels are silent.
+
+9
+00:00:24,467 --> 00:00:25,953
+Radio traffic is bursty.
+
+10
+00:00:26,073 --> 00:00:29,062
+Any one group transmits only a small
+fraction of the time, and groups rarely
+
+11
+00:00:29,062 --> 00:00:32,052
+all key up at once.
+
+12
+00:00:32,172 --> 00:00:35,579
+A city with thirty groups on thirty
+frequencies is paying for thirty channels
+
+13
+00:00:35,579 --> 00:00:38,987
+and using maybe four of them in any given
+second.
+
+14
+00:00:39,337 --> 00:00:40,661
+Trunking flips the model.
+
+15
+00:00:40,780 --> 00:00:43,090
+Take a small pool of channels — say five —
+and let a computer hand them out on
+
+16
+00:00:43,090 --> 00:00:45,401
+demand.
+
+17
+00:00:45,521 --> 00:00:48,493
+When someone keys up, their radio asks for
+a channel.
+
+18
+00:00:48,613 --> 00:00:52,340
+A coordinator called the control channel
+picks a free one, announces the
+
+19
+00:00:52,340 --> 00:00:56,067
+assignment, and every radio in that user's
+group retunes to it together.
+
+20
+00:00:56,187 --> 00:00:58,805
+When the talker is done and a hang timer
+expires, the channel goes back into the
+
+21
+00:00:58,805 --> 00:01:01,423
+pool for the next call.
+
+22
+00:01:01,773 --> 00:01:03,898
+No group owns a frequency anymore.
+
+23
+00:01:04,018 --> 00:01:07,588
+What a group owns is an identity — a
+talkgroup — and the system finds a
+
+24
+00:01:07,588 --> 00:01:11,158
+physical channel for each call, one call
+at a time.
+
+25
+00:01:11,508 --> 00:01:15,676
+The reason this works is pure statistics —
+the same queuing theory that lets a
+
+26
+00:01:15,676 --> 00:01:19,844
+telephone exchange serve a whole city with
+far fewer lines than subscribers.
+
+27
+00:01:19,964 --> 00:01:23,099
+Traffic engineers measure offered load in
+erlangs and size the pool so that the
+
+28
+00:01:23,099 --> 00:01:26,233
+probability of a call finding every
+channel busy — the grade of service —
+
+29
+00:01:26,233 --> 00:01:29,368
+stays low.
+
+30
+00:01:29,488 --> 00:01:33,656
+If it ever happens anyway, the system
+queues the request or plays a busy tone.
+
+31
+00:01:34,006 --> 00:01:37,156
+The payoff is dramatic: a well-sized pool
+of five channels can comfortably serve
+
+32
+00:01:37,156 --> 00:01:40,307
+dozens of talkgroups that would each have
+demanded a permanent frequency under the
+
+33
+00:01:40,307 --> 00:01:43,457
+conventional model.
+
+34
+00:01:43,806 --> 00:01:45,907
+The idea comes in several shapes.
+
+35
+00:01:46,028 --> 00:01:51,740
+FDMA systems like P25 Phase 1 give each
+call its own frequency.
+
+36
+00:01:51,860 --> 00:01:56,533
+TDMA systems like DMR and TETRA split each
+frequency into timeslots, so one channel
+
+37
+00:01:56,533 --> 00:02:01,206
+carries two or even four calls at once.
+
+38
+00:02:01,326 --> 00:02:04,280
+And a single site can stand alone, or be
+linked with others into a wide-area
+
+39
+00:02:04,280 --> 00:02:07,235
+network covering a whole state.
+
+40
+00:02:07,355 --> 00:02:09,758
+We will meet all of these later in the
+course.
+
+41
+00:02:10,109 --> 00:02:12,640
+For a scanner, trunking changes
+everything.
+
+42
+00:02:12,760 --> 00:02:16,231
+You cannot just park on one frequency,
+because the conversation you care about
+
+43
+00:02:16,231 --> 00:02:19,703
+scatters across the pool, call by call.
+
+44
+00:02:19,822 --> 00:02:23,032
+GopherTrunk deals with this the same way
+the radios do: it decodes the
+
+45
+00:02:23,032 --> 00:02:26,242
+coordinator's announcements and follows
+each call to wherever it lands — which
+
+46
+00:02:26,242 --> 00:02:29,453
+means one software-defined radio can
+reconstruct every conversation on the
+
+47
+00:02:29,453 --> 00:02:32,663
+system at once.
+
+48
+00:02:33,813 --> 00:02:38,422
+So: trunked radio shares a small pool of
+channels among many groups.
+
+49
+00:02:38,542 --> 00:02:42,594
+A computer assigns a free channel to each
+call and takes it back afterward.
+
+50
+00:02:42,714 --> 00:02:45,791
+And what a group keeps is not a frequency
+but an identity.
+
+51
+00:02:45,911 --> 00:02:47,803
+The full write-up is linked below.

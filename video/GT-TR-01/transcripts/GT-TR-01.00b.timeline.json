@@ -1,0 +1,117 @@
+{
+ "seg": "GT-TR-01.00b",
+ "title": "Course intro",
+ "fps": 30,
+ "dur": 55.51,
+ "clips": {},
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 3.286,
+   "visual": "introcard",
+   "variant": "welcome",
+   "arg": "",
+   "text": "Welcome to the GopherTrunk Field Guide \u2014 the video edition."
+  },
+  {
+   "b": 0,
+   "t": 3.406,
+   "dur": 8.139,
+   "visual": "introcard",
+   "variant": "welcome",
+   "arg": "",
+   "text": "This course is the trunked radio pillar: the concepts that let many users share a small pool of channels, explained one idea at a time."
+  },
+  {
+   "b": 1,
+   "t": 11.894,
+   "dur": 0.871,
+   "visual": "agenda",
+   "variant": "list",
+   "arg": "",
+   "text": "Here is the route."
+  },
+  {
+   "b": 1,
+   "t": 12.885,
+   "dur": 5.004,
+   "visual": "agenda",
+   "variant": "list",
+   "arg": "",
+   "text": "We start with trunked radio itself \u2014 the architecture, and why statistics make it work."
+  },
+  {
+   "b": 1,
+   "t": 18.009,
+   "dur": 3.309,
+   "visual": "agenda",
+   "variant": "list",
+   "arg": "",
+   "text": "Then the control channel, the data stream that coordinates everything."
+  },
+  {
+   "b": 1,
+   "t": 21.438,
+   "dur": 3.181,
+   "visual": "agenda",
+   "variant": "list",
+   "arg": "",
+   "text": "Then talkgroups, the virtual channels you actually listen to."
+  },
+  {
+   "b": 1,
+   "t": 24.739,
+   "dur": 3.111,
+   "visual": "agenda",
+   "variant": "list",
+   "arg": "",
+   "text": "Then channel grants, the messages that start every call."
+  },
+  {
+   "b": 1,
+   "t": 27.97,
+   "dur": 5.178,
+   "visual": "agenda",
+   "variant": "list",
+   "arg": "",
+   "text": "And finally FDMA and TDMA, the two ways calls share the spectrum."
+  },
+  {
+   "b": 2,
+   "t": 33.498,
+   "dur": 6.444,
+   "visual": "introcard",
+   "variant": "standalone",
+   "arg": "",
+   "text": "Every segment stands alone \u2014 each one starts from its own definition, so you can jump straight to the idea you need."
+  },
+  {
+   "b": 2,
+   "t": 40.062,
+   "dur": 8.185,
+   "visual": "introcard",
+   "variant": "standalone",
+   "arg": "",
+   "text": "And every segment has a full written article in the Field Guide at gophertrunk dot org, linked below, with diagrams, variants, and sources."
+  },
+  {
+   "b": 3,
+   "t": 48.597,
+   "dur": 0.65,
+   "visual": "introcard",
+   "variant": "start",
+   "arg": "",
+   "text": "That's the map."
+  },
+  {
+   "b": 3,
+   "t": 49.367,
+   "dur": 5.143,
+   "visual": "introcard",
+   "variant": "start",
+   "arg": "",
+   "text": "Let's start where the whole idea starts: with the problem of too many groups and too few frequencies."
+  }
+ ]
+}

@@ -1,0 +1,201 @@
+1
+00:00:02,350 --> 00:00:04,956
+A talkgroup is a channel that does not
+exist — and it is the thing you actually
+
+2
+00:00:04,956 --> 00:00:07,563
+listen to on a trunked system.
+
+3
+00:00:07,913 --> 00:00:10,839
+On a trunked system, "Police Dispatch" is
+not a frequency.
+
+4
+00:00:10,959 --> 00:00:14,570
+It is a number — a talkgroup ID — naming a
+group of users.
+
+5
+00:00:14,689 --> 00:00:18,741
+When a member keys up, the system borrows
+a physical channel for that one call.
+
+6
+00:00:18,861 --> 00:00:22,240
+The next call from the same group may land
+somewhere completely different.
+
+7
+00:00:22,590 --> 00:00:26,410
+Watch what that means over a minute of
+traffic: call one lands on channel 3, call
+
+8
+00:00:26,410 --> 00:00:30,229
+two on channel 7, call three on channel 2.
+
+9
+00:00:30,349 --> 00:00:32,218
+The frequency changes every time.
+
+10
+00:00:32,338 --> 00:00:34,056
+The talkgroup number never does.
+
+11
+00:00:34,177 --> 00:00:36,806
+The group is the stable identity; the
+frequency is a detail the system handles
+
+12
+00:00:36,806 --> 00:00:39,436
+underneath.
+
+13
+00:00:39,786 --> 00:00:43,641
+Every radio is programmed with the
+talkgroups it can select and monitor.
+
+14
+00:00:43,760 --> 00:00:47,986
+Key up on one, and your radio sends a
+request carrying that talkgroup ID.
+
+15
+00:00:48,106 --> 00:00:51,039
+The control channel grants a voice channel
+and announces the talkgroup, so every
+
+16
+00:00:51,039 --> 00:00:53,973
+radio affiliated to the group retunes
+together and hears the same call —
+
+17
+00:00:53,973 --> 00:00:56,906
+wherever it landed.
+
+18
+00:00:57,257 --> 00:00:59,509
+The IDs are numeric and system-specific.
+
+19
+00:00:59,629 --> 00:01:03,594
+On P25 a talkgroup ID is a sixteen-bit
+value scoped to the system's identity; DMR
+
+20
+00:01:03,594 --> 00:01:07,559
+numbers its own way.
+
+21
+00:01:07,679 --> 00:01:12,040
+Hobbyist databases publish alias tables
+that map the raw numbers to human names —
+
+22
+00:01:12,040 --> 00:01:16,402
+police districts, fire, EMS, public works
+— which is how a scanner display turns
+
+23
+00:01:16,402 --> 00:01:20,763
+"talkgroup 101" into something readable.
+
+24
+00:01:21,113 --> 00:01:24,068
+Alongside the talkgroup rides a second
+number: the radio ID of the individual
+
+25
+00:01:24,068 --> 00:01:27,022
+transmitting radio.
+
+26
+00:01:27,143 --> 00:01:30,394
+Together they answer the two questions a
+listener has about every call — which
+
+27
+00:01:30,394 --> 00:01:33,645
+group is this, and which unit is talking.
+
+28
+00:01:33,764 --> 00:01:36,620
+Group identity for the many; unit identity
+for the one.
+
+29
+00:01:36,970 --> 00:01:38,479
+Groups come in flavors.
+
+30
+00:01:38,600 --> 00:01:41,718
+Dispatch groups carry a desk's steady
+traffic; tactical groups are short-lived
+
+31
+00:01:41,718 --> 00:01:44,835
+channels stood up for an incident.
+
+32
+00:01:44,954 --> 00:01:49,040
+A dispatcher can patch several talkgroups
+together so they temporarily hear one
+
+33
+00:01:49,040 --> 00:01:53,127
+another, and an announcement group reaches
+every subordinate group at once.
+
+34
+00:01:53,478 --> 00:01:56,612
+This is why every serious trunking scanner
+— GopherTrunk included — is organized
+
+35
+00:01:56,612 --> 00:01:59,747
+around talkgroups, not frequencies.
+
+36
+00:01:59,867 --> 00:02:03,447
+You build allow lists and priority lists
+of groups; each active call shows its
+
+37
+00:02:03,447 --> 00:02:07,026
+talkgroup ID, its alias, and the
+transmitting radio ID; and the activity
+
+38
+00:02:07,026 --> 00:02:10,606
+log counts traffic per group.
+
+39
+00:02:10,726 --> 00:02:12,944
+The system hops frequencies constantly.
+
+40
+00:02:13,064 --> 00:02:14,202
+You never have to care.
+
+41
+00:02:15,351 --> 00:02:20,146
+So: a talkgroup is a virtual channel — a
+number naming a group of users.
+
+42
+00:02:20,266 --> 00:02:24,138
+Its calls hop across physical frequencies,
+but the ID stays put, which is why you
+
+43
+00:02:24,138 --> 00:02:28,010
+follow talkgroups and let the system worry
+about frequencies.
+
+44
+00:02:28,130 --> 00:02:29,767
+Full write-up linked below.

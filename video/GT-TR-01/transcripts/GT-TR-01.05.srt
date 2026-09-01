@@ -1,0 +1,193 @@
+1
+00:00:02,350 --> 00:00:06,756
+FDMA and TDMA are the two answers to the
+oldest question in radio: how do many
+
+2
+00:00:06,756 --> 00:00:11,162
+conversations share one band without
+talking over each other?
+
+3
+00:00:11,512 --> 00:00:14,623
+The first answer is frequency-division
+multiple access.
+
+4
+00:00:14,743 --> 00:00:17,541
+Slice the band into non-overlapping
+channels, and give each call its own
+
+5
+00:00:17,541 --> 00:00:20,339
+frequency for the whole duration.
+
+6
+00:00:20,459 --> 00:00:23,326
+Call A on one channel, call B on the next,
+small guard bands between them so
+
+7
+00:00:23,326 --> 00:00:26,194
+neighbors don't interfere.
+
+8
+00:00:26,315 --> 00:00:30,599
+Capacity scales the obvious way: more
+conversations means more channels.
+
+9
+00:00:30,949 --> 00:00:34,426
+Its virtue is simplicity — no timing to
+coordinate, tolerant of distance and delay
+
+10
+00:00:34,426 --> 00:00:37,903
+— which is why it carried early
+land-mobile radio.
+
+11
+00:00:38,023 --> 00:00:41,715
+Its cost is that a quiet talker still ties
+up a whole frequency.
+
+12
+00:00:41,835 --> 00:00:47,060
+So the industry narrowed the slices
+instead: twenty-five kilohertz FM became
+
+13
+00:00:47,060 --> 00:00:52,284
+the twelve-and-a-half of P25 Phase 1, and
+the six-and-a-quarter of NXDN.
+
+14
+00:00:52,634 --> 00:00:55,026
+The second answer divides time instead.
+
+15
+00:00:55,146 --> 00:00:58,809
+Time-division multiple access splits one
+frequency into rapid, repeating timeslots,
+
+16
+00:00:58,809 --> 00:01:02,472
+and calls take turns.
+
+17
+00:01:02,592 --> 00:01:07,689
+Call one bursts in slot one, call two in
+slot two, back to call one — many times
+
+18
+00:01:07,689 --> 00:01:12,786
+per second, fast enough that each
+conversation sounds perfectly continuous.
+
+19
+00:01:12,905 --> 00:01:15,053
+One channel now does the work of two.
+
+20
+00:01:15,403 --> 00:01:16,587
+The price is discipline.
+
+21
+00:01:16,707 --> 00:01:20,151
+Every radio must burst exactly inside its
+slot, so bursts are padded with a little
+
+22
+00:01:20,151 --> 00:01:23,596
+guard time, and receivers lock onto a
+frame-synchronization pattern to learn
+
+23
+00:01:23,596 --> 00:01:27,040
+where the slot boundaries fall.
+
+24
+00:01:27,160 --> 00:01:31,548
+In exchange, DMR and P25 Phase 2 double
+the calls per frequency with two slots,
+
+25
+00:01:31,548 --> 00:01:35,937
+and TETRA packs four calls onto one
+carrier.
+
+26
+00:01:36,057 --> 00:01:38,582
+A subscriber radio even saves battery by
+switching its transmitter off between
+
+27
+00:01:38,582 --> 00:01:41,107
+bursts.
+
+28
+00:01:41,458 --> 00:01:44,250
+Real systems combine both: FDMA
+channelizes the band, TDMA time-shares
+
+29
+00:01:44,250 --> 00:01:47,042
+each channel.
+
+30
+00:01:47,162 --> 00:01:51,568
+And for trunking, the difference shows up
+in the grant itself — on FDMA a grant
+
+31
+00:01:51,568 --> 00:01:55,974
+names a frequency; on TDMA it must name a
+frequency and a slot.
+
+32
+00:01:56,324 --> 00:01:58,762
+For an SDR, the split is concrete.
+
+33
+00:01:58,882 --> 00:02:03,230
+On FDMA, a granted channel is simply a
+carrier: GopherTrunk down-converts that
+
+34
+00:02:03,230 --> 00:02:07,578
+frequency from the wideband capture and
+demodulates it.
+
+35
+00:02:07,698 --> 00:02:13,294
+On TDMA, the same carrier holds two or
+four unrelated calls, so GopherTrunk must
+
+36
+00:02:13,294 --> 00:02:18,890
+also recover burst timing, sync to the
+frame, and pull out just the granted slot
+
+37
+00:02:18,890 --> 00:02:24,486
+— which is exactly what its DMR, P25 Phase
+2, and TETRA decode paths do.
+
+38
+00:02:25,636 --> 00:02:30,911
+So: FDMA gives each call its own
+frequency; TDMA lets calls share one
+
+39
+00:02:30,911 --> 00:02:36,185
+frequency in timeslots, doubling or
+quadrupling capacity at the cost of tight
+
+40
+00:02:36,185 --> 00:02:41,460
+timing — and on TDMA, every grant names a
+slot as well as a channel.
+
+41
+00:02:41,580 --> 00:02:43,124
+Full write-ups linked below.

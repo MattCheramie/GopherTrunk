@@ -1,0 +1,231 @@
+1
+00:00:02,350 --> 00:00:05,318
+A channel grant is the single most
+important message on a trunked system: the
+
+2
+00:00:05,318 --> 00:00:08,287
+moment it is broadcast, a call is
+starting, and the message says exactly
+
+3
+00:00:08,287 --> 00:00:11,255
+where.
+
+4
+00:00:11,605 --> 00:00:14,154
+Everything trunking promises — many
+groups, few channels — comes down to this
+
+5
+00:00:14,154 --> 00:00:16,702
+one transaction.
+
+6
+00:00:16,822 --> 00:00:17,762
+A user keys up.
+
+7
+00:00:17,882 --> 00:00:20,831
+Their radio sends a call request on the
+control channel.
+
+8
+00:00:20,951 --> 00:00:24,349
+The site controller picks a free voice
+channel from the pool, packs an answer
+
+9
+00:00:24,349 --> 00:00:27,747
+into a short signalling block, and
+broadcasts it: talkgroup 101, go to
+
+10
+00:00:27,747 --> 00:00:31,145
+channel 3.
+
+11
+00:00:31,495 --> 00:00:34,851
+Every radio affiliated to talkgroup 101
+hears that grant and retunes together, in
+
+12
+00:00:34,851 --> 00:00:38,206
+a fraction of a second.
+
+13
+00:00:38,325 --> 00:00:40,717
+So does every monitor following the
+system.
+
+14
+00:00:40,837 --> 00:00:43,786
+One message, and an entire group — plus
+everyone listening in — moves to the same
+
+15
+00:00:43,786 --> 00:00:46,735
+place at the same instant.
+
+16
+00:00:47,085 --> 00:00:50,057
+Look inside the message and there are
+three essentials.
+
+17
+00:00:50,177 --> 00:00:53,224
+First, the target: a talkgroup for a group
+call, or a source-and-destination pair for
+
+18
+00:00:53,224 --> 00:00:56,272
+a private call.
+
+19
+00:00:56,392 --> 00:00:59,991
+Second, the channel — usually not a raw
+frequency, but a channel number the radio
+
+20
+00:00:59,991 --> 00:01:03,590
+maps to a frequency through the system's
+channel plan.
+
+21
+00:01:03,710 --> 00:01:06,844
+And third, on TDMA systems, a timeslot,
+because two calls can share one frequency
+
+22
+00:01:06,844 --> 00:01:09,979
+in time.
+
+23
+00:01:10,330 --> 00:01:13,616
+A grant is broadcast once — but a radio
+might miss it.
+
+24
+00:01:13,735 --> 00:01:17,044
+It was out of range, powered off, or busy
+on another channel.
+
+25
+00:01:17,164 --> 00:01:19,864
+So while the call runs, the control
+channel repeats a grant update announcing
+
+26
+00:01:19,864 --> 00:01:22,563
+the call in progress.
+
+27
+00:01:22,683 --> 00:01:25,713
+A late arrival reads the update and joins
+mid-call.
+
+28
+00:01:25,833 --> 00:01:28,312
+That is late entry, and it is why trunked
+systems feel seamless even as radios come
+
+29
+00:01:28,312 --> 00:01:30,790
+and go.
+
+30
+00:01:31,140 --> 00:01:34,736
+The flavors mirror the traffic: group
+voice grants for the everyday case,
+
+31
+00:01:34,736 --> 00:01:38,332
+unit-to-unit grants for private calls
+between two radio IDs, grant updates for
+
+32
+00:01:38,332 --> 00:01:41,929
+late entry, and data grants that assign a
+channel for a short packet transfer
+
+33
+00:01:41,929 --> 00:01:45,525
+instead of voice.
+
+34
+00:01:45,875 --> 00:01:48,308
+One more wrinkle: a grant is a promise of
+a free channel, and sometimes there isn't
+
+35
+00:01:48,308 --> 00:01:50,740
+one.
+
+36
+00:01:50,860 --> 00:01:53,954
+During a busy incident the controller may
+queue the request instead, and the grant
+
+37
+00:01:53,954 --> 00:01:57,048
+arrives seconds later when a channel frees
+up.
+
+38
+00:01:57,168 --> 00:01:58,933
+Grade of service, made audible.
+
+39
+00:01:59,283 --> 00:02:03,091
+GopherTrunk's trunk-following engine is,
+at heart, a grant reader.
+
+40
+00:02:03,211 --> 00:02:06,735
+Every grant on the control channel is
+parsed in real time; the channel number
+
+41
+00:02:06,735 --> 00:02:10,258
+runs through the decoded channel plan to
+become a frequency; and a receiver is
+
+42
+00:02:10,258 --> 00:02:13,782
+tasked at that frequency — and that
+timeslot — before the first syllable of
+
+43
+00:02:13,782 --> 00:02:17,306
+audio arrives.
+
+44
+00:02:17,425 --> 00:02:19,886
+Repeat for every grant, and one wideband
+capture reconstructs the whole system's
+
+45
+00:02:19,886 --> 00:02:22,348
+traffic.
+
+46
+00:02:23,498 --> 00:02:26,116
+So: a channel grant is the control-channel
+message that assigns a call to a voice
+
+47
+00:02:26,116 --> 00:02:28,734
+channel.
+
+48
+00:02:28,854 --> 00:02:32,256
+It names the target, the channel, and on
+TDMA the slot — and its updates repeat
+
+49
+00:02:32,256 --> 00:02:35,657
+mid-call so latecomers can join.
+
+50
+00:02:35,777 --> 00:02:37,402
+Full write-up linked below.

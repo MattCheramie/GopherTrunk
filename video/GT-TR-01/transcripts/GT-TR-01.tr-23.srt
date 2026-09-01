@@ -1,0 +1,13 @@
+1
+00:00:00,000 --> 00:00:03,198
+The control channel keeps saying things
+like "talkgroup 101, go to channel 3."
+
+2
+00:00:03,198 --> 00:00:06,397
+We've covered the channels.
+
+3
+00:00:06,517 --> 00:00:10,023
+Now the other half of that sentence: what
+exactly is a talkgroup?

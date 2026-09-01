@@ -1,0 +1,52 @@
+1
+00:00:00,000 --> 00:00:03,111
+Somewhere in your city, right now, a
+dispatcher is talking to a hundred radios
+
+2
+00:00:03,111 --> 00:00:06,223
+— on a frequency that didn't exist a
+second ago and will be gone a second after
+
+3
+00:00:06,223 --> 00:00:09,334
+they stop.
+
+4
+00:00:09,684 --> 00:00:14,769
+Police, fire, transit, utilities —
+hundreds of groups, sharing a handful of
+
+5
+00:00:14,769 --> 00:00:19,854
+channels, coordinated by one data stream
+that never stops and never speaks.
+
+6
+00:00:20,205 --> 00:00:23,506
+Decode that one stream, and the entire
+system opens up: every call announces
+
+7
+00:00:23,506 --> 00:00:26,807
+itself before it starts, and a single
+software-defined radio can follow all of
+
+8
+00:00:26,807 --> 00:00:30,108
+it at once.
+
+9
+00:00:30,458 --> 00:00:34,022
+This is how trunked radio works — the
+pool, the coordinator, the virtual
+
+10
+00:00:34,022 --> 00:00:37,587
+channels, the grants, and the two ways
+calls share the air.
+
+11
+00:00:37,707 --> 00:00:41,283
+Five ideas, and by the end, you can read a
+trunked system like a map.

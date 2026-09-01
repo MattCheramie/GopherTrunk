@@ -1,0 +1,56 @@
+1
+00:00:00,000 --> 00:00:01,707
+That's the trunked radio pillar.
+
+2
+00:00:01,827 --> 00:00:06,866
+Five ideas, and they interlock: a pool of
+shared channels, a control channel
+
+3
+00:00:06,866 --> 00:00:11,904
+coordinating it, talkgroups giving users a
+stable identity, grants moving each call
+
+4
+00:00:11,904 --> 00:00:16,943
+to its channel — and FDMA or TDMA deciding
+how those channels share the spectrum.
+
+5
+00:00:17,293 --> 00:00:22,128
+Everything else in trunking — multisite
+networks, roaming, encryption, the
+
+6
+00:00:22,128 --> 00:00:26,964
+protocol wars between P25, DMR, and TETRA
+— builds on these five.
+
+7
+00:00:27,084 --> 00:00:29,499
+When you're ready, those are waiting in
+the Field Guide.
+
+8
+00:00:29,849 --> 00:00:34,539
+Every segment's full write-up is linked
+below, with diagrams and sources.
+
+9
+00:00:34,659 --> 00:00:37,751
+If this helped, the whole Field Guide is
+free at gophertrunk dot org — and
+
+10
+00:00:37,751 --> 00:00:40,843
+GopherTrunk itself, the open-source
+trunking scanner this course is built
+
+11
+00:00:40,843 --> 00:00:43,935
+around, is on GitHub.
+
+12
+00:00:44,056 --> 00:00:44,950
+Thanks for watching.

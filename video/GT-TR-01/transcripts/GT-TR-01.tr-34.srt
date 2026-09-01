@@ -1,0 +1,16 @@
+1
+00:00:00,000 --> 00:00:01,474
+A talkgroup is the who.
+
+2
+00:00:01,594 --> 00:00:04,903
+The message that moves a whole group to a
+voice channel in a fraction of a second is
+
+3
+00:00:04,903 --> 00:00:08,212
+the how — and it deserves a closer look.
+
+4
+00:00:08,332 --> 00:00:09,725
+Next: the channel grant.

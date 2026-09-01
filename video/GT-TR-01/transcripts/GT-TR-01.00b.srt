@@ -1,0 +1,79 @@
+1
+00:00:00,000 --> 00:00:03,286
+Welcome to the GopherTrunk Field Guide —
+the video edition.
+
+2
+00:00:03,406 --> 00:00:07,476
+This course is the trunked radio pillar:
+the concepts that let many users share a
+
+3
+00:00:07,476 --> 00:00:11,545
+small pool of channels, explained one idea
+at a time.
+
+4
+00:00:11,894 --> 00:00:12,765
+Here is the route.
+
+5
+00:00:12,885 --> 00:00:15,387
+We start with trunked radio itself — the
+architecture, and why statistics make it
+
+6
+00:00:15,387 --> 00:00:17,889
+work.
+
+7
+00:00:18,009 --> 00:00:21,318
+Then the control channel, the data stream
+that coordinates everything.
+
+8
+00:00:21,438 --> 00:00:24,619
+Then talkgroups, the virtual channels you
+actually listen to.
+
+9
+00:00:24,739 --> 00:00:27,850
+Then channel grants, the messages that
+start every call.
+
+10
+00:00:27,970 --> 00:00:33,148
+And finally FDMA and TDMA, the two ways
+calls share the spectrum.
+
+11
+00:00:33,498 --> 00:00:36,720
+Every segment stands alone — each one
+starts from its own definition, so you can
+
+12
+00:00:36,720 --> 00:00:39,942
+jump straight to the idea you need.
+
+13
+00:00:40,062 --> 00:00:44,154
+And every segment has a full written
+article in the Field Guide at gophertrunk
+
+14
+00:00:44,154 --> 00:00:48,247
+dot org, linked below, with diagrams,
+variants, and sources.
+
+15
+00:00:48,597 --> 00:00:49,247
+That's the map.
+
+16
+00:00:49,367 --> 00:00:51,938
+Let's start where the whole idea starts:
+with the problem of too many groups and
+
+17
+00:00:51,938 --> 00:00:54,510
+too few frequencies.

@@ -1,0 +1,17 @@
+1
+00:00:00,000 --> 00:00:02,415
+You may have noticed some grants name a
+frequency, and some name a frequency and a
+
+2
+00:00:02,415 --> 00:00:04,830
+timeslot.
+
+3
+00:00:04,950 --> 00:00:08,236
+That difference runs all the way down to
+how calls share the air.
+
+4
+00:00:08,355 --> 00:00:11,362
+Last stop: FDMA and TDMA.

@@ -1,0 +1,26 @@
+/* GopherTrunk video brand kit — tokens mirror docs/assets/css/style.scss (dark theme). */
+:root {
+  --bg: #0d1117;
+  --elev: #161b22;
+  --text: #e6edf3;
+  --muted: #8b96a3;
+  --accent: #58a6ff;
+  --accent-deep: #155799;
+  --accent-soft: #e8f0fa;
+  --border: #30363d;
+  --good: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --sans: "DejaVu Sans", system-ui, sans-serif;
+  --mono: "DejaVu Sans Mono", ui-monospace, monospace;
+}
+html, body { margin: 0; padding: 0; background: var(--bg); overflow: hidden; }
+#stage {
+  position: absolute; top: 0; left: 0;
+  background: var(--bg);
+  font-family: var(--sans);
+  color: var(--text);
+}
+#stage * { box-sizing: border-box; }
+text { font-family: var(--sans); }
+.mono, .mono text { font-family: var(--mono); }

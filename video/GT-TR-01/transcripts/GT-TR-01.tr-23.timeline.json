@@ -1,0 +1,27 @@
+{
+ "seg": "GT-TR-01.tr-23",
+ "title": "Transition: control channel \u2192 talkgroup",
+ "fps": 30,
+ "dur": 11.023,
+ "clips": {},
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 6.397,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Control channel \u2192 Talkgroup",
+   "text": "The control channel keeps saying things like \"talkgroup 101, go to channel 3.\" We've covered the channels."
+  },
+  {
+   "b": 0,
+   "t": 6.517,
+   "dur": 3.506,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Control channel \u2192 Talkgroup",
+   "text": "Now the other half of that sentence: what exactly is a talkgroup?"
+  }
+ ]
+}

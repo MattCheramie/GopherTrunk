@@ -1,0 +1,6 @@
+_render/
+*.mp4
+*.wav
+*.mp3
+*.onnx
+*.onnx.json

@@ -1,0 +1,45 @@
+{
+ "seg": "GT-TR-01.tr-12",
+ "title": "Transition: trunked radio \u2192 control channel",
+ "fps": 30,
+ "dur": 10.88,
+ "clips": {},
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 2.763,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Trunked radio \u2192 Control channel",
+   "text": "So a computer assigns every channel on demand."
+  },
+  {
+   "b": 0,
+   "t": 2.883,
+   "dur": 2.276,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Trunked radio \u2192 Control channel",
+   "text": "But where do those assignments actually come from?"
+  },
+  {
+   "b": 0,
+   "t": 5.279,
+   "dur": 2.589,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Trunked radio \u2192 Control channel",
+   "text": "One frequency on the system does nothing else."
+  },
+  {
+   "b": 0,
+   "t": 7.988,
+   "dur": 1.892,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Trunked radio \u2192 Control channel",
+   "text": "That's next: the control channel."
+  }
+ ]
+}

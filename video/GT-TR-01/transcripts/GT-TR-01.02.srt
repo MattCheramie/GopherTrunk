@@ -1,0 +1,218 @@
+1
+00:00:02,350 --> 00:00:05,955
+The control channel is the one frequency
+on a trunked system that never carries a
+
+2
+00:00:05,955 --> 00:00:09,560
+voice — and it is the only one worth
+decoding first.
+
+3
+00:00:09,910 --> 00:00:13,642
+Tune across a trunked site and you will
+find it immediately: a strong, continuous
+
+4
+00:00:13,642 --> 00:00:17,375
+data carrier that never stops and never
+speaks.
+
+5
+00:00:17,495 --> 00:00:19,945
+That is the control channel — the system's
+coordinator.
+
+6
+00:00:20,065 --> 00:00:23,508
+It carries a nonstop stream of short
+signalling messages: registrations, call
+
+7
+00:00:23,508 --> 00:00:26,950
+requests, and above all, channel grants.
+
+8
+00:00:27,299 --> 00:00:30,376
+Every message answers a question some
+radio just asked.
+
+9
+00:00:30,496 --> 00:00:33,851
+A radio powers on: the control channel
+registers it.
+
+10
+00:00:33,971 --> 00:00:36,444
+A user keys up: the control channel grants
+the call and names the channel it will
+
+11
+00:00:36,444 --> 00:00:38,917
+happen on.
+
+12
+00:00:39,037 --> 00:00:42,352
+Because it announces where every call
+goes, locking onto this one frequency
+
+13
+00:00:42,352 --> 00:00:45,666
+makes the entire system's activity
+visible.
+
+14
+00:00:46,017 --> 00:00:49,012
+Its counterpart is the voice channel — or
+traffic channel.
+
+15
+00:00:49,132 --> 00:00:52,795
+Control carries data and coordinates; a
+voice channel carries an actual
+
+16
+00:00:52,795 --> 00:00:56,458
+conversation, and only for the brief life
+of a single call.
+
+17
+00:00:56,578 --> 00:00:59,771
+A grant points a talkgroup at a voice
+channel, the audio flows, a short hang
+
+18
+00:00:59,771 --> 00:01:02,963
+time keeps replies on the same channel,
+and then the frequency goes idle and
+
+19
+00:01:02,963 --> 00:01:06,156
+rejoins the pool.
+
+20
+00:01:06,506 --> 00:01:10,960
+The messages themselves are compact,
+fixed-format bursts, packed back to back
+
+21
+00:01:10,960 --> 00:01:15,415
+on a fixed-rate downlink: TSBKs on P25,
+CSBKs on DMR, and their equivalents
+
+22
+00:01:15,415 --> 00:01:19,869
+elsewhere.
+
+23
+00:01:19,989 --> 00:01:23,398
+Between grants, the stream also broadcasts
+the system's identity, a list of neighbor
+
+24
+00:01:23,398 --> 00:01:26,808
+sites so radios know where to roam, and
+periodic status that keeps idle radios
+
+25
+00:01:26,808 --> 00:01:30,217
+locked.
+
+26
+00:01:30,567 --> 00:01:32,239
+And the announcements repeat.
+
+27
+00:01:32,359 --> 00:01:36,214
+A radio that arrives mid-call — it was out
+of range, or just powered on — hears an
+
+28
+00:01:36,214 --> 00:01:40,068
+update for the call in progress and joins
+late.
+
+29
+00:01:40,188 --> 00:01:43,386
+That trick, late entry, only works because
+the control channel keeps narrating the
+
+30
+00:01:43,386 --> 00:01:46,585
+system's state over and over.
+
+31
+00:01:46,935 --> 00:01:51,684
+Most systems dedicate one frequency to the
+job permanently — P25, DMR Tier 3, TETRA —
+
+32
+00:01:51,684 --> 00:01:56,432
+which is the easy case to find and
+monitor.
+
+33
+00:01:56,552 --> 00:01:59,474
+Lighter DMR modes rotate the control
+function around the pool on a rest
+
+34
+00:01:59,474 --> 00:02:02,396
+channel, and some systems interleave
+control signalling with voice on the same
+
+35
+00:02:02,396 --> 00:02:05,318
+carrier.
+
+36
+00:02:05,668 --> 00:02:08,245
+For GopherTrunk, the control channel is
+the map.
+
+37
+00:02:08,365 --> 00:02:12,266
+Decode it, and every call on the system
+announces itself before it starts.
+
+38
+00:02:12,386 --> 00:02:16,020
+GopherTrunk parses the grant, affiliation,
+and system messages in real time, tasks a
+
+39
+00:02:16,020 --> 00:02:19,654
+receiver at each granted voice channel,
+and follows many conversations from one
+
+40
+00:02:19,654 --> 00:02:23,288
+wideband capture.
+
+41
+00:02:23,408 --> 00:02:26,288
+Finding an unknown system works the same
+way: hunt for the carrier that is always
+
+42
+00:02:26,288 --> 00:02:29,167
+on and never talks.
+
+43
+00:02:30,317 --> 00:02:34,160
+So: the control channel is the data-only
+coordinator of a trunked system.
+
+44
+00:02:34,280 --> 00:02:37,821
+It announces every grant, registration,
+and system parameter.
+
+45
+00:02:37,941 --> 00:02:40,530
+Decode it first — it is the map to
+everything else.
+
+46
+00:02:40,650 --> 00:02:42,159
+Full write-up linked below.

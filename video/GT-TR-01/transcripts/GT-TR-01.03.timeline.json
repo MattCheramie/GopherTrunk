@@ -1,0 +1,278 @@
+{
+ "seg": "GT-TR-01.03",
+ "title": "Talkgroup",
+ "fps": 30,
+ "dur": 152.267,
+ "clips": {
+  "c1": {
+   "end": 39.436,
+   "start": 2.35
+  },
+  "c2": {
+   "end": 113.128,
+   "start": 81.113
+  }
+ },
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 2.0,
+   "visual": "title",
+   "variant": "",
+   "arg": "Talkgroup"
+  },
+  {
+   "b": 1,
+   "t": 2.35,
+   "dur": 5.213,
+   "visual": "tghop",
+   "variant": "intro",
+   "arg": "",
+   "text": "A talkgroup is a channel that does not exist \u2014 and it is the thing you actually listen to on a trunked system."
+  },
+  {
+   "b": 1,
+   "t": 7.913,
+   "dur": 2.926,
+   "visual": "tghop",
+   "variant": "intro",
+   "arg": "",
+   "text": "On a trunked system, \"Police Dispatch\" is not a frequency."
+  },
+  {
+   "b": 1,
+   "t": 10.959,
+   "dur": 3.611,
+   "visual": "tghop",
+   "variant": "intro",
+   "arg": "",
+   "text": "It is a number \u2014 a talkgroup ID \u2014 naming a group of users."
+  },
+  {
+   "b": 1,
+   "t": 14.689,
+   "dur": 4.052,
+   "visual": "tghop",
+   "variant": "intro",
+   "arg": "",
+   "text": "When a member keys up, the system borrows a physical channel for that one call."
+  },
+  {
+   "b": 1,
+   "t": 18.861,
+   "dur": 3.379,
+   "visual": "tghop",
+   "variant": "intro",
+   "arg": "",
+   "text": "The next call from the same group may land somewhere completely different."
+  },
+  {
+   "b": 2,
+   "t": 22.59,
+   "dur": 7.639,
+   "visual": "tghop",
+   "variant": "follow",
+   "arg": "",
+   "text": "Watch what that means over a minute of traffic: call one lands on channel 3, call two on channel 7, call three on channel 2."
+  },
+  {
+   "b": 2,
+   "t": 30.349,
+   "dur": 1.869,
+   "visual": "tghop",
+   "variant": "follow",
+   "arg": "",
+   "text": "The frequency changes every time."
+  },
+  {
+   "b": 2,
+   "t": 32.338,
+   "dur": 1.718,
+   "visual": "tghop",
+   "variant": "follow",
+   "arg": "",
+   "text": "The talkgroup number never does."
+  },
+  {
+   "b": 2,
+   "t": 34.177,
+   "dur": 5.259,
+   "visual": "tghop",
+   "variant": "follow",
+   "arg": "",
+   "text": "The group is the stable identity; the frequency is a detail the system handles underneath."
+  },
+  {
+   "b": 3,
+   "t": 39.786,
+   "dur": 3.855,
+   "visual": "tgprog",
+   "variant": "membership",
+   "arg": "",
+   "text": "Every radio is programmed with the talkgroups it can select and monitor."
+  },
+  {
+   "b": 3,
+   "t": 43.76,
+   "dur": 4.226,
+   "visual": "tgprog",
+   "variant": "membership",
+   "arg": "",
+   "text": "Key up on one, and your radio sends a request carrying that talkgroup ID."
+  },
+  {
+   "b": 3,
+   "t": 48.106,
+   "dur": 8.8,
+   "visual": "tgprog",
+   "variant": "membership",
+   "arg": "",
+   "text": "The control channel grants a voice channel and announces the talkgroup, so every radio affiliated to the group retunes together and hears the same call \u2014 wherever it landed."
+  },
+  {
+   "b": 4,
+   "t": 57.257,
+   "dur": 2.252,
+   "visual": "defcard",
+   "variant": "tgid",
+   "arg": "Talkgroup ID|P25: 16-bit, scoped to WACN + System ID \u2014 alias tables map IDs to names",
+   "text": "The IDs are numeric and system-specific."
+  },
+  {
+   "b": 4,
+   "t": 59.629,
+   "dur": 7.93,
+   "visual": "defcard",
+   "variant": "tgid",
+   "arg": "Talkgroup ID|P25: 16-bit, scoped to WACN + System ID \u2014 alias tables map IDs to names",
+   "text": "On P25 a talkgroup ID is a sixteen-bit value scoped to the system's identity; DMR numbers its own way."
+  },
+  {
+   "b": 4,
+   "t": 67.679,
+   "dur": 13.084,
+   "visual": "defcard",
+   "variant": "tgid",
+   "arg": "Talkgroup ID|P25: 16-bit, scoped to WACN + System ID \u2014 alias tables map IDs to names",
+   "text": "Hobbyist databases publish alias tables that map the raw numbers to human names \u2014 police districts, fire, EMS, public works \u2014 which is how a scanner display turns \"talkgroup 101\" into something readable."
+  },
+  {
+   "b": 5,
+   "t": 81.113,
+   "dur": 5.909,
+   "visual": "rid",
+   "variant": "pair",
+   "arg": "",
+   "text": "Alongside the talkgroup rides a second number: the radio ID of the individual transmitting radio."
+  },
+  {
+   "b": 5,
+   "t": 87.143,
+   "dur": 6.502,
+   "visual": "rid",
+   "variant": "pair",
+   "arg": "",
+   "text": "Together they answer the two questions a listener has about every call \u2014 which group is this, and which unit is talking."
+  },
+  {
+   "b": 5,
+   "t": 93.764,
+   "dur": 2.856,
+   "visual": "rid",
+   "variant": "pair",
+   "arg": "",
+   "text": "Group identity for the many; unit identity for the one."
+  },
+  {
+   "b": 6,
+   "t": 96.97,
+   "dur": 1.509,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "Kinds of groups|dispatch \u00b7 tactical \u00b7 patched \u00b7 announcement",
+   "text": "Groups come in flavors."
+  },
+  {
+   "b": 6,
+   "t": 98.6,
+   "dur": 6.235,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "Kinds of groups|dispatch \u00b7 tactical \u00b7 patched \u00b7 announcement",
+   "text": "Dispatch groups carry a desk's steady traffic; tactical groups are short-lived channels stood up for an incident."
+  },
+  {
+   "b": 6,
+   "t": 104.954,
+   "dur": 8.173,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "Kinds of groups|dispatch \u00b7 tactical \u00b7 patched \u00b7 announcement",
+   "text": "A dispatcher can patch several talkgroups together so they temporarily hear one another, and an announcement group reaches every subordinate group at once."
+  },
+  {
+   "b": 7,
+   "t": 113.478,
+   "dur": 6.269,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "This is why every serious trunking scanner \u2014 GopherTrunk included \u2014 is organized around talkgroups, not frequencies."
+  },
+  {
+   "b": 7,
+   "t": 119.867,
+   "dur": 10.739,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "You build allow lists and priority lists of groups; each active call shows its talkgroup ID, its alias, and the transmitting radio ID; and the activity log counts traffic per group."
+  },
+  {
+   "b": 7,
+   "t": 130.726,
+   "dur": 2.218,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "The system hops frequencies constantly."
+  },
+  {
+   "b": 7,
+   "t": 133.064,
+   "dur": 1.138,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "You never have to care."
+  },
+  {
+   "b": 8,
+   "t": 135.351,
+   "dur": 4.795,
+   "visual": "recap",
+   "variant": "",
+   "arg": "talkgroup|\u2460 A virtual channel: a numbered group of users \u2461 Calls hop frequencies; the ID stays put \u2462 You follow talkgroups, not frequencies",
+   "text": "So: a talkgroup is a virtual channel \u2014 a number naming a group of users."
+  },
+  {
+   "b": 8,
+   "t": 140.266,
+   "dur": 7.744,
+   "visual": "recap",
+   "variant": "",
+   "arg": "talkgroup|\u2460 A virtual channel: a numbered group of users \u2461 Calls hop frequencies; the ID stays put \u2462 You follow talkgroups, not frequencies",
+   "text": "Its calls hop across physical frequencies, but the ID stays put, which is why you follow talkgroups and let the system worry about frequencies."
+  },
+  {
+   "b": 8,
+   "t": 148.13,
+   "dur": 1.637,
+   "visual": "recap",
+   "variant": "",
+   "arg": "talkgroup|\u2460 A virtual channel: a numbered group of users \u2461 Calls hop frequencies; the ID stays put \u2462 You follow talkgroups, not frequencies",
+   "text": "Full write-up linked below."
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "seg": "GT-TR-01.tr-34",
+ "title": "Transition: talkgroup \u2192 channel grant",
+ "fps": 30,
+ "dur": 10.725,
+ "clips": {},
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 1.474,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Talkgroup \u2192 Channel grant",
+   "text": "A talkgroup is the who."
+  },
+  {
+   "b": 0,
+   "t": 1.594,
+   "dur": 6.618,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Talkgroup \u2192 Channel grant",
+   "text": "The message that moves a whole group to a voice channel in a fraction of a second is the how \u2014 and it deserves a closer look."
+  },
+  {
+   "b": 0,
+   "t": 8.332,
+   "dur": 1.393,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Talkgroup \u2192 Channel grant",
+   "text": "Next: the channel grant."
+  }
+ ]
+}

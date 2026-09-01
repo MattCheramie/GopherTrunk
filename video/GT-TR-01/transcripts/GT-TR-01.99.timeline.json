@@ -1,0 +1,80 @@
+{
+ "seg": "GT-TR-01.99",
+ "title": "Outro",
+ "fps": 30,
+ "dur": 65.95,
+ "clips": {},
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 1.707,
+   "visual": "outrosum",
+   "variant": "recap",
+   "arg": "",
+   "text": "That's the trunked radio pillar."
+  },
+  {
+   "b": 0,
+   "t": 1.827,
+   "dur": 15.116,
+   "visual": "outrosum",
+   "variant": "recap",
+   "arg": "",
+   "text": "Five ideas, and they interlock: a pool of shared channels, a control channel coordinating it, talkgroups giving users a stable identity, grants moving each call to its channel \u2014 and FDMA or TDMA deciding how those channels share the spectrum."
+  },
+  {
+   "b": 1,
+   "t": 17.293,
+   "dur": 9.671,
+   "visual": "outrosum",
+   "variant": "apply",
+   "arg": "",
+   "text": "Everything else in trunking \u2014 multisite networks, roaming, encryption, the protocol wars between P25, DMR, and TETRA \u2014 builds on these five."
+  },
+  {
+   "b": 1,
+   "t": 27.084,
+   "dur": 2.415,
+   "visual": "outrosum",
+   "variant": "apply",
+   "arg": "",
+   "text": "When you're ready, those are waiting in the Field Guide."
+  },
+  {
+   "b": 2,
+   "t": 29.849,
+   "dur": 4.69,
+   "visual": "outrosum",
+   "variant": "cta",
+   "arg": "",
+   "text": "Every segment's full write-up is linked below, with diagrams and sources."
+  },
+  {
+   "b": 2,
+   "t": 34.659,
+   "dur": 9.276,
+   "visual": "outrosum",
+   "variant": "cta",
+   "arg": "",
+   "text": "If this helped, the whole Field Guide is free at gophertrunk dot org \u2014 and GopherTrunk itself, the open-source trunking scanner this course is built around, is on GitHub."
+  },
+  {
+   "b": 2,
+   "t": 44.056,
+   "dur": 0.894,
+   "visual": "outrosum",
+   "variant": "cta",
+   "arg": "",
+   "text": "Thanks for watching."
+  },
+  {
+   "b": 3,
+   "t": 44.95,
+   "dur": 20.0,
+   "visual": "endslate",
+   "variant": "main",
+   "arg": ""
+  }
+ ]
+}

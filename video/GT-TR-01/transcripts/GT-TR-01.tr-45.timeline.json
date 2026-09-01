@@ -1,0 +1,36 @@
+{
+ "seg": "GT-TR-01.tr-45",
+ "title": "Transition: channel grant \u2192 FDMA & TDMA",
+ "fps": 30,
+ "dur": 12.362,
+ "clips": {},
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 4.83,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Channel grant \u2192 FDMA & TDMA",
+   "text": "You may have noticed some grants name a frequency, and some name a frequency and a timeslot."
+  },
+  {
+   "b": 0,
+   "t": 4.95,
+   "dur": 3.286,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Channel grant \u2192 FDMA & TDMA",
+   "text": "That difference runs all the way down to how calls share the air."
+  },
+  {
+   "b": 0,
+   "t": 8.355,
+   "dur": 3.007,
+   "visual": "transit",
+   "variant": "",
+   "arg": "Channel grant \u2192 FDMA & TDMA",
+   "text": "Last stop: FDMA and TDMA."
+  }
+ ]
+}

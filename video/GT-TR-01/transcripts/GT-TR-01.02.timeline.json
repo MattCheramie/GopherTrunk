@@ -1,0 +1,260 @@
+{
+ "seg": "GT-TR-01.02",
+ "title": "Control channel",
+ "fps": 30,
+ "dur": 164.659,
+ "clips": {
+  "c1": {
+   "end": 45.667,
+   "start": 2.35
+  },
+  "c2": {
+   "end": 106.585,
+   "start": 66.506
+  }
+ },
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 2.0,
+   "visual": "title",
+   "variant": "",
+   "arg": "Control channel"
+  },
+  {
+   "b": 1,
+   "t": 2.35,
+   "dur": 7.21,
+   "visual": "ccstream",
+   "variant": "intro",
+   "arg": "",
+   "text": "The control channel is the one frequency on a trunked system that never carries a voice \u2014 and it is the only one worth decoding first."
+  },
+  {
+   "b": 1,
+   "t": 9.91,
+   "dur": 7.465,
+   "visual": "ccstream",
+   "variant": "intro",
+   "arg": "",
+   "text": "Tune across a trunked site and you will find it immediately: a strong, continuous data carrier that never stops and never speaks."
+  },
+  {
+   "b": 1,
+   "t": 17.495,
+   "dur": 2.45,
+   "visual": "ccstream",
+   "variant": "intro",
+   "arg": "",
+   "text": "That is the control channel \u2014 the system's coordinator."
+  },
+  {
+   "b": 1,
+   "t": 20.065,
+   "dur": 6.885,
+   "visual": "ccstream",
+   "variant": "intro",
+   "arg": "",
+   "text": "It carries a nonstop stream of short signalling messages: registrations, call requests, and above all, channel grants."
+  },
+  {
+   "b": 2,
+   "t": 27.299,
+   "dur": 3.077,
+   "visual": "ccstream",
+   "variant": "messages",
+   "arg": "",
+   "text": "Every message answers a question some radio just asked."
+  },
+  {
+   "b": 2,
+   "t": 30.496,
+   "dur": 3.355,
+   "visual": "ccstream",
+   "variant": "messages",
+   "arg": "",
+   "text": "A radio powers on: the control channel registers it."
+  },
+  {
+   "b": 2,
+   "t": 33.971,
+   "dur": 4.946,
+   "visual": "ccstream",
+   "variant": "messages",
+   "arg": "",
+   "text": "A user keys up: the control channel grants the call and names the channel it will happen on."
+  },
+  {
+   "b": 2,
+   "t": 39.037,
+   "dur": 6.629,
+   "visual": "ccstream",
+   "variant": "messages",
+   "arg": "",
+   "text": "Because it announces where every call goes, locking onto this one frequency makes the entire system's activity visible."
+  },
+  {
+   "b": 3,
+   "t": 46.017,
+   "dur": 2.995,
+   "visual": "ccpair",
+   "variant": "roles",
+   "arg": "",
+   "text": "Its counterpart is the voice channel \u2014 or traffic channel."
+  },
+  {
+   "b": 3,
+   "t": 49.132,
+   "dur": 7.326,
+   "visual": "ccpair",
+   "variant": "roles",
+   "arg": "",
+   "text": "Control carries data and coordinates; a voice channel carries an actual conversation, and only for the brief life of a single call."
+  },
+  {
+   "b": 3,
+   "t": 56.578,
+   "dur": 9.578,
+   "visual": "ccpair",
+   "variant": "roles",
+   "arg": "",
+   "text": "A grant points a talkgroup at a voice channel, the audio flows, a short hang time keeps replies on the same channel, and then the frequency goes idle and rejoins the pool."
+  },
+  {
+   "b": 4,
+   "t": 66.506,
+   "dur": 13.363,
+   "visual": "ccstream",
+   "variant": "grantflow",
+   "arg": "",
+   "text": "The messages themselves are compact, fixed-format bursts, packed back to back on a fixed-rate downlink: TSBKs on P25, CSBKs on DMR, and their equivalents elsewhere."
+  },
+  {
+   "b": 4,
+   "t": 79.989,
+   "dur": 10.228,
+   "visual": "ccstream",
+   "variant": "grantflow",
+   "arg": "",
+   "text": "Between grants, the stream also broadcasts the system's identity, a list of neighbor sites so radios know where to roam, and periodic status that keeps idle radios locked."
+  },
+  {
+   "b": 5,
+   "t": 90.567,
+   "dur": 1.672,
+   "visual": "ccstream",
+   "variant": "lateentry",
+   "arg": "",
+   "text": "And the announcements repeat."
+  },
+  {
+   "b": 5,
+   "t": 92.359,
+   "dur": 7.709,
+   "visual": "ccstream",
+   "variant": "lateentry",
+   "arg": "",
+   "text": "A radio that arrives mid-call \u2014 it was out of range, or just powered on \u2014 hears an update for the call in progress and joins late."
+  },
+  {
+   "b": 5,
+   "t": 100.188,
+   "dur": 6.397,
+   "visual": "ccstream",
+   "variant": "lateentry",
+   "arg": "",
+   "text": "That trick, late entry, only works because the control channel keeps narrating the system's state over and over."
+  },
+  {
+   "b": 6,
+   "t": 106.935,
+   "dur": 9.497,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "Where the control lives|dedicated \u00b7 rotating rest channel \u00b7 composite",
+   "text": "Most systems dedicate one frequency to the job permanently \u2014 P25, DMR Tier 3, TETRA \u2014 which is the easy case to find and monitor."
+  },
+  {
+   "b": 6,
+   "t": 116.552,
+   "dur": 8.766,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "Where the control lives|dedicated \u00b7 rotating rest channel \u00b7 composite",
+   "text": "Lighter DMR modes rotate the control function around the pool on a rest channel, and some systems interleave control signalling with voice on the same carrier."
+  },
+  {
+   "b": 7,
+   "t": 125.668,
+   "dur": 2.577,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "For GopherTrunk, the control channel is the map."
+  },
+  {
+   "b": 7,
+   "t": 128.365,
+   "dur": 3.901,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "Decode it, and every call on the system announces itself before it starts."
+  },
+  {
+   "b": 7,
+   "t": 132.386,
+   "dur": 10.902,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "GopherTrunk parses the grant, affiliation, and system messages in real time, tasks a receiver at each granted voice channel, and follows many conversations from one wideband capture."
+  },
+  {
+   "b": 7,
+   "t": 143.408,
+   "dur": 5.759,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "Finding an unknown system works the same way: hunt for the carrier that is always on and never talks."
+  },
+  {
+   "b": 8,
+   "t": 150.317,
+   "dur": 3.843,
+   "visual": "recap",
+   "variant": "",
+   "arg": "control-channel|\u2460 Data only \u2014 it never carries voice \u2461 Announces grants, registrations, system info \u2462 Decode it first: it maps every call",
+   "text": "So: the control channel is the data-only coordinator of a trunked system."
+  },
+  {
+   "b": 8,
+   "t": 154.28,
+   "dur": 3.541,
+   "visual": "recap",
+   "variant": "",
+   "arg": "control-channel|\u2460 Data only \u2014 it never carries voice \u2461 Announces grants, registrations, system info \u2462 Decode it first: it maps every call",
+   "text": "It announces every grant, registration, and system parameter."
+  },
+  {
+   "b": 8,
+   "t": 157.941,
+   "dur": 2.589,
+   "visual": "recap",
+   "variant": "",
+   "arg": "control-channel|\u2460 Data only \u2014 it never carries voice \u2461 Announces grants, registrations, system info \u2462 Decode it first: it maps every call",
+   "text": "Decode it first \u2014 it is the map to everything else."
+  },
+  {
+   "b": 8,
+   "t": 160.65,
+   "dur": 1.509,
+   "visual": "recap",
+   "variant": "",
+   "arg": "control-channel|\u2460 Data only \u2014 it never carries voice \u2461 Announces grants, registrations, system info \u2462 Decode it first: it maps every call",
+   "text": "Full write-up linked below."
+  }
+ ]
+}

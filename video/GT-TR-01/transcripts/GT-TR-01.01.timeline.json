@@ -1,0 +1,323 @@
+{
+ "seg": "GT-TR-01.01",
+ "title": "Trunked radio",
+ "fps": 30,
+ "dur": 170.303,
+ "clips": {
+  "c1": {
+   "end": 38.987,
+   "start": 2.35
+  },
+  "c2": {
+   "end": 71.158,
+   "start": 39.337
+  }
+ },
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 2.0,
+   "visual": "title",
+   "variant": "",
+   "arg": "Trunked radio"
+  },
+  {
+   "b": 1,
+   "t": 2.35,
+   "dur": 5.259,
+   "visual": "conv-vs-trunk",
+   "variant": "intro",
+   "arg": "",
+   "text": "Trunked radio is how hundreds of user groups share a handful of frequencies \u2014 by never owning any of them."
+  },
+  {
+   "b": 1,
+   "t": 7.959,
+   "dur": 1.521,
+   "visual": "conv-vs-trunk",
+   "variant": "intro",
+   "arg": "",
+   "text": "Here is the problem it solves."
+  },
+  {
+   "b": 1,
+   "t": 9.6,
+   "dur": 3.762,
+   "visual": "conv-vs-trunk",
+   "variant": "intro",
+   "arg": "",
+   "text": "Under conventional radio, every group gets its own fixed frequency."
+  },
+  {
+   "b": 1,
+   "t": 13.482,
+   "dur": 2.136,
+   "visual": "conv-vs-trunk",
+   "variant": "intro",
+   "arg": "",
+   "text": "Police dispatch is always on channel A."
+  },
+  {
+   "b": 1,
+   "t": 15.738,
+   "dur": 1.858,
+   "visual": "conv-vs-trunk",
+   "variant": "intro",
+   "arg": "",
+   "text": "Fire is always on channel B."
+  },
+  {
+   "b": 1,
+   "t": 17.716,
+   "dur": 2.148,
+   "visual": "conv-vs-trunk",
+   "variant": "intro",
+   "arg": "",
+   "text": "Public works is always on channel C."
+  },
+  {
+   "b": 1,
+   "t": 19.984,
+   "dur": 4.133,
+   "visual": "conv-vs-trunk",
+   "variant": "intro",
+   "arg": "",
+   "text": "Simple \u2014 but wasteful, because most of the time, most of those channels are silent."
+  },
+  {
+   "b": 2,
+   "t": 24.467,
+   "dur": 1.486,
+   "visual": "conv-vs-trunk",
+   "variant": "idle",
+   "arg": "",
+   "text": "Radio traffic is bursty."
+  },
+  {
+   "b": 2,
+   "t": 26.073,
+   "dur": 5.979,
+   "visual": "conv-vs-trunk",
+   "variant": "idle",
+   "arg": "",
+   "text": "Any one group transmits only a small fraction of the time, and groups rarely all key up at once."
+  },
+  {
+   "b": 2,
+   "t": 32.172,
+   "dur": 6.815,
+   "visual": "conv-vs-trunk",
+   "variant": "idle",
+   "arg": "",
+   "text": "A city with thirty groups on thirty frequencies is paying for thirty channels and using maybe four of them in any given second."
+  },
+  {
+   "b": 3,
+   "t": 39.337,
+   "dur": 1.324,
+   "visual": "pool",
+   "variant": "grant",
+   "arg": "",
+   "text": "Trunking flips the model."
+  },
+  {
+   "b": 3,
+   "t": 40.78,
+   "dur": 4.621,
+   "visual": "pool",
+   "variant": "grant",
+   "arg": "",
+   "text": "Take a small pool of channels \u2014 say five \u2014 and let a computer hand them out on demand."
+  },
+  {
+   "b": 3,
+   "t": 45.521,
+   "dur": 2.972,
+   "visual": "pool",
+   "variant": "grant",
+   "arg": "",
+   "text": "When someone keys up, their radio asks for a channel."
+  },
+  {
+   "b": 3,
+   "t": 48.613,
+   "dur": 7.454,
+   "visual": "pool",
+   "variant": "grant",
+   "arg": "",
+   "text": "A coordinator called the control channel picks a free one, announces the assignment, and every radio in that user's group retunes to it together."
+  },
+  {
+   "b": 3,
+   "t": 56.187,
+   "dur": 5.236,
+   "visual": "pool",
+   "variant": "grant",
+   "arg": "",
+   "text": "When the talker is done and a hang timer expires, the channel goes back into the pool for the next call."
+  },
+  {
+   "b": 4,
+   "t": 61.773,
+   "dur": 2.125,
+   "visual": "pool",
+   "variant": "release",
+   "arg": "",
+   "text": "No group owns a frequency anymore."
+  },
+  {
+   "b": 4,
+   "t": 64.018,
+   "dur": 7.14,
+   "visual": "pool",
+   "variant": "release",
+   "arg": "",
+   "text": "What a group owns is an identity \u2014 a talkgroup \u2014 and the system finds a physical channel for each call, one call at a time."
+  },
+  {
+   "b": 5,
+   "t": 71.508,
+   "dur": 8.336,
+   "visual": "defcard",
+   "variant": "erlang",
+   "arg": "Grade of service|The probability a new call finds every channel busy \u2014 the number a channel pool is sized against.",
+   "text": "The reason this works is pure statistics \u2014 the same queuing theory that lets a telephone exchange serve a whole city with far fewer lines than subscribers."
+  },
+  {
+   "b": 5,
+   "t": 79.964,
+   "dur": 9.404,
+   "visual": "defcard",
+   "variant": "erlang",
+   "arg": "Grade of service|The probability a new call finds every channel busy \u2014 the number a channel pool is sized against.",
+   "text": "Traffic engineers measure offered load in erlangs and size the pool so that the probability of a call finding every channel busy \u2014 the grade of service \u2014 stays low."
+  },
+  {
+   "b": 5,
+   "t": 89.488,
+   "dur": 4.168,
+   "visual": "defcard",
+   "variant": "erlang",
+   "arg": "Grade of service|The probability a new call finds every channel busy \u2014 the number a channel pool is sized against.",
+   "text": "If it ever happens anyway, the system queues the request or plays a busy tone."
+  },
+  {
+   "b": 6,
+   "t": 94.006,
+   "dur": 9.451,
+   "visual": "pool",
+   "variant": "stats",
+   "arg": "",
+   "text": "The payoff is dramatic: a well-sized pool of five channels can comfortably serve dozens of talkgroups that would each have demanded a permanent frequency under the conventional model."
+  },
+  {
+   "b": 7,
+   "t": 103.806,
+   "dur": 2.101,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "One idea, many shapes|FDMA \u00b7 TDMA \u00b7 single-site \u00b7 multisite",
+   "text": "The idea comes in several shapes."
+  },
+  {
+   "b": 7,
+   "t": 106.028,
+   "dur": 5.712,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "One idea, many shapes|FDMA \u00b7 TDMA \u00b7 single-site \u00b7 multisite",
+   "text": "FDMA systems like P25 Phase 1 give each call its own frequency."
+  },
+  {
+   "b": 7,
+   "t": 111.86,
+   "dur": 9.346,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "One idea, many shapes|FDMA \u00b7 TDMA \u00b7 single-site \u00b7 multisite",
+   "text": "TDMA systems like DMR and TETRA split each frequency into timeslots, so one channel carries two or even four calls at once."
+  },
+  {
+   "b": 7,
+   "t": 121.326,
+   "dur": 5.909,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "One idea, many shapes|FDMA \u00b7 TDMA \u00b7 single-site \u00b7 multisite",
+   "text": "And a single site can stand alone, or be linked with others into a wide-area network covering a whole state."
+  },
+  {
+   "b": 7,
+   "t": 127.355,
+   "dur": 2.403,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "One idea, many shapes|FDMA \u00b7 TDMA \u00b7 single-site \u00b7 multisite",
+   "text": "We will meet all of these later in the course."
+  },
+  {
+   "b": 8,
+   "t": 130.109,
+   "dur": 2.531,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "For a scanner, trunking changes everything."
+  },
+  {
+   "b": 8,
+   "t": 132.76,
+   "dur": 6.943,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "You cannot just park on one frequency, because the conversation you care about scatters across the pool, call by call."
+  },
+  {
+   "b": 8,
+   "t": 139.822,
+   "dur": 12.841,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "GopherTrunk deals with this the same way the radios do: it decodes the coordinator's announcements and follows each call to wherever it lands \u2014 which means one software-defined radio can reconstruct every conversation on the system at once."
+  },
+  {
+   "b": 9,
+   "t": 153.813,
+   "dur": 4.609,
+   "visual": "recap",
+   "variant": "",
+   "arg": "trunked-radio|\u2460 Many groups share a small channel pool \u2461 A computer assigns a channel per call, then reclaims it \u2462 Groups keep an identity, not a frequency",
+   "text": "So: trunked radio shares a small pool of channels among many groups."
+  },
+  {
+   "b": 9,
+   "t": 158.542,
+   "dur": 4.052,
+   "visual": "recap",
+   "variant": "",
+   "arg": "trunked-radio|\u2460 Many groups share a small channel pool \u2461 A computer assigns a channel per call, then reclaims it \u2462 Groups keep an identity, not a frequency",
+   "text": "A computer assigns a free channel to each call and takes it back afterward."
+  },
+  {
+   "b": 9,
+   "t": 162.714,
+   "dur": 3.077,
+   "visual": "recap",
+   "variant": "",
+   "arg": "trunked-radio|\u2460 Many groups share a small channel pool \u2461 A computer assigns a channel per call, then reclaims it \u2462 Groups keep an identity, not a frequency",
+   "text": "And what a group keeps is not a frequency but an identity."
+  },
+  {
+   "b": 9,
+   "t": 165.911,
+   "dur": 1.892,
+   "visual": "recap",
+   "variant": "",
+   "arg": "trunked-radio|\u2460 Many groups share a small channel pool \u2461 A computer assigns a channel per call, then reclaims it \u2462 Groups keep an identity, not a frequency",
+   "text": "The full write-up is linked below."
+  }
+ ]
+}

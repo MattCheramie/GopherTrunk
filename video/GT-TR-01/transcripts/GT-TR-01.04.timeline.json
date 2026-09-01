@@ -1,0 +1,269 @@
+{
+ "seg": "GT-TR-01.04",
+ "title": "Channel grant",
+ "fps": 30,
+ "dur": 159.903,
+ "clips": {
+  "c1": {
+   "end": 46.735,
+   "start": 2.35
+  },
+  "c2": {
+   "end": 90.79,
+   "start": 47.085
+  }
+ },
+ "events": [
+  {
+   "b": 0,
+   "t": 0.0,
+   "dur": 2.0,
+   "visual": "title",
+   "variant": "",
+   "arg": "Channel grant"
+  },
+  {
+   "b": 1,
+   "t": 2.35,
+   "dur": 8.905,
+   "visual": "grantflow",
+   "variant": "intro",
+   "arg": "",
+   "text": "A channel grant is the single most important message on a trunked system: the moment it is broadcast, a call is starting, and the message says exactly where."
+  },
+  {
+   "b": 1,
+   "t": 11.605,
+   "dur": 5.097,
+   "visual": "grantflow",
+   "variant": "intro",
+   "arg": "",
+   "text": "Everything trunking promises \u2014 many groups, few channels \u2014 comes down to this one transaction."
+  },
+  {
+   "b": 1,
+   "t": 16.822,
+   "dur": 0.94,
+   "visual": "grantflow",
+   "variant": "intro",
+   "arg": "",
+   "text": "A user keys up."
+  },
+  {
+   "b": 1,
+   "t": 17.882,
+   "dur": 2.949,
+   "visual": "grantflow",
+   "variant": "intro",
+   "arg": "",
+   "text": "Their radio sends a call request on the control channel."
+  },
+  {
+   "b": 1,
+   "t": 20.951,
+   "dur": 10.194,
+   "visual": "grantflow",
+   "variant": "intro",
+   "arg": "",
+   "text": "The site controller picks a free voice channel from the pool, packs an answer into a short signalling block, and broadcasts it: talkgroup 101, go to channel 3."
+  },
+  {
+   "b": 2,
+   "t": 31.495,
+   "dur": 6.711,
+   "visual": "grantflow",
+   "variant": "retune",
+   "arg": "",
+   "text": "Every radio affiliated to talkgroup 101 hears that grant and retunes together, in a fraction of a second."
+  },
+  {
+   "b": 2,
+   "t": 38.325,
+   "dur": 2.392,
+   "visual": "grantflow",
+   "variant": "retune",
+   "arg": "",
+   "text": "So does every monitor following the system."
+  },
+  {
+   "b": 2,
+   "t": 40.837,
+   "dur": 5.898,
+   "visual": "grantflow",
+   "variant": "retune",
+   "arg": "",
+   "text": "One message, and an entire group \u2014 plus everyone listening in \u2014 moves to the same place at the same instant."
+  },
+  {
+   "b": 3,
+   "t": 47.085,
+   "dur": 2.972,
+   "visual": "grantfields",
+   "variant": "anatomy",
+   "arg": "",
+   "text": "Look inside the message and there are three essentials."
+  },
+  {
+   "b": 3,
+   "t": 50.177,
+   "dur": 6.095,
+   "visual": "grantfields",
+   "variant": "anatomy",
+   "arg": "",
+   "text": "First, the target: a talkgroup for a group call, or a source-and-destination pair for a private call."
+  },
+  {
+   "b": 3,
+   "t": 56.392,
+   "dur": 7.198,
+   "visual": "grantfields",
+   "variant": "anatomy",
+   "arg": "",
+   "text": "Second, the channel \u2014 usually not a raw frequency, but a channel number the radio maps to a frequency through the system's channel plan."
+  },
+  {
+   "b": 3,
+   "t": 63.71,
+   "dur": 6.269,
+   "visual": "grantfields",
+   "variant": "anatomy",
+   "arg": "",
+   "text": "And third, on TDMA systems, a timeslot, because two calls can share one frequency in time."
+  },
+  {
+   "b": 4,
+   "t": 70.33,
+   "dur": 3.286,
+   "visual": "grantupdate",
+   "variant": "repeat",
+   "arg": "",
+   "text": "A grant is broadcast once \u2014 but a radio might miss it."
+  },
+  {
+   "b": 4,
+   "t": 73.735,
+   "dur": 3.309,
+   "visual": "grantupdate",
+   "variant": "repeat",
+   "arg": "",
+   "text": "It was out of range, powered off, or busy on another channel."
+  },
+  {
+   "b": 4,
+   "t": 77.164,
+   "dur": 5.399,
+   "visual": "grantupdate",
+   "variant": "repeat",
+   "arg": "",
+   "text": "So while the call runs, the control channel repeats a grant update announcing the call in progress."
+  },
+  {
+   "b": 4,
+   "t": 82.683,
+   "dur": 3.03,
+   "visual": "grantupdate",
+   "variant": "repeat",
+   "arg": "",
+   "text": "A late arrival reads the update and joins mid-call."
+  },
+  {
+   "b": 4,
+   "t": 85.833,
+   "dur": 4.957,
+   "visual": "grantupdate",
+   "variant": "repeat",
+   "arg": "",
+   "text": "That is late entry, and it is why trunked systems feel seamless even as radios come and go."
+  },
+  {
+   "b": 5,
+   "t": 91.14,
+   "dur": 14.385,
+   "visual": "defcard",
+   "variant": "variants",
+   "arg": "Grant flavors|group voice \u00b7 private call \u00b7 grant update \u00b7 data",
+   "text": "The flavors mirror the traffic: group voice grants for the everyday case, unit-to-unit grants for private calls between two radio IDs, grant updates for late entry, and data grants that assign a channel for a short packet transfer instead of voice."
+  },
+  {
+   "b": 6,
+   "t": 105.875,
+   "dur": 4.865,
+   "visual": "grantqueue",
+   "variant": "busy",
+   "arg": "",
+   "text": "One more wrinkle: a grant is a promise of a free channel, and sometimes there isn't one."
+  },
+  {
+   "b": 6,
+   "t": 110.86,
+   "dur": 6.188,
+   "visual": "grantqueue",
+   "variant": "busy",
+   "arg": "",
+   "text": "During a busy incident the controller may queue the request instead, and the grant arrives seconds later when a channel frees up."
+  },
+  {
+   "b": 6,
+   "t": 117.168,
+   "dur": 1.765,
+   "visual": "grantqueue",
+   "variant": "busy",
+   "arg": "",
+   "text": "Grade of service, made audible."
+  },
+  {
+   "b": 7,
+   "t": 119.283,
+   "dur": 3.808,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "GopherTrunk's trunk-following engine is, at heart, a grant reader."
+  },
+  {
+   "b": 7,
+   "t": 123.211,
+   "dur": 14.095,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "Every grant on the control channel is parsed in real time; the channel number runs through the decoded channel plan to become a frequency; and a receiver is tasked at that frequency \u2014 and that timeslot \u2014 before the first syllable of audio arrives."
+  },
+  {
+   "b": 7,
+   "t": 137.425,
+   "dur": 4.923,
+   "visual": "gt-tiein",
+   "variant": "",
+   "arg": "",
+   "text": "Repeat for every grant, and one wideband capture reconstructs the whole system's traffic."
+  },
+  {
+   "b": 8,
+   "t": 143.498,
+   "dur": 5.236,
+   "visual": "recap",
+   "variant": "",
+   "arg": "channel-grant|\u2460 The message that starts every call \u2461 Carries target + channel (+ timeslot) \u2462 Updates repeat it for late entry",
+   "text": "So: a channel grant is the control-channel message that assigns a call to a voice channel."
+  },
+  {
+   "b": 8,
+   "t": 148.854,
+   "dur": 6.803,
+   "visual": "recap",
+   "variant": "",
+   "arg": "channel-grant|\u2460 The message that starts every call \u2461 Carries target + channel (+ timeslot) \u2462 Updates repeat it for late entry",
+   "text": "It names the target, the channel, and on TDMA the slot \u2014 and its updates repeat mid-call so latecomers can join."
+  },
+  {
+   "b": 8,
+   "t": 155.777,
+   "dur": 1.625,
+   "visual": "recap",
+   "variant": "",
+   "arg": "channel-grant|\u2460 The message that starts every call \u2461 Carries target + channel (+ timeslot) \u2462 Updates repeat it for late entry",
+   "text": "Full write-up linked below."
+  }
+ ]
+}
