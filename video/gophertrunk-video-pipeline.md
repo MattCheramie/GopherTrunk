@@ -40,6 +40,10 @@ session, not assumed. §14 logs lessons learned; append to it every run.
 | Graphics sources | brand kit + animation scenes (HTML/JS/SVG) | committed: `video/brand/`, `video/<PILLAR>/graphics/` |
 | Pipeline code | the scripts in §5–§11, checked in once, reused | committed: `video/pipeline/` |
 | Tracker + YAML stub | `<PILLAR>-tracker.csv`, `videos.yml.stub` (start/end per slug) | committed: `video/<PILLAR>/` |
+| Per-video transcript | one `.md` per delivered video, **same basename as the video** (timestamped beats + VO text, from the timeline JSONs) | in the companion archive; committed under `transcripts/` |
+| Per-video graphics folder | one folder per delivered video, **same basename**: beat stills (JPEG), scene source HTML, thumbnail | companion archive only (renders stay out of git) |
+| Scope doc | `<PILLAR>-scope-and-next.md` — scope of this video + recommended scope of the next one | committed + in the archive |
+| Companion archive | `<PILLAR>-companion-package.zip` = all of the above + this recipe; **must stay under the 30 MiB send cap** (stills at half-scale JPEG) | sent as a file |
 
 **Repo policy (owner decision, standing):** NO rendered media (video or audio) is ever
 committed to the repository. Renders live in a git-ignored `video/_render/` (or the
@@ -296,6 +300,18 @@ video/
 Commit text+graphics to the session's designated branch (`git push -u origin <branch>`,
 retry w/ backoff on network errors). Send each rendered video via the conversation's
 file-send as it's finished. Do NOT open a PR unless asked.
+
+## 13b. Companion package (transcripts + graphics per video)
+
+`pipeline/package_companion.py` generates the last four contract rows in one pass:
+it walks the delivered exports, asserts **name parity** (every `.mp4` basename gets a
+matching transcript `.md` and graphics folder — the script fails loudly if one is
+missing), derives all transcripts from the per-segment `timeline.json` files
+(verticals shift −2 s for the skipped title card; clips slice and rebase their
+`[CLIP]` span; the pilot and its parts concatenate pieces with running offsets),
+captures beat stills through one Chromium session at `device_scale_factor 0.5`
+(960×540 / 540×960 JPEG — keeps ~100 stills at ~5–8 MB total), then zips
+`_render/companion/` with this recipe + the scope doc + a README at the root.
 
 ## 14. Lessons learned (append per run)
 
