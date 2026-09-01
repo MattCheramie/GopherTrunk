@@ -1,0 +1,28 @@
+seg_id,slug,type,title,script,storyboard,shot,edited,qc,vertical,clips,start_s,end_s,posted_tiktok,posted_shorts,notes
+GT-RF-01.01,electromagnetic-spectrum,concept,Electromagnetic spectrum,done,done,,,,,0/2,,,,,
+GT-RF-01.02,radio-wave,term,Radio wave,done,done,,preview,,,0/2,,,,,"scene plan in pipeline/segment_plans.py; 720p preview in exports/"
+GT-RF-01.03,frequency,term,Frequency,done,done,,,,,0/2,,,,,"two_freq scene exists in scenes.py"
+GT-RF-01.04,wavelength,term,Wavelength,done,done,,,,,0/2,,,,,
+GT-RF-01.05,amplitude,term,Amplitude,done,done,,,,,0/2,,,,,
+GT-RF-01.06,phase,term,Phase,done,done,,,,,0/2,,,,,"source article may misattribute pi/4-DQPSK to P25 P1 — verify before QC"
+GT-RF-01.07,frequency-bands,term,Frequency bands (HF/VHF/UHF),done,done,,,,,0/2,,,,,
+GT-RF-01.08,carrier-wave,term,Carrier wave,done,done,,,,,0/2,,,,,
+GT-RF-01.09,modulation,concept,Modulation,done,done,,,,,0/3,,,,,"load-bearing chapter"
+GT-RF-01.10,bandwidth,term,Bandwidth,done,done,,,,,0/2,,,,,
+GT-RF-01.11,decibel,term,Decibel (dB),done,done,,preview,,preview,0/3,,,,,"also_slugs: dbm dbfs; 16:9 + 9:16 previews in exports/"
+GT-RF-01.12,noise-floor,term,Noise floor,done,done,,,,,0/2,,,,,"needs GT waterfall capture"
+GT-RF-01.13,signal-to-noise-ratio,concept,Signal-to-noise ratio (SNR),done,done,,,,,0/3,,,,,"~50% mark demo; needs GT live-decode capture"
+GT-RF-01.14,attenuation,term,Attenuation,done,done,,,,,0/2,,,,,
+GT-RF-01.15,path-loss,term,Path loss,done,done,,,,,0/2,,,,,
+GT-RF-01.16,impedance,term,Impedance,done,done,,,,,0/2,,,,,
+GT-RF-01.17,resonance,term,Resonance,done,done,,,,,0/2,,,,,
+GT-RF-01.18,harmonics,term,Harmonics,done,done,,,,,0/2,,,,,
+GT-RF-01.19,phase-noise,term,Phase noise,done,done,,,,,0/2,,,,,
+GT-RF-01.20,erp-eirp,term,ERP & EIRP,done,done,,,,,0/2,,,,,
+GT-RF-01.21,link-budget,concept,Link budget,done,done,,,,,0/3,,,,,"~90% mark demo; chain scene exists"
+GT-RF-01.22,shannon-capacity,concept,Shannon capacity,done,done,,,,,0/2,,,,,"finale"
+GT-RF-01.P1,-,pillar,Cold open,done,done,,,,,,,,,,
+GT-RF-01.P2,-,pillar,Course intro,done,done,,,,,,,,,,
+GT-RF-01.P3,-,pillar,Transition beats (21),done,done,,,,,,,,,,"batch-record in one session after any reorder"
+GT-RF-01.P4,-,pillar,Midpoint recap,done,done,,,,,,,,,,
+GT-RF-01.P5,-,pillar,Outro + end screen,done,done,,,,,,,,,,

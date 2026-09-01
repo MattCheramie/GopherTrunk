@@ -1,0 +1,228 @@
+1
+00:00:02,000 --> 00:00:04,700
+Path loss is the biggest number in radio.
+
+2
+00:00:04,700 --> 00:00:10,101
+It's the attenuation a signal suffers just travelling from transmitter to receiver
+
+3
+00:00:10,101 --> 00:00:15,106
+— dominated by the spreading of energy over distance, plus whatever terrain,
+
+4
+00:00:15,106 --> 00:00:20,309
+buildings, and foliage take on top — and it's the single largest term in almost
+
+5
+00:00:20,309 --> 00:00:21,495
+every link budget.
+
+6
+00:00:21,495 --> 00:00:23,141
+Cables cost you a few dB.
+
+7
+00:00:23,141 --> 00:00:24,590
+Connectors, fractions.
+
+8
+00:00:24,590 --> 00:00:25,183
+The path?
+
+9
+00:00:25,183 --> 00:00:28,410
+It can exceed a hundred dB over a few kilometres.
+
+10
+00:00:28,860 --> 00:00:32,145
+Here's the physical picture, and it's worth owning.
+
+11
+00:00:32,145 --> 00:00:37,299
+In empty space, a transmitter radiates its power over an expanding sphere — like
+
+12
+00:00:37,299 --> 00:00:42,452
+paint on an inflating balloon, the same energy stretched over ever more surface.
+
+13
+00:00:42,452 --> 00:00:47,670
+Your antenna is a fixed-size patch on that sphere, so the power crossing it falls
+
+14
+00:00:47,670 --> 00:00:51,148
+as the square of the distance: the inverse-square law.
+
+15
+00:00:51,148 --> 00:00:53,467
+Double the range, quarter the power.
+
+16
+00:00:53,467 --> 00:00:58,556
+In decibel terms, free-space loss rises twenty dB for every tenfold increase in
+
+17
+00:00:58,556 --> 00:01:03,903
+range — and, for a fixed-size antenna, another twenty dB for every tenfold increase
+
+18
+00:01:03,903 --> 00:01:04,741
+in frequency.
+
+19
+00:01:04,741 --> 00:01:09,701
+The Friis transmission equation wraps this idealised free-space case into one
+
+20
+00:01:09,701 --> 00:01:10,216
+formula.
+
+21
+00:01:10,666 --> 00:01:12,826
+But you don't live in empty space.
+
+22
+00:01:12,826 --> 00:01:17,780
+The catch-all model writes received power as falling with distance raised to a
+
+23
+00:01:17,780 --> 00:01:19,177
+path-loss exponent, n.
+
+24
+00:01:19,177 --> 00:01:20,892
+Free space is n equals two.
+
+25
+00:01:20,892 --> 00:01:25,656
+Cluttered urban and indoor settings run two-point-seven to four — and heavy
+
+26
+00:01:25,656 --> 00:01:27,879
+obstruction pushes it higher still.
+
+27
+00:01:27,879 --> 00:01:32,706
+On top of that trend sit two extra effects: shadowing, the slow variation as
+
+28
+00:01:32,706 --> 00:01:37,914
+terrain and buildings block the path, typically modelled as a log-normal spread of
+
+29
+00:01:37,914 --> 00:01:42,995
+a few dB — and multipath fading, the fast fluctuation as reflected copies of the
+
+30
+00:01:42,995 --> 00:01:44,710
+signal arrive out of phase.
+
+31
+00:01:44,710 --> 00:01:48,458
+A link budget reserves a fade margin to survive those dips.
+
+32
+00:01:48,908 --> 00:01:51,629
+And not all of the loss is bulk absorption.
+
+33
+00:01:51,629 --> 00:01:56,756
+Diffraction over rooftops and hills, reflection off the ground and buildings, and
+
+34
+00:01:56,756 --> 00:02:01,946
+blockage of the Fresnel zone — the region around the direct line the wave actually
+
+35
+00:02:01,946 --> 00:02:04,605
+needs — all shape how much energy arrives.
+
+36
+00:02:04,605 --> 00:02:09,479
+Which leads to the most cost-effective fact in this whole segment: raising an
+
+37
+00:02:09,479 --> 00:02:14,542
+antenna even a few metres, clearing obstacles and opening that Fresnel zone, can
+
+38
+00:02:14,542 --> 00:02:17,644
+buy more than a large increase in transmit power.
+
+39
+00:02:17,644 --> 00:02:19,100
+Geometry beats wattage.
+
+40
+00:02:19,550 --> 00:02:24,688
+Because the path so often totals a hundred dB or more, it dwarfs the handful of dB
+
+41
+00:02:24,688 --> 00:02:29,826
+you can claw back with better cable or a preamp — the big wins are height, a clear
+
+42
+00:02:29,826 --> 00:02:32,772
+line of sight, and a band that suits the range.
+
+43
+00:02:32,772 --> 00:02:37,973
+Lower frequencies generally carry farther for the same power — less free-space loss
+
+44
+00:02:37,973 --> 00:02:42,860
+and better diffraction around obstacles — one reason VHF public-safety systems
+
+45
+00:02:42,860 --> 00:02:44,866
+reach farther per site than UHF.
+
+46
+00:02:44,866 --> 00:02:49,879
+And path loss explains the shape of coverage: signal strength doesn't fall off a
+
+47
+00:02:49,879 --> 00:02:54,766
+cliff at some range, it decays smoothly with the logarithm of distance, fading
+
+48
+00:02:54,766 --> 00:02:58,526
+gradually into the noise floor rather than stopping sharply.
+
+49
+00:02:58,976 --> 00:03:04,067
+On your own waterfall, path loss is the whole story of that faint, distant system
+
+50
+00:03:04,067 --> 00:03:08,090
+sitting barely above the noise with hardly enough SNR to decode.
+
+51
+00:03:08,090 --> 00:03:13,055
+GopherTrunk receives whatever the path delivers — so when a known nearby system
+
+52
+00:03:13,055 --> 00:03:18,272
+won't decode, path loss is usually the first suspect: an obstruction, a low antenna
+
+53
+00:03:18,272 --> 00:03:20,974
+— checked before anything in the DSP chain.
+
+54
+00:03:21,424 --> 00:03:26,839
+So: path loss is the expanding sphere doing its arithmetic — twenty dB per decade
+
+55
+00:03:26,839 --> 00:03:31,986
+in free space, worse in clutter, softened or saved by geometry — and it's why
+
+56
+00:03:31,986 --> 00:03:35,863
+antenna height is the cheapest hundred dB fix that exists.
+
+57
+00:03:35,863 --> 00:03:37,668
+Full write-up linked below.
+

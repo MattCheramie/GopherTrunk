@@ -1,0 +1,216 @@
+1
+00:00:02,000 --> 00:00:06,281
+Frequency bands are the neighborhoods of the radio spectrum.
+
+2
+00:00:06,281 --> 00:00:12,202
+HF, VHF, UHF — the letters you see on every scanner listing and band plan — are the
+
+3
+00:00:12,202 --> 00:00:18,052
+conventional decade-wide divisions of the radio spectrum: HF is 3 to 30 megahertz,
+
+4
+00:00:18,052 --> 00:00:23,902
+VHF is 30 to 300 megahertz, UHF is 300 megahertz to 3 gigahertz, with VLF, LF, and
+
+5
+00:00:23,902 --> 00:00:25,543
+MF below and SHF above.
+
+6
+00:00:25,543 --> 00:00:31,108
+Each decade behaves so differently in propagation, antenna size, and available
+
+7
+00:00:31,108 --> 00:00:35,032
+bandwidth that engineers treat it as a distinct regime.
+
+8
+00:00:35,032 --> 00:00:40,454
+Learn the neighborhoods and you know what to expect before you ever tune in.
+
+9
+00:00:40,904 --> 00:00:42,560
+A city works the same way.
+
+10
+00:00:42,560 --> 00:00:47,784
+Districts are drawn on a map by convention, but each one genuinely feels different
+
+11
+00:00:47,784 --> 00:00:52,816
+— how you get around, how big the buildings are, what business gets done there.
+
+12
+00:00:52,816 --> 00:00:57,849
+The band boundaries are round numbers, not physics walls, yet cross one and the
+
+13
+00:00:57,849 --> 00:01:00,078
+rules of the road really do change.
+
+14
+00:01:00,528 --> 00:01:02,949
+Why does each decade feel different?
+
+15
+00:01:02,949 --> 00:01:03,689
+Wavelength.
+
+16
+00:01:03,689 --> 00:01:09,069
+Because wavelength is c over frequency, HF wavelengths are tens of metres, VHF a
+
+17
+00:01:09,069 --> 00:01:14,650
+few metres, UHF centimetres to a metre — and that directly sets antenna size, since
+
+18
+00:01:14,650 --> 00:01:18,820
+an efficient antenna is a meaningful fraction of a wavelength.
+
+19
+00:01:18,820 --> 00:01:22,317
+But the biggest difference is how each band travels.
+
+20
+00:01:22,317 --> 00:01:27,831
+HF refracts off the ionosphere: that sky-wave "skip" can span continents on modest
+
+21
+00:01:27,831 --> 00:01:33,211
+power, with conditions swinging by the sun, the time of day, and the eleven-year
+
+22
+00:01:33,211 --> 00:01:34,018
+solar cycle.
+
+23
+00:01:34,018 --> 00:01:39,196
+VHF and UHF normally punch straight through the ionosphere and travel in near
+
+24
+00:01:39,196 --> 00:01:43,701
+straight lines — range set by the radio horizon and antenna height.
+
+25
+00:01:43,701 --> 00:01:49,283
+That predictability is exactly why land-mobile, aviation, and public-safety systems
+
+26
+00:01:49,283 --> 00:01:54,864
+live there, though occasional tropospheric ducting and sporadic-E can fling VHF far
+
+27
+00:01:54,864 --> 00:01:56,142
+beyond the horizon.
+
+28
+00:01:56,142 --> 00:02:01,724
+SHF and above go strongly line-of-sight, offer huge bandwidth for radar, satellite,
+
+29
+00:02:01,724 --> 00:02:04,346
+and 5G — and start to suffer rain fade.
+
+30
+00:02:04,796 --> 00:02:09,756
+There's a running trade as you climb: higher frequencies carry more path loss for a
+
+31
+00:02:09,756 --> 00:02:14,536
+given distance and antenna, and penetrate buildings less — but they buy the wide
+
+32
+00:02:14,536 --> 00:02:16,986
+bandwidth high-rate digital systems need.
+
+33
+00:02:16,986 --> 00:02:20,213
+Range at the bottom of the ruler, capacity at the top.
+
+34
+00:02:20,213 --> 00:02:24,934
+Every wireless system is parked where its trade balances — and once you see the
+
+35
+00:02:24,934 --> 00:02:29,714
+ruler that way, an unfamiliar frequency starts telling you a story before you've
+
+36
+00:02:29,714 --> 00:02:31,387
+heard a single transmission.
+
+37
+00:02:31,837 --> 00:02:35,799
+For a scanner operator, the map gets specific.
+
+38
+00:02:35,799 --> 00:02:42,775
+Regulators — coordinated globally by the ITU, administered nationally by the FCC,
+
+39
+00:02:42,775 --> 00:02:49,836
+Ofcom, and others — publish band plans carving each band into slices for services.
+
+40
+00:02:49,836 --> 00:02:56,554
+Three slices to memorize: VHF high band, 136 to 174 megahertz — marine, nearby
+
+41
+00:02:56,554 --> 00:03:01,290
+aviation voice, older public-safety and business radio.
+
+42
+00:03:01,290 --> 00:03:07,147
+UHF, 400 to 520 — business, public safety, and many trunked systems.
+
+43
+00:03:07,147 --> 00:03:14,208
+And 700/800 megahertz — modern public-safety trunked radio, P25, in North America.
+
+44
+00:03:14,658 --> 00:03:19,856
+This is why GopherTrunk ships band presets: pick the target band and the scanner
+
+45
+00:03:19,856 --> 00:03:23,040
+starts looking where that traffic actually lives.
+
+46
+00:03:23,040 --> 00:03:28,108
+But the band decides more than the tuning — it determines the antenna type and
+
+47
+00:03:28,108 --> 00:03:33,307
+size, the expected path loss, the feedline, whether your SDR's range even covers
+
+48
+00:03:33,307 --> 00:03:36,231
+it, and which protocols are likely to appear.
+
+49
+00:03:36,231 --> 00:03:40,844
+Matching the band is the first hardware decision, ahead of any software
+
+50
+00:03:40,844 --> 00:03:41,753
+configuration.
+
+51
+00:03:42,203 --> 00:03:47,722
+So: the bands are decade-wide neighborhoods, each with its own propagation and
+
+52
+00:03:47,722 --> 00:03:53,098
+antenna scale — HF skips off the sky, VHF and UHF run line-of-sight, and the
+
+53
+00:03:53,098 --> 00:03:57,555
+trunked traffic you're after lives in three UHF-and-VHF slices.
+
+54
+00:03:57,555 --> 00:03:59,465
+Full write-up linked below.
+

@@ -1,0 +1,240 @@
+1
+00:00:02,000 --> 00:00:06,842
+Resonance is why a child on a swing can be sent soaring with tiny, well-timed
+
+2
+00:00:06,842 --> 00:00:10,111
+pushes — and it's why an antenna has a natural size.
+
+3
+00:00:10,111 --> 00:00:15,268
+Resonance is the condition where a system stores and exchanges energy most readily
+
+4
+00:00:15,268 --> 00:00:20,361
+at one particular frequency, so a small periodic drive produces a large response.
+
+5
+00:00:20,361 --> 00:00:25,517
+Tuning a radio, the sharpness of a filter, the length of an antenna — all of it is
+
+6
+00:00:25,517 --> 00:00:26,397
+this one idea.
+
+7
+00:00:26,847 --> 00:00:28,618
+Stay on the swing a moment.
+
+8
+00:00:28,618 --> 00:00:33,930
+Push at exactly the swing's own rhythm and every push adds energy — the arc grows
+
+9
+00:00:33,930 --> 00:00:34,586
+and grows.
+
+10
+00:00:34,586 --> 00:00:39,635
+Push at any other rhythm and you fight the swing as often as you help it, and
+
+11
+00:00:39,635 --> 00:00:40,619
+nothing builds.
+
+12
+00:00:40,619 --> 00:00:45,996
+The swing has a natural frequency, and only a drive at that frequency accumulates.
+
+13
+00:00:45,996 --> 00:00:51,374
+Every resonant system — a struck bell, a plucked string, a tuned circuit — is that
+
+14
+00:00:51,374 --> 00:00:56,489
+swing: energy sloshing between two stores at a rate the system itself chooses.
+
+15
+00:00:56,939 --> 00:01:02,142
+In a circuit, the two stores are an inductor's magnetic field and a capacitor's
+
+16
+00:01:02,142 --> 00:01:03,130
+electric field.
+
+17
+00:01:03,130 --> 00:01:07,675
+The inductor's reactance rises with frequency; the capacitor's falls.
+
+18
+00:01:07,675 --> 00:01:13,011
+Plot both, and at exactly one frequency the lines cross — equal in size, opposite
+
+19
+00:01:13,011 --> 00:01:14,591
+in sign, so they cancel.
+
+20
+00:01:14,591 --> 00:01:16,436
+That crossover is resonance.
+
+21
+00:01:16,436 --> 00:01:21,639
+The reactive parts of the impedance vanish, the circuit looks purely resistive,
+
+22
+00:01:21,639 --> 00:01:27,040
+voltage and current fall back into phase, and the system exchanges energy with its
+
+23
+00:01:27,040 --> 00:01:29,411
+drive as efficiently as it ever can.
+
+24
+00:01:29,861 --> 00:01:34,493
+The crossover has a formula: f-zero equals one over two pi, root L C.
+
+25
+00:01:34,493 --> 00:01:40,064
+Bigger inductance or bigger capacitance means a lower natural frequency — a heavier
+
+26
+00:01:40,064 --> 00:01:41,607
+swing, swinging slower.
+
+27
+00:01:41,607 --> 00:01:45,031
+And the same two parts give you mirror-image tools.
+
+28
+00:01:45,031 --> 00:01:50,534
+In series, L and C present minimum impedance at resonance — a path that passes one
+
+29
+00:01:50,534 --> 00:01:52,548
+frequency and blocks the rest.
+
+30
+00:01:52,548 --> 00:01:57,918
+In parallel — a tank — they present maximum impedance there, a wall that selects
+
+31
+00:01:57,918 --> 00:02:00,267
+one frequency out of a series path.
+
+32
+00:02:00,267 --> 00:02:03,958
+Oscillators and filters are built from those two moves.
+
+33
+00:02:04,408 --> 00:02:06,531
+And here's the payoff for antennas.
+
+34
+00:02:06,531 --> 00:02:11,443
+An antenna is itself a resonant structure: a half-wave dipole resonates where its
+
+35
+00:02:11,443 --> 00:02:14,657
+physical length matches half the signal's wavelength.
+
+36
+00:02:14,657 --> 00:02:19,569
+That's why antennas are cut for a target band — the metal has a natural frequency
+
+37
+00:02:19,569 --> 00:02:24,603
+exactly the way the swing has a natural rhythm, and a wave at that frequency builds
+
+38
+00:02:24,603 --> 00:02:25,998
+a large response in it.
+
+39
+00:02:25,998 --> 00:02:28,787
+The wrong length isn't just a smaller antenna.
+
+40
+00:02:28,787 --> 00:02:31,152
+It's a swing being pushed off the beat.
+
+41
+00:02:31,602 --> 00:02:36,119
+How sharp the peak is depends on loss, captured by the Q factor.
+
+42
+00:02:36,119 --> 00:02:41,764
+High-Q resonators — quartz crystals, coaxial cavities — give a tall, narrow peak
+
+43
+00:02:41,764 --> 00:02:47,057
+that selects one frequency tightly; a lossy circuit gives a broad hump that
+
+44
+00:02:47,057 --> 00:02:48,892
+responds over a wide span.
+
+45
+00:02:48,892 --> 00:02:54,467
+Radio keeps a whole zoo of resonators — lumped LC circuits, crystals, cavities,
+
+46
+00:02:54,467 --> 00:02:59,760
+dielectric pucks, mechanical structures — each chosen for the stability and
+
+47
+00:02:59,760 --> 00:03:01,312
+bandwidth a job needs.
+
+48
+00:03:01,762 --> 00:03:04,997
+Around any SDR, resonance is the analog scaffolding.
+
+49
+00:03:04,997 --> 00:03:10,098
+Preselector and RF filter stages use resonant elements to pass the wanted band and
+
+50
+00:03:10,098 --> 00:03:14,825
+keep strong out-of-band energy from overloading the front end, and the local
+
+51
+00:03:14,825 --> 00:03:19,864
+oscillator the receiver mixes against is steadied by a high-Q resonant reference.
+
+52
+00:03:19,864 --> 00:03:24,654
+GopherTrunk does its frequency selection downstream, in software: its digital
+
+53
+00:03:24,654 --> 00:03:29,755
+channelizer carves the wanted channel out of the wideband stream, playing the role
+
+54
+00:03:29,755 --> 00:03:32,305
+a tuned circuit plays in an analog radio.
+
+55
+00:03:32,305 --> 00:03:37,406
+But the physical resonances upstream — the antenna, the preselector, the reference
+
+56
+00:03:37,406 --> 00:03:41,449
+— still bound the quality of everything that reaches the decoder.
+
+57
+00:03:41,899 --> 00:03:47,413
+So: resonance is the frequency where a system's reactances cancel and its response
+
+58
+00:03:47,413 --> 00:03:52,861
+peaks; the formula is f-zero equals one over two pi root L C; and an antenna is a
+
+59
+00:03:52,861 --> 00:03:57,366
+resonator — cut it to the band, like timing your push to the swing.
+
+60
+00:03:57,366 --> 00:03:59,182
+Full write-up linked below.
+

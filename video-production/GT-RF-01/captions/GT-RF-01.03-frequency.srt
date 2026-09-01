@@ -1,0 +1,224 @@
+1
+00:00:02,000 --> 00:00:04,397
+Frequency is the number you tune to.
+
+2
+00:00:04,397 --> 00:00:09,789
+When you dial in 162.550 megahertz, you're not choosing a channel out of a list —
+
+3
+00:00:09,789 --> 00:00:15,182
+you're selecting how many times per second a wave vibrates, and listening for the
+
+4
+00:00:15,182 --> 00:00:17,379
+one wave in the air that matches.
+
+5
+00:00:17,379 --> 00:00:22,838
+Formally: frequency is the number of cycles a periodic wave completes each second,
+
+6
+00:00:22,838 --> 00:00:26,633
+measured in hertz — one hertz being one cycle per second.
+
+7
+00:00:26,633 --> 00:00:31,493
+It's the coordinate the whole electromagnetic spectrum is laid out along.
+
+8
+00:00:31,943 --> 00:00:34,365
+The everyday anchor is a metronome.
+
+9
+00:00:34,365 --> 00:00:38,102
+Set it slow and you get one tick a second — one hertz.
+
+10
+00:00:38,102 --> 00:00:41,770
+Speed it up and more ticks pack into the same second.
+
+11
+00:00:41,770 --> 00:00:46,338
+Nothing about any single tick changed; only the counting rate did.
+
+12
+00:00:46,338 --> 00:00:50,422
+Frequency is exactly that: a counting rate for wave cycles.
+
+13
+00:00:50,872 --> 00:00:55,566
+Put two waves side by side over the same one second and you can see it.
+
+14
+00:00:55,566 --> 00:01:00,788
+The top wave completes a handful of cycles; the bottom wave crams in many more.
+
+15
+00:01:00,788 --> 00:01:06,143
+Same duration, same speed of travel — the only difference is how many cycles pass
+
+16
+00:01:06,143 --> 00:01:06,871
+per second.
+
+17
+00:01:06,871 --> 00:01:11,829
+And notice what higher frequency costs: each individual cycle gets shorter.
+
+18
+00:01:11,829 --> 00:01:16,523
+More cycles per second means less time — and less distance — per cycle.
+
+19
+00:01:16,523 --> 00:01:21,283
+That's the seed of the frequency–wavelength trade you'll use constantly.
+
+20
+00:01:21,733 --> 00:01:22,621
+The numbers.
+
+21
+00:01:22,621 --> 00:01:28,686
+Frequency is the inverse of period: if one cycle takes T seconds, the frequency is
+
+22
+00:01:28,686 --> 00:01:29,500
+one over T.
+
+23
+00:01:29,500 --> 00:01:35,492
+A 100-megahertz FM signal repeats a hundred million times a second, so each cycle
+
+24
+00:01:35,492 --> 00:01:37,489
+lasts just ten nanoseconds.
+
+25
+00:01:37,489 --> 00:01:42,963
+Radio numbers run big, so they're scaled: kilohertz, thousands; megahertz,
+
+26
+00:01:42,963 --> 00:01:46,735
+millions; gigahertz, billions of cycles per second.
+
+27
+00:01:46,735 --> 00:01:52,653
+The unit honours Heinrich Hertz, who first generated and detected radio waves in
+
+28
+00:01:52,653 --> 00:01:53,392
+the 1880s.
+
+29
+00:01:53,842 --> 00:01:55,439
+Two consequences follow.
+
+30
+00:01:55,439 --> 00:02:00,361
+First, because all radio waves travel at the speed of light, frequency and
+
+31
+00:02:00,361 --> 00:02:05,549
+wavelength are locked together — doubling the frequency halves the wavelength.
+
+32
+00:02:05,549 --> 00:02:09,407
+Second, frequency isn't just a dial setting; it's an axis.
+
+33
+00:02:09,407 --> 00:02:14,595
+The frequency domain — what a spectrum analyzer or an FFT shows — plots energy
+
+34
+00:02:14,595 --> 00:02:19,717
+against frequency, where a pure tone is a single spike and a modulated signal
+
+35
+00:02:19,717 --> 00:02:22,910
+spreads into a band around its centre frequency.
+
+36
+00:02:23,360 --> 00:02:28,717
+Why you care: a transmitter and receiver must agree on frequency to within a small
+
+37
+00:02:28,717 --> 00:02:31,852
+tolerance, and real oscillators don't cooperate.
+
+38
+00:02:31,852 --> 00:02:37,209
+They drift with temperature and age, and their short-term jitter shows up as phase
+
+39
+00:02:37,209 --> 00:02:40,868
+noise that smears the carrier and degrades demodulation.
+
+40
+00:02:40,868 --> 00:02:45,702
+Motion shifts the apparent frequency too — Doppler shift — significant for
+
+41
+00:02:45,702 --> 00:02:47,596
+satellites and fast vehicles.
+
+42
+00:02:47,596 --> 00:02:52,823
+And beyond the physics there's law: the radio spectrum is divided into frequency
+
+43
+00:02:52,823 --> 00:02:57,069
+bands, and regulators assign slices of each to specific services.
+
+44
+00:02:57,069 --> 00:03:01,381
+A frequency is not just a number but a legal and physical context.
+
+45
+00:03:01,831 --> 00:03:06,997
+In GopherTrunk, tuning sets the centre frequency the SDR's local oscillator mixes
+
+46
+00:03:06,997 --> 00:03:12,099
+down toward baseband — the slice of air that lands in the spectrum and waterfall
+
+47
+00:03:12,099 --> 00:03:12,418
+view.
+
+48
+00:03:12,418 --> 00:03:17,648
+And because cheap tuners are off by a few parts per million, GopherTrunk applies a
+
+49
+00:03:17,648 --> 00:03:22,941
+PPM correction and then continuously tracks residual frequency error with automatic
+
+50
+00:03:22,941 --> 00:03:25,684
+frequency control, so symbols stay aligned.
+
+51
+00:03:25,684 --> 00:03:30,850
+Getting the frequency right — and keeping it right — is the first requirement for
+
+52
+00:03:30,850 --> 00:03:31,551
+any decode.
+
+53
+00:03:32,001 --> 00:03:37,715
+So: frequency is a counting rate — cycles per second in hertz — it's the inverse of
+
+54
+00:03:37,715 --> 00:03:42,879
+period, it fixes the wavelength, and holding it steady is job one for every
+
+55
+00:03:42,879 --> 00:03:43,498
+receiver.
+
+56
+00:03:43,498 --> 00:03:45,357
+Full write-up linked below.
+

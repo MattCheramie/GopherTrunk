@@ -1,0 +1,240 @@
+1
+00:00:02,000 --> 00:00:07,302
+The electromagnetic spectrum is the map every wireless signal in the world lives on.
+
+2
+00:00:07,302 --> 00:00:12,162
+Right now, passing straight through you, are broadcast radio, aviation voice,
+
+3
+00:00:12,162 --> 00:00:17,401
+police dispatch, satellite downlinks, and the light from your screen — thousands of
+
+4
+00:00:17,401 --> 00:00:20,367
+signals sharing the same air without colliding.
+
+5
+00:00:20,367 --> 00:00:20,619
+How?
+
+6
+00:00:20,619 --> 00:00:24,406
+They're all the same physical thing, at different addresses.
+
+7
+00:00:24,406 --> 00:00:27,310
+Sorting out those addresses is the whole idea.
+
+8
+00:00:27,760 --> 00:00:32,701
+The electromagnetic spectrum is the full range of electromagnetic radiation,
+
+9
+00:00:32,701 --> 00:00:37,772
+ordered by frequency: from radio waves through microwaves and visible light to
+
+10
+00:00:37,772 --> 00:00:39,202
+X-rays and gamma rays.
+
+11
+00:00:39,202 --> 00:00:44,208
+One continuous whole — the named regions are human labels of convenience, not
+
+12
+00:00:44,208 --> 00:00:45,508
+physical boundaries.
+
+13
+00:00:45,958 --> 00:00:51,247
+Here's the surprising part: radio waves, the light you see, and a hospital X-ray
+
+14
+00:00:51,247 --> 00:00:52,503
+are one phenomenon.
+
+15
+00:00:52,503 --> 00:00:57,791
+Each is an oscillating electric and magnetic field propagating through space — a
+
+16
+00:00:57,791 --> 00:01:02,948
+changing electric field creates a magnetic field, and vice versa, and the pair
+
+17
+00:01:02,948 --> 00:01:04,666
+sustains itself as a wave.
+
+18
+00:01:04,666 --> 00:01:08,302
+One law, Maxwell's equations, governs the entire strip.
+
+19
+00:01:08,302 --> 00:01:13,657
+The only thing that changes as you slide along it is how fast the field vibrates.
+
+20
+00:01:14,107 --> 00:01:19,316
+And that one variable changes everything, because the energy each cycle carries
+
+21
+00:01:19,316 --> 00:01:20,700
+rises with frequency.
+
+22
+00:01:20,700 --> 00:01:26,107
+At the top of the strip, gamma rays vibrate so fast their photons are ionising and
+
+23
+00:01:26,107 --> 00:01:26,766
+dangerous.
+
+24
+00:01:26,766 --> 00:01:31,777
+Down at the radio end, the photons are far too weak to break chemical bonds.
+
+25
+00:01:31,777 --> 00:01:36,129
+Same wave, wildly different character — set entirely by frequency.
+
+26
+00:01:36,579 --> 00:01:41,830
+Radio is the low-frequency end — conventionally about three kilohertz to three
+
+27
+00:01:41,830 --> 00:01:47,215
+hundred gigahertz — and it's special for an engineering reason: the oscillations
+
+28
+00:01:47,215 --> 00:01:52,332
+are slow enough that ordinary electronic circuits — oscillators, amplifiers,
+
+29
+00:01:52,332 --> 00:01:56,303
+antennas — can generate, radiate, and detect them directly.
+
+30
+00:01:56,303 --> 00:02:01,487
+Above radio, into infrared and light, no circuit switches fast enough, and we
+
+31
+00:02:01,487 --> 00:02:03,170
+resort to optics instead.
+
+32
+00:02:03,170 --> 00:02:08,758
+The radio portion is itself subdivided by the ITU into named bands — VLF up through
+
+33
+00:02:08,758 --> 00:02:12,393
+EHF — each one a decade of frequency, a factor of ten.
+
+34
+00:02:12,843 --> 00:02:18,027
+Where a signal sits on this map decides almost everything practical about it.
+
+35
+00:02:18,027 --> 00:02:23,413
+Propagation: HF waves, three to thirty megahertz, refract off the ionosphere and
+
+36
+00:02:23,413 --> 00:02:28,799
+can travel worldwide, while VHF and UHF are largely line-of-sight and microwaves
+
+37
+00:02:28,799 --> 00:02:30,953
+are blocked by terrain and rain.
+
+38
+00:02:30,953 --> 00:02:35,801
+Antenna size: a resonant antenna is a fraction of a wavelength, so lower
+
+39
+00:02:35,801 --> 00:02:38,898
+frequencies demand physically larger antennas.
+
+40
+00:02:38,898 --> 00:02:44,486
+And bandwidth: higher bands have more absolute spectrum to spare — the reason Wi-Fi
+
+41
+00:02:44,486 --> 00:02:45,900
+and 5G keep climbing.
+
+42
+00:02:45,900 --> 00:02:51,286
+One sense of scale: the visible-light octave alone spans more frequency than the
+
+43
+00:02:51,286 --> 00:02:53,171
+entire radio range below it.
+
+44
+00:02:53,171 --> 00:02:57,009
+Radio is a small, crowded strip of an enormous continuum.
+
+45
+00:02:57,459 --> 00:03:00,890
+Crowded enough that it's governed like territory.
+
+46
+00:03:00,890 --> 00:03:06,563
+The ITU and national regulators — the FCC, Ofcom, and others — allocate slices of
+
+47
+00:03:06,563 --> 00:03:11,535
+the radio spectrum to services, so a given frequency legally belongs to
+
+48
+00:03:11,535 --> 00:03:15,247
+broadcasting, aviation, land-mobile radio, and so on.
+
+49
+00:03:15,247 --> 00:03:19,449
+A frequency isn't just a physical address; it's a legal one.
+
+50
+00:03:19,899 --> 00:03:26,502
+GopherTrunk's spectrum and waterfall view is a window a few megahertz wide onto
+
+51
+00:03:26,502 --> 00:03:32,854
+exactly this map, bounded by what the hardware can reach — an RTL-SDR covers
+
+52
+00:03:32,854 --> 00:03:39,374
+roughly 24 megahertz to 1.7 gigahertz, a wideband device like the HackRF up to
+
+53
+00:03:39,374 --> 00:03:40,878
+about 6 gigahertz.
+
+54
+00:03:40,878 --> 00:03:47,648
+The trunking systems it decodes — P25, DMR, NXDN, TETRA — live in the VHF and UHF
+
+55
+00:03:47,648 --> 00:03:54,168
+land-mobile bands, typically 136 to 174, 380 to 520, and 700 to 900 megahertz.
+
+56
+00:03:54,168 --> 00:04:01,105
+Where a target sits in the spectrum dictates the antenna, how far it will be heard,
+
+57
+00:04:01,105 --> 00:04:04,114
+and which SDR can receive it at all.
+
+58
+00:04:04,564 --> 00:04:10,311
+So: one continuous spectrum, one kind of wave, and a signal's address on it decides
+
+59
+00:04:10,311 --> 00:04:14,605
+how it travels, what receives it, and who's allowed to use it.
+
+60
+00:04:14,605 --> 00:04:16,474
+Full write-up linked below.
+

@@ -1,0 +1,240 @@
+1
+00:00:02,000 --> 00:00:06,387
+ERP and EIRP answer a deceptively simple question: how much power is that
+
+2
+00:00:06,387 --> 00:00:08,250
+transmitter really putting out?
+
+3
+00:00:08,250 --> 00:00:13,117
+Not what the amplifier makes — what actually leaves the antenna, in its strongest
+
+4
+00:00:13,117 --> 00:00:13,718
+direction.
+
+5
+00:00:13,718 --> 00:00:18,645
+Both are effective radiated power measures that fold the transmitter's output, the
+
+6
+00:00:18,645 --> 00:00:22,431
+feedline's losses, and the antenna's gain into a single number.
+
+7
+00:00:22,431 --> 00:00:26,698
+The only difference between them is the ruler they're measured against.
+
+8
+00:00:27,148 --> 00:00:28,601
+Start with a flashlight.
+
+9
+00:00:28,601 --> 00:00:33,629
+The bulb makes the same light either way, but the reflector squeezes it into a beam
+
+10
+00:00:33,629 --> 00:00:37,082
+— and along that beam, it looks like a far brighter bulb.
+
+11
+00:00:37,082 --> 00:00:39,868
+Antenna gain works exactly like the reflector.
+
+12
+00:00:39,868 --> 00:00:44,895
+A passive antenna radiates no more total power than it's fed; gain is directivity —
+
+13
+00:00:44,895 --> 00:00:47,379
+energy concentrated into a narrower beam.
+
+14
+00:00:47,379 --> 00:00:52,164
+Along the main lobe the field is stronger than an omnidirectional antenna would
+
+15
+00:00:52,164 --> 00:00:54,648
+produce, and off to the side it's weaker.
+
+16
+00:00:54,648 --> 00:00:59,433
+That's why a high-power directional link can be nearly invisible from the wrong
+
+17
+00:00:59,433 --> 00:00:59,796
+angle.
+
+18
+00:01:00,246 --> 00:01:03,308
+The bookkeeping is a short chain of decibels.
+
+19
+00:01:03,308 --> 00:01:07,526
+Take the transmitter's output — say plus forty dBm, ten watts.
+
+20
+00:01:07,526 --> 00:01:12,289
+Subtract the feedline and connector losses — two dB lost up the tower.
+
+21
+00:01:12,289 --> 00:01:14,602
+Add the antenna's gain — nine dBi.
+
+22
+00:01:14,602 --> 00:01:18,072
+Forty minus two plus nine: forty-seven dBm of EIRP.
+
+23
+00:01:18,072 --> 00:01:23,583
+That's the power an ideal antenna radiating equally in every direction would need
+
+24
+00:01:23,583 --> 00:01:28,822
+to match this system's peak — even though the amplifier only ever made forty.
+
+25
+00:01:29,272 --> 00:01:31,522
+So what separates the two names?
+
+26
+00:01:31,522 --> 00:01:33,420
+Just the reference antenna.
+
+27
+00:01:33,420 --> 00:01:39,045
+EIRP compares against an ideal isotropic radiator — a mathematical point source,
+
+28
+00:01:39,045 --> 00:01:40,733
+equal in all directions.
+
+29
+00:01:40,733 --> 00:01:45,515
+ERP compares against a half-wave dipole — a real, buildable antenna.
+
+30
+00:01:45,515 --> 00:01:51,280
+A lossless dipole already has 2.15 dB of gain over isotropic, so the conversion is
+
+31
+00:01:51,280 --> 00:01:54,374
+fixed forever: EIRP equals ERP plus 2.15 dB.
+
+32
+00:01:54,374 --> 00:01:59,648
+Broadcasters and land-mobile regulators traditionally quote ERP; satellite,
+
+33
+00:01:59,648 --> 00:02:05,062
+microwave, and radar engineers quote EIRP, because the isotropic reference is
+
+34
+00:02:05,062 --> 00:02:05,976
+cleaner math.
+
+35
+00:02:06,426 --> 00:02:11,243
+And here's why regulators cap these numbers instead of raw transmitter power:
+
+36
+00:02:11,243 --> 00:02:15,058
+interference and exposure depend on what's actually radiated.
+
+37
+00:02:15,058 --> 00:02:19,874
+A Wi-Fi rule of thirty-six dBm EIRP lets you trade a bigger antenna against a
+
+38
+00:02:19,874 --> 00:02:23,877
+smaller amplifier, so long as the product stays under the limit.
+
+39
+00:02:23,877 --> 00:02:28,944
+A broadcast license of fifty kilowatts ERP fixes the station's effective reach no
+
+40
+00:02:28,944 --> 00:02:33,135
+matter how that power splits between the amplifier and the antenna.
+
+41
+00:02:33,135 --> 00:02:35,449
+The cap is on the field, not the box.
+
+42
+00:02:35,899 --> 00:02:40,934
+As a listener, you'll never radiate an ERP of your own — but every signal you hear
+
+43
+00:02:40,934 --> 00:02:42,285
+was launched with one.
+
+44
+00:02:42,285 --> 00:02:47,320
+A trunking control channel, a broadcast tower, an aircraft transponder: each one's
+
+45
+00:02:47,320 --> 00:02:52,355
+EIRP sets how strong it arrives at your antenna after the path takes its toll, and
+
+46
+00:02:52,355 --> 00:02:55,302
+hence whether it clears your noise floor at all.
+
+47
+00:02:55,302 --> 00:03:00,337
+Better still, for licensed land-mobile and broadcast transmitters the ERP is often
+
+48
+00:03:00,337 --> 00:03:05,434
+on public record — so you can look up how loudly a site shouts before you ever tune
+
+49
+00:03:05,434 --> 00:03:05,802
+to it.
+
+50
+00:03:06,252 --> 00:03:09,258
+That makes ERP a planning tool for GopherTrunk.
+
+51
+00:03:09,258 --> 00:03:14,565
+If a site's published power and its distance imply a weak arriving signal, the dBFS
+
+52
+00:03:14,565 --> 00:03:19,552
+level and SNR readout in GopherTrunk's interface will confirm it — and the fix
+
+53
+00:03:19,552 --> 00:03:24,668
+lives on your side of the link: a better receive antenna, a low-noise amplifier,
+
+54
+00:03:24,668 --> 00:03:26,074
+some gain of your own.
+
+55
+00:03:26,074 --> 00:03:29,527
+The decoder can only work with what survives the trip.
+
+56
+00:03:29,977 --> 00:03:35,718
+So: ERP and EIRP fold transmitter power, cable loss, and antenna gain into one
+
+57
+00:03:35,718 --> 00:03:41,311
+radiated-power figure; they differ only by reference antenna — dipole versus
+
+58
+00:03:41,311 --> 00:03:47,420
+isotropic, exactly 2.15 dB apart; and antenna gain is a reflector, not an amplifier
+
+59
+00:03:47,420 --> 00:03:49,775
+— concentration, never creation.
+
+60
+00:03:49,775 --> 00:03:51,762
+Full write-up linked below.
+

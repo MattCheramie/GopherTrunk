@@ -1,0 +1,14 @@
+# Regenerable heavy artifacts — rebuild with:
+#   pipeline/render.py --srt-only <script>   (scratch VO wavs)
+#   pipeline/render.py <script>              (preview mp4s; the committed ones
+#                                             in exports/ are curated samples)
+GT-RF-01/graphics/_tmp/
+GT-RF-01/audio/vo-scratch/*.wav
+__pycache__/
+# NEVER commit rendered video/audio to the repository — previews are delivered
+# out-of-band; the pipeline regenerates them from the scripts.
+*.mp4
+*.webm
+*.mov
+*.wav
+GT-RF-01/exports/

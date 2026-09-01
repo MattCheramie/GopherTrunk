@@ -1,0 +1,236 @@
+1
+00:00:02,000 --> 00:00:07,408
+Modulation is the answer to radio's founding problem: how do you make a wave carry
+
+2
+00:00:07,408 --> 00:00:07,936
+a voice?
+
+3
+00:00:07,936 --> 00:00:09,518
+Because here's the bind.
+
+4
+00:00:09,518 --> 00:00:14,795
+The wave you can actually radiate — a radio-frequency carrier — is a steady tone
+
+5
+00:00:14,795 --> 00:00:15,982
+that says nothing.
+
+6
+00:00:15,982 --> 00:00:21,324
+And the thing you want to send — audio, data — is a baseband signal that can't be
+
+7
+00:00:21,324 --> 00:00:22,379
+radiated at all.
+
+8
+00:00:22,379 --> 00:00:25,677
+Two signals, and neither one can do the job alone.
+
+9
+00:00:26,127 --> 00:00:31,239
+The way across the gap is this: there are only three things about a sinusoidal
+
+10
+00:00:31,239 --> 00:00:32,747
+carrier you can change.
+
+11
+00:00:32,747 --> 00:00:34,779
+Its amplitude — how tall it is.
+
+12
+00:00:34,779 --> 00:00:37,073
+Its frequency — how fast it cycles.
+
+13
+00:00:37,073 --> 00:00:39,630
+Its phase — the timing of those cycles.
+
+14
+00:00:39,630 --> 00:00:44,677
+Modulation is varying one or more of them in step with the message, and every
+
+15
+00:00:44,677 --> 00:00:48,086
+scheme ever invented is a way of doing exactly that.
+
+16
+00:00:48,086 --> 00:00:51,494
+The reverse process at the receiver is demodulation.
+
+17
+00:00:51,944 --> 00:00:53,206
+Watch the classics.
+
+18
+00:00:53,206 --> 00:00:58,454
+AM — amplitude modulation — writes the message into the carrier's envelope: the
+
+19
+00:00:58,454 --> 00:01:00,513
+wave's height traces the voice.
+
+20
+00:01:00,513 --> 00:01:05,561
+FM shifts the carrier's frequency with the message instead — and because its
+
+21
+00:01:05,561 --> 00:01:11,074
+envelope stays constant, amplitude noise mostly bounces off, which is why FM sounds
+
+22
+00:01:11,074 --> 00:01:12,136
+cleaner than AM.
+
+23
+00:01:12,136 --> 00:01:17,450
+Phase modulation nudges the carrier's timing; it's closely related to FM, and it
+
+24
+00:01:17,450 --> 00:01:19,509
+underlies most digital schemes.
+
+25
+00:01:19,959 --> 00:01:23,381
+Analog modulation varies a property continuously.
+
+26
+00:01:23,381 --> 00:01:29,176
+Digital modulation makes one sharp break with that: it switches the carrier among a
+
+27
+00:01:29,176 --> 00:01:33,227
+finite set of symbols, each standing for one or more bits.
+
+28
+00:01:33,227 --> 00:01:36,089
+FSK toggles between discrete frequencies.
+
+29
+00:01:36,089 --> 00:01:38,603
+PSK toggles between discrete phases.
+
+30
+00:01:38,603 --> 00:01:42,723
+QAM picks from combinations of amplitude and phase at once.
+
+31
+00:01:43,173 --> 00:01:48,277
+Those symbols are naturally drawn on a constellation diagram — the map of the IQ
+
+32
+00:01:48,277 --> 00:01:51,785
+plane the receiver uses to decide which symbol arrived.
+
+33
+00:01:51,785 --> 00:01:55,613
+And the constellation makes radio's central bargain visible.
+
+34
+00:01:55,613 --> 00:02:00,653
+Pack more bits per symbol — more constellation points — and spectral efficiency
+
+35
+00:02:00,653 --> 00:02:01,035
+rises.
+
+36
+00:02:01,035 --> 00:02:06,203
+But the points crowd closer together, so noise blurs them into each other sooner:
+
+37
+00:02:06,203 --> 00:02:09,520
+it takes more signal-to-noise to keep them distinct.
+
+38
+00:02:09,520 --> 00:02:14,623
+That's the fundamental power-versus-rate trade, and Shannon capacity puts a hard
+
+39
+00:02:14,623 --> 00:02:15,516
+ceiling on it.
+
+40
+00:02:15,516 --> 00:02:20,492
+Choosing a modulation scheme is a trade among data rate, bandwidth, power, and
+
+41
+00:02:20,492 --> 00:02:24,065
+robustness — there is no free lunch anywhere on the map.
+
+42
+00:02:24,515 --> 00:02:29,093
+So real systems pick their point on the trade deliberately.
+
+43
+00:02:29,093 --> 00:02:35,533
+Land-mobile digital voice has to survive weak, fading links, so it runs low, robust
+
+44
+00:02:35,533 --> 00:02:41,973
+orders: C4FM four-level FSK and π/4-DQPSK, precisely because they hold up at modest
+
+45
+00:02:41,973 --> 00:02:48,103
+SNR — with pulse shaping keeping each symbol from smearing into its neighbours.
+
+46
+00:02:48,103 --> 00:02:54,544
+High-throughput systems — LTE, Wi-Fi, DVB — climb to 16-, 64-, or 256-QAM over OFDM
+
+47
+00:02:54,544 --> 00:02:59,354
+when the channel is good, and adapt downward when it degrades.
+
+48
+00:02:59,804 --> 00:03:05,213
+Recognising a signal's modulation and applying the matching demodulator is the
+
+49
+00:03:05,213 --> 00:03:07,779
+heart of everything GopherTrunk does.
+
+50
+00:03:07,779 --> 00:03:13,049
+Its chain identifies the trunking waveform, then runs the appropriate symbol
+
+51
+00:03:13,049 --> 00:03:18,596
+recovery — four-level FSK slicing for DMR and NXDN, π/4-DQPSK carrier-and-symbol
+
+52
+00:03:18,596 --> 00:03:19,775
+tracking for P25.
+
+53
+00:03:19,775 --> 00:03:25,392
+And notice the loop closing: the three carrier properties reappear as the axes of
+
+54
+00:03:25,392 --> 00:03:31,008
+the IQ plane, so once the samples are in software, demodulation is just measuring
+
+55
+00:03:31,008 --> 00:03:36,278
+amplitude, frequency, and phase — and mapping them back to symbols and bits.
+
+56
+00:03:36,728 --> 00:03:41,837
+So: modulation is the bridge between message and carrier — three properties to
+
+57
+00:03:41,837 --> 00:03:47,076
+vary, analog varies them smoothly, digital snaps them to an alphabet of symbols,
+
+58
+00:03:47,076 --> 00:03:51,137
+and every extra bit per symbol is bought with signal-to-noise.
+
+59
+00:03:51,137 --> 00:03:52,905
+Full write-up linked below.
+

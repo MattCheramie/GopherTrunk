@@ -1,0 +1,212 @@
+1
+00:00:02,000 --> 00:00:06,950
+A carrier wave is a radio signal that carries, by itself, absolutely nothing.
+
+2
+00:00:06,950 --> 00:00:11,836
+It's a steady radio-frequency signal at a single frequency — the same cycle,
+
+3
+00:00:11,836 --> 00:00:15,051
+repeated forever, with no voice and no data in it.
+
+4
+00:00:15,051 --> 00:00:19,358
+And yet it's the foundation of every transmission you'll ever tune.
+
+5
+00:00:19,358 --> 00:00:22,701
+The carrier is the vehicle; the message rides on it.
+
+6
+00:00:23,151 --> 00:00:24,544
+Here's the definition.
+
+7
+00:00:24,544 --> 00:00:29,166
+A carrier conveys no information on its own — it becomes useful only when
+
+8
+00:00:29,166 --> 00:00:34,041
+modulation varies one of its properties, its amplitude, its frequency, or its
+
+9
+00:00:34,041 --> 00:00:35,941
+phase, in step with a message.
+
+10
+00:00:35,941 --> 00:00:40,563
+When you say a station is "on" some frequency, you're naming its carrier.
+
+11
+00:00:40,563 --> 00:00:45,628
+Tuning a receiver means picking one carrier out of the crowd — which is why "the
+
+12
+00:00:45,628 --> 00:00:49,997
+frequency of a station" and "its carrier" mean nearly the same thing.
+
+13
+00:00:50,447 --> 00:00:53,043
+Why bother with a wave that says nothing?
+
+14
+00:00:53,043 --> 00:00:58,109
+Think of an empty delivery truck: it moves no cargo, but it's the thing that can
+
+15
+00:00:58,109 --> 00:00:58,995
+make the trip.
+
+16
+00:00:58,995 --> 00:01:03,934
+Your voice can't make the trip itself — an antenna is only efficient at a size
+
+17
+00:01:03,934 --> 00:01:09,127
+comparable to the wavelength, and baseband audio, a few kilohertz, has wavelengths
+
+18
+00:01:09,127 --> 00:01:10,520
+of tens of kilometres.
+
+19
+00:01:10,520 --> 00:01:11,976
+Impractical to radiate.
+
+20
+00:01:11,976 --> 00:01:16,662
+Shift the message up onto a high-frequency carrier, and it radiates from a
+
+21
+00:01:16,662 --> 00:01:17,865
+reasonable antenna.
+
+22
+00:01:17,865 --> 00:01:22,931
+And there's a second win: carriers let many stations share the spectrum, each on
+
+23
+00:01:22,931 --> 00:01:28,123
+its own carrier frequency with a guard band between them, and a receiver picks one
+
+24
+00:01:28,123 --> 00:01:29,326
+out just by tuning.
+
+25
+00:01:29,776 --> 00:01:32,192
+Now watch what the message does to it.
+
+26
+00:01:32,192 --> 00:01:37,342
+A pure, unmodulated carrier is a single sinusoid, so in the frequency domain it's
+
+27
+00:01:37,342 --> 00:01:41,283
+one narrow spike — all of its energy at exactly one frequency.
+
+28
+00:01:41,283 --> 00:01:46,369
+The moment it's modulated, that energy spreads: the message frequencies mix with
+
+29
+00:01:46,369 --> 00:01:51,455
+the carrier and produce sidebands — mirror-image bands of energy above and below
+
+30
+00:01:51,455 --> 00:01:52,853
+the carrier frequency.
+
+31
+00:01:52,853 --> 00:01:58,130
+The span those sidebands occupy is essentially the signal's bandwidth, and it grows
+
+32
+00:01:58,130 --> 00:02:00,800
+with the rate and depth of the modulation.
+
+33
+00:02:00,800 --> 00:02:06,077
+A voice AM signal spreads a few kilohertz either side of its carrier; a wideband FM
+
+34
+00:02:06,077 --> 00:02:08,174
+broadcast, hundreds of kilohertz.
+
+35
+00:02:08,624 --> 00:02:11,073
+You can see all of this on a waterfall.
+
+36
+00:02:11,073 --> 00:02:14,777
+An idle transmitter is a thin bright line — a bare carrier.
+
+37
+00:02:14,777 --> 00:02:18,105
+Key it up, and the line blooms into a modulated band.
+
+38
+00:02:18,105 --> 00:02:22,876
+That presence-of-carrier test is also the simplest squelch there is: carrier
+
+39
+00:02:22,876 --> 00:02:27,899
+squelch opens the audio whenever a strong enough carrier shows up, regardless of
+
+40
+00:02:27,899 --> 00:02:28,715
+what's on it.
+
+41
+00:02:29,165 --> 00:02:32,112
+In GopherTrunk you'll meet one famous impostor.
+
+42
+00:02:32,112 --> 00:02:37,192
+After the SDR mixes your chosen slice of spectrum down toward baseband, the tuned
+
+43
+00:02:37,192 --> 00:02:42,334
+carrier lands near zero frequency — and a residual carrier or DC offset sitting at
+
+44
+00:02:42,334 --> 00:02:47,350
+exactly zero paints the familiar bright "DC spike" in the centre of the display.
+
+45
+00:02:47,350 --> 00:02:49,671
+It's an artifact, not a real station.
+
+46
+00:02:49,671 --> 00:02:54,625
+The real carriers matter more: GopherTrunk locks onto each channel's carrier to
+
+47
+00:02:54,625 --> 00:02:59,830
+establish a phase and frequency reference, and the digital voice systems it decodes
+
+48
+00:02:59,830 --> 00:03:04,909
+keep the carrier present and modulate its phase — so accurate carrier tracking is
+
+49
+00:03:04,909 --> 00:03:07,480
+the foundation of the whole decode chain.
+
+50
+00:03:07,930 --> 00:03:12,929
+So: a carrier is a steady wave that exists to be changed — modulation spreads it
+
+51
+00:03:12,929 --> 00:03:17,865
+into sidebands that carry the message, tuning means choosing a carrier, and the
+
+52
+00:03:17,865 --> 00:03:21,489
+bright spike in the middle of your SDR's screen isn't one.
+
+53
+00:03:21,489 --> 00:03:23,176
+Full write-up linked below.
+

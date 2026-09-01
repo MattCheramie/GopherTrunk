@@ -1,0 +1,220 @@
+1
+00:00:02,000 --> 00:00:07,137
+Wavelength is why some antennas are the size of a person and others hide inside a
+
+2
+00:00:07,137 --> 00:00:07,835
+laptop lid.
+
+3
+00:00:07,835 --> 00:00:12,909
+It's the physical distance a wave covers in one complete cycle — the gap between
+
+4
+00:00:12,909 --> 00:00:16,842
+one crest and the next — written with the Greek letter lambda.
+
+5
+00:00:16,842 --> 00:00:22,106
+And it's inversely proportional to frequency: higher frequency, shorter wavelength.
+
+6
+00:00:22,106 --> 00:00:27,370
+If frequency counts cycles in time, wavelength measures one cycle laid out in space
+
+7
+00:00:27,370 --> 00:00:30,478
+— the spatial twin of frequency's temporal count.
+
+8
+00:00:30,928 --> 00:00:32,427
+Anchor it with a walk.
+
+9
+00:00:32,427 --> 00:00:37,740
+Two people move down a street at exactly the same speed — but one takes quick,
+
+10
+00:00:37,740 --> 00:00:40,806
+short steps and the other slow, long strides.
+
+11
+00:00:40,806 --> 00:00:45,506
+Steps per second is frequency; the length of each step is wavelength.
+
+12
+00:00:45,506 --> 00:00:50,888
+Because the travel speed is fixed, more steps per second forces each step to be
+
+13
+00:00:50,888 --> 00:00:51,432
+shorter.
+
+14
+00:00:51,432 --> 00:00:57,087
+Radio waves all walk at one speed — the speed of light — so the same bargain holds.
+
+15
+00:00:57,537 --> 00:01:02,969
+That bargain is one clean formula: lambda equals c over f — wavelength is the speed
+
+16
+00:01:02,969 --> 00:01:04,933
+of light divided by frequency.
+
+17
+00:01:04,933 --> 00:01:10,234
+Plug in c, about three times ten-to-the-eighth metres per second, and you get the
+
+18
+00:01:10,234 --> 00:01:15,209
+shortcut every radio operator memorizes: wavelength in metres is roughly 300
+
+19
+00:01:15,209 --> 00:01:17,696
+divided by the frequency in megahertz.
+
+20
+00:01:17,696 --> 00:01:19,790
+One division, done in your head.
+
+21
+00:01:20,240 --> 00:01:20,756
+Try it.
+
+22
+00:01:20,756 --> 00:01:25,546
+A 150-megahertz VHF signal: 300 over 150 — about two metres long.
+
+23
+00:01:25,546 --> 00:01:29,746
+A 460-megahertz UHF signal: about sixty-five centimetres.
+
+24
+00:01:29,746 --> 00:01:32,252
+One gigahertz: thirty centimetres.
+
+25
+00:01:32,252 --> 00:01:38,295
+And Wi-Fi at 2.4 gigahertz is down around twelve and a half centimetres — which is
+
+26
+00:01:38,295 --> 00:01:44,116
+exactly why its antenna fits inside a laptop lid while a two-metre-band antenna
+
+27
+00:01:44,116 --> 00:01:46,180
+stands roughly a metre tall.
+
+28
+00:01:46,180 --> 00:01:52,296
+Zoom out and the range is staggering: as you climb the spectrum, wavelengths shrink
+
+29
+00:01:52,296 --> 00:01:58,413
+from kilometres at the low-frequency end to millimetres at the top of the microwave
+
+30
+00:01:58,413 --> 00:02:02,024
+range — the origin of the term "millimetre wave."
+
+31
+00:02:02,474 --> 00:02:04,118
+Why does the antenna care?
+
+32
+00:02:04,118 --> 00:02:09,178
+Because an efficient antenna is resonant when its length is a simple fraction of
+
+33
+00:02:09,178 --> 00:02:14,049
+the wavelength: a half-wave dipole is lambda over two, a quarter-wave whip is
+
+34
+00:02:14,049 --> 00:02:16,389
+lambda over four over a ground plane.
+
+35
+00:02:16,389 --> 00:02:21,639
+Get the fraction wrong and the antenna presents a poor impedance match — reflecting
+
+36
+00:02:21,639 --> 00:02:24,358
+power instead of radiating or capturing it.
+
+37
+00:02:24,358 --> 00:02:29,165
+Wavelength also sets how waves negotiate the world: they bend readily around
+
+38
+00:02:29,165 --> 00:02:34,415
+objects small compared to lambda, but cast sharp shadows behind objects much larger
+
+39
+00:02:34,415 --> 00:02:34,921
+than it.
+
+40
+00:02:34,921 --> 00:02:40,045
+Long-wavelength HF hugs terrain and refracts off the ionosphere; short-wavelength
+
+41
+00:02:40,045 --> 00:02:44,535
+UHF behaves more like light — line-of-sight, with pronounced multipath.
+
+42
+00:02:44,985 --> 00:02:49,888
+Here's a field skill hiding in this: the size of a repeater's antenna or a radar
+
+43
+00:02:49,888 --> 00:02:54,729
+dish is a quick visual estimate of its operating wavelength — and therefore its
+
+44
+00:02:54,729 --> 00:02:55,036
+band.
+
+45
+00:02:55,036 --> 00:02:57,794
+Hardware wears its wavelength on the outside.
+
+46
+00:02:58,244 --> 00:03:03,288
+Wavelength never appears in GopherTrunk's sample stream — the software works in
+
+47
+00:03:03,288 --> 00:03:07,949
+frequency and time — but it governs everything in front of the converter.
+
+48
+00:03:07,949 --> 00:03:12,993
+The VHF and UHF land-mobile bands GopherTrunk targets run from about two metres
+
+49
+00:03:12,993 --> 00:03:18,101
+down to thirty centimetres of wavelength, which is why discone and vertical whip
+
+50
+00:03:18,101 --> 00:03:20,910
+antennas of that scale are the usual choice.
+
+51
+00:03:20,910 --> 00:03:26,018
+Pick an antenna mismatched to your target and the signal meter in dBFS tells the
+
+52
+00:03:26,018 --> 00:03:29,785
+story: a starved receiver that no amount of DSP can rescue.
+
+53
+00:03:30,235 --> 00:03:35,306
+So: wavelength is one cycle measured in metres, it's 300 over the frequency in
+
+54
+00:03:35,306 --> 00:03:40,702
+megahertz, and it's the number that physically sizes every antenna you'll ever use.
+
+55
+00:03:40,702 --> 00:03:42,457
+Full write-up linked below.
+

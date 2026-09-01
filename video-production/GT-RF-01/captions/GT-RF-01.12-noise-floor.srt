@@ -1,0 +1,232 @@
+1
+00:00:02,000 --> 00:00:06,404
+The noise floor is what your receiver hears when there's nothing to hear.
+
+2
+00:00:06,404 --> 00:00:11,229
+Tune to an empty channel and the display doesn't go to zero — there's a constant
+
+3
+00:00:11,229 --> 00:00:15,572
+background level of random energy, thermal noise in the electronics plus
+
+4
+00:00:15,572 --> 00:00:18,106
+environmental RF picked up by the antenna.
+
+5
+00:00:18,106 --> 00:00:19,916
+That level is the noise floor.
+
+6
+00:00:19,916 --> 00:00:24,681
+It's measured in dBm, and it sets the bar every signal must clear to be usable.
+
+7
+00:00:25,131 --> 00:00:27,528
+The everyday anchor is a crowded room.
+
+8
+00:00:27,528 --> 00:00:32,636
+The room is never silent — there's always a hum of conversation — and whether you
+
+9
+00:00:32,636 --> 00:00:37,871
+hear someone depends not on how loudly they speak in absolute terms, but on whether
+
+10
+00:00:37,871 --> 00:00:39,448
+they rise above that hum.
+
+11
+00:00:39,448 --> 00:00:44,683
+Radio is the same: the floor is the hum, and "can I decode it" means "does it stand
+
+12
+00:00:44,683 --> 00:00:45,755
+above the floor."
+
+13
+00:00:46,205 --> 00:00:48,706
+The floor has a hard physical bottom.
+
+14
+00:00:48,706 --> 00:00:53,910
+Any resistor — including an antenna's radiation resistance — at temperature T
+
+15
+00:00:53,910 --> 00:00:59,520
+generates thermal noise power k-T-B: Boltzmann's constant, times temperature, times
+
+16
+00:00:59,520 --> 00:01:00,196
+bandwidth.
+
+17
+00:01:00,196 --> 00:01:05,738
+At room temperature that works out to about minus one hundred seventy-four dBm per
+
+18
+00:01:05,738 --> 00:01:06,144
+hertz.
+
+19
+00:01:06,144 --> 00:01:11,416
+Multiply by your bandwidth — add ten log B in dB — and you get the floor for a
+
+20
+00:01:11,416 --> 00:01:17,026
+perfect receiver: roughly minus one twenty-one dBm in a twelve-and-a-half kilohertz
+
+21
+00:01:17,026 --> 00:01:20,811
+channel, minus one fourteen in a hundred-kilohertz span.
+
+22
+00:01:20,811 --> 00:01:22,974
+No receiver can hear below this.
+
+23
+00:01:22,974 --> 00:01:24,055
+Physics says so.
+
+24
+00:01:24,505 --> 00:01:27,684
+Two things push the real floor above that ideal.
+
+25
+00:01:27,684 --> 00:01:33,048
+First, the receiver adds its own noise — its noise figure: a five-dB noise figure
+
+26
+00:01:33,048 --> 00:01:37,949
+raises the floor five dB above the thermal limit, which is why a low-noise
+
+27
+00:01:37,949 --> 00:01:43,313
+amplifier placed first in the chain matters so much — it sets the noise figure of
+
+28
+00:01:43,313 --> 00:01:44,638
+everything after it.
+
+29
+00:01:44,638 --> 00:01:50,069
+Second, the environment contributes: atmospheric and galactic noise, and above all
+
+30
+00:01:50,069 --> 00:01:54,969
+man-made interference — switching power supplies, USB buses, LED lighting,
+
+31
+00:01:54,969 --> 00:01:56,691
+Ethernet, solar inverters.
+
+32
+00:01:56,691 --> 00:02:02,056
+In a noisy urban install, the environment, not the receiver, dominates the floor.
+
+33
+00:02:02,506 --> 00:02:06,767
+And here's the part people miss: the floor moves with the measurement.
+
+34
+00:02:06,767 --> 00:02:11,636
+Thermal noise scales with bandwidth, so halving the receive bandwidth lowers the
+
+35
+00:02:11,636 --> 00:02:15,897
+noise power by three dB while a narrowband signal inside stays intact.
+
+36
+00:02:15,897 --> 00:02:20,219
+That's exactly why narrow channel filters and matched filtering improve
+
+37
+00:02:20,219 --> 00:02:24,967
+signal-to-noise — and why a wideband capture always shows a higher floor: it's
+
+38
+00:02:24,967 --> 00:02:27,219
+integrating noise over more spectrum.
+
+39
+00:02:27,669 --> 00:02:30,666
+You've been looking at the noise floor all along.
+
+40
+00:02:30,666 --> 00:02:35,559
+In GopherTrunk's waterfall, it's the grass — that speckled, ever-present texture
+
+41
+00:02:35,559 --> 00:02:37,578
+across the bottom of the display.
+
+42
+00:02:37,578 --> 00:02:41,737
+Every signal you'll ever decode is a shape standing above the grass.
+
+43
+00:02:41,737 --> 00:02:45,774
+And the grass hands you a free diagnostic: disconnect the antenna.
+
+44
+00:02:45,774 --> 00:02:50,790
+If the displayed floor drops several dB, environmental noise coming in through the
+
+45
+00:02:50,790 --> 00:02:55,377
+antenna is dominating — and the fix is at the install, not in the software.
+
+46
+00:02:55,827 --> 00:02:59,604
+That makes lowering the floor the cheapest way to hear more.
+
+47
+00:02:59,604 --> 00:03:04,827
+Put a low-noise preamp at the antenna, before cable loss degrades the noise figure.
+
+48
+00:03:04,827 --> 00:03:09,925
+Cut environmental pickup — ferrite chokes, quality shielded cable, moving the SDR
+
+49
+00:03:09,925 --> 00:03:14,142
+away from computers and chargers can drop the floor ten dB or more.
+
+50
+00:03:14,142 --> 00:03:16,534
+Filter out strong out-of-band signals.
+
+51
+00:03:16,534 --> 00:03:21,695
+And match the receive bandwidth to the signal, so noise isn't admitted needlessly.
+
+52
+00:03:21,695 --> 00:03:26,604
+GopherTrunk cannot decode a signal sitting at or below the floor — getting the
+
+53
+00:03:26,604 --> 00:03:31,576
+floor down is the highest-leverage move an operator has before touching any DSP
+
+54
+00:03:31,576 --> 00:03:32,079
+setting.
+
+55
+00:03:32,529 --> 00:03:37,571
+So: the noise floor is the ever-present hum — thermal physics at the bottom,
+
+56
+00:03:37,571 --> 00:03:42,811
+receiver and environment stacked on top — it's the grass on your waterfall, and
+
+57
+00:03:42,811 --> 00:03:45,796
+it's fixable at the antenna, not in software.
+
+58
+00:03:45,796 --> 00:03:47,587
+Full write-up linked below.
+

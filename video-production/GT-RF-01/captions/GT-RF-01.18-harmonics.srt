@@ -1,0 +1,240 @@
+1
+00:00:02,000 --> 00:00:06,663
+Harmonics are the echoes a radio signal leaves up the dial — extra copies at
+
+2
+00:00:06,663 --> 00:00:10,161
+exactly two times, three times, four times its frequency.
+
+3
+00:00:10,161 --> 00:00:15,254
+Transmit at one hundred fifty megahertz and there's a ghost of your signal at three
+
+4
+00:00:15,254 --> 00:00:17,401
+hundred, and another at four fifty.
+
+5
+00:00:17,401 --> 00:00:22,310
+Harmonics are spectral components at integer multiples of a signal's fundamental
+
+6
+00:00:22,310 --> 00:00:27,342
+frequency, they appear whenever a device bends a sine wave, and they're one of the
+
+7
+00:00:27,342 --> 00:00:32,066
+main things a transmitter must clean up before its signal is allowed near the
+
+8
+00:00:32,066 --> 00:00:32,557
+antenna.
+
+9
+00:00:33,007 --> 00:00:34,333
+Music got here first.
+
+10
+00:00:34,333 --> 00:00:39,448
+Pluck a guitar string and you don't hear one pure tone — you hear the fundamental
+
+11
+00:00:39,448 --> 00:00:44,500
+plus overtones at integer multiples of it, and that stack is what makes the note
+
+12
+00:00:44,500 --> 00:00:45,194
+sound rich.
+
+13
+00:00:45,194 --> 00:00:49,804
+Radio harmonics sit on exactly the same ladder of whole-number multiples.
+
+14
+00:00:49,804 --> 00:00:54,793
+The difference is where they come from: a string's overtones are its physics; a
+
+15
+00:00:54,793 --> 00:00:58,771
+radio's harmonics are a defect — the fingerprint of distortion.
+
+16
+00:00:59,221 --> 00:01:00,637
+Here's the mechanism.
+
+17
+00:01:00,637 --> 00:01:06,032
+A perfectly linear device passes a sine wave through unchanged — the output is a
+
+18
+00:01:06,032 --> 00:01:07,718
+scaled copy of the input.
+
+19
+00:01:07,718 --> 00:01:13,180
+Real components bend: a power amplifier driven near saturation, a diode, a mixer.
+
+20
+00:01:13,180 --> 00:01:18,507
+Write that bent response as a power series — a squared term, a cubed term — and
+
+21
+00:01:18,507 --> 00:01:19,856
+feed a pure sine in.
+
+22
+00:01:19,856 --> 00:01:25,386
+The squared term generates energy at twice the frequency; the cubed term, at three
+
+23
+00:01:25,386 --> 00:01:25,790
+times.
+
+24
+00:01:25,790 --> 00:01:30,376
+The harder you drive into the bend, the richer the harmonic content.
+
+25
+00:01:30,826 --> 00:01:33,355
+Two useful facts fall out of that math.
+
+26
+00:01:33,355 --> 00:01:38,219
+Even-order bending makes even harmonics and odd-order makes odd ones — so a
+
+27
+00:01:38,219 --> 00:01:43,212
+symmetric, push-pull amplifier stage suppresses the even harmonics naturally.
+
+28
+00:01:43,212 --> 00:01:48,530
+And harmonics always land above the fundamental at exact integer multiples — which
+
+29
+00:01:48,530 --> 00:01:52,226
+makes them predictable, and predictable means filterable.
+
+30
+00:01:52,226 --> 00:01:57,609
+Add up all the harmonic power and compare it with the fundamental and you get total
+
+31
+00:01:57,609 --> 00:02:02,278
+harmonic distortion — THD — the standard score for how bent a device is.
+
+32
+00:02:02,728 --> 00:02:08,059
+So in practice, a transmitter kills them with a low-pass or band-pass filter after
+
+33
+00:02:08,059 --> 00:02:09,359
+the final amplifier.
+
+34
+00:02:09,359 --> 00:02:14,690
+A one-fifty-megahertz VHF transmitter runs a low-pass filter that passes one fifty
+
+35
+00:02:14,690 --> 00:02:19,176
+but rejects the second harmonic at three hundred by tens of decibels.
+
+36
+00:02:19,176 --> 00:02:23,986
+The most efficient amplifier classes — class C and switching designs — are
+
+37
+00:02:23,986 --> 00:02:29,057
+efficient precisely because they run nonlinearly, so they lean hardest on that
+
+38
+00:02:29,057 --> 00:02:29,967
+output filter.
+
+39
+00:02:29,967 --> 00:02:35,233
+And regulators enforce all of it: type-approval rules set hard limits on harmonic
+
+40
+00:02:35,233 --> 00:02:39,784
+radiation, because your second harmonic lands in somebody else's band.
+
+41
+00:02:40,234 --> 00:02:42,662
+Harmonics bite on the receive side too.
+
+42
+00:02:42,662 --> 00:02:47,457
+A strong local FM broadcast can present a harmonic that lands right in a band
+
+43
+00:02:47,457 --> 00:02:52,564
+you're monitoring, and your receiver's own front end and local oscillator generate
+
+44
+00:02:52,564 --> 00:02:55,926
+harmonics that create spurious responses of their own.
+
+45
+00:02:55,926 --> 00:03:00,535
+So here's a working diagnostic: when you find a mystery carrier, halve its
+
+46
+00:03:00,535 --> 00:03:02,403
+frequency and look down there.
+
+47
+00:03:02,403 --> 00:03:07,571
+A strong real signal at exactly half is the giveaway that your "spur" is a harmonic
+
+48
+00:03:07,571 --> 00:03:09,564
+of it — not a real transmission.
+
+49
+00:03:10,014 --> 00:03:14,971
+GopherTrunk is receive-only, so it makes no harmonics of its own — but the budget
+
+50
+00:03:14,971 --> 00:03:19,499
+SDR front ends it often runs behind have limited selectivity, and a strong
+
+51
+00:03:19,499 --> 00:03:24,456
+out-of-band signal or its harmonic can overload the tuner and raise the effective
+
+52
+00:03:24,456 --> 00:03:29,535
+noise floor across the whole waterfall, degrading decode of the control channel you
+
+53
+00:03:29,535 --> 00:03:30,392
+actually want.
+
+54
+00:03:30,392 --> 00:03:35,288
+The standard cure is an external band-pass filter ahead of the SDR — and knowing
+
+55
+00:03:35,288 --> 00:03:39,755
+where harmonics fall is how you work out which strong neighbour to blame.
+
+56
+00:03:40,205 --> 00:03:45,207
+So: harmonics live at exact integer multiples of the fundamental; they're born
+
+57
+00:03:45,207 --> 00:03:50,208
+wherever a device bends a sine wave; and because they're predictable, a filter
+
+58
+00:03:50,208 --> 00:03:55,467
+kills them — required by law on transmit, and worth adding on receive for the sake
+
+59
+00:03:55,467 --> 00:03:57,006
+of your own noise floor.
+
+60
+00:03:57,006 --> 00:03:58,737
+Full write-up linked below.
+

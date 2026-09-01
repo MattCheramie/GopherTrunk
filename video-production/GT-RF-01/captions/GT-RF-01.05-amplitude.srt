@@ -1,0 +1,240 @@
+1
+00:00:02,000 --> 00:00:04,695
+Amplitude is the loudness of a radio wave.
+
+2
+00:00:04,695 --> 00:00:09,955
+Formally, it's the magnitude — the height — of the wave: the peak departure of its
+
+3
+00:00:09,955 --> 00:00:12,201
+oscillation from the resting level.
+
+4
+00:00:12,201 --> 00:00:17,205
+For radio it corresponds to signal strength, the thing a receiver reports as a
+
+5
+00:00:17,205 --> 00:00:17,975
+power level.
+
+6
+00:00:17,975 --> 00:00:23,107
+And it's one of exactly three properties — with frequency and phase — that fully
+
+7
+00:00:23,107 --> 00:00:27,598
+describe a wave, and that a transmitter can vary to carry information.
+
+8
+00:00:28,048 --> 00:00:30,781
+The everyday anchor: a whisper and a shout.
+
+9
+00:00:30,781 --> 00:00:35,866
+Same words, same pitch, same pace — the only difference is how hard the air gets
+
+10
+00:00:35,866 --> 00:00:36,311
+pushed.
+
+11
+00:00:36,311 --> 00:00:37,391
+That's amplitude.
+
+12
+00:00:37,391 --> 00:00:42,476
+Nothing about the message changes when a signal is stronger; what changes is how
+
+13
+00:00:42,476 --> 00:00:47,180
+much energy arrives to carry it above everything else that's shouting too.
+
+14
+00:00:47,630 --> 00:00:52,273
+Now the one relationship worth engraving: amplitude and power are linked by a
+
+15
+00:00:52,273 --> 00:00:52,695
+square.
+
+16
+00:00:52,695 --> 00:00:57,277
+The power a wave carries is proportional to the square of its amplitude — so
+
+17
+00:00:57,277 --> 00:00:59,931
+doubling the amplitude quadruples the power.
+
+18
+00:00:59,931 --> 00:01:04,574
+That square is why engineers stop talking about amplitude the moment a signal
+
+19
+00:01:04,574 --> 00:01:08,975
+reaches a receiver and switch to power instead, and why levels are quoted
+
+20
+00:01:08,975 --> 00:01:13,799
+logarithmically in decibels: a scale that turns those wide multiplicative ranges
+
+21
+00:01:13,799 --> 00:01:15,367
+into manageable additions.
+
+22
+00:01:15,817 --> 00:01:21,251
+A refinement: a single clean sinusoid can be summarised by its peak amplitude, but
+
+23
+00:01:21,251 --> 00:01:26,553
+real signals are messy, so engineers more often use the RMS — root-mean-square —
+
+24
+00:01:26,553 --> 00:01:29,932
+amplitude, which relates directly to average power.
+
+25
+00:01:29,932 --> 00:01:34,969
+The gap between peak and average, the crest factor, is what decides how much
+
+26
+00:01:34,969 --> 00:01:36,825
+headroom an amplifier needs.
+
+27
+00:01:37,275 --> 00:01:39,918
+And amplitude was radio's first mailbox.
+
+28
+00:01:39,918 --> 00:01:44,875
+The slowly varying outline traced by a modulated carrier's amplitude is its
+
+29
+00:01:44,875 --> 00:01:50,097
+envelope, and amplitude modulation — AM — writes the message directly into that
+
+30
+00:01:50,097 --> 00:01:54,194
+envelope, so simply that a lone diode detector can recover it.
+
+31
+00:01:54,194 --> 00:01:57,499
+Varying amplitude is still one axis of modern QAM.
+
+32
+00:01:57,949 --> 00:02:01,064
+Amplitude is also the property the journey eats.
+
+33
+00:02:01,064 --> 00:02:06,061
+As a wave spreads out, its amplitude falls — in free space with the square of
+
+34
+00:02:06,061 --> 00:02:10,863
+distance — and obstacles, absorption, and destructive multipath take more.
+
+35
+00:02:10,863 --> 00:02:16,249
+That steady weakening is why a distant station is faint and why link budgets exist.
+
+36
+00:02:16,249 --> 00:02:21,505
+At the receiver, what's left competes with the ever-present noise floor, and that
+
+37
+00:02:21,505 --> 00:02:26,761
+ratio — signal to noise — ultimately bounds whether the message can be recovered.
+
+38
+00:02:27,211 --> 00:02:29,736
+Why you care day to day: gain staging.
+
+39
+00:02:29,736 --> 00:02:35,052
+Your front-end amplifiers and attenuators set where the signal's amplitude lands
+
+40
+00:02:35,052 --> 00:02:37,311
+relative to the converter's range.
+
+41
+00:02:37,311 --> 00:02:40,567
+Too little, and it sinks into quantisation noise.
+
+42
+00:02:40,567 --> 00:02:45,950
+Too much, and it clips — generating intermodulation products that trash the whole
+
+43
+00:02:45,950 --> 00:02:46,282
+band.
+
+44
+00:02:46,282 --> 00:02:51,797
+Automatic gain control exists to hold it in the sweet spot, because amplitude isn't
+
+45
+00:02:51,797 --> 00:02:57,313
+static: multipath and motion make it fade and flutter, and receivers must ride that
+
+46
+00:02:57,313 --> 00:02:57,578
+out.
+
+47
+00:02:58,028 --> 00:03:02,952
+Inside GopherTrunk, the wave is IQ samples, and a sample's amplitude is its
+
+48
+00:03:02,952 --> 00:03:08,204
+distance from the origin of the IQ plane — the magnitude, root of I-squared plus
+
+49
+00:03:08,204 --> 00:03:08,860
+Q-squared.
+
+50
+00:03:08,860 --> 00:03:13,981
+The signal meter in dBFS is that number, reported against the converter's full
+
+51
+00:03:13,981 --> 00:03:14,375
+scale.
+
+52
+00:03:14,375 --> 00:03:19,758
+GopherTrunk reads it to judge whether a channel is active, to drive automatic gain
+
+53
+00:03:19,758 --> 00:03:24,025
+control, and to compute the SNR estimates that gate weak decodes.
+
+54
+00:03:24,025 --> 00:03:29,342
+The four-level and π/4-DQPSK signals it decodes are largely constant-envelope, so
+
+55
+00:03:29,342 --> 00:03:34,397
+there amplitude serves as a health and gain-staging indicator rather than the
+
+56
+00:03:34,397 --> 00:03:35,644
+information itself.
+
+57
+00:03:36,094 --> 00:03:41,410
+So: amplitude is the height of the wave, power grows with its square, and in an SDR
+
+58
+00:03:41,410 --> 00:03:46,342
+it becomes the magnitude of every IQ sample — the number your signal meter is
+
+59
+00:03:46,342 --> 00:03:47,111
+showing you.
+
+60
+00:03:47,111 --> 00:03:48,840
+Full write-up linked below.
+

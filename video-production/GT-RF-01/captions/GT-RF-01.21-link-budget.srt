@@ -1,0 +1,256 @@
+1
+00:00:02,000 --> 00:00:06,733
+A link budget is the answer to the question every radio listener eventually asks:
+
+2
+00:00:06,733 --> 00:00:10,706
+that transmitter is way across the county — will I actually hear it?
+
+3
+00:00:10,706 --> 00:00:11,641
+You could guess.
+
+4
+00:00:11,641 --> 00:00:15,439
+You could drive around with an antenna and find out the hard way.
+
+5
+00:00:15,439 --> 00:00:20,289
+Or you could do what every radio engineer on Earth does: follow the signal from the
+
+6
+00:00:20,289 --> 00:00:24,963
+transmitter's amplifier all the way to your receiver's input, writing down every
+
+7
+00:00:24,963 --> 00:00:29,638
+single gain and every single loss along the way — and know the answer before you
+
+8
+00:00:29,638 --> 00:00:30,631
+plug anything in.
+
+9
+00:00:31,081 --> 00:00:36,409
+The trick that makes this bookkeeping possible is the decibel — a logarithmic ratio
+
+10
+00:00:36,409 --> 00:00:41,738
+scale on which every multiplication becomes simple addition and plus three dB means
+
+11
+00:00:41,738 --> 00:00:42,636
+doubled power.
+
+12
+00:00:42,636 --> 00:00:47,772
+So the whole journey — amplifiers multiplying, cables eating fractions, the path
+
+13
+00:00:47,772 --> 00:00:53,036
+dividing the signal by billions — collapses into one running sum of small numbers.
+
+14
+00:00:53,036 --> 00:00:57,915
+A link budget is exactly that sum, and it fits on one line of a spreadsheet.
+
+15
+00:00:58,365 --> 00:00:59,389
+Let's walk one.
+
+16
+00:00:59,389 --> 00:01:02,734
+The transmitter makes plus forty dBm — ten watts.
+
+17
+00:01:02,734 --> 00:01:07,170
+Its feedline and connectors eat two dB on the climb up the tower.
+
+18
+00:01:07,170 --> 00:01:12,289
+The antenna adds nine dB of gain by focusing the energy toward the horizon.
+
+19
+00:01:12,289 --> 00:01:17,750
+Forty, minus two, plus nine: the signal leaves the site at an effective radiated
+
+20
+00:01:17,750 --> 00:01:19,456
+power of forty-seven dBm.
+
+21
+00:01:19,456 --> 00:01:25,122
+That launch figure has a name — EIRP — and it's the first line of every budget ever
+
+22
+00:01:25,122 --> 00:01:25,668
+written.
+
+23
+00:01:26,118 --> 00:01:28,999
+Then comes the path — and the path is brutal.
+
+24
+00:01:28,999 --> 00:01:34,312
+Spreading out through space, the signal sheds more decibels than everything else in
+
+25
+00:01:34,312 --> 00:01:39,306
+the chain combined; over a clear line of sight that loss is computed from just
+
+26
+00:01:39,306 --> 00:01:44,427
+distance and frequency by the Friis transmission equation, and terrain, foliage,
+
+27
+00:01:44,427 --> 00:01:49,037
+rain, and polarization mismatch each pile their own subtractions on top.
+
+28
+00:01:49,037 --> 00:01:51,982
+On the staircase chart, the path isn't a step.
+
+29
+00:01:51,982 --> 00:01:52,942
+It's the cliff.
+
+30
+00:01:53,392 --> 00:01:58,733
+At your end, you claw a little back: your antenna's gain, minus your own feedline
+
+31
+00:01:58,733 --> 00:01:59,063
+loss.
+
+32
+00:01:59,063 --> 00:02:03,415
+Where the staircase finally lands is the predicted received power.
+
+33
+00:02:03,415 --> 00:02:04,865
+Now comes the verdict.
+
+34
+00:02:04,865 --> 00:02:10,272
+Compare it against your receiver's sensitivity — the minimum power it needs for an
+
+35
+00:02:10,272 --> 00:02:14,163
+acceptable error rate — and the surplus is the link margin.
+
+36
+00:02:14,163 --> 00:02:16,669
+Comfortably positive: the link closes.
+
+37
+00:02:16,669 --> 00:02:18,581
+Thin or negative: unreliable.
+
+38
+00:02:18,581 --> 00:02:24,054
+And a robust design never aims for zero — it reserves a fade margin on top, so that
+
+39
+00:02:24,054 --> 00:02:29,329
+fading, multipath, and weather can't drag the link below threshold on a bad day.
+
+40
+00:02:29,779 --> 00:02:34,804
+What makes the budget more than arithmetic is that it runs in both directions.
+
+41
+00:02:34,804 --> 00:02:38,798
+Forward, it predicts coverage from equipment you already have.
+
+42
+00:02:38,798 --> 00:02:43,758
+Backward, it solves for the missing piece: how much antenna gain, or how much
+
+43
+00:02:43,758 --> 00:02:47,688
+transmit power, do I need for ten dB of margin at this range?
+
+44
+00:02:47,688 --> 00:02:52,841
+Every term is a straight addition, so the design question and its answer live on
+
+45
+00:02:52,841 --> 00:02:53,743
+the same line.
+
+46
+00:02:54,193 --> 00:02:57,087
+And here's the bottom line of a budget, live.
+
+47
+00:02:57,087 --> 00:03:00,496
+This is GopherTrunk locked to a real control channel.
+
+48
+00:03:00,496 --> 00:03:05,705
+The signal on this waterfall left a transmitter at full power, lost almost all of
+
+49
+00:03:05,705 --> 00:03:11,043
+itself to the path, and arrived here: the dBFS meter shows exactly what's left, and
+
+50
+00:03:11,043 --> 00:03:16,060
+the SNR readout is the margin story in real time — how far the survivor stands
+
+51
+00:03:16,060 --> 00:03:17,025
+above my noise.
+
+52
+00:03:17,025 --> 00:03:22,427
+Because it clears what the demodulator needs, the decode counter just keeps ticking.
+
+53
+00:03:22,427 --> 00:03:25,964
+Every one of those frames is a link budget that closed.
+
+54
+00:03:26,414 --> 00:03:30,619
+And when a channel doesn't decode, the budget is your diagnosis.
+
+55
+00:03:30,619 --> 00:03:36,006
+A negative margin isn't "bad reception" — it's a number: exactly how many dB short
+
+56
+00:03:36,006 --> 00:03:36,531
+you are.
+
+57
+00:03:36,531 --> 00:03:41,721
+Each fix has a dB value of its own — a better antenna, a lower-loss feedline, a
+
+58
+00:03:41,721 --> 00:03:46,911
+quieter front end, a better location — so you can pick the cheapest combination
+
+59
+00:03:46,911 --> 00:03:49,736
+that covers the gap before spending a cent.
+
+60
+00:03:50,186 --> 00:03:55,489
+So: a link budget follows a signal from transmitter to receiver, adding every gain
+
+61
+00:03:55,489 --> 00:04:00,663
+and subtracting every loss in decibels; received power minus sensitivity is your
+
+62
+00:04:00,663 --> 00:04:05,773
+margin, with a fade reserve on top; and when a channel won't decode, the budget
+
+63
+00:04:05,773 --> 00:04:10,041
+tells you how many dB you're short — and which fix buys them back.
+
+64
+00:04:10,041 --> 00:04:11,787
+Full write-up linked below.
+

@@ -1,0 +1,40 @@
+# Draft block for docs/_data/videos.yml (strategy §4.2). Fill youtube_id,
+# upload_date, duration_s and every start_s/end_s from the Resolve chapter
+# markers (playbook §4.3 step 8) after the pillar is assembled. start_s =
+# title-card first frame; end_s = last recap frame (next marker − 1 s).
+pillars:
+  gt-rf-01:
+    youtube_id: "REPLACE_ME"
+    title: "Radio Fundamentals: How Signals Actually Work — the complete course"
+    upload_date: "2026-XX-XX"
+    duration_s: 0
+
+segments:
+  electromagnetic-spectrum: { pillar: gt-rf-01, seg_id: "GT-RF-01.01", title: "The electromagnetic spectrum in 4 minutes", start_s: 0, end_s: 0 }
+  radio-wave:               { pillar: gt-rf-01, seg_id: "GT-RF-01.02", title: "What a radio wave actually is", start_s: 0, end_s: 0 }
+  frequency:                { pillar: gt-rf-01, seg_id: "GT-RF-01.03", title: "Frequency explained", start_s: 0, end_s: 0 }
+  wavelength:               { pillar: gt-rf-01, seg_id: "GT-RF-01.04", title: "Wavelength — why antennas have a size", start_s: 0, end_s: 0 }
+  amplitude:                { pillar: gt-rf-01, seg_id: "GT-RF-01.05", title: "Amplitude explained", start_s: 0, end_s: 0 }
+  phase:                    { pillar: gt-rf-01, seg_id: "GT-RF-01.06", title: "Phase — digital radio's favorite number", start_s: 0, end_s: 0 }
+  frequency-bands:          { pillar: gt-rf-01, seg_id: "GT-RF-01.07", title: "HF, VHF, UHF — the bands explained", start_s: 0, end_s: 0 }
+  carrier-wave:             { pillar: gt-rf-01, seg_id: "GT-RF-01.08", title: "The carrier wave", start_s: 0, end_s: 0 }
+  modulation:               { pillar: gt-rf-01, seg_id: "GT-RF-01.09", title: "Modulation — how a wave carries a message", start_s: 0, end_s: 0 }
+  bandwidth:                { pillar: gt-rf-01, seg_id: "GT-RF-01.10", title: "Bandwidth explained", start_s: 0, end_s: 0 }
+  decibel:
+    pillar: gt-rf-01
+    seg_id: "GT-RF-01.11"
+    title: "Decibels in 4 minutes"
+    start_s: 0
+    end_s: 0
+    also_slugs: [dbm, dbfs]
+  noise-floor:              { pillar: gt-rf-01, seg_id: "GT-RF-01.12", title: "The noise floor", start_s: 0, end_s: 0 }
+  signal-to-noise-ratio:    { pillar: gt-rf-01, seg_id: "GT-RF-01.13", title: "SNR — the number that decides everything", start_s: 0, end_s: 0 }
+  attenuation:              { pillar: gt-rf-01, seg_id: "GT-RF-01.14", title: "Attenuation", start_s: 0, end_s: 0 }
+  path-loss:                { pillar: gt-rf-01, seg_id: "GT-RF-01.15", title: "Path loss — where your signal goes", start_s: 0, end_s: 0 }
+  impedance:                { pillar: gt-rf-01, seg_id: "GT-RF-01.16", title: "Impedance — why everything is 50 ohms", start_s: 0, end_s: 0 }
+  resonance:                { pillar: gt-rf-01, seg_id: "GT-RF-01.17", title: "Resonance", start_s: 0, end_s: 0 }
+  harmonics:                { pillar: gt-rf-01, seg_id: "GT-RF-01.18", title: "Harmonics", start_s: 0, end_s: 0 }
+  phase-noise:              { pillar: gt-rf-01, seg_id: "GT-RF-01.19", title: "Phase noise — the receiver's hidden flaw", start_s: 0, end_s: 0 }
+  erp-eirp:                 { pillar: gt-rf-01, seg_id: "GT-RF-01.20", title: "ERP & EIRP", start_s: 0, end_s: 0 }
+  link-budget:              { pillar: gt-rf-01, seg_id: "GT-RF-01.21", title: "The link budget — end to end in dB", start_s: 0, end_s: 0 }
+  shannon-capacity:         { pillar: gt-rf-01, seg_id: "GT-RF-01.22", title: "Shannon capacity — radio's hard ceiling", start_s: 0, end_s: 0 }

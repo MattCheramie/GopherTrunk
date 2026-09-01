@@ -1,0 +1,252 @@
+1
+00:00:02,000 --> 00:00:07,761
+Shannon capacity is the speed limit — the one number no radio, no protocol, and no
+
+2
+00:00:07,761 --> 00:00:09,938
+clever engineer will ever beat.
+
+3
+00:00:09,938 --> 00:00:15,488
+Before 1948, engineers assumed noise simply meant errors: push data faster, get
+
+4
+00:00:15,488 --> 00:00:17,034
+more of them, forever.
+
+5
+00:00:17,034 --> 00:00:20,757
+Then Claude Shannon proved something nobody expected.
+
+6
+00:00:20,757 --> 00:00:26,588
+Every noisy channel has an exact capacity — a rate below which communication can be
+
+7
+00:00:26,588 --> 00:00:30,663
+made as error-free as you like, and above which it cannot.
+
+8
+00:00:30,663 --> 00:00:32,700
+Not difficult above the line.
+
+9
+00:00:32,700 --> 00:00:33,473
+Impossible.
+
+10
+00:00:33,923 --> 00:00:36,776
+The whole result comes from two resources.
+
+11
+00:00:36,776 --> 00:00:42,211
+First, bandwidth — how wide the channel is, in hertz — sets how many independent
+
+12
+00:00:42,211 --> 00:00:44,384
+symbols per second it can carry.
+
+13
+00:00:44,384 --> 00:00:49,819
+Second, signal-to-noise ratio — how far the signal stands above the noise — sets
+
+14
+00:00:49,819 --> 00:00:55,253
+how many distinguishable levels each symbol can reliably hold, and therefore how
+
+15
+00:00:55,253 --> 00:00:57,087
+many bits each one encodes.
+
+16
+00:00:57,087 --> 00:00:59,057
+Width, times bits per symbol.
+
+17
+00:00:59,057 --> 00:01:01,843
+That is everything a channel has to give.
+
+18
+00:01:02,293 --> 00:01:07,664
+Written down, the ceiling is one line: capacity C equals bandwidth B, times the log
+
+19
+00:01:07,664 --> 00:01:12,453
+base two of one plus the signal-to-noise ratio — bits per second, from two
+
+20
+00:01:12,453 --> 00:01:13,682
+measurable numbers.
+
+21
+00:01:13,682 --> 00:01:18,795
+Divide through by bandwidth and you get spectral efficiency: the ceiling on how
+
+22
+00:01:18,795 --> 00:01:22,030
+many bits each hertz of spectrum can ever deliver.
+
+23
+00:01:22,480 --> 00:01:26,189
+The shape of that curve explains half of radio engineering.
+
+24
+00:01:26,189 --> 00:01:31,407
+At high signal-to-noise, capacity grows only logarithmically: each extra three dB —
+
+25
+00:01:31,407 --> 00:01:36,185
+a doubling of signal power — buys roughly one more bit per second per hertz.
+
+26
+00:01:36,185 --> 00:01:39,454
+Brute-force power hits brutally diminishing returns.
+
+27
+00:01:39,454 --> 00:01:44,672
+At low signal-to-noise, the curve is nearly linear — so you can trade bandwidth for
+
+28
+00:01:44,672 --> 00:01:49,953
+power, spreading a weak signal across more hertz and still getting the bits through.
+
+29
+00:01:49,953 --> 00:01:54,479
+That trade is the principle behind spread-spectrum and deep-space links.
+
+30
+00:01:54,479 --> 00:01:58,817
+And there is an absolute floor: below about minus one point six dB of
+
+31
+00:01:58,817 --> 00:02:03,909
+energy-per-bit against noise density, reliable communication is impossible at any
+
+32
+00:02:03,909 --> 00:02:04,538
+bandwidth.
+
+33
+00:02:04,988 --> 00:02:07,542
+Here's the strangest part of the story.
+
+34
+00:02:07,542 --> 00:02:12,977
+Shannon proved capacity is achievable — codes exist that approach it with vanishing
+
+35
+00:02:12,977 --> 00:02:18,413
+error — but his proof was non-constructive: it offered no recipe for building them.
+
+36
+00:02:18,413 --> 00:02:23,128
+The gap between the proven limit and working hardware is what decades of
+
+37
+00:02:23,128 --> 00:02:28,498
+error-correction research have been closing, and today's best codes — turbo codes,
+
+38
+00:02:28,498 --> 00:02:33,672
+LDPC — operate within a fraction of a decibel of the line Shannon drew in 1948.
+
+39
+00:02:34,122 --> 00:02:39,192
+Why this matters to a listener: every modulation-and-coding scheme in every modern
+
+40
+00:02:39,192 --> 00:02:44,078
+standard is, in effect, a chosen point on Shannon's curve — a trade of spectral
+
+41
+00:02:44,078 --> 00:02:45,933
+efficiency against robustness.
+
+42
+00:02:45,933 --> 00:02:47,850
+And the theorem cuts both ways.
+
+43
+00:02:47,850 --> 00:02:52,797
+If the signal-to-noise at your antenna sits below what a waveform's chosen point
+
+44
+00:02:52,797 --> 00:02:57,744
+requires, no receiver cleverness will recover the data — the transmitter already
+
+45
+00:02:57,744 --> 00:03:01,639
+sent at a rate your channel cannot sustain at your noise level.
+
+46
+00:03:01,639 --> 00:03:06,648
+The only honest lever is the ratio itself: a better antenna, a quieter front end,
+
+47
+00:03:06,648 --> 00:03:07,328
+less noise.
+
+48
+00:03:07,778 --> 00:03:13,124
+GopherTrunk never computes capacity, but its entire decode chain lives under this
+
+49
+00:03:13,124 --> 00:03:13,651
+theorem.
+
+50
+00:03:13,651 --> 00:03:18,931
+When the SNR readout sits above what a waveform's coding and modulation require,
+
+51
+00:03:18,931 --> 00:03:21,372
+frames decode and the counters climb.
+
+52
+00:03:21,372 --> 00:03:26,784
+When it sits below, they don't — and no setting changes that, because the boundary
+
+53
+00:03:26,784 --> 00:03:29,687
+is exactly the line Shannon's formula draws.
+
+54
+00:03:29,687 --> 00:03:34,702
+Watch the SNR number next to a live decode, and you are watching the theorem
+
+55
+00:03:34,702 --> 00:03:35,692
+enforce itself.
+
+56
+00:03:36,142 --> 00:03:41,297
+So this is where every radio conversation ends: bandwidth and signal-to-noise,
+
+57
+00:03:41,297 --> 00:03:45,658
+multiplied into a hard ceiling that no code or modulation exceeds.
+
+58
+00:03:45,658 --> 00:03:51,077
+Capacity equals bandwidth times log two of one plus SNR; at high SNR each three dB
+
+59
+00:03:51,077 --> 00:03:56,495
+buys about one more bit per hertz; and below the SNR a signal requires, no decoder
+
+60
+00:03:56,495 --> 00:03:57,288
+can save it.
+
+61
+00:03:57,288 --> 00:04:02,508
+That ceiling is the wall every protocol in this course is climbing toward — and
+
+62
+00:04:02,508 --> 00:04:06,606
+everything a radio does well is a way of getting closer to it.
+
+63
+00:04:06,606 --> 00:04:08,390
+Full write-up linked below.
+

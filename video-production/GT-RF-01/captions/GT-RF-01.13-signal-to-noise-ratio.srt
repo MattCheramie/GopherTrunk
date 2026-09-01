@@ -1,0 +1,240 @@
+1
+00:00:02,000 --> 00:00:07,424
+Signal-to-noise ratio is the answer to one of radio's most maddening puzzles: why
+
+2
+00:00:07,424 --> 00:00:09,634
+turning up the gain doesn't help.
+
+3
+00:00:09,634 --> 00:00:10,773
+Here's the scene.
+
+4
+00:00:10,773 --> 00:00:14,322
+A distant system won't decode, so you raise the gain.
+
+5
+00:00:14,322 --> 00:00:19,077
+The signal climbs on the meter — taller, brighter — and still: nothing.
+
+6
+00:00:19,077 --> 00:00:22,492
+Because the noise floor climbed by exactly as much.
+
+7
+00:00:22,492 --> 00:00:25,907
+The receiver never cared how strong the signal was.
+
+8
+00:00:25,907 --> 00:00:28,519
+It cares about one thing only: the gap.
+
+9
+00:00:28,969 --> 00:00:34,015
+That gap is the signal-to-noise ratio: the difference, in decibels, between the
+
+10
+00:00:34,015 --> 00:00:36,251
+signal's power and the noise floor.
+
+11
+00:00:36,251 --> 00:00:41,489
+A signal at minus eighty-five dBm over a minus one-oh-five dBm floor has twenty dB
+
+12
+00:00:41,489 --> 00:00:41,936
+of SNR.
+
+13
+00:00:41,936 --> 00:00:47,046
+It is the single best predictor of whether a signal will decode — enough SNR and
+
+14
+00:00:47,046 --> 00:00:51,709
+the bits come out clean; too little and errors overwhelm the demodulator.
+
+15
+00:00:51,709 --> 00:00:56,883
+And because it's a difference of two readings, any constant calibration offset in
+
+16
+00:00:56,883 --> 00:01:01,674
+the receiver cancels out — which is why SNR is meaningful even on cheap SDR
+
+17
+00:01:01,674 --> 00:01:04,676
+hardware that can't report true absolute power.
+
+18
+00:01:05,126 --> 00:01:09,229
+One honest footnote before the payoff: SNR depends on bandwidth.
+
+19
+00:01:09,229 --> 00:01:14,102
+Noise power scales with the width you integrate it over — about three dB per
+
+20
+00:01:14,102 --> 00:01:19,231
+doubling — so an SNR figure is only well defined against a stated bandwidth, and
+
+21
+00:01:19,231 --> 00:01:23,014
+comparing across systems means normalising to a common one.
+
+22
+00:01:23,014 --> 00:01:27,822
+The practical upside: narrowing the receive filter to the signal's occupied
+
+23
+00:01:27,822 --> 00:01:29,874
+bandwidth improves SNR directly.
+
+24
+00:01:29,874 --> 00:01:33,080
+It admits less noise while keeping all the signal.
+
+25
+00:01:33,530 --> 00:01:38,191
+Now the concept that makes digital radio feel binary: the threshold.
+
+26
+00:01:38,191 --> 00:01:43,813
+Every digital mode has a threshold SNR below which the error rate climbs steeply —
+
+27
+00:01:43,813 --> 00:01:48,611
+the curve is flat above it, then collapses within just a few dB below.
+
+28
+00:01:48,611 --> 00:01:52,519
+Analog FM voice becomes readable around ten to twelve dB.
+
+29
+00:01:52,519 --> 00:01:57,661
+C4FM and CQPSK digital modes like P25 want roughly fifteen to twenty at the
+
+30
+00:01:57,661 --> 00:02:03,008
+demodulator for a clean lock, with forward error correction buying some margin
+
+31
+00:02:03,008 --> 00:02:03,762
+below that.
+
+32
+00:02:03,762 --> 00:02:06,915
+Three dB over threshold is usable but fragile.
+
+33
+00:02:06,915 --> 00:02:08,561
+Ten over is comfortable.
+
+34
+00:02:08,561 --> 00:02:12,811
+That cliff is why digital signals seem either perfect or gone.
+
+35
+00:02:13,261 --> 00:02:14,674
+Let's make that real.
+
+36
+00:02:14,674 --> 00:02:20,189
+GopherTrunk reports per-channel demodulator SNR and EVM — error vector magnitude —
+
+37
+00:02:20,189 --> 00:02:23,485
+so watch two replays of the same control channel.
+
+38
+00:02:23,485 --> 00:02:28,126
+First capture: the SNR readout sits in the high teens — right in that
+
+39
+00:02:28,126 --> 00:02:33,709
+fifteen-to-twenty clean-lock zone — EVM is low, sync locks, and the decode counters
+
+40
+00:02:33,709 --> 00:02:34,381
+just tick.
+
+41
+00:02:34,381 --> 00:02:39,157
+Second capture, same channel, weaker: the readout hovers around ten dB.
+
+42
+00:02:39,157 --> 00:02:44,269
+The signal is plainly there on the waterfall — and the decoder gets nothing.
+
+43
+00:02:44,269 --> 00:02:45,681
+Nothing else changed.
+
+44
+00:02:45,681 --> 00:02:50,793
+Same software, same channel — five or six dB of gap is the entire difference
+
+45
+00:02:50,793 --> 00:02:53,618
+between a working receiver and a dead one.
+
+46
+00:02:53,618 --> 00:02:58,932
+That readout also tells you what kind of problem you have: a failed decode with
+
+47
+00:02:58,932 --> 00:03:04,246
+healthy SNR isn't a weak signal — go look for overload or wrong tuning instead.
+
+48
+00:03:04,696 --> 00:03:07,592
+So how do you win dB you can actually keep?
+
+49
+00:03:07,592 --> 00:03:09,613
+Not the gain slider — the gap.
+
+50
+00:03:09,613 --> 00:03:10,758
+A better antenna.
+
+51
+00:03:10,758 --> 00:03:12,442
+A higher or clearer site.
+
+52
+00:03:12,442 --> 00:03:16,686
+Correct gain staging, a low-noise amplifier, matched filtering.
+
+53
+00:03:16,686 --> 00:03:20,929
+That's what moves a marginal signal from un-decodable to clean.
+
+54
+00:03:20,929 --> 00:03:26,520
+And there's a ceiling on what SNR can ever buy: channel capacity grows with the log
+
+55
+00:03:26,520 --> 00:03:32,111
+of one plus SNR, so every doubling of SNR yields diminishing returns — which is why
+
+56
+00:03:32,111 --> 00:03:36,826
+real systems just aim to sit a few dB above their threshold, reliably.
+
+57
+00:03:37,276 --> 00:03:42,596
+So: signal-to-noise ratio is the gap, not the height — every mode lives or dies at
+
+58
+00:03:42,596 --> 00:03:47,722
+its threshold, and the way past a marginal signal is a better gap, not a bigger
+
+59
+00:03:47,722 --> 00:03:49,409
+number on the gain slider.
+
+60
+00:03:49,409 --> 00:03:51,160
+Full write-up linked below.
+

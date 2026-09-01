@@ -1,0 +1,236 @@
+1
+00:00:02,000 --> 00:00:05,202
+Decibels exist because radio numbers are ridiculous.
+
+2
+00:00:05,202 --> 00:00:10,129
+The signal your antenna picks up from a repeater ten miles away can be a hundred
+
+3
+00:00:10,129 --> 00:00:14,625
+billion times weaker than the signal leaving that repeater's transmitter.
+
+4
+00:00:14,625 --> 00:00:17,211
+Nobody wants to do math with eleven zeros.
+
+5
+00:00:17,211 --> 00:00:22,385
+The decibel is how radio engineers make those numbers small, friendly — and addable.
+
+6
+00:00:22,835 --> 00:00:28,007
+A decibel is a logarithmic way of writing a ratio between two power levels.
+
+7
+00:00:28,007 --> 00:00:29,663
+Not an amount — a ratio.
+
+8
+00:00:29,663 --> 00:00:35,180
+Ten decibels means "ten times the power." Twenty decibels means a hundred times.
+
+9
+00:00:35,180 --> 00:00:36,836
+Thirty means a thousand.
+
+10
+00:00:36,836 --> 00:00:40,767
+Every ten dB you add multiplies the power by another ten.
+
+11
+00:00:41,217 --> 00:00:43,302
+The everyday anchor is a piano.
+
+12
+00:00:43,302 --> 00:00:48,886
+Each octave is the same-sized step to your ear, but each one doubles the frequency.
+
+13
+00:00:48,886 --> 00:00:54,066
+Decibels do that for power: equal steps that stand for equal multiplications.
+
+14
+00:00:54,066 --> 00:00:59,314
+Your ear and your radio both live on that kind of scale, which is why dB feels
+
+15
+00:00:59,314 --> 00:01:00,861
+natural once it clicks.
+
+16
+00:01:01,311 --> 00:01:04,147
+Three numbers are worth memorizing.
+
+17
+00:01:04,147 --> 00:01:06,741
+Plus three dB: double the power.
+
+18
+00:01:06,741 --> 00:01:08,442
+Minus three dB: half.
+
+19
+00:01:08,442 --> 00:01:10,063
+Plus ten: ten times.
+
+20
+00:01:10,063 --> 00:01:13,386
+That's it — every other value is a combo.
+
+21
+00:01:13,386 --> 00:01:14,277
+Sixteen dB?
+
+22
+00:01:14,277 --> 00:01:19,707
+That's 10 + 3 + 3: ten times two times two — forty times the power.
+
+23
+00:01:19,707 --> 00:01:24,083
+You just did logarithms in your head without noticing.
+
+24
+00:01:24,533 --> 00:01:28,488
+One footnote for the meter-readers: those rules are for power.
+
+25
+00:01:28,488 --> 00:01:33,656
+When the quantity is a voltage, a current, or a field strength, power goes as the
+
+26
+00:01:33,656 --> 00:01:38,760
+square of the amplitude, so the same ratio is written with twenty log instead of
+
+27
+00:01:38,760 --> 00:01:39,015
+ten.
+
+28
+00:01:39,015 --> 00:01:44,183
+It's not a different decibel — it falls straight out of the squaring — but it's a
+
+29
+00:01:44,183 --> 00:01:49,479
+classic source of two-times errors: a voltage that doubles is plus six dB, not plus
+
+30
+00:01:49,479 --> 00:01:49,861
+three.
+
+31
+00:01:50,311 --> 00:01:55,160
+And here's the superpower: on a log scale, multiplication becomes addition.
+
+32
+00:01:55,160 --> 00:02:00,332
+Follow a signal from transmitter to receiver — every cable loses a few dB, every
+
+33
+00:02:00,332 --> 00:02:04,922
+antenna adds a few, the path between them takes away a hundred or more.
+
+34
+00:02:04,922 --> 00:02:10,158
+Instead of multiplying raw numbers twelve orders of magnitude apart, you just add
+
+35
+00:02:10,158 --> 00:02:12,680
+and subtract small ones down the chain.
+
+36
+00:02:12,680 --> 00:02:18,045
+That running sum is called a link budget, and it's how every radio link on Earth is
+
+37
+00:02:18,045 --> 00:02:18,627
+designed.
+
+38
+00:02:19,077 --> 00:02:19,698
+One trap.
+
+39
+00:02:19,698 --> 00:02:23,766
+A plain dB is always relative — a ratio between two things.
+
+40
+00:02:23,766 --> 00:02:29,144
+The moment you see a letter after it, it's become an absolute number, measured
+
+41
+00:02:29,144 --> 00:02:34,454
+against a fixed reference: dB-m means compared to one milliwatt; dB-F-S means
+
+42
+00:02:34,454 --> 00:02:38,177
+compared to the loudest sample your SDR can represent.
+
+43
+00:02:38,177 --> 00:02:40,108
+Same math, different anchor.
+
+44
+00:02:40,558 --> 00:02:42,839
+And each anchor has its own quirk.
+
+45
+00:02:42,839 --> 00:02:48,342
+Received radio signals are tiny fractions of a milliwatt, so they land as negative
+
+46
+00:02:48,342 --> 00:02:53,844
+dBm — and less negative means stronger: minus seventy beats minus ninety by twenty
+
+47
+00:02:53,844 --> 00:02:56,461
+dB, which is a hundred times the power.
+
+48
+00:02:56,461 --> 00:03:01,561
+On the dBFS scale, zero is the ceiling — the largest value the converter can
+
+49
+00:03:01,561 --> 00:03:07,130
+represent — so real samples are always negative, and driving the input to zero dBFS
+
+50
+00:03:07,130 --> 00:03:08,137
+means clipping.
+
+51
+00:03:08,587 --> 00:03:13,605
+Decibels are also what let one screen hold that whole absurd range: a spectrum
+
+52
+00:03:13,605 --> 00:03:18,881
+display marked in dB shows a noise floor near minus one-twenty and a strong signal
+
+53
+00:03:18,881 --> 00:03:23,707
+at minus twenty on the same plot — a linear scale could never resolve both.
+
+54
+00:03:23,707 --> 00:03:28,983
+And you'll see all three flavors in GopherTrunk's dashboard: signal level in dBFS,
+
+55
+00:03:28,983 --> 00:03:33,358
+signal-to-noise ratio in plain dB, and hardware specs quoted in dBm.
+
+56
+00:03:33,358 --> 00:03:37,862
+Now they're not three mysteries — they're one idea with three anchors.
+
+57
+00:03:38,312 --> 00:03:43,962
+So: decibels turn absurd ratios into small numbers, multiplication into addition,
+
+58
+00:03:43,962 --> 00:03:47,450
+and three memorized steps into fluent mental math.
+
+59
+00:03:47,450 --> 00:03:51,217
+The full write-up, with the formulas, is linked below.
+

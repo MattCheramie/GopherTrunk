@@ -1,0 +1,232 @@
+1
+00:00:02,000 --> 00:00:06,696
+Phase noise is how an oscillator lies to you: its frequency is right on average,
+
+2
+00:00:06,696 --> 00:00:10,863
+but every individual cycle arrives a tiny bit early or a tiny bit late.
+
+3
+00:00:10,863 --> 00:00:15,265
+That rapid, random wobble in phase smears what should be an infinitely thin
+
+4
+00:00:15,265 --> 00:00:19,902
+spectral line into a mound with sloping "skirts" — and inside a receiver, those
+
+5
+00:00:19,902 --> 00:00:24,774
+skirts are the mechanism that lets a strong signal next door raise the noise on the
+
+6
+00:00:24,774 --> 00:00:27,063
+channel you're actually trying to hear.
+
+7
+00:00:27,513 --> 00:00:30,382
+Picture two metronomes set to the same tempo.
+
+8
+00:00:30,382 --> 00:00:32,485
+One ticks with machine precision.
+
+9
+00:00:32,485 --> 00:00:37,584
+The other keeps perfect time on average — count its ticks over a minute and it's
+
+10
+00:00:37,584 --> 00:00:42,939
+spot-on — but each individual tick lands slightly early or slightly late, at random.
+
+11
+00:00:42,939 --> 00:00:45,361
+That second metronome has phase noise.
+
+12
+00:00:45,361 --> 00:00:50,397
+And notice it's a different flaw from drift: an oscillator can hold its average
+
+13
+00:00:50,397 --> 00:00:55,368
+frequency beautifully over months and still jitter from cycle to cycle — or be
+
+14
+00:00:55,368 --> 00:00:59,320
+rock-steady tick-to-tick while slowly wandering off frequency.
+
+15
+00:00:59,320 --> 00:01:03,655
+Short-term jitter and long-term stability are separate report cards.
+
+16
+00:01:04,105 --> 00:01:06,715
+The spectrum view makes the wobble visible.
+
+17
+00:01:06,715 --> 00:01:11,694
+An oscillator's output is a cosine at its frequency plus a small random phase term
+
+18
+00:01:11,694 --> 00:01:13,272
+that wanders continuously.
+
+19
+00:01:13,272 --> 00:01:17,947
+That wander takes energy which belongs in a single line and spreads it into a
+
+20
+00:01:17,947 --> 00:01:21,772
+continuous pedestal on either side of the carrier — the skirts.
+
+21
+00:01:21,772 --> 00:01:26,628
+They're worst close in and fall away as you move out, eventually flattening into
+
+22
+00:01:26,628 --> 00:01:28,632
+the oscillator's broadband noise.
+
+23
+00:01:29,082 --> 00:01:34,491
+The standard measure reads like this: minus one hundred ten dBc per hertz, at ten
+
+24
+00:01:34,491 --> 00:01:35,627
+kilohertz offset.
+
+25
+00:01:35,627 --> 00:01:41,036
+Translation: ten kilohertz away from the carrier, each hertz of bandwidth holds a
+
+26
+00:01:41,036 --> 00:01:45,043
+hundred and ten decibels less power than the carrier itself.
+
+27
+00:01:45,043 --> 00:01:46,646
+More negative is better.
+
+28
+00:01:46,646 --> 00:01:51,655
+And one design rule worth keeping: multiply an oscillator up to N times its
+
+29
+00:01:51,655 --> 00:01:57,131
+frequency and its phase noise rises by twenty log N decibels — which is why higher
+
+30
+00:01:57,131 --> 00:02:00,270
+bands are inherently harder on spectral purity.
+
+31
+00:02:00,720 --> 00:02:03,542
+Now the receive-side trap: reciprocal mixing.
+
+32
+00:02:03,542 --> 00:02:07,931
+Your receiver's local oscillator multiplies with everything coming in.
+
+33
+00:02:07,931 --> 00:02:13,010
+If that oscillator has skirts, a strong off-channel signal — a pager, a broadcast
+
+34
+00:02:13,010 --> 00:02:18,151
+tower — mixes with the skirts, and its energy lands inside your passband as raised
+
+35
+00:02:18,151 --> 00:02:22,478
+noise, even though the strong signal itself is nominally out of band.
+
+36
+00:02:22,478 --> 00:02:27,556
+The symptom reads as "this receiver is deaf near that tower," when the real fault
+
+37
+00:02:27,556 --> 00:02:29,249
+is the oscillator's purity.
+
+38
+00:02:29,249 --> 00:02:34,265
+A cleaner oscillator — or a band-pass filter that keeps the strong neighbour out
+
+39
+00:02:34,265 --> 00:02:35,645
+entirely — is the fix.
+
+40
+00:02:36,095 --> 00:02:40,577
+On transmit, the same wobble corrupts the signal directly: it rotates the
+
+41
+00:02:40,577 --> 00:02:45,611
+constellation a little from symbol to symbol, inflating the error vector magnitude
+
+42
+00:02:45,611 --> 00:02:48,927
+and capping how dense a modulation the link can carry.
+
+43
+00:02:48,927 --> 00:02:53,961
+Phase noise is a ceiling on both ends of a link — and no amount of signal strength
+
+44
+00:02:53,961 --> 00:02:54,575
+raises it.
+
+45
+00:02:55,025 --> 00:02:59,945
+For GopherTrunk, phase noise arrives baked into the samples: whatever the SDR's
+
+46
+00:02:59,945 --> 00:03:04,740
+front end contributed before digitization, no software afterwards can remove.
+
+47
+00:03:04,740 --> 00:03:07,356
+What the concept gives you is a diagnosis.
+
+48
+00:03:07,356 --> 00:03:12,213
+A signal that looks strong on the waterfall yet decodes with a stubbornly high
+
+49
+00:03:12,213 --> 00:03:17,258
+error rate near a powerful neighbour is the classic reciprocal-mixing signature —
+
+50
+00:03:17,258 --> 00:03:20,932
+it points at the receiver's oscillator, not at the decoder.
+
+51
+00:03:20,932 --> 00:03:26,101
+GopherTrunk's own issue investigations have met exactly this fingerprint: a capture
+
+52
+00:03:26,101 --> 00:03:30,398
+whose carrier measured clean while the modulation on it was degraded.
+
+53
+00:03:30,398 --> 00:03:35,380
+Carrier-clean but modulation-degraded is the signature of front-end phase noise.
+
+54
+00:03:35,830 --> 00:03:40,434
+So: phase noise is cycle-to-cycle jitter that smears a carrier into skirts,
+
+55
+00:03:40,434 --> 00:03:45,406
+measured in dBc per hertz at an offset; reciprocal mixing lets a strong neighbour
+
+56
+00:03:45,406 --> 00:03:50,317
+ride those skirts into your channel; and a signal that's strong but won't decode
+
+57
+00:03:50,317 --> 00:03:54,062
+near a big transmitter is your cue to suspect the oscillator.
+
+58
+00:03:54,062 --> 00:03:55,719
+Full write-up linked below.
+

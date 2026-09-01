@@ -1,0 +1,224 @@
+1
+00:00:02,000 --> 00:00:06,784
+Impedance is why almost every connector, cable, and radio you will ever plug
+
+2
+00:00:06,784 --> 00:00:10,246
+together has the same number printed on it: fifty ohms.
+
+3
+00:00:10,246 --> 00:00:15,344
+It's the total opposition a circuit, a component, or a transmission line presents
+
+4
+00:00:15,344 --> 00:00:20,254
+to an alternating current — and radio standardizes on one shared value so that
+
+5
+00:00:20,254 --> 00:00:23,842
+power flows from source to antenna without bouncing back.
+
+6
+00:00:24,292 --> 00:00:28,709
+Written out, impedance is a complex number: Z equals R plus j X.
+
+7
+00:00:28,709 --> 00:00:30,849
+The R part is plain resistance.
+
+8
+00:00:30,849 --> 00:00:36,577
+The X part is reactance — the opposition from capacitors and inductors, which store
+
+9
+00:00:36,577 --> 00:00:41,685
+energy and hand it back, shifting the current's phase against the voltage.
+
+10
+00:00:41,685 --> 00:00:47,344
+One number, two personalities: how much the signal is held back, and how much it's
+
+11
+00:00:47,344 --> 00:00:48,448
+twisted in time.
+
+12
+00:00:48,898 --> 00:00:50,712
+Here's the everyday picture.
+
+13
+00:00:50,712 --> 00:00:54,338
+Tie a thin rope to a thick one and flick a wave down it.
+
+14
+00:00:54,338 --> 00:00:59,714
+At the knot, part of the wave keeps going — and part reflects straight back at you.
+
+15
+00:00:59,714 --> 00:01:01,980
+That knot is an impedance mismatch.
+
+16
+00:01:01,980 --> 00:01:07,031
+A radio signal traveling down a cable does exactly the same thing anywhere the
+
+17
+00:01:07,031 --> 00:01:11,629
+impedance changes: some power continues forward, and some bounces home.
+
+18
+00:01:12,079 --> 00:01:17,179
+A cable like coax has a characteristic impedance — fifty ohms for most RF coax —
+
+19
+00:01:17,179 --> 00:01:20,239
+fixed purely by its geometry and its insulation.
+
+20
+00:01:20,239 --> 00:01:24,893
+It's the ratio of voltage to current for a wave traveling along the line.
+
+21
+00:01:24,893 --> 00:01:29,802
+And here's the trap: it is not a resistance you can measure with an ohmmeter.
+
+22
+00:01:29,802 --> 00:01:34,328
+Put a meter across a disconnected coax and you'll read an open circuit.
+
+23
+00:01:34,328 --> 00:01:38,918
+Fifty ohms is what the cable looks like to a signal propagating down it.
+
+24
+00:01:39,368 --> 00:01:44,362
+Maximum power transfers — and nothing reflects — only when the impedances agree.
+
+25
+00:01:44,362 --> 00:01:49,543
+Match a fifty-ohm source through fifty-ohm cable into a fifty-ohm load and the wave
+
+26
+00:01:49,543 --> 00:01:50,916
+flows through cleanly.
+
+27
+00:01:50,916 --> 00:01:56,097
+Mismatch the far end and part of the wave comes back, piling up against the forward
+
+28
+00:01:56,097 --> 00:01:58,594
+wave into standing waves along the line.
+
+29
+00:01:58,594 --> 00:02:02,526
+Every watt in that reflection is a watt that never did its job.
+
+30
+00:02:02,976 --> 00:02:04,979
+So why fifty, of all numbers?
+
+31
+00:02:04,979 --> 00:02:06,844
+Pure historical compromise.
+
+32
+00:02:06,844 --> 00:02:12,576
+Coaxial cable handles peak power best near thirty ohms and has its lowest loss near
+
+33
+00:02:12,576 --> 00:02:13,543
+seventy-seven.
+
+34
+00:02:13,543 --> 00:02:19,068
+Fifty sits usefully between the two, with convenient physical dimensions — so it
+
+35
+00:02:19,068 --> 00:02:20,656
+became the RF standard.
+
+36
+00:02:20,656 --> 00:02:26,319
+Video and broadcast gear went the other way and standardized on seventy-five ohms,
+
+37
+00:02:26,319 --> 00:02:30,394
+which is why TV coax and radio coax are not the same cable.
+
+38
+00:02:30,844 --> 00:02:36,241
+In the real world, an antenna's feedpoint rarely lands exactly on fifty ohms across
+
+39
+00:02:36,241 --> 00:02:41,378
+a whole band, so matching networks — series and shunt inductors and capacitors,
+
+40
+00:02:41,378 --> 00:02:46,775
+tuners, transformers — cancel the leftover reactance and rotate the resistance back
+
+41
+00:02:46,775 --> 00:02:47,945
+toward the target.
+
+42
+00:02:47,945 --> 00:02:53,212
+On receive, a bad mismatch mostly costs signal rather than hardware: part of what
+
+43
+00:02:53,212 --> 00:02:57,829
+the antenna caught reflects away instead of ever reaching the receiver.
+
+44
+00:02:58,279 --> 00:03:03,451
+Every SDR front end GopherTrunk listens through presents a nominal fifty-ohm input,
+
+45
+00:03:03,451 --> 00:03:08,622
+and the amplifier, filters, and mixer behind that connector are all designed around
+
+46
+00:03:08,622 --> 00:03:08,809
+it.
+
+47
+00:03:08,809 --> 00:03:13,856
+GopherTrunk itself works on the digital samples after the front end, so it cannot
+
+48
+00:03:13,856 --> 00:03:18,903
+fix a mismatch in software — a control channel that arrives weak because half the
+
+49
+00:03:18,903 --> 00:03:24,075
+signal reflected off a bad match stays weak on the dBFS meter, and no amount of DSP
+
+50
+00:03:24,075 --> 00:03:24,823
+recovers it.
+
+51
+00:03:24,823 --> 00:03:29,620
+A resonant, reasonably matched antenna beats a random length of wire, and the
+
+52
+00:03:29,620 --> 00:03:32,923
+signal-to-noise readout will show you the difference.
+
+53
+00:03:33,373 --> 00:03:38,322
+So: impedance is R plus j X — opposition with a phase twist; fifty ohms is the
+
+54
+00:03:38,322 --> 00:03:43,525
+shared reference that keeps power moving forward instead of reflecting; and a good
+
+55
+00:03:43,525 --> 00:03:47,840
+match at the antenna is worth more than any setting in the software.
+
+56
+00:03:47,840 --> 00:03:49,553
+Full write-up linked below.
+

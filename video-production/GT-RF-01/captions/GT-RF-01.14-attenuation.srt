@@ -1,0 +1,216 @@
+1
+00:00:02,000 --> 00:00:06,937
+Attenuation is where your signal goes to die — a fraction of a dB at a time.
+
+2
+00:00:06,937 --> 00:00:12,328
+It's the reduction of signal strength as energy passes through a medium, a cable, a
+
+3
+00:00:12,328 --> 00:00:17,395
+connector, or an obstacle, and it's expressed in decibels because losses in dB
+
+4
+00:00:17,395 --> 00:00:19,733
+simply subtract from a power budget.
+
+5
+00:00:19,733 --> 00:00:24,800
+The numbers bite fast: a loss of just six dB means only a quarter of the power
+
+6
+00:00:24,800 --> 00:00:25,385
+survives.
+
+7
+00:00:25,835 --> 00:00:27,767
+There are only two mechanisms.
+
+8
+00:00:27,767 --> 00:00:32,920
+Spreading: a fixed amount of power gets diluted over a larger area, like ripples
+
+9
+00:00:32,920 --> 00:00:34,144
+widening on a pond.
+
+10
+00:00:34,144 --> 00:00:39,103
+And absorption: the medium converts RF energy into heat, like a shout muffled
+
+11
+00:00:39,103 --> 00:00:40,005
+inside a wall.
+
+12
+00:00:40,005 --> 00:00:45,093
+Everything that eats your signal is one of those two — and because each loss is
+
+13
+00:00:45,093 --> 00:00:49,023
+logged in dB, the total is just a running sum down the chain.
+
+14
+00:00:49,473 --> 00:00:52,115
+Walk the losses in a real receive path.
+
+15
+00:00:52,115 --> 00:00:57,738
+Cable first: coax loss rises with both frequency and length — a cheap RG-58 run can
+
+16
+00:00:57,738 --> 00:01:03,090
+lose several dB per ten metres at four hundred megahertz, which is why low-loss
+
+17
+00:01:03,090 --> 00:01:04,987
+cable and short runs matter.
+
+18
+00:01:04,987 --> 00:01:10,475
+Then every connector, filter, splitter, and switch adds its own insertion loss, a
+
+19
+00:01:10,475 --> 00:01:14,269
+fraction of a dB to a few dB each — and they accumulate.
+
+20
+00:01:14,269 --> 00:01:19,757
+Out in the world, walls, foliage, and terrain absorb and scatter energy, and loss
+
+21
+00:01:19,757 --> 00:01:24,702
+through material generally worsens at higher frequencies — the reason UHF
+
+22
+00:01:24,702 --> 00:01:27,412
+penetrates buildings less well than VHF.
+
+23
+00:01:27,412 --> 00:01:32,832
+And way up above ten gigahertz, the atmosphere itself joins in: oxygen and water
+
+24
+00:01:32,832 --> 00:01:38,252
+vapour absorb RF and rain adds "rain fade" — though below UHF that's negligible.
+
+25
+00:01:38,702 --> 00:01:40,806
+Two rules fall out of that list.
+
+26
+00:01:40,806 --> 00:01:45,804
+First, the recurring theme: for most of these mechanisms, higher frequencies
+
+27
+00:01:45,804 --> 00:01:50,801
+attenuate more — that single fact shapes band choice, cable choice, and site
+
+28
+00:01:50,801 --> 00:01:51,393
+planning.
+
+29
+00:01:51,393 --> 00:01:56,390
+Second, the sneaky one: a lossy cable ahead of the first amplifier is doubly
+
+30
+00:01:56,390 --> 00:02:01,716
+harmful, because it doesn't just weaken the signal — it degrades the noise figure
+
+31
+00:02:01,716 --> 00:02:03,163
+of the whole receiver.
+
+32
+00:02:03,163 --> 00:02:05,727
+Loss before the first amp counts twice.
+
+33
+00:02:05,727 --> 00:02:09,804
+That's why the preamp belongs at the antenna, not at the desk.
+
+34
+00:02:10,254 --> 00:02:13,374
+Now the twist: attenuation is not always the enemy.
+
+35
+00:02:13,374 --> 00:02:17,901
+A deliberate attenuator protects a receiver from strong signals that would
+
+36
+00:02:17,901 --> 00:02:22,917
+otherwise overload the front end and drive the converter past full scale, spraying
+
+37
+00:02:22,917 --> 00:02:25,425
+intermodulation products across the band.
+
+38
+00:02:25,425 --> 00:02:30,197
+Trading a few dB of wanted signal for headroom against a nearby transmitter is
+
+39
+00:02:30,197 --> 00:02:35,214
+often a net win — and filters attenuate out-of-band energy for the same protective
+
+40
+00:02:35,214 --> 00:02:35,642
+reason.
+
+41
+00:02:36,092 --> 00:02:40,764
+One scope note: free-space spreading over the air is a kind of attenuation
+
+42
+00:02:40,764 --> 00:02:46,004
+important enough to have its own name — path loss — while the feedline losses we've
+
+43
+00:02:46,004 --> 00:02:49,792
+just walked are the part of the budget you actually control.
+
+44
+00:02:49,792 --> 00:02:54,969
+And for GopherTrunk, the arithmetic is unforgiving: it sees only what survives the
+
+45
+00:02:54,969 --> 00:02:56,169
+path and the cable.
+
+46
+00:02:56,169 --> 00:03:00,967
+Attenuation upstream of the SDR is loss the software cannot recover — no DSP
+
+47
+00:03:00,967 --> 00:03:03,303
+setting refunds dB spent in the coax.
+
+48
+00:03:03,303 --> 00:03:08,417
+In a link budget, every one of these losses is a negative term, and knowing where
+
+49
+00:03:08,417 --> 00:03:13,594
+the dB are going tells you where to spend effort: usually a shorter cable run, and
+
+50
+00:03:13,594 --> 00:03:15,109
+a preamp at the antenna.
+
+51
+00:03:15,559 --> 00:03:21,141
+So: attenuation is loss in decibels — spreading and absorption, adding up connector
+
+52
+00:03:21,141 --> 00:03:26,453
+by connector — it hurts most before the first amplifier, and used deliberately,
+
+53
+00:03:26,453 --> 00:03:28,202
+it's how you buy headroom.
+
+54
+00:03:28,202 --> 00:03:30,017
+Full write-up linked below.
+

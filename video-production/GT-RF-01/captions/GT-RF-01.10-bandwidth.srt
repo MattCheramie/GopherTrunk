@@ -1,0 +1,216 @@
+1
+00:00:02,000 --> 00:00:06,929
+Bandwidth is how much room a signal takes up — the width, in hertz, of the
+
+2
+00:00:06,929 --> 00:00:10,726
+frequency range it occupies, or that a receiver captures.
+
+3
+00:00:10,726 --> 00:00:15,323
+A narrowband voice channel is about twelve and a half kilohertz wide.
+
+4
+00:00:15,323 --> 00:00:18,920
+An FM broadcast station, around two hundred kilohertz.
+
+5
+00:00:18,920 --> 00:00:21,251
+A Wi-Fi channel, tens of megahertz.
+
+6
+00:00:21,251 --> 00:00:26,714
+And that width is one of the most consequential numbers in radio: it caps how fast
+
+7
+00:00:26,714 --> 00:00:32,043
+information can flow, it decides how much spectrum a signal consumes, and on the
+
+8
+00:00:32,043 --> 00:00:37,039
+receive side it sets how much of the spectrum an SDR must digitise at once.
+
+9
+00:00:37,489 --> 00:00:42,394
+Think of the spectrum as a long street of land, with frequency as the address.
+
+10
+00:00:42,394 --> 00:00:46,985
+Every signal occupies a plot, and bandwidth is the width of its frontage.
+
+11
+00:00:46,985 --> 00:00:51,953
+A wider plot lets you build more — carry more data — but the street has a fixed
+
+12
+00:00:51,953 --> 00:00:55,789
+length, and every hertz you take is a hertz nobody else gets.
+
+13
+00:00:55,789 --> 00:01:01,008
+That's why regulators parcel it out: each service is allocated a channel of a given
+
+14
+00:01:01,008 --> 00:01:05,850
+width, emissions must stay inside it, and a guard band of empty spectrum sits
+
+15
+00:01:05,850 --> 00:01:08,554
+between neighbours to prevent interference.
+
+16
+00:01:09,004 --> 00:01:10,970
+Where does the width come from?
+
+17
+00:01:10,970 --> 00:01:13,697
+Information cannot be sent instantaneously.
+
+18
+00:01:13,697 --> 00:01:18,961
+A steady, unchanging carrier is a single spectral line of zero width; modulating it
+
+19
+00:01:18,961 --> 00:01:23,527
+to carry a message spreads its energy into sidebands, and the faster the
+
+20
+00:01:23,527 --> 00:01:26,191
+modulation, the wider those sidebands get.
+
+21
+00:01:26,191 --> 00:01:31,455
+The exact width a signal genuinely uses is its occupied bandwidth — usually defined
+
+22
+00:01:31,455 --> 00:01:35,767
+as the span containing ninety-nine percent of the transmitted power.
+
+23
+00:01:36,217 --> 00:01:38,187
+Now the hard link to data rate.
+
+24
+00:01:38,187 --> 00:01:43,399
+The Shannon–Hartley theorem gives a channel's theoretical ceiling: capacity equals
+
+25
+00:01:43,399 --> 00:01:47,339
+bandwidth times the log of one plus the signal-to-noise ratio.
+
+26
+00:01:47,339 --> 00:01:49,500
+Look at the shape of that formula.
+
+27
+00:01:49,500 --> 00:01:54,520
+Capacity scales linearly with bandwidth, but only logarithmically with SNR — so
+
+28
+00:01:54,520 --> 00:01:59,732
+more bandwidth is the most direct way to send data faster, and crowded spectrum is
+
+29
+00:01:59,732 --> 00:02:01,320
+such a valuable resource.
+
+30
+00:02:01,320 --> 00:02:06,532
+But bandwidth cuts the other way too: noise power is proportional to bandwidth, so
+
+31
+00:02:06,532 --> 00:02:09,328
+a wider receiver passband admits more noise.
+
+32
+00:02:09,328 --> 00:02:13,713
+Opening the filter beyond what the signal needs only lowers your SNR.
+
+33
+00:02:14,163 --> 00:02:17,123
+In practice, channel width sets the standard.
+
+34
+00:02:17,123 --> 00:02:21,792
+Land-mobile digital voice squeezes into narrow channels — DMR packs two
+
+35
+00:02:21,792 --> 00:02:27,251
+time-division slots into twelve and a half kilohertz, P25 Phase 1 uses twelve and a
+
+36
+00:02:27,251 --> 00:02:32,513
+half, NXDN offers a six-and-a-quarter kilohertz mode — and that width drives the
+
+37
+00:02:32,513 --> 00:02:34,946
+choice of modulation and symbol rate.
+
+38
+00:02:34,946 --> 00:02:40,339
+The receiver's rule of thumb: match the channel filter to the occupied bandwidth —
+
+39
+00:02:40,339 --> 00:02:45,732
+wide enough to pass the signal undistorted, narrow enough to reject neighbours and
+
+40
+00:02:45,732 --> 00:02:46,127
+noise.
+
+41
+00:02:46,577 --> 00:02:49,144
+GopherTrunk lives on both ends of this.
+
+42
+00:02:49,144 --> 00:02:54,607
+An SDR's capture bandwidth is roughly its sample rate — a complex IQ stream sampled
+
+43
+00:02:54,607 --> 00:02:57,306
+at some rate represents a band that wide.
+
+44
+00:02:57,306 --> 00:03:02,374
+So GopherTrunk captures a wide slice, several megahertz, then uses filtering,
+
+45
+00:03:02,374 --> 00:03:07,640
+decimation, and a digital down-converter to carve out each narrow channel at its
+
+46
+00:03:07,640 --> 00:03:12,708
+own centre frequency, reducing it to the per-channel rate the decoder needs —
+
+47
+00:03:12,708 --> 00:03:16,131
+forty-eight kilohertz for the 4800-baud C4FM family.
+
+48
+00:03:16,131 --> 00:03:21,462
+The wide capture is what lets one receiver follow a control channel and its voice
+
+49
+00:03:21,462 --> 00:03:26,728
+grants at once; the narrow per-channel bandwidth is what keeps noise out of each
+
+50
+00:03:26,728 --> 00:03:27,913
+individual decode.
+
+51
+00:03:28,363 --> 00:03:34,119
+So: bandwidth is the width a signal occupies — it buys data rate linearly, it costs
+
+52
+00:03:34,119 --> 00:03:39,598
+spectrum and admits noise, and the receiver's job is to capture wide but filter
+
+53
+00:03:39,598 --> 00:03:40,083
+narrow.
+
+54
+00:03:40,083 --> 00:03:41,956
+Full write-up linked below.
+
