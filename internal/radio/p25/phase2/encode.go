@@ -252,22 +252,26 @@ func EncodeTalkerAliasFragment(f TalkerAliasFragment) MACPDU {
 	return MACPDU{Opcode: OpVendorTalkerAlias, MFID: MFIDMotorola, Payload: payload}
 }
 
+// FixtureVoiceSeed is the PN44 seed synthesized voice bursts are scrambled
+// under. Any non-zero seed will do — seed 0 is the all-zero sequence, which is
+// no scrambling at all — and fixtures that care about voice content build
+// their bursts through EncodeVoiceBurst with the seed they decode under.
+const FixtureVoiceSeed uint64 = 0x123456789
+
 // EncodeVoiceSubframe builds a BurstDibits-long voice burst carrying payloads
 // as its AMBE+2 frames: the DUID for slotType's burst kind, the frames at
 // their real offsets threaded between the DUID dibits, and the whole payload
-// PN44-scrambled — which a voice burst always is.
+// PN44-scrambled under FixtureVoiceSeed at the slot counter maps to (offset by
+// FixtureAnchorSlot, the way EncodeMACSubframeScrambled keys its slot).
 //
-// The payload is left UNSCRAMBLED, which a real burst never is. These
-// sub-frames are filler in fixtures that care about signalling, and a
-// scrambled payload is pseudorandom: modulated, it is a far harder signal to
-// acquire than the near-constant one this used to emit, and it stops the
-// receiver locking in tests that were never about voice. A fixture that
-// actually exercises voice extraction should call EncodeVoiceBurst with a
-// scrambling sequence and the slot to match.
-//
-// That the difference matters at all is itself a finding: the receiver
-// acquires an unrealistically flat fixture and not a realistic one, which is
-// the same acquisition weakness the real-air work traced (issue #915).
+// The scrambling matters even for fixtures that never read the voice: a
+// scrambled payload is pseudorandom, which is what air carries, and an
+// unscrambled one of silence is a near-constant dibit run. With the Gardner
+// timing loop's feedback sign inverted the receiver acquired the flat fixture
+// and not the realistic one — the sigfollow and composer tests passed only
+// because their filler was unrealistic. Every fixture now carries the
+// realistic signal, so that class of acquisition bug fails a test instead of
+// waiting for real air.
 //
 // Each payload supplies a packed VoiceFrameBytes vocoder frame; a short or
 // missing one encodes as silence.
@@ -276,6 +280,6 @@ func EncodeVoiceSubframe(slotType SlotType, counter uint8, payloads [][]byte) []
 	if slotType == SlotTypeVoice2V {
 		bt = BurstVoice2
 	}
-	_ = counter
-	return EncodeVoiceBurst(bt, payloads, 0, nil)
+	slot := (int(counter) + FixtureAnchorSlot) % SubframesPerSuperframe
+	return EncodeVoiceBurst(bt, payloads, slot, ScrambleSequence(FixtureVoiceSeed))
 }
