@@ -600,6 +600,48 @@ func (r *Receiver) Reset() {
 	r.seedBuf = nil
 }
 
+// ReacquireCarrier drops the carrier-recovery state alone — the coarse NCO
+// seed and the fine Costas loop — and leaves symbol timing, gain and the
+// differential reference running. The next seedMinSamples of IQ re-estimate
+// the coarse offset, exactly as at the start of a stream.
+//
+// This is the narrow form of Reset for the re-acquisition problem (issue
+// #915): a channel the receiver has lost usually has *only* its carrier
+// wrong, and a full Reset additionally throws away a converged Gardner
+// timing phase that then costs symbols to re-acquire. Callers that cannot
+// tell which is wrong should use Reset.
+func (r *Receiver) ReacquireCarrier() {
+	if r.nco != nil {
+		r.nco.Reset()
+		r.nco.SetOffset(0, r.fs) // identity until the seed re-fires
+	}
+	if r.costas != nil {
+		r.costas.Reset()
+	}
+	r.seeded = false
+	r.seedHz = 0
+	r.seedBuf = nil
+}
+
+// ReacquireTiming drops symbol-timing state alone — the Gardner loop, the
+// naive-decimation phase and the matched filter's history — and leaves
+// carrier recovery and its converged seed in place. The counterpart of
+// ReacquireCarrier; see that method for why the two are separable.
+func (r *Receiver) ReacquireTiming() {
+	r.dq.Reset()
+	r.pending = r.pending[:0]
+	r.rxOffset = 0
+	if r.gardner != nil {
+		r.gardner.Reset()
+	}
+	if r.agc != nil {
+		r.agc.Reset()
+	}
+	if r.eq != nil {
+		r.eq.Reset()
+	}
+}
+
 // CarrierOffsetHz reports the carrier-recovery loop's current estimate of
 // the residual carrier-frequency offset in Hz: the coarse NCO seed plus the
 // fine Costas loop's tracked residual. Returns 0 on the ClockNaive path

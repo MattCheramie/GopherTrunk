@@ -1,38 +1,48 @@
 package phase2
 
-// Carrier re-acquisition for the Phase 2 receiver.
+// Loss-of-lock re-acquisition for the Phase 2 receiver.
 //
-// The receiver takes its coarse carrier-frequency estimate exactly once, at
-// the start of a stream, and hands the residual to a Costas loop whose
-// pull-in range is ±SymbolRate/8 = ±750 Hz. Nothing re-takes that estimate.
-// So a channel whose offset drifts past the loop — or whose one-shot seed was
-// measured over an unlucky window — stays lost for the rest of the call, with
-// no path back: the sync detector keeps searching a dibit stream that is
-// rotated out from under it.
+// A receiver that stops locking superframes partway through a call does not
+// recover on its own. This notices that no superframe has locked for a while
+// and lets the caller start the receiver over, which is the minimal form of
+// what both reference decoders do continuously — they re-acquire from every
+// frame sync they detect.
 //
-// Measured on a real Phase 2 traffic-channel capture (6.5 s, which SDRtrunk
-// decodes end to end): a single continuous pass finds the outbound sync for
-// the first 0.6 s and never again, recovering 54 ACCH bursts. The same samples
-// fed to a receiver restarted every second recover **301** — the later audio
-// is not weaker, the receiver simply cannot see it any more. That 5.6x is the
-// largest single factor in Phase 2 yield found so far, and it is a state bug
-// rather than a sensitivity limit (issue #915).
+// **On the diagnosis.** This was written as a *carrier* watchdog, on the
+// reasoning that the receiver takes its coarse carrier estimate exactly once
+// per stream and nothing ever re-takes it, so a drifting channel falls out of
+// the Costas loop's ±SymbolRate/8 pull-in and never comes back. That reasoning
+// was wrong, and the fix worked for a different reason. Driving the same
+// watchdog schedule with each piece of receiver state in turn attributes the
+// loss completely: re-seeding carrier recovery alone changes the yield by
+// literally nothing (byte-identical to no watchdog at all), while resetting
+// the Gardner timing loop alone recovers everything a full reset does. The
+// receiver was not losing its carrier; it was losing the eye, because the
+// timing loop's feedback sign was inverted and it was settling on the
+// transition instant. See internal/dsp/sync/gardner.go.
 //
-// A watchdog is the fix rather than a workaround: both reference decoders
-// re-acquire continuously, re-seeding carrier recovery from every frame sync
-// they detect. This is the minimal form of the same idea — notice that no
-// superframe has locked for a while, and let the receiver start over.
+// With that sign corrected this watchdog is no longer load-bearing on the
+// reference corpus — it fires once across a 6.5 s capture and changes no
+// counts — but it is kept: a genuine loss of lock (fade, retune, underrun)
+// still wants a way back, and nothing else provides one.
+//
+// The measurements the original text quoted are superseded. On the reference
+// capture, continuous decode with the timing fix recovers 830 ACCH bursts and
+// 31 distinct MAC PDUs — matching SDRtrunk's decode of the same file exactly,
+// with nothing fabricated and nothing missed — against 87 bursts and 9 PDUs
+// before it (issue #915).
 
 // ReacquireIdleSuperframes is how many superframes may pass with no lock
-// before the carrier seed is re-taken.
+// before the receiver is restarted.
 //
-// One (0.36 s) measured best on the reference capture, and by a wide margin —
-// distinct MAC PDUs recovered went 7 (no watchdog) → 15 (idle 1) → 11 (idle 2)
-// → 8 (idle 3). Waiting is pure loss: the receiver is not going to recover on
-// its own, so every extra superframe of patience is signalling thrown away.
-// The floor is acquisition cost — re-seeding needs roughly a quarter-second of
-// samples before it decodes anything, and a capture chopped into 0.25 s pieces
-// decodes nothing at all — which is why this does not go below one superframe.
+// One (0.36 s) measured best when this was the only thing standing between the
+// decoder and a lost channel, and by a wide margin — distinct MAC PDUs went 7
+// (no watchdog) → 15 (idle 1) → 11 (idle 2) → 8 (idle 3). Waiting was pure
+// loss, because the receiver was never going to recover on its own. Now that
+// the underlying timing bug is fixed it rarely fires at all, so the value is
+// no longer critical; it is left at one superframe because the floor still
+// holds — a restart needs roughly a quarter-second of samples before it
+// decodes anything, so anything shorter cannot pay for itself.
 const ReacquireIdleSuperframes = 1
 
 // CarrierWatchdog tracks how long a Phase 2 receiver has gone without locking
