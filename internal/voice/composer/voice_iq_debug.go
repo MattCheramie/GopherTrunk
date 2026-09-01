@@ -1,7 +1,6 @@
 package composer
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
@@ -38,6 +37,10 @@ import (
 type VoiceIQDebugConfig struct {
 	Enabled bool
 	Dir     string
+	// Format is the on-disk container: cs16 (default), wav, or flac (and the
+	// raw f32/u8 sample formats). The zero value (FormatU8) is remapped to cs16
+	// by the writer so an unset format keeps the historical default.
+	Format siglab.SampleFormat
 	// MaxBytes caps one call's capture; 0 defaults to
 	// voiceIQDebugDefaultMaxBytes.
 	MaxBytes int64
@@ -61,7 +64,7 @@ func (c *Composer) teeVoiceIQ(ctx context.Context, in <-chan []complex64, cs tru
 	if maxBytes <= 0 {
 		maxBytes = voiceIQDebugDefaultMaxBytes
 	}
-	w, err := newVoiceIQDebugWriter(c.voiceIQDebug.Dir, cs, rateHz, maxBytes, c.log)
+	w, err := newVoiceIQDebugWriter(c.voiceIQDebug, cs, rateHz, maxBytes, c.log)
 	if err != nil {
 		c.log.Warn("composer: voice IQ debug capture failed to open; call decodes without capture",
 			"system", cs.Grant.System, "group", cs.Grant.GroupID, "err", err)
@@ -96,6 +99,8 @@ type voiceIQDebugWriter struct {
 	path     string
 	metaPath string
 	meta     *siglab.Metadata
+	format   siglab.SampleFormat
+	rateHz   float64
 	log      *slog.Logger
 	queue    chan []complex64
 	done     chan struct{}
@@ -110,7 +115,8 @@ type voiceIQDebugWriter struct {
 // newVoiceIQDebugWriter opens the capture files and starts the disk
 // goroutine. The sidecar is written immediately (so a crashed daemon still
 // leaves a replayable pair) and rewritten at close with the final counts.
-func newVoiceIQDebugWriter(dir string, cs trunking.CallStart, rateHz float64, maxBytes int64, log *slog.Logger) (*voiceIQDebugWriter, error) {
+func newVoiceIQDebugWriter(cfg VoiceIQDebugConfig, cs trunking.CallStart, rateHz float64, maxBytes int64, log *slog.Logger) (*voiceIQDebugWriter, error) {
+	dir := cfg.Dir
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -123,9 +129,17 @@ func newVoiceIQDebugWriter(dir string, cs trunking.CallStart, rateHz float64, ma
 		sanitizeFileToken(cs.Grant.System), cs.Grant.GroupID,
 		cs.Grant.FrequencyHz, rateHz)
 	base = strings.ReplaceAll(base, ".", "_") // keep one extension dot
+	// The unset zero value (FormatU8) is not a valid voice-IQ container; treat
+	// it as the historical cs16 default. wav/flac wrap the same 16-bit body.
+	format := cfg.Format
+	if format == siglab.FormatU8 {
+		format = siglab.FormatS16
+	}
 	w := &voiceIQDebugWriter{
-		path:     filepath.Join(dir, base+".cs16"),
+		path:     filepath.Join(dir, base+"."+format.String()),
 		metaPath: filepath.Join(dir, base+".metadata.json"),
+		format:   format,
+		rateHz:   rateHz,
 		log:      log,
 		queue:    make(chan []complex64, voiceIQDebugQueue),
 		done:     make(chan struct{}),
@@ -135,7 +149,7 @@ func newVoiceIQDebugWriter(dir string, cs trunking.CallStart, rateHz float64, ma
 		Source:       "gophertrunk voice_iq_debug (per-call voice-channel IQ)",
 		SampleRateHz: rateHz,
 		CenterFreqHz: cs.Grant.FrequencyHz,
-		Format:       siglab.FormatS16.String(),
+		Format:       format.String(),
 		System: map[string]string{
 			"system":     cs.Grant.System,
 			"talkgroup":  strconv.FormatUint(uint64(cs.Grant.GroupID), 10),
@@ -209,13 +223,21 @@ func (w *voiceIQDebugWriter) close() {
 		"path", w.path, "samples", w.samples, "truncated", w.truncated.Load())
 }
 
-// run is the disk goroutine: encodes queued chunks as cs16 until the queue
-// closes or the byte cap is hit.
+// run is the disk goroutine: encodes queued chunks into the chosen container
+// (cs16/wav/flac) until the queue closes or the byte cap is hit. The byte cap
+// counts the uncompressed 16-bit body (len(chunk)*4) so it bounds the capture
+// the same way regardless of container compression.
 func (w *voiceIQDebugWriter) run(f *os.File, maxBytes int64) {
 	defer close(w.done)
 	defer f.Close()
-	bw := bufio.NewWriterSize(f, 1<<16)
-	enc := siglab.NewCaptureWriter(bw, siglab.FormatS16)
+	enc, err := siglab.NewIQContainer(f, w.format, int(w.rateHz+0.5))
+	if err != nil {
+		w.markTruncated("open container: " + err.Error())
+		// Drain the queue so offer() doesn't block the (already-closing) chain.
+		for range w.queue {
+		}
+		return
+	}
 	var written int64
 	for chunk := range w.queue {
 		if w.truncated.Load() {
@@ -232,8 +254,8 @@ func (w *voiceIQDebugWriter) run(f *os.File, maxBytes int64) {
 		written += int64(len(chunk) * 4)
 		w.samples += int64(len(chunk))
 	}
-	if err := bw.Flush(); err != nil {
-		w.markTruncated("flush error: " + err.Error())
+	if err := enc.Finalize(); err != nil {
+		w.markTruncated("finalize error: " + err.Error())
 	}
 }
 

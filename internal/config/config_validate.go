@@ -797,9 +797,9 @@ func (c Config) validateBaseband() []error {
 		// widely-imported config package deliberately does not import siglab).
 		// Keep this list in sync with siglab.ParseSampleFormat.
 		switch strings.ToLower(strings.TrimSpace(a.Format)) {
-		case "", "cs16", "f32", "u8":
+		case "", "cs16", "f32", "u8", "wav", "flac":
 		default:
-			errs = append(errs, fmt.Errorf("baseband.auto_record: format must be cs16|f32|u8, got %q", a.Format))
+			errs = append(errs, fmt.Errorf("baseband.auto_record: format must be cs16|f32|u8|wav|flac, got %q", a.Format))
 		}
 		if a.OnConcurrentCalls < 0 {
 			errs = append(errs, fmt.Errorf("baseband.auto_record: on_concurrent_calls must not be negative"))
@@ -830,6 +830,14 @@ func (c Config) validateBaseband() []error {
 		}
 		if v.MaxMB < 0 {
 			errs = append(errs, fmt.Errorf("baseband.voice_iq_debug: max_mb must not be negative"))
+		}
+		// Container format. The per-call voice IQ is a narrowband 16-bit stream,
+		// so only the 16-bit containers make sense (u8/f32 would throw away ADC
+		// resolution or bloat the file). Default (empty) is cs16.
+		switch strings.ToLower(strings.TrimSpace(v.Format)) {
+		case "", "cs16", "wav", "flac":
+		default:
+			errs = append(errs, fmt.Errorf("baseband.voice_iq_debug: format must be cs16|wav|flac, got %q", v.Format))
 		}
 	}
 	return errs

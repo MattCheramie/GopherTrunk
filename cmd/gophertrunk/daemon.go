@@ -2339,6 +2339,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 			VoiceIQDebug: composer.VoiceIQDebugConfig{
 				Enabled:  cfg.Baseband.VoiceIQDebug.Enabled,
 				Dir:      cfg.Baseband.VoiceIQDebug.Dir,
+				Format:   voiceIQDebugFormat(cfg.Baseband.VoiceIQDebug.Format),
 				MaxBytes: int64(cfg.Baseband.VoiceIQDebug.MaxMB) << 20,
 			},
 		})

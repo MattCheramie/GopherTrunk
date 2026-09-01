@@ -238,6 +238,11 @@ type VoiceIQDebugConfig struct {
 	// Dir is the directory per-call captures (and their metadata sidecars)
 	// are written into. Required when Enabled.
 	Dir string `yaml:"dir"`
+	// Format is the on-disk container: "cs16" (default, headerless raw IQ),
+	// "wav" (RIFF/WAVE wrapper — opens directly in Audacity/analysis tools),
+	// or "flac" (lossless ~30–50% smaller). All wrap the same 16-bit I/Q body,
+	// so the capture stays replayable. Parsed by siglab.ParseSampleFormat.
+	Format string `yaml:"format"`
 	// MaxMB caps one call's capture size in megabytes; the capture stops
 	// (and the sidecar notes truncation) when reached, so a stuck call or a
 	// full-SDR-rate tap cannot fill the disk. 0 defaults to 512 MB.
@@ -254,9 +259,10 @@ type BasebandAutoRecordConfig struct {
 	// Dir is the directory triggered captures (and their metadata sidecars)
 	// are written into. Required when Enabled.
 	Dir string `yaml:"dir"`
-	// Format is the on-disk sample format: "cs16" (default), "f32"
-	// (GNU Radio cfile), or "u8" (rtl_sdr native). Parsed by
-	// siglab.ParseSampleFormat.
+	// Format is the on-disk sample format / container: "cs16" (default), "f32"
+	// (GNU Radio cfile), "u8" (rtl_sdr native), "wav" (RIFF/WAVE wrapper over
+	// the 16-bit body — opens directly in Audacity/analysis tools), or "flac"
+	// (lossless ~30–50% smaller). Parsed by siglab.ParseSampleFormat.
 	Format string `yaml:"format"`
 	// Seconds is the length of each triggered capture. Required when Enabled.
 	Seconds int `yaml:"seconds"`

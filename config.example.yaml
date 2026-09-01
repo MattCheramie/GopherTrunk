@@ -1477,6 +1477,10 @@ broadcast:
 #     enabled: true
 #     dir: "../iq/auto/"
 #     format: cs16               # cs16 (default) | f32 (GNU Radio cfile) | u8
+#                                # | wav (RIFF/WAVE wrapper — opens directly in
+#                                #   Audacity / analysis tools) | flac (lossless,
+#                                #   ~30–50% smaller). wav/flac wrap the same
+#                                #   16-bit body, so both stay replayable.
 #     tap: wideband              # wideband (default, full-rate SDR — large files)
 #                                # | ddc (narrowband channelised stream at the
 #                                #   pipeline rate, e.g. 144 kHz for TETRA — far
@@ -1517,6 +1521,9 @@ broadcast:
 #   voice_iq_debug:
 #     enabled: true
 #     dir: "../iq/voice-debug/"
+#     format: cs16               # cs16 (default) | wav (Audacity-ready) | flac
+#                                #   (lossless, ~30–50% smaller). All wrap the
+#                                #   same 16-bit body and stay replayable.
 #     max_mb: 512                # per-call size cap (0 = default 512 MB);
 #                                #   the sidecar notes truncation when hit
 

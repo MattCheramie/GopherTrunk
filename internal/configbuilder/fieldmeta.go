@@ -452,7 +452,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandConfig.AutoRecord":                  {Label: "Auto-record", Help: "Event-driven raw-IQ capture of the control SDR (concurrent calls, unserved grant, encrypted/emergency, or manual API trigger)."},
 	"BasebandAutoRecordConfig.Enabled":           {Help: "Turn event-driven IQ auto-recording on. When off, every trigger is a no-op."},
 	"BasebandAutoRecordConfig.Dir":               {Label: "Directory", Help: "Directory triggered captures (and their .metadata.json sidecars) are written into."},
-	"BasebandAutoRecordConfig.Format":            {Help: "On-disk sample format for triggered captures.", Options: opts("", "cs16 (default)", "f32", "f32", "u8", "u8")},
+	"BasebandAutoRecordConfig.Format":            {Help: "On-disk format for triggered captures. wav/flac wrap the 16-bit body (flac is lossless and ~30–50% smaller).", Options: opts("", "cs16 (default)", "f32", "f32", "u8", "u8", "wav", "wav", "flac", "flac")},
 	"BasebandAutoRecordConfig.Seconds":           {Help: "Length in seconds of each triggered capture."},
 	"BasebandAutoRecordConfig.Cooldown":          {Help: "Minimum gap between automatic triggers (Go duration, e.g. 10s). The manual API trigger bypasses it."},
 	"BasebandAutoRecordConfig.OnConcurrentCalls": {Label: "On concurrent calls", Help: "Fire when this many voice calls are active at once. 0 disables this trigger."},
@@ -467,6 +467,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandConfig.VoiceIQDebug": {Label: "Voice IQ debug", Help: "Per-call voice-channel IQ debug captures: each voice call's exact channelised IQ stream plus a metadata sidecar, written to per-call files — the voice half of the diagnostic-container workflow (pair with auto_record's on_voice_grant)."},
 	"VoiceIQDebugConfig.Enabled":  {Help: "Turn per-call voice-channel IQ captures on. Off costs nothing."},
 	"VoiceIQDebugConfig.Dir":      {Help: "Directory per-call captures (and their .metadata.json sidecars) are written into."},
+	"VoiceIQDebugConfig.Format":   {Help: "On-disk container: cs16 (default raw), wav (opens in Audacity/analysis tools), or flac (lossless ~30–50% smaller). All stay replayable.", Options: opts("", "cs16 (default)", "wav", "wav", "flac", "flac")},
 	"VoiceIQDebugConfig.MaxMB":    {Label: "Max MB", Help: "Per-call capture size cap in megabytes; the sidecar notes truncation when hit. 0 = default 512 MB."},
 
 	// ---- Paging ------------------------------------------------------------

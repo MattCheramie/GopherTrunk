@@ -40,6 +40,13 @@ const (
 	// it away. The sample rate is not carried in-band, so it comes from the
 	// metadata sidecar (or -sample-rate), like u8/f32.
 	FormatS16
+	// FormatFLAC is a FLAC-compressed wrapper around the exact FormatS16 body
+	// (two-channel 16-bit, I=left/Q=right). Lossless and ~30–50% smaller than
+	// cs16 on continuous baseband; the sample rate is carried in the FLAC
+	// STREAMINFO. On read the stream is decoded back to the sw16 body and the
+	// rate is taken from the header, mirroring FormatWAV. Write-only for the
+	// live capture subsystems (auto_record / voice_iq_debug).
+	FormatFLAC
 )
 
 // String renders the format as the flag value operators type.
@@ -51,6 +58,8 @@ func (f SampleFormat) String() string {
 		return "wav"
 	case FormatS16:
 		return "cs16"
+	case FormatFLAC:
+		return "flac"
 	default:
 		return "u8"
 	}
@@ -78,8 +87,10 @@ func ParseSampleFormat(s string) (SampleFormat, error) {
 		return FormatWAV, nil
 	case "cs16", "sc16", "i16", "raw":
 		return FormatS16, nil
+	case "flac":
+		return FormatFLAC, nil
 	default:
-		return FormatU8, fmt.Errorf("siglab: unknown sample format %q (want u8, f32, cs16, or wav)", s)
+		return FormatU8, fmt.Errorf("siglab: unknown sample format %q (want u8, f32, cs16, wav, or flac)", s)
 	}
 }
 
@@ -94,11 +105,12 @@ func (f SampleFormat) Decoder() (SampleDecoder, int) {
 	switch f {
 	case FormatF32:
 		return decodeF32, 8
-	case FormatWAV, FormatS16:
-		// Same interleaved-16-bit decoder for both. FormatWAV's 44-byte
-		// RIFF/WAVE header is stripped upstream (prepareWAVInput in engine.go)
-		// before any bytes reach this decoder; FormatS16 is headerless, so its
-		// bytes are all IQ samples.
+	case FormatWAV, FormatS16, FormatFLAC:
+		// Same interleaved-16-bit decoder for all three. FormatWAV's 44-byte
+		// RIFF/WAVE header is stripped upstream (prepareInput in engine.go) and
+		// FormatFLAC is decoded upstream into the same sw16 body (with cfg.Format
+		// rewritten to FormatS16), so by the time bytes reach this decoder they
+		// are headerless interleaved 16-bit IQ; FormatS16 is headerless natively.
 		return decodeSW16, 4
 	default:
 		return decodeU8, 2
