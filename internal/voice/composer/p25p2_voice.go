@@ -46,10 +46,17 @@ func newP25P2VoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 	return newVoiceFrontEnd(iqHz, bw, p25p2VoiceIntermediateHz, p25p2ChannelSelectHz)
 }
 
-// p25p2VoiceGardnerGain matches the value newP25Phase2Pipeline settled
-// on for the H-DQPSK symbol clock (smaller than the receiver default
-// because H-DQPSK slips differently than C4FM).
-const p25p2VoiceGardnerGain = 0.005
+// p25p2VoiceGardnerGain is the Gardner loop step for the H-DQPSK symbol
+// clock. This was 0.005 — a sixth of the receiver default — on the reasoning
+// that "H-DQPSK slips" at higher gains. That slip was the loop's inverted
+// feedback sign running away from the eye, and a smaller gain only ran away
+// more slowly (internal/dsp/sync/gardner.go). With the sign corrected the
+// loop is stable at every gain, and slower is simply worse: on an
+// eight-capture corpus scored against SDRtrunk, confirmed MAC PDUs go
+// 228 → 234 (92% → 94% of the reference) from 0.005 to 0.03, with a flat
+// plateau from 0.03 to 0.10. 0.03 is the receiver default; the override is
+// kept explicit so the value is visible where the receiver is built.
+const p25p2VoiceGardnerGain = 0.03
 
 // burstHistLen sizes the per-call burst-type histogram in the chain census.
 // The DUID is a 4-bit field, so all sixteen values need a bucket — an array

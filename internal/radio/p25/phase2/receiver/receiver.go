@@ -133,6 +133,10 @@ type Options struct {
 	// GardnerGain overrides the Gardner loop step (default 0.03,
 	// applied only when ClockMode is ClockGardner).
 	GardnerGain float64
+	// CostasLoopBWHz overrides the fine carrier-tracking loop's noise
+	// bandwidth (default costasLoopBWHz; ClockGardner only). <= 0 uses the
+	// default.
+	CostasLoopBWHz float64
 	// SoftDecision enables soft-decision output: alongside the hard dibits the
 	// receiver emits, per dibit, the complex differential in the diagonal frame
 	// (b0 = Re<0, b1 = Im<0) via SoftSink, so the Phase 2 MAC path can run a
@@ -388,7 +392,11 @@ func New(opts Options) *Receiver {
 		// Rotation-aware: H-DQPSK's π/8 constellation locks the detector to
 		// 4·(π/8) = π/2, not the π/4 family's π. The wrong constant would
 		// settle a π/8 per-symbol bias that halves the decision margin.
-		r.costas = sync.NewQPSKCostasForRotation(SymbolRate, costasLoopBWHz, costasDamping, Rotation)
+		bw := opts.CostasLoopBWHz
+		if bw <= 0 {
+			bw = costasLoopBWHz
+		}
+		r.costas = sync.NewQPSKCostasForRotation(SymbolRate, bw, costasDamping, Rotation)
 		if opts.Equalizer {
 			taps := opts.EqualizerTaps
 			if taps <= 0 {

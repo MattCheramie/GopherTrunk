@@ -603,13 +603,15 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			}
 		},
 		ClockMode: clockMode,
-		// Tuned smaller than the 0.03 default — H-DQPSK at
-		// 6000 sym/s has the same slip behaviour as TETRA's
-		// π/4-DQPSK at the default gain (see PR #154). 0.005
-		// tracks both clean synthesized IQ and noisier on-air
-		// captures within the loop's lock-acquisition margin.
-		// Only applied when ClockMode == ClockGardner.
-		GardnerGain: 0.005,
+		// 0.03 is the receiver default. This was 0.005 — the "slip"
+		// that motivated a smaller gain was the Gardner loop's inverted
+		// feedback sign running away from the eye, which a smaller gain
+		// only slowed (internal/dsp/sync/gardner.go). Measured on an
+		// eight-capture corpus against SDRtrunk: 0.03 recovers more
+		// signalling than 0.005 and sits on a flat plateau to 0.10; see
+		// composer.p25p2VoiceGardnerGain. Only applied when ClockMode ==
+		// ClockGardner.
+		GardnerGain: 0.03,
 	})
 	return &p25Phase2Pipeline{
 		rx: rx, cc: cc, sfDec: sfDec, log: opts.Log, system: opts.SystemName,

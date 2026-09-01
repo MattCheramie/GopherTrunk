@@ -16,10 +16,10 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-// gardnerGain matches composer.p25p2VoiceGardnerGain — the H-DQPSK
-// symbol clock slips differently than C4FM, so the loop runs slower than
-// the receiver default.
-const gardnerGain = 0.005
+// gardnerGain matches composer.p25p2VoiceGardnerGain; see that constant
+// for the measurement. The former 0.005 was tuned against an inverted
+// timing loop and is now known to cost yield.
+const gardnerGain = 0.03
 
 // Follow-lifecycle bounds.
 const (
