@@ -161,7 +161,11 @@ func (a *iqAutoRecorder) defaultCapture(ctx context.Context, path string, format
 		if a.ddc != nil {
 			tap = a.ddc()
 		}
-		return captureDDCToFile(ctx, tap, path, format, seconds)
+		var rateHz uint32
+		if tap != nil {
+			rateHz = uint32(tap.PipelineRateHz() + 0.5)
+		}
+		return captureDDCToFile(ctx, tap, path, format, seconds, rateHz)
 	}
 	if a.broker == nil {
 		return 0, 0, fmt.Errorf("iq-autorecord: no broker")
@@ -169,9 +173,27 @@ func (a *iqAutoRecorder) defaultCapture(ctx context.Context, path string, format
 	// Wideband tap: optionally software-decimate to shrink the capture
 	// (SDR-rate / decimate). nil ddc when decimate <= 1 keeps the full-rate
 	// path byte-identical to before.
-	ddc := newCaptureDecimator(a.broker.SampleRateHz(), a.decimate)
-	samples, _, drops, err := captureIQToFile(ctx, a.broker, path, format, seconds, ddc)
+	rateHz := a.broker.SampleRateHz()
+	ddc := newCaptureDecimator(rateHz, a.decimate)
+	if ddc != nil {
+		rateHz = uint32(ddc.OutRateHz() + 0.5)
+	}
+	samples, _, drops, err := captureIQToFile(ctx, a.broker, path, format, seconds, ddc, rateHz)
 	return samples, drops, err
+}
+
+// voiceIQDebugFormat resolves the voice_iq_debug container format string
+// (validated to cs16|wav|flac) to a siglab.SampleFormat, defaulting empty to
+// cs16 — the historical raw format — so an unset format keeps prior behaviour.
+func voiceIQDebugFormat(s string) siglab.SampleFormat {
+	if strings.TrimSpace(s) == "" {
+		return siglab.FormatS16
+	}
+	f, err := siglab.ParseSampleFormat(s)
+	if err != nil {
+		return siglab.FormatS16
+	}
+	return f
 }
 
 // captureDDCToFile records `seconds` of the control decoder's post-DDC channelised
@@ -179,7 +201,7 @@ func (a *iqAutoRecorder) defaultCapture(ctx context.Context, path string, format
 // path in the chosen format, reusing siglab.CaptureWriter so the bytes are
 // identical to a wideband capture at that rate. Orders of magnitude smaller than
 // the wideband broker capture, and directly replayable. ctx cancels early.
-func captureDDCToFile(ctx context.Context, tap ddcVoiceTap, path string, format siglab.SampleFormat, seconds int) (samples int64, drops uint64, err error) {
+func captureDDCToFile(ctx context.Context, tap ddcVoiceTap, path string, format siglab.SampleFormat, seconds int, rateHz uint32) (samples int64, drops uint64, err error) {
 	if tap == nil {
 		return 0, 0, fmt.Errorf("iq-autorecord: no control decoder for ddc tap")
 	}
@@ -188,7 +210,11 @@ func captureDDCToFile(ctx context.Context, tap ddcVoiceTap, path string, format 
 		return 0, 0, fmt.Errorf("iq-autorecord: create %s: %w", path, err)
 	}
 	ch, unsub := tap.SubscribeVoiceIQ()
-	enc := siglab.NewCaptureWriter(f, format)
+	enc, err := siglab.NewIQContainer(f, format, int(rateHz))
+	if err != nil {
+		f.Close()
+		return 0, 0, fmt.Errorf("iq-autorecord: container %s: %w", path, err)
+	}
 
 	// The DDC fan-out only broadcasts while the control pipeline is locked/active;
 	// a timer arm ends the capture after the requested duration even if the stream
@@ -225,6 +251,11 @@ func captureDDCToFile(ctx context.Context, tap ddcVoiceTap, path string, format 
 	// fan-out logs its own warning at unsubscribe).
 	drops = unsub()
 
+	// Finalize the container (patch wav lengths / close the flac stream) before
+	// closing the file; a finalize error masks nothing when the stream failed.
+	if finErr := enc.Finalize(); streamErr == nil && finErr != nil {
+		streamErr = finErr
+	}
 	closeErr := f.Close()
 	if streamErr == nil && closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
 		streamErr = closeErr

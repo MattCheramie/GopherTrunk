@@ -42,6 +42,62 @@ func TestLogConfigSummaryEmitsPerSystemLine(t *testing.T) {
 	}
 }
 
+// TestWarnRecordingDestination pins the "autorecord not working" diagnosability
+// fix: when recordings.dir is empty the daemon records no .wav audio, and that
+// must be surfaced — loudly (WARN) when a raw-IQ capture subsystem is enabled
+// (the exact footgun: voice_iq_debug/auto_record write IQ under their own dirs
+// while no audio lands and nothing said why), and plainly (INFO) for a
+// deliberate decode-only setup. A configured recordings.dir stays quiet.
+func TestWarnRecordingDestination(t *testing.T) {
+	run := func(cfg config.Config) string {
+		var buf bytes.Buffer
+		d := &Daemon{log: slog.New(slog.NewTextHandler(&buf, nil)), cfg: cfg}
+		d.warnRecordingDestination()
+		return buf.String()
+	}
+
+	t.Run("dir set: no warning", func(t *testing.T) {
+		cfg := config.Config{}
+		cfg.Recordings.Dir = "/rec"
+		cfg.Baseband.VoiceIQDebug.Enabled = true
+		if out := run(cfg); out != "" {
+			t.Errorf("expected no log when recordings.dir is set, got:\n%s", out)
+		}
+	})
+
+	t.Run("dir empty + voice_iq_debug on: WARN names the fix", func(t *testing.T) {
+		cfg := config.Config{}
+		cfg.Baseband.VoiceIQDebug.Enabled = true
+		out := run(cfg)
+		if !strings.Contains(out, "level=WARN") {
+			t.Errorf("expected WARN, got:\n%s", out)
+		}
+		for _, want := range []string{"recordings.dir", "voice_iq_debug", "not"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("WARN missing %q\n---\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("dir empty + auto_record on: WARN", func(t *testing.T) {
+		cfg := config.Config{}
+		cfg.Baseband.AutoRecord.Enabled = true
+		if out := run(cfg); !strings.Contains(out, "level=WARN") {
+			t.Errorf("expected WARN when auto_record enabled + no recordings.dir, got:\n%s", out)
+		}
+	})
+
+	t.Run("dir empty, no capture: plain INFO decode-only", func(t *testing.T) {
+		out := run(config.Config{})
+		if strings.Contains(out, "level=WARN") {
+			t.Errorf("deliberate decode-only should not WARN, got:\n%s", out)
+		}
+		if !strings.Contains(out, "decode-only") {
+			t.Errorf("expected decode-only INFO, got:\n%s", out)
+		}
+	})
+}
+
 // TestSystemEnhancementsResolvesEffectiveState is the failing-first regression
 // for the startup config summary: the effective on/off it reports must come
 // from the receiver parsers (so "" means the per-protocol DEFAULT), not from

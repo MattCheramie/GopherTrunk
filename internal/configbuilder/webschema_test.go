@@ -70,7 +70,7 @@ var webRoundTripAllow = map[string][]string{
 	// Per-call voice-channel IQ debug captures (baseband.voice_iq_debug) —
 	// same debug/research posture as auto_record: round-trips through the
 	// BasebandConfig index signature; editable in the TUI and raw YAML.
-	"VoiceIQDebugConfig": {"Enabled", "Dir", "MaxMB"},
+	"VoiceIQDebugConfig": {"Enabled", "Dir", "Format", "MaxMB"},
 }
 
 // TestConfigSchemaCoveredByWebBuilder fails when a config.Config field has no

@@ -109,3 +109,68 @@ func TestTeeVoiceIQWritesPerCallCapture(t *testing.T) {
 		}
 	}
 }
+
+// TestTeeVoiceIQFormats pins the wav/flac container options: the per-call file
+// gets the right extension and signature, and the metadata Format matches.
+func TestTeeVoiceIQFormats(t *testing.T) {
+	cases := []struct {
+		format siglab.SampleFormat
+		ext    string
+		sig    string // leading bytes the container file must start with
+	}{
+		{siglab.FormatWAV, "wav", "RIFF"},
+		{siglab.FormatFLAC, "flac", "fLaC"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ext, func(t *testing.T) {
+			dir := t.TempDir()
+			c := &Composer{
+				log:          slog.Default(),
+				voiceIQDebug: VoiceIQDebugConfig{Enabled: true, Dir: dir, Format: tc.format},
+			}
+			cs := trunking.CallStart{
+				Grant:        trunking.Grant{System: "Ost", Protocol: "p25", GroupID: 5, FrequencyHz: 450_000_000},
+				DeviceSerial: "V",
+				StartedAt:    time.Unix(1_700_000_000, 0).UTC(),
+			}
+			in := make(chan []complex64, 4)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			out := c.teeVoiceIQ(ctx, in, cs, 48_000)
+			// Enough samples that flac emits at least one frame.
+			block := make([]complex64, 6000)
+			for i := range block {
+				block[i] = complex(float32(math.Cos(float64(i)*0.03)), float32(math.Sin(float64(i)*0.03)))
+			}
+			in <- block
+			close(in)
+			for range out { //nolint:revive // drain the passthrough
+			}
+
+			var files []string
+			deadline := time.Now().Add(2 * time.Second)
+			for {
+				files, _ = filepath.Glob(filepath.Join(dir, "*_voice."+tc.ext))
+				if len(files) == 1 {
+					if m, err := siglab.LoadMetadata(strings.TrimSuffix(files[0], "."+tc.ext) + ".metadata.json"); err == nil && m.System["samples"] != "" {
+						if m.Format != tc.ext {
+							t.Errorf("metadata Format = %q, want %q", m.Format, tc.ext)
+						}
+						break
+					}
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("no finalised *_voice.%s capture (files=%v)", tc.ext, files)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			raw, err := os.ReadFile(files[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(raw) < len(tc.sig) || string(raw[:len(tc.sig)]) != tc.sig {
+				t.Errorf("%s file does not start with %q signature", tc.ext, tc.sig)
+			}
+		})
+	}
+}

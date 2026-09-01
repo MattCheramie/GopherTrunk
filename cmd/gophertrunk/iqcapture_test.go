@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"math"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
@@ -88,7 +90,7 @@ func TestParseIQCaptureSpec(t *testing.T) {
 		},
 		{
 			name:    "bad format rejected",
-			in:      "serial=A,path=x,seconds=1,format=wav",
+			in:      "serial=A,path=x,seconds=1,format=mp3",
 			wantErr: "format",
 		},
 		{
@@ -132,19 +134,48 @@ func TestCaptureEncoderPassThroughIsByteIdentical(t *testing.T) {
 	chunk := []complex64{
 		complex(0.1, -0.2), complex(0.3, 0.4), complex(-0.5, 0.6), complex(0.7, -0.8),
 	}
-	var buf bytes.Buffer
-	enc := newCaptureEncoder(&buf, siglab.FormatF32, nil)
-	n, err := enc.write(chunk)
-	if err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	got, n := runCaptureEncoder(t, siglab.FormatF32, nil, [][]complex64{chunk})
 	if n != len(chunk) {
 		t.Errorf("written = %d, want %d (pass-through writes every sample)", n, len(chunk))
 	}
 	want := siglab.EncodeCapture(chunk, siglab.FormatF32)
-	if !bytes.Equal(buf.Bytes(), want) {
-		t.Errorf("pass-through bytes differ from siglab.EncodeCapture (len %d vs %d)", buf.Len(), len(want))
+	if !bytes.Equal(got, want) {
+		t.Errorf("pass-through bytes differ from siglab.EncodeCapture (len %d vs %d)", len(got), len(want))
 	}
+}
+
+// runCaptureEncoder drives a captureEncoder over a real temp file (the
+// container writer requires an *os.File for wav/flac seeking) and returns the
+// finalized on-disk bytes plus the total samples written.
+func runCaptureEncoder(t *testing.T, format siglab.SampleFormat, ddc *ccdecoder.Downconverter, chunks [][]complex64) ([]byte, int) {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "cap-*.iq")
+	if err != nil {
+		t.Fatalf("temp: %v", err)
+	}
+	enc, err := newCaptureEncoder(f, format, ddc, 48000)
+	if err != nil {
+		t.Fatalf("newCaptureEncoder: %v", err)
+	}
+	var total int
+	for _, chunk := range chunks {
+		n, werr := enc.write(chunk)
+		if werr != nil {
+			t.Fatalf("write: %v", werr)
+		}
+		total += n
+	}
+	if err := enc.finalize(); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	b, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	return b, total
 }
 
 // TestCaptureEncoderDecimates is the failing-first regression for software
@@ -164,14 +195,13 @@ func TestCaptureEncoderDecimates(t *testing.T) {
 	outBandHz := 300_000.0 // rejected (> 100 kHz)
 
 	run := func(toneHz float64) (writtenSamples int, meanMag float64) {
-		var buf bytes.Buffer
 		ddc := newCaptureDecimator(uint32(baseRate), factor)
 		if ddc == nil {
 			t.Fatal("newCaptureDecimator returned nil for factor 5")
 		}
-		enc := newCaptureEncoder(&buf, siglab.FormatF32, ddc)
 		phase := 0.0
 		dPhase := 2 * math.Pi * toneHz / baseRate
+		var chunks [][]complex64
 		for off := 0; off < total; off += chunkLen {
 			n := chunkLen
 			if off+n > total {
@@ -182,16 +212,14 @@ func TestCaptureEncoderDecimates(t *testing.T) {
 				chunk[i] = complex(float32(math.Cos(phase)), float32(math.Sin(phase)))
 				phase += dPhase
 			}
-			w, err := enc.write(chunk)
-			if err != nil {
-				t.Fatalf("write: %v", err)
-			}
-			writtenSamples += w
+			chunks = append(chunks, chunk)
 		}
+		raw, w := runCaptureEncoder(t, siglab.FormatF32, ddc, chunks)
+		writtenSamples = w
 		// Decode the written f32 bytes back to complex64.
 		dec, bytesPer := siglab.FormatF32.Decoder()
-		out := make([]complex64, buf.Len()/bytesPer)
-		dec(buf.Bytes(), out)
+		out := make([]complex64, len(raw)/bytesPer)
+		dec(raw, out)
 		// Skip the filter warm-up (first taps-worth) before measuring energy.
 		const warm = 200
 		var sum float64

@@ -60,6 +60,11 @@ type ControlChannel struct {
 	// established site logs once and re-logs only when its identity / primary
 	// control channel materially changes (see logSiteIdentity).
 	lastSiteLog siteLogKey
+	// lastSitePublish edge-triggers the KindSiteUpdate bus event: a P25 CC
+	// broadcasts a status TSBK many times a second, but the UI/site-table only
+	// cares when the site's material identity/topology changes. Mirrors TETRA's
+	// edge-triggered publishSiteIdentity. See publishSiteUpdate.
+	lastSitePublish sitePublishState
 	// lastNoHitsAt throttles the "no FSW hits" debug log so the chunk-rate
 	// emission doesn't flood at debug level. See Process for the rationale.
 	lastNoHitsAt time.Time
@@ -2075,6 +2080,20 @@ func (c *ControlChannel) publishSiteUpdate() {
 	if net.RFSS == 0 && net.Site == 0 && net.SystemID == 0 && net.WACN == 0 {
 		return
 	}
+	// Edge-trigger the bus event. dispatchTSBK calls this after essentially
+	// every broadcast opcode (many per second), which floods the SSE feed with
+	// the full topology block; the site table and logs are idempotent, so we
+	// publish only when the site's material identity/topology actually changes
+	// — plus a slow heartbeat so the sites table's live carrier offset / TSBK
+	// error-rate (#815/#858) stay fresh without spamming. Mirrors TETRA's
+	// edge-triggered publishSiteIdentity.
+	topo := c.TopologySnapshot()
+	now := c.now()
+	fp := topo.Fingerprint()
+	if !c.lastSitePublish.shouldPublish(fp, c.freqHz, now) {
+		return
+	}
+	c.lastSitePublish.mark(fp, c.freqHz, now)
 	var carrierOffsetHz int32
 	if c.carrierOffsetHz != nil {
 		carrierOffsetHz = int32(math.Round(c.carrierOffsetHz()))
@@ -2098,11 +2117,47 @@ func (c *ControlChannel) publishSiteUpdate() {
 			SystemIDHex:                   trunking.IDHex(uint64(net.SystemID)),
 			RFSSIDHex:                     trunking.IDHex(uint64(net.RFSS)),
 			SiteIDHex:                     trunking.IDHex(uint64(net.Site)),
-			Topology:                      c.TopologySnapshot(),
-			At:                            c.now(),
+			Topology:                      topo,
+			At:                            now,
 		},
 	})
 	c.logSiteIdentity(net)
+}
+
+// siteUpdateHeartbeat bounds how long an unchanging site can go without
+// re-publishing a KindSiteUpdate. The event is edge-triggered on material
+// content, but the SiteUpdate payload also carries the live carrier offset
+// (#815) and TSBK error rate (#858) that the sites table surfaces, so a slow
+// heartbeat keeps those fresh without reintroducing the per-TSBK flood.
+const siteUpdateHeartbeat = 15 * time.Second
+
+// sitePublishState edge-triggers a control channel's KindSiteUpdate: it holds
+// the material-content fingerprint + tuned frequency of the last published
+// update and when it was sent. Publish when the content changes or the
+// heartbeat elapses.
+type sitePublishState struct {
+	fp          uint64
+	freqHz      uint32
+	publishedAt time.Time
+	have        bool
+}
+
+// shouldPublish reports whether a site update carrying fingerprint fp at freqHz
+// should be published now: on the first update, on any content/frequency
+// change, or once the heartbeat interval has elapsed.
+func (s *sitePublishState) shouldPublish(fp uint64, freqHz uint32, now time.Time) bool {
+	if !s.have || fp != s.fp || freqHz != s.freqHz {
+		return true
+	}
+	return now.Sub(s.publishedAt) >= siteUpdateHeartbeat
+}
+
+// mark records that an update with fingerprint fp at freqHz was published at now.
+func (s *sitePublishState) mark(fp uint64, freqHz uint32, now time.Time) {
+	s.fp = fp
+	s.freqHz = freqHz
+	s.publishedAt = now
+	s.have = true
 }
 
 // siteLogKey is the dedupe key for the concise site-configuration log line.

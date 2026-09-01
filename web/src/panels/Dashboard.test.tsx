@@ -89,6 +89,35 @@ describe("Dashboard landing", () => {
     expect(kinds[1]).toBe("audio.state"); // stale timestamp sinks below
   });
 
+  it("keeps the P25 site.update/channel.power flood out of the digest and groups duplicate grants", async () => {
+    // The P25 regression: a control channel rebroadcasts site.update ~10×/s
+    // (and channel.power once/s), burying real grants. The digest drops those
+    // diagnostic kinds and collapses identical repeated grants into one ×N row.
+    const grant = {
+      kind: "grant",
+      payload: { group_id: 1414, system: "P25-2C2-Ost", frequency_hz: 451_287_500 },
+    };
+    useShared.setState({
+      events: [
+        { ...grant, timestamp: "2026-08-29T23:51:27Z" },
+        { kind: "site.update", timestamp: "2026-08-29T23:51:27Z", payload: { system: "P25-2C2-Ost" } },
+        { kind: "channel.power", timestamp: "2026-08-29T23:51:27Z", payload: {} },
+        { ...grant, timestamp: "2026-08-29T23:51:28Z" },
+        { kind: "site.update", timestamp: "2026-08-29T23:51:28Z", payload: { system: "P25-2C2-Ost" } },
+        { ...grant, timestamp: "2026-08-29T23:51:29Z" },
+      ] as never,
+    });
+    renderDash();
+
+    // No diagnostic rows in the digest.
+    expect(screen.queryByText("site.update")).not.toBeInTheDocument();
+    expect(screen.queryByText("channel.power")).not.toBeInTheDocument();
+    // The three identical grants collapse to a single ×3 row.
+    const grantRows = screen.getAllByText("grant");
+    expect(grantRows).toHaveLength(1);
+    expect(screen.getByText("×3")).toBeInTheDocument();
+  });
+
   it("shows the active-call roster with the transmitting radio", async () => {
     useShared.setState({
       activeCalls: [

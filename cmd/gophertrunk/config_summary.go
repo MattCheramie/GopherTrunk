@@ -29,6 +29,7 @@ import (
 // built with — including defaults.
 func (d *Daemon) logConfigSummary() {
 	d.log.Info("daemon: config summary", summarizeGlobal(d.cfg)...)
+	d.warnRecordingDestination()
 	for _, s := range d.systems {
 		d.log.Info("daemon: system config",
 			"name", s.Name,
@@ -37,6 +38,29 @@ func (d *Daemon) logConfigSummary() {
 			"enhancements", systemEnhancements(s),
 		)
 	}
+}
+
+// warnRecordingDestination makes the silent decode-only mode observable. When
+// recordings.dir is empty the daemon builds a decode-only recorder that feeds
+// the live stream but writes NO .wav audio to disk (cmd/gophertrunk/daemon.go
+// buildRecorderAndVoiceDecoder), and nothing else logs that fact. An operator
+// who enabled baseband.voice_iq_debug or baseband.auto_record — which write
+// raw IQ under their OWN dirs, not audio — then sees IQ files land while no
+// recordings appear, with no clue why ("autorecord not working"). Surface it:
+// a loud WARN when a capture subsystem is enabled but recordings.dir is unset,
+// and a plain INFO for a deliberate decode-only setup.
+func (d *Daemon) warnRecordingDestination() {
+	if strings.TrimSpace(d.cfg.Recordings.Dir) != "" {
+		return
+	}
+	captureEnabled := d.cfg.Baseband.VoiceIQDebug.Enabled || d.cfg.Baseband.AutoRecord.Enabled
+	if captureEnabled {
+		d.log.Warn("daemon: recordings.dir is not set — decoded audio is NOT being recorded to disk " +
+			"(decode-only: live stream only, no .wav files). baseband.voice_iq_debug / baseband.auto_record " +
+			"write raw IQ under their own dirs, not audio — set recordings.dir to write .wav recordings.")
+		return
+	}
+	d.log.Info("daemon: recordings.dir not set — decode-only (live audio only, no .wav files written)")
 }
 
 // summarizeGlobal builds the slog key/value attrs for the daemon-wide decode
@@ -82,6 +106,16 @@ func summarizeGlobal(cfg config.Config) []any {
 		attrs = append(attrs, "diversity", strings.Join(diversity, ","))
 	} else {
 		attrs = append(attrs, "diversity", "off")
+	}
+
+	// Recording destination. Empty means the daemon runs a decode-only recorder
+	// (live audio only, no .wav files) — surfaced explicitly here, and warned
+	// about separately in warnRecordingDestination, because a silent decode-only
+	// mode is exactly what makes "autorecord not working" hard to diagnose.
+	if recDir := strings.TrimSpace(cfg.Recordings.Dir); recDir != "" {
+		attrs = append(attrs, "rec_dir", recDir)
+	} else {
+		attrs = append(attrs, "rec_dir", "(decode-only, no .wav files)")
 	}
 
 	// Recording / voice audio-shaping enhancements. spec_amplitude_enhance is a
