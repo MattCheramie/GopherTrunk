@@ -463,6 +463,11 @@ type pendingHit struct {
 	mbtHave   bool
 	mbtHeader MBTHeader
 	mbtData   []byte
+	// mbtMetric is the worst (highest) data-block Viterbi metric seen for
+	// this PDU — logged with a data CRC failure so a corrupt block is
+	// distinguishable from a layout bug in the record (a high metric means
+	// the trellis itself was marginal: RF residual errors, not parsing).
+	mbtMetric int
 }
 
 // FSWFallbackToleranceDefault is the wider frame-sync-word tolerance the
@@ -1120,8 +1125,11 @@ func (c *ControlChannel) resumeMBTBlocks(ph *pendingHit) bool {
 			ph.mbtData = make([]byte, 0, int(h.BlocksToFollow)*12)
 		} else {
 			ph.mbtData = append(ph.mbtData, info...)
+			if metric > ph.mbtMetric {
+				ph.mbtMetric = metric
+			}
 			if len(ph.mbtData) >= int(ph.mbtHeader.BlocksToFollow)*12 {
-				c.dispatchMBT(ph.mbtHeader, ph.mbtData, ph.nac)
+				c.dispatchMBT(ph.mbtHeader, ph.mbtData, ph.nac, ph.mbtMetric)
 				return false
 			}
 		}
@@ -1132,12 +1140,21 @@ func (c *ControlChannel) resumeMBTBlocks(ph *pendingHit) bool {
 
 // dispatchMBT validates a complete MBT's data-block CRC-32 and routes the
 // AMBT broadcast opcodes into the same network model the TSBK forms feed.
-// data is the concatenation of the message's 12-octet data blocks.
-func (c *ControlChannel) dispatchMBT(h MBTHeader, data []byte, nac uint16) {
+// data is the concatenation of the message's 12-octet data blocks; metric is
+// the worst data-block Viterbi metric (for the failure diagnostic).
+func (c *ControlChannel) dispatchMBT(h MBTHeader, data []byte, nac uint16, metric int) {
 	if err := ValidateMBTData(data); err != nil {
 		atomic.AddInt64(&c.stats.MBTDataCRCFailed, 1)
+		// Everything identifying this line (opcode, blocks, nac) comes from
+		// the HEADER block, which passed its own CCITT-16 — only a data
+		// block is corrupt. So this line next to a decoded broadcast with
+		// the same identity is two different PDU frames, not one frame
+		// both failing and passing (the header repeats every broadcast).
+		// The Viterbi metric says how marginal the failing block was.
 		c.log.Debug("p25: MBT data CRC failed",
-			"opcode", h.Opcode, "blocks", h.BlocksToFollow, "nac", nac)
+			"opcode", ambtOpcodeLabel(h), "blocks", h.BlocksToFollow,
+			"metric", metric, "nac", nac,
+			"cause", "corrupt data block (header decoded clean; identity fields above are the header's)")
 		return
 	}
 	atomic.AddInt64(&c.stats.MBTDecoded, 1)
@@ -1179,8 +1196,24 @@ func (c *ControlChannel) dispatchMBT(h MBTHeader, data []byte, nac uint16) {
 		c.publishSiteUpdate()
 	default:
 		c.log.Debug("p25: unhandled AMBT opcode",
-			"opcode", h.Opcode, "mfid", h.MFID, "blocks", h.BlocksToFollow, "nac", nac)
+			"opcode", ambtOpcodeLabel(h), "mfid", h.MFID, "blocks", h.BlocksToFollow, "nac", nac)
 	}
+}
+
+// ambtOpcodeLabel names an AMBT header opcode for logging. Only the AMBT
+// forms GT decodes get a mnemonic; everything else renders numerically —
+// rendering an arbitrary AMBT (or inbound ISP) opcode through the TSBK OSP
+// String() map would mislabel it with a standard name that does not apply,
+// the same hazard logUnhandledTSBK documents for vendor opcodes. A vendor
+// MFID always renders numerically for the same reason.
+func ambtOpcodeLabel(h MBTHeader) string {
+	if h.MFID == 0 {
+		switch h.Opcode {
+		case OpNetworkStatusBroadcast, OpRFSSStatusBroadcast, OpAdjacentSiteStatusBroadcast:
+			return h.Opcode.String()
+		}
+	}
+	return fmt.Sprintf("AMBT(0x%02X)", uint8(h.Opcode))
 }
 
 // nidGuess is one evaluated NID-alignment hypothesis: the NID read from
@@ -1774,7 +1807,12 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 	// test can name and reverse any alias-bearing transport we don't yet
 	// decode, while the per-frame detail stays at Debug.
 	c.logUnhandledTSBK(t, nac)
-	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
+	// Numeric opcode only: Opcode.String() is the STANDARD OSP mnemonic map,
+	// so naming a vendor opcode through it mislabels (MFID 0x90 opcode 0x00
+	// would log as GRP_V_CH_GRANT) — the exact hazard logUnhandledTSBK's doc
+	// records.
+	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID,
+		"opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)), "nac", nac)
 }
 
 // diagnostic key namespaces for diagSeen — the high byte separates
