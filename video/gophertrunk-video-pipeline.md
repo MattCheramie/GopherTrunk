@@ -310,5 +310,36 @@ file-send as it's finished. Do NOT open a PR unless asked.
   imageio-ffmpeg's static build has everything (x264, aac, loudnorm, drawtext, soxr).
 - Chromium lives at `/opt/pw-browsers/chromium-<rev>/chrome-linux/chrome` — glob it,
   the plain `chromium` path is a directory stub.
-- 1080p30 screenshot-render throughput ≈ 16 fps with `preset fast` encode in the same
-  pipe — budget ~2× realtime for renders.
+- 1080p30 screenshot-render throughput ≈ 10–16 fps with `preset fast` encode in the same
+  pipe — budget ~2–3× realtime for renders (verticals are similar).
+
+**2026-08-31/09-01 · GT-RF-01 pilot, production pass (what actually bit):**
+- **ffmpeg `loudnorm` resamples to 96 kHz** unless you pass `-ar 48000` on the output;
+  and its `print_format=json` block has trailing chatter after the closing `}` — parse
+  only up to the first `}` after the last `{`.
+- **File delivery caps at 30 MiB per file** in the conversation channel. The 21-minute
+  pilot (67 MB) was split losslessly at piece boundaries (`-ss/-to … -c copy` — every
+  concat piece starts on an IDR frame, so boundary cuts are exact).
+- **Never animate `transform` for entrances** — it clobbers `translate(-50%,-50%)`
+  centering. Use the separate CSS `translate` property for the lift; `transform` stays
+  free for layout.
+- The script parser keeps an em-dash description in the visual name
+  (`"numbers-flying — absurd numbers…"`) — normalize with `v.split("—")[0].trim()` in
+  the engine, or keep `[V: name | args]` pipe-form for anything with arguments.
+- **Piper/espeak pronunciation dictionary** (verified via phonemizer, not by ear):
+  `AM→A-M`, `IQ→I-Q`, `UHF→U-H-F`, `FEC→F-E-C`, `EVM→E-V-M`, `QAM→kwam`, `LED→L-E-D`;
+  hyphenated single letters read correctly mid-sentence with no pause; FM/SNR/SDR/FSK/
+  PSK/DMR/NXDN/TETRA/"P25"/C4FM/DQPSK are all fine as written. Write VO numbers out
+  ("one hundred sixty-two point five five zero megahertz").
+- **Vertical wrapper trick**: load the 16:9 scene in an `<iframe>` scaled 0.7 into a
+  1080-wide band (center 1543 px of the stage survives; compose accordingly) —
+  Playwright's `add_init_script` injects `TIMELINE` into every frame including the
+  iframe, and the wrapper proxies `seek()` with a +2 s offset to skip the title card
+  behind its burned hook. No scene refactor needed.
+- Physics QC catches things synthetic checks don't: the first BER-"waterfall" curve
+  rendered inverted (errors rising with SNR), and E/B field arrows were drawn 90° out
+  of phase (far-field E and B are in phase). Review rendered frames against the claim
+  being narrated, not just for layout.
+- One article erratum surfaced while scripting: `docs/reference/phase.md` attributes
+  π/4-DQPSK to "P25 Phase 1" (Phase 1 is C4FM; π/4-DQPSK is the CQPSK/LSM and TETRA
+  side). The scripts avoid repeating it; the article should be corrected.
