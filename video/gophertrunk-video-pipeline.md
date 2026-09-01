@@ -340,3 +340,13 @@ file-send as it's finished. Do NOT open a PR unless asked.
 - Clip spans need checking at TTS time, not render time: one `[CLIP]` span measured
   23 s (< the 30 s floor) and was fixed by moving the end mark one beat later in the
   script, then re-running that segment's TTS only.
+- **imageio-ffmpeg 7.0.2 has NO drawtext filter** (contradicts the 2026-08-31 note —
+  that build differed). Burn text via a Chromium-rendered transparent PNG +
+  `overlay=enable='lt(t,2.2)'` instead; shorts.py does this now.
+- ffmpeg concat-demuxer list files resolve relative paths against the LIST file's
+  directory — write absolute paths into concat.txt.
+- AAC encoding overshoots true peak by up to ~0.6 dB after a limiter; set the
+  alimiter ceiling 0.6 dB below the TP target or the QC gate fails by 0.1–0.5 dB.
+- Conversation file-send caps at 30 MiB: a full pillar exceeds it. Split at chapter
+  boundaries by re-concatenating the per-piece mixes (lossless) and loudnorm each
+  part — do not re-encode the whole master to squeeze under the cap.

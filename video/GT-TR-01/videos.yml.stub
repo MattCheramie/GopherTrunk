@@ -1,0 +1,22 @@
+# videos.yml stub — GT-TR-01 pillar chapter offsets
+videos:
+  - slug: trunked-radio
+    seg: GT-TR-01.01
+    start_s: 97.8
+    end_s: 268.1
+  - slug: control-channel
+    seg: GT-TR-01.02
+    start_s: 279.0
+    end_s: 443.7
+  - slug: talkgroup
+    seg: GT-TR-01.03
+    start_s: 454.7
+    end_s: 607.0
+  - slug: channel-grant
+    seg: GT-TR-01.04
+    start_s: 617.7
+    end_s: 777.6
+  - slug: fdma
+    seg: GT-TR-01.05
+    start_s: 790.0
+    end_s: 955.6

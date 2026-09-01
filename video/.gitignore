@@ -4,3 +4,4 @@ _render/
 *.mp3
 *.onnx
 *.onnx.json
+__pycache__/

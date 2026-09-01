@@ -66,7 +66,7 @@ def loudnorm(inp, out, I=-14.0, tp=-1.5):
         "-af", (f"loudnorm=I={I}:TP={tp}:LRA=11:measured_I={j['input_i']}:"
                 f"measured_TP={j['input_tp']}:measured_LRA={j['input_lra']}:"
                 f"measured_thresh={j['input_thresh']}:offset={j['target_offset']}:"
-                f"linear=true,alimiter=limit={10**(tp/20):.4f}:level=false"),
+                f"linear=true,alimiter=limit={10**((tp-0.6)/20):.4f}:level=false"),
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(out))
 
 
@@ -78,7 +78,7 @@ def pillar(renderdir, outdir, tldir):
         if not f.exists():
             raise SystemExit(f"missing piece {f}")
     lst = renderdir / "concat.txt"
-    lst.write_text("".join(f"file '{f}'\n" for f in files))
+    lst.write_text("".join(f"file '{f.resolve()}'\n" for f in files))
     raw = renderdir / "pillar.raw.mp4"
     run(FF, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
         "-i", str(lst), "-c", "copy", str(raw))
