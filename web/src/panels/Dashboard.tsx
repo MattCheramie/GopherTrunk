@@ -14,7 +14,18 @@ import {
   liveCallCount,
 } from "../hooks/useLingeringActiveCalls";
 import { selectClientConfig, useShared } from "../store/shared";
+import { groupEvents } from "../lib/groupEvents";
 import type { EventDTO } from "../api/types";
+
+// DIGEST_EXCLUDE names the high-frequency status/diagnostic event kinds that
+// don't belong in the human "what happened" digest: a P25 control channel
+// rebroadcasts site.update many times a second (and channel.power ticks once a
+// second per active channel), which buried the actual grants/affiliations under
+// a wall of repeats. They're still available in full on the CC Activity, Sites
+// and Signal panels — this only trims the dashboard summary. (TETRA never
+// spammed the feed because its site publish is edge-triggered; the P25 backend
+// now edge-triggers too, but the feed is a summary either way.)
+const DIGEST_EXCLUDE = new Set(["site.update", "channel.power"]);
 
 // Dashboard — the operations landing. Trunking scanners lead with the two
 // core tasks (scan / hunt) and a live "who's talking now" roster, not a
@@ -216,27 +227,31 @@ export function Dashboard() {
         ) : (
           <ul className="space-y-1 text-xs font-mono max-h-72 overflow-auto">
             {/*
-              Order by the event's own wall-clock timestamp, newest first —
-              NOT by store arrival order. The events ring is appended in
-              arrival order (store/shared.ts appendEvents), so a late-arriving
-              event that carries an older timestamp (e.g. an audio.state
-              re-pushed on a state change) sits at the end of the ring and a
-              plain .reverse() floated it to the top. Same fix as the Events
-              tab (localeCompare on the ISO timestamp, descending).
+              A digest, not the raw firehose: drop the high-frequency status
+              kinds (DIGEST_EXCLUDE) and collapse identical repeats (e.g. a
+              grant re-sent every few seconds) into one row with an ×N count via
+              groupEvents — the same de-dup CC Activity uses. Then order by the
+              event's own wall-clock timestamp, newest first (NOT store arrival
+              order): the events ring is appended in arrival order, so a late-
+              arriving event carrying an older timestamp (e.g. an audio.state
+              re-push) would float to the top under a plain reverse().
             */}
-            {[...events]
-              .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+            {groupEvents(events.filter((ev) => !DIGEST_EXCLUDE.has(ev.kind)))
+              .sort((a, b) => b.lastTimestamp.localeCompare(a.lastTimestamp))
               .slice(0, 40)
-              .map((ev, i) => (
-                <li key={`${ev.timestamp}-${i}`} className="flex gap-3">
+              .map((g, i) => (
+                <li key={`${g.lastTimestamp}-${i}`} className="flex gap-3">
                   <span className="text-muted shrink-0">
-                    {ev.timestamp.replace("T", " ").replace(/\..*$/, "")}
+                    {g.lastTimestamp.replace("T", " ").replace(/\..*$/, "")}
                   </span>
                   <span className="text-accent shrink-0 w-28 truncate">
-                    {ev.kind}
+                    {g.event.kind}
+                    {g.count > 1 ? (
+                      <span className="ml-1 text-muted">×{g.count}</span>
+                    ) : null}
                   </span>
                   <span className="truncate text-fg/80">
-                    {summarizeEvent(ev)}
+                    {summarizeEvent(g.event)}
                   </span>
                 </li>
               ))}

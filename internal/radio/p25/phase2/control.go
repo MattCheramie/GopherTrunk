@@ -98,6 +98,11 @@ type ControlChannel struct {
 	netWACN  uint32
 	netSysID uint16
 	nac      uint16
+	// lastSitePublish edge-triggers the KindSiteUpdate bus event so a steady
+	// Phase 2 CC (which rebroadcasts NSB/RFSS status many times a second)
+	// publishes once per identity change, not per broadcast — mirroring Phase 1
+	// and TETRA. Guarded by mu. See publishSiteUpdate.
+	lastSitePublish sitePublishState
 
 	// macDecoded counts MAC PDUs that reached Ingest, i.e. those that
 	// cleared trellis + RS + CRC in DecodeSuperframeMACPDUs. It is the
@@ -806,6 +811,44 @@ func (c *ControlChannel) siteIdentity() (rfss, site uint8, nac uint16) {
 	return c.siteRFSS, c.siteSite, c.nac
 }
 
+// siteUpdateHeartbeat bounds how long a steady Phase 2 site can go without
+// re-publishing a KindSiteUpdate, so the sites table's LastSeen stays fresh
+// while the per-broadcast flood is suppressed. Matches the Phase 1 value.
+const siteUpdateHeartbeat = 15 * time.Second
+
+// sitePublishState edge-triggers KindSiteUpdate on a fingerprint of the site's
+// material identity plus the tuned frequency (Phase 2 carries no topology).
+type sitePublishState struct {
+	fp          uint64
+	freqHz      uint32
+	publishedAt time.Time
+	have        bool
+}
+
+func (s *sitePublishState) shouldPublish(fp uint64, freqHz uint32, now time.Time) bool {
+	if !s.have || fp != s.fp || freqHz != s.freqHz {
+		return true
+	}
+	return now.Sub(s.publishedAt) >= siteUpdateHeartbeat
+}
+
+func (s *sitePublishState) mark(fp uint64, freqHz uint32, now time.Time) {
+	s.fp = fp
+	s.freqHz = freqHz
+	s.publishedAt = now
+	s.have = true
+}
+
+// sitePublishFingerprint packs the Phase 2 site identity scalars into a single
+// comparison key. RFSS/Site are 8-bit, System ID 16-bit, WACN 20-bit — all fit
+// with room to spare in 64 bits.
+func sitePublishFingerprint(rfss, site uint8, wacn uint32, sysid uint16) uint64 {
+	return uint64(rfss) |
+		uint64(site)<<8 |
+		uint64(sysid)<<16 |
+		uint64(wacn)<<32
+}
+
 // publishSiteUpdate emits a KindSiteUpdate naming the site this Phase 2
 // control channel is camped on, joining the decoded RFSS/Site identity
 // to the tuned frequency. The SiteTracker accumulates these into GET
@@ -816,13 +859,26 @@ func (c *ControlChannel) publishSiteUpdate() {
 	if c.bus == nil {
 		return
 	}
+	now := c.now()
 	c.mu.Lock()
 	rfss, site, wacn, sysid := c.siteRFSS, c.siteSite, c.netWACN, c.netSysID
-	c.mu.Unlock()
 	// Publish once any identity scalar is known. WACN/System ID come only
 	// from the NSB and RFSS/Site only from the RFSS Status Broadcast, so an
 	// NSB-only or RFSS-only site must still surface (mirrors Phase 1's gate).
 	if rfss == 0 && site == 0 && wacn == 0 && sysid == 0 {
+		c.mu.Unlock()
+		return
+	}
+	// Edge-trigger like Phase 1: the payload carries no topology, so the
+	// content fingerprint is just the identity + tuned frequency. A heartbeat
+	// keeps the sites table's LastSeen fresh on a steady site.
+	fp := sitePublishFingerprint(rfss, site, wacn, sysid)
+	publish := c.lastSitePublish.shouldPublish(fp, c.freqHz, now)
+	if publish {
+		c.lastSitePublish.mark(fp, c.freqHz, now)
+	}
+	c.mu.Unlock()
+	if !publish {
 		return
 	}
 	c.bus.Publish(events.Event{
@@ -834,7 +890,7 @@ func (c *ControlChannel) publishSiteUpdate() {
 			ControlChannelHz: c.freqHz,
 			WACN:             wacn,
 			SystemID:         sysid,
-			At:               c.now(),
+			At:               now,
 		},
 	})
 }
