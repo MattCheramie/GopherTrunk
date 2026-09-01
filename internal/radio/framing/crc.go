@@ -71,3 +71,49 @@ func CRCCCITTAugmented(msg []byte) uint16 {
 	crc ^= 0xFFFF
 	return uint16(crc & 0xFFFF)
 }
+
+// CRC12P25P2 returns the 12-bit CRC that protects a P25 Phase 2 ACCH
+// (FACCH-S / SACCH-S) MAC PDU, computed over msg as a bit slice (each entry
+// 0/1, MSB-first). It is the inner integrity check under the outer
+// RS(63,35,29): the PDU is trusted only when this closes.
+//
+// Polynomial x¹²+x¹¹+x⁷+x⁴+x²+x+1, computed as a plain polynomial division of
+// the message augmented with 12 zero bits, with the remainder inverted
+// (final XOR 0xFFF). Both reference decoders compute it this way.
+//
+// Verified on real air: over a real P25 Phase 2 traffic-channel capture
+// this
+// accepts exactly the bursts SDRtrunk accepts, and the PDUs it passes are
+// byte-identical to SDRtrunk's.
+func CRC12P25P2(msg []byte) uint16 {
+	poly := [13]byte{1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1}
+	buf := make([]byte, len(msg)+12)
+	copy(buf, msg)
+	for i := range msg {
+		if buf[i] != 0 {
+			for j := range poly {
+				buf[i+j] ^= poly[j]
+			}
+		}
+	}
+	var crc uint16
+	for i := 0; i < 12; i++ {
+		crc = crc<<1 | uint16(buf[len(msg)+i])
+	}
+	return crc ^ 0xFFF
+}
+
+// CRC12P25P2OK reports whether a complete ACCH message — information bits
+// followed by their 12 CRC bits — satisfies CRC12P25P2. A 156-bit FACCH-S
+// message carries 144 information bits; a 180-bit SACCH-S message, 168.
+func CRC12P25P2OK(msg []byte) bool {
+	if len(msg) < 13 {
+		return false
+	}
+	n := len(msg) - 12
+	var got uint16
+	for i := 0; i < 12; i++ {
+		got = got<<1 | uint16(msg[n+i])
+	}
+	return got == CRC12P25P2(msg[:n])
+}
