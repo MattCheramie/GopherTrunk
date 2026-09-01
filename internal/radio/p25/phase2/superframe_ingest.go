@@ -1,5 +1,7 @@
 package phase2
 
+import "sync"
+
 // MACPayloadOffset is the dibit offset of the MAC PDU within a
 // 180-dibit sub-frame: it follows the SyncDibits-wide region and the
 // ISCH, sharing the same start as a voice sub-frame's first voice
@@ -73,92 +75,187 @@ type DecodedMACPDU struct {
 	RSValid bool
 }
 
-// DecodeSuperframeMACPDUsWithSlot returns every successfully decoded MAC
-// PDU found in sf's MAC-typed sub-frames, in sub-frame order, each
-// tagged with the SlotType of the sub-frame it came from. Voice
-// sub-frames are skipped. It is the slot-aware form of
-// DecodeSuperframeMACPDUs; callers that route on the PTT slot
-// (encryption sync) use this one.
+// sISCHSlots are the six superframe slots that carry the S-ISCH, and so the
+// only slots a superframe anchor can land on: the SuperframeDecoder locks onto
+// the outbound frame sync, which is transmitted in these and only these.
 //
-// The PN44 descrambler is handed the sub-frame's channel-bit offset
-// (slotChannelPN44Offset) because superframe sync pins which of the 12
-// TDMA slots each sub-frame occupies, and the descramble runs on the
-// coded channel bits before FEC (issue #915).
+// Both reference decoders agree on the set, and real air confirms it from two
+// directions — the sync arrives at inter-hit deltas of 540, 180, 540, 180
+// dibits, and every scramble phase that ever decodes a burst resolves to one
+// of these six. Searching six candidates rather than twelve halves the
+// exposure to a false accept.
+var sISCHSlots = [6]int{2, 3, 6, 7, 10, 11}
+
+// voiceSlotVoteMaxErrs is how many bits the Golay may correct in a voice
+// burst's first frame and still have that burst vote for a slot phase.
+//
+// Zero. The vote is a discriminator, not a decoder: at the right phase a clean
+// frame needs no correction at all, while a wrong phase leaves the decoder
+// working near its radius of 3. Allowing even one correction lets a wrong
+// phase collect votes from noise, and a wrong phase that wins the vote costs
+// the whole superframe — both its signalling and its audio.
+const voiceSlotVoteMaxErrs = 0
+
+// scrambleCache memoises the 4320-bit PN44 sequence per seed. A channel's seed
+// never changes mid-call, so this turns a per-superframe LFSR run into a map
+// lookup. Entries are read-only once stored.
+var scrambleCache sync.Map // uint64 seed -> []byte
+
+func cachedScrambleSequence(seed uint64) []byte {
+	if v, ok := scrambleCache.Load(seed); ok {
+		return v.([]byte)
+	}
+	seq := ScrambleSequence(seed)
+	scrambleCache.Store(seed, seq)
+	return seq
+}
+
+// ResolveSuperframeSlotOffset finds the constant that maps a sub-frame's Index
+// to its true slot within the scrambling sequence, and reports how many ACCH
+// bursts decoded under it. Exported for the voice path, which needs the same
+// slot to descramble a voice burst; score <= 0 means no offset was resolved
+// and nothing in the superframe can be descrambled.
+//
+// The superframe anchor is whichever S-ISCH slot the sync matched, so Index is
+// offset from the true slot by an amount that is fixed for the superframe but
+// unknown to the decoder. This resolves it by vote: each candidate offset is
+// scored by how many of the superframe's ACCH bursts decode under it, and the
+// best is taken.
+//
+// Voting over the whole superframe is what makes this safe. A wrong offset
+// turns a burst into noise, and noise clears the outer RS about once in a
+// billion and the CRC-12 once in 4096 — but for a wrong offset to win a vote
+// it would have to do that on more bursts than the correct offset does, which
+// does not happen. Deciding per burst instead, as the field probe does, gives
+// up that margin.
+func ResolveSuperframeSlotOffset(sf Superframe, seq []byte) (offset, score int) {
+	return resolveSuperframeSlotOffset(sf, seq)
+}
+
+func resolveSuperframeSlotOffset(sf Superframe, seq []byte) (offset, score int) {
+	// Score with the cheap CRC-only probe first. It sees any burst the air
+	// delivered intact, which is nearly all of them, and costs a fraction of
+	// the full decode. A superframe whose only signalling burst needs the
+	// outer RS to close would score zero under it, so fall back to the full
+	// decode rather than declaring the superframe unresolvable.
+	if off, n := resolveSlotOffsetScored(sf, seq, false); n > 0 {
+		return off, n
+	}
+	return resolveSlotOffsetScored(sf, seq, true)
+}
+
+func resolveSlotOffsetScored(sf Superframe, seq []byte, deep bool) (offset, score int) {
+	// How many bursts could vote at all, so a candidate that satisfies every
+	// one of them can be taken without scoring the rest.
+	eligible := 0
+	for _, sub := range sf.Subframes {
+		if len(sub.Dibits) < BurstDibits {
+			continue
+		}
+		if bt := BurstTypeOf(sub.Dibits); bt.IsACCH() || bt.IsVoice() {
+			eligible++
+		}
+	}
+	best, bestScore := 0, -1
+	for _, cand := range sISCHSlots {
+		n := 0
+		for _, sub := range sf.Subframes {
+			if len(sub.Dibits) < BurstDibits {
+				continue
+			}
+			slot := (sub.Index + cand) % SubframesPerSuperframe
+			switch bt := BurstTypeOf(sub.Dibits); {
+			case bt.IsACCH():
+				ok := acchSlotProbe(sub.Dibits, slot, seq)
+				if !ok && deep {
+					_, ok = DecodeACCHBurst(sub.Dibits, slot, seq)
+				}
+				if ok {
+					n++
+				}
+			case bt.IsVoice():
+				// A voice burst votes too. Its AMBE codewords are
+				// Golay-protected, so the right phase leaves the FEC with
+				// almost nothing to correct while a wrong one sits near the
+				// correction radius on every frame — a margin wide enough to
+				// separate the phases on its own. Without this a superframe
+				// of nothing but voice could not be descrambled at all,
+				// because it carries no signalling to resolve the phase from.
+				if errs, ok := voiceSlotProbe(sub.Dibits, slot, seq); ok && errs <= voiceSlotVoteMaxErrs {
+					n++
+				}
+			}
+		}
+		if n > bestScore {
+			best, bestScore = cand, n
+		}
+		if bestScore == eligible && eligible > 0 {
+			break // nothing can beat a clean sweep
+		}
+	}
+	return best, bestScore
+}
+
+// DecodeSuperframeMACPDUsWithSlot returns every MAC PDU found in sf's ACCH
+// bursts, in sub-frame order, each tagged with the channel state of the burst
+// it rode in.
+//
+// A burst is selected by its DUID — the 8-bit code scattered through the
+// payload that names the burst type — not by the ISCH SlotType, which this
+// package models on a working assumption rather than the spec. The DUID is
+// authoritative, it is protected by its own (8,4) code, and it is what both
+// reference decoders dispatch on.
+//
+// One ACCH burst yields one *message*, which may carry several MAC structures;
+// each becomes a DecodedMACPDU, all sharing the burst's channel state and FEC
+// verdict. That is why a single GROUP VOICE CHANNEL USER burst can also report
+// the neighbour site it was packed alongside.
+//
+// Only cfg.Seed is consulted. The Trellis / RS / Interleave / Scrambler mode
+// fields configured a FEC chain that never decoded real air (issue #915) and
+// are inert; see MACDecodeConfig.
 func DecodeSuperframeMACPDUsWithSlot(sf Superframe, cfg MACDecodeConfig) []DecodedMACPDU {
-	macLen := macPDUDibits
-	if cfg.Trellis == TrellisOn {
-		macLen = macPDUDibitsTrellis
+	seq := cachedScrambleSequence(cfg.Seed)
+	offset, score := resolveSuperframeSlotOffset(sf, seq)
+	if score <= 0 {
+		return nil
 	}
 	var out []DecodedMACPDU
 	for _, sub := range sf.Subframes {
-		if !sub.SlotType.IsMAC() {
+		if len(sub.Dibits) < BurstDibits || !BurstTypeOf(sub.Dibits).IsACCH() {
 			continue
 		}
-		if len(sub.Dibits) < MACPayloadOffset+macLen {
+		slot := (sub.Index + offset) % SubframesPerSuperframe
+		res, ok := DecodeACCHBurst(sub.Dibits, slot, seq)
+		if !ok {
 			continue
 		}
-		macDibits := sub.Dibits[MACPayloadOffset : MACPayloadOffset+macLen]
-		offset := slotChannelPN44Offset(sub.Index)
-		var pdu MACPDU
-		var ok bool
-		if len(sub.Soft) >= MACPayloadOffset+macLen {
-			// Soft-decision path (issue #915): true per-bit soft Viterbi over
-			// the diagonal-frame differential. Byte-identical to the hard path
-			// on a clean signal; recovers ~1.5-2 dB otherwise.
-			soft := sub.Soft[MACPayloadOffset : MACPayloadOffset+macLen]
-			pdu, ok = decodeMACPDUDibitsSoftC(macDibits, soft, cfg.Trellis, cfg.RS,
-				cfg.Interleave, cfg.Scrambler, cfg.Seed, offset)
-		} else {
-			pdu, ok = decodeMACPDUDibits(macDibits, cfg.Trellis, cfg.RS,
-				cfg.Interleave, cfg.Scrambler, cfg.Seed, offset)
+		msg, err := ParseACCHMessage(res.Message)
+		if err != nil {
+			continue
 		}
-		if ok {
-			out = append(out, DecodedMACPDU{
-				SlotType: sub.SlotType,
-				PDU:      pdu,
-				RSValid:  verifyMACPDURS(AssembleMACPDU(pdu)),
-			})
+		st := msg.Type.SlotType()
+		for _, pdu := range msg.Structures {
+			out = append(out, DecodedMACPDU{SlotType: st, PDU: pdu, RSValid: res.RSValid})
 		}
 	}
 	return out
 }
 
-// DecodeSuperframeMACPDUsWithSlotPinned is DecodeSuperframeMACPDUsWithSlot
-// with a self-aligning ScramblerProbe. When cfg.Scrambler is ScramblerProbe
-// and pin is non-nil, each MAC sub-frame is descrambled at the channel phase
-// the pin has discovered (or, until one is found, an RS-gated sweep of the
-// full 4320-bit sequence), so probe recovers a channel whose true intra-slot
-// PN44 offset differs from GopherTrunk's superframe-grid assumption
-// (slotChannelPN44Offset) — the mac_rs_valid=0 case in issue #915, Finding B.
-// The slot-base-only sweep in DecodeSuperframeMACPDUsWithSlot holds that
-// intra-slot offset fixed, so it cannot. For any other scrambler mode, or a
-// nil pin, this is identical to DecodeSuperframeMACPDUsWithSlot.
-func DecodeSuperframeMACPDUsWithSlotPinned(sf Superframe, cfg MACDecodeConfig, pin *ScramblerPin) []DecodedMACPDU {
-	if pin == nil || cfg.Scrambler != ScramblerProbe {
-		return DecodeSuperframeMACPDUsWithSlot(sf, cfg)
-	}
-	macLen := macPDUDibits
-	if cfg.Trellis == TrellisOn {
-		macLen = macPDUDibitsTrellis
-	}
-	var out []DecodedMACPDU
-	for _, sub := range sf.Subframes {
-		if !sub.SlotType.IsMAC() {
-			continue
-		}
-		if len(sub.Dibits) < MACPayloadOffset+macLen {
-			continue
-		}
-		macDibits := sub.Dibits[MACPayloadOffset : MACPayloadOffset+macLen]
-		if pdu, ok := pin.probeSubframe(macDibits, cfg.Trellis, cfg.Interleave, cfg.Seed, sub.Index); ok {
-			out = append(out, DecodedMACPDU{
-				SlotType: sub.SlotType,
-				PDU:      pdu,
-				RSValid:  verifyMACPDURS(AssembleMACPDU(pdu)),
-			})
-		}
-	}
-	return out
+// DecodeSuperframeMACPDUsWithSlotPinned is retained for callers that still
+// pass a ScramblerPin; it delegates to DecodeSuperframeMACPDUsWithSlot and
+// ignores the pin.
+//
+// The pin existed to hunt for a channel's true intra-slot PN44 offset by
+// sweeping the whole 4320-bit sequence, because the superframe-grid assumption
+// put the MAC payload at the wrong place and nothing ever descrambled (issue
+// #915, Finding B). The offset is no longer unknown: the payload begins at
+// burst dibit 20 and the sequence origin at slot 0 bit 20, both confirmed
+// against two independent decoders and real air, and what remains — which
+// S-ISCH slot the superframe anchored on — is resolved per superframe by
+// resolveSuperframeSlotOffset. There is nothing left to sweep for.
+func DecodeSuperframeMACPDUsWithSlotPinned(sf Superframe, cfg MACDecodeConfig, _ *ScramblerPin) []DecodedMACPDU {
+	return DecodeSuperframeMACPDUsWithSlot(sf, cfg)
 }
 
 // DecodeSuperframeMACPDUs returns every successfully decoded MAC PDU

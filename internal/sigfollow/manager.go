@@ -219,6 +219,13 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 	}
 
 	sfDec := p25p2.NewSuperframeDecoder()
+	// Same carrier watchdog the composer's voice chain runs: the receiver
+	// takes its coarse carrier estimate once and never retakes it, so a
+	// signalling tap that drifts past the Costas loop stays lost for the rest
+	// of the follow. The reset is applied between IQ chunks, never from
+	// inside the receiver's own sink (issue #915).
+	carrierWD := p25p2.NewCarrierWatchdog(0)
+	reacquire := false
 	dispatcher := NewMACDispatcher(MACDispatcherOptions{
 		Bus:       m.bus,
 		Log:       m.log,
@@ -251,11 +258,19 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true
 		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
-			drainSuperframes(sfDec.ProcessSoft(dibits, soft, baseIdx))
+			sfs := sfDec.ProcessSoft(dibits, soft, baseIdx)
+			if carrierWD.Observe(len(dibits), len(sfs)) {
+				reacquire = true
+			}
+			drainSuperframes(sfs)
 		}
 	} else {
 		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
-			drainSuperframes(sfDec.Process(dibits, baseIdx))
+			sfs := sfDec.Process(dibits, baseIdx)
+			if carrierWD.Observe(len(dibits), len(sfs)) {
+				reacquire = true
+			}
+			drainSuperframes(sfs)
 		}
 	}
 	rx := p25p2rx.New(rxOpts)
@@ -289,6 +304,12 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 				return
 			}
 			rx.Process(iq)
+			if reacquire {
+				rx.Reset()
+				sfDec.Reset()
+				carrierWD.Reset()
+				reacquire = false
+			}
 		}
 	}
 }

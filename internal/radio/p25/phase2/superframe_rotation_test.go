@@ -19,7 +19,6 @@ import "testing"
 func TestSuperframeDecoderLocksUnderDibitRotation(t *testing.T) {
 	// A superframe carrying a known grant in sub-frame 0, voice elsewhere.
 	grant := grantPDU(0x1234, 0x00ABCD, 0x1, 0x005)
-	grant.Payload = append(grant.Payload, make([]byte, 17-len(grant.Payload))...)
 	var subs [SubframesPerSuperframe][]uint8
 	for i := range subs {
 		if i == 0 {

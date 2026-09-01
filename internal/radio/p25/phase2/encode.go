@@ -3,7 +3,6 @@ package phase2
 import (
 	"encoding/binary"
 
-	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
@@ -51,60 +50,70 @@ func EncodeSuperframe(subframes [SubframesPerSuperframe][]uint8) []uint8 {
 	return out
 }
 
-// EncodeMACSubframe builds a DibitsPerSubframe-long MAC sub-frame: the
-// ISCH for slotType (which must be a MAC SlotType) at counter, followed
-// by the FEC-encoded MAC PDU at MACPayloadOffset. It is the inverse of
-// the slice + decodeMACPDUDibits step IngestSuperframe runs. The PDU is
-// assembled and zero-padded/truncated to the 18-byte (144-bit) MAC PDU
-// width; mode and interleave must match the decoder's configuration.
-// Panics if slotType is not a MAC SlotType.
+// FixtureAnchorSlot is the true superframe slot that synthesized fixtures put
+// at sub-frame index 0. It must be one of the six S-ISCH slots, since those are
+// the only slots that carry the frame sync a superframe can anchor on — a
+// fixture built at any other offset is one no receiver could ever produce, and
+// DecodeSuperframeMACPDUsWithSlot will not resolve it.
+const FixtureAnchorSlot = 2
+
+// EncodeMACSubframe builds a BurstDibits-long ACCH sub-frame carrying pdu as
+// its single MAC structure, with the channel state taken from slotType. It is
+// the inverse of the decode DecodeSuperframeMACPDUsWithSlot runs, and produces
+// an unscrambled FACCH-S burst so no seed is needed.
+//
+// mode and interleave are ignored. They selected between a trellis code and an
+// interleaver that the P25 Phase 2 ACCH does not have — a model this package
+// carried until the layer was decoded against real air (issue #915) — and are
+// kept only so existing callers compile.
 func EncodeMACSubframe(slotType SlotType, counter uint8, pdu MACPDU, mode TrellisMode, interleave InterleaveMode) []uint8 {
 	if !slotType.IsMAC() {
 		panic("p25/phase2: EncodeMACSubframe slotType is not a MAC SlotType")
 	}
-	macBytes := AssembleMACPDU(pdu)
-	full := make([]byte, 18)
-	copy(full, macBytes) // pad short / truncate long to the 144-bit MAC PDU
-	infoDibits := framing.BitsToDibits(framing.UnpackBitsMSB(full, 144))
-
-	channelDibits := infoDibits
-	if mode == TrellisOn {
-		channelDibits = framing.EncodeP25Trellis(infoDibits)
-	}
-	if interleave == InterleaveOn {
-		channelDibits = framing.InterleaveMACBurst(channelDibits)
-	}
-
-	sub := IdleSubframe()
-	WriteISCH(sub, slotType, counter)
-	copy(sub[MACPayloadOffset:MACPayloadOffset+len(channelDibits)], channelDibits)
-	return sub
+	// No WriteISCH: this package's ISCH model puts a 12-dibit field at dibit
+	// 20, which is where the real burst payload starts — writing it would
+	// overwrite the first DUID dibit and the head of the first coded window.
+	// The channel state a receiver reads back comes from the MAC header this
+	// burst carries, not from an ISCH.
+	_ = counter
+	return EncodeACCHBurst(BurstFACCHUnscrambled, macPDUTypeForSlot(slotType), 0,
+		[]MACPDU{pdu}, 0, nil)
 }
 
-// EncodeMACSubframeScrambled builds a MAC sub-frame exactly like
-// EncodeMACSubframe and then applies the PN44 channel-bit scrambling that
-// a real P25 Phase 2 downlink carries (TIA-102.BBAC-1 §7.2.5): the coded
-// MAC channel bits are XORed with the superframe scrambling sequence at
-// the sub-frame's channel-bit offset (slotChannelPN44Offset). It is the
-// transmit-side inverse of the ScramblerOn descramble in
-// decodeMACPDUDibits, and exists so tests can build a realistically
-// scrambled burst without a real over-the-air capture (issue #915).
+// EncodeMACSubframeScrambled builds the same burst as EncodeMACSubframe as a
+// PN44-scrambled FACCH-S, the form a real downlink carries.
 //
-// slotIndex is the sub-frame's 0..11 position within the superframe; seed
-// is the 44-bit PN44 seed (framing.PN44SeedFromIdentity). Only the MAC
-// payload region is scrambled — the ISCH is outside the scrambled window.
+// slotIndex is the sub-frame's 0..11 position within the superframe; the true
+// slot the scrambler keys on is that index offset by FixtureAnchorSlot, so a
+// superframe built this way resolves the way a received one does. seed is the
+// 44-bit PN44 seed (framing.PN44SeedFromIdentity).
 func EncodeMACSubframeScrambled(slotType SlotType, counter uint8, pdu MACPDU, mode TrellisMode, interleave InterleaveMode, slotIndex int, seed uint64) []uint8 {
-	sub := EncodeMACSubframe(slotType, counter, pdu, mode, interleave)
-	macLen := macPDUDibits
-	if mode == TrellisOn {
-		macLen = macPDUDibitsTrellis
+	if !slotType.IsMAC() {
+		panic("p25/phase2: EncodeMACSubframeScrambled slotType is not a MAC SlotType")
 	}
-	region := sub[MACPayloadOffset : MACPayloadOffset+macLen]
-	bits := framing.DibitsToBits(region)
-	// XOR is symmetric, so the descramble primitive scrambles too.
-	descrambleAtOffset(bits, seed, slotChannelPN44Offset(slotIndex))
-	copy(region, framing.BitsToDibits(bits))
-	return sub
+	slot := (slotIndex + FixtureAnchorSlot) % SubframesPerSuperframe
+	_ = counter // see EncodeMACSubframe on why no ISCH is written
+	return EncodeACCHBurst(BurstFACCHScrambled, macPDUTypeForSlot(slotType), 0,
+		[]MACPDU{pdu}, slot, ScrambleSequence(seed))
+}
+
+// macPDUTypeForSlot is the inverse of MACPDUType.SlotType, so a fixture named
+// by slot type produces the MAC header a receiver would read back as that
+// state. Slot types with no MAC PDU type of their own encode as SIGNAL.
+func macPDUTypeForSlot(s SlotType) MACPDUType {
+	switch s {
+	case SlotTypeMACPTT:
+		return MACPushToTalk
+	case SlotTypeMACEnd, SlotTypeMACEndCont:
+		return MACEndPushToTalk
+	case SlotTypeMACIdle:
+		return MACIdle
+	case SlotTypeMACActive:
+		return MACActive
+	case SlotTypeMACHangtime:
+		return MACHangtime
+	}
+	return MACSignal
 }
 
 // EncodeMACPDURS returns pdu with the outer RS(24, 16, 9) parity
@@ -243,32 +252,30 @@ func EncodeTalkerAliasFragment(f TalkerAliasFragment) MACPDU {
 	return MACPDU{Opcode: OpVendorTalkerAlias, MFID: MFIDMotorola, Payload: payload}
 }
 
-// EncodeVoiceSubframe builds a DibitsPerSubframe-long voice sub-frame:
-// the ISCH for slotType (which must be SlotTypeVoice4V or
-// SlotTypeVoice2V) at counter, followed by the AMBE+2-FEC-encoded voice
-// frames. payloads holds one VoiceFrameBytes-long AMBE+2 frame per
-// voice slot; len(payloads) must equal VoiceFrameCount(slotType). It is
-// the inverse of ExtractVoiceFrames. Panics on misuse.
+// EncodeVoiceSubframe builds a BurstDibits-long voice burst carrying payloads
+// as its AMBE+2 frames: the DUID for slotType's burst kind, the frames at
+// their real offsets threaded between the DUID dibits, and the whole payload
+// PN44-scrambled — which a voice burst always is.
+//
+// The payload is left UNSCRAMBLED, which a real burst never is. These
+// sub-frames are filler in fixtures that care about signalling, and a
+// scrambled payload is pseudorandom: modulated, it is a far harder signal to
+// acquire than the near-constant one this used to emit, and it stops the
+// receiver locking in tests that were never about voice. A fixture that
+// actually exercises voice extraction should call EncodeVoiceBurst with a
+// scrambling sequence and the slot to match.
+//
+// That the difference matters at all is itself a finding: the receiver
+// acquires an unrealistically flat fixture and not a realistic one, which is
+// the same acquisition weakness the real-air work traced (issue #915).
+//
+// Each payload supplies a packed VoiceFrameBytes vocoder frame; a short or
+// missing one encodes as silence.
 func EncodeVoiceSubframe(slotType SlotType, counter uint8, payloads [][]byte) []uint8 {
-	n := VoiceFrameCount(slotType)
-	if n == 0 {
-		panic("p25/phase2: EncodeVoiceSubframe slotType is not voice-bearing")
+	bt := BurstVoice4
+	if slotType == SlotTypeVoice2V {
+		bt = BurstVoice2
 	}
-	if len(payloads) != n {
-		panic("p25/phase2: EncodeVoiceSubframe payload count mismatch")
-	}
-	sub := IdleSubframe()
-	WriteISCH(sub, slotType, counter)
-	for i, p := range payloads {
-		if len(p) != VoiceFrameBytes {
-			panic("p25/phase2: EncodeVoiceSubframe payload must be VoiceFrameBytes")
-		}
-		onAir, err := dmrvoice.EncodeAMBEFrame(framing.UnpackBitsMSB(p, voiceInfoBits))
-		if err != nil {
-			panic("p25/phase2: EncodeVoiceSubframe: " + err.Error())
-		}
-		off := VoiceFrameOffset + i*VoiceOnAirFrameDibits
-		copy(sub[off:off+VoiceOnAirFrameDibits], framing.BitsToDibits(onAir))
-	}
-	return sub
+	_ = counter
+	return EncodeVoiceBurst(bt, payloads, 0, nil)
 }
