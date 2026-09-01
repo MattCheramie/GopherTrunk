@@ -551,6 +551,13 @@ func (s *Server) handleSiglabSynthesize(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
 		return
 	}
+	// The synth path stages via the pure byte encoder, which has no container
+	// support — a wav/flac request would silently produce a mislabeled body.
+	if format == siglab.FormatWAV || format == siglab.FormatFLAC {
+		s.writeError(w, http.StatusBadRequest,
+			"siglab: synth format must be u8, f32, or cs16 (wav/flac are live-capture container formats)")
+		return
+	}
 	taps, err := parseSiglabMultipath(req.Multipath)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())

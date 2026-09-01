@@ -180,6 +180,9 @@ storage:
 recordings:
   dir: "../recordings"
   sample_rate: 8000
+  # format: flac             # wav (default, 16-bit mono PCM) | flac (lossless,
+  #                          #   ~half the size for speech; web playback, loudness
+  #                          #   normalization and MP3 uploads all read it the same)
   # Recording name + folder layout. Both are optional {token} templates.
   # filename_template builds the basename (no extension); empty uses the default
   # "{date}_{time}_{tg}" — e.g. 20260810_230041_1005479 — which drops the
@@ -1463,6 +1466,9 @@ broadcast:
 #     - serial: "00000001"
 #       dir: "../iq/"
 #       tap: wideband            # or: ddc (small narrowband channel recording)
+#       format: wav              # wav (default, SDRtrunk-compatible RIFF/WAVE)
+#                                # | flac (lossless, ~30–50% smaller; replays
+#                                #   and mounts back as a tuner identically)
 #   replay:
 #     - file: "../iq/00000001_20260521T120000Z.wav"
 #       serial: "replay-01"

@@ -2,14 +2,15 @@ package siglab
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/mewkiz/flac"
-	"github.com/mewkiz/flac/frame"
-	"github.com/mewkiz/flac/meta"
+
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 )
 
 // IQContainer streams complex64 IQ to an *os.File in a chosen on-disk container:
@@ -37,11 +38,9 @@ type IQContainer struct {
 	cw      *CaptureWriter
 	dataLen uint32 // wav: body bytes written (for the RIFF length patch)
 
-	// FLAC.
-	enc       *flac.Encoder
-	blockSize int
-	left      []int32 // I samples pending in the current block
-	right     []int32 // Q samples pending in the current block
+	// FLAC: the shared two-channel encode core (also behind the baseband
+	// recorder's FLACIQWriter), fed siglab-normalised int16 pairs.
+	enc *baseband.FLACIQEncoder
 
 	samples int64
 }
@@ -49,7 +48,6 @@ type IQContainer struct {
 const (
 	iqWavHeaderSize = 44
 	iqWavBlockAlign = 4 // 2 channels × 16-bit
-	flacBlockSize   = 4096
 )
 
 // NewIQContainer creates a container writer over f for the given format.
@@ -72,25 +70,13 @@ func NewIQContainer(f *os.File, format SampleFormat, sampleRateHz int) (*IQConta
 		if sampleRateHz <= 0 {
 			return nil, fmt.Errorf("siglab: flac container needs a positive sample rate, got %d", sampleRateHz)
 		}
-		info := &meta.StreamInfo{
-			SampleRate:    uint32(sampleRateHz),
-			NChannels:     2,
-			BitsPerSample: 16,
-		}
-		// Hand the encoder a WriteSeeker that is NOT a Closer: it patches the
-		// STREAMINFO via Seek on Close but leaves closing the file to our caller
-		// (uniform with the other formats — Finalize never closes f).
-		enc, err := flac.NewEncoder(writeSeekerNoCloser{f}, info)
+		// The shared encoder patches the STREAMINFO via Seek on Finalize but
+		// never closes f — uniform with the other formats (the caller owns f).
+		enc, err := baseband.NewFLACIQEncoder(f, uint32(sampleRateHz))
 		if err != nil {
 			return nil, fmt.Errorf("siglab: init flac encoder: %w", err)
 		}
-		// Analyse each verbatim block for the best fixed/LPC predictor so the
-		// stream is actually compressed (not stored verbatim).
-		enc.EnablePredictionAnalysis(true)
 		c.enc = enc
-		c.blockSize = flacBlockSize
-		c.left = make([]int32, 0, flacBlockSize)
-		c.right = make([]int32, 0, flacBlockSize)
 	default:
 		c.bw = bufio.NewWriterSize(f, 1<<16)
 		c.cw = NewCaptureWriter(c.bw, format)
@@ -106,12 +92,11 @@ func (c *IQContainer) Write(iq []complex64) error {
 	switch c.format {
 	case FormatFLAC:
 		for _, s := range iq {
-			c.left = append(c.left, int32(floatToI16(real(s))))
-			c.right = append(c.right, int32(floatToI16(imag(s))))
-			if len(c.left) >= c.blockSize {
-				if err := c.flushFLACBlock(); err != nil {
-					return err
-				}
+			// siglab's own float→int16 normalisation (×32768), so a flac dump
+			// losslessly matches the cs16 body — the baseband recorder feeds
+			// the same core its ×32767 samples instead.
+			if err := c.enc.WriteI16(floatToI16(real(s)), floatToI16(imag(s))); err != nil {
+				return err
 			}
 		}
 	default: // headerless and wav both stream through the CaptureWriter
@@ -135,17 +120,9 @@ func (c *IQContainer) Samples() int64 { return c.samples }
 func (c *IQContainer) Finalize() error {
 	switch c.format {
 	case FormatFLAC:
-		if len(c.left) > 0 {
-			if err := c.flushFLACBlock(); err != nil {
-				return err
-			}
-		}
-		// enc.Close patches the STREAMINFO (sample count + MD5) via a seek on f;
-		// it does not close f itself.
-		if err := c.enc.Close(); err != nil {
-			return fmt.Errorf("siglab: finalize flac: %w", err)
-		}
-		return nil
+		// Finalize flushes the pending block and patches the STREAMINFO
+		// (sample count + MD5) via a seek on f; it does not close f itself.
+		return c.enc.Finalize()
 	case FormatWAV:
 		if err := c.bw.Flush(); err != nil {
 			return err
@@ -154,43 +131,6 @@ func (c *IQContainer) Finalize() error {
 	default:
 		return c.bw.Flush()
 	}
-}
-
-// flushFLACBlock encodes the pending L/R samples as one FLAC frame and resets
-// the block buffers. The prediction method is left verbatim; the encoder's
-// prediction analysis (enabled in the constructor) upgrades it to a fixed/LPC
-// predictor per subframe.
-func (c *IQContainer) flushFLACBlock() error {
-	n := len(c.left)
-	if n == 0 {
-		return nil
-	}
-	hdr := frame.Header{
-		HasFixedBlockSize: true,
-		BlockSize:         uint16(n),
-		SampleRate:        c.enc.Info.SampleRate,
-		Channels:          frame.ChannelsLR,
-		BitsPerSample:     16,
-	}
-	// Copy the pending samples: WriteFrame decorrelates in place and reverts,
-	// but the slices are reused for the next block, so hand it fresh backing.
-	left := make([]int32, n)
-	right := make([]int32, n)
-	copy(left, c.left)
-	copy(right, c.right)
-	fr := &frame.Frame{
-		Header: hdr,
-		Subframes: []*frame.Subframe{
-			{SubHeader: frame.SubHeader{Pred: frame.PredVerbatim}, Samples: left, NSamples: n},
-			{SubHeader: frame.SubHeader{Pred: frame.PredVerbatim}, Samples: right, NSamples: n},
-		},
-	}
-	if err := c.enc.WriteFrame(fr); err != nil {
-		return fmt.Errorf("siglab: encode flac frame: %w", err)
-	}
-	c.left = c.left[:0]
-	c.right = c.right[:0]
-	return nil
 }
 
 // flacSW16Reader lazily decodes a FLAC stream into the headerless interleaved
@@ -244,17 +184,40 @@ func (fr *flacSW16Reader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// writeSeekerNoCloser exposes an *os.File's Write+Seek to the FLAC encoder
-// without exposing Close, so the encoder patches the STREAMINFO on finalize but
-// never closes the file — the IQContainer's caller owns that.
-type writeSeekerNoCloser struct{ f *os.File }
-
-func (w writeSeekerNoCloser) Write(p []byte) (int, error) { return w.f.Write(p) }
-func (w writeSeekerNoCloser) Seek(offset int64, whence int) (int64, error) {
-	return w.f.Seek(offset, whence)
+// DecodeContainerFile reads a wav or flac IQ capture (as written by
+// IQContainer) back to complex64 samples plus the container's sample rate,
+// sniffing the container from the file content. Small-file convenience for
+// tests and tools; the replay engine streams instead.
+func DecodeContainerFile(path string) ([]complex64, uint32, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	var (
+		body []byte
+		rate uint32
+	)
+	switch {
+	case len(b) >= 4 && string(b[0:4]) == "fLaC":
+		fr, r, err := newFLACSW16Reader(bytes.NewReader(b))
+		if err != nil {
+			return nil, 0, err
+		}
+		body, err = io.ReadAll(fr)
+		if err != nil && err != io.EOF {
+			return nil, 0, err
+		}
+		rate = r
+	case len(b) >= iqWavHeaderSize && string(b[0:4]) == "RIFF":
+		rate = binary.LittleEndian.Uint32(b[24:28])
+		body = b[iqWavHeaderSize:]
+	default:
+		return nil, 0, fmt.Errorf("siglab: %s is neither a RIFF/WAVE nor a FLAC capture", path)
+	}
+	out := make([]complex64, len(body)/iqWavBlockAlign)
+	decodeSW16(body[:len(out)*iqWavBlockAlign], out)
+	return out, rate, nil
 }
-
-// writeIQWavHeader writes the 44-byte canonical two-channel 16-bit RIFF/WAVE
 // header (the length fields are patched on finalize). Same layout as
 // baseband.IQWriter, kept here so a wav dump's body is siglab's cs16 body.
 func writeIQWavHeader(w io.Writer, sampleRate uint32) error {

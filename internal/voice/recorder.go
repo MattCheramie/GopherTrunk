@@ -95,6 +95,7 @@ type Recorder struct {
 	bus                *events.Bus
 	log                *slog.Logger
 	outDir             string
+	format             string // recording container: "" / "wav", or "flac"
 	sampleRate         uint32
 	writeRaw           bool
 	writeMBE           bool
@@ -293,7 +294,12 @@ type RecorderOptions struct {
 	Log        *slog.Logger
 	OutDir     string
 	SampleRate uint32 // 8000 typical
-	WriteRaw   bool   // emit a .raw sidecar alongside each .wav
+	// Format selects the recording container: "wav" (default — 16-bit mono
+	// PCM RIFF/WAVE) or "flac" (lossless FLAC, typically half the size of
+	// speech WAV; browsers play it natively). Everything downstream —
+	// normalization, MP3 transcode for uploads, web playback — reads either.
+	Format   string
+	WriteRaw bool // emit a .raw sidecar alongside each recording
 	// WriteMBE emits a dsd-fme-playable MBE sidecar next to each recording
 	// for protocols dsd-fme can play offline: <basename>.imb for P25 Phase 1
 	// IMBE, <basename>.amb for DMR / NXDN / P25 Phase 2 AMBE+2. The file is
@@ -463,6 +469,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		bus:                opts.Bus,
 		log:                opts.Log,
 		outDir:             opts.OutDir,
+		format:             opts.Format,
 		sampleRate:         opts.SampleRate,
 		writeRaw:           opts.WriteRaw,
 		writeMBE:           opts.WriteMBE,
@@ -1110,7 +1117,7 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 				"recordings_sample_rate", r.sampleRate)
 		}
 	}
-	s.wavPath = filepath.Join(dir, base+".wav")
+	s.wavPath = filepath.Join(dir, base+r.audioExt())
 	// ProVoice and DMR voice grants always get a sidecar — neither has
 	// an in-process vocoder, so the .raw file is the only capture of
 	// the call.
@@ -1152,9 +1159,9 @@ func (r *Recorder) openSessionFiles(s *recordingSession) error {
 			return err
 		}
 	}
-	wav, err := NewWavFile(s.wavPath, s.sampleRate)
+	wav, err := NewAudioFileWriter(s.wavPath, s.sampleRate, r.format)
 	if err != nil {
-		r.log.Error("recorder: open wav", "path", s.wavPath, "err", err)
+		r.log.Error("recorder: open recording", "path", s.wavPath, "err", err)
 		if s.vocoder != nil {
 			_ = s.vocoder.Close()
 			s.vocoder = nil
@@ -1763,12 +1770,16 @@ func (r *Recorder) basenameFor(cs trunking.CallStart) string {
 func (r *Recorder) ensureUniqueBase(dir, base string) string {
 	candidate := base
 	for n := 2; ; n++ {
-		if !r.wavPathClaimed(filepath.Join(dir, candidate+".wav")) {
+		if !r.wavPathClaimed(filepath.Join(dir, candidate+r.audioExt())) {
 			return candidate
 		}
 		candidate = fmt.Sprintf("%s-%d", base, n)
 	}
 }
+
+// audioExt is the recording filename extension (with dot) for the configured
+// recordings format: ".wav" by default, ".flac" for flac.
+func (r *Recorder) audioExt() string { return AudioFormatExt(r.format) }
 
 // wavPathClaimed reports whether a WAV path already exists on disk or is held by
 // an active recording session.
@@ -1826,7 +1837,10 @@ func sanitize(s string) string {
 }
 
 type recordingSession struct {
-	wav         *WavWriter
+	// wav is the per-call audio writer (a WavWriter, or a FlacWriter when
+	// recordings.format is flac); wavPath keeps its historical name but
+	// carries the format's extension.
+	wav         AudioFileWriter
 	wavPath     string
 	raw         *os.File
 	rawPath     string
