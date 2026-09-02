@@ -142,8 +142,11 @@ func dumpP2Frames(t *testing.T, path string) {
 						if res.RSValid {
 							rs = 1
 						}
-						fmt.Printf("FRAME,gophertrunk,%s,2,%.4f,MAC,1F0,1,%s;rs=%d\n",
-							base, float64(start)/p25p2rx.SymbolRate, hex, rs)
+						// valid follows the outer RS: a CRC-12-only decode (rs=0) is what a
+						// false accept looks like under noise (1 in 4096 per phase tried), and
+						// production gates on RSValid, so the dump reports it as invalid.
+						fmt.Printf("FRAME,gophertrunk,%s,2,%.4f,MAC,1F0,%d,%s;rs=%d\n",
+							base, float64(start)/p25p2rx.SymbolRate, rs, hex, rs)
 						break
 					}
 				}
