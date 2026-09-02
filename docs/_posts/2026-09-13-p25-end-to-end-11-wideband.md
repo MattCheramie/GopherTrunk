@@ -53,9 +53,9 @@ issue-closing policy.*
   pathological input rate can land the tap a fraction of a percent off
   48 kHz (issue #550) — a "baud drift" that looks exactly like a demod bug.
 - **A wide capture spends a shared budget.** One antenna, one gain, one
-  ADC across every tap (issue #749) — and raising the native rate to cover
-  more band can *lower* in-channel quality (#764). The levers are
-  `gain: "auto"` and `sdr.input_sample_rate`, not more megasamples.
+  ADC across every tap (issue #749) — and raising the native rate can
+  *lower* in-channel quality (#764). The levers are `gain: "auto"` and
+  `sdr.input_sample_rate`, not more megasamples.
 
 ## Cheat sheet
 
@@ -210,7 +210,7 @@ implementations, and they are not wired together:
 | | `ccdecoder.Downconverter` | `tuner.DDCBank` |
 |---|---|---|
 | Taps | one channel | many |
-| Used by | hunting daemon's CC path, `replay -tune-hz`, siglab | `role: wideband`, wbvoice, hunt sweeps |
+| Used by | hunting daemon's CC path, `replay -tune-hz` | `role: wideband`, wbvoice, siglab wideband decode |
 | Rate handling | interpolates *up* too (sub-rate captures) | shared pre-decimation + per-tap resample |
 | File | `internal/scanner/ccdecoder/ddc.go` | `internal/dsp/tuner/ddc.go` |
 
@@ -237,11 +237,11 @@ deficit, and neither capture clipped — the ~10 dB was **baked into the
 samples** (front-end phase noise at the Airspy's native 10 MS/s clock),
 not GT's DSP. The decoder can only be as good as the samples.
 
-The twins have since been actively converged where it counts: the #550
-ratio fallback was ported into the `Downconverter` explicitly to close a
-"two separate DDC paths" divergence, and both files now say so in
-comments. But the structural rule stands — when you fix anything in one
-down-converter, go read the other one.
+The twins have since been converged where it counts: the #550 ratio
+fallback was ported into the `Downconverter` explicitly to close the "two
+separate DDC paths" divergence, and both files say so in comments. But the
+structural rule stands — fix anything in one down-converter, go read the
+other one.
 
 ## What a wide capture costs
 
@@ -273,21 +273,20 @@ Three budgets, all shared across every tap:
 ## Where this goes next
 
 Wideband is P25 monitoring at its most parallel — and it still inherits
-the weakest link of the series:
+the series' weakest link:
 [Part 12]({{ '/blog/deep-dives/p25-end-to-end-12-weak-signal-gap/' | relative_url }})
-faces the honest gap, the default C4FM voice path's missing equalizer and
-soft FEC, why the fix is gated on a real capture, and what contributing one
-looks like.
+faces the honest gap — the default C4FM voice path's missing equalizer and
+soft FEC, why the fix is gated on a real capture, and what contributing
+one looks like.
 
 ## FAQ
 
 **Can one SDR really monitor a whole P25 system?**
 If the system's channels fit the dongle's usable IQ window (sample rate
 minus a 5% guard per edge), yes: every site's CC as a wideband tap, voice
-via `voice_taps`, with a physical voice SDR as fallback for out-of-window
-grants. Systems spread across more spectrum than one dongle sees need a
-second dongle — each `widebandt2.Engine` owns one SDR and they share only
-the bus.
+via `voice_taps`, a physical voice SDR as fallback for out-of-window
+grants. Systems spread wider than one dongle sees need a second dongle —
+each `widebandt2.Engine` owns one SDR and they share only the bus.
 
 **Why does only one site decode while its siblings sit at the noise floor?**
 The channelizer is gain-flat across taps, so that difference is real RF: a

@@ -30,8 +30,8 @@ pipeline can silently default to zero on its twin.*
 > **MAC PDUs** through a trellis → RS(24,16,9) → PN44-descramble FEC chain
 > (`internal/radio/p25/phase2/process.go`), the PN44 seeded from
 > WACN/System/NAC. The control channel stays Phase 1 — and issue #882
-> proved the FEC knobs can validate, display, and still never arrive on the
-> wideband pipeline.
+> proved the FEC knobs can validate, display, and still never arrive on
+> one pipeline.
 
 **Key takeaways**
 
@@ -40,11 +40,11 @@ pipeline can silently default to zero on its twin.*
   carriers, and Part 5's `AccessTDMA` flag routes them into the right
   voice chain.
 - **The demodulator is a rotation argument.** `PiOver4DQPSK` serves TETRA
-  at π/4 and Phase 2 H-DQPSK at π/8 — one differential core, so a fix in
-  it lands in both protocols at once.
+  at π/4 and Phase 2 H-DQPSK at π/8 — one differential core, so a fix
+  lands in both protocols at once.
 - **The superframe is the addressing scheme.** Twelve 30 ms sub-frames,
-  even index → timeslot 0, odd → timeslot 1; the ISCH tells you what each
-  carries without inspecting the payload.
+  even index → timeslot 0, odd → timeslot 1; the ISCH names what each
+  carries without payload inspection.
 - **Descramble in the channel-bit domain, before the FEC.** The PN44
   applies to *channel* bits per TIA-102.BBAC-1 §7.2.5; descrambling the
   information bits after the trellis fails the outer RS on every real
@@ -144,7 +144,7 @@ A Phase 2 carrier is a continuous dibit stream with a strict rhythm: a
 alternating between the two timeslots — even sub-frame index → timeslot 0,
 odd → timeslot 1 (`Subframe.Timeslot = i & 1` in
 `superframe_decoder.go`). `SuperframeDecoder` anchors that grid on the
-20-dibit outbound sync word and slices the stream into tagged sub-frames.
+20-dibit outbound sync word and slices out tagged sub-frames.
 
 The tag is the **ISCH** — the Inter-Slot Signalling Channel field
 prefixing every sub-frame: a 12-bit word protected by extended
@@ -180,7 +180,7 @@ without touching the payload:
   <text x="230" y="75" text-anchor="middle" fill="currentColor" font-size="9">1</text>
   <text x="270" y="75" text-anchor="middle" fill="var(--accent)" font-size="9">2</text>
   <text x="630" y="75" text-anchor="middle" fill="currentColor" font-size="9">11</text>
-  <text x="170" y="100" fill="var(--fg-muted)" font-size="9">each sub-frame: 30 ms · 180 dibits · ISCH prefix names its SlotType</text>
+  <text x="170" y="100" fill="var(--fg-muted)" font-size="9">each sub-frame: 30 ms · 180 dibits · ISCH prefix names the SlotType</text>
   <!-- slot lanes -->
   <text x="30" y="140" fill="var(--accent)" font-size="10" font-weight="bold">timeslot 0 (even) — call A</text>
   <rect x="240" y="126" width="52" height="22" fill="none" stroke="var(--accent)" stroke-width="2"/>
@@ -320,11 +320,11 @@ NXDN use, which is why GopherTrunk's Phase 2 voice extraction delegates
 its frame FEC to the shared DMR path.
 
 **What does `trellis=0` in my p25p2 startup log mean?**
-That the voice chain believes MAC PDUs arrive un-trellis-coded — true only
-for pre-stripped test fixtures, never for live air. On a real system it
-means the Phase 2 FEC options aren't reaching this pipeline (the issue
-#882 failure) or are misconfigured; set `p25_phase2_trellis_mode=on` and
-check the startup line agrees.
+That the voice chain believes MAC PDUs arrive un-trellis-coded — true
+only for pre-stripped fixtures, never live air. On a real system it means
+the Phase 2 FEC options aren't reaching this pipeline (the #882 failure)
+or are misconfigured; set `p25_phase2_trellis_mode=on` and check the
+startup line agrees.
 
 **Can GopherTrunk decode both timeslots at once?**
 Yes — the superframe grid assigns every sub-frame to its slot by index,
