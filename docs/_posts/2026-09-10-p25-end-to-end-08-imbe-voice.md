@@ -111,33 +111,33 @@ burst error takes a slice of everything rather than all of one thing.
   <rect x="134" y="40" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="164" y="57" text-anchor="middle" fill="var(--accent)" font-size="9">u_1</text>
   <rect x="194" y="40" width="26" height="26" fill="none" stroke="currentColor"/>
-  <text x="207" y="57" text-anchor="middle" fill="currentColor" font-size="8">LC1</text>
+  <text x="207" y="57" text-anchor="middle" fill="currentColor" font-size="9">LC1</text>
   <rect x="220" y="40" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="250" y="57" text-anchor="middle" fill="var(--accent)" font-size="9">u_2</text>
   <rect x="280" y="40" width="26" height="26" fill="none" stroke="currentColor"/>
-  <text x="293" y="57" text-anchor="middle" fill="currentColor" font-size="8">LC2</text>
+  <text x="293" y="57" text-anchor="middle" fill="currentColor" font-size="9">LC2</text>
   <rect x="306" y="40" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="336" y="57" text-anchor="middle" fill="var(--accent)" font-size="9">u_3</text>
   <rect x="366" y="40" width="26" height="26" fill="none" stroke="currentColor"/>
-  <text x="379" y="57" text-anchor="middle" fill="currentColor" font-size="8">LC3</text>
+  <text x="379" y="57" text-anchor="middle" fill="currentColor" font-size="9">LC3</text>
   <rect x="392" y="40" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="422" y="57" text-anchor="middle" fill="var(--accent)" font-size="9">u_4</text>
   <rect x="452" y="40" width="26" height="26" fill="none" stroke="currentColor"/>
-  <text x="465" y="57" text-anchor="middle" fill="currentColor" font-size="8">LC4</text>
+  <text x="465" y="57" text-anchor="middle" fill="currentColor" font-size="9">LC4</text>
   <rect x="478" y="40" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="508" y="57" text-anchor="middle" fill="var(--accent)" font-size="9">u_5</text>
   <rect x="538" y="40" width="26" height="26" fill="none" stroke="currentColor"/>
-  <text x="551" y="57" text-anchor="middle" fill="currentColor" font-size="8">LC5</text>
+  <text x="551" y="57" text-anchor="middle" fill="currentColor" font-size="9">LC5</text>
   <!-- row 2 -->
   <rect x="30" y="86" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="60" y="103" text-anchor="middle" fill="var(--accent)" font-size="9">u_6</text>
   <rect x="90" y="86" width="26" height="26" fill="none" stroke="currentColor"/>
-  <text x="103" y="103" text-anchor="middle" fill="currentColor" font-size="8">LC6</text>
+  <text x="103" y="103" text-anchor="middle" fill="currentColor" font-size="9">LC6</text>
   <rect x="116" y="86" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="146" y="103" text-anchor="middle" fill="var(--accent)" font-size="9">u_7</text>
   <rect x="176" y="86" width="20" height="26" fill="none" stroke="var(--fg-muted)"/>
   <rect x="196" y="86" width="20" height="26" fill="none" stroke="var(--fg-muted)"/>
-  <text x="196" y="103" text-anchor="middle" fill="var(--fg-muted)" font-size="8">LSD</text>
+  <text x="196" y="103" text-anchor="middle" fill="var(--fg-muted)" font-size="9">LSD</text>
   <rect x="216" y="86" width="60" height="26" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <text x="246" y="103" text-anchor="middle" fill="var(--accent)" font-size="9">u_8</text>
   <text x="300" y="97" fill="var(--fg-muted)" font-size="10">9 voice frames × 144 bits = 180 ms of audio;</text>
