@@ -17,8 +17,8 @@ references to code you can trust on air.
 made captures first-class test fixtures. This part is the rule that governs
 what you do with them: **a bug fix is one narrow commit plus a regression
 test that fails without the fix and passes with it** — and if you can't write
-the failing test, you haven't reproduced the bug, so you keep digging instead
-of guessing. Three worked examples show the failing test doing the diagnosis
+the failing test, you haven't reproduced the bug, so keep digging instead of
+guessing. Three worked examples show the failing test doing the diagnosis
 itself.*
 
 > **TL;DR:** `CONTRIBUTING.md` states the rule in one line — *"regression test
@@ -45,9 +45,9 @@ itself.*
   needed the test's world made faithful first: an unconditional scrambler, a
   real-air bit stream, a true 255-dibit slot grid — Part 7's lesson paying
   rent.
-- **Failing-first inverts the workflow, and the inversion is the point.**
-  Reproduce → fail → fix → pass front-loads the diagnosis; guess → fix →
-  close defers it to the reporter, who becomes your regression suite.
+- **The inversion is the point.** Reproduce → fail → fix → pass front-loads
+  the diagnosis; guess → fix → close defers it to the reporter, who becomes
+  your regression suite.
 - **When no failing test is possible, the fix does not land.** The P25 C4FM
   weak-signal levers are diagnosed, designed — and parked until a capture can
   make a test fail
@@ -115,9 +115,9 @@ always descramble, always decoded.
 
 The regression test is the interesting artifact, because the *old* suite had
 checked this and passed: its round-trips scrambled and descrambled under the
-same `colour != 0` condition — self-consistent on both sides, green either
-way, blind to the asymmetry. The fix's test changes one thing: the encode
-side now behaves like the air, unconditionally.
+same `colour != 0` condition — self-consistent, green either way, blind to
+the asymmetry. The fix's test changes one thing: the encode side now behaves
+like the air, unconditionally.
 
 ```go
 // internal/radio/tetra/dmo_decode_test.go (shape) — TestDMTCHSpeechRoundTrip
@@ -277,9 +277,8 @@ the reporter's follow-up.
 The rule's honest edge case: some failures can't be reproduced from what you
 have. The P25 Phase 1 C4FM weak-signal gap is the standing example — the
 diagnosis is structural and confident (no equalizer, no soft-decision FEC on
-that path; the same two levers that roughly doubled TETRA yield), the fix is
-designed, and *nothing has landed*, because without a weak C4FM voice capture
-in `samples/p25/` there is no test that fails first.
+that path), the fix is designed, and *nothing has landed*, because without a
+weak C4FM voice capture in `samples/p25/` there is no test that fails first.
 
 So the workflow ends the only honest way it can: the issue **stays open**,
 with a status comment saying what's known and what's blocking — usually a
@@ -303,17 +302,16 @@ a transient.
 
 **What makes a regression test "failing-first" rather than just a test?**
 Provenance: it was run against the pre-fix code and observed to fail, and the
-observation is recorded (GopherTrunk writes it into the test's doc comment —
-"verified failing-first against the old code"). A test only ever seen green
-proves the code satisfies the test; it never proves the test detects the bug.
+observation is recorded — GopherTrunk writes it into the test's doc comment
+("verified failing-first against the old code"). A test only ever seen green
+proves the code satisfies the test, never that the test detects the bug.
 
 **Isn't this just test-driven development?**
 It's TDD's contrapositive, applied to defects: TDD writes a failing test to
 specify behaviour that doesn't exist yet; failing-first writes one to
-reproduce behaviour that shouldn't. The extra burden is fidelity — a
-regression test's world must match the air, the wire, or the protocol, or it
-reproduces nothing (the
-[Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }})
+reproduce behaviour that shouldn't. The extra burden is fidelity — the test's
+world must match the air, the wire, or the protocol, or it reproduces nothing
+(the [Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }})
 problem).
 
 **What if writing the failing test takes longer than the fix?**

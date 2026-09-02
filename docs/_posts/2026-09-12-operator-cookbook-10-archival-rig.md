@@ -25,11 +25,11 @@ from eating the disk. An archive you can't budget is an outage on a timer.*
 > downstream chain — web playback, loudness normalize (FLAC-in/FLAC-out),
 > MP3 uploads, the retention sweeper — reads either container by **content
 > sniffing**, never by extension. `baseband.record[].format: flac` does the
-> same for IQ taps (~30–50% smaller, mounts back as a virtual tuner
-> identically), and `tap: ddc` records the channelized stream at orders of
-> magnitude less than wideband. `storage.path` is the SQLite call log behind
-> the History panel; the `retention:` block sweeps rows (`call_log_days`),
-> decoder logs (`log_days`) and files (`files_days`) on an `interval`, logging
+> same for IQ taps (~30–50% smaller, mounts back as a virtual tuner), and
+> `tap: ddc` records the channelized stream at orders of magnitude less than
+> wideband. `storage.path` is the SQLite call log behind History; the
+> `retention:` block sweeps rows (`call_log_days`), decoder logs (`log_days`)
+> and files (`files_days`) on an `interval`, logging
 > `retention: deleted recordings count=N` as it goes.
 
 **Key takeaways**
@@ -38,9 +38,9 @@ from eating the disk. An archive you can't budget is an outage on a timer.*
   a container at all grew a `flac` option — voice recordings, IQ taps,
   auto-record, voice IQ debug — and every reader sniffs the content, so a
   mixed wav/flac archive Just Works.
-- **Archive the samples, not just the audio.** A voice file answers "what was
-  said"; a `tap: ddc` IQ file answers "what was received" and replays through
-  `gophertrunk replay` when a decode looks wrong. The archival rig keeps both.
+- **Archive the samples, not just the audio.** A voice file answers "what
+  was said"; a `tap: ddc` IQ file answers "what was received" and replays
+  when a decode looks wrong. This rig keeps both.
 - **The call log is the index; files are the payload.** SQLite rows survive
   after `files_days` sweeps the audio, so History can show a 30-day record
   while only 14 days of it stays playable — a feature, configurable per axis.
@@ -131,7 +131,7 @@ invariant depends on it) and the hunt's survey capture stays f32.
 
 | Item | Price (rough) | Notes |
 |---|---|---|
-| Storage | ~$50+ | an SSD or spinning disk sized by the budget table below; for an [SBC build]({{ '/gophertrunk-sbc-build/' | relative_url }}), external — don't archive to the [SD card]({{ '/reference/sd-card/' | relative_url }}) that boots the box |
+| Storage | ~$50+ | an SSD or spinning disk sized by the budget table below; on an [SBC build]({{ '/gophertrunk-sbc-build/' | relative_url }}), external — never the boot [SD card]({{ '/reference/sd-card/' | relative_url }}) |
 | Everything else | $0 | any rig from Parts 1–9 |
 
 ## The config
@@ -215,10 +215,9 @@ INF recorder: call started device=... wav=../recordings/Metro-P25/2026/09/12/202
 INF recorder: call ended device=... duration=6.42s reason=released
 ```
 
-Play the call in the web History panel (served as `audio/flac`), and confirm
-the `.json`, `.raw` and `.imb`/`.amb` siblings landed next to it. Then, within
-the first `interval` (and every hour after), the sweeper reports — only when
-it deletes something:
+Play the call in the web History panel (served as `audio/flac`) and confirm
+the `.json`, `.raw` and `.imb`/`.amb` siblings landed next to it. Then, each
+`interval`, the sweeper reports — only when it deletes something:
 
 ```
 INF retention: deleted recordings count=214
@@ -260,8 +259,8 @@ so even a misnamed file mounts correctly.
   the bytes — every audio tool since the 1990s opens it. Mixing is fine:
   readers sniff per file, so switching formats mid-archive breaks nothing.
 - **Frames-only cold storage.** `write_raw` + `mbe_files` with aggressive
-  `files_days`: vocoder frames are a few hundred bytes per second, and the
-  audio can be re-synthesized from them offline via `gophertrunk decode`.
+  `files_days`: vocoder frames cost a few hundred bytes per second, and
+  `gophertrunk decode` re-synthesizes audio from them offline.
 - **Forensic maximalist.** Add `auto_record` (event-triggered wideband
   slices) and `voice_iq_debug` (per-call channelized voice IQ, `format: flac`)
   — every questionable call arrives with its own replayable IQ attached.

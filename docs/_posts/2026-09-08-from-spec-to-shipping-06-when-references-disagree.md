@@ -1,6 +1,6 @@
 ---
 title: "From Spec to Shipping, Part 6: When References Disagree, the Capture Referees"
-description: "Two trusted decoders gave two different DMO burst geometries, and a single capture could not pin the colour-code bit offset at all. How GopherTrunk designs referee measurements where the right answer wins by a wide margin — and refuses to answer when it doesn't."
+description: Two trusted decoders gave two different DMO burst geometries, and a single capture could not pin the colour-code bit offset at all. How GopherTrunk designs referee measurements where the right answer wins by a wide margin — and refuses to answer when it doesn't.
 category: deep-dives
 keywords: tetra dmo burst geometry, dnb block offsets, osmo-tetra-dmo comparison, dm colour code recovery, crc yield sweep, when reference implementations disagree, empirical protocol validation, dominance gate decoder, gophertrunk from spec to shipping
 tags: [from-spec-to-shipping, tetra, dmo, methodology, captures, go]
@@ -200,6 +200,7 @@ for c := 0; c < 64; c++ {
     seed := base | uint32(c)
     n := 0
     for i := range bursts {
+        b := bursts[i]
         /* … skip non-DNBs … */
         if len(DMBurstTCHSpeechSoft(b, seed)) == 2 ||
             len(DMBurstTCHSpeech(b, seed)) == 2 {

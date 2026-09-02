@@ -72,7 +72,7 @@ anywhere else in the series.*
 
 ## What you're building
 
-The finished rig is the [Part 8]({{ '/blog/tutorials/operator-cookbook-08-remote-radios/' | relative_url }})
+The [Part 8]({{ '/blog/tutorials/operator-cookbook-08-remote-radios/' | relative_url }})
 remote-radio build with a second antenna: a two-channel SDR runs
 `SoapySDRServer` near the antennas, GopherTrunk opens **both** RX channels,
 and the driver phase-aligns and sums them into one maximised-SNR stream
@@ -80,19 +80,19 @@ before the decoder ever sees IQ. Everything downstream is unchanged;
 diversity is invisible except in the health log and, when the channel fades,
 in the calls that keep decoding.
 
-Three stages inside the driver do the work, in order: a **pre-combine capture
-tap** (raw, so evidence stays untouched), an **inter-branch aligner** that
-removes the fractional-sample start skew between the streams (on one field
-rig, 2.6 samples of skew made the combine decode **22% worse** than the best
+Three driver stages do the work, in order: a **pre-combine capture tap**
+(raw, so evidence stays untouched), an **inter-branch aligner** that removes
+the fractional-sample start skew between the streams (on one field rig,
+2.6 samples of skew made the combine decode **22% worse** than the best
 branch alone — the aligner is why that can't happen anymore), and the **MRC
 combiner**, which estimates one complex gain per calibration window and
-either tracks it (`mrc`) or freezes it (`mrc-static`). How each stage earned
-its place is
+either tracks (`mrc`) or freezes it (`mrc-static`). How each stage earned its
+place is
 [Weak-Signal Engineering Parts 10–11]({{ '/blog/deep-dives/weak-signal-engineering-10-mrc-calibration/' | relative_url }});
 this recipe is the operator's side.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Signal chain of the diversity build: two antennas feed the two RX channels of one coherent SDR running SoapySDRServer; inside GopherTrunk's soapyremote driver the branches pass a pre-combine capture tap, then the inter-branch aligner, then the MRC combiner, which emits one combined wideband stream to the decoder.">
+<svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Two antennas feed the two RX channels of one coherent SDR running SoapySDRServer; inside GopherTrunk's driver the branches pass a pre-combine capture tap, the inter-branch aligner, and the MRC combiner, which emits one combined wideband stream to the decoder.">
   <rect x="10" y="40" width="64" height="30" rx="4" fill="none" stroke="currentColor"/>
   <text x="42" y="59" text-anchor="middle" fill="currentColor" font-size="10">ant A</text>
   <rect x="10" y="150" width="64" height="30" rx="4" fill="none" stroke="currentColor"/>
@@ -115,22 +115,22 @@ this recipe is the operator's side.
   <text x="408" y="117" text-anchor="middle" fill="currentColor" font-size="10">inter-branch aligner (delay_samples)</text>
   <rect x="280" y="140" width="256" height="30" rx="4" fill="none" stroke="var(--accent)"/>
   <text x="408" y="159" text-anchor="middle" fill="var(--accent)" font-size="10">MRC combiner (mrc / mrc-static)</text>
-  <text x="408" y="190" text-anchor="middle" fill="var(--fg-muted)" font-size="9">health: coherence · branch_gain_db · branch_phase_deg</text>
-  <text x="408" y="204" text-anchor="middle" fill="var(--fg-muted)" font-size="9">constant phase ⇒ shared LO · walking ⇒ tracking mode</text>
+  <text x="408" y="190" text-anchor="middle" fill="var(--fg-muted)" font-size="9">health line: coherence · branch_gain_db · branch_phase_deg</text>
+  <text x="408" y="204" text-anchor="middle" fill="var(--fg-muted)" font-size="9">phase constant ⇒ shared LO · walking ⇒ tracking</text>
   <line x1="552" y1="155" x2="592" y2="155" stroke="var(--accent)"/>
   <polygon points="586,151 594,155 586,159" fill="var(--accent)"/>
   <rect x="594" y="128" width="76" height="54" rx="4" fill="none" stroke="currentColor"/>
   <text x="632" y="150" text-anchor="middle" fill="currentColor" font-size="10">one wideband</text>
   <text x="632" y="164" text-anchor="middle" fill="currentColor" font-size="10">stream → decode</text>
 </svg>
-<figcaption>The whole diversity build: the decoder never knows there were two antennas — the capture tap, the aligner and the combiner live inside the driver, and one log line reports whether they're earning their keep.</figcaption>
+<figcaption>The decoder never knows there were two antennas — the capture tap, aligner and combiner live inside the driver, and one log line reports whether they're earning their keep.</figcaption>
 </figure>
 
 ## The shopping list
 
-This is the expensive recipe, and the honest first line is: **most rigs don't
-need it.** You need one radio with two RX channels sharing a frequency
-reference — two separate dongles will not do.
+The honest first line: **most rigs don't need this.** You need one radio with
+two RX channels sharing a frequency reference — two separate dongles will not
+do.
 
 | Item | Class | Notes |
 |---|---|---|
@@ -176,11 +176,11 @@ trunking:
 
 Three notes. **`antenna:`** is the only correct way to pick ports — names are
 device-specific (a B210 has `TX/RX` and `RX2`, a TwinRX has `RX1` and `RX2`),
-and GopherTrunk validates the list against the device and reads it back, so a
-config moved between rigs fails loudly instead of silently keeping driver
-defaults. **`diversity: "mrc"`** re-estimates the branch gain continuously;
-**`"mrc-static"`** freezes it after one estimate — the first run tells you
-which to pick. And the combine happens below the protocol layer, so a
+and GopherTrunk validates the list and reads it back, so a config moved
+between rigs fails loudly. **`diversity: "mrc"`** re-estimates the branch
+gain continuously; **`"mrc-static"`** freezes it after one estimate — the
+first run tells you which to pick. And the combine happens below the protocol
+layer, so a
 [Part 4]({{ '/blog/tutorials/operator-cookbook-04-tetra-tmo/' | relative_url }})
 TETRA rig or a Part 1 P25 rig rides it identically.
 
@@ -212,9 +212,9 @@ Read it field by field — this line is the whole cockpit:
   is `updates` climbing with `holds` near zero; `updates` frozen while
   `holds` climbs means coasting on a stale gain, and it WARNs after 90 s.
 
-One more line worth knowing on sight, once per stream or retune — the
-aligner latching the start skew between the streams (per-stream, which is why
-it's re-measured every time rather than calibrated once):
+One more line to know on sight, once per stream or retune — the aligner
+latching the start skew (per-stream, which is why it's re-measured every time
+rather than calibrated once):
 
 ```
 INF soapyremote: MRC inter-branch delay measured — delaying the early branch to align the combine delay_samples=0.41 peak_rho=0.94
@@ -233,9 +233,9 @@ genuinely wanted upstream.
 
 Second limit: the combine applies **one complex gain to the whole wideband
 stream**. Antennas metres apart give every carrier its own phase difference,
-and a single scalar can only align one of them — the signature is coherence
-stuck around 0.3–0.5 that no tracking improves. Co-locate the antennas;
-per-channel combining after the DDC is known future work, not a config option
+and a single scalar can only align one — the signature is coherence stuck
+around 0.3–0.5 that no tracking improves. Co-locate the antennas; per-channel
+combining after the DDC is future work, not a config option
 ([MRC gotchas]({{ '/reference/mrc-diversity-gotchas/' | relative_url }})).
 
 ### The pre-combine A/B
@@ -265,9 +265,8 @@ The harness prints a windowed coherence/gain/**phase** trace with plain-text
 verdicts ("branch phase is essentially CONSTANT" vs "branch phase WALKS"),
 measures the inter-branch delay, and decodes the capture through each branch
 alone plus static, tracking, aligned and narrowband combine arms — **scored
-by CRC-clean decode yield**, the one metric that can't flatter a combiner. If
-tracking beats static on *your* capture, the mode question is answered with
-evidence instead of hardware folklore.
+by CRC-clean decode yield**, the one metric that can't flatter a combiner.
+That table answers the mode question with evidence instead of folklore.
 
 ## When it doesn't work
 
@@ -290,17 +289,16 @@ rule; trust coherence and decode yield.**
 ### Variations
 
 - **`diversity: "mrc-static"`** — one-shot calibration, frozen. Correct for
-  shared-LO hardware (constant `branch_phase_deg`), and the standard A/B
-  reference arm on any rig.
+  shared-LO hardware, and the standard A/B reference arm on any rig.
 - **Longer evidence** — `diversity_capture_seconds` accepts up to 120 s (a
-  1 GiB/branch cap always applies). At 200–250 kS/s two CS16 branches are only
-  ~1.6 MB/s total, so take the long capture.
+  1 GiB/branch cap always applies); at 200–250 kS/s two CS16 branches are
+  only ~1.6 MB/s total, so take the long capture.
 - **Single-channel, port-pinned** — `diversity: ""` with `antenna: [RX2]`:
-  the same radio as a plain remote SDR with the port explicit and validated —
-  the "each branch alone" baseline before you commit.
+  a plain remote SDR with the port explicit and validated — the "each branch
+  alone" baseline before you commit.
 - **Voice under diversity** — the combined stream is an ordinary tuner to the
-  rest of the daemon; `role: wideband` with `voice_taps` on top works exactly
-  as in Part 1.
+  daemon; `role: wideband` with `voice_taps` on top works exactly as in
+  Part 1.
 
 ## Where this goes next
 
@@ -328,14 +326,14 @@ and simpler. Walking phase — TwinRX-style independent PLLs — means stay on
 No. The combine needs two RX channels behind one clock in one sample stream —
 `diversity: mrc` opens RX0+RX1 on a single SoapyRemote device. Separate
 dongles have independent oscillators and USB timelines; there is no constant
-phase or delay for the calibrator to find.
+phase for the calibrator to find.
 
 **Why is my coherence only 0.3 when everything decodes fine?**
 Wideband coherence is diluted by every hertz of noise-only bandwidth around
 your carrier — a clean channel occupying a small fraction of a wide capture
 reads low even when the branches agree perfectly in-channel, which is why the
 lock gates scale with the estimation window. Judge the combine by decode
-yield and the WARN lines, not by wishing the number toward 1.0.
+yield and the WARN lines.
 
 ## Series navigation
 
