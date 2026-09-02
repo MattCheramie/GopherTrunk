@@ -39,11 +39,10 @@ of it first.*
 
 - **The spec is a family with a division of labor.** One part owns the
   modulation, another the burst geometry, another the codec. Knowing which
-  part owns your question is half of finding the answer — and a field
-  "defined in Part 3" is a trap when you only have Part 2.
-- **Read in decode order.** A decoder consumes physical symbols, then bursts,
-  then channel coding, then CRC-gated payloads, then PDUs. Reading the spec
-  in that order means every chapter you finish is testable against the last.
+  part owns your question is half of finding the answer.
+- **Read in decode order.** A decoder consumes physical symbols, then
+  bursts, then channel coding, then CRC-gated payloads, then PDUs. Reading
+  in that order makes every finished chapter testable against the last.
 - **Constants first, prose second.** Sync words, polynomial taps, interleave
   strides and bit offsets are the facts everything else leans on. Extract
   them into named, cited constants on day one; a wrong constant silently
@@ -59,7 +58,7 @@ of it first.*
 |---|---|---|
 | TETRA air interface | bursts, channel coding, scrambling, MAC/CMCE PDUs | ETSI EN 300 392-2; cited across `internal/radio/tetra/` |
 | TETRA voice codec | ACELP full-rate speech codec + reference C code | ETSI EN 300 395-2; `internal/voice/acelp/` |
-| TETRA direct mode | DMO radio layer (396-2) and MS-MS protocol (396-3) | ETSI EN 300 396-2/-3; `internal/radio/tetra/dmo.go` |
+| TETRA direct mode | radio layer (396-2), MS-MS protocol (396-3) | ETSI EN 300 396-2/-3; `internal/radio/tetra/dmo.go` |
 | P25 physical + FDMA | C4FM, NID, frame structure, data units | TIA-102.BAAA; `internal/radio/p25/phase1/` |
 | P25 trunking messages | TSBK/MBT opcodes and field layouts | TIA-102.AABC / TIA-102.AABF; `phase1/opcodes.go` |
 | P25 vocoder | IMBE frame format, FEC, synthesis | TIA-102.BABA; `internal/voice/imbe/` |
@@ -82,9 +81,9 @@ of it first.*
 Nobody publishes "the TETRA spec." ETSI publishes a *series*: EN 300 392 is
 "Voice plus Data," and its Part 2 — the air interface — is the ~1000-page
 volume a decoder author lives in. The speech codec is a different series
-entirely (EN 300 395-2, which ships reference C code — the anchor for
+(EN 300 395-2, which ships reference C code — the anchor for
 [Part 4]({{ '/blog/deep-dives/from-spec-to-shipping-04-conformance-harness/' | relative_url }})).
-Direct mode is yet another: EN 300 396-2 covers the DMO radio layer, and the
+Direct mode is yet another: EN 300 396-2 is the DMO radio layer, and the
 MS-to-MS call-control protocol riding on it is EN 300 396-3 — a separation
 GopherTrunk's `internal/radio/tetra/dmo.go` doc comment spells out, because
 burst slicing and call semantics arrive from two different books.
@@ -92,12 +91,12 @@ burst slicing and call semantics arrive from two different books.
 TIA slices P25 just as finely. TIA-102.BAAA is the FDMA common air
 interface — modulation, NID, frame structure. The trunking control-channel
 *message layouts* GopherTrunk's `opcodes.go` decodes cite TIA-102.AABC and
-TIA-102.AABF throughout. The IMBE vocoder is TIA-102.BABA; Phase 2's
+TIA-102.AABF throughout; the IMBE vocoder is TIA-102.BABA; Phase 2's
 two-slot TDMA splits across TIA-102.BBAB (physical) and TIA-102.BBAC (MAC);
 encryption is TIA-102.AACE. Revisions ride as suffixes —
-`internal/dsp/demod/c4fm_modulator.go` cites TIA-102.BAAA-**A** §6.1.1 for
-the deviation table, and a revision letter can silently change a constant
-you extracted from the base document.
+`internal/dsp/demod/c4fm_modulator.go` cites TIA-102.BAAA-**A** §6.1.1, and
+a revision letter can silently change a constant you extracted from the
+base document.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Two standards families side by side: the ETSI TETRA documents and the TIA-102 P25 documents, with the decoder-relevant parts highlighted and the conformance-testing, uplink-only and encryption parts muted; a note beneath says each highlighted document maps to one GopherTrunk package.">
@@ -129,12 +128,12 @@ you extracted from the base document.
 <figcaption>The decoder-relevant subset of two standards families: a handful of highlighted documents carry every constant a receive-only decoder needs.</figcaption>
 </figure>
 
-Two practical consequences. First, **get the right parts**: a receive-only
-scanner needs the air interface, the codec, and the trunking messages — not
-the conformance-testing or uplink-heavy parts. Second, **normative versus
+Two consequences. First, **get the right parts**: a receive-only scanner
+needs the air interface, the codec, and the trunking messages — not the
+conformance-testing or uplink-heavy parts. Second, **normative versus
 informative matters**: worked-example annexes are informative and can lag
-the normative clauses; when they disagree, the normative text wins — and the
-disagreement itself is a flag to find an independent reference.
+the normative clauses; when they disagree, the normative text wins — and
+the disagreement is itself a flag to find an independent reference.
 
 ## Read in decode order, not page order
 
@@ -145,9 +144,9 @@ reading order that works is the decode chain itself:
 | Stage | What to read for | TETRA example (EN 300 392-2) |
 |---|---|---|
 | 1. Physical | modulation, symbol rate, pulse shaping | π/4-DQPSK, 18000 sym/s ([TETRA End to End Part 1]({{ '/blog/deep-dives/tetra-end-to-end-01-pi4-dqpsk-carrier/' | relative_url }})) |
-| 2. Burst geometry | burst types, training sequences, slot grid | §9.4.4 burst layouts, in dibits from the training sequence |
-| 3. Channel coding | convolutional/RM codes, interleaving, scrambling | RCPC mother code, §8.2.5 scrambling |
-| 4. CRCs | polynomial, init, span, complement rules | the CRC each logical channel gates on |
+| 2. Burst geometry | burst types, training sequences, slot grid | §9.4.4 burst layouts |
+| 3. Channel coding | codes, interleaving, scrambling | RCPC mother code, §8.2.5 scrambling |
+| 4. CRCs | polynomial, init, span, complement | the CRC each logical channel gates on |
 | 5. PDU layouts | field-by-field bit offsets | MAC (§21) and CMCE (§14) PDU tables |
 
 The reason to hold this order is testability: each layer's output is the
@@ -190,14 +189,14 @@ const scrambleTetraTapMask uint32 = 0x82608EDB
 ```
 
 Equation numbers, section numbers, the exact seed packing — all in the
-comment, so the constant is *auditable* against the source years later.
-(That seed rule, eq. 8.42, is also why "colour code 0" is not a no-op — the
-LFSR seeds non-zero even with all colour bits zero, a fact that cost the
+comment, so the constant is *auditable* years later. (That seed rule,
+eq. 8.42, is also why "colour code 0" is not a no-op — the LFSR seeds
+non-zero even with all colour bits zero, a fact that cost the
 [DMO investigation]({{ '/blog/deep-dives/tetra-end-to-end-12-dmo-descramble-colour/' | relative_url }})
 weeks when one decode path skipped descrambling at colour 0.)
 
 **Exact bit offsets.** PDU field tables get transcribed as offsets with the
-spec's own field names, not paraphrased. The corollary is the hard lesson of
+spec's own field names. The corollary is the hard lesson of
 [From the Issue Tracker Part 17]({{ '/blog/solution-postmortem/from-the-issue-tracker-17-placeholder-constants/' | relative_url }}):
 a constant you *couldn't* verify and wrote down anyway is worse than a
 `panic("unimplemented")`, because it fails silently. GopherTrunk's original
@@ -217,10 +216,10 @@ determine whether e(1) is the MSB or LSB of the packed value. The vicious
 part: get it wrong and your encoder and decoder still agree. GopherTrunk's
 independent scrambler cross-check (`refScrambleTetraETSI` in
 `scramble_tetra_test.go`) documents it exactly: the wrong endianness "still
-round-trips and still passes BSCH, but does not match the sequence a real
-base station scrambles with, so no BNCH/SCH burst decodes." The series
-villain in its purest form — a self-consistent mistake, invisible to any
-test that doesn't bring in an outside fact.
+round-trips and still passes BSCH," but matches no real base station, so no
+BNCH/SCH burst ever decodes. The series villain in its purest form — a
+self-consistent mistake, invisible to any test that doesn't bring in an
+outside fact.
 
 **Transmission order versus logical order.** Interleavers, bit-reversal
 conventions, and MSB-first-on-the-wire rules mean the bytes in the PDU table
@@ -240,9 +239,9 @@ it exists, not what it means.
 **"Reserved" and vendor space that isn't.** P25's opcode space has
 manufacturer-specific regions, and rendering a vendor TSBK through the
 standard opcode name map actively *mislabels* it — MFID 0x90 opcode 0x00
-reads back as `GRP_V_CH_GRANT` if you let it, so GopherTrunk refuses to name
-vendor or undecoded opcodes through the standard map at all. Treat every
-"reserved" region as "defined somewhere you haven't looked yet."
+reads back as `GRP_V_CH_GRANT` if you let it, so GopherTrunk refuses to
+name vendor or undecoded opcodes through the standard map. Treat every
+"reserved" region as defined somewhere you haven't looked yet.
 
 ## What the spec cannot tell you
 
@@ -252,17 +251,15 @@ chain — EN 300 395-2's reference codec is a happy exception, and Part 4
 builds a whole conformance harness on it. Fields get defined but their
 values left unnamed: the D-SETUP communication-type bits are decoded by
 three independent open decoders, yet *none names the enum values* — so
-GopherTrunk carries the spec-derived mapping as constants that are
-deliberately **not** wired into call classification until a capture
-confirms them. And some questions the spec answers only for the
-transmitter — which of several permitted broadcast forms a real network
-actually uses is an empirical fact (some P25 systems announce their
+GopherTrunk carries the spec-derived mapping as constants deliberately
+**not** wired into call classification until a capture confirms them. And
+which of several permitted broadcast forms a real network uses is an
+empirical fact the spec never settles — some P25 systems announce their
 neighbours *only* in AMBT form, which GopherTrunk once dropped as
-"non-control" spam).
+"non-control" spam.
 
-Every one of those gaps has the same resolution: an independent fact from
-outside your own head — another implementation, a reference codec, a
-capture.
+Every gap has the same resolution: an independent fact from outside your
+own head — another implementation, a reference codec, a capture.
 
 ### How that principle shaped the Go code
 
@@ -297,9 +294,9 @@ air beats popular*.
 
 **Do I need to buy the standards to write a decoder?**
 ETSI standards are free downloads from etsi.org, including the EN 300 392
-and EN 300 395 families. The TIA-102 series is sold commercially; substantial
+and EN 300 395 families. The TIA-102 series is sold commercially; much
 layout knowledge is also recoverable from open implementations — Part 2's
-subject, with its own clean-room rules in Part 5.
+subject, with clean-room rules in Part 5.
 
 **What should I read first in a spec I've never opened?**
 The physical layer chapter and the burst/frame structure tables — then stop
@@ -308,11 +305,11 @@ you build the first testable thing (a sync correlator counting hits on a
 capture) before you understand the other 900 pages.
 
 **Why extract constants before writing any parsing logic?**
-Because constants fail silently and logic fails loudly. A wrong branch
-produces garbage you notice; a wrong sync word or CRC polynomial produces
-*zero decodes*, indistinguishable from a weak signal. Named, cited constants
-can be audited and pinned by literal-vector tests (Part 3) independently of
-the logic around them.
+Constants fail silently and logic fails loudly. A wrong branch produces
+garbage you notice; a wrong sync word or CRC polynomial produces *zero
+decodes*, indistinguishable from a weak signal. Named, cited constants can
+be pinned by literal-vector tests (Part 3) independently of the logic
+around them.
 
 **How do I know which document in a family defines a given field?**
 Follow the layer: physical facts in the air-interface part, message layouts
