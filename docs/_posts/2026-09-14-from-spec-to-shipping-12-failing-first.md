@@ -72,8 +72,8 @@ itself.*
 - **Zero frames, then two** — the DMO colour-0 descramble regression.
 - **A decoder that decodes nothing** — the SmartNet real-air-format test.
 - **Three tests against one pipeline** — the noise-grant trio.
-- **Failing first as a diagnostic method** — why root causes surface while
-  building the reproduction.
+- **Failing first as a diagnostic method** — root causes surface in the
+  reproduction.
 - **When you cannot fail first** — the honest ending, and the Part 14 tie-in.
 
 ## The rule, and what it is actually for
@@ -173,12 +173,11 @@ Notice the input: not the old encoder's output, but a stream built to the
 framing **two independent proven-on-air decoders** transmit and consume —
 OP25's `rx_smartnet` and trunk-recorder's parser, cross-checked as
 [Part 3]({{ '/blog/deep-dives/from-spec-to-shipping-03-literal-vectors/' | relative_url }})
-prescribes. That provenance is what makes the failure meaningful: feed this
-stream to the old decoder and it produces zero locks and zero grants — the
-reporter's `cchunt: hunt failed` symptom, reproduced on the desk, no antenna
-required. (And per the on-air gate, even the rebuild stays
-capture-verification-pending until the reporter's 854.5625 MHz capture
-replays through it — synthetic-green has fooled this exact decoder before.)
+prescribes. That provenance is what makes the failure meaningful: the old
+decoder produces zero locks and zero grants from it — the reporter's
+`cchunt: hunt failed` symptom, reproduced on the desk, no antenna required.
+(Per the on-air gate, even the rebuild stays capture-verification-pending
+until the reporter's 854.5625 MHz capture replays through it.)
 
 ## Three tests against one pipeline: the noise-grant trio
 

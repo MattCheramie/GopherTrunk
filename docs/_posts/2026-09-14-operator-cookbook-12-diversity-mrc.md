@@ -228,7 +228,7 @@ is per-stream (a field pair measured 2.60 samples on one run and 0.41 on the
 next, same rig), which is exactly why it's re-measured every time rather than
 calibrated once.
 
-## The honest ceiling
+## The honest ceiling — and the A/B that tests it
 
 Now the part a recipe owes you before you spend this money. Post-aligner, MRC
 is a **no-harm** combine: every capture A/B run to date scores the combined
@@ -246,7 +246,7 @@ stuck around 0.3–0.5 that no tracking improves. Co-locate the antennas;
 per-channel combining after the DDC is known future work, not a config option
 ([MRC gotchas]({{ '/reference/mrc-diversity-gotchas/' | relative_url }})).
 
-## The pre-combine A/B
+### The pre-combine A/B
 
 Every other IQ tap —
 [`baseband.auto_record`]({{ '/blog/tutorials/analog-edge-10-capture-discipline/' | relative_url }}),
@@ -296,7 +296,7 @@ phase error instead, and the WARN points at per-branch gain staging. The
 series-wide lesson: **never trust an absolute-dBFS rule; trust coherence and
 decode yield.**
 
-## Variations
+### Variations
 
 - **`diversity: "mrc-static"`** — one-shot calibration, frozen. Correct for
   shared-LO hardware (constant `branch_phase_deg`), and the standard A/B

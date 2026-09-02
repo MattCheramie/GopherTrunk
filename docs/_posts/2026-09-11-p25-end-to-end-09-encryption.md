@@ -40,18 +40,17 @@ call no scanner can decode.*
 
 - **Encryption is signalled twice, at different layers.** The grant says
   *that* a call is protected, before allocation; only the traffic channel
-  says *how* — algorithm and key arrive mid-call. Everything downstream is
-  built around that gap: events that backfill, policies that re-evaluate,
-  recordings that abort.
+  says *how*. Everything downstream is built around that gap: events that
+  backfill, policies that re-evaluate, recordings that abort.
 - **The metadata is FEC'd like it matters — and gated like it lies.** Two
-  FEC layers protect the ES word, and an Algorithm ID that survives both but
-  lands outside the TIA-102 registry is *provably* a mis-decode
+  FEC layers protect the ES word, and an Algorithm ID that survives both
+  but lands outside the TIA-102 registry is *provably* a mis-decode
   (`p25.AlgorithmKnown`, issue #924). A plausible-but-wrong key label is
   worse than none.
 - **Policy is per system, and configured keys trump policy.** `follow` /
-  `metadata` / `ignore` are set per `trunking.systems[]` entry, and a call
+  `metadata` / `ignore` are set per `trunking.systems[]` entry; a call
   whose Key ID matches a configured `encryption_keys` entry is always
-  followed regardless of mode.
+  followed.
 - **Identify, never decrypt.** GopherTrunk surfaces ALGID/KID/MI the way
   SDRtrunk and OP25 do. Known-key decode exists only for DMR ARC4; on P25
   there is no decryption and — everywhere — no key recovery of any kind.
@@ -92,9 +91,9 @@ carries an 8-bit Service Options octet, and bit `0x40` of it is the
 The protected bit is the early warning: `Grant.Encrypted` is set before the
 [voice pool]({{ '/blog/deep-dives/trunking-engine-04-voice-pool/' | relative_url }})
 ever binds a tuner, which is what lets the `ignore` policy drop a grant
-without spending anything on it. But one bit is all it is — no algorithm, no
-key, and on some systems it's simply wrong or absent until the traffic
-channel says otherwise.
+without spending anything on it. But one bit is all it is — no algorithm,
+no key, and on compressed Phase 2 grants not even the bit, until the
+traffic channel says otherwise.
 
 The spec also front-loads the full MI/ALGID/KID triple into the
 [**Header Data Unit**]({{ '/reference/p25-header-data-unit/' | relative_url }})
@@ -231,12 +230,10 @@ The Phase 1 composer publishes a `KindCallEncryption` event when an LDU2's
 ES survives both FEC layers and the registry gate — deduplicated, since
 ALGID/KID rarely change within a call. The engine backfills the bound
 `ActiveCall.Grant` and republishes with the call's identity, which is why a
-grant log line grows a suffix mid-call: `E(alg=0x84,key=0x01A3)`. The
-Algorithm ID and Key ID persist into the call log, so an operator can see
-*which* key a recorded call would need.
-
-What the engine then does is the per-system `encrypted_calls` policy
-(issue #711),
+grant log line grows a suffix mid-call: `E(alg=0x84,key=0x01A3)`. ALGID and
+KID persist into the call log, so an operator can see *which* key a
+recorded call would need. What the engine then does is the per-system
+`encrypted_calls` policy (issue #711),
 [Trunking Engine Part 11]({{ '/blog/deep-dives/trunking-engine-11-encrypted-mode/' | relative_url }})'s
 subject:
 

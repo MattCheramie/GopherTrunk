@@ -67,11 +67,11 @@ what single recording unblocks them.*
 ## In this post
 
 - **The report** — a hardware Astro Spectra sets the bound.
-- **The chain, audited** — what the C4FM voice path runs and what it discards.
-- **The twin that got the equalizer** — `fse`, Phase 2, and the inverted twin thread.
-- **The gap, measured** — what the BER sweep's loss budgets actually say.
+- **The chain, audited** — what the C4FM voice path runs and discards.
+- **The twin that got the equalizer** — `fse`, Phase 2, the inverted thread.
+- **The gap, measured** — what the sweep's loss budgets actually say.
 - **Why the port is parked** — proven levers, missing evidence.
-- **The instrument is waiting** — what to record and what happens next.
+- **The instrument is waiting** — what to record, and what happens next.
 
 ## The report: a hardware radio sets the bound
 
@@ -138,10 +138,9 @@ case that is not fair weather.
 
 ## The twin that got the equalizer
 
-This series' running thread is that P25 is a family of twins, and every twin
-pair is a place fixes drift apart. The weak-signal gap is that thread
-**inverted**: not a fix that missed one twin, but a capability that only ever
-landed on one.
+This series' running thread — P25 as a family of twins, each pair a place
+fixes drift apart — arrives here **inverted**: not a fix that missed one
+twin, but a capability that only ever landed on one.
 
 [Part 6]({{ '/blog/deep-dives/p25-end-to-end-06-cqpsk-lsm/' | relative_url }})
 covered the linear path in full: the opt-in `DemodCQPSK` receiver carries a

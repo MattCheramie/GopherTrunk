@@ -167,18 +167,15 @@ baseband:
 ```
 
 Choices worth explaining. **`format: flac`** costs CPU only at call
-finalization and buys ~2× more days per gigabyte; there is no fidelity trade
-— it decodes bit-identical. **`path_template`** is taste, but a date tree
-keeps directory sizes sane at archive scale and matches how you'll actually
-browse (concurrent same-second calls still auto-suffix `-2`, so no
-disambiguator token is needed). **`tap: ddc`** is the archival sweet spot for
-IQ: it records the down-converted channel the decoder actually consumed
-(48 kHz for the C4FM family, 144 kHz for TETRA), directly replayable with
-`gophertrunk replay -in rec.flac -protocol p25` — where a wideband tap at the
-full SDR rate is for short diagnostic grabs, not standing archival. For
-event-driven IQ instead of a standing tap, `baseband.auto_record` fires
-captures on encrypted/emergency/concurrent-call triggers and takes
-`format: flac` too.
+finalization and buys ~2× more days per gigabyte, with no fidelity trade —
+it decodes bit-identical. **`path_template`** is taste, but a date tree keeps
+directory sizes sane at archive scale. **`tap: ddc`** is the archival sweet
+spot for IQ: it records the down-converted channel the decoder actually
+consumed (48 kHz for the C4FM family, 144 kHz for TETRA), directly
+replayable with `gophertrunk replay` — where a wideband tap at the full SDR
+rate is for short diagnostic grabs, not standing archival. For event-driven
+IQ instead of a standing tap, `baseband.auto_record` fires captures on
+encrypted/emergency/concurrent-call triggers and takes `format: flac` too.
 
 **`mbe_files`** is the cross-verification lever: each call gets a `.imb`
 (P25 Phase 1) or `.amb` (DMR/NXDN/P25 Phase 2) file in DSD-FME's native
@@ -273,12 +270,11 @@ so even a misnamed file mounts correctly.
   `files_days`: vocoder frames are a few hundred bytes per second, and the
   audio can be re-synthesized from them offline via `gophertrunk decode`.
 - **Forensic maximalist.** Add `auto_record` (event-triggered wideband
-  slices) and `voice_iq_debug` (per-call channelized voice IQ, `format: flac`,
-  512 MB per-call cap) — every questionable call arrives with its own
-  replayable IQ attached.
-- **Network storage.** `recordings.dir` and `baseband.record[].dir` take
-  absolute paths, so a NAS mount works — but keep `storage.path` (SQLite) on
-  a local disk; databases and network filesystems are old enemies.
+  slices) and `voice_iq_debug` (per-call channelized voice IQ, `format: flac`)
+  — every questionable call arrives with its own replayable IQ attached.
+- **Network storage.** The `dir` keys take absolute paths, so a NAS mount
+  works — but keep `storage.path` (SQLite) on local disk; databases and
+  network filesystems are old enemies.
 
 ## Where this goes next
 
@@ -317,11 +313,13 @@ deliberately keeps rows longer. Set both to the same value if you want the
 searchable record and the playable record to expire together.
 
 **Do the .imb/.amb files replace the audio recording?**
-No — they're sidecars containing the raw vocoder frames in DSD-FME's native
+No — they're sidecars carrying the raw vocoder frames in DSD-FME's native
 container, written alongside the normal recording when
-`recordings.mbe_files: true`. Their job is independent verification
-(`dsd-fme -r call.imb` re-decodes the same frames with a different vocoder)
-and very compact archival, not playback convenience.
+`recordings.mbe_files: true`. Their job is independent verification and very
+compact archival, not playback convenience. Note DSD-FME's own `-w` writer
+stamps an 8 kHz header on 12 kHz synthesis (plays ~1.5× slow) — an upstream
+quirk documented in the [vocoders guide]({{ '/vocoders.html' | relative_url }}),
+not a sidecar defect.
 
 ## Series navigation
 
