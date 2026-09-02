@@ -174,6 +174,16 @@ type ControlChannel struct {
 	// on the call's release and pruned by age. Lazily built; guarded by mu.
 	grantSeen map[grantKey]grantSnapshot
 
+	// releaseSeen records when a KindCallRelease was last published per group
+	// (GSSI). The SwMI retransmits D-RELEASE / D-DISCONNECT — once per addressed
+	// party and again for reliability — so a single call teardown otherwise emits
+	// a burst of identical release events into the bus/SSE feed (the "release
+	// spam" field report; same family as grantSeen and lastTalker above). Only
+	// the first release per window publishes; the entry is cleared when a new
+	// grant for the group publishes, so a rapid grant→release→grant→release
+	// sequence still announces every real teardown. Pruned by age; guarded by mu.
+	releaseSeen map[uint32]time.Time
+
 	// fragTMSDU accumulates a TM-SDU that spans a start-fragment MAC-RESOURCE and
 	// one or more following MAC-FRAG / MAC-END PDUs (§21.4.3.3/.4). fragResource
 	// is the start fragment's MAC-RESOURCE context (address + channel allocation),
@@ -931,6 +941,10 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			delete(c.grantSeen, k)
 		}
 	}
+	// A fresh grant re-arms the release path for its group: the next
+	// D-RELEASE ends THIS call, not a retransmission of the previous one's
+	// teardown, so it must publish even inside releaseDedupWindow.
+	delete(c.releaseSeen, g.DestSSI)
 	c.mu.Unlock()
 
 	c.bus.Publish(events.Event{
@@ -1113,13 +1127,39 @@ func (c *ControlChannel) takeFragment(payload []byte) (MACResource, []byte, bool
 	return c.fragResource, sdu, true
 }
 
+// releaseDedupWindow is how long repeated releases for the same group are
+// suppressed after one was published. The SwMI's retransmissions of a call's
+// D-RELEASE/D-DISCONNECT all land within a few seconds of the first; a release
+// belonging to a genuinely NEW call is always preceded by that call's grant,
+// which clears the group's entry (publishGrant), so the window can be generous
+// without swallowing a real teardown.
+const releaseDedupWindow = 5 * time.Second
+
 // publishRelease emits a KindCallRelease so the engine ends the active call for
 // this talkgroup at once, rather than waiting out the voice hangtime/no-voice
-// timers. No-op without a bus or a resolvable group.
+// timers. No-op without a bus or a resolvable group. Retransmitted releases for
+// the same group inside releaseDedupWindow are suppressed (see releaseSeen).
 func (c *ControlChannel) publishRelease(gssi uint32, cause uint8) {
 	if c.bus == nil || gssi == 0 {
 		return
 	}
+	now := c.now()
+	c.mu.Lock()
+	if last, seen := c.releaseSeen[gssi]; seen && now.Sub(last) < releaseDedupWindow {
+		c.mu.Unlock()
+		return
+	}
+	if c.releaseSeen == nil {
+		c.releaseSeen = make(map[uint32]time.Time)
+	}
+	c.releaseSeen[gssi] = now
+	// Opportunistic age-prune so the map can't grow unbounded on a busy site.
+	for k, t := range c.releaseSeen {
+		if now.Sub(t) >= releaseDedupWindow {
+			delete(c.releaseSeen, k)
+		}
+	}
+	c.mu.Unlock()
 	c.bus.Publish(events.Event{
 		Kind: events.KindCallRelease,
 		Payload: trunking.CallRelease{
