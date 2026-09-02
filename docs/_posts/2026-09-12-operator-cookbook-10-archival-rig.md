@@ -42,9 +42,8 @@ from eating the disk. An archive you can't budget is an outage on a timer.*
   said"; a `tap: ddc` IQ file answers "what was received" and replays through
   `gophertrunk replay` when a decode looks wrong. The archival rig keeps both.
 - **The call log is the index; files are the payload.** SQLite rows survive
-  after `files_days` sweeps the audio, so History can show a 30-day record of
-  a system while only 14 days of it is playable — that split is a feature,
-  and it's configurable per axis.
+  after `files_days` sweeps the audio, so History can show a 30-day record
+  while only 14 days of it stays playable — a feature, configurable per axis.
 - **Retention math is arithmetic, not vibes.** 8 kHz 16-bit voice is
   16 KB/s of talk time; 2.4 MS/s wideband IQ is 9.6 MB/s of wall time. Do
   the multiplication before the disk does it for you.
@@ -208,8 +207,8 @@ habit.
 
 ## First run — what healthy looks like
 
-Restart and let a few calls land. The recorder lines look exactly like
-Part 1's, with the extension telling you the container took:
+Restart and let a few calls land. The recorder lines look like Part 1's,
+the extension telling you the container took:
 
 ```
 INF recorder: call started device=... wav=../recordings/Metro-P25/2026/09/12/20260912_141212_9001_857262500.flac tg=9001 vocoder=imbe
@@ -284,8 +283,7 @@ instead of thirty silent seconds.
 **Should I record scanner calls as FLAC or WAV?**
 FLAC, unless a specific external tool you depend on can't read it. It's
 lossless — bit-identical audio at roughly half the size for speech — and
-GopherTrunk's entire downstream chain (web playback, loudness normalize, MP3
-upload, retention) reads both containers transparently by content sniffing.
+GopherTrunk's entire downstream chain reads both containers transparently.
 
 **How much disk space do SDR call recordings use?**
 At the vocoder-native 8 kHz mono, WAV costs 16 KB per second of talk time

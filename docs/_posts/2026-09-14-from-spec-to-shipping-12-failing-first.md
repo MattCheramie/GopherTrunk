@@ -1,6 +1,6 @@
 ---
 title: "From Spec to Shipping, Part 12: Failing First — The Regression Rule"
-description: Why every GopherTrunk bug fix is one narrow commit plus a regression test that fails without the fix — and three worked examples where writing the failing test WAS the diagnosis, from the DMO colour-0 descramble to the SmartNet rebuild to the noise-grant trio.
+description: Why every GopherTrunk bug fix is one narrow commit plus a regression test that fails without the fix — with three worked examples where writing the failing test was the diagnosis, from the DMO colour-0 descramble to the SmartNet rebuild to the noise-grant trio.
 category: deep-dives
 keywords: failing first regression test, regression test that fails without the fix, reproduce a bug before fixing it, dmo colour code descramble regression, smartnet decoder rebuild test, protocol decoder bug fixing, go testing discipline, gophertrunk from spec to shipping
 tags: [from-spec-to-shipping, testing, regressions, methodology, tetra, smartnet]
@@ -205,7 +205,7 @@ one learned residue of the 255-dibit timeslot grid) is untestable, because
 the "transmitter" itself didn't keep slot time. `buildDMODibitStream` now
 emits every burst on its own 255-dibit timeslot, *as a real radio transmits
 them* — at which point the idle-channel test could demand `dnbQualified == 0`
-against ~18 raw detections a second and watch the old code fail.
+against the detection rain and watch the old code fail.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 210" width="680" height="210" role="img" aria-label="Two bug-fix workflows. Top: guess, fix, green tests, closed issue, and a dashed loop back to the symptom when the reporter reopens. Bottom: faithful reproduction, a test failing against the old code where the root cause surfaces, the fix, the same test passing, a verified close.">
@@ -269,8 +269,8 @@ design came out of the same arithmetic. Likewise the colour-0 test — writing
 0?*, whose answer (`0xC0000000`, not identity) was the bug.
 
 And when you *can't* make the test fail, that's data too: whatever you
-reproduced isn't what was reported, and you found out at your desk instead of
-in the reporter's follow-up comment.
+reproduced isn't what was reported — and you found out at your desk, not in
+the reporter's follow-up.
 
 ## When you cannot fail first
 

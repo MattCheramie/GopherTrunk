@@ -146,7 +146,7 @@ calibrator's job.
 
 ## The config
 
-Everything below is the [Part 8]({{ '/blog/tutorials/operator-cookbook-08-remote-radios/' | relative_url }})
+The [Part 8]({{ '/blog/tutorials/operator-cookbook-08-remote-radios/' | relative_url }})
 SoapyRemote block plus three diversity keys, all verified against
 `config.example.yaml`:
 
@@ -187,8 +187,7 @@ TETRA rig or a Part 1 P25 rig rides it identically.
 ## First run — what healthy looks like
 
 Start the daemon and let it lock as usual (`tetra cc locked freq=467912500
-mcc=… mnc=…` on this recipe's system). The diversity-specific heartbeat is one
-INFO line every 30 seconds:
+mcc=… mnc=…` here). The diversity heartbeat is one INFO line every 30 s:
 
 ```
 INF soapyremote: MRC diversity branches addr=192.168.1.60:55132 branch_dbfs="ch0=-51.2 ch1=-50.6" reference_branch=1 calibrated=true coherence=0.95 branch_gain_db=-1.2 branch_phase_deg=145.3 mode=mrc updates=6682 holds=0
@@ -285,9 +284,8 @@ That last row has history: an earlier build gated calibration on a fixed
 coherence constant, and its WARN told a bandwidth-diluted operator that
 raising RF gain would *not* help — exactly wrong in their regime (their weak
 branch needed +5 dB of per-branch gain). The gates now bound the estimate's
-phase error instead, and the WARN points at per-branch gain staging. The
-series-wide lesson: **never trust an absolute-dBFS rule; trust coherence and
-decode yield.**
+phase error instead. The series-wide lesson: **never trust an absolute-dBFS
+rule; trust coherence and decode yield.**
 
 ### Variations
 

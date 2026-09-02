@@ -109,7 +109,7 @@ superframe, and that repeating copy is the one the pipeline is built on.
 The LDU2 donates the same six 40-bit slots an LDU1 spends on Link Control
 ([Part 8]({{ '/blog/deep-dives/p25-end-to-end-08-imbe-voice/' | relative_url }}))
 to an Encryption Sync word, under the identical inner FEC — 24 codewords of
-shortened Hamming(10,6,3). Above that sits an outer Reed-Solomon layer:
+shortened Hamming(10,6,3) — with an outer Reed-Solomon layer above it:
 
 ```go
 // internal/radio/p25/phase1/encryption_sync.go (shape)
@@ -118,8 +118,6 @@ type EncryptionSync struct {
     AlgorithmID      uint8   // 0x80 = clear; 0x81 DES-OFB, 0x84 AES-256, …
     KeyID            uint16  // which key in the radio's keyset
 }
-
-const AlgorithmClear uint8 = 0x80
 
 func (e EncryptionSync) Encrypted() bool { return e.AlgorithmID != AlgorithmClear }
 
@@ -158,12 +156,12 @@ algorithm is admitted the moment it gets a name.
 
 Phase 2
 ([Part 7]({{ '/blog/deep-dives/p25-end-to-end-07-phase2-tdma/' | relative_url }}))
-signals the same two-layer story with MAC PDUs. The protected bit rides the
-grant's Service Options exactly as on Phase 1 — and also on the in-call
+tells the same two-layer story with MAC PDUs. The protected bit rides the
+grant's Service Options as on Phase 1 — and also the in-call
 `GROUP_VOICE_CHANNEL_USER` PDU, which matters because Phase 2 grants often
-arrive in a *compressed* form with no source and no service options; the
-traffic channel resolves both mid-call, published as a
-`KindCallSourceUpdate` the engine folds back onto the live call.
+arrive *compressed*, with no source and no service options; the traffic
+channel resolves both mid-call via a `KindCallSourceUpdate` the engine
+folds back onto the live call.
 
 The metadata took longer to find. GopherTrunk's first model put ALGID/KID/MI
 in a standalone Encryption Sync MAC opcode (`AsEncryptionSync`) — and on

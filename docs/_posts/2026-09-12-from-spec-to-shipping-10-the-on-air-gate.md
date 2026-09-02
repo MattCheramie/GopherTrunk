@@ -162,14 +162,13 @@ must be crossed repeatedly. Compressed to its verdicts:
 
 Three things to take from that table. First, **every round's conclusion
 was reasonable on its evidence** — a chance-floor CRC really is what
-encryption looks like. The failure wasn't sloppy reasoning; it was
-treating one capture's worth of evidence as more general than it was.
-Second, the facts that broke each deadlock — TEA0-clear, the colour, the
-MNI — all came **from the operator's side of the gate**: a codeplug
-screen, a radio model number. No amount of staring at the decoder could
-have produced them. Third, round 2's fix was *real and necessary* and
-still didn't make voice decode; rounds 3–5 each peeled another layer. A
-gate you cross once is a gate you'll cross again.
+encryption looks like; the failure was treating one capture's evidence as
+more general than it was. Second, the facts that broke each deadlock —
+TEA0-clear, the colour, the MNI — all came **from the operator's side of
+the gate**: a codeplug screen, a radio model number. Third, round 2's fix
+was real and necessary and *still* didn't make voice decode; rounds 3–5
+each peeled another layer. A gate you cross once is a gate you'll cross
+again.
 
 The empirical answer that came out of round 3 is worth showing, because
 it encodes the discipline in two constants:
@@ -234,19 +233,16 @@ if os.Getenv("GT_TETRA_DMO_CLEAR") == "1" {
 }
 ```
 
-The same measurement, two different conclusions — because the operator
-holds a fact the harness cannot measure. This is round 1's mistake,
-engineered away: the harness will never again silently launder "chance
-floor" into "encrypted" when somebody on the other end *knows* the call
-is clear. And when the verdict says "keep chasing," the next instrument
-is one env var away: `GT_TETRA_DMO_SCAN=1` runs
-`TestTETRADMOColourScan`, the 64-colour CRC-yield sweep whose full
-colour→yield map is what made the 15aug "no dominant colour" signature —
-and therefore the MNI blind spot — visible at all.
-[Part 11]({{ '/blog/deep-dives/from-spec-to-shipping-11-capture-driven-development/' | relative_url }})
-covers the fixture machinery behind all of this; the design rule here is
-that **the test harness is an interface between two people who each hold
-half the evidence**.
+The same measurement, two conclusions — because the operator holds a
+fact the harness cannot measure. Round 1's mistake, engineered away: the
+harness will never again launder "chance floor" into "encrypted" when
+somebody on the other end *knows* the call is clear. And when the verdict
+says "keep chasing," the next instrument is one env var away:
+`GT_TETRA_DMO_SCAN=1` runs `TestTETRADMOColourScan`, the 64-colour
+CRC-yield sweep whose full colour→yield map is what made the 15aug "no
+dominant colour" signature — and therefore the MNI blind spot — visible
+at all. The design rule: **the test harness is an interface between two
+people who each hold half the evidence**.
 
 The gate cuts the other way too, and honestly. Sometimes the capture
 proves the *decoder* innocent: the #764 endgame decimated the operator's
@@ -306,19 +302,17 @@ the metrics *before* touching the code.
 ## FAQ
 
 **Why isn't a passing test suite enough to close a bug?**
-Because the suite and the code can share the same wrong assumption — the
-recurring villain of this series. A test the author of the fix wrote can
-only check the author's model; the reported symptom lives on a system
-that doesn't care about the model. #764 was closed twice by exactly this
-overconfidence.
+Because the suite and the code can share the same wrong assumption — this
+series' recurring villain. A test the fix's author wrote checks the
+author's model; the reported symptom lives on a system that doesn't care
+about the model. #764 was closed twice by exactly this overconfidence.
 
 **What does a "CRC chance floor" mean and why does it matter?**
-With random input, a CRC-gated decode still passes occasionally — for
-the TCH/S class-2 check, at roughly 1/256. Yield *at* that floor means
-the decoder is recovering nothing: encryption, a wrong descramble seed,
+With random input, a CRC-gated decode still passes occasionally — for the
+TCH/S class-2 check, at roughly 1/256. Yield *at* that floor means the
+decoder is recovering nothing — but encryption, a wrong descramble seed,
 wrong geometry, and severe RF damage all look identical there. The floor
-tells you something is wrong; it cannot tell you what — which is why
-GopherTrunk pairs it with ground-truth flags and sweep diagnostics.
+says something is wrong; it cannot say what.
 
 **How do I run GopherTrunk's DMO replay against my own capture?**
 Record cs16 IQ on the DMO carrier, then

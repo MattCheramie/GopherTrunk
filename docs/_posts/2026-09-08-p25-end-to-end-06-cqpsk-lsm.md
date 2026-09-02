@@ -75,18 +75,18 @@ were once the bug.*
 ## Why a linear path exists
 
 "Compatible" is the load-bearing word in C4FM's name: the waveform family
-was designed so the same signal can be received either as four-level FM or
-as a phase modulation. Some operators — often, but not only, on simulcast
-systems — transmit **LSM (Linear Simulcast Modulation)**, a
-π/4-DQPSK-family linear waveform, because a linear signal survives
-multi-transmitter overlap better. When several towers transmit the same
-bits with small differential delays, the receiver hears the *sum* of
-delayed copies. For a linear modulation that sum is just a linear channel —
-inter-symbol interference an equalizer can invert
+was designed to be receivable either as four-level FM or as a phase
+modulation. Some operators — often, but not only, on simulcast systems —
+transmit **LSM (Linear Simulcast Modulation)**, a π/4-DQPSK-family linear
+waveform, because a linear signal survives multi-transmitter overlap
+better. When several towers transmit the same bits with small differential
+delays, the receiver hears the *sum* of delayed copies. For a linear
+modulation that sum is just a linear channel — inter-symbol interference an
+equalizer can invert
 ([the ISI story in general form]({{ '/blog/deep-dives/weak-signal-engineering-03-isi-linear-channel/' | relative_url }})).
 For an FM discriminator the sum is a disaster: FM demodulation is
-nonlinear, so overlapping carriers produce phase-slope artifacts no
-downstream filter can cleanly remove.
+nonlinear, and overlapping carriers produce artifacts no downstream filter
+can cleanly remove.
 
 Push an actually-linear LSM signal through a quadrature FM discriminator
 and you get near-random dibits and a frame sync word that never matches —
@@ -135,17 +135,15 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 }
 ```
 
-Read the last loop first, because it is the twin-pair contract: after the
-remap, the CQPSK path's dibit values match what `SymbolToDibit` produces
-from C4FM, so everything from
+Read the last loop first — it is the twin-pair contract: after the remap,
+the CQPSK path's dibit values match what `SymbolToDibit` produces from
+C4FM, so everything from
 [Part 2]({{ '/blog/deep-dives/p25-end-to-end-02-sync-nid-lock/' | relative_url }})'s
-FSW detector to
-[Part 5]({{ '/blog/deep-dives/p25-end-to-end-05-channels-band-plans/' | relative_url }})'s
-band plan is demod-agnostic. The AGC matters more than it looks: both the
-Gardner timing-error detector and the CMA weight update use un-normalised,
-amplitude-dependent error terms, so without it the path locked only in a
-narrow RTL-SDR gain window — a regression issue #275's reporters actually
-measured.
+FSW detector onward is demod-agnostic. The AGC matters more than it looks:
+the Gardner timing-error detector and the CMA weight update both use
+un-normalised, amplitude-dependent error terms, so without it the path
+locked only in a narrow RTL-SDR gain window — a regression issue #275's
+reporters actually measured.
 
 ## The equalizer C4FM never got
 
