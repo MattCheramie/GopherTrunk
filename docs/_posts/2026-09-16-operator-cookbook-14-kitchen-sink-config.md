@@ -14,12 +14,11 @@ series_part: 14
 complete, copy-paste GopherTrunk builds — one working rig per part, antenna to
 browser. Thirteen recipes ago the rig was one $40 dongle and four config
 blocks; along the way it learned trunked DMR and TETRA, analog and tone-out,
-grew extra dongles and remote radios, started streaming, archiving, running
-headless, combining two antennas, and calling everything by name. This
-closing part is the map of the territory: one kitchen-sink `config.yaml`
-walked top to bottom, every block stamped with the part that owns it, plus
-the decision table that turns "what do I want?" into "which part do I read?"
-— and the hygiene habits that keep a config this grown-up honest.*
+grew remote radios and a second antenna, started streaming, archiving,
+running headless, and calling everything by name. This closing part is the
+map: one kitchen-sink `config.yaml` walked top to bottom, every block stamped
+with the part that owns it, plus the decision table that turns "what do I
+want?" into "which part do I read?".*
 
 > **TL;DR:** A full GopherTrunk config is about ten top-level sections, and
 > the cookbook covered each where it mattered: `sdr` (Parts 1–2, 7–8, 12),

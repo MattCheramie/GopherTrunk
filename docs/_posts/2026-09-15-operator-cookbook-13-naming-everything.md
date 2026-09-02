@@ -182,8 +182,8 @@ CSV bundles, previews, then commits) gets you a starting file.
 ## Naming live from the browser
 
 Files are for bulk; the browser is for the radio that keyed up *just now*.
-The Talkgroups and Radio IDs panels edit names in place (the TUI too), backed
-by two endpoints:
+The web Talkgroups and Radio IDs panels edit names in place, backed by two
+endpoints:
 
 ```sh
 curl -X PATCH http://127.0.0.1:8080/api/v1/rids/7001234 \

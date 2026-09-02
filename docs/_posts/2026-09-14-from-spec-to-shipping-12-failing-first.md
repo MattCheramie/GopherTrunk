@@ -44,22 +44,21 @@ itself.*
   on a theory is a guess wearing a commit message.
 - **The hard part is making the test *able* to fail.** All three examples
   needed the test's world made faithful first: an unconditional scrambler, a
-  real-air bit stream, a true 255-dibit slot grid — Part 7's lesson paying
-  rent.
+  real-air bit stream, a true 255-dibit slot grid.
 - **The inversion is the point.** Reproduce → fail → fix → pass front-loads
   the diagnosis; guess → fix → close defers it to the reporter, who becomes
   your regression suite.
 - **When no failing test is possible, the fix does not land.** The P25 C4FM
-  weak-signal levers are diagnosed, designed — and parked until a capture can
-  make a test fail
-  ([Part 14]({{ '/blog/deep-dives/from-spec-to-shipping-14-definition-of-verified/' | relative_url }})'s
-  subject).
+  weak-signal levers are diagnosed, designed — and parked until a capture
+  can make a test fail —
+  [Part 14]({{ '/blog/deep-dives/from-spec-to-shipping-14-definition-of-verified/' | relative_url }})'s
+  subject.
 
 ## Cheat sheet
 
 | Concern | What it does | Where it lives |
 |---|---|---|
-| The rule | bug fix = one narrow commit + a test that fails without it | `CONTRIBUTING.md` ("How changes are scoped") |
+| The rule | bug fix = narrow commit + a test that fails without it | `CONTRIBUTING.md` ("How changes are scoped") |
 | Colour-0 regression | encode side scrambles unconditionally, like real air | `internal/radio/tetra/dmo_decode_test.go` (`TestDMTCHSpeechRoundTrip`) |
 | SmartNet regression | real-air OSW stream → old decoder = zero decodes | `internal/radio/motorola/process_test.go` (`TestProcessDecodesRealAirFormat`) |
 | Noise-grant trio | idle channel, lock ordering, re-arm — three failure modes | `internal/scanner/ccdecoder/pipelines_dmo_test.go` |
@@ -97,12 +96,10 @@ twice on fixes nobody had watched fail while the symptom stayed live
 ([#771](https://github.com/MattCheramie/GopherTrunk/issues/771)) — the story
 Part 14 turns into policy.
 
-One earned caveat: a failing test proves you reproduced *a* bug; only outside
-evidence proves it's *the* bug. The
+One earned caveat: a failing test proves you reproduced *a* bug; only
+outside evidence proves it's *the* bug — the
 [Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }})
-villain — the test sharing its assumption with the code — fabricates a
-convincing failure as easily as a convincing pass, and all three examples
-below had to defeat it first.
+villain fabricates a convincing failure as easily as a convincing pass.
 
 ## Zero frames, then two: the colour-0 descramble
 
@@ -291,20 +288,19 @@ policy, and its own guard hook. That is the finale's subject.
 ## Where this goes next
 
 A failing test proves the fix worked once, on your fixture. Whether it keeps
-working in the field only the running system can say — which means it has to
-be able to *say* things.
+working in the field only the running system can say — so it has to be able
+to *say* things.
 [Part 13]({{ '/blog/deep-dives/from-spec-to-shipping-13-instruments-not-logs/' | relative_url }})
-is about building diagnostics as instruments: counters on every branch,
-verdict lines written for operators, and WARNs that can tell a condition from
-a transient.
+builds diagnostics as instruments: counters on every branch, verdict lines
+written for operators, WARNs that can tell a condition from a transient.
 
 ## FAQ
 
 **What makes a regression test "failing-first" rather than just a test?**
-Provenance: it was run against the pre-fix code and observed to fail, and the
-observation is recorded — GopherTrunk writes it into the test's doc comment
-("verified failing-first against the old code"). A test only ever seen green
-proves the code satisfies the test, never that the test detects the bug.
+Provenance: it ran against the pre-fix code, was observed to fail, and the
+observation is recorded in the test's doc comment ("verified failing-first
+against the old code"). A test only ever seen green proves the code
+satisfies the test, never that the test detects the bug.
 
 **Isn't this just test-driven development?**
 It's TDD's contrapositive, applied to defects: TDD writes a failing test to

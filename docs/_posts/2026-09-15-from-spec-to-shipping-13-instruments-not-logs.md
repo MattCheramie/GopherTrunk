@@ -38,8 +38,8 @@ sampled transient.*
 **Key takeaways**
 
 - **Count every branch, especially the failing ones.** `dsb_total` next to
-  `dsb_schs_crc`, `dnb_total` next to `dnb_qualified`, `tch_crc` next to both
-  — ratios diagnose; lone success counters flatter.
+  `dsb_schs_crc`, `dnb_total` next to `dnb_qualified` — ratios diagnose;
+  lone success counters flatter.
 - **Name what a counter measures, not what you hope it means.** `dnb_total`
   is a noise meter and the docs say so; and when `colour_known` could be true
   without a verified recovery, it earned a separate `colourRecovered` flag —
@@ -64,8 +64,7 @@ sampled transient.*
 
 ## In this post
 
-- **A success-only line carries no information** — the census principle,
-  built forward.
+- **A success-only line carries no information** — the census principle.
 - **Anatomy of one status line** — the DMO decode status, field by field.
 - **Verdict lines are written for the operator** — text that changes with
   what the operator knows.
@@ -184,9 +183,9 @@ But the operator often knows something the code cannot: whether the radios
 are clear. `GT_TETRA_DMO_CLEAR=1` asserts it, and **flips the verdict text**
 — the same counters now print "this is a clear-voice DECODE defect to keep
 chasing … NOT encryption", with the next suspects named (DNB geometry, the
-DM colour code). That flip matters because the un-flipped reading already
-burned this project once: the chance floor was misread as encryption for
-weeks until the reporter confirmed TEA0-clear radios
+DM colour code). The flip matters because the un-flipped reading already
+burned this project: the chance floor was misread as encryption until the
+reporter confirmed TEA0-clear radios
 ([the on-air gate]({{ '/blog/deep-dives/from-spec-to-shipping-10-the-on-air-gate/' | relative_url }})).
 A verdict line that encodes *what evidence would change the conclusion* is
 the difference between a diagnostic and a verdict you have to argue with.
@@ -305,9 +304,9 @@ any value between those regimes works.
 GopherTrunk's split: periodic status lines at DEBUG (they're for
 investigations), state *transitions* at INFO, and conditions needing operator
 action at WARN — with the low-power WARN firing regardless of level because
-operator feedback is its whole point. The failure mode to avoid is a steady
-state logging identically forever; the Tier II engine moved parked channels
-to a 30 s summary cadence after a field report of "endless spam".
+operator feedback is its whole point. Avoid a steady state logging
+identically forever: the Tier II engine moved parked channels to a 30 s
+summary cadence after a field report of "endless spam".
 
 **What's the fastest way to audit an existing log line?**
 Ask, for each field: what ratio is this one side of, and could it be true
