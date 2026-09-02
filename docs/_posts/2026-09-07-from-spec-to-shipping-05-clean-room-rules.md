@@ -82,10 +82,10 @@ without ever copying them into an Apache-2.0 binary.*
 
 ## Two rooms, one wall
 
-Picture the project as two rooms. The **implementation room** contains
-the specs — ETSI EN 300 392-2, EN 300 395-2, the TIA-102 family from
+Picture the project as two rooms. The **implementation room** holds the
+specs — ETSI EN 300 392-2, EN 300 395-2, the TIA-102 family from
 [Part 1]({{ '/blog/deep-dives/from-spec-to-shipping-01-reading-a-radio-standard/' | relative_url }})
-— plus this project's own Go code. The **validation room** contains
+— plus this project's own Go code. The **validation room** holds
 everything else: OP25, trunk-recorder, osmo-tetra-dmo, DSD-FME, the
 compiled ETSI reference tools. The wall between them passes exactly two
 kinds of traffic: **outputs** (bytes to compare against) and **facts**
@@ -188,9 +188,9 @@ series villain preys on the absence of.
 
 ## The vocoder aisle: licenses, patents, and provenance
 
-Nowhere do these questions get sharper than vocoders, and GopherTrunk's
-three tell three different stories — each documented where a reader will
-trip over it, in `docs/vocoders.md` and the packages themselves.
+Nowhere do these questions get sharper than vocoders. GopherTrunk's
+three tell three different stories, each documented in
+`docs/vocoders.md` and the packages themselves.
 
 | Codec | License story | Patent story |
 |---|---|---|
@@ -213,8 +213,7 @@ legal evaluation belongs to the deployer.
 **The ACELP case** is the opposite shape: here the *spec itself ships
 the code*. EN 300 395-2's normative artifact is fixed-point ANSI C, and
 implementing the standard means reproducing that arithmetic bit-exactly —
-which is why the package doc opens with a provenance block instead of
-burying it:
+so the package doc opens with a provenance block instead of burying it:
 
 ```go
 // internal/voice/acelp/ops.go (shape) — package doc
@@ -232,14 +231,13 @@ package acelp
 The decoder was ported from the algorithmic description and the ITU-T
 fixed-point operator definitions, with the fixed quantiser tables —
 numeric constants, again — sourced from the reference. The gate that
-makes the port trustworthy is
-[Part 4]({{ '/blog/deep-dives/from-spec-to-shipping-04-conformance-harness/' | relative_url }})'s
-bit-exact conformance run, and the gate that keeps it honest is
-structural: the decoder registers behind an explicit `tetra-acelp`
-vocoder name so a build can omit it, and the ETSI sources and test
-vectors are **not committed** — the skip-guarded harness points at files
-the operator builds themselves. Different provenance, same principle:
-say exactly where every byte came from, in the file where the bytes live.
+makes the port trustworthy is Part 4's bit-exact conformance run, and
+the gate that keeps it honest is structural: the decoder registers
+behind an explicit `tetra-acelp` vocoder name so a build can omit it,
+and the ETSI sources and vectors are **not committed** — the
+skip-guarded harness points at files the operator builds themselves.
+Different provenance, same principle: say exactly where every byte came
+from, in the file where the bytes live.
 
 ## Hygiene as a build gate
 
@@ -248,9 +246,9 @@ inventory is mechanical: `THIRD_PARTY_LICENSES.md` hand-curates the
 direct dependency table (thirteen modules, all MIT / BSD / Apache-2.0
 families), and `make licenses` generates the full transitive inventory
 into a committed CSV. The CI `licenses` job re-runs the target, diffs
-against the committed copy, and **fails the build** if a newly-introduced
-dependency carries a non-permissive license — a PR that adds a
-dependency must regenerate both files, in the open, in the diff.
+against the committed copy, and **fails the build** on any
+non-permissive newcomer — a PR that adds a dependency must regenerate
+both files, in the open, in the diff.
 
 Three boundaries are worth naming because each is easy to get wrong:
 
@@ -293,9 +291,9 @@ clauses — see the
 
 ## Where this goes next
 
-Clean-room discipline assumes your references agree with each other. They
-don't, always — and when two implementations you trust give two different
-answers for the same burst geometry, no amount of reading settles it.
+Clean-room discipline assumes your references agree. They don't, always —
+and when two implementations you trust give different answers for the
+same burst geometry, no amount of reading settles it.
 [Part 6]({{ '/blog/deep-dives/from-spec-to-shipping-06-when-references-disagree/' | relative_url }})
 is about the referee that outranks every implementation: a measurement on
 a real capture, designed so the right answer wins by a wide margin — and
@@ -314,10 +312,10 @@ source structure does not.
 copyrightable?**
 Constants that describe a wire format are facts about an external system,
 and facts are not copyrightable — a sync word learned from OP25 is the
-same sync word the radio transmits. What copyright protects is creative
+same sync word the radio transmits. Copyright protects creative
 expression: the surrounding code's structure and phrasing. GopherTrunk
-cites the source of every borrowed constant anyway, both as courtesy and
-as engineering provenance.
+cites the source of every borrowed constant anyway, as courtesy and as
+engineering provenance.
 
 **Why is the ACELP decoder a port of the reference when everything else
 is implemented from prose?**
@@ -336,9 +334,9 @@ decoder sits in exactly the same patent posture as mbelib's C —
 
 **What stops a contributor from accidentally adding a GPL dependency?**
 The build. `make licenses` inventories every module the binary links, CI
-diffs the generated inventory against the committed copy, and a
-non-permissive newcomer fails the job — so the question surfaces in the
-PR that introduces it, when it costs a conversation instead of a rewrite.
+diffs the result against the committed copy, and a non-permissive
+newcomer fails the job — the question surfaces in the introducing PR,
+when it costs a conversation instead of a rewrite.
 
 ## Series navigation
 

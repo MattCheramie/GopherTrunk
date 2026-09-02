@@ -68,10 +68,10 @@ about sync words applies to them.*
 
 ## In this post
 
-- **A schema is a shared assumption** — what the SoapyRemote wire actually
+- **A schema is a shared assumption** — what the SoapyRemote wire
   carries, and what it doesn't check.
-- **Opcode 600: anatomy of a silent miss** — how a wrong id becomes a
-  successful call to the wrong function.
+- **Opcode 600: anatomy of a silent miss** — a wrong id as a successful
+  call to the wrong function.
 - **Why every test was green** — the self-consistent trap, RPC edition.
 - **The four nets** — literal pins, strict fakes, introspection, read-back.
 - **The general rules** — what transfers to any schemaless wire format.
@@ -79,18 +79,18 @@ about sync words applies to them.*
 ## A schema is a shared assumption you don't get to check
 
 SoapyRemote is how GopherTrunk drives a networked SDR — a USRP X310
-behind a `SoapySDRServer`. GopherTrunk speaks the protocol with a pure-Go
-client (`internal/sdr/soapyremote/`), reverse-engineered from upstream's
+behind a `SoapySDRServer` — with a pure-Go client
+(`internal/sdr/soapyremote/`) reverse-engineered from upstream's
 `SoapyRPCPacket.hpp` and packer/unpacker sources, in the spirit of the
 [device-contract]({{ '/blog/deep-dives/rf-front-end-02-the-device-contract/' | relative_url }})
 approach the driver stack takes everywhere.
 
 The format is simple and completely trusting: a 12-byte header (`"SRPC"`,
-a version, a length), a payload of type-tagged values, a 4-byte trailer.
-The first value is a CALL carrying a numeric id; the arguments follow as
-bare tagged values — no names, no arity, no signature. The server
-dispatches on the id, and the handler unpacks however many arguments *it*
-believes the call takes.
+version, length), a payload of type-tagged values, a 4-byte trailer. The
+first value is a CALL carrying a numeric id; the arguments follow as bare
+tagged values — no names, no arity, no signature. The server dispatches
+on the id, and the handler unpacks however many arguments *it* believes
+the call takes.
 
 So the call ids are not values GopherTrunk gets to choose. They are
 **positions in an upstream enum**, and the comment in `rpc.go` says so:
@@ -111,12 +111,11 @@ const (
 )
 ```
 
-Read that comment next to
+Read that next to
 [Part 1]({{ '/blog/deep-dives/from-spec-to-shipping-01-reading-a-radio-standard/' | relative_url }})'s
-rule — *constants first, and every constant cites its source* — and this
-part is half written. An opcode is a sync word for a TCP stream: one
-wrong value and you are invoking something else entirely, with no error
-message.
+rule — *constants first, every constant cites its source* — and this part
+is half written. An opcode is a sync word for a TCP stream: one wrong
+value and you are invoking something else entirely, with no error message.
 
 ## Opcode 600: anatomy of a silent miss
 
@@ -138,10 +137,10 @@ query. Walk through what the wire did with that, step by step:
    GopherTrunk logs `rx antenna set` for an antenna that was never set.
 
 The operator-visible symptom was maximally misleading: `antennas: [RX1,
-RX2]` in the config did nothing, every radio kept its *driver default*
-port, and the same config therefore behaved differently on an X310 and a
-B210. Nothing failed; nothing warned on the client side. The only witness
-was a cryptic destructor message on a machine in another room.
+RX2]` did nothing, every radio kept its *driver default* port, and the
+same config therefore behaved differently on an X310 and a B210. Nothing
+failed; nothing warned client-side. The only witness was a cryptic
+destructor message on a machine in another room.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Two-column RPC ladder comparing the intended SET_ANTENNA call with what opcode 600 actually did. Left column: client packs call 501 with direction, channel and the antenna name; the setAntenna handler consumes all arguments, switches the port, and replies void. Right column: client packs call 600 with the same arguments; the HAS_DC_OFFSET_MODE handler consumes only direction and channel, leaves 9 bytes unconsumed which the server logs, never touches the antenna, and replies with a bool that the client's exception check reads as success.">
@@ -236,12 +235,12 @@ the real `~SoapyRPCUnpacker`'s log line into a failure: every handler
 parses its arguments, a request with bytes left over (or an unknown id)
 lands in `protocolErrs`, and `newFakeSoapyServer` registers an
 `assertCleanProtocol` cleanup so **every** test in the package gets the
-check for free. This catches *argument-shape* drift — and when it was
-added it immediately found **two more calls** the fake had silently not
-been parsing. It cannot catch opcode drift (the fake still switches on
-the client's constants; the comment in the file says so), which is why
-Net 1 exists separately. The general rule — test doubles ranked by how
-much reality they enforce — got its own treatment in
+check for free. This catches *argument-shape* drift — and adding it
+immediately found **two more calls** the fake had silently not been
+parsing. It cannot catch opcode drift (the fake still switches on the
+client's constants; the comment in the file says so), which is why Net 1
+exists separately. The general rule — test doubles ranked by how much
+reality they enforce — got its own treatment in
 [Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }}).
 
 **Net 3: introspect, then read back.** The deepest fix is in the
@@ -268,11 +267,11 @@ Three RPCs where one used to be. `LIST_ANTENNAS` matters because port
 names do not transfer between radios — a TwinRX offers `RX1`/`RX2`, a
 B210 `TX/RX`/`RX2` — so a config moved between rigs must fail loudly with
 the names that *do* exist (`TestOpenRejectsAntennaNotOnDevice` pins the
-error message). And the `GET_ANTENNA` read-back is the assertion that
-survives everything: a wrong opcode, a driver that ignores the setter, a
-typo'd port. The log line now reports what the **device** said, where it
-used to report what GopherTrunk had asked for — the entire difference
-between a log and an instrument.
+error message). And the `GET_ANTENNA` read-back survives everything: a
+wrong opcode, a driver that ignores the setter, a typo'd port. The log
+line now reports what the **device** said, where it used to report what
+GopherTrunk had asked — the entire difference between a log and an
+instrument.
 
 **Net 4: make the wire visible.** `sdr.soapy_remote[].verbose_debug`
 enables a per-frame RPC tracer (`rpcdebug.go`) rendering each request and
@@ -283,9 +282,9 @@ the question "which call?" has a client-side answer.
 
 ## The rules, genericized
 
-Nothing above is SoapySDR-specific. Any wire format without a schema — a
-binary RPC, a vendor USB control protocol, a register map, a serial
-command set — has the same four failure faces, and earns the same nets:
+Nothing above is SoapySDR-specific. Any schemaless wire — a binary RPC, a
+vendor USB control protocol, a register map, a serial command set — has
+the same failure faces, and earns the same nets:
 
 - **Treat foreign enum values as extracted constants** (Part 1's rule):
   cite the defining file, and pin every value with a literal transcribed
@@ -313,8 +312,8 @@ capture by capture.
 
 **How does a wrong RPC opcode go unnoticed when the arguments don't match?**
 Because nothing compares them. The handler unpacks what *it* expects; if
-the leading argument types coincide — a direction byte and a channel int
-are near-universal prefixes in SoapySDR calls — it runs happily on the
+the leading types coincide — a direction byte and a channel int are
+near-universal prefixes in SoapySDR calls — it runs happily on the
 prefix, and the surplus bytes are at most a log line in a destructor.
 
 **Why not just generate the Go constants from SoapyRemoteDefs.hpp?**
@@ -338,9 +337,8 @@ covering that face with a different net, not retiring the double.
 **Do these rules apply to protocols that have schemas, like gRPC?**
 Less force, same direction. A schema checks names and types, but semantic
 drift — wrong units, a deprecated endpoint that still answers — passes
-any schema. Read-back and introspection-validation stay worth their cost
-wherever a success reply is cheaper for the peer to send than the write
-is to perform.
+any schema. Read-back and introspection stay worth their cost wherever a
+success reply is cheaper to send than the write is to perform.
 
 ## Series navigation
 

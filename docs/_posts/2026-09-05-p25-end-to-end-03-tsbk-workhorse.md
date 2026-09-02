@@ -186,9 +186,9 @@ into four working families:
 | Unit business | 0x28 GRP_AFF_RSP, 0x2C U_REG_RSP, 0x18 STS_UPDT, 0x1F CALL_ALRT | registration, affiliation, paging |
 
 `Opcode.String()` renders the canonical TIA mnemonic so logs read in spec
-terms, falling back to `OSP(0xNN)` for opcodes the decoder doesn't name.
-That method carries a scope rule we'll return to below: it is only
-meaningful for **standard** (MFID 0x00) outbound opcodes.
+terms, falling back to `OSP(0xNN)` for unnamed opcodes — with a scope rule
+we'll return to below: it is only meaningful for **standard** (MFID 0x00)
+outbound opcodes.
 
 ## From opcode to `trunking.Grant`
 

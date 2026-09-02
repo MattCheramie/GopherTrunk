@@ -1,6 +1,6 @@
 ---
 title: "P25 End to End, Part 5: Channel Identifiers & Band Plans — From Channel Number to Hertz"
-description: How a P25 grant's 16-bit channel field becomes a frequency — the IDEN_UP band-plan broadcasts in their 0x3D, 0x34 and 0x33 dialects, the base-plus-spacing arithmetic GopherTrunk runs in BandPlan.Frequency, and what happens when a grant arrives before the table that decodes it.
+description: How a P25 grant's 16-bit channel field becomes a frequency — the IDEN_UP band-plan broadcasts in their 0x3D, 0x34 and 0x33 dialects, the base-plus-spacing arithmetic in BandPlan.Frequency, and what happens when a grant arrives before the table that decodes it.
 category: deep-dives
 keywords: p25 iden_up, p25 band plan, p25 channel identifier, p25 channel number to frequency, iden_up_tdma 0x33, p25 grant frequency calculation, p25 tx offset uplink, trunking band plan decoding, gophertrunk p25
 tags: [p25-end-to-end, p25, band-plan, trunking, control-channel, go]
@@ -10,30 +10,29 @@ series: "P25 End to End"
 series_part: 5
 ---
 
-*Part 5 of **P25 End to End**, a 14-part deep dive that follows North America's
-dominant trunking protocol through GopherTrunk — from a raw C4FM carrier to
-recorded, named, multi-site voice.
+*Part 5 of **P25 End to End**, a 14-part deep dive that follows North
+America's dominant trunking protocol through GopherTrunk — from a raw C4FM
+carrier to recorded, named, multi-site voice.
 [Part 4]({{ '/blog/deep-dives/p25-end-to-end-04-mbt-ambt/' | relative_url }})
 decoded Multi-Block Trunking and recovered the site broadcasts some
 systems only send in AMBT form. But every grant and neighbor announcement
 names its frequency the same indirect way: a 4-bit channel identifier plus
-a 12-bit channel number. This part is the dictionary that turns those
-sixteen bits into hertz — the IDEN_UP broadcasts, the arithmetic, and the
-failure modes when the dictionary is late, missing, or wrong.*
+a 12-bit channel number. This part is the dictionary turning those sixteen
+bits into hertz — the IDEN_UP broadcasts, the arithmetic, and the failure
+modes when the dictionary is late, missing, or wrong.*
 
-> **TL;DR:** P25 never broadcasts frequencies with grants. A voice grant
-> carries a 16-bit channel field — **4-bit channel ID + 12-bit channel
-> number** — and the site separately, periodically broadcasts **IDEN_UP**
-> messages defining each ID slot's base frequency, spacing and transmit
-> offset. GopherTrunk accumulates them in `phase1.BandPlan`
+> **TL;DR:** P25 never broadcasts frequencies with grants. A grant carries
+> a 16-bit channel field — **4-bit channel ID + 12-bit channel number** —
+> and the site separately broadcasts **IDEN_UP** messages defining each ID
+> slot's base frequency, spacing and transmit offset. GopherTrunk
+> accumulates them in `phase1.BandPlan`
 > (`internal/radio/p25/phase1/identifier.go`) and resolves
-> `freq = BaseHz + ChannelNumber × SpacingHz`. Three on-air dialects (opcodes
-> **0x3D**, **0x34** VHF/UHF, **0x33** TDMA) parse into one struct; base
-> frequencies scale ×5 Hz, spacing ×125 Hz. A grant arriving before its
-> IDEN_UP is queued for 5 s (`pendingGrants`) and surfaced as a
-> `decode.error` with `stage="no-bandplan"` — and an explicit uplink channel
-> from Part 4's AMBT broadcasts resolves as plain base+spacing with **no**
-> tx offset.
+> `freq = BaseHz + ChannelNumber × SpacingHz`. Three on-air dialects
+> (opcodes **0x3D**, **0x34** VHF/UHF, **0x33** TDMA) parse into one
+> struct; bases scale ×5 Hz, spacing ×125 Hz. A grant arriving before its
+> IDEN_UP is queued 5 s (`pendingGrants`) and surfaced as a `decode.error`
+> with `stage="no-bandplan"` — and an explicit uplink channel from Part 4's
+> AMBT broadcasts resolves as plain base+spacing with **no** tx offset.
 
 **Key takeaways**
 
@@ -48,13 +47,12 @@ failure modes when the dictionary is late, missing, or wrong.*
   is fiction.
 - **An explicit uplink channel number already encodes the uplink
   frequency.** When an AMBT neighbor broadcast names an uplink channel,
-  GopherTrunk resolves it base+spacing with no transmit offset applied —
-  matching SDRTrunk, and the opposite of what the offset field's existence
-  tempts you to do.
+  GopherTrunk resolves it base+spacing with no transmit offset — matching
+  SDRTrunk, and the opposite of what the offset field tempts you to do.
 - **The channel ID carries more than arithmetic.** A slot advertised via
   opcode 0x33 is flagged `AccessTDMA`, and that one bit routes the grant
-  into the Phase 2 voice chain — the wiring hybrid Phase 1 CC / Phase 2
-  voice systems (issue #376) silently lacked.
+  into the Phase 2 voice chain — wiring hybrid Phase 1 CC / Phase 2 voice
+  systems (issue #376) silently lacked.
 
 ## Cheat sheet
 
@@ -70,17 +68,18 @@ failure modes when the dictionary is late, missing, or wrong.*
 
 ## In this post
 
-- **Frequencies are never broadcast with grants** — the 4+12-bit indirection and why it exists.
-- **Three dialects, one struct** — 0x3D vs 0x34 vs 0x33, and where they disagree.
-- **The arithmetic, worked** — from bitfield to megahertz in one figure.
-- **When the table is late, missing, or wrong** — pending grants, `no-bandplan`, and tuning to nothing.
-- **Uplinks, offsets, and the AMBT rule** — the Part 4 callback, resolved in code.
+- **Frequencies are never broadcast with grants** — the 4+12-bit indirection.
+- **Three dialects, one struct** — 0x3D vs 0x34 vs 0x33, where they disagree.
+- **The arithmetic, worked** — bitfield to megahertz in one figure.
+- **When the table is late, missing, or wrong** — pending grants, `no-bandplan`, tuning to nothing.
+- **Uplinks, offsets, and the AMBT rule** — the Part 4 callback, in code.
 
 ## Frequencies are never broadcast with grants
 
-Here is the whole payload of a Group Voice Channel Grant (TSBK opcode 0x00),
-the message [Part 3]({{ '/blog/deep-dives/p25-end-to-end-03-tsbk-workhorse/' | relative_url }})
-decoded a few hundred times a minute:
+Here is the whole payload of a Group Voice Channel Grant (TSBK opcode
+0x00), the message
+[Part 3]({{ '/blog/deep-dives/p25-end-to-end-03-tsbk-workhorse/' | relative_url }})
+decoded hundreds of times a minute:
 
 ```go
 // internal/radio/p25/phase1/opcodes.go (shape) — ParseGroupVoiceChannelGrant
@@ -96,9 +95,9 @@ func ParseGroupVoiceChannelGrant(p [8]byte) GroupVoiceChannelGrant {
 }
 ```
 
-Sixteen bits of channel, and not one of them is a frequency. The reason is
-economy: a TSBK payload is eight bytes, a frequency takes four, and a site
-grants calls constantly while its frequency plan changes never. So P25
+Sixteen bits of channel, none of them a frequency. The reason is economy:
+a TSBK payload is eight bytes, a frequency takes four, and a site grants
+calls constantly while its frequency plan changes never. So P25
 factors the plan out — the site periodically broadcasts up to sixteen
 **channel identifier** definitions, each pairing a 4-bit ID with a base
 frequency, spacing, nominal bandwidth and transmit offset, and every grant,
@@ -106,16 +105,16 @@ neighbor announcement and secondary-CC broadcast thereafter spends only 16
 bits per channel reference. The same `ID<<12 | number` packing appears in
 every channel-bearing TSBK in `opcodes.go` and in Part 4's AMBT forms alike.
 
-The cost of the economy is state: a receiver tuning in mid-stream knows the
-grants before it knows the dictionary — a structural race GopherTrunk built
-real machinery for, below.
+The cost of the economy is state: a receiver tuning in mid-stream knows
+the grants before the dictionary — a race GopherTrunk built real machinery
+for, below.
 
 ## Three dialects, one struct
 
-The dictionary entries arrive as **IDEN_UP** TSBKs, and there are three
-on-air variants. All three parse into one `IdentifierUpdate` struct, because
-downstream code only ever wants base, spacing, and offset — but the byte-0
-low nibble and the offset field mean different things in each:
+The dictionary entries arrive as **IDEN_UP** TSBKs, in three on-air
+variants. All three parse into one `IdentifierUpdate` struct — downstream
+code only wants base, spacing, and offset — but the byte-0 low nibble and
+the offset field mean different things in each:
 
 | | 0x3D `IDEN_UP` | 0x34 `IDEN_UP_VUHF` | 0x33 `IDEN_UP_TDMA` |
 |---|---|---|---|
@@ -124,11 +123,11 @@ low nibble and the offset field mean different things in each:
 | Tx offset | 9-bit two's complement × **250 kHz** | sign + 13-bit magnitude × **SpacingHz** | sign + 13-bit magnitude × **SpacingHz** |
 | Extra semantics | — | — | marks the slot `AccessTDMA` |
 
-Two fields are identical everywhere, and their scaling is worth memorising
-because it explains every suspicious number in a band-plan log: the 32-bit
-base frequency is in units of **5 Hz** (`BaseHz = freq32 × 5`), and the
-10-bit channel step is in units of **125 Hz** (`SpacingHz = step × 125`).
-The standard form's parser is compact enough to quote whole:
+Two fields are identical everywhere, and their scaling explains every
+suspicious number in a band-plan log: the 32-bit base frequency is in
+units of **5 Hz** (`BaseHz = freq32 × 5`), the 10-bit channel step in
+units of **125 Hz** (`SpacingHz = step × 125`). The standard form's parser
+is compact enough to quote:
 
 ```go
 // internal/radio/p25/phase1/identifier.go (shape) — ParseIdentifierUpdate
@@ -170,7 +169,7 @@ picks up the other side of that routing decision.
 
 ## The arithmetic, worked
 
-Resolution itself is one line plus guard rails:
+Resolution is one line plus guard rails:
 
 ```go
 // internal/radio/p25/phase1/identifier.go (shape) — BandPlan.Frequency
@@ -188,7 +187,7 @@ func (b *BandPlan) Frequency(channelID uint8, channelNumber uint16) (uint32, err
 ```
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 230" width="680" height="230" role="img" aria-label="A worked example of P25 channel resolution: a 16-bit channel field splits into a 4-bit identifier and a 12-bit channel number; the identifier selects one of sixteen band-plan slots carrying base frequency and spacing from an IDEN_UP broadcast; the arithmetic base plus number times spacing yields 853.88125 megahertz">
+<svg viewBox="0 0 680 230" width="680" height="230" role="img" aria-label="A 16-bit channel field splits into a 4-bit identifier selecting a band-plan slot and a 12-bit channel number; base plus number times spacing yields 853.88125 megahertz, and a missing slot queues the grant instead">
   <!-- channel field -->
   <rect x="30" y="28" width="60" height="30" fill="none" stroke="var(--accent)" stroke-width="2"/>
   <rect x="90" y="28" width="180" height="30" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -202,7 +201,7 @@ func (b *BandPlan) Frequency(channelID uint8, channelNumber uint16) (uint32, err
   <text x="340" y="40" fill="var(--fg-muted)" font-size="10">band plan (from IDEN_UP broadcasts)</text>
   <text x="340" y="58" fill="currentColor" font-size="10">id 0: base 851.00625 MHz · spacing 6.25 kHz</text>
   <text x="340" y="76" fill="var(--accent)" font-size="10" font-weight="bold">id 1: base 851.00625 MHz · spacing 6.25 kHz</text>
-  <text x="340" y="94" fill="var(--fg-muted)" font-size="10">id 2..15: (unknown until broadcast)</text>
+  <text x="340" y="94" fill="var(--fg-muted)" font-size="10">id 2..15: unknown until broadcast</text>
   <path d="M 92 60 C 140 110 260 90 334 74" fill="none" stroke="var(--accent)" stroke-dasharray="4 3"/>
   <polygon points="334,74 322,72 328,82" fill="var(--accent)"/>
   <!-- arithmetic -->
@@ -215,19 +214,17 @@ func (b *BandPlan) Frequency(channelID uint8, channelNumber uint16) (uint32, err
   <!-- failure branch -->
   <line x1="30" y1="182" x2="650" y2="182" stroke="var(--fg-muted)" stroke-dasharray="2 4"/>
   <text x="30" y="202" fill="currentColor" font-size="10" font-weight="bold">no IDEN_UP for that ID yet?</text>
-  <text x="230" y="202" fill="var(--fg-muted)" font-size="10">→ queue the grant 5 s (pendingGrants) + publish decode.error stage="no-bandplan"</text>
-  <text x="230" y="218" fill="var(--fg-muted)" font-size="10">→ drained the moment BandPlan.Apply lands the matching slot</text>
+  <text x="230" y="202" fill="var(--fg-muted)" font-size="10">→ queue 5 s (pendingGrants) + publish decode.error stage="no-bandplan"</text>
+  <text x="230" y="218" fill="var(--fg-muted)" font-size="10">→ drained when BandPlan.Apply lands the slot</text>
 </svg>
 <figcaption>Sixteen bits of grant become a frequency only through the band-plan table the site broadcasts separately — and GopherTrunk queues the grant when the table hasn't arrived yet.</figcaption>
 </figure>
 
 Run the example backwards to see the scaling: base 851.00625 MHz is
-`freq32 = 170201250` in 5 Hz units, spacing 6.25 kHz is `step = 50` in
-125 Hz units. Those constants also explain the classic symptom of a
-corrupted IDEN_UP — a base off by a factor of five lands the tuner in a
-different band entirely. The overflow guard exists for the same reason: a
-malformed broadcast must produce an error, never a silently wrapped
-frequency that looks plausible.
+`freq32 = 170201250` in 5 Hz units; spacing 6.25 kHz is `step = 50` in
+125 Hz units. The overflow guard exists in the same spirit: a malformed
+broadcast must produce an error, never a silently wrapped frequency that
+looks plausible.
 
 ## When the table is late, missing, or wrong
 
@@ -263,8 +260,8 @@ advertised.
 
 ## Uplinks, offsets, and the AMBT rule
 
-Every IDEN_UP carries a transmit offset — uplink = downlink + offset — and
-for a receive-only scanner it is mostly documentation. But
+Every IDEN_UP carries a transmit offset — uplink = downlink + offset —
+mostly documentation for a receive-only scanner. But
 [Part 4]({{ '/blog/deep-dives/p25-end-to-end-04-mbt-ambt/' | relative_url }})'s
 AMBT broadcasts reintroduce it with a trap: the Adjacent Status and RFSS
 Status AMBT forms carry **explicit uplink channels** — a second
@@ -311,22 +308,22 @@ because nothing tunes to it.
 
 ## Where this goes next
 
-Everything so far assumed the FM discriminator from Part 1 — the C4FM
-physics nearly every P25 site transmits.
+Everything so far assumed Part 1's FM discriminator — the C4FM physics
+nearly every P25 site transmits.
 [Part 6]({{ '/blog/deep-dives/p25-end-to-end-06-cqpsk-lsm/' | relative_url }})
 walks the twin path: the linear CQPSK/LSM demodulator for the minority of
-sites where the discriminator produces near-random dibits, the
-fractionally-spaced equalizer that path carries, and the hard-won rule that
-"simulcast" does not mean what the project's own docs once said it meant.
+sites where the discriminator produces near-random dibits, the equalizer
+that path carries, and the hard-won rule that "simulcast" does not mean
+what the project's own docs once said.
 
 ## FAQ
 
 **Why doesn't P25 just broadcast the frequency in the grant?**
-Payload economy on a channel granting calls many times per second: a 16-bit
-index costs a quarter of a 32-bit frequency and the plan it indexes almost
-never changes. The trade is that every receiver becomes stateful — it must
-hold the site's IDEN_UP table before any grant is actionable, which is why
-GopherTrunk queues grants that arrive first.
+Payload economy on a channel granting calls many times per second: a
+16-bit index is half a 32-bit frequency and the plan it indexes almost
+never changes. The trade is that every receiver becomes stateful — no
+grant is actionable before the site's IDEN_UP table arrives, which is why
+GopherTrunk queues the ones that beat it.
 
 **How long does it take to learn a site's band plan?**
 Sites repeat IDEN_UP continuously alongside their status broadcasts — the
@@ -336,17 +333,16 @@ broadcast gap, short enough that a stale grant isn't resolved pointlessly
 late.
 
 **What does `decode.error stage="no-bandplan"` mean in my metrics?**
-A voice grant referenced a channel ID for which no IDEN_UP has been seen
-yet. Occasional counts right after lock are the normal race; a steady rate
-means the site uses an ID it rarely (or never) defines on this control
-channel, or your capture is dropping the TSBKs that define it.
+A voice grant referenced a channel ID with no IDEN_UP seen yet. Occasional
+counts right after lock are the normal race; a steady rate means the site
+uses an ID it rarely defines on this control channel, or your capture is
+dropping the TSBKs that define it.
 
 **Can I hardcode my system's band plan instead of learning it?**
 The wideband path can pre-seed the table from configured `P25BandPlan`
-entries at startup, which helps replay and very short captures. But the
-on-air broadcasts still apply and win — a site's own IDEN_UP is the ground
-truth, and rebanding history is the argument against trusting a static
-table alone.
+entries, which helps replay and very short captures. But the on-air
+broadcasts still apply and win — a site's own IDEN_UP is the ground truth,
+and rebanding history is the argument against static tables.
 
 **Does the tx offset matter for a receive-only scanner?**
 For tuning, no — GopherTrunk only tunes downlinks. It matters for the

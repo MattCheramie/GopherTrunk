@@ -331,10 +331,9 @@ MPEG-2.5 family at 32 kbps CBR — small enough that a full day of busy-system
 calls is tens of megabytes of upload.
 
 **Can I upload the same system to Broadcastify and OpenMHz at once?**
-Yes — that's the default behavior. Every enabled feed whose `systems:` list
-(or absence of one) accepts the call gets its own upload, from one shared
-MP3 encode. Backends fail independently: an OpenMHz outage never costs you a
-Broadcastify call.
+Yes — that's the default. Every enabled feed whose `systems:` list accepts
+the call gets its own upload from one shared MP3 encode, and backends fail
+independently: an OpenMHz outage never costs you a Broadcastify call.
 
 **Why do my uploads sound quieter than other feeds?**
 Faithful decode is conservative, and aggregator players do no gain riding.

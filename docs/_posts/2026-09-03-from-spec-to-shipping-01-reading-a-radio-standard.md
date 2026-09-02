@@ -1,6 +1,6 @@
 ---
 title: "From Spec to Shipping, Part 1: How to Read a Radio Standard"
-description: How ETSI EN and TIA-102 standards families are organized, the order a decoder author should read them — physical layer up to PDU layouts — and the constants to extract on day one: sync words, CRC definitions, and the exact bit offsets everything else leans on.
+description: "How ETSI EN and TIA-102 standards families are organized, the order a decoder author should read them — physical layer up to PDU layouts — and the constants to extract on day one: sync words, CRC definitions, and the exact bit offsets everything else leans on."
 category: deep-dives
 keywords: how to read a radio standard, etsi en 300 392-2, tia-102 document family, p25 specification structure, tetra air interface specification, crc polynomial from spec, bit order transmission order, writing a protocol decoder from a spec, gophertrunk from spec to shipping
 tags: [from-spec-to-shipping, standards, etsi, tia-102, protocols, methodology]

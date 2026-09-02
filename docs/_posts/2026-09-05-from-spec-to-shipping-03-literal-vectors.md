@@ -1,6 +1,6 @@
 ---
 title: "From Spec to Shipping, Part 3: Literal Vectors, Not Round-Trips"
-description: Why round-trip tests let parser bugs live — the P25 SCCB opcode that read channel B one byte early while its test stayed green — and the fix as method: pin every parser with literal byte vectors cross-checked against an independent decoder, kept as bytes in the test, never generated.
+description: "Why round-trip tests let parser bugs live — the P25 SCCB opcode that read channel B one byte early while its test stayed green — and the fix as method: pin every parser with literal byte vectors cross-checked against an independent decoder, kept as bytes in the test, never generated."
 category: deep-dives
 keywords: round-trip test trap, literal test vectors, parser regression testing, p25 sccb tsbk 0x39, self-consistent test bug, byte layout off by one, cross-check independent decoder, pinning constants in tests, gophertrunk from spec to shipping
 tags: [from-spec-to-shipping, testing, p25, tsbk, go, methodology]

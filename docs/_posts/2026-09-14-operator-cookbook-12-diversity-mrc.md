@@ -15,10 +15,10 @@ copy-paste GopherTrunk builds — one working rig per part, antenna to browser.
 [Part 11]({{ '/blog/tutorials/operator-cookbook-11-closet-appliance/' | relative_url }})
 put the rig in a closet and taught it to survive unattended. This part is the
 advanced RF build: **two antennas feeding one decoder**, phase-coherently
-combined so a fade on one branch is covered by the other. It is the most
-instrument-heavy recipe in the series — diversity is the one upgrade that can
-silently do nothing (or, before the aligner, actively hurt), so the log lines
-that prove it's working matter more here than anywhere else.*
+combined so a fade on one branch is covered by the other. Diversity is the
+one upgrade that can silently do nothing — or, before the aligner, actively
+hurt — so the log lines that prove it's working matter more here than
+anywhere else in the series.*
 
 > **TL;DR:** Diversity needs **one radio with two coherent RX channels** — a
 > USRP B210 (shared LO) or an X310 with TwinRX daughterboards (independent
@@ -38,12 +38,10 @@ that prove it's working matter more here than anywhere else.*
 - **Diversity is the last lever, not the first.** A better antenna, feedline
   and gain staging (Parts 7–9 of
   [The Analog Edge]({{ '/blog/tutorials/analog-edge-07-antennas/' | relative_url }}))
-  buy more margin per dollar. Build this when one antenna genuinely fades —
-  and only after the single-branch rig already decodes.
+  buy more margin per dollar. Build this when one antenna genuinely fades.
 - **Hardware class decides the mode.** A shared-LO front end has one fixed
-  inter-branch phase; separate daughterboards with independent PLLs lock at a
-  random phase that then walks. `branch_phase_deg` in the health line tells
-  you which class you own, before any capture.
+  inter-branch phase; independent PLLs lock at a random phase that then
+  walks. `branch_phase_deg` tells you which class you own, before any capture.
 - **Coherence, not dBFS, is the verdict on the combine.** The
   [coherence]({{ '/reference/coherence/' | relative_url }}) figure is
   independent of RF gain — raising gain to make diversity "engage" is never
@@ -67,38 +65,35 @@ that prove it's working matter more here than anywhere else.*
 ## In this post
 
 - **What you're building** — two antennas, one coherent front end, one combined stream.
-- **The shopping list** — why this is the expensive recipe, and the two hardware classes.
+- **The shopping list** — the two hardware classes, honestly priced.
 - **The config** — `diversity: mrc` on a SoapyRemote device, every key verified.
 - **First run — what healthy looks like** — the MRC health line, field by field.
-- **The honest ceiling** — what MRC can and cannot buy you.
-- **The pre-combine A/B** — capturing both branches and grading the combine offline.
-- **When it doesn't work** — symptom → cause → fix.
-- **Variations** — mrc-static, longer captures, single-port pinning.
+- **The honest ceiling & the pre-combine A/B** — what MRC can buy, and how to prove it.
+- **When it doesn't work** — symptom → cause → fix, then variations.
 
 ## What you're building
 
 The finished rig is the [Part 8]({{ '/blog/tutorials/operator-cookbook-08-remote-radios/' | relative_url }})
 remote-radio build with a second antenna: a two-channel SDR runs
 `SoapySDRServer` near the antennas, GopherTrunk opens **both** RX channels,
-and the driver phase-aligns and sums them into a single maximised-SNR stream
-before the decoder ever sees IQ. Everything downstream — control-channel
-decode, voice taps, recordings — is unchanged; diversity is invisible except
-in the health log and, when the channel fades, in the calls that keep
-decoding.
+and the driver phase-aligns and sums them into one maximised-SNR stream
+before the decoder ever sees IQ. Everything downstream is unchanged;
+diversity is invisible except in the health log and, when the channel fades,
+in the calls that keep decoding.
 
 Three stages inside the driver do the work, in order: a **pre-combine capture
 tap** (raw, so evidence stays untouched), an **inter-branch aligner** that
-measures and removes the fractional-sample start skew between the two streams
-(on one field rig, 2.6 samples of skew made the combine decode **22% worse**
-than the best branch alone — the aligner is why that can't happen anymore),
-and the **MRC combiner** itself, which estimates one complex gain per
-calibration window and either tracks it (`mrc`) or freezes it (`mrc-static`).
-The deep-dive story of how each stage earned its place is
+removes the fractional-sample start skew between the streams (on one field
+rig, 2.6 samples of skew made the combine decode **22% worse** than the best
+branch alone — the aligner is why that can't happen anymore), and the **MRC
+combiner**, which estimates one complex gain per calibration window and
+either tracks it (`mrc`) or freezes it (`mrc-static`). How each stage earned
+its place is
 [Weak-Signal Engineering Parts 10–11]({{ '/blog/deep-dives/weak-signal-engineering-10-mrc-calibration/' | relative_url }});
-this recipe is the operator's side of it.
+this recipe is the operator's side.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Signal chain of the diversity build: two antennas feed the two RX channels of one coherent SDR running SoapySDRServer; inside GopherTrunk's soapyremote driver the de-interleaved branches pass a pre-combine capture tap, then an inter-branch aligner, then the MRC combiner which emits one combined wideband stream to the decoder; a meter labelled branch_phase_deg reads the inter-branch phase, constant for shared-LO hardware and walking for independent PLLs">
+<svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Signal chain of the diversity build: two antennas feed the two RX channels of one coherent SDR running SoapySDRServer; inside GopherTrunk's soapyremote driver the branches pass a pre-combine capture tap, then the inter-branch aligner, then the MRC combiner, which emits one combined wideband stream to the decoder.">
   <rect x="10" y="40" width="64" height="30" rx="4" fill="none" stroke="currentColor"/>
   <text x="42" y="59" text-anchor="middle" fill="currentColor" font-size="10">ant A</text>
   <rect x="10" y="150" width="64" height="30" rx="4" fill="none" stroke="currentColor"/>
@@ -141,15 +136,15 @@ stream, nothing to phase-align).
 
 | Item | Class | Notes |
 |---|---|---|
-| USRP B210 (or similar 2-ch, shared-LO SDR) | shared LO | one chip, both channels — inter-branch phase is a hardware constant; `mrc-static` territory |
-| USRP X310 + 2× TwinRX | independent PLLs | separate daughterboards (`rx_subdev_spec=B:0 A:0`): frequency-locked but the relative phase is random per lock and walks after it — tracking `mrc` territory ([USRP notes]({{ '/reference/usrp-ettus/' | relative_url }})) |
-| Two antennas, same band + polarisation | — | co-located (think a wavelength or two apart, not metres — see the honest ceiling below), each with a decent feedline ([Part 8 of The Analog Edge]({{ '/blog/tutorials/analog-edge-08-feedline-connectors/' | relative_url }})) |
-| A host for `SoapySDRServer` | — | the [Part 8]({{ '/blog/tutorials/operator-cookbook-08-remote-radios/' | relative_url }}) remote pattern; wired network, budget for two channels of CS16 |
+| USRP B210 (or similar 2-ch shared-LO SDR) | shared LO | one chip, both channels — inter-branch phase is a hardware constant; `mrc-static` territory |
+| USRP X310 + 2× TwinRX | independent PLLs | separate daughterboards (`rx_subdev_spec=B:0 A:0`): frequency-locked, but the relative phase is random per lock and walks after it — tracking `mrc` territory ([USRP notes]({{ '/reference/usrp-ettus/' | relative_url }})) |
+| Two antennas, same band + polarisation | — | co-located — a wavelength or two apart, not metres — with decent [feedline]({{ '/blog/tutorials/analog-edge-08-feedline-connectors/' | relative_url }}) |
+| A host for `SoapySDRServer` | — | the Part 8 remote pattern; wired network, budget for two channels of CS16 |
 
 No external reference oscillator is required for the X310/TwinRX class: a
-field capture proved the dual-daughterboard stream is coherent as delivered
-(wideband coherence 0.95+ on a healthy run) — the calibrator handles the
-phase, that's its job.
+field capture proved the dual-daughterboard stream coherent as delivered
+(wideband coherence 0.95+ on a healthy run) — handling the phase is the
+calibrator's job.
 
 ## The config
 
@@ -181,17 +176,15 @@ trunking:
         - 467_912_500
 ```
 
-Three notes. **`antenna:`** is the only correct way to pick ports — port names
-are device-specific (a B210 has `TX/RX` and `RX2`, a TwinRX has `RX1` and
-`RX2`), and GopherTrunk validates the list against the device and reads it
-back, so a config moved between rigs fails loudly instead of silently keeping
-driver defaults. **`diversity: "mrc"`** re-estimates the branch gain
-continuously; **`"mrc-static"`** freezes it after one estimate — which to pick
-is what the first run tells you. And the system block is whatever protocol you
-actually monitor; the combine happens below the protocol layer, so a
+Three notes. **`antenna:`** is the only correct way to pick ports — names are
+device-specific (a B210 has `TX/RX` and `RX2`, a TwinRX has `RX1` and `RX2`),
+and GopherTrunk validates the list against the device and reads it back, so a
+config moved between rigs fails loudly instead of silently keeping driver
+defaults. **`diversity: "mrc"`** re-estimates the branch gain continuously;
+**`"mrc-static"`** freezes it after one estimate — the first run tells you
+which to pick. And the combine happens below the protocol layer, so a
 [Part 4]({{ '/blog/tutorials/operator-cookbook-04-tetra-tmo/' | relative_url }})
-TETRA rig or a [Part 1]({{ '/blog/tutorials/operator-cookbook-01-forty-dollar-p25-rig/' | relative_url }})
-P25 rig rides it identically.
+TETRA rig or a Part 1 P25 rig rides it identically.
 
 ## First run — what healthy looks like
 
@@ -208,22 +201,21 @@ Read it field by field — this line is the whole cockpit:
 - **`branch_dbfs`** — both branches alive and within a few dB of each other.
   A branch ~10 dB down is a weak antenna or feedline, and MRC on a
   floor-limited branch is roughly no-gain: fix *that branch's* RF first.
-- **`coherence`** — the normalised cross-correlation between branches, and it
-  is **gain-independent by construction**. On a healthy co-located pair at
-  moderate bandwidth expect high values (0.9+); on wide captures where the
-  wanted carrier is a small fraction of the band, much lower numbers are
-  normal and the lock gates scale with the window to allow for it — the
+- **`coherence`** — the normalised cross-correlation between branches,
+  **gain-independent by construction**. A healthy co-located pair reads high
+  (0.9+) at moderate bandwidth; on wide captures where the wanted carrier is a
+  small fraction of the band, lower numbers are normal and the lock gates
+  scale with the window to allow for it — the
   [coherence-not-dBFS]({{ '/blog/tutorials/analog-edge-13-coherence-not-dbfs/' | relative_url }})
   post is the full story.
-- **`branch_phase_deg`** — the no-capture hardware-class instrument. Watch it
-  across a few lines: **constant** (within a degree or two) means a shared-LO
-  front end, and `mrc-static` would serve you fine; **walking** (a TwinRX rig
-  measured about −0.2°/s — a frozen constant decays over minutes) means
-  independent PLLs, and tracking `mrc` is the right default.
+- **`branch_phase_deg`** — the no-capture hardware-class instrument.
+  **Constant** across lines means a shared-LO front end and `mrc-static`
+  would serve; **walking** (a TwinRX rig measured about −0.2°/s — a frozen
+  constant decays over minutes) means independent PLLs and tracking `mrc`.
 - **`updates` / `holds`** — accepted vs rejected calibration windows.
-  Healthy is `updates` climbing and `holds` near zero. `updates` frozen while
-  `holds` climbs means the combiner locked once and has been coasting on a
-  stale gain — it WARNs after 90 s of that.
+  Healthy is `updates` climbing with `holds` near zero; `updates` frozen
+  while `holds` climbs means coasting on a stale gain, and it WARNs after
+  90 s of that.
 
 One more line worth knowing on sight, once per stream or retune:
 
@@ -241,27 +233,26 @@ calibrated once.
 Now the part a recipe owes you before you spend this money. Post-aligner, MRC
 is a **no-harm** combine: every capture A/B run to date scores the combined
 arms within one decoded frame of the best branch alone. But those captures
-decode at their ~100% yield ceiling — when the signal is already strong,
-matching the best branch *is* the ceiling, and a real gain **over** the best
-branch is still undemonstrated on air. The theory says it shows up on weak,
-fading signals; if your diversity rig produces a weak-signal pre-combine
-capture where the combined arm beats both branches, that capture is genuinely
-wanted upstream.
+decode at their ~100% yield ceiling — matching the best branch *is* the
+ceiling there, and a real gain **over** the best branch is still
+undemonstrated on air. Theory says it shows up on weak, fading signals; a
+weak-signal pre-combine capture where the combined arm beats both branches is
+genuinely wanted upstream.
 
-Second honest limit: the combine applies **one complex gain to the whole
-wideband stream**. Two antennas metres apart give every carrier its own phase
-difference, and a single scalar can only align one of them — the signature is
-coherence stuck around 0.3–0.5 that no tracking improves. Co-locate the
-antennas; per-channel combining after the DDC is known future work, not a
-config option ([MRC gotchas]({{ '/reference/mrc-diversity-gotchas/' | relative_url }})).
+Second limit: the combine applies **one complex gain to the whole wideband
+stream**. Antennas metres apart give every carrier its own phase difference,
+and a single scalar can only align one of them — the signature is coherence
+stuck around 0.3–0.5 that no tracking improves. Co-locate the antennas;
+per-channel combining after the DDC is known future work, not a config option
+([MRC gotchas]({{ '/reference/mrc-diversity-gotchas/' | relative_url }})).
 
 ## The pre-combine A/B
 
-Every other IQ tap in the daemon —
+Every other IQ tap —
 [`baseband.auto_record`]({{ '/blog/tutorials/analog-edge-10-capture-discipline/' | relative_url }}),
 the scope feeds — sits *downstream* of the combiner, so a capture from any of
-them has one combiner already baked in. `diversity_capture` is the one tap
-that records the branches raw, straight after de-interleave:
+them has one combiner baked in. `diversity_capture` is the one tap that
+records the branches raw, straight after de-interleave:
 
 ```
 INF soapyremote: diversity capture armed — dumping pre-combine per-branch IQ prefix=../iq/mrc/precombine seconds=30 branches=2
@@ -270,8 +261,8 @@ INF soapyremote: diversity capture complete — replay it with GT_DIVERSITY_CAPT
 
 You get `<prefix>.br0.cs16`, `<prefix>.br1.cs16` and a `.diversity.json`
 sidecar; a datagram that didn't carry every branch is dropped from **both**
-files, never written short, because one short write silently desynchronises
-the pair. Then grade every combiner against your own air:
+files, never written short — one short write silently desynchronises the
+pair. Then grade every combiner against your own air:
 
 ```sh
 GT_DIVERSITY_CAPTURE=../iq/mrc/precombine.diversity.json \
@@ -279,32 +270,31 @@ GT_DIVERSITY_CAPTURE=../iq/mrc/precombine.diversity.json \
 ```
 
 The harness prints a windowed coherence/gain/**phase** trace with plain-text
-verdicts ("branch phase is essentially CONSTANT — a frozen calibration is
-fine on this hardware" vs "branch phase WALKS"), measures the inter-branch
-delay, and decodes the capture through each branch alone plus static,
-tracking, aligned and narrowband combine arms — **scored by CRC-clean decode
-yield**, because yield is the only metric that can't flatter a combiner. If
-tracking beats static on *your* capture, you've just answered the mode
-question with evidence instead of hardware folklore.
+verdicts ("branch phase is essentially CONSTANT" vs "branch phase WALKS"),
+measures the inter-branch delay, and decodes the capture through each branch
+alone plus static, tracking, aligned and narrowband combine arms — **scored
+by CRC-clean decode yield**, the one metric that can't flatter a combiner. If
+tracking beats static on *your* capture, the mode question is answered with
+evidence instead of hardware folklore.
 
 ## When it doesn't work
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| WARN `MRC diversity got 1 of 2 channels in the stream` | the server never delivered the second RX channel | check `args` (`rx_subdev_spec`), that the device really has two RX channels, and that the server accepted a 2-channel stream |
-| WARN `MRC diversity branch is dead — … below the reference receiver` | that antenna's connection, feedline, or per-branch gain | reseat/re-test that branch's RF path; the port assignment is `antenna:` |
-| WARN `MRC diversity branches are not coherent` | antennas on different bands/polarisation, widely separated, or the front end isn't frequency-locked | co-locate, match polarisation, check `clock_source`/`time_source`; if one `branch_dbfs` sits far below the other, fix *its* gain staging |
-| Calibrated once, then WARN `has not accepted a calibration window in 90s` | the wideband-scalar limitation — one gain can't align every carrier from separated antennas | move the antennas together, or freeze deliberately with `mrc-static` |
-| Combine decodes *worse* than one antenna alone | on current builds, almost certainly not skew (the aligner handles it) — suspect a branch dragging the estimate | run the pre-combine A/B; the arm table names the culprit |
-| Tempted to raise gain until diversity "engages" | the old absolute-power trap | don't — `coherence` is independent of RF gain; raising gain moves signal and noise together ([gain staging]({{ '/blog/tutorials/analog-edge-03-gain-staging/' | relative_url }})) |
+| WARN `MRC diversity got 1 of 2 channels in the stream` | the server never delivered the second RX channel | check `args` (`rx_subdev_spec`) and that the device really has two RX channels |
+| WARN `MRC diversity branch is dead` | that antenna's connection, feedline or per-branch gain | reseat/re-test that branch's RF path; port assignment is `antenna:` |
+| WARN `MRC diversity branches are not coherent` | different bands/polarisation, widely separated antennas, or no frequency lock | co-locate, match polarisation, check `clock_source`/`time_source`; a far-down `branch_dbfs` wants *its* gain staging fixed |
+| Calibrated once, then WARN `has not accepted a calibration window` | the wideband-scalar limitation — one gain can't align every carrier from separated antennas | move the antennas together, or freeze deliberately with `mrc-static` |
+| Combine decodes *worse* than one antenna alone | not skew (the aligner handles it) — a branch is dragging the estimate | run the pre-combine A/B; the arm table names the culprit |
+| Tempted to raise gain until diversity "engages" | the old absolute-power trap | don't — `coherence` is gain-independent ([gain staging]({{ '/blog/tutorials/analog-edge-03-gain-staging/' | relative_url }})) |
 
 That last row has history: an earlier build gated calibration on a fixed
 coherence constant, and its WARN told a bandwidth-diluted operator that
-raising RF gain would *not* help — which in their regime was exactly wrong
-(their weak branch needed +5 dB of per-branch gain). The gates now bound the
-estimate's phase error instead of a raw threshold, and the WARN points at
-per-branch gain staging. The lesson generalises across this whole series:
-**never trust an absolute-dBFS rule; trust coherence and decode yield.**
+raising RF gain would *not* help — exactly wrong in their regime (their weak
+branch needed +5 dB of per-branch gain). The gates now bound the estimate's
+phase error instead, and the WARN points at per-branch gain staging. The
+series-wide lesson: **never trust an absolute-dBFS rule; trust coherence and
+decode yield.**
 
 ## Variations
 
@@ -314,12 +304,12 @@ per-branch gain staging. The lesson generalises across this whole series:
 - **Longer evidence** — `diversity_capture_seconds` accepts up to 120 s (a
   1 GiB/branch cap always applies). At 200–250 kS/s two CS16 branches are only
   ~1.6 MB/s total, so take the long capture.
-- **Single-channel, port-pinned** — `diversity: ""` with `antenna: [RX2]` is
-  the same radio as a plain remote SDR but with the port explicit and
-  validated; useful for the "each branch alone" baseline before you commit.
+- **Single-channel, port-pinned** — `diversity: ""` with `antenna: [RX2]`:
+  the same radio as a plain remote SDR with the port explicit and validated —
+  the "each branch alone" baseline before you commit.
 - **Voice under diversity** — the combined stream is an ordinary tuner to the
-  rest of the daemon, so `role: wideband` with `voice_taps` on top of it works
-  exactly as in [Part 1]({{ '/blog/tutorials/operator-cookbook-01-forty-dollar-p25-rig/' | relative_url }}).
+  rest of the daemon; `role: wideband` with `voice_taps` on top works exactly
+  as in Part 1.
 
 ## Where this goes next
 
@@ -333,36 +323,36 @@ things live from the browser, and exporting the result back to files you own.
 
 **Do I need a diversity setup for a scanner rig?**
 Almost certainly not first. Diversity is the only lever that costs serious
-hardware, and it addresses one specific regime: a signal that *fades* at your
-location. A better antenna, low-loss feedline and correct gain staging buy
-more decode margin per dollar; build this when those are done and a marginal
-system still swings.
+hardware, and it addresses one regime: a signal that *fades* at your location.
+A better antenna, low-loss feedline and correct gain staging buy more decode
+margin per dollar; build this when those are done and a marginal system still
+swings.
 
 **Should I use mrc or mrc-static?**
-Let `branch_phase_deg` answer: run `mrc`, watch the health line for a few
-minutes. If the phase sits constant, your hardware is shared-LO class and
-`mrc-static` is equivalent and simpler. If it walks — TwinRX-style independent
-PLLs — stay on `mrc`, because a frozen constant decays over minutes.
+Let `branch_phase_deg` answer: run `mrc` and watch the health line for a few
+minutes. Constant phase means shared-LO hardware — `mrc-static` is equivalent
+and simpler. Walking phase — TwinRX-style independent PLLs — means stay on
+`mrc`, because a frozen constant decays over minutes.
 
 **Can I do diversity with two RTL-SDR dongles?**
 No. The combine needs two RX channels behind one clock in one sample stream —
-`diversity: mrc` opens RX0+RX1 on a single SoapyRemote device. Two separate
-dongles have independent oscillators and independent USB timelines; there is
-no constant phase or delay for the calibrator to find.
+`diversity: mrc` opens RX0+RX1 on a single SoapyRemote device. Separate
+dongles have independent oscillators and USB timelines; there is no constant
+phase or delay for the calibrator to find.
 
 **Why is my coherence only 0.3 when everything decodes fine?**
 Wideband coherence is diluted by every hertz of noise-only bandwidth around
 your carrier — a clean channel occupying a small fraction of a wide capture
-reads low even when the branches agree perfectly in-channel. The lock gates
-scale with the estimation window for exactly this reason. Judge the combine by
-decode yield and the WARN lines, not by wishing the number toward 1.0.
+reads low even when the branches agree perfectly in-channel, which is why the
+lock gates scale with the estimation window. Judge the combine by decode
+yield and the WARN lines, not by wishing the number toward 1.0.
 
 **Does MRC help against a strong interferer?**
-Not blind, no — that's interference rejection combining (IRC), and measured on
-a synthetic co-channel scene, blind IRC buys 0.0 dB (the channel estimate is
+Not blind, no — that's interference rejection combining (IRC). Measured on a
+synthetic co-channel scene, blind IRC buys 0.0 dB (the channel estimate is
 contaminated by the interferer itself); the same code given a training
-sequence buys over 20 dB. That's why IRC exists only as an offline harness arm
-today, not a `diversity:` mode.
+sequence buys over 20 dB. That's why IRC exists only as an offline harness
+arm, not a `diversity:` mode.
 
 ## Series navigation
 

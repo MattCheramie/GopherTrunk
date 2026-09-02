@@ -98,16 +98,16 @@ SmartNet/SmartZone systems — NOT prose specs."
 
 Three secondary properties matter when candidates tie:
 
-- **Independent lineage.** Two decoders that both descend from the same
-  ancestor agree for free; their agreement is one vote, not two.
-- **Inspectable intermediate output.** A reference that can print its
-  deinterleaved bits or CRC inputs is worth far more than one that only
-  emits final talkgroups — you can pin *layers*, not just outcomes
-  ([Part 3]({{ '/blog/deep-dives/from-spec-to-shipping-03-literal-vectors/' | relative_url }})'s
-  whole method depends on this).
-- **A community that files bugs.** OP25's and SDRTrunk's issue trackers are
-  themselves references: a field layout that survived years of operator
-  scrutiny has been tested by thousands of antennas.
+| Property | Why it matters | What it looks like |
+|---|---|---|
+| Independent lineage | shared ancestry means agreement counts once | check headers/credits before counting votes |
+| Inspectable intermediates | you can pin *layers*, not just outcomes | prints deinterleaved bits, CRC inputs, parameters |
+| A community that files bugs | years of operator scrutiny = thousands of antennas | active trackers on OP25, SDRTrunk |
+
+The second row is the quiet one:
+[Part 3]({{ '/blog/deep-dives/from-spec-to-shipping-03-literal-vectors/' | relative_url }})'s
+whole method — harvesting literal vectors from a reference's output —
+depends on references that show their work, not just their verdicts.
 
 ## The stable, layer by layer
 
