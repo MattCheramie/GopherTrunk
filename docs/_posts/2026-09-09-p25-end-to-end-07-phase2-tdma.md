@@ -214,8 +214,10 @@ folklore.
 
 ## MAC PDUs, where TSBKs used to be
 
-Phase 2 signalling arrives as **MAC PDUs**: after FEC removal, an 18-byte
-unit — opcode byte, optional MFID for vendor messages, then payload. The
+Phase 2 signalling arrives as **MAC PDUs** (surveyed in
+[Protocol Decoders Part 4]({{ '/blog/deep-dives/protocol-decoders-04-p25-phase-2-tdma-mac/' | relative_url }})):
+after FEC removal, an 18-byte unit — opcode byte, optional MFID for
+vendor messages, then payload. The
 opcode families rhyme with Part 3's TSBKs (`OpGroupVoiceChannelGrant`,
 `OpIdentifierUpdate`, `OpNetworkStatusBroadcastUpdate`…) plus
 TDMA-specific channel-state messages (`OpMACIdle`, `OpMACHangtime`,
@@ -307,12 +309,12 @@ non-default handling.
 **How is P25 Phase 2's modulation related to TETRA's?**
 Both are differential QPSK variants with a per-symbol rotation — TETRA at
 π/4 and 18000 baud, Phase 2 H-DQPSK at π/8 and 6000 baud. GopherTrunk
-decodes both with one primitive (`demod.PiOver4DQPSK`) parameterised by
-rotation, which is why equalizer and soft-decision work migrates between
-them so readily.
+decodes both with one rotation-parameterised primitive, which is why
+equalizer and soft-decision work migrates between them so readily.
 
 **Why did Phase 2 change vocoder from IMBE to AMBE+2?**
-Each TDMA slot has roughly half a Phase 1 channel's bit budget, and AMBE+2
+Each TDMA slot has roughly half a Phase 1 channel's bit budget, and
+[AMBE+2]({{ '/blog/deep-dives/voice-coding-07-ambe-plus-2/' | relative_url }})
 delivers comparable voice at a lower rate — the same codec family DMR and
 NXDN use, which is why GopherTrunk's Phase 2 voice extraction delegates
 its frame FEC to the shared DMR path.
