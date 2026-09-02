@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"strings"
@@ -125,6 +126,14 @@ FLAGS:`)
 	if err := dev.SetSampleRate(uint32(*sampleRate)); err != nil {
 		rep.Fatal(1, fmt.Errorf("set sample rate: %w", err))
 	}
+	// Some backends quantize the requested rate to what the hardware can do.
+	// Record (and sidecar-stamp) the ACTUAL delivered rate, mirroring the
+	// daemon's effectiveStreamRate — a capture labeled with the wrong rate
+	// replays with a shifted symbol clock and every offset/ppm figure is off.
+	hwRate, rateNote := captureEffectiveRate(dev, uint32(*sampleRate))
+	if rateNote != "" {
+		fmt.Fprintln(os.Stderr, rateNote)
+	}
 	if err := dev.SetCenterFreq(uint32(*freq)); err != nil {
 		rep.Fatal(1, fmt.Errorf("set centre frequency: %w", err))
 	}
@@ -158,9 +167,9 @@ FLAGS:`)
 	}
 
 	fmt.Printf("capture: %s[%s] @ %d Hz, %g MS/s → %s for %gs…\n",
-		info.Driver, info.Serial, *freq, float64(*sampleRate)/1e6, *out, *seconds)
+		info.Driver, info.Serial, *freq, float64(hwRate)/1e6, *out, *seconds)
 
-	if hint := captureSampleRateHint(uint32(*sampleRate), *protocol); hint != "" {
+	if hint := captureSampleRateHint(hwRate, *protocol); hint != "" {
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
@@ -168,7 +177,7 @@ FLAGS:`)
 	// -center ± -bandwidth without retuning the SDR (the same DDC the daemon and
 	// replay path use). The recorded rate + centre become the channel's.
 	var ddc *ccdecoder.Downconverter
-	recRate := float64(*sampleRate)
+	recRate := float64(hwRate)
 	recCenter := uint32(*freq)
 	if *bandwidthHz > 0 && *decimate > 1 {
 		rep.Fatalf(2, "-bandwidth and -decimate are mutually exclusive (both decimate; pick one)")
@@ -177,7 +186,7 @@ FLAGS:`)
 		// Full-band integer decimation: keep the whole captured span, just at
 		// a lower rate. Same down-converter as the -bandwidth slice, targeted
 		// at sample-rate/decimate with no tuning offset (centre stays -freq).
-		ddc = ccdecoder.NewDownconverter(float64(*sampleRate), float64(*sampleRate)/float64(*decimate))
+		ddc = ccdecoder.NewDownconverter(float64(hwRate), float64(hwRate)/float64(*decimate))
 		recRate = ddc.OutRateHz()
 		fmt.Printf("capture: software decimation ×%d → %.1f kHz effective rate\n",
 			*decimate, recRate/1e3)
@@ -187,26 +196,36 @@ FLAGS:`)
 			center = uint32(*freq)
 		}
 		offsetHz := int64(center) - int64(*freq)
-		half := int64(*sampleRate) / 2
+		half := int64(hwRate) / 2
 		if absInt64(offsetHz)+int64(*bandwidthHz)/2 > half {
 			rep.Fatalf(2, "-center %d + -bandwidth %d falls outside the captured span %d ± %d Hz",
 				center, *bandwidthHz, *freq, half)
 		}
-		ddc = ccdecoder.NewDownconverterWithOffset(float64(*sampleRate), float64(*bandwidthHz), float64(offsetHz))
+		ddc = ccdecoder.NewDownconverterWithOffset(float64(hwRate), float64(*bandwidthHz), float64(offsetHz))
 		recRate = ddc.OutRateHz()
 		recCenter = center
 		fmt.Printf("capture: narrowband slice → centre %.3f MHz, %.1f kHz channel rate\n",
 			float64(recCenter)/1e6, recRate/1e3)
 	}
 
-	written, probe, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds, ddc)
+	written, probe, capErr := captureToFile(ctx, *out, sampleFormat, stream, hwRate, *seconds, ddc)
 	if capErr != nil && !errors.Is(capErr, context.Canceled) {
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
 	}
-	// Warn if a ppm error has pulled the recorded carrier off centre — the
-	// other half of the "capture won't lock" story alongside dropped chunks.
-	if w := carrierOffsetWarning(probe, recRate, recCenter); w != "" {
-		fmt.Fprintln(os.Stderr, w)
+	// Report the measured carrier offset (a ppm-measurement instrument in its
+	// own right — issue #836), and warn if a corroborated offset is large
+	// enough to prevent decode — the other half of the "capture won't lock"
+	// story alongside dropped chunks. A carrier seen in only one probe window
+	// is called out as transient instead of reported as a tuner error (#1143).
+	consensus := carrierOffsetConsensus(probe, recRate)
+	if m := carrierOffsetMeasurement(consensus, recCenter); m != "" {
+		fmt.Println(m)
+	}
+	if note := carrierOffsetInconclusiveNote(consensus); note != "" {
+		fmt.Fprintln(os.Stderr, note)
+	}
+	if consensus.OK && math.Abs(consensus.OffsetHz) >= carrierOffsetWarnHz {
+		fmt.Fprintln(os.Stderr, formatCarrierOffsetWarning(consensus.OffsetHz, offsetPPM(consensus.OffsetHz, recCenter)))
 	}
 	if d := drops.count(); d > 0 {
 		// Loud + actionable: a dropped-chunk capture looks fine on disk but
@@ -277,6 +296,25 @@ FLAGS:`)
 	}
 }
 
+// captureEffectiveRate returns the sample rate the device will actually
+// deliver, via the optional ActualSampleRate() extension (backends that model
+// hardware rate quantization), plus an operator-facing note when it differs
+// from the request. Backends without the extension deliver exactly the
+// configured rate. The capture command never checked this, so a quantizing
+// backend produced a file (and metadata sidecar) labeled with the wrong rate.
+func captureEffectiveRate(dev sdr.Device, requested uint32) (uint32, string) {
+	ar, ok := dev.(interface{ ActualSampleRate() (uint32, error) })
+	if !ok {
+		return requested, ""
+	}
+	actual, err := ar.ActualSampleRate()
+	if err != nil || actual == 0 || actual == requested {
+		return requested, ""
+	}
+	return actual, fmt.Sprintf("capture: note — the SDR quantized the sample rate to %d Hz (requested %d); "+
+		"the recording and its metadata sidecar use the actual hardware rate.", actual, requested)
+}
+
 // openCaptureDevice enumerates the registered drivers and opens the device
 // matching serial (or the sole device when serial is empty). Returns the open
 // handle plus the chosen Info so the caller can report what it grabbed.
@@ -337,10 +375,10 @@ const captureBufWriter = 1 << 20 // 1 MiB
 // INPUT samples, the stream ends, ctx cancels, or a wall-clock safety deadline
 // elapses. Returns the number of IQ samples written (post-decimation when ddc
 // is set).
-// captureToFile returns the samples written plus the first captureProbeSamples
-// of recorded (post-DDC) IQ, which the caller FFTs for the carrier-offset
-// warning.
-func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
+// captureToFile returns the samples written plus the recorded (post-DDC)
+// carrier-probe windows spread across the capture, which the caller FFTs for
+// the carrier-offset consensus estimate.
+func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
 	// Container formats need a header up front and a finalize step, so they
 	// take the IQContainer path; the headerless formats keep the historical
 	// byte-stream path below.
@@ -369,7 +407,7 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 // and the finalize step (RIFF length patch / FLAC STREAMINFO), so a
 // `capture -format wav|flac` file is a real container rather than a
 // mislabeled headerless body.
-func captureContainerToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
+func captureContainerToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
 	// The container header carries the ON-DISK rate: the decimated slice rate
 	// when a -bandwidth/-decimate DDC is set, the full input rate otherwise.
 	diskRate := rate
@@ -406,7 +444,7 @@ func captureContainerToFile(ctx context.Context, path string, format siglab.Samp
 // Decoupling keeps the drain running so a transient stall costs latency, not
 // samples. The stateful DDC stays on the drain goroutine (it must run in
 // order); only copied sample chunks cross to the writer, which encodes them.
-func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
+func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
 	return captureStreamSink(ctx, func(samples []complex64) error {
 		_, err := w.Write(siglab.EncodeCapture(samples, format))
 		return err
@@ -417,12 +455,20 @@ func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat,
 // container path: the writer goroutine consumes copied sample chunks and
 // hands them to sink (a byte encoder + io.Writer, or an IQContainer), so a
 // stalled sink costs latency, never samples.
-func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
-	probe := make([]complex64, 0, captureProbeSamples)
-
+func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
 	// Stop once seconds worth of INPUT samples have been read; the written
 	// count may be far smaller when ddc decimates to a narrow channel.
 	target := int64(seconds * float64(rate))
+
+	// Carrier-probe windows are spread across the whole expected recording,
+	// not just its first milliseconds — a real ppm offset persists for the
+	// entire file, and one startup window is where settling transients and
+	// momentarily-keyed neighbours live (#1143's false 550 ppm warning).
+	expected := target
+	if ddc != nil && rate > 0 {
+		expected = int64(float64(target) * ddc.OutRateHz() / float64(rate))
+	}
+	probe := newCarrierProbe(expected)
 	// Safety deadline so a stalled/under-delivering device doesn't hang the
 	// command forever waiting to reach the sample target. The timer is an
 	// explicit select arm (not a post-receive check) so a source that never
@@ -478,16 +524,10 @@ loop:
 			if len(samples) == 0 {
 				continue
 			}
-			// Collect the first window of recorded samples for the caller's
-			// carrier-offset probe (append copies, so it's safe against the
-			// reused ddcBuf / the src-owned chunk).
-			if len(probe) < captureProbeSamples {
-				take := samples
-				if n := captureProbeSamples - len(probe); len(take) > n {
-					take = take[:n]
-				}
-				probe = append(probe, take...)
-			}
+			// Collect recorded samples into the spread probe windows for the
+			// caller's carrier-offset consensus (append copies, so it's safe
+			// against the reused ddcBuf / the src-owned chunk).
+			probe.feed(samples)
 			// Fresh buffer per chunk: it is handed to the writer goroutine, so
 			// it must not alias the reused ddcBuf or the src-owned chunk.
 			// Encoding happens on the writer goroutine (sink), keeping the
@@ -517,7 +557,7 @@ loop:
 		default:
 		}
 	}
-	return written, probe, loopErr
+	return written, probe.Windows(), loopErr
 }
 
 // captureDropCounter counts SDR IQ-chunk drops for one device during a

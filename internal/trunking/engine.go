@@ -354,7 +354,7 @@ func (e *Engine) discoverTalkgroup(g Grant) *TalkGroup {
 	tg := &TalkGroup{
 		ID:     g.GroupID,
 		Tag:    discoveredTag,
-		Mode:   "D",
+		Mode:   discoveredMode(g),
 		Scan:   e.ScanMode() != ScanModeList,
 		Stream: true,
 		Record: true,
@@ -363,6 +363,26 @@ func (e *Engine) discoverTalkgroup(g Grant) *TalkGroup {
 	e.log.Info("talkgroup discovered on control channel",
 		"tg", g.GroupID, "system", g.System, "scan", tg.Scan)
 	return tg
+}
+
+// discoveredMode picks the Mode stamped on an auto-discovered talkgroup
+// (D=digital, A=analog — the Trunk Recorder / RadioReference CSV convention)
+// from the grant's protocol. The analog trunking protocols carry analog FM
+// voice and their control channels signal no per-call voice mode, so the old
+// unconditional "D" mislabeled every discovered SmartNet/SmartZone talkgroup
+// as digital (#1143). The protocol set mirrors the composer's analog-trunk
+// routing (classifyVoiceKind): EDACS is analog except ProVoice grants.
+func discoveredMode(g Grant) string {
+	switch g.Protocol {
+	case "motorola", "ltr", "mpt1327":
+		return "A"
+	case "edacs":
+		if g.ProVoice {
+			return "D"
+		}
+		return "A"
+	}
+	return "D"
 }
 
 // knownRadiosCap bounds the learned-radios set so a long-running busy site
