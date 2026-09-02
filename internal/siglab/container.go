@@ -218,6 +218,7 @@ func DecodeContainerFile(path string) ([]complex64, uint32, error) {
 	decodeSW16(body[:len(out)*iqWavBlockAlign], out)
 	return out, rate, nil
 }
+
 // header (the length fields are patched on finalize). Same layout as
 // baseband.IQWriter, kept here so a wav dump's body is siglab's cs16 body.
 func writeIQWavHeader(w io.Writer, sampleRate uint32) error {
