@@ -267,20 +267,12 @@ AMBT broadcasts reintroduce it with a trap: the Adjacent Status and RFSS
 Status AMBT forms carry **explicit uplink channels** — a second
 (ID, number) pair naming the neighbor's uplink directly. The tempting bug
 is to resolve that pair and then also apply the offset. The rule
-GopherTrunk encodes, matching SDRTrunk, is that an explicit uplink channel
-number *already encodes the uplink frequency*:
-
-```go
-// internal/radio/p25/phase1/control.go (shape) — topology snapshot
-if n.UplinkID != 0 || n.UplinkNumber != 0 {
-    // An explicit uplink channel number already encodes the uplink
-    // frequency in plain base+spacing terms — no transmit offset is
-    // applied (matches SDRTrunk's AMBT downlink/uplink resolution).
-    if hz, err := c.bandPlan.Frequency(n.UplinkID, n.UplinkNumber); err == nil {
-        ref.UplinkHz = hz
-    }
-}
-```
+GopherTrunk encodes, matching SDRTrunk's AMBT resolution, is that an
+explicit uplink channel number *already encodes the uplink frequency*:
+the topology snapshot in `control.go` runs the neighbor's
+`(UplinkID, UplinkNumber)` through the very same `bandPlan.Frequency`
+call as any downlink — plain base+spacing, with the comment "no transmit
+offset is applied" doing the standing-rule duty.
 
 Same arithmetic, same table, no offset. The offset exists so a *derived*
 uplink can be computed when only the downlink is named; an explicit uplink
