@@ -130,8 +130,8 @@ func ParseEncryptionSync(blocks [LDULCESBlockCount][]byte) (EncryptionSync, int,
 ```
 
 Note what the clear value is *not*: zero. A clear call advertises ALGID
-`0x80`, so "encrypted" means `AlgorithmID != 0x80` — a detail that has
-bitten every decoder that treated the field as a boolean. The IDs come from
+`0x80`, so "encrypted" means `AlgorithmID != 0x80` — a detail that bites
+any decoder treating the field as a boolean. The IDs come from
 the TIA-102.AACE-A registry, mirrored in `internal/radio/p25/algorithm.go`:
 `0x81` DES-OFB, `0x84` AES-256, `0x85` AES-128, `0xAA` ADP/RC4 (the "cheap
 encryption" you meet most often), `0x9F` DES-XL among others
@@ -301,8 +301,7 @@ Phase 1, or in the MAC_PTT key-up message on Phase 2. ALGID `0x80` is
 clear; anything else names a cipher.
 
 **Can GopherTrunk decrypt encrypted P25 calls?**
-No. It surfaces which algorithm and key a call uses — the same
-identify-don't-decrypt model as SDRtrunk and OP25 — and performs no key
+No. It surfaces which algorithm and key a call uses, and performs no key
 recovery. Known-key decryption exists for DMR ARC4 only; on P25 a
 configured key exempts the call from the encrypted-call policy but the
 audio is not decrypted.
@@ -310,9 +309,8 @@ audio is not decrypted.
 **Why do some encrypted calls show no algorithm or key?**
 Either the call ended before an LDU2/MAC_PTT landed (the grant flag alone
 carries no metadata), or the ES word failed its gates — GopherTrunk omits
-ALGID/KID it cannot trust, because an RS layer that "successfully" corrects
-to an out-of-registry Algorithm ID is a known mis-decode signature (issue
-#924).
+ALGID/KID it cannot trust, because an RS layer "successfully" correcting to
+an out-of-registry Algorithm ID is a known mis-decode signature (#924).
 
 **What does `encrypted_calls: metadata` actually buy me?**
 Alias, source and key intelligence without the tuner cost: the engine

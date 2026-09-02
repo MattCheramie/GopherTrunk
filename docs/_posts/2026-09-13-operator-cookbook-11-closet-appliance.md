@@ -265,14 +265,14 @@ so a slow restart names its culprit class instead of shrugging.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Random USB errors, dongle re-enumerates under load | undervoltage — the classic Pi failure | Use a proper supply; on a Pi, check the kernel log for its low-voltage warnings; move the SDR to a powered hub if the board browns out with bias-tee LNAs |
-| `sdr: watchdog: device missing from USB enumerate` repeating | flaky cable/port, or genuine power sag | The watchdog re-acquires by serial automatically; if it cycles, treat it as hardware — the [dongle-off-the-bus postmortem]({{ '/blog/solution-postmortem/from-the-issue-tracker-18-the-stall-that-wasnt/' | relative_url }}) is the war story |
-| `ccdecoder: decode can't keep up with real time` | CPU-starved board — too many systems/taps for the silicon, or thermal throttling | Reduce taps/systems, add cooling, or step up the board; this WARN is the CPU signal, distinct from any RF problem |
-| Decodes fine for days, then killed with no log line | memory pressure — OOM-killer | The auto `memory_limit_mb` guards this; on tiny boards set it explicitly and watch heartbeat `heap_sys_mb` trends |
-| `api: auth disabled — mutation endpoints are not authenticated` at startup | empty `auth.mode` resolving to the closed-LAN default on a `0.0.0.0` bind | Set `mode: "auto"` or `"required"` with a `token_file` — deliberate posture, not defaults ([hardening]({{ '/hardening.html' | relative_url }})) |
-| Daemon starts, no radio, no error | device node permissions under the hardened unit | Check the udev rule + `DeviceAllow`/`SupplementaryGroups` lines; `gophertrunk sdr doctor` from a shell tells you who owns the dongle |
-| `systemctl stop` takes ~30 s | a streaming handler missed the stop signal (the fixed bug's shape) | The journal WARN above fires when the cap is hit — report it with the log; it is a bug, not a config problem |
-| Web console unreachable from the LAN | daemon bound to loopback | `api.http_addr: "0.0.0.0:8080"` — then do the auth row above, in that order |
+| Random USB errors, dongle re-enumerates under load | undervoltage — the classic Pi failure | Use a proper supply; check the Pi kernel log for low-voltage warnings; a powered hub helps when a bias-tee LNA browns the board out |
+| `sdr: watchdog: device missing from USB enumerate` repeating | flaky cable/port, or power sag | The watchdog re-acquires by serial automatically; if it cycles, treat it as hardware — the [dongle-off-the-bus postmortem]({{ '/blog/solution-postmortem/from-the-issue-tracker-18-the-stall-that-wasnt/' | relative_url }}) is the war story |
+| `ccdecoder: decode can't keep up with real time` | CPU-starved board, or thermal throttling | Reduce taps/systems, add cooling, or step up the board; this WARN is the CPU signal, distinct from any RF problem |
+| Decodes for days, then killed with no log line | memory pressure — OOM-killer | The auto `memory_limit_mb` guards this; on tiny boards set it explicitly and watch heartbeat `heap_sys_mb` trends |
+| `api: auth disabled — mutation endpoints are not authenticated` at startup | empty `auth.mode` on a `0.0.0.0` bind | Set `mode: "auto"` or `"required"` with a `token_file` ([hardening]({{ '/hardening.html' | relative_url }})) |
+| Daemon starts, no radio, no error | device-node permissions under the hardened unit | Check the udev rule + `DeviceAllow`/`SupplementaryGroups`; `gophertrunk sdr doctor` tells you who owns the dongle |
+| `systemctl stop` takes ~30 s | a streaming handler missed the stop signal (the fixed bug's shape) | The journal WARN above fires at the cap — report it with the log; it's a bug, not a config problem |
+| Web console unreachable from the LAN | daemon bound to loopback | `api.http_addr: "0.0.0.0:8080"` — then the auth row above, in that order |
 
 ### How this recipe shapes operator practice
 
