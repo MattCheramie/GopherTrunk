@@ -31,9 +31,9 @@ sampled transient.*
 > `carrierOffsetWarnPersist` (10 s, `internal/scanner/ccdecoder/decoder.go`)
 > ended the fake wrong-site warnings a sub-second AFC alias blip produced,
 > and `lowPowerDecodeGrace` (`internal/scanner/widebandt2/engine.go`) stops
-> a channel that is *decoding* from being called unhealthy at −56 dBFS. And
-> the MRC health line now WARNs when `updates` freezes while `holds` climbs —
-> the failure a plain INFO line reported as healthy for eleven minutes.
+> a channel that is *decoding* from being called unhealthy at −56 dBFS. The
+> MRC health line now WARNs when `updates` freezes while `holds` climbs —
+> the failure a plain INFO line called healthy for eleven minutes.
 
 **Key takeaways**
 
@@ -82,10 +82,9 @@ taught this as a postmortem: a pipeline that only announces what it decoded
 cannot tell you *why* it isn't decoding. Taught forward, the principle is
 about ratios. "Decoded 46 SCH/S" is a number; "46 CRC-valid of 54 detected"
 is a diagnosis — the detector works, the channel is mostly clean, the FEC is
-earning its keep. Every stage boundary in a decode chain is a place where
-work either survives or dies, and an instrument counts **both** outcomes at
-every boundary, because the failing count is usually the one that localises
-the fault.
+earning its keep. Every boundary in a decode chain is a place where work
+either survives or dies, and an instrument counts **both** outcomes, because
+the failing count is usually the one that localises the fault.
 
 The DMO investigation ran on exactly this. The operator's log showed
 `dnb_total` climbing 1076→4541 over 185 seconds — 18.7 per second — while

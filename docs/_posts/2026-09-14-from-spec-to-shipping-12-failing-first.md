@@ -31,10 +31,11 @@ itself.*
 > CRC-valid frames**. `TestProcessDecodesRealAirFormat`
 > (`internal/radio/motorola/process_test.go`) feeds the real SmartNet air
 > format to the decoder: the pre-[#1143](https://github.com/MattCheramie/GopherTrunk/issues/1143)
-> fabricated framing decodes **nothing**. And three tests in
-> `internal/scanner/ccdecoder/pipelines_dmo_test.go` all fail against the old
-> DMO grant path that opened recordings on noise. **The failing test is the
-> reproduction, and the reproduction is where the root cause surfaces.**
+> fabricated framing decodes **nothing**. And three
+> `internal/scanner/ccdecoder/pipelines_dmo_test.go` tests all fail against
+> the old DMO grant path that opened recordings on noise. **The failing test
+> is the reproduction, and the reproduction is where the root cause
+> surfaces.**
 
 **Key takeaways**
 
@@ -74,7 +75,7 @@ itself.*
 - **Three tests against one pipeline** — the noise-grant trio.
 - **Failing first as a diagnostic method** — root causes surface in the
   reproduction.
-- **When you cannot fail first** — the honest ending, and the Part 14 tie-in.
+- **When you cannot fail first** — the honest ending, the Part 14 tie-in.
 
 ## The rule, and what it is actually for
 
@@ -97,11 +98,11 @@ twice on fixes nobody had watched fail while the symptom stayed live
 Part 14 turns into policy.
 
 One earned caveat: a failing test proves you reproduced *a* bug; only outside
-evidence proves it's *the* bug. The villain of
+evidence proves it's *the* bug. The
 [Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }})
-— the test that shares its assumption with the code — fabricates a convincing
-failure as easily as a convincing pass, and all three examples below had to
-defeat it first.
+villain — the test sharing its assumption with the code — fabricates a
+convincing failure as easily as a convincing pass, and all three examples
+below had to defeat it first.
 
 ## Zero frames, then two: the colour-0 descramble
 

@@ -40,10 +40,10 @@ roam by.*
 
 **Key takeaways**
 
-- **Identity arrives in fragments, on a schedule the system chooses.** No
-  single frame carries the whole ladder: 0x3B has the WACN but no
-  RFSS/Site, 0x3A the reverse. A decoder that waits for one authoritative
-  message reports blanks forever.
+- **Identity arrives in fragments, on the system's schedule.** No single
+  frame carries the whole ladder: 0x3B has the WACN but no RFSS/Site, 0x3A
+  the reverse. A decoder waiting for one authoritative message reports
+  blanks forever.
 - **The same broadcast wears two frames, and one may be missing.** Every
   status message has a TSBK and an AMBT form with complementary fields.
   GopherTrunk once decoded only the TSBK form — and showed one neighbour
@@ -115,15 +115,14 @@ grants
 | Secondary CC | 0x39 (+ 0x29 explicit) | additional control channels of this site |
 | Adjacent Site Status | 0x3C | one neighbour: RFSS, Site, its CC, CFVA flags |
 
-Every one of them also exists in the **AMBT** form — the same semantic
-message carried in a multi-block PDU
+Every one also exists in the **AMBT** form — the same semantic message
+carried in a multi-block PDU
 ([Part 4]({{ '/blog/deep-dives/p25-end-to-end-04-mbt-ambt/' | relative_url }}))
 — and the two forms are not redundant copies. The AMBT Adjacent Site
-Status is the only form that names the neighbour's **explicit uplink
-channel**; the TSBK form is the only one carrying the CFVA flags and
-service class. And many systems, notably Motorola, broadcast most or all
-of their neighbour list — and sometimes the WACN itself — **only** in AMBT
-form.
+Status alone names the neighbour's **explicit uplink channel**; the TSBK
+form alone carries the CFVA flags and service class. And many systems,
+notably Motorola, broadcast most of their neighbour list — sometimes the
+WACN itself — **only** in AMBT form.
 
 That asymmetry is the war story this series keeps returning to. GopherTrunk
 originally decoded only the TSBK forms and logged every control-channel PDU
@@ -207,9 +206,9 @@ m.neighborData[key] = n
 ```
 
 `CFVAKnown` exists because "flags all zero" and "never seen" are different
-facts — the same discipline as the voted zeros above. The snapshot of all
-this (`NetworkConfig`) crosses into the protocol-neutral
-`trunking.TopologySnapshot`, which is what the
+facts — the same discipline as the voted zeros. The snapshot of all this
+(`NetworkConfig`) crosses into the protocol-neutral
+`trunking.TopologySnapshot`, which the
 [network configuration report]({{ '/blog/deep-dives/trunking-engine-10-sites-topology-roaming/' | relative_url }})
 renders and the hunt accumulator folds into discovered systems.
 
@@ -298,9 +297,9 @@ firing, because a per-chunk estimator blip is not a site change.
 
 Hunting visits sites one at a time.
 [Part 11]({{ '/blog/deep-dives/p25-end-to-end-11-wideband/' | relative_url }})
-removes the "one at a time": pin a single SDR across a band and channelize
-every control channel out of one capture — the `DDCBank` tuner bank, voice
-taps that follow grants without retuning, and the twin down-converter paths
+removes the "one at a time": pin one SDR across a band and channelize every
+control channel out of one capture — the `DDCBank` tuner bank, voice taps
+that follow grants without retuning, and the twin down-converter paths
 whose drift taught this project its most expensive lesson.
 
 ## FAQ
