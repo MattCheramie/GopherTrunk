@@ -15,6 +15,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 )
 
 // diversityCaptureMeta mirrors the sidecar the driver's branch recorder writes
@@ -576,13 +577,29 @@ func loadDiversityCapture(t *testing.T) (br0, br1 []complex64, meta diversityCap
 		t.Fatal("sidecar carries no sample rate")
 	}
 	dir := path[:strings.LastIndex(path, "/")+1]
-	br0 = loadCS16File(t, dir+meta.BranchFiles[0])
-	br1 = loadCS16File(t, dir+meta.BranchFiles[1])
+	br0 = loadBranchFile(t, dir+meta.BranchFiles[0])
+	br1 = loadBranchFile(t, dir+meta.BranchFiles[1])
 	if len(br0) != len(br1) {
 		t.Fatalf("branch files are not the same length (%d vs %d) — they are not "+
 			"sample-aligned and no comparison from them is meaningful", len(br0), len(br1))
 	}
 	return br0, br1, meta
+}
+
+// loadBranchFile reads one diversity branch capture in either container,
+// sniffing the fLaC marker from the file content (a flac branch decodes to the
+// identical int16 samples its cs16 twin would carry, so the arms downstream
+// cannot tell which container fed them).
+func loadBranchFile(t *testing.T, path string) []complex64 {
+	t.Helper()
+	if baseband.IsFLACIQFile(path) {
+		samples, _, err := baseband.ReadIQFLACSamples(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return samples
+	}
+	return loadCS16File(t, path)
 }
 
 func loadCS16File(t *testing.T, path string) []complex64 {

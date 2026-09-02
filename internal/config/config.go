@@ -931,6 +931,18 @@ type SoapyRemoteConfig struct {
 	// long capture is cheap and is what the offline combiner A/B needs. A 1 GiB
 	// per-branch cap applies regardless of the configured seconds.
 	DiversityCaptureSeconds int `yaml:"diversity_capture_seconds"`
+	// DiversityCaptureFormat selects the per-branch container: "cs16" (default —
+	// headerless int16 pairs, playable by anything) or "flac" (lossless
+	// two-channel 16-bit FLAC via the shared baseband encode core, typically
+	// 30-50% smaller; each branch is still independently replayable because the
+	// replay FileDriver content-sniffs the fLaC marker, and the offline
+	// diversity harness reads either). FLAC is bit-exact — the decoded int16
+	// samples equal what the cs16 file would carry — so the branch ALIGNMENT
+	// invariant is unaffected. The FLAC encode runs on the stream goroutine, so
+	// it is limited to capture rates ≤ 1 MS/s (also FLAC's STREAMINFO ceiling);
+	// above that the capture falls back to cs16 with a warning rather than
+	// risking the very overruns it exists to diagnose.
+	DiversityCaptureFormat string `yaml:"diversity_capture_format"`
 	// VerboseDebug logs every control-channel RPC exchanged with this
 	// SoapySDRServer — decoded call name and arguments plus a hex dump of the
 	// frame — at DEBUG level. The SoapyRemote wire carries no schema, so when

@@ -7,9 +7,12 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 )
 
 // readCS16 decodes a headerless cs16 branch file back to complex64.
@@ -53,7 +56,7 @@ func TestBranchRecorderWritesBothBranches(t *testing.T) {
 	ch1 := scaleC(ch0, complex(0, 1))
 
 	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
-	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	rec, err := newBranchRecorder(prefix, "cs16", 2, 0, 200000, testLogger())
 	if err != nil {
 		t.Fatalf("newBranchRecorder: %v", err)
 	}
@@ -89,6 +92,85 @@ func TestBranchRecorderWritesBothBranches(t *testing.T) {
 	}
 }
 
+// TestBranchRecorderFLACIsBitExactTwin pins the diversity_capture_format: flac
+// contract: the .flac branches decode to EXACTLY the int16 samples the cs16
+// recorder writes for the same input (same clamp, same scale), the alignment
+// invariant holds (equal lengths, degenerate datagrams dropped from both), and
+// the sidecar says flac so the offline harness picks the right loader.
+func TestBranchRecorderFLACIsBitExactTwin(t *testing.T) {
+	dir := t.TempDir()
+	rng := rand.New(rand.NewSource(7))
+	ch0 := mrcSignal(rng, 512, 0.4)
+	ch1 := scaleC(ch0, complex(0, 1))
+
+	recCS, err := newBranchRecorder(filepath.Join(dir, "cs"), "cs16", 2, 0, 200000, testLogger())
+	if err != nil {
+		t.Fatalf("newBranchRecorder cs16: %v", err)
+	}
+	recFL, err := newBranchRecorder(filepath.Join(dir, "fl"), "flac", 2, 0, 200000, testLogger())
+	if err != nil {
+		t.Fatalf("newBranchRecorder flac: %v", err)
+	}
+
+	const rounds = 3
+	for i := 0; i < rounds; i++ {
+		recCS.write([][]complex64{ch0, ch1})
+		recFL.write([][]complex64{ch0, ch1})
+		// A degenerate (single-branch) datagram must be dropped from BOTH files
+		// on both containers — a short write would desynchronise the branches.
+		recCS.write([][]complex64{ch0})
+		recFL.write([][]complex64{ch0})
+	}
+	recCS.finish()
+	recFL.finish()
+
+	metaFL := readBranchMeta(t, filepath.Join(dir, "fl"))
+	if metaFL.Format != "flac" {
+		t.Fatalf("flac sidecar format = %q, want flac", metaFL.Format)
+	}
+	if metaFL.SamplesPerBranch != int64(rounds*len(ch0)) || metaFL.DroppedDatagrams != rounds {
+		t.Fatalf("flac sidecar samples=%d dropped=%d, want %d/%d",
+			metaFL.SamplesPerBranch, metaFL.DroppedDatagrams, rounds*len(ch0), rounds)
+	}
+	for br := 0; br < 2; br++ {
+		flacPath := filepath.Join(dir, "fl.br"+strconv.Itoa(br)+".flac")
+		magic := make([]byte, 4)
+		f, err := os.Open(flacPath)
+		if err != nil {
+			t.Fatalf("open %s: %v", flacPath, err)
+		}
+		if _, err := f.Read(magic); err != nil || string(magic) != "fLaC" {
+			t.Errorf("%s does not start with the fLaC marker (got %q, err %v)", flacPath, magic, err)
+		}
+		f.Close()
+		got, rate, err := baseband.ReadIQFLACSamples(flacPath)
+		if err != nil {
+			t.Fatalf("decode %s: %v", flacPath, err)
+		}
+		if rate != 200000 {
+			t.Errorf("flac branch %d sample rate = %d, want 200000", br, rate)
+		}
+		want := readCS16(t, filepath.Join(dir, "cs.br"+strconv.Itoa(br)+".cs16"))
+		if len(got) != len(want) {
+			t.Fatalf("flac branch %d decodes %d samples, cs16 twin has %d", br, len(got), len(want))
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("flac branch %d sample %d = %v, cs16 twin = %v — containers are not bit-exact", br, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// TestBranchRecorderFLACRejectsUnencodableRate: FLAC's STREAMINFO cannot carry a
+// multi-MS/s rate; the constructor refuses so startBranchCapture's cs16 fallback
+// (rather than a broken stream) handles it.
+func TestBranchRecorderFLACRejectsUnencodableRate(t *testing.T) {
+	if _, err := newBranchRecorder(filepath.Join(t.TempDir(), "x"), "flac", 2, 0, 6_250_000, testLogger()); err == nil {
+		t.Fatal("flac branch recorder accepted a 6.25 MS/s rate; STREAMINFO cannot carry it")
+	}
+}
+
 // TestBranchCaptureSidecarWireNames pins the JSON key names the sidecar emits.
 // The offline harness (cmd/gophertrunk/diversity_replay_test.go) declares its
 // own struct with these same names, so a rename here would silently produce
@@ -96,7 +178,7 @@ func TestBranchRecorderWritesBothBranches(t *testing.T) {
 // sides assert against these literals rather than against each other.
 func TestBranchCaptureSidecarWireNames(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "cap")
-	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	rec, err := newBranchRecorder(prefix, "cs16", 2, 0, 200000, testLogger())
 	if err != nil {
 		t.Fatalf("newBranchRecorder: %v", err)
 	}
@@ -142,7 +224,7 @@ func TestBranchRecorderKeepsBranchesAligned(t *testing.T) {
 	single := mrcSignal(rng, 256, 0.4)
 
 	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
-	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	rec, err := newBranchRecorder(prefix, "cs16", 2, 0, 200000, testLogger())
 	if err != nil {
 		t.Fatalf("newBranchRecorder: %v", err)
 	}
@@ -178,7 +260,7 @@ func TestBranchRecorderStopsAtBudget(t *testing.T) {
 	ch1 := scaleC(ch0, complex(0, 1))
 
 	m := newMRCCombiner(formatCS16, diversityMRCTracking, 0)
-	rec, err := newBranchRecorder(prefix, 2, 250, testLogger()) // 2.5 datagrams
+	rec, err := newBranchRecorder(prefix, "cs16", 2, 250, 200000, testLogger()) // 2.5 datagrams
 	if err != nil {
 		t.Fatalf("newBranchRecorder: %v", err)
 	}
@@ -275,7 +357,7 @@ func TestBranchCaptureArmsOncePerDevice(t *testing.T) {
 // Fails against the old code with "no such file or directory".
 func TestBranchRecorderCreatesMissingDirectory(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "does", "not", "exist", "cap")
-	rec, err := newBranchRecorder(prefix, 2, 0, testLogger())
+	rec, err := newBranchRecorder(prefix, "cs16", 2, 0, 200000, testLogger())
 	if err != nil {
 		t.Fatalf("newBranchRecorder: %v", err)
 	}
@@ -301,7 +383,7 @@ func TestBranchRecorderDirectoryPrefixIsNotHidden(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			rec, err := newBranchRecorder(tc.prefix(dir), 2, 0, testLogger())
+			rec, err := newBranchRecorder(tc.prefix(dir), "cs16", 2, 0, 200000, testLogger())
 			if err != nil {
 				t.Fatalf("newBranchRecorder: %v", err)
 			}

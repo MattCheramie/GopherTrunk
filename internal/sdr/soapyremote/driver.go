@@ -127,6 +127,10 @@ type Spec struct {
 	// DiversityCaptureSeconds bounds that dump; <=0 selects
 	// defaultDiversityCaptureSeconds.
 	DiversityCaptureSeconds int
+	// DiversityCaptureFormat selects the branch container: "" / "cs16"
+	// (headerless int16 pairs) or "flac" (lossless compressed twin; falls back
+	// to cs16 above flacCaptureMaxRateHz).
+	DiversityCaptureFormat string
 	// VerboseDebug logs every control-channel RPC request and response —
 	// decoded arguments plus a hex dump of the frame — at DEBUG. Off by
 	// default; the trace is per endpoint so a multi-radio config can follow
@@ -249,6 +253,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		dev.mrc.log = d.log
 		dev.capturePrefix = spec.DiversityCapture
 		dev.captureSeconds = spec.DiversityCaptureSeconds
+		dev.captureFormat = spec.DiversityCaptureFormat
 	}
 	dev.deviceArgs = formatDeviceArgs(spec.DeviceArgs)
 	dev.antennas = append([]string(nil), spec.Antennas...)
@@ -315,10 +320,11 @@ type device struct {
 	diversity diversityMode
 	mrc       *mrcCombiner
 
-	// capturePrefix/captureSeconds configure the one-shot pre-combine branch
-	// dump; empty prefix disables it. Set once at Open.
+	// capturePrefix/captureSeconds/captureFormat configure the one-shot
+	// pre-combine branch dump; empty prefix disables it. Set once at Open.
 	capturePrefix  string
 	captureSeconds int
+	captureFormat  string
 
 	// tracer logs every RPC frame when Spec.VerboseDebug is set; nil otherwise.
 	// Set once at Open, read-only thereafter, and nil-safe at every call site.

@@ -379,6 +379,14 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..120; two CS16 branches are tens of MB/s at high rates, and a 1 GiB per-branch cap applies regardless)", i, s.DiversityCaptureSeconds)
 		}
 	}
+	switch s.DiversityCaptureFormat {
+	case "", "cs16", "flac":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_format %q unknown (want cs16 or flac)", i, s.DiversityCaptureFormat)
+	}
+	if s.DiversityCaptureFormat != "" && s.DiversityCapture == "" {
+		return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_format set without diversity_capture", i)
+	}
 	// diversity_capture's directory is auto-created (preflight up front, and
 	// the branch recorder lazily for non-daemon entrypoints) like every other
 	// output directory in the config, so a missing directory is not an error

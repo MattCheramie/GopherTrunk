@@ -279,3 +279,43 @@ func ReadIQRecordingInfo(path string) (IQWavInfo, error) {
 	}
 	return ReadIQWavInfo(path)
 }
+
+// IsFLACIQFile sniffs the 4-byte fLaC marker, so a caller holding a branch or
+// baseband capture of unknown container can pick the right loader from the
+// file content rather than its extension.
+func IsFLACIQFile(path string) bool { return isFLACRecording(path) }
+
+// ReadIQFLACSamples decodes a whole two-channel 16-bit FLAC IQ recording into
+// complex64 samples with the same /32768 normalisation the replay driver's
+// streamFLAC applies (and loadCS16-style raw readers use), plus the stream's
+// sample rate. Whole-file: intended for offline harnesses and tests, not the
+// streaming replay path.
+func ReadIQFLACSamples(path string) ([]complex64, uint32, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	stream, err := flacIQStream(f)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]complex64, 0, stream.Info.NSamples)
+	for {
+		fr, err := stream.ParseNext()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, 0, fmt.Errorf("baseband: decode flac IQ frame: %w", err)
+		}
+		if len(fr.Subframes) != 2 {
+			return nil, 0, fmt.Errorf("baseband: flac IQ frame has %d subframes, want 2", len(fr.Subframes))
+		}
+		l, q := fr.Subframes[0].Samples, fr.Subframes[1].Samples
+		for i := range l {
+			out = append(out, complex(float32(int16(l[i]))/32768, float32(int16(q[i]))/32768))
+		}
+	}
+	return out, stream.Info.SampleRate, nil
+}

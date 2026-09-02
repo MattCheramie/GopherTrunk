@@ -62,8 +62,13 @@ confirmation before any close-as-completed.
   broadcast MP3 transcode, the `/calls/{id}/audio` handler (audio/flac + .flac in its
   extension allowlist), the retention sweeper, and the web RecordingPlayer's download
   name. `FlacWriter.DataBytes()` reports UNCOMPRESSED PCM bytes so the recorder's
-  duration/dead-key math is container-independent. Not converted (deliberately):
-  `diversity_capture` stays cs16 (branch-alignment invariant + offline harness),
+  duration/dead-key math is container-independent. `diversity_capture` now takes
+  `diversity_capture_format: flac` too (operator space-saving request): the branch
+  FLAC is a bit-exact twin of the cs16 (same clamp/scale, pinned by
+  `TestBranchRecorderFLACIsBitExactTwin`) so the alignment invariant and every
+  downstream conclusion are container-independent; the harness content-sniffs the
+  branches, and rates > 1 MS/s fall back to cs16 (STREAMINFO ceiling + the encode
+  runs on the stream goroutine). Not converted (deliberately):
   `hunt -survey-capture` stays f32.
 - **A P25 "MBT data CRC failed" line whose identity fields match a decoded broadcast
   is TWO different PDU frames, not a contradiction**: every field the failure line

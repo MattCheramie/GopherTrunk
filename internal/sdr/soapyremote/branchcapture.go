@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 )
 
 // branchRecorder dumps the PRE-COMBINE per-branch IQ of a diversity stream.
@@ -21,18 +23,24 @@ import (
 // tracking have beaten static on this signal?", or "is the second antenna
 // contributing anything?", offline and reproducibly.
 //
-// Layout: one headerless CS16 file per branch plus a JSON sidecar.
+// Layout: one file per branch plus a JSON sidecar. The branch container is
+// headerless CS16 by default, or lossless two-channel FLAC when
+// diversity_capture_format: flac is set (typically 30-50% smaller — the "MRC
+// autocapture should use FLAC for space saving" field request):
 //
-//	<prefix>.br0.cs16
-//	<prefix>.br1.cs16
+//	<prefix>.br0.cs16   (or .br0.flac)
+//	<prefix>.br1.cs16   (or .br1.flac)
 //	<prefix>.diversity.json
 //
 // Separate files rather than one interleaved blob, because each branch file is
 // then immediately playable by everything that already exists — `gophertrunk
-// replay -format cs16`, `analyze`, siglab — so an operator can sanity-check each
-// receiver on its own before anyone writes combiner code, and the offline
-// harness is a plain pair of reads. A bespoke container would buy nothing and
-// cost a parser plus a tool that understands it.
+// replay -format cs16` (or the content-sniffing FLAC mount), `analyze`, siglab
+// — so an operator can sanity-check each receiver on its own before anyone
+// writes combiner code, and the offline harness is a plain pair of reads. A
+// bespoke container would buy nothing and cost a parser plus a tool that
+// understands it. FLAC is bit-exact: a .flac branch decodes to the identical
+// int16 samples its .cs16 twin would carry, so nothing downstream can tell the
+// containers apart and the alignment invariant below is container-independent.
 //
 // ALIGNMENT INVARIANT: the two files are only meaningful if sample i of one is
 // simultaneous with sample i of the other. A datagram that did not carry every
@@ -49,7 +57,8 @@ type branchRecorder struct {
 	branches int
 
 	files   []*os.File
-	bufs    []*bufio.Writer
+	bufs    []*bufio.Writer           // cs16 path only
+	encs    []*baseband.FLACIQEncoder // flac path only
 	scratch []byte
 
 	budgetSamples int64
@@ -106,7 +115,17 @@ func (d *device) startBranchCapture(rateHz float64) {
 	if rateHz > 0 {
 		budget = int64(rateHz) * int64(secs)
 	}
-	rec, err := newBranchRecorder(d.capturePrefix, d.rxChannelCount(), budget, d.log)
+	format := d.captureFormat
+	if format == "flac" && rateHz > flacCaptureMaxRateHz {
+		// FLAC's STREAMINFO rate field tops out near 1 MS/s, and the encode runs
+		// on the stream goroutine — at high native rates it would risk inducing
+		// the very overruns the capture exists to diagnose. Keep the capture
+		// rather than the container.
+		d.log.Warn("soapyremote: diversity_capture_format flac not usable at this rate — falling back to cs16",
+			"rate_hz", rateHz, "max_flac_rate_hz", flacCaptureMaxRateHz)
+		format = "cs16"
+	}
+	rec, err := newBranchRecorder(d.capturePrefix, format, d.rxChannelCount(), budget, rateHz, d.log)
 	if err != nil {
 		d.log.Warn("soapyremote: diversity capture not started", "err", err)
 		return
@@ -152,14 +171,33 @@ func resolveCapturePrefix(prefix string, now time.Time) string {
 	return filepath.Join(prefix, "diversity_"+now.UTC().Format("20060102T150405Z"))
 }
 
-// newBranchRecorder opens the per-branch files under prefix. budgetSamples
-// bounds the capture per branch; <=0 means the byte cap alone applies.
-func newBranchRecorder(prefix string, branches int, budgetSamples int64, log *slog.Logger) (*branchRecorder, error) {
+// flacCaptureMaxRateHz bounds the sample rate at which a flac branch capture is
+// honoured: FLAC's STREAMINFO sample-rate field is 20 bits (1,048,575 Hz), and
+// the encode's prediction analysis runs on the stream goroutine, so a
+// multi-MS/s native rate falls back to cs16 (see startBranchCapture). Every
+// narrowband MRC rig (the 200-250 kS/s X310/TwinRX use case) is far under it.
+const flacCaptureMaxRateHz = 1_000_000
+
+// newBranchRecorder opens the per-branch files under prefix in the given
+// container format ("" or "cs16", or "flac"). budgetSamples bounds the capture
+// per branch; <=0 means the byte cap alone applies. rateHz is stamped into a
+// FLAC stream's header (cs16 ignores it).
+func newBranchRecorder(prefix, format string, branches int, budgetSamples int64, rateHz float64, log *slog.Logger) (*branchRecorder, error) {
 	if branches < 1 {
 		return nil, fmt.Errorf("soapyremote: branch capture needs at least one branch")
 	}
 	if prefix == "" {
 		return nil, fmt.Errorf("soapyremote: branch capture needs a file prefix")
+	}
+	switch format {
+	case "", "cs16":
+		format = "cs16"
+	case "flac":
+		if rateHz <= 0 || rateHz > flacCaptureMaxRateHz {
+			return nil, fmt.Errorf("soapyremote: flac branch capture needs a sample rate in (0, %d] Hz, got %g", flacCaptureMaxRateHz, rateHz)
+		}
+	default:
+		return nil, fmt.Errorf("soapyremote: unknown branch capture format %q (want cs16 or flac)", format)
 	}
 	prefix = resolveCapturePrefix(prefix, time.Now())
 	// Auto-create the directory like every other output path (the config
@@ -176,18 +214,27 @@ func newBranchRecorder(prefix string, branches int, budgetSamples int64, log *sl
 		budgetSamples: budgetSamples,
 	}
 	for i := 0; i < branches; i++ {
-		name := prefix + ".br" + strconv.Itoa(i) + ".cs16"
+		name := prefix + ".br" + strconv.Itoa(i) + "." + format
 		f, err := os.Create(name)
 		if err != nil {
 			r.closeFiles()
 			return nil, fmt.Errorf("soapyremote: branch capture %s: %w", name, err)
 		}
 		r.files = append(r.files, f)
-		r.bufs = append(r.bufs, bufio.NewWriterSize(f, 1<<20))
+		if format == "flac" {
+			enc, err := baseband.NewFLACIQEncoder(f, uint32(rateHz))
+			if err != nil {
+				r.closeFiles()
+				return nil, fmt.Errorf("soapyremote: branch capture %s: %w", name, err)
+			}
+			r.encs = append(r.encs, enc)
+		} else {
+			r.bufs = append(r.bufs, bufio.NewWriterSize(f, 1<<20))
+		}
 		r.meta.BranchFiles = append(r.meta.BranchFiles, filepath.Base(name))
 	}
 	r.meta.Branches = branches
-	r.meta.Format = "cs16"
+	r.meta.Format = format
 	return r, nil
 }
 
@@ -221,16 +268,29 @@ func (r *branchRecorder) write(branches [][]complex64) {
 			return
 		}
 	}
-	need := n * 4
-	if cap(r.scratch) < need {
-		r.scratch = make([]byte, need)
-	}
-	buf := r.scratch[:need]
-	for i, b := range branches {
-		encodeCS16Into(buf, b[:n])
-		if _, err := r.bufs[i].Write(buf); err != nil {
-			r.fail(err)
-			return
+	if r.encs != nil {
+		// FLAC path: feed each branch's encoder the SAME clamped int16 samples
+		// the cs16 path would write, so the two containers are bit-exact twins.
+		for i, b := range branches {
+			for _, z := range b[:n] {
+				if err := r.encs[i].WriteI16(clampInt16(real(z)*32768), clampInt16(imag(z)*32768)); err != nil {
+					r.fail(err)
+					return
+				}
+			}
+		}
+	} else {
+		need := n * 4
+		if cap(r.scratch) < need {
+			r.scratch = make([]byte, need)
+		}
+		buf := r.scratch[:need]
+		for i, b := range branches {
+			encodeCS16Into(buf, b[:n])
+			if _, err := r.bufs[i].Write(buf); err != nil {
+				r.fail(err)
+				return
+			}
 		}
 	}
 	r.written += int64(n)
@@ -247,6 +307,13 @@ func (r *branchRecorder) finish() {
 	r.done = true
 	for _, b := range r.bufs {
 		if err := b.Flush(); err != nil && !r.failed {
+			r.fail(err)
+		}
+	}
+	for _, e := range r.encs {
+		// Finalize flushes the last partial block and patches the STREAMINFO
+		// (sample count + MD5) via a seek on the file; the file close is ours.
+		if err := e.Finalize(); err != nil && !r.failed {
 			r.fail(err)
 		}
 	}
