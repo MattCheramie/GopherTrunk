@@ -8,6 +8,24 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Talkgroups auto-discovered on analog trunking systems are no longer
+  labeled mode "D" (digital)** (#1143 follow-up). Discovered-talkgroup mode
+  now follows the system's protocol: SmartNet/SmartZone, LTR, MPT-1327 and
+  non-ProVoice EDACS talkgroups are stamped "A" (analog), digital protocols
+  stay "D". Display/CSV metadata only — decode and recording are unaffected.
+- **`capture` no longer turns a transient carrier into a confident wrong ppm
+  warning, and now doubles as a ppm-measurement instrument** (#1143's bogus
+  "≈550.3 ppm" warning; #836). The carrier-offset probe used to FFT only the
+  first ~11 ms of the recording — exactly where front-end settling and
+  momentarily-keyed neighbours live. It now spreads eight probe windows
+  across the whole capture and reports an offset only when windows
+  corroborate each other (a real tuner error is constant for the entire
+  file). A corroborated offset is always printed as a `measured carrier
+  offset` line — even below the warning threshold — so capturing any strong
+  known-frequency carrier measures the dongle's ppm error where
+  kalibrate-rtl no longer works (regions without GSM towers). `capture` also
+  honours a backend's actual (quantized) sample rate in the recording,
+  metadata sidecar, and offset math.
 - **Motorola Type II / SmartNet / SmartZone control channels can now actually
   decode off the air** (#1143). The previous framing (24-bit sync, 32-bit OSW,
   BCH(64,16,11)) was spec-guessed, matched no real signal, and only decoded its
