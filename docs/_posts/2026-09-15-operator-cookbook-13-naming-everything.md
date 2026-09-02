@@ -77,19 +77,18 @@ silently lost.***
 
 Nothing on the antenna side changes. What changes is every surface you read:
 recordings file under `<system>/<talkgroup>/` with the `{alpha}` token
-available in `filename_template`, the History panel becomes searchable by
-name, the Talkgroups and Radio IDs panels become rosters instead of number
-columns, and broadcast feeds carry proper labels. A
+available in `filename_template`, History becomes searchable by name, the
+Talkgroups and Radio IDs panels become rosters instead of number columns, and
+broadcast feeds carry proper labels. A
 [talkgroup]({{ '/reference/talkgroup/' | relative_url }}) or
 [radio ID]({{ '/reference/radio-id/' | relative_url }}) is just a number on
 the air — everything human about it is this recipe.
 
-Three sources feed one merged catalogue, in a strict order: **files** (loaded
-at startup, per system), then **labels** (your live edits, persisted to
-SQLite, applied over the files), with **on-air harvest** — talker aliases,
-discovered talkgroups — filling gaps around both. The precedence is the whole
-design: a label is your most recent explicit act, so it beats the file; the
-air never overwrites either.
+Three sources feed one merged catalogue, in strict order: **files** (loaded
+at startup, per system), then **labels** (live edits, persisted to SQLite,
+applied over the files), with **on-air harvest** filling gaps around both.
+The precedence is the whole design: a label is your most recent explicit
+act, so it beats the file; the air never overwrites either.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 240" width="680" height="240" role="img" aria-label="Three naming layers feed one merged catalogue: talkgroup and RID alias files load at startup, the SQLite labels table applies operator edits over them and wins disagreements, and on-air harvest fills gaps; the catalogue feeds the web panels, recordings tree, history search and broadcast feeds, with an export loop back to CSV.">
@@ -157,10 +156,10 @@ Decimal,Alpha Tag,Description,Tag,Group,Priority,Stream
 
 Row 3 stays recorded and scannable but never reaches a
 [broadcast feed]({{ '/blog/tutorials/operator-cookbook-09-sharing-the-feed/' | relative_url }});
-row 4's `L` locks it out entirely. What each policy flag does at grant time —
-scan lists, priorities, lockout — is
+row 4's `L` locks it out entirely. What each policy flag does at grant time
+is
 [Trunking Engine Part 6]({{ '/blog/deep-dives/trunking-engine-06-talkgroups-scan-modes/' | relative_url }})'s
-territory; this part is only about the file that feeds it.
+territory; this part is about the file that feeds it.
 
 **The RID CSV** requires `Decimal`/`DEC`/`ID`, and accepts `Alias` (or
 `Alpha Tag`), `Description`, `Tag`, `Group` (or `Category`/`Agency`), `Owner`
@@ -174,11 +173,11 @@ Decimal,Alias,Description,Group,Owner
 ```
 
 Where do the numbers come from? RadioReference for talkgroups (its CSV
-export's `Decimal`/`Alpha Tag`/`Description` headers load unmodified), your
-own History panel for radios — and if the system isn't catalogued anywhere,
+headers load unmodified), your own History panel for radios — and if the
+system isn't catalogued anywhere,
 [`gophertrunk hunt`]({{ '/blog/deep-dives/the-hunt-11-naming-the-unknown/' | relative_url }})
 plus the import pipeline (`POST /api/v1/import` takes RadioReference PDFs and
-CSV bundles, previews, then commits) get you a starting file.
+CSV bundles, previews, then commits) gets you a starting file.
 
 ## Naming live from the browser
 
@@ -194,25 +193,23 @@ curl -X PATCH http://127.0.0.1:8080/api/v1/rids/7001234 \
 
 Three behaviors make this layer trustworthy:
 
-- **Unknown IDs are created, not 404'd.** Requiring you to edit
-  `rid_alias_file` and restart before naming a radio defeats the point — the
-  radios worth naming are the ones showing up live, which by definition
-  aren't in the file yet. A synthesized entry behaves exactly like a loaded
-  one (and is deliberately *not* tagged as auto-discovered, so cleanup sweeps
-  of discovered entries can never delete your names).
+- **Unknown IDs are created, not 404'd.** Requiring an edit to
+  `rid_alias_file` and a restart before naming a radio defeats the point —
+  the radios worth naming are the ones showing up live, which by definition
+  aren't in the file yet. A synthesized entry behaves like a loaded one (and
+  is deliberately *not* tagged auto-discovered, so cleanup sweeps of
+  discovered entries can never delete your names).
 - **Names persist; policy doesn't.** The name fields
   (alias/description/tag/group/owner/icon) write to the **labels** table in
-  `storage.path` and re-apply over the files at every startup. The policy
-  fields — priority, lockout, scan, watch — stay in-memory, exactly as
-  before; making those durable is a separate decision the daemon doesn't
-  take for you.
-- **The label wins, loudly.** At startup, files load first, then labels apply
-  on top. If your label and the file disagree, the label is your most recent
-  explicit act — it wins, and the daemon logs a WARN naming both so you can
-  reconcile.
+  `storage.path` and re-apply over the files at startup. The policy fields —
+  priority, lockout, scan, watch — stay in-memory as before; making those
+  durable is a separate decision the daemon doesn't take for you.
+- **The label wins, loudly.** Files load first, labels apply on top. When
+  they disagree, the label — your most recent explicit act — wins, and the
+  daemon logs a WARN naming both so you can reconcile.
 
-Reconciling is one request — the export endpoint emits the *merged* catalogue
-as a CSV whose columns are pinned by round-trip tests against the loader:
+Reconciling is one request — the export emits the *merged* catalogue as a
+CSV whose columns are pinned by round-trip tests against the loader:
 
 ```sh
 curl -o talkgroups-merged.csv \
@@ -222,9 +219,8 @@ curl -o talkgroups-merged.csv \
 Point `talkgroup_file` at the result, delete the labels
 (`DELETE /api/v1/labels/{kind}/{id}`), and you're back to one hand-edited
 file — the store is a convenience, never a lock-in. (`scope=labels`, the
-default, exports only the ids you've actually labelled; `kind=rid` does the
-same for radios, headers `Decimal,Alias,…,Watch,Icon`.) These are mutation
-routes, so off-loopback they need the
+default, exports only the ids you've labelled; `kind=rid` does radios.) The
+writes are mutation routes, so off-loopback they need the
 [auth token]({{ '/blog/deep-dives/running-it-for-real-02-auth-posture/' | relative_url }})
 like every other write.
 
@@ -233,13 +229,12 @@ like every other write.
 Some names arrive without you typing anything:
 
 - **Talker aliases.** Many radios transmit their own name on the traffic
-  channel; GopherTrunk decodes it and shows it in the Radio IDs roster
-  (`talker_alias` in the API) alongside your catalogue alias. On busy P25
-  Phase 2 systems most grants never get a voice tap, so the alias decode in
-  the voice chain rarely runs — set `signalling_taps: 2` on the wideband
-  device to harvest aliases from the signalling stream instead (issue
-  [#376](https://github.com/MattCheramie/GopherTrunk/issues/376); the
-  full story, including the encrypted-alias cryptanalysis, is
+  channel; GopherTrunk decodes it into the Radio IDs roster (`talker_alias`
+  in the API) alongside your catalogue alias. On busy P25 Phase 2 systems
+  most grants never get a voice tap, so set `signalling_taps: 2` on the
+  wideband device to harvest aliases from the signalling stream instead
+  (issue [#376](https://github.com/MattCheramie/GopherTrunk/issues/376); the
+  full story, encrypted-alias cryptanalysis included, is
   [The Hunt Parts 11–12]({{ '/blog/deep-dives/the-hunt-12-alias-harvesting/' | relative_url }})).
 - **Discovered talkgroups.** Talkgroups seen on grants but absent from your
   file appear in the roster tagged as discovered, so the panel is a live
@@ -250,13 +245,13 @@ Some names arrive without you typing anything:
   surfaces radios as they register, populating the RID roster with sightings
   even with no `rid_alias_file` configured at all.
 
-One filing fix worth knowing if you run DMR: an earlier build reclassified a
-group call as *individual* whenever the talkgroup number happened to equal a
-known radio ID — valid logic on TETRA, where group and individual IDs never
-overlap, but DMR shares one 24-bit space for both, so group calls got
-misfiled under `individual/<TG>/` and corrupted the roster's Last Talkgroup
-column. That mechanism is now scoped to TETRA only; DMR's own call-type
-signalling is authoritative, pinned by a regression test.
+One filing fix worth knowing on DMR: an earlier build reclassified a group
+call as *individual* whenever the talkgroup number equalled a known radio
+ID — valid on TETRA, where group and individual IDs never overlap, but DMR
+shares one 24-bit space, so group calls got misfiled under `individual/<TG>/`
+and corrupted the roster's Last Talkgroup column. The mechanism is now scoped
+to TETRA only; DMR's own call-type signalling is authoritative, pinned by a
+regression test.
 
 ## First run — what healthy looks like
 
@@ -268,19 +263,18 @@ INF daemon: rids loaded system=Metro-P25 count=87
 INF daemon: operator labels applied updated=12 created=3
 ```
 
-The counts are your first sanity check — a `count=0` on a file you know has
-rows means the header didn't parse (see the table below). If you've labelled
-things that also live in the file, you may also see the divergence WARN,
-which is informational by design:
+The counts are the first sanity check — `count=0` on a file you know has
+rows means the header didn't parse (table below). If a label and the file
+both name the same id, you'll also see the divergence WARN, informational by
+design:
 
 ```
 WRN daemon: operator label overrides the alias file's name kind=talkgroup id=9001 file=FD-DISP label=FIRE-DISP
 ```
 
-Then let a call come in: the recorder line now shows the folder tree using
-your talkgroup number with the alias visible everywhere the UI renders it,
-History filters accept the name, and a search by `FIRE-DISP` in the
-Talkgroups panel lands on 9001. The names also flow outward — call webhooks
+Then let a call come in: the alias renders everywhere the UI shows the
+talkgroup, History filters accept the name, and a search for `FIRE-DISP` in
+the Talkgroups panel lands on 9001. Names also flow outward — call webhooks
 and [broadcast uploads]({{ '/blog/tutorials/operator-cookbook-09-sharing-the-feed/' | relative_url }})
 carry the metadata, and a talkgroup with `stream: no` never leaves the box.
 
@@ -334,23 +328,23 @@ labels table to persist into. Set it, re-apply the name, and look for
 check the startup log for `operator labels not applied` with an error.
 
 **What's the difference between the labels table and the CSV files?**
-Scope and authorship. The files are your bulk, hand-maintained catalogue,
-loaded at startup; labels are individual edits made live, persisted
-separately, and applied over the files — winning any disagreement because
-they're your most recent explicit act. The export endpoint merges the two
-back into a file whenever you want a single source of truth again.
+Authorship and scope. Files are the bulk, hand-maintained catalogue loaded at
+startup; labels are individual live edits, persisted separately and applied
+over the files — winning any disagreement as your most recent explicit act.
+The export endpoint merges the two back into a file whenever you want one
+source of truth again.
 
 **Does GopherTrunk name talkgroups automatically?**
 Partially. Radios that transmit talker aliases get named from the air, and
 unknown talkgroups appear in the roster as discovered — a census, not a
-naming. Actual alpha tags for talkgroups still come from you or a database
-like RadioReference; the roster just makes the gaps obvious.
+naming. Alpha tags for talkgroups still come from you or RadioReference; the
+roster just makes the gaps obvious.
 
 **Why does the Radio IDs panel show two names for one radio?**
-They're different columns: your catalogue alias (file or label) and the
-talker alias the radio itself transmitted. They often disagree —
-fleet-programmed aliases can be stale or cryptic — and GopherTrunk shows
-both rather than guessing which you trust.
+Different columns: your catalogue alias (file or label) and the talker alias
+the radio itself transmitted. They often disagree — fleet-programmed aliases
+can be stale or cryptic — and GopherTrunk shows both rather than guessing
+which you trust.
 
 ## Series navigation
 

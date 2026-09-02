@@ -217,17 +217,15 @@ Default C4FM Phase 1 voice is, literally, the odd path out.
 ## The gap, measured
 
 "Noise-fragile" is not a vibe here; it is a committed CI number. The
-synthetic BER-vs-SNR sweep in `receiver/sweep_test.go` drives the **real
-receiver** on both demod paths across an injected-SNR ladder and gates the
-result against closed-form references:
+synthetic BER-vs-SNR sweep in `receiver/sweep_test.go`
+(`TestSweepImplementationLossBudget`) drives the **real receiver** on both
+demod paths across an injected-SNR ladder and gates the result against
+closed-form references:
 
-```go
-// internal/radio/p25/phase1/receiver/sweep_test.go (shape) — sweepGates
-// CQPSK lands ~3.85 dB off coherent QPSK at 1% SER;
-// C4FM ~23.8 dB off coherent 4-PAM. Budgets add ~2–3 dB of margin.
-{mode: DemodCQPSK, ref: metrics.SERCoherentQPSK, targetSER: 1e-2, lossBudgetDB: 6.0},
-{mode: DemodC4FM,  ref: metrics.SER4PAM,         targetSER: 1e-2, lossBudgetDB: 27.0},
-```
+| Path | Reference curve | Measured loss @ 1% SER | Committed budget |
+|---|---|---|---|
+| CQPSK (`DemodCQPSK`) | coherent QPSK (`metrics.SERCoherentQPSK`) | ~3.85 dB | 6.0 dB |
+| C4FM (`DemodC4FM`) | coherent 4-PAM (`metrics.SER4PAM`) | ~23.8 dB | 27.0 dB |
 
 Read the two numbers together. The linear path — coherent demod, equalizer,
 Gardner timing — reaches 1% symbol errors within ~4 dB of the coherent QPSK

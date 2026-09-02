@@ -162,9 +162,9 @@ baseband:
       format: flac
 ```
 
-Choices worth explaining. **`format: flac`** costs CPU only at call
-finalization and buys ~2× more days per gigabyte, with no fidelity trade —
-it decodes bit-identical. **`path_template`** is taste, but a date tree keeps
+Choices worth explaining. **`format: flac`** costs a little CPU per call
+and buys ~2× more days per gigabyte, with no fidelity trade — it decodes
+bit-identical. **`path_template`** is taste, but a date tree keeps
 directory sizes sane at archive scale. **`tap: ddc`** is the archival sweet
 spot for IQ: it records the down-converted channel the decoder actually
 consumed (48 kHz for the C4FM family, 144 kHz for TETRA), directly

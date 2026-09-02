@@ -63,7 +63,7 @@ itself.*
 | SmartNet regression | real-air OSW stream → old decoder = zero decodes | `internal/radio/motorola/process_test.go` (`TestProcessDecodesRealAirFormat`) |
 | Noise-grant trio | idle channel, lock ordering, re-arm — three failure modes | `internal/scanner/ccdecoder/pipelines_dmo_test.go` |
 | Faithful synthetic transmitter | every burst on a true 255-dibit timeslot | `pipelines_dmo_test.go` (`buildDMODibitStream`) |
-| When you can't fail first | the issue stays open, gated on evidence | `CLAUDE.md` issue-closing policy → Part 14 |
+| When you can't fail first | the issue stays open, gated on evidence | `CLAUDE.md` policy → Part 14 |
 
 ## In this post
 
@@ -92,7 +92,7 @@ fails against the old code, so the reproduction is real; it passes against
 the new, so the change addresses *that* reproduction. The price of skipping
 them was paid in public: issue
 [#764](https://github.com/MattCheramie/GopherTrunk/issues/764) was closed
-twice on fixes nobody had watched fail, while the symptom stayed live
+twice on fixes nobody had watched fail while the symptom stayed live
 ([#771](https://github.com/MattCheramie/GopherTrunk/issues/771)) — the story
 Part 14 turns into policy.
 
@@ -137,9 +137,9 @@ for _, colour := range []uint32{0, 0x0AB1F} {
 
 Verified failing-first, numbers on record: the old code returns **0 frames**
 at colour 0; the fixed code returns the **2 CRC-valid frames** that went in.
-That asymmetric shape — pin one side to reality, let the other side prove
-itself — is the whole difference from the green predecessor, and the
-constructive mirror of the
+That asymmetric shape — pin one side to reality, let the other prove itself —
+is the whole difference from the green predecessor, and the constructive
+mirror of the
 [self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }}).
 Full saga:
 [TETRA End to End Part 12]({{ '/blog/deep-dives/tetra-end-to-end-12-dmo-descramble-colour/' | relative_url }}).
@@ -185,8 +185,8 @@ distinct failing tests**, each pinning a different way the old code was
 wrong. The report: the daemon granted and opened a recording ~230 ms after
 startup on a *silent* channel, then never granted again — the operator's
 real 10-second PTT, which genuinely locked (`dsb_schs_crc=46/54`), produced
-nothing. The mechanism (told in full in
-[TETRA End to End Part 13]({{ '/blog/deep-dives/tetra-end-to-end-13-dmo-pipeline-grants/' | relative_url }})):
+nothing. The mechanism
+([TETRA End to End Part 13]({{ '/blog/deep-dives/tetra-end-to-end-13-dmo-pipeline-grants/' | relative_url }})):
 the DNB burst correlator fires **~18 times per second on pure noise**, and
 the grant logic took raw detections as traffic.
 
@@ -258,15 +258,15 @@ checked in ways prose theories don't.
 
 The DMO trio shows it best. "The grant fires on noise" was the theory; making
 a *test* say it required numbers — how often does the correlator fire on
-noise? Working that out (529 of the 4^11 possible 11-dibit sequences match
-within tolerance 2, across eight matched filters, at 18,000 dibits/s — ~18
-false detections a second; the operator's log measured 18.7/s) didn't just
-justify the test; it dictated the fix's shape. A threshold can't beat an 18/s
-rain, but a slot-grid residue vote can: one radio on one clock puts every
-burst on one residue mod 255, noise is uniform over all 255. Reproduction and
-design came out of the same arithmetic. Likewise the colour-0 test — writing
-"scramble like real air" forced the question *what does real air do at colour
-0?*, whose answer (`0xC0000000`, not identity) was the bug.
+noise? Working that out (529 of 4^11 possible 11-dibit patterns match at
+tolerance 2, times eight filters, at 18,000 dibits/s — ~18 false
+detections/s; the operator's log measured 18.7) didn't just justify the test;
+it dictated the fix's shape. A threshold can't beat an 18/s rain, but a
+slot-grid residue vote can: one radio on one clock puts every burst on one
+residue mod 255, noise is uniform over all 255. Reproduction and design came
+out of the same arithmetic. Likewise the colour-0 test — writing "scramble
+like real air" forced the question *what does real air do at colour 0?*,
+whose answer (`0xC0000000`, not identity) was the bug.
 
 And when you *can't* make the test fail, that's data too: whatever you
 reproduced isn't what was reported — and you found out at your desk, not in
@@ -285,8 +285,7 @@ with a status comment saying what's known and what's blocking — usually a
 [Part 11]({{ '/blog/deep-dives/from-spec-to-shipping-11-capture-driven-development/' | relative_url }})-shaped
 capture request. What it must *not* end with is a close. Closing is a claim
 that the problem is gone, and that claim has its own definition, its own
-policy, and — after this project shipped the counterexample — its own guard
-hook. That is the finale's subject.
+policy, and its own guard hook. That is the finale's subject.
 
 ## Where this goes next
 

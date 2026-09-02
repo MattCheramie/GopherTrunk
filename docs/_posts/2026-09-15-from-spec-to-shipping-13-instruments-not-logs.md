@@ -149,7 +149,8 @@ because a wrong instrument is worse than no instrument.
 <figure class="lab-figure">
 <svg viewBox="0 0 680 235" width="680" height="235" role="img" aria-label="One DMO decode-status log line annotated field by field. The line shows locked, dsb totals and CRC counts, dnb total and qualified, tch crc, distinct fn, and colour flags. Callouts group the fields: liveness proof, channel grade ratio, noise meter versus traffic, decode yield, and honest claim flags.">
   <rect x="14" y="92" width="652" height="30" rx="6" fill="none" stroke="currentColor"/>
-  <text x="24" y="111" fill="currentColor" font-size="10" font-family="monospace">tetra dmo: decode status  locked=true  dsb_total=54 dsb_schs_crc=46  dnb_total=4541 dnb_qualified=212  tch_crc=196  distinct_fn=9  colour=3 colour_known=true</text>
+  <text x="24" y="104" fill="var(--fg-muted)" font-size="8" font-family="monospace">DEBUG tetra dmo: decode status</text>
+  <text x="24" y="116" fill="currentColor" font-size="9" font-family="monospace">locked=true dsb_total=54 dsb_schs_crc=46 dnb_total=4541 dnb_qualified=212 tch_crc=196 distinct_fn=9 colour=3</text>
   <line x1="90" y1="92" x2="70" y2="58" stroke="var(--fg-muted)"/>
   <text x="24" y="48" fill="var(--fg-muted)" font-size="9">liveness: the lock claim…</text>
   <line x1="200" y1="92" x2="190" y2="58" stroke="var(--fg-muted)"/>
@@ -264,12 +265,12 @@ The fix makes staleness itself a tracked quantity: the reporter
 (`internal/sdr/soapyremote/mrc.go`) remembers `lastUpdates` across intervals,
 and three consecutive intervals with no accepted window
 (`mrcStaleUpdateIntervals`, 90 s) escalates to a WARN naming the real state —
-locked once, coasting since. The generalisation closes the loop this series
-opened: counters catch what single events miss, but only **derivatives of
-counters** catch a system that stopped making progress while still running.
-An instrument isn't finished when it reports its state; it's finished when it
-can report that its state has stopped changing — designed, like everything in
-this part, for the *next* investigation rather than the last one.
+locked once, coasting since. The generalisation: counters catch what single
+events miss, but only **derivatives of counters** catch a system that stopped
+making progress while still running. An instrument isn't finished when it
+reports its state; it's finished when it can report that its state has
+stopped changing — designed, like everything here, for the *next*
+investigation rather than the last one.
 
 ## Where this goes next
 
@@ -295,12 +296,11 @@ arm of a measurement. Removing it would be worse: you could no longer tell a
 dead correlator from a silent channel.
 
 **How long should a WARN persistence gate be?**
-As long as the longest transient the underlying estimator can produce, and
+Longer than the longest transient the underlying estimator can produce,
 shorter than the time an operator would care about the real condition.
 `carrierOffsetWarnPersist` is 10 s because the AFC alias blip lasts well
 under a second while an adjacent-site lock lasts until someone fixes it —
-any value between those regimes works, and the constant's comment records
-the reasoning.
+any value between those regimes works.
 
 **Should decoder diagnostics live at DEBUG or INFO?**
 GopherTrunk's split: periodic status lines at DEBUG (they're for

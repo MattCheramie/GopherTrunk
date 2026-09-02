@@ -27,32 +27,32 @@ about sync words applies to them.*
 > to match, the leftover antenna-name string produced only a server-side
 > `~SoapyRPCUnpacker: Unconsumed payload bytes 9`, and the `bool` reply
 > carried no exception — so `rpcVoid` logged "rx antenna set" for a call
-> that never ran. The fake server in the tests switched on the **same
-> constant**, so every test was green — the
+> that never ran. The fake server switched on the **same constant**, so
+> every test was green — the
 > [self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
-> at the RPC layer. The fixes live in `internal/sdr/soapyremote/`:
+> at the RPC layer. The fixes, all in `internal/sdr/soapyremote/`:
 > opcodes pinned against upstream literals
-> (`TestOpenSetAntennaUsesUpstreamOpcode`), a fake that asserts every
-> request byte is consumed, and an `applyAntennas` that validates against
-> `LIST_ANTENNAS` and reads back with `GET_ANTENNA`.
+> (`TestOpenSetAntennaUsesUpstreamOpcode`), a fake asserting every request
+> byte consumed, and `applyAntennas` validating against `LIST_ANTENNAS`
+> and reading back with `GET_ANTENNA`.
 
 **Key takeaways**
 
-- **A schemaless wire cannot tell you you're wrong.** With no field names
-  and no signature check, a wrong call id dispatches to whichever handler
-  lives at that number — and if the leading argument types line up, the
-  call "works." The failure is silent by construction.
+- **A schemaless wire cannot tell you you're wrong.** A wrong call id
+  dispatches to whichever handler lives at that number — and if the
+  leading argument types line up, the call "works." The failure is silent
+  by construction.
 - **Numeric ids from someone else's enum are extracted constants.**
   Part 1's rule for sync words and CRC polynomials applies verbatim: cite
-  the source (`SoapyRemoteDefs.hpp`), and pin the value with a literal an
+  the source (`SoapyRemoteDefs.hpp`), pin the value with a literal an
   independent party wrote.
 - **A test double is only worth the strictness it enforces.** A fake that
   tolerates leftover bytes hides argument-shape drift; one that switches
   on your own constants can never see opcode drift. The two nets catch
-  different bugs, and GopherTrunk needed both.
+  different bugs; GopherTrunk needed both.
 - **Read back what you set.** A success reply proves the server didn't
   throw, not that the device changed. `applyAntennas` now asks the device
-  what port it is actually on — the only assertion that survives a wrong
+  what port it is actually on — the assertion that survives a wrong
   opcode, a permissive driver, or a config moved between rigs.
 
 ## Cheat sheet
@@ -113,9 +113,9 @@ const (
 
 Read that next to
 [Part 1]({{ '/blog/deep-dives/from-spec-to-shipping-01-reading-a-radio-standard/' | relative_url }})'s
-rule — *constants first, every constant cites its source* — and this part
-is half written. An opcode is a sync word for a TCP stream: one wrong
-value and you are invoking something else entirely, with no error message.
+rule — *constants first, every constant cites its source*. An opcode is a
+sync word for a TCP stream: one wrong value and you are invoking
+something else entirely, with no error message.
 
 ## Opcode 600: anatomy of a silent miss
 
@@ -130,17 +130,17 @@ query. Walk through what the wire did with that, step by step:
    to match** — and returns a `bool`.
 3. The antenna-name string is never read. The server's unpacker destructor
    logs `~SoapyRPCUnpacker: Unconsumed payload bytes 9` — a string tag, a
-   tagged length, and `"RX2"` — once per channel, on the *server's*
-   console, without saying which call.
+   tagged length, `"RX2"` — once per channel, on the *server's* console,
+   without saying which call.
 4. The `bool` reply reaches the client. `rpcVoid` checks only for an
-   exception value; a `bool` is not one, so the call reports success and
-   GopherTrunk logs `rx antenna set` for an antenna that was never set.
+   exception value; a `bool` is not one, so GopherTrunk logs
+   `rx antenna set` for an antenna that was never set.
 
 The operator-visible symptom was maximally misleading: `antennas: [RX1,
 RX2]` did nothing, every radio kept its *driver default* port, and the
 same config therefore behaved differently on an X310 and a B210. Nothing
 failed; nothing warned client-side. The only witness was a cryptic
-destructor message on a machine in another room.
+destructor message in another room.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Two-column RPC ladder comparing the intended SET_ANTENNA call with what opcode 600 actually did. Left column: client packs call 501 with direction, channel and the antenna name; the setAntenna handler consumes all arguments, switches the port, and replies void. Right column: client packs call 600 with the same arguments; the HAS_DC_OFFSET_MODE handler consumes only direction and channel, leaves 9 bytes unconsumed which the server logs, never touches the antenna, and replies with a bool that the client's exception check reads as success.">
@@ -175,29 +175,37 @@ destructor message on a machine in another room.
 ## Why every test was green
 
 The unit tests could not catch this — the series' villain in a new
-costume. The package's tests run against `newFakeSoapyServer`, a real TCP
-listener speaking the real framing. But the fake's dispatch `switch` was
+costume. The package tests against `newFakeSoapyServer`, a real TCP
+listener speaking the real framing — but the fake's dispatch `switch` was
 written against **the same Go constants the client packs**. Change
-`callSetAntenna` to any value at all and both sides move together: the
-client sends 600, the fake's `case callSetAntenna` matches 600, the test
-passes. The test verified that GopherTrunk agrees with itself — which it
-always does.
+`callSetAntenna` to any value and both sides move together: the client
+sends 600, the fake's `case callSetAntenna` matches 600, the test passes.
+The test verified that GopherTrunk agrees with itself — which it always
+does.
 
-That is character-for-character the round-trip failure of
+That is the round-trip failure of
 [Part 3]({{ '/blog/deep-dives/from-spec-to-shipping-03-literal-vectors/' | relative_url }})'s
 SCCB parser and
 [Part 8]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }})'s
 fabricated SmartNet framing, transplanted to a TCP socket. A shared
-constant is a shared assumption, and no test that lives entirely inside
-the assumption can falsify it. (Not this protocol's first postmortem,
-either — the stream-handshake saga in
+constant is a shared assumption, and no test living entirely inside the
+assumption can falsify it. (Not this protocol's first postmortem, either —
+the stream-handshake saga in
 [From the Issue Tracker Part 13]({{ '/blog/solution-postmortem/from-the-issue-tracker-13-soapyremote-handshake/' | relative_url }})
 is the same wire biting a different way.)
 
 ## The four nets, and what each one catches
 
 The fix was not one test but four distinct nets, because the failure has
-four distinct faces — and any one net alone leaves a hole.
+four distinct faces — and any one net alone leaves a hole:
+
+| Failure face | Net that catches it | Pinned by |
+|---|---|---|
+| Opcode drift — wrong call id | literals transcribed from upstream | `TestOpenSetAntennaUsesUpstreamOpcode` |
+| Argument-shape drift | fake asserts full byte consumption | `newFakeSoapyServer` cleanup |
+| Port name not on this device | validate via `LIST_ANTENNAS` | `TestOpenRejectsAntennaNotOnDevice` |
+| Setter silently ignored | `GET_ANTENNA` read-back | `applyAntennas` |
+| "Which call was that?" | decoded per-frame RPC trace | `verbose_debug` (`rpcdebug.go`) |
 
 **Net 1: pin opcodes against upstream literals.** The only test that
 catches *opcode* drift is one whose expected value came from outside the
@@ -238,13 +246,13 @@ lands in `protocolErrs`, and `newFakeSoapyServer` registers an
 check for free. This catches *argument-shape* drift — and adding it
 immediately found **two more calls** the fake had silently not been
 parsing. It cannot catch opcode drift (the fake still switches on the
-client's constants; the comment in the file says so), which is why Net 1
-exists separately. The general rule — test doubles ranked by how much
-reality they enforce — got its own treatment in
+client's constants), which is why Net 1 exists separately. The general
+rule — test doubles ranked by how much reality they enforce — got its own
+treatment in
 [Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }}).
 
 **Net 3: introspect, then read back.** The deepest fix is in the
-production path, not the tests:
+production path:
 
 ```go
 // internal/sdr/soapyremote/driver.go (shape) — applyAntennas
@@ -267,18 +275,17 @@ Three RPCs where one used to be. `LIST_ANTENNAS` matters because port
 names do not transfer between radios — a TwinRX offers `RX1`/`RX2`, a
 B210 `TX/RX`/`RX2` — so a config moved between rigs must fail loudly with
 the names that *do* exist (`TestOpenRejectsAntennaNotOnDevice` pins the
-error message). And the `GET_ANTENNA` read-back survives everything: a
-wrong opcode, a driver that ignores the setter, a typo'd port. The log
-line now reports what the **device** said, where it used to report what
-GopherTrunk had asked — the entire difference between a log and an
-instrument.
+error message). The `GET_ANTENNA` read-back survives everything: a wrong
+opcode, a driver that ignores the setter, a typo'd port. And the log line
+now reports what the **device** said, not what GopherTrunk had asked —
+the entire difference between a log and an instrument.
 
 **Net 4: make the wire visible.** `sdr.soapy_remote[].verbose_debug`
-enables a per-frame RPC tracer (`rpcdebug.go`) rendering each request and
-response as a *decoded* argument list, paired by sequence number — the
-form that lines up against upstream's handler source, which a raw hex
-dump does not. When the server next says "Unconsumed payload bytes N,"
-the question "which call?" has a client-side answer.
+enables a per-frame RPC tracer rendering each request and response as a
+*decoded* argument list — the form that lines up against upstream's
+handler source, which a raw hex dump does not. When the server next says
+"Unconsumed payload bytes N," the question "which call?" has a
+client-side answer.
 
 ## The rules, genericized
 
@@ -287,22 +294,22 @@ vendor USB control protocol, a register map, a serial command set — has
 the same failure faces, and earns the same nets:
 
 - **Treat foreign enum values as extracted constants** (Part 1's rule):
-  cite the defining file, and pin every value with a literal transcribed
-  from it — never from your own header.
+  cite the defining file, pin every value with a literal transcribed from
+  it — never from your own header.
 - **Give your test double the real endpoint's strictness, mechanically** —
-  wired into the constructor, so no individual test can forget it.
-- **Prefer the protocol's introspection to your beliefs.** A peer that can
-  enumerate its own capabilities is an independent reference shipping
-  inside the protocol itself.
-- **Read back every write that matters, and log the read-back.** A
-  non-exception reply means "the server didn't throw," nothing more —
-  a rule the [testing module]({{ '/learn/testing/' | relative_url }})
-  generalizes beyond wire protocols.
+  wired into the constructor, so no test can forget it.
+- **Prefer the protocol's introspection to your beliefs.** A peer that
+  enumerates its own capabilities is an independent reference shipping
+  inside the protocol.
+- **Read back every write that matters.** A non-exception reply means
+  "the server didn't throw," nothing more — a rule the
+  [testing module]({{ '/learn/testing/' | relative_url }}) generalizes
+  beyond wire protocols.
 
 ## Where this goes next
 
-Every net in this part defends a claim made *before* the hardware is in
-the loop — and passing all four still proves nothing on a real system.
+Every net here defends a claim made *before* the hardware is in the
+loop — and passing all four still proves nothing on a real system.
 [Part 10]({{ '/blog/deep-dives/from-spec-to-shipping-10-the-on-air-gate/' | relative_url }})
 makes that boundary explicit: the on-air gate, the ladder of evidence
 every decoder claim climbs, and the DMO "encrypted" verdict overturned
@@ -317,17 +324,16 @@ near-universal prefixes in SoapySDR calls — it runs happily on the
 prefix, and the surplus bytes are at most a log line in a destructor.
 
 **Why not just generate the Go constants from SoapyRemoteDefs.hpp?**
-Generation moves the trust to the generator and its input snapshot, and a
-stale snapshot drifts just as silently. The literal test is smaller and
-cleaner: sixteen numbers transcribed from the authority, and any refactor
-that changes one has to argue with a named upstream file in the failure
-message.
+Generation moves the trust to the generator and its input snapshot, which
+can drift just as silently. The literal test is smaller and cleaner:
+sixteen numbers transcribed from the authority, and any refactor changing
+one must argue with a named upstream file in the failure message.
 
 **What does "Unconsumed payload bytes N" from SoapySDRServer actually mean?**
 The dispatched handler finished unpacking with N bytes of your request
 still unread — your call id and your argument list belong to two
-different calls. It does not say which RPC, which is why GopherTrunk grew
-a client-side tracer (`verbose_debug`) that decodes each outgoing frame.
+different calls. It doesn't say which RPC; the client-side tracer
+(`verbose_debug`) exists to answer that.
 
 **Is a fake server worth having if it can't catch opcode drift?**
 Yes — it catches everything else: framing, argument shapes, sequencing,

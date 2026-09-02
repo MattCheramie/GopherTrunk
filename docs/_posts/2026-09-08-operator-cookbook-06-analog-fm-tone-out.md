@@ -84,21 +84,21 @@ History panel with a WAV on disk, indistinguishable from the digital calls
 of Parts 1–5 except for its protocol tag (`fm-conv`).
 
 Under the hood this path is simpler than anything else in the series — FM
-discriminator to PCM, no vocoder — but it earned its own postmortem:
-the conventional channel used to be
+discriminator to PCM, no vocoder — but it earned its own postmortem: the
+conventional channel used to be
 [its own voice channel]({{ '/blog/solution-postmortem/from-the-issue-tracker-16-conventional-fm-broker/' | relative_url }})
-in a way the IQ plumbing didn't expect, and the broker fix that came out of
-it is why live monitoring, recording and the tone-out detector can all listen
-to the same dwell today. The wider conventional/wideband architecture is
+in a way the IQ plumbing didn't expect, and the broker fix from that story
+is why live monitoring, recording and the tone-out detector all listen to
+the same dwell today. The wider conventional architecture is
 [Protocol Decoders Part 9]({{ '/blog/deep-dives/protocol-decoders-09-conventional-wideband/' | relative_url }})'s
 territory.
 
 The second half of the build is **tone-out**: US fire/EMS dispatch still
 pages stations with Motorola Quick Call II — an A tone (~1 s) then a longer
-B tone, each a specific audio frequency. GopherTrunk runs a Goertzel
-detector across decoded voice PCM and fires a `KindToneAlert` event when a
-configured profile matches — surfaced in the web **Tones** panel and the
-log. (The encoder side of paging audio lives in
+B tone. GopherTrunk runs a Goertzel detector across decoded voice PCM and
+fires a `KindToneAlert` event when a profile matches — surfaced in the web
+**Tones** panel and the log. (The encoder side of this audio machinery
+lives in
 [Voice Coding Part 11]({{ '/blog/deep-dives/voice-coding-11-recording-encoding/' | relative_url }}).)
 
 <figure class="lab-figure">
@@ -226,11 +226,10 @@ block makes the gate require carrier *and* tone: without it, any carrier
 above squelch holds the scanner, including a distant system sharing the
 frequency.
 
-The tone-out profile is Quick Call II shaped: tone A ~1 s, tone B ~3 s, with
-`tolerance_hz` (default 15), `magnitude_threshold` (default 0.05) and
-`max_gap` (default 200 ms) available when the defaults misbehave. A
-`cooldown` stops one long page from re-firing the alert. Profiles can also
-scope to one `system` / `group_id` — that's the digital-side variation below.
+The tone-out profile is Quick Call II shaped: tone A ~1 s, tone B ~3 s,
+with `tolerance_hz` (default 15), `magnitude_threshold` (default 0.05) and
+`max_gap` (default 200 ms) available when the defaults misbehave, and a
+`cooldown` to stop one long page re-firing the alert.
 
 ## First run — what healthy looks like
 
@@ -249,10 +248,8 @@ INF recorder: call ended device=00000001 wav=... duration=8.32s reason=...
 INF synthetic call ended device=00000001 reason=...
 ```
 
-Open the web console: the dwell plays live in **Active**, lands in
-**History** under the pinned talkgroup ID, and the channel's `label` is what
-you'll want in a talkgroup file so it reads as a name. When a page goes out
-and matches a profile:
+Open the web console: the dwell plays live in **Active** and lands in
+**History** under the pinned talkgroup ID. When a page matches a profile:
 
 ```
 INF toneout: profile matched profile=station-1-engine device=00000001 tones=[1042.2 1297.4]
@@ -296,6 +293,21 @@ channel.
 - **Let the WARNs work.** This path fails loudly and open — the startup WARN
   and the tone-gate-disabled WARNs are designed to be grepped, not ignored.
 
+## Variations
+
+- **Manual VFO.** `scanner.manual_tune_enabled: true` builds the scanner
+  even with no channel list, so the TUI's `f` key (or
+  `POST /api/v1/scanner/manual_tune`) can tune anything ad hoc — a
+  software VFO on a spare voice dongle.
+- **Priority channels.** Per-channel `priority` is honored by the engine's
+  preemption against other calls — set your dispatch channel higher than
+  routine traffic (more in [Part 7]({{ '/blog/tutorials/operator-cookbook-07-multi-system-pool/' | relative_url }})).
+- **Digital-side tone-out.** Scope a profile with `system` and `group_id`
+  to catch pages that go out over a trunked talkgroup.
+- **Actual pagers.** For POCSAG/FLEX paging *protocols* (not voice tones),
+  the separate `paging:` section dedicates or shares an SDR per paging
+  frequency — same rig, different decoder.
+
 ## Where this goes next
 
 You now have five kinds of rig and only ever one system per box. [Part
@@ -333,9 +345,9 @@ Unpinned channels get a synthetic ID built from their list position
 stable — issue #1105 exists because reordering silently broke both.
 
 **Can tone-out watch digital talkgroups too?**
-Yes — the detector runs on decoded PCM from voice devices regardless of
-protocol, and a profile scoped with `system` and `group_id` will match pages
-that go out over a trunked talkgroup as readily as over analog dispatch.
+Yes — the detector runs on decoded PCM regardless of protocol, and a
+profile scoped with `system` and `group_id` matches pages sent over a
+trunked talkgroup as readily as over analog dispatch.
 
 ## Series navigation
 

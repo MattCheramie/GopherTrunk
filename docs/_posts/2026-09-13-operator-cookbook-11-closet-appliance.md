@@ -24,32 +24,29 @@ you'll see.*
 > **TL;DR:** One static Go binary + the example unit at
 > [`docs/gophertrunk.service`](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/gophertrunk.service)
 > makes a hardened appliance: `DynamicUser=true`, `ProtectSystem=strict`,
-> `DeviceAllow=char-usb_device rwm` for the pure-Go USB driver, `Restart=on-failure`,
-> logs in `journalctl -u gophertrunk -f`. Preflight with
-> `gophertrunk sdr doctor` (read-only driver-binding check), watch health via
-> `runtime: heartbeat` lines (`diagnostics.heartbeat_seconds`) and the USB
-> watchdog (`sdr.watchdog_interval_ms`) that re-acquires vanished dongles by
-> serial. Docker works too — the repo ships a `Dockerfile` and
-> `docker-compose.yml` whose `devices:` maps the dongle in. And
+> `DeviceAllow=char-usb_device rwm` for the pure-Go USB driver,
+> `Restart=on-failure`, logs in `journalctl -u gophertrunk -f`. Preflight
+> with `gophertrunk sdr doctor`, watch health via `runtime: heartbeat` lines
+> and the USB watchdog (`sdr.watchdog_interval_ms`) that re-acquires
+> vanished dongles by serial. Docker works too — the repo's
+> `docker-compose.yml` maps the dongle in via `devices:`. And
 > `systemctl restart` is now milliseconds, not a silent 30 s stall — that
 > teardown bug is fixed and warns if it ever recurs.
 
 **Key takeaways**
 
 - **An appliance is a binary plus supervision.** GopherTrunk is one static
-  executable with no libusb, no librtlsdr, no ALSA required — the whole
-  "install" is copying a file, and everything hard lives in the systemd unit.
+  executable — no libusb, no librtlsdr, no ALSA — so the "install" is
+  copying a file, and everything hard lives in the systemd unit.
 - **Hardening is shipped, not homework.** The example unit runs as a dynamic
   user with a read-only filesystem view, explicit `ReadWritePaths`, and a
   scoped USB `DeviceAllow` — you edit paths and serials, not policy.
 - **Headless health is three signals.** `runtime: heartbeat` proves the
-  process is alive and bounded, the SDR watchdog logs dongles leaving and
-  rejoining the bus, and the decode-status lines prove the radio side — learn
-  all three before the closet door closes.
+  process alive and bounded, the SDR watchdog narrates dongles leaving and
+  rejoining the bus, and the decode lines prove the radio side.
 - **Shutdown speed is a correctness feature.** A stop that takes 30 silent
-  seconds gets `KillMode`'d by init systems and blamed on ghosts. The
-  streaming handlers now exit on signal; a blown window logs a WARN naming
-  itself.
+  seconds gets blamed on ghosts. The streaming handlers now exit on signal;
+  a blown window logs a WARN naming itself.
 
 ## Cheat sheet
 
@@ -58,19 +55,19 @@ you'll see.*
 | Which board | Pi 4/5 class SBC or mini-PC sizing | [SBC build list]({{ '/gophertrunk-sbc-build/' | relative_url }}), [best SBC guide]({{ '/best-single-board-computer-for-gophertrunk/' | relative_url }}) |
 | Install & udev | binary, config, USB permissions | [Linux install]({{ '/install-linux.html' | relative_url }}), [hardening guide]({{ '/hardening.html' | relative_url }}) |
 | Supervision | hardened unit, restart-on-failure | `docs/gophertrunk.service`, [systemd deep dive]({{ '/blog/deep-dives/running-it-for-real-13-systemd-windows/' | relative_url }}) |
-| Containers | USB pass-through via `devices:` | repo `Dockerfile` + `docker-compose.yml`, [Docker deep dive]({{ '/blog/deep-dives/running-it-for-real-12-docker-usb/' | relative_url }}) |
-| Preflight | who owns the dongle before the daemon runs | `gophertrunk sdr doctor`, [sdr doctor deep dive]({{ '/blog/deep-dives/running-it-for-real-07-sdr-doctor-preflight/' | relative_url }}) |
+| Containers | USB pass-through via `devices:` | repo `docker-compose.yml`, [Docker deep dive]({{ '/blog/deep-dives/running-it-for-real-12-docker-usb/' | relative_url }}) |
+| Preflight | who owns the dongle before the daemon runs | `gophertrunk sdr doctor`, [deep dive]({{ '/blog/deep-dives/running-it-for-real-07-sdr-doctor-preflight/' | relative_url }}) |
 | Health & watchdogs | heartbeat line, USB re-acquire, memory cap | `diagnostics.heartbeat_seconds`, `sdr.watchdog_interval_ms`, `diagnostics.memory_limit_mb` |
-| Auth on the LAN | token-gated mutations on non-loopback binds | `api.auth`, [auth posture]({{ '/blog/deep-dives/running-it-for-real-02-auth-posture/' | relative_url }}) |
+| Auth on the LAN | token-gated mutations off-loopback | `api.auth`, [auth posture]({{ '/blog/deep-dives/running-it-for-real-02-auth-posture/' | relative_url }}) |
 
 ## In this post
 
 - **What you're building** — a supervised, hardened, self-reporting box.
-- **The shopping list** — the board, and the power supply you shouldn't cheap out on.
-- **The config** — the appliance-specific keys, on top of any earlier recipe.
+- **The shopping list** — the board, and the power supply not to cheap out on.
+- **The config** — the appliance-specific keys, atop any earlier recipe.
 - **The systemd unit** — install commands and what the hardening lines do.
 - **The Docker variation** — USB pass-through that actually works.
-- **First run & when it doesn't work** — headless health, undervoltage, USB resets, thermal.
+- **First run & when it doesn't work** — headless health, undervoltage, USB, thermal.
 
 ## What you're building
 
@@ -83,7 +80,7 @@ tells the *why* of each piece;
 covers the long-run failure modes. This recipe is the assembly.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 240" width="680" height="240" role="img" aria-label="Block diagram of the closet appliance: inside the closet a Raspberry Pi runs systemd which supervises the gophertrunk daemon with restart on failure; the daemon owns an RTL-SDR dongle over USB guarded by a watchdog that re-acquires it by serial, emits runtime heartbeat lines and decode logs into the systemd journal, and serves the web console and API over the LAN to a laptop, with a bearer token gating mutations">
+<svg viewBox="0 0 680 240" width="680" height="240" role="img" aria-label="Block diagram of the closet appliance: a Raspberry Pi runs systemd supervising the gophertrunk daemon, which owns an RTL-SDR over USB guarded by a re-acquiring watchdog, emits heartbeat and decode lines into the journal, and serves the token-gated web console over the LAN">
   <rect x="10" y="16" width="400" height="208" rx="8" fill="none" stroke="var(--fg-muted)" stroke-dasharray="5 4"/>
   <text x="210" y="34" text-anchor="middle" fill="var(--fg-muted)" font-size="10">the closet — Raspberry Pi / mini-PC, headless</text>
   <rect x="28" y="52" width="120" height="40" rx="4" fill="none" stroke="currentColor"/>
@@ -130,12 +127,12 @@ covers the long-run failure modes. This recipe is the assembly.
 Dongles and antenna carry over. The
 [SBC build list]({{ '/gophertrunk-sbc-build/' | relative_url }}) and the
 [Pi scanner guide]({{ '/raspberry-pi-sdr-scanner/' | relative_url }}) cover
-specific models and cases.
+specific models.
 
 ## The config
 
 Whatever system config you run, the appliance adds one theme: the box is on
-the LAN now, and nobody is watching it. Keys verified against
+the LAN and nobody is watching it. Keys verified against
 `config.example.yaml`:
 
 ```yaml
@@ -157,21 +154,19 @@ sdr:
 ```
 
 Three decisions. **`auth.mode: "auto"`** is the honest LAN posture: token
-required on non-loopback binds, loopback exempt. Set it *explicitly* — the
-[hardening guide]({{ '/hardening.html' | relative_url }}) documents that an
-empty `mode` now resolves to `disabled` for closed-LAN convenience, with a
-loud startup warning when that default takes effect on a non-loopback bind.
-`token_file` keeps the secret out of `config.yaml` and is re-read per
-request, so rotation needs no restart. **`memory_limit_mb: 0`** already
-protects you: it auto-derives a GC soft cap near 70% of physical RAM so the
-daemon bounds its footprint instead of meeting the OOM-killer.
+required on non-loopback binds, loopback exempt. Set it *explicitly* — per
+the [hardening guide]({{ '/hardening.html' | relative_url }}), an empty
+`mode` now resolves to `disabled` for closed-LAN convenience, with a loud
+startup warning on a non-loopback bind. `token_file` keeps the secret out
+of `config.yaml` and is re-read per request, so rotation needs no restart.
+**`memory_limit_mb: 0`** auto-derives a GC soft cap near 70% of physical
+RAM, so the daemon bounds its footprint instead of meeting the OOM-killer.
 **`heartbeat_seconds`** makes silence impossible: a periodic
 `runtime: heartbeat` line means a stopped log is itself a diagnosis.
 
 ## The systemd unit
 
-The repo ships a complete hardened unit. Install is five commands, straight
-from its header:
+The repo ships a complete hardened unit. Install, straight from its header:
 
 ```sh
 sudo install -m 0644 docs/gophertrunk.service /etc/systemd/system/gophertrunk.service
@@ -182,23 +177,21 @@ sudo systemctl daemon-reload && sudo systemctl enable --now gophertrunk
 ```
 
 (Edit `/etc/gophertrunk/config.yaml` before the last line — and note the
-`0640` mode: that's the Part 9 key-hygiene rule enforced by the installer.)
-The lines worth understanding rather than cargo-culting:
+`0640` mode: the Part 9 key-hygiene rule, enforced.) The lines worth
+understanding rather than cargo-culting:
 
 | Unit line | Why it's there |
 |---|---|
 | `Restart=on-failure` / `RestartSec=5` | crashes come back in five seconds; clean stops stay stopped |
-| `DynamicUser=true`, `NoNewPrivileges=true` | no dedicated account to manage, no privilege escalation path |
-| `ProtectSystem=strict` + `ReadWritePaths=` + `StateDirectory=gophertrunk` | the filesystem is read-only except where recordings and state actually live — point `ReadWritePaths` at your Part 10 archive dirs |
+| `DynamicUser=true`, `NoNewPrivileges=true` | no account to manage, no escalation path |
+| `ProtectSystem=strict` + `ReadWritePaths=` + `StateDirectory=` | filesystem read-only except where recordings and state live — point `ReadWritePaths` at your Part 10 archive dirs |
 | `DeviceAllow=char-usb_device rwm`, `SupplementaryGroups=plugdev` | the pure-Go USBDEVFS backend needs `/dev/bus/usb/*` read/write — no kernel driver, no libusb ([why]({{ '/blog/deep-dives/rf-front-end-01-why-pure-go-drivers/' | relative_url }})) |
 | `EnvironmentFile=-/etc/gophertrunk/env` (optional) | secrets outside the unit and the config |
 
 Logs land in the journal — `journalctl -u gophertrunk -f` is your new
 console. The udev rule granting non-root dongle access lives in the
-[hardware doc]({{ '/install-linux.html' | relative_url }}); apply it before
-first start.
-
-Before that first start, preflight the USB story from a shell:
+[Linux install guide]({{ '/install-linux.html' | relative_url }}); apply it,
+then preflight the USB story from a shell:
 
 ```sh
 gophertrunk sdr doctor        # read-only: which driver owns each known SDR
@@ -207,14 +200,13 @@ gophertrunk sdr list --probe  # enumeration + per-device gain ladders
 
 `sdr doctor` walks the known RTL-SDR and HackRF VID/PIDs and reports which
 kernel (or Windows) driver is bound to each, with an actionable next step —
-read-only, so it's safe alongside a live daemon. The
-[preflight deep dive]({{ '/blog/deep-dives/running-it-for-real-07-sdr-doctor-preflight/' | relative_url }})
-covers the verdicts.
+read-only, safe alongside a live daemon
+([preflight deep dive]({{ '/blog/deep-dives/running-it-for-real-07-sdr-doctor-preflight/' | relative_url }})).
 
 ## The Docker variation
 
 The repo ships a multi-stage `Dockerfile` and a `docker-compose.yml` whose
-`devices:` entry maps the dongle into the container:
+`devices:` entry maps the dongle in:
 
 ```yaml
     devices:
@@ -226,9 +218,8 @@ so a non-root container user can open the node, then smoke-test with
 `docker exec gophertrunk gophertrunk sdr list`. The
 [Docker deep dive]({{ '/blog/deep-dives/running-it-for-real-12-docker-usb/' | relative_url }})
 explains the trap: the mapped path names a *specific bus/device number*,
-which changes when the dongle re-enumerates — the reason systemd-on-metal is
-this recipe's default and mapping the whole `/dev/bus/usb` tree is the
-fallback for hotplug-prone hardware.
+which changes when the dongle re-enumerates — the reason systemd-on-metal
+is this recipe's default.
 
 ## First run — what healthy looks like
 
@@ -242,8 +233,8 @@ INF runtime: heartbeat uptime=1h0m0s goroutines=142 heap_alloc_mb=88 heap_sys_mb
 
 Read it like a vital sign: climbing goroutines or heap across hours is a
 leak, a frozen heartbeat on a live process is a hang, and the last line
-before an abrupt cut pins the pre-kill footprint for an OOM diagnosis. When
-a dongle drops off the bus, the watchdog narrates the whole recovery:
+before an abrupt cut pins the pre-kill footprint. When a dongle drops off
+the bus, the watchdog narrates the recovery:
 
 ```
 WRN sdr: watchdog: device missing from USB enumerate serial=00000001
@@ -256,10 +247,9 @@ Finally, test the thing appliances do most: restart.
 under a second. That speed is recent work: shutdown used to park for a full
 30 s whenever any SSE or live-audio client was attached — nothing told the
 streaming handlers to exit while the HTTP server politely waited, and the
-timeout was then miscounted as a clean exit. The fix threads a stop signal
-to every long-lived handler; the 30 s is now only a cap, and blowing it logs
-`api: graceful shutdown window expired — a streaming handler did not exit`,
-so a slow restart names its culprit class instead of shrugging.
+timeout was miscounted as a clean exit. Now a stop signal reaches every
+long-lived handler, the 30 s is only a cap, and blowing it logs
+`api: graceful shutdown window expired — a streaming handler did not exit`.
 
 ## When it doesn't work
 
@@ -277,25 +267,22 @@ so a slow restart names its culprit class instead of shrugging.
 ### How this recipe shapes operator practice
 
 - **Preflight, then trust.** `sdr doctor` and `sdr list --probe` before
-  `systemctl enable` turns "it doesn't work headless" into a category you
-  almost never meet.
+  `systemctl enable` retires "it doesn't work headless" almost entirely.
 - **Make silence impossible.** Heartbeat plus watchdog means every failure
-  mode leaves a journal trail; a box that can fail silently will.
+  leaves a journal trail; a box that can fail silently will.
 - **Restart as a test.** A fast, clean `systemctl restart` exercises the
-  entire teardown path — do it once after setup, on purpose, while you're
-  still watching.
+  whole teardown path — do it once after setup, while you're still watching.
 
 ## Variations
 
 - **The TUI closet.** SSH in and run
-  [`gophertrunk tui`]({{ '/tui.html' | relative_url }}) against the daemon —
-  the full cockpit in a terminal, no browser required.
+  [`gophertrunk tui`]({{ '/tui.html' | relative_url }}) — the full cockpit in
+  a terminal, no browser required.
 - **Docker Compose stack.** The compose file pairs naturally with a reverse
   proxy for [TLS]({{ '/blog/deep-dives/running-it-for-real-03-tls-reverse-proxy/' | relative_url }})
   when the console must leave the LAN.
-- **Split appliance.** Put the Pi at the antenna as a Part 8 `rtl_tcp` /
-  SoapyRemote source and the decode on a stronger box — closet appliance for
-  RF, desk machine for DSP.
+- **Split appliance.** Pi at the antenna as a Part 8 `rtl_tcp` / SoapyRemote
+  source, decode on a stronger box — closet for RF, desk for DSP.
 - **Windows service.** The same daemon runs as a Windows service via the
   installer; the [systemd & Windows deep dive]({{ '/blog/deep-dives/running-it-for-real-13-systemd-windows/' | relative_url }})
   covers both supervisors.
@@ -306,42 +293,41 @@ The appliance is running; now it can get *better at radio*. [Part
 12]({{ '/blog/tutorials/operator-cookbook-12-diversity-mrc/' | relative_url }})
 is the advanced RF build: two antennas on one coherent front end, MRC
 diversity combining, and the honest accounting of when a second antenna
-actually buys decode margin — and when it just buys a second feedline.
+buys decode margin — and when it just buys a second feedline.
 
 ## FAQ
 
 **Can a Raspberry Pi run GopherTrunk 24/7?**
 Yes — a Pi 4 comfortably runs a single-system trunking rig with recording
-and the web console, and a Pi 5 or mini-PC covers multi-system builds. The
+and the web console; a Pi 5 or mini-PC covers multi-system builds. The
 binary is pure Go with no native SDR libraries, so the ARM64 build runs
-as-is; sizing guidance lives in the [SBC guide]({{ '/best-single-board-computer-for-gophertrunk/' | relative_url }}).
+as-is; sizing lives in the [SBC guide]({{ '/best-single-board-computer-for-gophertrunk/' | relative_url }}).
 
 **Do I need to install librtlsdr or libusb on the appliance?**
-No. GopherTrunk's drivers speak USB directly through the kernel's USBDEVFS,
-so the only host requirements are the udev rule granting device-node access
+No. GopherTrunk's drivers speak USB directly through the kernel's USBDEVFS —
+the only host requirements are the udev rule granting device-node access
 and, under systemd hardening, the `DeviceAllow` line the shipped unit
 already carries.
 
 **How do I pass an RTL-SDR into Docker?**
 Map the device node with `devices:` in `docker-compose.yml` (or `--device`),
-matched to `lsusb`, with a host udev rule so the container user can open
-it. Verify with `docker exec gophertrunk gophertrunk sdr list`. Remember
-bus/device numbers change on re-enumeration — map `/dev/bus/usb` broadly if
-your dongle power-cycles.
+matched to `lsusb`, with a host udev rule so the container user can open it;
+verify with `docker exec gophertrunk gophertrunk sdr list`. Bus/device
+numbers change on re-enumeration — map `/dev/bus/usb` broadly if your
+dongle power-cycles.
 
 **How do I know a headless scanner is still healthy?**
-Three journal signals: the periodic `runtime: heartbeat` line (process
-alive, memory bounded), the absence of `sdr: watchdog: device missing`
-cycles (USB stable), and the ordinary rhythm of `control channel locked`
-and `recorder: call started/ended`. The web Dashboard shows the same facts
+Three journal signals: the periodic `runtime: heartbeat` line (alive,
+memory bounded), no `sdr: watchdog: device missing` cycles (USB stable),
+and the ordinary rhythm of `control channel locked` and
+`recorder: call started/ended`. The web Dashboard shows the same facts
 graphically from any LAN machine.
 
 **Why does my daemon warn about auth at startup?**
 It's bound to a non-loopback address with auth effectively off — the
-closed-LAN default. A prompt, not an error: set `api.auth.mode: "auto"` (or
-`"required"`) plus a `token_file` and the warning goes away along with the
-exposure. The [auth-posture deep dive]({{ '/blog/deep-dives/running-it-for-real-02-auth-posture/' | relative_url }})
-explains the modes.
+closed-LAN default. A prompt, not an error: set `api.auth.mode: "auto"` or
+`"required"` plus a `token_file` and the warning goes away with the
+exposure ([auth-posture deep dive]({{ '/blog/deep-dives/running-it-for-real-02-auth-posture/' | relative_url }})).
 
 ## Series navigation
 

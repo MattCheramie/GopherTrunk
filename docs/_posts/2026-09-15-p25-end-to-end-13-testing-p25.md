@@ -216,7 +216,7 @@ made the adaptive slicer *worse* on the #402 site.
   <line x1="52" y1="210" x2="130" y2="40" stroke="var(--accent)"/>
   <polygon points="124,44 132,34 133,46" fill="var(--accent)"/>
   <text x="30" y="120" fill="var(--accent)" font-size="9" transform="rotate(-65 30 120)">power of proof →</text>
-  <line x1="550" y1="40 " x2="628" y2="210" stroke="var(--fg-muted)"/>
+  <line x1="550" y1="40" x2="628" y2="210" stroke="var(--fg-muted)"/>
   <polygon points="622,204 630,214 618,214" fill="var(--fg-muted)"/>
   <text x="600" y="90" fill="var(--fg-muted)" font-size="9" transform="rotate(65 600 90)">cost &amp; scarcity →</text>
   <text x="340" y="242" text-anchor="middle" fill="var(--fg-muted)" font-size="9">a round-trip test lives below the base — it proved the SCCB bug "correct"</text>

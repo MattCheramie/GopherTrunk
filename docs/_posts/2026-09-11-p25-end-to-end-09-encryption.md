@@ -103,10 +103,10 @@ the one the pipeline is built on.
 
 ## The Encryption Sync word
 
-The LDU2 donates the same six 40-bit slots an LDU1 spends on Link Control
+The LDU2 donates the six 40-bit slots an LDU1 spends on Link Control
 ([Part 8]({{ '/blog/deep-dives/p25-end-to-end-08-imbe-voice/' | relative_url }}))
 to an Encryption Sync word, under the identical inner FEC — 24 codewords of
-shortened Hamming(10,6,3) — with an outer Reed-Solomon layer above it:
+shortened Hamming(10,6,3) — plus an outer Reed-Solomon layer:
 
 ```go
 // internal/radio/p25/phase1/encryption_sync.go (shape)
@@ -271,10 +271,10 @@ series.
 
 ### How the gap shaped the Go code
 
-- **Events backfill instead of blocking.** The grant publishes immediately
-  with what the control channel knows; `KindCallEncryption` and
-  `KindCallSourceUpdate` patch the live call as the traffic channel fills
-  the gap — no consumer waits for metadata that may never come.
+- **Events backfill instead of blocking.** The grant publishes immediately;
+  `KindCallEncryption` and `KindCallSourceUpdate` patch the live call as
+  the traffic channel fills the gap — no consumer waits for metadata that
+  may never come.
 - **Gates prefer omission to plausible garbage.** `AlgorithmKnown` and
   `ErrEncryptionSyncUncorrectable` drop low-confidence values — a wrong key
   label sends an operator chasing the wrong thing.

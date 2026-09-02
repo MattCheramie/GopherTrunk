@@ -29,9 +29,9 @@ recipe here, and it carries the series' most honest caveat list.*
 > air** (~20 traffic bursts), but on a network with a non-zero MNI you must
 > set `tetra_mcc` / `tetra_mnc` or every colour candidate sits at the chance
 > floor. Watch for `tetra dmo cc locked`, then
-> `tetra dmo grant (traffic detected)`. Recordings file under **talkgroup 0**
-> — DMO grants carry none. Full on-air verification is still open in
-> [#1003](https://github.com/MattCheramie/GopherTrunk/issues/1003).
+> `tetra dmo grant (traffic detected)`. Recordings file under
+> **talkgroup 0** — DMO grants carry none. On-air verification is still
+> open in [#1003](https://github.com/MattCheramie/GopherTrunk/issues/1003).
 
 **Key takeaways**
 
@@ -75,10 +75,10 @@ recipe here, and it carries the series' most honest caveat list.*
 ## What you're building
 
 Everything in Parts 1–4 decoded *infrastructure*: a tower transmitting
-continuously, voice channels handed out by grants. DMO has none of that.
-Two TETRA handhelds on a construction site or an event crew — one radio keys
-up, transmits directly on a simplex frequency, and stops. Between
-transmissions the channel is **pure noise floor**.
+continuously, voice handed out by grants. DMO has none of that. Two TETRA
+handhelds on a construction site — one keys up, transmits directly on a
+simplex frequency, and stops. Between transmissions the channel is **pure
+noise floor**.
 
 That changes the decoder's whole posture. So GopherTrunk **camps**: the hunt
 supervisor parks on the frequency without demanding a lock, the pipeline

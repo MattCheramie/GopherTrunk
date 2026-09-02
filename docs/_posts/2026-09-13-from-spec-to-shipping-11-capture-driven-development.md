@@ -217,7 +217,9 @@ now written into the harness notes: **known colour code (from the
 codeplug), actually talking, single antenna, combiner off**. Similarly,
 `samples/p25/README.md`'s priority ask is not another clean control
 channel — it is a *marginal voice-channel* call, because a strong capture
-cannot exercise the missing equalizer it exists to justify.
+cannot exercise the
+[missing equalizer]({{ '/blog/deep-dives/weak-signal-engineering-13-p25-c4fm-gap/' | relative_url }})
+it exists to justify.
 
 **Right physics.** IQ or nothing, for phase protocols: an FM-demodulated
 audio recording of TETRA has already destroyed the phase the decoder
@@ -248,7 +250,9 @@ before," which is how wishful DSP ships.
 
 This is also why the harnesses print yields rather than verdicts wherever
 a number will do: CRC-valid counts on the same capture are comparable
-across months and branches. The
+across months and branches — the fixture side of the
+[testing discipline]({{ '/learn/testing/' | relative_url }}) this whole
+series leans on. The
 [ten-megasamples investigation]({{ '/blog/solution-postmortem/from-the-issue-tracker-05-ten-megasamples/' | relative_url }})
 ([#764](https://github.com/MattCheramie/GopherTrunk/issues/764)) was
 settled exactly this way: the same capture, decimated by an independent
