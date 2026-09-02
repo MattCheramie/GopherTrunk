@@ -121,6 +121,7 @@ export interface SoapyRemoteConfig {
   Antennas?: string[]; // legacy alias for Antenna, preserved on round-trip
   DiversityCapture: string;
   DiversityCaptureSeconds: number;
+  DiversityCaptureFormat: string; // "" | "cs16" | "flac" (lossless, bit-exact twin)
   VerboseDebug: boolean;
 }
 
