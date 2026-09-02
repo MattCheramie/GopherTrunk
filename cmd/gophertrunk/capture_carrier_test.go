@@ -50,12 +50,12 @@ func TestCarrierOffsetWarning(t *testing.T) {
 	const freq = 467_913_000
 
 	// A small offset is pulled in by the decoder's AFC — stay silent.
-	if w := carrierOffsetWarning(synthTone(1<<15, 500, rate, 0.1), rate, freq); w != "" {
+	if w := carrierOffsetWarning([][]complex64{synthTone(1<<15, 500, rate, 0.1)}, rate, freq); w != "" {
 		t.Errorf("500 Hz offset should not warn, got: %s", w)
 	}
 
 	// A multi-kHz offset fires and names the fix.
-	w := carrierOffsetWarning(synthTone(1<<15, -8700, rate, 0.1), rate, freq)
+	w := carrierOffsetWarning([][]complex64{synthTone(1<<15, -8700, rate, 0.1)}, rate, freq)
 	if w == "" {
 		t.Fatal("an 8.7 kHz offset should warn")
 	}
