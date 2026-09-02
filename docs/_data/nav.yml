@@ -177,6 +177,10 @@ groups:
         url: /blog/series/tetra-end-to-end/
       - title: "Series: Weak-Signal Engineering"
         url: /blog/series/weak-signal-engineering/
+      - title: "Series: P25 End to End"
+        url: /blog/series/p25-end-to-end/
+      - title: "Series: From Spec to Shipping"
+        url: /blog/series/from-spec-to-shipping/
       - title: Tutorials
         url: /blog/category/tutorials/
       - title: "Series: Signal Lab"
@@ -187,6 +191,8 @@ groups:
         url: /blog/series/crypto-lab/
       - title: "Series: The Analog Edge"
         url: /blog/series/analog-edge/
+      - title: "Series: The Operator's Cookbook"
+        url: /blog/series/operator-cookbook/
       - title: Solution Postmortem
         url: /blog/category/solution-postmortem/
       - title: "Series: From the Issue Tracker"
