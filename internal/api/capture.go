@@ -168,6 +168,15 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The container formats (wav/flac) need the on-disk rate for their header
+	// before the first sample lands, so they require a streaming device.
+	isContainer := format == siglab.FormatWAV || format == siglab.FormatFLAC
+	if isContainer && outRate == 0 {
+		s.writeError(w, http.StatusBadGateway,
+			"siglab: capture: a wav/flac capture needs the device sample rate up front (start or resume a scan on this SDR)")
+		return
+	}
+
 	// Stream encoded IQ straight to the staged file: peak memory is one chunk
 	// (plus the DDC's FIR state for a narrowband slice), independent of duration.
 	id := randomID(16)
@@ -177,13 +186,36 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+err.Error())
 		return
 	}
-	bw := bufio.NewWriterSize(f, 1<<20)
-	enc := siglab.NewCaptureWriter(bw, format)
+	// Headerless formats stream through the byte encoder; wav/flac go through
+	// the IQContainer, which owns the header + finalize (RIFF length patch /
+	// FLAC STREAMINFO) — a staged "wav"/"flac" capture used to get a headerless
+	// (or, for flac, mis-encoded) body under a container label.
+	var (
+		bw      *bufio.Writer
+		enc     *siglab.CaptureWriter
+		cont    *siglab.IQContainer
+		samples func() int64
+		write   func([]complex64) error
+	)
+	if isContainer {
+		cont, err = siglab.NewIQContainer(f, format, int(outRate))
+		if err != nil {
+			f.Close()
+			_ = os.Remove(path)
+			s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+err.Error())
+			return
+		}
+		samples, write = cont.Samples, cont.Write
+	} else {
+		bw = bufio.NewWriterSize(f, 1<<20)
+		enc = siglab.NewCaptureWriter(bw, format)
+		samples, write = enc.Samples, enc.Write
+	}
 	sink := func(chunk []complex64) error {
 		if ddc != nil {
 			chunk = ddc.Process(chunk)
 		}
-		return enc.Write(chunk)
+		return write(chunk)
 	}
 
 	// A capture runs for up to req.Seconds and Shutdown would wait it out, so
@@ -191,7 +223,12 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 	capCtx, capCancel := s.streamCtx(r.Context())
 	defer capCancel()
 	gotRate, gotCenter, capErr := s.capture.CaptureStream(capCtx, req.Serial, req.Seconds, sink)
-	flushErr := bw.Flush()
+	var flushErr error
+	if cont != nil {
+		flushErr = cont.Finalize()
+	} else {
+		flushErr = bw.Flush()
+	}
 	if cerr := f.Close(); cerr != nil && flushErr == nil {
 		flushErr = cerr
 	}
@@ -205,7 +242,7 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+flushErr.Error())
 		return
 	}
-	if enc.Samples() == 0 {
+	if samples() == 0 {
 		_ = os.Remove(path)
 		s.writeError(w, http.StatusBadGateway, "siglab: capture produced no samples")
 		return
@@ -213,8 +250,12 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 
 	// A full-band grab keeps the tuner's authoritative rate/centre from the
 	// stream; a narrowband slice keeps its decimated rate + requested centre.
-	if req.BandwidthHz == 0 {
+	// A container grab keeps the pre-capture rate its header was written with.
+	if req.BandwidthHz == 0 && !isContainer {
 		outRate, outCenter = gotRate, gotCenter
+	}
+	if req.BandwidthHz == 0 && isContainer {
+		outCenter = gotCenter
 	}
 
 	meta := &siglab.Metadata{
@@ -237,7 +278,7 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		Path:         path,
 		Format:       format,
 		SampleRateHz: float64(outRate),
-		Size:         enc.Samples() * int64(bytesPerSample(format)),
+		Size:         stagedCaptureSize(path, samples(), format),
 		Created:      time.Now(),
 	}
 	s.siglab.putCapture(c)
@@ -247,6 +288,16 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		Metadata:    meta,
 		DownloadURL: fmt.Sprintf("/api/v1/siglab/captures/%s/download", id),
 	})
+}
+
+// stagedCaptureSize reports a staged capture's size: the real on-disk size
+// when it can be statted (the only truthful number for a compressed flac),
+// falling back to the uncompressed samples × bytes-per-sample estimate.
+func stagedCaptureSize(path string, samples int64, format siglab.SampleFormat) int64 {
+	if fi, err := os.Stat(path); err == nil {
+		return fi.Size()
+	}
+	return samples * int64(bytesPerSample(format))
 }
 
 // handleSiglabCaptureDownload streams a staged capture's raw bytes as a file
@@ -273,6 +324,8 @@ func (s *Server) handleSiglabCaptureDownload(w http.ResponseWriter, r *http.Requ
 		ext = "raw"
 	case siglab.FormatWAV:
 		ext = "wav"
+	case siglab.FormatFLAC:
+		ext = "flac"
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", c.ID, ext))

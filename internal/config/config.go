@@ -353,6 +353,20 @@ type BasebandRecordConfig struct {
 	//     wideband, and directly replayable with `replay -format wav`. This is
 	//     the "record the DDC output" tap for sharing a hard-to-decode channel.
 	Tap string `yaml:"tap"`
+	// Format selects the recording container: "wav" (default — the canonical
+	// two-channel 16-bit RIFF/WAVE, SDRtrunk-compatible) or "flac" (the
+	// lossless compressed twin, typically 30–50% smaller; replays and mounts
+	// back as a virtual tuner exactly like wav).
+	Format string `yaml:"format"`
+}
+
+// RecordFormat returns the normalised recording container ("wav" or "flac").
+func (b BasebandRecordConfig) RecordFormat() string {
+	f := strings.ToLower(strings.TrimSpace(b.Format))
+	if f == "" {
+		return "wav"
+	}
+	return f
 }
 
 // TapDDC reports whether this record entry taps the narrowband DDC output
@@ -1922,10 +1936,15 @@ type StorageConfig struct {
 	CCCacheFile string `yaml:"cc_cache_file"`
 }
 
-// RecordingsConfig configures the per-call WAV recorder.
+// RecordingsConfig configures the per-call voice recorder.
 type RecordingsConfig struct {
 	Dir        string `yaml:"dir"`
 	SampleRate uint32 `yaml:"sample_rate"`
+	// Format selects the per-call recording container: "wav" (default —
+	// 16-bit mono PCM RIFF/WAVE) or "flac" (lossless FLAC, typically about
+	// half the size for speech; plays natively in browsers and feeds the
+	// same normalization / MP3-upload / web-playback paths).
+	Format string `yaml:"format"`
 	// Enhance is the opt-in "sound-good" voice enhancement chain. When
 	// enabled it band-limits decoded digital voice to the telephone band,
 	// warms the bright software-AMBE+2 timbre, runs the AGC to a louder

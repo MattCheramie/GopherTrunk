@@ -420,7 +420,7 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 	// the endpoint from ever serving a non-recording even if the row is bad.
 	ext := strings.ToLower(filepath.Ext(path))
 	if !filepath.IsAbs(path) || strings.Contains(path, "..") ||
-		(ext != ".wav" && ext != ".mp3") {
+		(ext != ".wav" && ext != ".mp3" && ext != ".flac") {
 		s.writeError(w, http.StatusNotFound, "recording unavailable")
 		return
 	}
@@ -436,9 +436,12 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, "recording unavailable")
 		return
 	}
-	if ext == ".mp3" {
+	switch ext {
+	case ".mp3":
 		w.Header().Set("Content-Type", "audio/mpeg")
-	} else {
+	case ".flac":
+		w.Header().Set("Content-Type", "audio/flac")
+	default:
 		w.Header().Set("Content-Type", "audio/wav")
 	}
 	http.ServeContent(w, r, filepath.Base(path), fi.ModTime(), f)

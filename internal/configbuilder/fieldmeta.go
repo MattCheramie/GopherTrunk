@@ -290,7 +290,8 @@ var fieldMetas = map[string]FieldMeta{
 	"StorageConfig.CCCacheFile": {Label: "CC cache file", Help: "JSON cache the control-channel hunter uses to skip dead frequencies. Empty disables it."},
 
 	// ---- Recordings --------------------------------------------------------
-	"RecordingsConfig.Dir":                  {Label: "Directory", Help: "Output directory for per-call WAV recordings."},
+	"RecordingsConfig.Dir":                  {Label: "Directory", Help: "Output directory for per-call voice recordings."},
+	"RecordingsConfig.Format":               {Label: "Format", Help: "Recording container: wav (16-bit mono PCM) or flac (lossless, ~half the size for speech; browsers play it natively, and normalization/MP3 uploads read it the same).", Options: opts("", "wav (default)", "flac", "flac")},
 	"RecordingsConfig.SampleRate":           {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
 	"RecordingsConfig.WriteRaw":             {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
 	"RecordingsConfig.MBEFiles":             {Label: "dsd-fme MBE files", Help: "Also write a dsd-fme-playable MBE sidecar per call — .imb for P25 Phase 1 IMBE, .amb for DMR/NXDN/P25 Phase 2 AMBE+2 — so recordings decode offline with `dsd-fme -r <file>`. Protocols dsd-fme can't play (TETRA, ProVoice, analog) produce no file."},
@@ -444,6 +445,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandRecordConfig.Serial": {Help: "SDR serial whose IQ stream is recorded."},
 	"BasebandRecordConfig.Dir":    {Label: "Directory", Help: "Directory the IQ recordings are written into."},
 	"BasebandRecordConfig.Tap":    {Help: "What to record: wideband (raw SDR IQ) or ddc (narrowband channel the decoder sees).", Options: opts("", "wideband (default)", "ddc", "ddc")},
+	"BasebandRecordConfig.Format": {Help: "Recording container: wav (canonical two-channel 16-bit RIFF/WAVE, SDRtrunk-compatible) or flac (lossless, ~30–50% smaller; replays and mounts back identically).", Options: opts("", "wav (default)", "flac", "flac")},
 	"BasebandReplayConfig.File":   {Help: "Path to the baseband WAV recording to replay."},
 	"BasebandReplayConfig.Serial": {Help: "Virtual device serial the pool reports. Empty generates one."},
 	"BasebandReplayConfig.Role":   {Help: "Pool role: control / voice / auto.", Options: roleOpts()},

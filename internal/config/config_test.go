@@ -718,3 +718,41 @@ func TestResolvePathsDiversityCapture(t *testing.T) {
 		t.Errorf("empty prefix became %q", got)
 	}
 }
+
+// TestValidateRecordingFormats pins the two new container-format keys:
+// recordings.format (per-call voice recordings) and baseband.record[].format
+// (baseband IQ recordings) accept wav/flac and reject anything else.
+func TestValidateRecordingFormats(t *testing.T) {
+	base := func() Config {
+		var c Config
+		c.SDR.Devices = []DeviceConfig{{Serial: "A"}}
+		return c
+	}
+
+	c := base()
+	c.Recordings.Format = "flac"
+	if errs := c.validateRecordings(); len(errs) != 0 {
+		t.Fatalf("recordings.format flac rejected: %v", errs)
+	}
+	c.Recordings.Format = "mp3"
+	if errs := c.validateRecordings(); len(errs) == 0 {
+		t.Fatal("recordings.format mp3 should be rejected")
+	}
+
+	c = base()
+	c.Baseband.Record = []BasebandRecordConfig{{Serial: "A", Dir: "x", Format: "flac"}}
+	if errs := c.validateBaseband(); len(errs) != 0 {
+		t.Fatalf("baseband.record format flac rejected: %v", errs)
+	}
+	c.Baseband.Record[0].Format = "ogg"
+	if errs := c.validateBaseband(); len(errs) == 0 {
+		t.Fatal("baseband.record format ogg should be rejected")
+	}
+	if got := c.Baseband.Record[0].RecordFormat(); got != "ogg" {
+		t.Fatalf("RecordFormat() = %q, want the raw value back", got)
+	}
+	c.Baseband.Record[0].Format = ""
+	if got := c.Baseband.Record[0].RecordFormat(); got != "wav" {
+		t.Fatalf("RecordFormat() default = %q, want wav", got)
+	}
+}

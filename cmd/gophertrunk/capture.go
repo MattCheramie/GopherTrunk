@@ -40,7 +40,7 @@ func runCapture(args []string) {
 	ppm := fs.Int("ppm", 0, "frequency-correction in PPM")
 	seconds := fs.Float64("seconds", 10, "capture length in seconds (required, > 0)")
 	out := fs.String("out", "capture.cfile", "output capture path")
-	format := fs.String("format", "f32", "capture sample format: u8 | f32 | cs16 (f32 = GNU Radio cfile; cs16 = headerless 16-bit raw)")
+	format := fs.String("format", "f32", "capture sample format: u8 | f32 | cs16 | wav | flac (f32 = GNU Radio cfile; cs16 = headerless 16-bit raw; wav = cs16 body in a RIFF container; flac = lossless compressed cs16, typically 30-50% smaller)")
 	centerHz := fs.Uint("center", 0, "narrowband slice centre in Hz (default: -freq); with -bandwidth, carves a channel from the captured wideband without retuning")
 	bandwidthHz := fs.Uint("bandwidth", 0, "narrowband slice bandwidth in Hz; when > 0 the capture is decimated to ~this rate around -center (must fit inside -freq ± sample-rate/2)")
 	decimate := fs.Uint("decimate", 0, "integer software-decimation factor: record the full band anti-alias decimated to sample-rate/decimate (a manageable long capture off a source like the USRP B210 whose hardware rate floor is ~1 MS/s). Mutually exclusive with -bandwidth")
@@ -317,13 +317,13 @@ func openCaptureDevice(serial string) (sdr.Device, sdr.Info, error) {
 	return dev, chosen, nil
 }
 
-// captureWriterDepth is how many encoded chunks captureStream buffers between
-// the IQ-drain goroutine and the disk-writer goroutine. A storage-latency
-// spike up to this many chunks is absorbed here instead of stalling the drain
-// — which, on a live SDR, would make the driver shed whole IQ chunks
-// (NotifyIQDrop), punching time gaps into the capture that slip a downstream
-// decoder's symbol clock. Each entry is one post-DDC encoded chunk (a few KB
-// for a narrowband slice), so this is trivial memory.
+// captureWriterDepth is how many sample chunks captureStreamSink buffers
+// between the IQ-drain goroutine and the disk-writer goroutine. A
+// storage-latency spike up to this many chunks is absorbed here instead of
+// stalling the drain — which, on a live SDR, would make the driver shed whole
+// IQ chunks (NotifyIQDrop), punching time gaps into the capture that slip a
+// downstream decoder's symbol clock. Each entry is one post-DDC chunk (tens
+// of KB for a narrowband slice), so this is trivial memory.
 const captureWriterDepth = 256
 
 // captureBufWriter is the disk write-buffer size. Batching many small chunk
@@ -341,6 +341,12 @@ const captureBufWriter = 1 << 20 // 1 MiB
 // of recorded (post-DDC) IQ, which the caller FFTs for the carrier-offset
 // warning.
 func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
+	// Container formats need a header up front and a finalize step, so they
+	// take the IQContainer path; the headerless formats keep the historical
+	// byte-stream path below.
+	if format == siglab.FormatWAV || format == siglab.FormatFLAC {
+		return captureContainerToFile(ctx, path, format, src, rate, seconds, ddc)
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return 0, nil, fmt.Errorf("create %s: %w", path, err)
@@ -358,6 +364,37 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 	return written, probe, loopErr
 }
 
+// captureContainerToFile is captureToFile for the container formats (wav,
+// flac): the chunks stream through siglab.IQContainer, which owns the header
+// and the finalize step (RIFF length patch / FLAC STREAMINFO), so a
+// `capture -format wav|flac` file is a real container rather than a
+// mislabeled headerless body.
+func captureContainerToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
+	// The container header carries the ON-DISK rate: the decimated slice rate
+	// when a -bandwidth/-decimate DDC is set, the full input rate otherwise.
+	diskRate := rate
+	if ddc != nil {
+		diskRate = uint32(ddc.OutRateHz() + 0.5)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return 0, nil, fmt.Errorf("create %s: %w", path, err)
+	}
+	cont, err := siglab.NewIQContainer(f, format, int(diskRate))
+	if err != nil {
+		f.Close()
+		return 0, nil, fmt.Errorf("container %s: %w", path, err)
+	}
+	written, probe, loopErr := captureStreamSink(ctx, cont.Write, src, rate, seconds, ddc)
+	if ferr := cont.Finalize(); ferr != nil && loopErr == nil {
+		loopErr = fmt.Errorf("finalize: %w", ferr)
+	}
+	if cerr := f.Close(); cerr != nil && loopErr == nil {
+		loopErr = cerr
+	}
+	return written, probe, loopErr
+}
+
 // captureStream is the format-encode + write loop behind captureToFile,
 // decoupled from the file so it is testable with any io.Writer.
 //
@@ -368,8 +405,19 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 // driver drops whole IQ chunks (non-blocking, silent), corrupting the capture.
 // Decoupling keeps the drain running so a transient stall costs latency, not
 // samples. The stateful DDC stays on the drain goroutine (it must run in
-// order); only the encoded bytes cross to the writer.
+// order); only copied sample chunks cross to the writer, which encodes them.
 func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
+	return captureStreamSink(ctx, func(samples []complex64) error {
+		_, err := w.Write(siglab.EncodeCapture(samples, format))
+		return err
+	}, src, rate, seconds, ddc)
+}
+
+// captureStreamSink is the drain/write loop behind captureStream and the
+// container path: the writer goroutine consumes copied sample chunks and
+// hands them to sink (a byte encoder + io.Writer, or an IQContainer), so a
+// stalled sink costs latency, never samples.
+func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, []complex64, error) {
 	probe := make([]complex64, 0, captureProbeSamples)
 
 	// Stop once seconds worth of INPUT samples have been read; the written
@@ -382,13 +430,13 @@ func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat,
 	timer := time.NewTimer(time.Duration(seconds*float64(time.Second)) + 5*time.Second)
 	defer timer.Stop()
 
-	writerCh := make(chan []byte, captureWriterDepth)
+	writerCh := make(chan []complex64, captureWriterDepth)
 	writeErrCh := make(chan error, 1)
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
 		for b := range writerCh {
-			if _, werr := w.Write(b); werr != nil {
+			if werr := sink(b); werr != nil {
 				select {
 				case writeErrCh <- werr:
 				default:
@@ -441,9 +489,10 @@ loop:
 				probe = append(probe, take...)
 			}
 			// Fresh buffer per chunk: it is handed to the writer goroutine, so
-			// it must not alias the reused ddcBuf. siglab.EncodeCapture allocates
-			// a new buffer per call, which the cross-goroutine handoff needs.
-			buf := siglab.EncodeCapture(samples, format)
+			// it must not alias the reused ddcBuf or the src-owned chunk.
+			// Encoding happens on the writer goroutine (sink), keeping the
+			// drain to a copy.
+			buf := append([]complex64(nil), samples...)
 			select {
 			case writerCh <- buf:
 			case werr := <-writeErrCh:

@@ -48,6 +48,35 @@ confirmation before any close-as-completed.
 
 ## DSP / replay notes (so the next investigation starts ahead)
 
+- **FLAC is now a first-class container on every recorder that had a container at all**,
+  with ONE shared stereo encode core (`baseband.FLACIQEncoder` — `siglab.IQContainer`
+  delegates to it) and a mono voice twin (`voice.FlacWriter`): `capture -format wav|flac`
+  and the API staged capture route through `siglab.IQContainer` (both used to silently
+  write a mislabeled/garbage body — the streaming `EncodeCapture` has NO container case
+  and falls through to u8, so gen/synth now reject wav/flac at the boundary);
+  `baseband.record[].format: flac` covers both taps (wideband + ddc) and the replay
+  `FileDriver` mounts .flac back as a virtual tuner (content-sniffed via the fLaC
+  marker, never the extension); `recordings.format: flac` switches per-call voice
+  recordings, and the WHOLE downstream chain reads either container via content
+  sniffing (`voice.ReadAudioSamples`): loudness normalize rewrites flac-in/flac-out,
+  broadcast MP3 transcode, the `/calls/{id}/audio` handler (audio/flac + .flac in its
+  extension allowlist), the retention sweeper, and the web RecordingPlayer's download
+  name. `FlacWriter.DataBytes()` reports UNCOMPRESSED PCM bytes so the recorder's
+  duration/dead-key math is container-independent. Not converted (deliberately):
+  `diversity_capture` stays cs16 (branch-alignment invariant + offline harness),
+  `hunt -survey-capture` stays f32.
+- **A P25 "MBT data CRC failed" line whose identity fields match a decoded broadcast
+  is TWO different PDU frames, not a contradiction**: every field the failure line
+  prints (opcode/blocks/nac) comes from the HEADER block, which carries its own
+  CCITT-16 and decoded clean — only a data block failed its CRC-32 (RF residual
+  errors; the broadcast repeats, so a clean copy usually logs nearby). The CRC span
+  was re-verified byte-for-byte against OP25 `process_PDU` (single-block AMBT
+  included), so do NOT chase a parser bug from that log pair alone; the line now
+  carries the worst data-block Viterbi metric + an explanatory cause. Related naming
+  rule now enforced in code: never render a vendor TSBK or an undecoded AMBT opcode
+  through the standard `Opcode.String()` OSP map (it mislabels — MFID 0x90 opcode
+  0x00 reads GRP_V_CH_GRANT); `ambtOpcodeLabel` names only the decoded AMBT forms.
+
 - **P25 discovery: a PDU (DUID 0xC) on the control channel is Multi-Block
   Trunking, not noise — GT now decodes AMBT (`mbt.go`).** The operator's "only 1
   neighbor site, no WACN" report was this: their system broadcasts Network

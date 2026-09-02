@@ -1572,9 +1572,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					CarrierOffsetWarnHz: int(cfg.SDR.CarrierOffsetWarnHz),
 					// A baseband record entry with tap: ddc on this control
 					// serial tees the narrowband channelized stream (the DDC
-					// output the decoder sees) to WAV — small, shareable, and
-					// replayable with `replay -format wav`.
-					DDCRecordDir: ddcRecordDirForSerial(cfg, controlEntry.Info.Serial),
+					// output the decoder sees) to WAV or FLAC — small,
+					// shareable, and replayable with `replay -format wav|flac`.
+					DDCRecordDir:    ddcRecordDirForSerial(cfg, controlEntry.Info.Serial),
+					DDCRecordFormat: ddcRecordFormatForSerial(cfg, controlEntry.Info.Serial),
 					// Same-carrier voice-tap buffer depth (issue #402); 0 → the
 					// decoder's built-in default.
 					VoiceTapBufferChunks: cfg.Recordings.VoiceTapBufferChunks,
@@ -2155,6 +2156,7 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			Bus:           d.bus,
 			Log:           log,
 			OutDir:        cfg.Recordings.Dir,
+			Format:        recordingsFormat(cfg),
 			SampleRate:    cfg.Recordings.SampleRate,
 			WriteRaw:      cfg.Recordings.WriteRaw,
 			WriteMBE:      cfg.Recordings.MBEFiles,
@@ -4966,17 +4968,40 @@ func (s sitesProvider) Topology(system string) (*trunking.TopologySnapshot, bool
 	return s.t.Topology(system)
 }
 
-// ddcRecordDirForSerial returns the recording directory for a baseband
-// record entry with tap: ddc on the given serial, or "" if none is
-// configured. This drives ccdecoder.Options.DDCRecordDir so the narrowband
-// DDC output is teed at the decoder rather than by wrapping the raw device.
-func ddcRecordDirForSerial(cfg config.Config, serial string) string {
+// recordingsFormat normalises recordings.format ("" → wav) for the voice
+// recorder's container dispatch.
+func recordingsFormat(cfg config.Config) string {
+	f := strings.ToLower(strings.TrimSpace(cfg.Recordings.Format))
+	if f == "" {
+		return "wav"
+	}
+	return f
+}
+
+// ddcRecordForSerial returns the recording directory and container format
+// for a baseband record entry with tap: ddc on the given serial, or ("", "")
+// if none is configured. This drives ccdecoder.Options.DDCRecordDir/Format so
+// the narrowband DDC output is teed at the decoder rather than by wrapping
+// the raw device.
+func ddcRecordForSerial(cfg config.Config, serial string) (dir, format string) {
 	for _, r := range cfg.Baseband.Record {
 		if r.Serial == serial && r.TapDDC() {
-			return r.Dir
+			return r.Dir, r.RecordFormat()
 		}
 	}
-	return ""
+	return "", ""
+}
+
+// ddcRecordDirForSerial / ddcRecordFormatForSerial are struct-literal-friendly
+// accessors over ddcRecordForSerial.
+func ddcRecordDirForSerial(cfg config.Config, serial string) string {
+	dir, _ := ddcRecordForSerial(cfg, serial)
+	return dir
+}
+
+func ddcRecordFormatForSerial(cfg config.Config, serial string) string {
+	_, format := ddcRecordForSerial(cfg, serial)
+	return format
 }
 
 // wrapBasebandRecorders replaces the Device of every pool entry whose
@@ -4987,7 +5012,7 @@ func (d *Daemon) wrapBasebandRecorders(cfg config.Config, log *slog.Logger) {
 	if len(cfg.Baseband.Record) == 0 || d.pool == nil {
 		return
 	}
-	dirBySerial := make(map[string]string, len(cfg.Baseband.Record))
+	recBySerial := make(map[string]config.BasebandRecordConfig, len(cfg.Baseband.Record))
 	for _, r := range cfg.Baseband.Record {
 		if r.TapDDC() {
 			// Narrowband DDC-output recording is teed at the control-channel
@@ -4995,9 +5020,9 @@ func (d *Daemon) wrapBasebandRecorders(cfg config.Config, log *slog.Logger) {
 			// device — the device only ever sees the wideband SDR stream.
 			continue
 		}
-		dirBySerial[r.Serial] = r.Dir
+		recBySerial[r.Serial] = r
 	}
-	if len(dirBySerial) == 0 {
+	if len(recBySerial) == 0 {
 		return
 	}
 	rate := cfg.SDR.SampleRate
@@ -5005,14 +5030,15 @@ func (d *Daemon) wrapBasebandRecorders(cfg config.Config, log *slog.Logger) {
 		rate = sdr.DefaultSampleRateHz
 	}
 	for _, e := range d.pool.Entries() {
-		dir, ok := dirBySerial[e.Info.Serial]
+		rc, ok := recBySerial[e.Info.Serial]
 		if !ok {
 			continue
 		}
-		rec := baseband.NewRecordingDevice(e.Device, dir, log)
+		rec := baseband.NewRecordingDevice(e.Device, rc.Dir, rc.RecordFormat(), log)
 		_ = rec.SetSampleRate(rate)
 		e.Device = rec
-		log.Info("baseband recording enabled", "serial", e.Info.Serial, "dir", dir)
+		log.Info("baseband recording enabled", "serial", e.Info.Serial,
+			"dir", rc.Dir, "format", rc.RecordFormat())
 	}
 }
 

@@ -171,7 +171,7 @@ func runDaemon(args []string) {
 	// IQ capture diagnostic — taps a live SDR's iqtap broker and writes
 	// raw IQ samples to a file for offline analysis. Used to capture a
 	// reproducible fixture for replay (issue #402).
-	iqCapture := fs.String("iq-capture", "", "capture raw IQ from a live SDR for offline analysis (issue #402). Format: serial=<s>,path=<file>,seconds=<n>[,format=u8|f32|cs16][,decimate=<n>] (default format=f32, GNU Radio cfile; decimate>1 anti-alias decimates the recording to sdr.sample_rate/n and writes a metadata sidecar)")
+	iqCapture := fs.String("iq-capture", "", "capture raw IQ from a live SDR for offline analysis (issue #402). Format: serial=<s>,path=<file>,seconds=<n>[,format=u8|f32|cs16|wav|flac][,decimate=<n>] (default format=f32, GNU Radio cfile; decimate>1 anti-alias decimates the recording to sdr.sample_rate/n and writes a metadata sidecar)")
 	_ = fs.Parse(args)
 
 	// Resolve verbose-error reporting from the flag now (config folds in

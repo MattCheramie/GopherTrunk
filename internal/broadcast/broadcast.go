@@ -18,6 +18,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/loudness"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
+	"github.com/MattCheramie/GopherTrunk/internal/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/mp3"
 )
 
@@ -87,7 +88,7 @@ type Call struct {
 	PatchedGroups []uint32
 	StartedAt     time.Time
 	EndedAt       time.Time
-	AudioPath     string // .wav on disk written by the recorder
+	AudioPath     string // recording on disk written by the recorder (.wav or .flac)
 	SampleRate    int
 
 	// normalize, when Enabled, loudness-normalizes the audio in memory
@@ -117,20 +118,31 @@ func (c *Call) MP3() ([]byte, error) {
 	if c.normalize.Enabled {
 		c.mp3Data, c.mp3Err = encodeNormalizedMP3(c.AudioPath, c.normalize.Params)
 	} else {
-		c.mp3Data, _, c.mp3Err = mp3.EncodeWAVFile(c.AudioPath)
+		c.mp3Data, c.mp3Err = encodeMP3(c.AudioPath)
 	}
 	return c.mp3Data, c.mp3Err
 }
 
-// encodeNormalizedMP3 reads the WAV at path, applies a single linear
-// loudness-normalization gain in memory (leaving the file untouched), and
-// MP3-encodes the result. When the audio is too short or quiet to measure,
-// it encodes the samples unchanged.
-func encodeNormalizedMP3(path string, p loudness.NormalizeParams) ([]byte, error) {
-	samples, rate, err := mp3.ReadWAV(path)
+// encodeMP3 reads the recording at path (WAV or FLAC — the recorder's
+// container choice) and MP3-encodes it unchanged.
+func encodeMP3(path string) ([]byte, error) {
+	samples, rate, err := voice.ReadAudioSamples(path)
 	if err != nil {
 		return nil, err
 	}
+	return mp3.Encode(samples, int(rate))
+}
+
+// encodeNormalizedMP3 reads the recording at path (WAV or FLAC), applies a
+// single linear loudness-normalization gain in memory (leaving the file
+// untouched), and MP3-encodes the result. When the audio is too short or
+// quiet to measure, it encodes the samples unchanged.
+func encodeNormalizedMP3(path string, p loudness.NormalizeParams) ([]byte, error) {
+	samples, rate32, err := voice.ReadAudioSamples(path)
+	if err != nil {
+		return nil, err
+	}
+	rate := int(rate32)
 	fs := make([]float64, len(samples))
 	for i, s := range samples {
 		fs[i] = float64(s) / 32768.0

@@ -599,6 +599,11 @@ func (c Config) validateRecordings() []error {
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
 		return []error{fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)}
 	}
+	switch strings.ToLower(strings.TrimSpace(c.Recordings.Format)) {
+	case "", "wav", "flac":
+	default:
+		return []error{fmt.Errorf("recordings.format must be wav|flac, got %q", c.Recordings.Format)}
+	}
 	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
 		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}
@@ -773,6 +778,11 @@ func (c Config) validateBaseband() []error {
 		case "", "wideband", "ddc":
 		default:
 			errs = append(errs, fmt.Errorf("baseband.record[%d]: tap must be wideband|ddc", i))
+		}
+		switch strings.ToLower(strings.TrimSpace(r.Format)) {
+		case "", "wav", "flac":
+		default:
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: format must be wav|flac, got %q", i, r.Format))
 		}
 	}
 	for i, r := range c.Baseband.Replay {
