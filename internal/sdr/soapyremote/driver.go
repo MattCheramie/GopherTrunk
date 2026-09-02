@@ -1194,6 +1194,13 @@ func (d *device) Close() error {
 		return nil
 	}
 	d.closed = true
+	// Finalize an in-flight diversity capture so an interrupted dump (daemon
+	// stopped before the budget filled) still flushes its tail and writes the
+	// sidecar the offline harness requires — a partial capture with a sidecar
+	// is a valid capture; branch files without one are unusable.
+	if d.mrc != nil {
+		d.mrc.rec.finish()
+	}
 	if d.dataConn != nil {
 		d.dataConn.Close()
 		d.dataConn = nil

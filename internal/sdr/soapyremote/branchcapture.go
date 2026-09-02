@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
@@ -48,13 +49,20 @@ import (
 // — a single short write would silently desynchronise them and quietly
 // invalidate every conclusion drawn afterwards.
 //
-// Stream goroutine only. Any write error disables the recorder rather than
-// disturbing the stream: a capture that induces the overruns it is meant to
-// diagnose is worse than no capture.
+// write runs on the stream goroutine only. finish is also called from
+// device.Close (mu makes that safe): without it, a capture interrupted before
+// its budget filled — daemon stopped mid-dump — left branch files with an
+// unflushed tail and NO sidecar, which the offline harness refuses to load (an
+// operator shipped exactly that: a 64 s dump of a 120 s budget, sidecar-less
+// and unusable). A partial capture with a sidecar is still a valid capture.
+// Any write error disables the recorder rather than disturbing the stream: a
+// capture that induces the overruns it is meant to diagnose is worse than no
+// capture.
 type branchRecorder struct {
 	log      *slog.Logger
 	prefix   string
 	branches int
+	mu       sync.Mutex
 
 	files   []*os.File
 	bufs    []*bufio.Writer           // cs16 path only
@@ -242,7 +250,12 @@ func newBranchRecorder(prefix, format string, branches int, budgetSamples int64,
 // and before any combining, so the capture is byte-for-byte what the combiner
 // saw.
 func (r *branchRecorder) write(branches [][]complex64) {
-	if r == nil || r.done || r.failed {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.done || r.failed {
 		return
 	}
 	r.datagrams++
@@ -264,7 +277,7 @@ func (r *branchRecorder) write(branches [][]complex64) {
 	if r.budgetSamples > 0 && r.written+int64(n) > r.budgetSamples {
 		n = int(r.budgetSamples - r.written)
 		if n <= 0 {
-			r.finish()
+			r.finishLocked()
 			return
 		}
 	}
@@ -295,13 +308,24 @@ func (r *branchRecorder) write(branches [][]complex64) {
 	}
 	r.written += int64(n)
 	if (r.budgetSamples > 0 && r.written >= r.budgetSamples) || r.written*4 >= branchCaptureMaxBytes {
-		r.finish()
+		r.finishLocked()
 	}
 }
 
-// finish flushes, writes the sidecar, and logs the paths. Idempotent.
+// finish flushes, writes the sidecar, and logs the paths. Idempotent, and safe
+// to call from outside the stream goroutine (device.Close finalizes a capture
+// interrupted before its budget filled, so the sidecar always lands).
 func (r *branchRecorder) finish() {
-	if r == nil || r.done {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.finishLocked()
+}
+
+func (r *branchRecorder) finishLocked() {
+	if r.done {
 		return
 	}
 	r.done = true

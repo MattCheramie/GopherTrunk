@@ -171,6 +171,34 @@ func TestBranchRecorderFLACRejectsUnencodableRate(t *testing.T) {
 	}
 }
 
+// TestBranchRecorderInterruptedCaptureStillWritesSidecar: a capture cut short
+// of its budget (daemon stopped mid-dump — device.Close calls finish) must
+// still flush and write the sidecar with the partial sample count. Without
+// this, an operator's interrupted dump left branch files with no sidecar,
+// which the offline harness refuses to load — a real 64 s / 120 s capture
+// arrived unusable exactly this way.
+func TestBranchRecorderInterruptedCaptureStillWritesSidecar(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "cap")
+	// Budget far larger than what is written: the capture is "in flight".
+	rec, err := newBranchRecorder(prefix, "cs16", 2, 1_000_000, 200000, testLogger())
+	if err != nil {
+		t.Fatalf("newBranchRecorder: %v", err)
+	}
+	rng := rand.New(rand.NewSource(3))
+	ch0 := mrcSignal(rng, 256, 0.4)
+	ch1 := scaleC(ch0, complex(0, 1))
+	rec.write([][]complex64{ch0, ch1})
+	rec.finish() // what device.Close does on teardown
+
+	meta := readBranchMeta(t, prefix) // Fatal here = no sidecar (pre-fix behaviour)
+	if meta.SamplesPerBranch != int64(len(ch0)) {
+		t.Errorf("sidecar samples_per_branch = %d, want the partial %d", meta.SamplesPerBranch, len(ch0))
+	}
+	if got := readCS16(t, prefix+".br0.cs16"); len(got) != len(ch0) {
+		t.Errorf("branch 0 holds %d samples, want the flushed %d", len(got), len(ch0))
+	}
+}
+
 // TestBranchCaptureSidecarWireNames pins the JSON key names the sidecar emits.
 // The offline harness (cmd/gophertrunk/diversity_replay_test.go) declares its
 // own struct with these same names, so a rename here would silently produce
