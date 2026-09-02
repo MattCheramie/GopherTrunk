@@ -14,19 +14,18 @@ series_part: 9
 America's dominant trunking protocol through GopherTrunk — from a raw C4FM
 carrier to recorded, named, multi-site voice.
 [Part 8]({{ '/blog/deep-dives/p25-end-to-end-08-imbe-voice/' | relative_url }})
-followed an IMBE voice call from LDU superframes to a WAV on disk. This part
-is about the calls that never should make that trip: where "encrypted"
-actually lives on a P25 carrier — a single bit on the grant, and a 96-bit
-Encryption Sync buried inside the voice stream — and the policy machinery
-that decides what a scarce voice tuner, and your disk, should do about a
-call no scanner can decode.*
+followed an IMBE voice call from LDU superframes to a WAV on disk. This
+part is about the calls that should never make that trip: where
+"encrypted" actually lives on a P25 carrier — one bit on the grant, and a
+96-bit Encryption Sync buried inside the voice stream — and the policy
+machinery that decides what a scarce voice tuner, and your disk, should do
+about a call no scanner can decode.*
 
 > **TL;DR:** P25 signals encryption in two places GopherTrunk reads. The
 > grant's Service Options octet carries a **protected bit**
-> (`ServiceOptions.Encrypted`, `internal/radio/p25/phase1/opcodes.go`) —
-> one bit, known before voice even starts. The *metadata* arrives only
-> in-call: the **Encryption Sync** — a 72-bit Message Indicator, an
-> Algorithm ID and a Key ID — rides every LDU2, protected by a
+> (`ServiceOptions.Encrypted`) — one bit, known before voice starts. The
+> *metadata* arrives only in-call: the **Encryption Sync** — a 72-bit
+> Message Indicator, Algorithm ID and Key ID — rides every LDU2 under a
 > Hamming(10,6,3) inner FEC and an outer RS(24,16,9)
 > (`phase1.ParseEncryptionSync`). ALGID `0x80` means clear; anything else
 > names a cipher (`0x84` = AES-256, `0xAA` = ADP/RC4). On Phase 2 the same
@@ -189,7 +188,7 @@ zero" instead of failing silently.
 Here is the full path a discovered-encrypted call takes through the daemon:
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 258" width="680" height="258" role="img" aria-label="The two paths an encryption signal takes through GopherTrunk. Left column, control channel: the grant TSBK's protected bit sets Grant.Encrypted before a tuner is allocated. Right column, traffic channel: the LDU2 Encryption Sync is parsed by the composer, gated by the algorithm registry, and published as a KindCallEncryption bus event. Both converge on the trunking engine, which backfills the live grant and applies the per-system follow, metadata, or ignore policy, which in turn drives the recorder's skip-encrypted guard and the call log's algorithm and key columns.">
+<svg viewBox="0 0 680 258" width="680" height="258" role="img" aria-label="Two paths converge on the trunking engine: the grant's protected bit from the control channel, and the LDU2 Encryption Sync parsed and gated by the composer, published as a KindCallEncryption event; the engine backfills the live grant and applies the follow, metadata, or ignore policy that drives the recorder guard and the call log.">
   <text x="130" y="20" text-anchor="middle" fill="currentColor" font-size="11" font-weight="bold">control channel (early)</text>
   <text x="480" y="20" text-anchor="middle" fill="currentColor" font-size="11" font-weight="bold">traffic channel (mid-call)</text>
   <rect x="40" y="30" width="180" height="34" rx="6" fill="none" stroke="currentColor"/>
@@ -287,14 +286,13 @@ series.
 - **Events backfill instead of blocking.** The grant publishes immediately
   with what the control channel knows; `KindCallEncryption` and
   `KindCallSourceUpdate` patch the live call as the traffic channel fills
-  the gap — no consumer ever waits for metadata that may never come.
-- **Gates prefer omission to plausible garbage.** `AlgorithmKnown`,
-  `ErrEncryptionSyncUncorrectable` and the dedup check all drop
-  low-confidence values rather than surface them — a wrong key label sends
-  an operator chasing the wrong thing (the same reasoning as the TETRA DMO
-  colour-confidence gate).
+  the gap — no consumer waits for metadata that may never come.
+- **Gates prefer omission to plausible garbage.** `AlgorithmKnown` and
+  `ErrEncryptionSyncUncorrectable` drop low-confidence values rather than
+  surface them — a wrong key label sends an operator chasing the wrong
+  thing.
 - **Policy state lives in one enum with a safe zero.** `EncryptedFollow` is
-  the zero value and the parse fallback, so a config typo can never
+  the zero value *and* the parse fallback, so a config typo can never
   silently stop following calls.
 
 ## Where this goes next
@@ -311,32 +309,31 @@ frames and accumulates a neighbour map you can roam by.
 **How does GopherTrunk know a P25 call is encrypted?**
 Twice over: the voice grant's Service Options octet carries a protected bit
 (known before the call is even followed), and the traffic channel repeats
-the full Encryption Sync — Message Indicator, Algorithm ID, Key ID — in
-every LDU2 on Phase 1 or in the MAC_PTT key-up message on Phase 2. ALGID
-`0x80` is the clear value; anything else names a cipher.
+the full Encryption Sync — MI, Algorithm ID, Key ID — in every LDU2 on
+Phase 1 or in the MAC_PTT key-up message on Phase 2. ALGID `0x80` is the
+clear value; anything else names a cipher.
 
 **Can GopherTrunk decrypt encrypted P25 calls?**
 No. It surfaces which algorithm and key a call uses — the same
 identify-don't-decrypt model as SDRtrunk and OP25 — and performs no key
-recovery. Known-key decryption is currently implemented for DMR ARC4 only;
-on P25 a configured key exempts the call from the encrypted-call policy but
-the audio is not decrypted.
+recovery. Known-key decryption exists for DMR ARC4 only; on P25 a
+configured key exempts the call from the encrypted-call policy but the
+audio is not decrypted.
 
 **Why do some encrypted calls show no algorithm or key?**
 Either the call was torn down before an LDU2/MAC_PTT landed (the grant flag
-alone carries no metadata), or the ES word failed its FEC gates. GopherTrunk
+alone carries no metadata), or the ES word failed its gates. GopherTrunk
 deliberately omits ALGID/KID it cannot trust: an RS layer that
-"successfully" corrects to an Algorithm ID outside the TIA-102 registry is a
-known mis-decode signature (issue #924), and publishing it would be
-indistinguishable from a real key downstream.
+"successfully" corrects to an out-of-registry Algorithm ID is a known
+mis-decode signature (issue #924).
 
 **What does `encrypted_calls: metadata` actually buy me?**
 Alias, source and key intelligence without the tuner cost. The engine
 follows an encrypted call just long enough (default 1500 ms, or until the
 Phase 2 talker alias completes) to capture the traffic channel's metadata,
-then releases the voice SDR with end reason `encrypted`. On a busy system
-where a third of the traffic is encrypted, that's the difference between
-clear calls queueing for tuners and not.
+then releases the voice SDR with end reason `encrypted`. On a system where
+a third of the traffic is encrypted, that's the difference between clear
+calls queueing for tuners and not.
 
 **Should I set `recordings.skip_encrypted: true`?**
 If you never hold keys, probably: it keeps unplayable audio off the disk

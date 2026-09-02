@@ -24,13 +24,12 @@ anywhere else in the series.*
 > USRP B210 (shared LO) or an X310 with TwinRX daughterboards (independent
 > PLLs) — mounted over `sdr.soapy_remote[]` with `diversity: "mrc"` and
 > `antenna: [RX1, RX2]`. Health is one log line every 30 s:
-> `soapyremote: MRC diversity branches` with `coherence`, `branch_gain_db` and
-> `branch_phase_deg`. **`branch_phase_deg` is the instrument**: constant ⇒
-> shared-LO hardware, `mrc-static` is fine; walking ⇒ independent PLLs, you
-> want tracking `mrc`. The honest ceiling: MRC is guaranteed **≥ the best
-> branch alone**, but a real gain *over* it only shows on weak signals — prove
-> yours with a `diversity_capture` pre-combine dump and
-> `TestDiversityCombinerReplay`, scored by decode yield, never by
+> `soapyremote: MRC diversity branches`, and **`branch_phase_deg` is the
+> instrument**: constant ⇒ shared-LO hardware, `mrc-static` is fine; walking
+> ⇒ independent PLLs, you want tracking `mrc`. The honest ceiling: MRC is
+> guaranteed **≥ the best branch alone**, but a real gain *over* it only
+> shows on weak signals — prove yours with a `diversity_capture` pre-combine
+> dump and `TestDiversityCombinerReplay`, scored by decode yield, never by
 > [dBFS]({{ '/blog/tutorials/analog-edge-02-dbfs/' | relative_url }}).
 
 **Key takeaways**
@@ -131,8 +130,7 @@ this recipe is the operator's side.
 
 This is the expensive recipe, and the honest first line is: **most rigs don't
 need it.** You need one radio with two RX channels sharing a frequency
-reference — two separate dongles will not do (independent clocks, no common
-stream, nothing to phase-align).
+reference — two separate dongles will not do.
 
 | Item | Class | Notes |
 |---|---|---|
@@ -198,35 +196,30 @@ INF soapyremote: MRC diversity branches addr=192.168.1.60:55132 branch_dbfs="ch0
 
 Read it field by field — this line is the whole cockpit:
 
-- **`branch_dbfs`** — both branches alive and within a few dB of each other.
-  A branch ~10 dB down is a weak antenna or feedline, and MRC on a
-  floor-limited branch is roughly no-gain: fix *that branch's* RF first.
+- **`branch_dbfs`** — both branches alive and within a few dB. A branch
+  ~10 dB down is a weak antenna or feedline, and MRC on a floor-limited
+  branch is roughly no-gain: fix *that branch's* RF first.
 - **`coherence`** — the normalised cross-correlation between branches,
-  **gain-independent by construction**. A healthy co-located pair reads high
-  (0.9+) at moderate bandwidth; on wide captures where the wanted carrier is a
-  small fraction of the band, lower numbers are normal and the lock gates
-  scale with the window to allow for it — the
+  **gain-independent by construction**. A healthy co-located pair reads 0.9+
+  at moderate bandwidth; on wide captures lower numbers are normal and the
+  lock gates scale with the window —
   [coherence-not-dBFS]({{ '/blog/tutorials/analog-edge-13-coherence-not-dbfs/' | relative_url }})
-  post is the full story.
+  is the full story.
 - **`branch_phase_deg`** — the no-capture hardware-class instrument.
-  **Constant** across lines means a shared-LO front end and `mrc-static`
-  would serve; **walking** (a TwinRX rig measured about −0.2°/s — a frozen
-  constant decays over minutes) means independent PLLs and tracking `mrc`.
-- **`updates` / `holds`** — accepted vs rejected calibration windows.
-  Healthy is `updates` climbing with `holds` near zero; `updates` frozen
-  while `holds` climbs means coasting on a stale gain, and it WARNs after
-  90 s of that.
+  **Constant** across lines means shared-LO and `mrc-static` would serve;
+  **walking** (a TwinRX rig measured about −0.2°/s — a frozen constant decays
+  over minutes) means independent PLLs and tracking `mrc`.
+- **`updates` / `holds`** — accepted vs rejected calibration windows. Healthy
+  is `updates` climbing with `holds` near zero; `updates` frozen while
+  `holds` climbs means coasting on a stale gain, and it WARNs after 90 s.
 
-One more line worth knowing on sight, once per stream or retune:
+One more line worth knowing on sight, once per stream or retune — the
+aligner latching the start skew between the streams (per-stream, which is why
+it's re-measured every time rather than calibrated once):
 
 ```
 INF soapyremote: MRC inter-branch delay measured — delaying the early branch to align the combine delay_samples=0.41 peak_rho=0.94
 ```
-
-That is the aligner latching the start skew between the two streams. The skew
-is per-stream (a field pair measured 2.60 samples on one run and 0.41 on the
-next, same rig), which is exactly why it's re-measured every time rather than
-calibrated once.
 
 ## The honest ceiling — and the A/B that tests it
 
@@ -234,8 +227,8 @@ Now the part a recipe owes you before you spend this money. Post-aligner, MRC
 is a **no-harm** combine: every capture A/B run to date scores the combined
 arms within one decoded frame of the best branch alone. But those captures
 decode at their ~100% yield ceiling — matching the best branch *is* the
-ceiling there, and a real gain **over** the best branch is still
-undemonstrated on air. Theory says it shows up on weak, fading signals; a
+ceiling there — so a real gain **over** the best branch is still
+undemonstrated on air. Theory says it shows on weak, fading signals; a
 weak-signal pre-combine capture where the combined arm beats both branches is
 genuinely wanted upstream.
 
@@ -313,20 +306,19 @@ decode yield.**
 
 ## Where this goes next
 
-The rig now has every piece of hardware this series will ask you to buy. What
-it doesn't have yet is *names* — every talkgroup, radio and site is still a
-number. [Part 13]({{ '/blog/tutorials/operator-cookbook-13-naming-everything/' | relative_url }})
-is the zero-hardware recipe: alias CSVs with their real column formats, naming
-things live from the browser, and exporting the result back to files you own.
+The rig now has every piece of hardware this series will ask you to buy —
+but every talkgroup and radio is still a number.
+[Part 13]({{ '/blog/tutorials/operator-cookbook-13-naming-everything/' | relative_url }})
+is the zero-hardware recipe: alias CSVs and their real columns, naming things
+live from the browser, and exporting the result back to files you own.
 
 ## FAQ
 
 **Do I need a diversity setup for a scanner rig?**
-Almost certainly not first. Diversity is the only lever that costs serious
-hardware, and it addresses one regime: a signal that *fades* at your location.
-A better antenna, low-loss feedline and correct gain staging buy more decode
-margin per dollar; build this when those are done and a marginal system still
-swings.
+Almost certainly not first. It's the only lever that costs serious hardware,
+and it addresses one regime: a signal that *fades* at your location. Antenna,
+feedline and gain staging buy more margin per dollar; build this when those
+are done and a marginal system still swings.
 
 **Should I use mrc or mrc-static?**
 Let `branch_phase_deg` answer: run `mrc` and watch the health line for a few
@@ -346,13 +338,6 @@ your carrier — a clean channel occupying a small fraction of a wide capture
 reads low even when the branches agree perfectly in-channel, which is why the
 lock gates scale with the estimation window. Judge the combine by decode
 yield and the WARN lines, not by wishing the number toward 1.0.
-
-**Does MRC help against a strong interferer?**
-Not blind, no — that's interference rejection combining (IRC). Measured on a
-synthetic co-channel scene, blind IRC buys 0.0 dB (the channel estimate is
-contaminated by the interferer itself); the same code given a training
-sequence buys over 20 dB. That's why IRC exists only as an offline harness
-arm, not a `diversity:` mode.
 
 ## Series navigation
 

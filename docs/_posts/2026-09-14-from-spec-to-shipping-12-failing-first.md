@@ -89,30 +89,29 @@ cheapest verification gate in the series. A fix without a failing test makes
 two unproven claims at once: that you found the real cause, and that your
 change removes it. The failing test converts both into observations — it
 fails against the old code, so the reproduction is real; it passes against
-the new, so the change addresses *that* reproduction. This project learned
-the price of skipping them in public: issue
+the new, so the change addresses *that* reproduction. The price of skipping
+them was paid in public: issue
 [#764](https://github.com/MattCheramie/GopherTrunk/issues/764) was closed
 twice on fixes nobody had watched fail, while the symptom stayed live
 ([#771](https://github.com/MattCheramie/GopherTrunk/issues/771)) — the story
-[the on-air gate]({{ '/blog/deep-dives/from-spec-to-shipping-10-the-on-air-gate/' | relative_url }})
-told and Part 14 turns into policy.
+Part 14 turns into policy.
 
-One caveat the series has already earned: a failing test proves you
-reproduced *a* bug; only outside evidence proves it's *the* bug. The villain
-of [Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }})
-— the test that shares its assumption with the code — fabricates a
-convincing failure as easily as a convincing pass, and all three examples
-below had to defeat it before the rule could work.
+One earned caveat: a failing test proves you reproduced *a* bug; only outside
+evidence proves it's *the* bug. The villain of
+[Part 7]({{ '/blog/deep-dives/from-spec-to-shipping-07-tests-that-can-disagree/' | relative_url }})
+— the test that shares its assumption with the code — fabricates a convincing
+failure as easily as a convincing pass, and all three examples below had to
+defeat it first.
 
 ## Zero frames, then two: the colour-0 descramble
 
 [Part 10]({{ '/blog/deep-dives/from-spec-to-shipping-10-the-on-air-gate/' | relative_url }})
 told the DMO story from the verdict side: clear TETRA direct-mode voice sat
 at a ~1/256 chance-floor CRC rate and got misread as encryption, when the
-real cause was that `DMBurstTCHSpeech` skipped descrambling at colour code 0.
+real cause was `DMBurstTCHSpeech` skipping descramble at colour code 0.
 TETRA scrambling is **not** an identity at colour 0 — the LFSR seeds to
-`0xC0000000` (EN 300 392-2 §8.2.5.2), which is exactly why the signalling
-paths always descramble and always decoded.
+`0xC0000000` (EN 300 392-2 §8.2.5.2), which is why the signalling paths, which
+always descramble, always decoded.
 
 The regression test is the interesting artifact, because the *old* suite had
 checked this and passed: its round-trips scrambled and descrambled under the
@@ -209,7 +208,7 @@ them* — at which point the idle-channel test could demand `dnbQualified == 0`
 against ~18 raw detections a second and watch the old code fail.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 210" width="680" height="210" role="img" aria-label="Two bug-fix workflows compared. Top row, guess-fix-close: symptom, guessed cause, fix, existing tests green, issue closed — with a dashed arrow looping from the closed issue back to the symptom, labelled reporter reopens. Bottom row, reproduce-fail-fix-pass: symptom, faithful reproduction, a test that fails against the old code (marked as where the root cause surfaces), the fix, the same test passing, verified close.">
+<svg viewBox="0 0 680 210" width="680" height="210" role="img" aria-label="Two bug-fix workflows. Top: guess, fix, green tests, closed issue, and a dashed loop back to the symptom when the reporter reopens. Bottom: faithful reproduction, a test failing against the old code where the root cause surfaces, the fix, the same test passing, a verified close.">
   <text x="20" y="24" fill="currentColor" font-size="11" font-weight="bold">guess → fix → close</text>
   <rect x="20" y="36" width="92" height="28" rx="5" fill="none" stroke="currentColor"/>
   <text x="66" y="54" text-anchor="middle" fill="currentColor" font-size="10">symptom</text>
@@ -252,10 +251,10 @@ against ~18 raw detections a second and watch the old code fail.
 
 ## Failing first is a diagnostic method, not a formality
 
-The rule's reputation is bureaucratic: proof-of-work attached to a fix. In
-practice it's where most of the diagnosis happens, because **building a
-reproduction forces you to state, mechanically, what you believe the bug is**
-— and mechanical statements get checked in ways prose theories don't.
+The rule's reputation is bureaucratic. In practice it's where most of the
+diagnosis happens, because **building a reproduction forces you to state,
+mechanically, what you believe the bug is** — and mechanical statements get
+checked in ways prose theories don't.
 
 The DMO trio shows it best. "The grant fires on noise" was the theory; making
 a *test* say it required numbers — how often does the correlator fire on
@@ -284,12 +283,11 @@ in `samples/p25/` there is no test that fails first.
 
 So the workflow ends the only honest way it can: the issue **stays open**,
 with a status comment saying what's known and what's blocking — usually a
-capture request shaped by
-[Part 11]({{ '/blog/deep-dives/from-spec-to-shipping-11-capture-driven-development/' | relative_url }})'s
-discipline. What it must *not* end with is a close. Closing is a claim that
-the problem is gone, and that claim has its own definition, its own policy,
-and — after this project shipped the counterexample — its own guard hook.
-That is the finale's subject.
+[Part 11]({{ '/blog/deep-dives/from-spec-to-shipping-11-capture-driven-development/' | relative_url }})-shaped
+capture request. What it must *not* end with is a close. Closing is a claim
+that the problem is gone, and that claim has its own definition, its own
+policy, and — after this project shipped the counterexample — its own guard
+hook. That is the finale's subject.
 
 ## Where this goes next
 
@@ -321,16 +319,15 @@ problem).
 **What if writing the failing test takes longer than the fix?**
 It usually does, and that time is the diagnosis, not overhead. The colour-0
 fix was a guard removal; finding *which* guard took a colour sweep, a
-scrambler-seed check, and an encode-side rebuild of the test — while the
-"fix it and see" approach had already produced a wrong answer ("encrypted")
-from the same evidence.
+scrambler-seed check, and an encode-side rebuild of the test — while "fix it
+and see" had already produced a wrong answer ("encrypted") from the same
+evidence.
 
 **How do I fail first when the bug only appears on air?**
 Get the air onto disk: an IQ capture replayed through an env-gated harness is
 a failing test an operator can run (`GT_TETRA_DMO_IQ=… go test -run
 TestTETRADMOReplay`). Part 11 covers the conventions. When even that isn't
-available: the fix waits, the issue stays open, and the capture request *is*
-the work product.
+available: the fix waits, and the capture request *is* the work product.
 
 ## Series navigation
 

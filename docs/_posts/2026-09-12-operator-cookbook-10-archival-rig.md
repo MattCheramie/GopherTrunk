@@ -14,12 +14,11 @@ series_part: 10
 copy-paste GopherTrunk builds — one working rig per part, antenna to browser.
 [Part 9]({{ '/blog/tutorials/operator-cookbook-09-sharing-the-feed/' | relative_url }})
 sent your calls out into the world; this part is about keeping them. The
-archival rig is the build for operators who treat the recordings folder as a
-record, not a cache: lossless FLAC everywhere a container exists, a queryable
-SQLite call log, IQ taps that archive the radio signal itself, vocoder-frame
-sidecars for cross-decoder verification — and a retention policy that keeps
-all of it from eating the disk. The running thread: an archive you can't
-budget is an outage on a timer.*
+archival rig treats the recordings folder as a record, not a cache: lossless
+FLAC everywhere a container exists, a queryable SQLite call log, IQ taps
+that archive the radio signal itself, vocoder-frame sidecars for
+cross-decoder verification — and a retention policy that keeps all of it
+from eating the disk. An archive you can't budget is an outage on a timer.*
 
 > **TL;DR:** `recordings.format: flac` switches per-call voice recordings to
 > lossless FLAC at roughly **half the size** of WAV for speech, and the whole
@@ -36,9 +35,9 @@ budget is an outage on a timer.*
 **Key takeaways**
 
 - **FLAC is first-class now, not a transcode step.** Every recorder that had
-  a container at all grew a `flac` option — voice recordings, wideband and
-  DDC IQ taps, auto-record, voice IQ debug — and every reader sniffs the
-  content, so a mixed wav/flac archive Just Works.
+  a container at all grew a `flac` option — voice recordings, IQ taps,
+  auto-record, voice IQ debug — and every reader sniffs the content, so a
+  mixed wav/flac archive Just Works.
 - **Archive the samples, not just the audio.** A voice file answers "what was
   said"; a `tap: ddc` IQ file answers "what was received" and replays through
   `gophertrunk replay` when a decode looks wrong. The archival rig keeps both.
@@ -48,8 +47,7 @@ budget is an outage on a timer.*
   and it's configurable per axis.
 - **Retention math is arithmetic, not vibes.** 8 kHz 16-bit voice is
   16 KB/s of talk time; 2.4 MS/s wideband IQ is 9.6 MB/s of wall time. Do
-  the multiplication before the disk does it for you — the worked table is
-  below.
+  the multiplication before the disk does it for you.
 
 ## Cheat sheet
 
@@ -76,11 +74,10 @@ budget is an outage on a timer.*
 
 Any working rig from Parts 1–9, with its storage story made deliberate. Per
 call you keep up to four artifacts: the **audio** (`.flac`), the **JSON
-sidecar** with full metadata, the optional **raw vocoder frames**
-(`write_raw`), and the optional **DSD-FME-playable sidecar**
-(`mbe_files`: `.imb` for P25 Phase 1, `.amb` for DMR/NXDN/P25 Phase 2).
-Alongside them, one SQLite database indexes every call — the same store the
-History panel and `GET /api/v1/calls` query — and, if you choose, standing IQ
+sidecar**, optional **raw vocoder frames** (`write_raw`), and the optional
+**DSD-FME-playable sidecar** (`mbe_files`: `.imb` for P25 Phase 1, `.amb`
+for DMR/NXDN/P25 Phase 2). Alongside them, one SQLite database indexes every
+call — the store behind the History panel — and, if you choose, standing IQ
 taps archive the receiver's actual input for replay. The deep-dive series
 covers each layer's internals
 ([WAV on disk]({{ '/blog/deep-dives/recording-streaming-05-wav-on-disk/' | relative_url }}),
@@ -243,23 +240,20 @@ so even a misnamed file mounts correctly.
 | Disk filling despite `retention:` configured | the standing tap is `tap: wideband`, or `files_days: 0` | Wideband is ~34 GB/h — switch the standing tap to `ddc` and leave wideband to `auto_record` with a `seconds:` cap |
 | No `retention:` lines ever | all thresholds `0` (each `0` disables that sweep), or nothing is old enough yet | Set non-zero days; force a pass via `POST /api/v1/retention/sweep` and watch for the `deleted` lines |
 | `retention: file sweep failed` / `retention: rm failed` | permissions or a vanished mount under `recordings.dir` | The sweeper logs the path — fix ownership/mount; on the Part 11 systemd build check `ReadWritePaths` |
-| A player won't open the recordings | an old external tool that predates FLAC | Everything *inside* GopherTrunk (web player, normalize, MP3 uploads) sniffs content and reads either; for stubborn external tooling, set `format:` back to `wav` — the archive can mix containers freely |
-| History shows calls with no playable audio | working as designed: `call_log_days` > `files_days` | Rows outlive files on purpose; align the two values if you want them to expire together |
-| No `.imb`/`.amb` for some calls | TETRA / ProVoice / analog have no DSD-FME playback mode | Expected — those protocols produce no sidecar; the `.raw` frames still archive if `write_raw` is on |
-| DSD-FME plays a sidecar slow and low-pitched | DSD-FME's `-w` writer stamps 8 kHz on 12 kHz synthesis | Upstream quirk, [documented]({{ '/vocoders.html' | relative_url }}) — use its per-call mode or relabel the WAV to 12 kHz |
+| A player won't open the recordings | an old external tool that predates FLAC | Everything inside GopherTrunk sniffs content and reads either; for stubborn external tooling set `format:` back to `wav` — the archive can mix containers freely |
+| History shows calls with no playable audio | by design: `call_log_days` > `files_days` | Rows outlive files on purpose; align the two values to expire together |
+| No `.imb`/`.amb` for some calls | TETRA / ProVoice / analog have no DSD-FME playback mode | Expected — those protocols produce no sidecar; `.raw` frames still archive if `write_raw` is on |
 | Recording rate isn't what you set | digital voice forces vocoder-native output | `recorder: forcing WAV rate to vocoder-native 8000` — `recordings.sample_rate` applies to analog/NBFM only |
 
 ### How this recipe shapes operator practice
 
-- **Archive the evidence, not just the product.** Every hard bug this project
-  has chased ended with "get the raw capture" — the `ddc` tap means the
-  capture already exists when the bad decode happens.
+- **Archive the evidence, not just the product.** Every hard bug this
+  project has chased ended with "get the raw capture" — the `ddc` tap means
+  the capture already exists when the bad decode happens.
 - **Let the index outlive the payload.** Cheap rows, expensive files,
-  separate clocks: query 30 days, store 14, and nobody has to choose one
-  number for both.
-- **Verify with a second decoder.** `mbe_files` exists so your archive can be
-  cross-examined; a claim about audio quality backed by a paired `.amb` is
-  measurement, not opinion.
+  separate clocks.
+- **Verify with a second decoder.** A claim about audio quality backed by a
+  paired `.amb` is measurement, not opinion.
 
 ## Variations
 
@@ -278,12 +272,11 @@ so even a misnamed file mounts correctly.
 
 ## Where this goes next
 
-An archive this good deserves better than a laptop that gets rebooted for OS
-updates. [Part 11]({{ '/blog/tutorials/operator-cookbook-11-closet-appliance/' | relative_url }})
-turns the rig into a closet appliance: a Pi or mini-PC under systemd with
-hardening that actually fits an SDR daemon, Docker USB pass-through for the
-container crowd, watchdogs for dongles that fall off the bus, and the
-graceful-shutdown work that made `systemctl restart` take milliseconds
+An archive this good deserves better than a laptop rebooted for OS updates.
+[Part 11]({{ '/blog/tutorials/operator-cookbook-11-closet-appliance/' | relative_url }})
+turns the rig into a closet appliance: a Pi or mini-PC under systemd,
+Docker USB pass-through, watchdogs for dongles that fall off the bus, and
+the graceful-shutdown work that made `systemctl restart` take milliseconds
 instead of thirty silent seconds.
 
 ## FAQ
@@ -296,21 +289,21 @@ upload, retention) reads both containers transparently by content sniffing.
 
 **How much disk space do SDR call recordings use?**
 At the vocoder-native 8 kHz mono, WAV costs 16 KB per second of talk time
-and FLAC about half that — so ~29 MB per hour of actual talk as FLAC. Even
-busy systems accumulate slowly; it's IQ recording (192 KB/s for a DDC
-channel tap, 9.6 MB/s for a 2.4 MS/s wideband tap) that needs a real budget.
+and FLAC about half — ~29 MB per hour of actual talk. Busy systems
+accumulate slowly; it's IQ recording (192 KB/s for a DDC channel tap,
+9.6 MB/s for a 2.4 MS/s wideband tap) that needs a real budget.
 
 **Can I replay a FLAC IQ recording like a cs16 or WAV capture?**
 Yes — `baseband.replay` and `gophertrunk replay` mount a `.flac` IQ file as
 a virtual tuner exactly like a WAV, detecting the container from the `fLaC`
-marker in the file body rather than the extension. A DDC-tap recording
-replays through the same channel-rate decode path the live daemon used.
+marker rather than the extension. A DDC-tap recording replays through the
+same channel-rate decode path the live daemon used.
 
 **Why are old calls still in History after retention deleted the files?**
-Because the sweeps are independent: `files_days` ages out audio and sidecars
-on disk while `call_log_days` ages out SQLite rows, and the config above
-deliberately keeps rows longer. Set both to the same value if you want the
-searchable record and the playable record to expire together.
+Because the sweeps are independent: `files_days` ages out audio on disk
+while `call_log_days` ages out SQLite rows, and the config above
+deliberately keeps rows longer. Set both to one value to make the
+searchable record and the playable record expire together.
 
 **Do the .imb/.amb files replace the audio recording?**
 No — they're sidecars carrying the raw vocoder frames in DSD-FME's native
