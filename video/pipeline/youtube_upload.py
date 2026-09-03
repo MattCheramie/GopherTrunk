@@ -16,7 +16,10 @@ import json, mimetypes, sys, time, urllib.parse, urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl"
+# Device flow allows only a limited scope set: youtube + youtube.upload cover
+# uploads, thumbnails, playlists, and channel branding. captions.insert needs
+# force-ssl, which the device flow rejects — SRTs are added manually in Studio.
+SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube"
 
 
 def http(url, data=None, headers=None, method=None, raw=False):
