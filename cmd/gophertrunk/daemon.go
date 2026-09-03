@@ -2751,6 +2751,13 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 				log.Warn("daemon: baseband.auto_record enabled but no IQ broker for the control SDR; auto-record disabled",
 					"control_serial", d.controlSerial)
 			}
+		} else if cfg.Baseband.AutoRecord.Enabled {
+			// Previously this case was SILENT: auto_record enabled with no
+			// single-channel control SDR (e.g. a wideband-engine-only rig, or
+			// cc_hunt disabled) simply never wired the recorder, and the
+			// operator's only evidence was the absence of capture files.
+			log.Warn("daemon: baseband.auto_record enabled but no single-channel control SDR is configured; auto-record disabled " +
+				"(it captures the control SDR's IQ, which requires the cc_hunt + control-role decode path)")
 		}
 		if d.bookmarks != nil {
 			opts.Bookmarks = bookmarkProvider{store: d.bookmarks}

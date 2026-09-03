@@ -212,6 +212,13 @@ type ControlChannel struct {
 	fragTMSDU    []byte
 	fragResource MACResource
 	fragActive   bool
+	// curSlotPos is the absolute dibit stream position of the NCDB slot
+	// currently being decoded (stamped by decodeDownlinkSlot); fragLastPos is
+	// the position of the reassembly's most recent piece. Successive pieces of
+	// one fragmented TM-SDU must be stream-adjacent (within fragMaxGapDibits) —
+	// see appendFragment. Guarded by mu.
+	curSlotPos  int
+	fragLastPos int
 
 	// pendingSoft holds the per-symbol complex differential (soft
 	// information) for the next Process call, stashed by StashSoft
@@ -586,15 +593,21 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 	return snap
 }
 
-// neighbourStatusFlags renders a neighbour cell's sync state and optional
-// identity as the human-readable StatusFlags string the report and web UI
-// already display for P25 neighbours (CFVA words there; sync + identity here).
+// neighbourStatusFlags renders a neighbour cell's sync state, advertised load
+// and optional identity/status fields as the human-readable StatusFlags string
+// the report and web UI already display for P25 neighbours (CFVA words there).
+// Absent optional fields are omitted — never rendered as zeros — and the
+// unconfirmed-semantics fields (BS service details, subscriber class, …) are
+// rendered raw (see the NeighbourCell field docs).
 func neighbourStatusFlags(cell NeighbourCell) string {
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 8)
 	if cell.Synchronized {
 		parts = append(parts, "synced")
 	} else {
 		parts = append(parts, "unsynced")
+	}
+	if cell.CellServiceLevel != 0 { // 0 = load unknown; noise to print
+		parts = append(parts, "load="+CellLoadName(cell.CellServiceLevel))
 	}
 	if cell.HasMCC {
 		parts = append(parts, fmt.Sprintf("mcc=%d", cell.MCC))
@@ -605,7 +618,32 @@ func neighbourStatusFlags(cell NeighbourCell) string {
 	if cell.HasLA {
 		parts = append(parts, fmt.Sprintf("la=%d", cell.LA))
 	}
+	if cell.HasServiceDetails {
+		parts = append(parts, fmt.Sprintf("bs_svc=0x%03x", cell.ServiceDetails))
+	}
+	if cell.HasTimeshare {
+		parts = append(parts, fmt.Sprintf("timeshare=0x%02x", cell.Timeshare))
+	}
 	return strings.Join(parts, ",")
+}
+
+// plausibleNeighbourCell rejects neighbour cells whose decoded content is
+// physically impossible for a TETRA network — the last line of defence against
+// a corrupted-but-CRC-passing TL-SDU that parses as a plausible broadcast. A
+// main carrier of 0 is not a real cell, and the deployed carrier numbering
+// (TS 100 392-15, base = band × 100 MHz) covers the 100–999 MHz allocations
+// only: a frequency-band field of 0 or ≥10 renders as a sub-100 MHz or ≥1 GHz
+// "neighbour" (an operator's field report showed a confirmed 1.5 GHz entry —
+// band bits 1111 read from leaked tail bits), which no TETRA allocation
+// occupies.
+func plausibleNeighbourCell(cell NeighbourCell) bool {
+	if cell.MainCarrier == 0 {
+		return false
+	}
+	if cell.HasExtension && (cell.FreqBand == 0 || cell.FreqBand > 9) {
+		return false
+	}
+	return true
 }
 
 // publishSiteIdentity emits a KindSiteUpdate carrying the decoded TETRA identity
@@ -907,7 +945,15 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighbours = make(map[uint8]NeighbourCell)
 		c.neighboursPending = make(map[uint8]NeighbourCell)
 	}
+	var implausible []NeighbourCell
 	for _, cell := range nb.Neighbours {
+		if !plausibleNeighbourCell(cell) {
+			// Log outside the lock; the sibling cells still get their chance —
+			// a genuinely corrupt list's other cells must also pass this gate
+			// AND confirm twice before surfacing.
+			implausible = append(implausible, cell)
+			continue
+		}
 		if cur, seen := c.neighbours[cell.CellID]; seen && cur == cell {
 			continue // steady-state rebroadcast of a confirmed cell
 		}
@@ -922,20 +968,62 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighboursPending[cell.CellID] = cell
 	}
 	c.mu.Unlock()
+	for _, cell := range implausible {
+		c.log.Debug("tetra: dropping implausible d-nwrk-broadcast neighbour cell",
+			"system", c.systemName,
+			"cell_id", cell.CellID,
+			"main_carrier", cell.MainCarrier,
+			"has_ext", cell.HasExtension,
+			"band", cell.FreqBand)
+	}
 	if len(confirmed) == 0 {
 		return
 	}
 	for _, cell := range confirmed {
 		dl, ul := c.neighbourFrequencies(cell)
-		c.log.Debug("tetra: d-nwrk-broadcast neighbour cell",
+		// Optional fields are logged only when the broadcast carried them, so an
+		// absent MCC/MNC/LA is distinguishable from a genuine zero (the field
+		// report that motivated this read unconditional "mcc=0 mnc=0" as a
+		// decode defect). The unconfirmed-semantics status fields are raw.
+		args := []any{
 			"system", c.systemName,
 			"cell_id", cell.CellID,
 			"main_carrier", cell.MainCarrier,
 			"downlink_hz", dl,
 			"uplink_hz", ul,
 			"synced", cell.Synchronized,
+			"cell_load", CellLoadName(cell.CellServiceLevel),
+			"reselect_types", cell.ReselectTypes,
 			"has_ext", cell.HasExtension,
-			"mcc", cell.MCC, "mnc", cell.MNC, "la", cell.LA)
+		}
+		if cell.HasMCC {
+			args = append(args, "mcc", cell.MCC)
+		}
+		if cell.HasMNC {
+			args = append(args, "mnc", cell.MNC)
+		}
+		if cell.HasLA {
+			args = append(args, "la", cell.LA)
+		}
+		if cell.HasMaxTxPower {
+			args = append(args, "max_tx_power_raw", cell.MaxTxPower)
+		}
+		if cell.HasMinRxLevel {
+			args = append(args, "min_rx_level_raw", cell.MinRxLevel)
+		}
+		if cell.HasSubscriberClass {
+			args = append(args, "subscriber_class", fmt.Sprintf("0x%04x", cell.SubscriberClass))
+		}
+		if cell.HasServiceDetails {
+			args = append(args, "bs_service_details", fmt.Sprintf("0x%03x", cell.ServiceDetails))
+		}
+		if cell.HasTimeshare {
+			args = append(args, "timeshare_security", fmt.Sprintf("0x%02x", cell.Timeshare))
+		}
+		if cell.HasFrameOffset {
+			args = append(args, "tdma_frame_offset", cell.FrameOffset)
+		}
+		c.log.Debug("tetra: d-nwrk-broadcast neighbour cell", args...)
 	}
 	c.publishSiteIdentity()
 }
@@ -1218,6 +1306,18 @@ func (c *ControlChannel) isIndividual(ssi uint32) bool {
 // never delivers a MAC-END from growing the buffer without limit.
 const fragMaxBits = 2048
 
+// fragMaxGapDibits bounds the dibit stream distance between successive pieces
+// of one fragmented TM-SDU. Fragments continue in the following signalling
+// opportunities of the same channel (§23.4.2), i.e. one TDMA frame apart on the
+// MCCH (4 slots × 255 dibits = 1020), occasionally displaced by a sync burst or
+// the frame-18 schedule — four frames of slack accepts all of that. What it
+// rejects is a MAC-FRAG/MAC-END arriving long after the chain's previous piece:
+// that continuation belongs to a LATER fragmented PDU whose own start fragment
+// was lost, and splicing it onto the stale chain manufactures a corrupt L3 PDU
+// (see abandonFragment's caller for why that corruption survives dedup).
+// osmo-tetra-sq5bpf ages fragment slots out the same way (fragtimer > N203).
+const fragMaxGapDibits = 4 * 4 * 255
+
 // stashFragment records a start-fragment MAC-RESOURCE's partial TM-SDU and its
 // resource context so a following MAC-END can reassemble the complete L3 PDU. A
 // new start fragment replaces any incomplete one (single TM-SDU in flight).
@@ -1227,38 +1327,69 @@ func (c *ControlChannel) stashFragment(m MACResource, partial []byte) {
 	c.fragResource = m
 	c.fragTMSDU = append(c.fragTMSDU[:0], partial...)
 	c.fragActive = true
+	c.fragLastPos = c.curSlotPos
+}
+
+// fragChainAdjacentLocked reports whether the slot being decoded is close
+// enough in the dibit stream to the reassembly's previous piece for a
+// MAC-FRAG/MAC-END in it to be that chain's continuation. A negative delta is
+// a stream discontinuity (resync baseline jump) and never adjacent. Callers
+// hold mu.
+func (c *ControlChannel) fragChainAdjacentLocked() bool {
+	delta := c.curSlotPos - c.fragLastPos
+	return delta >= 0 && delta <= fragMaxGapDibits
+}
+
+// dropFragmentLocked abandons the in-progress reassembly. Callers hold mu.
+func (c *ControlChannel) dropFragmentLocked() {
+	c.fragActive = false
+	c.fragTMSDU = c.fragTMSDU[:0]
+	c.fragResource = MACResource{}
+}
+
+// abandonFragment drops any in-progress TM-SDU reassembly, logging why. Used
+// when continuity is broken — an undecoded control slot, or a continuation
+// arriving too far from the chain's previous piece — because a spliced
+// reassembly around a lost block parses as a plausible corrupt L3 PDU.
+func (c *ControlChannel) abandonFragment(reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.fragActive {
+		return
+	}
+	c.dropFragmentLocked()
+	c.log.Debug("tetra: abandoning TM-SDU fragment reassembly", "reason", reason)
 }
 
 // appendFragment appends a MAC-FRAG continuation to the in-progress TM-SDU. A
 // no-op when no start fragment is in progress; a stream that would exceed
-// fragMaxBits is dropped rather than accumulated.
+// fragMaxBits, or a continuation that is not stream-adjacent to the chain's
+// previous piece, drops the chain rather than splicing.
 func (c *ControlChannel) appendFragment(payload []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.fragActive {
 		return
 	}
-	if len(c.fragTMSDU)+len(payload) > fragMaxBits {
-		c.fragActive = false
-		c.fragTMSDU = c.fragTMSDU[:0]
+	if !c.fragChainAdjacentLocked() || len(c.fragTMSDU)+len(payload) > fragMaxBits {
+		c.dropFragmentLocked()
 		return
 	}
 	c.fragTMSDU = append(c.fragTMSDU, payload...)
+	c.fragLastPos = c.curSlotPos
 }
 
 // takeFragment appends a MAC-END payload, returns the reassembled TM-SDU (a
 // fresh slice) plus the start fragment's MAC-RESOURCE context, and clears the
-// buffer. ok is false for a stray MAC-END with no start fragment in progress or
-// an over-length reassembly.
+// buffer. ok is false for a stray MAC-END with no start fragment in progress,
+// an over-length reassembly, or a MAC-END that is not stream-adjacent to the
+// chain's previous piece (its own start fragment was lost — splicing it onto
+// the stale chain would manufacture a corrupt L3 PDU).
 func (c *ControlChannel) takeFragment(payload []byte) (MACResource, []byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	defer func() {
-		c.fragActive = false
-		c.fragTMSDU = c.fragTMSDU[:0]
-		c.fragResource = MACResource{}
-	}()
-	if !c.fragActive || len(c.fragTMSDU)+len(payload) > fragMaxBits {
+	defer c.dropFragmentLocked()
+	if !c.fragActive || !c.fragChainAdjacentLocked() || len(c.fragTMSDU)+len(payload) > fragMaxBits {
 		return MACResource{}, nil, false
 	}
 	sdu := make([]byte, 0, len(c.fragTMSDU)+len(payload))
@@ -1562,7 +1693,5 @@ func (c *ControlChannel) ResyncReset() {
 	// A stream re-sync abandons any half-reassembled TM-SDU: its continuation
 	// belonged to the pre-resync bit index and must not splice onto a fragment
 	// decoded after the baseline jump.
-	c.fragActive = false
-	c.fragTMSDU = c.fragTMSDU[:0]
-	c.fragResource = MACResource{}
+	c.dropFragmentLocked()
 }

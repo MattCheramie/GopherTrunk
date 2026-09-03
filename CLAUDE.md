@@ -454,7 +454,25 @@ confirmation before any close-as-completed.
   systems report's "Neighbor sites"; cells surface only after the SAME content decodes twice —
   the 6-bit PD+type gate lets a rare corrupted-but-CRC-passing TL-SDU parse plausibly (one-shot
   surfaced 18 "neighbours"; the repeating 8 were real: carriers 467.99-470.00 MHz, LAs 1021-1089,
-  `TestTETRANeighbourReportReplay` is the skip-guarded harness). Related dedup in the same pass:
+  `TestTETRANeighbourReportReplay` is the skip-guarded harness). **Follow-up (Sep 3): the operator's
+  "totally bogus entries in the neighbours list, like a 1.5 GHz one" — confirmed-twice garbage — was
+  TWO MORE MAC boundary holes, both deterministic (so identical corruption repeats and the
+  confirm-twice gate cannot help): (1) `tmSDU`/`macFragmentPayload` handed everything to the BLOCK
+  end — the MAC length indication (total PDU octets; osmo rx_resrc `macpdu_length*8`, tetra-kit
+  `decodeLength(li)*8 - pos`) was parsed but never applied and the fill-bit indication never
+  stripped fill ('1' then '0's, §23.4.3.2) — so fill/multiplexed tail bits leaked into the TL-SDU
+  and D-NWRK-BROADCAST's trailing P-bit reads turned them into phantom optionals (band bits 1111 ⇒
+  a 1.5 GHz "neighbour"); prefix-reading parsers never noticed, which is why everything else looked
+  fine. (2) fragment reassembly had NO continuity check — a MAC-END spliced onto however-old a start
+  fragment across lost blocks; now pieces must be stream-adjacent (`fragMaxGapDibits`, the NCDB
+  detector's dibit position plumbed through `decodeDownlinkSlot`) and an AACH-confirmed control slot
+  that decodes nothing abandons the chain (osmo-sq5bpf ages fragslots the same way). Test builders
+  used to write a PLACEHOLDER length indication the decoder ignored — honouring the field made them
+  encode real lengths (`stampMACResourceLength`), the encoder/decoder-drift trap in yet another
+  dress. `plausibleNeighbourCell` (carrier≠0, band 1..9) is defence-in-depth behind those fixes, and
+  the neighbour log/StatusFlags now print MCC/MNC/LA (and the newly surfaced §18.5.17 status
+  optionals — raw values; their spec bit maps stay un-named until capture-confirmed, per the
+  CommsType rule) only when present, so "mcc=0" can no longer mean "absent".** Related dedup in the same pass:
   retransmitted D-RELEASE/D-DISCONNECT now publish ONE `call.release` per teardown (`releaseSeen`,
   re-armed by a fresh grant) — the "release spam" report, same family as `grantSeen`/`lastTalker`.
 - **The "sausages" in the operator's TETRA waterfall are the BS toggling discontinuous-downlink
