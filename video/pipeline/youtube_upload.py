@@ -72,6 +72,38 @@ def auth(client_id, client_secret, statedir):
         raise SystemExit(f"auth failed: {err}")
 
 
+REDIRECT = "http://127.0.0.1:8765/"
+
+
+def authurl(client_id):
+    """Web-consent fallback for a Desktop-type client: print the consent URL;
+    after approval the browser fails to load 127.0.0.1 — the ?code= in its
+    address bar is pasted back into the `exchange` command."""
+    q = urllib.parse.urlencode({
+        "client_id": client_id, "redirect_uri": REDIRECT, "response_type": "code",
+        "scope": SCOPES, "access_type": "offline", "prompt": "consent"})
+    print("\n==> Open this URL, approve, then copy the code from the failed page's address bar:\n")
+    print(f"https://accounts.google.com/o/oauth2/v2/auth?{q}\n")
+
+
+def exchange(client_id, client_secret, code, statedir):
+    code = code.strip()
+    if "code=" in code:  # accept the whole pasted URL too
+        code = urllib.parse.parse_qs(urllib.parse.urlsplit(code).query)["code"][0]
+    st, _, tok = http("https://oauth2.googleapis.com/token",
+                      urllib.parse.urlencode({
+                          "client_id": client_id, "client_secret": client_secret,
+                          "code": code, "redirect_uri": REDIRECT,
+                          "grant_type": "authorization_code"}).encode(),
+                      {"Content-Type": "application/x-www-form-urlencoded"})
+    if st != 200:
+        raise SystemExit(f"code exchange failed: {st} {tok}")
+    tok["client_id"] = client_id; tok["client_secret"] = client_secret
+    tok["obtained_at"] = time.time()
+    save(Path(statedir) / "token.json", tok)
+    print("authorized — token stored")
+
+
 def access_token(statedir):
     tokp = Path(statedir) / "token.json"
     tok = load(tokp)
@@ -220,6 +252,10 @@ if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "auth":
         auth(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif cmd == "authurl":
+        authurl(sys.argv[2])
+    elif cmd == "exchange":
+        exchange(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
     elif cmd == "upload":
         upload(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 6)
     elif cmd == "brand":
