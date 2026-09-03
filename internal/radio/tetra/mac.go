@@ -297,14 +297,71 @@ func SysInfoMainCarrier(bits []byte) (uint16, bool) {
 	return si.MainCarrier, ok
 }
 
+// macPDULengthBits converts a 6-bit MAC length indication to the total MAC PDU
+// length in BITS, measured from the PDU's first bit (§21.4.3.1). The coding is
+// octets for the π/4-DQPSK channels — osmo-tetra's decode_length returns
+// length_ind octets for 1..0x3a (its Y2/Z2 multipliers are 1 for QPSK) and
+// rx_resrc bounds the SDU with macpdu_length*8; tetra-kit extracts the SDU as
+// decodeLength(li)*8 - pos. Returns 0 for the reserved/marker values (0,
+// 0x3b..0x3f: invalid, second-half stolen, start fragment), meaning "no bound
+// known — the PDU runs to the block end".
+func macPDULengthBits(li uint8) int {
+	if li == 0 || li > 0x3a {
+		return 0
+	}
+	return int(li) * 8
+}
+
+// stripFillBits removes trailing MAC fill bits from a PDU tail: a single '1'
+// followed by zero or more '0's (§23.4.3.2 — "the first fill bit shall be set
+// to 1 and any subsequent fill bits set to 0", so stripping walks the tail in
+// reverse). Mirrors tetra-kit's removeFillBits. Call it only when the PDU's
+// fill-bit indication is set; a tail of all zeros (malformed — no fill '1' to
+// anchor on) strips to empty rather than guessing.
+func stripFillBits(bits []byte) []byte {
+	end := len(bits)
+	for end > 0 && bits[end-1] == 0 {
+		end--
+	}
+	if end > 0 {
+		end-- // the '1' that opens the fill run
+	}
+	return bits[:end]
+}
+
 // tmSDU returns the TM-SDU (Layer-3 PDU) bits following the MAC header, as a
 // one-bit-per-byte slice. Returns nil when the offset runs past the block or
 // the PDU carries no TM-SDU (null / start-fragment-with-nothing).
+//
+// The SDU is bounded by the header's length indication (total PDU length in
+// octets) and stripped of trailing fill bits when the fill-bit indication is
+// set — both per osmo-tetra rx_resrc / tetra-kit. Without the bound, whatever
+// follows the L3 PDU inside the MAC block (fill bits, or a further multiplexed
+// MAC PDU, §23.4.3.1) leaked into the TL-SDU; harmless to parsers that read a
+// fixed prefix, but a parser with trailing presence bits — ParseDNwrkBroadcast's
+// last neighbour cell — read the leaked bits as phantom optional fields
+// (e.g. a frequency-band extension of garbage ⇒ a bogus 1.5 GHz neighbour).
+// Deterministic tail content repeats bit-identically across rebroadcasts, so
+// the corruption also defeated confirm-twice dedup downstream.
 func (m MACResource) tmSDU(bits []byte) []byte {
 	if m.NullPDU || m.TMSDUBitOffset >= len(bits) {
 		return nil
 	}
-	return bits[m.TMSDUBitOffset:]
+	end := len(bits)
+	if n := macPDULengthBits(m.LengthInd); n > 0 && n < end {
+		end = n
+	}
+	if end <= m.TMSDUBitOffset {
+		return nil
+	}
+	sdu := bits[m.TMSDUBitOffset:end]
+	if m.FillBits {
+		sdu = stripFillBits(sdu)
+	}
+	if len(sdu) == 0 {
+		return nil
+	}
+	return sdu
 }
 
 // macFragmentSubtype reports the MAC-FRAG/MAC-END subtype for a PDU whose
@@ -338,16 +395,24 @@ func macFragmentSubtype(bits []byte) (uint8, bool) {
 // D-NWRK-BROADCAST's neighbour list decoded its first ~two cells (before the
 // seam) and garbage after it; deleting exactly one bit at the seam made all
 // seven advertised cells decode cleanly.
+// Like tmSDU, the payload honours the header's own boundary metadata — the
+// MAC-END length indication bounds the PDU and a set fill-bit indication
+// strips the trailing fill run — so the reassembled TM-SDU ends where the PDU
+// ends instead of at the block end (see tmSDU for why leaked tail bits are not
+// harmless).
 func macFragmentPayload(bits []byte) []byte {
 	sub, ok := macFragmentSubtype(bits)
 	if !ok {
 		return nil
 	}
 	r := &bitReader{bits: bits}
-	r.u(3)  // MAC PDU type + subtype
-	r.bit() // fill-bit indication (present on MAC-FRAG and MAC-END alike)
+	r.u(3)               // MAC PDU type + subtype
+	fill := r.bit() == 1 // fill-bit indication (present on MAC-FRAG and MAC-END alike)
+	end := len(bits)
 	if sub == macEnd {
-		r.u(6) // length indication
+		if n := macPDULengthBits(uint8(r.u(6))); n > 0 && n < end {
+			end = n
+		}
 		if r.bit() == 1 {
 			r.u(8) // basic slot-granting element (§21.5.1)
 		}
@@ -355,8 +420,15 @@ func macFragmentPayload(bits []byte) []byte {
 			parseChanAlloc(r) // variable-length channel allocation (§21.5.2)
 		}
 	}
-	if r.pos >= len(bits) {
+	if r.pos >= end {
 		return nil
 	}
-	return bits[r.pos:]
+	payload := bits[r.pos:end]
+	if fill {
+		payload = stripFillBits(payload)
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+	return payload
 }

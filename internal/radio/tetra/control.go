@@ -212,6 +212,13 @@ type ControlChannel struct {
 	fragTMSDU    []byte
 	fragResource MACResource
 	fragActive   bool
+	// curSlotPos is the absolute dibit stream position of the NCDB slot
+	// currently being decoded (stamped by decodeDownlinkSlot); fragLastPos is
+	// the position of the reassembly's most recent piece. Successive pieces of
+	// one fragmented TM-SDU must be stream-adjacent (within fragMaxGapDibits) —
+	// see appendFragment. Guarded by mu.
+	curSlotPos  int
+	fragLastPos int
 
 	// pendingSoft holds the per-symbol complex differential (soft
 	// information) for the next Process call, stashed by StashSoft
@@ -1218,6 +1225,18 @@ func (c *ControlChannel) isIndividual(ssi uint32) bool {
 // never delivers a MAC-END from growing the buffer without limit.
 const fragMaxBits = 2048
 
+// fragMaxGapDibits bounds the dibit stream distance between successive pieces
+// of one fragmented TM-SDU. Fragments continue in the following signalling
+// opportunities of the same channel (§23.4.2), i.e. one TDMA frame apart on the
+// MCCH (4 slots × 255 dibits = 1020), occasionally displaced by a sync burst or
+// the frame-18 schedule — four frames of slack accepts all of that. What it
+// rejects is a MAC-FRAG/MAC-END arriving long after the chain's previous piece:
+// that continuation belongs to a LATER fragmented PDU whose own start fragment
+// was lost, and splicing it onto the stale chain manufactures a corrupt L3 PDU
+// (see abandonFragment's caller for why that corruption survives dedup).
+// osmo-tetra-sq5bpf ages fragment slots out the same way (fragtimer > N203).
+const fragMaxGapDibits = 4 * 4 * 255
+
 // stashFragment records a start-fragment MAC-RESOURCE's partial TM-SDU and its
 // resource context so a following MAC-END can reassemble the complete L3 PDU. A
 // new start fragment replaces any incomplete one (single TM-SDU in flight).
@@ -1227,38 +1246,69 @@ func (c *ControlChannel) stashFragment(m MACResource, partial []byte) {
 	c.fragResource = m
 	c.fragTMSDU = append(c.fragTMSDU[:0], partial...)
 	c.fragActive = true
+	c.fragLastPos = c.curSlotPos
+}
+
+// fragChainAdjacentLocked reports whether the slot being decoded is close
+// enough in the dibit stream to the reassembly's previous piece for a
+// MAC-FRAG/MAC-END in it to be that chain's continuation. A negative delta is
+// a stream discontinuity (resync baseline jump) and never adjacent. Callers
+// hold mu.
+func (c *ControlChannel) fragChainAdjacentLocked() bool {
+	delta := c.curSlotPos - c.fragLastPos
+	return delta >= 0 && delta <= fragMaxGapDibits
+}
+
+// dropFragmentLocked abandons the in-progress reassembly. Callers hold mu.
+func (c *ControlChannel) dropFragmentLocked() {
+	c.fragActive = false
+	c.fragTMSDU = c.fragTMSDU[:0]
+	c.fragResource = MACResource{}
+}
+
+// abandonFragment drops any in-progress TM-SDU reassembly, logging why. Used
+// when continuity is broken — an undecoded control slot, or a continuation
+// arriving too far from the chain's previous piece — because a spliced
+// reassembly around a lost block parses as a plausible corrupt L3 PDU.
+func (c *ControlChannel) abandonFragment(reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.fragActive {
+		return
+	}
+	c.dropFragmentLocked()
+	c.log.Debug("tetra: abandoning TM-SDU fragment reassembly", "reason", reason)
 }
 
 // appendFragment appends a MAC-FRAG continuation to the in-progress TM-SDU. A
 // no-op when no start fragment is in progress; a stream that would exceed
-// fragMaxBits is dropped rather than accumulated.
+// fragMaxBits, or a continuation that is not stream-adjacent to the chain's
+// previous piece, drops the chain rather than splicing.
 func (c *ControlChannel) appendFragment(payload []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.fragActive {
 		return
 	}
-	if len(c.fragTMSDU)+len(payload) > fragMaxBits {
-		c.fragActive = false
-		c.fragTMSDU = c.fragTMSDU[:0]
+	if !c.fragChainAdjacentLocked() || len(c.fragTMSDU)+len(payload) > fragMaxBits {
+		c.dropFragmentLocked()
 		return
 	}
 	c.fragTMSDU = append(c.fragTMSDU, payload...)
+	c.fragLastPos = c.curSlotPos
 }
 
 // takeFragment appends a MAC-END payload, returns the reassembled TM-SDU (a
 // fresh slice) plus the start fragment's MAC-RESOURCE context, and clears the
-// buffer. ok is false for a stray MAC-END with no start fragment in progress or
-// an over-length reassembly.
+// buffer. ok is false for a stray MAC-END with no start fragment in progress,
+// an over-length reassembly, or a MAC-END that is not stream-adjacent to the
+// chain's previous piece (its own start fragment was lost — splicing it onto
+// the stale chain would manufacture a corrupt L3 PDU).
 func (c *ControlChannel) takeFragment(payload []byte) (MACResource, []byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	defer func() {
-		c.fragActive = false
-		c.fragTMSDU = c.fragTMSDU[:0]
-		c.fragResource = MACResource{}
-	}()
-	if !c.fragActive || len(c.fragTMSDU)+len(payload) > fragMaxBits {
+	defer c.dropFragmentLocked()
+	if !c.fragActive || !c.fragChainAdjacentLocked() || len(c.fragTMSDU)+len(payload) > fragMaxBits {
 		return MACResource{}, nil, false
 	}
 	sdu := make([]byte, 0, len(c.fragTMSDU)+len(payload))
@@ -1562,7 +1612,5 @@ func (c *ControlChannel) ResyncReset() {
 	// A stream re-sync abandons any half-reassembled TM-SDU: its continuation
 	// belonged to the pre-resync bit index and must not splice onto a fragment
 	// decoded after the baseline jump.
-	c.fragActive = false
-	c.fragTMSDU = c.fragTMSDU[:0]
-	c.fragResource = MACResource{}
+	c.dropFragmentLocked()
 }

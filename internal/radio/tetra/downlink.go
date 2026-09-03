@@ -41,10 +41,13 @@ type downlinkNCDB struct {
 	softBuf []complex64 // per-symbol differentials, strictly parallel to buf (or empty)
 	bufBase int
 	pending []int
-	onSlot  func(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)
+	// onSlot receives the burst's absolute dibit stream position L alongside the
+	// slot's blocks — the continuity currency the MAC fragment reassembly uses to
+	// refuse splicing pieces that are not stream-adjacent.
+	onSlot func(pos int, bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)
 }
 
-func newDownlinkNCDB(onSlot func(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)) *downlinkNCDB {
+func newDownlinkNCDB(onSlot func(pos int, bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)) *downlinkNCDB {
 	d := &downlinkNCDB{onSlot: onSlot}
 	// The π/4-DQPSK stream carries a residual 0..3 dibit rotation, so correlate
 	// the normal training sequence (NTS1 + NTS2) under all four rotations.
@@ -153,7 +156,7 @@ func (d *downlinkNCDB) emit(L int) {
 	if bkn1 == nil || aach1 == nil || aach2 == nil || bkn2 == nil {
 		return
 	}
-	d.onSlot(bkn1, aach1, aach2, bkn2, softSlice(ndbBKN1Start, ndbBlockDibits), softSlice(ndbBKN2Start, ndbBlockDibits))
+	d.onSlot(L, bkn1, aach1, aach2, bkn2, softSlice(ndbBKN1Start, ndbBlockDibits), softSlice(ndbBKN2Start, ndbBlockDibits))
 }
 
 // decodeDownlinkSlot classifies and decodes one NCDB. It reads the AACH to find
@@ -162,9 +165,13 @@ func (d *downlinkNCDB) emit(L int) {
 // and hands each CRC-clean block to the MAC demux. CRC gates every decode, so
 // trying all three channel shapes never double-counts: a full-slot SCH/F slot
 // fails the half-slot SCH/HD CRC and vice versa.
-func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64) {
+func (c *ControlChannel) decodeDownlinkSlot(pos int, bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64) {
 	c.mu.Lock()
 	colour := c.colourCode
+	// Stamp the slot's stream position before any block decodes: the MAC
+	// fragment reassembly uses it to verify that successive pieces of one
+	// TM-SDU are stream-adjacent (see fragMaxGapDibits).
+	c.curSlotPos = pos
 	c.mu.Unlock()
 
 	derot := func(d []uint8, rot uint8) []byte {
@@ -237,6 +244,15 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bk
 		c.notePayloadActivity()
 	} else if aachOK && aa.IsControlChannel() {
 		c.addStat(&c.stats.SCHPDUsFail, 1)
+		// A control slot that yielded no CRC-clean block is a lost signalling
+		// block. If a fragmented TM-SDU is mid-reassembly, its continuation may
+		// be exactly what was lost — splicing the pieces either side of the gap
+		// yields a plausible-looking corrupt L3 PDU, and because broadcast
+		// content and fragmentation split points repeat, the SAME corrupt
+		// reassembly can repeat bit-identically (defeating confirm-twice dedup
+		// downstream, e.g. bogus D-NWRK-BROADCAST neighbour cells). Abandon the
+		// chain; the broadcast rebroadcasts within seconds.
+		c.abandonFragment("undecoded control slot mid-reassembly")
 	}
 }
 
