@@ -1,0 +1,11 @@
+GopherTrunk — trunked radio, decoded.
+
+GopherTrunk is an open-source SDR trunking scanner and decoder for P25, DMR, NXDN, and TETRA. This channel is the video edition of the GopherTrunk Field Guide: plain-language courses that explain how trunked radio actually works, one idea at a time — the channel pool, the control channel, talkgroups, channel grants, FDMA and TDMA, and everything they build into.
+
+Every video has a full written article with diagrams and sources in the Field Guide:
+https://gophertrunk.org/reference/
+
+The software is free and open source:
+https://github.com/MattCheramie/GopherTrunk
+
+New course pillars monthly. Shorts during the week, deep dives on weekends.
