@@ -593,15 +593,21 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 	return snap
 }
 
-// neighbourStatusFlags renders a neighbour cell's sync state and optional
-// identity as the human-readable StatusFlags string the report and web UI
-// already display for P25 neighbours (CFVA words there; sync + identity here).
+// neighbourStatusFlags renders a neighbour cell's sync state, advertised load
+// and optional identity/status fields as the human-readable StatusFlags string
+// the report and web UI already display for P25 neighbours (CFVA words there).
+// Absent optional fields are omitted — never rendered as zeros — and the
+// unconfirmed-semantics fields (BS service details, subscriber class, …) are
+// rendered raw (see the NeighbourCell field docs).
 func neighbourStatusFlags(cell NeighbourCell) string {
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 8)
 	if cell.Synchronized {
 		parts = append(parts, "synced")
 	} else {
 		parts = append(parts, "unsynced")
+	}
+	if cell.CellServiceLevel != 0 { // 0 = load unknown; noise to print
+		parts = append(parts, "load="+CellLoadName(cell.CellServiceLevel))
 	}
 	if cell.HasMCC {
 		parts = append(parts, fmt.Sprintf("mcc=%d", cell.MCC))
@@ -612,7 +618,32 @@ func neighbourStatusFlags(cell NeighbourCell) string {
 	if cell.HasLA {
 		parts = append(parts, fmt.Sprintf("la=%d", cell.LA))
 	}
+	if cell.HasServiceDetails {
+		parts = append(parts, fmt.Sprintf("bs_svc=0x%03x", cell.ServiceDetails))
+	}
+	if cell.HasTimeshare {
+		parts = append(parts, fmt.Sprintf("timeshare=0x%02x", cell.Timeshare))
+	}
 	return strings.Join(parts, ",")
+}
+
+// plausibleNeighbourCell rejects neighbour cells whose decoded content is
+// physically impossible for a TETRA network — the last line of defence against
+// a corrupted-but-CRC-passing TL-SDU that parses as a plausible broadcast. A
+// main carrier of 0 is not a real cell, and the deployed carrier numbering
+// (TS 100 392-15, base = band × 100 MHz) covers the 100–999 MHz allocations
+// only: a frequency-band field of 0 or ≥10 renders as a sub-100 MHz or ≥1 GHz
+// "neighbour" (an operator's field report showed a confirmed 1.5 GHz entry —
+// band bits 1111 read from leaked tail bits), which no TETRA allocation
+// occupies.
+func plausibleNeighbourCell(cell NeighbourCell) bool {
+	if cell.MainCarrier == 0 {
+		return false
+	}
+	if cell.HasExtension && (cell.FreqBand == 0 || cell.FreqBand > 9) {
+		return false
+	}
+	return true
 }
 
 // publishSiteIdentity emits a KindSiteUpdate carrying the decoded TETRA identity
@@ -914,7 +945,15 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighbours = make(map[uint8]NeighbourCell)
 		c.neighboursPending = make(map[uint8]NeighbourCell)
 	}
+	var implausible []NeighbourCell
 	for _, cell := range nb.Neighbours {
+		if !plausibleNeighbourCell(cell) {
+			// Log outside the lock; the sibling cells still get their chance —
+			// a genuinely corrupt list's other cells must also pass this gate
+			// AND confirm twice before surfacing.
+			implausible = append(implausible, cell)
+			continue
+		}
 		if cur, seen := c.neighbours[cell.CellID]; seen && cur == cell {
 			continue // steady-state rebroadcast of a confirmed cell
 		}
@@ -929,20 +968,62 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighboursPending[cell.CellID] = cell
 	}
 	c.mu.Unlock()
+	for _, cell := range implausible {
+		c.log.Debug("tetra: dropping implausible d-nwrk-broadcast neighbour cell",
+			"system", c.systemName,
+			"cell_id", cell.CellID,
+			"main_carrier", cell.MainCarrier,
+			"has_ext", cell.HasExtension,
+			"band", cell.FreqBand)
+	}
 	if len(confirmed) == 0 {
 		return
 	}
 	for _, cell := range confirmed {
 		dl, ul := c.neighbourFrequencies(cell)
-		c.log.Debug("tetra: d-nwrk-broadcast neighbour cell",
+		// Optional fields are logged only when the broadcast carried them, so an
+		// absent MCC/MNC/LA is distinguishable from a genuine zero (the field
+		// report that motivated this read unconditional "mcc=0 mnc=0" as a
+		// decode defect). The unconfirmed-semantics status fields are raw.
+		args := []any{
 			"system", c.systemName,
 			"cell_id", cell.CellID,
 			"main_carrier", cell.MainCarrier,
 			"downlink_hz", dl,
 			"uplink_hz", ul,
 			"synced", cell.Synchronized,
+			"cell_load", CellLoadName(cell.CellServiceLevel),
+			"reselect_types", cell.ReselectTypes,
 			"has_ext", cell.HasExtension,
-			"mcc", cell.MCC, "mnc", cell.MNC, "la", cell.LA)
+		}
+		if cell.HasMCC {
+			args = append(args, "mcc", cell.MCC)
+		}
+		if cell.HasMNC {
+			args = append(args, "mnc", cell.MNC)
+		}
+		if cell.HasLA {
+			args = append(args, "la", cell.LA)
+		}
+		if cell.HasMaxTxPower {
+			args = append(args, "max_tx_power_raw", cell.MaxTxPower)
+		}
+		if cell.HasMinRxLevel {
+			args = append(args, "min_rx_level_raw", cell.MinRxLevel)
+		}
+		if cell.HasSubscriberClass {
+			args = append(args, "subscriber_class", fmt.Sprintf("0x%04x", cell.SubscriberClass))
+		}
+		if cell.HasServiceDetails {
+			args = append(args, "bs_service_details", fmt.Sprintf("0x%03x", cell.ServiceDetails))
+		}
+		if cell.HasTimeshare {
+			args = append(args, "timeshare_security", fmt.Sprintf("0x%02x", cell.Timeshare))
+		}
+		if cell.HasFrameOffset {
+			args = append(args, "tdma_frame_offset", cell.FrameOffset)
+		}
+		c.log.Debug("tetra: d-nwrk-broadcast neighbour cell", args...)
 	}
 	c.publishSiteIdentity()
 }

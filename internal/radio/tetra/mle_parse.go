@@ -71,6 +71,42 @@ type NeighbourCell struct {
 	MNC    uint16 // 14-bit
 	HasLA  bool
 	LA     uint16 // 14-bit location area
+
+	// Remaining optional per-cell status elements (§18.5.17), surfaced as RAW
+	// field values. The spec-derived semantic mappings (e.g. §18.5.3's BS
+	// service details bit assignments: registration, de-registration, priority
+	// cell, minimum mode service, migration, system wide services, TETRA voice
+	// service, circuit mode data service, reserved, SNDCP service, air
+	// interface encryption service, advanced link — MSB first) are deliberately
+	// NOT rendered as named flags until confirmed against a capture: neither
+	// osmo-tetra nor tetra-kit itemises them, so naming them now would be the
+	// same spec-only guess the CommsType discipline forbids acting on.
+	HasMaxTxPower      bool
+	MaxTxPower         uint8 // 3-bit maximum MS transmit power
+	HasMinRxLevel      bool
+	MinRxLevel         uint8 // 4-bit minimum RX access level
+	HasSubscriberClass bool
+	SubscriberClass    uint16 // 16-bit allowed subscriber classes bitmap
+	HasServiceDetails  bool
+	ServiceDetails     uint16 // 12-bit BS service details bitmap
+	HasTimeshare       bool
+	Timeshare          uint8 // 5-bit timeshare cell / security parameters
+	HasFrameOffset     bool
+	FrameOffset        uint8 // 6-bit TDMA frame offset
+}
+
+// CellLoadName renders a 2-bit cell service level as the load it advertises
+// (§18.5.5): 0 = unknown, 1 = low, 2 = medium, 3 = high.
+func CellLoadName(level uint8) string {
+	switch level & 0x3 {
+	case 1:
+		return "low"
+	case 2:
+		return "medium"
+	case 3:
+		return "high"
+	}
+	return "unknown"
 }
 
 // DNwrkBroadcast is the decoded D-NWRK-BROADCAST PDU.
@@ -131,8 +167,8 @@ func ParseDNwrkBroadcast(tl []byte) (DNwrkBroadcast, bool) {
 }
 
 // parseNeighbourCell reads one Neighbour cell information element (§18.5.17)
-// from r. Unsurfaced optional fields are length-skipped so the NEXT cell in the
-// list stays aligned.
+// from r. Every optional field is decoded with a Has* presence flag, so
+// consumers can distinguish "absent" from a genuine zero.
 func parseNeighbourCell(r *bitReader) (NeighbourCell, bool) {
 	if r.remaining() < 5+2+1+2+12+1 {
 		return NeighbourCell{}, false
@@ -165,12 +201,12 @@ func parseNeighbourCell(r *bitReader) (NeighbourCell, bool) {
 		{10, func() { cell.HasMCC = true; cell.MCC = uint16(r.u(10)) }},
 		{14, func() { cell.HasMNC = true; cell.MNC = uint16(r.u(14)) }},
 		{14, func() { cell.HasLA = true; cell.LA = uint16(r.u(14)) }},
-		{3, func() { r.u(3) }},   // max MS tx power
-		{4, func() { r.u(4) }},   // min RX access level
-		{16, func() { r.u(16) }}, // subscriber class
-		{12, func() { r.u(12) }}, // BS service details
-		{5, func() { r.u(5) }},   // timeshare cell / security parameters
-		{6, func() { r.u(6) }},   // TDMA frame offset
+		{3, func() { cell.HasMaxTxPower = true; cell.MaxTxPower = uint8(r.u(3)) }},
+		{4, func() { cell.HasMinRxLevel = true; cell.MinRxLevel = uint8(r.u(4)) }},
+		{16, func() { cell.HasSubscriberClass = true; cell.SubscriberClass = uint16(r.u(16)) }},
+		{12, func() { cell.HasServiceDetails = true; cell.ServiceDetails = uint16(r.u(12)) }},
+		{5, func() { cell.HasTimeshare = true; cell.Timeshare = uint8(r.u(5)) }},
+		{6, func() { cell.HasFrameOffset = true; cell.FrameOffset = uint8(r.u(6)) }},
 	}
 	for _, o := range opts {
 		if r.remaining() < 1 {

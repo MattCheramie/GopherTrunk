@@ -44,13 +44,20 @@ func TestParseDNwrkBroadcastLiteral(t *testing.T) {
 	// carrier=2716 (101010011100), O=1, then P-gated: extension present
 	// (band=4 0100, offset=3 11, duplex=6 110, reverse=0), MCC=250
 	// (0011111010), MNC=13 (00000000001101), LA=4001 (00111110100001),
-	// remaining six optionals absent.
+	// max tx power=5 (101), min rx level=10 (1010), subscriber class=0x8001,
+	// BS service details=0x5A5 (010110100101), timeshare=0x15 (10101),
+	// TDMA frame offset=51 (110011).
 	pdu += "00101" + "11" + "1" + "01" + "101010011100" + "1" +
 		"1" + "0100" + "11" + "110" + "0" +
 		"1" + "0011111010" +
 		"1" + "00000000001101" +
 		"1" + "00111110100001" +
-		"0" + "0" + "0" + "0" + "0" + "0"
+		"1" + "101" +
+		"1" + "1010" +
+		"1" + "1000000000000001" +
+		"1" + "010110100101" +
+		"1" + "10101" +
+		"1" + "110011"
 	// Cell 2: id=9 (01001), reselect types=0, synced=0, service=3 (11),
 	// carrier=2720 (101010100000), O=0 — no optionals at all.
 	pdu += "01001" + "00" + "0" + "11" + "101010100000" + "0"
@@ -75,11 +82,23 @@ func TestParseDNwrkBroadcastLiteral(t *testing.T) {
 	if !c1.HasMCC || c1.MCC != 250 || !c1.HasMNC || c1.MNC != 13 || !c1.HasLA || c1.LA != 4001 {
 		t.Errorf("cell 1 identity = %+v, want MCC=250 MNC=13 LA=4001", c1)
 	}
+	if !c1.HasMaxTxPower || c1.MaxTxPower != 5 || !c1.HasMinRxLevel || c1.MinRxLevel != 10 {
+		t.Errorf("cell 1 power/access = %+v, want tx=5 rx=10", c1)
+	}
+	if !c1.HasSubscriberClass || c1.SubscriberClass != 0x8001 ||
+		!c1.HasServiceDetails || c1.ServiceDetails != 0x5A5 {
+		t.Errorf("cell 1 class/services = %+v, want subscriber=0x8001 bs=0x5a5", c1)
+	}
+	if !c1.HasTimeshare || c1.Timeshare != 0x15 || !c1.HasFrameOffset || c1.FrameOffset != 51 {
+		t.Errorf("cell 1 timeshare/offset = %+v, want timeshare=0x15 offset=51", c1)
+	}
 	c2 := nb.Neighbours[1]
 	if c2.CellID != 9 || c2.Synchronized || c2.CellServiceLevel != 3 || c2.MainCarrier != 2720 {
 		t.Errorf("cell 2 = %+v, want id=9 unsynced sl=3 carrier=2720", c2)
 	}
-	if c2.HasExtension || c2.HasMCC || c2.HasMNC || c2.HasLA {
+	if c2.HasExtension || c2.HasMCC || c2.HasMNC || c2.HasLA || c2.HasMaxTxPower ||
+		c2.HasMinRxLevel || c2.HasSubscriberClass || c2.HasServiceDetails ||
+		c2.HasTimeshare || c2.HasFrameOffset {
 		t.Errorf("cell 2 carries optionals it did not broadcast: %+v", c2)
 	}
 }
@@ -169,5 +188,55 @@ func TestLearnNeighbourCellsFillsTopology(t *testing.T) {
 	cc.learnNeighbourCells(nb)
 	if n := countSiteUpdates(); n != 0 {
 		t.Errorf("unchanged rebroadcast published %d site updates, want 0", n)
+	}
+}
+
+// TestLearnNeighbourCellsRejectsImplausibleCells: cells whose decoded content
+// is physically impossible for a TETRA network — a ≥1 GHz frequency-band
+// extension (an operator's field report showed a confirmed 1.5 GHz
+// "neighbour") or a zero main carrier — must never surface, even when the same
+// corrupt content decodes twice; plausible siblings in the same broadcast
+// still do.
+func TestLearnNeighbourCellsRejectsImplausibleCells(t *testing.T) {
+	cc := New(Options{SystemName: "Sys", FrequencyHz: 467_912_500})
+	cc.learnSysInfo(SysInfo{MainCarrier: 2716, FreqBand: 4, Offset: 3, DuplexSpacing: 6})
+
+	nb := DNwrkBroadcast{
+		Neighbours: []NeighbourCell{
+			{CellID: 1, MainCarrier: 2795, HasExtension: true, FreqBand: 15}, // 1.5 GHz
+			{CellID: 2, MainCarrier: 2795, HasExtension: true, FreqBand: 0},  // sub-100 MHz
+			{CellID: 3, MainCarrier: 0},                                      // no carrier
+			{CellID: 4, MainCarrier: 2720, Synchronized: true},               // plausible
+		},
+	}
+	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb)
+
+	got := cc.TopologySnapshot().Neighbors
+	if len(got) != 1 || got[0].Site != 4 {
+		t.Fatalf("surfaced neighbours = %+v, want only the plausible cell 4", got)
+	}
+}
+
+// TestNeighbourStatusFlagsRendersStatuses: the StatusFlags string carries the
+// advertised load and the raw status fields when present, and never renders an
+// absent optional as a zero.
+func TestNeighbourStatusFlagsRendersStatuses(t *testing.T) {
+	cell := NeighbourCell{
+		Synchronized:      true,
+		CellServiceLevel:  2,
+		HasLA:             true,
+		LA:                1031,
+		HasServiceDetails: true,
+		ServiceDetails:    0x5A5,
+		HasTimeshare:      true,
+		Timeshare:         0x15,
+	}
+	if got, want := neighbourStatusFlags(cell), "synced,load=medium,la=1031,bs_svc=0x5a5,timeshare=0x15"; got != want {
+		t.Errorf("StatusFlags = %q, want %q", got, want)
+	}
+	bare := NeighbourCell{}
+	if got, want := neighbourStatusFlags(bare), "unsynced"; got != want {
+		t.Errorf("bare StatusFlags = %q, want %q (absent fields must be omitted, not zero)", got, want)
 	}
 }
