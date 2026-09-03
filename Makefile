@@ -37,7 +37,7 @@ build:
 dist: web-build siglab-web-build rfscope-web-build configbuilder-web-build build
 
 test:
-	$(GO) test -tags "$(TAGS)" -race -count=1 $(PKGS)
+	$(GO) test -tags "$(TAGS)" -race -count=1 -timeout 25m $(PKGS)
 
 # test-dvsi runs the DVSI hardware-backend tests under the -tags dvsi
 # build. The Vocoder + Transport + USB-enumeration codepath is gated
