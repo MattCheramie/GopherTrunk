@@ -321,19 +321,39 @@ func macFragmentSubtype(bits []byte) (uint8, bool) {
 }
 
 // macFragmentPayload returns the fragment payload bits of a MAC-FRAG/MAC-END
-// PDU. MAC-FRAG (§21.4.3.3): 2-bit type + 1-bit subtype, then the fragment.
-// MAC-END additionally carries a fill-bit flag + length indication before the
-// fragment (§21.4.3.4).
+// PDU, per EN 300 392-2 §21.4.3.3/.4 as implemented by osmo-tetra's
+// rx_macfrag/rx_macend (the proven on-air reference):
+//
+//	MAC-FRAG: type (2) + subtype (1) + fill-bit indication (1), then the fragment.
+//	MAC-END:  type (2) + subtype (1) + fill-bit indication (1) + length
+//	          indication (6) + slot-granting flag (1, +8 when set) +
+//	          channel-allocation flag (1, +variable when set), then the fragment.
+//
+// Both header shapes are verified against a real capture: the old reader
+// skipped MAC-FRAG's fill-bit indication (and MAC-END's two flags), so EVERY
+// reassembled multi-block TM-SDU carried one stray bit at each fragment seam —
+// invisible to the round-trip test (its encoder shared the same wrong layout,
+// the #764/#771 self-consistent trap) and to single-block PDUs, but corrupting
+// every fragmented L3 PDU from the seam onward. Found because a real
+// D-NWRK-BROADCAST's neighbour list decoded its first ~two cells (before the
+// seam) and garbage after it; deleting exactly one bit at the seam made all
+// seven advertised cells decode cleanly.
 func macFragmentPayload(bits []byte) []byte {
 	sub, ok := macFragmentSubtype(bits)
 	if !ok {
 		return nil
 	}
 	r := &bitReader{bits: bits}
-	r.u(3) // MAC PDU type + subtype
+	r.u(3)  // MAC PDU type + subtype
+	r.bit() // fill-bit indication (present on MAC-FRAG and MAC-END alike)
 	if sub == macEnd {
-		r.bit() // fill-bit indication
-		r.u(6)  // length indication
+		r.u(6) // length indication
+		if r.bit() == 1 {
+			r.u(8) // basic slot-granting element (§21.5.1)
+		}
+		if r.bit() == 1 {
+			parseChanAlloc(r) // variable-length channel allocation (§21.5.2)
+		}
 	}
 	if r.pos >= len(bits) {
 		return nil

@@ -2,7 +2,9 @@ package tetra
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -173,6 +175,31 @@ type ControlChannel struct {
 	// an emergency flag, a changed frequency) still publishes. Entries are dropped
 	// on the call's release and pruned by age. Lazily built; guarded by mu.
 	grantSeen map[grantKey]grantSnapshot
+
+	// neighbours accumulates the cells advertised by D-NWRK-BROADCAST (EN 300
+	// 392-2 §18.4.1.4.1), keyed by the 5-bit cell identifier — the TETRA
+	// analogue of the P25 adjacent-status list, surfaced through
+	// TopologySnapshot into the systems report's "Neighbor sites". A cell is
+	// surfaced only once the SAME content has been decoded twice
+	// (neighboursPending): the PD+type gate is just 6 bits, so a rare
+	// corrupted-but-CRC-passing TL-SDU can parse as a plausible-looking
+	// broadcast — on a real 120 s capture the one-shot version surfaced 18
+	// "neighbours" of which only the 4 repeating ones were real. The genuine
+	// broadcast repeats every few seconds with identical content; bit garbage
+	// does not (mirrors the BSCH identity/colour confirm-twice rule).
+	// Inherently bounded (32 ids each). Lazily built; guarded by mu.
+	neighbours        map[uint8]NeighbourCell
+	neighboursPending map[uint8]NeighbourCell
+
+	// releaseSeen records when a KindCallRelease was last published per group
+	// (GSSI). The SwMI retransmits D-RELEASE / D-DISCONNECT — once per addressed
+	// party and again for reliability — so a single call teardown otherwise emits
+	// a burst of identical release events into the bus/SSE feed (the "release
+	// spam" field report; same family as grantSeen and lastTalker above). Only
+	// the first release per window publishes; the entry is cleared when a new
+	// grant for the group publishes, so a rapid grant→release→grant→release
+	// sequence still announces every real teardown. Pruned by age; guarded by mu.
+	releaseSeen map[uint32]time.Time
 
 	// fragTMSDU accumulates a TM-SDU that spans a start-fragment MAC-RESOURCE and
 	// one or more following MAC-FRAG / MAC-END PDUs (§21.4.3.3/.4). fragResource
@@ -514,8 +541,11 @@ type TopologyConfig struct {
 // TopologySnapshot renders the decoded single-cell identity as the protocol-
 // neutral trunking.TopologySnapshot the SiteTracker stores per system, so the
 // live systems API can surface TETRA identity (MCC/MNC/Location Area + colour
-// code) the same way it surfaces P25 WACN/SysID/RFSS/Site. TETRA advertises no
-// adjacent cells, so there are no neighbours. Mirrors the offline
+// code) the same way it surfaces P25 WACN/SysID/RFSS/Site. Adjacent cells
+// decoded from D-NWRK-BROADCAST (learnNeighbourCells) fill Neighbors — the
+// TETRA analogue of the P25 adjacent-status list — with Site carrying the
+// 5-bit cell identifier and StatusFlags the sync state plus whatever identity
+// (mcc/mnc/la) the broadcast carried. Mirrors the offline
 // tetraPipeline.TopologySnapshot. Returns nil-safe zero when nothing is decoded.
 func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 	t := c.Topology()
@@ -536,7 +566,46 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 			UplinkHz:      t.UplinkHz,
 		}
 	}
+	c.mu.Lock()
+	cells := make([]NeighbourCell, 0, len(c.neighbours))
+	for _, cell := range c.neighbours {
+		cells = append(cells, cell)
+	}
+	c.mu.Unlock()
+	sort.Slice(cells, func(i, j int) bool { return cells[i].CellID < cells[j].CellID })
+	for _, cell := range cells {
+		dl, ul := c.neighbourFrequencies(cell)
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          cell.CellID,
+			ChannelNumber: cell.MainCarrier,
+			FrequencyHz:   dl,
+			UplinkHz:      ul,
+			StatusFlags:   neighbourStatusFlags(cell),
+		})
+	}
 	return snap
+}
+
+// neighbourStatusFlags renders a neighbour cell's sync state and optional
+// identity as the human-readable StatusFlags string the report and web UI
+// already display for P25 neighbours (CFVA words there; sync + identity here).
+func neighbourStatusFlags(cell NeighbourCell) string {
+	parts := make([]string, 0, 4)
+	if cell.Synchronized {
+		parts = append(parts, "synced")
+	} else {
+		parts = append(parts, "unsynced")
+	}
+	if cell.HasMCC {
+		parts = append(parts, fmt.Sprintf("mcc=%d", cell.MCC))
+	}
+	if cell.HasMNC {
+		parts = append(parts, fmt.Sprintf("mnc=%d", cell.MNC))
+	}
+	if cell.HasLA {
+		parts = append(parts, fmt.Sprintf("la=%d", cell.LA))
+	}
+	return strings.Join(parts, ",")
 }
 
 // publishSiteIdentity emits a KindSiteUpdate carrying the decoded TETRA identity
@@ -822,6 +891,87 @@ func (c *ControlChannel) cellFrequencies() (downlinkHz, uplinkHz uint32, downlin
 	return uint32(dl), 0, true, false
 }
 
+// learnNeighbourCells folds a decoded D-NWRK-BROADCAST into the accumulated
+// neighbour-cell map. On any change (a cell first seen, or its advertised
+// content changing) it logs the cell and republishes the site identity so the
+// SiteTracker's topology — and the systems report's "Neighbor sites" — update
+// live. The steady-state rebroadcast (unchanged content every few seconds) is
+// a no-op, so this adds no event or log spam.
+func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
+	if len(nb.Neighbours) == 0 {
+		return
+	}
+	var confirmed []NeighbourCell
+	c.mu.Lock()
+	if c.neighbours == nil {
+		c.neighbours = make(map[uint8]NeighbourCell)
+		c.neighboursPending = make(map[uint8]NeighbourCell)
+	}
+	for _, cell := range nb.Neighbours {
+		if cur, seen := c.neighbours[cell.CellID]; seen && cur == cell {
+			continue // steady-state rebroadcast of a confirmed cell
+		}
+		if pending, seen := c.neighboursPending[cell.CellID]; seen && pending == cell {
+			// Second identical sighting: confirmed real (garbage never repeats
+			// bit-identically), promote into the surfaced set.
+			delete(c.neighboursPending, cell.CellID)
+			c.neighbours[cell.CellID] = cell
+			confirmed = append(confirmed, cell)
+			continue
+		}
+		c.neighboursPending[cell.CellID] = cell
+	}
+	c.mu.Unlock()
+	if len(confirmed) == 0 {
+		return
+	}
+	for _, cell := range confirmed {
+		dl, ul := c.neighbourFrequencies(cell)
+		c.log.Debug("tetra: d-nwrk-broadcast neighbour cell",
+			"system", c.systemName,
+			"cell_id", cell.CellID,
+			"main_carrier", cell.MainCarrier,
+			"downlink_hz", dl,
+			"uplink_hz", ul,
+			"synced", cell.Synchronized,
+			"has_ext", cell.HasExtension,
+			"mcc", cell.MCC, "mnc", cell.MNC, "la", cell.LA)
+	}
+	c.publishSiteIdentity()
+}
+
+// neighbourFrequencies resolves a neighbour cell's absolute downlink/uplink
+// carrier frequencies (Hz; 0 when unknown). With the main-carrier extension the
+// broadcast names the band/offset/duplex explicitly; without it the spec's
+// default applies — the carrier is in the SERVING cell's band, so it resolves
+// exactly like a voice-grant carrier number (carrierFrequency), with the uplink
+// derived from the serving cell's own duplex parameters.
+func (c *ControlChannel) neighbourFrequencies(cell NeighbourCell) (dlHz, ulHz uint32) {
+	if cell.HasExtension {
+		dl := tetraDLCarrierHz(cell.FreqBand, cell.MainCarrier, cell.Offset)
+		if dl <= 0 {
+			return 0, 0
+		}
+		if ul, ok := tetraULCarrierHz(dl, cell.FreqBand, cell.DuplexSpacing, cell.ReverseOper); ok && ul > 0 {
+			return uint32(dl), uint32(ul)
+		}
+		return uint32(dl), 0
+	}
+	dl, ok := c.carrierFrequency(cell.MainCarrier)
+	if !ok {
+		return 0, 0
+	}
+	c.mu.Lock()
+	si, siSet := c.sysInfo, c.sysInfoSet
+	c.mu.Unlock()
+	if siSet {
+		if ul, ok := tetraULCarrierHz(int64(dl), si.FreqBand, si.DuplexSpacing, si.ReverseOper); ok && ul > 0 {
+			return dl, uint32(ul)
+		}
+	}
+	return dl, 0
+}
+
 // grantKey identifies a distinct voice grant for dedup: the destination group
 // (or individual) SSI plus the physical channel it was granted on. A repeat with
 // the same key inside grantDedupWindow is the same call's rebroadcast.
@@ -931,6 +1081,10 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			delete(c.grantSeen, k)
 		}
 	}
+	// A fresh grant re-arms the release path for its group: the next
+	// D-RELEASE ends THIS call, not a retransmission of the previous one's
+	// teardown, so it must publish even inside releaseDedupWindow.
+	delete(c.releaseSeen, g.DestSSI)
 	c.mu.Unlock()
 
 	c.bus.Publish(events.Event{
@@ -1113,13 +1267,39 @@ func (c *ControlChannel) takeFragment(payload []byte) (MACResource, []byte, bool
 	return c.fragResource, sdu, true
 }
 
+// releaseDedupWindow is how long repeated releases for the same group are
+// suppressed after one was published. The SwMI's retransmissions of a call's
+// D-RELEASE/D-DISCONNECT all land within a few seconds of the first; a release
+// belonging to a genuinely NEW call is always preceded by that call's grant,
+// which clears the group's entry (publishGrant), so the window can be generous
+// without swallowing a real teardown.
+const releaseDedupWindow = 5 * time.Second
+
 // publishRelease emits a KindCallRelease so the engine ends the active call for
 // this talkgroup at once, rather than waiting out the voice hangtime/no-voice
-// timers. No-op without a bus or a resolvable group.
+// timers. No-op without a bus or a resolvable group. Retransmitted releases for
+// the same group inside releaseDedupWindow are suppressed (see releaseSeen).
 func (c *ControlChannel) publishRelease(gssi uint32, cause uint8) {
 	if c.bus == nil || gssi == 0 {
 		return
 	}
+	now := c.now()
+	c.mu.Lock()
+	if last, seen := c.releaseSeen[gssi]; seen && now.Sub(last) < releaseDedupWindow {
+		c.mu.Unlock()
+		return
+	}
+	if c.releaseSeen == nil {
+		c.releaseSeen = make(map[uint32]time.Time)
+	}
+	c.releaseSeen[gssi] = now
+	// Opportunistic age-prune so the map can't grow unbounded on a busy site.
+	for k, t := range c.releaseSeen {
+		if now.Sub(t) >= releaseDedupWindow {
+			delete(c.releaseSeen, k)
+		}
+	}
+	c.mu.Unlock()
 	c.bus.Publish(events.Event{
 		Kind: events.KindCallRelease,
 		Payload: trunking.CallRelease{

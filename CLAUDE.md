@@ -62,8 +62,13 @@ confirmation before any close-as-completed.
   broadcast MP3 transcode, the `/calls/{id}/audio` handler (audio/flac + .flac in its
   extension allowlist), the retention sweeper, and the web RecordingPlayer's download
   name. `FlacWriter.DataBytes()` reports UNCOMPRESSED PCM bytes so the recorder's
-  duration/dead-key math is container-independent. Not converted (deliberately):
-  `diversity_capture` stays cs16 (branch-alignment invariant + offline harness),
+  duration/dead-key math is container-independent. `diversity_capture` now takes
+  `diversity_capture_format: flac` too (operator space-saving request): the branch
+  FLAC is a bit-exact twin of the cs16 (same clamp/scale, pinned by
+  `TestBranchRecorderFLACIsBitExactTwin`) so the alignment invariant and every
+  downstream conclusion are container-independent; the harness content-sniffs the
+  branches, and rates > 1 MS/s fall back to cs16 (STREAMINFO ceiling + the encode
+  runs on the stream goroutine). Not converted (deliberately):
   `hunt -survey-capture` stays f32.
 - **A P25 "MBT data CRC failed" line whose identity fields match a decoded broadcast
   is TWO different PDU frames, not a contradiction**: every field the failure line
@@ -434,6 +439,33 @@ confirmation before any close-as-completed.
         silent ~0.1 s WAV still published to History) is inherent: the recorder only drops `dataBytes==0`
         or `StatProvider` zero-voice calls, and ACELP is neither, so a 2-frame call becomes a tiny
         bogus row. Staged, not shipped.
+- **TETRA MAC fragment reassembly had off-by-bits at every seam — found via D-NWRK-BROADCAST,
+  and the neighbour-cell decode is now live + capture-verified.** `macFragmentPayload` skipped
+  only type+subtype on MAC-FRAG (the fill-bit indication leaked into the payload, +1 bit) and
+  fill+length on MAC-END (the slot-granting + channel-allocation flags leaked, +2 or more) —
+  the round-trip test was green because its encoder shared the wrong layout (the #764/#771
+  self-consistent trap, again), single-block PDUs were unaffected, and the corruption surfaced
+  only in fragmented L3 PDUs from the seam onward. Diagnosed on the operator's 120 s 467.9125 MHz
+  MRC capture: a D-NWRK-BROADCAST rotating neighbour list decoded ~2 cells then garbage; deleting
+  exactly ONE bit at the seam made all seven advertised cells decode — the raw MAC-FRAG blocks
+  confirm the payload starts one bit later (layouts pinned against osmo-tetra rx_macfrag/rx_macend).
+  `ParseDNwrkBroadcast` (`mle_parse.go`, layout cross-checked osmo-tetra + tetra-kit) now feeds
+  `TopologySnapshot.Neighbors` (Site=5-bit cell id, StatusFlags carries sync+mcc/mnc/la) → the
+  systems report's "Neighbor sites"; cells surface only after the SAME content decodes twice —
+  the 6-bit PD+type gate lets a rare corrupted-but-CRC-passing TL-SDU parse plausibly (one-shot
+  surfaced 18 "neighbours"; the repeating 8 were real: carriers 467.99-470.00 MHz, LAs 1021-1089,
+  `TestTETRANeighbourReportReplay` is the skip-guarded harness). Related dedup in the same pass:
+  retransmitted D-RELEASE/D-DISCONNECT now publish ONE `call.release` per teardown (`releaseSeen`,
+  re-armed by a fresh grant) — the "release spam" report, same family as `grantSeen`/`lastTalker`.
+- **The "sausages" in the operator's TETRA waterfall are the BS toggling discontinuous-downlink
+  (timeshare/MCCH-sharing) mode per multiframe — not RF trouble and not a GT defect.** On both
+  1-2 Sep 120 s MRC captures the CC's occupied bandwidth alternates ~±10 kHz ↔ ~±12.3 kHz in
+  sharp ~1.02 s (= one multiframe) segments while total in-channel power stays constant (±0.3 dB)
+  and branch fades are uncorrelated (r≈-0.06); slot-boundary ramp dips (14.2 ms) are always
+  present, and the +2.4 kHz "tone" is the SB frequency-correction sequence, both normal. GT
+  decodes straight through the segmented windows (BSCH ~99.9%, all harness arms at ceiling) —
+  same family as the reporter's #925 SCBS/dynamic-MCCH-sharing observations. Don't chase a
+  receiver bug from a "sausage" waterfall alone; check decode yield first.
 - **TETRA individual/private-call SRC is restored across mid-call PDUs via a callID→source
   binding; cold-start group-vs-individual classification stays capture-gated.** ETSI compresses
   the SSIs out of mid-call and traffic-channel signalling (§14): once a call is set up, a

@@ -1088,32 +1088,12 @@ func (p *tetraPipeline) Reset() {
 }
 func (p *tetraPipeline) Close() error { return nil }
 
-// TopologySnapshot surfaces the TETRA single-cell identity (MCC/MNC/LA + colour
-// code) the control channel learned. No adjacent cells for TETRA.
+// TopologySnapshot surfaces the TETRA cell identity (MCC/MNC/LA + colour code),
+// the offset-corrected control carrier, and the D-NWRK-BROADCAST neighbour
+// cells. Delegates to the control channel's own snapshot so the offline/siglab
+// report and the live KindSiteUpdate path can never drift apart.
 func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
-	t := p.cc.Topology()
-	snap := &trunking.TopologySnapshot{
-		MCC:          t.MCC,
-		MNC:          t.MNC,
-		LocationArea: t.LocationArea,
-		// The ETSI 6-bit colour code is the low 6 bits of the 30-bit extended
-		// colour code (MCC<<20 | MNC<<6 | CC); masking 0xFF would drag in two
-		// stray MNC bits and corrupt the surfaced value.
-		ColorCode: uint8(t.ColourCode & 0x3F),
-	}
-	// Surface the cell's own control carrier with its offset-corrected downlink
-	// frequency (§21.4.4.1) — the true carrier, not the tuned frequency — so the
-	// network-config report shows where the CC actually is.
-	if t.DownlinkHz != 0 {
-		snap.PrimaryCC = &trunking.TopoChannelRef{
-			ChannelNumber: t.MainCarrier,
-			FrequencyHz:   t.DownlinkHz,
-			// The uplink is the offset-corrected duplex pair (§21.4.4.1), derived
-			// directly from the SYSINFO duplex spacing rather than a band plan.
-			UplinkHz: t.UplinkHz,
-		}
-	}
-	return snap
+	return p.cc.TopologySnapshot()
 }
 
 // newYSFPipeline wires the existing internal/radio/ysf/receiver

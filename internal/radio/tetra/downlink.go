@@ -339,6 +339,13 @@ func (c *ControlChannel) ingestResourceTMSDU(m MACResource, sdu []byte) {
 		// ParseCMCE misframes every L3 address (corrupts ISSI/GSSI).
 		if tl, ok := ParseLLC(sdu); ok {
 			msg, haveCMCE = ParseCMCE(tl)
+			// MLE D-NWRK-BROADCAST: the serving cell's advertised neighbours
+			// (per-cell carrier, optionally band/offset/duplex + MCC/MNC/LA).
+			// Cheap to try — it bails on the 3-bit protocol discriminator for
+			// every non-MLE TL-SDU.
+			if nb, ok := ParseDNwrkBroadcast(tl); ok {
+				c.learnNeighbourCells(nb)
+			}
 			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
 			if pdu, err := PDUFromBits(tl); err == nil {
 				c.Ingest(pdu)

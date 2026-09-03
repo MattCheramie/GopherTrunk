@@ -926,6 +926,7 @@ combined:
       diversity_capture: "iq/mrc/x310"   # path PREFIX
       diversity_capture_seconds: 5       # 1..120; two CS16 branches are tens of MB/s
                                          # at high rates (1 GiB/branch cap regardless)
+      diversity_capture_format: flac     # optional: cs16 (default) or flac
 ```
 
 It writes `x310.br0.cs16`, `x310.br1.cs16` and `x310.diversity.json` once per
@@ -933,6 +934,16 @@ stream. Each branch file is a plain headerless cs16 capture, so it plays through
 `gophertrunk replay -format cs16` on its own. A datagram that did not carry both
 branches is dropped from *both* files and counted in the sidecar, so sample *i*
 of one file is always simultaneous with sample *i* of the other.
+
+`diversity_capture_format: flac` swaps the container for lossless two-channel
+FLAC (`x310.br0.flac`, …), typically 30–50% smaller — useful for the long
+narrowband captures the offline A/B wants (120 s at 200 kS/s is ~96 MB per
+branch as cs16). It is bit-exact: a `.flac` branch decodes to the identical
+int16 samples its `.cs16` twin would carry, the alignment invariant is
+unchanged, the replay driver mounts `.flac` by content sniffing, and the
+diversity harness reads either container. FLAC needs a capture rate ≤ 1 MS/s
+(the STREAMINFO ceiling, and the encode runs on the stream goroutine); above
+that the capture falls back to cs16 with a warning.
 
 Replay it to compare combiners and measure the phase drift directly:
 
