@@ -107,7 +107,7 @@ jobs:
         run: |
           set -eu
           STAGE=dist/staging
-          cp README.md LICENSE config.example.yaml "$STAGE/"
+          cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
           # Standalone browser consoles bundled into each release. All
           # three UIs nest under gophertrunk-web/ (standard console at
@@ -181,7 +181,7 @@ jobs:
             -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME} ${RR_LDFLAGS}" \
             -o "dist/${NAME}/gophertrunk.exe" \
             ./cmd/gophertrunk
-          cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+          cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "dist/${NAME}/"
           cp docs/install-windows.md "dist/${NAME}/INSTALL-WINDOWS.md"
           mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
           cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
@@ -263,7 +263,7 @@ jobs:
               -ldflags "${LDFLAGS}" \
               -o "dist/${NAME}/gophertrunk" \
               ./cmd/gophertrunk
-            cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "dist/${NAME}/"
             mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
             cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
             cp -r web/siglab/dist/. "dist/${NAME}/gophertrunk-web/siglab/"
@@ -343,7 +343,7 @@ jobs:
               -ldflags "${LDFLAGS}" \
               -o "dist/${NAME}/gophertrunk" \
               ./cmd/gophertrunk
-            cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "dist/${NAME}/"
             mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
             cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
             cp -r web/siglab/dist/. "dist/${NAME}/gophertrunk-web/siglab/"

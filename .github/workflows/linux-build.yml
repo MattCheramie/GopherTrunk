@@ -94,7 +94,7 @@ jobs:
               -ldflags "${LDFLAGS}" \
               -o "dist/${NAME}/gophertrunk" \
               ./cmd/gophertrunk
-            cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "dist/${NAME}/"
             mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
             cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
             cp -r web/siglab/dist/. "dist/${NAME}/gophertrunk-web/siglab/"

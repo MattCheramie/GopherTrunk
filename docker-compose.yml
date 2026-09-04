@@ -29,6 +29,13 @@ services:
     container_name: gophertrunk
     restart: unless-stopped
 
+    # The daemon requires the Terms of Service to be acknowledged on
+    # first run (TERMS_OF_SERVICE.md; `gophertrunk terms` prints them).
+    # A container has no TTY to prompt on, so setting this env var IS
+    # your acknowledgment — read the terms before you uncomment it.
+    # environment:
+    #   - GOPHERTRUNK_ACCEPT_TERMS=1
+
     ports:
       - "127.0.0.1:8080:8080"   # HTTP REST + SSE + WebSocket
       - "127.0.0.1:50051:50051" # gRPC

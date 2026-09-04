@@ -47,6 +47,12 @@ import (
 )
 
 func main() {
+	// Install/first-run gate: every command except version/help/terms
+	// requires the Terms of Service to have been acknowledged (see
+	// TERMS_OF_SERVICE.md and cmd/gophertrunk/terms.go).
+	if !termsExempt(os.Args) {
+		requireTermsAcceptance()
+	}
 	if len(os.Args) < 2 {
 		runDaemon(os.Args[1:])
 		return
@@ -115,6 +121,8 @@ func main() {
 		runBundle(os.Args[2:])
 	case "import-pdf":
 		runImport(os.Args[2:])
+	case "terms":
+		runTerms(os.Args[2:])
 	case "daemon", "run":
 		runDaemon(os.Args[2:])
 	case "help", "--help", "-h":
@@ -152,6 +160,7 @@ USAGE:
   gophertrunk config serve [flags]    standalone web Config Builder/Editor (browser UI)
   gophertrunk config [tui] [flags]    standalone terminal Config Builder/Editor (no browser)
   gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
+  gophertrunk terms [show|status|accept]  read / check / acknowledge the Terms of Service
   gophertrunk version                 print build version
   gophertrunk help                    show this message`)
 }

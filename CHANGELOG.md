@@ -7,6 +7,22 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Terms of Service, acknowledged once at install/first run**
+  (`TERMS_OF_SERVICE.md`). A short, plain-language ToS in line with other
+  open SDR software: lawful monitoring is the operator's responsibility, no
+  defeating encryption, no misuse of received content, recording-privacy
+  duties, not for safety-of-life use, receive-only posture, vocoder patent
+  note, export compliance, and the Apache-2.0 no-warranty terms. The Windows
+  installer adds a mandatory acknowledgment page (and records acceptance);
+  on every other install path the CLI shows the terms once on first
+  interactive run. Unattended installs acknowledge with
+  `gophertrunk terms accept` or `GOPHERTRUNK_ACCEPT_TERMS=1`; a new
+  `gophertrunk terms [show|status|accept]` subcommand reads/checks/records.
+  Acceptance is a local marker file under the user config directory —
+  nothing ever leaves the machine. `version`, `help`, and `terms` itself
+  never require acceptance.
+
 ### Fixed
 - **Talkgroups auto-discovered on analog trunking systems are no longer
   labeled mode "D" (digital)** (#1143 follow-up). Discovered-talkgroup mode
