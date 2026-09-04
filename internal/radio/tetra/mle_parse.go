@@ -1,5 +1,7 @@
 package tetra
 
+import "encoding/hex"
+
 // MLE (Mobile Link Entity) downlink PDU parsing — specifically D-NWRK-BROADCAST
 // (EN 300 392-2 §18.4.1.4.1), the broadcast that advertises the serving cell's
 // re-selection parameters and its NEIGHBOUR CELLS: per-cell main carrier (and
@@ -42,9 +44,87 @@ package tetra
 // cmceMLEPD).
 const mlePDMLE uint32 = 0x5
 
-// mlePDUTypeDNwrkBroadcast is the 3-bit downlink MLE PDU type for
-// D-NWRK-BROADCAST (osmo-tetra TMLE_PDUT_D_NWRK_BROADCAST = tetra-kit 0b010).
-const mlePDUTypeDNwrkBroadcast uint32 = 0x2
+// packBitsHex packs a one-bit-per-byte slice into MSB-first hex (the inverse of
+// the test helper hexToBits), zero-padding the final nibble group. Used to dump
+// a rejected TL-SDU into the log so a mis-framed layout can be pinned from a
+// field report alone.
+func packBitsHex(bits []byte) string {
+	if len(bits) == 0 {
+		return ""
+	}
+	packed := make([]byte, (len(bits)+7)/8)
+	for i, b := range bits {
+		if b != 0 {
+			packed[i/8] |= 0x80 >> (i % 8)
+		}
+	}
+	return hex.EncodeToString(packed)
+}
+
+// Downlink MLE-subsystem PDU types (EN 300 392-2 §18.5.20; the numbering is
+// pinned by BOTH osmo-tetra-sq5bpf tetra_mle_pdu.h (tetra_mle_pdu_type_d) and
+// tetra-kit mle.cc serviceMleSubsystem — they agree on all seven values).
+const (
+	mlePDUTypeDNewCell          uint32 = 0x0 // D-NEW-CELL
+	mlePDUTypeDPrepareFail      uint32 = 0x1 // D-PREPARE-FAIL
+	mlePDUTypeDNwrkBroadcast    uint32 = 0x2 // D-NWRK-BROADCAST
+	mlePDUTypeDNwrkBroadcastExt uint32 = 0x3 // D-NWRK-BROADCAST-EXTENSION
+	mlePDUTypeDRestoreAck       uint32 = 0x4 // D-RESTORE-ACK (wraps a CMCE SDU)
+	mlePDUTypeDRestoreFail      uint32 = 0x5 // D-RESTORE-FAIL
+	mlePDUTypeDChannelResponse  uint32 = 0x6 // D-CHANNEL-RESPONSE
+)
+
+// mleSubsystemPDUName names a downlink MLE-subsystem PDU type for logging.
+func mleSubsystemPDUName(t uint32) string {
+	switch t {
+	case mlePDUTypeDNewCell:
+		return "D-NEW-CELL"
+	case mlePDUTypeDPrepareFail:
+		return "D-PREPARE-FAIL"
+	case mlePDUTypeDNwrkBroadcast:
+		return "D-NWRK-BROADCAST"
+	case mlePDUTypeDNwrkBroadcastExt:
+		return "D-NWRK-BROADCAST-EXTENSION"
+	case mlePDUTypeDRestoreAck:
+		return "D-RESTORE-ACK"
+	case mlePDUTypeDRestoreFail:
+		return "D-RESTORE-FAIL"
+	case mlePDUTypeDChannelResponse:
+		return "D-CHANNEL-RESPONSE"
+	}
+	return "MLE-RESERVED"
+}
+
+// ParseMLESubsystemType reports the MLE-subsystem PDU type of a TL-SDU, or
+// false when the TL-SDU does not carry an MLE-subsystem PDU.
+func ParseMLESubsystemType(tl []byte) (uint32, bool) {
+	r := &bitReader{bits: tl}
+	if r.remaining() < 3+3 {
+		return 0, false
+	}
+	if r.u(3) != mlePDMLE {
+		return 0, false
+	}
+	return r.u(3), true
+}
+
+// ParseCMCERestoreAck decodes the CMCE SDU an MLE D-RESTORE-ACK carries — the
+// call-restoration signalling sent to an MS that re-selected onto this cell
+// mid-call. tetra-kit's serviceMleSubsystem (mle.cc, case 0b100) forwards the
+// payload after the 3-bit MLE PDU type straight to its CMCE layer, which reads
+// a 5-bit CMCE PDU type first — exactly parseCMCEBody's framing. Returns
+// (zero, false) when the TL-SDU is not a D-RESTORE-ACK or the wrapped SDU is
+// not a modelled CMCE PDU.
+func ParseCMCERestoreAck(tl []byte) (CMCEMessage, bool) {
+	r := &bitReader{bits: tl}
+	if r.remaining() < 3+3 {
+		return CMCEMessage{}, false
+	}
+	if r.u(3) != mlePDMLE || r.u(3) != mlePDUTypeDRestoreAck {
+		return CMCEMessage{}, false
+	}
+	return parseCMCEBody(r)
+}
 
 // NeighbourCell is one neighbour advertised by D-NWRK-BROADCAST. MainCarrier
 // is always present; the frequency extension (band/offset/duplex) and the
@@ -73,14 +153,15 @@ type NeighbourCell struct {
 	LA     uint16 // 14-bit location area
 
 	// Remaining optional per-cell status elements (§18.5.17), surfaced as RAW
-	// field values. The spec-derived semantic mappings (e.g. §18.5.3's BS
-	// service details bit assignments: registration, de-registration, priority
-	// cell, minimum mode service, migration, system wide services, TETRA voice
-	// service, circuit mode data service, reserved, SNDCP service, air
-	// interface encryption service, advanced link — MSB first) are deliberately
-	// NOT rendered as named flags until confirmed against a capture: neither
-	// osmo-tetra nor tetra-kit itemises them, so naming them now would be the
-	// same spec-only guess the CommsType discipline forbids acting on.
+	// field values. BS service details additionally renders named bits via
+	// BSServiceDetailsString (sysinfo_ext.go): an earlier note here claimed no
+	// reference decoder itemises them, but tetra-kit's parseBsServiceDetails
+	// (decoder/mle/mle_elements.cc) names all 12 (registration,
+	// de-registration, priority cell, minimum mode, migration, system wide
+	// services, voice, circuit data, reserved, SNDCP, air encryption, advanced
+	// link — MSB first), which is the independent corroboration the CommsType
+	// discipline requires. The other raw fields (subscriber class, timeshare)
+	// stay un-named — still no decoder itemises those.
 	HasMaxTxPower      bool
 	MaxTxPower         uint8 // 3-bit maximum MS transmit power
 	HasMinRxLevel      bool

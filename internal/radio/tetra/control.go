@@ -127,6 +127,13 @@ type ControlChannel struct {
 	sysInfo    SysInfo
 	sysInfoSet bool
 
+	// sysInfoExt holds the cell's extended SYSINFO parameters (SCCH allocation,
+	// power/access parameters, D-MLE-SYSINFO LA + subscriber class + BS service
+	// details) once a full 124-bit SYSINFO block is decoded. Logged on change
+	// (hyperframe counter excluded — it advances every cycle).
+	sysInfoExt    SysInfoExt
+	sysInfoExtSet bool
+
 	// individuals is the set of SSIs observed acting as a CMCE calling /
 	// transmitting party (msg.PartySSI). A party is always an individual radio, so
 	// this lets classifyParties recognise a grant addressed to a subscriber ISSI
@@ -619,7 +626,11 @@ func neighbourStatusFlags(cell NeighbourCell) string {
 		parts = append(parts, fmt.Sprintf("la=%d", cell.LA))
 	}
 	if cell.HasServiceDetails {
-		parts = append(parts, fmt.Sprintf("bs_svc=0x%03x", cell.ServiceDetails))
+		svc := fmt.Sprintf("bs_svc=0x%03x", cell.ServiceDetails)
+		if names := BSServiceDetailsString(cell.ServiceDetails); names != "" {
+			svc += "[" + names + "]"
+		}
+		parts = append(parts, svc)
 	}
 	if cell.HasTimeshare {
 		parts = append(parts, fmt.Sprintf("timeshare=0x%02x", cell.Timeshare))
@@ -909,6 +920,49 @@ func (c *ControlChannel) learnSysInfo(si SysInfo) {
 	}
 }
 
+// learnSysInfoExt records the cell's extended SYSINFO parameters and logs them
+// when they first decode or change — the hyperframe counter is excluded from
+// the change detection (it advances every multiframe cycle and would turn the
+// INFO line into per-minute spam). The SCCH count is the operator-visible
+// answer to "does this cell run secondary control channels": n common SCCH
+// occupy timeslots 2..(n+1) of the main carrier per §21.4.4.1.
+func (c *ControlChannel) learnSysInfoExt(ext SysInfoExt) {
+	c.mu.Lock()
+	changed := !c.sysInfoExtSet || !c.sysInfoExt.sameCellParams(ext)
+	c.sysInfoExt = ext
+	c.sysInfoExtSet = true
+	c.mu.Unlock()
+	if !changed {
+		return
+	}
+	args := []any{
+		"system", c.systemName,
+		"scch_in_use", ext.SCCHInUse,
+		"access_parameter", ext.AccessParameter,
+		"radio_dl_timeout", ext.RadioDLTimeout,
+		"rxlev_access_min_dbm", ext.RxLevAccessMinDBm(),
+		"la", ext.LocationArea,
+		"subscriber_class", fmt.Sprintf("0x%04x", ext.SubscriberClass),
+		"bs_service_details", fmt.Sprintf("0x%03x", ext.BSServiceDetails),
+	}
+	if ts := ext.SCCHTimeslots(); ts != "" {
+		args = append(args, "scch_timeslots", ts)
+	}
+	if dbm, ok := ext.MSTxPwrMaxCellDBm(); ok {
+		args = append(args, "ms_txpwr_max_dbm", dbm)
+	}
+	if s := BSServiceDetailsString(ext.BSServiceDetails); s != "" {
+		args = append(args, "bs_services", s)
+	}
+	if ext.CCKValid {
+		args = append(args, "cck_id", fmt.Sprintf("0x%04x", ext.CounterOrCCK))
+	}
+	// The rotating 20-bit optional field is deliberately not logged here — the
+	// BS cycles which definition each broadcast carries, and it is excluded
+	// from the change gate (sameCellParams) for the same reason.
+	c.log.Info("tetra: SYSINFO cell parameters", args...)
+}
+
 // cellFrequencies returns the cell's absolute downlink and uplink carrier
 // frequencies (Hz) derived from the learned SYSINFO. downlinkOK/uplinkOK report
 // whether each is known (uplink needs a mapped duplex spacing for the band).
@@ -935,9 +989,35 @@ func (c *ControlChannel) cellFrequencies() (downlinkHz, uplinkHz uint32, downlin
 // SiteTracker's topology — and the systems report's "Neighbor sites" — update
 // live. The steady-state rebroadcast (unchanged content every few seconds) is
 // a no-op, so this adds no event or log spam.
-func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
+//
+// tl is the raw TL-SDU the broadcast was parsed from (may be nil); it is logged
+// hex-packed when the broadcast is rejected, so a field report alone can pin the
+// mis-framed layout without waiting for a new capture.
+func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast, tl []byte) {
 	if len(nb.Neighbours) == 0 {
 		return
+	}
+	// An implausible cell anywhere in the list invalidates the WHOLE broadcast.
+	// The neighbour list is parsed sequentially, so a physically-impossible cell
+	// is proof the bit alignment was lost (leaked fill bits, a mis-framed seam, a
+	// corrupted-but-CRC-passing block) — and every sibling parsed from the same
+	// misaligned bits is suspect even when its fields happen to look plausible.
+	// Deterministic corruption repeats bit-identically, so confirm-twice cannot
+	// catch those siblings (a 4 Sep field log showed a "cell 0, carrier 80,
+	// synced" phantom 65 MHz off-network confirming twice alongside a band-13
+	// implausible sibling in the same broadcasts).
+	for _, cell := range nb.Neighbours {
+		if !plausibleNeighbourCell(cell) {
+			c.log.Debug("tetra: dropping d-nwrk-broadcast with implausible neighbour cell — whole list distrusted",
+				"system", c.systemName,
+				"cell_id", cell.CellID,
+				"main_carrier", cell.MainCarrier,
+				"has_ext", cell.HasExtension,
+				"band", cell.FreqBand,
+				"cells", len(nb.Neighbours),
+				"tl_sdu_hex", packBitsHex(tl))
+			return
+		}
 	}
 	var confirmed []NeighbourCell
 	c.mu.Lock()
@@ -945,15 +1025,7 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighbours = make(map[uint8]NeighbourCell)
 		c.neighboursPending = make(map[uint8]NeighbourCell)
 	}
-	var implausible []NeighbourCell
 	for _, cell := range nb.Neighbours {
-		if !plausibleNeighbourCell(cell) {
-			// Log outside the lock; the sibling cells still get their chance —
-			// a genuinely corrupt list's other cells must also pass this gate
-			// AND confirm twice before surfacing.
-			implausible = append(implausible, cell)
-			continue
-		}
 		if cur, seen := c.neighbours[cell.CellID]; seen && cur == cell {
 			continue // steady-state rebroadcast of a confirmed cell
 		}
@@ -968,14 +1040,6 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighboursPending[cell.CellID] = cell
 	}
 	c.mu.Unlock()
-	for _, cell := range implausible {
-		c.log.Debug("tetra: dropping implausible d-nwrk-broadcast neighbour cell",
-			"system", c.systemName,
-			"cell_id", cell.CellID,
-			"main_carrier", cell.MainCarrier,
-			"has_ext", cell.HasExtension,
-			"band", cell.FreqBand)
-	}
 	if len(confirmed) == 0 {
 		return
 	}
@@ -1462,6 +1526,96 @@ func (c *ControlChannel) evictGrantSeen(dst uint32) {
 	}
 	delete(c.lastTalker, dst)
 	c.mu.Unlock()
+}
+
+// observeMLESubsystem logs the MLE-subsystem PDUs GT recognises but does not
+// yet field-parse: D-NEW-CELL (an MS being commanded to a new cell during
+// announced re-selection), D-PREPARE-FAIL, D-RESTORE-FAIL, D-CHANNEL-RESPONSE
+// and D-NWRK-BROADCAST-EXTENSION. Neither reference decoder (osmo-tetra-sq5bpf,
+// tetra-kit) parses their contents — both only name the type — so per the
+// fabricated-SmartNet / #764/#771 discipline GT surfaces the occurrence plus
+// the raw TL-SDU hex (enough to pin the field layout from a field report the
+// day one shows up on air) instead of shipping a spec-only parse no decoder
+// corroborates. D-NWRK-BROADCAST and D-RESTORE-ACK are handled by their real
+// parsers in ingestResourceTMSDU and are skipped here.
+func (c *ControlChannel) observeMLESubsystem(tl []byte) {
+	t, ok := ParseMLESubsystemType(tl)
+	if !ok || t == mlePDUTypeDNwrkBroadcast || t == mlePDUTypeDRestoreAck {
+		return
+	}
+	c.log.Debug("tetra: mle subsystem pdu",
+		"system", c.systemName,
+		"pdu", mleSubsystemPDUName(t),
+		"tl_sdu_hex", packBitsHex(tl))
+}
+
+// handleMM acts on an MM-protocol TL-SDU. D-ATTACH/DETACH GROUP IDENTITY — the
+// SwMI assigning (or revoking) group memberships to the addressed MS — is
+// decoded in full: each attachment logs and publishes a KindAffiliation (the
+// TETRA analogue of the P25 Group Affiliation Response feed, ISSI→GSSI), each
+// detachment logs. Every other MM PDU type (location updates, OTAR,
+// enable/disable, …) is surfaced by name at debug so registration activity is
+// visible in the log without a parser for each.
+func (c *ControlChannel) handleMM(m MACResource, tl []byte) {
+	t, ok := ParseMMPDUType(tl)
+	if !ok {
+		return
+	}
+	issi := m.Address.SSI
+	if t != MMDAttachDetachGroupIdentity {
+		c.log.Debug("tetra: mm pdu",
+			"system", c.systemName, "pdu", t.String(), "issi", issi)
+		return
+	}
+	ad, ok := ParseDAttachDetachGroupIdentity(tl)
+	if !ok {
+		return
+	}
+	if len(ad.Groups) == 0 {
+		c.log.Debug("tetra: d-attach/detach group identity with no group elements",
+			"system", c.systemName, "issi", issi,
+			"detach_all_attach", ad.DetachAllAttach)
+		return
+	}
+	for _, g := range ad.Groups {
+		if g.Detach {
+			c.log.Info("tetra: group detach",
+				"system", c.systemName,
+				"issi", issi,
+				"gssi", g.GSSI,
+				"reason_raw", g.DetachReason,
+				"detach_all_attach", ad.DetachAllAttach)
+			continue
+		}
+		args := []any{
+			"system", c.systemName,
+			"issi", issi,
+			"gssi", g.GSSI,
+			"lifetime_raw", g.Lifetime,
+			"class_of_usage_raw", g.ClassOfUsage,
+			"detach_all_attach", ad.DetachAllAttach,
+		}
+		if g.HasExtension {
+			args = append(args, "mcc", g.MCC, "mnc", g.MNC)
+		}
+		if g.HasVGSSI {
+			args = append(args, "vgssi", g.VGSSI)
+		}
+		c.log.Info("tetra: group attach", args...)
+		if c.bus != nil && issi != 0 && g.GSSI != 0 {
+			c.bus.Publish(events.Event{
+				Kind: events.KindAffiliation,
+				Payload: trunking.Affiliation{
+					System:   c.systemName,
+					Protocol: "tetra",
+					SourceID: issi,
+					GroupID:  g.GSSI,
+					Response: trunking.AffiliationAccepted,
+					At:       c.now(),
+				},
+			})
+		}
+	}
 }
 
 // publishTalker emits a KindCallTalker so the engine backfills the current

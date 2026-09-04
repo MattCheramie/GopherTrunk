@@ -103,6 +103,32 @@ func TestParseDNwrkBroadcastLiteral(t *testing.T) {
 	}
 }
 
+// TestParseCMCERestoreAckLiteral: an MLE D-RESTORE-ACK wraps a CMCE SDU
+// (5-bit CMCE type onward) — the framing tetra-kit's serviceMleSubsystem
+// implements by forwarding the payload after the 3-bit MLE PDU type straight
+// to its CMCE layer. The literal is a D-CONNECT for call id 0x1234.
+func TestParseCMCERestoreAckLiteral(t *testing.T) {
+	pdu := "101" + "100" + // PD=MLE, type=D-RESTORE-ACK
+		"00010" + // CMCE type = D-CONNECT
+		"01001000110100" + // call identifier = 0x1234
+		"0000" + "0" + "0" + "00" + "0" + "0" + // timeout/hook/simplex/grant/perm/ownership
+		"0" // O-bit: no optional elements
+	msg, ok := ParseCMCERestoreAck(bitsOf(t, pdu))
+	if !ok {
+		t.Fatal("ParseCMCERestoreAck returned ok=false on a valid PDU")
+	}
+	if msg.Type != CMCETypeDConnect || msg.CallIdentifier != 0x1234 {
+		t.Errorf("restored CMCE = %+v, want D-CONNECT call 0x1234", msg)
+	}
+	// A D-NWRK-BROADCAST is not a restore-ack; nor is a direct CMCE TL-SDU.
+	if _, ok := ParseCMCERestoreAck(bitsOf(t, "101"+"010"+"1010101101010100"+"10"+"0")); ok {
+		t.Error("ParseCMCERestoreAck accepted a D-NWRK-BROADCAST")
+	}
+	if _, ok := ParseCMCERestoreAck(bitsOf(t, "010"+"100"+"00010"+"01001000110100"+"000000000"+"0")); ok {
+		t.Error("ParseCMCERestoreAck accepted a CMCE TL-SDU")
+	}
+}
+
 // TestParseDNwrkBroadcastRejects covers the not-this-PDU and truncation exits.
 func TestParseDNwrkBroadcastRejects(t *testing.T) {
 	cases := map[string]string{
@@ -142,11 +168,11 @@ func TestLearnNeighbourCellsFillsTopology(t *testing.T) {
 	// One sighting is NOT enough: a corrupted-but-CRC-passing TL-SDU can parse
 	// as a plausible broadcast, so a cell surfaces only after the same content
 	// decodes twice (the real broadcast repeats every few seconds).
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
 	if got := cc.TopologySnapshot().Neighbors; len(got) != 0 {
 		t.Fatalf("a single sighting surfaced %d neighbours, want 0 (confirm-twice)", len(got))
 	}
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
 
 	snap := cc.TopologySnapshot()
 	if len(snap.Neighbors) != 1 {
@@ -185,33 +211,45 @@ func TestLearnNeighbourCellsFillsTopology(t *testing.T) {
 		t.Error("no KindSiteUpdate published for a newly-learned neighbour")
 	}
 	// Unchanged rebroadcast: no further publish, no further log.
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
 	if n := countSiteUpdates(); n != 0 {
 		t.Errorf("unchanged rebroadcast published %d site updates, want 0", n)
 	}
 }
 
-// TestLearnNeighbourCellsRejectsImplausibleCells: cells whose decoded content
-// is physically impossible for a TETRA network — a ≥1 GHz frequency-band
-// extension (an operator's field report showed a confirmed 1.5 GHz
-// "neighbour") or a zero main carrier — must never surface, even when the same
-// corrupt content decodes twice; plausible siblings in the same broadcast
-// still do.
+// TestLearnNeighbourCellsRejectsImplausibleCells: an implausible cell — a
+// ≥1 GHz frequency-band extension (an operator's field report showed a
+// confirmed 1.5 GHz "neighbour") or a zero main carrier — invalidates the
+// ENTIRE broadcast it arrived in, plausible-looking siblings included. The
+// list is parsed sequentially, so an impossible cell proves the bit alignment
+// was lost and every sibling from the same bits is suspect; deterministic
+// corruption repeats bit-identically, so confirm-twice cannot catch those
+// siblings (the 4 Sep field log: a "cell 0, carrier 80, synced" phantom
+// 65 MHz off-network confirmed twice alongside a band-13 implausible sibling
+// in the same broadcasts and surfaced in the web UI).
 func TestLearnNeighbourCellsRejectsImplausibleCells(t *testing.T) {
 	cc := New(Options{SystemName: "Sys", FrequencyHz: 467_912_500})
 	cc.learnSysInfo(SysInfo{MainCarrier: 2716, FreqBand: 4, Offset: 3, DuplexSpacing: 6})
 
 	nb := DNwrkBroadcast{
 		Neighbours: []NeighbourCell{
-			{CellID: 1, MainCarrier: 2795, HasExtension: true, FreqBand: 15}, // 1.5 GHz
-			{CellID: 2, MainCarrier: 2795, HasExtension: true, FreqBand: 0},  // sub-100 MHz
-			{CellID: 3, MainCarrier: 0},                                      // no carrier
-			{CellID: 4, MainCarrier: 2720, Synchronized: true},               // plausible
+			{CellID: 2, MainCarrier: 698, HasExtension: true, FreqBand: 13}, // impossible band
+			{CellID: 0, MainCarrier: 80, Synchronized: true},                // plausible-looking sibling (the field log's phantom)
 		},
 	}
-	cc.learnNeighbourCells(nb)
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
+	cc.learnNeighbourCells(nb, nil)
 
+	if got := cc.TopologySnapshot().Neighbors; len(got) != 0 {
+		t.Fatalf("surfaced neighbours = %+v, want none — an implausible cell distrusts the whole broadcast", got)
+	}
+
+	// A fully-plausible broadcast is unaffected by the earlier rejection.
+	good := DNwrkBroadcast{
+		Neighbours: []NeighbourCell{{CellID: 4, MainCarrier: 2720, Synchronized: true}},
+	}
+	cc.learnNeighbourCells(good, nil)
+	cc.learnNeighbourCells(good, nil)
 	got := cc.TopologySnapshot().Neighbors
 	if len(got) != 1 || got[0].Site != 4 {
 		t.Fatalf("surfaced neighbours = %+v, want only the plausible cell 4", got)
@@ -232,7 +270,7 @@ func TestNeighbourStatusFlagsRendersStatuses(t *testing.T) {
 		HasTimeshare:      true,
 		Timeshare:         0x15,
 	}
-	if got, want := neighbourStatusFlags(cell), "synced,load=medium,la=1031,bs_svc=0x5a5,timeshare=0x15"; got != want {
+	if got, want := neighbourStatusFlags(cell), "synced,load=medium,la=1031,bs_svc=0x5a5[dereg,min-mode,migration,voice,sndcp,adv-link],timeshare=0x15"; got != want {
 		t.Errorf("StatusFlags = %q, want %q", got, want)
 	}
 	bare := NeighbourCell{}

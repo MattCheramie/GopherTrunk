@@ -646,6 +646,11 @@ sdr:
   #     diversity_capture_seconds: 0 # length of that dump, 1..120 (0 = 5 s). Two
   #                                 #  CS16 branches run to tens of MB/s at high
   #                                 #  rates; a 1 GiB/branch cap always applies.
+  #     diversity_capture_format: cs16 # per-branch container: cs16 (default) or
+  #                                 #  flac (lossless FLAC, bit-exact twin of the
+  #                                 #  cs16 — same clamp/scale — at roughly half
+  #                                 #  the size). Rates > 1 MS/s fall back to
+  #                                 #  cs16. Requires diversity_capture.
   #     verbose_debug: false        # log every control-channel RPC to this
   #                                 #  server — decoded call name and arguments
   #                                 #  plus a hex dump of the frame — at DEBUG.

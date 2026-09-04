@@ -322,8 +322,8 @@ type CallStart struct {
 // boundary instant; the recorder uses it as the new segment's start
 // timestamp.
 type CallSegment struct {
-	DeviceSerial string
-	At           time.Time
+	DeviceSerial string    `json:"device_serial,omitempty"`
+	At           time.Time `json:"at"`
 }
 
 // CallEnd is the payload of an events.KindCallEnd event.
@@ -407,22 +407,29 @@ type CallEncryption struct {
 // and republishes the event with System / Protocol / GroupID
 // populated so SSE + TUI consumers can patch their live view.
 // DeviceSerial keys the update to a specific active call.
+// The JSON tags give the wire event the same snake_case field names as a
+// grant's GrantDTO, so the web activity feed's one payload formatter renders
+// grant and call.source rows alike (a field report showed talker/source rows
+// with an empty detail cell next to fully-detailed grant rows).
 type CallSourceUpdate struct {
-	DeviceSerial string
-	System       string // filled in by the engine on republish
-	Protocol     string
-	GroupID      uint32 // filled in by the engine on republish from the bound Grant
-	SourceID     uint32
-	Encrypted    bool
+	DeviceSerial string `json:"device_serial,omitempty"`
+	System       string `json:"system,omitempty"` // filled in by the engine on republish
+	Protocol     string `json:"protocol,omitempty"`
+	GroupID      uint32 `json:"group_id,omitempty"` // filled in by the engine on republish from the bound Grant
+	SourceID     uint32 `json:"source_id,omitempty"`
+	// FrequencyHz is the followed call's voice frequency, filled in by the
+	// engine on republish from the bound Grant (0 from the raw composer event).
+	FrequencyHz uint32 `json:"frequency_hz,omitempty"`
+	Encrypted   bool   `json:"encrypted,omitempty"`
 	// Emergency and Priority carry the in-call Service Options a followed
 	// call reveals on the traffic channel but whose grant lacked them — a
 	// DMR Tier III channel-grant CSBK has no service-options octet, so an
 	// encrypted / emergency / prioritised Tier III call would otherwise be
 	// logged clear / non-emergency / priority-0. Backfilled additively (an
 	// unset field never clears an already-set one).
-	Emergency bool
-	Priority  uint8
-	At        time.Time
+	Emergency bool      `json:"emergency,omitempty"`
+	Priority  uint8     `json:"priority,omitempty"`
+	At        time.Time `json:"at"`
 }
 
 // CallRelease is the payload of an events.KindCallRelease event. A
@@ -432,10 +439,10 @@ type CallSourceUpdate struct {
 // hangtime/no-voice timers. Keyed by talkgroup because a TETRA release rides in
 // a MAC-RESOURCE addressed to the GSSI and carries no device/serial notion.
 type CallRelease struct {
-	System  string
-	GroupID uint32
-	Reason  EndReason
-	At      time.Time
+	System  string    `json:"system,omitempty"`
+	GroupID uint32    `json:"group_id,omitempty"`
+	Reason  EndReason `json:"reason,omitempty"`
+	At      time.Time `json:"at"`
 }
 
 // CallTalker is the payload of an events.KindCallTalker event. A control-channel
@@ -443,11 +450,13 @@ type CallRelease struct {
 // active call (e.g. a TETRA CMCE D-TX-GRANTED carrying the transmitting party
 // SSI). The engine resolves (System, GroupID) to the bound device and backfills
 // the source via the KindCallSourceUpdate path.
+// Tagged snake_case like CallSourceUpdate so the web activity feed renders a
+// talker row's talkgroup/source/system detail.
 type CallTalker struct {
-	System   string
-	GroupID  uint32
-	SourceID uint32
-	At       time.Time
+	System   string    `json:"system,omitempty"`
+	GroupID  uint32    `json:"group_id,omitempty"`
+	SourceID uint32    `json:"source_id,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // SiteUpdate is the payload of an events.KindSiteUpdate event. The P25
