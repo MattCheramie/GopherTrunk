@@ -475,6 +475,50 @@ confirmation before any close-as-completed.
   CommsType rule) only when present, so "mcc=0" can no longer mean "absent".** Related dedup in the same pass:
   retransmitted D-RELEASE/D-DISCONNECT now publish ONE `call.release` per teardown (`releaseSeen`,
   re-armed by a fresh grant) — the "release spam" report, same family as `grantSeen`/`lastTalker`.
+- **An implausible D-NWRK-BROADCAST cell now distrusts the WHOLE broadcast, not just itself
+  (4 Sep field report: "one bogus neighbor site").** The list is parsed sequentially, so a
+  physically-impossible cell (band 13, carrier 0, …) proves the bit alignment was lost — and
+  its plausible-LOOKING siblings from the same bits are garbage too. The operator's log showed
+  exactly that: a "cell 0, carrier 80, synced" phantom 65 MHz off-network (the web UI's
+  402.0125 MHz neighbour) confirming twice ALONGSIDE a band-13 implausible sibling in the same
+  broadcasts at 02:11/02:31/02:33 — deterministic corruption repeats bit-identically, so
+  confirm-twice can never catch the siblings. `learnNeighbourCells` now drops the entire list
+  when any cell fails `plausibleNeighbourCell` and logs the raw TL-SDU hex (`tl_sdu_hex`) so the
+  NEXT such report can pin the actual mis-framed layout without a capture (the corruption source
+  — likely another MAC boundary/seam hole in a rarely-sent broadcast variant — is still
+  un-root-caused; the hex dump is the instrument). Pinned failing-first by
+  `TestLearnNeighbourCellsRejectsImplausibleCells` (old code reproduces the operator's exact row).
+- **TETRA control-plane decode surface (the "advanced D-SYSINFO / D-ATTACH/DETACH / D-NEW-CELL /
+  SCCH" request) — what's decoded vs deliberately raw.** `ParseSysInfoExtended` (`sysinfo_ext.go`)
+  decodes the rest of the 124-bit SYSINFO: common-SCCH count (+ TS2..TS4 mapping),
+  MS_TXPWR_MAX_CELL / RXLEV_ACCESS_MIN / ACCESS_PARAMETER / RADIO_DOWNLINK_TIMEOUT,
+  hyperframe-vs-CCK id (osmo's flag sense: flag SET ⇒ CCK id), and the D-MLE-SYSINFO TM-SDU at
+  the FIXED offset 82 (= 124−42: LA + subscriber class + BS service details) — layout pinned by
+  osmo `macpdu_decode_sysinfo` AND tetra-kit `pduProcessSysinfo`; the change-gated INFO log
+  excludes the hyperframe counter or it spams every cycle. MM D-ATTACH/DETACH GROUP IDENTITY
+  (`mm_parse.go`, layout from tetra-kit mm.cc/mm_elements.cc — the type-3/4 element walk skips
+  unknown elements by their OWN 11-bit length so OTAR/security elements can't desync it) yields
+  an ISSI→GSSI feed: attaches publish `KindAffiliation` (protocol tetra), detaches log. MLE
+  D-RESTORE-ACK wraps a CMCE SDU (5-bit type onward, tetra-kit's forwarding) → decoded via
+  `ParseCMCERestoreAck` so a mid-call cell re-selection keeps call state. D-NEW-CELL /
+  D-PREPARE-FAIL / D-RESTORE-FAIL / D-CHANNEL-RESPONSE / D-NWRK-BROADCAST-EXTENSION are
+  recognised and logged with raw TL-SDU hex but NOT field-parsed — NEITHER reference decoder
+  parses their contents, so a field layout would be the fabricated-SmartNet trap; the hex log is
+  the capture-pinning instrument. CORRECTION of an earlier note here: tetra-kit DOES itemise the
+  12 BS-service-details bits (`parseBsServiceDetails`), so they are now rendered as named flags
+  (`BSServiceDetailsString`) in SYSINFO logs and neighbour StatusFlags; subscriber class and
+  timeshare stay raw (still no decoder itemises those).
+- **The in-call event payloads (`call.source`, `call.talker`, `call.release`, `call.segment`)
+  now carry snake_case JSON tags + `frequency_hz`** so the web activity feed's one formatter
+  renders them like grant rows (they used to marshal Go-capitalized names, which the SPA's
+  snake_case-only `summarizeEvent` silently rendered as an empty detail cell — the "call.talker
+  shows nothing" report; same silent-mismatch family as the History `r.rows` lesson). Still
+  passthrough kinds (docs/api-events.md notes the rename); `summarizeEvent` also descends into a
+  nested `grant`/`Grant` object for call.start/end/complete.
+- **Every config key must appear in config.example.yaml when it lands** — `diversity_capture_format`
+  shipped in code but was missed there, and an operator guessing the key name at their rig is the
+  failure mode (4 Sep report). When adding a `Config` field, grep config.example.yaml before
+  committing.
 - **The "sausages" in the operator's TETRA waterfall are the BS toggling discontinuous-downlink
   (timeshare/MCCH-sharing) mode per multiframe — not RF trouble and not a GT defect.** On both
   1-2 Sep 120 s MRC captures the CC's occupied bandwidth alternates ~±10 kHz ↔ ~±12.3 kHz in
