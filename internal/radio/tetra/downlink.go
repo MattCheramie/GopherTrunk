@@ -360,7 +360,7 @@ func (c *ControlChannel) ingestResourceTMSDU(m MACResource, sdu []byte) {
 			// Cheap to try — it bails on the 3-bit protocol discriminator for
 			// every non-MLE TL-SDU.
 			if nb, ok := ParseDNwrkBroadcast(tl); ok {
-				c.learnNeighbourCells(nb)
+				c.learnNeighbourCells(nb, tl)
 			}
 			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
 			if pdu, err := PDUFromBits(tl); err == nil {

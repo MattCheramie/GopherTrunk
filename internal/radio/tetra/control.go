@@ -935,9 +935,35 @@ func (c *ControlChannel) cellFrequencies() (downlinkHz, uplinkHz uint32, downlin
 // SiteTracker's topology — and the systems report's "Neighbor sites" — update
 // live. The steady-state rebroadcast (unchanged content every few seconds) is
 // a no-op, so this adds no event or log spam.
-func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
+//
+// tl is the raw TL-SDU the broadcast was parsed from (may be nil); it is logged
+// hex-packed when the broadcast is rejected, so a field report alone can pin the
+// mis-framed layout without waiting for a new capture.
+func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast, tl []byte) {
 	if len(nb.Neighbours) == 0 {
 		return
+	}
+	// An implausible cell anywhere in the list invalidates the WHOLE broadcast.
+	// The neighbour list is parsed sequentially, so a physically-impossible cell
+	// is proof the bit alignment was lost (leaked fill bits, a mis-framed seam, a
+	// corrupted-but-CRC-passing block) — and every sibling parsed from the same
+	// misaligned bits is suspect even when its fields happen to look plausible.
+	// Deterministic corruption repeats bit-identically, so confirm-twice cannot
+	// catch those siblings (a 4 Sep field log showed a "cell 0, carrier 80,
+	// synced" phantom 65 MHz off-network confirming twice alongside a band-13
+	// implausible sibling in the same broadcasts).
+	for _, cell := range nb.Neighbours {
+		if !plausibleNeighbourCell(cell) {
+			c.log.Debug("tetra: dropping d-nwrk-broadcast with implausible neighbour cell — whole list distrusted",
+				"system", c.systemName,
+				"cell_id", cell.CellID,
+				"main_carrier", cell.MainCarrier,
+				"has_ext", cell.HasExtension,
+				"band", cell.FreqBand,
+				"cells", len(nb.Neighbours),
+				"tl_sdu_hex", packBitsHex(tl))
+			return
+		}
 	}
 	var confirmed []NeighbourCell
 	c.mu.Lock()
@@ -945,15 +971,7 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighbours = make(map[uint8]NeighbourCell)
 		c.neighboursPending = make(map[uint8]NeighbourCell)
 	}
-	var implausible []NeighbourCell
 	for _, cell := range nb.Neighbours {
-		if !plausibleNeighbourCell(cell) {
-			// Log outside the lock; the sibling cells still get their chance —
-			// a genuinely corrupt list's other cells must also pass this gate
-			// AND confirm twice before surfacing.
-			implausible = append(implausible, cell)
-			continue
-		}
 		if cur, seen := c.neighbours[cell.CellID]; seen && cur == cell {
 			continue // steady-state rebroadcast of a confirmed cell
 		}
@@ -968,14 +986,6 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast) {
 		c.neighboursPending[cell.CellID] = cell
 	}
 	c.mu.Unlock()
-	for _, cell := range implausible {
-		c.log.Debug("tetra: dropping implausible d-nwrk-broadcast neighbour cell",
-			"system", c.systemName,
-			"cell_id", cell.CellID,
-			"main_carrier", cell.MainCarrier,
-			"has_ext", cell.HasExtension,
-			"band", cell.FreqBand)
-	}
 	if len(confirmed) == 0 {
 		return
 	}

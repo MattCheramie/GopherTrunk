@@ -1,5 +1,7 @@
 package tetra
 
+import "encoding/hex"
+
 // MLE (Mobile Link Entity) downlink PDU parsing — specifically D-NWRK-BROADCAST
 // (EN 300 392-2 §18.4.1.4.1), the broadcast that advertises the serving cell's
 // re-selection parameters and its NEIGHBOUR CELLS: per-cell main carrier (and
@@ -41,6 +43,23 @@ package tetra
 // MLE-protocol PDU (EN 300 392-2 Table 18.1: 101 = MLE; 010 = CMCE, see
 // cmceMLEPD).
 const mlePDMLE uint32 = 0x5
+
+// packBitsHex packs a one-bit-per-byte slice into MSB-first hex (the inverse of
+// the test helper hexToBits), zero-padding the final nibble group. Used to dump
+// a rejected TL-SDU into the log so a mis-framed layout can be pinned from a
+// field report alone.
+func packBitsHex(bits []byte) string {
+	if len(bits) == 0 {
+		return ""
+	}
+	packed := make([]byte, (len(bits)+7)/8)
+	for i, b := range bits {
+		if b != 0 {
+			packed[i/8] |= 0x80 >> (i % 8)
+		}
+	}
+	return hex.EncodeToString(packed)
+}
 
 // mlePDUTypeDNwrkBroadcast is the 3-bit downlink MLE PDU type for
 // D-NWRK-BROADCAST (osmo-tetra TMLE_PDUT_D_NWRK_BROADCAST = tetra-kit 0b010).

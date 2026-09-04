@@ -142,11 +142,11 @@ func TestLearnNeighbourCellsFillsTopology(t *testing.T) {
 	// One sighting is NOT enough: a corrupted-but-CRC-passing TL-SDU can parse
 	// as a plausible broadcast, so a cell surfaces only after the same content
 	// decodes twice (the real broadcast repeats every few seconds).
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
 	if got := cc.TopologySnapshot().Neighbors; len(got) != 0 {
 		t.Fatalf("a single sighting surfaced %d neighbours, want 0 (confirm-twice)", len(got))
 	}
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
 
 	snap := cc.TopologySnapshot()
 	if len(snap.Neighbors) != 1 {
@@ -185,33 +185,45 @@ func TestLearnNeighbourCellsFillsTopology(t *testing.T) {
 		t.Error("no KindSiteUpdate published for a newly-learned neighbour")
 	}
 	// Unchanged rebroadcast: no further publish, no further log.
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
 	if n := countSiteUpdates(); n != 0 {
 		t.Errorf("unchanged rebroadcast published %d site updates, want 0", n)
 	}
 }
 
-// TestLearnNeighbourCellsRejectsImplausibleCells: cells whose decoded content
-// is physically impossible for a TETRA network — a ≥1 GHz frequency-band
-// extension (an operator's field report showed a confirmed 1.5 GHz
-// "neighbour") or a zero main carrier — must never surface, even when the same
-// corrupt content decodes twice; plausible siblings in the same broadcast
-// still do.
+// TestLearnNeighbourCellsRejectsImplausibleCells: an implausible cell — a
+// ≥1 GHz frequency-band extension (an operator's field report showed a
+// confirmed 1.5 GHz "neighbour") or a zero main carrier — invalidates the
+// ENTIRE broadcast it arrived in, plausible-looking siblings included. The
+// list is parsed sequentially, so an impossible cell proves the bit alignment
+// was lost and every sibling from the same bits is suspect; deterministic
+// corruption repeats bit-identically, so confirm-twice cannot catch those
+// siblings (the 4 Sep field log: a "cell 0, carrier 80, synced" phantom
+// 65 MHz off-network confirmed twice alongside a band-13 implausible sibling
+// in the same broadcasts and surfaced in the web UI).
 func TestLearnNeighbourCellsRejectsImplausibleCells(t *testing.T) {
 	cc := New(Options{SystemName: "Sys", FrequencyHz: 467_912_500})
 	cc.learnSysInfo(SysInfo{MainCarrier: 2716, FreqBand: 4, Offset: 3, DuplexSpacing: 6})
 
 	nb := DNwrkBroadcast{
 		Neighbours: []NeighbourCell{
-			{CellID: 1, MainCarrier: 2795, HasExtension: true, FreqBand: 15}, // 1.5 GHz
-			{CellID: 2, MainCarrier: 2795, HasExtension: true, FreqBand: 0},  // sub-100 MHz
-			{CellID: 3, MainCarrier: 0},                                      // no carrier
-			{CellID: 4, MainCarrier: 2720, Synchronized: true},               // plausible
+			{CellID: 2, MainCarrier: 698, HasExtension: true, FreqBand: 13}, // impossible band
+			{CellID: 0, MainCarrier: 80, Synchronized: true},                // plausible-looking sibling (the field log's phantom)
 		},
 	}
-	cc.learnNeighbourCells(nb)
-	cc.learnNeighbourCells(nb)
+	cc.learnNeighbourCells(nb, nil)
+	cc.learnNeighbourCells(nb, nil)
 
+	if got := cc.TopologySnapshot().Neighbors; len(got) != 0 {
+		t.Fatalf("surfaced neighbours = %+v, want none — an implausible cell distrusts the whole broadcast", got)
+	}
+
+	// A fully-plausible broadcast is unaffected by the earlier rejection.
+	good := DNwrkBroadcast{
+		Neighbours: []NeighbourCell{{CellID: 4, MainCarrier: 2720, Synchronized: true}},
+	}
+	cc.learnNeighbourCells(good, nil)
+	cc.learnNeighbourCells(good, nil)
 	got := cc.TopologySnapshot().Neighbors
 	if len(got) != 1 || got[0].Site != 4 {
 		t.Fatalf("surfaced neighbours = %+v, want only the plausible cell 4", got)
