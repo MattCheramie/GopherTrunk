@@ -270,13 +270,22 @@ function summarizeEvent(ev: EventDTO): string {
   const p = ev.payload;
   if (!p || typeof p !== "object") return "";
   const o = p as Record<string, unknown>;
+  // call.start / call.end nest the call identity under a "grant" object
+  // (stable DTO); the passthrough call.complete nests it under the
+  // Go-capitalized "Grant". Fold the nested grant's fields in as fallbacks so
+  // those rows summarize like a grant row instead of rendering empty.
+  const nested = o.grant ?? o.Grant;
+  const g: Record<string, unknown> =
+    nested && typeof nested === "object" ? (nested as Record<string, unknown>) : {};
   const parts: string[] = [];
-  const tg = o.group_id ?? o.talkgroup;
+  const tg = o.group_id ?? o.talkgroup ?? g.group_id ?? g.GroupID;
   if (typeof tg === "number") parts.push(`TG ${tg}`);
-  const src = o.source_id ?? o.source ?? o.radio_id;
+  const src = o.source_id ?? o.source ?? o.radio_id ?? g.source_id ?? g.SourceID;
   if (typeof src === "number" && src !== 0) parts.push(`← ${src}`);
-  if (typeof o.system === "string" && o.system) parts.push(o.system);
-  const freq = o.frequency_hz ?? o.freq_hz ?? o.frequency;
+  const sys = o.system ?? g.system ?? g.System;
+  if (typeof sys === "string" && sys) parts.push(sys);
+  const freq =
+    o.frequency_hz ?? o.freq_hz ?? o.frequency ?? g.frequency_hz ?? g.FrequencyHz;
   if (typeof freq === "number" && freq > 0)
     parts.push(`${(freq / 1e6).toFixed(4)} MHz`);
   return parts.join(" · ");
