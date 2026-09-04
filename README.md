@@ -411,6 +411,14 @@ in:
 
 More ways to help: [docs/support.md](docs/support.md).
 
-## License
+## License & Terms of Service
 
-See [LICENSE](LICENSE).
+The code is licensed under [Apache 2.0](LICENSE). Using GopherTrunk
+additionally requires acknowledging the short
+[Terms of Service](TERMS_OF_SERVICE.md) — the usual open-SDR ground
+rules (lawful monitoring only, no defeating encryption, not for
+safety-of-life use, no warranty). The Windows installer asks during
+setup; on every other platform the CLI asks once on first run.
+Unattended installs (services, containers, CI) accept with
+`gophertrunk terms accept` or `GOPHERTRUNK_ACCEPT_TERMS=1`; nothing is
+ever sent anywhere — acceptance is recorded in a local marker file.

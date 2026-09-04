@@ -40,5 +40,13 @@ COPY --from=builder /out/gophertrunk /usr/local/bin/gophertrunk
 # Default ports: HTTP API on 8080, gRPC on 50051. Override with config.
 EXPOSE 8080 50051
 
+# The daemon requires the Terms of Service (TERMS_OF_SERVICE.md, also
+# printed by `gophertrunk terms`) to be acknowledged on first run; a
+# container has no TTY to prompt on, so pass the acknowledgment
+# explicitly at run time:
+#   docker run -e GOPHERTRUNK_ACCEPT_TERMS=1 ...
+# It is deliberately NOT baked into the image — accepting is the
+# operator's act, not the build's.
+
 ENTRYPOINT ["/usr/local/bin/gophertrunk"]
 CMD ["run", "-config", "/etc/gophertrunk/config.yaml"]

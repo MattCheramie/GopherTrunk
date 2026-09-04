@@ -107,7 +107,7 @@ jobs:
         run: |
           set -eu
           STAGE=dist/staging
-          cp README.md LICENSE config.example.yaml "$STAGE/"
+          cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
           # All three consoles nest under gophertrunk-web/; the Inno
           # Setup script copies the whole tree into <DataRoot>\web.
