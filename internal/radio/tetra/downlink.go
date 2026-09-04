@@ -332,6 +332,12 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 		if si, ok := ParseSysInfo(recovered); ok {
 			c.learnSysInfo(si)
 		}
+		// The rest of the 124-bit block: SCCH allocation, power/access
+		// parameters and the D-MLE-SYSINFO TM-SDU (LA + subscriber class +
+		// BS service details). Logged on change by learnSysInfoExt.
+		if ext, ok := ParseSysInfoExtended(recovered); ok {
+			c.learnSysInfoExt(ext)
+		}
 	}
 }
 
@@ -362,6 +368,21 @@ func (c *ControlChannel) ingestResourceTMSDU(m MACResource, sdu []byte) {
 			if nb, ok := ParseDNwrkBroadcast(tl); ok {
 				c.learnNeighbourCells(nb, tl)
 			}
+			// MLE D-RESTORE-ACK wraps the call-restoration CMCE SDU for an MS
+			// that re-selected onto this cell mid-call — decode it like the
+			// direct CMCE PDU it carries, so the restored call's state (call-id
+			// binding, talker, release) keeps flowing after a cell change.
+			if !haveCMCE {
+				if restored, ok := ParseCMCERestoreAck(tl); ok {
+					c.log.Debug("tetra: mle d-restore-ack — call restored after cell re-selection",
+						"system", c.systemName,
+						"cmce_type", restored.Type,
+						"call_id", restored.CallIdentifier)
+					msg, haveCMCE = restored, true
+				}
+			}
+			c.observeMLESubsystem(tl)
+			c.handleMM(m, tl)
 			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
 			if pdu, err := PDUFromBits(tl); err == nil {
 				c.Ingest(pdu)

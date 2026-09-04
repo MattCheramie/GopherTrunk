@@ -103,6 +103,32 @@ func TestParseDNwrkBroadcastLiteral(t *testing.T) {
 	}
 }
 
+// TestParseCMCERestoreAckLiteral: an MLE D-RESTORE-ACK wraps a CMCE SDU
+// (5-bit CMCE type onward) — the framing tetra-kit's serviceMleSubsystem
+// implements by forwarding the payload after the 3-bit MLE PDU type straight
+// to its CMCE layer. The literal is a D-CONNECT for call id 0x1234.
+func TestParseCMCERestoreAckLiteral(t *testing.T) {
+	pdu := "101" + "100" + // PD=MLE, type=D-RESTORE-ACK
+		"00010" + // CMCE type = D-CONNECT
+		"01001000110100" + // call identifier = 0x1234
+		"0000" + "0" + "0" + "00" + "0" + "0" + // timeout/hook/simplex/grant/perm/ownership
+		"0" // O-bit: no optional elements
+	msg, ok := ParseCMCERestoreAck(bitsOf(t, pdu))
+	if !ok {
+		t.Fatal("ParseCMCERestoreAck returned ok=false on a valid PDU")
+	}
+	if msg.Type != CMCETypeDConnect || msg.CallIdentifier != 0x1234 {
+		t.Errorf("restored CMCE = %+v, want D-CONNECT call 0x1234", msg)
+	}
+	// A D-NWRK-BROADCAST is not a restore-ack; nor is a direct CMCE TL-SDU.
+	if _, ok := ParseCMCERestoreAck(bitsOf(t, "101"+"010"+"1010101101010100"+"10"+"0")); ok {
+		t.Error("ParseCMCERestoreAck accepted a D-NWRK-BROADCAST")
+	}
+	if _, ok := ParseCMCERestoreAck(bitsOf(t, "010"+"100"+"00010"+"01001000110100"+"000000000"+"0")); ok {
+		t.Error("ParseCMCERestoreAck accepted a CMCE TL-SDU")
+	}
+}
+
 // TestParseDNwrkBroadcastRejects covers the not-this-PDU and truncation exits.
 func TestParseDNwrkBroadcastRejects(t *testing.T) {
 	cases := map[string]string{
@@ -244,7 +270,7 @@ func TestNeighbourStatusFlagsRendersStatuses(t *testing.T) {
 		HasTimeshare:      true,
 		Timeshare:         0x15,
 	}
-	if got, want := neighbourStatusFlags(cell), "synced,load=medium,la=1031,bs_svc=0x5a5,timeshare=0x15"; got != want {
+	if got, want := neighbourStatusFlags(cell), "synced,load=medium,la=1031,bs_svc=0x5a5[dereg,min-mode,migration,voice,sndcp,adv-link],timeshare=0x15"; got != want {
 		t.Errorf("StatusFlags = %q, want %q", got, want)
 	}
 	bare := NeighbourCell{}
