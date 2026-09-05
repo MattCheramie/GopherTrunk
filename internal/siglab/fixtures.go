@@ -244,7 +244,9 @@ func buildP25LockedDibits(nac uint16, repeats int) []uint8 {
 // buildP25Phase2MACPTTStream builds a P25 Phase 2 superframe stream of
 // MAC-signaling subframes. Lifted from integration_cc_p25p2_test.go.
 func buildP25Phase2MACPTTStream(repeats int) []uint8 {
-	pdu := p25phase2.MACPDU{Opcode: p25phase2.OpGroupVoiceChannelUserAbbreviated, Payload: make([]byte, 17)}
+	// 16 bytes of payload + the opcode fills the 17 a MAC structure may
+	// occupy after the PDU header byte.
+	pdu := p25phase2.MACPDU{Opcode: p25phase2.OpGroupVoiceChannelUserAbbreviated, Payload: make([]byte, 16)}
 	var subs [p25phase2.SubframesPerSuperframe][]uint8
 	for i := range subs {
 		subs[i] = p25phase2.EncodeMACSubframe(

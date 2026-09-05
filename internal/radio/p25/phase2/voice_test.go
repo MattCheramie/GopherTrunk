@@ -1,126 +1,157 @@
 package phase2
 
 import (
-	"bytes"
-	"errors"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
-// ambePayload builds a VoiceFrameBytes-long AMBE+2 frame with the 7
-// padding bits (the low 7 bits of the last byte) cleared, so an
-// encode→extract round-trip is bit-exact.
-func ambePayload(b ...byte) []byte {
-	if len(b) != VoiceFrameBytes {
-		panic("ambePayload needs VoiceFrameBytes bytes")
+// voiceInfoPattern returns a packed vocoder frame with a deterministic bit
+// pattern — the form the encoder takes and the decoder returns.
+func voiceInfoPattern(seed byte) []byte {
+	bits := make([]byte, VoiceInfoBits)
+	for i := range bits {
+		bits[i] = (seed + byte(i)) & 1
 	}
-	out := append([]byte(nil), b...)
-	out[VoiceFrameBytes-1] &= 0x80 // 49 bits = 6 bytes + 1 bit
-	return out
+	return framing.PackBitsMSB(bits)
 }
 
-func voicePayloads(n int) [][]byte {
-	seeds := []byte{0x12, 0x34, 0x56, 0x78}
-	out := make([][]byte, n)
-	for i := 0; i < n; i++ {
-		s := seeds[i%len(seeds)]
-		out[i] = ambePayload(s, s^0xFF, s+1, s+2, s+3, s+4, s+5)
-	}
-	return out
-}
-
-func TestExtractVoiceFramesRoundTrip(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		slot SlotType
-		n    int
-	}{
-		{"Voice4V", SlotTypeVoice4V, Voice4VFrameCount},
-		{"Voice2V", SlotTypeVoice2V, Voice2VFrameCount},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			want := voicePayloads(tc.n)
-			sub := EncodeVoiceSubframe(tc.slot, 3, want)
-			frame := Subframe{Index: 3, Timeslot: 1, SlotType: tc.slot, Dibits: sub}
-
-			got, errs, err := ExtractVoiceFrames(frame)
+// TestVoiceBurstRoundTrip exercises the encoder against the decoder across
+// both voice burst kinds and every slot phase, including the PN44 descramble.
+func TestVoiceBurstRoundTrip(t *testing.T) {
+	seq := ScrambleSequence(framing.PN44SeedFromIdentity(0xBEE00, 0x1FC, 0x1F0))
+	for _, bt := range []BurstType{BurstVoice4, BurstVoice2} {
+		n := len(VoiceFrameOffsets(bt))
+		want := make([][]byte, n)
+		for i := range want {
+			want[i] = voiceInfoPattern(byte(i))
+		}
+		for slot := 0; slot < SubframesPerSuperframe; slot++ {
+			burst := EncodeVoiceBurst(bt, want, slot, seq)
+			if got := BurstTypeOf(burst); got != bt {
+				t.Fatalf("burst type %d round-tripped as %d", bt, got)
+			}
+			got, errs, unc, err := ExtractBurstVoiceFrames(burst, slot, seq)
 			if err != nil {
-				t.Fatalf("ExtractVoiceFrames: %v", err)
+				t.Fatalf("type %d slot %d: %v", bt, slot, err)
 			}
-			if errs != 0 {
-				t.Errorf("clean sub-frame corrected %d errors", errs)
+			if errs != 0 || unc != 0 {
+				t.Errorf("type %d slot %d: clean burst reported errs=%d unc=%d", bt, slot, errs, unc)
 			}
-			if len(got) != tc.n {
-				t.Fatalf("got %d frames, want %d", len(got), tc.n)
+			if len(got) != n {
+				t.Fatalf("type %d slot %d: %d frames, want %d", bt, slot, len(got), n)
 			}
 			for i := range got {
-				if !bytes.Equal(got[i], want[i]) {
-					t.Errorf("frame %d = %x, want %x", i, got[i], want[i])
+				if string(got[i]) != string(want[i]) {
+					t.Errorf("type %d slot %d frame %d mismatch", bt, slot, i)
 				}
 			}
-		})
+		}
 	}
 }
 
-func TestExtractVoiceFramesCorrectsBitError(t *testing.T) {
-	want := voicePayloads(Voice4VFrameCount)
-	sub := EncodeVoiceSubframe(SlotTypeVoice4V, 3, want)
-	// The high bit of the first voice frame's first dibit maps into the
-	// C0 sub-vector, which AMBE+2 protects with Golay(23,12). Flipping
-	// it injects one correctable error.
-	sub[VoiceFrameOffset] ^= 0x2
-
-	frame := Subframe{SlotType: SlotTypeVoice4V, Dibits: sub}
-	got, errs, err := ExtractVoiceFrames(frame)
+// TestVoiceBurstCorrectsBitErrors: the AMBE codeword's first two fields are
+// Golay-protected, so up to three bit errors in each are repaired and the
+// vocoder frame comes back intact.
+func TestVoiceBurstCorrectsBitErrors(t *testing.T) {
+	seq := ScrambleSequence(framing.PN44SeedFromIdentity(0xBEE00, 0x1FC, 0x1F0))
+	want := [][]byte{voiceInfoPattern(0), voiceInfoPattern(1), voiceInfoPattern(2), voiceInfoPattern(3)}
+	const slot = 5
+	burst := EncodeVoiceBurst(BurstVoice4, want, slot, seq)
+	// Flip three dibits inside the first frame's c0 column (on-air bits 4k).
+	for k := 0; k < 3; k++ {
+		burst[voiceFrameOffsets[0]+2*k] ^= 2
+	}
+	got, errs, unc, err := ExtractBurstVoiceFrames(burst, slot, seq)
 	if err != nil {
-		t.Fatalf("ExtractVoiceFrames with 1 bit error: %v", err)
+		t.Fatal(err)
 	}
-	if errs < 1 {
-		t.Errorf("expected at least 1 corrected error, got %d", errs)
+	if unc != 0 {
+		t.Errorf("uncorrectable=%d, want 0", unc)
 	}
-	if !bytes.Equal(got[0], want[0]) {
-		t.Errorf("frame 0 = %x, want %x (FEC should have corrected it)", got[0], want[0])
+	if errs == 0 {
+		t.Error("errs=0; the damage should have been corrected, not absent")
 	}
-}
-
-func TestExtractVoiceFramesRejectsMACSubframe(t *testing.T) {
-	sub := IdleSubframe()
-	WriteISCH(sub, SlotTypeMACSignaling, 0)
-	frame := Subframe{SlotType: SlotTypeMACSignaling, Dibits: sub}
-	if _, _, err := ExtractVoiceFrames(frame); !errors.Is(err, ErrNotVoiceSubframe) {
-		t.Errorf("err = %v, want ErrNotVoiceSubframe", err)
+	if string(got[0]) != string(want[0]) {
+		t.Error("frame 0 not repaired")
 	}
 }
 
-func TestSuperframeDecodeToVoiceFrames(t *testing.T) {
-	// Build a superframe whose every sub-frame is a 4V voice slot, run
-	// it through the full SuperframeDecoder, and extract voice from
-	// each — the end-to-end Phase A→B→C path.
-	var subs [SubframesPerSuperframe][]uint8
-	want := make([][][]byte, SubframesPerSuperframe)
-	for i := range subs {
-		want[i] = voicePayloads(Voice4VFrameCount)
-		subs[i] = EncodeVoiceSubframe(SlotTypeVoice4V, uint8(i), want[i])
+// TestVoiceBurstWrongSlotIsNoise pins the discriminator the slot-phase vote
+// relies on: at the wrong scramble phase the Golay decoders work near their
+// correction radius on every frame.
+func TestVoiceBurstWrongSlotIsNoise(t *testing.T) {
+	seq := ScrambleSequence(framing.PN44SeedFromIdentity(0xBEE00, 0x1FC, 0x1F0))
+	want := [][]byte{voiceInfoPattern(0), voiceInfoPattern(1), voiceInfoPattern(2), voiceInfoPattern(3)}
+	const slot = 4
+	burst := EncodeVoiceBurst(BurstVoice4, want, slot, seq)
+	right, ok := VoiceBurstGolayErrors(burst, slot, seq)
+	if !ok || right != 0 {
+		t.Fatalf("correct slot reported errs=%d ok=%v, want 0/true", right, ok)
 	}
-	const warmup = 50
-	stream := append(make([]uint8, warmup), EncodeSuperframe(subs)...)
+	for other := 0; other < SubframesPerSuperframe; other++ {
+		if other == slot {
+			continue
+		}
+		wrong, ok := VoiceBurstGolayErrors(burst, other, seq)
+		if !ok {
+			continue
+		}
+		if wrong <= voiceSlotVoteMaxErrs {
+			t.Errorf("slot %d (wrong) reported only %d corrected bits; the vote "+
+				"threshold is %d, so it would tie with the right phase",
+				other, wrong, voiceSlotVoteMaxErrs)
+		}
+	}
+}
 
-	d := NewSuperframeDecoder()
-	got := d.Process(stream, 0)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 superframe, got %d", len(got))
+func TestVoiceFrameOffsetsLandOnDUIDBoundaries(t *testing.T) {
+	// The geometry is self-checking: each frame ends exactly where a DUID
+	// dibit sits, and the ESS fills the gap after frame 1.
+	if got := VoiceFrameOffsets(BurstVoice4); len(got) != 4 {
+		t.Fatalf("4V has %d frames, want 4", len(got))
 	}
-	for i, s := range got[0].Subframes {
-		if s.SlotType != SlotTypeVoice4V {
-			t.Fatalf("sub-frame %d SlotType = %v, want Voice4V", i, s.SlotType)
-		}
-		frames, _, err := ExtractVoiceFrames(s)
-		if err != nil {
-			t.Fatalf("sub-frame %d ExtractVoiceFrames: %v", i, err)
-		}
-		for j := range frames {
-			if !bytes.Equal(frames[j], want[i][j]) {
-				t.Errorf("sub-frame %d frame %d mismatch", i, j)
-			}
+	if got := len(VoiceFrameOffsets(BurstVoice2)); got != 2 {
+		t.Fatalf("2V has %d frames, want 2", got)
+	}
+	if VoiceFrameOffsets(BurstFACCHScrambled) != nil {
+		t.Error("an ACCH burst reported voice frames")
+	}
+	// The burst tiles exactly, with nothing left over:
+	//   DUID 20 | f0 21..56 | DUID 57 | f1 58..93 | ESS 94..105 |
+	//   f2 106..141 | DUID 142 | f3 143..178 | DUID 179
+	duid := map[int]bool{}
+	for _, p := range duidDibitPositions {
+		duid[p] = true
+	}
+	off := VoiceFrameOffsets(BurstVoice4)
+	for _, i := range []int{0, 1, 3} {
+		if !duid[off[i]-1] {
+			t.Errorf("frame %d starts at %d, which does not follow a DUID dibit", i, off[i])
 		}
 	}
+	for _, i := range []int{0, 2, 3} {
+		if end := off[i] + VoiceCodewordDibits; !duid[end] {
+			t.Errorf("frame %d ends at %d, which is not a DUID dibit", i, end)
+		}
+	}
+	if got := off[1] + VoiceCodewordDibits; got != ESSDibitOffset {
+		t.Errorf("frame 1 ends at %d, but the ESS starts at %d", got, ESSDibitOffset)
+	}
+	if got := ESSDibitOffset + ESSDibits; got != off[2] {
+		t.Errorf("ESS ends at %d, but frame 2 starts at %d", got, off[2])
+	}
+	if got := off[3] + VoiceCodewordDibits; got != BurstDibits-1 {
+		t.Errorf("frame 3 ends at %d, want the final DUID dibit at %d", got, BurstDibits-1)
+	}
+}
+
+// voicePayloads builds n silent vocoder payloads for fixtures that need voice
+// sub-frames as filler.
+func voicePayloads(n int) [][]byte {
+	out := make([][]byte, n)
+	for i := range out {
+		out[i] = make([]byte, VoiceFrameBytes)
+	}
+	return out
 }

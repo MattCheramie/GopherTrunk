@@ -299,7 +299,7 @@ func New(opts Options) (*Engine, error) {
 		e.p25p2Rx = p25phase2rx.New(p25phase2rx.Options{
 			SampleRateHz: ddc.OutRateHz(),
 			ClockMode:    p25phase2rx.ClockGardner,
-			GardnerGain:  0.005,
+			GardnerGain:  0.03, // matches composer.p25p2VoiceGardnerGain
 			SoftDecision: true,
 			SoftSink: func(dibits []uint8, soft []complex64, baseIdx int) {
 				e.onSymbols(soft)

@@ -56,6 +56,7 @@ type ControlChannel struct {
 	// debug line (Options.QuietNonControlDUID) — an operator-facing log
 	// hygiene knob for busy control channels.
 	quietNonControlDUID bool
+	nidSink             func(NIDReport)
 	// lastSiteLog dedupes the concise site-configuration log line so an
 	// established site logs once and re-logs only when its identity / primary
 	// control channel materially changes (see logSiteIdentity).
@@ -509,6 +510,11 @@ type Options struct {
 	// hot path, so it is invoked only when set; production wiring leaves it nil
 	// and pays nothing.
 	PDUSink func(SignalingBlock)
+	// NIDSink, when set, is called for every NID the channel accepts —
+	// control-channel TSDUs and non-control data units alike — before any
+	// TSBK decoding. It is the per-frame tap the decoder-comparison harness
+	// uses; production leaves it nil.
+	NIDSink func(NIDReport)
 
 	// NIDSearchSpan overrides the per-instance NID-alignment grid
 	// radius. Zero falls back to the package-level NIDSearchSpan
@@ -626,6 +632,7 @@ func New(opts Options) *ControlChannel {
 		now:                   now,
 		carrierOffsetHz:       opts.CarrierOffsetHz,
 		quietNonControlDUID:   opts.QuietNonControlDUID,
+		nidSink:               opts.NIDSink,
 		fswTol:                fswTol,
 		aliasAsm:              NewTalkerAliasAssembler(now),
 		diagSeen:              make(map[uint32]int),
@@ -907,6 +914,16 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8, req
 			"at_boundary", atSearchBoundary(best.delta, c.nidSearchSpan),
 			"err_pattern", formatErrPattern(best.errPattern))
 	}
+	if c.nidSink != nil {
+		c.nidSink(NIDReport{
+			FSWStart:     (nidStart + best.delta - len(FrameSyncWord)) + c.bufBase,
+			NAC:          best.nid.NAC,
+			DUID:         best.nid.DUID,
+			Errs:         best.errs,
+			Rotation:     best.rot,
+			Corroborated: best.errs > NIDAcceptErrs,
+		})
+	}
 	if best.nid.DUID == DUIDPacketDataUnit {
 		// A PDU on the control channel is (usually) Multi-Block Trunking —
 		// the AMBT carrier of the WACN-bearing Network Status Broadcast and
@@ -980,6 +997,20 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8, req
 // to an optional PDUSink for SigLab's data-PDU inspector. It is decoder-neutral
 // and carries the raw opcode/payload plus the FEC/CRC outcome and the absolute
 // symbol offset, so the inspector can dissect, filter, and locate each PDU.
+// NIDReport describes one accepted NID: the frame's first FSW dibit as an
+// absolute stream index, the decoded NAC/DUID and the BCH correction count.
+// Corroborated is true when the NID exceeded NIDAcceptErrs on its own and was
+// accepted only because the frame's TSBK CRC verified under the same
+// alignment. Delivered via Options.NIDSink.
+type NIDReport struct {
+	FSWStart     int
+	NAC          uint16
+	DUID         DUID
+	Errs         int
+	Rotation     uint8
+	Corroborated bool
+}
+
 type SignalingBlock struct {
 	Opcode     uint8
 	OpcodeName string

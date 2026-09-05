@@ -57,7 +57,7 @@ func (g *gardnerRef) Process(dst, src []complex64) []complex64 {
 		if g.have && midOK {
 			diff := complex64(sym - g.prevSym)
 			err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
-			g.mu += g.sps + g.gain*err
+			g.mu += g.sps - g.gain*err
 		} else {
 			g.mu += g.sps
 			g.have = true
@@ -109,7 +109,7 @@ func (g *gardnerRef) Process2x(dst, src []complex64) []complex64 {
 		if g.have && midOK {
 			diff := complex64(sym - g.prevSym)
 			err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
-			g.mu += g.sps + g.gain*err
+			g.mu += g.sps - g.gain*err
 		} else {
 			g.mu += g.sps
 			g.have = true
