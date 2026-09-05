@@ -243,6 +243,19 @@ func ParseDNwrkBroadcast(tl []byte) (DNwrkBroadcast, bool) {
 			}
 			out.Neighbours = append(out.Neighbours, cell)
 		}
+		// The neighbour list is the PDU's last element, and the MAC/LLC layers
+		// bound the TL-SDU to the PDU's own advertised length (length
+		// indication honoured, fill bits stripped) — so a genuine broadcast
+		// ends within a fill run (< 8 bits) of the last cell. A longer residue
+		// is proof the bits are not one D-NWRK-BROADCAST: every 4-5 Sep field
+		// splice (two transmissions of the broadcast glued by a mis-continued
+		// fragment reassembly) left 15-388 trailing bits after a cell list
+		// that parsed "cleanly", and the phantom neighbour sites were parsed
+		// out of exactly that misalignment. Rejecting here is defence in depth
+		// behind the reassembly-integrity abandons in decodeDownlinkSlot.
+		if r.remaining() >= 8 {
+			return DNwrkBroadcast{}, false
+		}
 	}
 	return out, true
 }
