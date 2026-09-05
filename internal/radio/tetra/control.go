@@ -195,8 +195,13 @@ type ControlChannel struct {
 	// broadcast repeats every few seconds with identical content; bit garbage
 	// does not (mirrors the BSCH identity/colour confirm-twice rule).
 	// Inherently bounded (32 ids each). Lazily built; guarded by mu.
+	// neighboursSeen stamps when each cell id last appeared in an ACCEPTED
+	// broadcast; cells the BS stops advertising for neighbourExpiry are pruned
+	// (see learnNeighbourCells) so a long session's report tracks the live
+	// neighbour list instead of accumulating every cell ever seen.
 	neighbours        map[uint8]NeighbourCell
 	neighboursPending map[uint8]NeighbourCell
+	neighboursSeen    map[uint8]time.Time
 
 	// releaseSeen records when a KindCallRelease was last published per group
 	// (GSSI). The SwMI retransmits D-RELEASE / D-DISCONNECT — once per addressed
@@ -713,6 +718,12 @@ type Stats struct {
 	SCHPDUs     int64 // signalling channel (SCH/F, SCH/HD) blocks recovered CRC-clean off a real NCDB slot
 	SCHPDUsFail int64 // AACH-confirmed control slots that yielded no CRC-clean SCH block
 	Grants      int64 // voice grants published
+	// FragAbandons counts TM-SDU fragment chains dropped by the reassembly
+	// continuity guards (see abandonFragment): a designed safety response to a
+	// lost/unreadable slot mid-reassembly, not a parse defect — the broadcast
+	// repeats within seconds, so each abandon costs one cycle. A high rate
+	// simply tracks marginal RF.
+	FragAbandons int64
 }
 
 // addStat adds n to a decode-health counter when debug telemetry is on. A
@@ -1020,12 +1031,16 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast, tl []byte) {
 		}
 	}
 	var confirmed []NeighbourCell
+	var expired []uint8
+	now := c.now()
 	c.mu.Lock()
 	if c.neighbours == nil {
 		c.neighbours = make(map[uint8]NeighbourCell)
 		c.neighboursPending = make(map[uint8]NeighbourCell)
+		c.neighboursSeen = make(map[uint8]time.Time)
 	}
 	for _, cell := range nb.Neighbours {
+		c.neighboursSeen[cell.CellID] = now
 		if cur, seen := c.neighbours[cell.CellID]; seen && cur == cell {
 			continue // steady-state rebroadcast of a confirmed cell
 		}
@@ -1039,8 +1054,32 @@ func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast, tl []byte) {
 		}
 		c.neighboursPending[cell.CellID] = cell
 	}
+	// Age out cells the BS stopped advertising. The broadcast rotates through
+	// the live neighbour list within a minute or two, so a cell absent for
+	// neighbourExpiry has genuinely left it — a reconfigured network, or a
+	// phantom that slipped an earlier gate. Pruning happens only here, on an
+	// ACCEPTED broadcast, so a CC outage (no broadcasts at all) never expires
+	// anything: the clock only advances relative to broadcasts still arriving.
+	for id, seen := range c.neighboursSeen {
+		if now.Sub(seen) < neighbourExpiry {
+			continue
+		}
+		delete(c.neighboursSeen, id)
+		delete(c.neighboursPending, id)
+		if _, surfaced := c.neighbours[id]; surfaced {
+			delete(c.neighbours, id)
+			expired = append(expired, id)
+		}
+	}
 	c.mu.Unlock()
+	for _, id := range expired {
+		c.log.Debug("tetra: neighbour cell no longer advertised — expiring",
+			"system", c.systemName, "cell_id", id, "expiry", neighbourExpiry)
+	}
 	if len(confirmed) == 0 {
+		if len(expired) > 0 {
+			c.publishSiteIdentity()
+		}
 		return
 	}
 	for _, cell := range confirmed {
@@ -1373,14 +1412,61 @@ const fragMaxBits = 2048
 // fragMaxGapDibits bounds the dibit stream distance between successive pieces
 // of one fragmented TM-SDU. Fragments continue in the following signalling
 // opportunities of the same channel (§23.4.2), i.e. one TDMA frame apart on the
-// MCCH (4 slots × 255 dibits = 1020), occasionally displaced by a sync burst or
-// the frame-18 schedule — four frames of slack accepts all of that. What it
-// rejects is a MAC-FRAG/MAC-END arriving long after the chain's previous piece:
-// that continuation belongs to a LATER fragmented PDU whose own start fragment
-// was lost, and splicing it onto the stale chain manufactures a corrupt L3 PDU
-// (see abandonFragment's caller for why that corruption survives dedup).
-// osmo-tetra-sq5bpf ages fragment slots out the same way (fragtimer > N203).
-const fragMaxGapDibits = 4 * 4 * 255
+// MCCH (4 slots × 255 dibits = 1020), occasionally two frames when the
+// frame-18 schedule displaces one — two frames plus grid jitter accepts all of
+// that. What it rejects is a MAC-FRAG/MAC-END arriving later: that
+// continuation belongs to a LATER transmission of a fragmented PDU whose own
+// start fragment was lost, and splicing it onto the stale chain manufactures a
+// corrupt L3 PDU (see abandonFragment's caller for why that corruption
+// survives dedup). osmo-tetra-sq5bpf ages fragment slots out the same way
+// (fragtimer > N203). The 4-5 Sep field splices (phantom D-NWRK-BROADCAST
+// neighbour sites built from two transmissions of the rotating broadcast)
+// arrived inside the old FOUR-frame window; two frames rejects every splice
+// that lost a whole transmission's worth of pieces, and the on-grid slot
+// checks in decodeDownlinkSlot cover the tighter cases.
+const fragMaxGapDibits = 2*4*255 + 2*fragGridJitterDibits
+
+// fragGridJitterDibits is the tolerance around the 255-dibit slot grid within
+// which an NCDB position still counts as the same slot: the detector's
+// correlation lead can slip a couple of dibits between bursts on a marginal
+// carrier.
+const fragGridJitterDibits = 3
+
+// onChainSlotGrid reports whether a positive dibit-stream delta from a
+// fragment chain's last piece lands on the downlink's 255-dibit slot grid
+// (± fragGridJitterDibits). Real slots — the only places a continuation can
+// arrive, and the only places its loss can hide — are on the grid; the NCDB
+// detector's spurious off-grid correlator emits (tolerance-2 matches inside
+// burst payloads, e.g. at +92/+163 dibits on the 4 Sep field captures) are
+// not, and must count for nothing: neither as a continuation opportunity nor
+// as decode-failure evidence.
+func onChainSlotGrid(delta int) bool {
+	r := delta % 255
+	return r <= fragGridJitterDibits || r >= 255-fragGridJitterDibits
+}
+
+// aachClassifyMaxErrs is the maximum Hamming distance at which a hard AACH
+// decode's slot classification (control vs traffic) is TRUSTED. DecodeAACH's
+// RM(30,14) maximum-likelihood search always returns the nearest codeword —
+// random garbage typically lands at distance 4-6 (the sphere around some
+// codeword: ~2^14 codewords in 2^30 words), so an unconfident "decode" is a
+// coin-flip classification, not evidence. A genuine AACH at workable SNR
+// decodes at 0-2 errors; at ≤2 the chance of garbage passing is ~0.7%
+// (466·2^-16). Trusted-only classification gates the SCHPDUsFail counter and
+// the fragment-chain integrity checks in decodeDownlinkSlot. (The soft-decision
+// fallback in traffic.go uses its own, looser aachSoftMaxDist — that path also
+// requires a routable traffic marker, a stronger content check.)
+const aachClassifyMaxErrs = 2
+
+// neighbourExpiry is how long a neighbour cell stays in the surfaced set (and
+// the pending confirm-twice set) without reappearing in an accepted
+// D-NWRK-BROADCAST. The broadcast rotates through the live list within a
+// minute or two, so 30 minutes of absence — measured only while broadcasts
+// keep arriving, never across a CC outage — means the BS no longer advertises
+// the cell. Keeps a long session's "Neighbor sites" tracking the network's
+// live list rather than accumulating every cell ever seen (the 4-5 Sep 10-hour
+// field report's phantom pile-up).
+const neighbourExpiry = 30 * time.Minute
 
 // stashFragment records a start-fragment MAC-RESOURCE's partial TM-SDU and its
 // resource context so a following MAC-END can reassemble the complete L3 PDU. A
@@ -1395,13 +1481,14 @@ func (c *ControlChannel) stashFragment(m MACResource, partial []byte) {
 }
 
 // fragChainAdjacentLocked reports whether the slot being decoded is close
-// enough in the dibit stream to the reassembly's previous piece for a
-// MAC-FRAG/MAC-END in it to be that chain's continuation. A negative delta is
-// a stream discontinuity (resync baseline jump) and never adjacent. Callers
-// hold mu.
+// enough in the dibit stream to the reassembly's previous piece — and on the
+// chain's 255-dibit slot grid — for a MAC-FRAG/MAC-END in it to be that
+// chain's continuation. A negative delta is a stream discontinuity (resync
+// baseline jump) and never adjacent; an off-grid delta is a spurious
+// correlator emit, not a slot a continuation can arrive in. Callers hold mu.
 func (c *ControlChannel) fragChainAdjacentLocked() bool {
 	delta := c.curSlotPos - c.fragLastPos
-	return delta >= 0 && delta <= fragMaxGapDibits
+	return delta >= 0 && delta <= fragMaxGapDibits && onChainSlotGrid(delta)
 }
 
 // dropFragmentLocked abandons the in-progress reassembly. Callers hold mu.
@@ -1422,7 +1509,13 @@ func (c *ControlChannel) abandonFragment(reason string) {
 		return
 	}
 	c.dropFragmentLocked()
-	c.log.Debug("tetra: abandoning TM-SDU fragment reassembly", "reason", reason)
+	if c.debug {
+		c.statsMu.Lock()
+		c.stats.FragAbandons++
+		c.statsMu.Unlock()
+	}
+	c.log.Debug("tetra: abandoning TM-SDU fragment reassembly — awaiting rebroadcast (continuity guard, not a parse error)",
+		"reason", reason)
 }
 
 // appendFragment appends a MAC-FRAG continuation to the in-progress TM-SDU. A

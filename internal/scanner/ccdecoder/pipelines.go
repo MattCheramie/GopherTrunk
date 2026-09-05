@@ -1070,6 +1070,7 @@ func (p *tetraPipeline) maybeLogStatus() {
 		"sysinfo", st.SysInfo,
 		"sch_pdus", st.SCHPDUs,
 		"sch_pdus_fail", st.SCHPDUsFail,
+		"frag_abandons", st.FragAbandons,
 		"grants", st.Grants,
 		"colour_code", p.cc.Topology().ColourCode&0x3F,
 	)

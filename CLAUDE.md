@@ -488,6 +488,40 @@ confirmation before any close-as-completed.
   — likely another MAC boundary/seam hole in a rarely-sent broadcast variant — is still
   un-root-caused; the hex dump is the instrument). Pinned failing-first by
   `TestLearnNeighbourCellsRejectsImplausibleCells` (old code reproduces the operator's exact row).
+- **The phantom-neighbour corruption source is ROOT-CAUSED (5 Sep, from the 4 Sep tl_sdu_hex
+  instrument alone): mis-continued fragment reassembly SPLICING TWO TRANSMISSIONS of the rotating
+  D-NWRK-BROADCAST.** The 11 rejected dumps in the operator's 10.4 h log decode as the real cell
+  list (9,10,11 … 57-bit cells, perfect) that mid-cell jumps back to another copy of the list —
+  identical substrings repeat inside one TL-SDU, and every dump left 15–388 trailing bits after a
+  "complete" cell list (genuine: <8, the MAC bounds the TM-SDU to the PDU's own length). Bogus
+  sites that LOOKED plausible (mnc=1021/1032 = the real cells' LAs shifted into the MNC field)
+  were the same splices confirming twice, because the loss pattern repeats with the broadcast
+  schedule. Three holes let a chain survive the losses that set a splice up, all fixed in
+  `decodeDownlinkSlot`/`fragChainAdjacentLocked`: (1) a control slot with ONE decoded SCH/HD half
+  counted as recovered — the failed half IS a lost signalling block (on a control slot both halves
+  carry signalling; stealing exists only on traffic slots); (2) **`DecodeAACH` is an ML search that
+  ALWAYS returns the nearest RM(30,14) codeword** (`errs` = Hamming distance, garbage lands at
+  4-6), so a faded AACH was a coin-flip classification and "traffic" kept the chain — the
+  classification is now trusted only at `errs ≤ aachClassifyMaxErrs` (2). (Searching the other
+  three rotations on unconfident slots was tried and REVERTED: most emits on this capture are
+  unconfident, and the extra 16k-codeword ML searches took the 120 s replay 61→139 s, past real
+  time — the multi-rotation loop was always unreachable anyway, r=0 is the stream's rotation);
+  (3) adjacency tightened
+  4→2 frames + the continuation must land on the chain's 255-dibit slot grid. **The grid gate is
+  load-bearing, measured on the 4 Sep MRC captures**: the NCDB detector also emits spurious
+  off-grid correlator hits (+92/+163 dibits, tolerance-2 matches inside payloads), and a naive
+  "gap between emitted slots" check (first attempt) aborted every chain on this SCBS/timeshare
+  carrier (neighbours 0/8) — integrity evidence must be slots on the chain's own grid, nothing
+  else. Defence in depth: `ParseDNwrkBroadcast` rejects ≥8 trailing bits after the neighbour list
+  (kills the whole splice class even if a new hole appears; reject logged with `tl_sdu_hex`), and
+  neighbours now EXPIRE after `neighbourExpiry` (30 min) without re-advertisement — aged only
+  across ACCEPTED broadcasts, so a CC outage expires nothing — ending the 10-hour phantom pile-up.
+  The periodic "abandoning TM-SDU fragment reassembly" DEBUG line is the continuity guard WORKING
+  (each abandon costs one broadcast cycle; the reporter read it as a parse bug) — it now says so,
+  and `frag_abandons` in the decode-status line tracks the rate. Pinned failing-first:
+  `TestParseDNwrkBroadcastRejectsSplicedFieldCapture` (a LITERAL field dump), half-slot /
+  unclassifiable-AACH / on-grid tests in `frag_continuity_test.go`, expiry in `mle_parse_test.go`;
+  no-harm: both 4 Sep captures replay 8/8 real cells through `TestTETRANeighbourReportReplay`.
 - **TETRA control-plane decode surface (the "advanced D-SYSINFO / D-ATTACH/DETACH / D-NEW-CELL /
   SCCH" request) — what's decoded vs deliberately raw.** `ParseSysInfoExtended` (`sysinfo_ext.go`)
   decodes the rest of the 124-bit SYSINFO: common-SCCH count (+ TS2..TS4 mapping),

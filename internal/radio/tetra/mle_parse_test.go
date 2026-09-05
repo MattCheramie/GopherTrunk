@@ -3,6 +3,7 @@ package tetra
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 )
@@ -276,5 +277,86 @@ func TestNeighbourStatusFlagsRendersStatuses(t *testing.T) {
 	bare := NeighbourCell{}
 	if got, want := neighbourStatusFlags(bare), "unsynced"; got != want {
 		t.Errorf("bare StatusFlags = %q, want %q (absent fields must be omitted, not zero)", got, want)
+	}
+}
+
+// TestParseDNwrkBroadcastRejectsSplicedFieldCapture pins the trailing-residue
+// gate with a LITERAL TL-SDU from the 4 Sep 2026 field log (tl_sdu_hex, 17:02
+// broadcast): a fragment reassembly that spliced two transmissions of the
+// serving cell's rotating neighbour broadcast. The first cells parse perfectly
+// (they are the real cells 9/10 with their true carriers and LAs) and the list
+// "completes", but 132 bits of the second transmission trail the last cell — a
+// genuine broadcast ends within a fill run (< 8 bits) of its final cell,
+// because the MAC bounds the TM-SDU to the PDU's own length. The old parser
+// accepted this and the misaligned later cells became phantom neighbour sites
+// that repeated bit-identically past the confirm-twice dedup. Fails against
+// the old parser (it returned ok=true with 7 "cells").
+func TestParseDNwrkBroadcastRejectsSplicedFieldCapture(t *testing.T) {
+	spliced := hexToBits(t,
+		"ab1ba8e8a2ce0035fffd20ac2d30220380a0557680110200582baf4520ac2d3022"+
+			"0380a0557680110200582baf40087fa030153fa60444100a0ab3d00110a40302bb340080")[:552]
+	if _, ok := ParseDNwrkBroadcast(spliced); ok {
+		t.Error("ParseDNwrkBroadcast accepted a spliced broadcast with 132 bits of trailing residue")
+	}
+}
+
+// TestParseDNwrkBroadcastTrailingResidue: the gate's boundary. A genuine
+// TL-SDU may end with up to 7 bits of MAC fill after the last cell (octet
+// granularity of the length indication); 8 or more residual bits is proof of a
+// misframed/spliced PDU.
+func TestParseDNwrkBroadcastTrailingResidue(t *testing.T) {
+	// Header + one cell (id=9, no optionals), ending flush.
+	base := "101" + "010" + "1010101101010100" + "10" + "1" + "0" + "1" + "001" +
+		"01001" + "00" + "0" + "11" + "101010100000" + "0"
+	if _, ok := ParseDNwrkBroadcast(bitsOf(t, base)); !ok {
+		t.Fatal("flush-ending broadcast rejected")
+	}
+	if nb, ok := ParseDNwrkBroadcast(bitsOf(t, base+"0000000")); !ok || len(nb.Neighbours) != 1 {
+		t.Error("broadcast with 7 fill bits after the list rejected")
+	}
+	if _, ok := ParseDNwrkBroadcast(bitsOf(t, base+"00000000")); ok {
+		t.Error("broadcast with 8 residual bits after the list accepted")
+	}
+}
+
+// TestLearnNeighbourCellsExpiresUnadvertisedCells: a cell absent from every
+// accepted broadcast for neighbourExpiry leaves the surfaced set (and the
+// topology republishes), so a long session's "Neighbor sites" tracks the
+// network's LIVE neighbour list — the 4-5 Sep 10-hour field report accumulated
+// phantom sites for the daemon's whole lifetime because nothing ever pruned.
+// Expiry is measured only across accepted broadcasts: a CC outage (no
+// broadcasts at all) must not expire anything.
+func TestLearnNeighbourCellsExpiresUnadvertisedCells(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	cc := New(Options{SystemName: "Sys", FrequencyHz: 467_912_500,
+		Now: func() time.Time { return now }})
+	cc.learnSysInfo(SysInfo{MainCarrier: 2716, FreqBand: 4, Offset: 3, DuplexSpacing: 6})
+
+	cellA := NeighbourCell{CellID: 7, MainCarrier: 2720, Synchronized: true}
+	cellB := NeighbourCell{CellID: 9, MainCarrier: 2754}
+	both := DNwrkBroadcast{Neighbours: []NeighbourCell{cellA, cellB}}
+	onlyA := DNwrkBroadcast{Neighbours: []NeighbourCell{cellA}}
+
+	cc.learnNeighbourCells(both, nil)
+	cc.learnNeighbourCells(both, nil) // confirm-twice
+	if got := len(cc.TopologySnapshot().Neighbors); got != 2 {
+		t.Fatalf("surfaced %d neighbours, want 2", got)
+	}
+
+	// B keeps rotating out of the broadcast but the window has not elapsed yet:
+	// it must survive.
+	now = now.Add(neighbourExpiry / 2)
+	cc.learnNeighbourCells(onlyA, nil)
+	if got := len(cc.TopologySnapshot().Neighbors); got != 2 {
+		t.Fatalf("cell expired before neighbourExpiry: surfaced %d, want 2", got)
+	}
+
+	// Past the window with B still absent: B is pruned, A (just re-advertised)
+	// stays.
+	now = now.Add(neighbourExpiry/2 + time.Minute)
+	cc.learnNeighbourCells(onlyA, nil)
+	snap := cc.TopologySnapshot()
+	if len(snap.Neighbors) != 1 || snap.Neighbors[0].Site != 7 {
+		t.Fatalf("after expiry snapshot = %+v, want only cell 7", snap.Neighbors)
 	}
 }
