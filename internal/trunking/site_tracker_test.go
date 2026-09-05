@@ -138,7 +138,14 @@ func TestSiteTrackerDedupesAndUpdates(t *testing.T) {
 	bus.Publish(events.Event{Kind: events.KindSiteUpdate, Payload: SiteUpdate{System: "MMR", RFSSID: 2, SiteID: 9, ControlChannelHz: 423012500}})
 	bus.Publish(events.Event{Kind: events.KindSiteUpdate, Payload: SiteUpdate{System: "MMR", RFSSID: 1, SiteID: 1, ControlChannelHz: 420112500}})
 
-	waitFor(t, func() bool { return tr.Len() == 2 })
+	// Wait for the THIRD event (the refresh), not just Len()==2 — the count
+	// reaches 2 as soon as the second event is processed, and asserting the
+	// refreshed frequency in that window raced the tracker goroutine (seen as
+	// a -race CI flake: snapshot still carried the first event's 420012500).
+	waitFor(t, func() bool {
+		s := tr.Snapshot()
+		return len(s) == 2 && s[0].ControlChannelHz == 420112500
+	})
 	snap := tr.Snapshot()
 	if len(snap) != 2 {
 		t.Fatalf("want 2 sites, got %d: %+v", len(snap), snap)
