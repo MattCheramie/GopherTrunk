@@ -180,6 +180,149 @@ func TestReceiverIsCarrierOffsetInvariant(t *testing.T) {
 	}
 }
 
+// decodeDibitsChunked runs one IQ buffer through a DeviationHz-calibrated DMR
+// receiver in fixed-size chunks (mirroring how the daemon feeds live IQ) and
+// returns the recovered dibit stream. The pre-clock coarse acquirer only
+// applies its one-shot correction on the chunk AFTER it locks, so exercising it
+// requires chunked delivery — a single Process call mixes the whole buffer with
+// the identity NCO before the lock ever fires.
+func decodeDibitsChunked(iq []complex64, chunk int) []uint8 {
+	var got []uint8
+	r := New(Options{
+		SampleRateHz: 48_000,
+		DeviationHz:  1944.0,
+		DibitSink:    func(dibits []uint8, baseIdx int) { got = append(got, dibits...) },
+	})
+	for i := 0; i < len(iq); i += chunk {
+		end := i + chunk
+		if end > len(iq) {
+			end = len(iq)
+		}
+		r.Process(iq[i:end])
+	}
+	return got
+}
+
+// bestLagAgreement returns the fraction of dibits (over ref[warmup:]) that match
+// got at the single best constant lag in [-40, +40]. When the coarse acquirer
+// engages it re-acquires symbol timing on the corrected signal, which shifts the
+// recovered stream by a constant, decode-neutral number of symbols relative to a
+// stream that never engaged — so the streams are compared under their best
+// constant alignment, exactly as a downstream sync-word correlator finds a burst
+// wherever it lands. A true mis-decode stays at the ~0.25 chance / ~0.71
+// mis-slice floor at every lag; only a correct decode aligns.
+func bestLagAgreement(ref, got []uint8, warmup int) float64 {
+	best := 0.0
+	for lag := -40; lag <= 40; lag++ {
+		ok, tot := 0, 0
+		for i := warmup; i < len(ref); i++ {
+			j := i + lag
+			if j < 0 || j >= len(got) {
+				continue
+			}
+			tot++
+			if ref[i] == got[j] {
+				ok++
+			}
+		}
+		if tot > 500 {
+			if f := float64(ok) / float64(tot); f > best {
+				best = f
+			}
+		}
+	}
+	return best
+}
+
+// TestReceiverDecodesGrosslyMistunedDongle pins the issue #836 follow-up: the
+// pre-clock coarse carrier acquisition. The receiver's post-clock CoarseAFC
+// alone pulls in only a few hundred Hz, so a real RTL-SDR off by tens of ppm
+// (several kHz at 446 MHz — the reporter's case, with kalibrate-rtl unavailable
+// to hand-set sdr.ppm) sat past the decode cliff and never synced. The coarse
+// stage estimates the offset from the discriminator mean and de-rotates the IQ
+// once, before the discriminator, so the recovered stream matches the
+// zero-offset decode.
+//
+// Metric: decode each offset stream and the (never-engaging) zero-offset
+// reference, then take the best-constant-lag agreement over a post-acquisition
+// tail. Verified failing-first by disabling the stage (deadband → ∞): agreement
+// collapses to the ~0.71 mis-slice floor at 3–18 kHz and to the ~0.29 chance
+// floor in the ~1.2–1.5 kHz notch, versus ≥0.93 with the stage on.
+func TestReceiverDecodesGrosslyMistunedDongle(t *testing.T) {
+	const chunk = 4096 // RTL-realistic delivery; single Process can't exercise the stage
+	stream := balancedStream(3000)
+	// The reference never engages the acquirer (0 Hz < deadband), so it is
+	// identical to the pre-#836 decode and a stable ground truth.
+	ref := decodeDibitsChunked(makeC4FMIQWithOffset(stream, 0), chunk)
+
+	cases := []struct {
+		name     string
+		offsetHz float64
+	}{
+		// ≈2.7 ppm at 446 MHz — the ~1.2–1.5 kHz notch where the old code
+		// mis-locked to the wrong symbol instant (chance floor ~0.29).
+		{"mid-band notch 1500 Hz", 1500},
+		// ≈6.7 ppm — a typical RTL-SDR tuner error; old code floors at ~0.71.
+		{"grossly mistuned 3000 Hz", 3000},
+		// ≈13 ppm — a badly-mistuned dongle; old code floors at ~0.71.
+		{"grossly mistuned 6000 Hz", 6000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			off := decodeDibitsChunked(makeC4FMIQWithOffset(stream, tc.offsetHz), chunk)
+			// Skip past the coarse acquisition window (~819 symbols at chunk=4096)
+			// plus a short re-lock settle, so the measurement is over the frozen,
+			// centred steady state.
+			const warmup = 1100
+			if len(ref) <= warmup || len(off) <= warmup {
+				t.Fatalf("recovered too few dibits: ref=%d off=%d, need > %d", len(ref), len(off), warmup)
+			}
+			frac := bestLagAgreement(ref, off, warmup)
+			if frac < 0.95 {
+				t.Fatalf("dibit agreement with the zero-offset decode = %.3f at %.0f Hz, want >=0.95 — the coarse pre-clock acquirer should make decode invariant to a grossly-mistuned tuner (issue #836); the stage disabled floors at ~0.71 (mis-slice) / ~0.29 (notch)", frac, tc.offsetHz)
+			}
+		})
+	}
+}
+
+// TestCoarseCarrierAcquirerReportsOffset pins the diagnostic getter and the
+// deadband: a grossly-mistuned signal reports a frozen coarse offset close to
+// the true tuner error (so the daemon can log it), while a well-tuned signal
+// leaves the stage dormant at 0 (the post-clock CoarseAFC handles small offsets
+// and the pre-clock stage must not perturb an already-decoding dongle).
+func TestCoarseCarrierAcquirerReportsOffset(t *testing.T) {
+	const chunk = 4096
+	stream := balancedStream(3000)
+
+	runOffset := func(offsetHz float64) float64 {
+		r := New(Options{
+			SampleRateHz: 48_000,
+			DeviationHz:  1944.0,
+			DibitSink:    func([]uint8, int) {},
+		})
+		iq := makeC4FMIQWithOffset(stream, offsetHz)
+		for i := 0; i < len(iq); i += chunk {
+			end := i + chunk
+			if end > len(iq) {
+				end = len(iq)
+			}
+			r.Process(iq[i:end])
+		}
+		return r.CoarseCarrierOffsetHz()
+	}
+
+	// Below the deadband: the stage stays dormant and reports exactly 0.
+	if got := runOffset(120); got != 0 {
+		t.Errorf("small (120 Hz) offset engaged the coarse stage: reported %.1f Hz, want 0", got)
+	}
+	// Grossly mistuned: the stage engages and its frozen estimate is within a
+	// few hundred Hz of the true offset (a small bias is expected from the
+	// finite acquisition window's residual symbol DC).
+	if got := runOffset(6000); math.Abs(got-6000) > 400 {
+		t.Errorf("6000 Hz offset: reported coarse offset %.1f Hz, want within 400 Hz of 6000", got)
+	}
+}
+
 func TestReceiverConstructsAndProcessesSilence(t *testing.T) {
 	r := New(Options{
 		SampleRateHz: 48_000,

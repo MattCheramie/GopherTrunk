@@ -115,9 +115,12 @@ type Receiver struct {
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
 	afc       *demod.CoarseAFC
+	acq       *coarseCarrierAcquirer
 	agc       demod.C4FMSymbolAGC
 	dibitSink dmr.DibitSink
 	dibitBase int
+
+	mixed []complex64 // scratch for the coarse-acquirer de-rotation (acq path only)
 
 	// Optional diagnostic taps (symbol scope). nil = no-op.
 	softSink   func([]float32)
@@ -198,11 +201,27 @@ func New(opts Options) *Receiver {
 		afc = demod.NewCoarseAFC(1)
 	}
 
+	// Coarse pre-clock carrier acquisition (issue #836): the post-clock
+	// CoarseAFC above only pulls in a few hundred Hz because the timing loop
+	// and matched filter still see the shifted signal. A grossly-mistuned
+	// dongle (tens of ppm — several kHz at 446 MHz) sits far past that, at the
+	// slicer's mis-slice floor, and no sdr.ppm was set. This stage estimates
+	// the offset from the discriminator mean and de-rotates the IQ once, before
+	// the discriminator, so everything downstream sees a centred eye; the
+	// post-clock AFC then mops up the small residual. Allocated only on the
+	// calibrated DeviationHz>0 path so legacy pre-scaled fixtures stay
+	// byte-identical, and a deadband keeps it dormant on well-tuned signals.
+	var acq *coarseCarrierAcquirer
+	if opts.DeviationHz > 0 {
+		acq = newCoarseCarrierAcquirer(opts.SampleRateHz, sps)
+	}
+
 	return &Receiver{
 		fm:    demod.NewFM(),
 		mf:    demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
 		clock: sync.NewMuellerMuller(sps, gain),
 		afc:   afc,
+		acq:   acq,
 		// Symbol-AGC bridges the level mismatch between the unit-energy
 		// RRC matched filter and the 4-level slicer's fixed thresholds.
 		// The RRC has a DC gain of ~3.1 (it is normalised to unit
@@ -235,7 +254,35 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
 	}
-	r.disc = r.fm.Process(r.disc, iq)
+	// Coarse pre-clock carrier de-rotation (issue #836). Until the acquirer
+	// engages this is an identity mix (byte-identical output); once it locks it
+	// removes the bulk of a large tuner offset in the IQ domain so the timing
+	// loop and matched filter see a centred signal. nil on the legacy
+	// DeviationHz<=0 path — iq is then passed through untouched.
+	src := iq
+	if r.acq != nil {
+		r.mixed = r.acq.Mix(r.mixed, iq)
+		src = r.mixed
+	}
+	r.disc = r.fm.Process(r.disc, src)
+	if r.acq != nil {
+		// Fold this chunk's discriminator output into the acquisition mean and,
+		// once the window is full, apply the one-shot frozen correction to the
+		// NCO — which takes effect on the NEXT chunk's Mix. When it engages, the
+		// downstream timing loop and level trackers have been following the
+		// uncorrected (shifted) signal, so re-acquire them on the now-centred
+		// signal: without this, the Mueller-Müller loop stays parked at a phase
+		// tuned to the old offset and a narrow band of large offsets re-locks to
+		// the wrong symbol instant (issue #836). This chunk is still inside the
+		// discarded acquisition warm-up, so the reset costs nothing decoded.
+		if r.acq.Observe(r.disc) {
+			r.clock.Reset()
+			r.agc.Reset()
+			if r.afc != nil {
+				r.afc.Reset()
+			}
+		}
+	}
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
 	r.symbols = r.clock.Process(r.symbols, r.matched)
 	if len(r.symbols) == 0 {
@@ -308,6 +355,21 @@ func (r *Receiver) Reset() {
 	if r.afc != nil {
 		r.afc.Reset()
 	}
+	if r.acq != nil {
+		r.acq.Reset()
+	}
+}
+
+// CoarseCarrierOffsetHz reports the frozen coarse carrier-offset correction the
+// pre-clock acquirer pulled out of the IQ, in hertz (issue #836). It is 0 until
+// the stage engages (a well-tuned dongle, or an offset below the deadband) and
+// 0 on the legacy pre-scaled-fixture path where the acquirer is disabled.
+// Exposed so the daemon can log the tuner offset an operator's dongle carries.
+func (r *Receiver) CoarseCarrierOffsetHz() float64 {
+	if r.acq == nil {
+		return 0
+	}
+	return r.acq.OffsetHz()
 }
 
 // AGCLevel and AGCTarget expose the shared symbol-AGC's running mean|x|
