@@ -24,6 +24,18 @@ for tagged releases.
   never require acceptance.
 
 ### Fixed
+- **Conventional DMR now decodes through a grossly-mistuned RTL-SDR** (#836).
+  DMR was the one C4FM receiver whose only carrier-offset correction was the
+  post-clock CoarseAFC, which pulls in just a few hundred Hz — so a dongle off
+  by tens of ppm (several kHz at 446 MHz) sat past the decode cliff and never
+  synced, and there was no way to hand-set `sdr.ppm` without a GSM-based
+  calibration tool. A new pre-clock coarse carrier acquisition estimates the
+  offset from the discriminator mean and de-rotates the IQ once, before the
+  discriminator, so the timing loop and matched filter see a centred eye;
+  synthetic decode is now invariant to a tuner offset out to ~40 ppm. Only
+  engages above a 500 Hz deadband, so a well-tuned dongle is unchanged.
+  Synthetic-verified; on-air confirmation against a real mistuned dongle is
+  still pending a capture.
 - **Talkgroups auto-discovered on analog trunking systems are no longer
   labeled mode "D" (digital)** (#1143 follow-up). Discovered-talkgroup mode
   now follows the system's protocol: SmartNet/SmartZone, LTR, MPT-1327 and
