@@ -43,25 +43,52 @@ import (
 // is well inside the post-clock CoarseAFC's comfortable range, which continues
 // to track slow drift. A deadband keeps the stage from touching signals the
 // post-clock AFC already handles, so a well-tuned dongle stays byte-identical.
+//
+// # Idle-channel robustness
+//
+// A conventional / simplex channel is silent before its first transmission, and
+// the discriminator output on noise is ~zero-mean but not zero-variance — one
+// window of noise can post a mean of a few hundred Hz by chance. So the stage
+// does NOT freeze on a single window: it requires TWO consecutive windows whose
+// estimates both clear the deadband AND agree with each other (a real tuner
+// offset is constant window-to-window; noise is not). Windows that fall below
+// the deadband — silence, or a well-tuned signal — simply re-arm, so the stage
+// waits through idle noise and engages on the first ~two windows of a genuinely
+// offset transmission rather than latching onto a noise fluctuation. This
+// replaces an earlier single-window design that locked on the leading silence of
+// a bursty channel and never corrected the transmission (found replaying a real
+// simplex capture, issue #836). It uses no absolute-power gate — agreement, not
+// dBFS, is the signal-vs-noise discriminator.
 type coarseCarrierAcquirer struct {
 	nco        *dsp.NCO
 	sampleRate float64
 	acqSamples int     // acquisition window length, in IQ samples
 	deadbandHz float64 // minimum |estimate| worth correcting
+	agreeHz    float64 // max window-to-window disagreement to accept a lock
 
-	seen   int
-	sumRad float64 // running sum of discriminator output over the window (rad/sample)
-	locked bool
-	offHz  float64 // frozen correction applied to the NCO (0 until/unless it engages)
+	seen    int
+	sumRad  float64 // running sum of discriminator output over the window (rad/sample)
+	haveCan bool    // a prior above-deadband window is pending confirmation
+	canHz   float64 // that window's estimate, awaiting an agreeing second window
+	locked  bool
+	offHz   float64 // frozen correction applied to the NCO (0 until/unless it engages)
 }
 
 // coarseAcqSymbols is the acquisition window length in symbol periods. ~512
 // symbols (~107 ms at 4800 baud) is long enough that ordinary DMR traffic /
 // idle / sync content averages spectrally flat — so the mean tracks the carrier
-// offset, not a transient symbol-distribution bias — yet short enough to lock
-// early in a transmission. Only the leading window of the first transmission
-// after a Reset decodes uncorrected; every burst after the freeze is centred.
+// offset, not a transient symbol-distribution bias — yet short enough that the
+// two-window confirmation still locks early in a transmission (~2 windows,
+// ~214 ms). Only that leading span of the first transmission after a Reset
+// decodes uncorrected; every burst after the freeze is centred.
 const coarseAcqSymbols = 512
+
+// coarseAcqAgreeHz is the maximum window-to-window disagreement accepted when
+// confirming a lock. A real tuner offset is constant to well within this;
+// two independent noise windows agreeing this closely at a >deadband magnitude
+// is vanishingly unlikely, which is what keeps the stage from latching on idle
+// noise. 250 Hz is well below the deadband so a confirmed pair is unambiguous.
+const coarseAcqAgreeHz = 250.0
 
 // coarseAcqDeadbandHz is the smallest estimated offset the stage will correct.
 // The post-clock CoarseAFC already decodes cleanly below ~800 Hz, so a 500 Hz
@@ -84,6 +111,7 @@ func newCoarseCarrierAcquirer(sampleRateHz, sps float64) *coarseCarrierAcquirer 
 		sampleRate: sampleRateHz,
 		acqSamples: int(math.Round(coarseAcqSymbols * sps)),
 		deadbandHz: coarseAcqDeadbandHz,
+		agreeHz:    coarseAcqAgreeHz,
 	}
 }
 
@@ -111,20 +139,37 @@ func (c *coarseCarrierAcquirer) Observe(disc []float32) (engaged bool) {
 	if c.seen < c.acqSamples {
 		return false
 	}
+	// One window complete: estimate its offset and reset the accumulator for the
+	// next window.
 	meanRad := c.sumRad / float64(c.seen)
 	offHz := meanRad * c.sampleRate / (2 * math.Pi)
-	c.locked = true
+	c.seen = 0
+	c.sumRad = 0
+
+	// Below the deadband — silence, or a signal the post-clock AFC already
+	// handles. Drop any pending candidate and re-arm; never freeze here, so an
+	// idle channel keeps waiting instead of latching on a noise fluctuation.
 	if math.Abs(offHz) < c.deadbandHz {
+		c.haveCan = false
 		return false
 	}
-	// The NCO shifts a component at +offHz down to DC; the balanced-data mean
-	// is measured on the current (identity, pre-lock) stream, so the full
-	// offset folds in at once. += keeps the general form; the freeze above
-	// makes it single-shot. The frequency step this applies mid-stream would
-	// otherwise leave the Mueller-Müller timing loop parked at a bad phase
-	// (measured: a narrow band of offsets re-locks to a wrong symbol instant),
-	// so the receiver resets the downstream chain when engaged is true.
-	c.offHz += offHz
+	// Above the deadband but not yet confirmed: hold it as a candidate and wait
+	// for the next window. A real tuner offset repeats; a noise window won't.
+	if !c.haveCan || math.Abs(offHz-c.canHz) > c.agreeHz {
+		c.haveCan = true
+		c.canHz = offHz
+		return false
+	}
+	// Two consecutive windows agree above the deadband — a genuine, constant
+	// carrier offset. Freeze the average and apply it once. The NCO shifts a
+	// component at +offHz down to DC; the estimate is measured on the current
+	// (identity, pre-lock) stream, so the full offset folds in at once. The
+	// frequency step this applies mid-stream would otherwise leave the
+	// Mueller-Müller timing loop parked at a bad phase (measured: a narrow band
+	// of offsets re-locks to a wrong symbol instant), so the receiver resets the
+	// downstream chain when engaged is true.
+	c.locked = true
+	c.offHz += 0.5 * (offHz + c.canHz)
 	c.nco.SetOffset(c.offHz, c.sampleRate)
 	return true
 }
@@ -141,6 +186,8 @@ func (c *coarseCarrierAcquirer) Reset() {
 	c.nco.SetOffset(0, c.sampleRate)
 	c.seen = 0
 	c.sumRad = 0
+	c.haveCan = false
+	c.canHz = 0
 	c.locked = false
 	c.offHz = 0
 }
