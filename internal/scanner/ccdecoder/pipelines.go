@@ -372,11 +372,17 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// after the matched filter so DeviationHz isn't used.
 		DeviationHz: 1800.0,
 		DemodMode:   demodMode,
-		// EnableDecisionDirectedAFC intentionally left false: the
-		// daemon runs CoarseAFC-alone (the pre-DDA behaviour). The DDA
-		// can stably false-lock with no FSW/CC-lock feedback to catch
-		// it and was a net regression on the issue #402 capture; keep
-		// it off here until the eye-skew root cause is pinned.
+		// Decision-directed AFC, gated on the control channel's lock
+		// (issue #402). The DDA once stably false-locked with no
+		// FSW/CC-lock feedback to catch it; the receiver now commits the
+		// handoff only while p25LockProbe reports the CC locked and
+		// decoding, and reverts to CoarseAFC-alone within a few seconds
+		// if that stops. Measured on weak-signal control-channel
+		// recordings adjudicated by content: +23% corroborated TSBKs on
+		// the weakest channel, no change on the rest, no change in
+		// refuted claims. C4FM only; the CQPSK path has no AFC stage.
+		EnableDecisionDirectedAFC: true,
+		LockProbe:                 p25LockProbe(cc),
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
@@ -1778,3 +1784,18 @@ type dstarPipeline struct {
 func (p *dstarPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dstarPipeline) Reset()                 { p.rx.Reset() }
 func (p *dstarPipeline) Close() error           { return nil }
+
+// p25LockProbe builds the receiver's decision-directed AFC lock signal
+// from the control channel: locked, and at least one trusted NID accepted
+// since the previous poll. The receiver polls it about once a second,
+// during which a live control channel accepts ~27 trusted NIDs, so a
+// false answer means the framer really has stopped decoding. Issue #402.
+func p25LockProbe(cc *p25phase1.ControlChannel) func() bool {
+	var lastTrusted int64
+	return func() bool {
+		trusted := cc.Stats().NIDTrusted
+		advanced := trusted > lastTrusted
+		lastTrusted = trusted
+		return cc.Locked() && advanced
+	}
+}
