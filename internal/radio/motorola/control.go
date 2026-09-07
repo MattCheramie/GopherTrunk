@@ -33,6 +33,18 @@ func (s LockState) LockedNAC() uint16         { return s.SystemID }
 // sequencer only steps once it can see a full window.
 const oswQueueDepth = 3
 
+// sourceMemoryTTL bounds how long the source radio ID from an initiating
+// grant is remembered and backfilled onto that talkgroup's later voice
+// updates (issue #1143). SmartNet sends the source RID only on the two-OSW
+// grant that starts a call; the single-OSW updates that keep it alive omit
+// it, so without this the Active Calls source blanks after one frame. The
+// memory is refreshed on every grant/update for the talkgroup, so a call
+// keeps its source however sparsely its updates arrive on a weak CC; it ages
+// out this long after updates stop (the call ended) so a stale talker can't
+// be attached to a later, source-less call on the same talkgroup. It is only
+// ever a display/attribution aid — decode and recording never key off it.
+const sourceMemoryTTL = 30 * time.Second
+
 // ControlChannel ingests OSWs from a single SmartNet / SmartZone
 // control channel, emits cc.locked the first time the OSW stream
 // carries the system identity, and republishes voice grants as
@@ -66,6 +78,17 @@ type ControlChannel struct {
 	oswQ   []OSW
 	locked bool
 	last   LockState
+	// callSrc remembers the calling radio ID from each talkgroup's
+	// initiating grant so the source-less voice updates that follow can be
+	// backfilled with it (issue #1143). Keyed by masked talkgroup.
+	callSrc map[uint16]srcMemo
+}
+
+// srcMemo is one talkgroup's remembered source radio ID and the time it was
+// last seen, for aging out a stale talker (see sourceMemoryTTL).
+type srcMemo struct {
+	id uint32
+	at time.Time
 }
 
 // Options configure a ControlChannel.
@@ -108,6 +131,7 @@ func New(opts Options) *ControlChannel {
 		plan:       plan,
 		onOSW:      opts.OnOSW,
 		now:        now,
+		callSrc:    map[uint16]srcMemo{},
 	}
 }
 
@@ -237,12 +261,17 @@ func (c *ControlChannel) publishGrant(grantOSW OSW, src uint32) {
 	if !ok {
 		return
 	}
+	tg := grantOSW.Talkgroup()
+	// Backfill the calling radio ID onto a source-less voice update from the
+	// grant that started the call, and remember a fresh source for the updates
+	// still to come (issue #1143).
+	src = c.resolveSource(tg, src)
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
 			System:      c.systemName,
 			Protocol:    "motorola",
-			GroupID:     uint32(grantOSW.Talkgroup()),
+			GroupID:     uint32(tg),
 			SourceID:    src,
 			FrequencyHz: freq,
 			ChannelNum:  grantOSW.Command,
@@ -252,8 +281,33 @@ func (c *ControlChannel) publishGrant(grantOSW OSW, src uint32) {
 		},
 	})
 	c.log.Debug("motorola: grant",
-		"system", c.systemName, "tg", grantOSW.Talkgroup(), "src", src,
+		"system", c.systemName, "tg", tg, "src", src,
 		"channel", grantOSW.Command, "freq_hz", freq)
+}
+
+// resolveSource remembers a talkgroup's source radio ID from its initiating
+// grant (src != 0) and backfills it onto that talkgroup's later voice updates
+// (src == 0), which SmartNet sends without a source (issue #1143). A fresh
+// grant for the talkgroup overwrites the remembered source with the new
+// talker; a remembered source older than sourceMemoryTTL is treated as stale
+// (the previous call ended) and not attached to a new source-less call. Every
+// hit refreshes recency so a call keeps its source across sparse updates on a
+// weak control channel. Caller holds c.mu.
+func (c *ControlChannel) resolveSource(tg uint16, src uint32) uint32 {
+	now := c.now()
+	if src != 0 {
+		c.callSrc[tg] = srcMemo{id: src, at: now}
+		return src
+	}
+	if m, ok := c.callSrc[tg]; ok && now.Sub(m.at) <= sourceMemoryTTL {
+		m.at = now
+		c.callSrc[tg] = m
+		return m.id
+	}
+	// Stale or never seen: drop any aged entry so the map can't grow without
+	// bound on a busy system, and report no source.
+	delete(c.callSrc, tg)
+	return 0
 }
 
 // maybeLockLocked publishes cc.locked on the first (or a changed)

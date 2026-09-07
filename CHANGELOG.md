@@ -24,6 +24,15 @@ for tagged releases.
   never require acceptance.
 
 ### Fixed
+- **SmartNet/SmartZone call source RID no longer blanks after the first frame**
+  (#1143). Motorola SmartNet sends the calling radio ID only on the two-OSW
+  grant that starts a call; the single-OSW voice updates that keep it alive omit
+  it, so the source flashed for one frame on the Active Calls view and then
+  disappeared. The control channel now remembers each talkgroup's source from
+  its initiating grant and backfills it onto the following updates (aged out
+  after the call ends so a stale talker can't attach to a later call, and
+  replaced when a new talker keys up the same talkgroup). Display/attribution
+  only — decode and recording are unaffected.
 - **Conventional DMR now decodes through a grossly-mistuned RTL-SDR** (#836).
   DMR was the one C4FM receiver whose only carrier-offset correction was the
   post-clock CoarseAFC, which pulls in just a few hundred Hz — so a dongle off
