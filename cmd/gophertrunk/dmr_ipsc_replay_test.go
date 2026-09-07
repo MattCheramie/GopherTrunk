@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -18,9 +20,13 @@ import (
 )
 
 // TestDMRIPSCReplay is a real-air diagnostic harness for conventional DMR /
-// IPSC captures (issue #1036). Skip unless GT_DMR_IQ points at a cs16
-// (interleaved int16) IQ file; GT_DMR_IQ_RATE gives its sample rate (default
-// 50000). It mirrors the daemon's dmr-tier2 decode: it downconverts to the DMR
+// IPSC captures (issue #1036). Skip unless GT_DMR_IQ points at an IQ file;
+// GT_DMR_IQ_RATE gives its sample rate (default 50000) and GT_DMR_IQ_FORMAT the
+// encoding (cs16 default, or f32 for a GNU Radio / gqrx cfile — the reporter's
+// 25 kS/s f32 capture: GT_DMR_IQ_RATE=25000 GT_DMR_IQ_FORMAT=f32). Note an
+// idle-beacon capture (a resting burst with no voice keyup) decodes 0 grants by
+// design — set GT_DMR_ALLOW_EMPTY=1 for that case. It mirrors the daemon's
+// dmr-tier2 decode: it downconverts to the DMR
 // channel rate, runs the shared DMR receiver, and feeds the recovered dibits to
 // BOTH the Tier II conventional state machine (which emits a grant on every
 // Voice LC Header — "grants but no voice" comes from here) AND the DMR voice
@@ -36,7 +42,7 @@ import (
 func TestDMRIPSCReplay(t *testing.T) {
 	path := os.Getenv("GT_DMR_IQ")
 	if path == "" {
-		t.Skip("set GT_DMR_IQ (cs16 IQ) [+ GT_DMR_IQ_RATE] to run the DMR IPSC replay")
+		t.Skip("set GT_DMR_IQ (IQ file) [+ GT_DMR_IQ_RATE, GT_DMR_IQ_FORMAT=cs16|f32] to run the DMR IPSC replay")
 	}
 	inRate := 50000.0
 	if v := os.Getenv("GT_DMR_IQ_RATE"); v != "" {
@@ -52,11 +58,31 @@ func TestDMRIPSCReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	iq := make([]complex64, len(raw)/4)
-	for i := range iq {
-		re := int16(binary.LittleEndian.Uint16(raw[i*4:]))
-		im := int16(binary.LittleEndian.Uint16(raw[i*4+2:]))
-		iq[i] = complex(float32(re)/32768, float32(im)/32768)
+	// GT_DMR_IQ_FORMAT selects the sample encoding: cs16 (default, interleaved
+	// int16) or f32 (interleaved float32 — the GNU Radio / gqrx cfile format the
+	// #1036 reporter's 25 kS/s capture uses).
+	format := strings.ToLower(os.Getenv("GT_DMR_IQ_FORMAT"))
+	if format == "" {
+		format = "cs16"
+	}
+	var iq []complex64
+	switch format {
+	case "cs16", "sc16":
+		iq = make([]complex64, len(raw)/4)
+		for i := range iq {
+			re := int16(binary.LittleEndian.Uint16(raw[i*4:]))
+			im := int16(binary.LittleEndian.Uint16(raw[i*4+2:]))
+			iq[i] = complex(float32(re)/32768, float32(im)/32768)
+		}
+	case "f32", "cf32", "fc32":
+		iq = make([]complex64, len(raw)/8)
+		for i := range iq {
+			re := math.Float32frombits(binary.LittleEndian.Uint32(raw[i*8:]))
+			im := math.Float32frombits(binary.LittleEndian.Uint32(raw[i*8+4:]))
+			iq[i] = complex(re, im)
+		}
+	default:
+		t.Fatalf("unknown GT_DMR_IQ_FORMAT %q (want cs16 or f32)", format)
 	}
 
 	// DMR is the 4800-baud C4FM family — normalise to the 48 kHz channel rate.
