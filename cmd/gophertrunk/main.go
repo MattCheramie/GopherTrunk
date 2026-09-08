@@ -436,9 +436,12 @@ func listSDRs(args []string) {
 	// --probe: open each device long enough to run the demod + tuner
 	// bring-up so TunerName and the gain ladder can be filled in. Each
 	// device is closed before the next is opened to avoid claiming two
-	// dongles at once. Failures don't abort the loop — the row just
-	// keeps the empty fields from Enumerate and the error is printed
-	// to stderr so the operator can see why probing failed.
+	// dongles at once, and probeDevice uses the driver's no-reset
+	// OpenProbe fast path (sdr.ProbeOpener) so probing one dongle can't
+	// reset-storm a sibling on the same host controller (issue #1135).
+	// Failures don't abort the loop — the row just keeps the empty
+	// fields from Enumerate and the error is printed to stderr so the
+	// operator can see why probing failed.
 	if probe {
 		for i := range infos {
 			d, err := sdr.DriverByName(infos[i].Driver)
@@ -473,14 +476,28 @@ const probeTimeout = 5 * time.Second
 // goroutine finish (and close the handle) on its own — harmless for a
 // short-lived CLI. Driver.Open takes no context, so the bound has to live
 // here at the call site rather than inside the driver.
+//
+// When the driver implements [sdr.ProbeOpener] the goroutine uses its
+// no-reset OpenProbe fast path instead of Open. This keeps probing a
+// read-only, single-pass operation: the daemon Open's reset+retry
+// envelope re-enumerates the device on macOS and would perturb a sibling
+// dongle on the same host controller, which is what made `sdr list
+// --probe` both time out and swap which of two dongles probed run to run
+// (issue #1135). With the no-reset probe each open touches only its own
+// device and finishes well inside the deadline, so the leaked-goroutine
+// safety net above almost never fires.
 func probeDevice(drv sdr.Driver, idx int, timeout time.Duration) (sdr.Info, error) {
 	type result struct {
 		info sdr.Info
 		err  error
 	}
+	open := drv.Open
+	if po, ok := drv.(sdr.ProbeOpener); ok {
+		open = po.OpenProbe
+	}
 	done := make(chan result, 1)
 	go func() {
-		dev, err := drv.Open(idx)
+		dev, err := open(idx)
 		if err != nil {
 			done <- result{err: err}
 			return

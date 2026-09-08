@@ -666,6 +666,42 @@ func TestOpenDevice_BringupTransferAbortedFiveTimes_ReturnsHintError(t *testing.
 	}
 }
 
+// Regression for the issue #1135 follow-up ("still fails on v1.1.0:
+// probe rtlsdr[N] timed out after 5s, and which dongle probes swaps run
+// to run"): the `sdr list --probe` fast path runs a SINGLE bring-up pass
+// and must NEVER reset the device, even for an error class the daemon
+// Open reset+retries (here the macOS ErrTransferAborted from #1137). On
+// the reporter's two-dongle Mac the reset+retry envelope turned a
+// transient bring-up abort during probe into up to four IOKit
+// ResetDevice re-enumerations, which both blew past the 5 s probe
+// deadline and — because a reset re-enumerates the shared bus —
+// perturbed the sibling dongle so the successful probe alternated
+// between the two. openDeviceAttempts(..., probeOpenAttempts) must
+// surface the abort immediately with ZERO resets, so probing never
+// reset-storms. The daemon budget (maxOpenAttempts) still resets, pinned
+// by TestOpenDevice_BringupTransferAborted_TriggersFullReset above.
+func TestOpenDeviceAttempts_ProbeBudgetNeverResets(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),                    // warmup OK (swallowed)
+		warmupUSBSysctlExchange(usb.ErrTransferAborted), // InitBaseband step 0 aborts
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-probe-noreset"}
+	_, err := openDeviceAttempts(m, desc, 0, probeOpenAttempts)
+	if err == nil {
+		t.Fatal("openDeviceAttempts(probe) succeeded; expected the aborted bring-up to fail")
+	}
+	if !errors.Is(err, usb.ErrTransferAborted) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrTransferAborted) (cause stays inspectable)", err)
+	}
+	if m.ResetCalls != 0 {
+		t.Errorf("ResetCalls = %d, want 0 (the probe fast path must never reset a device — issue #1135)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 1 {
+		t.Errorf("ClaimCalls = %d, want 1 (single claim, no post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
 // Regression: when ErrTimeout recurs on every bring-up pass (warmup
 // swallowed, then InitBaseband step 0 times out), the surfaced error
 // must carry the Windows-aware hint that points at the WinUSB / Zadig
