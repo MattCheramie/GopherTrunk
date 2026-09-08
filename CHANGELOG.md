@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **FleetSync / FleetSync II protocol decoder (clean-room core)** (#437). A new
+  `internal/radio/fleetsync` package decodes Kenwood FleetSync in-band ANI: the
+  16-bit sync hunt, the FleetSync I block check (CRC), the FleetSync II
+  single-error-correcting ECC, and the Fleet/Unit field extraction, plus a
+  bus-free bit framer. Ported clean-room from the multimon-ng `fsync` framing
+  (cross-checked against a working reference contributed on the issue) and
+  pinned with reference-literal + single-bit-correction tests. This is the
+  protocol core only; wiring it to a live 1200-baud FFSK front end and the
+  events/storage/REST/web surface is staged pending an on-air A/B against a real
+  Kenwood capture, so no operator-facing decode ships yet.
 - **Terms of Service, acknowledged once at install/first run**
   (`TERMS_OF_SERVICE.md`). A short, plain-language ToS in line with other
   open SDR software: lawful monitoring is the operator's responsibility, no
