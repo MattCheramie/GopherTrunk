@@ -66,4 +66,4 @@ back here whenever you want.
 
 If there's a topic you'd like a deep dive on, open a discussion on
 [GitHub](https://github.com/MattCheramie/GopherTrunk/discussions) or
-say hi on [Discord](https://discord.gg/x49Hr62uH).
+say hi on [Discord](https://discord.gg/fB77PQA4yk).
