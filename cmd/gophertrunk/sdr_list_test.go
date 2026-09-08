@@ -21,6 +21,23 @@ func (d *fakeProbeDriver) Name() string                     { return "fake" }
 func (d *fakeProbeDriver) Enumerate() ([]sdr.Info, error)   { return nil, nil }
 func (d *fakeProbeDriver) Open(idx int) (sdr.Device, error) { return d.open(idx) }
 
+// fakeProbeOpenerDriver additionally implements sdr.ProbeOpener so the
+// probe fast path can be exercised: openProbe is used by probeDevice when
+// present, and open records whether the daemon path was taken instead.
+type fakeProbeOpenerDriver struct {
+	open      func(idx int) (sdr.Device, error)
+	openProbe func(idx int) (sdr.Device, error)
+}
+
+func (d *fakeProbeOpenerDriver) Name() string                   { return "fake-probe" }
+func (d *fakeProbeOpenerDriver) Enumerate() ([]sdr.Info, error) { return nil, nil }
+func (d *fakeProbeOpenerDriver) Open(idx int) (sdr.Device, error) {
+	return d.open(idx)
+}
+func (d *fakeProbeOpenerDriver) OpenProbe(idx int) (sdr.Device, error) {
+	return d.openProbe(idx)
+}
+
 // fakeProbeDevice reports a fixed Info and records that Close was called.
 type fakeProbeDevice struct {
 	info   sdr.Info
@@ -70,6 +87,62 @@ func TestProbeDeviceOpenError(t *testing.T) {
 	}}
 	if _, err := probeDevice(drv, 0, time.Second); !errors.Is(err, wantErr) {
 		t.Fatalf("probeDevice error = %v, want %v", err, wantErr)
+	}
+}
+
+// TestProbeDevicePrefersProbeOpener is the regression for the issue #1135
+// follow-up: `sdr list --probe` must use a driver's no-reset OpenProbe
+// fast path (sdr.ProbeOpener) rather than the daemon Open with its
+// reset+retry envelope, because on macOS that envelope re-enumerates the
+// device and made probing one dongle perturb its sibling (timeouts +
+// which-dongle-probes swapping). probeDevice must call OpenProbe and not
+// Open when the driver implements ProbeOpener.
+func TestProbeDevicePrefersProbeOpener(t *testing.T) {
+	want := sdr.Info{TunerName: "R820T2", Gains: []int{0, 496}}
+	var openCalled, probeCalled bool
+	drv := &fakeProbeOpenerDriver{
+		open: func(int) (sdr.Device, error) {
+			openCalled = true
+			return nil, errors.New("daemon Open must not be used for probing")
+		},
+		openProbe: func(int) (sdr.Device, error) {
+			probeCalled = true
+			return &fakeProbeDevice{info: want}, nil
+		},
+	}
+	got, err := probeDevice(drv, 0, time.Second)
+	if err != nil {
+		t.Fatalf("probeDevice: unexpected error: %v", err)
+	}
+	if openCalled {
+		t.Error("probeDevice called Driver.Open; it must use the no-reset OpenProbe fast path (issue #1135)")
+	}
+	if !probeCalled {
+		t.Error("probeDevice did not call OpenProbe despite the driver implementing sdr.ProbeOpener")
+	}
+	if got.TunerName != want.TunerName {
+		t.Errorf("TunerName = %q, want %q", got.TunerName, want.TunerName)
+	}
+}
+
+// A driver that does NOT implement sdr.ProbeOpener must still be probed
+// via Open — the fast path is an optional extension, not a requirement.
+func TestProbeDeviceFallsBackToOpen(t *testing.T) {
+	want := sdr.Info{TunerName: "FC0013"}
+	var openCalled bool
+	drv := &fakeProbeDriver{open: func(int) (sdr.Device, error) {
+		openCalled = true
+		return &fakeProbeDevice{info: want}, nil
+	}}
+	got, err := probeDevice(drv, 0, time.Second)
+	if err != nil {
+		t.Fatalf("probeDevice: unexpected error: %v", err)
+	}
+	if !openCalled {
+		t.Error("probeDevice did not fall back to Driver.Open for a driver without ProbeOpener")
+	}
+	if got.TunerName != want.TunerName {
+		t.Errorf("TunerName = %q, want %q", got.TunerName, want.TunerName)
 	}
 }
 
