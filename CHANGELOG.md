@@ -24,6 +24,16 @@ for tagged releases.
   never require acceptance.
 
 ### Fixed
+- **`sdr list --probe` no longer times out or swaps which RTL-SDR probes on
+  macOS with two dongles** (#1135). Probing opened each dongle through the
+  daemon bring-up envelope, which reset+retries a transient macOS
+  control-transfer abort up to four times. On macOS each device reset is an
+  IOKit re-enumeration, so a transient abort while probing one dongle blew past
+  the 5 s probe deadline *and* perturbed the sibling on the same USB controller
+  — making the successful probe alternate between the two run to run. Probing is
+  now a single best-effort bring-up pass with no device reset (a dongle that
+  doesn't come up just shows empty tuner/gain fields, as before); the daemon
+  open path that actually streams keeps the full reset+retry recovery.
 - **SmartNet/SmartZone call source RID no longer blanks after the first frame**
   (#1143). Motorola SmartNet sends the calling radio ID only on the two-OSW
   grant that starts a call; the single-OSW voice updates that keep it alive omit
