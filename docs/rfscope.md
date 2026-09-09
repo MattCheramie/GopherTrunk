@@ -51,7 +51,9 @@ gophertrunk rfscope serve [-addr host:port] [-open]          web console (browse
 gophertrunk rfscope list                                     list registered analyzers
 ```
 
-Common flags (shared by `analyze` and `live`): `-format u8|f32`, `-sample-rate`,
+Common flags (shared by `analyze` and `live`): `-format u8|f32|cs16|wav|flac` (a
+wav/flac capture carries its own rate; the container is also sniffed from the
+file content whatever the label), `-sample-rate`,
 `-freq` (capture centre), `-fft`, `-peak-threshold-db`, `-min-spacing`,
 `-channel-rate`, `-analyzers hierarchy,timing,…` (default: all),
 `-out-format summary|json|jsonl|yaml|csv`, `-out <path>`, and `-frames-out

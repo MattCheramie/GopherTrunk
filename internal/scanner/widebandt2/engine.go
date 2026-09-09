@@ -1411,6 +1411,8 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 						"fec_pass", c.FECPass-ec.lastLogCnt.FECPass,
 						"fec_fail", c.FECFail-ec.lastLogCnt.FECFail,
 						"beacons", c.Beacons-ec.lastLogCnt.Beacons,
+						"late_entries", c.LateEntries-ec.lastLogCnt.LateEntries,
+						"csbk_crc_fail", c.CSBKCRCFail-ec.lastLogCnt.CSBKCRCFail,
 						"locks_total", c.Locks)
 					ec.activityLogAt = now
 					ec.activityCls = cls

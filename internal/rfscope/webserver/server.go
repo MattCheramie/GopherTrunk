@@ -139,7 +139,7 @@ func (s *Server) handleAnalyzers(w http.ResponseWriter, _ *http.Request) {
 	for _, a := range rfscope.Analyzers() {
 		out = append(out, analyzerDTO{Name: a.Name(), Synopsis: a.Synopsis(), DependsOn: a.DependsOn()})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"analyzers": out, "formats": []string{"u8", "f32"}})
+	writeJSON(w, http.StatusOK, map[string]any{"analyzers": out, "formats": []string{"u8", "f32", "cs16", "wav", "flac"}})
 }
 
 // analyzeResponse is the body of a successful analyze: the Scene plus the
@@ -169,8 +169,11 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rate, _ := strconv.ParseFloat(r.FormValue("sample_rate_hz"), 64)
-	if rate <= 0 {
-		writeErr(w, http.StatusBadRequest, "rfscope: sample_rate_hz is required")
+	// A wav/flac container carries its own rate (OpenFile reads it, and also
+	// sniffs a container behind a headerless label); headerless formats need
+	// the field.
+	if rate <= 0 && format != siglab.FormatWAV && format != siglab.FormatFLAC {
+		writeErr(w, http.StatusBadRequest, "rfscope: sample_rate_hz is required for a headerless (u8/f32/cs16) capture")
 		return
 	}
 	freq64, _ := strconv.ParseUint(r.FormValue("freq"), 10, 32)

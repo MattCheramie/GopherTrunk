@@ -637,6 +637,43 @@ confirmation before any close-as-completed.
   `debug.log` (interleaved never reaching the decoder; per-superframe log spam) corroborate the bug.
   Sharp edge to watch on air: if the embedded LC never decodes (#644), both same-carrier taps'
   `slotRouter`s fall back to phase parity and could bind the same phase (one slot recorded twice).
+- **Conventional DMR "false call ended" (9 Sep IPSC report) was a FORGED TERMINATOR from a voice
+  burst, root-caused on the operator's own captures; the missed continuation was the absence of
+  late entry.** The Tier II slicer (`tier2/process.go`) parsed a slot type on EVERY sync match, but
+  only DATA bursts carry one — a voice burst A has AMBE bits in the slot-type positions, and
+  Golay(20,8) decodes ~1/3 of arbitrary 20-bit words to SOME codeword, so ~1 voice burst A in 12
+  read as (cc, TerminatorWithLC) and the single-call fallback ("LC undecodable but only one call
+  active ⇒ unambiguous") ended the live call mid-sentence. Measured on `dmr_tests_9sep` (25 kS/s
+  cs16 SigLab slices, 442.3875 MHz, tg 11): a terminator exactly 6 bursts (1728 dibits) before the
+  next voice superframe of the SAME over, and 11 grants for 5 transmissions. Fixes, all in
+  `internal/radio/dmr/tier2` and pinned failing-first by `conventional_lateentry_test.go`:
+  (1) slot types are read only from data-sync bursts — per polarity, because DMR's data/voice sync
+  words are each other's `PolarityFlip` image (`dmr.SyncIsDataAtPolarity`), and the stream's
+  polarity is LOCKED by the first FEC-valid burst so the voice-sync gate becomes exact;
+  (2) the undecodable-terminator fallback now requires a BPTC-valid payload (a repeater repeats
+  the real Terminator-with-LC for its whole hang time — 50–170 copies on these captures — so a
+  genuine end never hinges on one uncorrectable burst); (3) **late entry**: the channel now runs
+  the voice superframe assembler beside the burst slicer and grants from two agreeing CRC-valid
+  embedded LCs (`ingestVoiceSuperframe`, ~720 ms in) when a transmission's Voice LC Headers were
+  lost — what every subscriber radio does, and why the operator's radio "still heard the
+  conversation" (their weak −60 dBFS bin-edge tap lost headers at keyup; the composer only
+  starts on a grant). Gates that cost time: a late-entry LC whose superframe STARTED BEFORE the
+  destination's last terminator is the closing superframe of the ended call (the assembler runs a
+  span behind the slicer) — without `endedAtDibit` it re-granted every dead call (7 phantoms/120 s);
+  and the IPSC `color_code` filter is honoured via the superframe's majority EMB colour code
+  (`VoiceSuperframe.EMBColorCode`). Capture-verified with `TestDMRIPSCReplay`: `GT_DMR_DROP_HEADERS=1`
+  scrubs every header burst from the real dibit stream and all 5/5 transmissions are still granted
+  (late_entries=5); un-scrubbed runs grant exactly once per over; capture 1's mid-PTT start is
+  late-entered. The synthetic Tier I fixtures (`siglab/fixtures.go`, `integration_cc_dmr_tier1_test.go`)
+  framed a Voice LC Header with the DM VOICE sync and only passed because of the old parse-everything
+  slicer — a data burst uses the data sync (ETSI TS 102 361-1 Table 9.1); fixed. **The "CSBK CRC
+  mismatch" storm is NOT resolved**: the operator's 443.2375 MHz log shows a 30 ms-cadence (both
+  slots) train of BPTC-clean, CRC-failing CSBKs at cc=7 for ~4 s on a cc=12 system — a real
+  proprietary train, not noise (the CRC convention itself is pinned by real Tier III vectors). The
+  Debug line is now parked (first + summary per 10 s, `csbk_crc_fail` in the activity line) and
+  carries csbko/fid/lb/pf + `info_hex`, the instrument for the next log; a capture of that
+  frequency idle is what pins it. The CSBK/FEC failures that DID appear in these captures (7/120 s)
+  were the same voice-burst forgery and are gone.
 - **DMR group calls are no longer relabeled "individual."** The engine's known-radio →
   individual reclassification (`HandleGrant`, `internal/trunking/engine.go`) and `noteRadio`'s
   talkgroup retraction rest on a TETRA-only invariant (GSSIs and ISSIs never overlap). DMR shares

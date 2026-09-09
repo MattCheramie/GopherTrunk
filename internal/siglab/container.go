@@ -184,6 +184,45 @@ func (fr *flacSW16Reader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// SniffContainer inspects the first bytes of an IQ file and reports whether
+// they carry a container signature: FormatFLAC for the "fLaC" stream marker,
+// FormatWAV for a RIFF/WAVE header. ok=false means headerless (or too short
+// to tell) — the caller's declared format then stands. Content decides, never
+// the extension: an operator's ".cs16.raw" that is really a FLAC (or a
+// ".flac" that is a headerless raw) decodes by what is in it.
+func SniffContainer(head []byte) (SampleFormat, bool) {
+	switch {
+	case len(head) >= 4 && string(head[0:4]) == "fLaC":
+		return FormatFLAC, true
+	case len(head) >= 12 && string(head[0:4]) == "RIFF" && string(head[8:12]) == "WAVE":
+		return FormatWAV, true
+	}
+	return FormatU8, false
+}
+
+// UnwrapContainer turns a wav/flac IQ stream into the headerless sw16 body
+// the plain FormatS16 decoder reads, returning the body reader, the format
+// to decode it with, and the container's sample rate (0 for a headerless
+// format, which is passed through untouched with rate 0).
+func UnwrapContainer(r io.Reader, format SampleFormat) (io.Reader, SampleFormat, uint32, error) {
+	switch format {
+	case FormatWAV:
+		info, err := baseband.ReadIQWavStreamHeader(r)
+		if err != nil {
+			return nil, format, 0, err
+		}
+		return r, FormatS16, info.SampleRate, nil
+	case FormatFLAC:
+		fr, rate, err := newFLACSW16Reader(r)
+		if err != nil {
+			return nil, format, 0, err
+		}
+		return fr, FormatS16, rate, nil
+	default:
+		return r, format, 0, nil
+	}
+}
+
 // DecodeContainerFile reads a wav or flac IQ capture (as written by
 // IQContainer) back to complex64 samples plus the container's sample rate,
 // sniffing the container from the file content. Small-file convenience for

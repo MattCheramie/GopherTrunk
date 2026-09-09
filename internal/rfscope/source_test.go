@@ -113,3 +113,96 @@ func TestSourceContextCancel(t *testing.T) {
 		t.Fatalf("want context error")
 	}
 }
+
+// TestFileSourceContainers pins that rfscope reads the wav and flac IQ
+// containers the rest of GT writes (SigLab capture-from-tuner, `capture
+// -format flac`): the body decodes to the same samples as the headerless cs16
+// twin, the sample rate comes from the container header (rateHz 0 is fine),
+// and the container is sniffed from CONTENT — a flac uploaded under the
+// "cs16" label (the reporter's ".cs16.raw" habit) still decodes.
+func TestFileSourceContainers(t *testing.T) {
+	t.Parallel()
+	const n = 4000
+	iq := makeIQ(n)
+	dir := t.TempDir()
+
+	rawPath := filepath.Join(dir, "cap.cs16")
+	if err := os.WriteFile(rawPath, siglab.EncodeCapture(iq, siglab.FormatS16), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := readAll(t, rawPath, siglab.FormatS16, 25_000)
+
+	for _, tc := range []struct {
+		name    string
+		format  siglab.SampleFormat
+		declare siglab.SampleFormat
+		rate    float64
+	}{
+		{"wav declared", siglab.FormatWAV, siglab.FormatWAV, 0},
+		{"flac declared", siglab.FormatFLAC, siglab.FormatFLAC, 0},
+		{"flac sniffed behind cs16 label", siglab.FormatFLAC, siglab.FormatS16, 0},
+		{"wav sniffed behind f32 label, bogus rate overridden", siglab.FormatWAV, siglab.FormatF32, 999},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(dir, tc.name+".bin")
+			f, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cont, err := siglab.NewIQContainer(f, tc.format, 25_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := cont.Write(iq); err != nil {
+				t.Fatal(err)
+			}
+			if err := cont.Finalize(); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+
+			src, err := OpenFile(path, tc.declare, 1, tc.rate)
+			if err != nil {
+				t.Fatalf("OpenFile: %v", err)
+			}
+			defer src.Close()
+			if src.SampleRateHz() != 25_000 {
+				t.Fatalf("rate = %g, want 25000 from the container header", src.SampleRateHz())
+			}
+			got := drain(t, src)
+			if len(got) != len(want) {
+				t.Fatalf("samples: got %d want %d", len(got), len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("sample %d: got %v want %v (container body differs from cs16 twin)", i, got[i], want[i])
+				}
+			}
+		})
+	}
+}
+
+func readAll(t *testing.T, path string, format siglab.SampleFormat, rate float64) []complex64 {
+	t.Helper()
+	src, err := OpenFile(path, format, 1, rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	return drain(t, src)
+}
+
+func drain(t *testing.T, src *FileSource) []complex64 {
+	t.Helper()
+	var got []complex64
+	for {
+		c, err := src.Next(context.Background(), 1000)
+		got = append(got, c...)
+		if err == io.EOF {
+			return got
+		}
+		if err != nil {
+			t.Fatalf("Next: %v", err)
+		}
+	}
+}

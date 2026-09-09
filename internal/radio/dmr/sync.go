@@ -124,3 +124,37 @@ func (s *SyncDetector) Process(dst []Match, src []uint8, baseIndex int) ([]Match
 	}
 	return dst, baseIndex + len(src)
 }
+
+// IsDataSync reports whether p is one of the data-burst sync words (BS/MS/DM
+// data). Only data bursts carry a slot type; voice bursts carry the voice
+// sync in burst A and embedded signalling in B–F, with AMBE bits in the
+// slot-type positions.
+func IsDataSync(p SyncPattern) bool {
+	switch p.Hex {
+	case BSData.Hex, MSData.Hex, DMData1.Hex, DMData2.Hex:
+		return true
+	}
+	return false
+}
+
+// IsVoiceSync reports whether p is one of the voice-burst sync words (BS/MS/DM
+// voice). The four data/voice pairs are each other's PolarityFlip image, so a
+// voice-sync match on a spectrum-inverted stream is really a data burst.
+func IsVoiceSync(p SyncPattern) bool {
+	switch p.Hex {
+	case BSVoice.Hex, MSVoice.Hex, DMVoice1.Hex, DMVoice2.Hex:
+		return true
+	}
+	return false
+}
+
+// SyncIsDataAtPolarity reports whether a burst framed by sync p carries a
+// slot type once its dibits are rotated by polarity k: at identity that is a
+// data sync; at PolarityFlip it is a voice sync (whose flip image is the
+// paired data sync). MS-RC is neither and never carries a slot type.
+func SyncIsDataAtPolarity(p SyncPattern, k uint8) bool {
+	if k == 0 {
+		return IsDataSync(p)
+	}
+	return IsVoiceSync(p)
+}

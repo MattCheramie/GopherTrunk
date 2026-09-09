@@ -27,11 +27,16 @@ type Source interface {
 	SampleRateHz() float64
 }
 
-// FileSource streams an on-disk IQ capture (u8/f32) in chunks, decoding through
-// the same siglab.SampleFormat decoders the replay path uses so rfscope and
-// replay read captures identically.
+// FileSource streams an on-disk IQ capture in chunks, decoding through the
+// same siglab.SampleFormat decoders the replay path uses so rfscope and replay
+// read captures identically. Headerless u8/f32/cs16 bodies stream straight
+// from the file; the wav/flac containers are unwrapped (header skipped /
+// FLAC decoded) into the same 16-bit body, with the sample rate taken from
+// the container — an rfscope upload of a SigLab or `capture -format flac`
+// recording no longer needs the operator to retype the rate.
 type FileSource struct {
 	f        *os.File
+	r        io.Reader
 	decode   siglab.SampleDecoder
 	bytesPer int
 	centerHz uint32
@@ -41,17 +46,44 @@ type FileSource struct {
 
 // OpenFile opens an IQ capture for streaming. centerHz/rateHz describe the
 // capture (the segmentation engine stamps absolute frequencies from them).
+// The file content is sniffed for a wav/flac container signature, which
+// overrides format — content decides, never the extension or the label — and
+// a container's own sample rate overrides rateHz; rateHz may then be 0. A
+// headerless format with rateHz <= 0 is an error.
 func OpenFile(path string, format siglab.SampleFormat, centerHz uint32, rateHz float64) (*FileSource, error) {
-	if rateHz <= 0 {
-		return nil, fmt.Errorf("rfscope: sample rate must be positive, got %g", rateHz)
-	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("rfscope: open capture: %w", err)
 	}
+	head := make([]byte, 12)
+	n, _ := io.ReadFull(f, head)
+	if sniffed, ok := siglab.SniffContainer(head[:n]); ok {
+		format = sniffed
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("rfscope: rewind capture: %w", err)
+	}
+	var r io.Reader = f
+	if format == siglab.FormatWAV || format == siglab.FormatFLAC {
+		body, bodyFormat, headerRate, err := siglab.UnwrapContainer(f, format)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("rfscope: %w", err)
+		}
+		r, format = body, bodyFormat
+		if headerRate > 0 {
+			rateHz = float64(headerRate)
+		}
+	}
+	if rateHz <= 0 {
+		f.Close()
+		return nil, fmt.Errorf("rfscope: sample rate must be positive, got %g", rateHz)
+	}
 	decode, bytesPer := format.Decoder()
 	return &FileSource{
 		f:        f,
+		r:        r,
 		decode:   decode,
 		bytesPer: bytesPer,
 		centerHz: centerHz,
@@ -76,7 +108,7 @@ func (s *FileSource) Next(ctx context.Context, n int) ([]complex64, error) {
 		s.rbuf = make([]byte, want)
 	}
 	buf := s.rbuf[:want]
-	got, err := io.ReadFull(s.f, buf)
+	got, err := io.ReadFull(s.r, buf)
 	switch {
 	case err == nil:
 		// full read
