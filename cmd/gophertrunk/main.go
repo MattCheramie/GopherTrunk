@@ -47,6 +47,12 @@ import (
 )
 
 func main() {
+	// Install/first-run gate: every command except version/help/terms
+	// requires the Terms of Service to have been acknowledged (see
+	// TERMS_OF_SERVICE.md and cmd/gophertrunk/terms.go).
+	if !termsExempt(os.Args) {
+		requireTermsAcceptance()
+	}
 	if len(os.Args) < 2 {
 		runDaemon(os.Args[1:])
 		return
@@ -115,6 +121,8 @@ func main() {
 		runBundle(os.Args[2:])
 	case "import-pdf":
 		runImport(os.Args[2:])
+	case "terms":
+		runTerms(os.Args[2:])
 	case "daemon", "run":
 		runDaemon(os.Args[2:])
 	case "help", "--help", "-h":
@@ -152,6 +160,7 @@ USAGE:
   gophertrunk config serve [flags]    standalone web Config Builder/Editor (browser UI)
   gophertrunk config [tui] [flags]    standalone terminal Config Builder/Editor (no browser)
   gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
+  gophertrunk terms [show|status|accept]  read / check / acknowledge the Terms of Service
   gophertrunk version                 print build version
   gophertrunk help                    show this message`)
 }
@@ -171,7 +180,7 @@ func runDaemon(args []string) {
 	// IQ capture diagnostic — taps a live SDR's iqtap broker and writes
 	// raw IQ samples to a file for offline analysis. Used to capture a
 	// reproducible fixture for replay (issue #402).
-	iqCapture := fs.String("iq-capture", "", "capture raw IQ from a live SDR for offline analysis (issue #402). Format: serial=<s>,path=<file>,seconds=<n>[,format=u8|f32|cs16][,decimate=<n>] (default format=f32, GNU Radio cfile; decimate>1 anti-alias decimates the recording to sdr.sample_rate/n and writes a metadata sidecar)")
+	iqCapture := fs.String("iq-capture", "", "capture raw IQ from a live SDR for offline analysis (issue #402). Format: serial=<s>,path=<file>,seconds=<n>[,format=u8|f32|cs16|wav|flac][,decimate=<n>] (default format=f32, GNU Radio cfile; decimate>1 anti-alias decimates the recording to sdr.sample_rate/n and writes a metadata sidecar)")
 	_ = fs.Parse(args)
 
 	// Resolve verbose-error reporting from the flag now (config folds in
@@ -427,9 +436,12 @@ func listSDRs(args []string) {
 	// --probe: open each device long enough to run the demod + tuner
 	// bring-up so TunerName and the gain ladder can be filled in. Each
 	// device is closed before the next is opened to avoid claiming two
-	// dongles at once. Failures don't abort the loop — the row just
-	// keeps the empty fields from Enumerate and the error is printed
-	// to stderr so the operator can see why probing failed.
+	// dongles at once, and probeDevice uses the driver's no-reset
+	// OpenProbe fast path (sdr.ProbeOpener) so probing one dongle can't
+	// reset-storm a sibling on the same host controller (issue #1135).
+	// Failures don't abort the loop — the row just keeps the empty
+	// fields from Enumerate and the error is printed to stderr so the
+	// operator can see why probing failed.
 	if probe {
 		for i := range infos {
 			d, err := sdr.DriverByName(infos[i].Driver)
@@ -464,14 +476,28 @@ const probeTimeout = 5 * time.Second
 // goroutine finish (and close the handle) on its own — harmless for a
 // short-lived CLI. Driver.Open takes no context, so the bound has to live
 // here at the call site rather than inside the driver.
+//
+// When the driver implements [sdr.ProbeOpener] the goroutine uses its
+// no-reset OpenProbe fast path instead of Open. This keeps probing a
+// read-only, single-pass operation: the daemon Open's reset+retry
+// envelope re-enumerates the device on macOS and would perturb a sibling
+// dongle on the same host controller, which is what made `sdr list
+// --probe` both time out and swap which of two dongles probed run to run
+// (issue #1135). With the no-reset probe each open touches only its own
+// device and finishes well inside the deadline, so the leaked-goroutine
+// safety net above almost never fires.
 func probeDevice(drv sdr.Driver, idx int, timeout time.Duration) (sdr.Info, error) {
 	type result struct {
 		info sdr.Info
 		err  error
 	}
+	open := drv.Open
+	if po, ok := drv.(sdr.ProbeOpener); ok {
+		open = po.OpenProbe
+	}
 	done := make(chan result, 1)
 	go func() {
-		dev, err := drv.Open(idx)
+		dev, err := open(idx)
 		if err != nil {
 			done <- result{err: err}
 			return

@@ -125,9 +125,13 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 		fec:    edacsBCHFEC,
 	},
 	trunking.ProtocolMotorola: {
-		cardinality: 2, tolerance: 3,
+		// The SmartNet sync is only 8 bits, so exact matching is the
+		// only sane correlation (real decode additionally requires the
+		// next frame's sync 76 bits later; the landscape view can't
+		// express that bracket, so expect false hits in the histogram).
+		cardinality: 2, tolerance: 0,
 		syncFn: func() []SyncVariant { return oneVariant("outbound", motorola.OutboundSyncBits()) },
-		fec:    motorolaBCHFEC,
+		fec:    motorolaOSWFEC,
 	},
 	trunking.ProtocolDStar: {
 		cardinality: 2, tolerance: 2,

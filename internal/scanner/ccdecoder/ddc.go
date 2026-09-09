@@ -37,16 +37,30 @@ const DDCTargetRateHz = ddcTargetRateHz
 // 8 samples per symbol for the Gardner timing-recovery loop.
 const tetraDDCTargetRateHz = 144000.0
 
+// motorolaDDCTargetRateHz is the channel rate for the Motorola
+// SmartNet / SmartZone 3600-baud FSK control channel: 5 samples per
+// symbol, matching trunk-recorder's proven smartnet chain. The
+// narrow target matters beyond samples-per-symbol — the DDC's
+// anti-alias filter doubles as the channel-select filter, and at the
+// 48 kHz C4FM-family target its ±24 kHz passband admits the
+// adjacent 25 kHz-spaced channels into the FM discriminator; at
+// 18 kHz the ±9 kHz passband rejects them (issue #1143).
+const motorolaDDCTargetRateHz = 18000.0
+
 // ddcTargetForProtocol picks the narrowband channel rate the down-
 // converter decimates to for a protocol. The 4800-baud C4FM family
 // (P25 / DMR / NXDN / dPMR / YSF / D-STAR) and the other ≤9600-baud
 // protocols all channelize to ddcTargetRateHz; TETRA's 18000-baud
 // π/4-DQPSK needs a wider channel, so it gets tetraDDCTargetRateHz —
 // including TETRA DMO (Direct Mode), which shares the same 18000-baud
-// physical layer as TMO.
+// physical layer as TMO — while Motorola's 3600-baud FSK gets the
+// narrower motorolaDDCTargetRateHz.
 func ddcTargetForProtocol(p trunking.Protocol) float64 {
-	if p == trunking.ProtocolTETRA || p == trunking.ProtocolTETRADMO {
+	switch p {
+	case trunking.ProtocolTETRA, trunking.ProtocolTETRADMO:
 		return tetraDDCTargetRateHz
+	case trunking.ProtocolMotorola:
+		return motorolaDDCTargetRateHz
 	}
 	return ddcTargetRateHz
 }

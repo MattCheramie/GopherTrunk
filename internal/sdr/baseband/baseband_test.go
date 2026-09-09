@@ -150,7 +150,7 @@ func TestRecordingDeviceTeesToWav(t *testing.T) {
 		info:   sdr.Info{Serial: "00000111"},
 		chunks: [][]complex64{iqTone(1000), iqTone(1000), iqTone(500)},
 	}
-	rec := NewRecordingDevice(inner, dir, nil)
+	rec := NewRecordingDevice(inner, dir, "", nil)
 	if err := rec.SetSampleRate(2_400_000); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
 	}

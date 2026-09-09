@@ -222,6 +222,31 @@ type BasebandConfig struct {
 	// self-describing (`.metadata.json` sidecar) so they drop straight into
 	// `replay`/siglab — the event-driven debugging hook the operator asked for.
 	AutoRecord BasebandAutoRecordConfig `yaml:"auto_record"`
+	// VoiceIQDebug writes each voice call's channelised IQ (exactly the
+	// stream the voice chain decodes) plus a self-describing metadata
+	// sidecar to per-call files — the voice half of the "diagnostic
+	// container" workflow (pair with auto_record.on_voice_grant for the
+	// control-channel half). Off by default; heavy on disk when the voice
+	// taps run at a full SDR rate rather than a channelised 48 kHz.
+	VoiceIQDebug VoiceIQDebugConfig `yaml:"voice_iq_debug"`
+}
+
+// VoiceIQDebugConfig configures per-call voice-channel IQ debug captures.
+type VoiceIQDebugConfig struct {
+	// Enabled turns the per-call voice IQ tee on. When false: zero cost.
+	Enabled bool `yaml:"enabled"`
+	// Dir is the directory per-call captures (and their metadata sidecars)
+	// are written into. Required when Enabled.
+	Dir string `yaml:"dir"`
+	// Format is the on-disk container: "cs16" (default, headerless raw IQ),
+	// "wav" (RIFF/WAVE wrapper — opens directly in Audacity/analysis tools),
+	// or "flac" (lossless ~30–50% smaller). All wrap the same 16-bit I/Q body,
+	// so the capture stays replayable. Parsed by siglab.ParseSampleFormat.
+	Format string `yaml:"format"`
+	// MaxMB caps one call's capture size in megabytes; the capture stops
+	// (and the sidecar notes truncation) when reached, so a stuck call or a
+	// full-SDR-rate tap cannot fill the disk. 0 defaults to 512 MB.
+	MaxMB int `yaml:"max_mb"`
 }
 
 // BasebandAutoRecordConfig configures event-triggered raw-IQ capture of the
@@ -234,9 +259,10 @@ type BasebandAutoRecordConfig struct {
 	// Dir is the directory triggered captures (and their metadata sidecars)
 	// are written into. Required when Enabled.
 	Dir string `yaml:"dir"`
-	// Format is the on-disk sample format: "cs16" (default), "f32"
-	// (GNU Radio cfile), or "u8" (rtl_sdr native). Parsed by
-	// siglab.ParseSampleFormat.
+	// Format is the on-disk sample format / container: "cs16" (default), "f32"
+	// (GNU Radio cfile), "u8" (rtl_sdr native), "wav" (RIFF/WAVE wrapper over
+	// the 16-bit body — opens directly in Audacity/analysis tools), or "flac"
+	// (lossless ~30–50% smaller). Parsed by siglab.ParseSampleFormat.
 	Format string `yaml:"format"`
 	// Seconds is the length of each triggered capture. Required when Enabled.
 	Seconds int `yaml:"seconds"`
@@ -255,6 +281,13 @@ type BasebandAutoRecordConfig struct {
 	OnEncrypted bool `yaml:"on_encrypted"`
 	// OnEmergency fires on an emergency-flagged grant.
 	OnEmergency bool `yaml:"on_emergency"`
+	// OnVoiceGrant fires a control-channel capture on EVERY voice grant, so a
+	// per-call voice-IQ debug capture (baseband.voice_iq_debug) has a paired
+	// control-channel context capture — the "diagnostic container" workflow:
+	// grant metadata + CC IQ + voice-channel IQ per call. Rate-limited by the
+	// shared Cooldown, so a burst of grants shares one CC capture (the CC
+	// context overlaps anyway).
+	OnVoiceGrant bool `yaml:"on_voice_grant"`
 	// OnCCSyncLoss fires when a locked control channel suddenly loses sync
 	// (events.KindCCLost, which only fires after a genuine lock — never for a
 	// hunt that never locked). It captures the seconds AFTER the loss, i.e. the
@@ -320,6 +353,20 @@ type BasebandRecordConfig struct {
 	//     wideband, and directly replayable with `replay -format wav`. This is
 	//     the "record the DDC output" tap for sharing a hard-to-decode channel.
 	Tap string `yaml:"tap"`
+	// Format selects the recording container: "wav" (default — the canonical
+	// two-channel 16-bit RIFF/WAVE, SDRtrunk-compatible) or "flac" (the
+	// lossless compressed twin, typically 30–50% smaller; replays and mounts
+	// back as a virtual tuner exactly like wav).
+	Format string `yaml:"format"`
+}
+
+// RecordFormat returns the normalised recording container ("wav" or "flac").
+func (b BasebandRecordConfig) RecordFormat() string {
+	f := strings.ToLower(strings.TrimSpace(b.Format))
+	if f == "" {
+		return "wav"
+	}
+	return f
 }
 
 // TapDDC reports whether this record entry taps the narrowband DDC output
@@ -878,10 +925,24 @@ type SoapyRemoteConfig struct {
 	// the only tap that can answer "would a different combiner have done
 	// better on this signal?" offline. Requires diversity: mrc or mrc-static.
 	DiversityCapture string `yaml:"diversity_capture"`
-	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s. Two CS16 branches
-	// at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short. A 1 GiB
-	// per-branch cap applies regardless.
+	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s, max 120. Two CS16
+	// branches at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short at
+	// high rates — but at narrowband rates (200 kS/s is ~0.8 MB/s per branch) a
+	// long capture is cheap and is what the offline combiner A/B needs. A 1 GiB
+	// per-branch cap applies regardless of the configured seconds.
 	DiversityCaptureSeconds int `yaml:"diversity_capture_seconds"`
+	// DiversityCaptureFormat selects the per-branch container: "cs16" (default —
+	// headerless int16 pairs, playable by anything) or "flac" (lossless
+	// two-channel 16-bit FLAC via the shared baseband encode core, typically
+	// 30-50% smaller; each branch is still independently replayable because the
+	// replay FileDriver content-sniffs the fLaC marker, and the offline
+	// diversity harness reads either). FLAC is bit-exact — the decoded int16
+	// samples equal what the cs16 file would carry — so the branch ALIGNMENT
+	// invariant is unaffected. The FLAC encode runs on the stream goroutine, so
+	// it is limited to capture rates ≤ 1 MS/s (also FLAC's STREAMINFO ceiling);
+	// above that the capture falls back to cs16 with a warning rather than
+	// risking the very overruns it exists to diagnose.
+	DiversityCaptureFormat string `yaml:"diversity_capture_format"`
 	// VerboseDebug logs every control-channel RPC exchanged with this
 	// SoapySDRServer — decoded call name and arguments plus a hex dump of the
 	// frame — at DEBUG level. The SoapyRemote wire carries no schema, so when
@@ -1462,6 +1523,15 @@ type SystemConfig struct {
 	// every block). C4FM only — CQPSK/LSM sites decode hard regardless.
 	// Ignored for non-P25-Phase-1 protocols.
 	P25Phase1SoftDecision string `yaml:"p25_phase1_soft_decision"`
+	// P25QuietNonControlDUID silences the per-frame "non-control DUID"
+	// debug log line on this system's P25 Phase 1 control channel. The
+	// line fires for every TDU (and other non-TSDU) frame the CC decodes —
+	// many times per second on a busy system — and buries a debug log an
+	// operator is using to chase something else. Default false keeps the
+	// line (it is genuinely useful when first identifying an unknown
+	// carrier); set true to quiet it. Diagnostic-log hygiene only: decode
+	// behaviour is unchanged either way.
+	P25QuietNonControlDUID bool `yaml:"p25_quiet_noncontrol_duid"`
 	// DMRInterleavedVoice overrides the 2-slot interleaved voice decoder.
 	// A DMR carrier is 2-slot TDMA, so the demodulated stream interleaves
 	// both timeslots' bursts; the interleaved decoder pulls each call's own
@@ -1639,14 +1709,19 @@ type SystemConfig struct {
 	// synthesized fixtures); a decimal integer in [0, 15] for
 	// custom thresholds. Ignored for non-MPT-1327 protocols.
 	MPT1327CWSCTolerance string `yaml:"mpt1327_cwsc_tolerance"`
-	// MotorolaBCHMode enables the BCH(64, 16, 11) FEC layer on the
-	// Motorola Type II OSW. Recognised values: "" / "on" / "true" /
-	// "1" (the new default — two 64-bit BCH(64, 16, 11) codewords
-	// reassembled into the 32-bit OSW with single- through 11-bit-
-	// error correction) or "off" / "false" / "0" (legacy 32-bit
-	// raw-OSW path, opt-out for pre-stripped fixtures). Ignored
-	// for non-Motorola protocols.
+	// MotorolaBCHMode is OBSOLETE and ignored: it gated a
+	// BCH(64,16,11) layer the real SmartNet air interface never had
+	// (issue #1143). The key is still accepted so existing configs
+	// keep loading; the real OSW FEC (interleave + parity ECC +
+	// CRC-10) always runs.
 	MotorolaBCHMode string `yaml:"motorola_bch_mode"`
+	// MotorolaBandPlan selects the SmartNet channel-number →
+	// frequency table for Motorola Type II systems. Recognised
+	// values (case-insensitive): "" / "800" / "800_standard" (the
+	// default — the domestic 800 MHz plan), "800_rebanded" /
+	// "800_reband", "800_splinter", "900". Ignored for non-Motorola
+	// protocols.
+	MotorolaBandPlan string `yaml:"motorola_band_plan"`
 	// DStarFECMode enables the JARL DV-mode header FEC chain on
 	// the D-STAR Process adapter (conv R=1/2 K=5 + PN15 scrambler
 	// + 22×30 block interleaver). Recognised values: "" / "off" /
@@ -1873,10 +1948,15 @@ type StorageConfig struct {
 	CCCacheFile string `yaml:"cc_cache_file"`
 }
 
-// RecordingsConfig configures the per-call WAV recorder.
+// RecordingsConfig configures the per-call voice recorder.
 type RecordingsConfig struct {
 	Dir        string `yaml:"dir"`
 	SampleRate uint32 `yaml:"sample_rate"`
+	// Format selects the per-call recording container: "wav" (default —
+	// 16-bit mono PCM RIFF/WAVE) or "flac" (lossless FLAC, typically about
+	// half the size for speech; plays natively in browsers and feeds the
+	// same normalization / MP3-upload / web-playback paths).
+	Format string `yaml:"format"`
 	// Enhance is the opt-in "sound-good" voice enhancement chain. When
 	// enabled it band-limits decoded digital voice to the telephone band,
 	// warms the bright software-AMBE+2 timbre, runs the AGC to a louder

@@ -31,6 +31,18 @@ func TestParseSampleFormatCS16(t *testing.T) {
 	}
 }
 
+// TestParseSampleFormatCF32 pins the cf32/fc32 aliases for interleaved float32
+// IQ — the SoapySDR / OpenWebRX+ spelling of the format OWRX+ pipes into
+// `replay -in -` (issue #314).
+func TestParseSampleFormatCF32(t *testing.T) {
+	for _, s := range []string{"cf32", "fc32", "CF32", "f32", "float32", "cfile"} {
+		f, err := ParseSampleFormat(s)
+		if err != nil || f != FormatF32 {
+			t.Fatalf("ParseSampleFormat(%q) = %v, %v; want FormatF32", s, f, err)
+		}
+	}
+}
+
 // TestEncodeCaptureCS16RoundTrip encodes known IQ as cs16, decodes it back
 // through the format's own decoder, and asserts the samples survive within
 // 16-bit quantisation. It also confirms cs16 is exactly half the size of f32

@@ -103,6 +103,10 @@ func (s *Server) handleSiglabProtocols(w http.ResponseWriter, r *http.Request) {
 		"protocols": decode,
 		"fixtures":  synth,
 		"formats":   []string{"u8", "f32", "cs16"},
+		// capture_formats is the superset the live capture-from-tuner route
+		// accepts: the headerless encodings plus the wav/flac containers
+		// (siglab.IQContainer). synth/upload stay on the headerless trio.
+		"capture_formats": []string{"u8", "f32", "cs16", "wav", "flac"},
 	})
 }
 
@@ -549,6 +553,13 @@ func (s *Server) handleSiglabSynthesize(w http.ResponseWriter, r *http.Request) 
 	format, err := siglab.ParseSampleFormat(req.Format)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
+		return
+	}
+	// The synth path stages via the pure byte encoder, which has no container
+	// support — a wav/flac request would silently produce a mislabeled body.
+	if format == siglab.FormatWAV || format == siglab.FormatFLAC {
+		s.writeError(w, http.StatusBadRequest,
+			"siglab: synth format must be u8, f32, or cs16 (wav/flac are live-capture container formats)")
 		return
 	}
 	taps, err := parseSiglabMultipath(req.Multipath)

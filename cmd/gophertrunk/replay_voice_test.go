@@ -88,7 +88,10 @@ func TestReplayRecordVoiceEndToEnd(t *testing.T) {
 	if target := ccdecoder.DDCTargetForProtocol(proto); rate != target {
 		ddcRate = target
 	}
-	rig, err := setupReplayVoice(outDir, ddcRate, 3500*time.Millisecond, log)
+	// Also exercise the -audio-out live PCM tap (issue #314): decoded voice
+	// must stream continuously alongside the recordings.
+	var audioBuf syncBuffer
+	rig, err := setupReplayVoice(outDir, ddcRate, 3500*time.Millisecond, newPCMStreamWriter(&audioBuf), log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,4 +121,8 @@ func TestReplayRecordVoiceEndToEnd(t *testing.T) {
 		t.Fatal("replay -record-voice produced no non-empty .wav — conventional DMR voice did not record (#1036)")
 	}
 	t.Logf("recorded %d wav(s), e.g. %s", len(wavs), filepath.Base(wavs[0]))
+	if audioBuf.Len() == 0 {
+		t.Fatal("voice recorded to WAV but the -audio-out live PCM stream carried no bytes — the decoded-PCM tap is not wired (#314)")
+	}
+	t.Logf("live audio stream carried %d PCM bytes", audioBuf.Len())
 }

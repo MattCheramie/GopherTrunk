@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -51,10 +52,19 @@ type ControlChannel struct {
 	carrierOffsetHz func() float64
 	locked          bool
 	lastNAC         uint16
+	// quietNonControlDUID suppresses the per-frame "non-control DUID"
+	// debug line (Options.QuietNonControlDUID) — an operator-facing log
+	// hygiene knob for busy control channels.
+	quietNonControlDUID bool
 	// lastSiteLog dedupes the concise site-configuration log line so an
 	// established site logs once and re-logs only when its identity / primary
 	// control channel materially changes (see logSiteIdentity).
 	lastSiteLog siteLogKey
+	// lastSitePublish edge-triggers the KindSiteUpdate bus event: a P25 CC
+	// broadcasts a status TSBK many times a second, but the UI/site-table only
+	// cares when the site's material identity/topology changes. Mirrors TETRA's
+	// edge-triggered publishSiteIdentity. See publishSiteUpdate.
+	lastSitePublish sitePublishState
 	// lastNoHitsAt throttles the "no FSW hits" debug log so the chunk-rate
 	// emission doesn't flood at debug level. See Process for the rationale.
 	lastNoHitsAt time.Time
@@ -222,6 +232,15 @@ type CCStats struct {
 	// resolved but NetStatusSeen == 0 is the normal shape of a system that
 	// names its site via registrations but withholds the WACN-bearing NSB.
 	LocRegSeen int64
+	// MBT (multi-block trunking, DUID 0xC on the CC) outcomes. MBTDecoded
+	// counts complete MBT messages that cleared the header CRC16 + data
+	// CRC32 and reached dispatchMBT; MBTHeaderFailed / MBTDataCRCFailed
+	// split the failure modes. Systems that carry their neighbour list /
+	// WACN only in AMBT form show MBTDecoded > 0 with NetStatusSeen /
+	// AdjacentSeen advancing from the MBT path.
+	MBTDecoded       int64
+	MBTHeaderFailed  int64
+	MBTDataCRCFailed int64
 }
 
 // TSBKErrorRate returns the percentage (0..100) of decode-attempted TSBK
@@ -307,11 +326,23 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 		ref := trunking.TopoNeighborRef{
 			RFSS:          n.RFSS,
 			Site:          n.Site,
+			LRA:           n.LRA,
+			SystemID:      uint32(n.SystemID),
 			ChannelID:     n.ChannelID,
 			ChannelNumber: n.ChannelNumber,
+			StatusFlags:   cfvaString(n.CFVA, n.CFVAKnown),
 		}
 		if hz, err := c.bandPlan.Frequency(n.ChannelID, n.ChannelNumber); err == nil {
 			ref.FrequencyHz = hz
+		}
+		if n.UplinkID != 0 || n.UplinkNumber != 0 {
+			ref.UplinkChannelID, ref.UplinkChannelNumber = n.UplinkID, n.UplinkNumber
+			// An explicit uplink channel number already encodes the uplink
+			// frequency in plain base+spacing terms — no transmit offset is
+			// applied (matches SDRTrunk's AMBT downlink/uplink resolution).
+			if hz, err := c.bandPlan.Frequency(n.UplinkID, n.UplinkNumber); err == nil {
+				ref.UplinkHz = hz
+			}
 		}
 		t.Neighbors = append(t.Neighbors, ref)
 	}
@@ -329,6 +360,32 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 		return nil
 	}
 	return t
+}
+
+// cfvaString renders the adjacent-site CFVA flags as a short summary for
+// the topology snapshot ("" when the flags were never observed; "none"
+// when observed all-clear — a distinction the API keeps visible).
+func cfvaString(cfva uint8, known bool) string {
+	if !known {
+		return ""
+	}
+	var parts []string
+	if cfva&CFVAConventional != 0 {
+		parts = append(parts, "conventional")
+	}
+	if cfva&CFVAFailure != 0 {
+		parts = append(parts, "failure")
+	}
+	if cfva&CFVAValid != 0 {
+		parts = append(parts, "valid")
+	}
+	if cfva&CFVAActive != 0 {
+		parts = append(parts, "active")
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ",")
 }
 
 // channelRef resolves a (band-plan ID, channel number) pair into a
@@ -356,6 +413,9 @@ func (c *ControlChannel) Stats() CCStats {
 		RFSSStatusSeen:    atomic.LoadInt64(&c.stats.RFSSStatusSeen),
 		AdjacentSeen:      atomic.LoadInt64(&c.stats.AdjacentSeen),
 		LocRegSeen:        atomic.LoadInt64(&c.stats.LocRegSeen),
+		MBTDecoded:        atomic.LoadInt64(&c.stats.MBTDecoded),
+		MBTHeaderFailed:   atomic.LoadInt64(&c.stats.MBTHeaderFailed),
+		MBTDataCRCFailed:  atomic.LoadInt64(&c.stats.MBTDataCRCFailed),
 	}
 }
 
@@ -393,6 +453,21 @@ type pendingHit struct {
 	fswStart   int    // absolute index of the frame's first FSW dibit
 	strip      bool   // status-symbol stripping the alignment search chose
 	nac        uint16 // NAC the NID decoded to (for dispatch)
+
+	// PDU (DUID 0xC) continuation state — the multi-block trunking path.
+	// A PDU frame reuses the TSBK block coding (98-dibit trellis blocks),
+	// so blocksDone/nextStart drive it too; pdu selects resumeMBTBlocks
+	// over resumeTSBKBlocks, mbtHeader holds the CRC-validated header once
+	// block 0 decodes, and mbtData accumulates the following data blocks.
+	pdu       bool
+	mbtHave   bool
+	mbtHeader MBTHeader
+	mbtData   []byte
+	// mbtMetric is the worst (highest) data-block Viterbi metric seen for
+	// this PDU — logged with a data CRC failure so a corrupt block is
+	// distinguishable from a layout bug in the record (a high metric means
+	// the trellis itself was marginal: RF residual errors, not parsing).
+	mbtMetric int
 }
 
 // FSWFallbackToleranceDefault is the wider frame-sync-word tolerance the
@@ -455,6 +530,14 @@ type Options struct {
 	// preserves the C4FM default in the voice chain — and is what the
 	// existing replay / unit tests pass.
 	P25Phase1DemodMode string
+
+	// QuietNonControlDUID suppresses the per-frame "non-control DUID"
+	// debug log line (config `p25_quiet_noncontrol_duid`). On a busy
+	// control channel TDU/PDU frames arrive many times per second and the
+	// line buries a debug log an operator is using to chase something
+	// else. Default false keeps the line (it is genuinely useful when
+	// first identifying an unknown carrier).
+	QuietNonControlDUID bool
 
 	// FSWFallbackTolerance opts the FSW correlator into a wider fallback
 	// tolerance (see FSWFallbackToleranceDefault). Zero (the default, and what
@@ -542,6 +625,7 @@ func New(opts Options) *ControlChannel {
 		bandPlan:              bp,
 		now:                   now,
 		carrierOffsetHz:       opts.CarrierOffsetHz,
+		quietNonControlDUID:   opts.QuietNonControlDUID,
 		fswTol:                fswTol,
 		aliasAsm:              NewTalkerAliasAssembler(now),
 		diagSeen:              make(map[uint32]int),
@@ -742,8 +826,15 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	kept := c.pending[:0]
 	for _, ph := range c.pending {
 		if ph.cont {
-			// Resume the data unit's remaining TSBK blocks (issue #402).
-			if c.resumeTSBKBlocks(&ph) {
+			// Resume the data unit's remaining blocks (issue #402); a PDU
+			// continuation resumes its MBT header/data blocks instead.
+			more := false
+			if ph.pdu {
+				more = c.resumeMBTBlocks(&ph)
+			} else {
+				more = c.resumeTSBKBlocks(&ph)
+			}
+			if more {
 				kept = append(kept, ph)
 			}
 			continue
@@ -816,9 +907,35 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8, req
 			"at_boundary", atSearchBoundary(best.delta, c.nidSearchSpan),
 			"err_pattern", formatErrPattern(best.errPattern))
 	}
+	if best.nid.DUID == DUIDPacketDataUnit {
+		// A PDU on the control channel is (usually) Multi-Block Trunking —
+		// the AMBT carrier of the WACN-bearing Network Status Broadcast and
+		// of Adjacent Status Broadcasts with explicit uplinks. Decode its
+		// blocks with the same trellis machinery as the TSDU path; the
+		// header CRC16 + data CRC32 gate acceptance. It does not lock the
+		// channel — only a TSDU proves a control channel.
+		ph := pendingHit{
+			cont:      true,
+			pdu:       true,
+			rot:       best.rot,
+			strip:     best.strip,
+			nac:       best.nid.NAC,
+			fswStart:  (nidStart + best.delta - len(FrameSyncWord)) + c.bufBase,
+			nextStart: best.tsbkStart + c.bufBase,
+		}
+		if c.resumeMBTBlocks(&ph) {
+			return ph, true
+		}
+		return pendingHit{}, false
+	}
 	if best.nid.DUID != DUIDTrunkingSignaling {
-		// Some non-control DUID — record but don't lock.
-		c.log.Debug("non-control DUID", "duid", best.nid.DUID, "nac", best.nid.NAC)
+		// Some non-control DUID — record but don't lock. The per-frame
+		// debug line is suppressible via Options.QuietNonControlDUID: on a
+		// busy CC these frames arrive many times per second and bury a
+		// debug log an operator is using to chase something else.
+		if !c.quietNonControlDUID {
+			c.log.Debug("non-control DUID", "duid", best.nid.DUID, "nac", best.nid.NAC)
+		}
 		return pendingHit{}, false
 	}
 	if !c.locked || c.lastNAC != best.nid.NAC {
@@ -964,6 +1081,139 @@ func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
 		}
 	}
 	return false // reached maxTSBKBlocks
+}
+
+// resumeMBTBlocks decodes the blocks of a PDU (DUID 0xC) data unit — the
+// Multi-Block Trunking path. Block 0 is the 12-octet PDU header (validated
+// by its CCITT-16 CRC); the following BlocksToFollow blocks are data,
+// validated as a train by their trailing CRC-32, then dispatched. Returns
+// true when blocks remain undecoded for want of buffered dibits, mirroring
+// resumeTSBKBlocks' contract so Process can keep the continuation pending.
+func (c *ControlChannel) resumeMBTBlocks(ph *pendingHit) bool {
+	for {
+		start := ph.nextStart - c.bufBase
+		if start < 0 {
+			return false // buffer trimmed past it (shouldn't happen) — drop
+		}
+		if start+tsbkBlockSpan > len(c.buf) {
+			return true // next block not buffered yet — resume later
+		}
+		fswStart := ph.fswStart - c.bufBase
+		channel, next := gatherFrameDibits(c.buf, start, 98, fswStart, ph.strip)
+		info, metric := DecodeMBTBlockChannel(rotateDibits(channel, ph.rot))
+		if !ph.mbtHave {
+			h, err := ParseMBTHeader(info)
+			if err != nil {
+				atomic.AddInt64(&c.stats.MBTHeaderFailed, 1)
+				c.log.Debug("p25: MBT PDU header failed", "err", err,
+					"metric", metric, "nac", ph.nac)
+				return false
+			}
+			if !h.IsTrunkingControl() {
+				// A genuine (non-trunking) data PDU on this carrier — not
+				// an error, just not signalling. Skip its blocks.
+				c.log.Debug("p25: non-trunking PDU ignored",
+					"sap", h.SAP, "format", h.Format, "nac", ph.nac)
+				return false
+			}
+			if h.BlocksToFollow == 0 || int(h.BlocksToFollow) > maxMBTDataBlocks {
+				c.log.Debug("p25: MBT blocks-to-follow out of range",
+					"blocks", h.BlocksToFollow, "nac", ph.nac)
+				return false
+			}
+			ph.mbtHeader, ph.mbtHave = h, true
+			ph.mbtData = make([]byte, 0, int(h.BlocksToFollow)*12)
+		} else {
+			ph.mbtData = append(ph.mbtData, info...)
+			if metric > ph.mbtMetric {
+				ph.mbtMetric = metric
+			}
+			if len(ph.mbtData) >= int(ph.mbtHeader.BlocksToFollow)*12 {
+				c.dispatchMBT(ph.mbtHeader, ph.mbtData, ph.nac, ph.mbtMetric)
+				return false
+			}
+		}
+		ph.blocksDone++
+		ph.nextStart = next + c.bufBase
+	}
+}
+
+// dispatchMBT validates a complete MBT's data-block CRC-32 and routes the
+// AMBT broadcast opcodes into the same network model the TSBK forms feed.
+// data is the concatenation of the message's 12-octet data blocks; metric is
+// the worst data-block Viterbi metric (for the failure diagnostic).
+func (c *ControlChannel) dispatchMBT(h MBTHeader, data []byte, nac uint16, metric int) {
+	if err := ValidateMBTData(data); err != nil {
+		atomic.AddInt64(&c.stats.MBTDataCRCFailed, 1)
+		// Everything identifying this line (opcode, blocks, nac) comes from
+		// the HEADER block, which passed its own CCITT-16 — only a data
+		// block is corrupt. So this line next to a decoded broadcast with
+		// the same identity is two different PDU frames, not one frame
+		// both failing and passing (the header repeats every broadcast).
+		// The Viterbi metric says how marginal the failing block was.
+		c.log.Debug("p25: MBT data CRC failed",
+			"opcode", ambtOpcodeLabel(h), "blocks", h.BlocksToFollow,
+			"metric", metric, "nac", nac,
+			"cause", "corrupt data block (header decoded clean; identity fields above are the header's)")
+		return
+	}
+	atomic.AddInt64(&c.stats.MBTDecoded, 1)
+	c.lastActivityNano.Store(c.now().UnixNano())
+	if h.Format != MBTFormatAlternate {
+		// Unconfirmed MBT (0x15) carries its opcode and fields inside the
+		// data blocks with different layouts; census it until a capture
+		// justifies decoding it (#764/#771 discipline: no spec-guessing).
+		c.log.Debug("p25: unconfirmed MBT not decoded",
+			"opcode_raw", data[0]&0x3F, "blocks", h.BlocksToFollow, "nac", nac)
+		return
+	}
+	switch h.Opcode {
+	case OpNetworkStatusBroadcast:
+		atomic.AddInt64(&c.stats.NetStatusSeen, 1)
+		n := ParseMBTNetworkStatusBroadcast(h, data)
+		c.log.Debug("p25: MBT network status broadcast", "nac", nac,
+			"wacn", n.WACN, "sysid", n.SystemID,
+			"channel", fmt.Sprintf("%d-%d", n.ChannelID, n.ChannelNumber),
+			"uplink", fmt.Sprintf("%d-%d", n.UplinkID, n.UplinkNumber))
+		c.netModel.ApplyMBTNetworkStatus(n)
+		c.publishSiteUpdate()
+	case OpRFSSStatusBroadcast:
+		atomic.AddInt64(&c.stats.RFSSStatusSeen, 1)
+		r := ParseMBTRFSSStatusBroadcast(h, data)
+		c.log.Debug("p25: MBT RFSS status broadcast", "nac", nac,
+			"sysid", r.SystemID, "rfss", r.RFSS, "site", r.Site,
+			"channel", fmt.Sprintf("%d-%d", r.ChannelID, r.ChannelNumber))
+		c.netModel.ApplyMBTRFSSStatus(r)
+		c.publishSiteUpdate()
+	case OpAdjacentSiteStatusBroadcast:
+		atomic.AddInt64(&c.stats.AdjacentSeen, 1)
+		a := ParseMBTAdjacentSiteStatusBroadcast(h, data)
+		c.log.Debug("p25: MBT adjacent site broadcast", "nac", nac,
+			"sysid", a.SystemID, "rfss", a.RFSS, "site", a.Site,
+			"channel", fmt.Sprintf("%d-%d", a.ChannelID, a.ChannelNumber),
+			"uplink", fmt.Sprintf("%d-%d", a.UplinkID, a.UplinkNumber))
+		c.netModel.ApplyMBTAdjacentSite(a)
+		c.publishSiteUpdate()
+	default:
+		c.log.Debug("p25: unhandled AMBT opcode",
+			"opcode", ambtOpcodeLabel(h), "mfid", h.MFID, "blocks", h.BlocksToFollow, "nac", nac)
+	}
+}
+
+// ambtOpcodeLabel names an AMBT header opcode for logging. Only the AMBT
+// forms GT decodes get a mnemonic; everything else renders numerically —
+// rendering an arbitrary AMBT (or inbound ISP) opcode through the TSBK OSP
+// String() map would mislabel it with a standard name that does not apply,
+// the same hazard logUnhandledTSBK documents for vendor opcodes. A vendor
+// MFID always renders numerically for the same reason.
+func ambtOpcodeLabel(h MBTHeader) string {
+	if h.MFID == 0 {
+		switch h.Opcode {
+		case OpNetworkStatusBroadcast, OpRFSSStatusBroadcast, OpAdjacentSiteStatusBroadcast:
+			return h.Opcode.String()
+		}
+	}
+	return fmt.Sprintf("AMBT(0x%02X)", uint8(h.Opcode))
 }
 
 // nidGuess is one evaluated NID-alignment hypothesis: the NID read from
@@ -1557,7 +1807,12 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 	// test can name and reverse any alias-bearing transport we don't yet
 	// decode, while the per-frame detail stays at Debug.
 	c.logUnhandledTSBK(t, nac)
-	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
+	// Numeric opcode only: Opcode.String() is the STANDARD OSP mnemonic map,
+	// so naming a vendor opcode through it mislabels (MFID 0x90 opcode 0x00
+	// would log as GRP_V_CH_GRANT) — the exact hazard logUnhandledTSBK's doc
+	// records.
+	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID,
+		"opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)), "nac", nac)
 }
 
 // diagnostic key namespaces for diagSeen — the high byte separates
@@ -1863,6 +2118,20 @@ func (c *ControlChannel) publishSiteUpdate() {
 	if net.RFSS == 0 && net.Site == 0 && net.SystemID == 0 && net.WACN == 0 {
 		return
 	}
+	// Edge-trigger the bus event. dispatchTSBK calls this after essentially
+	// every broadcast opcode (many per second), which floods the SSE feed with
+	// the full topology block; the site table and logs are idempotent, so we
+	// publish only when the site's material identity/topology actually changes
+	// — plus a slow heartbeat so the sites table's live carrier offset / TSBK
+	// error-rate (#815/#858) stay fresh without spamming. Mirrors TETRA's
+	// edge-triggered publishSiteIdentity.
+	topo := c.TopologySnapshot()
+	now := c.now()
+	fp := topo.Fingerprint()
+	if !c.lastSitePublish.shouldPublish(fp, c.freqHz, now) {
+		return
+	}
+	c.lastSitePublish.mark(fp, c.freqHz, now)
 	var carrierOffsetHz int32
 	if c.carrierOffsetHz != nil {
 		carrierOffsetHz = int32(math.Round(c.carrierOffsetHz()))
@@ -1886,11 +2155,47 @@ func (c *ControlChannel) publishSiteUpdate() {
 			SystemIDHex:                   trunking.IDHex(uint64(net.SystemID)),
 			RFSSIDHex:                     trunking.IDHex(uint64(net.RFSS)),
 			SiteIDHex:                     trunking.IDHex(uint64(net.Site)),
-			Topology:                      c.TopologySnapshot(),
-			At:                            c.now(),
+			Topology:                      topo,
+			At:                            now,
 		},
 	})
 	c.logSiteIdentity(net)
+}
+
+// siteUpdateHeartbeat bounds how long an unchanging site can go without
+// re-publishing a KindSiteUpdate. The event is edge-triggered on material
+// content, but the SiteUpdate payload also carries the live carrier offset
+// (#815) and TSBK error rate (#858) that the sites table surfaces, so a slow
+// heartbeat keeps those fresh without reintroducing the per-TSBK flood.
+const siteUpdateHeartbeat = 15 * time.Second
+
+// sitePublishState edge-triggers a control channel's KindSiteUpdate: it holds
+// the material-content fingerprint + tuned frequency of the last published
+// update and when it was sent. Publish when the content changes or the
+// heartbeat elapses.
+type sitePublishState struct {
+	fp          uint64
+	freqHz      uint32
+	publishedAt time.Time
+	have        bool
+}
+
+// shouldPublish reports whether a site update carrying fingerprint fp at freqHz
+// should be published now: on the first update, on any content/frequency
+// change, or once the heartbeat interval has elapsed.
+func (s *sitePublishState) shouldPublish(fp uint64, freqHz uint32, now time.Time) bool {
+	if !s.have || fp != s.fp || freqHz != s.freqHz {
+		return true
+	}
+	return now.Sub(s.publishedAt) >= siteUpdateHeartbeat
+}
+
+// mark records that an update with fingerprint fp at freqHz was published at now.
+func (s *sitePublishState) mark(fp uint64, freqHz uint32, now time.Time) {
+	s.fp = fp
+	s.freqHz = freqHz
+	s.publishedAt = now
+	s.have = true
 }
 
 // siteLogKey is the dedupe key for the concise site-configuration log line.

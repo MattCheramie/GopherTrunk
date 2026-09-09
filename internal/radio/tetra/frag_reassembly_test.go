@@ -36,15 +36,34 @@ func macResourceStartFragment(ssi uint32, carrier uint16, timeslot uint8, partia
 	return append(w.bits, partial...)
 }
 
-// macEndPDU wraps continuation bits in a MAC-END PDU (§21.4.3.4): MAC PDU
-// type = MACPDUFragEnd, subtype = macEnd, then a fill-bit flag + 6-bit length
-// indication before the fragment — the exact header macFragmentPayload skips.
+// macEndPDU wraps continuation bits in a MAC-END PDU (§21.4.3.4) with the
+// on-air header layout (verified against osmo-tetra rx_macend and a real
+// capture): MAC PDU type, subtype, fill-bit indication, 6-bit length
+// indication, slot-granting flag, channel-allocation flag, then the fragment.
+// The flags used to be missing here AND in macFragmentPayload — the encoder
+// and decoder drifted together (the #764/#771 self-consistent trap), so the
+// round-trip stayed green while every real reassembled TM-SDU carried stray
+// bits at the fragment seam.
 func macEndPDU(payload []byte) []byte {
 	w := &cmceBitWriter{}
 	w.u(uint64(MACPDUFragEnd), 2)
 	w.u(uint64(macEnd), 1)
 	w.u(0, 1) // fill-bit indication
 	w.u(0, 6) // length indication
+	w.u(0, 1) // slot-granting flag (absent)
+	w.u(0, 1) // channel-allocation flag (absent)
+	return append(w.bits, payload...)
+}
+
+// macFragPDU wraps continuation bits in a MAC-FRAG PDU (§21.4.3.3): MAC PDU
+// type, subtype, fill-bit indication, then the fragment. The fill-bit
+// indication is the one bit the old macFragmentPayload did not strip — every
+// reassembled TM-SDU gained a stray bit at this seam on real air.
+func macFragPDU(payload []byte) []byte {
+	w := &cmceBitWriter{}
+	w.u(uint64(MACPDUFragEnd), 2)
+	w.u(uint64(macFrag), 1)
+	w.u(0, 1) // fill-bit indication
 	return append(w.bits, payload...)
 }
 
@@ -134,6 +153,52 @@ func TestIngestMACReassemblesFragmentedTMSDU(t *testing.T) {
 	if enriched == nil {
 		t.Fatalf("fragmented grant not enriched from the reassembled MAC-END: got %+v (want group=%#x src=%#x emergency=true)",
 			grants, uint32(gssi), uint32(party))
+	}
+	if enriched.GroupID != gssi {
+		t.Errorf("reassembled grant GroupID = %#x, want %#x", enriched.GroupID, uint32(gssi))
+	}
+}
+
+// TestIngestMACReassemblesThreeBlockTMSDU pins the MAC-FRAG seam: a TM-SDU
+// spanning start-fragment + MAC-FRAG + MAC-END must reassemble to the same
+// enriched grant as the unfragmented delivery. The MAC-FRAG header's fill-bit
+// indication is what the old reader failed to strip — with it unstripped, the
+// mid-PDU seam gains a stray bit and the CMCE fields after it decode as
+// garbage, so this test fails against the old macFragmentPayload.
+func TestIngestMACReassemblesThreeBlockTMSDU(t *testing.T) {
+	const (
+		gssi     = 0x0F5670
+		party    = 0x0123AB
+		callID   = 0x1234
+		carrier  = 2716
+		timeslot = 1
+	)
+	full := cmceSetupEmergencyParty(callID, party)
+	splitA, splitB := 24, 40 // start | FRAG | END, both cuts inside the CMCE mandatory block
+	if splitB >= len(full) {
+		t.Fatal("test TM-SDU shorter than the split points")
+	}
+
+	bus := events.NewBus(32)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "Sys", FrequencyHz: 467_913_000})
+	cc.ingestMAC(macResourceStartFragment(gssi, carrier, timeslot, full[:splitA]))
+	cc.ingestMAC(macFragPDU(full[splitA:splitB]))
+	cc.ingestMAC(macEndPDU(full[splitB:]))
+
+	grants := collectGrants(sub)
+	var enriched *trunking.Grant
+	for i := range grants {
+		if grants[i].SourceID == party && grants[i].Emergency {
+			enriched = &grants[i]
+		}
+	}
+	if enriched == nil {
+		t.Fatalf("three-block reassembly did not produce the enriched grant: got %+v (want src=%#x emergency=true)",
+			grants, uint32(party))
 	}
 	if enriched.GroupID != gssi {
 		t.Errorf("reassembled grant GroupID = %#x, want %#x", enriched.GroupID, uint32(gssi))

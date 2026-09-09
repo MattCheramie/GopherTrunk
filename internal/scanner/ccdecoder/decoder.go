@@ -342,6 +342,9 @@ type Options struct {
 	// the SDR rate. Empty (the default) disables it at zero cost. Driven by a
 	// baseband record entry with tap: ddc.
 	DDCRecordDir string
+	// DDCRecordFormat selects the DDC recording container: "wav" (default)
+	// or "flac" (lossless compressed). Driven by the record entry's format.
+	DDCRecordFormat string
 	// VoiceTapBufferChunks sizes the per-consumer same-carrier voice-tap
 	// buffer (how many post-DDC IQ chunks queue before a lagging voice consumer
 	// drops, issue #402). 0 selects the built-in default. Driven by
@@ -593,7 +596,7 @@ func New(opts Options) (*Decoder, error) {
 	}
 	d.carrierOffsetWarnPersist = carrierOffsetWarnPersist
 	d.zeroIFHealthWindow = zeroIFHealthWindow
-	d.ddcRec = newDDCRecorder(opts.DDCRecordDir, log)
+	d.ddcRec = newDDCRecorder(opts.DDCRecordDir, opts.DDCRecordFormat, log)
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
 	}

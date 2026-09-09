@@ -25,25 +25,27 @@ import (
 // retune to a different protocol/rate), so each recording holds one
 // contiguous channelized stream at one rate.
 type ddcRecorder struct {
-	dir string
-	log *slog.Logger
+	dir    string
+	format string // "wav" (default) or "flac"
+	log    *slog.Logger
 
-	w      *baseband.IQWriter
+	w      baseband.IQRecorderWriter
 	path   string
 	system string
 	rate   uint32
 }
 
 // newDDCRecorder returns a recorder writing into dir, or nil if dir is empty
-// (the zero-cost disabled case).
-func newDDCRecorder(dir string, log *slog.Logger) *ddcRecorder {
+// (the zero-cost disabled case). format selects the container ("wav" default,
+// "flac" for the lossless compressed twin).
+func newDDCRecorder(dir, format string, log *slog.Logger) *ddcRecorder {
 	if strings.TrimSpace(dir) == "" {
 		return nil
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &ddcRecorder{dir: dir, log: log}
+	return &ddcRecorder{dir: dir, format: format, log: log}
 }
 
 // write appends one channelized chunk, opening or rolling the WAV as needed.
@@ -85,10 +87,11 @@ func (r *ddcRecorder) roll(system string, rate uint32) {
 		r.dir = ""
 		return
 	}
-	name := fmt.Sprintf("%s_%s_%dhz.wav", ddcRecSanitize(system),
-		time.Now().UTC().Format("20060102T150405Z"), rate)
+	name := fmt.Sprintf("%s_%s_%dhz.%s", ddcRecSanitize(system),
+		time.Now().UTC().Format("20060102T150405Z"), rate,
+		baseband.IQRecordingExt(r.format))
 	path := filepath.Join(r.dir, name)
-	w, err := baseband.NewIQWriter(path, rate)
+	w, err := baseband.NewIQRecorderWriter(path, rate, r.format)
 	if err != nil {
 		r.log.Warn("ccdecoder: cannot open DDC recording; recording disabled",
 			"path", path, "err", err)

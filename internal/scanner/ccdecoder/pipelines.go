@@ -333,6 +333,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		BandPlan:              bandPlan,
 		Rotations:             rotations,
 		P25Phase1DemodMode:    opts.System.P25Phase1DemodMode,
+		QuietNonControlDUID:   opts.System.P25QuietNonControlDUID,
 		P25Phase2Trellis:      uint8(p2Trellis),
 		P25Phase2RS:           uint8(p2RS),
 		P25Phase2Interleave:   uint8(p2Interleave),
@@ -1069,6 +1070,7 @@ func (p *tetraPipeline) maybeLogStatus() {
 		"sysinfo", st.SysInfo,
 		"sch_pdus", st.SCHPDUs,
 		"sch_pdus_fail", st.SCHPDUsFail,
+		"frag_abandons", st.FragAbandons,
 		"grants", st.Grants,
 		"colour_code", p.cc.Topology().ColourCode&0x3F,
 	)
@@ -1087,32 +1089,12 @@ func (p *tetraPipeline) Reset() {
 }
 func (p *tetraPipeline) Close() error { return nil }
 
-// TopologySnapshot surfaces the TETRA single-cell identity (MCC/MNC/LA + colour
-// code) the control channel learned. No adjacent cells for TETRA.
+// TopologySnapshot surfaces the TETRA cell identity (MCC/MNC/LA + colour code),
+// the offset-corrected control carrier, and the D-NWRK-BROADCAST neighbour
+// cells. Delegates to the control channel's own snapshot so the offline/siglab
+// report and the live KindSiteUpdate path can never drift apart.
 func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
-	t := p.cc.Topology()
-	snap := &trunking.TopologySnapshot{
-		MCC:          t.MCC,
-		MNC:          t.MNC,
-		LocationArea: t.LocationArea,
-		// The ETSI 6-bit colour code is the low 6 bits of the 30-bit extended
-		// colour code (MCC<<20 | MNC<<6 | CC); masking 0xFF would drag in two
-		// stray MNC bits and corrupt the surfaced value.
-		ColorCode: uint8(t.ColourCode & 0x3F),
-	}
-	// Surface the cell's own control carrier with its offset-corrected downlink
-	// frequency (§21.4.4.1) — the true carrier, not the tuned frequency — so the
-	// network-config report shows where the CC actually is.
-	if t.DownlinkHz != 0 {
-		snap.PrimaryCC = &trunking.TopoChannelRef{
-			ChannelNumber: t.MainCarrier,
-			FrequencyHz:   t.DownlinkHz,
-			// The uplink is the offset-corrected duplex pair (§21.4.4.1), derived
-			// directly from the SYSINFO duplex spacing rather than a band plan.
-			UplinkHz: t.UplinkHz,
-		}
-	}
-	return snap
+	return p.cc.TopologySnapshot()
 }
 
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
@@ -1567,30 +1549,34 @@ func (p *edacsPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 
 // newMotorolaPipeline wires internal/radio/motorola/receiver into
 // motorola.ControlChannel.Process. The receiver's BitSink forwards
-// bits + baseIdx into the state machine (24-bit sync detect →
-// 32-bit OSW slice → OSWFromBits → Ingest).
+// bits + baseIdx into the framer (8-bit sync-bracketed frame capture
+// → deinterleave → convolutional-parity ECC → CRC-10 → OSW
+// sequencer). The band plan comes from the `motorola_band_plan`
+// system key (default: the 800 MHz standard plan).
 //
-// The BCH(64, 16, 11) FEC layer is gated on per-system config:
-// trunking.System.MotorolaBCHMode (the `motorola_bch_mode` YAML
-// key) flips SetBCHMode on the ControlChannel before any sample
-// flows. Empty string preserves the legacy 32-bit raw-OSW path so
-// existing synthesized-fixture tests stay green; live Motorola
-// Type II captures typically need `motorola_bch_mode: on` to pass
-// the FEC layer. Unknown values warn-log and fall back to off
-// rather than failing the retune.
+// `motorola_bch_mode` is obsolete: it gated a BCH(64,16,11) layer
+// the real SmartNet air interface never had (issue #1143 — the old
+// framing decoded only its own synthetic fixtures). The key is still
+// accepted so existing configs keep loading, but it is ignored; the
+// real OSW FEC (interleave + parity ECC + CRC-10) always runs.
 func newMotorolaPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	if v := opts.System.MotorolaBCHMode; v != "" {
+		opts.Log.Info("ccdecoder: motorola_bch_mode is obsolete and ignored — "+
+			"the SmartNet OSW FEC (interleave + parity ECC + CRC-10) always runs",
+			"system", opts.SystemName, "value", v)
+	}
+	plan, ok := motorola.ParseBandPlan(opts.System.MotorolaBandPlan)
+	if !ok {
+		opts.Log.Warn("ccdecoder: unrecognised motorola_band_plan; falling back to 800_standard",
+			"system", opts.SystemName, "value", opts.System.MotorolaBandPlan)
+	}
 	cc := motorola.New(motorola.Options{
 		Bus:         opts.Bus,
 		Log:         opts.Log,
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
+		Plan:        plan,
 	})
-	bchMode, ok := motorola.ParseBCHMode(opts.System.MotorolaBCHMode)
-	if !ok {
-		opts.Log.Warn("ccdecoder: unrecognised motorola_bch_mode; falling back to on",
-			"system", opts.SystemName, "value", opts.System.MotorolaBCHMode)
-	}
-	cc.SetBCHMode(bchMode)
 	rx := motorolarx.New(motorolarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
@@ -1607,17 +1593,21 @@ type motorolaPipeline struct {
 }
 
 func (p *motorolaPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *motorolaPipeline) Reset()                 { p.rx.Reset() }
-func (p *motorolaPipeline) Close() error           { return nil }
+func (p *motorolaPipeline) Reset() {
+	p.rx.Reset()
+	p.cc.ResetFraming()
+}
+func (p *motorolaPipeline) Close() error { return nil }
 
-// TopologySnapshot surfaces the Motorola system identity + adjacent sites the
-// control channel accumulated. Motorola has no RFSS; only SystemID + neighbors.
+// TopologySnapshot surfaces the Motorola system identity plus the
+// alternate/adjacent control channels the OSW stream advertised.
+// Motorola has no RFSS, and the OSW broadcasts carry no numeric site
+// ID — neighbors are identified by channel number alone.
 func (p *motorolaPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 	t := p.cc.Topology()
 	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
 	for _, n := range t.Neighbors {
 		ref := trunking.TopoNeighborRef{
-			Site:          uint8(n.SiteID),
 			ChannelNumber: n.LCN,
 		}
 		if hz, ok := p.cc.NeighborFrequency(n.LCN); ok {

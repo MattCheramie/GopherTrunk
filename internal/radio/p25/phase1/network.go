@@ -33,12 +33,25 @@ type Channel struct {
 	ChannelNumber uint16
 }
 
-// NeighborSite is one adjacent site a radio may roam to.
+// NeighborSite is one adjacent site a radio may roam to. ChannelID/
+// ChannelNumber name the neighbour's control-channel downlink; Uplink*
+// are set only when an explicit-channel broadcast (the AMBT form of
+// 0x3C) named the uplink — zero otherwise, in which case the uplink is
+// derived downstream from the band plan's transmit offset. CFVA and
+// ServiceClass come from the TSBK form (the AMBT form doesn't carry
+// them); CFVAKnown distinguishes "flags all zero" from "never seen".
 type NeighborSite struct {
 	RFSS          uint8
 	Site          uint8
+	LRA           uint8
+	SystemID      uint16
 	ChannelID     uint8
 	ChannelNumber uint16
+	UplinkID      uint8
+	UplinkNumber  uint16
+	CFVA          uint8
+	CFVAKnown     bool
+	ServiceClass  uint8
 }
 
 // NetworkConfig is a snapshot of the accumulated system topology.
@@ -198,14 +211,79 @@ func (m *NetworkModel) ApplySecondaryControlChannelExplicit(s SecondaryControlCh
 // SDRtrunk, which corroborate System ID from adjacent broadcasts). RFSS/Site
 // are deliberately NOT voted: they describe the neighbour, not the camped site.
 func (m *NetworkModel) ApplyAdjacentSite(a AdjacentSiteStatusBroadcast) {
+	m.upsertNeighbor(NeighborSite{
+		RFSS: a.RFSS, Site: a.Site, LRA: a.LRA, SystemID: a.SystemID,
+		ChannelID: a.ChannelID, ChannelNumber: a.ChannelNumber,
+		CFVA: a.CFVA, CFVAKnown: true, ServiceClass: a.ServiceClass,
+	})
+}
+
+// ApplyMBTAdjacentSite folds the AMBT form of the Adjacent Site Status
+// Broadcast (0x3C carried in a multi-block PDU) in. It is the only form
+// that names the neighbour's explicit uplink channel; many systems
+// broadcast most or all of their neighbour list ONLY this way, which is
+// why the TSBK-only decoder surfaced one neighbour where SDRTrunk
+// listed twelve.
+func (m *NetworkModel) ApplyMBTAdjacentSite(a MBTAdjacentSiteStatusBroadcast) {
+	m.upsertNeighbor(NeighborSite{
+		RFSS: a.RFSS, Site: a.Site, LRA: a.LRA, SystemID: a.SystemID,
+		ChannelID: a.ChannelID, ChannelNumber: a.ChannelNumber,
+		UplinkID: a.UplinkID, UplinkNumber: a.UplinkNumber,
+	})
+}
+
+// upsertNeighbor merges one adjacent-site observation into the
+// neighbour table, keyed by (RFSS, Site). The TSBK and AMBT forms carry
+// complementary fields (CFVA/service class vs explicit uplink), so a
+// merge keeps whichever half the new observation lacks instead of
+// clobbering it with zeros.
+func (m *NetworkModel) upsertNeighbor(n NeighborSite) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensure()
-	if a.SystemID != 0 {
-		m.sysidVotes[a.SystemID]++
+	if n.SystemID != 0 {
+		// Every site of a P25 system shares one System ID, so an adjacent
+		// site names our own — often the only System ID source on systems
+		// that never emit 0x3B/0x3A. RFSS/Site are deliberately NOT voted:
+		// they describe the neighbour, not the camped site.
+		m.sysidVotes[n.SystemID]++
 	}
-	key := neighborKey{RFSS: a.RFSS, Site: a.Site}
-	m.neighborData[key] = NeighborSite{RFSS: a.RFSS, Site: a.Site, ChannelID: a.ChannelID, ChannelNumber: a.ChannelNumber}
+	key := neighborKey{RFSS: n.RFSS, Site: n.Site}
+	if old, ok := m.neighborData[key]; ok {
+		if n.UplinkID == 0 && n.UplinkNumber == 0 {
+			n.UplinkID, n.UplinkNumber = old.UplinkID, old.UplinkNumber
+		}
+		if !n.CFVAKnown {
+			n.CFVA, n.CFVAKnown, n.ServiceClass = old.CFVA, old.CFVAKnown, old.ServiceClass
+		}
+		if n.LRA == 0 {
+			n.LRA = old.LRA
+		}
+		if n.SystemID == 0 {
+			n.SystemID = old.SystemID
+		}
+	}
+	m.neighborData[key] = n
+}
+
+// ApplyMBTNetworkStatus folds the AMBT form of the Network Status
+// Broadcast (0x3B in a multi-block PDU) in — on some systems the ONLY
+// carrier of the WACN.
+func (m *NetworkModel) ApplyMBTNetworkStatus(n MBTNetworkStatusBroadcast) {
+	m.ApplyNetworkStatus(NetworkStatusBroadcast{
+		LRA: n.LRA, WACN: n.WACN, SystemID: n.SystemID,
+		ChannelID: n.ChannelID, ChannelNumber: n.ChannelNumber,
+		ServiceClass: uint16(n.ServiceClass),
+	})
+}
+
+// ApplyMBTRFSSStatus folds the AMBT form of the RFSS Status Broadcast
+// (0x3A in a multi-block PDU) in.
+func (m *NetworkModel) ApplyMBTRFSSStatus(r MBTRFSSStatusBroadcast) {
+	m.ApplyRFSSStatus(RFSSStatusBroadcast{
+		LRA: r.LRA, SystemID: r.SystemID, RFSS: r.RFSS, Site: r.Site,
+		ChannelID: r.ChannelID, ChannelNumber: r.ChannelNumber,
+	})
 }
 
 // Snapshot returns a deep copy of the accumulated topology. Identity fields

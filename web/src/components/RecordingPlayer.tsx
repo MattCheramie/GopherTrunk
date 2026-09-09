@@ -21,7 +21,7 @@ export function RecordingPlayer({
   callId: number;
 }) {
   const [objURL, setObjURL] = useState<string | null>(null);
-  const [ext, setExt] = useState<"wav" | "mp3">("wav");
+  const [ext, setExt] = useState<"wav" | "mp3" | "flac">("wav");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // Track the current object URL so the cleanup revokes exactly what is live,
@@ -65,7 +65,16 @@ export function RecordingPlayer({
         if (cancelled) return;
         const url = URL.createObjectURL(blob);
         urlRef.current = url;
-        setExt(blob.type === "audio/mpeg" ? "mp3" : "wav");
+        // The download name follows the served Content-Type (the daemon sends
+        // audio/flac for recordings.format: flac), so a FLAC recording is not
+        // saved under a lying .wav name.
+        setExt(
+          blob.type === "audio/mpeg"
+            ? "mp3"
+            : blob.type === "audio/flac"
+              ? "flac"
+              : "wav",
+        );
         setObjURL(url);
         setLoading(false);
       })

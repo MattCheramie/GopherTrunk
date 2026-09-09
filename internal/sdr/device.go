@@ -140,3 +140,19 @@ type Driver interface {
 	Enumerate() ([]Info, error)
 	Open(idx int) (Device, error)
 }
+
+// ProbeOpener is an optional Driver extension offering a fast,
+// read-only device open for `sdr list --probe`. Callers type-assert for
+// it (like FreqRanger / TunerDiagnoser) and fall back to Open when a
+// driver doesn't implement it.
+//
+// OpenProbe must bring the device up cheaply and touch ONLY that device
+// — in particular it must not run any multi-pass device-reset recovery,
+// because on macOS a reset re-enumerates the USB device and probing one
+// dongle would then perturb a sibling on the same host controller (issue
+// #1135). A device that doesn't come up on the first pass simply yields
+// the empty Info fields from Enumerate; the daemon Open path owns the
+// reset+retry recovery that actually getting a dongle streaming needs.
+type ProbeOpener interface {
+	OpenProbe(idx int) (Device, error)
+}

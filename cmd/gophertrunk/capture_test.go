@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -264,5 +265,129 @@ func TestSerialsOf(t *testing.T) {
 	got := serialsOf([]sdr.Info{{Serial: "AAA"}, {Serial: "BBB"}})
 	if got != "AAA, BBB" {
 		t.Errorf("serialsOf = %q, want \"AAA, BBB\"", got)
+	}
+}
+
+// feedIQChunks streams a deterministic low-amplitude waveform (n chunks of
+// size samples) so container round-trip tests can compare decoded samples
+// without hitting the int16 clamp feedChunks' large values would.
+func feedIQChunks(n, size int) (<-chan []complex64, []complex64) {
+	src := make(chan []complex64, n)
+	all := make([]complex64, 0, n*size)
+	for i := 0; i < n; i++ {
+		chunk := make([]complex64, size)
+		for j := range chunk {
+			k := i*size + j
+			chunk[j] = complex(float32(k%97)/200, -float32(k%89)/200)
+		}
+		all = append(all, chunk...)
+		src <- chunk
+	}
+	close(src)
+	return src, all
+}
+
+// TestCaptureToFileFLACIsRealFLAC is the failing-first regression for the
+// `capture -format flac` defect: the streaming encoder had no FLAC case and
+// silently fell through to the u8 encoder, leaving a file that was neither
+// FLAC nor decodable. The container path must produce a real FLAC stream that
+// losslessly decodes back to the captured samples.
+func TestCaptureToFileFLACIsRealFLAC(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cap.flac")
+	src, all := feedIQChunks(4, 300)
+	written, _, err := captureToFile(context.Background(), path, siglab.FormatFLAC, src, 1000, 1.0, nil)
+	if err != nil {
+		t.Fatalf("captureToFile: %v", err)
+	}
+	if written != int64(len(all)) {
+		t.Fatalf("written = %d, want %d", written, len(all))
+	}
+
+	head := make([]byte, 4)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := f.Read(head); err != nil || string(head) != "fLaC" {
+		f.Close()
+		t.Fatalf("file starts with %q (err %v), want the fLaC stream marker", head, err)
+	}
+	f.Close()
+
+	// Decode through siglab's own reader path (the same one replay uses) and
+	// require lossless int16 round-trip of every sample.
+	got, rate, err := readContainerSW16(t, path)
+	if err != nil {
+		t.Fatalf("decode flac capture: %v", err)
+	}
+	if rate != 1000 {
+		t.Errorf("container rate = %d, want 1000", rate)
+	}
+	compareSW16(t, got, all)
+}
+
+// TestCaptureToFileWAVHasRIFFHeader is the companion regression for
+// `capture -format wav`, which used to write a headerless sw16 body under a
+// wav label (so siglab's reader ate the first 11 samples as a fake header).
+func TestCaptureToFileWAVHasRIFFHeader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cap.wav")
+	src, all := feedIQChunks(4, 300)
+	written, _, err := captureToFile(context.Background(), path, siglab.FormatWAV, src, 1000, 1.0, nil)
+	if err != nil {
+		t.Fatalf("captureToFile: %v", err)
+	}
+	if written != int64(len(all)) {
+		t.Fatalf("written = %d, want %d", written, len(all))
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(b) < 44 || string(b[0:4]) != "RIFF" || string(b[8:12]) != "WAVE" {
+		t.Fatalf("capture is not a RIFF/WAVE file (got %d bytes, head %q)", len(b), b[:min(len(b), 12)])
+	}
+	if len(b) != 44+len(all)*4 {
+		t.Errorf("file size = %d, want %d (44-byte header + 4 bytes/sample)", len(b), 44+len(all)*4)
+	}
+	got, rate, err := readContainerSW16(t, path)
+	if err != nil {
+		t.Fatalf("decode wav capture: %v", err)
+	}
+	if rate != 1000 {
+		t.Errorf("container rate = %d, want 1000", rate)
+	}
+	compareSW16(t, got, all)
+}
+
+// readContainerSW16 decodes a wav/flac IQ capture back to complex64 through
+// siglab's reader (RunReader would drag in a whole analysis; DecodeCaptureFile
+// is enough for sample fidelity).
+func readContainerSW16(t *testing.T, path string) ([]complex64, uint32, error) {
+	t.Helper()
+	return siglab.DecodeContainerFile(path)
+}
+
+// compareSW16 requires got to equal want through the sw16 quantization
+// (float → int16 ×32768 with clamp → float /32768).
+func compareSW16(t *testing.T, got, want []complex64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("decoded %d samples, want %d", len(got), len(want))
+	}
+	quant := func(v float32) float32 {
+		x := math.Round(float64(v) * 32768)
+		if x > 32767 {
+			x = 32767
+		}
+		if x < -32768 {
+			x = -32768
+		}
+		return float32(int16(x)) / 32768
+	}
+	for i := range want {
+		w := complex(quant(real(want[i])), quant(imag(want[i])))
+		if got[i] != w {
+			t.Fatalf("sample %d = %v, want %v", i, got[i], w)
+		}
 	}
 }

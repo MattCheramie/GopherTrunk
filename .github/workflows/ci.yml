@@ -44,7 +44,11 @@ jobs:
             exit 1
           fi
       - run: go build ./...
-      - run: go test -race -count=1 ./...
+      # -timeout raised from go test's 10m default: the heaviest DSP package
+      # (internal/radio/p25/phase1/receiver) measures ~6 min under -race on a
+      # fast machine and crossed 10m on a slow hosted runner (run 2394), where
+      # the per-PACKAGE alarm kills the run even though no single test hangs.
+      - run: go test -race -count=1 -timeout 25m ./...
       - run: make integration
 
   # The pure-Go USB transport (internal/sdr/rtlsdr/usb) lands platform-

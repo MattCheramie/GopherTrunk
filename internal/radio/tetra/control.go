@@ -2,7 +2,9 @@ package tetra
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -125,6 +127,13 @@ type ControlChannel struct {
 	sysInfo    SysInfo
 	sysInfoSet bool
 
+	// sysInfoExt holds the cell's extended SYSINFO parameters (SCCH allocation,
+	// power/access parameters, D-MLE-SYSINFO LA + subscriber class + BS service
+	// details) once a full 124-bit SYSINFO block is decoded. Logged on change
+	// (hyperframe counter excluded — it advances every cycle).
+	sysInfoExt    SysInfoExt
+	sysInfoExtSet bool
+
 	// individuals is the set of SSIs observed acting as a CMCE calling /
 	// transmitting party (msg.PartySSI). A party is always an individual radio, so
 	// this lets classifyParties recognise a grant addressed to a subscriber ISSI
@@ -174,6 +183,36 @@ type ControlChannel struct {
 	// on the call's release and pruned by age. Lazily built; guarded by mu.
 	grantSeen map[grantKey]grantSnapshot
 
+	// neighbours accumulates the cells advertised by D-NWRK-BROADCAST (EN 300
+	// 392-2 §18.4.1.4.1), keyed by the 5-bit cell identifier — the TETRA
+	// analogue of the P25 adjacent-status list, surfaced through
+	// TopologySnapshot into the systems report's "Neighbor sites". A cell is
+	// surfaced only once the SAME content has been decoded twice
+	// (neighboursPending): the PD+type gate is just 6 bits, so a rare
+	// corrupted-but-CRC-passing TL-SDU can parse as a plausible-looking
+	// broadcast — on a real 120 s capture the one-shot version surfaced 18
+	// "neighbours" of which only the 4 repeating ones were real. The genuine
+	// broadcast repeats every few seconds with identical content; bit garbage
+	// does not (mirrors the BSCH identity/colour confirm-twice rule).
+	// Inherently bounded (32 ids each). Lazily built; guarded by mu.
+	// neighboursSeen stamps when each cell id last appeared in an ACCEPTED
+	// broadcast; cells the BS stops advertising for neighbourExpiry are pruned
+	// (see learnNeighbourCells) so a long session's report tracks the live
+	// neighbour list instead of accumulating every cell ever seen.
+	neighbours        map[uint8]NeighbourCell
+	neighboursPending map[uint8]NeighbourCell
+	neighboursSeen    map[uint8]time.Time
+
+	// releaseSeen records when a KindCallRelease was last published per group
+	// (GSSI). The SwMI retransmits D-RELEASE / D-DISCONNECT — once per addressed
+	// party and again for reliability — so a single call teardown otherwise emits
+	// a burst of identical release events into the bus/SSE feed (the "release
+	// spam" field report; same family as grantSeen and lastTalker above). Only
+	// the first release per window publishes; the entry is cleared when a new
+	// grant for the group publishes, so a rapid grant→release→grant→release
+	// sequence still announces every real teardown. Pruned by age; guarded by mu.
+	releaseSeen map[uint32]time.Time
+
 	// fragTMSDU accumulates a TM-SDU that spans a start-fragment MAC-RESOURCE and
 	// one or more following MAC-FRAG / MAC-END PDUs (§21.4.3.3/.4). fragResource
 	// is the start fragment's MAC-RESOURCE context (address + channel allocation),
@@ -185,6 +224,13 @@ type ControlChannel struct {
 	fragTMSDU    []byte
 	fragResource MACResource
 	fragActive   bool
+	// curSlotPos is the absolute dibit stream position of the NCDB slot
+	// currently being decoded (stamped by decodeDownlinkSlot); fragLastPos is
+	// the position of the reassembly's most recent piece. Successive pieces of
+	// one fragmented TM-SDU must be stream-adjacent (within fragMaxGapDibits) —
+	// see appendFragment. Guarded by mu.
+	curSlotPos  int
+	fragLastPos int
 
 	// pendingSoft holds the per-symbol complex differential (soft
 	// information) for the next Process call, stashed by StashSoft
@@ -514,8 +560,11 @@ type TopologyConfig struct {
 // TopologySnapshot renders the decoded single-cell identity as the protocol-
 // neutral trunking.TopologySnapshot the SiteTracker stores per system, so the
 // live systems API can surface TETRA identity (MCC/MNC/Location Area + colour
-// code) the same way it surfaces P25 WACN/SysID/RFSS/Site. TETRA advertises no
-// adjacent cells, so there are no neighbours. Mirrors the offline
+// code) the same way it surfaces P25 WACN/SysID/RFSS/Site. Adjacent cells
+// decoded from D-NWRK-BROADCAST (learnNeighbourCells) fill Neighbors — the
+// TETRA analogue of the P25 adjacent-status list — with Site carrying the
+// 5-bit cell identifier and StatusFlags the sync state plus whatever identity
+// (mcc/mnc/la) the broadcast carried. Mirrors the offline
 // tetraPipeline.TopologySnapshot. Returns nil-safe zero when nothing is decoded.
 func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 	t := c.Topology()
@@ -536,7 +585,81 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 			UplinkHz:      t.UplinkHz,
 		}
 	}
+	c.mu.Lock()
+	cells := make([]NeighbourCell, 0, len(c.neighbours))
+	for _, cell := range c.neighbours {
+		cells = append(cells, cell)
+	}
+	c.mu.Unlock()
+	sort.Slice(cells, func(i, j int) bool { return cells[i].CellID < cells[j].CellID })
+	for _, cell := range cells {
+		dl, ul := c.neighbourFrequencies(cell)
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          cell.CellID,
+			ChannelNumber: cell.MainCarrier,
+			FrequencyHz:   dl,
+			UplinkHz:      ul,
+			StatusFlags:   neighbourStatusFlags(cell),
+		})
+	}
 	return snap
+}
+
+// neighbourStatusFlags renders a neighbour cell's sync state, advertised load
+// and optional identity/status fields as the human-readable StatusFlags string
+// the report and web UI already display for P25 neighbours (CFVA words there).
+// Absent optional fields are omitted — never rendered as zeros — and the
+// unconfirmed-semantics fields (BS service details, subscriber class, …) are
+// rendered raw (see the NeighbourCell field docs).
+func neighbourStatusFlags(cell NeighbourCell) string {
+	parts := make([]string, 0, 8)
+	if cell.Synchronized {
+		parts = append(parts, "synced")
+	} else {
+		parts = append(parts, "unsynced")
+	}
+	if cell.CellServiceLevel != 0 { // 0 = load unknown; noise to print
+		parts = append(parts, "load="+CellLoadName(cell.CellServiceLevel))
+	}
+	if cell.HasMCC {
+		parts = append(parts, fmt.Sprintf("mcc=%d", cell.MCC))
+	}
+	if cell.HasMNC {
+		parts = append(parts, fmt.Sprintf("mnc=%d", cell.MNC))
+	}
+	if cell.HasLA {
+		parts = append(parts, fmt.Sprintf("la=%d", cell.LA))
+	}
+	if cell.HasServiceDetails {
+		svc := fmt.Sprintf("bs_svc=0x%03x", cell.ServiceDetails)
+		if names := BSServiceDetailsString(cell.ServiceDetails); names != "" {
+			svc += "[" + names + "]"
+		}
+		parts = append(parts, svc)
+	}
+	if cell.HasTimeshare {
+		parts = append(parts, fmt.Sprintf("timeshare=0x%02x", cell.Timeshare))
+	}
+	return strings.Join(parts, ",")
+}
+
+// plausibleNeighbourCell rejects neighbour cells whose decoded content is
+// physically impossible for a TETRA network — the last line of defence against
+// a corrupted-but-CRC-passing TL-SDU that parses as a plausible broadcast. A
+// main carrier of 0 is not a real cell, and the deployed carrier numbering
+// (TS 100 392-15, base = band × 100 MHz) covers the 100–999 MHz allocations
+// only: a frequency-band field of 0 or ≥10 renders as a sub-100 MHz or ≥1 GHz
+// "neighbour" (an operator's field report showed a confirmed 1.5 GHz entry —
+// band bits 1111 read from leaked tail bits), which no TETRA allocation
+// occupies.
+func plausibleNeighbourCell(cell NeighbourCell) bool {
+	if cell.MainCarrier == 0 {
+		return false
+	}
+	if cell.HasExtension && (cell.FreqBand == 0 || cell.FreqBand > 9) {
+		return false
+	}
+	return true
 }
 
 // publishSiteIdentity emits a KindSiteUpdate carrying the decoded TETRA identity
@@ -595,6 +718,12 @@ type Stats struct {
 	SCHPDUs     int64 // signalling channel (SCH/F, SCH/HD) blocks recovered CRC-clean off a real NCDB slot
 	SCHPDUsFail int64 // AACH-confirmed control slots that yielded no CRC-clean SCH block
 	Grants      int64 // voice grants published
+	// FragAbandons counts TM-SDU fragment chains dropped by the reassembly
+	// continuity guards (see abandonFragment): a designed safety response to a
+	// lost/unreadable slot mid-reassembly, not a parse defect — the broadcast
+	// repeats within seconds, so each abandon costs one cycle. A high rate
+	// simply tracks marginal RF.
+	FragAbandons int64
 }
 
 // addStat adds n to a decode-health counter when debug telemetry is on. A
@@ -802,6 +931,49 @@ func (c *ControlChannel) learnSysInfo(si SysInfo) {
 	}
 }
 
+// learnSysInfoExt records the cell's extended SYSINFO parameters and logs them
+// when they first decode or change — the hyperframe counter is excluded from
+// the change detection (it advances every multiframe cycle and would turn the
+// INFO line into per-minute spam). The SCCH count is the operator-visible
+// answer to "does this cell run secondary control channels": n common SCCH
+// occupy timeslots 2..(n+1) of the main carrier per §21.4.4.1.
+func (c *ControlChannel) learnSysInfoExt(ext SysInfoExt) {
+	c.mu.Lock()
+	changed := !c.sysInfoExtSet || !c.sysInfoExt.sameCellParams(ext)
+	c.sysInfoExt = ext
+	c.sysInfoExtSet = true
+	c.mu.Unlock()
+	if !changed {
+		return
+	}
+	args := []any{
+		"system", c.systemName,
+		"scch_in_use", ext.SCCHInUse,
+		"access_parameter", ext.AccessParameter,
+		"radio_dl_timeout", ext.RadioDLTimeout,
+		"rxlev_access_min_dbm", ext.RxLevAccessMinDBm(),
+		"la", ext.LocationArea,
+		"subscriber_class", fmt.Sprintf("0x%04x", ext.SubscriberClass),
+		"bs_service_details", fmt.Sprintf("0x%03x", ext.BSServiceDetails),
+	}
+	if ts := ext.SCCHTimeslots(); ts != "" {
+		args = append(args, "scch_timeslots", ts)
+	}
+	if dbm, ok := ext.MSTxPwrMaxCellDBm(); ok {
+		args = append(args, "ms_txpwr_max_dbm", dbm)
+	}
+	if s := BSServiceDetailsString(ext.BSServiceDetails); s != "" {
+		args = append(args, "bs_services", s)
+	}
+	if ext.CCKValid {
+		args = append(args, "cck_id", fmt.Sprintf("0x%04x", ext.CounterOrCCK))
+	}
+	// The rotating 20-bit optional field is deliberately not logged here — the
+	// BS cycles which definition each broadcast carries, and it is excluded
+	// from the change gate (sameCellParams) for the same reason.
+	c.log.Info("tetra: SYSINFO cell parameters", args...)
+}
+
 // cellFrequencies returns the cell's absolute downlink and uplink carrier
 // frequencies (Hz) derived from the learned SYSINFO. downlinkOK/uplinkOK report
 // whether each is known (uplink needs a mapped duplex spacing for the band).
@@ -820,6 +992,175 @@ func (c *ControlChannel) cellFrequencies() (downlinkHz, uplinkHz uint32, downlin
 		return uint32(dl), uint32(ul), true, true
 	}
 	return uint32(dl), 0, true, false
+}
+
+// learnNeighbourCells folds a decoded D-NWRK-BROADCAST into the accumulated
+// neighbour-cell map. On any change (a cell first seen, or its advertised
+// content changing) it logs the cell and republishes the site identity so the
+// SiteTracker's topology — and the systems report's "Neighbor sites" — update
+// live. The steady-state rebroadcast (unchanged content every few seconds) is
+// a no-op, so this adds no event or log spam.
+//
+// tl is the raw TL-SDU the broadcast was parsed from (may be nil); it is logged
+// hex-packed when the broadcast is rejected, so a field report alone can pin the
+// mis-framed layout without waiting for a new capture.
+func (c *ControlChannel) learnNeighbourCells(nb DNwrkBroadcast, tl []byte) {
+	if len(nb.Neighbours) == 0 {
+		return
+	}
+	// An implausible cell anywhere in the list invalidates the WHOLE broadcast.
+	// The neighbour list is parsed sequentially, so a physically-impossible cell
+	// is proof the bit alignment was lost (leaked fill bits, a mis-framed seam, a
+	// corrupted-but-CRC-passing block) — and every sibling parsed from the same
+	// misaligned bits is suspect even when its fields happen to look plausible.
+	// Deterministic corruption repeats bit-identically, so confirm-twice cannot
+	// catch those siblings (a 4 Sep field log showed a "cell 0, carrier 80,
+	// synced" phantom 65 MHz off-network confirming twice alongside a band-13
+	// implausible sibling in the same broadcasts).
+	for _, cell := range nb.Neighbours {
+		if !plausibleNeighbourCell(cell) {
+			c.log.Debug("tetra: dropping d-nwrk-broadcast with implausible neighbour cell — whole list distrusted",
+				"system", c.systemName,
+				"cell_id", cell.CellID,
+				"main_carrier", cell.MainCarrier,
+				"has_ext", cell.HasExtension,
+				"band", cell.FreqBand,
+				"cells", len(nb.Neighbours),
+				"tl_sdu_hex", packBitsHex(tl))
+			return
+		}
+	}
+	var confirmed []NeighbourCell
+	var expired []uint8
+	now := c.now()
+	c.mu.Lock()
+	if c.neighbours == nil {
+		c.neighbours = make(map[uint8]NeighbourCell)
+		c.neighboursPending = make(map[uint8]NeighbourCell)
+		c.neighboursSeen = make(map[uint8]time.Time)
+	}
+	for _, cell := range nb.Neighbours {
+		c.neighboursSeen[cell.CellID] = now
+		if cur, seen := c.neighbours[cell.CellID]; seen && cur == cell {
+			continue // steady-state rebroadcast of a confirmed cell
+		}
+		if pending, seen := c.neighboursPending[cell.CellID]; seen && pending == cell {
+			// Second identical sighting: confirmed real (garbage never repeats
+			// bit-identically), promote into the surfaced set.
+			delete(c.neighboursPending, cell.CellID)
+			c.neighbours[cell.CellID] = cell
+			confirmed = append(confirmed, cell)
+			continue
+		}
+		c.neighboursPending[cell.CellID] = cell
+	}
+	// Age out cells the BS stopped advertising. The broadcast rotates through
+	// the live neighbour list within a minute or two, so a cell absent for
+	// neighbourExpiry has genuinely left it — a reconfigured network, or a
+	// phantom that slipped an earlier gate. Pruning happens only here, on an
+	// ACCEPTED broadcast, so a CC outage (no broadcasts at all) never expires
+	// anything: the clock only advances relative to broadcasts still arriving.
+	for id, seen := range c.neighboursSeen {
+		if now.Sub(seen) < neighbourExpiry {
+			continue
+		}
+		delete(c.neighboursSeen, id)
+		delete(c.neighboursPending, id)
+		if _, surfaced := c.neighbours[id]; surfaced {
+			delete(c.neighbours, id)
+			expired = append(expired, id)
+		}
+	}
+	c.mu.Unlock()
+	for _, id := range expired {
+		c.log.Debug("tetra: neighbour cell no longer advertised — expiring",
+			"system", c.systemName, "cell_id", id, "expiry", neighbourExpiry)
+	}
+	if len(confirmed) == 0 {
+		if len(expired) > 0 {
+			c.publishSiteIdentity()
+		}
+		return
+	}
+	for _, cell := range confirmed {
+		dl, ul := c.neighbourFrequencies(cell)
+		// Optional fields are logged only when the broadcast carried them, so an
+		// absent MCC/MNC/LA is distinguishable from a genuine zero (the field
+		// report that motivated this read unconditional "mcc=0 mnc=0" as a
+		// decode defect). The unconfirmed-semantics status fields are raw.
+		args := []any{
+			"system", c.systemName,
+			"cell_id", cell.CellID,
+			"main_carrier", cell.MainCarrier,
+			"downlink_hz", dl,
+			"uplink_hz", ul,
+			"synced", cell.Synchronized,
+			"cell_load", CellLoadName(cell.CellServiceLevel),
+			"reselect_types", cell.ReselectTypes,
+			"has_ext", cell.HasExtension,
+		}
+		if cell.HasMCC {
+			args = append(args, "mcc", cell.MCC)
+		}
+		if cell.HasMNC {
+			args = append(args, "mnc", cell.MNC)
+		}
+		if cell.HasLA {
+			args = append(args, "la", cell.LA)
+		}
+		if cell.HasMaxTxPower {
+			args = append(args, "max_tx_power_raw", cell.MaxTxPower)
+		}
+		if cell.HasMinRxLevel {
+			args = append(args, "min_rx_level_raw", cell.MinRxLevel)
+		}
+		if cell.HasSubscriberClass {
+			args = append(args, "subscriber_class", fmt.Sprintf("0x%04x", cell.SubscriberClass))
+		}
+		if cell.HasServiceDetails {
+			args = append(args, "bs_service_details", fmt.Sprintf("0x%03x", cell.ServiceDetails))
+		}
+		if cell.HasTimeshare {
+			args = append(args, "timeshare_security", fmt.Sprintf("0x%02x", cell.Timeshare))
+		}
+		if cell.HasFrameOffset {
+			args = append(args, "tdma_frame_offset", cell.FrameOffset)
+		}
+		c.log.Debug("tetra: d-nwrk-broadcast neighbour cell", args...)
+	}
+	c.publishSiteIdentity()
+}
+
+// neighbourFrequencies resolves a neighbour cell's absolute downlink/uplink
+// carrier frequencies (Hz; 0 when unknown). With the main-carrier extension the
+// broadcast names the band/offset/duplex explicitly; without it the spec's
+// default applies — the carrier is in the SERVING cell's band, so it resolves
+// exactly like a voice-grant carrier number (carrierFrequency), with the uplink
+// derived from the serving cell's own duplex parameters.
+func (c *ControlChannel) neighbourFrequencies(cell NeighbourCell) (dlHz, ulHz uint32) {
+	if cell.HasExtension {
+		dl := tetraDLCarrierHz(cell.FreqBand, cell.MainCarrier, cell.Offset)
+		if dl <= 0 {
+			return 0, 0
+		}
+		if ul, ok := tetraULCarrierHz(dl, cell.FreqBand, cell.DuplexSpacing, cell.ReverseOper); ok && ul > 0 {
+			return uint32(dl), uint32(ul)
+		}
+		return uint32(dl), 0
+	}
+	dl, ok := c.carrierFrequency(cell.MainCarrier)
+	if !ok {
+		return 0, 0
+	}
+	c.mu.Lock()
+	si, siSet := c.sysInfo, c.sysInfoSet
+	c.mu.Unlock()
+	if siSet {
+		if ul, ok := tetraULCarrierHz(int64(dl), si.FreqBand, si.DuplexSpacing, si.ReverseOper); ok && ul > 0 {
+			return dl, uint32(ul)
+		}
+	}
+	return dl, 0
 }
 
 // grantKey identifies a distinct voice grant for dedup: the destination group
@@ -931,6 +1272,10 @@ func (c *ControlChannel) publishGrant(g VoiceGrant) {
 			delete(c.grantSeen, k)
 		}
 	}
+	// A fresh grant re-arms the release path for its group: the next
+	// D-RELEASE ends THIS call, not a retransmission of the previous one's
+	// teardown, so it must publish even inside releaseDedupWindow.
+	delete(c.releaseSeen, g.DestSSI)
 	c.mu.Unlock()
 
 	c.bus.Publish(events.Event{
@@ -1064,6 +1409,65 @@ func (c *ControlChannel) isIndividual(ssi uint32) bool {
 // never delivers a MAC-END from growing the buffer without limit.
 const fragMaxBits = 2048
 
+// fragMaxGapDibits bounds the dibit stream distance between successive pieces
+// of one fragmented TM-SDU. Fragments continue in the following signalling
+// opportunities of the same channel (§23.4.2), i.e. one TDMA frame apart on the
+// MCCH (4 slots × 255 dibits = 1020), occasionally two frames when the
+// frame-18 schedule displaces one — two frames plus grid jitter accepts all of
+// that. What it rejects is a MAC-FRAG/MAC-END arriving later: that
+// continuation belongs to a LATER transmission of a fragmented PDU whose own
+// start fragment was lost, and splicing it onto the stale chain manufactures a
+// corrupt L3 PDU (see abandonFragment's caller for why that corruption
+// survives dedup). osmo-tetra-sq5bpf ages fragment slots out the same way
+// (fragtimer > N203). The 4-5 Sep field splices (phantom D-NWRK-BROADCAST
+// neighbour sites built from two transmissions of the rotating broadcast)
+// arrived inside the old FOUR-frame window; two frames rejects every splice
+// that lost a whole transmission's worth of pieces, and the on-grid slot
+// checks in decodeDownlinkSlot cover the tighter cases.
+const fragMaxGapDibits = 2*4*255 + 2*fragGridJitterDibits
+
+// fragGridJitterDibits is the tolerance around the 255-dibit slot grid within
+// which an NCDB position still counts as the same slot: the detector's
+// correlation lead can slip a couple of dibits between bursts on a marginal
+// carrier.
+const fragGridJitterDibits = 3
+
+// onChainSlotGrid reports whether a positive dibit-stream delta from a
+// fragment chain's last piece lands on the downlink's 255-dibit slot grid
+// (± fragGridJitterDibits). Real slots — the only places a continuation can
+// arrive, and the only places its loss can hide — are on the grid; the NCDB
+// detector's spurious off-grid correlator emits (tolerance-2 matches inside
+// burst payloads, e.g. at +92/+163 dibits on the 4 Sep field captures) are
+// not, and must count for nothing: neither as a continuation opportunity nor
+// as decode-failure evidence.
+func onChainSlotGrid(delta int) bool {
+	r := delta % 255
+	return r <= fragGridJitterDibits || r >= 255-fragGridJitterDibits
+}
+
+// aachClassifyMaxErrs is the maximum Hamming distance at which a hard AACH
+// decode's slot classification (control vs traffic) is TRUSTED. DecodeAACH's
+// RM(30,14) maximum-likelihood search always returns the nearest codeword —
+// random garbage typically lands at distance 4-6 (the sphere around some
+// codeword: ~2^14 codewords in 2^30 words), so an unconfident "decode" is a
+// coin-flip classification, not evidence. A genuine AACH at workable SNR
+// decodes at 0-2 errors; at ≤2 the chance of garbage passing is ~0.7%
+// (466·2^-16). Trusted-only classification gates the SCHPDUsFail counter and
+// the fragment-chain integrity checks in decodeDownlinkSlot. (The soft-decision
+// fallback in traffic.go uses its own, looser aachSoftMaxDist — that path also
+// requires a routable traffic marker, a stronger content check.)
+const aachClassifyMaxErrs = 2
+
+// neighbourExpiry is how long a neighbour cell stays in the surfaced set (and
+// the pending confirm-twice set) without reappearing in an accepted
+// D-NWRK-BROADCAST. The broadcast rotates through the live list within a
+// minute or two, so 30 minutes of absence — measured only while broadcasts
+// keep arriving, never across a CC outage — means the BS no longer advertises
+// the cell. Keeps a long session's "Neighbor sites" tracking the network's
+// live list rather than accumulating every cell ever seen (the 4-5 Sep 10-hour
+// field report's phantom pile-up).
+const neighbourExpiry = 30 * time.Minute
+
 // stashFragment records a start-fragment MAC-RESOURCE's partial TM-SDU and its
 // resource context so a following MAC-END can reassemble the complete L3 PDU. A
 // new start fragment replaces any incomplete one (single TM-SDU in flight).
@@ -1073,38 +1477,76 @@ func (c *ControlChannel) stashFragment(m MACResource, partial []byte) {
 	c.fragResource = m
 	c.fragTMSDU = append(c.fragTMSDU[:0], partial...)
 	c.fragActive = true
+	c.fragLastPos = c.curSlotPos
+}
+
+// fragChainAdjacentLocked reports whether the slot being decoded is close
+// enough in the dibit stream to the reassembly's previous piece — and on the
+// chain's 255-dibit slot grid — for a MAC-FRAG/MAC-END in it to be that
+// chain's continuation. A negative delta is a stream discontinuity (resync
+// baseline jump) and never adjacent; an off-grid delta is a spurious
+// correlator emit, not a slot a continuation can arrive in. Callers hold mu.
+func (c *ControlChannel) fragChainAdjacentLocked() bool {
+	delta := c.curSlotPos - c.fragLastPos
+	return delta >= 0 && delta <= fragMaxGapDibits && onChainSlotGrid(delta)
+}
+
+// dropFragmentLocked abandons the in-progress reassembly. Callers hold mu.
+func (c *ControlChannel) dropFragmentLocked() {
+	c.fragActive = false
+	c.fragTMSDU = c.fragTMSDU[:0]
+	c.fragResource = MACResource{}
+}
+
+// abandonFragment drops any in-progress TM-SDU reassembly, logging why. Used
+// when continuity is broken — an undecoded control slot, or a continuation
+// arriving too far from the chain's previous piece — because a spliced
+// reassembly around a lost block parses as a plausible corrupt L3 PDU.
+func (c *ControlChannel) abandonFragment(reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.fragActive {
+		return
+	}
+	c.dropFragmentLocked()
+	if c.debug {
+		c.statsMu.Lock()
+		c.stats.FragAbandons++
+		c.statsMu.Unlock()
+	}
+	c.log.Debug("tetra: abandoning TM-SDU fragment reassembly — awaiting rebroadcast (continuity guard, not a parse error)",
+		"reason", reason)
 }
 
 // appendFragment appends a MAC-FRAG continuation to the in-progress TM-SDU. A
 // no-op when no start fragment is in progress; a stream that would exceed
-// fragMaxBits is dropped rather than accumulated.
+// fragMaxBits, or a continuation that is not stream-adjacent to the chain's
+// previous piece, drops the chain rather than splicing.
 func (c *ControlChannel) appendFragment(payload []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.fragActive {
 		return
 	}
-	if len(c.fragTMSDU)+len(payload) > fragMaxBits {
-		c.fragActive = false
-		c.fragTMSDU = c.fragTMSDU[:0]
+	if !c.fragChainAdjacentLocked() || len(c.fragTMSDU)+len(payload) > fragMaxBits {
+		c.dropFragmentLocked()
 		return
 	}
 	c.fragTMSDU = append(c.fragTMSDU, payload...)
+	c.fragLastPos = c.curSlotPos
 }
 
 // takeFragment appends a MAC-END payload, returns the reassembled TM-SDU (a
 // fresh slice) plus the start fragment's MAC-RESOURCE context, and clears the
-// buffer. ok is false for a stray MAC-END with no start fragment in progress or
-// an over-length reassembly.
+// buffer. ok is false for a stray MAC-END with no start fragment in progress,
+// an over-length reassembly, or a MAC-END that is not stream-adjacent to the
+// chain's previous piece (its own start fragment was lost — splicing it onto
+// the stale chain would manufacture a corrupt L3 PDU).
 func (c *ControlChannel) takeFragment(payload []byte) (MACResource, []byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	defer func() {
-		c.fragActive = false
-		c.fragTMSDU = c.fragTMSDU[:0]
-		c.fragResource = MACResource{}
-	}()
-	if !c.fragActive || len(c.fragTMSDU)+len(payload) > fragMaxBits {
+	defer c.dropFragmentLocked()
+	if !c.fragActive || !c.fragChainAdjacentLocked() || len(c.fragTMSDU)+len(payload) > fragMaxBits {
 		return MACResource{}, nil, false
 	}
 	sdu := make([]byte, 0, len(c.fragTMSDU)+len(payload))
@@ -1113,13 +1555,39 @@ func (c *ControlChannel) takeFragment(payload []byte) (MACResource, []byte, bool
 	return c.fragResource, sdu, true
 }
 
+// releaseDedupWindow is how long repeated releases for the same group are
+// suppressed after one was published. The SwMI's retransmissions of a call's
+// D-RELEASE/D-DISCONNECT all land within a few seconds of the first; a release
+// belonging to a genuinely NEW call is always preceded by that call's grant,
+// which clears the group's entry (publishGrant), so the window can be generous
+// without swallowing a real teardown.
+const releaseDedupWindow = 5 * time.Second
+
 // publishRelease emits a KindCallRelease so the engine ends the active call for
 // this talkgroup at once, rather than waiting out the voice hangtime/no-voice
-// timers. No-op without a bus or a resolvable group.
+// timers. No-op without a bus or a resolvable group. Retransmitted releases for
+// the same group inside releaseDedupWindow are suppressed (see releaseSeen).
 func (c *ControlChannel) publishRelease(gssi uint32, cause uint8) {
 	if c.bus == nil || gssi == 0 {
 		return
 	}
+	now := c.now()
+	c.mu.Lock()
+	if last, seen := c.releaseSeen[gssi]; seen && now.Sub(last) < releaseDedupWindow {
+		c.mu.Unlock()
+		return
+	}
+	if c.releaseSeen == nil {
+		c.releaseSeen = make(map[uint32]time.Time)
+	}
+	c.releaseSeen[gssi] = now
+	// Opportunistic age-prune so the map can't grow unbounded on a busy site.
+	for k, t := range c.releaseSeen {
+		if now.Sub(t) >= releaseDedupWindow {
+			delete(c.releaseSeen, k)
+		}
+	}
+	c.mu.Unlock()
 	c.bus.Publish(events.Event{
 		Kind: events.KindCallRelease,
 		Payload: trunking.CallRelease{
@@ -1151,6 +1619,96 @@ func (c *ControlChannel) evictGrantSeen(dst uint32) {
 	}
 	delete(c.lastTalker, dst)
 	c.mu.Unlock()
+}
+
+// observeMLESubsystem logs the MLE-subsystem PDUs GT recognises but does not
+// yet field-parse: D-NEW-CELL (an MS being commanded to a new cell during
+// announced re-selection), D-PREPARE-FAIL, D-RESTORE-FAIL, D-CHANNEL-RESPONSE
+// and D-NWRK-BROADCAST-EXTENSION. Neither reference decoder (osmo-tetra-sq5bpf,
+// tetra-kit) parses their contents — both only name the type — so per the
+// fabricated-SmartNet / #764/#771 discipline GT surfaces the occurrence plus
+// the raw TL-SDU hex (enough to pin the field layout from a field report the
+// day one shows up on air) instead of shipping a spec-only parse no decoder
+// corroborates. D-NWRK-BROADCAST and D-RESTORE-ACK are handled by their real
+// parsers in ingestResourceTMSDU and are skipped here.
+func (c *ControlChannel) observeMLESubsystem(tl []byte) {
+	t, ok := ParseMLESubsystemType(tl)
+	if !ok || t == mlePDUTypeDNwrkBroadcast || t == mlePDUTypeDRestoreAck {
+		return
+	}
+	c.log.Debug("tetra: mle subsystem pdu",
+		"system", c.systemName,
+		"pdu", mleSubsystemPDUName(t),
+		"tl_sdu_hex", packBitsHex(tl))
+}
+
+// handleMM acts on an MM-protocol TL-SDU. D-ATTACH/DETACH GROUP IDENTITY — the
+// SwMI assigning (or revoking) group memberships to the addressed MS — is
+// decoded in full: each attachment logs and publishes a KindAffiliation (the
+// TETRA analogue of the P25 Group Affiliation Response feed, ISSI→GSSI), each
+// detachment logs. Every other MM PDU type (location updates, OTAR,
+// enable/disable, …) is surfaced by name at debug so registration activity is
+// visible in the log without a parser for each.
+func (c *ControlChannel) handleMM(m MACResource, tl []byte) {
+	t, ok := ParseMMPDUType(tl)
+	if !ok {
+		return
+	}
+	issi := m.Address.SSI
+	if t != MMDAttachDetachGroupIdentity {
+		c.log.Debug("tetra: mm pdu",
+			"system", c.systemName, "pdu", t.String(), "issi", issi)
+		return
+	}
+	ad, ok := ParseDAttachDetachGroupIdentity(tl)
+	if !ok {
+		return
+	}
+	if len(ad.Groups) == 0 {
+		c.log.Debug("tetra: d-attach/detach group identity with no group elements",
+			"system", c.systemName, "issi", issi,
+			"detach_all_attach", ad.DetachAllAttach)
+		return
+	}
+	for _, g := range ad.Groups {
+		if g.Detach {
+			c.log.Info("tetra: group detach",
+				"system", c.systemName,
+				"issi", issi,
+				"gssi", g.GSSI,
+				"reason_raw", g.DetachReason,
+				"detach_all_attach", ad.DetachAllAttach)
+			continue
+		}
+		args := []any{
+			"system", c.systemName,
+			"issi", issi,
+			"gssi", g.GSSI,
+			"lifetime_raw", g.Lifetime,
+			"class_of_usage_raw", g.ClassOfUsage,
+			"detach_all_attach", ad.DetachAllAttach,
+		}
+		if g.HasExtension {
+			args = append(args, "mcc", g.MCC, "mnc", g.MNC)
+		}
+		if g.HasVGSSI {
+			args = append(args, "vgssi", g.VGSSI)
+		}
+		c.log.Info("tetra: group attach", args...)
+		if c.bus != nil && issi != 0 && g.GSSI != 0 {
+			c.bus.Publish(events.Event{
+				Kind: events.KindAffiliation,
+				Payload: trunking.Affiliation{
+					System:   c.systemName,
+					Protocol: "tetra",
+					SourceID: issi,
+					GroupID:  g.GSSI,
+					Response: trunking.AffiliationAccepted,
+					At:       c.now(),
+				},
+			})
+		}
+	}
 }
 
 // publishTalker emits a KindCallTalker so the engine backfills the current
@@ -1382,7 +1940,5 @@ func (c *ControlChannel) ResyncReset() {
 	// A stream re-sync abandons any half-reassembled TM-SDU: its continuation
 	// belonged to the pre-resync bit index and must not splice onto a fragment
 	// decoded after the baseline jump.
-	c.fragActive = false
-	c.fragTMSDU = c.fragTMSDU[:0]
-	c.fragResource = MACResource{}
+	c.dropFragmentLocked()
 }

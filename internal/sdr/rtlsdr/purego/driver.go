@@ -116,6 +116,34 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 //
 // Failure at any step closes the transport and returns the error.
 func (d *Driver) Open(idx int) (sdr.Device, error) {
+	return d.openIndex(idx, maxOpenAttempts)
+}
+
+// OpenProbe is the [sdr.ProbeOpener] fast path used by `sdr list
+// --probe`: it brings the device up in a SINGLE pass with NO
+// device-reset recovery envelope, then reads its tuner/gains and lets
+// the caller close it.
+//
+// Probing is a best-effort, read-only listing — a device that doesn't
+// come up on the first pass simply keeps the empty Info fields from
+// Enumerate. It must NOT run the daemon Open's reset+retry envelope,
+// because on macOS every transport.Reset() is an IOKit ResetDevice that
+// re-enumerates the device: with two dongles on one host controller, a
+// transient bring-up abort on one turned into up to four re-enumerations
+// (issue #1135) that both blew past the 5 s probe deadline AND perturbed
+// the sibling dongle, so which of the two probed successfully swapped
+// run to run. A single bring-up pass is fast and touches only the device
+// being probed, so probing one dongle can never reset-storm another. The
+// daemon Open path (the one that must actually get a dongle streaming)
+// keeps the full envelope.
+func (d *Driver) OpenProbe(idx int) (sdr.Device, error) {
+	return d.openIndex(idx, probeOpenAttempts)
+}
+
+// openIndex resolves the cached descriptor for idx, opens the USB
+// transport, and runs bring-up bounded to maxAttempts passes. Shared by
+// Open (maxOpenAttempts) and OpenProbe (probeOpenAttempts).
+func (d *Driver) openIndex(idx, maxAttempts int) (sdr.Device, error) {
 	d.mu.Lock()
 	if idx < 0 || idx >= len(d.detectCache) {
 		d.mu.Unlock()
@@ -130,7 +158,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	}
 	transport = usb.MaybeWrapDebug(transport, desc)
 
-	dev, err := openDevice(transport, desc, idx)
+	dev, err := openDeviceAttempts(transport, desc, idx, maxAttempts)
 	if err != nil {
 		_ = transport.Close()
 		return nil, err
@@ -138,11 +166,42 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	return dev, nil
 }
 
-// openDevice runs the full bring-up sequence: claim interface, warm up
-// the USB endpoint, init demod, detect tuner, run any tuner-specific
-// demod prep, init the tuner, set IF freq. Factored out of Open so
-// tests can drive it directly with a mock transport without going
-// through the enumerator.
+// maxOpenAttempts is the bring-up attempt budget for a daemon Open: one
+// initial pass plus up to four reset+retry passes for the cold-boot
+// stall classes isBringupResetable covers.
+const maxOpenAttempts = 5
+
+// probeOpenAttempts is the bring-up budget for the `sdr list --probe`
+// fast path: a SINGLE pass, no reset. See [Driver.OpenProbe] and issue
+// #1135 for why probing must never run the reset envelope.
+const probeOpenAttempts = 1
+
+// bringupBackoffs[attempt] is the sleep that runs BEFORE the
+// (attempt+1)th bring-up pass — exponential with a soft cap at 1200ms so
+// a pathologically wedged dongle still surfaces the error in ~3s rather
+// than dragging out into a 10s tail. Indexed 0..maxOpenAttempts-2; the
+// final attempt's failure surfaces immediately with no further sleep
+// (we're out of retries). probeOpenAttempts never indexes it.
+var bringupBackoffs = [maxOpenAttempts - 1]time.Duration{
+	200 * time.Millisecond,
+	400 * time.Millisecond,
+	800 * time.Millisecond,
+	1200 * time.Millisecond,
+}
+
+// openDevice runs the full daemon bring-up (maxOpenAttempts). It is a
+// thin wrapper over [openDeviceAttempts] retained so tests can drive the
+// standard reset+retry envelope directly with a mock transport without
+// going through the enumerator.
+func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device, error) {
+	return openDeviceAttempts(transport, desc, idx, maxOpenAttempts)
+}
+
+// openDeviceAttempts runs the full bring-up sequence: claim interface,
+// warm up the USB endpoint, init demod, detect tuner, run any
+// tuner-specific demod prep, init the tuner, set IF freq. Factored out
+// of Open so tests can drive it directly with a mock transport without
+// going through the enumerator.
 //
 // Each step manages its own I²C repeater state. Detect wraps the
 // probe sweep in a single on/off pair (off-on-return); PrepareDemod's
@@ -181,24 +240,18 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 //
 // Non-resetable errors (validation failures, ErrClosed) return
 // immediately — reset is the wrong hammer for them.
-func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device, error) {
+//
+// The attempt budget is parameterised: a daemon Open passes
+// maxOpenAttempts (the full reset+retry envelope described above); the
+// read-only `sdr list --probe` fast path passes probeOpenAttempts (a
+// single pass, NO reset) so probing one dongle can never reset-storm a
+// sibling on the same host controller — see [Driver.OpenProbe] and
+// issue #1135.
+func openDeviceAttempts(transport usb.Transport, desc usb.Descriptor, idx, maxAttempts int) (*Device, error) {
 	if err := transport.ClaimInterface(0); err != nil {
 		return nil, fmt.Errorf("rtlsdr: claim interface 0: %w%s", err, claimBusyHint(err))
 	}
 
-	const maxAttempts = 5
-	// backoff[attempt] is the sleep that runs BEFORE the (attempt+1)th
-	// bring-up pass — exponential with a soft cap at 1200ms so a
-	// pathologically wedged dongle still surfaces the error in ~3s
-	// rather than dragging out into a 10s tail. Indexed 0..maxAttempts-2;
-	// the last attempt's failure surfaces immediately with no further
-	// sleep (we're out of retries).
-	backoffs := [maxAttempts - 1]time.Duration{
-		200 * time.Millisecond,
-		400 * time.Millisecond,
-		800 * time.Millisecond,
-		1200 * time.Millisecond,
-	}
 	var (
 		demod *rtl2832u.Demod
 		tuner tuners.Tuner
@@ -216,7 +269,7 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		if resetErr := transport.Reset(); resetErr != nil {
 			return nil, fmt.Errorf("rtlsdr: bring-up hit %w; reset failed: %w", err, resetErr)
 		}
-		time.Sleep(backoffs[attempt])
+		time.Sleep(bringupBackoffs[attempt])
 		_ = transport.ReleaseInterface(0)
 		if claimErr := transport.ClaimInterface(0); claimErr != nil {
 			return nil, fmt.Errorf("rtlsdr: re-claim interface 0 after reset: %w", claimErr)

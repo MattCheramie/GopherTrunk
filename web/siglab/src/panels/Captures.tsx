@@ -119,7 +119,7 @@ function UploadForm() {
 function CaptureForm() {
   const config = useStore((s) => s.config);
   const captureFromTuner = useStore((s) => s.captureFromTuner);
-  const formats = useStore((s) => s.formats);
+  const formats = useStore((s) => s.captureFormats);
   const protocols = useStore((s) => s.protocols);
 
   const [devices, setDevices] = useState<CaptureDevice[] | null>(null);
@@ -256,7 +256,8 @@ function CaptureForm() {
       <p className="text-xs text-muted">
         Set a bandwidth to save a small narrowband slice around the centre (carved from the
         tuner&rsquo;s current span, no retune). Leave blank for a full-band grab. cs16 = 16-bit raw
-        (half the size of f32).
+        (half the size of f32); wav = cs16 in a RIFF container; flac = losslessly compressed cs16
+        (typically 30&ndash;50% smaller, replays and decodes like cs16).
       </p>
       <button className="btn" disabled={busy || !serial} onClick={onCapture}>
         {busy ? "Capturing…" : "Capture"}

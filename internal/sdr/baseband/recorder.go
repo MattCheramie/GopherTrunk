@@ -17,20 +17,23 @@ import (
 // normal consumer unchanged. A fresh WAV is opened each time StreamIQ
 // is called and closed when that stream ends.
 type RecordingDevice struct {
-	inner sdr.Device
-	dir   string
-	log   *slog.Logger
+	inner  sdr.Device
+	dir    string
+	format string // "wav" (default) or "flac"
+	log    *slog.Logger
 
 	mu   sync.Mutex
 	rate uint32
 }
 
-// NewRecordingDevice wraps inner so its IQ is recorded into dir.
-func NewRecordingDevice(inner sdr.Device, dir string, log *slog.Logger) *RecordingDevice {
+// NewRecordingDevice wraps inner so its IQ is recorded into dir. format
+// selects the recording container ("wav" default, "flac" for the lossless
+// compressed twin).
+func NewRecordingDevice(inner sdr.Device, dir, format string, log *slog.Logger) *RecordingDevice {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &RecordingDevice{inner: inner, dir: dir, log: log}
+	return &RecordingDevice{inner: inner, dir: dir, format: format, log: log}
 }
 
 // Inner returns the wrapped device.
@@ -82,8 +85,8 @@ func (r *RecordingDevice) StreamIQ(ctx context.Context) (<-chan []complex64, err
 			"dir", r.dir, "err", err)
 		return in, nil
 	}
-	path := filepath.Join(r.dir, recordingName(r.inner.Info().Serial))
-	w, err := NewIQWriter(path, rate)
+	path := filepath.Join(r.dir, recordingName(r.inner.Info().Serial, r.format))
+	w, err := NewIQRecorderWriter(path, rate, r.format)
 	if err != nil {
 		r.log.Warn("baseband: cannot open recording; streaming unrecorded",
 			"path", path, "err", err)
@@ -117,13 +120,14 @@ func (r *RecordingDevice) StreamIQ(ctx context.Context) (<-chan []complex64, err
 	return out, nil
 }
 
-// recordingName builds a per-stream filename: serial + UTC timestamp.
-func recordingName(serial string) string {
+// recordingName builds a per-stream filename: serial + UTC timestamp, with
+// the extension matching the recording format.
+func recordingName(serial, format string) string {
 	s := sanitize(serial)
 	if s == "" {
 		s = "sdr"
 	}
-	return s + "_" + time.Now().UTC().Format("20060102T150405Z") + ".wav"
+	return s + "_" + time.Now().UTC().Format("20060102T150405Z") + "." + IQRecordingExt(format)
 }
 
 // sanitize strips path-hostile characters from a serial.

@@ -152,7 +152,8 @@ var fieldMetas = map[string]FieldMeta{
 	"SoapyRemoteConfig.Antenna":                 {Help: "RX antenna port per channel, in channel order. [RX1] pins a single (non-diversity) receiver's port; [RX1, RX2] assigns RX1->channel 0, RX2->channel 1 for an X310 under diversity: mrc. Empty leaves the device default. Use this, NOT antenna= in args — an antenna= there only reaches make() and never selects the per-channel port (it is rejected)."},
 	"SoapyRemoteConfig.Antennas":                {Help: "Legacy alias for Antenna (RX antenna port per channel). Still honoured for existing configs; prefer antenna:. Setting both is an error."},
 	"SoapyRemoteConfig.DiversityCapture":        {Label: "Diversity capture", Help: "Path PREFIX for a one-shot dump of the PRE-COMBINE per-branch IQ (<prefix>.br0.cs16, .br1.cs16, .diversity.json). Every other IQ tap is post-combine, so this is the only capture that can be replayed through a different combiner. Needs diversity: mrc. Empty disables."},
-	"SoapyRemoteConfig.DiversityCaptureSeconds": {Label: "Diversity capture seconds", Help: "Length of that dump, 1..60 (0 = 5 s). Two CS16 branches run to tens of MB/s, and a 1 GiB per-branch cap applies regardless."},
+	"SoapyRemoteConfig.DiversityCaptureSeconds": {Label: "Diversity capture seconds", Help: "Length of that dump, 1..120 (0 = 5 s). Two CS16 branches run to tens of MB/s at high rates, and a 1 GiB per-branch cap applies regardless."},
+	"SoapyRemoteConfig.DiversityCaptureFormat":  {Label: "Diversity capture format", Help: "Branch container: cs16 (default, headerless int16 pairs) or flac (lossless, typically 30-50% smaller, bit-exact — decodes to the same samples). flac needs a capture rate <= 1 MS/s; above that the dump falls back to cs16 with a warning.", Options: opts("", "cs16 (default)", "cs16", "cs16", "flac", "flac")},
 	"SoapyRemoteConfig.VerboseDebug":            {Label: "Verbose RPC debug", Help: "Log every control-channel RPC to this server — decoded call name and arguments plus a hex dump — at DEBUG. The SoapyRemote wire carries no schema, so a server-side 'Unconsumed payload bytes N' never says which call was mis-shaped; this is the other half of that conversation. Needs log level debug. Diagnostic only; leave off for normal operation."},
 
 	"SDRConfig.Sidecar":              {Help: "External IQ producers mounted as virtual tuners. A sidecar is any process that owns a radio and streams raw IQ to GopherTrunk over a pipe or socket — a UHD/RFNoC program, a GNU Radio flowgraph, a vendor tool with no SoapySDR support — steered by a 5-byte UDP command protocol."},
@@ -217,6 +218,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.P25Phase2Equalizer":      {Label: "P25 Ph2 equalizer", Help: "Blind CMA adaptive equalizer on the traffic-channel symbol stream; removes residual inter-symbol interference (multipath / timing / RRC mismatch) ahead of the differential decode. off (default) or on. Helps ISI-limited channels; neutral on purely AWGN-limited ones. P25 Phase 2 only."},
 	"SystemConfig.P25Phase2DCBlock":        {Label: "P25 Ph2 DC block", Help: "DC-removal high-pass on the traffic-channel receiver; strips a zero-IF front end's LO-leakage spur from an on-channel voice DDC (the same stage the P25 Phase 1 and TETRA voice receivers run). off (default) or on. P25 Phase 2 only."},
 	"SystemConfig.P25Phase1SoftDecision":   {Label: "P25 Ph1 soft decision", Help: "Per-bit soft Viterbi on the control channel's TSBK trellis, driven by the C4FM 4-level soft symbols; recovers coding gain the hard slicer discards on marginal signals (CRC still corroborates every block). off (default) or on. C4FM sites only — CQPSK/LSM decodes hard regardless. P25 Phase 1 only."},
+	"SystemConfig.P25QuietNonControlDUID":  {Label: "P25 quiet non-control DUID", Help: "Silence the per-frame 'non-control DUID' debug log line (TDU spam on a busy control channel). Log hygiene only — decode behaviour is unchanged. P25 Phase 1 only."},
 	"SystemConfig.P25Phase2ClockMode":      {Label: "P25 Ph2 clock", Help: "Symbol-timing recovery: gardner (default, live SDR) or naive (fixtures). P25 Phase 2 only."},
 	"SystemConfig.DMRInterleavedVoice":     {Label: "DMR interleaved voice", Help: "Override the 2-slot interleaved DMR voice decoder. Unset = on for DMR Tier II conventional & Tier III (single-slot only for Tier I direct-mode); set true/false to force. DMR only."},
 	"SystemConfig.DMRColorCode":            {Label: "DMR colour code", Help: "Pin a conventional DMR (IPSC / linked-repeater) system to one colour code (0-15). Bursts on any other colour code are dropped, keeping a co-channel system off the call log. Unset = accept every colour code (read off air). Conventional DMR (dmr-tier2 / dmr-tier1) only."},
@@ -227,7 +229,8 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.EDACSBCHMode":            {Label: "EDACS BCH mode", Help: "BCH(40,28,2) FEC on the EDACS CCW. on (default) or off (pre-stripped fixtures). EDACS only."},
 	"SystemConfig.MPT1327BCHMode":          {Label: "MPT1327 BCH mode", Help: "BCH(63,38) FEC on the MPT1327 codeword. on (default) or off (pre-stripped fixtures). MPT1327 only."},
 	"SystemConfig.MPT1327CWSCTolerance":    {Label: "MPT1327 CWSC tolerance", Help: "Hamming-distance threshold for the MPT1327 sync code. Empty = 2; 0/exact, or 0–15. MPT1327 only."},
-	"SystemConfig.MotorolaBCHMode":         {Label: "Motorola BCH mode", Help: "BCH(64,16,11) FEC on the Motorola Type II OSW. on (default) or off (pre-stripped fixtures). Motorola only."},
+	"SystemConfig.MotorolaBCHMode":         {Label: "Motorola BCH mode", Help: "Obsolete and ignored (issue #1143): the real SmartNet OSW FEC (interleave + parity ECC + CRC-10) always runs. Safe to delete."},
+	"SystemConfig.MotorolaBandPlan":        {Label: "Motorola band plan", Help: "SmartNet channel-number → frequency table: 800_standard (default), 800_rebanded, 800_splinter, or 900. Motorola only."},
 	"SystemConfig.DStarFECMode":            {Label: "D-STAR FEC mode", Help: "JARL DV-header FEC chain. off (default) or on. D-STAR only."},
 
 	"P25BandPlanEntryConfig.ChannelID":   {Help: "4-bit IDEN_UP slot index (0–15)."},
@@ -288,7 +291,8 @@ var fieldMetas = map[string]FieldMeta{
 	"StorageConfig.CCCacheFile": {Label: "CC cache file", Help: "JSON cache the control-channel hunter uses to skip dead frequencies. Empty disables it."},
 
 	// ---- Recordings --------------------------------------------------------
-	"RecordingsConfig.Dir":                  {Label: "Directory", Help: "Output directory for per-call WAV recordings."},
+	"RecordingsConfig.Dir":                  {Label: "Directory", Help: "Output directory for per-call voice recordings."},
+	"RecordingsConfig.Format":               {Label: "Format", Help: "Recording container: wav (16-bit mono PCM) or flac (lossless, ~half the size for speech; browsers play it natively, and normalization/MP3 uploads read it the same).", Options: opts("", "wav (default)", "flac", "flac")},
 	"RecordingsConfig.SampleRate":           {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
 	"RecordingsConfig.WriteRaw":             {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
 	"RecordingsConfig.MBEFiles":             {Label: "dsd-fme MBE files", Help: "Also write a dsd-fme-playable MBE sidecar per call — .imb for P25 Phase 1 IMBE, .amb for DMR/NXDN/P25 Phase 2 AMBE+2 — so recordings decode offline with `dsd-fme -r <file>`. Protocols dsd-fme can't play (TETRA, ProVoice, analog) produce no file."},
@@ -442,6 +446,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandRecordConfig.Serial": {Help: "SDR serial whose IQ stream is recorded."},
 	"BasebandRecordConfig.Dir":    {Label: "Directory", Help: "Directory the IQ recordings are written into."},
 	"BasebandRecordConfig.Tap":    {Help: "What to record: wideband (raw SDR IQ) or ddc (narrowband channel the decoder sees).", Options: opts("", "wideband (default)", "ddc", "ddc")},
+	"BasebandRecordConfig.Format": {Help: "Recording container: wav (canonical two-channel 16-bit RIFF/WAVE, SDRtrunk-compatible) or flac (lossless, ~30–50% smaller; replays and mounts back identically).", Options: opts("", "wav (default)", "flac", "flac")},
 	"BasebandReplayConfig.File":   {Help: "Path to the baseband WAV recording to replay."},
 	"BasebandReplayConfig.Serial": {Help: "Virtual device serial the pool reports. Empty generates one."},
 	"BasebandReplayConfig.Role":   {Help: "Pool role: control / voice / auto.", Options: roleOpts()},
@@ -450,7 +455,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandConfig.AutoRecord":                  {Label: "Auto-record", Help: "Event-driven raw-IQ capture of the control SDR (concurrent calls, unserved grant, encrypted/emergency, or manual API trigger)."},
 	"BasebandAutoRecordConfig.Enabled":           {Help: "Turn event-driven IQ auto-recording on. When off, every trigger is a no-op."},
 	"BasebandAutoRecordConfig.Dir":               {Label: "Directory", Help: "Directory triggered captures (and their .metadata.json sidecars) are written into."},
-	"BasebandAutoRecordConfig.Format":            {Help: "On-disk sample format for triggered captures.", Options: opts("", "cs16 (default)", "f32", "f32", "u8", "u8")},
+	"BasebandAutoRecordConfig.Format":            {Help: "On-disk format for triggered captures. wav/flac wrap the 16-bit body (flac is lossless and ~30–50% smaller).", Options: opts("", "cs16 (default)", "f32", "f32", "u8", "u8", "wav", "wav", "flac", "flac")},
 	"BasebandAutoRecordConfig.Seconds":           {Help: "Length in seconds of each triggered capture."},
 	"BasebandAutoRecordConfig.Cooldown":          {Help: "Minimum gap between automatic triggers (Go duration, e.g. 10s). The manual API trigger bypasses it."},
 	"BasebandAutoRecordConfig.OnConcurrentCalls": {Label: "On concurrent calls", Help: "Fire when this many voice calls are active at once. 0 disables this trigger."},
@@ -458,8 +463,15 @@ var fieldMetas = map[string]FieldMeta{
 	"BasebandAutoRecordConfig.OnEncrypted":       {Label: "On encrypted", Help: "Fire on a grant flagged encrypted."},
 	"BasebandAutoRecordConfig.OnEmergency":       {Label: "On emergency", Help: "Fire on an emergency-flagged grant."},
 	"BasebandAutoRecordConfig.OnCCSyncLoss":      {Label: "On CC sync loss", Help: "Fire when a locked control channel suddenly loses sync — captures the re-acquisition IQ, ideal for debugging sync-loss / slow warm-up lock. Pair with the ddc tap for small files."},
+	"BasebandAutoRecordConfig.OnVoiceGrant":      {Label: "On voice grant", Help: "Fire a control-channel context capture on every voice grant (rate-limited by the cooldown) — the CC half of the per-call diagnostic container; pair with baseband.voice_iq_debug for the voice-channel half."},
 	"BasebandAutoRecordConfig.Tap":               {Help: "What IQ to capture: wideband (default, full-rate SDR — large files) or ddc (narrowband channelised stream at the pipeline rate, e.g. 144 kHz for TETRA — far smaller and directly replayable).", Options: opts("", "wideband (default)", "ddc", "ddc")},
 	"BasebandAutoRecordConfig.Decimate":          {Help: "Software-decimation factor for the wideband tap: record at SDR-rate / N (anti-aliased), shrinking the file by N. 0/1 = full rate. The fix for a radio (e.g. USRP B210) whose hardware sample-rate floor is far above the bandwidth a channel needs. Only valid with tap: wideband."},
+
+	"BasebandConfig.VoiceIQDebug": {Label: "Voice IQ debug", Help: "Per-call voice-channel IQ debug captures: each voice call's exact channelised IQ stream plus a metadata sidecar, written to per-call files — the voice half of the diagnostic-container workflow (pair with auto_record's on_voice_grant)."},
+	"VoiceIQDebugConfig.Enabled":  {Help: "Turn per-call voice-channel IQ captures on. Off costs nothing."},
+	"VoiceIQDebugConfig.Dir":      {Help: "Directory per-call captures (and their .metadata.json sidecars) are written into."},
+	"VoiceIQDebugConfig.Format":   {Help: "On-disk container: cs16 (default raw), wav (opens in Audacity/analysis tools), or flac (lossless ~30–50% smaller). All stay replayable.", Options: opts("", "cs16 (default)", "wav", "wav", "flac", "flac")},
+	"VoiceIQDebugConfig.MaxMB":    {Label: "Max MB", Help: "Per-call capture size cap in megabytes; the sidecar notes truncation when hit. 0 = default 512 MB."},
 
 	// ---- Paging ------------------------------------------------------------
 	"PagingConfig.POCSAG":               {Label: "POCSAG", Help: "POCSAG channels, each pinning one SDR to a paging frequency."},

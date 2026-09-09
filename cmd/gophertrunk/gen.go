@@ -82,6 +82,11 @@ FLAGS:`)
 	if err != nil {
 		rep.Fatal(2, err)
 	}
+	// gen writes through the pure byte encoder, which has no container
+	// support — a wav/flac request would silently produce a mislabeled body.
+	if sampleFormat == siglab.FormatWAV || sampleFormat == siglab.FormatFLAC {
+		rep.Fatalf(2, "-format %s is a live-capture container format; gen supports u8, f32, or cs16", sampleFormat)
+	}
 	mpTaps, err := parseMultipath(*multipath)
 	if err != nil {
 		fs.Usage()

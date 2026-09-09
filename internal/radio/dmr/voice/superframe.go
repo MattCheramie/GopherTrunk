@@ -59,6 +59,16 @@ type VoiceSuperframe struct {
 	// publishes it on the location bus.
 	HasGPS bool
 	GPS    dmr.GPSInfo
+	// HasEMB reports that the EMB headers of bursts B–E carried a colour code
+	// and EMBColorCode is their majority value. The EMB is read systematically
+	// (no QR(16,7) correction), so a single bursts' bit error can flip its
+	// nibble — the majority over the four LC-bearing bursts makes the value
+	// usable as the IPSC colour-code filter's input on a late-entry grant
+	// (voice bursts carry no slot type, so this is the only colour code a
+	// header-less transmission has). Only set when HasLC is true, i.e. the
+	// same four bursts also passed the embedded-LC BPTC + CRC.
+	HasEMB       bool
+	EMBColorCode uint8
 }
 
 // voiceSyncs are the sync words that frame burst A of a voice
@@ -354,6 +364,7 @@ func (d *Decoder) sliceAt(start, step int, syncName string) VoiceSuperframe {
 	// frags maps the four embedded-LC-bearing bursts B,C,D,E (burst
 	// indices 1..4) to their fragment slot 0..3; A and F carry none.
 	var frags [4][]byte
+	var embCC [16]uint8
 	for b := 0; b < BurstsPerSuperframe; b++ {
 		var burst dmr.Burst
 		copy(burst.Dibits[:], d.buf[off+b*step:off+b*step+dmr.BurstDibits])
@@ -364,6 +375,7 @@ func (d *Decoder) sliceAt(start, step int, syncName string) VoiceSuperframe {
 		if b >= 1 && b <= 4 {
 			emb, frag := dmr.SplitEmbeddedField(dibitsToBits(burst.Sync()))
 			frags[b-1] = frag
+			embCC[emb.ColorCode&0x0F]++
 			// A single-fragment (LCSS==Single) embedded field is not part of
 			// the four-fragment Full LC: it carries either a Reverse Channel
 			// word or the null idle. Decode the first RC seen in the
@@ -380,6 +392,8 @@ func (d *Decoder) sliceAt(start, step int, syncName string) VoiceSuperframe {
 	if info, lc, ok := dmr.ReassembleEmbeddedLCInfo(frags); ok {
 		sf.HasLC = true
 		sf.LC = lc
+		sf.HasEMB = true
+		sf.EMBColorCode = majorityColorCode(embCC)
 		// A talker-alias header/block reuses the Full LC framing but its
 		// octets 2..8 are alias text, not the group/source addresses the
 		// generic LC view reads. Surface the parsed fragment so the voice
@@ -405,4 +419,17 @@ func dibitsToBits(dibits []uint8) []byte {
 		out = append(out, (d>>1)&1, d&1)
 	}
 	return out
+}
+
+// majorityColorCode returns the most frequent colour-code nibble among the
+// EMB headers of bursts B–E (ties resolve to the lowest value). Used to
+// stamp VoiceSuperframe.EMBColorCode.
+func majorityColorCode(counts [16]uint8) uint8 {
+	best := uint8(0)
+	for cc := 1; cc < 16; cc++ {
+		if counts[cc] > counts[best] {
+			best = uint8(cc)
+		}
+	}
+	return best
 }

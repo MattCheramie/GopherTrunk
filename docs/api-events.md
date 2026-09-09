@@ -118,6 +118,13 @@ Passthrough kinds include: `sdr.attached`, `sdr.detached`, `cc.locked`,
 `cchunt.failed`, `hunt.progress`, `hunt.candidate`, `hunt.done`,
 `unit.request`, `dmr.grant.observed`, `dmr.bandplan.learned`.
 
+The in-call passthrough kinds `call.source`, `call.talker`, `call.release` and
+`call.segment` now carry snake_case field names matching the grant DTO
+(`system`, `group_id`, `source_id`, `frequency_hz` on `call.source`, `at`, …)
+so activity feeds can render them with the same formatter as `grant`. They
+remain passthrough (best-effort) kinds; earlier releases emitted Go-capitalized
+field names for them.
+
 ## Stable payload schema
 
 Field types are the JSON types the Go structs marshal to. `omitempty` fields are

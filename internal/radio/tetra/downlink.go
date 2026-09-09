@@ -41,10 +41,13 @@ type downlinkNCDB struct {
 	softBuf []complex64 // per-symbol differentials, strictly parallel to buf (or empty)
 	bufBase int
 	pending []int
-	onSlot  func(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)
+	// onSlot receives the burst's absolute dibit stream position L alongside the
+	// slot's blocks — the continuity currency the MAC fragment reassembly uses to
+	// refuse splicing pieces that are not stream-adjacent.
+	onSlot func(pos int, bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)
 }
 
-func newDownlinkNCDB(onSlot func(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)) *downlinkNCDB {
+func newDownlinkNCDB(onSlot func(pos int, bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64)) *downlinkNCDB {
 	d := &downlinkNCDB{onSlot: onSlot}
 	// The π/4-DQPSK stream carries a residual 0..3 dibit rotation, so correlate
 	// the normal training sequence (NTS1 + NTS2) under all four rotations.
@@ -153,7 +156,7 @@ func (d *downlinkNCDB) emit(L int) {
 	if bkn1 == nil || aach1 == nil || aach2 == nil || bkn2 == nil {
 		return
 	}
-	d.onSlot(bkn1, aach1, aach2, bkn2, softSlice(ndbBKN1Start, ndbBlockDibits), softSlice(ndbBKN2Start, ndbBlockDibits))
+	d.onSlot(L, bkn1, aach1, aach2, bkn2, softSlice(ndbBKN1Start, ndbBlockDibits), softSlice(ndbBKN2Start, ndbBlockDibits))
 }
 
 // decodeDownlinkSlot classifies and decodes one NCDB. It reads the AACH to find
@@ -162,34 +165,59 @@ func (d *downlinkNCDB) emit(L int) {
 // and hands each CRC-clean block to the MAC demux. CRC gates every decode, so
 // trying all three channel shapes never double-counts: a full-slot SCH/F slot
 // fails the half-slot SCH/HD CRC and vice versa.
-func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64) {
+func (c *ControlChannel) decodeDownlinkSlot(pos int, bkn1, aach1, aach2, bkn2 []uint8, bkn1Diffs, bkn2Diffs []complex64) {
 	c.mu.Lock()
 	colour := c.colourCode
+	// Stamp the slot's stream position before any block decodes: the MAC
+	// fragment reassembly uses it to verify that successive pieces of one
+	// TM-SDU are stream-adjacent AND on the chain's 255-dibit slot grid (see
+	// fragMaxGapDibits / fragChainAdjacentLocked). chainDelta places THIS slot
+	// relative to the chain's last ingested piece, for the integrity checks at
+	// the end: only a slot on the chain's grid is a real slot whose loss can
+	// have eaten the chain's continuation — the NCDB detector also emits
+	// spurious off-grid correlator hits (e.g. at +92/+163 dibits on the 4 Sep
+	// field captures, tolerance-2 matches inside burst payloads), and those
+	// must not count as slot evidence of anything.
+	chainDelta, fragActive := pos-c.fragLastPos, c.fragActive
+	c.curSlotPos = pos
 	c.mu.Unlock()
 
 	derot := func(d []uint8, rot uint8) []byte {
 		return TetraDibitsToBits(rotateDibits(d, (4-rot)&3))
 	}
 
-	// The AACH is present in every downlink slot and decodes ~100% on a locked
-	// carrier, so it pins the rotation cheaply; fall back to trying all four
-	// only when it does not decode (e.g. a synthesised slot with no AACH). The
-	// parsed ACCESS-ASSIGN also classifies the slot (control vs traffic), which
-	// gates the SCHPDUsFail counter below.
-	rots := []uint8{0, 1, 2, 3}
+	// The AACH is present in every downlink slot; it classifies the slot
+	// (control vs traffic), which gates the SCHPDUsFail counter and the
+	// fragment-chain integrity checks below — but ONLY when the decode is
+	// CONFIDENT. DecodeAACH is a maximum-likelihood search that ALWAYS returns
+	// the nearest RM(30,14) codeword — its errs is that codeword's Hamming
+	// distance, and ParseAccessAssign accepts any 14 bits — so a faded/garbage
+	// AACH "decodes" (typically at distance 4-6) to RANDOM header bits, a
+	// coin-flip control/traffic classification. The old code took any errs >= 0
+	// as authoritative, which let a lost control slot mid-reassembly read as
+	// "traffic" and keep a fragment chain alive across the loss (one leg of
+	// the 4-5 Sep phantom-neighbour splices); aachTrusted now requires
+	// errs <= aachClassifyMaxErrs.
+	//
+	// ONE ML search, at rotation 0 only. The receiver's differential decode
+	// leaves this path's dibit stream at a fixed rotation (the old loop's
+	// "search all four" was unreachable: errs is never negative and
+	// ParseAccessAssign accepts anything, so it always broke at r=0 — and
+	// everything decodes on air that way). Searching the other rotations on
+	// unconfident slots was tried and measured: on the 4 Sep capture most
+	// emits ARE unconfident (spurious off-grid hits, timeshare-off periods),
+	// and the extra RM(30,14) searches took the 120 s replay from 61 s to
+	// 139 s — past real time. Decoding extra rotations of SCH would likewise
+	// only multiply the 16-bit-CRC collision floor on garbage.
 	var aa AccessAssign
-	var aachOK bool
+	var aachTrusted bool
 	aachDi := append(append([]uint8{}, aach1...), aach2...)
-	for r := uint8(0); r < 4; r++ {
-		rec, errs := DecodeAACH(derot(aachDi, r), colour)
-		if errs >= 0 {
-			if parsed, ok := ParseAccessAssign(rec); ok {
-				aa, aachOK = parsed, true
-				rots = []uint8{r}
-				break
-			}
+	if rec, errs := DecodeAACH(derot(aachDi, 0), colour); errs >= 0 && errs <= aachClassifyMaxErrs {
+		if parsed, ok := ParseAccessAssign(rec); ok {
+			aa, aachTrusted = parsed, true
 		}
 	}
+	rots := []uint8{0}
 
 	// Soft data (the per-symbol differentials) lets the longer SCH/F and SCH/HD
 	// blocks decode ~1.5–2 dB deeper on a marginal constellation — the same soft
@@ -199,6 +227,7 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bk
 	haveF := bkn1Diffs != nil && bkn2Diffs != nil && len(bkn1Diffs) == len(bkn1) && len(bkn2Diffs) == len(bkn2)
 
 	recovered := 0
+	var fullOK, half1OK, half2OK bool
 	for _, r := range rots {
 		full := append(append([]uint8{}, bkn1...), bkn2...)
 		if haveF {
@@ -206,19 +235,24 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bk
 			if rec, ok := DecodeSCHFSoft(softType5FromDiffs(fullDiffs, (4-r)&3), colour); ok {
 				c.ingestMAC(rec)
 				recovered++
+				fullOK = true
 			} else if rec, ok := DecodeSCHF(derot(full, r), colour); ok {
 				c.ingestMAC(rec)
 				recovered++
+				fullOK = true
 			}
 		} else if rec, ok := DecodeSCHF(derot(full, r), colour); ok {
 			c.ingestMAC(rec)
 			recovered++
+			fullOK = true
 		}
 		if c.decodeDownlinkHalf(bkn1, bkn1Diffs, r, derot, colour) {
 			recovered++
+			half1OK = true
 		}
 		if c.decodeDownlinkHalf(bkn2, bkn2Diffs, r, derot, colour) {
 			recovered++
+			half2OK = true
 		}
 	}
 
@@ -235,8 +269,51 @@ func (c *ControlChannel) decodeDownlinkSlot(bkn1, aach1, aach2, bkn2 []uint8, bk
 		// genuinely decoding channel from the BSCH-only "locked but deaf" state
 		// (wrong AFC alias latch) the payload-drought check escapes.
 		c.notePayloadActivity()
-	} else if aachOK && aa.IsControlChannel() {
+	} else if aachTrusted && aa.IsControlChannel() {
 		c.addStat(&c.stats.SCHPDUsFail, 1)
+	}
+
+	// Fragment-chain integrity. A control slot that yielded no CRC-clean block
+	// is a lost signalling block. If a fragmented TM-SDU is mid-reassembly, its
+	// continuation may be exactly what was lost — splicing the pieces either
+	// side of the gap yields a plausible-looking corrupt L3 PDU, and because
+	// broadcast content and fragmentation split points repeat, the SAME corrupt
+	// reassembly can repeat bit-identically (defeating confirm-twice dedup
+	// downstream, e.g. bogus D-NWRK-BROADCAST neighbour cells). Abandon the
+	// chain; the broadcast rebroadcasts within seconds.
+	//
+	// Only a slot ON THE CHAIN'S 255-dibit GRID counts as evidence: spurious
+	// off-grid correlator emits are not slots, and their garbage "decodes"
+	// prove nothing (gating on the grid is what lets the checks below stay
+	// aggressive without aborting every chain on a busy carrier).
+	//
+	// "Lost" is judged per BLOCK, not per slot: the 4-5 Sep field splices got
+	// past the old slot-level check (recovered == 0) through two holes it left
+	// open. (1) A control slot where one SCH/HD half decodes and the other
+	// fails CRC counted as recovered — but on an AACH-confirmed control slot
+	// both halves carry signalling (SCH/HD or BNCH; half-slot stealing exists
+	// only on traffic slots), so the failed half IS a lost block. A decoded
+	// SCH/F consumes the whole slot (the halves' CRCs cannot also pass), so
+	// fullOK means nothing was lost. (2) A slot whose AACH itself does not
+	// decode CONFIDENTLY is unclassifiable — DecodeAACH always returns the
+	// nearest codeword, so a faded AACH is a coin-flip classification, and the
+	// old code kept the chain whenever the coin read "traffic". Both abandons
+	// cost one broadcast cycle at worst; a spliced corrupt PDU costs a phantom
+	// neighbour site that repeats until restart.
+	slotFullyRecovered := fullOK || (half1OK && half2OK)
+	if fragActive && !slotFullyRecovered && chainDelta > 0 && onChainSlotGrid(chainDelta) {
+		switch {
+		case aachTrusted && aa.IsControlChannel():
+			if recovered == 0 {
+				c.abandonFragment("undecoded control slot mid-reassembly")
+			} else {
+				c.abandonFragment("half-slot signalling block lost mid-reassembly")
+			}
+		case !aachTrusted:
+			c.abandonFragment("unclassifiable slot mid-reassembly")
+		}
+		// aachTrusted && !IsControlChannel(): a confirmed traffic slot carries no
+		// control signalling — nothing of the chain's can have been lost in it.
 	}
 }
 
@@ -316,6 +393,12 @@ func (c *ControlChannel) ingestMAC(recovered []byte) {
 		if si, ok := ParseSysInfo(recovered); ok {
 			c.learnSysInfo(si)
 		}
+		// The rest of the 124-bit block: SCCH allocation, power/access
+		// parameters and the D-MLE-SYSINFO TM-SDU (LA + subscriber class +
+		// BS service details). Logged on change by learnSysInfoExt.
+		if ext, ok := ParseSysInfoExtended(recovered); ok {
+			c.learnSysInfoExt(ext)
+		}
 	}
 }
 
@@ -339,6 +422,37 @@ func (c *ControlChannel) ingestResourceTMSDU(m MACResource, sdu []byte) {
 		// ParseCMCE misframes every L3 address (corrupts ISSI/GSSI).
 		if tl, ok := ParseLLC(sdu); ok {
 			msg, haveCMCE = ParseCMCE(tl)
+			// MLE D-NWRK-BROADCAST: the serving cell's advertised neighbours
+			// (per-cell carrier, optionally band/offset/duplex + MCC/MNC/LA).
+			// Cheap to try — it bails on the 3-bit protocol discriminator for
+			// every non-MLE TL-SDU.
+			if nb, ok := ParseDNwrkBroadcast(tl); ok {
+				c.learnNeighbourCells(nb, tl)
+			} else if t, isMLE := ParseMLESubsystemType(tl); isMLE && t == mlePDUTypeDNwrkBroadcast {
+				// A TL-SDU that names itself D-NWRK-BROADCAST but fails the
+				// full parse (truncated list, or the trailing-residue gate) is
+				// misframed or spliced upstream. Keep the raw hex instrument
+				// alive — it is what pinned the 4-5 Sep splice mechanism from
+				// a field report alone.
+				c.log.Debug("tetra: rejecting misframed d-nwrk-broadcast",
+					"system", c.systemName,
+					"tl_sdu_hex", packBitsHex(tl))
+			}
+			// MLE D-RESTORE-ACK wraps the call-restoration CMCE SDU for an MS
+			// that re-selected onto this cell mid-call — decode it like the
+			// direct CMCE PDU it carries, so the restored call's state (call-id
+			// binding, talker, release) keeps flowing after a cell change.
+			if !haveCMCE {
+				if restored, ok := ParseCMCERestoreAck(tl); ok {
+					c.log.Debug("tetra: mle d-restore-ack — call restored after cell re-selection",
+						"system", c.systemName,
+						"cmce_type", restored.Type,
+						"call_id", restored.CallIdentifier)
+					msg, haveCMCE = restored, true
+				}
+			}
+			c.observeMLESubsystem(tl)
+			c.handleMM(m, tl)
 			// Keep the broadcast/SYSINFO L3 path (Ingest no longer emits grants).
 			if pdu, err := PDUFromBits(tl); err == nil {
 				c.Ingest(pdu)

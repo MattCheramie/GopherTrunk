@@ -539,31 +539,41 @@ type RFSSStatusBroadcast struct {
 }
 
 // SecondaryControlChannelBroadcast (opcode 0x39) announces alternate
-// control-channel frequencies for the site. Working-model payload
-// layout:
+// control-channel frequencies for the site. Payload layout per
+// TIA-102.AABC / SDRTrunk's SecondaryControlChannelBroadcast (bit
+// offsets 16.. relative to the TSBK, i.e. payload octets):
 //
 //	byte 0    : RFSS ID
 //	byte 1    : Site ID
-//	bytes 2-3 : secondary control channel A
-//	bytes 4-5 : secondary control channel B (zero when only one)
-//	bytes 6-7 : system service class
+//	bytes 2-3 : secondary control channel A (4-bit ID + 12-bit number)
+//	byte 4    : system service class A
+//	bytes 5-6 : secondary control channel B (4-bit ID + 12-bit number)
+//	byte 7    : system service class B
+//
+// The previous working model read channel B from bytes 4-5 — one byte
+// early, splicing service class A into the channel field and producing a
+// phantom secondary CC; the round-trip test passed because the assembler
+// encoded the same wrong layout (the self-consistent-synthetic trap).
 type SecondaryControlChannelBroadcast struct {
 	RFSS, Site                     uint8
 	ChannelAID, ChannelBID         uint8
 	ChannelANumber, ChannelBNumber uint16
+	ServiceClassA, ServiceClassB   uint8
 }
 
 // ParseSecondaryControlChannelBroadcast decodes payload for opcode 0x39.
 func ParseSecondaryControlChannelBroadcast(p [8]byte) SecondaryControlChannelBroadcast {
 	cA := binary.BigEndian.Uint16(p[2:4])
-	cB := binary.BigEndian.Uint16(p[4:6])
+	cB := binary.BigEndian.Uint16(p[5:7])
 	return SecondaryControlChannelBroadcast{
 		RFSS:           p[0],
 		Site:           p[1],
 		ChannelAID:     uint8(cA >> 12),
 		ChannelANumber: cA & 0x0FFF,
+		ServiceClassA:  p[4],
 		ChannelBID:     uint8(cB >> 12),
 		ChannelBNumber: cB & 0x0FFF,
+		ServiceClassB:  p[7],
 	}
 }
 
@@ -572,7 +582,9 @@ func AssembleSecondaryControlChannelBroadcast(s SecondaryControlChannelBroadcast
 	var p [8]byte
 	p[0], p[1] = s.RFSS, s.Site
 	binary.BigEndian.PutUint16(p[2:4], uint16(s.ChannelAID&0x0F)<<12|s.ChannelANumber&0x0FFF)
-	binary.BigEndian.PutUint16(p[4:6], uint16(s.ChannelBID&0x0F)<<12|s.ChannelBNumber&0x0FFF)
+	p[4] = s.ServiceClassA
+	binary.BigEndian.PutUint16(p[5:7], uint16(s.ChannelBID&0x0F)<<12|s.ChannelBNumber&0x0FFF)
+	p[7] = s.ServiceClassB
 	return p
 }
 
@@ -625,13 +637,24 @@ func AssembleSecondaryControlChannelBroadcastExplicit(s SecondaryControlChannelB
 	return p
 }
 
+// CFVA flag bits of an Adjacent Site Status Broadcast (byte 1 high
+// nibble). Bit positions per TIA-102.AABC / SDRTrunk's
+// AdjacentStatusBroadcast (message bits 24-27 = payload byte 1 bits 7-4).
+const (
+	CFVAConventional uint8 = 0x08 // C: site operates a conventional channel
+	CFVAFailure      uint8 = 0x04 // F: site is in failure condition
+	CFVAValid        uint8 = 0x02 // V: information is valid (site polled OK)
+	CFVAActive       uint8 = 0x01 // A: site has active RFSS network connection
+)
+
 // AdjacentSiteStatusBroadcast (opcode 0x3C) announces a neighbouring
 // site a radio may roam to. Payload layout per TIA-102.AABF — it shares
 // the RFSS Status Broadcast field layout, except byte 1's high nibble
-// carries the CFVA (conventional/failsoft/valid/active) flags rather
+// carries the CFVA (conventional/failure/valid/active) flags rather
 // than reserved bits, and it still names the neighbour's System ID:
 //
 //	byte 0    : LRA (Location Registration Area)
+//	byte 1    : high nibble CFVA flags; low nibble = System ID high bits
 //	bytes 1-2 : System ID (12 bits, low nibble of byte 1 + byte 2)
 //	byte 3    : RFSS ID
 //	byte 4    : Site ID
@@ -639,10 +662,12 @@ func AssembleSecondaryControlChannelBroadcastExplicit(s SecondaryControlChannelB
 //	byte 7    : system service class
 type AdjacentSiteStatusBroadcast struct {
 	LRA           uint8
+	CFVA          uint8  // 4-bit flags, see CFVA* constants
 	SystemID      uint16 // 12-bit
 	RFSS, Site    uint8
 	ChannelID     uint8
 	ChannelNumber uint16
+	ServiceClass  uint8
 }
 
 // ParseAdjacentSiteStatusBroadcast decodes payload for opcode 0x3C.
@@ -650,11 +675,13 @@ func ParseAdjacentSiteStatusBroadcast(p [8]byte) AdjacentSiteStatusBroadcast {
 	ch := binary.BigEndian.Uint16(p[5:7])
 	return AdjacentSiteStatusBroadcast{
 		LRA:           p[0],
+		CFVA:          p[1] >> 4,
 		SystemID:      uint16(p[1]&0x0F)<<8 | uint16(p[2]),
 		RFSS:          p[3],
 		Site:          p[4],
 		ChannelID:     uint8(ch >> 12),
 		ChannelNumber: ch & 0x0FFF,
+		ServiceClass:  p[7],
 	}
 }
 
@@ -662,11 +689,12 @@ func ParseAdjacentSiteStatusBroadcast(p [8]byte) AdjacentSiteStatusBroadcast {
 func AssembleAdjacentSiteStatusBroadcast(a AdjacentSiteStatusBroadcast) [8]byte {
 	var p [8]byte
 	p[0] = a.LRA
-	p[1] = uint8(a.SystemID>>8) & 0x0F
+	p[1] = a.CFVA<<4 | uint8(a.SystemID>>8)&0x0F
 	p[2] = uint8(a.SystemID)
 	p[3] = a.RFSS
 	p[4] = a.Site
 	binary.BigEndian.PutUint16(p[5:7], uint16(a.ChannelID&0x0F)<<12|a.ChannelNumber&0x0FFF)
+	p[7] = a.ServiceClass
 	return p
 }
 

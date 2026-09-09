@@ -136,7 +136,16 @@ type replayVoiceRig struct {
 // setupReplayVoice builds and starts the engine/composer/recorder rig writing to
 // outDir. rateHz is the expected channelized (DDC output) rate; the source also
 // refines it from the first IQ chunk.
-func setupReplayVoice(outDir string, rateHz float64, hangtime time.Duration, log *slog.Logger) (*replayVoiceRig, error) {
+//
+// An empty outDir runs the recorder in decode-only mode (no files are written)
+// — the `-audio-out`-without-`-record-voice` shape, where the caller only wants
+// the live PCM stream. audio, when non-nil, receives every decoded call's PCM
+// as a continuous raw s16le stream (issue #314): it is fanned into the
+// composer's main sink (analog FM chains write PCM there) AND wired as the
+// recorder's decoded-PCM tap (digital protocols emit raw vocoder frames that
+// only the recorder decodes — without the tap, digital audio never reaches a
+// WritePCM-only sink; the same wiring the daemon uses for live browser audio).
+func setupReplayVoice(outDir string, rateHz float64, hangtime time.Duration, audio *pcmStreamWriter, log *slog.Logger) (*replayVoiceRig, error) {
 	bus := events.NewBus(1024)
 	src := newReplayVoiceSource(rateHz)
 
@@ -152,23 +161,35 @@ func setupReplayVoice(outDir string, rateHz float64, hangtime time.Duration, log
 		bus.Close()
 		return nil, fmt.Errorf("replay voice: engine: %w", err)
 	}
+	// An empty outDir puts the recorder in its decode-only mode: every call
+	// still builds its per-protocol vocoder (digital voice still decodes and
+	// reaches the decoded-PCM tap below), it just never writes WAV/raw/json.
 	rec, err := voice.NewRecorder(voice.RecorderOptions{
 		Bus:                bus,
 		Log:                log,
 		OutDir:             outDir,
 		SampleRate:         8000,
-		WriteRaw:           true,
-		WriteCallJSON:      true,
+		WriteRaw:           outDir != "",
+		WriteCallJSON:      outDir != "",
 		VocoderForProtocol: voice.DefaultVocoderForProtocol(),
 	})
 	if err != nil {
 		bus.Close()
 		return nil, fmt.Errorf("replay voice: recorder: %w", err)
 	}
+	// The composer type-asserts its sink for the raw-frame / drain-coordination
+	// extensions, so the multi-sink shape must be the daemon's fanoutSink (which
+	// forwards them to the recorder) — a naive tee would silently drop every
+	// IMBE/AMBE frame (the issue #356 failure class).
+	var sink composer.PCMSink = rec
+	if audio != nil {
+		sink = fanoutSink{rec, audio}
+		rec.SetDecodedPCMSink(audio)
+	}
 	comp, err := composer.New(composer.Options{
 		Bus:           bus,
 		Devices:       replayVoiceDevices{src: src},
-		Sink:          rec,
+		Sink:          sink,
 		Engine:        engine,
 		Log:           log,
 		IQSampleRate:  uint32(rateHz + 0.5),

@@ -143,6 +143,18 @@ func ParseCMCE(bits []byte) (CMCEMessage, bool) {
 	if r.u(3) != cmceMLEPD {
 		return CMCEMessage{}, false
 	}
+	return parseCMCEBody(r)
+}
+
+// parseCMCEBody decodes a CMCE SDU from the 5-bit CMCE PDU type onward. Split
+// out of ParseCMCE because the same SDU shape also arrives wrapped in an MLE
+// D-RESTORE-ACK (call restoration after cell re-selection) — tetra-kit's
+// serviceMleSubsystem forwards that payload straight to its CMCE service the
+// same way (see ParseCMCERestoreAck).
+func parseCMCEBody(r *bitReader) (CMCEMessage, bool) {
+	if r.remaining() < 5 {
+		return CMCEMessage{}, false
+	}
 	msg := CMCEMessage{Type: CMCEType(r.u(5))}
 
 	switch msg.Type {

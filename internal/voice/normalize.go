@@ -63,7 +63,10 @@ func NormalizeWAVFile(path string, cfg NormalizeConfig) error {
 // quiet to measure (IntegratedLUFS reports !ok) — there is nothing
 // meaningful to normalize. cfg is assumed to already carry defaults.
 func normalizeWAVFile(path string, cfg NormalizeConfig) error {
-	samples, sampleRate, err := ReadWAVSamples(path)
+	// Content-sniffed read + same-container rewrite, so a flac recording is
+	// normalized in place as flac.
+	isFLAC := isFLACAudioFile(path)
+	samples, sampleRate, err := ReadAudioSamples(path)
 	if err != nil {
 		return fmt.Errorf("voice/normalize: read %s: %w", path, err)
 	}
@@ -88,6 +91,9 @@ func normalizeWAVFile(path string, cfg NormalizeConfig) error {
 		samples[i] = clampInt16(v * gain * 32768.0)
 	}
 
+	if isFLAC {
+		return rewriteAudio(path, samples, sampleRate, "flac")
+	}
 	return rewriteWAV(path, samples, sampleRate)
 }
 
@@ -107,8 +113,13 @@ func clampInt16(v float64) int16 {
 // renames it over the original, so a crash mid-write can't truncate the
 // recording.
 func rewriteWAV(path string, samples []int16, sampleRate uint32) error {
+	return rewriteAudio(path, samples, sampleRate, "wav")
+}
+
+// rewriteAudio is rewriteWAV generalized over the recording container.
+func rewriteAudio(path string, samples []int16, sampleRate uint32, format string) error {
 	tmp := path + ".tmp"
-	w, err := NewWavFile(tmp, sampleRate)
+	w, err := NewAudioFileWriter(tmp, sampleRate, format)
 	if err != nil {
 		return fmt.Errorf("voice/normalize: create temp: %w", err)
 	}

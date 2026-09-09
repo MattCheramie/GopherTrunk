@@ -33,6 +33,30 @@ for tagged releases.
   `test-hackrf-real*`). The HackRF harness exercises the Pro-only
   narrowband-filter / FPGA-DC-block requests on a Pro and asserts they error
   on other boards.
+- **FleetSync / FleetSync II protocol decoder (clean-room core)** (#437). A new
+  `internal/radio/fleetsync` package decodes Kenwood FleetSync in-band ANI: the
+  16-bit sync hunt, the FleetSync I block check (CRC), the FleetSync II
+  single-error-correcting ECC, and the Fleet/Unit field extraction, plus a
+  bus-free bit framer. Ported clean-room from the multimon-ng `fsync` framing
+  (cross-checked against a working reference contributed on the issue) and
+  pinned with reference-literal + single-bit-correction tests. This is the
+  protocol core only; wiring it to a live 1200-baud FFSK front end and the
+  events/storage/REST/web surface is staged pending an on-air A/B against a real
+  Kenwood capture, so no operator-facing decode ships yet.
+- **Terms of Service, acknowledged once at install/first run**
+  (`TERMS_OF_SERVICE.md`). A short, plain-language ToS in line with other
+  open SDR software: lawful monitoring is the operator's responsibility, no
+  defeating encryption, no misuse of received content, recording-privacy
+  duties, not for safety-of-life use, receive-only posture, vocoder patent
+  note, export compliance, and the Apache-2.0 no-warranty terms. The Windows
+  installer adds a mandatory acknowledgment page (and records acceptance);
+  on every other install path the CLI shows the terms once on first
+  interactive run. Unattended installs acknowledge with
+  `gophertrunk terms accept` or `GOPHERTRUNK_ACCEPT_TERMS=1`; a new
+  `gophertrunk terms [show|status|accept]` subcommand reads/checks/records.
+  Acceptance is a local marker file under the user config directory —
+  nothing ever leaves the machine. `version`, `help`, and `terms` itself
+  never require acceptance.
 
 ### Fixed
 - **Voice-calibration docs described a DSD-FME invocation that cannot work**:
@@ -45,6 +69,144 @@ for tagged releases.
   `docs/dmr-voice-quality.md` now show the working container-based recipe
   with the required 12→8 kHz resample, plus the caveat that sample-level
   xcorr across independent MBE decoders is depressed by construction.
+- **`sdr list --probe` no longer times out or swaps which RTL-SDR probes on
+  macOS with two dongles** (#1135). Probing opened each dongle through the
+  daemon bring-up envelope, which reset+retries a transient macOS
+  control-transfer abort up to four times. On macOS each device reset is an
+  IOKit re-enumeration, so a transient abort while probing one dongle blew past
+  the 5 s probe deadline *and* perturbed the sibling on the same USB controller
+  — making the successful probe alternate between the two run to run. Probing is
+  now a single best-effort bring-up pass with no device reset (a dongle that
+  doesn't come up just shows empty tuner/gain fields, as before); the daemon
+  open path that actually streams keeps the full reset+retry recovery.
+- **SmartNet/SmartZone call source RID no longer blanks after the first frame**
+  (#1143). Motorola SmartNet sends the calling radio ID only on the two-OSW
+  grant that starts a call; the single-OSW voice updates that keep it alive omit
+  it, so the source flashed for one frame on the Active Calls view and then
+  disappeared. The control channel now remembers each talkgroup's source from
+  its initiating grant and backfills it onto the following updates (aged out
+  after the call ends so a stale talker can't attach to a later call, and
+  replaced when a new talker keys up the same talkgroup). Display/attribution
+  only — decode and recording are unaffected.
+- **Conventional DMR now decodes through a grossly-mistuned RTL-SDR** (#836).
+  DMR was the one C4FM receiver whose only carrier-offset correction was the
+  post-clock CoarseAFC, which pulls in just a few hundred Hz — so a dongle off
+  by tens of ppm (several kHz at 446 MHz) sat past the decode cliff and never
+  synced, and there was no way to hand-set `sdr.ppm` without a GSM-based
+  calibration tool. A new pre-clock coarse carrier acquisition estimates the
+  offset from the discriminator mean and de-rotates the IQ once, before the
+  discriminator, so the timing loop and matched filter see a centred eye;
+  synthetic decode is now invariant to a tuner offset out to ~40 ppm. Only
+  engages above a 500 Hz deadband (a well-tuned dongle is unchanged), and
+  requires two agreeing acquisition windows so it waits through the idle noise
+  of a silent conventional/simplex channel and locks on the transmission rather
+  than the silence. Synthetic-verified; on-air confirmation still pending a
+  usable capture.
+- **Talkgroups auto-discovered on analog trunking systems are no longer
+  labeled mode "D" (digital)** (#1143 follow-up). Discovered-talkgroup mode
+  now follows the system's protocol: SmartNet/SmartZone, LTR, MPT-1327 and
+  non-ProVoice EDACS talkgroups are stamped "A" (analog), digital protocols
+  stay "D". Display/CSV metadata only — decode and recording are unaffected.
+- **`capture` no longer turns a transient carrier into a confident wrong ppm
+  warning, and now doubles as a ppm-measurement instrument** (#1143's bogus
+  "≈550.3 ppm" warning; #836). The carrier-offset probe used to FFT only the
+  first ~11 ms of the recording — exactly where front-end settling and
+  momentarily-keyed neighbours live. It now spreads eight probe windows
+  across the whole capture and reports an offset only when windows
+  corroborate each other (a real tuner error is constant for the entire
+  file). A corroborated offset is always printed as a `measured carrier
+  offset` line — even below the warning threshold — so capturing any strong
+  known-frequency carrier measures the dongle's ppm error where
+  kalibrate-rtl no longer works (regions without GSM towers). `capture` also
+  honours a backend's actual (quantized) sample rate in the recording,
+  metadata sidecar, and offset math.
+- **Motorola Type II / SmartNet / SmartZone control channels can now actually
+  decode off the air** (#1143). The previous framing (24-bit sync, 32-bit OSW,
+  BCH(64,16,11)) was spec-guessed, matched no real signal, and only decoded its
+  own synthetic fixtures — every live capture failed with `cchunt: hunt failed —
+  no control-channel lock`. The whole layer is rebuilt from the proven OP25 /
+  trunk-recorder implementations: real 84-bit sync-bracketed OSW frames
+  (interleave + convolutional-parity ECC + CRC-10, inverted data), the real
+  27-bit OSW model (16-bit address / group bit / 10-bit command), multi-OSW
+  grant + system-ID sequencing, SmartNet band plans (new `motorola_band_plan`
+  key: `800_standard` default, `800_rebanded`, `800_splinter`, `900`), a 2-FSK
+  receiver at the real ±1.2 kHz deviation with carrier-offset tracking, and an
+  18 kHz channel target. Grants now carry real voice frequencies, source radio
+  IDs and encrypted/emergency flags, so the analog voice recorder engages.
+  `motorola_bch_mode` is obsolete and ignored (the real OSW FEC always runs);
+  existing configs keep loading. On-air verification against a reporter capture
+  is still pending — synthetic-green is not on-air-proven (#764/#771).
+
+### Added
+- **`replay -in -` is now a full live pipeline stage for external IQ sources
+  (OpenWebRX+ hand-off, #314).** Three pieces complete the stdin→stdout
+  integration the offline pipe started: `-out-format jsonl` now **streams each
+  decoded event the moment it happens** (grants, locks, calls) instead of
+  batch-dumping at EOF — so an unbounded live pipe actually produces output —
+  with the trailing summary line still landing at stream end (file-based jsonl
+  output is byte-identical to before); a new **`-audio-out <path|->`** streams
+  decoded voice as continuous raw s16le mono 8 kHz PCM to a file, FIFO, or
+  stdout as calls decode (usable with or without `-record-voice`; wires the
+  production engine→composer→recorder voice path, digital voice included via
+  the recorder's decoded-PCM tap); and `-format` accepts **`cf32`/`fc32`** as
+  aliases for f32 — the SoapySDR/OpenWebRX+ spelling of interleaved float32
+  IQ. A channelized narrowband stream below the protocol's channel rate is
+  interpolated up by the existing DDC, so OWRX+ can hand off at 24/48 kHz.
+  Example:
+  `owrx-iq | gophertrunk replay -in - -format cf32 -sample-rate 48000
+  -protocol dmr-tier2 -freq 438900000 -audio-out - -out-format jsonl -out
+  events.jsonl`.
+- **P25 Multi-Block Trunking (AMBT) decode — full system discovery.** A PDU
+  (DUID 0xC) on the control channel is now decoded as Multi-Block Trunking
+  instead of being dropped as "non-control DUID": the AMBT forms of the
+  Network Status Broadcast (0x3B — the WACN, with explicit downlink AND
+  uplink channels), RFSS Status Broadcast (0x3A) and Adjacent Site Status
+  Broadcast (0x3C — neighbours with explicit uplinks) all feed the same
+  topology model as their TSBK twins. Systems (notably Motorola) that
+  broadcast their neighbour list only in AMBT form went from one neighbour
+  and "No Network Status Broadcast yet" to the full SDRTrunk-equivalent
+  picture. Field layouts cross-checked against SDRTrunk's `AMBTC*` classes
+  and OP25's `process_PDU` (header CRC-CCITT16 + data CRC-32 both enforced).
+- **Systems panel: full site discovery view.** The detail modal now shows
+  NAC and LRA, the camped site's decoded primary + secondary control channels
+  (with uplinks), and neighbour rows carry channel coordinates, downlink AND
+  uplink frequencies, and the CFVA status flags (`[valid,active]`) —
+  matching SDRTrunk's Neighbor Sites output. The `/api/v1/systems` DTO gains
+  `nac`, `lra`, `primary_control_channel`, `secondary_control_channels`, and
+  per-neighbour `lra`/`uplink_hz`/`status`.
+- **Per-call diagnostic IQ containers** (`baseband.voice_iq_debug` +
+  `baseband.auto_record.on_voice_grant`). Every voice call can now write the
+  exact channelised IQ stream its decode chain consumed to a per-call
+  `*_voice.cs16` + `.metadata.json` pair (system/talkgroup/source/frequency/
+  rate; replayable directly), while `on_voice_grant` fires the existing CC
+  auto-recorder for the control-channel context — the metadata + CC-IQ +
+  voice-IQ triplet requested for offline DSP debugging of hopped voice
+  channels. Concurrent calls get independent files; a slow disk truncates
+  the capture (recorded in the sidecar) rather than corrupting it.
+- **`p25_quiet_noncontrol_duid`** per-system config knob silences the
+  per-frame "non-control DUID" debug line (TDU spam on a busy CC). Default
+  off (line keeps firing); log hygiene only.
+
+### Fixed
+- **TSBK Secondary Control Channel Broadcast (0x39) layout.** Channel B was
+  read one byte early (splicing service class A into the channel field),
+  producing a phantom secondary CC; both service classes were dropped. Now
+  matches SDRTrunk's bit offsets, pinned by a literal-vector test.
+- **Adjacent Site Status Broadcast (0x3C)** now captures the CFVA flags and
+  system service class into the decoded struct (previously log-only).
+- **"channel iq power very low" WARN no longer fires against a decoding
+  channel.** A DMR Tier III CC decoding every C_ALOHA at −56 dBFS drew the
+  "carrier likely outside the captured passband" WARN every 5 s — an
+  absolute-dBFS gate contradicting live decode evidence. Any channel whose
+  protocol decode counter advanced recently is healthy whatever its power
+  gauge reads; never-decoding channels keep the repeating WARN.
+- **Wideband per-channel DEBUG diagnostics are parked in steady state.** The
+  per-second "channel decode activity" / "channel iq power" lines (DMR IPSC:
+  one of each per channel per second, forever) now log immediately on a
+  state change and otherwise summarise every 30 s with deltas covering the
+  parked span. Likewise the DMR Tier III per-CSBK debug line: an unchanged
+  repeating Aloha beacon summarises every 10 s with a suppressed-repeat
+  count instead of ~16 identical lines per second.
 - **Startup configuration summary** — the daemon now logs an effective-config
   snapshot at startup (`daemon: config summary` plus one `daemon: system
   config` line per system) so an operator can confirm at a glance which decode

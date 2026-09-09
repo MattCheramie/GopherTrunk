@@ -46,7 +46,7 @@ func (d *FileDriver) Name() string { return FileDriverName }
 func (d *FileDriver) Enumerate() ([]sdr.Info, error) {
 	var out []sdr.Info
 	for i, spec := range d.specs {
-		if _, err := ReadIQWavInfo(spec.Path); err != nil {
+		if _, err := ReadIQRecordingInfo(spec.Path); err != nil {
 			continue
 		}
 		out = append(out, sdr.Info{
@@ -67,7 +67,7 @@ func (d *FileDriver) Open(idx int) (sdr.Device, error) {
 		return nil, fmt.Errorf("baseband: replay index %d out of range", idx)
 	}
 	spec := d.specs[idx]
-	info, err := ReadIQWavInfo(spec.Path)
+	info, err := ReadIQRecordingInfo(spec.Path)
 	if err != nil {
 		return nil, fmt.Errorf("baseband: %s: %w", spec.Path, err)
 	}
@@ -125,8 +125,13 @@ func (d *replayDevice) SetSampleRate(hz uint32) error {
 }
 
 // StreamIQ replays the recording, metered to the configured rate, and
-// loops on EOF when Loop is set.
+// loops on EOF when Loop is set. FLAC recordings (sniffed from the stream
+// marker) are decoded through the FLAC replay path; everything else is
+// treated as the canonical baseband WAV.
 func (d *replayDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	if isFLACRecording(d.path) {
+		return d.streamFLAC(ctx)
+	}
 	f, err := os.Open(d.path)
 	if err != nil {
 		return nil, err
@@ -187,6 +192,81 @@ func (d *replayDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 					return
 				}
 			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return out, nil
+}
+
+// streamFLAC replays a FLAC baseband recording, decoding frames on the fly
+// and metering chunks to the configured rate, looping on EOF when Loop is
+// set (by reopening the stream — the mewkiz parser is forward-only).
+func (d *replayDevice) streamFLAC(ctx context.Context) (<-chan []complex64, error) {
+	f, err := os.Open(d.path)
+	if err != nil {
+		return nil, err
+	}
+	stream, err := flacIQStream(f)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	d.mu.Lock()
+	rate := d.rate
+	d.mu.Unlock()
+	if rate == 0 {
+		rate = d.wavRate
+	}
+	if rate == 0 {
+		rate = sdr.DefaultSampleRateHz
+	}
+
+	out := make(chan []complex64, 8)
+	go func() {
+		defer close(out)
+		defer func() { f.Close() }()
+		ticker := time.NewTicker(time.Second) // reset per chunk below
+		defer ticker.Stop()
+		for {
+			fr, err := stream.ParseNext()
+			if err != nil {
+				if !d.loop {
+					return
+				}
+				// EOF (or a truncated tail): reopen from the top.
+				f.Close()
+				nf, oerr := os.Open(d.path)
+				if oerr != nil {
+					return
+				}
+				ns, serr := flacIQStream(nf)
+				if serr != nil {
+					nf.Close()
+					return
+				}
+				f, stream = nf, ns
+				continue
+			}
+			if len(fr.Subframes) != 2 {
+				return
+			}
+			l, q := fr.Subframes[0].Samples, fr.Subframes[1].Samples
+			n := len(l)
+			chunk := make([]complex64, n)
+			for i := 0; i < n; i++ {
+				chunk[i] = complex(float32(int16(l[i]))/32768, float32(int16(q[i]))/32768)
+			}
+			select {
+			case out <- chunk:
+			case <-ctx.Done():
+				return
+			}
+			// Meter to real time: one FLAC frame's worth of samples per tick.
+			ticker.Reset(time.Duration(float64(time.Second) * float64(n) / float64(rate)))
 			select {
 			case <-ctx.Done():
 				return

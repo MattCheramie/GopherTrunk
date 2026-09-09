@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -192,6 +193,77 @@ drain:
 	// change — two, not five.
 	if n := strings.Count(buf.String(), "tetra: call talker"); n != 2 {
 		t.Fatalf(`"tetra: call talker" log lines = %d, want 2 (4 identical rebroadcasts collapse to 1, +1 for the changed talker); pre-fix this is 5`, n)
+	}
+}
+
+// TestHandleCMCEReleaseDedupsRetransmissions: the SwMI retransmits a call's
+// D-RELEASE/D-DISCONNECT (once per addressed party, plus repeats for
+// reliability), so a single teardown used to emit a burst of identical
+// KindCallRelease events into the bus/SSE feed — the "release spam" field
+// report, same family as the grant-rebroadcast spam grantSeen fixed. Only the
+// first release per group inside releaseDedupWindow publishes; a NEW call's
+// grant re-arms the group so its own teardown still announces. Pre-fix the
+// first drain sees 3 events instead of 1.
+func TestHandleCMCEReleaseDedupsRetransmissions(t *testing.T) {
+	bus := events.NewBus(32)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	now := time.Unix(5_000, 0)
+	cc := New(Options{Bus: bus, SystemName: "Sys", FrequencyHz: 467_913_000,
+		Now: func() time.Time { return now }})
+
+	const (
+		callID = 0x321
+		gssi   = 0x0ABCDE
+	)
+	release := func() {
+		cc.handleCMCE(
+			MACResource{Address: MACAddress{Type: addrSSI, SSI: gssi}},
+			CMCEMessage{Type: CMCETypeDRelease, CallIdentifier: callID},
+		)
+	}
+	countReleases := func() int {
+		n := 0
+		for {
+			select {
+			case ev := <-sub.C:
+				if ev.Kind == events.KindCallRelease {
+					n++
+				}
+			default:
+				return n
+			}
+		}
+	}
+
+	// One teardown, retransmitted: three D-RELEASE PDUs inside the window.
+	release()
+	now = now.Add(200 * time.Millisecond)
+	release()
+	now = now.Add(300 * time.Millisecond)
+	release()
+	if n := countReleases(); n != 1 {
+		t.Fatalf("KindCallRelease events for one retransmitted teardown = %d, want 1 (pre-fix: 3)", n)
+	}
+
+	// A new call for the same group re-arms the release path even inside the
+	// dedup window: its teardown is a distinct event and must publish.
+	now = now.Add(time.Second)
+	cc.publishGrant(VoiceGrant{DestSSI: gssi, CarrierNumber: 1000, Timeslot: 1})
+	now = now.Add(500 * time.Millisecond)
+	release()
+	if n := countReleases(); n != 1 {
+		t.Fatalf("release after a fresh grant published %d events, want 1 (the grant must re-arm the group)", n)
+	}
+
+	// Past the window with no intervening grant, a release publishes again
+	// (a conservatively-late retransmission is preferable to a stuck call).
+	now = now.Add(releaseDedupWindow + time.Second)
+	release()
+	if n := countReleases(); n != 1 {
+		t.Fatalf("release after the dedup window published %d events, want 1", n)
 	}
 }
 

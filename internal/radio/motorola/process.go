@@ -1,216 +1,90 @@
 package motorola
 
-import (
-	"strings"
-
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
-)
-
-// processState is the cross-call bit buffering + sync-detection
-// state the Process adapter holds. Lazily initialised on the first
-// Process call.
+// processState is the cross-call framing state the Process adapter
+// holds: an 8-bit sync correlator, the sync-bracketed frame window,
+// and the in-sync countdown. Lazily initialised on the first Process
+// call. Port of OP25 rx_smartnet::rx_sym's framer.
 type processState struct {
-	det          *SyncDetector
-	remaining    int
-	osw          []byte
-	matchScratch []int
+	syncReg uint8
+	inSync  bool
+	// count is how many bits have arrived since the last accepted
+	// sync ended. A frame is complete when count reaches FrameBits
+	// (76 payload bits + the NEXT frame's 8 sync bits, which must
+	// match for the frame to be trusted).
+	count int
+	// ring holds the last FrameBits bits, ringPos the write index.
+	ring    [FrameBits]byte
+	ringPos int
+	// payload is the scratch buffer the completed 76-bit window is
+	// unrolled into.
+	payload [PayloadBits]byte
 }
-
-// BCHMode controls whether the Process adapter runs the
-// BCH(64,16,11) FEC over each on-air codeword pair before
-// reassembling the 32-bit OSW. Configurable via SetBCHMode.
-type BCHMode uint8
-
-const (
-	// BCHOff treats the 32 bits after sync as raw OSW info bits.
-	// Useful only for test fixtures whose codewords are pre-
-	// stripped of the FEC layer; on-air traffic always fails OSW
-	// parsing under BCHOff. Explicit opt-out for operators feeding
-	// pre-stripped capture files.
-	BCHOff BCHMode = iota
-	// BCHOn (default) reads two 64-bit BCH(64,16,11) codewords
-	// (128 wire bits) after sync, decodes each via the framing
-	// primitive, and concatenates the recovered 16-bit halves into
-	// the 32-bit OSW. Uncorrectable codewords (> 11 errors) drop
-	// the frame.
-	BCHOn
-)
-
-// SetBCHMode configures whether the Process adapter runs
-// BCH(64,16,11) FEC over each codeword pair. Call before the
-// first Process call; switching mode mid-stream resets the
-// adapter's buffer.
-func (c *ControlChannel) SetBCHMode(m BCHMode) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.bchMode = m
-	if c.proc != nil {
-		c.proc.remaining = 0
-		c.proc.osw = c.proc.osw[:0]
-	}
-}
-
-// BCHMode returns the configured BCHMode. Mirrors the Set* family
-// so callers (and tests) can introspect the configured mode
-// without poking at unexported state.
-func (c *ControlChannel) BCHMode() BCHMode {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.bchMode
-}
-
-// ParseBCHMode maps a config / user-facing string into a BCHMode.
-// Recognised values (case-insensitive): "" → BCHOn (the new default
-// — two 64-bit BCH(64, 16, 11) codewords reassembled into the
-// 32-bit OSW); "off" / "false" / "0" → BCHOff (legacy 32-bit
-// raw-OSW path, explicit opt-out for pre-stripped fixtures); "on" /
-// "true" / "1" → BCHOn. Unknown strings return BCHOn with
-// `ok = false` so callers can surface the misconfiguration.
-func ParseBCHMode(s string) (BCHMode, bool) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "":
-		return BCHOn, true
-	case "off", "false", "0":
-		return BCHOff, true
-	case "on", "true", "1":
-		return BCHOn, true
-	default:
-		return BCHOn, false
-	}
-}
-
-// oswInfoBits is the count of bits the adapter collects after each
-// 24-bit sync match in BCHOff mode: 32 information bits = one OSW.
-const oswInfoBits = 32
-
-// oswBCHBits is the count of bits the adapter collects after each
-// sync match in BCHOn mode: two 64-bit BCH(64,16,11) codewords =
-// 128 channel bits, decoding to 32 information bits.
-const oswBCHBits = 128
 
 // Process consumes a window of raw bits from the Motorola receiver
-// (the IQ → MSK bit chain in internal/radio/motorola/receiver/),
-// runs the 24-bit outbound sync detector, slices the following
-// codeword window (32 raw bits in BCHOff mode, 128 channel bits
-// across two BCH(64,16,11) codewords in BCHOn mode) out of the
-// stream, parses it via OSWFromBits, and forwards the result to
-// Ingest.
+// (the IQ → FSK bit chain in internal/radio/motorola/receiver/),
+// frames them on the 8-bit outbound sync, and decodes each
+// sync-bracketed 76-bit payload (deinterleave → convolutional-parity
+// ECC → CRC-10, frame.go) into an OSW for the sequencer.
+//
+// Framing follows OP25's rx_smartnet: the first sync starts
+// collection, and a frame is accepted only when ANOTHER sync arrives
+// exactly PayloadBits later — control-channel frames run
+// back-to-back, so every valid frame is bracketed by two syncs. That
+// plus the CRC-10 makes the short 8-bit sync word safe against false
+// matches. A missing trailing sync drops framing entirely and waits
+// for a fresh sync (any early sync inside a frame is treated as
+// payload data, exactly like the reference).
 //
 // baseIdx is the absolute bit index of bits[0] across the stream
-// lifetime. The adapter's internal countdown survives across
-// Process calls so a sync match in one chunk and the payload in
-// the next still decode cleanly.
-//
-// Returns baseIdx + len(bits) to match the YSF / P25 Phase 1 /
-// dPMR / NXDN / EDACS ControlChannel.Process contracts.
+// lifetime; the framing state survives across Process calls so a
+// frame spanning a chunk boundary still decodes. Returns
+// baseIdx + len(bits) to match the YSF / P25 Phase 1 / dPMR / NXDN /
+// EDACS ControlChannel.Process contracts.
 func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 	if c.proc == nil {
-		c.proc = &processState{
-			det: NewSyncDetector(OutboundSyncBits(), 1),
-			osw: make([]byte, 0, oswBCHBits),
-		}
+		c.proc = &processState{}
 	}
 	p := c.proc
 
-	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], bits, baseIdx)
-	matchIdx := 0
+	for _, b := range bits {
+		b &= 1
+		p.syncReg = p.syncReg<<1 | b
+		syncDetected := p.syncReg == uint8(OutboundSyncHex)
+		p.ring[p.ringPos] = b
+		p.ringPos = (p.ringPos + 1) % FrameBits
+		p.count++
 
-	postSyncBits := c.codewordBitsForMode()
-
-	for i, b := range bits {
-		absPos := baseIdx + i
-		if p.remaining > 0 {
-			p.osw = append(p.osw, b&1)
-			p.remaining--
-			if p.remaining == 0 {
-				c.tryIngestOSW(p.osw)
-				p.osw = p.osw[:0]
-			}
+		if syncDetected && !p.inSync {
+			p.inSync = true
+			p.count = 0
+			continue
 		}
-		for matchIdx < len(p.matchScratch) && p.matchScratch[matchIdx] == absPos {
-			p.remaining = postSyncBits
-			p.osw = p.osw[:0]
-			matchIdx++
+		if !p.inSync || p.count < FrameBits {
+			continue
+		}
+		if !syncDetected {
+			// The bracket sync didn't arrive where the frame should
+			// end — framing is wrong; hunt for a fresh sync.
+			p.inSync = false
+			p.count = 0
+			continue
+		}
+		p.count = 0
+		// The ring now holds [payload(76) | next sync(8)] with the
+		// oldest bit at ringPos; unroll the payload.
+		for i := 0; i < PayloadBits; i++ {
+			p.payload[i] = p.ring[(p.ringPos+i)%FrameBits]
+		}
+		if osw, ok := DecodeOSWPayload(p.payload[:]); ok {
+			c.Ingest(osw)
 		}
 	}
 	return baseIdx + len(bits)
 }
 
-// codewordBitsForMode returns how many bits Process collects
-// after each sync, based on the current BCH mode.
-func (c *ControlChannel) codewordBitsForMode() int {
-	c.mu.Lock()
-	m := c.bchMode
-	c.mu.Unlock()
-	if m == BCHOn {
-		return oswBCHBits
-	}
-	return oswInfoBits
-}
-
-// tryIngestOSW reconstructs an OSW from the post-sync bits and
-// hands it to Ingest. In BCHOff mode the bits are used directly;
-// in BCHOn mode each 64-bit codeword runs through BCHDecode64_16
-// and the two recovered 16-bit halves are concatenated.
-func (c *ControlChannel) tryIngestOSW(post []byte) {
-	c.mu.Lock()
-	m := c.bchMode
-	c.mu.Unlock()
-	switch m {
-	case BCHOn:
-		if len(post) != oswBCHBits {
-			return
-		}
-		half1, errs1 := framing.BCHDecode64_16(bitsToUint64(post[0:64]))
-		if errs1 < 0 {
-			return
-		}
-		half2, errs2 := framing.BCHDecode64_16(bitsToUint64(post[64:128]))
-		if errs2 < 0 {
-			return
-		}
-		var bits [32]byte
-		for i := 0; i < 16; i++ {
-			bits[i] = byte((half1 >> uint(15-i)) & 1)
-		}
-		for i := 0; i < 16; i++ {
-			bits[16+i] = byte((half2 >> uint(15-i)) & 1)
-		}
-		if osw, err := OSWFromBits(bits[:]); err == nil {
-			c.Ingest(osw)
-		}
-	default:
-		if len(post) != oswInfoBits {
-			return
-		}
-		if osw, err := OSWFromBits(post); err == nil {
-			c.Ingest(osw)
-		}
-	}
-}
-
-// bitsToUint64 packs up to 64 MSB-first bits into a uint64. Bit
-// 63 of the result is bits[0] (the wire-order leading bit).
-func bitsToUint64(bits []byte) uint64 {
-	var v uint64
-	n := len(bits)
-	if n > 64 {
-		n = 64
-	}
-	for i := 0; i < n; i++ {
-		if bits[i]&1 != 0 {
-			v |= uint64(1) << uint(63-i)
-		}
-	}
-	return v
-}
-
-// Reset clears the SyncDetector's history so a stale match doesn't
-// fire after a stream re-sync.
-func (s *SyncDetector) Reset() {
-	for i := range s.hist {
-		s.hist[i] = 0
-	}
-	s.primed = 0
-	s.pos = 0
+// ResetFraming clears the Process adapter's sync/framing state. The
+// receiver calls this via its own Reset on stream re-sync so a stale
+// half-frame doesn't bridge two IQ epochs.
+func (c *ControlChannel) ResetFraming() {
+	c.proc = nil
 }

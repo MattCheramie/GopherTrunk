@@ -27,6 +27,14 @@ export interface SystemDTO {
   system_id?: number;
   rfss?: number;
   site?: number;
+  // NAC and LRA of the camped site, decoded live (P25). Absent until heard.
+  nac?: number;
+  lra?: number;
+  // The camped site's advertised control channels (primary + secondaries),
+  // decoded live from RFSS/Network Status and Secondary Control Channel
+  // broadcasts. Absent until decoded.
+  primary_control_channel?: SiteChannelDTO;
+  secondary_control_channels?: SiteChannelDTO[];
   // TETRA network identity decoded live from the control channel (MLE-SYSINFO /
   // D-NWRK-BROADCAST). TETRA has no WACN/RFSS/Site, so the P25 fields above stay
   // zero and the UI shows these instead. MCC+MNC form the Mobile Network Identity
@@ -53,12 +61,25 @@ export interface SystemDTO {
 export interface NeighborDTO {
   rfss: number;
   site: number;
+  lra?: number;
   channel_id?: number;
   channel_number?: number;
   downlink_hz?: number;
   uplink_hz?: number;
   rfss_hex?: string;
   site_hex?: string;
+  // Human-readable CFVA flag summary from the adjacent-status broadcast
+  // (e.g. "valid,active"); absent when never observed.
+  status?: string;
+}
+
+// SiteChannelDTO mirrors api.SiteChannelDTO — one advertised control channel
+// of the camped site with band-plan-resolved frequencies.
+export interface SiteChannelDTO {
+  channel_id?: number;
+  channel_number?: number;
+  downlink_hz?: number;
+  uplink_hz?: number;
 }
 
 // BandPlanSlotDTO mirrors api.BandPlanSlotDTO — one P25 IDEN_UP frequency-band

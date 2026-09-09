@@ -220,6 +220,14 @@ func (s *Server) overlayTopology(dto *SystemDTO) {
 	if snap, ok := tp.Topology(dto.Name); ok {
 		dto.Neighbors = neighborsFromTopology(snap)
 		dto.FrequencyBands = bandPlanFromTopology(snap)
+		dto.PrimaryControlChannel, dto.SecondaryControlChannels = siteChannelsFromTopology(snap)
+		if snap.NAC != 0 {
+			dto.NAC = snap.NAC
+			dto.NACHex = trunking.IDHex(uint64(snap.NAC))
+		}
+		if snap.LRA != 0 {
+			dto.LRA = snap.LRA
+		}
 		// TETRA has no WACN/RFSS/Site; its live identity (MCC/MNC/Location Area +
 		// colour code) rides the same topology snapshot. Surface it so the Systems
 		// panel can render a protocol-appropriate identity block instead of four
@@ -412,7 +420,7 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 	// the endpoint from ever serving a non-recording even if the row is bad.
 	ext := strings.ToLower(filepath.Ext(path))
 	if !filepath.IsAbs(path) || strings.Contains(path, "..") ||
-		(ext != ".wav" && ext != ".mp3") {
+		(ext != ".wav" && ext != ".mp3" && ext != ".flac") {
 		s.writeError(w, http.StatusNotFound, "recording unavailable")
 		return
 	}
@@ -428,9 +436,12 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, "recording unavailable")
 		return
 	}
-	if ext == ".mp3" {
+	switch ext {
+	case ".mp3":
 		w.Header().Set("Content-Type", "audio/mpeg")
-	} else {
+	case ".flac":
+		w.Header().Set("Content-Type", "audio/flac")
+	default:
 		w.Header().Set("Content-Type", "audio/wav")
 	}
 	http.ServeContent(w, r, filepath.Base(path), fi.ModTime(), f)

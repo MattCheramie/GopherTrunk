@@ -17,7 +17,6 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/mpt1327"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -724,73 +723,51 @@ func TestMotorolaFactoryConstructs(t *testing.T) {
 	}
 }
 
-// TestMotorolaFactoryAppliesBCHFromSystem: MotorolaBCHMode = "on"
-// flips the OSW decoder into BCHOn.
-func TestMotorolaFactoryAppliesBCHFromSystem(t *testing.T) {
+// TestMotorolaFactoryAppliesBandPlanFromSystem: motorola_band_plan
+// selects the SmartNet channel table the sequencer resolves grants
+// and neighbours against.
+func TestMotorolaFactoryAppliesBandPlanFromSystem(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	p, err := newMotorolaPipeline(PipelineOptions{
-		Bus: bus, SystemName: "Test", FrequencyHz: 851_012_500,
-		SampleRateHz: 48_000,
+		Bus: bus, SystemName: "Test", FrequencyHz: 935_012_500,
+		SampleRateHz: 18_000,
 		System: trunking.System{
 			Name: "Test", Protocol: trunking.ProtocolMotorola,
-			ControlChannels: []uint32{851_012_500},
-			MotorolaBCHMode: "on",
+			ControlChannels:  []uint32{935_012_500},
+			MotorolaBandPlan: "900",
 		},
 	})
 	if err != nil {
 		t.Fatalf("newMotorolaPipeline: %v", err)
 	}
 	mp := p.(*motorolaPipeline)
-	if got := mp.cc.BCHMode(); got != motorola.BCHOn {
-		t.Errorf("BCHMode = %v, want BCHOn", got)
+	if hz, ok := mp.cc.NeighborFrequency(0); !ok || hz != 935_012_500 {
+		t.Errorf("NeighborFrequency(0) = %d, %v; want 935012500 under the 900 plan", hz, ok)
 	}
 }
 
-// TestMotorolaFactoryDefaultsKeepBCHOn: empty MotorolaBCHMode flips
-// the connector to BCHOn (the new default — dual 64-bit
-// BCH(64, 16, 11) reassembly). Live captures always need the FEC
-// layer, so default-on matches operator expectations.
-func TestMotorolaFactoryDefaultsKeepBCHOn(t *testing.T) {
+// TestMotorolaFactoryDefaultsTo800Standard: an empty
+// motorola_band_plan selects the 800 MHz standard (domestic) plan.
+func TestMotorolaFactoryDefaultsTo800Standard(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	p, err := newMotorolaPipeline(PipelineOptions{
-		Bus: bus, SystemName: "Test", FrequencyHz: 851_012_500,
-		SampleRateHz: 48_000,
+		Bus: bus, SystemName: "Test", FrequencyHz: 854_562_500,
+		SampleRateHz: 18_000,
 		System: trunking.System{
 			Name: "Test", Protocol: trunking.ProtocolMotorola,
-			ControlChannels: []uint32{851_012_500},
+			ControlChannels: []uint32{854_562_500},
 		},
 	})
 	if err != nil {
 		t.Fatalf("newMotorolaPipeline: %v", err)
 	}
 	mp := p.(*motorolaPipeline)
-	if got := mp.cc.BCHMode(); got != motorola.BCHOn {
-		t.Errorf("BCHMode = %v, want BCHOn", got)
-	}
-}
-
-// TestMotorolaFactoryExplicitOffOptsOut: motorola_bch_mode=off opts
-// out of the new BCHOn default for pre-stripped fixtures.
-func TestMotorolaFactoryExplicitOffOptsOut(t *testing.T) {
-	bus := events.NewBus(8)
-	defer bus.Close()
-	p, err := newMotorolaPipeline(PipelineOptions{
-		Bus: bus, SystemName: "Test", FrequencyHz: 851_012_500,
-		SampleRateHz: 48_000,
-		System: trunking.System{
-			Name: "Test", Protocol: trunking.ProtocolMotorola,
-			ControlChannels: []uint32{851_012_500},
-			MotorolaBCHMode: "off",
-		},
-	})
-	if err != nil {
-		t.Fatalf("newMotorolaPipeline: %v", err)
-	}
-	mp := p.(*motorolaPipeline)
-	if got := mp.cc.BCHMode(); got != motorola.BCHOff {
-		t.Errorf("BCHMode = %v, want BCHOff", got)
+	// Channel 0x8E = 854.5625 MHz in the standard 800 plan (the
+	// issue #1143 reporter's control channel).
+	if hz, ok := mp.cc.NeighborFrequency(0x8E); !ok || hz != 854_562_500 {
+		t.Errorf("NeighborFrequency(0x8E) = %d, %v; want 854562500 under 800_standard", hz, ok)
 	}
 }
 

@@ -48,6 +48,60 @@ confirmation before any close-as-completed.
 
 ## DSP / replay notes (so the next investigation starts ahead)
 
+- **FLAC is now a first-class container on every recorder that had a container at all**,
+  with ONE shared stereo encode core (`baseband.FLACIQEncoder` — `siglab.IQContainer`
+  delegates to it) and a mono voice twin (`voice.FlacWriter`): `capture -format wav|flac`
+  and the API staged capture route through `siglab.IQContainer` (both used to silently
+  write a mislabeled/garbage body — the streaming `EncodeCapture` has NO container case
+  and falls through to u8, so gen/synth now reject wav/flac at the boundary);
+  `baseband.record[].format: flac` covers both taps (wideband + ddc) and the replay
+  `FileDriver` mounts .flac back as a virtual tuner (content-sniffed via the fLaC
+  marker, never the extension); `recordings.format: flac` switches per-call voice
+  recordings, and the WHOLE downstream chain reads either container via content
+  sniffing (`voice.ReadAudioSamples`): loudness normalize rewrites flac-in/flac-out,
+  broadcast MP3 transcode, the `/calls/{id}/audio` handler (audio/flac + .flac in its
+  extension allowlist), the retention sweeper, and the web RecordingPlayer's download
+  name. `FlacWriter.DataBytes()` reports UNCOMPRESSED PCM bytes so the recorder's
+  duration/dead-key math is container-independent. `diversity_capture` now takes
+  `diversity_capture_format: flac` too (operator space-saving request): the branch
+  FLAC is a bit-exact twin of the cs16 (same clamp/scale, pinned by
+  `TestBranchRecorderFLACIsBitExactTwin`) so the alignment invariant and every
+  downstream conclusion are container-independent; the harness content-sniffs the
+  branches, and rates > 1 MS/s fall back to cs16 (STREAMINFO ceiling + the encode
+  runs on the stream goroutine). Not converted (deliberately):
+  `hunt -survey-capture` stays f32.
+- **A P25 "MBT data CRC failed" line whose identity fields match a decoded broadcast
+  is TWO different PDU frames, not a contradiction**: every field the failure line
+  prints (opcode/blocks/nac) comes from the HEADER block, which carries its own
+  CCITT-16 and decoded clean — only a data block failed its CRC-32 (RF residual
+  errors; the broadcast repeats, so a clean copy usually logs nearby). The CRC span
+  was re-verified byte-for-byte against OP25 `process_PDU` (single-block AMBT
+  included), so do NOT chase a parser bug from that log pair alone; the line now
+  carries the worst data-block Viterbi metric + an explanatory cause. Related naming
+  rule now enforced in code: never render a vendor TSBK or an undecoded AMBT opcode
+  through the standard `Opcode.String()` OSP map (it mislabels — MFID 0x90 opcode
+  0x00 reads GRP_V_CH_GRANT); `ambtOpcodeLabel` names only the decoded AMBT forms.
+
+- **P25 discovery: a PDU (DUID 0xC) on the control channel is Multi-Block
+  Trunking, not noise — GT now decodes AMBT (`mbt.go`).** The operator's "only 1
+  neighbor site, no WACN" report was this: their system broadcasts Network
+  Status / Adjacent Status (with explicit downlink+uplink channels) only in AMBT
+  form, and GT logged every one as `non-control DUID duid=PDU` and dropped it.
+  MBT blocks reuse the TSBK 98-dibit trellis coding; the header ends in the same
+  augmented CRC-CCITT16 as a TSBK trailer, the data blocks in a CRC-32 (OP25
+  `process_PDU` is the validation reference; SDRTrunk AMBTC* classes the field
+  layouts). An explicit uplink channel resolves as plain base+spacing —
+  NO tx offset (uplink channel numbers already encode the uplink frequency).
+  Also fixed in the same pass: TSBK SCCB (0x39) read channel B one byte early
+  (`p[4:6]` vs the correct `p[5:7]`) and its round-trip test passed because the
+  assembler encoded the same wrong layout — pin parsers with LITERAL byte
+  vectors cross-checked against an independent decoder, not just round-trips.
+- **Never gate a per-channel health WARN on absolute dBFS when decode evidence
+  exists.** The widebandt2 "channel iq power very low" WARN fired every 5 s on a
+  Tier III CC decoding every C_ALOHA at −56 dBFS. Any channel whose decode
+  counter advanced within `lowPowerDecodeGrace` is healthy whatever its power
+  gauge reads. Same family as the MRC dBFS-gate lesson below.
+
 - `gophertrunk replay -tune-hz` uses the single-channel
   `ccdecoder.Downconverter` (`internal/scanner/ccdecoder/ddc.go`), **not** the
   multi-tap wideband `DDCBank` (`internal/dsp/tuner/ddc.go`). They are separate
@@ -385,6 +439,129 @@ confirmation before any close-as-completed.
         silent ~0.1 s WAV still published to History) is inherent: the recorder only drops `dataBytes==0`
         or `StatProvider` zero-voice calls, and ACELP is neither, so a 2-frame call becomes a tiny
         bogus row. Staged, not shipped.
+- **TETRA MAC fragment reassembly had off-by-bits at every seam — found via D-NWRK-BROADCAST,
+  and the neighbour-cell decode is now live + capture-verified.** `macFragmentPayload` skipped
+  only type+subtype on MAC-FRAG (the fill-bit indication leaked into the payload, +1 bit) and
+  fill+length on MAC-END (the slot-granting + channel-allocation flags leaked, +2 or more) —
+  the round-trip test was green because its encoder shared the wrong layout (the #764/#771
+  self-consistent trap, again), single-block PDUs were unaffected, and the corruption surfaced
+  only in fragmented L3 PDUs from the seam onward. Diagnosed on the operator's 120 s 467.9125 MHz
+  MRC capture: a D-NWRK-BROADCAST rotating neighbour list decoded ~2 cells then garbage; deleting
+  exactly ONE bit at the seam made all seven advertised cells decode — the raw MAC-FRAG blocks
+  confirm the payload starts one bit later (layouts pinned against osmo-tetra rx_macfrag/rx_macend).
+  `ParseDNwrkBroadcast` (`mle_parse.go`, layout cross-checked osmo-tetra + tetra-kit) now feeds
+  `TopologySnapshot.Neighbors` (Site=5-bit cell id, StatusFlags carries sync+mcc/mnc/la) → the
+  systems report's "Neighbor sites"; cells surface only after the SAME content decodes twice —
+  the 6-bit PD+type gate lets a rare corrupted-but-CRC-passing TL-SDU parse plausibly (one-shot
+  surfaced 18 "neighbours"; the repeating 8 were real: carriers 467.99-470.00 MHz, LAs 1021-1089,
+  `TestTETRANeighbourReportReplay` is the skip-guarded harness). **Follow-up (Sep 3): the operator's
+  "totally bogus entries in the neighbours list, like a 1.5 GHz one" — confirmed-twice garbage — was
+  TWO MORE MAC boundary holes, both deterministic (so identical corruption repeats and the
+  confirm-twice gate cannot help): (1) `tmSDU`/`macFragmentPayload` handed everything to the BLOCK
+  end — the MAC length indication (total PDU octets; osmo rx_resrc `macpdu_length*8`, tetra-kit
+  `decodeLength(li)*8 - pos`) was parsed but never applied and the fill-bit indication never
+  stripped fill ('1' then '0's, §23.4.3.2) — so fill/multiplexed tail bits leaked into the TL-SDU
+  and D-NWRK-BROADCAST's trailing P-bit reads turned them into phantom optionals (band bits 1111 ⇒
+  a 1.5 GHz "neighbour"); prefix-reading parsers never noticed, which is why everything else looked
+  fine. (2) fragment reassembly had NO continuity check — a MAC-END spliced onto however-old a start
+  fragment across lost blocks; now pieces must be stream-adjacent (`fragMaxGapDibits`, the NCDB
+  detector's dibit position plumbed through `decodeDownlinkSlot`) and an AACH-confirmed control slot
+  that decodes nothing abandons the chain (osmo-sq5bpf ages fragslots the same way). Test builders
+  used to write a PLACEHOLDER length indication the decoder ignored — honouring the field made them
+  encode real lengths (`stampMACResourceLength`), the encoder/decoder-drift trap in yet another
+  dress. `plausibleNeighbourCell` (carrier≠0, band 1..9) is defence-in-depth behind those fixes, and
+  the neighbour log/StatusFlags now print MCC/MNC/LA (and the newly surfaced §18.5.17 status
+  optionals — raw values; their spec bit maps stay un-named until capture-confirmed, per the
+  CommsType rule) only when present, so "mcc=0" can no longer mean "absent".** Related dedup in the same pass:
+  retransmitted D-RELEASE/D-DISCONNECT now publish ONE `call.release` per teardown (`releaseSeen`,
+  re-armed by a fresh grant) — the "release spam" report, same family as `grantSeen`/`lastTalker`.
+- **An implausible D-NWRK-BROADCAST cell now distrusts the WHOLE broadcast, not just itself
+  (4 Sep field report: "one bogus neighbor site").** The list is parsed sequentially, so a
+  physically-impossible cell (band 13, carrier 0, …) proves the bit alignment was lost — and
+  its plausible-LOOKING siblings from the same bits are garbage too. The operator's log showed
+  exactly that: a "cell 0, carrier 80, synced" phantom 65 MHz off-network (the web UI's
+  402.0125 MHz neighbour) confirming twice ALONGSIDE a band-13 implausible sibling in the same
+  broadcasts at 02:11/02:31/02:33 — deterministic corruption repeats bit-identically, so
+  confirm-twice can never catch the siblings. `learnNeighbourCells` now drops the entire list
+  when any cell fails `plausibleNeighbourCell` and logs the raw TL-SDU hex (`tl_sdu_hex`) so the
+  NEXT such report can pin the actual mis-framed layout without a capture (the corruption source
+  — likely another MAC boundary/seam hole in a rarely-sent broadcast variant — is still
+  un-root-caused; the hex dump is the instrument). Pinned failing-first by
+  `TestLearnNeighbourCellsRejectsImplausibleCells` (old code reproduces the operator's exact row).
+- **The phantom-neighbour corruption source is ROOT-CAUSED (5 Sep, from the 4 Sep tl_sdu_hex
+  instrument alone): mis-continued fragment reassembly SPLICING TWO TRANSMISSIONS of the rotating
+  D-NWRK-BROADCAST.** The 11 rejected dumps in the operator's 10.4 h log decode as the real cell
+  list (9,10,11 … 57-bit cells, perfect) that mid-cell jumps back to another copy of the list —
+  identical substrings repeat inside one TL-SDU, and every dump left 15–388 trailing bits after a
+  "complete" cell list (genuine: <8, the MAC bounds the TM-SDU to the PDU's own length). Bogus
+  sites that LOOKED plausible (mnc=1021/1032 = the real cells' LAs shifted into the MNC field)
+  were the same splices confirming twice, because the loss pattern repeats with the broadcast
+  schedule. Three holes let a chain survive the losses that set a splice up, all fixed in
+  `decodeDownlinkSlot`/`fragChainAdjacentLocked`: (1) a control slot with ONE decoded SCH/HD half
+  counted as recovered — the failed half IS a lost signalling block (on a control slot both halves
+  carry signalling; stealing exists only on traffic slots); (2) **`DecodeAACH` is an ML search that
+  ALWAYS returns the nearest RM(30,14) codeword** (`errs` = Hamming distance, garbage lands at
+  4-6), so a faded AACH was a coin-flip classification and "traffic" kept the chain — the
+  classification is now trusted only at `errs ≤ aachClassifyMaxErrs` (2). (Searching the other
+  three rotations on unconfident slots was tried and REVERTED: most emits on this capture are
+  unconfident, and the extra 16k-codeword ML searches took the 120 s replay 61→139 s, past real
+  time — the multi-rotation loop was always unreachable anyway, r=0 is the stream's rotation);
+  (3) adjacency tightened
+  4→2 frames + the continuation must land on the chain's 255-dibit slot grid. **The grid gate is
+  load-bearing, measured on the 4 Sep MRC captures**: the NCDB detector also emits spurious
+  off-grid correlator hits (+92/+163 dibits, tolerance-2 matches inside payloads), and a naive
+  "gap between emitted slots" check (first attempt) aborted every chain on this SCBS/timeshare
+  carrier (neighbours 0/8) — integrity evidence must be slots on the chain's own grid, nothing
+  else. Defence in depth: `ParseDNwrkBroadcast` rejects ≥8 trailing bits after the neighbour list
+  (kills the whole splice class even if a new hole appears; reject logged with `tl_sdu_hex`), and
+  neighbours now EXPIRE after `neighbourExpiry` (30 min) without re-advertisement — aged only
+  across ACCEPTED broadcasts, so a CC outage expires nothing — ending the 10-hour phantom pile-up.
+  The periodic "abandoning TM-SDU fragment reassembly" DEBUG line is the continuity guard WORKING
+  (each abandon costs one broadcast cycle; the reporter read it as a parse bug) — it now says so,
+  and `frag_abandons` in the decode-status line tracks the rate. Pinned failing-first:
+  `TestParseDNwrkBroadcastRejectsSplicedFieldCapture` (a LITERAL field dump), half-slot /
+  unclassifiable-AACH / on-grid tests in `frag_continuity_test.go`, expiry in `mle_parse_test.go`;
+  no-harm: both 4 Sep captures replay 8/8 real cells through `TestTETRANeighbourReportReplay`.
+- **TETRA control-plane decode surface (the "advanced D-SYSINFO / D-ATTACH/DETACH / D-NEW-CELL /
+  SCCH" request) — what's decoded vs deliberately raw.** `ParseSysInfoExtended` (`sysinfo_ext.go`)
+  decodes the rest of the 124-bit SYSINFO: common-SCCH count (+ TS2..TS4 mapping),
+  MS_TXPWR_MAX_CELL / RXLEV_ACCESS_MIN / ACCESS_PARAMETER / RADIO_DOWNLINK_TIMEOUT,
+  hyperframe-vs-CCK id (osmo's flag sense: flag SET ⇒ CCK id), and the D-MLE-SYSINFO TM-SDU at
+  the FIXED offset 82 (= 124−42: LA + subscriber class + BS service details) — layout pinned by
+  osmo `macpdu_decode_sysinfo` AND tetra-kit `pduProcessSysinfo`; the change-gated INFO log
+  excludes the hyperframe counter or it spams every cycle. MM D-ATTACH/DETACH GROUP IDENTITY
+  (`mm_parse.go`, layout from tetra-kit mm.cc/mm_elements.cc — the type-3/4 element walk skips
+  unknown elements by their OWN 11-bit length so OTAR/security elements can't desync it) yields
+  an ISSI→GSSI feed: attaches publish `KindAffiliation` (protocol tetra), detaches log. MLE
+  D-RESTORE-ACK wraps a CMCE SDU (5-bit type onward, tetra-kit's forwarding) → decoded via
+  `ParseCMCERestoreAck` so a mid-call cell re-selection keeps call state. D-NEW-CELL /
+  D-PREPARE-FAIL / D-RESTORE-FAIL / D-CHANNEL-RESPONSE / D-NWRK-BROADCAST-EXTENSION are
+  recognised and logged with raw TL-SDU hex but NOT field-parsed — NEITHER reference decoder
+  parses their contents, so a field layout would be the fabricated-SmartNet trap; the hex log is
+  the capture-pinning instrument. CORRECTION of an earlier note here: tetra-kit DOES itemise the
+  12 BS-service-details bits (`parseBsServiceDetails`), so they are now rendered as named flags
+  (`BSServiceDetailsString`) in SYSINFO logs and neighbour StatusFlags; subscriber class and
+  timeshare stay raw (still no decoder itemises those).
+- **The in-call event payloads (`call.source`, `call.talker`, `call.release`, `call.segment`)
+  now carry snake_case JSON tags + `frequency_hz`** so the web activity feed's one formatter
+  renders them like grant rows (they used to marshal Go-capitalized names, which the SPA's
+  snake_case-only `summarizeEvent` silently rendered as an empty detail cell — the "call.talker
+  shows nothing" report; same silent-mismatch family as the History `r.rows` lesson). Still
+  passthrough kinds (docs/api-events.md notes the rename); `summarizeEvent` also descends into a
+  nested `grant`/`Grant` object for call.start/end/complete.
+- **Every config key must appear in config.example.yaml when it lands** — `diversity_capture_format`
+  shipped in code but was missed there, and an operator guessing the key name at their rig is the
+  failure mode (4 Sep report). When adding a `Config` field, grep config.example.yaml before
+  committing.
+- **The "sausages" in the operator's TETRA waterfall are the BS toggling discontinuous-downlink
+  (timeshare/MCCH-sharing) mode per multiframe — not RF trouble and not a GT defect.** On both
+  1-2 Sep 120 s MRC captures the CC's occupied bandwidth alternates ~±10 kHz ↔ ~±12.3 kHz in
+  sharp ~1.02 s (= one multiframe) segments while total in-channel power stays constant (±0.3 dB)
+  and branch fades are uncorrelated (r≈-0.06); slot-boundary ramp dips (14.2 ms) are always
+  present, and the +2.4 kHz "tone" is the SB frequency-correction sequence, both normal. GT
+  decodes straight through the segmented windows (BSCH ~99.9%, all harness arms at ceiling) —
+  same family as the reporter's #925 SCBS/dynamic-MCCH-sharing observations. Don't chase a
+  receiver bug from a "sausage" waterfall alone; check decode yield first.
 - **TETRA individual/private-call SRC is restored across mid-call PDUs via a callID→source
   binding; cold-start group-vs-individual classification stays capture-gated.** ETSI compresses
   the SSIs out of mid-call and traffic-channel signalling (§14): once a call is set up, a
@@ -460,6 +637,43 @@ confirmation before any close-as-completed.
   `debug.log` (interleaved never reaching the decoder; per-superframe log spam) corroborate the bug.
   Sharp edge to watch on air: if the embedded LC never decodes (#644), both same-carrier taps'
   `slotRouter`s fall back to phase parity and could bind the same phase (one slot recorded twice).
+- **Conventional DMR "false call ended" (9 Sep IPSC report) was a FORGED TERMINATOR from a voice
+  burst, root-caused on the operator's own captures; the missed continuation was the absence of
+  late entry.** The Tier II slicer (`tier2/process.go`) parsed a slot type on EVERY sync match, but
+  only DATA bursts carry one — a voice burst A has AMBE bits in the slot-type positions, and
+  Golay(20,8) decodes ~1/3 of arbitrary 20-bit words to SOME codeword, so ~1 voice burst A in 12
+  read as (cc, TerminatorWithLC) and the single-call fallback ("LC undecodable but only one call
+  active ⇒ unambiguous") ended the live call mid-sentence. Measured on `dmr_tests_9sep` (25 kS/s
+  cs16 SigLab slices, 442.3875 MHz, tg 11): a terminator exactly 6 bursts (1728 dibits) before the
+  next voice superframe of the SAME over, and 11 grants for 5 transmissions. Fixes, all in
+  `internal/radio/dmr/tier2` and pinned failing-first by `conventional_lateentry_test.go`:
+  (1) slot types are read only from data-sync bursts — per polarity, because DMR's data/voice sync
+  words are each other's `PolarityFlip` image (`dmr.SyncIsDataAtPolarity`), and the stream's
+  polarity is LOCKED by the first FEC-valid burst so the voice-sync gate becomes exact;
+  (2) the undecodable-terminator fallback now requires a BPTC-valid payload (a repeater repeats
+  the real Terminator-with-LC for its whole hang time — 50–170 copies on these captures — so a
+  genuine end never hinges on one uncorrectable burst); (3) **late entry**: the channel now runs
+  the voice superframe assembler beside the burst slicer and grants from two agreeing CRC-valid
+  embedded LCs (`ingestVoiceSuperframe`, ~720 ms in) when a transmission's Voice LC Headers were
+  lost — what every subscriber radio does, and why the operator's radio "still heard the
+  conversation" (their weak −60 dBFS bin-edge tap lost headers at keyup; the composer only
+  starts on a grant). Gates that cost time: a late-entry LC whose superframe STARTED BEFORE the
+  destination's last terminator is the closing superframe of the ended call (the assembler runs a
+  span behind the slicer) — without `endedAtDibit` it re-granted every dead call (7 phantoms/120 s);
+  and the IPSC `color_code` filter is honoured via the superframe's majority EMB colour code
+  (`VoiceSuperframe.EMBColorCode`). Capture-verified with `TestDMRIPSCReplay`: `GT_DMR_DROP_HEADERS=1`
+  scrubs every header burst from the real dibit stream and all 5/5 transmissions are still granted
+  (late_entries=5); un-scrubbed runs grant exactly once per over; capture 1's mid-PTT start is
+  late-entered. The synthetic Tier I fixtures (`siglab/fixtures.go`, `integration_cc_dmr_tier1_test.go`)
+  framed a Voice LC Header with the DM VOICE sync and only passed because of the old parse-everything
+  slicer — a data burst uses the data sync (ETSI TS 102 361-1 Table 9.1); fixed. **The "CSBK CRC
+  mismatch" storm is NOT resolved**: the operator's 443.2375 MHz log shows a 30 ms-cadence (both
+  slots) train of BPTC-clean, CRC-failing CSBKs at cc=7 for ~4 s on a cc=12 system — a real
+  proprietary train, not noise (the CRC convention itself is pinned by real Tier III vectors). The
+  Debug line is now parked (first + summary per 10 s, `csbk_crc_fail` in the activity line) and
+  carries csbko/fid/lb/pf + `info_hex`, the instrument for the next log; a capture of that
+  frequency idle is what pins it. The CSBK/FEC failures that DID appear in these captures (7/120 s)
+  were the same voice-burst forgery and are gone.
 - **DMR group calls are no longer relabeled "individual."** The engine's known-radio →
   individual reclassification (`HandleGrant`, `internal/trunking/engine.go`) and `noteRadio`'s
   talkgroup retraction rest on a TETRA-only invariant (GSSIs and ISSIs never overlap). DMR shares
@@ -525,6 +739,33 @@ confirmation before any close-as-completed.
   FSW-margin/LDU yield), then either port the `cqpsk.go` CMA/FSE equalizer onto the C4FM
   path or add soft-decision to the IMBE FEC, and A/B LDU/IMBE yield against the capture. No
   change lands without that capture. See `samples/p25/README.md` (weak-signal voice section).
+- **The Motorola Type II / SmartNet framing was FABRICATED and never matched the air interface —
+  rebuilt from OP25/trunk-recorder (#1143), on-air verification still pending.** The original
+  package (24-bit sync `0xA4D7AA`, 32-bit OSW, BCH(64,16,11)) matched no real reference; every
+  synthetic test was green because encoder and decoder shared the invented format (the #764/#771
+  self-consistent trap — same as the SoapyRemote opcode bug below), while no real capture could
+  ever lock (`cchunt: hunt failed`, the reporter's symptom). The real format, ported from OP25
+  `rx_smartnet.cc/h` + trunk-recorder `SmartnetParser` (both proven on air): 8-bit sync `0xAC`,
+  84-bit frames back-to-back (a frame is only trusted when the NEXT sync arrives 76 bits later),
+  76-bit payload → stride-19 deinterleave → (info,parity) pairs with `parity[i]=info[i]^info[i-1]`
+  → 27 data + 10 CRC bits, data INVERTED on the wire (address `^0xCC38`, command `^0x0D5`, CRC
+  complemented); OSW = 16-bit address + group bit + 10-bit command, where a command ≤ the band
+  plan's range IS the voice channel number and grants/sysID span 1-3 consecutive OSWs (no
+  opcodes — `motorola_bch_mode` is now accepted-but-ignored, `motorola_band_plan` selects
+  800_standard/800_rebanded/800_splinter/900). Physical layer: 3600-baud 2-FSK at ±1.2 kHz
+  deviation (NOT MSK/±900 Hz), channelized to an 18 kHz DDC target (5 sps, mirrors
+  trunk-recorder; the old 48 kHz target's ±24 kHz passband also admitted 25 kHz-spaced
+  neighbours into the discriminator), with a slow post-discriminator DC tracker — at ±1.2 kHz
+  deviation a few-hundred-Hz carrier offset is a large slicer bias
+  (`TestReceiverToleratesCarrierOffset`). Pinned by reference-literal tests (sync bits,
+  interleave permutation, XOR masks — the only tests that catch constant drift) +
+  failing-first `TestProcessDecodesRealAirFormat` (real-air stream → old decoder = zero
+  decodes). Per #764/#771: synthetic-green ≠ on-air-verified — the #1143 reporter's 854.5625 MHz
+  capture (Airspy R2, 3 MS/s cfile on Google Drive; unreachable from the dev environment's
+  network policy) is the outstanding verification gate. Their "≈550.3 ppm" capture warning was
+  almost certainly the probe estimator latching a different momentarily-strong carrier in the
+  3 MHz span (the probe is the FIRST 32768 samples ≈ 11 ms, and `capture` never checks
+  `ActualSampleRate` — though sample-count math shows their file really is 3 MS/s).
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the
@@ -759,6 +1000,30 @@ confirmation before any close-as-completed.
   setting it once and never revisiting. `web/src/api/reconnectingSocket.ts` now owns the logic
   the four clients had each copied — including the `onerror`+`onclose` double-bind that
   scheduled two timers per failure while remembering only one handle.
+- **29 Aug X310 field material (18.5 min debug.log + 60 s pre-combine capture at 200 kS/s) —
+  the 19 Aug fixes HOLD on air, and the skew question is answered: PER-STREAM.** After the
+  operator fixed the weak antenna/feedline (the 19 Aug deficit followed the swap), the branches
+  sit balanced (~−51 dBFS each, branch_gain within ±1.4 dB) and the whole session is clean:
+  wideband coherence 0.95–0.96 every health interval (vs ≤0.8 in every pre-aligner session),
+  `updates` climbing continuously with `holds=0`, no anchor flips, ONE benign WARN in the whole
+  log, CC locked in 0.3 s and never lost (`bsch_fail=0` in every 5 s status line), 0 overruns,
+  3 drought resyncs in 18.5 min, voice flowing (demux total tch_frames=7052, vocoder_drops=0
+  per call). The inter-branch skew measured **0.41 samples** on this stream where 19 Aug
+  measured 2.60 on the same rig — so the skew is a per-stream START skew, not a fixed DDC
+  group delay, and the aligner's re-measure-per-stream/retune design is the right one (latched
+  at peak |rho|=0.94). Offline A/B on the capture (`TestDiversityCombinerReplay`): branch0
+  2589 / branch1 2626 / wb-static 2625 / wb-tracking 2626 / wb-irc-blind 2626 /
+  wb-aligned-static 2625 / nb-static 2625 / nb-tracking 2626 — every combined arm matches the
+  best branch (NO harm, the pre-aligner 22%-loss regime is gone), narrowband coherence (0.958)
+  ≈ wideband (0.945) so the wideband scalar is NOT the bottleneck on this rig, and phase walks
+  −0.11°/s (a frozen constant decays over minutes ⇒ tracking stays the right TwinRX default).
+  What this capture CANNOT close: it decodes at its ~100% BSCH ceiling, so a real MRC gain
+  over the best branch is still undemonstrated — that gate needs a WEAK-signal capture
+  (per-branch BSCH well below ceiling), not a longer one. `diversity_capture_seconds` cap
+  raised 60→120 on the operator's request (at 200 kS/s two CS16 branches are ~1.6 MB/s total;
+  the 1 GiB/branch recorder cap still bounds high rates). The demux teardown counters that look
+  alarming in this log (`undecoded_drops=24784`, `concurrency_suppressed=33125`) are by-design
+  cross-slot-leak protection on a busy multi-slot carrier, not defects.
 - **A green `ci.yml` does not mean the web console builds.** `npm test` (vitest) transpiles
   with esbuild and never typechecks, so the SPA jobs in `ci.yml` pass on code that
   `npm run build` (`tsc --noEmit && vite build`, i.e. `make web-build`/`make dist`) rejects.

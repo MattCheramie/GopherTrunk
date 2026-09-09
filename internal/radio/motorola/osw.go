@@ -1,70 +1,63 @@
 package motorola
 
-import (
-	"encoding/binary"
-	"fmt"
-)
-
-// OSW is one Outbound Status Word — a 32-bit information block that
-// rides every Motorola Type II / SmartZone control-channel frame
-// after sync, BCH(64,16,11) error correction, and de-interleaving.
+// OSW is one Outbound Status Word — the 27-bit information block
+// carried by every Motorola Type II / SmartZone control-channel
+// frame after sync, deinterleave, convolutional-parity ECC and the
+// CRC-10 (see frame.go):
 //
-// Field layout follows the most-cited public reference: the upper 16
-// bits carry an Address (talkgroup or radio ID, depending on opcode);
-// the lower 16 bits carry a Command field that combines a 12-bit
-// opcode with a 4-bit per-opcode parameter (typically the LCN for
-// voice grants).
+//	Address  16 bits — talkgroup (with low-nibble status flags) or
+//	                   radio ID, depending on the surrounding
+//	                   OSW sequence
+//	Group     1 bit  — group (true) vs individual (false) address
+//	Command  10 bits — a voice-channel number when it falls inside
+//	                   the system's band plan, otherwise a control
+//	                   command (idle, system ID, extended function…)
 //
-// The package's higher-level helpers (in opcodes.go) interpret the
-// Command field per-opcode so callers don't need to know the
-// bit-packing.
+// Field semantics follow OP25's rx_smartnet / trunk-recorder's
+// SmartnetParser: a single OSW is not self-describing — grants,
+// system-ID broadcasts and extended functions span one to three
+// consecutive OSWs, sequenced by the ControlChannel state machine
+// (control.go).
 type OSW struct {
 	Address uint16
+	Group   bool
 	Command uint16
 }
 
-// AssembleOSW packs an OSW into 4 bytes (32 bits) MSB-first. Used by
-// tests and for any future encoder work.
-func AssembleOSW(o OSW) []byte {
-	out := make([]byte, 4)
-	binary.BigEndian.PutUint16(out[0:2], o.Address)
-	binary.BigEndian.PutUint16(out[2:4], o.Command)
-	return out
+// Talkgroup returns the talkgroup ID with the low-nibble status
+// flags stripped, the form scanners and RadioReference list. Only
+// meaningful on group-addressed OSWs.
+func (o OSW) Talkgroup() uint16 { return o.Address & 0xFFF0 }
+
+// Encrypted reports the encrypted-call status flag carried in the
+// low nibble of a group address.
+func (o OSW) Encrypted() bool { return o.Address&0x8 != 0 }
+
+// Emergency reports whether the group address's low-nibble option
+// field flags an emergency call (options 2, 4 and 5).
+func (o OSW) Emergency() bool {
+	opt := o.Address & 0x7
+	return opt == 2 || opt == 4 || opt == 5
 }
 
-// ParseOSW reads 4 bytes (32 bits MSB-first) into an OSW.
-func ParseOSW(info []byte) (OSW, error) {
-	if len(info) != 4 {
-		return OSW{}, fmt.Errorf("motorola: OSW info must be 4 bytes, got %d", len(info))
-	}
-	return OSW{
-		Address: binary.BigEndian.Uint16(info[0:2]),
-		Command: binary.BigEndian.Uint16(info[2:4]),
-	}, nil
-}
+// Control-command values carried in OSW.Command when it is not a
+// channel number. From trunk-recorder's SmartnetParser.
+const (
+	// CmdIdle is the background idle / heartbeat OSW.
+	CmdIdle uint16 = 0x2F8
+	// CmdGroupBusy queues a group call when no channel is free.
+	CmdGroupBusy uint16 = 0x300
+	// CmdEmergencyBusy queues an emergency call.
+	CmdEmergencyBusy uint16 = 0x303
+	// CmdFirstNormal opens the two/three-OSW sequences: system ID +
+	// control-channel broadcast, and analog group voice grants (the
+	// first OSW carries the source radio ID).
+	CmdFirstNormal uint16 = 0x308
+	// CmdFirstAlternate opens the alternate two/three-OSW sequences:
+	// system ID + alternate/adjacent control-channel broadcasts and
+	// extended functions.
+	CmdFirstAlternate uint16 = 0x30B
+)
 
-// OSWFromBits packs 32 MSB-first bits (each entry 0/1) into an OSW.
-func OSWFromBits(bits []byte) (OSW, error) {
-	if len(bits) != 32 {
-		return OSW{}, fmt.Errorf("motorola: OSW requires 32 bits, got %d", len(bits))
-	}
-	info := make([]byte, 4)
-	for i := 0; i < 32; i++ {
-		if bits[i]&1 != 0 {
-			info[i>>3] |= 1 << uint(7-(i&7))
-		}
-	}
-	return ParseOSW(info)
-}
-
-// OSWBits returns the 32 MSB-first bits of an OSW.
-func OSWBits(o OSW) []byte {
-	bytes := AssembleOSW(o)
-	out := make([]byte, 32)
-	for i := 0; i < 32; i++ {
-		if bytes[i>>3]&(1<<uint(7-(i&7))) != 0 {
-			out[i] = 1
-		}
-	}
-	return out
-}
+// IsIdle reports whether this OSW is the idle / heartbeat command.
+func (o OSW) IsIdle() bool { return o.Command == CmdIdle }

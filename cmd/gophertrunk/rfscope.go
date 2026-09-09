@@ -111,7 +111,7 @@ func runRFScopeAnalyze(args []string) {
 	fs := flag.NewFlagSet("rfscope analyze", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	in := fs.String("in", "", "raw IQ capture file (required)")
-	format := fs.String("format", "f32", "sample format: u8 | f32")
+	format := fs.String("format", "f32", "sample format: u8 | f32 | cs16 | wav | flac (wav/flac carry their own rate and are also sniffed from content behind any label)")
 	sampleRate := fs.Float64("sample-rate", 2_000_000, "IQ sample rate in Hz")
 	freq := fs.Uint64("freq", 0, "capture centre frequency in Hz")
 	window := fs.Float64("window", 0, "analyze only the first N seconds (0 ⇒ whole capture)")
@@ -120,7 +120,7 @@ func runRFScopeAnalyze(args []string) {
 		fmt.Fprintln(fs.Output(), `gophertrunk rfscope analyze — segment + analyze a recorded IQ capture.
 
 USAGE:
-  gophertrunk rfscope analyze -in <path> [-format u8|f32] [-sample-rate Hz] [-freq Hz]
+  gophertrunk rfscope analyze -in <path> [-format u8|f32|cs16|wav|flac] [-sample-rate Hz] [-freq Hz]
                              [-window sec] [-analyzers a,b] [-out-format fmt] [-out path]
 
 FLAGS:`)
@@ -134,12 +134,12 @@ FLAGS:`)
 		fs.Usage()
 		rep.Fatalf(2, "-in is required")
 	}
-	if *sampleRate <= 0 {
-		rep.Fatalf(2, "-sample-rate must be > 0")
-	}
 	sampleFormat, err := siglab.ParseSampleFormat(*format)
 	if err != nil {
 		rep.Fatal(2, err)
+	}
+	if *sampleRate <= 0 && sampleFormat != siglab.FormatWAV && sampleFormat != siglab.FormatFLAC {
+		rep.Fatalf(2, "-sample-rate must be > 0 for a headerless (u8/f32/cs16) capture")
 	}
 
 	src, err := rfscope.OpenFile(*in, sampleFormat, uint32(*freq), *sampleRate)
@@ -148,9 +148,11 @@ FLAGS:`)
 	}
 	defer src.Close()
 
+	// A wav/flac container's header rate wins over -sample-rate (see OpenFile).
+	rate := src.SampleRateHz()
 	maxSamples := 0
 	if *window > 0 {
-		maxSamples = int(*window * *sampleRate)
+		maxSamples = int(*window * rate)
 	}
 	rfscopeRunAndExport(rep, src, af.segConfig(maxSamples), af.selectedAnalyzers(), *in, *af.outFormat, *af.out, *af.framesOut)
 }

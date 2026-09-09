@@ -158,7 +158,12 @@ func buildDMRTier1VoiceLCHeaderDibits(repeats int, colorCode uint8, groupID, sou
 	burst := make([]uint8, 0, dmr.BurstDibits)
 	burst = append(burst, payloadDibits[:dmr.HalfPayloadDibits]...)
 	burst = append(burst, slotDibits[:dmr.SlotTypeDibits]...)
-	burst = append(burst, dmr.DMVoice1.Dibits[:]...)
+	// A Voice LC Header is a DATA burst, framed in direct mode by the DM data
+	// sync (ETSI TS 102 361-1 Table 9.1). This fixture used DMVoice1 and only
+	// passed while the slicer parsed a slot type on every sync match; slot
+	// types are now read from data-sync bursts only (voice bursts carry AMBE
+	// bits there, which forged terminators on air).
+	burst = append(burst, dmr.DMData1.Dibits[:]...)
 	burst = append(burst, slotDibits[dmr.SlotTypeDibits:]...)
 	burst = append(burst, payloadDibits[dmr.HalfPayloadDibits:]...)
 

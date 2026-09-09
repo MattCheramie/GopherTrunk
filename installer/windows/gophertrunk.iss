@@ -16,6 +16,11 @@
   #define AppVersion "v0.0.0-dev"
 #endif
 
+; Terms-of-service revision this installer acknowledges. Keep in sync
+; with internal/terms.Version (the CLI's first-run gate enforces the
+; same revision and reads the same marker file this installer writes).
+#define TermsVersion "1"
+
 [Setup]
 AppId={{B6B6CC9A-3A70-4B23-8E2E-8E0C7A2F4B30}
 AppName=GopherTrunk
@@ -51,6 +56,12 @@ Source: "..\..\dist\staging\gophertrunk.exe";  DestDir: "{app}"; Flags: ignoreve
 Source: "..\..\dist\staging\config.example.yaml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\staging\README.md";        DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\staging\LICENSE";          DestDir: "{app}"; Flags: ignoreversion
+; Terms of Service: installed next to the LICENSE, and extracted a
+; second time at wizard runtime (dontcopy) so the mandatory
+; acknowledgment page below can display it. Sourced straight from the
+; repo root, like LicenseFile above.
+Source: "..\..\TERMS_OF_SERVICE.md";           DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\TERMS_OF_SERVICE.md";           Flags: dontcopy
 Source: "..\..\dist\staging\INSTALL-WINDOWS.md"; DestDir: "{app}"; Flags: ignoreversion
 ; Zadig WinUSB driver installer — bundled so the operator doesn't
 ; have to chase a download. GPL-3.0; upstream source is at
@@ -193,9 +204,63 @@ Filename: "{code:WebDir}\index.html"; \
 [Code]
 var
   DataDirPage: TInputDirWizardPage;
+  TermsPage: TWizardPage;
+  TermsMemo: TNewMemo;
+  TermsAcceptCheck: TNewCheckBox;
+
+// The Next button on the Terms page follows the checkbox: unchecked
+// means the operator cannot proceed past the Terms of Service.
+procedure TermsAcceptChanged(Sender: TObject);
+begin
+  WizardForm.NextButton.Enabled := TermsAcceptCheck.Checked;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = TermsPage.ID then
+    WizardForm.NextButton.Enabled := TermsAcceptCheck.Checked;
+end;
 
 procedure InitializeWizard;
+var
+  TermsText: AnsiString;
 begin
+  // Mandatory Terms of Service acknowledgment, right after the Apache
+  // LICENSE page. A custom page (memo + checkbox) rather than a second
+  // LicenseFile because Inno supports only one of those. Like the
+  // built-in license page, this page is skipped by /SILENT installs —
+  // running the installer silently implies acceptance, and the marker
+  // below is written either way. The CLI's own first-run gate
+  // (cmd/gophertrunk/terms.go) is the backstop for every other install
+  // path (portable ZIP, tarballs, go install, Docker).
+  TermsPage := CreateCustomPage(wpLicense, 'Terms of Service',
+    'Please read and acknowledge the GopherTrunk Terms of Service.');
+  TermsMemo := TNewMemo.Create(TermsPage);
+  TermsMemo.Parent := TermsPage.Surface;
+  TermsMemo.Left := 0;
+  TermsMemo.Top := 0;
+  TermsMemo.Width := TermsPage.SurfaceWidth;
+  TermsMemo.Height := TermsPage.SurfaceHeight - ScaleY(28);
+  TermsMemo.ScrollBars := ssVertical;
+  TermsMemo.ReadOnly := True;
+  TermsMemo.WordWrap := True;
+  // TERMS_OF_SERVICE.md is kept ASCII-only (pinned by a repo test) so
+  // this AnsiString round-trip cannot mangle it.
+  ExtractTemporaryFile('TERMS_OF_SERVICE.md');
+  if LoadStringFromFile(ExpandConstant('{tmp}\TERMS_OF_SERVICE.md'), TermsText) then
+    TermsMemo.Text := TermsText
+  else
+    TermsMemo.Text := 'See TERMS_OF_SERVICE.md in the install folder ' +
+      '(and at https://github.com/MattCheramie/GopherTrunk).';
+  TermsAcceptCheck := TNewCheckBox.Create(TermsPage);
+  TermsAcceptCheck.Parent := TermsPage.Surface;
+  TermsAcceptCheck.Left := 0;
+  TermsAcceptCheck.Top := TermsMemo.Top + TermsMemo.Height + ScaleY(8);
+  TermsAcceptCheck.Width := TermsPage.SurfaceWidth;
+  TermsAcceptCheck.Caption := 'I have read and accept the Terms of Service';
+  TermsAcceptCheck.Checked := False;
+  TermsAcceptCheck.OnClick := @TermsAcceptChanged;
+
   // Single data-folder choice. The executable always installs to
   // {app} (Program Files); this page picks the SEPARATE, user-owned
   // data root that holds everything else — config files, voice-call
@@ -223,6 +288,28 @@ begin
   DataDirPage.Add('Data folder:');
   DataDirPage.Values[0] :=
     ExpandConstant('{userdocs}\GopherTrunk');
+end;
+
+// Record the Terms of Service acknowledgment where the CLI's first-run
+// gate looks for it: %AppData%\GopherTrunk\terms-accepted (Go's
+// os.UserConfigDir() + "GopherTrunk" — see internal/terms). Written at
+// ssPostInstall, i.e. only after the operator got past the mandatory
+// Terms page (or ran /SILENT, which implies acceptance). Note the
+// installer runs elevated, so {userappdata} is the elevating user's
+// profile; a different Windows account running GopherTrunk later is
+// prompted by the CLI gate instead — acknowledgment is per-user.
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then begin
+    ForceDirectories(ExpandConstant('{userappdata}\GopherTrunk'));
+    SaveStringToFile(
+      ExpandConstant('{userappdata}\GopherTrunk\terms-accepted'),
+      '# GopherTrunk terms-of-service acceptance record (see TERMS_OF_SERVICE.md).' + #13#10 +
+      'version={#TermsVersion}' + #13#10 +
+      'accepted_at=' + GetDateTimeString('yyyy/mm/dd hh:nn:ss', '-', ':') + #13#10 +
+      'accepted_via=windows-installer' + #13#10,
+      False);
+  end;
 end;
 
 // DataDir is the user-chosen data root. ConfigDir and WebDir return

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -74,10 +73,10 @@ func parseIQCaptureSpec(s string) (iqCaptureSpec, error) {
 		case "format":
 			f := strings.ToLower(v)
 			switch f {
-			case "f32", "u8", "cs16":
+			case "f32", "u8", "cs16", "wav", "flac":
 				spec.Format = f
 			default:
-				return iqCaptureSpec{}, fmt.Errorf("iq-capture: format must be u8, f32, or cs16, got %q", v)
+				return iqCaptureSpec{}, fmt.Errorf("iq-capture: format must be u8, f32, cs16, wav, or flac, got %q", v)
 			}
 		case "decimate":
 			n, err := strconv.Atoi(v)
@@ -136,7 +135,7 @@ func runIQCapture(ctx context.Context, broker *iqtap.Broker, spec iqCaptureSpec,
 		"serial", spec.Serial, "path", spec.Path,
 		"seconds", spec.Seconds, "format", spec.Format,
 		"decimate", max(spec.Decimate, 1), "record_rate_hz", recRate)
-	samples, bytesPerSample, drops, capErr := captureIQToFile(ctx, broker, spec.Path, format, spec.Seconds, ddc)
+	samples, bytesPerSample, drops, capErr := captureIQToFile(ctx, broker, spec.Path, format, spec.Seconds, ddc, recRate)
 	if capErr == nil && ddc != nil {
 		// Only decimated captures get a sidecar: their on-disk rate differs
 		// from the configured sdr.sample_rate, so the file is unusable for
@@ -183,7 +182,7 @@ func newCaptureDecimator(baseRateHz uint32, factor int) *ccdecoder.Downconverter
 // A non-nil ddc anti-alias decimates every chunk before it is encoded, so the
 // file lands at the down-converter's output rate (software decimation). A nil
 // ddc is a byte-identical pass-through of the historical full-rate path.
-func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, format siglab.SampleFormat, seconds int, ddc *ccdecoder.Downconverter) (samples int64, bytesPerSample int, drops uint64, err error) {
+func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, format siglab.SampleFormat, seconds int, ddc *ccdecoder.Downconverter, rateHz uint32) (samples int64, bytesPerSample int, drops uint64, err error) {
 	_, bytesPerSample = format.Decoder()
 	f, err := os.Create(path)
 	if err != nil {
@@ -192,7 +191,11 @@ func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, for
 
 	sub := broker.Subscribe()
 	defer sub.Close()
-	enc := newCaptureEncoder(f, format, ddc)
+	enc, err := newCaptureEncoder(f, format, ddc, rateHz)
+	if err != nil {
+		f.Close()
+		return 0, bytesPerSample, 0, fmt.Errorf("iq-capture: container %s: %w", path, err)
+	}
 
 	// Safety timer as an explicit select arm: the broker pauses fan-out when no
 	// primary StreamIQ session is running, so a receive-then-check deadline
@@ -225,8 +228,12 @@ func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, for
 		}
 	}()
 
-	// Close for flush/error visibility right here; report a close error only
-	// when the stream itself succeeded (so the real cause isn't masked).
+	// Finalize the container (patch wav lengths / close the flac stream), then
+	// close the file. Report a finalize/close error only when the stream itself
+	// succeeded (so the real cause isn't masked).
+	if finErr := enc.finalize(); streamErr == nil && finErr != nil {
+		streamErr = finErr
+	}
 	closeErr := f.Close()
 	if streamErr == nil && closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
 		streamErr = closeErr
@@ -240,15 +247,24 @@ func captureIQToFile(ctx context.Context, broker *iqtap.Broker, path string, for
 // pass-through: byte-identical to encoding through siglab.CaptureWriter
 // directly, so an undecimated capture is unchanged.
 type captureEncoder struct {
-	enc     *siglab.CaptureWriter
+	enc     *siglab.IQContainer
 	ddc     *ccdecoder.Downconverter // nil ⇒ no decimation
 	scratch []complex64              // reused decimation output buffer
 }
 
-// newCaptureEncoder wraps w with the chosen format and optional decimator.
-func newCaptureEncoder(w io.Writer, format siglab.SampleFormat, ddc *ccdecoder.Downconverter) *captureEncoder {
-	return &captureEncoder{enc: siglab.NewCaptureWriter(w, format), ddc: ddc}
+// newCaptureEncoder wraps f with the chosen container format and optional
+// decimator. rateHz is the on-disk (post-decimation) sample rate, needed for
+// the wav/flac headers.
+func newCaptureEncoder(f *os.File, format siglab.SampleFormat, ddc *ccdecoder.Downconverter, rateHz uint32) (*captureEncoder, error) {
+	enc, err := siglab.NewIQContainer(f, format, int(rateHz))
+	if err != nil {
+		return nil, err
+	}
+	return &captureEncoder{enc: enc, ddc: ddc}, nil
 }
+
+// finalize completes the container (patch/finalize) without closing the file.
+func (c *captureEncoder) finalize() error { return c.enc.Finalize() }
 
 // write encodes one chunk, decimating it first when a down-converter is set,
 // and returns the number of samples actually written (post-decimation, so the

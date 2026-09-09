@@ -106,7 +106,7 @@ soapy_remote:
     diversity: "mrc"          # "" | "mrc" | "mrc-static"
     antennas: [RX1, RX2]      # RX port per channel, checked against the device
     diversity_capture: ""     # set a path prefix for the Part 10 pre-combine dump
-    diversity_capture_seconds: 0   # 1..60 (0 = 5 s)
+    diversity_capture_seconds: 0   # 1..120 (0 = 5 s)
 ```
 
 Three notes from the field. `antennas` exists because a comma-separated

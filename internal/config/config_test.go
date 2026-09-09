@@ -454,6 +454,16 @@ func TestValidate(t *testing.T) {
 		{"soapy diversity empty ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: ""}}}}, false},
 		{"soapy diversity bad rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "selection"}}}}, true},
 		{"soapy diversity mrc-static ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc-static"}}}}, false},
+		// diversity_capture_seconds allows up to 120 s: at narrowband rates
+		// (200 kS/s ≈ 0.8 MB/s per branch) a long capture is cheap and is what
+		// the offline combiner A/B needs, and the 1 GiB per-branch cap in the
+		// branch recorder bounds high rates regardless. The 90 s case is the
+		// reporter's exact config, rejected under the old 1..60 bound.
+		{"soapy diversity capture 90s ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 90}}}}, false},
+		{"soapy diversity capture 120s ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 120}}}}, false},
+		{"soapy diversity capture 121s rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 121}}}}, true},
+		{"soapy diversity capture negative rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: -5}}}}, true},
+		{"soapy diversity capture seconds without prefix rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCaptureSeconds: 30}}}}, true},
 		// The escape hatch still opens two RX channels, so a per-channel antenna
 		// pair must stay legal under it.
 		{"soapy antennas pair ok under mrc-static", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc-static", Antennas: []string{"RX1", "RX2"}}}}}, false},
@@ -501,7 +511,11 @@ func TestValidate(t *testing.T) {
 		{"auto_record cooldown ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 4, Cooldown: "5s", OnEmergency: true}}}, false},
 		{"auto_record missing dir", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Seconds: 8, OnNoVoiceDevice: true}}}, true},
 		{"auto_record zero seconds", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", OnConcurrentCalls: 2}}}, true},
-		{"auto_record bad format", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Format: "flac", OnEncrypted: true}}}, true},
+		{"auto_record wav ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Format: "wav", OnEncrypted: true}}}, false},
+		{"auto_record flac ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Format: "flac", OnEncrypted: true}}}, false},
+		{"auto_record bad format", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Format: "mp3", OnEncrypted: true}}}, true},
+		{"voice_iq_debug flac ok", Config{Baseband: BasebandConfig{VoiceIQDebug: VoiceIQDebugConfig{Enabled: true, Dir: "iq", Format: "flac"}}}, false},
+		{"voice_iq_debug bad format", Config{Baseband: BasebandConfig{VoiceIQDebug: VoiceIQDebugConfig{Enabled: true, Dir: "iq", Format: "mp3"}}}, true},
 		{"auto_record tap ddc ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "ddc", OnConcurrentCalls: 2}}}, false},
 		{"auto_record tap wideband ok", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "wideband"}}}, false},
 		{"auto_record bad tap", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Enabled: true, Dir: "iq", Seconds: 8, Tap: "narrowband"}}}, true},
@@ -702,5 +716,43 @@ func TestResolvePathsDiversityCapture(t *testing.T) {
 	}
 	if got := c.SDR.SoapyRemote[2].DiversityCapture; got != "" {
 		t.Errorf("empty prefix became %q", got)
+	}
+}
+
+// TestValidateRecordingFormats pins the two new container-format keys:
+// recordings.format (per-call voice recordings) and baseband.record[].format
+// (baseband IQ recordings) accept wav/flac and reject anything else.
+func TestValidateRecordingFormats(t *testing.T) {
+	base := func() Config {
+		var c Config
+		c.SDR.Devices = []DeviceConfig{{Serial: "A"}}
+		return c
+	}
+
+	c := base()
+	c.Recordings.Format = "flac"
+	if errs := c.validateRecordings(); len(errs) != 0 {
+		t.Fatalf("recordings.format flac rejected: %v", errs)
+	}
+	c.Recordings.Format = "mp3"
+	if errs := c.validateRecordings(); len(errs) == 0 {
+		t.Fatal("recordings.format mp3 should be rejected")
+	}
+
+	c = base()
+	c.Baseband.Record = []BasebandRecordConfig{{Serial: "A", Dir: "x", Format: "flac"}}
+	if errs := c.validateBaseband(); len(errs) != 0 {
+		t.Fatalf("baseband.record format flac rejected: %v", errs)
+	}
+	c.Baseband.Record[0].Format = "ogg"
+	if errs := c.validateBaseband(); len(errs) == 0 {
+		t.Fatal("baseband.record format ogg should be rejected")
+	}
+	if got := c.Baseband.Record[0].RecordFormat(); got != "ogg" {
+		t.Fatalf("RecordFormat() = %q, want the raw value back", got)
+	}
+	c.Baseband.Record[0].Format = ""
+	if got := c.Baseband.Record[0].RecordFormat(); got != "wav" {
+		t.Fatalf("RecordFormat() default = %q, want wav", got)
 	}
 }

@@ -198,7 +198,7 @@ func (r *Retention) deleteOldFiles() (int, error) {
 
 func isRecordingArtifact(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".wav", ".raw":
+	case ".wav", ".flac", ".raw":
 		return true
 	}
 	return false

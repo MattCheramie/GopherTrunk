@@ -26,21 +26,40 @@ import (
 // re-seek and re-estimate a wideband carrier) is rejected here — use -tune-hz
 // for a small residual offset instead.
 func prepareWAVInput(r io.Reader, cfg *Config) (io.Reader, error) {
-	if cfg.Format != FormatWAV {
+	switch cfg.Format {
+	case FormatWAV:
+		if cfg.AutoTune {
+			return nil, fmt.Errorf("siglab: -auto-tune is not supported for wav input (a baseband WAV is already channelized; use -tune-hz for a residual offset)")
+		}
+		info, err := baseband.ReadIQWavStreamHeader(r)
+		if err != nil {
+			return nil, err
+		}
+		if info.SampleRate == 0 {
+			return nil, fmt.Errorf("siglab: wav header reports a zero sample rate")
+		}
+		cfg.SampleRateHz = float64(info.SampleRate)
+		return r, nil
+	case FormatFLAC:
+		if cfg.AutoTune {
+			return nil, fmt.Errorf("siglab: -auto-tune is not supported for flac input (a baseband FLAC is already channelized; use -tune-hz for a residual offset)")
+		}
+		// Decode the FLAC stream into the same headerless sw16 body the rest of
+		// the pipeline reads, take the rate from STREAMINFO, and rewrite the
+		// format so the downstream decoder path is the plain 16-bit reader.
+		fr, rate, err := newFLACSW16Reader(r)
+		if err != nil {
+			return nil, err
+		}
+		if rate == 0 {
+			return nil, fmt.Errorf("siglab: flac header reports a zero sample rate")
+		}
+		cfg.SampleRateHz = float64(rate)
+		cfg.Format = FormatS16
+		return fr, nil
+	default:
 		return r, nil
 	}
-	if cfg.AutoTune {
-		return nil, fmt.Errorf("siglab: -auto-tune is not supported for wav input (a baseband WAV is already channelized; use -tune-hz for a residual offset)")
-	}
-	info, err := baseband.ReadIQWavStreamHeader(r)
-	if err != nil {
-		return nil, err
-	}
-	if info.SampleRate == 0 {
-		return nil, fmt.Errorf("siglab: wav header reports a zero sample rate")
-	}
-	cfg.SampleRateHz = float64(info.SampleRate)
-	return r, nil
 }
 
 // Run decodes the capture at path through the production pipeline for

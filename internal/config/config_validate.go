@@ -375,9 +375,17 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 		if s.DiversityCapture == "" {
 			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds set without diversity_capture", i)
 		}
-		if s.DiversityCaptureSeconds < 1 || s.DiversityCaptureSeconds > 60 {
-			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..60; two CS16 branches are tens of MB/s)", i, s.DiversityCaptureSeconds)
+		if s.DiversityCaptureSeconds < 1 || s.DiversityCaptureSeconds > 120 {
+			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..120; two CS16 branches are tens of MB/s at high rates, and a 1 GiB per-branch cap applies regardless)", i, s.DiversityCaptureSeconds)
 		}
+	}
+	switch s.DiversityCaptureFormat {
+	case "", "cs16", "flac":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_format %q unknown (want cs16 or flac)", i, s.DiversityCaptureFormat)
+	}
+	if s.DiversityCaptureFormat != "" && s.DiversityCapture == "" {
+		return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_format set without diversity_capture", i)
 	}
 	// diversity_capture's directory is auto-created (preflight up front, and
 	// the branch recorder lazily for non-daemon entrypoints) like every other
@@ -599,6 +607,11 @@ func (c Config) validateRecordings() []error {
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
 		return []error{fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)}
 	}
+	switch strings.ToLower(strings.TrimSpace(c.Recordings.Format)) {
+	case "", "wav", "flac":
+	default:
+		return []error{fmt.Errorf("recordings.format must be wav|flac, got %q", c.Recordings.Format)}
+	}
 	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
 		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}
@@ -774,6 +787,11 @@ func (c Config) validateBaseband() []error {
 		default:
 			errs = append(errs, fmt.Errorf("baseband.record[%d]: tap must be wideband|ddc", i))
 		}
+		switch strings.ToLower(strings.TrimSpace(r.Format)) {
+		case "", "wav", "flac":
+		default:
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: format must be wav|flac, got %q", i, r.Format))
+		}
 	}
 	for i, r := range c.Baseband.Replay {
 		if r.File == "" {
@@ -797,9 +815,9 @@ func (c Config) validateBaseband() []error {
 		// widely-imported config package deliberately does not import siglab).
 		// Keep this list in sync with siglab.ParseSampleFormat.
 		switch strings.ToLower(strings.TrimSpace(a.Format)) {
-		case "", "cs16", "f32", "u8":
+		case "", "cs16", "f32", "u8", "wav", "flac":
 		default:
-			errs = append(errs, fmt.Errorf("baseband.auto_record: format must be cs16|f32|u8, got %q", a.Format))
+			errs = append(errs, fmt.Errorf("baseband.auto_record: format must be cs16|f32|u8|wav|flac, got %q", a.Format))
 		}
 		if a.OnConcurrentCalls < 0 {
 			errs = append(errs, fmt.Errorf("baseband.auto_record: on_concurrent_calls must not be negative"))
@@ -823,6 +841,22 @@ func (c Config) validateBaseband() []error {
 		}
 		// No automatic trigger set is allowed: it leaves the feature armed for
 		// the manual API trigger only (still a valid, useful configuration).
+	}
+	if v := c.Baseband.VoiceIQDebug; v.Enabled {
+		if v.Dir == "" {
+			errs = append(errs, fmt.Errorf("baseband.voice_iq_debug: dir required when enabled"))
+		}
+		if v.MaxMB < 0 {
+			errs = append(errs, fmt.Errorf("baseband.voice_iq_debug: max_mb must not be negative"))
+		}
+		// Container format. The per-call voice IQ is a narrowband 16-bit stream,
+		// so only the 16-bit containers make sense (u8/f32 would throw away ADC
+		// resolution or bloat the file). Default (empty) is cs16.
+		switch strings.ToLower(strings.TrimSpace(v.Format)) {
+		case "", "cs16", "wav", "flac":
+		default:
+			errs = append(errs, fmt.Errorf("baseband.voice_iq_debug: format must be cs16|wav|flac, got %q", v.Format))
+		}
 	}
 	return errs
 }

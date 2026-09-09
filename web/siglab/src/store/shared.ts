@@ -35,6 +35,8 @@ interface Store {
   protocols: string[];
   fixtures: string[];
   formats: string[];
+  /** Formats offered by the capture-from-tuner panel (formats + wav/flac). */
+  captureFormats: string[];
   loadProtocols: () => Promise<void>;
 
   captures: CaptureDTO[];
@@ -63,9 +65,17 @@ export const useStore = create<Store>((set, get) => ({
   protocols: [],
   fixtures: [],
   formats: ["u8", "f32", "cs16"],
+  captureFormats: ["u8", "f32", "cs16", "wav", "flac"],
   loadProtocols: async () => {
     const p = await api.protocols(get().config);
-    set({ protocols: p.protocols, fixtures: p.fixtures, formats: p.formats });
+    set({
+      protocols: p.protocols,
+      fixtures: p.fixtures,
+      formats: p.formats,
+      // An older daemon omits capture_formats; the tuner route has accepted
+      // wav/flac since the IQContainer landed, so fall back to formats + both.
+      captureFormats: p.capture_formats ?? [...p.formats, "wav", "flac"],
+    });
   },
 
   captures: [],

@@ -180,6 +180,9 @@ storage:
 recordings:
   dir: "../recordings"
   sample_rate: 8000
+  # format: flac             # wav (default, 16-bit mono PCM) | flac (lossless,
+  #                          #   ~half the size for speech; web playback, loudness
+  #                          #   normalization and MP3 uploads all read it the same)
   # Recording name + folder layout. Both are optional {token} templates.
   # filename_template builds the basename (no extension); empty uses the default
   # "{date}_{time}_{tg}" — e.g. 20260810_230041_1005479 — which drops the
@@ -640,8 +643,14 @@ sdr:
   #                                 #  Every other IQ tap is post-combine, so this
   #                                 #  is the only capture that can be replayed
   #                                 #  through a different combiner. Needs mrc.
-  #     diversity_capture_seconds: 0 # length of that dump, 1..60 (0 = 5 s). Two
-  #                                 #  CS16 branches run to tens of MB/s.
+  #     diversity_capture_seconds: 0 # length of that dump, 1..120 (0 = 5 s). Two
+  #                                 #  CS16 branches run to tens of MB/s at high
+  #                                 #  rates; a 1 GiB/branch cap always applies.
+  #     diversity_capture_format: cs16 # per-branch container: cs16 (default) or
+  #                                 #  flac (lossless FLAC, bit-exact twin of the
+  #                                 #  cs16 — same clamp/scale — at roughly half
+  #                                 #  the size). Rates > 1 MS/s fall back to
+  #                                 #  cs16. Requires diversity_capture.
   #     verbose_debug: false        # log every control-channel RPC to this
   #                                 #  server — decoded call name and arguments
   #                                 #  plus a hex dump of the frame — at DEBUG.
@@ -1125,6 +1134,10 @@ trunking:
   #     # p25_phase1_soft_decision: "on"  # per-bit soft Viterbi on the
   #     #                               # C4FM TSBK trellis (marginal-
   #     #                               # signal gain; C4FM sites only)
+  #     # p25_quiet_noncontrol_duid: true # silence the per-frame
+  #     #                               # "non-control DUID" debug line
+  #     #                               # (TDU spam on a busy CC); decode
+  #     #                               # behaviour unchanged
   #
   #   - name: "Legacy-P25-Phase2"
   #     protocol: p25
@@ -1459,6 +1472,9 @@ broadcast:
 #     - serial: "00000001"
 #       dir: "../iq/"
 #       tap: wideband            # or: ddc (small narrowband channel recording)
+#       format: wav              # wav (default, SDRtrunk-compatible RIFF/WAVE)
+#                                # | flac (lossless, ~30–50% smaller; replays
+#                                #   and mounts back as a tuner identically)
 #   replay:
 #     - file: "../iq/00000001_20260521T120000Z.wav"
 #       serial: "replay-01"
@@ -1473,6 +1489,10 @@ broadcast:
 #     enabled: true
 #     dir: "../iq/auto/"
 #     format: cs16               # cs16 (default) | f32 (GNU Radio cfile) | u8
+#                                # | wav (RIFF/WAVE wrapper — opens directly in
+#                                #   Audacity / analysis tools) | flac (lossless,
+#                                #   ~30–50% smaller). wav/flac wrap the same
+#                                #   16-bit body, so both stay replayable.
 #     tap: wideband              # wideband (default, full-rate SDR — large files)
 #                                # | ddc (narrowband channelised stream at the
 #                                #   pipeline rate, e.g. 144 kHz for TETRA — far
@@ -1495,6 +1515,29 @@ broadcast:
 #                                #   loses sync — captures the re-acquisition IQ,
 #                                #   ideal for debugging sync-loss / slow warm-up
 #                                #   lock (pair with tap: ddc for small files)
+#     on_voice_grant: true       # fire a CC-context capture on every voice grant
+#                                #   (rate-limited by cooldown) — the control-
+#                                #   channel half of the per-call diagnostic
+#                                #   container; pair with voice_iq_debug below
+#
+#   # Per-call voice-channel IQ debug captures — the voice half of the
+#   # "diagnostic container" workflow. Every voice call writes the exact
+#   # channelised IQ stream its decode chain consumed to
+#   # <dir>/<UTC>_<system>_tg<group>_<freq>_<rate>_voice.cs16 plus a
+#   # .metadata.json sidecar (system/talkgroup/source/frequency/rate), so a
+#   # hopped voice channel's raw samples are on disk the moment a decode
+#   # sounds wrong — replayable directly via `gophertrunk replay` / siglab.
+#   # Concurrent calls each get their own files. Heavy on disk when the
+#   # voice taps run at a full SDR rate (physical voice tuner) rather than
+#   # the channelised 48 kHz of a wideband-derived virtual tap.
+#   voice_iq_debug:
+#     enabled: true
+#     dir: "../iq/voice-debug/"
+#     format: cs16               # cs16 (default) | wav (Audacity-ready) | flac
+#                                #   (lossless, ~30–50% smaller). All wrap the
+#                                #   same 16-bit body and stay replayable.
+#     max_mb: 512                # per-call size cap (0 = default 512 MB);
+#                                #   the sidecar notes truncation when hit
 
 # User-interface tabs. Every navigation tab shows by default in both the
 # web UI and the terminal TUI. If you run GopherTrunk for one main task

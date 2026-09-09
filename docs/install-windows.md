@@ -34,7 +34,13 @@ anywhere — the contents are the same.
 
 ## 2. Run the installer
 
-Double-click `setup.exe` and accept the defaults. The installer:
+Double-click `setup.exe` and accept the defaults. After the license
+page, the installer shows the short GopherTrunk **Terms of Service**
+(lawful monitoring only, no warranty — the usual scanner-software
+ground rules) and asks you to tick the acknowledgment box before it
+will continue; your acceptance is recorded locally so the CLI never
+asks again. If you use the portable ZIP instead, `gophertrunk` shows
+the same terms once on first run. The installer:
 
 - Copies `gophertrunk.exe` to `C:\Program Files\GopherTrunk\` —
   a single static binary, no DLLs to ship. **This is the only

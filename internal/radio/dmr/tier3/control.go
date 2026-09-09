@@ -66,6 +66,13 @@ type ControlChannel struct {
 	// handleBroadcast. Single-threaded with the IQ pump.
 	chanFreqLogged bool
 
+	// CSBK debug-log parking (handleCSBK): an unchanged repeat of the
+	// last-logged (opcode, FID, cc) is summarised at csbkRepeatLogInterval
+	// instead of logged per burst. Single-threaded with the IQ pump.
+	lastCSBKLog csbkLogKey
+	csbkLogAt   time.Time
+	csbkRepeats int
+
 	// topo accumulates the system topology (identity + adjacent sites) for the
 	// hunt/discovery layer; read via Topology().
 	topo topologyModel
@@ -206,6 +213,18 @@ func (c *ControlChannel) decodeInfoBlock(b *dmr.Burst) ([]byte, bool) {
 	return InfoBitsToBytes(bits), true
 }
 
+// csbkLogKey identifies a CSBK for debug-log parking: the same
+// (opcode, FID, cc) repeating is one beacon, not new information.
+type csbkLogKey struct {
+	opcode CSBKOpcode
+	fid    uint8
+	cc     uint8
+}
+
+// csbkRepeatLogInterval is how often an unchanged repeating CSBK (the idle
+// Aloha beacon) is summarised in the debug log.
+const csbkRepeatLogInterval = 10 * time.Second
+
 func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 	// Dispatch on FID before opcode: a vendor CSBK is routed to the
 	// vendor handler so its opcode is not misread against the
@@ -214,11 +233,27 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 		c.handleVendorCSBK(vendor, cc, csbk)
 		return
 	}
-	// Log every standard CSBK so the control-channel stream is visible
-	// in the debug log the way a reference decoder (dsd-neo) shows it —
-	// the dominant Aloha beacon is otherwise consumed silently once the
-	// CC is locked, which made GopherTrunk look idle.
-	c.log.Debug("dmr/tier3: csbk", "opcode", csbk.Opcode, "fid", csbk.FID, "cc", cc)
+	// Log standard CSBKs so the control-channel stream is visible in the
+	// debug log the way a reference decoder (dsd-neo) shows it — the
+	// dominant Aloha beacon is otherwise consumed silently once the CC is
+	// locked, which made GopherTrunk look idle. But an idle CC repeats the
+	// SAME beacon ~16×/s forever, which buried a debug log in thousands of
+	// identical lines (field report: 2177 C_ALOHA lines in two minutes).
+	// Park the repeats: any opcode/FID/cc CHANGE logs immediately; an
+	// unchanged repeat logs at csbkRepeatLogInterval with the suppressed
+	// count, so the stream stays visibly alive without the flood.
+	key := csbkLogKey{opcode: csbk.Opcode, fid: csbk.FID, cc: cc}
+	if key != c.lastCSBKLog || c.now().Sub(c.csbkLogAt) >= csbkRepeatLogInterval {
+		if c.csbkRepeats > 0 {
+			c.log.Debug("dmr/tier3: csbk", "opcode", csbk.Opcode, "fid", csbk.FID, "cc", cc,
+				"repeats_suppressed", c.csbkRepeats)
+		} else {
+			c.log.Debug("dmr/tier3: csbk", "opcode", csbk.Opcode, "fid", csbk.FID, "cc", cc)
+		}
+		c.lastCSBKLog, c.csbkLogAt, c.csbkRepeats = key, c.now(), 0
+	} else {
+		c.csbkRepeats++
+	}
 	switch csbk.Opcode {
 	case OpAloha:
 		sysID := ParseAloha(csbk.Payload).SystemID

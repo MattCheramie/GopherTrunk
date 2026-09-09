@@ -12,6 +12,9 @@ import (
 // PDU) — the exact layout ParseMACResource reads (EN 300 392-2 §21.4.3.1 /
 // §21.5.2). ULDL=1 and monitoring-pattern=1 keep parseChanAlloc out of its
 // augmented / frame-18 branches so the TM-SDU begins right after the element.
+// The length indication is stamped with the PDU's real octet length — it used
+// to be a hardcoded 1 ("any non-reserved value"), which the decoder now honours
+// as an 8-bit PDU bound.
 func macResourceGrant(ssi uint32, carrier uint16, timeslot uint8, tmsdu []byte) []byte {
 	w := &cmceBitWriter{}
 	w.u(uint64(MACPDUResource), 2) // MAC PDU type
@@ -19,7 +22,7 @@ func macResourceGrant(ssi uint32, carrier uint16, timeslot uint8, tmsdu []byte) 
 	w.u(0, 1)                      // grant position
 	w.u(0, 2)                      // encryption mode (0 = clear)
 	w.u(0, 1)                      // random access
-	w.u(1, 6)                      // length indication (not 0x3f/0x3e)
+	w.u(0, 6)                      // length indication — stamped below
 	w.u(uint64(addrSSI), 3)        // address type = SSI
 	w.u(uint64(ssi), 24)           // SSI
 	w.u(0, 1)                      // power control absent
@@ -33,7 +36,24 @@ func macResourceGrant(ssi uint32, carrier uint16, timeslot uint8, tmsdu []byte) 
 	w.u(uint64(carrier), 12)       // main carrier number
 	w.u(0, 1)                      // extended carrier absent
 	w.u(1, 2)                      // monitoring pattern (nonzero → no frame-18 field)
-	return append(w.bits, tmsdu...)
+	return stampMACResourceLength(append(w.bits, tmsdu...))
+}
+
+// stampMACResourceLength patches a built MAC-RESOURCE bit vector's 6-bit length
+// indication (bit offsets 7..12: after type+fill+grant-position+encryption+
+// random-access) to the PDU's total length in octets, rounded up — the octet
+// coding both reference decoders implement (osmo-tetra decode_length /
+// tetra-kit decodeLength). A real transmitter fill-pads the final octet; the
+// decoder clamps the bound to the block, so the round-up alone is enough here.
+func stampMACResourceLength(bits []byte) []byte {
+	octets := (len(bits) + 7) / 8
+	if octets == 0 || octets > 0x3a {
+		panic("stampMACResourceLength: PDU length outside the plain length-indication range")
+	}
+	for i := 0; i < 6; i++ {
+		bits[7+i] = byte((octets >> (5 - i)) & 1)
+	}
+	return bits
 }
 
 // cmceReleaseTMSDU / cmceSetupTMSDU wrap a CMCE PDU in a BL-UDATA LLC PDU — the

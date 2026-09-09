@@ -92,6 +92,20 @@ func (m *MuellerMuller) Process(dst []float32, src []float32) []float32 {
 	return dst
 }
 
+// Reset returns the loop to its just-constructed state, so a downstream
+// consumer that applies a large mid-stream correction (e.g. a coarse
+// carrier de-rotation) can re-acquire symbol timing from scratch on the
+// corrected signal instead of carrying a phase parked against the old one.
+// The nominal sps and gain are preserved.
+func (m *MuellerMuller) Reset() {
+	m.mu = m.sps
+	m.prevSym = 0
+	m.prevMid = 0
+	m.have = false
+	m.prevTail = 0
+	m.havePrev = false
+}
+
 // Mu returns the current sub-sample phase accumulator (rad-equivalent;
 // in (-1, sps] depending on where the loop is in the symbol period).
 // At steady state on a noise-free signal mu cycles deterministically

@@ -1,5 +1,10 @@
 package trunking
 
+import (
+	"encoding/binary"
+	"hash/fnv"
+)
+
 // TopologySnapshot is the protocol-neutral system topology a control-channel
 // decoder accumulates over a run: the system/site identity, the neighbor
 // (adjacent) sites it advertised, and its band plan. The signal-lab engine
@@ -72,9 +77,21 @@ type TopoChannelRef struct {
 type TopoNeighborRef struct {
 	RFSS          uint8  `json:"rfss" yaml:"rfss"`
 	Site          uint8  `json:"site" yaml:"site"`
+	LRA           uint8  `json:"lra,omitempty" yaml:"lra,omitempty"`
+	SystemID      uint32 `json:"system_id,omitempty" yaml:"system_id,omitempty"`
 	ChannelID     uint8  `json:"channel_id,omitempty" yaml:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty" yaml:"channel_number,omitempty"`
 	FrequencyHz   uint32 `json:"frequency_hz,omitempty" yaml:"frequency_hz,omitempty"`
+	// Uplink* name the neighbour's explicit uplink channel when the broadcast
+	// carried one (the P25 AMBT adjacent-status form); zero otherwise, in
+	// which case the uplink is derived from the band plan's transmit offset.
+	UplinkChannelID     uint8  `json:"uplink_channel_id,omitempty" yaml:"uplink_channel_id,omitempty"`
+	UplinkChannelNumber uint16 `json:"uplink_channel_number,omitempty" yaml:"uplink_channel_number,omitempty"`
+	UplinkHz            uint32 `json:"uplink_hz,omitempty" yaml:"uplink_hz,omitempty"`
+	// StatusFlags is a short human-readable summary of the neighbour's CFVA
+	// flags from the TSBK adjacent-status form (e.g. "valid,active"),
+	// empty when the flags were never observed.
+	StatusFlags string `json:"status_flags,omitempty" yaml:"status_flags,omitempty"`
 }
 
 // TopoBandPlanSlot is one entry of a P25-style band plan (IDEN_UP): a channel
@@ -86,6 +103,78 @@ type TopoBandPlanSlot struct {
 	BandwidthHz uint32 `json:"bandwidth_hz,omitempty" yaml:"bandwidth_hz,omitempty"`
 	TxOffsetHz  int64  `json:"tx_offset_hz,omitempty" yaml:"tx_offset_hz,omitempty"`
 	AccessTDMA  bool   `json:"access_tdma,omitempty" yaml:"access_tdma,omitempty"`
+}
+
+// Fingerprint returns a stable 64-bit hash of the snapshot's MATERIAL content:
+// the system identity plus the secondary control channels, neighbor (adjacent)
+// sites, and band plan. Display-only metadata (SystemName/Protocol) is excluded,
+// as are per-broadcast varying stats that live on the SiteUpdate payload rather
+// than here (carrier offset, TSBK error rate). Two snapshots with equal
+// fingerprints describe the same topology, so a control-channel decoder can
+// edge-trigger its site.update event on it — publishing only when the content
+// actually changes instead of on every status broadcast (many per second on
+// P25). A nil snapshot hashes to 0. Slice order is taken as-is (Snapshot()
+// emits deterministic order); a reorder would at worst force one extra publish,
+// never a missed change.
+func (t *TopologySnapshot) Fingerprint() uint64 {
+	h := fnv.New64a()
+	if t == nil {
+		return h.Sum64()
+	}
+	var b [8]byte
+	put := func(v uint64) {
+		binary.LittleEndian.PutUint64(b[:], v)
+		_, _ = h.Write(b[:])
+	}
+	put(uint64(t.WACN))
+	put(uint64(t.SystemID))
+	put(uint64(t.NAC))
+	put(uint64(t.RFSS))
+	put(uint64(t.Site))
+	put(uint64(t.LRA))
+	put(uint64(t.ColorCode))
+	put(uint64(t.RAN))
+	put(uint64(t.MCC))
+	put(uint64(t.MNC))
+	put(uint64(t.LocationArea))
+	if t.PrimaryCC != nil {
+		put(uint64(t.PrimaryCC.ChannelID))
+		put(uint64(t.PrimaryCC.ChannelNumber))
+		put(uint64(t.PrimaryCC.FrequencyHz))
+		put(uint64(t.PrimaryCC.UplinkHz))
+	}
+	for _, s := range t.Secondary {
+		put(uint64(s.ChannelID))
+		put(uint64(s.ChannelNumber))
+		put(uint64(s.FrequencyHz))
+		put(uint64(s.UplinkHz))
+	}
+	for _, n := range t.Neighbors {
+		put(uint64(n.RFSS))
+		put(uint64(n.Site))
+		put(uint64(n.LRA))
+		put(uint64(n.SystemID))
+		put(uint64(n.ChannelID))
+		put(uint64(n.ChannelNumber))
+		put(uint64(n.FrequencyHz))
+		put(uint64(n.UplinkChannelID))
+		put(uint64(n.UplinkChannelNumber))
+		put(uint64(n.UplinkHz))
+		_, _ = h.Write([]byte(n.StatusFlags))
+	}
+	for _, s := range t.BandPlan {
+		put(uint64(s.ChannelID))
+		put(s.BaseHz)
+		put(uint64(s.SpacingHz))
+		put(uint64(s.BandwidthHz))
+		put(uint64(s.TxOffsetHz))
+		if s.AccessTDMA {
+			put(1)
+		} else {
+			put(0)
+		}
+	}
+	return h.Sum64()
 }
 
 // TopologyProvider is the optional hook a control-channel pipeline implements

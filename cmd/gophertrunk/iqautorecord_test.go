@@ -46,7 +46,7 @@ func TestCaptureDDCToFile(t *testing.T) {
 		make([]complex64, 128), make([]complex64, 128), make([]complex64, 128),
 	}}
 	path := filepath.Join(t.TempDir(), "ddc.cs16")
-	samples, _, err := captureDDCToFile(context.Background(), tap, path, siglab.FormatS16, 1)
+	samples, _, err := captureDDCToFile(context.Background(), tap, path, siglab.FormatS16, 1, uint32(tap.rate))
 	if err != nil {
 		t.Fatalf("captureDDCToFile: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestCaptureDDCToFileReportsDrops(t *testing.T) {
 		make([]complex64, 64),
 	}}
 	path := filepath.Join(t.TempDir(), "ddc.cs16")
-	_, drops, err := captureDDCToFile(context.Background(), tap, path, siglab.FormatS16, 1)
+	_, drops, err := captureDDCToFile(context.Background(), tap, path, siglab.FormatS16, 1, uint32(tap.rate))
 	if err != nil {
 		t.Fatalf("captureDDCToFile: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestCaptureDDCToFileReportsDrops(t *testing.T) {
 
 // TestCaptureDDCToFileNilTap errors clearly when the control decoder is absent.
 func TestCaptureDDCToFileNilTap(t *testing.T) {
-	if _, _, err := captureDDCToFile(context.Background(), nil, filepath.Join(t.TempDir(), "x.cs16"), siglab.FormatS16, 1); err == nil {
+	if _, _, err := captureDDCToFile(context.Background(), nil, filepath.Join(t.TempDir(), "x.cs16"), siglab.FormatS16, 1, 48000); err == nil {
 		t.Error("captureDDCToFile(nil tap) = nil error, want an error")
 	}
 }

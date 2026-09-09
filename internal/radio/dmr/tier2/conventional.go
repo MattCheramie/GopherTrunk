@@ -13,7 +13,9 @@ package tier2
 
 import (
 	"encoding/hex"
+	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +24,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
+	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -31,6 +34,29 @@ import (
 // itself once, then stays quiet — the Beacons counter keeps the exact
 // count. See handleCSBK.
 const beaconLogInterval = 30 * time.Second
+
+// csbkFailLogInterval parks the Debug log for CSBK bursts that BPTC-decode
+// but fail the CSBK CRC (or are BPTC-uncorrectable). A keyed idle IPSC
+// repeater can put such a burst on BOTH timeslots every 30 ms (field
+// report: one identical "CSBK CRC mismatch" line per burst for seconds at
+// a time), so the first failure logs immediately — with the block's
+// opcode/FID/LB/PF and raw info hex, the instrument that lets the next
+// report pin what those bursts actually are — and unchanged repeats are
+// summarised at this interval with the suppressed count. Mirrors the Tier
+// III csbkRepeatLogInterval parking.
+const csbkFailLogInterval = 10 * time.Second
+
+// lateEntryConfirm is how many CRC-valid embedded-LC superframes must name
+// the same (destination, source) before a transmission whose Voice LC
+// Header was never decoded is granted by late entry. The embedded LC repeats
+// every superframe (360 ms), so two agreeing copies cost ~720 ms of the
+// transmission and rule out a lone miscorrected LC forging a phantom call.
+const lateEntryConfirm = 2
+
+// lateEntryWindow bounds how long a single unconfirmed late-entry candidate
+// stays valid: a second agreeing LC must land within this much of the first
+// or the candidate is restarted.
+const lateEntryWindow = 3 * time.Second
 
 // LockState is the payload of cc.locked / cc.lost events emitted by
 // the Tier II per-repeater state machine. DMR Tier II is conventional
@@ -69,6 +95,17 @@ type Counters struct {
 	// IPSC / linked-repeater profile) to ignore other systems sharing the
 	// wideband passband.
 	DroppedOffCC uint64
+	// LateEntries counts grants raised by late entry — a transmission whose
+	// Voice LC Header bursts never decoded (lost to a fade / bin-edge SNR at
+	// keyup) but whose embedded Link Control, repeated every voice
+	// superframe, named the call. Zero when every transmission's header
+	// decodes; a steadily climbing value on a live repeater is the signature
+	// of a weak tap (the conversation is being caught mid-transmission).
+	LateEntries uint64
+	// CSBKCRCFail counts CSBK-typed bursts that passed BPTC(196,96) but failed
+	// the CSBK CRC — either between-beacon noise, or a real proprietary CSBK
+	// train GT does not yet understand (see handleCSBK's parked log).
+	CSBKCRCFail uint64
 }
 
 // LockedFrequencyHz / LockedNAC make LockState satisfy
@@ -146,6 +183,51 @@ type ConventionalChannel struct {
 	// atomic cnt below.
 	calls map[uint32]*convCall
 
+	// voice assembles voice superframes from the same dibit stream Process
+	// slices bursts from, so the embedded Link Control (bursts B–E of every
+	// superframe) can grant a transmission whose Voice LC Header never
+	// decoded — DMR late entry, the mechanism every subscriber radio uses to
+	// join a call in progress. Without it the conventional path had exactly
+	// one chance per transmission (the header bursts at keyup, the weakest
+	// moment of a PTT on a marginal tap): a header lost to a fade dropped the
+	// whole over, which an operator with a radio beside the scanner sees as
+	// "GT said the call ended but the conversation continued". Lazily built
+	// on the first Process call (interleaved when InterleavedVoice is set,
+	// single-slot for direct mode); nil until then, so IngestBurst-only
+	// callers (tests, the Tier III adapter) are unaffected.
+	voice *dmrvoice.Decoder
+
+	// lateEntry holds the unconfirmed late-entry candidates keyed by
+	// destination: the (source, first-seen) of an embedded LC that named a
+	// call not in calls. A second agreeing LC within lateEntryWindow grants.
+	lateEntry map[uint32]*lateEntryCandidate
+
+	// endedAtDibit records, per destination, the absolute dibit index of the
+	// Terminator-with-LC burst that last released its call. The voice
+	// superframe assembler runs a span behind the burst slicer, so the
+	// closing superframes of a transmission can surface AFTER its terminator
+	// was processed; their embedded LCs belong to the call that just ended
+	// and must not seed a late-entry re-grant of it (measured on air: 7
+	// phantom grant/release pairs in a 120 s capture without this gate). An
+	// LC whose superframe started before the terminator is ignored.
+	endedAtDibit map[uint32]int
+	// ingestDibit is the absolute dibit index of the burst IngestBurst is
+	// currently handling when driven from Process (−1 otherwise).
+	ingestDibit int
+
+	// polarity is the discriminator polarity (0 identity, dmr.PolarityFlip)
+	// this stream decodes at, learned from the first FEC-valid burst; −1 while
+	// unknown, when both candidates are tried. DMR's data and voice sync
+	// words are each other's flip image, so until the polarity is known a
+	// voice burst A at the untried polarity looks like a data burst and gets
+	// its (AMBE-bit) slot type parsed; once known, only real data-sync bursts
+	// reach the slot-type path. A front end's inversion is a fixed property
+	// of the stream, so the lock is never dropped.
+	polarity int
+	// burstValid is set by the FEC-validated decode paths (header BPTC+RS,
+	// CSBK CRC, terminator LC) so Process can learn the polarity.
+	burstValid bool
+
 	// cnt holds the lock-free decode-activity counters exposed via
 	// Counters(). Incremented on the existing hot paths with atomic
 	// adds so any goroutine can snapshot them without taking c.mu.
@@ -157,11 +239,30 @@ type ConventionalChannel struct {
 		locks        atomic.Uint64
 		beacons      atomic.Uint64
 		droppedOffCC atomic.Uint64
+		lateEntries  atomic.Uint64
+		csbkCRCFail  atomic.Uint64
 	}
 
 	// beaconLogAt is the last time handleCSBK emitted an Info "site alive"
 	// line; guarded by mu and used only to rate-limit that log.
 	beaconLogAt time.Time
+
+	// csbkFailLog parks the CSBK-failure Debug log (see csbkFailLogInterval).
+	// Touched only on the decode goroutine.
+	csbkFailLog struct {
+		at         time.Time
+		suppressed int
+		lastKey    string
+	}
+}
+
+// lateEntryCandidate is one unconfirmed late-entry call: the source the
+// first embedded LC named for a destination, when it was seen, and how many
+// agreeing LCs have accumulated.
+type lateEntryCandidate struct {
+	src     uint32
+	firstAt time.Time
+	seen    int
 }
 
 // Counters returns a snapshot of this channel's decode-activity
@@ -175,6 +276,8 @@ func (c *ConventionalChannel) Counters() Counters {
 		Locks:        c.cnt.locks.Load(),
 		Beacons:      c.cnt.beacons.Load(),
 		DroppedOffCC: c.cnt.droppedOffCC.Load(),
+		LateEntries:  c.cnt.lateEntries.Load(),
+		CSBKCRCFail:  c.cnt.csbkCRCFail.Load(),
 	}
 }
 
@@ -222,6 +325,8 @@ func New(opts Options) *ConventionalChannel {
 		tag = "dmr-tier2"
 	}
 	return &ConventionalChannel{
+		ingestDibit:      -1,
+		polarity:         -1,
 		bus:              opts.Bus,
 		log:              log,
 		systemName:       opts.SystemName,
@@ -298,15 +403,24 @@ func (c *ConventionalChannel) handleCSBK(b *dmr.Burst, slot dmr.SlotType) {
 	payload := b.PayloadBits()
 	bits, errs := framing.DecodeBPTC196_96(payload)
 	if errs < 0 {
-		c.log.Debug("dmr/tier2: CSBK BPTC uncorrectable (between-beacon noise)", "cc", slot.ColorCode)
+		c.logCSBKFailure("dmr/tier2: CSBK BPTC uncorrectable (between-beacon noise)", slot, nil, nil)
 		return
 	}
-	csbk, err := tier3.ParseCSBK(infoBitsToBytes(bits))
+	info := infoBitsToBytes(bits)
+	csbk, err := tier3.ParseCSBK(info)
 	if err != nil {
-		c.log.Debug("dmr/tier2: CSBK CRC mismatch (between-beacon noise)", "cc", slot.ColorCode)
+		// BPTC(196,96) passed — the burst is well received — but the 16-bit
+		// CSBK CRC (ETSI mask, pinned by real Tier III vectors) does not check.
+		// On a keyed idle IPSC repeater this can be EVERY burst on both slots
+		// for seconds (a vendor-proprietary CSBK train, not noise), so the log
+		// is parked and carries the decoded header + raw block so the next
+		// field log pins what the train is. Not a decode error on the bus.
+		c.cnt.csbkCRCFail.Add(1)
+		c.logCSBKFailure("dmr/tier2: CSBK CRC mismatch (between-beacon noise or proprietary CSBK train)", slot, &csbk, info)
 		return
 	}
 	c.cnt.beacons.Add(1)
+	c.burstValid = true
 
 	// Rate-limit the operator-facing Info line so a fast beacon interval
 	// doesn't flood the log; the counter still records every beacon.
@@ -324,6 +438,140 @@ func (c *ConventionalChannel) handleCSBK(b *dmr.Burst, slot dmr.SlotType) {
 	} else {
 		c.log.Debug("dmr/tier2: beacon", "cc", slot.ColorCode, "csbk", csbk.Opcode.String())
 	}
+}
+
+// logCSBKFailure emits the parked Debug line for a CSBK burst that failed
+// BPTC or CRC: the first occurrence of a (message, cc, opcode, fid) key logs
+// at once with the block's header fields + raw info hex; repeats within
+// csbkFailLogInterval are counted and summarised on the next emit. A change
+// of key (different colour code / opcode) logs immediately so a real
+// transition is never hidden behind the parking.
+func (c *ConventionalChannel) logCSBKFailure(msg string, slot dmr.SlotType, csbk *tier3.CSBK, info []byte) {
+	key := msg + "|" + strconv.Itoa(int(slot.ColorCode))
+	attrs := []any{"cc", slot.ColorCode}
+	if csbk != nil {
+		key += "|" + strconv.Itoa(int(csbk.Opcode)) + "|" + strconv.Itoa(int(csbk.FID))
+		attrs = append(attrs,
+			"csbko", fmt.Sprintf("0x%02x", uint8(csbk.Opcode)), "fid", fmt.Sprintf("0x%02x", csbk.FID),
+			"lb", csbk.LB, "pf", csbk.PF, "info_hex", hex.EncodeToString(info))
+	}
+	now := c.now()
+	st := &c.csbkFailLog
+	if !st.at.IsZero() && st.lastKey == key && now.Sub(st.at) < csbkFailLogInterval {
+		st.suppressed++
+		return
+	}
+	if st.suppressed > 0 {
+		attrs = append(attrs, "suppressed_repeats", st.suppressed)
+	}
+	st.at, st.lastKey, st.suppressed = now, key, 0
+	c.log.Debug(msg, attrs...)
+}
+
+// ingestVoiceSuperframe is the late-entry path: every CRC-valid embedded
+// Link Control that names a group / unit-to-unit voice call either refreshes
+// the tracked call it belongs to or, for a destination no Voice LC Header
+// ever granted, accumulates towards a late-entry grant (lateEntryConfirm
+// agreeing superframes within lateEntryWindow). The optional colour-code
+// filter is honoured through the superframe's majority EMB colour code.
+func (c *ConventionalChannel) ingestVoiceSuperframe(sf dmrvoice.VoiceSuperframe) {
+	if !sf.HasLC {
+		return
+	}
+	if c.colorFilter != nil && (!sf.HasEMB || sf.EMBColorCode != *c.colorFilter) {
+		c.cnt.droppedOffCC.Add(1)
+		return
+	}
+	var dest, src uint32
+	var prio uint8
+	var enc, emer, individual bool
+	if gv, ok := sf.LC.AsGroupVoiceUser(); ok {
+		dest, src, enc, emer, prio = gv.GroupAddress, gv.SourceID, gv.Encrypted, gv.Emergency, gv.Priority
+	} else if uu, ok := sf.LC.AsUnitToUnitVoice(); ok {
+		dest, src, enc, emer, individual, prio = uu.DestinationID, uu.SourceID, uu.Encrypted, uu.Emergency, true, uu.Priority
+	} else {
+		return
+	}
+	if dest == 0 || src == 0 {
+		return
+	}
+	if end, ok := c.endedAtDibit[dest]; ok && sf.StartDibit < end {
+		// Closing superframe of a call whose terminator already released it.
+		return
+	}
+	now := c.now()
+	if existing, ok := c.calls[dest]; ok {
+		// The call is already tracked (header-granted or late-entered): the
+		// LC is liveness for slot reuse. A source change mid-call is a talker
+		// change on the same slot — republish, as the header path does.
+		existing.lastAt = now
+		if existing.src != src {
+			existing.src = src
+			c.publishGrant(dest, src, individual, enc, emer, prio, existing.slot, sf.EMBColorCode, true)
+		}
+		return
+	}
+	if c.lateEntry == nil {
+		c.lateEntry = make(map[uint32]*lateEntryCandidate)
+	}
+	cand := c.lateEntry[dest]
+	if cand == nil || cand.src != src || now.Sub(cand.firstAt) > lateEntryWindow {
+		c.lateEntry[dest] = &lateEntryCandidate{src: src, firstAt: now, seen: 1}
+		if lateEntryConfirm > 1 {
+			return
+		}
+		cand = c.lateEntry[dest]
+	} else {
+		cand.seen++
+		if cand.seen < lateEntryConfirm {
+			return
+		}
+	}
+	delete(c.lateEntry, dest)
+	// Two agreeing CRC-valid embedded LCs are as strong an on-air proof as a
+	// BPTC+RS-clean header: declare the lock too, so a camped channel whose
+	// first transmission lost its header still reports locked.
+	c.cnt.lateEntries.Add(1)
+	if c.polarity < 0 {
+		// The assembler ran on identity-polarity dibits (see Process), so two
+		// CRC-valid LCs also fix the stream's polarity at identity.
+		c.polarity = 0
+	}
+	c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: sf.EMBColorCode})
+	if c.calls == nil {
+		c.calls = make(map[uint32]*convCall)
+	}
+	ts := c.assignSlot(now)
+	c.calls[dest] = &convCall{src: src, slot: ts, lastAt: now}
+	c.publishGrant(dest, src, individual, enc, emer, prio, ts, sf.EMBColorCode, true)
+}
+
+// publishGrant publishes one trunking.Grant for this channel and logs it.
+// lateEntry marks a grant raised from the embedded LC rather than a header.
+func (c *ConventionalChannel) publishGrant(dest, src uint32, individual, enc, emer bool, prio uint8, ts uint8, cc uint8, lateEntry bool) {
+	c.bus.Publish(events.Event{
+		Kind: events.KindGrant,
+		Payload: trunking.Grant{
+			System:              c.systemName,
+			Protocol:            c.protocolTag,
+			GroupID:             dest,
+			SourceID:            src,
+			Individual:          individual,
+			FrequencyHz:         c.freqHz,
+			ChannelID:           cc,
+			Timeslot:            ts,
+			DMRInterleavedVoice: c.interleavedVoice,
+			Encrypted:           enc,
+			Emergency:           emer,
+			Priority:            prio,
+			At:                  c.now(),
+		},
+	})
+	c.log.Debug("dmr/tier2: grant",
+		"system", c.systemName, "freq_hz", c.freqHz,
+		"cc", cc, "dst", dest, "src", src,
+		"individual", individual, "enc", enc, "emer", emer,
+		"late_entry", lateEntry)
 }
 
 func (c *ConventionalChannel) maybeLock(s LockState) {
@@ -362,6 +610,16 @@ func (c *ConventionalChannel) MarkLost() {
 	}
 	c.locked = false
 	c.bus.Publish(events.Event{Kind: events.KindCCLost, Payload: c.last})
+}
+
+// ResetLateEntry drops any unconfirmed late-entry candidates and the voice
+// superframe assembler's buffered state, e.g. after a retune.
+func (c *ConventionalChannel) ResetLateEntry() {
+	c.lateEntry = nil
+	c.endedAtDibit = nil
+	if c.voice != nil {
+		c.voice.Reset()
+	}
 }
 
 func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType) {
@@ -414,6 +672,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 	// tuned frequency. Declare the lock here (not on the slot type alone)
 	// so a false sync / miscorrected slot type can't forge it.
 	c.cnt.fecPass.Add(1)
+	c.burstValid = true
 	c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: slot.ColorCode})
 	flc, err := dmr.ParseFLC(infoBytes)
 	if err != nil {
@@ -460,28 +719,10 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		ts = c.assignSlot(now)
 		c.calls[dest] = &convCall{src: src, slot: ts, lastAt: now}
 	}
-	c.bus.Publish(events.Event{
-		Kind: events.KindGrant,
-		Payload: trunking.Grant{
-			System:              c.systemName,
-			Protocol:            c.protocolTag,
-			GroupID:             dest,
-			SourceID:            src,
-			Individual:          individual,
-			FrequencyHz:         c.freqHz,
-			ChannelID:           slot.ColorCode,
-			Timeslot:            ts,
-			DMRInterleavedVoice: c.interleavedVoice,
-			Encrypted:           enc,
-			Emergency:           emer,
-			Priority:            prio,
-			At:                  c.now(),
-		},
-	})
-	c.log.Debug("dmr/tier2: grant",
-		"system", c.systemName, "freq_hz", c.freqHz,
-		"cc", slot.ColorCode, "dst", dest, "src", src,
-		"individual", individual, "enc", enc, "emer", emer)
+	// A header grant supersedes any pending late-entry candidate for the
+	// destination (the header is the stronger evidence and arrives first).
+	delete(c.lateEntry, dest)
+	c.publishGrant(dest, src, individual, enc, emer, prio, ts, slot.ColorCode, false)
 }
 
 func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) {
@@ -493,14 +734,27 @@ func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) 
 	// TS2 call. The Terminator-with-LC carries the same FLC as the Voice LC
 	// Header — group talkgroup or unit-to-unit destination — protected by
 	// BPTC(196,96) + RS(12,9) with the terminator parity seed.
-	dest, ok := c.terminatorDest(b)
+	dest, ok, bptcOK := c.terminatorDest(b)
+	if ok {
+		c.burstValid = true
+	}
 	if !ok {
 		// The terminator's Full LC did not decode. With a single call active the
 		// terminator is unambiguous, so end that call (preserving the prompt
-		// teardown Tier II has always done). With two concurrent calls it is
-		// ambiguous — releasing by a guess could cross-tear the other slot — so
-		// release nothing and let each voice chain's own terminator detector +
-		// hangtime end its call.
+		// teardown Tier II has always done) — but only if its BPTC(196,96)
+		// block decoded (an RS/FLC mismatch on a well-received burst). A burst
+		// whose slot type says Terminator but whose payload is not even a BPTC
+		// codeword is a forged slot type, not a weak terminator: a repeater
+		// repeats the real Terminator-with-LC for its whole hang time (50–170
+		// copies on the 9 Sep captures), so a genuine end never depends on one
+		// uncorrectable burst, while a false one ends a live call mid-sentence.
+		// With two concurrent calls it is ambiguous — releasing by a guess could
+		// cross-tear the other slot — so release nothing and let each voice
+		// chain's own terminator detector + hangtime end its call.
+		if !bptcOK {
+			c.log.Debug("dmr/tier2: terminator slot type without a BPTC-valid payload ignored", "cc", slot.ColorCode)
+			return
+		}
 		if len(c.calls) != 1 {
 			c.log.Debug("dmr/tier2: ambiguous terminator (LC undecodable, two calls active); leaving to hangtime",
 				"cc", slot.ColorCode)
@@ -517,6 +771,14 @@ func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) 
 		return
 	}
 	delete(c.calls, dest)
+	delete(c.lateEntry, dest)
+	if c.ingestDibit >= 0 {
+		if c.endedAtDibit == nil {
+			c.endedAtDibit = make(map[uint32]int)
+		}
+		c.endedAtDibit[dest] = c.ingestDibit
+	}
+
 	// A Terminator with LC is the explicit end of the transmission. Publish a
 	// call release so the engine ends the call at once, rather than waiting out
 	// the composer's hangtime / no-voice timers — the same prompt-teardown path
@@ -540,26 +802,30 @@ func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) 
 // call destination it names (talkgroup or called subscriber), or ok=false if
 // the embedded LC fails FEC. It mirrors handleVoiceHeader's BPTC + RS(12,9)
 // pipeline but with the terminator parity seed.
-func (c *ConventionalChannel) terminatorDest(b *dmr.Burst) (uint32, bool) {
+//
+// bptcOK reports whether the burst's BPTC(196,96) block decoded at all, so
+// the caller can tell a weak-but-real terminator (BPTC ok, RS/FLC mismatch)
+// from a forged slot type on a non-BPTC payload.
+func (c *ConventionalChannel) terminatorDest(b *dmr.Burst) (dest uint32, ok bool, bptcOK bool) {
 	bits, errs := framing.DecodeBPTC196_96(b.PayloadBits())
 	if errs < 0 {
-		return 0, false
+		return 0, false, false
 	}
 	infoBytes := infoBitsToBytes(bits)
 	if !framing.VerifyRS12_9(infoBytes, framing.RS129SeedTerminatorLC) {
-		return 0, false
+		return 0, false, true
 	}
 	flc, err := dmr.ParseFLC(infoBytes)
 	if err != nil {
-		return 0, false
+		return 0, false, true
 	}
 	if gv, ok := flc.AsGroupVoiceUser(); ok {
-		return gv.GroupAddress, true
+		return gv.GroupAddress, true, true
 	}
 	if uu, ok := flc.AsUnitToUnitVoice(); ok {
-		return uu.DestinationID, true
+		return uu.DestinationID, true, true
 	}
-	return 0, false
+	return 0, false, true
 }
 
 // convCall is one in-progress conventional-DMR call. slot is the synthetic

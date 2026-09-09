@@ -5,245 +5,159 @@ import (
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-// TestProcessDecodesGroupVoiceGrantAfterSync builds a bit stream
-// containing 30 bits of padding (so the SyncDetector primes), the
-// 24-bit outbound sync, and a 32-bit OSW carrying a Group Voice
-// Channel Grant. Process must publish a KindGrant on the bus.
-func TestProcessDecodesGroupVoiceGrantAfterSync(t *testing.T) {
-	bus := events.NewBus(8)
+// realAirStream renders OSWs back-to-back in the on-air frame format
+// plus the trailing sync the bracket framer needs, preceded by an
+// alternating warmup that can never frame (10101010… ≠ 10101100).
+func realAirStream(warmup int, osws ...OSW) []byte {
+	out := make([]byte, 0, warmup+len(osws)*FrameBits+SyncBits)
+	for i := 0; i < warmup; i++ {
+		out = append(out, byte(i&1))
+	}
+	for _, o := range osws {
+		out = append(out, EncodeOSWFrame(o)...)
+	}
+	return append(out, OutboundSyncBits()...)
+}
+
+func drainEvents(sub *events.Subscription) (locked []LockState, grants []trunking.Grant) {
+	for {
+		select {
+		case ev := <-sub.C:
+			switch ev.Kind {
+			case events.KindCCLocked:
+				if ls, ok := ev.Payload.(LockState); ok {
+					locked = append(locked, ls)
+				}
+			case events.KindGrant:
+				if g, ok := ev.Payload.(trunking.Grant); ok {
+					grants = append(grants, g)
+				}
+			}
+		default:
+			return locked, grants
+		}
+	}
+}
+
+// TestProcessDecodesRealAirFormat is the issue #1143 regression: a
+// control-channel stream in the REAL SmartNet air format (OP25
+// rx_smartnet framing) must lock and publish the grant. The
+// pre-#1143 decoder (24-bit sync 0xA4D7AA + BCH(64,16,11), a framing
+// no real system transmits) decodes NOTHING from this stream —
+// verified failing-first against the old code.
+func TestProcessDecodesRealAirFormat(t *testing.T) {
+	bus := events.NewBus(256)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
+	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Real", FrequencyHz: 854_562_500})
 
-	cc := New(Options{
-		Bus:         bus,
-		Log:         slog.Default(),
-		SystemName:  "Sys",
-		FrequencyHz: 851_012_500,
-	})
+	var seq []OSW
+	for r := 0; r < 5; r++ {
+		seq = append(seq,
+			// Two-OSW system ID + CC broadcast (the lock signal).
+			OSW{Address: 0x4567, Command: CmdFirstNormal},
+			OSW{Address: 0x1F00, Command: 0x8E},
+			// Two-OSW analog group voice grant: source RID 0x2E9A,
+			// talkgroup 0xB010, channel 0x1A5 (861.5375 MHz).
+			OSW{Address: 0x2E9A, Command: CmdFirstNormal},
+			OSW{Address: 0xB010, Group: true, Command: 0x1A5},
+			OSW{Address: 0x02F8, Command: CmdIdle},
+		)
+	}
+	cc.Process(realAirStream(200, seq...), 0)
 
-	// Command = (opcode << 4) | LCN. Group Voice Channel Grant on
-	// LCN 5.
-	cmd := (uint16(OpGroupVoiceChannelGrant) << 4) | 0x5
-	osw := OSW{Address: 0xCAFE, Command: cmd}
-	oswBits := OSWBits(osw)
+	locked, grants := drainEvents(sub)
+	if len(locked) == 0 {
+		t.Fatal("no cc.locked from a real-air-format stream")
+	}
+	if locked[0].SystemID != 0x4567 {
+		t.Errorf("SystemID = %#x, want 0x4567", locked[0].SystemID)
+	}
+	if len(grants) == 0 {
+		t.Fatal("no grant from a real-air-format stream")
+	}
+	g := grants[0]
+	if g.GroupID != 0xB010 || g.SourceID != 0x2E9A {
+		t.Errorf("grant tg/src = %#x/%#x, want 0xB010/0x2E9A", g.GroupID, g.SourceID)
+	}
+	if g.FrequencyHz != 861_537_500 {
+		t.Errorf("grant freq = %d, want 861537500 (channel 0x1A5, 800_standard)", g.FrequencyHz)
+	}
+}
 
-	stream := make([]byte, 30)
-	stream = append(stream, OutboundSyncBits()...)
-	stream = append(stream, oswBits...)
+// TestProcessSurvivesChunkBoundaries feeds the same stream one bit at
+// a time; framing state must carry across Process calls.
+func TestProcessSurvivesChunkBoundaries(t *testing.T) {
+	bus := events.NewBus(64)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	cc := New(Options{Bus: bus, SystemName: "Chunked", FrequencyHz: 854_562_500})
 
+	stream := realAirStream(31,
+		OSW{Address: 0x4567, Command: CmdFirstNormal},
+		OSW{Address: 0x1F00, Command: 0x8E},
+		OSW{Address: 0x02F8, Command: CmdIdle},
+	)
+	idx := 0
+	for _, b := range stream {
+		cc.Process([]byte{b}, idx)
+		idx++
+	}
+	locked, _ := drainEvents(sub)
+	if len(locked) == 0 || locked[0].SystemID != 0x4567 {
+		t.Fatalf("bit-at-a-time stream did not lock: %+v", locked)
+	}
+}
+
+// TestProcessCorrectsWireBitError flips one info-position wire bit
+// inside a frame; the ECC must repair it end-to-end through the
+// framer.
+func TestProcessCorrectsWireBitError(t *testing.T) {
+	bus := events.NewBus(64)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	cc := New(Options{Bus: bus, SystemName: "ECC", FrequencyHz: 854_562_500})
+
+	stream := realAirStream(20,
+		OSW{Address: 0x4567, Command: CmdFirstNormal},
+		OSW{Address: 0x1F00, Command: 0x8E},
+		OSW{Address: 0x02F8, Command: CmdIdle},
+	)
+	// First frame's payload starts after warmup+sync; corrupt an
+	// info-position bit (wire offset 40 = seq position 10).
+	stream[20+SyncBits+40] ^= 1
 	cc.Process(stream, 0)
-
-	var sawGrant bool
-	for {
-		select {
-		case ev := <-sub.C:
-			if ev.Kind == events.KindGrant {
-				g, ok := ev.Payload.(trunking.Grant)
-				if !ok {
-					t.Fatalf("Grant payload type = %T, want trunking.Grant", ev.Payload)
-				}
-				if g.System != "Sys" {
-					t.Errorf("Grant.System = %q, want Sys", g.System)
-				}
-				if g.Protocol != "motorola" {
-					t.Errorf("Grant.Protocol = %q, want motorola", g.Protocol)
-				}
-				if g.GroupID != 0xCAFE {
-					t.Errorf("Grant.GroupID = %#x, want 0xCAFE", g.GroupID)
-				}
-				sawGrant = true
-			}
-		default:
-			if !sawGrant {
-				t.Errorf("Process did not publish a KindGrant for a valid OSW")
-			}
-			return
-		}
+	locked, _ := drainEvents(sub)
+	if len(locked) == 0 || locked[0].SystemID != 0x4567 {
+		t.Fatalf("single wire bit error was not corrected: %+v", locked)
 	}
 }
 
-func TestProcessIgnoresGarbageWithoutSync(t *testing.T) {
-	bus := events.NewBus(8)
+// TestProcessRequiresBracketSync: a frame whose trailing sync is
+// corrupted must be dropped (framing lost), not decoded — the
+// double-sync bracket is what makes the 8-bit sync safe.
+func TestProcessRequiresBracketSync(t *testing.T) {
+	bus := events.NewBus(64)
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
+	cc := New(Options{Bus: bus, SystemName: "Bracket", FrequencyHz: 854_562_500})
 
-	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Sys"})
-
-	garbage := make([]byte, 1000)
-	for i := range garbage {
-		garbage[i] = byte(i & 1)
-	}
-	cc.Process(garbage, 0)
-
-	select {
-	case ev := <-sub.C:
-		t.Errorf("unexpected event from garbage stream: %v", ev.Kind)
-	default:
-	}
-}
-
-func TestProcessHandlesSyncSpanningCalls(t *testing.T) {
-	bus := events.NewBus(8)
-	defer bus.Close()
-	sub := bus.Subscribe()
-	defer sub.Close()
-
-	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Sys"})
-
-	cmd := (uint16(OpGroupVoiceChannelGrant) << 4) | 0x3
-	osw := OSW{Address: 0xBEEF, Command: cmd}
-	oswBits := OSWBits(osw)
-
-	chunk1 := make([]byte, 30)
-	chunk1 = append(chunk1, OutboundSyncBits()...)
-	cc.Process(chunk1, 0)
-	cc.Process(oswBits, len(chunk1))
-
-	var sawGrant bool
-	for {
-		select {
-		case ev := <-sub.C:
-			if ev.Kind == events.KindGrant {
-				sawGrant = true
-			}
-		default:
-			if !sawGrant {
-				t.Errorf("Process did not publish a KindGrant across the chunk boundary")
-			}
-			return
-		}
-	}
-}
-
-// TestProcessBCHModeDecodesEncodedOSW: in BCHOn mode the adapter
-// must read two 64-bit BCH(64,16,11) codewords after sync and
-// recover the underlying 32-bit OSW.
-func TestProcessBCHModeDecodesEncodedOSW(t *testing.T) {
-	bus := events.NewBus(8)
-	defer bus.Close()
-	sub := bus.Subscribe()
-	defer sub.Close()
-
-	cc := New(Options{
-		Bus: bus, Log: slog.Default(), SystemName: "Sys",
-		FrequencyHz: 851_012_500,
-	})
-	cc.SetBCHMode(BCHOn)
-
-	cmd := (uint16(OpGroupVoiceChannelGrant) << 4) | 0x4
-	osw := OSW{Address: 0xC0DE, Command: cmd}
-
-	// Encode the OSW's two 16-bit halves through BCH(64,16,11)
-	// and pack into a 128-bit channel stream.
-	cw1 := framing.BCHEncode64_16(osw.Address)
-	cw2 := framing.BCHEncode64_16(osw.Command)
-	encoded := make([]byte, 128)
-	for i := 0; i < 64; i++ {
-		if cw1&(uint64(1)<<uint(63-i)) != 0 {
-			encoded[i] = 1
-		}
-	}
-	for i := 0; i < 64; i++ {
-		if cw2&(uint64(1)<<uint(63-i)) != 0 {
-			encoded[64+i] = 1
-		}
-	}
-
-	stream := make([]byte, 30)
-	stream = append(stream, OutboundSyncBits()...)
-	stream = append(stream, encoded...)
-
+	stream := realAirStream(20,
+		OSW{Address: 0x4567, Command: CmdFirstNormal},
+		OSW{Address: 0x1F00, Command: 0x8E},
+	)
+	// Corrupt the SECOND frame's sync (the first frame's bracket).
+	stream[20+FrameBits] ^= 1
 	cc.Process(stream, 0)
-
-	var sawGrant bool
-	for {
-		select {
-		case ev := <-sub.C:
-			if ev.Kind == events.KindGrant {
-				g, _ := ev.Payload.(trunking.Grant)
-				if g.GroupID == 0xC0DE {
-					sawGrant = true
-				}
-			}
-		default:
-			if !sawGrant {
-				t.Errorf("BCHOn mode did not publish a KindGrant for the encoded OSW")
-			}
-			return
-		}
-	}
-}
-
-func TestSyncDetectorReset(t *testing.T) {
-	det := NewSyncDetector(OutboundSyncBits(), 0)
-	junk := make([]byte, 100)
-	det.Process(nil, junk, 0)
-	det.Reset()
-	if det.primed != 0 {
-		t.Errorf("post-Reset primed = %d, want 0", det.primed)
-	}
-	if det.pos != 0 {
-		t.Errorf("post-Reset pos = %d, want 0", det.pos)
-	}
-}
-
-// TestSetBCHModeDefault confirms the zero-value ControlChannel
-// uses BCHOff (the in-package fixture default), the accessor
-// mirrors the setter, and SetBCHMode round-trips both ways.
-// Production callers reach the new BCHOn default via the
-// ccdecoder connector (which always runs ParseBCHMode).
-func TestSetBCHModeDefault(t *testing.T) {
-	cc := New(Options{})
-	if cc.bchMode != BCHOff {
-		t.Errorf("default bchMode = %v, want BCHOff", cc.bchMode)
-	}
-	if got := cc.BCHMode(); got != BCHOff {
-		t.Errorf("BCHMode() = %v, want BCHOff", got)
-	}
-	cc.SetBCHMode(BCHOn)
-	if cc.bchMode != BCHOn {
-		t.Errorf("SetBCHMode(BCHOn) did not take effect")
-	}
-	if got := cc.BCHMode(); got != BCHOn {
-		t.Errorf("BCHMode() = %v, want BCHOn", got)
-	}
-	cc.SetBCHMode(BCHOff)
-	if cc.bchMode != BCHOff {
-		t.Errorf("SetBCHMode(BCHOff) did not take effect")
-	}
-}
-
-// TestParseBCHMode covers the config-string → BCHMode mapping the
-// ccdecoder connector uses to translate the `motorola_bch_mode`
-// YAML field into a SetBCHMode call.
-func TestParseBCHMode(t *testing.T) {
-	cases := []struct {
-		in   string
-		want BCHMode
-		ok   bool
-	}{
-		{"", BCHOn, true},
-		{"off", BCHOff, true},
-		{"false", BCHOff, true},
-		{"0", BCHOff, true},
-		{"on", BCHOn, true},
-		{"ON", BCHOn, true},
-		{"true", BCHOn, true},
-		{"1", BCHOn, true},
-		{" on ", BCHOn, true},
-		{"nonsense", BCHOn, false},
-	}
-	for _, tc := range cases {
-		got, ok := ParseBCHMode(tc.in)
-		if got != tc.want || ok != tc.ok {
-			t.Errorf("ParseBCHMode(%q) = (%v, %v), want (%v, %v)",
-				tc.in, got, ok, tc.want, tc.ok)
-		}
+	locked, _ := drainEvents(sub)
+	if len(locked) != 0 {
+		t.Fatalf("frame without its bracket sync still decoded: %+v", locked)
 	}
 }

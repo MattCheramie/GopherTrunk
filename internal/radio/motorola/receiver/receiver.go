@@ -1,26 +1,28 @@
-// Package receiver wires the IQ → MSK bit chain that feeds the
-// Motorola Type II / SmartZone control-channel state machine.
+// Package receiver wires the IQ → FSK bit chain that feeds the
+// Motorola Type II / SmartZone control-channel framer.
 //
-//	IQ samples
+//	IQ samples (channelized, SampleRateHz)
 //	  → FM discriminator (internal/dsp/demod.FM)
-//	  → Gaussian matched filter + 2-level slicer (internal/dsp/demod.GFSK)
-//	  → Mueller-Müller symbol clock recovery (internal/dsp/sync.MuellerMuller)
-//	  → motorola.BitSink
+//	  → slow DC tracker (carrier-offset removal)
+//	  → boxcar symbol filter (one symbol wide)
+//	  → Mueller-Müller symbol clock recovery (internal/dsp/sync)
+//	  → zero-threshold slicer → motorola.BitSink
 //
-// Motorola Type II's control channel is 3600-baud MSK. MSK is a
-// special case of CPFSK (modulation index = 0.5) and decodes
-// cleanly via an FM-discriminator front-end plus a matched filter —
-// the same shape as the GFSK receiver. The GFSK helper's BT-
-// configurable Gaussian matched filter is the closest approximation
-// of an ideal MSK matched filter; with the default BT it works well
-// enough to recover bits from a clean MSK signal, and the
-// configurable BT lets the operator fine-tune for noisy or
-// off-spec transmitters.
+// The SmartNet control channel is 3600-baud binary FSK with ~±1.2 kHz
+// deviation. This chain mirrors trunk-recorder's proven
+// smartnet_fsk2_demod (PLL frequency detector → AGC → one-symbol
+// averaging filter → two-level symbol tracker → binary slicer): the
+// FM discriminator is the open-loop equivalent of its PLL frequency
+// detector, and the DC tracker stands in for the PLL's carrier
+// pull-in — at ±1.2 kHz deviation a few hundred hertz of residual
+// carrier offset is a large slicer bias, so it cannot be ignored the
+// way wider-deviation protocols can. The slicer threshold is zero and
+// the M&M timing error is amplitude-normalised, so no AGC is needed.
 //
 // The receiver emits raw bits (each byte is 0 or 1) via
-// motorola.BitSink. The downstream framing — 24-bit sync, 84-bit
-// OSW with a BCH(64,16,11) FEC reducing to 32 information bits —
-// lives in the parent motorola package + upstream FEC.
+// motorola.BitSink. The downstream framing — 8-bit sync, 76-bit
+// interleaved payload, convolutional-parity ECC, CRC-10 — lives in
+// the parent motorola package (frame.go / process.go).
 //
 // The receiver is stateful and not safe for concurrent Process
 // calls. Instantiate one per tuned frequency / per call chain.
@@ -36,29 +38,25 @@ import (
 const (
 	// SymbolRate is the control-channel bit rate.
 	SymbolRate = 3600.0
-	// BT is the Gaussian matched-filter product. 0.5 is the
-	// closest fit for an MSK matched filter; vendor receivers
-	// sometimes drop to ~0.3 for noisier sites.
-	BT = 0.5
-	// PulseSpanSymbols is the half-span of the Gaussian pulse on
-	// each side of the symbol time. 4 symbols is the typical
-	// receiver-side compromise.
-	PulseSpanSymbols = 4
+	// DeviationHz is the nominal FSK deviation (±), for modulators
+	// and documentation; the receive chain is deviation-agnostic.
+	DeviationHz = 1200.0
+	// dcTrackSeconds is the time constant of the discriminator DC
+	// tracker. Long against the 84-bit / ~23 ms frame so NRZ data
+	// content is untouched, short enough to pull in oscillator
+	// drift within a couple hundred milliseconds.
+	dcTrackSeconds = 0.1
 )
 
 // Options configures a Receiver.
 type Options struct {
-	// SampleRateHz is the IQ sample rate after any upstream
+	// SampleRateHz is the IQ sample rate after upstream
 	// channelization. Required; must be ≥ 2 × SymbolRate (7200 Hz).
+	// The production DDC delivers 18 kHz (5 samples/symbol).
 	SampleRateHz float64
 	// BitSink receives the raw bit stream the receiver decodes
 	// from IQ. Required.
 	BitSink motorola.BitSink
-	// PulseSpanSymbols overrides the Gaussian half-span. <= 0
-	// uses PulseSpanSymbols.
-	PulseSpanSymbols int
-	// BTProduct overrides the Gaussian BT. <= 0 uses BT.
-	BTProduct float64
 	// ClockGain is the Mueller-Müller loop gain. <= 0 uses 0.05.
 	ClockGain float64
 }
@@ -66,10 +64,20 @@ type Options struct {
 // Receiver is the composed IQ → bit pipeline.
 type Receiver struct {
 	fm      *demod.FM
-	gfsk    *demod.GFSK
 	clock   *sync.MuellerMuller
 	bitSink motorola.BitSink
 	bitBase int
+
+	// DC tracker state: one-pole mean estimate of the discriminator
+	// output (the carrier-offset term), subtracted before filtering.
+	dcAlpha float32
+	dcMean  float32
+
+	// Boxcar matched filter: N-sample moving average.
+	boxTaps int
+	boxHist []float32
+	boxPos  int
+	boxSum  float32
 
 	disc    []float32
 	matched []float32
@@ -90,24 +98,18 @@ func New(opts Options) *Receiver {
 	if sps < 2 {
 		panic("receiver: SampleRateHz must be >= 2*SymbolRate (7200 Hz)")
 	}
-	span := opts.PulseSpanSymbols
-	if span <= 0 {
-		span = PulseSpanSymbols
-	}
-	bt := opts.BTProduct
-	if bt <= 0 {
-		bt = BT
-	}
 	gain := opts.ClockGain
 	if gain <= 0 {
 		gain = 0.05
 	}
-
+	taps := int(sps + 0.5)
 	return &Receiver{
 		fm:      demod.NewFM(),
-		gfsk:    demod.NewGFSK(int(sps+0.5), span, bt),
 		clock:   sync.NewMuellerMuller(sps, gain),
 		bitSink: opts.BitSink,
+		dcAlpha: float32(1.0 / (dcTrackSeconds * opts.SampleRateHz)),
+		boxTaps: taps,
+		boxHist: make([]float32, taps),
 	}
 }
 
@@ -119,7 +121,25 @@ func (r *Receiver) Process(iq []complex64) {
 		return
 	}
 	r.disc = r.fm.Process(r.disc, iq)
-	r.matched = r.gfsk.MatchedFilter(r.matched, r.disc)
+	// Remove the carrier-offset DC term with a slow one-pole
+	// tracker, then apply the one-symbol boxcar matched filter.
+	if cap(r.matched) < len(r.disc) {
+		r.matched = make([]float32, len(r.disc))
+	} else {
+		r.matched = r.matched[:len(r.disc)]
+	}
+	inv := 1.0 / float32(r.boxTaps)
+	for i, x := range r.disc {
+		r.dcMean += r.dcAlpha * (x - r.dcMean)
+		x -= r.dcMean
+		r.boxSum += x - r.boxHist[r.boxPos]
+		r.boxHist[r.boxPos] = x
+		r.boxPos++
+		if r.boxPos == r.boxTaps {
+			r.boxPos = 0
+		}
+		r.matched[i] = r.boxSum * inv
+	}
 	r.symbols = r.clock.Process(r.symbols, r.matched)
 	if len(r.symbols) == 0 {
 		return
@@ -130,7 +150,11 @@ func (r *Receiver) Process(iq []complex64) {
 		r.bits = r.bits[:len(r.symbols)]
 	}
 	for i, s := range r.symbols {
-		r.bits[i] = byte(r.gfsk.Slice(s))
+		if s > 0 {
+			r.bits[i] = 1
+		} else {
+			r.bits[i] = 0
+		}
 	}
 	r.bitSink(r.bits, r.bitBase)
 	r.bitBase += len(r.bits)
@@ -138,9 +162,14 @@ func (r *Receiver) Process(iq []complex64) {
 
 // Reset returns the receiver to its initial state. Call on stream
 // re-sync (control-channel hunt success, IQ underrun recovery) so
-// the BitSink baseIdx restarts at 0 and the matched filter sheds
-// its history.
+// the BitSink baseIdx restarts at 0 and the filters shed their
+// history.
 func (r *Receiver) Reset() {
 	r.bitBase = 0
-	r.gfsk.Reset()
+	r.dcMean = 0
+	r.boxSum = 0
+	r.boxPos = 0
+	for i := range r.boxHist {
+		r.boxHist[i] = 0
+	}
 }

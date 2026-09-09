@@ -2,6 +2,7 @@ package receiver
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -177,6 +178,229 @@ func TestReceiverIsCarrierOffsetInvariant(t *testing.T) {
 	// leaving margin for the coarse AFC's small steady-state residual.
 	if frac < 0.95 {
 		t.Fatalf("offset-vs-baseline dibit agreement = %.3f over %d symbols, want >=0.95 — CoarseAFC should make decode invariant to a %.0f Hz carrier offset (issue #836)", frac, n-warmup, offsetHz)
+	}
+}
+
+// decodeDibitsChunked runs one IQ buffer through a DeviationHz-calibrated DMR
+// receiver in fixed-size chunks (mirroring how the daemon feeds live IQ) and
+// returns the recovered dibit stream. The pre-clock coarse acquirer only
+// applies its one-shot correction on the chunk AFTER it locks, so exercising it
+// requires chunked delivery — a single Process call mixes the whole buffer with
+// the identity NCO before the lock ever fires.
+func decodeDibitsChunked(iq []complex64, chunk int) []uint8 {
+	var got []uint8
+	r := New(Options{
+		SampleRateHz: 48_000,
+		DeviationHz:  1944.0,
+		DibitSink:    func(dibits []uint8, baseIdx int) { got = append(got, dibits...) },
+	})
+	for i := 0; i < len(iq); i += chunk {
+		end := i + chunk
+		if end > len(iq) {
+			end = len(iq)
+		}
+		r.Process(iq[i:end])
+	}
+	return got
+}
+
+// bestLagAgreement returns the fraction of dibits (over ref[warmup:]) that match
+// got at the single best constant lag in [-40, +40]. When the coarse acquirer
+// engages it re-acquires symbol timing on the corrected signal, which shifts the
+// recovered stream by a constant, decode-neutral number of symbols relative to a
+// stream that never engaged — so the streams are compared under their best
+// constant alignment, exactly as a downstream sync-word correlator finds a burst
+// wherever it lands. A true mis-decode stays at the ~0.25 chance / ~0.71
+// mis-slice floor at every lag; only a correct decode aligns.
+func bestLagAgreement(ref, got []uint8, warmup int) float64 {
+	best := 0.0
+	for lag := -40; lag <= 40; lag++ {
+		ok, tot := 0, 0
+		for i := warmup; i < len(ref); i++ {
+			j := i + lag
+			if j < 0 || j >= len(got) {
+				continue
+			}
+			tot++
+			if ref[i] == got[j] {
+				ok++
+			}
+		}
+		if tot > 500 {
+			if f := float64(ok) / float64(tot); f > best {
+				best = f
+			}
+		}
+	}
+	return best
+}
+
+// TestReceiverDecodesGrosslyMistunedDongle pins the issue #836 follow-up: the
+// pre-clock coarse carrier acquisition. The receiver's post-clock CoarseAFC
+// alone pulls in only a few hundred Hz, so a real RTL-SDR off by tens of ppm
+// (several kHz at 446 MHz — the reporter's case, with kalibrate-rtl unavailable
+// to hand-set sdr.ppm) sat past the decode cliff and never synced. The coarse
+// stage estimates the offset from the discriminator mean and de-rotates the IQ
+// once, before the discriminator, so the recovered stream matches the
+// zero-offset decode.
+//
+// Metric: decode each offset stream and the (never-engaging) zero-offset
+// reference, then take the best-constant-lag agreement over a post-acquisition
+// tail. Verified failing-first by disabling the stage (deadband → ∞): agreement
+// collapses to the ~0.71 mis-slice floor at 3–18 kHz and to the ~0.29 chance
+// floor in the ~1.2–1.5 kHz notch, versus ≥0.93 with the stage on.
+func TestReceiverDecodesGrosslyMistunedDongle(t *testing.T) {
+	const chunk = 4096 // RTL-realistic delivery; single Process can't exercise the stage
+	stream := balancedStream(4500)
+	// The reference never engages the acquirer (0 Hz < deadband), so it is
+	// identical to the pre-#836 decode and a stable ground truth.
+	ref := decodeDibitsChunked(makeC4FMIQWithOffset(stream, 0), chunk)
+
+	cases := []struct {
+		name     string
+		offsetHz float64
+	}{
+		// ≈2.7 ppm at 446 MHz — the ~1.2–1.5 kHz notch where the old code
+		// mis-locked to the wrong symbol instant (chance floor ~0.29).
+		{"mid-band notch 1500 Hz", 1500},
+		// ≈6.7 ppm — a typical RTL-SDR tuner error; old code floors at ~0.71.
+		{"grossly mistuned 3000 Hz", 3000},
+		// ≈13 ppm — a badly-mistuned dongle; old code floors at ~0.71.
+		{"grossly mistuned 6000 Hz", 6000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			off := decodeDibitsChunked(makeC4FMIQWithOffset(stream, tc.offsetHz), chunk)
+			// Skip past the two-window coarse acquisition. Observe accumulates whole
+			// chunks, so each window rounds up to ~one chunk beyond the 512-symbol
+			// minimum and the confirmed lock lands near ~1650 symbols; skip well past
+			// it so the measurement is over the frozen, centred steady state.
+			const warmup = 2400
+			if len(ref) <= warmup || len(off) <= warmup {
+				t.Fatalf("recovered too few dibits: ref=%d off=%d, need > %d", len(ref), len(off), warmup)
+			}
+			frac := bestLagAgreement(ref, off, warmup)
+			if frac < 0.95 {
+				t.Fatalf("dibit agreement with the zero-offset decode = %.3f at %.0f Hz, want >=0.95 — the coarse pre-clock acquirer should make decode invariant to a grossly-mistuned tuner (issue #836); the stage disabled floors at ~0.71 (mis-slice) / ~0.29 (notch)", frac, tc.offsetHz)
+			}
+		})
+	}
+}
+
+// prependNoise puts nNoise samples of complex Gaussian noise (amplitude amp)
+// ahead of sig — a stand-in for the idle noise a conventional / simplex channel
+// carries before its first transmission.
+func prependNoise(sig []complex64, nNoise int, amp float32, seed int64) []complex64 {
+	rng := rand.New(rand.NewSource(seed))
+	out := make([]complex64, nNoise+len(sig))
+	for i := 0; i < nNoise; i++ {
+		out[i] = complex(amp*float32(rng.NormFloat64()), amp*float32(rng.NormFloat64()))
+	}
+	copy(out[nNoise:], sig)
+	return out
+}
+
+// TestCoarseAcquirerEngagesAfterIdleNoise pins the idle-channel fix found while
+// replaying a real DMR simplex capture (issue #836): a conventional / simplex
+// channel is silent before the first transmission, and an earlier single-window
+// design locked on that leading noise (mean below the deadband → frozen at 0)
+// and never corrected the transmission. The two-window-agreement design instead
+// re-arms through idle noise and engages on the first ~two windows of the actual
+// (offset) signal. Verified failing-first against the single-window design:
+// there CoarseCarrierOffsetHz stays 0 (locked on silence); here it recovers the
+// tuner offset.
+func TestCoarseAcquirerEngagesAfterIdleNoise(t *testing.T) {
+	const chunk = 4096
+	const offsetHz = 4000.0 // ≈9 ppm at 446 MHz — well past the decode cliff
+	// ~1.4 windows of idle noise so a full pure-noise window is evaluated (and
+	// must be re-armed) before the signal starts.
+	noise := int(1.4 * coarseAcqSymbols * 10)
+	iq := prependNoise(makeC4FMIQWithOffset(balancedStream(3000), offsetHz), noise, 0.15, 1)
+
+	r := New(Options{
+		SampleRateHz: 48_000,
+		DeviationHz:  1944.0,
+		DibitSink:    func([]uint8, int) {},
+	})
+	for i := 0; i < len(iq); i += chunk {
+		end := i + chunk
+		if end > len(iq) {
+			end = len(iq)
+		}
+		r.Process(iq[i:end])
+	}
+	got := r.CoarseCarrierOffsetHz()
+	if got == 0 {
+		t.Fatalf("coarse stage never engaged after idle noise — it locked on the silence (issue #836 idle-channel bug); want a correction near %.0f Hz", offsetHz)
+	}
+	if math.Abs(got-offsetHz) > 500 {
+		t.Errorf("coarse offset after idle noise = %.1f Hz, want within 500 Hz of %.0f", got, offsetHz)
+	}
+}
+
+// TestCoarseAcquirerIgnoresPureNoise pins the other half of the idle-channel
+// design: a channel that is only ever noise (no transmission) must NOT engage
+// the stage — two independent noise windows do not agree above the deadband, so
+// a spurious per-window mean can't latch a bogus correction onto the stream.
+func TestCoarseAcquirerIgnoresPureNoise(t *testing.T) {
+	const chunk = 4096
+	rng := rand.New(rand.NewSource(7))
+	iq := make([]complex64, 60*coarseAcqSymbols*10) // ~60 windows of pure noise
+	for i := range iq {
+		iq[i] = complex(0.15*float32(rng.NormFloat64()), 0.15*float32(rng.NormFloat64()))
+	}
+	r := New(Options{
+		SampleRateHz: 48_000,
+		DeviationHz:  1944.0,
+		DibitSink:    func([]uint8, int) {},
+	})
+	for i := 0; i < len(iq); i += chunk {
+		end := i + chunk
+		if end > len(iq) {
+			end = len(iq)
+		}
+		r.Process(iq[i:end])
+	}
+	if got := r.CoarseCarrierOffsetHz(); got != 0 {
+		t.Errorf("coarse stage engaged on pure noise: reported %.1f Hz, want 0 (two noise windows must not agree above the deadband)", got)
+	}
+}
+
+// TestCoarseCarrierAcquirerReportsOffset pins the diagnostic getter and the
+// deadband: a grossly-mistuned signal reports a frozen coarse offset close to
+// the true tuner error (so the daemon can log it), while a well-tuned signal
+// leaves the stage dormant at 0 (the post-clock CoarseAFC handles small offsets
+// and the pre-clock stage must not perturb an already-decoding dongle).
+func TestCoarseCarrierAcquirerReportsOffset(t *testing.T) {
+	const chunk = 4096
+	stream := balancedStream(3000)
+
+	runOffset := func(offsetHz float64) float64 {
+		r := New(Options{
+			SampleRateHz: 48_000,
+			DeviationHz:  1944.0,
+			DibitSink:    func([]uint8, int) {},
+		})
+		iq := makeC4FMIQWithOffset(stream, offsetHz)
+		for i := 0; i < len(iq); i += chunk {
+			end := i + chunk
+			if end > len(iq) {
+				end = len(iq)
+			}
+			r.Process(iq[i:end])
+		}
+		return r.CoarseCarrierOffsetHz()
+	}
+
+	// Below the deadband: the stage stays dormant and reports exactly 0.
+	if got := runOffset(120); got != 0 {
+		t.Errorf("small (120 Hz) offset engaged the coarse stage: reported %.1f Hz, want 0", got)
+	}
+	// Grossly mistuned: the stage engages and its frozen estimate is within a
+	// few hundred Hz of the true offset (a small bias is expected from the
+	// finite acquisition window's residual symbol DC).
+	if got := runOffset(6000); math.Abs(got-6000) > 400 {
+		t.Errorf("6000 Hz offset: reported coarse offset %.1f Hz, want within 400 Hz of 6000", got)
 	}
 }
 
