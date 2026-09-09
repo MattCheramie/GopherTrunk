@@ -1233,7 +1233,8 @@ func TestDefaultVocoderForProtocolMappings(t *testing.T) {
 		"dmr-tier2":  "ambe2-dmr",
 		"dmr-tier3":  "ambe2-dmr",
 		"nxdn":       "ambe2-dmr",
-		"dpmr":       "ambe2",
+		"dpmr":       "ambe2-dmr",
+		"dstar":      "ambe2",
 		"tetra":      "tetra-acelp",
 		"tetra-dmo":  "tetra-acelp",
 	}

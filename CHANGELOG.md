@@ -8,6 +8,31 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **dPMR and D-STAR voice now decode to PCM (experimental, unverified on
+  air).** Following the NXDN precedent, both protocols gain end-to-end voice
+  chains: dPMR anchors on the FS1/FS2 voice syncs, carves each 80 ms frame's
+  4×72-bit TCH AMBE+2 payload, and renders through the `ambe2-dmr`
+  (3600x2450) vocoder (`internal/radio/dpmr/{traffic,voice,voice_ambe}.go`,
+  `internal/voice/composer/dpmr_voice.go`); D-STAR anchors its 96-bit DV
+  cadence on the Slow Data sync — independent of the header decode — and
+  renders through the base `ambe2` (AMBE 3600x2400) vocoder, whose codebook
+  is exactly the D-STAR codec (`internal/radio/dstar/{voice,voice_ambe}.go`,
+  `internal/voice/composer/dstar_voice.go`, the composer's first bit-based
+  chain). Each chain's AMBE interleave table is a documented placeholder
+  validated by synthetic encoder/decoder round-trips only; a real voice
+  capture is the verification gate (`docs/decoder-capture-needs.md`). Also
+  fixes the recorder's default vocoder map: `dpmr` now renders through
+  `ambe2-dmr` (it was wired to the 3600x2400 base codebook), and `dstar`
+  gains a mapping.
+- **Hardware-gated real-hardware harnesses for Airspy HF+ and HackRF**
+  (`internal/sdr/airspyhf/airspyhf_real_test.go`,
+  `internal/sdr/hackrf/hackrf_real_test.go`), mirroring the Airspy R2/Mini
+  harness: open/configure/stream smoke tests, bias-tee / RF-amp toggles, and
+  raw-USB diag probes, gated on `GOPHERTRUNK_AIRSPYHF_REAL` /
+  `GOPHERTRUNK_HACKRF_REAL` (Makefile: `test-airspyhf-real*`,
+  `test-hackrf-real*`). The HackRF harness exercises the Pro-only
+  narrowband-filter / FPGA-DC-block requests on a Pro and asserts they error
+  on other boards.
 - **FleetSync / FleetSync II protocol decoder (clean-room core)** (#437). A new
   `internal/radio/fleetsync` package decodes Kenwood FleetSync in-band ANI: the
   16-bit sync hunt, the FleetSync I block check (CRC), the FleetSync II
@@ -34,6 +59,16 @@ for tagged releases.
   never require acceptance.
 
 ### Fixed
+- **Voice-calibration docs described a DSD-FME invocation that cannot work**:
+  `dsd-fme -r <call>.raw -o reference.wav` (`-r` reads DSD-FME's cookie-headed
+  `.imb`/`.amb` container written by `recordings.mbe_files`, not the flat
+  `.raw`; `-o` selects an audio device) and claimed the output is 8 kHz PCM
+  (DSD-FME's `-w` stamps an 8 kHz header on 12 kHz synthesis, which the
+  calibrate harness's header-trusting reader silently accepts and then
+  measures collapsed correlation). `docs/voice-calibration.md` and
+  `docs/dmr-voice-quality.md` now show the working container-based recipe
+  with the required 12→8 kHz resample, plus the caveat that sample-level
+  xcorr across independent MBE decoders is depressed by construction.
 - **`sdr list --probe` no longer times out or swaps which RTL-SDR probes on
   macOS with two dongles** (#1135). Probing opened each dongle through the
   daemon bring-up envelope, which reset+retries a transient macOS

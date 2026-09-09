@@ -29,20 +29,26 @@
 //	             events.KindCCLocked / events.KindGrant on the bus
 //	             with `trunking.Grant.Protocol = "dpmr"`.
 //
+// Also wired now:
+//
+//	receiver/    The IQ → 4FSK dibit chain (2400 sym/s C4FM with
+//	             α=0.20 RRC + Mueller-Müller clock recovery).
+//	traffic.go   FS1/FS2-anchored voice-traffic adapter that carves
+//	             the TCH payload out of each 80 ms frame.
+//	voice.go     TCH → 4 × 72-bit AMBE+2 frame carve.
+//	voice_ambe.go The AMBE+2 FEC (Golay(23,12) + descramble) to the
+//	             49-bit vocoder payload, rendered by
+//	             internal/voice/ambe2's "ambe2-dmr" decoder via the
+//	             composer's dpmr voice chain.
+//
 // What's NOT yet wired (honest deferrals):
 //
-//   - The 4FSK demodulator + symbol-clock recovery for dPMR's
-//     2400 sym/sec air interface. internal/dsp/demod/c4fm.go is the
-//     closest fit; matched-filter parameters differ slightly.
 //   - The interleaver + FEC over CSBK bits. Mode 3 CSBKs use a
 //     short-block cyclic code with rate-3/4 convolutional outer
 //     coding; the parsing here assumes the upstream caller has
 //     already corrected errors.
-//   - Voice frame extraction → AMBE+2 vocoder. The vocoder lives
-//     in internal/voice/ambe2 (pure-Go, default-on).
-//
-// As with the other trunking packages: ship a clean structured
-// surface now, leave the analogue / FEC pieces as named follow-ups
-// so the trunking engine can consume the events end-to-end against
-// fixtures.
+//   - ⚠️ The whole voice path is UNVERIFIED ON AIR — the TCH
+//     interleave table is a documented placeholder and the frame
+//     geometry is spec-derived; a real dPMR voice capture is the
+//     gate (see voice_ambe.go).
 package dpmr

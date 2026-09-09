@@ -31,23 +31,22 @@
 //	            protocol packages so the engine + recorder + composer
 //	            don't need to know D-STAR is conventional.
 //
-// What's NOT yet wired (honest deferrals):
+// Also wired now:
 //
-//   - The 4800 bps GMSK demodulator + bit-clock recovery.
-//     internal/dsp/demod is the closest fit; D-STAR uses BT=0.5
-//     filtering with a slightly different matched-filter shape than
-//     the other protocols here.
-//   - The PCH FEC: convolutional rate-1/2 inner + scrambler outer +
-//     interleaver. Parsing here assumes upstream FEC has corrected
-//     errors.
-//   - Voice frame extraction → original AMBE vocoder (note: original
-//     AMBE, not AMBE+2 — separate algorithm, same DVSI patent family).
-//     IMBE lives in internal/voice/imbe and AMBE+2 in
-//     internal/voice/ambe2; plain AMBE is a future deferral with no
-//     pure-Go decoder shipped yet.
+//	receiver/     The IQ → 4800 bps GMSK (BT=0.5) bit chain.
+//	framing.DecodeDStarHeaderFEC  The PCH FEC (interleave →
+//	              descramble → depuncture → K=5 Viterbi), driven by
+//	              Process under FECOn.
+//	voice.go      Slow-Data-sync-anchored 96-bit DV cadence tracker
+//	              (VoiceChannel), independent of the header decode.
+//	voice_ambe.go The AMBE FEC to the 49-bit vocoder payload. D-STAR
+//	              carries the original AMBE 3600×2400 — which IS the
+//	              base decoder internal/voice/ambe2.New() implements
+//	              (params.go ports mbelib's ambe3600x2400.c), so no
+//	              separate vocoder is needed; the composer's dstar
+//	              voice chain renders it via the "ambe2" mapping.
 //
-// As with the other protocol packages: ship a clean structured
-// surface now, leave the analogue / FEC / vocoder pieces as named
-// follow-ups so the trunking engine can consume the events
-// end-to-end against fixtures.
+// ⚠️ The voice path is UNVERIFIED ON AIR — the AMBE interleave table
+// is a documented placeholder and the DV cadence is spec-derived; a
+// real D-STAR capture is the gate (see voice_ambe.go).
 package dstar

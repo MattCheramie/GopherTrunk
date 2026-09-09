@@ -516,8 +516,8 @@ func (c *Composer) ActiveChains() []string {
 type voiceKind int
 
 const (
-	// voiceKindUnsupported has no composer voice chain yet (dPMR, YSF, D-STAR,
-	// EDACS ProVoice) — its voice bursts are not decoded into PCM here.
+	// voiceKindUnsupported has no composer voice chain yet (YSF, EDACS
+	// ProVoice) — its voice bursts are not decoded into PCM here.
 	voiceKindUnsupported voiceKind = iota
 	// voiceKindFM is analog narrowband FM: conventional channels ("", fm,
 	// fm-conv, analog) and the analog-trunk voice channels (Motorola/LTR/
@@ -530,6 +530,8 @@ const (
 	voiceKindTETRA    // tetra
 	voiceKindTETRADMO // tetra-dmo (Direct Mode)
 	voiceKindNXDN     // nxdn
+	voiceKindDPMR     // dpmr (Mode 3) — experimental, unverified on air
+	voiceKindDSTAR    // dstar — experimental, unverified on air
 )
 
 // classifyVoiceKind maps a grant to its voiceKind. Digital protocols are matched
@@ -549,6 +551,10 @@ func classifyVoiceKind(cs trunking.CallStart) voiceKind {
 		return voiceKindTETRADMO
 	case "nxdn":
 		return voiceKindNXDN
+	case "dpmr":
+		return voiceKindDPMR
+	case "dstar":
+		return voiceKindDSTAR
 	}
 	proto := cs.Grant.Protocol
 	isAnalogTrunk := proto == "motorola" || proto == "ltr" || proto == "mpt1327" ||
@@ -673,6 +679,10 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, cs.Grant.TETRADMOBaseMNI, liveColour, ch.done)
 	case voiceKindNXDN:
 		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
+	case voiceKindDPMR:
+		go c.runDPMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
+	case voiceKindDSTAR:
+		go c.runDStarVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	default:
 		// Analog FM has no symbol clock to drift, so the rounded integer
 		// rate is fine; keep its uint32 signature unchanged.

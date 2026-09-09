@@ -71,19 +71,34 @@ The daemon writes two files under `recordings/<system>/<tg>/`:
 
 ### 2. Decode through DSD-FME (or OP25)
 
-Run the **same** `.raw` through an external reference decoder:
+Run the **same** frames through an external reference decoder.
+DSD-FME's `-r` mode does **not** read the flat `.raw` — it reads
+DSD-FME's own cookie-headed `.imb`/`.amb` container, which the daemon
+writes next to each recording when `recordings.mbe_files: true` is
+set (see [vocoders.md](vocoders.md)):
 
 ```sh
 # DSD-FME (https://github.com/lwvmobile/dsd-fme)
-dsd-fme -r <call>.raw -o reference.wav
+dsd-fme -f1 -w reference12k.wav -r <call>.imb   # P25 Phase 1 IMBE
+dsd-fme -fs -w reference12k.wav -r <call>.amb   # DMR AMBE+2
 
 # OP25 (https://github.com/osmocom/op25)
 # (see OP25's docs for mbe-decode invocation against a .raw)
 ```
 
-DSD-FME's `-r` mode reads the byte-packed AMBE+2 / IMBE frames
-directly and writes 8 kHz mono 16-bit PCM, matching the in-tree
-calibrate harness's expected WAV format.
+**DSD-FME's `-w` writer stamps an 8 kHz header on synthesis it
+produces at 12 kHz** (an upstream quirk — see the note in
+[vocoders.md](vocoders.md)). The calibrate harness trusts the WAV
+header, so feeding that file in directly *passes* the 8 kHz format
+gate but compares 1.5×-stretched audio — the cross-correlation
+collapses and the failure looks like a synthesis bug. Fix the rate
+first: treat the payload as 12 kHz and resample to a true 8 kHz mono
+16-bit PCM, e.g.
+
+```sh
+tail -c +45 reference12k.wav > ref12k.pcm   # strip the 44-byte header
+sox -t raw -r 12000 -e signed -b 16 -c 1 ref12k.pcm -r 8000 reference.wav
+```
 
 ### 3. Run the calibration
 
@@ -108,6 +123,18 @@ LagSamples, sample counts). Acceptance criteria:
 
 - `|RMSRatioDb| < 3.0` — loudness offset under ±3 dB.
 - `PeakXcorr > 0.85` — waveform similarity 85%+ at best lag.
+
+**AMBE+2 caveat:** sample-level cross-correlation against an
+*independent* MBE-family decoder (mbelib / DSD-FME) is weaker
+evidence than it looks — two MBE decoders synthesise harmonics with
+different absolute phase, so waveform xcorr is depressed by
+construction even when both decode the same speech correctly (see the
+note in `internal/voice/ambe2/dmr_sample_test.go`; the measured
+envelope correlation between a correct GopherTrunk and DSD-FME decode
+of the same frames is ~0.7). Treat a low AMBE+2 PeakXcorr with a
+clean RMS as a prompt to compare **envelope / octave-band energy**,
+not as an automatic synthesis failure; the strict xcorr gate is most
+meaningful for IMBE and for A/Bs of two in-tree configurations.
 
 ### 4. Tune if the thresholds miss
 
