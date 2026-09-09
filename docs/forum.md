@@ -11,7 +11,7 @@ hide_ctas: true
 
 Ask questions, share systems and talkgroups, and swap notes with other operators.
 Reading is open to everyone; posting needs a free [account](/account/). Prefer chat?
-The [Discord](https://discord.gg/x49Hr62uH) and [r/GopherTrunk](https://www.reddit.com/r/GopherTrunk)
+The [Discord](https://discord.gg/fB77PQA4yk) and [r/GopherTrunk](https://www.reddit.com/r/GopherTrunk)
 are still there too.
 
 <div class="forum" data-forum-list>
