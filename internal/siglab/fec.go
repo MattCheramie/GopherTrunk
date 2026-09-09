@@ -293,41 +293,50 @@ func tetraFEC(stream []uint8, land *SyncLandscape, sys trunking.System) []FECSta
 	return []FECStat{st}
 }
 
-// p25p2FEC tallies the P25 Phase 2 ISCH Golay(24,12,8) decode and the MAC-PDU
-// ½-rate trellis decode. After each outbound-sync hit (only sub-frame 0 of a
-// superframe carries the sync) the ISCH is 12 dibits at offset SyncDibits and
-// the trellis-coded MAC payload is 146 dibits after that.
+// p25p2FEC tallies what a P25 Phase 2 burst's FEC actually is: the (8,4) code
+// protecting the DUID that names the burst type, and the outer RS(63,35,29)
+// plus CRC-12 that protect an ACCH burst's MAC PDU.
+//
+// It used to tally an ISCH Golay(24,12,8) and a ½-rate MAC trellis. Neither
+// exists on air. The ACCH path runs dibits → 6-bit symbols → RS → CRC with no
+// inner convolutional code, and the ISCH is a 40-bit codeword occupying the
+// region this package modelled as sync + Golay (issue #915). Tallying them
+// reported health for stages the signal does not contain.
+//
+// A sync hit marks the first dibit of a burst, so the whole BurstDibits-long
+// burst follows from it.
 func p25p2FEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
-	isch := FECStat{Stage: "ISCH Golay(24,12,8)"}
-	mac := FECStat{Stage: "MAC trellis(1/2)"}
-	const macDibits = 146
-	ischDibits := p25phase2.ISCHDibits
-	syncLen := land.SyncLen
+	duid := FECStat{Stage: "DUID (8,4)"}
+	acch := FECStat{Stage: "ACCH RS(63,35,29)+CRC12"}
 	for _, pos := range land.positions {
-		ischStart := pos + syncLen
-		if ischStart+ischDibits > len(stream) {
+		if pos+p25phase2.BurstDibits > len(stream) {
 			continue
 		}
 		best := -1
+		var bestBurst []uint8
 		for rot := uint8(0); rot < 4; rot++ {
-			if _, errs, err := p25phase2.DecodeISCH(rotateDibits(stream[ischStart:ischStart+ischDibits], rot)); err == nil {
-				if best < 0 || errs < best {
-					best = errs
-				}
+			b := rotateDibits(stream[pos:pos+p25phase2.BurstDibits], rot)
+			if p25phase2.BurstTypeOf(b) != p25phase2.BurstInvalid {
+				best = 0
+				bestBurst = b
+				break
 			}
 		}
-		tallyErrs(&isch, best)
-
-		macStart := ischStart + ischDibits
-		if macStart+macDibits <= len(stream) {
-			bestM := -1
-			for rot := uint8(0); rot < 4; rot++ {
-				if _, metric := framing.DecodeP25Trellis(rotateDibits(stream[macStart:macStart+macDibits], rot)); bestM < 0 || metric < bestM {
-					bestM = metric
-				}
-			}
-			tallyErrs(&mac, bestM)
+		tallyErrs(&duid, best)
+		if bestBurst == nil || !p25phase2.BurstTypeOf(bestBurst).IsACCH() {
+			continue
+		}
+		// The scramble phase is not known here — siglab characterises a
+		// signal rather than following a system — so an unscrambled burst is
+		// the only one this can vouch for. A scrambled one tallies as
+		// uncorrectable, which is the honest reading: without the identity,
+		// its MAC PDU cannot be recovered.
+		res, ok := p25phase2.DecodeACCHBurst(bestBurst, 0, nil)
+		if ok {
+			tallyErrs(&acch, res.RSErrors)
+		} else {
+			tallyErrs(&acch, -1)
 		}
 	}
-	return []FECStat{isch, mac}
+	return []FECStat{duid, acch}
 }

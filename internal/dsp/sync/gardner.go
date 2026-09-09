@@ -18,6 +18,21 @@ package sync
 // and signed deviation otherwise; a scalar update applies it to
 // the sub-sample phase.
 //
+// The update SUBTRACTS the error, and that sign is load-bearing.
+// Sampling late drives e positive — the midpoint has moved past the
+// zero crossing toward the next symbol while the symbol difference
+// keeps the opposite sign — so the next symbol instant must be
+// pulled *earlier*. Adding it instead makes the loop's stable point
+// the transition instant, the worst sampling phase there is: the
+// loop settles there and never leaves, and its yield then degrades
+// monotonically with loop gain. That inversion shipped here, and it
+// was invisible to every test in this package because they shape
+// symbols with a flat-topped triangular window and assert a quadrant
+// match rate, which a badly mistimed sample still satisfies. It cost
+// roughly 7x the recoverable P25 Phase 2 signalling (issue #915);
+// see gardner_timing_test.go, which judges the loop against the
+// transmitted dibits through the repo's real RRC modulator.
+//
 // Compared to MuellerMuller (this package) which is real-valued
 // and decision-directed, Gardner:
 //
@@ -137,7 +152,7 @@ func (g *Gardner) Process(dst, src []complex64) []complex64 {
 			// is the canonical form for complex signals.
 			diff := complex64(sym - g.prevSym)
 			err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
-			g.mu += g.sps + g.gain*err
+			g.mu += g.sps - g.gain*err
 		} else {
 			g.mu += g.sps
 			g.have = true
@@ -204,7 +219,7 @@ func (g *Gardner) Process2x(dst, src []complex64) []complex64 {
 		if g.have && midOK {
 			diff := complex64(sym - g.prevSym)
 			err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
-			g.mu += g.sps + g.gain*err
+			g.mu += g.sps - g.gain*err
 		} else {
 			g.mu += g.sps
 			g.have = true

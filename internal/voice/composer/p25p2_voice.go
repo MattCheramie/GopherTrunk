@@ -46,10 +46,23 @@ func newP25P2VoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 	return newVoiceFrontEnd(iqHz, bw, p25p2VoiceIntermediateHz, p25p2ChannelSelectHz)
 }
 
-// p25p2VoiceGardnerGain matches the value newP25Phase2Pipeline settled
-// on for the H-DQPSK symbol clock (smaller than the receiver default
-// because H-DQPSK slips differently than C4FM).
-const p25p2VoiceGardnerGain = 0.005
+// p25p2VoiceGardnerGain is the Gardner loop step for the H-DQPSK symbol
+// clock. This was 0.005 — a sixth of the receiver default — on the reasoning
+// that "H-DQPSK slips" at higher gains. That slip was the loop's inverted
+// feedback sign running away from the eye, and a smaller gain only ran away
+// more slowly (internal/dsp/sync/gardner.go). With the sign corrected the
+// loop is stable at every gain, and slower is simply worse: on an
+// eight-capture corpus scored against SDRtrunk, confirmed MAC PDUs go
+// 228 → 234 (92% → 94% of the reference) from 0.005 to 0.03, with a flat
+// plateau from 0.03 to 0.10. 0.03 is the receiver default; the override is
+// kept explicit so the value is visible where the receiver is built.
+const p25p2VoiceGardnerGain = 0.03
+
+// burstHistLen sizes the per-call burst-type histogram in the chain census.
+// The DUID is a 4-bit field, so all sixteen values need a bucket — an array
+// sized to the old SlotType range silently dropped FACCH-U (15), the very
+// burst type an unscrambled fixture produces.
+const burstHistLen = 16
 
 // slotHistLen sizes the per-call SlotType histogram in the chain census.
 // It spans SlotTypeUnknown (0x0) .. SlotTypeMACEndCont (0x9); an
@@ -137,6 +150,17 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 
 	rs, _ := c.sink.(rawFrameSink)
 	sfDec := p25p2.NewSuperframeDecoder()
+	// The receiver takes its coarse carrier estimate once and never retakes
+	// it, so a channel that drifts past the Costas loop's ±750 Hz pull-in
+	// stays lost for the rest of the call. carrierWD notices that no
+	// superframe has locked for a superframe's worth of dibits and asks for a
+	// re-seed; the reset itself happens between IQ chunks below, never from
+	// inside the receiver's own sink. Measured on a real Phase 2 traffic
+	// channel this is worth 7 → 15 distinct MAC PDUs over a 6.5 s call
+	// (issue #915).
+	carrierWD := p25p2.NewCarrierWatchdog(0)
+	reacquire := false
+	var carrierReseeds atomic.Uint64
 	// dispatcher decodes the MAC PDUs interleaved with voice on the
 	// traffic channel (talker alias, in-call source, encryption sync).
 	// It is the same shared dispatch the signalling follower runs off the
@@ -181,7 +205,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		macSubframesSeen atomic.Uint64
 		macPDUsDecoded   atomic.Uint64
 		macRSValid       atomic.Uint64
-		slotHist         [slotHistLen]atomic.Uint64
+		slotHist         [burstHistLen]atomic.Uint64
 	)
 	// drainSuperframes runs the shared per-superframe voice + MAC census
 	// body. It is driven by the hard DibitSink or, when the grant requests
@@ -189,31 +213,53 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// carry per-symbol soft differentials in Subframe.Soft that the MAC
 	// decode path picks up automatically. The census body is identical
 	// either way, so both paths stay in lock-step.
+	// One superframe of PN44 for the channel identity, built once: both the
+	// MAC and the voice path descramble against it.
+	scrambleSeq := p25p2.ScrambleSequence(macCfg.Seed)
 	drainSuperframes := func(sfs []p25p2.Superframe) {
 		for _, sf := range sfs {
 			superframesSeen.Add(1)
+			// Which S-ISCH slot this superframe anchored on, resolved by vote
+			// over its ACCH bursts. Voice bursts carry no signalling of their
+			// own to resolve it from, so they inherit it.
+			slotOffset, slotScore := p25p2.ResolveSuperframeSlotOffset(sf, scrambleSeq)
 			for _, sub := range sf.Subframes {
-				// Census every sub-frame's slot type — including
-				// SlotTypeUnknown and MAC types — before the voice gate,
-				// so the end-of-call census can show whether ISCH ever
-				// classified a MAC slot (#813).
-				if int(sub.SlotType) < slotHistLen {
-					slotHist[sub.SlotType].Add(1)
+				// Census every sub-frame by the burst type its DUID names,
+				// before the voice gate, so the end-of-call census shows
+				// what the channel actually carried.
+				//
+				// This used to census the ISCH SlotType. That field comes
+				// from this package's own ISCH model, which does not match
+				// the air (issue #915): the histogram read as
+				// slot_Unknown for every sub-frame of a channel that was
+				// decoding MAC PDUs perfectly well. The DUID is the field
+				// both reference decoders dispatch on, and it is protected
+				// by its own (8,4) code.
+				burst := p25p2.BurstTypeOf(sub.Dibits)
+				if int(burst) < burstHistLen {
+					slotHist[burst].Add(1)
 				}
-				if sub.SlotType.IsMAC() {
+				if burst.IsACCH() {
 					macSubframesSeen.Add(1)
 				}
-				if !sub.SlotType.IsVoice() {
+				if !burst.IsVoice() {
 					continue
 				}
 				voiceSubframes.Add(1)
 				bt.onVoice(0)
-				if rs == nil {
+				if rs == nil || slotScore <= 0 {
 					continue
 				}
-				frames, errBits, err := p25p2.ExtractVoiceFrames(sub)
+				// A voice burst's payload is PN44-scrambled at the same slot
+				// phase as an ACCH burst's, so it needs the offset the MAC
+				// bursts resolved for this superframe.
+				frames, errBits, unc, err := p25p2.ExtractBurstVoiceFrames(
+					sub.Dibits, (sub.Index+slotOffset)%p25p2.SubframesPerSuperframe, scrambleSeq)
 				if errBits > 0 {
 					corrErrBits.Add(uint64(errBits))
+				}
+				if unc > 0 {
+					uncorrectableSubframes.Add(uint64(unc))
 				}
 				if err != nil {
 					uncorrectableSubframes.Add(1)
@@ -257,11 +303,19 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true
 		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
-			drainSuperframes(sfDec.ProcessSoft(dibits, soft, baseIdx))
+			sfs := sfDec.ProcessSoft(dibits, soft, baseIdx)
+			if carrierWD.Observe(len(dibits), len(sfs)) {
+				reacquire = true
+			}
+			drainSuperframes(sfs)
 		}
 	} else {
 		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
-			drainSuperframes(sfDec.Process(dibits, baseIdx))
+			sfs := sfDec.Process(dibits, baseIdx)
+			if carrierWD.Observe(len(dibits), len(sfs)) {
+				reacquire = true
+			}
+			drainSuperframes(sfs)
 		}
 	}
 	rx := p25p2rx.New(rxOpts)
@@ -309,10 +363,15 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			"mac_subframes", macSubframesSeen.Load(),
 			"mac_pdus", macPDUsDecoded.Load(),
 			"mac_rs_valid", macRSValid.Load(),
+			// carrier_reseeds > 0 means the receiver lost its carrier
+			// mid-call and the watchdog restarted acquisition. A steady
+			// count on a channel that still decodes is normal; a high count
+			// with superframes near zero says acquisition never took.
+			"carrier_reseeds", carrierReseeds.Load(),
 		}
-		for st := 0; st < slotHistLen; st++ {
-			if cnt := slotHist[st].Load(); cnt > 0 {
-				attrs = append(attrs, "slot_"+p25p2.SlotType(st).String(), cnt)
+		for bt := 0; bt < burstHistLen; bt++ {
+			if cnt := slotHist[bt].Load(); cnt > 0 {
+				attrs = append(attrs, "burst_"+p25p2.BurstType(bt).String(), cnt)
 			}
 		}
 		c.log.Info("composer: p25p2 call census", attrs...)
@@ -336,6 +395,18 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			}
 			bt.observe(iq)
 			rx.Process(fe.Process(nil, iq))
+			if reacquire {
+				// Between chunks: Reset clears the receiver's one-shot
+				// carrier seed so the next samples re-estimate it, and the
+				// superframe decoder drops anchors that belong to the old
+				// carrier. Doing this inside the sink would re-enter a
+				// receiver that is mid-Process.
+				rx.Reset()
+				sfDec.Reset()
+				carrierWD.Reset()
+				reacquire = false
+				carrierReseeds.Add(1)
+			}
 		}
 	}
 }

@@ -46,7 +46,6 @@ func TestIngestSuperframeRoutesMACSubframes(t *testing.T) {
 	cc.SetTrellisMode(TrellisOn)
 
 	grant := grantPDU(0x1234, 0x00ABCD, 0x1, 0x005)
-	grant.Payload = append(grant.Payload, make([]byte, 17-len(grant.Payload))...)
 
 	var subs [SubframesPerSuperframe][]uint8
 	for i := range subs {
@@ -80,14 +79,6 @@ func TestDecodeSuperframeMACPDUsReturnsAllMACSubframes(t *testing.T) {
 		EncodeTalkerAliasFragment(TalkerAliasFragment{SourceID: 0xABC123, BlockIndex: 1, BlockCount: 2, Data: []byte("-7")}),
 		grantPDU(0x1234, 0x00ABCD, 0x1, 0x005),
 	}
-	for i := range pdus {
-		// Pad to the 18-byte MAC PDU width so the round-trip is bit-exact.
-		bytes := AssembleMACPDU(pdus[i])
-		if len(bytes) < 18 {
-			pdus[i].Payload = append(pdus[i].Payload, make([]byte, 18-len(bytes))...)
-		}
-	}
-
 	var subs [SubframesPerSuperframe][]uint8
 	macIdx := 0
 	for i := range subs {
@@ -106,9 +97,13 @@ func TestDecodeSuperframeMACPDUsReturnsAllMACSubframes(t *testing.T) {
 	if len(got) != len(pdus) {
 		t.Fatalf("DecodeSuperframeMACPDUs returned %d PDUs, want %d", len(got), len(pdus))
 	}
-	for i, want := range pdus {
-		if got[i].Opcode != want.Opcode {
-			t.Errorf("PDU[%d] opcode = %#x, want %#x", i, got[i].Opcode, want.Opcode)
+	// The PTT sub-frame is the odd one out on purpose: a PTT PDU has no inner
+	// opcode, its header byte *is* the opcode, so what comes back is 0x20 and
+	// not whatever PDU the fixture handed the encoder.
+	wantOps := []Opcode{pdus[0].Opcode, pdus[1].Opcode, 0x20}
+	for i, want := range wantOps {
+		if got[i].Opcode != want {
+			t.Errorf("PDU[%d] opcode = %#x, want %#x", i, got[i].Opcode, want)
 		}
 	}
 }
@@ -121,10 +116,6 @@ func TestDecodeSuperframeMACPDUsWithSlotTagsPTT(t *testing.T) {
 	es := EncryptionSync{AlgorithmID: 0x84, KeyID: 0x1234,
 		MessageIndicator: [9]byte{9, 8, 7, 6, 5, 4, 3, 2, 1}}
 	ptt := EncodePushToTalk(es)
-	// Pad to the 18-byte MAC PDU width so the round-trip is bit-exact.
-	if b := AssembleMACPDU(ptt); len(b) < 18 {
-		ptt.Payload = append(ptt.Payload, make([]byte, 18-len(b))...)
-	}
 
 	var subs [SubframesPerSuperframe][]uint8
 	for i := range subs {
@@ -155,49 +146,62 @@ func TestDecodeSuperframeMACPDUsWithSlotTagsPTT(t *testing.T) {
 }
 
 // TestDecodeSuperframeMACPDUsRSValidFlag pins the per-PDU RS-integrity
-// signal the source-RID gate + framing-health census read (issue #915):
-// a MAC PDU carrying a valid outer RS(24,16,9) parity (EncodeMACPDURS)
-// decodes with RSValid=true and its fields intact, while the same PDU
-// without parity (the plain Encode* form, standing in for a mis-framed
-// window) decodes with RSValid=false.
-func TestDecodeSuperframeMACPDUsRSValidFlag(t *testing.T) {
+// / TestDecodeSuperframeMACPDUsRSValid pins what the RSValid flag now reports:
+// that the burst's outer RS(63,35,29) closed, alongside the CRC-12. That is a
+// property of the burst rather than of the PDU inside it, so a well-formed
+// sub-frame always carries it — and damage past the code's correction budget
+// yields no PDU at all rather than an unvouched one.
+//
+// It replaces a test built on the older model, where RSValid meant an inner
+// RS(24,16,9) parity carried in the PDU's own bytes. P25 Phase 2 has no such
+// field; the outer code is the integrity the wire actually provides.
+func TestDecodeSuperframeMACPDUsRSValid(t *testing.T) {
 	const wantSrc = 315203
 	base := GroupVoiceChannelUser{ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc}
-	cfg := MACDecodeConfig{Trellis: TrellisOn}
+	cfg := MACDecodeConfig{}
 
-	decodeSource := func(pdu MACPDU) DecodedMACPDU {
-		t.Helper()
+	build := func(damage int) [SubframesPerSuperframe][]uint8 {
 		var subs [SubframesPerSuperframe][]uint8
 		for i := range subs {
 			if i == 0 {
-				subs[i] = EncodeMACSubframe(SlotTypeMACSignaling, uint8(i), pdu, TrellisOn, InterleaveOff)
+				subs[i] = EncodeMACSubframe(SlotTypeMACSignaling, uint8(i),
+					EncodeGroupVoiceChannelUser(base, false), TrellisOn, InterleaveOff)
+				for d := 0; d < damage; d++ {
+					subs[i][ISCHRegionDibits+1+3*d] ^= 1
+				}
 			} else {
 				subs[i] = EncodeVoiceSubframe(SlotTypeVoice4V, uint8(i), voicePayloads(Voice4VFrameCount))
 			}
 		}
-		got := DecodeSuperframeMACPDUsWithSlot(decodeOneSuperframe(t, subs), cfg)
-		if len(got) != 1 {
-			t.Fatalf("DecodeSuperframeMACPDUsWithSlot returned %d PDUs, want 1", len(got))
-		}
-		return got[0]
+		return subs
 	}
 
-	valid := decodeSource(EncodeMACPDURS(EncodeGroupVoiceChannelUser(base, false)))
-	if !valid.RSValid {
-		t.Error("RS-valid GROUP_VOICE_CHANNEL_USER decoded with RSValid=false")
+	got := DecodeSuperframeMACPDUsWithSlot(decodeOneSuperframe(t, build(0)), cfg)
+	if len(got) != 1 {
+		t.Fatalf("clean superframe returned %d PDUs, want 1", len(got))
 	}
-	if u, ok := valid.PDU.AsGroupVoiceChannelUser(); !ok || u.SourceID != wantSrc {
-		t.Errorf("RS-encoding altered the source RID: got %+v ok=%v, want SourceID=%d", u, ok, wantSrc)
+	if !got[0].RSValid {
+		t.Error("clean burst decoded with RSValid=false")
+	}
+	if u, ok := got[0].PDU.AsGroupVoiceChannelUser(); !ok || u.SourceID != wantSrc {
+		t.Errorf("recovered %+v ok=%v, want SourceID=%d", u, ok, wantSrc)
 	}
 
-	raw := decodeSource(EncodeGroupVoiceChannelUser(base, false))
-	if raw.RSValid {
-		t.Error("RS-invalid (no-parity) source PDU decoded with RSValid=true")
+	// Within the correction budget the RS repairs the burst and the source
+	// RID still comes back intact.
+	got = DecodeSuperframeMACPDUsWithSlot(decodeOneSuperframe(t, build(6)), cfg)
+	if len(got) != 1 || !got[0].RSValid {
+		t.Fatalf("6 damaged symbols: got %d PDUs, want 1 RS-valid", len(got))
+	}
+	if u, ok := got[0].PDU.AsGroupVoiceChannelUser(); !ok || u.SourceID != wantSrc {
+		t.Errorf("6 damaged symbols: recovered %+v ok=%v, want SourceID=%d", u, ok, wantSrc)
+	}
+
+	// Past it, nothing is emitted — an unvouched MAC PDU is a fabricated grant.
+	if got := DecodeSuperframeMACPDUsWithSlot(decodeOneSuperframe(t, build(14)), cfg); len(got) != 0 {
+		t.Errorf("14 damaged symbols returned %d PDUs, want 0: %+v", len(got), got)
 	}
 }
-
-// TestIngestSuperframeAllVoicePublishesNothing confirms an all-voice
-// superframe drives no control-channel events — the composer owns voice.
 func TestIngestSuperframeAllVoicePublishesNothing(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()

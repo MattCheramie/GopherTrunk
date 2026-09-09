@@ -9,7 +9,9 @@ package framing
 //
 //	G(x) = x^44 + x^40 + x^35 + x^29 + x^24 + x^10 + 1
 //
-// shifting one bit per clock and outputting bit 43. The seed is
+// shifting one bit per clock and outputting bit 43. The exponents index
+// the register from its output end (bit 43), not from bit 0 — see Next.
+// The seed is
 // computed once per call from the (WACN_ID, System_ID, Color Code)
 // triple — the same values the Network Status Broadcast MAC message
 // publishes — and the sequence restarts at the beginning of every
@@ -60,16 +62,34 @@ func NewPN44Scrambler(seed uint64) *PN44Scrambler {
 // 44-bit register) before the register shifts and the new feedback
 // bit clocks into position 0.
 //
-// The feedback bit is the XOR of the state bits at the polynomial's
-// non-leading tap positions (0, 10, 24, 29, 35, 40).
+// The feedback bit is the XOR of the state bits the polynomial's
+// non-leading exponents (0, 10, 24, 29, 35, 40) select. Those exponents
+// count from the register's OUTPUT end, which is bit 43 — so exponent e is
+// register bit 43-e, giving tap bits (43, 33, 19, 14, 8, 3).
+//
+// Reading the exponents as register bit indices directly instead taps
+// (40, 35, 29, 24, 10, 0): the mirror image about bit 43, which is the
+// reciprocal polynomial. That is a different but also-primitive sequence, so
+// every structural property this file tests — period, round-trip, seed
+// sensitivity — holds either way, and only real air can tell them apart.
+// This scrambler ran on the mirrored taps until 2026-09-01, which is why no
+// Phase 2 MAC PDU ever descrambled (issue #915): a descramble is exact or it
+// is noise, with nothing in between to hint at which.
+//
+// Verified against a real P25 Phase 2 traffic channel (WACN 0xBEE00 /
+// SysID 0x1FC / NAC 0x1F0): with these taps the FACCH-S PDUs come out
+// byte-identical to SDRtrunk's decode of the same capture, and every
+// recovered burst lands on the predicted sequence origin (slot k payload at
+// sequence bit k*360+20). With the mirrored taps no offset anywhere in the
+// 4320-bit sequence recovers anything.
 func (s *PN44Scrambler) Next() byte {
 	out := byte((s.state >> 43) & 1)
-	fb := byte((s.state>>40 ^
-		s.state>>35 ^
-		s.state>>29 ^
-		s.state>>24 ^
-		s.state>>10 ^
-		s.state) & 1)
+	fb := byte((s.state>>43 ^
+		s.state>>33 ^
+		s.state>>19 ^
+		s.state>>14 ^
+		s.state>>8 ^
+		s.state>>3) & 1)
 	s.state = ((s.state << 1) | uint64(fb)) & pn44Mask
 	return out
 }

@@ -155,6 +155,8 @@ func applySystemKnobs(sys *trunking.System, knobs map[string]string) {
 			sys.SystemID = uint16(parseUintKnob(v, 16))
 		case "site":
 			sys.Site = uint8(parseUintKnob(v, 8))
+		case "nac", "color_code", "colour_code":
+			sys.NAC = uint16(parseUintKnob(v, 16)) & 0x0FFF
 		case "tetra_colour_code", "tetra_color_code":
 			sys.TETRAColourCode = uint32(parseUintKnob(v, 32))
 		case "tetra_channel":
