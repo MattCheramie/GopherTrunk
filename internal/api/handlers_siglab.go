@@ -103,6 +103,10 @@ func (s *Server) handleSiglabProtocols(w http.ResponseWriter, r *http.Request) {
 		"protocols": decode,
 		"fixtures":  synth,
 		"formats":   []string{"u8", "f32", "cs16"},
+		// capture_formats is the superset the live capture-from-tuner route
+		// accepts: the headerless encodings plus the wav/flac containers
+		// (siglab.IQContainer). synth/upload stay on the headerless trio.
+		"capture_formats": []string{"u8", "f32", "cs16", "wav", "flac"},
 	})
 }
 

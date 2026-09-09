@@ -86,7 +86,11 @@ var fixtures = map[trunking.Protocol]fixture{
 	},
 	trunking.ProtocolDMRTier1: {
 		build: func() []uint8 {
-			return buildDMRConventionalVoiceLCHeaderDibits(80, 0x7, 0x123, 0x456789, dmr.DMVoice1.Dibits[:])
+			// A Voice LC Header is a DATA burst: in direct mode it is framed by the
+			// DM data sync (ETSI TS 102 361-1 Table 9.1), never the DM voice sync.
+			// The fixture used DMVoice1 and only passed because the slicer once
+			// parsed a slot type on every sync match (the self-consistent trap).
+			return buildDMRConventionalVoiceLCHeaderDibits(80, 0x7, 0x123, 0x456789, dmr.DMData1.Dibits[:])
 		},
 		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 10, 8, 0.20, sr, 1944.0) },
 		sampleRate: 48_000,
@@ -270,7 +274,7 @@ func buildP25Phase2MACPTTStream(repeats int) []uint8 {
 // repeated Voice LC Header bursts. Lifted from integration_cc_dmr_tier2_test.go.
 // buildDMRConventionalVoiceLCHeaderDibits builds a DMR conventional /
 // direct-mode Voice LC Header stream. The sync word distinguishes Tier II
-// (base-station, dmr.BSData) from Tier I (direct-mode, dmr.DMVoice1); the rest
+// (base-station, dmr.BSData) from Tier I (direct-mode, dmr.DMData1); the rest
 // of the wire format is identical. Lifted from integration_cc_dmr_tier2_test.go.
 func buildDMRConventionalVoiceLCHeaderDibits(repeats int, colorCode uint8, groupID, sourceID uint32, sync []uint8) []uint8 {
 	flc := dmr.FLC{

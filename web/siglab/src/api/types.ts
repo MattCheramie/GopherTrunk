@@ -336,6 +336,9 @@ export interface ProtocolsDTO {
   protocols: string[];
   fixtures: string[];
   formats: string[];
+  /** Formats the capture-from-tuner route accepts: `formats` plus the wav/flac
+   * containers. Optional so an older daemon still drives the panel. */
+  capture_formats?: string[];
 }
 
 // CaptureDevice mirrors api.SpectrumDevice — an SDR available to record from.

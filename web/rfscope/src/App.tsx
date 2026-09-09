@@ -77,11 +77,19 @@ export function App() {
           <select className="input" value={format} onChange={(e) => setFormat(e.target.value)}>
             <option value="f32">f32 (cfile)</option>
             <option value="u8">u8 (rtl_sdr)</option>
+            <option value="cs16">cs16 (16-bit raw .cs16/.raw)</option>
+            <option value="wav">wav (baseband WAV, rate from header)</option>
+            <option value="flac">flac (compressed cs16, rate from header)</option>
           </select>
         </div>
         <div>
           <label className="label">Sample rate (Hz)</label>
-          <input className="input" value={sampleRate} onChange={(e) => setSampleRate(e.target.value)} />
+          <input
+            className="input"
+            value={sampleRate}
+            onChange={(e) => setSampleRate(e.target.value)}
+            title="Ignored for wav/flac uploads — the container header carries the rate"
+          />
         </div>
         <div>
           <label className="label">Center (Hz)</label>
