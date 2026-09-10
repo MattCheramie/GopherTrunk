@@ -147,8 +147,12 @@ const phaseRngSeedOffset = 0x5DEECE66D
 // such a clear, the recovery ramp eases the synthesiser back in
 // over 60 ms.
 type Decoder struct {
-	state mbe.SynthState
-	rng   *rand.Rand
+	// unvoicedGainSet / unvoicedGainVal hold the calibrated unvoiced band
+	// level once SetUnvoicedGain has been called; unset ⇒ legacy scaling.
+	unvoicedGainSet bool
+	unvoicedGainVal float64
+	state           mbe.SynthState
+	rng             *rand.Rand
 	// phaseRng is a SEPARATE seeded source for the §6.3 voiced-phase
 	// dispersion draws. Keeping it independent of rng means the unvoiced
 	// excitation noise stream is byte-identical with or without the phase
@@ -659,7 +663,7 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 	for i := range noise {
 		noise[i] = d.rng.NormFloat64()
 	}
-	mbe.SynthUnvoicedOverlapAdd(&d.state, p, M, noise, pcm)
+	mbe.SynthUnvoicedOverlapAddGain(&d.state, p, M, noise, pcm, d.unvoicedGain())
 	d.state.UpdateLog2Ml(p, log2M)
 	d.state.UpdateVoicedState(p, M)
 }
@@ -704,6 +708,26 @@ func (d *Decoder) SetVoiceEnhancer(cfg mbe.EnhancerConfig) {
 // call (unless recordings.spec_amplitude_enhance is disabled). Call once after
 // construction, before decoding; implements voice.SpecAmplitudeConfigurable.
 func (d *Decoder) SetSpecAmplitudeEnhance(on bool) { d.specAmplitude = on }
+
+// SetUnvoicedGain sets the unvoiced band level (see mbe.DefaultUnvoicedGain):
+// 0 selects the mbelib-matched default, a negative value the legacy
+// uncalibrated scaling the raw decoder starts with. Implements
+// voice.UnvoicedGainConfigurable.
+func (d *Decoder) SetUnvoicedGain(g float64) {
+	if g == 0 {
+		g = mbe.DefaultUnvoicedGain
+	}
+	d.unvoicedGainSet, d.unvoicedGainVal = true, g
+}
+
+// unvoicedGain is the unvoiced band level in effect: legacy until
+// SetUnvoicedGain is called (so the raw decoder's goldens hold).
+func (d *Decoder) unvoicedGain() float64 {
+	if !d.unvoicedGainSet {
+		return mbe.LegacyUnvoicedGain
+	}
+	return d.unvoicedGainVal
+}
 
 // accumStats folds the just-applied frame's AGC telemetry and output
 // samples into the per-call stats. Call immediately after agc.Apply on

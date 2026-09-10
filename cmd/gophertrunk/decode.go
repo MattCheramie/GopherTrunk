@@ -33,6 +33,7 @@ func runDecode(args []string) {
 	in := fs.String("in", "-", "raw vocoder-frame input path; '-' reads stdin")
 	out := fs.String("out", "", "WAV output path (required; must be a regular file for the WAV header to be patched)")
 	vocoderName := fs.String("vocoder", "imbe", "vocoder name from the registry (imbe, ambe2, null, ...)")
+	legacySynth := fs.Bool("legacy-synthesis", false, "decode with the raw decoder's legacy synthesis (no spec-faithful §6.2 amplitude enhancement, uncalibrated unvoiced band level) instead of the daemon's recording defaults — for A/B only")
 	listVocoders := fs.Bool("list-vocoders", false, "print the registered vocoder names and exit")
 	statsFlag := fs.Bool("stats", true, "print a per-call voice audio-quality summary to stderr after decoding")
 	normalizeFlag := fs.Bool("normalize", false, "loudness-normalize the output WAV (EBU R128, -16 LUFS / -1.5 dBTP) after decoding")
@@ -88,6 +89,19 @@ FLAGS:`)
 	v, err := voice.DefaultRegistry.New(*vocoderName)
 	if err != nil {
 		rep.Fatal(1, err)
+	}
+	// Match what the daemon's recorder does to every call (spec-faithful
+	// §6.2 enhancement + the mbelib-calibrated unvoiced band level), so a
+	// CLI decode of a .raw sidecar sounds like the recording it came from —
+	// the whole point of decoding a sidecar is to A/B against another
+	// decoder on the same frames (docs/vocoders.md "Calibration").
+	if !*legacySynth {
+		if sa, ok := v.(voice.SpecAmplitudeConfigurable); ok {
+			sa.SetSpecAmplitudeEnhance(true)
+		}
+		if ug, ok := v.(voice.UnvoicedGainConfigurable); ok {
+			ug.SetUnvoicedGain(0)
+		}
 	}
 	defer v.Close()
 

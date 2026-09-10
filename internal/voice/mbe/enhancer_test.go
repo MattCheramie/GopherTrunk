@@ -73,11 +73,19 @@ func TestVoiceEnhancerBandLimitsAndWarms(t *testing.T) {
 	if e == nil {
 		t.Fatal("default config should build a non-nil enhancer")
 	}
-	// Rebuild per probe so each tone sees fresh filter state.
-	low := enhancerGainDB(NewVoiceEnhancer(8000, DefaultEnhancerConfig()), 120)
-	mid := enhancerGainDB(NewVoiceEnhancer(8000, DefaultEnhancerConfig()), 1000)
-	upperMid := enhancerGainDB(NewVoiceEnhancer(8000, DefaultEnhancerConfig()), 2500)
-	high := enhancerGainDB(NewVoiceEnhancer(8000, DefaultEnhancerConfig()), 3900)
+	// Rebuild per probe so each tone sees fresh filter state. The radio
+	// tilt is disabled here so the band limits and the shelf are measured
+	// in isolation (the tilt is −2 dB at 1 kHz by design; its own shape is
+	// pinned by TestRadioTiltIsFirstOrderHighPass).
+	untilted := func() *VoiceEnhancer {
+		cfg := DefaultEnhancerConfig()
+		cfg.TiltHz = -1
+		return NewVoiceEnhancer(8000, cfg)
+	}
+	low := enhancerGainDB(untilted(), 120)
+	mid := enhancerGainDB(untilted(), 1000)
+	upperMid := enhancerGainDB(untilted(), 2500)
+	high := enhancerGainDB(untilted(), 3900)
 
 	if low > -4 {
 		t.Errorf("120 Hz rumble not attenuated: %.2f dB", low)
@@ -166,5 +174,47 @@ func TestAGCSetTargetPeakIsLouder(t *testing.T) {
 	faithful := run(18000)
 	if int(loud) <= int(float64(faithful)*1.1) {
 		t.Errorf("target 22000 not meaningfully louder than 18000: %d vs %d", loud, faithful)
+	}
+}
+
+// TestRadioTiltIsFirstOrderHighPass pins the tilt stage's shape: a first-
+// order RC high-pass is −3 dB at its corner, ≈−6 dB an octave below, and
+// within 1 dB of flat two octaves above — the curve measured between
+// GopherTrunk's vocoder output and dsd-neo's default-on digital-voice
+// high-pass (10 Sep calibration pairs), which the 2nd-order rumble HPF
+// cannot reproduce.
+func TestRadioTiltIsFirstOrderHighPass(t *testing.T) {
+	const rate, fc = 8000.0, 750.0
+	gainDB := func(f float64) float64 {
+		tilt := newRadioTilt(rate, fc)
+		n := 8000
+		pcm := make([]float64, n)
+		for i := range pcm {
+			pcm[i] = math.Sin(2 * math.Pi * f * float64(i) / rate)
+		}
+		tilt.Process(pcm)
+		var sum float64
+		for _, v := range pcm[n/2:] { // steady state only
+			sum += v * v
+		}
+		rms := math.Sqrt(sum / float64(n/2))
+		return 20 * math.Log10(rms/math.Sqrt(0.5))
+	}
+	for _, tc := range []struct{ f, wantDB, tol float64 }{
+		{fc, -3.0, 0.3},
+		{fc / 2, -7.0, 0.5},
+		{fc / 4, -12.3, 0.6},
+		{fc * 4, -0.2, 0.3}, // bilinear warp pulls this slightly toward 0 dB
+	} {
+		if got := gainDB(tc.f); math.Abs(got-tc.wantDB) > tc.tol {
+			t.Errorf("tilt gain at %.0f Hz = %.2f dB, want %.2f ± %.1f", tc.f, got, tc.wantDB, tc.tol)
+		}
+	}
+	// Disabled by a negative corner; still enabled at the default.
+	if e := NewVoiceEnhancer(rate, EnhancerConfig{Enabled: true, TiltHz: -1}); e.tilt != nil {
+		t.Error("TiltHz < 0 must disable the tilt stage")
+	}
+	if e := NewVoiceEnhancer(rate, EnhancerConfig{Enabled: true}); e.tilt == nil {
+		t.Error("default enabled config must carry the tilt stage")
 	}
 }

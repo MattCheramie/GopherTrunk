@@ -51,6 +51,16 @@ type SpecAmplitudeConfigurable interface {
 	SetSpecAmplitudeEnhance(on bool)
 }
 
+// UnvoicedGainConfigurable is implemented by vocoders whose unvoiced band
+// level is calibratable (recordings.unvoiced_gain; see
+// mbe.DefaultUnvoicedGain). The recorder sets it on every decoded call so
+// both the recorded WAV and the live fan-out get the mbelib-matched
+// fricative level; the raw decoders start on the legacy scaling so unit-test
+// goldens stay byte-identical.
+type UnvoicedGainConfigurable interface {
+	SetUnvoicedGain(g float64)
+}
+
 // Recorder writes per-call audio + raw-frame files. It subscribes to
 // events.KindCallStart and events.KindCallEnd from the trunking engine,
 // opens a WAV (and optional raw-frame sidecar) for each new call, and
@@ -130,6 +140,9 @@ type Recorder struct {
 	// defaults ON so production DMR + P25 audio gets the corrected envelope
 	// out of the box (the raw decoders stay legacy for test byte-identity).
 	specAmplitude bool
+	// unvoicedGain is the vocoder unvoiced band level handed to every
+	// decoded call (0 ⇒ mbe.DefaultUnvoicedGain; negative ⇒ legacy).
+	unvoicedGain float64
 
 	mu       sync.Mutex
 	sessions map[string]*recordingSession // by device serial
@@ -342,6 +355,11 @@ type RecorderOptions struct {
 	// (tri-state, defaults ON) into this bool. Off by default at the struct
 	// level so recorder callers that don't set it (unit tests) stay legacy.
 	SpecAmplitudeEnhance bool
+	// UnvoicedGain is the vocoder unvoiced (fricative / noise) band level
+	// relative to a voiced harmonic of the same amplitude: 0 selects
+	// mbe.DefaultUnvoicedGain (mbelib-matched), a negative value the legacy
+	// uncalibrated scaling. See recordings.unvoiced_gain.
+	UnvoicedGain float64
 
 	// VocoderForProtocol maps a Grant.Protocol value to a vocoder
 	// registry name used to decode raw frames into PCM that's
@@ -488,6 +506,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		normalize:          opts.Normalize,
 		enhance:            opts.Enhance,
 		specAmplitude:      opts.SpecAmplitudeEnhance,
+		unvoicedGain:       opts.UnvoicedGain,
 		vocoderForProtocol: vocoderMap,
 		displayLoc:         loc,
 		filenameTmpl:       opts.FilenameTemplate,
@@ -1100,6 +1119,12 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 			// off so unit tests are unaffected).
 			if sa, ok := v.(SpecAmplitudeConfigurable); ok {
 				sa.SetSpecAmplitudeEnhance(r.specAmplitude)
+			}
+			// Calibrate the unvoiced band level on the live/recording path
+			// (default mbelib-matched; the raw decoder keeps the legacy
+			// scaling so unit tests are unaffected).
+			if ug, ok := v.(UnvoicedGainConfigurable); ok {
+				ug.SetUnvoicedGain(r.unvoicedGain)
 			}
 			// Suppress the receiver-acquisition "startup scratch" on the
 			// recording/live path (opt-in on the vocoder; off in the raw

@@ -158,6 +158,23 @@ dsd-fme -fs -w out.wav -r call.amb    # DMR AMBE+2
 TETRA ACELP and EDACS ProVoice have no DSD-FME playback mode, so they
 produce no MBE sidecar (the flat `.raw` remains the escape hatch).
 
+[dsd-neo](https://github.com/arancormonk/dsd-neo) (the DSD-FME fork
+with mbelib-neo) plays the same files, writes its `-w` WAV at a correct
+8 kHz, and is the reference the calibration below was measured against.
+To batch-decode a directory of sidecars for an A/B against
+GopherTrunk's own decode of the same frames:
+
+```sh
+for f in *.amb; do ./dsd-neo -o null -w "${f%.amb}_dsd.wav" -fs -r "$f"; done   # DMR (-fs = DMR BS/MS simplex)
+for f in *.imb; do ./dsd-neo -o null -w "${f%.imb}_dsd.wav" -f1 -r "$f"; done   # P25 Phase 1
+gophertrunk decode -in call.raw -out call_gt.wav -vocoder ambe2-dmr          # GopherTrunk, recording defaults
+```
+
+`gophertrunk decode` applies the daemon's recording defaults (spec-
+faithful §6.2 amplitude enhancement + the calibrated unvoiced band
+level) so the WAV matches what the recorder wrote; pass
+`-legacy-synthesis` to hear the raw decoder instead.
+
 **Note on DSD-FME's `-w` output rate.** DSD-FME's `-w single.wav`
 writer stamps an 8 kHz header on synthesis it produces at 12 kHz, so
 the file plays ~1.5× slow / low-pitched. This is an upstream DSD-FME
@@ -245,6 +262,46 @@ The calibration harness ships end-to-end:
 - [`cmd/voice-calibrate`](https://github.com/MattCheramie/GopherTrunk/tree/main/cmd/voice-calibrate/) — CLI wrapper
   around `calibrate.Compare` so a one-off check doesn't require
   writing a test.
+
+### What the 10 Sep calibration pairs showed
+
+Four sidecars (DMR male/female, P25 male/female) decoded by both
+GopherTrunk and dsd-neo from the SAME `.amb`/`.imb` frames, compared
+harmonic by harmonic (per-frame DFT at each `l·ω₀`) and by long-term
+spectrum:
+
+- **Pitch and voiced harmonics agree.** `f₀` tracks are identical
+  (ratio 1.00), and above ~1.5 kHz the IMBE voiced harmonics match
+  within ±1 dB — the vocoder core is right.
+- **Low-frequency excess on the voiced harmonics**: GopherTrunk was
+  +2 dB at 1 kHz, +4 dB at 500 Hz, +8 dB at 350 Hz, +12 dB at 175 Hz,
+  +16 dB at 125 Hz over dsd-neo — the shape of a first-order high-pass.
+  dsd-neo runs a digital-voice high-pass by default (`use_hpf_d = 1`),
+  and a handset's audio path tilts the same way, which is why the
+  un-tilted decode read as boomy/muffled. This is now the
+  `recordings.enhance.tilt_hz` stage (default 450 Hz: the corner that
+  minimises the long-term log-spectral distance over 100–3400 Hz across
+  all four pairs once the unvoiced level is also calibrated).
+- **Unvoiced (fricative / noise) bands were 6 dB (IMBE) to 13–15 dB
+  (AMBE+2 2450) too quiet.** mbelib synthesises an unvoiced harmonic as
+  three random-phase cosines of amplitude ≈1.353·Ml each (≈2.75·Ml² of
+  band power, 5.5× a voiced harmonic of the same amplitude);
+  GopherTrunk's FFT-noise §6.4 path scaled each noise bin by Ml alone,
+  which for a 125 Hz male voice put ~12 dB less than even the
+  equal-power level into each band and made it pitch-dependent. That is
+  now `recordings.unvoiced_gain` (default 5.49 = the mbelib level; 1 =
+  equal-power; negative = legacy). Long-term log-spectral distance to
+  dsd-neo over 300–3400 Hz fell from 8.3 → 1.5 dB (P25 male) and
+  4.9 → 2.1 dB (DMR male) with the calibration alone.
+- **Still open:** the AMBE+2 2450 (DMR) male voice keeps a −3 to −6 dB
+  VOICED deficit above 1 kHz that IMBE does not show (the female DMR
+  pair goes the other way), so it is in the 3600×2450 parameter
+  reconstruction, not the shared synthesis — the frame-by-frame diff
+  against a wired mbelib-neo 2450 reference is the next instrument.
+
+Reproduce: decode the pairs with both tools as above, then compare
+octave-band energy fractions / spectral centroid, or run
+`internal/voice/calibrate` against the `_dsd.wav`.
 
 ## Knox / call-alert extension hook
 

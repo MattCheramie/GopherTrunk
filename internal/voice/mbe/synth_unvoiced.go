@@ -102,6 +102,40 @@ func init() {
 // Silent + zero-L frames leave spec untouched (caller handles
 // silence at a higher level).
 func ShapeUnvoicedSpectrum(spec []complex128, p Params, M *[57]float64) {
+	ShapeUnvoicedSpectrumGain(spec, p, M, LegacyUnvoicedGain)
+}
+
+// LegacyUnvoicedGain selects the pre-calibration unvoiced band level: each
+// noise bin scaled by Ml alone. With unit-variance noise, an unnormalised
+// forward FFT and a 1/N inverse, that puts (2·bins/N)·Ml² of power in the
+// band — for a 125 Hz male voice (≈4 bins per harmonic side) ~12 dB BELOW
+// the Ml²/2 a voiced harmonic of the same amplitude carries, and ~19 dB
+// below mbelib. It is kept so the raw decoders' unit-test goldens hold.
+const LegacyUnvoicedGain = -1
+
+// DefaultUnvoicedGain is the unvoiced band power, relative to the Ml²/2 of
+// a voiced harmonic of the same amplitude, that matches mbelib (the
+// reference every DSD-family decoder plays through). mbelib synthesises an
+// unvoiced harmonic as uvquality=3 random-phase cosines at (l−⅓, l, l+⅓)·ω₀,
+// each of amplitude uvsine·qfactor·Ml = (1.3591409·e)·(ln 3/3)·Ml ≈ 1.353·Ml
+// (mbe_synthesizeSpeechf), i.e. 3·(1.353·Ml)²/2 ≈ 2.745·Ml² per band —
+// 5.49× (+7.4 dB) the equal-power level. Measured on the 10 Sep calibration
+// pairs (same .imb/.amb frames decoded by both): GopherTrunk's UNVOICED
+// harmonics sat 6 dB (IMBE) to 13–15 dB (AMBE+2 2450) below dsd-neo's while
+// the VOICED ones matched above 1.5 kHz — the "no fricatives / crushed
+// highs" half of the "sounds awful" report, distinct from the low-frequency
+// tilt (see EnhancerConfig.TiltHz). 1 is the equal-power spec reading.
+const DefaultUnvoicedGain = 5.49
+
+// ShapeUnvoicedSpectrumGain is ShapeUnvoicedSpectrum with the unvoiced band
+// level calibrated: gain ≥ 0 scales each unvoiced harmonic's noise band so
+// its expected time-domain power is gain·Ml²/2 (the power of a voiced
+// harmonic of amplitude Ml, times gain), independent of the pitch — the
+// number of FFT bins a band spans (ω₀·N/2π per side, so a low-pitched voice
+// spreads the same Ml over fewer bins) is folded into the per-bin scale so
+// the band total is what the encoder measured. gain < 0 (LegacyUnvoicedGain)
+// reproduces the uncalibrated per-bin Ml scaling byte-for-byte.
+func ShapeUnvoicedSpectrumGain(spec []complex128, p Params, M *[57]float64, gain float64) {
 	if p.Silent || p.L == 0 {
 		return
 	}
@@ -110,6 +144,18 @@ func ShapeUnvoicedSpectrum(spec []complex128, p Params, M *[57]float64) {
 	}
 	const twoPi = 2 * math.Pi
 	N := UnvoicedFFTSize
+	// Bins per harmonic (one side), from the same nearest-centre mapping the
+	// shaping loop uses, so the per-bin scale exactly compensates the count.
+	var bins [57]int
+	if gain >= 0 {
+		for k := 0; k <= N/2; k++ {
+			f := twoPi * float64(k) / float64(N)
+			l := int(math.Round(f / p.W0))
+			if l >= 1 && l <= p.L {
+				bins[l]++
+			}
+		}
+	}
 	for k := 0; k < N; k++ {
 		kEff := k
 		if k > N/2 {
@@ -121,7 +167,13 @@ func ShapeUnvoicedSpectrum(spec []complex128, p Params, M *[57]float64) {
 			spec[k] = 0
 			continue
 		}
-		spec[k] *= complex(M[l], 0)
+		scale := M[l]
+		if gain >= 0 && bins[l] > 0 {
+			// E[y²] = (2·bins/N)·(M·s)² for unit-variance noise, unnormalised
+			// forward FFT and 1/N inverse; solve for s so E[y²] = gain·M²/2.
+			scale *= math.Sqrt(gain * float64(N) / (4 * float64(bins[l])))
+		}
+		spec[k] *= complex(scale, 0)
 	}
 }
 
@@ -199,6 +251,12 @@ func SynthUnvoicedFromNoise(p Params, M *[57]float64, noise []float64, dst []flo
 // dst must be >= SamplesPerFrame. dst shorter than SamplesPerFrame
 // or noise of the wrong length leave dst + state untouched.
 func SynthUnvoicedOverlapAdd(s *SynthState, p Params, M *[57]float64, noise []float64, dst []float64) {
+	SynthUnvoicedOverlapAddGain(s, p, M, noise, dst, LegacyUnvoicedGain)
+}
+
+// SynthUnvoicedOverlapAddGain is SynthUnvoicedOverlapAdd with the unvoiced
+// band level set by gain (see ShapeUnvoicedSpectrumGain / DefaultUnvoicedGain).
+func SynthUnvoicedOverlapAddGain(s *SynthState, p Params, M *[57]float64, noise []float64, dst []float64, gain float64) {
 	if len(dst) < SamplesPerFrame {
 		return
 	}
@@ -221,7 +279,7 @@ func SynthUnvoicedOverlapAdd(s *SynthState, p Params, M *[57]float64, noise []fl
 		spec[i] = complex(v, 0)
 	}
 	spec = plan.Forward(spec, spec)
-	ShapeUnvoicedSpectrum(spec, p, M)
+	ShapeUnvoicedSpectrumGain(spec, p, M, gain)
 	spec = plan.Inverse(spec, spec)
 
 	for n := 0; n < SamplesPerFrame; n++ {
