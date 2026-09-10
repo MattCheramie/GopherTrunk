@@ -8,6 +8,11 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Play recordings by radio ID.** Each recent call in a radio's detail modal
+  that has a recording carries a ▶ button that expands the player inline,
+  plus an "All calls from this radio" link into History, which now accepts
+  a `source_id` filter (form field + `?source_id=` deep link) backed by a new
+  `source_id` query parameter on `GET /api/v1/calls/history`.
 - **dPMR and D-STAR voice now decode to PCM (experimental, unverified on
   air).** Following the NXDN precedent, both protocols gain end-to-end voice
   chains: dPMR anchors on the FS1/FS2 voice syncs, carves each 80 ms frame's
@@ -59,6 +64,38 @@ for tagged releases.
   never require acceptance.
 
 ### Fixed
+- **A multi-over call played only its first over.** In per-transmission
+  grouping (a TETRA talker change rolls the recording file) the recorder
+  announces one `call.complete` PER SEGMENT, each stamped with the over's own
+  start time — which matched no call row, so the call log kept the first
+  segment's file and orphaned the rest: a 30 s call with a 4 s "recording".
+  `call.complete` now also carries the CALL's start (`CallStartedAt`) and a
+  `Segment` index, every file lands in a new `call_recordings` table (swept
+  with its call row), and `GET /api/v1/calls/{id}/audio` concatenates the
+  segments into one WAV with the real inter-over silence restored (capped at
+  1.5 s), degrading to the first file when a segment cannot be decoded
+  (e.g. an MP3 transcode). Rows written before the table keep playing from
+  `recording_path`.
+- **Recording paths kept non-ASCII names.** The recorder's path sanitiser
+  passed only `[A-Za-z0-9._-]`, so a Cyrillic (Greek, CJK, …) talkgroup or
+  radio alias became a directory of underscores
+  (`Депо им.Русакова` → `_______.________`). Letters, digits and combining
+  marks from every script now survive; separators, whitespace, controls and
+  OS/shell metacharacters still map to `_`, and a bare `.`/`..` segment can
+  never traverse.
+- **Web: every timestamp is now the browser's local time.** History (table +
+  detail), Events, the Dashboard digest, Active, Tones, the scanner log and
+  Pagers rendered a raw slice of the daemon's UTC string, so an operator in
+  UTC+3 saw History three hours behind the live activity feed and read it as
+  "history stops updating" — the 00:15 row WAS the 03:15 call. All of them
+  share `formatLocalDateTime` / `formatClock`; Radio IDs' first/last seen
+  are formatted the same way instead of raw RFC3339.
+- **Web: History is live.** It refetches ~1.5 s after every `call.end` in
+  the event feed (so `has_recording` is right on first paint) and polls every
+  30 s while the tab is visible; it used to fetch once per filter change.
+- **Web: the floating audio player covered the table pager.** DataTable now
+  renders Prev/Next above the table as well as below, and the main content
+  keeps bottom clearance for the player at every width (desktop had 1 rem).
 - **Voice-calibration docs described a DSD-FME invocation that cannot work**:
   `dsd-fme -r <call>.raw -o reference.wav` (`-r` reads DSD-FME's cookie-headed
   `.imb`/`.amb` container written by `recordings.mbe_files`, not the flat

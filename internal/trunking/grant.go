@@ -364,11 +364,34 @@ type CallComplete struct {
 	Grant        Grant
 	Talkgroup    *TalkGroup
 	DeviceSerial string
-	StartedAt    time.Time
-	EndedAt      time.Time
-	Reason       EndReason
-	AudioPath    string
-	SampleRate   uint32
+	// StartedAt / EndedAt bound the RECORDING this event announces. For a
+	// single-file call that is the call span; for a per-transmission segment
+	// roll (KindCallSegment) it is the span of this one over, so StartedAt is
+	// later than the call's own start.
+	StartedAt time.Time
+	EndedAt   time.Time
+	Reason    EndReason
+	AudioPath string
+	// CallStartedAt is the originating call's start (CallStart.StartedAt) —
+	// the key the call log's row was written under. It is what lets a second,
+	// third, … segment recording be attached to the SAME call row: keying on
+	// StartedAt alone matched only the first over, so a multi-over call kept
+	// one segment's recording and orphaned the rest (the "30 s call with a
+	// 4 s recording" report). Zero means "same as StartedAt" (single file).
+	CallStartedAt time.Time
+	// Segment is this recording's 0-based index within the call (0 for the
+	// only/first file, 1 for the second over, …).
+	Segment    int
+	SampleRate uint32
+}
+
+// CallStart returns the originating call's start time: CallStartedAt when a
+// segment roll set it, else StartedAt (a single-file recording).
+func (c CallComplete) CallStart() time.Time {
+	if !c.CallStartedAt.IsZero() {
+		return c.CallStartedAt
+	}
+	return c.StartedAt
 }
 
 // Duration returns how long the call ran.

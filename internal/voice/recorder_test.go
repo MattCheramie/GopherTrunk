@@ -581,6 +581,22 @@ func TestSanitize(t *testing.T) {
 		"  spaces  ":        "spaces",
 		"path/../traversal": "path_.._traversal",
 		"":                  "",
+		// Non-ASCII letters survive (the operator's Cyrillic alias used to
+		// come out as "_______.________"); only the space becomes '_'.
+		"Депо им.Русакова": "Депо_им.Русакова",
+		"Дежурный депо":    "Дежурный_депо",
+		"Ärzte-Notruf 3":   "Ärzte-Notruf_3",
+		"東京消防庁":            "東京消防庁",
+		// Combining marks (a decomposed é) stay attached to their base.
+		"caf\u0065\u0301": "caf\u0065\u0301",
+		// OS/shell metacharacters and controls still map to '_'.
+		"a:b*c?d\"e<f>g|h": "a_b_c_d_e_f_g_h",
+		"tab\there":        "tab_here",
+		// A bare "." / ".." segment can never traverse.
+		".":  "_",
+		"..": "__",
+		// Invalid UTF-8 is neutralised, not passed through.
+		"bad\xffbyte": "bad_byte",
 	}
 	for in, want := range cases {
 		if got := sanitize(in); got != want {

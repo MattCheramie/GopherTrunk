@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
@@ -11,55 +11,97 @@ import { CallHealth } from "../components/SignalHealth";
 import { PageHeader } from "../components/ui/PageHeader";
 import type { CallRow } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
+import { formatLocalDateTime } from "../lib/formatTime";
 import {
   selectCanMutate,
   selectClientConfig,
   useShared,
 } from "../store/shared";
 
+// HISTORY_POLL_MS is the fallback refresh cadence while the tab is visible.
+// The primary trigger is the live event feed (a call.end below); the poll
+// covers a dropped SSE/WS connection so the table can never quietly freeze.
+const HISTORY_POLL_MS = 30_000;
+// HISTORY_REFRESH_DELAY_MS is how long after a call.end the refetch waits, so
+// the recorder's call.complete (has_recording) has landed on the row first.
+const HISTORY_REFRESH_DELAY_MS = 1_500;
+
+type HistoryFilter = {
+  limit?: number;
+  system?: string;
+  group_id?: number;
+  source_id?: number;
+};
+
+// selectLastCallEnd picks the timestamp of the newest call.end in the live
+// feed — a primitive, so the zustand subscription only re-renders on a new
+// call ending, not on every event.
+function selectLastCallEnd(s: { events: { kind: string; timestamp: string }[] }) {
+  for (let i = s.events.length - 1; i >= 0; i--) {
+    if (s.events[i].kind === "call.end") return s.events[i].timestamp;
+  }
+  return null;
+}
+
 // History reads /api/v1/calls/history with the same filter shape the
-// daemon accepts: limit, system, group_id. The response envelope is
+// daemon accepts: limit, system, group_id, source_id. The response envelope is
 // {"calls":[...]} — reading any other key yields a silently empty table.
+//
+// The table is LIVE: it refetches shortly after every call.end in the event
+// feed and on a slow visible-tab poll. It used to fetch exactly once per
+// filter change, so the operator had to reload the page to see new calls
+// (the "history updates too slow / stops reflecting latest calls" report —
+// though most of that report was the UTC rendering, see formatLocalDateTime).
 export function History() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setGlobalError = useShared((s) => s.setError);
   const notify = useShared((s) => s.notify);
+  const lastCallEnd = useShared(selectLastCallEnd);
+  // Bumped to refetch with the same filter (live refresh / poll).
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const [rows, setRows] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSweep, setConfirmSweep] = useState(false);
 
-  // Cross-links from Talkgroups / Systems seed the filter via query params
-  // (?system=, ?group_id=) so "view this TG's / system's calls" lands here
-  // pre-filtered — the cross-selection trunking operators expect.
+  // Cross-links from Talkgroups / Systems / Radio IDs seed the filter via
+  // query params (?system=, ?group_id=, ?source_id=) so "view this TG's /
+  // system's / radio's calls" lands here pre-filtered — the cross-selection
+  // trunking operators expect.
   const [searchParams] = useSearchParams();
   const initSystem = searchParams.get("system") ?? "";
   const initGroup = searchParams.get("group_id") ?? "";
+  const initSource = searchParams.get("source_id") ?? "";
 
   // Form fields kept separate from the "submitted" filter object so
   // typing into the inputs doesn't trigger a fetch on every keystroke.
   const [limitInput, setLimitInput] = useState("200");
   const [systemInput, setSystemInput] = useState(initSystem);
   const [groupInput, setGroupInput] = useState(initGroup);
-  const [filter, setFilter] = useState<{
-    limit?: number;
-    system?: string;
-    group_id?: number;
-  }>(() => {
-    const f: { limit?: number; system?: string; group_id?: number } = { limit: 200 };
+  const [sourceInput, setSourceInput] = useState(initSource);
+  const [filter, setFilter] = useState<HistoryFilter>(() => {
+    const f: HistoryFilter = { limit: 200 };
     if (initSystem) f.system = initSystem;
     const g = parseInt(initGroup, 10);
     if (Number.isFinite(g)) f.group_id = g;
+    const src = parseInt(initSource, 10);
+    if (Number.isFinite(src)) f.source_id = src;
     return f;
   });
 
   const [selected, setSelected] = useState<CallRow | null>(null);
 
+  // A refetch with the SAME filter (live refresh / poll) is silent: the
+  // rows stay on screen and the header's "loading…" doesn't flash every
+  // 30 s. Only a filter change shows the loading state.
+  const fetchedFilter = useRef<HistoryFilter | null>(null);
   useEffect(() => {
     let cancel = false;
-    setLoading(true);
+    const silent = fetchedFilter.current === filter;
+    fetchedFilter.current = filter;
+    if (!silent) setLoading(true);
     setError(null);
     api
       .history(cfg, filter)
@@ -77,16 +119,44 @@ export function History() {
     return () => {
       cancel = true;
     };
-  }, [cfg, filter]);
+  }, [cfg, filter, refreshTick]);
+
+  // Live refresh: a call.end in the event feed means a new row (or a row that
+  // just gained its duration / recording). Debounced past the recorder's
+  // call.complete so has_recording is right on the first paint. The feed
+  // usually already holds a call.end when the panel mounts — that one is not
+  // news, skip it.
+  const seenCallEnd = useRef(lastCallEnd);
+  useEffect(() => {
+    if (lastCallEnd === null || lastCallEnd === seenCallEnd.current) return;
+    seenCallEnd.current = lastCallEnd;
+    const t = window.setTimeout(
+      () => setRefreshTick((n) => n + 1),
+      HISTORY_REFRESH_DELAY_MS,
+    );
+    return () => window.clearTimeout(t);
+  }, [lastCallEnd]);
+
+  // Fallback poll while the tab is visible (covers a dropped event stream).
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        setRefreshTick((n) => n + 1);
+      }
+    }, HISTORY_POLL_MS);
+    return () => window.clearInterval(t);
+  }, []);
 
   function applyFilter(e: React.FormEvent) {
     e.preventDefault();
-    const next: typeof filter = {};
+    const next: HistoryFilter = {};
     const lim = parseInt(limitInput, 10);
     if (Number.isFinite(lim) && lim > 0) next.limit = lim;
     if (systemInput.trim()) next.system = systemInput.trim();
     const gid = parseInt(groupInput, 10);
     if (Number.isFinite(gid)) next.group_id = gid;
+    const src = parseInt(sourceInput, 10);
+    if (Number.isFinite(src)) next.source_id = src;
     setFilter(next);
   }
 
@@ -94,6 +164,7 @@ export function History() {
     setLimitInput("200");
     setSystemInput("");
     setGroupInput("");
+    setSourceInput("");
     setFilter({ limit: 200 });
   }
 
@@ -104,7 +175,7 @@ export function History() {
         header: "Started",
         render: (r) => (
           <span className="font-mono text-xs text-muted whitespace-nowrap">
-            {r.started_at.replace("T", " ").replace(/\..*$/, "")}
+            {formatLocalDateTime(r.started_at)}
           </span>
         ),
         sort: (a, b) => a.started_at.localeCompare(b.started_at),
@@ -254,7 +325,7 @@ export function History() {
 
       <form
         onSubmit={applyFilter}
-        className="panel p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end"
+        className="panel p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 items-end"
       >
         <label className="text-xs space-y-1">
           <span className="text-muted uppercase tracking-wider">Limit</span>
@@ -286,6 +357,17 @@ export function History() {
             placeholder="e.g. 1001"
             value={groupInput}
             onChange={(e) => setGroupInput(e.target.value)}
+          />
+        </label>
+        <label className="text-xs space-y-1">
+          <span className="text-muted uppercase tracking-wider">Source RID</span>
+          <input
+            type="number"
+            min={0}
+            className="input w-full"
+            placeholder="radio id"
+            value={sourceInput}
+            onChange={(e) => setSourceInput(e.target.value)}
           />
         </label>
         <div className="flex gap-2 col-span-2 sm:col-span-1">
@@ -369,14 +451,14 @@ export function History() {
             <DetailField
               label="Started"
               mono
-              value={selected.started_at.replace("T", " ").replace(/\..*$/, "")}
+              value={formatLocalDateTime(selected.started_at)}
             />
             <DetailField
               label="Ended"
               mono
               value={
                 selected.ended_at
-                  ? selected.ended_at.replace("T", " ").replace(/\..*$/, "")
+                  ? formatLocalDateTime(selected.ended_at)
                   : null
               }
             />

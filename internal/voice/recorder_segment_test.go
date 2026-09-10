@@ -148,3 +148,84 @@ func waitSession(t *testing.T, r *Recorder, serial string, want bool) {
 	}
 	t.Fatalf("timed out waiting for HasSession(%q) == %v", serial, want)
 }
+
+// TestRecorderSegmentCompleteCarriesCallStart pins the field the call log
+// keys on: every per-over KindCallComplete must carry the CALL's start
+// (CallStartedAt == CallStart.StartedAt) and its segment index, even though
+// its own StartedAt is the over's start. Without it the second over's
+// recording could not be attached to the call row (the "30 s call, 4 s
+// recording" report).
+func TestRecorderSegmentCompleteCarriesCallStart(t *testing.T) {
+	r, bus, _ := mkRecorder(t, false)
+	defer r.Close()
+	defer bus.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "S", Protocol: "fm", GroupID: 5, SourceID: 9,
+			FrequencyHz: 451_000_000,
+		},
+		DeviceSerial: "V1",
+		StartedAt:    time.Date(2026, 9, 10, 0, 15, 18, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	waitSession(t, r, "V1", true)
+	if err := r.WritePCM("V1", make([]int16, 800)); err != nil {
+		t.Fatal(err)
+	}
+	bus.Publish(events.Event{Kind: events.KindCallSegment, Payload: trunking.CallSegment{
+		DeviceSerial: "V1", At: cs.StartedAt.Add(6 * time.Second),
+	}})
+	time.Sleep(50 * time.Millisecond)
+	if err := r.WritePCM("V1", make([]int16, 800)); err != nil {
+		t.Fatal(err)
+	}
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: cs.Grant, DeviceSerial: "V1", StartedAt: cs.StartedAt,
+		EndedAt: cs.StartedAt.Add(30 * time.Second), Reason: trunking.EndReasonNormal,
+	}})
+	waitSession(t, r, "V1", false)
+
+	var completes []trunking.CallComplete
+	deadline := time.After(500 * time.Millisecond)
+loop:
+	for {
+		select {
+		case ev := <-sub.C:
+			if cc, ok := ev.Payload.(trunking.CallComplete); ok && ev.Kind == events.KindCallComplete {
+				completes = append(completes, cc)
+				if len(completes) == 2 {
+					break loop
+				}
+			}
+		case <-deadline:
+			break loop
+		}
+	}
+	if len(completes) != 2 {
+		t.Fatalf("got %d CallComplete events, want 2", len(completes))
+	}
+	for i, cc := range completes {
+		if !cc.CallStartedAt.Equal(cs.StartedAt) {
+			t.Errorf("segment %d: CallStartedAt = %v, want the call's start %v", i, cc.CallStartedAt, cs.StartedAt)
+		}
+		if cc.Segment != i {
+			t.Errorf("segment %d: Segment = %d", i, cc.Segment)
+		}
+		if cc.AudioPath == "" {
+			t.Errorf("segment %d: empty AudioPath", i)
+		}
+	}
+	if completes[0].AudioPath == completes[1].AudioPath {
+		t.Errorf("both segments announce the same file %q", completes[0].AudioPath)
+	}
+	if !completes[1].StartedAt.After(completes[0].StartedAt) {
+		t.Errorf("segment 1 StartedAt %v should be after segment 0's %v", completes[1].StartedAt, completes[0].StartedAt)
+	}
+}

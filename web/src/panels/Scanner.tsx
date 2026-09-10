@@ -18,6 +18,7 @@ import type {
   SystemHuntStatusDTO,
 } from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
+import { formatLocalDateTime } from "../lib/formatTime";
 
 const POLL_INTERVAL_MS = 3_000;
 
@@ -558,7 +559,7 @@ function StatePill({ state }: { state: string }) {
 }
 
 function timeOnly(ts: string): string {
-  return ts.replace("T", " ").replace(/\..*$/, "");
+  return formatLocalDateTime(ts);
 }
 
 function formatHz(hz: number): string {
