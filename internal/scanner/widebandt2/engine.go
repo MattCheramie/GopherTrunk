@@ -145,16 +145,14 @@ func channelizerBinsFor(sampleRateHz uint32) int {
 const channelizerTapsPerBranch = 16
 const channelizerKaiserBeta = 9.0
 
-// channelizerCleanResidualFrac is the |residual|/binRate above which a tap sits
-// far enough toward its channelizer bin edge to lose noticeable SNR. A
-// critically-sampled bin is flat to ~0.45·binRate then rolls off to −6 dB at
-// the edge (0.5). New warns when a polyphase plan crowds taps past this — a
-// dense, irregular plan (e.g. 70 DMR repeaters on a 12.5 kHz grid that never
-// aligns to the bin centres) inevitably does. The channelizer is still used
-// because it is the only bank that stays real-time at this tap count (a per-tap
-// DDC benches ~6x heavier — see BenchmarkDense71* in internal/dsp/tuner); the
-// warning just makes the trade-off visible.
-const channelizerCleanResidualFrac = 0.40
+// channelizerEdgeResidualFrac is the |residual|/binRate above which a tap
+// sits on a channelizer bin edge. The channelizer is 2x oversampled, so a
+// bin-edge tap decodes exactly like a centred one (the critically-sampled
+// predecessor rolled off to −6 dB there and folded the channel across the
+// edge — the 10 Sep IPSC "losing calls" report, pinned by
+// TestDMRIPSCWidebandReplay on the operator's capture); New now only logs the
+// layout at DEBUG so a dense plan's geometry stays visible in a log.
+const channelizerEdgeResidualFrac = 0.40
 
 // ChannelConfig binds one repeater frequency to the trunking system
 // it belongs to. The Engine creates one DMR state machine per entry,
@@ -643,17 +641,10 @@ func New(opts Options) (*Engine, error) {
 		engine.channels = append(engine.channels, ec)
 	}
 
-	// Dense, irregular plans crowd some taps onto channelizer bin edges, where
-	// the critically-sampled bin rolls off and those channels decode at reduced
-	// SNR. The channelizer is still the right bank (a per-tap DDC at this tap
-	// count is ~6x heavier and would not stay real-time), so this is a
-	// heads-up, not a switch: a channel that won't lock may simply be sitting on
-	// a bin edge — give it its own dongle, or thin the plan, if it matters.
 	if cb, ok := bank.(*tuner.ChannelizerBank); ok {
-		if frac := cb.MaxResidualFrac(); frac > channelizerCleanResidualFrac {
-			log.Warn("widebandt2: dense plan crowds some taps onto channelizer bin edges — those channels decode at reduced SNR (inherent to packing this many carriers on one wideband tuner)",
-				"serial", opts.Serial, "worst_residual_frac", fmt.Sprintf("%.2f", frac),
-				"clean_threshold", channelizerCleanResidualFrac)
+		if frac := cb.MaxResidualFrac(); frac > channelizerEdgeResidualFrac {
+			log.Debug("widebandt2: plan places taps near channelizer bin edges (oversampled channelizer: no SNR penalty)",
+				"serial", opts.Serial, "worst_residual_frac", fmt.Sprintf("%.2f", frac))
 		}
 		// Fan the per-tap fine-tune loop out across CPU cores. A dense plan's
 		// 71 NCO+resampler+receiver chains are the bulk of the per-chunk cost
@@ -1470,12 +1461,12 @@ func (ec *engineChannel) powerLabel() string {
 // DDCBank (linear, no bin-alignment constraint); a larger fleet favours the
 // shared polyphase channelizer, whose amortised wide-band filter is the only
 // thing that stays real-time at high tap counts. A dense 71-DMR plan benches
-// ~6x cheaper on the channelizer than on a per-tap DDC (one shared FFT vs 71
-// reduced-rate resamplers — BenchmarkDense71* in internal/dsp/tuner), so auto
-// keeps high counts on the channelizer even
-// when the plan crowds taps onto bin edges — New warns about the resulting
-// edge roll-off rather than trading real-time headroom for it. Explicit
-// "ddc"/"polyphase" are honoured verbatim.
+// ~4x cheaper on the (2x oversampled) channelizer than on a per-tap DDC (one
+// shared FFT vs 71 reduced-rate resamplers — BenchmarkDense71* in
+// internal/dsp/tuner), so auto keeps high counts on the channelizer; since the
+// oversampling a tap on a bin edge decodes like one at a centre, so the plan's
+// geometry no longer argues for the DDC. Explicit "ddc"/"polyphase" are
+// honoured verbatim.
 func pickStrategy(requested string, channelCount int) (kind, tag string) {
 	switch requested {
 	case "ddc":

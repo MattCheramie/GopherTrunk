@@ -3,6 +3,7 @@ package tuner
 import (
 	"errors"
 	"math"
+	"math/cmplx"
 	"testing"
 )
 
@@ -271,5 +272,60 @@ func TestBinForOffsetWrapsNegativeFrequencies(t *testing.T) {
 	}
 	if got := b.binCenterHz(15); math.Abs(got+150_000) > 1 {
 		t.Errorf("binCenterHz(15) = %.1f, want -150000", got)
+	}
+}
+
+// TestChannelizerBankBinEdgeChannelIsFlat is the regression for the 10 Sep
+// IPSC "still losing calls" report: a repeater 0.48 bins off a channelizer
+// bin centre decoded only intermittently on the live wideband tap while a
+// DDC on the same IQ decoded every transmission (TestDMRIPSCWidebandReplay on
+// the operator's capture: 1991 vs 6103 idle beacons, 2 vs 7 grants over the
+// same 300 s). A 12.5 kHz channel centred there spans both sides of the bin's
+// edge: the critically-sampled bin rolled its centre off by −6 dB and FOLDED
+// the part beyond the edge back across baseband, where the tap's fine-tune
+// resampler then rejected it. Every tone across such a channel must now leave
+// the tap flat (within 1 dB) and at its true offset from the tap centre.
+func TestChannelizerBankBinEdgeChannelIsFlat(t *testing.T) {
+	const (
+		M       = 8
+		inRate  = 8 * 195_312.5 // the 6.25 MS/s / 32-bin plan's bin width
+		outRate = 48_000.0
+		binRate = inRate / M
+	)
+	tapResidual := 0.48 // bins from bin 3's centre, the field geometry
+	tapHz := (3 + tapResidual) * binRate
+	for _, toneResidual := range []float64{0.45, 0.48, 0.50, 0.51} { // a 12.5 kHz channel at 0.48 spans 0.448..0.512 bins
+		b := NewChannelizerBank(inRate, outRate, 0.05, M, 16, 9.0)
+		var got []complex64
+		if err := b.AddTap(tapHz, func(out []complex64) { got = append(got, out...) }); err != nil {
+			t.Fatal(err)
+		}
+		toneHz := (3 + toneResidual) * binRate
+		const N = 1 << 17
+		in := make([]complex64, N)
+		for i := range in {
+			th := 2 * math.Pi * toneHz * float64(i) / inRate
+			in[i] = complex(float32(math.Cos(th)), float32(math.Sin(th)))
+		}
+		b.Process(in)
+		seg := got[len(got)/2:]
+		L := len(seg)
+		bestP, bestF := 0.0, 0.0
+		for q := -L / 2; q < L/2; q++ {
+			var acc complex128
+			for i, s := range seg {
+				acc += complex128(s) * cmplx.Exp(complex(0, -2*math.Pi*float64(q)*float64(i)/float64(L)))
+			}
+			if p := cmplx.Abs(acc); p > bestP {
+				bestP, bestF = p, float64(q)*b.OutputRateHz()/float64(L)
+			}
+		}
+		wantF := toneHz - tapHz
+		if math.Abs(bestF-wantF) > 2*b.OutputRateHz()/float64(L) {
+			t.Errorf("tone at residual %.2f: left the tap at %.0f Hz, want %.0f Hz (folded across the bin edge)", toneResidual, bestF, wantF)
+		}
+		if db := 20 * math.Log10(bestP/float64(L)); db < -1 || db > 0.5 {
+			t.Errorf("tone at residual %.2f: %.2f dB, want within [-1, +0.5] dB (bin-edge roll-off)", toneResidual, db)
+		}
 	}
 }

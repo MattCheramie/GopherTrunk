@@ -21,22 +21,29 @@ import (
 // More than one tap may share a channelizer bin: each tap reads the same
 // bin output and runs its own fine-tune DDC (NCO mixer keyed off its own
 // residual offset + resampler), so the taps are independent downstream and
-// their narrow per-protocol receivers reject the in-band neighbours. The
-// caveat is purely a quality one: a critically-sampled bin rolls off toward
-// its edges, so a tap whose residual sits near ±binRate/2 is attenuated.
-// Callers that need every channel at full SNR should keep residuals well
-// inside the bin (raise the bin count) or use DDCBank, which has no bin
-// geometry at all. See widebandt2's strategy picker.
+// their narrow per-protocol receivers reject the in-band neighbours.
+//
+// The channelizer is 2x oversampled (channelizer.Oversampled): each bin is
+// emitted at 2·InputRateHz/M with the whole ±binRate/2 span inside the
+// prototype's flat passband, so a tap sitting on a bin edge decodes exactly
+// like one at a bin centre. The critically-sampled predecessor rolled off to
+// −6 dB at the edge and folded the part of a channel that crossed it — a DMR
+// repeater 0.48 bins off-centre (10 Sep IPSC report) went deaf for minutes at
+// 30 dB SNR while a DDC on the same stream decoded every transmission. The
+// fine-tune resampler now decimates from 2·binRate, which doubles the per-tap
+// cost; the shared channelizer still leaves a dense plan several times
+// cheaper than per-tap DDCs.
 type ChannelizerBank struct {
 	inRateHz    float64
 	outRateHz   float64
 	actualOutHz float64
 	guardFrac   float64
 
-	channels  int
-	binRateHz float64
+	channels     int
+	binRateHz    float64 // bin SPACING, InputRateHz/M
+	binOutRateHz float64 // each bin's emitted rate, 2·binRateHz (oversampled)
 
-	ch   *channelizer.Polyphase
+	ch   *channelizer.Oversampled
 	bins [][]complex64 // reused channelizer output buffer
 
 	taps []*channelizerTap
@@ -62,23 +69,26 @@ type channelizerTap struct {
 }
 
 // NewChannelizerBank constructs a ChannelizerBank with the requested
-// number of channelizer bins (must be ≥ 2). tapsPerBranch and kaiserBeta
+// number of channelizer bins (must be an even number ≥ 2 — the oversampled
+// structure advances M/2 samples per output). tapsPerBranch and kaiserBeta
 // govern the channelizer's prototype filter; sensible defaults are 16
 // and 9.0 respectively, matching the channelizer package's own tests.
 func NewChannelizerBank(inRateHz, outRateHz, guardFrac float64, channels, tapsPerBranch int, kaiserBeta float64) *ChannelizerBank {
-	if channels < 2 {
-		panic("tuner: ChannelizerBank requires channels >= 2")
+	if channels < 2 || channels%2 != 0 {
+		panic("tuner: ChannelizerBank requires an even channel count >= 2")
 	}
 	binRateHz := inRateHz / float64(channels)
-	l, m := rationalRatio(outRateHz, binRateHz)
+	binOutRateHz := 2 * binRateHz
+	l, m := rationalRatio(outRateHz, binOutRateHz)
 	return &ChannelizerBank{
-		inRateHz:    inRateHz,
-		outRateHz:   outRateHz,
-		actualOutHz: binRateHz * float64(l) / float64(m),
-		guardFrac:   guardFrac,
-		channels:    channels,
-		binRateHz:   binRateHz,
-		ch:          channelizer.New(channels, tapsPerBranch, kaiserBeta),
+		inRateHz:     inRateHz,
+		outRateHz:    outRateHz,
+		actualOutHz:  binOutRateHz * float64(l) / float64(m),
+		guardFrac:    guardFrac,
+		channels:     channels,
+		binRateHz:    binRateHz,
+		binOutRateHz: binOutRateHz,
+		ch:           channelizer.NewOversampled(channels, tapsPerBranch, kaiserBeta),
 	}
 }
 
@@ -95,7 +105,7 @@ func (b *ChannelizerBank) AddTap(offsetHz float64, sink SinkFunc) error {
 	binCenter := b.binCenterHz(binIdx)
 	residual := offsetHz - binCenter
 
-	l, m := rationalRatio(b.outRateHz, b.binRateHz)
+	l, m := rationalRatio(b.outRateHz, b.binOutRateHz)
 	tapsPerBranch := (ddcStopbandTaps*m + l - 1) / l
 	if tapsPerBranch < ddcMinTapsPerBranch {
 		tapsPerBranch = ddcMinTapsPerBranch
@@ -104,7 +114,7 @@ func (b *ChannelizerBank) AddTap(offsetHz float64, sink SinkFunc) error {
 		offsetHz:   offsetHz,
 		binIdx:     binIdx,
 		residualHz: residual,
-		nco:        newNCO(residual, b.binRateHz),
+		nco:        newNCO(residual, b.binOutRateHz),
 		resampler:  dsp.NewResampler(l, m, tapsPerBranch, ddcKaiserBeta),
 		sink:       sink,
 	}
@@ -114,9 +124,8 @@ func (b *ChannelizerBank) AddTap(offsetHz float64, sink SinkFunc) error {
 
 // MaxResidualFrac returns the largest |residual|/binRate over all taps added
 // so far — a 0..0.5 measure of how close the worst-placed tap sits to its
-// bin edge, where the critically-sampled prototype rolls off. Callers use it
-// to decide whether the polyphase layout is clean enough or whether a
-// per-tap DDC (no bin geometry) would decode the set better.
+// bin edge. With the oversampled channelizer the whole bin is in the flat
+// passband, so this is a layout diagnostic, not a decode-quality cliff.
 func (b *ChannelizerBank) MaxResidualFrac() float64 {
 	worst := 0.0
 	for _, t := range b.taps {
@@ -212,19 +221,16 @@ func (b *ChannelizerBank) Process(src []complex64) {
 func (b *ChannelizerBank) InputRateHz() float64 { return b.inRateHz }
 
 // OutputRateHz returns the per-tap narrow-band sample rate the bank actually
-// emits. The fine-tune resampler decimates the bin rate (InputRateHz/channels)
-// to the construction target, but when that exact ratio exceeds the resampler
+// emits. The fine-tune resampler decimates the bin's emitted rate
+// (2·InputRateHz/channels) to the construction target, but when that exact ratio exceeds the resampler
 // caps the achieved rate differs by a fraction of a percent (issue #550);
 // consumers should build their symbol clocks from this value.
 func (b *ChannelizerBank) OutputRateHz() float64 { return b.actualOutHz }
 
-// Reset clears the channelizer and every tap's fine-tune state. The
-// channelizer.Polyphase has no Reset method of its own; we drive a
-// flush of zero-input samples through it to clear the polyphase history
-// so a restart doesn't replay stale samples.
+// Reset clears the channelizer and every tap's fine-tune state so a restart
+// doesn't replay stale samples.
 func (b *ChannelizerBank) Reset() {
-	flush := make([]complex64, b.channels*16)
-	b.ch.Process(b.bins, flush)
+	b.ch.Reset()
 	for _, t := range b.taps {
 		t.nco.reset()
 		t.resampler.Reset()
