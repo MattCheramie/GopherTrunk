@@ -378,6 +378,13 @@ type engineChannel struct {
 	protoTag  string // e.g. "dmr-tier2", "dmr-tier3", "p25-phase1", "p25-phase2"
 	processor channelProcessor
 	receiver  narrowbandReceiver
+	// rateHz is the tap's ACTUAL output rate (the DDC bank's realised rate
+	// for this channel's protocol), reported through Engine.ChannelRateHz to
+	// the same-carrier voice source.
+	rateHz float64
+	// fan distributes this channel's post-DDC IQ to same-carrier voice
+	// subscribers (ChannelVoiceSource). No-op with zero subscribers.
+	fan *channelFanout
 	// dmrTier3 is the typed Tier III control channel for "dmr-tier3"
 	// channels (nil otherwise). Exposed via DMRTier3ControlChannel so the
 	// DMR LCN autoconfig learner can hot-swap a learned band-plan resolver.
@@ -609,12 +616,18 @@ func New(opts Options) (*Engine, error) {
 		if err != nil {
 			return nil, err
 		}
+		ec.rateHz = outRateHz
+		ec.fan = newChannelFanout(log, opts.Serial, ch.FrequencyHz, outRateHz)
 		sink := func(ec *engineChannel) tuner.SinkFunc {
 			return func(out []complex64) {
 				if len(out) == 0 {
 					return
 				}
 				ec.pwr.Add(out)
+				// Same-carrier voice taps see the chunk before the control
+				// receiver consumes it (mirrors ccdecoder's voiceFan ordering);
+				// a no-op while nothing is subscribed.
+				ec.fan.broadcast(out)
 				ec.receiver.Process(out)
 			}
 		}(ec)
@@ -1413,6 +1426,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 						"beacons", c.Beacons-ec.lastLogCnt.Beacons,
 						"late_entries", c.LateEntries-ec.lastLogCnt.LateEntries,
 						"csbk_crc_fail", c.CSBKCRCFail-ec.lastLogCnt.CSBKCRCFail,
+						"rekeys", c.Rekeys-ec.lastLogCnt.Rekeys,
 						"locks_total", c.Locks)
 					ec.activityLogAt = now
 					ec.activityCls = cls
