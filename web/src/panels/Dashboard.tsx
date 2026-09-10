@@ -16,6 +16,7 @@ import {
 import { selectClientConfig, useShared } from "../store/shared";
 import { groupEvents } from "../lib/groupEvents";
 import type { EventDTO } from "../api/types";
+import { formatLocalDateTime } from "../lib/formatTime";
 
 // DIGEST_EXCLUDE names the high-frequency status/diagnostic event kinds that
 // don't belong in the human "what happened" digest: a P25 control channel
@@ -242,7 +243,7 @@ export function Dashboard() {
               .map((g, i) => (
                 <li key={`${g.lastTimestamp}-${i}`} className="flex gap-3">
                   <span className="text-muted shrink-0">
-                    {g.lastTimestamp.replace("T", " ").replace(/\..*$/, "")}
+                    {formatLocalDateTime(g.lastTimestamp)}
                   </span>
                   <span className="text-accent shrink-0 w-28 truncate">
                     {g.event.kind}

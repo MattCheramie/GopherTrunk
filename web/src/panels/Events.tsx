@@ -5,6 +5,7 @@ import { Badge } from "../components/ui/Badge";
 import type { EventDTO } from "../api/types";
 import { useShared } from "../store/shared";
 import { contentKey, groupEvents, type GroupedEvent } from "../lib/groupEvents";
+import { formatLocalDateTime } from "../lib/formatTime";
 
 // Events renders the live ring buffer the WebSocket stream populates
 // into the shared store. No polling — the stream pushes everything;
@@ -55,7 +56,7 @@ export function Events() {
         header: "Time",
         render: (g) => (
           <span className="font-mono text-xs text-muted whitespace-nowrap">
-            {g.event.timestamp.replace("T", " ").replace(/\..*$/, "")}
+            {formatLocalDateTime(g.event.timestamp)}
             {g.count > 1 ? (
               <span
                 className="ml-1 px-1 rounded bg-surface text-fg/70 text-[10px]"

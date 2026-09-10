@@ -1155,6 +1155,30 @@ confirmation before any close-as-completed.
   that one IS in `unpackParams2450`, and needs the mbelib-neo 2450 frame diff. Measure with
   band fractions / centroid / LSD, never by ear alone; the "gt-shipped" WAVs had
   enhance+normalize+warm on top and hid all of this.
+- **10 Sep user-reported batch — five web/recording reports, one root cause each.**
+  (1) "History updates too slow / stops at 00:15 while activity shows 03:15" was the
+  UTC-render bug, not staleness: History/Events/Dashboard/Active/Tones/Scanner sliced
+  the daemon's RFC3339 string (`.replace("T"," ")`), so a UTC+3 operator saw every
+  table 3 h behind the (locally formatted) activity feed. `lib/formatTime.ts`
+  (`formatLocalDateTime`/`formatClock`) is now the ONLY way to render a timestamp —
+  grep for `replace("T", " ")` / `toISOString().slice` before shipping a panel. History
+  also refetches after each `call.end` (+30 s visible-tab poll). (2) "duration 30 s,
+  recording 4 s" = per-transmission segment rolls: the recorder publishes one
+  `CallComplete` PER OVER stamped with the over's own `StartedAt`, and the call log
+  keyed on it — only the first over matched the row, later files were orphaned.
+  `CallComplete.CallStartedAt`/`Segment` + the `call_recordings` table fix the keying;
+  `/calls/{id}/audio` concatenates the segments (`concatRecordingSegments`, inter-over
+  gap restored, capped 1.5 s). Pinned by `TestCallLogAttachesEverySegmentRecording`,
+  `TestCallAudioEndpointPlaysEverySegment`, `TestRecorderSegmentCompleteCarriesCallStart`.
+  The residual "1.7 s audio of a 5.6 s over, 58 frames, audio_pct=31" in the same log is
+  TETRA TCH/S decode yield on a −53 dBFS same-carrier signal (the existing
+  "recording shorter than call span" diagnostic) — RF/decode, not the recorder; do not
+  chase it from the recorder side. (3) Cyrillic recording folders as `_______`: the
+  recorder `sanitize` was `[A-Za-z0-9._-]`; it now keeps Unicode L/M/N categories.
+  (4) The floating AudioPlayer docks bottom-right exactly over DataTable's pager — pager
+  is now rendered top AND bottom, and `AppShell` main keeps `pb-24` at every width.
+  (5) Per-RID playback: `/calls/history?source_id=` + a ▶ per recent call in the RID
+  modal (`RecordingPlayer` inline).
 - **Capture ceilings**: siglab capture-from-tuner 120→1200 s (`maxCaptureSeconds`, byte
   budget 4 GiB estimated at the UNCOMPRESSED decoder width even for flac),
   `diversity_capture_seconds` 120→1200 (`maxDiversityCaptureSeconds`); the REST hunt capture

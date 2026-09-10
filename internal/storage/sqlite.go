@@ -99,6 +99,23 @@ CREATE INDEX IF NOT EXISTS idx_call_log_system  ON call_log(system, started_at);
 CREATE INDEX IF NOT EXISTS idx_call_log_group   ON call_log(group_id, started_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_call_log_active ON call_log(device_serial, started_at);
 
+-- One row per finished recording FILE of a call. A call recorded in
+-- "transmission" grouping (per-over segment rolls, e.g. a TETRA talker
+-- change) produces several files; call_log.recording_path keeps only the
+-- first, this table keeps them all in order so /calls/{id}/audio can play
+-- the whole call. Rows are attached by the recorder's KindCallComplete and
+-- swept with their call row (retention).
+CREATE TABLE IF NOT EXISTS call_recordings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_id     INTEGER NOT NULL,
+    seq         INTEGER NOT NULL,           -- 0-based segment index within the call
+    path        TEXT    NOT NULL,
+    started_at  INTEGER NOT NULL,           -- unix nanoseconds, this file's span
+    ended_at    INTEGER,
+    UNIQUE(call_id, path)
+);
+CREATE INDEX IF NOT EXISTS idx_call_recordings_call ON call_recordings(call_id, seq);
+
 CREATE TABLE IF NOT EXISTS location_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     system      TEXT    NOT NULL DEFAULT '',

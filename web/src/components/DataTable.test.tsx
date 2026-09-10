@@ -82,9 +82,13 @@ describe("DataTable", () => {
     // First page shows 1..10, not 11.
     expect(screen.getByText("item-10")).toBeInTheDocument();
     expect(screen.queryByText("item-11")).toBeNull();
-    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    expect(screen.getAllByText("1 / 3")).toHaveLength(2);
 
-    await user.click(screen.getByRole("button", { name: /Next/i }));
+    // Prev/Next are rendered above AND below the table (the bottom pair sits
+    // under the floating audio player); either steps the page.
+    const nexts = screen.getAllByRole("button", { name: /Next/i });
+    expect(nexts).toHaveLength(2);
+    await user.click(nexts[0]);
     expect(screen.getByText("item-11")).toBeInTheDocument();
     expect(screen.queryByText("item-10")).toBeNull();
   });
