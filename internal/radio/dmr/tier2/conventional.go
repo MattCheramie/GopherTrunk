@@ -12,6 +12,7 @@
 package tier2
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -57,6 +58,32 @@ const lateEntryConfirm = 2
 // stays valid: a second agreeing LC must land within this much of the first
 // or the candidate is restarted.
 const lateEntryWindow = 3 * time.Second
+
+// headerRekeyDibits separates the repeated copies of ONE transmission's Voice
+// LC Header (a repeater sends 2–3 back-to-back copies at keyup, 60 ms / 288
+// dibits apart on a two-slot carrier) from the header of a NEW transmission
+// on the same (destination, source). A header for a tracked call that lands
+// more than this far past the call's last header/LC is a re-key whose
+// terminator went undecoded — the 10 Sep IPSC field report: the composer's
+// voice-path detector released the call at PTT release, but the control
+// path's copy of the Terminator-with-LC sat BPTC-uncorrectable for 0.8–6.5 s
+// on its weaker channelizer tap, so the next transmission's header was
+// "deduped" against a call the engine had already ended and the reply was
+// never recorded. 0.25 s (1200 dibits): the copies of one header span
+// ~120–180 ms, while a re-key's header is always at least one superframe
+// (360 ms) past the previous over's last superframe start — the operator's
+// 10 Sep capture has one reply keyed up so fast that a 0.5 s rule missed it.
+const headerRekeyDibits = 1200
+
+// superframeRekeyGapDibits is the same re-key rule for a transmission whose
+// header was ALSO lost: a CRC-valid embedded LC naming a tracked call after
+// this much silence (no header / LC for the call) is a new transmission and
+// re-grants by late entry. Measured from the START of the last superframe
+// that named the call, so 2 s (9600 dibits) is ~1.6 s of actual silence:
+// superframes of one transmission are 1728 dibits (360 ms) apart, so a
+// four-superframe fade mid-over is tolerated, while a reply that follows a
+// typical ≥3 s repeater hang time is caught even when its header is lost.
+const superframeRekeyGapDibits = 9600
 
 // LockState is the payload of cc.locked / cc.lost events emitted by
 // the Tier II per-repeater state machine. DMR Tier II is conventional
@@ -106,6 +133,12 @@ type Counters struct {
 	// the CSBK CRC — either between-beacon noise, or a real proprietary CSBK
 	// train GT does not yet understand (see handleCSBK's parked log).
 	CSBKCRCFail uint64
+	// Rekeys counts transmissions granted because a Voice LC Header (or, with
+	// the header lost too, a fresh embedded LC after a silence gap) named a
+	// call this channel still tracked — i.e. the previous transmission's
+	// Terminator-with-LC never decoded here. Each one is a reply that would
+	// have been missed before the re-key rule (see headerRekeyDibits).
+	Rekeys uint64
 }
 
 // LockedFrequencyHz / LockedNAC make LockState satisfy
@@ -241,6 +274,7 @@ type ConventionalChannel struct {
 		droppedOffCC atomic.Uint64
 		lateEntries  atomic.Uint64
 		csbkCRCFail  atomic.Uint64
+		rekeys       atomic.Uint64
 	}
 
 	// beaconLogAt is the last time handleCSBK emitted an Info "site alive"
@@ -278,6 +312,7 @@ func (c *ConventionalChannel) Counters() Counters {
 		DroppedOffCC: c.cnt.droppedOffCC.Load(),
 		LateEntries:  c.cnt.lateEntries.Load(),
 		CSBKCRCFail:  c.cnt.csbkCRCFail.Load(),
+		Rekeys:       c.cnt.rekeys.Load(),
 	}
 }
 
@@ -375,6 +410,64 @@ func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 		c.handleTerminator(b, slot)
 	case dmr.DTCSBK:
 		c.handleCSBK(b, slot)
+	case dmr.DTIdle:
+		c.handleIdle(b, slot)
+	}
+}
+
+// IdleInfoPattern is the fixed 96-bit information block of the ETSI DMR Idle
+// burst (TS 102 361-1 §9.3.x "Idle") as recovered through BPTC(196,96). It is
+// what a Motorola / Hytera IPSC repeater transmits on BOTH timeslots while
+// keyed but idle — the periodic ~10 s "beacon" trains between calls — and it
+// is pinned two independent ways: the operator's 10 Sep 442.3875 MHz
+// beacon-only capture decodes 2402/2416 synced bursts to exactly this block
+// at colour code 12, and BPTC-decoding MMDVMHost's DMR_IDLE_DATA burst
+// constant (DMRDefines.h) yields the same 12 bytes
+// (TestIdleInfoPatternMatchesMMDVMHostConstant).
+var IdleInfoPattern = [12]byte{0xff, 0x83, 0xdf, 0x17, 0x32, 0x09, 0x4e, 0xd1, 0xe7, 0xcd, 0x8a, 0x91}
+
+// handleIdle processes an Idle-typed burst. A conventional/IPSC repeater
+// that is keyed with nothing to carry fills both slots with Idle bursts, so
+// on this profile Idle IS the idle beacon (the operator's "camp / idle
+// beacon" request, 10 Sep): before this handler Idle fell through
+// IngestBurst's switch, Beacons stayed 0 on a repeater that was audibly
+// keyed for ten seconds at a time, the channel never reported locked until
+// someone spoke, and the wideband engine's "strong in-channel signal but no
+// sync" hint fired on every beacon train.
+//
+// The gate is content-strict, mirroring handleCSBK: the burst must BPTC-
+// decode AND its information block must equal IdleInfoPattern, so a noise
+// burst that false-syncs and happens to Golay-decode to (cc, Idle) cannot
+// forge a beacon — it would also have to be a BPTC codeword carrying that
+// exact 96-bit block. A BPTC-clean Idle with a DIFFERENT block is a vendor
+// variant GT has not seen: it is dropped, and its info hex is logged
+// (parked) so the next field log pins it. Not a decode error on the bus.
+func (c *ConventionalChannel) handleIdle(b *dmr.Burst, slot dmr.SlotType) {
+	bits, errs := framing.DecodeBPTC196_96(b.PayloadBits())
+	if errs < 0 {
+		return
+	}
+	info := infoBitsToBytes(bits)
+	if !bytes.Equal(info, IdleInfoPattern[:]) {
+		c.logCSBKFailure("dmr/tier2: idle burst with an unknown information block (vendor idle variant?)", slot, nil, info)
+		return
+	}
+	c.cnt.beacons.Add(1)
+	c.burstValid = true
+	// A keyed repeater sending the ETSI idle pattern at this colour code is
+	// as strong a "this carrier is a DMR repeater" proof as a voice header,
+	// so camp on it: the channel reports locked (site alive) while idle.
+	c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: slot.ColorCode})
+	c.mu.Lock()
+	now := c.now()
+	due := c.beaconLogAt.IsZero() || now.Sub(c.beaconLogAt) >= beaconLogInterval
+	if due {
+		c.beaconLogAt = now
+	}
+	c.mu.Unlock()
+	if due {
+		c.log.Info("dmr/tier2 site alive (idle beacon)",
+			"freq", c.freqHz, "cc", slot.ColorCode, "system", c.systemName)
 	}
 }
 
@@ -454,6 +547,9 @@ func (c *ConventionalChannel) logCSBKFailure(msg string, slot dmr.SlotType, csbk
 		attrs = append(attrs,
 			"csbko", fmt.Sprintf("0x%02x", uint8(csbk.Opcode)), "fid", fmt.Sprintf("0x%02x", csbk.FID),
 			"lb", csbk.LB, "pf", csbk.PF, "info_hex", hex.EncodeToString(info))
+	} else if info != nil {
+		key += "|" + hex.EncodeToString(info)
+		attrs = append(attrs, "info_hex", hex.EncodeToString(info))
 	}
 	now := c.now()
 	st := &c.csbkFailLog
@@ -501,12 +597,31 @@ func (c *ConventionalChannel) ingestVoiceSuperframe(sf dmrvoice.VoiceSuperframe)
 	}
 	now := c.now()
 	if existing, ok := c.calls[dest]; ok {
+		if existing.src == src && existing.lastDibit >= 0 &&
+			sf.StartDibit-existing.lastDibit > superframeRekeyGapDibits {
+			// The call went silent for longer than any fade a transmission
+			// survives and then its (dest, src) is back in a fresh embedded
+			// LC: a re-key whose header AND whose predecessor's terminator
+			// were both lost. Release the stale call and re-grant by late
+			// entry, exactly as if the call had never been tracked.
+			c.cnt.rekeys.Add(1)
+			c.cnt.lateEntries.Add(1)
+			c.log.Debug("dmr/tier2: re-key by late entry — embedded LC for a still-tracked call after a silence gap",
+				"dst", dest, "src", src, "gap_dibits", sf.StartDibit-existing.lastDibit)
+			c.releaseCall(dest)
+			ts := c.assignSlot(now)
+			c.calls[dest] = newConvCall(src, ts, now, sf.StartDibit)
+			c.publishGrant(dest, src, individual, enc, emer, prio, ts, sf.EMBColorCode, true)
+			return
+		}
 		// The call is already tracked (header-granted or late-entered): the
 		// LC is liveness for slot reuse. A source change mid-call is a talker
 		// change on the same slot — republish, as the header path does.
 		existing.lastAt = now
+		existing.touch(sf.StartDibit)
 		if existing.src != src {
 			existing.src = src
+			existing.anchorDibit = sf.StartDibit
 			c.publishGrant(dest, src, individual, enc, emer, prio, existing.slot, sf.EMBColorCode, true)
 		}
 		return
@@ -542,7 +657,7 @@ func (c *ConventionalChannel) ingestVoiceSuperframe(sf dmrvoice.VoiceSuperframe)
 		c.calls = make(map[uint32]*convCall)
 	}
 	ts := c.assignSlot(now)
-	c.calls[dest] = &convCall{src: src, slot: ts, lastAt: now}
+	c.calls[dest] = newConvCall(src, ts, now, sf.StartDibit)
 	c.publishGrant(dest, src, individual, enc, emer, prio, ts, sf.EMBColorCode, true)
 }
 
@@ -706,18 +821,40 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 	}
 	var ts uint8
 	if existing, ok := c.calls[dest]; ok {
-		existing.lastAt = now
 		if existing.src == src {
-			// Same call's repeated Voice LC Header — dedupe.
+			if c.ingestDibit < 0 || existing.anchorDibit < 0 ||
+				c.ingestDibit-existing.anchorDibit <= headerRekeyDibits {
+				// Same transmission's repeated Voice LC Header copy — or a
+				// header that surfaced behind the superframes that already
+				// (re-)granted this transmission by late entry. Dedupe.
+				existing.lastAt = now
+				existing.touch(c.ingestDibit)
+				return
+			}
+			// A Voice LC Header is only ever sent at keyup, so one this far
+			// past the tracked call's own header is a NEW transmission whose
+			// predecessor's terminator this channel never decoded. Release
+			// the stale call (idempotent for an engine the voice path
+			// already released) and grant the re-key.
+			c.cnt.rekeys.Add(1)
+			c.log.Debug("dmr/tier2: re-key — Voice LC Header for a still-tracked call; previous terminator undecoded here",
+				"dst", dest, "src", src, "gap_dibits", c.ingestDibit-existing.anchorDibit)
+			c.releaseCall(dest)
+			ts = c.assignSlot(now)
+			c.calls[dest] = newConvCall(src, ts, now, c.ingestDibit)
+			c.publishGrant(dest, src, individual, enc, emer, prio, ts, slot.ColorCode, false)
 			return
 		}
 		// Same destination, new talker: keep the slot, republish with the new
 		// source so the engine surfaces the talker change.
+		existing.lastAt = now
 		existing.src = src
+		existing.anchorDibit = c.ingestDibit
+		existing.touch(c.ingestDibit)
 		ts = existing.slot
 	} else {
 		ts = c.assignSlot(now)
-		c.calls[dest] = &convCall{src: src, slot: ts, lastAt: now}
+		c.calls[dest] = newConvCall(src, ts, now, c.ingestDibit)
 	}
 	// A header grant supersedes any pending late-entry candidate for the
 	// destination (the header is the stronger evidence and arrives first).
@@ -770,6 +907,21 @@ func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) 
 		// was never decoded) — harmless no-op.
 		return
 	}
+	// A Terminator with LC is the explicit end of the transmission. Publish a
+	// call release so the engine ends the call at once, rather than waiting out
+	// the composer's hangtime / no-voice timers — the same prompt-teardown path
+	// TETRA's D-RELEASE drives.
+	c.releaseCall(dest)
+	c.log.Debug("dmr/tier2: terminator", "dst", dest, "slot", cc.slot)
+}
+
+// releaseCall forgets the tracked call on dest, records where in the stream it
+// ended (so the closing superframes that surface behind the slicer cannot
+// re-grant it) and publishes one call.release keyed by (System, GroupID) —
+// which uniquely names this call among the concurrent slots. The engine's
+// release handling is idempotent, so releasing a call the voice path already
+// ended is harmless.
+func (c *ConventionalChannel) releaseCall(dest uint32) {
 	delete(c.calls, dest)
 	delete(c.lateEntry, dest)
 	if c.ingestDibit >= 0 {
@@ -778,12 +930,6 @@ func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) 
 		}
 		c.endedAtDibit[dest] = c.ingestDibit
 	}
-
-	// A Terminator with LC is the explicit end of the transmission. Publish a
-	// call release so the engine ends the call at once, rather than waiting out
-	// the composer's hangtime / no-voice timers — the same prompt-teardown path
-	// TETRA's D-RELEASE drives. Keyed by (System, GroupID), which uniquely names
-	// this call among the concurrent slots.
 	if c.bus != nil && dest != 0 {
 		c.bus.Publish(events.Event{
 			Kind: events.KindCallRelease,
@@ -795,7 +941,6 @@ func (c *ConventionalChannel) handleTerminator(b *dmr.Burst, slot dmr.SlotType) 
 			},
 		})
 	}
-	c.log.Debug("dmr/tier2: terminator", "dst", dest, "slot", cc.slot)
 }
 
 // terminatorDest decodes a Terminator-with-LC burst's Full LC and returns the
@@ -835,6 +980,36 @@ type convCall struct {
 	src    uint32
 	slot   uint8
 	lastAt time.Time
+	// anchorDibit is the absolute dibit index of the evidence that most
+	// recently STARTED this call's current transmission: the last Voice LC
+	// Header copy, or the embedded LC that (re-)granted it by late entry.
+	// The header re-key rule measures against it. lastDibit is the index of
+	// the last header or CRC-valid embedded LC of any kind that named the
+	// call; the silence-gap re-key rule measures against it. Both are −1
+	// when unknown (a burst ingested directly rather than through Process).
+	// They are stream-time clocks — wall-clock would not survive an offline
+	// replay that runs faster than real time — and they are kept separately
+	// because Process assembles a chunk's superframes BEFORE it slices the
+	// chunk's data bursts, so a new transmission's first superframe can
+	// refresh the call ahead of that transmission's own header: measured
+	// against lastDibit that header would look like a stale copy.
+	anchorDibit int
+	lastDibit   int
+}
+
+// newConvCall tracks a call granted by evidence at absolute dibit index
+// dibit (−1 when unknown).
+func newConvCall(src uint32, slot uint8, at time.Time, dibit int) *convCall {
+	return &convCall{src: src, slot: slot, lastAt: at, anchorDibit: dibit, lastDibit: dibit}
+}
+
+// touch records further evidence of the call at dibit; positions only ever
+// move forward, so evidence that surfaces out of stream order (a header
+// sliced one chunk behind the superframe that followed it) cannot rewind.
+func (cc *convCall) touch(dibit int) {
+	if dibit > cc.lastDibit {
+		cc.lastDibit = dibit
+	}
 }
 
 // assignSlot returns a synthetic timeslot (1 then 2) for a new concurrent call.
