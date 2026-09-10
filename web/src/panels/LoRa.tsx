@@ -44,7 +44,7 @@ export function LoRa() {
         render: (f) => (
           <span className="inline-flex items-center gap-1">
             <span className="font-mono text-accent">
-              {(f.frequency_hz / 1e6).toFixed(3)}
+              {(f.frequency_hz / 1e6).toFixed(4)}
             </span>
             {!f.crc_ok && <Badge tone="warn">crc</Badge>}
           </span>
@@ -144,7 +144,7 @@ export function LoRa() {
         searchable
         searchAccessor={(f) =>
           [
-            (f.frequency_hz / 1e6).toFixed(3),
+            (f.frequency_hz / 1e6).toFixed(4),
             f.mtype,
             f.dev_addr,
             f.decoded,

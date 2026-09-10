@@ -1080,3 +1080,86 @@ confirmation before any close-as-completed.
   because `talkgroup_file` / `rid_alias_file` are per-system config keys and the CSV export has
   to be able to emit one file per system. Only the naming fields persist; priority / lockout /
   watch / scan stay in memory as before.
+- **Two systems on one `role: control`/`auto` tuner are TIME-multiplexed, never concurrent
+  (10 Sep "can't monitor two TETRA systems at once").** `cchunt.Supervisor` hunts systems
+  round-robin and `parkUntilUnlocked` on the first that locks — on a healthy site the second
+  is never hunted, with no log line saying so (only `systems=2` at startup and the web UI's
+  system list). `channels:`/`voice_taps`/`tuner_strategy` on a non-wideband device are dead
+  config (gated on `Role == "wideband"` in daemon.go and config_validate.go). The daemon now
+  WARNs + `addWarning`s both conditions at startup (`TestTwoSystemsOnOneControlSDRWarns`).
+  The concurrent path is `role: wideband` with one `channels:` entry per system; TETRA there
+  used to have NO same-carrier voice source (a TETRA grant on a wideband-hosted CC could only
+  bind a 48 kHz `wbvoice.VirtualTuner` and run the SOLO chain, never the 4-slot per-carrier
+  demux), so `widebandt2.ChannelVoiceSource` (`channeliq.go`) now fans each wideband channel's
+  own tap IQ out (`engineChannel.fan`, mirroring `ccdecoder.voiceFanout`) and the daemon
+  registers four of them per wideband TETRA channel (`buildWidebandSameCarrierVoiceTaps`,
+  `d.wbVoiceSources`, serial `wb:<serial>:same-carrier:<hz>:<n>`, `CarrierKey` keyed by
+  engine AND frequency). Ordering matters: they are listed BEFORE the VirtualTuners in
+  `collectVoiceDevices` because a VirtualTuner's `CanTune` accepts the CC carrier too and
+  would otherwise take the grant into its solo chain; DMR Tier II on wideband deliberately
+  keeps the VirtualTuner path (its own DDC from raw IQ, on-air-verified; the channelizer's
+  bin-edge tap is the weaker one). NOT on-air-verified yet (#764/#771): the operator must run
+  the wideband two-TETRA config and confirm both CCs lock AND voice records for both.
+- **DMR Tier II IPSC "calls completely missed while the radios decode" (10 Sep) = a re-key
+  within hangtime deduped against a call the control path still tracked.** The operator's
+  own log: the composer's voice-path `TerminatorDetector` released each call at PTT release,
+  while the tier2 slicer's copy of the same terminator decoded 0.8–6.5 s LATER (its polyphase
+  bin-edge tap is weaker; `terminator slot type without a BPTC-valid payload ignored`), so a
+  reply's Voice LC Header for the same (tg, radio) hit `Same call's repeated header — dedupe`
+  and was never granted. Fix (`conventional.go`): a header for a tracked call more than
+  `headerRekeyDibits` (0.25 s) past that call's `anchorDibit` (its own last header / the LC
+  that late-entered it) is a NEW transmission → `releaseCall` + re-grant (`Rekeys` counter,
+  `rekeys` in the widebandt2 activity line); a fresh embedded LC after
+  `superframeRekeyGapDibits` (2 s from the last LC's superframe start) re-grants by late
+  entry when the header was lost too. Gotcha that cost a round: `Process` assembles a chunk's
+  superframes BEFORE slicing its data bursts, so the new over's first superframe refreshed
+  the call ahead of its own header — measure against the header/late-entry anchor, never the
+  last superframe (`convCall.touch` only moves forward). Real-air A/B in
+  `TestDMRIPSCReplay` (now reads wav/flac containers directly): `GT_DMR_DROP_TERMINATORS=1`
+  on `dmr_ipsc_beacon_voice.flac` — old 1 grant / 5 transmissions, new 5 (`rekeys=4`);
+  unscrubbed 5 grants (one on-air re-key had no terminator at all), `GT_DMR_DROP_HEADERS=1`
+  unchanged at 4 late entries. The harness also prints a grant/release/voice-terminator
+  timeline (stream time, 4800 dibits/s). Mid-hangtime the repeater repeats the LAST
+  terminator of the OTHER slot too (tg 25862 on these captures) — harmless, dest ≠ call.
+- **The IPSC "camp / idle beacon" is the ETSI DMR Idle burst (slot type 9), not a CSBK, and
+  `beacons=0` was because `IngestBurst` dropped Idle on the floor.** On the operator's 10 Sep
+  beacon-only capture a keyed-but-idle Motorola/Hytera repeater fills BOTH slots with
+  BS-Data-synced Idle bursts (cc 12, ~33/s in ~10 s trains) whose BPTC-decoded block is
+  always `ff83df1732094ed1e7cd8a91` (2402/2416 bursts) — and BPTC-decoding MMDVMHost's
+  `DMR_IDLE_DATA` template (DMRDefines.h; its slot type is a placeholder the host stamps)
+  yields the same 12 bytes with zero corrections (`TestIdleInfoPatternMatchesMMDVMHostConstant`,
+  the independent-reference pin). `handleIdle` counts a BPTC-clean Idle carrying exactly
+  `IdleInfoPattern` as a beacon, declares the lock (site camped while idle) and logs
+  `site alive (idle beacon)` rate-limited; a BPTC-clean Idle with any other block is logged
+  parked with `info_hex` (vendor variant instrument), never counted. Side effect: the
+  widebandt2 "strong in-channel signal but no sync" hint no longer fires on beacon trains
+  (`activityClass` counts beacons as decode). The 9 Sep cc=7 CSBK-CRC-fail train did NOT
+  appear on these captures (only a few Golay-forged slot types on voice bursts), so it is
+  still unpinned.
+- **Vocoder "sounds awful" is now MEASURED against dsd-neo on the same frames (10 Sep pairs)
+  and is two calibratable things, neither in the vocoder core.** Per-harmonic DFT at l·ω₀ of
+  both decodes: f₀ identical; VOICED IMBE harmonics match within ±1 dB above 1.5 kHz; below
+  that GT has a smooth LF excess (+4 dB @500 Hz … +16 dB @125 Hz = a first-order HPF shape —
+  dsd-neo runs `use_hpf_d=1` by default, a handset tilts the same way) → new
+  `recordings.enhance.tilt_hz` first-order high-pass (`radioTilt`, bilinear pre-warped; the
+  naive RC recurrence is 1.2 dB off at 8 kHz), default 450 Hz = the LSD-optimal corner once
+  the unvoiced level is also fixed (750 fits the voiced harmonics alone). UNVOICED bands were
+  6 dB (IMBE) to 13–15 dB (AMBE 2450) low: mbelib's unvoiced harmonic is 3 random-phase
+  cosines of ≈1.353·Ml (≈2.75·Ml², 5.5× a voiced harmonic), while GT's §6.4 FFT-noise path
+  scaled bins by Ml alone (≈(2·bins/N)·Ml², pitch-dependent) → `ShapeUnvoicedSpectrumGain`
+  normalises per band (`recordings.unvoiced_gain`, default `mbe.DefaultUnvoicedGain`=5.49,
+  1 = equal power, <0 = legacy; raw decoders stay legacy for goldens, the recorder and
+  `gophertrunk decode` set it, `decode -legacy-synthesis` opts out). Long-term LSD to dsd-neo
+  300–3400 Hz: P25 male 8.3→1.5 dB, DMR male 4.9→2.1 dB. STILL OPEN: AMBE 2450 male VOICED
+  harmonics −3..−6 dB above 1 kHz (IMBE doesn't show it; the DMR female goes the other way) —
+  that one IS in `unpackParams2450`, and needs the mbelib-neo 2450 frame diff. Measure with
+  band fractions / centroid / LSD, never by ear alone; the "gt-shipped" WAVs had
+  enhance+normalize+warm on top and hid all of this.
+- **Capture ceilings**: siglab capture-from-tuner 120→1200 s (`maxCaptureSeconds`, byte
+  budget 4 GiB estimated at the UNCOMPRESSED decoder width even for flac),
+  `diversity_capture_seconds` 120→1200 (`maxDiversityCaptureSeconds`); the REST hunt capture
+  (`/api/v1/hunt/capture`) materialises the whole grab in RAM twice at the survey rate, so it
+  got an explicit `api.MaxHuntCaptureSeconds`=60 instead. Capture NAMES use `%.4f` MHz
+  (`captureName`) — `%.3f` renamed a 442.3875 MHz slice "442.387MHz"; every other frequency
+  name in the tree was already `%.4f`, and `toFixed(3)` on a centre frequency in a SPA is a
+  bug (sample rates / spans / kHz spacings at 3 decimals are fine).

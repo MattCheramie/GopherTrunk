@@ -670,3 +670,53 @@ func TestResetClearsPrevUnvoicedTail(t *testing.T) {
 		}
 	}
 }
+
+// TestUnvoicedGainCalibratesBandPower pins the unvoiced band level: with
+// DefaultUnvoicedGain every unvoiced harmonic of amplitude Ml carries
+// DefaultUnvoicedGain·Ml²/2 of power (the mbelib level), pitch-independent —
+// a 100 Hz and a 250 Hz voice with the same Ml must synthesise the same
+// unvoiced RMS — while the legacy scaling is the old per-bin Ml (≈12 dB low
+// for a male voice, and pitch-dependent). Measured on 10 Sep calibration
+// pairs: GopherTrunk's unvoiced harmonics sat 6–15 dB under dsd-neo's.
+func TestUnvoicedGainCalibratesBandPower(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	synthRMS := func(f0 float64, gain float64) float64 {
+		p := Params{Header: Header{W0: 2 * math.Pi * f0 / 8000, L: int(3800 / f0)}}
+		var M [57]float64
+		for l := 1; l <= p.L; l++ {
+			M[l] = 1
+			p.Vl[l] = 0
+		}
+		var st SynthState
+		var sum float64
+		var n int
+		for frame := 0; frame < 60; frame++ {
+			noise := make([]float64, UnvoicedFFTSize)
+			for i := range noise {
+				noise[i] = rng.NormFloat64()
+			}
+			dst := make([]float64, SamplesPerFrame)
+			SynthUnvoicedOverlapAddGain(&st, p, &M, noise, dst, gain)
+			if frame < 2 {
+				continue // let the overlap-add settle
+			}
+			for _, v := range dst {
+				sum += v * v
+				n++
+			}
+		}
+		return math.Sqrt(sum / float64(n))
+	}
+	for _, f0 := range []float64{100, 250} {
+		p := Params{Header: Header{W0: 2 * math.Pi * f0 / 8000, L: int(3800 / f0)}}
+		want := math.Sqrt(DefaultUnvoicedGain * float64(p.L) / 2)
+		got := synthRMS(f0, DefaultUnvoicedGain)
+		if r := got / want; r < 0.85 || r > 1.15 {
+			t.Errorf("f0=%.0f Hz: calibrated unvoiced RMS = %.3f, want %.3f (±15%%)", f0, got, want)
+		}
+		legacy := synthRMS(f0, LegacyUnvoicedGain)
+		if legacy >= got/2 {
+			t.Errorf("f0=%.0f Hz: legacy RMS %.3f is not well below calibrated %.3f", f0, legacy, got)
+		}
+	}
+}

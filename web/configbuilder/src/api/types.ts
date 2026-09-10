@@ -192,6 +192,7 @@ export interface CompressConfig {
 export interface EnhanceConfig {
   Enabled: boolean;
   HPFHz: number;
+  TiltHz: number;
   LPFHz: number;
   ShelfHz: number;
   ShelfDB: number;
@@ -210,6 +211,7 @@ export interface RecordingsConfig {
   Normalize: NormalizeConfig;
   WarmDMRAudio?: boolean;
   SpecAmplitudeEnhance?: boolean;
+  UnvoicedGain: number;
   WriteCallJSON?: boolean;
   VoiceTapBufferChunks?: number;
 }

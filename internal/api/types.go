@@ -32,11 +32,20 @@ type HuntStatus struct {
 	GainNote            string                    `json:"gain_note,omitempty"`
 }
 
+// MaxHuntCaptureSeconds bounds HuntCaptureRequest.Seconds. Unlike the Signal
+// Lab capture (which streams to disk and allows 1200 s), the hunt capture path
+// materialises the whole grab in RAM twice — the []complex64 from
+// hunt.Manager.CaptureSignal plus its f32 encoding — at the survey rate
+// (2.4 MS/s ⇒ ~38 MB per second of capture), so a long request here is an OOM,
+// not a slow one. 60 s ≈ 2.3 GB peak at 2.4 MS/s; anything longer belongs in
+// Signal Lab's capture-from-tuner.
+const MaxHuntCaptureSeconds = 60
+
 // HuntCaptureRequest records one signal from the survey inventory and routes it
 // to deeper analysis — the daemon counterpart of the CLI's -survey-capture.
 type HuntCaptureRequest struct {
 	FreqHz  uint32  `json:"freq_hz"`           // signal centre frequency to record
-	Seconds float64 `json:"seconds,omitempty"` // capture length (0 ⇒ a default)
+	Seconds float64 `json:"seconds,omitempty"` // capture length (0 ⇒ a default; max MaxHuntCaptureSeconds)
 	Target  string  `json:"target,omitempty"`  // "siglab" (default) | "cryptolab"
 }
 

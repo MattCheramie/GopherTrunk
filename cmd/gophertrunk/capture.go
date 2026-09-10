@@ -204,7 +204,7 @@ FLAGS:`)
 		ddc = ccdecoder.NewDownconverterWithOffset(float64(hwRate), float64(*bandwidthHz), float64(offsetHz))
 		recRate = ddc.OutRateHz()
 		recCenter = center
-		fmt.Printf("capture: narrowband slice → centre %.3f MHz, %.1f kHz channel rate\n",
+		fmt.Printf("capture: narrowband slice → centre %.4f MHz, %.1f kHz channel rate\n",
 			float64(recCenter)/1e6, recRate/1e3)
 	}
 

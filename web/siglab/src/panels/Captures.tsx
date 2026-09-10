@@ -197,7 +197,7 @@ function CaptureForm() {
           {(devices ?? []).map((d) => (
             <option key={d.serial} value={d.serial}>
               {d.serial} · {d.driver}
-              {d.center_hz ? ` · ${(d.center_hz / 1e6).toFixed(3)} MHz` : ""}
+              {d.center_hz ? ` · ${(d.center_hz / 1e6).toFixed(4)} MHz` : ""}
             </option>
           ))}
         </select>

@@ -81,10 +81,15 @@ depends on the path:
   several carriers at once from a single dongle, as long as they all fit in its IQ
   band. This wideband multi-system path covers **DMR (Tier II/III)**, **P25 (Phase
   1/2)**, and **TETRA** control channels — so multiple TETRA sites/systems can now
-  share one wideband SDR. Note the boundary: the wideband path multiplexes
-  **control channels**; a TETRA channel is channelized to its own 144 kHz tap
-  (DMR/P25 use 48 kHz), and TETRA **voice** grants still follow on a `role: voice`
-  SDR (or its own control SDR's same-carrier voice), not on a wideband voice tap.
+  share one wideband SDR. A TETRA channel is channelized to its own 144 kHz tap
+  (DMR/P25 use 48 kHz), and each wideband TETRA control channel also gets four
+  per-timeslot **same-carrier voice taps** on that tap (the wideband twin of the
+  control SDR's `cc:same-carrier` taps), so its voice follows on the same dongle
+  through the shared per-carrier demux — no `role: voice` SDR needed. This is
+  the supported way to monitor two TETRA systems at once from one SDR: with a
+  single `role: control`/`auto` tuner the hunter is a time multiplexer that
+  camps on the first system that locks, and the daemon now warns at startup
+  when several systems share one control SDR.
 
 Either way, when the same call is heard on several networked or simulcast sites,
 **cross-site call deduplication** saves it once instead of once per site: enable

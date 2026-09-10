@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -18,6 +19,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier2"
 	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -26,8 +28,9 @@ import (
 // GT_DMR_IQ_RATE gives its sample rate (default 50000) and GT_DMR_IQ_FORMAT the
 // encoding (cs16 default, or f32 for a GNU Radio / gqrx cfile — the reporter's
 // 25 kS/s f32 capture: GT_DMR_IQ_RATE=25000 GT_DMR_IQ_FORMAT=f32). Note an
-// idle-beacon capture (a resting burst with no voice keyup) decodes 0 grants by
-// design — set GT_DMR_ALLOW_EMPTY=1 for that case. It mirrors the daemon's
+// idle-beacon capture (a keyed repeater with no voice keyup) decodes 0 grants
+// by design but a non-zero beacons count (the ETSI Idle bursts it fills both
+// slots with) — set GT_DMR_ALLOW_EMPTY=1 for a capture that decodes nothing. It mirrors the daemon's
 // dmr-tier2 decode: it downconverts to the DMR
 // channel rate, runs the shared DMR receiver, and feeds the recovered dibits to
 // BOTH the Tier II conventional state machine (which emits a grant on every
@@ -48,6 +51,12 @@ import (
 // must still be granted from their embedded LC (grants ≈ the un-scrubbed run,
 // late_entries > 0); without it the run decodes voice but grants nothing —
 // exactly the "GT said the call ended but the conversation continued" report.
+//
+// GT_DMR_DROP_TERMINATORS=1 scrubs every Terminator-with-LC burst instead: the
+// on-air model of the 10 Sep report where the control path never decoded the
+// terminator while the voice path did. Each transmission after the first must
+// still be granted (rekeys = grants − 1); before the re-key rule the run
+// granted exactly once and every reply on the same talkgroup was missed.
 func TestDMRIPSCReplay(t *testing.T) {
 	path := os.Getenv("GT_DMR_IQ")
 	if path == "" {
@@ -63,6 +72,7 @@ func TestDMRIPSCReplay(t *testing.T) {
 	}
 	interleaved := os.Getenv("GT_DMR_INTERLEAVED") == "1" || os.Getenv("GT_DMR_INTERLEAVED") == "true"
 	dropHeaders := os.Getenv("GT_DMR_DROP_HEADERS") == "1"
+	dropTerminators := os.Getenv("GT_DMR_DROP_TERMINATORS") == "1"
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -70,13 +80,27 @@ func TestDMRIPSCReplay(t *testing.T) {
 	}
 	// GT_DMR_IQ_FORMAT selects the sample encoding: cs16 (default, interleaved
 	// int16) or f32 (interleaved float32 — the GNU Radio / gqrx cfile format the
-	// #1036 reporter's 25 kS/s capture uses).
+	// #1036 reporter's 25 kS/s capture uses). A wav/flac container (the Signal
+	// Lab "capture from tuner" output) is sniffed from its content and carries
+	// its own sample rate, so GT_DMR_IQ_RATE / GT_DMR_IQ_FORMAT are not needed.
 	format := strings.ToLower(os.Getenv("GT_DMR_IQ_FORMAT"))
 	if format == "" {
 		format = "cs16"
 	}
 	var iq []complex64
+	if _, isContainer := siglab.SniffContainer(raw); isContainer {
+		format = "container"
+	}
 	switch format {
+	case "container":
+		samples, rate, err := siglab.DecodeContainerFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		iq = samples
+		if rate > 0 && os.Getenv("GT_DMR_IQ_RATE") == "" {
+			inRate = float64(rate)
+		}
 	case "cs16", "sc16":
 		iq = make([]complex64, len(raw)/4)
 		for i := range iq {
@@ -109,6 +133,18 @@ func TestDMRIPSCReplay(t *testing.T) {
 	}
 	var grantsMu sync.Mutex
 	var grants []grantRec
+	// timeline records every grant / release the Tier II state machine
+	// published against the dibit position the harness was feeding at the
+	// time (4800 dibits/s), next to the composer-side terminator detector's
+	// own detections, so a terminator the control path decodes seconds after
+	// the voice path (the 10 Sep "re-key within hangtime is missed" report)
+	// is visible as a timing gap rather than inferred from a daemon log.
+	var feedPos atomic.Int64
+	var timeline []string
+	termDet := dmrvoice.NewTerminatorDetector()
+	stamp := func(kind string, tg uint32) {
+		timeline = append(timeline, fmt.Sprintf("%8.2fs %-14s tg=%d", float64(feedPos.Load())/4800, kind, tg))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	drainDone := make(chan struct{})
 	go func() {
@@ -121,13 +157,20 @@ func TestDMRIPSCReplay(t *testing.T) {
 				if !ok {
 					return
 				}
-				if ev.Kind != events.KindGrant {
-					continue
-				}
-				if g, ok := ev.Payload.(trunking.Grant); ok {
-					grantsMu.Lock()
-					grants = append(grants, grantRec{tg: g.GroupID, src: g.SourceID, indiv: g.Individual})
-					grantsMu.Unlock()
+				switch ev.Kind {
+				case events.KindGrant:
+					if g, ok := ev.Payload.(trunking.Grant); ok {
+						grantsMu.Lock()
+						grants = append(grants, grantRec{tg: g.GroupID, src: g.SourceID, indiv: g.Individual})
+						stamp("grant", g.GroupID)
+						grantsMu.Unlock()
+					}
+				case events.KindCallRelease:
+					if r, ok := ev.Payload.(trunking.CallRelease); ok {
+						grantsMu.Lock()
+						stamp("tier2-release", r.GroupID)
+						grantsMu.Unlock()
+					}
 				}
 			}
 		}
@@ -172,7 +215,17 @@ func TestDMRIPSCReplay(t *testing.T) {
 	})
 	feed := func(dibits []uint8, baseIdx int) {
 		{
+			feedPos.Store(int64(baseIdx))
 			cc.Process(dibits, baseIdx)
+			// Wait for the bus to deliver this chunk's events before moving on
+			// so the timeline stamps carry this chunk's position.
+			for _, flc := range termDet.Process(dibits, baseIdx) {
+				if dest, ok := lcCallDestinationForReplay(flc); ok {
+					grantsMu.Lock()
+					stamp("voice-term", dest)
+					grantsMu.Unlock()
+				}
+			}
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				superframes++
 				phaseCounts[sf.Phase&1]++
@@ -206,7 +259,10 @@ func TestDMRIPSCReplay(t *testing.T) {
 	}
 	scrubbed := 0
 	if dropHeaders {
-		scrubbed = scrubVoiceLCHeaders(allDibits)
+		scrubbed = scrubBursts(allDibits, dmr.DTVoiceLCHeader)
+	}
+	if dropTerminators {
+		scrubbed += scrubBursts(allDibits, dmr.DTTerminatorWithLC)
 	}
 	// Re-feed the (possibly scrubbed) dibit stream in receiver-sized chunks.
 	const dibitChunk = 4096
@@ -224,9 +280,9 @@ func TestDMRIPSCReplay(t *testing.T) {
 	defer grantsMu.Unlock()
 	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs interleaved=%v",
 		inRate, outRate, len(iq), float64(len(iq))/inRate, interleaved)
-	t.Logf("grants=%d late_entries=%d fec_pass=%d fec_fail=%d csbk_crc_fail=%d scrubbed_headers=%d",
-		len(grants), cc.Counters().LateEntries, cc.Counters().FECPass, cc.Counters().FECFail,
-		cc.Counters().CSBKCRCFail, scrubbed)
+	t.Logf("grants=%d late_entries=%d rekeys=%d fec_pass=%d fec_fail=%d csbk_crc_fail=%d beacons=%d locks=%d scrubbed_headers=%d",
+		len(grants), cc.Counters().LateEntries, cc.Counters().Rekeys, cc.Counters().FECPass, cc.Counters().FECFail,
+		cc.Counters().CSBKCRCFail, cc.Counters().Beacons, cc.Counters().Locks, scrubbed)
 	seen := map[grantRec]int{}
 	for _, g := range grants {
 		seen[grantRec{tg: g.tg, src: g.src, indiv: g.indiv}]++
@@ -239,6 +295,9 @@ func TestDMRIPSCReplay(t *testing.T) {
 	for tg, n := range lcGroups {
 		t.Logf("  embedded-LC group_address=%d count=%d", tg, n)
 	}
+	for _, line := range timeline {
+		t.Logf("  timeline %s", line)
+	}
 
 	// The harness is a diagnostic. On a signal-bearing capture it should surface
 	// a grant or a superframe, and zero of both usually means a wrong rate/tune.
@@ -246,8 +305,8 @@ func TestDMRIPSCReplay(t *testing.T) {
 	// baseline measurement (the 0/0 floor the equalizer work is measured
 	// against), so GT_DMR_ALLOW_EMPTY=1 downgrades the hard failure to a logged
 	// warning. Default stays strict so an accidental mistune is still caught.
-	if len(grants) == 0 && superframes == 0 {
-		msg := fmt.Sprintf("no grants and no voice superframes decoded — check GT_DMR_IQ_RATE (%v) / tuning / capture", inRate)
+	if len(grants) == 0 && superframes == 0 && cc.Counters().Beacons == 0 {
+		msg := fmt.Sprintf("no grants, no voice superframes and no idle beacons decoded — check GT_DMR_IQ_RATE (%v) / tuning / capture", inRate)
 		if os.Getenv("GT_DMR_ALLOW_EMPTY") == "1" {
 			t.Logf("WARNING: %s (GT_DMR_ALLOW_EMPTY=1: treating as a weak-signal 0/0 baseline)", msg)
 		} else {
@@ -256,12 +315,16 @@ func TestDMRIPSCReplay(t *testing.T) {
 	}
 }
 
-// scrubVoiceLCHeaders overwrites every Voice-LC-Header burst in dibits (found
-// via the data-sync detector + slot type, exactly as the Tier II adapter
-// slices them) with a pseudo-random dibit pattern that matches no sync word,
-// and returns how many bursts were scrubbed. It models a keyup whose header
-// bursts were lost on air.
-func scrubVoiceLCHeaders(dibits []uint8) int {
+// scrubBursts overwrites every data burst of slot type dt in dibits (found via
+// the data-sync detector + slot type, exactly as the Tier II adapter slices
+// them) with a pseudo-random dibit pattern that matches no sync word, and
+// returns how many bursts were scrubbed. With DTVoiceLCHeader it models a
+// keyup whose header bursts were lost on air; with DTTerminatorWithLC
+// (GT_DMR_DROP_TERMINATORS=1) it models the 10 Sep field condition where the
+// control path's copy of every terminator was BPTC-uncorrectable while the
+// composer's voice path still released each call — every transmission after
+// the first must then be granted by the re-key rule.
+func scrubBursts(dibits []uint8, dt dmr.DataType) int {
 	det := dmr.NewSyncDetector(nil, 2)
 	matches, _ := det.Process(nil, dibits, 0)
 	n := 0
@@ -275,7 +338,7 @@ func scrubVoiceLCHeaders(dibits []uint8) int {
 		var b dmr.Burst
 		copy(b.Dibits[:], dibits[start:end])
 		slot, _, err := dmr.ParseSlotType(b.SlotTypeBitsAll())
-		if err != nil || slot.DataType != dmr.DTVoiceLCHeader {
+		if err != nil || slot.DataType != dt {
 			continue
 		}
 		for i := start; i < end; i++ {
@@ -285,4 +348,16 @@ func scrubVoiceLCHeaders(dibits []uint8) int {
 		n++
 	}
 	return n
+}
+
+// lcCallDestinationForReplay mirrors the composer's lcCallDestination: the
+// destination a Terminator-with-LC's Full LC names (group or unit-to-unit).
+func lcCallDestinationForReplay(flc dmr.FLC) (uint32, bool) {
+	if gv, ok := flc.AsGroupVoiceUser(); ok {
+		return gv.GroupAddress, true
+	}
+	if uu, ok := flc.AsUnitToUnitVoice(); ok {
+		return uu.DestinationID, true
+	}
+	return 0, false
 }

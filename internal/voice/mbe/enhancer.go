@@ -43,6 +43,7 @@ import (
 // can hold an optional *VoiceEnhancer and invoke it unconditionally,
 // mirroring the existing *ToneTilt wiring. Not safe for concurrent use.
 type VoiceEnhancer struct {
+	tilt  *radioTilt     // first-order "radio tilt" high-pass (see TiltHz)
 	hpf   *filter.Biquad // pre-shelf rumble high-pass
 	shelf *ToneTilt      // presence/warmth high-shelf
 	lpf   *filter.Biquad // band-limit low-pass
@@ -63,6 +64,28 @@ type EnhancerConfig struct {
 	// HPFHz is the −3 dB corner of the rumble high-pass. 0 backfills to
 	// the default; a negative value disables just the high-pass.
 	HPFHz float64
+	// TiltHz is the −3 dB corner of a FIRST-ORDER "radio tilt" high-pass
+	// run ahead of the rumble high-pass. 0 backfills to the default; a
+	// negative value disables just the tilt.
+	//
+	// This is the measured difference between GopherTrunk's vocoder output
+	// and dsd-neo's (mbelib-neo + its default-on digital-voice high-pass,
+	// use_hpf_d=1), taken from the 10 Sep calibration pairs — the same
+	// .imb/.amb frames decoded by both: above ~1.5 kHz the VOICED IMBE
+	// harmonics match within ±1 dB, but below that GopherTrunk carries a
+	// smooth low-frequency EXCESS of +2 dB at 1 kHz, +4 dB at 500 Hz, +8 dB
+	// at 350 Hz, +12 dB at 175 Hz and +16 dB at 125 Hz — the shape of a
+	// first-order high-pass (|H| = f/√(f²+fc²)), ~750 Hz on the voiced
+	// harmonics alone. With the unvoiced band level calibrated as well
+	// (recordings.unvoiced_gain), the corner that minimises the long-term
+	// log-spectral distance to dsd-neo over 100–3400 Hz across all four
+	// pairs is ~450 Hz (mean 2.2 dB, vs 3.5 dB untilted and 2.9 dB at
+	// 750 Hz), which is the default. A radio's audio path has the same kind
+	// of tilt, which is why the un-tilted decode reads as boomy/muffled next
+	// to the handset even though the vocoder core agrees. The 2nd-order
+	// 250 Hz rumble HPF does not reproduce it (−3 dB at 250 Hz, flat above
+	// 400 Hz).
+	TiltHz float64
 	// LPFHz is the −3 dB corner of the band-limit low-pass. 0 backfills
 	// to the default; a negative value disables just the low-pass.
 	LPFHz float64
@@ -111,6 +134,7 @@ func DefaultEnhancerConfig() EnhancerConfig {
 	return EnhancerConfig{
 		Enabled:   true,
 		HPFHz:     250,
+		TiltHz:    450,
 		LPFHz:     3400,
 		ShelfHz:   1500,
 		ShelfDB:   2.0,
@@ -135,6 +159,9 @@ func (cfg EnhancerConfig) WithDefaults() EnhancerConfig {
 	d := DefaultEnhancerConfig()
 	if cfg.HPFHz == 0 {
 		cfg.HPFHz = d.HPFHz
+	}
+	if cfg.TiltHz == 0 {
+		cfg.TiltHz = d.TiltHz
 	}
 	if cfg.LPFHz == 0 {
 		cfg.LPFHz = d.LPFHz
@@ -177,6 +204,9 @@ func NewVoiceEnhancer(sampleRate float64, cfg EnhancerConfig) *VoiceEnhancer {
 	}
 	cfg = cfg.WithDefaults()
 	e := &VoiceEnhancer{}
+	if cfg.TiltHz > 0 {
+		e.tilt = newRadioTilt(sampleRate, cfg.TiltHz)
+	}
 	if cfg.HPFHz > 0 {
 		e.hpf = filter.NewHighPass(sampleRate, cfg.HPFHz)
 	}
@@ -198,10 +228,59 @@ func (e *VoiceEnhancer) Process(pcm []float64) {
 	if e == nil {
 		return
 	}
+	e.tilt.Process(pcm)
 	e.hpf.Process(pcm)
 	e.shelf.Process(pcm)
 	e.lpf.Process(pcm)
 	e.comp.process(pcm)
+}
+
+// radioTilt is a first-order (6 dB/octave) high-pass — the classic RC
+// high-pass |H(f)| = f/√(f²+fc²): −3 dB at fc, −6 dB an octave below, and a
+// gentle roll that is still −1 dB two octaves above fc. It is the shape
+// measured between GopherTrunk's decode and dsd-neo's (see
+// EnhancerConfig.TiltHz); a biquad would be too steep to match. Discretised
+// with the bilinear transform and a pre-warped corner so the −3 dB point
+// lands on fc at 8 kHz (the naive a = RC/(RC+dt) recurrence is ~1.2 dB low
+// at 750 Hz and 2 dB low at 3 kHz because of the sampling warp):
+//
+//	y[n] = a·y[n−1] + g·(x[n] − x[n−1]),  a = (1−k)/(1+k),  g = (1+a)/2,
+//	k = tan(π·fc/fs)
+type radioTilt struct {
+	a, g    float64
+	prevIn  float64
+	prevOut float64
+}
+
+func newRadioTilt(sampleRate, cornerHz float64) *radioTilt {
+	if sampleRate <= 0 || cornerHz <= 0 || cornerHz >= sampleRate/2 {
+		return nil
+	}
+	k := math.Tan(math.Pi * cornerHz / sampleRate)
+	a := (1 - k) / (1 + k)
+	return &radioTilt{a: a, g: (1 + a) / 2}
+}
+
+// Process filters pcm in place. A nil receiver is a no-op.
+func (t *radioTilt) Process(pcm []float64) {
+	if t == nil {
+		return
+	}
+	a, g, pi, po := t.a, t.g, t.prevIn, t.prevOut
+	for i, x := range pcm {
+		po = a*po + g*(x-pi)
+		pi = x
+		pcm[i] = po
+	}
+	t.prevIn, t.prevOut = pi, po
+}
+
+// Reset clears the filter state.
+func (t *radioTilt) Reset() {
+	if t == nil {
+		return
+	}
+	t.prevIn, t.prevOut = 0, 0
 }
 
 // Reset clears all stage state (call on re-sync alongside the DC block).
@@ -210,6 +289,7 @@ func (e *VoiceEnhancer) Reset() {
 	if e == nil {
 		return
 	}
+	e.tilt.Reset()
 	e.hpf.Reset()
 	e.shelf.Reset()
 	e.lpf.Reset()

@@ -461,7 +461,9 @@ func TestValidate(t *testing.T) {
 		// reporter's exact config, rejected under the old 1..60 bound.
 		{"soapy diversity capture 90s ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 90}}}}, false},
 		{"soapy diversity capture 120s ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 120}}}}, false},
-		{"soapy diversity capture 121s rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 121}}}}, true},
+		// 10 Sep request: long FLAC captures are cheap, so the ceiling is 1200 s.
+		{"soapy diversity capture 1200s ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 1200}}}}, false},
+		{"soapy diversity capture 1201s rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: 1201}}}}, true},
 		{"soapy diversity capture negative rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCapture: "mrc_autocaptures/", DiversityCaptureSeconds: -5}}}}, true},
 		{"soapy diversity capture seconds without prefix rejected", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Diversity: "mrc", DiversityCaptureSeconds: 30}}}}, true},
 		// The escape hatch still opens two RX channels, so a per-channel antenna

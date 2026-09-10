@@ -199,7 +199,7 @@ export function SDRSection() {
                 label="Diversity capture seconds"
                 value={s.DiversityCaptureSeconds}
                 onChange={(v) => set({ ...s, DiversityCaptureSeconds: v })}
-                placeholder="0 = 5 s (1..60)"
+                placeholder="0 = 5 s (1..1200)"
               />
               <SelectField
                 label="Diversity capture format"

@@ -549,6 +549,16 @@ type Daemon struct {
 	// concurrent calls on the control carrier — one per slot — each bind their
 	// own tap; the fan-out under the control decoder copies IQ to all of them.
 	ccVoiceSources []*ccdecoder.CCVoiceSource
+	// wbVoiceSources are the wideband twins of ccVoiceSources: one per TDMA
+	// timeslot per TETRA control channel hosted on a `role: wideband` device,
+	// each streaming that channel's own 144 kHz tap so a grant on the
+	// wideband-hosted CC carrier binds without a retune and reaches the
+	// composer's shared per-carrier 4-slot demux (CarrierKey) rather than a
+	// 48 kHz VirtualTuner's solo chain. Without them "two TETRA systems on one
+	// X310" could lock both CCs on a wideband device but not follow their
+	// voice properly (10 Sep report). Resolved lazily — the wideband engines
+	// are built after the voice pool. See widebandt2.ChannelVoiceSource.
+	wbVoiceSources []*widebandt2.ChannelVoiceSource
 	// p25p2Follower harvests P25 Phase 2 talker aliases off the traffic
 	// channel's FACCH-S signalling using standalone signalling DDC taps,
 	// independent of the voice pool — so aliases surface even when no
@@ -1301,6 +1311,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	if err := d.buildVirtualVoiceTuners(cfg, log); err != nil {
 		return nil, err
 	}
+	d.buildWidebandSameCarrierVoiceTaps(cfg, log)
 	if err := d.buildP25P2SignallingFollower(cfg, log); err != nil {
 		return nil, err
 	}
@@ -1444,6 +1455,37 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// wideband-hosted the filtered list is empty and the supervisor — along
 	// with its ccdecoder connector — is not built at all.
 	cchSystems := cchuntSystems(d.systems, cfg.SDR.Devices)
+	if len(cchSystems) > 1 {
+		// The single-tuner hunter is a TIME multiplexer: it hunts the systems
+		// round-robin and parks on the first that locks until that lock is
+		// lost — on a healthy site, never. An operator who lists two TETRA
+		// systems whose CCs both sit inside one 200 kHz span sees "systems=2"
+		// in the web UI and only one ever decoding (10 Sep report), with no
+		// hint that concurrency needs the wideband path. Say so once.
+		names := make([]string, 0, len(cchSystems))
+		for _, s := range cchSystems {
+			names = append(names, s.Name)
+		}
+		msg := fmt.Sprintf("daemon: %d systems (%s) share ONE control SDR: the single-tuner hunter decodes them one at a time and camps on the first that locks, so the others are hunted only after it loses lock. To decode them concurrently host every control channel on a `role: wideband` device with one `channels:` entry per system (`system:` names which) — see docs/guide-advanced.md \"Following multiple systems and sites\"",
+			len(cchSystems), strings.Join(names, ", "))
+		log.Warn(msg)
+		d.addWarning(msg)
+	}
+	for _, dev := range cfg.SDR.Devices {
+		if dev.Role == "wideband" {
+			continue
+		}
+		if len(dev.Channels) > 0 || dev.VoiceTaps > 0 || dev.TunerStrategy != "" {
+			// channels: / voice_taps / tuner_strategy only mean something on a
+			// role: wideband device; on any other role they are silently dead
+			// config, which is how the 10 Sep two-system TETRA rig ended up with
+			// a `channels:` plan that nothing read.
+			msg := fmt.Sprintf("daemon: sdr.devices[%s] has role %q but sets channels:/voice_taps/tuner_strategy — those keys only apply to role: wideband and are being IGNORED; set role: wideband (with a `system:` on each channel) to decode the listed carriers in parallel",
+				dev.Serial, dev.Role)
+			log.Warn(msg)
+			d.addWarning(msg)
+		}
+	}
 	if d.pool != nil && len(cchSystems) > 0 {
 		cchEnabled := cfg.Scanner.CCHunt.Enabled || cfg.Scanner.CCHunt == (config.CCHuntConfig{})
 		if cchEnabled {
@@ -2182,6 +2224,7 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
 			// defaults ON. Applies to the recorded WAV and the live fan-out.
 			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
+			UnvoicedGain:         cfg.Recordings.UnvoicedGain,
 			Dedup: voice.DedupConfig{
 				Enabled: cfg.Recordings.Dedup.Enabled,
 				Window:  cfg.Recordings.Dedup.Window(),
@@ -2221,6 +2264,7 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
 			// defaults ON. Live decode-only path (no files).
 			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
+			UnvoicedGain:         cfg.Recordings.UnvoicedGain,
 		})
 		if err != nil {
 			return fmt.Errorf("daemon: voice decoder: %w", err)
@@ -3080,6 +3124,7 @@ func enhancerConfigFromYAML(c config.EnhanceConfig) mbe.EnhancerConfig {
 	return mbe.EnhancerConfig{
 		Enabled:   c.Enabled,
 		HPFHz:     c.HPFHz,
+		TiltHz:    c.TiltHz,
 		LPFHz:     c.LPFHz,
 		ShelfHz:   c.ShelfHz,
 		ShelfDB:   c.ShelfDB,
@@ -4544,6 +4589,61 @@ func (d *Daemon) buildVirtualVoiceTuners(cfg config.Config, log *slog.Logger) er
 	return nil
 }
 
+// buildWidebandSameCarrierVoiceTaps registers one widebandt2.ChannelVoiceSource
+// per TDMA timeslot for every TETRA control channel hosted on a `role:
+// wideband` device — the wideband twin of the ccVoiceSources registered
+// above for the single-tuner control decoder. TETRA only: its voice rides
+// other timeslots of the SAME carrier and needs the composer's shared
+// per-carrier demux; conventional DMR on a wideband dongle keeps using the
+// wbvoice VirtualTuner path (its own DDC from the raw stream, on-air-verified
+// on the 10 Sep IPSC captures), so nothing changes there.
+func (d *Daemon) buildWidebandSameCarrierVoiceTaps(cfg config.Config, log *slog.Logger) {
+	if d.pool == nil {
+		return
+	}
+	protoByName := make(map[string]trunking.Protocol, len(cfg.Trunking.Systems))
+	for _, sys := range cfg.Trunking.Systems {
+		if proto, err := trunking.ParseProtocol(sys.Protocol); err == nil {
+			protoByName[sys.Name] = proto
+		}
+	}
+	for _, devCfg := range cfg.SDR.Devices {
+		if devCfg.Role != "wideband" {
+			continue
+		}
+		entry := d.pool.FindBySerial(devCfg.Serial)
+		if entry == nil {
+			continue // the wideband engine loop logs the missing dongle
+		}
+		serial := entry.Info.Serial
+		get := func() *widebandt2.Engine { return d.widebandEngineForSerial(serial) }
+		for _, ch := range devCfg.Channels {
+			if protoByName[ch.System] != trunking.ProtocolTETRA {
+				continue
+			}
+			taps := sameCarrierVoiceTaps(trunking.ProtocolTETRA)
+			for i := 1; i <= taps; i++ {
+				d.wbVoiceSources = append(d.wbVoiceSources, widebandt2.NewChannelVoiceSource(
+					get, ch.FrequencyHz,
+					fmt.Sprintf("wb:%s:same-carrier:%d:%d", serial, ch.FrequencyHz, i)))
+			}
+			log.Info("daemon: wideband: same-carrier TETRA voice taps registered — grants on this control carrier follow on its own 144 kHz tap",
+				"wideband_serial", serial, "system", ch.System, "freq_hz", ch.FrequencyHz, "taps", taps)
+		}
+	}
+}
+
+// widebandEngineForSerial returns the running wideband engine on the dongle
+// with the given serial, or nil before it is built.
+func (d *Daemon) widebandEngineForSerial(serial string) *widebandt2.Engine {
+	for _, eng := range d.widebandT2 {
+		if eng != nil && eng.Serial() == serial {
+			return eng
+		}
+	}
+	return nil
+}
+
 // buildP25P2SignallingFollower spins up one standalone wbvoice.VirtualTuner
 // per `signalling_taps` slot on every `role: wideband` dongle and assembles
 // the sigfollow.Manager that drives them. These taps are NOT registered in
@@ -4628,6 +4728,19 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 			})
 		}
 	}
+	// Wideband same-carrier TETRA taps come BEFORE the wideband virtual
+	// tuners: a VirtualTuner's CanTune accepts any frequency inside the
+	// dongle's IQ window — the CC carrier included — so listed first it
+	// would take a TETRA grant on the wideband-hosted CC into its 48 kHz
+	// solo chain instead of the shared per-carrier demux. Each same-carrier
+	// tap binds only its own channel's exact frequency, so it never steals a
+	// grant on any other carrier from the taps below.
+	for _, wb := range d.wbVoiceSources {
+		voices = append(voices, &trunking.VoiceDevice{
+			Tuner:  wb,
+			Serial: wb.Serial(),
+		})
+	}
 	// Append virtual voice tuners after physical ones so the engine's
 	// FindFree prefers a physical SDR when both are free. Out-of-
 	// window grants still surface ErrOutOfBand on virtual tuners and
@@ -4656,12 +4769,15 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 // poolDevices uses to resolve a virtual tuner. Returns nil when no
 // virtual tuners are configured so the lookup is a no-op.
 func (d *Daemon) virtualVoiceMap() map[string]composer.IQSource {
-	if len(d.virtualVoiceTuners) == 0 && len(d.ccVoiceSources) == 0 && len(d.dcAvoidVoiceTuners) == 0 {
+	if len(d.virtualVoiceTuners) == 0 && len(d.ccVoiceSources) == 0 && len(d.dcAvoidVoiceTuners) == 0 && len(d.wbVoiceSources) == 0 {
 		return nil
 	}
-	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+len(d.ccVoiceSources)+len(d.dcAvoidVoiceTuners))
+	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+len(d.ccVoiceSources)+len(d.dcAvoidVoiceTuners)+len(d.wbVoiceSources))
 	for _, vt := range d.virtualVoiceTuners {
 		out[vt.Serial()] = vt
+	}
+	for _, wb := range d.wbVoiceSources {
+		out[wb.Serial()] = wb
 	}
 	for _, cc := range d.ccVoiceSources {
 		out[cc.Serial()] = cc

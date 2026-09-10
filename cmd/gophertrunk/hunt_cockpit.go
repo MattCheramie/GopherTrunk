@@ -197,6 +197,11 @@ func (c huntCockpit) CaptureSignal(req api.HuntCaptureRequest) (api.HuntCaptureR
 	if seconds <= 0 {
 		seconds = 10
 	}
+	if seconds > api.MaxHuntCaptureSeconds {
+		// Defence in depth behind the handler's check: CaptureSignal buffers
+		// the whole grab in RAM (see api.MaxHuntCaptureSeconds).
+		return api.HuntCaptureResult{}, fmt.Errorf("seconds must be ≤ %d (hunt captures are held in memory; use Signal Lab's capture-from-tuner for longer grabs)", api.MaxHuntCaptureSeconds)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+30)*time.Second)
 	defer cancel()

@@ -205,6 +205,10 @@ recordings:
   enhance:
     enabled: false       # master switch for the chain
     hpf_hz: 250          # rumble high-pass corner (default 250; <0 disables)
+    tilt_hz: 450         # first-order "radio tilt" high-pass corner (default 450; <0 disables).
+                         # Measured against dsd-neo on the same vocoder frames: GT's raw
+                         # decode is +4 dB at 500 Hz / +16 dB at 125 Hz vs dsd-neo, whose
+                         # default digital-voice high-pass gives the "handset" balance.
     lpf_hz: 3400         # band-limit low-pass corner (default 3400, like OP25; <0 disables)
     shelf_hz: 1500       # warmth high-shelf corner (default 1500)
     shelf_db: 2.0        # high-shelf cut above the corner (default 2; 0 disables shelf)
@@ -225,6 +229,10 @@ recordings:
                          # NOTE: true also suppresses the completed-call
                          # broadcast backends (webhook/rdioscanner) for
                          # encrypted calls — keep false to deliver them.
+  unvoiced_gain: 0     # vocoder unvoiced (fricative) band level vs a voiced harmonic of the same
+                       # amplitude. 0 = default 5.49 (mbelib / DSD level; the old GopherTrunk
+                       # scaling sat 6-15 dB below it = muffled, consonant-less speech);
+                       # 1 = equal-power spec reading; <0 = legacy scaling.
   warm_dmr_audio: false  # opt-in: warmer DMR vocoder (gentle high-shelf, softens the bright software-AMBE+2 timbre; superseded by enhance, DMR only)
   equalizer:
     enabled: false  # CMA blind equalizer in the FM voice chain (simulcast mitigation)
@@ -549,6 +557,24 @@ sdr:
     #   channels:
     #     - frequency_hz: 851_006_250
     #       system: "regional-p25-p2"
+    #
+    # Two TETRA systems on one SDR. Each channel points at ITS OWN
+    # `protocol: tetra` system (frequency_hz must be in that system's
+    # control_channels); both control channels are decoded in parallel
+    # and each gets four same-carrier voice taps on its own 144 kHz tap,
+    # so timeslot voice follows on this dongle too. With a single
+    # `role: control`/`auto` tuner instead, the hunter follows systems
+    # ONE AT A TIME and camps on the first that locks — the second is
+    # never decoded on a healthy site. TETRA forces the per-tap `ddc`
+    # tuner strategy (the polyphase channelizer cannot emit 144 kHz).
+    # - serial: "soapy-10_110_162_1_23313-00"
+    #   role: wideband
+    #   center_freq_hz: 467_893_750   # both CCs within ±90 kHz at 200 kS/s
+    #   channels:
+    #     - frequency_hz: 467_912_500
+    #       system: "250_013"
+    #     - frequency_hz: 467_875_000
+    #       system: "250_208"
 
   # rtl_tcp remote SDRs. Each entry mounts a host:port rtl_tcp server
   # as a virtual tuner alongside any local USB dongles. Use when the
@@ -643,7 +669,7 @@ sdr:
   #                                 #  Every other IQ tap is post-combine, so this
   #                                 #  is the only capture that can be replayed
   #                                 #  through a different combiner. Needs mrc.
-  #     diversity_capture_seconds: 0 # length of that dump, 1..120 (0 = 5 s). Two
+  #     diversity_capture_seconds: 0 # length of that dump, 1..1200 (0 = 5 s). Two
   #                                 #  CS16 branches run to tens of MB/s at high
   #                                 #  rates; a 1 GiB/branch cap always applies.
   #     diversity_capture_format: cs16 # per-branch container: cs16 (default) or
