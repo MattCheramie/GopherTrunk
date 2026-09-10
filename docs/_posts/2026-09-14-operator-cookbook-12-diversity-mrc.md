@@ -290,7 +290,7 @@ rule; trust coherence and decode yield.**
 
 - **`diversity: "mrc-static"`** — one-shot calibration, frozen. Correct for
   shared-LO hardware, and the standard A/B reference arm on any rig.
-- **Longer evidence** — `diversity_capture_seconds` accepts up to 120 s (a
+- **Longer evidence** — `diversity_capture_seconds` accepts up to 1200 s (a
   1 GiB/branch cap always applies); at 200–250 kS/s two CS16 branches are
   only ~1.6 MB/s total, so take the long capture.
 - **Single-channel, port-pinned** — `diversity: ""` with `antenna: [RX2]`:

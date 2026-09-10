@@ -341,3 +341,26 @@ func TestHuntStop_OK(t *testing.T) {
 		t.Error("stopped=false, want true")
 	}
 }
+
+// TestHuntCapture_OverlongSeconds400 pins the hunt-capture ceiling: the daemon
+// path holds the whole grab in memory at the survey rate, so a request beyond
+// MaxHuntCaptureSeconds is rejected up front instead of becoming an OOM.
+func TestHuntCapture_OverlongSeconds400(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeHuntCockpit{}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Hunt: cock, AllowMutations: true})
+	defer teardown()
+	resp, err := http.Post(base+"/api/v1/hunt/capture", "application/json",
+		strings.NewReader(`{"freq_hz":751000000,"seconds":1200}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("status=%d, want 400 for a %ds hunt capture", resp.StatusCode, 1200)
+	}
+	if cock.lastCapture.FreqHz != 0 {
+		t.Errorf("overlong request was forwarded to the cockpit: %+v", cock.lastCapture)
+	}
+}

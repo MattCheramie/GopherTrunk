@@ -375,8 +375,8 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 		if s.DiversityCapture == "" {
 			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds set without diversity_capture", i)
 		}
-		if s.DiversityCaptureSeconds < 1 || s.DiversityCaptureSeconds > 120 {
-			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..120; two CS16 branches are tens of MB/s at high rates, and a 1 GiB per-branch cap applies regardless)", i, s.DiversityCaptureSeconds)
+		if s.DiversityCaptureSeconds < 1 || s.DiversityCaptureSeconds > maxDiversityCaptureSeconds {
+			return fmt.Errorf("sdr.soapy_remote[%d]: diversity_capture_seconds is %d (want 1..%d; two CS16 branches are tens of MB/s at high rates, and a 1 GiB per-branch cap applies regardless)", i, s.DiversityCaptureSeconds, maxDiversityCaptureSeconds)
 		}
 	}
 	switch s.DiversityCaptureFormat {
@@ -879,6 +879,13 @@ func (c Config) validateWeb() []error {
 	}
 	return nil
 }
+
+// maxDiversityCaptureSeconds bounds sdr.soapy_remote[].diversity_capture_seconds.
+// Raised 120 → 1200 (10 Sep operator request): with diversity_capture_format:
+// flac two 200 kS/s branches are ~1.6 MB/s total, so a 20 min pre-combine
+// capture is a few hundred MB, and the branch recorder's 1 GiB per-branch cap
+// still bounds high rates regardless of this ceiling.
+const maxDiversityCaptureSeconds = 1200
 
 // widebandGuardFrac reserves this fraction of the dongle's IQ band at
 // each edge as a guard against alias roll-off. Channel frequencies

@@ -143,6 +143,12 @@ func (s *Server) handleHuntCapture(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "freq_hz is required")
 		return
 	}
+	if req.Seconds < 0 || req.Seconds > MaxHuntCaptureSeconds {
+		s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
+			"seconds must be 0..%d (the hunt capture is held in memory at the survey rate; use Signal Lab's capture-from-tuner for longer grabs)",
+			MaxHuntCaptureSeconds))
+		return
+	}
 	res, err := s.hunt.CaptureSignal(req)
 	if err != nil {
 		status := http.StatusInternalServerError

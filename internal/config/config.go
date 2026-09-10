@@ -925,7 +925,7 @@ type SoapyRemoteConfig struct {
 	// the only tap that can answer "would a different combiner have done
 	// better on this signal?" offline. Requires diversity: mrc or mrc-static.
 	DiversityCapture string `yaml:"diversity_capture"`
-	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s, max 120. Two CS16
+	// DiversityCaptureSeconds bounds the dump; 0 selects 5 s, max 1200. Two CS16
 	// branches at 6.25 MS/s is roughly 50 MB/s, so this is deliberately short at
 	// high rates — but at narrowband rates (200 kS/s is ~0.8 MB/s per branch) a
 	// long capture is cheap and is what the offline combiner A/B needs. A 1 GiB
@@ -2036,6 +2036,13 @@ type RecordingsConfig struct {
 	// it affects DMR and P25 alike. On-air quality sign-off is still owed via
 	// internal/voice/calibrate once reference WAVs are supplied.
 	SpecAmplitudeEnhance *bool `yaml:"spec_amplitude_enhance"`
+	// UnvoicedGain calibrates the vocoder's unvoiced (fricative / breath /
+	// noise-band) level relative to a voiced harmonic of the same decoded
+	// amplitude. 0 selects the default (5.49, the level mbelib synthesises
+	// and every DSD-family decoder plays — measured 6–15 dB above the old
+	// GopherTrunk scaling on the 10 Sep calibration pairs); 1 is the
+	// equal-power spec reading; a negative value keeps the legacy scaling.
+	UnvoicedGain float64 `yaml:"unvoiced_gain"`
 	// WriteCallJSON writes a trunk-recorder-compatible <basename>.json metadata
 	// sidecar next to each recording (per WAV / per-transmission segment). It
 	// carries the call's talkgroup, source, frequency, timing, flags, and the
@@ -2152,6 +2159,10 @@ type EnhanceConfig struct {
 	// that stage disabled.
 	HPFHz float64 `yaml:"hpf_hz"`
 	LPFHz float64 `yaml:"lpf_hz"`
+	// TiltHz is the corner of the first-order "radio tilt" high-pass that
+	// matches the measured dsd-neo / handset low-frequency shaping (see
+	// mbe.EnhancerConfig.TiltHz). 0 ⇒ default 450; negative ⇒ disable.
+	TiltHz float64 `yaml:"tilt_hz"`
 	// ShelfHz / ShelfDB define the warmth high-shelf: ShelfDB dB of cut
 	// above ShelfHz. ShelfDB ≤ 0 disables the shelf.
 	ShelfHz float64 `yaml:"shelf_hz"`

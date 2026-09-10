@@ -595,12 +595,18 @@ message that names the offending entry.
 
 ### Limits
 
-- **DMR + P25.** Wideband supports `protocol: dmr-tier2` (Tier II
-  conventional), `protocol: dmr` (Tier III trunked control channel),
-  `protocol: p25` (P25 Phase 1 trunked control channel — C4FM and
-  CQPSK / LSM), and `protocol: p25-phase2` (P25 Phase 2
-  H-DQPSK trunked control channel). Other protocols (NXDN, TETRA,
-  …) are not in scope yet.
+- **DMR + P25 + NXDN + TETRA.** Wideband supports `protocol: dmr-tier2`
+  (Tier II conventional), `protocol: dmr` (Tier III trunked control
+  channel), `protocol: p25` (P25 Phase 1 trunked control channel — C4FM
+  and CQPSK / LSM), `protocol: p25-phase2` (P25 Phase 2 H-DQPSK trunked
+  control channel), `protocol: nxdn`, and `protocol: tetra` (a TETRA
+  channel is channelised to its own 144 kHz tap, which forces the
+  per-tap `ddc` strategy, and gets four same-carrier voice taps so its
+  timeslot voice follows on that tap). Two TETRA systems whose control
+  channels both sit inside one span (e.g. 467.9125 and 467.875 MHz in a
+  200 kS/s capture) decode concurrently this way — on a single
+  `role: control`/`auto` tuner the hunter follows systems one at a time
+  and camps on the first that locks.
 - **Trunked voice on the same wideband dongle.** With `voice_taps`
   set, the daemon allocates per-grant DDC tuners from the dongle's
   IQ stream so DMR T3 / P25 Phase 1 / P25 Phase 2 voice grants
@@ -929,7 +935,7 @@ combined:
     - addr: "10.110.162.1:23313"
       diversity: mrc
       diversity_capture: "iq/mrc/x310"   # path PREFIX
-      diversity_capture_seconds: 5       # 1..120; two CS16 branches are tens of MB/s
+      diversity_capture_seconds: 5       # 1..1200; two CS16 branches are tens of MB/s
                                          # at high rates (1 GiB/branch cap regardless)
       diversity_capture_format: flac     # optional: cs16 (default) or flac
 ```
