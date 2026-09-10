@@ -1163,3 +1163,22 @@ confirmation before any close-as-completed.
   (`captureName`) — `%.3f` renamed a 442.3875 MHz slice "442.387MHz"; every other frequency
   name in the tree was already `%.4f`, and `toFixed(3)` on a centre frequency in a SPA is a
   bug (sample rates / spans / kHz spacings at 3 decimals are fine).
+- **6 Sep X310 MRC field material (40 min debug.log + 120 s pre-combine FLAC branches at
+  200 kS/s, first capture written with `diversity_capture_format: flac`) — the FLAC branch
+  path replays end-to-end and the 19/29 Aug MRC fixes still hold; still a CEILING capture.**
+  Live: coherence 0.94–0.95 every health interval, `holds=0`, `updates` climbing, phase
+  parked at ≈−98° (walk <1°/min), skew latched at +1.1 samples (|rho| 0.95), CC locked in
+  0.3 s and never lost, `bsch_fail` 0 in 80% of 5 s windows (max 19), 5 drought resyncs, one
+  WARN in 40 min (the same-carrier tap drop count logged at shutdown teardown — an unsubscribe
+  artefact, not a live starvation). Branch 0 sits ~8 dB under branch 1 (`ch0=-57 ch1=-49`) —
+  the same antenna/feedline deficit as 19 Aug; MRC's `branch_gain_db` ≈ −8.5 tracks it.
+  Offline (`TestDiversityCombinerReplay` on the .flac branches): branch0 5680/24, branch1
+  5700/4, wb-static 5702/5, wb-tracking 5703/4, wb-irc-blind 5703/4, wb-aligned-static
+  5704/3, nb-static 5702/5, nb-tracking 5703/4 — every combined arm ≥ the best branch (no
+  harm) but ~99.9% BSCH is the ceiling, so a real MRC gain is STILL undemonstrated; only a
+  weak-signal capture (per-branch BSCH well below ceiling) closes that gate. Two log lines
+  that look alarming and are not: `recorder: recording shorter than call span` (56×, median
+  `audio_pct` 43%) is DEBUG bookkeeping — a TETRA group call's wall span includes setup,
+  hangtime and talker-change rolls, and `vocoder_drops=0` on every follow; and `rejecting
+  misframed d-nwrk-broadcast` (48×) is the 5 Sep splice guard WORKING (that fix is in the
+  operator's build f08aeaf; 7 real cells were accepted), not a regression.
