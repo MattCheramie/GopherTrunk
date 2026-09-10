@@ -1155,6 +1155,65 @@ confirmation before any close-as-completed.
   that one IS in `unpackParams2450`, and needs the mbelib-neo 2450 frame diff. Measure with
   band fractions / centroid / LSD, never by ear alone; the "gt-shipped" WAVs had
   enhance+normalize+warm on top and hid all of this.
+- **"Host overruns at a tiny 200 kS/s" on the dual-TETRA wideband rig (10 Sep) was CPU, and the
+  CPU was `DecodeAACH` re-ENCODING all 16 384 RM(30,14) codewords per call.** `DecodeRM3014Tetra`
+  / `DecodeRM3014TetraSoft` were ML searches that called `EncodeRM3014Tetra` (allocating) for every
+  codeword on every call: ~15 ms and ~16 k allocations per AACH decode, run once per downlink slot
+  (~70/s per carrier) on the wideband pump AND once per traffic burst in the voice demux. Two TETRA
+  DDC channels at 200 kS/s measured 0.44x real time on one 2.1 GHz core with 65% in that search
+  (`TestEngineDualTETRA200kThroughput`, `GT_WB_BENCH_SECONDS=30 GT_WB_BENCH_PROFILE=...`), and it
+  was the ~19 GC/s on a 9 MB heap in the operator's heartbeat lines. Fix: a once-built codebook
+  (`rm3014Table`, uint32-packed) with popcount / three 10-bit partial-sum tables — 17 µs / 36 µs,
+  allocation-free, bit-identical (`rm_30_14_tetra_codebook_test.go` keeps the brute force as the
+  reference). Second cost was `filter.FIR.Process` (~50% after that): its ring buffer branched per
+  tap; it now runs a mirrored 2N history window with the SAME float32 summation order
+  (`TestFIRMirroredWindowIsBitExact`), ~1.8x faster. Pump: 0.44x → 0.12x real time. Lesson: an
+  "overruns at low rate" report on a path that logs no `decode can't keep up` WARN still means
+  profile the pump — `host_drops` is the consumer, and the consumer here was a block decoder,
+  not the DSP.
+- **IPSC "still losing calls" (10 Sep, 1200 s Signal Lab flac at 442.3875 MHz) was the polyphase
+  channelizer's BIN EDGE, root-caused on the capture and fixed by 2x oversampling the
+  channelizer.** The live wideband tap (6.25 MS/s, `tuner_strategy: polyphase` → 32 bins of
+  195.3125 kHz; Fire2 at +687.5 kHz = 3.52 bins ⇒ 0.48 from bin 4) logged `sync_hits=0` for
+  minutes at a time while the same capture decodes 25 001 idle beacons / 14 grants through a DDC
+  (the repeater sits at −53 dBFS over a −83 dBFS floor ≈ 30 dB SNR, keyed solid through both
+  missed windows — the offline `TestDMRIPSCReplay` grants at 12:17:27 and 12:20:34 local, the
+  live log has nothing on Fire2 between 12:11 and 12:22). `TestDMRIPSCWidebandReplay`
+  (`GT_DMR_IQ=<flac> GT_DMR_WB=1`, interpolates the slice to the field bin geometry and A/Bs
+  `ChannelizerBank` vs `DDCBank` with one tap each on the SAME stream) reproduced it exactly:
+  polyphase 1991 beacons / 2 grants vs DDC 6103 / 7 over 300 s, deaf in the same tens-of-seconds
+  stretches. Mechanism: the critically-sampled bin's prototype is −6 dB AT the edge and the
+  half of a 12.5 kHz channel that crosses ±binRate/2 folds back — measured −18.6/−9.3/−6.2/−5.2 dB
+  across one channel's 0.45..0.51-bin span (`TestChannelizerBankBinEdgeChannelIsFlat`, fails on the
+  old bank). `channelizer.Oversampled` (Harris M/2 polyphase: M/2 inputs per step, IDFT, and the
+  per-bin `e^{-j2πk·t_s/M}` rotation a critically-sampled bank never needs) emits each bin at
+  2·Fs/M with cutoff 0.75·Fs/M, so the whole bin is flat; `ChannelizerBank` uses it unconditionally
+  (fine-tune NCO/resampler now run from 2·binRate — dense-71 bench 1.5→2.8 ms/chunk, DDC 11.8 ms).
+  Post-fix the polyphase arm matches the DDC arm window-for-window on the capture. The old
+  "dense plan crowds taps onto bin edges — reduced SNR" WARN is gone (DEBUG layout line only).
+  A clean synthetic C4FM carrier at residual 0.48 still GRANTED through the old bank (200 header
+  repeats need only a few good bursts), so a synthetic grant test could not fail first — the
+  tone-flatness pin + the capture harness are the regression; don't reintroduce a grant-based one.
+- **P25 IMBE vs trunk-recorder/OP25 on the same 7-reply conversation (10 Sep, tg 805): measured,
+  NOT changed.** Merging GT's per-transmission WAVs back-to-back (TR's `freqList.pos` is cumulative
+  length, no gaps) and aligning per segment: (1) GT's recordings are SHORTER — 27.18 s vs 30.42 s;
+  the loss is whole LDUs at the HEAD (0.36 s = 2 LDUs on two replies, 1 LDU on one, 0 on three) —
+  receiver acquisition, not the talkgroup gate (`boundaryTracker` already starts `lastMatch=true`);
+  OP25 catches the first LDU more often. Needs a voice IQ capture to tune (`ddaWarmupSymbols`=512
+  ≈107 ms plus filter/AGC settle). (2) Spectrum: the SHIPPED WAVs (enhance chain on) sit at
+  LSD 4.4 dB from OP25 (−5 dB at 100–300 Hz from the HPF/tilt, +3.6/+8 dB at 2–3/3–4 kHz); the
+  raw recorder-default decode of the same `.raw` frames is 3.6 dB, and sweeping
+  `recordings.unvoiced_gain` (`TestIMBEUnvoicedGainSweep`, `GT_IMBE_RAW_DIR`/`GT_IMBE_GAINS`) is
+  monotonic: 5.49 (the dsd-neo/mbelib calibration) → 3.57 dB, 2 → 2.96, 1 → 2.69, 0.5 → 2.53.
+  So the two references DISAGREE on unvoiced level by several dB (mbelib's 3-cosine unvoiced is
+  ≈5.5x a voiced harmonic; the spec's equal-power rule is gain 1, which is where OP25 sits) — and
+  the residual +5..+7 dB GT excess at 3–4 kHz (rel. 1 kHz) does NOT move with the gain, so it is
+  in the high-harmonic spectral-amplitude reconstruction/§6.2 path, same family as the open AMBE
+  2450 note above; per-harmonic diff against OP25's `imbe_vocoder` is the next instrument. Don't
+  flip the default on one conversation; an operator chasing OP25's balance can set
+  `unvoiced_gain: 1` and lower `enhance.hpf_hz`/`tilt_hz`. GT's per-call JSON shipped
+  `srcList: []` on this rig while TR lists the two radios (80902/80816); not investigated this
+  round.
 - **Capture ceilings**: siglab capture-from-tuner 120→1200 s (`maxCaptureSeconds`, byte
   budget 4 GiB estimated at the UNCOMPRESSED decoder width even for flac),
   `diversity_capture_seconds` 120→1200 (`maxDiversityCaptureSeconds`); the REST hunt capture
