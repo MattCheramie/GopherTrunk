@@ -4,12 +4,12 @@ import { HashRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { prefs, themeAttr } from "./store/prefs";
+import { applyTheme, prefs } from "./store/prefs";
 import "./styles.css";
 
 // Apply the stored theme + density before the first render so the UI
 // never flashes the default palette or spacing.
-document.documentElement.dataset.theme = themeAttr(prefs.theme());
+applyTheme(prefs.theme());
 document.documentElement.dataset.density = prefs.density();
 
 // Register the service worker. autoUpdate strategy: if a new bundle

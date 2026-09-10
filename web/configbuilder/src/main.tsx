@@ -11,7 +11,13 @@ import "./styles.css";
   try {
     const theme = localStorage.getItem("gt.ui.theme");
     document.documentElement.dataset.theme =
-      theme === "monochrome" ? "mono" : theme === "light" ? "light" : "dark";
+      theme === "monochrome"
+        ? "mono"
+        : theme === "light"
+          ? "light"
+          : theme === "high-contrast"
+            ? "contrast"
+            : "dark";
     const density = localStorage.getItem("gt.ui.density");
     document.documentElement.dataset.density =
       density === "compact" ? "compact" : "comfortable";
