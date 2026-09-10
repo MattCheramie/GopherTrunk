@@ -304,7 +304,7 @@ func TestSiglabCaptureRejectsBadSeconds(t *testing.T) {
 	ts := newCaptureTestServer(t, prov)
 	for _, body := range []string{
 		`{"serial":"SDR1","seconds":0,"format":"f32"}`,
-		`{"serial":"SDR1","seconds":121,"format":"f32"}`, // just over the 120s ceiling
+		`{"serial":"SDR1","seconds":1201,"format":"f32"}`, // just over the 1200s ceiling
 		`{"serial":"SDR1","seconds":9999,"format":"f32"}`,
 		`{"seconds":1,"format":"f32"}`, // missing serial
 	} {
@@ -510,5 +510,23 @@ func TestSiglabCaptureSurvivesWriteTimeout(t *testing.T) {
 	}
 	if cr.Capture.ID == "" || cr.Capture.Size != int64(len(iq))*8 {
 		t.Fatalf("capture DTO = %+v, want id + %d bytes", cr.Capture, int64(len(iq))*8)
+	}
+}
+
+// TestCaptureNameKeepsQuarterKilohertz pins the staged-capture name to four
+// decimals: the standard 6.25 / 12.5 kHz channel steps put centres on quarter
+// kilohertz, and the old %.3f renamed a 442.3875 MHz slice "442.387MHz".
+func TestCaptureNameKeepsQuarterKilohertz(t *testing.T) {
+	for hz, want := range map[uint32]string{
+		442_387_500: "capture-x-442.3875MHz",
+		443_237_500: "capture-x-443.2375MHz",
+		460_000_000: "capture-x-460.0000MHz",
+	} {
+		if got := captureName("x", hz); got != want {
+			t.Errorf("captureName(%d) = %q, want %q", hz, got, want)
+		}
+	}
+	if got := captureName("x", 0); got != "capture-x" {
+		t.Errorf("captureName(0) = %q", got)
 	}
 }

@@ -19,17 +19,23 @@ import (
 // tuner indefinitely with one request. The capture streams encoded IQ straight
 // to disk (peak RAM is one chunk, not the whole grab), so duration is bounded by
 // disk — see maxCaptureIQBytes — rather than memory; this is a coarse ceiling on
-// wall-clock duration.
-const maxCaptureSeconds = 120
+// wall-clock duration. 1200 s (20 min): with FLAC a 25 kHz DMR slice runs
+// ~3–4 MB per two minutes, so the long captures operators asked for (10 Sep:
+// "extend capture time to 600 or 1200 seconds everywhere") are cheap on disk
+// and are exactly what a multi-transmission A/B needs.
+const maxCaptureSeconds = 1200
 
 // maxCaptureIQBytes caps the on-disk size a single capture may stage. Because
 // the capture now streams encoded IQ to disk one chunk at a time (see
 // siglab.CaptureWriter), memory is no longer the constraint — this bounds the
-// staged file so one request can't fill the disk. 1 GiB is ~13 s of f32 at
-// 10 MS/s or ~55 s at 2.4 MS/s; a grab that would exceed it is rejected up front
-// (before the tuner is pinned) with an actionable error suggesting a shorter
-// duration or a narrowband slice.
-const maxCaptureIQBytes = 1 << 30
+// staged file so one request can't fill the disk. The estimate is the
+// UNCOMPRESSED size (bytesPerSample of the format's decoder width), so a flac
+// grab is budgeted as if it were cs16 — the compression is a bonus, never
+// relied on. 4 GiB is 1200 s of cs16/flac at ~890 kS/s (or 1200 s of f32 at
+// ~445 kS/s, ~53 s of f32 at 10 MS/s); a grab that would exceed it is rejected
+// up front (before the tuner is pinned) with an actionable error suggesting a
+// shorter duration or a narrowband slice.
+const maxCaptureIQBytes = 4 << 30
 
 // CaptureProvider taps a live SDR for a fixed-length raw-IQ capture. The
 // daemon (cmd/gophertrunk) implements it over its iqtap.Broker map; nil keeps
@@ -348,8 +354,8 @@ func narrowbandParams(rateHz, tunerCenterHz, wantCenterHz, wantBWHz uint32) (off
 	half := int64(rateHz) / 2
 	if abs64(offsetHz)+int64(wantBWHz)/2 > half {
 		return 0, 0, fmt.Errorf(
-			"center_hz %d + bandwidth_hz %d falls outside the tuner's current span %.3f–%.3f MHz "+
-				"(centre %.3f MHz, rate %.3f MS/s); a capture extracts a channel from the live stream "+
+			"center_hz %d + bandwidth_hz %d falls outside the tuner's current span %.4f–%.4f MHz "+
+				"(centre %.4f MHz, rate %.3f MS/s); a capture extracts a channel from the live stream "+
 				"without retuning, so pick a centre/bandwidth inside the span",
 			center, wantBWHz,
 			float64(int64(tunerCenterHz)-half)/1e6, float64(int64(tunerCenterHz)+half)/1e6,
@@ -379,9 +385,14 @@ func captureDeviceRateCenter(devices []SpectrumDevice, serial string) (rate, cen
 }
 
 // captureName builds a friendly staged-capture name from the device + tuning.
+// Four decimals: the standard 6.25 / 12.5 kHz channel steps land on quarter-
+// kilohertz centres (442.3875, 443.2375 MHz), and three decimals silently
+// renamed a 442.3875 MHz slice "442.387MHz" (10 Sep report) — every other
+// frequency-bearing name in the tree (survey/hunt captures, rfscope labels)
+// already uses %.4f.
 func captureName(serial string, centerHz uint32) string {
 	if centerHz > 0 {
-		return fmt.Sprintf("capture-%s-%.3fMHz", serial, float64(centerHz)/1e6)
+		return fmt.Sprintf("capture-%s-%.4fMHz", serial, float64(centerHz)/1e6)
 	}
 	return "capture-" + serial
 }
