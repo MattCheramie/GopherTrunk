@@ -37,7 +37,7 @@ browser-only panels (e.g. Radio IDs, Import):
 | Tones       | `tone.alert` feed with per-device reset                         |
 | Metrics     | Curated `gophertrunk_*` Prometheus tiles + Chart.js trend       |
 | Scanner     | CC hunter, conventional channels, manual VFO tune, scan_mode    |
-| Settings    | Theme, write-mode toggle, **live config editing** (PATCH /api/v1/settings) |
+| Settings    | Theme (dark / monochrome / light / high-contrast), density, write-mode toggle, **live config editing** (PATCH /api/v1/settings) |
 | Import      | Upload PDFs / CSV bundles, preview, commit into config.yaml     |
 
 The headline scenario: run the daemon on a Raspberry Pi (or any host

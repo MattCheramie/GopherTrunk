@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 /* Theme tokens. Swap these via the `data-theme` attribute on <html>;
-   the Settings panel toggles between "dark" (default), "mono", and
-   "light". Density is a separate axis on `data-density`. */
+   the Settings panel toggles between "dark" (default), "mono", "light",
+   and "contrast". Density is a separate axis on `data-density`. */
 :root,
 [data-theme="dark"] {
   --gt-bg: 15 23 42;        /* slate-900 */
@@ -53,6 +53,29 @@
   --gt-surface-2: 255 255 255; /* raised card = white */
   --gt-surface-3: 226 232 240; /* hover */
   --gt-border: 203 213 225; /* slate-300 hairline */
+  color-scheme: light;
+}
+
+/* High-contrast: pure black on pure white for outdoor / bright-sunlight
+   use (#1176). Every surface is white and every hairline is black, so
+   the layering that the other themes express through tinted surfaces
+   is expressed here through borders instead (see the overrides below).
+   Status colours stay semantic but are pushed to very dark shades that
+   hold ~7:1 against white; accent collapses to black so buttons and
+   focus rings read as solid ink. */
+[data-theme="contrast"] {
+  --gt-bg: 255 255 255;
+  --gt-panel: 255 255 255;
+  --gt-muted: 0 0 0;
+  --gt-fg: 0 0 0;
+  --gt-accent: 0 0 0;
+  --gt-ok: 0 96 0;          /* dark green */
+  --gt-warn: 124 58 0;      /* dark amber */
+  --gt-err: 160 0 0;        /* dark red */
+  --gt-surface-1: 255 255 255;
+  --gt-surface-2: 255 255 255;
+  --gt-surface-3: 229 229 229; /* hover / active: the one grey allowed */
+  --gt-border: 0 0 0;
   color-scheme: light;
 }
 
@@ -165,4 +188,39 @@ body {
   .pill-err {
     @apply pill bg-err/15 text-err;
   }
+}
+
+/* High-contrast theme: the component classes above lean on translucent
+   panel tints (bg-panel/60, ring-white/5, bg-ok/15) to separate layers,
+   which is invisible when panel == bg == white. Give every container and
+   control a solid black hairline instead, and drop the tinted pill fills
+   so their dark text sits on plain white. Kept out of the token block
+   because these are structural, not palette, changes. */
+[data-theme="contrast"] .panel,
+[data-theme="contrast"] .card,
+[data-theme="contrast"] .btn-ghost,
+[data-theme="contrast"] .input,
+[data-theme="contrast"] .pill {
+  border-color: rgb(var(--gt-border));
+  --tw-ring-color: rgb(var(--gt-border));
+  box-shadow: none;
+}
+[data-theme="contrast"] .pill {
+  border-width: 1px;
+  background-color: rgb(var(--gt-bg));
+}
+[data-theme="contrast"] .btn-ghost:hover {
+  background-color: rgb(var(--gt-surface-3));
+}
+[data-theme="contrast"] .btn-primary {
+  border: 1px solid rgb(var(--gt-border));
+}
+/* Structural dividers (sidebar rail, top bar, list separators, chart
+   frames) are drawn with the panel tint, which is white-on-white here.
+   `.border-border` is not a token the Tailwind config defines, so those
+   frames otherwise fall back to preflight's pale grey. */
+[data-theme="contrast"] .border-panel,
+[data-theme="contrast"] .border-border,
+[data-theme="contrast"] .divide-panel > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(var(--gt-border));
 }

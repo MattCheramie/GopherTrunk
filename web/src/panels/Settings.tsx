@@ -7,7 +7,7 @@ import type {
   RuntimeDTO,
   SettingsPatch,
 } from "../api/types";
-import { prefs, themeAttr, type Density, type Theme } from "../store/prefs";
+import { applyTheme, prefs, THEMES, type Density, type Theme } from "../store/prefs";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Section } from "../components/ui/Section";
@@ -36,7 +36,7 @@ export function Settings() {
   const onTheme = (t: Theme) => {
     setTheme(t);
     prefs.setTheme(t);
-    document.documentElement.dataset.theme = themeAttr(t);
+    applyTheme(t);
   };
 
   const onDensity = (d: Density) => {
@@ -71,7 +71,7 @@ export function Settings() {
         <div className="space-y-2">
           <h3 className="panel-title">Theme</h3>
           <div className="flex flex-wrap gap-2">
-            {(["dark", "monochrome", "light"] as const).map((t) => (
+            {THEMES.map((t) => (
               <button
                 key={t}
                 className={theme === t ? "btn-primary" : "btn-ghost"}
@@ -82,6 +82,10 @@ export function Settings() {
               </button>
             ))}
           </div>
+          <p className="text-xs text-muted">
+            High-contrast is pure black on white for reading the console in
+            bright sunlight.
+          </p>
         </div>
         <div className="space-y-2">
           <h3 className="panel-title">Density</h3>

@@ -246,3 +246,28 @@ describe("Settings inline-edit (Live config)", () => {
     expect(formatRow.textContent).toMatch(/\[restart\]/);
   });
 });
+
+describe("Settings theme picker", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStore();
+    window.localStorage.clear();
+    delete document.documentElement.dataset.theme;
+    vi.mocked(api.configFiles).mockResolvedValue({ dirs: [], files: [] });
+    vi.mocked(api.runtime).mockResolvedValue({ config_path: "" });
+  });
+
+  // #1176: a black-on-white maximum-contrast mode for bright sunlight.
+  it("offers high-contrast and applies it to <html> when picked", async () => {
+    const user = userEvent.setup();
+    render(<Settings />);
+
+    const btn = await screen.findByRole("button", { name: "high-contrast" });
+    expect(btn).toHaveAttribute("aria-pressed", "false");
+    await user.click(btn);
+
+    expect(btn).toHaveAttribute("aria-pressed", "true");
+    expect(document.documentElement.dataset.theme).toBe("contrast");
+    expect(window.localStorage.getItem("gt.ui.theme")).toBe("high-contrast");
+  });
+});

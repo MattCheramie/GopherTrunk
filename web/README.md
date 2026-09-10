@@ -172,7 +172,7 @@ tap in the bottom nav can't fire one.
 - **React 18** + **React Router** (hash mode so `file://` works)
 - **Zustand** for shared state — see `src/store/shared.ts`
 - **Tailwind CSS** for layout + a tiny `tokens.css` for the
-  dark / monochrome themes
+  dark / monochrome / light / high-contrast themes
 - **Chart.js** + **react-chartjs-2** for metrics + scanner
   visualisations; **D3 scale** subpackage for custom axes
 - **vite-plugin-pwa** wraps Workbox; the service worker

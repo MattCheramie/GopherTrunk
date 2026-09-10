@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Web console high-contrast theme** (#1176). Settings → Theme gains a
+  fourth option, `high-contrast`: pure black on pure white, black hairlines
+  in place of tinted surfaces, and status colours pushed to dark shades that
+  hold ~7:1 against white, for reading the console in bright sunlight. The
+  choice is shared with the Config Builder, Signal Lab, RF Scope and Crypto
+  Lab SPAs like the existing themes, and the PWA `theme-color` now follows
+  the selected theme so the browser chrome matches the page.
 - **dPMR and D-STAR voice now decode to PCM (experimental, unverified on
   air).** Following the NXDN precedent, both protocols gain end-to-end voice
   chains: dPMR anchors on the FS1/FS2 voice syncs, carves each 80 ms frame's
