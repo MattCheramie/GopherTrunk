@@ -61,21 +61,18 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 	}
 	ext := tetra.NewDMStreamExtractor(dec.onBurst)
 
+	// The receiver knobs are shared with the control pipeline through
+	// tetrarx.DMOOptions (equalizer on, DC block OFF — the 20 Aug #1003 run showed
+	// this chain, with the DC blocker on, could not verify the colour the pipeline
+	// recovered on the same carrier). Only the sinks are attached here.
 	var pendingSoft []complex64
-	rx := tetrarx.New(tetrarx.Options{
-		SampleRateHz: symbolHz,
-		DibitSink: func(d []uint8, base int) {
-			ext.Process(d, pendingSoft, base)
-			pendingSoft = nil
-		},
-		SoftSink:            func(diffs []complex64, base int) { pendingSoft = diffs },
-		ClockMode:           tetrarx.ClockGardner,
-		GardnerGain:         0.005,
-		EnableAFC:           true,
-		EnableChannelFilter: true,
-		EnableEqualizer:     true, // invert the ISI that garbles DMO TCH/S (required for DMO)
-		EnableDCBlock:       true, // strip the front-end DC spur on the voice tap
-	})
+	rxOpts := tetrarx.DMOOptions(symbolHz)
+	rxOpts.DibitSink = func(d []uint8, base int) {
+		ext.Process(d, pendingSoft, base)
+		pendingSoft = nil
+	}
+	rxOpts.SoftSink = func(diffs []complex64, base int) { pendingSoft = diffs }
+	rx := tetrarx.New(rxOpts)
 
 	c.log.Info("composer: tetra DMO voice follow started — DNB TCH/S decode + ACELP vocoder",
 		"serial", serial, "colour_hint", colourHint, "rate_hz", symbolHz)
@@ -86,6 +83,7 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 			"serial", serial, "dnb_bursts", dec.dnb.Load(),
 			"speech_frames", dec.speech.Load(), "bfi_count", dec.bfi.Load(),
 			"colour", dec.colour, "colour_recovered", dec.colourRecovered,
+			"colour_from_pipeline", dec.colourFromPipeline,
 			"colour_attempts", dec.colourTries)
 	}()
 
@@ -122,8 +120,11 @@ const (
 	// colour-code recovery (matches the pipeline's dmoColourBatch cadence).
 	dmoVoiceColourBatch = 20
 	// dmoVoiceColourMax caps the buffer: past this, if no colour has cleared the
-	// confidence gate, decode the buffer at colour 0 (a clear radio-to-radio call) and
-	// stop buffering — an encrypted/unrecoverable call then simply yields no speech.
+	// confidence gate, stop buffering and decode at the best colour available —
+	// the control pipeline's recovered colour if it has one (adopted even when
+	// this chain cannot re-verify it locally, see adoptLiveColourUnverified),
+	// else colour 0 on the known MNI (a clear radio-to-radio call). An
+	// encrypted/unrecoverable call then simply yields no speech.
 	dmoVoiceColourMax = 120
 	// dmoVoiceColourMaxAttempts caps how many recovery passes to run, mirroring the
 	// control pipeline's dmoColourMaxAttempts.
@@ -170,7 +171,14 @@ type dmoVoiceDecoder struct {
 	// colour 0", which colourKnown alone conflates — the end-of-call log used to
 	// claim colour_known=true colour=0 on a call where nothing was ever recovered.
 	colourRecovered bool
-	buffer          []tetra.DMBurst // ALL DNBs awaiting colour recovery (retroactive decode)
+	// colourFromPipeline is set when the control pipeline's colour was adopted
+	// WITHOUT this chain verifying it on its own bursts (the give-up / flush
+	// paths, or a hint landing after give-up). The pipeline's answer is
+	// confidence-gated on the same carrier, so it beats the colour-0 fallback
+	// it replaces; on the 20 Aug #1003 run the chain fell back to 0 before
+	// ever adopting the pipeline's 39 and decoded 242 DNBs as BFI.
+	colourFromPipeline bool
+	buffer             []tetra.DMBurst // ALL DNBs awaiting colour recovery (retroactive decode)
 	// scored holds only the slot-grid-QUALIFIED DNBs (freshest
 	// dmoVoiceColourBatch), the set colour recovery and hint verification score
 	// against. The DNB correlator false-alarms ~18/s, so an un-gated scoring
@@ -271,6 +279,31 @@ func (d *dmoVoiceDecoder) tryAdoptLiveColour() bool {
 	return true
 }
 
+// adoptLiveColourUnverified adopts the control pipeline's recovered colour
+// WITHOUT verifying it against this chain's own bursts. It is only used where the
+// alternative is the colour-0 fallback — the give-up cap, flush, or a hint that
+// lands after give-up — never while local recovery still has a chance, so a stale
+// hint can only ever replace a guess, not a locally recovered colour. The
+// pipeline's colour is confidence-gated (RecoverDMColourCode's dominance gate) on
+// the same carrier; the fallback is not evidence at all. This is what the 20 Aug
+// #1003 on-air run lacked: the chain gave up at colour 0 before adopting the
+// pipeline's 39, and tryAdoptLiveColour's re-verification then failed forever on a
+// receiver whose bursts differed from the pipeline's. Returns true when the colour
+// changed.
+func (d *dmoVoiceDecoder) adoptLiveColourUnverified() bool {
+	if d.liveColour == nil || d.colourRecovered {
+		return false
+	}
+	c, known := d.liveColour()
+	if !known || (d.colourKnown && c == d.colour) {
+		return false
+	}
+	d.colour, d.colourKnown, d.colourFromPipeline = c, true, true
+	d.c.log.Info("composer: tetra DMO colour adopted from control pipeline (not verified on this chain's bursts)",
+		"serial", d.serial, "colour", c)
+	return true
+}
+
 // onBurst handles one streamed DMO burst. DSBs carry no speech (signalling only), so
 // only DNBs are decoded. Until the colour code is known, DNBs are buffered; once
 // recovered/adopted (or the cap forces a colour-0 fallback) the buffer is decoded in
@@ -289,7 +322,11 @@ func (d *dmoVoiceDecoder) onBurst(b tetra.DMBurst) {
 			if qualified {
 				d.pushScored(b)
 			}
-			d.tryAdoptLiveColour()
+			// A verified adoption is preferred; failing that, the pipeline's
+			// colour still beats the fallback this chain is decoding at.
+			if !d.tryAdoptLiveColour() {
+				d.adoptLiveColourUnverified()
+			}
 		}
 		d.emit(b)
 		return
@@ -311,10 +348,13 @@ func (d *dmoVoiceDecoder) onBurst(b tetra.DMBurst) {
 	case canBrute && d.tryRecoverColour():
 		// Recovered locally; fall through and flush.
 	case len(d.buffer) >= dmoVoiceColourMax || d.colourTries >= dmoVoiceColourMaxAttempts:
-		// Give up recovering; assume clear colour 0 on top of the known MNI
+		// Give up recovering locally. Prefer the control pipeline's colour even
+		// unverified; otherwise assume clear colour 0 on top of the known MNI
 		// (baseMNI | 0 — plain 0 when MNI is 0). A genuinely encrypted call then
 		// yields no CRC-valid speech (bfi), which the hangtime ends normally.
-		d.colour, d.colourKnown = d.baseMNI, true
+		if !d.adoptLiveColourUnverified() {
+			d.colour, d.colourKnown = d.baseMNI, true
+		}
 	default:
 		return // keep buffering
 	}
@@ -374,9 +414,10 @@ func (d *dmoVoiceDecoder) flush() {
 		if !d.tryAdoptLiveColour() {
 			d.tryRecoverColour()
 		}
-		if !d.colourRecovered {
-			// Nothing cleared the gate — fall back to clear colour 0 on top of the
-			// known MNI (baseMNI | 0) so a short clear call still decodes.
+		if !d.colourRecovered && !d.adoptLiveColourUnverified() {
+			// Nothing cleared the gate and the pipeline has no answer — fall back
+			// to clear colour 0 on top of the known MNI (baseMNI | 0) so a short
+			// clear call still decodes.
 			d.colour = d.baseMNI
 		}
 		d.colourKnown = true

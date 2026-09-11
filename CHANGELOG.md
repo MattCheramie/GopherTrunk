@@ -59,6 +59,31 @@ for tagged releases.
   never require acceptance.
 
 ### Fixed
+- **DMR (AMBE+2 3600x2450) silence frames no longer gate the audio and reset the
+  gain predictor** (#644). A frame-by-frame diff of the in-tree decoder against
+  szechyjs/mbelib and mbelib-neo (the dsd-neo vocoder) on the #644 sample showed
+  the 2450 unpack is bit-identical on every voice frame, but AMBE+2 *silence*
+  frames (b0 124/125 — 47% of that sample, in runs of up to 1.3 s) were
+  short-circuited to digital silence with the cross-frame state reset, whereas
+  both references decode them as an ordinary all-unvoiced frame (w0 = 2π/32,
+  L = 14) carrying the frame's own gain delta and spectral envelope. The first
+  voice frame after every pause therefore decoded with gamma = ΔΓ + 0 instead of
+  ΔΓ + 0.5·γ_prev — up to 4 log2 units (≈24 dB) low against both references —
+  and the pauses were hard-gated between utterances. Silence frames now decode
+  as the references do (the background the radio encoded plays at its
+  transmitted level, the predictor carries through); pinned by literal reference
+  vectors in `params2450_silence_test.go`.
+- **TETRA DMO voice chain adopts the control pipeline's recovered colour instead
+  of falling back to colour 0** (#1003, the 20 Aug on-air run). The chain gave up
+  at colour 0 when its own recovery did not land, before ever adopting the
+  pipeline's colour, and a hint that once failed local re-verification was never
+  retried — so a whole PTT decoded as BFI and ended on hangtime. The pipeline's
+  colour (confidence-gated on the same carrier) now wins wherever the colour-0
+  guess would otherwise be used, and the two DMO receivers share one
+  configuration (`tetrarx.DMOOptions`: equalizer on, DC block off — the voice
+  chain alone ran the DC blocker, the prime suspect for why it could not verify
+  the colour the pipeline recovered). `tetra_mcc` / `tetra_mnc` now appear in
+  `config.example.yaml` (a `tetra-dmo` system example). Still on-air-gated.
 - **Voice-calibration docs described a DSD-FME invocation that cannot work**:
   `dsd-fme -r <call>.raw -o reference.wav` (`-r` reads DSD-FME's cookie-headed
   `.imb`/`.amb` container written by `recordings.mbe_files`, not the flat

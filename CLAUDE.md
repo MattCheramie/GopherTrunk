@@ -1222,3 +1222,34 @@ confirmation before any close-as-completed.
   (`captureName`) — `%.3f` renamed a 442.3875 MHz slice "442.387MHz"; every other frequency
   name in the tree was already `%.4f`, and `toFixed(3)` on a centre frequency in a SPA is a
   bug (sample rates / spans / kHz spacings at 3 decimals are fine).
+- **AMBE+2 3600x2450 (DMR) is bit-identical to mbelib on every VOICE frame — the #644
+  "computer voice" was the SILENCE-frame handling, measured against two references.**
+  A frame-by-frame diff (szechyjs/mbelib 1.3.0 + arancormonk/mbelib-neo, both cloneable
+  from the dev environment; build with `gcc -c` + `ar`, dump `cur_mp` per frame) of the
+  committed `internal/voice/ambe2/testdata/dmr-voice.raw` (the reporter's 378-frame TS2
+  clip) shows `unpackParams2450`'s Tl/Vl/L/w0 match mbelib to 1e-5 on all 201 voice frames
+  and the amplitude prediction within ~1 dB per band — so the earlier "the 2450 high-band
+  deficit is in unpackParams2450" note is REFUTED; do not chase the 2450 tables. What
+  differed: 177 frames are AMBE+2 *silence* frames (b0 124/125, runs of 44/63 = ~1.3 s)
+  that both references decode as an all-unvoiced fixed-model frame (w0 = 2π/32, L = 14,
+  the frame's own ΔΓ/PRBA/HOC) and synthesise, while GT rendered digital silence and
+  reset the predictor — so every post-pause onset frame had gamma = ΔΓ + 0 vs
+  ΔΓ + 0.5·γ_prev (frame 95: 4.37 vs 8.40; frame 308: 5.78 vs 10.03 — ≈24 dB), and the
+  pauses were hard-gated. Fixed to the reference behaviour; `params2450_silence_test.go`
+  pins literal Tl (frame 0) and the gamma sequence at every onset (both refs agree to the
+  printed precision). Two things the diff did NOT settle: the two references disagree on
+  the silence model itself (mbelib-neo/JMBE uses L=15 and a different w0; mbelib and
+  DSD-FME's lwvmobile fork use 2π/32 / L=14 — GT follows the DSD-FME lineage the reporter
+  compares against), and the whole-file band fractions depend on that model, so compare
+  voice frames only (`voicemask`) when measuring spectra. On this sample GT is NOT high-band
+  deficient vs mbelib-neo on voice frames (3–4 kHz 0.057 vs 0.123 fraction, GT brighter).
+- **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
+  colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
+  give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that
+  failed local re-verification once was never retried; `adoptLiveColourUnverified` now
+  applies the pipeline's (confidence-gated) colour wherever the guess would be used
+  (give-up cap, post-give-up hint, flush) — pinned failing-first by
+  `TestDMOVoiceDecoderPrefersPipelineColourOverFallback`. The voice chain's `EnableDCBlock`
+  is now OFF like the pipeline's (the prime suspect for the divergent bursts); still
+  on-air-gated. `tetra_mcc`/`tetra_mnc` were missing from config.example.yaml (the 4 Sep
+  rule) — now in a `tetra-dmo` example.

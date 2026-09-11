@@ -62,6 +62,14 @@ type Params struct {
 	DeltaGamma float64
 	Unvc       float64
 	Tone       bool
+	// SilenceFrame marks an AMBE+2 3600x2450 "silence" frame (b0 124 or
+	// 125). It is NOT a Silent frame to the decoder: mbelib and
+	// mbelib-neo/JMBE both decode it as an ordinary all-unvoiced frame
+	// with a fixed spectral model (w0 = 2π/32, L = 14) and the frame's
+	// own gain / PRBA / HOC bits, so the gain predictor and the log2Ml
+	// history carry across a pause and the background the radio encoded
+	// is synthesised at its transmitted level. See unpackParams2450.
+	SilenceFrame bool
 
 	B0, B1, B2, B3, B4, B5, B6, B7, B8 int
 }

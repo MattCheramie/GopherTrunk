@@ -457,3 +457,67 @@ func TestDMOVoiceDecoderKeepsBufferedSpeechAcrossAttempts(t *testing.T) {
 		}
 	}
 }
+
+// TestDMOVoiceDecoderPrefersPipelineColourOverFallback reproduces the 20 Aug
+// #1003 on-air run. The grant fired with colour_hint=0; the chain buffered past
+// dmoVoiceColourMax without its own recovery landing and the give-up path fell
+// back to colour 0 BEFORE it ever adopted the pipeline's colour (39 on that
+// run). tryAdoptLiveColour then never cleared, because its local re-verification
+// kept failing on this chain's own bursts (a receiver configured differently
+// from the pipeline's) and a hint that failed once was never retried — so all
+// 242 DNBs decoded as BFI and the call died on hangtime. The pipeline's colour is
+// confidence-gated on the same carrier; the fallback is a guess, so the
+// pipeline's answer must win wherever the fallback would otherwise be used.
+//
+// Here the chain's bursts are undecodable at ANY colour while the hint is up
+// (local recovery and hint verification both fail, as on air) and a few
+// decodable colour-39 bursts arrive afterwards. Old code: colour 0, nothing
+// emitted. Fixed: colour 39 adopted at give-up (or the moment the hint lands
+// after give-up) and every good burst's speech emitted.
+func TestDMOVoiceDecoderPrefersPipelineColourOverFallback(t *testing.T) {
+	const colour = 39
+	for _, tc := range []struct {
+		name         string
+		hintAfterDNB int // hint becomes known once this many DNBs were seen
+	}{
+		{"hint known from the start", 0},
+		{"hint lands after the give-up cap", dmoVoiceColourMax + 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			noise := buildDMOUndecodableDNBs(t, dmoVoiceColourMax+10)
+			good, want := buildDMODNBBursts(t, colour, 6)
+
+			sink := &fakeDMOSink{}
+			c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
+			seen := 0
+			dec := &dmoVoiceDecoder{
+				c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink,
+				grid: tetra.NewDMSlotGrid(),
+				liveColour: func() (uint32, bool) {
+					if seen >= tc.hintAfterDNB {
+						return colour, true
+					}
+					return 0, false
+				},
+			}
+			for _, b := range noise {
+				seen++
+				dec.onBurst(b)
+			}
+			for _, b := range good {
+				seen++
+				dec.onBurst(b)
+			}
+			dec.flush()
+
+			if !dec.colourKnown || dec.colour != colour {
+				t.Fatalf("decoding at colour=%d known=%v, want the pipeline's %d over the colour-0 fallback",
+					dec.colour, dec.colourKnown, colour)
+			}
+			if len(sink.frames) != 2*len(want) {
+				t.Fatalf("emitted %d speech frames, want %d (good bursts decoded BFI at the fallback colour?)",
+					len(sink.frames), 2*len(want))
+			}
+		})
+	}
+}

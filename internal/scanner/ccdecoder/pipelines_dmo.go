@@ -115,29 +115,26 @@ func newTETRADMOPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	}
 	p.ext = tetra.NewDMStreamExtractor(p.onBurst)
 	p.grid = tetra.NewDMSlotGrid()
-	p.rx = tetrarx.New(tetrarx.Options{
-		SampleRateHz: opts.SampleRateHz,
-		DibitSink: func(dibits []uint8, baseIdx int) {
-			opts.tapDibits(dibits, baseIdx)
-			p.ext.Process(dibits, p.pendingSoft, baseIdx)
-			p.pendingSoft = nil
-		},
-		// The SoftSink fires just before the matching DibitSink with the same base
-		// (issue #553), so stash the differentials and hand them to the extractor
-		// alongside the dibits, keeping the two strictly parallel.
-		SoftSink: func(diffs []complex64, baseIdx int) {
-			p.pendingSoft = diffs
-		},
-		ClockMode:           tetraClockMode,
-		GardnerGain:         0.005,
-		EnableAFC:           true,
-		EnableChannelFilter: true,
-		// The blind SnapshotCMA equalizer is REQUIRED for DMO, not optional: on the
-		// reporter's 438.9 MHz capture it lifts CRC-valid SCH/S from ~6 to ~64 by
-		// inverting the ISI that smears the π/4-DQPSK constellation (same lever the
-		// TMO CC path and the offline TestTETRADMOReplay run by default).
-		EnableEqualizer: true,
-	})
+	// The receiver knobs (equalizer on, DC block off, AFC, channel filter) are
+	// shared with the composer's DMO voice chain through tetrarx.DMOOptions so
+	// both consumers slice the same bursts — the voice chain verifies THIS
+	// pipeline's recovered colour against its own stream (see DMOOptions' doc for
+	// the 20 Aug divergence). Only the sinks and the configured clock mode are
+	// set here.
+	rxOpts := tetrarx.DMOOptions(opts.SampleRateHz)
+	rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
+		opts.tapDibits(dibits, baseIdx)
+		p.ext.Process(dibits, p.pendingSoft, baseIdx)
+		p.pendingSoft = nil
+	}
+	// The SoftSink fires just before the matching DibitSink with the same base
+	// (issue #553), so stash the differentials and hand them to the extractor
+	// alongside the dibits, keeping the two strictly parallel.
+	rxOpts.SoftSink = func(diffs []complex64, baseIdx int) {
+		p.pendingSoft = diffs
+	}
+	rxOpts.ClockMode = tetraClockMode
+	p.rx = tetrarx.New(rxOpts)
 	log.Info("ccdecoder: tetra DMO pipeline configured",
 		"system", opts.SystemName, "freq_hz", opts.FrequencyHz,
 		"colour_override", opts.System.TETRAColourCode)
