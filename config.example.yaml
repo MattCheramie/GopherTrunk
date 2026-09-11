@@ -1196,6 +1196,18 @@ trunking:
   #     #                               # traffic soft path (opt-in until
   #     #                               # the GT_TETRA_LMS capture A/B)
   #
+  #   - name: "DMO-438.9"
+  #     protocol: tetra-dmo             # TETRA Direct Mode (radio-to-radio);
+  #     control_channels: [438_900_000] # the DMO carrier to camp on
+  #     tetra_mcc: 250                  # the radios' network MNI (CPS codeplug):
+  #     tetra_mnc: 1                    #   TCH/S is scrambled with the FULL
+  #                                     #   ExtendedColourCode(MCC, MNC, colour),
+  #                                     #   so a non-zero MNI must be configured
+  #                                     #   or colour recovery never reaches the
+  #                                     #   seed; 0 / 0 (default) = MNI-0 DMO
+  #     # tetra_colour_code: 39         # pin the DM colour (normally auto-
+  #                                     #   recovered from the traffic)
+  #
   #   - name: "Legacy-EDACS"
   #     protocol: edacs
   #     control_channels: [856_012_500]
