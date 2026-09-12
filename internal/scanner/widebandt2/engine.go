@@ -409,6 +409,16 @@ type engineChannel struct {
 	// control channel. See maybeLogDiagnostics.
 	lowPowerWarned bool
 
+	// deafWindows counts consecutive diagnostics windows in which a Tier II
+	// channel that HAS synced before saw no sync at all while its power stayed
+	// within tier2DeafHealMarginDb of the level it last decoded at — the
+	// signature of a receiver whose state has latched, not of an idle repeater
+	// (whose carrier drops away). decodeDbFS is that reference level;
+	// deafHeals counts the receiver resets the guard performed.
+	deafWindows int
+	decodeDbFS  float64
+	everSynced  bool
+	deafHeals   uint64
 	// strongNoSyncWindows counts consecutive diagnostics windows in which
 	// this channel carried a strong signal yet produced zero sync/FEC — the
 	// signature of an uncorrected tuner frequency offset (issue #836). It
@@ -1198,6 +1208,23 @@ const noSyncHintDbFS = -45.0
 // tripping it; a real mistuned transmission holds for seconds.
 const strongNoSyncWindowsNeeded = 3
 
+// tier2DeafHealWindows / tier2DeafHealMarginDb gate the conventional-DMR
+// self-heal (see healDeafTier2). The 12 Sep IPSC field log showed the
+// 442.3875 MHz wideband tap going deaf for ~3-minute stretches, six times in
+// 30 min, at a steady -51 dBFS (its normal decoding level) while the other
+// tap on the same channelizer decoded throughout and offline replays of the
+// same IQ (DDC, channelizer, live-sized chunks) decode every transmission —
+// state accumulated inside the live receiver chain, not RF and not the tuner.
+// Three consecutive windows (~15 s) with no sync at a power within 6 dB of
+// the level the channel last synced at ⇒ reset the receiver and the Tier II
+// stream state, which is exactly what a fresh offline receiver does. An
+// unkeyed repeater drops well below that level, so idle silence never trips
+// it; a keyed foreign/analog carrier trips it every 15 s, harmlessly.
+const (
+	tier2DeafHealWindows  = 3
+	tier2DeafHealMarginDb = 6.0
+)
+
 // lowPowerDecodeGrace suppresses the "iq power very low" WARN for a channel
 // that produced protocol decodes (CSBKs / TSBKs / FEC passes) this recently.
 // Absolute dBFS is a gain-staging number, not a health verdict: a Tier III /
@@ -1410,6 +1437,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 					now.Sub(ec.activityLogAt) >= parkedLogInterval {
 					e.log.Debug("widebandt2: channel decode activity",
 						"freq_hz", ec.freqHz, "system", ec.sysName,
+						"dibits", c.Dibits-ec.lastLogCnt.Dibits,
 						"sync_hits", c.SyncHits-ec.lastLogCnt.SyncHits,
 						"bursts", c.Bursts-ec.lastLogCnt.Bursts,
 						"fec_pass", c.FECPass-ec.lastLogCnt.FECPass,
@@ -1418,13 +1446,16 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 						"late_entries", c.LateEntries-ec.lastLogCnt.LateEntries,
 						"csbk_crc_fail", c.CSBKCRCFail-ec.lastLogCnt.CSBKCRCFail,
 						"rekeys", c.Rekeys-ec.lastLogCnt.Rekeys,
-						"locks_total", c.Locks)
+						"locks_total", c.Locks,
+						"deaf_heals", ec.deafHeals)
 					ec.activityLogAt = now
 					ec.activityCls = cls
 					ec.lastLogCnt = c
 				}
 			}
 			ec.lastCnt = c
+
+			e.healDeafTier2(ec, dbfs, syncDelta, fecPassDelta, c.Beacons-ec.lastCnt.Beacons)
 
 			// Strong-signal-but-no-sync hint (issue #836). A real transmission
 			// that never produces a single burst-sync match is the classic
@@ -1481,4 +1512,57 @@ func pickStrategy(requested string, channelCount int) (kind, tag string) {
 	default:
 		return requested, requested
 	}
+}
+
+// tier2Diag is the receiver-internals view the deaf-tap self-heal logs before
+// it resets a Tier II receiver (dmrrx.Receiver satisfies it), so the next field
+// log shows the latched state rather than only the fact of the reset.
+type tier2Diag interface {
+	CoarseCarrierOffsetHz() float64
+	AGCLevel() float64
+	MMClockMu() float64
+	MMClockSPS() float64
+}
+
+// healDeafTier2 is the conventional-DMR deaf-tap guard (constants above): a
+// channel that has synced before, now seeing no sync for tier2DeafHealWindows
+// consecutive windows at a power within tier2DeafHealMarginDb of its last
+// decoding level, gets its receiver reset together with the Tier II stream
+// state (tier2.ResyncReset — the receiver's dibit index restarts at 0, so the
+// adapter's absolute-index buffer must go with it). Gated on the channel's OWN
+// decoding level, never an absolute dBFS: a -51 dBFS tap is healthy when it
+// decodes there and deaf when it stops, and an idle repeater's carrier falls
+// well below either. Runs inline on the pump goroutine like the rest of the
+// diagnostics, so the reset never races the receiver's Process.
+func (e *Engine) healDeafTier2(ec *engineChannel, dbfs float64, syncDelta, fecPassDelta, beaconDelta uint64) {
+	if ec.tier2Cnt == nil {
+		return
+	}
+	if syncDelta > 0 || fecPassDelta > 0 || beaconDelta > 0 {
+		ec.everSynced = true
+		ec.decodeDbFS = dbfs
+		ec.deafWindows = 0
+		return
+	}
+	if !ec.everSynced || dbfs < ec.decodeDbFS-tier2DeafHealMarginDb {
+		ec.deafWindows = 0
+		return
+	}
+	ec.deafWindows++
+	if ec.deafWindows < tier2DeafHealWindows {
+		return
+	}
+	ec.deafWindows = 0
+	ec.deafHeals++
+	attrs := []any{"freq_hz", ec.freqHz, "system", ec.sysName, "dbfs", dbfs,
+		"decode_dbfs", ec.decodeDbFS, "heals", ec.deafHeals}
+	if d, ok := ec.receiver.(tier2Diag); ok {
+		attrs = append(attrs, "coarse_offset_hz", d.CoarseCarrierOffsetHz(),
+			"agc_level", d.AGCLevel(), "mm_mu", d.MMClockMu(), "mm_sps", d.MMClockSPS())
+	}
+	e.log.Warn("widebandt2: conventional DMR tap deaf at its decoding level — resetting the receiver (field report: 3-minute deaf stretches at a steady -51 dBFS; the receiver internals logged here are the instrument for pinning the latch)", attrs...)
+	if r, ok := ec.receiver.(interface{ Reset() }); ok {
+		r.Reset()
+	}
+	ec.tier2Cnt.ResyncReset()
 }

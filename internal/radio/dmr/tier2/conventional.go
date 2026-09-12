@@ -110,6 +110,12 @@ type LockState struct {
 //     Voice LC Header fails FEC (weak/dirty signal, clipping).
 //   - FECPass > 0                    → genuine DMR headers decoded.
 type Counters struct {
+	// Dibits counts demodulated dibits handed to Process — the receiver's
+	// output rate (4800/s on a live stream). It separates "the receiver
+	// emits nothing" from "the receiver emits junk that never syncs", which
+	// sync_hits alone cannot (the 12 Sep IPSC field log: a tap deaf for
+	// three-minute stretches at a steady -51 dBFS with sync_hits=0).
+	Dibits   uint64
 	SyncHits uint64 // FSW matches reported by the burst-sync detector
 	Bursts   uint64 // slot-type-parsed bursts handed to IngestBurst
 	FECPass  uint64 // Voice LC Header with BPTC + RS both valid
@@ -265,6 +271,7 @@ type ConventionalChannel struct {
 	// Counters(). Incremented on the existing hot paths with atomic
 	// adds so any goroutine can snapshot them without taking c.mu.
 	cnt struct {
+		dibits       atomic.Uint64
 		syncHits     atomic.Uint64
 		bursts       atomic.Uint64
 		fecPass      atomic.Uint64
@@ -303,6 +310,7 @@ type lateEntryCandidate struct {
 // counters. Safe to call concurrently with the decode path.
 func (c *ConventionalChannel) Counters() Counters {
 	return Counters{
+		Dibits:       c.cnt.dibits.Load(),
 		SyncHits:     c.cnt.syncHits.Load(),
 		Bursts:       c.cnt.bursts.Load(),
 		FECPass:      c.cnt.fecPass.Load(),
@@ -735,6 +743,22 @@ func (c *ConventionalChannel) ResetLateEntry() {
 	if c.voice != nil {
 		c.voice.Reset()
 	}
+}
+
+// ResyncReset drops the Process adapter's cross-call dibit buffer, its pending
+// sync matches and the late-entry / superframe state so a receiver-side Reset
+// (which restarts the dibit index at 0) can reacquire cleanly. Without it the
+// adapter's absolute bufStart stays at the pre-reset value while every new sync
+// match arrives at a small index, so each is discarded as "lookback already
+// trimmed" for ever — the trap tier3.ResyncReset documents. Tracked calls are
+// kept (the engine's own timers end them); the learned polarity is kept too, a
+// front end's inversion being a fixed property of the stream.
+//
+// Precondition: called on the same goroutine as Process (from the engine, after
+// the receiver's Process returns), so the proc swap never races a Process call.
+func (c *ConventionalChannel) ResyncReset() {
+	c.proc = nil
+	c.ResetLateEntry()
 }
 
 func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType) {
