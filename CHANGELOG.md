@@ -7,7 +7,10 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.2] — 2026-09-12
+
 ### Added
+
 - **dPMR and D-STAR voice now decode to PCM (experimental, unverified on
   air).** Following the NXDN precedent, both protocols gain end-to-end voice
   chains: dPMR anchors on the FS1/FS2 voice syncs, carves each 80 ms frame's
@@ -24,6 +27,7 @@ for tagged releases.
   fixes the recorder's default vocoder map: `dpmr` now renders through
   `ambe2-dmr` (it was wired to the 3600x2400 base codebook), and `dstar`
   gains a mapping.
+
 - **Hardware-gated real-hardware harnesses for Airspy HF+ and HackRF**
   (`internal/sdr/airspyhf/airspyhf_real_test.go`,
   `internal/sdr/hackrf/hackrf_real_test.go`), mirroring the Airspy R2/Mini
@@ -33,6 +37,51 @@ for tagged releases.
   `test-hackrf-real*`). The HackRF harness exercises the Pro-only
   narrowband-filter / FPGA-DC-block requests on a Pro and asserts they error
   on other boards.
+
+### Fixed
+
+- **DMR (AMBE+2 3600x2450) silence frames no longer gate the audio and reset the
+  gain predictor** (#644). A frame-by-frame diff of the in-tree decoder against
+  szechyjs/mbelib and mbelib-neo (the dsd-neo vocoder) on the #644 sample showed
+  the 2450 unpack is bit-identical on every voice frame, but AMBE+2 *silence*
+  frames (b0 124/125 — 47% of that sample, in runs of up to 1.3 s) were
+  short-circuited to digital silence with the cross-frame state reset, whereas
+  both references decode them as an ordinary all-unvoiced frame (w0 = 2π/32,
+  L = 14) carrying the frame's own gain delta and spectral envelope. The first
+  voice frame after every pause therefore decoded with gamma = ΔΓ + 0 instead of
+  ΔΓ + 0.5·γ_prev — up to 4 log2 units (≈24 dB) low against both references —
+  and the pauses were hard-gated between utterances. Silence frames now decode
+  as the references do (the background the radio encoded plays at its
+  transmitted level, the predictor carries through); pinned by literal reference
+  vectors in `params2450_silence_test.go`.
+
+- **TETRA DMO voice chain adopts the control pipeline's recovered colour instead
+  of falling back to colour 0** (#1003, the 20 Aug on-air run). The chain gave up
+  at colour 0 when its own recovery did not land, before ever adopting the
+  pipeline's colour, and a hint that once failed local re-verification was never
+  retried — so a whole PTT decoded as BFI and ended on hangtime. The pipeline's
+  colour (confidence-gated on the same carrier) now wins wherever the colour-0
+  guess would otherwise be used, and the two DMO receivers share one
+  configuration (`tetrarx.DMOOptions`: equalizer on, DC block off — the voice
+  chain alone ran the DC blocker, the prime suspect for why it could not verify
+  the colour the pipeline recovered). `tetra_mcc` / `tetra_mnc` now appear in
+  `config.example.yaml` (a `tetra-dmo` system example). Still on-air-gated.
+
+- **Voice-calibration docs described a DSD-FME invocation that cannot work**:
+  `dsd-fme -r <call>.raw -o reference.wav` (`-r` reads DSD-FME's cookie-headed
+  `.imb`/`.amb` container written by `recordings.mbe_files`, not the flat
+  `.raw`; `-o` selects an audio device) and claimed the output is 8 kHz PCM
+  (DSD-FME's `-w` stamps an 8 kHz header on 12 kHz synthesis, which the
+  calibrate harness's header-trusting reader silently accepts and then
+  measures collapsed correlation). `docs/voice-calibration.md` and
+  `docs/dmr-voice-quality.md` now show the working container-based recipe
+  with the required 12→8 kHz resample, plus the caveat that sample-level
+  xcorr across independent MBE decoders is depressed by construction.
+
+## [v1.1.1] — 2026-09-09
+
+### Added
+
 - **FleetSync / FleetSync II protocol decoder (clean-room core)** (#437). A new
   `internal/radio/fleetsync` package decodes Kenwood FleetSync in-band ANI: the
   16-bit sync hunt, the FleetSync I block check (CRC), the FleetSync II
@@ -43,6 +92,53 @@ for tagged releases.
   protocol core only; wiring it to a live 1200-baud FFSK front end and the
   events/storage/REST/web surface is staged pending an on-air A/B against a real
   Kenwood capture, so no operator-facing decode ships yet.
+
+### Fixed
+
+- **`sdr list --probe` no longer times out or swaps which RTL-SDR probes on
+  macOS with two dongles** (#1135). Probing opened each dongle through the
+  daemon bring-up envelope, which reset+retries a transient macOS
+  control-transfer abort up to four times. On macOS each device reset is an
+  IOKit re-enumeration, so a transient abort while probing one dongle blew past
+  the 5 s probe deadline *and* perturbed the sibling on the same USB controller
+  — making the successful probe alternate between the two run to run. Probing is
+  now a single best-effort bring-up pass with no device reset (a dongle that
+  doesn't come up just shows empty tuner/gain fields, as before); the daemon
+  open path that actually streams keeps the full reset+retry recovery.
+
+## [v1.1.0] — 2026-09-07
+
+### Fixed
+
+- **SmartNet/SmartZone call source RID no longer blanks after the first frame**
+  (#1143). Motorola SmartNet sends the calling radio ID only on the two-OSW
+  grant that starts a call; the single-OSW voice updates that keep it alive omit
+  it, so the source flashed for one frame on the Active Calls view and then
+  disappeared. The control channel now remembers each talkgroup's source from
+  its initiating grant and backfills it onto the following updates (aged out
+  after the call ends so a stale talker can't attach to a later call, and
+  replaced when a new talker keys up the same talkgroup). Display/attribution
+  only — decode and recording are unaffected.
+
+- **Conventional DMR now decodes through a grossly-mistuned RTL-SDR** (#836).
+  DMR was the one C4FM receiver whose only carrier-offset correction was the
+  post-clock CoarseAFC, which pulls in just a few hundred Hz — so a dongle off
+  by tens of ppm (several kHz at 446 MHz) sat past the decode cliff and never
+  synced, and there was no way to hand-set `sdr.ppm` without a GSM-based
+  calibration tool. A new pre-clock coarse carrier acquisition estimates the
+  offset from the discriminator mean and de-rotates the IQ once, before the
+  discriminator, so the timing loop and matched filter see a centred eye;
+  synthetic decode is now invariant to a tuner offset out to ~40 ppm. Only
+  engages above a 500 Hz deadband (a well-tuned dongle is unchanged), and
+  requires two agreeing acquisition windows so it waits through the idle noise
+  of a silent conventional/simplex channel and locks on the transmission rather
+  than the silence. Synthetic-verified; on-air confirmation still pending a
+  usable capture.
+
+## [v1.0.9] — 2026-09-05
+
+### Added
+
 - **Terms of Service, acknowledged once at install/first run**
   (`TERMS_OF_SERVICE.md`). A short, plain-language ToS in line with other
   open SDR software: lawful monitoring is the operator's responsibility, no
@@ -58,80 +154,16 @@ for tagged releases.
   nothing ever leaves the machine. `version`, `help`, and `terms` itself
   never require acceptance.
 
+## [v1.0.8] — 2026-09-04
+
 ### Fixed
-- **DMR (AMBE+2 3600x2450) silence frames no longer gate the audio and reset the
-  gain predictor** (#644). A frame-by-frame diff of the in-tree decoder against
-  szechyjs/mbelib and mbelib-neo (the dsd-neo vocoder) on the #644 sample showed
-  the 2450 unpack is bit-identical on every voice frame, but AMBE+2 *silence*
-  frames (b0 124/125 — 47% of that sample, in runs of up to 1.3 s) were
-  short-circuited to digital silence with the cross-frame state reset, whereas
-  both references decode them as an ordinary all-unvoiced frame (w0 = 2π/32,
-  L = 14) carrying the frame's own gain delta and spectral envelope. The first
-  voice frame after every pause therefore decoded with gamma = ΔΓ + 0 instead of
-  ΔΓ + 0.5·γ_prev — up to 4 log2 units (≈24 dB) low against both references —
-  and the pauses were hard-gated between utterances. Silence frames now decode
-  as the references do (the background the radio encoded plays at its
-  transmitted level, the predictor carries through); pinned by literal reference
-  vectors in `params2450_silence_test.go`.
-- **TETRA DMO voice chain adopts the control pipeline's recovered colour instead
-  of falling back to colour 0** (#1003, the 20 Aug on-air run). The chain gave up
-  at colour 0 when its own recovery did not land, before ever adopting the
-  pipeline's colour, and a hint that once failed local re-verification was never
-  retried — so a whole PTT decoded as BFI and ended on hangtime. The pipeline's
-  colour (confidence-gated on the same carrier) now wins wherever the colour-0
-  guess would otherwise be used, and the two DMO receivers share one
-  configuration (`tetrarx.DMOOptions`: equalizer on, DC block off — the voice
-  chain alone ran the DC blocker, the prime suspect for why it could not verify
-  the colour the pipeline recovered). `tetra_mcc` / `tetra_mnc` now appear in
-  `config.example.yaml` (a `tetra-dmo` system example). Still on-air-gated.
-- **Voice-calibration docs described a DSD-FME invocation that cannot work**:
-  `dsd-fme -r <call>.raw -o reference.wav` (`-r` reads DSD-FME's cookie-headed
-  `.imb`/`.amb` container written by `recordings.mbe_files`, not the flat
-  `.raw`; `-o` selects an audio device) and claimed the output is 8 kHz PCM
-  (DSD-FME's `-w` stamps an 8 kHz header on 12 kHz synthesis, which the
-  calibrate harness's header-trusting reader silently accepts and then
-  measures collapsed correlation). `docs/voice-calibration.md` and
-  `docs/dmr-voice-quality.md` now show the working container-based recipe
-  with the required 12→8 kHz resample, plus the caveat that sample-level
-  xcorr across independent MBE decoders is depressed by construction.
-- **`sdr list --probe` no longer times out or swaps which RTL-SDR probes on
-  macOS with two dongles** (#1135). Probing opened each dongle through the
-  daemon bring-up envelope, which reset+retries a transient macOS
-  control-transfer abort up to four times. On macOS each device reset is an
-  IOKit re-enumeration, so a transient abort while probing one dongle blew past
-  the 5 s probe deadline *and* perturbed the sibling on the same USB controller
-  — making the successful probe alternate between the two run to run. Probing is
-  now a single best-effort bring-up pass with no device reset (a dongle that
-  doesn't come up just shows empty tuner/gain fields, as before); the daemon
-  open path that actually streams keeps the full reset+retry recovery.
-- **SmartNet/SmartZone call source RID no longer blanks after the first frame**
-  (#1143). Motorola SmartNet sends the calling radio ID only on the two-OSW
-  grant that starts a call; the single-OSW voice updates that keep it alive omit
-  it, so the source flashed for one frame on the Active Calls view and then
-  disappeared. The control channel now remembers each talkgroup's source from
-  its initiating grant and backfills it onto the following updates (aged out
-  after the call ends so a stale talker can't attach to a later call, and
-  replaced when a new talker keys up the same talkgroup). Display/attribution
-  only — decode and recording are unaffected.
-- **Conventional DMR now decodes through a grossly-mistuned RTL-SDR** (#836).
-  DMR was the one C4FM receiver whose only carrier-offset correction was the
-  post-clock CoarseAFC, which pulls in just a few hundred Hz — so a dongle off
-  by tens of ppm (several kHz at 446 MHz) sat past the decode cliff and never
-  synced, and there was no way to hand-set `sdr.ppm` without a GSM-based
-  calibration tool. A new pre-clock coarse carrier acquisition estimates the
-  offset from the discriminator mean and de-rotates the IQ once, before the
-  discriminator, so the timing loop and matched filter see a centred eye;
-  synthetic decode is now invariant to a tuner offset out to ~40 ppm. Only
-  engages above a 500 Hz deadband (a well-tuned dongle is unchanged), and
-  requires two agreeing acquisition windows so it waits through the idle noise
-  of a silent conventional/simplex channel and locks on the transmission rather
-  than the silence. Synthetic-verified; on-air confirmation still pending a
-  usable capture.
+
 - **Talkgroups auto-discovered on analog trunking systems are no longer
   labeled mode "D" (digital)** (#1143 follow-up). Discovered-talkgroup mode
   now follows the system's protocol: SmartNet/SmartZone, LTR, MPT-1327 and
   non-ProVoice EDACS talkgroups are stamped "A" (analog), digital protocols
   stay "D". Display/CSV metadata only — decode and recording are unaffected.
+
 - **`capture` no longer turns a transient carrier into a confident wrong ppm
   warning, and now doubles as a ppm-measurement instrument** (#1143's bogus
   "≈550.3 ppm" warning; #836). The carrier-offset probe used to FFT only the
@@ -145,24 +177,11 @@ for tagged releases.
   kalibrate-rtl no longer works (regions without GSM towers). `capture` also
   honours a backend's actual (quantized) sample rate in the recording,
   metadata sidecar, and offset math.
-- **Motorola Type II / SmartNet / SmartZone control channels can now actually
-  decode off the air** (#1143). The previous framing (24-bit sync, 32-bit OSW,
-  BCH(64,16,11)) was spec-guessed, matched no real signal, and only decoded its
-  own synthetic fixtures — every live capture failed with `cchunt: hunt failed —
-  no control-channel lock`. The whole layer is rebuilt from the proven OP25 /
-  trunk-recorder implementations: real 84-bit sync-bracketed OSW frames
-  (interleave + convolutional-parity ECC + CRC-10, inverted data), the real
-  27-bit OSW model (16-bit address / group bit / 10-bit command), multi-OSW
-  grant + system-ID sequencing, SmartNet band plans (new `motorola_band_plan`
-  key: `800_standard` default, `800_rebanded`, `800_splinter`, `900`), a 2-FSK
-  receiver at the real ±1.2 kHz deviation with carrier-offset tracking, and an
-  18 kHz channel target. Grants now carry real voice frequencies, source radio
-  IDs and encrypted/emergency flags, so the analog voice recorder engages.
-  `motorola_bch_mode` is obsolete and ignored (the real OSW FEC always runs);
-  existing configs keep loading. On-air verification against a reporter capture
-  is still pending — synthetic-green is not on-air-proven (#764/#771).
+
+## [v1.0.7] — 2026-09-01
 
 ### Added
+
 - **`replay -in -` is now a full live pipeline stage for external IQ sources
   (OpenWebRX+ hand-off, #314).** Three pieces complete the stdin→stdout
   integration the offline pipe started: `-out-format jsonl` now **streams each
@@ -181,6 +200,7 @@ for tagged releases.
   `owrx-iq | gophertrunk replay -in - -format cf32 -sample-rate 48000
   -protocol dmr-tier2 -freq 438900000 -audio-out - -out-format jsonl -out
   events.jsonl`.
+
 - **P25 Multi-Block Trunking (AMBT) decode — full system discovery.** A PDU
   (DUID 0xC) on the control channel is now decoded as Multi-Block Trunking
   instead of being dropped as "non-control DUID": the AMBT forms of the
@@ -192,6 +212,7 @@ for tagged releases.
   and "No Network Status Broadcast yet" to the full SDRTrunk-equivalent
   picture. Field layouts cross-checked against SDRTrunk's `AMBTC*` classes
   and OP25's `process_PDU` (header CRC-CCITT16 + data CRC-32 both enforced).
+
 - **Systems panel: full site discovery view.** The detail modal now shows
   NAC and LRA, the camped site's decoded primary + secondary control channels
   (with uplinks), and neighbour rows carry channel coordinates, downlink AND
@@ -199,6 +220,7 @@ for tagged releases.
   matching SDRTrunk's Neighbor Sites output. The `/api/v1/systems` DTO gains
   `nac`, `lra`, `primary_control_channel`, `secondary_control_channels`, and
   per-neighbour `lra`/`uplink_hz`/`status`.
+
 - **Per-call diagnostic IQ containers** (`baseband.voice_iq_debug` +
   `baseband.auto_record.on_voice_grant`). Every voice call can now write the
   exact channelised IQ stream its decode chain consumed to a per-call
@@ -208,23 +230,45 @@ for tagged releases.
   voice-IQ triplet requested for offline DSP debugging of hopped voice
   channels. Concurrent calls get independent files; a slow disk truncates
   the capture (recorded in the sidecar) rather than corrupting it.
+
 - **`p25_quiet_noncontrol_duid`** per-system config knob silences the
   per-frame "non-control DUID" debug line (TDU spam on a busy CC). Default
   off (line keeps firing); log hygiene only.
 
 ### Fixed
+
+- **Motorola Type II / SmartNet / SmartZone control channels can now actually
+  decode off the air** (#1143). The previous framing (24-bit sync, 32-bit OSW,
+  BCH(64,16,11)) was spec-guessed, matched no real signal, and only decoded its
+  own synthetic fixtures — every live capture failed with `cchunt: hunt failed —
+  no control-channel lock`. The whole layer is rebuilt from the proven OP25 /
+  trunk-recorder implementations: real 84-bit sync-bracketed OSW frames
+  (interleave + convolutional-parity ECC + CRC-10, inverted data), the real
+  27-bit OSW model (16-bit address / group bit / 10-bit command), multi-OSW
+  grant + system-ID sequencing, SmartNet band plans (new `motorola_band_plan`
+  key: `800_standard` default, `800_rebanded`, `800_splinter`, `900`), a 2-FSK
+  receiver at the real ±1.2 kHz deviation with carrier-offset tracking, and an
+  18 kHz channel target. Grants now carry real voice frequencies, source radio
+  IDs and encrypted/emergency flags, so the analog voice recorder engages.
+  `motorola_bch_mode` is obsolete and ignored (the real OSW FEC always runs);
+  existing configs keep loading. On-air verification against a reporter capture
+  is still pending — synthetic-green is not on-air-proven (#764/#771).
+
 - **TSBK Secondary Control Channel Broadcast (0x39) layout.** Channel B was
   read one byte early (splicing service class A into the channel field),
   producing a phantom secondary CC; both service classes were dropped. Now
   matches SDRTrunk's bit offsets, pinned by a literal-vector test.
+
 - **Adjacent Site Status Broadcast (0x3C)** now captures the CFVA flags and
   system service class into the decoded struct (previously log-only).
+
 - **"channel iq power very low" WARN no longer fires against a decoding
   channel.** A DMR Tier III CC decoding every C_ALOHA at −56 dBFS drew the
   "carrier likely outside the captured passband" WARN every 5 s — an
   absolute-dBFS gate contradicting live decode evidence. Any channel whose
   protocol decode counter advanced recently is healthy whatever its power
   gauge reads; never-decoding channels keep the repeating WARN.
+
 - **Wideband per-channel DEBUG diagnostics are parked in steady state.** The
   per-second "channel decode activity" / "channel iq power" lines (DMR IPSC:
   one of each per channel per second, forever) now log immediately on a
@@ -232,6 +276,11 @@ for tagged releases.
   parked span. Likewise the DMR Tier III per-CSBK debug line: an unchanged
   repeating Aloha beacon summarises every 10 s with a suppressed-repeat
   count instead of ~16 identical lines per second.
+
+## [v1.0.6] — 2026-08-29
+
+### Fixed
+
 - **Startup configuration summary** — the daemon now logs an effective-config
   snapshot at startup (`daemon: config summary` plus one `daemon: system
   config` line per system) so an operator can confirm at a glance which decode
@@ -243,6 +292,23 @@ for tagged releases.
   uses, so the reported state matches how the receiver was actually built. The
   global line covers `sample_rate`, input pre-decimation factor, `autotune`,
   MRC `diversity` per endpoint, and the recording audio-shaping levers.
+
+- **Vocoder: the spec-faithful §6.2 amplitude enhancement was missing mbelib's
+  `sqrt(M_l)` weight, so the default-on enhancement only carried half the
+  correction.** `mbe_spectralAmpEnhance` (TIA-102.BABA §6.2) uses
+  `W_l = sqrt(M_l)·ξ^0.25`; the enhancer restored the `π/ω₀` factor but dropped
+  the `sqrt(M_l)` amplitude term. Without it the weight is not scale-invariant
+  (it scales as `k^−½` under a uniform amplitude scaling `M_l → k·M_l`), so
+  whether a harmonic lands on the `[0.5, 1.2]` clamp depended on the absolute
+  `Ml` units and a pure gain change reshaped the enhanced envelope. Restored on
+  the spec-faithful path (the legacy `spec_amplitude_enhance: false` form is
+  unchanged as the A/B baseline). Audibly clearer high band on DMR and P25
+  voice, most on higher-pitched speakers.
+
+## [v1.0.5] — 2026-08-28
+
+### Fixed
+
 - **Cross-protocol feature-parity series** (see
   [`docs/protocol-feature-parity.md`](docs/protocol-feature-parity.md) for the
   full matrix and A/B recipes). Everything decode-affecting is opt-in and off
@@ -269,51 +335,7 @@ for tagged releases.
     replay harness (`GT_NXDN_IQ` / `GT_NXDN_SOFT` / `GT_NXDN_AFC`); NXDN
     control channels on the wideband multi-tap engine (`wideband` role
     `protocol: nxdn`).
-- **`unfollowed_reason` on observed calls** (issue #356). Calls the control
-  channel announces but no voice tuner follows now say *why* in
-  `/api/v1/calls/active`: `no voice SDR configured`, `voice frequency outside
-  every voice device's tuning window`, or `all voice tuners busy with
-  higher-priority calls`. On a single wideband SDR whose IQ window misses the
-  system's voice channels, every call shows as "observed" — which operators
-  read as "the talkgroup has no voice"; the field makes the coverage gap (or
-  tuner shortage) visible instead. Omitted for followed calls. Diagnostic
-  only — grant handling and the decode path are unchanged. *(Re-landed: this
-  was described in PR #1121 but the commit never made it onto the merged
-  branch.)*
-- **`scanner.conventional[].talkgroup_id`** (issue #1105). Optional fixed
-  talkgroup ID a conventional channel surfaces under (API, call log, and
-  scan-type upload consumers — Rdio Scanner, OpenMHz, Broadcastify Calls)
-  instead of the positional synthetic `0x80000000 | list-index` default,
-  which silently shifts when channels are reordered/inserted/removed and
-  breaks `talkgroup_file` roster rows. Config validation rejects two channels
-  resolving to the same effective ID. Unset keeps today's positional
-  behaviour. *(Re-landed: described in PR #1121 but the commit never made it
-  onto the merged branch.)*
 
-### Docs
-- **Documented the minimum macOS version (12 Monterey).** macOS binaries link
-  against system APIs that first shipped in macOS 12 (e.g.
-  `SecTrustCopyCertificateChain`), so on macOS 11 and older they abort at launch
-  with `dyld: Symbol not found`. The requirement is now stated in the README,
-  the [macOS install guide](docs/install-macos.md) (a Requirements callout plus
-  a troubleshooting row for the exact `dyld` error), the
-  [downloads page](docs/downloads.md), and the GitHub **release notes** shown on
-  every release (the download point of contact — the macOS line now states the
-  requirement and the `dyld` symptom). Docs only — no behaviour change (issue
-  #1096).
-
-### Fixed
-- **Vocoder: the spec-faithful §6.2 amplitude enhancement was missing mbelib's
-  `sqrt(M_l)` weight, so the default-on enhancement only carried half the
-  correction.** `mbe_spectralAmpEnhance` (TIA-102.BABA §6.2) uses
-  `W_l = sqrt(M_l)·ξ^0.25`; the enhancer restored the `π/ω₀` factor but dropped
-  the `sqrt(M_l)` amplitude term. Without it the weight is not scale-invariant
-  (it scales as `k^−½` under a uniform amplitude scaling `M_l → k·M_l`), so
-  whether a harmonic lands on the `[0.5, 1.2]` clamp depended on the absolute
-  `Ml` units and a pure gain change reshaped the enhanced envelope. Restored on
-  the spec-faithful path (the legacy `spec_amplitude_enhance: false` form is
-  unchanged as the A/B baseline). Audibly clearer high band on DMR and P25
-  voice, most on higher-pitched speakers.
 - **Web History: "recording is unavailable (it may have been swept by
   retention)" while the WAV was on disk the whole time.** A daemon started with
   a relative `-config` path (e.g. `gophertrunk -config config.yaml`) resolved
@@ -328,6 +350,11 @@ for tagged releases.
   the daemon's own error detail (`no recording for this call` / `recording
   unavailable` / `recording file is gone`) instead of unconditionally guessing
   retention, so the next mismatch is diagnosable from the screenshot.
+
+## [v1.0.4] — 2026-08-26
+
+### Fixed
+
 - **macOS: transient RTL-SDR control-transfer aborts during bring-up are now
   retried instead of failing the open** (issue #1135; also the macOS variant
   reported on #1131). On a Mac with two dongles on one bus, a control
@@ -345,6 +372,37 @@ for tagged releases.
   classes. A failure that survives every retry now carries a macOS hint pointing
   at USB power / bus contention (give each dongle its own powered port). No
   effect on Linux or Windows.
+
+## [v1.0.3] — 2026-08-25
+
+### Fixed
+
+- **`unfollowed_reason` on observed calls** (issue #356). Calls the control
+  channel announces but no voice tuner follows now say *why* in
+  `/api/v1/calls/active`: `no voice SDR configured`, `voice frequency outside
+  every voice device's tuning window`, or `all voice tuners busy with
+  higher-priority calls`. On a single wideband SDR whose IQ window misses the
+  system's voice channels, every call shows as "observed" — which operators
+  read as "the talkgroup has no voice"; the field makes the coverage gap (or
+  tuner shortage) visible instead. Omitted for followed calls. Diagnostic
+  only — grant handling and the decode path are unchanged. *(Re-landed: this
+  was described in PR #1121 but the commit never made it onto the merged
+  branch.)*
+
+- **`scanner.conventional[].talkgroup_id`** (issue #1105). Optional fixed
+  talkgroup ID a conventional channel surfaces under (API, call log, and
+  scan-type upload consumers — Rdio Scanner, OpenMHz, Broadcastify Calls)
+  instead of the positional synthetic `0x80000000 | list-index` default,
+  which silently shifts when channels are reordered/inserted/removed and
+  breaks `talkgroup_file` roster rows. Config validation rejects two channels
+  resolving to the same effective ID. Unset keeps today's positional
+  behaviour. *(Re-landed: described in PR #1121 but the commit never made it
+  onto the merged branch.)*
+
+## [v1.0.2] — 2026-08-24
+
+### Fixed
+
 - **Windows: two identical RTL-SDR composite dongles can now open concurrently**
   (issue #1131). The WinUSB composite-device fallback located the Interface 0
   (`&MI_00`) child function node by VID/PID only, so with two identical
@@ -364,6 +422,11 @@ for tagged releases.
   `sdr doctor`'s per-row composite-child driver verdict is serial-keyed the
   same way, and an in-use child now surfaces an explicit "device is already
   open" error instead of blaming the driver binding.
+
+## [v1.0.1] — 2026-08-23
+
+### Fixed
+
 - **RTL-SDR Blog V4 retunes no longer abort on an intermittent control-pipe
   stall** (issue #753). The V4's R828D occasionally STALLs a demod control write
   mid-run — most visibly the `SetI2CRepeater` toggle inside a `SetCenterFreq`
@@ -378,6 +441,7 @@ for tagged releases.
   stall still surfaces. A full device reset is deliberately not used at runtime —
   it would tear down the live IQ stream mid-tune. Additive recovery path; no
   config/behaviour change.
+
 - **`gophertrunk config` (terminal Config Builder) now defaults its Save path to
   the file the daemon actually loads** (issue #1120). The earlier #1120 fix The earlier #1120 fix
   taught `configbuilder.DefaultConfigPath` to follow the daemon's discovery, but
@@ -388,55 +452,24 @@ for tagged releases.
   the file currently open, an operator-supplied `-config-dir`, then the
   discovered/`$GOPHERTRUNK_CONFIG` file. No behaviour change when `-config-dir`
   is set or a file is already open.
-- **Conventional/analog scanner recordings no longer end in a loud multi-second
-  noise tail** (issue #1090). The scanner-side hangtime debounce (#1091) fixed
-  when a call *ends*, but for the whole hangtime window the composer's FM chain
-  kept demodulating carrier-less receiver noise — loud out of an FM
-  discriminator regardless of RF level — and the audio AGC amplified it toward
-  full scale. The scanner now publishes its live, debounced squelch decision and
-  the FM chain follows it: while squelch is closed the audio AGC freezes and the
-  recorded/streamed PCM fades to silence within ~10 ms, resuming when real
-  activity returns. No config changes; analog-trunk voice channels
-  (Motorola/LTR/MPT 1327) are unaffected.
-- **A config whose only SDR source is a network one now has a radio.** Pool
-  construction was gated on `sdr.devices`, `baseband.replay` and `sdr.rtl_tcp`
-  only, and the network drivers are registered inside that block — so a config
-  with just `sdr.soapy_remote` or just `sdr.ka9q_radio` registered no driver at
-  all and the daemon started quietly with nothing to demodulate.
-- **Ctrl-C no longer takes 30 seconds.** `Daemon.Close` stops the HTTP server
-  first, and `http.Server.Shutdown` waits for active non-hijacked requests
-  without cancelling them — so an attached SSE / live-audio / siglab subscriber
-  held the whole 30 s drain window open, while the bus that would have ended
-  those handlers is closed at the very end of teardown. The server now signals
-  its streaming handlers at the top of shutdown; the 30 s is a cap for a handler
-  that misses the signal, and reaching it logs a WARN instead of passing as a
-  clean exit. `GRPCServer.Stop` is bounded too (an open `StreamAudio` made
-  `GracefulStop` wait forever), and each teardown stage that owns goroutines,
-  sockets or hardware now names itself in the log when it runs slow.
-- **The SoapyRemote and rtl_tcp stream read loops honour ctx cancel.** Both
-  checked `ctx.Done()` only between reads and then parked in `io.ReadFull`
-  behind a 30 s deadline, so a cancel arriving while the server was quiet — the
-  normal state at shutdown — was not seen until that deadline expired.
-- **Call history search by talkgroup returns rows.** The web client read the
-  wrong key off the `/api/v1/calls/history` response (`rows` instead of
-  `calls`) and fell back to an empty list, so the History panel had rendered
-  "No calls in the daemon's call log for this filter" for every query since the
-  file was written. The daemon, the filter and the SQL were all correct.
-- **Call-history rows carry `algorithm_id`, `key_id` and `source_alpha`.** The
-  storage row held them and the SPA already declared them, but the API DTO
-  dropped all three, so the History table's Source column and its encryption
-  badge could never populate.
 
-### Security
-- **Bumped the Go toolchain to 1.25.13 and `golang.org/x/net` to v0.55.0** to
-  clear the CVEs govulncheck reports against the pinned toolchain: seven Go
-  standard-library advisories fixed in go1.25.13 (`net/url` GO-2026-6218,
-  `html/template` GO-2026-6091, `crypto/tls` GO-2026-6090, `net/http`
-  GO-2026-6089, `encoding/xml` GO-2026-6088, `encoding/asn1` GO-2026-5972) and
-  the `x/net/idna` Punycode advisory GO-2026-5026. Toolchain/dependency bump
-  only — no code changes.
+### Docs
+
+- **Documented the minimum macOS version (12 Monterey).** macOS binaries link
+  against system APIs that first shipped in macOS 12 (e.g.
+  `SecTrustCopyCertificateChain`), so on macOS 11 and older they abort at launch
+  with `dyld: Symbol not found`. The requirement is now stated in the README,
+  the [macOS install guide](docs/install-macos.md) (a Requirements callout plus
+  a troubleshooting row for the exact `dyld` error), the
+  [downloads page](docs/downloads.md), and the GitHub **release notes** shown on
+  every release (the download point of contact — the macOS line now states the
+  requirement and the `dyld` symptom). Docs only — no behaviour change (issue
+  #1096).
+
+## [v1.0.0] — 2026-08-20
 
 ### Added
+
 - **Software decimation for IQ captures — record long grabs off a radio whose
   hardware sample-rate floor is too high.** The USRP B210 cannot stream below
   ~1 MS/s, so a single narrowband channel could only be captured as a huge
@@ -450,6 +483,7 @@ for tagged releases.
   size, still wide enough to debug. `decimate` is a wideband-tap lever; a value
   above 1 with `tap: ddc` (already narrowband) is rejected at config load. No
   change to undecimated captures.
+
 - **Conventional scanner channels upload under their configured name.** A
   `scanner.conventional` channel's `label:` now travels on the call grant to
   Rdio Scanner and the other scan-type consumers (OpenMHz, Broadcastify Calls),
@@ -459,6 +493,11 @@ for tagged releases.
   a pure conventional-scanner deployment with no trunked system gets readable
   channel names too. No config changes; channels with no `label:` are unchanged
   (issue #1105).
+
+## [v0.9.9] — 2026-08-19
+
+### Added
+
 - **`sdr.sidecar` mounts an external IQ producer as a virtual tuner.** A sidecar
   is any process that owns a radio and streams raw IQ over a FIFO, TCP or UDP —
   a UHD/RFNoC program, a GNU Radio flowgraph, a vendor tool with no SoapySDR
@@ -466,6 +505,7 @@ for tagged releases.
   `rtl_tcp`'s, so a tool that already speaks those works unmodified. It keeps
   hardware and DSP that would need CGO out of GopherTrunk's process while it
   still sees a real tuner. See `docs/reference/sdr-sidecar.md`.
+
 - **Diversity: an offline instrument for deciding what to ship, and an MMSE-IRC
   combiner to feed it.** `TestDiversityCombinerReplay` now measures coherence
   BOTH on the wideband stream and after the per-channel DDC — the number that
@@ -478,14 +518,17 @@ for tagged releases.
   estimate returns a power-weighted blend of every signal present. That is why
   it is not offered as a driver mode — the driver combines the wideband stream,
   where no training sequence exists. Nothing changes by default.
+
 - **The MRC health line reports a calibration that has gone stale.** A combiner
   that locks once and then fails the coherence gate on every window afterwards
   keeps applying a gain measured minutes ago; the line reported that as healthy
   because `calibrated` was still true. It now WARNs after three quiet intervals
   and names the wideband-combine limitation as the likely cause.
+
 - **The diversity capture sidecar records the device args, antenna ports, centre
   frequency and gain.** All four were declared and never written, so a replay
   could not tell which channel to tune to or what hardware produced the branches.
+
 - **Name radios and talkgroups from the web console, and keep the names.**
   The Radio IDs and Talkgroups detail panels now carry Name / Description
   fields (and Owner for a radio), committed on blur or Enter. A radio or
@@ -498,6 +541,7 @@ for tagged releases.
   stay in memory as before. The on-disk files are never rewritten — an
   **Export names → CSV** link on each panel downloads them in the alias file's
   own format so they can be folded back in by hand.
+
 - **`sdr.soapy_remote[].verbose_debug` traces the RPC conversation.** Logs every
   control-channel request and response to that server — decoded call name and
   arguments plus a hex dump of the frame — at DEBUG. The SoapyRemote wire
@@ -505,121 +549,53 @@ for tagged releases.
   bytes N` never says WHICH call was mis-shaped; this is the other half of that
   conversation, and the decoded arguments line up directly against upstream's
   `ClientHandler.cpp`. Per endpoint, off by default, needs `log.level: debug`.
-- **SoapyRemote: experimental phase-coherent MRC diversity over two RX channels.**
-  A new `diversity: mrc` option on a `soapy_remote` source opens RX channels 0
-  and 1 and phase-coherently maximal-ratio-combines them into one maximised-SNR
-  stream, for shared-LO front-ends (USRP B210 / AD9361 and clones) whose RX0↔RX1
-  phase relationship is a constant per tune. It reuses the existing
-  `dsp/diversity.StaticCalibrator`: a one-time phase calibration is taken on the
-  first signal-bearing window after each tune (no per-sample tracking), and the
-  combined stream feeds the normal decode pipeline unchanged. Default (unset) is
-  the ordinary single-channel stream — byte-identical to before. **Experimental
-  (issue #1062):** the 2-channel wire de-interleave and the calibration trigger
-  are validated in unit tests but not yet confirmed against a live dual-RX
-  server; the feature is opt-in and cannot affect single-channel users.
-- **TETRA DMO (Direct Mode Operation) now decodes in the daemon.** A new
-  `protocol: tetra-dmo` (aliases `dmo` / `tetra_dmo`) camps a direct-mode
-  frequency, locks on the Direct Mode Synchronisation Burst (DSB), auto-recovers
-  the DM colour code, and decodes the Direct Mode Normal Burst (DNB) TCH/S speech
-  train to voice on the same carrier — no separate traffic channel. Previously a
-  DMO capture had to run through the TMO control-channel pipeline, whose burst
-  geometry does not match DMO, so it appeared to "lock" (the DSB SCH/S is
-  colour-0-scrambled like a TMO BSCH) but produced no grants and no audio. The
-  new pipeline reuses the offline-validated DMO decoders behind a bounded
-  streaming burst extractor. Configure with `protocol: tetra-dmo` +
-  `control_channels: [<freq>]` (optional `tetra_colour_code` overrides colour
-  recovery). The DM call-control protocol (EN 300 396-3 source/destination SSI,
-  group) is not yet decoded, so a DMO call records without a talkgroup identity
-  (filed under group `0`); and this path is validated offline/synthetically but
-  not yet A/B'd against a real on-air DMO capture (see docs/reference/tetra-dmo.md).
-- **HackRF Pro is now identified as such, and its narrowband filter is
-  configurable.** GopherTrunk reads the firmware's board ID at open, so a HackRF
-  Pro (board ID 5, *Praline*) now reports `HackRF Pro` — and a HackRF One R9
-  (board ID 4) `HackRF One R9` — in `gophertrunk sdr list`, the Devices panel,
-  and the startup log, instead of being lumped in with the original HackRF One.
-  Two new per-device options expose the Pro's RF-path features: `narrowband_filter:
-  true` engages the Pro's switchable narrowband anti-alias filter (tighter
-  adjacent-channel rejection for narrowband voice like P25, at the cost of usable
-  bandwidth), and `fpga_dc_block: true` strips the zero-IF DC-offset spike in the
-  Pro's FPGA before samples leave the device — a hardware alternative to the P25
-  voice path's software DC-block that also cleans the control channel (measured
-  on hardware: raw-stream DC magnitude drops to zero). Both are ignored, with a
-  startup warning, on any board without the hardware. (The Pro's 16-bit
-  extended-precision RX mode is not included: it's unimplemented in the released
-  Pro firmware — `fpga_init` only programs the standard bitstream and the SGPIO
-  capture is hardwired to the 2-byte format — so it can't be driven from the host
-  yet.)
-- **`dc_avoid` now also protects voice grants, not just the control channel.**
-  On a zero-IF dongle (HackRF, RTL-SDR) a granted voice carrier tuned exactly
-  on-channel sits directly on the front-end DC spur / LO self-mixing / I/Q
-  image. That corruption leaves a healthy *average* EVM but biases the specific
-  symbol decisions the frame-sync word rides on, so the sync correlator misses
-  and voice grants decode zero LDUs while the short, heavily-FEC'd control
-  channel still limps through — a system that locks its CC but never produces
-  audio. `dc_avoid: true` on a `role: voice` device now offset-tunes each
-  granted call's LO (by `dc_avoid_offset_hz`, default `sample_rate/4`) and mixes
-  the carrier back to baseband before the composer sees it, the same technique
-  SDRTrunk/OP25 apply by channelising every carrier off-DC — extending the
-  existing control-only offset tuning (issue #402) to the per-grant voice path.
-  Measured on a HackRF Pro against a marginal simulcast P25 system: an
-  on-channel capture demods at ~21 % EVM with 0 frame-sync hits (0 LDUs), while
-  the same signal offset-tuned lands ~10 % EVM and locks (66 NIDs); on the air,
-  voice went from never decoding to clean IMBE audio. The composer is unchanged
-  — the offset is fully encapsulated in a per-device tuner wrapper.
-- **The HackRF front-end RF amplifier is now configurable via `rf_amp`.** The
-  HackRF has no true AGC, so `gain: auto` uses a fixed LNA/VGA split with the
-  front-end amp off. Setting `rf_amp: true` on a device turns the amp on for the
-  auto preset, lowering the noise figure by ~14 dB to recover a weak-signal site
-  (matching SDRTrunk's amp-on default) — but because it adds gain ahead of
-  everything it can overload a front end near a strong transmitter, so it is
-  opt-in and off by default. Manual (positive) `gain:` values are unaffected, and
-  the option is ignored, with a startup warning, on a device without a switchable
-  amp.
-- **DMR now auto-corrects a small residual tuner carrier offset.** The
-  narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
-  the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz
-  even a fraction of a ppm exceeds that. The receiver now runs the same coarse
-  AFC the P25 Phase 1 decoder already used (issue #275), recentring the symbol
-  eye, so a lightly-mistuned dongle (up to roughly ±2 ppm) decodes without
-  hand-setting `sdr.ppm`. Grossly-mistuned dongles still want a measured
-  `sdr.ppm`; automatic correction of large offsets is a follow-up.
-- **Conventional DMR / IPSC repeaters now report "site alive" from their idle
-  beacons.** On a `dmr-tier2` channel that parks on a fixed carrier with no
-  control channel, the periodic idle beacon a repeater emits between calls (a
-  CSBK Preamble / broadcast burst carrying valid sync + colour code but no
-  voice) is now recognised: a CRC-valid CSBK marks the site alive, is counted
-  in the wideband engine's per-channel diagnostics (`beacons`), and logs a
-  rate-limited status line — instead of being ignored or, worse, surfaced as a
-  decode error. Between-beacon noise on the parked channel stays silent. Groundwork
-  for conventional/IPSC monitoring (issue #1036).
-- **On-air call priority now reaches the webhook sinks.** The completed-call
-  and grant `broadcast.webhook` payloads already carried the emergency flag but
-  not the signalled priority level (the low 3 bits of the P25 / DMR Service
-  Options octet, or the TETRA CMCE Call priority); both now include a `priority`
-  field, matching what the call log and `/api/v1/calls` already surface, so a
-  webhook consumer can rank calls the way the local UI does.
-- **Unit-to-unit / private calls are now flagged in call history.** The
-  `Individual` grant flag (the call's `group_id` is a target radio address,
-  not a talkgroup) already reached the live-grant API but was dropped from the
-  call record, so a followed private call was indistinguishable from a group
-  call in history and its 24-bit target rendered as a phantom talkgroup. Each
-  call record now carries an `individual` field (persisted at call start and
-  latched on at call end for TETRA, which cannot flag a unit-to-unit
-  destination on first sighting), returned by the `/api/v1/calls` endpoint.
-- **Call history now shows who was talking, not just the RID number.** Each
-  call record carries a `source_alpha` field resolving the source radio's
-  alias/name — preferring the operator-curated RID catalogue (`rid_alias_file`)
-  and falling back to the most-recently-decoded over-the-air talker alias. The
-  alias is persisted to the call log and returned by the `/api/v1/calls`
-  history endpoint alongside the existing talkgroup alias, and is re-resolved
-  at call end so a compressed grant whose source RID is backfilled mid-call
-  still lands with a name.
-- **TETRA call priority is now surfaced.** The CMCE parser already decoded
-  the mandatory 4-bit Call priority (and derived the emergency flag from it);
-  the value now reaches `Grant.Priority` and the call log, extending on-air
-  call-priority metadata to TETRA alongside P25 and DMR.
 
 ### Fixed
+
+- **Conventional/analog scanner recordings no longer end in a loud multi-second
+  noise tail** (issue #1090). The scanner-side hangtime debounce (#1091) fixed
+  when a call *ends*, but for the whole hangtime window the composer's FM chain
+  kept demodulating carrier-less receiver noise — loud out of an FM
+  discriminator regardless of RF level — and the audio AGC amplified it toward
+  full scale. The scanner now publishes its live, debounced squelch decision and
+  the FM chain follows it: while squelch is closed the audio AGC freezes and the
+  recorded/streamed PCM fades to silence within ~10 ms, resuming when real
+  activity returns. No config changes; analog-trunk voice channels
+  (Motorola/LTR/MPT 1327) are unaffected.
+
+- **A config whose only SDR source is a network one now has a radio.** Pool
+  construction was gated on `sdr.devices`, `baseband.replay` and `sdr.rtl_tcp`
+  only, and the network drivers are registered inside that block — so a config
+  with just `sdr.soapy_remote` or just `sdr.ka9q_radio` registered no driver at
+  all and the daemon started quietly with nothing to demodulate.
+
+- **Ctrl-C no longer takes 30 seconds.** `Daemon.Close` stops the HTTP server
+  first, and `http.Server.Shutdown` waits for active non-hijacked requests
+  without cancelling them — so an attached SSE / live-audio / siglab subscriber
+  held the whole 30 s drain window open, while the bus that would have ended
+  those handlers is closed at the very end of teardown. The server now signals
+  its streaming handlers at the top of shutdown; the 30 s is a cap for a handler
+  that misses the signal, and reaching it logs a WARN instead of passing as a
+  clean exit. `GRPCServer.Stop` is bounded too (an open `StreamAudio` made
+  `GracefulStop` wait forever), and each teardown stage that owns goroutines,
+  sockets or hardware now names itself in the log when it runs slow.
+
+- **The SoapyRemote and rtl_tcp stream read loops honour ctx cancel.** Both
+  checked `ctx.Done()` only between reads and then parked in `io.ReadFull`
+  behind a 30 s deadline, so a cancel arriving while the server was quiet — the
+  normal state at shutdown — was not seen until that deadline expired.
+
+- **Call history search by talkgroup returns rows.** The web client read the
+  wrong key off the `/api/v1/calls/history` response (`rows` instead of
+  `calls`) and fell back to an empty list, so the History panel had rendered
+  "No calls in the daemon's call log for this filter" for every query since the
+  file was written. The daemon, the filter and the SQL were all correct.
+
+- **Call-history rows carry `algorithm_id`, `key_id` and `source_alpha`.** The
+  storage row held them and the SPA already declared them, but the API DTO
+  dropped all three, so the History table's Source column and its encryption
+  badge could never populate.
+
 - **SoapyRemote MRC diversity now actually uses the second receiver.** On a real
   USRP B210 the first cut streamed only RX0: RX1 stayed dark, and disconnecting
   RX0's antenna dropped the whole stream to the noise floor even with a good
@@ -642,6 +618,40 @@ for tagged releases.
   requested, so a dark receiver is visible in GopherTrunk's own log instead of
   requiring `SoapySDRServer`'s UHD debug output. Single-channel streams are
   unaffected. Still experimental pending an on-air A/B.
+
+## [v0.9.8] — 2026-08-15
+
+No changelog entries were recorded for this tag; see the GitHub release notes.
+
+## [v0.9.7] — 2026-08-14
+
+### Security
+
+- **Bumped the Go toolchain to 1.25.13 and `golang.org/x/net` to v0.55.0** to
+  clear the CVEs govulncheck reports against the pinned toolchain: seven Go
+  standard-library advisories fixed in go1.25.13 (`net/url` GO-2026-6218,
+  `html/template` GO-2026-6091, `crypto/tls` GO-2026-6090, `net/http`
+  GO-2026-6089, `encoding/xml` GO-2026-6088, `encoding/asn1` GO-2026-5972) and
+  the `x/net/idna` Punycode advisory GO-2026-5026. Toolchain/dependency bump
+  only — no code changes.
+
+### Added
+
+- **SoapyRemote: experimental phase-coherent MRC diversity over two RX channels.**
+  A new `diversity: mrc` option on a `soapy_remote` source opens RX channels 0
+  and 1 and phase-coherently maximal-ratio-combines them into one maximised-SNR
+  stream, for shared-LO front-ends (USRP B210 / AD9361 and clones) whose RX0↔RX1
+  phase relationship is a constant per tune. It reuses the existing
+  `dsp/diversity.StaticCalibrator`: a one-time phase calibration is taken on the
+  first signal-bearing window after each tune (no per-sample tracking), and the
+  combined stream feeds the normal decode pipeline unchanged. Default (unset) is
+  the ordinary single-channel stream — byte-identical to before. **Experimental
+  (issue #1062):** the 2-channel wire de-interleave and the calibration trigger
+  are validated in unit tests but not yet confirmed against a live dual-RX
+  server; the feature is opt-in and cannot affect single-channel users.
+
+### Fixed
+
 - **TETRA DMO no longer grants and opens a recording on an idle channel, and now
   grants for every real transmission.** On air, `protocol: tetra-dmo` started a
   call and a recording session about 230 ms after the daemon came up — before any
@@ -661,6 +671,7 @@ for tagged releases.
   status line now reports `dnb_qualified` alongside the raw `dnb_total`, so the
   false-alarm rate stays visible. Trade-off: a grant now lands ~0.5 s into a
   transmission rather than instantly. (Refs #1003)
+
 - **A TETRA DMO call no longer burns CPU brute-forcing the colour code, starving
   its own audio.** The voice chain re-ran the full 64-colour `RecoverDMColourCode`
   search over its entire, still-growing burst buffer on *every* arriving burst —
@@ -671,11 +682,13 @@ for tagged releases.
   bounded scoring window, matching the control pipeline's existing budget, while
   still keeping every buffered burst so the start of the transmission is decoded
   retroactively into the recording.
+
 - **The DMO end-of-call log no longer claims a colour code it never recovered.**
   A call that decoded nothing reported `colour=0 colour_known=true`, which reads
   as "recovered colour 0" and sends the investigation after the wrong thing. The
   fallback that picks colour 0 in order to decode *something* is now distinct from
   a recovery that actually cleared the confidence gate (`colour_recovered`).
+
 - **"symbol: poor" no longer latches permanently on TETRA, TETRA DMO and DMR
   systems.** The web panels' "Auto" mode resolved the symbol-stream receiver from
   a field that is only ever populated for P25 Phase 1 systems, so a non-P25 rig
@@ -686,6 +699,7 @@ for tagged releases.
   daemon now reports a protocol-aware `symbol_proto` per device and the panels use
   it, which also stops an extra, wrong receiver being spun up per open panel. The
   symbol-quality tooltip now names which measurement produced its verdict.
+
 - **One talkgroup is one row in Active calls.** The same talkgroup could occupy
   three rows at once — because the roster keyed rows on source, timeslot and
   frequency while the daemon reports followed and control-channel-observed calls
@@ -696,6 +710,7 @@ for tagged releases.
   actually shown. The client-side chip for a just-ended call is now labelled
   `ended` rather than `observed`, which collided with the daemon's own meaning of
   "observed" (announced on the control channel but not tuned — shown as `untuned`).
+
 - **A camped conventional / direct-mode system now actually reports itself as
   camped.** The camp-on-idle state added for conventional DMR, DMR Tier I and TETRA
   DMO was overwritten at the top of every hunt round, so it survived only the few
@@ -707,6 +722,7 @@ for tagged releases.
   test for the feature was left sampling a state that is almost never true, so it
   failed under CI load. Camping is now durable: a re-dwell on an idle channel is the
   camp, not a fresh acquisition attempt. (Refs #1036)
+
 - **Conventional DMR (IPSC) and other camp-on-idle systems no longer spam
   "hunt failed" while simply idle.** A conventional DMR / IPSC repeater has no
   continuous control channel — it sits silent between transmissions — but the
@@ -720,6 +736,7 @@ for tagged releases.
   frequency (no backoff, no failure event) so the decoder catches the next burst
   and locks. Trunked systems (P25, DMR Tier III, TETRA TMO, …) are unchanged — an
   idle hunt is still a real failure for them. (issue #1036)
+
 - **Conventional scanner recordings no longer run long or hang open on brief
   noise.** A `scanner.conventional` channel released a call only after `hangtime_ms`
   of continuous below-squelch silence, but the trailing-edge logic let a *single*
@@ -733,6 +750,29 @@ for tagged releases.
   margin (default 3 dB) keeps a signal hovering at the threshold from chattering
   the countdown. Both are per-channel with sane defaults, so existing configs need
   no changes. (issue #1090)
+
+## [v0.9.6] — 2026-08-13
+
+### Added
+
+- **TETRA DMO (Direct Mode Operation) now decodes in the daemon.** A new
+  `protocol: tetra-dmo` (aliases `dmo` / `tetra_dmo`) camps a direct-mode
+  frequency, locks on the Direct Mode Synchronisation Burst (DSB), auto-recovers
+  the DM colour code, and decodes the Direct Mode Normal Burst (DNB) TCH/S speech
+  train to voice on the same carrier — no separate traffic channel. Previously a
+  DMO capture had to run through the TMO control-channel pipeline, whose burst
+  geometry does not match DMO, so it appeared to "lock" (the DSB SCH/S is
+  colour-0-scrambled like a TMO BSCH) but produced no grants and no audio. The
+  new pipeline reuses the offline-validated DMO decoders behind a bounded
+  streaming burst extractor. Configure with `protocol: tetra-dmo` +
+  `control_channels: [<freq>]` (optional `tetra_colour_code` overrides colour
+  recovery). The DM call-control protocol (EN 300 396-3 source/destination SSI,
+  group) is not yet decoded, so a DMO call records without a talkgroup identity
+  (filed under group `0`); and this path is validated offline/synthetically but
+  not yet A/B'd against a real on-air DMO capture (see docs/reference/tetra-dmo.md).
+
+### Fixed
+
 - **Conventional scanner channels now record audio.** A `scanner.conventional`
   (analog FM) channel detected activity, opened a synthetic call, and named a WAV
   path, but no file was ever written. The scanner holds the voice SDR's
@@ -744,12 +784,70 @@ for tagged releases.
   Subscribes to that fan-out instead of opening a colliding second stream, so it
   receives copies of the exact IQ the scanner is already reading during the call.
   (issue #1075)
+
 - **The Plots signal-quality banner no longer reads like a bogus symbol rate.**
   The banner's "N symbols" figure is the count of symbols in the rolling
   signal-quality analysis window (capped at 4000), but sitting directly above the
   constellation's "18000 sym/s" it looked like the symbol rate stuck at 4000. It
   is now labelled "N sym analysed" with a tooltip clarifying it is the analysis
   window, not the rate.
+
+## [v0.9.5] — 2026-08-12
+
+No changelog entries were recorded for this tag; see the GitHub release notes.
+
+## [v0.9.4] — 2026-08-11
+
+### Added
+
+- **HackRF Pro is now identified as such, and its narrowband filter is
+  configurable.** GopherTrunk reads the firmware's board ID at open, so a HackRF
+  Pro (board ID 5, *Praline*) now reports `HackRF Pro` — and a HackRF One R9
+  (board ID 4) `HackRF One R9` — in `gophertrunk sdr list`, the Devices panel,
+  and the startup log, instead of being lumped in with the original HackRF One.
+  Two new per-device options expose the Pro's RF-path features: `narrowband_filter:
+  true` engages the Pro's switchable narrowband anti-alias filter (tighter
+  adjacent-channel rejection for narrowband voice like P25, at the cost of usable
+  bandwidth), and `fpga_dc_block: true` strips the zero-IF DC-offset spike in the
+  Pro's FPGA before samples leave the device — a hardware alternative to the P25
+  voice path's software DC-block that also cleans the control channel (measured
+  on hardware: raw-stream DC magnitude drops to zero). Both are ignored, with a
+  startup warning, on any board without the hardware. (The Pro's 16-bit
+  extended-precision RX mode is not included: it's unimplemented in the released
+  Pro firmware — `fpga_init` only programs the standard bitstream and the SGPIO
+  capture is hardwired to the 2-byte format — so it can't be driven from the host
+  yet.)
+
+- **`dc_avoid` now also protects voice grants, not just the control channel.**
+  On a zero-IF dongle (HackRF, RTL-SDR) a granted voice carrier tuned exactly
+  on-channel sits directly on the front-end DC spur / LO self-mixing / I/Q
+  image. That corruption leaves a healthy *average* EVM but biases the specific
+  symbol decisions the frame-sync word rides on, so the sync correlator misses
+  and voice grants decode zero LDUs while the short, heavily-FEC'd control
+  channel still limps through — a system that locks its CC but never produces
+  audio. `dc_avoid: true` on a `role: voice` device now offset-tunes each
+  granted call's LO (by `dc_avoid_offset_hz`, default `sample_rate/4`) and mixes
+  the carrier back to baseband before the composer sees it, the same technique
+  SDRTrunk/OP25 apply by channelising every carrier off-DC — extending the
+  existing control-only offset tuning (issue #402) to the per-grant voice path.
+  Measured on a HackRF Pro against a marginal simulcast P25 system: an
+  on-channel capture demods at ~21 % EVM with 0 frame-sync hits (0 LDUs), while
+  the same signal offset-tuned lands ~10 % EVM and locks (66 NIDs); on the air,
+  voice went from never decoding to clean IMBE audio. The composer is unchanged
+  — the offset is fully encapsulated in a per-device tuner wrapper.
+
+- **The HackRF front-end RF amplifier is now configurable via `rf_amp`.** The
+  HackRF has no true AGC, so `gain: auto` uses a fixed LNA/VGA split with the
+  front-end amp off. Setting `rf_amp: true` on a device turns the amp on for the
+  auto preset, lowering the noise figure by ~14 dB to recover a weak-signal site
+  (matching SDRTrunk's amp-on default) — but because it adds gain ahead of
+  everything it can overload a front end near a strong transmitter, so it is
+  opt-in and off by default. Manual (positive) `gain:` values are unaffected, and
+  the option is ignored, with a startup warning, on a device without a switchable
+  amp.
+
+### Fixed
+
 - **TETRA radio IDs still leaked into recordings as phantom talkgroups when a
   group grant was missed.** On a same-carrier site a group call's first
   control-channel message is a source-less notification (`SourceID==0`, `dst=` the
@@ -768,6 +866,15 @@ for tagged releases.
   grant was entirely missed keeps the honest individual-call label rather than a
   fabricated talkgroup, so its `srcList` reflects that (reconstructing the full
   multi-talker list would require attributing the call to a group GT never decoded).
+
+## [v0.9.3] — 2026-08-10
+
+No changelog entries were recorded for this tag; see the GitHub release notes.
+
+## [v0.9.2] — 2026-08-09
+
+### Fixed
+
 - **DMR 2-slot voice: a wrong same-slot cadence guess could garble a whole
   call and never recover (reopened #644).** When a call opens on a section
   whose embedded Link Control doesn't decode, the interleaved decoder picks
@@ -781,6 +888,32 @@ for tagged releases.
   the correct cadence, after which the LC lock is authoritative. Single-slot
   (Tier I) decoding is unchanged. Pinned by
   `TestInterleavedDecoderLCOverridesWrongProvisionalCadence`.
+
+## [v0.9.1] — 2026-08-07
+
+### Added
+
+- **DMR now auto-corrects a small residual tuner carrier offset.** The
+  narrowband DMR C4FM decoder tolerates only ~±75 Hz of carrier error before
+  the 4-level slicer mis-decides and nothing decodes (issue #836) — at 446 MHz
+  even a fraction of a ppm exceeds that. The receiver now runs the same coarse
+  AFC the P25 Phase 1 decoder already used (issue #275), recentring the symbol
+  eye, so a lightly-mistuned dongle (up to roughly ±2 ppm) decodes without
+  hand-setting `sdr.ppm`. Grossly-mistuned dongles still want a measured
+  `sdr.ppm`; automatic correction of large offsets is a follow-up.
+
+- **Conventional DMR / IPSC repeaters now report "site alive" from their idle
+  beacons.** On a `dmr-tier2` channel that parks on a fixed carrier with no
+  control channel, the periodic idle beacon a repeater emits between calls (a
+  CSBK Preamble / broadcast burst carrying valid sync + colour code but no
+  voice) is now recognised: a CRC-valid CSBK marks the site alive, is counted
+  in the wideband engine's per-channel diagnostics (`beacons`), and logs a
+  rate-limited status line — instead of being ignored or, worse, surfaced as a
+  decode error. Between-beacon noise on the parked channel stays silent. Groundwork
+  for conventional/IPSC monitoring (issue #1036).
+
+### Fixed
+
 - **macOS: RTL-SDR (R820T) dongles failed to open with "no supported tuner
   detected."** On Apple silicon the tuner's first I²C-bridge burst write could
   STALL the USB control pipe (IOKit `kIOUSBPipeStalled`, `kern_return
@@ -790,6 +923,49 @@ for tagged releases.
   init aborted — leaving a plainly-present dongle reported as having no tuner.
   The macOS backend now maps the IOKit stall to the shared retry path, matching
   the other platforms. (#1038)
+
+## [v0.9.0] — 2026-08-06
+
+### Added
+
+- **On-air call priority now reaches the webhook sinks.** The completed-call
+  and grant `broadcast.webhook` payloads already carried the emergency flag but
+  not the signalled priority level (the low 3 bits of the P25 / DMR Service
+  Options octet, or the TETRA CMCE Call priority); both now include a `priority`
+  field, matching what the call log and `/api/v1/calls` already surface, so a
+  webhook consumer can rank calls the way the local UI does.
+
+- **Unit-to-unit / private calls are now flagged in call history.** The
+  `Individual` grant flag (the call's `group_id` is a target radio address,
+  not a talkgroup) already reached the live-grant API but was dropped from the
+  call record, so a followed private call was indistinguishable from a group
+  call in history and its 24-bit target rendered as a phantom talkgroup. Each
+  call record now carries an `individual` field (persisted at call start and
+  latched on at call end for TETRA, which cannot flag a unit-to-unit
+  destination on first sighting), returned by the `/api/v1/calls` endpoint.
+
+- **Call history now shows who was talking, not just the RID number.** Each
+  call record carries a `source_alpha` field resolving the source radio's
+  alias/name — preferring the operator-curated RID catalogue (`rid_alias_file`)
+  and falling back to the most-recently-decoded over-the-air talker alias. The
+  alias is persisted to the call log and returned by the `/api/v1/calls`
+  history endpoint alongside the existing talkgroup alias, and is re-resolved
+  at call end so a compressed grant whose source RID is backfilled mid-call
+  still lands with a name.
+
+- **TETRA call priority is now surfaced.** The CMCE parser already decoded
+  the mandatory 4-bit Call priority (and derived the emergency flag from it);
+  the value now reaches `Grant.Priority` and the call log, extending on-air
+  call-priority metadata to TETRA alongside P25 and DMR.
+
+- **rdio-scanner uploads forward the talkgroup tag and group.** The RdioScanner
+  broadcast backend now sends `talkgroupTag` / `talkgroupGroup` when known, so the
+  console shows GopherTrunk's own tag/group instead of falling back to its static
+  per-system config. (The console's system-type label — e.g. "P25" — is not
+  settable: the call-upload API has no protocol/type field.)
+
+### Fixed
+
 - **P25 Phase 2 grants could carry a garbage encryption Algorithm ID.** A
   bit-errored MAC Encryption Sync decodes to an Algorithm ID outside the
   TIA-102 registry; the control channel stored any decoded sync and attached
@@ -799,6 +975,7 @@ for tagged releases.
   as the reference — the same validity gate the voice path already applied —
   so a protected grant with no valid sync reports encrypted with alg/key 0
   rather than smearing garbage keys. (#924)
+
 - **WebUI live-audio playback: silence, PTT clicks, and dropped calls.** The
   cockpit's live-audio player rebuilt a fresh `AudioContext` every time it
   followed a new call, and on teardown only suspended (never closed) it — so on
@@ -809,6 +986,7 @@ for tagged releases.
   follow-hold policy plays the current call to completion before advancing to the
   newest — instead of cutting it off the instant a newer grant appears ("eating
   conversations"). No theme or layout changes.
+
 - **DMR call-startup "scratch" is now squelched.** The AMBE+2/DMR decoder gained
   the same call-startup acquisition squelch the P25 IMBE decoder already had:
   while the receiver is acquiring lock, the FEC resolves the marginal dibit
@@ -818,13 +996,7 @@ for tagged releases.
   removing the per-PTT onset scratch. Opt-in and enabled per call by the
   recorder; the raw decode path stays byte-identical. (The residual synthetic
   timbre of software AMBE+2 across a whole call is intrinsic to software decode.)
-- **Encrypted / emergency DMR Tier III calls were logged clear.** A DMR
-  Tier III channel-grant CSBK carries no service-options octet, so a
-  followed call's encrypted / emergency / priority state never reached the
-  call record even though those bits are decoded on the traffic channel. The
-  DMR voice chain now backfills them (plus the source RID) from the embedded
-  voice LC via the in-call `CallSourceUpdate` path the P25 Phase 2 chain
-  already uses — so an encrypted Tier III call is now recorded as encrypted.
+
 - **Mid-call emergency / priority was still dropped at the call record.**
   The engine backfills a followed call's Emergency and Priority (decoded on
   the traffic channel, since a DMR Tier III / P25 Phase 2 grant carries no
@@ -834,12 +1006,10 @@ for tagged releases.
   now latches emergency on and takes a non-zero priority, the same
   never-downgrade discipline it already applied to encrypted.
 
+## [v0.8.9] — 2026-08-05
+
 ### Added
-- **rdio-scanner uploads forward the talkgroup tag and group.** The RdioScanner
-  broadcast backend now sends `talkgroupTag` / `talkgroupGroup` when known, so the
-  console shows GopherTrunk's own tag/group instead of falling back to its static
-  per-system config. (The console's system-type label — e.g. "P25" — is not
-  settable: the call-upload API has no protocol/type field.)
+
 - **`gophertrunk replay -record-voice -out-dir <dir> -freq <Hz>`** decodes and
   records voice from a capture, not just control-channel locks/grants. It wires
   the production voice path (trunking engine → voice composer → recorder) onto
@@ -850,6 +1020,7 @@ for tagged releases.
   produces audio, and the reproduction vehicle for #1036. Requires `-freq` (a
   grant with frequency 0 is dropped) and does not support `-auto-tune` (use
   `-tune-hz`). Backed by a new siglab `Config.Bus` / `Config.OnChannelIQ` seam.
+
 - **On-air call priority is decoded and surfaced.** The call's signalled
   priority level — the low 3 bits of the P25 / DMR Service Options octet —
   is now carried on the grant (`Grant.Priority`), persisted to the call log,
@@ -859,6 +1030,7 @@ for tagged releases.
   DMR (group and unit-to-unit voice LCs). This is the calling radio's
   requested priority (distinct from a talkgroup's operator-configured
   priority); engine preemption is unchanged.
+
 - **Followed DMR calls (Tier III / Tier I) end promptly on the Terminator.**
   The voice chain now detects the Terminator-with-LC burst on the followed
   traffic channel — reusing the trusted control-path FEC chain (slot-type
@@ -868,12 +1040,14 @@ for tagged releases.
   the hangtime. Extends the Tier II conventional prompt-release to followed
   calls; strictly additive (the hangtime path still ends a call whose
   terminator never decodes).
+
 - **DMR Tier II conventional calls end promptly on the Terminator.** The
   decoder now publishes a `call.release` when it sees the explicit
   Terminator-with-LC burst, so the engine tears the call down at once
   instead of waiting out the composer's hangtime / no-voice timers — the
   same prompt-teardown TETRA already drives from D-RELEASE. Recorded call
   durations match the air more closely.
+
 - **DMR private (unit-to-unit) calls route and attribute correctly on
   interleaved carriers.** The 2-slot `slotRouter` now binds a private call's
   timeslot from its unit-to-unit embedded LC (by called subscriber), instead
@@ -881,6 +1055,7 @@ for tagged releases.
   call's source radio from a unit-to-unit LC too — so talker-alias / GPS
   metadata is attributed to the caller on private calls, not just group calls.
   Completes the unit-to-unit voice-follow work.
+
 - **DMR private (unit-to-unit) calls are now followed.** A Tier II
   conventional channel dropped any non-group Voice LC Header, so DMR private
   calls were invisible — no grant, never followed, never recorded. The
@@ -890,6 +1065,15 @@ for tagged releases.
   call.
 
 ### Fixed
+
+- **Encrypted / emergency DMR Tier III calls were logged clear.** A DMR
+  Tier III channel-grant CSBK carries no service-options octet, so a
+  followed call's encrypted / emergency / priority state never reached the
+  call record even though those bits are decoded on the traffic channel. The
+  DMR voice chain now backfills them (plus the source RID) from the embedded
+  voice LC via the in-call `CallSourceUpdate` path the P25 Phase 2 chain
+  already uses — so an encrypted Tier III call is now recorded as encrypted.
+
 - **Conventional DMR (Tier II / IPSC) voice never recorded (#1036).** A
   conventional DMR repeater carries voice on the *same* carrier it emits Voice
   LC Headers on, but the daemon's same-carrier voice tap was gated to TETRA
@@ -900,6 +1084,7 @@ for tagged releases.
   was fine end to end). Same-carrier voice taps are now registered for
   `dmr-tier2`/`dmr-tier1` too (two, for the 2-slot carrier). Trunked Tier III
   and P25 still register none, so their "no voice SDR" diagnostic is preserved.
+
 - **Trailing voice frames dropped at the end of a transmission.** When a call
   ended, the recorder finalized and deleted the recording session on
   `CallEnd` while the composer's voice chain was still draining its buffered
@@ -912,11 +1097,13 @@ for tagged releases.
   safety timeout so a dropped `CallEnd` can't hang a recording), and the
   same-carrier chain waits for its owner worker to finish draining before
   reporting done. Digital voice (TETRA/DMR/P25/ProVoice) keeps its full tail.
+
 - **DMR Tier III private-voice grants were mislabelled as talkgroups.** The
   shared grant path never set `Individual`, so a Tier III private
   (unit-to-unit) call's destination subscriber was published as if it were a
   talkgroup — polluting talkgroup discovery. Private-voice grants (standard
   and vendor) now carry `Individual=true`.
+
 - **DMR GPS position decode → live map.** A DMR radio's GPS Info embedded
   Link Control (FLCO 0x08) is now decoded — a 25-bit two's-complement
   longitude and 24-bit two's-complement latitude per ETSI TS 102 361-2,
@@ -926,6 +1113,7 @@ for tagged releases.
   position appears on the map alongside P25 the same way. Stationary radios
   that rebroadcast an unchanged fix produce one row, not one per superframe.
   The wire layout is a working model pending on-air capture validation.
+
 - **DMR talker alias decode.** A DMR radio's display name — carried in the
   voice superframe's embedded Link Control as a header (FLCO 0x04) plus up to
   three continuation blocks (0x05-0x07) — is now reassembled and published as a
@@ -935,6 +1123,11 @@ for tagged releases.
   UTF-8, UTF-16BE) decode; the header text-bit boundary follows ETSI
   TS 102 361-2 §7.2.18 cross-checked against the ok-dmrlib reference and is a
   working model pending on-air capture validation.
+
+## [v0.8.8] — 2026-08-04
+
+### Fixed
+
 - **Event API reference docs (`docs/api-events.md`).** A stable-contract reference
   for the real-time telemetry surface: the SSE (`/api/v1/events`) and WebSocket
   (`/api/v1/events/ws`) transports and shared event envelope, the full JSON payload
@@ -942,6 +1135,7 @@ for tagged releases.
   affiliation, registration, unit.request, patch, DMR grant/bandplan), the per-call
   and per-grant webhook payloads, config keys, and reliability caveats (no stream
   auth, no server-side filtering, slow-subscriber drop). Refs #268.
+
 - **Baseband auto-record trigger on control-channel sync loss
   (`baseband.auto_record.on_cc_sync_loss`).** Fires an IQ capture when a locked
   control channel suddenly loses sync (`cc.lost`, which only fires after a genuine
@@ -949,11 +1143,13 @@ for tagged releases.
   follows. That is exactly the raw IQ needed to debug sync-loss and slow
   warm-up-lock episodes, where the carrier is present but GT fails to re-lock.
   Off by default; pair with `tap: ddc` for small, directly-replayable captures.
+
 - **TETRA in the live Signals/DSP scopes.** The Constellation / Symbol / Histogram
   / Tuning / Mixer scopes gain a **TETRA** mode, plotting the π/4-DQPSK
   constellation (the four ±45°/±135° clusters) and dibits from the TETRA receiver's
   existing soft tap. The offline Signal Lab's deep visuals (EVM/eye/rotation) stay
   P25-only for now.
+
 - **TETRA on the wideband multi-system path.** A `role: wideband` SDR can now
   follow multiple TETRA control channels alongside DMR/P25, so several TETRA
   sites/systems share one dongle. The blocker was never the protocol allowlist —
@@ -963,13 +1159,58 @@ for tagged releases.
   protocol's rate and forces the per-tap DDC strategy when TETRA is present (the
   polyphase channelizer can't emit 144 kHz). The wideband path multiplexes
   control channels; TETRA voice grants still follow on a `role: voice` SDR.
+
 - **Live signal level (dBFS) in the Scanner cockpit.** The locked carrier's mean
   channel power is surfaced per system as a numeric read-out + bar, so an operator
   can aim an antenna / trim LNA gain against a live number instead of only the
   clean/marginal/poor quality pill.
+
 - **TETRA network identity on the Systems page.** A TETRA system's decoded MCC/MNC
   (MNI), Location Area and colour code are now surfaced in place of the P25
   WACN/RFSS/Site fields, which have no TETRA analogue.
+
+- **Autotune measure/log spam on TETRA.** At debug level a TETRA control channel
+  emitted the autotune measurement + "suggested error" lines every second, always
+  with `applied_hz=0` — the correction is only consumed by the P25 Phase 1 path, so
+  measuring and logging it for TETRA was dead work. The sampler now gates on a
+  narrower marker (only P25 Phase 1), leaving the #815 carrier-offset WARN intact.
+
+- **TETRA individual calls reported as "tg == src".** A point-to-point (individual)
+  call was surfaced as a phantom talkgroup whose ID equalled the transmitting
+  radio's — "calling yourself." TETRA's MAC can't distinguish a group SSI from an
+  individual SSI, so a call addressed to a subscriber ISSI was misread as a group.
+  Using the invariant that a party can never equal the call's own identity, such
+  calls are now flagged Individual with no self-source, and the self-referential
+  talker update is suppressed.
+
+- **DC spur leaked into TETRA voice under heavy multislot traffic.** Same-carrier
+  TETRA voice rides the control carrier at 0 Hz offset, so the zero-IF front end's
+  DC spur (worsened by ADC-clipping/IMD as concurrent-call power rises) sat on the
+  wanted signal and biased the π/4-DQPSK differential decode; nothing in the voice
+  path removed it. A first-order complex DC-block high-pass is now applied on the
+  TETRA voice receivers (safe because π/4-DQPSK has a spectral null at DC), leaving
+  the control-channel path untouched.
+
+- **TETRA recordings ended a beat early.** On the solo voice path a control-channel
+  D-RELEASE cancelled the chain immediately and dropped IQ still buffered in its
+  channel; that in-flight tail is now drained before teardown. (Raising
+  `voice_hangtime_ms` does not help — hangtime governs SDR release, not digital
+  audio length.)
+
+- **TETRA control-channel grant spam.** TETRA re-announces an active call's grant
+  every multiframe; each was published as a separate `KindGrant` event (~3.7 per
+  call). Identical grants are now de-duplicated per `(group, carrier, timeslot)`
+  within a short window, while an enriched re-grant (backfilled source, emergency)
+  still publishes.
+
+## [v0.8.7] — 2026-08-03
+
+No changelog entries were recorded for this tag; see the GitHub release notes.
+
+## [v0.8.6] — 2026-08-01
+
+### Fixed
+
 - **Push grant webhook (`broadcast.grant_webhook`).** A new outbound sink POSTs
   one JSON object per control-channel grant the moment GopherTrunk decodes it —
   the push counterpart to the pollable `GET /api/v1/grants` and the live
@@ -982,6 +1223,7 @@ for tagged releases.
   read the source RID off the grant at call-setup time without holding an SSE
   connection or polling. Off by default; opt in per feed with a URL, optional
   `Authorization` header, and an optional system filter. Refs #915, #268.
+
 - **TETRA DMO (Direct Mode Operation) burst-framing foundation.** First increment
   toward decoding TETRA's infrastructure-less peer-to-peer mode (ETSI EN 300 396-2,
   part 2 — radio aspects): a burst detector/slicer for the Direct Mode
@@ -993,6 +1235,7 @@ for tagged releases.
   channel decode, the EN 300 396-3 call-control protocol (source/group SSI, call
   type), and a control-channel-less scanner ingestion path are the remaining
   stages, and none is validated against a real DMO capture yet.
+
 - **TETRA recordings split per talker, so every over is attributed to its source.**
   A group call stays on one traffic channel while members key up in turn; GT
   recorded the whole call as one WAV tagged with only the first talker, so a reply
@@ -1004,6 +1247,56 @@ for tagged releases.
   a file named with the new one. Honors the existing `voice_call_grouping` setting
   (default splits per transmission, matching P25; `conversation` keeps one file per
   call). No configuration change.
+
+- **TETRA wakeup / notification grants spawned ghost recordings named after a
+  radio ID.** On a group call the SwMI sends a source-less notification (an
+  Energy-Economy wakeup page, `SourceID==0`, addressed to the calling party's radio
+  SSI) 50–400 ms before the authoritative group grant. The engine spawned it
+  immediately, creating a ghost call and a WAV directory named after the radio ID
+  (`recordings/<sys>/<radioSSI>/…src0…`) that was then torn down when the group
+  grant superseded it — fragmenting audio and leaking radio IDs as talkgroups. The
+  engine now holds a source-less TETRA notification for a short window (500 ms) so
+  the group grant arrives first and cancels it, spawning the one real call under
+  the GSSI. The hold keys on `SourceID==0` (not the `Individual` flag, which the
+  first notification for a radio is published without), and a notification that is
+  never superseded is dropped if it targets a known radio (else recorded under its
+  real talkgroup). A genuine unit-to-unit call carries a source, so it is never
+  held.
+
+- **Cross-slot audio leaked between concurrent same-carrier TETRA calls.** The
+  shared per-carrier voice demux fell back to a "sole active call" CRC gate for
+  bursts it could not route by AACH marker — but a single *registered* owner is not
+  the same as a single call on the *air*. When another slot carried a call GT was
+  not tracking as an owner (a missed grant, a call in hangtime, a wakeup-page
+  ghost), that foreign slot's speech funnelled through the one owner's CRC gate and
+  bled into its recording (a valid TCH/S CRC proves a burst is speech, not *whose*).
+  The demux now judges on-air concurrency from the SB-anchored physical TDMA slot
+  (available on ~100% of bursts, unlike the marker) and suppresses the sole-owner
+  fallback whenever two or more slots are active, so foreign speech is dropped
+  rather than mis-attributed. Clean single-call captures are unchanged.
+
+- **`ccdecoder: decode can't keep up… dropping IQ` (#402) fired at idle CPU on a
+  remote USRP.** The decode queue between the IQ forwarder and the decode goroutine
+  was a fixed 128-*chunk* buffer. That is only meaningful in seconds when chunks are
+  large; SoapyRemote delivers a remote USRP ~369-sample datagrams, so 128 chunks was
+  only ~47 ms at 1 MS/s — while the driver's own channel is sized for 400 ms and
+  never overflowed, producing attributable decode overruns the driver never saw. The
+  queue is now bounded by a wall-clock **sample budget** (~0.5 s) derived from the
+  sample rate, so its depth-in-seconds is invariant to how the driver chunks
+  delivery. Airspy/B210 (large native blocks) are unaffected.
+
+- **`ccdecoder: iq power very low` DEBUG spam while locked and decoding.** The
+  low-power hint fired whenever windowed RMS sat below −55 dBFS with no gate on lock
+  state, so a USRP/SDR run at conservative gain (~−60 dBFS, ~55 dB of unused ADC
+  headroom) that decoded TETRA cleanly logged it every few seconds. It is now gated
+  on `!locked` — a low absolute level only matters when the decoder cannot lock — and
+  throttled to 30 s to match the clip / DC-dominant siblings. The Prometheus IQ-power
+  gauge still records every window.
+
+## [v0.8.5] — 2026-07-31
+
+### Fixed
+
 - **TETRA demodulator equalizer recovers garbled voice recordings.** On
   concurrent-load captures a residual garble survived the soft-decision TCH/S
   decode: a linear channel / ISI defect (multipath, band-edge group delay) was
@@ -1014,6 +1307,7 @@ for tagged releases.
   doubles CRC-valid TCH/S burst yield (soft-decision 410→778, ~1.9×; one call
   went 4→207 bursts, another 42→134) with no loss on already-clean captures. On
   automatically (voice path); no configuration change. Refs #764, #771, #1001.
+
 - **Cross-site duplicate-recording suppression (`recordings.dedup`).** When
   monitoring several networked / simulcast sites where the same talkgroup carries
   the same traffic, a call heard on more than one system is now saved once
@@ -1024,6 +1318,53 @@ for tagged releases.
   different calls that share a talkgroup number across systems still both record
   when their sources are known; a re-key on the same system is never suppressed;
   and live monitoring is unaffected (recording-only). Off by default.
+
+- **TETRA radio IDs still surfaced as talkgroups in the live Active Calls list.**
+  The engine's RadioID→TGID retraction cleaned the Talkgroups catalogue but not
+  the control-only "observed" call set, which is the other half of what the
+  Active Calls UI renders: a notification / D-CONNECT bound to the calling party
+  creates a provisional call keyed by the radio ID, and the notification-supersede
+  only released the pool-bound call, leaving the observed entry to linger as a
+  phantom "TG <radioID>". The engine now skips individual / known-radio grants when
+  recording observed calls, and retracts any observed call already tracked under an
+  SSI once that SSI is revealed to be a subscriber radio.
+
+- **TETRA metrics weren't counting.** `grants_total` was never defined or
+  incremented (the metrics event handler had no `KindGrant` case), so TETRA grants
+  went uncounted; TETRA voice calls were miscounted under the DMR-named
+  `dmr_voice_calls_total` (its per-timeslot increment was gated only on a non-zero
+  timeslot, which TETRA also carries); and the curated dashboards asked for a
+  `cc_locked` metric the daemon never emits (it exports `control_channel_locked`).
+  Added a protocol-labelled `grants_total`, gated `dmr_voice_calls_total` to the
+  DMR protocol, and pointed the TUI/web curated panels at `control_channel_locked`.
+
+- **A single-call same-carrier TETRA burst whose AACH usage marker miscorrected
+  was dropped instead of decoded.** The shared per-carrier voice demux routes by
+  AACH downlink usage marker; on a marginal signal the RM(30,14) AACH occasionally
+  miscorrects to a stray marker with no registered owner, so the burst was counted
+  as an `ownerless_drop` and its speech lost. When exactly one call is active the
+  demux now routes such a burst to that sole call through the class-2 CRC gate
+  (the same single-call fallback already used for an undecoded AACH) — the CRC
+  rejects a genuinely foreign burst ~255/256, and with one call there is no peer
+  to cross-talk into. With ≥2 concurrent calls the burst is still dropped, so the
+  cross-talk guarantees are unchanged.
+
+- **TETRA radio IDs leaked into the Talkgroups list.** A notification / D-CONNECT
+  addressed to a call's calling party arrives as a bare grant before that SSI is
+  known to be a radio, so it was published `Individual=false` and the engine
+  auto-catalogued the radio ID as a phantom talkgroup (e.g. `100xxxx` source IDs
+  showing up alongside real `102xxxx` talkgroups). The engine now learns which
+  SSIs are subscriber radios — any grant's calling/transmitting party (`SourceID`)
+  and any `Individual`-addressed destination — retracts a phantom talkgroup
+  already catalogued for one (`TalkgroupDB.DeleteDiscovered`, which only removes
+  auto-`Discovered` entries, never an operator-catalogued talkgroup), and refuses
+  to re-discover a known radio. GSSIs and ISSIs never overlap on a TETRA network,
+  so this is safe.
+
+## [v0.8.4] — 2026-07-29
+
+### Fixed
+
 - **`GET /api/v1/grants` — a pollable log of recent control-channel grants.**
   GopherTrunk decodes a source RID off most `GRP_VCH_GRANT` TSBKs, and already
   streams every grant live over the `grant` SSE event; this adds the pollable
@@ -1034,6 +1375,7 @@ for tagged releases.
   stream emits, with a per-row `at` timestamp; `?limit=` and `?system=` narrow
   the result. Backed by a bounded in-memory ring (newest-first, always on), so a
   busy system never grows the log without bound (issue #915, reporter fix #2).
+
 - **TETRA control-channel PDUs that span multiple MAC blocks are reassembled
   (MAC-FRAG / MAC-END).** A TM-SDU too large for one MAC block arrives as a
   start-fragment MAC-RESOURCE followed by MAC-FRAG and a MAC-END (ETSI EN 300
@@ -1043,16 +1385,102 @@ for tagged releases.
   complete on the start fragment, so the voice grant still publishes immediately;
   the reassembled MAC-END now recovers the full call-control PDU and enriches the
   call with its source and emergency state.
+
 - **TETRA network-configuration report now shows the control channel's uplink.**
   The cell's uplink carrier, derived from the SYSINFO duplex spacing and the
   frequency offset (§21.4.4.1), was computed but dropped before the report; the
   primary control channel now renders its `UPLINK:` frequency alongside the
   downlink.
+
 - **Soft-decision decode on the TETRA grant (SCH/F + SCH/HD) path.** The
   signalling-channel decode on the grant-bearing blocks now uses the per-symbol
   soft (log-likelihood) information when available, falling back to the
   hard-decision Viterbi path, recovering grants on marginal control channels that
   a hard decision drops.
+
+- **TETRA voice recordings on a same-carrier site came out short and garbled
+  (low `audio_pct`).** The TCH/S traffic decoder was hard-decision while the
+  control channel already ran soft-decision, so on a marginal same-carrier
+  signal ~70% of a call's own speech bursts failed the class-2 CRC and were
+  dropped; the recorder concatenates only the surviving bursts, so the audio
+  played back choppy/robotic (the `recording shorter than call span` diagnostic
+  showed `audio_pct` ≈ 30%). The TCH/S channel decode now uses the receiver's
+  per-symbol soft (log-likelihood) information — a soft-input rate-1/3 Viterbi
+  mother decoder with soft depuncture and descramble, mirroring the existing
+  soft SCH path — recovering the ~2 dB of coding gain the hard path threw away.
+  Bursts with no soft info still fall back to the hard decoder, so the change is
+  never worse than before.
+
+- **TETRA group calls could land on the wrong talkgroup with starved audio when
+  the first grant was a notification.** On a same-carrier site a group call's
+  first control-channel grant is often a notification / a D-CONNECT addressed to
+  the calling party, which arrives before that party is known as a radio ID — so
+  it is labelled with the individual's SSI (a phantom talkgroup), carries no
+  source, and follows the notification's own downlink usage marker rather than
+  the traffic channel's. The recording bound to that provisional identity, and
+  when the authoritative group grant for the same physical channel arrived, the
+  physical-channel source backfill folded it on as a mere source update — so the
+  recording stayed on the wrong talkgroup and kept following the wrong usage
+  marker, starving the voice demux (a few percent of the call decoded). The
+  engine now supersedes a still-unfinalised, notification-bound TETRA call when
+  the authoritative group grant (real GSSI, calling-party source, traffic usage
+  marker) lands on its channel, so the recording follows the correct talkgroup
+  and marker from the outset. TETRA-gated; P25 same-channel grants are unchanged.
+
+- **TETRA: a corrupt control-channel block whose CRC happened to pass could
+  surface a ghost grant on a foreign frequency band.** A false-positive SCH CRC
+  (or a slipped bit cursor) produced a bogus voice grant whose carrier resolved
+  tens of MHz from the site — e.g. `carrier 6 → 400 MHz` on a 467 MHz cell —
+  spawning a phantom call on a band the site does not operate. Grants whose
+  resolved carrier sits more than 10 MHz from the control channel are now
+  dropped as bit-alignment / CRC artefacts (a site's downlink carriers span at
+  most a few MHz).
+
+- **`auto_record` with `tap: ddc` reported `drops=0` even when the DDC grab had
+  gaps.** A triggered narrowband capture that fell behind the voice fan-out
+  dropped IQ chunks (time gaps that break downstream decode), but the "captured"
+  log line always showed `drops=0` — the drop count was only surfaced in a
+  separate fan-out warning. The capture now reports the real subscriber drop
+  count, matching the wideband tap, so a gappy grab is visible in its own result.
+
+- **TETRA subscriber/talkgroup identities (ISSI/GSSI) were corrupted on a live
+  single-carrier site.** The MAC TM-SDU is an LLC PDU (§21.2); its basic-link
+  header was not stripped before the L3 CMCE PDU was parsed, so the 3-bit MLE
+  discriminator and every address field were misframed and the decoded radio /
+  talkgroup IDs were wrong. GopherTrunk now parses the LLC sublayer (`ParseLLC`)
+  before CMCE, recovering the correct ISSI/GSSI.
+
+- **TETRA grant frequencies ignored the SYSINFO frequency offset.** The broadcast
+  frequency-offset field (0 / ±6.25 / +12.5 kHz, §21.4.4.1) was dropped, so a
+  cell whose carrier actually sits at e.g. 469.88125 MHz resolved to 469.875 MHz.
+  The offset (with the frequency band, duplex spacing, and reverse-operation
+  flags) is now parsed and applied, so grant carriers resolve to their true
+  absolute downlink/uplink frequencies.
+
+- **Ghost TETRA recordings from teardown PDUs.** A MAC-RESOURCE whose CMCE PDU is
+  a call teardown (D-RELEASE, and now D-DISCONNECT, EN 300 392-2 Table 14.9)
+  carries a channel-allocation element for the resource being *reclaimed*, not a
+  new call; publishing a grant for it spawned a zero-byte phantom recording. Such
+  grants are now suppressed, and D-DISCONNECT is modelled so it tears the call
+  down instead of leaking a ghost.
+
+- **Individual (unit-to-unit) TETRA calls were surfaced as phantom talkgroups.** A
+  grant addressed to a subscriber ISSI showed the radio ID as if it were a
+  talkgroup. Calls are now classified individual-vs-group (any SSI seen as a CMCE
+  calling/transmitting party is an individual radio), and an individual-addressed
+  grant is flagged as such (`GrantDTO.individual`) instead of being listed as a
+  talkgroup.
+
+- **TETRA active-call tracking thrashed on a busy carrier (marker collisions,
+  starved audio).** Grants for the same call on one carrier could be keyed as
+  separate calls, colliding on the voice tap and starving audio. Same-carrier
+  TETRA grants that share a (system, frequency, timeslot) are now folded into one
+  call, backfilling the source onto the existing recording.
+
+## [v0.8.3] — 2026-07-28
+
+### Fixed
+
 - **P25 Phase 2 blind CMA equalizer on the traffic-channel receiver
   (`p25_phase2_equalizer: on`).** A new opt-in adds a blind constant-modulus
   (CMA) adaptive equalizer on the Phase 2 symbol stream, after carrier
@@ -1070,6 +1498,11 @@ for tagged releases.
   byte-identically (the centre-spike init is transparent). Off by default — an
   AWGN-limited channel gains nothing from equalization, so it is opt-in; pairs
   with `p25_phase2_soft_decision` and `p25_phase2_rs_mode: correct`. (issue #915)
+
+## [v0.8.2] — 2026-07-27
+
+### Fixed
+
 - **P25 Phase 2 outer RS can now error-*correct* weak MAC PDUs
   (`p25_phase2_rs_mode: correct`).** The `p25_phase2_rs_mode` knob gains a
   `correct` (alias `fix` / `ecc`) setting that runs the RS(24, 16, 9) outer code
@@ -1086,6 +1519,34 @@ for tagged releases.
   additionally gated on a recognised MAC opcode so a wrong descramble phase
   cannot be miscorrected into a bogus source RID. Off by default; pairs with
   `p25_phase2_soft_decision: on`. (issue #915)
+
+- **`baseband.auto_record` can capture the narrowband DDC output (`tap: ddc`).**
+  The default `tap: wideband` records the control SDR's full-rate raw IQ
+  (~50 MB per 30 s at 2.5 MS/s); `tap: ddc` instead records the control
+  decoder's channelised post-DDC stream at the pipeline rate (144 kHz for TETRA,
+  ~48 kHz for the C4FM family) — orders of magnitude smaller and directly
+  replayable with `replay -format wav` / siglab. For a same-carrier TETRA site
+  the DDC tap holds all four voice timeslots of the control carrier, so a
+  triggered capture of a hard-to-decode concurrent-call moment stays small
+  enough to share. Triggered captures also now create their target directory if
+  it does not exist.
+
+- **TETRA colour code locked on the first sync burst, so a single mis-decoded
+  BSCH could poison a whole session.** The extended colour code (the scrambler
+  seed for every BNCH/SCH/TCH block) was learned from the first BSCH and never
+  re-evaluated. If that burst's bit errors slipped through the BSCH FEC as a
+  valid-but-wrong codeword, the wrong scrambler locked in and every subsequent
+  descramble failed silently — empty or truncated recordings until a restart.
+  The colour is now adopted provisionally on the first BSCH (so a cold receiver
+  still starts decoding immediately) but only locked once a second BSCH
+  corroborates it; a mis-decoded first burst is corrected by the true colour
+  that every later BSCH carries. An operator-configured colour is still
+  authoritative.
+
+## [v0.8.1] — 2026-07-26
+
+### Fixed
+
 - **`call.end` real-time event now carries `duration_ms`.** The SSE/WebSocket
   event stream's call-completion event (`event: call.end` on `/api/v1/events`
   and the WS stream) now includes the call length in milliseconds alongside
@@ -1097,6 +1558,7 @@ for tagged releases.
   alongside `rfss_id`/`site_id` — is present on every P25 grant / affiliation /
   registration event (threaded from the decoded NID; omitted only for non-P25
   protocols where NAC does not apply). (issue #268)
+
 - **Motorola P25 talker-alias ciphertext is logged as cryptanalysis ground
   truth.** When a Motorola FACCH-S talker alias reassembles on a Phase 2
   traffic channel, GopherTrunk now emits a `p25p2 alias ciphertext` log line
@@ -1107,6 +1569,7 @@ for tagged releases.
   harvest the chosen-plaintext / known-RID corpus needed to finish it
   (`research/p25-talker-alias-chosen-plaintext.md`) using GopherTrunk alone
   instead of SDRTrunk (#773).
+
 - **P25 Phase 2 soft-decision demod (`p25_phase2_soft_decision`).** A new
   per-system opt-in knob (on/off, default off) that builds the Phase 2
   traffic-channel receiver with soft-decision decoding: the demodulator's
@@ -1117,6 +1580,7 @@ for tagged releases.
   byte-for-byte unchanged. Applies to the voice composer and signalling
   follower (including Phase 1 control channels that grant Phase 2 traffic).
   Issue #915.
+
 - **`baseband.auto_record.tap: ddc`** — event-triggered auto-captures can now
   record the control decoder's narrowband post-DDC stream (the pipeline rate,
   144 kHz for TETRA) instead of the full-rate wideband SDR IQ. Files are orders of
@@ -1124,6 +1588,85 @@ for tagged releases.
   same-carrier TETRA site the DDC tap holds all four voice timeslots of the
   control carrier. `tap: wideband` (default) is unchanged. Triggered captures also
   create their target directory if missing.
+
+- **Concurrent same-carrier TETRA calls could still leak audio between each
+  other** — a long conversation would pick up a second slot's speech mid-stream.
+  The per-call demux ran one receiver per call and routed by the AACH usage
+  marker, but could not evict a peer: when a call ended and the network reused its
+  usage marker for a new call while the old one lingered in hangtime, both matched
+  and the old recording absorbed the new call's audio. Concurrent same-carrier
+  calls now share ONE per-carrier voice demux (its sync/AACH state stays warm
+  across calls) with a single owner per usage marker and most-recent-grant-wins
+  eviction, so a reused marker immediately displaces the lingering call. Routing by
+  the AACH usage marker (not the physical TDMA slot) is what makes this reliable:
+  on real captures a single call's bursts jitter across adjacent decoded slot
+  numbers, so slot-keyed routing mis-delivers them — the usage marker is stable
+  per call. Grants addressed without a usage marker bind to the first unclaimed
+  marker instead of accept-all-mixing.
+
+- **A locked TETRA control channel flapped "CC hunt failed · candidates
+  exhausted" every ~30–60 s while it was decoding calls fine.** Two coupled gaps:
+  the control-channel hunter's success test needs a fresh `cc.locked` event within
+  its dwell (default 3 s), but TETRA emits the lock only once (edge-triggered), so
+  when cold acquisition (BSCH sync + colour code) outlasts the dwell the first hunt
+  fails and every same-frequency re-hunt then exhausts the dwell against an
+  already-locked, silent-on-the-wire pipeline; and there was no TETRA lock-loss
+  watchdog (`MarkLost` had no callers), so the scanner could never leave the locked
+  state on a genuine outage. Now the supervisor parks a system it already knows is
+  locked instead of re-hunting it, and a new control-channel watchdog publishes
+  `cc.lost` when a locked carrier decodes nothing for ~5 s (≈5 missed
+  multiframes), so a genuinely dead carrier still re-hunts and recovers. (The
+  ±6 kHz AFC acquisition range, #940, was already merged and is unrelated — a
+  ~1.5 kHz carrier offset sits well inside it.)
+
+- **Concurrent same-carrier TETRA calls decoded as "DJ scratches" — most calls
+  produced only brief garbled fragments.** The per-slot demux dropped a burst
+  whose decoded TDMA timeslot did not match the call's *granted* timeslot, but on
+  real air the grant timeslot does not identify the physical slot (distinct calls
+  collide on one value; the synchronisation-burst slot anchor also jitters a
+  call's bursts across adjacent slot numbers), so most calls had their own speech
+  discarded as "off-slot" and recorded only the handful of frames decoded before
+  the slot grid anchored. The voice chain now demultiplexes concurrent calls by
+  the **AACH downlink usage marker** — the per-slot call identifier the AACH
+  broadcasts in every downlink slot, matched against the usage marker carried in
+  the call's grant — which cleanly separates simultaneous calls on one carrier.
+  A grant addressed without a usage marker, or a burst whose AACH does not decode,
+  falls back to CRC-gated single-call decoding so a call's speech is never dropped
+  on a guess. Verified against a real 5-capture same-carrier IQ set: the two
+  concurrent calls that the timeslot filter starved now recover their full audio.
+
+## [v0.8.0] — 2026-07-25
+
+No changelog entries were recorded for this tag; see the GitHub release notes.
+
+## [v0.7.9] — 2026-07-24
+
+### Changed
+
+- **Short digital recordings now report their frame yield.** The recorder's
+  `recording shorter than call span` diagnostic gained `frames`, `audio_pct`
+  (the fraction of the call span that decoded to audio), and `vocoder`, so a
+  sparse-decode recording (few TCH/S bursts passing CRC — the TETRA
+  short-recording symptom) is diagnosable from one log line instead of by
+  diffing the WAV against the call record.
+
+- **Same-carrier voice-tap IQ drops are no longer silent.** When the control
+  decoder's voice tap drops IQ to a lagging voice consumer (still dropping to
+  protect the decode hot path), the dropped chunks are now counted and surfaced
+  as a single warning at call end with the remedy — so starved voice decode
+  (the short/gappy-recording symptom) is visible instead of silent (issue #402).
+
+- **Live captures stream straight to disk instead of buffering the whole grab in
+  RAM.** The Signal-Lab capture path (and the `gophertrunk capture` / daemon
+  `--iq-capture` subcommands) previously held the entire capture in memory as
+  `complex64` and then allocated a second encoded copy, so peak memory scaled
+  with `seconds × sample-rate` (~4.8 GB for 30 s at 10 MS/s). They now encode and
+  write one chunk at a time through a shared streaming writer — narrowband slices
+  too, via a stateful down-converter — so peak memory is a single chunk
+  regardless of capture length, and maximum duration is bounded by disk, not RAM.
+
+### Fixed
+
 - **TETRA voice now decodes to audible audio, including up to 4 concurrent
   calls on one carrier.** The TETRA voice path recovers each traffic burst,
   channel-decodes TCH/S, and renders it with the clean-room ACELP vocoder
@@ -1135,6 +1678,7 @@ for tagged releases.
   binding and the rest being dropped with "no voice device available for grant".
   The same-carrier voice device serial changes from `cc:same-carrier` to
   `cc:same-carrier:1..4`.
+
 - **Event-driven raw-IQ auto-recording (`baseband.auto_record`).** The daemon
   can now capture a short slice of the control SDR's raw IQ whenever a
   classified event fires — `on_concurrent_calls: N` (N+ calls active at once),
@@ -1147,19 +1691,84 @@ for tagged releases.
   and an in-flight cap keep a burst of grants from spawning a capture storm.
   This is the event-based debugging hook for capturing hard-to-decode moments
   (concurrent grants, unknown packets) as they happen.
-- **`baseband.auto_record` can capture the narrowband DDC output (`tap: ddc`).**
-  The default `tap: wideband` records the control SDR's full-rate raw IQ
-  (~50 MB per 30 s at 2.5 MS/s); `tap: ddc` instead records the control
-  decoder's channelised post-DDC stream at the pipeline rate (144 kHz for TETRA,
-  ~48 kHz for the C4FM family) — orders of magnitude smaller and directly
-  replayable with `replay -format wav` / siglab. For a same-carrier TETRA site
-  the DDC tap holds all four voice timeslots of the control carrier, so a
-  triggered capture of a hard-to-decode concurrent-call moment stays small
-  enough to share. Triggered captures also now create their target directory if
-  it does not exist.
+
 - **siglab capture start time in the capture list.** Each capture row now shows
   its recording start time, so otherwise-identical grabs of the same carrier
   (e.g. three `capture-AIRSPY SN:…` captures) can be told apart at a glance.
+
+- **TETRA TCH/S class-2 CRC was computed wrong, so no on-air voice ever
+  decoded.** The 8-bit CRC was a `G(X)=1+X³+X⁷` LFSR; the TETRA CRC
+  (EN 300 395-2 §5.5.1) is a fixed parity-check matrix, so every received TCH/S
+  burst failed the check and was dropped (recordings held only spurious frames).
+  Reimplemented from the ETSI reference tap tables — real voice now decodes.
+
+- **TETRA voice calls could hang forever, monopolising the same-carrier tap.**
+  Call liveness is now driven by CRC-valid decoded speech rather than every raw
+  carrier burst, so a call ends on hangtime when its transmission stops and the
+  tap is freed for the next grant.
+
+- **TETRA AFC now acquires carriers several kHz off-centre.** The carrier AFC
+  estimated the offset from the 4×Δφ differential mean, which wraps into
+  ±f_sym/8 ≈ ±2250 Hz — so a control channel more than 2250 Hz off-frequency
+  aliased into that window and left a multi-kHz constellation spin that broke
+  Gardner timing, and the receiver never locked even on a clean, strong signal.
+  Real SDR front-ends (RTL-SDR, Airspy, HackRF, non-GPSDO USRP) routinely sit
+  several kHz off, so this was a real acquisition gap. A coarse mean-frequency
+  stage (the angle of the pre-matched-filter block's lag-1 autocorrelation)
+  now picks the alias bucket before the existing fine estimator refines it,
+  extending acquisition to roughly ±6 kHz. (issue #940)
+
+- **Signal-Lab "Capture from tuner" hung on 30 s grabs and hid the recorded
+  file.** A capture of N seconds spends ≥N seconds collecting IQ in real time
+  before the handler writes anything, so a 30 s grab ran past the API server's
+  30 s write timeout and the response was torn down mid-write — the console sat
+  on "Capturing…" forever (10 s worked). The capture handler now disables the
+  per-request write deadline (as the SSE and audio-stream handlers already do),
+  and the duration ceiling rose from 30 s to 120 s (bounded by a staged-file-size
+  budget). The captures list also gained a persistent per-row **Download** link
+  (previously the only link was transient state on the capture form, so it
+  appeared to show up only after a second capture), and a long capture name no
+  longer overflows the card and pushes the compare checkbox out of reach.
+
+## [v0.7.8] — 2026-07-23
+
+### Fixed
+
+- **Config guidance no longer conflates LSM/simulcast with CQPSK.** The
+  `p25_phase1_demod_mode` docs, config-builder help, `config.example.yaml`, and the
+  per-site override example (issue #942) all implied that a *simulcast* site needs the
+  `cqpsk`/`lsm` demod path — using Victoria's MMR / Melbourne CBD as the worked
+  "→ cqpsk" example. That is backwards: simulcast is a transmitter-coordination
+  technique, not a modulation, and most simulcast systems (MMR included, every site)
+  transmit C4FM — forcing CQPSK there kills the decode. Linear Simulcast Modulation
+  (LSM/CQPSK) is a *choice* some systems make, not implied by simulcast and not
+  readable from emission-designator/licensing data. All guidance now says: leave it at
+  C4FM, and switch a channel to `cqpsk` only when a strong, clean signal won't lock in
+  C4FM. The per-channel override feature itself is unchanged and still correct for
+  genuinely-CQPSK systems. A follow-up completes the same correction on the surfaces the
+  first pass missed — the opt-in-features reference, the web config-builder's per-channel
+  demod-override help, and the system-identification learn article. (issue #935)
+
+- **P25 Phase 2 MAC descramble moved to the coded-channel-bit domain.** The PN44
+  scrambler (TIA-102.BBAC-1 §7.2.5) wraps the burst "between demodulation and
+  FEC", i.e. over the coded channel bits — but GopherTrunk XORed the recovered
+  144 *information* bits *after* the trellis decode. The trellis code does not
+  commute with the XOR, so a genuinely scrambled burst could never satisfy the
+  outer RS(24,16,9) check regardless of seed — the `mac_rs_valid=0` blocker that
+  suppresses the Phase 2 source RID (and talker alias). The descramble now runs
+  on the raw channel dibits before deinterleave/trellis, at each sub-frame's
+  channel-bit offset into the continuous 4320-bit superframe sequence, matching
+  the reference decoders (SDRtrunk `Timeslot.xor()`, OP25 `handle_packet()`).
+  `ScramblerProbe` self-aligns the slot phase against the RS gate. Regression
+  tests build a channel-scrambled burst from the reporter's confirmed MMR
+  identity (WACN 0xBEE00 / System ID 0x164 / NAC 0x161) and recover the source
+  RID through the full FEC chain; live-air confirmation of the per-slot offset is
+  pending the reporter's `mac_rs_valid` re-pull. (issue #915, Finding B)
+
+## [v0.7.7] — 2026-07-22
+
+### Fixed
+
 - **Startup warning when paging is configured without storage.** A
   `paging.pocsag` / `paging.flex` / `paging.wideband` subsystem with no
   `storage.path` set decodes fine and consumes live IQ, but decoded pages are
@@ -1168,6 +1777,7 @@ for tagged releases.
   the missing piece. The daemon now surfaces this at load time as a startup
   warning (alongside the launcher / TUI dashboard warnings) instead of leaving
   the misconfiguration silent. (issue #565)
+
 - **Per-site P25 Phase 1 demod mode on wideband multi-site taps.** A single P25
   system can now mix modulation across its sites: set the system-level
   `p25_phase1_demod_mode` to the majority modulation and add a per-channel
@@ -1184,6 +1794,24 @@ for tagged releases.
   wideband path never stamped a demod mode onto its grants at all, so wideband
   P25 voice always ran the C4FM chain regardless of the system setting.
   (issue #935)
+
+- **P25 Phase 2 superframes now lock under any dibit rotation.** Real-air Phase 2
+  is differentially decoded H-DQPSK, so a residual carrier offset near an odd
+  multiple of ±1500 Hz (a quarter of the 6000-baud symbol rate) rotates every
+  recovered dibit by a constant 0..3. The superframe decoder only correlated the
+  outbound frame sync under the single canonical rotation, so a rotated stream
+  never locked — no superframe, no traffic-channel MAC PDU, and hence no source
+  RID or talker alias. It now searches all four rotations (the three non-canonical
+  ones at a stricter tolerance so noise cannot false-lock) and de-rotates the
+  sliced superframe to canonical before the ISCH + MAC FEC. Verified against a
+  real Victorian MMR (WACN 0xBEE00) Phase 2 voice capture: 0 superframes before,
+  ~430 after. (issue #915; the traffic-channel MAC descramble mapping that keeps
+  `mac_rs_valid=0` even on a locked superframe is a separate, still-open blocker.)
+
+## [v0.7.6] — 2026-07-21
+
+### Fixed
+
 - **LoRa Low Data Rate Optimization (LDRO).** The LoRa PHY now decodes the
   reduced-rate payload mode LoRa uses at high spreading factors, where the long
   symbol lets clock drift smear the dechirp peak across the two least-significant
@@ -1197,6 +1825,7 @@ for tagged releases.
   networks that deviate from the recommendation. (issue #586; the reduced-rate
   SF-2 *header* region and bit-exact Semtech interop remain gated on captured
   golden vectors.)
+
 - **P25 Phase 2 per-call MAC framing-health signal (`mac_rs_valid`).** The
   end-of-call census line now reports how many of the decoded traffic-channel
   MAC PDUs carried a valid outer RS(24,16,9) parity, and the per-opcode
@@ -1205,317 +1834,7 @@ for tagged releases.
   Phase 2 superframe (random bytes parsing as MAC PDUs rather than real
   signalling) — the objective before/after metric for a superframe-framing fix,
   and the reason a system's clear-MAC source RID never lands (issue #915).
-- **P25 Phase 2 control-channel MAC opcode census (`--log-level debug`).** A
-  new diagnostic inventories every MAC opcode seen on the control channel —
-  logging a one-shot `payload_hex` sample the first time each opcode appears
-  plus a periodic `opcode:count` summary. Unlike the existing per-grant DEBUG
-  line, it has no survivorship bias: it also surfaces opcodes GT does not
-  currently parse as a grant, which is where a RID-bearing grant would hide on
-  a system whose completed-call `source_rid` under-populates (issue #915). The
-  raw opcode inventory + byte sample is what pins the remaining gap on a
-  missing/mis-mapped grant opcode (decode-side) vs. a call-association gap.
-- **TETRA AACH downlink usage marker parsing (per-slot control/traffic
-  identification).** GopherTrunk now decodes the ACCESS-ASSIGN PDU the AACH
-  carries in the centre of every TETRA downlink slot into its downlink usage
-  marker (`unallocated` / `assigned control` / `common control` / `traffic`,
-  per ETSI EN 300 392-2 §21.4.7). This is the per-slot MCCH indicator a
-  Single Carrier Base Station running dynamic MCCH sharing relies on, where
-  any of the four TDMA slots can be the control channel at a given moment
-  rather than a fixed slot 1 — the building block for issue #925.
 
-### Fixed
-- **Autotune measure/log spam on TETRA.** At debug level a TETRA control channel
-  emitted the autotune measurement + "suggested error" lines every second, always
-  with `applied_hz=0` — the correction is only consumed by the P25 Phase 1 path, so
-  measuring and logging it for TETRA was dead work. The sampler now gates on a
-  narrower marker (only P25 Phase 1), leaving the #815 carrier-offset WARN intact.
-- **TETRA individual calls reported as "tg == src".** A point-to-point (individual)
-  call was surfaced as a phantom talkgroup whose ID equalled the transmitting
-  radio's — "calling yourself." TETRA's MAC can't distinguish a group SSI from an
-  individual SSI, so a call addressed to a subscriber ISSI was misread as a group.
-  Using the invariant that a party can never equal the call's own identity, such
-  calls are now flagged Individual with no self-source, and the self-referential
-  talker update is suppressed.
-- **DC spur leaked into TETRA voice under heavy multislot traffic.** Same-carrier
-  TETRA voice rides the control carrier at 0 Hz offset, so the zero-IF front end's
-  DC spur (worsened by ADC-clipping/IMD as concurrent-call power rises) sat on the
-  wanted signal and biased the π/4-DQPSK differential decode; nothing in the voice
-  path removed it. A first-order complex DC-block high-pass is now applied on the
-  TETRA voice receivers (safe because π/4-DQPSK has a spectral null at DC), leaving
-  the control-channel path untouched.
-- **TETRA recordings ended a beat early.** On the solo voice path a control-channel
-  D-RELEASE cancelled the chain immediately and dropped IQ still buffered in its
-  channel; that in-flight tail is now drained before teardown. (Raising
-  `voice_hangtime_ms` does not help — hangtime governs SDR release, not digital
-  audio length.)
-- **TETRA control-channel grant spam.** TETRA re-announces an active call's grant
-  every multiframe; each was published as a separate `KindGrant` event (~3.7 per
-  call). Identical grants are now de-duplicated per `(group, carrier, timeslot)`
-  within a short window, while an enriched re-grant (backfilled source, emergency)
-  still publishes.
-- **TETRA wakeup / notification grants spawned ghost recordings named after a
-  radio ID.** On a group call the SwMI sends a source-less notification (an
-  Energy-Economy wakeup page, `SourceID==0`, addressed to the calling party's radio
-  SSI) 50–400 ms before the authoritative group grant. The engine spawned it
-  immediately, creating a ghost call and a WAV directory named after the radio ID
-  (`recordings/<sys>/<radioSSI>/…src0…`) that was then torn down when the group
-  grant superseded it — fragmenting audio and leaking radio IDs as talkgroups. The
-  engine now holds a source-less TETRA notification for a short window (500 ms) so
-  the group grant arrives first and cancels it, spawning the one real call under
-  the GSSI. The hold keys on `SourceID==0` (not the `Individual` flag, which the
-  first notification for a radio is published without), and a notification that is
-  never superseded is dropped if it targets a known radio (else recorded under its
-  real talkgroup). A genuine unit-to-unit call carries a source, so it is never
-  held.
-- **Cross-slot audio leaked between concurrent same-carrier TETRA calls.** The
-  shared per-carrier voice demux fell back to a "sole active call" CRC gate for
-  bursts it could not route by AACH marker — but a single *registered* owner is not
-  the same as a single call on the *air*. When another slot carried a call GT was
-  not tracking as an owner (a missed grant, a call in hangtime, a wakeup-page
-  ghost), that foreign slot's speech funnelled through the one owner's CRC gate and
-  bled into its recording (a valid TCH/S CRC proves a burst is speech, not *whose*).
-  The demux now judges on-air concurrency from the SB-anchored physical TDMA slot
-  (available on ~100% of bursts, unlike the marker) and suppresses the sole-owner
-  fallback whenever two or more slots are active, so foreign speech is dropped
-  rather than mis-attributed. Clean single-call captures are unchanged.
-- **`ccdecoder: decode can't keep up… dropping IQ` (#402) fired at idle CPU on a
-  remote USRP.** The decode queue between the IQ forwarder and the decode goroutine
-  was a fixed 128-*chunk* buffer. That is only meaningful in seconds when chunks are
-  large; SoapyRemote delivers a remote USRP ~369-sample datagrams, so 128 chunks was
-  only ~47 ms at 1 MS/s — while the driver's own channel is sized for 400 ms and
-  never overflowed, producing attributable decode overruns the driver never saw. The
-  queue is now bounded by a wall-clock **sample budget** (~0.5 s) derived from the
-  sample rate, so its depth-in-seconds is invariant to how the driver chunks
-  delivery. Airspy/B210 (large native blocks) are unaffected.
-- **`ccdecoder: iq power very low` DEBUG spam while locked and decoding.** The
-  low-power hint fired whenever windowed RMS sat below −55 dBFS with no gate on lock
-  state, so a USRP/SDR run at conservative gain (~−60 dBFS, ~55 dB of unused ADC
-  headroom) that decoded TETRA cleanly logged it every few seconds. It is now gated
-  on `!locked` — a low absolute level only matters when the decoder cannot lock — and
-  throttled to 30 s to match the clip / DC-dominant siblings. The Prometheus IQ-power
-  gauge still records every window.
-- **TETRA radio IDs still surfaced as talkgroups in the live Active Calls list.**
-  The engine's RadioID→TGID retraction cleaned the Talkgroups catalogue but not
-  the control-only "observed" call set, which is the other half of what the
-  Active Calls UI renders: a notification / D-CONNECT bound to the calling party
-  creates a provisional call keyed by the radio ID, and the notification-supersede
-  only released the pool-bound call, leaving the observed entry to linger as a
-  phantom "TG <radioID>". The engine now skips individual / known-radio grants when
-  recording observed calls, and retracts any observed call already tracked under an
-  SSI once that SSI is revealed to be a subscriber radio.
-- **TETRA metrics weren't counting.** `grants_total` was never defined or
-  incremented (the metrics event handler had no `KindGrant` case), so TETRA grants
-  went uncounted; TETRA voice calls were miscounted under the DMR-named
-  `dmr_voice_calls_total` (its per-timeslot increment was gated only on a non-zero
-  timeslot, which TETRA also carries); and the curated dashboards asked for a
-  `cc_locked` metric the daemon never emits (it exports `control_channel_locked`).
-  Added a protocol-labelled `grants_total`, gated `dmr_voice_calls_total` to the
-  DMR protocol, and pointed the TUI/web curated panels at `control_channel_locked`.
-- **A single-call same-carrier TETRA burst whose AACH usage marker miscorrected
-  was dropped instead of decoded.** The shared per-carrier voice demux routes by
-  AACH downlink usage marker; on a marginal signal the RM(30,14) AACH occasionally
-  miscorrects to a stray marker with no registered owner, so the burst was counted
-  as an `ownerless_drop` and its speech lost. When exactly one call is active the
-  demux now routes such a burst to that sole call through the class-2 CRC gate
-  (the same single-call fallback already used for an undecoded AACH) — the CRC
-  rejects a genuinely foreign burst ~255/256, and with one call there is no peer
-  to cross-talk into. With ≥2 concurrent calls the burst is still dropped, so the
-  cross-talk guarantees are unchanged.
-- **TETRA radio IDs leaked into the Talkgroups list.** A notification / D-CONNECT
-  addressed to a call's calling party arrives as a bare grant before that SSI is
-  known to be a radio, so it was published `Individual=false` and the engine
-  auto-catalogued the radio ID as a phantom talkgroup (e.g. `100xxxx` source IDs
-  showing up alongside real `102xxxx` talkgroups). The engine now learns which
-  SSIs are subscriber radios — any grant's calling/transmitting party (`SourceID`)
-  and any `Individual`-addressed destination — retracts a phantom talkgroup
-  already catalogued for one (`TalkgroupDB.DeleteDiscovered`, which only removes
-  auto-`Discovered` entries, never an operator-catalogued talkgroup), and refuses
-  to re-discover a known radio. GSSIs and ISSIs never overlap on a TETRA network,
-  so this is safe.
-- **TETRA voice recordings on a same-carrier site came out short and garbled
-  (low `audio_pct`).** The TCH/S traffic decoder was hard-decision while the
-  control channel already ran soft-decision, so on a marginal same-carrier
-  signal ~70% of a call's own speech bursts failed the class-2 CRC and were
-  dropped; the recorder concatenates only the surviving bursts, so the audio
-  played back choppy/robotic (the `recording shorter than call span` diagnostic
-  showed `audio_pct` ≈ 30%). The TCH/S channel decode now uses the receiver's
-  per-symbol soft (log-likelihood) information — a soft-input rate-1/3 Viterbi
-  mother decoder with soft depuncture and descramble, mirroring the existing
-  soft SCH path — recovering the ~2 dB of coding gain the hard path threw away.
-  Bursts with no soft info still fall back to the hard decoder, so the change is
-  never worse than before.
-- **TETRA group calls could land on the wrong talkgroup with starved audio when
-  the first grant was a notification.** On a same-carrier site a group call's
-  first control-channel grant is often a notification / a D-CONNECT addressed to
-  the calling party, which arrives before that party is known as a radio ID — so
-  it is labelled with the individual's SSI (a phantom talkgroup), carries no
-  source, and follows the notification's own downlink usage marker rather than
-  the traffic channel's. The recording bound to that provisional identity, and
-  when the authoritative group grant for the same physical channel arrived, the
-  physical-channel source backfill folded it on as a mere source update — so the
-  recording stayed on the wrong talkgroup and kept following the wrong usage
-  marker, starving the voice demux (a few percent of the call decoded). The
-  engine now supersedes a still-unfinalised, notification-bound TETRA call when
-  the authoritative group grant (real GSSI, calling-party source, traffic usage
-  marker) lands on its channel, so the recording follows the correct talkgroup
-  and marker from the outset. TETRA-gated; P25 same-channel grants are unchanged.
-- **TETRA: a corrupt control-channel block whose CRC happened to pass could
-  surface a ghost grant on a foreign frequency band.** A false-positive SCH CRC
-  (or a slipped bit cursor) produced a bogus voice grant whose carrier resolved
-  tens of MHz from the site — e.g. `carrier 6 → 400 MHz` on a 467 MHz cell —
-  spawning a phantom call on a band the site does not operate. Grants whose
-  resolved carrier sits more than 10 MHz from the control channel are now
-  dropped as bit-alignment / CRC artefacts (a site's downlink carriers span at
-  most a few MHz).
-- **`auto_record` with `tap: ddc` reported `drops=0` even when the DDC grab had
-  gaps.** A triggered narrowband capture that fell behind the voice fan-out
-  dropped IQ chunks (time gaps that break downstream decode), but the "captured"
-  log line always showed `drops=0` — the drop count was only surfaced in a
-  separate fan-out warning. The capture now reports the real subscriber drop
-  count, matching the wideband tap, so a gappy grab is visible in its own result.
-- **TETRA subscriber/talkgroup identities (ISSI/GSSI) were corrupted on a live
-  single-carrier site.** The MAC TM-SDU is an LLC PDU (§21.2); its basic-link
-  header was not stripped before the L3 CMCE PDU was parsed, so the 3-bit MLE
-  discriminator and every address field were misframed and the decoded radio /
-  talkgroup IDs were wrong. GopherTrunk now parses the LLC sublayer (`ParseLLC`)
-  before CMCE, recovering the correct ISSI/GSSI.
-- **TETRA grant frequencies ignored the SYSINFO frequency offset.** The broadcast
-  frequency-offset field (0 / ±6.25 / +12.5 kHz, §21.4.4.1) was dropped, so a
-  cell whose carrier actually sits at e.g. 469.88125 MHz resolved to 469.875 MHz.
-  The offset (with the frequency band, duplex spacing, and reverse-operation
-  flags) is now parsed and applied, so grant carriers resolve to their true
-  absolute downlink/uplink frequencies.
-- **Ghost TETRA recordings from teardown PDUs.** A MAC-RESOURCE whose CMCE PDU is
-  a call teardown (D-RELEASE, and now D-DISCONNECT, EN 300 392-2 Table 14.9)
-  carries a channel-allocation element for the resource being *reclaimed*, not a
-  new call; publishing a grant for it spawned a zero-byte phantom recording. Such
-  grants are now suppressed, and D-DISCONNECT is modelled so it tears the call
-  down instead of leaking a ghost.
-- **Individual (unit-to-unit) TETRA calls were surfaced as phantom talkgroups.** A
-  grant addressed to a subscriber ISSI showed the radio ID as if it were a
-  talkgroup. Calls are now classified individual-vs-group (any SSI seen as a CMCE
-  calling/transmitting party is an individual radio), and an individual-addressed
-  grant is flagged as such (`GrantDTO.individual`) instead of being listed as a
-  talkgroup.
-- **TETRA active-call tracking thrashed on a busy carrier (marker collisions,
-  starved audio).** Grants for the same call on one carrier could be keyed as
-  separate calls, colliding on the voice tap and starving audio. Same-carrier
-  TETRA grants that share a (system, frequency, timeslot) are now folded into one
-  call, backfilling the source onto the existing recording.
-- **TETRA colour code locked on the first sync burst, so a single mis-decoded
-  BSCH could poison a whole session.** The extended colour code (the scrambler
-  seed for every BNCH/SCH/TCH block) was learned from the first BSCH and never
-  re-evaluated. If that burst's bit errors slipped through the BSCH FEC as a
-  valid-but-wrong codeword, the wrong scrambler locked in and every subsequent
-  descramble failed silently — empty or truncated recordings until a restart.
-  The colour is now adopted provisionally on the first BSCH (so a cold receiver
-  still starts decoding immediately) but only locked once a second BSCH
-  corroborates it; a mis-decoded first burst is corrected by the true colour
-  that every later BSCH carries. An operator-configured colour is still
-  authoritative.
-- **Concurrent same-carrier TETRA calls could still leak audio between each
-  other** — a long conversation would pick up a second slot's speech mid-stream.
-  The per-call demux ran one receiver per call and routed by the AACH usage
-  marker, but could not evict a peer: when a call ended and the network reused its
-  usage marker for a new call while the old one lingered in hangtime, both matched
-  and the old recording absorbed the new call's audio. Concurrent same-carrier
-  calls now share ONE per-carrier voice demux (its sync/AACH state stays warm
-  across calls) with a single owner per usage marker and most-recent-grant-wins
-  eviction, so a reused marker immediately displaces the lingering call. Routing by
-  the AACH usage marker (not the physical TDMA slot) is what makes this reliable:
-  on real captures a single call's bursts jitter across adjacent decoded slot
-  numbers, so slot-keyed routing mis-delivers them — the usage marker is stable
-  per call. Grants addressed without a usage marker bind to the first unclaimed
-  marker instead of accept-all-mixing.
-- **A locked TETRA control channel flapped "CC hunt failed · candidates
-  exhausted" every ~30–60 s while it was decoding calls fine.** Two coupled gaps:
-  the control-channel hunter's success test needs a fresh `cc.locked` event within
-  its dwell (default 3 s), but TETRA emits the lock only once (edge-triggered), so
-  when cold acquisition (BSCH sync + colour code) outlasts the dwell the first hunt
-  fails and every same-frequency re-hunt then exhausts the dwell against an
-  already-locked, silent-on-the-wire pipeline; and there was no TETRA lock-loss
-  watchdog (`MarkLost` had no callers), so the scanner could never leave the locked
-  state on a genuine outage. Now the supervisor parks a system it already knows is
-  locked instead of re-hunting it, and a new control-channel watchdog publishes
-  `cc.lost` when a locked carrier decodes nothing for ~5 s (≈5 missed
-  multiframes), so a genuinely dead carrier still re-hunts and recovers. (The
-  ±6 kHz AFC acquisition range, #940, was already merged and is unrelated — a
-  ~1.5 kHz carrier offset sits well inside it.)
-- **Concurrent same-carrier TETRA calls decoded as "DJ scratches" — most calls
-  produced only brief garbled fragments.** The per-slot demux dropped a burst
-  whose decoded TDMA timeslot did not match the call's *granted* timeslot, but on
-  real air the grant timeslot does not identify the physical slot (distinct calls
-  collide on one value; the synchronisation-burst slot anchor also jitters a
-  call's bursts across adjacent slot numbers), so most calls had their own speech
-  discarded as "off-slot" and recorded only the handful of frames decoded before
-  the slot grid anchored. The voice chain now demultiplexes concurrent calls by
-  the **AACH downlink usage marker** — the per-slot call identifier the AACH
-  broadcasts in every downlink slot, matched against the usage marker carried in
-  the call's grant — which cleanly separates simultaneous calls on one carrier.
-  A grant addressed without a usage marker, or a burst whose AACH does not decode,
-  falls back to CRC-gated single-call decoding so a call's speech is never dropped
-  on a guess. Verified against a real 5-capture same-carrier IQ set: the two
-  concurrent calls that the timeslot filter starved now recover their full audio.
-- **TETRA TCH/S class-2 CRC was computed wrong, so no on-air voice ever
-  decoded.** The 8-bit CRC was a `G(X)=1+X³+X⁷` LFSR; the TETRA CRC
-  (EN 300 395-2 §5.5.1) is a fixed parity-check matrix, so every received TCH/S
-  burst failed the check and was dropped (recordings held only spurious frames).
-  Reimplemented from the ETSI reference tap tables — real voice now decodes.
-- **TETRA voice calls could hang forever, monopolising the same-carrier tap.**
-  Call liveness is now driven by CRC-valid decoded speech rather than every raw
-  carrier burst, so a call ends on hangtime when its transmission stops and the
-  tap is freed for the next grant.
-- **Config guidance no longer conflates LSM/simulcast with CQPSK.** The
-  `p25_phase1_demod_mode` docs, config-builder help, `config.example.yaml`, and the
-  per-site override example (issue #942) all implied that a *simulcast* site needs the
-  `cqpsk`/`lsm` demod path — using Victoria's MMR / Melbourne CBD as the worked
-  "→ cqpsk" example. That is backwards: simulcast is a transmitter-coordination
-  technique, not a modulation, and most simulcast systems (MMR included, every site)
-  transmit C4FM — forcing CQPSK there kills the decode. Linear Simulcast Modulation
-  (LSM/CQPSK) is a *choice* some systems make, not implied by simulcast and not
-  readable from emission-designator/licensing data. All guidance now says: leave it at
-  C4FM, and switch a channel to `cqpsk` only when a strong, clean signal won't lock in
-  C4FM. The per-channel override feature itself is unchanged and still correct for
-  genuinely-CQPSK systems. A follow-up completes the same correction on the surfaces the
-  first pass missed — the opt-in-features reference, the web config-builder's per-channel
-  demod-override help, and the system-identification learn article. (issue #935)
-- **P25 Phase 2 superframes now lock under any dibit rotation.** Real-air Phase 2
-  is differentially decoded H-DQPSK, so a residual carrier offset near an odd
-  multiple of ±1500 Hz (a quarter of the 6000-baud symbol rate) rotates every
-  recovered dibit by a constant 0..3. The superframe decoder only correlated the
-  outbound frame sync under the single canonical rotation, so a rotated stream
-  never locked — no superframe, no traffic-channel MAC PDU, and hence no source
-  RID or talker alias. It now searches all four rotations (the three non-canonical
-  ones at a stricter tolerance so noise cannot false-lock) and de-rotates the
-  sliced superframe to canonical before the ISCH + MAC FEC. Verified against a
-  real Victorian MMR (WACN 0xBEE00) Phase 2 voice capture: 0 superframes before,
-  ~430 after. (issue #915; the traffic-channel MAC descramble mapping that keeps
-  `mac_rs_valid=0` even on a locked superframe is a separate, still-open blocker.)
-- **P25 Phase 2 MAC descramble moved to the coded-channel-bit domain.** The PN44
-  scrambler (TIA-102.BBAC-1 §7.2.5) wraps the burst "between demodulation and
-  FEC", i.e. over the coded channel bits — but GopherTrunk XORed the recovered
-  144 *information* bits *after* the trellis decode. The trellis code does not
-  commute with the XOR, so a genuinely scrambled burst could never satisfy the
-  outer RS(24,16,9) check regardless of seed — the `mac_rs_valid=0` blocker that
-  suppresses the Phase 2 source RID (and talker alias). The descramble now runs
-  on the raw channel dibits before deinterleave/trellis, at each sub-frame's
-  channel-bit offset into the continuous 4320-bit superframe sequence, matching
-  the reference decoders (SDRtrunk `Timeslot.xor()`, OP25 `handle_packet()`).
-  `ScramblerProbe` self-aligns the slot phase against the RS gate. Regression
-  tests build a channel-scrambled burst from the reporter's confirmed MMR
-  identity (WACN 0xBEE00 / System ID 0x164 / NAC 0x161) and recover the source
-  RID through the full FEC chain; live-air confirmation of the per-slot offset is
-  pending the reporter's `mac_rs_valid` re-pull. (issue #915, Finding B)
-- **TETRA AFC now acquires carriers several kHz off-centre.** The carrier AFC
-  estimated the offset from the 4×Δφ differential mean, which wraps into
-  ±f_sym/8 ≈ ±2250 Hz — so a control channel more than 2250 Hz off-frequency
-  aliased into that window and left a multi-kHz constellation spin that broke
-  Gardner timing, and the receiver never locked even on a clean, strong signal.
-  Real SDR front-ends (RTL-SDR, Airspy, HackRF, non-GPSDO USRP) routinely sit
-  several kHz off, so this was a real acquisition gap. A coarse mean-frequency
-  stage (the angle of the pre-matched-filter block's lag-1 autocorrelation)
-  now picks the alias bucket before the existing fine estimator refines it,
-  extending acquisition to roughly ±6 kHz. (issue #940)
 - **TETRA control channels now lock on real air (§8.2.5 scrambler).** The
   scrambling LFSR shifted its register the wrong direction relative to the tap
   convention, so the generated sequence diverged from ETSI EN 300 392-2 §8.2.5
@@ -1528,6 +1847,7 @@ for tagged releases.
   lock" symptom, including on Single Carrier Base Station / dynamic-MCCH-sharing
   sites. Verified against a real 467.913 MHz SCBS capture, which now locks in
   ~11 ms and decodes MCC 250 / MNC 013 / colour code 0x2C. (issue #925)
+
 - **Eye diagram panel now follows the locked channel like the other Plots
   scopes.** The Eye diagram carried the offset/frequency tuning controls from
   the constellation work (issue #557) but, unlike the Constellation and Symbol
@@ -1537,6 +1857,7 @@ for tagged releases.
   instead of parking it on the control channel. The panel now polls active
   calls while mounted and parks on the configured control channel on Hold,
   matching the sibling scopes.
+
 - **Completed-call `source_rid` is no longer set from an unverified P25 Phase 2
   traffic-channel MAC PDU.** The in-call source RID is backfilled from the
   `GROUP_VOICE_CHANNEL_USER` MAC PDU decoded off the voice channel, but that
@@ -1561,11 +1882,36 @@ for tagged releases.
   before publishing, so an out-of-set value is dropped and the fields stay
   omitted rather than carrying garbage. Clear and every registered algorithm
   pass through unchanged. Refs #813, #924.
+
+## [v0.7.5] — 2026-07-20
+
+### Fixed
+
+- **P25 Phase 2 control-channel MAC opcode census (`--log-level debug`).** A
+  new diagnostic inventories every MAC opcode seen on the control channel —
+  logging a one-shot `payload_hex` sample the first time each opcode appears
+  plus a periodic `opcode:count` summary. Unlike the existing per-grant DEBUG
+  line, it has no survivorship bias: it also surfaces opcodes GT does not
+  currently parse as a grant, which is where a RID-bearing grant would hide on
+  a system whose completed-call `source_rid` under-populates (issue #915). The
+  raw opcode inventory + byte sample is what pins the remaining gap on a
+  missing/mis-mapped grant opcode (decode-side) vs. a call-association gap.
+
+- **TETRA AACH downlink usage marker parsing (per-slot control/traffic
+  identification).** GopherTrunk now decodes the ACCESS-ASSIGN PDU the AACH
+  carries in the centre of every TETRA downlink slot into its downlink usage
+  marker (`unallocated` / `assigned control` / `common control` / `traffic`,
+  per ETSI EN 300 392-2 §21.4.7). This is the per-slot MCCH indicator a
+  Single Carrier Base Station running dynamic MCCH sharing relies on, where
+  any of the four TDMA slots can be the control channel at a given moment
+  rather than a fixed slot 1 — the building block for issue #925.
+
 - **The AACH is no longer mis-routed through the CMCE/MLE Layer-3 PDU
   parser.** The decoded AACH (a MAC-layer ACCESS-ASSIGN PDU) was being handed
   to `ParsePDU`, which is for CMCE/MLE Layer-3 PDUs, so it was mis-parsed
   (and could surface as a spurious grant/release). It is now parsed as the
   ACCESS-ASSIGN PDU it actually is.
+
 - **A TETRA channel recorded as a narrowband slice below the 144 kHz channel
   rate (e.g. the natural 48/50 kHz SDR++/SDRTrunk record rate) now decodes
   instead of emitting a nonsense symbol rate.** The `siglab` replay/analyze
@@ -1581,6 +1927,11 @@ for tagged releases.
   and the training sequences correlate; the committed 48 kHz `samples/tetra`
   reference likewise normalises to exactly 144000 Hz. Only sub-target replays
   change; every wideband SDR rate reduces exactly as before.
+
+## [v0.7.4] — 2026-07-19
+
+### Fixed
+
 - **The narrowband down-converter no longer shifts the channel rate on SDR
   sample rates that don't divide cleanly into the channel target.** When a
   capture rate reduced to a ratio past the resampler's L/M caps, `ccdecoder`'s
@@ -1591,17 +1942,11 @@ for tagged releases.
   bounded search already used in the wideband `internal/dsp/tuner` path for
   issue #550), landing the same stream at 143998 Hz (17999.8 sym/s). Standard
   SDR rates (2.4/2.5/10 MS/s) reduce cleanly and are unaffected.
-- **Signal-Lab "Capture from tuner" hung on 30 s grabs and hid the recorded
-  file.** A capture of N seconds spends ≥N seconds collecting IQ in real time
-  before the handler writes anything, so a 30 s grab ran past the API server's
-  30 s write timeout and the response was torn down mid-write — the console sat
-  on "Capturing…" forever (10 s worked). The capture handler now disables the
-  per-request write deadline (as the SSE and audio-stream handlers already do),
-  and the duration ceiling rose from 30 s to 120 s (bounded by a staged-file-size
-  budget). The captures list also gained a persistent per-row **Download** link
-  (previously the only link was transient state on the capture form, so it
-  appeared to show up only after a second capture), and a long capture name no
-  longer overflows the card and pushes the compare checkbox out of reach.
+
+## [v0.7.3] — 2026-07-18
+
+### Fixed
+
 - **Completed-call webhook now carries the source RID on nearly every call,
   not just the ~18% whose voice-side `call.source` decoded.** The per-call
   `broadcast.webhook` sink read the source RID off the grant that *bound* the
@@ -1626,26 +1971,9 @@ for tagged releases.
   suppresses the phantom duplicate call the mismatched talkgroup would otherwise
   spawn (issue #915).
 
-### Changed
-- **Short digital recordings now report their frame yield.** The recorder's
-  `recording shorter than call span` diagnostic gained `frames`, `audio_pct`
-  (the fraction of the call span that decoded to audio), and `vocoder`, so a
-  sparse-decode recording (few TCH/S bursts passing CRC — the TETRA
-  short-recording symptom) is diagnosable from one log line instead of by
-  diffing the WAV against the call record.
-- **Same-carrier voice-tap IQ drops are no longer silent.** When the control
-  decoder's voice tap drops IQ to a lagging voice consumer (still dropping to
-  protect the decode hot path), the dropped chunks are now counted and surfaced
-  as a single warning at call end with the remedy — so starved voice decode
-  (the short/gappy-recording symptom) is visible instead of silent (issue #402).
-- **Live captures stream straight to disk instead of buffering the whole grab in
-  RAM.** The Signal-Lab capture path (and the `gophertrunk capture` / daemon
-  `--iq-capture` subcommands) previously held the entire capture in memory as
-  `complex64` and then allocated a second encoded copy, so peak memory scaled
-  with `seconds × sample-rate` (~4.8 GB for 30 s at 10 MS/s). They now encode and
-  write one chunk at a time through a shared streaming writer — narrowband slices
-  too, via a stateful down-converter — so peak memory is a single chunk
-  regardless of capture length, and maximum duration is bounded by disk, not RAM.
+## [v0.7.2] — 2026-07-17
+
+No changelog entries were recorded for this tag; see the GitHub release notes.
 
 ## [v0.7.1] — 2026-07-16
 
