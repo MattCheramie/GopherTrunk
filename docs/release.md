@@ -71,8 +71,12 @@ tag. Anything failing means the tag isn't ready.
      Builder) and stages them under `gophertrunk-web/` alongside
      every artifact,
    - computes `SHA256SUMS` over every file,
-   - attaches everything to a new GitHub Release with notes
-     auto-extracted from the matching `CHANGELOG.md` section.
+   - attaches everything to a new GitHub Release whose body is
+     the fixed per-platform install blurb from `release.yml` plus
+     GitHub's auto-generated notes (`generate_release_notes: true`,
+     i.e. the merged-PR list since the previous tag). The release
+     body does **not** read `CHANGELOG.md`, which is why step 1
+     above has to happen by hand.
 
    If any job fails, the release won't publish. Fix and re-tag with
    a fresh patch number — do not delete-and-recreate a tag that
