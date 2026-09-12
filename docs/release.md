@@ -29,6 +29,10 @@ tag. Anything failing means the tag isn't ready.
 - [ ] `make release-dry-run VERSION=vX.Y.Z` produces a Linux binary
       under `dist/dry-run/gophertrunk` and `gophertrunk version`
       prints the expected version / commit / build time.
+- [ ] `make version-refs-check` passes (the same check CI runs as the
+      `version-refs` job): CHANGELOG.md / README / docs fallback all
+      still name the newest stable tag, so you are starting from a
+      consistent state.
 - [ ] `CHANGELOG.md` `[Unreleased]` section covers every merged PR
       since the previous tag. Cross-check with:
       ```sh
@@ -44,15 +48,28 @@ tag. Anything failing means the tag isn't ready.
 
 ## Tagging
 
-1. **Promote `[Unreleased]` to a versioned section in CHANGELOG.md.**
-   Rename `## [Unreleased]` to `## [vX.Y.Z] — YYYY-MM-DD` and insert
-   a fresh empty `## [Unreleased]` block above it for the next
-   cycle. Commit:
+1. **Promote `[Unreleased]` and bump every hand-maintained version
+   reference in one go:**
    ```sh
-   git add CHANGELOG.md
+   make release-prep VERSION=vX.Y.Z
+   ```
+   This runs `scripts/release-refs.py bump`, which renames
+   `## [Unreleased]` to `## [vX.Y.Z] — YYYY-MM-DD` (inserting a fresh
+   empty `## [Unreleased]` above it, or a placeholder heading if
+   nothing was recorded), and points `README.md`'s Quick Start
+   `VERSION=` line and the docs site's fallback tag
+   (`docs/_includes/latest-version.html`) at the new version. It is
+   idempotent and verifies itself. Commit and push:
+   ```sh
+   git add CHANGELOG.md README.md docs/_includes/latest-version.html
    git commit -m "release: vX.Y.Z"
    git push origin main
    ```
+   If you skip this step, the release workflow's `version-refs` job
+   does the same bump after publishing and opens a
+   `release/refs-vX.Y.Z` PR for it — merge that promptly, because
+   the `version-refs` CI job is red on `main` until the references
+   catch up with the tag.
 
 2. **Create and push the annotated tag.** Annotated (not
    lightweight) so `git describe` produces a useful version string
@@ -85,12 +102,11 @@ tag. Anything failing means the tag isn't ready.
 
 ## Post-release
 
-- Update `README.md`'s Quick Start `VERSION=v…` snippet to the new
-  tag.
-- Bump the hardcoded fallback version in
-  `docs/_includes/latest-version.html` (`downloads.md` is fully
-  `{{ ver }}`-templated and reads the version from that include, so
-  the fallback constant is the only spot left to update by hand).
+- Merge the `release/refs-vX.Y.Z` PR if the workflow opened one
+  (i.e. you tagged without running `make release-prep`). The README
+  Quick Start `VERSION=` snippet and the docs-site fallback in
+  `docs/_includes/latest-version.html` are covered by that step;
+  `downloads.md` is fully `{{ ver }}`-templated and needs nothing.
 - Sanity-check the published `gophertrunk-<ver>-windows-amd64-setup.exe`
   on a real Windows 11 machine — install, run Zadig from the Start
   Menu, run `gophertrunk sdr list`, uninstall and confirm the

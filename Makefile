@@ -16,7 +16,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-airspyhf-real test-airspyhf-real-bias test-airspyhf-real-diag test-hackrf-real test-hackrf-real-bias test-hackrf-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
+.PHONY: all build dist test version-refs-check release-prep test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-airspyhf-real test-airspyhf-real-bias test-airspyhf-real-diag test-hackrf-real test-hackrf-real-bias test-hackrf-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
 
 all: build
 
@@ -315,6 +315,20 @@ cross-build: web-build
 #
 # Depends on `web-build` so the rehearsed binary embeds the operator
 # console — matches what `cross-build` and the release workflow ship.
+# Keep the hand-maintained version references (CHANGELOG.md heading,
+# README Quick Start VERSION=, docs/_includes/latest-version.html fallback)
+# in step with the git tag. `version-refs-check` is what CI runs; it fails
+# when those files document an OLDER release than git's newest stable tag.
+# `release-prep VERSION=vX.Y.Z` is step 1 of docs/release.md: promote
+# [Unreleased] and point README/docs at the tag you are about to push.
+# The release workflow runs the same bump after publishing as a safety net.
+version-refs-check:
+	python3 scripts/release-refs.py check
+
+release-prep:
+	@case "$(VERSION)" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "usage: make release-prep VERSION=vX.Y.Z" >&2; exit 2 ;; esac
+	python3 scripts/release-refs.py bump $(VERSION)
+
 release-dry-run: web-build
 	@echo "→ Rehearsing release build for version $(VERSION)"
 	@echo "→ COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME)"
