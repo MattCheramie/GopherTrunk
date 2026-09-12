@@ -90,3 +90,12 @@ func (c *C4FM) SliceMany(dst []int8, src []float32) []int8 {
 	}
 	return dst
 }
+
+// Reset clears the matched filter's sample history so a restarted stream does
+// not convolve against stale samples. The taps are kept.
+func (c *C4FM) Reset() {
+	for i := range c.hist {
+		c.hist[i] = 0
+	}
+	c.histPos = 0
+}

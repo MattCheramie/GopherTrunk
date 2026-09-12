@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -17,24 +18,21 @@ import (
 // marker routing across four slots) this is a self-contained single-call chain,
 // closest in shape to the solo-tap runTETRAVoiceChain. It decimates the tap IQ to the
 // TETRA symbol rate, recovers the π/4-DQPSK stream with the shared receiver (blind CMA
-// equalizer + soft differentials, as the offline DMO path requires), slices each DNB
-// with the streaming DMStreamExtractor, TCH/S-decodes it (soft, with a hard fallback)
-// and emits the 137-bit speech frames to the recorder — which renders them to PCM with
-// the same clean-room ACELP vocoder ("tetra-acelp") the TMO path uses.
+// equalizer + soft differentials, as the offline DMO path requires), slices each
+// DSB/DNB with the streaming DMStreamExtractor, TCH/S-decodes each DNB (soft, with a
+// hard fallback) and emits the 137-bit speech frames to the recorder — which renders
+// them to PCM with the same clean-room ACELP vocoder ("tetra-acelp") the TMO path uses.
 //
-// colourHint is the DM traffic colour code the pipeline stamped on the grant. Because
-// the grant fires on the first DNBs (before the pipeline finishes brute-forcing the
-// colour), the hint is often 0, so this chain recovers the colour on its own and
-// decodes the buffer retroactively once known — no leading speech is lost. Recovery
-// runs, in preference order: (1) liveColour — a poll of the control pipeline's own
-// recovery via the same-carrier source (dmoColourSource), verified against a few
-// buffered bursts before adoption, at ~1/64 the cost of a brute force; (2) the local
-// RecoverDMColourCode brute force, scored ONLY on slot-grid-qualified bursts — the DNB
-// correlator false-alarms ~18/s (tetra/dmo_grid.go), and un-gated scoring windows were
-// ~half noise, which is why the dominance gate never cleared on air and all six
-// attempts burned. This is #1003 work: on-air A/B still gates it (a green synthetic
-// decode is not proof — #764/#771).
-func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, colourHint, baseMNI uint32, liveColour func() (uint32, bool), done chan<- struct{}) {
+// The TCH/S scramble seed is PER TRANSMISSION on air (tetra/dmo_seed_tracker.go: the
+// 12 Sep #1003 capture carried a different 30-bit seed on each PTT — the
+// transmitting radio's source address under a fixed prefix), so the chain runs its
+// own tetra.DMSeedTracker: the DSB SCH/H it slices announces the seed, the first
+// error-free DNB solves it exactly, and until one of those has confirmed a seed the
+// DNBs are buffered and decoded retroactively — no leading speech is lost. seedHint
+// is the pipeline's answer stamped on the grant (verified there, so adopted as is
+// when non-zero); liveColour polls the pipeline for the answer it reaches after the
+// grant, which the tracker confirms against this chain's own bursts before use.
+func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, seedHint uint32, liveColour func() (uint32, bool), done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-tetra-dmo:"+serial, nil)
 
@@ -50,14 +48,15 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 		serial:     serial,
 		bt:         bt,
 		rs:         rs,
-		colour:     colourHint,
-		baseMNI:    baseMNI &^ 0x3F,
+		seeds:      tetra.NewDMSeedTracker(),
 		liveColour: liveColour,
 		grid:       tetra.NewDMSlotGrid(),
-		// A non-zero hint from the grant is the pipeline's already-recovered colour
-		// (or the operator's tetra_colour_code override), so it counts as recovered.
-		colourKnown:     colourHint != 0,
-		colourRecovered: colourHint != 0,
+	}
+	if seedHint != 0 {
+		// The grant's seed is the pipeline's verified answer (or the operator's
+		// tetra_colour_code override): use it from the first burst.
+		dec.seeds.Adopt(seedHint)
+		dec.colourFromPipeline = true
 	}
 	ext := tetra.NewDMStreamExtractor(dec.onBurst)
 
@@ -75,16 +74,19 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 	rx := tetrarx.New(rxOpts)
 
 	c.log.Info("composer: tetra DMO voice follow started — DNB TCH/S decode + ACELP vocoder",
-		"serial", serial, "colour_hint", colourHint, "rate_hz", symbolHz)
+		"serial", serial, "seed_hint", fmt.Sprintf("%#010x", seedHint), "rate_hz", symbolHz)
 	defer func() {
 		ext.Flush() // emit any tail burst still inside the extractor window
-		dec.flush() // decode any DNBs still buffered awaiting colour recovery
+		dec.flush() // decode any DNBs still buffered awaiting the seed
+		seed, known := dec.seeds.Seed()
 		c.log.Info("composer: tetra DMO voice follow ended",
 			"serial", serial, "dnb_bursts", dec.dnb.Load(),
 			"speech_frames", dec.speech.Load(), "bfi_count", dec.bfi.Load(),
-			"colour", dec.colour, "colour_recovered", dec.colourRecovered,
-			"colour_from_pipeline", dec.colourFromPipeline,
-			"colour_attempts", dec.colourTries)
+			"seed", fmt.Sprintf("%#010x", seed), "seed_known", known,
+			"seed_verified", dec.seeds.Verified(),
+			"seed_from_pipeline", dec.colourFromPipeline,
+			"bursts_solved", dec.seeds.Solved,
+			"exact_adopts", dec.seeds.ExactAdopts, "hint_adopts", dec.seeds.HintAdopts)
 	}()
 
 	// feBuf is the reused front-end output scratch: fe.Process(nil, …) allocated
@@ -115,272 +117,122 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 	}
 }
 
-const (
-	// dmoVoiceColourBatch is how many DNBs the voice chain buffers before attempting
-	// colour-code recovery (matches the pipeline's dmoColourBatch cadence).
-	dmoVoiceColourBatch = 20
-	// dmoVoiceColourMax caps the buffer: past this, if no colour has cleared the
-	// confidence gate, stop buffering and decode at the best colour available —
-	// the control pipeline's recovered colour if it has one (adopted even when
-	// this chain cannot re-verify it locally, see adoptLiveColourUnverified),
-	// else colour 0 on the known MNI (a clear radio-to-radio call). An
-	// encrypted/unrecoverable call then simply yields no speech.
-	dmoVoiceColourMax = 120
-	// dmoVoiceColourMaxAttempts caps how many recovery passes to run, mirroring the
-	// control pipeline's dmoColourMaxAttempts.
-	//
-	// RecoverDMColourCode is a 64-colour brute force and each candidate is a full
-	// soft-Viterbi TCH/S decode over every buffered burst, plus a hard decode on the
-	// (usually failing) fallback path. Retrying it on EVERY arriving burst from buffer
-	// size 20 up to 120 is 64·Σ(20..120) ≈ 450 000 Viterbi decodes per call, crammed
-	// into the few seconds it takes to accumulate them — enough to starve the
-	// same-carrier IQ tap feeding this very chain ("voice tap dropped IQ to a lagging
-	// voice consumer"). Attempting only at batch boundaries, over a decimated buffer,
-	// brings it to the ~10k the control pipeline already budgets for.
-	dmoVoiceColourMaxAttempts = 6
-	// dmoVoiceHintMinBursts / dmoVoiceHintMinValid gate adopting the control
-	// pipeline's recovered colour (liveColour): at least MinBursts slot-grid-
-	// qualified bursts must be buffered, and decoding them at the hinted colour
-	// must yield at least MinValid CRC-valid bursts. Verification is N single-
-	// colour decodes — ~1/64 of one brute-force pass — so a correct hint makes
-	// the local brute force unnecessary, and a wrong/stale one cannot blindly
-	// latch.
-	dmoVoiceHintMinBursts = 4
-	dmoVoiceHintMinValid  = 2
-)
+// dmoVoiceSeedMax caps the DNBs buffered while no seed is known: past this, if
+// neither an exact solve nor a confirmed hint has landed (an encrypted call, or
+// one too weak for a single error-free burst), stop buffering and decode at the
+// best guess available — the pipeline's live answer if it has one, else seed 0
+// (the spec default for a radio-to-radio DMO). An unrecoverable call then simply
+// yields no speech. ~7 s of a full-rate call.
+const dmoVoiceSeedMax = 120
 
-// dmoVoiceDecoder holds the streaming DMO voice decode state for one call. All methods
-// run on the single receiver goroutine (the voice chain's process loop), so the fields
-// need no locking; the atomic counters are read from the deferred ended-log on the
-// same goroutine after the loop exits.
+// dmoVoiceDecoder holds the streaming DMO voice decode state for one call. All
+// methods run on the single receiver goroutine (the voice chain's process loop), so
+// the fields need no locking; the atomic counters are read from the deferred
+// ended-log on the same goroutine after the loop exits.
 type dmoVoiceDecoder struct {
 	c      *Composer
 	serial string
 	bt     *boundaryTracker
 	rs     rawFrameSink
 
-	colour uint32
-	// baseMNI is the DMO network MNI (ExtendedColourCode(MCC, MNC, 0)) from the
-	// grant's tetra_mcc/tetra_mnc, folded into colour recovery so a non-zero-MNI
-	// network decodes, and used as the clear-fallback seed (base | colour 0)
-	// instead of a bare 0. Zero on an MNI-0 radio-to-radio DMO.
-	baseMNI     uint32
-	colourKnown bool
-	// colourRecovered distinguishes "a colour cleared verification (local brute
-	// force or an adopted pipeline hint)" from "we gave up and fell back to
-	// colour 0", which colourKnown alone conflates — the end-of-call log used to
-	// claim colour_known=true colour=0 on a call where nothing was ever recovered.
-	colourRecovered bool
-	// colourFromPipeline is set when the control pipeline's colour was adopted
-	// WITHOUT this chain verifying it on its own bursts (the give-up / flush
-	// paths, or a hint landing after give-up). The pipeline's answer is
-	// confidence-gated on the same carrier, so it beats the colour-0 fallback
-	// it replaces; on the 20 Aug #1003 run the chain fell back to 0 before
-	// ever adopting the pipeline's 39 and decoded 242 DNBs as BFI.
+	// seeds learns the transmission's scramble seed from this chain's own DSBs and
+	// DNBs (and from the pipeline's hint, which it confirms before use).
+	seeds *tetra.DMSeedTracker
+	// colourFromPipeline records that the seed in use came from the pipeline
+	// (grant or give-up adoption) rather than this chain's own bursts.
 	colourFromPipeline bool
-	buffer             []tetra.DMBurst // ALL DNBs awaiting colour recovery (retroactive decode)
-	// scored holds only the slot-grid-QUALIFIED DNBs (freshest
-	// dmoVoiceColourBatch), the set colour recovery and hint verification score
-	// against. The DNB correlator false-alarms ~18/s, so an un-gated scoring
-	// window is ~half noise on a live tap and RecoverDMColourCode's dominance
-	// gate can never clear — the on-air "colour_attempts=6, colour_recovered=
-	// false, all BFI" failure. Buffering/emission stay un-gated (the CRC gates
-	// output; a pre-latch real burst must not be dropped).
-	scored []tetra.DMBurst
-	// grid votes DNB leads onto the 255-dibit slot grid to qualify them (the
-	// same tetra.DMSlotGrid the control pipeline uses).
+	// buffer holds every DNB seen while no seed was known, in order, so the
+	// start of the transmission is decoded retroactively once the seed lands.
+	buffer []tetra.DMBurst
+	// grid votes DNB leads onto the 255-dibit slot grid to qualify them (the same
+	// tetra.DMSlotGrid the control pipeline uses): the DNB correlator false-alarms
+	// ~18/s, and only qualified bursts are allowed to teach the tracker a seed.
+	// Buffering/emission stay un-gated (the CRC gates output; a pre-latch real
+	// burst must not be dropped).
 	grid *tetra.DMSlotGrid
-	// liveColour, when non-nil, polls the control pipeline's own colour
-	// recovery (via the same-carrier source). lastHint/lastHintValid remember a
-	// hinted value that FAILED verification so it is not re-verified every
-	// burst — only a changed hint is retried.
-	liveColour    func() (uint32, bool)
-	lastHint      uint32
-	lastHintValid bool
-	// colourTries counts recovery passes run, capped at dmoVoiceColourMaxAttempts.
-	// sinceTry is how many QUALIFIED bursts arrived since the last pass, so the
-	// brute force runs once per batch instead of once per burst.
-	colourTries int
-	sinceTry    int
+	// liveColour, when non-nil, polls the control pipeline's own seed recovery
+	// (via the same-carrier source).
+	liveColour func() (uint32, bool)
 
 	dnb, speech, bfi atomic.Uint64
 }
 
-// tryRecoverColour runs one capped colour-recovery pass and reports whether the
-// confidence gate was cleared.
-//
-// It scores only the qualified window (d.scored — the freshest
-// dmoVoiceColourBatch slot-grid-qualified bursts), not the whole buffer: the
-// gate needs a couple of dozen REAL bursts to separate the true colour from the
-// ~1/256 chance floor, and correlator noise in the window dilutes the dominance
-// ratio it needs. The full buffer is deliberately left intact — unlike the
-// control pipeline, which only wants the colour and can decimate, this chain
-// must still decode every buffered burst retroactively once the colour lands,
-// or the start of the transmission is lost from the recording. A call whose
-// grid never latched (very short PTT) falls back to the buffer tail — worse
-// odds, but better than scoring nothing at flush.
-func (d *dmoVoiceDecoder) tryRecoverColour() bool {
-	d.colourTries++
-	d.sinceTry = 0
-	scored := d.scored
-	if len(scored) == 0 {
-		scored = d.buffer
-		if len(scored) > dmoVoiceColourBatch {
-			scored = scored[len(scored)-dmoVoiceColourBatch:]
-		}
-	}
-	c, _, ok := tetra.RecoverDMColourCode(scored, d.baseMNI)
-	if !ok {
-		return false
-	}
-	d.colour, d.colourKnown, d.colourRecovered = c, true, true
-	d.c.log.Info("composer: tetra DMO colour code recovered",
-		"serial", d.serial, "colour", c, "attempt", d.colourTries)
-	return true
-}
-
-// tryAdoptLiveColour polls the control pipeline's own colour recovery and, when
-// it has an answer this chain hasn't already rejected, verifies it against the
-// buffered qualified bursts before adopting: at least dmoVoiceHintMinValid of
-// them must TCH/S-decode CRC-valid at the hinted colour. Verification is a
-// handful of single-colour decodes (~1/64 of one brute-force pass), so a
-// correct hint replaces the local brute force almost for free, while a wrong
-// or stale hint cannot blindly latch. A hint that fails is remembered
-// (lastHint) and only re-verified if the pipeline's answer changes. Returns
-// true when a colour was adopted.
-func (d *dmoVoiceDecoder) tryAdoptLiveColour() bool {
-	if d.liveColour == nil || d.colourRecovered {
-		return false
-	}
-	c, known := d.liveColour()
-	if !known || (d.colourKnown && c == d.colour) {
-		return false
-	}
-	if d.lastHintValid && c == d.lastHint {
-		return false // this exact value already failed verification here
-	}
-	if len(d.scored) < dmoVoiceHintMinBursts {
-		return false // too few real bursts to verify; retry as more arrive
-	}
-	valid := 0
-	for i := len(d.scored) - 1; i >= 0 && valid < dmoVoiceHintMinValid; i-- {
-		bb := d.scored[i]
-		if len(tetra.DMBurstTCHSpeechSoft(bb, c)) == 2 || len(tetra.DMBurstTCHSpeech(bb, c)) == 2 {
-			valid++
-		}
-	}
-	if valid < dmoVoiceHintMinValid {
-		d.lastHint, d.lastHintValid = c, true
-		return false
-	}
-	d.colour, d.colourKnown, d.colourRecovered = c, true, true
-	d.c.log.Info("composer: tetra DMO colour adopted from control pipeline",
-		"serial", d.serial, "colour", c)
-	return true
-}
-
-// adoptLiveColourUnverified adopts the control pipeline's recovered colour
-// WITHOUT verifying it against this chain's own bursts. It is only used where the
-// alternative is the colour-0 fallback — the give-up cap, flush, or a hint that
-// lands after give-up — never while local recovery still has a chance, so a stale
-// hint can only ever replace a guess, not a locally recovered colour. The
-// pipeline's colour is confidence-gated (RecoverDMColourCode's dominance gate) on
-// the same carrier; the fallback is not evidence at all. This is what the 20 Aug
-// #1003 on-air run lacked: the chain gave up at colour 0 before adopting the
-// pipeline's 39, and tryAdoptLiveColour's re-verification then failed forever on a
-// receiver whose bursts differed from the pipeline's. Returns true when the colour
-// changed.
-func (d *dmoVoiceDecoder) adoptLiveColourUnverified() bool {
-	if d.liveColour == nil || d.colourRecovered {
-		return false
-	}
-	c, known := d.liveColour()
-	if !known || (d.colourKnown && c == d.colour) {
-		return false
-	}
-	d.colour, d.colourKnown, d.colourFromPipeline = c, true, true
-	d.c.log.Info("composer: tetra DMO colour adopted from control pipeline (not verified on this chain's bursts)",
-		"serial", d.serial, "colour", c)
-	return true
-}
-
-// onBurst handles one streamed DMO burst. DSBs carry no speech (signalling only), so
-// only DNBs are decoded. Until the colour code is known, DNBs are buffered; once
-// recovered/adopted (or the cap forces a colour-0 fallback) the buffer is decoded in
-// order and each subsequent DNB decodes immediately.
+// onBurst handles one streamed DMO burst. A DSB carries no speech but its SCH/H
+// announces the transmission's seed, so it feeds the tracker; a DNB is decoded at
+// once when the seed is known, else buffered until it is.
 func (d *dmoVoiceDecoder) onBurst(b tetra.DMBurst) {
-	if b.Kind != tetra.DMBurstNormal {
+	switch b.Kind {
+	case tetra.DMBurstSync:
+		d.seeds.ObserveDSB(b)
+		return
+	case tetra.DMBurstNormal:
+	default:
 		return
 	}
 	d.dnb.Add(1)
 	qualified := d.grid.Observe(b.Lead)
-	if d.colourKnown {
-		// A give-up latch (colourKnown without colourRecovered) can still be
-		// rescued by the pipeline's recovery landing later: keep the qualified
-		// window fresh and adopt a verified hint for the remaining bursts.
-		if !d.colourRecovered {
-			if qualified {
-				d.pushScored(b)
-			}
-			// A verified adoption is preferred; failing that, the pipeline's
-			// colour still beats the fallback this chain is decoding at.
-			if !d.tryAdoptLiveColour() {
-				d.adoptLiveColourUnverified()
-			}
+	if d.liveColour != nil && !d.seeds.Verified() {
+		if s, known := d.liveColour(); known {
+			d.seeds.Hint(s)
 		}
-		d.emit(b)
+	}
+	if _, known := d.seeds.Seed(); known {
+		d.emit(b, qualified)
 		return
 	}
 	d.buffer = append(d.buffer, b)
 	if qualified {
-		d.pushScored(b)
-		d.sinceTry++
-	}
-	// Attempt only once per batch of fresh QUALIFIED bursts, and only up to the
-	// attempt cap — re-running the 64-colour brute force on every arriving burst is
-	// what made this chain starve its own IQ tap.
-	canBrute := d.colourTries < dmoVoiceColourMaxAttempts &&
-		len(d.scored) >= dmoVoiceColourBatch &&
-		(d.colourTries == 0 || d.sinceTry >= dmoVoiceColourBatch)
-	switch {
-	case d.tryAdoptLiveColour():
-		// Adopted the pipeline's verified colour; fall through and flush.
-	case canBrute && d.tryRecoverColour():
-		// Recovered locally; fall through and flush.
-	case len(d.buffer) >= dmoVoiceColourMax || d.colourTries >= dmoVoiceColourMaxAttempts:
-		// Give up recovering locally. Prefer the control pipeline's colour even
-		// unverified; otherwise assume clear colour 0 on top of the known MNI
-		// (baseMNI | 0 — plain 0 when MNI is 0). A genuinely encrypted call then
-		// yields no CRC-valid speech (bfi), which the hangtime ends normally.
-		if !d.adoptLiveColourUnverified() {
-			d.colour, d.colourKnown = d.baseMNI, true
+		// Let the qualified burst teach the tracker (an exact solve, or a CRC
+		// confirmation of the hint). Its own frames are emitted with the buffer.
+		_, seed, adopted := d.seeds.ObserveDNB(b, true)
+		if adopted {
+			d.c.log.Info("composer: tetra DMO scramble seed recovered",
+				"serial", d.serial, "seed", fmt.Sprintf("%#010x", seed),
+				"exact_adopts", d.seeds.ExactAdopts, "hint_adopts", d.seeds.HintAdopts)
 		}
-	default:
+	}
+	if _, known := d.seeds.Seed(); !known && len(d.buffer) >= dmoVoiceSeedMax {
+		d.giveUp()
+	}
+	if _, known := d.seeds.Seed(); !known {
 		return // keep buffering
 	}
 	buf := d.buffer
 	d.buffer = nil
 	for _, bb := range buf {
-		d.emit(bb)
+		d.emit(bb, true)
 	}
 }
 
-// pushScored appends a qualified burst to the scoring window, keeping only the
-// freshest dmoVoiceColourBatch entries.
-func (d *dmoVoiceDecoder) pushScored(b tetra.DMBurst) {
-	d.scored = append(d.scored, b)
-	if len(d.scored) > dmoVoiceColourBatch {
-		d.scored = append(d.scored[:0], d.scored[len(d.scored)-dmoVoiceColourBatch:]...)
+// giveUp installs a fallback seed once the buffer cap is hit with nothing
+// confirmed: the pipeline's live answer if it has one, else seed 0. A later exact
+// solve still replaces it.
+func (d *dmoVoiceDecoder) giveUp() {
+	if d.liveColour != nil {
+		if s, known := d.liveColour(); known {
+			d.seeds.Fallback(s)
+			d.colourFromPipeline = true
+			d.c.log.Info("composer: tetra DMO seed adopted from control pipeline (not confirmed on this chain's bursts)",
+				"serial", d.serial, "seed", fmt.Sprintf("%#010x", s))
+			return
+		}
 	}
+	d.seeds.Fallback(0)
 }
 
-// emit TCH/S-decodes one DNB (soft with a hard fallback) at the known colour and writes
-// its speech frames to the recorder, refreshing call liveness on real speech. A DNB
-// that yields no CRC-valid speech is a Bad Frame Indication (encrypted/corrupt).
-func (d *dmoVoiceDecoder) emit(b tetra.DMBurst) {
-	frames := tetra.DMBurstTCHSpeechSoft(b, d.colour)
-	if len(frames) != 2 {
-		frames = tetra.DMBurstTCHSpeech(b, d.colour)
+// emit TCH/S-decodes one DNB through the tracker (which keeps learning: an exact
+// solve on a burst of a NEW transmission switches the seed) and writes its speech
+// frames to the recorder, refreshing call liveness on real speech. A DNB that
+// yields no CRC-valid speech is a Bad Frame Indication (noise/encrypted/corrupt).
+func (d *dmoVoiceDecoder) emit(b tetra.DMBurst, qualified bool) {
+	// Every burst goes through the tracker: the exact solve is safe on an
+	// unqualified (possibly noise) burst — no solution can come from noise —
+	// and it is what catches the first bursts of a fast re-key before the slot
+	// grid re-latches; only hint confirmation is withheld from unqualified ones.
+	frames, seed, adopted := d.seeds.ObserveDNB(b, qualified)
+	if adopted {
+		d.c.log.Info("composer: tetra DMO scramble seed changed",
+			"serial", d.serial, "seed", fmt.Sprintf("%#010x", seed))
 	}
 	if len(frames) != 2 {
 		d.bfi.Add(1)
@@ -397,34 +249,20 @@ func (d *dmoVoiceDecoder) emit(b tetra.DMBurst) {
 	}
 }
 
-// flush decodes any DNBs still buffered awaiting colour recovery at end-of-call. If the
-// colour never cleared the confidence gate, it makes a final best-effort attempt, then
-// falls back to colour 0 so a short clear call is not dropped.
-//
-// The fallback sets colourKnown (the buffer is about to be decoded at SOME colour) but
-// deliberately NOT colourRecovered, so the end-of-call log distinguishes "recovered
-// colour 0" from "never recovered anything". Setting the flag unconditionally is what
-// made a call that decoded nothing report `colour=0 colour_known=true`, which reads as
-// a successful recovery.
+// flush decodes any DNBs still buffered awaiting the seed at end-of-call. If no
+// seed was ever confirmed, it falls back (giveUp) so a short clear call is still
+// decoded at the best available guess; the ended-log reports seed_verified=false
+// so a fallback is never mistaken for a recovery.
 func (d *dmoVoiceDecoder) flush() {
 	if len(d.buffer) == 0 {
 		return
 	}
-	if !d.colourKnown {
-		if !d.tryAdoptLiveColour() {
-			d.tryRecoverColour()
-		}
-		if !d.colourRecovered && !d.adoptLiveColourUnverified() {
-			// Nothing cleared the gate and the pipeline has no answer — fall back
-			// to clear colour 0 on top of the known MNI (baseMNI | 0) so a short
-			// clear call still decodes.
-			d.colour = d.baseMNI
-		}
-		d.colourKnown = true
+	if _, known := d.seeds.Seed(); !known {
+		d.giveUp()
 	}
 	buf := d.buffer
 	d.buffer = nil
 	for _, bb := range buf {
-		d.emit(bb)
+		d.emit(bb, true)
 	}
 }

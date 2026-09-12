@@ -108,8 +108,24 @@ func TestDMRIPSCWidebandReplay(t *testing.T) {
 		if i%(chunk*40) == 0 {
 			nco /= complex(math.Hypot(real(nco), imag(nco)), 0)
 		}
-		for _, a := range arms {
-			a.bank.Process(wide)
+		// GT_DMR_WB_CHUNK feeds the banks in wideband chunks of this many samples
+		// (the live daemon's SoapyRemote datagram is ~2000 samples at 6.25 MS/s,
+		// i.e. ~125 samples per channelizer bin per call); 0 = one call per
+		// resampled block.
+		if wbChunk := envInt("GT_DMR_WB_CHUNK", 0); wbChunk > 0 {
+			for k := 0; k < len(wide); k += wbChunk {
+				ke := k + wbChunk
+				if ke > len(wide) {
+					ke = len(wide)
+				}
+				for _, a := range arms {
+					a.bank.Process(wide[k:ke])
+				}
+			}
+		} else {
+			for _, a := range arms {
+				a.bank.Process(wide)
+			}
 		}
 		if (e/window) != (i/window) || e == len(iq) {
 			sec := startS + float64(e)/inRate

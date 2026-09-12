@@ -2,6 +2,7 @@ package ccdecoder
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"time"
@@ -28,8 +29,12 @@ import (
 //     DM channel. The lock is sticky (no cc.lost on inter-transmission silence) —
 //     re-hunting a camped DMO frequency every quiet gap is exactly the churn the TMO
 //     pipeline produced on a DMO capture.
-//   - COLOUR: recover the DM traffic colour code once (RecoverDMColourCode), so the
-//     voice chain can descramble TCH/S. A non-zero tetra_colour_code overrides.
+//   - SEED: learn the transmission's TCH/S scramble seed (tetra.DMSeedTracker — the
+//     DSB SCH/H hint confirmed by traffic, or an exact per-burst solve), so the
+//     voice chain can descramble TCH/S. The seed is PER TRANSMISSION on air (the
+//     12 Sep #1003 capture: a different 30-bit seed on each of three PTTs, none of
+//     them a "colour code" a 64-way brute force could reach), so it is re-learned
+//     after every traffic drought. A non-zero tetra_colour_code pins it.
 //   - GRANT: publish events.KindGrant (Protocol "tetra-dmo") on the rising edge of a
 //     DNB traffic burst train, so the engine starts a same-carrier voice chain that
 //     decodes the actual speech (composer.runTETRADMOVoiceChain). Edge-triggered and
@@ -48,7 +53,7 @@ import (
 // noise hits spread uniformly over all 255.
 //
 // The actual TCH/S → ACELP audio is decoded in the voice chain, not here; this
-// pipeline decodes SCH/S (lock) and brute-forces the colour, and only needs to detect
+// pipeline decodes SCH/S (lock) and learns the scramble seed, and only needs to detect
 // DNB *presence* to grant. This is #1003, design-first and on-air A/B gated: a green
 // synthetic decode is not proof of on-air correctness (the #764/#771 rule).
 
@@ -56,15 +61,6 @@ const (
 	// dmoStatusInterval throttles the DMO decode-status debug line (mirrors the TMO
 	// tetraStatusInterval).
 	dmoStatusInterval = 5 * time.Second
-	// dmoColourBatch is how many DNBs to buffer before brute-forcing the DM colour
-	// code (RecoverDMColourCode). ~one second of a full-rate call, enough for the
-	// confidence gate (dmColourMinCRC/dmColourDominance) to separate the true colour
-	// from the chance floor.
-	dmoColourBatch = 20
-	// dmoColourMaxAttempts caps how many recovery passes to try before giving up and
-	// falling back to colour 0 (a channel that never clears the confidence gate is
-	// encrypted or unreceivable — chasing it forever would burn CPU on every DNB).
-	dmoColourMaxAttempts = 6
 	// dmoGrantMinDNB is how many SLOT-GRID-QUALIFIED DNBs must follow a lock before a
 	// grant fires — a short guard on top of the grid gate so a call is not spawned
 	// before the burst train is unambiguous.
@@ -96,19 +92,14 @@ func newTETRADMOPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		rateHz:       opts.SampleRateHz,
 		now:          time.Now,
 		configColour: opts.System.TETRAColourCode,
-		// baseMNI is the network's MNI (MCC<<20 | MNC<<6) — the non-colour half of
-		// the extended colour code. On a DMO network with a non-zero MNI the TCH/S
-		// traffic seed is ExtendedColourCode(MCC, MNC, colour), so colour recovery
-		// must search on top of this base or it never reaches the true seed (the
-		// reporter's Motorola DMO at MCC 250 / MNC 1 — #1003 follow-up).
-		baseMNI:    tetra.ExtendedColourCode(opts.System.TETRAMCC, opts.System.TETRAMNC, 0),
-		colourSink: opts.TETRADMOColourSink,
-		fnSeen:     map[uint8]struct{}{},
-		debug:      log.Enabled(context.Background(), slog.LevelDebug),
+		seeds:        tetra.NewDMSeedTracker(),
+		colourSink:   opts.TETRADMOColourSink,
+		fnSeen:       map[uint8]struct{}{},
+		debug:        log.Enabled(context.Background(), slog.LevelDebug),
 	}
 	if p.configColour != 0 {
-		p.colour = p.configColour
-		p.colourKnown = true
+		p.seeds.Pin(p.configColour)
+		p.colour, p.colourKnown = p.configColour, true
 		if p.colourSink != nil {
 			p.colourSink(p.colour)
 		}
@@ -159,23 +150,18 @@ type tetraDMOPipeline struct {
 	// SoftSink → DibitSink hand-off (both fire on the single rx.Process goroutine).
 	pendingSoft []complex64
 
-	// Colour recovery: 0 = auto-recover via RecoverDMColourCode; a non-zero
-	// tetra_colour_code overrides.
+	// Scramble seed: 0 = learn it per transmission (seeds); a non-zero
+	// tetra_colour_code pins it. colour/colourKnown mirror the tracker's
+	// current answer for the status line, the grant and the tests.
 	configColour uint32
-	// baseMNI is ExtendedColourCode(MCC, MNC, 0) from tetra_mcc/tetra_mnc — the
-	// network MNI folded into every colour-recovery candidate so a non-zero-MNI
-	// DMO network decodes (its traffic seed is baseMNI | colour). 0 = MNI 0.
-	baseMNI     uint32
-	colour      uint32
-	colourKnown bool
-	colourCand  []tetra.DMBurst
-	colourTries int
-	// colourSink, when non-nil, is told the DM colour the moment it is known
-	// (config override at construction, or a confident recovery). The decoder
-	// exposes it to the same-carrier voice chain, which typically starts
-	// before recovery completes (the grant fires at dmoGrantMinDNB=4 bursts,
-	// recovery needs dmoColourBatch=20) and would otherwise brute-force the
-	// colour all over again — or fail to, on a noisy tap.
+	seeds        *tetra.DMSeedTracker
+	colour       uint32
+	colourKnown  bool
+	// colourSink, when non-nil, is told the scramble seed the moment it is
+	// known or changes (config override at construction, or a verified
+	// recovery). The decoder exposes it to the same-carrier voice chain,
+	// which typically starts before this pipeline's first solve lands (the
+	// grant fires at dmoGrantMinDNB=4 bursts) and polls it as a hint.
 	colourSink func(colour uint32)
 
 	// Lock + liveness.
@@ -208,6 +194,10 @@ func (p *tetraDMOPipeline) onBurst(b tetra.DMBurst) {
 	switch b.Kind {
 	case tetra.DMBurstSync:
 		p.dsbTotal++
+		// The DSB's SCH/H announces the transmission's scramble seed (the source
+		// address field, capture-pinned in tetra/dmo_seed_tracker.go); the tracker
+		// keeps it as a hint the DNB traffic must confirm.
+		p.seeds.ObserveDSB(b)
 		type1, ok := tetra.DecodeDMSCHS(b)
 		if !ok {
 			return
@@ -231,20 +221,7 @@ func (p *tetraDMOPipeline) onBurst(b tetra.DMBurst) {
 		p.dnbQualified++
 		p.lastDNB = now
 		p.dnbSinceLock++
-		p.recoverColour(b)
-		// Telemetry only: count CRC-valid TCH/S when the colour is known (the voice
-		// chain does the real decode). This is a full Viterbi pass per burst (two when
-		// the soft decode fails and the hard fallback runs), which was unbounded while
-		// noise detections reached here; qualified bursts cap it at the ~17/s a real
-		// transmission produces, and only while one is in progress. Debug-gated: the
-		// counter only feeds the debug status line, so at INFO level the decode is
-		// pure waste on the control decode goroutine.
-		if p.debug && p.colourKnown {
-			if len(tetra.DMBurstTCHSpeechSoft(b, p.colour)) == 2 ||
-				len(tetra.DMBurstTCHSpeech(b, p.colour)) == 2 {
-				p.tchCRC++
-			}
-		}
+		p.learnSeed(b)
 		p.maybeGrant()
 	}
 }
@@ -262,15 +239,12 @@ func (p *tetraDMOPipeline) maybeRearmGrant(now time.Time) {
 	p.dnbSinceLock = 0
 	p.lastDNB = time.Time{}
 	p.grid.Reset()
-	// A drought ends the transmission, so the colour-recovery attempt budget is
-	// per-transmission, not per-process: without this, six failed attempts (a
-	// weak first PTT, or noise-diluted early batches) disabled recovery for the
-	// daemon's lifetime — the operator's run showed colour_known=false forever
-	// while hundreds of later, perfectly decodable qualified DNBs arrived.
-	// Buffered candidates are stale for the same reason: bursts carried across
-	// a transmission boundary dilute the next attempt's dominance gate.
-	p.colourTries = 0
-	p.colourCand = p.colourCand[:0]
+	// A drought ends the transmission, and the scramble seed is per transmission
+	// (a new PTT carries a new source-address seed), so forget it — the next
+	// transmission's DSB hint / first clean DNB re-learns it in well under a
+	// second. A pinned tetra_colour_code survives the reset.
+	p.seeds.Reset()
+	p.colour, p.colourKnown = p.seeds.Seed()
 }
 
 // maybeLock publishes cc.locked once, on the first CRC-valid SCH/S with a parseable
@@ -288,30 +262,28 @@ func (p *tetraDMOPipeline) maybeLock() {
 	p.log.Info("tetra dmo cc locked", "freq", p.freqHz, "system", p.system)
 }
 
-// recoverColour brute-forces the DM traffic colour code once (RecoverDMColourCode),
-// buffering DNBs until a batch is available. No-op once the colour is known (config
-// override or a prior successful recovery) or after dmoColourMaxAttempts give up.
-func (p *tetraDMOPipeline) recoverColour(b tetra.DMBurst) {
-	if p.colourKnown || p.colourTries >= dmoColourMaxAttempts {
-		return
+// learnSeed feeds one qualified DNB to the seed tracker: an exact solve adopts
+// the burst's seed on the spot (and preempts a stale one from the previous PTT),
+// the DSB hint is adopted once traffic CRC-confirms it, and every CRC-valid
+// decode feeds the tch_crc telemetry. The solve is a microsecond GF(2)
+// elimination and the decode one or two Viterbi passes per qualified burst — the
+// ~17/s a real transmission produces — so this replaces the 64-colour brute
+// force (64 Viterbi passes per burst per attempt) at a fraction of its cost, with
+// no confidence gate to mis-clear and no colour space to be outside of.
+func (p *tetraDMOPipeline) learnSeed(b tetra.DMBurst) {
+	frames, seed, adopted := p.seeds.ObserveDNB(b, true)
+	if frames != nil {
+		p.tchCRC++
 	}
-	p.colourCand = append(p.colourCand, b)
-	if len(p.colourCand) < dmoColourBatch {
-		return
-	}
-	p.colourTries++
-	if c, n, confident := tetra.RecoverDMColourCode(p.colourCand, p.baseMNI); confident {
-		p.colour = c
-		p.colourKnown = true
-		p.log.Info("tetra dmo colour code recovered", "colour", c, "crc_valid_tchs", n, "system", p.system)
+	if adopted {
+		p.colour, p.colourKnown = seed, true
+		p.log.Info("tetra dmo scramble seed recovered",
+			"seed", fmt.Sprintf("%#010x", seed), "source_field", fmt.Sprintf("%#08x", seed&0xFFFFFF),
+			"exact_adopts", p.seeds.ExactAdopts, "hint_adopts", p.seeds.HintAdopts, "system", p.system)
 		if p.colourSink != nil {
-			p.colourSink(c)
+			p.colourSink(seed)
 		}
 	}
-	// Keep only the freshest half so the next attempt reflects current channel
-	// conditions rather than re-scoring stale bursts.
-	keep := len(p.colourCand) / 2
-	p.colourCand = append(p.colourCand[:0], p.colourCand[keep:]...)
 }
 
 // maybeGrant publishes a tetra-dmo grant on the rising edge of a QUALIFIED DNB
@@ -335,16 +307,15 @@ func (p *tetraDMOPipeline) maybeGrant() {
 	p.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
-			System:          p.system,
-			Protocol:        "tetra-dmo",
-			FrequencyHz:     p.freqHz,
-			TETRAColourExt:  p.colour,
-			TETRADMOBaseMNI: p.baseMNI,
-			At:              p.now(),
+			System:         p.system,
+			Protocol:       "tetra-dmo",
+			FrequencyHz:    p.freqHz,
+			TETRAColourExt: p.colour,
+			At:             p.now(),
 		},
 	})
 	p.log.Info("tetra dmo grant (traffic detected)",
-		"freq", p.freqHz, "colour", p.colour, "system", p.system)
+		"freq", p.freqHz, "seed", fmt.Sprintf("%#010x", p.colour), "seed_known", p.colourKnown, "system", p.system)
 }
 
 func (p *tetraDMOPipeline) maybeLogStatus() {
@@ -370,8 +341,10 @@ func (p *tetraDMOPipeline) maybeLogStatus() {
 		"dnb_qualified", p.dnbQualified,
 		"tch_crc", p.tchCRC,
 		"distinct_fn", len(p.fnSeen),
-		"colour", p.colour,
-		"colour_known", p.colourKnown,
+		"seed", fmt.Sprintf("%#010x", p.colour),
+		"seed_known", p.colourKnown,
+		"seed_verified", p.seeds.Verified(),
+		"bursts_solved", p.seeds.Solved,
 		"grant_active", p.grantActive,
 	)
 }
@@ -396,11 +369,10 @@ func (p *tetraDMOPipeline) Reset() {
 	p.lastDNB = time.Time{}
 	p.pendingSoft = nil
 	p.lastLog = time.Time{}
-	// Buffered colour candidates predate the re-anchor and the attempt budget is
-	// per-transmission (see maybeRearmGrant); a recovered/configured colour itself
-	// stays — the DM colour is a network constant, not receiver state.
-	p.colourTries = 0
-	p.colourCand = p.colourCand[:0]
+	// The transmission's seed is forgotten with the grid (see maybeRearmGrant);
+	// a pinned tetra_colour_code survives.
+	p.seeds.Reset()
+	p.colour, p.colourKnown = p.seeds.Seed()
 }
 
 func (p *tetraDMOPipeline) Close() error { return nil }
