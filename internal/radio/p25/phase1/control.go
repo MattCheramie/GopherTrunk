@@ -275,6 +275,13 @@ func (c *ControlChannel) BandPlanSnapshot() []IdentifierUpdate {
 // control channel locks. Used to stamp the network-configuration report.
 func (c *ControlChannel) LastNAC() uint16 { return c.lastNAC }
 
+// Locked reports whether the control channel currently holds lock (a
+// trusted TSDU NID has been accepted and MarkLost has not been called
+// since). Pair it with Stats().NIDTrusted to tell a live lock from a
+// stale flag: the receiver's decision-directed AFC probe does exactly
+// that (see ccdecoder.p25LockProbe).
+func (c *ControlChannel) Locked() bool { return c.locked }
+
 // SystemName returns the operator-assigned system name, if any.
 func (c *ControlChannel) SystemName() string { return c.systemName }
 
