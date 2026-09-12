@@ -40,6 +40,17 @@ func dmoSeqBits(seed, n int) []byte {
 	return out
 }
 
+// dmoSCHHBits is a DM-SYNC SCH/H whose capture-pinned seed field (bits 42..65,
+// tetra.DMSCHHSeedFieldOffset) announces seed's low 24 bits, as a real
+// transmitter's does; the rest is a fixed pattern.
+func dmoSCHHBits(seed uint32) []byte {
+	bits := dmoSeqBits(2, 124)
+	for i := 0; i < tetra.DMSCHHSeedFieldBits; i++ {
+		bits[tetra.DMSCHHSeedFieldOffset+i] = byte(seed >> uint(tetra.DMSCHHSeedFieldBits-1-i) & 1)
+	}
+	return bits
+}
+
 func dmoFiller(seed, n int) []uint8 {
 	out := make([]uint8, n)
 	for i := range out {
@@ -60,6 +71,7 @@ func dmoFiller(seed, n int) []uint8 {
 // timeslot from one clock, so all its DNB leads share one residue mod 255 — the
 // property tetra.DMSlotGrid uses to tell traffic from correlator noise.
 const (
+	dmoTestDSBs       = 3 // DSBs a transmission opens with (12 Sep capture: three consecutive slots)
 	dmoTestSlotDibits = 255
 	dmoTestDSBLead    = 107
 	dmoTestDNBLead    = 115
@@ -81,27 +93,39 @@ func dmoSlot(seed int, fields ...[]uint8) []uint8 {
 	return slot
 }
 
+// dmoTestSeed is the scramble seed the synthetic transmissions use where a
+// specific on-air value is not the point: source-address field 3 under the
+// capture-pinned prefix (tetra.DMScrambleSeedPrefix), so the DSB SCH/H hint the
+// stream carries is faithful to the traffic, as on air.
+const dmoTestSeed = tetra.DMScrambleSeedPrefix<<24 | 3
+
 // buildDMODibitStream synthesizes a DMO transmission's demodulated dibit stream: a
-// long receiver lead-in, one DSB (SCH/S + SCH/H), then nDNB TCH/S DNBs scrambled with
-// colour — every burst on its own 255-dibit timeslot, as a real radio transmits them.
+// long receiver lead-in, one DSB (SCH/S + SCH/H announcing colour's low 24 bits in
+// the seed field), then nDNB TCH/S DNBs scrambled with colour — every burst on its
+// own 255-dibit timeslot, as a real radio transmits them.
 // It mirrors the buildDSB/buildDNB layout the tetra package tests use (EN 300 396-2
 // Tables 15/16), built from the exported encoders so it can live in the ccdecoder
 // package.
 func buildDMODibitStream(colour uint32, nDNB int) []uint8 {
 	b2d := tetra.TetraBitsToDibits
 	schs := b2d(tetra.EncodeBSCH(dmoSeqBits(1, 60)))
-	schh := b2d(tetra.EncodeSCHHD(dmoSeqBits(2, 124), 0))
+	schh := b2d(tetra.EncodeSCHHD(dmoSCHHBits(colour), 0))
 
 	var out []uint8
 	// Lead-in (a whole number of slots): let Gardner/AFC/equalizer converge.
 	out = append(out, dmoFiller(0, 4*dmoTestSlotDibits)...)
 
-	out = append(out, dmoSlot(1,
-		dmoFiller(3, dmoTestDSBLead-dmoTestBurstStart-60), // 40-dibit freq-corr field
-		schs,
-		tetra.SyncTrainingDibits(),
-		schh,
-	)...)
+	// A transmission opens with DSBs in consecutive slots (the 12 Sep capture
+	// shows three, 255 dibits apart) before the DNB train — the receiver gets
+	// more than one chance at the SCH/S lock and the SCH/H seed hint.
+	for k := 0; k < dmoTestDSBs; k++ {
+		out = append(out, dmoSlot(1+k,
+			dmoFiller(3, dmoTestDSBLead-dmoTestBurstStart-60), // 40-dibit freq-corr field
+			schs,
+			tetra.SyncTrainingDibits(),
+			schh,
+		)...)
+	}
 
 	for i := 0; i < nDNB; i++ {
 		frameA := dmoSeqBits(7+i, dmoTestSpeechBits)
@@ -132,7 +156,10 @@ func TestTETRADMOPipelineLocksAndGrants(t *testing.T) {
 		span       = 8
 		alpha      = 0.35
 		freqHz     = 438_900_000
-		testColour = uint32(3) // the DM traffic colour to recover (0 = config default)
+		// The TCH/S scramble seed to recover: a real on-air value from the 12 Sep
+		// #1003 capture, outside the 0..63 "colour" space the old brute force
+		// searched (this test fails against the old recovery).
+		testColour = uint32(0x012915c0)
 		nDNB       = 40
 	)
 
@@ -200,12 +227,12 @@ func TestTETRADMOPipelineLocksAndGrants(t *testing.T) {
 		t.Errorf("no CRC-valid DSB SCH/S decoded")
 	}
 	if !dmo.colourKnown {
-		t.Errorf("DM colour code not recovered (dnb_total=%d tch_crc=%d)", dmo.dnbTotal, dmo.tchCRC)
+		t.Errorf("scramble seed not recovered (dnb_total=%d tch_crc=%d)", dmo.dnbTotal, dmo.tchCRC)
 	} else if dmo.colour != testColour {
-		t.Errorf("recovered colour=%d, want %d", dmo.colour, testColour)
+		t.Errorf("recovered seed=%#x, want %#x", dmo.colour, testColour)
 	}
 	if dmo.tchCRC == 0 {
-		t.Errorf("no CRC-valid TCH/S decoded at the recovered colour")
+		t.Errorf("no CRC-valid TCH/S decoded at the recovered seed")
 	}
 
 	bus.Close()
@@ -369,7 +396,7 @@ func TestTETRADMOPipelineGrantsOnlyAfterLock(t *testing.T) {
 	if p.locked {
 		t.Fatalf("locked on the idle lead-in")
 	}
-	dmoFeed(p, dmoModulate(buildDMODibitStream(3, 40), 7))
+	dmoFeed(p, dmoModulate(buildDMODibitStream(dmoTestSeed, 40), 7))
 
 	bus.Close()
 	<-w.drainEnd
@@ -408,7 +435,7 @@ func dmoRandDibits(seed, n int) []uint8 {
 func buildDMOUndecodableDibitStream(nDNB int) []uint8 {
 	b2d := tetra.TetraBitsToDibits
 	schs := b2d(tetra.EncodeBSCH(dmoSeqBits(1, 60)))
-	schh := b2d(tetra.EncodeSCHHD(dmoSeqBits(2, 124), 0))
+	schh := b2d(tetra.EncodeSCHHD(dmoSCHHBits(0), 0))
 
 	var out []uint8
 	out = append(out, dmoFiller(0, 4*dmoTestSlotDibits)...)
@@ -450,10 +477,6 @@ func TestTETRADMOPipelineRecoversColourAfterRearm(t *testing.T) {
 	if p.colourKnown {
 		t.Fatalf("recovered a colour from undecodable payload (colour=%d)", p.colour)
 	}
-	if p.colourTries < dmoColourMaxAttempts {
-		t.Fatalf("burned %d attempts, want %d — the scenario is not exercising the cap",
-			p.colourTries, dmoColourMaxAttempts)
-	}
 
 	// Silence past the re-arm drought: the attempt budget must reset with the grid.
 	gap := dmoNoiseIQ(1, 99)
@@ -461,22 +484,21 @@ func TestTETRADMOPipelineRecoversColourAfterRearm(t *testing.T) {
 		clock = clock.Add(time.Second)
 		dmoFeed(p, gap)
 	}
-	if p.colourTries != 0 {
-		t.Errorf("colourTries = %d after the re-arm drought, want 0", p.colourTries)
-	}
-	if len(p.colourCand) != 0 {
-		t.Errorf("%d stale colour candidates survived the re-arm, want 0", len(p.colourCand))
+	if p.colourKnown {
+		t.Errorf("a seed survived the re-arm drought (seed=%#x); it is per transmission", p.colour)
 	}
 
-	// Second transmission: clean colour-3 traffic must now recover.
+	// Second transmission: clean traffic must now recover its seed (through the
+	// DSB hint if the post-gap receiver leaves the bursts too errored to solve).
 	clock = clock.Add(time.Second)
-	dmoFeed(p, dmoModulate(buildDMODibitStream(3, 40), 11))
+	dmoFeed(p, dmoModulate(buildDMODibitStream(dmoTestSeed, 40), 11))
 	if !p.colourKnown {
-		t.Fatalf("colour not recovered on a clean transmission after re-arm (tries=%d, qualified=%d)",
-			p.colourTries, p.dnbQualified)
+		hint, hintSet := p.seeds.HintKnown()
+		t.Fatalf("seed not recovered on a clean transmission after re-arm (qualified=%d dsb_crc=%d solved=%d hint=%#x hint_set=%v tch_crc=%d)",
+			p.dnbQualified, p.dsbCRC, p.seeds.Solved, hint, hintSet, p.tchCRC)
 	}
-	if p.colour != 3 {
-		t.Errorf("recovered colour=%d, want 3", p.colour)
+	if p.colour != dmoTestSeed {
+		t.Errorf("recovered seed=%#x, want %#x", p.colour, dmoTestSeed)
 	}
 
 	bus.Close()
@@ -504,9 +526,9 @@ func TestTETRADMOPipelinePublishesColourToSink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newTETRADMOPipeline: %v", err)
 	}
-	dmoFeed(pl, dmoModulate(buildDMODibitStream(3, 40), 7))
-	if len(got) != 1 || got[0] != 3 {
-		t.Errorf("colour sink calls = %v, want exactly [3]", got)
+	dmoFeed(pl, dmoModulate(buildDMODibitStream(dmoTestSeed, 40), 7))
+	if len(got) != 1 || got[0] != dmoTestSeed {
+		t.Errorf("seed sink calls = %#x, want exactly [%#x]", got, dmoTestSeed)
 	}
 
 	// A configured colour publishes at construction, before any IQ.
@@ -566,7 +588,7 @@ func TestTETRADMOPipelineRearmsBetweenTransmissions(t *testing.T) {
 	clock := time.Unix(1_760_000_000, 0)
 	p := dmoTestPipeline(t, bus, &clock)
 
-	tx := dmoModulate(buildDMODibitStream(3, 40), 7)
+	tx := dmoModulate(buildDMODibitStream(dmoTestSeed, 40), 7)
 	gap := dmoNoiseIQ(1, 99) // idle channel, still raining false DNB detections
 
 	dmoFeed(p, tx)
@@ -588,7 +610,7 @@ func TestTETRADMOPipelineRearmsBetweenTransmissions(t *testing.T) {
 	}
 
 	clock = clock.Add(time.Second)
-	dmoFeed(p, dmoModulate(buildDMODibitStream(3, 40), 11))
+	dmoFeed(p, dmoModulate(buildDMODibitStream(dmoTestSeed, 40), 11))
 
 	if p.dnbQualified <= afterFirst {
 		t.Errorf("second transmission qualified no DNBs (%d → %d)", afterFirst, p.dnbQualified)

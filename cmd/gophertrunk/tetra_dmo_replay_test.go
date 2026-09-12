@@ -12,19 +12,20 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/acelp"
 )
 
 // TestTETRADMOReplay is the real-air validation gate for TETRA Direct Mode
 // Operation (DMO) voice decode — the acceptance criterion of issue #1003. Skip
-// unless GT_TETRA_DMO_IQ points at a cs16 (interleaved int16) IQ file of a DMO
-// transmission; GT_TETRA_DMO_RATE gives its sample rate (default 150000, the
-// reporter's Tetra_DMO_Two_TX_cs16_30sec_bw150.raw), GT_TETRA_DMO_COLOUR pins the
-// DM colour code the TCH/S traffic is scrambled with — but when it is UNSET the
-// harness now auto-recovers the colour via tetra.RecoverDMColourCode (the colour
-// that maximises CRC-valid TCH/S), so a clear DMO call decodes with no manual
-// override (on the 10aug capture it recovers colour 3). GT_TETRA_DMO_OUT
-// optionally names a dir for the decoded WAV.
+// unless GT_TETRA_DMO_IQ points at an IQ file of a DMO transmission — a headerless
+// cs16 (interleaved int16) file at GT_TETRA_DMO_RATE (default 150000), or a
+// wav/flac container, which carries its own rate. The TCH/S scramble seed is
+// learned per transmission by the production tetra.DMSeedTracker (the 12 Sep
+// capture: a different seed on every PTT — the transmitting radio's source
+// address), so nothing needs pinning; GT_TETRA_DMO_COLOUR pins ONE full 30-bit
+// seed for diagnostics. GT_TETRA_DMO_OUT optionally names a dir for the decoded
+// WAV.
 //
 // It resamples to the 144 kHz TETRA channel rate, runs the shared π/4-DQPSK
 // receiver, accumulates the whole dibit stream, then:
@@ -77,21 +78,24 @@ func TestTETRADMOReplay(t *testing.T) {
 	bursts, inRate, outRate, iqLen, enableEQ, enableLMS := loadDMOReplayBursts(t)
 	dibitRate := tetrarx.SymbolRate // 18000 dibits/sec
 
-	// Recover the DM colour code the TCH/S is scrambled with when it was not
-	// pinned via GT_TETRA_DMO_COLOUR (#1003). The DSB SCH/S is always colour-0
-	// scrambled and can't reveal the traffic colour, so RecoverDMColourCode
-	// learns it by maximising CRC-valid TCH/S. On the 10aug clear capture this
-	// auto-selects colour 3 (the value that lifts TCH/S off the chance floor)
-	// with no manual override — the C1 acceptance signal.
-	if !colourSet {
-		if rc, n, ok := tetra.RecoverDMColourCode(bursts, baseMNI); ok {
-			colour = rc
-			t.Logf("recovered DM colour code seed=%#x (crc-valid TCH/S=%d) — no GT_TETRA_DMO_COLOUR set", rc, n)
-		} else {
-			colour = baseMNI
-			t.Logf("DM colour code not recovered (no colour cleared the chance floor); using baseMNI %#x", colour)
-		}
+	// The TCH/S scramble seed is PER TRANSMISSION (12 Sep #1003 capture: a
+	// different 30-bit seed on each PTT — see tetra/dmo_seed_tracker.go), so the
+	// replay runs the production tetra.DMSeedTracker over the burst sequence:
+	// each DSB's SCH/H announces the seed as a hint, each DNB is solved exactly
+	// (GF(2), no colour search) or decoded through the confirmed hint. A
+	// GT_TETRA_DMO_COLOUR override pins one seed for the whole capture.
+	// GT_TETRA_DMO_MCC/MNC are accepted for the legacy colour scan only.
+	seeds := tetra.NewDMSeedTracker()
+	if colourSet {
+		seeds.Pin(colour)
 	}
+	type seedRun struct {
+		seed        uint32
+		first, last float64
+		bursts, crc int
+	}
+	var seedRuns []seedRun
+	_ = baseMNI
 
 	var dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly int
 	var syncSecs []int           // seconds carrying a CRC-valid SCH/S (transmission starts)
@@ -113,6 +117,7 @@ func TestTETRADMOReplay(t *testing.T) {
 		switch b.Kind {
 		case tetra.DMBurstSync:
 			dsbTotal++
+			seeds.ObserveDSB(b)
 			if type1, ok := tetra.DecodeDMSCHS(b); ok {
 				dsbCRC++
 				if pdu, pok := tetra.ParseSyncPDU(type1); pok {
@@ -128,25 +133,32 @@ func TestTETRADMOReplay(t *testing.T) {
 			}
 		case tetra.DMBurstNormal:
 			dnbTotal++
-			// Prefer soft-decision; fall back to hard when no differentials were
-			// carried for this burst (e.g. an edge burst).
-			frames := tetra.DMBurstTCHSpeechSoft(b, colour)
-			if len(frames) != 2 {
-				if hard := tetra.DMBurstTCHSpeech(b, colour); len(hard) == 2 {
-					frames = hard
-				}
-			} else if tetra.DMBurstTCHSpeech(b, colour) == nil {
-				tchSoftOnly++ // recovered by soft-decision that the hard path missed
+			frames, seed, adopted := seeds.ObserveDNB(b, true)
+			if adopted || len(seedRuns) == 0 || seedRuns[len(seedRuns)-1].seed != seed {
+				seedRuns = append(seedRuns, seedRun{seed: seed, first: float64(b.Lead) / dibitRate})
 			}
+			run := &seedRuns[len(seedRuns)-1]
+			run.last = float64(b.Lead) / dibitRate
+			run.bursts++
 			if len(frames) == 2 {
+				run.crc++
 				tchCRC++
 				speechBySec[sec]++
 				speechFrames = append(speechFrames, frames...)
+				if tetra.DMBurstTCHSpeech(b, seed) == nil {
+					tchSoftOnly++ // recovered by soft-decision that the hard path missed
+				}
 			}
 		}
 	}
+	colour, _ = seeds.Seed()
+	for _, r := range seedRuns {
+		t.Logf("seed %#010x (source field %#08x) %6.2fs..%6.2fs dnbs=%d tch_crc=%d",
+			r.seed, r.seed&0xFFFFFF, r.first, r.last, r.bursts, r.crc)
+	}
+	t.Logf("seed tracker: bursts_solved=%d exact_adopts=%d hint_adopts=%d", seeds.Solved, seeds.ExactAdopts, seeds.HintAdopts)
 
-	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs colour=%#x eq=%v lms=%v",
+	t.Logf("in=%.0fHz out=%.0fHz samples=%d dur=%.1fs last_seed=%#x eq=%v lms=%v",
 		inRate, outRate, iqLen, float64(iqLen)/inRate, colour, enableEQ, enableLMS)
 	t.Logf("bursts: dsb_total=%d dsb_schs_crc=%d dnb_total=%d tch_crc=%d (soft_only=%d)",
 		dsbTotal, dsbCRC, dnbTotal, tchCRC, tchSoftOnly)
@@ -249,11 +261,27 @@ func loadDMOReplayBursts(t *testing.T) (bursts []tetra.DMBurst, inRate, outRate 
 	if err != nil {
 		t.Fatal(err)
 	}
-	iq := make([]complex64, len(raw)/4)
-	for i := range iq {
-		re := int16(binary.LittleEndian.Uint16(raw[i*4:]))
-		im := int16(binary.LittleEndian.Uint16(raw[i*4+2:]))
-		iq[i] = complex(float32(re)/32768, float32(im)/32768)
+	// A wav/flac container (the Signal Lab "capture from tuner" output — the
+	// operator's 12 Sep DMO capture is a 144 kHz flac) is sniffed from its
+	// content and carries its own sample rate; a headerless file is cs16 at
+	// GT_TETRA_DMO_RATE, as before.
+	var iq []complex64
+	if _, isContainer := siglab.SniffContainer(raw); isContainer {
+		samples, rate, err := siglab.DecodeContainerFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		iq = samples
+		if rate > 0 && os.Getenv("GT_TETRA_DMO_RATE") == "" {
+			inRate = float64(rate)
+		}
+	} else {
+		iq = make([]complex64, len(raw)/4)
+		for i := range iq {
+			re := int16(binary.LittleEndian.Uint16(raw[i*4:]))
+			im := int16(binary.LittleEndian.Uint16(raw[i*4+2:]))
+			iq[i] = complex(float32(re)/32768, float32(im)/32768)
+		}
 	}
 	iqLen = len(iq)
 
@@ -323,8 +351,10 @@ func loadDMOReplayBursts(t *testing.T) (bursts []tetra.DMBurst, inRate, outRate 
 // capture (25 s of clear, colour-0 silent PTT) decodes SCH/S at ~90% yet TCH/S
 // sits near the chance floor at EVERY single colour — and a 64-colour sweep
 // shows several colours rising modestly above the floor at once (28/57/30),
-// which one radio scrambling with one label cannot produce. That signature
-// means the DM descramble model is missing a per-burst component. This scan
+// which one radio scrambling with one label cannot produce. RESOLVED (12 Sep):
+// the seed is the radio's 24-bit source address under a fixed prefix, outside
+// any 64-colour space — TestTETRADMOSeedScan solves it exactly; this scan is
+// kept as the legacy colour-space instrument. This scan
 // maps, for every DNB: which colours CRC-decode it, its slot-grid position,
 // and its frame number estimated from the CRC-valid DSBs' SYNC PDU FN — so the
 // burst→colour map reveals the rule (FN-dependent seed, cross-burst pairing,

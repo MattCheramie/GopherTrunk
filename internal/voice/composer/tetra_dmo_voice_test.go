@@ -98,7 +98,11 @@ func buildDMODNBBursts(t *testing.T, colour uint32, n int) ([]tetra.DMBurst, [][
 	all := tetra.ExtractDMBurstsSoft(dibits, dmoVIdealDiffs(dibits), 0)
 	var dnbs []tetra.DMBurst
 	for _, b := range all {
-		if b.Kind == tetra.DMBurstNormal {
+		// Keep only the bursts on the transmitter's slot grid (lead at slot
+		// offset 7+108): a scrambled payload can contain chance 11-dibit
+		// training-sequence matches (the correlator's ~18/s false-alarm class),
+		// which the live chain drops via DMSlotGrid and the noise test covers.
+		if b.Kind == tetra.DMBurstNormal && b.Lead%dmoVSlotDibits == 115 {
 			dnbs = append(dnbs, b)
 		}
 	}
@@ -108,29 +112,37 @@ func buildDMODNBBursts(t *testing.T, colour uint32, n int) ([]tetra.DMBurst, [][
 	return dnbs, want
 }
 
-// TestDMOVoiceDecoderRecoversColourAndEmits pins the voice chain's core logic: when the
-// grant carries no colour (hint 0), the decoder buffers DNBs, brute-force-recovers the
-// DM colour code, decodes the buffered DNBs retroactively (so no leading speech is
-// lost), and emits every call's two 137-bit speech frames to the recorder sink — the
-// same frames that were encoded. This is the composer half of the #1003 DMO voice path
-// (the receiver→extractor half is covered by the pipeline test); on-air A/B still gates
-// closing #1003.
-func TestDMOVoiceDecoderRecoversColourAndEmits(t *testing.T) {
-	const colour = 3
-	bursts, want := buildDMODNBBursts(t, colour, 28)
+// newTestDMODecoder builds a voice decoder with the production wiring minus the
+// receiver: an empty seed tracker, a slot grid, a fake raw-frame sink.
+func newTestDMODecoder(sink *fakeDMOSink, live func() (uint32, bool)) *dmoVoiceDecoder {
+	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
+	return &dmoVoiceDecoder{
+		c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink,
+		seeds: tetra.NewDMSeedTracker(), grid: tetra.NewDMSlotGrid(), liveColour: live,
+	}
+}
+
+// TestDMOVoiceDecoderRecoversSeedAndEmits pins the voice chain's core logic: when
+// the grant carries no seed, the decoder buffers DNBs, learns the scramble seed
+// from the first error-free burst (an exact GF(2) solve — no colour space, no
+// configuration), decodes the buffered DNBs retroactively (so no leading speech
+// is lost) and emits every burst's two 137-bit speech frames to the recorder —
+// the same frames that were encoded. The seed is a real on-air value from the
+// 12 Sep #1003 capture (0x012915c0), outside the 0..63 the old brute force
+// searched: this test fails against the old code, which never recovered it.
+func TestDMOVoiceDecoderRecoversSeedAndEmits(t *testing.T) {
+	const seed = 0x012915c0
+	bursts, want := buildDMODNBBursts(t, seed, 28)
 
 	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-	bt := c.newBoundaryTracker("s", 0, nil)
-	dec := &dmoVoiceDecoder{c: c, serial: "s", bt: bt, rs: sink, grid: tetra.NewDMSlotGrid()}
-
+	dec := newTestDMODecoder(sink, nil)
 	for _, b := range bursts {
 		dec.onBurst(b)
 	}
 	dec.flush()
 
-	if !dec.colourKnown || dec.colour != colour {
-		t.Fatalf("recovered colour=%d known=%v, want %d", dec.colour, dec.colourKnown, colour)
+	if got, known := dec.seeds.Seed(); !known || got != seed || !dec.seeds.Verified() {
+		t.Fatalf("recovered seed=%#x known=%v verified=%v, want %#x", got, known, dec.seeds.Verified(), seed)
 	}
 	if len(sink.frames) != 2*len(want) {
 		t.Fatalf("emitted %d speech frames, want %d", len(sink.frames), 2*len(want))
@@ -145,27 +157,58 @@ func TestDMOVoiceDecoderRecoversColourAndEmits(t *testing.T) {
 	}
 }
 
-// TestDMOVoiceDecoderUsesGrantColour checks the fast path: when the grant already
-// carries the recovered colour, the decoder uses it directly with no buffering — every
-// DNB decodes immediately.
-func TestDMOVoiceDecoderUsesGrantColour(t *testing.T) {
-	const colour = 3
-	bursts, want := buildDMODNBBursts(t, colour, 4)
+// TestDMOVoiceDecoderUsesGrantSeed checks the fast path: when the grant already
+// carries the pipeline's seed, the decoder uses it directly with no buffering —
+// every DNB decodes immediately.
+func TestDMOVoiceDecoderUsesGrantSeed(t *testing.T) {
+	const seed = 3
+	bursts, want := buildDMODNBBursts(t, seed, 4)
 	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-	dec := &dmoVoiceDecoder{
-		c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink,
-		grid:   tetra.NewDMSlotGrid(),
-		colour: colour, colourKnown: true, colourRecovered: true,
-	}
+	dec := newTestDMODecoder(sink, nil)
+	dec.seeds.Adopt(seed)
 	for _, b := range bursts {
 		dec.onBurst(b)
 	}
 	if len(dec.buffer) != 0 {
-		t.Errorf("decoder buffered %d bursts despite a known colour", len(dec.buffer))
+		t.Errorf("decoder buffered %d bursts despite a known seed", len(dec.buffer))
 	}
 	if len(sink.frames) != 2*len(want) {
 		t.Fatalf("emitted %d speech frames, want %d", len(sink.frames), 2*len(want))
+	}
+}
+
+// TestDMOVoiceDecoderFollowsSeedChangeMidStream is the on-air behaviour of the
+// 12 Sep capture: three back-to-back transmissions, each with its own seed, on
+// one chain (the grant re-arm did not separate them). Every burst must decode at
+// its own transmission's seed — the tracker switches on the first clean burst of
+// the next PTT — with no garbage from a stale seed.
+func TestDMOVoiceDecoderFollowsSeedChangeMidStream(t *testing.T) {
+	var bursts []tetra.DMBurst
+	var want [][2][]byte
+	for k, seed := range []uint32{0x012915c0, 0x015d9c07, 0x01671384} {
+		b, w := buildDMODNBBursts(t, seed, 10)
+		for i := range b {
+			b[i].Lead += k * 40 * dmoVSlotDibits // later transmissions sit later in the stream
+		}
+		bursts = append(bursts, b...)
+		want = append(want, w...)
+	}
+	sink := &fakeDMOSink{}
+	dec := newTestDMODecoder(sink, nil)
+	for _, b := range bursts {
+		dec.onBurst(b)
+	}
+	dec.flush()
+	if len(sink.frames) != 2*len(want) {
+		t.Fatalf("emitted %d speech frames, want %d", len(sink.frames), 2*len(want))
+	}
+	for i, w := range want {
+		if !reflect.DeepEqual(sink.frames[2*i], w[0]) || !reflect.DeepEqual(sink.frames[2*i+1], w[1]) {
+			t.Errorf("DNB %d: emitted speech frame mismatch", i)
+		}
+	}
+	if dec.seeds.ExactAdopts != 3 {
+		t.Errorf("exact seed adoptions = %d, want 3 (one per transmission)", dec.seeds.ExactAdopts)
 	}
 }
 
@@ -252,44 +295,33 @@ func buildDMOGoodWithNoise(t *testing.T, colour uint32, nGood int) ([]tetra.DMBu
 	return dnbs, want
 }
 
-// TestDMOVoiceDecoderAdoptsLiveColourHint pins the pipeline→voice-chain colour
-// hand-off: a DMO grant structurally fires before the control pipeline finishes
-// its own colour recovery, so the chain polls liveColour and must adopt a
-// verified answer with far fewer bursts than the local brute force needs. Only
-// 12 bursts are fed — below dmoVoiceColourBatch — so with no hint plumbing the
-// brute force could not have fired mid-stream at all; adoption must land with
-// zero local attempts and every burst's speech emitted. Fails against the old
-// code (no liveColour parameter existed).
-func TestDMOVoiceDecoderAdoptsLiveColourHint(t *testing.T) {
-	const colour = 44
-	bursts, want := buildDMODNBBursts(t, colour, 12)
+// TestDMOVoiceDecoderConfirmsLiveHint pins the pipeline→voice-chain hand-off: a
+// DMO grant structurally fires before the control pipeline has solved the seed, so
+// the chain polls liveColour. On bursts that carry bit errors (no exact solve) the
+// hint is what decodes them, once two of them CRC-confirm it; every burst's
+// speech is then emitted from the buffer.
+func TestDMOVoiceDecoderConfirmsLiveHint(t *testing.T) {
+	const seed = 0x015d9c07
+	bursts, want := buildDMODNBBurstsWithErrors(t, seed, 12, 3)
 
 	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
 	calls := 0
-	dec := &dmoVoiceDecoder{
-		c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink,
-		grid: tetra.NewDMSlotGrid(),
-		liveColour: func() (uint32, bool) {
-			// The pipeline's recovery lands a few bursts into the call.
-			calls++
-			if calls > 3 {
-				return colour, true
-			}
-			return 0, false
-		},
-	}
+	dec := newTestDMODecoder(sink, func() (uint32, bool) {
+		// The pipeline's answer lands a few bursts into the call.
+		calls++
+		if calls > 3 {
+			return seed, true
+		}
+		return 0, false
+	})
 	for _, b := range bursts {
 		dec.onBurst(b)
 	}
 	dec.flush()
 
-	if !dec.colourRecovered || dec.colour != colour {
-		t.Fatalf("adopted colour=%d recovered=%v, want %d via the live hint",
-			dec.colour, dec.colourRecovered, colour)
-	}
-	if dec.colourTries != 0 {
-		t.Errorf("ran %d local brute-force attempts despite a valid live hint, want 0", dec.colourTries)
+	if got, _ := dec.seeds.Seed(); got != seed || !dec.seeds.Verified() || dec.seeds.HintAdopts != 1 {
+		t.Fatalf("seed=%#x verified=%v hint_adopts=%d, want %#x via the confirmed hint",
+			got, dec.seeds.Verified(), dec.seeds.HintAdopts, seed)
 	}
 	if len(sink.frames) != 2*len(want) {
 		t.Fatalf("emitted %d speech frames, want %d (buffered speech lost?)",
@@ -298,64 +330,47 @@ func TestDMOVoiceDecoderAdoptsLiveColourHint(t *testing.T) {
 }
 
 // TestDMOVoiceDecoderRejectsBadLiveHint is the companion: a wrong/stale hint
-// (different DMO net, cleared-too-late atomic) must NOT blindly latch — it
-// fails CRC verification against the buffered bursts and local recovery still
-// lands the true colour.
+// (another radio's DSB, a cleared-too-late atomic) must NOT latch — it never CRC-
+// confirms against the buffered bursts, and the exact solve lands the true seed.
 func TestDMOVoiceDecoderRejectsBadLiveHint(t *testing.T) {
-	const colour = 3
-	bursts, want := buildDMODNBBursts(t, colour, 30)
+	const seed = 3
+	bursts, want := buildDMODNBBursts(t, seed, 30)
 
 	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-	dec := &dmoVoiceDecoder{
-		c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink,
-		grid:       tetra.NewDMSlotGrid(),
-		liveColour: func() (uint32, bool) { return 17, true }, // wrong colour
-	}
+	dec := newTestDMODecoder(sink, func() (uint32, bool) { return 17, true }) // wrong seed
 	for _, b := range bursts {
 		dec.onBurst(b)
 	}
 	dec.flush()
 
-	if dec.colour != colour || !dec.colourRecovered {
-		t.Fatalf("colour=%d recovered=%v, want %d recovered locally despite the bad hint",
-			dec.colour, dec.colourRecovered, colour)
-	}
-	if dec.colourTries == 0 {
-		t.Errorf("local recovery never ran — the bad hint was adopted?")
+	if got, _ := dec.seeds.Seed(); got != seed || !dec.seeds.Verified() || dec.seeds.HintAdopts != 0 {
+		t.Fatalf("seed=%#x verified=%v hint_adopts=%d, want %#x solved locally despite the bad hint",
+			got, dec.seeds.Verified(), dec.seeds.HintAdopts, seed)
 	}
 	if len(sink.frames) != 2*len(want) {
 		t.Fatalf("emitted %d speech frames, want %d", len(sink.frames), 2*len(want))
 	}
 }
 
-// TestDMOVoiceDecoderRecoversColourThroughNoise reproduces the on-air failure
-// that left every real DMO call at colour_attempts=6, colour_recovered=false,
-// all-BFI: on a live tap the DNB correlator's ~18/s false alarms outnumber real
-// traffic, and the old un-gated colour scoring windows were mostly noise, so
-// RecoverDMColourCode's dominance gate could never clear and the attempt budget
-// burned out before enough real bursts arrived. With slot-grid gating, only the
-// grid-qualified (real) bursts are scored, recovery lands, and every real
-// burst's speech is emitted. Fails against the old un-gated code.
-func TestDMOVoiceDecoderRecoversColourThroughNoise(t *testing.T) {
-	const colour = 3
-	bursts, want := buildDMOGoodWithNoise(t, colour, 30)
+// TestDMOVoiceDecoderRecoversSeedThroughNoise reproduces the live-tap condition:
+// the DNB correlator's ~18/s false alarms outnumber real traffic. Only slot-grid-
+// qualified bursts may teach the tracker, so the noise cannot steer it; the
+// first clean real burst solves the seed and every real burst's speech is
+// emitted in order, the noise bursts BFI.
+func TestDMOVoiceDecoderRecoversSeedThroughNoise(t *testing.T) {
+	const seed = 0x01671384
+	bursts, want := buildDMOGoodWithNoise(t, seed, 30)
 
 	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-	dec := &dmoVoiceDecoder{c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink, grid: tetra.NewDMSlotGrid()}
-
+	dec := newTestDMODecoder(sink, nil)
 	for _, b := range bursts {
 		dec.onBurst(b)
 	}
 	dec.flush()
 
-	if !dec.colourRecovered || dec.colour != colour {
-		t.Fatalf("colour=%d recovered=%v (attempts=%d), want %d recovered through the noise",
-			dec.colour, dec.colourRecovered, dec.colourTries, colour)
+	if got, _ := dec.seeds.Seed(); got != seed || !dec.seeds.Verified() {
+		t.Fatalf("seed=%#x verified=%v, want %#x recovered through the noise", got, dec.seeds.Verified(), seed)
 	}
-	// Every GOOD burst's two speech frames must be present, in order; the noise
-	// bursts BFI at the recovered colour and contribute nothing.
 	if len(sink.frames) != 2*len(want) {
 		t.Fatalf("emitted %d speech frames, want %d", len(sink.frames), 2*len(want))
 	}
@@ -366,158 +381,74 @@ func TestDMOVoiceDecoderRecoversColourThroughNoise(t *testing.T) {
 	}
 }
 
-// TestDMOVoiceDecoderBoundsColourRecovery pins the cost bound on the 64-colour brute
-// force. RecoverDMColourCode is a full soft-Viterbi TCH/S decode per colour per burst
-// (plus a hard decode on the failing fallback), and it used to be re-run on EVERY
-// arriving burst from buffer size 20 to 120 — 64·Σ(20..120) ≈ 450 000 decodes per
-// call, on exactly the calls that cannot be recovered anyway. That is what starved the
-// same-carrier IQ tap feeding this chain. It must now run at most
-// dmoVoiceColourMaxAttempts times, scoring a bounded window.
-func TestDMOVoiceDecoderBoundsColourRecovery(t *testing.T) {
+// TestDMOVoiceDecoderDoesNotClaimUnrecoveredSeed is the honesty regression for the
+// end-of-call log: undecodable bursts (an encrypted call) must never produce a
+// "verified" seed — the give-up fallback decodes at a guess, emits nothing, and
+// reports seed_verified=false so a fallback is not mistaken for a recovery.
+func TestDMOVoiceDecoderDoesNotClaimUnrecoveredSeed(t *testing.T) {
 	bursts := buildDMOUndecodableDNBs(t, 200)
 	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-	dec := &dmoVoiceDecoder{c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink, grid: tetra.NewDMSlotGrid()}
-
+	dec := newTestDMODecoder(sink, nil)
 	for _, b := range bursts {
 		dec.onBurst(b)
 	}
 	dec.flush()
 
-	if dec.colourTries > dmoVoiceColourMaxAttempts {
-		t.Errorf("ran %d colour-recovery passes, want at most %d",
-			dec.colourTries, dmoVoiceColourMaxAttempts)
+	if dec.seeds.Verified() {
+		s, _ := dec.seeds.Seed()
+		t.Errorf("reported seed %#x as verified on undecodable bursts", s)
 	}
-	if dec.colourTries == 0 {
-		t.Errorf("never attempted colour recovery — the test is not exercising the path")
+	if _, known := dec.seeds.Seed(); !known {
+		t.Errorf("no fallback seed after flush; the buffer would never be decoded")
+	}
+	if len(dec.buffer) != 0 {
+		t.Errorf("%d bursts still buffered past the cap", len(dec.buffer))
 	}
 	if len(sink.frames) != 0 {
 		t.Errorf("emitted %d speech frames from undecodable bursts, want 0", len(sink.frames))
 	}
 }
 
-// TestDMOVoiceDecoderDoesNotClaimUnrecoveredColour is the honesty regression for the
-// end-of-call log. flush() used to set colourKnown = true OUTSIDE the confidence-gate
-// branch, so a call where nothing was ever recovered reported `colour=0
-// colour_known=true` — which reads as "recovered colour 0" and sent the investigation
-// after the wrong thing. The fallback still has to pick a colour to decode at, so
-// colourKnown is separate from colourRecovered.
-func TestDMOVoiceDecoderDoesNotClaimUnrecoveredColour(t *testing.T) {
-	bursts := buildDMOUndecodableDNBs(t, 60)
-	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-	dec := &dmoVoiceDecoder{c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink, grid: tetra.NewDMSlotGrid()}
-
-	for _, b := range bursts {
-		dec.onBurst(b)
+// buildDMODNBBurstsWithErrors is buildDMODNBBursts with flips random coded bits
+// corrupted in every burst, so no burst solves exactly and only a hinted seed
+// (confirmed by the soft decode's CRC) can decode them.
+func buildDMODNBBurstsWithErrors(t *testing.T, seed uint32, n, flips int) ([]tetra.DMBurst, [][2][]byte) {
+	t.Helper()
+	b2d := tetra.TetraBitsToDibits
+	var dibits []uint8
+	var want [][2][]byte
+	dibits = append(dibits, dmoVFiller(0, dmoVSlotDibits)...)
+	for i := 0; i < n; i++ {
+		fa := dmoVSeq(7+i, 137)
+		fb := dmoVSeq(9+i, 137)
+		t4 := framing.UnpackBitsMSB(tetra.EncodeTCHS(fa, fb), 432)
+		onair := framing.ScrambleTetra(t4, seed)
+		for k := 0; k < flips; k++ {
+			// Coded region only (type-3 bits 102..431 through the 24x18 interleave).
+			t3 := 102 + (i*53+k*97)%330
+			onair[(t3%18)*24+t3/18] ^= 1
+		}
+		dibits = append(dibits, dmoVSlot(11+i,
+			b2d(onair[:216]),
+			tetra.NormalSyncDibits(),
+			b2d(onair[216:]),
+		)...)
+		want = append(want, [2][]byte{framing.PackBitsMSB(fa), framing.PackBitsMSB(fb)})
 	}
-	dec.flush()
-
-	if dec.colourRecovered {
-		t.Errorf("reported colour %d as recovered when the confidence gate never cleared",
-			dec.colour)
-	}
-	if !dec.colourKnown {
-		t.Errorf("colourKnown = false after flush; the buffer would never be decoded")
-	}
-}
-
-// TestDMOVoiceDecoderKeepsBufferedSpeechAcrossAttempts guards the interaction between
-// the new attempt cap and the retroactive decode: the control pipeline decimates its
-// candidate buffer between passes because it only wants the colour, but this chain
-// must still emit every buffered burst once the colour lands, or the start of the
-// transmission is missing from the recording. Recovery is deliberately delayed past
-// the first attempt here by prefixing undecodable bursts.
-func TestDMOVoiceDecoderKeepsBufferedSpeechAcrossAttempts(t *testing.T) {
-	const colour = 3
-	good, want := buildDMODNBBursts(t, colour, 24)
-	bad := buildDMOUndecodableDNBs(t, dmoVoiceColourBatch)
-
-	sink := &fakeDMOSink{}
-	c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-	dec := &dmoVoiceDecoder{c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink, grid: tetra.NewDMSlotGrid()}
-
-	for _, b := range append(append([]tetra.DMBurst{}, bad...), good...) {
-		dec.onBurst(b)
-	}
-	dec.flush()
-
-	if !dec.colourRecovered || dec.colour != colour {
-		t.Fatalf("recovered colour=%d recovered=%v, want %d", dec.colour, dec.colourRecovered, colour)
-	}
-	// Every good burst's two speech frames must still be emitted, in order, even
-	// though they were buffered across more than one recovery attempt.
-	if len(sink.frames) != 2*len(want) {
-		t.Fatalf("emitted %d speech frames, want %d (buffered speech was dropped)",
-			len(sink.frames), 2*len(want))
-	}
-	for i, w := range want {
-		if !reflect.DeepEqual(sink.frames[2*i], w[0]) || !reflect.DeepEqual(sink.frames[2*i+1], w[1]) {
-			t.Errorf("DNB %d: emitted speech frame mismatch", i)
+	dibits = append(dibits, dmoVFiller(99, dmoVSlotDibits)...)
+	all := tetra.ExtractDMBurstsSoft(dibits, dmoVIdealDiffs(dibits), 0)
+	var dnbs []tetra.DMBurst
+	for _, b := range all {
+		// Keep only the bursts on the transmitter's slot grid (lead at slot
+		// offset 7+108): a scrambled payload can contain chance 11-dibit
+		// training-sequence matches (the correlator's ~18/s false-alarm class),
+		// which the live chain drops via DMSlotGrid and the noise test covers.
+		if b.Kind == tetra.DMBurstNormal && b.Lead%dmoVSlotDibits == 115 {
+			dnbs = append(dnbs, b)
 		}
 	}
-}
-
-// TestDMOVoiceDecoderPrefersPipelineColourOverFallback reproduces the 20 Aug
-// #1003 on-air run. The grant fired with colour_hint=0; the chain buffered past
-// dmoVoiceColourMax without its own recovery landing and the give-up path fell
-// back to colour 0 BEFORE it ever adopted the pipeline's colour (39 on that
-// run). tryAdoptLiveColour then never cleared, because its local re-verification
-// kept failing on this chain's own bursts (a receiver configured differently
-// from the pipeline's) and a hint that failed once was never retried — so all
-// 242 DNBs decoded as BFI and the call died on hangtime. The pipeline's colour is
-// confidence-gated on the same carrier; the fallback is a guess, so the
-// pipeline's answer must win wherever the fallback would otherwise be used.
-//
-// Here the chain's bursts are undecodable at ANY colour while the hint is up
-// (local recovery and hint verification both fail, as on air) and a few
-// decodable colour-39 bursts arrive afterwards. Old code: colour 0, nothing
-// emitted. Fixed: colour 39 adopted at give-up (or the moment the hint lands
-// after give-up) and every good burst's speech emitted.
-func TestDMOVoiceDecoderPrefersPipelineColourOverFallback(t *testing.T) {
-	const colour = 39
-	for _, tc := range []struct {
-		name         string
-		hintAfterDNB int // hint becomes known once this many DNBs were seen
-	}{
-		{"hint known from the start", 0},
-		{"hint lands after the give-up cap", dmoVoiceColourMax + 5},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			noise := buildDMOUndecodableDNBs(t, dmoVoiceColourMax+10)
-			good, want := buildDMODNBBursts(t, colour, 6)
-
-			sink := &fakeDMOSink{}
-			c := &Composer{log: slog.New(slog.NewTextHandler(io.Discard, nil)), hangtime: time.Second}
-			seen := 0
-			dec := &dmoVoiceDecoder{
-				c: c, serial: "s", bt: c.newBoundaryTracker("s", 0, nil), rs: sink,
-				grid: tetra.NewDMSlotGrid(),
-				liveColour: func() (uint32, bool) {
-					if seen >= tc.hintAfterDNB {
-						return colour, true
-					}
-					return 0, false
-				},
-			}
-			for _, b := range noise {
-				seen++
-				dec.onBurst(b)
-			}
-			for _, b := range good {
-				seen++
-				dec.onBurst(b)
-			}
-			dec.flush()
-
-			if !dec.colourKnown || dec.colour != colour {
-				t.Fatalf("decoding at colour=%d known=%v, want the pipeline's %d over the colour-0 fallback",
-					dec.colour, dec.colourKnown, colour)
-			}
-			if len(sink.frames) != 2*len(want) {
-				t.Fatalf("emitted %d speech frames, want %d (good bursts decoded BFI at the fallback colour?)",
-					len(sink.frames), 2*len(want))
-			}
-		})
+	if len(dnbs) != n {
+		t.Fatalf("built %d DNB bursts, want %d", len(dnbs), n)
 	}
+	return dnbs, want
 }
