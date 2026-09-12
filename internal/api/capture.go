@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -224,11 +226,37 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		return write(chunk)
 	}
 
+	// Bracket the grab in debug.log so an operator can line a capture up with
+	// the daemon's decode log without guessing (13 Sep request: "capture
+	// started, freq= bandwidth= format … capture ended"). The start line
+	// carries everything the metadata sidecar will, plus the tuner's own
+	// centre/rate for a narrowband slice; the end line carries what was
+	// actually recorded.
+	started := time.Now()
+	s.log.Info("siglab: capture started",
+		"serial", req.Serial, "center_hz", outCenter, "sample_rate_hz", outRate,
+		"bandwidth_hz", req.BandwidthHz, "tuner_center_hz", centerHz, "tuner_rate_hz", rate,
+		"format", format.String(), "seconds", req.Seconds, "protocol", req.Protocol, "path", path)
 	// A capture runs for up to req.Seconds and Shutdown would wait it out, so
 	// a daemon stop cancels it the same way a client hangup does.
 	capCtx, capCancel := s.streamCtx(r.Context())
 	defer capCancel()
 	gotRate, gotCenter, capErr := s.capture.CaptureStream(capCtx, req.Serial, req.Seconds, sink)
+	logEnd := func(outcome string, err error) {
+		args := []any{
+			"serial", req.Serial, "center_hz", outCenter, "sample_rate_hz", outRate,
+			"format", format.String(), "samples", samples(), "elapsed", time.Since(started).Round(time.Millisecond),
+			"path", path,
+		}
+		if outRate > 0 {
+			args = append(args, "recorded_seconds", math.Round(float64(samples())/float64(outRate)*100)/100)
+		}
+		if err != nil {
+			s.log.Warn("siglab: capture "+outcome, append(args, "err", err)...)
+			return
+		}
+		s.log.Info("siglab: capture "+outcome, args...)
+	}
 	var flushErr error
 	if cont != nil {
 		flushErr = cont.Finalize()
@@ -239,20 +267,24 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		flushErr = cerr
 	}
 	if capErr != nil {
+		logEnd("aborted", capErr)
 		_ = os.Remove(path)
 		s.writeError(w, http.StatusBadGateway, "siglab: capture: "+capErr.Error())
 		return
 	}
 	if flushErr != nil {
+		logEnd("aborted", flushErr)
 		_ = os.Remove(path)
 		s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+flushErr.Error())
 		return
 	}
 	if samples() == 0 {
+		logEnd("aborted", errors.New("capture produced no samples"))
 		_ = os.Remove(path)
 		s.writeError(w, http.StatusBadGateway, "siglab: capture produced no samples")
 		return
 	}
+	logEnd("ended", nil)
 
 	// A full-band grab keeps the tuner's authoritative rate/centre from the
 	// stream; a narrowband slice keeps its decimated rate + requested centre.

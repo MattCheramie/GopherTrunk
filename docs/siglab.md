@@ -118,6 +118,13 @@ The running daemon mounts the same `/api/v1/siglab/*` routes, so if you already
 have a daemon up you can reach the console (and the live-capture surface) there
 instead of starting a separate server.
 
+A live capture from a tuner is bracketed in the daemon's log so it lines up with
+the decode log without guesswork: `siglab: capture started` (serial, centre and
+sample rate the file is recorded at, the tuner's own centre/rate for a narrowband
+slice, bandwidth, format, requested seconds, staged path) and `siglab: capture
+ended` (samples, `recorded_seconds`, elapsed) — or `siglab: capture aborted` with
+the error when the tuner stopped streaming or the request was cancelled.
+
 ## Demod benchmark: `gophertrunk siglab sweep`
 
 Synthesizes P25 Phase 1 at a ladder of injected SNRs on both demod paths,

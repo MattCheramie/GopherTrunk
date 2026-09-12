@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // TestVoiceFanoutDeliversCopies verifies subscribers get their own copy of each
@@ -15,7 +17,7 @@ func TestVoiceFanoutDeliversCopies(t *testing.T) {
 	f := newVoiceFanout(nil, 0, nil)
 	f.broadcast([]complex64{1, 2, 3}) // no subscribers: must not panic/block
 
-	ch, unsub := f.subscribe()
+	ch, unsub := f.subscribe(false)
 	buf := []complex64{complex(1, 0), complex(2, 0)}
 	f.broadcast(buf)
 	buf[0] = complex(9, 0) // mutate the reused buffer after broadcast
@@ -43,7 +45,7 @@ func TestVoiceFanoutDeliversCopies(t *testing.T) {
 func TestVoiceFanoutDropsWhenFull(t *testing.T) {
 	var logs bytes.Buffer
 	f := newVoiceFanout(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})), 0, nil)
-	_, unsub := f.subscribe()
+	_, unsub := f.subscribe(false)
 	for i := 0; i < 1000; i++ {
 		f.broadcast([]complex64{complex(float32(i), 0)}) // never blocks despite full buffer
 	}
@@ -64,7 +66,7 @@ func TestVoiceFanoutDropsWhenFull(t *testing.T) {
 func TestVoiceFanoutNoDropWarningWhenDrained(t *testing.T) {
 	var logs bytes.Buffer
 	f := newVoiceFanout(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})), 0, nil)
-	ch, unsub := f.subscribe()
+	ch, unsub := f.subscribe(false)
 	done := make(chan struct{})
 	go func() {
 		for range ch { // drain promptly so nothing drops
@@ -90,7 +92,7 @@ func TestVoiceFanoutNoDropWarningWhenDrained(t *testing.T) {
 func TestVoiceFanoutHonoursConfiguredDepth(t *testing.T) {
 	const depth = 4
 	f := newVoiceFanout(nil, depth, nil)
-	_, unsub := f.subscribe() // never drained
+	_, unsub := f.subscribe(false) // never drained
 
 	// The first `depth` chunks fit; each subsequent one drops.
 	for i := 0; i < depth; i++ {
@@ -116,7 +118,7 @@ func TestVoiceTapAutoDepthCoversOneSecond(t *testing.T) {
 	const rateHz = 144_000.0
 	const observedChunkSamples = 53
 	f := newVoiceFanout(nil, 0, func() float64 { return rateHz })
-	ch, unsub := f.subscribe()
+	ch, unsub := f.subscribe(false)
 	defer unsub()
 	if got := float64(cap(ch) * observedChunkSamples); got < rateHz {
 		t.Fatalf("auto depth %d chunks ≈ %.0f samples at %d samples/chunk, want ≥ %.0f (1 s at %.0f Hz)",
@@ -126,13 +128,13 @@ func TestVoiceTapAutoDepthCoversOneSecond(t *testing.T) {
 	// An unknown rate (pre-acquisition) falls back to the floor, and an
 	// explicit configured depth still wins over auto-sizing.
 	fUnknown := newVoiceFanout(nil, 0, func() float64 { return 0 })
-	chU, unsubU := fUnknown.subscribe()
+	chU, unsubU := fUnknown.subscribe(false)
 	defer unsubU()
 	if cap(chU) != defaultVoiceTapBufferChunks {
 		t.Errorf("unknown-rate depth = %d, want floor %d", cap(chU), defaultVoiceTapBufferChunks)
 	}
 	fExplicit := newVoiceFanout(nil, 7, func() float64 { return rateHz })
-	chE, unsubE := fExplicit.subscribe()
+	chE, unsubE := fExplicit.subscribe(false)
 	defer unsubE()
 	if cap(chE) != 7 {
 		t.Errorf("explicit depth = %d, want 7 (config override beats auto)", cap(chE))
@@ -207,5 +209,82 @@ func TestCCVoiceSourceSameCarrierGate(t *testing.T) {
 		case <-deadline:
 			t.Fatal("channel not closed after ctx cancel")
 		}
+	}
+}
+
+// TestVoiceFanoutPrerollReplaysRecentIQ pins the DMO pre-roll: with a ring
+// enabled, a pre-roll subscriber's FIRST chunk is the most recent ring's worth
+// of broadcast samples in time order (recorded while nobody was subscribed —
+// the DMO grant arrives after the samples it needs), followed seamlessly by the
+// live broadcasts; a plain subscriber (the triggered DDC capture) gets no
+// history; and disabling the ring drops it.
+func TestVoiceFanoutPrerollReplaysRecentIQ(t *testing.T) {
+	f := newVoiceFanout(nil, 0, nil)
+	f.setPreroll(8)
+	f.broadcast([]complex64{1, 2, 3})
+	f.broadcast([]complex64{4, 5, 6})
+	f.broadcast([]complex64{7, 8, 9, 10}) // wraps the ring: 3..10 survive
+
+	recv := func(t *testing.T, ch <-chan []complex64) []complex64 {
+		t.Helper()
+		select {
+		case got := <-ch:
+			return got
+		case <-time.After(time.Second):
+			t.Fatal("no chunk delivered")
+		}
+		return nil
+	}
+	ch, unsub := f.subscribe(true)
+	defer unsub()
+	if got := recv(t, ch); len(got) != 8 || got[0] != 3 || got[7] != 10 {
+		t.Fatalf("pre-roll chunk = %v, want [3 4 5 6 7 8 9 10]", got)
+	}
+	f.broadcast([]complex64{11})
+	if got := recv(t, ch); len(got) != 1 || got[0] != 11 {
+		t.Fatalf("live chunk after the pre-roll = %v, want [11]", got)
+	}
+
+	// A plain subscriber sees only what is broadcast after it subscribes.
+	plain, unsubPlain := f.subscribe(false)
+	defer unsubPlain()
+	f.broadcast([]complex64{12})
+	if got := recv(t, plain); len(got) != 1 || got[0] != 12 {
+		t.Fatalf("plain subscriber's first chunk = %v, want [12] (no pre-roll)", got)
+	}
+
+	// A chunk larger than the ring keeps its tail.
+	f.broadcast([]complex64{20, 21, 22, 23, 24, 25, 26, 27, 28, 29})
+	big, unsubBig := f.subscribe(true)
+	defer unsubBig()
+	if got := recv(t, big); len(got) != 8 || got[0] != 22 || got[7] != 29 {
+		t.Fatalf("pre-roll after an oversized chunk = %v, want [22..29]", got)
+	}
+
+	// Disabled: no history at all, and the live stream still flows.
+	f.setPreroll(0)
+	f.broadcast([]complex64{30})
+	none, unsubNone := f.subscribe(true)
+	defer unsubNone()
+	f.broadcast([]complex64{31})
+	if got := recv(t, none); len(got) != 1 || got[0] != 31 {
+		t.Fatalf("subscriber with the ring disabled got %v, want the live [31] only", got)
+	}
+}
+
+// TestVoicePrerollSamplesIsDMOOnly pins which pipelines keep a pre-roll: TETRA
+// DMO (grant trails traffic) at dmoVoicePrerollSeconds of the channelised
+// rate; every other protocol (grant precedes traffic) none.
+func TestVoicePrerollSamplesIsDMOOnly(t *testing.T) {
+	if got, want := voicePrerollSamples(trunking.ProtocolTETRADMO, 144_000), 144_000; got != want {
+		t.Errorf("DMO pre-roll = %d samples at 144 kHz, want %d (%.1f s)", got, want, dmoVoicePrerollSeconds)
+	}
+	for _, p := range []trunking.Protocol{trunking.ProtocolTETRA, trunking.ProtocolP25, trunking.ProtocolDMR} {
+		if got := voicePrerollSamples(p, 144_000); got != 0 {
+			t.Errorf("%v keeps a %d-sample pre-roll, want none", p, got)
+		}
+	}
+	if got := voicePrerollSamples(trunking.ProtocolTETRADMO, 0); got != 0 {
+		t.Errorf("unknown rate keeps a %d-sample pre-roll, want none", got)
 	}
 }

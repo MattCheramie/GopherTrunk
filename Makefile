@@ -121,14 +121,21 @@ test-hackrf-real-diag:
 # the engine + recorder + call log + metrics + API agree on a synthetic
 # call. Build-tagged so default `make test` stays a fast unit run.
 integration:
-	$(GO) test -tags "integration $(TAGS)" -race -count=1 ./cmd/gophertrunk/...
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -timeout 25m ./cmd/gophertrunk/...
 
 # test-integration is the full-tree variant — runs every
 # integration-tagged test across the codebase, not just the ones in
 # cmd/gophertrunk/. Future-proofs against integration-tagged tests
 # landing in other packages without an explicit CI / Makefile change.
+#
+# -timeout 25m mirrors the `test` target and ci.yml's build-test job: go
+# test's 10m default is a per-PACKAGE alarm, and under -race on a loaded
+# hosted runner the P25 Phase 1 receiver package alone crossed it (PR #1175's
+# integration job: `panic: test timed out after 10m0s` inside
+# TestSweepImplementationLossBudget, 21 s into a test that passes in seconds
+# on main) — a slow runner, not a hung test, so it must not fail the run.
 test-integration:
-	$(GO) test -tags "integration $(TAGS)" -race -count=1 $(PKGS)
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -timeout 25m $(PKGS)
 
 # integration-cc is the focused "lights up live trunked reception" check:
 # boots the daemon with a mock SDR + a stubbed P25 Phase 1 pipeline factory

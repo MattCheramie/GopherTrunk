@@ -85,7 +85,7 @@ func (c *Composer) runTETRADMOVoiceChain(ctx context.Context, serial string, iqC
 			"seed", fmt.Sprintf("%#010x", seed), "seed_known", known,
 			"seed_verified", dec.seeds.Verified(),
 			"seed_from_pipeline", dec.colourFromPipeline,
-			"bursts_solved", dec.seeds.Solved,
+			"bursts_solved", dec.seeds.Solved, "solve_rejects", dec.seeds.SolveRejects,
 			"exact_adopts", dec.seeds.ExactAdopts, "hint_adopts", dec.seeds.HintAdopts)
 	}()
 

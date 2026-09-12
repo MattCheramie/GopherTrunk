@@ -1,8 +1,12 @@
 package tetra
 
 import (
+	"encoding/binary"
 	"encoding/hex"
+	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
@@ -147,5 +151,90 @@ func TestDMSeedTrackerPinnedSeed(t *testing.T) {
 	tr.Reset()
 	if s, known := tr.Seed(); !known || s != 0x2c {
 		t.Fatalf("pinned seed lost on Reset: %#x known=%v", s, known)
+	}
+}
+
+// loadDMOFixtureDNB reads a literal on-air DNB from testdata: rotation (u8),
+// BKN1 (108 dibits), BKN2 (108 dibits), then the 216 receiver differentials as
+// little-endian float32 (re, im) pairs — exactly the DMBurst the production
+// stream extractor emitted for that burst.
+func loadDMOFixtureDNB(t *testing.T, name string) DMBurst {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 2 * dmBlockDibits
+	if len(raw) != 1+n+n*8 {
+		t.Fatalf("%s: %d bytes, want %d", name, len(raw), 1+n+n*8)
+	}
+	b := DMBurst{Kind: DMBurstNormal, Rotation: raw[0]}
+	b.BKN1 = append([]uint8(nil), raw[1:1+dmBlockDibits]...)
+	b.BKN2 = append([]uint8(nil), raw[1+dmBlockDibits:1+n]...)
+	soft := make([]complex64, n)
+	for i := range soft {
+		off := 1 + n + i*8
+		re := math.Float32frombits(binary.LittleEndian.Uint32(raw[off:]))
+		im := math.Float32frombits(binary.LittleEndian.Uint32(raw[off+4:]))
+		soft[i] = complex(re, im)
+	}
+	b.SoftBKN1, b.SoftBKN2 = soft[:dmBlockDibits], soft[dmBlockDibits:]
+	return b
+}
+
+// Two DNBs from the operator's 13 Sep #1003 capture (438.9 MHz DMO, five
+// PTTs) that the soft-assisted reliable-check solver "solves" to a seed at
+// which they decode NOTHING: a slot-grid-qualified burst of the third
+// transmission (seed 0x0001733855) returning 0x00028b4304 — which the live
+// pipeline and voice chain both adopted and flipped back from a burst later
+// ("composer: tetra DMO scramble seed changed" twice within 56 ms) — and a
+// correlator false alarm off the idle channel returning 0x0003d69966. A solve
+// that cannot decode its own burst is no proof of anything: it must neither
+// displace a verified seed nor seed a fresh tracker.
+func TestDMSeedTrackerRejectsSolveThatDoesNotDecode(t *testing.T) {
+	for _, tc := range []struct {
+		fixture string
+		bogus   uint32
+		// wantFrames at the verified seed: the qualified burst is a real,
+		// mildly errored burst of the transmission and decodes at its true
+		// seed once the bogus solve stops displacing it (the gate does not
+		// just avoid a flip, it rescues the burst's speech); the noise burst
+		// decodes at nothing.
+		wantFrames int
+	}{
+		{"dmo_13sep_false_solve_0x00028b43.dnb", 0x00028b4304, 2},
+		{"dmo_13sep_false_solve_0x0003d699.dnb", 0x0003d69966, 0},
+	} {
+		b := loadDMOFixtureDNB(t, tc.fixture)
+		// The solver itself still returns the bogus seed (the fixture pins
+		// that the path exists); the tracker is what must not trust it.
+		if s, ok := DMBurstScrambleSeed(b); !ok || s != tc.bogus {
+			t.Fatalf("%s: solver returned %#010x ok=%v, fixture expects %#010x", tc.fixture, s, ok, tc.bogus)
+		}
+		if frames := dmDecodeDNB(b, tc.bogus); frames != nil {
+			t.Fatalf("%s: decodes at the bogus seed — fixture no longer exercises the gate", tc.fixture)
+		}
+
+		const verified = 0x0001733855
+		tr := NewDMSeedTracker()
+		tr.Adopt(verified)
+		frames, seed, adopted := tr.ObserveDNB(b, true)
+		if adopted || seed != verified {
+			t.Errorf("%s: displaced a verified seed: adopted=%v seed=%#010x", tc.fixture, adopted, seed)
+		}
+		if len(frames) != tc.wantFrames {
+			t.Errorf("%s: decoded %d frames at the verified seed, want %d", tc.fixture, len(frames), tc.wantFrames)
+		}
+		if tr.SolveRejects != 1 {
+			t.Errorf("%s: solve_rejects=%d, want 1", tc.fixture, tr.SolveRejects)
+		}
+
+		fresh := NewDMSeedTracker()
+		if _, seed, adopted := fresh.ObserveDNB(b, false); adopted {
+			t.Errorf("%s: a fresh tracker adopted %#010x from a burst that does not decode at it", tc.fixture, seed)
+		}
+		if _, known := fresh.Seed(); known {
+			t.Errorf("%s: fresh tracker claims a seed", tc.fixture)
+		}
 	}
 }

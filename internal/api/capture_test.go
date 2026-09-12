@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -528,5 +531,73 @@ func TestCaptureNameKeepsQuarterKilohertz(t *testing.T) {
 	}
 	if got := captureName("x", 0); got != "capture-x" {
 		t.Errorf("captureName(0) = %q", got)
+	}
+}
+
+// TestSiglabCaptureLogsStartAndEnd pins the debug.log bracket around a live
+// capture (13 Sep operator request: "add some entry into debug.log, like
+// 'capture started, freq= bandwidth= format' and 'capture ended'" so a capture
+// can be lined up with the decode log). The start line carries the tuning the
+// file was recorded at, the end line what was actually recorded, and an
+// aborted capture says so with the error.
+func TestSiglabCaptureLogsStartAndEnd(t *testing.T) {
+	iq := make([]complex64, 4800)
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      iq,
+		rate:    2_400_000,
+		center:  460_000_000,
+	}
+	var logs bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	bus := events.NewBus(8)
+	t.Cleanup(bus.Close)
+	srv, err := NewServer(ServerOptions{
+		Addr:           "127.0.0.1:0",
+		Bus:            bus,
+		Log:            log,
+		AllowMutations: true,
+		Siglab:         SiglabOptions{Enabled: true, TempDir: t.TempDir()},
+		Capture:        prov,
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	ts := httptest.NewServer(srv.routes())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json",
+		bytes.NewBufferString(`{"serial":"SDR1","seconds":2,"format":"flac","center_hz":460400000,"bandwidth_hz":25000}`))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	out := logs.String()
+	for _, want := range []string{
+		`msg="siglab: capture started"`, "serial=SDR1", "center_hz=460400000", "bandwidth_hz=25000",
+		"tuner_center_hz=460000000", "tuner_rate_hz=2400000", "format=flac", "seconds=2", "path=",
+		`msg="siglab: capture ended"`, "samples=", "recorded_seconds=", "elapsed=",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("capture log lacks %q; log was:\n%s", want, out)
+		}
+	}
+
+	// An aborted capture is logged as such, with the error.
+	logs.Reset()
+	prov.err = errors.New("tuner went away")
+	resp, err = http.Post(ts.URL+"/api/v1/siglab/capture", "application/json",
+		bytes.NewBufferString(`{"serial":"SDR1","seconds":1,"format":"cs16"}`))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	resp.Body.Close()
+	out = logs.String()
+	if !strings.Contains(out, `msg="siglab: capture aborted"`) || !strings.Contains(out, "tuner went away") {
+		t.Errorf("aborted capture not logged with its error; log was:\n%s", out)
 	}
 }

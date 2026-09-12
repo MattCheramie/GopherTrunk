@@ -8,6 +8,8 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // Same-carrier voice tap. A TETRA Single Carrier Base Station keeps voice calls
@@ -27,6 +29,16 @@ type voiceFanout struct {
 	subs map[int]*voiceSub
 	next int
 	log  *slog.Logger
+	// preroll is a ring of the most recent post-DDC samples, kept only while
+	// the active pipeline asks for one (setPreroll; today DMO only). A voice
+	// subscriber that asks for it (subscribe(true) — the same-carrier voice
+	// chain) receives the ring's contents, oldest first, as its first chunk,
+	// so a chain whose grant structurally trails the start of traffic still
+	// decodes the transmission's head. nil when disabled. prerollW is the next
+	// write index and prerollN the number of valid samples (≤ len(preroll)).
+	preroll  []complex64
+	prerollW int
+	prerollN int
 	// bufDepth is the explicit per-subscriber channel capacity override
 	// (recordings.voice_tap_buffer_chunks); 0 auto-sizes each subscription
 	// from the pipeline rate at subscribe time (voiceTapBudget).
@@ -78,6 +90,36 @@ func voiceTapBudget(rateHz float64) int {
 	return depth
 }
 
+// dmoVoicePrerollSeconds is the pre-roll the DMO pipeline keeps for its
+// same-carrier voice chain. DMO grants AFTER traffic has started (the burst
+// train is the only evidence there is), and the composer's chain opens a COLD
+// receiver on IQ that begins at the grant — so without history it can never
+// decode the bursts that preceded the grant, and it loses more while its
+// timing / AFC / equalizer loops acquire. Measured on the operator's 13 Sep
+// #1003 capture (five PTTs, TestTETRADMOPipelineCaptureReplay phase 2: a cold
+// receiver + extractor started at grant − pre-roll, CRC-valid TCH/S bursts
+// summed over the five transmissions): 0 s → 320, 0.5 s → 359, 1.0 s → 361,
+// 2.0 s → 346, 3.0 s → 318. The head of every transmission (3–8 decodable
+// bursts before the slot grid latches) is recovered by ~1 s; longer pre-rolls
+// LOSE bursts because the receiver then starts on inter-transmission noise and
+// its blind equalizer / normaliser condition on that rather than on the
+// signal (one weak transmission went 60 → 20 bursts from 0 s to 3 s). So 1 s:
+// the measured optimum, and short enough that the previous transmission
+// (≥ dmoGrantRearm = 3 s of silence ago) can never be inside it.
+const dmoVoicePrerollSeconds = 1.0
+
+// voicePrerollSamples is the pre-roll ring length the fanout keeps for a
+// pipeline of the given protocol at the channelised rate: dmoVoicePrerollSeconds
+// of IQ for TETRA DMO, none for anything else (TMO and the trunked protocols
+// grant BEFORE their traffic starts, so a chain started at the grant misses
+// nothing).
+func voicePrerollSamples(protocol trunking.Protocol, rateHz float64) int {
+	if protocol != trunking.ProtocolTETRADMO || rateHz <= 0 {
+		return 0
+	}
+	return int(math.Ceil(dmoVoicePrerollSeconds * rateHz))
+}
+
 // voiceSub is one subscriber's channel plus its dropped-chunk counter. A drop
 // is a gap of missing IQ delivered to the followed call's voice chain, which
 // breaks the receiver's symbol timing / lock — the mechanism behind starved,
@@ -98,12 +140,70 @@ func newVoiceFanout(log *slog.Logger, bufDepth int, rateHz func() float64) *voic
 	return &voiceFanout{subs: map[int]*voiceSub{}, log: log, bufDepth: bufDepth, rateHz: rateHz}
 }
 
+// setPreroll sizes (or, with samples ≤ 0, disables) the pre-roll ring. Called
+// by the decoder when it activates a pipeline (voicePrerollSamples) and when it
+// tears one down, so a retune never replays the previous carrier's IQ into a
+// chain on the new one. Sizing to the current length just clears it.
+func (f *voiceFanout) setPreroll(samples int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if samples <= 0 {
+		f.preroll = nil
+	} else if len(f.preroll) != samples {
+		f.preroll = make([]complex64, samples)
+	}
+	f.prerollW, f.prerollN = 0, 0
+}
+
+// prerollWrite appends chunk to the ring. Caller holds f.mu.
+func (f *voiceFanout) prerollWrite(chunk []complex64) {
+	n := len(f.preroll)
+	if n == 0 {
+		return
+	}
+	if len(chunk) >= n {
+		// The chunk alone fills the ring: keep its tail.
+		copy(f.preroll, chunk[len(chunk)-n:])
+		f.prerollW, f.prerollN = 0, n
+		return
+	}
+	k := copy(f.preroll[f.prerollW:], chunk)
+	if k < len(chunk) {
+		copy(f.preroll, chunk[k:])
+	}
+	f.prerollW = (f.prerollW + len(chunk)) % n
+	if f.prerollN += len(chunk); f.prerollN > n {
+		f.prerollN = n
+	}
+}
+
+// prerollSnapshot returns the ring's valid samples in time order as a fresh
+// slice, or nil when empty. Caller holds f.mu.
+func (f *voiceFanout) prerollSnapshot() []complex64 {
+	if f.prerollN == 0 {
+		return nil
+	}
+	out := make([]complex64, f.prerollN)
+	n := len(f.preroll)
+	if f.prerollN < n {
+		copy(out, f.preroll[:f.prerollN])
+		return out
+	}
+	k := copy(out, f.preroll[f.prerollW:])
+	copy(out[k:], f.preroll[:f.prerollW])
+	return out
+}
+
 // subscribe registers a voice subscriber and returns its IQ channel plus an
 // unsubscribe func. The unsubscribe func returns the number of chunks that were
 // dropped to this subscriber over its lifetime (0 when it kept up), so a consumer
 // that wants the count — e.g. a triggered DDC capture reporting whether the grab
-// has gaps — can read it; callers that don't care simply ignore the return.
-func (f *voiceFanout) subscribe() (<-chan []complex64, func() uint64) {
+// has gaps — can read it; callers that don't care simply ignore the return. With
+// withPreroll the subscriber's first chunk is the pre-roll ring's contents (when
+// the active pipeline keeps one), delivered atomically with the registration so
+// no sample is both in the pre-roll and in a later broadcast, and none is lost
+// between them.
+func (f *voiceFanout) subscribe(withPreroll bool) (<-chan []complex64, func() uint64) {
 	depth := f.bufDepth
 	if depth <= 0 {
 		// Auto-size from the pipeline rate, resolved OUTSIDE f.mu (the getter
@@ -117,6 +217,11 @@ func (f *voiceFanout) subscribe() (<-chan []complex64, func() uint64) {
 	}
 	sub := &voiceSub{ch: make(chan []complex64, depth)}
 	f.mu.Lock()
+	if withPreroll {
+		if pre := f.prerollSnapshot(); pre != nil {
+			sub.ch <- pre // fresh channel, depth ≥ 1: cannot block
+		}
+	}
 	id := f.next
 	f.next++
 	f.subs[id] = sub
@@ -153,6 +258,9 @@ func (f *voiceFanout) subscribe() (<-chan []complex64, func() uint64) {
 func (f *voiceFanout) broadcast(chunk []complex64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// The pre-roll ring records whether or not anyone is subscribed — that is
+	// its whole point (the subscriber arrives after the samples it needs).
+	f.prerollWrite(chunk)
 	if len(f.subs) == 0 {
 		return
 	}
@@ -173,7 +281,17 @@ func (f *voiceFanout) broadcast(chunk []complex64) {
 // IQ chunks dropped to this subscriber (0 when it kept up); callers that don't
 // need the count ignore it.
 func (d *Decoder) SubscribeVoiceIQ() (<-chan []complex64, func() uint64) {
-	return d.voiceFan.subscribe()
+	return d.voiceFan.subscribe(false)
+}
+
+// SubscribeVoiceIQWithPreroll is SubscribeVoiceIQ for a voice chain that must
+// decode a transmission already in progress: when the active pipeline keeps a
+// pre-roll (TETRA DMO, whose grant structurally trails the start of traffic —
+// see dmoVoicePrerollSeconds), the subscriber's first chunk is the most recent
+// pre-roll of channelised IQ, followed seamlessly by the live stream. With no
+// pre-roll kept it behaves exactly like SubscribeVoiceIQ.
+func (d *Decoder) SubscribeVoiceIQWithPreroll() (<-chan []complex64, func() uint64) {
+	return d.voiceFan.subscribe(true)
 }
 
 // CenterFreqHz reports the frequency the active control pipeline is tuned to,
@@ -284,13 +402,15 @@ func (s *CCVoiceSource) SampleRateExactHz() float64 {
 	return 0
 }
 
-// StreamIQ subscribes to the control carrier's channelised IQ until ctx ends.
+// StreamIQ subscribes to the control carrier's channelised IQ until ctx ends,
+// pre-roll first when the active pipeline keeps one (a DMO grant fires after
+// the transmission has started; the chain gets its head back this way).
 func (s *CCVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	dec := s.get()
 	if dec == nil {
 		return nil, errNoControlDecoder
 	}
-	ch, unsub := dec.SubscribeVoiceIQ()
+	ch, unsub := dec.SubscribeVoiceIQWithPreroll()
 	go func() {
 		<-ctx.Done()
 		unsub() // closes ch, ending the composer's read loop

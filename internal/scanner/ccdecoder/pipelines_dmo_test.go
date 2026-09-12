@@ -623,3 +623,51 @@ func TestTETRADMOPipelineRearmsBetweenTransmissions(t *testing.T) {
 		t.Errorf("published %d grants across two transmissions, want 2", len(w.grants))
 	}
 }
+
+// TestTETRADMOPipelineGrantsOnSeedAdoption pins that a seed adoption grants at
+// once. Before this the grant waited for dmoGrantMinDNB qualified bursts even
+// though the seed — an exact, CRC-decoded solve on a grid-qualified burst — had
+// already proved traffic on the first of them, and the voice chain sees no IQ
+// before the grant: on the 13 Sep #1003 capture every transmission lost its
+// first three decodable bursts that way, and two weak live transmissions lost
+// 1.0 and 1.8 s (the operator's "we are eating the first seconds"). Fails on the
+// old code (grant at the 4th qualified burst); passes when the grant lands on the
+// burst that adopted the seed.
+func TestTETRADMOPipelineGrantsOnSeedAdoption(t *testing.T) {
+	bus := events.NewBus(256)
+	defer bus.Close()
+	w := dmoWatch(bus)
+	clock := time.Unix(1_760_000_000, 0)
+	p := dmoTestPipeline(t, bus, &clock)
+
+	grantAtQualified, seedAtQualified := -1, -1
+	p.ext = tetra.NewDMStreamExtractor(func(b tetra.DMBurst) {
+		g0, s0 := p.grantActive, p.colourKnown
+		p.onBurst(b)
+		if !s0 && p.colourKnown {
+			seedAtQualified = int(p.dnbQualified)
+		}
+		if !g0 && p.grantActive {
+			grantAtQualified = int(p.dnbQualified)
+		}
+	})
+
+	dmoFeed(p, dmoModulate(buildDMODibitStream(dmoTestSeed, 40), 7))
+	bus.Close()
+	<-w.drainEnd
+
+	if seedAtQualified < 0 || grantAtQualified < 0 {
+		t.Fatalf("seed adopted at qualified DNB %d, grant at %d — both must happen", seedAtQualified, grantAtQualified)
+	}
+	if p.colour != dmoTestSeed {
+		t.Fatalf("recovered seed %#x, want %#x", p.colour, dmoTestSeed)
+	}
+	if grantAtQualified != seedAtQualified {
+		t.Errorf("grant fired at qualified DNB #%d but the seed was adopted at #%d — the grant must not wait for dmoGrantMinDNB once the seed is known", grantAtQualified, seedAtQualified)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.grants) != 1 || w.grants[0].TETRAColourExt != dmoTestSeed {
+		t.Errorf("grants = %+v, want exactly one carrying seed %#x", w.grants, dmoTestSeed)
+	}
+}

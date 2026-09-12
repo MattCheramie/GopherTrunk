@@ -486,8 +486,14 @@ func SolveTCHScrambleSeedSoft(type5 []byte, llr []float32) (seed uint32, ok bool
 
 // tchSparseMinChecks is how many of the most reliable sparse checks must agree
 // on a seed for the reliable-check solve to accept it: 30 to determine the seed
-// plus 24 redundant ones, so a burst that is not a TCH/S codeword (noise, a
-// signalling DNB) passes by chance ~2^-24 per attempt.
+// plus 24 nominally redundant ones. The redundancy is NOMINAL: the sparse
+// checks overlap heavily (neighbouring ~48-bit windows) and are far from
+// independent, so a burst that is not a TCH/S codeword passes far more often
+// than 2^-24 — on the 13 Sep #1003 capture the reliable-check path "solved"
+// 7 of 1411 DNBs (noise and errored real bursts) to seeds that decode nothing
+// (testdata/dmo_13sep_false_solve_*.dnb). Consumers must therefore verify a
+// solved seed against the burst's own CRC before acting on it; DMSeedTracker
+// does, and RecoverDMScrambleSeed votes across bursts and CRC-checks the winner.
 const tchSparseMinChecks = tchSeedBits + 24
 
 // solveTCHSeedReliableChecks solves the seed from the burst's most reliable

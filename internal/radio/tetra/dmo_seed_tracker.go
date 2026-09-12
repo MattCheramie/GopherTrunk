@@ -66,9 +66,13 @@ const (
 // both see the same rule. Not safe for concurrent use.
 //
 // Precedence: an exact solve (SolveTCHScrambleSeed) adopts immediately — a
-// solution is a 128-check-redundant proof that the burst is a TCH/S codeword
-// under that seed, so it cannot be a chance hit — and it also preempts a
-// previously adopted seed, which is how a new PTT with a new seed takes over.
+// dense solution is a 128-check-redundant proof that the burst is a TCH/S
+// codeword under that seed, so it cannot be a chance hit — and it also
+// preempts a previously adopted seed, which is how a new PTT with a new seed
+// takes over. A solve only counts once the burst CRC-decodes at the solved
+// seed (see ObserveDNB): the soft-assisted reliable-check solve can and does
+// return a wrong seed on noise, and that is the one place a "solution" could
+// otherwise displace a good seed.
 // The SCH/H hint (or an external hint, e.g. the pipeline's answer polled by the
 // voice chain) is adopted only after dmSeedHintMinCRC CRC-valid decodes, and
 // only while no exact solve has spoken for the current transmission. A pinned
@@ -85,9 +89,10 @@ type DMSeedTracker struct {
 	hintSeen int
 
 	// Counters for the status/ended logs.
-	ExactAdopts int // seeds adopted from an exact per-burst solve
-	HintAdopts  int // seeds adopted from a CRC-confirmed hint
-	Solved      int // bursts that solved exactly
+	ExactAdopts  int // seeds adopted from an exact per-burst solve
+	HintAdopts   int // seeds adopted from a CRC-confirmed hint
+	Solved       int // bursts that solved exactly (and CRC-decoded at the solution)
+	SolveRejects int // solves discarded because the burst did not decode at the solved seed
 }
 
 // NewDMSeedTracker returns an empty tracker (no seed known).
@@ -141,7 +146,7 @@ func (t *DMSeedTracker) Reset() {
 		t.hintSet, t.hintCRC, t.hintSeen = false, 0, 0
 		return
 	}
-	*t = DMSeedTracker{ExactAdopts: t.ExactAdopts, HintAdopts: t.HintAdopts, Solved: t.Solved}
+	*t = DMSeedTracker{ExactAdopts: t.ExactAdopts, HintAdopts: t.HintAdopts, Solved: t.Solved, SolveRejects: t.SolveRejects}
 }
 
 // ObserveDSB decodes a DSB's SCH/H and records the seed it announces as the
@@ -182,14 +187,31 @@ func (t *DMSeedTracker) ObserveDNB(b DMBurst, qualified bool) (frames [][]byte, 
 	// the 8-bit CRC alone admits 1/256 at random), which would emit garbage
 	// speech and delay the switch. The solve costs microseconds and is exact.
 	if s, ok := DMBurstScrambleSeed(b); ok && !t.pinned {
-		t.Solved++
-		if !t.known || s != t.seed {
+		if t.known && s == t.seed {
+			t.Solved++
+			return dmDecodeDNB(b, s), s, false
+		}
+		// A solve that would CHANGE the seed must first decode this very burst
+		// CRC-valid at the seed it claims. The dense solve is a 128-check-
+		// redundant proof and always does; the soft-assisted reliable-check
+		// solve (DMBurstScrambleSeed's last resort) is not — its local sparse
+		// checks are far from independent, and on the 13 Sep #1003 capture it
+		// "solved" 7 noise / errored bursts of 1411 to seeds that decode
+		// nothing (testdata/dmo_13sep_false_solve_*.dnb). Adopting those is the
+		// "scramble seed changed … changed back" flip-flop in the operator's
+		// log, each costing the flipped burst's speech and, on a weak stretch,
+		// every burst until the next clean solve. The decode is one Viterbi
+		// pass the caller needed anyway, so the gate is free.
+		if frames = dmDecodeDNB(b, s); frames != nil {
+			t.Solved++
 			t.seed, t.known, t.verified = s, true, true
 			t.ExactAdopts++
 			t.hintCRC, t.hintSeen = 0, 0
-			adopted = true
+			return frames, t.seed, true
 		}
-		return dmDecodeDNB(b, t.seed), t.seed, adopted
+		t.SolveRejects++
+		// Fall through: treat the burst as unsolved (decode at the known seed
+		// or let the hint earn adoption).
 	}
 	if t.known {
 		if frames = dmDecodeDNB(b, t.seed); frames != nil {

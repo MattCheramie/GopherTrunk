@@ -222,7 +222,7 @@ func (p *tetraDMOPipeline) onBurst(b tetra.DMBurst) {
 		p.lastDNB = now
 		p.dnbSinceLock++
 		p.learnSeed(b)
-		p.maybeGrant()
+		p.maybeGrant(false)
 	}
 }
 
@@ -283,6 +283,11 @@ func (p *tetraDMOPipeline) learnSeed(b tetra.DMBurst) {
 		if p.colourSink != nil {
 			p.colourSink(seed)
 		}
+		// A seed adoption is the strongest traffic evidence there is (an exact
+		// solve CRC-decoded on a slot-grid-qualified burst, or three CRC-valid
+		// decodes at the DSB's announced seed): grant NOW rather than waiting
+		// for dmoGrantMinDNB more bursts. See maybeGrant.
+		p.maybeGrant(true)
 	}
 }
 
@@ -299,8 +304,22 @@ func (p *tetraDMOPipeline) learnSeed(b tetra.DMBurst) {
 // unlocked, silent channel. A DSB SCH/S lock is CRC- and SYNC-PDU-validated and so is
 // real evidence a DMO radio is on this frequency; qualified DNBs then say it is
 // transmitting traffic right now. Both are required.
-func (p *tetraDMOPipeline) maybeGrant() {
-	if p.grantActive || p.bus == nil || !p.locked || p.dnbSinceLock < dmoGrantMinDNB {
+//
+// seedAdopted short-circuits the dmoGrantMinDNB count: a seed the tracker just
+// adopted is a CRC-decoded TCH/S burst on the slot grid (or three of them at the
+// announced seed), which is strictly stronger evidence of traffic than four
+// grid-qualified correlator hits, so waiting for the count only delays the
+// recording. The voice chain sees no IQ before the grant (the tap has no history
+// beyond its pre-roll), so every burst between the seed and the grant was speech
+// the daemon could not record: on the 13 Sep #1003 capture the grant trailed the
+// seed by 3 qualified bursts (0.17–0.28 s) on every transmission, and by 1.0 and
+// 1.8 s on two weak transmissions of the operator's live run
+// (TestTETRADMOPipelineCaptureReplay / TestTETRADMOPipelineGrantsOnSeedAdoption).
+func (p *tetraDMOPipeline) maybeGrant(seedAdopted bool) {
+	if p.grantActive || p.bus == nil || !p.locked {
+		return
+	}
+	if !seedAdopted && p.dnbSinceLock < dmoGrantMinDNB {
 		return
 	}
 	p.grantActive = true
@@ -345,6 +364,7 @@ func (p *tetraDMOPipeline) maybeLogStatus() {
 		"seed_known", p.colourKnown,
 		"seed_verified", p.seeds.Verified(),
 		"bursts_solved", p.seeds.Solved,
+		"solve_rejects", p.seeds.SolveRejects,
 		"grant_active", p.grantActive,
 	)
 }
