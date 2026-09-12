@@ -439,6 +439,71 @@ confirmation before any close-as-completed.
         silent ~0.1 s WAV still published to History) is inherent: the recorder only drops `dataBytes==0`
         or `StatProvider` zero-voice calls, and ACELP is neither, so a 2-frame call becomes a tiny
         bogus row. Staged, not shipped.
+- **DMO (#1003) ROOT-CAUSED on the 12 Sep 3-PTT capture: the TCH/S scramble seed is PER
+  TRANSMISSION — the transmitting radio's SOURCE ADDRESS under a fixed prefix — so every
+  "colour code" ever recovered (3, 39, 36, 31) was a partial-keystream artifact, and no
+  MNI/colour config could ever describe it.** The instrument that settled it is an EXACT
+  GF(2) seed solver (`tetra.SolveTCHScrambleSeed`, `dmo_seed.go`): the LFSR scrambler is
+  affine in its 30-bit seed and the TCH/S coding (CRC parity matrix + K=5 conv code +
+  puncturing + interleave) is a linear block code, so `H'·(r ⊕ PN(0)) = (H'·P)·seed` — 158
+  equations, 30 unknowns, one error-free DNB pins the seed with 128 redundant checks, no
+  colour space, no field layout, no config. Solving the 12 Sep capture burst by burst
+  (`TestTETRADMOSeedScan`, `GT_TETRA_DMO_SEEDS=1`) gave three seeds for three PTTs —
+  0x012915c0 / 0x015d9c07 / 0x01671384 — and each seed's low 24 bits sit verbatim at the
+  DSB SCH/H bits 42..65, immediately before a 24-bit field at 66..89 that decodes as
+  MCC 250 / MNC 1 (the operator's codeplug), i.e. the standard DMAC-SYNC layout
+  `… src addr type, SOURCE ADDRESS, MNI, message type …`; the top 6 bits were 000001 on all
+  three (capture-pinned, `DMScrambleSeedPrefix`; neither osmo-tetra-dmo nor
+  TetraDMO-Receiver has any DMO traffic-seed rule at all, so there is no reference to
+  quote). Lessons: (1) the earlier "MNI-fold" theory (`tetra_mcc`/`tetra_mnc`) was wrong
+  — the 250/1 A/B decodes NOTHING — and the "colour 36 with 58 CRC-valid bursts" the brute
+  force reported on this very capture was a wrong seed: a related wrong seed CRC-passes
+  ~9% of bursts (measured), so a CRC count is NOT proof of a seed; only an exact solve is.
+  (2) Production now runs `tetra.DMSeedTracker` in BOTH the pipeline and the voice chain:
+  the DSB SCH/H announces the seed as a hint (adopted only after 3 CRC-valid decodes on
+  slot-grid-qualified bursts — two was measurably too few against random payload), any
+  burst's exact solve adopts immediately and preempts a stale seed (a stale seed from the
+  previous PTT can still CRC-pass the next PTT's bursts, so the solve runs BEFORE the
+  decode-at-known-seed), and errored bursts get a soft-assisted solve (least-reliable bit
+  flips, then a reliability-ranked solve over LOCAL sparse parity checks — a bit error only
+  spoils the ~48-bit windows containing it). Re-arm droughts reset the seed; a
+  `tetra_colour_code` pins one. `RecoverDMColourCode` (the 64-way brute force) survives
+  only for the diagnostic colour scan. (3) Verdict on the capture: 159 CRC-valid TCH/S
+  across ALL THREE PTTs, speech in seconds [2-5, 13-16, 24-27], 9.5 s PCM (before: 58 of one
+  PTT at a bogus colour). Reproduce: `GT_TETRA_DMO_IQ=<flac> GT_TETRA_DMO_CLEAR=1
+  go test ./cmd/gophertrunk -run TestTETRADMOReplay -v` (the harness now reads wav/flac).
+  STILL ON-AIR-GATED for the daemon path (#764/#771): the operator must confirm a live
+  recording with intelligible audio; the synthetic stream builders now open a transmission
+  with THREE DSBs (as the capture shows) so the hint path is exercised realistically.
+- **12 Sep IPSC "missed a lot of calls" (442.3875 MHz, 20-min Signal Lab flac + live log):
+  NOT two colour codes, NOT the tuner — the live wideband Tier II tap goes deaf in
+  ~3-minute stretches, and the root cause is still open.** Facts pinned: every one of the
+  26 865 data bursts in the capture is colour code 12 (the EMB colour code of all 544
+  embedded LCs too, all tg 11), so the reporter's "IPSC runs two colour codes, one per
+  slot" is not what this repeater does (the 9 Sep cc=7 CSBK train was on the OTHER
+  repeater, 443.2375). Offline, the same capture decodes every one of its 26 transmissions
+  (37 grants, `TestDMRIPSCReplay` interleaved; `TestDMRIPSCBurstDump` is the burst-level
+  instrument), and so do the channelizer arm of `TestDMRIPSCWidebandReplay` over the whole
+  20 min AND with live-sized chunks (`GT_DMR_WB_CHUNK=500`). Live, aligned to the capture
+  (offset 23:41:31.28), the Fire2 tap logged `sync_hits=0` for six stretches of 180–210 s
+  (23:38:24, 23:42:58, 23:47:46, 23:52:07, 23:56:34, 00:00:35 — alive ~60–110 s between)
+  while its IQ power sat at its normal −51 dBFS and the Fire tap on the same channelizer
+  decoded throughout; ~10 of the 26 transmissions fell in those stretches (that is the
+  "missed calls"). The coarse carrier acquirer (the one frozen stage) never engages on the
+  capture, the MM loop/AGC/AFC have no long time constants, chunking is not it, nothing in
+  the daemon runs on a ~3-min timer, and an activity line cannot distinguish "no dibits"
+  from "junk dibits" — so the tier2 counters now carry `dibits`, and the engine self-heals:
+  `healDeafTier2` resets the receiver + `tier2.ResyncReset()` after 3 windows with no sync
+  at a power within 6 dB of the level the channel LAST SYNCED at (its own level, never an
+  absolute dBFS — the tap sits at −51 dBFS, below the −45 "strong signal" hint floor, which
+  is why no WARN ever fired), logging `mm_mu/mm_sps/agc_level/coarse_offset_hz` at the reset
+  as the instrument for the next log; `deaf_heals` in the activity line counts them. Pinned
+  by `engine_deafheal_test.go`. `dmrrx.Receiver.Reset` used to leave the timing loop and
+  demod history in place — a reset that is not a reset — now cleared. Do not re-chase the
+  channelizer bin edge (the 10 Sep fix holds: polyphase 37 grants vs DDC 36 over the full
+  capture); the next field log's `dibits` + heal WARN internals decide whether the latch is
+  in the receiver (heal works, internals show which loop) or upstream of it (heal does not
+  work ⇒ the tap's NCO/resampler or the stream).
 - **TETRA MAC fragment reassembly had off-by-bits at every seam — found via D-NWRK-BROADCAST,
   and the neighbour-cell decode is now live + capture-verified.** `macFragmentPayload` skipped
   only type+subtype on MAC-FRAG (the fill-bit indication leaked into the payload, +1 bit) and

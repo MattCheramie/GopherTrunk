@@ -7,7 +7,42 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **TETRA DMO voice: the "bogus colour code on every call" is gone — the
+  TCH/S scramble seed is learned exactly, per transmission (#1003).** The
+  12 Sep three-PTT capture, solved burst by burst with a new exact GF(2)
+  scramble-seed solver (`tetra.SolveTCHScrambleSeed`: the TCH/S coding and the
+  scrambler are both linear, so one error-free DNB pins all 30 seed bits with
+  128 redundant checks), shows a DIFFERENT 30-bit seed on each PTT — the
+  transmitting radio's source address (the DSB SCH/H field right before the
+  MNI, which reads MCC 250 / MNC 1 exactly as the operator's codeplug) under a
+  fixed 6-bit prefix. No "colour code" a 64-way brute force could reach; the
+  colours it reported (36, 31, 39, 3) were partial-keystream artifacts. The
+  pipeline and the voice chain now share `tetra.DMSeedTracker`: the DSB
+  announces the seed as a hint, the first clean DNB solves it exactly (a
+  reliability-ranked sparse-check solve covers errored bursts), and every
+  re-key re-learns it. On the capture: 159 CRC-valid TCH/S across all three
+  PTTs and 9.5 s of speech, versus 58 bursts of one PTT before. `tetra_mcc` /
+  `tetra_mnc` are no longer needed for DMO. On-air verification of the
+  daemon path (a recording with intelligible audio) is the remaining gate.
+- **Conventional DMR wideband tap: a deaf tap now heals itself.** The 12 Sep
+  IPSC log showed the 442.3875 MHz tap going deaf for ~3-minute stretches,
+  six times in 30 minutes, at its normal -51 dBFS while the other tap and
+  every offline replay of the same IQ (DDC, channelizer, live-sized chunks)
+  decoded everything — state inside the live receiver chain, root cause
+  still open. The engine now resets a Tier II receiver (and its stream
+  state, `tier2.ResyncReset`) after three windows with no sync at the
+  channel's own decoding level, logging the receiver internals; the
+  activity line carries `dibits` and `deaf_heals`. `dmrrx.Receiver.Reset`
+  now also resets the timing loop and demod history.
+
 ### Added
+- **DMO seed instruments**: `TestTETRADMOSeedScan` (`GT_TETRA_DMO_SEEDS=1`)
+  prints every burst's solved seed next to each DSB's SCH/S and raw SCH/H
+  bits; `TestTETRADMOReplay` reports the per-transmission seed runs and reads
+  wav/flac captures; `TestDMRIPSCBurstDump` (`GT_DMR_DUMP=<file>`) dumps a
+  conventional-DMR capture burst by burst (slot types, colour codes, embedded
+  LC), and `TestDMRIPSCWidebandReplay` takes `GT_DMR_WB_CHUNK`.
 - **dPMR and D-STAR voice now decode to PCM (experimental, unverified on
   air).** Following the NXDN precedent, both protocols gain end-to-end voice
   chains: dPMR anchors on the FS1/FS2 voice syncs, carves each 80 ms frame's

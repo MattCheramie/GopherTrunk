@@ -28,3 +28,6 @@ func (f *FM) Process(dst []float32, src []complex64) []float32 {
 	}
 	return dst
 }
+
+// Reset clears the discriminator's previous-sample memory.
+func (f *FM) Reset() { f.last = complex(1, 0) }
