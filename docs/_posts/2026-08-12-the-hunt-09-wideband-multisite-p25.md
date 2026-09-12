@@ -192,13 +192,15 @@ control channels, no bin-alignment constraints. But it scales linearly: 70 taps
 means 70 reduced-rate resamplers, and the host stops keeping up. A
 `ChannelizerBank` instead runs **one** shared polyphase filter/FFT across the
 whole band and reads each tap out of a bin — a dense 71-repeater DMR plan benches
-**~6× cheaper** on the channelizer than on a per-tap DDC. The cost is that a bin
-has a fixed width, so a carrier that lands near a bin edge decodes at reduced
-SNR. The engine keeps the bin width roughly constant (`channelizerBinsFor` aims
-for ~150 kHz per bin, so a 10 MS/s band gets ~64 bins instead of 16), and when a
-dense plan crowds taps onto bin edges it **warns** rather than silently
-degrading — the channelizer is still the only bank that stays real-time at that
-tap count, so the trade-off is made visible, not avoided.
+**~4× cheaper** on the channelizer than on a per-tap DDC. The bins have a fixed
+width (`channelizerBinsFor` aims for ~150 kHz per bin, so a 10 MS/s band gets
+~64 bins instead of 16), and since a 12.5 kHz plan never aligns to that grid
+some carriers inevitably land near a bin edge. The channelizer is therefore
+**2× oversampled**: each bin is emitted at twice its spacing with the whole bin
+inside the prototype's flat passband, so an edge tap decodes exactly like a
+centred one. (The first, critically-sampled version rolled the edge off by
+−6 dB and folded the part of a channel that crossed it — a repeater 0.48 bins
+off-centre went deaf for minutes on a 30 dB SNR signal.)
 
 ### How that principle shaped the Go code
 

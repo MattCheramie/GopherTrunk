@@ -12,11 +12,12 @@
 //     there is no constraint on the tap offsets - they can sit anywhere
 //     inside the dongle's usable IQ band. Best for a small number of taps.
 //
-//   - ChannelizerBank: a single M-channel critically-sampled polyphase
+//   - ChannelizerBank: a single M-channel 2x-oversampled polyphase
 //     channelizer (internal/dsp/channelizer) splits the input into evenly-
 //     spaced bins; a small fine-tune DDC on the bin nearest each tap
 //     offset cleans up the residual. The wide-band filter cost is shared
-//     across all taps, which wins at higher tap counts.
+//     across all taps, which wins at higher tap counts, and the
+//     oversampling keeps a tap on a bin edge as clean as one at a centre.
 //
 // Both implementations decimate to the same narrow-band rate - typically
 // 48 kHz, matching what the existing 4800-baud C4FM receivers

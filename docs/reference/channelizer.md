@@ -78,7 +78,11 @@ which is what makes wideband, many-channel monitoring practical on an ordinary C
   efficient, but adjacent-channel energy can alias unless the prototype is designed carefully.
 - **Oversampled / M:N channelizer.** Decimates by less than the channel count, leaving guard
   room so channels don't overlap at the edges — needed when the wanted signals don't sit
-  exactly on the channel grid.
+  exactly on the channel grid. GopherTrunk's `ChannelizerBank` is 2× oversampled for exactly
+  this reason: a repeater that lands 0.48 of a bin off-centre (a 12.5 kHz plan never aligns
+  to ~150–200 kHz bins) was tilted and folded by the critically-sampled bin and decoded only
+  intermittently; with the whole bin inside the prototype's flat passband it decodes like a
+  centred one.
 - **Non-uniform / per-tap DDC.** When only a few channels are wanted, or they sit at arbitrary
   offsets, individual [DDCs](/reference/digital-down-converter/) can be cheaper than a full
   bank — a channelizer wins when many uniformly-spaced channels are needed at once.

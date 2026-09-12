@@ -358,6 +358,13 @@ func (r *Receiver) Reset() {
 	if r.acq != nil {
 		r.acq.Reset()
 	}
+	// The timing loop and the discriminator / matched-filter history are
+	// receiver state too: a reset that leaves them in place is not a reset
+	// (the 12 Sep IPSC wideband self-heal relies on this one call returning
+	// the whole chain to its constructed state).
+	r.clock.Reset()
+	r.fm.Reset()
+	r.mf.Reset()
 }
 
 // CoarseCarrierOffsetHz reports the frozen coarse carrier-offset correction the

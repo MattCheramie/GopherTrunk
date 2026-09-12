@@ -13,7 +13,17 @@ import (
 // It maintains an internal sample history so consecutive Process calls
 // produce a continuous output stream.
 type FIR struct {
-	taps    []float32
+	taps []float32
+	// rtaps is taps reversed (rtaps[j] = taps[N-1-j]) so the dot product runs
+	// over a contiguous, chronologically ordered history window.
+	rtaps []float32
+	// hist is a 2N mirrored history: every sample is written at histPos and
+	// histPos+N, so hist[histPos:histPos+N] is always the last N samples in
+	// arrival order with no wrap. That turns the per-tap modulo/branch of a
+	// plain ring buffer into a straight two-slice dot product — the filter
+	// is the largest single cost of a narrowband receiver (≈50% of a TETRA
+	// wideband tap's CPU once the AACH decoder stopped re-encoding its
+	// codebook), so the inner loop matters.
 	hist    []complex64
 	histPos int
 }
@@ -24,7 +34,11 @@ func NewFIR(taps []float32) *FIR {
 	}
 	cp := make([]float32, len(taps))
 	copy(cp, taps)
-	return &FIR{taps: cp, hist: make([]complex64, len(taps))}
+	rt := make([]float32, len(taps))
+	for j := range rt {
+		rt[j] = taps[len(taps)-1-j]
+	}
+	return &FIR{taps: cp, rtaps: rt, hist: make([]complex64, 2*len(taps))}
 }
 
 // Reset clears the internal history.
@@ -44,27 +58,26 @@ func (f *FIR) Process(dst, src []complex64) []complex64 {
 		dst = dst[:len(src)]
 	}
 	N := len(f.taps)
+	rt := f.rtaps[:N]
 	for i, x := range src {
 		f.hist[f.histPos] = x
+		f.hist[f.histPos+N] = x
 		f.histPos++
 		if f.histPos == N {
 			f.histPos = 0
 		}
-		// Convolve: output is sum_{k} h[k] * hist[(histPos - 1 - k) mod N].
+		// w holds the last N samples oldest-first; output is
+		// sum_k h[k] * w[N-1-k] = sum_j rtaps[j] * w[j]. Accumulate newest
+		// tap first (j descending) so the float32 summation order matches
+		// the original ring-buffer loop exactly.
+		w := f.hist[f.histPos : f.histPos+N]
+		w = w[:len(rt)]
 		var accI, accQ float32
-		idx := f.histPos - 1
-		if idx < 0 {
-			idx = N - 1
-		}
-		for k := 0; k < N; k++ {
-			s := f.hist[idx]
-			h := f.taps[k]
+		for j := len(rt) - 1; j >= 0; j-- {
+			s := w[j]
+			h := rt[j]
 			accI += h * real(s)
 			accQ += h * imag(s)
-			idx--
-			if idx < 0 {
-				idx = N - 1
-			}
 		}
 		dst[i] = complex(accI, accQ)
 	}

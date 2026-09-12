@@ -439,6 +439,71 @@ confirmation before any close-as-completed.
         silent ~0.1 s WAV still published to History) is inherent: the recorder only drops `dataBytes==0`
         or `StatProvider` zero-voice calls, and ACELP is neither, so a 2-frame call becomes a tiny
         bogus row. Staged, not shipped.
+- **DMO (#1003) ROOT-CAUSED on the 12 Sep 3-PTT capture: the TCH/S scramble seed is PER
+  TRANSMISSION — the transmitting radio's SOURCE ADDRESS under a fixed prefix — so every
+  "colour code" ever recovered (3, 39, 36, 31) was a partial-keystream artifact, and no
+  MNI/colour config could ever describe it.** The instrument that settled it is an EXACT
+  GF(2) seed solver (`tetra.SolveTCHScrambleSeed`, `dmo_seed.go`): the LFSR scrambler is
+  affine in its 30-bit seed and the TCH/S coding (CRC parity matrix + K=5 conv code +
+  puncturing + interleave) is a linear block code, so `H'·(r ⊕ PN(0)) = (H'·P)·seed` — 158
+  equations, 30 unknowns, one error-free DNB pins the seed with 128 redundant checks, no
+  colour space, no field layout, no config. Solving the 12 Sep capture burst by burst
+  (`TestTETRADMOSeedScan`, `GT_TETRA_DMO_SEEDS=1`) gave three seeds for three PTTs —
+  0x012915c0 / 0x015d9c07 / 0x01671384 — and each seed's low 24 bits sit verbatim at the
+  DSB SCH/H bits 42..65, immediately before a 24-bit field at 66..89 that decodes as
+  MCC 250 / MNC 1 (the operator's codeplug), i.e. the standard DMAC-SYNC layout
+  `… src addr type, SOURCE ADDRESS, MNI, message type …`; the top 6 bits were 000001 on all
+  three (capture-pinned, `DMScrambleSeedPrefix`; neither osmo-tetra-dmo nor
+  TetraDMO-Receiver has any DMO traffic-seed rule at all, so there is no reference to
+  quote). Lessons: (1) the earlier "MNI-fold" theory (`tetra_mcc`/`tetra_mnc`) was wrong
+  — the 250/1 A/B decodes NOTHING — and the "colour 36 with 58 CRC-valid bursts" the brute
+  force reported on this very capture was a wrong seed: a related wrong seed CRC-passes
+  ~9% of bursts (measured), so a CRC count is NOT proof of a seed; only an exact solve is.
+  (2) Production now runs `tetra.DMSeedTracker` in BOTH the pipeline and the voice chain:
+  the DSB SCH/H announces the seed as a hint (adopted only after 3 CRC-valid decodes on
+  slot-grid-qualified bursts — two was measurably too few against random payload), any
+  burst's exact solve adopts immediately and preempts a stale seed (a stale seed from the
+  previous PTT can still CRC-pass the next PTT's bursts, so the solve runs BEFORE the
+  decode-at-known-seed), and errored bursts get a soft-assisted solve (least-reliable bit
+  flips, then a reliability-ranked solve over LOCAL sparse parity checks — a bit error only
+  spoils the ~48-bit windows containing it). Re-arm droughts reset the seed; a
+  `tetra_colour_code` pins one. `RecoverDMColourCode` (the 64-way brute force) survives
+  only for the diagnostic colour scan. (3) Verdict on the capture: 159 CRC-valid TCH/S
+  across ALL THREE PTTs, speech in seconds [2-5, 13-16, 24-27], 9.5 s PCM (before: 58 of one
+  PTT at a bogus colour). Reproduce: `GT_TETRA_DMO_IQ=<flac> GT_TETRA_DMO_CLEAR=1
+  go test ./cmd/gophertrunk -run TestTETRADMOReplay -v` (the harness now reads wav/flac).
+  STILL ON-AIR-GATED for the daemon path (#764/#771): the operator must confirm a live
+  recording with intelligible audio; the synthetic stream builders now open a transmission
+  with THREE DSBs (as the capture shows) so the hint path is exercised realistically.
+- **12 Sep IPSC "missed a lot of calls" (442.3875 MHz, 20-min Signal Lab flac + live log):
+  NOT two colour codes, NOT the tuner — the live wideband Tier II tap goes deaf in
+  ~3-minute stretches, and the root cause is still open.** Facts pinned: every one of the
+  26 865 data bursts in the capture is colour code 12 (the EMB colour code of all 544
+  embedded LCs too, all tg 11), so the reporter's "IPSC runs two colour codes, one per
+  slot" is not what this repeater does (the 9 Sep cc=7 CSBK train was on the OTHER
+  repeater, 443.2375). Offline, the same capture decodes every one of its 26 transmissions
+  (37 grants, `TestDMRIPSCReplay` interleaved; `TestDMRIPSCBurstDump` is the burst-level
+  instrument), and so do the channelizer arm of `TestDMRIPSCWidebandReplay` over the whole
+  20 min AND with live-sized chunks (`GT_DMR_WB_CHUNK=500`). Live, aligned to the capture
+  (offset 23:41:31.28), the Fire2 tap logged `sync_hits=0` for six stretches of 180–210 s
+  (23:38:24, 23:42:58, 23:47:46, 23:52:07, 23:56:34, 00:00:35 — alive ~60–110 s between)
+  while its IQ power sat at its normal −51 dBFS and the Fire tap on the same channelizer
+  decoded throughout; ~10 of the 26 transmissions fell in those stretches (that is the
+  "missed calls"). The coarse carrier acquirer (the one frozen stage) never engages on the
+  capture, the MM loop/AGC/AFC have no long time constants, chunking is not it, nothing in
+  the daemon runs on a ~3-min timer, and an activity line cannot distinguish "no dibits"
+  from "junk dibits" — so the tier2 counters now carry `dibits`, and the engine self-heals:
+  `healDeafTier2` resets the receiver + `tier2.ResyncReset()` after 3 windows with no sync
+  at a power within 6 dB of the level the channel LAST SYNCED at (its own level, never an
+  absolute dBFS — the tap sits at −51 dBFS, below the −45 "strong signal" hint floor, which
+  is why no WARN ever fired), logging `mm_mu/mm_sps/agc_level/coarse_offset_hz` at the reset
+  as the instrument for the next log; `deaf_heals` in the activity line counts them. Pinned
+  by `engine_deafheal_test.go`. `dmrrx.Receiver.Reset` used to leave the timing loop and
+  demod history in place — a reset that is not a reset — now cleared. Do not re-chase the
+  channelizer bin edge (the 10 Sep fix holds: polyphase 37 grants vs DDC 36 over the full
+  capture); the next field log's `dibits` + heal WARN internals decide whether the latch is
+  in the receiver (heal works, internals show which loop) or upstream of it (heal does not
+  work ⇒ the tap's NCO/resampler or the stream).
 - **TETRA MAC fragment reassembly had off-by-bits at every seam — found via D-NWRK-BROADCAST,
   and the neighbour-cell decode is now live + capture-verified.** `macFragmentPayload` skipped
   only type+subtype on MAC-FRAG (the fill-bit indication leaked into the payload, +1 bit) and
@@ -1179,6 +1244,65 @@ confirmation before any close-as-completed.
   is now rendered top AND bottom, and `AppShell` main keeps `pb-24` at every width.
   (5) Per-RID playback: `/calls/history?source_id=` + a ▶ per recent call in the RID
   modal (`RecordingPlayer` inline).
+- **"Host overruns at a tiny 200 kS/s" on the dual-TETRA wideband rig (10 Sep) was CPU, and the
+  CPU was `DecodeAACH` re-ENCODING all 16 384 RM(30,14) codewords per call.** `DecodeRM3014Tetra`
+  / `DecodeRM3014TetraSoft` were ML searches that called `EncodeRM3014Tetra` (allocating) for every
+  codeword on every call: ~15 ms and ~16 k allocations per AACH decode, run once per downlink slot
+  (~70/s per carrier) on the wideband pump AND once per traffic burst in the voice demux. Two TETRA
+  DDC channels at 200 kS/s measured 0.44x real time on one 2.1 GHz core with 65% in that search
+  (`TestEngineDualTETRA200kThroughput`, `GT_WB_BENCH_SECONDS=30 GT_WB_BENCH_PROFILE=...`), and it
+  was the ~19 GC/s on a 9 MB heap in the operator's heartbeat lines. Fix: a once-built codebook
+  (`rm3014Table`, uint32-packed) with popcount / three 10-bit partial-sum tables — 17 µs / 36 µs,
+  allocation-free, bit-identical (`rm_30_14_tetra_codebook_test.go` keeps the brute force as the
+  reference). Second cost was `filter.FIR.Process` (~50% after that): its ring buffer branched per
+  tap; it now runs a mirrored 2N history window with the SAME float32 summation order
+  (`TestFIRMirroredWindowIsBitExact`), ~1.8x faster. Pump: 0.44x → 0.12x real time. Lesson: an
+  "overruns at low rate" report on a path that logs no `decode can't keep up` WARN still means
+  profile the pump — `host_drops` is the consumer, and the consumer here was a block decoder,
+  not the DSP.
+- **IPSC "still losing calls" (10 Sep, 1200 s Signal Lab flac at 442.3875 MHz) was the polyphase
+  channelizer's BIN EDGE, root-caused on the capture and fixed by 2x oversampling the
+  channelizer.** The live wideband tap (6.25 MS/s, `tuner_strategy: polyphase` → 32 bins of
+  195.3125 kHz; Fire2 at +687.5 kHz = 3.52 bins ⇒ 0.48 from bin 4) logged `sync_hits=0` for
+  minutes at a time while the same capture decodes 25 001 idle beacons / 14 grants through a DDC
+  (the repeater sits at −53 dBFS over a −83 dBFS floor ≈ 30 dB SNR, keyed solid through both
+  missed windows — the offline `TestDMRIPSCReplay` grants at 12:17:27 and 12:20:34 local, the
+  live log has nothing on Fire2 between 12:11 and 12:22). `TestDMRIPSCWidebandReplay`
+  (`GT_DMR_IQ=<flac> GT_DMR_WB=1`, interpolates the slice to the field bin geometry and A/Bs
+  `ChannelizerBank` vs `DDCBank` with one tap each on the SAME stream) reproduced it exactly:
+  polyphase 1991 beacons / 2 grants vs DDC 6103 / 7 over 300 s, deaf in the same tens-of-seconds
+  stretches. Mechanism: the critically-sampled bin's prototype is −6 dB AT the edge and the
+  half of a 12.5 kHz channel that crosses ±binRate/2 folds back — measured −18.6/−9.3/−6.2/−5.2 dB
+  across one channel's 0.45..0.51-bin span (`TestChannelizerBankBinEdgeChannelIsFlat`, fails on the
+  old bank). `channelizer.Oversampled` (Harris M/2 polyphase: M/2 inputs per step, IDFT, and the
+  per-bin `e^{-j2πk·t_s/M}` rotation a critically-sampled bank never needs) emits each bin at
+  2·Fs/M with cutoff 0.75·Fs/M, so the whole bin is flat; `ChannelizerBank` uses it unconditionally
+  (fine-tune NCO/resampler now run from 2·binRate — dense-71 bench 1.5→2.8 ms/chunk, DDC 11.8 ms).
+  Post-fix the polyphase arm matches the DDC arm window-for-window on the capture. The old
+  "dense plan crowds taps onto bin edges — reduced SNR" WARN is gone (DEBUG layout line only).
+  A clean synthetic C4FM carrier at residual 0.48 still GRANTED through the old bank (200 header
+  repeats need only a few good bursts), so a synthetic grant test could not fail first — the
+  tone-flatness pin + the capture harness are the regression; don't reintroduce a grant-based one.
+- **P25 IMBE vs trunk-recorder/OP25 on the same 7-reply conversation (10 Sep, tg 805): measured,
+  NOT changed.** Merging GT's per-transmission WAVs back-to-back (TR's `freqList.pos` is cumulative
+  length, no gaps) and aligning per segment: (1) GT's recordings are SHORTER — 27.18 s vs 30.42 s;
+  the loss is whole LDUs at the HEAD (0.36 s = 2 LDUs on two replies, 1 LDU on one, 0 on three) —
+  receiver acquisition, not the talkgroup gate (`boundaryTracker` already starts `lastMatch=true`);
+  OP25 catches the first LDU more often. Needs a voice IQ capture to tune (`ddaWarmupSymbols`=512
+  ≈107 ms plus filter/AGC settle). (2) Spectrum: the SHIPPED WAVs (enhance chain on) sit at
+  LSD 4.4 dB from OP25 (−5 dB at 100–300 Hz from the HPF/tilt, +3.6/+8 dB at 2–3/3–4 kHz); the
+  raw recorder-default decode of the same `.raw` frames is 3.6 dB, and sweeping
+  `recordings.unvoiced_gain` (`TestIMBEUnvoicedGainSweep`, `GT_IMBE_RAW_DIR`/`GT_IMBE_GAINS`) is
+  monotonic: 5.49 (the dsd-neo/mbelib calibration) → 3.57 dB, 2 → 2.96, 1 → 2.69, 0.5 → 2.53.
+  So the two references DISAGREE on unvoiced level by several dB (mbelib's 3-cosine unvoiced is
+  ≈5.5x a voiced harmonic; the spec's equal-power rule is gain 1, which is where OP25 sits) — and
+  the residual +5..+7 dB GT excess at 3–4 kHz (rel. 1 kHz) does NOT move with the gain, so it is
+  in the high-harmonic spectral-amplitude reconstruction/§6.2 path, same family as the open AMBE
+  2450 note above; per-harmonic diff against OP25's `imbe_vocoder` is the next instrument. Don't
+  flip the default on one conversation; an operator chasing OP25's balance can set
+  `unvoiced_gain: 1` and lower `enhance.hpf_hz`/`tilt_hz`. GT's per-call JSON shipped
+  `srcList: []` on this rig while TR lists the two radios (80902/80816); not investigated this
+  round.
 - **Capture ceilings**: siglab capture-from-tuner 120→1200 s (`maxCaptureSeconds`, byte
   budget 4 GiB estimated at the UNCOMPRESSED decoder width even for flac),
   `diversity_capture_seconds` 120→1200 (`maxDiversityCaptureSeconds`); the REST hunt capture
@@ -1187,3 +1311,34 @@ confirmation before any close-as-completed.
   (`captureName`) — `%.3f` renamed a 442.3875 MHz slice "442.387MHz"; every other frequency
   name in the tree was already `%.4f`, and `toFixed(3)` on a centre frequency in a SPA is a
   bug (sample rates / spans / kHz spacings at 3 decimals are fine).
+- **AMBE+2 3600x2450 (DMR) is bit-identical to mbelib on every VOICE frame — the #644
+  "computer voice" was the SILENCE-frame handling, measured against two references.**
+  A frame-by-frame diff (szechyjs/mbelib 1.3.0 + arancormonk/mbelib-neo, both cloneable
+  from the dev environment; build with `gcc -c` + `ar`, dump `cur_mp` per frame) of the
+  committed `internal/voice/ambe2/testdata/dmr-voice.raw` (the reporter's 378-frame TS2
+  clip) shows `unpackParams2450`'s Tl/Vl/L/w0 match mbelib to 1e-5 on all 201 voice frames
+  and the amplitude prediction within ~1 dB per band — so the earlier "the 2450 high-band
+  deficit is in unpackParams2450" note is REFUTED; do not chase the 2450 tables. What
+  differed: 177 frames are AMBE+2 *silence* frames (b0 124/125, runs of 44/63 = ~1.3 s)
+  that both references decode as an all-unvoiced fixed-model frame (w0 = 2π/32, L = 14,
+  the frame's own ΔΓ/PRBA/HOC) and synthesise, while GT rendered digital silence and
+  reset the predictor — so every post-pause onset frame had gamma = ΔΓ + 0 vs
+  ΔΓ + 0.5·γ_prev (frame 95: 4.37 vs 8.40; frame 308: 5.78 vs 10.03 — ≈24 dB), and the
+  pauses were hard-gated. Fixed to the reference behaviour; `params2450_silence_test.go`
+  pins literal Tl (frame 0) and the gamma sequence at every onset (both refs agree to the
+  printed precision). Two things the diff did NOT settle: the two references disagree on
+  the silence model itself (mbelib-neo/JMBE uses L=15 and a different w0; mbelib and
+  DSD-FME's lwvmobile fork use 2π/32 / L=14 — GT follows the DSD-FME lineage the reporter
+  compares against), and the whole-file band fractions depend on that model, so compare
+  voice frames only (`voicemask`) when measuring spectra. On this sample GT is NOT high-band
+  deficient vs mbelib-neo on voice frames (3–4 kHz 0.057 vs 0.123 fraction, GT brighter).
+- **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
+  colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
+  give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that
+  failed local re-verification once was never retried; `adoptLiveColourUnverified` now
+  applies the pipeline's (confidence-gated) colour wherever the guess would be used
+  (give-up cap, post-give-up hint, flush) — pinned failing-first by
+  `TestDMOVoiceDecoderPrefersPipelineColourOverFallback`. The voice chain's `EnableDCBlock`
+  is now OFF like the pipeline's (the prime suspect for the divergent bursts); still
+  on-air-gated. `tetra_mcc`/`tetra_mnc` were missing from config.example.yaml (the 4 Sep
+  rule) — now in a `tetra-dmo` example.

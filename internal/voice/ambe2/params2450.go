@@ -16,9 +16,11 @@ import (
 // Algorithmic reference: szechyjs/mbelib's mbe_decodeAmbe2450Parms in
 // ambe3600x2450.c (ISC-licensed; codebook attribution in
 // tables2450.go). The 2450 frame distinguishes erasure (b0 120-123),
-// silence (124-125) and tone (126-127) frames by b0 range; all three
-// are rendered as silence here — tone synthesis is a follow-up,
-// matching the 2400 path's tone-as-silence treatment.
+// silence (124-125) and tone (126-127) frames by b0 range: erasure and
+// tone are rendered as silence here (tone synthesis is a follow-up,
+// matching the 2400 path's tone-as-silence treatment); a silence frame
+// is decoded as the all-unvoiced fixed-model frame both references
+// make of it (see below).
 func unpackParams2450(info []byte) (Params, error) {
 	if len(info) != InfoBits {
 		return Params{}, fmt.Errorf("%w, got %d", ErrInfoLength, len(info))
@@ -32,9 +34,27 @@ func unpackParams2450(info []byte) (Params, error) {
 		int(info[38])<<1 |
 		int(info[39])
 
-	// b0 in 120..127 marks an erasure / silence / tone frame; render
-	// all three as silence.
-	if b0 >= 120 {
+	// b0 in 120..127 is not a voice pitch. 120..123 mark an erasure and
+	// 126..127 a tone frame; both are rendered as silence (tone synthesis
+	// is a follow-up, matching the 2400 path's tone-as-silence treatment).
+	//
+	// 124..125 are AMBE+2 SILENCE frames, and those are NOT silence to the
+	// decoder. mbelib's mbe_decodeAmbe2450Parms (the DSD-FME lineage) and
+	// mbelib-neo/JMBE both decode them as an ordinary all-unvoiced frame
+	// with a fixed model — w0 = 2π/32, L = 14 — and the frame's own gain /
+	// PRBA / HOC bits, then synthesise them like any other frame: the gain
+	// predictor (gamma = ΔΓ + 0.5·γ_prev) and the log2Ml history carry
+	// through the pause, and the background the radio encoded (a vehicle
+	// cab, a street) plays at its transmitted level. GopherTrunk used to
+	// short-circuit them to digital silence AND reset the predictor, so the
+	// first frame after every pause decoded with gamma = ΔΓ + 0 instead of
+	// ΔΓ + 0.5·γ_prev. Measured on the #644 sample (47% silence frames)
+	// against both references: identical Tl on every voice frame, but
+	// 4 log2 units (≈24 dB) low at each utterance onset, with the pauses
+	// hard-gated in between — the "unnatural / computer voice" report.
+	// Pinned by TestDecodeDMRSampleGammaTracksReference.
+	silenceFrame := b0 == 124 || b0 == 125
+	if b0 >= 120 && !silenceFrame {
 		p := Params{B0: b0}
 		p.Params.Silent = true
 		if b0 >= 126 {
@@ -43,32 +63,44 @@ func unpackParams2450(info []byte) (Params, error) {
 		return p, nil
 	}
 
-	f0 := dmrW0table[b0]
+	var f0 float64
+	var L int
+	if silenceFrame {
+		// mbelib: cur_mp->w0 = 2π/32, f0 = 1/32, L = 14, Vl[1..L] = 0.
+		f0 = 1.0 / 32
+		L = 14
+	} else {
+		f0 = dmrW0table[b0]
+		L = int(dmrLtable[b0])
+	}
 	w0 := f0 * 2 * math.Pi
 	unvc := 0.2046 / math.Sqrt(w0)
-	L := int(dmrLtable[b0])
 	if L < 9 || L > 56 {
 		return Params{}, fmt.Errorf("ambe2: 2450 derived L=%d out of [9, 56]", L)
 	}
 
 	p := Params{
-		Params: mbe.Params{Header: mbe.Header{W0: w0, L: L}},
-		Unvc:   unvc,
-		B0:     b0,
+		Params:       mbe.Params{Header: mbe.Header{W0: w0, L: L}},
+		Unvc:         unvc,
+		B0:           b0,
+		SilenceFrame: silenceFrame,
 	}
 
-	// V/UV: b1 (5 bits) selects a voicing-pattern row.
+	// V/UV: b1 (5 bits) selects a voicing-pattern row. A silence frame is
+	// all-unvoiced by definition (Vl stays 0; mbelib skips the lookup).
 	b1 := int(info[4])<<4 | int(info[5])<<3 | int(info[6])<<2 |
 		int(info[7])<<1 | int(info[35])
 	p.B1 = b1
-	for l := 1; l <= L; l++ {
-		jl := int(float64(l) * 16.0 * f0)
-		if jl < 0 {
-			jl = 0
-		} else if jl > 7 {
-			jl = 7
+	if !silenceFrame {
+		for l := 1; l <= L; l++ {
+			jl := int(float64(l) * 16.0 * f0)
+			if jl < 0 {
+				jl = 0
+			} else if jl > 7 {
+				jl = 7
+			}
+			p.Vl[l] = dmrVuv[b1][jl]
 		}
-		p.Vl[l] = dmrVuv[b1][jl]
 	}
 
 	// Gain delta — absolute gamma is folded in by the synthesizer.
