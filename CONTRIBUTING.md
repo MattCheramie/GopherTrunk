@@ -228,11 +228,13 @@ version` against the built binary and writes a `SHA256SUMS` file —
 match those values against what you expect the production release
 to print before pushing the real tag.
 
-The first production release should be a prerelease (e.g.
-`v0.99.0`) so the full release workflow runs end-to-end against
-the live GitHub Actions infrastructure before a v1.0.0 tag goes
-out. Trigger via the **Actions → Release → Run workflow** button
-with the version field set.
+Stable releases have shipped as `v1.x.y` since v1.0.0 (2026-08-20).
+Before a major-version bump, rehearse with a hyphenated prerelease
+tag (e.g. `v2.0.0-rc.1` — `release.yml` flags any hyphenated tag
+as a prerelease) so the full release workflow runs end-to-end
+against the live GitHub Actions infrastructure before the stable
+tag goes out. Trigger via the **Actions → Release → Run workflow**
+button with the version field set.
 
 ## Security issues
 

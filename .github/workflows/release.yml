@@ -360,6 +360,9 @@ jobs:
     name: Publish GitHub Release
     needs: [windows, linux, macos]
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -419,3 +422,57 @@ jobs:
             **Web operator console:** every archive includes a standalone `gophertrunk-web/` folder with all three consoles — the standard console at the top, plus `siglab/` and `configbuilder/`. Open the relevant `index.html` in any browser and point it at a running daemon. Setup walkthrough: [gophertrunk.org/web.html](https://gophertrunk.org/web.html).
 
             All artifacts are SHA-256-checksummed in `SHA256SUMS`.
+
+  # Safety net for the post-release checklist in docs/release.md. The
+  # CHANGELOG heading, README Quick Start VERSION= and docs-site fallback
+  # are the only version references not derived from the tag, and they
+  # went unbumped for 41 consecutive tags (v0.7.2..v1.1.2). If the
+  # maintainer already ran `make release-prep` before tagging, this is a
+  # no-op. Otherwise it bumps them on a branch and opens a PR — it never
+  # pushes to main (the "Protect main" ruleset requires PR checks) and it
+  # can't fail the release (the artifacts are already published).
+  version-refs:
+    name: Bump version references
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Bump CHANGELOG / README / docs fallback and open a PR if stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -eu
+          if python3 scripts/release-refs.py check --tag "$VERSION"; then
+            echo "version references already document $VERSION — nothing to do"
+            exit 0
+          fi
+          python3 scripts/release-refs.py bump "$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH="release/refs-${VERSION}"
+          git checkout -B "$BRANCH"
+          git add CHANGELOG.md README.md docs/_includes/latest-version.html
+          git commit -m "release: reference ${VERSION} in CHANGELOG, README and the docs site" \
+            -m "Automated by release.yml (version-refs job) because the tag was pushed without \`make release-prep VERSION=${VERSION}\`. See docs/release.md."
+          git push --force -u origin "$BRANCH"
+          if ! gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "release: reference ${VERSION} in CHANGELOG, README and the docs site" \
+              --body "$(cat <<EOF
+          The ${VERSION} tag was pushed without promoting \`[Unreleased]\` / bumping the README Quick Start and docs-site fallback (docs/release.md, step 1). This PR does that; \`make version-refs-check\` (the \`version-refs\` CI job) stays red on \`main\` until it merges.
+
+          Opened by \`release.yml\` with the repository token, so GitHub does not fire \`pull_request\` checks for it; the workflow dispatches CI on this branch instead. If the required checks still show as missing, push any commit to this branch or close and reopen the PR.
+          EOF
+          )"
+          fi
+          # GITHUB_TOKEN-created PRs never trigger pull_request workflows, but
+          # workflow_dispatch is explicitly exempt from that rule.
+          gh workflow run ci.yml --ref "$BRANCH" || echo "could not dispatch CI on $BRANCH; run it by hand"

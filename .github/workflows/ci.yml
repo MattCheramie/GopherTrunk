@@ -20,8 +20,26 @@ on:
   push:
     branches: [main]
   pull_request:
+  # release.yml opens the "release: reference vX.Y.Z" PR with the
+  # repository GITHUB_TOKEN, and GitHub never fires pull_request for
+  # events that token creates — so the required checks would never run
+  # on that PR. release.yml dispatches this workflow on the PR branch
+  # instead; check runs land on the same head SHA the ruleset looks at.
+  workflow_dispatch:
 
 jobs:
+  # The three hand-maintained release-version references (CHANGELOG.md's
+  # newest heading, README's Quick Start VERSION=, the docs-site fallback
+  # tag) drifted for 41 consecutive tags once. This fails whenever they
+  # document an OLDER release than git's newest stable tag, or disagree
+  # with each other. Fix: `make release-prep VERSION=vX.Y.Z`.
+  version-refs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version references match the newest stable tag
+        run: make version-refs-check
+
   build-test:
     runs-on: ubuntu-latest
     steps:
