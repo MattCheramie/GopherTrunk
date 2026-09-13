@@ -870,6 +870,11 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	// previous channel doesn't bleed into the freshly-tuned one.
 	d.ddc.Reset()
 	d.mu.Unlock()
+	// Keep a voice pre-roll for protocols whose grant trails the start of
+	// traffic (DMO); cleared for everything else (see voicetap.go).
+	if d.voiceFan != nil {
+		d.voiceFan.setPreroll(voicePrerollSamples(sys.Protocol, rate))
+	}
 }
 
 // lockEventMatchesActive reports whether a cc.locked/cc.lost payload belongs to
@@ -903,6 +908,11 @@ func (d *Decoder) clearActiveLocked() {
 	if d.active != nil {
 		_ = d.active.Close()
 		d.active = nil
+	}
+	// Drop any voice pre-roll: the next pipeline may sit on another carrier,
+	// and its first voice chain must not be fed this one's IQ.
+	if d.voiceFan != nil {
+		d.voiceFan.setPreroll(0)
 	}
 	// A torn-down/retuned system's recovered DM colour must not leak into the
 	// next acquisition (a different DMO network may use a different colour).

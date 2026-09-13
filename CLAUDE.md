@@ -475,6 +475,64 @@ confirmation before any close-as-completed.
   STILL ON-AIR-GATED for the daemon path (#764/#771): the operator must confirm a live
   recording with intelligible audio; the synthetic stream builders now open a transmission
   with THREE DSBs (as the capture shows) so the hint path is exercised realistically.
+- **DMO (#1003) IS ON-AIR VERIFIED (13 Sep): five consecutive clear PTTs decoded live —
+  the operator's "DMO is finally working" run, log + 60 s 144 kHz flac in sync. The seeds
+  the live pipeline recovered (0x0001498b2a / 0x000162eab3 / 0x0001733855 / 0x00011f914e /
+  0x0001088472, one per PTT, all under the 000001 prefix — eight transmissions now) match
+  the offline replay burst-for-burst.** The residual complaint, "we are eating the first
+  seconds of transmission, because of CC bruteforcing probably", is NOT the seed solve (it
+  lands on the first grid-qualified DNB, ~1 ms) — it is three smaller things, each now
+  measured by the new **`TestTETRADMOPipelineCaptureReplay`** (`ccdecoder/`, skip-guarded
+  on `GT_TETRA_DMO_IQ`, replays a flac/cs16 capture through the PRODUCTION pipeline with a
+  sample clock and prints per-PTT lock/seed/grant timing, CRC-valid bursts lost before the
+  grant, a false-solve audit, and a cold-voice-chain-by-pre-roll sweep):
+  - **The grant waited for `dmoGrantMinDNB`=4 qualified DNBs even though the seed — an
+    exact CRC-decoded solve — had already proved traffic on the first.** Offline that cost
+    the first 3 decodable bursts of every PTT (0.17–0.28 s); LIVE it cost 1.0 s and 1.8 s
+    on two weak PTTs (18 qualified DNBs live vs 65 offline for the same PTT — the live
+    grid latched slowly). `maybeGrant(seedAdopted=true)` now fires on the adoption; pinned
+    by `TestTETRADMOPipelineGrantsOnSeedAdoption` (old: grant at #4, seed at #1).
+  - **The voice chain saw no IQ before the grant.** Each PTT opens with a DSB-only setup
+    phase (0.3–1.4 s of DSBs before the first DNB — protocol, not loss) and then 3–8
+    decodable DNBs BEFORE the 6-vote slot grid latches; a chain started cold at the grant
+    can never decode those and loses more while its loops acquire. `voiceFanout` now keeps
+    a **1 s pre-roll ring for DMO only** (`dmoVoicePrerollSeconds`, set/cleared by the
+    decoder per activation, delivered as the first chunk of `SubscribeVoiceIQWithPreroll`
+    → `CCVoiceSource.StreamIQ`; the auto-record DDC tap keeps plain `SubscribeVoiceIQ`).
+    Length is MEASURED, not guessed — cold receiver + extractor started at grant − pre-roll,
+    CRC-valid bursts over the five PTTs: 0 s → 320, 0.5 s → 359, **1 s → 361**, 2 s → 346,
+    3 s → 318. Longer LOSES: a receiver that starts on inter-transmission noise (blind CMA /
+    cumulative-mean normaliser conditioning on the floor) decodes WORSE than one started at
+    signal onset — one weak PTT went 60 → 20 bursts from 0 s to 3 s of pre-roll. That is
+    also the likely reason the live warm pipeline (sitting in silence for minutes) decoded
+    the weak PTT so much worse than the offline replay: receiver conditioning across
+    silence → traffic onset is the next DMO lever, unmeasured beyond this sweep.
+  - **"composer: tetra DMO scramble seed changed … changed back" flip-flops (2 in 5 calls)
+    were FALSE EXACT SOLVES from the soft-assisted reliable-check solver**, never the dense
+    solve: its ~48-bit local sparse checks overlap so heavily that the "24 redundant checks
+    ⇒ 2^-24" claim was fiction — 7 of 1411 DNBs on this capture (6 noise, 1 real errored
+    burst) solved to seeds that decode nothing. `DMSeedTracker.ObserveDNB` now adopts a
+    seed-CHANGING solve only if the burst CRC-decodes at the solved seed (the decode it
+    needed anyway, so free); a rejected solve is counted as `solve_rejects` in the status /
+    ended lines and the burst decodes at the known seed instead (the real errored burst was
+    thereby RESCUED: 2 frames at the true seed). Pinned by
+    `TestDMSeedTrackerRejectsSolveThatDoesNotDecode` against two LITERAL capture bursts
+    (`tetra/testdata/dmo_13sep_false_solve_*.dnb`) — old code adopts both.
+  - Operator-side: their config had `gain: 50` (= 5 dB, the startup WARN says so; the CC sat
+    at −70 dBFS) — `gain: 500` is the first thing to try before any further DSP work.
+  - Still unverified on air: the pre-roll + grant-on-adoption pair in the live daemon (this
+    round's changes were validated on the capture only; #764/#771). Also requested and
+    done the same day: `siglab: capture started/ended/aborted` INFO lines in debug.log
+    (serial, centre, rate, bandwidth, format, seconds, path; samples/recorded_seconds/elapsed
+    at the end) so a capture lines up with the log without guessing.
+- **`make test-integration` / `make integration` had NO `-timeout`, so a slow hosted runner
+  fails a green PR.** PR #1175's `integration` job died with `panic: test timed out after
+  10m0s` inside `TestSweepImplementationLossBudget` (P25 Phase 1 receiver, 21 s into a test
+  that is seconds on main) because go test's 10 m default is a PER-PACKAGE alarm and the
+  package as a whole crossed it under `-race` on that runner — the same lesson `ci.yml`'s
+  build-test job already applied (`-timeout 25m`, run 2394). Both Makefile targets now carry
+  `-timeout 25m` (landed on main via PR #1182, which also merged main into #1175). When a PR
+  shows only the `integration` job red with that panic, re-run before reading it as a defect.
 - **12 Sep IPSC "missed a lot of calls" (442.3875 MHz, 20-min Signal Lab flac + live log):
   NOT two colour codes, NOT the tuner — the live wideband Tier II tap goes deaf in
   ~3-minute stretches, and the root cause is still open.** Facts pinned: every one of the

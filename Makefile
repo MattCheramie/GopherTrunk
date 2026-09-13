@@ -121,7 +121,7 @@ test-hackrf-real-diag:
 # the engine + recorder + call log + metrics + API agree on a synthetic
 # call. Build-tagged so default `make test` stays a fast unit run.
 integration:
-	$(GO) test -tags "integration $(TAGS)" -race -count=1 ./cmd/gophertrunk/...
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -timeout 25m ./cmd/gophertrunk/...
 
 # test-integration is the full-tree variant — runs every
 # integration-tagged test across the codebase, not just the ones in
