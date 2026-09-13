@@ -285,6 +285,7 @@ func TestCallHistoryEndpointRejectsBadParams(t *testing.T) {
 
 	for _, q := range []string{
 		"group_id=abc",
+		"source_id=abc",
 		"since=not-a-date",
 		"until=not-a-date",
 		"limit=-1",
@@ -294,5 +295,65 @@ func TestCallHistoryEndpointRejectsBadParams(t *testing.T) {
 			t.Errorf("%s status = %d, want 400", q, resp.StatusCode)
 		}
 		resp.Body.Close()
+	}
+}
+
+// TestCallHistoryEndpointFiltersBySourceID: ?source_id= narrows the call log
+// to calls FROM one radio — the per-RID view (Radio IDs → "All calls from this
+// radio"), so recordings can be found by who was talking, not only by
+// talkgroup. The parameter used to be silently ignored (HistoryFilter.SourceID
+// existed but the handler never parsed it).
+func TestCallHistoryEndpointFiltersBySourceID(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	db, _ := storage.Open(":memory:")
+	defer db.Close()
+	cl, _ := storage.NewCallLog(db, bus, nil)
+	defer cl.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	for i, src := range []uint32{1005492, 1005546, 1005492} {
+		bus.Publish(events.Event{
+			Kind: events.KindCallStart,
+			Payload: trunking.CallStart{
+				Grant:        trunking.Grant{System: "250_013", GroupID: 1020543, SourceID: src, FrequencyHz: 467_912_500},
+				DeviceSerial: "TETRA-" + string(rune('A'+i)),
+				StartedAt:    startedAt.Add(time.Duration(i) * time.Second),
+			},
+		})
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		rows, _ := db.History(context.Background(), storage.HistoryFilter{Limit: 10})
+		if len(rows) == 3 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, History: HistoryFromStorage(db)})
+	defer teardown()
+
+	resp := mustGet(t, base+"/api/v1/calls/history?source_id=1005492")
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var body struct {
+		Calls []CallRow `json:"calls"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Calls) != 2 {
+		t.Fatalf("source-filtered rows = %d, want 2 (source_id is ignored)", len(body.Calls))
+	}
+	for _, r := range body.Calls {
+		if r.SourceID != 1005492 {
+			t.Errorf("row source_id = %d, want 1005492", r.SourceID)
+		}
 	}
 }

@@ -127,13 +127,9 @@ integration:
 # integration-tagged test across the codebase, not just the ones in
 # cmd/gophertrunk/. Future-proofs against integration-tagged tests
 # landing in other packages without an explicit CI / Makefile change.
-#
-# -timeout 25m mirrors the `test` target and ci.yml's build-test job: go
-# test's 10m default is a per-PACKAGE alarm, and under -race on a loaded
-# hosted runner the P25 Phase 1 receiver package alone crossed it (PR #1175's
-# integration job: `panic: test timed out after 10m0s` inside
-# TestSweepImplementationLossBudget, 21 s into a test that passes in seconds
-# on main) — a slow runner, not a hung test, so it must not fail the run.
+# -timeout 25m for the same reason as `test`: this walks the whole tree
+# under -race, and internal/radio/p25/phase1/receiver alone crosses go
+# test's 10m per-package default on a slow hosted runner.
 test-integration:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -timeout 25m $(PKGS)
 

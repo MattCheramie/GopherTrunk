@@ -105,7 +105,7 @@ live RIDs.
 | --- | --- | --- | --- |
 | `GET`   | `/api/v1/rids`                  | open           | Merged list (configured ∪ live). |
 | `GET`   | `/api/v1/rids/{id}`             | open           | Single merged row. |
-| `GET`   | `/api/v1/rids/{id}/history`     | open           | `call_log` filtered by `source_id`. Same query params as `/api/v1/calls/history` (`limit`, `only_ended`, `system`). |
+| `GET`   | `/api/v1/rids/{id}/history`     | open           | `call_log` filtered by `source_id`. Same query params as `/api/v1/calls/history` (`limit`, `only_ended`, `system`). `/api/v1/calls/history?source_id={id}` is the equivalent on the main history route (the web History panel's "Source RID" filter / the "All calls from this radio" link). Rows with `has_recording` play via `GET /api/v1/calls/{id}/audio` — the ▶ button beside each recent call in the Radio IDs modal. |
 | `PATCH` | `/api/v1/rids/{id}`             | mutation-gated | Edit alias / description / tag / group / owner / priority / lockout / watch / icon. A radio with no catalogue row is **created**, so a radio seen only over the air can be named without editing a file first. Optional `?system=` scopes the persisted name to one system. |
 | `GET`   | `/api/v1/labels`                | open           | The persisted operator-applied names. `?kind=rid\|talkgroup`, `?system=`. 503 without `storage.path`. |
 | `GET`   | `/api/v1/labels/export`         | open           | Those names as a CSV that loads into `rid_alias_file` / `talkgroup_file`. `?kind=` (required), `?system=`, `?scope=labels\|all`. |

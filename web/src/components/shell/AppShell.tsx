@@ -71,7 +71,10 @@ export function AppShell({ children }: Props) {
           onOpenMore={() => setDrawerOpen(true)}
           onOpenPalette={() => setPaletteOpen(true)}
         />
-        <main id="main" className="flex-1 p-3 sm:p-4 pb-24 sm:pb-4">
+        {/* Bottom padding at EVERY width: the floating audio mini-player docks
+            bottom-right and covered the last table row / pager on desktop
+            (sm:pb-4 left it only 1rem). Mobile keeps room for BottomNav too. */}
+        <main id="main" className="flex-1 p-3 sm:p-4 pb-24 sm:pb-24">
           {children}
         </main>
       </div>

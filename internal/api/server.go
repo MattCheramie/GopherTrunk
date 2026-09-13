@@ -557,6 +557,25 @@ type RecordingProvider interface {
 	RecordingPathByID(ctx context.Context, id int64) (string, error)
 }
 
+// RecordingSegment is one recording file of a call, in playback order. A call
+// recorded in per-transmission grouping (one file per over — a TETRA talker
+// change rolls the file) has several; a single-file call has one.
+type RecordingSegment struct {
+	Seq       int
+	Path      string
+	StartedAt time.Time
+	EndedAt   time.Time
+}
+
+// RecordingSegmentsProvider is the optional, richer form of RecordingProvider:
+// every recording file of a call rather than the row's single path, so the
+// audio endpoint can play a multi-over call end to end instead of only its
+// first segment (the "30 s call with a 4 s recording" report). A provider
+// without it serves the single RecordingPathByID file as before.
+type RecordingSegmentsProvider interface {
+	RecordingSegmentsByID(ctx context.Context, id int64) ([]RecordingSegment, error)
+}
+
 // LocationFix is one geographic fix returned by GET /api/v1/locations.
 type LocationFix struct {
 	System     string  `json:"system"`

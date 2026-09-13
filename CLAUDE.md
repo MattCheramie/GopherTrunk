@@ -531,9 +531,8 @@ confirmation before any close-as-completed.
   that is seconds on main) because go test's 10 m default is a PER-PACKAGE alarm and the
   package as a whole crossed it under `-race` on that runner — the same lesson `ci.yml`'s
   build-test job already applied (`-timeout 25m`, run 2394). Both Makefile targets now carry
-  `-timeout 25m`. When a PR shows only the `integration` job red with that panic, re-run
-  before reading it as a defect; #1175 itself also needs main merged (`mergeable_state:
-  dirty`).
+  `-timeout 25m` (landed on main via PR #1182, which also merged main into #1175). When a PR
+  shows only the `integration` job red with that panic, re-run before reading it as a defect.
 - **12 Sep IPSC "missed a lot of calls" (442.3875 MHz, 20-min Signal Lab flac + live log):
   NOT two colour codes, NOT the tuner — the live wideband Tier II tap goes deaf in
   ~3-minute stretches, and the root cause is still open.** Facts pinned: every one of the
@@ -1279,6 +1278,30 @@ confirmation before any close-as-completed.
   that one IS in `unpackParams2450`, and needs the mbelib-neo 2450 frame diff. Measure with
   band fractions / centroid / LSD, never by ear alone; the "gt-shipped" WAVs had
   enhance+normalize+warm on top and hid all of this.
+- **10 Sep user-reported batch — five web/recording reports, one root cause each.**
+  (1) "History updates too slow / stops at 00:15 while activity shows 03:15" was the
+  UTC-render bug, not staleness: History/Events/Dashboard/Active/Tones/Scanner sliced
+  the daemon's RFC3339 string (`.replace("T"," ")`), so a UTC+3 operator saw every
+  table 3 h behind the (locally formatted) activity feed. `lib/formatTime.ts`
+  (`formatLocalDateTime`/`formatClock`) is now the ONLY way to render a timestamp —
+  grep for `replace("T", " ")` / `toISOString().slice` before shipping a panel. History
+  also refetches after each `call.end` (+30 s visible-tab poll). (2) "duration 30 s,
+  recording 4 s" = per-transmission segment rolls: the recorder publishes one
+  `CallComplete` PER OVER stamped with the over's own `StartedAt`, and the call log
+  keyed on it — only the first over matched the row, later files were orphaned.
+  `CallComplete.CallStartedAt`/`Segment` + the `call_recordings` table fix the keying;
+  `/calls/{id}/audio` concatenates the segments (`concatRecordingSegments`, inter-over
+  gap restored, capped 1.5 s). Pinned by `TestCallLogAttachesEverySegmentRecording`,
+  `TestCallAudioEndpointPlaysEverySegment`, `TestRecorderSegmentCompleteCarriesCallStart`.
+  The residual "1.7 s audio of a 5.6 s over, 58 frames, audio_pct=31" in the same log is
+  TETRA TCH/S decode yield on a −53 dBFS same-carrier signal (the existing
+  "recording shorter than call span" diagnostic) — RF/decode, not the recorder; do not
+  chase it from the recorder side. (3) Cyrillic recording folders as `_______`: the
+  recorder `sanitize` was `[A-Za-z0-9._-]`; it now keeps Unicode L/M/N categories.
+  (4) The floating AudioPlayer docks bottom-right exactly over DataTable's pager — pager
+  is now rendered top AND bottom, and `AppShell` main keeps `pb-24` at every width.
+  (5) Per-RID playback: `/calls/history?source_id=` + a ▶ per recent call in the RID
+  modal (`RecordingPlayer` inline).
 - **"Host overruns at a tiny 200 kS/s" on the dual-TETRA wideband rig (10 Sep) was CPU, and the
   CPU was `DecodeAACH` re-ENCODING all 16 384 RM(30,14) codewords per call.** `DecodeRM3014Tetra`
   / `DecodeRM3014TetraSoft` were ML searches that called `EncodeRM3014Tetra` (allocating) for every

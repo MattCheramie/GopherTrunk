@@ -141,10 +141,50 @@ export function DataTable<T>({
 
   const hasToolbar = searchable || !!toolbar || showColumnMenu;
   const totalCols = visibleColumns.length + (rowActions ? 1 : 0);
+  const paginated = !!pageSize && sorted.length > pageSize;
+
+  // The Prev / Next pair. Rendered ABOVE the table (in the toolbar row, or
+  // on its own when there is no toolbar) as well as below it: the bottom
+  // pager sits exactly where the floating audio mini-player docks
+  // (bottom-right), so on a 50-row page the operator could not reach "Next"
+  // without stopping the player. The main content also keeps bottom padding
+  // for the player (AppShell), but a second pager that is always in reach is
+  // what the reported bug asked for.
+  const pager = (position: "top" | "bottom") =>
+    paginated ? (
+      <div
+        className="flex items-center gap-2 text-xs text-muted"
+        data-testid={`pager-${position}`}
+      >
+        <span className="tabular-nums">
+          {page * pageSize! + 1}–{Math.min((page + 1) * pageSize!, sorted.length)}{" "}
+          of {sorted.length}
+        </span>
+        <button
+          type="button"
+          className="btn-ghost !min-h-0 !py-1 text-xs"
+          onClick={() => setPage((p) => Math.max(0, p - 1))}
+          disabled={page === 0}
+        >
+          ‹ Prev
+        </button>
+        <span className="tabular-nums">
+          {page + 1} / {pageCount}
+        </span>
+        <button
+          type="button"
+          className="btn-ghost !min-h-0 !py-1 text-xs"
+          onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+          disabled={page >= pageCount - 1}
+        >
+          Next ›
+        </button>
+      </div>
+    ) : null;
 
   return (
     <div className="space-y-2">
-      {hasToolbar && (
+      {hasToolbar ? (
         <div className="flex items-center gap-2 flex-wrap">
           {searchable && (
             <Input
@@ -157,12 +197,13 @@ export function DataTable<T>({
             />
           )}
           {toolbar}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-3 flex-wrap">
             {searchable && query && (
               <span className="text-xs text-muted">
                 {sorted.length} of {rows.length}
               </span>
             )}
+            {pager("top")}
             {showColumnMenu && (
               <ColumnMenu
                 columns={columns}
@@ -172,6 +213,8 @@ export function DataTable<T>({
             )}
           </div>
         </div>
+      ) : (
+        paginated && <div className="flex justify-end">{pager("top")}</div>
       )}
 
       <div className="panel overflow-hidden">
@@ -254,33 +297,7 @@ export function DataTable<T>({
         )}
       </div>
 
-      {pageSize && sorted.length > pageSize && (
-        <div className="flex items-center justify-between gap-2 text-xs text-muted">
-          <span>
-            {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)}{" "}
-            of {sorted.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              className="btn-ghost !min-h-0 !py-1 text-xs"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-            >
-              ‹ Prev
-            </button>
-            <span>
-              {page + 1} / {pageCount}
-            </span>
-            <button
-              className="btn-ghost !min-h-0 !py-1 text-xs"
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              disabled={page >= pageCount - 1}
-            >
-              Next ›
-            </button>
-          </div>
-        </div>
-      )}
+      {paginated && <div className="flex justify-end">{pager("bottom")}</div>}
     </div>
   );
 }

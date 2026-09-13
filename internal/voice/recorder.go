@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -746,6 +747,9 @@ func (r *Recorder) sessionForWrite(serial string, callID uint64) *recordingSessi
 			if ns == nil {
 				return nil
 			}
+			// Carry the over index the park stamped, so this file's
+			// CallComplete says which segment of the call it is.
+			ns.segment = s.segment
 			r.sessions[serial] = ns
 			s = ns
 		}
@@ -1242,7 +1246,7 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 	// Park a dormant session: keeps the call's identity so the next write
 	// opens the next segment file, without creating an empty trailing
 	// file if no further audio arrives before the call ends.
-	r.sessions[seg.DeviceSerial] = &recordingSession{cs: s.cs, callID: s.callID}
+	r.sessions[seg.DeviceSerial] = &recordingSession{cs: s.cs, callID: s.callID, segment: s.segment + 1}
 	r.mu.Unlock()
 	if cc != nil {
 		r.normalizeIfEnabled(cc.AudioPath)
@@ -1388,7 +1392,11 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		EndedAt:      endedAt,
 		Reason:       reason,
 		AudioPath:    s.wavPath,
-		SampleRate:   s.sampleRate,
+		// The call's own start + this file's index, so the call log can attach
+		// every segment of a multi-over call to the one row (see CallComplete).
+		CallStartedAt: s.cs.StartedAt,
+		Segment:       s.segment,
+		SampleRate:    s.sampleRate,
 	}
 	var meta *callMeta
 	if r.writeCallJSON {
@@ -1849,6 +1857,18 @@ func fadeTail(from int16, n int) []int16 {
 }
 
 // sanitize strips characters that are awkward in file paths across OSes.
+//
+// It keeps letters and digits from EVERY script (Unicode categories L, M, N),
+// not just ASCII — an operator naming talkgroups/radios in Cyrillic, Greek,
+// CJK, … used to get a directory of underscores ("Депо им.Русакова" →
+// "_______.________", the reported bug) because the old mapper only passed
+// [A-Za-z0-9]. Every modern filesystem GopherTrunk runs on (APFS, ext4, NTFS)
+// is UTF-8/UTF-16 clean, so the alias survives verbatim; only separators,
+// whitespace, control characters and shell/OS metacharacters become '_'.
+// Dots stay (talkgroup names like "Site 1.2" are common) but a segment that
+// would be "." or ".." is neutralised so a token value can never traverse.
+// Invalid UTF-8 bytes map to '_' as well (strings.Map hands them over as
+// U+FFFD, which is a symbol, not a letter).
 func sanitize(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -1856,19 +1876,19 @@ func sanitize(s string) string {
 	}
 	mapper := func(r rune) rune {
 		switch {
-		case r >= 'a' && r <= 'z':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r
-		case r >= '0' && r <= '9':
-			return r
 		case r == '-' || r == '_' || r == '.':
+			return r
+		case unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r):
 			return r
 		default:
 			return '_'
 		}
 	}
-	return strings.Map(mapper, s)
+	out := strings.Map(mapper, s)
+	if out == "." || out == ".." {
+		return strings.Repeat("_", len(out))
+	}
+	return out
 }
 
 type recordingSession struct {
@@ -1915,6 +1935,11 @@ type recordingSession struct {
 	// each (which flooded at debug level on a garbled call).
 	vocoderDrops int
 	startedAt    time.Time
+	// segment is this file's 0-based index within the call: 0 for the first
+	// (or only) recording, incremented on each per-transmission segment roll
+	// (handleSegment parks the dormant successor with segment+1). Carried on
+	// the CallComplete so the call log keeps the overs in order.
+	segment int
 	// callID is the Grant.CallID of the call this session records. Frames
 	// arriving via WriteRawFrameForCall with a different non-zero callID are
 	// dropped (see sessionForWrite) so a reused tap serial can't bleed the

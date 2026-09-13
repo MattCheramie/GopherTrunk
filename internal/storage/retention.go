@@ -141,6 +141,12 @@ func (r *Retention) deleteOldRows(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	// The per-segment recording rows belong to their call row; drop the ones
+	// whose call just went (no FK cascade — foreign keys are off by default).
+	if _, err := r.db.sql.ExecContext(ctx,
+		`DELETE FROM call_recordings WHERE call_id NOT IN (SELECT id FROM call_log)`); err != nil {
+		return 0, err
+	}
 	return res.RowsAffected()
 }
 
