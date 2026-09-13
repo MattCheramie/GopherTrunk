@@ -127,8 +127,11 @@ integration:
 # integration-tagged test across the codebase, not just the ones in
 # cmd/gophertrunk/. Future-proofs against integration-tagged tests
 # landing in other packages without an explicit CI / Makefile change.
+# -timeout 25m for the same reason as `test`: this walks the whole tree
+# under -race, and internal/radio/p25/phase1/receiver alone crosses go
+# test's 10m per-package default on a slow hosted runner.
 test-integration:
-	$(GO) test -tags "integration $(TAGS)" -race -count=1 $(PKGS)
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -timeout 25m $(PKGS)
 
 # integration-cc is the focused "lights up live trunked reception" check:
 # boots the daemon with a mock SDR + a stubbed P25 Phase 1 pipeline factory

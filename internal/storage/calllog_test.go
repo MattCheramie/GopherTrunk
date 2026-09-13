@@ -936,3 +936,129 @@ CREATE TABLE call_log (
 	}
 	db2.Close()
 }
+
+// TestCallLogAttachesEverySegmentRecording pins the multi-over fix: a call
+// recorded in per-transmission grouping announces one KindCallComplete PER
+// SEGMENT, each with its own StartedAt (the over's start, later than the
+// call's). The old recordComplete keyed on that StartedAt, so only the first
+// over matched the call row and every later segment was orphaned — the
+// operator's "duration 30 s, recording 4 s" call. Now every segment lands on
+// the row in order, and the first file stays on recording_path.
+func TestCallLogAttachesEverySegmentRecording(t *testing.T) {
+	db := openTestDB(t)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cl, err := NewCallLog(db, bus, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	callStart := time.Now().UTC().Truncate(time.Microsecond)
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "250_013", Protocol: "tetra", GroupID: 1020545, SourceID: 1005546,
+			FrequencyHz: 467_912_500,
+		},
+		DeviceSerial: "cc:same-carrier:1",
+		StartedAt:    callStart,
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	waitFor := func(cond func() bool) bool {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if cond() {
+				return true
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		return cond()
+	}
+	var id int64
+	if !waitFor(func() bool {
+		rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1})
+		if len(rows) == 1 {
+			id = rows[0].ID
+			return true
+		}
+		return false
+	}) {
+		t.Fatal("call row never landed")
+	}
+
+	// Over 1 (talker A): the file spans the call start → +6 s.
+	const seg0 = "/rec/250_013/Депо_им.Русакова/20260910_031518_1020545.flac"
+	// Over 2 (talker B): a segment roll — StartedAt is the OVER's start.
+	const seg1 = "/rec/250_013/Депо_им.Русакова/20260910_031524_1020545.flac"
+	bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: trunking.CallComplete{
+		Grant: cs.Grant, DeviceSerial: cs.DeviceSerial,
+		StartedAt: callStart, EndedAt: callStart.Add(6 * time.Second),
+		CallStartedAt: callStart, Segment: 0, AudioPath: seg0,
+	}})
+	bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: trunking.CallComplete{
+		Grant: cs.Grant, DeviceSerial: cs.DeviceSerial,
+		StartedAt: callStart.Add(6 * time.Second), EndedAt: callStart.Add(30 * time.Second),
+		CallStartedAt: callStart, Segment: 1, AudioPath: seg1,
+	}})
+	// A replayed duplicate of the second announcement must not double it.
+	bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: trunking.CallComplete{
+		Grant: cs.Grant, DeviceSerial: cs.DeviceSerial,
+		StartedAt: callStart.Add(6 * time.Second), EndedAt: callStart.Add(30 * time.Second),
+		CallStartedAt: callStart, Segment: 1, AudioPath: seg1,
+	}})
+
+	var segs []RecordingSegment
+	if !waitFor(func() bool {
+		segs, _ = db.RecordingSegmentsByID(context.Background(), id)
+		return len(segs) == 2
+	}) {
+		t.Fatalf("RecordingSegmentsByID = %d segments (%+v), want 2 — the second over was orphaned", len(segs), segs)
+	}
+	if segs[0].Path != seg0 || segs[1].Path != seg1 {
+		t.Errorf("segment order = %q, %q; want %q, %q", segs[0].Path, segs[1].Path, seg0, seg1)
+	}
+	if segs[0].Seq != 0 || segs[1].Seq != 1 {
+		t.Errorf("segment seq = %d, %d; want 0, 1", segs[0].Seq, segs[1].Seq)
+	}
+	if !segs[1].StartedAt.Equal(callStart.Add(6*time.Second)) || !segs[1].EndedAt.Equal(callStart.Add(30*time.Second)) {
+		t.Errorf("segment 1 span = %v..%v, want +6s..+30s", segs[1].StartedAt, segs[1].EndedAt)
+	}
+	// The row's single recording_path stays the FIRST file (has_recording +
+	// legacy readers), never a later over.
+	if p, _ := db.RecordingPathByID(context.Background(), id); p != seg0 {
+		t.Errorf("RecordingPathByID = %q, want the first segment %q", p, seg0)
+	}
+	rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1})
+	if len(rows) != 1 || !rows[0].HasRecording {
+		t.Errorf("HasRecording = false after segment recordings")
+	}
+}
+
+// TestRecordingSegmentsFallsBackToRowPath: rows written before the
+// call_recordings table existed carry only call_log.recording_path — they must
+// still play as a single segment rather than reading as "no recording".
+func TestRecordingSegmentsFallsBackToRowPath(t *testing.T) {
+	db := openTestDB(t)
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := db.sql.Exec(`INSERT INTO call_log (system, group_id, device_serial, started_at, recording_path)
+		VALUES ('A', 1, 'V1', ?, '/rec/old.wav')`, startedAt.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	if err := db.sql.QueryRow(`SELECT id FROM call_log`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	segs, err := db.RecordingSegmentsByID(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segs) != 1 || segs[0].Path != "/rec/old.wav" {
+		t.Errorf("segments = %+v, want the row's own path", segs)
+	}
+	if segs, err := db.RecordingSegmentsByID(context.Background(), 999999); err != nil || segs != nil {
+		t.Errorf("unknown id: segs=%v err=%v", segs, err)
+	}
+}

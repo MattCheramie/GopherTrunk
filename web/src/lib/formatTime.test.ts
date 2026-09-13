@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { formatClock } from "./formatTime";
+import { formatClock, formatLocalDateTime } from "./formatTime";
 
 // Pin a non-UTC timezone so the "local, not GMT" behaviour is observable and
 // deterministic regardless of where the suite runs.
@@ -25,5 +25,28 @@ describe("formatClock", () => {
     // Non-date input: Date() is NaN, so it returns raw.slice(11,19) — here the
     // 8 chars starting at index 11 ("XXXXXXXXXXX" is 11 chars) = "12:34:56".
     expect(formatClock("XXXXXXXXXXX12:34:56")).toBe("12:34:56");
+  });
+});
+
+describe("formatLocalDateTime", () => {
+  it("renders date + time in local time, not UTC", () => {
+    // 2026-09-10T00:15:18Z is 20:15:18 the previous evening in New York.
+    // The old `.replace("T", " ")` slice would have shown "2026-09-10 00:15:18"
+    // — the operator's "history is 3 hours behind the activity feed" report.
+    expect(formatLocalDateTime("2026-09-10T00:15:18Z")).toBe(
+      "2026-09-09 20:15:18",
+    );
+  });
+
+  it("drops fractional seconds and honours an explicit offset", () => {
+    expect(formatLocalDateTime("2026-09-10T03:15:18.654+03:00")).toBe(
+      "2026-09-09 20:15:18",
+    );
+  });
+
+  it("falls back to the raw value on an unparseable timestamp", () => {
+    // (V8's Date parser is permissive — even "xTy.1" yields a year — so the
+    // fixture is plain words, which every engine rejects.)
+    expect(formatLocalDateTime("not a date")).toBe("not a date");
   });
 });

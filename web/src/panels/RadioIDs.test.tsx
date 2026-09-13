@@ -219,6 +219,72 @@ describe("RadioIDs panel", () => {
     });
   });
 
+  // Recordings used to be playable only from the talkgroup-filtered History
+  // table; each recent call with a recording now carries its own play button
+  // that expands the RecordingPlayer inline, plus a link to the per-radio
+  // call log.
+  it("plays a recent call's recording from the radio's modal", async () => {
+    vi.mocked(api.rids).mockResolvedValue([
+      { id: 4242, alias: "ALPHA", configured: true, call_count: 2 },
+    ]);
+    vi.mocked(api.ridHistory).mockResolvedValue([
+      {
+        id: 1,
+        system: "Metro",
+        protocol: "p25",
+        group_id: 99,
+        frequency_hz: 851_000_000,
+        started_at: "2026-05-26T12:00:00Z",
+        has_recording: true,
+      },
+      {
+        id: 2,
+        system: "Metro",
+        protocol: "p25",
+        group_id: 99,
+        frequency_hz: 851_000_000,
+        started_at: "2026-05-26T12:01:00Z",
+      },
+    ]);
+    // RecordingPlayer fetches the audio; leave it pending so the test only
+    // asserts the player mounted.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => new Promise(() => {}));
+    try {
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("ALPHA")).toBeInTheDocument();
+      });
+      await userEvent.click(screen.getByText("ALPHA"));
+
+      const play = await screen.findByRole("button", {
+        name: /Play recording of call 1/,
+      });
+      // Only the call that has a recording gets a button.
+      expect(
+        screen.queryByRole("button", { name: /Play recording of call 2/ }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("link", { name: /All calls from this radio/ }),
+      ).toHaveAttribute("href", "/history?source_id=4242");
+
+      await userEvent.click(play);
+      expect(screen.getByText(/Loading recording/)).toBeInTheDocument();
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/calls/1/audio"),
+        expect.anything(),
+      );
+      // Toggles off again.
+      await userEvent.click(
+        screen.getByRole("button", { name: /Hide recording of call 1/ }),
+      );
+      expect(screen.queryByText(/Loading recording/)).toBeNull();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   // Regression: a /rids/:id deep link (e.g. a source-radio click in CC
   // Activity or call history) must open that radio's detail modal. The route
   // used to be unregistered, so such links fell through to the dashboard.

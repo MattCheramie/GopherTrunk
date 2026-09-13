@@ -5,6 +5,7 @@ import { ConfirmModal } from "../components/ConfirmModal";
 import { PageHeader } from "../components/ui/PageHeader";
 import type { EventDTO, ToneAlertDTO } from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
+import { formatLocalDateTime } from "../lib/formatTime";
 
 interface ToneRow {
   alert: ToneAlertDTO;
@@ -40,7 +41,7 @@ export function Tones() {
         header: "Matched",
         render: (r) => (
           <span className="font-mono text-xs text-muted whitespace-nowrap">
-            {r.alert.matched_at.replace("T", " ").replace(/\..*$/, "")}
+            {formatLocalDateTime(r.alert.matched_at)}
           </span>
         ),
         sort: (a, b) => a.alert.matched_at.localeCompare(b.alert.matched_at),
@@ -185,7 +186,7 @@ function ToneDetail({ row, onClose }: { row: ToneRow; onClose: () => void }) {
           <div className="flex-1">
             <h3 className="text-lg font-semibold">{row.alert.profile}</h3>
             <p className="text-xs text-muted">
-              {row.alert.matched_at.replace("T", " ").replace(/\..*$/, "")}
+              {formatLocalDateTime(row.alert.matched_at)}
             </p>
           </div>
           <button

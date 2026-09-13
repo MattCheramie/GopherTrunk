@@ -141,3 +141,17 @@ func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRo
 func (s *storageHistory) RecordingPathByID(ctx context.Context, id int64) (string, error) {
 	return s.db.RecordingPathByID(ctx, id)
 }
+
+// RecordingSegmentsByID delegates to storage.DB so the audio endpoint can play
+// every segment of a multi-over call (RecordingSegmentsProvider).
+func (s *storageHistory) RecordingSegmentsByID(ctx context.Context, id int64) ([]RecordingSegment, error) {
+	segs, err := s.db.RecordingSegmentsByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RecordingSegment, len(segs))
+	for i, seg := range segs {
+		out[i] = RecordingSegment{Seq: seg.Seq, Path: seg.Path, StartedAt: seg.StartedAt, EndedAt: seg.EndedAt}
+	}
+	return out, nil
+}

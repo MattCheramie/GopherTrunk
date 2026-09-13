@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
@@ -10,7 +10,9 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Section } from "../components/ui/Section";
 import { Select } from "../components/ui/Select";
 import { PositionMap, type MapPoint } from "../components/PositionMap";
+import { RecordingPlayer } from "../components/RecordingPlayer";
 import type { CallRow, LocationFix, RIDDTO } from "../api/types";
+import { formatLocalDateTime } from "../lib/formatTime";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -39,6 +41,8 @@ export function RadioIDs() {
   const [selected, setSelected] = useState<RIDDTO | null>(null);
   const [history, setHistory] = useState<CallRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // The recent call whose recording is expanded inline (one at a time).
+  const [playingCallId, setPlayingCallId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   // Selected system filter ("" = all systems). Populates the ?system= query so
   // a large multi-system RID roster stays legible.
@@ -179,6 +183,7 @@ export function RadioIDs() {
 
   // Fetch per-RID call history when the detail modal opens.
   useEffect(() => {
+    setPlayingCallId(null);
     if (!selected) {
       setHistory([]);
       return;
@@ -436,18 +441,29 @@ export function RadioIDs() {
             />
             <DetailField
               label="First seen"
-              value={selected.first_seen ?? "—"}
+              mono
+              value={selected.first_seen ? formatLocalDateTime(selected.first_seen) : "—"}
             />
             <DetailField
               label="Last seen"
-              value={selected.last_seen ?? "—"}
+              mono
+              value={selected.last_seen ? formatLocalDateTime(selected.last_seen) : "—"}
             />
           </div>
 
           <div className="pt-3 border-t border-panel">
-            <p className="text-xs uppercase tracking-wider text-muted mb-2">
-              Recent calls
-            </p>
+            <div className="flex items-baseline justify-between gap-3 mb-2">
+              <p className="text-xs uppercase tracking-wider text-muted">
+                Recent calls
+              </p>
+              <Link
+                to={`/history?source_id=${selected.id}`}
+                className="text-xs text-accent hover:underline"
+                title="Open the call log filtered to calls from this radio"
+              >
+                All calls from this radio →
+              </Link>
+            </div>
             {historyLoading ? (
               <p className="text-xs text-muted">Loading…</p>
             ) : history.length === 0 ? (
@@ -455,17 +471,42 @@ export function RadioIDs() {
                 No calls in the persisted call log for this RID.
               </p>
             ) : (
-              <ul className="space-y-1 max-h-56 overflow-y-auto text-xs">
+              <ul className="space-y-1 max-h-72 overflow-y-auto text-xs">
                 {history.map((c) => (
-                  <li
-                    key={c.id}
-                    className="flex justify-between gap-3 font-mono"
-                  >
-                    <span>
-                      {c.system} · TG {c.group_id}
-                      {c.talkgroup_alpha ? ` · ${c.talkgroup_alpha}` : ""}
-                    </span>
-                    <span className="text-muted">{formatTime(c.started_at)}</span>
+                  <li key={c.id} className="font-mono">
+                    <div className="flex justify-between items-center gap-3">
+                      <span>
+                        {c.system} · TG {c.group_id}
+                        {c.talkgroup_alpha ? ` · ${c.talkgroup_alpha}` : ""}
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-muted">{formatTime(c.started_at)}</span>
+                        {/* Per-call playback: recordings used to be reachable
+                            only through the talkgroup-filtered History table. */}
+                        {c.has_recording && (
+                          <button
+                            type="button"
+                            className="btn-ghost !min-h-0 !py-0 !px-1.5 text-xs"
+                            aria-label={
+                              playingCallId === c.id
+                                ? `Hide recording of call ${c.id}`
+                                : `Play recording of call ${c.id}`
+                            }
+                            aria-expanded={playingCallId === c.id}
+                            onClick={() =>
+                              setPlayingCallId((cur) => (cur === c.id ? null : c.id))
+                            }
+                          >
+                            {playingCallId === c.id ? "■" : "▶"}
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                    {playingCallId === c.id && (
+                      <div className="mt-1 mb-2">
+                        <RecordingPlayer cfg={cfg} callId={c.id} />
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -557,10 +598,6 @@ export function RadioIDs() {
 }
 
 function formatTime(rfc3339: string): string {
-  // Render compact local time; fall back to the raw string if
-  // parsing fails so a malformed daemon timestamp is still visible.
-  const t = Date.parse(rfc3339);
-  if (Number.isNaN(t)) return rfc3339;
-  const d = new Date(t);
-  return d.toLocaleString();
+  // Compact local date + time, the same shape as the History table.
+  return formatLocalDateTime(rfc3339);
 }

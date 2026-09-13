@@ -211,12 +211,20 @@ export const api = {
   },
   history: (
     c: ClientConfig,
-    opts: { limit?: number; system?: string; group_id?: number } = {},
+    opts: {
+      limit?: number;
+      system?: string;
+      group_id?: number;
+      // Filter to calls FROM one radio (call_log.source_id) — the per-RID
+      // view of the call log, so recordings can be found by who was talking.
+      source_id?: number;
+    } = {},
   ) => {
     const q = new URLSearchParams();
     if (opts.limit != null) q.set("limit", String(opts.limit));
     if (opts.system) q.set("system", opts.system);
     if (opts.group_id != null) q.set("group_id", String(opts.group_id));
+    if (opts.source_id != null) q.set("source_id", String(opts.source_id));
     const qs = q.toString();
     return request<{ calls: CallRow[] }>(
       c,

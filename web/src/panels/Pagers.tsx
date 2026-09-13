@@ -9,6 +9,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
+import { formatClock } from "../lib/formatTime";
 
 // Pagers panel — list of recent POCSAG and FLEX pages decoded by the
 // daemon. Each row carries its protocol, RIC, function code, encoding,
@@ -159,10 +160,6 @@ function ProtocolBadge({ protocol }: { protocol: string }) {
 }
 
 function formatTime(ts: string): string {
-  try {
-    const d = new Date(ts);
-    return d.toISOString().slice(11, 19);
-  } catch {
-    return ts.slice(11, 19);
-  }
+  // Local wall-clock, like every other live panel (toISOString is always UTC).
+  return formatClock(ts);
 }

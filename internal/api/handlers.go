@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -330,6 +332,17 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 		}
 		f.GroupID = uint32(n)
 	}
+	// source_id narrows to calls FROM one radio (call_log.source_id): the
+	// per-RID view of the call log, so an operator can find and play a radio's
+	// recordings rather than only a talkgroup's.
+	if v := q.Get("source_id"); v != "" {
+		n, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, "invalid source_id")
+			return
+		}
+		f.SourceID = uint32(n)
+	}
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
@@ -374,9 +387,17 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 
 // handleCallAudio streams the finished recording for one call so the web UI
 // can play a past transmission (the call-history "play" button). The call id
-// is resolved to a path through the RecordingProvider capability — the
-// filesystem path is never exposed to the client — and the file is served with
-// range support (http.ServeContent) so the browser can seek.
+// is resolved to its file(s) through the RecordingProvider capability — the
+// filesystem path is never exposed to the client — and a single file is served
+// with range support (http.ServeContent) so the browser can seek.
+//
+// A call recorded in per-transmission grouping has one file PER OVER (the
+// recorder rolls the file on a talker change). Serving only the row's single
+// path played the first over and silently dropped the rest — a 30 s call with
+// a 4 s "recording". With a RecordingSegmentsProvider every segment is decoded
+// (WAV or FLAC, content-sniffed) and concatenated into one WAV, with the real
+// silence between overs restored (capped, see concatRecordingSegments) so the
+// talker change is audible and the timeline stays roughly honest.
 //
 //	GET /api/v1/calls/{id}/audio
 func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
@@ -394,36 +415,39 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "invalid call id")
 		return
 	}
-	path, err := prov.RecordingPathByID(r.Context(), id)
+	segs, err := s.recordingSegments(r.Context(), prov, id)
 	if err != nil {
 		s.log.Warn("api: recording path lookup failed", "err", err, "call", id)
 		s.writeError(w, http.StatusInternalServerError, "recording lookup failed")
 		return
 	}
-	if path == "" {
+	if len(segs) == 0 {
 		s.writeError(w, http.StatusNotFound, "no recording for this call")
 		return
 	}
-	// Rows written while recordings.dir resolved to a relative path (a
-	// relative -config invocation, before config.Load absolutized the resolve
-	// base) store cwd-relative recording paths. The recorder wrote them
-	// relative to the daemon's working directory, so resolving against the
-	// same cwd is exactly what makes the file reachable — without this every
-	// such row 404'd as "unavailable" while the file was on disk.
-	if !filepath.IsAbs(path) {
-		if abs, err := filepath.Abs(path); err == nil {
-			path = abs
+	// Validate every segment's path the same way (see validRecordingPath); a
+	// bad row must never make the endpoint serve a non-recording.
+	for i := range segs {
+		p, ok := validRecordingPath(segs[i].Path)
+		if !ok {
+			s.writeError(w, http.StatusNotFound, "recording unavailable")
+			return
 		}
+		segs[i].Path = p
 	}
-	// The path is daemon-generated, but validate defensively before opening:
-	// an absolute audio file, no traversal, actually a regular file. This keeps
-	// the endpoint from ever serving a non-recording even if the row is bad.
-	ext := strings.ToLower(filepath.Ext(path))
-	if !filepath.IsAbs(path) || strings.Contains(path, "..") ||
-		(ext != ".wav" && ext != ".mp3" && ext != ".flac") {
-		s.writeError(w, http.StatusNotFound, "recording unavailable")
-		return
+	if len(segs) > 1 {
+		wav, err := concatRecordingSegments(segs)
+		if err == nil {
+			w.Header().Set("Content-Type", "audio/wav")
+			http.ServeContent(w, r, "call.wav", time.Time{}, bytes.NewReader(wav))
+			return
+		}
+		// e.g. an MP3-transcoded segment the PCM reader can't decode —
+		// degrade to the first segment rather than 404 a call that has audio.
+		s.log.Warn("api: concatenating segment recordings failed; serving the first segment",
+			"call", id, "segments", len(segs), "err", err)
 	}
+	path := segs[0].Path
 	f, err := os.Open(path)
 	if err != nil {
 		// Retention may have deleted it, or the volume moved.
@@ -436,7 +460,7 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, "recording unavailable")
 		return
 	}
-	switch ext {
+	switch strings.ToLower(filepath.Ext(path)) {
 	case ".mp3":
 		w.Header().Set("Content-Type", "audio/mpeg")
 	case ".flac":
@@ -445,6 +469,42 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "audio/wav")
 	}
 	http.ServeContent(w, r, filepath.Base(path), fi.ModTime(), f)
+}
+
+// recordingSegments resolves a call id to its recording file(s): every segment
+// when the provider can enumerate them, else the row's single path.
+func (s *Server) recordingSegments(ctx context.Context, prov RecordingProvider, id int64) ([]RecordingSegment, error) {
+	if sp, ok := prov.(RecordingSegmentsProvider); ok {
+		return sp.RecordingSegmentsByID(ctx, id)
+	}
+	path, err := prov.RecordingPathByID(ctx, id)
+	if err != nil || path == "" {
+		return nil, err
+	}
+	return []RecordingSegment{{Path: path}}, nil
+}
+
+// validRecordingPath makes a stored recording path absolute and checks it is
+// plausibly a recording before it is opened: an absolute audio file, no
+// traversal, one of the recorder's extensions. Returns the resolved path.
+func validRecordingPath(path string) (string, bool) {
+	// Rows written while recordings.dir resolved to a relative path (a
+	// relative -config invocation, before config.Load absolutized the resolve
+	// base) store cwd-relative recording paths. The recorder wrote them
+	// relative to the daemon's working directory, so resolving against the
+	// same cwd is exactly what makes the file reachable — without this every
+	// such row 404'd as "unavailable" while the file was on disk.
+	if !filepath.IsAbs(path) {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if !filepath.IsAbs(path) || strings.Contains(path, "..") ||
+		(ext != ".wav" && ext != ".mp3" && ext != ".flac") {
+		return "", false
+	}
+	return path, true
 }
 
 // handleListDevices returns the SDR pool snapshot — every opened

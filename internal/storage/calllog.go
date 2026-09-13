@@ -220,21 +220,38 @@ UPDATE call_log
 	return err
 }
 
-// recordComplete stamps the finished recording's path onto the matching call
-// row. Keyed by (device_serial, started_at) exactly like recordEnd. The
-// COALESCE(NULLIF(...)) update keeps an empty path from clobbering a value
-// already written, mirroring the never-downgrade discipline elsewhere in this
-// file. A CallComplete with no matching row (a recording without a persisted
-// call, e.g. replay tooling) updates nothing and is not an error.
+// recordComplete attaches a finished recording file to its call row. Keyed
+// by (device_serial, CALL started_at) — cc.CallStart(), not cc.StartedAt —
+// because a per-transmission segment roll announces each over with its OWN
+// start time, which matched no row: a multi-over call kept only its first
+// segment's recording and every later over was orphaned on disk (the "30 s
+// call with a 4 s recording" report). Every file lands in call_recordings
+// (ordered by segment, deduped on path so a replayed event is harmless), and
+// call_log.recording_path keeps the FIRST file so HasRecording / the legacy
+// single-path readers see the call as recorded. A CallComplete with no
+// matching row (a recording without a persisted call, e.g. replay tooling)
+// attaches nothing and is not an error.
 func (c *CallLog) recordComplete(cc trunking.CallComplete) error {
 	if cc.AudioPath == "" {
 		return nil
 	}
+	callKey := cc.CallStart().UnixNano()
 	const q = `
 UPDATE call_log
-   SET recording_path = COALESCE(NULLIF(?, ''), recording_path)
+   SET recording_path = COALESCE(recording_path, NULLIF(?, ''))
  WHERE device_serial = ? AND started_at = ?`
-	_, err := c.db.sql.Exec(q, cc.AudioPath, cc.DeviceSerial, cc.StartedAt.UnixNano())
+	if _, err := c.db.sql.Exec(q, cc.AudioPath, cc.DeviceSerial, callKey); err != nil {
+		return err
+	}
+	var endedAt any
+	if !cc.EndedAt.IsZero() {
+		endedAt = cc.EndedAt.UnixNano()
+	}
+	const ins = `
+INSERT OR IGNORE INTO call_recordings (call_id, seq, path, started_at, ended_at)
+SELECT id, ?, ?, ?, ? FROM call_log WHERE device_serial = ? AND started_at = ?`
+	_, err := c.db.sql.Exec(ins, cc.Segment, cc.AudioPath, cc.StartedAt.UnixNano(), endedAt,
+		cc.DeviceSerial, callKey)
 	return err
 }
 
@@ -415,6 +432,61 @@ func (d *DB) RecordingPathByID(ctx context.Context, id int64) (string, error) {
 		return "", nil
 	}
 	return p.String, nil
+}
+
+// RecordingSegment is one recording file of a call, in playback order.
+type RecordingSegment struct {
+	// Seq is the 0-based segment index within the call.
+	Seq int
+	// Path is the on-disk recording (WAV/FLAC/MP3 — the container is sniffed
+	// by whoever reads it, never assumed from the extension).
+	Path string
+	// StartedAt / EndedAt bound the audio in this file (EndedAt zero when the
+	// recorder did not report one). The gap between one segment's end and the
+	// next's start is the silence between overs the files do not contain.
+	StartedAt time.Time
+	EndedAt   time.Time
+}
+
+// RecordingSegmentsByID returns every recording file attached to one call, in
+// segment order — several for a call recorded in per-transmission grouping
+// (one file per over), one for a single-file call. Rows written before the
+// call_recordings table existed fall back to call_log.recording_path. nil when
+// the call has no recording or the id is unknown.
+func (d *DB) RecordingSegmentsByID(ctx context.Context, id int64) ([]RecordingSegment, error) {
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT seq, path, started_at, ended_at FROM call_recordings
+		  WHERE call_id = ? ORDER BY seq, started_at, id`, id)
+	if err != nil {
+		return nil, fmt.Errorf("storage: recording segments for call %d: %w", id, err)
+	}
+	defer rows.Close()
+	var out []RecordingSegment
+	for rows.Next() {
+		var seg RecordingSegment
+		var startNs int64
+		var endNs sql.NullInt64
+		if err := rows.Scan(&seg.Seq, &seg.Path, &startNs, &endNs); err != nil {
+			return nil, err
+		}
+		seg.StartedAt = time.Unix(0, startNs).UTC()
+		if endNs.Valid {
+			seg.EndedAt = time.Unix(0, endNs.Int64).UTC()
+		}
+		out = append(out, seg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	// Pre-table rows: the single path on the call row.
+	p, err := d.RecordingPathByID(ctx, id)
+	if err != nil || p == "" {
+		return nil, err
+	}
+	return []RecordingSegment{{Path: p}}, nil
 }
 
 // RIDSummary is one aggregated per-radio (source_id) row derived from the

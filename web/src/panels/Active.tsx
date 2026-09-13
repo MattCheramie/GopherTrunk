@@ -12,6 +12,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import type { ActiveCallDTO } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
 import { useDataPoll } from "../hooks/useDataPoll";
+import { formatLocalDateTime } from "../lib/formatTime";
 import {
   useLingeringActiveCalls,
   callDuration,
@@ -301,7 +302,7 @@ export function Active() {
             <DetailField
               label="Started"
               mono
-              value={selected.started_at.replace("T", " ").replace(/\..*$/, "")}
+              value={formatLocalDateTime(selected.started_at)}
             />
             <DetailField
               label="Duration"

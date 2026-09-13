@@ -177,6 +177,12 @@ Fires when the control channel decodes a voice/data channel grant.
 
 > `call.end` is the stream's completion event. `call.complete` also exists but is
 > a passthrough kind; prefer `call.end` for a stable duration/reason.
+>
+> `call.complete` announces one finished recording FILE. A call recorded in
+> per-transmission grouping (one file per over) emits several: each carries
+> its own `StartedAt`/`EndedAt` (the over's span), the call's start in
+> `CallStartedAt`, and a 0-based `Segment` index. `GET /api/v1/calls/{id}/audio`
+> plays every segment of the call back to back.
 
 ### `call.encryption`
 
