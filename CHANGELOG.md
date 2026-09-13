@@ -7,6 +7,24 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **FleetSync FFSK front end + capture replay harness** (#1184, #437). The
+  clean-room FleetSync / FleetSync II protocol core shipped in v1.1.1 now has
+  its DSP front end, `internal/radio/fleetsync/afsk`: IQ (or discriminator
+  audio) → FM demod → resample → 1200/1800 Hz FFSK discriminator → Mueller-
+  Müller symbol timing → zero-threshold slicer → `fleetsync.Framer`, the same
+  building blocks as the MDC1200 / MPT 1327 paths, with a selectable baud
+  rate. `fleetsync.SynthBurst` synthesises FS-I / FS-II ANI bursts as test
+  vectors, and the front end is pinned end-to-end against FFSK-modulated IQ
+  (both formats, several capture rates, inverted tone sense, chunk
+  invariance, AWGN, carrier offset, wrong-baud and noise-only no-false-decode).
+  `TestFleetSyncReplay` (`GT_FLEETSYNC_IQ`, float32 I/Q by default, cs16 /
+  audio / wav / flac accepted; rate probe when the rate is unknown; baud sweep;
+  wideband tune offset) replays a real Kenwood capture through the production
+  front end and asserts the capture's known Fleet/Unit decodes CRC-valid — the
+  on-air gate for #437. Still NOT on-air verified: the events/storage/REST/web
+  wiring stays staged until the reporter's captures pass that harness.
+
 ### Fixed
 - **A multi-over call played only its first over.** In per-transmission
   grouping (a TETRA talker change rolls the recording file) the recorder

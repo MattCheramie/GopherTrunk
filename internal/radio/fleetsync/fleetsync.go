@@ -41,10 +41,13 @@
 //
 // Verification status: the protocol constants below are pinned to the
 // multimon-ng reference and exercised by reference-literal + single-bit
-// ECC-correction tests, but this decoder has NOT yet been confirmed
-// against a real Kenwood off-air capture. Wiring it to a live DSP front
-// end, the events bus, storage and the REST/web surface is deliberately
-// staged for after that on-air A/B (issue #437).
+// ECC-correction tests, and the DSP front end (internal/radio/fleetsync/
+// afsk) decodes synthesised FFSK IQ end-to-end — but this decoder has NOT
+// yet been confirmed against a real Kenwood off-air capture. That gate is
+// cmd/gophertrunk's TestFleetSyncReplay (GT_FLEETSYNC_IQ) against the
+// captures contributed on issue #1184; wiring the events bus, storage and
+// the REST/web surface is deliberately staged for after that on-air A/B
+// (issue #437).
 package fleetsync
 
 import (

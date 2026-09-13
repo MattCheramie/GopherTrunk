@@ -1390,6 +1390,23 @@ confirmation before any close-as-completed.
   compares against), and the whole-file band fractions depend on that model, so compare
   voice frames only (`voicemask`) when measuring spectra. On this sample GT is NOT high-band
   deficient vs mbelib-neo on voice frames (3–4 kHz 0.057 vs 0.123 fraction, GT brighter).
+- **FleetSync (#437/#1184): the FFSK front end + capture harness are built; on-air
+  verification is gated on the reporter's captures, which the dev environment CANNOT
+  fetch.** `internal/radio/fleetsync/afsk` mirrors the MDC1200 front end (FM → resample →
+  1200/1800 Hz `demod.FFSK` → Mueller-Müller → slicer → `fleetsync.Framer`), with the
+  baud rate as an option. Lesson that cost a round: **slice FFSK at a fixed ZERO
+  threshold** (as the reference does) — an FS-II frame whose word1 nibbles are small opens
+  with ~68 symbols of continuous space tone, a 1/512 bias tracker drifted toward it and
+  flipped the ISI-weakened isolated bits after the run (23 errors/frame → 0). The
+  discriminator output is DC-free by construction (the FFSK stage mixes to the tone
+  midpoint and low-passes), so a tracker buys nothing. `TestFleetSyncReplay`
+  (`GT_FLEETSYNC_IQ`, float32 I/Q default, cs16/audio/wav/flac, rate PROBE when the rate
+  is unknown, baud sweep, `GT_FLEETSYNC_TUNE_HZ` for wideband) is the gate; its self-check
+  pins the harness on synthetic f32/cs16/audio vectors, so a FAIL on a real capture
+  points at the capture or the framing, never the harness. The #1184 Google Drive links
+  redirect to a sign-in page from here (restricted share or Drive gating), so the A/B must
+  run on the maintainer's machine, or the reporter re-shares / attaches the files. Bus/
+  storage/REST/web wiring stays staged until that A/B passes (#764/#771).
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that
