@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.3] — 2026-09-13
+
 ### Fixed
 - **A multi-over call played only its first over.** In per-transmission
   grouping (a TETRA talker change rolls the recording file) the recorder
