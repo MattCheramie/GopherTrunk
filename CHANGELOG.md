@@ -33,6 +33,10 @@ for tagged releases.
   end is clipping. The #836 reporter's 14 Sep capture had 23 % of its samples
   pinned (`gain: auto`, handheld in the same room) and every earlier
   diagnosis chased carrier offset.
+
+## [v1.1.3] — 2026-09-13
+
+### Fixed
 - **A multi-over call played only its first over.** In per-transmission
   grouping (a TETRA talker change rolls the recording file) the recorder
   announces one `call.complete` PER SEGMENT, each stamped with the over's own
