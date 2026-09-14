@@ -147,6 +147,14 @@ const (
 	lockPlausibleSNRdB  = 12.0
 )
 
+// ClipOverloadRatio is the raw-capture ADC-rail fraction at or above which a
+// capture is diagnosed as front-end overload. 0.5 % is far above anything a
+// healthy capture produces (a clean one is exactly 0) and far below what a
+// clipping burst-mode signal produces (its on-air duty cycle: ~23 % for a
+// direct-mode DMR handheld on the #836 capture) — a strong CONTINUOUS
+// carrier that clips reads ~100 %.
+const ClipOverloadRatio = 0.005
+
 // classifyNoLockReason returns a human-readable explanation of why the control
 // channel failed to lock, or "" when it locked. It reuses metrics already on
 // the Result — the P25 frame-decode tally (CCStats), the FSW landscape, and the
@@ -160,6 +168,13 @@ func classifyNoLockReason(r *Result) string {
 	}
 	if r.Symbols == 0 {
 		return "no symbols were recovered — the input may be empty or not interleaved IQ; check -sample-rate and -format"
+	}
+	// Front-end overload comes before every decode-side diagnosis: a burst
+	// whose samples sit at the ADC rail carries no recoverable modulation, so
+	// EVM / sync / NID figures measured on it describe the clipping, not the
+	// channel (issue #836).
+	if r.RawClipRatio >= ClipOverloadRatio {
+		return fmt.Sprintf("%.1f%% of the raw samples are pinned at the ADC rail — the front end was overloaded when this was captured (too much gain, or AGC with a strong transmitter nearby); a clipped burst cannot be decoded by any receiver. Re-capture with a lower FIXED gain (e.g. -gain 200 and step down until `capture` stops warning) or add attenuation", 100*r.RawClipRatio)
 	}
 
 	// P25 deep-path frame outcomes + FSW landscape, when present.

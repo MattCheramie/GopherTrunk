@@ -38,6 +38,16 @@ type Result struct {
 	EventCounts  map[string]int `json:"event_counts" yaml:"event_counts"`
 	DecodeErrors map[string]int `json:"decode_errors" yaml:"decode_errors"`
 
+	// RawClipRatio is the fraction of raw (pre-DDC) IQ samples with I or Q at
+	// the ADC rail (|value| ≥ 0.98 of full scale) — front-end overload. It is
+	// measured on every run, not just with CollectIQDiag, because a clipped
+	// capture is undecodable by ANY receiver and the verdict has to say so
+	// instead of "no frame sync was found" (issue #836: a handheld a few
+	// metres from an RTL-SDR on AGC pinned 23 % of the samples). 0 for a
+	// clean capture; a burst-mode transmitter at close range reads its duty
+	// cycle.
+	RawClipRatio float64 `json:"raw_clip_ratio" yaml:"raw_clip_ratio"`
+
 	// Analysis (nil unless CollectIQDiag).
 	Signal *SignalQuality `json:"signal,omitempty" yaml:"signal,omitempty"`
 	// Detail is the protocol-specific deep dive (a *P25P1Detail, *DMRDetail,

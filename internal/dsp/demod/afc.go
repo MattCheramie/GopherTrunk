@@ -53,8 +53,20 @@ func NewCoarseAFC(sps float64) *CoarseAFC {
 // buf is a real FM-discriminator (or matched-filter) output; the
 // estimate carries across calls so a chunked stream converges once.
 func (a *CoarseAFC) Process(buf []float32) {
+	a.ProcessGated(buf, nil)
+}
+
+// ProcessGated is Process with a per-sample carrier-presence gate: a sample
+// whose present flag is false has the current estimate subtracted but does
+// not update it (a nil present is all-true, byte-identical to Process). On a
+// burst-mode carrier the inter-burst noise is zero-mean, so an ungated
+// tracker decays toward zero in every gap and re-converges from scratch on
+// every burst — holding it carries the settled offset across (issue #836).
+func (a *CoarseAFC) ProcessGated(buf []float32, present []bool) {
 	for i, x := range buf {
-		a.dc += a.beta * (float64(x) - a.dc)
+		if present == nil || present[i] {
+			a.dc += a.beta * (float64(x) - a.dc)
+		}
 		buf[i] = float32(float64(x) - a.dc)
 	}
 }

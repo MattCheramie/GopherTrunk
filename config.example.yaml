@@ -280,7 +280,11 @@ sdr:
       ppm: 0               # 0 is fine for TCXO-equipped units like the NESDR Smart v5
       gain: "auto"         # TENTHS of a dB — NOT dB. "496" = 49.6 dB. SDRTrunk/
                            # OP25/gqrx users: multiply your dB figure by 10
-                           # (32 dB → "320"). "auto" (AGC) is the safe default.
+                           # (32 dB → "320"). "auto" (AGC) is the safe default
+                           # for a distant site; a transmitter a few metres
+                           # away drives the AGC into the ADC rail (the daemon
+                           # logs "front end overloaded") — pin a fixed gain
+                           # and step down until that WARN stops (issue #836).
                            # Run `gophertrunk sdr list --probe` to print each
                            # device's supported gain ladder (tenths of dB).
                            # Typical ranges: RTL-SDR R820T 0–496; Airspy R2/Mini

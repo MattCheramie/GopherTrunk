@@ -31,6 +31,10 @@ func renderResultText(w io.Writer, r *siglab.Result) {
 			r.EffectiveBaud, r.ExpectedBaud, r.BaudDeviationPct, warning)
 	}
 
+	if r.RawClipRatio >= siglab.ClipOverloadRatio {
+		fmt.Fprintf(w, "siglab: WARNING — %.1f%% of the raw samples are pinned at the ADC rail (front-end overload); a clipped burst is undecodable by any receiver — re-capture with less gain\n", 100*r.RawClipRatio)
+	}
+
 	if r.Locked {
 		fmt.Fprintf(w, "siglab: LOCKED  freq=%d  latency=%.2fs", lockFreq(r), r.LockLatencySec)
 		for _, k := range sortedKeys(lockFields(r)) {

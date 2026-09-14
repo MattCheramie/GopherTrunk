@@ -58,8 +58,18 @@ matters. Any offset that keeps the carrier inside `center ± ~1.08 MHz`
 ## If nothing decodes
 
 - **Set the serial** correctly (`gophertrunk sdr list`).
-- **Check the antenna / gain.** Try a fixed gain instead of `"auto"`,
-  e.g. `gain: "320"` (= 32.0 dB — gains are in *tenths* of a dB here).
+- **Check the gain — in BOTH directions.** With the radio a few metres from
+  the dongle, `"auto"` (the tuner AGC) drives the ADC into the rail: the log
+  shows `widebandt2: wideband front end overloaded` and no receiver can
+  decode a clipped burst. Pin a fixed gain, e.g. `gain: "200"` (= 20.0 dB —
+  gains are in *tenths* of a dB here), and step down until that WARN stops;
+  `"0"` is the other failure (deaf). `gophertrunk capture` now prints the
+  same overload warning, so a test capture tells you before you replay it.
+- **Simplex is burst-mode, and that is handled.** A handheld transmits
+  27.5 ms bursts with 32.5 ms of silence between them (one TDMA slot), unlike
+  a repeater's continuous carrier; the receiver gates its level and timing
+  trackers on carrier presence so the inter-burst noise no longer blinds it
+  (issue #836). Both `dmr-tier2` and `dmr-tier1` decode it.
 - **Set `ppm`** to your dongle's measured frequency error. A few kHz of
   drift on a cheap RTL crystal can keep DMR from locking.
 - **Set `log.level: debug`** to see lock/sync detail.

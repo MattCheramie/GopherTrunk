@@ -148,30 +148,56 @@ func TestWriterPathGuard(t *testing.T) {
 
 func TestChecksumTamperDetected(t *testing.T) {
 	raw := packSampleBundle(t, "tamper")
-	// Flip a byte somewhere in the gzip payload after the header. Retry a few
-	// offsets in case the first still gunzips to the same members.
-	mutated := append([]byte(nil), raw...)
-	// Corrupt within the compressed stream but leave gzip framing intact enough
-	// to inflate: target a middle byte.
-	mutated[len(mutated)/2] ^= 0xFF
-
-	r, err := NewReader(bytes.NewReader(mutated))
+	pristine, err := NewReader(bytes.NewReader(raw))
 	if err != nil {
-		// A corrupted gzip that fails to inflate is also an acceptable outcome —
-		// the tamper is detected, just earlier.
-		return
+		t.Fatalf("pristine bundle: %v", err)
 	}
-	sawBad := false
-	for _, v := range r.Verify() {
-		if !v.OK {
-			sawBad = true
+
+	// The invariant: no LISTED (checksummed) member can change without the
+	// reader noticing — either the gzip stream fails to inflate, Verify flags
+	// the member, or the typed read fails. A flip that lands in an index file
+	// (MANIFEST.yaml free text, README.md) is by design not integrity-checked
+	// and must leave every listed member byte-identical. The compressed
+	// layout moves whenever a serialized model gains a field, so one fixed
+	// offset is not a test: sweep the middle of the stream and check each.
+	listed := map[string]bool{}
+	for _, e := range pristine.man.Files {
+		listed[e.Path] = true
+	}
+	detected := 0
+	for pct := 20; pct <= 80; pct += 5 {
+		off := len(raw) * pct / 100
+		mutated := append([]byte(nil), raw...)
+		mutated[off] ^= 0xFF
+
+		r, err := NewReader(bytes.NewReader(mutated))
+		if err != nil {
+			detected++ // a corrupted gzip that fails to inflate is a detection, just earlier
+			continue
+		}
+		sawBad := false
+		for _, v := range r.Verify() {
+			if !v.OK {
+				sawBad = true
+			}
+		}
+		if sawBad {
+			detected++
+			continue
+		}
+		if _, _, err := r.CaptureIQ(); err != nil {
+			detected++
+			continue
+		}
+		// Undetected: only an index file may have changed.
+		for path, body := range r.blobs {
+			if listed[path] && !bytes.Equal(body, pristine.blobs[path]) {
+				t.Errorf("flip at byte %d altered listed member %q undetected: Verify clean and CaptureIQ succeeded", off, path)
+			}
 		}
 	}
-	if !sawBad {
-		// If Verify passed, at least a typed read of the mutated member must fail.
-		if _, _, err := r.CaptureIQ(); err == nil {
-			t.Errorf("tampered bundle verified clean and CaptureIQ succeeded")
-		}
+	if detected == 0 {
+		t.Errorf("no flipped offset in the middle 60%% of the stream was detected — the checksums are not covering the payload")
 	}
 }
 

@@ -99,6 +99,17 @@ const coarseAcqAgreeHz = 250.0
 // bias over the whole window, which real DMR content does not carry.
 const coarseAcqDeadbandHz = 500.0
 
+// coarseAcqClockRelockHz is the frozen offset at or above which the receiver
+// re-locks its symbol-timing loop from scratch when the stage engages. Below
+// it the Mueller-Müller loop was tracking the shifted signal correctly (its
+// sgn() error term survives a discriminator DC bias smaller than the inner
+// symbol level), so its phase is kept — a de-rotation does not move symbol
+// timing, and throwing a good lock away costs the rest of the transmission
+// on a burst-mode carrier (issue #836). At and above it the loop was parked
+// at a wrong instant (the ~1.5 kHz notch measured in #1165) and must
+// re-acquire.
+const coarseAcqClockRelockHz = 1400.0
+
 // newCoarseCarrierAcquirer builds a one-shot coarse acquirer for an IQ stream
 // sampled at sampleRateHz with sps samples per symbol. Panics on non-positive
 // arguments.
@@ -128,11 +139,22 @@ func (c *coarseCarrierAcquirer) Mix(dst, iq []complex64) []complex64 {
 // It returns engaged==true on the single call where a correction is applied, so
 // the receiver can reset the downstream DSP to re-lock cleanly on the newly
 // centred signal. A no-op (returns false) after the stage has locked.
-func (c *coarseCarrierAcquirer) Observe(disc []float32) (engaged bool) {
+//
+// present, when non-nil, is the per-sample carrier-presence flag aligned with
+// disc: only present samples feed the acquisition mean. On a burst-mode
+// carrier (DMR direct mode: 27.5 ms on, 32.5 ms off) an ungated window is
+// ~54 % zero-mean noise, which halves the offset estimate — a 1.2 kHz tuner
+// error read as ~550 Hz, right at the deadband, so the stage never engaged
+// on the very signal it was built for (issue #836). A nil present is
+// all-true.
+func (c *coarseCarrierAcquirer) Observe(disc []float32, present []bool) (engaged bool) {
 	if c.locked {
 		return false
 	}
-	for _, x := range disc {
+	for i, x := range disc {
+		if present != nil && !present[i] {
+			continue
+		}
 		c.sumRad += float64(x)
 		c.seen++
 	}

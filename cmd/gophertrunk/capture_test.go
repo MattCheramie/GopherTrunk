@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -389,5 +390,46 @@ func compareSW16(t *testing.T, got, want []complex64) {
 		if got[i] != w {
 			t.Fatalf("sample %d = %v, want %v", i, got[i], w)
 		}
+	}
+}
+
+// TestCaptureWarnsOnADCRailOverload is the issue #836 capture-side
+// instrument: a recording whose samples sit at the ADC rail must be flagged
+// at capture time (the reporter's 23 %-clipped file looked healthy on disk and
+// only failed hours later in replay), with the remedy keyed to whether the
+// tuner AGC was in use.
+func TestCaptureWarnsOnADCRailOverload(t *testing.T) {
+	const n, size = 40, 1024
+	src := make(chan []complex64, n)
+	for i := 0; i < n; i++ {
+		chunk := make([]complex64, size)
+		for k := range chunk {
+			// 30 % of every chunk pinned to the rail, the rest at -20 dBFS.
+			if k%10 < 3 {
+				chunk[k] = complex(1, -1)
+			} else {
+				chunk[k] = complex(0.1, 0.05)
+			}
+		}
+		src <- chunk
+	}
+	close(src)
+	_, probe, err := captureStream(context.Background(), io.Discard, siglab.FormatF32, src, uint32(n*size), 1.0, nil)
+	if err != nil {
+		t.Fatalf("captureStream: %v", err)
+	}
+	if got := probe.ClipRatio(); got < 0.29 || got > 0.31 {
+		t.Fatalf("ClipRatio = %.3f, want ≈0.30", got)
+	}
+	agc := formatClipWarning(probe.ClipRatio(), -1)
+	if !strings.Contains(agc, "WARNING") || !strings.Contains(agc, "30.") || !strings.Contains(agc, "AGC") {
+		t.Errorf("AGC warning = %q, want a WARNING naming 30.0%% and the AGC remedy", agc)
+	}
+	fixed := formatClipWarning(probe.ClipRatio(), 300)
+	if !strings.Contains(fixed, "lower -gain") || strings.Contains(fixed, "AGC") {
+		t.Errorf("fixed-gain warning = %q, want the lower-gain remedy without the AGC wording", fixed)
+	}
+	if w := formatClipWarning(0, -1); w != "" {
+		t.Errorf("a clean capture must not warn, got %q", w)
 	}
 }

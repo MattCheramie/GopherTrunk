@@ -183,11 +183,11 @@ func TestCaptureStreamProbeIgnoresStartupTransient(t *testing.T) {
 				src <- stream[off:end]
 			}
 		}()
-		_, windows, err := captureStream(context.Background(), io.Discard, siglab.FormatF32, src, rate, seconds, nil)
+		_, probe, err := captureStream(context.Background(), io.Discard, siglab.FormatF32, src, rate, seconds, nil)
 		if err != nil {
 			t.Fatalf("captureStream: %v", err)
 		}
-		return carrierOffsetWarning(windows, float64(rate), freq)
+		return carrierOffsetWarning(probe.Windows(), float64(rate), freq)
 	}
 
 	total := int(seconds * float64(rate))
