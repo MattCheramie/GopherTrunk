@@ -95,6 +95,27 @@ which adds an optional `color_code:` filter (drop other Color Codes sharing the
 passband) and keeps the log quiet for idle repeaters between calls.
 For trunked DMR, see [Tier III](/reference/dmr-tier-3/). See [Status](/status.html).
 
+### Direct mode (simplex) is burst-mode, and the receiver knows it
+
+A repeater transmits both timeslots continuously, but a handheld on a simplex
+frequency (DMR direct mode, Tier I or a Tier II radio in "talkaround") sends
+one 27.5 ms burst per 60 ms frame and is silent for the other 32.5 ms. The
+receiver's level, carrier and timing trackers are gated on carrier presence
+(an FM noise-quieting statistic on the discriminator, not a power threshold),
+so the inter-burst noise does not inflate the symbol AGC or walk the timing
+loop — without that gate a simplex handheld produced no burst sync at all
+while a repeater decoded fine (issue #836). Both `dmr-tier2` and `dmr-tier1`
+decode a direct-mode transmission; `dmr-tier1` restricts the sync search to
+the direct-mode sync words. With an uncorrected tuner offset above ~1 kHz the
+first transmission after start-up trains the coarse carrier acquirer (about
+half a second of bursts) and later ones decode from their first burst; set
+`ppm` from the offset `gophertrunk capture` measures to decode the first one
+too. Gain matters in both directions on a nearby handheld: the tuner AGC
+drives it into the ADC rail (the daemon logs `front end overloaded`, and
+`capture` warns the same way), so pin a fixed gain and step down until the
+warning stops.
+
+
 ## Sources
 
 [^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the ETSI DMR tiers, including the licensed conventional Tier II and its two-slot TDMA.

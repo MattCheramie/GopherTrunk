@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"math"
 	"sort"
 
@@ -40,6 +41,14 @@ type carrierProbe struct {
 	starts  []int64
 	windows [][]complex64
 	pos     int64
+
+	// clipped counts recorded samples with I or Q at the ADC rail over the
+	// WHOLE capture (not just the probe windows): front-end overload. A
+	// clipped burst is undecodable by any receiver, so the capture command
+	// warns about it the way it warns about dropped chunks (issue #836: a
+	// handheld a few metres from an RTL-SDR on AGC pinned 23 % of the samples
+	// and the file could never lock).
+	clipped int64
 }
 
 func newCarrierProbe(expected int64) *carrierProbe {
@@ -67,6 +76,7 @@ func newCarrierProbe(expected int64) *carrierProbe {
 func (p *carrierProbe) feed(samples []complex64) {
 	base := p.pos
 	p.pos += int64(len(samples))
+	p.clipped += siglab.CountClipped(samples)
 	for i, start := range p.starts {
 		w := p.windows[i]
 		if len(w) >= captureProbeSamples {
@@ -85,6 +95,33 @@ func (p *carrierProbe) feed(samples []complex64) {
 			p.windows[i] = append(w, samples[s:e]...)
 		}
 	}
+}
+
+// ClipRatio is the fraction of all recorded samples with I or Q at the ADC
+// rail (0 when nothing was recorded).
+func (p *carrierProbe) ClipRatio() float64 {
+	if p == nil || p.pos == 0 {
+		return 0
+	}
+	return float64(p.clipped) / float64(p.pos)
+}
+
+// formatClipWarning renders the front-end-overload warning for a capture
+// whose rail-pinned fraction is ratio; gainTenthsDB is the -gain the capture
+// ran with (-1 = AGC), which decides the remedy wording. "" below
+// siglab.ClipOverloadRatio.
+func formatClipWarning(ratio float64, gainTenthsDB int) string {
+	if ratio < siglab.ClipOverloadRatio {
+		return ""
+	}
+	remedy := "lower -gain (step down until this warning stops) or add attenuation"
+	if gainTenthsDB < 0 {
+		remedy = "this capture ran the tuner AGC (-gain -1), which drives a strong nearby transmitter straight into the rail — re-capture with a FIXED gain (start around -gain 200 = 20 dB and step down until this warning stops), or add attenuation"
+	}
+	return fmt.Sprintf(
+		"capture: WARNING — %.1f%% of the recorded samples are pinned at the ADC rail: the front end was overloaded. "+
+			"A clipped burst carries no recoverable modulation, so NO receiver (GopherTrunk, SDR++, a scanner) can decode this file; replaying it cannot lock. "+
+			"Remedy: %s; then re-capture. issue #836", 100*ratio, remedy)
 }
 
 // Windows returns the collected probe windows, dropping any too short to

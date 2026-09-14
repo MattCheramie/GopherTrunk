@@ -525,6 +525,45 @@ confirmation before any close-as-completed.
     done the same day: `siglab: capture started/ended/aborted` INFO lines in debug.log
     (serial, centre, rate, bandwidth, format, seconds, path; samples/recorded_seconds/elapsed
     at the end) so a capture lines up with the log without guessing.
+- **DMR direct mode / simplex (#836) NEVER decoded, and every earlier round chased the wrong
+  thing (ppm, gain-too-low, "odd rotation") — the receiver was blinded by the GAPS between
+  bursts.** A handheld on a simplex frequency transmits one 27.5 ms burst per 60 ms frame
+  (one TDMA slot) and is off for 32.5 ms; every synthetic DMR fixture laid bursts back-to-back
+  like a repeater, so the self-consistent trap hid it for the issue's whole life. In the gap the
+  FM discriminator of receiver noise is uniform over ±π — several TIMES the signal's ±0.25
+  rad/sample — and that inflated the symbol AGC's 53 ms level EMA (every outer symbol then sliced
+  as inner ⇒ no sync word, all ±3, ever matched), decayed the post-clock AFC, halved the coarse
+  acquirer's window mean (a 1.2 kHz offset read ~550 Hz, at its own deadband) and random-walked
+  the MM loop. Failing-first: the production Tier I AND Tier II pipelines decoded ZERO sync words
+  from a 27 dB-SNR direct-mode stream (`pipelines_dmr_directmode_test.go`,
+  `receiver_burst_test.go`). Fix = `dmrrx.carrierGate`: the discriminator's running
+  mean-removed VARIANCE (measured on the reporter's capture through the production DDC: 0.01–0.08
+  rad² inside bursts even when ADC-clipped, 2.3–3.9 rad² in gaps / band-limited noise — a 30×
+  separation, offset-independent, no dBFS anywhere) with hysteresis (open <1.0, close ≥2.5) and
+  a 4-symbol delay line so the decision aligns with the burst edge; it HOLDS the AGC / AFC /
+  acquirer / MM-error updates on absent samples (gated `ProcessGated` variants, byte-identical
+  when all-present) and MUTES the discriminator there (the RRC matched-filter memory otherwise
+  carries ±π gap noise into every burst's first span — half the headers failed BPTC with the
+  trackers gated but the discriminator unmuted). Two more traps found on the way: (1) the
+  acquirer applied its correction "on the NEXT chunk" — an RTL-sized 4096-sample chunk is a whole
+  burst, so decode after engage depended on where the chunk boundary fell (34/40 vs 20/40 syncs);
+  it now re-mixes the engage chunk at the frozen offset from a clean history. (2) `clock.Reset()`
+  on engage THREW AWAY a good timing lock: a de-rotation moves nothing in the timing domain, and
+  the gated loop crawled back for over a second (129/132 → ~80/132 per burst); it now re-locks
+  only at |offset| ≥ `coarseAcqClockRelockHz` (1400 Hz, the #1165 notch where the sgn() error
+  term is genuinely broken). Consequence for operators: with an uncorrected offset above ~1 kHz
+  the FIRST PTT after start-up trains the acquirer (~0.5 s of bursts) and later PTTs decode from
+  burst one — set `ppm` from `capture`'s measured line to get the first one too.
+  Test-fixture lessons: an identical burst repeated for seconds carries a fixed symbol-mean bias
+  no real transmission has, which the open-loop AFC reads as carrier drift and shifts the eye by
+  ~0.16 d (the #402 class) — model a PTT as 3 headers + random voice bursts; and the modulator's
+  RRC group delay is span·sps samples, so gate synthetic bursts on the DELAYED grid or you chop
+  their tails. The reporter's 14 Sep capture itself is UNDECODABLE by construction — 40 % of raw
+  samples at the ADC rail (`gain: auto`, handheld in the same room; 30 ms on / 30 ms off at +1.8
+  dBFS) — which `capture`, `replay`'s verdict and the wideband no-sync WARN now all say
+  explicitly instead of "no frame sync was found" / "set sdr.ppm". STILL ON-AIR-GATED
+  (#764/#771): the direct-mode fix is synthetic-verified only; the reporter must re-capture with
+  a fixed gain (~200, stepping down until the overload WARN stops) and replay / run live.
 - **`make test-integration` / `make integration` had NO `-timeout`, so a slow hosted runner
   fails a green PR.** PR #1175's `integration` job died with `panic: test timed out after
   10m0s` inside `TestSweepImplementationLossBudget` (P25 Phase 1 receiver, 21 s into a test

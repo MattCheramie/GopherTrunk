@@ -106,6 +106,14 @@ type Options struct {
 	// the residual carrier offset, so folding sps samples reconstructs the
 	// 4-level eye. Optional; used by the diagnostic symbol scope.
 	EyeSink func(oversampled []float32, sps int)
+
+	// NoCarrierGate disables the per-sample carrier-presence gate that holds
+	// the level / offset / timing trackers across the inter-burst gaps of a
+	// direct-mode (Tier I / simplex) transmission — see carrierGate. The gate
+	// is on by default on the calibrated DeviationHz>0 path and is a no-op on
+	// a continuous base-station carrier (every sample is present). Exposed
+	// for A/B measurement only; production never sets it.
+	NoCarrierGate bool
 }
 
 // Receiver is the composed IQ → dibit pipeline. Process is the only
@@ -116,11 +124,15 @@ type Receiver struct {
 	clock     *sync.MuellerMuller
 	afc       *demod.CoarseAFC
 	acq       *coarseCarrierAcquirer
+	gate      *carrierGate
 	agc       demod.C4FMSymbolAGC
 	dibitSink dmr.DibitSink
 	dibitBase int
 
 	mixed []complex64 // scratch for the coarse-acquirer de-rotation (acq path only)
+
+	present    []bool // per-sample carrier presence for the current chunk (gate path only)
+	symPresent []bool // per-symbol presence, aligned with symbols (gate path only)
 
 	// Optional diagnostic taps (symbol scope). nil = no-op.
 	softSink   func([]float32)
@@ -216,12 +228,21 @@ func New(opts Options) *Receiver {
 		acq = newCoarseCarrierAcquirer(opts.SampleRateHz, sps)
 	}
 
+	// Carrier-presence gate (issue #836): holds the trackers above across the
+	// 32.5 ms noise gaps of a direct-mode transmission. Calibrated path only,
+	// like the trackers it gates, so legacy fixtures stay byte-identical.
+	var gate *carrierGate
+	if opts.DeviationHz > 0 && !opts.NoCarrierGate {
+		gate = newCarrierGate(sps)
+	}
+
 	return &Receiver{
 		fm:    demod.NewFM(),
 		mf:    demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
 		clock: sync.NewMuellerMuller(sps, gain),
 		afc:   afc,
 		acq:   acq,
+		gate:  gate,
 		// Symbol-AGC bridges the level mismatch between the unit-energy
 		// RRC matched filter and the 4-level slicer's fixed thresholds.
 		// The RRC has a DC gain of ~3.1 (it is normalised to unit
@@ -265,26 +286,75 @@ func (r *Receiver) Process(iq []complex64) {
 		src = r.mixed
 	}
 	r.disc = r.fm.Process(r.disc, src)
+	// Per-sample carrier presence (issue #836). nil (all-present) without the
+	// gate, so every gated stage below degrades to its historical behaviour.
+	var present []bool
+	if r.gate != nil {
+		r.present = r.gate.Process(r.present, r.disc, src)
+		present = r.present
+	}
 	if r.acq != nil {
 		// Fold this chunk's discriminator output into the acquisition mean and,
 		// once the window is full, apply the one-shot frozen correction to the
-		// NCO — which takes effect on the NEXT chunk's Mix. When it engages, the
-		// downstream timing loop and level trackers have been following the
-		// uncorrected (shifted) signal, so re-acquire them on the now-centred
-		// signal: without this, the Mueller-Müller loop stays parked at a phase
-		// tuned to the old offset and a narrow band of large offsets re-locks to
-		// the wrong symbol instant (issue #836). This chunk is still inside the
-		// discarded acquisition warm-up, so the reset costs nothing decoded.
-		if r.acq.Observe(r.disc) {
-			r.clock.Reset()
-			r.agc.Reset()
+		// NCO. When it engages, the downstream timing loop and level trackers
+		// have been following the uncorrected (shifted) signal, so re-acquire
+		// them on the now-centred signal: without this, the Mueller-Müller loop
+		// stays parked at a phase tuned to the old offset and a narrow band of
+		// large offsets re-locks to the wrong symbol instant (issue #836). This
+		// chunk is still inside the discarded acquisition warm-up, so the reset
+		// costs nothing decoded.
+		//
+		// The correction is applied to THIS chunk, not the next: the chunk is
+		// re-mixed at the frozen offset and re-discriminated from a clean
+		// history, so the just-reset loops only ever see the centred signal.
+		// Letting the rest of the chunk through uncorrected (an RTL-sized
+		// 4096-sample chunk is ~85 ms — more than a whole direct-mode burst)
+		// re-locked the freshly reset timing loop against the still-shifted
+		// signal, and it then crawled toward the right phase for over a second
+		// while the eye stayed smeared; decode quality depended on where the
+		// chunk boundary happened to fall (measured on the direct-mode fixture:
+		// 34/40 burst syncs with 10 ms chunks, 20/40 with 4096-sample ones).
+		if r.acq.Observe(r.disc, present) {
+			r.fm.Reset()
+			r.mf.Reset()
+			// A constant de-rotation moves nothing in the symbol-timing or
+			// amplitude domains, so the timing loop and the symbol AGC keep
+			// their state — UNLESS the pre-engage offset was large enough to
+			// have broken the timing loop outright (its sgn() error term flips
+			// once the discriminator DC bias exceeds the inner symbol level),
+			// in which case the loop is parked at a wrong instant and must
+			// re-lock from scratch (the #1165 notch, measured at 1.5 kHz).
+			// Below that the loop is already locked on the shifted signal and a
+			// reset only throws the lock away: on the direct-mode fixture a
+			// reset at the reporter's −1.2 kHz offset dropped the rest of the
+			// transmission from 129/132 to ~80/132 dibits per burst while the
+			// gated loop crawled back, with no reset it stays at 128–130.
+			if math.Abs(r.acq.OffsetHz()) >= coarseAcqClockRelockHz {
+				r.clock.Reset()
+			}
 			if r.afc != nil {
 				r.afc.Reset()
+			}
+			if r.gate != nil {
+				r.gate.Reset()
+			}
+			r.mixed = r.acq.Mix(r.mixed, iq)
+			src = r.mixed
+			r.disc = r.fm.Process(r.disc, src)
+			if r.gate != nil {
+				r.present = r.gate.Process(r.present, r.disc, src)
+				present = r.present
 			}
 		}
 	}
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
-	r.symbols = r.clock.Process(r.symbols, r.matched)
+	var symPresent []bool
+	if present != nil {
+		r.symbols, r.symPresent = r.clock.ProcessGated(r.symbols, r.symPresent, r.matched, present)
+		symPresent = r.symPresent
+	} else {
+		r.symbols = r.clock.Process(r.symbols, r.matched)
+	}
 	if len(r.symbols) == 0 {
 		return
 	}
@@ -296,13 +366,13 @@ func (r *Receiver) Process(iq []complex64) {
 	// timing; nil (no-op) on the legacy DeviationHz<=0 path. Runs before the
 	// AGC so the level normalisation sees a centred eye.
 	if r.afc != nil {
-		r.afc.Process(r.symbols)
+		r.afc.ProcessGated(r.symbols, symPresent)
 	}
 	// Normalise the symbol level to the slicer's expected scale before
 	// slicing, so the unit-energy matched filter's ~3.1× DC gain doesn't
 	// push the 4-level eye past the slicer's fixed thresholds (no-op on
 	// the legacy DeviationHz<=0 path where target==0). See package doc.
-	agcLevel := r.agc.Process(r.symbols)
+	agcLevel := r.agc.ProcessGated(r.symbols, symPresent)
 	// Diagnostic taps (symbol scope). The soft track is the post-AFC/AGC
 	// 1/symbol waveform — aligned with the dibit batch fired below. The eye
 	// is the oversampled matched buffer the clock loop read read-only,
@@ -357,6 +427,9 @@ func (r *Receiver) Reset() {
 	}
 	if r.acq != nil {
 		r.acq.Reset()
+	}
+	if r.gate != nil {
+		r.gate.Reset()
 	}
 	// The timing loop and the discriminator / matched-filter history are
 	// receiver state too: a reset that leaves them in place is not a reset

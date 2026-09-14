@@ -185,6 +185,26 @@ func (a *analyzer) observeSymbols(symbols []uint8, isBits bool) {
 	}
 }
 
+// ClipThreshold is the normalised |I| or |Q| magnitude at or above which a raw
+// sample is counted as pinned to the ADC rail. Full scale is 1.0 for every
+// sample format GopherTrunk decodes (u8 / cs16 / f32 all normalise to ±1), and
+// 0.98 leaves room for the u8 path's 127.5 centring — the same constant the
+// wideband engine's overload WARN uses.
+const ClipThreshold = 0.98
+
+// CountClipped returns how many samples of raw have I or Q at or beyond
+// ClipThreshold — the front-end overload count.
+func CountClipped(raw []complex64) int64 {
+	var n int64
+	for _, v := range raw {
+		re, im := real(v), imag(v)
+		if re >= ClipThreshold || re <= -ClipThreshold || im >= ClipThreshold || im <= -ClipThreshold {
+			n++
+		}
+	}
+	return n
+}
+
 // observeIQ folds a chunk of raw (pre-DDC) IQ into the imbalance moments.
 func (a *analyzer) observeIQ(raw []complex64) {
 	a.iqStats.Observe(raw)

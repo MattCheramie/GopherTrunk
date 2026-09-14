@@ -217,7 +217,7 @@ FLAGS:`)
 	// enough to prevent decode — the other half of the "capture won't lock"
 	// story alongside dropped chunks. A carrier seen in only one probe window
 	// is called out as transient instead of reported as a tuner error (#1143).
-	consensus := carrierOffsetConsensus(probe, recRate)
+	consensus := carrierOffsetConsensus(probe.Windows(), recRate)
 	if m := carrierOffsetMeasurement(consensus, recCenter); m != "" {
 		fmt.Println(m)
 	}
@@ -226,6 +226,13 @@ FLAGS:`)
 	}
 	if consensus.OK && math.Abs(consensus.OffsetHz) >= carrierOffsetWarnHz {
 		fmt.Fprintln(os.Stderr, formatCarrierOffsetWarning(consensus.OffsetHz, offsetPPM(consensus.OffsetHz, recCenter)))
+	}
+	// Front-end overload (issue #836): a capture whose samples sit at the ADC
+	// rail looks fine on disk and even "strong", but no receiver can decode a
+	// clipped burst — say so here, where the operator can still fix the gain
+	// and re-capture, rather than after a replay that "did NOT lock".
+	if w := formatClipWarning(probe.ClipRatio(), *gain); w != "" {
+		fmt.Fprintln(os.Stderr, w)
 	}
 	if d := drops.count(); d > 0 {
 		// Loud + actionable: a dropped-chunk capture looks fine on disk but
@@ -375,10 +382,11 @@ const captureBufWriter = 1 << 20 // 1 MiB
 // INPUT samples, the stream ends, ctx cancels, or a wall-clock safety deadline
 // elapses. Returns the number of IQ samples written (post-decimation when ddc
 // is set).
-// captureToFile returns the samples written plus the recorded (post-DDC)
-// carrier-probe windows spread across the capture, which the caller FFTs for
-// the carrier-offset consensus estimate.
-func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
+// captureToFile returns the samples written plus the carrier probe: the
+// recorded (post-DDC) probe windows spread across the capture, which the
+// caller FFTs for the carrier-offset consensus estimate, and the whole-capture
+// ADC-rail clip count.
+func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, *carrierProbe, error) {
 	// Container formats need a header up front and a finalize step, so they
 	// take the IQContainer path; the headerless formats keep the historical
 	// byte-stream path below.
@@ -407,7 +415,7 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 // and the finalize step (RIFF length patch / FLAC STREAMINFO), so a
 // `capture -format wav|flac` file is a real container rather than a
 // mislabeled headerless body.
-func captureContainerToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
+func captureContainerToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, *carrierProbe, error) {
 	// The container header carries the ON-DISK rate: the decimated slice rate
 	// when a -bandwidth/-decimate DDC is set, the full input rate otherwise.
 	diskRate := rate
@@ -444,7 +452,7 @@ func captureContainerToFile(ctx context.Context, path string, format siglab.Samp
 // Decoupling keeps the drain running so a transient stall costs latency, not
 // samples. The stateful DDC stays on the drain goroutine (it must run in
 // order); only copied sample chunks cross to the writer, which encodes them.
-func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
+func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, *carrierProbe, error) {
 	return captureStreamSink(ctx, func(samples []complex64) error {
 		_, err := w.Write(siglab.EncodeCapture(samples, format))
 		return err
@@ -455,7 +463,7 @@ func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat,
 // container path: the writer goroutine consumes copied sample chunks and
 // hands them to sink (a byte encoder + io.Writer, or an IQContainer), so a
 // stalled sink costs latency, never samples.
-func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, [][]complex64, error) {
+func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, *carrierProbe, error) {
 	// Stop once seconds worth of INPUT samples have been read; the written
 	// count may be far smaller when ddc decimates to a narrow channel.
 	target := int64(seconds * float64(rate))
@@ -557,7 +565,7 @@ loop:
 		default:
 		}
 	}
-	return written, probe.Windows(), loopErr
+	return written, probe, loopErr
 }
 
 // captureDropCounter counts SDR IQ-chunk drops for one device during a

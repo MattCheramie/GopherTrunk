@@ -52,8 +52,15 @@ sdr:
       # within the usable ±1.08 MHz band at 2.4 MS/s.
       center_freq_hz: 446_800_000
       tuner_strategy: auto       # auto -> ddc for a single channel
-      gain: "auto"               # gains are in TENTHS of a dB if you pin one
-                                 #   (e.g. "320" = 32.0 dB). "auto" is the safe start.
+      # Gain is in TENTHS of a dB if you pin one (e.g. "200" = 20.0 dB).
+      # "auto" (the tuner AGC) is fine for a distant repeater, but with a
+      # handheld keyed a few metres from the dongle it drives the 8-bit ADC
+      # straight into the rail — the daemon then logs "widebandt2: wideband
+      # front end overloaded" and NOTHING can decode the clipped bursts
+      # (issue #836: 23 % of the samples were pinned). For a nearby simplex
+      # radio start with a fixed "200" and step DOWN until that WARN stops;
+      # "0" (the minimum) is deaf, the sweet spot is in between.
+      gain: "auto"
       # ppm: your dongle's measured frequency error. THIS MATTERS FOR
       # NARROWBAND DECODE. A single DMR/P25/NXDN carrier is only ~12.5 kHz
       # wide with ~1.9 kHz deviation, and the demod tolerates only a tiny

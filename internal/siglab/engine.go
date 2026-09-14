@@ -456,6 +456,7 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	samples := make([]complex64, chunk)
 	var ddcOut []complex64
 	var totalSamples int64
+	var clipped int64 // raw samples with I or Q at the ADC rail
 	var readErr error
 	for {
 		n, rerr := io.ReadFull(r, buf)
@@ -466,6 +467,7 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			}
 			decode(buf[:pairs*bytesPerSample], samples[:pairs])
 			feed := samples[:pairs]
+			clipped += CountClipped(feed)
 			if cfg.Conjugate {
 				for i, s := range feed {
 					feed[i] = complex(real(s), -imag(s))
@@ -552,6 +554,9 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	}
 
 	res := assembleResult(source, cfg, totalSamples, symbolCount, receiverRate, tuneHz, coll, an)
+	if totalSamples > 0 {
+		res.RawClipRatio = float64(clipped) / float64(totalSamples)
+	}
 
 	// Attach the protocol-specific deep dive. P25 Phase 1 uses its dedicated
 	// deep path (soft eye + receiver-state + native CCStats); every other

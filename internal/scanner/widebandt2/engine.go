@@ -1468,9 +1468,21 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 				ec.strongNoSyncWindows++
 				if ec.strongNoSyncWindows >= strongNoSyncWindowsNeeded &&
 					now.Sub(ec.noSyncLogAt) >= lowPowerWarnInterval {
-					e.log.Warn("widebandt2: strong in-channel signal but no sync — the classic symptom of an uncorrected tuner frequency error on a narrowband carrier. Measure and set sdr.ppm for this dongle; even ~100 Hz of offset stops a DMR/P25/NXDN decode while SDR++ still produces FM audio. Also verify the carrier frequency and that this protocol/mode is supported. issue #836",
-						"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
-						"dbfs", dbfs)
+					if wbOverloaded {
+						// The front end is clipping: that alone explains the
+						// missing sync (a rail-pinned burst carries no
+						// recoverable modulation), and the ppm hint would send
+						// the operator chasing the wrong knob. The 14 Sep #836
+						// log alternated the two WARNs every few seconds while
+						// `gain: auto` drove a nearby handheld into the rail.
+						e.log.Warn("widebandt2: strong in-channel signal but no sync — and the wideband front end is OVERLOADED (IQ pinned to the ADC rail), which by itself explains it: a clipped burst cannot be decoded by any receiver. Reduce gain (with gain: auto the tuner AGC drives a strong nearby transmitter straight into the rail — pin a fixed gain, e.g. \"200\", and step down until the overload WARN stops) or add attenuation; do NOT chase sdr.ppm until the clipping is gone. issue #836",
+							"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
+							"dbfs", dbfs, "clip_ratio", wbClip)
+					} else {
+						e.log.Warn("widebandt2: strong in-channel signal but no sync — the classic symptom of an uncorrected tuner frequency error on a narrowband carrier. Measure and set sdr.ppm for this dongle; even ~100 Hz of offset stops a DMR/P25/NXDN decode while SDR++ still produces FM audio. Also verify the carrier frequency and that this protocol/mode is supported. issue #836",
+							"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
+							"dbfs", dbfs)
+					}
 					ec.noSyncLogAt = now
 				}
 			} else {

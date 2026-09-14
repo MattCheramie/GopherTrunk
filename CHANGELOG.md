@@ -8,6 +8,35 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **DMR direct mode (simplex) never decoded — the receiver was blinded by the
+  gaps between bursts.** A handheld on a simplex frequency transmits one
+  27.5 ms burst per 60 ms frame; every earlier fixture modelled a repeater's
+  continuous carrier. In the 32.5 ms gap the FM discriminator of receiver noise
+  is several times larger than the signal's own symbol levels, which inflated
+  the symbol AGC (every outer symbol then sliced as an inner one, so no sync
+  word — all ±3 — ever matched), decayed the post-clock AFC, halved the coarse
+  carrier acquirer's estimate and random-walked the timing loop. Reproduced
+  failing-first: the production Tier I and Tier II pipelines decoded ZERO
+  sync words from a synthetic direct-mode transmission at 27 dB SNR. The DMR
+  receiver now runs a carrier-presence gate (the discriminator's running
+  variance — an FM noise-quieting squelch as a statistic, no dBFS threshold)
+  that holds the AGC / AFC / acquirer / timing trackers and mutes the
+  discriminator on absent samples; the acquirer also keeps the timing lock
+  when it engages below the ~1.4 kHz relock notch. A continuous carrier is
+  unchanged (every sample present). `internal/radio/dmr/receiver` (#836).
+- **A clipped capture is now named as such.** `gophertrunk capture` counts
+  samples at the ADC rail over the whole recording and warns (with the remedy
+  keyed to whether the tuner AGC was in use), `replay` puts the raw clip ratio
+  on the result and the no-lock verdict says "front-end overload" instead of
+  "no frame sync was found", and the wideband engine's "strong signal but no
+  sync — set sdr.ppm" WARN names the overload instead of ppm while the front
+  end is clipping. The #836 reporter's 14 Sep capture had 23 % of its samples
+  pinned (`gain: auto`, handheld in the same room) and every earlier
+  diagnosis chased carrier offset.
+
+## [v1.1.3] — 2026-09-13
+
+### Fixed
 - **A multi-over call played only its first over.** In per-transmission
   grouping (a TETRA talker change rolls the recording file) the recorder
   announces one `call.complete` PER SEGMENT, each stamped with the over's own

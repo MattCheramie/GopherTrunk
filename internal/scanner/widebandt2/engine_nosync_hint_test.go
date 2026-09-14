@@ -17,6 +17,12 @@ import (
 // worth of power before each flush. It returns every captured "strong
 // signal but no sync" WARN.
 func runNoSyncDiag(t *testing.T, chanIQ []complex64, windows int) []capturedRecord {
+	return runNoSyncDiagOverloaded(t, chanIQ, windows, false)
+}
+
+// runNoSyncDiagOverloaded is runNoSyncDiag with the wideband front end
+// reporting ADC-rail clipping in every window when overloaded is set.
+func runNoSyncDiagOverloaded(t *testing.T, chanIQ []complex64, windows int, overloaded bool) []capturedRecord {
 	t.Helper()
 	handler, recs, mu := newRecordingHandler()
 	bus := events.NewBus(8)
@@ -39,6 +45,11 @@ func runNoSyncDiag(t *testing.T, chanIQ []complex64, windows int) []capturedReco
 	e.maybeLogDiagnostics(base)
 	for i := 1; i <= windows; i++ {
 		ec.pwr.Add(chanIQ)
+		if overloaded {
+			// 23 % of the wideband samples at the rail: the #836 capture's
+			// direct-mode duty cycle, far above inputClipWarnRatio.
+			e.wbClipped, e.wbClipSamples = 230, 1000
+		}
 		e.maybeLogDiagnostics(base.Add(time.Duration(i) * (iqpower.Window + time.Second)))
 	}
 
@@ -94,5 +105,28 @@ func TestNoSyncHintQuietChannelSilent(t *testing.T) {
 	recs := runNoSyncDiag(t, quietIQ(n), strongNoSyncWindowsNeeded+2)
 	if len(recs) != 0 {
 		t.Errorf("no-sync hint fired on a quiet channel; got %d WARN(s)", len(recs))
+	}
+}
+
+// TestNoSyncHintNamesOverloadNotPPM: when the shared front end is clipping,
+// the strong-but-no-sync WARN must blame the overload (the clipping alone
+// explains the missing sync) and not send the operator to sdr.ppm. The 14 Sep
+// #836 log alternated "no sync — set sdr.ppm" with "front end overloaded"
+// every few seconds while `gain: auto` drove a nearby handheld into the rail.
+func TestNoSyncHintNamesOverloadNotPPM(t *testing.T) {
+	const n = 4096
+	recs := runNoSyncDiagOverloaded(t, loudIQ(n), strongNoSyncWindowsNeeded+1, true)
+	if len(recs) == 0 {
+		t.Fatal("expected a 'strong signal but no sync' WARN, got none")
+	}
+	r := recs[0]
+	if !strings.Contains(r.msg, "OVERLOADED") {
+		t.Errorf("WARN msg = %q, want it to name the front-end overload", r.msg)
+	}
+	if strings.Contains(r.msg, "Measure and set sdr.ppm") {
+		t.Errorf("WARN msg = %q, must not send the operator to sdr.ppm while the front end is clipping", r.msg)
+	}
+	if ratio, ok := r.attrs["clip_ratio"].(float64); !ok || ratio < inputClipWarnRatio {
+		t.Errorf("WARN clip_ratio attr = %v, want the overload ratio", r.attrs["clip_ratio"])
 	}
 }

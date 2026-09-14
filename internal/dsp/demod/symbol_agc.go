@@ -30,6 +30,22 @@ type C4FMSymbolAGC struct {
 // sample seeded the loop. A no-op scaling when Target<=0 (the legacy
 // pre-scaled-fixture path with DeviationHz=0).
 func (a *C4FMSymbolAGC) Process(symbols []float32) float64 {
+	return a.ProcessGated(symbols, nil)
+}
+
+// ProcessGated is Process with a per-symbol carrier-presence gate. present,
+// when non-nil, must be len(symbols) long: a symbol whose flag is false is
+// scaled by the current gain like any other but does NOT update the level
+// estimate. A nil present is all-true (byte-identical to Process).
+//
+// The level EMA's ~256-symbol time constant (53 ms at 4800 baud) is longer
+// than a DMR direct-mode burst (27.5 ms), and the receiver noise in the
+// 32.5 ms gap between bursts drives the FM discriminator to several times the
+// signal's symbol level — so an ungated EMA is inflated by every gap and the
+// next burst's outer symbols slice as inner ones, which is why a direct-mode
+// simplex handheld produced no sync at all (issue #836). Holding the level
+// across the gap carries the previous burst's calibration into the next.
+func (a *C4FMSymbolAGC) ProcessGated(symbols []float32, present []bool) float64 {
 	if a.Target <= 0 {
 		return 0 // calibration disabled (legacy DeviationHz=0 path)
 	}
@@ -40,14 +56,18 @@ func (a *C4FMSymbolAGC) Process(symbols []float32) float64 {
 		if ax < 0 {
 			ax = -ax
 		}
-		if !a.seeded {
+		on := present == nil || present[i]
+		switch {
+		case !on:
+			// Hold the estimate; still scale the symbol below when seeded.
+		case !a.seeded:
 			if ax > 1e-12 {
 				a.level = ax
 				a.seeded = true
 			} else {
 				continue
 			}
-		} else {
+		default:
 			a.level += a.Rate * (ax - a.level)
 		}
 		if a.level > 1e-12 {
