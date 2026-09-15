@@ -2369,7 +2369,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 		// PI header names a configured key id. Nil when none are configured.
 		keyResolver := buildKeyResolver(cfg.Trunking.Systems, log)
 		if keyResolver != nil {
-			log.Info("daemon: in-process decryption keys configured (DMR enhanced privacy)")
+			log.Info("daemon: in-process decryption keys configured (DMR enhanced privacy / P25 ADP)")
 		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,

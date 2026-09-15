@@ -12,6 +12,11 @@ import "fmt"
 // pulling in the LDU2 parser.
 const AlgorithmClear uint8 = 0x80
 
+// AlgorithmADP is the Algorithm ID of ADP ("Advanced Digital Privacy", the
+// RC4-based option); the one P25 algorithm GopherTrunk decrypts in-process
+// when an operator key is configured (issue #1187, phase1/adp.go).
+const AlgorithmADP uint8 = 0xAA
+
 // AlgorithmName returns the TIA-102 algorithm mnemonic for id, or
 // "unknown" when the value is not in the registry. The table covers
 // the algorithms currently in use on systems GopherTrunk observers

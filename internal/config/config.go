@@ -1858,10 +1858,12 @@ type EncryptionKeyConfig struct {
 func (k EncryptionKeyConfig) KeyBytes() ([]byte, error) { return decodeHexKey(k.Key) }
 
 // NormalizedAlgorithm is the canonical lower-case algorithm name the
-// decoders match on: "rc4" for both spellings ("rc4" / "arc4").
+// decoders match on: "rc4" for every spelling of the RC4 family — "rc4" /
+// "arc4" (DMR Enhanced Privacy) and "adp" (P25 Advanced Digital Privacy,
+// ALGID 0xAA, the same cipher keyed the same way).
 func (k EncryptionKeyConfig) NormalizedAlgorithm() string {
 	switch a := strings.ToLower(strings.TrimSpace(k.Algorithm)); a {
-	case "rc4", "arc4":
+	case "rc4", "arc4", "adp":
 		return "rc4"
 	default:
 		return a

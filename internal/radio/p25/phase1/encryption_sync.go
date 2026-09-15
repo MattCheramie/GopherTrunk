@@ -19,8 +19,9 @@ import (
 //     0x81 = DES-OFB, 0x84 = AES-256, … per the TIA algorithm registry)
 //   - KeyID: which key in the radio's keyset the call uses
 //
-// Like SDRtrunk, GopherTrunk identifies encryption — it surfaces the
-// algorithm and key — but does not decrypt.
+// GopherTrunk identifies encryption — it surfaces the algorithm and key —
+// and decrypts ADP (0xAA) in-process when an operator key is configured
+// (adp.go, issue #1187); other algorithms are identified only.
 //
 // The 96-bit ES content layout is the project's working model (the
 // 144-bit Hamming-recovered field's first 12 octets). As for Link

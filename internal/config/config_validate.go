@@ -553,14 +553,14 @@ func validateSystem(i int, s SystemConfig) error {
 	seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
 	for k, ek := range s.EncryptionKeys {
 		switch strings.ToLower(strings.TrimSpace(ek.Algorithm)) {
-		case "rc4", "arc4":
-			// supported
+		case "rc4", "arc4", "adp":
+			// supported: DMR Enhanced Privacy and P25 ADP, one RC4 family
 		case "":
-			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm is required (use \"rc4\")", i, k)
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm is required (use \"rc4\" or \"adp\")", i, k)
 		case "aes", "des":
-			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm %q is not supported yet (only \"rc4\")", i, k, ek.Algorithm)
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm %q is not supported yet (only \"rc4\" / \"adp\")", i, k, ek.Algorithm)
 		default:
-			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: unknown algorithm %q (use \"rc4\")", i, k, ek.Algorithm)
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: unknown algorithm %q (use \"rc4\" or \"adp\")", i, k, ek.Algorithm)
 		}
 		if _, dup := seenKeyIDs[ek.KeyID]; dup {
 			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate key_id %d", i, k, ek.KeyID)
