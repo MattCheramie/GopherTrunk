@@ -579,6 +579,7 @@ func TestSiglabCaptureLogsStartAndEnd(t *testing.T) {
 	out := logs.String()
 	for _, want := range []string{
 		`msg="siglab: capture started"`, "serial=SDR1", "center_hz=460400000", "bandwidth_hz=25000",
+		"requested_center_hz=460400000",
 		"tuner_center_hz=460000000", "tuner_rate_hz=2400000", "format=flac", "seconds=2", "path=",
 		`msg="siglab: capture ended"`, "samples=", "recorded_seconds=", "elapsed=",
 	} {

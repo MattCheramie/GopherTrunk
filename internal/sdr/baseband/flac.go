@@ -15,6 +15,40 @@ import (
 // writers produce identically-framed streams.
 const flacIQBlockSize = 4096
 
+// FLACMaxSampleRateHz is the highest sample rate a FLAC stream can carry:
+// STREAMINFO's sample-rate field is 20 bits. The upstream encoder writes the
+// low 20 bits of whatever it is handed, so a 2.4 MS/s stream would be
+// silently labelled 351424 Hz — every FLAC writer in the tree refuses a rate
+// above this instead. (Rates above it fall back to cs16 where a recorder has
+// that choice: soapyremote's diversity capture, and siglab's capture route
+// rejects the request before pinning the tuner.)
+const FLACMaxSampleRateHz = 1<<20 - 1
+
+// FLACFrameSampleRate returns the sample rate to stamp in each FLAC FRAME
+// header for a stream whose STREAMINFO carries rate: the rate itself when the
+// frame header can encode it verbatim, else 0 — the spec's "get from
+// STREAMINFO" code. A frame header can only carry rates ≤ 65535 Hz directly,
+// ≤ 655350 Hz in tens of Hz, ≤ 255 kHz in whole kHz, and the fixed audio
+// rates. The upstream encoder never picks the STREAMINFO code on its own —
+// it fails the frame — so before this every FLAC IQ capture at an
+// unrepresentable rate aborted on its first block (15 Sep: a siglab slice
+// carved at 880029 Hz, and a clean 880000 Hz would have failed the same
+// way). Shared by the IQ encode core and the mono voice twin so the two
+// writers cannot drift.
+func FLACFrameSampleRate(rate uint32) uint32 {
+	switch rate {
+	case 88200, 176400, 192000, 8000, 16000, 22050, 24000, 32000, 44100, 48000, 96000:
+		return rate
+	}
+	switch {
+	case rate <= 255000 && rate%1000 == 0,
+		rate <= 65535,
+		rate <= 655350 && rate%10 == 0:
+		return rate
+	}
+	return 0
+}
+
 // FLACIQEncoder losslessly encodes 16-bit I/Q pairs into a two-channel FLAC
 // stream (I in the left channel, Q in the right) — the FLAC twin of the
 // two-channel 16-bit RIFF/WAVE layout IQWriter emits, typically 30–50%
@@ -38,6 +72,9 @@ type FLACIQEncoder struct {
 func NewFLACIQEncoder(ws io.WriteSeeker, sampleRate uint32) (*FLACIQEncoder, error) {
 	if sampleRate == 0 {
 		return nil, errors.New("baseband: FLAC IQ sample rate must be > 0")
+	}
+	if sampleRate > FLACMaxSampleRateHz {
+		return nil, fmt.Errorf("baseband: FLAC cannot carry a %d Hz sample rate (STREAMINFO ceiling is %d Hz); record cs16/wav, or a narrower slice", sampleRate, FLACMaxSampleRateHz)
 	}
 	info := &meta.StreamInfo{
 		SampleRate:    sampleRate,
@@ -95,7 +132,7 @@ func (e *FLACIQEncoder) flushBlock() error {
 	hdr := frame.Header{
 		HasFixedBlockSize: true,
 		BlockSize:         uint16(n),
-		SampleRate:        e.enc.Info.SampleRate,
+		SampleRate:        FLACFrameSampleRate(e.enc.Info.SampleRate),
 		Channels:          frame.ChannelsLR,
 		BitsPerSample:     16,
 	}

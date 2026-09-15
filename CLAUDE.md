@@ -1557,6 +1557,46 @@ confirmation before any close-as-completed.
   "needs storage.path" list and config.example.yaml (the 4 Sep rule). The bus path is pinned
   on the real-air slice (`receiver_bus_test.go`). Still open: the reporter's live lab test on
   the Kenwood radios (#764/#771 — synthetic + offline ≠ on air).
+- **15 Sep IPSC field material (X310 6.25 MS/s wideband, Fire/Fire2 taps, 60 s "442.8125 MHz"
+  cs16 + debug.log): four defects, all pinned, and the −20 kHz mystery is bounded, not solved.**
+  (1) **The siglab capture was carved at the TUNER centre (441.7 MHz), not the 442.8125 MHz the
+  operator typed** — the file's only carriers sit at −11/−37/−61/−87 kHz and +213 kHz and NEITHER
+  repeater is in it; the start log line said `center_hz=441700000 tuner_center_hz=441700000` and
+  nothing in the UI disagreed. The daemon and the SPA at the operator's commit both wire
+  `center_hz` correctly, so the centre was lost client-side: the form coerced with `Number()` and
+  silently fell back on NaN (a decimal comma / a pasted invisible character), and a centre without a
+  bandwidth was dropped the same way. Now: `web/siglab/src/lib/captureTuning.ts` parses strictly
+  and errors, the route 400s a centre-without-bandwidth that differs from the tuner centre, the
+  start line carries `requested_center_hz`, and the staged capture row shows its centre. Ask the
+  operator to re-capture **442.3875 MHz with a ±100 kHz bandwidth** (see (4)). (2) **FLAC aborted
+  the same grab with "unable to encode sample rate 880029"**: the FLAC FRAME header can only carry
+  ≤ 65535 Hz verbatim, ≤ 655350 Hz in tens of Hz, ≤ 255 kHz in whole kHz — an odd rate above
+  65535 (the DDC's capped L/M gives 880029 for an 880 kHz slice of 6.25 MS/s), and ANY rate above
+  655350 (a clean 880000 too), needs the "get from STREAMINFO" code, which mewkiz/flac never picks
+  on its own. `baseband.FLACFrameSampleRate` (shared with `voice.FlacWriter`) stamps 0 there;
+  `FLACMaxSampleRateHz` (20-bit STREAMINFO, 1048575) is refused at construction (the upstream
+  encoder silently writes the low 20 bits otherwise) and the capture route 400s a full-band flac
+  over it before pinning the tuner. (3) **The Fire2 deaf-heal WARN fired every ~15 s (21 in 6 min)
+  with `coarse_offset_hz≈−20100` on a GPSDO X310 that decodes at 0 Hz**: the repeater beacons in
+  ~10 s idle-burst trains with ~5–9 s gaps; in the gap the tap's power stays at the train level
+  (−49 dBFS — Fire's drops 5 dB, so this is NOT the repeater's carrier) and the coarse carrier
+  acquirer, which is a discriminator MEAN with no bound and no decode check, froze on whatever
+  dominates the tap at −20.1 kHz ± 150 Hz, deafening the channel until the heal reset it — every
+  gap. By frequency alone the stage cannot tell a neighbour from a 45 ppm tuner error (#836), so
+  decode evidence now settles it: `healDeafTier2` confirms an offset that held for a whole synced
+  window and REJECTS an engage the channel never synced under (`Receiver.RejectCoarseCarrierOffset`
+  → `coarseCarrierAcquirer.Reject`: reverts the live correction, ignores candidates within 500 Hz,
+  survives `Reset`). Pinned by `coarse_reject_test.go` + the `TestDeafHeal*` family. The heal WARN
+  is now once per 10 min per channel (DEBUG after; `deaf_heals` counts). Also fixed in that path:
+  the beacon delta was computed AFTER `ec.lastCnt = c` (always 0, latent), and `Counters.Dibits`
+  was never incremented (every activity line read `dibits=0` on a decoding tap). (4) **What the
+  −20 kHz emitter at ≈442.3675 MHz IS remains unknown** — the 15 Sep capture does not cover it
+  (441.26–442.14 MHz). Geometry rules out the channelizer (bin-4 image of Fire lands at +68.75 kHz,
+  the bin centre at +93.75 kHz, the tuner DC nowhere near). A capture centred on 442.3875 MHz with
+  ±100 kHz over one full idle cycle (train + gap) is the instrument; `TestDMRIPSCReplay` plus a
+  gap-phase spectrum will name it. The reject path makes the tap immune either way; do NOT add a
+  frequency bound to the acquirer to "fix" this — a 12.5 kHz adjacent channel sits inside any bound
+  that still serves #836.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that
