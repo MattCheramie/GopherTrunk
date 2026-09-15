@@ -161,3 +161,16 @@ func buildVoiceLCHeaderBurstDibits(colorCode uint8, groupID, sourceID uint32) []
 	burst = append(burst, payloadDibits[dmr.HalfPayloadDibits:]...)
 	return burst
 }
+
+// TestProcessCountsDibits: Counters.Dibits was declared as the "receiver
+// emits nothing vs emits junk" instrument for the 12 Sep deaf-tap log but was
+// never incremented — every field activity line read dibits=0 on a tap that
+// was decoding hundreds of bursts (15 Sep). Fails against the old adapter.
+func TestProcessCountsDibits(t *testing.T) {
+	cc := New(Options{SystemName: "ipsc", FrequencyHz: 442_387_500})
+	cc.Process(make([]uint8, 300), 0)
+	cc.Process(make([]uint8, 150), 300)
+	if got := cc.Counters().Dibits; got != 450 {
+		t.Fatalf("Counters().Dibits = %d after 450 dibits, want 450", got)
+	}
+}

@@ -72,6 +72,12 @@ type coarseCarrierAcquirer struct {
 	canHz   float64 // that window's estimate, awaiting an agreeing second window
 	locked  bool
 	offHz   float64 // frozen correction applied to the NCO (0 until/unless it engages)
+
+	// rejected holds offsets the stage's consumer has ruled out with decode
+	// evidence (see Reject): a candidate within coarseAcqRejectHz of one is
+	// ignored. Survives Reset — a rejection describes the channel's RF
+	// neighbourhood, which a stream resync does not change.
+	rejected []float64
 }
 
 // coarseAcqSymbols is the acquisition window length in symbol periods. ~512
@@ -98,6 +104,18 @@ const coarseAcqAgreeHz = 250.0
 // window: faking a 500 Hz mean needs a sustained ~0.77-of-full-scale symbol DC
 // bias over the whole window, which real DMR content does not carry.
 const coarseAcqDeadbandHz = 500.0
+
+// coarseAcqRejectHz is how close a candidate estimate must sit to a rejected
+// offset to be ignored. The estimate of one fixed emitter wanders a few
+// hundred Hz window to window (the 15 Sep IPSC log: −20049 … −20313 Hz across
+// 21 engages of the same neighbour), so the deadband-sized 500 Hz covers one
+// emitter without swallowing a genuinely different offset.
+const coarseAcqRejectHz = 500.0
+
+// coarseAcqMaxRejected bounds the rejection list; the oldest entry is dropped
+// past it. A channel with more than a handful of distinct false emitters is
+// not a channel this stage can serve anyway.
+const coarseAcqMaxRejected = 8
 
 // coarseAcqClockRelockHz is the frozen offset at or above which the receiver
 // re-locks its symbol-timing loop from scratch when the stage engages. Below
@@ -175,6 +193,14 @@ func (c *coarseCarrierAcquirer) Observe(disc []float32, present []bool) (engaged
 		c.haveCan = false
 		return false
 	}
+	// An offset decode evidence has already ruled out (Reject): a neighbour
+	// that dominates the tap whenever the wanted carrier is silent would
+	// otherwise re-engage the stage — and deafen the channel — on every idle
+	// gap. Treat it like silence: drop any candidate and re-arm.
+	if c.isRejected(offHz) {
+		c.haveCan = false
+		return false
+	}
 	// Above the deadband but not yet confirmed: hold it as a candidate and wait
 	// for the next window. A real tuner offset repeats; a noise window won't.
 	if !c.haveCan || math.Abs(offHz-c.canHz) > c.agreeHz {
@@ -201,8 +227,50 @@ func (c *coarseCarrierAcquirer) Observe(disc []float32, present []bool) (engaged
 // offset the receiver pulled out.
 func (c *coarseCarrierAcquirer) OffsetHz() float64 { return c.offHz }
 
+// isRejected reports whether hz sits within coarseAcqRejectHz of a rejected
+// offset.
+func (c *coarseCarrierAcquirer) isRejected(hz float64) bool {
+	for _, r := range c.rejected {
+		if math.Abs(hz-r) <= coarseAcqRejectHz {
+			return true
+		}
+	}
+	return false
+}
+
+// Reject records hz as an offset that is NOT the wanted signal's — the
+// consumer engaged it and then decoded nothing at it (the wideband engine's
+// deaf-tap guard is the caller: an engage that never produced a sync before
+// the tap went deaf). Future candidates near it are ignored (isRejected),
+// and if the stage is currently frozen at it the correction is reverted to
+// identity and the stage re-armed; reverted reports that. The stage cannot
+// tell a neighbour from a mistuned wanted carrier by frequency alone — a
+// 12.5 kHz-spaced adjacent channel and a 28 ppm tuner error look identical
+// to a discriminator mean — so decode evidence is the only discriminator,
+// and it lives with the consumer.
+func (c *coarseCarrierAcquirer) Reject(hz float64) (reverted bool) {
+	if !c.isRejected(hz) {
+		c.rejected = append(c.rejected, hz)
+		if len(c.rejected) > coarseAcqMaxRejected {
+			c.rejected = c.rejected[len(c.rejected)-coarseAcqMaxRejected:]
+		}
+	}
+	if c.locked && math.Abs(c.offHz-hz) <= coarseAcqRejectHz {
+		c.nco.Reset()
+		c.nco.SetOffset(0, c.sampleRate)
+		c.locked = false
+		c.offHz = 0
+		c.seen = 0
+		c.sumRad = 0
+		c.haveCan = false
+		return true
+	}
+	return false
+}
+
 // Reset clears the acquisition so the next transmission re-acquires from
 // scratch. Call on stream re-tune / re-sync alongside the rest of the receiver.
+// The rejection list is deliberately kept (see Reject).
 func (c *coarseCarrierAcquirer) Reset() {
 	c.nco.Reset()
 	c.nco.SetOffset(0, c.sampleRate)

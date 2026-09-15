@@ -118,3 +118,136 @@ func TestIdleTier2TapIsNotReset(t *testing.T) {
 		t.Errorf("never-synced channel reset %d times, want 0", resets)
 	}
 }
+
+// acqReceiver stands in for a Tier II receiver whose coarse carrier acquirer
+// is frozen at offHz, recording the rejections the engine hands it.
+type acqReceiver struct {
+	resetCountingReceiver
+	offHz    float64
+	rejected []float64
+}
+
+func (r *acqReceiver) CoarseCarrierOffsetHz() float64 { return r.offHz }
+func (r *acqReceiver) AGCLevel() float64              { return 1 }
+func (r *acqReceiver) MMClockMu() float64             { return 0 }
+func (r *acqReceiver) MMClockSPS() float64            { return 10 }
+func (r *acqReceiver) RejectCoarseCarrierOffset(hz float64) bool {
+	r.rejected = append(r.rejected, hz)
+	r.offHz = 0
+	return true
+}
+
+// runDeafHealAcq drives `synced` windows with a sync at -49 dBFS, calls
+// between (to move the fake acquirer), then `deaf` windows at the same power.
+func runDeafHealAcq(t *testing.T, rx *acqReceiver, synced int, between func(), deaf int) *engineChannel {
+	t.Helper()
+	handler, _, _ := newRecordingHandler()
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cc := tier2.New(tier2.Options{Bus: bus, SystemName: "ipsc", FrequencyHz: 442_387_500})
+	ec := &engineChannel{freqHz: 442_387_500, sysName: "ipsc", protoTag: "dmr-tier2", tier2Cnt: cc, receiver: rx}
+	e := &Engine{log: slog.New(handler), channels: []*engineChannel{ec}, now: time.Now}
+	level := scaledIQ(4096, -49)
+	base := time.Unix(1_700_000_000, 0)
+	e.maybeLogDiagnostics(base)
+	w, pos := 1, 0
+	for i := 0; i < synced; i++ {
+		d := syncDibits()
+		cc.Process(d, pos)
+		pos += len(d)
+		ec.pwr.Add(level)
+		e.maybeLogDiagnostics(base.Add(time.Duration(w) * (iqpower.Window + time.Second)))
+		w++
+	}
+	if between != nil {
+		between()
+	}
+	for i := 0; i < deaf; i++ {
+		ec.pwr.Add(level)
+		e.maybeLogDiagnostics(base.Add(time.Duration(w) * (iqpower.Window + time.Second)))
+		w++
+	}
+	return ec
+}
+
+// TestDeafHealRejectsUnconfirmedCoarseOffset is the 15 Sep IPSC regression:
+// the tap decoded at coarse offset 0 (GPSDO X310), the repeater's idle gap
+// left a −20.1 kHz neighbour dominating the tap, the acquirer froze on it and
+// the tap went deaf until the heal — every gap, 21 heals in 6 minutes. An
+// engage the channel never synced under must be REJECTED at the heal so the
+// receiver's acquirer cannot take that neighbour again. Fails against the old
+// heal, which only reset the receiver (re-arming the acquirer for the same
+// neighbour).
+func TestDeafHealRejectsUnconfirmedCoarseOffset(t *testing.T) {
+	rx := &acqReceiver{}
+	ec := runDeafHealAcq(t, rx, 2, func() { rx.offHz = -20_100 }, tier2DeafHealWindows)
+	if ec.deafHeals != 1 || rx.resets != 1 {
+		t.Fatalf("heals=%d resets=%d, want 1/1", ec.deafHeals, rx.resets)
+	}
+	if len(rx.rejected) != 1 || rx.rejected[0] != -20_100 {
+		t.Fatalf("rejected offsets = %v, want [-20100] (an engage the tap never synced under)", rx.rejected)
+	}
+}
+
+// TestDeafHealKeepsConfirmedCoarseOffset: the acquirer's whole purpose is a
+// mistuned dongle (issue #836). An offset the channel DECODED under for a
+// whole window is the wanted signal's; a later genuine deaf stretch (the 12
+// Sep latch) must reset the receiver but never reject that offset, or the
+// dongle could never be corrected again.
+func TestDeafHealKeepsConfirmedCoarseOffset(t *testing.T) {
+	rx := &acqReceiver{offHz: 9000}
+	ec := runDeafHealAcq(t, rx, 3, nil, tier2DeafHealWindows)
+	if ec.deafHeals != 1 || rx.resets != 1 {
+		t.Fatalf("heals=%d resets=%d, want 1/1", ec.deafHeals, rx.resets)
+	}
+	if len(rx.rejected) != 0 {
+		t.Fatalf("rejected offsets = %v, want none for an offset the tap decoded under", rx.rejected)
+	}
+}
+
+// TestDeafHealEngageMidWindowIsNotConfirmedByThatWindow: an engage that lands
+// part-way through a window still carrying the tail of a decoding train must
+// not be confirmed by that window's syncs — the offset has to hold across a
+// synced window to count as decode evidence.
+func TestDeafHealEngageMidWindowIsNotConfirmedByThatWindow(t *testing.T) {
+	rx := &acqReceiver{}
+	handler, _, _ := newRecordingHandler()
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cc := tier2.New(tier2.Options{Bus: bus, SystemName: "ipsc", FrequencyHz: 442_387_500})
+	ec := &engineChannel{freqHz: 442_387_500, sysName: "ipsc", protoTag: "dmr-tier2", tier2Cnt: cc, receiver: rx}
+	e := &Engine{log: slog.New(handler), channels: []*engineChannel{ec}, now: time.Now}
+	level := scaledIQ(4096, -49)
+	base := time.Unix(1_700_000_000, 0)
+	tick := func(w int) { e.maybeLogDiagnostics(base.Add(time.Duration(w) * (iqpower.Window + time.Second))) }
+	tick(0)
+	d := syncDibits()
+	cc.Process(d, 0)
+	ec.pwr.Add(level)
+	tick(1) // synced at offset 0
+	cc.Process(d, len(d))
+	rx.offHz = -20_100 // engages during window 2, whose syncs came from the train's tail
+	ec.pwr.Add(level)
+	tick(2)
+	for w := 3; w < 3+tier2DeafHealWindows; w++ {
+		ec.pwr.Add(level)
+		tick(w)
+	}
+	if len(rx.rejected) != 1 {
+		t.Fatalf("rejected offsets = %v, want the mid-window engage rejected", rx.rejected)
+	}
+}
+
+// TestDeafHealWarnIsRateLimited: every heal still resets the receiver and
+// counts, but a tap that heals every idle gap (15 Sep: 21 in 6 min) WARNs
+// once per tier2DeafHealWarnInterval and logs the rest at DEBUG.
+func TestDeafHealWarnIsRateLimited(t *testing.T) {
+	level := scaledIQ(4096, -51)
+	resets, heals, warns := runDeafHeal(t, 2, 2*tier2DeafHealWindows, level, level)
+	if resets != 2 || heals != 2 {
+		t.Fatalf("resets=%d heals=%d after %d deaf windows, want 2/2", resets, heals, 2*tier2DeafHealWindows)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("deaf-tap WARNs = %d for 2 heals inside the interval, want 1", len(warns))
+	}
+}
