@@ -7,7 +7,42 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **FleetSync FFSK front end + capture replay harness** (#1184, #437). The
+  clean-room FleetSync / FleetSync II protocol core shipped in v1.1.1 now has
+  its DSP front end, `internal/radio/fleetsync/afsk`: IQ (or discriminator
+  audio) → FM demod → resample → 1200/1800 Hz FFSK discriminator → Mueller-
+  Müller symbol timing → zero-threshold slicer → `fleetsync.Framer`, the same
+  building blocks as the MDC1200 / MPT 1327 paths, with a selectable baud
+  rate. `fleetsync.SynthBurst` synthesises FS-I / FS-II ANI bursts as test
+  vectors, and the front end is pinned end-to-end against FFSK-modulated IQ
+  (both formats, several capture rates, inverted tone sense, chunk
+  invariance, AWGN, carrier offset, wrong-baud and noise-only no-false-decode).
+  `TestFleetSyncReplay` (`GT_FLEETSYNC_IQ`, float32 I/Q by default, cs16 /
+  audio / wav / flac accepted; rate probe when the rate is unknown; baud sweep;
+  wideband tune offset) replays a real Kenwood capture through the production
+  front end and asserts the capture's known Fleet/Unit decodes CRC-valid — the
+  on-air gate for #437. **Verified on the reporter's two SDR# captures**
+  (2.048 MS/s, 462.5625 MHz): FleetSync-I decodes 5 of 6 ANI bursts CRC-valid
+  and FleetSync-II 8 of 8, all Fleet 107 / Unit 1772, with one command per
+  file and nothing else given — the harness now reads the SDR# float WAV,
+  takes the rate from its header, and finds the off-centre carrier itself
+  (+424.5 kHz and +323 kHz in these files) from a whole-capture averaged
+  spectrum. Two 1.3 s channelized slices of those bursts are committed as
+  real-air regression fixtures (`internal/radio/fleetsync/afsk/testdata`).
+  The events/storage/REST/web wiring is the next step.
+
 ### Fixed
+- **IQ WAV readers decoded every RIFF/WAVE as 16-bit PCM.** An SDR# baseband
+  recording is two-channel 32-bit IEEE float (8-bit PCM is its other option);
+  the siglab container reader stripped 44 bytes and read the float body as
+  int16 pairs — twice the sample count of noise at −2.5 dBFS that no decoder
+  could lock to (the #1184 FleetSync captures) — while the replay driver and
+  the streaming header parser rejected the file outright. The fmt chunk now
+  decides: 16-bit PCM, 8-bit PCM and 32-bit float (plain or
+  WAVE_FORMAT_EXTENSIBLE, extra chunks before `data` skipped) decode
+  everywhere a WAV is read — `replay -format wav`, `baseband.replay`, the
+  Signal Lab / RF Scope readers and the capture-replay harnesses.
 - **DMR direct mode (simplex) never decoded — the receiver was blinded by the
   gaps between bursts.** A handheld on a simplex frequency transmits one
   27.5 ms burst per 60 ms frame; every earlier fixture modelled a repeater's

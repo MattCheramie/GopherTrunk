@@ -2,7 +2,6 @@ package baseband
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -136,7 +135,7 @@ func (d *replayDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 	if err != nil {
 		return nil, err
 	}
-	dataBytes, _, err := parseIQWavHeader(f)
+	dataBytes, info, err := parseIQWavHeader(f)
 	if err != nil {
 		f.Close()
 		return nil, err
@@ -161,7 +160,7 @@ func (d *replayDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 	go func() {
 		defer close(out)
 		defer f.Close()
-		buf := make([]byte, chunkSamples*iqWavBlockAlign)
+		buf := make([]byte, chunkSamples*info.BlockAlign)
 		interval := time.Duration(float64(time.Second) * float64(chunkSamples) / float64(rate))
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -187,7 +186,7 @@ func (d *replayDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 			remaining -= int64(n)
 			if n > 0 {
 				select {
-				case out <- decodeIQ16(buf[:n]):
+				case out <- info.Encoding.DecodeIQ(buf[:n]):
 				case <-ctx.Done():
 					return
 				}
@@ -275,16 +274,4 @@ func (d *replayDevice) streamFLAC(ctx context.Context) (<-chan []complex64, erro
 		}
 	}()
 	return out, nil
-}
-
-// decodeIQ16 converts interleaved 16-bit I/Q PCM into complex64.
-func decodeIQ16(buf []byte) []complex64 {
-	n := len(buf) / iqWavBlockAlign
-	out := make([]complex64, n)
-	for i := 0; i < n; i++ {
-		iv := int16(binary.LittleEndian.Uint16(buf[4*i:]))
-		qv := int16(binary.LittleEndian.Uint16(buf[4*i+2:]))
-		out[i] = complex(float32(iv)/32768, float32(qv)/32768)
-	}
-	return out
 }

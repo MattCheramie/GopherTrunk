@@ -39,6 +39,10 @@ func prepareWAVInput(r io.Reader, cfg *Config) (io.Reader, error) {
 			return nil, fmt.Errorf("siglab: wav header reports a zero sample rate")
 		}
 		cfg.SampleRateHz = float64(info.SampleRate)
+		// The body decoder follows the fmt chunk (16-bit PCM, SDR# float32,
+		// 8-bit PCM) — rewrite the format like the FLAC branch does so the
+		// downstream Decoder() reads the right sample width.
+		cfg.Format = wavBodyFormat(info.Encoding)
 		return r, nil
 	case FormatFLAC:
 		if cfg.AutoTune {

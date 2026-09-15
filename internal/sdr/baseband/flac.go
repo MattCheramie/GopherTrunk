@@ -268,6 +268,8 @@ func readIQFLACInfo(path string) (IQWavInfo, error) {
 		SampleRate: stream.Info.SampleRate,
 		Channels:   uint16(stream.Info.NChannels),
 		Samples:    int(stream.Info.NSamples),
+		Encoding:   IQWavPCM16,
+		BlockAlign: iqWavBlockAlign,
 	}, nil
 }
 
