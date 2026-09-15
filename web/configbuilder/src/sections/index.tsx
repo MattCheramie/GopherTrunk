@@ -23,6 +23,7 @@ import { APRSSection } from "./APRS";
 import { AISSection } from "./AIS";
 import { DSCSection } from "./DSC";
 import { MDC1200Section } from "./MDC1200";
+import { FleetSyncSection } from "./FleetSync";
 import { ADSBSection } from "./ADSB";
 import { M17Section } from "./M17";
 
@@ -60,6 +61,7 @@ export const SECTIONS: SectionDef[] = [
   { key: "ais", cfgKey: "AIS", label: "AIS", render: () => <AISSection /> },
   { key: "dsc", cfgKey: "DSC", label: "DSC", render: () => <DSCSection /> },
   { key: "mdc1200", cfgKey: "MDC1200", label: "MDC1200", render: () => <MDC1200Section /> },
+  { key: "fleetsync", cfgKey: "FleetSync", label: "FleetSync", render: () => <FleetSyncSection /> },
   { key: "adsb", cfgKey: "ADSB", label: "ADS-B", render: () => <ADSBSection /> },
   { key: "m17", cfgKey: "M17", label: "M17", render: () => <M17Section /> },
 ];

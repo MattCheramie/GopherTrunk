@@ -16,16 +16,20 @@
 //
 // Layout mirrors internal/radio/mdc1200/afsk — same modulation class,
 // same building blocks, one Receiver per (SDR, frequency) pair. Two
-// deliberate differences: the framer is callback-based rather than
-// bus-based (the events/storage/REST/web wiring is staged behind the
-// on-air A/B, issue #437 / #1184), and the baud rate is an option
+// deliberate differences: the protocol framer stays callback-based (so
+// it unit-tests in isolation) and this front end is what publishes onto
+// the events bus — with Options.Bus set every framed burst becomes an
+// events.KindFleetSyncMessage carrying a storage.FleetSyncMessage, which
+// storage.FleetSyncLog persists, GET /api/v1/fleetsync/messages serves
+// and the /fleetsync web panel renders; and the baud rate is an option
 // (FleetSync signalling is 1200 baud; the reference decoder also
 // accepts 2400, so the replay harness can sweep both against a capture
 // instead of anyone guessing).
 //
-// Verification status: exercised end-to-end against synthesised FFSK
-// IQ (receiver_test.go) and staged for the reporter's off-air captures
-// via cmd/gophertrunk TestFleetSyncReplay. NOT yet confirmed on air.
+// Verification status: decodes the #1184 reporter's two SDR# captures
+// (Fleet 107 / Unit 1772, FleetSync-I 5/6 bursts and FleetSync-II 8/8)
+// through this exact chain — realair_test.go pins channelized slices of
+// them. The daemon wiring itself awaits the reporter's live run.
 package afsk
 
 import (
@@ -34,11 +38,14 @@ import (
 	"fmt"
 	"log/slog"
 	"sync/atomic"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	dspsync "github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
+	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/fleetsync"
+	"github.com/MattCheramie/GopherTrunk/internal/storage"
 )
 
 // CCIR FFSK tone frequencies — the FleetSync signalling convention
@@ -71,8 +78,20 @@ type Options struct {
 
 	// OnMessage receives every framed burst, including CRC-failed ones
 	// (Message.CRCOK == false) so a caller can surface marginal signals.
-	// Required. Invoked synchronously on the processing goroutine.
+	// Invoked synchronously on the processing goroutine. At least one of
+	// OnMessage and Bus must be set; both may be.
 	OnMessage func(fleetsync.Message)
+
+	// Bus, when non-nil, receives every framed burst as an
+	// events.KindFleetSyncMessage whose payload is a
+	// storage.FleetSyncMessage — the daemon's path to the SQLite log,
+	// the REST endpoint and the web panel.
+	Bus *events.Bus
+
+	// DropBadCRC, when true, keeps block-check-failed bursts off the Bus
+	// (OnMessage still sees them). Defaults to false so marginal bursts
+	// publish with CRCOK=false and the panel can flag them.
+	DropBadCRC bool
 
 	// SourceName is stamped on log lines.
 	SourceName string
@@ -96,6 +115,10 @@ type Receiver struct {
 	mm     *dspsync.MuellerMuller
 	framer *fleetsync.Framer
 
+	onMessage  func(fleetsync.Message)
+	bus        *events.Bus
+	dropBadCRC bool
+
 	// Scratch buffers reused across chunks so the hot path never
 	// allocates.
 	demodBuf []float32
@@ -103,16 +126,18 @@ type Receiver struct {
 	ffskBuf  []float32
 	symBuf   []float32
 
-	samplesSeen atomic.Uint64
-	bitsEmitted atomic.Uint64
+	samplesSeen   atomic.Uint64
+	bitsEmitted   atomic.Uint64
+	burstsPublish atomic.Uint64 // events published to the bus
+	burstsDropped atomic.Uint64 // block-check failures kept off the bus
 }
 
-// New constructs a Receiver. Returns an error if OnMessage is nil,
-// InputRateHz is unset, or the input rate cannot be resampled to the
-// FFSK audio rate.
+// New constructs a Receiver. Returns an error if neither OnMessage nor
+// Bus is set, InputRateHz is unset, or the input rate cannot be
+// resampled to the FFSK audio rate.
 func New(opts Options) (*Receiver, error) {
-	if opts.OnMessage == nil {
-		return nil, errors.New("fleetsync/afsk: OnMessage is required")
+	if opts.OnMessage == nil && opts.Bus == nil {
+		return nil, errors.New("fleetsync/afsk: OnMessage or Bus is required")
 	}
 	if opts.InputRateHz == 0 {
 		return nil, errors.New("fleetsync/afsk: InputRateHz is required")
@@ -149,18 +174,59 @@ func New(opts Options) (*Receiver, error) {
 		tapsPerBranch = 512
 	}
 
-	return &Receiver{
-		inputRate: opts.InputRateHz,
-		baud:      baud,
-		audioRate: audioRate,
-		source:    opts.SourceName,
-		log:       log,
-		fm:        demod.NewFM(),
-		rsmp:      dsp.NewRealResampler(L, M, tapsPerBranch, 7.0),
-		ffsk:      demod.NewFFSK(float64(audioRate), MarkHz, SpaceHz),
-		mm:        dspsync.NewMuellerMuller(float64(Oversample), mmGain),
-		framer:    fleetsync.NewFramer(opts.OnMessage),
-	}, nil
+	r := &Receiver{
+		inputRate:  opts.InputRateHz,
+		baud:       baud,
+		audioRate:  audioRate,
+		source:     opts.SourceName,
+		log:        log,
+		fm:         demod.NewFM(),
+		rsmp:       dsp.NewRealResampler(L, M, tapsPerBranch, 7.0),
+		ffsk:       demod.NewFFSK(float64(audioRate), MarkHz, SpaceHz),
+		mm:         dspsync.NewMuellerMuller(float64(Oversample), mmGain),
+		onMessage:  opts.OnMessage,
+		bus:        opts.Bus,
+		dropBadCRC: opts.DropBadCRC,
+	}
+	r.framer = fleetsync.NewFramer(r.onFrame)
+	return r, nil
+}
+
+// onFrame is the framer callback: it hands the burst to OnMessage (when
+// set) and publishes it on the bus (when set), honouring DropBadCRC for
+// the bus only — a caller that asked for every burst still gets them.
+func (r *Receiver) onFrame(m fleetsync.Message) {
+	if r.onMessage != nil {
+		r.onMessage(m)
+	}
+	if r.bus == nil {
+		return
+	}
+	if !m.CRCOK && r.dropBadCRC {
+		r.burstsDropped.Add(1)
+		return
+	}
+	r.bus.Publish(events.Event{
+		Kind:      events.KindFleetSyncMessage,
+		Timestamp: time.Now(),
+		Payload:   MessageToStorage(m, time.Now()),
+	})
+	r.burstsPublish.Add(1)
+}
+
+// MessageToStorage converts a decoded burst into the persisted /
+// wire shape the bus carries. Exposed so the replay harness and tests
+// build the exact payload the daemon publishes.
+func MessageToStorage(m fleetsync.Message, at time.Time) storage.FleetSyncMessage {
+	return storage.FleetSyncMessage{
+		ReceivedAt: at,
+		Fleet:      m.Fleet,
+		Unit:       m.Unit,
+		IsFS2:      m.IsFS2,
+		CRCOK:      m.CRCOK,
+		RawHex:     m.RawHex,
+		Body:       m.Body,
+	}
 }
 
 // Process pumps IQ chunks from in through the decode pipeline until ctx
@@ -252,14 +318,18 @@ func (r *Receiver) AudioRateHz() uint32 { return r.audioRate }
 
 // Stats reports cumulative DSP-front-end counters.
 type Stats struct {
-	SamplesSeen uint64 // input samples (IQ or audio) consumed
-	BitsEmitted uint64 // bits handed to the framer
+	SamplesSeen     uint64 // input samples (IQ or audio) consumed
+	BitsEmitted     uint64 // bits handed to the framer
+	BurstsPublished uint64 // events published to the bus
+	BurstsDropped   uint64 // block-check failures kept off the bus (DropBadCRC)
 }
 
 func (r *Receiver) Stats() Stats {
 	return Stats{
-		SamplesSeen: r.samplesSeen.Load(),
-		BitsEmitted: r.bitsEmitted.Load(),
+		SamplesSeen:     r.samplesSeen.Load(),
+		BitsEmitted:     r.bitsEmitted.Load(),
+		BurstsPublished: r.burstsPublish.Load(),
+		BurstsDropped:   r.burstsDropped.Load(),
 	}
 }
 

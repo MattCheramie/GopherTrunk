@@ -40,6 +40,7 @@ import (
 	aisgmsk "github.com/MattCheramie/GopherTrunk/internal/radio/ais/gmsk"
 	aprsafsk "github.com/MattCheramie/GopherTrunk/internal/radio/aprs/afsk"
 	dscffsk "github.com/MattCheramie/GopherTrunk/internal/radio/dsc/ffsk"
+	fleetsyncafsk "github.com/MattCheramie/GopherTrunk/internal/radio/fleetsync/afsk"
 	lorapkg "github.com/MattCheramie/GopherTrunk/internal/radio/lora"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/lora/lorawan"
 	lorarx "github.com/MattCheramie/GopherTrunk/internal/radio/lora/receiver"
@@ -485,6 +486,7 @@ type Daemon struct {
 	loraLog      *storage.LoRaLog
 	aircraftLog  *storage.AircraftLog
 	mdc1200Log   *storage.MDC1200Log
+	fleetsyncLog *storage.FleetSyncLog
 	messageLog   *gtlog.MessageLog
 	powerLog     *gtlog.PowerLog
 	eventLog     *gtlog.EventLog
@@ -623,6 +625,12 @@ type Daemon struct {
 	// decoded signaling bursts on KindMDC1200Message.
 	mdc1200Receivers []*mdc1200afsk.Receiver
 	mdc1200Specs     []mdc1200Spec // index-aligned with mdc1200Receivers
+	// fleetsyncReceivers holds one Kenwood FleetSync FFSK receiver per
+	// configured fleetsync.channels entry. Same shape as the MDC1200
+	// receivers above: each subscribes to its assigned SDR's iqtap broker
+	// and publishes decoded ANI bursts on KindFleetSyncMessage.
+	fleetsyncReceivers []*fleetsyncafsk.Receiver
+	fleetsyncSpecs     []fleetsyncSpec // index-aligned with fleetsyncReceivers
 	// adsbBeastClients consume ADS-B Mode-S frames from external
 	// dump1090 / readsb upstreams (BEAST binary protocol). Each
 	// client decodes frames, pairs CPR halves via an embedded
@@ -2673,6 +2681,39 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 		d.mdc1200Specs = append(d.mdc1200Specs, spec)
 	}
 
+	// FleetSync FFSK receivers — one per configured fleetsync.channels
+	// entry. Same construction shape as MDC1200 above: per-entry
+	// validation in the receiver, failures surface as a startup
+	// warning and skip the entry (nil slot preserved for stable
+	// indexing).
+	for _, fc := range cfg.FleetSync.Channels {
+		spec := fleetsyncSpec{serial: fc.Serial, freq: fc.FrequencyHz}
+		if fc.Serial == "" || fc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"fleetsync.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				fc.Serial, fc.FrequencyHz))
+			d.fleetsyncReceivers = append(d.fleetsyncReceivers, nil)
+			d.fleetsyncSpecs = append(d.fleetsyncSpecs, spec)
+			continue
+		}
+		rcv, err := fleetsyncafsk.New(fleetsyncafsk.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			BaudHz:      fc.BaudHz,
+			SourceName:  fc.Serial,
+			Bus:         d.bus,
+			DropBadCRC:  fc.DropBadCRC,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("fleetsync.channels[%s]: %v — skipped", fc.Serial, err))
+			d.fleetsyncReceivers = append(d.fleetsyncReceivers, nil)
+			d.fleetsyncSpecs = append(d.fleetsyncSpecs, spec)
+			continue
+		}
+		d.fleetsyncReceivers = append(d.fleetsyncReceivers, rcv)
+		d.fleetsyncSpecs = append(d.fleetsyncSpecs, spec)
+	}
+
 	// ADS-B BEAST upstreams — one client per configured
 	// adsb.beast_upstreams entry. Each opens a TCP connection
 	// to a dump1090 / readsb BEAST output port, decodes the
@@ -2843,6 +2884,9 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 		}
 		if d.mdc1200Log != nil {
 			opts.MDC1200 = mdc1200Provider{log: d.mdc1200Log}
+		}
+		if d.fleetsyncLog != nil {
+			opts.FleetSync = fleetsyncProvider{log: d.fleetsyncLog}
 		}
 		if d.db != nil {
 			opts.History = api.HistoryFromStorage(d.db)
@@ -3110,6 +3154,13 @@ func (d *Daemon) buildStorage(cfg config.Config, log *slog.Logger) error {
 		}
 		d.mdc1200Log = mdl
 
+		fsl, err := storage.NewFleetSyncLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("daemon: fleetsync log: %w", err)
+		}
+		d.fleetsyncLog = fsl
+
 		if cfg.Retention.CallLogDays > 0 || cfg.Retention.LogDays > 0 || cfg.Retention.FilesDays > 0 {
 			interval, err := retentionInterval(cfg.Retention.Interval)
 			if err != nil {
@@ -3231,6 +3282,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.mdc1200Log != nil {
 		d.spawn(runCtx, "mdc1200log", false, func(ctx context.Context) error {
 			return d.mdc1200Log.Run(ctx)
+		})
+	}
+	if d.fleetsyncLog != nil {
+		d.spawn(runCtx, "fleetsynclog", false, func(ctx context.Context) error {
+			return d.fleetsyncLog.Run(ctx)
 		})
 	}
 	if d.messageLog != nil {
@@ -3733,6 +3789,43 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return rcv.Process(ctx, iqCh)
 		})
 	}
+	// FleetSync receivers — same shape as MDC1200 above. Each subscribes
+	// to its assigned SDR's iqtap broker and runs the FFSK pipeline (FM
+	// demod → FFSK discriminator → symbol-timing recovery → zero-threshold
+	// slicer → preamble+sync framer → FleetSync I / II ANI decode),
+	// publishing bursts onto the events bus where the FleetSyncLog
+	// subscriber persists them and the /fleetsync panel renders them.
+	// Non-essential: a missing SDR or misconfigured frequency is logged
+	// but doesn't bring down the trunking pipeline.
+	for i, rcv := range d.fleetsyncReceivers {
+		if rcv == nil {
+			continue // skipped at construction; warning already logged
+		}
+		rcv := rcv
+		spec := d.fleetsyncSpecs[i]
+		name := fmt.Sprintf("fleetsync-%s-%d", spec.serial, spec.freq)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			br := d.iqBrokers[spec.serial]
+			if br == nil {
+				d.log.Warn("fleetsync: SDR not found, skipping receiver",
+					"serial", spec.serial, "freq_hz", spec.freq)
+				return nil
+			}
+			if err := br.SetCenterFreq(spec.freq); err != nil {
+				d.log.Warn("fleetsync: SetCenterFreq failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("fleetsync: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
+		})
+	}
 	// ADS-B BEAST upstream clients — each consumes Mode-S
 	// frames from a separately-running dump1090 / readsb /
 	// commercial hub. Reconnect-with-backoff on disconnects;
@@ -3967,6 +4060,9 @@ func (d *Daemon) Close() {
 		}
 		if d.mdc1200Log != nil {
 			_ = d.mdc1200Log.Close()
+		}
+		if d.fleetsyncLog != nil {
+			_ = d.fleetsyncLog.Close()
 		}
 		if d.messageLog != nil {
 			_ = d.messageLog.Close()
@@ -5215,7 +5311,7 @@ func (d *Daemon) wrapIQBrokers(cfg config.Config, log *slog.Logger) {
 }
 
 // openSingleChannelIQ returns an IQ channel for a single-channel decoder
-// (POCSAG, FLEX, M17, APRS, AIS, DSC, MDC1200, ADS-B/PPM) pinned to serial.
+// (POCSAG, FLEX, M17, APRS, AIS, DSC, MDC1200, FleetSync, ADS-B/PPM) pinned to serial.
 //
 // An iqtap.Broker only fans IQ out to Subscribe() consumers while a primary
 // StreamIQ session is running. Trunking / wideband dongles get that primary
@@ -5848,6 +5944,15 @@ func (m mdc1200Provider) RecentMDC1200Messages(limit int) ([]storage.MDC1200Mess
 	return m.log.Recent(limit)
 }
 
+// fleetsyncProvider adapts storage.FleetSyncLog into api.FleetSyncProvider
+// so the api package stays free of the storage import dependency.
+// Read-only — the decoder writes via the events bus.
+type fleetsyncProvider struct{ log *storage.FleetSyncLog }
+
+func (f fleetsyncProvider) RecentFleetSyncMessages(limit int) ([]storage.FleetSyncMessage, error) {
+	return f.log.Recent(limit)
+}
+
 // aprsSpec captures the broker-side wiring info for one configured
 // APRS channel. Index-aligned with Daemon.aprsReceivers so the Run
 // loop can spawn each receiver without re-walking the YAML. Mirrors
@@ -5975,6 +6080,15 @@ type adsbPPMSpec struct {
 // Run loop can spawn each receiver without re-walking the YAML.
 // Mirrors aprsSpec / aisSpec.
 type mdc1200Spec struct {
+	serial string
+	freq   uint32
+}
+
+// fleetsyncSpec captures the broker-side wiring info for one configured
+// FleetSync channel. Index-aligned with Daemon.fleetsyncReceivers so the
+// Run loop can spawn each receiver without re-walking the YAML.
+// Mirrors mdc1200Spec.
+type fleetsyncSpec struct {
 	serial string
 	freq   uint32
 }

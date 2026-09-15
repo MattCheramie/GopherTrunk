@@ -1,6 +1,6 @@
 // Auxiliary-decoder configuration: the non-trunking side channels GopherTrunk
 // can decode alongside the trunked systems — ADS-B, M17, LoRa/LoRaWAN, APRS,
-// AIS, DSC, MDC1200 and paging (POCSAG/FLEX). Split out of config.go to keep
+// AIS, DSC, MDC1200, FleetSync and paging (POCSAG/FLEX). Split out of config.go to keep
 // the core schema focused; these are plain YAML-mapped DTOs.
 package config
 
@@ -218,6 +218,35 @@ type MDC1200Config struct {
 type MDC1200ChannelConfig struct {
 	Serial      string `yaml:"serial"`
 	FrequencyHz uint32 `yaml:"frequency_hz"`
+	DropBadCRC  bool   `yaml:"drop_bad_crc"`
+}
+
+// FleetSyncConfig configures the Kenwood FleetSync FFSK signalling
+// receiver. Each entry pins an SDR to a conventional analog VHF / UHF
+// voice channel and runs the DSP frontend (FM demod → FFSK
+// discriminator at 1200/1800 Hz → symbol-timing recovery → zero-threshold
+// slicer → preamble+sync framer → FleetSync I / II ANI decode with block
+// check) against its full IQ stream. Decoded bursts publish on
+// events.KindFleetSyncMessage; storage.FleetSyncLog persists them, the
+// REST endpoint at /api/v1/fleetsync/messages and the /fleetsync web
+// panel render them. Verified against the #1184 on-air captures.
+type FleetSyncConfig struct {
+	Channels []FleetSyncChannelConfig `yaml:"channels"`
+}
+
+// FleetSyncChannelConfig describes one FleetSync channel to decode.
+// Serial picks the SDR; the daemon tunes it to FrequencyHz and runs the
+// FFSK receiver against its full IQ stream. Target the conventional
+// analog voice channels of the Kenwood fleet you monitor — the ANI burst
+// rides at the head of each transmission. BaudHz is the signalling rate
+// (0 selects 1200, the FleetSync rate; the reference decoder also
+// accepts 2400). DropBadCRC matches the receiver's option — leave it
+// false to see block-check-failed bursts on the panel (flagged), flip it
+// on for noisy channels.
+type FleetSyncChannelConfig struct {
+	Serial      string `yaml:"serial"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
+	BaudHz      int    `yaml:"baud_hz"`
 	DropBadCRC  bool   `yaml:"drop_bad_crc"`
 }
 

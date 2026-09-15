@@ -63,6 +63,7 @@ receiver with its own log and console panel:
 - **[APRS / AX.25](aprs.html)** — amateur packet, beacons, and messages.
 - **[DSC](dsc.html)** — marine digital selective calling, including distress.
 - **[MDC1200](mdc1200.html)** — Motorola in-band signaling (PTT IDs, emergency).
+- **[FleetSync](fleetsync.html)** — Kenwood in-band signalling (fleet / unit ANI).
 - **[M17](m17.html)** — the open digital-voice link layer.
 
 Which of these are on by default, and how to enable the rest, lives in

@@ -516,6 +516,16 @@ export interface MDC1200Config {
   Channels: MDC1200ChannelConfig[] | null;
 }
 
+export interface FleetSyncChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  BaudHz: number;
+  DropBadCRC: boolean;
+}
+export interface FleetSyncConfig {
+  Channels: FleetSyncChannelConfig[] | null;
+}
+
 export interface ADSBBeastConfig {
   Addr: string;
   Name: string;
@@ -556,6 +566,7 @@ export interface GTConfig {
   AIS: AISConfig;
   DSC: DSCConfig;
   MDC1200: MDC1200Config;
+  FleetSync: FleetSyncConfig;
   ADSB: ADSBConfig;
   M17: M17Config;
   Web: WebConfig;

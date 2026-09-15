@@ -23,13 +23,14 @@ var decoderLogTables = []string{
 	"dsc_log",
 	"aircraft_log",
 	"mdc1200_log",
+	"fleetsync_log",
 	"m17_log",
 }
 
 // Retention deletes old data on a schedule:
 //  1. call_log rows with started_at older than CallRowMaxAge.
 //  2. decoder log-table rows (pager_log, aprs_log, vessel_log, dsc_log,
-//     aircraft_log, mdc1200_log, m17_log, location_log) with
+//     aircraft_log, mdc1200_log, fleetsync_log, m17_log, location_log) with
 //     received_at older than LogRowMaxAge.
 //  3. WAV / raw files under FilesRoot whose modification time is older
 //     than FilesMaxAge.
@@ -57,8 +58,8 @@ type RetentionOptions struct {
 	// deleted. Zero (the default) disables call-row deletion.
 	CallRowMaxAge time.Duration
 	// LogRowMaxAge: decoder log-table rows (pager_log, aprs_log,
-	// vessel_log, dsc_log, aircraft_log, mdc1200_log, m17_log,
-	// location_log) with received_at older than this are deleted. Zero
+	// vessel_log, dsc_log, aircraft_log, mdc1200_log, fleetsync_log,
+	// m17_log, location_log) with received_at older than this are deleted. Zero
 	// (the default) disables decoder-log deletion.
 	LogRowMaxAge time.Duration
 	// FilesMaxAge: files older than this (mtime) are deleted. Zero
