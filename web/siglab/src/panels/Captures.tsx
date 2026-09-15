@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useStore } from "../store/shared";
 import { api } from "../api/client";
 import { CaptureRow } from "./CaptureRow";
+import { parseCaptureTuning } from "../lib/captureTuning";
 import type { CaptureDTO, CaptureDevice, RunConfig } from "../api/types";
 
 export function Captures() {
@@ -157,17 +158,20 @@ function CaptureForm() {
     setErr(null);
     setDownloadID(null);
     try {
-      const bandwidthHz = bandwidthKHz.trim() ? Math.round(Number(bandwidthKHz) * 1e3) : 0;
-      const centerHz = centerMHz.trim() ? Math.round(Number(centerMHz) * 1e6) : 0;
+      // Strict: a centre that does not parse, or arrives without a
+      // bandwidth, is an error here — never a silent fall-back to the tuner
+      // centre (see lib/captureTuning.ts).
+      const parsed = parseCaptureTuning(centerMHz, bandwidthKHz);
+      if (!parsed.ok) {
+        setErr(parsed.error);
+        return;
+      }
       const res = await captureFromTuner({
         serial,
         seconds: Number(seconds) || 1,
         format,
         protocol: protocol || undefined,
-        // A narrowband slice is requested only when a bandwidth is given; the
-        // centre defaults to the tuner centre server-side when omitted.
-        bandwidth_hz: bandwidthHz > 0 ? bandwidthHz : undefined,
-        center_hz: bandwidthHz > 0 && centerHz > 0 ? centerHz : undefined,
+        ...parsed.tuning,
       });
       setDownloadID(res.capture.id);
     } catch (e) {

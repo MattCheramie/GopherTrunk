@@ -55,6 +55,14 @@ export function CaptureRow({
         <div className="text-xs text-muted">
           {capture.format} ·{" "}
           {capture.sample_rate_hz ? `${capture.sample_rate_hz} Hz` : "rate?"} ·{" "}
+          {capture.center_hz ? (
+            // Where the grab was taken — a slice quietly carved at the tuner
+            // centre used to be indistinguishable from the one asked for.
+            <>
+              <span data-testid="center-mhz">{(capture.center_hz / 1e6).toFixed(4)} MHz</span>
+              {" · "}
+            </>
+          ) : null}
           {(capture.size / 1024).toFixed(0)} KiB
           {formatCapturedAt(capture.created_at) && (
             <>
