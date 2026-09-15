@@ -52,6 +52,22 @@
   color-scheme: light;
 }
 
+[data-theme="contrast"] {
+  --gt-bg: 255 255 255;
+  --gt-panel: 255 255 255;
+  --gt-muted: 0 0 0;
+  --gt-fg: 0 0 0;
+  --gt-accent: 0 0 0;
+  --gt-ok: 0 96 0;
+  --gt-warn: 124 58 0;
+  --gt-err: 160 0 0;
+  --gt-surface-1: 255 255 255;
+  --gt-surface-2: 255 255 255;
+  --gt-surface-3: 229 229 229;
+  --gt-border: 0 0 0;
+  color-scheme: light;
+}
+
 html,
 body,
 #root {

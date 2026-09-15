@@ -51,13 +51,48 @@ const SS_KEYS = {
   noConfigDismissed: "gt.ui.noConfigDismissed",
 } as const;
 
-export type Theme = "dark" | "monochrome" | "light";
+export type Theme = "dark" | "monochrome" | "light" | "high-contrast";
 export type Density = "comfortable" | "compact";
 
+export const THEMES: readonly Theme[] = ["dark", "monochrome", "light", "high-contrast"];
+
 // Maps a stored Theme to the `data-theme` attribute value the CSS uses
-// ("monochrome" → "mono"). Centralized so main.tsx and Settings agree.
+// ("monochrome" → "mono", "high-contrast" → "contrast"). Centralized so
+// main.tsx, Settings, and the sister SPAs' bootstrap agree.
 export function themeAttr(theme: Theme): string {
-  return theme === "monochrome" ? "mono" : theme;
+  switch (theme) {
+    case "monochrome":
+      return "mono";
+    case "high-contrast":
+      return "contrast";
+    default:
+      return theme;
+  }
+}
+
+// The browser-chrome colour (PWA status bar, Android task switcher) per
+// theme. A white high-contrast page under a slate-900 status bar reads
+// as a broken theme outdoors, which is the one case this theme exists for.
+export function themeColor(theme: Theme): string {
+  switch (theme) {
+    case "light":
+      return "#f1f5f9";
+    case "high-contrast":
+      return "#ffffff";
+    case "monochrome":
+      return "#111111";
+    default:
+      return "#0f172a";
+  }
+}
+
+// Apply a theme to the document: the `data-theme` attribute the CSS keys
+// on, plus the `theme-color` meta. Shared by the pre-render bootstrap in
+// main.tsx and the Settings panel so they cannot drift.
+export function applyTheme(theme: Theme) {
+  document.documentElement.dataset.theme = themeAttr(theme);
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (meta) meta.content = themeColor(theme);
 }
 
 function readLS(key: string): string | null {
@@ -116,7 +151,8 @@ export const prefs = {
   },
 
   theme(): Theme {
-    return (readLS(LS_KEYS.theme) as Theme | null) ?? "dark";
+    const raw = readLS(LS_KEYS.theme);
+    return (THEMES as readonly string[]).includes(raw ?? "") ? (raw as Theme) : "dark";
   },
   setTheme(theme: Theme) {
     writeLS(LS_KEYS.theme, theme);
