@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.4] — 2026-09-15
+
 ### Added
 - **FleetSync FFSK front end + capture replay harness** (#1184, #437). The
   clean-room FleetSync / FleetSync II protocol core shipped in v1.1.1 now has
