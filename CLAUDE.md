@@ -525,6 +525,41 @@ confirmation before any close-as-completed.
     done the same day: `siglab: capture started/ended/aborted` INFO lines in debug.log
     (serial, centre, rate, bandwidth, format, seconds, path; samples/recorded_seconds/elapsed
     at the end) so a capture lines up with the log without guessing.
+- **DMR direct mode (#836) IS ON-AIR VERIFIED on the reporter's 15 Sep captures, and the
+  captures exposed three more defects, all fixed the same day.** Alvin's three 20 s
+  cs16 captures (446.500 MHz centred, 2.4 MS/s, gain auto / 200 / 250, −1.6..−1.9 kHz
+  offset, still 36–40 % ADC-clipped — the handheld is in the same room; it decodes
+  anyway, so "clipped ⇒ undecodable by construction" was too strong) decode through the
+  production Tier II path: lock, grant tg 99 / src 3024109 / cc 1, 34–39 superframes,
+  0 uncorrectable AMBE; the same files give ZERO sync words with `NoCarrierGate` (the
+  #1186 pin on real air, `TestDMRDirectModeRealAirKeyup`). What the captures then
+  showed: (1) **every keyup lands at a random sub-symbol phase and the gated MM loop
+  pulls a bad one in at gain·error per symbol** — cold-started on PTT 2 at ten
+  sub-sample offsets, 7 phases decoded the first burst and 3 took 1.3–2.8 s; live, the
+  phase HELD through the gap from PTT 1 cost PTT 2 its entire ten-copy header train
+  (1.5 s, no grant until late entry). Do NOT read `MMClockMu()` as a drift meter: mu is a
+  per-symbol countdown, its value at a chunk boundary is the loop's phase, and a slow walk
+  is the loop converging. Fix: feed-forward acquisition at every onset after an absence
+  > 100 ms (`receiver/timing_acq.go` → `sync.EstimateSymbolPhase` → `SetPhase`). The
+  Oerder-Meyr square-law line was tried first and is USELESS here (20 % roll-off: the
+  symbol-rate line is often below the noise floor); the kurtosis eye-opening search
+  (central moments — an uncorrected offset biases raw moments) is exact to ±1 sample
+  ≥ 95 % of 96-symbol windows and validated burst-by-burst on the capture (phase 0 at
+  every header copy, drifting ~0.6 samples/s through the PTT = TX-vs-RX clock, jumping
+  3 samples at the next keyup). Acquisition arms only AFTER an absence so the
+  continuous-carrier "gate is a no-op" pin stays byte-identical. (2) **This radio repeats
+  its Voice LC Header TEN times over 0.6 s**; the 0.25 s re-key rule measured from the
+  FIRST copy ⇒ phantom release + re-grant on every keyup; the anchor now follows the last
+  copy (`TestConventionalHeaderTrainIsOneKeyup`). (3) **Direct-mode voice must be sliced
+  at the 288-dibit cadence** (one burst per 60 ms frame): the single-slot 132-cadence
+  decoder slices the gaps — its `ambe_ok` counts are BOGUS (muted gaps decode as valid
+  all-zero Golay words) and `lc_superframes=0` — so `trunking.DMRVoiceCadenceDetected`
+  now defaults every DMR protocol (Tier I included; siglab and `replay -record-voice`
+  had no System at all) to the cadence-detecting decoder; embedded LC then decodes in
+  ~80 % of superframes and late entry works. The DC spur of a channel-centred capture
+  was ruled out (−28 dB, DC-block changes nothing). Still open: the reporter's LIVE run on
+  a build with these fixes (#764/#771), and `TestDMRIPSCReplay` still needs
+  `GT_DMR_INTERLEAVED=1` for a direct-mode file (it now says so).
 - **DMR direct mode / simplex (#836) NEVER decoded, and every earlier round chased the wrong
   thing (ppm, gain-too-low, "odd rotation") — the receiver was blinded by the GAPS between
   bursts.** A handheld on a simplex frequency transmits one 27.5 ms burst per 60 ms frame

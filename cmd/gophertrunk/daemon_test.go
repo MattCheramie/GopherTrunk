@@ -143,10 +143,13 @@ func TestResolveDMRInterleavedVoice(t *testing.T) {
 	}{
 		{"tier2 conventional defaults on", trunking.ProtocolDMRTier2, nil, true},
 		{"tier3 trunked defaults on", trunking.ProtocolDMR, nil, true},
-		{"tier1 direct-mode defaults off", trunking.ProtocolDMRTier1, nil, false},
+		// Direct mode is one burst per 60 ms frame — same-slot bursts 288
+		// dibits apart, exactly a repeater's cadence — so it takes the
+		// cadence-detecting decoder too (issue #836).
+		{"tier1 direct-mode defaults on", trunking.ProtocolDMRTier1, nil, true},
 		{"non-dmr defaults off", trunking.ProtocolP25, nil, false},
 		{"override false beats tier2 default", trunking.ProtocolDMRTier2, ptr(false), false},
-		{"override true beats tier1 default", trunking.ProtocolDMRTier1, ptr(true), true},
+		{"override false beats tier1 default", trunking.ProtocolDMRTier1, ptr(false), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

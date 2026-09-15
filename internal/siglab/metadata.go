@@ -103,7 +103,7 @@ func (m *Metadata) Config(collectIQDiag bool) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	sys := trunking.System{Name: "siglab", Protocol: proto}
+	sys := trunking.System{Name: "siglab", Protocol: proto, DMRInterleavedVoice: trunking.DMRVoiceCadenceDetected(proto)}
 	applySystemKnobs(&sys, m.System)
 	acc := m.Expected
 	return Config{

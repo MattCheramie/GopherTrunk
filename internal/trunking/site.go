@@ -591,3 +591,21 @@ func (s System) HuntOrder(lastKnown uint32) []uint32 {
 	}
 	return out[1:]
 }
+
+// DMRVoiceCadenceDetected reports whether a DMR protocol's voice should be
+// decoded with the cadence-detecting superframe decoder (the composer's
+// "interleaved" decoder) rather than the back-to-back single-slot one. On
+// air no DMR carrier lays a call's bursts back to back: a base station
+// interleaves two timeslots (same-slot bursts 264 or 288 dibits apart) and a
+// direct-mode / Tier I handheld transmits one burst per 60 ms frame (288
+// dibits apart, the other slot silent) — the #836 reporter's simplex
+// captures decode their embedded LC in 26 of 35 superframes at the 288
+// cadence and in none at 132. The single-slot decoder remains for
+// synthesised back-to-back fixtures and explicit config overrides.
+func DMRVoiceCadenceDetected(p Protocol) bool {
+	switch p {
+	case ProtocolDMR, ProtocolDMRTier2, ProtocolDMRTier1:
+		return true
+	}
+	return false
+}

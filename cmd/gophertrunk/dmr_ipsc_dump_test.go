@@ -11,7 +11,6 @@ import (
 	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
-	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
 // TestDMRIPSCBurstDump is a burst-level instrument for a conventional DMR
@@ -19,7 +18,9 @@ import (
 // type, BPTC validity) and every voice superframe (phase, embedded-LC
 // talkgroup/source, EMB colour code) against stream time, so a missed
 // transmission or a second colour code can be found by inspection rather than
-// inferred from grant counts. GT_DMR_IQ=<capture> GT_DMR_DUMP=<out file>.
+// inferred from grant counts. GT_DMR_IQ=<capture> GT_DMR_DUMP=<out file>;
+// a raw cs16/f32 capture takes GT_DMR_IQ_RATE / GT_DMR_IQ_FORMAT like
+// TestDMRIPSCReplay (a wav/flac container carries its own rate).
 func TestDMRIPSCBurstDump(t *testing.T) {
 	out := os.Getenv("GT_DMR_DUMP")
 	path := os.Getenv("GT_DMR_IQ")
@@ -34,13 +35,7 @@ func TestDMRIPSCBurstDump(t *testing.T) {
 		}
 		inRate = f
 	}
-	iq, rate, err := siglab.DecodeContainerFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rate > 0 && os.Getenv("GT_DMR_IQ_RATE") == "" {
-		inRate = float64(rate)
-	}
+	iq, inRate := readDMRCaptureIQ(t, path, inRate)
 	f, err := os.Create(out)
 	if err != nil {
 		t.Fatal(err)

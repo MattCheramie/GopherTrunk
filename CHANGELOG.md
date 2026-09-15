@@ -7,6 +7,49 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **DMR direct mode (#836): every PTT now decodes from its first header,
+  verified on the reporter's air.** The carrier gate shipped in v1.1.4 was
+  confirmed on @alvin275's three new 446.500 MHz captures — the production
+  Tier II path locks, grants talkgroup 99 from radio 3024109 and decodes 34–39
+  voice superframes with zero uncorrectable AMBE frames, and the same files
+  decode nothing with the gate off — and three more things the captures showed
+  are fixed:
+  - **Symbol timing is now acquired feed-forward at every transmission onset.**
+    A keyup lands on the receiver's sample clock at an arbitrary sub-symbol
+    phase, and the gated Mueller-Müller loop pulled a bad start phase in at
+    gain·error per symbol: cold-started on the second PTT at ten sub-sample
+    offsets the receiver decoded the first burst at seven and took 1.3–2.8 s at
+    the other three, and live it lost that PTT's whole ten-copy header train
+    (1.5 s) to the phase held from the previous PTT. `sync.EstimateSymbolPhase`
+    (an eye-opening / kurtosis search over the sps candidate phases, scale-free
+    and independent of the pulse's excess bandwidth) seeds
+    `MuellerMuller.SetPhase` from 96 symbols inside the first burst after any
+    absence longer than the inter-burst gap (`receiver/timing_acq.go`); on the
+    captures the first sync now lands 20–80 ms after the carrier at every phase.
+  - **A radio that repeats its Voice LC Header for longer than 0.25 s is one
+    keyup.** The reporter's handheld sends ten copies 60 ms apart; measured from
+    the first copy the re-key rule released and re-granted every PTT (a phantom
+    zero-length call each time). The anchor now follows the last copy
+    (`tier2/conventional.go`).
+  - **Tier I / direct-mode voice is decoded at the on-air 288-dibit cadence.**
+    `trunking.DMRVoiceCadenceDetected` makes the cadence-detecting superframe
+    decoder the default for every DMR protocol (the daemon already had it for
+    Tier II/III; Tier I, siglab and `replay -record-voice` ran the single-slot
+    decoder, which sliced the inter-burst gaps — no embedded LC ever decoded,
+    so no late entry either). On the captures the embedded LC now decodes in
+    28–30 of ~38 superframes.
+  Real-air pins: `cmd/gophertrunk/testdata/dmr-directmode-446500-*.cs16` (two
+  48 kHz slices of the gain-200 capture, keyup and second-PTT onset) with
+  `TestDMRDirectModeRealAirKeyup` / `TestDMRDirectModeRealAirOnsetAtEveryPhase`;
+  synthetic failing-first: `receiver/timing_acq_test.go`,
+  `tier2/conventional_headertrain_test.go`. `TestDMRIPSCBurstDump` now reads raw
+  cs16/f32 captures like `TestDMRIPSCReplay`, and the replay harness points a
+  direct-mode capture at `GT_DMR_INTERLEAVED=1`. Still to confirm live: the
+  reporter's daemon run on a build with these changes (the captures are still
+  36–40 % ADC-clipped at gain 200/250 — the handheld is in the same room — and
+  decode anyway; a lower gain or more distance is still advised).
+
 ### Added
 - **P25 ADP (RC4) known-key decryption in-process — verified on the #1187
   reporter's capture.** With a `trunking.systems[].encryption_keys` entry

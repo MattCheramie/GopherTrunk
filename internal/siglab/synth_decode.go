@@ -33,7 +33,7 @@ func SynthesizeAndAnalyze(synth SynthOptions, decode Config, onEvent func(EventR
 
 	// Build the decode system from the fixture's per-protocol knobs so the
 	// analysis path matches the synthesized waveform.
-	sys := trunking.System{Name: "siglab", Protocol: proto}
+	sys := trunking.System{Name: "siglab", Protocol: proto, DMRInterleavedVoice: trunking.DMRVoiceCadenceDetected(proto)}
 	applySystemKnobs(&sys, meta.System)
 
 	cfg := decode

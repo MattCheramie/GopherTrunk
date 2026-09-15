@@ -41,9 +41,14 @@ import (
 // superframes>0 with AMBE decoding ⇒ the audio is recoverable and the gap is in
 // grant→voice-device binding, not the DSP.
 //
-// GT_DMR_INTERLEAVED=1 decodes the carrier as 2-slot interleaved (two talkers,
-// one per timeslot) — the common IPSC case — and reports per-phase superframe
-// counts so slot separation is visible.
+// GT_DMR_INTERLEAVED=1 decodes the voice with the cadence-detecting decoder
+// (same-slot bursts 264/288 dibits apart) — the 2-slot IPSC case AND a
+// direct-mode / simplex handheld (one burst per 60 ms frame, #836) — and
+// reports per-phase superframe counts so slot separation is visible. The
+// daemon uses that decoder for every DMR protocol by default; without it
+// here the single-slot decoder slices the inter-burst gaps, so its
+// superframe / AMBE counts are meaningless and lc_superframes reads 0 — the
+// harness says so when the carrier is MS-sourced.
 //
 // GT_DMR_DROP_HEADERS=1 scrubs every Voice LC Header burst out of the recovered
 // dibit stream before the Tier II state machine sees it — the on-air model of
@@ -74,50 +79,7 @@ func TestDMRIPSCReplay(t *testing.T) {
 	dropHeaders := os.Getenv("GT_DMR_DROP_HEADERS") == "1"
 	dropTerminators := os.Getenv("GT_DMR_DROP_TERMINATORS") == "1"
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// GT_DMR_IQ_FORMAT selects the sample encoding: cs16 (default, interleaved
-	// int16) or f32 (interleaved float32 — the GNU Radio / gqrx cfile format the
-	// #1036 reporter's 25 kS/s capture uses). A wav/flac container (the Signal
-	// Lab "capture from tuner" output) is sniffed from its content and carries
-	// its own sample rate, so GT_DMR_IQ_RATE / GT_DMR_IQ_FORMAT are not needed.
-	format := strings.ToLower(os.Getenv("GT_DMR_IQ_FORMAT"))
-	if format == "" {
-		format = "cs16"
-	}
-	var iq []complex64
-	if _, isContainer := siglab.SniffContainer(raw); isContainer {
-		format = "container"
-	}
-	switch format {
-	case "container":
-		samples, rate, err := siglab.DecodeContainerFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		iq = samples
-		if rate > 0 && os.Getenv("GT_DMR_IQ_RATE") == "" {
-			inRate = float64(rate)
-		}
-	case "cs16", "sc16":
-		iq = make([]complex64, len(raw)/4)
-		for i := range iq {
-			re := int16(binary.LittleEndian.Uint16(raw[i*4:]))
-			im := int16(binary.LittleEndian.Uint16(raw[i*4+2:]))
-			iq[i] = complex(float32(re)/32768, float32(im)/32768)
-		}
-	case "f32", "cf32", "fc32":
-		iq = make([]complex64, len(raw)/8)
-		for i := range iq {
-			re := math.Float32frombits(binary.LittleEndian.Uint32(raw[i*8:]))
-			im := math.Float32frombits(binary.LittleEndian.Uint32(raw[i*8+4:]))
-			iq[i] = complex(re, im)
-		}
-	default:
-		t.Fatalf("unknown GT_DMR_IQ_FORMAT %q (want cs16 or f32)", format)
-	}
+	iq, inRate := readDMRCaptureIQ(t, path, inRate)
 
 	// DMR is the 4800-baud C4FM family — normalise to the 48 kHz channel rate.
 	ddc := ccdecoder.NewDownconverter(inRate, 48000)
@@ -292,6 +254,12 @@ func TestDMRIPSCReplay(t *testing.T) {
 	}
 	t.Logf("superframes=%d lc_superframes=%d phase0=%d phase1=%d ambe_ok=%d ambe_uncorrectable=%d",
 		superframes, lcSuperframes, phaseCounts[0], phaseCounts[1], ambeOK, ambeUncorrect)
+	if !interleaved {
+		det := dmr.NewSyncDetector([]dmr.SyncPattern{dmr.MSVoice, dmr.MSData}, 2)
+		if ms, _ := det.Process(nil, allDibits, 0); len(ms) > 0 {
+			t.Logf("NOTE: %d MS-sourced sync words — a direct-mode / simplex handheld (one burst per 60 ms frame): re-run with GT_DMR_INTERLEAVED=1 for the on-air 288-dibit cadence the daemon uses; the single-slot decoder above sliced the inter-burst gaps", len(ms))
+		}
+	}
 	for tg, n := range lcGroups {
 		t.Logf("  embedded-LC group_address=%d count=%d", tg, n)
 	}
@@ -360,4 +328,56 @@ func lcCallDestinationForReplay(flc dmr.FLC) (uint32, bool) {
 		return uu.DestinationID, true
 	}
 	return 0, false
+}
+
+// readDMRCaptureIQ loads a DMR IQ capture for the replay harnesses. A wav/flac
+// container (the Signal Lab "capture from tuner" output) is sniffed from its
+// content and carries its own sample rate; a raw file is decoded per
+// GT_DMR_IQ_FORMAT — cs16 (default, interleaved int16, the `gophertrunk
+// capture -format cs16` output) or f32 (interleaved float32, the GNU Radio /
+// gqrx cfile the #1036 reporter's 25 kS/s capture uses) — at inRate unless
+// GT_DMR_IQ_RATE overrides it. Shared by TestDMRIPSCReplay and
+// TestDMRIPSCBurstDump so every DMR harness reads the same inputs.
+func readDMRCaptureIQ(t *testing.T, path string, inRate float64) ([]complex64, float64) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	format := strings.ToLower(os.Getenv("GT_DMR_IQ_FORMAT"))
+	if format == "" {
+		format = "cs16"
+	}
+	var iq []complex64
+	if _, isContainer := siglab.SniffContainer(raw); isContainer {
+		format = "container"
+	}
+	switch format {
+	case "container":
+		samples, rate, err := siglab.DecodeContainerFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		iq = samples
+		if rate > 0 && os.Getenv("GT_DMR_IQ_RATE") == "" {
+			inRate = float64(rate)
+		}
+	case "cs16", "sc16":
+		iq = make([]complex64, len(raw)/4)
+		for i := range iq {
+			re := int16(binary.LittleEndian.Uint16(raw[i*4:]))
+			im := int16(binary.LittleEndian.Uint16(raw[i*4+2:]))
+			iq[i] = complex(float32(re)/32768, float32(im)/32768)
+		}
+	case "f32", "cf32", "fc32":
+		iq = make([]complex64, len(raw)/8)
+		for i := range iq {
+			re := math.Float32frombits(binary.LittleEndian.Uint32(raw[i*8:]))
+			im := math.Float32frombits(binary.LittleEndian.Uint32(raw[i*8+4:]))
+			iq[i] = complex(re, im)
+		}
+	default:
+		t.Fatalf("unknown GT_DMR_IQ_FORMAT %q (want cs16 or f32)", format)
+	}
+	return iq, inRate
 }

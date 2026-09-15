@@ -131,6 +131,20 @@ type Receiver struct {
 
 	mixed []complex64 // scratch for the coarse-acquirer de-rotation (acq path only)
 
+	// Feed-forward symbol-timing acquisition at a new transmission's onset
+	// (issue #836, gate path only). See observeTimingAcq.
+	sps         float64
+	acqTiming   bool      // enabled
+	absentRun   int       // samples since the carrier was last present
+	acqPending  bool      // an acquisition window is armed or filling
+	acqSkip     int       // present samples still to skip before the window opens
+	acqBuf      []float32 // matched-filter samples of the window (contiguous)
+	acqStart    int       // global sample index of acqBuf[0]
+	sampleBase  int       // global index of the current chunk's first sample
+	timingSeeds int       // seeds applied so far (diagnostics)
+	symbols2    []float32 // scratch: symbols after a mid-chunk seed
+	symPresent2 []bool
+
 	present    []bool // per-sample carrier presence for the current chunk (gate path only)
 	symPresent []bool // per-symbol presence, aligned with symbols (gate path only)
 
@@ -243,6 +257,14 @@ func New(opts Options) *Receiver {
 		afc:   afc,
 		acq:   acq,
 		gate:  gate,
+		sps:   sps,
+		// Feed-forward timing acquisition rides the gate's presence flags.
+		// It arms only after an absence, so a stream that is present from
+		// its first sample (the continuous-carrier fixtures that pin the
+		// gate as a no-op) is timed exactly as before; every real stream —
+		// a daemon that has sat on noise, a capture that opens with silence
+		// — sees its first burst acquired like any later transmission's.
+		acqTiming: gate != nil,
 		// Symbol-AGC bridges the level mismatch between the unit-energy
 		// RRC matched filter and the 4-level slicer's fixed thresholds.
 		// The RRC has a DC gain of ~3.1 (it is normalised to unit
@@ -331,6 +353,11 @@ func (r *Receiver) Process(iq []complex64) {
 			// gated loop crawled back, with no reset it stays at 128–130.
 			if math.Abs(r.acq.OffsetHz()) >= coarseAcqClockRelockHz {
 				r.clock.Reset()
+				// The reset loop has no phase again: re-acquire it from the
+				// centred signal rather than pulling in from wherever the
+				// reset left it (the same slow-pull-in trap as a new
+				// transmission's onset, see observeTimingAcq).
+				r.armTimingAcq()
 			}
 			if r.afc != nil {
 				r.afc.Reset()
@@ -350,11 +377,25 @@ func (r *Receiver) Process(iq []complex64) {
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
 	var symPresent []bool
 	if present != nil {
-		r.symbols, r.symPresent = r.clock.ProcessGated(r.symbols, r.symPresent, r.matched, present)
+		// Feed-forward timing acquisition (issue #836): at a new
+		// transmission's onset the walk below collects a window of the
+		// matched-filter output and, once it has estimated the symbol
+		// phase, the clock is seeded between the two halves of this chunk
+		// so every symbol after the window is timed from the estimate.
+		if k, mu, seed := r.observeTimingAcq(present); seed {
+			r.symbols, r.symPresent = r.clock.ProcessGated(r.symbols, r.symPresent, r.matched[:k], present[:k])
+			r.clock.SetPhase(mu)
+			r.symbols2, r.symPresent2 = r.clock.ProcessGated(r.symbols2, r.symPresent2, r.matched[k:], present[k:])
+			r.symbols = append(r.symbols, r.symbols2...)
+			r.symPresent = append(r.symPresent, r.symPresent2...)
+		} else {
+			r.symbols, r.symPresent = r.clock.ProcessGated(r.symbols, r.symPresent, r.matched, present)
+		}
 		symPresent = r.symPresent
 	} else {
 		r.symbols = r.clock.Process(r.symbols, r.matched)
 	}
+	r.sampleBase += len(iq)
 	if len(r.symbols) == 0 {
 		return
 	}
@@ -438,7 +479,15 @@ func (r *Receiver) Reset() {
 	r.clock.Reset()
 	r.fm.Reset()
 	r.mf.Reset()
+	r.absentRun = 0
+	r.acqPending = false
+	r.acqBuf = r.acqBuf[:0]
 }
+
+// TimingSeeds reports how many times the feed-forward symbol-timing
+// acquisition seeded the timing loop (once per transmission onset, plus once
+// per coarse-carrier engage that reset the loop). Diagnostics only.
+func (r *Receiver) TimingSeeds() int { return r.timingSeeds }
 
 // CoarseCarrierOffsetHz reports the frozen coarse carrier-offset correction the
 // pre-clock acquirer pulled out of the IQ, in hertz (issue #836). It is 0 until
