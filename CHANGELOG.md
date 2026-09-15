@@ -37,6 +37,10 @@ for tagged releases.
   ~90 %; the #1187 DMR files carried 20–34 %, being white-noise bursts gated
   at the TDMA slot cadence with a 15.5 kHz codec cliff, i.e. re-recorded
   decoded audio rather than an air signal) and what to record instead.
+
+## [v1.1.4] — 2026-09-15
+
+### Added
 - **FleetSync FFSK front end + capture replay harness** (#1184, #437). The
   clean-room FleetSync / FleetSync II protocol core shipped in v1.1.1 now has
   its DSP front end, `internal/radio/fleetsync/afsk`: IQ (or discriminator
