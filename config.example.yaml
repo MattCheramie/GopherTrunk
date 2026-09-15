@@ -1048,9 +1048,9 @@ trunking:
       #     to catch the full alias block sequence.
       # A call whose key_id matches a configured encryption_keys entry below
       # is exempt and always followed (you intend to capture / decode it).
-      # Note GopherTrunk does not decrypt P25 in-process; DMR rc4
-      # (Enhanced Privacy) keys are decrypted in-process by the voice
-      # chain (docs/dmr-encryption.md).
+      # DMR rc4 (Enhanced Privacy) and P25 ADP (RC4, ALGID 0xAA) keys are
+      # decrypted in-process by the voice chain (docs/dmr-encryption.md);
+      # other P25 algorithms (DES / AES) are identified but not decrypted.
       # encrypted_calls:
       #   mode: metadata
       #   metadata_follow_ms: 1500
@@ -1230,17 +1230,21 @@ trunking:
   #     dstar_fec_mode: "on"            # default off — flip on for raw 660-bit
   #                                     # on-wire D-STAR JARL DV-mode headers
   #
-  # Encrypted DMR systems (ARC4 / RC4 "Enhanced Privacy"). If you are
-  # authorized to monitor a DMR system that encrypts voice with ARC4
-  # and you hold the key, list it under `encryption_keys`: the voice
-  # chain decodes the transmission's Privacy Indicator header and
-  # descrambles in-process when the header's key id matches an entry
-  # (docs/dmr-encryption.md — on-air verification still pending, #1187).
+  # Encrypted DMR systems (ARC4 / RC4 "Enhanced Privacy") and P25 systems
+  # using ADP (RC4, ALGID 0xAA). If you are authorized to monitor a system
+  # that encrypts voice with RC4 and you hold the key, list it under
+  # `encryption_keys`: the DMR voice chain decodes the transmission's
+  # Privacy Indicator header and descrambles in-process when the header's
+  # key id matches an entry; the P25 Phase 1 voice chain does the same from
+  # the LDU2 Encryption Sync (docs/dmr-encryption.md — P25 ADP is verified
+  # on a reporter's capture, DMR Enhanced Privacy still awaits one, #1187).
   # GopherTrunk decrypts only with operator-supplied keys — it performs
   # no key recovery. `key_id` matches the key identifier the radios
-  # carry in the privacy header (a system may rotate between several
-  # keys). `key` is hex (40-bit = 10 digits); whitespace and an optional
-  # "0x" prefix are ignored.
+  # carry in the privacy header / Encryption Sync (a system may rotate
+  # between several keys). `key` is hex (40-bit = 10 digits); whitespace
+  # and an optional "0x" prefix are ignored. `algorithm` accepts "rc4" /
+  # "arc4" / "adp" — all the same cipher family; DES / AES are rejected
+  # at load ("not supported yet").
   #
   #   - name: "Example-DMR-Encrypted"
   #     protocol: dmr
@@ -1248,8 +1252,16 @@ trunking:
   #     talkgroup_file: "../config/talkgroups-dmr.csv"
   #     encryption_keys:
   #       - key_id: 1
-  #         algorithm: rc4              # only "rc4" is supported today
+  #         algorithm: rc4              # rc4 / arc4 / adp
   #         key: "0123456789"           # hex-encoded key
+  #
+  #   - name: "Example-P25-ADP"
+  #     protocol: p25
+  #     control_channels: [851_000_000]
+  #     encryption_keys:
+  #       - key_id: 1                   # the KID the LDU2 Encryption Sync names
+  #         algorithm: adp              # P25 ADP = RC4
+  #         key: "1234567890"           # 40-bit key, hex
 
 # Police-scanner subsystems:
 #   - scan_mode controls the engine's per-grant gate. "all" follows every

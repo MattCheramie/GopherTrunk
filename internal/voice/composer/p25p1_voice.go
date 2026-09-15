@@ -234,6 +234,38 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		lcRSUncorrectable  atomic.Uint64
 		essRSUncorrectable atomic.Uint64
 	)
+	// writeFrame hands one FEC-decoded 11-byte IMBE frame and its
+	// corrected-bit count to the recorder. The per-frame count feeds the
+	// IMBE decoder's adaptive smoothing (via the recorder) so it can track
+	// the channel error rate; the call-aware path also fences stale frames
+	// on a reused serial. Falls back through errAwareRawSink then the plain
+	// write for sinks that don't support the richer shapes.
+	writeFrame := func(f []byte, errs int) {
+		if rs == nil {
+			return // sink does not take raw frames (nothing is ever held then either)
+		}
+		var werr error
+		switch {
+		case cas != nil:
+			werr = cas.WriteRawFrameForCall(serial, callID, f, errs)
+		case ers != nil:
+			werr = ers.WriteRawFrameWithErrors(serial, f, errs)
+		default:
+			werr = rs.WriteRawFrame(serial, f)
+		}
+		if werr != nil {
+			c.log.Warn("composer: p25p1 raw-frame write failed",
+				"serial", serial, "err", werr)
+		}
+	}
+	// In-process ADP (RC4) decryption state, only when the operator has
+	// configured keys (issue #1187). Nil leaves the frame path byte-identical
+	// to before: ciphertext is recorded as ciphertext.
+	var adp *p25ADPState
+	if c.keyResolver != nil {
+		adp = newP25ADPState(c, serial, system)
+		defer adp.finish(writeFrame)
+	}
 	rx := p25p1rx.New(p25p1rx.Options{
 		SampleRateHz: symbolHz,
 		DeviationHz:  p25p1DeviationHz,
@@ -281,6 +313,9 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 						}
 					}
 				}
+				if adp != nil {
+					adp.flushHeld(writeFrame)
+				}
 				bt.onTransmissionEnd()
 				return
 			}
@@ -322,6 +357,22 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 				gatedLDUs.Add(1)
 			}
 
+			// The LDU2 Encryption Sync is parsed once, ahead of the voice
+			// frames: the in-process ADP decrypt needs it before the frames
+			// are written, and the metadata publish below reuses it.
+			var (
+				es       phase1.EncryptionSync
+				esErr    error
+				esParsed bool
+			)
+			if duid == phase1.DUIDLogicalLink2 && haveBlocks {
+				es, _, esErr = phase1.ParseEncryptionSync(blocks)
+				esParsed = true
+			}
+			if adp != nil && duid == phase1.DUIDLogicalLink2 {
+				adp.onES(es, esParsed && esErr == nil, writeFrame)
+			}
+
 			if write && rs != nil {
 				fs, frameErrs, errBits, err := phase1.ExtractVoiceFramesDetailed(ldu)
 				if errBits > 0 {
@@ -332,30 +383,22 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 					c.log.Debug("composer: p25p1 voice extract uncorrectable subframe",
 						"serial", serial, "err", err)
 				}
-				for i, f := range fs {
-					if f == nil {
-						continue
-					}
-					// Hand the per-frame corrected-bit count to the IMBE
-					// decoder (via the recorder) so its adaptive smoothing can
-					// track the channel error rate; the call-aware path also
-					// fences stale frames on a reused serial. Fall back through
-					// errAwareRawSink then the plain write for sinks that don't
-					// support the richer shapes.
-					var werr error
-					switch {
-					case cas != nil:
-						werr = cas.WriteRawFrameForCall(serial, callID, f, frameErrs[i])
-					case ers != nil:
-						werr = ers.WriteRawFrameWithErrors(serial, f, frameErrs[i])
-					default:
-						werr = rs.WriteRawFrame(serial, f)
-					}
-					if werr != nil {
-						c.log.Warn("composer: p25p1 raw-frame write failed",
-							"serial", serial, "err", werr)
+				if adp != nil {
+					// Descrambles in place when the call's MI + key are known,
+					// holds the first superframe until its ES decodes, or
+					// writes through unchanged (issue #1187).
+					adp.frames(duid, &fs, frameErrs, writeFrame)
+				} else {
+					for i, f := range fs {
+						if f == nil {
+							continue
+						}
+						writeFrame(f, frameErrs[i])
 					}
 				}
+			}
+			if adp != nil && duid == phase1.DUIDLogicalLink2 {
+				adp.endLDU2()
 			}
 
 			// Call metadata (talker alias, source ID, encryption sync) is
@@ -391,7 +434,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 					}
 				}
 			case phase1.DUIDLogicalLink2:
-				es, _, lerr := phase1.ParseEncryptionSync(blocks)
+				lerr := esErr
 				if errors.Is(lerr, phase1.ErrEncryptionSyncUncorrectable) {
 					// Outer RS could not recover the ES; do not surface a
 					// garbage algorithm/key as a real encryption change.

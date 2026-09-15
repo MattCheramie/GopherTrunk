@@ -1429,6 +1429,27 @@ confirmation before any close-as-completed.
   compares against), and the whole-file band fractions depend on that model, so compare
   voice frames only (`voicemask`) when measuring spectra. On this sample GT is NOT high-band
   deficient vs mbelib-neo on voice frames (3–4 kHz 0.057 vs 0.123 fraction, GT brighter).
+- **P25 ADP (RC4, ALGID 0xAA, #1187) IS ON-AIR VERIFIED and decrypted in-process; the same
+  reporter's DMR "RC4 audio" files were NOT air signals.** The reporter posted three 96 kHz mono
+  WAVs. The P25 one is a genuine C4FM discriminator tap (energy ≤ 3 kHz, RRC cliff): re-modulated
+  through `TestP25ADPReplay` it yields 15 LDU1 + 15 LDU2 FEC-clean, every ES `0xAA` / KID 1, and
+  with key `1234567890` the IMBE pitch track goes 0.13 → 0.57 (speech). Two facts the capture
+  pinned, both now in `phase1/adp.go` + `testdata/adp_issue1187_ldus.json`: (1) the keystream
+  layout is OP25's — RC4(key‖MI[0:8]), drop 256, LDU1 voice from absolute byte 267, LDU2 from
+  368, +2 before u8 (LSD) — a brute-force over every base offset × MI choice found it unique
+  (the LDU1 frames score lower on pitch continuity than LDU2's, 0.43 vs 0.64, but with ZERO
+  out-of-range b0 across 126 frames, vs ~17 % under any wrong keystream — use BOTH statistics);
+  (2) **the ES in an LDU2 names the NEXT superframe's MI, and consecutive MIs follow the 64-bit
+  LFSR x⁶⁴+x⁶²+x⁴⁶+x³⁸+x²⁷+x¹⁵+1** (8/8 and 14/14 pairs match), so `RewindMI` recovers the first
+  superframe's MI without the HDU (which the LDU assembler never delivers) — the composer holds
+  that one superframe (360 ms) until its ES decodes, then flushes. Applying the ES MI to its OWN
+  superframe, or omitting the 11-byte skip, stays at ciphertext level (≤ 0.13). The two DMR
+  files are white-noise bursts gated at an exact 30/30 ms slot cadence with a 15.5 kHz codec
+  cliff, flat spectrum inside bursts, no 4-level eye, no symbol-clock line, not constant-modulus
+  as interleaved IQ either — i.e. decoded/garbled audio re-recorded, not a discriminator tap;
+  `discriminatorAudioSanity` in the harnesses now measures the ≤ 3 kHz energy fraction (92 % on
+  the P25 file, 20–34 % on the DMR ones) and says so. DMR Enhanced Privacy therefore STILL awaits
+  an on-air capture (IQ via `gophertrunk capture`, or a raw unsquelched discriminator tap).
 - **DMR "Enhanced Privacy" (DMRA RC4, #1187) is now decoded in-process — PI header → MI
   chain → descramble — pinned against two independent decoders, NOT yet on-air-verified.**
   The reporter offered RC4 audio with a known key by email; the material must land on the

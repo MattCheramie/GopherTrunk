@@ -8,6 +8,39 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **P25 ADP (RC4) known-key decryption in-process — verified on the #1187
+  reporter's capture.** With a `trunking.systems[].encryption_keys` entry
+  (`algorithm: adp`, or `rc4`) whose `key_id` matches the LDU2 Encryption
+  Sync, the P25 Phase 1 voice chain now descrambles ADP (ALGID 0xAA) voice
+  before the recorder, so the call records as clear audio; without a key
+  nothing changes. `phase1.ADP*` carries the keystream layout (RC4 keyed with
+  key‖MI, 256 bytes dropped, LDU1 voice from byte 267 and LDU2 from 368, a
+  2-byte Low Speed Data gap before the ninth frame — OP25's layout) and the
+  Message Indicator schedule (`AdvanceMI` / `RewindMI`: the ES in an LDU2
+  names the NEXT superframe's MI, successive MIs follow the 64-bit LFSR
+  x⁶⁴+x⁶²+x⁴⁶+x³⁸+x²⁷+x¹⁵+1, and rewinding the first ES recovers the first
+  superframe's MI, so the chain holds that superframe's frames — 360 ms,
+  once per call — until its ES decodes rather than losing them for want of
+  the HDU). Both facts are pinned against the reporter's 6.2 s ADP call
+  (`phase1/testdata/adp_issue1187_ldus.json`, key 1234567890): the layout +
+  next-superframe rule lifts the IMBE pitch track from ciphertext-random
+  (0.13) to speech-continuous (0.57) and every alternative stays ≤ 0.13,
+  and all fourteen consecutive MI pairs satisfy the LFSR.
+  `TestP25ADPReplay` (`GT_P25_ADP_IQ` / `GT_P25_ADP_AUDIO`, `GT_P25_ADP_KEY`,
+  `GT_P25_ADP_OUT`) is the reporter-facing harness with the same
+  pitch-continuity verdict as the DMR one. `encryption_keys[].algorithm`
+  accepts `adp` as an alias of `rc4`.
+- **Discriminator-audio sanity line in the encryption replay harnesses.**
+  When a `GT_DMR_EP_AUDIO` / `GT_P25_ADP_AUDIO` file decodes nothing, the
+  harness now says whether it looks like a discriminator tap at all (energy
+  below 3 kHz through a 3 kHz Butterworth — a 4800-baud 4FSK / C4FM tap keeps
+  ~90 %; the #1187 DMR files carried 20–34 %, being white-noise bursts gated
+  at the TDMA slot cadence with a 15.5 kHz codec cliff, i.e. re-recorded
+  decoded audio rather than an air signal) and what to record instead.
+
+## [v1.1.4] — 2026-09-15
+
+### Added
 - **FleetSync FFSK front end + capture replay harness** (#1184, #437). The
   clean-room FleetSync / FleetSync II protocol core shipped in v1.1.1 now has
   its DSP front end, `internal/radio/fleetsync/afsk`: IQ (or discriminator

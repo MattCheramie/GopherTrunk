@@ -232,11 +232,12 @@ type Options struct {
 	// extraction runs for it. See internal/voice/cryptocap.
 	CryptoSink cryptocap.Sink
 	// KeyResolver, when non-nil, resolves an operator-configured decryption
-	// key for (system, algorithm, key ID) — today the DMR "Enhanced Privacy"
-	// RC4 keys under trunking.systems[].encryption_keys (issue #1187). The
-	// DMR voice chain consults it when a Privacy Indicator header names a
-	// key; nil (default) leaves an encrypted call recorded as ciphertext,
-	// exactly as before.
+	// key for (system, algorithm, key ID) — the RC4-family keys under
+	// trunking.systems[].encryption_keys (issue #1187): DMR "Enhanced
+	// Privacy" (the DMR voice chain consults it when a Privacy Indicator
+	// header names a key) and P25 ADP (the Phase 1 chain, from the LDU2
+	// Encryption Sync). Nil (default) leaves an encrypted call recorded as
+	// ciphertext, exactly as before.
 	KeyResolver KeyResolver
 	// Squelch, when non-nil, gates the analog FM chain's audio on the
 	// conventional scanner's live squelch decision (issue #1090). The
