@@ -227,6 +227,14 @@ const (
 	// for the live MDC1200 panel.
 	KindMDC1200Message Kind = "mdc1200.message"
 
+	// KindFleetSyncMessage fires when the Kenwood FleetSync decoder
+	// completes one ANI burst off a conventional analog FM voice channel.
+	// Payload is a storage.FleetSyncMessage carrying the transmitting
+	// radio's fleet + unit ID, whether it decoded via the FleetSync II
+	// ECC path, and the block-check-valid flag. Surfaced over SSE / WS
+	// for the live FleetSync panel.
+	KindFleetSyncMessage Kind = "fleetsync.message"
+
 	// KindM17LinkSetup fires when the M17 decoder reassembles a Link
 	// Setup Frame (via the stream-frame LICH path). Payload is a
 	// storage.M17LinkSetup carrying source / destination callsigns, the

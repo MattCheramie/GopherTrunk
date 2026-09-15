@@ -1545,8 +1545,18 @@ confirmation before any close-as-completed.
   channel and wrong for a bursty PTT capture; average over seconds for those (not changed in
   the shared estimator — `siglab -auto-tune` callers should know). Real-air regression:
   `TestFleetSyncRealAirSlices` (`afsk/testdata/fleetsync{1,2}_fleet107_unit1772_48k.cs16`,
-  1.3 s channelized slices of the reporter's bursts). Still open: the daemon wiring
-  (events/storage/REST/web) and the reporter's live lab test on the Kenwood radios.
+  1.3 s channelized slices of the reporter's bursts). **The daemon wiring LANDED** (the
+  MDC1200 shape, one file per layer): `fleetsync.channels` config → `afsk.Options.Bus`
+  publishes `KindFleetSyncMessage` / `storage.FleetSyncMessage` (the front end publishes,
+  the protocol framer stays callback-only so it unit-tests alone) → `storage.FleetSyncLog`
+  (`fleetsync_log`, in the retention sweep) → `GET /api/v1/fleetsync/messages` → `/fleetsync`
+  panel + config-builder section + `web.tabs.fleetsync`. Adding a decoder like this touches
+  ELEVEN places and three tests police them: `TestFieldHelpCoverage` (fieldmeta),
+  `TestConfigSchemaCoveredByWebBuilder` (configbuilder `types.ts`) and the web
+  `registry.test.ts` / `App.panels.test.tsx` route lists — plus the `doctor` preflight
+  "needs storage.path" list and config.example.yaml (the 4 Sep rule). The bus path is pinned
+  on the real-air slice (`receiver_bus_test.go`). Still open: the reporter's live lab test on
+  the Kenwood radios (#764/#771 — synthetic + offline ≠ on air).
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

@@ -32,6 +32,7 @@ type Config struct {
 	AIS            AISConfig            `yaml:"ais"`
 	DSC            DSCConfig            `yaml:"dsc"`
 	MDC1200        MDC1200Config        `yaml:"mdc1200"`
+	FleetSync      FleetSyncConfig      `yaml:"fleetsync"`
 	ADSB           ADSBConfig           `yaml:"adsb"`
 	M17            M17Config            `yaml:"m17"`
 	LoRa           LoRaConfig           `yaml:"lora"`
@@ -186,6 +187,7 @@ var KnownUITabs = map[string]bool{
 	"dsc":           true,
 	"adsb":          true,
 	"mdc1200":       true,
+	"fleetsync":     true,
 	"spectrum":      true,
 	"constellation": true,
 	"bookmarks":     true,
@@ -2222,8 +2224,8 @@ type MetricsConfig struct {
 type RetentionConfig struct {
 	CallLogDays int `yaml:"call_log_days"`
 	// LogDays sweeps the decoder log tables (pager_log, aprs_log,
-	// vessel_log, dsc_log, aircraft_log, mdc1200_log, m17_log,
-	// location_log): rows older than this many days are deleted. Zero
+	// vessel_log, dsc_log, aircraft_log, mdc1200_log, fleetsync_log,
+	// m17_log, location_log): rows older than this many days are deleted. Zero
 	// (the default) disables the decoder-log sweep.
 	LogDays   int    `yaml:"log_days"`
 	FilesDays int    `yaml:"files_days"`

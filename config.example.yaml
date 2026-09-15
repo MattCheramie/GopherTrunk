@@ -248,8 +248,8 @@ recordings:
 retention:
   call_log_days: 30   # 0 disables call-log row sweep
   log_days: 30        # 0 disables decoder-log sweep (pager / aprs /
-                      #  vessel / dsc / aircraft / mdc1200 / m17 /
-                      #  location logs, aged by received_at)
+                      #  vessel / dsc / aircraft / mdc1200 / fleetsync /
+                      #  m17 / location logs, aged by received_at)
   files_days: 14      # 0 disables filesystem sweep
   interval: "1h"      # how often the sweeper runs
 
@@ -760,7 +760,7 @@ sdr:
 # tagged protocol=pocsag or protocol=flex.
 #
 # NOTE: paging (and the other message decoders: aprs, ais, dsc,
-# mdc1200, m17) surface decoded messages only through the SQLite
+# mdc1200, fleetsync, m17) surface decoded messages only through the SQLite
 # log. You must set a `storage:` section (see the storage example
 # above) — without it the decoder runs but /api/v1/pager/messages
 # returns 503 and the web panel stays empty.
@@ -856,6 +856,31 @@ sdr:
 #       drop_bad_crc: false           # true to silently drop CRC-failed
 #                                     #  bursts instead of publishing them
 #                                     #  with crc_ok=false
+
+# Kenwood FleetSync ANI (fleet / unit ID) signalling. Each entry pins
+# one SDR to a conventional analog VHF / UHF voice channel and decodes
+# the FFSK burst Kenwood radios key at the head of a transmission.
+# Pipeline: FM demod → FFSK discriminator (CCIR tones, mark 1200 Hz /
+# space 1800 Hz, 1200 baud) → symbol-timing recovery → zero-threshold
+# slicer → preamble + 16-bit sync framer → FleetSync I / FleetSync II
+# (ECC) ANI decode with block check. Decoded bursts publish on
+# events.KindFleetSyncMessage; storage.FleetSyncLog persists them to
+# the fleetsync_log SQLite table, the REST endpoint at
+# /api/v1/fleetsync/messages returns the most recent N, and the
+# /fleetsync web panel renders them live (fleet, unit, FS-I / FS-II,
+# block check). Verified against the issue #1184 on-air captures.
+#
+# fleetsync:
+#   channels:
+#     - serial: "uhf-antenna"         # SDR serial (must be in sdr.devices
+#                                     #  or sdr.rtl_tcp)
+#       frequency_hz: 462_562_500     # conventional analog voice channel
+#                                     #  the Kenwood fleet talks on
+#       baud_hz: 1200                 # signalling rate; 0 / omitted = 1200
+#                                     #  (2400 also accepted)
+#       drop_bad_crc: false           # true to silently drop block-check
+#                                     #  failures instead of publishing
+#                                     #  them with crc_ok=false
 
 # DSC marine distress / safety / routine calls. Each entry pins one
 # SDR to a DSC channel and decodes the calls. Pipeline: FM demod →
@@ -1612,9 +1637,9 @@ broadcast:
 #
 # Valid tab keys: dashboard, active, scanner, settings, systems,
 # talkgroups, rids, history, events, cc, tones, pagers, aprs, ais, dsc,
-# adsb, mdc1200, spectrum, constellation, bookmarks, metrics, devices,
-# import. (The feature tabs pagers/aprs/ais/dsc/adsb/mdc1200 are web-only,
-# so hiding them is a no-op in the TUI.)
+# adsb, mdc1200, fleetsync, spectrum, constellation, bookmarks, metrics,
+# devices, import. (The feature tabs pagers/aprs/ais/dsc/adsb/mdc1200/
+# fleetsync are web-only, so hiding them is a no-op in the TUI.)
 # web:
 #   tabs:
 #     aprs: false
@@ -1622,6 +1647,7 @@ broadcast:
 #     dsc: false
 #     adsb: false
 #     mdc1200: false
+#     fleetsync: false
 #
 #   # How identity numbers (WACN, System ID, NAC, RFSS, Site) are rendered in
 #   # the web UI: "hex" (default — the P25 field convention, shown with the

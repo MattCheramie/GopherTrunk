@@ -343,7 +343,7 @@ var fieldMetas = map[string]FieldMeta{
 
 	// ---- Retention ---------------------------------------------------------
 	"RetentionConfig.CallLogDays": {Help: "Delete call-log rows older than this many days. 0 disables the call-log sweep."},
-	"RetentionConfig.LogDays":     {Help: "Delete decoder-log rows (pager, aprs, vessel, dsc, aircraft, mdc1200, m17) older than this. 0 disables."},
+	"RetentionConfig.LogDays":     {Help: "Delete decoder-log rows (pager, aprs, vessel, dsc, aircraft, mdc1200, fleetsync, m17) older than this. 0 disables."},
 	"RetentionConfig.FilesDays":   {Help: "Delete recorded WAV files older than this many days. 0 disables the file sweep."},
 	"RetentionConfig.Interval":    {Help: "How often the sweeper runs (Go duration string, e.g. 1h). Default 1h."},
 
@@ -516,6 +516,13 @@ var fieldMetas = map[string]FieldMeta{
 	"MDC1200ChannelConfig.Serial":      {Help: "SDR serial to pin to this MDC1200 channel."},
 	"MDC1200ChannelConfig.FrequencyHz": {Label: "Frequency", Hz: true, Help: "Analog voice channel frequency to watch for MDC1200 bursts."},
 	"MDC1200ChannelConfig.DropBadCRC":  {Label: "Drop bad CRC", Help: "Discard CRC-failed bursts instead of showing them flagged."},
+
+	// ---- FleetSync ---------------------------------------------------------
+	"FleetSyncConfig.Channels":           {Help: "Kenwood FleetSync FFSK channels. Target the conventional analog voice channels your Kenwood fleet uses; the ANI burst rides at the head of each transmission."},
+	"FleetSyncChannelConfig.Serial":      {Help: "SDR serial to pin to this FleetSync channel."},
+	"FleetSyncChannelConfig.FrequencyHz": {Label: "Frequency", Hz: true, Help: "Analog voice channel frequency to watch for FleetSync ANI bursts."},
+	"FleetSyncChannelConfig.BaudHz":      {Label: "Baud", Help: "Signalling rate. 0 = 1200 baud (FleetSync); 2400 is also accepted."},
+	"FleetSyncChannelConfig.DropBadCRC":  {Label: "Drop bad CRC", Help: "Discard block-check-failed bursts instead of showing them flagged."},
 
 	// ---- ADS-B -------------------------------------------------------------
 	"ADSBConfig.BeastUpstreams":     {Help: "BEAST Mode-S upstreams (dump1090 / readsb), typically host:30005."},

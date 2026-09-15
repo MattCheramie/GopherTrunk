@@ -36,7 +36,7 @@ Full device matrix, antenna notes, and gain tips are in the
 - **Trunked voice** — P25 Phase 1 + Phase 2, DMR Tier II + Tier III, NXDN,
   Motorola Type II / SmartZone, EDACS / GE-Marc, LTR, MPT 1327, dPMR Mode 3,
   TETRA TMO; amateur D-STAR and Yaesu System Fusion.
-- **Paging & signaling** — POCSAG + FLEX paging, MDC1200.
+- **Paging & signaling** — POCSAG + FLEX paging, MDC1200, FleetSync.
 - **Position & safety** — APRS / AX.25 packet, AIS marine, ADS-B aircraft,
   DSC marine distress.
 

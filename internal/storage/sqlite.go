@@ -369,6 +369,24 @@ CREATE TABLE IF NOT EXISTS mdc1200_log (
 
 CREATE INDEX IF NOT EXISTS idx_mdc1200_log_time    ON mdc1200_log(received_at);
 CREATE INDEX IF NOT EXISTS idx_mdc1200_log_unit_id ON mdc1200_log(unit_id, received_at);
+
+-- Kenwood FleetSync ANI bursts persisted from the decoder pipeline. One
+-- row per decoded burst: the transmitting radio's fleet + unit ID, which
+-- protocol variant (FleetSync I / II) decoded it, and whether the block
+-- check validated.
+CREATE TABLE IF NOT EXISTS fleetsync_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at INTEGER NOT NULL,             -- unix nanoseconds
+    fleet       INTEGER NOT NULL DEFAULT 0,   -- transmitting radio's fleet number
+    unit        INTEGER NOT NULL DEFAULT 0,   -- transmitting radio's unit ID
+    fs2         INTEGER NOT NULL DEFAULT 0,   -- 1 when decoded via the FleetSync II ECC path
+    body        TEXT    NOT NULL DEFAULT '',  -- one-line summary
+    raw_hex     TEXT    NOT NULL DEFAULT '',  -- hex of the two recovered 32-bit words
+    crc_ok      INTEGER NOT NULL DEFAULT 0    -- 1 when the block check validated
+);
+
+CREATE INDEX IF NOT EXISTS idx_fleetsync_log_time ON fleetsync_log(received_at);
+CREATE INDEX IF NOT EXISTS idx_fleetsync_log_unit ON fleetsync_log(fleet, unit, received_at);
 `
 
 func (d *DB) migrate() error {

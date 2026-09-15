@@ -583,7 +583,7 @@ export function AudioSection() {
 const KNOWN_TABS = [
   "dashboard", "active", "scanner", "settings", "hunt", "systems", "talkgroups",
   "rids", "history", "events", "cc", "tones", "pagers", "aprs", "ais", "dsc",
-  "adsb", "mdc1200", "spectrum", "constellation", "symbols", "bookmarks",
+  "adsb", "mdc1200", "fleetsync", "spectrum", "constellation", "symbols", "bookmarks",
   "metrics", "devices", "import",
 ];
 

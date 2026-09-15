@@ -410,6 +410,12 @@ type Server struct {
 	// storage.MDC1200Log.
 	mdc1200 MDC1200Provider
 
+	// fleetsync is the optional provider backing /api/v1/fleetsync/...
+	// routes (Kenwood FleetSync ANI-burst log). nil disables the routes.
+	// Implemented by the daemon over the SQLite-backed
+	// storage.FleetSyncLog.
+	fleetsync FleetSyncProvider
+
 	// siglab is the optional offline signal-analysis subsystem backing
 	// the /api/v1/siglab/* routes (capture upload, engine run + SSE,
 	// identify, synthesize, export, decimated-IQ retrieval). nil disables
@@ -946,6 +952,11 @@ type ServerOptions struct {
 	// MDC1200 signaling bursts. Wired by the daemon over the
 	// SQLite-backed storage.MDC1200Log.
 	MDC1200 MDC1200Provider
+	// FleetSync, when non-nil, enables the
+	// GET /api/v1/fleetsync/messages route serving recent decoded
+	// Kenwood FleetSync ANI bursts. Wired by the daemon over the
+	// SQLite-backed storage.FleetSyncLog.
+	FleetSync FleetSyncProvider
 	// CORS configures the cross-origin middleware. Off when
 	// AllowedOrigins is empty (the daemon emits no CORS headers).
 	// Set this when the browser-served SPA is loaded from an
@@ -1090,6 +1101,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		lora:           opts.LoRa,
 		adsb:           opts.ADSB,
 		mdc1200:        opts.MDC1200,
+		fleetsync:      opts.FleetSync,
 	}, nil
 }
 
@@ -1488,6 +1500,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/adsb/aircraft", s.handleADSBAircraft)
 	mux.HandleFunc("GET /api/v1/adsb/aircraft/current", s.handleADSBAircraftCurrent)
 	mux.HandleFunc("GET /api/v1/mdc1200/messages", s.handleMDC1200Messages)
+	mux.HandleFunc("GET /api/v1/fleetsync/messages", s.handleFleetSyncMessages)
 
 	// Embedded SPA at "/" — served only when the daemon was linked
 	// against a populated web/dist embed. SPA history routes

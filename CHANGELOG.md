@@ -15,6 +15,25 @@ for tagged releases.
   header, fixed in 1.83.2). `golang.org/x/net`, `x/sys`, `x/text` and the
   genproto rpc module moved with it. Dependency bump only — no code changes.
 
+### Added
+- **FleetSync is wired into the daemon** (#1184, #437). The Kenwood FleetSync
+  / FleetSync II decoder verified offline on the #1184 captures now runs as
+  a first-class receiver: a `fleetsync.channels` config section (serial,
+  frequency, optional `baud_hz`, `drop_bad_crc`) pins an SDR to a
+  conventional analog voice channel; every framed ANI burst publishes on the
+  events bus as `fleetsync.message` (fleet, unit, FleetSync I / II variant,
+  raw words, block-check result); `storage.FleetSyncLog` persists it to the
+  new `fleetsync_log` SQLite table (swept by `retention.log_days`);
+  `GET /api/v1/fleetsync/messages?limit=N` serves the most recent bursts;
+  and a `/fleetsync` panel in the operator console (hide with
+  `web.tabs.fleetsync: false`) plus a FleetSync section in the Config
+  Builder round it out. `gophertrunk doctor` names `fleetsync` among the
+  decoders that need `storage.path`. Pinned on the real-air fixture
+  (`TestReceiverPublishesRealAirBurstsOnBus`: the on-air FleetSync-II slice
+  reaches the bus as Fleet 107 / Unit 1772) plus storage, REST and panel
+  tests. Docs: `docs/fleetsync.md`. Not yet confirmed on a live Kenwood
+  fleet — that is the remaining gate on #1184.
+
 ### Fixed
 - **DMR direct mode (#836): every PTT now decodes from its first header,
   verified on the reporter's air.** The carrier gate shipped in v1.1.4 was

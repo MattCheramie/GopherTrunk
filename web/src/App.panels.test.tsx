@@ -63,6 +63,10 @@ vi.mock("./api/mdc1200", () => ({
   fetchMDC1200Messages: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("./api/fleetsync", () => ({
+  fetchFleetSyncMessages: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("./api/bookmarks", () => ({
   bookmarks: {
     list: vi.fn().mockResolvedValue([]),
@@ -192,6 +196,7 @@ const ROUTES = [
   "/pagers",
   "/aprs",
   "/mdc1200",
+  "/fleetsync",
   "/metrics",
   "/devices",
   "/settings",

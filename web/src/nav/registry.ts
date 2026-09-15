@@ -110,6 +110,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/dsc", label: "DSC", icon: "📡", keywords: ["marine", "distress"] },
       { to: "/adsb", label: "ADS-B", icon: "✈", keywords: ["aircraft", "mode s", "aviation"] },
       { to: "/mdc1200", label: "MDC1200", icon: "📻", keywords: ["signaling", "ptt id"] },
+      { to: "/fleetsync", label: "FleetSync", icon: "🚚", keywords: ["kenwood", "ani", "fleet", "unit id"] },
       { to: "/lora", label: "LoRa", icon: "🌐", keywords: ["frame", "iot"] },
     ],
   },

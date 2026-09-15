@@ -128,7 +128,8 @@ func preflight(cfg config.Config) ([]string, error) {
 	}
 
 	// Message decoders that only surface their output through the
-	// SQLite-backed logs (pager / aprs / ais / dsc / mdc1200 / m17). With
+	// SQLite-backed logs (pager / aprs / ais / dsc / mdc1200 / fleetsync /
+	// m17). With
 	// storage.path empty the daemon skips storage init entirely, so these
 	// decoders still run but their logs are never wired: the REST endpoints
 	// return 503 and the web panels stay empty. Operators hit this as a
@@ -150,6 +151,9 @@ func preflight(cfg config.Config) ([]string, error) {
 		}
 		if len(cfg.MDC1200.Channels) > 0 {
 			needs = append(needs, "mdc1200")
+		}
+		if len(cfg.FleetSync.Channels) > 0 {
+			needs = append(needs, "fleetsync")
 		}
 		if len(cfg.M17.Channels) > 0 {
 			needs = append(needs, "m17")
