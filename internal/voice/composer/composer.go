@@ -231,6 +231,13 @@ type Options struct {
 	// analysis. Nil (default) disables the capture at zero cost — no frame
 	// extraction runs for it. See internal/voice/cryptocap.
 	CryptoSink cryptocap.Sink
+	// KeyResolver, when non-nil, resolves an operator-configured decryption
+	// key for (system, algorithm, key ID) — today the DMR "Enhanced Privacy"
+	// RC4 keys under trunking.systems[].encryption_keys (issue #1187). The
+	// DMR voice chain consults it when a Privacy Indicator header names a
+	// key; nil (default) leaves an encrypted call recorded as ciphertext,
+	// exactly as before.
+	KeyResolver KeyResolver
 	// Squelch, when non-nil, gates the analog FM chain's audio on the
 	// conventional scanner's live squelch decision (issue #1090). The
 	// daemon builds the composer before the scanner, so it wires this
@@ -302,6 +309,7 @@ type Composer struct {
 	resampCfg    AudioResamplerConfig
 	autotune     *autotune.Registry
 	cryptoSink   cryptocap.Sink
+	keyResolver  KeyResolver
 	// squelch is the optional conventional-scanner squelch feed for the
 	// FM chain (issue #1090). Guarded by mu: the daemon sets it after
 	// construction (SetSquelchState) and each chain reads it once at
@@ -423,6 +431,7 @@ func New(opts Options) (*Composer, error) {
 		resampCfg:    opts.AudioResampler,
 		autotune:     opts.Autotune,
 		cryptoSink:   opts.CryptoSink,
+		keyResolver:  opts.KeyResolver,
 		squelch:      opts.Squelch,
 		chains:       make(map[string]*chain),
 		tetraDemuxes: make(map[string]*tetraSlotDemux),
@@ -647,14 +656,16 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	switch kind {
 	case voiceKindDMR:
 		if cs.Grant.Encrypted {
-			// Surface encryption clearly: the .raw sidecar will hold
-			// encrypted AMBE+2 frames and the WAV will be unintelligible
-			// until in-process descramble lands (docs/dmr-encryption.md).
-			c.log.Info("composer: DMR voice call is encrypted; .raw sidecar holds encrypted AMBE+2 frames, in-process decryption not yet available",
+			// Surface encryption clearly. The traffic channel's Privacy
+			// Indicator header names the algorithm and key; a configured
+			// encryption_keys entry for that key ID descrambles in-process
+			// (dmr_ep.go), otherwise the .raw sidecar holds encrypted AMBE+2
+			// frames and the WAV is unintelligible (docs/dmr-encryption.md).
+			c.log.Info("composer: DMR voice call is encrypted; decrypting in-process if a configured key matches the PI header's key id, else the .raw sidecar holds encrypted AMBE+2 frames",
 				"device", cs.DeviceSerial, "system", cs.Grant.System,
-				"group", cs.Grant.GroupID)
+				"group", cs.Grant.GroupID, "keys_configured", c.keyResolver != nil)
 		}
-		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, ch.done)
+		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, cs.Grant.Encrypted, ch.done)
 	case voiceKindP25P2:
 		macCfg := p25p2.MACDecodeConfig{
 			Trellis:      p25p2.TrellisMode(cs.Grant.P25Phase2Decode.Trellis),

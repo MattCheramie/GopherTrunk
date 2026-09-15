@@ -1853,6 +1853,21 @@ type EncryptionKeyConfig struct {
 	Key       string `yaml:"key"`
 }
 
+// KeyBytes decodes Key: hex, with surrounding whitespace, internal spaces
+// and an optional 0x prefix tolerated (the same rule validation applies).
+func (k EncryptionKeyConfig) KeyBytes() ([]byte, error) { return decodeHexKey(k.Key) }
+
+// NormalizedAlgorithm is the canonical lower-case algorithm name the
+// decoders match on: "rc4" for both spellings ("rc4" / "arc4").
+func (k EncryptionKeyConfig) NormalizedAlgorithm() string {
+	switch a := strings.ToLower(strings.TrimSpace(k.Algorithm)); a {
+	case "rc4", "arc4":
+		return "rc4"
+	default:
+		return a
+	}
+}
+
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.
 // Both addresses are TCP listen specifiers (":8080", "127.0.0.1:9000",
 // etc.). An empty value disables that surface.
@@ -1989,7 +2004,8 @@ type RecordingsConfig struct {
 	// metadata) to them. See issue #897.
 	SkipEncrypted bool `yaml:"skip_encrypted"`
 	// CryptoCapturePath, when set, opts into the cryptolab crypto-frame
-	// bridge: for each encrypted P25 Phase 1 superframe the voice composer
+	// bridge: for each encrypted P25 Phase 1 superframe — and each
+	// encrypted DMR voice superframe (issue #1187) — the voice composer
 	// appends a JSON line {label, iv (Message Indicator), ct (encrypted
 	// voice frames), algid, keyid, …} to this file. The artifact feeds
 	// `gophertrunk cryptolab assess`, the security-test harness that attempts

@@ -1048,9 +1048,9 @@ trunking:
       #     to catch the full alias block sequence.
       # A call whose key_id matches a configured encryption_keys entry below
       # is exempt and always followed (you intend to capture / decode it).
-      # Note GopherTrunk does not decrypt P25 in-process; only DMR rc4
-      # (Enhanced Privacy) keys are accepted, and only for out-of-band
-      # capture.
+      # Note GopherTrunk does not decrypt P25 in-process; DMR rc4
+      # (Enhanced Privacy) keys are decrypted in-process by the voice
+      # chain (docs/dmr-encryption.md).
       # encrypted_calls:
       #   mode: metadata
       #   metadata_follow_ms: 1500
@@ -1232,11 +1232,15 @@ trunking:
   #
   # Encrypted DMR systems (ARC4 / RC4 "Enhanced Privacy"). If you are
   # authorized to monitor a DMR system that encrypts voice with ARC4
-  # and you hold the key, list it under `encryption_keys`. GopherTrunk
-  # decrypts only with operator-supplied keys — it performs no key
-  # recovery. `key_id` matches the key identifier the radios carry in
-  # the privacy header (a system may rotate between several keys).
-  # `key` is hex; whitespace and an optional "0x" prefix are ignored.
+  # and you hold the key, list it under `encryption_keys`: the voice
+  # chain decodes the transmission's Privacy Indicator header and
+  # descrambles in-process when the header's key id matches an entry
+  # (docs/dmr-encryption.md — on-air verification still pending, #1187).
+  # GopherTrunk decrypts only with operator-supplied keys — it performs
+  # no key recovery. `key_id` matches the key identifier the radios
+  # carry in the privacy header (a system may rotate between several
+  # keys). `key` is hex (40-bit = 10 digits); whitespace and an optional
+  # "0x" prefix are ignored.
   #
   #   - name: "Example-DMR-Encrypted"
   #     protocol: dmr

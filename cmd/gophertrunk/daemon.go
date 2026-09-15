@@ -2364,6 +2364,13 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 			cryptoSink = cw
 			log.Info("daemon: cryptolab crypto-frame capture enabled", "path", path)
 		}
+		// Operator-held decryption keys (trunking.systems[].encryption_keys):
+		// the DMR voice chain descrambles Enhanced Privacy (RC4) calls whose
+		// PI header names a configured key id. Nil when none are configured.
+		keyResolver := buildKeyResolver(cfg.Trunking.Systems, log)
+		if keyResolver != nil {
+			log.Info("daemon: in-process decryption keys configured (DMR enhanced privacy)")
+		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,
 			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap(), scannerBrokers: d.scannerBrokers},
@@ -2371,6 +2378,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 			Engine:        d.engine,
 			Autotune:      d.autotune,
 			CryptoSink:    cryptoSink,
+			KeyResolver:   keyResolver,
 			Log:           log,
 			IQSampleRate:  cfg.SDR.SampleRate,
 			PCMSampleRate: cfg.Recordings.SampleRate,

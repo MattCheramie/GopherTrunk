@@ -36,8 +36,9 @@ per-system — it moved there from a global key as a breaking change — so one 
 - `mode: ignore` — never tie up a voice SDR on an encrypted call.
 
 A system with a configured decryption key is exempt and always followed. Note GopherTrunk
-does not decrypt P25 in-process; only DMR RC4 (Enhanced Privacy) keys are accepted, so the
-exemption is effectively DMR-only.
+does not decrypt P25 in-process; only DMR RC4 (Enhanced Privacy) keys are accepted (and applied
+in-process by the DMR voice chain, see [DMR encryption](/dmr-encryption/)), so the exemption is
+effectively DMR-only.
 
 ## Encryption is often not known at grant time
 

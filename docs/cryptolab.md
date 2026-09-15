@@ -338,7 +338,10 @@ recordings:
 
 When set, the P25 Phase 1 voice composer appends one JSON record per encrypted
 LDU2 superframe — `{label, iv (Message Indicator), ct (encrypted voice
-frames), system, protocol, tg, algid, keyid, at}` — to that file. Point
+frames), system, protocol, tg, algid, keyid, at}` — to that file, and the DMR
+voice chain does the same per encrypted voice superframe (`protocol: "dmr"`,
+the superframe's 32-bit Message Indicator as `iv`, its 18 packed AMBE+2 frames
+as `ct`; see [DMR encryption](dmr-encryption.md)). Point
 `cryptolab ks reuse` / `ks mtp` at it to hunt for MI reuse across the capture.
 Empty (the default) disables the bridge entirely: no extraction work runs on
 the voice path, so the standard operator build is unaffected.
