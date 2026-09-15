@@ -78,7 +78,7 @@ gophertrunk siglab -in capture.cfile -protocol p25p1 -format u8 -auto-tune
 |------|---------|---------|
 | `-in <path>` | *(required)* | raw IQ capture file |
 | `-protocol <p>` | *(pick in the TUI)* | protocol to decode — empty prompts a picker |
-| `-format u8\|f32\|wav` | `f32` | sample format (`wav` = 2-ch 16-bit baseband; rate from header) |
+| `-format u8\|f32\|wav` | `f32` | sample format (`wav` = 2-ch baseband, 16-bit PCM / 8-bit PCM / 32-bit float per its header; rate from header) |
 | `-sample-rate <Hz>` | `2400000` | IQ sample rate of the capture |
 | `-freq <Hz>` | `0` | informational nominal centre frequency |
 | `-auto-tune` | off | estimate the carrier offset and tune to 0 Hz before demod |
@@ -183,7 +183,9 @@ candidates for you.
 - **`f32` vs `u8` vs `wav`.** GopherTrunk's own `capture` writes interleaved
   `f32`; many SDR tools (and `.cu8`/`.cfile` from `rtl_sdr`) write `u8`; SDRtrunk
   and SDR++ baseband recordings (and GopherTrunk's own narrowband recordings)
-  are two-channel 16-bit `wav`. Set `-format` to match. For `wav` the sample rate
+  are two-channel 16-bit `wav`, and SDR# ("SDRSharp") baseband recordings are
+  two-channel 32-bit float (or 8-bit) `wav` — all three decode as `wav`, the
+  fmt chunk decides. Set `-format` to match. For `wav` the sample rate
   comes from the file header, so `-sample-rate` is ignored (and `-auto-tune` is
   rejected — a baseband WAV is already channelized; use `-tune-hz` for a small
   residual offset).

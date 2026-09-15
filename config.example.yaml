@@ -1502,7 +1502,8 @@ broadcast:
 # Baseband (IQ) recording and offline replay. `record` taps a tuner and
 # writes IQ to a two-channel 16-bit WAV (the same layout SDRtrunk/SDR++ use);
 # `replay` mounts recorded WAVs as virtual tuners so a capture can be decoded
-# with no radio attached.
+# with no radio attached (an SDR# 32-bit float or 8-bit baseband WAV replays
+# too — the file's fmt chunk decides the decoder).
 #
 # Each record entry chooses what it taps with `tap`:
 #   tap: wideband (default) — the full-rate raw SDR IQ. Large files; record at

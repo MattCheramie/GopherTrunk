@@ -200,10 +200,13 @@ func SniffContainer(head []byte) (SampleFormat, bool) {
 	return FormatU8, false
 }
 
-// UnwrapContainer turns a wav/flac IQ stream into the headerless sw16 body
-// the plain FormatS16 decoder reads, returning the body reader, the format
-// to decode it with, and the container's sample rate (0 for a headerless
-// format, which is passed through untouched with rate 0).
+// UnwrapContainer turns a wav/flac IQ stream into the headerless body the
+// plain sample decoders read, returning the body reader, the format to
+// decode it with, and the container's sample rate (0 for a headerless
+// format, which is passed through untouched with rate 0). A WAV's body
+// format follows its fmt chunk — GopherTrunk/SDRtrunk 16-bit PCM decodes as
+// FormatS16, an SDR# 32-bit float recording as FormatF32, 8-bit PCM as
+// FormatU8 (issue #1184: every WAV used to be read as 16-bit PCM).
 func UnwrapContainer(r io.Reader, format SampleFormat) (io.Reader, SampleFormat, uint32, error) {
 	switch format {
 	case FormatWAV:
@@ -211,7 +214,7 @@ func UnwrapContainer(r io.Reader, format SampleFormat) (io.Reader, SampleFormat,
 		if err != nil {
 			return nil, format, 0, err
 		}
-		return r, FormatS16, info.SampleRate, nil
+		return r, wavBodyFormat(info.Encoding), info.SampleRate, nil
 	case FormatFLAC:
 		fr, rate, err := newFLACSW16Reader(r)
 		if err != nil {
@@ -247,15 +250,38 @@ func DecodeContainerFile(path string) ([]complex64, uint32, error) {
 			return nil, 0, err
 		}
 		rate = r
-	case len(b) >= iqWavHeaderSize && string(b[0:4]) == "RIFF":
-		rate = binary.LittleEndian.Uint32(b[24:28])
-		body = b[iqWavHeaderSize:]
+	case len(b) >= 12 && string(b[0:4]) == "RIFF":
+		// Walk the chunks (a third-party WAV may carry LIST/fact chunks
+		// before data) and decode the body in the fmt chunk's encoding.
+		br := bytes.NewReader(b)
+		info, err := baseband.ReadIQWavStreamHeader(br)
+		if err != nil {
+			return nil, 0, err
+		}
+		body = b[len(b)-br.Len():]
+		decode, per := wavBodyFormat(info.Encoding).Decoder()
+		out := make([]complex64, len(body)/per)
+		decode(body[:len(out)*per], out)
+		return out, info.SampleRate, nil
 	default:
 		return nil, 0, fmt.Errorf("siglab: %s is neither a RIFF/WAVE nor a FLAC capture", path)
 	}
 	out := make([]complex64, len(body)/iqWavBlockAlign)
 	decodeSW16(body[:len(out)*iqWavBlockAlign], out)
 	return out, rate, nil
+}
+
+// wavBodyFormat maps a WAV data-chunk encoding onto the headerless sample
+// format whose decoder reads it.
+func wavBodyFormat(enc baseband.IQWavEncoding) SampleFormat {
+	switch enc {
+	case baseband.IQWavFloat32:
+		return FormatF32
+	case baseband.IQWavPCM8:
+		return FormatU8
+	default:
+		return FormatS16
+	}
 }
 
 // header (the length fields are patched on finalize). Same layout as

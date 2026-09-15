@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 )
 
@@ -120,11 +121,83 @@ func (w *IQWriter) patchHeader() error {
 	return nil
 }
 
+// IQWavEncoding is the sample encoding of a baseband WAV's data chunk.
+// GopherTrunk and SDRtrunk write 16-bit PCM; SDR# ("SDRSharp") baseband
+// recordings are 32-bit IEEE float (or 8-bit PCM), and every reader in the
+// tree used to assume 16-bit PCM without looking at the fmt chunk, decoding a
+// float capture as garbage int16 pairs (issue #1184: the FleetSync captures
+// read as 2x the samples at -2.5 dBFS of noise). The fmt chunk decides.
+type IQWavEncoding uint8
+
+const (
+	// IQWavPCM16 is two-channel 16-bit signed PCM (the canonical layout).
+	IQWavPCM16 IQWavEncoding = iota
+	// IQWavFloat32 is two-channel 32-bit IEEE float (SDR#, GNU Radio wav sinks).
+	IQWavFloat32
+	// IQWavPCM8 is two-channel 8-bit unsigned PCM (SDR# 8-bit recordings).
+	IQWavPCM8
+)
+
+// String renders the encoding for logs and errors.
+func (e IQWavEncoding) String() string {
+	switch e {
+	case IQWavFloat32:
+		return "float32"
+	case IQWavPCM8:
+		return "pcm8"
+	default:
+		return "pcm16"
+	}
+}
+
+// BlockAlign is the byte length of one IQ frame (both channels) in this encoding.
+func (e IQWavEncoding) BlockAlign() int {
+	switch e {
+	case IQWavFloat32:
+		return 8
+	case IQWavPCM8:
+		return 2
+	default:
+		return iqWavBlockAlign
+	}
+}
+
+// DecodeIQ converts a data-chunk byte run in this encoding into complex64
+// IQ (I = channel 1, Q = channel 2), normalised to [-1, 1] for the PCM
+// encodings and passed through for float.
+func (e IQWavEncoding) DecodeIQ(buf []byte) []complex64 {
+	n := len(buf) / e.BlockAlign()
+	out := make([]complex64, n)
+	switch e {
+	case IQWavFloat32:
+		for i := 0; i < n; i++ {
+			iv := math.Float32frombits(binary.LittleEndian.Uint32(buf[8*i:]))
+			qv := math.Float32frombits(binary.LittleEndian.Uint32(buf[8*i+4:]))
+			out[i] = complex(iv, qv)
+		}
+	case IQWavPCM8:
+		for i := 0; i < n; i++ {
+			out[i] = complex((float32(buf[2*i])-127.5)/127.5, (float32(buf[2*i+1])-127.5)/127.5)
+		}
+	default:
+		for i := 0; i < n; i++ {
+			iv := int16(binary.LittleEndian.Uint16(buf[4*i:]))
+			qv := int16(binary.LittleEndian.Uint16(buf[4*i+2:]))
+			out[i] = complex(float32(iv)/32768, float32(qv)/32768)
+		}
+	}
+	return out
+}
+
 // IQWavInfo describes a baseband WAV without loading its samples.
 type IQWavInfo struct {
 	SampleRate uint32
 	Channels   uint16
 	Samples    int // IQ-sample frames in the data chunk
+	// Encoding is the data chunk's sample encoding (fmt chunk: format tag +
+	// bits per sample); BlockAlign is the byte length of one IQ frame in it.
+	Encoding   IQWavEncoding
+	BlockAlign int
 }
 
 // ReadIQWavInfo parses just the header of a baseband WAV.
@@ -138,6 +211,57 @@ func ReadIQWavInfo(path string) (IQWavInfo, error) {
 	return info, err
 }
 
+// WAVE format tags (RIFF/WAVE fmt chunk).
+const (
+	wavFormatPCM        = 0x0001
+	wavFormatIEEEFloat  = 0x0003
+	wavFormatExtensible = 0xFFFE
+)
+
+// applyWavFmt fills info from a fmt chunk body: channels, rate, and the
+// encoding resolved from the format tag and bits per sample. A
+// WAVE_FORMAT_EXTENSIBLE chunk carries the real tag in the first two bytes
+// of its SubFormat GUID (offset 24), which is how SDR# and sox label 32-bit
+// float files.
+func applyWavFmt(info *IQWavInfo, fmtBuf []byte) error {
+	if len(fmtBuf) < 16 {
+		return errors.New("baseband: short fmt chunk")
+	}
+	tag := binary.LittleEndian.Uint16(fmtBuf[0:2])
+	info.Channels = binary.LittleEndian.Uint16(fmtBuf[2:4])
+	info.SampleRate = binary.LittleEndian.Uint32(fmtBuf[4:8])
+	bits := binary.LittleEndian.Uint16(fmtBuf[14:16])
+	if tag == wavFormatExtensible {
+		if len(fmtBuf) < 26 {
+			return errors.New("baseband: short WAVE_FORMAT_EXTENSIBLE fmt chunk")
+		}
+		tag = binary.LittleEndian.Uint16(fmtBuf[24:26])
+	}
+	switch {
+	case tag == wavFormatPCM && bits == 16:
+		info.Encoding = IQWavPCM16
+	case tag == wavFormatPCM && bits == 8:
+		info.Encoding = IQWavPCM8
+	case tag == wavFormatIEEEFloat && bits == 32:
+		info.Encoding = IQWavFloat32
+	default:
+		return fmt.Errorf("baseband: WAV format tag 0x%04X at %d bits is not a supported IQ encoding (16-bit PCM, 8-bit PCM or 32-bit float)", tag, bits)
+	}
+	info.BlockAlign = info.Encoding.BlockAlign()
+	return nil
+}
+
+// validateIQWav is the data-chunk gate both header parsers share.
+func validateIQWav(info IQWavInfo, gotFmt bool) error {
+	if !gotFmt {
+		return errors.New("baseband: data chunk before fmt chunk")
+	}
+	if info.Channels != iqWavChannels {
+		return fmt.Errorf("baseband: WAV has %d channels, IQ recordings need 2", info.Channels)
+	}
+	return nil
+}
+
 // parseIQWavHeader reads the RIFF chunks up to (and including) the
 // "data" chunk header, leaving f positioned at the first data byte. It
 // returns the data-chunk byte length and the format info.
@@ -149,10 +273,7 @@ func parseIQWavHeader(f *os.File) (dataBytes uint32, info IQWavInfo, err error) 
 	if string(hdr[0:4]) != "RIFF" || string(hdr[8:12]) != "WAVE" {
 		return 0, info, errors.New("baseband: not a RIFF/WAVE file")
 	}
-	var (
-		bits   uint16
-		gotFmt bool
-	)
+	gotFmt := false
 	chunkHdr := make([]byte, 8)
 	for {
 		if _, err = io.ReadFull(f, chunkHdr); err != nil {
@@ -166,24 +287,15 @@ func parseIQWavHeader(f *os.File) (dataBytes uint32, info IQWavInfo, err error) 
 			if _, err = io.ReadFull(f, fmtBuf); err != nil {
 				return 0, info, fmt.Errorf("baseband: read fmt chunk: %w", err)
 			}
-			if len(fmtBuf) < 16 {
-				return 0, info, errors.New("baseband: short fmt chunk")
+			if err = applyWavFmt(&info, fmtBuf); err != nil {
+				return 0, info, err
 			}
-			info.Channels = binary.LittleEndian.Uint16(fmtBuf[2:4])
-			info.SampleRate = binary.LittleEndian.Uint32(fmtBuf[4:8])
-			bits = binary.LittleEndian.Uint16(fmtBuf[14:16])
 			gotFmt = true
 		case "data":
-			if !gotFmt {
-				return 0, info, errors.New("baseband: data chunk before fmt chunk")
+			if err = validateIQWav(info, gotFmt); err != nil {
+				return 0, info, err
 			}
-			if info.Channels != iqWavChannels {
-				return 0, info, fmt.Errorf("baseband: WAV has %d channels, IQ recordings need 2", info.Channels)
-			}
-			if bits != iqWavBitsPerSample {
-				return 0, info, fmt.Errorf("baseband: WAV is %d-bit, IQ recordings need 16-bit", bits)
-			}
-			info.Samples = int(size / iqWavBlockAlign)
+			info.Samples = int(size) / info.BlockAlign
 			return size, info, nil
 		default:
 			skip := int64(size)
@@ -212,10 +324,7 @@ func ReadIQWavStreamHeader(r io.Reader) (IQWavInfo, error) {
 	if string(hdr[0:4]) != "RIFF" || string(hdr[8:12]) != "WAVE" {
 		return info, errors.New("baseband: not a RIFF/WAVE file")
 	}
-	var (
-		bits   uint16
-		gotFmt bool
-	)
+	gotFmt := false
 	chunkHdr := make([]byte, 8)
 	for {
 		if _, err := io.ReadFull(r, chunkHdr); err != nil {
@@ -229,22 +338,13 @@ func ReadIQWavStreamHeader(r io.Reader) (IQWavInfo, error) {
 			if _, err := io.ReadFull(r, fmtBuf); err != nil {
 				return info, fmt.Errorf("baseband: read fmt chunk: %w", err)
 			}
-			if len(fmtBuf) < 16 {
-				return info, errors.New("baseband: short fmt chunk")
+			if err := applyWavFmt(&info, fmtBuf); err != nil {
+				return info, err
 			}
-			info.Channels = binary.LittleEndian.Uint16(fmtBuf[2:4])
-			info.SampleRate = binary.LittleEndian.Uint32(fmtBuf[4:8])
-			bits = binary.LittleEndian.Uint16(fmtBuf[14:16])
 			gotFmt = true
 		case "data":
-			if !gotFmt {
-				return info, errors.New("baseband: data chunk before fmt chunk")
-			}
-			if info.Channels != iqWavChannels {
-				return info, fmt.Errorf("baseband: WAV has %d channels, IQ recordings need 2", info.Channels)
-			}
-			if bits != iqWavBitsPerSample {
-				return info, fmt.Errorf("baseband: WAV is %d-bit, IQ recordings need 16-bit", bits)
+			if err := validateIQWav(info, gotFmt); err != nil {
+				return info, err
 			}
 			return info, nil
 		default:
@@ -262,7 +362,7 @@ func ReadIQWavStreamHeader(r io.Reader) (IQWavInfo, error) {
 // DecodeIQ16 converts one interleaved 16-bit I/Q PCM block into complex64,
 // matching the normalisation IQWriter uses. Exported so offline replay can
 // decode baseband WAV payloads through the same math the driver uses.
-func DecodeIQ16(buf []byte) []complex64 { return decodeIQ16(buf) }
+func DecodeIQ16(buf []byte) []complex64 { return IQWavPCM16.DecodeIQ(buf) }
 
 // floatToI16 clamps a normalised sample to [-1, 1] and scales it to a
 // signed 16-bit value.

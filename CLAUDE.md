@@ -1459,6 +1459,38 @@ confirmation before any close-as-completed.
   Not decoded: Hytera EP (FID 0x68, 40-bit MI, vendor schedule), Kirisun, DES/AES in the voice
   path. SDRTrunk (Apache-2.0) is the layout reference; DSD-FME (GPL) was read for the
   conventions only, nothing ported.
+- **FleetSync (#437/#1184) is VERIFIED OFFLINE on the reporter's two SDR# captures — and the
+  blocker was never FleetSync, it was the WAV reader.** `internal/radio/fleetsync/afsk` mirrors
+  the MDC1200 front end (FM → resample → 1200/1800 Hz `demod.FFSK` → Mueller-Müller → slicer →
+  `fleetsync.Framer`), with the baud rate as an option. Lesson that cost a round: **slice FFSK
+  at a fixed ZERO threshold** (as the reference does) — an FS-II frame whose word1 nibbles are
+  small opens with ~68 symbols of continuous space tone, a 1/512 bias tracker drifted toward
+  it and flipped the ISI-weakened isolated bits after the run (23 errors/frame → 0). Result
+  on the captures (2.048 MS/s SDR# baseband WAVs, VFO 462.5625 MHz, Fleet 107 / Unit 1772):
+  FleetSync-I **5/6** ANI bursts CRC-valid (one RF miss at t=3.0 s), FleetSync-II **8/8**,
+  raw words `FE80083053059B6C` / `FC80083053057E59` repeating — through the production front
+  end, one command per file (`GT_FLEETSYNC_IQ=<wav> go test ./cmd/gophertrunk -run
+  'TestFleetSyncReplay$' -v`). Three things had to land first, each a trap for the next
+  capture: (1) **every IQ WAV reader assumed 16-bit PCM** — `siglab.DecodeContainerFile`
+  stripped 44 bytes and read the SDR# 32-bit FLOAT body as int16 pairs (2× the samples at
+  −2.5 dBFS of noise; the harness "signal stats" line is what exposed it: a real capture does
+  not sit at −2.5 dBFS with a 0.16 DC), and `baseband.parseIQWavHeader` /
+  `ReadIQWavStreamHeader` rejected anything but 16-bit. `IQWavInfo.Encoding` (pcm16 / pcm8 /
+  float32, WAVE_FORMAT_EXTENSIBLE unwrapped, chunks before `data` skipped) now drives the
+  replay driver, `UnwrapContainer`, `DecodeContainerFile` and siglab's `prepareWAVInput`;
+  pinned failing-first by `wav_encoding_test.go` + `container_encoding_test.go`. (2) **An SDR#
+  baseband recording is the whole tuner span, not the VFO**: the signals sat at +424.5 kHz and
+  +323 kHz off centre (different in each file — SDR# recentres per recording), so a run at
+  centre decodes nothing; the harness now searches a whole-capture averaged 4096-point
+  spectrum (`fleetSyncCarrierCandidates`) and tries each carrier, strongest first. (3) **The
+  shared `dsp.EstimateCarrierCandidatesHz` scans only its first ~256 short windows — tens of
+  milliseconds** — which on these captures is before the radio keys up: it ranked a −423 kHz
+  spur first and never saw the 64 dB FleetSync carrier. It is right for a continuous control
+  channel and wrong for a bursty PTT capture; average over seconds for those (not changed in
+  the shared estimator — `siglab -auto-tune` callers should know). Real-air regression:
+  `TestFleetSyncRealAirSlices` (`afsk/testdata/fleetsync{1,2}_fleet107_unit1772_48k.cs16`,
+  1.3 s channelized slices of the reporter's bursts). Still open: the daemon wiring
+  (events/storage/REST/web) and the reporter's live lab test on the Kenwood radios.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that
