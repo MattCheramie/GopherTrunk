@@ -10,6 +10,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // runReplay is the entry point for `gophertrunk replay`. It runs an offline
@@ -126,8 +127,17 @@ FLAGS:`)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := siglab.Config{
-		Protocol:             proto,
-		SystemName:           "replay",
+		Protocol:   proto,
+		SystemName: "replay",
+		// The per-protocol voice-cadence default the daemon applies
+		// (trunking.DMRVoiceCadenceDetected): without it -record-voice on a
+		// DMR capture ran the single-slot superframe decoder, which slices
+		// a real carrier's inter-burst gaps (issue #836).
+		System: trunking.System{
+			Name:                "replay",
+			Protocol:            proto,
+			DMRInterleavedVoice: trunking.DMRVoiceCadenceDetected(proto),
+		},
 		FrequencyHz:          uint32(*freq),
 		SampleRateHz:         *sampleRate,
 		Format:               sampleFormat,

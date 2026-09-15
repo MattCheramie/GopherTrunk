@@ -850,8 +850,18 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 				c.ingestDibit-existing.anchorDibit <= headerRekeyDibits {
 				// Same transmission's repeated Voice LC Header copy — or a
 				// header that surfaced behind the superframes that already
-				// (re-)granted this transmission by late entry. Dedupe.
+				// (re-)granted this transmission by late entry. Dedupe, and
+				// move the anchor up to THIS copy: the re-key rule measures
+				// from the transmission's LAST header copy, so a radio that
+				// repeats its header for longer than headerRekeyDibits in
+				// total (the #836 reporter's direct-mode handheld sends ten
+				// copies over 0.6 s) is still one keyup. Measured from the
+				// first copy, copy six looked like a re-key and every PTT
+				// opened with a phantom release + re-grant.
 				existing.lastAt = now
+				if c.ingestDibit > existing.anchorDibit {
+					existing.anchorDibit = c.ingestDibit
+				}
 				existing.touch(c.ingestDibit)
 				return
 			}

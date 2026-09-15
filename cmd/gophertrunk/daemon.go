@@ -810,19 +810,22 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 // so PATCH /api/v1/settings can re-write the file in place.
 // resolveDMRInterleavedVoice turns the tri-state config.SystemConfig.
 // DMRInterleavedVoice override into the concrete bool the trunking layer
-// carries. nil (unset) takes the per-protocol default — interleaved ON for
-// DMR Tier III trunked (ProtocolDMR) AND Tier II conventional
-// (ProtocolDMRTier2), which are both 2-slot TDMA repeater carriers whose
-// outbound stream interleaves the two timeslots' bursts; the single-slot
-// decoder slices straight through them and produces garbled, encrypted-
-// sounding audio (issue #644). Tier I (ProtocolDMRTier1) is direct-mode
-// simplex — genuinely single-slot — so it stays single-slot, as does every
-// non-DMR protocol. An explicit value forces it on or off.
+// carries. nil (unset) takes the per-protocol default
+// (trunking.DMRVoiceCadenceDetected): the cadence-detecting decoder for
+// every DMR protocol — Tier III trunked and Tier II conventional are 2-slot
+// TDMA repeater carriers whose outbound stream interleaves the two
+// timeslots' bursts (the single-slot decoder slices straight through them
+// and produces garbled, encrypted-sounding audio, issue #644), and Tier I
+// direct-mode simplex transmits one burst per 60 ms frame, so its bursts
+// sit 288 dibits apart just like same-slot repeater bursts (issue #836: the
+// single-slot decoder sliced the reporter's voice out of the gaps and never
+// decoded an embedded LC). Non-DMR protocols stay single-slot. An explicit
+// value forces it on or off.
 func resolveDMRInterleavedVoice(proto trunking.Protocol, override *bool) bool {
 	if override != nil {
 		return *override
 	}
-	return proto == trunking.ProtocolDMR || proto == trunking.ProtocolDMRTier2
+	return trunking.DMRVoiceCadenceDetected(proto)
 }
 
 func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *slog.Logger) (*Daemon, error) {
