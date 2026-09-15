@@ -7,6 +7,14 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Security
+- **Bumped `google.golang.org/grpc` v1.82.1 → v1.83.2** to clear two advisories
+  govulncheck reports as call-reachable through the daemon's gRPC server:
+  GO-2026-6348 (heap exhaustion via HTTP/2 DATA frame fragmentation, fixed in
+  1.83.1) and GO-2026-6443 (server panic on a missing `:authority` / Host
+  header, fixed in 1.83.2). `golang.org/x/net`, `x/sys`, `x/text` and the
+  genproto rpc module moved with it. Dependency bump only — no code changes.
+
 ### Fixed
 - **DMR direct mode (#836): every PTT now decodes from its first header,
   verified on the reporter's air.** The carrier gate shipped in v1.1.4 was
