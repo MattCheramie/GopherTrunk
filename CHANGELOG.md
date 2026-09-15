@@ -35,6 +35,24 @@ for tagged releases.
   diagnosis chased carrier offset.
 
 ### Added
+- **DMR "Enhanced Privacy" (RC4) known-key decryption, in-process** (#1187).
+  The DMR voice chain now decodes the Privacy Indicator header (algorithm,
+  key id, Message Indicator — published as `call.encryption`, so DMR calls
+  carry `algorithm_id` / `key_id` like P25), follows the Message Indicator
+  across superframes (the per-superframe LFSR advance, confirmed by the
+  IV every superframe embeds for late entry), and descrambles with the
+  matching `trunking.systems[].encryption_keys` entry before the recorder,
+  so an encrypted call records as clear audio. Without a key the frames
+  are recorded as ciphertext exactly as before, and
+  `recordings.crypto_capture_path` now captures DMR superframes (MI +
+  ciphertext) for the cryptolab bridge too. `TestDMREnhancedPrivacyReplay`
+  (`cmd/gophertrunk`, `GT_DMR_EP_IQ` / `GT_DMR_EP_AUDIO` + `GT_DMR_EP_KEY`)
+  replays a capture — IQ or DSD-FME-style discriminator audio — through the
+  production chain and reports the header / MI chain / verdict.
+  Construction pinned against SDRTrunk and DSD-FME by literal vectors; the
+  cryptolab `dmrcrypto` RC4 keystream now discards the 256 warm-up bytes it
+  wrongly claimed DMR skipped. **Not yet on-air-verified**: a known-key
+  capture through the harness is the gate (docs/dmr-encryption.md).
 - **Web console high-contrast theme** (#1176). Settings → Theme gains a
   fourth option, `high-contrast`: pure black on pure white, black hairlines
   in place of tinted surfaces, and status colours pushed to dark shades that

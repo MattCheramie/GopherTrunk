@@ -65,10 +65,14 @@ standard cores worth implementing.
 
 ## How the keystream is built
 
-For **RC4**, the supplied key and the frame's IV bytes are concatenated and used directly as the
-RC4 key — the common Enhanced-Privacy model — and, unlike P25's ADP, no warm-up keystream bytes are
-discarded before use. The RC4 core accepts a variable key length; the 40-bit size is the common
-Enhanced-Privacy default used for the weak-key dictionary.
+For **RC4**, the supplied key and the transmission's 4-byte Message Indicator are concatenated and
+used as the RC4 key — the DMRA Enhanced-Privacy model — and, exactly as with P25's ADP, the first
+256 keystream bytes are discarded before use (the convention DSD-FME verified on air; an earlier
+version of this page claimed DMR discarded nothing, which was unreferenced and wrong). The keystream
+is then consumed 7 bytes per 49-bit AMBE+2 frame across a voice superframe, and the Message
+Indicator advances once per superframe through a 32-bit LFSR (x³² + x⁴ + x² + 1). The RC4 core
+accepts a variable key length; the 40-bit size is the common Enhanced-Privacy default used for the
+weak-key dictionary.
 
 For the **block ciphers**, the scheme runs the cipher in **output-feedback (OFB)** mode: the IV
 seeds OFB directly and the cipher generates a continuous keystream independent of the ciphertext,

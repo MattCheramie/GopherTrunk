@@ -2,6 +2,7 @@ package dmrcrypto
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 )
 
@@ -43,6 +44,20 @@ func TestKeystreamRoundTrip(t *testing.T) {
 		if got := xor(ct, ks2); !bytes.Equal(got, pt) {
 			t.Fatalf("%s: decrypt mismatch: %q", AlgName(c.alg), got)
 		}
+	}
+}
+
+// TestRC4ReferenceVector pins the Enhanced Privacy RC4 construction against
+// a literal produced by an independent RC4 (KSA/PRGA written from the
+// algorithm): key‖MI, keystream bytes 256.. (issue #1187).
+func TestRC4ReferenceVector(t *testing.T) {
+	t.Parallel()
+	ks, err := Keystream(AlgRC4, []byte{1, 2, 3, 4, 5}, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(ks); got != "28e71dc649ae90d466864165d1c5" {
+		t.Fatalf("keystream = %s (a stream starting 4fa6162c… skipped the 256-byte discard)", got)
 	}
 }
 

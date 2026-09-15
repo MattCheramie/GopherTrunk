@@ -1429,6 +1429,36 @@ confirmation before any close-as-completed.
   compares against), and the whole-file band fractions depend on that model, so compare
   voice frames only (`voicemask`) when measuring spectra. On this sample GT is NOT high-band
   deficient vs mbelib-neo on voice frames (3–4 kHz 0.057 vs 0.123 fraction, GT brighter).
+- **DMR "Enhanced Privacy" (DMRA RC4, #1187) is now decoded in-process — PI header → MI
+  chain → descramble — pinned against two independent decoders, NOT yet on-air-verified.**
+  The reporter offered RC4 audio with a known key by email; the material must land on the
+  issue (or a link) so the recipe is reproducible. What landed so the material can verify
+  it: `dmr.ParsePIHeader` (12-octet PI header: alg / FID / KID / 32-bit MI / dest / CRC-CCITT
+  with mask **0x9696** in GT's non-inverted convention = ETSI's 0x6969 inverted — the same
+  relation as `csbkCRCMask` 0x5A5A ↔ ETSI 0xA5A5; pinned by a LITERAL vector from an
+  independent Python CRC), `dmrvoice.PIHeaderDetector` beside the terminator detector, and
+  `dmrvoice/ep.go`: RC4 key = key‖MI (4 bytes), **drop 256** keystream bytes (the cryptolab
+  `dmrcrypto` had claimed "no warm-up bytes" — unreferenced and wrong, fixed), 7 bytes per
+  49-bit frame contiguous over the superframe, MI advances per superframe through the LFSR
+  x³²+x⁴+x²+1, silence-vector frames pass through in clear, and every superframe embeds its
+  own MI (18 nibbles at on-air bits 71/67/63/59 of each frame = C3[0..3] after deinterleave —
+  both refs agree, pinned through GT's own rW..rZ tables) as 3 Golay(24,12) codewords + CRC-4.
+  `EPTracker` follows the chain (embedded IV confirms/overrides the LFSR prediction; a
+  CORRECTED disagreeing IV holds the prediction because the radius-3 Golay sphere covers 57%
+  of the space so a clear superframe "verifies" ~1% of the time — measured; the composer only
+  acts on an embedded IV for a call with other encryption evidence or a perfectly clean
+  decode). Composer: `Options.KeyResolver` (daemon builds it from `encryption_keys`),
+  `composer/dmr_ep.go` publishes `call.encryption` for DMR, captures MI+ciphertext to
+  `crypto_capture_path`, descrambles before the recorder. Failing-first:
+  `TestComposerDMREnhancedPrivacyDecryptsWithConfiguredKey` (old chain records ciphertext).
+  Harness `TestDMREnhancedPrivacyReplay` (`GT_DMR_EP_IQ` or DSD-FME-style discriminator
+  audio `GT_DMR_EP_AUDIO`, `GT_DMR_EP_KEY`) — its verdict uses **pitch continuity** (|Δb0| ≤ 10
+  between consecutive frames: speech ≳0.5, random/ciphertext ≈0.16), NOT loudness: random
+  AMBE parameters through the vocoder are loud, so an RMS "voice activity" verdict passed on
+  a WRONG key (measured on the synthetic fixture) — never judge a decrypt by output level.
+  Not decoded: Hytera EP (FID 0x68, 40-bit MI, vendor schedule), Kirisun, DES/AES in the voice
+  path. SDRTrunk (Apache-2.0) is the layout reference; DSD-FME (GPL) was read for the
+  conventions only, nothing ported.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

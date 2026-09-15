@@ -70,11 +70,18 @@ func AlgName(algid uint8) string {
 	return fmt.Sprintf("dmr-alg-0x%02X", algid)
 }
 
+// rc4Discard is the number of leading RC4 keystream bytes DMRA Enhanced
+// Privacy throws away before the first voice frame — the same 256 as P25 ADP
+// (DSD-FME `dropL = 256`, on-air verified; the earlier claim here that DMR
+// discards nothing was unreferenced and wrong — issue #1187). The live voice
+// path's dmrvoice.EPKeystream is the same construction.
+const rc4Discard = 256
+
 // Keystream returns n keystream bytes for the algorithm, key, and IV. For RC4
-// the IV (if present) is appended to the key — the common Enhanced-Privacy
-// model — and no warm-up bytes are discarded (unlike P25 ADP). For the block
-// ciphers the IV seeds OFB directly. RC4 accepts a 1..256-byte key; the block
-// ciphers require the exact KeySize.
+// the IV (the 4-byte Message Indicator) is appended to the key — the DMRA
+// Enhanced-Privacy model — and the first rc4Discard bytes are skipped. For
+// the block ciphers the IV seeds OFB directly. RC4 accepts a 1..256-byte key
+// (with the IV); the block ciphers require the exact KeySize.
 func Keystream(algid uint8, key, iv []byte, n int) ([]byte, error) {
 	if n < 0 {
 		return nil, fmt.Errorf("dmrcrypto: negative length")
@@ -86,6 +93,7 @@ func Keystream(algid uint8, key, iv []byte, n int) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("dmrcrypto: rc4: %w", err)
 		}
+		c.KeyStream(rc4Discard)
 		return c.KeyStream(n), nil
 	case AlgDESOFB:
 		if len(key) != 8 {

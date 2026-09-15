@@ -216,7 +216,7 @@ func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 	return false
 }
 
-func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved bool, done chan<- struct{}) {
+func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved, grantEncrypted bool, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-dmr:"+serial, nil)
 
@@ -335,6 +335,11 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 	// embedded/data-burst FEC is capture-pending, #644) the hangtime path
 	// still ends the call, so this is strictly additive.
 	termDet := dmrvoice.NewTerminatorDetector()
+	// Enhanced Privacy (issue #1187): the PI header detector runs beside the
+	// terminator detector on the same dibit stream; ep follows the Message
+	// Indicator across superframes and descrambles with a configured key.
+	piDet := dmrvoice.NewPIHeaderDetector()
+	ep := c.newDMREPState(serial, system, groupID, grantEncrypted)
 	var released bool
 	publishRelease := func() {
 		if released || c.bus == nil || groupID == 0 {
@@ -386,6 +391,9 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 					publishRelease()
 				}
 			}
+			for _, h := range piDet.Process(dibits, baseIdx) {
+				ep.onPIHeader(h)
+			}
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				if sf.HasLC {
 					lcSuperframes.Add(1)
@@ -397,9 +405,11 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 					if gv, ok := sf.LC.AsGroupVoiceUser(); ok && gv.SourceID != 0 {
 						callSrc = gv.SourceID
 						publishSource(gv.SourceID, gv.Encrypted, gv.Emergency, gv.Priority)
+						ep.noteLC(gv.Encrypted)
 					} else if uu, ok := sf.LC.AsUnitToUnitVoice(); ok && uu.SourceID != 0 {
 						callSrc = uu.SourceID
 						publishSource(uu.SourceID, uu.Encrypted, uu.Emergency, uu.Priority)
+						ep.noteLC(uu.Encrypted)
 					}
 				}
 				// Talker-alias header/block and GPS Info embedded LCs are
@@ -441,6 +451,12 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 				if rs == nil {
 					continue
 				}
+				// FEC-decode the whole superframe first: the Enhanced Privacy
+				// descramble is a per-superframe operation (one keystream span
+				// per superframe, 7 bytes per frame in transmission order), so
+				// a frame that failed FEC must keep its slot as nil.
+				var infos [dmrvoice.FramesPerSuperframe][]byte
+				var frameErrs [dmrvoice.FramesPerSuperframe]int
 				for i := range sf.Frames {
 					info, errBits, err := dmrvoice.DecodeAMBEFrame(sf.Frames[i])
 					if errBits > 0 {
@@ -453,6 +469,14 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 						uncorrectableFrames.Add(1)
 						continue
 					}
+					infos[i], frameErrs[i] = info, errBits
+				}
+				ep.superframe(sf, infos[:])
+				for i, info := range infos {
+					if info == nil {
+						continue
+					}
+					errBits := frameErrs[i]
 					packed := packBits(info)
 					var werr error
 					if ers != nil {
@@ -490,6 +514,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 			"superframes", n, "uncorrectable_frames", uncorrectableFrames.Load(),
 			"corrected_bit_errs", corrErrBits.Load(),
 			"lc_superframes", lcSuperframes.Load())
+		ep.logQuality(final)
 	}
 
 	for {
