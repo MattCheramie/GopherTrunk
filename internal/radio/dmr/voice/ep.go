@@ -25,21 +25,31 @@ import (
 //     once per superframe through a 32-bit LFSR with characteristic
 //     polynomial x^32 + x^4 + x^2 + 1 (AdvanceMI). The PI header's MI is the
 //     first superframe's.
-//   - Every superframe also carries its own MI in the voice bursts, for late
+//   - Every superframe also carries an MI in the voice bursts, for late
 //     entry (Motorola patent EP2347540B1, "embedding encryption parameters in
 //     voice super frame"): each of the 18 frames donates one 4-bit nibble in
 //     its unprotected C3 sub-vector, and the 72 bits reassemble into three
 //     Golay(24,12) codewords whose 36 data bits are the 32-bit MI plus a
-//     4-bit CRC (ExtractEmbeddedIV). A receiver that missed the PI header can
-//     therefore still decrypt from the next full superframe.
+//     4-bit CRC (ExtractEmbeddedIV). **The embedded MI is the NEXT
+//     superframe's**, not the one carrying it — the same convention as the
+//     P25 LDU2 Encryption Sync. Capture-verified on the #1187 radio (every
+//     superframe's embedded IV equals AdvanceMI of the one before, and the
+//     first equals AdvanceMI of the PI header's), and it is the order DSD-FME
+//     applies: dmr_alg_refresh LFSR-advances the MI at voice burst F BEFORE
+//     dmr_late_entry_mi compares it with the reassembled fragments. A receiver
+//     that missed the PI header therefore decrypts the superframe it verified
+//     the IV on by REWINDING one step (RewindMI) and the following ones from
+//     the IV directly.
 //   - A frame that carries the AMBE+2 silence vector is transmitted in clear
 //     and is passed through untouched, but still consumes its 7 keystream
 //     bytes (DSD-FME's silence guard).
 //
-// Verify-before-close (#764/#771): the primitives are pinned by literal
-// vectors from independent implementations (ep_test.go), but the whole chain
-// is on-air-verified only once a known-key capture decodes to intelligible
-// audio through the daemon — docs/dmr-encryption.md.
+// Capture-verified (#1187, 16 Sep): the reporter's two known-key discriminator
+// captures (key IDs 11 and 22, colour code 2, TG 582743) decode to speech
+// through this construction — ep_test.go pins the first three superframes of
+// one transmission as literal on-air vectors. Whether the DAEMON path (grant →
+// composer → recorder) produces intelligible audio on air is still the
+// reporter's confirmation to give (#764/#771) — docs/dmr-encryption.md.
 
 const (
 	// EPKeystreamDrop is the number of leading RC4 keystream bytes discarded
@@ -74,6 +84,21 @@ func AdvanceMI(mi uint32) uint32 {
 		l = (l << 1) | bit
 	}
 	return uint32(l)
+}
+
+// RewindMI is the inverse of AdvanceMI: the Message Indicator of the
+// superframe BEFORE the one whose MI is mi. The LFSR is a bijection on its
+// 32-bit state (each reverse shift recovers the bit that was shifted out:
+// b31 = l'[0] ^ l'[2] ^ l'[4], since the taps at 3 and 1 have moved to 4 and
+// 2), so a superframe whose embedded IV verifies can be decrypted even when
+// the PI header that named its own MI was missed.
+func RewindMI(mi uint32) uint32 {
+	l := mi
+	for i := 0; i < 32; i++ {
+		b31 := (l ^ (l >> 2) ^ (l >> 4)) & 1
+		l = (l >> 1) | (b31 << 31)
+	}
+	return l
 }
 
 // EPKeystream returns n bytes of the Enhanced Privacy keystream for key and
@@ -260,9 +285,11 @@ func EmbedIV(frames [FramesPerSuperframe][]byte, iv uint32) {
 }
 
 // EPTracker follows the Message Indicator across a call's superframes. The
-// PI header seeds it; each superframe's embedded IV, when it verifies,
-// confirms (or corrects) the prediction; otherwise the LFSR prediction
-// carries the chain across a superframe whose embedded IV was damaged.
+// PI header seeds it with the FIRST superframe's MI; each superframe's
+// embedded IV names the NEXT superframe's MI and, when it verifies, confirms
+// (or, decoding clean, corrects) the LFSR prediction for that next
+// superframe; otherwise the prediction carries the chain across a superframe
+// whose embedded IV was damaged.
 type EPTracker struct {
 	known bool
 	next  uint32
@@ -286,30 +313,45 @@ func (t *EPTracker) SetHeaderMI(mi uint32) {
 // corrected the Golay repairs it needed), and advances the prediction. ok is
 // false when no MI is known at all.
 //
-// A verified embedded IV that disagrees with the LFSR prediction is adopted
+// The embedded IV is the NEXT superframe's MI (see the package comment), so
+// the current superframe always decodes on what was already known for it —
+// the PI header's MI, the previous superframe's embedded IV, or the LFSR
+// prediction — and the embedded IV only steers what comes next. With no
+// chain at all (late entry), a verified IV yields the current MI by
+// RewindMI.
+//
+// A verified embedded IV that disagrees with the LFSR prediction is trusted
 // only when it decoded CLEAN (no Golay corrections): a clean triple codeword
 // plus CRC-4 is ~2^-40 by chance, whereas a corrected one has the ~1% false
-// verification rate of the radius-3 sphere. Otherwise the prediction holds
-// and the disagreement is counted in Mismatches.
+// verification rate of the radius-3 sphere. A clean disagreement means the
+// chain is broken (a superframe was missed), so the current superframe is
+// re-derived from it too; a corrected disagreement holds the prediction. Both
+// are counted in Mismatches.
 func (t *EPTracker) Next(embedded uint32, embeddedOK bool, corrected int) (mi uint32, ok bool) {
 	switch {
-	case embeddedOK && (!t.known || embedded == t.next || corrected == 0):
-		if t.known && embedded != t.next {
-			t.Mismatches++
-		}
-		mi = embedded
+	case !t.known && embeddedOK: // late entry: the IV names the next superframe
+		mi = RewindMI(embedded)
+		t.next = embedded
+	case !t.known:
+		return 0, false
+	case embeddedOK && embedded == AdvanceMI(t.next): // confirms the chain
+		mi = t.next
+		t.next = embedded
+	case embeddedOK && corrected == 0: // clean but disagrees: the chain was broken
+		t.Mismatches++
+		mi = RewindMI(embedded)
+		t.next = embedded
 	case embeddedOK: // corrected AND disagrees: hold the chain
 		t.Mismatches++
 		mi = t.next
 		t.Predicted++
-	case t.known:
+		t.next = AdvanceMI(mi)
+	default: // no usable IV: the prediction carries
 		mi = t.next
 		t.Predicted++
-	default:
-		return 0, false
+		t.next = AdvanceMI(mi)
 	}
 	t.known = true
-	t.next = AdvanceMI(mi)
 	return mi, true
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/cmplx"
@@ -41,8 +42,14 @@ import (
 // MIs without descrambling), GT_DMR_EP_KEYID=<n> (apply the key only when
 // the PI header names this id; default any), GT_DMR_EP_MI=<8 hex> (seed the
 // MI chain by hand when neither a PI header nor an embedded IV decodes),
-// GT_DMR_EP_INTERLEAVED=1 (2-slot repeater carrier), GT_DMR_EP_OUT=<wav>
-// (write the decoded 8 kHz audio), GT_DMR_EP_ALLOW_EMPTY=1.
+// GT_DMR_EP_SINGLE_SLOT=1 (force the back-to-back 132-dibit single-slot
+// slicer; the default is the cadence-detecting decoder production uses —
+// a simplex handheld's bursts are 288 dibits apart and the single-slot
+// slicer reads bursts B–F out of the gaps, which is what made the #1187
+// captures look post-FEC-scrambled), GT_DMR_EP_OUT=<wav> (write the decoded
+// 8 kHz audio), GT_DMR_EP_DUMP=<json> (write every PI header and every
+// superframe's raw on-air + FEC-decoded frames, embedded IV and MI BEFORE
+// descrambling, for offline keystream analysis), GT_DMR_EP_ALLOW_EMPTY=1.
 //
 // Reproduce: GT_DMR_EP_IQ=<capture> GT_DMR_EP_KEY=0123456789 \
 //
@@ -78,7 +85,7 @@ func TestDMREnhancedPrivacyReplay(t *testing.T) {
 		}
 		seedMI, haveSeedMI = uint32(n), true
 	}
-	interleaved := os.Getenv("GT_DMR_EP_INTERLEAVED") == "1"
+	interleaved := os.Getenv("GT_DMR_EP_SINGLE_SLOT") != "1"
 
 	var (
 		iq          []complex64
@@ -195,13 +202,18 @@ func TestDMREnhancedPrivacyReplay(t *testing.T) {
 		keyApplied   bool
 		miTimeline   []string
 		written      [][]byte // the 49-bit payloads as the recorder would get them
+		dump         epDump   // GT_DMR_EP_DUMP: raw (pre-descramble) frames + headers
 	)
+	dumpPath := os.Getenv("GT_DMR_EP_DUMP")
 	activeKey = key // GT_DMR_EP_KEYID gates it per header below
 	feed := func(dibits []uint8, baseIdx int) {
 		for _, h := range piDet.Process(dibits, baseIdx) {
 			line := fmt.Sprintf("%8.2fs PI header alg=%s(0x%02X) fid=0x%02X key_id=%d mi=%s dst=%d raw=%s",
 				float64(baseIdx)/4800, h.AlgName(), h.AlgID, h.FID, h.KeyID, hex.EncodeToString(h.MI[:]), h.DstAddr, hex.EncodeToString(h.Raw[:]))
 			headers = append(headers, line)
+			if dumpPath != "" {
+				dump.Headers = append(dump.Headers, epDumpHeader{Dibit: baseIdx, AlgID: h.AlgID, FID: h.FID, KeyID: h.KeyID, MI: hex.EncodeToString(h.MI[:]), Dst: h.DstAddr})
+			}
 			tracker.SetHeaderMI(h.MI32())
 			lastHeaderMI = hex.EncodeToString(h.MI[:])
 			if key != nil {
@@ -226,14 +238,41 @@ func TestDMREnhancedPrivacyReplay(t *testing.T) {
 					float64(sf.StartDibit)/4800, superframes, iv, ivOK, corrected, mi, ok))
 			}
 			infos := make([][]byte, dmrvoice.FramesPerSuperframe)
+			sfGolayErrs := make([]int, dmrvoice.FramesPerSuperframe)
 			for i := range sf.Frames {
-				info, _, err := dmrvoice.DecodeAMBEFrame(sf.Frames[i])
+				info, golayErrs, err := dmrvoice.DecodeAMBEFrame(sf.Frames[i])
 				if err != nil {
 					ambeBad++
 					continue
 				}
 				ambeOK++
 				infos[i] = info
+				sfGolayErrs[i] = golayErrs
+			}
+			if dumpPath != "" {
+				rec := epDumpSuperframe{StartDibit: sf.StartDibit, Sync: sf.SyncName, HasLC: sf.HasLC, EmbeddedIV: fmt.Sprintf("%08x", iv), IVOK: ivOK, IVCorrected: corrected, MI: fmt.Sprintf("%08x", mi), MIKnown: ok, Frames: make([]string, len(infos)), OnAir: make([]string, len(infos)), GolayErrs: sfGolayErrs}
+				for i, f := range sf.Frames {
+					raw := make([]byte, 9)
+					for b := range f {
+						if f[b]&1 != 0 {
+							raw[b>>3] |= 1 << uint(7-(b&7))
+						}
+					}
+					rec.OnAir[i] = hex.EncodeToString(raw)
+				}
+				for i, info := range infos {
+					if info == nil {
+						continue
+					}
+					packed := make([]byte, 7)
+					for b := range info {
+						if info[b]&1 != 0 {
+							packed[b>>3] |= 1 << uint(7-(b&7))
+						}
+					}
+					rec.Frames[i] = hex.EncodeToString(packed)
+				}
+				dump.Superframes = append(dump.Superframes, rec)
 			}
 			if !ok {
 				noMI++
@@ -273,7 +312,7 @@ func TestDMREnhancedPrivacyReplay(t *testing.T) {
 	}
 
 	// Pitch continuity is the verdict's discriminator: the AMBE+2 fundamental
-	// index (b0, the payload's first 7 bits) of real speech moves slowly
+	// index (b0: payload bits 0..3 and 37..39) of real speech moves slowly
 	// between consecutive 20 ms frames, while ciphertext (or the wrong key)
 	// gives a uniformly random b0 every frame — output loudness cannot tell
 	// the two apart (random vocoder parameters are LOUD), so RMS alone is
@@ -309,6 +348,18 @@ func TestDMREnhancedPrivacyReplay(t *testing.T) {
 	}
 	t.Logf("descrambled_frames=%d silence_frames=%d pitch_continuity=%.2f (over %d frame pairs; speech ≳0.5, ciphertext ≈0.15) pcm_seconds=%.1f loud_seconds=%v",
 		descrambled, silence, continuity, voicedPairs, float64(len(pcm))/pcmRate, active)
+	if dumpPath != "" {
+		dump.InputRateHz = inRate
+		dump.DibitRateHz = 4800
+		js, err := json.MarshalIndent(dump, "", " ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dumpPath, js, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s (%d PI headers, %d superframes of raw 49-bit frames)", dumpPath, len(dump.Headers), len(dump.Superframes))
+	}
 	if out := os.Getenv("GT_DMR_EP_OUT"); out != "" && len(pcm) > 0 {
 		w, err := voice.NewWavFile(out, pcmRate)
 		if err != nil {
@@ -348,6 +399,49 @@ func TestDMREnhancedPrivacyReplay(t *testing.T) {
 	}
 }
 
+// epDump is the GT_DMR_EP_DUMP record: every PI header and every voice
+// superframe's 18 FEC-decoded 49-bit payloads (7 bytes each, MSB-first, hex;
+// "" for a frame that failed FEC) exactly as received — BEFORE any
+// descramble — so a keystream hypothesis can be tested offline against a
+// capture without re-running the receiver.
+type epDump struct {
+	InputRateHz float64            `json:"input_rate_hz"`
+	DibitRateHz int                `json:"dibit_rate_hz"`
+	Headers     []epDumpHeader     `json:"pi_headers"`
+	Superframes []epDumpSuperframe `json:"superframes"`
+}
+
+type epDumpHeader struct {
+	Dibit int    `json:"dibit"`
+	AlgID uint8  `json:"alg_id"`
+	FID   uint8  `json:"fid"`
+	KeyID uint8  `json:"key_id"`
+	MI    string `json:"mi"`
+	Dst   uint32 `json:"dst"`
+}
+
+type epDumpSuperframe struct {
+	StartDibit int    `json:"start_dibit"`
+	Sync       string `json:"sync"`
+	HasLC      bool   `json:"has_lc"`
+	// EmbeddedIV is the Message Indicator the superframe itself carries
+	// (ExtractEmbeddedIV), IVOK whether it verified, IVCorrected the Golay
+	// repairs it needed; MI is the indicator the tracker used for it.
+	EmbeddedIV  string   `json:"embedded_iv"`
+	IVOK        bool     `json:"iv_ok"`
+	IVCorrected int      `json:"iv_corrected"`
+	MI          string   `json:"mi"`
+	MIKnown     bool     `json:"mi_known"`
+	Frames      []string `json:"frames"`
+	// OnAir is each frame's 72 on-air bits (9 bytes, MSB-first, hex) before
+	// deinterleave/FEC, for analysing the FEC structure of ciphertext.
+	OnAir []string `json:"on_air"`
+	// GolayErrs is the number of Golay(23,12) corrections C0+C1 needed per
+	// frame: near zero on a clean capture proves the FEC structure is intact,
+	// i.e. the encryption sits INSIDE the FEC (on the 49 payload bits).
+	GolayErrs []int `json:"golay_errs"`
+}
+
 // pitchContinuityVoice is the b0-continuity fraction above which decoded
 // frames read as speech. Random parameters land near 21/128 ≈ 0.16 (the
 // chance of |Δb0| ≤ 10 on a uniform 7-bit index); speech sits well above
@@ -355,20 +449,19 @@ func TestDMREnhancedPrivacyReplay(t *testing.T) {
 const pitchContinuityVoice = 0.45
 
 // pitchContinuity returns the fraction of consecutive non-silence frame
-// pairs whose AMBE+2 fundamental index b0 (payload bits 0..6) differs by at
-// most 10, and the number of pairs measured.
+// pairs whose AMBE+2 fundamental index b0 differs by at most 10, and the
+// number of pairs measured. b0 is payload bits 0..3 and 37..39 (mbelib
+// ambe3600x2450.c) — NOT the first seven bits, which mix in b1's top bits
+// and diluted the verdict until the #1187 captures decoded.
 func pitchContinuity(frames [][]byte) (float64, int) {
 	b0 := func(f []byte) int {
-		v := 0
-		for i := 0; i < 7; i++ {
-			v = v<<1 | int(f[i]&1)
-		}
-		return v
+		return int(f[0]&1)<<6 | int(f[1]&1)<<5 | int(f[2]&1)<<4 | int(f[3]&1)<<3 |
+			int(f[37]&1)<<2 | int(f[38]&1)<<1 | int(f[39]&1)
 	}
 	var pairs, close int
 	prev := -1
 	for _, f := range frames {
-		if len(f) < 7 {
+		if len(f) < 40 {
 			continue
 		}
 		p := b0(f)
