@@ -49,6 +49,10 @@ type processState struct {
 // Returns baseIdx + len(dibits) to match the Tier III / NXDN /
 // other Process contracts.
 func (c *ConventionalChannel) Process(dibits []uint8, baseIdx int) int {
+	// Counters.Dibits is the "receiver emits nothing" vs "emits junk"
+	// instrument; it was declared for the 12 Sep deaf-tap log but never
+	// incremented, so every activity line read dibits=0 on a decoding tap.
+	c.cnt.dibits.Add(uint64(len(dibits)))
 	if c.proc == nil {
 		c.proc = &processState{
 			det: dmr.NewSyncDetector(c.syncPatterns, 2),

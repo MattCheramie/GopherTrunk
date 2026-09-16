@@ -53,8 +53,11 @@ type siglabCapture struct {
 	Path         string
 	Format       siglab.SampleFormat
 	SampleRateHz float64
-	Size         int64
-	Created      time.Time
+	// CenterHz is the RF centre of the staged IQ when known (live captures);
+	// 0 for uploads and synthesised fixtures.
+	CenterHz uint32
+	Size     int64
+	Created  time.Time
 }
 
 // siglabJob is one async engine run. Events stream in via the engine's

@@ -501,6 +501,41 @@ func (r *Receiver) CoarseCarrierOffsetHz() float64 {
 	return r.acq.OffsetHz()
 }
 
+// RejectCoarseCarrierOffset tells the pre-clock acquirer that a correction it
+// engaged at hz was NOT the wanted signal: the caller has decode evidence (an
+// engage after which no sync was ever found — the wideband engine's deaf-tap
+// guard). The acquirer will not engage near hz again (the list survives
+// Reset; see coarseCarrierAcquirer.Reject), and if it is currently frozen
+// there the correction is reverted so the channel hears the wanted carrier
+// again without waiting for a full receiver Reset. Returns true when a live
+// correction was reverted. No-op (false) on the legacy path without the
+// acquirer.
+func (r *Receiver) RejectCoarseCarrierOffset(hz float64) bool {
+	if r.acq == nil {
+		return false
+	}
+	if !r.acq.Reject(hz) {
+		return false
+	}
+	// Mirror the engage path: the de-rotation just stepped back by hz, so the
+	// discriminator / matched-filter history and the trackers that followed
+	// the shifted stream are stale; a large step also parked the timing loop
+	// at a wrong instant (the same coarseAcqClockRelockHz rule as engaging).
+	r.fm.Reset()
+	r.mf.Reset()
+	if r.afc != nil {
+		r.afc.Reset()
+	}
+	if r.gate != nil {
+		r.gate.Reset()
+	}
+	if math.Abs(hz) >= coarseAcqClockRelockHz {
+		r.clock.Reset()
+		r.armTimingAcq()
+	}
+	return true
+}
+
 // AGCLevel and AGCTarget expose the shared symbol-AGC's running mean|x|
 // estimate and its target, for the diagnostic Tuning panel. Both are 0 on the
 // legacy pre-scaled-fixture path (AGC disabled).

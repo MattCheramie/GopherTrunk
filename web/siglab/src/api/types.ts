@@ -316,6 +316,9 @@ export interface CaptureDTO {
   name: string;
   format: string;
   sample_rate_hz: number;
+  // RF centre of the staged IQ when the daemon knows it (a live capture);
+  // omitted for uploads / synthesised fixtures.
+  center_hz?: number;
   size: number;
   created_at: string;
 }

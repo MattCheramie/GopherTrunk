@@ -419,6 +419,21 @@ type engineChannel struct {
 	decodeDbFS  float64
 	everSynced  bool
 	deafHeals   uint64
+	// deafWarnAt throttles the deaf-tap WARN: one per tier2DeafHealWarnInterval
+	// per channel, later heals at DEBUG (deaf_heals in the activity line
+	// counts them). A repeater whose idle gap keeps a −49 dBFS neighbour in
+	// the tap healed every 15 s and WARNed every time (15 Sep IPSC log).
+	deafWarnAt time.Time
+	// acqPrevHz / acqConfirmed / acqConfirmedHz track the receiver's coarse
+	// carrier-offset correction against decode evidence: an offset that was
+	// in force for a whole diagnostics window in which the channel synced is
+	// confirmed as the wanted signal's; an engage that never saw a sync
+	// before the tap went deaf is rejected at the heal
+	// (dmrrx.Receiver.RejectCoarseCarrierOffset) so the same neighbour cannot
+	// re-engage the stage — and deafen the tap — on the next idle gap.
+	acqPrevHz      float64
+	acqConfirmed   bool
+	acqConfirmedHz float64
 	// strongNoSyncWindows counts consecutive diagnostics windows in which
 	// this channel carried a strong signal yet produced zero sync/FEC — the
 	// signature of an uncorrected tuner frequency offset (issue #836). It
@@ -1225,6 +1240,11 @@ const (
 	tier2DeafHealMarginDb = 6.0
 )
 
+// tier2DeafHealWarnInterval is the per-channel WARN cadence for the deaf-tap
+// heal; heals inside the interval log at DEBUG. Every heal still resets the
+// receiver and counts in deaf_heals — only the log level is throttled.
+const tier2DeafHealWarnInterval = 10 * time.Minute
+
 // lowPowerDecodeGrace suppresses the "iq power very low" WARN for a channel
 // that produced protocol decodes (CSBKs / TSBKs / FEC passes) this recently.
 // Absolute dBFS is a gain-staging number, not a health verdict: a Tier III /
@@ -1453,9 +1473,13 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 					ec.lastLogCnt = c
 				}
 			}
+			// The beacon delta must be taken BEFORE the snapshot moves on —
+			// it used to be computed after `ec.lastCnt = c` and so was
+			// always 0 (latent: a beacon always comes with a sync hit).
+			beaconDelta := c.Beacons - ec.lastCnt.Beacons
 			ec.lastCnt = c
 
-			e.healDeafTier2(ec, dbfs, syncDelta, fecPassDelta, c.Beacons-ec.lastCnt.Beacons)
+			e.healDeafTier2(ec, now, dbfs, syncDelta, fecPassDelta, beaconDelta)
 
 			// Strong-signal-but-no-sync hint (issue #836). A real transmission
 			// that never produces a single burst-sync match is the classic
@@ -1536,6 +1560,13 @@ type tier2Diag interface {
 	MMClockSPS() float64
 }
 
+// coarseRejecter is the receiver hook the deaf-tap heal uses to rule out a
+// coarse carrier-offset engage that decode evidence contradicts
+// (dmrrx.Receiver.RejectCoarseCarrierOffset).
+type coarseRejecter interface {
+	RejectCoarseCarrierOffset(hz float64) bool
+}
+
 // healDeafTier2 is the conventional-DMR deaf-tap guard (constants above): a
 // channel that has synced before, now seeing no sync for tier2DeafHealWindows
 // consecutive windows at a power within tier2DeafHealMarginDb of its last
@@ -1546,14 +1577,40 @@ type tier2Diag interface {
 // decodes there and deaf when it stops, and an idle repeater's carrier falls
 // well below either. Runs inline on the pump goroutine like the rest of the
 // diagnostics, so the reset never races the receiver's Process.
-func (e *Engine) healDeafTier2(ec *engineChannel, dbfs float64, syncDelta, fecPassDelta, beaconDelta uint64) {
+//
+// The coarse carrier-offset acquirer (dmrrx coarse_carrier.go) is the one
+// receiver stage that can deafen a tap on its own: it freezes on two agreeing
+// discriminator-mean windows, and by frequency alone it cannot tell a
+// mistuned wanted carrier from a neighbour that dominates the tap whenever
+// the wanted one is silent (15 Sep IPSC log: a −20.1 kHz engage on every
+// idle gap of the 442.3875 MHz tap, 21 heals in 6 min, on a GPSDO-locked
+// X310 that decodes at 0 Hz). Decode evidence settles it: an offset in force
+// for a whole window in which the channel synced is the wanted signal's
+// (confirmed); an engage the channel never synced under before going deaf is
+// rejected at the heal, so that neighbour cannot re-engage the stage again.
+func (e *Engine) healDeafTier2(ec *engineChannel, now time.Time, dbfs float64, syncDelta, fecPassDelta, beaconDelta uint64) {
 	if ec.tier2Cnt == nil {
 		return
 	}
+	var offHz float64
+	diag, hasDiag := ec.receiver.(tier2Diag)
+	if hasDiag {
+		offHz = diag.CoarseCarrierOffsetHz()
+	}
+	// The correction was in force for this whole window only if it already
+	// read the same at the previous tick (a frozen offset is exactly
+	// constant); an engage part-way through a window that also carried the
+	// tail of a decoding train must not be confirmed by those syncs.
+	held := offHz == ec.acqPrevHz
+	ec.acqPrevHz = offHz
 	if syncDelta > 0 || fecPassDelta > 0 || beaconDelta > 0 {
 		ec.everSynced = true
 		ec.decodeDbFS = dbfs
 		ec.deafWindows = 0
+		if held {
+			ec.acqConfirmed = true
+			ec.acqConfirmedHz = offHz
+		}
 		return
 	}
 	if !ec.everSynced || dbfs < ec.decodeDbFS-tier2DeafHealMarginDb {
@@ -1568,11 +1625,30 @@ func (e *Engine) healDeafTier2(ec *engineChannel, dbfs float64, syncDelta, fecPa
 	ec.deafHeals++
 	attrs := []any{"freq_hz", ec.freqHz, "system", ec.sysName, "dbfs", dbfs,
 		"decode_dbfs", ec.decodeDbFS, "heals", ec.deafHeals}
-	if d, ok := ec.receiver.(tier2Diag); ok {
-		attrs = append(attrs, "coarse_offset_hz", d.CoarseCarrierOffsetHz(),
-			"agc_level", d.AGCLevel(), "mm_mu", d.MMClockMu(), "mm_sps", d.MMClockSPS())
+	if hasDiag {
+		attrs = append(attrs, "coarse_offset_hz", offHz,
+			"agc_level", diag.AGCLevel(), "mm_mu", diag.MMClockMu(), "mm_sps", diag.MMClockSPS())
 	}
-	e.log.Warn("widebandt2: conventional DMR tap deaf at its decoding level — resetting the receiver (field report: 3-minute deaf stretches at a steady -51 dBFS; the receiver internals logged here are the instrument for pinning the latch)", attrs...)
+	// An engaged coarse offset the channel never synced under is a false
+	// engage on whatever dominated the tap while the wanted carrier was
+	// silent — rule it out for good, not just for this reset.
+	rejected := false
+	if offHz != 0 && !(ec.acqConfirmed && ec.acqConfirmedHz == offHz) {
+		if rj, ok := ec.receiver.(coarseRejecter); ok {
+			rj.RejectCoarseCarrierOffset(offHz)
+			rejected = true
+		}
+	}
+	if hasDiag {
+		attrs = append(attrs, "coarse_offset_rejected", rejected)
+	}
+	const msg = "widebandt2: conventional DMR tap deaf at its decoding level — resetting the receiver (field report: 3-minute deaf stretches at a steady -51 dBFS; the receiver internals logged here are the instrument for pinning the latch)"
+	if ec.deafWarnAt.IsZero() || now.Sub(ec.deafWarnAt) >= tier2DeafHealWarnInterval {
+		e.log.Warn(msg, attrs...)
+		ec.deafWarnAt = now
+	} else {
+		e.log.Debug(msg+" (repeat within the WARN interval; deaf_heals in the activity line counts them)", attrs...)
+	}
 	if r, ok := ec.receiver.(interface{ Reset() }); ok {
 		r.Reset()
 	}
