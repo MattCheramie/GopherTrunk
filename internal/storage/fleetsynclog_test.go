@@ -49,11 +49,11 @@ func TestFleetSyncLogInsertsBurst(t *testing.T) {
 	bus.Publish(events.Event{
 		Kind: events.KindFleetSyncMessage,
 		Payload: FleetSyncMessage{
-			ReceivedAt: time.Unix(1735000000, 0),
-			Fleet:      107,
-			Unit:       1772,
-			IsFS2:      true,
-			CRCOK:      true,
+			ReceivedAt:  time.Unix(1735000000, 0),
+			Fleet:       107,
+			Unit:        1772,
+			IsFS2:       true,
+			CRCOK:       true,
 			RawHex:      "FC80083053057E59",
 			Body:        "FleetSync II ANI: fleet=107 unit=1772",
 			Serial:      "R1",
