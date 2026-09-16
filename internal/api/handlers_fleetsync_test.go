@@ -68,10 +68,12 @@ func TestFleetSyncMessagesReturnsList(t *testing.T) {
 			ReceivedAt: time.Unix(1735000010, 0).UTC(),
 			Fleet:      107,
 			Unit:       1772,
-			IsFS2:      true,
-			CRCOK:      true,
-			RawHex:     "FC80083053057E59",
-			Body:       "FleetSync II ANI: fleet=107 unit=1772",
+			IsFS2:       true,
+			CRCOK:       true,
+			RawHex:      "FC80083053057E59",
+			Body:        "FleetSync II ANI: fleet=107 unit=1772",
+			Serial:      "R1",
+			FrequencyHz: 462_562_500,
 		},
 	}}
 	ts := newFleetSyncTestServer(t, prov)
@@ -95,6 +97,12 @@ func TestFleetSyncMessagesReturnsList(t *testing.T) {
 	}
 	if !got[1].FS2 || got[1].RawHex != "FC80083053057E59" {
 		t.Errorf("row 1 = %+v", got[1])
+	}
+	if got[1].Serial != "R1" || got[1].FrequencyHz != 462_562_500 {
+		t.Errorf("row 1 channel provenance (#1184) = %q / %d, want R1 / 462562500", got[1].Serial, got[1].FrequencyHz)
+	}
+	if got[0].Serial != "" || got[0].FrequencyHz != 0 {
+		t.Errorf("row 0 logged before provenance existed must stay blank: %+v", got[0])
 	}
 }
 

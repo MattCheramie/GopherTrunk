@@ -705,3 +705,85 @@ func TestConvScannerRejectsBadConfig(t *testing.T) {
 		})
 	}
 }
+
+// stallIQ opens squelch with one loud chunk and then delivers NOTHING —
+// the stream neither closes nor errors, it just stops, the way a wedged
+// USB bulk pipe looks to the consumer. Every StreamIQ call behaves the
+// same, so a scanner that recovers by re-opening the stream keeps
+// hitting it.
+type stallIQ struct {
+	mu    sync.Mutex
+	opens int
+}
+
+func (f *stallIQ) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	f.mu.Lock()
+	f.opens++
+	f.mu.Unlock()
+	out := make(chan []complex64, 1)
+	out <- loudChunk(256)
+	go func() {
+		<-ctx.Done()
+		close(out)
+	}()
+	return out, nil
+}
+
+func (f *stallIQ) openCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.opens
+}
+
+// TestConvScannerStalledStreamEndsDwell is the #1184 regression: a
+// dwell whose IQ stream stops delivering chunks (without closing) used
+// to stay open until the daemon was killed — hangtime only counts
+// silent chunks, and the watchdog was touched from a timer. The reporter
+// saw a synthetic call open at start-up on a silent channel and end 23 s
+// later with reason=error at Ctrl-C. Now the dwell ends on its own
+// within StreamStallTimeout and the scanner re-tunes and re-opens.
+func TestConvScannerStalledStreamEndsDwell(t *testing.T) {
+	tuner := &fakeTuner{}
+	iq := &stallIQ{}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-1",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "A", FrequencyHz: 146_670_000, SquelchDbFS: -10, Hangtime: 50 * time.Millisecond},
+		},
+		MinDwellPerChannel: 30 * time.Millisecond,
+		StreamStallTimeout: 150 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	go func() { _ = s.Run(ctx) }()
+
+	start := time.Now()
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for eng.endCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if eng.startCount() == 0 {
+		t.Fatal("squelch never opened on the loud chunk")
+	}
+	if eng.endCount() == 0 {
+		t.Fatalf("stalled stream held the call open for %v — the dwell never ended", time.Since(start))
+	}
+	if reasons := eng.endReasonsCopy(); reasons[0] != trunking.EndReasonError {
+		t.Errorf("end reason = %v, want EndReasonError (a stalled stream is not a hangtime)", reasons[0])
+	}
+	// Recovery: the scanner goes back through Run, re-tunes and re-opens.
+	deadline = time.Now().Add(time.Second)
+	for iq.openCount() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if iq.openCount() < 2 {
+		t.Errorf("stream re-opened %d times, want ≥ 2 after the stall", iq.openCount())
+	}
+	cancel()
+}

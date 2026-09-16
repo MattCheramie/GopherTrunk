@@ -85,8 +85,17 @@ answers 503 and the panel stays empty (`gophertrunk doctor` warns).
 - **REST** — `GET /api/v1/fleetsync/messages?limit=N` (default 200,
   max 5000); 503 when the daemon runs without `storage.path`.
 - **Web** — the `/fleetsync` panel polls every 5 s and shows fleet,
-  unit, the FleetSync / FleetSync II variant, the raw words and the
-  block-check result. Hide it with `web.tabs.fleetsync: false`.
+  unit, the channel that produced the ID (frequency and SDR serial of
+  the `fleetsync.channels` entry, also `serial` / `frequency_hz` on the
+  event and REST rows), the FleetSync / FleetSync II variant, the raw
+  words and the block-check result. Hide it with `web.tabs.fleetsync: false`.
+
+A receiver that cannot tune or stream its dongle at start-up (an RTL-SDR
+control-pipe stall on the first PLL write, a pump that dies later) is
+retried with backoff for the daemon's lifetime rather than skipped — the
+log shows `fleetsync: SetCenterFreq failed — retrying` and then
+`SetCenterFreq recovered`. Only a serial that is not in the pool at all is
+skipped.
 
 ## Verifying a capture offline
 

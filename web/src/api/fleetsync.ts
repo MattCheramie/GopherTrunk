@@ -11,6 +11,10 @@ export interface FleetSyncMessage {
   body?: string;
   raw_hex?: string;
   crc_ok: boolean;
+  /** SDR serial of the fleetsync.channels receiver that decoded the burst (#1184). */
+  serial?: string;
+  /** That receiver's channel frequency in Hz. */
+  frequency_hz?: number;
 }
 
 export async function fetchFleetSyncMessages(

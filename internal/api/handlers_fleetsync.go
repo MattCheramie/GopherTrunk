@@ -27,18 +27,24 @@ type FleetSyncMessageDTO struct {
 	Body       string    `json:"body,omitempty"`
 	RawHex     string    `json:"raw_hex,omitempty"`
 	CRCOK      bool      `json:"crc_ok"`
+	// Serial / FrequencyHz: the fleetsync.channels receiver that decoded
+	// the burst (#1184); omitted for rows logged before they were recorded.
+	Serial      string `json:"serial,omitempty"`
+	FrequencyHz uint32 `json:"frequency_hz,omitempty"`
 }
 
 func fleetSyncMessageToDTO(m storage.FleetSyncMessage) FleetSyncMessageDTO {
 	return FleetSyncMessageDTO{
-		ID:         m.ID,
-		ReceivedAt: m.ReceivedAt,
-		Fleet:      m.Fleet,
-		Unit:       m.Unit,
-		FS2:        m.IsFS2,
-		Body:       m.Body,
-		RawHex:     m.RawHex,
-		CRCOK:      m.CRCOK,
+		ID:          m.ID,
+		ReceivedAt:  m.ReceivedAt,
+		Fleet:       m.Fleet,
+		Unit:        m.Unit,
+		FS2:         m.IsFS2,
+		Body:        m.Body,
+		RawHex:      m.RawHex,
+		CRCOK:       m.CRCOK,
+		Serial:      m.Serial,
+		FrequencyHz: m.FrequencyHz,
 	}
 }
 

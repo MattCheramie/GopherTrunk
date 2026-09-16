@@ -22,6 +22,11 @@ type FleetSyncMessage struct {
 	CRCOK      bool      `json:"crc_ok"`  // the block check validated
 	RawHex     string    `json:"raw_hex"` // hex of the two recovered 32-bit words
 	Body       string    `json:"body"`    // one-line summary
+	// Serial and FrequencyHz name the receiver that decoded the burst —
+	// the fleetsync.channels entry's SDR and channel — so an operator
+	// running several channels can tell which one produced an ID (#1184).
+	Serial      string `json:"serial"`
+	FrequencyHz uint32 `json:"frequency_hz"`
 }
 
 // FleetSyncLog drains KindFleetSyncMessage events until ctx cancels or
@@ -60,9 +65,10 @@ func (f *FleetSyncLog) insert(msg FleetSyncMessage) error {
 	}
 	_, err := f.db.SQL().Exec(
 		`INSERT INTO fleetsync_log
-		 (received_at, fleet, unit, fs2, body, raw_hex, crc_ok)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 (received_at, fleet, unit, fs2, body, raw_hex, crc_ok, serial, frequency_hz)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		at.UnixNano(), msg.Fleet, msg.Unit, fs2, msg.Body, msg.RawHex, crcOK,
+		msg.Serial, int64(msg.FrequencyHz),
 	)
 	return err
 }
@@ -77,7 +83,7 @@ func (f *FleetSyncLog) Recent(limit int) ([]FleetSyncMessage, error) {
 		limit = 5000
 	}
 	rows, err := f.db.SQL().Query(
-		`SELECT id, received_at, fleet, unit, fs2, body, raw_hex, crc_ok
+		`SELECT id, received_at, fleet, unit, fs2, body, raw_hex, crc_ok, serial, frequency_hz
 		 FROM fleetsync_log ORDER BY received_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("storage/fleetsynclog: query: %w", err)
@@ -90,12 +96,14 @@ func (f *FleetSyncLog) Recent(limit int) ([]FleetSyncMessage, error) {
 			ns    int64
 			fs2   int
 			crcOK int
+			freq  int64
 		)
 		if err := rows.Scan(&msg.ID, &ns, &msg.Fleet, &msg.Unit, &fs2,
-			&msg.Body, &msg.RawHex, &crcOK); err != nil {
+			&msg.Body, &msg.RawHex, &crcOK, &msg.Serial, &freq); err != nil {
 			return nil, fmt.Errorf("storage/fleetsynclog: scan: %w", err)
 		}
 		msg.ReceivedAt = time.Unix(0, ns)
+		msg.FrequencyHz = uint32(freq)
 		msg.IsFS2 = fs2 != 0
 		msg.CRCOK = crcOK != 0
 		out = append(out, msg)

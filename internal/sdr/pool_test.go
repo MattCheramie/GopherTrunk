@@ -630,3 +630,15 @@ func TestPoolReacquireErrorsWhenOpenFails(t *testing.T) {
 		t.Errorf("Reacquire = %v, want underlying %v", err, openErr)
 	}
 }
+
+// TestPoolEntrySnapshotCarriesEnumerationIndex pins that the status /
+// banner payload names each dongle's enumeration index: the #1184
+// reporter's two-dongle banner printed rtlsdr[0] twice because the
+// snapshot dropped it.
+func TestPoolEntrySnapshotCarriesEnumerationIndex(t *testing.T) {
+	e := &PoolEntry{Info: Info{Driver: "rtlsdr", Index: 1, Serial: "R2"}, Role: RoleVoice}
+	st := e.Snapshot(true)
+	if st.Index != 1 || st.Serial != "R2" {
+		t.Fatalf("snapshot = %+v, want index 1 serial R2", st)
+	}
+}

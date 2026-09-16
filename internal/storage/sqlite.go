@@ -382,7 +382,9 @@ CREATE TABLE IF NOT EXISTS fleetsync_log (
     fs2         INTEGER NOT NULL DEFAULT 0,   -- 1 when decoded via the FleetSync II ECC path
     body        TEXT    NOT NULL DEFAULT '',  -- one-line summary
     raw_hex     TEXT    NOT NULL DEFAULT '',  -- hex of the two recovered 32-bit words
-    crc_ok      INTEGER NOT NULL DEFAULT 0    -- 1 when the block check validated
+    crc_ok      INTEGER NOT NULL DEFAULT 0,   -- 1 when the block check validated
+    serial      TEXT    NOT NULL DEFAULT '',  -- SDR serial of the receiver that decoded it
+    frequency_hz INTEGER NOT NULL DEFAULT 0   -- channel frequency of that receiver
 );
 
 CREATE INDEX IF NOT EXISTS idx_fleetsync_log_time ON fleetsync_log(received_at);
@@ -399,6 +401,15 @@ func (d *DB) migrate() error {
 	}
 	if err := d.ensureColumns("pager_log", []columnAdd{
 		{"protocol", `ALTER TABLE pager_log ADD COLUMN protocol TEXT NOT NULL DEFAULT 'pocsag'`},
+	}); err != nil {
+		return err
+	}
+	// fleetsync_log gained the decoding channel's identity after v1.1.5
+	// (#1184): a database created by the first FleetSync release lacks
+	// both columns.
+	if err := d.ensureColumns("fleetsync_log", []columnAdd{
+		{"serial", `ALTER TABLE fleetsync_log ADD COLUMN serial TEXT NOT NULL DEFAULT ''`},
+		{"frequency_hz", `ALTER TABLE fleetsync_log ADD COLUMN frequency_hz INTEGER NOT NULL DEFAULT 0`},
 	}); err != nil {
 		return err
 	}

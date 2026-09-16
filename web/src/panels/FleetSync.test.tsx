@@ -53,6 +53,8 @@ describe("FleetSync panel", () => {
         body: "FleetSync ANI: fleet=107 unit=1772",
         raw_hex: "FE80083053059B6C",
         crc_ok: true,
+        serial: "R1",
+        frequency_hz: 462_562_500,
       },
     ]);
     render(<FleetSync />);
@@ -62,6 +64,9 @@ describe("FleetSync panel", () => {
       expect(screen.getByText("FS-I")).toBeInTheDocument();
       expect(screen.getByText("FE80083053059B6C")).toBeInTheDocument();
       expect(screen.getByText("ok")).toBeInTheDocument();
+      // #1184: the channel that produced the ID — frequency and SDR serial.
+      expect(screen.getByText(/462\.5625 MHz/)).toBeInTheDocument();
+      expect(screen.getByText(/R1/)).toBeInTheDocument();
     });
   });
 
