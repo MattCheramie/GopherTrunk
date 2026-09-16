@@ -240,8 +240,9 @@ func (s *Server) handleConfigRRSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"results": hits})
 }
 
-// handleConfigRRStates answers GET /api/v1/config/rr/states — the state
-// list (id+name) backing the name-based browse picker.
+// handleConfigRRStates answers GET /api/v1/config/rr/states[?country=<coid>]
+// — the state list (id+name) backing the name-based browse picker. The
+// country defaults to the United States (RadioReference coid 1).
 func (s *Server) handleConfigRRStates(w http.ResponseWriter, r *http.Request) {
 	client, err := s.configBuilder.rrClientFor(r)
 	if err != nil {
@@ -249,7 +250,16 @@ func (s *Server) handleConfigRRStates(w http.ResponseWriter, r *http.Request) {
 			"config: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS)")
 		return
 	}
-	states, err := client.GetStateList(r.Context())
+	coid := radioreference.CountryIDUnitedStates
+	if q := r.URL.Query().Get("country"); q != "" {
+		v, cerr := strconv.Atoi(q)
+		if cerr != nil || v <= 0 {
+			s.writeError(w, http.StatusBadRequest, "config: country must be a numeric RadioReference coid")
+			return
+		}
+		coid = v
+	}
+	states, err := client.GetStatesByCountry(r.Context(), coid)
 	if err != nil {
 		s.writeError(w, http.StatusBadGateway, "config: RadioReference: "+err.Error())
 		return

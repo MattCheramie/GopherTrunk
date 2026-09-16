@@ -54,12 +54,20 @@ func (c *Client) VerifyCredentials(ctx context.Context) (Account, error) {
 }
 
 // subscriptionActive reports whether an RR expiry timestamp is in the future.
-// RR returns dates like "2025-12-31 00:00:00" or "2025-12-31" (and some
-// accounts a UNIX-seconds value); unparseable or empty values are treated as
-// "not premium". Feed Provider and Admin accounts keep premium for as long as
-// their feed is active, so RR reports their expiry as the sentinel strings
+// The live service reports subExpireDate as a US-style "03-02-2027"
+// (MM-DD-YYYY — issue #1197, the reporter's Premium account verified as
+// premium=false because only ISO layouts were tried); older responses used
+// "2025-12-31 00:00:00" / "2025-12-31", and some accounts a UNIX-seconds
+// value. Unparseable or empty values are treated as "not premium". Feed
+// Provider and Admin accounts keep premium for as long as their feed is
+// active, so RR reports their expiry as the sentinel strings
 // "Never - Feed Provider" / "Never - Admin" rather than a date — those count
 // as active.
+//
+// The dashed layout is read MM-DD-YYYY first (RadioReference is a US service
+// and renders dates that way on its own pages); DD-MM-YYYY is tried only when
+// the first field cannot be a month, so a day > 12 in either convention still
+// parses instead of silently reading as "not premium".
 func subscriptionActive(expires string) bool {
 	expires = strings.TrimSpace(expires)
 	if expires == "" {
@@ -68,7 +76,13 @@ func subscriptionActive(expires string) bool {
 	if strings.HasPrefix(strings.ToLower(expires), "never") {
 		return true
 	}
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02", time.RFC3339} {
+	layouts := []string{
+		"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02", time.RFC3339,
+		"01-02-2006 15:04:05", "01-02-2006", // RR live: MM-DD-YYYY
+		"02-01-2006 15:04:05", "02-01-2006", // DD-MM-YYYY fallback (day > 12)
+		"01/02/2006 15:04:05", "01/02/2006",
+	}
+	for _, layout := range layouts {
 		if t, err := time.Parse(layout, expires); err == nil {
 			return t.After(time.Now())
 		}
