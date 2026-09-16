@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
@@ -131,6 +132,20 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 
 	rate, centerHz := captureDeviceRateCenter(s.capture.Devices(), req.Serial)
 
+	// A centre without a bandwidth cannot be honoured — the capture is carved
+	// from the tuner's live stream without retuning, so a centre only means
+	// something for a narrowband slice. Refuse rather than quietly record the
+	// tuner centre under the name of the one the operator asked for (15 Sep:
+	// a "442.8125 MHz" grab that neither repeater was in).
+	if req.CenterHz != 0 && req.BandwidthHz == 0 && req.CenterHz != centerHz {
+		s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
+			"siglab: center_hz %d without bandwidth_hz: a capture is carved from the tuner's live stream "+
+				"without retuning (tuner centre %.4f MHz), so a centre only applies to a narrowband slice — "+
+				"add bandwidth_hz to slice around %.4f MHz, or omit center_hz for a full-band grab",
+			req.CenterHz, float64(centerHz)/1e6, float64(req.CenterHz)/1e6))
+		return
+	}
+
 	// Optional narrowband slice: validate the requested channel fits the tuner's
 	// current span and build a streaming down-converter up front, so an
 	// out-of-span request 400s before the tuner is pinned. The slice is carved
@@ -184,6 +199,17 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 			"siglab: capture: a wav/flac capture needs the device sample rate up front (start or resume a scan on this SDR)")
 		return
 	}
+	// FLAC's STREAMINFO rate field is 20 bits: a full-band grab of a
+	// multi-MS/s tuner cannot be a flac. Say so before pinning the tuner (the
+	// encoder would otherwise fail its first block and the capture abort
+	// after the operator waited on it — the 15 Sep report's first attempt).
+	if format == siglab.FormatFLAC && outRate > baseband.FLACMaxSampleRateHz {
+		s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
+			"siglab: flac cannot carry a %.3f MS/s stream (FLAC's STREAMINFO ceiling is %d Hz) — "+
+				"request a narrowband slice (center_hz + bandwidth_hz) under that rate, or use cs16/wav for the full band",
+			float64(outRate)/1e6, baseband.FLACMaxSampleRateHz))
+		return
+	}
 
 	// Stream encoded IQ straight to the staged file: peak memory is one chunk
 	// (plus the DDC's FIR state for a narrowband slice), independent of duration.
@@ -235,7 +261,8 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	s.log.Info("siglab: capture started",
 		"serial", req.Serial, "center_hz", outCenter, "sample_rate_hz", outRate,
-		"bandwidth_hz", req.BandwidthHz, "tuner_center_hz", centerHz, "tuner_rate_hz", rate,
+		"bandwidth_hz", req.BandwidthHz, "requested_center_hz", req.CenterHz,
+		"tuner_center_hz", centerHz, "tuner_rate_hz", rate,
 		"format", format.String(), "seconds", req.Seconds, "protocol", req.Protocol, "path", path)
 	// A capture runs for up to req.Seconds and Shutdown would wait it out, so
 	// a daemon stop cancels it the same way a client hangup does.
@@ -316,6 +343,7 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		Path:         path,
 		Format:       format,
 		SampleRateHz: float64(outRate),
+		CenterHz:     outCenter,
 		Size:         stagedCaptureSize(path, samples(), format),
 		Created:      time.Now(),
 	}

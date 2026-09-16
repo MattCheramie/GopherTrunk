@@ -43,6 +43,16 @@ describe("CaptureRow", () => {
     expect(nameEl).toHaveAttribute("title", longNamed.name);
   });
 
+  it("shows the capture's RF centre when the daemon reports one, and omits it otherwise", () => {
+    renderRow({ capture: { ...longNamed, center_hz: 441_700_000 } });
+    expect(screen.getByTestId("center-mhz")).toHaveTextContent("441.7000 MHz");
+  });
+
+  it("omits the RF centre for an upload that has none", () => {
+    renderRow();
+    expect(screen.queryByTestId("center-mhz")).toBeNull();
+  });
+
   it("renders a clickable cmp checkbox that toggles compare", () => {
     const { props } = renderRow();
     const cmp = screen.getByRole("checkbox");

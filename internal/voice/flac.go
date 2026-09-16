@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/mewkiz/flac"
 	"github.com/mewkiz/flac/frame"
 	"github.com/mewkiz/flac/meta"
@@ -37,6 +38,9 @@ type FlacWriter struct {
 func NewFlacWriter(w io.WriteSeeker, sampleRate uint32) (*FlacWriter, error) {
 	if sampleRate == 0 {
 		return nil, errors.New("voice: FLAC sample rate must be > 0")
+	}
+	if sampleRate > baseband.FLACMaxSampleRateHz {
+		return nil, fmt.Errorf("voice: FLAC cannot carry a %d Hz sample rate (STREAMINFO ceiling is %d Hz)", sampleRate, baseband.FLACMaxSampleRateHz)
 	}
 	info := &meta.StreamInfo{
 		SampleRate:    sampleRate,
@@ -128,9 +132,12 @@ func (w *FlacWriter) flushBlock() error {
 	hdr := frame.Header{
 		HasFixedBlockSize: true,
 		BlockSize:         uint16(n),
-		SampleRate:        w.sampleRate,
-		Channels:          frame.ChannelsMono,
-		BitsPerSample:     16,
+		// The frame header cannot carry every rate STREAMINFO can; the
+		// shared policy defers to STREAMINFO where it can't (see
+		// baseband.FLACFrameSampleRate).
+		SampleRate:    baseband.FLACFrameSampleRate(w.sampleRate),
+		Channels:      frame.ChannelsMono,
+		BitsPerSample: 16,
 	}
 	// Copy the pending samples: WriteFrame mutates in place and the slice is
 	// reused for the next block.

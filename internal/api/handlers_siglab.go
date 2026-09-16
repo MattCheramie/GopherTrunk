@@ -112,12 +112,18 @@ func (s *Server) handleSiglabProtocols(w http.ResponseWriter, r *http.Request) {
 
 // siglabCaptureDTO is the JSON projection of a staged capture.
 type siglabCaptureDTO struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Format       string    `json:"format"`
-	SampleRateHz float64   `json:"sample_rate_hz"`
-	Size         int64     `json:"size"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Format       string  `json:"format"`
+	SampleRateHz float64 `json:"sample_rate_hz"`
+	// CenterHz is the RF centre the staged IQ is at (a live capture's tuner
+	// centre, or the requested slice centre), so the captures list shows an
+	// operator WHERE a grab was taken — the 15 Sep report's slice quietly
+	// landed at the tuner centre and nothing in the UI said so. 0 (omitted)
+	// for an upload or synthesised capture, whose centre is unknown here.
+	CenterHz  uint32    `json:"center_hz,omitempty"`
+	Size      int64     `json:"size"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func captureDTO(c *siglabCapture) siglabCaptureDTO {
@@ -126,6 +132,7 @@ func captureDTO(c *siglabCapture) siglabCaptureDTO {
 		Name:         c.Name,
 		Format:       c.Format.String(),
 		SampleRateHz: c.SampleRateHz,
+		CenterHz:     c.CenterHz,
 		Size:         c.Size,
 		CreatedAt:    c.Created,
 	}
