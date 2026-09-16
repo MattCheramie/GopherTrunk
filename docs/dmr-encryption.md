@@ -27,11 +27,14 @@ are authorized to hold. GopherTrunk performs **no key recovery** of
 any kind — it is the same model used by SDRTrunk, DSD-FME and OP25.
 Only monitor systems you are legally permitted to monitor.
 
-> **Verification status (issue #1187):** the descramble is pinned by
-> reference vectors and a full-chain synthetic test, but it has **not yet
-> been verified on air** — no known-key encrypted capture has been run
-> through it. See [Contributing a known-key capture](#contributing-a-known-key-capture)
-> below; that is the one thing that closes the loop.
+> **Verification status (issue #1187):** the descramble is **capture-verified**
+> — the reporter's two known-key discriminator captures (key IDs 11 and 22,
+> colour code 2, TG 582743, a simplex handheld) decode to speech through
+> `TestDMREnhancedPrivacyReplay`, and the first three superframes of one
+> transmission are pinned as literal on-air vectors in
+> `internal/radio/dmr/voice/testdata/ep_issue1187_ptt1.json`. What remains is
+> the daemon path on air: a live call with the key configured that records
+> intelligible audio. See [Contributing a known-key capture](#contributing-a-known-key-capture).
 
 ## Configuration
 
@@ -114,13 +117,21 @@ from their stated algorithms, not ported code:
 - **The MI advances once per superframe** through a 32-bit LFSR
   (x³² + x⁴ + x² + 1, 32 shifts). The PI header's MI is the first
   superframe's.
-- **Every superframe also carries its own MI** for late entry: each of
-  the 18 frames donates a 4-bit nibble in its unprotected C3 bits, and
-  the 72 bits reassemble into three Golay(24,12) codewords holding the
-  32-bit MI plus a 4-bit CRC. GopherTrunk verifies this embedded IV on
-  every superframe: it confirms (or, when it decodes perfectly clean,
-  corrects) the LFSR prediction, and lets a chain that missed the PI
-  header start decrypting from the next full superframe.
+- **Every superframe also carries the NEXT superframe's MI** for late
+  entry: each of the 18 frames donates a 4-bit nibble in its unprotected
+  C3 bits, and the 72 bits reassemble into three Golay(24,12) codewords
+  holding the 32-bit MI plus a 4-bit CRC. That it names the *next*
+  superframe (the P25 Encryption Sync convention) is capture-pinned: on
+  the #1187 radio every embedded IV equals the LFSR advance of the MI
+  before it, the first equals the advance of the PI header's, and
+  descrambling each superframe with its *own* embedded IV stays at
+  ciphertext level. It is also the order DSD-FME applies (the LFSR
+  advance in `dmr_alg_refresh` runs before the late-entry comparison).
+  GopherTrunk verifies the embedded IV on every superframe: it confirms
+  (or, when it decodes perfectly clean, corrects) the prediction for the
+  superframe that follows, and a chain that missed the PI header decrypts
+  the superframe it first verified an IV on by rewinding the LFSR one
+  step (`RewindMI`).
 
 The counters behind all of this are in the debug-level
 `composer: dmr enhanced privacy` line: `pi_headers`, `iv_verified`,
@@ -171,7 +182,16 @@ GT_DMR_EP_IQ=ep-call.cs16 GT_DMR_EP_RATE=2400000 GT_DMR_EP_KEY=0123456789 GT_DMR
 audio.) The harness prints every PI header it decoded (algorithm, key
 ID, MI, raw octets), the per-superframe embedded-IV / MI chain, the
 descrambled frame count and the seconds of the output WAV that carry
-speech, ending in a one-line `VERDICT`. **"Discriminator audio" means the
+speech, ending in a one-line `VERDICT`. `GT_DMR_EP_DUMP=<json>` writes
+every header and every superframe's raw on-air and FEC-decoded frames,
+embedded IV and MI *before* descrambling, so a keystream hypothesis can
+be tested offline without re-running the receiver. The harness slices
+voice with the cadence-detecting decoder production uses; a simplex
+handheld sends one burst per 60 ms frame, and the back-to-back
+single-slot slicer (`GT_DMR_EP_SINGLE_SLOT=1`) reads bursts B–F out of
+the gaps — on the #1187 captures that produced frames whose Golay
+codewords needed the random-word 3 corrections, which looked exactly
+like post-FEC scrambling and was not. **"Discriminator audio" means the
 receiver's raw, unsquelched FM discriminator output** (what DSD-FME is fed
 through a virtual cable), not a radio's speaker or a decoder's playback:
 the #1187 DMR files were 96 kHz recordings of the *decoded* (garbled)

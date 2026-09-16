@@ -10,13 +10,18 @@ import (
 // b0 indices (ciphertext through the vocoder), with silence frames ignored.
 func TestPitchContinuitySeparatesSpeechFromCiphertext(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
+	// b0 sits at payload bits 0..3 (its top four) and 37..39 (mbelib
+	// ambe3600x2450.c); everything else is noise here.
 	mk := func(b0 int) []byte {
 		f := make([]byte, 49)
-		for i := 0; i < 7; i++ {
+		for i := range f {
+			f[i] = byte(rng.Intn(2))
+		}
+		for i := 0; i < 4; i++ {
 			f[i] = byte(b0>>uint(6-i)) & 1
 		}
-		for i := 7; i < 49; i++ {
-			f[i] = byte(rng.Intn(2))
+		for i := 0; i < 3; i++ {
+			f[37+i] = byte(b0>>uint(2-i)) & 1
 		}
 		return f
 	}

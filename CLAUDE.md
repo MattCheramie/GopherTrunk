@@ -1485,8 +1485,30 @@ confirmation before any close-as-completed.
   `discriminatorAudioSanity` in the harnesses now measures the ≤ 3 kHz energy fraction (92 % on
   the P25 file, 20–34 % on the DMR ones) and says so. DMR Enhanced Privacy therefore STILL awaits
   an on-air capture (IQ via `gophertrunk capture`, or a raw unsquelched discriminator tap).
-- **DMR "Enhanced Privacy" (DMRA RC4, #1187) is now decoded in-process — PI header → MI
-  chain → descramble — pinned against two independent decoders, NOT yet on-air-verified.**
+- **DMR "Enhanced Privacy" (DMRA RC4, #1187) IS CAPTURE-VERIFIED (16 Sep): the reporter's two
+  known-key discriminator captures decode to speech (b0 continuity 0.77 / 0.74), and the two
+  defects that hid it were both on OUR side, not in the construction.** (1) The harness sliced
+  voice with the single-slot 132-dibit decoder; the radio is a simplex handheld (one burst per
+  60 ms, 288 dibits apart), so bursts B–F were read out of the inter-burst gaps — burst A
+  FEC-clean, B–F with the random-word Golay signature (73 % exactly 3 corrections, 12 %
+  exactly 2), which reads as "post-FEC scrambling" and is NOT. Same defect #1192 fixed in
+  production the day before; the harness now defaults to the cadence-detecting decoder, and
+  a C0/C1 Golay histogram is the first thing to check when frames look scrambled. (2) **The
+  embedded IV names the NEXT superframe's MI** (the P25 ES convention): every superframe's IV
+  equals AdvanceMI of the one before, the first equals AdvanceMI of the PI header's, and
+  DSD-FME's order (LFSR advance in `dmr_alg_refresh` BEFORE the late-entry compare) says the
+  same — `EPTracker` applied it to the CURRENT superframe, so the correctly sliced frames
+  decoded on the wrong MI while the wrongly sliced ones decoded on the right one, and the
+  two runs failed for opposite reasons. `RewindMI` (the LFSR is a bijection) gives late entry
+  its first superframe. Also fixed: the harness's pitch metric read b0 as payload bits 0..6;
+  AMBE+2's b0 is bits 0..3 + 37..39 (mbelib `ambe3600x2450.c`). Pinned by
+  `TestEPCaptureIssue1187` against `voice/testdata/ep_issue1187_ptt1.json` (literal on-air
+  frames; old semantics fail) and `GT_DMR_EP_DUMP` is the offline instrument. Method that
+  settled it in one pass: dump the raw frames, sweep the hypothesis space by b0 continuity
+  (`scratchpad sweep`) — a Golay histogram + per-frame-index clean fraction told the slicing
+  story before any cipher theory. STILL OPEN (#764/#771): the daemon path on air — a live call
+  with `encryption_keys` configured recording intelligible audio is the reporter's confirmation.
+  Earlier note, kept for the layout facts:**
   The reporter offered RC4 audio with a known key by email; the material must land on the
   issue (or a link) so the recipe is reproducible. What landed so the material can verify
   it: `dmr.ParsePIHeader` (12-octet PI header: alg / FID / KID / 32-bit MI / dest / CRC-CCITT

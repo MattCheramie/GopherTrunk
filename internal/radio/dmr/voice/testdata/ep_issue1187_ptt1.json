@@ -1,0 +1,88 @@
+{
+ "_source": "issue #1187, reporter mrscanner2008, DMR_EP_Test_KeyID_11_4E77AD0B51.wav (96 kHz discriminator audio, DMR simplex colour code 2, TG 582743, key ID 11); first PI header and first three voice superframes of the first transmission, on-air AMBE+2 frames as sliced by the cadence-detecting decoder. The key was published by the reporter on the issue for this test radio.",
+ "key_hex": "4E77AD0B51",
+ "pi_header": {
+  "alg_id": 33,
+  "fid": 16,
+  "key_id": 11,
+  "mi": "3b77735f",
+  "dst": 582743
+ },
+ "superframes": [
+  {
+   "start_dibit": 7075,
+   "sync": "BS-Voice",
+   "embedded_iv": "098c9dff",
+   "on_air": [
+    "e0eac944230297e0ac",
+    "4a03cc384b0ad76c5d",
+    "1b5ceccd5fb4f539fd",
+    "52b3c574ac17b39acf",
+    "629baf126294af9ea3",
+    "5222747fab894c1ffb",
+    "2fe30f45e79e8440c9",
+    "f9e9a73fa120b9f89d",
+    "e586b76872fc37b528",
+    "edcbe58157f6afd4f7",
+    "e9badd7a268feaf01a",
+    "d02125ec56f20166ab",
+    "69f8c5af3a298397dc",
+    "9f9d248a830d24e230",
+    "18eb6143e019d4a9cb",
+    "9906c18be3d6a035ef",
+    "89dbdea539702252c7",
+    "05cdb2e05c411ccf1b"
+   ]
+  },
+  {
+   "start_dibit": 8803,
+   "sync": "BS-Voice",
+   "embedded_iv": "3733775d",
+   "on_air": [
+    "2cd27c31e91030b9e2",
+    "bf63e1094c86843d0e",
+    "f2e4e5ac2afdf9f256",
+    "0a7619beb9f8e615d0",
+    "2ed022b3d66755f37e",
+    "3cb43d1dc392419879",
+    "d00a55f49eb776ff08",
+    "b1adaf37ffb64f35f0",
+    "4946f45a68c6590b46",
+    "e3245243c6d920504a",
+    "a1387f4c48590dbd0f",
+    "dfb683199aa296bcba",
+    "15c4fb92e7b5309b24",
+    "8a47cb9a18d770c303",
+    "0adee8cd3106593e67",
+    "403ab5e20af9b66f8d",
+    "7cd036da2047af76bf",
+    "f1294780cb8572da38"
+   ]
+  },
+  {
+   "start_dibit": 10531,
+   "sync": "BS-Voice",
+   "embedded_iv": "8ccc98e9",
+   "on_air": [
+    "ded3e4dfd76d0ba64b",
+    "b4d3eff9ffd24fe095",
+    "70851d8e4091eaa77f",
+    "598b4aa2bb5265c2fd",
+    "8178589de6a57dbc21",
+    "d5d4514bbc9d6af6af",
+    "609b90f3254d7e4a71",
+    "f999dd6c458baec40d",
+    "cb89137a06bd136177",
+    "c49615ca0fad8978bc",
+    "c698a3de6fe3163f5e",
+    "7684b124b263045909",
+    "7c228356983704c3d4",
+    "86c8c7d84eb8f13fc2",
+    "ce9c640a1c8e86d7d3",
+    "589aca138712f87978",
+    "70544e1c9c129678f0",
+    "38a11010d39f0f481c"
+   ]
+  }
+ ]
+}

@@ -73,7 +73,9 @@ func buildEnhancedPrivacyStream(t *testing.T, key []byte, keyID uint8, mi0 uint3
 			}
 			onair[k] = f
 		}
-		dmrvoice.EmbedIV(onair, mi) // after encryption, as a radio does
+		// After encryption, as a radio does — and the IV a superframe carries
+		// is the NEXT superframe's MI (capture-pinned, dmrvoice ep_test.go).
+		dmrvoice.EmbedIV(onair, dmrvoice.AdvanceMI(mi))
 		for b := 0; b < dmrvoice.BurstsPerSuperframe; b++ {
 			sync := dmr.BSData.Dibits
 			if b == 0 {
