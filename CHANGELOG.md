@@ -7,6 +7,35 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **DMR Enhanced Privacy (RC4) is capture-verified — and decodes (#1187).**
+  The reporter's two known-key discriminator captures (key IDs 11 and 22,
+  simplex, colour code 2, TG 582743) now decode to speech through
+  `TestDMREnhancedPrivacyReplay` (b0 continuity 0.77 / 0.74; ciphertext
+  sits at ~0.15). The keystream construction shipped in #1189 was right;
+  two things on our side hid it. (1) **The embedded IV a voice superframe
+  carries is the NEXT superframe's Message Indicator** — the P25
+  Encryption Sync convention, and the order DSD-FME applies — but
+  `EPTracker` applied it to the superframe carrying it, so every superframe
+  after the first decoded on the wrong MI. The tracker now decodes each
+  superframe on what it already knew (PI header, previous IV, or the LFSR
+  prediction) and lets a verified IV steer the next; a late entrant with
+  no header decrypts its first superframe by rewinding the LFSR one step
+  (`dmrvoice.RewindMI`). (2) The replay harness sliced voice with the
+  back-to-back single-slot decoder, which on a simplex handheld (one burst
+  per 60 ms) reads bursts B–F out of the inter-burst gaps — the same
+  defect #1192 fixed in production — so the frames looked scrambled
+  *through* their FEC; the harness now defaults to the cadence-detecting
+  decoder (`GT_DMR_EP_SINGLE_SLOT=1` forces the old slicer) and its pitch
+  verdict reads the real AMBE+2 `b0` bits (0..3 and 37..39). New
+  `GT_DMR_EP_DUMP=<json>` writes every header and raw superframe for
+  offline analysis. Pinned by `TestEPCaptureIssue1187` against literal
+  on-air frames from the capture (`voice/testdata/ep_issue1187_ptt1.json`)
+  — the old semantics fail it. Still to confirm: a live call through the
+  daemon with `encryption_keys` configured recording intelligible audio.
+
+## [v1.1.5] — 2026-09-15
+
 ### Security
 - **Bumped `google.golang.org/grpc` v1.82.1 → v1.83.2** to clear two advisories
   govulncheck reports as call-reachable through the daemon's gRPC server:
@@ -35,31 +64,6 @@ for tagged releases.
   fleet — that is the remaining gate on #1184.
 
 ### Fixed
-- **DMR Enhanced Privacy (RC4) is capture-verified — and decodes (#1187).**
-  The reporter's two known-key discriminator captures (key IDs 11 and 22,
-  simplex, colour code 2, TG 582743) now decode to speech through
-  `TestDMREnhancedPrivacyReplay` (b0 continuity 0.77 / 0.74; ciphertext
-  sits at ~0.15). The keystream construction shipped in #1189 was right;
-  two things on our side hid it. (1) **The embedded IV a voice superframe
-  carries is the NEXT superframe's Message Indicator** — the P25
-  Encryption Sync convention, and the order DSD-FME applies — but
-  `EPTracker` applied it to the superframe carrying it, so every superframe
-  after the first decoded on the wrong MI. The tracker now decodes each
-  superframe on what it already knew (PI header, previous IV, or the LFSR
-  prediction) and lets a verified IV steer the next; a late entrant with
-  no header decrypts its first superframe by rewinding the LFSR one step
-  (`dmrvoice.RewindMI`). (2) The replay harness sliced voice with the
-  back-to-back single-slot decoder, which on a simplex handheld (one burst
-  per 60 ms) reads bursts B–F out of the inter-burst gaps — the same
-  defect #1192 fixed in production — so the frames looked scrambled
-  *through* their FEC; the harness now defaults to the cadence-detecting
-  decoder (`GT_DMR_EP_SINGLE_SLOT=1` forces the old slicer) and its pitch
-  verdict reads the real AMBE+2 `b0` bits (0..3 and 37..39). New
-  `GT_DMR_EP_DUMP=<json>` writes every header and raw superframe for
-  offline analysis. Pinned by `TestEPCaptureIssue1187` against literal
-  on-air frames from the capture (`voice/testdata/ep_issue1187_ptt1.json`)
-  — the old semantics fail it. Still to confirm: a live call through the
-  daemon with `encryption_keys` configured recording intelligible audio.
 - **DMR direct mode (#836): every PTT now decodes from its first header,
   verified on the reporter's air.** The carrier gate shipped in v1.1.4 was
   confirmed on @alvin275's three new 446.500 MHz captures — the production
