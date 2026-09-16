@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.5] — 2026-09-16
+
 ### Security
 - **Bumped `google.golang.org/grpc` v1.82.1 → v1.83.2** to clear two advisories
   govulncheck reports as call-reachable through the daemon's gRPC server:
