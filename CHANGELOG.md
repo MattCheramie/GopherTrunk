@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.6] — 2026-09-16
+
 ### Fixed
 - **RadioReference verify reported `premium: false` on an active Premium
   account, and the state picker called an operation the WSDL does not define
