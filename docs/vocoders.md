@@ -303,6 +303,38 @@ Reproduce: decode the pairs with both tools as above, then compare
 octave-band energy fractions / spectral centroid, or run
 `internal/voice/calibrate` against the `_dsd.wav`.
 
+### Picking a reference balance: `recordings.voice_profile`
+
+The two references GopherTrunk has been measured against **disagree with
+each other** on the unvoiced level by several dB: mbelib / dsd-neo synthesise
+an unvoiced band at ≈5.5× a voiced harmonic (`unvoiced_gain` 5.49, the
+default), OP25 / trunk-recorder at the spec's equal-power reading
+(`unvoiced_gain` 1). On the 10 Sep P25 A/B (one 7-reply conversation decoded
+by both GopherTrunk and trunk-recorder) the long-term log-spectral distance
+to the OP25 decode fell monotonically with the gain — 5.49 → 3.57 dB,
+2 → 2.96, 1 → 2.69 — and the shipped enhance chain's dsd-neo-matched radio
+tilt / high-pass sat −5 dB against OP25 at 100–300 Hz. So which decode
+"sounds right" depends on which reference an operator is used to, and the
+preset makes that one choice instead of three knobs:
+
+```yaml
+recordings:
+  voice_profile: op25      # "" / mbelib (default) | op25 (alias trunk-recorder)
+```
+
+`op25` sets `unvoiced_gain: 1` and, when `enhance.enabled` is on, disables
+the radio tilt and moves the rumble high-pass to 100 Hz. It only fills knobs
+still at their default — an explicit `unvoiced_gain` / `enhance.tilt_hz` /
+`enhance.hpf_hz` wins. `gophertrunk decode -voice-profile op25` applies the
+same vocoder-level choice to an offline `.raw` decode for A/B listening.
+
+What the preset does **not** change, because it is not yet measured to a
+fix: the residual +5..+7 dB GopherTrunk excess at 3–4 kHz relative to OP25
+(it does not move with the unvoiced gain, so it is in the high-harmonic
+spectral-amplitude reconstruction), and the whole-LDU head loss on weak
+P25 calls (receiver acquisition; needs a voice IQ capture). See CLAUDE.md
+"P25 IMBE vs trunk-recorder/OP25".
+
 ## Knox / call-alert extension hook
 
 AMBE+2 tone frames with b1 ∈ [144, 163] are vendor-specific knox /

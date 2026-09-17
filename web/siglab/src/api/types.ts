@@ -319,6 +319,9 @@ export interface CaptureDTO {
   // RF centre of the staged IQ when the daemon knows it (a live capture);
   // omitted for uploads / synthesised fixtures.
   center_hz?: number;
+  // Id shared by the sample-synchronous slices of one multi-centre live
+  // capture; omitted for a single capture.
+  capture_group?: string;
   size: number;
   created_at: string;
 }
@@ -359,6 +362,9 @@ export interface CaptureDevice {
 // tuner's current wideband stream: the channel at center_hz is shifted to DC and
 // decimated to ~bandwidth_hz. The tuner is not retuned, so center_hz must sit
 // inside the tuned span. Omit bandwidth_hz for a full-band capture.
+// centers_hz records several slices (all bandwidth_hz wide) from the same
+// live stream at once — sample-synchronous files sharing a capture group —
+// and is mutually exclusive with center_hz.
 export interface CaptureRequest {
   serial: string;
   seconds: number;
@@ -367,13 +373,24 @@ export interface CaptureRequest {
   source?: string;
   center_hz?: number;
   bandwidth_hz?: number;
+  centers_hz?: number[];
 }
 
-// CaptureResponse is returned by a successful live capture.
+// CaptureSliceResponse is one staged slice of a multi-centre capture.
+export interface CaptureSliceResponse {
+  capture: CaptureDTO;
+  metadata: unknown;
+  download_url: string;
+}
+
+// CaptureResponse is returned by a successful live capture. A multi-centre
+// request lists every slice in `captures` (request order) and mirrors the
+// first one into the top-level fields.
 export interface CaptureResponse {
   capture: CaptureDTO;
   metadata: unknown;
   download_url: string;
+  captures?: CaptureSliceResponse[];
 }
 
 // RunConfig mirrors siglabRunConfig (the engine knobs).

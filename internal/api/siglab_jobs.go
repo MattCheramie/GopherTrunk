@@ -56,8 +56,11 @@ type siglabCapture struct {
 	// CenterHz is the RF centre of the staged IQ when known (live captures);
 	// 0 for uploads and synthesised fixtures.
 	CenterHz uint32
-	Size     int64
-	Created  time.Time
+	// Group is the capture group id shared by the sample-synchronous slices
+	// of one multi-centre live capture; "" otherwise.
+	Group   string
+	Size    int64
+	Created time.Time
 }
 
 // siglabJob is one async engine run. Events stream in via the engine's

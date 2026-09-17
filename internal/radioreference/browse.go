@@ -120,7 +120,7 @@ func (c *Client) SearchByState(ctx context.Context, stid int) ([]SearchHit, erro
 	}
 	var hits []SearchHit
 	seen := make(map[int]struct{})
-	for _, block := range blocks(raw, "countyList") {
+	for _, block := range listEntries(raw, "countyList") {
 		ctid := atoiDefault(firstLeaves(block, "ctid")["ctid"], 0)
 		if ctid == 0 {
 			continue
@@ -147,19 +147,36 @@ type GeoRef struct {
 	Name string `json:"name"`
 }
 
-// GetStateList returns the states RadioReference knows (stid + name) for a
-// name dropdown. Element names are matched tolerantly (the SOAP schema
-// labels vary); an unrecognised response yields an empty list.
+// CountryIDUnitedStates is RadioReference's coid for the United States
+// (https://www.radioreference.com/db/browse/coid/1), the default country for
+// the state picker.
+const CountryIDUnitedStates = 1
+
+// GetStateList returns the United States' states (stid + name) for a name
+// dropdown. See GetStatesByCountry.
 func (c *Client) GetStateList(ctx context.Context) ([]GeoRef, error) {
-	body := fmt.Sprintf(`<ns1:getStateList>%s</ns1:getStateList>`, c.authXML())
+	return c.GetStatesByCountry(ctx, CountryIDUnitedStates)
+}
+
+// GetStatesByCountry returns the states/provinces of a country (by coid) via
+// getCountryInfo, whose stateList is the only state enumeration the
+// RadioReference WSDL defines — there is no getStateList operation (the
+// service answers one with "Operation 'getStateList' is not defined in the
+// WSDL", issue #1197). Element names are matched tolerantly; an unrecognised
+// response yields an empty list.
+func (c *Client) GetStatesByCountry(ctx context.Context, coid int) ([]GeoRef, error) {
+	body := fmt.Sprintf(`<ns1:getCountryInfo>`+
+		`<coid xsi:type="xsd:int">%d</coid>`+
+		`%s`+
+		`</ns1:getCountryInfo>`, coid, c.authXML())
 	raw, err := c.call(ctx, body)
 	if err != nil {
 		return nil, err
 	}
 	var out []GeoRef
-	for _, block := range blocks(raw, "stateList") {
-		l := firstLeaves(block, "stateId", "stid", "stateName", "stateCode")
-		id := atoiDefault(firstNonEmpty(l["stateId"], l["stid"]), 0)
+	for _, block := range listEntries(raw, "stateList") {
+		l := firstLeaves(block, "stid", "stateId", "stateName", "stateCode")
+		id := atoiDefault(firstNonEmpty(l["stid"], l["stateId"]), 0)
 		if id == 0 {
 			continue
 		}
@@ -181,7 +198,7 @@ func (c *Client) GetCountyList(ctx context.Context, stid int) ([]GeoRef, error) 
 		return nil, err
 	}
 	var out []GeoRef
-	for _, block := range blocks(raw, "countyList") {
+	for _, block := range listEntries(raw, "countyList") {
 		l := firstLeaves(block, "ctid", "countyName", "name")
 		id := atoiDefault(l["ctid"], 0)
 		if id == 0 {
@@ -279,7 +296,7 @@ func (c *Client) getTrsTalkgroups(ctx context.Context, sid int) ([]TalkgroupDeta
 // metadata-only <siteList> doesn't surface as a zero-channel site.
 func parseSites(raw []byte) []SiteDetail {
 	var sites []SiteDetail
-	for _, block := range blocks(raw, "siteList") {
+	for _, block := range listEntries(raw, "siteList") {
 		leaves := firstLeaves(block, "rfss", "siteNumber", "siteDescr", "siteCounty", "cName", "siteLat", "siteLng")
 		site := SiteDetail{
 			RFSS:        atoiDefault(leaves["rfss"], 0),
@@ -289,7 +306,7 @@ func parseSites(raw []byte) []SiteDetail {
 			Latitude:    parseDegrees(leaves["siteLat"]),
 			Longitude:   parseDegrees(leaves["siteLng"]),
 		}
-		for _, fb := range blocks(block, "siteFreq") {
+		for _, fb := range listEntries(block, "siteFreq") {
 			fl := firstLeaves(fb, "freq", "use")
 			hz := mhzToHz(fl["freq"])
 			if hz == 0 {
@@ -311,7 +328,7 @@ func parseSites(raw []byte) []SiteDetail {
 // parseTalkgroups extracts every <tgList> entry.
 func parseTalkgroups(raw []byte) []TalkgroupDetail {
 	var tgs []TalkgroupDetail
-	for _, block := range blocks(raw, "tgList") {
+	for _, block := range listEntries(raw, "tgList") {
 		leaves := firstLeaves(block, "tgDec", "tgAlpha", "tgDescr", "tgSort", "tgTag", "tag", "enc", "mode")
 		dec := atoiDefault(leaves["tgDec"], 0)
 		if dec == 0 {

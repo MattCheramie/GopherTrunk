@@ -2,190 +2,139 @@ package receiver
 
 import (
 	"math"
+	"math/cmplx"
 	"math/rand"
 	"testing"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 )
 
-// neighbourBurstDibits is one 144-dibit repeater burst: random payload halves
-// around the BS-Data sync word, the shape the IPSC idle-beacon trains have.
-func neighbourBurstDibits(rng *rand.Rand) []uint8 {
-	out := make([]uint8, 144)
-	for i := range out {
-		out[i] = uint8(rng.Intn(4))
+// neighbourC4FM is a second, unrelated DMR-like C4FM carrier (random dibits)
+// of the same amplitude as the wanted signal, shifted to offsetHz — the
+// co-passband emitter the wideband tap's ±~22 kHz DDC output admits.
+func neighbourC4FM(n int, offsetHz float64, seed int64) []complex64 {
+	const sampleRate, sps = 48_000.0, 10
+	rng := rand.New(rand.NewSource(seed))
+	dibits := make([]uint8, n/sps+64)
+	for i := range dibits {
+		dibits[i] = uint8(rng.Intn(4))
 	}
-	copy(out[54:78], dmr.BSData.Dibits[:])
-	return out
-}
-
-// countBSDataSyncs counts BS-Data sync words in a dibit stream (≤ 2 dibits
-// off over the 24-dibit word, the usual correlator tolerance).
-func countBSDataSyncs(d []uint8) int {
-	n := 0
-	for i := 0; i+24 <= len(d); i++ {
-		miss := 0
-		for k, s := range dmr.BSData.Dibits {
-			if d[i+k] != s {
-				miss++
-				if miss > 2 {
-					break
-				}
-			}
-		}
-		if miss <= 2 {
-			n++
-			i += 23
-		}
+	iq := demod.ModulateC4FM(dibits, sps, 8, 0.20, sampleRate, 1944.0)
+	if len(iq) > n {
+		iq = iq[:n]
 	}
-	return n
-}
-
-// addComplexNoise adds circular AWGN at rmsDb dBFS to iq in place.
-func addComplexNoise(rng *rand.Rand, iq []complex64, rmsDb float64) {
-	sigma := math.Pow(10, rmsDb/20) / math.Sqrt2
 	for i := range iq {
-		iq[i] += complex(float32(rng.NormFloat64()*sigma), float32(rng.NormFloat64()*sigma))
+		iq[i] *= complex64(cmplx.Rect(1, 2*math.Pi*offsetHz*float64(i)/sampleRate))
 	}
+	return iq
 }
 
-// neighbourScene models the 15/17 Sep IPSC field condition on the 442.3875 MHz
-// wideband tap: the wanted repeater keys in trains with idle gaps, and a
-// second carrier 20 kHz away — inside the tap's ±24 kHz but far outside the
-// 12.5 kHz channel — sits a few dB below the wanted one the whole time (the
-// tap read −52 dBFS in every gap where the capture's in-channel floor was
-// −81 dBFS). Returns the IQ for train 1, the gap and train 2, and the
-// per-train dibit count fed.
-func neighbourScene(rng *rand.Rand) (train1, gap, train2 []complex64) {
-	const (
-		trainBursts = 60 // ≈1.8 s of back-to-back repeater bursts
-		gapSamples  = 48_000 * 3 / 2
-	)
-	train := func() []complex64 {
-		var d []uint8
-		for i := 0; i < trainBursts; i++ {
-			d = append(d, neighbourBurstDibits(rng)...)
-		}
-		return makeC4FMIQWithOffset(d, 0)
-	}
-	train1 = train()
-	train2 = train()
-	gap = make([]complex64, gapSamples)
-	// The neighbour: a continuous 4FSK carrier at −20 kHz, 4 dB BELOW the
-	// wanted signal (the tap read it at −52 dBFS against the repeater's
-	// −48.5), running through all three phases with a continuous phase so
-	// the phases splice cleanly. During a train the FM capture effect lets
-	// the wanted signal win; in the gap the neighbour is all there is.
-	total := len(train1) + len(gap) + len(train2)
-	nd := make([]uint8, total/10+1)
-	for i := range nd {
-		nd[i] = uint8(rng.Intn(4))
-	}
-	nb := makeC4FMIQWithOffset(nd, -20_000)
-	gainN := float32(math.Pow(10, -4.0/20))
-	pos := 0
-	for _, buf := range [][]complex64{train1, gap, train2} {
-		for i := range buf {
-			buf[i] += nb[pos] * complex(gainN, 0)
-			pos++
-		}
-		addComplexNoise(rng, buf, -30)
-	}
-	return train1, gap, train2
-}
-
-// runNeighbourScene feeds the scene through a receiver in RTL-sized chunks
-// and returns the BS-Data syncs recovered from each train plus the coarse
-// carrier offset the receiver ended on.
-func runNeighbourScene(opts Options, train1, gap, train2 []complex64) (syncs1, syncs2 int, offHz float64) {
+// countSyncsFiltered is countBurstSyncs with the channel-select filter
+// switchable.
+func countSyncsFiltered(iq []complex64, chanFilter bool) (total, steady int) {
 	var got []uint8
-	opts.SampleRateHz = 48_000
-	opts.DeviationHz = 1944.0
-	opts.DibitSink = func(d []uint8, _ int) { got = append(got, d...) }
-	r := New(opts)
-	feed := func(iq []complex64) {
-		for i := 0; i < len(iq); i += 4096 {
-			end := i + 4096
-			if end > len(iq) {
-				end = len(iq)
-			}
-			r.Process(iq[i:end])
+	r := New(Options{
+		SampleRateHz:        48_000,
+		DeviationHz:         1944.0,
+		ClockGain:           0.015,
+		EnableChannelFilter: chanFilter,
+		DibitSink:           func(dibits []uint8, baseIdx int) { got = append(got, dibits...) },
+	})
+	const chunk = 4096
+	for i := 0; i < len(iq); i += chunk {
+		end := i + chunk
+		if end > len(iq) {
+			end = len(iq)
+		}
+		r.Process(iq[i:end])
+	}
+	det := dmr.NewSyncDetector([]dmr.SyncPattern{dmr.DMData1}, 2)
+	matches, _ := det.Process(nil, got, 0)
+	for _, m := range matches {
+		if m.Index >= len(got)/2 {
+			steady++
 		}
 	}
-	feed(train1)
-	syncs1 = countBSDataSyncs(got)
-	got = got[:0]
-	feed(gap)
-	got = got[:0]
-	feed(train2)
-	syncs2 = countBSDataSyncs(got)
-	return syncs1, syncs2, r.CoarseCarrierOffsetHz()
+	return len(matches), steady
 }
 
-// TestReceiverIgnoresStrongOffChannelNeighbour pins the channel filter
-// against the 15/17 Sep IPSC field condition: a carrier 20 kHz off the
-// channel, a few dB stronger than the wanted repeater, must not reach the
-// discriminator. Without the filter the neighbour owns the discriminator
-// during the wanted repeater's idle gap, the carrier gate reads it as a
-// present carrier and the coarse acquirer engages at −20 kHz — after which
-// the wanted train is mixed 20 kHz OFF centre and decodes nothing until the
-// wideband engine's heal resets the receiver (the field log's
-// coarse_offset_hz=−20338 heals). With the filter the acquirer never sees
-// it and the second train decodes like the first. Fails against the old
-// receiver (no channel filter: second train ≈ 0 syncs, offset ≈ −20 kHz).
-func TestReceiverIgnoresStrongOffChannelNeighbour(t *testing.T) {
-	rng := rand.New(rand.NewSource(17))
-	train1, gap, train2 := neighbourScene(rng)
-
-	s1, s2, off := runNeighbourScene(Options{ChannelFilterHz: DefaultChannelFilterHz}, train1, gap, train2)
-	t.Logf("channel filter on:  train1 syncs=%d train2 syncs=%d coarse_offset_hz=%.0f", s1, s2, off)
-	u1, u2, uoff := runNeighbourScene(Options{}, train1, gap, train2)
-	t.Logf("channel filter off: train1 syncs=%d train2 syncs=%d coarse_offset_hz=%.0f (the field condition)", u1, u2, uoff)
-
-	if s1 < 50 {
-		t.Fatalf("first train decoded only %d/60 bursts with the neighbour present", s1)
+// TestReceiverChannelFilterRejectsCoPassbandNeighbour is the 15/16 Sep IPSC
+// "deaf tap" regression. The wideband channelizer / DDC hands the receiver a
+// 48 kHz stream whose ±~22 kHz passband is two DMR channels wide either side,
+// and the FM discriminator cannot separate co-passband carriers of comparable
+// power: on the operator's 442.3875 MHz tap an emitter at −20.1 kHz sat at the
+// tap's own level through every idle gap, and the tap decoded nothing while it
+// was up (`sync_hits=0` for minutes at the channel's normal −49..−51 dBFS).
+//
+// Failing-first: a continuous wanted C4FM stream plus an equal-power C4FM
+// neighbour at −20 kHz yields (almost) no burst syncs through the receiver
+// without the channel filter, and the full count with it.
+func TestReceiverChannelFilterRejectsCoPassbandNeighbour(t *testing.T) {
+	const frames = 40
+	bursts := dmHeaderBursts(8)
+	clean := directModeIQ(frames, bursts, false, 0, 0.03, 1)
+	nb := neighbourC4FM(len(clean), -20_000, 7)
+	mixed := make([]complex64, len(clean))
+	for i := range clean {
+		mixed[i] = clean[i] + nb[i]
 	}
-	if s2 < s1*4/5 {
-		t.Fatalf("second train (after an idle gap the neighbour dominated) decoded %d bursts vs %d in the first — the neighbour deafened the receiver", s2, s1)
+
+	cleanTotal, _ := countSyncsFiltered(clean, false)
+	if cleanTotal < frames*8/10 {
+		t.Fatalf("clean fixture: %d syncs of %d, fixture broken", cleanTotal, frames)
 	}
-	if math.Abs(off) > 1000 {
-		t.Fatalf("coarse carrier acquirer engaged at %.0f Hz on the off-channel neighbour", off)
+	oldTotal, _ := countSyncsFiltered(mixed, false)
+	newTotal, _ := countSyncsFiltered(mixed, true)
+	t.Logf("syncs: clean=%d neighbour(unfiltered)=%d neighbour(filtered)=%d of %d", cleanTotal, oldTotal, newTotal, frames)
+	if oldTotal > cleanTotal/2 {
+		t.Fatalf("unfiltered receiver decoded %d/%d syncs with an equal-power −20 kHz neighbour; the fixture does not reproduce the deaf tap", oldTotal, cleanTotal)
+	}
+	if newTotal < cleanTotal*9/10 {
+		t.Fatalf("channel-filtered receiver decoded %d syncs with the neighbour, want ≥ 90%% of the clean %d", newTotal, cleanTotal)
 	}
 }
 
-// TestChannelFilterDesign pins the default filter's shape at the 48 kHz
-// channel rate: flat across the DMR signal out to the acquirer's 6 kHz
-// mistune reach, ≥ 50 dB down from the 12.5 kHz-spaced adjacent channel's
-// far half out to 20 kHz (where the field neighbour sat), and skipped at
-// rates too low to fit a passband.
-func TestChannelFilterDesign(t *testing.T) {
-	taps := channelFilterTaps(48_000, DefaultChannelFilterHz)
-	if taps == nil {
-		t.Fatal("no taps at 48 kHz")
-	}
-	resp := func(fHz float64) float64 {
-		var re, im float64
-		for n, h := range taps {
-			th := -2 * math.Pi * fHz * float64(n) / 48_000
-			re += float64(h) * math.Cos(th)
-			im += float64(h) * math.Sin(th)
-		}
-		return 20 * math.Log10(math.Hypot(re, im))
-	}
-	for _, f := range []float64{0, 1944, 3400, 6000} {
-		if g := resp(f); math.Abs(g) > 0.5 {
-			t.Errorf("passband at %.0f Hz: %.2f dB, want flat within 0.5 dB", f, g)
+// TestReceiverChannelFilterNoHarmOnCleanSignal: the filter passes the wanted
+// signal — a clean stream (with and without a small tuner offset) decodes the
+// same burst syncs with the filter as without.
+func TestReceiverChannelFilterNoHarmOnCleanSignal(t *testing.T) {
+	const frames = 40
+	bursts := dmHeaderBursts(8)
+	for _, offset := range []float64{0, 400, -1200} {
+		iq := directModeIQ(frames, bursts, false, offset, 0.03, 3)
+		off, offSteady := countSyncsFiltered(iq, false)
+		on, onSteady := countSyncsFiltered(iq, true)
+		t.Logf("offset %+.0f Hz: syncs unfiltered=%d (steady %d) filtered=%d (steady %d)", offset, off, offSteady, on, onSteady)
+		if onSteady < offSteady-1 {
+			t.Errorf("offset %+.0f Hz: channel filter lost steady-state syncs: %d → %d", offset, offSteady, onSteady)
 		}
 	}
-	for _, f := range []float64{12_500, 15_000, 20_000, 23_000} {
-		if g := resp(f); g > -50 {
-			t.Errorf("stopband at %.0f Hz: %.1f dB, want ≤ −50 dB", f, g)
+}
+
+// TestChannelFilterKeepsCarrierGateOnDirectMode: the channel filter narrows
+// the receiver noise, and the carrier gate's thresholds must follow it —
+// with the wideband constants a filtered inter-burst gap read as a quiet
+// carrier (variance ~0.5 rad² < the 1.0 open threshold), the gate never
+// closed, and the direct-mode fixture that pins #836 decoded ZERO syncs
+// through the filtered receiver (verified failing-first). The filtered
+// receiver must decode the gapped direct-mode fixture like the unfiltered one.
+func TestChannelFilterKeepsCarrierGateOnDirectMode(t *testing.T) {
+	const frames = 40
+	bursts := dmHeaderBursts(8)
+	for _, offset := range []float64{0, -1200} {
+		iq := directModeIQ(frames, bursts, true, offset, 0.03, 1)
+		off, offSteady := countSyncsFiltered(iq, false)
+		on, onSteady := countSyncsFiltered(iq, true)
+		t.Logf("gapped, offset %+.0f Hz: syncs unfiltered=%d (steady %d) filtered=%d (steady %d)", offset, off, offSteady, on, onSteady)
+		if onSteady < offSteady-1 {
+			t.Errorf("offset %+.0f Hz: filtered receiver lost direct-mode syncs: %d → %d (carrier gate not calibrated to the filtered noise)", offset, offSteady, onSteady)
 		}
 	}
-	if len(taps) > channelFilterMaxTaps {
-		t.Errorf("taps=%d exceeds cap %d", len(taps), channelFilterMaxTaps)
-	}
-	if got := channelFilterTaps(9_600, DefaultChannelFilterHz); got != nil {
-		t.Errorf("filter designed at 9.6 kHz (passband edge past the design limit), want skipped")
+	v := filteredNoiseDiscVariance(filter.LowpassKaiser(181, ChannelCutoffHz/48_000, channelFilterBeta))
+	t.Logf("filtered noise discriminator variance at 48 kHz: %.3f rad² (wideband %.3f)", v, carrierGateNoiseVarianceWideband)
+	if v < 0.2 || v > 1.0 {
+		t.Errorf("filtered noise variance %.3f outside the measured 0.2..1.0 band", v)
 	}
 }

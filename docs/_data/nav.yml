@@ -181,6 +181,10 @@ groups:
         url: /blog/series/p25-end-to-end/
       - title: "Series: From Spec to Shipping"
         url: /blog/series/from-spec-to-shipping/
+      - title: "Series: DMR End to End"
+        url: /blog/series/dmr-end-to-end/
+      - title: "Series: Beyond Voice"
+        url: /blog/series/beyond-voice/
       - title: Tutorials
         url: /blog/category/tutorials/
       - title: "Series: Signal Lab"
@@ -193,6 +197,8 @@ groups:
         url: /blog/series/analog-edge/
       - title: "Series: The Operator's Cookbook"
         url: /blog/series/operator-cookbook/
+      - title: "Series: The Field Notebook"
+        url: /blog/series/field-notebook/
       - title: Solution Postmortem
         url: /blog/category/solution-postmortem/
       - title: "Series: From the Issue Tracker"

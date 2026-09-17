@@ -2063,6 +2063,25 @@ type RecordingsConfig struct {
 	// GopherTrunk scaling on the 10 Sep calibration pairs); 1 is the
 	// equal-power spec reading; a negative value keeps the legacy scaling.
 	UnvoicedGain float64 `yaml:"unvoiced_gain"`
+	// VoiceProfile is an opt-in preset for the vocoder / enhancement
+	// calibration knobs, so an operator picks a reference decoder's balance
+	// by name instead of assembling the individual settings:
+	//
+	//   ""/"mbelib"  — the default: the mbelib / dsd-neo / DSD-FME calibration
+	//                  (unvoiced_gain 5.49, enhance tilt 450 Hz).
+	//   "op25"       — the OP25 / trunk-recorder balance (aliases
+	//                  "trunk-recorder"): unvoiced_gain 1 (the spec's
+	//                  equal-power reading, where OP25's imbe_vocoder sits)
+	//                  and, when recordings.enhance is enabled, the
+	//                  dsd-neo-matched radio tilt off and the rumble
+	//                  high-pass at 100 Hz. Measured on the 10 Sep P25 A/B
+	//                  (same 7-reply conversation decoded by both): long-term
+	//                  log-spectral distance to OP25 3.6 dB → 2.7 dB from the
+	//                  unvoiced level alone.
+	//
+	// The preset only fills knobs left at their zero/default value — an
+	// explicit unvoiced_gain / enhance.tilt_hz / enhance.hpf_hz still wins.
+	VoiceProfile string `yaml:"voice_profile"`
 	// WriteCallJSON writes a trunk-recorder-compatible <basename>.json metadata
 	// sidecar next to each recording (per WAV / per-transmission segment). It
 	// carries the call's talkgroup, source, frequency, timing, flags, and the

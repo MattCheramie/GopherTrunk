@@ -41,7 +41,6 @@ package receiver
 
 import (
 	"math"
-	"math/rand"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
@@ -63,7 +62,30 @@ const (
 	// of the symbol time. 8 symbols (16 total) is the standard
 	// receiver-side compromise between truncation noise and CPU cost.
 	PulseSpanSymbols = 8
+
+	// ChannelCutoffHz is the one-sided cutoff of the optional channel-select
+	// low-pass (Options.EnableChannelFilter): half the 12.5 kHz DMR channel
+	// spacing. The 4FSK signal's Carson bandwidth is ≈ 2·(1944 + 4800·0.6) ≈
+	// 9.6 kHz (±4.8 kHz), so the 6.25 kHz cutoff passes it with margin for a
+	// few hundred hertz of tuner offset, while the 12.5 kHz adjacent channel
+	// (its lower skirt from ≈7.7 kHz) and anything further out are in the
+	// stopband. The wideband channelizer / DDC that feeds the receiver
+	// decimates to 48 kHz and passes ±~22 kHz — two channels either side —
+	// straight into the FM discriminator, where a neighbour of comparable
+	// power breaks FM capture and the wanted signal decodes nothing (the
+	// 15/16 Sep IPSC "deaf tap": a −20.1 kHz emitter at the tap's own level).
+	ChannelCutoffHz = 6250.0
 )
+
+// channelFilterSpanSymbols sets the channel-select FIR length to
+// 2*span*sps+1 taps: 181 taps at the 48 kHz production rate, a Kaiser
+// β=8.6 (~87 dB stopband) skirt ≈1.5 kHz wide, so −20 kHz is gone entirely
+// and the 12.5 kHz adjacent channel is >80 dB down. Mirrors the TETRA
+// receiver's channel filter (tetra/receiver: channelFilterSpanSymbols).
+const channelFilterSpanSymbols = 9
+
+// channelFilterBeta is the Kaiser shape of the channel-select FIR.
+const channelFilterBeta = 8.6
 
 // Options configures a Receiver. Zero-valued fields fall back to the
 // DMR defaults above.
@@ -109,6 +131,15 @@ type Options struct {
 	// 4-level eye. Optional; used by the diagnostic symbol scope.
 	EyeSink func(oversampled []float32, sps int)
 
+	// EnableChannelFilter inserts a ±ChannelCutoffHz channel-select low-pass
+	// ahead of the FM discriminator (after the coarse carrier de-rotation, so
+	// it is centred on the corrected carrier). Off by default so the
+	// synthetic single-carrier fixtures stay byte-identical; every production
+	// pipeline turns it on, because the channelised passband they feed the
+	// receiver is two DMR channels wide either side and an FM discriminator
+	// cannot separate co-passband carriers of comparable power.
+	EnableChannelFilter bool
+
 	// NoCarrierGate disables the per-sample carrier-presence gate that holds
 	// the level / offset / timing trackers across the inter-burst gaps of a
 	// direct-mode (Tier I / simplex) transmission — see carrierGate. The gate
@@ -116,104 +147,6 @@ type Options struct {
 	// a continuous base-station carrier (every sample is present). Exposed
 	// for A/B measurement only; production never sets it.
 	NoCarrierGate bool
-
-	// ChannelFilterHz, when > 0, inserts a linear-phase lowpass on the IQ
-	// (one-sided passband edge = this value) BEFORE the FM discriminator,
-	// after the coarse carrier de-rotation. 0 (the default) means no filter,
-	// so every existing caller is byte-identical. Only meaningful on the
-	// DeviationHz-calibrated path. DefaultChannelFilterHz is the value the
-	// conventional-DMR CC receivers pass.
-	//
-	// It is for the always-listening Tier II CC receiver on a shared
-	// wideband tap: without it the discriminator sees the whole tap
-	// (±24 kHz at the 48 kHz channel rate), so a neighbouring carrier
-	// ~20 kHz off — a few dB below the wanted repeater — dominates the
-	// discriminator whenever the wanted repeater is silent between beacon
-	// trains, engages the coarse carrier acquirer (measured −20.1 kHz on
-	// the 15/17 Sep IPSC field taps) and deafens the channel until the
-	// wideband engine's heal resets it. The filter keeps the neighbour off
-	// the discriminator, the acquirer and the carrier gate, and shrinks the
-	// wanted signal's noise bandwidth from the tap's to the channel's. The
-	// per-call voice chain, which only runs while the wanted signal is
-	// present and is fed an already-channelised DDC stream, does NOT set it.
-	ChannelFilterHz float64
-}
-
-// DefaultChannelFilterHz is the one-sided passband edge of the default DMR
-// channel filter. It is wider than the 6.25 kHz half-channel on purpose: the
-// coarse carrier acquirer (issue #836) has to SEE a mistuned carrier before
-// it can centre it, and a 4FSK signal at ±1944 Hz deviation / 4800 baud
-// (main lobe ≈ ±3.4 kHz) sitting up to 6 kHz off — the widest tuner error
-// the acquirer is pinned to recover — still passes when the edge is at
-// 8 kHz. A 6.25 kHz edge cut that case to the mis-slice floor (measured).
-// The stopband starts at 1.4 × the edge (11.2 kHz), so the neighbour that
-// deafened the 15 Sep field tap (−20.1 kHz) is ≥ 60 dB down and the
-// 12.5 kHz-spaced adjacent channel's near half is in the transition band.
-const DefaultChannelFilterHz = 8000.0
-
-// channelFilterStopbandDb is the stopband attenuation the channel filter is
-// designed for; its transition band is channelFilterTransitionFrac of the
-// passband edge (8 kHz edge → stopband ~60 dB down by 11.2 kHz at 48 kHz).
-const (
-	channelFilterStopbandDb      = 60.0
-	channelFilterTransitionFrac  = 0.4
-	channelFilterMaxTaps         = 255
-	channelFilterMinPassbandFrac = 0.45 // skip the filter when the passband edge is this close to Nyquist
-)
-
-// filteredNoiseDiscVariance measures the discriminator variance of white
-// noise seen through the channel filter taps: a fixed-seed Gaussian IQ
-// sequence is filtered and FM-discriminated exactly as the receiver's front
-// end does, and the mean-removed variance of the result (rad²) is returned.
-// It is what the carrier gate's hysteresis is scaled to. Deterministic, a
-// few tens of thousands of samples, run once per receiver.
-func filteredNoiseDiscVariance(taps []float32) float64 {
-	const n = 32_768
-	rng := rand.New(rand.NewSource(0x5eed))
-	iq := make([]complex64, n)
-	for i := range iq {
-		iq[i] = complex(float32(rng.NormFloat64()), float32(rng.NormFloat64()))
-	}
-	f := filter.NewFIR(taps)
-	filtered := f.Process(nil, iq)
-	disc := demod.NewFM().Process(nil, filtered)
-	// Skip the filter's warm-up.
-	disc = disc[len(taps):]
-	var mean, sq float64
-	for _, x := range disc {
-		mean += float64(x)
-		sq += float64(x) * float64(x)
-	}
-	mean /= float64(len(disc))
-	sq /= float64(len(disc))
-	return sq - mean*mean
-}
-
-// channelFilterTaps designs the pre-discriminator channel filter for
-// sampleRateHz with a one-sided passband edge of cutoffHz (Kaiser-windowed
-// sinc: tap count from the Kaiser estimate for the stopband / transition
-// above, capped). nil when the passband edge is too close to Nyquist for a
-// filter to mean anything (very low sample rates).
-func channelFilterTaps(sampleRateHz, cutoffHz float64) []float32 {
-	if cutoffHz <= 0 || cutoffHz >= channelFilterMinPassbandFrac*sampleRateHz {
-		return nil
-	}
-	transition := channelFilterTransitionFrac * cutoffHz
-	dw := 2 * math.Pi * transition / sampleRateHz
-	n := int(math.Ceil((channelFilterStopbandDb-8)/(2.285*dw))) + 1
-	if n < 3 {
-		n = 3
-	}
-	if n > channelFilterMaxTaps {
-		n = channelFilterMaxTaps
-	}
-	if n%2 == 0 {
-		n++
-	}
-	beta := 0.1102 * (channelFilterStopbandDb - 8.7)
-	// Kaiser design: the cutoff sits mid-transition.
-	fc := (cutoffHz + transition/2) / sampleRateHz
-	return filter.LowpassKaiser(n, fc, beta)
 }
 
 // Receiver is the composed IQ → dibit pipeline. Process is the only
@@ -231,22 +164,10 @@ type Receiver struct {
 
 	mixed []complex64 // scratch for the coarse-acquirer de-rotation (acq path only)
 
-	// chanLPF is the pre-discriminator channel filter (see
-	// Options.ChannelFilterHz); nil when disabled. filtered is its scratch.
-	chanLPF  *filter.FIR
+	// Channel-select low-pass (Options.EnableChannelFilter) and its output
+	// scratch; nil when disabled.
+	chanFilt *filter.FIR
 	filtered []complex64
-	chanWarm int // filter history length: the gate is held open this long after a reset
-	// discDrop is the number of discriminator samples still to zero after a
-	// channel-filter reset. Over the filter's group delay its output is the
-	// switch-on transient of its leading, tiny, sign-alternating taps, not
-	// the carrier: the discriminator reads it as ±π spikes (measured −3.10,
-	// −3.08 rad on the first two samples of a clean fixture that reads ±0.04
-	// unfiltered), and one such spike at the head was enough to send the
-	// timing loop's cold-start pull-in down a different basin than an
-	// identical stream shifted by a few samples. Those samples carry no
-	// information, so they are zeroed (the gate is held open across the
-	// same span). 0 on the unfiltered path, which stays byte-identical.
-	discDrop int
 
 	// Feed-forward symbol-timing acquisition at a new transmission's onset
 	// (issue #836, gate path only). See observeTimingAcq.
@@ -365,26 +286,22 @@ func New(opts Options) *Receiver {
 	// Carrier-presence gate (issue #836): holds the trackers above across the
 	// 32.5 ms noise gaps of a direct-mode transmission. Calibrated path only,
 	// like the trackers it gates, so legacy fixtures stay byte-identical.
-	var chanLPF *filter.FIR
+	var chanFilt *filter.FIR
 	var chanTaps []float32
-	if opts.DeviationHz > 0 && opts.ChannelFilterHz > 0 {
-		if chanTaps = channelFilterTaps(opts.SampleRateHz, opts.ChannelFilterHz); chanTaps != nil {
-			chanLPF = filter.NewFIR(chanTaps)
-		}
+	if opts.EnableChannelFilter {
+		fc := ChannelCutoffHz / opts.SampleRateHz
+		taps := 2*channelFilterSpanSymbols*int(sps+0.5) + 1
+		chanTaps = filter.LowpassKaiser(taps, fc, channelFilterBeta)
+		chanFilt = filter.NewFIR(chanTaps)
 	}
 
 	var gate *carrierGate
 	if opts.DeviationHz > 0 && !opts.NoCarrierGate {
-		if chanTaps != nil {
-			// The gate's hysteresis is a fraction of the noise floor's
-			// discriminator variance, which the channel filter lowers —
-			// measure it through this very filter (see
-			// newCarrierGateForNoise).
-			// The filter's switch-on transient is not a carrier decision
-			// either: hold the gate open over its warm-up (see
-			// carrierGate.holdOpen).
-			gate = newCarrierGateForNoise(sps, filteredNoiseDiscVariance(chanTaps))
-			gate.HoldOpen(len(chanTaps))
+		if chanFilt != nil {
+			// The gate's thresholds are fractions of the noise-only
+			// discriminator variance, which the channel filter narrows
+			// (see newCarrierGateCalibrated).
+			gate = newCarrierGateCalibrated(sps, filteredNoiseDiscVariance(chanTaps))
 		} else {
 			gate = newCarrierGate(sps)
 		}
@@ -397,9 +314,7 @@ func New(opts Options) *Receiver {
 		afc:      afc,
 		acq:      acq,
 		gate:     gate,
-		chanLPF:  chanLPF,
-		chanWarm: len(chanTaps),
-		discDrop: len(chanTaps) / 2,
+		chanFilt: chanFilt,
 		sps:      sps,
 		// Feed-forward timing acquisition rides the gate's presence flags.
 		// It arms only after an absence, so a stream that is present from
@@ -450,16 +365,14 @@ func (r *Receiver) Process(iq []complex64) {
 		r.mixed = r.acq.Mix(r.mixed, iq)
 		src = r.mixed
 	}
-	// Channel filter (see Options.ChannelFilterHz): after the de-rotation so
-	// an engaged coarse correction re-centres the signal in the passband,
-	// before the discriminator so an off-channel neighbour never reaches
-	// it, the carrier gate or the acquirer.
-	if r.chanLPF != nil {
-		r.filtered = r.chanLPF.Process(r.filtered, src)
+	// Channel-select low-pass on the (de-rotated) IQ, so the discriminator
+	// only ever sees this channel. Runs after the coarse de-rotation so a
+	// large tuner offset is corrected before the filter, not clipped by it.
+	if r.chanFilt != nil {
+		r.filtered = r.chanFilt.Process(r.filtered, src)
 		src = r.filtered
 	}
 	r.disc = r.fm.Process(r.disc, src)
-	r.dropFreshDisc()
 	// Per-sample carrier presence (issue #836). nil (all-present) without the
 	// gate, so every gated stage below degrades to its historical behaviour.
 	var present []bool
@@ -519,20 +432,12 @@ func (r *Receiver) Process(iq []complex64) {
 			}
 			r.mixed = r.acq.Mix(r.mixed, iq)
 			src = r.mixed
-			if r.chanLPF != nil {
-				// The filter's history followed the un-corrected stream:
-				// re-filter the re-mixed chunk from a clean history like the
-				// discriminator below.
-				r.chanLPF.Reset()
-				if r.gate != nil {
-					r.gate.HoldOpen(r.chanWarm)
-				}
-				r.filtered = r.chanLPF.Process(r.filtered, src)
+			if r.chanFilt != nil {
+				r.chanFilt.Reset()
+				r.filtered = r.chanFilt.Process(r.filtered, src)
 				src = r.filtered
-				r.discDrop = r.chanWarm / 2
 			}
 			r.disc = r.fm.Process(r.disc, src)
-			r.dropFreshDisc()
 			if r.gate != nil {
 				r.present = r.gate.Process(r.present, r.disc, src)
 				present = r.present
@@ -622,23 +527,6 @@ func (r *Receiver) Process(iq []complex64) {
 	r.dibitBase += len(r.dibits)
 }
 
-// dropFreshDisc zeroes the discriminator output over the channel filter's
-// switch-on transient after a reset (see discDrop). No-op on the unfiltered
-// path, which is left byte-identical.
-func (r *Receiver) dropFreshDisc() {
-	if r.discDrop <= 0 {
-		return
-	}
-	n := r.discDrop
-	if n > len(r.disc) {
-		n = len(r.disc)
-	}
-	for i := 0; i < n; i++ {
-		r.disc[i] = 0
-	}
-	r.discDrop -= n
-}
-
 // Reset returns the receiver to its initial state. Call on stream
 // re-sync (control-channel hunt success, IQ underrun recovery) so
 // the DibitSink baseIdx restarts at 0.
@@ -661,12 +549,8 @@ func (r *Receiver) Reset() {
 	r.clock.Reset()
 	r.fm.Reset()
 	r.mf.Reset()
-	if r.chanLPF != nil {
-		r.chanLPF.Reset()
-		if r.gate != nil {
-			r.gate.HoldOpen(r.chanWarm)
-		}
-		r.discDrop = r.chanWarm / 2
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
 	}
 	r.absentRun = 0
 	r.acqPending = false
@@ -712,18 +596,14 @@ func (r *Receiver) RejectCoarseCarrierOffset(hz float64) bool {
 	// at a wrong instant (the same coarseAcqClockRelockHz rule as engaging).
 	r.fm.Reset()
 	r.mf.Reset()
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
+	}
 	if r.afc != nil {
 		r.afc.Reset()
 	}
 	if r.gate != nil {
 		r.gate.Reset()
-	}
-	if r.chanLPF != nil {
-		r.chanLPF.Reset()
-		if r.gate != nil {
-			r.gate.HoldOpen(r.chanWarm)
-		}
-		r.discDrop = r.chanWarm / 2
 	}
 	if math.Abs(hz) >= coarseAcqClockRelockHz {
 		r.clock.Reset()

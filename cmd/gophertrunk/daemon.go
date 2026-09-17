@@ -2195,6 +2195,9 @@ func (d *Daemon) buildOutboundFeeds(cfg config.Config, log *slog.Logger, dispLoc
 // decode-only recorder so digital voice still reaches the live stream).
 // Extracted verbatim from NewDaemonWithPath.
 func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logger) error {
+	// recordings.voice_profile applied onto the explicit vocoder /
+	// enhance knobs (a preset only fills defaults; explicit values win).
+	voiceCal := cfg.Recordings.ResolveVoiceCalibration()
 	// Recorder is optional; needs a target directory.
 	if cfg.Recordings.Dir != "" {
 		// Default protocol→vocoder map, optionally swapping DMR to the
@@ -2231,11 +2234,13 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
 				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
 			},
-			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			// recordings.voice_profile resolves the reference-decoder preset
+			// onto the explicit knobs (explicit values win).
+			Enhance: enhancerConfigFromYAML(voiceCal.Enhance),
 			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
 			// defaults ON. Applies to the recorded WAV and the live fan-out.
 			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
-			UnvoicedGain:         cfg.Recordings.UnvoicedGain,
+			UnvoicedGain:         voiceCal.UnvoicedGain,
 			Dedup: voice.DedupConfig{
 				Enabled: cfg.Recordings.Dedup.Enabled,
 				Window:  cfg.Recordings.Dedup.Window(),
@@ -2271,11 +2276,11 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			DisplayLoc:         cfg.Display.Location(),
 			// Voice enhancement operates on decoded PCM, so it applies to the
 			// live stream too; loudness/normalize are file-only and omitted.
-			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
+			Enhance: enhancerConfigFromYAML(voiceCal.Enhance),
 			// Spec-faithful §6.2 spectral-amplitude enhancement: tri-state,
 			// defaults ON. Live decode-only path (no files).
 			SpecAmplitudeEnhance: cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
-			UnvoicedGain:         cfg.Recordings.UnvoicedGain,
+			UnvoicedGain:         voiceCal.UnvoicedGain,
 		})
 		if err != nil {
 			return fmt.Errorf("daemon: voice decoder: %w", err)

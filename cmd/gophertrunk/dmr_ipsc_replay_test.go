@@ -171,10 +171,10 @@ func TestDMRIPSCReplay(t *testing.T) {
 	)
 	var allDibits []uint8
 	rx := dmrrx.New(dmrrx.Options{
-		SampleRateHz:    outRate,
-		DeviationHz:     1944.0,
-		ClockGain:       0.015,
-		ChannelFilterHz: dmrHarnessChannelFilterHz(),
+		SampleRateHz:        outRate,
+		DeviationHz:         1944.0,
+		ClockGain:           0.015,
+		EnableChannelFilter: dmrHarnessChannelFilter(),
 		DibitSink: func(dibits []uint8, _ int) {
 			allDibits = append(allDibits, dibits...)
 		},
@@ -334,15 +334,13 @@ func lcCallDestinationForReplay(flc dmr.FLC) (uint32, bool) {
 	return 0, false
 }
 
-// dmrHarnessChannelFilterHz is the pre-discriminator channel filter cutoff the
-// DMR replay harnesses build their (Tier II CC) receiver with — the production
-// default, unless GT_DMR_NO_CHANNEL_FILTER=1 disables it (returns 0), the A/B
+// dmrHarnessChannelFilter reports whether the DMR replay harnesses build their
+// (Tier II CC) receiver with the pre-discriminator channel-select filter — the
+// production default, unless GT_DMR_NO_CHANNEL_FILTER=1 disables it, the A/B
 // instrument for a capture that decodes differently with and without it.
-func dmrHarnessChannelFilterHz() float64 {
-	if v := os.Getenv("GT_DMR_NO_CHANNEL_FILTER"); v == "1" || v == "true" {
-		return 0
-	}
-	return dmrrx.DefaultChannelFilterHz
+func dmrHarnessChannelFilter() bool {
+	v := os.Getenv("GT_DMR_NO_CHANNEL_FILTER")
+	return v != "1" && v != "true"
 }
 
 // readDMRCaptureIQ loads a DMR IQ capture for the replay harnesses. A wav/flac

@@ -11,9 +11,14 @@
 // retuned, so a centre only applies to a narrowband slice). Both are errors
 // now, and the only silent path left is the one that was asked for: blank
 // fields ⇒ a full-band grab at the tuner centre.
+//
+// Several centres ("442.3875, 443.2375" — comma, semicolon or whitespace
+// separated) become centers_hz: the daemon records every slice from the same
+// live stream, so the staged files are sample-synchronous.
 export interface CaptureTuning {
   center_hz?: number;
   bandwidth_hz?: number;
+  centers_hz?: number[];
 }
 
 export type CaptureTuningResult =
@@ -35,6 +40,27 @@ function parsePositive(label: string, raw: string, unit: string): number | strin
   return v;
 }
 
+// splitCentres tokenises the Center MHz field into one entry per centre.
+// Whitespace and semicolons always separate; a comma separates only when
+// every piece around it carries a decimal point ("442.3875,443.2375"), so a
+// DECIMAL comma ("442,8125") is left as one token and rejected as not-a-number
+// by the caller instead of being read as two centres (the 15 Sep guard).
+function splitCentres(raw: string): string[] {
+  const out: string[] = [];
+  for (const tok of raw.split(/[;\s]+/)) {
+    if (!tok) continue;
+    if (tok.includes(",")) {
+      const pieces = tok.split(",").filter((p) => p.length > 0);
+      if (pieces.length > 0 && pieces.every((p) => p.includes("."))) {
+        out.push(...pieces);
+        continue;
+      }
+    }
+    out.push(tok);
+  }
+  return out;
+}
+
 export function parseCaptureTuning(centerMHz: string, bandwidthKHz: string): CaptureTuningResult {
   const tuning: CaptureTuning = {};
   if (bandwidthKHz.trim()) {
@@ -42,9 +68,14 @@ export function parseCaptureTuning(centerMHz: string, bandwidthKHz: string): Cap
     if (typeof v === "string") return { ok: false, error: v };
     tuning.bandwidth_hz = Math.round(v * 1e3);
   }
-  if (centerMHz.trim()) {
-    const v = parsePositive("Center MHz", centerMHz, "MHz");
-    if (typeof v === "string") return { ok: false, error: v };
+  const parts = splitCentres(centerMHz);
+  if (parts.length > 0) {
+    const centers: number[] = [];
+    for (const part of parts) {
+      const v = parsePositive("Center MHz", part, "MHz");
+      if (typeof v === "string") return { ok: false, error: v };
+      centers.push(Math.round(v * 1e6));
+    }
     if (tuning.bandwidth_hz === undefined) {
       return {
         ok: false,
@@ -54,7 +85,14 @@ export function parseCaptureTuning(centerMHz: string, bandwidthKHz: string): Cap
           "grab at the tuner centre",
       };
     }
-    tuning.center_hz = Math.round(v * 1e6);
+    if (new Set(centers).size !== centers.length) {
+      return { ok: false, error: "Center MHz lists the same frequency twice" };
+    }
+    if (centers.length === 1) {
+      tuning.center_hz = centers[0];
+    } else {
+      tuning.centers_hz = centers;
+    }
   }
   return { ok: true, tuning };
 }

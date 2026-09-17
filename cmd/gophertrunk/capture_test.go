@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"math/cmplx"
 	"os"
 	"path/filepath"
 	"strings"
@@ -431,5 +432,86 @@ func TestCaptureWarnsOnADCRailOverload(t *testing.T) {
 	}
 	if w := formatClipWarning(0, -1); w != "" {
 		t.Errorf("a clean capture must not warn, got %q", w)
+	}
+}
+
+// TestCaptureToFilesSlicesAreSampleSynchronous: `capture -centers` records
+// several slices from ONE stream, so a keyup that lands on two carriers at the
+// same instant sits at the same sample index in both files (16 Sep request:
+// time-synced small recordings of two IPSC repeaters).
+func TestCaptureToFilesSlicesAreSampleSynchronous(t *testing.T) {
+	const rate = 480_000
+	const onset = rate / 2
+	src := make(chan []complex64, 64)
+	go func() {
+		defer close(src)
+		const chunk = 4096
+		for i := 0; i < rate; i += chunk {
+			buf := make([]complex64, chunk)
+			for j := range buf {
+				n := i + j
+				if n >= onset {
+					tt := float64(n) / rate
+					buf[j] = complex64(cmplx.Rect(0.5, 2*math.Pi*50_000*tt) + cmplx.Rect(0.5, 2*math.Pi*-120_000*tt))
+				}
+			}
+			src <- buf
+		}
+	}()
+	dir := t.TempDir()
+	paths := []string{filepath.Join(dir, "a.raw"), filepath.Join(dir, "b.raw")}
+	ddcs := []*ccdecoder.Downconverter{
+		ccdecoder.NewDownconverterWithOffset(rate, 25_000, 50_000),
+		ccdecoder.NewDownconverterWithOffset(rate, 25_000, -120_000),
+	}
+	written, _, err := captureToFiles(context.Background(), paths, siglab.FormatS16, src, rate, 1.0, ddcs)
+	if err != nil {
+		t.Fatalf("captureToFiles: %v", err)
+	}
+	if written[0] == 0 || written[0] != written[1] {
+		t.Fatalf("written = %v, want equal non-zero counts", written)
+	}
+	var onsets []int
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec, bpp := siglab.FormatS16.Decoder()
+		samples := make([]complex64, len(raw)/bpp)
+		dec(raw, samples)
+		var peak float64
+		for _, v := range samples {
+			if m := cmplx.Abs(complex128(v)); m > peak {
+				peak = m
+			}
+		}
+		on := -1
+		for i, v := range samples {
+			if cmplx.Abs(complex128(v)) > peak/2 {
+				on = i
+				break
+			}
+		}
+		onsets = append(onsets, on)
+	}
+	t.Logf("written %v, keyup onsets %v", written, onsets)
+	if onsets[0] < 0 || onsets[1] < 0 || onsets[0]-onsets[1] > 1 || onsets[1]-onsets[0] > 1 {
+		t.Errorf("keyup onsets %v differ; slices must be sample-synchronous", onsets)
+	}
+}
+
+func TestCaptureSlicePathAndCenters(t *testing.T) {
+	if got := captureSlicePath("/tmp/ipsc.flac", 442_387_500); got != "/tmp/ipsc-442.3875MHz.flac" {
+		t.Errorf("captureSlicePath = %q", got)
+	}
+	cs, err := parseCaptureCenters(" 442387500, 443237500 ")
+	if err != nil || len(cs) != 2 || cs[1] != 443_237_500 {
+		t.Errorf("parseCaptureCenters = %v, %v", cs, err)
+	}
+	for _, bad := range []string{"", "442.3875", "442387500,442387500", "0"} {
+		if _, err := parseCaptureCenters(bad); err == nil {
+			t.Errorf("parseCaptureCenters(%q) accepted", bad)
+		}
 	}
 }

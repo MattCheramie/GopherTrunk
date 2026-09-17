@@ -100,7 +100,7 @@ func (c *Client) GetCountyInfo(ctx context.Context, ctid int) ([]System, error) 
 		return nil, err
 	}
 	var out []System
-	for _, block := range blocks(raw, "trsList") {
+	for _, block := range listEntries(raw, "trsList") {
 		leaves := firstLeaves(block, "sid", "sName", "sType")
 		if leaves["sid"] == "" {
 			continue
@@ -205,6 +205,28 @@ func firstLeaves(raw []byte, names ...string) map[string]string {
 		case xml.EndElement:
 			cur = ""
 		}
+	}
+	return out
+}
+
+// listEntries returns one raw XML block per ENTRY of a RadioReference list
+// element. The service's PHP SoapServer encodes an rpc/encoded array as ONE
+// wrapper element carrying repeated <item> children
+// (<trsList SOAP-ENC:arrayType="ns1:Trs[2]"><item>…</item><item>…</item></trsList>),
+// so walking the wrapper with firstLeaves yields only the first entry — the
+// "zip search returns very limited results" symptom of issue #1197. A wrapper
+// with no <item> children (the document-style shape the earlier fixtures
+// assumed, one wrapper per entry) is returned as the entry itself, so both
+// encodings parse to the same list.
+func listEntries(raw []byte, name string) [][]byte {
+	var out [][]byte
+	for _, block := range blocks(raw, name) {
+		items := blocks(block, "item")
+		if len(items) == 0 {
+			out = append(out, block)
+			continue
+		}
+		out = append(out, items...)
 	}
 	return out
 }

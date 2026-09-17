@@ -40,11 +40,11 @@ func TestReceiverRealAirKeyupDecodes(t *testing.T) {
 	iq := readCS16(t, "testdata/dmr-ipsc-442.3875-keyup-17sep-48k.cs16")
 	var got []uint8
 	r := New(Options{
-		SampleRateHz:    48_000,
-		DeviationHz:     1944.0,
-		ClockGain:       0.015,
-		ChannelFilterHz: DefaultChannelFilterHz,
-		DibitSink:       func(d []uint8, _ int) { got = append(got, d...) },
+		SampleRateHz:        48_000,
+		DeviationHz:         1944.0,
+		ClockGain:           0.015,
+		EnableChannelFilter: true,
+		DibitSink:           func(d []uint8, _ int) { got = append(got, d...) },
 	})
 	const chunk = 4096 // RTL-sized
 	for i := 0; i < len(iq); i += chunk {

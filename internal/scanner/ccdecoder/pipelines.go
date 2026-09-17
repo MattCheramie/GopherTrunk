@@ -1194,6 +1194,11 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// FM-discriminator output level so live captures slice
 		// correctly out of the box.
 		DeviationHz: 1944.0,
+		// Channel-select low-pass ahead of the FM discriminator (see
+		// dmrrx.ChannelCutoffHz): the 48 kHz channel stream passes two
+		// DMR channels either side, and a co-passband carrier of
+		// comparable power blinds an FM discriminator (16 Sep IPSC deaf tap).
+		EnableChannelFilter: true,
 		// ClockGain tuned smaller than the 0.05 default — at
 		// 1944 Hz deviation the per-sample phase excursion is
 		// ~8% larger than P25 P1's, and the standard MM gain
@@ -1202,11 +1207,6 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// and stays well within the loop's noise margin for
 		// live captures.
 		ClockGain: 0.025,
-		// Channel filter on the shared wideband tap: keep an off-channel
-		// neighbour off the discriminator/acquirer so it can't engage the
-		// coarse carrier stage and deafen this tap during the CC's idle
-		// gaps (15/17 Sep IPSC field taps).
-		ChannelFilterHz: dmrrx.DefaultChannelFilterHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
@@ -1305,6 +1305,11 @@ func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  1944.0,
+		// Channel-select low-pass ahead of the FM discriminator (see
+		// dmrrx.ChannelCutoffHz): the 48 kHz channel stream passes two
+		// DMR channels either side, and a co-passband carrier of
+		// comparable power blinds an FM discriminator (16 Sep IPSC deaf tap).
+		EnableChannelFilter: true,
 		// ClockGain lowered to 0.015 vs Tier III's 0.025 because Tier
 		// II Voice LC Header bursts have a higher per-symbol
 		// transition magnitude than Tier III's CSBK Aloha bursts
@@ -1319,11 +1324,6 @@ func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// 0.015 value still sits well within the loop's noise
 		// margin per the MM stability bound.
 		ClockGain: 0.015,
-		// Channel filter on the shared wideband tap: keep an off-channel
-		// neighbour off the discriminator/acquirer so it can't engage the
-		// coarse carrier stage and deafen this tap during the CC's idle
-		// gaps (15/17 Sep IPSC field taps).
-		ChannelFilterHz: dmrrx.DefaultChannelFilterHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
@@ -1365,7 +1365,12 @@ func newDMRTier1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  1944.0,
-		ClockGain:    0.015, // same as Tier II (identical burst symbol statistics)
+		// Channel-select low-pass ahead of the FM discriminator (see
+		// dmrrx.ChannelCutoffHz): the 48 kHz channel stream passes two
+		// DMR channels either side, and a co-passband carrier of
+		// comparable power blinds an FM discriminator (16 Sep IPSC deaf tap).
+		EnableChannelFilter: true,
+		ClockGain:           0.015, // same as Tier II (identical burst symbol statistics)
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)

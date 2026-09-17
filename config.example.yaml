@@ -233,6 +233,11 @@ recordings:
                        # amplitude. 0 = default 5.49 (mbelib / DSD level; the old GopherTrunk
                        # scaling sat 6-15 dB below it = muffled, consonant-less speech);
                        # 1 = equal-power spec reading; <0 = legacy scaling.
+  voice_profile: ""    # reference-decoder balance preset: "" / mbelib = the default dsd-neo / DSD-FME
+                       # calibration (unvoiced_gain 5.49, enhance tilt 450 Hz); op25 (alias
+                       # trunk-recorder) = the OP25 / trunk-recorder balance (unvoiced_gain 1, and with
+                       # enhance on: tilt off, hpf_hz 100). Measured on the 10 Sep P25 A/B. Only fills
+                       # knobs left at their default — explicit values above/below still win.
   warm_dmr_audio: false  # opt-in: warmer DMR vocoder (gentle high-shelf, softens the bright software-AMBE+2 timbre; superseded by enhance, DMR only)
   equalizer:
     enabled: false  # CMA blind equalizer in the FM voice chain (simulcast mitigation)
