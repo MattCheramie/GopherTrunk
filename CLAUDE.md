@@ -1667,6 +1667,55 @@ confirmation before any close-as-completed.
   (different bandwidths ⇒ different group delays ⇒ not aligned); sidecars carry
   `capture_group` / index / size / `capture_started_at`. Up to 8 slices; each is a full
   polyphase DDC on the capture goroutine, and the broker drops chunks to a slow consumer.
+- **17 Sep IPSC "Fire2" 600 s capture (442.3875 MHz, 25 kS/s flac + debug.log): three MORE
+  defects beyond the channel filter above — a deaf-heal that false-fires every idle gap, a
+  re-key that drops both overs' recordings, and a late first grant.** Same tap as the 16 Sep
+  note (idle-beacon repeater, cc 12, tg 11 src 199, ~10 s beacon trains / ~5–9 s gaps, the
+  −20 kHz neighbour). With `EnableChannelFilter` on the CC taps the neighbour is gone; these
+  three are independent, each pinned failing-first:
+  1. **Deaf-heal false-fires every idle gap (7 heals in 3 min).** `healDeafTier2`'s
+     decoding-level reference (`decodeDbFS`) took the mean power of the ~1 s window that
+     STRADDLES a train's tail — a few syncs over mostly-gap samples reads −63/−61 dBFS — as
+     the channel's level, so the next gap windows (−65 dBFS, inside the 6 dB margin) read
+     "deaf at its decoding level" and reset a healthy receiver. Fix: the reference rises to
+     any synced window at once but falls by at most `tier2DeafRefDecayDb`=1 dB per synced
+     window, so a single edge window cannot drag it into the gap while a genuine level change
+     still tracks within a few windows. Pinned by `TestDeafHealIgnoresTrainEdgeWindow` /
+     `TestDeafHealTracksGenuineLevelChange` (`engine_deafheal_test.go`).
+  2. **A re-key within hangtime dropped BOTH overs' recordings.** The composer runs the
+     recorder drain-coordinated, so on a Voice-LC-Header re-key (the engine ends the previous
+     call and grants the next in the same instant) the previous call's `CallEnd` is deferred
+     waiting for the chain's drain signal when the next `CallStart` lands. `handleStart`'s
+     "device already has session, replacing" path then closed the previous session WITHOUT
+     finalizing it (no CallComplete, no sidecar, no history row), and the previous call's late
+     drain signal finalized the NEW session before its first frame (files open lazily, so
+     silently) — every frame of the next over dropped. The field log's lone "replacing" WARN
+     is exactly this. Fix: `finalizeDrainingBeforeReuse` finalizes the deferred previous call
+     with its own `CallEnd` before the reuse, and every finalize/drain path is now fenced by
+     `Grant.CallID` (`callIDsDiffer`, `NotifyDrainCompleteForCall` threaded
+     composer→fanout→recorder) so a stale drain can neither finalize nor pre-drain the next
+     over. Pinned by `TestRecorderRekeyDuringPendingDrainKeepsNextOver` (old recorder records
+     one over and emits one CallComplete; fixed records both).
+  3. **The first grant slid 3.4 s late — the channel filter fixes it; a false timing seed was
+     a smaller contributor.** In the offline 600 s replay the FIRST grant moves 3.41 s →
+     0.85 s with the channel filter alone (`GT_DMR_NO_CHANNEL_FILTER=1` puts it back to
+     3.41 s): the cold-start receiver sits through the opening idle gap where the −20 kHz
+     neighbour engages the coarse acquirer, and the filter keeps that from displacing the
+     first keyup's header decode. Separately, the #836 feed-forward timing acquisition seeded
+     the loop from a SINGLE eye-estimator window; the repeater keys up with ~40 ms of
+     near-unmodulated carrier, and a window straddling that transient could seed a phase
+     ~2 samples off and displace the loop's still-valid held phase. The seed now requires TWO
+     consecutive windows whose symbol instants agree within `timingAcqAgreeSamples`=1
+     (mirroring the coarse acquirer's two-windows-agree rule); after `timingAcqMaxWindows`=4
+     disagreeing windows it gives up and the loop pulls in on its own, as before. Its measured
+     effect on this capture is small (superframes 215→216, late_entries 2→1) and it is
+     byte-identical on continuous streams. Real-air smoke test
+     `dmr-ipsc-442.3875-keyup-17sep-48k.cs16` (`TestReceiverRealAirKeyupDecodes`) pins that
+     the production CC config decodes this keyup's header train. Full-replay net: 17→17 grants,
+     first grant 3.41 s → 0.85 s, superframes 213→216.
+  STILL ON-AIR-GATED (#764/#771): the daemon-path A/B (does the live tap stop the every-gap
+  heals, does a re-key now record both overs, does the first PTT of a train grant on its
+  header) needs the operator's next live run on a build with these fixes.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

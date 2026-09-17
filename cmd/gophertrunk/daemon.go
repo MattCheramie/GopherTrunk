@@ -5095,6 +5095,20 @@ func (f fanoutSink) NotifyDrainComplete(serial string) {
 	}
 }
 
+// NotifyDrainCompleteForCall forwards the call-aware drain signal (the composer
+// prefers it so a re-keyed serial's late drain is matched to its own call);
+// sinks that only know the plain form get that.
+func (f fanoutSink) NotifyDrainCompleteForCall(serial string, callID uint64) {
+	for _, s := range f {
+		switch dc := s.(type) {
+		case interface{ NotifyDrainCompleteForCall(string, uint64) }:
+			dc.NotifyDrainCompleteForCall(serial, callID)
+		case interface{ NotifyDrainComplete(string) }:
+			dc.NotifyDrainComplete(serial)
+		}
+	}
+}
+
 // toneProfilesFromConfig converts the YAML config shape into the
 // internal toneout.Profile shape, parsing duration strings.
 func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {

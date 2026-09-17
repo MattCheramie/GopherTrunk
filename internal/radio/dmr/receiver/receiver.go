@@ -178,6 +178,9 @@ type Receiver struct {
 	acqSkip     int       // present samples still to skip before the window opens
 	acqBuf      []float32 // matched-filter samples of the window (contiguous)
 	acqStart    int       // global sample index of acqBuf[0]
+	acqHaveCand bool      // a previous window's estimate is awaiting confirmation
+	acqCandInst float64   // that estimate's symbol instant (global sample index)
+	acqWindows  int       // windows evaluated since arming (see timingAcqMaxWindows)
 	sampleBase  int       // global index of the current chunk's first sample
 	timingSeeds int       // seeds applied so far (diagnostics)
 	symbols2    []float32 // scratch: symbols after a mid-chunk seed

@@ -71,7 +71,29 @@ func (r *Receiver) armTimingAcq() {
 	r.acqPending = true
 	r.acqSkip = int(timingAcqSkipSymbols * r.sps)
 	r.acqBuf = r.acqBuf[:0]
+	r.acqHaveCand = false
+	r.acqWindows = 0
 }
+
+// timingAcqAgreeSamples / timingAcqMaxWindows gate the seed on agreement
+// between consecutive windows, mirroring the coarse carrier acquirer's
+// two-windows-agree rule. One window is not evidence: a repeater keys up
+// with tens of milliseconds of near-unmodulated carrier before its first
+// burst (17 Sep IPSC capture, 442.3875 MHz: 40 ms at 8 % outer symbols
+// after a 0.4 s unkey), and a window straddling that transient and the
+// first data passed the estimator's eye gates with a phase ~2 samples off
+// — displacing the loop's still-valid held phase and costing the whole
+// Voice LC Header train (0.5 s of pull-in at the pipelines' gain). Two
+// windows whose symbol instants agree modulo the symbol period (a real
+// transmitter's clock drifts well under a sample between them) are; the
+// candidate survives a short absence (a direct-mode burst gap), so a
+// handheld confirms across its first two bursts. After
+// timingAcqMaxWindows disagreeing windows the acquisition gives up and
+// the loop pulls in on its own, as before the acquisition existed.
+const (
+	timingAcqAgreeSamples = 1.0
+	timingAcqMaxWindows   = 4
+)
 
 // observeTimingAcq walks this chunk's presence flags (aligned with r.matched),
 // arming a window at every new-transmission onset and filling the armed one.
@@ -117,16 +139,44 @@ func (r *Receiver) observeTimingAcq(present []bool) (k int, mu float64, seed boo
 			continue
 		}
 		tau, ok := sync.EstimateSymbolPhase(r.acqBuf, r.sps)
-		r.acqPending = false
+		start := r.acqStart
 		r.acqBuf = r.acqBuf[:0]
+		r.acqWindows++
 		if !ok {
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending = false
+				r.acqHaveCand = false
+			}
 			continue
 		}
-		// The symbol instants sit at acqStart + tau + n·sps. The loop's next
-		// instant must be the first of those past the last sample it will
-		// have processed before the seed, chunk sample i.
+		// The symbol instants sit at start + tau + n·sps. Confirm the
+		// estimate against the previous window's (see timingAcqAgreeSamples)
+		// before touching the loop.
+		inst := float64(start) + tau
+		if !r.acqHaveCand {
+			r.acqHaveCand = true
+			r.acqCandInst = inst
+			continue
+		}
+		d := math.Mod(inst-r.acqCandInst, r.sps)
+		if d > r.sps/2 {
+			d -= r.sps
+		} else if d < -r.sps/2 {
+			d += r.sps
+		}
+		if math.Abs(d) > timingAcqAgreeSamples {
+			r.acqCandInst = inst
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending = false
+				r.acqHaveCand = false
+			}
+			continue
+		}
+		r.acqPending = false
+		r.acqHaveCand = false
+		// The loop's next instant must be the first of those past the last
+		// sample it will have processed before the seed, chunk sample i.
 		last := float64(r.sampleBase + i)
-		inst := float64(r.acqStart) + tau
 		if inst <= last {
 			inst += math.Ceil((last-inst)/r.sps) * r.sps
 			if inst <= last {
