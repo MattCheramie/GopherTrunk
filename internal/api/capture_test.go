@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
+	"math/cmplx"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -600,5 +602,137 @@ func TestSiglabCaptureLogsStartAndEnd(t *testing.T) {
 	out = logs.String()
 	if !strings.Contains(out, `msg="siglab: capture aborted"`) || !strings.Contains(out, "tuner went away") {
 		t.Errorf("aborted capture not logged with its error; log was:\n%s", out)
+	}
+}
+
+// TestSiglabCaptureMultiSliceIsSampleAligned: centers_hz records several
+// narrowband slices from the same live stream, and the staged files must be
+// sample-synchronous (16 Sep request: "2-3 frequencies to record at the same
+// time … synchronized"). The fake tuner carries two carriers that key up at
+// the same instant; the onset lands on the same sample index in both slices,
+// the slices share a capture group, and every slice is staged + downloadable.
+func TestSiglabCaptureMultiSliceIsSampleAligned(t *testing.T) {
+	const rate = 1_200_000
+	const centerHz = 460_000_000
+	const onset = rate / 2        // both carriers key 0.5 s in
+	iq := make([]complex64, rate) // 1 s
+	for i := onset; i < len(iq); i++ {
+		tt := float64(i) / rate
+		a := cmplx.Rect(0.5, 2*math.Pi*100_000*tt)  // +100 kHz
+		b := cmplx.Rect(0.5, 2*math.Pi*-250_000*tt) // −250 kHz
+		iq[i] = complex64(a + b)
+	}
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      iq,
+		rate:    rate,
+		center:  centerHz,
+		chunks:  37,
+	}
+	ts := newCaptureTestServer(t, prov)
+
+	body := `{"serial":"SDR1","seconds":1,"format":"cs16","bandwidth_hz":25000,"centers_hz":[460100000,459750000]}`
+	cResp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("POST capture: %v", err)
+	}
+	defer cResp.Body.Close()
+	if cResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(cResp.Body)
+		t.Fatalf("status = %d, want 200 (%s)", cResp.StatusCode, b)
+	}
+	var cr captureResponse
+	if err := json.NewDecoder(cResp.Body).Decode(&cr); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(cr.Captures) != 2 {
+		t.Fatalf("captures = %d, want 2", len(cr.Captures))
+	}
+	if cr.Capture.ID != cr.Captures[0].Capture.ID || cr.DownloadURL != cr.Captures[0].DownloadURL {
+		t.Errorf("top-level capture must mirror the first slice: %+v vs %+v", cr.Capture, cr.Captures[0].Capture)
+	}
+	g := cr.Captures[0].Capture.Group
+	if g == "" || cr.Captures[1].Capture.Group != g {
+		t.Errorf("slices must share a capture group: %q / %q", g, cr.Captures[1].Capture.Group)
+	}
+	if cr.Captures[0].Metadata.CaptureGroup != g || cr.Captures[1].Metadata.CaptureGroupIndex != 1 ||
+		cr.Captures[1].Metadata.CaptureGroupSize != 2 || cr.Captures[0].Metadata.CaptureStartedAt == "" {
+		t.Errorf("metadata group fields: %+v / %+v", cr.Captures[0].Metadata, cr.Captures[1].Metadata)
+	}
+	if cr.Captures[0].Metadata.CenterFreqHz != 460_100_000 || cr.Captures[1].Metadata.CenterFreqHz != 459_750_000 {
+		t.Errorf("slice centres = %d / %d", cr.Captures[0].Metadata.CenterFreqHz, cr.Captures[1].Metadata.CenterFreqHz)
+	}
+	if cr.Captures[0].Capture.SampleRateHz != cr.Captures[1].Capture.SampleRateHz {
+		t.Errorf("slice rates differ: %g vs %g", cr.Captures[0].Capture.SampleRateHz, cr.Captures[1].Capture.SampleRateHz)
+	}
+
+	// Download both, decode cs16, find the keyup onset in each.
+	var onsets []int
+	var lengths []int
+	for _, sl := range cr.Captures {
+		dl, err := http.Get(ts.URL + sl.DownloadURL)
+		if err != nil {
+			t.Fatalf("download: %v", err)
+		}
+		raw, _ := io.ReadAll(dl.Body)
+		dl.Body.Close()
+		dec, bpp := siglab.FormatS16.Decoder()
+		samples := make([]complex64, len(raw)/bpp)
+		dec(raw, samples)
+		lengths = append(lengths, len(samples))
+		var peak float64
+		for _, v := range samples {
+			if m := cmplx.Abs(complex128(v)); m > peak {
+				peak = m
+			}
+		}
+		on := -1
+		for i, v := range samples {
+			if cmplx.Abs(complex128(v)) > peak/2 {
+				on = i
+				break
+			}
+		}
+		onsets = append(onsets, on)
+	}
+	t.Logf("slice lengths %v, keyup onsets %v (samples at %g Hz)", lengths, onsets, cr.Capture.SampleRateHz)
+	if lengths[0] != lengths[1] {
+		t.Errorf("slice lengths differ: %v", lengths)
+	}
+	if onsets[0] < 0 || onsets[1] < 0 {
+		t.Fatalf("no keyup found in a slice: %v", onsets)
+	}
+	if d := onsets[0] - onsets[1]; d > 1 || d < -1 {
+		t.Errorf("keyup onset differs between slices by %d samples; the slices must be sample-synchronous", d)
+	}
+}
+
+// TestSiglabCaptureMultiSliceRejects pins the request-shape errors of
+// centers_hz: no bandwidth, mixed with center_hz, duplicates, out of span,
+// too many.
+func TestSiglabCaptureMultiSliceRejects(t *testing.T) {
+	prov := &fakeCaptureProvider{
+		devices: []SpectrumDevice{{Serial: "SDR1", Driver: "mock"}},
+		iq:      make([]complex64, 4096),
+		rate:    2_400_000,
+		center:  460_000_000,
+	}
+	ts := newCaptureTestServer(t, prov)
+	for name, body := range map[string]string{
+		"no bandwidth": `{"serial":"SDR1","seconds":1,"format":"cs16","centers_hz":[460100000,460200000]}`,
+		"mixed":        `{"serial":"SDR1","seconds":1,"format":"cs16","bandwidth_hz":25000,"center_hz":460100000,"centers_hz":[460200000]}`,
+		"duplicate":    `{"serial":"SDR1","seconds":1,"format":"cs16","bandwidth_hz":25000,"centers_hz":[460100000,460100000]}`,
+		"out of span":  `{"serial":"SDR1","seconds":1,"format":"cs16","bandwidth_hz":25000,"centers_hz":[460100000,463000000]}`,
+		"too many":     `{"serial":"SDR1","seconds":1,"format":"cs16","bandwidth_hz":25000,"centers_hz":[460100000,460200000,460300000,460400000,460500000,460600000,460700000,460800000,460900000]}`,
+	} {
+		resp, err := http.Post(ts.URL+"/api/v1/siglab/capture", "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatalf("%s: POST: %v", name, err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400 (%s)", name, resp.StatusCode, b)
+		}
 	}
 }

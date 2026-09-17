@@ -718,6 +718,12 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DibitSink:    dmr.DibitSink(func(d []uint8, b int) { cc.Process(d, b) }),
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier3,
+			// Channel-select low-pass ahead of the FM discriminator: the tap's
+			// 48 kHz stream passes two DMR channels either side, and an FM
+			// discriminator cannot separate co-passband carriers of comparable
+			// power — the 15/16 Sep IPSC "deaf tap" (a −20.1 kHz emitter at the
+			// tap's own level through every idle gap). See dmrrx.ChannelCutoffHz.
+			EnableChannelFilter: true,
 		})
 		// Decode-drought watchdog, mirroring the ccdecoder dmrPipeline: the
 		// CC's burst buffer keys on absolute dibit indices, so the receiver
@@ -747,6 +753,12 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DibitSink:    dmr.DibitSink(func(d []uint8, b int) { cc.Process(d, b) }),
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier2,
+			// Channel-select low-pass ahead of the FM discriminator: the tap's
+			// 48 kHz stream passes two DMR channels either side, and an FM
+			// discriminator cannot separate co-passband carriers of comparable
+			// power — the 15/16 Sep IPSC "deaf tap" (a −20.1 kHz emitter at the
+			// tap's own level through every idle gap). See dmrrx.ChannelCutoffHz.
+			EnableChannelFilter: true,
 		})
 		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier2", processor: cc, receiver: rx, tier2Cnt: cc,
 			decoded: func() uint64 { return cc.Counters().FECPass }}, nil

@@ -212,6 +212,7 @@ export interface RecordingsConfig {
   WarmDMRAudio?: boolean;
   SpecAmplitudeEnhance?: boolean;
   UnvoicedGain: number;
+  VoiceProfile?: string;
   WriteCallJSON?: boolean;
   VoiceTapBufferChunks?: number;
 }
