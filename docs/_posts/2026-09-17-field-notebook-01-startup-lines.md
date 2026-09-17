@@ -135,8 +135,8 @@ A one-dongle P25 rig from Cookbook Part 1 at `log.level: info` starts like
 this (long fields trimmed with `…`; every field name is real):
 
 ```
-INF gophertrunk starting version=v1.4.0
-INF diagnostics banner="GopherTrunk diagnostics\nversion : v1.4.0 …"
+INF gophertrunk starting version=v1.1.5
+INF diagnostics banner="GopherTrunk diagnostics\nversion : v1.1.5 …"
 INF device opened driver=rtlsdr serial=00000001 role=wideband rate_hz=2400000 ppm=0 bias_tee=false
 INF sdr: gain set serial=00000001 role=wideband gain_db=49.6
 INF daemon: system config name=Metro-P25 protocol=p25 control_channels=2 enhancements=demod=c4fm …
@@ -231,7 +231,7 @@ non-empty and the `else` never ran. The unhealthy block's signature is what
 is missing:
 
 ```
-INF gophertrunk starting version=v1.4.0
+INF gophertrunk starting version=v1.1.5
 INF diagnostics banner="GopherTrunk diagnostics\n…\ndongles : none detected"
 INF gophertrunk starting http_addr=127.0.0.1:8080 systems=1 voice_devices=0
 WRN no voice source configured but trunking systems are defined; voice grants will be dropped — … systems=1
