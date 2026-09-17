@@ -107,7 +107,12 @@ export const useStore = create<Store>((set, get) => ({
 
   captureFromTuner: async (req) => {
     const res = await api.capture(get().config, req);
-    get().addCapture(res.capture);
+    // A multi-centre grab stages one capture per slice; list them all (the
+    // top-level capture is the first slice, so a single grab adds once).
+    const slices = res.captures && res.captures.length > 0 ? res.captures : [res];
+    for (const sl of slices) get().addCapture(sl.capture);
+    // Leave the FIRST slice selected, not the last one added.
+    get().select(slices[0].capture.id);
     return res;
   },
 

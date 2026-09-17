@@ -35,6 +35,32 @@ describe("parseCaptureTuning", () => {
     if (!r.ok) expect(r.error).toMatch(/needs a Bandwidth kHz/);
   });
 
+  it("several centres become a synchronous multi-slice request", () => {
+    expect(parseCaptureTuning("442.3875, 443.2375", "25")).toEqual({
+      ok: true,
+      tuning: { centers_hz: [442_387_500, 443_237_500], bandwidth_hz: 25_000 },
+    });
+    // Whitespace / semicolon separators, and a single entry stays center_hz.
+    expect(parseCaptureTuning("442.3875 443.2375; 446.5", "25")).toEqual({
+      ok: true,
+      tuning: { centers_hz: [442_387_500, 443_237_500, 446_500_000], bandwidth_hz: 25_000 },
+    });
+    expect(parseCaptureTuning(" 442.3875 ", "25")).toEqual({
+      ok: true,
+      tuning: { center_hz: 442_387_500, bandwidth_hz: 25_000 },
+    });
+  });
+
+  it("refuses a malformed or duplicated entry in a centre list", () => {
+    const bad = parseCaptureTuning("442.3875, 443,2375", "25");
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error).toMatch(/Center MHz .* is not a number/);
+    const dup = parseCaptureTuning("442.3875 442.3875", "25");
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.error).toMatch(/twice/);
+    expect(parseCaptureTuning("442.3875, 443.2375", "").ok).toBe(false);
+  });
+
   it("refuses a non-positive or malformed bandwidth", () => {
     expect(parseCaptureTuning("", "0").ok).toBe(false);
     expect(parseCaptureTuning("", "-25").ok).toBe(false);

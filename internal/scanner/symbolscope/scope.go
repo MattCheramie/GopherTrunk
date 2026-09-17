@@ -268,10 +268,13 @@ func New(opts Options) (*Engine, error) {
 		e.dmrRx = dmrrx.New(dmrrx.Options{
 			SampleRateHz: ddc.OutRateHz(),
 			DeviationHz:  dmrDeviationHz,
-			SoftSink:     e.onSoft,
-			SymbolSink:   e.onSymbols,
-			EyeSink:      e.onEye,
-			DibitSink:    e.onDibits,
+			// Same channel-select filter as the production pipelines, so the
+			// scope shows the eye the decoder actually slices.
+			EnableChannelFilter: true,
+			SoftSink:            e.onSoft,
+			SymbolSink:          e.onSymbols,
+			EyeSink:             e.onEye,
+			DibitSink:           e.onDibits,
 		})
 	case trunking.ProtocolNXDN:
 		// NXDN (9600-baud variant) is the same 4800-baud 4-level C4FM family

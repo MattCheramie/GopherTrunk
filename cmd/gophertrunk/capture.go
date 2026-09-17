@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -44,6 +45,7 @@ func runCapture(args []string) {
 	format := fs.String("format", "f32", "capture sample format: u8 | f32 | cs16 | wav | flac (f32 = GNU Radio cfile; cs16 = headerless 16-bit raw; wav = cs16 body in a RIFF container; flac = lossless compressed cs16, typically 30-50% smaller)")
 	centerHz := fs.Uint("center", 0, "narrowband slice centre in Hz (default: -freq); with -bandwidth, carves a channel from the captured wideband without retuning")
 	bandwidthHz := fs.Uint("bandwidth", 0, "narrowband slice bandwidth in Hz; when > 0 the capture is decimated to ~this rate around -center (must fit inside -freq ± sample-rate/2)")
+	centersList := fs.String("centers", "", "comma-separated narrowband slice centres in Hz; with -bandwidth, records one SAMPLE-SYNCHRONOUS slice per centre from the same stream (two IPSC repeaters, a P25 control channel + voice channels): -out names the files with a -<MHz>MHz suffix each, and the sidecars share a capture_group. Mutually exclusive with -center / -decimate / -bundle")
 	decimate := fs.Uint("decimate", 0, "integer software-decimation factor: record the full band anti-alias decimated to sample-rate/decimate (a manageable long capture off a source like the USRP B210 whose hardware rate floor is ~1 MS/s). Mutually exclusive with -bandwidth")
 	protocol := fs.String("protocol", "", "protocol name written to the metadata sidecar (enables `test`; see `gophertrunk gen -list`)")
 	source := fs.String("source", "", "free-text provenance written to the metadata sidecar")
@@ -74,6 +76,10 @@ EXAMPLES:
   # a 2.4 MS/s grab centred there — a shareable .raw a fraction of the full size
   gophertrunk capture -freq 467913000 -sample-rate 2400000 -seconds 30 \
     -center 467913000 -bandwidth 50000 -format cs16 -out cc.raw
+
+  # Two IPSC repeaters as two small, sample-synchronous flac slices from one grab
+  gophertrunk capture -freq 442800000 -sample-rate 2400000 -seconds 600 \
+    -centers 442387500,443237500 -bandwidth 25000 -format flac -out ipsc.flac
 
   # USRP B210 (hardware rate floor ~1 MS/s): record the full band but software-
   # decimate ×5 → an alias-free 200 kS/s file, a fifth the size, still replayable
@@ -208,7 +214,48 @@ FLAGS:`)
 			float64(recCenter)/1e6, recRate/1e3)
 	}
 
-	written, probe, capErr := captureToFile(ctx, *out, sampleFormat, stream, hwRate, *seconds, ddc)
+	// Several sample-synchronous slices (-centers): one DDC per centre, all
+	// fed the same chunks, one file each. The single-output path above is the
+	// one-slice case of this.
+	slices := []captureCLISlice{{path: *out, center: recCenter, ddc: ddc}}
+	if *centersList != "" {
+		if *bandwidthHz == 0 || *centerHz != 0 || *decimate > 1 || *bundleOut != "" {
+			rep.Fatalf(2, "-centers needs -bandwidth and excludes -center, -decimate and -bundle")
+		}
+		cs, err := parseCaptureCenters(*centersList)
+		if err != nil {
+			rep.Fatal(2, err)
+		}
+		slices = slices[:0]
+		for _, c := range cs {
+			offsetHz := int64(c) - int64(*freq)
+			half := int64(hwRate) / 2
+			if absInt64(offsetHz)+int64(*bandwidthHz)/2 > half {
+				rep.Fatalf(2, "-centers %d + -bandwidth %d falls outside the captured span %d ± %d Hz",
+					c, *bandwidthHz, *freq, half)
+			}
+			d := ccdecoder.NewDownconverterWithOffset(float64(hwRate), float64(*bandwidthHz), float64(offsetHz))
+			recRate = d.OutRateHz()
+			slices = append(slices, captureCLISlice{
+				path:   captureSlicePath(*out, c),
+				center: c,
+				ddc:    d,
+			})
+		}
+		recCenter = slices[0].center
+		fmt.Printf("capture: %d sample-synchronous slices, %.1f kHz channel rate each:\n", len(slices), recRate/1e3)
+		for _, sl := range slices {
+			fmt.Printf("  %.4f MHz → %s\n", float64(sl.center)/1e6, sl.path)
+		}
+	}
+	paths := make([]string, len(slices))
+	ddcs := make([]*ccdecoder.Downconverter, len(slices))
+	for i, sl := range slices {
+		paths[i], ddcs[i] = sl.path, sl.ddc
+	}
+	started := time.Now()
+	writtenAll, probe, capErr := captureToFiles(ctx, paths, sampleFormat, stream, hwRate, *seconds, ddcs)
+	written := writtenAll[0]
 	if capErr != nil && !errors.Is(capErr, context.Canceled) {
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
 	}
@@ -247,34 +294,51 @@ FLAGS:`)
 				"or write to faster storage; then re-capture.\n", d)
 	}
 
-	meta := &siglab.Metadata{
-		Protocol:     *protocol,
-		Source:       *source,
-		SampleRateHz: recRate,
-		CenterFreqHz: recCenter,
-		Format:       sampleFormat.String(),
-		TuneHz:       *tune,
-		AutoTune:     *autoTune,
-		Conjugate:    *conjugate,
+	var meta *siglab.Metadata
+	var metaPath string
+	group := ""
+	if len(slices) > 1 {
+		group = fmt.Sprintf("%x", started.UnixNano())
 	}
-
-	metaPath := *metaOut
-	switch {
-	case strings.EqualFold(metaPath, "none"):
-		metaPath = ""
-	case metaPath == "":
-		metaPath = strings.TrimSuffix(*out, ext(*out)) + ".metadata.json"
-	}
-	if metaPath != "" {
-		if err := siglab.WriteMetadata(metaPath, meta); err != nil {
-			rep.Fatal(1, fmt.Errorf("write metadata: %w", err))
+	for i, sl := range slices {
+		m := &siglab.Metadata{
+			Protocol:     *protocol,
+			Source:       *source,
+			SampleRateHz: recRate,
+			CenterFreqHz: sl.center,
+			Format:       sampleFormat.String(),
+			TuneHz:       *tune,
+			AutoTune:     *autoTune,
+			Conjugate:    *conjugate,
 		}
-	}
-
-	if metaPath != "" {
-		fmt.Printf("capture: wrote %d samples → %s  (metadata → %s)\n", written, *out, metaPath)
-	} else {
-		fmt.Printf("capture: wrote %d samples → %s\n", written, *out)
+		if group != "" {
+			m.CaptureGroup = group
+			m.CaptureGroupIndex = i
+			m.CaptureGroupSize = len(slices)
+			m.CaptureStartedAt = started.UTC().Format(time.RFC3339Nano)
+		}
+		mp := *metaOut
+		switch {
+		case strings.EqualFold(mp, "none"):
+			mp = ""
+		case mp == "" || len(slices) > 1:
+			// A multi-slice grab always writes one sidecar per file; a
+			// custom -meta path would name only one of them.
+			mp = strings.TrimSuffix(sl.path, ext(sl.path)) + ".metadata.json"
+		}
+		if mp != "" {
+			if err := siglab.WriteMetadata(mp, m); err != nil {
+				rep.Fatal(1, fmt.Errorf("write metadata: %w", err))
+			}
+		}
+		if mp != "" {
+			fmt.Printf("capture: wrote %d samples → %s  (metadata → %s)\n", writtenAll[i], sl.path, mp)
+		} else {
+			fmt.Printf("capture: wrote %d samples → %s\n", writtenAll[i], sl.path)
+		}
+		if i == 0 {
+			meta, metaPath = m, mp
+		}
 	}
 	if *protocol == "" && metaPath != "" {
 		fmt.Fprintln(os.Stderr, "capture: note — no -protocol set; sidecar is informational only (the `test` harness needs a protocol).")
@@ -387,56 +451,127 @@ const captureBufWriter = 1 << 20 // 1 MiB
 // caller FFTs for the carrier-offset consensus estimate, and the whole-capture
 // ADC-rail clip count.
 func captureToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, *carrierProbe, error) {
-	// Container formats need a header up front and a finalize step, so they
-	// take the IQContainer path; the headerless formats keep the historical
-	// byte-stream path below.
-	if format == siglab.FormatWAV || format == siglab.FormatFLAC {
-		return captureContainerToFile(ctx, path, format, src, rate, seconds, ddc)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return 0, nil, fmt.Errorf("create %s: %w", path, err)
-	}
-	bw := bufio.NewWriterSize(f, captureBufWriter)
-	written, probe, loopErr := captureStream(ctx, bw, format, src, rate, seconds, ddc)
-	// captureStream has joined its writer goroutine before returning, so bw is
-	// no longer touched concurrently — flush + close on this goroutine.
-	if ferr := bw.Flush(); ferr != nil && loopErr == nil {
-		loopErr = fmt.Errorf("flush: %w", ferr)
-	}
-	if cerr := f.Close(); cerr != nil && loopErr == nil {
-		loopErr = cerr
-	}
-	return written, probe, loopErr
+	written, probe, err := captureToFiles(ctx, []string{path}, format, src, rate, seconds, []*ccdecoder.Downconverter{ddc})
+	return written[0], probe, err
 }
 
-// captureContainerToFile is captureToFile for the container formats (wav,
-// flac): the chunks stream through siglab.IQContainer, which owns the header
-// and the finalize step (RIFF length patch / FLAC STREAMINFO), so a
-// `capture -format wav|flac` file is a real container rather than a
-// mislabeled headerless body.
-func captureContainerToFile(ctx context.Context, path string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, *carrierProbe, error) {
-	// The container header carries the ON-DISK rate: the decimated slice rate
-	// when a -bandwidth/-decimate DDC is set, the full input rate otherwise.
-	diskRate := rate
-	if ddc != nil {
-		diskRate = uint32(ddc.OutRateHz() + 0.5)
+// captureCLISlice is one output of a `capture` run: its file, its RF centre
+// and the down-converter that carves it (nil for the full band).
+type captureCLISlice struct {
+	path   string
+	center uint32
+	ddc    *ccdecoder.Downconverter
+}
+
+// parseCaptureCenters parses the -centers list (comma-separated Hz).
+func parseCaptureCenters(list string) ([]uint32, error) {
+	var out []uint32
+	seen := map[uint32]bool{}
+	for _, tok := range strings.Split(list, ",") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		v, err := strconv.ParseUint(tok, 10, 32)
+		if err != nil || v == 0 {
+			return nil, fmt.Errorf("-centers: %q is not a frequency in Hz", tok)
+		}
+		if seen[uint32(v)] {
+			return nil, fmt.Errorf("-centers lists %d Hz twice", v)
+		}
+		seen[uint32(v)] = true
+		out = append(out, uint32(v))
 	}
-	f, err := os.Create(path)
-	if err != nil {
-		return 0, nil, fmt.Errorf("create %s: %w", path, err)
+	if len(out) == 0 {
+		return nil, errors.New("-centers: no frequencies given")
 	}
-	cont, err := siglab.NewIQContainer(f, format, int(diskRate))
-	if err != nil {
-		f.Close()
-		return 0, nil, fmt.Errorf("container %s: %w", path, err)
+	return out, nil
+}
+
+// captureSlicePath names one slice of a multi-centre grab from the -out path:
+// <stem>-<MHz>MHz<ext>, four decimals like every other frequency-bearing name
+// in the tree (442.3875, 443.2375).
+func captureSlicePath(out string, centerHz uint32) string {
+	e := ext(out)
+	return fmt.Sprintf("%s-%.4fMHz%s", strings.TrimSuffix(out, e), float64(centerHz)/1e6, e)
+}
+
+// captureToFiles records one file per (path, ddc) pair from ONE stream: every
+// chunk is pushed through every down-converter in order, so the outputs are
+// sample-synchronous (same chunks, identical DDCs ⇒ identical group delay).
+// Container formats (wav, flac) stream through siglab.IQContainer, which
+// owns the header and the finalize step (RIFF length patch / FLAC
+// STREAMINFO), so a `capture -format wav|flac` file is a real container
+// rather than a mislabeled headerless body; the headerless formats keep the
+// historical byte-stream path. Returns the samples written per output.
+func captureToFiles(ctx context.Context, paths []string, format siglab.SampleFormat, src <-chan []complex64, rate uint32, seconds float64, ddcs []*ccdecoder.Downconverter) ([]int64, *carrierProbe, error) {
+	isContainer := format == siglab.FormatWAV || format == siglab.FormatFLAC
+	outs := make([]captureOutput, len(paths))
+	files := make([]*os.File, len(paths))
+	finish := make([]func() error, len(paths))
+	closeAll := func() error {
+		var first error
+		for i := range files {
+			if files[i] == nil {
+				continue
+			}
+			if finish[i] != nil {
+				if err := finish[i](); err != nil && first == nil {
+					first = err
+				}
+			}
+			if err := files[i].Close(); err != nil && first == nil {
+				first = err
+			}
+		}
+		return first
 	}
-	written, probe, loopErr := captureStreamSink(ctx, cont.Write, src, rate, seconds, ddc)
-	if ferr := cont.Finalize(); ferr != nil && loopErr == nil {
-		loopErr = fmt.Errorf("finalize: %w", ferr)
+	for i, path := range paths {
+		f, err := os.Create(path)
+		if err != nil {
+			_ = closeAll()
+			return make([]int64, len(paths)), nil, fmt.Errorf("create %s: %w", path, err)
+		}
+		files[i] = f
+		outs[i].ddc = ddcs[i]
+		if isContainer {
+			// The container header carries the ON-DISK rate: the decimated
+			// slice rate when a DDC is set, the full input rate otherwise.
+			diskRate := rate
+			if ddcs[i] != nil {
+				diskRate = uint32(ddcs[i].OutRateHz() + 0.5)
+			}
+			cont, err := siglab.NewIQContainer(f, format, int(diskRate))
+			if err != nil {
+				_ = closeAll()
+				return make([]int64, len(paths)), nil, fmt.Errorf("container %s: %w", path, err)
+			}
+			outs[i].sink = cont.Write
+			finish[i] = func() error {
+				if err := cont.Finalize(); err != nil {
+					return fmt.Errorf("finalize: %w", err)
+				}
+				return nil
+			}
+		} else {
+			bw := bufio.NewWriterSize(f, captureBufWriter)
+			outs[i].sink = func(samples []complex64) error {
+				_, err := bw.Write(siglab.EncodeCapture(samples, format))
+				return err
+			}
+			finish[i] = func() error {
+				if err := bw.Flush(); err != nil {
+					return fmt.Errorf("flush: %w", err)
+				}
+				return nil
+			}
+		}
 	}
-	if cerr := f.Close(); cerr != nil && loopErr == nil {
-		loopErr = cerr
+	written, probe, loopErr := captureStreamSinks(ctx, outs, src, rate, seconds)
+	// captureStreamSinks has joined its writer goroutine before returning, so
+	// the writers are no longer touched concurrently — flush + close here.
+	if err := closeAll(); err != nil && loopErr == nil {
+		loopErr = err
 	}
 	return written, probe, loopErr
 }
@@ -464,6 +599,32 @@ func captureStream(ctx context.Context, w io.Writer, format siglab.SampleFormat,
 // hands them to sink (a byte encoder + io.Writer, or an IQContainer), so a
 // stalled sink costs latency, never samples.
 func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-chan []complex64, rate uint32, seconds float64, ddc *ccdecoder.Downconverter) (int64, *carrierProbe, error) {
+	written, probe, err := captureStreamSinks(ctx, []captureOutput{{ddc: ddc, sink: sink}}, src, rate, seconds)
+	return written[0], probe, err
+}
+
+// captureOutput is one drain target of captureStreamSinks: the (optional)
+// down-converter that carves it from the input stream and the sink that
+// encodes/writes what comes out.
+type captureOutput struct {
+	ddc  *ccdecoder.Downconverter
+	sink func([]complex64) error
+}
+
+// captureChunk is one decimated chunk on its way to the writer goroutine,
+// tagged with the output it belongs to.
+type captureChunk struct {
+	idx int
+	buf []complex64
+}
+
+// captureStreamSinks is captureStreamSink over several outputs fed from the
+// same input chunks: every chunk goes through every output's DDC in order on
+// the drain goroutine, so the outputs stay sample-synchronous. The carrier
+// probe (offset consensus / clip ratio) is taken from the FIRST output.
+func captureStreamSinks(ctx context.Context, outs []captureOutput, src <-chan []complex64, rate uint32, seconds float64) ([]int64, *carrierProbe, error) {
+	written := make([]int64, len(outs))
+	ddc := outs[0].ddc
 	// Stop once seconds worth of INPUT samples have been read; the written
 	// count may be far smaller when ddc decimates to a narrow channel.
 	target := int64(seconds * float64(rate))
@@ -484,13 +645,13 @@ func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-
 	timer := time.NewTimer(time.Duration(seconds*float64(time.Second)) + 5*time.Second)
 	defer timer.Stop()
 
-	writerCh := make(chan []complex64, captureWriterDepth)
+	writerCh := make(chan captureChunk, captureWriterDepth)
 	writeErrCh := make(chan error, 1)
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
 		for b := range writerCh {
-			if werr := sink(b); werr != nil {
+			if werr := outs[b.idx].sink(b.buf); werr != nil {
 				select {
 				case writeErrCh <- werr:
 				default:
@@ -504,8 +665,8 @@ func captureStreamSink(ctx context.Context, sink func([]complex64) error, src <-
 		}
 	}()
 
-	var ddcBuf []complex64
-	var inputRead, written int64
+	ddcBufs := make([][]complex64, len(outs))
+	var inputRead int64
 	var loopErr error
 loop:
 	for inputRead < target {
@@ -524,33 +685,38 @@ loop:
 				break loop
 			}
 			inputRead += int64(len(chunk))
-			samples := chunk
-			if ddc != nil {
-				ddcBuf = ddc.Process(ddcBuf, chunk)
-				samples = ddcBuf
+			for i, out := range outs {
+				samples := chunk
+				if out.ddc != nil {
+					ddcBufs[i] = out.ddc.Process(ddcBufs[i], chunk)
+					samples = ddcBufs[i]
+				}
+				if len(samples) == 0 {
+					continue
+				}
+				if i == 0 {
+					// Collect recorded samples into the spread probe windows
+					// for the caller's carrier-offset consensus (append
+					// copies, so it's safe against the reused DDC buffer /
+					// the src-owned chunk).
+					probe.feed(samples)
+				}
+				// Fresh buffer per chunk: it is handed to the writer
+				// goroutine, so it must not alias the reused DDC buffer or
+				// the src-owned chunk. Encoding happens on the writer
+				// goroutine (sink), keeping the drain to a copy.
+				buf := append([]complex64(nil), samples...)
+				select {
+				case writerCh <- captureChunk{idx: i, buf: buf}:
+				case werr := <-writeErrCh:
+					loopErr = fmt.Errorf("write: %w", werr)
+					break loop
+				case <-ctx.Done():
+					loopErr = ctx.Err()
+					break loop
+				}
+				written[i] += int64(len(samples))
 			}
-			if len(samples) == 0 {
-				continue
-			}
-			// Collect recorded samples into the spread probe windows for the
-			// caller's carrier-offset consensus (append copies, so it's safe
-			// against the reused ddcBuf / the src-owned chunk).
-			probe.feed(samples)
-			// Fresh buffer per chunk: it is handed to the writer goroutine, so
-			// it must not alias the reused ddcBuf or the src-owned chunk.
-			// Encoding happens on the writer goroutine (sink), keeping the
-			// drain to a copy.
-			buf := append([]complex64(nil), samples...)
-			select {
-			case writerCh <- buf:
-			case werr := <-writeErrCh:
-				loopErr = fmt.Errorf("write: %w", werr)
-				break loop
-			case <-ctx.Done():
-				loopErr = ctx.Err()
-				break loop
-			}
-			written += int64(len(samples))
 		}
 	}
 

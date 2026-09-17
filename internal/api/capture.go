@@ -65,23 +65,128 @@ type CaptureProvider interface {
 // recording instead of a full-rate wideband grab. The tuner is NOT retuned (the
 // slice is extracted from what it is already streaming), so CenterHz must fall
 // inside the tuned span. BandwidthHz == 0 keeps the legacy full-band behaviour.
+//
+// CentersHz (optional) records SEVERAL narrowband slices at once — one per
+// centre, all BandwidthHz wide — from the same live stream, so the staged
+// files are sample-synchronous by construction: every slice is carved from
+// the same IQ chunks through an identical down-converter (same rate, same
+// bandwidth ⇒ same group delay), so sample N of one file is the same instant
+// as sample N of every other. Two IPSC repeaters, or a P25 control channel
+// plus its voice channels, land as small time-aligned recordings (16 Sep
+// request). Mutually exclusive with CenterHz; needs BandwidthHz.
 type captureRequest struct {
-	Serial      string `json:"serial"`
-	Seconds     int    `json:"seconds"`
-	Format      string `json:"format"`
-	Protocol    string `json:"protocol,omitempty"`
-	Source      string `json:"source,omitempty"`
-	CenterHz    uint32 `json:"center_hz,omitempty"`
-	BandwidthHz uint32 `json:"bandwidth_hz,omitempty"`
+	Serial      string   `json:"serial"`
+	Seconds     int      `json:"seconds"`
+	Format      string   `json:"format"`
+	Protocol    string   `json:"protocol,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	CenterHz    uint32   `json:"center_hz,omitempty"`
+	BandwidthHz uint32   `json:"bandwidth_hz,omitempty"`
+	CentersHz   []uint32 `json:"centers_hz,omitempty"`
 }
+
+// maxCaptureSlices bounds how many synchronous slices one request may carve:
+// each is a full polyphase DDC on the live stream, run on the capture
+// goroutine, and the broker drops chunks to a consumer that falls behind.
+const maxCaptureSlices = 8
 
 // captureResponse is returned by a successful capture: the staged capture
 // (runnable/identifiable immediately), the metadata sidecar describing it, and
 // a relative URL to download the raw .cfile.
+//
+// A multi-slice request (centers_hz) returns every slice in Captures, in the
+// request's order, and mirrors the first one into the three top-level fields
+// so a single-slice client keeps working unchanged.
 type captureResponse struct {
+	Capture     siglabCaptureDTO       `json:"capture"`
+	Metadata    *siglab.Metadata       `json:"metadata"`
+	DownloadURL string                 `json:"download_url"`
+	Captures    []captureSliceResponse `json:"captures,omitempty"`
+}
+
+// captureSliceResponse is one staged slice of a multi-slice capture.
+type captureSliceResponse struct {
 	Capture     siglabCaptureDTO `json:"capture"`
 	Metadata    *siglab.Metadata `json:"metadata"`
 	DownloadURL string           `json:"download_url"`
+}
+
+// captureSlice is the per-output state of one capture: the down-converter
+// that carves it (nil for a full-band grab) and the encoder/container writing
+// its staged file.
+type captureSlice struct {
+	center  uint32
+	ddc     *siglab.StreamDownconverter
+	id      string
+	path    string
+	f       *os.File
+	bw      *bufio.Writer
+	cont    *siglab.IQContainer
+	samples func() int64
+	write   func([]complex64) error
+}
+
+// close finalises the slice's file (container trailer / buffered flush) and
+// closes it; the first error wins.
+func (sl *captureSlice) close() error {
+	var err error
+	if sl.cont != nil {
+		err = sl.cont.Finalize()
+	} else if sl.bw != nil {
+		err = sl.bw.Flush()
+	}
+	if cerr := sl.f.Close(); cerr != nil && err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// resolveCaptureCenters turns the request's centre fields into the list of
+// slice centres (empty ⇒ a full-band grab): center_hz alone is one slice,
+// centers_hz is several; both together, a duplicate, or more than
+// maxCaptureSlices is an error, and any list needs bandwidth_hz (a capture is
+// carved from the live stream without retuning, so a centre only means
+// something for a slice).
+func resolveCaptureCenters(req captureRequest, tunerCenterHz uint32) ([]uint32, error) {
+	if len(req.CentersHz) == 0 {
+		if req.CenterHz == 0 && req.BandwidthHz == 0 {
+			return nil, nil
+		}
+		if req.BandwidthHz == 0 {
+			// Refuse rather than quietly record the tuner centre under the
+			// name of the one the operator asked for (15 Sep: a
+			// "442.8125 MHz" grab that neither repeater was in).
+			if req.CenterHz != tunerCenterHz {
+				return nil, fmt.Errorf(
+					"center_hz %d without bandwidth_hz: a capture is carved from the tuner's live stream "+
+						"without retuning (tuner centre %.4f MHz), so a centre only applies to a narrowband slice — "+
+						"add bandwidth_hz to slice around %.4f MHz, or omit center_hz for a full-band grab",
+					req.CenterHz, float64(tunerCenterHz)/1e6, float64(req.CenterHz)/1e6)
+			}
+			return nil, nil
+		}
+		return []uint32{req.CenterHz}, nil
+	}
+	if req.CenterHz != 0 {
+		return nil, errors.New("center_hz and centers_hz are mutually exclusive — put every slice centre in centers_hz")
+	}
+	if req.BandwidthHz == 0 {
+		return nil, errors.New("centers_hz needs bandwidth_hz: each centre is a narrowband slice carved from the tuner's live stream")
+	}
+	if len(req.CentersHz) > maxCaptureSlices {
+		return nil, fmt.Errorf("centers_hz lists %d slices, at most %d can be recorded together", len(req.CentersHz), maxCaptureSlices)
+	}
+	seen := map[uint32]bool{}
+	for _, c := range req.CentersHz {
+		if c == 0 {
+			return nil, errors.New("centers_hz entries must be non-zero frequencies in Hz")
+		}
+		if seen[c] {
+			return nil, fmt.Errorf("centers_hz lists %.4f MHz twice", float64(c)/1e6)
+		}
+		seen[c] = true
+	}
+	return append([]uint32(nil), req.CentersHz...), nil
 }
 
 // handleSiglabCaptureDevices answers GET /api/v1/siglab/capture/devices with
@@ -132,61 +237,58 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 
 	rate, centerHz := captureDeviceRateCenter(s.capture.Devices(), req.Serial)
 
-	// A centre without a bandwidth cannot be honoured — the capture is carved
-	// from the tuner's live stream without retuning, so a centre only means
-	// something for a narrowband slice. Refuse rather than quietly record the
-	// tuner centre under the name of the one the operator asked for (15 Sep:
-	// a "442.8125 MHz" grab that neither repeater was in).
-	if req.CenterHz != 0 && req.BandwidthHz == 0 && req.CenterHz != centerHz {
-		s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
-			"siglab: center_hz %d without bandwidth_hz: a capture is carved from the tuner's live stream "+
-				"without retuning (tuner centre %.4f MHz), so a centre only applies to a narrowband slice — "+
-				"add bandwidth_hz to slice around %.4f MHz, or omit center_hz for a full-band grab",
-			req.CenterHz, float64(centerHz)/1e6, float64(req.CenterHz)/1e6))
+	centers, err := resolveCaptureCenters(req, centerHz)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
 		return
 	}
 
-	// Optional narrowband slice: validate the requested channel fits the tuner's
-	// current span and build a streaming down-converter up front, so an
-	// out-of-span request 400s before the tuner is pinned. The slice is carved
-	// from the live stream chunk-by-chunk during capture — no wideband buffer.
-	// Done before the budget check so a slice is sized by its decimated output
-	// rate, not the full band.
-	var ddc *siglab.StreamDownconverter
-	outRate, outCenter := rate, centerHz
-	if req.BandwidthHz > 0 {
+	// Optional narrowband slice(s): validate that every requested channel fits
+	// the tuner's current span and build one streaming down-converter per
+	// slice up front, so an out-of-span request 400s before the tuner is
+	// pinned. Each slice is carved from the SAME live chunks during capture
+	// (no wideband buffer), through an identical DDC, so multi-slice files are
+	// sample-synchronous. Done before the budget check so a slice is sized by
+	// its decimated output rate, not the full band.
+	slices := []*captureSlice{{center: centerHz}}
+	outRate := rate
+	if len(centers) > 0 {
 		if rate == 0 {
 			s.writeError(w, http.StatusBadGateway,
 				"siglab: capture: device has no sample rate yet (start or resume a scan on this SDR)")
 			return
 		}
-		offsetHz, center, err := narrowbandParams(rate, centerHz, req.CenterHz, req.BandwidthHz)
-		if err != nil {
-			s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
-			return
+		slices = slices[:0]
+		for _, want := range centers {
+			offsetHz, center, err := narrowbandParams(rate, centerHz, want, req.BandwidthHz)
+			if err != nil {
+				s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
+				return
+			}
+			ddc := siglab.NewStreamDownconverter(float64(rate), float64(offsetHz), float64(req.BandwidthHz))
+			slices = append(slices, &captureSlice{center: center, ddc: ddc})
+			outRate = uint32(ddc.OutRateHz() + 0.5)
 		}
-		ddc = siglab.NewStreamDownconverter(float64(rate), float64(offsetHz), float64(req.BandwidthHz))
-		outRate = uint32(ddc.OutRateHz() + 0.5)
-		outCenter = center
 	}
+	multi := len(slices) > 1
 
 	// Reject an over-budget grab before pinning the tuner. Streaming keeps RAM
-	// bounded to one chunk, so this bounds the on-disk file size (seconds ×
-	// effective rate × bytes-per-sample), not memory. outRate is the full band
-	// for a plain grab and the decimated slice rate for a narrowband request, so
-	// a legitimate slice is not rejected on its full-band footprint. Skipped when
-	// the rate is unknown (device not streaming yet) — then maxCaptureSeconds is
-	// the only bound.
+	// bounded to one chunk, so this bounds the on-disk size (seconds ×
+	// effective rate × bytes-per-sample × slices), not memory. outRate is the
+	// full band for a plain grab and the decimated slice rate for a narrowband
+	// request, so a legitimate slice is not rejected on its full-band
+	// footprint. Skipped when the rate is unknown (device not streaming yet) —
+	// then maxCaptureSeconds is the only bound.
 	if rate > 0 {
-		estBytes := int64(req.Seconds) * int64(outRate) * int64(bytesPerSample(format))
+		estBytes := int64(req.Seconds) * int64(outRate) * int64(bytesPerSample(format)) * int64(len(slices))
 		if estBytes > maxCaptureIQBytes {
 			hint := "reduce seconds or request a narrowband slice (center_hz + bandwidth_hz)"
-			if req.BandwidthHz > 0 {
-				hint = "reduce seconds or bandwidth"
+			if len(centers) > 0 {
+				hint = "reduce seconds, bandwidth, or the number of slices"
 			}
 			s.writeError(w, http.StatusBadRequest, fmt.Sprintf(
-				"siglab: a %ds capture at %.3f MS/s would stage ~%d MiB, over the %d MiB budget — %s",
-				req.Seconds, float64(outRate)/1e6, estBytes>>20, int64(maxCaptureIQBytes)>>20, hint))
+				"siglab: a %ds capture at %.3f MS/s × %d file(s) would stage ~%d MiB, over the %d MiB budget — %s",
+				req.Seconds, float64(outRate)/1e6, len(slices), estBytes>>20, int64(maxCaptureIQBytes)>>20, hint))
 			return
 		}
 	}
@@ -211,45 +313,59 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stream encoded IQ straight to the staged file: peak memory is one chunk
-	// (plus the DDC's FIR state for a narrowband slice), independent of duration.
-	id := randomID(16)
-	path := s.siglab.newCapturePath(id)
-	f, err := os.Create(path)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+err.Error())
-		return
-	}
-	// Headerless formats stream through the byte encoder; wav/flac go through
-	// the IQContainer, which owns the header + finalize (RIFF length patch /
-	// FLAC STREAMINFO) — a staged "wav"/"flac" capture used to get a headerless
+	// Stream encoded IQ straight to the staged file(s): peak memory is one
+	// chunk (plus each DDC's FIR state), independent of duration. Headerless
+	// formats stream through the byte encoder; wav/flac go through the
+	// IQContainer, which owns the header + finalize (RIFF length patch / FLAC
+	// STREAMINFO) — a staged "wav"/"flac" capture used to get a headerless
 	// (or, for flac, mis-encoded) body under a container label.
-	var (
-		bw      *bufio.Writer
-		enc     *siglab.CaptureWriter
-		cont    *siglab.IQContainer
-		samples func() int64
-		write   func([]complex64) error
-	)
-	if isContainer {
-		cont, err = siglab.NewIQContainer(f, format, int(outRate))
+	var group string
+	if multi {
+		group = randomID(8)
+	}
+	removeAll := func() {
+		for _, sl := range slices {
+			if sl.f != nil {
+				_ = os.Remove(sl.path)
+			}
+		}
+	}
+	for _, sl := range slices {
+		sl.id = randomID(16)
+		sl.path = s.siglab.newCapturePath(sl.id)
+		f, err := os.Create(sl.path)
 		if err != nil {
-			f.Close()
-			_ = os.Remove(path)
+			removeAll()
 			s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+err.Error())
 			return
 		}
-		samples, write = cont.Samples, cont.Write
-	} else {
-		bw = bufio.NewWriterSize(f, 1<<20)
-		enc = siglab.NewCaptureWriter(bw, format)
-		samples, write = enc.Samples, enc.Write
+		sl.f = f
+		if isContainer {
+			cont, err := siglab.NewIQContainer(f, format, int(outRate))
+			if err != nil {
+				removeAll()
+				s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+err.Error())
+				return
+			}
+			sl.cont = cont
+			sl.samples, sl.write = cont.Samples, cont.Write
+		} else {
+			sl.bw = bufio.NewWriterSize(f, 1<<20)
+			enc := siglab.NewCaptureWriter(sl.bw, format)
+			sl.samples, sl.write = enc.Samples, enc.Write
+		}
 	}
 	sink := func(chunk []complex64) error {
-		if ddc != nil {
-			chunk = ddc.Process(chunk)
+		for _, sl := range slices {
+			out := chunk
+			if sl.ddc != nil {
+				out = sl.ddc.Process(chunk)
+			}
+			if err := sl.write(out); err != nil {
+				return err
+			}
 		}
-		return write(chunk)
+		return nil
 	}
 
 	// Bracket the grab in debug.log so an operator can line a capture up with
@@ -259,24 +375,33 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 	// centre/rate for a narrowband slice; the end line carries what was
 	// actually recorded.
 	started := time.Now()
-	s.log.Info("siglab: capture started",
-		"serial", req.Serial, "center_hz", outCenter, "sample_rate_hz", outRate,
+	startAttrs := []any{
+		"serial", req.Serial, "center_hz", slices[0].center, "sample_rate_hz", outRate,
 		"bandwidth_hz", req.BandwidthHz, "requested_center_hz", req.CenterHz,
 		"tuner_center_hz", centerHz, "tuner_rate_hz", rate,
-		"format", format.String(), "seconds", req.Seconds, "protocol", req.Protocol, "path", path)
+		"format", format.String(), "seconds", req.Seconds, "protocol", req.Protocol, "path", slices[0].path,
+	}
+	if multi {
+		startAttrs = append(startAttrs, "capture_group", group, "slices", len(slices), "centers_hz", centers)
+	}
+	s.log.Info("siglab: capture started", startAttrs...)
 	// A capture runs for up to req.Seconds and Shutdown would wait it out, so
 	// a daemon stop cancels it the same way a client hangup does.
 	capCtx, capCancel := s.streamCtx(r.Context())
 	defer capCancel()
 	gotRate, gotCenter, capErr := s.capture.CaptureStream(capCtx, req.Serial, req.Seconds, sink)
+	samples := slices[0].samples
 	logEnd := func(outcome string, err error) {
 		args := []any{
-			"serial", req.Serial, "center_hz", outCenter, "sample_rate_hz", outRate,
+			"serial", req.Serial, "center_hz", slices[0].center, "sample_rate_hz", outRate,
 			"format", format.String(), "samples", samples(), "elapsed", time.Since(started).Round(time.Millisecond),
-			"path", path,
+			"path", slices[0].path,
 		}
 		if outRate > 0 {
 			args = append(args, "recorded_seconds", math.Round(float64(samples())/float64(outRate)*100)/100)
+		}
+		if multi {
+			args = append(args, "capture_group", group, "slices", len(slices))
 		}
 		if err != nil {
 			s.log.Warn("siglab: capture "+outcome, append(args, "err", err)...)
@@ -285,29 +410,26 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 		s.log.Info("siglab: capture "+outcome, args...)
 	}
 	var flushErr error
-	if cont != nil {
-		flushErr = cont.Finalize()
-	} else {
-		flushErr = bw.Flush()
-	}
-	if cerr := f.Close(); cerr != nil && flushErr == nil {
-		flushErr = cerr
+	for _, sl := range slices {
+		if err := sl.close(); err != nil && flushErr == nil {
+			flushErr = err
+		}
 	}
 	if capErr != nil {
 		logEnd("aborted", capErr)
-		_ = os.Remove(path)
+		removeAll()
 		s.writeError(w, http.StatusBadGateway, "siglab: capture: "+capErr.Error())
 		return
 	}
 	if flushErr != nil {
 		logEnd("aborted", flushErr)
-		_ = os.Remove(path)
+		removeAll()
 		s.writeError(w, http.StatusInternalServerError, "siglab: stage capture: "+flushErr.Error())
 		return
 	}
 	if samples() == 0 {
 		logEnd("aborted", errors.New("capture produced no samples"))
-		_ = os.Remove(path)
+		removeAll()
 		s.writeError(w, http.StatusBadGateway, "siglab: capture produced no samples")
 		return
 	}
@@ -316,44 +438,63 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 	// A full-band grab keeps the tuner's authoritative rate/centre from the
 	// stream; a narrowband slice keeps its decimated rate + requested centre.
 	// A container grab keeps the pre-capture rate its header was written with.
-	if req.BandwidthHz == 0 && !isContainer {
-		outRate, outCenter = gotRate, gotCenter
-	}
-	if req.BandwidthHz == 0 && isContainer {
-		outCenter = gotCenter
-	}
-
-	meta := &siglab.Metadata{
-		Protocol:     req.Protocol,
-		Source:       req.Source,
-		SampleRateHz: float64(outRate),
-		CenterFreqHz: outCenter,
-		Format:       format.String(),
-	}
-	// Best-effort sidecar at the path siglab.DiscoverMetadata probes
-	// (<stem>.metadata.json) so the staged file is a drop-in fixture.
-	metaPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".metadata.json"
-	if err := siglab.WriteMetadata(metaPath, meta); err != nil {
-		s.log.Warn("api: siglab capture metadata write failed", "err", err)
+	if len(centers) == 0 {
+		if !isContainer {
+			outRate = gotRate
+		}
+		slices[0].center = gotCenter
 	}
 
-	c := &siglabCapture{
-		ID:           id,
-		Name:         captureName(req.Serial, outCenter),
-		Path:         path,
-		Format:       format,
-		SampleRateHz: float64(outRate),
-		CenterHz:     outCenter,
-		Size:         stagedCaptureSize(path, samples(), format),
-		Created:      time.Now(),
-	}
-	s.siglab.putCapture(c)
+	resp := captureResponse{}
+	for i, sl := range slices {
+		meta := &siglab.Metadata{
+			Protocol:     req.Protocol,
+			Source:       req.Source,
+			SampleRateHz: float64(outRate),
+			CenterFreqHz: sl.center,
+			Format:       format.String(),
+		}
+		if multi {
+			// The group ties the sample-synchronous slices together for
+			// whoever lines them up later; the start stamp ties them to
+			// the daemon log.
+			meta.CaptureGroup = group
+			meta.CaptureGroupIndex = i
+			meta.CaptureGroupSize = len(slices)
+			meta.CaptureStartedAt = started.UTC().Format(time.RFC3339Nano)
+		}
+		// Best-effort sidecar at the path siglab.DiscoverMetadata probes
+		// (<stem>.metadata.json) so the staged file is a drop-in fixture.
+		metaPath := strings.TrimSuffix(sl.path, filepath.Ext(sl.path)) + ".metadata.json"
+		if err := siglab.WriteMetadata(metaPath, meta); err != nil {
+			s.log.Warn("api: siglab capture metadata write failed", "err", err)
+		}
 
-	writeJSON(w, http.StatusOK, captureResponse{
-		Capture:     captureDTO(c),
-		Metadata:    meta,
-		DownloadURL: fmt.Sprintf("/api/v1/siglab/captures/%s/download", id),
-	})
+		c := &siglabCapture{
+			ID:           sl.id,
+			Name:         captureName(req.Serial, sl.center),
+			Path:         sl.path,
+			Format:       format,
+			SampleRateHz: float64(outRate),
+			CenterHz:     sl.center,
+			Group:        group,
+			Size:         stagedCaptureSize(sl.path, sl.samples(), format),
+			Created:      started,
+		}
+		s.siglab.putCapture(c)
+		one := captureSliceResponse{
+			Capture:     captureDTO(c),
+			Metadata:    meta,
+			DownloadURL: fmt.Sprintf("/api/v1/siglab/captures/%s/download", sl.id),
+		}
+		if i == 0 {
+			resp.Capture, resp.Metadata, resp.DownloadURL = one.Capture, one.Metadata, one.DownloadURL
+		}
+		if multi {
+			resp.Captures = append(resp.Captures, one)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // stagedCaptureSize reports a staged capture's size: the real on-disk size

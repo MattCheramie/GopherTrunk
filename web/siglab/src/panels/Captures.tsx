@@ -133,7 +133,7 @@ function CaptureForm() {
   const [bandwidthKHz, setBandwidthKHz] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [downloadID, setDownloadID] = useState<string | null>(null);
+  const [downloadIDs, setDownloadIDs] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,7 +156,7 @@ function CaptureForm() {
   async function onCapture() {
     setBusy(true);
     setErr(null);
-    setDownloadID(null);
+    setDownloadIDs([]);
     try {
       // Strict: a centre that does not parse, or arrives without a
       // bandwidth, is an error here — never a silent fall-back to the tuner
@@ -173,7 +173,8 @@ function CaptureForm() {
         protocol: protocol || undefined,
         ...parsed.tuning,
       });
-      setDownloadID(res.capture.id);
+      const slices = res.captures && res.captures.length > 0 ? res.captures : [res];
+      setDownloadIDs(slices.map((sl) => sl.capture.id));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -239,10 +240,10 @@ function CaptureForm() {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="label">Center MHz (optional)</label>
+          <label className="label">Center MHz (optional; several, comma-separated)</label>
           <input
             className="input"
-            placeholder="tuner centre"
+            placeholder="tuner centre · e.g. 442.3875, 443.2375"
             value={centerMHz}
             onChange={(e) => setCenterMHz(e.target.value)}
           />
@@ -259,21 +260,24 @@ function CaptureForm() {
       </div>
       <p className="text-xs text-muted">
         Set a bandwidth to save a small narrowband slice around the centre (carved from the
-        tuner&rsquo;s current span, no retune). Leave blank for a full-band grab. cs16 = 16-bit raw
+        tuner&rsquo;s current span, no retune). List several centres to record them together as
+        sample-synchronous slices (two IPSC repeaters, a P25 control channel plus its voice
+        channels) — sample N of each file is the same instant. Leave blank for a full-band grab. cs16 = 16-bit raw
         (half the size of f32); wav = cs16 in a RIFF container; flac = losslessly compressed cs16
         (typically 30&ndash;50% smaller, replays and decodes like cs16).
       </p>
       <button className="btn" disabled={busy || !serial} onClick={onCapture}>
         {busy ? "Capturing…" : "Capture"}
       </button>
-      {downloadID && (
+      {downloadIDs.map((id, i) => (
         <a
+          key={id}
           className="btn-ghost block text-center"
-          href={api.captureDownloadURL(config, downloadID)}
+          href={api.captureDownloadURL(config, id)}
         >
-          Download capture
+          {downloadIDs.length > 1 ? `Download slice ${i + 1} of ${downloadIDs.length}` : "Download capture"}
         </a>
-      )}
+      ))}
       {err && <p className="text-xs text-err">{err}</p>}
     </div>
   );

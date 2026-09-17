@@ -1619,6 +1619,54 @@ confirmation before any close-as-completed.
   gap-phase spectrum will name it. The reject path makes the tap immune either way; do NOT add a
   frequency bound to the acquirer to "fix" this — a 12.5 kHz adjacent channel sits inside any bound
   that still serves #836.
+- **16 Sep IPSC "still deaf" (Fire2, some calls now captured): the DMR receiver had NO
+  channel-select filter — the 48 kHz channel stream passes ±~22 kHz (two 12.5 kHz
+  channels either side) straight into the FM discriminator, and an FM discriminator
+  cannot separate co-passband carriers of comparable power.** The 15 Sep fix (reject a
+  coarse-acquirer engage the tap never synced under) stopped the acquirer LATCHING on the
+  −20.1 kHz emitter, but while that emitter is up at the tap's own level the discriminator
+  output is garbage regardless — that is the residual deaf stretch. `dmrrx.Options.
+  EnableChannelFilter` (Kaiser lowpass, `ChannelCutoffHz` 6250 = half the channel spacing,
+  181 taps at 48 kHz, ~1.5 kHz skirt, >80 dB on the 12.5 kHz neighbour) now runs after the
+  coarse de-rotation and ahead of the discriminator on EVERY production DMR receiver
+  (widebandt2 Tier II/III, ccdecoder Tier I/II/III, the composer voice chain, the symbol
+  scope). Failing-first: `TestReceiverChannelFilterRejectsCoPassbandNeighbour` (equal-power
+  C4FM neighbour at −20 kHz: 0/40 syncs unfiltered, 40/40 filtered). Two traps the filter
+  sprang, both pinned: (1) **the carrier gate's thresholds are absolute rad² measured on
+  WIDEBAND noise** (uniform ±π ⇒ 3.3 rad²); filtered noise swings ~0.49 rad², so the fixed
+  1.0/2.5 thresholds read every gap as a quiet carrier and the gate never closed — the #836
+  direct-mode fixture decoded ZERO syncs. `newCarrierGateCalibrated` sets the thresholds as
+  FRACTIONS of the noise-only variance, which is MEASURED at construction by pushing
+  fixed-seed white noise through the actual filter taps (`filteredNoiseDiscVariance`) — no
+  closed form for the wrapped variance of narrowband-noise instantaneous frequency. (2) The
+  fractions are NOT the wideband ratio: filtered noise is correlated over ~4 samples, so the
+  4-symbol EMA swings wider (gap minimum 0.14 vs median 0.47) and a 0.30 fraction flickered
+  the gate open on gap noise; 0.15/0.75 hold. That slower open (~2.3 windows) then muted the
+  first 4–8 dibits of every burst behind a 1-window delay line and BPTC mis-corrected the
+  Voice LC Headers (the direct-mode pipeline fixture lost a whole PTT) — the calibrated
+  gate's delay line is sized to the open latency and a close-HOLD keeps the burst tail out
+  of the mute. The wideband (unfiltered) gate path is byte-identical. STILL ON-AIR-GATED
+  (#764/#771): the operator's next Fire2 run decides; if the −20 kHz emitter is a real
+  12.5 kHz-adjacent DMR channel the filter is the whole fix, if it is closer than ~7 kHz it
+  is co-channel and nothing short of moving the antenna helps. The offered Hytera
+  scrambler capture is a separate item (DMR "basic privacy" scramble, not RC4).
+- **`recordings.voice_profile` (mbelib | op25) is the opt-in the 10 Sep P25 A/B pointed at:**
+  the two references disagree on the unvoiced level by several dB (mbelib 5.49× vs OP25's
+  equal-power 1×) and on the LF tilt, so "sounds like trunk-recorder" is a preset, not a
+  fix — `op25` sets `unvoiced_gain` 1 and (with enhance on) tilt off / hpf 100 Hz, filling
+  only knobs left at default (`RecordingsConfig.ResolveVoiceCalibration`, `decode
+  -voice-profile`). What it deliberately does NOT touch: the +5..+7 dB 3–4 kHz excess (in the
+  high-harmonic reconstruction; needs the per-harmonic OP25 diff) and the whole-LDU head loss
+  (needs a voice IQ capture).
+- **Sample-synchronous multi-frequency capture landed** (`centers_hz` on
+  `POST /api/v1/siglab/capture`, comma list in the SigLab form, `capture -centers`): every
+  slice is carved from the SAME live chunks through an identical DDC (same rate + bandwidth ⇒
+  same group delay), so sample N of each file is the same instant — pinned by keyup-onset
+  equality across slices (`TestSiglabCaptureMultiSliceIsSampleAligned`,
+  `TestCaptureToFilesSlicesAreSampleSynchronous`). One shared bandwidth is the invariant
+  (different bandwidths ⇒ different group delays ⇒ not aligned); sidecars carry
+  `capture_group` / index / size / `capture_started_at`. Up to 8 slices; each is a full
+  polyphase DDC on the capture goroutine, and the broker drops chunks to a slow consumer.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

@@ -118,6 +118,25 @@ The running daemon mounts the same `/api/v1/siglab/*` routes, so if you already
 have a daemon up you can reach the console (and the live-capture surface) there
 instead of starting a separate server.
 
+### Recording several frequencies together (sample-synchronous slices)
+
+The **Capture from tuner** form (and `POST /api/v1/siglab/capture`) can carve
+several narrowband slices from the same live stream in one grab: list the
+centres comma-separated in *Center MHz* (`442.3875, 443.2375`) with a
+*Bandwidth kHz*, or send `centers_hz: [...]` + `bandwidth_hz` in the request
+body. Every slice is fed the same IQ chunks through an identical down-converter
+(same rate, same bandwidth, hence the same group delay), so the staged files
+are **sample-synchronous by construction**: sample *N* of one file is the same
+instant as sample *N* of every other. That is what makes two small `.flac`
+recordings of two IPSC repeaters, or a P25 control channel plus a few voice
+channels, line up without any post-hoc alignment. Each slice is its own staged
+capture (its own download and metadata sidecar); the sidecars share a
+`capture_group` id, carry `capture_group_index` / `capture_group_size`, and
+stamp `capture_started_at` so the group lines up with the daemon log. The
+response lists every slice under `captures` and mirrors the first into the
+usual top-level fields. Up to 8 slices per grab; all share one bandwidth. The
+CLI equivalent is `gophertrunk capture -centers 442387500,443237500 -bandwidth 25000`.
+
 A live capture from a tuner is bracketed in the daemon's log so it lines up with
 the decode log without guesswork: `siglab: capture started` (serial, centre and
 sample rate the file is recorded at, the tuner's own centre/rate for a narrowband

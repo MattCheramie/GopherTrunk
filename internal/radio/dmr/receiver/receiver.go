@@ -43,6 +43,7 @@ import (
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 )
@@ -61,7 +62,30 @@ const (
 	// of the symbol time. 8 symbols (16 total) is the standard
 	// receiver-side compromise between truncation noise and CPU cost.
 	PulseSpanSymbols = 8
+
+	// ChannelCutoffHz is the one-sided cutoff of the optional channel-select
+	// low-pass (Options.EnableChannelFilter): half the 12.5 kHz DMR channel
+	// spacing. The 4FSK signal's Carson bandwidth is ≈ 2·(1944 + 4800·0.6) ≈
+	// 9.6 kHz (±4.8 kHz), so the 6.25 kHz cutoff passes it with margin for a
+	// few hundred hertz of tuner offset, while the 12.5 kHz adjacent channel
+	// (its lower skirt from ≈7.7 kHz) and anything further out are in the
+	// stopband. The wideband channelizer / DDC that feeds the receiver
+	// decimates to 48 kHz and passes ±~22 kHz — two channels either side —
+	// straight into the FM discriminator, where a neighbour of comparable
+	// power breaks FM capture and the wanted signal decodes nothing (the
+	// 15/16 Sep IPSC "deaf tap": a −20.1 kHz emitter at the tap's own level).
+	ChannelCutoffHz = 6250.0
 )
+
+// channelFilterSpanSymbols sets the channel-select FIR length to
+// 2*span*sps+1 taps: 181 taps at the 48 kHz production rate, a Kaiser
+// β=8.6 (~87 dB stopband) skirt ≈1.5 kHz wide, so −20 kHz is gone entirely
+// and the 12.5 kHz adjacent channel is >80 dB down. Mirrors the TETRA
+// receiver's channel filter (tetra/receiver: channelFilterSpanSymbols).
+const channelFilterSpanSymbols = 9
+
+// channelFilterBeta is the Kaiser shape of the channel-select FIR.
+const channelFilterBeta = 8.6
 
 // Options configures a Receiver. Zero-valued fields fall back to the
 // DMR defaults above.
@@ -107,6 +131,15 @@ type Options struct {
 	// 4-level eye. Optional; used by the diagnostic symbol scope.
 	EyeSink func(oversampled []float32, sps int)
 
+	// EnableChannelFilter inserts a ±ChannelCutoffHz channel-select low-pass
+	// ahead of the FM discriminator (after the coarse carrier de-rotation, so
+	// it is centred on the corrected carrier). Off by default so the
+	// synthetic single-carrier fixtures stay byte-identical; every production
+	// pipeline turns it on, because the channelised passband they feed the
+	// receiver is two DMR channels wide either side and an FM discriminator
+	// cannot separate co-passband carriers of comparable power.
+	EnableChannelFilter bool
+
 	// NoCarrierGate disables the per-sample carrier-presence gate that holds
 	// the level / offset / timing trackers across the inter-burst gaps of a
 	// direct-mode (Tier I / simplex) transmission — see carrierGate. The gate
@@ -130,6 +163,11 @@ type Receiver struct {
 	dibitBase int
 
 	mixed []complex64 // scratch for the coarse-acquirer de-rotation (acq path only)
+
+	// Channel-select low-pass (Options.EnableChannelFilter) and its output
+	// scratch; nil when disabled.
+	chanFilt *filter.FIR
+	filtered []complex64
 
 	// Feed-forward symbol-timing acquisition at a new transmission's onset
 	// (issue #836, gate path only). See observeTimingAcq.
@@ -245,19 +283,36 @@ func New(opts Options) *Receiver {
 	// Carrier-presence gate (issue #836): holds the trackers above across the
 	// 32.5 ms noise gaps of a direct-mode transmission. Calibrated path only,
 	// like the trackers it gates, so legacy fixtures stay byte-identical.
+	var chanFilt *filter.FIR
+	var chanTaps []float32
+	if opts.EnableChannelFilter {
+		fc := ChannelCutoffHz / opts.SampleRateHz
+		taps := 2*channelFilterSpanSymbols*int(sps+0.5) + 1
+		chanTaps = filter.LowpassKaiser(taps, fc, channelFilterBeta)
+		chanFilt = filter.NewFIR(chanTaps)
+	}
+
 	var gate *carrierGate
 	if opts.DeviationHz > 0 && !opts.NoCarrierGate {
-		gate = newCarrierGate(sps)
+		if chanFilt != nil {
+			// The gate's thresholds are fractions of the noise-only
+			// discriminator variance, which the channel filter narrows
+			// (see newCarrierGateCalibrated).
+			gate = newCarrierGateCalibrated(sps, filteredNoiseDiscVariance(chanTaps))
+		} else {
+			gate = newCarrierGate(sps)
+		}
 	}
 
 	return &Receiver{
-		fm:    demod.NewFM(),
-		mf:    demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
-		clock: sync.NewMuellerMuller(sps, gain),
-		afc:   afc,
-		acq:   acq,
-		gate:  gate,
-		sps:   sps,
+		fm:       demod.NewFM(),
+		mf:       demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
+		clock:    sync.NewMuellerMuller(sps, gain),
+		afc:      afc,
+		acq:      acq,
+		gate:     gate,
+		chanFilt: chanFilt,
+		sps:      sps,
 		// Feed-forward timing acquisition rides the gate's presence flags.
 		// It arms only after an absence, so a stream that is present from
 		// its first sample (the continuous-carrier fixtures that pin the
@@ -306,6 +361,13 @@ func (r *Receiver) Process(iq []complex64) {
 	if r.acq != nil {
 		r.mixed = r.acq.Mix(r.mixed, iq)
 		src = r.mixed
+	}
+	// Channel-select low-pass on the (de-rotated) IQ, so the discriminator
+	// only ever sees this channel. Runs after the coarse de-rotation so a
+	// large tuner offset is corrected before the filter, not clipped by it.
+	if r.chanFilt != nil {
+		r.filtered = r.chanFilt.Process(r.filtered, src)
+		src = r.filtered
 	}
 	r.disc = r.fm.Process(r.disc, src)
 	// Per-sample carrier presence (issue #836). nil (all-present) without the
@@ -367,6 +429,11 @@ func (r *Receiver) Process(iq []complex64) {
 			}
 			r.mixed = r.acq.Mix(r.mixed, iq)
 			src = r.mixed
+			if r.chanFilt != nil {
+				r.chanFilt.Reset()
+				r.filtered = r.chanFilt.Process(r.filtered, src)
+				src = r.filtered
+			}
 			r.disc = r.fm.Process(r.disc, src)
 			if r.gate != nil {
 				r.present = r.gate.Process(r.present, r.disc, src)
@@ -479,6 +546,9 @@ func (r *Receiver) Reset() {
 	r.clock.Reset()
 	r.fm.Reset()
 	r.mf.Reset()
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
+	}
 	r.absentRun = 0
 	r.acqPending = false
 	r.acqBuf = r.acqBuf[:0]
@@ -523,6 +593,9 @@ func (r *Receiver) RejectCoarseCarrierOffset(hz float64) bool {
 	// at a wrong instant (the same coarseAcqClockRelockHz rule as engaging).
 	r.fm.Reset()
 	r.mf.Reset()
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
+	}
 	if r.afc != nil {
 		r.afc.Reset()
 	}

@@ -121,7 +121,10 @@ type siglabCaptureDTO struct {
 	// operator WHERE a grab was taken — the 15 Sep report's slice quietly
 	// landed at the tuner centre and nothing in the UI said so. 0 (omitted)
 	// for an upload or synthesised capture, whose centre is unknown here.
-	CenterHz  uint32    `json:"center_hz,omitempty"`
+	CenterHz uint32 `json:"center_hz,omitempty"`
+	// Group is the id shared by the slices of one multi-centre live
+	// capture (sample-synchronous files); omitted for a single capture.
+	Group     string    `json:"capture_group,omitempty"`
 	Size      int64     `json:"size"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -133,6 +136,7 @@ func captureDTO(c *siglabCapture) siglabCaptureDTO {
 		Format:       c.Format.String(),
 		SampleRateHz: c.SampleRateHz,
 		CenterHz:     c.CenterHz,
+		Group:        c.Group,
 		Size:         c.Size,
 		CreatedAt:    c.Created,
 	}
