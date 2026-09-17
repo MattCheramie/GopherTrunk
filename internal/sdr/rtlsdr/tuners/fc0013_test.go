@@ -8,6 +8,86 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
+// fc0013RegisterMock models an FC0013's I2C register file the way the
+// #1200 dongle behaves: the chip-ID (0xA3) lives at register 0x00, a
+// bare read returns whatever register is currently selected, and a
+// register-pointer write selects a register. It reproduces the
+// reporter's trace, where a bare read of the un-selected bus answered
+// 0x02 instead of the 0xA3 chip ID.
+type fc0013RegisterMock struct {
+	selected   byte
+	defaultVal byte
+	regs       map[byte]byte
+}
+
+func (m *fc0013RegisterMock) ControlIn(_ uint8, _, _ uint16, n int, _ int) ([]byte, error) {
+	v, ok := m.regs[m.selected]
+	if !ok {
+		v = m.defaultVal
+	}
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = v
+	}
+	return out, nil
+}
+
+func (m *fc0013RegisterMock) ControlOut(_ uint8, _, _ uint16, data []byte, _ int) error {
+	// An I2CReadReg / I2CWriteReg starts by writing the register pointer.
+	if len(data) >= 1 {
+		m.selected = data[0]
+	}
+	return nil
+}
+
+func (m *fc0013RegisterMock) ClaimInterface(int) error   { return nil }
+func (m *fc0013RegisterMock) ReleaseInterface(int) error { return nil }
+func (m *fc0013RegisterMock) StartBulkIn(byte, int, int, func([]byte), func(error)) error {
+	return nil
+}
+func (m *fc0013RegisterMock) StopBulkIn() error { return nil }
+func (m *fc0013RegisterMock) Reset() error      { return nil }
+func (m *fc0013RegisterMock) Close() error      { return nil }
+
+// TestDetectFC0013SelectsChipIDRegister is the #1200 regression: the
+// FC0013 chip ID (0xA3) sits at register fc0013CheckAddr (0x00), but a
+// bare I2CRead returns whatever register the bus currently has selected
+// (the reporter's device answered 0x02). detectFC0013 must select
+// register 0x00 first, or a real FC0013 never matches. Fails against the
+// old bare-read code (detect returns nil), passes with the register
+// select.
+func TestDetectFC0013SelectsChipIDRegister(t *testing.T) {
+	m := &fc0013RegisterMock{
+		selected:   0x0B, // some non-ID register selected at power-up
+		defaultVal: 0x02, // the stale byte the #1200 dongle returned
+		regs:       map[byte]byte{fc0013CheckAddr: fc0013CheckVal},
+	}
+	tuner := detectFC0013(rtl2832u.New(m))
+	if tuner == nil {
+		t.Fatalf("detectFC0013 returned nil: the chip ID 0x%02x lives at register 0x%02x, "+
+			"but a bare read returned the stale 0x%02x — detect must select the register first (#1200)",
+			fc0013CheckVal, fc0013CheckAddr, m.defaultVal)
+	}
+	if tuner.Type() != TypeFC0013 {
+		t.Errorf("Type() = %v, want FC0013", tuner.Type())
+	}
+}
+
+// TestDetectFC0013RejectsWrongChipID confirms the probe still declines a
+// device whose register 0x00 is not the FC0013 ID (e.g. an FC0012 at the
+// shared 0xC6 address reads 0xA1), so the register-select fix does not
+// make detection over-eager.
+func TestDetectFC0013RejectsWrongChipID(t *testing.T) {
+	m := &fc0013RegisterMock{
+		selected:   0x00,
+		defaultVal: 0x00,
+		regs:       map[byte]byte{fc0013CheckAddr: 0xA1}, // FC0012 chip ID
+	}
+	if tuner := detectFC0013(rtl2832u.New(m)); tuner != nil {
+		t.Errorf("detectFC0013 matched on chip ID 0xA1, want nil (only 0x%02x is FC0013)", fc0013CheckVal)
+	}
+}
+
 func TestFC0013_TypeAndIF(t *testing.T) {
 	f := NewFC0013(rtl2832u.New(usb.NewMockTransport()))
 	if f.Type() != TypeFC0013 {

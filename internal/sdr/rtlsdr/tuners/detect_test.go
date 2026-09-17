@@ -118,8 +118,9 @@ func TestDetect_FallsThroughToE4000(t *testing.T) {
 	// GPIO4 output enable (no level writes — librtlsdr only flips
 	// the direction, leaves the value undriven).
 	m.Script = append(m.Script, expectSetGPIOOutput(4, 0x00, 0x00)...)
-	// FC0013 miss.
-	m.Script = append(m.Script, expectI2CReadRaw(0xC6, 1, []byte{0x00}))
+	// FC0013 miss — selects reg 0x00 (the chip-ID register) first, then
+	// reads (#1200: a bare read returns a stale register).
+	m.Script = append(m.Script, expectI2CReadRegRaw(0xC6, fc0013CheckAddr, 0x00)...)
 	// E4000 dummy read (NAK wakeup) — mock returns 0x00.
 	m.Script = append(m.Script, expectI2CReadRaw(0xC8, 1, []byte{0x00}))
 	// E4000 chip-ID match.
