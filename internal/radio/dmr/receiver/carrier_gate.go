@@ -1,5 +1,7 @@
 package receiver
 
+import "math"
+
 // carrierGate is a per-sample carrier-presence detector on the FM
 // discriminator output — an FM noise-quieting squelch expressed as a
 // statistic, with no absolute-power threshold anywhere.
@@ -81,6 +83,17 @@ type carrierGate struct {
 
 	ring    []float32 // discriminator delay line (lag samples)
 	ringPos int
+
+	// holdOpen is the number of leading samples (after construction or a
+	// reset) the gate passes as present WITHOUT folding them into its
+	// statistics: the receiver's channel filter starts from an empty
+	// history, and the partial sums of its warm-up are a switch-on
+	// transient whose instantaneous frequency is not the carrier's — read
+	// as variance, it closed the gate for ~150 samples at the head of every
+	// stream, muting the loops' first samples and starting the gated path
+	// from a different state than the ungated one. Held samples still run
+	// through the delay line, so the gate stays a pure lag over the head.
+	holdOpen int
 }
 
 // carrierGateSymbols is the gate's EMA window in symbol periods. Four symbols
@@ -106,11 +119,37 @@ const (
 )
 
 func newCarrierGate(sps float64) *carrierGate {
+	return newCarrierGateForNoise(sps, fullBandNoiseDiscVariance)
+}
+
+// fullBandNoiseDiscVariance is the discriminator variance of white noise
+// occupying the whole sample band: successive phase differences are uniform
+// on ±π, so the variance is π²/3 ≈ 3.29 rad². The hysteresis constants above
+// were measured against exactly that population (2.3–3.9 rad² in the
+// direct-mode capture's gaps), so they are expressed as fractions of it.
+var fullBandNoiseDiscVariance = math.Pi * math.Pi / 3
+
+// newCarrierGateForNoise builds a gate whose hysteresis is scaled to the
+// discriminator variance the receiver's front end produces on NOISE ALONE
+// (noiseVariance, rad²). The gate's whole decision rests on the gap between
+// a burst's variance (the modulation's own, ~0.04 rad², independent of the
+// noise bandwidth) and the noise floor's — and the floor's is set by the
+// bandwidth ahead of the discriminator: the full ±Fs/2 band gives π²/3, a
+// channel filter a fraction of that (band-limited noise swings the
+// instantaneous frequency only across its own band). The absolute rad²
+// constants therefore hold only for the unfiltered front end they were
+// measured on; behind a 12.5 kHz channel filter idle-gap noise fell below
+// the OPEN threshold, the gate declared a carrier present on noise and the
+// coarse acquirer engaged on that noise's mean (measured: −1 kHz, losing the
+// next transmission). Scaling keeps the same fractions of the floor. The
+// full-band value reproduces the historical constants exactly.
+func newCarrierGateForNoise(sps, noiseVariance float64) *carrierGate {
 	lag := int(carrierGateSymbols*sps + 0.5)
+	scale := noiseVariance / fullBandNoiseDiscVariance
 	return &carrierGate{
 		rate:      1.0 / (carrierGateSymbols * sps),
-		openBelow: carrierGateOpenBelow,
-		closeAt:   carrierGateCloseAt,
+		openBelow: carrierGateOpenBelow * scale,
+		closeAt:   carrierGateCloseAt * scale,
 		ring:      make([]float32, lag),
 	}
 }
@@ -135,6 +174,9 @@ func (g *carrierGate) Process(dst []bool, disc []float32, iq []complex64) []bool
 	for i, x := range disc {
 		v := float64(x)
 		switch {
+		case g.holdOpen > 0:
+			g.holdOpen--
+			g.open = true
 		case iq != nil && iq[i] == 0:
 			g.open = false
 		case !g.seeded:
@@ -176,11 +218,16 @@ func (g *carrierGate) Process(dst []bool, disc []float32, iq []complex64) []bool
 
 // Reset clears the statistics and the delay line so a re-synced stream
 // re-seeds.
+// HoldOpen makes the next n samples pass as present without touching the
+// gate's statistics (see holdOpen).
+func (g *carrierGate) HoldOpen(n int) { g.holdOpen = n }
+
 func (g *carrierGate) Reset() {
 	g.mean = 0
 	g.sq = 0
 	g.seeded = false
 	g.open = false
+	g.holdOpen = 0
 	for i := range g.ring {
 		g.ring[i] = 0
 	}

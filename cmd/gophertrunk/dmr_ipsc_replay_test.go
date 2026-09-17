@@ -57,6 +57,9 @@ import (
 // late_entries > 0); without it the run decodes voice but grants nothing —
 // exactly the "GT said the call ended but the conversation continued" report.
 //
+// GT_DMR_NO_CHANNEL_FILTER=1 builds the receiver without its pre-discriminator
+// channel filter (the A/B for a capture that decodes differently with it).
+//
 // GT_DMR_DROP_TERMINATORS=1 scrubs every Terminator-with-LC burst instead: the
 // on-air model of the 10 Sep report where the control path never decoded the
 // terminator while the voice path did. Each transmission after the first must
@@ -168,9 +171,10 @@ func TestDMRIPSCReplay(t *testing.T) {
 	)
 	var allDibits []uint8
 	rx := dmrrx.New(dmrrx.Options{
-		SampleRateHz: outRate,
-		DeviationHz:  1944.0,
-		ClockGain:    0.015,
+		SampleRateHz:    outRate,
+		DeviationHz:     1944.0,
+		ClockGain:       0.015,
+		ChannelFilterHz: dmrHarnessChannelFilterHz(),
 		DibitSink: func(dibits []uint8, _ int) {
 			allDibits = append(allDibits, dibits...)
 		},
@@ -328,6 +332,17 @@ func lcCallDestinationForReplay(flc dmr.FLC) (uint32, bool) {
 		return uu.DestinationID, true
 	}
 	return 0, false
+}
+
+// dmrHarnessChannelFilterHz is the pre-discriminator channel filter cutoff the
+// DMR replay harnesses build their (Tier II CC) receiver with — the production
+// default, unless GT_DMR_NO_CHANNEL_FILTER=1 disables it (returns 0), the A/B
+// instrument for a capture that decodes differently with and without it.
+func dmrHarnessChannelFilterHz() float64 {
+	if v := os.Getenv("GT_DMR_NO_CHANNEL_FILTER"); v == "1" || v == "true" {
+		return 0
+	}
+	return dmrrx.DefaultChannelFilterHz
 }
 
 // readDMRCaptureIQ loads a DMR IQ capture for the replay harnesses. A wav/flac

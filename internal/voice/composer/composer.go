@@ -721,7 +721,15 @@ func (c *Composer) handleEnd(ce trunking.CallEnd) {
 	// not come. Ordering (this vs the recorder's own CallEnd handling) is
 	// arbitrary; the recorder finalizes once both have arrived.
 	if c.drainCoord != nil {
-		c.drainCoord.NotifyDrainComplete(ce.DeviceSerial)
+		// Name the call when the recorder can use it: after a re-key on the
+		// same serial this drain may be the previous call's, arriving with
+		// the next over's session already open, and the recorder must not
+		// take it as that session's.
+		if dc, ok := c.drainCoord.(interface{ NotifyDrainCompleteForCall(string, uint64) }); ok {
+			dc.NotifyDrainCompleteForCall(ce.DeviceSerial, ce.Grant.CallID)
+		} else {
+			c.drainCoord.NotifyDrainComplete(ce.DeviceSerial)
+		}
 	}
 }
 

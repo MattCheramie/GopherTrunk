@@ -1202,6 +1202,11 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// and stays well within the loop's noise margin for
 		// live captures.
 		ClockGain: 0.025,
+		// Channel filter on the shared wideband tap: keep an off-channel
+		// neighbour off the discriminator/acquirer so it can't engage the
+		// coarse carrier stage and deafen this tap during the CC's idle
+		// gaps (15/17 Sep IPSC field taps).
+		ChannelFilterHz: dmrrx.DefaultChannelFilterHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
@@ -1314,6 +1319,11 @@ func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// 0.015 value still sits well within the loop's noise
 		// margin per the MM stability bound.
 		ClockGain: 0.015,
+		// Channel filter on the shared wideband tap: keep an off-channel
+		// neighbour off the discriminator/acquirer so it can't engage the
+		// coarse carrier stage and deafen this tap during the CC's idle
+		// gaps (15/17 Sep IPSC field taps).
+		ChannelFilterHz: dmrrx.DefaultChannelFilterHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
