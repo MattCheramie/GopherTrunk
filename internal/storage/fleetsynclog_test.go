@@ -49,13 +49,15 @@ func TestFleetSyncLogInsertsBurst(t *testing.T) {
 	bus.Publish(events.Event{
 		Kind: events.KindFleetSyncMessage,
 		Payload: FleetSyncMessage{
-			ReceivedAt: time.Unix(1735000000, 0),
-			Fleet:      107,
-			Unit:       1772,
-			IsFS2:      true,
-			CRCOK:      true,
-			RawHex:     "FC80083053057E59",
-			Body:       "FleetSync II ANI: fleet=107 unit=1772",
+			ReceivedAt:  time.Unix(1735000000, 0),
+			Fleet:       107,
+			Unit:        1772,
+			IsFS2:       true,
+			CRCOK:       true,
+			RawHex:      "FC80083053057E59",
+			Body:        "FleetSync II ANI: fleet=107 unit=1772",
+			Serial:      "R1",
+			FrequencyHz: 462_562_500,
 		},
 	})
 
@@ -66,6 +68,9 @@ func TestFleetSyncLogInsertsBurst(t *testing.T) {
 	r := recent[0]
 	if r.Fleet != 107 || r.Unit != 1772 || !r.IsFS2 || !r.CRCOK {
 		t.Errorf("identity not round-tripped: %+v", r)
+	}
+	if r.Serial != "R1" || r.FrequencyHz != 462_562_500 {
+		t.Errorf("channel provenance not round-tripped (#1184): serial=%q freq=%d", r.Serial, r.FrequencyHz)
 	}
 	if r.RawHex != "FC80083053057E59" || r.Body != "FleetSync II ANI: fleet=107 unit=1772" {
 		t.Errorf("Recent[0] = %+v", r)

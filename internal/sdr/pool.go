@@ -32,6 +32,7 @@ type PoolEntry struct {
 func (e *PoolEntry) Snapshot(attached bool) SDRStatus {
 	st := SDRStatus{
 		Driver:       e.Info.Driver,
+		Index:        e.Info.Index,
 		Serial:       e.Info.Serial,
 		Manufacturer: e.Info.Manufacturer,
 		Product:      e.Info.Product,

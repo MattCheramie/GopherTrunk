@@ -1537,8 +1537,33 @@ confirmation before any close-as-completed.
   Not decoded: Hytera EP (FID 0x68, 40-bit MI, vendor schedule), Kirisun, DES/AES in the voice
   path. SDRTrunk (Apache-2.0) is the layout reference; DSD-FME (GPL) was read for the
   conventions only, nothing ported.
-- **FleetSync (#437/#1184) is VERIFIED OFFLINE on the reporter's two SDR# captures — and the
-  blocker was never FleetSync, it was the WAV reader.** `internal/radio/fleetsync/afsk` mirrors
+- **FleetSync (#1184) IS ON-AIR VERIFIED (16 Sep, reporter's Kenwood lab: FS-I and FS-II both
+  decode live) — and the live run exposed a coexistence failure that is NOT yet root-caused.**
+  Config: `fleetsync.channels` on RTL R1 + `scanner.conventional` on RTL R2 (`systems=0`,
+  `voice_devices=2`). Each section alone works; together, 146 ms after start `fleetsync:
+  SetCenterFreq failed` on R1 with the r82xx PLL I2C write EPIPE (`tried chunk sizes 16,8,4;
+  all stalled` — the runtime control-pipe stall class of #248/#753), and at +627 ms the
+  scanner opened a synthetic call on a SILENT 146.67 MHz channel that ran 23 s and ended
+  `reason=error` at Ctrl-C. Two robustness holes turned one USB hiccup into "nothing works":
+  (1) every single-channel decoder block gave up FOREVER on one failed tune/open —
+  `runSingleChannelDecoder` (daemon.go) now retries tune / open / a decoder that stops with
+  500 ms→30 s backoff (MDC1200 + FleetSync converted; POCSAG/FLEX/M17/APRS/AIS/LoRa/DSC/ADS-B
+  still have the give-up shape — same fix applies); (2) a scanner dwell whose IQ stream STOPS
+  (without closing) never ended — hangtime counts silent chunks that never arrive, and the
+  ticker kept touching the watchdog — so a wedged pump held a phantom call open; `Options.
+  StreamStallTimeout` (3 s) ends it and Run re-opens the stream. Both pinned failing-first.
+  Still open: WHY both dongles stalled at the same instant (a USB port reset on a sibling
+  dongle sharing a hub is the #1135 lesson; the reporter's log excerpt starts at the banner,
+  so the `device opened` / tuner-diag lines and whether the two NESDRs share a hub are the
+  next instrument). Do NOT read the banner's `rtlsdr[0]` twice as a double-open: the pool
+  snapshot dropped `Info.Index` (now carried as `SDRStatus.Index`). Also landed on request:
+  FleetSync messages carry `serial`/`frequency_hz` (bus → `fleetsync_log` columns, migrated
+  in place → REST → a Channel column). The reporter's design ask — attach MDC1200/FleetSync
+  to `scanner.conventional` channels instead of pinning a whole SDR — is sound (the dwell
+  already has the FM chain; an FFSK decoder could hang off the dwell IQ) and NOT built.
+  Earlier note (offline verification), kept:**
+  FleetSync (#437/#1184) is VERIFIED OFFLINE on the reporter's two SDR# captures — and the
+  blocker was never FleetSync, it was the WAV reader. `internal/radio/fleetsync/afsk` mirrors
   the MDC1200 front end (FM → resample → 1200/1800 Hz `demod.FFSK` → Mueller-Müller → slicer →
   `fleetsync.Framer`), with the baud rate as an option. Lesson that cost a round: **slice FFSK
   at a fixed ZERO threshold** (as the reference does) — an FS-II frame whose word1 nibbles are

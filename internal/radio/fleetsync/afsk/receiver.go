@@ -96,6 +96,13 @@ type Options struct {
 	// SourceName is stamped on log lines.
 	SourceName string
 
+	// Serial and FrequencyHz identify this receiver's SDR and channel;
+	// both are stamped on every published storage.FleetSyncMessage so the
+	// log, REST endpoint and panel can say which channel produced an ID
+	// (#1184). Optional — a harness or offline decode may leave them zero.
+	Serial      string
+	FrequencyHz uint32
+
 	// Log is optional; defaults to slog.Default.
 	Log *slog.Logger
 }
@@ -130,6 +137,9 @@ type Receiver struct {
 	bitsEmitted   atomic.Uint64
 	burstsPublish atomic.Uint64 // events published to the bus
 	burstsDropped atomic.Uint64 // block-check failures kept off the bus
+
+	serial string // Options.Serial, stamped on every published message
+	freqHz uint32 // Options.FrequencyHz, likewise
 }
 
 // New constructs a Receiver. Returns an error if neither OnMessage nor
@@ -187,6 +197,8 @@ func New(opts Options) (*Receiver, error) {
 		onMessage:  opts.OnMessage,
 		bus:        opts.Bus,
 		dropBadCRC: opts.DropBadCRC,
+		serial:     opts.Serial,
+		freqHz:     opts.FrequencyHz,
 	}
 	r.framer = fleetsync.NewFramer(r.onFrame)
 	return r, nil
@@ -206,10 +218,12 @@ func (r *Receiver) onFrame(m fleetsync.Message) {
 		r.burstsDropped.Add(1)
 		return
 	}
+	msg := MessageToStorage(m, time.Now())
+	msg.Serial, msg.FrequencyHz = r.serial, r.freqHz
 	r.bus.Publish(events.Event{
 		Kind:      events.KindFleetSyncMessage,
 		Timestamp: time.Now(),
-		Payload:   MessageToStorage(m, time.Now()),
+		Payload:   msg,
 	})
 	r.burstsPublish.Add(1)
 }

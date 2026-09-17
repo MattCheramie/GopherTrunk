@@ -11,7 +11,11 @@ package sdr
 // keeps the JSON layer self-contained so the api package doesn't have
 // to import the pb generated types just to render the response.
 type SDRStatus struct {
-	Driver       string `json:"driver"`
+	Driver string `json:"driver"`
+	// Index is the driver's enumeration index for this device (the IDX
+	// column of `gophertrunk sdr list`), so a two-dongle banner reads
+	// rtlsdr[0] / rtlsdr[1] instead of [0] twice (#1184).
+	Index        int    `json:"index"`
 	Serial       string `json:"serial"`
 	Manufacturer string `json:"manufacturer,omitempty"`
 	Product      string `json:"product,omitempty"`
