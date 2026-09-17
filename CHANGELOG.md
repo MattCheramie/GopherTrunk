@@ -8,6 +8,25 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **RadioReference verify reported `premium: false` on an active Premium
+  account, and the state picker called an operation the WSDL does not define
+  (#1197).** The live service reports `subExpireDate` as a US-style
+  `03-02-2027` (MM-DD-YYYY); `subscriptionActive` only tried ISO layouts, so
+  a future expiry read as "no active premium subscription" while the same
+  response echoed the date. The dashed US layout (and a DD-MM fallback when
+  the first field cannot be a month) now parses. Separately, `GET /api/v1/config/rr/states` called
+  `getStateList`, which the RadioReference WSDL has never defined (the
+  reporter's `Operation 'getStateList' is not defined in the WSDL` 502); states
+  now come from `getCountryInfo`'s `stateList` (United States by default,
+  `?country=<coid>` for others). While pinning that against the service's real
+  response shape, every list walker (`trsList`, `countyList`, `stateList`,
+  `siteList`, `siteFreq`, `tgList`) turned out to read only the FIRST entry of
+  a SOAP-encoded array (`<list><item/><item/></list>` — the PHP SoapServer
+  shape) because the fixtures modelled one wrapper per entry; `listEntries`
+  now walks the `<item>` children, so a county/zip search lists every
+  system rather than one. Failing-first: `TestVerifyCredentials_USDateFormat`
+  (the reporter's literal response), `TestGetStateList_UsesGetCountryInfo`,
+  `TestGetCountyInfo_SOAPEncodedArray`, `TestGetCountyList_SOAPEncodedArray`.
 - **DMR Enhanced Privacy (RC4) is capture-verified — and decodes (#1187).**
   The reporter's two known-key discriminator captures (key IDs 11 and 22,
   simplex, colour code 2, TG 582743) now decode to speech through
