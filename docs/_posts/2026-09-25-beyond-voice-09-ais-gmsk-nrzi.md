@@ -84,7 +84,7 @@ GopherTrunk does **no slot bookkeeping**: the self-organising
 [TDMA]({{ '/reference/tdma/' | relative_url }}) is the transmitters' problem,
 and a receiver that frames bursts as they arrive gets every message the slot
 map would have given it. It needs a physical layer (burst → bits) and a link
-layer (bits → frame body) — this post's two halves. The chain landed across
+layer (bits → frame body). The chain landed across
 issues #427 and #428; `docs/ais.md` is its
 [operator page]({{ '/ais.html' | relative_url }}).
 
@@ -120,11 +120,14 @@ loop of
 at 8 samples per bit, `mmGain` 0.05 — sized to settle inside the 2.5 ms
 training sequence yet not be yanked by a 168-bit payload.
 
-The slicer is the deliberate difference from the AFSK family. `feedSymbol`
+The slicer is the deliberate difference from the
+[AFSK family]({{ '/blog/deep-dives/beyond-voice-02-afsk-ffsk-fundamentals/' | relative_url }}).
+`feedSymbol`
 slices at a **fixed zero** — "GMSK is symmetric around DC so the slicer
 threshold is fixed at zero — no DC-tracking needed" — and hands the raw bit
-to the NRZI decoder. That constant is the lesson FleetSync learned the hard
-way: a bias tracker drifting toward a long run of one tone flips the isolated
+to the NRZI decoder. That constant is the lesson
+[FleetSync]({{ '/blog/deep-dives/beyond-voice-04-fleetsync-wav-that-lied/' | relative_url }})
+learned the hard way: a bias tracker drifting toward a long run of one tone flips the isolated
 bits after it. AIS never gives a tracker the chance, because the line code
 below guarantees an edge at least every six bits.
 
@@ -178,7 +181,8 @@ checked at every bit position, so a misaligned stream or a noise burst costs
 nothing but the frame it landed in; `closeFrame` drops bodies under
 `MinFrameBytes` (18). `TestFramerBitDestuffsCorrectly`,
 `TestFramerResyncsAcrossNoise` and `TestFramerAbortsOnSevenOnes` pin the
-rules, and the same code already framed every APRS packet in Part 7.
+rules, and the same code already framed every APRS packet in
+[Part 7]({{ '/blog/deep-dives/beyond-voice-07-aprs-ax25-location/' | relative_url }}).
 
 The AIS receiver adds its own gate: 168 bits plus a 16-bit FCS is 23 bytes,
 so `MinPayloadBytes` = 23 sits above the framer's 18 and shorter bodies
@@ -311,8 +315,8 @@ in waiting.
   bits" or "no frames" from `/metrics` alone.
 - **Publish marginal frames, flag them.** `FCSOK` travels with the message
   instead of gating it; the operator chooses `drop_bad_fcs`.
-- **Never return an error from `Decode`.** Unknown or short payloads come
-  back as `TypeUnknown` with `RawHex` intact.
+- **Never return an error from `Decode`.** Unknown payloads come back as
+  `TypeUnknown` with `RawHex` intact.
 
 ## Where this goes next
 
