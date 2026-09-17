@@ -718,6 +718,12 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DibitSink:    dmr.DibitSink(func(d []uint8, b int) { cc.Process(d, b) }),
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier3,
+			// Channel-select low-pass ahead of the FM discriminator: the tap's
+			// 48 kHz stream passes two DMR channels either side, and an FM
+			// discriminator cannot separate co-passband carriers of comparable
+			// power — the 15/16 Sep IPSC "deaf tap" (a −20.1 kHz emitter at the
+			// tap's own level through every idle gap). See dmrrx.ChannelCutoffHz.
+			EnableChannelFilter: true,
 		})
 		// Decode-drought watchdog, mirroring the ccdecoder dmrPipeline: the
 		// CC's burst buffer keys on absolute dibit indices, so the receiver
@@ -747,6 +753,12 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DibitSink:    dmr.DibitSink(func(d []uint8, b int) { cc.Process(d, b) }),
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier2,
+			// Channel-select low-pass ahead of the FM discriminator: the tap's
+			// 48 kHz stream passes two DMR channels either side, and an FM
+			// discriminator cannot separate co-passband carriers of comparable
+			// power — the 15/16 Sep IPSC "deaf tap" (a −20.1 kHz emitter at the
+			// tap's own level through every idle gap). See dmrrx.ChannelCutoffHz.
+			EnableChannelFilter: true,
 		})
 		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier2", processor: cc, receiver: rx, tier2Cnt: cc,
 			decoded: func() uint64 { return cc.Counters().FECPass }}, nil
@@ -1240,6 +1252,20 @@ const (
 	tier2DeafHealMarginDb = 6.0
 )
 
+// tier2DeafRefDecayDb bounds how far ONE synced window can pull the channel's
+// decoding-level reference (engineChannel.decodeDbFS) down. A diagnostics
+// window is ~1 s and a beacon train ends wherever it ends, so the window that
+// straddles the train's tail carries a few syncs at a mean power that is
+// mostly the idle gap (17 Sep IPSC log: decode_dbfs −63/−61 on a tap whose
+// trains sit at −48.4 dBFS). Taken at face value that made the next three gap
+// windows (−65 dBFS, within the 6 dB margin) read as "deaf at its decoding
+// level" and reset a healthy receiver every idle gap — six false heals in
+// three minutes, each costing the next train its re-acquisition. The
+// reference therefore only rises freely; it falls by at most this much per
+// synced window, so a genuine level change is tracked within a few windows
+// while a single edge window cannot move it into the gap.
+const tier2DeafRefDecayDb = 1.0
+
 // tier2DeafHealWarnInterval is the per-channel WARN cadence for the deaf-tap
 // heal; heals inside the interval log at DEBUG. Every heal still resets the
 // receiver and counts in deaf_heals — only the log level is throttled.
@@ -1604,8 +1630,17 @@ func (e *Engine) healDeafTier2(ec *engineChannel, now time.Time, dbfs float64, s
 	held := offHz == ec.acqPrevHz
 	ec.acqPrevHz = offHz
 	if syncDelta > 0 || fecPassDelta > 0 || beaconDelta > 0 {
+		// The reference rises to any synced window's level at once, but a
+		// window straddling a train's tail (a few syncs, gap-level mean
+		// power) may only lower it by tier2DeafRefDecayDb — see that const.
+		if !ec.everSynced || dbfs > ec.decodeDbFS {
+			ec.decodeDbFS = dbfs
+		} else if ec.decodeDbFS-dbfs > tier2DeafRefDecayDb {
+			ec.decodeDbFS -= tier2DeafRefDecayDb
+		} else {
+			ec.decodeDbFS = dbfs
+		}
 		ec.everSynced = true
-		ec.decodeDbFS = dbfs
 		ec.deafWindows = 0
 		if held {
 			ec.acqConfirmed = true

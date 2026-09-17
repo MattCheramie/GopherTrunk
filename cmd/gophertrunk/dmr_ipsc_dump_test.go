@@ -45,9 +45,10 @@ func TestDMRIPSCBurstDump(t *testing.T) {
 	ddc := ccdecoder.NewDownconverter(inRate, 48000)
 	var allDibits []uint8
 	rx := dmrrx.New(dmrrx.Options{
-		SampleRateHz: ddc.OutRateHz(),
-		DeviationHz:  1944.0,
-		ClockGain:    0.015,
+		SampleRateHz:        ddc.OutRateHz(),
+		DeviationHz:         1944.0,
+		ClockGain:           0.015,
+		EnableChannelFilter: dmrHarnessChannelFilter(),
 		DibitSink: func(d []uint8, _ int) {
 			allDibits = append(allDibits, d...)
 		},

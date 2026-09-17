@@ -1644,6 +1644,103 @@ confirmation before any close-as-completed.
   gap-phase spectrum will name it. The reject path makes the tap immune either way; do NOT add a
   frequency bound to the acquirer to "fix" this — a 12.5 kHz adjacent channel sits inside any bound
   that still serves #836.
+- **16 Sep IPSC "still deaf" (Fire2, some calls now captured): the DMR receiver had NO
+  channel-select filter — the 48 kHz channel stream passes ±~22 kHz (two 12.5 kHz
+  channels either side) straight into the FM discriminator, and an FM discriminator
+  cannot separate co-passband carriers of comparable power.** The 15 Sep fix (reject a
+  coarse-acquirer engage the tap never synced under) stopped the acquirer LATCHING on the
+  −20.1 kHz emitter, but while that emitter is up at the tap's own level the discriminator
+  output is garbage regardless — that is the residual deaf stretch. `dmrrx.Options.
+  EnableChannelFilter` (Kaiser lowpass, `ChannelCutoffHz` 6250 = half the channel spacing,
+  181 taps at 48 kHz, ~1.5 kHz skirt, >80 dB on the 12.5 kHz neighbour) now runs after the
+  coarse de-rotation and ahead of the discriminator on EVERY production DMR receiver
+  (widebandt2 Tier II/III, ccdecoder Tier I/II/III, the composer voice chain, the symbol
+  scope). Failing-first: `TestReceiverChannelFilterRejectsCoPassbandNeighbour` (equal-power
+  C4FM neighbour at −20 kHz: 0/40 syncs unfiltered, 40/40 filtered). Two traps the filter
+  sprang, both pinned: (1) **the carrier gate's thresholds are absolute rad² measured on
+  WIDEBAND noise** (uniform ±π ⇒ 3.3 rad²); filtered noise swings ~0.49 rad², so the fixed
+  1.0/2.5 thresholds read every gap as a quiet carrier and the gate never closed — the #836
+  direct-mode fixture decoded ZERO syncs. `newCarrierGateCalibrated` sets the thresholds as
+  FRACTIONS of the noise-only variance, which is MEASURED at construction by pushing
+  fixed-seed white noise through the actual filter taps (`filteredNoiseDiscVariance`) — no
+  closed form for the wrapped variance of narrowband-noise instantaneous frequency. (2) The
+  fractions are NOT the wideband ratio: filtered noise is correlated over ~4 samples, so the
+  4-symbol EMA swings wider (gap minimum 0.14 vs median 0.47) and a 0.30 fraction flickered
+  the gate open on gap noise; 0.15/0.75 hold. That slower open (~2.3 windows) then muted the
+  first 4–8 dibits of every burst behind a 1-window delay line and BPTC mis-corrected the
+  Voice LC Headers (the direct-mode pipeline fixture lost a whole PTT) — the calibrated
+  gate's delay line is sized to the open latency and a close-HOLD keeps the burst tail out
+  of the mute. The wideband (unfiltered) gate path is byte-identical. STILL ON-AIR-GATED
+  (#764/#771): the operator's next Fire2 run decides; if the −20 kHz emitter is a real
+  12.5 kHz-adjacent DMR channel the filter is the whole fix, if it is closer than ~7 kHz it
+  is co-channel and nothing short of moving the antenna helps. The offered Hytera
+  scrambler capture is a separate item (DMR "basic privacy" scramble, not RC4).
+- **`recordings.voice_profile` (mbelib | op25) is the opt-in the 10 Sep P25 A/B pointed at:**
+  the two references disagree on the unvoiced level by several dB (mbelib 5.49× vs OP25's
+  equal-power 1×) and on the LF tilt, so "sounds like trunk-recorder" is a preset, not a
+  fix — `op25` sets `unvoiced_gain` 1 and (with enhance on) tilt off / hpf 100 Hz, filling
+  only knobs left at default (`RecordingsConfig.ResolveVoiceCalibration`, `decode
+  -voice-profile`). What it deliberately does NOT touch: the +5..+7 dB 3–4 kHz excess (in the
+  high-harmonic reconstruction; needs the per-harmonic OP25 diff) and the whole-LDU head loss
+  (needs a voice IQ capture).
+- **Sample-synchronous multi-frequency capture landed** (`centers_hz` on
+  `POST /api/v1/siglab/capture`, comma list in the SigLab form, `capture -centers`): every
+  slice is carved from the SAME live chunks through an identical DDC (same rate + bandwidth ⇒
+  same group delay), so sample N of each file is the same instant — pinned by keyup-onset
+  equality across slices (`TestSiglabCaptureMultiSliceIsSampleAligned`,
+  `TestCaptureToFilesSlicesAreSampleSynchronous`). One shared bandwidth is the invariant
+  (different bandwidths ⇒ different group delays ⇒ not aligned); sidecars carry
+  `capture_group` / index / size / `capture_started_at`. Up to 8 slices; each is a full
+  polyphase DDC on the capture goroutine, and the broker drops chunks to a slow consumer.
+- **17 Sep IPSC "Fire2" 600 s capture (442.3875 MHz, 25 kS/s flac + debug.log): three MORE
+  defects beyond the channel filter above — a deaf-heal that false-fires every idle gap, a
+  re-key that drops both overs' recordings, and a late first grant.** Same tap as the 16 Sep
+  note (idle-beacon repeater, cc 12, tg 11 src 199, ~10 s beacon trains / ~5–9 s gaps, the
+  −20 kHz neighbour). With `EnableChannelFilter` on the CC taps the neighbour is gone; these
+  three are independent, each pinned failing-first:
+  1. **Deaf-heal false-fires every idle gap (7 heals in 3 min).** `healDeafTier2`'s
+     decoding-level reference (`decodeDbFS`) took the mean power of the ~1 s window that
+     STRADDLES a train's tail — a few syncs over mostly-gap samples reads −63/−61 dBFS — as
+     the channel's level, so the next gap windows (−65 dBFS, inside the 6 dB margin) read
+     "deaf at its decoding level" and reset a healthy receiver. Fix: the reference rises to
+     any synced window at once but falls by at most `tier2DeafRefDecayDb`=1 dB per synced
+     window, so a single edge window cannot drag it into the gap while a genuine level change
+     still tracks within a few windows. Pinned by `TestDeafHealIgnoresTrainEdgeWindow` /
+     `TestDeafHealTracksGenuineLevelChange` (`engine_deafheal_test.go`).
+  2. **A re-key within hangtime dropped BOTH overs' recordings.** The composer runs the
+     recorder drain-coordinated, so on a Voice-LC-Header re-key (the engine ends the previous
+     call and grants the next in the same instant) the previous call's `CallEnd` is deferred
+     waiting for the chain's drain signal when the next `CallStart` lands. `handleStart`'s
+     "device already has session, replacing" path then closed the previous session WITHOUT
+     finalizing it (no CallComplete, no sidecar, no history row), and the previous call's late
+     drain signal finalized the NEW session before its first frame (files open lazily, so
+     silently) — every frame of the next over dropped. The field log's lone "replacing" WARN
+     is exactly this. Fix: `finalizeDrainingBeforeReuse` finalizes the deferred previous call
+     with its own `CallEnd` before the reuse, and every finalize/drain path is now fenced by
+     `Grant.CallID` (`callIDsDiffer`, `NotifyDrainCompleteForCall` threaded
+     composer→fanout→recorder) so a stale drain can neither finalize nor pre-drain the next
+     over. Pinned by `TestRecorderRekeyDuringPendingDrainKeepsNextOver` (old recorder records
+     one over and emits one CallComplete; fixed records both).
+  3. **The first grant slid 3.4 s late — the channel filter fixes it; a false timing seed was
+     a smaller contributor.** In the offline 600 s replay the FIRST grant moves 3.41 s →
+     0.85 s with the channel filter alone (`GT_DMR_NO_CHANNEL_FILTER=1` puts it back to
+     3.41 s): the cold-start receiver sits through the opening idle gap where the −20 kHz
+     neighbour engages the coarse acquirer, and the filter keeps that from displacing the
+     first keyup's header decode. Separately, the #836 feed-forward timing acquisition seeded
+     the loop from a SINGLE eye-estimator window; the repeater keys up with ~40 ms of
+     near-unmodulated carrier, and a window straddling that transient could seed a phase
+     ~2 samples off and displace the loop's still-valid held phase. The seed now requires TWO
+     consecutive windows whose symbol instants agree within `timingAcqAgreeSamples`=1
+     (mirroring the coarse acquirer's two-windows-agree rule); after `timingAcqMaxWindows`=4
+     disagreeing windows it gives up and the loop pulls in on its own, as before. Its measured
+     effect on this capture is small (superframes 215→216, late_entries 2→1) and it is
+     byte-identical on continuous streams. Real-air smoke test
+     `dmr-ipsc-442.3875-keyup-17sep-48k.cs16` (`TestReceiverRealAirKeyupDecodes`) pins that
+     the production CC config decodes this keyup's header train. Full-replay net: 17→17 grants,
+     first grant 3.41 s → 0.85 s, superframes 213→216.
+  STILL ON-AIR-GATED (#764/#771): the daemon-path A/B (does the live tap stop the every-gap
+  heals, does a re-key now record both overs, does the first PTT of a train grant on its
+  header) needs the operator's next live run on a build with these fixes.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

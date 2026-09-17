@@ -64,6 +64,17 @@ export function CaptureRow({
             </>
           ) : null}
           {(capture.size / 1024).toFixed(0)} KiB
+          {capture.capture_group && (
+            <>
+              {" · "}
+              <span
+                data-testid="capture-group"
+                title={`Recorded together with the other slices of group ${capture.capture_group}; sample-synchronous`}
+              >
+                sync {capture.capture_group.slice(0, 4)}
+              </span>
+            </>
+          )}
           {formatCapturedAt(capture.created_at) && (
             <>
               {" · "}

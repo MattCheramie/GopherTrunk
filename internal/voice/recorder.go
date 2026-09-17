@@ -954,6 +954,7 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 			"tg", cs.Grant.GroupID, "src", cs.Grant.SourceID)
 		return
 	}
+	r.finalizeDrainingBeforeReuse(cs)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, busy := r.sessions[cs.DeviceSerial]; busy {
@@ -980,6 +981,42 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		"tg", cs.Grant.GroupID, "provoice", cs.Grant.ProVoice,
 		"vocoder", s.vocoderName)
 }
+
+// finalizeDrainingBeforeReuse handles a re-key on a drain-coordinated
+// recorder: the engine ended the previous call on this serial and granted
+// the next over in the same instant (a conventional-DMR Voice LC Header for a
+// still-tracked call), so the previous call's CallEnd is deferred in
+// pendingFinalize waiting for the composer's drain signal when the next
+// call's CallStart arrives. Left alone, handleStart's replace path closed the
+// previous session WITHOUT finalizing it (no CallComplete, no sidecar, no
+// history row), and the previous call's drain signal then finalized the NEW
+// session before its first frame — silently, files open lazily — so the whole
+// next over was dropped (17 Sep IPSC log: one re-key in five, two recordings
+// gone). Finalize the previous call now with its own CallEnd; the tail frames
+// its chain may still write carry its CallID and are fenced off the next
+// session by sessionForWrite. No-op unless a CallEnd is pending for the serial.
+func (r *Recorder) finalizeDrainingBeforeReuse(cs trunking.CallStart) {
+	r.mu.Lock()
+	st := r.pendingFinalize[cs.DeviceSerial]
+	if st == nil || !st.haveCE {
+		r.mu.Unlock()
+		return
+	}
+	if st.timer != nil {
+		st.timer.Stop()
+	}
+	delete(r.pendingFinalize, cs.DeviceSerial)
+	ce := st.ce
+	r.mu.Unlock()
+	r.log.Debug("recorder: device re-keyed while its previous call was draining — finalizing that call now",
+		"device", cs.DeviceSerial, "prev_call_id", ce.Grant.CallID, "call_id", cs.Grant.CallID)
+	r.finalizeCall(ce)
+}
+
+// callIDsDiffer reports whether two Grant.CallIDs name different calls. A zero
+// on either side is "unknown" and matches anything, preserving behaviour for
+// un-stamped / synthetic calls and legacy callers.
+func callIDsDiffer(a, b uint64) bool { return a != 0 && b != 0 && a != b }
 
 // algorithmClear is the encryption Algorithm ID a clear (unencrypted)
 // call advertises; anything else means the call is encrypted. Mirrors
@@ -1526,6 +1563,12 @@ type pendingFinalize struct {
 	haveCE  bool
 	drained bool
 	timer   *time.Timer
+	// callID is the Grant.CallID the pending finalize belongs to (0 when the
+	// caller could not say): from the CallEnd, or from the drain signal when
+	// that arrives first. A drain signal or CallEnd for a DIFFERENT call on
+	// the same serial is the previous call's, arriving after a re-key reused
+	// the serial — it must not finalize, or mark as drained, the newer call.
+	callID uint64
 }
 
 // EnableDrainCoordination switches the recorder into drain-coordinated finalize:
@@ -1545,6 +1588,17 @@ func (r *Recorder) EnableDrainCoordination() {
 // is recorded and finalize happens when handleEnd runs. A serial with no open
 // session and no pending CallEnd is ignored (nothing to finalize).
 func (r *Recorder) NotifyDrainComplete(deviceSerial string) {
+	r.NotifyDrainCompleteForCall(deviceSerial, 0)
+}
+
+// NotifyDrainCompleteForCall is NotifyDrainComplete plus the Grant.CallID of
+// the call whose chain drained. A composer that knows the call passes it so a
+// drain signal that arrives AFTER a re-key reused the serial (the previous
+// call's chain finishing while the next over's session is already open) is
+// recognised as the previous call's and ignored, instead of finalizing — or
+// pre-marking as drained — the newer call. callID 0 matches anything (legacy
+// callers).
+func (r *Recorder) NotifyDrainCompleteForCall(deviceSerial string, callID uint64) {
 	r.mu.Lock()
 	if !r.drainCoordinated {
 		r.mu.Unlock()
@@ -1554,13 +1608,22 @@ func (r *Recorder) NotifyDrainComplete(deviceSerial string) {
 	if st == nil {
 		// Drain signal arrived before handleEnd. Only track it if a session is
 		// still open (a CallEnd for it is therefore still coming); otherwise
-		// there is nothing to finalize and tracking it would leak.
-		if _, hasSession := r.sessions[deviceSerial]; !hasSession {
+		// there is nothing to finalize and tracking it would leak. A session
+		// for a different call than the drain names is the next over on a
+		// re-keyed serial: the drained call's recording was already finalized
+		// when the serial was reused (handleStart), so there is nothing left.
+		s, hasSession := r.sessions[deviceSerial]
+		if !hasSession || callIDsDiffer(s.callID, callID) {
 			r.mu.Unlock()
 			return
 		}
-		st = &pendingFinalize{}
+		st = &pendingFinalize{callID: callID}
 		r.pendingFinalize[deviceSerial] = st
+	} else if st.haveCE && callIDsDiffer(st.ce.Grant.CallID, callID) {
+		// The pending CallEnd is a newer call's; this drain is the previous
+		// call's, late. Its recording is gone already — nothing to do.
+		r.mu.Unlock()
+		return
 	}
 	st.drained = true
 	if !st.haveCE {
@@ -1615,8 +1678,14 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 	if st == nil {
 		st = &pendingFinalize{}
 		r.pendingFinalize[serial] = st
+	} else if st.drained && callIDsDiffer(st.callID, ce.Grant.CallID) {
+		// The drained flag was the previous call's (its drain signal landed
+		// after a re-key reused this serial); this CallEnd is the newer
+		// call's, whose own drain is still to come.
+		st.drained = false
 	}
 	st.ce = ce
+	st.callID = ce.Grant.CallID
 	st.haveCE = true
 	if st.drained {
 		if st.timer != nil {
@@ -1660,6 +1729,17 @@ func (r *Recorder) flushPendingFinalize() {
 func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 	r.mu.Lock()
 	s, ok := r.sessions[ce.DeviceSerial]
+	if ok && callIDsDiffer(s.callID, ce.Grant.CallID) {
+		// The session on this serial belongs to a NEWER call (a re-key reused
+		// the serial and handleStart already finalized the call this CallEnd
+		// names). Finalizing it here would close the next over's recording
+		// before its first frame — silently, since a session opens its files
+		// lazily — and every frame of that over would then be dropped.
+		r.mu.Unlock()
+		r.log.Debug("recorder: ignoring call end for a call this device no longer records",
+			"device", ce.DeviceSerial, "call_id", ce.Grant.CallID, "session_call_id", s.callID)
+		return
+	}
 	if ok {
 		delete(r.sessions, ce.DeviceSerial)
 	}

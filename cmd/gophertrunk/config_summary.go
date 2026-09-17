@@ -125,6 +125,7 @@ func summarizeGlobal(cfg config.Config) []any {
 		"rec_normalize", cfg.Recordings.Normalize.Enabled,
 		"rec_fm_equalizer", cfg.Recordings.Equalizer.Enabled,
 		"rec_warm_dmr_audio", cfg.Recordings.WarmDMRAudio,
+		"rec_voice_profile", resolvedVoiceProfileName(cfg.Recordings.VoiceProfile),
 		"rec_spec_amplitude_enhance",
 		cfg.Recordings.SpecAmplitudeEnhance == nil || *cfg.Recordings.SpecAmplitudeEnhance,
 	)
@@ -207,4 +208,13 @@ func tetraClockLabel(m tetrarx.ClockMode) string {
 		return "gardner"
 	}
 	return "naive"
+}
+
+// resolvedVoiceProfileName renders recordings.voice_profile as its canonical
+// name (the empty default reads "mbelib") for the startup summary.
+func resolvedVoiceProfileName(raw string) string {
+	if p, ok := config.ParseVoiceProfile(raw); ok {
+		return string(p)
+	}
+	return raw
 }

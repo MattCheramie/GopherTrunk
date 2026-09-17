@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
 )
 
@@ -33,6 +34,7 @@ func runDecode(args []string) {
 	in := fs.String("in", "-", "raw vocoder-frame input path; '-' reads stdin")
 	out := fs.String("out", "", "WAV output path (required; must be a regular file for the WAV header to be patched)")
 	vocoderName := fs.String("vocoder", "imbe", "vocoder name from the registry (imbe, ambe2, null, ...)")
+	voiceProfile := fs.String("voice-profile", "", "reference-decoder balance preset for the vocoder (mbelib = default dsd-neo calibration; op25 = the OP25 / trunk-recorder equal-power unvoiced level), the same choice as recordings.voice_profile")
 	legacySynth := fs.Bool("legacy-synthesis", false, "decode with the raw decoder's legacy synthesis (no spec-faithful §6.2 amplitude enhancement, uncalibrated unvoiced band level) instead of the daemon's recording defaults — for A/B only")
 	listVocoders := fs.Bool("list-vocoders", false, "print the registered vocoder names and exit")
 	statsFlag := fs.Bool("stats", true, "print a per-call voice audio-quality summary to stderr after decoding")
@@ -100,7 +102,11 @@ FLAGS:`)
 			sa.SetSpecAmplitudeEnhance(true)
 		}
 		if ug, ok := v.(voice.UnvoicedGainConfigurable); ok {
-			ug.SetUnvoicedGain(0)
+			if _, ok := config.ParseVoiceProfile(*voiceProfile); !ok {
+				rep.Fatalf(2, "-voice-profile must be mbelib|op25, got %q", *voiceProfile)
+			}
+			cal := config.RecordingsConfig{VoiceProfile: *voiceProfile}.ResolveVoiceCalibration()
+			ug.SetUnvoicedGain(cal.UnvoicedGain)
 		}
 	}
 	defer v.Close()

@@ -384,6 +384,10 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 		// the control-channel receiver in internal/scanner/ccdecoder.
 		DeviationHz: 1944.0,
 		ClockGain:   0.025,
+		// Channel-select low-pass (dmrrx.ChannelCutoffHz): the voice DDC's
+		// 48 kHz stream passes two channels either side and a co-passband
+		// carrier of comparable power blinds the discriminator (16 Sep).
+		EnableChannelFilter: true,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			// End the call promptly on an explicit Terminator for this group.
 			for _, flc := range termDet.Process(dibits, baseIdx) {

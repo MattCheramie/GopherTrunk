@@ -42,6 +42,17 @@ type Metadata struct {
 	// names (e.g. "tetra_colour_code": "1", "p25_phase1_demod_mode":
 	// "cqpsk"), applied onto the trunking.System the engine drives.
 	System map[string]string `json:"system,omitempty" yaml:"system,omitempty"`
+	// CaptureGroup / CaptureGroupIndex / CaptureGroupSize tie together the
+	// slices of one multi-centre live capture (POST /api/v1/siglab/capture
+	// with centers_hz, or `capture -centers`): every member was carved from
+	// the same IQ chunks through an identical down-converter, so sample N of
+	// one file is the same instant as sample N of every other member.
+	// CaptureStartedAt is the wall-clock start (RFC 3339) that lines the
+	// group up with the daemon log. All empty for a single capture.
+	CaptureGroup      string `json:"capture_group,omitempty" yaml:"capture_group,omitempty"`
+	CaptureGroupIndex int    `json:"capture_group_index,omitempty" yaml:"capture_group_index,omitempty"`
+	CaptureGroupSize  int    `json:"capture_group_size,omitempty" yaml:"capture_group_size,omitempty"`
+	CaptureStartedAt  string `json:"capture_started_at,omitempty" yaml:"capture_started_at,omitempty"`
 	// Expected is the acceptance contract graded against the decode.
 	Expected Acceptance `json:"expected" yaml:"expected"`
 }

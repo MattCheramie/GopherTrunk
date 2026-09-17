@@ -612,6 +612,9 @@ func (c Config) validateRecordings() []error {
 	default:
 		return []error{fmt.Errorf("recordings.format must be wav|flac, got %q", c.Recordings.Format)}
 	}
+	if _, ok := ParseVoiceProfile(c.Recordings.VoiceProfile); !ok {
+		return []error{fmt.Errorf("recordings.voice_profile must be mbelib|op25 (or empty), got %q", c.Recordings.VoiceProfile)}
+	}
 	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
 		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}

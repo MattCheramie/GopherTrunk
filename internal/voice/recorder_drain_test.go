@@ -3,6 +3,7 @@ package voice
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -202,5 +203,125 @@ func TestRecorderUncoordinatedFinalizesOnCallEnd(t *testing.T) {
 	r.handleEnd(drainCallEnd(cs))
 	if r.HasSession(cs.DeviceSerial) {
 		t.Fatal("uncoordinated recorder should finalize immediately on CallEnd")
+	}
+}
+
+// rawFrameCounts returns the frame count of every .raw sidecar under dir,
+// sorted by path (one per recorded transmission).
+func rawFrameCounts(t *testing.T, dir string, frameSize int) []int {
+	t.Helper()
+	var raws []string
+	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(p) == ".raw" {
+			raws = append(raws, p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(raws)
+	out := make([]int, 0, len(raws))
+	for _, p := range raws {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fi.Size()%int64(frameSize) != 0 {
+			t.Fatalf("%s: size %d not a multiple of frame size %d", p, fi.Size(), frameSize)
+		}
+		out = append(out, int(fi.Size()/int64(frameSize)))
+	}
+	return out
+}
+
+// TestRecorderRekeyDuringPendingDrainKeepsNextOver is the 17 Sep IPSC
+// regression. A conventional-DMR re-key ends the previous call and grants the
+// next over in the same instant, so with drain coordination the recorder can
+// see the next CallStart while the previous call's CallEnd is still deferred
+// waiting for the composer's drain signal. The old recorder then (1) replaced
+// the previous session without finalizing it — no CallComplete, no sidecar,
+// no history row — and (2) let the previous call's late drain signal finalize
+// the NEW session before its first frame (silently: files open lazily), so
+// every frame of the next over was dropped and its own CallEnd found nothing.
+// The field log: "recorder: device already has session, replacing" followed
+// by two recordings that never logged an end. Both overs must be recorded and
+// completed. Fails against the old recorder (one .raw, one CallComplete).
+func TestRecorderRekeyDuringPendingDrainKeepsNextOver(t *testing.T) {
+	DefaultRegistry.Register("loud-voc-drain", func() (Vocoder, error) { return loudVocoder{}, nil })
+	bus := events.NewBus(16)
+	t.Cleanup(bus.Close)
+	sub := bus.Subscribe()
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:                bus,
+		OutDir:             dir,
+		SampleRate:         8000,
+		WriteRaw:           true,
+		VocoderForProtocol: map[string]string{"test-drain": "loud-voc-drain"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.EnableDrainCoordination()
+	const frameSize = 11 // loudVocoder.FrameSize()
+	frame := make([]byte, frameSize)
+
+	// Over A: 5 frames, then its CallEnd (deferred for the drain signal).
+	csA := drainCallStart()
+	csA.Grant.CallID = 1
+	r.handleStart(csA)
+	for i := 0; i < 5; i++ {
+		if err := r.WriteRawFrameForCall(csA.DeviceSerial, 1, frame, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.handleEnd(drainCallEnd(csA))
+
+	// The re-key: over B's CallStart on the same serial lands before A's chain
+	// has drained.
+	csB := drainCallStart()
+	csB.Grant.CallID = 2
+	csB.StartedAt = csA.StartedAt.Add(2 * time.Second)
+	r.handleStart(csB)
+	if !r.HasSession(csB.DeviceSerial) {
+		t.Fatal("no session for the next over after the re-key")
+	}
+
+	// A's chain finishes draining now — after B is already open.
+	r.NotifyDrainCompleteForCall(csA.DeviceSerial, 1)
+	if !r.HasSession(csB.DeviceSerial) {
+		t.Fatal("the previous call's drain signal finalized the next over's session (the bug)")
+	}
+
+	// Over B: 4 frames, then its own end + drain.
+	for i := 0; i < 4; i++ {
+		if err := r.WriteRawFrameForCall(csB.DeviceSerial, 2, frame, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.handleEnd(drainCallEnd(csB))
+	r.NotifyDrainCompleteForCall(csB.DeviceSerial, 2)
+	if r.HasSession(csB.DeviceSerial) {
+		t.Fatal("next over not finalized after its own CallEnd + drain")
+	}
+
+	if got := rawFrameCounts(t, dir, frameSize); len(got) != 2 || got[0] != 5 || got[1] != 4 {
+		t.Fatalf("recorded transmissions (frames per .raw) = %v, want [5 4]: a re-key must record both overs", got)
+	}
+	completes := 0
+	deadline := time.After(2 * time.Second)
+	for completes < 2 {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallComplete {
+				completes++
+			}
+		case <-deadline:
+			t.Fatalf("saw %d KindCallComplete events, want 2 (the previous call was replaced without being finalized)", completes)
+		}
 	}
 }

@@ -308,6 +308,17 @@ export function RecordingsSection() {
         onChange={(x) => set({ ...cfg, SkipEncrypted: x })}
         help="Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."
       />
+      <SelectField
+        label="Voice profile"
+        value={cfg.VoiceProfile ?? ""}
+        onChange={(x) => set({ ...cfg, VoiceProfile: x })}
+        options={[
+          { value: "", label: "(default: mbelib / dsd-neo balance)" },
+          { value: "mbelib", label: "mbelib — dsd-neo / DSD-FME calibration" },
+          { value: "op25", label: "op25 — OP25 / trunk-recorder balance" },
+        ]}
+        help="Reference-decoder audio balance preset. op25 sets the unvoiced band to the equal-power level OP25 synthesises and (with enhance on) drops the dsd-neo-matched radio tilt; explicit unvoiced_gain / tilt_hz / hpf_hz values still win."
+      />
       <Fieldset legend="Equalizer (CMA blind equalizer)">
         <BoolField
           label="Enabled"
