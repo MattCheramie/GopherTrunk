@@ -8,6 +8,43 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **FC0013 tuners on RTL2832U dongles are now detected (#1200).** The chip-ID
+  probe did a bare `I2CRead` of the tuner, which returns whatever register the
+  bus currently has selected (the reporter's device answered `0x02`), instead of
+  selecting the ID register `0x00` first — so a genuine FC0013 (ID `0xA3`) never
+  matched and `sdr list --probe` reported "no supported tuner detected".
+  `detectFC0013` now reads via `I2CReadReg(0xC6, 0x00)` (write the register
+  pointer, then read — osmocom's `fc0013_readreg`). Pinned failing-first by
+  `TestDetectFC0013SelectsChipIDRegister`.
+
+## [v1.1.6] — 2026-09-16
+
+### Fixed
+- **FleetSync on air is confirmed (#1184), and the two defects the live run
+  exposed are fixed.** With a `fleetsync` channel on one RTL-SDR and the
+  conventional scanner on another, the reporter's v1.1.5 daemon logged
+  `fleetsync: SetCenterFreq failed … broken pipe` once and never ran the
+  receiver, while the scanner opened a synthetic call on a silent channel
+  that only ended at Ctrl-C (`reason=error`). (1) The single-channel
+  decoders (MDC1200, FleetSync) abandoned their receiver for the daemon's
+  lifetime on ONE failed tune or stream open; `runSingleChannelDecoder`
+  now retries tune, open and a decoder that stops (a dead pump) with
+  backoff (500 ms doubling to 30 s) — an RTL-SDR control-pipe stall on
+  the first PLL write recovers a moment later. (2) A scanner dwell whose
+  IQ stream stopped delivering chunks could never end: hangtime counts
+  silent chunks that never arrive and the watchdog was touched from a
+  timer. `scanner.StreamStallTimeout` (default 3 s) now ends such a dwell
+  with `EndReasonError`, logs `conv: IQ stream stalled during dwell`, and
+  the scanner re-tunes and re-opens the stream. Also: FleetSync messages
+  now carry the decoding channel (`serial`, `frequency_hz`) through the
+  bus, the `fleetsync_log` table (migrated in place), the REST rows and a
+  new Channel column on the `/fleetsync` panel, so an operator with
+  several channels can tell which produced an ID; and the diagnostics
+  banner names each dongle's enumeration index (`rtlsdr[0]` / `[1]`)
+  instead of `[0]` twice. Pinned by `TestConvScannerStalledStreamEndsDwell`
+  and `TestTuneWithRetryRecoversFromStartupStall` (both fail on the old
+  code). What made the two dongles stall at the same instant is not yet
+  root-caused; the reporter's full start-up log is the next instrument.
 - **RadioReference verify reported `premium: false` on an active Premium
   account, and the state picker called an operation the WSDL does not define
   (#1197).** The live service reports `subExpireDate` as a US-style

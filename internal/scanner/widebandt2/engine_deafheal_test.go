@@ -251,3 +251,78 @@ func TestDeafHealWarnIsRateLimited(t *testing.T) {
 		t.Fatalf("deaf-tap WARNs = %d for 2 heals inside the interval, want 1", len(warns))
 	}
 }
+
+// deafWindow is one diagnostics window for runDeafHealSeq: synced says the
+// channel saw a sync in it, dbfs is its mean IQ power.
+type deafWindow struct {
+	synced bool
+	dbfs   float64
+}
+
+// runDeafHealSeq drives an arbitrary window sequence through the deaf-tap
+// guard on one Tier II channel (runDeafHeal's synced-then-deaf shape is the
+// special case) and returns the receiver reset count.
+func runDeafHealSeq(t *testing.T, seq []deafWindow) int {
+	t.Helper()
+	handler, _, _ := newRecordingHandler()
+	bus := events.NewBus(8)
+	defer bus.Close()
+	rx := &resetCountingReceiver{}
+	cc := tier2.New(tier2.Options{Bus: bus, SystemName: "ipsc", FrequencyHz: 442_387_500})
+	ec := &engineChannel{freqHz: 442_387_500, sysName: "ipsc", protoTag: "dmr-tier2", tier2Cnt: cc, receiver: rx}
+	e := &Engine{log: slog.New(handler), channels: []*engineChannel{ec}, now: time.Now}
+
+	base := time.Unix(1_700_000_000, 0)
+	e.maybeLogDiagnostics(base)
+	pos := 0
+	for w, win := range seq {
+		if win.synced {
+			d := syncDibits()
+			cc.Process(d, pos)
+			pos += len(d)
+		}
+		ec.pwr.Add(scaledIQ(4096, win.dbfs))
+		e.maybeLogDiagnostics(base.Add(time.Duration(w+1) * (iqpower.Window + time.Second)))
+	}
+	return rx.resets
+}
+
+// TestDeafHealIgnoresTrainEdgeWindow is the 17 Sep IPSC regression: an idle
+// repeater beacons in ~10 s trains with ~5–9 s gaps, and the ~1 s diagnostics
+// window that straddles a train's tail carries a few syncs at a mean power
+// that is mostly gap (the field log: decode_dbfs=−63 on a tap decoding at
+// −48.4 dBFS). The old guard took that window's power as the channel's
+// decoding level, so the following gap windows (−65 dBFS, inside the 6 dB
+// margin) read as a deaf tap and reset a healthy receiver on every idle gap —
+// six false heals in three minutes. The reference must not follow a single
+// edge window down into the gap. Fails against the old engine (reset after
+// the gap).
+func TestDeafHealIgnoresTrainEdgeWindow(t *testing.T) {
+	seq := []deafWindow{
+		{true, -48.4}, {true, -48.4}, {true, -48.4}, {true, -48.4}, {true, -48.4},
+		{true, -63.0}, // train tail: a few syncs, mostly gap in the mean
+	}
+	for i := 0; i < 3*tier2DeafHealWindows; i++ {
+		seq = append(seq, deafWindow{false, -65.0}) // idle gap
+	}
+	if resets := runDeafHealSeq(t, seq); resets != 0 {
+		t.Fatalf("healthy tap reset %d times across an idle beacon gap after a train-edge window (the 17 Sep false-heal bug), want 0", resets)
+	}
+}
+
+// TestDeafHealTracksGenuineLevelChange: the bounded reference still follows a
+// real, sustained level change, so a tap that keeps decoding at a lower level
+// and THEN goes deaf there is healed — the reference decays a step per synced
+// window rather than freezing at the historical peak.
+func TestDeafHealTracksGenuineLevelChange(t *testing.T) {
+	seq := []deafWindow{{true, -48}, {true, -48}, {true, -48}}
+	for i := 0; i < 12; i++ {
+		seq = append(seq, deafWindow{true, -58}) // sustained 10 dB lower, still decoding
+	}
+	for i := 0; i < tier2DeafHealWindows; i++ {
+		seq = append(seq, deafWindow{false, -58}) // now deaf at that level
+	}
+	if resets := runDeafHealSeq(t, seq); resets != 1 {
+		t.Fatalf("tap deaf at its (lowered) decoding level reset %d times, want 1", resets)
+	}
+}

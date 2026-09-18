@@ -1537,8 +1537,33 @@ confirmation before any close-as-completed.
   Not decoded: Hytera EP (FID 0x68, 40-bit MI, vendor schedule), Kirisun, DES/AES in the voice
   path. SDRTrunk (Apache-2.0) is the layout reference; DSD-FME (GPL) was read for the
   conventions only, nothing ported.
-- **FleetSync (#437/#1184) is VERIFIED OFFLINE on the reporter's two SDR# captures — and the
-  blocker was never FleetSync, it was the WAV reader.** `internal/radio/fleetsync/afsk` mirrors
+- **FleetSync (#1184) IS ON-AIR VERIFIED (16 Sep, reporter's Kenwood lab: FS-I and FS-II both
+  decode live) — and the live run exposed a coexistence failure that is NOT yet root-caused.**
+  Config: `fleetsync.channels` on RTL R1 + `scanner.conventional` on RTL R2 (`systems=0`,
+  `voice_devices=2`). Each section alone works; together, 146 ms after start `fleetsync:
+  SetCenterFreq failed` on R1 with the r82xx PLL I2C write EPIPE (`tried chunk sizes 16,8,4;
+  all stalled` — the runtime control-pipe stall class of #248/#753), and at +627 ms the
+  scanner opened a synthetic call on a SILENT 146.67 MHz channel that ran 23 s and ended
+  `reason=error` at Ctrl-C. Two robustness holes turned one USB hiccup into "nothing works":
+  (1) every single-channel decoder block gave up FOREVER on one failed tune/open —
+  `runSingleChannelDecoder` (daemon.go) now retries tune / open / a decoder that stops with
+  500 ms→30 s backoff (MDC1200 + FleetSync converted; POCSAG/FLEX/M17/APRS/AIS/LoRa/DSC/ADS-B
+  still have the give-up shape — same fix applies); (2) a scanner dwell whose IQ stream STOPS
+  (without closing) never ended — hangtime counts silent chunks that never arrive, and the
+  ticker kept touching the watchdog — so a wedged pump held a phantom call open; `Options.
+  StreamStallTimeout` (3 s) ends it and Run re-opens the stream. Both pinned failing-first.
+  Still open: WHY both dongles stalled at the same instant (a USB port reset on a sibling
+  dongle sharing a hub is the #1135 lesson; the reporter's log excerpt starts at the banner,
+  so the `device opened` / tuner-diag lines and whether the two NESDRs share a hub are the
+  next instrument). Do NOT read the banner's `rtlsdr[0]` twice as a double-open: the pool
+  snapshot dropped `Info.Index` (now carried as `SDRStatus.Index`). Also landed on request:
+  FleetSync messages carry `serial`/`frequency_hz` (bus → `fleetsync_log` columns, migrated
+  in place → REST → a Channel column). The reporter's design ask — attach MDC1200/FleetSync
+  to `scanner.conventional` channels instead of pinning a whole SDR — is sound (the dwell
+  already has the FM chain; an FFSK decoder could hang off the dwell IQ) and NOT built.
+  Earlier note (offline verification), kept:**
+  FleetSync (#437/#1184) is VERIFIED OFFLINE on the reporter's two SDR# captures — and the
+  blocker was never FleetSync, it was the WAV reader. `internal/radio/fleetsync/afsk` mirrors
   the MDC1200 front end (FM → resample → 1200/1800 Hz `demod.FFSK` → Mueller-Müller → slicer →
   `fleetsync.Framer`), with the baud rate as an option. Lesson that cost a round: **slice FFSK
   at a fixed ZERO threshold** (as the reference does) — an FS-II frame whose word1 nibbles are
@@ -1667,6 +1692,55 @@ confirmation before any close-as-completed.
   (different bandwidths ⇒ different group delays ⇒ not aligned); sidecars carry
   `capture_group` / index / size / `capture_started_at`. Up to 8 slices; each is a full
   polyphase DDC on the capture goroutine, and the broker drops chunks to a slow consumer.
+- **17 Sep IPSC "Fire2" 600 s capture (442.3875 MHz, 25 kS/s flac + debug.log): three MORE
+  defects beyond the channel filter above — a deaf-heal that false-fires every idle gap, a
+  re-key that drops both overs' recordings, and a late first grant.** Same tap as the 16 Sep
+  note (idle-beacon repeater, cc 12, tg 11 src 199, ~10 s beacon trains / ~5–9 s gaps, the
+  −20 kHz neighbour). With `EnableChannelFilter` on the CC taps the neighbour is gone; these
+  three are independent, each pinned failing-first:
+  1. **Deaf-heal false-fires every idle gap (7 heals in 3 min).** `healDeafTier2`'s
+     decoding-level reference (`decodeDbFS`) took the mean power of the ~1 s window that
+     STRADDLES a train's tail — a few syncs over mostly-gap samples reads −63/−61 dBFS — as
+     the channel's level, so the next gap windows (−65 dBFS, inside the 6 dB margin) read
+     "deaf at its decoding level" and reset a healthy receiver. Fix: the reference rises to
+     any synced window at once but falls by at most `tier2DeafRefDecayDb`=1 dB per synced
+     window, so a single edge window cannot drag it into the gap while a genuine level change
+     still tracks within a few windows. Pinned by `TestDeafHealIgnoresTrainEdgeWindow` /
+     `TestDeafHealTracksGenuineLevelChange` (`engine_deafheal_test.go`).
+  2. **A re-key within hangtime dropped BOTH overs' recordings.** The composer runs the
+     recorder drain-coordinated, so on a Voice-LC-Header re-key (the engine ends the previous
+     call and grants the next in the same instant) the previous call's `CallEnd` is deferred
+     waiting for the chain's drain signal when the next `CallStart` lands. `handleStart`'s
+     "device already has session, replacing" path then closed the previous session WITHOUT
+     finalizing it (no CallComplete, no sidecar, no history row), and the previous call's late
+     drain signal finalized the NEW session before its first frame (files open lazily, so
+     silently) — every frame of the next over dropped. The field log's lone "replacing" WARN
+     is exactly this. Fix: `finalizeDrainingBeforeReuse` finalizes the deferred previous call
+     with its own `CallEnd` before the reuse, and every finalize/drain path is now fenced by
+     `Grant.CallID` (`callIDsDiffer`, `NotifyDrainCompleteForCall` threaded
+     composer→fanout→recorder) so a stale drain can neither finalize nor pre-drain the next
+     over. Pinned by `TestRecorderRekeyDuringPendingDrainKeepsNextOver` (old recorder records
+     one over and emits one CallComplete; fixed records both).
+  3. **The first grant slid 3.4 s late — the channel filter fixes it; a false timing seed was
+     a smaller contributor.** In the offline 600 s replay the FIRST grant moves 3.41 s →
+     0.85 s with the channel filter alone (`GT_DMR_NO_CHANNEL_FILTER=1` puts it back to
+     3.41 s): the cold-start receiver sits through the opening idle gap where the −20 kHz
+     neighbour engages the coarse acquirer, and the filter keeps that from displacing the
+     first keyup's header decode. Separately, the #836 feed-forward timing acquisition seeded
+     the loop from a SINGLE eye-estimator window; the repeater keys up with ~40 ms of
+     near-unmodulated carrier, and a window straddling that transient could seed a phase
+     ~2 samples off and displace the loop's still-valid held phase. The seed now requires TWO
+     consecutive windows whose symbol instants agree within `timingAcqAgreeSamples`=1
+     (mirroring the coarse acquirer's two-windows-agree rule); after `timingAcqMaxWindows`=4
+     disagreeing windows it gives up and the loop pulls in on its own, as before. Its measured
+     effect on this capture is small (superframes 215→216, late_entries 2→1) and it is
+     byte-identical on continuous streams. Real-air smoke test
+     `dmr-ipsc-442.3875-keyup-17sep-48k.cs16` (`TestReceiverRealAirKeyupDecodes`) pins that
+     the production CC config decodes this keyup's header train. Full-replay net: 17→17 grants,
+     first grant 3.41 s → 0.85 s, superframes 213→216.
+  STILL ON-AIR-GATED (#764/#771): the daemon-path A/B (does the live tap stop the every-gap
+  heals, does a re-key now record both overs, does the first PTT of a train grant on its
+  header) needs the operator's next live run on a build with these fixes.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

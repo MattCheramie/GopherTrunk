@@ -10,9 +10,9 @@ import { formatClock } from "../lib/formatTime";
 
 // FleetSync panel — list of recent decoded Kenwood FFSK ANI bursts off
 // conventional analog voice channels. Each row shows the transmitting
-// radio's fleet and unit ID, which protocol variant (FleetSync I or the
-// ECC-protected FleetSync II) decoded it, and whether the block check
-// validated.
+// radio's fleet and unit ID, the channel (frequency + SDR serial) that
+// produced it, which protocol variant (FleetSync I or the ECC-protected
+// FleetSync II) decoded it, and whether the block check validated.
 //
 // Polls /api/v1/fleetsync/messages every 5 s.
 
@@ -50,6 +50,20 @@ export function FleetSync() {
         header: "Unit ID",
         render: (m) => <span className="font-mono text-accent">{m.unit}</span>,
         sort: (a, b) => a.unit - b.unit,
+      },
+      {
+        key: "channel",
+        header: "Channel",
+        render: (m) =>
+          m.frequency_hz ? (
+            <span className="font-mono" title={m.serial ? `SDR ${m.serial}` : undefined}>
+              {(m.frequency_hz / 1e6).toFixed(4)} MHz
+              {m.serial ? <span className="text-muted"> · {m.serial}</span> : null}
+            </span>
+          ) : (
+            <span className="text-muted">—</span>
+          ),
+        sort: (a, b) => (a.frequency_hz ?? 0) - (b.frequency_hz ?? 0),
       },
       {
         key: "variant",

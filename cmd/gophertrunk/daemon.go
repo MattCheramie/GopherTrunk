@@ -792,6 +792,7 @@ func (d *Daemon) newDiagCollector() *gtdiag.Collector {
 	for _, st := range snap {
 		dongles = append(dongles, gtdiag.DongleInfo{
 			Driver:  st.Driver,
+			Index:   st.Index,
 			Serial:  st.Serial,
 			Product: st.Product,
 			Tuner:   st.TunerName,
@@ -2705,6 +2706,8 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			InputRateHz: cfg.SDR.SampleRate,
 			BaudHz:      fc.BaudHz,
 			SourceName:  fc.Serial,
+			Serial:      fc.Serial,
+			FrequencyHz: fc.FrequencyHz,
 			Bus:         d.bus,
 			DropBadCRC:  fc.DropBadCRC,
 			Log:         log,
@@ -3773,25 +3776,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.mdc1200Specs[i]
 		name := fmt.Sprintf("mdc1200-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("mdc1200: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("mdc1200: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("mdc1200: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "mdc1200", spec.serial, spec.freq, rcv.Process)
 		})
 	}
 	// FleetSync receivers — same shape as MDC1200 above. Each subscribes
@@ -3800,8 +3785,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// slicer → preamble+sync framer → FleetSync I / II ANI decode),
 	// publishing bursts onto the events bus where the FleetSyncLog
 	// subscriber persists them and the /fleetsync panel renders them.
-	// Non-essential: a missing SDR or misconfigured frequency is logged
-	// but doesn't bring down the trunking pipeline.
+	// Non-essential: a missing SDR is logged but doesn't bring down the
+	// trunking pipeline; a failed tune / stream open / dead pump is
+	// retried for the daemon's lifetime (runSingleChannelDecoder, #1184).
 	for i, rcv := range d.fleetsyncReceivers {
 		if rcv == nil {
 			continue // skipped at construction; warning already logged
@@ -3810,25 +3796,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.fleetsyncSpecs[i]
 		name := fmt.Sprintf("fleetsync-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("fleetsync: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("fleetsync: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("fleetsync: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "fleetsync", spec.serial, spec.freq, rcv.Process)
 		})
 	}
 	// ADS-B BEAST upstream clients — each consumes Mode-S
@@ -5095,6 +5063,20 @@ func (f fanoutSink) NotifyDrainComplete(serial string) {
 	}
 }
 
+// NotifyDrainCompleteForCall forwards the call-aware drain signal (the composer
+// prefers it so a re-keyed serial's late drain is matched to its own call);
+// sinks that only know the plain form get that.
+func (f fanoutSink) NotifyDrainCompleteForCall(serial string, callID uint64) {
+	for _, s := range f {
+		switch dc := s.(type) {
+		case interface{ NotifyDrainCompleteForCall(string, uint64) }:
+			dc.NotifyDrainCompleteForCall(serial, callID)
+		case interface{ NotifyDrainComplete(string) }:
+			dc.NotifyDrainComplete(serial)
+		}
+	}
+}
+
 // toneProfilesFromConfig converts the YAML config shape into the
 // internal toneout.Profile shape, parsing duration strings.
 func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {
@@ -5313,6 +5295,113 @@ func (d *Daemon) wrapIQBrokers(cfg config.Config, log *slog.Logger) {
 		br.Seed(0, rate)
 		d.iqBrokers[e.Info.Serial] = br
 	}
+}
+
+// singleChannelRetryBackoff is the wait before the (attempt+1)th retry of
+// a single-channel decoder's tune, stream open or restart: 500 ms doubling
+// to a 30 s ceiling. A var so tests can shrink it.
+var singleChannelRetryBackoff = func(attempt int) time.Duration {
+	if attempt > 6 {
+		attempt = 6
+	}
+	d := 500 * time.Millisecond << uint(attempt)
+	if d > 30*time.Second {
+		d = 30 * time.Second
+	}
+	return d
+}
+
+// centerTuner is the one method tuneWithRetry needs of a device or broker.
+type centerTuner interface {
+	SetCenterFreq(hz uint32) error
+}
+
+// tuneWithRetry programs freq on t and, when the tune fails, retries with
+// singleChannelRetryBackoff until it succeeds or ctx ends (returning
+// ctx.Err()). The single-channel decoders used to give up for the daemon's
+// whole lifetime on ONE failed SetCenterFreq — on the #1184 rig the
+// FleetSync dongle's first PLL write after start-up came back EPIPE (an
+// RTL-SDR control-pipe stall the driver recovers from in-place a moment
+// later), so a receiver that was fine on the next attempt never ran.
+func tuneWithRetry(ctx context.Context, log *slog.Logger, name string, t centerTuner, freq uint32) error {
+	for attempt := 0; ; attempt++ {
+		err := t.SetCenterFreq(freq)
+		if err == nil {
+			if attempt > 0 {
+				log.Info(name+": SetCenterFreq recovered", "freq_hz", freq, "attempts", attempt+1)
+			}
+			return nil
+		}
+		wait := singleChannelRetryBackoff(attempt)
+		if attempt == 0 {
+			log.Warn(name+": SetCenterFreq failed — retrying",
+				"freq_hz", freq, "err", err, "retry_in", wait)
+		} else {
+			log.Debug(name+": SetCenterFreq still failing",
+				"freq_hz", freq, "err", err, "attempt", attempt+1, "retry_in", wait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+}
+
+// runSingleChannelDecoder drives one single-channel decoder (MDC1200,
+// FleetSync) pinned to serial for the daemon's lifetime: tune the dongle
+// to freq, open its IQ stream, run decode until the stream ends — and
+// then do it again. Every failure is retried with singleChannelRetryBackoff
+// rather than abandoning the receiver: a tune that stalls at start-up, a
+// stream that cannot open, or a decode that returns because the pump died
+// (a USB reacquire replaces the broker's device underneath it) all come
+// back on the next pass. Only a serial with no broker at all is a
+// permanent skip, logged once. Returns nil when ctx ends.
+func (d *Daemon) runSingleChannelDecoder(ctx context.Context, name, serial string, freq uint32,
+	decode func(context.Context, <-chan []complex64) error) error {
+	br := d.iqBrokers[serial]
+	if br == nil {
+		d.log.Warn(name+": SDR not found, skipping receiver", "serial", serial, "freq_hz", freq)
+		return nil
+	}
+	wait := func(attempt int) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(singleChannelRetryBackoff(attempt)):
+			return true
+		}
+	}
+	for attempt := 0; ctx.Err() == nil; attempt++ {
+		if err := tuneWithRetry(ctx, d.log, name, br, freq); err != nil {
+			return nil // ctx ended
+		}
+		iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, serial)
+		if err != nil {
+			d.log.Warn(name+": open IQ failed — retrying",
+				"serial", serial, "freq_hz", freq, "err", err, "retry_in", singleChannelRetryBackoff(attempt))
+			if !wait(attempt) {
+				return nil
+			}
+			continue
+		}
+		started := time.Now()
+		err = decode(ctx, iqCh)
+		cleanup()
+		if ctx.Err() != nil {
+			return nil
+		}
+		if time.Since(started) > time.Minute {
+			attempt = 0 // it ran: a fresh failure starts the backoff over
+		}
+		d.log.Warn(name+": decoder stopped — restarting",
+			"serial", serial, "freq_hz", freq, "err", err, "ran_for", time.Since(started).Round(time.Millisecond),
+			"retry_in", singleChannelRetryBackoff(attempt))
+		if !wait(attempt) {
+			return nil
+		}
+	}
+	return nil
 }
 
 // openSingleChannelIQ returns an IQ channel for a single-channel decoder

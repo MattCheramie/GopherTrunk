@@ -126,6 +126,12 @@ type Recorder interface {
 }
 
 // Options configure the conventional scanner.
+// DefaultStreamStallTimeout is the Options.StreamStallTimeout applied when
+// unset: long enough that an RTL-SDR's ~4096-sample chunks (a few ms) or a
+// throttled remote stream never trip it, short enough that a dead pump
+// releases the channel before an operator notices.
+const DefaultStreamStallTimeout = 3 * time.Second
+
 type Options struct {
 	Log          *slog.Logger
 	Tuner        Tuner
@@ -150,6 +156,15 @@ type Options struct {
 	SampleRateHz float64
 	// Now is injectable for tests; defaults to time.Now.
 	Now func() time.Time
+
+	// StreamStallTimeout bounds how long a dwell tolerates receiving NO
+	// IQ chunks at all before it declares the stream stalled, ends the
+	// call (EndReasonError) and re-opens the stream. Hangtime cannot end
+	// such a dwell — it measures silence in chunks that never arrive —
+	// and the watchdog is touched from a timer, so a stalled USB pump
+	// held a phantom call open until the daemon was killed (#1184). Zero
+	// selects DefaultStreamStallTimeout.
+	StreamStallTimeout time.Duration
 }
 
 // State is the high-level scanner state surfaced through Snapshot.
@@ -288,6 +303,9 @@ func New(opts Options) (*Scanner, error) {
 	}
 	if opts.MinDwellPerChannel <= 0 {
 		opts.MinDwellPerChannel = 100 * time.Millisecond
+	}
+	if opts.StreamStallTimeout <= 0 {
+		opts.StreamStallTimeout = DefaultStreamStallTimeout
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -610,6 +628,10 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	// chunk clears it, so belowSince (and the elapsed silence) survives.
 	belowSince := time.Time{}
 	aboveSince := time.Time{}
+	// lastChunk is when the stream last delivered anything; the ticker
+	// compares it against StreamStallTimeout so a pump that stops
+	// producing (without closing) cannot hold the call open forever.
+	lastChunk := now
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -618,12 +640,20 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 			s.endDwell(idx, trunking.EndReasonError)
 			return
 		case <-ticker.C:
+			if stalled := s.opts.Now().Sub(lastChunk); stalled >= s.opts.StreamStallTimeout {
+				s.log.Warn("conv: IQ stream stalled during dwell — ending call and re-opening the stream",
+					"freq_hz", ch.FrequencyHz, "label", ch.Label,
+					"no_samples_for", stalled.Round(time.Millisecond))
+				s.endDwell(idx, trunking.EndReasonError)
+				return
+			}
 			s.opts.Engine.Touch(s.opts.DeviceSerial)
 		case iq, ok := <-stream:
 			if !ok {
 				s.endDwell(idx, trunking.EndReasonError)
 				return
 			}
+			lastChunk = s.opts.Now()
 			active := PowerDbFS(iq) >= keepAlive
 			if active && det != nil {
 				active = det.Process(iq)

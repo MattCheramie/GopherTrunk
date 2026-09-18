@@ -59,7 +59,7 @@ func TestReceiverPublishesRealAirBurstsOnBus(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	rcv, err := New(Options{InputRateHz: 48000, Bus: bus, SourceName: "test"})
+	rcv, err := New(Options{InputRateHz: 48000, Bus: bus, SourceName: "test", Serial: "R1", FrequencyHz: 462_562_500})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +76,9 @@ func TestReceiverPublishesRealAirBurstsOnBus(t *testing.T) {
 		if m.Fleet != 107 || m.Unit != 1772 || !m.IsFS2 {
 			t.Errorf("CRC-valid bus payload with the wrong identity: %+v", m)
 			continue
+		}
+		if m.Serial != "R1" || m.FrequencyHz != 462_562_500 {
+			t.Errorf("bus payload missing the decoding channel (#1184): serial=%q freq=%d", m.Serial, m.FrequencyHz)
 		}
 		if m.ReceivedAt.IsZero() || m.RawHex == "" || m.Body == "" {
 			t.Errorf("bus payload missing fields: %+v", m)
