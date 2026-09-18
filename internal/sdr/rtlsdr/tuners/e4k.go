@@ -62,20 +62,20 @@ const (
 // MASTER1 bit fields (tuner_e4k.h). The power-on write asserts a soft
 // reset, keeps the chip out of standby, and clears the POR indicator.
 const (
-	e4kMaster1Reset   byte = 1 << 0
+	e4kMaster1Reset    byte = 1 << 0
 	e4kMaster1NormStby byte = 1 << 1
-	e4kMaster1PorDet  byte = 1 << 2
-	e4kMaster1Init    byte = e4kMaster1Reset | e4kMaster1NormStby | e4kMaster1PorDet // 0x07
+	e4kMaster1PorDet   byte = 1 << 2
+	e4kMaster1Init     byte = e4kMaster1Reset | e4kMaster1NormStby | e4kMaster1PorDet // 0x07
 )
 
 // AGC mode nibbles (E4K_AGC_MOD_*) and control-bit masks.
 const (
-	e4kAGC1ModMask         byte = 0x0F
-	e4kAGCModSerial        byte = 0x0 // manual LNA (serial-programmed) gain
+	e4kAGC1ModMask           byte = 0x0F
+	e4kAGCModSerial          byte = 0x0 // manual LNA (serial-programmed) gain
 	e4kAGCModIFSerialLNAAuto byte = 0x9 // auto LNA (E4K_AGC_MOD_IF_SERIAL_LNA_AUTON)
-	e4kAGC7MixGainAuto     byte = 1 << 0
-	e4kFilt3Disable        byte = 1 << 5
-	e4kClkoutPwdnDisable   byte = 0x96 // value librtlsdr writes to power down clock-out
+	e4kAGC7MixGainAuto       byte = 1 << 0
+	e4kFilt3Disable          byte = 1 << 5
+	e4kClkoutPwdnDisable     byte = 0x96 // value librtlsdr writes to power down clock-out
 )
 
 // width2mask[w] is a w-bit-wide mask, verbatim from tuner_e4k.c. Used

@@ -241,7 +241,7 @@ func TestE4000_Init_WireBytes(t *testing.T) {
 	s = append(s, expectRepeaterToggle(true)...)
 	s = append(s, e4kExpectRead(0x00, 0x00)...) // dummy read
 	s = append(s,
-		e4kExpectWrite(e4kRegMaster1, 0x07),    // RESET|NORM_STBY|POR_DET
+		e4kExpectWrite(e4kRegMaster1, 0x07), // RESET|NORM_STBY|POR_DET
 		e4kExpectWrite(e4kRegClkInp, 0x00),
 		e4kExpectWrite(e4kRegRefClk, 0x00),
 		e4kExpectWrite(e4kRegClkoutPwdn, 0x96), // disable clock output
