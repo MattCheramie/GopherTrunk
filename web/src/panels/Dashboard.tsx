@@ -4,10 +4,11 @@ import { api } from "../api/client";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { RIDLink } from "../components/RIDLink";
-import { SignalSummary } from "../components/SignalHealth";
+import { SignalSummary, SystemSignalMeter } from "../components/SignalHealth";
 import { useDataPoll } from "../hooks/useDataPoll";
-import { useSignalQuality } from "../hooks/useSignalQuality";
-import { useLockedSystemSignal } from "../hooks/useLockedSystemSignal";
+import { useScannerSystems } from "../hooks/useLockedSystemSignal";
+import { useSpectrumDevices } from "../hooks/useSpectrumDevices";
+import { symbolTargetForSystem } from "../api/symbols";
 import {
   useLingeringActiveCalls,
   callDuration,
@@ -54,11 +55,13 @@ export function Dashboard() {
     return () => window.clearInterval(t);
   }, []);
 
-  // Signal health belongs on the operations landing (we're monitoring a locked
-  // system), not buried in the Scanner/hunter tab. Show both axes: the locked
-  // system's decode health (GET /api/v1/scanner) and the live symbol SNR/eye.
-  const { quality: symbolQuality, status: symbolStatus } = useSignalQuality();
-  const lockedSignal = useLockedSystemSignal();
+  // Signal health belongs on the operations landing. Show one meter PER system
+  // (not a single collapsed reading): each system's own decode health + level
+  // (GET /api/v1/scanner) alongside a symbol SNR/eye stream on the SDR carrying
+  // THAT system's control channel. The SDR pool + per-system→device mapping
+  // come from the spectrum device list.
+  const scannerSystems = useScannerSystems();
+  const spectrumDevices = useSpectrumDevices();
 
   // Freeze just-ended calls briefly so the roster shows a final duration +
   // "ended" marker rather than the row blinking out.
@@ -139,16 +142,22 @@ export function Dashboard() {
         />
       </div>
 
-      {/* Signal health for the locked system — both axes, labelled. */}
-      <SignalSummary
-        decodeQuality={
-          lockedSignal?.has_decode_health ? lockedSignal.decode_quality : null
-        }
-        offsetHz={lockedSignal?.carrier_offset_hz}
-        signalDbfs={lockedSignal?.has_signal ? lockedSignal.signal_dbfs : null}
-        symbolQuality={symbolQuality}
-        status={symbolStatus}
-      />
+      {/* Signal health — one meter per system, both axes labelled. With no
+          trunked systems (conventional-only, or nothing configured) fall back
+          to a single empty banner so the SIGNAL row is never missing. */}
+      {scannerSystems.length === 0 ? (
+        <SignalSummary decodeQuality={null} symbolQuality={null} />
+      ) : (
+        <div className="space-y-2">
+          {scannerSystems.map((sys) => (
+            <SystemSignalMeter
+              key={sys.name}
+              system={sys}
+              target={symbolTargetForSystem(spectrumDevices, sys)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Hero: who's talking right now. */}
       <section className="panel p-4">

@@ -1,5 +1,8 @@
 import { Badge } from "./ui/Badge";
 import { qualityVerdict, type Quality } from "../lib/signalQuality";
+import { useSymbolQualityStream } from "../hooks/useSignalQuality";
+import type { SymbolTarget } from "../api/symbols";
+import type { SystemHuntStatusDTO } from "../api/types";
 
 // SignalHealth — shared signal-quality readouts so an operator sees signal
 // health in context (on the Scanner cockpit, in a live call, in call
@@ -165,12 +168,17 @@ export function CallHealth({
 // two different measurements. Feed it the locked system's decode fields (from
 // GET /api/v1/scanner) and the live symbol Quality (useSignalQuality).
 export function SignalSummary({
+  name,
   decodeQuality,
   offsetHz,
   signalDbfs,
   symbolQuality,
   status,
 }: {
+  // Optional leading label — the system name — so a stack of per-system
+  // summaries says which system each row is for. Absent on the single-summary
+  // views (Plots hub).
+  name?: string;
   decodeQuality?: string | null;
   offsetHz?: number;
   signalDbfs?: number | null;
@@ -180,6 +188,11 @@ export function SignalSummary({
   const hasLevel = signalDbfs != null && Number.isFinite(signalDbfs);
   return (
     <div className="panel flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+      {name ? (
+        <span className="font-medium text-xs truncate max-w-[10rem]" title={name}>
+          {name}
+        </span>
+      ) : null}
       <span className="text-muted text-xs uppercase tracking-wider">Signal</span>
       {decodeQuality ? (
         <SignalQualityChip quality={decodeQuality} offsetHz={offsetHz} />
@@ -212,5 +225,36 @@ export function SignalSummary({
         </span>
       )}
     </div>
+  );
+}
+
+// SystemSignalMeter renders one SignalSummary row for a single trunked system —
+// the fix for "one signal meter no matter how many systems". The DECODE and
+// LEVEL axes come from the system's own hunt status (per-system, from GET
+// /api/v1/scanner); the SYMBOL axis opens a /diag/symbols stream on the SDR
+// carrying THIS system's control channel (`target`) rather than a single shared
+// control SDR. `target` is null for a system that isn't locked or maps to no
+// in-band SDR, in which case no stream is opened (the symbol chip reads
+// "acquiring…") — so an idle/hunting system costs no DSP chain, and on a shared
+// control tuner only the currently-decoding system streams.
+export function SystemSignalMeter({
+  system,
+  target,
+}: {
+  system: SystemHuntStatusDTO;
+  target: SymbolTarget | null;
+}) {
+  const { quality, status } = useSymbolQualityStream(target);
+  return (
+    <SignalSummary
+      name={system.name}
+      decodeQuality={
+        system.has_decode_health ? system.decode_quality : null
+      }
+      offsetHz={system.carrier_offset_hz}
+      signalDbfs={system.has_signal ? system.signal_dbfs : null}
+      symbolQuality={quality}
+      status={target ? status : undefined}
+    />
   );
 }

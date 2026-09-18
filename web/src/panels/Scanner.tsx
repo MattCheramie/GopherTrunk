@@ -12,7 +12,9 @@ import {
   SignalLevelBar,
   SymbolQualityChip,
 } from "../components/SignalHealth";
-import { useSignalQuality } from "../hooks/useSignalQuality";
+import { useSymbolQualityStream } from "../hooks/useSignalQuality";
+import { useSpectrumDevices } from "../hooks/useSpectrumDevices";
+import { symbolTargetForSystem, type SymbolTarget } from "../api/symbols";
 import type {
   ConvChannelStatusDTO,
   SystemHuntStatusDTO,
@@ -171,6 +173,15 @@ interface ConfirmRequest {
   onConfirm: () => Promise<void>;
 }
 
+// SystemSymbolChip opens one /diag/symbols stream for a single locked system's
+// control channel (its own SDR + offset) and renders the SYMBOL-quality chip
+// from it, so each system row reports its own reading. A null target (no in-band
+// SDR yet) opens no stream and the chip reads "acquiring…".
+function SystemSymbolChip({ target }: { target: SymbolTarget | null }) {
+  const { quality } = useSymbolQualityStream(target);
+  return <SymbolQualityChip quality={quality} />;
+}
+
 function Hunt({
   systems,
   canMutate,
@@ -183,10 +194,11 @@ function Hunt({
   onConfirm: (c: ConfirmRequest) => void;
 }) {
   const cfg = useShared(selectClientConfig);
-  // One symbol stream on the control SDR gives the SYMBOL-quality axis
-  // (raw SNR/eye) to sit alongside each locked system's DECODE-health chip,
-  // so the Scanner shows the same two labelled metrics as the Plots hub.
-  const { quality: symbolQuality } = useSignalQuality();
+  // Per-system SYMBOL-quality: each locked system gets its own symbol stream on
+  // the SDR carrying ITS control channel, so the raw SNR/eye chip sits beside
+  // that system's own DECODE-health chip instead of every locked system sharing
+  // one control SDR's reading. The SDR pool feeds the system→device mapping.
+  const spectrumDevices = useSpectrumDevices();
 
   return (
     <Card title="Trunked-system hunter">
@@ -209,7 +221,9 @@ function Hunt({
                   />
                 )}
                 {sys.state === "locked" && (
-                  <SymbolQualityChip quality={symbolQuality} />
+                  <SystemSymbolChip
+                    target={symbolTargetForSystem(spectrumDevices, sys)}
+                  />
                 )}
                 {sys.has_signal && sys.signal_dbfs != null && (
                   <SignalLevelBar dbfs={sys.signal_dbfs} />
