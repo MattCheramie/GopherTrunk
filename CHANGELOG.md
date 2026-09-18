@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.7] — 2026-09-18
+
 ### Fixed
 - **FC0013 tuners on RTL2832U dongles are now detected (#1200).** The chip-ID
   probe did a bare `I2CRead` of the tuner, which returns whatever register the
