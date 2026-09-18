@@ -128,6 +128,19 @@ const (
 	// bounded by the handoff gate plus this drift, so the DDA can never
 	// strand the receiver below the pre-DDA behaviour. Issue #402.
 	ddaMaxDriftHz = 4000.0
+
+	// ddaLockProbeSymbols is how often (in symbols, ~1 s at 4800 baud) the
+	// receiver polls Options.LockProbe once the handoff is ready or
+	// committed. A locked control channel accepts a trusted NID every
+	// 37.5 ms, so one poll interval is ~27 chances to report progress.
+	ddaLockProbeSymbols = 4800
+
+	// ddaLockLossProbes is the number of consecutive false lock polls
+	// after handoff that revert the DDA to CoarseAFC-alone. Three (~3 s)
+	// rides out a burst of noise without letting a false lock persist for
+	// long: the #402 capture went from ~60% to 0% lock, which this bounds
+	// to a few seconds before the pre-DDA behaviour is restored.
+	ddaLockLossProbes = 3
 )
 
 // P25 Phase 1 on-air parameters.
@@ -218,6 +231,19 @@ type Options struct {
 	// cause is pinned and the handoff is gated on a real lock signal.
 	// Ignored when DemodMode == DemodCQPSK (no AFC stage). Issue #402.
 	EnableDecisionDirectedAFC bool
+	// LockProbe, when non-nil, is the lock signal the decision-directed
+	// AFC handoff is gated on — the feedback from the framer that the
+	// receiver otherwise lacks (issue #402: the DDA once committed a
+	// self-consistent wrong offset and nothing downstream could tell it).
+	// It is polled at most once per ddaLockProbeSymbols and must report
+	// whether the downstream framer is locked AND has decoded something
+	// since the previous poll (a control channel: a trusted NID accepted;
+	// see ccdecoder's probe). The handoff is committed only while it
+	// reports true, and after handoff ddaLockLossProbes consecutive false
+	// polls revert the receiver to CoarseAFC-alone and re-arm, exactly
+	// like the drift watchdog. Nil keeps the internal gates only, which is
+	// what the offline replay harnesses use.
+	LockProbe func() bool
 	// EnableAdaptiveC4FMSlicer opts the C4FM path into the adaptive
 	// 4-level slicer (issue #402) that tracks the observed per-symbol
 	// eye instead of slicing at fixed nominal thresholds. Default false:
@@ -311,17 +337,21 @@ type Receiver struct {
 	dda              *demod.DecisionDirectedAFC
 	clock            *sync.MuellerMuller
 	agc              demod.C4FMSymbolAGC
-	ddaNominal       [4]float32 // post-AGC nominal value for sliced ±1, ±3
-	ddaResidMeanGate float64    // max |AcceptedResidualMean| for handoff (slicerScale units)
-	ddaMaxDrift      float64    // max |DDA − handoff estimate| before re-arm (rad/sample)
-	ddaLearning      bool       // true once the DDA is integrating: CoarseAFC frozen (subtract-only)
-	ddaActive        bool       // true after handoff: afc frozen, dda carries the estimate
-	ddaValidUpdates  int        // accepted-update count this learning attempt; crossing ddaHandoffSymbols arms the handoff
-	ddaTotalUpdates  int        // total DDA updates this learning attempt; with ddaValidUpdates gives the accept-rate
-	ddaWarmupDoneAt  int        // c4fmSymbolsTotal at which learning may (re)start; bumped on a watchdog re-arm
-	afcAtHandoff     float64    // total AFC estimate the DDA carried at handoff; the watchdog bounds drift from this
-	ddaRearms        int        // number of watchdog re-arms (diagnostic)
-	c4fmSymbolsTotal int        // symbols processed; the DDA waits ddaWarmupSymbols of these before learning
+	ddaNominal       [4]float32  // post-AGC nominal value for sliced ±1, ±3
+	ddaResidMeanGate float64     // max |AcceptedResidualMean| for handoff (slicerScale units)
+	ddaMaxDrift      float64     // max |DDA − handoff estimate| before re-arm (rad/sample)
+	ddaLearning      bool        // true once the DDA is integrating: CoarseAFC frozen (subtract-only)
+	ddaActive        bool        // true after handoff: afc frozen, dda carries the estimate
+	ddaValidUpdates  int         // accepted-update count this learning attempt; crossing ddaHandoffSymbols arms the handoff
+	ddaTotalUpdates  int         // total DDA updates this learning attempt; with ddaValidUpdates gives the accept-rate
+	ddaWarmupDoneAt  int         // c4fmSymbolsTotal at which learning may (re)start; bumped on a watchdog re-arm
+	afcAtHandoff     float64     // total AFC estimate the DDA carried at handoff; the watchdog bounds drift from this
+	ddaRearms        int         // number of watchdog re-arms (diagnostic)
+	lockProbe        func() bool // Options.LockProbe; nil ⇒ internal gates only
+	ddaLockProbeAt   int         // c4fmSymbolsTotal at which the lock probe may next be polled
+	ddaLockMisses    int         // consecutive false lock polls since handoff
+	ddaLockReverts   int         // number of lock-loss reverts (diagnostic)
+	c4fmSymbolsTotal int         // symbols processed; the DDA waits ddaWarmupSymbols of these before learning
 
 	// CQPSK / LSM path: complex RRC + Gardner + DQPSK quadrant
 	// decode + LSM dibit remap. Allocated only when demodMode ==
@@ -511,6 +541,7 @@ func New(opts Options) *Receiver {
 			// scale as the CoarseAFC/DDA estimates — see the clamp).
 			r.ddaMaxDrift = 2.0 * math.Pi * ddaMaxDriftHz * sps / opts.SampleRateHz
 			r.ddaWarmupDoneAt = ddaWarmupSymbols
+			r.lockProbe = opts.LockProbe
 		}
 	}
 	if opts.Sink != nil {
@@ -658,12 +689,27 @@ func (r *Receiver) Process(iq []complex64) {
 				// (mean accepted residual near zero). The CoarseAFC
 				// value is folded in exactly, since it has been
 				// frozen for the whole learning window.
-				if r.ddaHandoffReady() {
+				//
+				// With a lock probe, the handoff additionally waits for
+				// the framer to report that it is locked and decoding
+				// under CoarseAFC: a DDA estimate the framer cannot
+				// decode through is the #402 false lock, however
+				// self-consistent its residuals look.
+				if r.ddaHandoffReady() && r.lockProbeAllows() {
 					r.dda.AddOffset(r.afc.Offset())
 					r.afc.SetOffset(0)
 					r.afcAtHandoff = r.dda.Offset()
 					r.ddaActive = true
+					r.ddaLockMisses = 0
+					r.ddaLockProbeAt = r.c4fmSymbolsTotal + ddaLockProbeSymbols
 				}
+			} else if r.lockLostSinceHandoff() {
+				// Lock-signal watchdog: the framer stopped decoding after
+				// the handoff. Whatever the DDA is tracking, the receiver
+				// was decoding under CoarseAFC when it handed off, so
+				// revert to that and re-arm. Issue #402.
+				r.ddaRevert()
+				r.ddaLockReverts++
 			} else if math.Abs(r.dda.Offset()-r.afcAtHandoff) > r.ddaMaxDrift {
 				// Post-handoff watchdog: the DDA has walked too far
 				// from the gate-verified handoff estimate to still be
@@ -674,14 +720,7 @@ func (r *Receiver) Process(iq []complex64) {
 				// eye stays continuous, then re-arm warmup so
 				// CoarseAFC re-converges before the DDA tries again.
 				// Issue #402.
-				r.afc.SetOffset(r.dda.Offset())
-				r.dda.Reset()
-				r.ddaActive = false
-				r.ddaLearning = false
-				r.ddaValidUpdates = 0
-				r.ddaTotalUpdates = 0
-				r.afcAtHandoff = 0
-				r.ddaWarmupDoneAt = r.c4fmSymbolsTotal + ddaWarmupSymbols
+				r.ddaRevert()
 				r.ddaRearms++
 			}
 		}
@@ -734,6 +773,54 @@ func (r *Receiver) Process(iq []complex64) {
 //     residuals, so the count + accept-rate alone can't see it; the
 //     residual-mean gate is what stops the handoff from locking onto
 //     the stable-but-wrong offset that broke decode in #402.
+//
+// ddaRevert hands the DDA's current estimate back to CoarseAFC so the eye
+// stays continuous, drops the DDA state, and re-arms warmup so CoarseAFC
+// re-converges before the DDA tries again. Shared by the drift and
+// lock-signal watchdogs.
+func (r *Receiver) ddaRevert() {
+	r.afc.SetOffset(r.dda.Offset())
+	r.dda.Reset()
+	r.ddaActive = false
+	r.ddaLearning = false
+	r.ddaValidUpdates = 0
+	r.ddaTotalUpdates = 0
+	r.afcAtHandoff = 0
+	r.ddaLockMisses = 0
+	r.ddaWarmupDoneAt = r.c4fmSymbolsTotal + ddaWarmupSymbols
+}
+
+// lockProbeAllows reports whether the lock signal permits a handoff now:
+// true without a probe, otherwise the probe's latest verdict, polled at
+// most once per ddaLockProbeSymbols so a slow framer is not asked for
+// progress it has had no time to make.
+func (r *Receiver) lockProbeAllows() bool {
+	if r.lockProbe == nil {
+		return true
+	}
+	if r.c4fmSymbolsTotal < r.ddaLockProbeAt {
+		return false
+	}
+	r.ddaLockProbeAt = r.c4fmSymbolsTotal + ddaLockProbeSymbols
+	return r.lockProbe()
+}
+
+// lockLostSinceHandoff polls the lock probe once per ddaLockProbeSymbols
+// after a handoff and reports true once ddaLockLossProbes consecutive
+// polls have come back false.
+func (r *Receiver) lockLostSinceHandoff() bool {
+	if r.lockProbe == nil || r.c4fmSymbolsTotal < r.ddaLockProbeAt {
+		return false
+	}
+	r.ddaLockProbeAt = r.c4fmSymbolsTotal + ddaLockProbeSymbols
+	if r.lockProbe() {
+		r.ddaLockMisses = 0
+		return false
+	}
+	r.ddaLockMisses++
+	return r.ddaLockMisses >= ddaLockLossProbes
+}
+
 func (r *Receiver) ddaHandoffReady() bool {
 	if r.dda == nil || r.ddaValidUpdates < ddaHandoffSymbols || r.ddaTotalUpdates == 0 {
 		return false
@@ -756,6 +843,12 @@ func (r *Receiver) DDAActive() bool { return r.ddaActive }
 // means the DDA can't hold this signal and the receiver is repeatedly
 // falling back. Issue #402 diagnostic.
 func (r *Receiver) DDARearms() int { return r.ddaRearms }
+
+// DDALockReverts returns how many times the lock-signal watchdog has
+// reverted the DDA to CoarseAFC-alone because Options.LockProbe stopped
+// reporting progress after a handoff. 0 on a stable lock. Issue #402
+// diagnostic.
+func (r *Receiver) DDALockReverts() int { return r.ddaLockReverts }
 
 // AFCBiasRadPerSample returns the C4FM AFC's *total* current DC bias
 // estimate on the FM-discriminator output, in radians per sample at

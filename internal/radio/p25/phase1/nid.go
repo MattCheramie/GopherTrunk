@@ -55,6 +55,26 @@ type NID struct {
 // cannot recover the codeword within its t=11 error-correction radius.
 var ErrNIDUncorrectable = errors.New("p25/phase1: NID BCH uncorrectable")
 
+// ErrNIDReservedDUID reports a BCH-corrected NID whose DUID is one of the
+// nine values no P25 Phase 1 frame carries (1, 2, 4, 6, 8, 9, B, D, E).
+// A codeword that corrects to one of them is a mis-aligned or noise
+// hypothesis the BCH happened to close on, not a frame: on a weak
+// control channel 22% of the NIDs the search accepted carried one, and
+// each cost a block's worth of trellis work downstream before the CRC
+// threw it out. Treated as uncorrectable.
+var ErrNIDReservedDUID = errors.New("p25/phase1: NID carries a reserved DUID")
+
+// Valid reports whether d is a DUID a P25 Phase 1 transmitter emits:
+// HDU, TDU, LDU1, TSDU, LDU2, PDU or TDULC.
+func (d DUID) Valid() bool {
+	switch d {
+	case DUIDHeader, DUIDTerminator, DUIDLogicalLink1, DUIDTrunkingSignaling,
+		DUIDLogicalLink2, DUIDPacketDataUnit, DUIDTerminatorWithLC:
+		return true
+	}
+	return false
+}
+
 // ErrNIDParity is returned by ParseNID when the BCH decoder accepted a
 // codeword but the trailing NID flag bit disagrees with the
 // DUID-dictated value (see expectedNIDParity). Treated as uncorrectable.
@@ -69,8 +89,8 @@ var ErrNIDParity = errors.New("p25/phase1: NID parity mismatch")
 //   - 0 for HDU (0), TDU (3), TSDU (7), PDU (12), TDULC (15)
 //   - 1 for LDU1 (5), LDU2 (10)
 //
-// Reserved DUIDs are unspecified; we default to 0 so synthetic test
-// frames carrying a reserved DUID still decode cleanly.
+// Reserved DUIDs never reach here (ParseNID rejects them first); 0 is
+// returned for completeness.
 func expectedNIDParity(duid DUID) byte {
 	switch duid {
 	case DUIDLogicalLink1, DUIDLogicalLink2:
@@ -102,6 +122,9 @@ func ParseNID(bits []byte) (NID, int, error) {
 		return NID{}, -1, ErrNIDUncorrectable
 	}
 	duid := DUID(data & 0xF)
+	if !duid.Valid() {
+		return NID{}, errs, ErrNIDReservedDUID
+	}
 	if expectedNIDParity(duid) != rxParity {
 		return NID{}, errs, ErrNIDParity
 	}
@@ -170,6 +193,9 @@ func NIDFromDibitsWithErrors(dibits []uint8) (NID, int, [32]uint8, error) {
 		pattern[31]++
 	}
 
+	if !duid.Valid() {
+		return NID{}, errs, pattern, ErrNIDReservedDUID
+	}
 	if correctedParity != rxParity {
 		return NID{}, errs, pattern, ErrNIDParity
 	}
