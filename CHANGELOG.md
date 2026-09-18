@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **FC0013 tuners on RTL2832U dongles are now detected (#1200).** The chip-ID
+  probe did a bare `I2CRead` of the tuner, which returns whatever register the
+  bus currently has selected (the reporter's device answered `0x02`), instead of
+  selecting the ID register `0x00` first — so a genuine FC0013 (ID `0xA3`) never
+  matched and `sdr list --probe` reported "no supported tuner detected".
+  `detectFC0013` now reads via `I2CReadReg(0xC6, 0x00)` (write the register
+  pointer, then read — osmocom's `fc0013_readreg`). Pinned failing-first by
+  `TestDetectFC0013SelectsChipIDRegister`.
+
 ## [v1.1.6] — 2026-09-16
 
 ### Fixed

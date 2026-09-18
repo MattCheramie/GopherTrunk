@@ -274,12 +274,20 @@ func (f *FC0013) readReg(addr byte) (byte, error) {
 // address with FC0012; the ID byte (0xA3 vs 0xA1) is the disambiguator.
 // FC0013 isn't gated by GPIO 5 the way FC0012 is, so this probe runs
 // before the FC0012 one in the orchestrator.
+//
+// The ID lives at register fc0013CheckAddr (0x00), so the register
+// pointer MUST be selected before the read — a bare I2CRead returns
+// whatever register the tuner currently has selected. osmocom's
+// fc0013_readreg writes the register address then reads (which is
+// exactly what I2CReadReg does); relying on I2CRead's bus behaviour
+// left #1200's dongle answering 0x02 (a stale register) instead of
+// 0xA3, so the tuner never matched.
 func detectFC0013(d *rtl2832u.Demod) Tuner {
-	out, err := d.I2CRead(fc0013I2CAddr, 1)
-	if err != nil || len(out) == 0 {
+	id, err := d.I2CReadReg(fc0013I2CAddr, fc0013CheckAddr)
+	if err != nil {
 		return nil
 	}
-	if out[0] != fc0013CheckVal {
+	if id != fc0013CheckVal {
 		return nil
 	}
 	return NewFC0013(d)
