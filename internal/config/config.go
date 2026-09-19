@@ -2119,6 +2119,48 @@ type RecordingsConfig struct {
 	// headroom for bursty stalls, not a cure for sustained CPU starvation.
 	// 0 selects the built-in default (128); the accepted range is 1..1024.
 	VoiceTapBufferChunks int `yaml:"voice_tap_buffer_chunks"`
+	// FMDeEmphasis selects the post-demod de-emphasis applied to analog-FM
+	// voice recordings (the conventional scanner and analog SmartNet/Type II
+	// voice channels — the composer's FM chain). Analog FM transmitters
+	// pre-emphasize treble for SNR, so without the matching single-pole
+	// low-pass the audio is harsh and hissy (issue #1184). Tokens: ""/"us"/
+	// "75us" = 75 µs (North America, the default — matches the survey analog
+	// path), "eu"/"50us" = 50 µs (Europe / most regions), "off"/"none"/"flat"
+	// = disabled (flat response; only for capturing sub-audible signalling).
+	// Digital-voice protocols decode through their vocoders and are unaffected.
+	FMDeEmphasis string `yaml:"fm_deemphasis"`
+	// FMAudioLowpassHz sets the post-demod audio low-pass corner (Hz) for
+	// analog-FM voice. It band-limits the recovered audio to the voice band
+	// AND acts as the anti-alias filter ahead of the decimation to the 8 kHz
+	// PCM rate — without it, high-frequency FM noise folds back into the voice
+	// band and the recording is broadband-noisy at full quieting (issue #1184).
+	// 0 selects the default 3400 Hz; a negative value disables the filter.
+	FMAudioLowpassHz int `yaml:"fm_audio_lowpass_hz"`
+}
+
+// FM de-emphasis time constants for RecordingsConfig.FMDeEmphasis; the values
+// mirror internal/dsp/filter's DeEmphasis75us / DeEmphasis50us but are declared
+// here so the config package need not import the DSP layer.
+const (
+	FMDeEmphasis75us = 75 * time.Microsecond // North America (default)
+	FMDeEmphasis50us = 50 * time.Microsecond // Europe / most other regions
+)
+
+// ParseFMDeEmphasis maps a recordings.fm_deemphasis token to its de-emphasis
+// time constant. enabled is false for the "off" family; ok is false for an
+// unrecognised token (the caller reports a config error). An empty string
+// selects the North-America 75 µs default, matching the survey analog path.
+func ParseFMDeEmphasis(s string) (tau time.Duration, enabled, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "us", "75us", "75", "na":
+		return FMDeEmphasis75us, true, true
+	case "eu", "50us", "50":
+		return FMDeEmphasis50us, true, true
+	case "off", "none", "flat", "false":
+		return 0, false, true
+	default:
+		return 0, false, false
+	}
 }
 
 // EqualizerConfig is the YAML shape of the optional CMA equalizer in
