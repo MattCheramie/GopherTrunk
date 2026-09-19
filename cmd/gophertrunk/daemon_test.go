@@ -3,7 +3,10 @@ package main
 import (
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/config"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -158,5 +161,64 @@ func TestResolveDMRInterleavedVoice(t *testing.T) {
 					tc.proto, tc.override, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestResolveFMDeEmphasis pins that the analog-FM voice chain de-emphasizes by
+// DEFAULT (issue #1184: conventional-scanner audio was recorded flat, so it was
+// harsh and hissy — the daemon built the composer without a DeEmphasis option,
+// leaving it disabled). A default/unset config must resolve to Enabled at 75 µs
+// (North America, matching the survey analog path); "eu" selects 50 µs; only an
+// explicit "off" disables it.
+func TestResolveFMDeEmphasis(t *testing.T) {
+	cases := []struct {
+		token       string
+		wantEnabled bool
+		wantTau     time.Duration
+	}{
+		{"", true, filter.DeEmphasis75us}, // default-on is the fix
+		{"us", true, filter.DeEmphasis75us},
+		{"75us", true, filter.DeEmphasis75us},
+		{"eu", true, filter.DeEmphasis50us},
+		{"50us", true, filter.DeEmphasis50us},
+		{"off", false, 0},
+		{"none", false, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.token, func(t *testing.T) {
+			got := resolveFMDeEmphasis(config.RecordingsConfig{FMDeEmphasis: tc.token})
+			if got.Enabled != tc.wantEnabled {
+				t.Fatalf("fm_deemphasis=%q Enabled = %v, want %v", tc.token, got.Enabled, tc.wantEnabled)
+			}
+			if tc.wantEnabled && got.TimeConstant != tc.wantTau {
+				t.Errorf("fm_deemphasis=%q TimeConstant = %v, want %v", tc.token, got.TimeConstant, tc.wantTau)
+			}
+		})
+	}
+}
+
+// TestResolveFMAudioLPF pins that the post-demod audio low-pass (band-limit +
+// anti-alias ahead of the 8 kHz decimation) is ON by default at 3400 Hz — its
+// absence folded HF FM noise back into the voice band (issue #1184). 0 selects
+// the default, a positive value overrides the cutoff, and a negative value
+// disables it.
+func TestResolveFMAudioLPF(t *testing.T) {
+	cases := []struct {
+		hz          int
+		wantEnabled bool
+		wantCutoff  uint32
+	}{
+		{0, true, 3400}, // default-on is the fix
+		{5000, true, 5000},
+		{-1, false, 0},
+	}
+	for _, tc := range cases {
+		got := resolveFMAudioLPF(config.RecordingsConfig{FMAudioLowpassHz: tc.hz})
+		if got.Enabled != tc.wantEnabled {
+			t.Fatalf("fm_audio_lowpass_hz=%d Enabled = %v, want %v", tc.hz, got.Enabled, tc.wantEnabled)
+		}
+		if tc.wantEnabled && got.CutoffHz != tc.wantCutoff {
+			t.Errorf("fm_audio_lowpass_hz=%d CutoffHz = %v, want %v", tc.hz, got.CutoffHz, tc.wantCutoff)
+		}
 	}
 }
