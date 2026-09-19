@@ -23,7 +23,7 @@ infobox:
   - { label: Programming, value: "CHIRP (mature driver)" }
   - { label: Price, value: around $60 }
   - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B00MAULSOK?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
-see_also: [baofeng-uv-5r, btech-uv-pro, yaesu-ft-60r, anytone-at-d878uvii-plus, rtl-sdr, ctcss]
+see_also: [baofeng-uv-5rm, baofeng-uv-5r, btech-uv-pro, yaesu-ft-60r, anytone-at-d878uvii-plus, rtl-sdr, ctcss]
 related_lessons:
   - { title: "Analog vs. digital voice", url: /learn/rf-sdr/digital-voice/ }
   - { title: "Legal & ethical monitoring", url: /learn/rf-sdr/legal-ethical/ }
