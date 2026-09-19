@@ -23,7 +23,7 @@ infobox:
   - { label: Programming, value: "CHIRP (its flagship radio)" }
   - { label: Price, value: around $25 }
   - { label: Buy, value: "<a class=\"btn btn--buy\" href=\"https://www.amazon.com/dp/B007UYKG4E?tag=gophertrunk-20\" rel=\"nofollow sponsored noopener\">View on Amazon &rarr;</a>" }
-see_also: [baofeng-bf-f8hp, btech-uv-pro, yaesu-ft-60r, kenwood-th-f6a, rtl-sdr, fcc]
+see_also: [baofeng-uv-5rm, baofeng-bf-f8hp, btech-uv-pro, yaesu-ft-60r, kenwood-th-f6a, rtl-sdr, fcc]
 related_lessons:
   - { title: "Analog vs. digital voice", url: /learn/rf-sdr/digital-voice/ }
   - { title: "Legal & ethical monitoring", url: /learn/rf-sdr/legal-ethical/ }
