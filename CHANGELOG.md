@@ -22,6 +22,10 @@ for tagged releases.
   vocoders and are unaffected. Pinned by `TestResolveFMDeEmphasis` /
   `TestResolveFMAudioLPF`; still awaiting the reporter's on-air listening
   confirmation.
+
+## [v1.1.7] — 2026-09-17
+
+### Fixed
 - **FC0013 tuners on RTL2832U dongles are now detected (#1200).** The chip-ID
   probe did a bare `I2CRead` of the tuner, which returns whatever register the
   bus currently has selected (the reporter's device answered `0x02`), instead of
