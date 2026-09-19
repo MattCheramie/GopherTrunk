@@ -6,6 +6,8 @@ import {
   openReconnectingSocket,
   type SocketStatus,
 } from "./reconnectingSocket";
+import type { SpectrumDevice } from "./spectrum";
+import type { SystemHuntStatusDTO } from "./types";
 
 export interface SymbolFrame {
   ts_ns: number;
@@ -81,6 +83,93 @@ export function demodModeToProto(mod: string | undefined | null): string {
     default:
       return "p25-c4fm";
   }
+}
+
+// SymbolTarget names the one /diag/symbols receiver a symbol-quality stream
+// should open: which SDR (serial), which receiver to demodulate it with
+// (proto), and the control-channel offset from the SDR's centre (Hz). A
+// per-system meter builds one of these from the system's locked frequency and
+// its SDR; a null target opens no stream at all.
+export interface SymbolTarget {
+  serial: string;
+  proto: string;
+  offset: number;
+}
+
+// symbolProtoForProtocol maps a trunking system's protocol string (as sent in
+// SystemHuntStatusDTO.protocol) to the /diag/symbols receiver selector, so a
+// per-system meter can pick a receiver from the SYSTEM's own protocol when the
+// device it sits on can't say (a wideband SDR shared by several systems reports
+// only one symbol_proto). Mirrors the daemon's symbolProtoFor
+// (cmd/gophertrunk/spectrum_provider.go). Returns "" for protocols with no
+// symbol-scope receiver, so the caller opens no stream rather than a wrong one.
+//
+// P25 Phase 1 can't distinguish C4FM from CQPSK by protocol alone (the demod
+// mode isn't on the wire here), so it defaults to the C4FM receiver — the same
+// default the daemon's ParseDemodMode uses. Prefer the matched device's
+// symbol_proto, which does carry the resolved C4FM/CQPSK, when it is present.
+export function symbolProtoForProtocol(protocol: string): string {
+  switch ((protocol ?? "").toLowerCase()) {
+    case "p25":
+    case "p25-phase1":
+    case "p25p1":
+      return "p25-c4fm";
+    case "p25-phase2":
+    case "p25p2":
+      return "p25-phase2";
+    case "tetra":
+    case "tetra-dmo":
+    case "dmo":
+      // DMO reuses the TMO physical layer (π/4-DQPSK), same receiver.
+      return "tetra";
+    case "dmr":
+    case "dmr-tier2":
+    case "dmr-tier1":
+      return "dmr";
+    case "nxdn":
+      return "nxdn";
+    default:
+      // MPT1327, EDACS, … have no symbol-scope receiver yet.
+      return "";
+  }
+}
+
+// symbolTargetForSystem resolves the /diag/symbols target for one locked
+// trunked system: the SDR whose passband contains the system's locked control
+// channel, demodulated with that system's receiver, offset from the SDR centre.
+// Returns null when the system isn't locked, carries no lock frequency, sits on
+// no in-band SDR, or has no symbol-scope receiver — in every such case the
+// caller opens NO stream (so an idle/hunting system never spins up a DSP chain,
+// and on a shared control tuner only the currently-decoding system streams).
+//
+// Matching mirrors the daemon's system↔device association (a control channel is
+// in a device's passband when |cc − centre| ≤ sample_rate/2), choosing the
+// nearest-centre device when several span it. The receiver comes from the
+// matched device's protocol-aware symbol_proto when present (it carries the
+// resolved P25 C4FM/CQPSK), falling back to the system's own protocol.
+export function symbolTargetForSystem(
+  devices: SpectrumDevice[],
+  system: SystemHuntStatusDTO,
+): SymbolTarget | null {
+  if (system.state !== "locked") return null;
+  const freq = system.locked_freq_hz;
+  if (!freq) return null;
+
+  let best: SpectrumDevice | null = null;
+  let bestDelta = Infinity;
+  for (const d of devices) {
+    if (!d.sample_rate_hz || !d.center_hz) continue;
+    const delta = Math.abs(freq - d.center_hz);
+    if (delta <= d.sample_rate_hz / 2 && delta < bestDelta) {
+      best = d;
+      bestDelta = delta;
+    }
+  }
+  if (!best) return null;
+
+  const proto = best.symbol_proto || symbolProtoForProtocol(system.protocol);
+  if (!proto) return null;
+  return { serial: best.serial, proto, offset: freq - best.center_hz };
 }
 
 export type SymbolFrameHandler = (f: SymbolFrame) => void;

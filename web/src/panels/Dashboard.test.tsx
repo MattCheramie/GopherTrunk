@@ -8,9 +8,18 @@ vi.mock("../api/client", () => ({
     activeCalls: vi.fn().mockResolvedValue([]),
     devices: vi.fn().mockResolvedValue([]),
     systems: vi.fn().mockResolvedValue([]),
+    scanner: vi.fn().mockResolvedValue({ systems: [] }),
   },
 }));
 
+// Keep the SDR-pool poll off the network; the per-system decode/level chips
+// render from the scanner status regardless of the device list.
+vi.mock("../api/spectrum", async (orig) => ({
+  ...(await orig<typeof import("../api/spectrum")>()),
+  fetchSpectrumDevices: vi.fn().mockResolvedValue([]),
+}));
+
+import { api } from "../api/client";
 import { useShared } from "../store/shared";
 import { Dashboard } from "./Dashboard";
 
@@ -116,6 +125,44 @@ describe("Dashboard landing", () => {
     const grantRows = screen.getAllByText("grant");
     expect(grantRows).toHaveLength(1);
     expect(screen.getByText("×3")).toBeInTheDocument();
+  });
+
+  it("renders one signal meter PER system, not a single collapsed reading", async () => {
+    // Regression: the SIGNAL bar reduced every configured system to one meter
+    // (useLockedSystemSignal picked one, useSignalQuality one control SDR). With
+    // two locked systems the Dashboard must show a per-system decode-health row
+    // for each, labelled by system name.
+    (api.scanner as ReturnType<typeof vi.fn>).mockResolvedValue({
+      systems: [
+        {
+          name: "CountyP25",
+          protocol: "p25",
+          state: "locked",
+          locked_freq_hz: 851_012_500,
+          has_decode_health: true,
+          decode_quality: "clean",
+        },
+        {
+          name: "CityTETRA",
+          protocol: "tetra",
+          state: "locked",
+          locked_freq_hz: 467_912_500,
+          has_decode_health: true,
+          decode_quality: "marginal",
+        },
+      ],
+    });
+    renderDash();
+    await waitFor(() => {
+      expect(screen.getByText("CountyP25")).toBeInTheDocument();
+      expect(screen.getByText("CityTETRA")).toBeInTheDocument();
+    });
+    // Each system contributes its OWN decode chip (clean vs marginal), so both
+    // labelled SIGNAL rows are present — not one shared verdict.
+    expect(screen.getByText("decode: clean")).toBeInTheDocument();
+    expect(screen.getByText("decode: marginal")).toBeInTheDocument();
+    // Two SIGNAL banners, one per system.
+    expect(screen.getAllByText("Signal")).toHaveLength(2);
   });
 
   it("shows the active-call roster with the transmitting radio", async () => {
