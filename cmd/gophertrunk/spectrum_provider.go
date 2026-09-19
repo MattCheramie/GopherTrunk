@@ -130,12 +130,20 @@ func p25ModulationFor(systems []trunking.System, centerHz, sampleRateHz uint32) 
 // Closest-to-centre (rather than first-match) is used because a wideband
 // voice SDR can span several CCs of one system; the nearest one is the
 // deterministic, operator-intuitive choice.
+//
+// It considers any protocol that has a symbol-scope receiver
+// (symbolProtoForSystem), NOT just P25: on a wideband DMR/TETRA device the
+// panels rest their symbol view on this frequency, and a device parked far
+// off its carrier (a `role: wideband` centre never sits on a channel)
+// reported 0 here, so the scope tuned to DC — no carrier, so the symbol
+// chip read "acquiring…" forever while the decode chip on the same rig was
+// fine. Mirroring symbolProtoForSystem keeps the two in lockstep.
 func controlChannelFor(systems []trunking.System, centerHz, sampleRateHz uint32) uint32 {
 	var best uint32
 	var bestDelta int64 = -1
 	half := int64(sampleRateHz) / 2
 	for i := range systems {
-		if systems[i].Protocol != trunking.ProtocolP25 {
+		if symbolProtoForSystem(systems[i]) == "" {
 			continue
 		}
 		for _, cc := range systems[i].ControlChannels {
@@ -183,37 +191,10 @@ func demodModeName(cfg string) string {
 // control channels falls inside the device passband, with a fallback to
 // the sole configured system when exactly one exists.
 func symbolProtoFor(systems []trunking.System, centerHz, sampleRateHz uint32) string {
-	proto := func(s trunking.System) string {
-		switch s.Protocol {
-		case trunking.ProtocolP25:
-			// P25 Phase 1 voice shares the CC's modulation, so one value
-			// covers both the control channel and any followed call.
-			if demodModeName(s.P25Phase1DemodMode) == "cqpsk" {
-				return "p25-cqpsk"
-			}
-			return "p25-c4fm"
-		case trunking.ProtocolTETRA, trunking.ProtocolTETRADMO:
-			// DMO reuses the TMO physical layer (π/4-DQPSK at 18 ksym/s),
-			// so the same receiver applies.
-			return "tetra"
-		case trunking.ProtocolDMR, trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1:
-			return "dmr"
-		case trunking.ProtocolNXDN:
-			return "nxdn"
-		case trunking.ProtocolP25Phase2:
-			return "p25-phase2"
-		default:
-			// MPT1327, EDACS, … have no symbol-scope receiver yet; ""
-			// leaves the panel on its default rather than asserting a
-			// wrong one.
-			return ""
-		}
-	}
-
 	var only *trunking.System
 	count := 0
 	for i := range systems {
-		if proto(systems[i]) == "" {
+		if symbolProtoForSystem(systems[i]) == "" {
 			continue
 		}
 		count++
@@ -225,14 +206,49 @@ func symbolProtoFor(systems []trunking.System, centerHz, sampleRateHz uint32) st
 				delta = -delta
 			}
 			if delta <= half {
-				return proto(systems[i])
+				return symbolProtoForSystem(systems[i])
 			}
 		}
 	}
 	if count == 1 {
-		return proto(*only)
+		return symbolProtoForSystem(*only)
 	}
 	return ""
+}
+
+// symbolProtoForSystem maps one system to the WS /api/v1/diag/symbols
+// receiver selector it should be demodulated with, or "" when the
+// protocol has no symbol-scope receiver yet. Shared by symbolProtoFor
+// (which one this device runs) and controlChannelFor (which systems can
+// rest a symbol-domain view on a control channel), so the two stay in
+// lockstep — a device that reports symbol_proto="dmr" must also report a
+// control_channel_hz for the scope to tune to, or it rests on DC and
+// never acquires.
+func symbolProtoForSystem(s trunking.System) string {
+	switch s.Protocol {
+	case trunking.ProtocolP25:
+		// P25 Phase 1 voice shares the CC's modulation, so one value
+		// covers both the control channel and any followed call.
+		if demodModeName(s.P25Phase1DemodMode) == "cqpsk" {
+			return "p25-cqpsk"
+		}
+		return "p25-c4fm"
+	case trunking.ProtocolTETRA, trunking.ProtocolTETRADMO:
+		// DMO reuses the TMO physical layer (π/4-DQPSK at 18 ksym/s),
+		// so the same receiver applies.
+		return "tetra"
+	case trunking.ProtocolDMR, trunking.ProtocolDMRTier2, trunking.ProtocolDMRTier1:
+		return "dmr"
+	case trunking.ProtocolNXDN:
+		return "nxdn"
+	case trunking.ProtocolP25Phase2:
+		return "p25-phase2"
+	default:
+		// MPT1327, EDACS, … have no symbol-scope receiver yet; ""
+		// leaves the panel on its default rather than asserting a
+		// wrong one.
+		return ""
+	}
 }
 
 // Tune programs the named SDR's centre frequency. Routes through

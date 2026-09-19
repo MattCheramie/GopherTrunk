@@ -896,6 +896,32 @@ confirmation before any close-as-completed.
   the FULL input rate plus a receiver (`internal/scanner/symbolscope/scope.go`), nothing is
   pooled, and Dashboard + Scanner + Plots each mount `useSignalQuality` while Histogram opens a
   fourth. Several open tabs = several full DSP chains. Pooling them is still open work.
+- **The web signal meter reads BOTH axes off wiring that was P25/single-channel only — a
+  `role: wideband` DMR IPSC rig showed `decode: —` + `symbol: acquiring…` while a single-channel
+  TETRA rig read clean (18 Sep #1207).** Two independent gaps, both fixed:
+  - **Symbol axis:** `controlChannelFor` (`spectrum_provider.go`) only considered `ProtocolP25`
+    systems, so a wideband DMR/TETRA device reported `control_channel_hz=0` → `useSignalQuality`
+    used offset 0 → the `/diag/symbols` receiver rested on the device CENTRE (a wideband centre
+    never sits on a carrier) → no dibits → "acquiring…" forever. It now mirrors
+    `symbolProtoForSystem` (any symbol-scope protocol) and returns the nearest in-band CC, so the
+    scope tunes to a real carrier. `symbolProtoFor` was already protocol-general — the two now
+    share `symbolProtoForSystem`.
+  - **Decode + level axes:** wideband systems are STRIPPED from `cchunt` (they decode on
+    `widebandt2`, not the hunter), and `DecodeHealth` lives on the single-channel
+    `ccdecoder.Decoder`, so a wideband system never reached `/api/v1/scanner` at all →
+    `useLockedSystemSignal` had no locked system → `decode: —`, no dBFS. Fix:
+    `widebandt2.Engine.SystemHealthSnapshot()` (a per-system snapshot built each 1 s diagnostics
+    window on the pump goroutine, read under `healthMu`) → `scannerCockpit.wideband` appends them
+    to `Status().Systems`. The DMR Tier II verdict (`decideTier2Health`) is honest for an idle
+    IPSC carrier: a real FEC frame-error-rate bucket when voice headers are present, else a
+    CRC-valid idle beacon (`ConventionalChannel.Locked()` + `Beacons`) reads "clean", retained
+    across the ~5–9 s beacon gaps (`wbHealthDecodeGrace`) so it doesn't flap. Tier III/P25 report
+    lock + level + a coarse "decoding = clean" from the monotonic decoded-frame counter (no
+    per-window fail count is plumbed there yet — the honest refinement to a real error rate is
+    open). Note this ALSO fixes the TUI/web Scanner panel, which showed no systems for a wideband
+    config. Still on-air-gated only in the sense that the web A/B wasn't run in the dev env; the
+    logic is unit-pinned (`decideTier2Health`, `foldHealth` on a real locked tier2 channel,
+    cockpit mapping).
 - **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
   `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
   a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ

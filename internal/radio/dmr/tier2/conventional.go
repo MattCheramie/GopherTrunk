@@ -324,6 +324,18 @@ func (c *ConventionalChannel) Counters() Counters {
 	}
 }
 
+// Locked reports whether this channel currently holds a repeater lock
+// (a cc.locked was published and no cc.lost has cleared it since). It is
+// the same flag maybeLock / MarkLost maintain, exposed so the wideband
+// engine can surface a Tier II system's lock state on the scanner status
+// the way a single-channel control decoder does. Safe to call
+// concurrently with the decode path.
+func (c *ConventionalChannel) Locked() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.locked
+}
+
 // Options configure a ConventionalChannel.
 type Options struct {
 	Bus         *events.Bus

@@ -384,9 +384,40 @@ func TestControlChannelFor(t *testing.T) {
 			want:       0,
 		},
 		{
-			name:       "no P25 systems configured is absent",
+			// A DMR system now resolves its in-band CC just like P25: on a
+			// wideband DMR device the symbol scope rests its view here, and
+			// a 0 sent it to DC (no carrier) → "symbol: acquiring…" forever.
+			name:       "single in-band DMR system resolves its control channel",
 			systems:    []trunking.System{dmr},
 			centerHz:   451_000_000,
+			sampleRate: sr,
+			want:       451_000_000,
+		},
+		{
+			// The reported case: a `role: wideband` DMR IPSC rig with two
+			// Tier II systems, centre parked between them. The nearest
+			// in-band control channel wins so the scope tunes to a real
+			// carrier instead of the centre DC spike.
+			name: "wideband DMR IPSC, two systems, nearest in-band CC wins",
+			systems: []trunking.System{
+				{Name: "Fire", Protocol: trunking.ProtocolDMRTier2, ControlChannels: []uint32{442_387_500}},
+				{Name: "Fire2", Protocol: trunking.ProtocolDMRTier2, ControlChannels: []uint32{441_000_000}},
+			},
+			centerHz:   441_700_000,
+			sampleRate: 6_250_000,   // ±3.125 MHz passband, both CCs in band
+			want:       442_387_500, // 687.5 kHz from centre vs 700 kHz for the other
+		},
+		{
+			name:       "TETRA control channel in band resolves",
+			systems:    []trunking.System{{Name: "T", Protocol: trunking.ProtocolTETRA, ControlChannels: []uint32{467_912_500}}},
+			centerHz:   467_912_500,
+			sampleRate: sr,
+			want:       467_912_500,
+		},
+		{
+			name:       "protocol with no symbol receiver is absent",
+			systems:    []trunking.System{{Name: "MPT", Protocol: trunking.ProtocolMPT1327, ControlChannels: []uint32{157_000_000}}},
+			centerHz:   157_000_000,
 			sampleRate: sr,
 			want:       0,
 		},

@@ -2928,6 +2928,11 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 			conv:       d.convScan,
 			engine:     d.engine,
 			talkgroups: d.talkgroups,
+			// Wideband-hosted systems (DMR IPSC, multi-TETRA, …) are decoded by
+			// these engines, not cchunt, so they must be surfaced into the
+			// scanner status here or the web/TUI signal meter shows nothing for
+			// them (decode: —, no dBFS).
+			wideband: widebandHealthProviders(d.widebandT2),
 		}
 		// Live system-discovery ("hunt") manager: operator-triggered blind
 		// spectrum sweep that shares the radio via spare-SDR-else-borrow

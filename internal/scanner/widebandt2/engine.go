@@ -50,8 +50,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -118,6 +120,110 @@ const sampleRateAdvisoryFactor = 1.5
 // tuner strategy: at or below it, DDCBank wins on simplicity;
 // above it, ChannelizerBank's shared wide-band filter pays off.
 const strategyAutoThreshold = 6
+
+// Decode-health thresholds for the scanner-status surface (SystemHealth).
+// A wideband-hosted system's live state is invisible on GET /api/v1/scanner
+// unless the engine reports it — cchunt strips wideband systems, so without
+// this the web signal meter reads "decode: —" and no dBFS for a DMR IPSC rig
+// while a single-channel TETRA control SDR (which the ccdecoder path reports)
+// reads clean. These mirror the ccdecoder buckets so the two paths agree.
+const (
+	// wbHealthMinAttempts is the FEC-checked-frame count a Tier II channel
+	// must attempt in one diagnostics window before its error-rate bucket is
+	// trusted. A repeater rarely sends many voice headers a second, so the
+	// beacon-liveness path usually decides for an idle IPSC carrier.
+	wbHealthMinAttempts = 8
+	// wbHealthDecodeGrace is how long a locked channel keeps its last decode
+	// verdict across an idle gap before it decays to "marginal". A DMR IPSC
+	// repeater beacons in ~10 s trains with ~5–9 s gaps, so the verdict must
+	// survive a gap without flapping (same intent as lowPowerDecodeGrace).
+	wbHealthDecodeGrace = 12 * time.Second
+	// Frame-error-rate buckets (percent), matching ccdecoder's clean/marginal
+	// thresholds so a wideband system reads the same scale as a dedicated one.
+	wbHealthCleanMaxPct    = 1.0
+	wbHealthMarginalMaxPct = 5.0
+)
+
+// SystemHealth is a per-configured-system decode-health snapshot the scanner
+// cockpit maps onto api.SystemHuntStatusDTO for GET /api/v1/scanner, so a
+// wideband-hosted system shows the same live signal meter (decode verdict,
+// carrier offset, front-end level) the single-channel ccdecoder path already
+// gives a dedicated control SDR. Rebuilt once per diagnostics window on the
+// Run pump goroutine and read under healthMu from the API goroutine.
+type SystemHealth struct {
+	Name     string
+	Protocol string // config protocol string (e.g. "dmr-tier2")
+	FreqHz   uint32 // the channel this snapshot is taken from
+	Locked   bool
+	LockedAt time.Time
+	// DecodeQuality is "clean"/"marginal"/"poor"; HasDecodeHealth is false
+	// until there is enough evidence (an unlocked or freshly-seen channel
+	// reports no quality rather than a misleading 0).
+	DecodeQuality   string
+	HasDecodeHealth bool
+	CarrierOffsetHz int32
+	SignalDbFS      float64
+	HasSignal       bool
+}
+
+// wbBucketErrorRate maps a frame-error rate (percent) to the clean/marginal/
+// poor buckets. Local copy of ccdecoder.bucketErrorRate to keep this package
+// free of a dependency on the decoder package.
+func wbBucketErrorRate(ratePct float64) string {
+	switch {
+	case ratePct <= wbHealthCleanMaxPct:
+		return "clean"
+	case ratePct <= wbHealthMarginalMaxPct:
+		return "marginal"
+	default:
+		return "poor"
+	}
+}
+
+// coarseOffsetReporter is the optional capability a receiver exposes when it
+// tracks a frozen coarse carrier-offset correction (dmrrx.Receiver does), so
+// SystemHealth can carry the offset the web decode chip shows in its tooltip.
+type coarseOffsetReporter interface {
+	CoarseCarrierOffsetHz() float64
+}
+
+// healthDecision is the sticky per-channel decode verdict state threaded
+// across diagnostics windows. Kept a value type so decideTier2Health is a
+// pure function that unit-tests without a live receiver.
+type healthDecision struct {
+	verdict    string    // "", "clean", "marginal", "poor"
+	lastGoodAt time.Time // last window with a CRC/FEC-valid decode
+}
+
+// decideTier2Health advances a DMR Tier II channel's decode verdict for one
+// diagnostics window from that window's counter deltas. The rule, honest for
+// a conventional/IPSC carrier whose signalling is idle beacons between
+// transmissions:
+//   - enough FEC-checked voice headers this window → a real frame-error-rate
+//     bucket (clean/marginal/poor);
+//   - else any FEC-valid header or CRC-valid beacon → clean (it is decoding);
+//   - else locked but idle within the grace window → keep the last verdict
+//     (a beacon gap must not flap the chip);
+//   - else locked but quiet too long → marginal;
+//   - else unlocked → no verdict.
+func decideTier2Health(d healthDecision, now time.Time, locked bool, fecPassD, fecFailD, beaconD uint64) healthDecision {
+	attempts := fecPassD + fecFailD
+	switch {
+	case attempts >= wbHealthMinAttempts:
+		d.verdict = wbBucketErrorRate(100 * float64(fecFailD) / float64(attempts))
+		d.lastGoodAt = now
+	case fecPassD > 0 || beaconD > 0:
+		d.verdict = "clean"
+		d.lastGoodAt = now
+	case locked && !d.lastGoodAt.IsZero() && now.Sub(d.lastGoodAt) <= wbHealthDecodeGrace:
+		// Locked, idle gap within grace — keep the previous verdict.
+	case locked:
+		d.verdict = "marginal"
+	default:
+		d.verdict = ""
+	}
+	return d
+}
 
 // channelizerBinWidthHz is the target per-bin width the polyphase
 // channelizer aims for. 16 bins across a 2.4 MS/s IQ band gives 150 kHz
@@ -294,6 +400,13 @@ type Engine struct {
 	// spurious grants whose voice taps capture no audio (empty TG folders).
 	// Read on the pump goroutine; set via Suspend/Resume from another goroutine.
 	suspended atomic.Bool
+
+	// health is the per-system decode-health snapshot the scanner cockpit
+	// reads for GET /api/v1/scanner (keyed by system name). Written once per
+	// diagnostics window on the Run pump goroutine, read under healthMu from
+	// the API goroutine. See SystemHealth / SystemHealthSnapshot.
+	healthMu sync.Mutex
+	health   map[string]SystemHealth
 }
 
 // Serial returns the dongle serial this engine decodes on (the value passed as
@@ -467,6 +580,19 @@ type engineChannel struct {
 	activityLogAt  time.Time
 	pwDebugLogAt   time.Time
 	lastLoggedDbFS float64
+
+	// Scanner-status decode-health state (SystemHealth), owned by the pump
+	// goroutine. hlthPrevCnt / hlthPrevDecoded are the previous window's
+	// counter snapshots so the verdict is computed from per-window deltas;
+	// hlthVerdict is the sticky clean/marginal/poor verdict retained across
+	// idle beacon gaps (until wbHealthDecodeGrace elapses); hlthLastGoodAt is
+	// the last window with a CRC/FEC-valid decode; hlthLockedAt is when the
+	// current lock began (zeroed on unlock).
+	hlthPrevCnt     tier2.Counters
+	hlthPrevDecoded uint64
+	hlthVerdict     string
+	hlthLastGoodAt  time.Time
+	hlthLockedAt    time.Time
 }
 
 // fixedGainTenthDB interprets a configured gain string the same way the
@@ -618,6 +744,7 @@ func New(opts Options) (*Engine, error) {
 		metrics:     opts.Metrics,
 		serial:      opts.Serial,
 		now:         now,
+		health:      make(map[string]SystemHealth),
 	}
 
 	for i, ch := range opts.Channels {
@@ -1359,6 +1486,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 	}
 
 	debug := e.log.Enabled(context.Background(), slog.LevelDebug)
+	newHealth := make(map[string]SystemHealth, len(e.channels))
 	for _, ec := range e.channels {
 		if ec.pwr.Samples() == 0 {
 			continue
@@ -1367,6 +1495,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 		if e.metrics != nil {
 			e.metrics.RecordIQPowerDbFS(ec.powerLabel(), dbfs)
 		}
+		ec.foldHealth(newHealth, now, dbfs)
 
 		// Decode-activity-gated power event. When the channel decoded at
 		// least one frame this window, publish a per-window signal-level
@@ -1540,6 +1669,128 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 			}
 		}
 	}
+
+	// Publish this window's per-system health snapshot for the scanner status
+	// (GET /api/v1/scanner). Replace wholesale so a channel that produced no IQ
+	// this window (dropped from newHealth by the Samples()==0 continue above)
+	// simply carries its previous snapshot forward on the next populated
+	// window rather than lingering stale; a wideband tap always has IQ, so in
+	// practice every system is refreshed each window.
+	e.healthMu.Lock()
+	if e.health == nil {
+		// An Engine built directly (some tests) rather than via New has no map.
+		e.health = make(map[string]SystemHealth, len(newHealth))
+	}
+	for name, h := range newHealth {
+		e.health[name] = h
+	}
+	e.healthMu.Unlock()
+}
+
+// SystemHealthSnapshot returns the latest per-system decode-health snapshot,
+// one entry per configured system this engine decodes, sorted by name. Safe
+// to call from any goroutine; the scanner cockpit reads it for GET
+// /api/v1/scanner so a wideband-hosted system surfaces the same live signal
+// meter a single-channel control SDR does.
+func (e *Engine) SystemHealthSnapshot() []SystemHealth {
+	e.healthMu.Lock()
+	out := make([]SystemHealth, 0, len(e.health))
+	for _, h := range e.health {
+		out = append(out, h)
+	}
+	e.healthMu.Unlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// foldHealth computes this channel's decode-health for the current
+// diagnostics window and folds it into dst (keyed by system name). It runs on
+// the Run pump goroutine, so it may read the channel's mutable state directly.
+// When two channels share a system name the locked one wins, then the one
+// with the stronger signal — so a system's snapshot reflects its best carrier.
+func (ec *engineChannel) foldHealth(dst map[string]SystemHealth, now time.Time, dbfs float64) {
+	h := SystemHealth{
+		Name:       ec.sysName,
+		Protocol:   ec.protoTag,
+		FreqHz:     ec.freqHz,
+		SignalDbFS: dbfs,
+		HasSignal:  true,
+	}
+
+	if ec.tier2Cnt != nil {
+		// DMR Tier II / IPSC: an honest control-channel verdict from the
+		// always-on signalling. FEC-checked voice headers give a real
+		// frame-error rate when present; otherwise a CRC-valid idle beacon (or
+		// header) this window is a successful decode, so a locked repeater
+		// beaconing cleanly reads "clean". The verdict is retained across an
+		// idle beacon gap (wbHealthDecodeGrace) so it doesn't flap between
+		// trains.
+		locked := ec.tier2Cnt.Locked()
+		c := ec.tier2Cnt.Counters()
+		dec := decideTier2Health(healthDecision{verdict: ec.hlthVerdict, lastGoodAt: ec.hlthLastGoodAt},
+			now, locked,
+			c.FECPass-ec.hlthPrevCnt.FECPass,
+			c.FECFail-ec.hlthPrevCnt.FECFail,
+			c.Beacons-ec.hlthPrevCnt.Beacons)
+		ec.hlthPrevCnt = c
+		ec.hlthVerdict = dec.verdict
+		ec.hlthLastGoodAt = dec.lastGoodAt
+		h.Locked = locked
+		if locked && ec.hlthVerdict != "" {
+			h.DecodeQuality = ec.hlthVerdict
+			h.HasDecodeHealth = true
+		}
+	} else {
+		// Tier III / P25 Phase 1 / Phase 2 control channels: no per-window FEC
+		// error-rate is plumbed here, so report lock + level and a coarse
+		// "decoding" verdict from the monotonic decoded-frame counter. A CC
+		// that advanced its decode counter within the grace window is locked
+		// and decoding (clean); otherwise it is unlocked and reports no
+		// quality. This is honest — "it is decoding" — without inventing an
+		// error rate the wideband path doesn't measure.
+		var decoded uint64
+		if ec.decoded != nil {
+			decoded = ec.decoded()
+		}
+		if decoded > ec.hlthPrevDecoded {
+			ec.hlthLastGoodAt = now
+		}
+		ec.hlthPrevDecoded = decoded
+		locked := !ec.hlthLastGoodAt.IsZero() && now.Sub(ec.hlthLastGoodAt) <= wbHealthDecodeGrace
+		h.Locked = locked
+		if locked {
+			h.DecodeQuality = "clean"
+			h.HasDecodeHealth = true
+		}
+	}
+
+	if h.Locked {
+		if ec.hlthLockedAt.IsZero() {
+			ec.hlthLockedAt = now
+		}
+		h.LockedAt = ec.hlthLockedAt
+	} else {
+		ec.hlthLockedAt = time.Time{}
+	}
+
+	if r, ok := ec.receiver.(coarseOffsetReporter); ok {
+		h.CarrierOffsetHz = int32(math.Round(r.CoarseCarrierOffsetHz()))
+	}
+
+	prev, ok := dst[ec.sysName]
+	if !ok || betterHealth(h, prev) {
+		dst[ec.sysName] = h
+	}
+}
+
+// betterHealth reports whether candidate a should represent a system over the
+// already-stored b: a locked channel beats an unlocked one, then the stronger
+// signal wins. Keeps a multi-carrier system's snapshot on its best carrier.
+func betterHealth(a, b SystemHealth) bool {
+	if a.Locked != b.Locked {
+		return a.Locked
+	}
+	return a.SignalDbFS > b.SignalDbFS
 }
 
 // powerLabel is the metrics label for this channel's dBFS gauge:
