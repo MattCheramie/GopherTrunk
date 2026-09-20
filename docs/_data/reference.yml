@@ -882,6 +882,7 @@ domains:
           - { slug: anytone-at-d878uvii-plus, title: AnyTone AT-D878UVII Plus, type: hardware }
           - { slug: btech-uv-pro, title: BTECH UV-PRO, type: hardware }
           - { slug: baofeng-bf-f8hp, title: Baofeng BF-F8HP, type: hardware }
+          - { slug: baofeng-uv-5rm, title: Baofeng UV-5RM, type: hardware }
           - { slug: baofeng-uv-5r, title: Baofeng UV-5R, type: hardware }
           - { slug: kenwood-th-f6a, title: Kenwood TH-F6A, type: hardware }
           - { slug: yaesu-vx-8dr, title: Yaesu VX-8DR, type: hardware }
