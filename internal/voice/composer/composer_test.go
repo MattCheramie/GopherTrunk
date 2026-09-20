@@ -1021,3 +1021,89 @@ func TestP25P1ChainClocksAtExactSourceRate(t *testing.T) {
 		t.Errorf("receiver clocked at %v Hz, want the exact source rate %v Hz", got, fractionalHz)
 	}
 }
+
+// fmChainDCMean runs a frequency-offset FM carrier through a Composer FM chain
+// built with the given AudioHPF config and returns the mean of the settled PCM
+// the chain writes. A constant carrier offset becomes a constant DC bias out of
+// the FM discriminator (arg(z[n]·conj(z[n-1])) is a constant ω), so the mean
+// measures exactly the DC a residual tuning offset leaves (issue #1184).
+func fmChainDCMean(t *testing.T, hpf AudioHPFConfig) float64 {
+	t.Helper()
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        &fakeEngine{},
+		IQSampleRate:  2_400_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+		// Isolate the high-pass: no de-emphasis / LPF / AGC so the only thing
+		// that can move the DC is the stage under test.
+		AudioHPF: hpf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	defer func() { cancel(); c.Close(); bus.Close() }()
+
+	publishStartFM(bus, "VOICE-1")
+	waitFor(t, time.Second, func() bool {
+		for _, s := range c.ActiveChains() {
+			if s == "VOICE-1" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// A pure carrier 500 Hz off the channel centre: e^{j2π·500·n/Fs}. The
+	// discriminator turns the constant offset into a constant DC audio level.
+	const offHz = 500.0
+	const fs = 2_400_000.0
+	const chunk = 4800
+	phase := 0.0
+	dphi := 2 * math.Pi * offHz / fs
+	for b := 0; b < 60; b++ {
+		buf := make([]complex64, chunk)
+		for i := range buf {
+			buf[i] = complex(float32(math.Cos(phase)), float32(math.Sin(phase)))
+			phase += dphi
+		}
+		src.SendIQ(buf)
+		time.Sleep(2 * time.Millisecond)
+	}
+	waitFor(t, 2*time.Second, func() bool { return sink.total("VOICE-1") > 400 })
+
+	pcm := sink.pcmCopy("VOICE-1")
+	// Drop the head (filter/AGC transient) and any tail; average the middle.
+	if len(pcm) < 200 {
+		t.Fatalf("only %d PCM samples, need a settled window", len(pcm))
+	}
+	lo, hi := len(pcm)/4, 3*len(pcm)/4
+	var s float64
+	for _, v := range pcm[lo:hi] {
+		s += float64(v)
+	}
+	return s / float64(hi-lo)
+}
+
+// TestComposerFMChainHighPassRemovesDC is the failing-first regression for the
+// #1184 follow-up: a residual carrier-frequency offset leaves a DC bias in the
+// analog-FM audio (the "dc component / tone" the reporter heard after the
+// de-emphasis fix, which boosts the low end). With the high-pass OFF the PCM
+// carries a clear DC; with it ON (the daemon default) the DC is removed.
+func TestComposerFMChainHighPassRemovesDC(t *testing.T) {
+	dcOff := fmChainDCMean(t, AudioHPFConfig{Enabled: false})
+	if math.Abs(dcOff) < 200 {
+		t.Fatalf("expected a clear DC bias without the high-pass, got mean %.1f", dcOff)
+	}
+	dcOn := fmChainDCMean(t, AudioHPFConfig{Enabled: true, CutoffHz: 300})
+	if math.Abs(dcOn) > 0.05*math.Abs(dcOff) {
+		t.Errorf("high-pass did not remove the DC: mean %.1f with HPF vs %.1f without", dcOn, dcOff)
+	}
+}

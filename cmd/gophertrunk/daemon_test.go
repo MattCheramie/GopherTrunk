@@ -222,3 +222,28 @@ func TestResolveFMAudioLPF(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveFMAudioHPF pins that the post-demod audio high-pass (DC bias +
+// sub-audible CTCSS/DCS tone removal, the low hum de-emphasis amplifies) is ON
+// by default at 300 Hz (issue #1184). 0 selects the default, a positive value
+// overrides the cutoff, and a negative value disables it.
+func TestResolveFMAudioHPF(t *testing.T) {
+	cases := []struct {
+		hz          int
+		wantEnabled bool
+		wantCutoff  uint32
+	}{
+		{0, true, 300}, // default-on is the fix
+		{200, true, 200},
+		{-1, false, 0},
+	}
+	for _, tc := range cases {
+		got := resolveFMAudioHPF(config.RecordingsConfig{FMAudioHighpassHz: tc.hz})
+		if got.Enabled != tc.wantEnabled {
+			t.Fatalf("fm_audio_highpass_hz=%d Enabled = %v, want %v", tc.hz, got.Enabled, tc.wantEnabled)
+		}
+		if tc.wantEnabled && got.CutoffHz != tc.wantCutoff {
+			t.Errorf("fm_audio_highpass_hz=%d CutoffHz = %v, want %v", tc.hz, got.CutoffHz, tc.wantCutoff)
+		}
+	}
+}

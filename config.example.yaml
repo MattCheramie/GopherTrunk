@@ -244,13 +244,17 @@ recordings:
     taps: 8         # default 8 when enabled
     step_size: 0.0001  # default 1e-4 when enabled
   # Analog-FM voice audio (conventional scanner + analog SmartNet/Type II voice).
-  # Both default ON — leaving them off records harsh, hissy audio (issue #1184).
+  # All default ON — leaving them off records harsh, hissy, hum-ridden audio (issue #1184).
   fm_deemphasis: us          # us/75us (default, North America) | eu/50us | off (flat).
                              # Recovers the transmitter's treble pre-emphasis; the
                              # survey analog path uses the same 75 µs curve.
   fm_audio_lowpass_hz: 3400  # post-demod audio low-pass corner: band-limits voice AND
                              # anti-aliases the decimation to sample_rate. 0 = default
                              # 3400; <0 disables (flat, aliased — diagnostic only).
+  fm_audio_highpass_hz: 300  # post-demod audio high-pass corner: strips the DC bias a
+                             # carrier-tuning offset leaves and the sub-audible CTCSS/DCS
+                             # squelch tones (the low hum de-emphasis amplifies). 0 =
+                             # default 300; <0 disables.
   normalize:
     enabled: false       # EBU R128 loudness-normalize each finished recording
     apply_to: recording  # recording (rewrite WAV) | distributed (MP3 only) | both

@@ -119,6 +119,29 @@ func (f *Biquad) Process(pcm []float64) {
 	f.z1, f.z2 = z1, z2
 }
 
+// ProcessFloat32 applies the section in place over float32 pcm, carrying
+// state across calls exactly like Process. The difference equation runs in
+// float64 (the state words stay float64, which keeps a low-corner high-pass
+// numerically well-behaved) and each result is written back as float32. This
+// lets the float32 audio chains (the composer's analog-FM voice chain) reuse
+// the same well-tested RBJ sections as the float64 voice enhancer without a
+// per-chunk []float64 conversion. A nil receiver is a no-op so callers can
+// hold an optional *Biquad and invoke it unconditionally.
+func (f *Biquad) ProcessFloat32(pcm []float32) {
+	if f == nil {
+		return
+	}
+	z1, z2 := f.z1, f.z2
+	for i, x32 := range pcm {
+		x := float64(x32)
+		y := f.b0*x + z1
+		z1 = f.b1*x - f.a1*y + z2
+		z2 = f.b2*x - f.a2*y
+		pcm[i] = float32(y)
+	}
+	f.z1, f.z2 = z1, z2
+}
+
 // Reset clears the section's state words so the next sample starts from
 // a quiescent filter. Call on stream re-sync alongside the rest of the
 // decode state. A nil receiver is a no-op.

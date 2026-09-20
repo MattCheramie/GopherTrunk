@@ -868,6 +868,22 @@ func resolveFMAudioLPF(rec config.RecordingsConfig) composer.AudioLPFConfig {
 	}
 }
 
+// resolveFMAudioHPF maps recordings.fm_audio_highpass_hz to the composer's
+// post-demod audio high-pass (issue #1184). It removes the DC bias a residual
+// carrier offset leaves after the FM discriminator and the sub-audible
+// CTCSS/DCS squelch tones — the low hum de-emphasis would otherwise amplify.
+// It defaults to ENABLED at 300 Hz; a negative value disables it.
+func resolveFMAudioHPF(rec config.RecordingsConfig) composer.AudioHPFConfig {
+	switch {
+	case rec.FMAudioHighpassHz < 0:
+		return composer.AudioHPFConfig{Enabled: false}
+	case rec.FMAudioHighpassHz == 0:
+		return composer.AudioHPFConfig{Enabled: true, CutoffHz: 300}
+	default:
+		return composer.AudioHPFConfig{Enabled: true, CutoffHz: uint32(rec.FMAudioHighpassHz)}
+	}
+}
+
 func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *slog.Logger) (*Daemon, error) {
 	if log == nil {
 		return nil, errors.New("daemon: logger is required")
@@ -2439,12 +2455,14 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 				Taps:     cfg.Recordings.Equalizer.Taps,
 				StepSize: cfg.Recordings.Equalizer.StepSize,
 			},
-			// Analog-FM voice de-emphasis + anti-alias audio low-pass. Both
-			// default on so conventional-scanner / analog voice recordings
-			// aren't harsh and hiss-ridden (issue #1184); operators tune or
-			// disable via recordings.fm_deemphasis / fm_audio_lowpass_hz.
+			// Analog-FM voice de-emphasis + anti-alias audio low-pass + a
+			// sub-audible/DC high-pass. All default on so conventional-scanner /
+			// analog voice recordings aren't harsh, hiss-ridden, or hum-ridden
+			// (issue #1184); operators tune or disable via recordings.fm_deemphasis
+			// / fm_audio_lowpass_hz / fm_audio_highpass_hz.
 			DeEmphasis: resolveFMDeEmphasis(cfg.Recordings),
 			AudioLPF:   resolveFMAudioLPF(cfg.Recordings),
+			AudioHPF:   resolveFMAudioHPF(cfg.Recordings),
 			VoiceIQDebug: composer.VoiceIQDebugConfig{
 				Enabled:  cfg.Baseband.VoiceIQDebug.Enabled,
 				Dir:      cfg.Baseband.VoiceIQDebug.Dir,
