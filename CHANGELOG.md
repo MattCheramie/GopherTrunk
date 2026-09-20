@@ -8,6 +8,24 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Conventional-scanner / analog-FM voice recordings now de-emphasize and
+  band-limit their audio (#1184).** The analog-FM voice chain demodulated the
+  discriminator straight to PCM with no de-emphasis and no anti-alias low-pass:
+  FM transmitters pre-emphasize treble for SNR, so the recovered audio was harsh
+  and hissy at full quieting, and decimating 48 kHz → 8 kHz with no low-pass
+  folded high-frequency FM noise back into the voice band. The composer already
+  had both stages as opt-in features, but the daemon never wired them and there
+  was no config knob (the survey analog path did it correctly). They now default
+  ON — de-emphasis at 75 µs (North America) plus a 3400 Hz audio low-pass — and
+  are tunable via `recordings.fm_deemphasis` (`us`/`eu`/`off`) and
+  `recordings.fm_audio_lowpass_hz`. Digital-voice protocols decode through their
+  vocoders and are unaffected. Pinned by `TestResolveFMDeEmphasis` /
+  `TestResolveFMAudioLPF`; still awaiting the reporter's on-air listening
+  confirmation.
+
+## [v1.1.7] — 2026-09-17
+
+### Fixed
 - **FC0013 tuners on RTL2832U dongles are now detected (#1200).** The chip-ID
   probe did a bare `I2CRead` of the tuner, which returns whatever register the
   bus currently has selected (the reporter's device answered `0x02`), instead of

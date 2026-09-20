@@ -837,6 +837,37 @@ func resolveDMRInterleavedVoice(proto trunking.Protocol, override *bool) bool {
 	return trunking.DMRVoiceCadenceDetected(proto)
 }
 
+// resolveFMDeEmphasis maps recordings.fm_deemphasis to the composer's
+// post-demod de-emphasis stage. It defaults to ENABLED at 75 µs (issue #1184):
+// analog FM transmitters pre-emphasize treble, so the conventional-scanner /
+// analog voice chain must de-emphasize to match — the survey analog path
+// already does. An operator disables it with fm_deemphasis: off. The token is
+// validated in config.validateRecordings, so an unrecognised value never
+// reaches here; if one somehow does, fall back to the 75 µs default rather
+// than silently record flat (hissy) audio.
+func resolveFMDeEmphasis(rec config.RecordingsConfig) composer.DeEmphasisConfig {
+	tau, enabled, ok := config.ParseFMDeEmphasis(rec.FMDeEmphasis)
+	if !ok {
+		tau, enabled = config.FMDeEmphasis75us, true
+	}
+	return composer.DeEmphasisConfig{Enabled: enabled, TimeConstant: tau}
+}
+
+// resolveFMAudioLPF maps recordings.fm_audio_lowpass_hz to the composer's
+// post-demod audio low-pass — band-limit plus the anti-alias filter ahead of
+// the decimation to the PCM rate (issue #1184). It defaults to ENABLED at
+// 3400 Hz; a negative value disables it (flat, aliased — diagnostic only).
+func resolveFMAudioLPF(rec config.RecordingsConfig) composer.AudioLPFConfig {
+	switch {
+	case rec.FMAudioLowpassHz < 0:
+		return composer.AudioLPFConfig{Enabled: false}
+	case rec.FMAudioLowpassHz == 0:
+		return composer.AudioLPFConfig{Enabled: true, CutoffHz: 3400}
+	default:
+		return composer.AudioLPFConfig{Enabled: true, CutoffHz: uint32(rec.FMAudioLowpassHz)}
+	}
+}
+
 func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *slog.Logger) (*Daemon, error) {
 	if log == nil {
 		return nil, errors.New("daemon: logger is required")
@@ -2408,6 +2439,12 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 				Taps:     cfg.Recordings.Equalizer.Taps,
 				StepSize: cfg.Recordings.Equalizer.StepSize,
 			},
+			// Analog-FM voice de-emphasis + anti-alias audio low-pass. Both
+			// default on so conventional-scanner / analog voice recordings
+			// aren't harsh and hiss-ridden (issue #1184); operators tune or
+			// disable via recordings.fm_deemphasis / fm_audio_lowpass_hz.
+			DeEmphasis: resolveFMDeEmphasis(cfg.Recordings),
+			AudioLPF:   resolveFMAudioLPF(cfg.Recordings),
 			VoiceIQDebug: composer.VoiceIQDebugConfig{
 				Enabled:  cfg.Baseband.VoiceIQDebug.Enabled,
 				Dir:      cfg.Baseband.VoiceIQDebug.Dir,

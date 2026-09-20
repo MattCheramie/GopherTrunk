@@ -615,6 +615,9 @@ func (c Config) validateRecordings() []error {
 	if _, ok := ParseVoiceProfile(c.Recordings.VoiceProfile); !ok {
 		return []error{fmt.Errorf("recordings.voice_profile must be mbelib|op25 (or empty), got %q", c.Recordings.VoiceProfile)}
 	}
+	if _, _, ok := ParseFMDeEmphasis(c.Recordings.FMDeEmphasis); !ok {
+		return []error{fmt.Errorf("recordings.fm_deemphasis must be us|75us|eu|50us|off (or empty), got %q", c.Recordings.FMDeEmphasis)}
+	}
 	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
 		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}
