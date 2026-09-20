@@ -2136,6 +2136,15 @@ type RecordingsConfig struct {
 	// band and the recording is broadband-noisy at full quieting (issue #1184).
 	// 0 selects the default 3400 Hz; a negative value disables the filter.
 	FMAudioLowpassHz int `yaml:"fm_audio_lowpass_hz"`
+	// FMAudioHighpassHz sets the post-demod audio high-pass corner (Hz) for
+	// analog-FM voice. It removes the DC bias a residual carrier-frequency
+	// offset leaves after the FM discriminator AND the sub-audible CTCSS/DCS
+	// squelch tones (67–250 Hz) that ride under the voice as a low hum — the
+	// stage rtl_tcp / SDR# / openwebrx apply. It is the companion to
+	// de-emphasis: de-emphasis boosts the low end, so without a high-pass it
+	// makes that DC/tone louder, not softer (issue #1184). 0 selects the
+	// default 300 Hz; a negative value disables the filter.
+	FMAudioHighpassHz int `yaml:"fm_audio_highpass_hz"`
 }
 
 // FM de-emphasis time constants for RecordingsConfig.FMDeEmphasis; the values

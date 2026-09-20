@@ -22,6 +22,21 @@ for tagged releases.
   vocoders and are unaffected. Pinned by `TestResolveFMDeEmphasis` /
   `TestResolveFMAudioLPF`; still awaiting the reporter's on-air listening
   confirmation.
+- **Analog-FM voice recordings now high-pass the audio to strip the DC bias and
+  the sub-audible squelch tone the de-emphasis fix left audible (#1184).** On the
+  reporter's follow-up capture (447.100 MHz, 2.4 MS/s cs16), the de-emphasized
+  audio carried a low hum: a residual carrier-tuning offset becomes a constant DC
+  out of the FM discriminator, and the CTCSS/DCS sub-audible squelch tones
+  (67–250 Hz — the capture has a ~241.8 Hz tone at 3.3× a voice bin) ride under
+  the voice. De-emphasis is a low-pass, so it *boosts* both — which is why the hum
+  became noticeable only after that fix. The chain now runs a post-demod audio
+  high-pass (a 4th-order Butterworth cascade at 300 Hz, before de-emphasis) — the
+  same stage rtl_tcp / SDR# / openwebrx apply. On the capture it zeroes the DC and
+  drops the 241.8 Hz tone from 3.3× to 0.8× a voice bin (below voice). Defaults ON
+  at 300 Hz, tunable/disable-able via `recordings.fm_audio_highpass_hz`. Pinned by
+  `TestResolveFMAudioHPF`, `filter.TestProcessFloat32*` and the end-to-end
+  `TestComposerFMChainHighPassRemovesDC`; still awaiting the reporter's on-air
+  listening confirmation.
 
 ## [v1.1.7] — 2026-09-17
 

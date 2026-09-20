@@ -56,11 +56,11 @@ var webRoundTripAllow = map[string][]string{
 	// the RecordingsConfig index signature; editable in the TUI, raw YAML, and
 	// the web builder's generic editor. A bespoke web editor is a follow-up.
 	// Analog-FM voice audio knobs (recordings.fm_deemphasis /
-	// fm_audio_lowpass_hz, issue #1184) round-trip through the RecordingsConfig
-	// index signature; the FieldMeta registry supplies their label/help/options
-	// to the TUI and the web builder's generic editor. A bespoke typed web
-	// editor is a follow-up.
-	"RecordingsConfig": {"CryptoCapturePath", "Dedup", "FilenameTemplate", "PathTemplate", "FMDeEmphasis", "FMAudioLowpassHz"},
+	// fm_audio_lowpass_hz / fm_audio_highpass_hz, issue #1184) round-trip
+	// through the RecordingsConfig index signature; the FieldMeta registry
+	// supplies their label/help/options to the TUI and the web builder's
+	// generic editor. A bespoke typed web editor is a follow-up.
+	"RecordingsConfig": {"CryptoCapturePath", "Dedup", "FilenameTemplate", "PathTemplate", "FMDeEmphasis", "FMAudioLowpassHz", "FMAudioHighpassHz"},
 	"DedupConfig":      {"Enabled", "WindowSeconds"},
 
 	// Event-driven raw-IQ auto-record (baseband.auto_record) — a debug/research

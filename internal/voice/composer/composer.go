@@ -202,6 +202,13 @@ type Options struct {
 	// anti-aliasing filter for the second decimation. Off by default;
 	// callers tune CutoffHz (typical 3400) and Taps (default 81).
 	AudioLPF AudioLPFConfig
+	// AudioHPF configures a post-demod audio high-pass (a Butterworth
+	// biquad) applied right after the FM discriminator, before
+	// de-emphasis. It removes the DC bias a residual carrier offset
+	// leaves and the sub-audible CTCSS/DCS squelch tones, the low
+	// hum that de-emphasis otherwise amplifies. Off by default; callers
+	// tune CutoffHz (typical 300).
+	AudioHPF AudioHPFConfig
 	// AudioAGC configures a real-valued envelope-follower-based AGC
 	// applied after the audio LPF (so the envelope follower sees a
 	// clean band-limited signal). The point is to level out the
@@ -266,6 +273,19 @@ type AudioLPFConfig struct {
 	Taps     int
 }
 
+// AudioHPFConfig holds runtime knobs for the post-demod audio
+// high-pass. It removes the DC bias a residual carrier-frequency offset
+// leaves after the FM discriminator and the sub-audible CTCSS/DCS squelch
+// tones (67–250 Hz) that ride under the voice — the low hum real NFM
+// receivers (rtl_tcp / SDR# / openwebrx) strip with the same stage. It is
+// the companion to de-emphasis: de-emphasis is a low-pass that boosts the
+// low end, so without a high-pass it makes that DC/tone louder, not softer.
+// CutoffHz is in Hz relative to the intermediate rate the FM demod emits.
+type AudioHPFConfig struct {
+	Enabled  bool
+	CutoffHz uint32
+}
+
 // AudioResamplerConfig holds runtime knobs for the polyphase audio
 // resampler. TapsPerBranch (default 16) controls the prototype
 // filter's per-branch length; Beta (default 8.6) is the Kaiser
@@ -306,6 +326,7 @@ type Composer struct {
 	eqCfg        EqualizerConfig
 	deemphCfg    DeEmphasisConfig
 	lpfCfg       AudioLPFConfig
+	hpfCfg       AudioHPFConfig
 	agcCfg       AudioAGCConfig
 	resampCfg    AudioResamplerConfig
 	autotune     *autotune.Registry
@@ -428,6 +449,7 @@ func New(opts Options) (*Composer, error) {
 		eqCfg:        opts.Equalizer,
 		deemphCfg:    opts.DeEmphasis,
 		lpfCfg:       opts.AudioLPF,
+		hpfCfg:       opts.AudioHPF,
 		agcCfg:       opts.AudioAGC,
 		resampCfg:    opts.AudioResampler,
 		autotune:     opts.Autotune,
@@ -886,6 +908,25 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 		deemph = filter.NewDeEmphasis(c.deemphCfg.TimeConstant, intermediateHzf)
 	}
 
+	// Optional post-demod audio high-pass. A residual carrier-frequency
+	// offset becomes a constant DC bias out of the FM discriminator, and
+	// the sub-audible CTCSS/DCS squelch tones (67–250 Hz) ride under the
+	// voice as a low hum; a ~300 Hz high-pass strips both, the same stage
+	// rtl_tcp / SDR# / openwebrx apply. It runs first, before de-emphasis,
+	// so the DC never reaches the de-emphasis integrator or the AGC — and
+	// because de-emphasis boosts the low end, without this the tone/DC is
+	// louder, not softer (issue #1184). Two cascaded Butterworth sections
+	// (4th order, ~24 dB/oct) give real rejection of a CTCSS tone that
+	// sits just under the corner (241.8 Hz is a standard tone); a single
+	// 2nd-order section only trims it ~6 dB.
+	var audioHP []*filter.Biquad
+	if c.hpfCfg.Enabled && c.hpfCfg.CutoffHz > 0 {
+		audioHP = []*filter.Biquad{
+			filter.NewHighPass(intermediateHzf, float64(c.hpfCfg.CutoffHz)),
+			filter.NewHighPass(intermediateHzf, float64(c.hpfCfg.CutoffHz)),
+		}
+	}
+
 	// Optional post-demod audio LPF. Two jobs: band-limit voice to
 	// ~3.4 kHz (telephony grade, kills hiss + sub-carriers like the
 	// 19 kHz pilot tone on broadcast FM if any leaks through) and
@@ -1020,6 +1061,9 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 				decimated = eqScratch
 			}
 			audio := fm.Process(nil, decimated)
+			for _, hp := range audioHP {
+				hp.ProcessFloat32(audio)
+			}
 			if deemph != nil {
 				audio = deemph.Process(audio, audio)
 			}
