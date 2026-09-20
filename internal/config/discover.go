@@ -43,6 +43,8 @@ func Discover() string {
 //   - <os.UserConfigDir()>/GopherTrunk and .../GopherTrunk/config
 //     (%APPDATA%\GopherTrunk on Windows, ~/.config/GopherTrunk on
 //     Linux, ~/Library/Application Support/GopherTrunk on macOS).
+//   - <os.UserConfigDir()>/gophertrunk and ~/.config/gophertrunk — the
+//     lowercase XDG-style path the install docs use (issue #836).
 //   - <UserHomeDir>/Documents/GopherTrunk and .../GopherTrunk/config
 //     (the Windows installer's default — operators who accept it
 //     get auto-discovery without setting any env var).
@@ -91,18 +93,47 @@ func DirConfigFiles(dir string) []string { return dirConfigFiles(dir) }
 // config.yaml lives at <DataRoot>/config/config.yaml). The top-level
 // entry is listed first so an old-style config still wins if both
 // exist.
+//
+// Both the platform-conventional CamelCase name (%APPDATA%\GopherTrunk
+// on Windows, ~/Library/Application Support/GopherTrunk on macOS,
+// ~/.config/GopherTrunk on Linux) AND the lowercase XDG-style name
+// ~/.config/gophertrunk are scanned. The lowercase name is what the
+// install docs (install-linux.md, install-macos.md, downloads.md) tell
+// operators to create by hand, and what Linux CLI tools conventionally
+// use — but os.UserConfigDir() only yields the CamelCase root, so a
+// config placed at the documented ~/.config/gophertrunk/config.yaml was
+// never discovered and only worked when the daemon happened to run from
+// that directory (the cwd fallback). Issue #836. On macOS the documented
+// ~/.config path is not os.UserConfigDir() at all, so it is scanned
+// explicitly from $HOME. Duplicate paths (e.g. on Linux, where
+// os.UserConfigDir() already is ~/.config, and on case-insensitive
+// filesystems) are collapsed so a directory is never scanned twice.
 func candidateDirs() []string {
 	var out []string
+	seen := make(map[string]bool)
 	add := func(root string) {
-		out = append(out, root, filepath.Join(root, "config"))
+		for _, d := range []string{root, filepath.Join(root, "config")} {
+			if !seen[d] {
+				seen[d] = true
+				out = append(out, d)
+			}
+		}
 	}
 	if dir, err := os.UserConfigDir(); err == nil {
 		add(filepath.Join(dir, "GopherTrunk"))
+		add(filepath.Join(dir, "gophertrunk"))
 	}
 	if home, err := os.UserHomeDir(); err == nil {
+		// The docs point Linux and macOS at ~/.config/gophertrunk, but
+		// os.UserConfigDir() is ~/Library/Application Support on macOS, so
+		// scan the documented XDG path explicitly too (a no-op dedup on
+		// Linux, where it equals the lowercase entry above).
+		add(filepath.Join(home, ".config", "gophertrunk"))
 		add(filepath.Join(home, "Documents", "GopherTrunk"))
 	}
-	out = append(out, ".")
+	if !seen["."] {
+		out = append(out, ".")
+	}
 	return out
 }
 
