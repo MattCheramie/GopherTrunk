@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.8] — 2026-09-21
+
 ### Fixed
 - **Config auto-discovery now finds the documented `~/.config/gophertrunk/`
   (lowercase) path (#836).** The install docs (install-linux.md, install-macos.md,
