@@ -758,3 +758,29 @@ func TestValidateRecordingFormats(t *testing.T) {
 		t.Fatalf("RecordFormat() default = %q, want wav", got)
 	}
 }
+
+// TestValidateFMChannelBandwidth pins the analog-FM channel bandwidth range
+// (recordings.fm_channel_bandwidth_hz, issue #1184): 0 is allowed (legacy
+// default), the 2500..50000 band is accepted, and values outside it are
+// rejected.
+func TestValidateFMChannelBandwidth(t *testing.T) {
+	base := func() Config {
+		var c Config
+		c.SDR.Devices = []DeviceConfig{{Serial: "A"}}
+		return c
+	}
+	for _, hz := range []int{0, 2500, 12500, 25000, 50000} {
+		c := base()
+		c.Recordings.FMChannelBandwidthHz = hz
+		if errs := c.validateRecordings(); len(errs) != 0 {
+			t.Errorf("fm_channel_bandwidth_hz=%d rejected: %v", hz, errs)
+		}
+	}
+	for _, hz := range []int{2499, 50001, -1, 100} {
+		c := base()
+		c.Recordings.FMChannelBandwidthHz = hz
+		if errs := c.validateRecordings(); len(errs) == 0 {
+			t.Errorf("fm_channel_bandwidth_hz=%d should be rejected", hz)
+		}
+	}
+}

@@ -209,6 +209,15 @@ type Options struct {
 	// hum that de-emphasis otherwise amplifies. Off by default; callers
 	// tune CutoffHz (typical 300).
 	AudioHPF AudioHPFConfig
+	// FMChannelBandwidthHz sets the analog-FM chain's front-end channel
+	// filter to a TOTAL width of this many Hz — the complex low-pass cutoff
+	// is ±half of it, the "bandwidth" SDR#/SDR++ expose for NFM (issue
+	// #1184). It affects ONLY the analog FM chain (runFMChain); the digital
+	// voice chains size their own channel-select filter from
+	// VoiceBandwidthHz and are untouched. 0 keeps the legacy analog front
+	// end (VoiceBandwidthHz as the cutoff, i.e. a 25 kHz channel), so
+	// existing analog recordings are byte-for-byte unchanged.
+	FMChannelBandwidthHz uint32
 	// AudioAGC configures a real-valued envelope-follower-based AGC
 	// applied after the audio LPF (so the envelope follower sees a
 	// clean band-limited signal). The point is to level out the
@@ -316,22 +325,23 @@ type Composer struct {
 	engine EngineHooks
 	log    *slog.Logger
 
-	iqHz         uint32
-	voiceIQDebug VoiceIQDebugConfig
-	pcmHz        uint32
-	bw           uint32
-	touchEvery   time.Duration
-	hangtime     time.Duration
-	splitTx      bool
-	eqCfg        EqualizerConfig
-	deemphCfg    DeEmphasisConfig
-	lpfCfg       AudioLPFConfig
-	hpfCfg       AudioHPFConfig
-	agcCfg       AudioAGCConfig
-	resampCfg    AudioResamplerConfig
-	autotune     *autotune.Registry
-	cryptoSink   cryptocap.Sink
-	keyResolver  KeyResolver
+	iqHz          uint32
+	voiceIQDebug  VoiceIQDebugConfig
+	pcmHz         uint32
+	bw            uint32
+	touchEvery    time.Duration
+	hangtime      time.Duration
+	splitTx       bool
+	eqCfg         EqualizerConfig
+	deemphCfg     DeEmphasisConfig
+	lpfCfg        AudioLPFConfig
+	hpfCfg        AudioHPFConfig
+	fmChannelBWHz uint32
+	agcCfg        AudioAGCConfig
+	resampCfg     AudioResamplerConfig
+	autotune      *autotune.Registry
+	cryptoSink    cryptocap.Sink
+	keyResolver   KeyResolver
 	// squelch is the optional conventional-scanner squelch feed for the
 	// FM chain (issue #1090). Guarded by mu: the daemon sets it after
 	// construction (SetSquelchState) and each chain reads it once at
@@ -434,31 +444,32 @@ func New(opts Options) (*Composer, error) {
 		log = slog.Default()
 	}
 	c := &Composer{
-		bus:          opts.Bus,
-		dev:          opts.Devices,
-		sink:         opts.Sink,
-		engine:       opts.Engine,
-		log:          log,
-		iqHz:         opts.IQSampleRate,
-		voiceIQDebug: opts.VoiceIQDebug,
-		pcmHz:        opts.PCMSampleRate,
-		bw:           opts.VoiceBandwidthHz,
-		touchEvery:   opts.TouchInterval,
-		hangtime:     opts.VoiceHangtime,
-		splitTx:      opts.SplitPerTransmission,
-		eqCfg:        opts.Equalizer,
-		deemphCfg:    opts.DeEmphasis,
-		lpfCfg:       opts.AudioLPF,
-		hpfCfg:       opts.AudioHPF,
-		agcCfg:       opts.AudioAGC,
-		resampCfg:    opts.AudioResampler,
-		autotune:     opts.Autotune,
-		cryptoSink:   opts.CryptoSink,
-		keyResolver:  opts.KeyResolver,
-		squelch:      opts.Squelch,
-		chains:       make(map[string]*chain),
-		tetraDemuxes: make(map[string]*tetraSlotDemux),
-		runDone:      make(chan struct{}),
+		bus:           opts.Bus,
+		dev:           opts.Devices,
+		sink:          opts.Sink,
+		engine:        opts.Engine,
+		log:           log,
+		iqHz:          opts.IQSampleRate,
+		voiceIQDebug:  opts.VoiceIQDebug,
+		pcmHz:         opts.PCMSampleRate,
+		bw:            opts.VoiceBandwidthHz,
+		touchEvery:    opts.TouchInterval,
+		hangtime:      opts.VoiceHangtime,
+		splitTx:       opts.SplitPerTransmission,
+		eqCfg:         opts.Equalizer,
+		deemphCfg:     opts.DeEmphasis,
+		lpfCfg:        opts.AudioLPF,
+		hpfCfg:        opts.AudioHPF,
+		fmChannelBWHz: opts.FMChannelBandwidthHz,
+		agcCfg:        opts.AudioAGC,
+		resampCfg:     opts.AudioResampler,
+		autotune:      opts.Autotune,
+		cryptoSink:    opts.CryptoSink,
+		keyResolver:   opts.KeyResolver,
+		squelch:       opts.Squelch,
+		chains:        make(map[string]*chain),
+		tetraDemuxes:  make(map[string]*tetraSlotDemux),
+		runDone:       make(chan struct{}),
 	}
 	// Enable drain coordination when the sink (the recorder) supports it: the
 	// composer will signal NotifyDrainComplete once each call's chain has
@@ -858,6 +869,32 @@ func (c *Composer) removeTETRADemux(key string, d *tetraSlotDemux) {
 // (proper polyphase resamplers, de-emphasis, post-demod LPF) is a
 // follow-up; this is honest passthrough quality good enough to verify
 // the wiring end-to-end and to land the operator-visible plumbing.
+// newFMChannelFilter builds the optional analog-FM channel-select filter — a
+// DC-centred complex low-pass, run at the intermediate rate (intermediateHzf,
+// ~48 kHz), that band-limits the IQ to ±half of fm_channel_bandwidth_hz before
+// the FM discriminator (issue #1184). It returns nil when the knob is unset, so
+// the legacy FM chain is byte-for-byte unchanged.
+//
+// It is deliberately a SECOND filter at the intermediate rate rather than a
+// narrower front-end (decimating) FIR: the front end runs at the SDR rate
+// (~2.4 MS/s) where an 81-tap FIR has a ~100 kHz transition band, far too wide
+// to separate a 12.5 kHz NFM channel from its neighbour. At 48 kHz the same
+// short FIR IS sharp (transition ≈ 2–3 kHz), so this is where a selectable
+// "bandwidth" (the control SDR#/SDR++ expose) can actually reject the
+// adjacent-channel FM energy and out-of-channel noise a wide filter passes —
+// the Kenwood NFM hiss/tone in issue #1184. The complex FIR uses real,
+// symmetric taps, so its passband is centred on DC (the tuned carrier).
+func (c *Composer) newFMChannelFilter(intermediateHzf float64) *filter.FIR {
+	if c.fmChannelBWHz == 0 {
+		return nil
+	}
+	fc := (float64(c.fmChannelBWHz) / 2) / intermediateHzf
+	if fc > 0.45 {
+		fc = 0.45 // keep below Nyquist even at the widest configured channel
+	}
+	return filter.NewFIR(filter.LowpassKaiser(81, fc, 8.6))
+}
+
 func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-fm:"+serial, nil)
@@ -903,6 +940,14 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 	// sounds harsh. Filter runs on the real audio at the intermediate
 	// rate (~48 kHz) before the second naive decimation to PCM.
 	intermediateHzf := fe.OutRateHz()
+
+	// Optional front-end channel-select filter (recordings.fm_channel_bandwidth_hz,
+	// issue #1184). Runs at the intermediate rate, right after the decimator and
+	// before the equalizer/discriminator, to band-limit the IQ to the configured
+	// NFM channel. nil (the default) leaves the chain byte-for-byte unchanged.
+	chanFilter := c.newFMChannelFilter(intermediateHzf)
+	var chanScratch []complex64
+
 	var deemph *filter.DeEmphasis
 	if c.deemphCfg.Enabled {
 		deemph = filter.NewDeEmphasis(c.deemphCfg.TimeConstant, intermediateHzf)
@@ -1049,6 +1094,13 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			}
 			bt.observe(iq)
 			decimated := fe.Process(nil, iq)
+			if chanFilter != nil {
+				// Band-limit to the configured NFM channel before the
+				// discriminator. Reuses chanScratch across chunks so the
+				// per-call allocation cost stays flat.
+				chanScratch = chanFilter.Process(chanScratch[:0], decimated)
+				decimated = chanScratch
+			}
 			if eq != nil {
 				if cap(eqScratch) < len(decimated) {
 					eqScratch = make([]complex64, len(decimated))

@@ -884,6 +884,19 @@ func resolveFMAudioHPF(rec config.RecordingsConfig) composer.AudioHPFConfig {
 	}
 }
 
+// resolveFMChannelBandwidth maps recordings.fm_channel_bandwidth_hz to the
+// composer's analog-FM front-end channel bandwidth (issue #1184). The value is
+// the TOTAL channel width (the SDR#/SDR++ convention); the composer sizes the
+// front-end complex low-pass to ±half of it. 0 (or unset) keeps the legacy
+// 25 kHz front end. The 2500..50000 range is enforced in
+// config.validateRecordings, so an out-of-range value never reaches here.
+func resolveFMChannelBandwidth(rec config.RecordingsConfig) uint32 {
+	if rec.FMChannelBandwidthHz <= 0 {
+		return 0
+	}
+	return uint32(rec.FMChannelBandwidthHz)
+}
+
 func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *slog.Logger) (*Daemon, error) {
 	if log == nil {
 		return nil, errors.New("daemon: logger is required")
@@ -2463,6 +2476,12 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 			DeEmphasis: resolveFMDeEmphasis(cfg.Recordings),
 			AudioLPF:   resolveFMAudioLPF(cfg.Recordings),
 			AudioHPF:   resolveFMAudioHPF(cfg.Recordings),
+			// Analog-FM front-end channel bandwidth (recordings.
+			// fm_channel_bandwidth_hz): narrow the IF filter to a tightly-
+			// deviated NFM channel to reject adjacent-channel energy/noise a
+			// wide filter passes (issue #1184). 0 keeps the legacy 25 kHz
+			// front end; digital voice chains are unaffected.
+			FMChannelBandwidthHz: resolveFMChannelBandwidth(cfg.Recordings),
 			VoiceIQDebug: composer.VoiceIQDebugConfig{
 				Enabled:  cfg.Baseband.VoiceIQDebug.Enabled,
 				Dir:      cfg.Baseband.VoiceIQDebug.Dir,

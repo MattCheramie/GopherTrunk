@@ -618,6 +618,9 @@ func (c Config) validateRecordings() []error {
 	if _, _, ok := ParseFMDeEmphasis(c.Recordings.FMDeEmphasis); !ok {
 		return []error{fmt.Errorf("recordings.fm_deemphasis must be us|75us|eu|50us|off (or empty), got %q", c.Recordings.FMDeEmphasis)}
 	}
+	if c.Recordings.FMChannelBandwidthHz != 0 && (c.Recordings.FMChannelBandwidthHz < 2500 || c.Recordings.FMChannelBandwidthHz > 50_000) {
+		return []error{fmt.Errorf("recordings.fm_channel_bandwidth_hz %d outside 2500..50000 (0 = default 25 kHz channel)", c.Recordings.FMChannelBandwidthHz)}
+	}
 	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
 		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}

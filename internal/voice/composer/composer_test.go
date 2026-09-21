@@ -1107,3 +1107,85 @@ func TestComposerFMChainHighPassRemovesDC(t *testing.T) {
 		t.Errorf("high-pass did not remove the DC: mean %.1f with HPF vs %.1f without", dcOn, dcOff)
 	}
 }
+
+// TestFMChannelFilterSelectivity is the failing-first regression for the #1184
+// follow-up: the analog-FM chain gained a selectable channel bandwidth
+// (recordings.fm_channel_bandwidth_hz) so a tightly-deviated NFM signal can be
+// filtered to its own channel, rejecting the adjacent-channel energy and noise
+// the wide 25 kHz default passes (the Kenwood NFM artifacts the reporter heard).
+// Unset, the chain builds NO channel filter — byte-for-byte legacy; set, it
+// builds a complex low-pass at the intermediate rate that passes in-channel
+// audio and attenuates an adjacent-channel tone. It also pins that the analog
+// knob does not touch the digital chains' bandwidth (c.bw).
+func TestFMChannelFilterSelectivity(t *testing.T) {
+	const intermediate = 48_000.0
+
+	mustComposer := func(bwHz uint32) *Composer {
+		t.Helper()
+		c, err := New(Options{
+			Bus:                  events.NewBus(1),
+			Devices:              &fakeDevices{},
+			Sink:                 &recordingSink{},
+			Engine:               &fakeEngine{},
+			IQSampleRate:         2_400_000,
+			PCMSampleRate:        8000,
+			FMChannelBandwidthHz: bwHz,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	// Unset: no channel filter, and the digital-chain bandwidth is untouched.
+	def := mustComposer(0)
+	if def.newFMChannelFilter(intermediate) != nil {
+		t.Errorf("fm_channel_bandwidth_hz unset built a channel filter, want nil (legacy chain unchanged)")
+	}
+	if def.bw != 12_500 {
+		t.Errorf("default VoiceBandwidthHz = %d, want 12500", def.bw)
+	}
+
+	// A 12.5 kHz NFM channel: a ±6.25 kHz filter at the intermediate rate, with
+	// the digital-chain bandwidth still untouched (analog-only knob).
+	nb := mustComposer(12_500)
+	if nb.bw != 12_500 {
+		t.Errorf("analog channel knob changed digital VoiceBandwidthHz to %d, want 12500 (unaffected)", nb.bw)
+	}
+	if nb.newFMChannelFilter(intermediate) == nil {
+		t.Fatal("fm_channel_bandwidth_hz=12500 built no channel filter")
+	}
+
+	// Push a unit-magnitude complex tone at a given offset through the filter
+	// and return the settled output RMS (≈ the passband gain at that offset).
+	toneRMS := func(offHz float64) float64 {
+		f := nb.newFMChannelFilter(intermediate)
+		var out []complex64
+		phase, dphi := 0.0, 2*math.Pi*offHz/intermediate
+		for b := 0; b < 20; b++ {
+			buf := make([]complex64, 2048)
+			for i := range buf {
+				buf[i] = complex(float32(math.Cos(phase)), float32(math.Sin(phase)))
+				phase += dphi
+			}
+			out = f.Process(out[:0], buf)
+		}
+		if len(out) == 0 {
+			t.Fatal("no channel-filter output")
+		}
+		var s float64
+		for _, v := range out {
+			s += float64(real(v))*float64(real(v)) + float64(imag(v))*float64(imag(v))
+		}
+		return math.Sqrt(s / float64(len(out)))
+	}
+
+	inCh := toneRMS(2_000)   // +2 kHz — inside a ±6.25 kHz channel
+	adjCh := toneRMS(12_500) // +12.5 kHz — the adjacent NFM channel
+	if inCh < 0.7 {
+		t.Errorf("in-channel 2 kHz tone attenuated: RMS %.4f, want ~1.0 (passband)", inCh)
+	}
+	if adjCh > 0.1*inCh {
+		t.Errorf("adjacent-channel 12.5 kHz tone not rejected: RMS %.4f vs in-channel %.4f (want < 10%%)", adjCh, inCh)
+	}
+}
