@@ -192,6 +192,47 @@ func TestDiscover_ConfigSubfolder(t *testing.T) {
 	}
 }
 
+// TestDiscover_LowercaseXDGDir is the #836 regression: an operator who
+// followed the Linux/macOS install docs and created
+// ~/.config/gophertrunk/config.yaml (lowercase, the XDG-style name) must
+// have it discovered from any working directory — not only when the daemon
+// runs from that directory. Before the fix candidateDirs scanned only the
+// CamelCase ~/.config/GopherTrunk, so on a case-sensitive filesystem the
+// documented lowercase path fell through to the cwd fallback.
+func TestDiscover_LowercaseXDGDir(t *testing.T) {
+	t.Setenv("GOPHERTRUNK_CONFIG", "")
+	redirectUserDirs(t)
+	// Isolate cwd so the cwd fallback can't mask a discovery miss.
+	t.Chdir(t.TempDir())
+
+	cfgDir, _ := os.UserConfigDir()
+	target := filepath.Join(cfgDir, "gophertrunk", "config.yaml")
+	mustWrite(t, target, "log:\n")
+
+	got, err := DiscoverWith(DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("DiscoverWith: %v", err)
+	}
+	if got != target {
+		t.Errorf("Discover() = %q, want %q (documented ~/.config/gophertrunk path)", got, target)
+	}
+}
+
+// TestCandidateDirs_NoDuplicates guards the dedup: every scanned directory
+// must be unique so the lowercase-under-UserConfigDir and explicit
+// ~/.config/gophertrunk entries (equal on Linux) aren't scanned twice.
+func TestCandidateDirs_NoDuplicates(t *testing.T) {
+	redirectUserDirs(t)
+	got := candidateDirs()
+	seen := map[string]bool{}
+	for _, d := range got {
+		if seen[d] {
+			t.Errorf("candidateDirs() scans %q more than once: %v", d, got)
+		}
+		seen[d] = true
+	}
+}
+
 // redirectUserDirs points os.UserConfigDir / os.UserHomeDir at a
 // fresh tempdir for the duration of the test, returning the
 // tempdir for path-building. Sets every relevant env var so the

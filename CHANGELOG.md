@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Config auto-discovery now finds the documented `~/.config/gophertrunk/`
+  (lowercase) path (#836).** The install docs (install-linux.md, install-macos.md,
+  downloads.md) tell operators to create `~/.config/gophertrunk/config.yaml`, but
+  discovery only scanned the CamelCase `<UserConfigDir>/GopherTrunk` that
+  `os.UserConfigDir()` yields. On a case-sensitive filesystem the documented
+  lowercase directory was never scanned, so the daemon fell through to the cwd
+  fallback — it only picked up the config when run from that directory (the
+  reporter's "works best if you cd there first"). `candidateDirs` now also scans
+  `<UserConfigDir>/gophertrunk` and, so the macOS docs' `~/.config/gophertrunk`
+  is covered where `UserConfigDir` is `~/Library/Application Support`, an explicit
+  `$HOME/.config/gophertrunk`; duplicate paths are collapsed. Pinned by
+  `TestDiscover_LowercaseXDGDir` / `TestCandidateDirs_NoDuplicates`.
 - **Conventional-scanner / analog-FM voice recordings now de-emphasize and
   band-limit their audio (#1184).** The analog-FM voice chain demodulated the
   discriminator straight to PCM with no de-emphasis and no anti-alias low-pass:
