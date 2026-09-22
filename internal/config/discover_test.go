@@ -233,6 +233,55 @@ func TestCandidateDirs_NoDuplicates(t *testing.T) {
 	}
 }
 
+// TestConfigFilesElsewhere_ReportsIgnoredConfigs pins the #1184 diagnostic:
+// when a config exists in more than one candidate directory, discovery picks
+// the highest-precedence one and ConfigFilesElsewhere names the rest so the
+// daemon can WARN that a different file was ignored.
+func TestConfigFilesElsewhere_ReportsIgnoredConfigs(t *testing.T) {
+	t.Setenv("GOPHERTRUNK_CONFIG", "")
+	dir := redirectUserDirs(t)
+	// Isolate cwd so the cwd fallback can't add a phantom config.
+	t.Chdir(t.TempDir())
+
+	cfgDir, _ := os.UserConfigDir()
+	chosen := filepath.Join(cfgDir, "GopherTrunk", "config.yaml") // first precedence
+	other := filepath.Join(dir, "Documents", "GopherTrunk", "config.yaml")
+	mustWrite(t, chosen, "log:\n")
+	mustWrite(t, other, "log:\n")
+
+	got, err := DiscoverWith(DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("DiscoverWith: %v", err)
+	}
+	if got != chosen {
+		t.Fatalf("Discover() = %q, want %q (highest precedence)", got, chosen)
+	}
+	elsewhere := ConfigFilesElsewhere(got)
+	if len(elsewhere) != 1 || elsewhere[0] != other {
+		t.Errorf("ConfigFilesElsewhere(%q) = %v, want [%q]", got, elsewhere, other)
+	}
+}
+
+// TestConfigFilesElsewhere_SingleConfig confirms the common case is silent:
+// with a config in exactly one directory there is nothing to warn about, and
+// an empty selection (explicit -config / env, or built-in defaults) returns nil.
+func TestConfigFilesElsewhere_SingleConfig(t *testing.T) {
+	t.Setenv("GOPHERTRUNK_CONFIG", "")
+	redirectUserDirs(t)
+	t.Chdir(t.TempDir())
+
+	cfgDir, _ := os.UserConfigDir()
+	only := filepath.Join(cfgDir, "GopherTrunk", "config.yaml")
+	mustWrite(t, only, "log:\n")
+
+	if elsewhere := ConfigFilesElsewhere(only); len(elsewhere) != 0 {
+		t.Errorf("ConfigFilesElsewhere(%q) = %v, want empty (only one config on disk)", only, elsewhere)
+	}
+	if elsewhere := ConfigFilesElsewhere(""); elsewhere != nil {
+		t.Errorf("ConfigFilesElsewhere(\"\") = %v, want nil", elsewhere)
+	}
+}
+
 // redirectUserDirs points os.UserConfigDir / os.UserHomeDir at a
 // fresh tempdir for the duration of the test, returning the
 // tempdir for path-building. Sets every relevant env var so the

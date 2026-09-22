@@ -201,6 +201,17 @@ func runDaemon(args []string) {
 		rep.Fatalf(2, "launcher: %v", err)
 	}
 
+	// configOrigin records how *cfgPath was resolved so it can be logged
+	// through the structured logger below (issue #1184). "flag" is an
+	// explicit -config; the discovery branch refines it to "env",
+	// "discovered", or "defaults".
+	configOrigin := "flag"
+	// configIgnored holds any config files discovery found in candidate
+	// directories other than the chosen one — surfaced as a WARN so an
+	// operator who "lost" their config after an update (which broadened the
+	// search order, issue #836) can see a different file won by precedence.
+	var configIgnored []string
+
 	// No -config passed: walk the standard discovery precedence
 	// ($GOPHERTRUNK_CONFIG → UserConfigDir → Documents → cwd) so
 	// the Windows installer's chosen path (and equivalent setups
@@ -213,9 +224,21 @@ func runDaemon(args []string) {
 		if err != nil {
 			rep.Fatalf(2, "config: %v", err)
 		}
+		switch {
+		case discovered == "":
+			configOrigin = "defaults"
+		case os.Getenv("GOPHERTRUNK_CONFIG") != "":
+			configOrigin = "env"
+			*cfgPath = discovered
+		default:
+			configOrigin = "discovered"
+			// Only precedence-based discovery can be ambiguous: an
+			// explicit path or $GOPHERTRUNK_CONFIG named the file.
+			configIgnored = config.ConfigFilesElsewhere(discovered)
+			*cfgPath = discovered
+		}
 		if discovered != "" {
 			fmt.Fprintf(os.Stderr, "config: loaded %s\n", discovered)
-			*cfgPath = discovered
 		}
 	}
 
@@ -247,6 +270,28 @@ func runDaemon(args []string) {
 	logger, logSwap := gtlog.NewWithSwap(cfg.Log.Level, cfg.Log.Format)
 
 	logger.Info("gophertrunk starting", "version", version.String())
+
+	// Record which config file actually backs this run, in the structured
+	// log (the stderr note above lands before the logger exists, so it never
+	// reaches debug.log). After an update that changed discovery precedence
+	// this is the first thing to check when "it stopped working": a daemon
+	// silently running built-in defaults, or a different file than intended,
+	// explains missing squelch/gain/recording settings without any other
+	// symptom (issue #1184).
+	switch configOrigin {
+	case "defaults":
+		logger.Warn("config: no config file found — running built-in defaults",
+			"hint", "pass -config, set GOPHERTRUNK_CONFIG, or place config.yaml in a discovered directory (gophertrunk doctor lists them)")
+	default:
+		logger.Info("config: source", "path", *cfgPath, "origin", configOrigin)
+	}
+	if len(configIgnored) > 0 {
+		// More than one config on disk: the one above won by precedence and
+		// the rest were ignored. Broadening the search order can change which
+		// wins, so name the ignored files explicitly.
+		logger.Warn("config: multiple config files found; using the one above and ignoring the others",
+			"using", *cfgPath, "ignored", configIgnored)
+	}
 
 	// Bound the resident footprint so a long live run isn't SIGKILLed by
 	// the OS memory-pressure killer with no in-process trace (issue #492).

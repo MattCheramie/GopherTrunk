@@ -83,6 +83,41 @@ func CandidateDirs() []string { return candidateDirs() }
 // unreadable / missing dir yields an empty slice.
 func DirConfigFiles(dir string) []string { return dirConfigFiles(dir) }
 
+// ConfigFilesElsewhere returns every discoverable config file that sits in a
+// candidate directory OTHER than the one holding `chosen` — i.e. the config
+// files auto-discovery did NOT pick. When it is non-empty, more than one config
+// exists on disk and `chosen` won only by precedence; an update that broadens
+// the search order (issue #836 added the lowercase ~/.config/gophertrunk paths)
+// can silently change which file wins, so the daemon can log the ignored ones
+// to make "it stopped working after I updated" diagnosable (issue #1184).
+//
+// It scans the same candidate directories as discovery, so it is only
+// meaningful when `chosen` itself came from discovery — callers pass the empty
+// list through for an explicit -config or $GOPHERTRUNK_CONFIG selection, where
+// the operator named the file and precedence never ran. Result is sorted and
+// de-duplicated; an empty `chosen` yields nil.
+func ConfigFilesElsewhere(chosen string) []string {
+	if chosen == "" {
+		return nil
+	}
+	chosenDir := filepath.Clean(filepath.Dir(chosen))
+	seen := make(map[string]bool)
+	var out []string
+	for _, dir := range candidateDirs() {
+		if filepath.Clean(dir) == chosenDir {
+			continue
+		}
+		for _, f := range dirConfigFiles(dir) {
+			if !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // candidateDirs returns the directories DiscoverWith will scan, in
 // precedence order. Factored out so tests can assert the order
 // without touching the filesystem.
