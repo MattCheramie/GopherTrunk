@@ -8,6 +8,25 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **The daemon now logs which config file backs the run, in the structured log
+  (#1184).** A reporter updated to the latest build and lost all analog-scanner
+  audio — "a continuous saw-wave tone, squelch stuck open on every frequency" —
+  right after v1.1.8 broadened config auto-discovery to the lowercase
+  `~/.config/gophertrunk/` path (#836). A daemon silently running built-in
+  defaults, or a *different* config file than intended, produces exactly that
+  (a wide-open default squelch records demodulated noise) with no other symptom,
+  and the only note of the resolved path was an `stderr` line printed before the
+  logger exists — so it never reached `debug.log`. Startup now emits
+  `config: source path=… origin=flag|env|discovered` through the logger; a
+  `config: no config file found — running built-in defaults` WARN when none is
+  discovered; and, when config files exist in more than one candidate directory,
+  a `config: multiple config files found; … ignoring the others` WARN naming the
+  ignored files — the ambiguity a broadened search order can silently resolve the
+  wrong way. Pinned by `TestConfigFilesElsewhere_ReportsIgnoredConfigs` and
+  `TestConfigFilesElsewhere_SingleConfig`. (Investigation note: all six of the
+  reporter's on-air captures decode cleanly through the current analog-FM voice
+  chain at every bandwidth setting, so the audio DSP is not the regression — this
+  is the diagnostic to pinpoint the config the daemon actually loaded.)
 - **Selectable analog-FM channel bandwidth (`recordings.fm_channel_bandwidth_hz`,
   #1184).** On the reporter's three-radio follow-up, a tightly-deviated Kenwood
   NFM signal still recorded with audible noise/artifacts the de-emphasis and
