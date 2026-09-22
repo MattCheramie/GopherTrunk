@@ -255,6 +255,12 @@ recordings:
                              # carrier-tuning offset leaves and the sub-audible CTCSS/DCS
                              # squelch tones (the low hum de-emphasis amplifies). 0 =
                              # default 300; <0 disables.
+  fm_channel_bandwidth_hz: 0 # analog-FM IF channel filter TOTAL width (the "bandwidth"
+                             # SDR#/SDR++ expose); the front-end low-pass is ±half this.
+                             # 12500 = a 12.5 kHz NFM channel (narrower, rejects adjacent-
+                             # channel noise), 25000 = a 25 kHz wideband channel. 0 = the
+                             # legacy 25 kHz front end; range 2500..50000. Digital voice
+                             # protocols size their own filter and are unaffected.
   normalize:
     enabled: false       # EBU R128 loudness-normalize each finished recording
     apply_to: recording  # recording (rewrite WAV) | distributed (MP3 only) | both

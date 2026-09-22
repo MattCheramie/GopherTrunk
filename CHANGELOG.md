@@ -7,6 +7,29 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Selectable analog-FM channel bandwidth (`recordings.fm_channel_bandwidth_hz`,
+  #1184).** On the reporter's three-radio follow-up, a tightly-deviated Kenwood
+  NFM signal still recorded with audible noise/artifacts the de-emphasis and
+  high-pass fixes did not remove, and they asked for the 5.0–12.5 kHz channel-
+  bandwidth control SDR#/SDR++ expose. The analog-FM chain's decimating front end
+  runs at the SDR rate (~2.4 MS/s), where an 81-tap FIR has a ~100 kHz transition
+  and cannot separate a 12.5 kHz channel from its neighbour, so channel selection
+  was effectively 25 kHz-wide. This adds an optional channel-select complex
+  low-pass at the 48 kHz intermediate rate (where a short FIR is sharp), sized to
+  ±half the configured total width — the SDR# convention, so `12500` selects a
+  12.5 kHz NFM channel (±6.25 kHz) and `25000` a 25 kHz wideband channel. It runs
+  right before the discriminator, rejecting the adjacent-channel FM energy and
+  out-of-channel noise a wide filter passes. `0` (the default) builds no filter,
+  leaving the chain byte-for-byte unchanged; the range is 2500..50000. Digital
+  voice protocols size their own channel-select filter and are unaffected. Pinned
+  by `TestFMChannelFilterSelectivity` (a +12.5 kHz adjacent tone is rejected while
+  a +2 kHz in-channel tone passes), `TestResolveFMChannelBandwidth` and
+  `TestValidateFMChannelBandwidth`; still awaiting the reporter's on-air listening
+  confirmation on the Kenwood radios.
+
+## [v1.1.8] — 2026-09-20
+
 ### Fixed
 - **Config auto-discovery now finds the documented `~/.config/gophertrunk/`
   (lowercase) path (#836).** The install docs (install-linux.md, install-macos.md,

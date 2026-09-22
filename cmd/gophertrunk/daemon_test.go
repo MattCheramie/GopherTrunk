@@ -247,3 +247,25 @@ func TestResolveFMAudioHPF(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveFMChannelBandwidth pins that the analog-FM front-end channel
+// bandwidth knob (issue #1184) passes the operator's TOTAL channel width
+// straight through to the composer (which halves it into the ±cutoff), and that
+// 0 / unset / a negative value keeps the legacy front end (0 = the composer's
+// VoiceBandwidthHz default).
+func TestResolveFMChannelBandwidth(t *testing.T) {
+	cases := []struct {
+		hz   int
+		want uint32
+	}{
+		{0, 0},         // unset — legacy 25 kHz front end
+		{12500, 12500}, // a 12.5 kHz NFM channel (composer → ±6250 cutoff)
+		{25000, 25000}, // a 25 kHz wideband channel (composer → ±12500 cutoff)
+		{-1, 0},        // defensive: never negative through to the composer
+	}
+	for _, tc := range cases {
+		if got := resolveFMChannelBandwidth(config.RecordingsConfig{FMChannelBandwidthHz: tc.hz}); got != tc.want {
+			t.Errorf("fm_channel_bandwidth_hz=%d -> %d, want %d", tc.hz, got, tc.want)
+		}
+	}
+}

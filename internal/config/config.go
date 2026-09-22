@@ -2145,6 +2145,19 @@ type RecordingsConfig struct {
 	// makes that DC/tone louder, not softer (issue #1184). 0 selects the
 	// default 300 Hz; a negative value disables the filter.
 	FMAudioHighpassHz int `yaml:"fm_audio_highpass_hz"`
+	// FMChannelBandwidthHz sets the analog-FM front-end channel bandwidth (Hz)
+	// — the TOTAL width of the IF channel filter the composer's FM chain
+	// applies to the IQ before the discriminator, the "bandwidth" SDR# / SDR++
+	// expose for NFM (issue #1184). The complex low-pass is sized to ±half this
+	// value, so 12500 selects a 12.5 kHz NFM channel (±6.25 kHz) and 25000 a
+	// 25 kHz wideband channel (±12.5 kHz). A filter matched to a narrow channel
+	// rejects the adjacent-channel energy and FM noise a wide filter passes
+	// (cleaner audio on a tightly-deviated NFM radio); too narrow clips a
+	// normally-deviated signal. 0 keeps the legacy front end (a 25 kHz channel,
+	// ±12.5 kHz), so existing analog recordings are unchanged; the accepted
+	// range is 2500..50000. Digital-voice protocols set their own channel-select
+	// width and are unaffected.
+	FMChannelBandwidthHz int `yaml:"fm_channel_bandwidth_hz"`
 }
 
 // FM de-emphasis time constants for RecordingsConfig.FMDeEmphasis; the values
