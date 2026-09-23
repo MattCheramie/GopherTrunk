@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.1.9] — 2026-09-23
+
 ### Added
 - **The daemon now logs which config file backs the run, in the structured log
   (#1184).** A reporter updated to the latest build and lost all analog-scanner
