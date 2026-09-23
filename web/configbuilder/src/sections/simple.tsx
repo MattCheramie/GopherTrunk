@@ -549,6 +549,13 @@ export function ScannerSection() {
         onChange={(x) => set({ ...cfg, ManualTuneDisabled: x })}
         help="Opt out of the auto-detect rule that builds the scanner when ≥2 Voice SDRs are present."
       />
+      <NumberField
+        label="LO offset (Hz)"
+        value={cfg.LOOffsetHz ?? 0}
+        onChange={(x) => set({ ...cfg, LOOffsetHz: x })}
+        placeholder="0"
+        help="Tune the scanner SDR this far below each channel and mix back, keeping the DC spur / clipping products out of the FM audio. 0 = auto, <0 = off."
+      />
     </Section>
   );
 }

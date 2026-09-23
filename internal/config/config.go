@@ -564,6 +564,15 @@ type ScannerConfig struct {
 	// `conventional` channels are explicitly listed or
 	// ManualTuneEnabled is set true.
 	ManualTuneDisabled bool `yaml:"manual_tune_disabled"`
+	// LOOffsetHz controls the conventional scanner's LO offset tuning
+	// (issue #1184). The scanner tunes its SDR this far BELOW each channel
+	// and digitally mixes the channel back to baseband, so the front end's
+	// DC spur, I/Q image and (on an overloaded ADC) per-axis clipping
+	// products fall outside the analog FM channel instead of whistling in
+	// the audio. 0 (default) picks a clip-safe offset for the sample rate
+	// automatically; > 0 pins it (Hz, at most 35% of sdr.sample_rate);
+	// < 0 disables it (legacy on-channel tuning).
+	LOOffsetHz int `yaml:"lo_offset_hz"`
 }
 
 // CCHuntConfig tunes the hunter's dwell + exponential backoff.

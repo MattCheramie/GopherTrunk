@@ -261,6 +261,7 @@ export interface ScannerConfig {
   Conventional: ConvChannelConfig[] | null;
   ManualTuneEnabled: boolean;
   ManualTuneDisabled: boolean;
+  LOOffsetHz: number;
 }
 
 export interface AudioConfig {
