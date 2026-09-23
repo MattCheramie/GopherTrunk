@@ -1345,6 +1345,15 @@ scanner:
   manual_tune_enabled: false
   # manual_tune_disabled vetoes the auto-detect rule.
   manual_tune_disabled: false
+  # lo_offset_hz: the conventional scanner tunes its SDR this far BELOW
+  # each channel and mixes the channel back to baseband, so the front
+  # end's DC spur, I/Q image and — on an overloaded ADC — the clipping
+  # products land outside the analog FM channel instead of whistling in
+  # the audio (issue #1184). 0 = pick a clip-safe offset for the sample
+  # rate automatically (logged at start-up as "conv: scanner LO offset
+  # tuning"); > 0 pins it in Hz (at most 35% of sdr.sample_rate);
+  # < 0 disables it (legacy on-channel tuning).
+  lo_offset_hz: 0
   conventional: []
   # Example conventional channels:
   # conventional:

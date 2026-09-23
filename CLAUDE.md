@@ -1741,6 +1741,19 @@ confirmation before any close-as-completed.
   STILL ON-AIR-GATED (#764/#771): the daemon-path A/B (does the live tap stop the every-gap
   heals, does a re-key now record both overs, does the first PTT of a train grant on its
   header) needs the operator's next live run on a build with these fixes.
+- **Analog-FM "noise/tone on an on-frequency signal" (#1184, 23 Sep) = zero-IF tuning of an
+  overloaded ADC; the conventional scanner now offset-tunes.** The fingerprint to look for
+  first: per-axis ADC clipping squares the constellation (|IQ| ∈ [1.0, 1.414] in the capture),
+  and the discriminator then emits a tone at **4× the residual carrier offset** — the reporter's
+  Kenwood captures carried it 18–25 dB above the voice floor at exactly 4δ; the unclipped Radtel
+  did not. The earlier "all six captures decode cleanly" conclusion missed it because nobody
+  checked the rail fraction or searched the audio for a 4δ line. Fix: `convScannerFrontEnd`
+  (`cmd/gophertrunk/conv_offset.go`) tunes the LO below the channel and NCO-mixes back for the
+  scanner AND the FM chain (`convScanVoiceSource`), at an offset SEARCHED so DC spur / image /
+  clipping products (4k·offset mod fs) miss the channel. **Never use fs/4 for a clipped signal**:
+  4·(fs/4) ≡ 0 mod fs, the 3rd-order product aliases onto the channel (simulated SINAD 0.5 dB,
+  same as on-channel; searched 518 kHz → 56 dB) — and fs/4 is the `dc_avoid` default for control
+  and voice SDRs, which has the same exposure (not changed here). Still on-air-gated.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

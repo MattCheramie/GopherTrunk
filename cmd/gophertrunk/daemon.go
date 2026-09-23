@@ -675,10 +675,14 @@ type Daemon struct {
 	// scanner construction and shared by reference with poolDevices, which
 	// reads it lazily at call time (after the scanner has registered).
 	scannerBrokers map[string]*iqtap.Broker
-	metrics        *metrics.Metrics
-	httpAPI        *api.Server
-	grpcAPI        *api.GRPCServer
-	rigctld        *rigctld.Server
+	// scannerLOOffsets maps a conventional-scanner voice SDR's serial to the
+	// LO offset (Hz) its front end tunes below the channel (issue #1184); the
+	// composer's convScanVoiceSource mixes the broker fan-out back by it.
+	scannerLOOffsets map[string]float64
+	metrics          *metrics.Metrics
+	httpAPI          *api.Server
+	grpcAPI          *api.GRPCServer
+	rigctld          *rigctld.Server
 
 	// startupWarnings collects non-fatal observations from
 	// NewDaemon / preflight (missing talkgroup CSV, SDR enumeration
@@ -912,8 +916,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// Allocated here (before the composer's poolDevices captures it and
 		// before the scanner populates it) so the reference the two share is
 		// non-nil in both places — issue #1075.
-		scannerBrokers: make(map[string]*iqtap.Broker),
-		autotune:       autotune.NewRegistry(cfg.SDR.Autotune, log),
+		scannerBrokers:   make(map[string]*iqtap.Broker),
+		scannerLOOffsets: make(map[string]float64),
+		autotune:         autotune.NewRegistry(cfg.SDR.Autotune, log),
 	}
 	if cfg.SDR.Autotune {
 		log.Info("autotune: enabled — tracking per-dongle carrier error and applying digital correction (P25 Phase 1 control + voice)")
@@ -1785,13 +1790,25 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			// back to the bare device if no broker exists (defensive — every
 			// pool entry is wrapped by wrapIQBrokers, so this is unreachable
 			// while d.pool != nil).
-			var convTuner conventional.Tuner = convEntry.Device
-			var convIQ conventional.IQSource = convEntry.Device
+			var convInner convTunerIQ = convEntry.Device
 			if br := d.iqBrokers[convEntry.Info.Serial]; br != nil {
-				convTuner = br
-				convIQ = br
+				convInner = br
 				d.scannerBrokers[convEntry.Info.Serial] = br
 			}
+			// Tune the LO off-channel and mix back (issue #1184): on-channel
+			// (zero-IF) tuning parks the DC spur, the I/Q image and — on an
+			// overloaded ADC — the per-axis clipping products inside the
+			// analog FM channel, audible as a whistle/tone at 4x the carrier
+			// offset. The FM voice chain reads the same offset through
+			// scannerLOOffsets (poolDevices → convScanVoiceSource).
+			loOffset, loReason := convScannerLOOffsetHz(cfg.SDR.SampleRate, cfg.Scanner.LOOffsetHz)
+			d.scannerLOOffsets[convEntry.Info.Serial] = loOffset
+			log.Info("conv: scanner LO offset tuning",
+				"serial", convEntry.Info.Serial, "lo_offset_hz", int(loOffset), "mode", loReason,
+				"sample_rate_hz", cfg.SDR.SampleRate)
+			convFE := newConvScannerFrontEnd(convInner, loOffset, cfg.SDR.SampleRate, convEntry.Info.Serial, log)
+			var convTuner conventional.Tuner = convFE
+			var convIQ conventional.IQSource = convFE
 			cs, err := conventional.New(conventional.Options{
 				Log:          log,
 				Tuner:        convTuner,
@@ -2450,7 +2467,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,
-			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap(), scannerBrokers: d.scannerBrokers},
+			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap(), scannerBrokers: d.scannerBrokers, scannerLOOffsets: d.scannerLOOffsets},
 			Sink:          sink,
 			Engine:        d.engine,
 			Autotune:      d.autotune,
@@ -5629,6 +5646,9 @@ type poolDevices struct {
 	// fans out from the scanner's stream rather than opening a colliding
 	// second StreamIQ on the same physical device (issue #1075).
 	scannerBrokers map[string]*iqtap.Broker
+	// scannerLOOffsets carries each scanner SDR's LO offset so the FM
+	// voice chain mixes the fan-out back to the channel (issue #1184).
+	scannerLOOffsets map[string]float64
 }
 
 func (p *poolDevices) FindBySerial(serial string) composer.IQSource {
@@ -5640,7 +5660,7 @@ func (p *poolDevices) FindBySerial(serial string) composer.IQSource {
 	// so the composer must Subscribe to the fan-out — a second StreamIQ on the
 	// underlying device fails with "stream already active" (issue #1075).
 	if br := p.scannerBrokers[serial]; br != nil {
-		return &convScanVoiceSource{broker: br, serial: serial, rate: p.rateHz}
+		return &convScanVoiceSource{broker: br, serial: serial, rate: p.rateHz, offsetHz: p.scannerLOOffsets[serial]}
 	}
 	if p.pool == nil {
 		return nil
@@ -5665,6 +5685,10 @@ type convScanVoiceSource struct {
 	broker *iqtap.Broker
 	serial string
 	rate   uint32
+	// offsetHz is the scanner front end's LO offset: the broker delivers
+	// the channel at +offsetHz, so the subscription is mixed back to DC
+	// before the FM chain sees it (issue #1184). 0 = on-channel.
+	offsetHz float64
 }
 
 func (s *convScanVoiceSource) SampleRateHz() uint32 { return s.rate }
@@ -5675,7 +5699,7 @@ func (s *convScanVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64,
 		<-ctx.Done()
 		sub.Close() // closes sub.C, ending the composer's read loop
 	}()
-	return sub.C, nil
+	return mixToChannel(ctx, sub.C, s.offsetHz, s.rate, nil), nil
 }
 
 // deviceWithRate makes an sdr.Device satisfy composer.IQSource by

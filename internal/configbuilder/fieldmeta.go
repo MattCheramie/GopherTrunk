@@ -373,6 +373,7 @@ var fieldMetas = map[string]FieldMeta{
 	"ScannerConfig.Conventional":            {Help: "Fixed-frequency analog FM scan list."},
 	"ScannerConfig.ManualTuneEnabled":       {Help: "Force-build the conventional scanner so the TUI 'f' key / manual_tune works even with no static channels (steals one voice SDR)."},
 	"ScannerConfig.ManualTuneDisabled":      {Help: "Veto the auto-detect rule — build the conventional scanner only when channels are listed or ManualTuneEnabled is set."},
+	"ScannerConfig.LOOffsetHz":              {Label: "LO offset (Hz)", Help: "Conventional scanner LO offset tuning: the SDR is tuned this far below each channel and mixed back, keeping the DC spur, I/Q image and ADC-clipping products out of the analog FM audio. 0 = automatic (clip-safe for the sample rate), >0 = pin (Hz), <0 = off (on-channel tuning)."},
 	"CCHuntConfig.Enabled":                  {Help: "Run the control-channel hunter. Defaults on when any trunked system is configured."},
 	"CCHuntConfig.DwellMs":                  {Help: "Per-frequency wait before declaring no lock. Default 3000 ms."},
 	"CCHuntConfig.BackoffMs":                {Help: "Initial sleep after exhausting a system's CC list. Default 5000 ms; doubles per failure."},

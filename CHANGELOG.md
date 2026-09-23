@@ -7,6 +7,30 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **Conventional-scanner analog FM: the "high-pitched noise / tone" on an
+  on-frequency signal is gone — the scanner now tunes its SDR off-channel and
+  mixes back (#1184).** The scanner tuned the LO exactly onto the channel, so the
+  front end's DC spur, I/Q image and — on an overloaded 8-bit ADC — the per-axis
+  clipping products all landed inside the FM channel. Clipping I and Q
+  independently squares the constellation, and the discriminator turns that into
+  a tone at 4× the residual carrier offset: the reporter's Kenwood captures are
+  pinned to the ADC rail and carry a tone 18–25 dB above the voice floor at
+  exactly 4× each file's offset (NX-5000 δ≈−420 Hz → 1676 Hz, NX-300 δ≈−850 Hz →
+  3381 Hz), and their bench test showed the same thing from the other side (an
+  on-channel carrier noisy, the same carrier ±3.25 kHz off clean). The scanner's
+  front end now places the LO below the channel and NCO-mixes the stream back for
+  both the squelch/tone detectors and the FM voice chain, at an offset searched so
+  no DC-spur, image or clipping product (up to 25th order, aliased mod the sample
+  rate) lands on the channel — 518 kHz at 2.4 MS/s. `sample_rate/4` (the
+  `dc_avoid` default) is deliberately NOT used: its 3rd-order clipping product
+  aliases exactly onto the channel. New `scanner.lo_offset_hz` (0 = auto, > 0 =
+  pin, < 0 = legacy on-channel). The scanner also WARNs when its IQ is pinned to
+  the ADC rail (`conv: front end overloaded`), since offset tuning hides the
+  artefact but a clipped front end still loses weak signals — reduce gain.
+  Pinned by `TestConvScannerOffsetTuningRemovesClippingWhistle` (simulated
+  clipped front end: on-channel SINAD 0.5 dB / fs/4 0.5 dB / auto offset 56 dB).
+
 ### Added
 - **The daemon now logs which config file backs the run, in the structured log
   (#1184).** A reporter updated to the latest build and lost all analog-scanner
