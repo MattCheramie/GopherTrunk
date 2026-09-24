@@ -22,6 +22,6 @@ Three-tier resolution so callers stay useful no matter the release state:
 {%- elsif site.github.releases and site.github.releases[0] and site.github.releases[0].tag_name -%}
   {%- assign ver = site.github.releases[0].tag_name -%}
 {%- else -%}
-  {%- assign ver = "v1.1.9" -%}
+  {%- assign ver = "v1.2.0" -%}
 {%- endif -%}
 {%- assign rel_url = "https://github.com/MattCheramie/GopherTrunk/releases/download/" | append: ver -%}

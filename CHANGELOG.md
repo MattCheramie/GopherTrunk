@@ -33,6 +33,10 @@ for tagged releases.
     `conv: DCS gate opened` line reports which one did.
   Tone-gated channels now dwell at least 350 ms (CTCSS) / 600 ms (DCS) so the
   detector can report.
+
+## [v1.2.0] — 2026-09-24
+
+### Fixed
 - **Conventional-scanner CTCSS tone squelch now detects tones (#1184).** On air
   the tone gate never opened on any configured CTCSS tone. The detector's
   magnitude threshold was calibrated in radians-per-sample at 48 kHz, but the
