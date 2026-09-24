@@ -8,6 +8,20 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Conventional-scanner CTCSS tone squelch now detects tones (#1184).** On air
+  the tone gate never opened on any configured CTCSS tone. The detector's
+  magnitude threshold was calibrated in radians-per-sample at 48 kHz, but the
+  scanner feeds it the SDR's full 2.4 MS/s stream, where the same deviation
+  reads 50x smaller: a real tone (a few hundred Hz of deviation) sat ~3000x
+  below the threshold, and the discriminator also saw the whole unfiltered
+  band. The detector now decimates to ~48 kHz behind an anti-alias filter,
+  band-limits to ±8 kHz, and normalises the discriminator to the calibration
+  rate. On the reporter's 447.100 MHz captures: 100 Hz tone detected in 81% of
+  chunks on the Radtel and 81% on the NX-300 (0% before; the misses are the
+  first 200 ms Goertzel block and the gaps around each keyup), adjacent codes
+  94.8/103.5/107.2 Hz and the tone-free transmission stay closed. Pinned
+  failing-first by `TestCTCSSDetectsRealAirToneAtSDRRate` against real-air
+  slices of those captures.
 - **`sdr list --probe` on Windows now retries a transient bring-up timeout
   instead of giving up on the first pass (#1200).** The probe fast path was made
   a single pass with no device reset for #1135, because on macOS (and usbdevfs)
