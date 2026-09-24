@@ -90,6 +90,11 @@ type MockTransport struct {
 	// Open. Mirrors the real winTransport.Diagnostics capability.
 	Diag string
 
+	// LocalReset, when true, makes the mock report a local (non-
+	// re-enumerating) Reset via [LocalResetter], like the WinUSB
+	// transport. Default false: the conservative usbdevfs/IOKit answer.
+	LocalReset bool
+
 	BulkPackets  [][]byte
 	BulkInterval time.Duration
 	// BulkSimulateDeath, when true, makes the bulk-IN goroutine fire
@@ -320,6 +325,9 @@ func (m *MockTransport) Remaining() int { return len(m.Script) - m.Step }
 // the canned Diag string. Lets tests assert the bring-up path appends
 // transport diagnostics on a failed Open.
 func (m *MockTransport) Diagnostics() string { return m.Diag }
+
+// ResetIsLocal implements [LocalResetter] from the LocalReset field.
+func (m *MockTransport) ResetIsLocal() bool { return m.LocalReset }
 
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {

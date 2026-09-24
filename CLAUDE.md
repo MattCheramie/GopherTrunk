@@ -1754,6 +1754,15 @@ confirmation before any close-as-completed.
   4·(fs/4) ≡ 0 mod fs, the 3rd-order product aliases onto the channel (simulated SINAD 0.5 dB,
   same as on-channel; searched 518 kHz → 56 dB) — and fs/4 is the `dc_avoid` default for control
   and voice SDRs, which has the same exposure (not changed here). Still on-air-gated.
+- **The #1135 "probe never resets" rule is a macOS/usbdevfs rule, not a universal one (#1200).**
+  It exists because an IOKit/usbdevfs reset re-enumerates the device and perturbs siblings on
+  the same controller. A WinUSB `Reset` only re-opens this process's handle, so on Windows a
+  single-pass probe just discarded the recovery the daemon Open gets for the same transient
+  (the reporter's intermittent first-write `USB_SYSCTL` timeouts). Transports now declare
+  `usb.LocalResetter`; `probeAttemptsFor` gives local-reset transports a 3-pass budget that
+  fits the 5 s probe deadline. The root cause of those WinUSB first-write timeouts is still
+  unknown: the reporter's traces are GitHub attachments, which this environment's proxy
+  refuses, so get them pasted inline.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

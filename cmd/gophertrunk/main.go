@@ -509,7 +509,8 @@ func listSDRs(args []string) {
 
 // probeTimeout bounds how long a single device's open+info+close may take
 // during `sdr list --probe`. Each USB control transfer inside Open already
-// carries its own 1 s timeout, but the open as a whole is otherwise
+// carries its own 300 ms timeout (rtl2832u.CtrlTimeoutMs), but the open as a
+// whole is otherwise
 // unbounded: a wedged device or transport (firmware that NAKs, a clone in a
 // bad state, a stalled control ioctl) would hang the command with no output.
 // This deadline guarantees `--probe` always returns.
@@ -530,7 +531,9 @@ const probeTimeout = 5 * time.Second
 // --probe` both time out and swap which of two dongles probed run to run
 // (issue #1135). With the no-reset probe each open touches only its own
 // device and finishes well inside the deadline, so the leaked-goroutine
-// safety net above almost never fires.
+// safety net above almost never fires. On a transport whose reset is LOCAL
+// (WinUSB re-opens its own handle and never re-enumerates) OpenProbe allows a
+// short reset+retry budget sized to fit this deadline (issue #1200).
 func probeDevice(drv sdr.Driver, idx int, timeout time.Duration) (sdr.Info, error) {
 	type result struct {
 		info sdr.Info
