@@ -1763,6 +1763,15 @@ confirmation before any close-as-completed.
   fits the 5 s probe deadline. The root cause of those WinUSB first-write timeouts is still
   unknown: the reporter's traces are GitHub attachments, which this environment's proxy
   refuses, so get them pasted inline.
+- **A detector threshold in radians-per-sample is a SAMPLE-RATE trap (#1184 CTCSS).** The
+  conventional scanner's CTCSS gate never opened on air: its Goertzel threshold was calibrated
+  on 48 kHz unit tests, but the scanner feeds 2.4 MS/s, where the same deviation is 50x smaller
+  in rad/sample (≈3000x in power). Unit tests at 48 kHz with a clean synthetic tone could never
+  catch it (the self-consistent trap again). `CTCSSDetector` now decimates to ~48 kHz, channel-
+  filters ±8 kHz and normalises to the calibration rate; `ctcss_realair_test.go` interpolates
+  the reporter's real-air 48 kHz slices back to 2.4 MS/s so the PRODUCTION rate is what's
+  pinned. The DCS detector also demodulates the raw band but slices by sign (rate-invariant);
+  it has not been checked on air.
 - **TETRA DMO voice chain (#1003, 20 Aug run) now adopts the pipeline's colour over the
   colour-0 fallback, and both DMO receivers share `tetrarx.DMOOptions`.** The chain's
   give-up path fell back to `baseMNI` before adopting the pipeline's 39, and a hint that

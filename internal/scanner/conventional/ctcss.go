@@ -3,6 +3,8 @@ package conventional
 import (
 	"math"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 )
 
@@ -40,6 +42,22 @@ import (
 // Not safe for concurrent use — the conv scanner owns one detector
 // per channel and processes each chunk serially.
 type CTCSSDetector struct {
+	// Front end (issue #1184). The scanner feeds the detector the SDR's
+	// full-rate IQ (2.4 MS/s on an RTL-SDR). pre decimates it to ~48 kHz
+	// behind an anti-alias filter (nil when the input is already at or
+	// near that rate), and chanFilter band-limits it to the NFM channel
+	// before the discriminator, so neither out-of-channel signals nor the
+	// whole band's FM noise reach the tone bin.
+	pre        *dsp.Resampler
+	chanFilter *filter.FIR
+	scratch    []complex64
+	chanBuf    []complex64
+	// discScale converts the discriminator output (radians per sample at
+	// the post-decimation rate) to radians per sample at
+	// ctcssRefRateHz, the rate magThreshold is calibrated at, so the
+	// threshold means the same deviation at any SDR sample rate.
+	discScale float64
+
 	// FM discriminator state (last IQ sample for the conjugate
 	// multiply).
 	last complex64
@@ -112,6 +130,20 @@ type CTCSSConfig struct {
 	BlockSize int
 }
 
+// ctcssRefRateHz is the rate the detector's magnitude threshold is
+// calibrated at and the rate it decimates its input to. The threshold
+// compares the Goertzel power of the discriminator output, which is in
+// radians per sample, so the same deviation reads 50x smaller at 2.4 MS/s
+// than at 48 kHz: run at the SDR rate, a real CTCSS tone (a few hundred
+// Hz of deviation) sat ~3000x below the threshold and the gate never
+// opened on any signal (issue #1184).
+const ctcssRefRateHz = 48_000
+
+// ctcssChannelCutoffHz is the one-sided bandwidth of the channel filter
+// ahead of the discriminator: an NFM channel (±2.5–5 kHz deviation plus
+// Carson margin) passes, a 12.5/25 kHz neighbour does not.
+const ctcssChannelCutoffHz = 8_000
+
 // NewCTCSSDetector constructs a detector. TargetHz must be > 0 and
 // inside the practical CTCSS range (50..300 Hz); SampleHz must be
 // the IQ rate the detector will be fed.
@@ -122,9 +154,27 @@ func NewCTCSSDetector(cfg CTCSSConfig) *CTCSSDetector {
 	if cfg.AudioCutoffHz <= 0 {
 		cfg.AudioCutoffHz = 500
 	}
-	if cfg.BlockSize <= 0 {
-		cfg.BlockSize = int(cfg.SampleHz / 5)
+	// Decimate to ~ctcssRefRateHz. M = 1 when the input is already near
+	// that rate, keeping the detector's historical 48 kHz behaviour.
+	var pre *dsp.Resampler
+	m := int(cfg.SampleHz / ctcssRefRateHz)
+	if m < 2 {
+		m = 1
+	} else {
+		pre = dsp.NewResampler(1, m, m*8+1, 8.6)
+		if cfg.BlockSize > 0 {
+			cfg.BlockSize /= m // BlockSize is in INPUT samples
+		}
 	}
+	rate := cfg.SampleHz / float64(m)
+	if cfg.BlockSize <= 0 {
+		cfg.BlockSize = int(rate / 5)
+	}
+	var chanFilter *filter.FIR
+	if fc := ctcssChannelCutoffHz / rate; fc < 0.45 {
+		chanFilter = filter.NewFIR(filter.LowpassKaiser(63, fc, 8.6))
+	}
+	cfg.SampleHz = rate
 	// Single-pole IIR low-pass: alpha = dt / (RC + dt), where
 	// RC = 1 / (2π·fc). Pre-warps the cutoff into the IIR's
 	// per-sample step.
@@ -152,6 +202,9 @@ func NewCTCSSDetector(cfg CTCSSConfig) *CTCSSDetector {
 	}
 
 	return &CTCSSDetector{
+		pre:         pre,
+		chanFilter:  chanFilter,
+		discScale:   rate / ctcssRefRateHz,
 		last:        complex(1, 0),
 		lpfAlpha:    alpha,
 		goertzel:    toneout.NewGoertzel(cfg.TargetHz, cfg.SampleHz, cfg.BlockSize),
@@ -197,6 +250,12 @@ func (d *CTCSSDetector) Present() bool { return d.present }
 // it retunes so a tone match on a previous channel doesn't bleed
 // into the new dwell.
 func (d *CTCSSDetector) Reset() {
+	if d.pre != nil {
+		d.pre.Reset()
+	}
+	if d.chanFilter != nil {
+		d.chanFilter.Reset()
+	}
 	d.last = complex(1, 0)
 	d.lpfState = 0
 	d.goertzel.Reset()
@@ -214,11 +273,20 @@ func (d *CTCSSDetector) Process(iq []complex64) bool {
 	if d == nil || len(iq) == 0 {
 		return d != nil && d.present
 	}
+	if d.pre != nil {
+		d.scratch = d.pre.Process(d.scratch, iq)
+		iq = d.scratch
+	}
+	if d.chanFilter != nil {
+		d.chanBuf = d.chanFilter.Process(d.chanBuf[:0], iq)
+		iq = d.chanBuf
+	}
 	for _, s := range iq {
-		// FM discriminator: arg(z[n] · conj(z[n-1])).
+		// FM discriminator: arg(z[n] · conj(z[n-1])), normalised to
+		// radians per sample at ctcssRefRateHz.
 		ar := real(s)*real(d.last) + imag(s)*imag(d.last)
 		ai := imag(s)*real(d.last) - real(s)*imag(d.last)
-		demod := math.Atan2(float64(ai), float64(ar))
+		demod := math.Atan2(float64(ai), float64(ar)) * d.discScale
 		d.last = s
 
 		// Single-pole low-pass to reject the audio band that would
