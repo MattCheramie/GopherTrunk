@@ -373,3 +373,26 @@ func TestNewValidates(t *testing.T) {
 type fakeClock struct{ t time.Time }
 
 func (c *fakeClock) Now() time.Time { return c.t }
+
+// NewGoertzelExact measures a tone that falls between NewGoertzel's
+// rounded bins at full strength (#1184: 162.2 Hz at a 5 Hz resolution).
+func TestGoertzelExactHitsOffGridTone(t *testing.T) {
+	const rate, block, hz = 48_000, 9_600, 162.2
+	feed := func(g *Goertzel) float64 {
+		for i := 0; i < block; i++ {
+			s := int16(16384 * math.Sin(2*math.Pi*hz*float64(i)/rate))
+			if mag, ready := g.Process(s); ready {
+				return mag
+			}
+		}
+		return 0
+	}
+	exact := feed(NewGoertzelExact(hz, rate, block))
+	rounded := feed(NewGoertzel(hz, rate, block))
+	if exact < 0.24 || exact > 0.26 { // half-scale sine → 0.25
+		t.Errorf("exact Goertzel magnitude = %.3f, want ~0.25", exact)
+	}
+	if rounded > 0.8*exact {
+		t.Errorf("rounded Goertzel magnitude %.3f unexpectedly close to exact %.3f", rounded, exact)
+	}
+}

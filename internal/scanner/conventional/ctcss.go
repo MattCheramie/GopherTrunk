@@ -3,8 +3,6 @@ package conventional
 import (
 	"math"
 
-	"github.com/MattCheramie/GopherTrunk/internal/dsp"
-	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 )
 
@@ -17,22 +15,17 @@ import (
 // same frequency, including marine, business, and adjacent-county
 // traffic.
 //
-// Implementation: IQ samples → quadrature FM discriminator
-// (inline atan2 over z[n]·conj(z[n-1])) → single-pole IIR low-pass
-// at ~500 Hz to roll off the audio band that would otherwise alias
-// into the sub-audible region → Goertzel detector at the target
-// tone frequency → magnitude threshold. The whole chain processes
+// Implementation: IQ samples → decimate to ~48 kHz + channel filter →
+// quadrature FM discriminator (toneFrontEnd) → single-pole IIR low-pass
+// at ~500 Hz to roll off the audio band → Goertzel detector at exactly
+// the target tone frequency, compared against reverse bins at the
+// adjacent EIA tones → magnitude threshold. The whole chain processes
 // one IQ chunk at a time and runs only when a channel has tone
 // gating configured, so the cost for un-gated channels is zero.
 //
 // DCS (Digital-Coded Squelch — also called DPL) is the digital
 // cousin of CTCSS: a 23-bit Golay-coded codeword transmitted as a
-// 134.4 baud sub-audible NRZ stream. Decoding it requires a
-// proper bit-level demodulator (clock recovery + Golay decoder)
-// that is materially more work than the Goertzel pattern here;
-// the conventional scanner's tone config validates the DCS mode
-// so operators can configure it without churning the config
-// surface later, but the detector itself is a tracked follow-up.
+// 134.4 baud sub-audible NRZ stream. Its detector is in dcs.go.
 
 // CTCSSDetector matches a single CTCSS tone against a stream of IQ
 // chunks. Construct via NewCTCSSDetector; feed IQ via Process. The
@@ -42,25 +35,10 @@ import (
 // Not safe for concurrent use — the conv scanner owns one detector
 // per channel and processes each chunk serially.
 type CTCSSDetector struct {
-	// Front end (issue #1184). The scanner feeds the detector the SDR's
-	// full-rate IQ (2.4 MS/s on an RTL-SDR). pre decimates it to ~48 kHz
-	// behind an anti-alias filter (nil when the input is already at or
-	// near that rate), and chanFilter band-limits it to the NFM channel
-	// before the discriminator, so neither out-of-channel signals nor the
-	// whole band's FM noise reach the tone bin.
-	pre        *dsp.Resampler
-	chanFilter *filter.FIR
-	scratch    []complex64
-	chanBuf    []complex64
-	// discScale converts the discriminator output (radians per sample at
-	// the post-decimation rate) to radians per sample at
-	// ctcssRefRateHz, the rate magThreshold is calibrated at, so the
-	// threshold means the same deviation at any SDR sample rate.
-	discScale float64
-
-	// FM discriminator state (last IQ sample for the conjugate
-	// multiply).
-	last complex64
+	// fe decimates the SDR-rate IQ to ~48 kHz, channel-filters it and
+	// FM-discriminates (issue #1184); its output is radians per sample
+	// at toneRefRateHz whatever the input rate.
+	fe *toneFrontEnd
 
 	// Single-pole IIR low-pass on the discriminator output. Cutoff
 	// is set by NewCTCSSDetector to ~500 Hz so the audio band
@@ -69,31 +47,25 @@ type CTCSSDetector struct {
 	lpfAlpha float64
 	lpfState float64
 
-	// Goertzel detector at the target tone frequency. Reuses the
-	// already-existing toneout primitive so the math is shared
-	// with the paging-tone detector.
+	// Goertzel detector at exactly the target tone frequency (no bin
+	// rounding — see toneout.NewGoertzelExact).
 	goertzel *toneout.Goertzel
 
-	// reverseBins are Goertzel detectors at nearby off-target
-	// frequencies. They sample the noise / leak floor so the
-	// detector can require target_mag > rejectRatio * max(reverse).
-	// This rejects adjacent CTCSS codes whose spectral leak would
-	// otherwise show up in the target bin — the EIA list has codes
-	// as close as ~3 Hz at the low end and the configured-tone-only
-	// path can false-trigger on those.
+	// reverseBins are Goertzel detectors at off-target frequencies: the
+	// target ±ctcssReverseOffsetHz plus the adjacent tones of the EIA
+	// table. A match requires target_mag > rejectRatio * max(reverse),
+	// so a transmission on the next tone up or down the table — which
+	// lands dead-on its own reverse bin — can never open the gate.
 	reverseBins []*toneout.Goertzel
 
 	// rejectRatio is how much the target bin must dominate the
-	// largest reverse bin before declaring a match. 1.5 is a
-	// reasonable default — tight enough that a 5 Hz-offset
-	// adjacent CTCSS leaks below threshold, loose enough that a
-	// real tone still locks under noise. Tunable per detector.
+	// largest reverse bin before declaring a match. Tunable per
+	// detector.
 	rejectRatio float64
 
-	// Magnitude threshold above which the tone is considered
-	// present. Tunable per detector via SetMagnitudeThreshold; the
-	// constructor picks a conservative default that works against
-	// FM-demod normalised amplitudes for unit-amplitude tones.
+	// Magnitude threshold above which the tone is considered present,
+	// derived from ctcssMinDeviationHz. Tunable per detector via
+	// SetMagnitudeThreshold.
 	magThreshold float64
 
 	// Detection state — present is true while the current matched
@@ -106,43 +78,55 @@ type CTCSSDetector struct {
 }
 
 // CTCSSConfig holds the sample rate of the input IQ stream + the
-// CTCSS frequency to look for. Goertzel block size is derived from
-// the sample rate so the frequency resolution is around 5 Hz at any
-// reasonable SDR rate.
+// CTCSS frequency to look for.
 type CTCSSConfig struct {
 	// SampleHz is the IQ sample rate (typically 2.4e6 for RTL-SDR).
 	SampleHz float64
 	// TargetHz is the CTCSS frequency to detect. Standard values
-	// range from 67.0 to 254.1 Hz; the EIA list has 50 codes but
-	// only 38 + 12 are widely used.
+	// range from 67.0 to 254.1 Hz (EIACTCSSTones).
 	TargetHz float64
 	// AudioCutoffHz sets the single-pole IIR low-pass cutoff. The
-	// LPF rolls off the audio band so it doesn't alias into the
-	// sub-audible band when the Goertzel samples at its block
-	// rate. Defaults to 500 Hz when zero — comfortably above the
-	// highest CTCSS frequency and below the lowest voice formant.
+	// LPF rolls off the audio band so it doesn't leak into the
+	// sub-audible bins. Defaults to 500 Hz when zero — comfortably
+	// above the highest CTCSS frequency and below the lowest voice
+	// formant.
 	AudioCutoffHz float64
-	// BlockSize is the Goertzel block size in IQ samples. Larger
-	// blocks → finer frequency resolution at the cost of slower
-	// detection. Defaults to SampleHz / 5 (≈ 5 Hz bin resolution
-	// and ~200 ms detection latency, comfortably under typical
-	// CTCSS reaction times on commercial radios).
+	// BlockSize is the Goertzel block size in INPUT IQ samples.
+	// Larger blocks → finer frequency resolution at the cost of
+	// slower detection. Defaults to ctcssBlockSeconds of input.
 	BlockSize int
 }
 
 // ctcssRefRateHz is the rate the detector's magnitude threshold is
-// calibrated at and the rate it decimates its input to. The threshold
-// compares the Goertzel power of the discriminator output, which is in
-// radians per sample, so the same deviation reads 50x smaller at 2.4 MS/s
-// than at 48 kHz: run at the SDR rate, a real CTCSS tone (a few hundred
-// Hz of deviation) sat ~3000x below the threshold and the gate never
-// opened on any signal (issue #1184).
-const ctcssRefRateHz = 48_000
+// calibrated at (issue #1184); see toneRefRateHz.
+const ctcssRefRateHz = toneRefRateHz
 
-// ctcssChannelCutoffHz is the one-sided bandwidth of the channel filter
-// ahead of the discriminator: an NFM channel (±2.5–5 kHz deviation plus
-// Carson margin) passes, a 12.5/25 kHz neighbour does not.
-const ctcssChannelCutoffHz = 8_000
+// ctcssBlockSeconds is the default Goertzel block: 250 ms, a 4 Hz
+// resolution. Adjacent EIA tones sit 2.3–3.0 Hz apart; at the former
+// 200 ms (5 Hz) block an on-tone signal leaked ~57% of its power into a
+// neighbour 2.3 Hz away, leaving the rejection ratio almost no margin.
+// At 4 Hz the leak is ~29%, and a detection still lands well inside the
+// ~300 ms decode time radios quote.
+const ctcssBlockSeconds = 0.25
+
+// ctcssMinDeviationHz is the weakest tone the gate accepts, as peak FM
+// deviation. Radios put ~15% of their peak deviation into CTCSS: ~350 Hz
+// on a 2.5 kHz narrowband channel, ~750 Hz on a 5 kHz wideband one. The
+// old fixed threshold (5e-4) needed ~540 Hz, so no narrowband radio ever
+// opened the gate (issue #1184). 100 Hz keeps a >10 dB margin under an
+// NFM tone; a carrier WITHOUT a tone still stays shut, because it puts
+// nothing coherent in the target bin and the reverse-bin ratio holds.
+const ctcssMinDeviationHz = 100
+
+// ctcssReverseOffsetHz places the two fixed reverse bins either side of
+// the target, catching non-EIA tones and broadband sub-audible energy.
+const ctcssReverseOffsetHz = 5.0
+
+// ctcssMinNeighbourSpacingHz: EIA neighbours closer than this are not
+// used as reverse bins. Only 150.0/151.4 Hz (1.4 Hz apart) fall inside
+// it; a 250 ms block cannot separate them (each leaks ~66% into the
+// other), so a gate on either opens on both, as on most radios.
+const ctcssMinNeighbourSpacingHz = 2.0
 
 // NewCTCSSDetector constructs a detector. TargetHz must be > 0 and
 // inside the practical CTCSS range (50..300 Hz); SampleHz must be
@@ -154,69 +138,76 @@ func NewCTCSSDetector(cfg CTCSSConfig) *CTCSSDetector {
 	if cfg.AudioCutoffHz <= 0 {
 		cfg.AudioCutoffHz = 500
 	}
-	// Decimate to ~ctcssRefRateHz. M = 1 when the input is already near
-	// that rate, keeping the detector's historical 48 kHz behaviour.
-	var pre *dsp.Resampler
-	m := int(cfg.SampleHz / ctcssRefRateHz)
-	if m < 2 {
-		m = 1
-	} else {
-		pre = dsp.NewResampler(1, m, m*8+1, 8.6)
-		if cfg.BlockSize > 0 {
-			cfg.BlockSize /= m // BlockSize is in INPUT samples
-		}
+	fe := newToneFrontEnd(cfg.SampleHz)
+	rate := fe.rate
+	block := int(math.Round(rate * ctcssBlockSeconds))
+	if cfg.BlockSize > 0 {
+		block = cfg.BlockSize / fe.m // BlockSize is in INPUT samples
 	}
-	rate := cfg.SampleHz / float64(m)
-	if cfg.BlockSize <= 0 {
-		cfg.BlockSize = int(rate / 5)
+	if block < 1 {
+		block = 1
 	}
-	var chanFilter *filter.FIR
-	if fc := ctcssChannelCutoffHz / rate; fc < 0.45 {
-		chanFilter = filter.NewFIR(filter.LowpassKaiser(63, fc, 8.6))
+
+	var reverseHz []float64
+	for _, off := range []float64{-ctcssReverseOffsetHz, ctcssReverseOffsetHz} {
+		reverseHz = append(reverseHz, cfg.TargetHz+off)
 	}
-	cfg.SampleHz = rate
-	// Single-pole IIR low-pass: alpha = dt / (RC + dt), where
-	// RC = 1 / (2π·fc). Pre-warps the cutoff into the IIR's
-	// per-sample step.
-	dt := 1.0 / cfg.SampleHz
-	rc := 1.0 / (2 * math.Pi * cfg.AudioCutoffHz)
-	alpha := dt / (rc + dt)
-	// Reverse-bin detectors at ±5 Hz off the target — exactly one
-	// Goertzel bin away under the default 5 Hz resolution. An
-	// adjacent CTCSS code in the standard 38-code EIA list (codes
-	// spaced as close as ~3 Hz) puts most of its energy in the
-	// nearest reverse bin while leaking a smaller amount into the
-	// target. The ratio check `target > rejectRatio · max(reverse)`
-	// rejects that case while still passing a clean on-target tone
-	// (whose adjacent-bin leakage is ~30% of peak under Goertzel's
-	// sinc response). Two bins (high + low) give symmetric
-	// rejection regardless of which side the off-target tone is on.
-	reverseOffsets := []float64{-5.0, 5.0}
-	reverseBins := make([]*toneout.Goertzel, 0, len(reverseOffsets))
-	for _, off := range reverseOffsets {
-		hz := cfg.TargetHz + off
+	reverseHz = append(reverseHz, eiaNeighbourTones(cfg.TargetHz)...)
+	reverseBins := make([]*toneout.Goertzel, 0, len(reverseHz))
+	for _, hz := range reverseHz {
 		if hz <= 0 {
 			continue
 		}
-		reverseBins = append(reverseBins, toneout.NewGoertzel(hz, cfg.SampleHz, cfg.BlockSize))
+		reverseBins = append(reverseBins, toneout.NewGoertzelExact(hz, rate, block))
 	}
 
 	return &CTCSSDetector{
-		pre:         pre,
-		chanFilter:  chanFilter,
-		discScale:   rate / ctcssRefRateHz,
-		last:        complex(1, 0),
-		lpfAlpha:    alpha,
-		goertzel:    toneout.NewGoertzel(cfg.TargetHz, cfg.SampleHz, cfg.BlockSize),
-		reverseBins: reverseBins,
-		rejectRatio: 1.5,
-		// 5e-4 catches typical CTCSS injection (~500-1000 Hz peak
-		// deviation on commercial repeaters) with ~3x headroom
-		// over the noise floor measured on RTL-SDR captures.
-		// Tunable per channel via SetMagnitudeThreshold.
-		magThreshold: 5e-4,
+		fe:           fe,
+		lpfAlpha:     onePoleAlpha(cfg.AudioCutoffHz, rate),
+		goertzel:     toneout.NewGoertzelExact(cfg.TargetHz, rate, block),
+		reverseBins:  reverseBins,
+		rejectRatio:  1.5,
+		magThreshold: ctcssToneMagnitude(ctcssMinDeviationHz, cfg.TargetHz, cfg.AudioCutoffHz),
 		targetHz:     cfg.TargetHz,
 	}
+}
+
+// ctcssToneMagnitude is the Goertzel magnitude a steady tone at toneHz
+// with devHz of peak FM deviation produces at the detector's output: the
+// discriminator reads 2π·dev/rate radians per sample at toneRefRateHz,
+// the int16 scaling divides by π, and the single-pole low-pass
+// attenuates it by 1/sqrt(1+(f/fc)²). The Goertzel reports squared
+// amplitude.
+func ctcssToneMagnitude(devHz, toneHz, cutoffHz float64) float64 {
+	a := 2 * devHz / toneRefRateHz
+	g := 1 / (1 + (toneHz/cutoffHz)*(toneHz/cutoffHz))
+	return a * a * g
+}
+
+// eiaNeighbourTones returns the EIA tones immediately below and above
+// targetHz (the tone itself excluded), skipping any closer than
+// ctcssMinNeighbourSpacingHz.
+func eiaNeighbourTones(targetHz float64) []float64 {
+	var below, above float64
+	for _, hz := range EIACTCSSTones {
+		d := hz - targetHz
+		if math.Abs(d) < ctcssMinNeighbourSpacingHz {
+			continue
+		}
+		if d < 0 {
+			below = hz
+		} else if above == 0 {
+			above = hz
+		}
+	}
+	var out []float64
+	if below > 0 && targetHz-below < 10 {
+		out = append(out, below)
+	}
+	if above > 0 && above-targetHz < 10 {
+		out = append(out, above)
+	}
+	return out
 }
 
 // SetRejectRatio tunes the reverse-bin rejection ratio: target bin
@@ -250,13 +241,7 @@ func (d *CTCSSDetector) Present() bool { return d.present }
 // it retunes so a tone match on a previous channel doesn't bleed
 // into the new dwell.
 func (d *CTCSSDetector) Reset() {
-	if d.pre != nil {
-		d.pre.Reset()
-	}
-	if d.chanFilter != nil {
-		d.chanFilter.Reset()
-	}
-	d.last = complex(1, 0)
+	d.fe.reset()
 	d.lpfState = 0
 	d.goertzel.Reset()
 	for _, rb := range d.reverseBins {
@@ -273,39 +258,21 @@ func (d *CTCSSDetector) Process(iq []complex64) bool {
 	if d == nil || len(iq) == 0 {
 		return d != nil && d.present
 	}
-	if d.pre != nil {
-		d.scratch = d.pre.Process(d.scratch, iq)
-		iq = d.scratch
-	}
-	if d.chanFilter != nil {
-		d.chanBuf = d.chanFilter.Process(d.chanBuf[:0], iq)
-		iq = d.chanBuf
-	}
-	for _, s := range iq {
-		// FM discriminator: arg(z[n] · conj(z[n-1])), normalised to
-		// radians per sample at ctcssRefRateHz.
-		ar := real(s)*real(d.last) + imag(s)*imag(d.last)
-		ai := imag(s)*real(d.last) - real(s)*imag(d.last)
-		demod := math.Atan2(float64(ai), float64(ar)) * d.discScale
-		d.last = s
-
+	for _, demod := range d.fe.process(iq) {
 		// Single-pole low-pass to reject the audio band that would
-		// alias into the sub-audible Goertzel bin.
+		// leak into the sub-audible Goertzel bins.
 		d.lpfState = d.lpfState + d.lpfAlpha*(demod-d.lpfState)
 
 		// Goertzel wants int16-scaled samples. Scale the [-π, π]
 		// discriminator output into the int16 range; the Goertzel
 		// normalises by sample-count so the absolute scale only
 		// affects the magThreshold which is calibrated for this
-		// scaling.
+		// scaling (ctcssToneMagnitude).
 		const scale = 32768.0 / math.Pi
 		sample := int16(d.lpfState * scale)
 
 		// Feed every Goertzel — they all share the same block
 		// size, so the ready signals fire on the same sample.
-		// We hold off on the decision until the target reports
-		// ready (the reverse bins must report on the same sample
-		// to be valid comparators).
 		targetMag, ready := d.goertzel.Process(sample)
 		var maxReverseMag float64
 		for _, rb := range d.reverseBins {
@@ -330,4 +297,17 @@ func (d *CTCSSDetector) Process(iq []complex64) bool {
 		d.present = true
 	}
 	return d.present
+}
+
+// EIACTCSSTones is the standard CTCSS tone table: the 38 original EIA
+// tones plus the 12 later additions (150.0, 159.8, 165.5, 171.3, 177.3,
+// 183.5, 189.9, 196.6, 199.5, 206.5, 229.1, 254.1) that current
+// commercial radios program. Sorted ascending.
+var EIACTCSSTones = []float64{
+	67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5,
+	94.8, 97.4, 100.0, 103.5, 107.2, 110.9, 114.8, 118.8, 123.0, 127.3,
+	131.8, 136.5, 141.3, 146.2, 150.0, 151.4, 156.7, 159.8, 162.2, 165.5,
+	167.9, 171.3, 173.8, 177.3, 179.9, 183.5, 186.2, 189.9, 192.8, 196.6,
+	199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8, 250.3,
+	254.1,
 }

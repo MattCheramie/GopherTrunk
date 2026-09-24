@@ -5,69 +5,109 @@ import (
 	"math"
 	"math/bits"
 	"strconv"
-
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	"time"
 )
 
 // DCS — Digital-Coded Squelch, also called DPL (Digital Private Line).
 // A 134.4 baud sub-audible NRZ stream carrying a continuously-cycled
-// 23-bit Golay(23,12,7) codeword. The 12 information bits decompose
-// as 9 code bits (three octal digits, e.g. "023" → 000 010 011) plus
-// a 3-bit fixed sync field ("100"). The transmitter loops the
-// codeword indefinitely so a receiver can lock onto any of the 23
-// cyclic rotations.
+// 23-bit Golay(23,12,7) word. On air, bit by bit: the 9-bit code (the
+// three octal digits, least significant bit first), the fixed 0 0 1,
+// then 11 parity bits. The transmitter loops the word indefinitely, so
+// a receiver can lock onto any of its 23 cyclic rotations.
 //
-// Detection strategy in this file: FM discriminator → single-pole
-// IIR low-pass at ~250 Hz (rejects audio band) → bit-rate integrator
-// → 23-bit sliding window → compare against the 46 precomputed
-// rotations (23 cyclic shifts × 2 polarities; some markets transmit
-// DCS with inverted polarity) and declare a match when Hamming
-// distance ≤ 2. The Golay(23,12,7) primitive lives in
-// internal/radio/framing — same one used by P25 Phase 1 IMBE channel
-// coding — so the codeword math is shared with the rest of the
-// project.
+// Detection: toneFrontEnd (decimate to ~48 kHz, channel filter, FM
+// discriminator) → single-pole IIR low-pass at ~250 Hz → a slicing level
+// halfway between the recent high and low (the discriminator carries the
+// carrier offset as DC, which a sign slicer would read as all-ones) →
+// integrate-and-dump over one bit period at dcsPhases staggered clock
+// phases → per phase, a 23-bit sliding window compared against the 46
+// precomputed rotations (23 cyclic shifts × 2 polarities) at Hamming
+// distance ≤ 2. A match must then hold for dcsConfirmBits consecutive
+// bits before the gate opens: a real DCS stream matches at every bit
+// shift, random data does not.
+//
+// Issue #1184: the previous detector never matched a real radio. Its
+// codeword put the code in the high bits and the sync as "100" in the
+// low bits, and it slid bits in MSB-first; its test synthesizer
+// transmitted that same invented layout, so every unit test passed.
+// It also ran the discriminator on the whole 2.4 MHz SDR band and
+// sliced on the raw sign, so a carrier offset alone pinned every bit.
+// The codeword is now pinned against the published parity equations
+// (dcs_reference_test.go), independently of this file.
+
+// dcsPhases is how many staggered bit-clock phases are integrated in
+// parallel. There is no clock recovery: one of four phases is always
+// within 1/8 bit of the transmitter's, which is plenty at 134.4 baud.
+const dcsPhases = 4
+
+// dcsConfirmBits is how many consecutive bits a match must hold before
+// the gate opens (~120 ms). A true stream matches at every bit; noise
+// that happens to match one window keeps matching with probability ~1/2
+// per bit, so 16 bits cuts the false-open rate by ~2^16.
+const dcsConfirmBits = 16
+
+// dcsMinDwell covers the detector's first report: half a word to set
+// the slicing level, a full 23-bit window, dcsConfirmBits, and the
+// front end's filter delay.
+const dcsMinDwell = 600 * time.Millisecond
+
+// dcsBitRate is the DCS signalling rate in bits per second.
+const dcsBitRate = 134.4
 
 // DCSDetector matches a single DCS code on a stream of IQ chunks.
 // Construct via NewDCSDetector. Stateful — owns the demod / bit-
 // recovery / sliding-window state across IQ chunks. Not safe for
 // concurrent use; the conv scanner owns one detector per channel.
 type DCSDetector struct {
-	// FM discriminator state.
-	last complex64
+	fe *toneFrontEnd
 
 	// Single-pole IIR low-pass to roll off the audio band before
 	// the bit integrator sees it.
 	lpfAlpha float64
 	lpfState float64
 
-	// Bit-rate integrator. We accumulate the discriminator
-	// output over a window of ~ samplesPerBit samples, then
-	// slice on the sign of the integrated value.
-	samplesPerBit  float64
-	phaseInBit     float64 // 0..1, advances by 1/samplesPerBit each sample
-	bitAccumulator float64
+	// Slicing level: halfway between the high and low of the last two
+	// half-word blocks. blkN counts samples into the current block.
+	blkLen     int
+	blkN       int
+	blkHi      float64
+	blkLo      float64
+	prevHi     float64
+	prevLo     float64
+	prevValid  bool
+	mid        float64
+	levelValid bool
 
-	// 23-bit sliding window of recovered bits. Bits enter at the
-	// LSB; older bits shift into higher positions. Masked to 23
-	// bits after every shift.
-	bitWindow uint32
-	bitsHave  int // how many bits received so far (saturates at 23)
+	samplesPerBit float64
+	phases        [dcsPhases]dcsPhase
 
 	// Precomputed targets — both polarities × 23 rotations of the
-	// expected codeword. We check every entry per new bit; popcount
-	// is one CPU instruction and 46 comparisons per bit at 134.4
-	// baud is invisible in the profiler.
+	// expected word.
 	targets []uint32
 
 	// distanceThreshold is the maximum Hamming distance from any
-	// target rotation that still counts as a match. 2 is a sweet
-	// spot empirically — tight enough that pure noise doesn't
-	// false-trigger across the 46 targets, loose enough that a
-	// real DCS signal with a single demod glitch still locks.
+	// target rotation that still counts as a match.
 	distanceThreshold int
 
+	// sinceMatch counts samples since any phase last matched; the gate
+	// closes once it exceeds one word.
+	sinceMatch int
+	wordLen    int
+
 	present bool
-	code    string
+	// inverted records the polarity of the match that opened the gate:
+	// false when a 1 bit arrived as positive frequency deviation.
+	inverted bool
+	code     string
+}
+
+// dcsPhase is one integrate-and-dump bit clock and its bit window.
+type dcsPhase struct {
+	pos    float64 // position in the current bit, 0..1
+	acc    float64 // integrated (sample − slicing level)
+	window uint32  // last 23 bits, newest at bit 22 (on-air order)
+	have   int     // bits received, saturating at 23
+	streak int     // consecutive matching bits
 }
 
 // DCSConfig holds the IQ sample rate + the DCS code to detect.
@@ -79,8 +119,8 @@ type DCSConfig struct {
 	// 3-digit octal value.
 	Code string
 	// AudioCutoffHz sets the single-pole IIR low-pass cutoff.
-	// Defaults to 250 Hz — well above the 134.4 baud Nyquist
-	// rate and below any voice formant.
+	// Defaults to 250 Hz — above the 134.4 baud NRZ fundamental
+	// and below the voice band.
 	AudioCutoffHz float64
 }
 
@@ -88,6 +128,11 @@ type DCSConfig struct {
 // Returns nil on bad config (empty code, non-octal digits, missing
 // sample rate) — the scanner falls back to power-only squelch when
 // the constructor returns nil.
+//
+// Both polarities match: a code's inverted word is a rotation of a
+// different code's normal word (023 normal ≡ 047 inverted), so a gate
+// on 023 also opens for a radio sending 047 inverted, as on radios
+// that do not distinguish polarity.
 func NewDCSDetector(cfg DCSConfig) *DCSDetector {
 	if cfg.SampleHz <= 0 {
 		return nil
@@ -99,18 +144,20 @@ func NewDCSDetector(cfg DCSConfig) *DCSDetector {
 	if cfg.AudioCutoffHz <= 0 {
 		cfg.AudioCutoffHz = 250
 	}
-	dt := 1.0 / cfg.SampleHz
-	rc := 1.0 / (2 * math.Pi * cfg.AudioCutoffHz)
-	alpha := dt / (rc + dt)
-	const bitsPerSecond = 134.4
-	return &DCSDetector{
-		last:              complex(1, 0),
-		lpfAlpha:          alpha,
-		samplesPerBit:     cfg.SampleHz / bitsPerSecond,
+	fe := newToneFrontEnd(cfg.SampleHz)
+	spb := fe.rate / dcsBitRate
+	d := &DCSDetector{
+		fe:                fe,
+		lpfAlpha:          onePoleAlpha(cfg.AudioCutoffHz, fe.rate),
+		blkLen:            int(spb * 23 / 2),
+		samplesPerBit:     spb,
 		targets:           dcsRotations(target),
 		distanceThreshold: 2,
+		wordLen:           int(spb * 23),
 		code:              cfg.Code,
 	}
+	d.Reset()
+	return d
 }
 
 // SetDistanceThreshold tunes the match tolerance. Lower = fewer
@@ -135,13 +182,19 @@ func (d *DCSDetector) Reset() {
 	if d == nil {
 		return
 	}
-	d.last = complex(1, 0)
+	d.fe.reset()
 	d.lpfState = 0
-	d.phaseInBit = 0
-	d.bitAccumulator = 0
-	d.bitWindow = 0
-	d.bitsHave = 0
+	d.blkN = 0
+	d.blkHi, d.blkLo = math.Inf(-1), math.Inf(1)
+	d.prevValid = false
+	d.levelValid = false
+	d.mid = 0
+	for i := range d.phases {
+		d.phases[i] = dcsPhase{pos: float64(i) / dcsPhases}
+	}
+	d.sinceMatch = 0
 	d.present = false
+	d.inverted = false
 }
 
 // Process feeds an IQ chunk. Returns the most-recent Present()
@@ -151,86 +204,144 @@ func (d *DCSDetector) Process(iq []complex64) bool {
 		return d != nil && d.present
 	}
 	step := 1.0 / d.samplesPerBit
-	for _, s := range iq {
-		// FM discriminator: arg(z[n]·conj(z[n-1])).
-		ar := real(s)*real(d.last) + imag(s)*imag(d.last)
-		ai := imag(s)*real(d.last) - real(s)*imag(d.last)
-		demod := math.Atan2(float64(ai), float64(ar))
-		d.last = s
-
-		// Audio-band rejection.
-		d.lpfState = d.lpfState + d.lpfAlpha*(demod-d.lpfState)
-
-		// Integrate over the bit window.
-		d.bitAccumulator += d.lpfState
-		d.phaseInBit += step
-		if d.phaseInBit < 1.0 {
+	for _, demod := range d.fe.process(iq) {
+		d.lpfState += d.lpfAlpha * (demod - d.lpfState)
+		x := d.lpfState
+		d.trackLevel(x)
+		if !d.levelValid {
 			continue
 		}
-		// One bit completed. Slice on the integrator sign.
-		var bit uint32
-		if d.bitAccumulator > 0 {
-			bit = 1
+		d.sinceMatch++
+		for i := range d.phases {
+			p := &d.phases[i]
+			p.acc += x - d.mid
+			p.pos += step
+			if p.pos < 1 {
+				continue
+			}
+			p.pos--
+			var bit uint32
+			if p.acc > 0 {
+				bit = 1
+			}
+			p.acc = 0
+			// On-air order: the oldest bit ends up in bit 0, so a window
+			// aligned to a word boundary reads exactly the codeword.
+			p.window = (p.window >> 1) | bit<<22
+			if p.have < 23 {
+				p.have++
+				continue
+			}
+			match, inverted := d.checkTargets(p.window)
+			if !match {
+				p.streak = 0
+				continue
+			}
+			p.streak++
+			d.sinceMatch = 0
+			if p.streak >= dcsConfirmBits && !d.present {
+				d.present = true
+				d.inverted = inverted
+			}
 		}
-		d.bitWindow = ((d.bitWindow << 1) | bit) & dcsCodewordMask
-		d.bitAccumulator = 0
-		d.phaseInBit -= 1.0
-		if d.bitsHave < 23 {
-			d.bitsHave++
+		if d.present && d.sinceMatch > d.wordLen {
+			d.present = false
 		}
-		if d.bitsHave < 23 {
-			continue
-		}
-		d.present = d.checkTargets()
 	}
 	return d.present
 }
 
-// checkTargets walks the precomputed rotation table and returns true
-// when any entry is within distanceThreshold Hamming bits of the
-// current window. Cheap: 46 XOR + popcount ops per bit decision.
-func (d *DCSDetector) checkTargets() bool {
-	for _, t := range d.targets {
-		if bits.OnesCount32(d.bitWindow^t) <= d.distanceThreshold {
-			return true
+// trackLevel maintains the slicing level: the midpoint of the high and
+// low over the last one-to-two half-word blocks. A DCS word always holds
+// both bit values, so the extremes bracket the NRZ levels whatever DC
+// the carrier offset adds.
+func (d *DCSDetector) trackLevel(x float64) {
+	d.blkHi = math.Max(d.blkHi, x)
+	d.blkLo = math.Min(d.blkLo, x)
+	d.blkN++
+	if d.blkN < d.blkLen {
+		return
+	}
+	hi, lo := d.blkHi, d.blkLo
+	if d.prevValid {
+		hi = math.Max(hi, d.prevHi)
+		lo = math.Min(lo, d.prevLo)
+	}
+	d.mid = (hi + lo) / 2
+	d.levelValid = true
+	d.prevHi, d.prevLo, d.prevValid = d.blkHi, d.blkLo, true
+	d.blkHi, d.blkLo = math.Inf(-1), math.Inf(1)
+	d.blkN = 0
+}
+
+// checkTargets reports whether w is within distanceThreshold Hamming
+// bits of any target rotation, and whether that rotation is the
+// complemented polarity (odd entries of dcsRotations). Cheap: 46 XOR +
+// popcount ops.
+func (d *DCSDetector) checkTargets(w uint32) (match, inverted bool) {
+	for i, t := range d.targets {
+		if bits.OnesCount32(w^t) <= d.distanceThreshold {
+			return true, i%2 == 1
 		}
 	}
-	return false
+	return false, false
 }
+
+// Inverted reports the polarity of the match that opened the gate:
+// false when the code's 1 bits arrived as positive frequency deviation,
+// true when they arrived as negative. Meaningful only while Present.
+//
+// Which of these a radio's "normal" (N) and "inverted" (I) settings
+// produce is not pinned by an on-air capture yet, so the detector
+// accepts both and the scanner logs this value when the gate opens.
+func (d *DCSDetector) Inverted() bool { return d != nil && d.inverted }
 
 // --- internal helpers ---
 
 const dcsCodewordMask uint32 = 0x7F_FF_FF // 23 bits
 
 // dcsCodewordFromOctal converts a 3-digit octal DCS code (e.g. "023")
-// into the 23-bit Golay(23,12,7) codeword that a transmitter would
-// cycle on air. Layout of the 12 info bits passed to the Golay
-// encoder: [octal-digit-1(3) | octal-digit-2(3) | octal-digit-3(3) |
-// sync(3 = "100")] with octal-digit-1 in bits 11..9 and sync "100"
-// in bits 2..0. The 11 parity bits land in the low end after Golay
-// encoding (the framing package's GolayEncode23_12 emits
-// [data | parity]).
+// into the 23-bit word a transmitter cycles on air, with bit i the i-th
+// bit sent: bits 0..8 the code (least significant bit first), bits
+// 9..11 the fixed 0 0 1, bits 12..22 the Golay parity. The parity is
+// the remainder of the systematic Golay(23,12) encoding with generator
+// x^11+x^9+x^7+x^6+x^5+x+1 (0xAE3), taken over the on-air bit order;
+// dcs_reference_test.go pins it against the published parity equations
+// for all 512 codes (023 → 0x763813).
 func dcsCodewordFromOctal(code string) (uint32, error) {
 	if len(code) != 3 {
 		return 0, fmt.Errorf("dcs: code %q must be 3 octal digits", code)
 	}
-	var info uint16
-	for i, r := range code {
+	for _, r := range code {
 		if r < '0' || r > '7' {
 			return 0, fmt.Errorf("dcs: code %q must be octal 0..7", code)
 		}
-		d, err := strconv.ParseUint(string(r), 10, 8)
-		if err != nil {
-			return 0, fmt.Errorf("dcs: parse %q: %w", code, err)
-		}
-		info |= uint16(d) << (9 - (i+1)*3)
 	}
-	// Append the standard "100" sync trailer in the low 3 bits of
-	// the 12-bit info field — bit 11..3 hold the octal-digit-1..3
-	// pattern, bit 2 is fixed '1', bits 1..0 are '0'.
-	info = (info << 3) | 0b100
-	return framing.GolayEncode23_12(info), nil
+	c, err := strconv.ParseUint(code, 8, 32)
+	if err != nil {
+		return 0, fmt.Errorf("dcs: parse %q: %w", code, err)
+	}
+	data := uint32(c) | 1<<11 // code + the fixed 0 0 1
+	// Systematic cyclic encoding over the transmit order: with bit i the
+	// coefficient of x^(22-i), the data occupies x^22..x^11 and the
+	// parity x^10..x^0 is (data · x^11) mod g(x).
+	var reg uint32
+	for i := 0; i < 12; i++ {
+		fb := (data>>uint(i))&1 ^ (reg>>10)&1
+		reg = (reg << 1) & 0x7FF
+		if fb != 0 {
+			reg ^= dcsGolayPoly & 0x7FF
+		}
+	}
+	w := data
+	for i := 0; i < 11; i++ {
+		w |= ((reg >> uint(10-i)) & 1) << uint(12+i)
+	}
+	return w, nil
 }
+
+// dcsGolayPoly is the Golay(23,12) generator x^11+x^9+x^7+x^6+x^5+x+1.
+const dcsGolayPoly = 0xAE3
 
 // dcsRotations precomputes every cyclic rotation of cw (23 of them)
 // plus the bit-inverse of each rotation (so the detector tolerates
