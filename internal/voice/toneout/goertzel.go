@@ -57,6 +57,25 @@ func NewGoertzel(targetHz, sampleHz float64, blockSize int) *Goertzel {
 	}
 }
 
+// NewGoertzelExact is NewGoertzel without the bin rounding: it measures
+// the DTFT at exactly targetHz, whatever the block size. The magnitude
+// formula Process uses is exact at any frequency, so nothing is lost —
+// and a detector that must separate tones only a few Hz apart (CTCSS)
+// cannot afford rounding: at a 5 Hz bin spacing, NewGoertzel's 162.2 Hz
+// bin is really 160 Hz, which a 159.8 Hz tone hits dead-on and a real
+// 162.2 Hz tone misses by 2.2 Hz (issue #1184).
+func NewGoertzelExact(targetHz, sampleHz float64, blockSize int) *Goertzel {
+	if blockSize <= 0 {
+		blockSize = 1
+	}
+	omega := 2 * math.Pi * targetHz / sampleHz
+	return &Goertzel{
+		coeff:     2 * math.Cos(omega),
+		blockSize: blockSize,
+		normalize: 1.0 / float64(blockSize) / float64(blockSize),
+	}
+}
+
 // Reset clears internal state. The detector is also reset
 // automatically each time a block completes.
 func (g *Goertzel) Reset() {

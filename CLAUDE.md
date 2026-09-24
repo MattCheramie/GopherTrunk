@@ -1763,6 +1763,21 @@ confirmation before any close-as-completed.
   fits the 5 s probe deadline. The root cause of those WinUSB first-write timeouts is still
   unknown: the reporter's traces are GitHub attachments, which this environment's proxy
   refuses, so get them pasted inline.
+- **The #1184 tone gates, round 2 (24 Sep): three more defects, all failing-first.**
+  (1) `toneout.NewGoertzel` ROUNDS to the nearest bin — fine for paging tones, fatal
+  for CTCSS, whose EIA tones sit 2.3–3.0 Hz apart: at 5 Hz resolution "162.2" was a
+  160 Hz bin, so 162.2 stayed shut and 159.8 opened (the reporter's exact report).
+  CTCSS now uses `NewGoertzelExact` + 250 ms blocks + the adjacent EIA tones as
+  reverse bins; 150.0/151.4 (1.4 Hz apart) cannot be separated and open together.
+  (2) The fixed 5e-4 magnitude was ~540 Hz of tone deviation; NFM radios send ~350,
+  so it is now derived from `ctcssMinDeviationHz`. (3) DCS was the self-consistent
+  trap again: codeword layout AND bit order invented, and `synthesizeDCSIQ` sent the
+  same invention. On air bit 0 goes first: C0..C8, 0 0 1, P0..P10 (023 = 0x763813).
+  Pinned against the published parity equations (independent of the encoder) and
+  SDRangel's alias tables (023≡340≡766, 023N≡047I). The DCS gate accepts both
+  polarities because which NRZ sense a radio's "N" setting sends is NOT capture-
+  pinned — `conv: DCS gate opened … nrz_inverted=` is the instrument; restrict the
+  polarity only after a known-N radio settles it. Still on-air-gated (#764/#771).
 - **A detector threshold in radians-per-sample is a SAMPLE-RATE trap (#1184 CTCSS).** The
   conventional scanner's CTCSS gate never opened on air: its Goertzel threshold was calibrated
   on 48 kHz unit tests, but the scanner feeds 2.4 MS/s, where the same deviation is 50x smaller

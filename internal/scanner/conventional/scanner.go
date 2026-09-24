@@ -74,8 +74,7 @@ type Channel struct {
 	// IQ-power squelch is open AND the configured sub-audible
 	// tone is detected. Zero value (Mode="" / "none") disables
 	// tone gating and the scanner behaves identically to its
-	// pre-tone version. DCS mode parses + validates but the
-	// detector is a tracked follow-up — see ctcss.go.
+	// pre-tone version. Detectors: ctcss.go, dcs.go.
 	Tone ToneConfig
 }
 
@@ -91,8 +90,8 @@ type ToneConfig struct {
 	// 254.1 Hz; 38 are widely deployed.
 	CTCSSHz float64
 	// DCSCode is the three-digit octal DCS code (e.g. "023",
-	// "754"). Required when Mode is "dcs". Detector wiring is
-	// deferred — see Workstream D follow-up.
+	// "754"). Required when Mode is "dcs". Both NRZ polarities
+	// match (see NewDCSDetector).
 	DCSCode string
 }
 
@@ -339,12 +338,15 @@ func New(opts Options) (*Scanner, error) {
 		}
 	}
 	// Bump min dwell when any channel has tone gating so the
-	// Goertzel block has time to fire. 250 ms covers a SampleHz/5
-	// block plus margin; without this the scanner would advance
-	// before the detector ever updated and tone-gated channels
-	// would never lock.
-	if hasToneGate(channels) && opts.MinDwellPerChannel < 250*time.Millisecond {
-		opts.MinDwellPerChannel = 250 * time.Millisecond
+	// detector has time to fire. 350 ms covers the CTCSS detector's
+	// 250 ms Goertzel block (ctcssBlockSeconds) plus chunk-granularity
+	// margin; without this the scanner would advance before the
+	// detector ever updated and tone-gated channels would never lock.
+	// A DCS gate needs longer still (see dcsMinDwell) — its first
+	// match takes a full codeword plus confirmation bits.
+	minDwell := minToneDwell(channels)
+	if minDwell > 0 && opts.MinDwellPerChannel < minDwell {
+		opts.MinDwellPerChannel = minDwell
 	}
 	detectors := make([]toneDetector, len(channels))
 	for i, ch := range channels {
@@ -395,14 +397,24 @@ func validateTone(t ToneConfig) error {
 	}
 }
 
-func hasToneGate(channels []Channel) bool {
+// minToneDwell is the shortest dwell that lets the slowest configured
+// tone detector report: zero when no channel is tone-gated.
+func minToneDwell(channels []Channel) time.Duration {
+	var d time.Duration
 	for _, ch := range channels {
-		if ch.Tone.Mode == "ctcss" || ch.Tone.Mode == "dcs" {
-			return true
+		switch ch.Tone.Mode {
+		case "ctcss":
+			d = max(d, ctcssMinDwell)
+		case "dcs":
+			d = max(d, dcsMinDwell)
 		}
 	}
-	return false
+	return d
 }
+
+// ctcssMinDwell covers one ctcssBlockSeconds Goertzel block plus
+// chunk-granularity margin.
+const ctcssMinDwell = 350 * time.Millisecond
 
 // toneDetector is the shared interface CTCSS / DCS detectors satisfy.
 // Lets the scanner store either one in a single field without losing
@@ -554,6 +566,14 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				return true
 			}
 			if det.Process(iq) {
+				if dcs, ok := det.(*DCSDetector); ok {
+					// The polarity a radio's N / I setting produces is
+					// not capture-pinned yet (#1184); log it so an
+					// operator's known-N radio settles it.
+					s.log.Info("conv: DCS gate opened",
+						"freq_hz", ch.FrequencyHz, "label", ch.Label,
+						"dcs_code", dcs.Code(), "nrz_inverted", dcs.Inverted())
+				}
 				return true
 			}
 		}

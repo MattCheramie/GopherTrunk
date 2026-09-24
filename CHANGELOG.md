@@ -8,6 +8,35 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **CTCSS tones open on the right tone, narrowband radios open the gate, and
+  DCS squelch now detects codes (#1184, on-air follow-up).** Three defects in
+  the conventional scanner's tone gates:
+  - *Wrong tone.* The Goertzel bin was rounded to a 5 Hz grid, so the
+    "162.2 Hz" bin was really 160 Hz: the reporter's 162.2 Hz gate stayed shut
+    on its own tone and opened on 159.8 Hz, and 19 pairs of adjacent EIA tones
+    cross-opened. Bins are now evaluated at the exact frequency, the block is
+    250 ms (4 Hz resolution), and the adjacent EIA tones are reverse bins, so a
+    transmission on the next tone up or down the table can't open the gate.
+  - *Narrowband FM never opened.* The fixed magnitude threshold needed ~540 Hz
+    of tone deviation; an NFM radio sends ~350 Hz. The threshold is now derived
+    from a 100 Hz minimum deviation. On the reporter's captures the 100 Hz tone
+    is now detected in 100% of chunks (was 81%); no other tone opens on it and
+    none opens on the tone-free transmission.
+  - *DCS never matched a real radio.* The codeword put the code in the high
+    bits with an invented "100" trailer and read bits in the wrong order, and
+    the test synthesizer transmitted the same invented layout, so every unit
+    test passed. The codeword is now built in on-air order and pinned against
+    the published DCS parity equations for all 512 codes (023 = 0x763813). The
+    detector now uses the CTCSS channelized front end, slices at the midpoint
+    of the recent high and low (a carrier offset used to pin every bit), and
+    integrates at four bit-clock phases. Both polarities still match; the new
+    `conv: DCS gate opened` line reports which one did.
+  Tone-gated channels now dwell at least 350 ms (CTCSS) / 600 ms (DCS) so the
+  detector can report.
+
+## [v1.2.0] — 2026-09-24
+
+### Fixed
 - **Conventional-scanner CTCSS tone squelch now detects tones (#1184).** On air
   the tone gate never opened on any configured CTCSS tone. The detector's
   magnitude threshold was calibrated in radians-per-sample at 48 kHz, but the

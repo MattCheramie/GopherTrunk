@@ -629,8 +629,8 @@ type ConvToneConfig struct {
 	// Required when Mode is "ctcss".
 	CTCSSHz float64 `yaml:"ctcss_hz"`
 	// DCSCode is the 3-digit octal DCS code. Required when
-	// Mode is "dcs". Detector wiring is a tracked follow-up; the
-	// config is accepted now so deployments can pre-stage YAML.
+	// Mode is "dcs". Both NRZ polarities (normal / inverted)
+	// match; the gate-open log line reports which one did.
 	DCSCode string `yaml:"dcs_code"`
 }
 

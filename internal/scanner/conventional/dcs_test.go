@@ -20,9 +20,8 @@ func synthesizeDCSIQ(codeword uint32, sampleHz float64, devHz float64, nFrames i
 	for i := range totalSamples {
 		// Which bit are we in?
 		bitIdx := int(float64(i)/samplesPerBit) % 23
-		// Bits are emitted MSB-first to match the encoder's
-		// "data in high bits" layout.
-		bit := (codeword >> (22 - bitIdx)) & 1
+		// On-air order: bit 0 of the word is sent first.
+		bit := (codeword >> uint(bitIdx)) & 1
 		var modAmp float64
 		if bit == 1 {
 			modAmp = 1
@@ -37,17 +36,16 @@ func synthesizeDCSIQ(codeword uint32, sampleHz float64, devHz float64, nFrames i
 }
 
 func TestDCSCodewordFromOctal(t *testing.T) {
-	// Round-trip a sample of codes through the encoder + the
-	// framing-package decoder and confirm the 12 info bits match
-	// the constructed pattern.
+	// The first 12 bits on air are the 9-bit code, least significant
+	// bit first, then the fixed 0 0 1 (bit 11 set).
 	cases := []struct {
 		code     string
-		wantBits uint16 // 9-bit code (high) | "100" (low)
+		wantBits uint32
 	}{
-		{"023", 0b000_010_011_100},
-		{"754", 0b111_101_100_100},
-		{"000", 0b000_000_000_100},
-		{"777", 0b111_111_111_100},
+		{"023", 0o023 | 1<<11},
+		{"754", 0o754 | 1<<11},
+		{"000", 1 << 11},
+		{"777", 0o777 | 1<<11},
 	}
 	for _, tc := range cases {
 		t.Run(tc.code, func(t *testing.T) {
@@ -55,10 +53,7 @@ func TestDCSCodewordFromOctal(t *testing.T) {
 			if err != nil {
 				t.Fatalf("encode: %v", err)
 			}
-			// The framing package's encoder layout is [data | parity].
-			// Bits 22..11 hold the data, 10..0 hold the 11 parity bits.
-			data := uint16((cw >> 11) & 0xFFF)
-			if data != tc.wantBits {
+			if data := cw & 0xFFF; data != tc.wantBits {
 				t.Errorf("data bits = %012b, want %012b", data, tc.wantBits)
 			}
 		})
@@ -107,7 +102,7 @@ func TestDCSDetector_MatchesConfiguredCode(t *testing.T) {
 	if d == nil {
 		t.Fatal("constructor returned nil for valid config")
 	}
-	iq := synthesizeDCSIQ(dcsCodewordOrPanic(t, "023"), 48_000, 400, 4)
+	iq := synthesizeDCSIQ(dcsCodewordOrPanic(t, "023"), 48_000, 400, 6)
 	if !d.Process(iq) {
 		t.Error("detector failed to match configured DCS code")
 	}
@@ -117,7 +112,7 @@ func TestDCSDetector_RejectsDifferentCode(t *testing.T) {
 	d := NewDCSDetector(DCSConfig{SampleHz: 48_000, Code: "023"})
 	// Transmit "754" but configure detection for "023". The two
 	// codewords share no rotation, so detection must stay false.
-	iq := synthesizeDCSIQ(dcsCodewordOrPanic(t, "754"), 48_000, 400, 4)
+	iq := synthesizeDCSIQ(dcsCodewordOrPanic(t, "754"), 48_000, 400, 6)
 	if d.Process(iq) {
 		t.Error("detector matched a different DCS code")
 	}
@@ -138,7 +133,7 @@ func TestDCSDetector_MatchesInvertedPolarity(t *testing.T) {
 	d := NewDCSDetector(DCSConfig{SampleHz: 48_000, Code: "023"})
 	cw, _ := dcsCodewordFromOctal("023")
 	inverted := (^cw) & dcsCodewordMask
-	iq := synthesizeDCSIQ(inverted, 48_000, 400, 4)
+	iq := synthesizeDCSIQ(inverted, 48_000, 400, 6)
 	if !d.Process(iq) {
 		t.Error("detector failed to match inverted-polarity DCS")
 	}
@@ -146,7 +141,7 @@ func TestDCSDetector_MatchesInvertedPolarity(t *testing.T) {
 
 func TestDCSDetector_ResetClearsState(t *testing.T) {
 	d := NewDCSDetector(DCSConfig{SampleHz: 48_000, Code: "023"})
-	iq := synthesizeDCSIQ(dcsCodewordOrPanic(t, "023"), 48_000, 400, 4)
+	iq := synthesizeDCSIQ(dcsCodewordOrPanic(t, "023"), 48_000, 400, 6)
 	d.Process(iq)
 	if !d.Present() {
 		t.Fatal("test setup: detector never matched")
@@ -187,7 +182,7 @@ func TestDCSDetector_ToleratesSingleBitError(t *testing.T) {
 	// Flip a single bit in the cycled codeword. With distance
 	// threshold of 2 (default), this should still match.
 	corrupt := cw ^ (1 << 5)
-	iq := synthesizeDCSIQ(corrupt, 48_000, 400, 4)
+	iq := synthesizeDCSIQ(corrupt, 48_000, 400, 6)
 	if !d.Process(iq) {
 		t.Error("detector failed to match a single-bit-corrupted DCS code")
 	}

@@ -59,8 +59,8 @@ func ctcssPresentFraction(x []complex64, targetHz float64) float64 {
 // Old code: 0% present.
 func TestCTCSSDetectsRealAirToneAtSDRRate(t *testing.T) {
 	x := loadRealAirAt2400k(t, "ctcss100_radtel_447100k_48k.cs16")
-	if f := ctcssPresentFraction(x, 100); f < 0.9 {
-		t.Errorf("100 Hz CTCSS present in %.0f%% of chunks on a transmission carrying it, want >= 90%%", f*100)
+	if f := ctcssPresentFraction(x, 100); f < 0.95 {
+		t.Errorf("100 Hz CTCSS present in %.0f%% of chunks on a transmission carrying it, want >= 95%%", f*100)
 	}
 	// Adjacent EIA codes on the same real signal must stay closed.
 	for _, other := range []float64{94.8, 103.5, 107.2} {
@@ -75,5 +75,28 @@ func TestCTCSSRejectsRealAirToneFreeCarrierAtSDRRate(t *testing.T) {
 	x := loadRealAirAt2400k(t, "ctcss_none_radtel_447100k_48k.cs16")
 	if f := ctcssPresentFraction(x, 100); f > 0 {
 		t.Errorf("100 Hz gate opened in %.0f%% of chunks on a transmission with no CTCSS", f*100)
+	}
+}
+
+// TestCTCSSRealAirOnlyTheSentToneOpens sweeps the whole EIA table over
+// both real-air captures: on the 100 Hz transmission only the 100 Hz gate
+// may open, and on the tone-free one none may. This is the no-harm pin
+// for the lower NFM threshold (#1184).
+func TestCTCSSRealAirOnlyTheSentToneOpens(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sweeps 51 tones over two captures")
+	}
+	none := loadRealAirAt2400k(t, "ctcss_none_radtel_447100k_48k.cs16")
+	tone := loadRealAirAt2400k(t, "ctcss100_radtel_447100k_48k.cs16")
+	for _, hz := range EIACTCSSTones {
+		if f := ctcssPresentFraction(none, hz); f > 0 {
+			t.Errorf("%.1f Hz gate opened in %.0f%% of chunks on a tone-free transmission", hz, f*100)
+		}
+		if hz == 100 {
+			continue
+		}
+		if f := ctcssPresentFraction(tone, hz); f > 0 {
+			t.Errorf("%.1f Hz gate opened in %.0f%% of chunks on a 100 Hz transmission", hz, f*100)
+		}
 	}
 }
