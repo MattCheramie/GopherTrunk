@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/rtl2832u"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
@@ -687,7 +688,7 @@ func TestOpenDeviceAttempts_ProbeBudgetNeverResets(t *testing.T) {
 		warmupUSBSysctlExchange(usb.ErrTransferAborted), // InitBaseband step 0 aborts
 	}
 	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-probe-noreset"}
-	_, err := openDeviceAttempts(m, desc, 0, probeOpenAttempts)
+	_, err := openDeviceAttempts(m, desc, 0, probeAttemptsFor(m))
 	if err == nil {
 		t.Fatal("openDeviceAttempts(probe) succeeded; expected the aborted bring-up to fail")
 	}
@@ -699,6 +700,68 @@ func TestOpenDeviceAttempts_ProbeBudgetNeverResets(t *testing.T) {
 	}
 	if m.ClaimCalls != 1 {
 		t.Errorf("ClaimCalls = %d, want 1 (single claim, no post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
+// Regression for issue #1200: on Windows the first USB_SYSCTL write
+// (block=1 addr=0x2000 val=0x09) intermittently timed out on several WinUSB
+// dongles, and `sdr list --probe` reported it with NO retry — the #1135
+// single-pass rule, written for macOS, where a reset re-enumerates the bus
+// and disturbs sibling dongles. A WinUSB reset only re-opens this process's
+// handle (usb.LocalResetter), so that hazard does not exist there and the
+// probe must get the same reset+retry recovery the daemon Open gives the
+// same transient. Old behaviour: one pass, ResetCalls 0, the timeout
+// surfaces.
+func TestOpenDeviceAttempts_ProbeRetriesTimeoutOnLocalResetTransport(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.LocalReset = true
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),            // pass 1: warmup OK (swallowed)
+		warmupUSBSysctlExchange(usb.ErrTimeout), // pass 1: InitBaseband step 0 times out
+		warmupUSBSysctlExchange(nil),            // pass 2: warmup OK (post-reset)
+		warmupUSBSysctlExchange(usb.ErrClosed),  // pass 2: non-resetable terminator
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2832, Serial: "test-probe-winusb-retry"}
+	_, err := openDeviceAttempts(m, desc, 0, probeAttemptsFor(m))
+	if err == nil {
+		t.Fatal("openDeviceAttempts(probe) succeeded; expected the scripted terminator to fail it")
+	}
+	if !errors.Is(err, usb.ErrClosed) {
+		t.Errorf("err = %v, want the pass-2 terminator (proves the probe retried after the timeout)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (a local-reset probe must reset+retry a bring-up timeout)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 2 {
+		t.Errorf("ClaimCalls = %d, want 2 (initial claim + post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
+// The probe budget on a local-reset transport must still fit `sdr list
+// --probe`'s 5 s per-device deadline when EVERY pass times out, or the probe
+// reports "timed out" instead of the real error: passes × (warmup + step-0
+// control timeouts) + inter-pass backoffs + a WinUSB re-open settle per
+// reset. A non-local transport stays at the single #1135 pass.
+func TestProbeAttemptsFor_FitsProbeDeadline(t *testing.T) {
+	if got := probeAttemptsFor(usb.NewMockTransport()); got != probeOpenAttempts {
+		t.Errorf("non-local transport probe budget = %d, want %d (issue #1135: never reset on usbdevfs/IOKit)", got, probeOpenAttempts)
+	}
+	m := usb.NewMockTransport()
+	m.LocalReset = true
+	n := probeAttemptsFor(m)
+	if n < 2 {
+		t.Fatalf("local-reset probe budget = %d, want >= 2 (at least one reset+retry)", n)
+	}
+	const (
+		probeDeadline  = 5 * time.Second
+		winResetSettle = 150 * time.Millisecond
+	)
+	worst := time.Duration(n) * 2 * time.Duration(rtl2832u.CtrlTimeoutMs) * time.Millisecond
+	for i := 0; i < n-1; i++ {
+		worst += bringupBackoffs[i] + winResetSettle
+	}
+	if worst >= probeDeadline*3/4 {
+		t.Errorf("worst-case local-reset probe %v leaves too little of the %v probe deadline", worst, probeDeadline)
 	}
 }
 

@@ -650,6 +650,12 @@ func (t *winTransport) ClaimInterface(num int) error {
 
 func (t *winTransport) ReleaseInterface(int) error { return nil }
 
+// ResetIsLocal implements [LocalResetter]: Reset below only clears the
+// control pipe and re-opens this process's WinUSB handle; it never resets
+// the port or re-enumerates the device, so it cannot disturb a sibling
+// dongle (issue #1200).
+func (t *winTransport) ResetIsLocal() bool { return true }
+
 // Reset mirrors what libusb_reset_device does on Windows: clear-halt
 // the control endpoint, then drop the WinUSB handles and re-bind via
 // CreateFile + WinUsb_Initialize. The plain clear-halt that earlier

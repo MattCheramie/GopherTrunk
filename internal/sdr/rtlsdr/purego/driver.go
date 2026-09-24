@@ -116,7 +116,7 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 //
 // Failure at any step closes the transport and returns the error.
 func (d *Driver) Open(idx int) (sdr.Device, error) {
-	return d.openIndex(idx, maxOpenAttempts)
+	return d.openIndex(idx, func(usb.Transport) int { return maxOpenAttempts })
 }
 
 // OpenProbe is the [sdr.ProbeOpener] fast path used by `sdr list
@@ -136,14 +136,25 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 // being probed, so probing one dongle can never reset-storm another. The
 // daemon Open path (the one that must actually get a dongle streaming)
 // keeps the full envelope.
+//
+// The one exception is a transport whose Reset is LOCAL (WinUSB — see
+// [usb.LocalResetter]): there a reset only re-opens this process's handle
+// and cannot re-enumerate or disturb a sibling, so the #1135 hazard does
+// not exist, and a single pass would throw away the recovery the daemon
+// Open gets for the same transient. On Windows the probe therefore gets a
+// short reset budget ([probeAttemptsFor]) — issue #1200, where the first
+// USB_SYSCTL write intermittently timed out on several WinUSB dongles and
+// `--probe` reported the failure with no retry at all.
 func (d *Driver) OpenProbe(idx int) (sdr.Device, error) {
-	return d.openIndex(idx, probeOpenAttempts)
+	return d.openIndex(idx, probeAttemptsFor)
 }
 
 // openIndex resolves the cached descriptor for idx, opens the USB
-// transport, and runs bring-up bounded to maxAttempts passes. Shared by
-// Open (maxOpenAttempts) and OpenProbe (probeOpenAttempts).
-func (d *Driver) openIndex(idx, maxAttempts int) (sdr.Device, error) {
+// transport, and runs bring-up bounded to attempts(transport) passes.
+// Shared by Open (maxOpenAttempts) and OpenProbe ([probeAttemptsFor]); the
+// budget is a function of the opened transport because the probe budget
+// depends on whether that transport's Reset is local.
+func (d *Driver) openIndex(idx int, attempts func(usb.Transport) int) (sdr.Device, error) {
 	d.mu.Lock()
 	if idx < 0 || idx >= len(d.detectCache) {
 		d.mu.Unlock()
@@ -158,7 +169,7 @@ func (d *Driver) openIndex(idx, maxAttempts int) (sdr.Device, error) {
 	}
 	transport = usb.MaybeWrapDebug(transport, desc)
 
-	dev, err := openDeviceAttempts(transport, desc, idx, maxAttempts)
+	dev, err := openDeviceAttempts(transport, desc, idx, attempts(transport))
 	if err != nil {
 		_ = transport.Close()
 		return nil, err
@@ -175,6 +186,26 @@ const maxOpenAttempts = 5
 // fast path: a SINGLE pass, no reset. See [Driver.OpenProbe] and issue
 // #1135 for why probing must never run the reset envelope.
 const probeOpenAttempts = 1
+
+// probeLocalResetAttempts is the probe budget on a transport whose Reset is
+// local ([usb.LocalResetter], i.e. WinUSB): one initial pass plus two
+// reset+retry passes. Sized to fit `sdr list --probe`'s 5 s per-device
+// deadline even when every pass times out: 3 passes × (warmup + step-0
+// control timeouts, 2 × 300 ms) + backoffs (200 + 400 ms) + 2 WinUSB
+// re-open settles (2 × 150 ms) ≈ 2.7 s. The daemon Open keeps the full
+// maxOpenAttempts envelope.
+const probeLocalResetAttempts = 3
+
+// probeAttemptsFor returns the `sdr list --probe` bring-up budget for t:
+// probeLocalResetAttempts when t's Reset is local (it cannot re-enumerate
+// or perturb a sibling dongle), otherwise the single no-reset pass
+// (probeOpenAttempts) that issue #1135 requires for usbdevfs / IOKit.
+func probeAttemptsFor(t usb.Transport) int {
+	if usb.ResetIsLocal(t) {
+		return probeLocalResetAttempts
+	}
+	return probeOpenAttempts
+}
 
 // bringupBackoffs[attempt] is the sleep that runs BEFORE the
 // (attempt+1)th bring-up pass — exponential with a soft cap at 1200ms so

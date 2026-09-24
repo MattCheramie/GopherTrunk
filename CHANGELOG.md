@@ -8,6 +8,21 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`sdr list --probe` on Windows now retries a transient bring-up timeout
+  instead of giving up on the first pass (#1200).** The probe fast path was made
+  a single pass with no device reset for #1135, because on macOS (and usbdevfs)
+  a reset re-enumerates the device and disturbs sibling dongles on the same
+  controller. A WinUSB reset only re-opens this process's handle, so that hazard
+  does not exist on Windows, yet the probe still reported the reporter's
+  intermittent first-write `WinUsb_ControlTransfer` timeout (USB_SYSCTL,
+  block=1 addr=0x2000) with no retry, while the daemon Open recovers the same
+  transient. Transports now declare a local reset (`usb.LocalResetter`, WinUSB
+  only), and `--probe` gets a 3-pass reset+retry budget on them, sized to fit the
+  5 s per-device probe deadline; macOS/Linux keep the #1135 single pass. Pinned
+  failing-first by `TestOpenDeviceAttempts_ProbeRetriesTimeoutOnLocalResetTransport`.
+  This does not explain why the dongles time out in the first place, or the
+  capture/daemon failures that survive the full reset envelope; that needs
+  the reporter's v1.1.9 traces.
 - **Conventional-scanner analog FM: the "high-pitched noise / tone" on an
   on-frequency signal is gone — the scanner now tunes its SDR off-channel and
   mixes back (#1184).** The scanner tuned the LO exactly onto the channel, so the

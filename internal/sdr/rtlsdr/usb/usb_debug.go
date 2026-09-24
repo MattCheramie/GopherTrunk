@@ -51,6 +51,26 @@ type Diagnoser interface {
 	Diagnostics() string
 }
 
+// LocalResetter is an optional [Transport] capability. ResetIsLocal
+// reports true when the transport's Reset only drops and re-opens THIS
+// host's handle to the device — it does not reset the USB port or make the
+// device re-enumerate on the bus — so a Reset cannot disturb any other
+// device on the same host controller. The WinUSB transport is the one that
+// qualifies (Reset is WinUsb_ResetPipe + CloseHandle + CreateFile +
+// WinUsb_Initialize); usbdevfs (USBDEVFS_RESET) and IOKit (ResetDevice)
+// resets re-enumerate, which is what issue #1135 was about.
+type LocalResetter interface {
+	ResetIsLocal() bool
+}
+
+// ResetIsLocal reports whether t's Reset is local (see [LocalResetter]).
+// Transports that don't implement the capability are treated as
+// re-enumerating, the conservative answer.
+func ResetIsLocal(t Transport) bool {
+	lr, ok := t.(LocalResetter)
+	return ok && lr.ResetIsLocal()
+}
+
 // debugMaxDataBytes caps how many payload bytes the debug log dumps
 // per ControlOut. 64 bytes is enough to capture the R820T 27-byte
 // init burst (and the chunked variant) in full while keeping log
@@ -262,6 +282,10 @@ func (d *debugTransport) Close() error {
 // Diagnostics forwards to the wrapped transport's Diagnostics when it
 // implements Diagnoser, so the RTLSDR_DEBUG_USB wrapper doesn't hide the
 // rich device dump the bring-up path appends on failure.
+// ResetIsLocal forwards the wrapped transport's [LocalResetter]
+// capability so RTLSDR_DEBUG_USB=1 doesn't change bring-up policy.
+func (d *debugTransport) ResetIsLocal() bool { return ResetIsLocal(d.inner) }
+
 func (d *debugTransport) Diagnostics() string {
 	if dg, ok := d.inner.(Diagnoser); ok {
 		return dg.Diagnostics()
