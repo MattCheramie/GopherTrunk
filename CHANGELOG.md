@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.2.0] — 2026-09-24
+
 ### Fixed
 - **Conventional-scanner CTCSS tone squelch now detects tones (#1184).** On air
   the tone gate never opened on any configured CTCSS tone. The detector's
