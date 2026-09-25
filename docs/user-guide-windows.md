@@ -1057,6 +1057,7 @@ scanner:
         mode: ctcss        # ctcss | dcs | none
         ctcss_hz: 100.0
         # dcs_code: "023"  # 3-digit octal for DCS
+        # dcs_polarity: normal  # normal (radio "D023N", default) | inverted ("D023I") | both
 ```
 
 **Per-channel knobs:**

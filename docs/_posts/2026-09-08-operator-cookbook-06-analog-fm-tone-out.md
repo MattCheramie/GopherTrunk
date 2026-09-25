@@ -57,7 +57,7 @@ not under `trunking.systems` — this recipe is built on what actually exists.*
 |---|---|---|
 | The scan list | fixed analog channels, scanned in order | `scanner.conventional[]` |
 | Squelch | carrier gate in dBFS, per channel | `squelch_dbfs` ([squelch]({{ '/reference/squelch/' | relative_url }})) |
-| Tone gate | require CTCSS/DCS before dwelling | `tone: {mode, ctcss_hz, dcs_code}` |
+| Tone gate | require CTCSS/DCS before dwelling | `tone: {mode, ctcss_hz, dcs_code, dcs_polarity}` |
 | Stable call-log IDs | pin the channel's talkgroup number | `talkgroup_id` (else synthetic, shifts on reorder — #1105) |
 | Fire paging alerts | Quick Call II two-tone sequential detect | `tone_out.profiles[]` |
 | Live audio | hear dwells on the host speakers | `audio.enabled: true` |

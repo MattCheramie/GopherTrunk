@@ -477,7 +477,7 @@ export function ScannerSection() {
             SquelchHysteresisDb: 0,
             Priority: 0,
             TalkgroupID: 0,
-            Tone: { Mode: "", CTCSSHz: 0, DCSCode: "" },
+            Tone: { Mode: "", CTCSSHz: 0, DCSCode: "", DCSPolarity: "" },
           })}
           itemTitle={(ch) => ch.Label || "channel"}
           emptyHint="Fixed-frequency analog channels the scanner sweeps alongside trunking."
@@ -529,6 +529,19 @@ export function ScannerSection() {
                     value={ch.Tone?.DCSCode ?? ""}
                     onChange={(x) => setCh({ ...ch, Tone: { ...ch.Tone, DCSCode: x } })}
                     placeholder="023"
+                  />
+                ) : null}
+                {ch.Tone?.Mode === "dcs" ? (
+                  <SelectField
+                    label="DCS polarity"
+                    value={ch.Tone?.DCSPolarity ?? ""}
+                    onChange={(x) => setCh({ ...ch, Tone: { ...ch.Tone, DCSPolarity: x } })}
+                    options={[
+                      { value: "", label: "normal (D023N, default)" },
+                      { value: "normal", label: "normal (N)" },
+                      { value: "inverted", label: "inverted (I)" },
+                      { value: "both", label: "both" },
+                    ]}
                   />
                 ) : null}
               </div>

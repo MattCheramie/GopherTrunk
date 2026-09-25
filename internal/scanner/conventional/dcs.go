@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/bits"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -99,6 +100,67 @@ type DCSDetector struct {
 	// false when a 1 bit arrived as positive frequency deviation.
 	inverted bool
 	code     string
+
+	// polarity is the NRZ sense the gate accepts. The other polarity
+	// is still tracked, but only to flag a likely N/I misconfiguration
+	// (oppositeHeard); it never opens the gate.
+	polarity      DCSPolarity
+	oppositeHeard bool
+}
+
+// DCSPolarity selects which NRZ sense of the configured code opens the
+// gate. On air (#1184, reporter's Kenwood NX-300/NX-5000 and service
+// monitor): a radio set to "N" (normal, e.g. D025N) sends the code's 1
+// bits as POSITIVE frequency deviation, and "I" (inverted, D025I) as
+// negative. That is what normal/inverted mean here.
+type DCSPolarity int
+
+const (
+	// DCSPolarityNormal accepts only the normal (N) sense — the default,
+	// matching a radio's plain "D023" / "D023N" setting.
+	DCSPolarityNormal DCSPolarity = iota
+	// DCSPolarityInverted accepts only the inverted (I) sense.
+	DCSPolarityInverted
+	// DCSPolarityBoth accepts either sense. A code's inverted word is a
+	// rotation of a different code's normal word (023I ≡ 047N), so
+	// "both" on 023 also opens for 047N.
+	DCSPolarityBoth
+)
+
+// ParseDCSPolarity maps the config spelling ("" / "normal" / "n",
+// "inverted" / "i", "both") to a DCSPolarity. "" is normal.
+func ParseDCSPolarity(s string) (DCSPolarity, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "normal", "n":
+		return DCSPolarityNormal, nil
+	case "inverted", "i":
+		return DCSPolarityInverted, nil
+	case "both":
+		return DCSPolarityBoth, nil
+	}
+	return 0, fmt.Errorf("dcs polarity %q must be normal|inverted|both", s)
+}
+
+// String returns the config spelling.
+func (p DCSPolarity) String() string {
+	switch p {
+	case DCSPolarityInverted:
+		return "inverted"
+	case DCSPolarityBoth:
+		return "both"
+	}
+	return "normal"
+}
+
+// accepts reports whether a match of the given sense may open the gate.
+func (p DCSPolarity) accepts(inverted bool) bool {
+	switch p {
+	case DCSPolarityBoth:
+		return true
+	case DCSPolarityInverted:
+		return inverted
+	}
+	return !inverted
 }
 
 // dcsPhase is one integrate-and-dump bit clock and its bit window.
@@ -107,7 +169,10 @@ type dcsPhase struct {
 	acc    float64 // integrated (sample − slicing level)
 	window uint32  // last 23 bits, newest at bit 22 (on-air order)
 	have   int     // bits received, saturating at 23
-	streak int     // consecutive matching bits
+	streak int     // consecutive matching bits (accepted polarity)
+	// oppStreak counts consecutive matches of the code in the polarity
+	// the gate does NOT accept — evidence of an N/I mismatch.
+	oppStreak int
 }
 
 // DCSConfig holds the IQ sample rate + the DCS code to detect.
@@ -122,6 +187,9 @@ type DCSConfig struct {
 	// Defaults to 250 Hz — above the 134.4 baud NRZ fundamental
 	// and below the voice band.
 	AudioCutoffHz float64
+	// Polarity selects the NRZ sense that opens the gate. The zero
+	// value is DCSPolarityNormal.
+	Polarity DCSPolarity
 }
 
 // NewDCSDetector builds a detector for the configured DCS code.
@@ -129,12 +197,16 @@ type DCSConfig struct {
 // sample rate) — the scanner falls back to power-only squelch when
 // the constructor returns nil.
 //
-// Both polarities match: a code's inverted word is a rotation of a
-// different code's normal word (023 normal ≡ 047 inverted), so a gate
-// on 023 also opens for a radio sending 047 inverted, as on radios
-// that do not distinguish polarity.
+// Only cfg.Polarity opens the gate (normal by default). A code's
+// inverted word is a rotation of a different code's normal word
+// (023I ≡ 047N, and so 023N ≡ 047I), so every gate also opens on its
+// alias — inherent in DCS, not tellable apart on air — and a "both"
+// gate on 023 opens for 023N/047I and 023I/047N alike.
 func NewDCSDetector(cfg DCSConfig) *DCSDetector {
 	if cfg.SampleHz <= 0 {
+		return nil
+	}
+	if cfg.Polarity < DCSPolarityNormal || cfg.Polarity > DCSPolarityBoth {
 		return nil
 	}
 	target, err := dcsCodewordFromOctal(cfg.Code)
@@ -155,6 +227,7 @@ func NewDCSDetector(cfg DCSConfig) *DCSDetector {
 		distanceThreshold: 2,
 		wordLen:           int(spb * 23),
 		code:              cfg.Code,
+		polarity:          cfg.Polarity,
 	}
 	d.Reset()
 	return d
@@ -195,6 +268,7 @@ func (d *DCSDetector) Reset() {
 	d.sinceMatch = 0
 	d.present = false
 	d.inverted = false
+	d.oppositeHeard = false
 }
 
 // Process feeds an IQ chunk. Returns the most-recent Present()
@@ -232,11 +306,20 @@ func (d *DCSDetector) Process(iq []complex64) bool {
 				p.have++
 				continue
 			}
-			match, inverted := d.checkTargets(p.window)
+			match, opposite, inverted := d.checkTargets(p.window)
 			if !match {
 				p.streak = 0
+				if opposite {
+					p.oppStreak++
+					if p.oppStreak >= dcsConfirmBits {
+						d.oppositeHeard = true
+					}
+				} else {
+					p.oppStreak = 0
+				}
 				continue
 			}
+			p.oppStreak = 0
 			p.streak++
 			d.sinceMatch = 0
 			if p.streak >= dcsConfirmBits && !d.present {
@@ -275,25 +358,49 @@ func (d *DCSDetector) trackLevel(x float64) {
 }
 
 // checkTargets reports whether w is within distanceThreshold Hamming
-// bits of any target rotation, and whether that rotation is the
-// complemented polarity (odd entries of dcsRotations). Cheap: 46 XOR +
-// popcount ops.
-func (d *DCSDetector) checkTargets(w uint32) (match, inverted bool) {
+// bits of a target rotation in an accepted polarity (match, with that
+// rotation's sense in inverted — odd entries of dcsRotations are the
+// complemented polarity), or failing that, of one in the polarity the
+// gate does not accept (opposite). Accepted rotations are checked in
+// full first, so a word near both never reads as a mismatch. Cheap:
+// 46 XOR + popcount ops.
+func (d *DCSDetector) checkTargets(w uint32) (match, opposite, inverted bool) {
 	for i, t := range d.targets {
-		if bits.OnesCount32(w^t) <= d.distanceThreshold {
-			return true, i%2 == 1
+		inv := i%2 == 1
+		if d.polarity.accepts(inv) && bits.OnesCount32(w^t) <= d.distanceThreshold {
+			return true, false, inv
 		}
 	}
-	return false, false
+	for i, t := range d.targets {
+		if !d.polarity.accepts(i%2 == 1) && bits.OnesCount32(w^t) <= d.distanceThreshold {
+			return false, true, false
+		}
+	}
+	return false, false, false
+}
+
+// Polarity returns the NRZ sense this detector accepts.
+func (d *DCSDetector) Polarity() DCSPolarity { return d.polarity }
+
+// TakeOppositeHeard reports whether, since the last call or Reset, the
+// configured code was received in the polarity the gate does NOT accept
+// (held for the same dcsConfirmBits a gate-open needs) — the signature
+// of a channel configured N for a radio sending I, or vice versa. The
+// flag is cleared by the call.
+func (d *DCSDetector) TakeOppositeHeard() bool {
+	if d == nil || !d.oppositeHeard {
+		return false
+	}
+	d.oppositeHeard = false
+	return true
 }
 
 // Inverted reports the polarity of the match that opened the gate:
 // false when the code's 1 bits arrived as positive frequency deviation,
 // true when they arrived as negative. Meaningful only while Present.
 //
-// Which of these a radio's "normal" (N) and "inverted" (I) settings
-// produce is not pinned by an on-air capture yet, so the detector
-// accepts both and the scanner logs this value when the gate opens.
+// On air a radio's "N" setting reads false and "I" reads true (#1184:
+// D025N → false, D025I → true on the reporter's Kenwoods).
 func (d *DCSDetector) Inverted() bool { return d != nil && d.inverted }
 
 // --- internal helpers ---

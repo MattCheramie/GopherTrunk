@@ -7,6 +7,22 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **DCS gates now open only on the configured polarity — new
+  `tone.dcs_polarity` (#1184, on-air follow-up).** The reporter's Kenwood
+  NX-300/NX-5000 run pinned the convention the detector was logging for:
+  a radio set to **D025N** reads `nrz_inverted=false`, **D025I** reads
+  `nrz_inverted=true`. So a DCS channel now accepts `normal` (the default —
+  the radio's N setting), `inverted` (I) or `both` (the previous behaviour).
+  A plain `dcs_code: "023"` gate therefore no longer opens for a radio set to
+  023I, nor for 047N (the same bit pattern on air). 023N and 047I remain one
+  bit pattern, so a 023 gate still opens on 047I — no receiver can tell them
+  apart. If the configured code is heard in the other polarity the gate stays
+  shut and the scanner logs one `conv: DCS code heard with the opposite
+  polarity` WARN per channel naming the fix. **Upgrade note:** a channel whose
+  radios transmit the inverted code needs `dcs_polarity: inverted` (or `both`).
+  The config builder has a DCS polarity selector.
+
 ### Fixed
 - **CTCSS tones open on the right tone, narrowband radios open the gate, and
   DCS squelch now detects codes (#1184, on-air follow-up).** Three defects in

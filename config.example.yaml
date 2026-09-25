@@ -1378,6 +1378,7 @@ scanner:
   #       mode: ctcss        # ctcss | dcs | none
   #       ctcss_hz: 100.0    # required for ctcss
   #       # dcs_code: "023"  # required for dcs (3-digit octal)
+  #       # dcs_polarity: normal  # normal (radio "D023N", default) | inverted ("D023I") | both
 
 # audio routes decoded PCM to the host's speakers. Disabled by default;
 # WAV recording is unaffected and continues whether audio is on or off.

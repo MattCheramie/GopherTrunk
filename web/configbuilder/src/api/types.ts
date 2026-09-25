@@ -240,6 +240,7 @@ export interface ConvToneConfig {
   Mode: string; // "" | none | ctcss | dcs
   CTCSSHz: number;
   DCSCode: string;
+  DCSPolarity: string; // "" | normal | inverted | both
 }
 
 export interface ConvChannelConfig {
