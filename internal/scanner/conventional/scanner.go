@@ -90,9 +90,12 @@ type ToneConfig struct {
 	// 254.1 Hz; 38 are widely deployed.
 	CTCSSHz float64
 	// DCSCode is the three-digit octal DCS code (e.g. "023",
-	// "754"). Required when Mode is "dcs". Both NRZ polarities
-	// match (see NewDCSDetector).
+	// "754"). Required when Mode is "dcs".
 	DCSCode string
+	// DCSPolarity is the NRZ sense that opens a DCS gate: "" /
+	// "normal" (a radio's D023N), "inverted" (D023I) or "both". See
+	// ParseDCSPolarity.
+	DCSPolarity string
 }
 
 // Tuner is the subset of sdr.Device the scanner needs.
@@ -230,6 +233,10 @@ type Scanner struct {
 	// scanner state changes (hold / resume) but not across daemon
 	// restarts.
 	lockedOut map[int]bool
+	// dcsPolarityWarned records the DCS detectors whose opposite-
+	// polarity WARN has fired, so a misconfigured channel warns once
+	// instead of on every scan pass. Scan-goroutine only.
+	dcsPolarityWarned map[*DCSDetector]bool
 	// squelchState publishes beginDwell's live per-chunk squelch
 	// decision for SquelchOpen (one of the squelch* constants).
 	// Atomic because the composer's FM chain polls it from its own
@@ -365,14 +372,33 @@ func New(opts Options) (*Scanner, error) {
 		lastBreakAt:      make([]time.Time, len(channels)),
 		tempChannels:     make(map[int]bool),
 		lockedOut:        make(map[int]bool),
+
+		dcsPolarityWarned: make(map[*DCSDetector]bool),
 	}, nil
+}
+
+// warnDCSOppositePolarity tells the operator, once per channel, that
+// the configured DCS code is being received in the polarity the gate
+// does not accept — a radio set to I on a channel configured normal, or
+// the reverse. The gate stays shut; the fix is tone.dcs_polarity.
+func (s *Scanner) warnDCSOppositePolarity(idx int, ch Channel, d *DCSDetector) {
+	if s.dcsPolarityWarned[d] {
+		return
+	}
+	s.dcsPolarityWarned[d] = true
+	heard := "inverted"
+	if d.Polarity() == DCSPolarityInverted {
+		heard = "normal"
+	}
+	s.log.Warn("conv: DCS code heard with the opposite polarity; gate kept shut — set tone.dcs_polarity to match the radio (N = normal, I = inverted) or both",
+		"freq_hz", ch.FrequencyHz, "label", ch.Label, "index", idx,
+		"dcs_code", d.Code(), "dcs_polarity", d.Polarity().String(), "heard", heard)
 }
 
 // validateTone rejects malformed tone configs at construction time.
 // "" / "none" disables gating; "ctcss" requires CTCSSHz in the
-// practical band; "dcs" requires a 3-digit octal code (detector
-// not yet implemented — config is accepted so deployments can
-// pre-stage their YAML).
+// practical band; "dcs" requires a 3-digit octal code and a valid
+// polarity.
 func validateTone(t ToneConfig) error {
 	switch t.Mode {
 	case "", "none":
@@ -390,6 +416,9 @@ func validateTone(t ToneConfig) error {
 			if r < '0' || r > '7' {
 				return fmt.Errorf("tone.dcs_code %q must be octal digits 0..7", t.DCSCode)
 			}
+		}
+		if _, err := ParseDCSPolarity(t.DCSPolarity); err != nil {
+			return fmt.Errorf("tone.dcs_polarity: %w", err)
 		}
 		return nil
 	default:
@@ -469,8 +498,11 @@ func buildDetector(t ToneConfig, sampleHz float64, log *slog.Logger) toneDetecto
 				"ctcss_hz", t.CTCSSHz, "sample_hz", sampleHz)
 		}
 	case "dcs":
-		if d := NewDCSDetector(DCSConfig{SampleHz: sampleHz, Code: t.DCSCode}); d != nil {
-			return d
+		pol, err := ParseDCSPolarity(t.DCSPolarity)
+		if err == nil {
+			if d := NewDCSDetector(DCSConfig{SampleHz: sampleHz, Code: t.DCSCode, Polarity: pol}); d != nil {
+				return d
+			}
 		}
 		if log != nil {
 			log.Warn("conv: DCS detector failed to initialise; tone gate disabled — every signal passes the gate",
@@ -567,14 +599,14 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 			}
 			if det.Process(iq) {
 				if dcs, ok := det.(*DCSDetector); ok {
-					// The polarity a radio's N / I setting produces is
-					// not capture-pinned yet (#1184); log it so an
-					// operator's known-N radio settles it.
 					s.log.Info("conv: DCS gate opened",
 						"freq_hz", ch.FrequencyHz, "label", ch.Label,
 						"dcs_code", dcs.Code(), "nrz_inverted", dcs.Inverted())
 				}
 				return true
+			}
+			if dcs, ok := det.(*DCSDetector); ok && dcs.TakeOppositeHeard() {
+				s.warnDCSOppositePolarity(idx, ch, dcs)
 			}
 		}
 	}

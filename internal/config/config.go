@@ -629,9 +629,12 @@ type ConvToneConfig struct {
 	// Required when Mode is "ctcss".
 	CTCSSHz float64 `yaml:"ctcss_hz"`
 	// DCSCode is the 3-digit octal DCS code. Required when
-	// Mode is "dcs". Both NRZ polarities (normal / inverted)
-	// match; the gate-open log line reports which one did.
+	// Mode is "dcs".
 	DCSCode string `yaml:"dcs_code"`
+	// DCSPolarity is the NRZ sense that opens a DCS gate: "normal"
+	// (default; a radio's D023N), "inverted" (D023I) or "both"
+	// (either sense; note 023 "both" also opens on 047N).
+	DCSPolarity string `yaml:"dcs_polarity"`
 }
 
 type LogConfig struct {

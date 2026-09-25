@@ -141,7 +141,11 @@ func TestDCSDetectsOnAirWordAtSDRRate(t *testing.T) {
 	for i, code := range []string{"023", "754", "411"} {
 		c, _ := strconv.ParseUint(code, 8, 32)
 		for _, invert := range []bool{false, true} {
-			d := NewDCSDetector(DCSConfig{SampleHz: rate, Code: code})
+			pol := DCSPolarityNormal
+			if invert {
+				pol = DCSPolarityInverted
+			}
+			d := NewDCSDetector(DCSConfig{SampleHz: rate, Code: code, Polarity: pol})
 			x := synthDCSOnAir(refDCSWord(uint32(c)), invert, rate, 350, 600, 25, 1.5, int64(i))
 			if always, _ := dcsPresentAfter(d, x, rate, dcsMinDwell.Seconds()); !always {
 				t.Errorf("DCS %s (inverted=%v) not continuously detected after %v", code, invert, dcsMinDwell)
@@ -165,12 +169,12 @@ func TestDCSRejectsOtherCodeAndBareCarrierAtSDRRate(t *testing.T) {
 	}
 }
 
-// The detector reports which polarity matched, so an operator's radio
-// with a known N / I setting can pin the convention.
+// With both polarities accepted the detector reports which one matched
+// (the #1184 instrument that pinned N = false, I = true on air).
 func TestDCSReportsMatchedPolarity(t *testing.T) {
 	const rate = 240_000
 	for _, invert := range []bool{false, true} {
-		d := NewDCSDetector(DCSConfig{SampleHz: rate, Code: "023"})
+		d := NewDCSDetector(DCSConfig{SampleHz: rate, Code: "023", Polarity: DCSPolarityBoth})
 		x := synthDCSOnAir(refDCSWord(0o023), invert, rate, 350, 0, 25, 1.5, 3)
 		if always, _ := dcsPresentAfter(d, x, rate, dcsMinDwell.Seconds()); !always {
 			t.Fatalf("inverted=%v: not detected", invert)

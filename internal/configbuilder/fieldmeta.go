@@ -391,6 +391,7 @@ var fieldMetas = map[string]FieldMeta{
 	"ConvToneConfig.Mode":                   {Help: "Sub-audible gate: none, ctcss, or dcs.", Options: opts("", "none", "none", "none", "ctcss", "ctcss", "dcs", "dcs")},
 	"ConvToneConfig.CTCSSHz":                {Label: "CTCSS (Hz)", Help: "Target CTCSS frequency (50–300 Hz). Required when mode is ctcss."},
 	"ConvToneConfig.DCSCode":                {Label: "DCS code", Help: "3-digit octal DCS code. Required when mode is dcs."},
+	"ConvToneConfig.DCSPolarity":            {Label: "DCS polarity", Help: "Which DCS sense opens the gate: normal (the radio's N setting, e.g. D023N — default), inverted (I, e.g. D023I) or both.", Options: opts("", "normal (default)", "normal", "normal", "inverted", "inverted", "both", "both")},
 
 	// ---- Audio -------------------------------------------------------------
 	"AudioConfig.Enabled":      {Help: "Enable live speaker playback of decoded voice. Off by default (headless-safe). Recordings are unaffected."},

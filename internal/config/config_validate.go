@@ -768,6 +768,12 @@ func validateConvChannel(i int, ch ConvChannelConfig) error {
 					i, ch.Tone.DCSCode)
 			}
 		}
+		switch strings.ToLower(strings.TrimSpace(ch.Tone.DCSPolarity)) {
+		case "", "normal", "n", "inverted", "i", "both":
+		default:
+			return fmt.Errorf("scanner.conventional[%d].tone.dcs_polarity %q must be normal|inverted|both",
+				i, ch.Tone.DCSPolarity)
+		}
 	default:
 		return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
 	}

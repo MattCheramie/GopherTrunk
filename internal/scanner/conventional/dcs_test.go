@@ -130,7 +130,7 @@ func TestDCSDetector_RejectsSilence(t *testing.T) {
 }
 
 func TestDCSDetector_MatchesInvertedPolarity(t *testing.T) {
-	d := NewDCSDetector(DCSConfig{SampleHz: 48_000, Code: "023"})
+	d := NewDCSDetector(DCSConfig{SampleHz: 48_000, Code: "023", Polarity: DCSPolarityInverted})
 	cw, _ := dcsCodewordFromOctal("023")
 	inverted := (^cw) & dcsCodewordMask
 	iq := synthesizeDCSIQ(inverted, 48_000, 400, 6)

@@ -1774,10 +1774,13 @@ confirmation before any close-as-completed.
   trap again: codeword layout AND bit order invented, and `synthesizeDCSIQ` sent the
   same invention. On air bit 0 goes first: C0..C8, 0 0 1, P0..P10 (023 = 0x763813).
   Pinned against the published parity equations (independent of the encoder) and
-  SDRangel's alias tables (023≡340≡766, 023N≡047I). The DCS gate accepts both
-  polarities because which NRZ sense a radio's "N" setting sends is NOT capture-
-  pinned — `conv: DCS gate opened … nrz_inverted=` is the instrument; restrict the
-  polarity only after a known-N radio settles it. Still on-air-gated (#764/#771).
+  SDRangel's alias tables (023≡340≡766, 023N≡047I). **All three are now ON-AIR
+  VERIFIED (24 Sep, reporter's Kenwood NX-300/NX-5000 + service monitor)**, and the
+  run pinned the DCS polarity the `nrz_inverted=` log was waiting for: **D025N →
+  false (1 bits = positive deviation), D025I → true**. The gate therefore accepts
+  only `tone.dcs_polarity` (normal default | inverted | both); the other sense is
+  tracked only to WARN once per channel on an N/I mismatch. Aliasing is inherent:
+  a normal 023 gate still opens on 047I (same bits) — do not "fix" that.
 - **A detector threshold in radians-per-sample is a SAMPLE-RATE trap (#1184 CTCSS).** The
   conventional scanner's CTCSS gate never opened on air: its Goertzel threshold was calibrated
   on 48 kHz unit tests, but the scanner feeds 2.4 MS/s, where the same deviation is 50x smaller

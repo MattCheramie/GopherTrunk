@@ -1769,9 +1769,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Priority:            ch.Priority,
 					TalkgroupID:         ch.TalkgroupID,
 					Tone: conventional.ToneConfig{
-						Mode:    ch.Tone.Mode,
-						CTCSSHz: ch.Tone.CTCSSHz,
-						DCSCode: ch.Tone.DCSCode,
+						Mode:        ch.Tone.Mode,
+						CTCSSHz:     ch.Tone.CTCSSHz,
+						DCSCode:     ch.Tone.DCSCode,
+						DCSPolarity: ch.Tone.DCSPolarity,
 					},
 				})
 			}
