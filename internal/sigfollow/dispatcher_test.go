@@ -194,9 +194,9 @@ func sourceSuperframes(t *testing.T, user p25p2.MACPDU) []p25p2.Superframe {
 // dispatcher only trusts a source RID that survives the FEC check (#915).
 func TestDispatcherSourceCallback(t *testing.T) {
 	const wantSrc = 315203
-	user := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
+	user := p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
 		ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc,
-	}, false))
+	}, false)
 
 	var gotSrc uint32
 	var called int
@@ -234,25 +234,39 @@ func TestDispatcherSourceRequiresRSIntegrity(t *testing.T) {
 	base := p25p2.GroupVoiceChannelUser{ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc}
 	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
 
-	// RS-invalid: a raw GROUP_VOICE_CHANNEL_USER with no outer parity —
-	// stands in for a mis-decoded MAC window whose opcode byte happens to
-	// be 0x01. It must be dropped.
-	garbage := p25p2.EncodeGroupVoiceChannelUser(base, false)
+	// A burst damaged past the outer RS(63,35,29)'s correction budget stands
+	// in for a mis-decoded MAC window whose opcode byte happens to be 0x01.
+	// Neither the RS nor the CRC-12 can vouch for it, so nothing is emitted
+	// and no source RID reaches the webhook.
+	//
+	// The older form of this test built its bad PDU by omitting an inner
+	// RS(24,16,9) parity. P25 Phase 2 has no such field — the integrity the
+	// wire provides is the outer code over the burst — so the damage now goes
+	// where the FEC actually lives.
 	var garbageCalls int
 	dGarbage := NewMACDispatcher(MACDispatcherOptions{
 		Log: quietLog(), System: "TestSys", Serial: "tap-0",
 		OnCallSource: func(p25p2.GroupVoiceChannelUser) { garbageCalls++ },
 	})
-	for _, sf := range sourceSuperframes(t, garbage) {
+	for _, sf := range sourceSuperframes(t, p25p2.EncodeGroupVoiceChannelUser(base, false)) {
+		for i := range sf.Subframes {
+			d := sf.Subframes[i].Dibits
+			if len(d) < p25p2.BurstDibits || !p25p2.BurstTypeOf(d).IsACCH() {
+				continue
+			}
+			for k := 0; k < 14; k++ {
+				d[p25p2.ISCHRegionDibits+1+3*k] ^= 1
+			}
+		}
 		dGarbage.Dispatch(sf, macCfg)
 	}
 	if garbageCalls != 0 {
-		t.Errorf("OnCallSource fired %d time(s) for an RS-invalid source PDU; want 0 (bogus source_rid must not reach the webhook)", garbageCalls)
+		t.Errorf("OnCallSource fired %d time(s) for a burst past the RS correction budget; want 0 (bogus source_rid must not reach the webhook)", garbageCalls)
 	}
 
 	// RS-valid: identical opcode + RID, but with the outer parity a real
 	// over-the-air PDU carries. It must still fire with the correct RID.
-	valid := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(base, false))
+	valid := p25p2.EncodeGroupVoiceChannelUser(base, false)
 	var gotSrc uint32
 	var validCalls int
 	dValid := NewMACDispatcher(MACDispatcherOptions{
@@ -274,9 +288,9 @@ func TestDispatcherSourceRequiresRSIntegrity(t *testing.T) {
 // decoded MAC PDUs carried a clean outer RS parity — the framing-health
 // signal the per-call census surfaces as mac_rs_valid (#915).
 func TestDispatchReturnsRSValidCount(t *testing.T) {
-	user := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
+	user := p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
 		ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: 315203,
-	}, false))
+	}, false)
 	d := NewMACDispatcher(MACDispatcherOptions{Log: quietLog(), System: "TestSys", Serial: "tap-0"})
 	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
 	var totDec, totRS int
