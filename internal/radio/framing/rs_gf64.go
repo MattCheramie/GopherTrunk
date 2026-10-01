@@ -69,6 +69,7 @@ func init() {
 		f.exp[i] = f.exp[i-63]
 	}
 	rsGF64 = f
+	rsGen63_35 = buildRSGen63_35()
 }
 
 // gf64Mul multiplies two GF(2^6) elements via the log/exp tables.
@@ -356,36 +357,7 @@ func decodeRSGF64(cw []byte, n, k int) ([]byte, int, error) {
 
 	// Berlekamp-Massey: synthesise the shortest LFSR (error-locator
 	// polynomial Λ) that generates the syndrome sequence.
-	lambda := []byte{1}
-	bPoly := []byte{1}
-	L := 0
-	m := 1
-	b := byte(1)
-	for i := 0; i < r; i++ {
-		// Discrepancy delta = S_{i+1} + Σ_{j=1..L} Λ_j · S_{i+1-j}.
-		delta := synd[i]
-		for j := 1; j <= L; j++ {
-			if j < len(lambda) {
-				delta ^= gf64Mul(lambda[j], synd[i-j])
-			}
-		}
-		switch {
-		case delta == 0:
-			m++
-		case 2*L <= i:
-			tmp := append([]byte(nil), lambda...)
-			coef := gf64Mul(delta, gf64Inv(b))
-			lambda = polyAddShiftScaledGF64(lambda, bPoly, m, coef)
-			L = i + 1 - L
-			bPoly = tmp
-			b = delta
-			m = 1
-		default:
-			coef := gf64Mul(delta, gf64Inv(b))
-			lambda = polyAddShiftScaledGF64(lambda, bPoly, m, coef)
-			m++
-		}
-	}
+	lambda, L := bmGF64(synd)
 
 	if L > t {
 		return nil, 0, ErrRSUncorrectable
@@ -498,4 +470,218 @@ func formalDerivativeGF64(poly []byte) []byte {
 		}
 	}
 	return out
+}
+
+// bmGF64 runs Berlekamp-Massey over a syndrome sequence and returns the
+// shortest LFSR that generates it — the error-locator polynomial Λ, with
+// Λ[0] = 1 — together with its degree L. The caller decides whether L is
+// within the code's correction radius; this routine always returns something.
+//
+// Shared by the errors-only decoder (which feeds it the raw syndromes) and
+// the errata decoder (which feeds it the Forney-modified ones).
+func bmGF64(synd []byte) ([]byte, int) {
+	lambda := []byte{1}
+	bPoly := []byte{1}
+	L := 0
+	m := 1
+	b := byte(1)
+	for i := range synd {
+		// Discrepancy delta = S_{i+1} + Σ_{j=1..L} Λ_j · S_{i+1-j}.
+		delta := synd[i]
+		for j := 1; j <= L; j++ {
+			if j < len(lambda) {
+				delta ^= gf64Mul(lambda[j], synd[i-j])
+			}
+		}
+		switch {
+		case delta == 0:
+			m++
+		case 2*L <= i:
+			tmp := append([]byte(nil), lambda...)
+			coef := gf64Mul(delta, gf64Inv(b))
+			lambda = polyAddShiftScaledGF64(lambda, bPoly, m, coef)
+			L = i + 1 - L
+			bPoly = tmp
+			b = delta
+			m = 1
+		default:
+			coef := gf64Mul(delta, gf64Inv(b))
+			lambda = polyAddShiftScaledGF64(lambda, bPoly, m, coef)
+			m++
+		}
+	}
+	return lambda, L
+}
+
+// RS(63, 35, 29) — the outer code protecting a P25 Phase 2 ACCH burst.
+//
+// Unlike the three Phase 1 codes above, this one is used *punctured* as well
+// as shortened: an ACCH burst carries neither the leading information symbols
+// (which are shortened away, known to be zero and therefore free) nor the
+// trailing parity symbols (which are simply not transmitted, and so are true
+// erasures — unknown values at known positions). Erasure decoding is what
+// makes the difference worth having: 28 parity symbols spend as
+// 2·errors + erasures ≤ 28, so a FACCH-S burst with its 9 punctured parity
+// symbols still corrects up to 9 symbol errors, where treating the shortened
+// information symbols as erasures too — as OP25 does — would leave only 5.
+const (
+	rs63N = 63
+	rs63K = 35
+)
+
+// rsGen63_35 is the code generator polynomial Π(x + α^j) for j = 1..28,
+// coefficient i holding the x^i term. Built at init; the roots match the
+// α^1..α^r convention the syndromes and Forney magnitudes above assume.
+// It is populated by buildRSGen63_35 from the package init, once the field
+// tables exist — a var initializer would run before them.
+var rsGen63_35 []byte
+
+func buildRSGen63_35() []byte {
+	g := []byte{1}
+	for j := 1; j <= rs63N-rs63K; j++ {
+		next := make([]byte, len(g)+1)
+		root := gf64Pow(j)
+		for i, c := range g {
+			next[i+1] ^= c              // x · g(x)
+			next[i] ^= gf64Mul(c, root) // α^j · g(x)
+		}
+		g = next
+	}
+	return g
+}
+
+// EncodeRS63_35 systematically encodes 35 information symbols into a
+// 63-symbol codeword: the information verbatim, followed by 28 parity
+// symbols. Symbols must be 6-bit values.
+//
+// Provided mainly so the decoder can be exercised against known codewords —
+// nothing in the receive path encodes — but it is also what an ACCH burst
+// generator would use.
+func EncodeRS63_35(info [rs63K]byte) [rs63N]byte {
+	var cw [rs63N]byte
+	copy(cw[:], info[:])
+	// Remainder of info(x)·x^28 modulo the generator, by long division.
+	rem := make([]byte, rs63N-rs63K)
+	for i := 0; i < rs63K; i++ {
+		feedback := info[i] ^ rem[0]
+		copy(rem, rem[1:])
+		rem[len(rem)-1] = 0
+		if feedback != 0 {
+			for j := 0; j < len(rem); j++ {
+				// rsGen63_35 is monic in x^28; its lower terms are
+				// indices 27..0, taken most-significant first here.
+				rem[j] ^= gf64Mul(feedback, rsGen63_35[rs63N-rs63K-1-j])
+			}
+		}
+	}
+	copy(cw[rs63K:], rem)
+	return cw
+}
+
+// DecodeRS63_35 corrects a shortened, punctured RS(63, 35, 29) codeword.
+//
+// cw is the full 63-symbol block: shortened information positions carry zero,
+// received symbols carry their values, and positions listed in erasures are
+// ignored on input and reconstructed on output. It returns the corrected
+// block, the number of symbol *errors* corrected (erasures filled are not
+// counted — they were known to be missing), and ErrRSUncorrectable when
+// 2·errors + erasures would exceed 28.
+//
+// A returned block is always a genuine codeword: the decode is re-syndromed
+// before it is handed back, so an error pattern beyond the radius fails
+// cleanly instead of returning a plausible-looking miscorrection.
+func DecodeRS63_35(cw []byte, erasures []int) ([]byte, int, error) {
+	return decodeRSGF64Erasures(cw, rs63N, rs63K, erasures)
+}
+
+// decodeRSGF64Erasures is the errors-and-erasures decoder: Forney-modified
+// syndromes fold the known erasure positions in, Berlekamp-Massey finds the
+// remaining error locations in what is left of the correction budget, and the
+// two locator polynomials multiply into one errata locator that Chien and
+// Forney then evaluate exactly as the errors-only path does.
+func decodeRSGF64Erasures(cw []byte, n, k int, erasures []int) ([]byte, int, error) {
+	if len(cw) != n {
+		return nil, 0, ErrRSUncorrectable
+	}
+	for _, s := range cw {
+		if s&^0x3F != 0 {
+			return nil, 0, ErrRSUncorrectable
+		}
+	}
+	r := n - k
+	if len(erasures) > r {
+		return nil, 0, ErrRSUncorrectable
+	}
+	out := append([]byte(nil), cw...)
+	seen := make(map[int]bool, len(erasures))
+	for _, e := range erasures {
+		if e < 0 || e >= n || seen[e] {
+			return nil, 0, ErrRSUncorrectable
+		}
+		seen[e] = true
+		out[e] = 0
+	}
+	if len(erasures) == 0 {
+		return decodeRSGF64(out, n, k)
+	}
+
+	synd := syndromesGF64(out, n, r)
+
+	// Erasure locator Γ(x) = Π (1 + Y_l x), Y_l = α^(n-1-idx) — the same
+	// index-to-locator mapping the Chien search below inverts.
+	gamma := []byte{1}
+	for _, e := range erasures {
+		y := gf64Pow(n - 1 - e)
+		next := make([]byte, len(gamma)+1)
+		for i, c := range gamma {
+			next[i] ^= c
+			next[i+1] ^= gf64Mul(c, y)
+		}
+		gamma = next
+	}
+
+	// Forney syndromes: T(x) = S(x)·Γ(x) mod x^r. Its first len(erasures)
+	// coefficients are determined by the erasures alone; Berlekamp-Massey
+	// runs on what remains, and can resolve at most half of it in errors.
+	ne := len(erasures)
+	forney := polyMulModGF64(syndromePolyGF64(synd), gamma, r)[ne:]
+	lambda, L := bmGF64(forney)
+	if 2*L > r-ne {
+		return nil, 0, ErrRSUncorrectable
+	}
+
+	// Errata locator σ(x) = Λ(x)·Γ(x): its roots are the erasures and the
+	// errors together.
+	sigma := polyMulModGF64(lambda, gamma, len(lambda)+len(gamma))
+	type errPos struct {
+		idx int
+		x   byte
+	}
+	var positions []errPos
+	for p := 0; p < n; p++ {
+		if polyEvalGF64(sigma, gf64Pow(-p)) == 0 {
+			positions = append(positions, errPos{idx: n - 1 - p, x: gf64Pow(p)})
+		}
+	}
+	if len(positions) != L+ne {
+		return nil, 0, ErrRSUncorrectable
+	}
+
+	omega := polyMulModGF64(syndromePolyGF64(synd), sigma, r)
+	sigmaPrime := formalDerivativeGF64(sigma)
+	for _, ep := range positions {
+		xInv := gf64Inv(ep.x)
+		den := polyEvalGF64(sigmaPrime, xInv)
+		if den == 0 {
+			return nil, 0, ErrRSUncorrectable
+		}
+		out[ep.idx] ^= gf64Mul(polyEvalGF64(omega, xInv), gf64Inv(den))
+	}
+
+	for _, s := range syndromesGF64(out, n, r) {
+		if s != 0 {
+			return nil, 0, ErrRSUncorrectable
+		}
+	}
+	return out, L, nil
 }

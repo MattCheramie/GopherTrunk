@@ -27,7 +27,6 @@ func sdStream(t *testing.T, nSF int) []complex64 {
 		MessageIndicator: [9]byte{9, 8, 7, 6, 5, 4, 3, 2, 1}}
 	ptt := phase2.EncodePushToTalk(es)
 	if b := phase2.AssembleMACPDU(ptt); len(b) < 18 {
-		ptt.Payload = append(ptt.Payload, make([]byte, 18-len(b))...)
 	}
 	vpay := make([][]byte, phase2.VoiceFrameCount(phase2.SlotTypeVoice4V))
 	for i := range vpay {
@@ -133,7 +132,18 @@ func TestSoftDecisionBeatsHard(t *testing.T) {
 		totalSoft += sSum
 	}
 	t.Logf("TOTAL hard=%d soft=%d", totalHard, totalSoft)
-	if totalSoft <= totalHard {
-		t.Errorf("soft-decision did not improve payload recovery (hard=%d soft=%d)", totalHard, totalSoft)
+	// Soft decision must never do WORSE than the hard slicer. It is no longer
+	// expected to do better: the gain it used to show came from a soft Viterbi
+	// over a trellis code, and the P25 Phase 2 ACCH has no trellis — the chain
+	// runs dibits → 6-bit symbols → RS(63,35,29) → CRC-12 with nothing in
+	// between (issue #915). The soft samples reach the MAC layer and find
+	// nothing there to use.
+	//
+	// Recovering the coding gain the hard slicer discards means giving the
+	// outer RS soft information — erasure marking from per-symbol confidence,
+	// or a soft-input decoder — which nothing here implements yet. Until then
+	// this test pins parity, not improvement.
+	if totalSoft < totalHard {
+		t.Errorf("soft-decision recovered fewer payloads than hard (hard=%d soft=%d)", totalHard, totalSoft)
 	}
 }

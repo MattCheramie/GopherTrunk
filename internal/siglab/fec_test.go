@@ -95,12 +95,16 @@ func findFEC(d *ProtocolDetail, sub string) *FECStat {
 	return nil
 }
 
-// TestFECTallyP25P2 asserts the P25 Phase 2 ISCH Golay and MAC trellis tallies
-// decode every frame clean on the synth (a strong check that the ISCH/MAC
-// offsets + dibit packing are correct).
+// TestFECTallyP25P2 asserts the P25 Phase 2 DUID and ACCH tallies decode every
+// burst clean on the synth — a strong check that the burst geometry, the
+// scattered DUID positions, the coded dibit windows and the 6-bit symbol
+// packing all line up.
+//
+// The stages it checks changed with the FEC: the ISCH Golay and MAC trellis it
+// used to name are stages P25 Phase 2 does not have (issue #915).
 func TestFECTallyP25P2(t *testing.T) {
 	d := runSynthDetail(t, trunking.ProtocolP25Phase2)
-	for _, stage := range []string{"ISCH", "MAC trellis"} {
+	for _, stage := range []string{"DUID", "ACCH"} {
 		f := findFEC(d, stage)
 		if f == nil || f.Frames == 0 {
 			t.Fatalf("P25P2 %s tally missing/empty", stage)
