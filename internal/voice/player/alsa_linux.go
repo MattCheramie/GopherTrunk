@@ -18,7 +18,7 @@
 // backend — the same code path that runs when audio.enabled is
 // false. The daemon keeps recording WAVs and serving the TUI.
 
-//go:build linux
+//go:build linux && !nolibasound
 
 package player
 

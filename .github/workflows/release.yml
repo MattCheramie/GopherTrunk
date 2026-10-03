@@ -16,6 +16,8 @@ name: Release
 #   gophertrunk-<ver>-windows-arm64.zip         portable ZIP (Windows on ARM)
 #   gophertrunk-<ver>-linux-amd64.tar.gz        Linux x86_64 tarball
 #   gophertrunk-<ver>-linux-arm64.tar.gz        Linux aarch64 tarball
+#   gophertrunk-<ver>-termux-arm64.tar.gz       Android/Termux aarch64 (static)
+#   gophertrunk-<ver>-termux-armv7.tar.gz       Android/Termux 32-bit ARM (static)
 #   gophertrunk-<ver>-darwin-amd64.tar.gz       macOS Intel tarball
 #   gophertrunk-<ver>-darwin-arm64.tar.gz       macOS Apple Silicon tarball
 #   SHA256SUMS                                  per-file SHA-256 checksums
@@ -270,6 +272,27 @@ jobs:
             cp -r web/configbuilder/dist/. "dist/${NAME}/gophertrunk-web/configbuilder/"
             (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
           done
+          # Android / Termux (#1230): static (nolibasound, no libdl), arm64 for
+          # 64-bit Android and armv7 for 32-bit. scripts/check-static.sh fails
+          # the build if either links dynamically.
+          for ARCH in arm64 armv7; do
+            case "${ARCH}" in armv7) GA=arm; GM=7 ;; *) GA="${ARCH}"; GM= ;; esac
+            NAME="gophertrunk-${VERSION}-termux-${ARCH}"
+            mkdir -p "dist/${NAME}"
+            GOARCH="${GA}" GOARM="${GM}" go build \
+              -trimpath \
+              -tags nolibasound \
+              -ldflags "${LDFLAGS}" \
+              -o "dist/${NAME}/gophertrunk" \
+              ./cmd/gophertrunk
+            scripts/check-static.sh "dist/${NAME}/gophertrunk"
+            cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "dist/${NAME}/"
+            mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
+            cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
+            cp -r web/siglab/dist/. "dist/${NAME}/gophertrunk-web/siglab/"
+            cp -r web/configbuilder/dist/. "dist/${NAME}/gophertrunk-web/configbuilder/"
+            (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -417,7 +440,9 @@ jobs:
 
             **macOS 12 (Monterey) or later** (Apple Silicon or Intel): extract `gophertrunk-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz` (Apple Silicon) or `gophertrunk-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz` (Intel) and run `./gophertrunk`. Builds are unsigned — right-click → Open the first time to bypass Gatekeeper. On macOS 11 or older the binary aborts at launch with `dyld: Symbol not found: _SecTrustCopyCertificateChain` — update to macOS 12+ or run on a supported machine (see the [macOS install guide](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-macos.md)).
 
-            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` (x86_64) or `gophertrunk-${{ steps.version.outputs.version }}-linux-arm64.tar.gz` (aarch64, e.g. Raspberry Pi 4/5) and run `./gophertrunk`. Single static binary; no system dependencies needed.
+            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` (x86_64) or `gophertrunk-${{ steps.version.outputs.version }}-linux-arm64.tar.gz` (aarch64, e.g. Raspberry Pi 4/5) and run `./gophertrunk`. One binary, no cgo; it needs only glibc, plus libasound2 for live audio.
+
+            **Android (Termux):** extract `gophertrunk-${{ steps.version.outputs.version }}-termux-arm64.tar.gz` (64-bit Android) or `gophertrunk-${{ steps.version.outputs.version }}-termux-armv7.tar.gz` (32-bit Android) inside Termux and run `./gophertrunk`. Fully static, for use with an rtl_tcp driver app (e.g. `gophertrunk power -rtltcp 127.0.0.1:1234 …`); see [docs/termux.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/termux.md).
 
             **Web operator console:** every archive includes a standalone `gophertrunk-web/` folder with all three consoles — the standard console at the top, plus `siglab/` and `configbuilder/`. Open the relevant `index.html` in any browser and point it at a running daemon. Setup walkthrough: [gophertrunk.org/web.html](https://gophertrunk.org/web.html).
 

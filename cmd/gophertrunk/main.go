@@ -84,6 +84,8 @@ func main() {
 		runGen(os.Args[2:])
 	case "capture":
 		runCapture(os.Args[2:])
+	case "power":
+		runPower(os.Args[2:])
 	case "test":
 		runSiglabTest(os.Args[2:])
 	case "siglab":
@@ -152,6 +154,7 @@ USAGE:
   gophertrunk hunt [flags]            discover & map an unknown trunked system, export it + an RR submission package
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
   gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
+  gophertrunk power [flags]           rtl_power-style sweep logger (CSV) for a local or rtl_tcp SDR
   gophertrunk bundle <cmd> [flags]    build/inspect a GopherTrunk Bundle (.gtb.tar.gz): pack|info|verify|extract|add|commit
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
   gophertrunk cryptolab <tool> ...    cryptographic-research toolkit (optional; build with -tags cryptolab)

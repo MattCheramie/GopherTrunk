@@ -16,7 +16,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test version-refs-check release-prep test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-airspyhf-real test-airspyhf-real-bias test-airspyhf-real-diag test-hackrf-real test-hackrf-real-bias test-hackrf-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
+.PHONY: all build dist test version-refs-check release-prep test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-airspyhf-real test-airspyhf-real-bias test-airspyhf-real-diag test-hackrf-real test-hackrf-real-bias test-hackrf-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build termux-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
 
 all: build
 
@@ -307,6 +307,26 @@ cross-build: web-build
 	    done; \
 	done
 	@ls -lh dist/
+
+# termux-build cross-compiles static Linux ARM binaries for Android / Termux
+# (#1230): arm64 for 64-bit Android, armv7 for 32-bit Android (most phones
+# from before ~2017 run a 32-bit userland even on a 64-bit CPU). Termux runs
+# Linux ELF binaries, but Android's Bionic libc has no glibc loader or libdl,
+# so these must be static: -tags nolibasound drops the purego ALSA backend
+# that links libdl (Linux audio then uses the direct /dev/snd backend), and
+# scripts/check-static.sh fails the build if anything links dynamically.
+TERMUX_ARCHES ?= arm64 armv7
+
+termux-build:
+	@mkdir -p dist
+	@for a in $(TERMUX_ARCHES); do \
+	    case "$$a" in armv7) ga=arm; gm=7 ;; *) ga=$$a; gm= ;; esac; \
+	    echo "  → CGO_ENABLED=0 GOOS=linux GOARCH=$$ga GOARM=$$gm -tags nolibasound"; \
+	    CGO_ENABLED=0 GOOS=linux GOARCH=$$ga GOARM=$$gm \
+	        $(GO) build -trimpath -tags "nolibasound $(TAGS)" -ldflags "$(LDFLAGS)" \
+	        -o dist/gophertrunk-termux-$$a ./cmd/gophertrunk || exit 1; \
+	    scripts/check-static.sh dist/gophertrunk-termux-$$a || exit 1; \
+	done
 
 # release-dry-run rehearses the release.yml linux job locally so an
 # operator can validate ldflags wiring + version-string injection

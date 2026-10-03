@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`gophertrunk power`: an rtl_power-style sweep logger that also works
+  over rtl_tcp (#1230).** It steps a local SDR, or a dongle behind an rtl_tcp
+  server, across `-f lower:upper:bin` and writes the averaged power spectrum
+  in rtl_power's CSV layout (`date, time, Hz low, Hz high, Hz step, samples,
+  dB…`), so rtl_power tooling reads it unchanged. It supports rtl_power's
+  `-i` / `-e` / `-1`. See docs/power-sweep.md.
+- **Android / Termux builds (#1230).** Releases now include static
+  `termux-arm64` and `termux-armv7` tarballs (`make termux-build`). The
+  regular Linux binary links glibc's `libdl` to load ALSA for live audio, so
+  it cannot start on Android. The Termux build uses `-tags nolibasound` and
+  CI checks that it stays statically linked. See docs/termux.md.
 - **Per-channel gain on the conventional scanner (#1239).**
   `scanner.conventional[].gain` (`"auto"` or tenths of a dB, like
   `sdr.devices[].gain`) is written to the scanner SDR before the channel is

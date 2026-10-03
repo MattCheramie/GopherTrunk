@@ -1,6 +1,6 @@
 name: Linux build (manual)
 
-# Builds Linux tarballs (amd64 + arm64) on demand and uploads them as
+# Builds Linux tarballs (amd64 + arm64, plus static Termux arm64 + armv7) on demand and uploads them as
 # downloadable CI artifacts. This is the Linux analogue of the Windows
 # "installer (PR)" job, but MANUAL ONLY: it never runs on a push or a
 # pull request — only when someone clicks "Run workflow" in the Actions
@@ -94,6 +94,27 @@ jobs:
               -ldflags "${LDFLAGS}" \
               -o "dist/${NAME}/gophertrunk" \
               ./cmd/gophertrunk
+            cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "dist/${NAME}/"
+            mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
+            cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
+            cp -r web/siglab/dist/. "dist/${NAME}/gophertrunk-web/siglab/"
+            cp -r web/configbuilder/dist/. "dist/${NAME}/gophertrunk-web/configbuilder/"
+            (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
+          done
+          # Android / Termux (#1230): static (nolibasound, no libdl), arm64 for
+          # 64-bit Android and armv7 for 32-bit. scripts/check-static.sh fails
+          # the build if either links dynamically.
+          for ARCH in arm64 armv7; do
+            case "${ARCH}" in armv7) GA=arm; GM=7 ;; *) GA="${ARCH}"; GM= ;; esac
+            NAME="gophertrunk-${VERSION}-termux-${ARCH}"
+            mkdir -p "dist/${NAME}"
+            GOARCH="${GA}" GOARM="${GM}" go build \
+              -trimpath \
+              -tags nolibasound \
+              -ldflags "${LDFLAGS}" \
+              -o "dist/${NAME}/gophertrunk" \
+              ./cmd/gophertrunk
+            scripts/check-static.sh "dist/${NAME}/gophertrunk"
             cp README.md LICENSE TERMS_OF_SERVICE.md config.example.yaml "dist/${NAME}/"
             mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
             cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"

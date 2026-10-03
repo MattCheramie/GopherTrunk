@@ -678,6 +678,11 @@ decoder all work against remote sources.
   running librtlsdr ≥ 0.7. Servers that ignore those commands
   silently no-op them.
 
+`gophertrunk power -rtltcp host:port` sweeps an rtl_tcp dongle and logs
+rtl_power-style CSV without the daemon ([Power sweep](power-sweep.html)),
+and the [Termux builds](termux.html) run against an rtl_tcp driver app on an
+Android phone.
+
 **Diagnostics:** the daemon logs `rtltcp: connected addr=... tuner=...`
 on each successful Open, `dial: connection refused` if the remote
 isn't listening, and `header magic = "..."` if the address points

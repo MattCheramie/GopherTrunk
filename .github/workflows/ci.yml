@@ -69,6 +69,20 @@ jobs:
       - run: go test -race -count=1 -timeout 25m ./...
       - run: make integration
 
+  # Android / Termux builds (#1230) must stay statically linked: Bionic has no
+  # glibc loader or libdl, so a dynamic binary does not start there. The
+  # check fails if a new purego/cgo import makes the nolibasound build dynamic.
+  termux-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.13"
+      - run: make termux-build
+      - run: go vet -tags nolibasound ./internal/voice/player/
+      - run: go test -tags nolibasound -count=1 ./internal/voice/player/
+
   # The pure-Go USB transport (internal/sdr/rtlsdr/usb) lands platform-
   # specific backends — Linux USBDEVFS, Windows WinUSB, macOS IOKit
   # (PR-10). Each must build + test cleanly under CGO_ENABLED=0 on its
