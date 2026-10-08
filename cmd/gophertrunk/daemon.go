@@ -1744,7 +1744,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	//       in the pool) AND manual_tune_disabled is not set.
 	//
 	// Requires its own dedicated Voice SDR (carved out of the pool's
-	// voice fleet) and a recorder to land WAVs into. The scanner
+	// voice fleet) and a voice decoder to feed. That is the file recorder
+	// when recordings.dir is set and the decode-only recorder otherwise, so
+	// scanning (and its live audio) does not require recordings. The scanner
 	// publishes synthetic CallStart/CallEnd events through
 	// Engine.HandleSyntheticCall, so the recorder, call log, and
 	// /api/v1/calls/active surfaces light up like any other call.
@@ -1759,7 +1761,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		log.Info("daemon: scanner: auto-enabling manual tune (spare Voice SDR detected)",
 			"voice_sdrs", len(voiceEntries))
 	}
-	if d.pool != nil && d.recorder != nil && d.engine != nil && convWanted {
+	if d.pool != nil && d.voiceDecoder != nil && d.engine != nil && convWanted {
 		if len(voiceEntries) == 0 {
 			log.Warn("daemon: scanner.conventional / manual_tune_enabled configured but no Voice SDRs in the pool; skipping")
 		} else {
@@ -1793,9 +1795,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Decoders: ch.Decoders,
 				})
 			}
-			var convRec conventional.Recorder = d.recorder
+			var convRec conventional.Recorder = d.voiceDecoder
 			if d.player != nil {
-				convRec = convFanoutRecorder{d.recorder, playerSink{p: d.player, engine: d.engine}}
+				convRec = convFanoutRecorder{d.voiceDecoder, playerSink{p: d.player, engine: d.engine}}
 			}
 			// Drive the scanner through the device's iqtap broker (not the raw
 			// device) so it becomes the broker's primary StreamIQ consumer. A

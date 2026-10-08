@@ -15,6 +15,13 @@ for tagged releases.
   decoded but never published. It now publishes a `call.source` update whenever
   the talker changes, as the DMR and P25 Phase 2 chains do, so the call log,
   live view and recording sidecar carry the radio ID.
+- **The conventional scanner no longer requires `recordings.dir`.** The scanner
+  was gated on the file recorder, which only exists when `recordings.dir` is
+  set, so a config with `scanner.conventional` channels and a voice SDR but no
+  recordings directory silently built no scanner (the web UI reported it as
+  disabled and nothing was logged). Trunked systems already fell back to a
+  decode-only recorder; the scanner now uses that same voice decoder, so
+  scanning and live audio work without writing files.
 
 ## [v1.2.4] — 2026-10-06
 
