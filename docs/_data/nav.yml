@@ -185,6 +185,8 @@ groups:
         url: /blog/series/dmr-end-to-end/
       - title: "Series: Beyond Voice"
         url: /blog/series/beyond-voice/
+      - title: "Series: The Legacy Family End to End"
+        url: /blog/series/legacy-family-end-to-end/
       - title: Tutorials
         url: /blog/category/tutorials/
       - title: "Series: Signal Lab"
@@ -199,10 +201,14 @@ groups:
         url: /blog/series/operator-cookbook/
       - title: "Series: The Field Notebook"
         url: /blog/series/field-notebook/
+      - title: "Series: The Conventional Scanner"
+        url: /blog/series/conventional-scanner/
       - title: Solution Postmortem
         url: /blog/category/solution-postmortem/
       - title: "Series: From the Issue Tracker"
         url: /blog/series/from-the-issue-tracker/
+      - title: "Series: From the Issue Tracker, Season 2"
+        url: /blog/series/from-the-issue-tracker-s2/
   - label: Hardware
     items:
       - heading: Start here
