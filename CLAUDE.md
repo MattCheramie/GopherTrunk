@@ -103,6 +103,15 @@ confirmation before any close-as-completed.
   band plan's BASE frequency (450.000 MHz) with a garbage TG/src — calls then timed out on an
   empty carrier. Signature to recognise: `frequency_hz` == an IDEN_UP `base_hz` exactly. It had
   no test at all; pinned by `opcodes_explicit_test.go` (literal bit positions via `tsbkBits`).
+- **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
+  read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
+  hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's
+  `call_length` / `freqList.len` were filled from the span (trunk-recorder's are the AUDIO length),
+  and a `voice_hangtime_ms` longer than the engine's `call_timeout_ms` (default 30 s) never took
+  effect — the composer touches the engine only while voice arrives, so the watchdog reaped the held
+  call first (`engineCallTimeout` now raises it to hangtime + 5 s). Daemon slog lines (`composer:`,
+  `recorder:`) go to STDERR, not `messages.log`/`event_log` — on Windows redirect `2> debug.log`;
+  under the in-process TUI they go to `%TEMP%\gophertrunk-tui-*.log`.
 - **P25 discovery: a PDU (DUID 0xC) on the control channel is Multi-Block
   Trunking, not noise — GT now decodes AMBT (`mbt.go`).** The operator's "only 1
   neighbor site, no WACN" report was this: their system broadcasts Network
