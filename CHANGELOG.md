@@ -15,6 +15,15 @@ for tagged releases.
   decoded but never published. It now publishes a `call.source` update whenever
   the talker changes, as the DMR and P25 Phase 2 chains do, so the call log,
   live view and recording sidecar carry the radio ID.
+- **Conventional scanner channels now show their `label` as the alpha tag.** The
+  Active calls panel's "Alpha tag" column reads the call's talkgroup record from
+  the talkgroup catalogue, and a `scanner.conventional` channel has no catalogue
+  entry unless the operator loads a CSV or names it through the API, so the
+  channel's configured `label` never reached it (it only reached broadcast
+  uploads and alert rules). When the catalogue has no entry the scanner's call
+  now falls back to the channel's `label`; a catalogue entry still wins, and the
+  fallback is not added to the catalogue. Pin a `talkgroup_id` on the channel to
+  keep its ID stable across scan-list edits.
 
 ## [v1.2.4] — 2026-10-06
 

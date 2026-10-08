@@ -1589,6 +1589,12 @@ func (e *Engine) HandleSyntheticCall(g Grant, deviceSerial string) {
 		g.At = e.now()
 	}
 	tg := e.talkgroups.Lookup(g.GroupID)
+	if tg == nil && g.GroupLabel != "" {
+		// A conventional channel's configured label doubles as its alpha tag
+		// when the catalogue has no entry. Deliberately not added to the DB:
+		// the catalogue stays authoritative and nothing is persisted.
+		tg = &TalkGroup{ID: g.GroupID, AlphaTag: g.GroupLabel, Scan: true, Stream: true, Record: true}
+	}
 	ac := &ActiveCall{
 		Device:      &VoiceDevice{Serial: deviceSerial},
 		Grant:       g,
