@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **`recordings.fm_audio_gain_db`: conventional-scanner (analog FM / AM) audio is
+  now ~10 dB louder by default.** The FM discriminator's output is radians per
+  sample scaled by a fixed constant, so a full-deviation NFM carrier peaked near
+  -14 dBFS and speech well below it — roughly half the loudness of decoded
+  digital voice, with no analog gain stage anywhere (`audio.live_loudness` is
+  digital-only and `recordings.normalize` only rewrites files). The gain is
+  applied in the composer's analog chain before the sink fan-out, so it lifts
+  the recorder, the live stream and the host speaker together. Default +10 dB
+  when unset; `0` restores the previous level; limited to ±30 dB and the PCM
+  saturates rather than wraps. Digital voice is unaffected.
+
 ### Fixed
 - **P25 Phase 1 calls set up by an explicit channel update logged no radio ID
   (#1242).** Opcode 0x03 (Group Voice Channel Update – Explicit) carries no

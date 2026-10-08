@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -898,6 +899,21 @@ func resolveFMAudioHPF(rec config.RecordingsConfig) composer.AudioHPFConfig {
 	default:
 		return composer.AudioHPFConfig{Enabled: true, CutoffHz: uint32(rec.FMAudioHighpassHz)}
 	}
+}
+
+// defaultFMAudioGainDb is the analog-FM audio gain applied when
+// recordings.fm_audio_gain_db is unset. The FM discriminator's output sits
+// roughly 10 dB (about half the perceived loudness) below vocoder output.
+const defaultFMAudioGainDb = 10.0
+
+// resolveFMAudioGainDb maps recordings.fm_audio_gain_db to the composer's
+// static analog audio gain: unset selects the default, an explicit 0 is unity,
+// and the value is limited to ±30 dB.
+func resolveFMAudioGainDb(rec config.RecordingsConfig) float64 {
+	if rec.FMAudioGainDb == nil {
+		return defaultFMAudioGainDb
+	}
+	return math.Max(-30, math.Min(30, *rec.FMAudioGainDb))
 }
 
 // resolveFMChannelBandwidth maps recordings.fm_channel_bandwidth_hz to the
@@ -2552,6 +2568,9 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 			DeEmphasis: resolveFMDeEmphasis(cfg.Recordings),
 			AudioLPF:   resolveFMAudioLPF(cfg.Recordings),
 			AudioHPF:   resolveFMAudioHPF(cfg.Recordings),
+			// Static analog audio gain (recordings.fm_audio_gain_db): lifts the
+			// quiet FM discriminator output toward vocoder loudness.
+			AudioGainDB: resolveFMAudioGainDb(cfg.Recordings),
 			// Analog-FM front-end channel bandwidth (recordings.
 			// fm_channel_bandwidth_hz): narrow the IF filter to a tightly-
 			// deviated NFM channel to reject adjacent-channel energy/noise a

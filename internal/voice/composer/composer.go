@@ -218,6 +218,16 @@ type Options struct {
 	// end (VoiceBandwidthHz as the cutoff, i.e. a 25 kHz channel), so
 	// existing analog recordings are byte-for-byte unchanged.
 	FMChannelBandwidthHz uint32
+	// AudioGainDB is a static gain, in dB, applied to the analog chain's
+	// demodulated audio after the filters and before the PCM conversion, so it
+	// reaches every sink (recorder, live stream, host player) alike. The FM
+	// discriminator's output is radians/sample — a full-deviation NFM carrier
+	// lands near -14 dBFS and speech well below it — so analog audio is much
+	// quieter than vocoder output without it. 0 is unity (the Options zero
+	// value leaves existing callers unchanged); the PCM conversion clamps, so
+	// an excessive gain saturates rather than wraps. Digital voice chains are
+	// unaffected.
+	AudioGainDB float64
 	// AudioAGC configures a real-valued envelope-follower-based AGC
 	// applied after the audio LPF (so the envelope follower sees a
 	// clean band-limited signal). The point is to level out the
@@ -338,6 +348,7 @@ type Composer struct {
 	hpfCfg        AudioHPFConfig
 	fmChannelBWHz uint32
 	agcCfg        AudioAGCConfig
+	audioGain     float32 // linear form of Options.AudioGainDB (1 = unity)
 	resampCfg     AudioResamplerConfig
 	autotune      *autotune.Registry
 	cryptoSink    cryptocap.Sink
@@ -462,6 +473,7 @@ func New(opts Options) (*Composer, error) {
 		hpfCfg:        opts.AudioHPF,
 		fmChannelBWHz: opts.FMChannelBandwidthHz,
 		agcCfg:        opts.AudioAGC,
+		audioGain:     float32(math.Pow(10, opts.AudioGainDB/20)),
 		resampCfg:     opts.AudioResampler,
 		autotune:      opts.Autotune,
 		cryptoSink:    opts.CryptoSink,
@@ -1168,6 +1180,11 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			}
 			if audioLPF != nil {
 				audio = audioLPF.Process(audio, audio)
+			}
+			if c.audioGain != 1 && c.audioGain != 0 {
+				for i := range audio {
+					audio[i] *= c.audioGain
+				}
 			}
 			// Freeze the AGC while squelch-closed: its output is about
 			// to be muted anyway, and letting the envelope follower

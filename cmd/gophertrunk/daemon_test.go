@@ -269,3 +269,27 @@ func TestResolveFMChannelBandwidth(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveFMAudioGainDb pins that analog-FM audio gets +10 dB by default
+// (the discriminator output sits ~10 dB under vocoder output), that an explicit
+// 0 means unity rather than "unset", and that the value is limited to ±30 dB.
+func TestResolveFMAudioGainDb(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	cases := []struct {
+		name string
+		in   *float64
+		want float64
+	}{
+		{"unset selects the default", nil, 10},
+		{"explicit zero is unity", f(0), 0},
+		{"explicit value", f(6), 6},
+		{"negative attenuates", f(-4), -4},
+		{"clamped high", f(99), 30},
+		{"clamped low", f(-99), -30},
+	}
+	for _, tc := range cases {
+		if got := resolveFMAudioGainDb(config.RecordingsConfig{FMAudioGainDb: tc.in}); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

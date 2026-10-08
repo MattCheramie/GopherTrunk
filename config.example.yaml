@@ -262,6 +262,11 @@ recordings:
                              # carrier-tuning offset leaves and the sub-audible CTCSS/DCS
                              # squelch tones (the low hum de-emphasis amplifies). 0 =
                              # default 300; <0 disables.
+  fm_audio_gain_db: 10       # static gain on analog-FM/AM audio (recorder, live stream and
+                             # host speaker alike). FM discriminator output is ~10 dB
+                             # quieter than decoded digital voice; +10 (the default when
+                             # unset) brings conventional channels near trunked loudness.
+                             # 0 = no gain; limited to -30..+30 dB; peaks saturate.
   fm_channel_bandwidth_hz: 0 # analog-FM IF channel filter TOTAL width (the "bandwidth"
                              # SDR#/SDR++ expose); the front-end low-pass is ±half this.
                              # 12500 = a 12.5 kHz NFM channel (narrower, rejects adjacent-

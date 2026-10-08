@@ -60,7 +60,7 @@ var webRoundTripAllow = map[string][]string{
 	// issue #1184) round-trip through the RecordingsConfig index signature; the
 	// FieldMeta registry supplies their label/help/options to the TUI and the
 	// web builder's generic editor. A bespoke typed web editor is a follow-up.
-	"RecordingsConfig": {"CryptoCapturePath", "Dedup", "FilenameTemplate", "PathTemplate", "FMDeEmphasis", "FMAudioLowpassHz", "FMAudioHighpassHz", "FMChannelBandwidthHz"},
+	"RecordingsConfig": {"CryptoCapturePath", "Dedup", "FilenameTemplate", "PathTemplate", "FMDeEmphasis", "FMAudioLowpassHz", "FMAudioHighpassHz", "FMAudioGainDb", "FMChannelBandwidthHz"},
 	"DedupConfig":      {"Enabled", "WindowSeconds"},
 
 	// Event-driven raw-IQ auto-record (baseband.auto_record) — a debug/research

@@ -2251,6 +2251,14 @@ type RecordingsConfig struct {
 	// makes that DC/tone louder, not softer (issue #1184). 0 selects the
 	// default 300 Hz; a negative value disables the filter.
 	FMAudioHighpassHz int `yaml:"fm_audio_highpass_hz"`
+	// FMAudioGainDb is a static gain, in dB, applied to analog-FM (and AM)
+	// voice audio before it reaches the recorder, the live stream and the host
+	// player. The FM discriminator's output is radians/sample, so analog audio
+	// sits roughly 10 dB below vocoder output without it. nil selects the
+	// default of +10 dB; 0 is unity (the pre-gain level); the effective value is
+	// limited to -30..+30 dB and the PCM saturates rather than wraps. Digital
+	// voice is unaffected.
+	FMAudioGainDb *float64 `yaml:"fm_audio_gain_db"`
 	// FMChannelBandwidthHz sets the analog-FM front-end channel bandwidth (Hz)
 	// — the TOTAL width of the IF channel filter the composer's FM chain
 	// applies to the IQ before the discriminator, the "bandwidth" SDR# / SDR++

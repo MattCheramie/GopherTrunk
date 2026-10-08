@@ -44,18 +44,28 @@ func toneAmp(pcm []int16, hz float64) float64 {
 // returns the recorded PCM (the first 0.25 s dropped: filter settle).
 func recordAnalog(t *testing.T, proto string, iq []complex64) []int16 {
 	t.Helper()
+	return recordAnalogOpts(t, proto, iq, nil)
+}
+
+// recordAnalogOpts is recordAnalog with a hook to adjust the composer options.
+func recordAnalogOpts(t *testing.T, proto string, iq []complex64, mod func(*Options)) []int16 {
+	t.Helper()
 	bus := events.NewBus(8)
 	defer bus.Close()
 	src := newFakeSource()
 	sink := &recordingSink{}
-	c, err := New(Options{
+	opts := Options{
 		Bus: bus, Devices: &fakeDevices{src: map[string]IQSource{"CONV": src}},
 		Sink: sink, Engine: &fakeEngine{},
 		IQSampleRate: 2_400_000, PCMSampleRate: 8000, TouchInterval: 30 * time.Millisecond,
 		// Uniformly-timed PCM so a coherent tone measurement is meaningful
 		// (the default naive decimation restarts its phase every chunk).
 		AudioResampler: AudioResamplerConfig{Enabled: true},
-	})
+	}
+	if mod != nil {
+		mod(&opts)
+	}
+	c, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
