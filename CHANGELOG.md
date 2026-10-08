@@ -15,6 +15,16 @@ for tagged releases.
   decoded but never published. It now publishes a `call.source` update whenever
   the talker changes, as the DMR and P25 Phase 2 chains do, so the call log,
   live view and recording sidecar carry the radio ID.
+- **Recording sidecars reported the call's span as its audio length (#1242).**
+  `call_length`, `call_length_ms` and `freqList[].len` in the `.json` sidecar
+  were filled from the call's wall-clock span, so a call held open by a long
+  hangtime claimed 35 s for a 1.6 s WAV. They now give the length of the audio
+  in the file, as trunk-recorder's do; `start_time` / `stop_time` still give
+  the span.
+- **A `voice_hangtime_ms` longer than `call_timeout_ms` never took effect
+  (#1242).** The engine's inactivity watchdog (30 s by default) ended held calls
+  first. The daemon now raises the watchdog to the hangtime plus 5 s and logs a
+  warning when it does.
 
 ## [v1.2.4] — 2026-10-06
 
