@@ -3,9 +3,12 @@ package receiver
 import "testing"
 
 // TestDefaultC4FMOptionsDisableDDAAndAdaptiveSlicer pins the issue #402
-// reverts so a future change can't silently revive them. The production
-// pipeline (internal/scanner/ccdecoder/pipelines.go) builds the C4FM receiver
-// with neither EnableDecisionDirectedAFC nor EnableAdaptiveC4FMSlicer set:
+// reverts at the library default so a future change can't silently revive
+// them: a zero-valued Options builds neither the DDA nor the adaptive
+// slicer. (The production pipeline in internal/scanner/ccdecoder/pipelines.go
+// does opt into the DDA — with the LockProbe gate that ties its handoff to
+// control-channel lock and reverts it on lock loss — but the adaptive slicer
+// stays off everywhere.)
 //
 //   - The decision-directed AFC (#412) stably false-locked onto a wrong
 //     carrier offset with no FSW/CC-lock feedback to catch it, dropping the
