@@ -2257,7 +2257,7 @@ func (d *Daemon) buildEngine(cfg config.Config, log *slog.Logger) error {
 		VoicePool:        d.voicePool,
 		Talkgroups:       d.talkgroups,
 		ScanMode:         trunking.ParseScanMode(cfg.Scanner.ScanMode),
-		CallTimeout:      time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
+		CallTimeout:      engineCallTimeout(cfg.Trunking, log),
 		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
 		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
 		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
@@ -2271,6 +2271,39 @@ func (d *Daemon) buildEngine(cfg config.Config, log *slog.Logger) error {
 	}
 	d.engine = engine
 	return nil
+}
+
+// engineDefaultCallTimeout mirrors trunking.NewEngine's default for a zero
+// CallTimeout.
+const engineDefaultCallTimeout = 30 * time.Second
+
+// engineWatchdogHangtimeMargin is how far the engine's inactivity watchdog
+// runs past voice_hangtime_ms, so the composer's own hangtime end (polled
+// every 200 ms) always fires first.
+const engineWatchdogHangtimeMargin = 5 * time.Second
+
+// engineCallTimeout resolves the engine's inactivity watchdog. The watchdog
+// is a backstop: the composer ends a call voice_hangtime_ms after its last
+// voice frame and only touches the engine while voice is arriving. A hangtime
+// longer than the watchdog therefore never took effect — the watchdog reaped
+// the held call first (#1242: voice_hangtime_ms 50000 with the default 30 s
+// call timeout ended conversation-grouped calls ~30 s after their last voice,
+// not 50 s). The watchdog is raised to cover the hangtime, with a WARN so the
+// effective value is visible.
+func engineCallTimeout(tc config.TrunkingConfig, log *slog.Logger) time.Duration {
+	timeout := time.Duration(tc.CallTimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = engineDefaultCallTimeout
+	}
+	hangtime := time.Duration(tc.VoiceHangtimeMs) * time.Millisecond
+	if need := hangtime + engineWatchdogHangtimeMargin; hangtime > 0 && timeout < need {
+		if log != nil {
+			log.Warn("trunking: call_timeout_ms is shorter than voice_hangtime_ms; raising the call watchdog so the hangtime takes effect",
+				"call_timeout", timeout, "voice_hangtime", hangtime, "effective_call_timeout", need)
+		}
+		timeout = need
+	}
+	return timeout
 }
 
 // buildOutboundFeeds constructs the optional outbound call-streaming manager

@@ -250,3 +250,75 @@ func TestRecorderCallJSONSrcListSpansTransmissions(t *testing.T) {
 		}
 	}
 }
+
+// TestCallJSONLengthIsAudioNotSpan pins the sidecar length fields to the AUDIO
+// in the file, as trunk-recorder writes them (#1242). A conversation-grouped
+// call held open by a long hangtime spans 35 s of wall clock but decoded
+// 0.2 s of voice: call_length / call_length_ms / freqList len must say 0.2 s,
+// while start_time_ms / stop_time_ms keep the 35 s span. Fail-first: the old
+// sidecar filled every length from the span (call_length_ms = 35000).
+func TestCallJSONLengthIsAudioNotSpan(t *testing.T) {
+	bus := events.NewBus(8)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:           bus,
+		OutDir:        dir,
+		SampleRate:    8000,
+		WriteCallJSON: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "P25_System", Protocol: "p25", GroupID: 301, FrequencyHz: 450_937_500,
+		},
+		Talkgroup:    &trunking.TalkGroup{ID: 301, AlphaTag: "301", Record: true},
+		DeviceSerial: "V1",
+		StartedAt:    time.Date(2026, 10, 8, 13, 2, 26, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	waitSession(t, r, "V1", true)
+	if err := r.WritePCM("V1", make([]int16, 1600)); err != nil { // 0.2 s at 8 kHz
+		t.Fatal(err)
+	}
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: cs.Grant, DeviceSerial: "V1", StartedAt: cs.StartedAt,
+		EndedAt: cs.StartedAt.Add(35 * time.Second), Reason: trunking.EndReasonNormal,
+	}})
+	waitSession(t, r, "V1", false)
+
+	tgDir := filepath.Join(dir, "P25_System", "301")
+	entries, err := os.ReadDir(tgDir)
+	if err != nil {
+		t.Fatalf("read tg dir: %v", err)
+	}
+	var wav string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".wav") {
+			wav = filepath.Join(tgDir, e.Name())
+		}
+	}
+	if wav == "" {
+		t.Fatalf("no wav recorded in %s (entries: %v)", tgDir, entries)
+	}
+	var m callMeta
+	if err := json.Unmarshal(waitForSidecar(t, strings.TrimSuffix(wav, ".wav")+".json"), &m); err != nil {
+		t.Fatalf("sidecar is not valid JSON: %v", err)
+	}
+	if m.CallLengthMs != 200 || m.CallLength != 0 {
+		t.Errorf("call_length_ms = %d, call_length = %d; want 200 / 0 (the audio, not the 35 s span)", m.CallLengthMs, m.CallLength)
+	}
+	if len(m.FreqList) != 1 || m.FreqList[0].Pos != 0 || m.FreqList[0].Len != 0.2 {
+		t.Errorf("freqList = %+v, want one entry pos 0 len 0.2", m.FreqList)
+	}
+	if span := m.StopTimeMs - m.StartTimeMs; span != 35000 {
+		t.Errorf("stop_time_ms - start_time_ms = %d, want the 35000 ms call span", span)
+	}
+}

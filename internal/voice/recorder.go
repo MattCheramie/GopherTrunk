@@ -1484,7 +1484,13 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		if ct := r.callTalkers[serial]; len(ct) > 0 {
 			srcs = ct
 		}
-		meta = buildCallMeta(s.cs, s.startedAt, endedAt, int(r.callNum.Add(1)), s.vocoder != nil, srcs, s.freqs)
+		// The file's audio length, read after the tail fade so it matches the
+		// WAV on disk (DataBytes counts uncompressed PCM for wav and flac alike).
+		var audioSec float64
+		if s.sampleRate > 0 {
+			audioSec = float64(s.wav.DataBytes()) / (float64(s.sampleRate) * 2)
+		}
+		meta = buildCallMeta(s.cs, s.startedAt, endedAt, int(r.callNum.Add(1)), s.vocoder != nil, srcs, s.freqs, audioSec)
 		// Label the vocoder + .raw frame size so the flat raw sidecar is
 		// self-describing (GT extension fields; trunk-recorder parsers
 		// ignore unknown keys).

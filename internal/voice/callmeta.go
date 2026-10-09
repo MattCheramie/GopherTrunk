@@ -104,6 +104,9 @@ type srcEvent struct {
 type freqEvent struct {
 	freq uint32
 	at   time.Time
+	// audioPos is the recording's decoded-audio length (seconds) when this
+	// frequency took effect — the trunk-recorder freqList `pos`.
+	audioPos float64
 }
 
 func boolToInt(b bool) int {
@@ -117,9 +120,20 @@ func boolToInt(b bool) int {
 // from the session's grant/talkgroup and its accumulated talker/frequency
 // events. startedAt/endedAt bound the file (a per-transmission segment has its
 // own span). callNum is the recorder's monotonic call counter.
-func buildCallMeta(cs trunking.CallStart, startedAt, endedAt time.Time, callNum int, digital bool, srcs []srcEvent, freqs []freqEvent) *callMeta {
+//
+// audioSec is the length of the audio actually in the file. trunk-recorder's
+// call_length and freqList pos/len measure the AUDIO (its freqList pos is the
+// cumulative transmission length, with no gaps), while start_time/stop_time
+// carry the wall-clock span. GopherTrunk used to fill both from the span, so a
+// conversation-grouped call held open by a long hangtime claimed a 35 s
+// call_length for a 1.6 s WAV (#1242). audioSec <= 0 (unknown) falls back to
+// the span, as before.
+func buildCallMeta(cs trunking.CallStart, startedAt, endedAt time.Time, callNum int, digital bool, srcs []srcEvent, freqs []freqEvent, audioSec float64) *callMeta {
 	g := cs.Grant
 	dur := endedAt.Sub(startedAt)
+	if audioSec > 0 {
+		dur = time.Duration(audioSec * float64(time.Second))
+	}
 	audioType := "analog"
 	if digital {
 		audioType = "digital"
@@ -157,22 +171,34 @@ func buildCallMeta(cs trunking.CallStart, startedAt, endedAt time.Time, callNum 
 		m.Priority = tg.Priority
 	}
 
-	// freqList: pos is seconds from the file start; len runs to the next entry
-	// (or the call end for the last). TETRA same-carrier calls stay on one freq,
-	// so this is usually a single entry spanning the call.
+	// freqList: pos is the audio position the entry starts at; len runs to the
+	// next entry (or the end of the audio for the last). Without an audio length
+	// both fall back to wall-clock seconds from the file start. TETRA
+	// same-carrier calls stay on one freq, so this is usually a single entry
+	// spanning the call.
 	if len(freqs) == 0 {
 		freqs = []freqEvent{{freq: g.FrequencyHz, at: startedAt}}
 	}
 	for i, fe := range freqs {
-		end := endedAt
-		if i+1 < len(freqs) {
-			end = freqs[i+1].at
+		var pos, length float64
+		if audioSec > 0 {
+			end := audioSec
+			if i+1 < len(freqs) {
+				end = freqs[i+1].audioPos
+			}
+			pos, length = fe.audioPos, end-fe.audioPos
+		} else {
+			end := endedAt
+			if i+1 < len(freqs) {
+				end = freqs[i+1].at
+			}
+			pos, length = fe.at.Sub(startedAt).Seconds(), end.Sub(fe.at).Seconds()
 		}
 		m.FreqList = append(m.FreqList, callFreqEntry{
 			Freq: fe.freq,
 			Time: fe.at.Unix(),
-			Pos:  round2(fe.at.Sub(startedAt).Seconds()),
-			Len:  round2(end.Sub(fe.at).Seconds()),
+			Pos:  round2(pos),
+			Len:  round2(length),
 		})
 	}
 

@@ -1377,7 +1377,9 @@ type TrunkingConfig struct {
 	// Defaults to 30 000 (30 s) when zero. Negative values are
 	// rejected by Validate; setting it explicitly lets operators tune
 	// teardown on systems whose signaling is consistently clean
-	// (lower) or chatty with long pauses (higher). Issue #356.
+	// (lower) or chatty with long pauses (higher). Issue #356. The daemon
+	// raises it to VoiceHangtimeMs + 5 s when it is shorter, so a long
+	// hangtime is not cut off by the watchdog (#1242).
 	CallTimeoutMs int `yaml:"call_timeout_ms"`
 
 	// VoiceHangtimeMs is the universal "end of transmission" window

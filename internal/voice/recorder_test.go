@@ -52,14 +52,14 @@ func TestRecorderFilesIndividualCallsSeparately(t *testing.T) {
 	// The metadata sidecar marks the call individual so a consumer renders it as
 	// an individual call, not a talkgroup.
 	start := time.Unix(1_700_000_000, 0)
-	m := buildCallMeta(indiv, start, start.Add(3*time.Second), 1, true, nil, nil)
+	m := buildCallMeta(indiv, start, start.Add(3*time.Second), 1, true, nil, nil, 0)
 	if !m.Individual {
 		t.Errorf("call meta Individual = false, want true")
 	}
 	if m.Talkgroup != 1009267 {
 		t.Errorf("call meta Talkgroup = %d, want 1009267 (the target ISSI)", m.Talkgroup)
 	}
-	gm := buildCallMeta(group, start, start.Add(3*time.Second), 2, true, nil, nil)
+	gm := buildCallMeta(group, start, start.Add(3*time.Second), 2, true, nil, nil, 0)
 	if gm.Individual {
 		t.Errorf("group call meta Individual = true, want false")
 	}
