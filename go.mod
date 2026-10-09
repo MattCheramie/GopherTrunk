@@ -1,17 +1,17 @@
 module github.com/MattCheramie/GopherTrunk
 
-go 1.25.0
+go 1.26.0
 
-// Toolchain pinned to 1.25.12 to close the stdlib CVEs govulncheck
-// surfaced against earlier 1.25.x (html/template XSS, crypto/tls
-// KeyUpdate DoS + ALPN info leak + the Encrypted Client Hello privacy
-// leak GO-2026-5856 fixed in 1.25.12, crypto/x509 chain build + policy
-// validation + inefficient hostname parsing, net/url IPv6 + query
-// parse, net/textproto unescaped error inputs, etc.). The toolchain
-// directive auto-downloads 1.25.12 on a build host running an older
-// 1.25.x; CI's setup-go is pinned to the same version so the toolchain
-// download doesn't run at every CI step.
-toolchain go1.25.13
+// Toolchain pinned to the newest patched release so govulncheck stays
+// clean: Go 1.25 is out of support and the October 2026 stdlib advisories
+// (GO-2026-6603..6617: net/http HTTP/1 + HTTP/2 desync, HPACK race and flow
+// control, Range/MIME header limits, crypto/tls ECH) are fixed only in
+// 1.26.9 / 1.27.2. golang.org/x/net v0.60.0 (the same advisories' x/net
+// half) requires go 1.26, hence the go directive above. The toolchain
+// directive auto-downloads 1.26.9 on a build host running an older Go;
+// CI's setup-go is pinned to the same version so the toolchain download
+// doesn't run at every CI step.
+toolchain go1.26.9
 
 require gopkg.in/yaml.v3 v3.0.1
 
@@ -27,8 +27,8 @@ require (
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/mewkiz/flac v1.0.14
 	github.com/prometheus/client_golang v1.23.2
-	golang.org/x/sys v0.47.0
-	golang.org/x/text v0.41.0
+	golang.org/x/sys v0.48.0
+	golang.org/x/text v0.42.0
 	gonum.org/v1/gonum v0.17.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11
@@ -73,7 +73,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	modernc.org/libc v1.72.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

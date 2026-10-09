@@ -169,7 +169,7 @@ make test                # unit tests
 make integration         # daemon end-to-end (no SDR required)
 ```
 
-Requires Go 1.25+ — the project's `go.mod` pins the toolchain to 1.25.12 (closes the stdlib CVEs in the bare 1.25.0). See **[`CONTRIBUTING.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/CONTRIBUTING.md)** for the full dev setup.
+Requires Go 1.26+ — the project's `go.mod` pins the toolchain to 1.26.9 (closes the stdlib CVEs in earlier releases; an older `go` downloads it automatically). See **[`CONTRIBUTING.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/CONTRIBUTING.md)** for the full dev setup.
 
 ## Docker
 

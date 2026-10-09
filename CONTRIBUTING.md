@@ -22,7 +22,7 @@ Use `make build` while iterating on Go code (no npm needed). Use
 `/` — it runs `make web-build` first so the `//go:embed all:dist`
 snapshot picks up a real bundle.
 
-You need Go 1.25+ — no C toolchain (`CGO_ENABLED=0` everywhere),
+You need Go 1.26+ — no C toolchain (`CGO_ENABLED=0` everywhere),
 no `librtlsdr`, no `libusb`. macOS / Windows / Linux all build the
 same way; the platform-specific code paths live behind
 `//go:build` guards in `internal/sdr/rtlsdr/usb/` and
