@@ -77,8 +77,12 @@ const (
 	// acquisition garbage jumps by ~100.
 	acqMaxB0Jump = 20
 	// acqMaxMuteFrames is the failsafe: never squelch more than this many
-	// frames (~2 s) of a call, so a pathological call can't be fully muted.
-	acqMaxMuteFrames = 100
+	// frames (~0.6 s) of a call. It is sized to the measured startup scratch
+	// (0.15–0.55 s across the field captures), not longer: a weak-signal over
+	// whose voiced frames never form a stable run is still speech, and the
+	// old 100-frame (2 s) window muted every over shorter than that end to end
+	// — #1242's rms=0 recordings of 1–2 s overs.
+	acqMaxMuteFrames = 30
 )
 
 func iabs(x int) int {

@@ -17,6 +17,13 @@ for tagged releases.
   an older `go` downloads 1.26.9 automatically.
 
 ### Fixed
+- **Short weak-signal P25 Phase 1 overs were recorded as pure silence (#1242).**
+  The call-start squelch, which mutes the receiver's startup burst until a run
+  of stable-pitch voiced frames confirms speech, only gave up after 100 frames
+  (2 s). On a weak signal that run never forms, so any over shorter than 2 s
+  came out all zeros (`rms=0` in the recorder's `voice audio quality` line).
+  The limit is now 30 frames (0.6 s), which still covers the measured 0.15–0.55 s
+  startup burst.
 - **`gophertrunk power` sweeps overran their interval on a slow CPU (#1230).**
   Each hop waited until it had FFT'd its full share of samples, so on a phone
   whose FFT runs below real time a `-i 30` sweep took about a minute, and the
