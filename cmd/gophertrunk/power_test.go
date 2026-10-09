@@ -156,16 +156,15 @@ func TestPowerSweepOverRTLTCP(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	src, err := newDeviceIQSource(ctx, dev, rate, log)
+	src, err := newPowerIQSource(ctx, dev, rate, 60*time.Millisecond, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	src.settle = 60 * time.Millisecond
 
 	var out bytes.Buffer
 	w := bufio.NewWriter(&out)
-	err = runPowerSweeps(ctx, src, plan, 20*plan.FFTSize, powerSchedule{every: time.Second, single: true},
-		w, time.Now, sleepCtx)
+	err = runPowerSweeps(ctx, src, plan, powersweep.Integration{Samples: 20 * plan.FFTSize}, powerSchedule{every: time.Second, single: true},
+		w, nil, time.Now, sleepCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,8 +220,8 @@ func TestRunPowerSweepsHonoursExitTimer(t *testing.T) {
 	src := &silentSource{}
 	var out bytes.Buffer
 	w := bufio.NewWriter(&out)
-	err = runPowerSweeps(context.Background(), src, plan, plan.FFTSize,
-		powerSchedule{every: 10 * time.Second, stopAfter: 35 * time.Second}, w, now, sleep)
+	err = runPowerSweeps(context.Background(), src, plan, powersweep.Integration{Samples: plan.FFTSize},
+		powerSchedule{every: 10 * time.Second, stopAfter: 35 * time.Second}, w, nil, now, sleep)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,4 +240,81 @@ type silentSource struct{}
 func (silentSource) Tune(uint32) error { return nil }
 func (silentSource) Capture(_ context.Context, n int) ([]complex64, error) {
 	return make([]complex64, n), nil
+}
+
+// slowFFTSource stands in for a phone whose FFT runs at a fraction of real
+// time: each Capture advances the fake clock by n/rate/speed.
+type slowFFTSource struct {
+	rate, speed float64
+	clock       *time.Time
+}
+
+func (s *slowFFTSource) Tune(uint32) error { return nil }
+func (s *slowFFTSource) Capture(_ context.Context, n int) ([]complex64, error) {
+	*s.clock = s.clock.Add(time.Duration(float64(n) / s.rate / s.speed * float64(time.Second)))
+	return make([]complex64, n), nil
+}
+
+// TestRunPowerSweepsKeepsIntervalWhenFFTIsSlow is the #1230 report: on a phone
+// that FFTs at half real time, `power -i 10 -e 35` must still sweep every 10 s
+// (at 0, 10, 20, 30 s) and say once that it averaged fewer samples. Fail-first:
+// each sweep took 20 s, so sweeps ran at 0, 20 and 40 s instead.
+func TestRunPowerSweepsKeepsIntervalWhenFFTIsSlow(t *testing.T) {
+	const rate = 2_400_000
+	r, _ := powersweep.ParseRange("88M:94M:10k")
+	plan, err := powersweep.NewPlan(r, rate, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	now := func() time.Time { return clock }
+	sleep := func(_ context.Context, d time.Duration) error {
+		if d > 0 {
+			clock = clock.Add(d)
+		}
+		return nil
+	}
+	src := &slowFFTSource{rate: rate, speed: 0.5, clock: &clock}
+	every := 10 * time.Second
+	integ := powerIntegration(every, rate, len(plan.Hops), 0)
+	var out, notes bytes.Buffer
+	w := bufio.NewWriter(&out)
+	err = runPowerSweeps(context.Background(), src, plan, integ,
+		powerSchedule{every: every, stopAfter: 35 * time.Second}, w, &notes, now, sleep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if want := 4 * len(plan.Hops); len(lines) != want {
+		t.Fatalf("%d CSV lines, want %d (sweeps at 0, 10, 20, 30 s)", len(lines), want)
+	}
+	if n := strings.Count(notes.String(), "can't keep up"); n != 1 {
+		t.Fatalf("slow-CPU note printed %d times, want once:\n%s", n, notes.String())
+	}
+}
+
+// TestPowerIQSourceDropsQuietly: `power` expects to fall behind real time on a
+// slow CPU and reports it once itself, so its IQ stream must not log the
+// per-second "hunt: decode falling behind" WARN the reporter saw flood their
+// terminal (#1230). Drops are still counted.
+func TestPowerIQSourceDropsQuietly(t *testing.T) {
+	var logBuf bytes.Buffer
+	ch := make(chan []complex64, 4)
+	s := &streamIQSource{
+		ch:         ch,
+		bufCh:      make(chan []complex64, 1),
+		log:        slog.New(slog.NewTextHandler(&logBuf, nil)),
+		quietDrops: true,
+	}
+	for i := 0; i < 4; i++ {
+		ch <- make([]complex64, 8)
+	}
+	close(ch)
+	s.forward(context.Background())
+	if s.dropped.Load() == 0 {
+		t.Fatal("no drops counted; the test did not overfill the slack queue")
+	}
+	if logBuf.Len() != 0 {
+		t.Fatalf("power's IQ stream logged on drops: %s", logBuf.String())
+	}
 }

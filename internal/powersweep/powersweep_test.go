@@ -131,7 +131,7 @@ func TestSweepFindsToneAtItsFrequency(t *testing.T) {
 	const toneHz = 103_337_000.0
 	src := &toneSource{rate: rate, toneHz: toneHz, amp: 0.1, noise: 1e-4, rng: rand.New(rand.NewSource(1))}
 	stamp := time.Date(2026, 10, 3, 21, 30, 5, 0, time.UTC)
-	rows, err := Sweep(context.Background(), src, p, 20*p.FFTSize, stamp)
+	rows, err := Sweep(context.Background(), src, p, Integration{Samples: 20 * p.FFTSize}, stamp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,5 +205,51 @@ func TestWriteCSVMatchesRTLPowerLayout(t *testing.T) {
 	step, _ := strconv.ParseFloat(f[4], 64)
 	if n := int(math.Round((high - low) / step)); n != len(f)-6 {
 		t.Fatalf("header spans %d bins, line carries %d", n, len(f)-6)
+	}
+}
+
+// slowSource delivers samples as a CPU that processes them at a fraction of
+// real time would: each Capture of n samples advances the fake clock by
+// n/rate/speed.
+type slowSource struct {
+	rate  float64
+	speed float64
+	clock *time.Time
+}
+
+func (s *slowSource) Tune(uint32) error { return nil }
+func (s *slowSource) Capture(_ context.Context, n int) ([]complex64, error) {
+	*s.clock = s.clock.Add(time.Duration(float64(n) / s.rate / s.speed * float64(time.Second)))
+	return make([]complex64, n), nil
+}
+
+// TestSweepHopBudgetCapsSlowIntegration pins #1230: on a CPU that FFTs at half
+// real time, a hop asked for one second of samples must stop at its one-second
+// budget (integrating about half of them) instead of taking two seconds — which
+// stretched every sweep past its -i interval on the reporter's phones.
+// Fail-first: without the budget check each hop takes 2 s.
+func TestSweepHopBudgetCapsSlowIntegration(t *testing.T) {
+	const rate = 2_400_000.0
+	p, err := NewPlan(Range{LowHz: 100e6, HighHz: 103e6, BinHz: 10e3}, rate, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	src := &slowSource{rate: rate, speed: 0.5, clock: &clock}
+	start := clock
+	in := Integration{Samples: int(rate), Budget: time.Second, Now: func() time.Time { return clock }}
+	rows, err := Sweep(context.Background(), src, p, in, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One capture block (65536 samples at half speed ≈ 55 ms) may overshoot.
+	block := time.Duration(math.Round(float64(captureBlock) / rate / 0.5 * float64(time.Second)))
+	if elapsed, limit := clock.Sub(start), time.Duration(len(p.Hops))*(time.Second+block); elapsed > limit {
+		t.Fatalf("sweep of %d hops took %v, want ≤ %v (one budget per hop)", len(p.Hops), elapsed, limit)
+	}
+	for _, r := range rows {
+		if r.Samples >= in.Samples || r.Samples < in.Samples/3 {
+			t.Fatalf("hop integrated %d samples, want about half of %d", r.Samples, in.Samples)
+		}
 	}
 }

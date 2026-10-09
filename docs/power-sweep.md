@@ -48,7 +48,8 @@ date, time, Hz low, Hz high, Hz step, samples, dB, dB, ...
 - **Hz high:** `Hz low + (number of values) × Hz step`.
 - **Hz step:** the bin width. It is the requested bin size rounded down to
   `sample rate / FFT size`, where the FFT size is a power of two.
-- **samples:** IQ samples averaged for this hop.
+- **samples:** IQ samples averaged for this hop. On a CPU too slow to FFT
+  every sample (see below) it is less than `interval ÷ hops × rate`.
 - **dB:** averaged power per bin in **uncalibrated dBFS**. A carrier's
   power reads 1.8–3.2 dB low here (Hann window), so compare levels with
   each other, not against an absolute reference.
@@ -87,6 +88,12 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
   it belongs, raise `-settle`.
 - **The centre of each hop carries the tuner's DC spike.** rtl_power has the
   same artefact. A larger `-crop` narrows each hop but does not move the spike.
+- **A slow CPU averages fewer samples; it doesn't slow the sweeps.** Each hop
+  gets its share of the interval. If the FFT can't keep up with the sample
+  rate, as on older phones, the hop stops at that time limit with whatever
+  it averaged, so sweeps still start every `-i`. `power` says so once on
+  stderr, and the `samples` column shows how many each hop used. A lower
+  `-rate` (for example `1024000`) needs less CPU but takes more hops.
 - **Differences from rtl_power:** the default crop is 0.25 (rtl_power's is
   0), gain is in tenths of a dB, and there is no `-w` window choice (Hann is
   used) or `-F` downsampling filter.

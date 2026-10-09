@@ -188,14 +188,34 @@ type Row struct {
 // integration streams through a fixed buffer instead of being held in memory.
 const captureBlock = 1 << 16
 
-// Sweep runs one pass of p over src, integrating samplesPerHop IQ samples
-// (rounded up to whole FFTs, at least one) per hop. stamp is the time written
-// on every row of the pass, as rtl_power does.
-func Sweep(ctx context.Context, src Source, p Plan, samplesPerHop int, stamp time.Time) ([]Row, error) {
+// Integration is how long each hop of a sweep integrates.
+type Integration struct {
+	// Samples is the number of IQ samples a hop integrates (rounded up to
+	// whole FFTs, at least one).
+	Samples int
+	// Budget, when > 0, caps the wall-clock time a hop spends integrating
+	// (from just after its retune). A hop stops at whichever of Samples or
+	// Budget comes first, having integrated at least one FFT. Without it a
+	// CPU that cannot FFT every sample in real time stretched each hop — and
+	// so each sweep — past the requested interval (#1230: a 30 s sweep took
+	// about a minute on a 32-bit phone). The row's Samples reports what was
+	// actually integrated.
+	Budget time.Duration
+	// Now is the clock Budget is measured on; nil means time.Now.
+	Now func() time.Time
+}
+
+// Sweep runs one pass of p over src, integrating each hop as in says. stamp
+// is the time written on every row of the pass, as rtl_power does.
+func Sweep(ctx context.Context, src Source, p Plan, in Integration, stamp time.Time) ([]Row, error) {
 	acc := newAccumulator(p.FFTSize)
-	frames := (samplesPerHop + p.FFTSize - 1) / p.FFTSize
+	frames := (in.Samples + p.FFTSize - 1) / p.FFTSize
 	if frames < 1 {
 		frames = 1
+	}
+	now := in.Now
+	if now == nil {
+		now = time.Now
 	}
 	perBlock := max(1, captureBlock/p.FFTSize)
 	rows := make([]Row, 0, len(p.Hops))
@@ -204,6 +224,10 @@ func Sweep(ctx context.Context, src Source, p Plan, samplesPerHop int, stamp tim
 			return rows, fmt.Errorf("tune %d Hz: %w", h.CenterHz, err)
 		}
 		acc.reset()
+		var deadline time.Time
+		if in.Budget > 0 {
+			deadline = now().Add(in.Budget)
+		}
 		for acc.frames < frames {
 			want := min(perBlock, frames-acc.frames) * p.FFTSize
 			iq, err := src.Capture(ctx, want)
@@ -214,6 +238,9 @@ func Sweep(ctx context.Context, src Source, p Plan, samplesPerHop int, stamp tim
 				return rows, io.ErrUnexpectedEOF
 			}
 			acc.add(iq)
+			if !deadline.IsZero() && !now().Before(deadline) {
+				break
+			}
 		}
 		rows = append(rows, Row{
 			Time:    stamp,

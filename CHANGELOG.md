@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`gophertrunk power` sweeps overran their interval on a slow CPU (#1230).**
+  Each hop waited until it had FFT'd its full share of samples, so on a phone
+  whose FFT runs below real time a `-i 30` sweep took about a minute, and the
+  terminal filled with a per-second `hunt: decode falling behind real time`
+  warning borrowed from the hunt command. Each hop now stops at its share of
+  the interval with whatever it averaged (the CSV `samples` column reports
+  how many), and `power` prints one note instead of the warning flood.
 - **P25 Phase 1 calls set up by an explicit channel update logged no radio ID
   (#1242).** Opcode 0x03 (Group Voice Channel Update – Explicit) carries no
   source unit, so those grants arrive with source 0. The keyed radio is named in
