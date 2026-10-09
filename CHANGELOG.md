@@ -7,7 +7,23 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Security
+- **Go toolchain moved to 1.26.9 and `golang.org/x/net` to v0.60.0.** Twelve
+  October 2026 Go advisories (GO-2026-6603..6617: HTTP/1 and HTTP/2 request
+  desync, an HPACK encoder race, HTTP/2 flow-control and memory issues,
+  unbounded Range / MIME header parsing, a crypto/tls ECH check) affect the
+  daemon's HTTP API. They are fixed only in Go 1.26.9 / 1.27.2, since Go 1.25
+  no longer gets releases. Building from source now needs Go 1.26 or later;
+  an older `go` downloads 1.26.9 automatically.
+
 ### Fixed
+- **`gophertrunk power` sweeps overran their interval on a slow CPU (#1230).**
+  Each hop waited until it had FFT'd its full share of samples, so on a phone
+  whose FFT runs below real time a `-i 30` sweep took about a minute, and the
+  terminal filled with a per-second `hunt: decode falling behind real time`
+  warning borrowed from the hunt command. Each hop now stops at its share of
+  the interval with whatever it averaged (the CSV `samples` column reports
+  how many), and `power` prints one note instead of the warning flood.
 - **P25 Phase 1 calls set up by an explicit channel update logged no radio ID
   (#1242).** Opcode 0x03 (Group Voice Channel Update – Explicit) carries no
   source unit, so those grants arrive with source 0. The keyed radio is named in

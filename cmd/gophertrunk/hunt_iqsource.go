@@ -38,6 +38,11 @@ type streamIQSource struct {
 	pending []complex64      // Capture-side leftover (< n) carried between calls
 	dropped atomic.Uint64    // chunks dropped at bufCh when decode falls behind real time
 	log     *slog.Logger     // nil ⇒ slog.Default(); see logger()
+	// quietDrops suppresses the per-second "falling behind" WARN for a
+	// consumer that expects to fall behind and reports it itself (`power`,
+	// whose FFT may run below real time on a slow CPU and which integrates
+	// whatever it can within each hop's time budget).
+	quietDrops bool
 }
 
 // logger returns the configured structured logger, falling back to the slog
@@ -88,6 +93,9 @@ func (s *streamIQSource) forward(ctx context.Context) {
 				// Slack queue full: drop and keep draining s.ch so the SDR
 				// never blocks. Rate-limit the warning to once per second.
 				n := s.dropped.Add(1)
+				if s.quietDrops {
+					continue
+				}
 				if now := time.Now(); now.Sub(lastLogAt) >= time.Second {
 					s.logger().Warn("hunt: decode falling behind real time; dropping buffered IQ (the SDR is still drained, so this is a CPU/throughput limit, not an RF overrun)",
 						"dropped_total", n)

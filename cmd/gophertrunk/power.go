@@ -156,16 +156,16 @@ FLAGS:`)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	src, err := newDeviceIQSource(ctx, dev, uint32(*rate), log)
+	settleFor := *settle
+	if settleFor <= 0 {
+		settleFor = powerSettleLocal
+		if *rtlTCP != "" {
+			settleFor = powerSettleRTLTCP
+		}
+	}
+	src, err := newPowerIQSource(ctx, dev, uint32(*rate), settleFor, log)
 	if err != nil {
 		rep.Fatal(1, fmt.Errorf("start IQ stream: %w", err))
-	}
-	src.settle = *settle
-	if src.settle <= 0 {
-		src.settle = powerSettleLocal
-		if *rtlTCP != "" {
-			src.settle = powerSettleRTLTCP
-		}
 	}
 
 	w := io.Writer(os.Stdout)
@@ -180,11 +180,11 @@ FLAGS:`)
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
 
-	perHop := int(every.Seconds() * float64(*rate) / float64(len(plan.Hops)))
+	integ := powerIntegration(every, uint32(*rate), len(plan.Hops), settleFor)
 	fmt.Fprintf(os.Stderr, "power: %s, %.0f–%.0f Hz in %d hops of %d × %.1f Hz bins (%d-point FFT), %s per sweep\n",
 		name, r.LowHz, r.HighHz, len(plan.Hops), plan.HopBins, plan.BinHz, plan.FFTSize, every)
 
-	err = runPowerSweeps(ctx, src, plan, perHop, powerSchedule{every: every, stopAfter: stopAfter, single: *single}, bw, time.Now, sleepCtx)
+	err = runPowerSweeps(ctx, src, plan, integ, powerSchedule{every: every, stopAfter: stopAfter, single: *single}, bw, os.Stderr, time.Now, sleepCtx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		_ = bw.Flush()
 		rep.Fatal(1, err)
@@ -199,17 +199,58 @@ type powerSchedule struct {
 	single    bool
 }
 
+// newPowerIQSource opens the device's IQ stream for `power`. Falling behind
+// real time is expected there on a slow CPU (each hop integrates what it can
+// within its time budget, and runPowerSweeps says so once), so the stream's
+// per-second "hunt: decode falling behind" WARN is silenced (#1230).
+func newPowerIQSource(ctx context.Context, dev sdr.Device, rate uint32, settle time.Duration, log *slog.Logger) (*streamIQSource, error) {
+	src, err := newDeviceIQSource(ctx, dev, rate, log)
+	if err != nil {
+		return nil, err
+	}
+	src.settle = settle
+	src.quietDrops = true
+	return src, nil
+}
+
+// powerIntegration splits one sweep interval across its hops: each hop asks
+// for its share of the interval's samples, and may spend its share of the
+// interval (less the retune settle) doing so. On a CPU that cannot FFT every
+// sample in real time the budget ends the hop first, so sweeps keep to the
+// interval instead of stretching (#1230).
+func powerIntegration(every time.Duration, rate uint32, hops int, settle time.Duration) powersweep.Integration {
+	in := powersweep.Integration{Samples: int(every.Seconds() * float64(rate) / float64(hops))}
+	if b := every/time.Duration(hops) - settle; b > 0 {
+		in.Budget = b
+	}
+	return in
+}
+
 // runPowerSweeps runs sweeps on sched, writing (and flushing) each one's rows
 // as it completes so a long log can be tailed and a Ctrl-C loses at most the
-// sweep in progress.
-func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.Plan, perHop int,
-	sched powerSchedule, w *bufio.Writer, now func() time.Time, sleep func(context.Context, time.Duration) error) error {
+// sweep in progress. The first sweep that integrates fewer samples than asked
+// (the FFT could not keep up, see powerIntegration) prints one note to notes.
+func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.Plan, in powersweep.Integration,
+	sched powerSchedule, w *bufio.Writer, notes io.Writer, now func() time.Time, sleep func(context.Context, time.Duration) error) error {
+	if in.Now == nil {
+		in.Now = now
+	}
 	start := now()
+	noted := false
 	for {
 		t0 := now()
-		rows, err := powersweep.Sweep(ctx, src, plan, perHop, t0)
+		rows, err := powersweep.Sweep(ctx, src, plan, in, t0)
 		if err != nil {
 			return err
+		}
+		if !noted && notes != nil {
+			if got, want := sweepSamples(rows), len(rows)*in.Samples; got < want {
+				noted = true
+				fmt.Fprintf(notes, "power: note — the FFT can't keep up with %.0f S/s on this CPU, so each hop averaged "+
+					"%.0f%% of its samples to keep sweeps on the -i schedule. The CSV's samples column has each hop's "+
+					"count. A lower -rate (e.g. 1024000) needs less CPU.\n",
+					plan.SampleRateHz, 100*float64(got)/float64(want))
+			}
 		}
 		if err := powersweep.WriteCSV(w, rows); err != nil {
 			return err
@@ -228,6 +269,15 @@ func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.
 			return err
 		}
 	}
+}
+
+// sweepSamples is the number of IQ samples a sweep's rows integrated.
+func sweepSamples(rows []powersweep.Row) int {
+	n := 0
+	for _, r := range rows {
+		n += r.Samples
+	}
+	return n
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {

@@ -2046,6 +2046,12 @@ confirmation before any close-as-completed.
   `ANDROID_NDK_HOME`. Not runnable on a CI host, so a phone is still the on-air gate.
   `gophertrunk power` (`internal/powersweep`) is the rtl_power-compatible sweep logger the same
   issue asked for; its rtl_tcp path is pinned by `TestPowerSweepOverRTLTCP` (fake rtl_tcp server).
+  On the reporter's 32-bit phones (8 Oct) the per-sample complex128 FFT ran BELOW real time
+  (~1.3 of 2.4 MS/s; 38 MS/s on an x86 dev box), so each hop waited for its full sample share and a
+  `-i 30` sweep took ~1 min while the borrowed hunt IQ reader flooded `hunt: decode falling behind`.
+  Hops now carry a wall-clock budget (`powersweep.Integration.Budget` = interval/hops − settle) and
+  the CSV `samples` column is the honest count; `power` notes it once (`quietDrops` silences the
+  hunt WARN). A faster FFT (complex64/radix-4) is the open lever for more samples per hop.
 - **A detector threshold in radians-per-sample is a SAMPLE-RATE trap (#1184 CTCSS).** The
   conventional scanner's CTCSS gate never opened on air: its Goertzel threshold was calibrated
   on 48 kHz unit tests, but the scanner feeds 2.4 MS/s, where the same deviation is 50x smaller

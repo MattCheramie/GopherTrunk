@@ -7,7 +7,7 @@
 # USB pass-through is the operator's responsibility; see
 # docs/hardening.md for the udev + docker run / compose recipe.
 
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 WORKDIR /src
 
 # Cache deps before copying the rest of the source.
