@@ -61,6 +61,12 @@ A power sweep ([full reference](power-sweep.html)):
 ./gophertrunk power -rtltcp 127.0.0.1:1234 -f 88M:108M:10k -i 30 -out fm.csv
 ```
 
+Wireless M-Bus meters at 868.95 MHz ([full reference](wmbus.html)):
+
+```sh
+./gophertrunk wmbus -rtltcp 127.0.0.1:1234
+```
+
 The daemon works the same way, with the dongle listed under `sdr.rtl_tcp`
 (see [Remote rtl_tcp SDRs](hardware.html#remote-rtl_tcp-sdrs)).
 

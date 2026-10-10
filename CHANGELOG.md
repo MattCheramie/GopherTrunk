@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Wireless M-Bus meter decoder: `gophertrunk wmbus` (#1256).** Decodes
+  EN 13757-4 telegrams from 868 MHz utility meters (heat cost allocators,
+  water, gas, heat and electricity meters; OMS), modes T1 and C1 (frame
+  formats A and B), live from a local or rtl_tcp SDR or from a capture file.
+  It prints each meter's manufacturer, ID and device type, and the readings
+  of unencrypted meters (EN 13757-3 data records). Encrypted meters (OMS
+  security modes 5 and 7) show their header and security mode only; there is
+  no decryption. Verified against rtl-wmbus's real-air sample captures and
+  wmbusmeters' decoded test telegrams. See `docs/wmbus.md`.
 - **P25 conventional channels in the scan list (#1239).** A
   `scanner.conventional` entry now takes `mode: p25` for a P25 Phase 1
   conventional channel, such as the national P25 interoperability channels.
