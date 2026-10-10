@@ -188,20 +188,35 @@ func (a *amCNMeter) reset() {
 // ModeAM is the Channel.Mode of an AM channel (issue #1219).
 const ModeAM = "am"
 
+// ModeP25 is the Channel.Mode of a P25 Phase 1 conventional channel
+// (issue #1239), e.g. the national P25 interoperability channels. It
+// squelches on in-channel power like an FM channel and hands the call to
+// the composer's P25 Phase 1 (IMBE) voice chain.
+const ModeP25 = "p25"
+
 // ValidMode reports whether mode is a Channel.Mode the scanner knows.
 func ValidMode(mode string) bool {
 	switch mode {
-	case "fm", "nfm", ModeAM:
+	case "fm", "nfm", ModeAM, ModeP25:
 		return true
 	}
 	return false
 }
 
+// IsDigitalMode reports whether mode carries digital voice, which has no
+// sub-audible tone and no analog data bursts to decode.
+func IsDigitalMode(mode string) bool {
+	return mode == ModeP25
+}
+
 // conventionalProtocol is the synthetic grant protocol for ch: the
-// composer picks its analog voice chain from it.
+// composer picks its voice chain from it.
 func conventionalProtocol(ch Channel) string {
-	if ch.Mode == ModeAM {
+	switch ch.Mode {
+	case ModeAM:
 		return "am-conv"
+	case ModeP25:
+		return "p25"
 	}
 	return "fm-conv"
 }

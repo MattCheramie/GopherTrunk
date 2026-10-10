@@ -30,7 +30,10 @@ type Channel struct {
 	// Mode is "fm" or "nfm" — the latter narrows the post-demod
 	// audio LPF; both share the IQ-power squelch — or "am" (issue
 	// #1219): envelope-detected audio (protocol "am-conv") and a
-	// carrier-to-noise squelch (SquelchCNDb) instead of SquelchDbFS.
+	// carrier-to-noise squelch (SquelchCNDb) instead of SquelchDbFS —
+	// or "p25" (issue #1239): P25 Phase 1 conventional, the FM
+	// channel's in-channel power squelch with the call decoded by the
+	// composer's P25 Phase 1 voice chain (protocol "p25").
 	Mode string
 	// SquelchDbFS is the threshold above which the scanner declares
 	// "carrier present", compared against the CHANNEL's power
@@ -419,7 +422,15 @@ func New(opts Options) (*Scanner, error) {
 			ch.Mode = "fm"
 		}
 		if !ValidMode(ch.Mode) {
-			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am", ch.Label, ch.Mode)
+			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25", ch.Label, ch.Mode)
+		}
+		if IsDigitalMode(ch.Mode) {
+			if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {
+				return nil, fmt.Errorf("conventional: channel %q: tone gating applies to analog channels, not mode %q", ch.Label, ch.Mode)
+			}
+			if len(ch.Decoders) > 0 {
+				return nil, fmt.Errorf("conventional: channel %q: data decoders run on analog channels, not mode %q", ch.Label, ch.Mode)
+			}
 		}
 		if ch.Mode == ModeAM && ch.SquelchCNDb <= 0 {
 			ch.SquelchCNDb = DefaultAMSquelchCNDb
@@ -791,13 +802,16 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 		gid = uint32(0x80000000) | uint32(idx)
 	}
 	g := trunking.Grant{
-		System:      s.opts.SystemName,
-		Protocol:    conventionalProtocol(ch),
-		GroupID:     gid,
-		GroupLabel:  ch.Label, // #1105: surface the channel's configured name to scan consumers
-		SourceID:    0,
-		FrequencyHz: ch.FrequencyHz,
-		At:          now,
+		System:     s.opts.SystemName,
+		Protocol:   conventionalProtocol(ch),
+		GroupID:    gid,
+		GroupLabel: ch.Label, // #1105: surface the channel's configured name to scan consumers
+		// GroupID is the channel's synthetic ID, not an on-air
+		// talkgroup: digital voice chains must not gate on it (#1239).
+		Conventional: true,
+		SourceID:     0,
+		FrequencyHz:  ch.FrequencyHz,
+		At:           now,
 	}
 	s.opts.Engine.HandleSyntheticCall(g, s.opts.DeviceSerial)
 
@@ -1155,6 +1169,11 @@ func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 	if !ValidMode(ch.Mode) {
 		s.log.Warn("conv: unknown mode on temp channel; using fm", "mode", ch.Mode)
 		ch.Mode = "fm"
+	}
+	if IsDigitalMode(ch.Mode) && (ch.Tone.Mode != "" && ch.Tone.Mode != "none" || len(ch.Decoders) > 0) {
+		s.log.Warn("conv: tone gate / data decoders ignored on a digital temp channel", "mode", ch.Mode)
+		ch.Tone = ToneConfig{}
+		ch.Decoders = nil
 	}
 	if ch.Mode == ModeAM && ch.SquelchCNDb <= 0 {
 		ch.SquelchCNDb = DefaultAMSquelchCNDb

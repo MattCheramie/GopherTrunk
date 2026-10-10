@@ -26,11 +26,17 @@ type Grant struct {
 	// of the opaque synthetic 0x80000000|idx GroupID in Rdio Scanner and
 	// other scan-type consumers. Empty on grants whose label (if any)
 	// comes only from the roster.
-	GroupLabel  string
-	SourceID    uint32 // originator (subscriber unit)
-	FrequencyHz uint32 // voice channel frequency
-	ChannelID   uint8  // raw channel ID (P25 band-plan ID, DMR LCN high)
-	ChannelNum  uint16 // raw channel number within the ID
+	GroupLabel string
+	// Conventional marks a synthetic grant from the conventional scanner:
+	// GroupID is the scan-list channel's synthetic ID, not an on-air
+	// talkgroup, so a digital voice chain (a P25 conventional channel,
+	// issue #1239) must not gate the channel's audio on its in-band
+	// talkgroup matching it. False on every trunked grant.
+	Conventional bool
+	SourceID     uint32 // originator (subscriber unit)
+	FrequencyHz  uint32 // voice channel frequency
+	ChannelID    uint8  // raw channel ID (P25 band-plan ID, DMR LCN high)
+	ChannelNum   uint16 // raw channel number within the ID
 	// RFSSID and SiteID identify the P25 site whose control channel
 	// granted the call, decoded from the site's RFSS Status Broadcast
 	// (TSBK 0x3A) and accumulated in the control channel's NetworkModel.

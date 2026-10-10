@@ -1066,7 +1066,7 @@ scanner:
 | --- | --- |
 | `label` | Display name |
 | `frequency_hz` | Tuner centre frequency |
-| `mode` | `fm` (default), `nfm`, or `am` (the VHF air band — see below) |
+| `mode` | `fm` (default), `nfm`, `am` (the VHF air band — see below), or `p25` (P25 Phase 1 digital — see below) |
 | `gain` | Optional tuner gain for this channel on the scanner SDR: `"auto"` or tenths of a dB (`"280"` = 28 dB). Empty uses the device's gain |
 | `squelch_dbfs` | Squelch threshold in dBFS (FM channels), measured on the channel itself (±8 kHz), not the SDR's whole span |
 | `squelch_cn_db` | AM channels: carrier-to-noise open threshold in dB (default 12) |
@@ -1108,6 +1108,38 @@ scanner:
 - **Frequencies.** Enter the carrier frequency, not the 8.33 kHz
   channel name: channel "118.005" is the 118.000 MHz carrier. Both
   25 kHz and 8.33 kHz spacing work.
+
+#### P25 conventional channels
+
+`mode: p25` scans a P25 Phase 1 conventional (non-trunked) channel,
+such as the national P25 interoperability channels, alongside the
+analog ones:
+
+```yaml
+scanner:
+  conventional:
+    - label: "VCALL10"
+      frequency_hz: 155752500
+      mode: p25
+      squelch_dbfs: -50
+```
+
+- **Squelch.** The same in-channel power squelch as an FM channel
+  (`squelch_dbfs`, ±8 kHz). A conventional P25 transmitter is only on
+  the air while a radio is keyed, so carrier presence is the activity
+  signal.
+- **Audio.** The call is decoded by the same P25 Phase 1 (C4FM, IMBE)
+  voice chain as a trunked P25 call, and recorded and streamed the same
+  way. Every talkgroup on the channel is recorded: the call files under
+  the channel's label and `talkgroup_id`, not the on-air talkgroup, and
+  the keyed radio's ID comes from the voice link control.
+- **Not available on a P25 channel:** `tone` (CTCSS/DCS) and
+  `decoders` (MDC1200/FleetSync/ACARS) are analog features and are
+  rejected. There is no NAC filter yet, and the linear (CQPSK/LSM)
+  P25 modulation used by simulcast sites is not selectable here.
+- **Encryption.** An encrypted call records as encrypted IMBE unless a
+  matching `encryption_keys` entry is configured, as on a trunked
+  system.
 - **Manual tune.** The VFO form in the web Scanner tab has an AM
   option too.
 

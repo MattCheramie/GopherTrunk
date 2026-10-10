@@ -733,9 +733,19 @@ func validateConvChannel(i int, ch ConvChannelConfig) error {
 		return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
 	}
 	switch ch.Mode {
-	case "", "fm", "nfm", "am":
+	case "", "fm", "nfm", "am", "p25":
 	default:
-		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm|am", i)
+		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm|am|p25", i)
+	}
+	if ch.Mode == "p25" {
+		// A P25 channel carries digital voice: a sub-audible tone gate and
+		// the analog FFSK/MSK data decoders have nothing to listen to.
+		if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {
+			return fmt.Errorf("scanner.conventional[%d].tone: CTCSS/DCS gating applies to analog channels, not mode: p25", i)
+		}
+		if len(ch.Decoders) > 0 {
+			return fmt.Errorf("scanner.conventional[%d].decoders: data decoders run on analog channels, not mode: p25", i)
+		}
 	}
 	if ch.SquelchCNDb < 0 {
 		return fmt.Errorf("scanner.conventional[%d]: squelch_cn_db must be ≥ 0", i)

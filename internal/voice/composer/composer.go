@@ -614,6 +614,18 @@ func classifyVoiceKind(cs trunking.CallStart) voiceKind {
 	return voiceKindUnsupported
 }
 
+// voiceGateTalkgroup is the talkgroup a digital voice chain gates its audio
+// on: the grant's GroupID for a trunked call, 0 (gating off) for a
+// conventional scan-list channel, whose GroupID is a synthetic channel ID
+// that no on-air link control ever carries — gating on it would drop every
+// frame of a P25 conventional call as a foreign talkgroup (issue #1239).
+func voiceGateTalkgroup(g trunking.Grant) uint32 {
+	if g.Conventional {
+		return 0
+	}
+	return g.GroupID
+}
+
 func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	proto := cs.Grant.Protocol
 	kind := classifyVoiceKind(cs)
@@ -719,7 +731,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case voiceKindP25P1:
-		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
+		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, voiceGateTalkgroup(cs.Grant), cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	case voiceKindTETRA:
 		go c.runTETRAVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.Timeslot, cs.Grant.TETRAColourExt, cs.Grant.TETRAUsageMarker, cs.Grant.TETRATrafficLMS, ch.done)
 	case voiceKindTETRADMO:

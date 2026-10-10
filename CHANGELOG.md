@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **P25 conventional channels in the scan list (#1239).** A
+  `scanner.conventional` entry now takes `mode: p25` for a P25 Phase 1
+  conventional channel, such as the national P25 interoperability channels.
+  It squelches on in-channel power like an FM channel, and the call is
+  decoded by the same P25 Phase 1 voice chain as a trunked call. Any
+  talkgroup keyed on the channel is recorded: conventional grants are no
+  longer gated on the channel's synthetic talkgroup ID, which no on-air
+  link control carries. `tone` and `decoders` are rejected on a P25
+  channel. Also selectable from the web Scanner panel's manual tune and
+  the config builder.
+
 ### Changed
 - **`gophertrunk power` explains its bin layout (#1230).** As with rtl_power,
   the `-f` bin size is a maximum, so `-f 88M:108M:10k` gives 9375 Hz bins and

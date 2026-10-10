@@ -170,7 +170,7 @@ export const writes = {
     body: {
       frequency_hz: number;
       label?: string;
-      mode?: "fm" | "nfm" | "am";
+      mode?: "fm" | "nfm" | "am" | "p25";
       squelch_dbfs?: number;
       squelch_cn_db?: number;
       hangtime_ms?: number;

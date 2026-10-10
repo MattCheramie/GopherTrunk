@@ -1437,6 +1437,16 @@ scanner:
   #     frequency_hz: 131550000   # also 131.525, 130.025, 129.125, 131.125 …
   #     mode: am
   #     decoders: [acars]
+  #   # P25 Phase 1 conventional channel (#1239), e.g. the national P25
+  #   # interoperability channels. Squelches on in-channel power like FM
+  #   # (squelch_dbfs) and decodes the call with the P25 Phase 1 IMBE voice
+  #   # chain. Every talkgroup keyed on the channel is recorded under this
+  #   # channel's label / talkgroup_id. tone and decoders are analog-only
+  #   # and rejected here.
+  #   - label: "VCALL10"
+  #     frequency_hz: 155752500
+  #     mode: p25
+  #     squelch_dbfs: -50
 
 # audio routes decoded PCM to the host's speakers. Disabled by default;
 # WAV recording is unaffected and continues whether audio is on or off.

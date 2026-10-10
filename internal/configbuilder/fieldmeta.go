@@ -427,7 +427,7 @@ var fieldMetas = map[string]FieldMeta{
 	"CCHuntConfig.MaxBackoffMs":             {Help: "Cap on the exponential backoff. Default 60000 ms."},
 	"ConvChannelConfig.Label":               {Help: "Display name for this conventional channel."},
 	"ConvChannelConfig.FrequencyHz":         {Label: "Frequency", Hz: true, Help: "Channel center frequency."},
-	"ConvChannelConfig.Mode":                {Help: "Demodulation: fm (wide), nfm (narrow) or am (the VHF air band — envelope detection with a carrier-to-noise squelch).", Options: opts("", "(fm)", "fm", "fm", "nfm", "nfm", "am", "am")},
+	"ConvChannelConfig.Mode":                {Help: "Demodulation: fm (wide), nfm (narrow), am (the VHF air band — envelope detection with a carrier-to-noise squelch) or p25 (P25 Phase 1 conventional digital voice, e.g. the interoperability channels — in-channel power squelch, IMBE decode; no tone gate or data decoders).", Options: opts("", "(fm)", "fm", "fm", "nfm", "nfm", "am", "am", "p25", "p25")},
 	"ConvChannelConfig.Gain":                {Label: "Gain", Help: "Tuner gain for this channel on the scanner SDR: \"auto\" or tenths of a dB (\"280\" = 28 dB), like sdr.devices gain. Empty uses the device's gain; if no channel sets one, the scanner never changes the gain."},
 	"ConvChannelConfig.SquelchDbFS":         {Label: "Squelch (dBFS)", Help: "Squelch threshold in dBFS, measured on the channel itself (±8 kHz), not the SDR's whole span. Default -50. Ignored for mode am."},
 	"ConvChannelConfig.SquelchCNDb":         {Label: "AM squelch C/N (dB)", Help: "AM channels only: open when the carrier stands this many dB over the channel's own noise floor (in a ~188 Hz bin). Independent of gain. Default 12; noise alone reads ~3–7."},
