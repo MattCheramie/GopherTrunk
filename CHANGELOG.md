@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.2.5] — 2026-10-10
+
 ### Changed
 - **`gophertrunk power` explains its bin layout (#1230).** As with rtl_power,
   the `-f` bin size is a maximum, so `-f 88M:108M:10k` gives 9375 Hz bins and
