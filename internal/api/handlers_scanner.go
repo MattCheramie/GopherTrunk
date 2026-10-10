@@ -336,8 +336,8 @@ func (s *Server) handleScannerManualTune(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusBadRequest, "frequency_hz outside 25 MHz – 1.3 GHz tuning range")
 		return
 	}
-	if req.Mode != "" && req.Mode != "fm" && req.Mode != "nfm" && req.Mode != "am" {
-		s.writeError(w, http.StatusBadRequest, "mode must be fm, nfm or am")
+	if req.Mode != "" && req.Mode != "fm" && req.Mode != "nfm" && req.Mode != "am" && req.Mode != "p25" {
+		s.writeError(w, http.StatusBadRequest, "mode must be fm, nfm, am or p25")
 		return
 	}
 	idx, ok := s.scanner.ManualTune(req)

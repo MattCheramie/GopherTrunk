@@ -603,7 +603,7 @@ type CCHuntConfig struct {
 type ConvChannelConfig struct {
 	Label       string  `yaml:"label"`
 	FrequencyHz uint32  `yaml:"frequency_hz"`
-	Mode        string  `yaml:"mode"`         // "fm" | "nfm" | "am" (#1219)
+	Mode        string  `yaml:"mode"`         // "fm" | "nfm" | "am" (#1219) | "p25" (#1239)
 	SquelchDbFS float64 `yaml:"squelch_dbfs"` // in-channel power (±8 kHz); default -50; ignored for mode am
 	// SquelchCNDb is an AM channel's squelch: the carrier's
 	// carrier-to-noise ratio (dB, in a ~188 Hz bin) measured from the
