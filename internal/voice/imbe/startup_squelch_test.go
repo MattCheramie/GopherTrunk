@@ -118,3 +118,52 @@ func TestStartupSquelchMutesUntilStableVoice(t *testing.T) {
 		t.Fatalf("squelch released during the garbage (sample %d < %d)", firstNonZero(on), garbageSamples)
 	}
 }
+
+// TestStartupSquelchNeverMutesAWholeShortOver pins the #1242 field report: a
+// weak-signal P25 over decoded 81 IMBE frames (1.6 s) whose voiced frames were
+// scattered among unvoiced ones, so the stable-pitch run that releases the
+// squelch never formed — and because the failsafe window (100 frames, 2 s) was
+// longer than the whole over, every sample was muted: the recorder logged
+// rms=0 crest=0 and wrote a WAV of digital silence. The measured startup
+// scratch the squelch exists for lasts 0.15–0.55 s, so the failsafe must
+// release within that bound and leave the rest of a short over audible.
+func TestStartupSquelchNeverMutesAWholeShortOver(t *testing.T) {
+	const overFrames = 81 // call 2 in the #1242 report
+	// Voiced frames at a stable pitch, but never two in a row: each is
+	// followed by an unvoiced/idle-free frame that breaks the run. That is the
+	// shape of the report's calls (voiced=19 of 81, voiced_frac 0.32).
+	voiced := packInfo(speechBits(48))
+	unvoicedBits := make([]byte, InfoBits) // b0 48, all-zero payload: unvoiced
+	setB0(unvoicedBits, 48)
+	unvoiced := packInfo(unvoicedBits)
+
+	d := New()
+	d.EnableStartupSquelch()
+	var out []int16
+	for i := 0; i < overFrames; i++ {
+		f := unvoiced
+		if i%3 == 0 {
+			f = voiced
+		}
+		s, _ := d.Decode(f)
+		out = append(out, s...)
+	}
+	if d.acqRun >= acqRunFrames {
+		t.Fatalf("fixture formed a %d-frame stable run; it must not release the squelch on speech", d.acqRun)
+	}
+
+	first := firstNonZero(out)
+	if first < 0 {
+		t.Fatalf("whole %d-frame over muted (rms=0): the failsafe window outlasts a short over", overFrames)
+	}
+	// The measured startup scratch tops out at ~0.55 s; the failsafe must
+	// release by 0.6 s (30 frames) so it never mutes more than that.
+	if limit := 30 * mbe.SamplesPerFrame; first > limit {
+		t.Fatalf("squelch muted %.2f s of a call with no stable run; want <= 0.60 s",
+			float64(first)/8000)
+	}
+	// Sanity: the squelch is still active at the start (first frames muted).
+	if first == 0 {
+		t.Fatal("squelch did not mute the onset at all")
+	}
+}
