@@ -55,6 +55,46 @@ type LDUAssembler struct {
 	tolerance int
 	buf       []uint8
 	pending   int // -1 = awaiting FSW; ≥0 = buf-relative FSW start
+	// frameLen is the on-air dibit length of the data unit at pending, read
+	// from its NID once nidPrefixDibits have arrived; 0 = not read yet.
+	frameLen int
+}
+
+// On-air dibit lengths of the non-LDU data units a voice channel carries
+// (TIA-102.BAAA; OP25 p25_framer: HDU 792 bits, TDU 144, TDULC 432). Each is
+// a whole number of the LDU's 72-bit status-symbol blocks.
+const (
+	hduDibitCount   = 792 / 2
+	tduDibitCount   = 144 / 2
+	tdulcDibitCount = 432 / 2
+)
+
+// nidPrefixDibits is how much of a data unit carries its frame sync + NID:
+// 48 + 64 bits, plus the status symbol after bit 70 — 114 bits.
+const nidPrefixDibits = (LDUFrameSyncBits + LDUNIDBits + 2) / 2
+
+// dataUnitDibits reads the NID that follows a frame sync and returns the data
+// unit's on-air length in dibits. An undecodable NID, or a DUID with no fixed
+// length here (LDU, or anything unexpected on a voice channel), returns the
+// LDU length — the assembler's behaviour before it read NIDs.
+func dataUnitDibits(prefix []uint8) int {
+	bits := framing.DibitsToBits(prefix)
+	payload := make([]byte, 0, LDUFrameSyncBits+LDUNIDBits)
+	payload = append(payload, bits[:LDUStatusInterval]...)
+	payload = append(payload, bits[LDUStatusInterval+2:]...)
+	nid, _, err := ParseNID(payload[lduNIDOffset : lduNIDOffset+LDUNIDBits])
+	if err != nil {
+		return LDUDibitCount
+	}
+	switch nid.DUID {
+	case DUIDHeader:
+		return hduDibitCount
+	case DUIDTerminator:
+		return tduDibitCount
+	case DUIDTerminatorWithLC:
+		return tdulcDibitCount
+	}
+	return LDUDibitCount
 }
 
 // NewLDUAssembler returns an LDUAssembler that forwards completed
@@ -89,23 +129,59 @@ func (a *LDUAssembler) Process(dibits []uint8) {
 		if a.pending < 0 && len(a.buf) >= 24 {
 			if a.fswMismatch(a.buf[len(a.buf)-24:]) <= a.tolerance {
 				a.pending = len(a.buf) - 24
+				a.frameLen = 0
 			}
 		}
-		// Emit an LDU once 864 dibits have been buffered since the
-		// FSW start.
-		if a.pending >= 0 && len(a.buf)-a.pending >= LDUDibitCount {
+		if a.pending < 0 {
+			continue
+		}
+		have := len(a.buf) - a.pending
+		// Read the NID as soon as it has arrived, so a data unit shorter
+		// than an LDU doesn't swallow the frame sync of the one after it
+		// (#1242: every HDU swallowed its over's first LDU1).
+		if a.frameLen == 0 && have >= nidPrefixDibits {
+			a.frameLen = dataUnitDibits(a.buf[a.pending : a.pending+nidPrefixDibits])
+		}
+		// An HDU carries no voice: drop it once complete and hunt for the
+		// LDU1 that follows. Handing it to the sink would decode header
+		// bits as IMBE frames.
+		if a.frameLen == hduDibitCount && have >= hduDibitCount {
+			a.consume(a.pending + hduDibitCount)
+			continue
+		}
+		// Emit an LDU-sized window once 864 dibits have been buffered since
+		// the FSW start. Terminators are emitted in the same window (the
+		// sink's contract is a 1728-bit buffer and it reads only their
+		// NID/LC), but only their own length is consumed, and the dibits
+		// after them are hunted again for the next frame sync.
+		if have >= LDUDibitCount {
 			lduStart := a.pending
-			lduDibits := a.buf[lduStart : lduStart+LDUDibitCount]
-			ldu := framing.DibitsToBits(lduDibits)
+			ldu := framing.DibitsToBits(a.buf[lduStart : lduStart+LDUDibitCount])
 			a.sink(ldu)
-			// Compact: drop everything up to and including this LDU.
-			// The next LDU's FSW must appear in subsequent dibits.
-			tailStart := lduStart + LDUDibitCount
-			copy(a.buf, a.buf[tailStart:])
-			a.buf = a.buf[:len(a.buf)-tailStart]
+			n := a.frameLen
+			if n == 0 {
+				n = LDUDibitCount
+			}
+			if n == LDUDibitCount {
+				a.consume(lduStart + LDUDibitCount)
+				continue
+			}
+			rest := append([]uint8(nil), a.buf[lduStart+n:]...)
+			a.buf = a.buf[:0]
 			a.pending = -1
+			a.frameLen = 0
+			a.Process(rest)
 		}
 	}
+}
+
+// consume drops the first n buffered dibits and returns to hunting for a
+// frame sync in the dibits that arrive next.
+func (a *LDUAssembler) consume(n int) {
+	copy(a.buf, a.buf[n:])
+	a.buf = a.buf[:len(a.buf)-n]
+	a.pending = -1
+	a.frameLen = 0
 }
 
 // Reset clears the assembler's internal state. Callers invoke
@@ -115,6 +191,7 @@ func (a *LDUAssembler) Process(dibits []uint8) {
 func (a *LDUAssembler) Reset() {
 	a.buf = a.buf[:0]
 	a.pending = -1
+	a.frameLen = 0
 }
 
 // Buffered returns the number of dibits currently held in the
