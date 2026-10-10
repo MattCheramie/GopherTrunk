@@ -55,7 +55,29 @@ date, time, Hz low, Hz high, Hz step, samples, dB, dB, ...
   each other, not against an absolute reference.
 
 Hops abut exactly, so concatenating a sweep's lines gives one continuous
-spectrum from the lower edge to the upper edge.
+spectrum from the lower edge to the upper edge. A signal that sits right on
+a hop boundary is therefore split: half of it ends one line and the rest
+opens the next.
+
+### Why "10k" gives 192 values of 9375 Hz
+
+As with rtl_power, the bin size in `-f` is a **maximum**. For
+`-f 88M:108M:10k` at the default 2.4 MS/s:
+
+1. **Bin width.** The FFT is the smallest power of two whose bins are no
+   wider than 10 kHz. 2,400,000 ÷ 128 = 18,750 Hz is too wide, and
+   2,400,000 ÷ 256 = **9375 Hz** fits, so the FFT has 256 points.
+2. **Bins per line.** `-crop 0.25` drops a quarter of the FFT (an eighth at
+   each edge, where the tuner's filter rolls off), leaving
+   256 × 0.75 = **192 bins**, or 192 × 9375 Hz = 1.8 MHz per hop.
+3. **Hops.** 20 MHz is 2134 bins of 9375 Hz, which takes **12 hops**, so a
+   sweep is 12 lines. The first 11 have 192 values each and the last has the
+   remaining 22, ending at 108 MHz.
+
+`power` prints this breakdown on stderr whenever the bins come out narrower
+than you asked for. For exactly 10 kHz bins, pick a rate that divides into
+them, for example `-rate 2560000` (2,560,000 ÷ 256 = 10,000 Hz), provided
+your dongle runs that rate without dropping samples.
 
 ## Flags
 
@@ -63,7 +85,7 @@ spectrum from the lower edge to the upper edge.
 |---|---|---|
 | `-f lower:upper:bin` | (required) | Range and bin size, with `k` / `M` / `G` suffixes. |
 | `-i` | `10s` | Integration interval. One sweep starts every interval, and each hop integrates `interval ÷ hops` of samples. A bare number is seconds. |
-| `-e` | (none) | Stop after this long. Without it, sweeps run until Ctrl-C. |
+| `-e` | (none) | Stop after this long. It is checked between sweeps, so a sweep is never cut short: `-i 30 -e 5m` gives exactly 10 complete sweeps. Without it, sweeps run until Ctrl-C. |
 | `-1` | off | Run one sweep, then exit. |
 | `-out` | stdout | CSV path. A trailing positional file name also works, as with rtl_power. |
 | `-rtltcp host:port` | (none) | Sweep the dongle behind an rtl_tcp server instead of a local SDR. |

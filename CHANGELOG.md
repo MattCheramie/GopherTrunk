@@ -7,6 +7,15 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **`gophertrunk power` explains its bin layout (#1230).** As with rtl_power,
+  the `-f` bin size is a maximum, so `-f 88M:108M:10k` gives 9375 Hz bins and
+  192 values per CSV line, which read as a bug. When the bins come out narrower
+  than requested, the startup banner now shows how they were derived
+  (`2400000 S/s ÷ 256 = 9375.0 Hz`, 192 of 256 bins kept after the 25 % crop).
+  `docs/power-sweep.md` walks through the same calculation and notes that `-e`
+  never cuts a sweep short.
+
 ### Security
 - **Go toolchain moved to 1.26.9 and `golang.org/x/net` to v0.60.0.** Twelve
   October 2026 Go advisories (GO-2026-6603..6617: HTTP/1 and HTTP/2 request
