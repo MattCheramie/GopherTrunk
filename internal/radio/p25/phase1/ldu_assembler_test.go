@@ -28,13 +28,27 @@ func dibitsFor(n int, pattern ...uint8) []uint8 {
 // trailing-collection together.
 func makeLDUDibits(filler ...uint8) []uint8 {
 	out := make([]uint8, LDUDibitCount)
-	copy(out, FrameSyncWord[:])
 	if len(filler) > 0 {
 		for i := 24; i < LDUDibitCount; i++ {
 			out[i] = filler[(i-24)%len(filler)]
 		}
 	}
+	copy(out, lduHeadDibits())
 	return out
+}
+
+// lduHeadDibits is an LDU1's frame sync + NID as they appear on air (the
+// status symbol after bit 70 falls inside the NID). The assembler reads the
+// NID to frame each data unit at its own length, so a fixture LDU needs a
+// real LDU NID: an all-zero NID field is a valid codeword for an HDU on
+// NAC 0x000 and is dropped as one.
+func lduHeadDibits() []uint8 {
+	nid := EncodeNIDBits(0x293, DUIDLogicalLink1)
+	bits := append([]byte(nil), FrameSyncBits()...)
+	bits = append(bits, nid[:LDUStatusInterval-LDUFrameSyncBits]...)
+	bits = append(bits, 0, 0) // status symbol
+	bits = append(bits, nid[LDUStatusInterval-LDUFrameSyncBits:]...)
+	return framing.BitsToDibits(bits)
 }
 
 // TestLDUAssemblerEmitsOnClean864: a clean FSW + 840 trailing
@@ -113,12 +127,13 @@ func TestLDUAssemblerHandlesMultipleLDUs(t *testing.T) {
 func TestLDUAssemblerNoEmitOnPartialLDU(t *testing.T) {
 	var got [][]byte
 	a := NewLDUAssembler(func(ldu []byte) { got = append(got, ldu) }, 0)
-	a.Process(FrameSyncWord[:])
+	head := lduHeadDibits()
+	a.Process(head)
 	a.Process(dibitsFor(100, 0))
 	if len(got) != 0 {
 		t.Fatalf("sink invoked %d times after partial input, want 0", len(got))
 	}
-	a.Process(dibitsFor(LDUDibitCount-24-100, 0))
+	a.Process(dibitsFor(LDUDibitCount-len(head)-100, 0))
 	if len(got) != 1 {
 		t.Fatalf("sink invoked %d times after completing the LDU, want 1", len(got))
 	}
@@ -192,8 +207,9 @@ func TestLDUAssemblerResetClearsState(t *testing.T) {
 func TestLDUAssemblerEmitsLDUConsumableByExtractVoiceFrames(t *testing.T) {
 	payload := make([]byte, LDUPayloadBits)
 	// First 48 bits of the payload must be the canonical FSW bits
-	// so the assembler latches.
+	// so the assembler latches, followed by a real LDU1 NID.
 	copy(payload, FrameSyncBits())
+	copy(payload[lduNIDOffset:], EncodeNIDBits(0x293, DUIDLogicalLink1))
 	// Encode 9 synthetic IMBE subframes through the full channel
 	// path: info → EncodeFrameToChannel (per-vector FEC + §7.4
 	// scramble + §7.5 interleave) → place at the voice offsets in

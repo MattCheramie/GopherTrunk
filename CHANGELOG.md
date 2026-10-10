@@ -26,6 +26,14 @@ for tagged releases.
   an older `go` downloads 1.26.9 automatically.
 
 ### Fixed
+- **P25 Phase 1 recordings lost the first LDU (180 ms) of every over (#1242).**
+  The voice path collected 864 dibits, an LDU's length, after every frame
+  sync. Each over opens with a 396-dibit header (HDU), so that window swallowed
+  the first LDU1's frame sync. LDU1 was lost every time, and the header bits
+  went to the vocoder as if they were nine voice frames. A reply that keyed
+  up within 180 ms of a terminator lost its header and LDU1 the same way. The
+  assembler now reads each frame's NID and frames headers, terminators and
+  LDUs at their own on-air lengths.
 - **Short weak-signal P25 Phase 1 overs were recorded as pure silence (#1242).**
   The call-start squelch, which mutes the receiver's startup burst until a run
   of stable-pitch voiced frames confirms speech, only gave up after 100 frames
