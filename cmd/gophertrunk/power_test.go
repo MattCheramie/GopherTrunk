@@ -318,3 +318,46 @@ func TestPowerIQSourceDropsQuietly(t *testing.T) {
 		t.Fatalf("power's IQ stream logged on drops: %s", logBuf.String())
 	}
 }
+
+// TestPowerPlanSummaryExplainsBinChoice pins the banner for #1230's command
+// (-f 88M:108M:10k at 2.4 MS/s): the reporter read "192 × 9375.0 Hz bins" as
+// wrong for a 10 kHz request, so the banner must say where 9375 and 192 come
+// from. A request that is met exactly prints the layout line alone.
+func TestPowerPlanSummaryExplainsBinChoice(t *testing.T) {
+	r, err := powersweep.ParseRange("88M:108M:10k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := powersweep.NewPlan(r, 2_400_000, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// docs/power-sweep.md quotes these numbers.
+	if n, last := len(plan.Hops), plan.Hops[len(plan.Hops)-1].Bins; n != 12 || last != 22 {
+		t.Fatalf("plan has %d hops, last with %d bins; docs say 12 and 22", n, last)
+	}
+	got := powerPlanSummary("rtlsdr[00000001]", r, plan, 30*time.Second)
+	for _, want := range []string{
+		"12 hops of 192 × 9375.0 Hz bins (256-point FFT), 30s per sweep",
+		"2400000 S/s ÷ 256 = 9375.0 Hz",
+		"10000 Hz asked for",
+		"centre 192 of 256 bins (1800.0 kHz, -crop 0.25)",
+		"a CSV line has 192 values",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("banner missing %q:\n%s", want, got)
+		}
+	}
+
+	exact, err := powersweep.ParseRange("88M:108M:9375")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err = powersweep.NewPlan(exact, 2_400_000, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := powerPlanSummary("x", exact, plan, 30*time.Second); strings.Count(got, "\n") != 1 {
+		t.Errorf("exact bin request should print the layout line only, got:\n%s", got)
+	}
+}

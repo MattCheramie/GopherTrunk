@@ -181,14 +181,33 @@ FLAGS:`)
 	defer bw.Flush()
 
 	integ := powerIntegration(every, uint32(*rate), len(plan.Hops), settleFor)
-	fmt.Fprintf(os.Stderr, "power: %s, %.0f–%.0f Hz in %d hops of %d × %.1f Hz bins (%d-point FFT), %s per sweep\n",
-		name, r.LowHz, r.HighHz, len(plan.Hops), plan.HopBins, plan.BinHz, plan.FFTSize, every)
+	fmt.Fprint(os.Stderr, powerPlanSummary(name, r, plan, every))
 
 	err = runPowerSweeps(ctx, src, plan, integ, powerSchedule{every: every, stopAfter: stopAfter, single: *single}, bw, os.Stderr, time.Now, sleepCtx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		_ = bw.Flush()
 		rep.Fatal(1, err)
 	}
+}
+
+// powerPlanSummary is the banner `power` prints before sweeping. The first
+// line is the layout; when the bins come out narrower than -f asked for, a
+// second line shows where the numbers come from (#1230: "10k" gave 192 ×
+// 9375 Hz bins per line, where a reader expected 180 × 10 kHz). Like
+// rtl_power, the requested bin size is a maximum: the FFT is the smallest
+// power of two whose bins are no wider, and each hop keeps the centre
+// (1 − crop) of it.
+func powerPlanSummary(name string, r powersweep.Range, plan powersweep.Plan, every time.Duration) string {
+	s := fmt.Sprintf("power: %s, %.0f–%.0f Hz in %d hops of %d × %.1f Hz bins (%d-point FFT), %s per sweep\n",
+		name, r.LowHz, r.HighHz, len(plan.Hops), plan.HopBins, plan.BinHz, plan.FFTSize, every)
+	if plan.BinHz < r.BinHz {
+		hopHz := float64(plan.HopBins) * plan.BinHz
+		s += fmt.Sprintf("power: bins are %.0f S/s ÷ %d = %.1f Hz (the largest width not over the %.0f Hz asked for); "+
+			"each hop keeps the centre %d of %d bins (%.1f kHz, -crop %.2f), so a CSV line has %d values\n",
+			plan.SampleRateHz, plan.FFTSize, plan.BinHz, r.BinHz,
+			plan.HopBins, plan.FFTSize, hopHz/1e3, 1-float64(plan.HopBins)/float64(plan.FFTSize), plan.HopBins)
+	}
+	return s
 }
 
 // powerSchedule is when sweeps run: one per every, until stopAfter has
