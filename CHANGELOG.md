@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **`voice_iq_debug` sidecars name the radio the voice channel decoded
+  (#1242).** The per-call `.metadata.json` took `source_id` from the grant
+  alone, so on a site that sets calls up with Group Voice Channel Update –
+  Explicit (no source unit) every capture read `"source_id": "0"` while the
+  log showed the keyed radio from link control. The first radio the voice
+  chain decodes now fills a zero `source_id`, and a new `source_ids` field
+  lists every radio heard on the call, in order. P25 Phase 1, P25 Phase 2
+  and DMR chains all feed it.
+
 ## [v1.2.6] — 2026-10-11
 
 ### Added
@@ -29,16 +39,6 @@ for tagged releases.
   link control carries. `tone` and `decoders` are rejected on a P25
   channel. Also selectable from the web Scanner panel's manual tune and
   the config builder.
-
-### Fixed
-- **`voice_iq_debug` sidecars name the radio the voice channel decoded
-  (#1242).** The per-call `.metadata.json` took `source_id` from the grant
-  alone, so on a site that sets calls up with Group Voice Channel Update –
-  Explicit (no source unit) every capture read `"source_id": "0"` while the
-  log showed the keyed radio from link control. The first radio the voice
-  chain decodes now fills a zero `source_id`, and a new `source_ids` field
-  lists every radio heard on the call, in order. P25 Phase 1, P25 Phase 2
-  and DMR chains all feed it.
 
 ## [v1.2.5] — 2026-10-10
 
