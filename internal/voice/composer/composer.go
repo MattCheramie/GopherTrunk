@@ -383,6 +383,9 @@ type sameCarrierSource interface {
 type chain struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	// iqDebug is the call's voice_iq_debug capture (nil when off), so
+	// publishCallSource can carry decoded radio IDs into its sidecar.
+	iqDebug *voiceIQDebugWriter
 }
 
 // New validates options and constructs a Composer. The bus subscription
@@ -697,10 +700,11 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	// Diagnostic-container voice capture: tee the exact IQ stream this
 	// call's chain will decode into a per-call file (voice_iq_debug.go).
 	// Lossless toward the chain; disk side is best-effort.
+	var iqDebug *voiceIQDebugWriter
 	if c.voiceIQDebug.Enabled {
-		iqCh = c.teeVoiceIQ(chainCtx, iqCh, cs, rateHzF)
+		iqCh, iqDebug = c.teeVoiceIQ(chainCtx, iqCh, cs, rateHzF)
 	}
-	ch := &chain{cancel: cancel, done: make(chan struct{})}
+	ch := &chain{cancel: cancel, done: make(chan struct{}), iqDebug: iqDebug}
 	c.mu.Lock()
 	c.chains[cs.DeviceSerial] = ch
 	c.mu.Unlock()

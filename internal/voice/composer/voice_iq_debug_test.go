@@ -39,7 +39,7 @@ func TestTeeVoiceIQWritesPerCallCapture(t *testing.T) {
 	in := make(chan []complex64, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := c.teeVoiceIQ(ctx, in, cs, 48_000)
+	out, _ := c.teeVoiceIQ(ctx, in, cs, 48_000)
 
 	want := []complex64{0.5 + 0i, 0 - 0.25i, -0.125 + 0.75i, 1 + 0i}
 	in <- want[:2]
@@ -136,7 +136,7 @@ func TestTeeVoiceIQFormats(t *testing.T) {
 			in := make(chan []complex64, 4)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			out := c.teeVoiceIQ(ctx, in, cs, 48_000)
+			out, _ := c.teeVoiceIQ(ctx, in, cs, 48_000)
 			// Enough samples that flac emits at least one frame.
 			block := make([]complex64, 6000)
 			for i := range block {
@@ -170,6 +170,56 @@ func TestTeeVoiceIQFormats(t *testing.T) {
 			}
 			if len(raw) < len(tc.sig) || string(raw[:len(tc.sig)]) != tc.sig {
 				t.Errorf("%s file does not start with %q signature", tc.ext, tc.sig)
+			}
+		})
+	}
+}
+
+// TestVoiceIQDebugNoteSource pins the sidecar's radio bookkeeping: a zero
+// grant source is filled by the first decoded radio, every distinct radio
+// is listed once in order, a non-zero grant source is kept, and a radio
+// that arrives after the capture closed still rewrites the sidecar.
+func TestVoiceIQDebugNoteSource(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		grantSrc uint32
+		notes    []uint32
+		wantID   string
+		wantIDs  string
+	}{
+		{"zero grant filled", 0, []uint32{2710, 2710, 1495}, "2710", "2710,1495"},
+		{"grant source kept", 1234, []uint32{1234, 2547}, "1234", "1234,2547"},
+		{"nothing decoded", 0, nil, "0", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cs := trunking.CallStart{
+				Grant:        trunking.Grant{System: "S", Protocol: "p25", GroupID: 301, SourceID: tc.grantSrc, FrequencyHz: 451_500_000},
+				DeviceSerial: "VOICE-1",
+				StartedAt:    time.Unix(1_700_000_000, 0).UTC(),
+			}
+			w, err := newVoiceIQDebugWriter(VoiceIQDebugConfig{Enabled: true, Dir: dir}, cs, 48_000, 1<<20, slog.Default())
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Half the radios before close, the rest after (a late LC).
+			half := len(tc.notes) / 2
+			for _, s := range tc.notes[:half] {
+				w.noteSource(s)
+			}
+			w.close()
+			for _, s := range tc.notes[half:] {
+				w.noteSource(s)
+			}
+			meta, err := siglab.LoadMetadata(w.metaPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := meta.System["source_id"]; got != tc.wantID {
+				t.Errorf("source_id = %q, want %q", got, tc.wantID)
+			}
+			if got := meta.System["source_ids"]; got != tc.wantIDs {
+				t.Errorf("source_ids = %q, want %q", got, tc.wantIDs)
 			}
 		})
 	}

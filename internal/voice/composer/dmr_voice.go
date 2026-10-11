@@ -314,7 +314,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 	var lastSrcUpd trunking.CallSourceUpdate
 	var haveSrcUpd bool
 	publishSource := func(src uint32, enc, emer bool, prio uint8) {
-		if src == 0 || c.bus == nil {
+		if src == 0 {
 			return
 		}
 		upd := trunking.CallSourceUpdate{DeviceSerial: serial, SourceID: src, Encrypted: enc, Emergency: emer, Priority: prio}
@@ -323,7 +323,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 		}
 		lastSrcUpd, haveSrcUpd = upd, true
 		upd.At = time.Now().UTC()
-		c.bus.Publish(events.Event{Kind: events.KindCallSourceUpdate, Payload: upd})
+		c.publishCallSource(upd)
 	}
 	// Terminator detection: end the call at once when the followed traffic
 	// channel carries a valid Terminator-with-LC for this call's group,

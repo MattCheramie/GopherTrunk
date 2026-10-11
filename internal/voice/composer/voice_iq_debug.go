@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -59,7 +61,10 @@ const voiceIQDebugQueue = 256
 // teeVoiceIQ wraps in with a per-call IQ capture. The returned channel
 // delivers the same chunks with the same semantics; the capture goroutine
 // owns the file and closes it when the input channel closes or ctx ends.
-func (c *Composer) teeVoiceIQ(ctx context.Context, in <-chan []complex64, cs trunking.CallStart, rateHz float64) <-chan []complex64 {
+// The returned writer (nil when the capture could not open) is kept on the
+// call's chain so radio IDs the chain decodes later reach the sidecar
+// (noteSource).
+func (c *Composer) teeVoiceIQ(ctx context.Context, in <-chan []complex64, cs trunking.CallStart, rateHz float64) (<-chan []complex64, *voiceIQDebugWriter) {
 	maxBytes := c.voiceIQDebug.MaxBytes
 	if maxBytes <= 0 {
 		maxBytes = voiceIQDebugDefaultMaxBytes
@@ -68,7 +73,7 @@ func (c *Composer) teeVoiceIQ(ctx context.Context, in <-chan []complex64, cs tru
 	if err != nil {
 		c.log.Warn("composer: voice IQ debug capture failed to open; call decodes without capture",
 			"system", cs.Grant.System, "group", cs.Grant.GroupID, "err", err)
-		return in
+		return in, nil
 	}
 	out := make(chan []complex64)
 	go func() {
@@ -91,7 +96,7 @@ func (c *Composer) teeVoiceIQ(ctx context.Context, in <-chan []complex64, cs tru
 			}
 		}
 	}()
-	return out
+	return out, w
 }
 
 // voiceIQDebugWriter owns one call's capture file + sidecar.
@@ -110,6 +115,12 @@ type voiceIQDebugWriter struct {
 	// goroutine, hence atomic.
 	samples   int64
 	truncated atomic.Bool
+
+	// mu guards meta, sources and closed: the chain goroutine reports
+	// decoded radio IDs (noteSource) while the tee goroutine finalises.
+	mu      sync.Mutex
+	sources []uint32 // distinct radio IDs, in order first seen
+	closed  bool
 }
 
 // newVoiceIQDebugWriter opens the capture files and starts the disk
@@ -144,6 +155,9 @@ func newVoiceIQDebugWriter(cfg VoiceIQDebugConfig, cs trunking.CallStart, rateHz
 		queue:    make(chan []complex64, voiceIQDebugQueue),
 		done:     make(chan struct{}),
 	}
+	if cs.Grant.SourceID != 0 {
+		w.sources = []uint32{cs.Grant.SourceID}
+	}
 	w.meta = &siglab.Metadata{
 		Protocol:     cs.Grant.Protocol,
 		Source:       "gophertrunk voice_iq_debug (per-call voice-channel IQ)",
@@ -154,6 +168,7 @@ func newVoiceIQDebugWriter(cfg VoiceIQDebugConfig, cs trunking.CallStart, rateHz
 			"system":     cs.Grant.System,
 			"talkgroup":  strconv.FormatUint(uint64(cs.Grant.GroupID), 10),
 			"source_id":  strconv.FormatUint(uint64(cs.Grant.SourceID), 10),
+			"source_ids": joinSourceIDs(w.sources),
 			"timeslot":   strconv.Itoa(int(cs.Grant.Timeslot)),
 			"rfss":       strconv.Itoa(int(cs.Grant.RFSSID)),
 			"site":       strconv.Itoa(int(cs.Grant.SiteID)),
@@ -207,18 +222,83 @@ func (w *voiceIQDebugWriter) markTruncated(reason string) {
 	}
 }
 
+// noteSource records a radio ID the call's chain decoded from the voice
+// channel (the LC/MAC that names the keyed radio). The grant's source is
+// only what the control channel announced, and some grants name none — a
+// P25 Group Voice Channel Update – Explicit carries no source unit, so
+// every such call's sidecar read source_id 0 while the chain logged the
+// radio (#1242). The first radio fills a zero source_id; every distinct
+// radio is listed in source_ids. A radio that arrives after the capture
+// closed (the chain drains buffered IQ after the tee ends) rewrites the
+// sidecar itself, so a late LC is never lost.
+func (w *voiceIQDebugWriter) noteSource(src uint32) {
+	if w == nil || src == 0 {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, s := range w.sources {
+		if s == src {
+			return
+		}
+	}
+	w.sources = append(w.sources, src)
+	if w.meta.System["source_id"] == "0" {
+		w.meta.System["source_id"] = strconv.FormatUint(uint64(src), 10)
+	}
+	w.meta.System["source_ids"] = joinSourceIDs(w.sources)
+	if w.closed {
+		w.writeMetaLocked()
+	}
+}
+
+// publishCallSource is the one exit for a chain's decoded source radio: it
+// records the radio on the call's voice_iq_debug capture (if any) and
+// publishes the KindCallSourceUpdate the engine backfills from. Routing
+// every chain through here keeps the sidecar and the call log naming the
+// same radio.
+func (c *Composer) publishCallSource(upd trunking.CallSourceUpdate) {
+	c.mu.Lock()
+	var w *voiceIQDebugWriter
+	if ch := c.chains[upd.DeviceSerial]; ch != nil {
+		w = ch.iqDebug
+	}
+	c.mu.Unlock()
+	w.noteSource(upd.SourceID)
+	if c.bus != nil {
+		c.bus.Publish(events.Event{Kind: events.KindCallSourceUpdate, Payload: upd})
+	}
+}
+
+// joinSourceIDs renders radio IDs as a comma-separated list ("" for none).
+func joinSourceIDs(ids []uint32) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatUint(uint64(id), 10)
+	}
+	return strings.Join(parts, ",")
+}
+
+// writeMetaLocked rewrites the sidecar; w.mu must be held.
+func (w *voiceIQDebugWriter) writeMetaLocked() {
+	if err := siglab.WriteMetadata(w.metaPath, w.meta); err != nil {
+		w.log.Warn("composer: voice IQ debug metadata rewrite failed", "path", w.metaPath, "err", err)
+	}
+}
+
 // close ends the capture: drains what is queued, closes the file, and
 // rewrites the sidecar with the final sample count / truncation flag.
 func (w *voiceIQDebugWriter) close() {
 	close(w.queue)
 	<-w.done
+	w.mu.Lock()
 	w.meta.System["samples"] = strconv.FormatInt(w.samples, 10)
 	if w.truncated.Load() {
 		w.meta.System["truncated"] = "true"
 	}
-	if err := siglab.WriteMetadata(w.metaPath, w.meta); err != nil {
-		w.log.Warn("composer: voice IQ debug metadata rewrite failed", "path", w.metaPath, "err", err)
-	}
+	w.closed = true
+	w.writeMetaLocked()
+	w.mu.Unlock()
 	w.log.Info("composer: voice IQ debug capture closed",
 		"path", w.path, "samples", w.samples, "truncated", w.truncated.Load())
 }
