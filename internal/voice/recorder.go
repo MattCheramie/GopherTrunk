@@ -915,6 +915,10 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 		}
 		s.mutedFrames++
 	}
+	// A conventional channel's audio_gain_db (#1239). Digital PCM exists
+	// only here, so this one point covers the WAV and the live tap below.
+	// Analog chains apply the same gain in the composer before WritePCM.
+	applyAudioGain(samples, s.cs.Grant.AudioGainDB)
 	if n := len(samples); n > 0 {
 		s.lastSample = samples[n-1]
 	}

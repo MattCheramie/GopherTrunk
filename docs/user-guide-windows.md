@@ -1068,6 +1068,7 @@ scanner:
 | `frequency_hz` | Tuner centre frequency |
 | `mode` | `fm` (default), `nfm`, `am` (the VHF air band — see below), or `p25` (P25 Phase 1 digital — see below) |
 | `gain` | Optional tuner gain for this channel on the scanner SDR: `"auto"` or tenths of a dB (`"280"` = 28 dB). Empty uses the device's gain |
+| `audio_gain_db` | Optional gain in dB on this channel's recovered audio (recording, live stream, uploads), to balance a mixed list of AM, NFM and P25 channels. `0` (default) leaves it unchanged; range ±30 dB; clamps at full scale |
 | `squelch_dbfs` | Squelch threshold in dBFS (FM channels), measured on the channel itself (±8 kHz), not the SDR's whole span |
 | `squelch_cn_db` | AM channels: carrier-to-noise open threshold in dB (default 12) |
 | `hangtime_ms` | Carrier-lost dwell before hopping |
@@ -1133,6 +1134,12 @@ scanner:
   way. Every talkgroup on the channel is recorded: the call files under
   the channel's label and `talkgroup_id`, not the on-air talkgroup, and
   the keyed radio's ID comes from the voice link control.
+- **Level.** Digital voice is levelled by the vocoder, and analog audio
+  is not, so a mixed list's channels each arrive at their own level.
+  Use `audio_gain_db` on a channel to balance it against the others
+  (for example `audio_gain_db: 6` on a P25 channel that sounds quieter
+  than your AM and NFM ones). `recordings.normalize` evens out the
+  recorded files instead, but it leaves the live stream alone.
 - **Not available on a P25 channel:** `tone` (CTCSS/DCS) and
   `decoders` (MDC1200/FleetSync/ACARS) are analog features and are
   rejected. There is no NAC filter yet, and the linear (CQPSK/LSM)

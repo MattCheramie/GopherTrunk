@@ -33,10 +33,17 @@ type Grant struct {
 	// issue #1239) must not gate the channel's audio on its in-band
 	// talkgroup matching it. False on every trunked grant.
 	Conventional bool
-	SourceID     uint32 // originator (subscriber unit)
-	FrequencyHz  uint32 // voice channel frequency
-	ChannelID    uint8  // raw channel ID (P25 band-plan ID, DMR LCN high)
-	ChannelNum   uint16 // raw channel number within the ID
+	// AudioGainDB is a gain in dB the voice path applies to this call's
+	// recovered audio: the conventional scanner's per-channel
+	// audio_gain_db (#1239), so a mixed scan list can be balanced. The
+	// analog chain applies it before PCM conversion; for a digital channel
+	// the recorder applies it to the vocoder's output. 0 on every trunked
+	// grant, which leaves audio unchanged.
+	AudioGainDB float64
+	SourceID    uint32 // originator (subscriber unit)
+	FrequencyHz uint32 // voice channel frequency
+	ChannelID   uint8  // raw channel ID (P25 band-plan ID, DMR LCN high)
+	ChannelNum  uint16 // raw channel number within the ID
 	// RFSSID and SiteID identify the P25 site whose control channel
 	// granted the call, decoded from the site's RFSS Status Broadcast
 	// (TSBK 0x3A) and accumulated in the control channel's NetworkModel.

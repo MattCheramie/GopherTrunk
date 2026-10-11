@@ -2014,6 +2014,16 @@ confirmation before any close-as-completed.
   difference. Gate (#764/#771): the reporter's own file through
   `GT_ACARS_AUDIO=<wav> go test ./cmd/gophertrunk -run TestACARSReplay -v`, then a live
   scanner run. Known limit: an ACARS burst also opens an ordinary AM "call".
+- **Scan-list loudness (#1239 follow-up): digital and analog are levelled differently — balance per
+  channel with `audio_gain_db`, don't move a global default.** The IMBE/AMBE vocoder AGC targets a fixed
+  peak (18000, ≈−5 dBFS; measured −19.5 dBFS RMS on `imbe/testdata/p25p1-tone-bracketed-voice.raw`), while
+  the analog chain has NO AGC in production (`AudioAGC` is never configured) and scales the discriminator
+  ×10 000, so a full ±2.5 kHz NFM channel peaks near −20 dBFS: by default P25 is ~10 dB LOUDER than NFM.
+  A report of the opposite is source/config-specific (5 kHz-deviation amateur FM, compressed air-band AM,
+  enhance/normalize settings), which is why the fix was a per-channel knob, not a default. The gain rides
+  `Grant.AudioGainDB`: the composer's FM/AM chain applies it before PCM conversion, the recorder applies it
+  to decoded digital PCM (the only place digital PCM exists) — never both, as analog never reaches
+  `writeRawFrame`.
 - **The conventional scanner's FM squelch measured the WHOLE SDR span, not the channel
   (#1239).** `squelch_dbfs` was `PowerDbFS` of the scanner's full 2.4 MS/s IQ, so any other
   carrier in the span (or the noise floor an auto-gain tuner holds near full scale) kept every

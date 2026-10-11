@@ -1772,6 +1772,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				channels = append(channels, conventional.Channel{
 					GainTenthDB: gainTenthDB,
 					GainSet:     gainSet,
+					AudioGainDB: ch.AudioGainDB,
 					Label:       ch.Label,
 					FrequencyHz: ch.FrequencyHz,
 					Mode:        ch.Mode,

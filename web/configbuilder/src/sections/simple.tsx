@@ -485,6 +485,7 @@ export function ScannerSection() {
             Priority: 0,
             TalkgroupID: 0,
             Gain: "",
+            AudioGainDB: 0,
             Tone: { Mode: "", CTCSSHz: 0, DCSCode: "", DCSPolarity: "" },
             Decoders: null,
           })}
@@ -528,6 +529,12 @@ export function ScannerSection() {
                   onChange={(x) => setCh({ ...ch, Gain: x })}
                   placeholder="device gain"
                   help="Tuner gain for this channel: auto, or tenths of a dB (280 = 28 dB). Empty uses the scanner SDR gain."
+                />
+                <NumberField
+                  label="Audio gain (dB)"
+                  step={0.5}
+                  value={ch.AudioGainDB ?? 0}
+                  onChange={(x) => setCh({ ...ch, AudioGainDB: x })}
                 />
                 <TextField
                   label="Data decoders"
