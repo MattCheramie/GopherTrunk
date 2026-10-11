@@ -346,20 +346,14 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 // fills in System / Protocol / GroupID from the bound Grant on
 // republish — leave them blank here.
 func (c *Composer) publishP25Phase2CallSource(serial string, u p25p2.GroupVoiceChannelUser) {
-	if c.bus == nil {
-		return
-	}
 	so := p25p2.ServiceOptions(u.ServiceOptions)
-	c.bus.Publish(events.Event{
-		Kind: events.KindCallSourceUpdate,
-		Payload: trunking.CallSourceUpdate{
-			DeviceSerial: serial,
-			SourceID:     u.SourceID,
-			Encrypted:    so.Encrypted(),
-			Emergency:    so.Emergency(),
-			Priority:     so.Priority(),
-			At:           time.Now().UTC(),
-		},
+	c.publishCallSource(trunking.CallSourceUpdate{
+		DeviceSerial: serial,
+		SourceID:     u.SourceID,
+		Encrypted:    so.Encrypted(),
+		Emergency:    so.Emergency(),
+		Priority:     so.Priority(),
+		At:           time.Now().UTC(),
 	})
 }
 

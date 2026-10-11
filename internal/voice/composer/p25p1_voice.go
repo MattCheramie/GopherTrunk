@@ -185,17 +185,14 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	// updates it. The engine's backfill is additive.
 	var publishedSourceID uint32
 	publishSource := func(src uint32) {
-		if src == 0 || src == publishedSourceID || c.bus == nil {
+		if src == 0 || src == publishedSourceID {
 			return
 		}
 		publishedSourceID = src
-		c.bus.Publish(events.Event{
-			Kind: events.KindCallSourceUpdate,
-			Payload: trunking.CallSourceUpdate{
-				DeviceSerial: serial,
-				SourceID:     src,
-				At:           time.Now().UTC(),
-			},
+		c.publishCallSource(trunking.CallSourceUpdate{
+			DeviceSerial: serial,
+			SourceID:     src,
+			At:           time.Now().UTC(),
 		})
 	}
 	// publishMotorolaAlias surfaces a completed voice-channel talker
