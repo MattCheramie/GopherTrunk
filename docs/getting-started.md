@@ -83,6 +83,8 @@ captures and discovery:
 - `gophertrunk capture` — record live SDR IQ to a file.
 - `gophertrunk power` — sweep a band and log its power as rtl_power-style CSV,
   from a local or rtl_tcp SDR ([Power sweep](power-sweep.html)).
+- `gophertrunk wmbus` — decode 868 MHz Wireless M-Bus utility meter telegrams,
+  live or from a capture ([Wireless M-Bus](wmbus.html)).
 - `gophertrunk replay` / `analyze` / `identify` — decode and inspect a capture
   offline, auto-detect its protocol, export JSON/YAML/CSV.
 - `gophertrunk hunt` — discover and map an unknown trunked system
