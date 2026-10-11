@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.2.6] — 2026-10-11
+
 ### Added
 - **Wireless M-Bus meter decoder: `gophertrunk wmbus` (#1256).** Decodes
   EN 13757-4 telegrams from 868 MHz utility meters (heat cost allocators,
