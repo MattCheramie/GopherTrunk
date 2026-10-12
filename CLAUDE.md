@@ -112,6 +112,16 @@ confirmation before any close-as-completed.
   call first (`engineCallTimeout` now raises it to hangtime + 5 s). Daemon slog lines (`composer:`,
   `recorder:`) go to STDERR, not `messages.log`/`event_log` — on Windows redirect `2> debug.log`;
   under the in-process TUI they go to `%TEMP%\gophertrunk-tui-*.log`.
+- **#1242 voice loss was IQ HOLES, not a weak signal — check frame-sync SPACING before any
+  DSP theory.** On the reporter's `voice_iq_debug` captures (wideband Pi, SoapyRemote 2.4 MS/s)
+  consecutive P25 LDU frame syncs landed 790–850 symbols apart instead of the fixed 864: 2–3.5 % of
+  every call's samples were missing, in 8–14 ms gaps that hit a third of the LDUs, while the eye
+  was 12–25 % EVM (decodable) and the CC decoded fine. Cause: `iqtap.Broker` subscriber channels
+  were 16 CHUNKS, ~60 ms for RTL-SDR 16 KiB chunks but ~2.4 ms for ~360-sample SoapyRemote
+  datagrams — the depth-8 driver bug (`streamBufferLatency`) one layer down. Subscribers are now
+  time-sized (`SubBufferLatency` 400 ms at the stream rate; pinned by `broker_latency_test.go`)
+  and `wbvoice` WARNs its drop count per call (they were silent). An explicit chunk depth in
+  `iqtap.New` keeps the old fixed behaviour. On-air confirmation pending (#764/#771).
 - **P25 discovery: a PDU (DUID 0xC) on the control channel is Multi-Block
   Trunking, not noise — GT now decodes AMBT (`mbt.go`).** The operator's "only 1
   neighbor site, no WACN" report was this: their system broadcasts Network

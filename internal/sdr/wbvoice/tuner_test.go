@@ -1,11 +1,13 @@
 package wbvoice
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -364,4 +366,68 @@ func powerNearDC(samples []complex64, sampleRateHz, halfWidthHz float64) float64
 		return 0
 	}
 	return dcPow / totalPow
+}
+
+// TestStreamIQWarnsWhenTapDropsIQ pins the #1242 visibility fix: a voice tap
+// whose DDC falls behind the wideband stream loses chunks at the broker, and
+// that used to leave no trace in the log while the call's audio came out
+// garbled. The stream's end must now WARN with the dropped-chunk count.
+func TestStreamIQWarnsWhenTapDropsIQ(t *testing.T) {
+	var logBuf syncBuffer
+	log := slog.New(slog.NewTextHandler(&logBuf, nil))
+	fake := newFakeDevice()
+	broker := iqtap.New(fake, 2, log) // tiny fixed depth: overflows at once
+	v, err := New(Options{
+		Serial: "tap-0", Broker: broker,
+		WidebandCenterHz: 851_500_000, SDRSampleRateHz: 2_400_000, Log: log,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.SetCenterFreq(852_000_000); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	primary, err := broker.StreamIQ(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for range primary {
+		}
+	}()
+	streamCtx, stopStream := context.WithCancel(ctx)
+	iqCh, err := v.StreamIQ(streamCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Never read iqCh: the tap's goroutine blocks on its own output, the
+	// broker subscription fills, and further chunks are dropped.
+	for i := 0; i < 200; i++ {
+		fake.stream <- make([]complex64, 4800)
+	}
+	stopStream()
+	for range iqCh {
+	}
+	if got := logBuf.String(); !strings.Contains(got, "voice tap dropped wideband IQ") || !strings.Contains(got, "dropped_chunks=") {
+		t.Fatalf("no drop WARN after a lagging tap stream; log:\n%s", got)
+	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
