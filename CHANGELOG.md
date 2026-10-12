@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **`gophertrunk power` FFT is 3–4× faster (#1230).** The sweep now uses a
+  radix-2 FFT on `complex64` instead of gonum's `complex128` FFT, writes its
+  windowed input straight into the transform's bit-reversed order, and does
+  the butterflies in float32 (Go evaluates a `complex64` product in float64,
+  and the conversions dominated on 32-bit CPUs). Measured per-sample
+  throughput at 256 / 1024 / 8192 points: 32-bit x86 23 / 18 / 14 → 82 /
+  74 / 40 MS/s, amd64 32 / 24 / 18 → 93 / 80 / 59 MS/s. On the reporter's
+  32-bit phones, which managed ~1.3 MS/s before, each hop should now average
+  every sample a 2.4 MS/s dongle delivers. The spectrum reads within 0.01 dB
+  of the previous float64 path.
+
 ### Added
 - **`gophertrunk wmbus -save-frames DIR` (#1256).** Keeps the IQ around each
   decoded telegram, as a small IQ WAV (typically 100–400 KB) plus a
