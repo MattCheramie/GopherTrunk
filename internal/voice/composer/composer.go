@@ -751,11 +751,11 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	case voiceKindDSTAR:
 		go c.runDStarVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	case voiceKindAM:
-		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, uint32(math.Round(rateHzF)), true, ch.done)
+		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, uint32(math.Round(rateHzF)), true, cs.Grant.AudioGainDB, ch.done)
 	default:
 		// Analog FM has no symbol clock to drift, so the rounded integer
 		// rate is fine; keep its uint32 signature unchanged.
-		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, uint32(math.Round(rateHzF)), false, ch.done)
+		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, uint32(math.Round(rateHzF)), false, cs.Grant.AudioGainDB, ch.done)
 	}
 }
 
@@ -926,7 +926,11 @@ func (c *Composer) newFMChannelFilter(intermediateHzf float64) *filter.FIR {
 // and no CMA equalizer (its constant-modulus target is wrong for AM, whose
 // envelope IS the audio). Everything else — decimation, the tone high-pass,
 // AGC, resampling, squelch-tail mute, PCM delivery — is shared.
-func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, am bool, done chan<- struct{}) {
+//
+// audioGainDB is the call's Grant.AudioGainDB (a conventional channel's
+// audio_gain_db, #1239), applied to the demodulated audio just before PCM
+// conversion so the recording, live stream and tone-out all hear it.
+func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, am bool, audioGainDB float64, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-fm:"+serial, nil)
 
@@ -937,6 +941,13 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 	// the tracker keeps the engine's LastHeardAt fresh.
 	bt := c.newBoundaryTracker(serial, 0, nil)
 	go bt.run(ctx)
+
+	// The PCM conversion clamps at full scale, so a boost that overshoots
+	// saturates rather than wrapping.
+	audioGain := float32(1)
+	if audioGainDB != 0 {
+		audioGain = float32(math.Pow(10, audioGainDB/20))
+	}
 
 	// Front-end decimator: an 81-tap anti-alias FIR that convolves ONLY at
 	// the output positions, replacing the old full-rate FIR + every-Nth-
@@ -1191,6 +1202,11 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			// the next over inside the hangtime window.
 			if agc != nil && squelchOpen {
 				audio = agc.Process(audio, audio)
+			}
+			if audioGain != 1 {
+				for i := range audio {
+					audio[i] *= audioGain
+				}
 			}
 			var pcm []int16
 			if resamp != nil {

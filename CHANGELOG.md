@@ -7,6 +7,15 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Per-channel audio gain on the conventional scanner (#1239).** A
+  `scanner.conventional` entry takes `audio_gain_db` (±30 dB, default 0),
+  applied to that channel's recovered audio in the recording, the live
+  stream and broadcast uploads alike. It balances a mixed scan list: digital
+  voice (P25) is levelled by the vocoder's AGC, while analog AM/NFM audio
+  follows the transmitter's modulation, so each channel otherwise arrives at
+  its own level. Also in the config builder.
+
 ### Fixed
 - **`voice_iq_debug` sidecars name the radio the voice channel decoded
   (#1242).** The per-call `.metadata.json` took `source_id` from the grant

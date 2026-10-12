@@ -638,6 +638,14 @@ type ConvChannelConfig struct {
 	// device's own gain — and if no channel sets one, the scanner never
 	// touches the gain. Issue #1239.
 	Gain string `yaml:"gain"`
+	// AudioGainDB is a gain in dB applied to this channel's recovered audio
+	// (the recording, the live stream and broadcast uploads alike), so a
+	// mixed scan list can be balanced: an air-band AM channel, an NFM
+	// repeater and a P25 channel otherwise each arrive at their own level.
+	// 0 (default) leaves the audio unchanged; range ±30 dB. Output is
+	// clamped at full scale, so a large boost on a loud channel clips.
+	// Issue #1239.
+	AudioGainDB float64 `yaml:"audio_gain_db"`
 	// Tone is the optional CTCSS / DCS sub-audible squelch gate.
 	// Zero / "none" disables tone gating (default).
 	Tone ConvToneConfig `yaml:"tone"`

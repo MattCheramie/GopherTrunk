@@ -728,6 +728,10 @@ func (c Config) validateScanner() []error {
 	return errs
 }
 
+// maxConvAudioGainDB bounds scanner.conventional[].audio_gain_db: past
+// ±30 dB a boost only clips and a cut only mutes.
+const maxConvAudioGainDB = 30.0
+
 func validateConvChannel(i int, ch ConvChannelConfig) error {
 	if ch.FrequencyHz == 0 {
 		return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
@@ -760,6 +764,9 @@ func validateConvChannel(i int, ch ConvChannelConfig) error {
 		if _, err := strconv.ParseFloat(strings.ReplaceAll(g, ",", "."), 64); err != nil {
 			return fmt.Errorf("scanner.conventional[%d]: gain %q must be \"auto\" or tenths of a dB (e.g. \"280\")", i, ch.Gain)
 		}
+	}
+	if ch.AudioGainDB < -maxConvAudioGainDB || ch.AudioGainDB > maxConvAudioGainDB {
+		return fmt.Errorf("scanner.conventional[%d]: audio_gain_db %.1f must be within ±%.0f dB", i, ch.AudioGainDB, maxConvAudioGainDB)
 	}
 	switch ch.Tone.Mode {
 	case "", "none":

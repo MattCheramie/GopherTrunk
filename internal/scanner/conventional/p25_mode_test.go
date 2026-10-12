@@ -38,6 +38,7 @@ func TestP25ChannelGrantsP25AndEndsOnCarrierDrop(t *testing.T) {
 		Channels: []Channel{{
 			Label: "VCALL10", FrequencyHz: freq, Mode: ModeP25,
 			SquelchDbFS: -50, Hangtime: 200 * time.Millisecond,
+			AudioGainDB: 6,
 		}},
 		SampleRateHz: amTestRate,
 	})
@@ -69,6 +70,9 @@ func TestP25ChannelGrantsP25AndEndsOnCarrierDrop(t *testing.T) {
 	}
 	if g.GroupLabel != "VCALL10" {
 		t.Errorf("grant label %q, want the channel label", g.GroupLabel)
+	}
+	if g.AudioGainDB != 6 {
+		t.Errorf("grant AudioGainDB = %v, want the channel's 6 dB (the voice path reads it from the grant)", g.AudioGainDB)
 	}
 	normal := 0
 	for _, reason := range eng.endReasons {

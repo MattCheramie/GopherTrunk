@@ -259,6 +259,8 @@ export interface ConvChannelConfig {
   // Per-channel tuner gain on the scanner SDR: "auto" or tenths of a dB;
   // "" = the device's gain (#1239).
   Gain?: string;
+  // Gain in dB on this channel's recovered audio; 0 = unchanged (#1239).
+  AudioGainDB?: number;
   Tone: ConvToneConfig;
   // Data decoders run on the channel's dwell: "mdc1200" | "fleetsync" (#1220),
   // "acars" on an AM channel (#1231).

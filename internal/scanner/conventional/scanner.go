@@ -95,6 +95,9 @@ type Channel struct {
 	// (issue #1239).
 	GainTenthDB int
 	GainSet     bool
+	// AudioGainDB is carried on the channel's grant (Grant.AudioGainDB) so
+	// the voice path scales this channel's recovered audio by it (#1239).
+	AudioGainDB float64
 	// Decoders names the data decoders (DecoderMDC1200, DecoderFleetSync,
 	// DecoderACARS)
 	// to run on this channel's IQ while the scanner is on it, built through
@@ -809,6 +812,7 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 		// GroupID is the channel's synthetic ID, not an on-air
 		// talkgroup: digital voice chains must not gate on it (#1239).
 		Conventional: true,
+		AudioGainDB:  ch.AudioGainDB,
 		SourceID:     0,
 		FrequencyHz:  ch.FrequencyHz,
 		At:           now,

@@ -44,6 +44,13 @@ func toneAmp(pcm []int16, hz float64) float64 {
 // returns the recorded PCM (the first 0.25 s dropped: filter settle).
 func recordAnalog(t *testing.T, proto string, iq []complex64) []int16 {
 	t.Helper()
+	return recordAnalogGain(t, proto, iq, 0)
+}
+
+// recordAnalogGain is recordAnalog with the grant's AudioGainDB set, as the
+// conventional scanner does from a channel's audio_gain_db (#1239).
+func recordAnalogGain(t *testing.T, proto string, iq []complex64, gainDB float64) []int16 {
+	t.Helper()
 	bus := events.NewBus(8)
 	defer bus.Close()
 	src := newFakeSource()
@@ -63,7 +70,7 @@ func recordAnalog(t *testing.T, proto string, iq []complex64) []int16 {
 	defer func() { cancel(); c.Close() }()
 	go c.Run(ctx)
 	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
-		Grant:        trunking.Grant{System: "scanner", Protocol: proto, GroupID: 0x80000000, FrequencyHz: 118_700_000},
+		Grant:        trunking.Grant{System: "scanner", Protocol: proto, GroupID: 0x80000000, FrequencyHz: 118_700_000, Conventional: true, AudioGainDB: gainDB},
 		DeviceSerial: "CONV", StartedAt: time.Now().UTC(),
 	}})
 	var ch chan []complex64
@@ -177,5 +184,23 @@ func TestAMCarrierAFCHoldsOnNoise(t *testing.T) {
 func TestClassifyAMConv(t *testing.T) {
 	if k := classifyVoiceKind(trunking.CallStart{Grant: trunking.Grant{Protocol: "am-conv"}}); k != voiceKindAM {
 		t.Fatalf("am-conv classified %v, want voiceKindAM", k)
+	}
+}
+
+// TestComposerAnalogChainAppliesAudioGain pins scanner.conventional[]
+// .audio_gain_db on an analog channel (#1239): the grant's AudioGainDB
+// scales the demodulated audio before PCM conversion, so +6 dB doubles the
+// recorded tone and -6 dB halves it, on AM and FM alike.
+func TestComposerAnalogChainAppliesAudioGain(t *testing.T) {
+	const n = 2_400_000 // 1 s
+	iq := amToneIQ(n, 0.2, false)
+	base := toneAmp(recordAnalogGain(t, "am-conv", iq, 0), 1000)
+	for _, tc := range []struct {
+		gainDB, wantRatio float64
+	}{{6, 1.995}, {-6, 0.501}} {
+		got := toneAmp(recordAnalogGain(t, "am-conv", iq, tc.gainDB), 1000)
+		if r := got / base; math.Abs(r-tc.wantRatio) > 0.02*tc.wantRatio {
+			t.Errorf("audio_gain_db %+g: tone %.0f vs %.0f at 0 dB = ×%.3f, want ×%.3f", tc.gainDB, got, base, r, tc.wantRatio)
+		}
 	}
 }
