@@ -115,7 +115,10 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
   rate, as on older phones, the hop stops at that time limit with whatever
   it averaged, so sweeps still start every `-i`. `power` says so once on
   stderr, and the `samples` column shows how many each hop used. A lower
-  `-rate` (for example `1024000`) needs less CPU but takes more hops.
+  `-rate` (for example `1024000`) needs less CPU but takes more hops. Since
+  the FFT was rewritten for speed (about 3–4× faster, measured on 32-bit
+  and 64-bit x86), a 2.4 MS/s dongle should keep up on most phones; the
+  note on stderr tells you if yours does not.
 - **Differences from rtl_power:** the default crop is 0.25 (rtl_power's is
   0), gain is in tenths of a dB, and there is no `-w` window choice (Hann is
   used) or `-F` downsampling filter.

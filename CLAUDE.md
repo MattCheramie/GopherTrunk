@@ -2061,7 +2061,11 @@ confirmation before any close-as-completed.
   `-i 30` sweep took ~1 min while the borrowed hunt IQ reader flooded `hunt: decode falling behind`.
   Hops now carry a wall-clock budget (`powersweep.Integration.Budget` = interval/hops − settle) and
   the CSV `samples` column is the honest count; `power` notes it once (`quietDrops` silences the
-  hunt WARN). A faster FFT (complex64/radix-4) is the open lever for more samples per hop.
+  hunt WARN). The FFT was then rewritten (`fft.Radix2`, complex64, bit-reversed write in the window
+  step): 3.3× on amd64 and 3.8× on GOARCH=386 at 1024 points. The single biggest factor on 32-bit was
+  NOT the algorithm: **Go evaluates a `complex64` product in float64** (widen/narrow around every
+  multiply), so the butterfly is spelled out in float32 — the plain radix-2 with complex64 `*` was only
+  1.5× on 386. Keep that in mind for any hot complex64 loop. Not verified on an ARM phone yet.
 - **A detector threshold in radians-per-sample is a SAMPLE-RATE trap (#1184 CTCSS).** The
   conventional scanner's CTCSS gate never opened on air: its Goertzel threshold was calibrated
   on 48 kHz unit tests, but the scanner feeds 2.4 MS/s, where the same deviation is 50x smaller

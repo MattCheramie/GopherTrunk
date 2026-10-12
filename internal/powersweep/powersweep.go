@@ -257,30 +257,41 @@ func Sweep(ctx context.Context, src Source, p Plan, in Integration, stamp time.T
 // accumulator averages FFT periodograms in linear power, with the same Hann
 // window and normalisation as spectrum.PowerDB (a unit-amplitude tone reads
 // ~0 dBFS in its bin).
+//
+// The transform is fft.Radix2 on complex64: on the #1230 reporter's 32-bit
+// phones the gonum (complex128) backend could not keep up with a 2.4 MS/s
+// dongle. The window step writes each sample straight into the FFT's
+// bit-reversed input slot, so there is no separate permutation pass.
 type accumulator struct {
 	n      int
-	plan   fft.Plan
-	win    []float64
+	plan   *fft.Radix2
+	rev    []int32
+	win    []float32
 	norm   float64
-	in     []complex128
-	out    []complex128
+	buf    []complex64
 	sum    []float64 // FFT-shifted linear power
 	frames int
 }
 
 func newAccumulator(n int) *accumulator {
-	win := window.Hann(n)
+	hann := window.Hann(n)
+	win := make([]float32, n)
 	var ws float64
-	for _, w := range win {
+	for i, w := range hann {
 		ws += w * w
+		win[i] = float32(w)
+	}
+	plan, err := fft.NewRadix2(n)
+	if err != nil {
+		panic(err) // Plan sizes are powers of two in [MinFFTSize, MaxFFTSize]
 	}
 	return &accumulator{
 		n:    n,
-		plan: fft.New(n),
+		plan: plan,
+		rev:  plan.Rev(),
 		win:  win,
 		norm: 1 / (float64(n) * ws),
-		in:   make([]complex128, n),
-		out:  make([]complex128, n),
+		buf:  make([]complex64, n),
 		sum:  make([]float64, n),
 	}
 }
@@ -293,15 +304,24 @@ func (a *accumulator) reset() {
 // add folds every whole FFT frame of iq into the average.
 func (a *accumulator) add(iq []complex64) {
 	half := a.n / 2
+	buf, rev, win := a.buf, a.rev[:a.n], a.win[:a.n]
+	// FFT-shift as two straight runs instead of a per-bin modulo: bins
+	// [0, half) land at [half, n) and [half, n) at [0, half).
+	lowSum, highSum := a.sum[half:], a.sum[:half]
 	for off := 0; off+a.n <= len(iq); off += a.n {
-		for i, s := range iq[off : off+a.n] {
-			w := a.win[i]
-			a.in[i] = complex(float64(real(s))*w, float64(imag(s))*w)
+		frame := iq[off : off+a.n]
+		for i, w := range win {
+			s := frame[i]
+			buf[rev[i]] = complex(real(s)*w, imag(s)*w)
 		}
-		out := a.plan.Forward(a.out, a.in)
-		for i, v := range out {
-			re, im := real(v), imag(v)
-			a.sum[(i+half)%a.n] += (re*re + im*im) * a.norm
+		a.plan.TransformBitReversed(buf)
+		for i, v := range buf[:half] {
+			re, im := float64(real(v)), float64(imag(v))
+			lowSum[i] += (re*re + im*im) * a.norm
+		}
+		for i, v := range buf[half:] {
+			re, im := float64(real(v)), float64(imag(v))
+			highSum[i] += (re*re + im*im) * a.norm
 		}
 		a.frames++
 	}
