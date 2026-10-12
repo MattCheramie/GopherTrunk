@@ -7,6 +7,23 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **Wideband voice taps no longer drop IQ on a short pause (#1242).** Every
+  IQ broker subscriber (wideband voice taps, Signal Lab captures, the scopes)
+  had a buffer of 16 *chunks*. That was ~60 ms for an RTL-SDR's 16 KiB
+  transfers but only ~2.4 ms for a SoapyRemote stream at 2.4 MS/s, whose
+  datagrams carry ~360 samples. Any longer pause in a voice tap's DDC
+  goroutine silently cut a hole in the call's IQ. On the reporter's Raspberry
+  Pi every captured P25 call was missing 2–3.5 % of its samples in 8–14 ms
+  gaps, hitting about a third of the LDUs and garbling the IMBE frames, while
+  the control channel decoded cleanly. The buffer is now sized in time:
+  400 ms of IQ at the stream rate, the same cushion the SoapyRemote driver
+  keeps. A voice tap that still drops logs a `wbvoice: voice tap dropped
+  wideband IQ` warning with the chunk count when the call ends; drops used
+  to leave no trace.
+
+## [v1.2.7] — 2026-10-12
+
 ### Changed
 - **`gophertrunk power` FFT is 3–4× faster (#1230).** The sweep now uses a
   radix-2 FFT on `complex64` instead of gonum's `complex128` FFT, writes its

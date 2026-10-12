@@ -288,6 +288,17 @@ func (v *VirtualTuner) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 	go func() {
 		defer close(out)
 		defer sub.Close()
+		// Every dropped chunk is a hole in this call's IQ: the voice chain
+		// loses frame alignment across it and the LDU / burst it lands in
+		// decodes as garbage. It used to be silent — the #1242 captures were
+		// missing 2–3.5 % of their samples with nothing in the log saying
+		// so — so report it once per call, when the stream ends.
+		defer func() {
+			if d := sub.Dropped(); d > 0 {
+				v.log.Warn("wbvoice: voice tap dropped wideband IQ — the call's audio has gaps; the tap's DDC fell behind the stream (reduce CPU load: fewer channels / voice_taps, or a lower sdr.sample_rate)",
+					"target_hz", target, "dropped_chunks", d)
+			}
+		}()
 		for {
 			select {
 			case <-ctx.Done():

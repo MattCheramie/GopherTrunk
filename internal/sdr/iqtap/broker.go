@@ -33,20 +33,36 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
-// DefaultSubBuffer is the per-subscriber channel depth (in IQ chunks)
-// used when New is called with subBuffer == 0. At a typical 2.048 MS/s
-// rate and ~16 KiB chunks (~4 ms), 16 chunks ≈ 60 ms of buffering —
-// enough to absorb a typical SSE/WS frame's worth of jitter without
-// dropping, but small enough that a wedged consumer falls behind
-// fast enough to be visible in the drop counter.
+// DefaultSubBuffer is the per-subscriber depth floor (in IQ chunks) when New
+// is called with subBuffer == 0, and the whole depth while the stream rate is
+// unknown. The depth is otherwise sized in TIME (SubBufferLatency), because a
+// chunk is a driver-specific amount of IQ: ~4 ms for an RTL-SDR's 16 KiB
+// transfers but ~0.15 ms for a SoapyRemote datagram at 2.4 MS/s, where 16
+// chunks was 2.4 ms of slack and every longer pause in a voice tap's DDC
+// goroutine silently cut a hole in the call's IQ (#1242).
 const DefaultSubBuffer = 16
+
+// SubBufferLatency is how much IQ, at the stream rate, a subscriber's channel
+// may hold before fanout drops for it (New with subBuffer == 0). It matches
+// the SoapyRemote driver's own stream cushion (streamBufferLatency): well
+// above realistic GC / scheduling pauses, while a consumer that falls behind
+// for good still drops — never blocking the primary — and is visible in the
+// drop counter.
+const SubBufferLatency = 400 * time.Millisecond
+
+// maxSubBufferChunks caps a time-sized subscriber channel. At SoapyRemote's
+// ~360-sample chunks it holds SubBufferLatency up to ~3.6 MS/s, and ~150 ms
+// at 10 MS/s; the channel's backing array is 4096 slice headers (~96 KiB).
+const maxSubBufferChunks = 4096
 
 // primaryHandoffDepth is the buffer depth (in IQ chunks) of the broker's
 // primary handoff channel returned by StreamIQ. A small buffer lets the
@@ -71,7 +87,8 @@ type Broker struct {
 
 	subsMu      sync.Mutex
 	subs        map[*Subscriber]struct{}
-	subBuffer   int
+	subBuffer   int  // channel capacity (chunks)
+	timeSized   bool // subBuffer==0 at New: depth limited by SubBufferLatency, see sendLimit
 	subsDropped atomic.Uint64
 
 	// streamActive counts the live StreamIQ sessions. A count, not a flag:
@@ -124,14 +141,16 @@ func New(inner sdr.Device, subBuffer int, log *slog.Logger) *Broker {
 	if log == nil {
 		log = slog.Default()
 	}
-	if subBuffer <= 0 {
-		subBuffer = DefaultSubBuffer
+	timeSized := subBuffer <= 0
+	if timeSized {
+		subBuffer = maxSubBufferChunks
 	}
 	return &Broker{
 		log:       log,
 		inner:     inner,
 		subs:      make(map[*Subscriber]struct{}),
 		subBuffer: subBuffer,
+		timeSized: timeSized,
 	}
 }
 
@@ -325,6 +344,7 @@ func (b *Broker) fanout(chunk []complex64) {
 	}
 	b.subsMu.Unlock()
 
+	limit := b.sendLimit(len(chunk))
 	for _, s := range subs {
 		// Cheap lock-free early-out: skip the allocation for a
 		// subscriber that's already closed. trySend re-checks under
@@ -334,19 +354,50 @@ func (b *Broker) fanout(chunk []complex64) {
 		}
 		cp := make([]complex64, len(chunk))
 		copy(cp, chunk)
-		s.trySend(cp)
+		s.trySend(cp, limit)
 	}
+}
+
+// sendLimit is how many chunks of chunkLen samples a subscriber may have
+// queued before fanout drops for it. A fixed-depth broker (New with an
+// explicit subBuffer) uses the channel capacity; a time-sized one holds
+// SubBufferLatency of IQ at the stream rate, never fewer than
+// DefaultSubBuffer chunks, and falls back to that floor while the rate is
+// unknown.
+func (b *Broker) sendLimit(chunkLen int) int {
+	if !b.timeSized {
+		return b.subBuffer
+	}
+	rate := b.rateHz.Load()
+	if rate == 0 || chunkLen <= 0 {
+		return DefaultSubBuffer
+	}
+	n := int(math.Ceil(SubBufferLatency.Seconds() * float64(rate) / float64(chunkLen)))
+	if n < DefaultSubBuffer {
+		n = DefaultSubBuffer
+	}
+	if n > b.subBuffer {
+		n = b.subBuffer
+	}
+	return n
 }
 
 // trySend delivers a pre-copied chunk to the subscriber's channel without
 // blocking. s.sendMu serialises the non-blocking send against Close: Close
 // holds the same mutex while it closes the channel, so re-checking closed
 // under the lock here guarantees the send can never land on a closed
-// channel. Drops (full buffer) are counted, never blocking.
-func (s *Subscriber) trySend(cp []complex64) {
+// channel. Drops (limit chunks already queued, or a full buffer) are
+// counted, never blocking. Every send to s.ch happens here under sendMu,
+// so the len check cannot race another send into the space it saw.
+func (s *Subscriber) trySend(cp []complex64, limit int) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
 	if s.closed.Load() {
+		return
+	}
+	if len(s.ch) >= limit {
+		s.dropped.Add(1)
+		s.b.subsDropped.Add(1)
 		return
 	}
 	select {
