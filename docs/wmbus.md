@@ -67,9 +67,12 @@ Storage 0 is the current value, and higher storage numbers are historic
 values. Here, storage 1 is the reading at the last set day. A capture file
 prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 
-- `-json` prints one JSON object per telegram instead.
+- `-json` prints one JSON object per telegram instead. Its `frame` field is
+  the telegram's raw bytes in hex.
 - `-all` also prints frames whose CRC failed.
 - `-seconds N` stops after N seconds.
+- `-save-frames DIR` keeps the radio signal (IQ) around each telegram; see
+  [Saving telegrams to share](#saving-telegrams-to-share).
 
 **Tuning.** An RTL-SDR's crystal can be tens of ppm off, which is tens of
 kHz at 868 MHz. The decoder tolerates about ±50 kHz, so `-ppm` is rarely
@@ -94,6 +97,36 @@ gophertrunk capture -freq 868950000 -sample-rate 1024000 -seconds 60 -format fla
 
 1.6 MS/s decodes slightly more weak telegrams. FLAC is smaller, but it cannot
 store rates above 1,048,575 S/s, hence 1.024 MS/s for it.
+
+## Saving telegrams to share
+
+A meter sends a telegram every few seconds to few minutes, and each one lasts
+only tens of milliseconds, so a whole capture is mostly empty air: 30 s at
+1.6 MS/s is about 96 MB even in rtl_sdr's 8-bit format. `-save-frames` keeps just the part that matters:
+
+```
+gophertrunk wmbus -rtltcp 127.0.0.1:1234 -save-frames meters/   # live, phone + rtl_tcp
+gophertrunk wmbus -save-frames meters/                         # live, local dongle
+gophertrunk wmbus -in street.cu8 -save-frames meters/          # cut a big capture down
+```
+
+For every telegram it prints, it writes two files to the directory:
+
+- `<time>_<mode>_<manufacturer>_<id>.wav`: the IQ from just before the
+  telegram to just after it, typically 100–400 KB. The WAV carries its own
+  sample rate, so `gophertrunk wmbus -in <file>.wav` replays it (add the same
+  `-offset` if the original run used one).
+- `<time>_<mode>_<manufacturer>_<id>.metadata.json`: the sample rate, the
+  centre frequency and offset, and the decoded telegram (manufacturer, ID,
+  device type, CRC result, level, and the raw frame in hex).
+
+This works live, including through rtl_tcp, where `gophertrunk capture` cannot
+record. With `-all`, telegrams whose CRC failed are saved too, which is the
+useful case when a meter does not decode.
+
+To report results, the printed lines (or `-json` lines) can be pasted as text
+on its own. Zip the `meters/` directory when the signal itself needs looking
+at.
 
 ## Verification
 

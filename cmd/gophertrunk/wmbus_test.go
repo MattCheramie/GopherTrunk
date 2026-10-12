@@ -68,7 +68,7 @@ func TestWMBusDecodesCaptureFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			return rx
-		})
+		}, nil)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.path, err)
 		}
