@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.2.7] — 2026-10-12
+
 ### Changed
 - **`gophertrunk power` FFT is 3–4× faster (#1230).** The sweep now uses a
   radix-2 FFT on `complex64` instead of gonum's `complex128` FFT, writes its
