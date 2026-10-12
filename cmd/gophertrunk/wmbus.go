@@ -35,6 +35,7 @@ func runWMBus(args []string) {
 	seconds := fs.Float64("seconds", 0, "stop a live run after this many seconds (0 = until Ctrl-C)")
 	asJSON := fs.Bool("json", false, "print one JSON object per telegram")
 	all := fs.Bool("all", false, "also print frames whose CRC failed")
+	saveFrames := fs.String("save-frames", "", "write the IQ around each telegram to this directory (an IQ .wav plus a .metadata.json per telegram; a few hundred KB each, small enough to share), live or from -in")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk wmbus — Wireless M-Bus (EN 13757-4) meter telegram decoder, modes T1 and C1 at 868.95 MHz.
@@ -62,6 +63,10 @@ EXAMPLES:
   # Decode an rtl_sdr capture (rtl_sdr -f 868.95M -s 1600000 m.cu8)
   gophertrunk wmbus -in m.cu8 -rate 1600000
 
+  # Keep the IQ around each telegram (works over rtl_tcp too), then replay one
+  gophertrunk wmbus -rtltcp 127.0.0.1:1234 -save-frames meters/
+  gophertrunk wmbus -in meters/<file>.wav
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
@@ -77,6 +82,26 @@ FLAGS:`)
 	defer out.Flush()
 	// stamp labels a frame: wall-clock time live, capture time for a file.
 	var stamp func(sample int64) string
+	// saver, when -save-frames is set, keeps the IQ around each telegram.
+	var saver *wmbusSnippetSaver
+	newSaver := func(rateHz float64, centerHz uint32) {
+		if *saveFrames == "" {
+			return
+		}
+		var err error
+		if saver, err = newWMBusSnippetSaver(*saveFrames, rateHz, centerHz, *offset); err != nil {
+			rep.Fatal(1, err)
+		}
+	}
+	reportSaved := func() {
+		if saver == nil {
+			return
+		}
+		if err := saver.flush(true); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		fmt.Fprintf(os.Stderr, "wmbus: saved %d telegram snippet(s) to %s\n", saver.saved, *saveFrames)
+	}
 	newRx := func(rateHz float64) *wmbus.Receiver {
 		rx, err := wmbus.NewReceiver(wmbus.ReceiverOptions{
 			SampleRateHz: rateHz,
@@ -86,8 +111,12 @@ FLAGS:`)
 					return
 				}
 				tg, err := wmbus.ParseTelegram(f)
-				writeWMBusTelegram(out, stamp(info.Sample), tg, err, f, info, *asJSON)
+				ts := stamp(info.Sample)
+				writeWMBusTelegram(out, ts, tg, err, f, info, *asJSON)
 				_ = out.Flush()
+				if saver != nil {
+					saver.onFrame(ts, f, tg, info)
+				}
 			},
 		})
 		if err != nil {
@@ -99,10 +128,14 @@ FLAGS:`)
 	if *in != "" {
 		rateHz := float64(*rate)
 		stamp = func(s int64) string { return fmt.Sprintf("t=%8.3fs", float64(s)/rateHz) }
-		rx, err := decodeWMBusFile(*in, *format, &rateHz, newRx)
+		rx, err := decodeWMBusFile(*in, *format, &rateHz, func(r float64) *wmbus.Receiver {
+			newSaver(r, 0)
+			return newRx(r)
+		}, func() *wmbusSnippetSaver { return saver })
 		if err != nil {
 			rep.Fatal(1, err)
 		}
+		reportSaved()
 		st := rx.Stats()
 		fmt.Fprintf(os.Stderr, "wmbus: %.1f s of IQ at %.0f S/s, %d frames (%d CRC-valid), %d access codes\n",
 			float64(st.Samples)/rateHz, rateHz, st.Framer.Frames, st.Framer.CRCOK, st.Framer.Syncs)
@@ -149,6 +182,7 @@ FLAGS:`)
 		rep.Fatal(1, fmt.Errorf("start IQ stream: %w", err))
 	}
 	stamp = func(int64) string { return time.Now().Format("2006-01-02 15:04:05.000") }
+	newSaver(float64(*rate), uint32(*freq))
 	rx := newRx(float64(*rate))
 	fmt.Fprintf(os.Stderr, "wmbus: listening on %s at %.3f MHz, %d S/s (Ctrl-C to stop)\n", name, float64(*freq)/1e6, *rate)
 	for {
@@ -156,12 +190,22 @@ FLAGS:`)
 		case <-ctx.Done():
 			st := rx.Stats()
 			fmt.Fprintf(os.Stderr, "wmbus: %d frames (%d CRC-valid), %d access codes\n", st.Framer.Frames, st.Framer.CRCOK, st.Framer.Syncs)
+			reportSaved()
 			return
 		case iq, ok := <-stream:
 			if !ok {
+				reportSaved()
 				return
 			}
+			if saver != nil {
+				saver.feed(iq)
+			}
 			rx.Process(iq)
+			if saver != nil {
+				if err := saver.flush(false); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+				}
+			}
 		}
 	}
 }
@@ -169,7 +213,10 @@ FLAGS:`)
 // decodeWMBusFile replays a capture through a receiver. wav/flac containers
 // are detected from the content and carry their own rate (it overrides
 // *rateHz); headerless files are read in the named format, in chunks.
-func decodeWMBusFile(path, format string, rateHz *float64, newRx func(float64) *wmbus.Receiver) (*wmbus.Receiver, error) {
+//
+// saverFor returns the -save-frames saver (nil when off) once newRx has run;
+// with one, the IQ is fed in chunks so the saver's history stays bounded.
+func decodeWMBusFile(path, format string, rateHz *float64, newRx func(float64) *wmbus.Receiver, saverFor func() *wmbusSnippetSaver) (*wmbus.Receiver, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -186,7 +233,12 @@ func decodeWMBusFile(path, format string, rateHz *float64, newRx func(float64) *
 			*rateHz = float64(r)
 		}
 		rx := newRx(*rateHz)
-		rx.Process(iq)
+		feed := wmbusFeeder(rx, saverFor)
+		for len(iq) > 0 {
+			n := min(len(iq), 65536)
+			feed(iq[:n])
+			iq = iq[n:]
+		}
 		rx.Flush()
 		return rx, nil
 	}
@@ -199,6 +251,7 @@ func decodeWMBusFile(path, format string, rateHz *float64, newRx func(float64) *
 		return nil, err
 	}
 	rx := newRx(*rateHz)
+	feed := wmbusFeeder(rx, saverFor)
 	buf := make([]byte, size*65536)
 	iq := make([]complex64, 65536)
 	br := bufio.NewReaderSize(f, len(buf))
@@ -207,7 +260,7 @@ func decodeWMBusFile(path, format string, rateHz *float64, newRx func(float64) *
 		if n >= size {
 			k := n / size
 			dec(buf[:k*size], iq[:k])
-			rx.Process(iq[:k])
+			feed(iq[:k])
 		}
 		if err != nil {
 			break
@@ -215,6 +268,26 @@ func decodeWMBusFile(path, format string, rateHz *float64, newRx func(float64) *
 	}
 	rx.Flush()
 	return rx, nil
+}
+
+// wmbusFeeder returns the per-chunk step for a file replay: the receiver
+// alone, or, with -save-frames, history in, receiver, then any snippet whose
+// trailing samples have arrived out.
+func wmbusFeeder(rx *wmbus.Receiver, saverFor func() *wmbusSnippetSaver) func([]complex64) {
+	var saver *wmbusSnippetSaver
+	if saverFor != nil {
+		saver = saverFor()
+	}
+	if saver == nil {
+		return rx.Process
+	}
+	return func(iq []complex64) {
+		saver.feed(iq)
+		rx.Process(iq)
+		if err := saver.flush(false); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}
 }
 
 // wmbusJSON is the -json line for one telegram.

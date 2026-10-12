@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`gophertrunk wmbus -save-frames DIR` (#1256).** Keeps the IQ around each
+  decoded telegram, as a small IQ WAV (typically 100–400 KB) plus a
+  `.metadata.json` naming the telegram, so an operator can share what a meter
+  sent without a whole capture (30 s at 1.6 MS/s is ~96 MB as 8-bit IQ). It works live,
+  including through rtl_tcp (where `gophertrunk capture` cannot record), and
+  on a capture file, and each snippet replays with `wmbus -in`.
 - **Per-channel audio gain on the conventional scanner (#1239).** A
   `scanner.conventional` entry takes `audio_gain_db` (±30 dB, default 0),
   applied to that channel's recovered audio in the recording, the live

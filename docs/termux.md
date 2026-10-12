@@ -67,6 +67,10 @@ Wireless M-Bus meters at 868.95 MHz ([full reference](wmbus.html)):
 ./gophertrunk wmbus -rtltcp 127.0.0.1:1234
 ```
 
+Add `-save-frames meters/` to keep a small IQ file for each telegram (a few
+hundred KB each), which you can zip and share instead of a whole capture
+(see [Saving telegrams to share](wmbus.html#saving-telegrams-to-share)).
+
 The daemon works the same way, with the dongle listed under `sdr.rtl_tcp`
 (see [Remote rtl_tcp SDRs](hardware.html#remote-rtl_tcp-sdrs)).
 
