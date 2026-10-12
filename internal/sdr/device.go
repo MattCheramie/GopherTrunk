@@ -134,6 +134,24 @@ type FreqRanger interface {
 	FreqRange() (minHz, maxHz uint32)
 }
 
+// StreamEnder is an optional Device extension that reports why the most
+// recent StreamIQ channel closed on its own: the remote end hung up, went
+// silent, or a read failed. It returns nil while the stream runs and after
+// the caller cancelled its context. A closed channel alone cannot tell a
+// network source's lost session from a normal end, so callers that run until
+// the stream stops use StreamErr to say what happened.
+type StreamEnder interface {
+	StreamErr() error
+}
+
+// StreamErr returns dev's StreamErr when it implements StreamEnder, else nil.
+func StreamErr(dev Device) error {
+	if se, ok := dev.(StreamEnder); ok {
+		return se.StreamErr()
+	}
+	return nil
+}
+
 // Driver is the factory each backend exposes.
 type Driver interface {
 	Name() string

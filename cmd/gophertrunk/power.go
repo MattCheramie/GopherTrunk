@@ -184,6 +184,9 @@ FLAGS:`)
 	fmt.Fprint(os.Stderr, powerPlanSummary(name, r, plan, every))
 
 	err = runPowerSweeps(ctx, src, plan, integ, powerSchedule{every: every, stopAfter: stopAfter, single: *single}, bw, os.Stderr, time.Now, sleepCtx)
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		err = iqStreamEnded(dev, err)
+	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		_ = bw.Flush()
 		rep.Fatal(1, err)
@@ -324,6 +327,19 @@ func parsePowerDuration(s string) (time.Duration, error) {
 		return time.Duration(f * float64(time.Second)), nil
 	}
 	return time.ParseDuration(s)
+}
+
+// iqStreamEnded explains an IQ stream that stopped before the command was
+// done. A closed channel says only that it ended, so `power` printed a bare
+// "unexpected EOF" and `wmbus` exited silently when the reporter's rtl_tcp
+// driver app dropped the session (#1230, #1256); the device's own reason
+// (sdr.StreamErr: the server hung up, after how long and how much IQ) is
+// what the operator can act on. Without one, fallback is returned as is.
+func iqStreamEnded(dev sdr.Device, fallback error) error {
+	if err := sdr.StreamErr(dev); err != nil {
+		return fmt.Errorf("IQ stream ended: %w", err)
+	}
+	return fallback
 }
 
 // openPowerDevice opens the rtl_tcp server at addr when given, else the local

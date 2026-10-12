@@ -120,8 +120,9 @@ For every telegram it prints, it writes two files to the directory:
   centre frequency and offset, and the decoded telegram (manufacturer, ID,
   device type, CRC result, level, and the raw frame in hex).
 
-This works live, including through rtl_tcp, where `gophertrunk capture` cannot
-record. With `-all`, telegrams whose CRC failed are saved too, which is the
+This works live, including through rtl_tcp, and on a capture you already
+have. (`gophertrunk capture -rtltcp host:port` records a whole capture through
+rtl_tcp too, but most of it is empty air between telegrams.) With `-all`, telegrams whose CRC failed are saved too, which is the
 useful case when a meter does not decode.
 
 To report results, the printed lines (or `-json` lines) can be pasted as text

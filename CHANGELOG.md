@@ -7,7 +7,26 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **`gophertrunk capture -rtltcp host:port` (#1256).** `capture` can record
+  through an rtl_tcp server, such as an rtl_tcp driver app on a phone, like
+  `power` and `wmbus` already could. It used to reject the flag, so on a
+  phone a capture needed a laptop. `capture` now also notes when fewer
+  samples per second arrived than the rate asked for: the capture stops on a
+  sample count, so a source that drops samples makes it run long, and the
+  delivered rate is how to find the highest rate a phone or dongle sustains.
+
 ### Fixed
+- **A lost rtl_tcp session is reported, not hidden (#1230, #1256).** When
+  the rtl_tcp server closed the connection mid-stream, `power` failed with a
+  bare `unexpected EOF`, `wmbus` exited with no message at all, and `capture`
+  said only that the stream ended. All three now say the rtl_tcp server
+  closed the connection (or stopped sending), after how long and how much
+  IQ, and to restart the server or driver app. The rtl_tcp driver also logs
+  it as a warning in the daemon. A connection the server accepted without
+  sending its header (`read header: i/o timeout`) now explains that rtl_tcp
+  serves one client at a time, so another client or an earlier run may still
+  hold it.
 - **Wideband voice taps no longer drop IQ on a short pause (#1242).** Every
   IQ broker subscriber (wideband voice taps, Signal Lab captures, the scopes)
   had a buffer of 16 *chunks*. That was ~60 ms for an RTL-SDR's 16 KiB
