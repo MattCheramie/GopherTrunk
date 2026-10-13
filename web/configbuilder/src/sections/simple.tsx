@@ -488,6 +488,8 @@ export function ScannerSection() {
             AudioGainDB: 0,
             Tone: { Mode: "", CTCSSHz: 0, DCSCode: "", DCSPolarity: "" },
             Decoders: null,
+            NAC: "",
+            P25Phase1DemodMode: "",
           })}
           itemTitle={(ch) => ch.Label || "channel"}
           emptyHint="Fixed-frequency analog channels the scanner sweeps alongside trunking."
@@ -536,6 +538,27 @@ export function ScannerSection() {
                   value={ch.AudioGainDB ?? 0}
                   onChange={(x) => setCh({ ...ch, AudioGainDB: x })}
                 />
+                {ch.Mode === "p25" ? (
+                  <>
+                    <TextField
+                      label="P25 NAC filter"
+                      value={ch.NAC ?? ""}
+                      onChange={(x) => setCh({ ...ch, NAC: x })}
+                      placeholder="any carrier"
+                      help="Three hex digits (e.g. 293): the channel opens only on P25 frames with this NAC, so another system on the frequency is skipped. F7E = any NAC, P25 only. Empty = no filter."
+                    />
+                    <SelectField
+                      label="P25 demod"
+                      value={ch.P25Phase1DemodMode ?? ""}
+                      onChange={(x) => setCh({ ...ch, P25Phase1DemodMode: x })}
+                      options={[
+                        { value: "", label: "(c4fm)" },
+                        { value: "c4fm", label: "c4fm" },
+                        { value: "cqpsk", label: "cqpsk (LSM simulcast)" },
+                      ]}
+                    />
+                  </>
+                ) : null}
                 <TextField
                   label="Data decoders"
                   value={formatCommaList(ch.Decoders)}

@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **NAC filter and CQPSK demod for P25 conventional scan-list channels
+  (#1262).** A `mode: p25` entry in `scanner.conventional` takes
+  `nac: "293"` (three hex digits): the scanner decodes the P25 NID on the
+  channel itself and opens, or holds, the channel only while frames carry
+  that NAC, so another system's P25 traffic on the frequency is skipped
+  like a wrong CTCSS tone, and a radio with a different NAC keying up
+  mid-call ends the dwell at once. `"F7E"` accepts any NAC but only P25.
+  `p25_phase1_demod_mode: cqpsk` selects the linear (LSM) demod for both
+  the NAC check and the call's voice decode, as on a trunked system. Both
+  are in the config builder.
 - **`gophertrunk capture -rtltcp host:port` (#1256).** `capture` can record
   through an rtl_tcp server, such as an rtl_tcp driver app on a phone, like
   `power` and `wmbus` already could. It used to reject the flag, so on a

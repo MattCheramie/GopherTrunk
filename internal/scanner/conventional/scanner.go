@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	p25p1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -103,6 +104,18 @@ type Channel struct {
 	// to run on this channel's IQ while the scanner is on it, built through
 	// Options.DataDecoders. Empty runs none. See data.go (issue #1220).
 	Decoders []string
+	// NAC, with NACSet, is a p25 channel's NAC filter: the scanner opens
+	// and holds the channel only while it decodes a NID carrying this NAC,
+	// so another system's P25 traffic on the frequency is skipped like a
+	// wrong CTCSS tone. NACReceiveAny / NACReceiveAnyRepeat accept any
+	// NAC (but still only P25). Unset: any carrier above the squelch.
+	// See nac.go (issue #1262).
+	NAC    uint16
+	NACSet bool
+	// P25Phase1DemodMode is a p25 channel's demod, "" / "c4fm" (default)
+	// or "cqpsk" for a linear (LSM) transmitter; carried on the grant to
+	// the voice chain and used by the NAC gate (issue #1262).
+	P25Phase1DemodMode string
 }
 
 // ToneConfig configures CTCSS / DCS squelch gating for one channel.
@@ -434,6 +447,16 @@ func New(opts Options) (*Scanner, error) {
 			if len(ch.Decoders) > 0 {
 				return nil, fmt.Errorf("conventional: channel %q: data decoders run on analog channels, not mode %q", ch.Label, ch.Mode)
 			}
+		} else if ch.NACSet || ch.P25Phase1DemodMode != "" {
+			return nil, fmt.Errorf("conventional: channel %q: nac and p25_phase1_demod_mode apply to mode p25, not %q", ch.Label, ch.Mode)
+		}
+		if ch.P25Phase1DemodMode != "" {
+			if _, ok := p25p1rx.ParseDemodMode(ch.P25Phase1DemodMode); !ok {
+				return nil, fmt.Errorf("conventional: channel %q: p25_phase1_demod_mode %q must be c4fm|cqpsk", ch.Label, ch.P25Phase1DemodMode)
+			}
+		}
+		if ch.NACSet && ch.NAC > 0xFFF {
+			return nil, fmt.Errorf("conventional: channel %q: nac %#x is outside 000..FFF", ch.Label, ch.NAC)
 		}
 		if ch.Mode == ModeAM && ch.SquelchCNDb <= 0 {
 			ch.SquelchCNDb = DefaultAMSquelchCNDb
@@ -463,7 +486,7 @@ func New(opts Options) (*Scanner, error) {
 	}
 	detectors := make([]toneDetector, len(channels))
 	for i, ch := range channels {
-		if d := buildDetector(ch.Tone, opts.SampleRateHz, opts.Log); d != nil {
+		if d := buildChannelDetector(ch, opts.SampleRateHz, opts.Log); d != nil {
 			detectors[i] = d
 		}
 	}
@@ -567,6 +590,9 @@ func validateTone(t ToneConfig) error {
 func minToneDwell(channels []Channel) time.Duration {
 	var d time.Duration
 	for _, ch := range channels {
+		if ch.Mode == ModeP25 && ch.NACSet {
+			d = max(d, nacMinDwell)
+		}
 		switch ch.Tone.Mode {
 		case "ctcss":
 			d = max(d, ctcssMinDwell)
@@ -597,6 +623,17 @@ type toneDetector interface {
 	// every retune so leftover state from a previous channel
 	// doesn't bias the new dwell.
 	Reset()
+}
+
+// buildChannelDetector returns the gate the scanner checks alongside the
+// channel's carrier power: the NAC gate on a p25 channel with a NAC filter
+// (issue #1262), else the CTCSS / DCS detector from its tone config, else
+// nil (no gate).
+func buildChannelDetector(ch Channel, sampleHz float64, log *slog.Logger) toneDetector {
+	if ch.Mode == ModeP25 {
+		return buildNACDetector(ch, sampleHz, log)
+	}
+	return buildDetector(ch.Tone, sampleHz, log)
 }
 
 // buildDetector returns a tone detector when gating is configured for
@@ -761,6 +798,11 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				return true
 			}
 			if det.Process(iq) {
+				if nd, ok := det.(*NACDetector); ok {
+					s.log.Info("conv: NAC gate opened",
+						"freq_hz", ch.FrequencyHz, "label", ch.Label,
+						"nac", fmt.Sprintf("%03X", nd.lastNAC))
+				}
 				if dcs, ok := det.(*DCSDetector); ok {
 					s.log.Info("conv: DCS gate opened",
 						"freq_hz", ch.FrequencyHz, "label", ch.Label,
@@ -770,6 +812,13 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 			}
 			if dcs, ok := det.(*DCSDetector); ok && dcs.TakeOppositeHeard() {
 				s.warnDCSOppositePolarity(idx, ch, dcs)
+			}
+			if nd, ok := det.(*NACDetector); ok {
+				if nac, foreign := nd.TakeForeign(); foreign {
+					s.log.Debug("conv: P25 carrier with another NAC; channel skipped",
+						"freq_hz", ch.FrequencyHz, "label", ch.Label,
+						"heard_nac", fmt.Sprintf("%03X", nac), "want_nac", fmt.Sprintf("%03X", nd.Want()))
+				}
 			}
 		}
 	}
@@ -812,10 +861,13 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 		// GroupID is the channel's synthetic ID, not an on-air
 		// talkgroup: digital voice chains must not gate on it (#1239).
 		Conventional: true,
-		AudioGainDB:  ch.AudioGainDB,
-		SourceID:     0,
-		FrequencyHz:  ch.FrequencyHz,
-		At:           now,
+		// A p25 channel's demod reaches the voice chain the way a trunked
+		// system's does (issue #1262); empty on analog channels.
+		P25Phase1DemodMode: ch.P25Phase1DemodMode,
+		AudioGainDB:        ch.AudioGainDB,
+		SourceID:           0,
+		FrequencyHz:        ch.FrequencyHz,
+		At:                 now,
 	}
 	s.opts.Engine.HandleSyntheticCall(g, s.opts.DeviceSerial)
 
@@ -1189,7 +1241,19 @@ func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 		s.log.Warn("conv: dropping invalid tone config on temp channel", "err", err)
 		ch.Tone = ToneConfig{}
 	}
-	det := buildDetector(ch.Tone, s.opts.SampleRateHz, s.log)
+	if !IsDigitalMode(ch.Mode) && (ch.NACSet || ch.P25Phase1DemodMode != "") {
+		s.log.Warn("conv: nac / p25_phase1_demod_mode ignored on a non-p25 temp channel", "mode", ch.Mode)
+		ch.NACSet, ch.NAC, ch.P25Phase1DemodMode = false, 0, ""
+	}
+	if _, ok := p25p1rx.ParseDemodMode(ch.P25Phase1DemodMode); !ok {
+		s.log.Warn("conv: unknown p25_phase1_demod_mode on temp channel; using c4fm", "demod", ch.P25Phase1DemodMode)
+		ch.P25Phase1DemodMode = ""
+	}
+	if ch.NAC > 0xFFF {
+		s.log.Warn("conv: nac outside 000..FFF on temp channel; NAC filter dropped", "nac", ch.NAC)
+		ch.NACSet, ch.NAC = false, 0
+	}
+	det := buildChannelDetector(ch, s.opts.SampleRateHz, s.log)
 	if err := validateDecoders(ch.Decoders); err != nil {
 		s.log.Warn("conv: dropping invalid decoders on temp channel", "err", err)
 		ch.Decoders = nil

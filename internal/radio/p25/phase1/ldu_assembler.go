@@ -1,6 +1,10 @@
 package phase1
 
-import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+import (
+	"fmt"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+)
 
 // LDUDibitCount is the dibit length of a complete LDU on the air:
 // 1728 bits / 2 = 864 dibits = 864 C4FM symbols. Used by the
@@ -73,16 +77,33 @@ const (
 // 48 + 64 bits, plus the status symbol after bit 70 — 114 bits.
 const nidPrefixDibits = (LDUFrameSyncBits + LDUNIDBits + 2) / 2
 
+// FrameNIDDibits is the number of dibits, counted from the first frame-sync
+// dibit, that ParseFrameNID needs: the 24-dibit sync, the NID and the status
+// symbol inside it.
+const FrameNIDDibits = nidPrefixDibits
+
+// ParseFrameNID decodes the NID (NAC + DUID) of the data unit whose frame
+// sync starts at prefix[0]. prefix must hold at least FrameNIDDibits dibits;
+// the status symbol after bit 70 is skipped. The conventional scanner's NAC
+// gate reads a channel's NAC with it (#1262).
+func ParseFrameNID(prefix []uint8) (NID, error) {
+	if len(prefix) < FrameNIDDibits {
+		return NID{}, fmt.Errorf("p25/phase1: frame NID needs %d dibits, got %d", FrameNIDDibits, len(prefix))
+	}
+	bits := framing.DibitsToBits(prefix[:FrameNIDDibits])
+	payload := make([]byte, 0, LDUFrameSyncBits+LDUNIDBits)
+	payload = append(payload, bits[:LDUStatusInterval]...)
+	payload = append(payload, bits[LDUStatusInterval+2:]...)
+	nid, _, err := ParseNID(payload[lduNIDOffset : lduNIDOffset+LDUNIDBits])
+	return nid, err
+}
+
 // dataUnitDibits reads the NID that follows a frame sync and returns the data
 // unit's on-air length in dibits. An undecodable NID, or a DUID with no fixed
 // length here (LDU, or anything unexpected on a voice channel), returns the
 // LDU length — the assembler's behaviour before it read NIDs.
 func dataUnitDibits(prefix []uint8) int {
-	bits := framing.DibitsToBits(prefix)
-	payload := make([]byte, 0, LDUFrameSyncBits+LDUNIDBits)
-	payload = append(payload, bits[:LDUStatusInterval]...)
-	payload = append(payload, bits[LDUStatusInterval+2:]...)
-	nid, _, err := ParseNID(payload[lduNIDOffset : lduNIDOffset+LDUNIDBits])
+	nid, err := ParseFrameNID(prefix)
 	if err != nil {
 		return LDUDibitCount
 	}

@@ -1769,16 +1769,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			channels := make([]conventional.Channel, 0, len(cfg.Scanner.Conventional))
 			for _, ch := range cfg.Scanner.Conventional {
 				gainTenthDB, gainSet := convChannelGain(ch, log)
+				// Config validation already rejected a malformed nac.
+				nac, nacErr := conventional.ParseNAC(ch.NAC)
+				nacSet := strings.TrimSpace(ch.NAC) != "" && nacErr == nil
 				channels = append(channels, conventional.Channel{
-					GainTenthDB: gainTenthDB,
-					GainSet:     gainSet,
-					AudioGainDB: ch.AudioGainDB,
-					Label:       ch.Label,
-					FrequencyHz: ch.FrequencyHz,
-					Mode:        ch.Mode,
-					SquelchDbFS: ch.SquelchDbFS,
-					SquelchCNDb: ch.SquelchCNDb,
-					Hangtime:    msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
+					NAC:                nac,
+					NACSet:             nacSet,
+					P25Phase1DemodMode: ch.P25Phase1DemodMode,
+					GainTenthDB:        gainTenthDB,
+					GainSet:            gainSet,
+					AudioGainDB:        ch.AudioGainDB,
+					Label:              ch.Label,
+					FrequencyHz:        ch.FrequencyHz,
+					Mode:               ch.Mode,
+					SquelchDbFS:        ch.SquelchDbFS,
+					SquelchCNDb:        ch.SquelchCNDb,
+					Hangtime:           msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
 					// 0 => let the scanner apply its own defaults
 					// (50 ms debounce / 3 dB hysteresis) in one place.
 					ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
