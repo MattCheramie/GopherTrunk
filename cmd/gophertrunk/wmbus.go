@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -194,8 +195,11 @@ FLAGS:`)
 			return
 		case iq, ok := <-stream:
 			if !ok {
+				// Only a cancel or -seconds ends a live listen normally; a
+				// stream that closes on its own is a lost source, which used
+				// to exit with no message at all (#1256).
 				reportSaved()
-				return
+				rep.Fatal(1, iqStreamEnded(dev, errors.New("IQ stream ended")))
 			}
 			if saver != nil {
 				saver.feed(iq)

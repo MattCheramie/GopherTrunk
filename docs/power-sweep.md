@@ -104,6 +104,13 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
 
 - **Only one program can use the dongle.** Stop the daemon, or any other
   rtl_tcp client, before sweeping the same SDR.
+- **An rtl_tcp server serves one client at a time.** If `power` (or
+  `wmbus` / `capture -rtltcp`) reports that the server accepted the
+  connection but sent no header, another client or an earlier run still holds
+  it, or the server has lost its dongle. If it reports that the server closed
+  the connection, the server ended the session, for example because a phone's
+  rtl_tcp driver app lost the dongle or was stopped. Either way, restart the
+  rtl_tcp server or driver app, then run the command again.
 - **rtl_tcp needs a longer settle.** The server keeps streaming while the
   retune command crosses the network, so samples from the previous frequency
   are still in flight. If a strong carrier shows up one hop away from where

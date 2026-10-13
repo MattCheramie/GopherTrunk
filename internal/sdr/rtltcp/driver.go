@@ -44,6 +44,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
@@ -85,6 +86,16 @@ const DefaultConnectTimeout = 3 * time.Second
 // closing the socket. It is NOT the shutdown path — a watcher in StreamIQ
 // expires the deadline on ctx cancel — so it can stay generous.
 const streamReadIdleTimeout = 30 * time.Second
+
+// ErrServerClosed is wrapped by StreamErr when the rtl_tcp server closed the
+// connection while IQ was streaming. On a phone running an rtl_tcp driver app
+// this is the app ending the session (its dongle went away, or it was
+// stopped), not something the client can retry its way past.
+var ErrServerClosed = errors.New("rtl_tcp server closed the connection")
+
+// ErrServerSilent is wrapped by StreamErr when the server kept the socket open
+// but sent no IQ for streamReadIdleTimeout.
+var ErrServerSilent = errors.New("rtl_tcp server stopped sending IQ")
 
 // Spec names one rtl_tcp endpoint to expose as a virtual tuner.
 type Spec struct {
@@ -168,6 +179,14 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	var hdr [12]byte
 	if _, err := io.ReadFull(conn, hdr[:]); err != nil {
 		conn.Close()
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			// The TCP connect succeeded, so something is listening, but an
+			// rtl_tcp server sends its header the moment it accepts a client.
+			// Silence means it has not accepted us (#1256).
+			return nil, fmt.Errorf("rtltcp: read header: %w (%s accepted the connection but sent no rtl_tcp header within %s: an rtl_tcp server serves one client at a time, so another client or an earlier run may still hold it, or the server has lost its dongle; restart the rtl_tcp server or driver app)",
+				err, spec.Addr, timeout)
+		}
 		return nil, fmt.Errorf("rtltcp: read header: %w", err)
 	}
 	// Validate magic — guards against connecting to a non-rtl_tcp
@@ -212,9 +231,23 @@ type device struct {
 	minHz uint32
 	maxHz uint32
 
-	mu     sync.Mutex
-	conn   net.Conn
-	closed bool
+	mu        sync.Mutex
+	conn      net.Conn
+	closed    bool
+	streamErr error // why the last StreamIQ ended on its own; nil while running or after a ctx cancel
+}
+
+// StreamErr reports why the most recent StreamIQ channel closed without its
+// context being cancelled: ErrServerClosed (the server hung up) or
+// ErrServerSilent (it went quiet), with how long the stream ran and how much
+// IQ arrived. It is nil while the stream runs and after a cancel. Commands
+// that run until the stream ends (`power`, `wmbus`, `capture`) used to see
+// only a closed channel and printed "unexpected EOF" or nothing at all
+// (#1230, #1256). Implements sdr.StreamEnder.
+func (d *device) StreamErr() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.streamErr
 }
 
 func (d *device) Info() sdr.Info { return d.info }
@@ -296,6 +329,7 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		return nil, errors.New("rtltcp: device closed")
 	}
 	conn := d.conn
+	d.streamErr = nil
 	d.mu.Unlock()
 
 	const chunkSamples = 8192
@@ -322,6 +356,36 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 			}
 		}()
 
+		started := time.Now()
+		var total int64
+		// ended records why the stream stopped on its own. It runs before the
+		// deferred close(out), so a reader that sees the channel close finds
+		// the reason already set.
+		ended := func(err error) {
+			if ctx.Err() != nil {
+				return
+			}
+			var why error
+			var ne net.Error
+			switch {
+			case errors.As(err, &ne) && ne.Timeout():
+				why = fmt.Errorf("%w: nothing for %s (after %.1f s and %d bytes of IQ from %s)",
+					ErrServerSilent, streamReadIdleTimeout, time.Since(started).Seconds(), total, d.addr)
+			case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, syscall.ECONNRESET):
+				// A reset is a hang-up too: a server that closes with our
+				// commands still unread in its socket resets the connection.
+				why = fmt.Errorf("%w after %.1f s and %d bytes of IQ (%s); restart the rtl_tcp server or driver app",
+					ErrServerClosed, time.Since(started).Seconds(), total, d.addr)
+			default:
+				why = fmt.Errorf("rtl_tcp %s: stream read failed after %.1f s and %d bytes of IQ: %w",
+					d.addr, time.Since(started).Seconds(), total, err)
+			}
+			d.mu.Lock()
+			d.streamErr = why
+			d.mu.Unlock()
+			d.log.Warn("rtltcp: IQ stream ended", "addr", d.addr, "err", why)
+		}
+
 		buf := make([]byte, chunkSamples*2)
 		for {
 			// Backstop for a server that stops sending without closing the
@@ -330,10 +394,9 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 			// very next statement, so it never took effect.)
 			_ = conn.SetReadDeadline(time.Now().Add(streamReadIdleTimeout))
 			n, err := io.ReadFull(conn, buf)
+			total += int64(n)
 			if err != nil {
-				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-					d.log.Debug("rtltcp: stream read", "addr", d.addr, "err", err)
-				}
+				ended(err)
 				if n == 0 {
 					return
 				}

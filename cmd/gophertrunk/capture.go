@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/signal"
@@ -36,6 +37,7 @@ func runCapture(args []string) {
 	fs := flag.NewFlagSet("capture", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	serial := fs.String("serial", "", "SDR serial to capture from (default: the sole enumerated device)")
+	rtlTCP := fs.String("rtltcp", "", "host:port of an rtl_tcp server to capture from instead of a local SDR (e.g. an rtl_tcp driver app on a phone)")
 	freq := fs.Uint("freq", 0, "centre frequency in Hz (required)")
 	sampleRate := fs.Uint("sample-rate", 2_400_000, "sample rate in Hz")
 	gain := fs.Int("gain", -1, "tuner gain in tenths of a dB (-1 selects automatic gain control)")
@@ -61,7 +63,7 @@ func runCapture(args []string) {
 		fmt.Fprintln(fs.Output(), `gophertrunk capture — record raw IQ off a live SDR to a .cfile + metadata sidecar.
 
 USAGE:
-  gophertrunk capture -freq <hz> [-serial <s>] [-sample-rate <hz>] -seconds <n> -out <path>
+  gophertrunk capture -freq <hz> [-serial <s> | -rtltcp <host:port>] [-sample-rate <hz>] -seconds <n> -out <path>
 
 EXAMPLES:
   # 30 s of P25 control-channel IQ at 2.4 MS/s → cfile + sidecar
@@ -85,6 +87,10 @@ EXAMPLES:
   # decimate ×5 → an alias-free 200 kS/s file, a fifth the size, still replayable
   gophertrunk capture -freq 467913000 -sample-rate 1000000 -seconds 60 \
     -decimate 5 -format cs16 -protocol tetra -out cc.raw
+
+  # Through an rtl_tcp server, e.g. an rtl_tcp driver app on an Android phone
+  gophertrunk capture -rtltcp 127.0.0.1:1234 -freq 868950000 -sample-rate 1600000 \
+    -seconds 30 -format u8 -out meters.cu8
 
   # List the SDRs this binary can capture from
   gophertrunk capture -list
@@ -123,7 +129,21 @@ FLAGS:`)
 		rep.Fatal(2, err)
 	}
 
-	dev, info, err := openCaptureDevice(*serial)
+	var (
+		dev  sdr.Device
+		info sdr.Info
+	)
+	if *rtlTCP != "" {
+		// Same opener as `power` / `wmbus`: on a phone the dongle is only
+		// reachable through an rtl_tcp driver app (#1256).
+		log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+		dev, _, err = openPowerDevice(*rtlTCP, *serial, log)
+		if err == nil {
+			info = dev.Info()
+		}
+	} else {
+		dev, info, err = openCaptureDevice(*serial)
+	}
 	if err != nil {
 		rep.Fatal(1, err)
 	}
@@ -256,8 +276,16 @@ FLAGS:`)
 	started := time.Now()
 	writtenAll, probe, capErr := captureToFiles(ctx, paths, sampleFormat, stream, hwRate, *seconds, ddcs)
 	written := writtenAll[0]
+	if errors.Is(capErr, errCaptureStreamEnded) {
+		if se := sdr.StreamErr(dev); se != nil {
+			capErr = fmt.Errorf("%w: %w", capErr, se)
+		}
+	}
 	if capErr != nil && !errors.Is(capErr, context.Canceled) {
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
+	}
+	if note := captureDeliveredNote(written, time.Since(started), recRate); note != "" {
+		fmt.Fprintln(os.Stderr, note)
 	}
 	// Report the measured carrier offset (a ppm-measurement instrument in its
 	// own right — issue #836), and warn if a corroborated offset is large
@@ -681,7 +709,7 @@ loop:
 			break loop
 		case chunk, ok := <-src:
 			if !ok {
-				loopErr = errors.New("IQ stream ended before capture finished")
+				loopErr = errCaptureStreamEnded
 				break loop
 			}
 			inputRead += int64(len(chunk))
@@ -733,6 +761,31 @@ loop:
 	}
 	return written, probe, loopErr
 }
+
+// captureDeliveredNote compares the IQ a capture recorded with the wall
+// time it took. The capture stops on a sample count, so a source that cannot
+// sustain the requested rate (an rtl_tcp driver app or a phone that falls
+// behind and drops samples, a dongle above its stable rate) makes it run
+// long: the delivered rate is the measure of what the setup sustains (#1256:
+// "how can the maximum sample rate be determined?"). Returns "" when the
+// capture kept up within 3 %, or is too short to judge.
+func captureDeliveredNote(samples int64, elapsed time.Duration, rate float64) string {
+	if elapsed < time.Second || samples <= 0 || rate <= 0 {
+		return ""
+	}
+	got := float64(samples) / elapsed.Seconds()
+	if got >= 0.97*rate {
+		return ""
+	}
+	return fmt.Sprintf("capture: note — only %.0f S/s of the requested %.0f S/s arrived (%d samples in %.1f s): "+
+		"the source cannot sustain this rate, and the gaps are samples it dropped. Try a lower -sample-rate "+
+		"(1024000 is safe on most phones and dongles) until this note goes away.",
+		got, rate, samples, elapsed.Seconds())
+}
+
+// errCaptureStreamEnded is the capture loop's error when the IQ stream closes
+// before -seconds of IQ were recorded.
+var errCaptureStreamEnded = errors.New("IQ stream ended before capture finished")
 
 // captureDropCounter counts SDR IQ-chunk drops for one device during a
 // capture, via the process-wide sdr IQ-drop observer. It turns a silently
