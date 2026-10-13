@@ -705,6 +705,25 @@ func (c Config) validateScanner() []error {
 			errs = append(errs, err)
 		}
 	}
+	// A scanner device is a voice SDR the scanner retunes channel by
+	// channel: naming a control or wideband dongle would retune the CC
+	// decoder's (or the channelizer's) radio out from under it (#1260).
+	sdrRoles := map[string]string{}
+	for _, d := range c.SDR.Devices {
+		sdrRoles[strings.TrimSpace(d.Serial)] = d.Role
+	}
+	for i, ch := range c.Scanner.Conventional {
+		dev := strings.TrimSpace(ch.Device)
+		if dev == "" {
+			continue
+		}
+		switch role := sdrRoles[dev]; role {
+		case "control", "wideband":
+			errs = append(errs, fmt.Errorf(
+				"scanner.conventional[%d].device: %q is a role: %s SDR; a scanner channel needs a role: voice SDR",
+				i, dev, role))
+		}
+	}
 	// Two channels resolving to the same effective talkgroup ID would fold
 	// into one synthetic call at the engine, which keys on (system, GroupID)
 	// — reject the collision loudly instead. The effective ID is the explicit

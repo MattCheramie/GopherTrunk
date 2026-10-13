@@ -237,6 +237,13 @@ type Options struct {
 	// held a phantom call open until the daemon was killed (#1184). Zero
 	// selects DefaultStreamStallTimeout.
 	StreamStallTimeout time.Duration
+	// PositionalIDOffset shifts the positional 0x80000000|index talkgroup
+	// ID of a channel without an explicit TalkgroupID. With one scanner
+	// per SDR (issue #1260) each scanner indexes its own channels from 0,
+	// so a second scanner's channel 0 would otherwise surface under the
+	// same synthetic talkgroup as the first's and the engine would fold
+	// the two calls together. Zero (one scanner) keeps the plain index.
+	PositionalIDOffset int
 }
 
 // State is the high-level scanner state surfaced through Snapshot.
@@ -851,7 +858,7 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	// reordering (#1105); config validation rejects collisions.
 	gid := ch.TalkgroupID
 	if gid == 0 {
-		gid = uint32(0x80000000) | uint32(idx)
+		gid = uint32(0x80000000) | uint32(s.opts.PositionalIDOffset+idx)
 	}
 	g := trunking.Grant{
 		System:     s.opts.SystemName,

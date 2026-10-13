@@ -521,9 +521,15 @@ type Daemon struct {
 	// decoder and the voice composer (sdr.autotune). Nil-safe: when the
 	// knob is off, Get returns nil and both paths keep their pre-autotune
 	// behaviour. See internal/autotune.
-	autotune   *autotune.Registry
-	convScan   *conventional.Scanner
-	widebandT2 []*widebandt2.Engine
+	autotune *autotune.Registry
+	// convScans holds one conventional scanner per SDR (issue #1260). The
+	// LAST one is the shared scanner SDR, which also takes manual-tune
+	// temporary channels.
+	convScans []*conventional.Scanner
+	// convDedicated is the set of voice SDRs a scan-list channel names with
+	// `device:`; they are withheld from the trunking voice pool.
+	convDedicated map[string]bool
+	widebandT2    []*widebandt2.Engine
 	// dmrLearners holds one DMR LCN autoconfig learner per wideband DMR
 	// Tier III control channel whose system ships without a dmr_band_plan.
 	// Each watches grants + RF onsets to learn the LCN→frequency plan and
@@ -1462,6 +1468,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// granted call through the wrapper instead of the bare on-channel device.
 	d.buildDCAvoidVoiceTuners(cfg, log)
 
+	// Voice SDRs a scan-list channel names with `device:` belong to the
+	// conventional scanner for the daemon's lifetime (issue #1260): settle
+	// the set before the voice pool is built so no grant is ever bound to
+	// one.
+	if d.pool != nil {
+		d.convDedicated = convDedicatedSerials(cfg.Scanner.Conventional, d.pool.FindBySerial)
+	}
 	// Voice device list from the pool; empty when no SDRs.
 	d.voicePool = trunking.NewVoicePool(d.collectVoiceDevices())
 	// Wire the voice pool's reacquire hook so a USB disconnect
@@ -1763,116 +1776,37 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if len(voiceEntries) == 0 {
 			log.Warn("daemon: scanner.conventional / manual_tune_enabled configured but no Voice SDRs in the pool; skipping")
 		} else {
-			// Use the LAST voice SDR so the trunking engine still
-			// has the first N-1 voice radios for normal grants.
-			convEntry := voiceEntries[len(voiceEntries)-1]
-			channels := make([]conventional.Channel, 0, len(cfg.Scanner.Conventional))
-			for _, ch := range cfg.Scanner.Conventional {
-				gainTenthDB, gainSet := convChannelGain(ch, log)
-				// Config validation already rejected a malformed nac.
-				nac, nacErr := conventional.ParseNAC(ch.NAC)
-				nacSet := strings.TrimSpace(ch.NAC) != "" && nacErr == nil
-				channels = append(channels, conventional.Channel{
-					NAC:                nac,
-					NACSet:             nacSet,
-					P25Phase1DemodMode: ch.P25Phase1DemodMode,
-					GainTenthDB:        gainTenthDB,
-					GainSet:            gainSet,
-					AudioGainDB:        ch.AudioGainDB,
-					Label:              ch.Label,
-					FrequencyHz:        ch.FrequencyHz,
-					Mode:               ch.Mode,
-					SquelchDbFS:        ch.SquelchDbFS,
-					SquelchCNDb:        ch.SquelchCNDb,
-					Hangtime:           msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
-					// 0 => let the scanner apply its own defaults
-					// (50 ms debounce / 3 dB hysteresis) in one place.
-					ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
-					SquelchHysteresisDb: ch.SquelchHysteresisDb,
-					Priority:            ch.Priority,
-					TalkgroupID:         ch.TalkgroupID,
-					Tone: conventional.ToneConfig{
-						Mode:        ch.Tone.Mode,
-						CTCSSHz:     ch.Tone.CTCSSHz,
-						DCSCode:     ch.Tone.DCSCode,
-						DCSPolarity: ch.Tone.DCSPolarity,
-					},
-					Decoders: ch.Decoders,
-				})
-			}
+			// One scanner per SDR (issue #1260): channels naming a
+			// `device:` scan on that SDR, in parallel with the others; the
+			// rest share the scanner SDR the daemon has always used — the
+			// last voice SDR, so the trunking engine keeps the first N-1.
+			groups := planConvScanGroups(cfg.Scanner.Conventional, voiceEntries, d.pool.FindBySerial, !hasConventional, log)
 			var convRec conventional.Recorder = d.recorder
 			if d.player != nil {
 				convRec = convFanoutRecorder{d.recorder, playerSink{p: d.player, engine: d.engine}}
 			}
-			// Drive the scanner through the device's iqtap broker (not the raw
-			// device) so it becomes the broker's primary StreamIQ consumer. A
-			// conventional (fm-conv) call's FM voice chain then Subscribes to
-			// the same broker via convScanVoiceSource instead of opening a
-			// second StreamIQ on the underlying device — the collision that
-			// produced "composer: StreamIQ failed … stream already active" and
-			// no recorded audio (issue #1075). Register the serial so the
-			// composer's poolDevices resolves it to the Subscribe source. Fall
-			// back to the bare device if no broker exists (defensive — every
-			// pool entry is wrapped by wrapIQBrokers, so this is unreachable
-			// while d.pool != nil).
-			var convInner convTunerIQ = convEntry.Device
-			if br := d.iqBrokers[convEntry.Info.Serial]; br != nil {
-				convInner = br
-				d.scannerBrokers[convEntry.Info.Serial] = br
-			}
-			// Tune the LO off-channel and mix back (issue #1184): on-channel
-			// (zero-IF) tuning parks the DC spur, the I/Q image and — on an
-			// overloaded ADC — the per-axis clipping products inside the
-			// analog FM channel, audible as a whistle/tone at 4x the carrier
-			// offset. The FM voice chain reads the same offset through
-			// scannerLOOffsets (poolDevices → convScanVoiceSource).
-			loOffset, loReason := convScannerLOOffsetHz(cfg.SDR.SampleRate, cfg.Scanner.LOOffsetHz)
-			d.scannerLOOffsets[convEntry.Info.Serial] = loOffset
-			log.Info("conv: scanner LO offset tuning",
-				"serial", convEntry.Info.Serial, "lo_offset_hz", int(loOffset), "mode", loReason,
-				"sample_rate_hz", cfg.SDR.SampleRate)
-			convFE := newConvScannerFrontEnd(convInner, loOffset, cfg.SDR.SampleRate, convEntry.Info.Serial, log)
-			var convTuner conventional.Tuner = convFE
-			var convIQ conventional.IQSource = convFE
 			// Runtime lockouts persist by frequency when storage is
 			// configured (a scanner's lockout memory); without storage
-			// they stay runtime-only as before.
+			// they stay runtime-only as before. Every scanner reads the
+			// whole set and applies the frequencies on its own list.
 			lockedOutHz, onLockout := convLockoutPersistence(d.convLockouts, log)
-			cs, err := conventional.New(conventional.Options{
-				Log:                log,
-				Tuner:              convTuner,
-				IQ:                 convIQ,
-				Engine:             d.engine,
-				Recorder:           convRec,
-				DeviceSerial:       convEntry.Info.Serial,
-				SystemName:         "scanner",
-				Channels:           channels,
-				SampleRateHz:       float64(cfg.SDR.SampleRate),
-				LockedOutHz:        lockedOutHz,
-				OnLockoutChange:    onLockout,
-				PriorityInterleave: cfg.Scanner.PriorityInterleave,
-				// MDC1200 / FleetSync on the scan list's own channels
-				// (issue #1220): decoded bursts publish on the same bus
-				// kinds as the dedicated-SDR receivers, stamped with this
-				// scanner's serial and the channel's frequency.
-				DataDecoders: convDataDecoderFactory(d.bus, convEntry.Info.Serial, log),
-				// Per-channel gain (#1239) goes to the device itself — the
-				// broker has no gain control — and a channel without one
-				// returns to the device's configured gain.
-				Gain:               convEntry.Device,
-				DefaultGainTenthDB: convDeviceGain(convEntry),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("daemon: conv scanner: %w", err)
+			for gi, g := range groups {
+				cs, err := d.buildConvScanner(cfg, g, convRec, lockedOutHz, onLockout, gi == len(groups)-1, log)
+				if err != nil {
+					return nil, err
+				}
+				d.convScans = append(d.convScans, cs)
 			}
-			d.convScan = cs
-			// Gate the composer's FM chain on the scanner's live squelch
+			if len(groups) > 1 {
+				log.Info("conv: scanning on several SDRs in parallel", "scanners", len(groups))
+			}
+			// Gate the composer's FM chain on the scanners' live squelch
 			// decision so the hangtime tail records as silence instead of
 			// AGC-boosted receiver noise (issue #1090). Set here (not in
 			// buildComposer's Options) because the composer is built
-			// before the scanner exists.
-			if d.composer != nil {
-				d.composer.SetSquelchState(cs)
+			// before the scanners exist.
+			if d.composer != nil && len(d.convScans) > 0 {
+				d.composer.SetSquelchState(convSquelchMux(d.convScans))
 			}
 		}
 	}
@@ -3134,7 +3068,7 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 		}
 		opts.Scanner = scannerCockpit{
 			cchunt:     d.cchuntSup,
-			conv:       d.convScan,
+			convs:      d.convScans,
 			engine:     d.engine,
 			talkgroups: d.talkgroups,
 		}
@@ -3633,9 +3567,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.ccDecoder != nil {
 		d.spawn(runCtx, "ccdecoder", false, d.runCCDecoderWithRetry)
 	}
-	if d.convScan != nil {
-		d.spawn(runCtx, "conv-scanner", false, func(ctx context.Context) error {
-			return d.convScan.Run(ctx)
+	for i, cs := range d.convScans {
+		cs := cs
+		name := "conv-scanner"
+		if i > 0 {
+			name = fmt.Sprintf("conv-scanner-%d", i)
+		}
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			return cs.Run(ctx)
 		})
 	}
 	for i, eng := range d.widebandT2 {
@@ -5052,6 +4991,9 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 	var voices []*trunking.VoiceDevice
 	if d.pool != nil {
 		for _, e := range d.pool.AllByRole(sdr.RoleVoice) {
+			if d.convDedicated[e.Info.Serial] {
+				continue // a conventional scanner's own SDR (#1260)
+			}
 			// Route through the DC-spike-avoidance wrapper when dc_avoid is set
 			// on this voice device; otherwise tune the bare SDR on-channel.
 			var tuner trunking.Tuner = e.Device
@@ -5099,6 +5041,125 @@ func (d *Daemon) collectVoiceDevices() []*trunking.VoiceDevice {
 		})
 	}
 	return voices
+}
+
+// buildConvScanner constructs the conventional scanner for one SDR's share of
+// the scan list (issue #1260). shared marks the manual-tune scanner, which is
+// always the last one built.
+func (d *Daemon) buildConvScanner(cfg config.Config, g convScanGroup, convRec conventional.Recorder,
+	lockedOutHz []uint32, onLockout func(conventional.Channel, bool), shared bool, log *slog.Logger) (*conventional.Scanner, error) {
+	convEntry := g.entry
+	channels := make([]conventional.Channel, 0, len(g.channels))
+	for _, i := range g.channels {
+		ch := cfg.Scanner.Conventional[i]
+		gainTenthDB, gainSet := convChannelGain(ch, log)
+		// Config validation already rejected a malformed nac.
+		nac, nacErr := conventional.ParseNAC(ch.NAC)
+		nacSet := strings.TrimSpace(ch.NAC) != "" && nacErr == nil
+		// The positional talkgroup ID follows the channel's place in the
+		// whole scan list, not in this SDR's share of it, so splitting the
+		// list across SDRs keeps every channel's ID (and config
+		// validation's collision check stays exact).
+		tgid := ch.TalkgroupID
+		if tgid == 0 {
+			tgid = 0x80000000 | uint32(i)
+		}
+		channels = append(channels, conventional.Channel{
+			NAC:                nac,
+			NACSet:             nacSet,
+			P25Phase1DemodMode: ch.P25Phase1DemodMode,
+			GainTenthDB:        gainTenthDB,
+			GainSet:            gainSet,
+			AudioGainDB:        ch.AudioGainDB,
+			Label:              ch.Label,
+			FrequencyHz:        ch.FrequencyHz,
+			Mode:               ch.Mode,
+			SquelchDbFS:        ch.SquelchDbFS,
+			SquelchCNDb:        ch.SquelchCNDb,
+			Hangtime:           msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
+			// 0 => let the scanner apply its own defaults
+			// (50 ms debounce / 3 dB hysteresis) in one place.
+			ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
+			SquelchHysteresisDb: ch.SquelchHysteresisDb,
+			Priority:            ch.Priority,
+			TalkgroupID:         tgid,
+			Tone: conventional.ToneConfig{
+				Mode:        ch.Tone.Mode,
+				CTCSSHz:     ch.Tone.CTCSSHz,
+				DCSCode:     ch.Tone.DCSCode,
+				DCSPolarity: ch.Tone.DCSPolarity,
+			},
+			Decoders: ch.Decoders,
+		})
+	}
+	// Manual-tune temporary channels are appended to the shared scanner's
+	// list; offset their positional IDs past the whole scan list so one can
+	// never collide with a configured channel's.
+	idOffset := 0
+	if shared {
+		idOffset = len(cfg.Scanner.Conventional) - len(channels)
+	}
+	// Drive the scanner through the device's iqtap broker (not the raw
+	// device) so it becomes the broker's primary StreamIQ consumer. A
+	// conventional (fm-conv) call's FM voice chain then Subscribes to
+	// the same broker via convScanVoiceSource instead of opening a
+	// second StreamIQ on the underlying device — the collision that
+	// produced "composer: StreamIQ failed … stream already active" and
+	// no recorded audio (issue #1075). Register the serial so the
+	// composer's poolDevices resolves it to the Subscribe source. Fall
+	// back to the bare device if no broker exists (defensive — every
+	// pool entry is wrapped by wrapIQBrokers, so this is unreachable
+	// while d.pool != nil).
+	var convInner convTunerIQ = convEntry.Device
+	if br := d.iqBrokers[convEntry.Info.Serial]; br != nil {
+		convInner = br
+		d.scannerBrokers[convEntry.Info.Serial] = br
+	}
+	// Tune the LO off-channel and mix back (issue #1184): on-channel
+	// (zero-IF) tuning parks the DC spur, the I/Q image and — on an
+	// overloaded ADC — the per-axis clipping products inside the
+	// analog FM channel, audible as a whistle/tone at 4x the carrier
+	// offset. The FM voice chain reads the same offset through
+	// scannerLOOffsets (poolDevices → convScanVoiceSource).
+	loOffset, loReason := convScannerLOOffsetHz(cfg.SDR.SampleRate, cfg.Scanner.LOOffsetHz)
+	d.scannerLOOffsets[convEntry.Info.Serial] = loOffset
+	log.Info("conv: scanner LO offset tuning",
+		"serial", convEntry.Info.Serial, "lo_offset_hz", int(loOffset), "mode", loReason,
+		"sample_rate_hz", cfg.SDR.SampleRate)
+	if g.dedicated {
+		log.Info("conv: scanner SDR reserved for its scan-list channels (not used for trunking voice)",
+			"serial", convEntry.Info.Serial, "channels", len(channels))
+	}
+	convFE := newConvScannerFrontEnd(convInner, loOffset, cfg.SDR.SampleRate, convEntry.Info.Serial, log)
+	cs, err := conventional.New(conventional.Options{
+		Log:                log,
+		Tuner:              convFE,
+		IQ:                 convFE,
+		Engine:             d.engine,
+		Recorder:           convRec,
+		DeviceSerial:       convEntry.Info.Serial,
+		SystemName:         "scanner",
+		Channels:           channels,
+		SampleRateHz:       float64(cfg.SDR.SampleRate),
+		LockedOutHz:        lockedOutHz,
+		OnLockoutChange:    onLockout,
+		PriorityInterleave: cfg.Scanner.PriorityInterleave,
+		PositionalIDOffset: idOffset,
+		// MDC1200 / FleetSync on the scan list's own channels
+		// (issue #1220): decoded bursts publish on the same bus
+		// kinds as the dedicated-SDR receivers, stamped with this
+		// scanner's serial and the channel's frequency.
+		DataDecoders: convDataDecoderFactory(d.bus, convEntry.Info.Serial, log),
+		// Per-channel gain (#1239) goes to the device itself — the
+		// broker has no gain control — and a channel without one
+		// returns to the device's configured gain.
+		Gain:               convEntry.Device,
+		DefaultGainTenthDB: convDeviceGain(convEntry),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("daemon: conv scanner %q: %w", convEntry.Info.Serial, err)
+	}
+	return cs, nil
 }
 
 // virtualVoiceMap builds the serial → IQSource map the composer's

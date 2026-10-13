@@ -202,7 +202,7 @@ func TestConventionalScannerRegistersBrokerVoiceSource(t *testing.T) {
 	}
 	t.Cleanup(d.Close)
 
-	if d.convScan == nil {
+	if len(d.convScans) == 0 {
 		t.Fatal("conventional scanner was not constructed from a scanner.conventional config")
 	}
 	if _, ok := d.scannerBrokers["mock-00"]; !ok {

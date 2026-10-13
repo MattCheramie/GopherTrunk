@@ -52,3 +52,45 @@ func TestConvScannerUsesExplicitTalkgroupID(t *testing.T) {
 		t.Errorf("group label = %q, want B", eng.starts[0].GroupLabel)
 	}
 }
+
+// TestConvScannerPositionalIDOffset pins the multi-SDR half of the positional
+// default (issue #1260): a second scanner's channels index from 0 too, so
+// without the offset its channel 1 would surface as 0x80000001 — the same
+// synthetic talkgroup as the first scanner's channel 1 — and the engine would
+// fold two different channels' calls into one.
+func TestConvScannerPositionalIDOffset(t *testing.T) {
+	tuner := &fakeTuner{}
+	iq := &fakeIQ{
+		tuner: tuner,
+		chunks: map[uint32][][]complex64{
+			200_000_000: {
+				loudChunk(256), loudChunk(256), loudChunk(256),
+			},
+		},
+	}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-2",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "A", FrequencyHz: 100_000_000, SquelchDbFS: -10},
+			{Label: "B", FrequencyHz: 200_000_000, SquelchDbFS: -10, Hangtime: 50 * time.Millisecond},
+		},
+		MinDwellPerChannel: 30 * time.Millisecond,
+		PositionalIDOffset: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = s.Run(ctx)
+
+	if eng.startCount() == 0 {
+		t.Fatal("squelch never fired (no HandleSyntheticCall)")
+	}
+	if want := uint32(0x80000000 | 6); eng.starts[0].GroupID != want {
+		t.Errorf("group id = %#x, want %#x (offset 5 + index 1)", eng.starts[0].GroupID, want)
+	}
+}

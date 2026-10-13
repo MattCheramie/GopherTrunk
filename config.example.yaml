@@ -1396,6 +1396,13 @@ scanner:
   #     # arrive at their own level). 0 = unchanged; ±30 dB; clamps at
   #     # full scale.
   #     # audio_gain_db: 6
+  #     # Optional SDR for this channel (#1260): the serial of a role: voice
+  #     # SDR. Channels naming the same device are that SDR's scan list,
+  #     # and every SDR scans in parallel — e.g. air-band AM on one dongle,
+  #     # VHF FM on another, each with its own antenna and gain. A named
+  #     # SDR is taken out of the trunking voice pool. Empty = the shared
+  #     # scanner SDR (the last role: voice SDR no channel names).
+  #     # device: "00000002"
   #     hangtime_ms: 1500
   #     priority: 4
   #     # Optional fixed talkgroup ID for the API / call log / scan-type

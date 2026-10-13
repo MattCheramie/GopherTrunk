@@ -288,11 +288,15 @@ type SystemHuntStatusDTO struct {
 
 // ConvScannerStatusDTO is the conventional FM scanner's read shape.
 type ConvScannerStatusDTO struct {
-	Enabled      bool                   `json:"enabled"`
-	State        string                 `json:"state,omitempty"`
-	DeviceSerial string                 `json:"device_serial,omitempty"`
-	CursorIndex  int                    `json:"cursor_index,omitempty"`
-	Channels     []ConvChannelStatusDTO `json:"channels"`
+	Enabled      bool   `json:"enabled"`
+	State        string `json:"state,omitempty"`
+	DeviceSerial string `json:"device_serial,omitempty"`
+	// DeviceSerials lists every SDR the scanner runs on, one scanner per
+	// SDR (issue #1260); DeviceSerial and CursorIndex describe the shared
+	// scanner SDR, which also takes manual-tune channels.
+	DeviceSerials []string               `json:"device_serials,omitempty"`
+	CursorIndex   int                    `json:"cursor_index,omitempty"`
+	Channels      []ConvChannelStatusDTO `json:"channels"`
 }
 
 // ConvChannelStatusDTO mirrors conventional.ChannelStatus.
@@ -304,6 +308,8 @@ type ConvChannelStatusDTO struct {
 	Active      bool      `json:"active"`
 	LockedOut   bool      `json:"locked_out,omitempty"`
 	LastBreakAt time.Time `json:"last_break_at,omitempty"`
+	// DeviceSerial is the SDR this channel scans on (issue #1260).
+	DeviceSerial string `json:"device_serial,omitempty"`
 }
 
 // Server hosts the GopherTrunk HTTP/SSE/WebSocket API. A separate gRPC

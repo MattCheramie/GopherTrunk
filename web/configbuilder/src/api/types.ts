@@ -261,6 +261,9 @@ export interface ConvChannelConfig {
   Gain?: string;
   // Gain in dB on this channel's recovered audio; 0 = unchanged (#1239).
   AudioGainDB?: number;
+  // Serial of the role: voice SDR this channel scans on; "" = the shared
+  // scanner SDR (#1260).
+  Device?: string;
   Tone: ConvToneConfig;
   // Data decoders run on the channel's dwell: "mdc1200" | "fleetsync" (#1220),
   // "acars" on an AM channel (#1231).

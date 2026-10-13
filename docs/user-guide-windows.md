@@ -1069,6 +1069,7 @@ scanner:
 | `mode` | `fm` (default), `nfm`, `am` (the VHF air band — see below), or `p25` (P25 Phase 1 digital — see below) |
 | `gain` | Optional tuner gain for this channel on the scanner SDR: `"auto"` or tenths of a dB (`"280"` = 28 dB). Empty uses the device's gain |
 | `audio_gain_db` | Optional gain in dB on this channel's recovered audio (recording, live stream, uploads), to balance a mixed list of AM, NFM and P25 channels. `0` (default) leaves it unchanged; range ±30 dB; clamps at full scale |
+| `device` | Optional SDR for this channel: the serial of a `role: voice` SDR. Channels naming the same device form that SDR's scan list, and each SDR scans in parallel with the others. A named SDR is taken out of the trunking voice pool. Empty (default) uses the shared scanner SDR. See "Scanning on several SDRs" below |
 | `squelch_dbfs` | Squelch threshold in dBFS (FM channels), measured on the channel itself (±8 kHz), not the SDR's whole span |
 | `squelch_cn_db` | AM channels: carrier-to-noise open threshold in dB (default 12) |
 | `hangtime_ms` | Carrier-lost dwell before hopping |
@@ -1162,6 +1163,39 @@ scanner:
   system.
 - **Manual tune.** The VFO form in the web Scanner tab has an AM
   option too.
+
+### Scanning on several SDRs
+
+One SDR can only sit on one channel at a time, so a long, mixed scan list
+waits its turn. Give a channel a `device:` and it runs on that SDR
+instead. Channels naming the same SDR form its scan list, and every SDR
+scans its own list in parallel:
+
+```yaml
+sdr:
+  devices:
+    - { serial: "00000001", role: voice }   # air band, with its own antenna
+    - { serial: "00000002", role: voice }   # VHF/UHF FM
+scanner:
+  conventional:
+    - { label: "KRIC Tower",  frequency_hz: 126400000, mode: am, device: "00000001" }
+    - { label: "KRIC Ground", frequency_hz: 121900000, mode: am, device: "00000001" }
+    - { label: "Fire Disp",   frequency_hz: 154130000, mode: nfm, device: "00000002" }
+```
+
+- **Each SDR is its own scanner**, with its own hangtime, priority
+  rotation and gain. A call on one SDR doesn't pause the others.
+- **A named SDR belongs to the scanner.** It is taken out of the
+  trunking voice pool, so a trunked grant never retunes it. It must be a
+  `role: voice` SDR; naming a control or wideband SDR is a config error.
+- **Channels without `device`** run on the shared scanner SDR, as
+  before: the last `role: voice` SDR that no channel names. That SDR
+  stays available to trunking, as it always has. A channel whose device
+  isn't connected also falls back to it, with a warning in the log.
+- **The Scanner panel and the API** show all the channels as one list,
+  each with the SDR it runs on. Hold and resume apply to every SDR;
+  manual tune uses the shared scanner SDR.
+- **Lockouts** are remembered by frequency, as before.
 
 ### Manual VFO tune
 
