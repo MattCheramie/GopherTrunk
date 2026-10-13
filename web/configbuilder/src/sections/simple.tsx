@@ -509,6 +509,9 @@ export function ScannerSection() {
                     { value: "nfm", label: "nfm" },
                     { value: "am", label: "am (air band)" },
                     { value: "p25", label: "p25 (Phase 1 digital)" },
+                    { value: "dmr", label: "dmr (digital)" },
+                    { value: "nxdn", label: "nxdn (digital, experimental)" },
+                    { value: "dstar", label: "dstar (digital)" },
                   ]}
                 />
                 {ch.Mode === "am" ? (

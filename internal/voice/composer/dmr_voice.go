@@ -142,6 +142,13 @@ type callAwareRawSink interface {
 // call — recording empty files. To degrade gracefully it falls back to
 // the active slot's Phase after a short grace window with no LC bind, so
 // audio still records; a later valid LC re-binds and corrects the routing.
+//
+// groupID 0 is FOLLOW mode, for a conventional scan-list channel (issue
+// #1261): its grant's GroupID is a synthetic channel ID no on-air LC ever
+// names, so there is no talkgroup to bind by. The router instead binds the
+// first timeslot that carries a call — by an LC naming any destination, or
+// the phase fallback — and follows it, whatever talkgroup a later over on
+// that slot names, while the other slot of a repeater stays out.
 type slotRouter struct {
 	groupID          uint32
 	bound            int   // -1 until a phase is bound (by LC or by fallback)
@@ -181,6 +188,9 @@ func lcCallDestination(lc dmr.FLC) (uint32, bool) {
 // unbound we wait a couple of superframes for an LC and otherwise fall back to
 // the active slot's phase so the call still records rather than dropping it.
 func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
+	if r.groupID == 0 {
+		return r.acceptFollow(sf)
+	}
 	if sf.HasLC {
 		if dest, ok := lcCallDestination(sf.LC); ok {
 			if dest == r.groupID {
@@ -216,7 +226,34 @@ func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 	return false
 }
 
-func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved, grantEncrypted bool, done chan<- struct{}) {
+// acceptFollow is accept in follow mode (groupID 0): bind the first slot
+// that carries a call and keep it. An LC naming a destination binds while
+// unbound and is authoritative over a phase-fallback bind; once a slot is
+// bound by LC, the other slot is a different call and stays out.
+func (r *slotRouter) acceptFollow(sf dmrvoice.VoiceSuperframe) bool {
+	if sf.HasLC {
+		if _, ok := lcCallDestination(sf.LC); ok {
+			if r.bound < 0 || r.byFallback {
+				r.bound = int(sf.Phase)
+				r.byFallback = false
+				return true
+			}
+			return int(sf.Phase) == r.bound
+		}
+	}
+	if r.bound >= 0 {
+		return int(sf.Phase) == r.bound
+	}
+	r.unboundSeen++
+	if r.unboundSeen >= unboundPhaseFallbackGrace {
+		r.bound = int(sf.Phase)
+		r.byFallback = true
+		return true
+	}
+	return false
+}
+
+func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved, grantEncrypted, conventional bool, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-dmr:"+serial, nil)
 
@@ -246,11 +283,16 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 	// count into the AMBE+2 decoder's adaptive smoothing (the recorder
 	// implements it). Falls back to the plain rawFrameSink path otherwise.
 	ers, _ := c.sink.(errAwareRawSink)
+	// routeTG is the talkgroup the call's slot is routed and released by:
+	// the grant's for a trunked call, none (0) for a conventional scan-list
+	// channel, whose GroupID is a synthetic ID no on-air LC names (#1261).
+	// The scanner's squelch ends a conventional call, not a terminator.
+	routeTG := voiceGateTalkgroup(trunking.Grant{GroupID: groupID, Conventional: conventional})
 	voiceDec := dmrvoice.NewDecoder()
 	var router *slotRouter
 	if interleaved {
 		voiceDec = dmrvoice.NewInterleavedDecoder()
-		router = newSlotRouter(groupID)
+		router = newSlotRouter(routeTG)
 	}
 	// Talker-alias reassembly and GPS Info both ride the embedded LC, which
 	// carries no source address, so both are attributed to the most recent
@@ -342,7 +384,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 	ep := c.newDMREPState(serial, system, groupID, grantEncrypted)
 	var released bool
 	publishRelease := func() {
-		if released || c.bus == nil || groupID == 0 {
+		if released || c.bus == nil || routeTG == 0 {
 			return
 		}
 		released = true
@@ -391,7 +433,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			// End the call promptly on an explicit Terminator for this group.
 			for _, flc := range termDet.Process(dibits, baseIdx) {
-				if dest, ok := lcCallDestination(flc); ok && dest == groupID {
+				if dest, ok := lcCallDestination(flc); ok && routeTG != 0 && dest == routeTG {
 					publishRelease()
 				}
 			}

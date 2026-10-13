@@ -144,3 +144,48 @@ func TestSlotRouterLCBeatsFallback(t *testing.T) {
 		t.Error("did not re-bind to the phase named by the newer LC")
 	}
 }
+
+// TestSlotRouterFollowModeBindsFirstCall pins follow mode (groupID 0), the
+// router a conventional scan-list DMR channel gets (issue #1261). Its grant's
+// GroupID is a synthetic channel ID no on-air LC names, so a talkgroup-bound
+// router marked every slot foreign and recorded nothing. Follow mode binds the
+// first slot that carries a call, follows it across talkgroups (a channel's
+// next over may be another group), and keeps the other slot out.
+func TestSlotRouterFollowModeBindsFirstCall(t *testing.T) {
+	r := newSlotRouter(0)
+
+	if !r.accept(sfWithLC(1, 11)) {
+		t.Fatal("follow mode rejected the first call's LC")
+	}
+	if r.accept(sfWithLC(0, 22)) {
+		t.Error("follow mode accepted the other slot's call")
+	}
+	if !r.accept(sfNoLC(1)) {
+		t.Error("follow mode rejected an LC-less superframe on the bound slot")
+	}
+	if !r.accept(sfWithLC(1, 33)) {
+		t.Error("follow mode dropped a new talkgroup on the bound slot")
+	}
+	if r.accept(sfNoLC(0)) {
+		t.Error("follow mode accepted an LC-less superframe on the other slot")
+	}
+}
+
+// TestSlotRouterFollowModeLCOverridesFallback: with no LC at first the phase
+// fallback binds the active slot, and the first LC to decode re-binds to its
+// own slot (it is authoritative, the fallback a guess).
+func TestSlotRouterFollowModeLCOverridesFallback(t *testing.T) {
+	r := newSlotRouter(0)
+	for i := 0; i < unboundPhaseFallbackGrace; i++ {
+		r.accept(sfNoLC(0))
+	}
+	if !r.accept(sfNoLC(0)) {
+		t.Fatal("phase fallback did not bind after the grace window")
+	}
+	if !r.accept(sfWithLC(1, 44)) {
+		t.Fatal("an LC did not override the fallback bind")
+	}
+	if r.accept(sfNoLC(0)) {
+		t.Error("still accepting the fallback slot after an LC re-bound to the other")
+	}
+}

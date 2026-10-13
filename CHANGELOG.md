@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **DMR, NXDN and D-STAR channels in the conventional scan list (#1261).**
+  A `scanner.conventional` entry takes `mode: dmr`, `mode: nxdn` or
+  `mode: dstar`, so one scanner SDR can hop between analog, P25 and these
+  digital conventional channels. Each squelches on in-channel power and
+  is decoded by that protocol's existing voice chain. On a DMR repeater
+  the channel records the timeslot that carries voice first: the DMR
+  chain used to route slots by the grant's talkgroup, which a scan-list
+  channel's synthetic ID never matches, so nothing would have recorded.
+  NXDN voice decode is still experimental. There is no `mode: ysf` yet:
+  System Fusion has no voice decode.
 - **The conventional scanner can run on several SDRs at once (#1260).** A
   `scanner.conventional` entry takes `device: "<serial>"`, naming the
   `role: voice` SDR it runs on. Channels naming the same SDR are that

@@ -247,7 +247,7 @@ export interface ConvToneConfig {
 export interface ConvChannelConfig {
   Label: string;
   FrequencyHz: number;
-  Mode: string; // "" | fm | nfm | am | p25
+  Mode: string; // "" | fm | nfm | am | p25 | dmr | nxdn | dstar
   SquelchDbFS: number;
   // AM channels: carrier-to-noise open threshold in dB (#1219).
   SquelchCNDb: number;

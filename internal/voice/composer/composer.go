@@ -621,7 +621,8 @@ func classifyVoiceKind(cs trunking.CallStart) voiceKind {
 // on: the grant's GroupID for a trunked call, 0 (gating off) for a
 // conventional scan-list channel, whose GroupID is a synthetic channel ID
 // that no on-air link control ever carries — gating on it would drop every
-// frame of a P25 conventional call as a foreign talkgroup (issue #1239).
+// frame of a P25 conventional call as a foreign talkgroup (issue #1239), and
+// would route no DMR timeslot at all (issue #1261).
 func voiceGateTalkgroup(g trunking.Grant) uint32 {
 	if g.Conventional {
 		return 0
@@ -721,7 +722,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 				"device", cs.DeviceSerial, "system", cs.Grant.System,
 				"group", cs.Grant.GroupID, "keys_configured", c.keyResolver != nil)
 		}
-		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, cs.Grant.Encrypted, ch.done)
+		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, cs.Grant.Encrypted, cs.Grant.Conventional, ch.done)
 	case voiceKindP25P2:
 		macCfg := p25p2.MACDecodeConfig{
 			Trellis:      p25p2.TrellisMode(cs.Grant.P25Phase2Decode.Trellis),
