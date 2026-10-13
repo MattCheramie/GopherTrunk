@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 vi.mock("../api/spectrum", () => ({
   fetchSpectrumDevices: vi.fn(),
@@ -264,7 +264,15 @@ describe("Spectrum panel", () => {
       render(<Spectrum />);
       await waitFor(() => expect(screen.getByText("live")).toBeInTheDocument());
       expect(screen.queryByRole("status")).toBeNull();
-      vi.advanceTimersByTime(5_000);
+      // "live" renders as soon as the stream reports open, but the effect
+      // that arms the stall timer for that render can still be pending — on
+      // a loaded runner the advance below used to run first, and the timer,
+      // armed after it, never fired within waitFor's budget. Flush pending
+      // effects, then advance inside act.
+      await act(async () => {});
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
       await waitFor(() => {
         expect(screen.getByRole("status")).toHaveTextContent(/only streams while it is following a call/);
       });
