@@ -638,6 +638,15 @@ type ConvChannelConfig struct {
 	// device's own gain — and if no channel sets one, the scanner never
 	// touches the gain. Issue #1239.
 	Gain string `yaml:"gain"`
+	// Device pins this channel to one SDR, by serial (an sdr.devices entry
+	// with role: voice). Channels naming the same device form one scan list
+	// on that SDR, and each SDR scans its list in parallel with the others
+	// — so air-band AM, VHF FM and UHF can each have their own dongle,
+	// antenna and gain. An SDR named here is taken out of the trunking
+	// voice pool. Empty (default) runs the channel on the shared scanner
+	// SDR, as before: the last role: voice SDR no channel names. Issue
+	// #1260.
+	Device string `yaml:"device"`
 	// AudioGainDB is a gain in dB applied to this channel's recovered audio
 	// (the recording, the live stream and broadcast uploads alike), so a
 	// mixed scan list can be balanced: an air-band AM channel, an NFM

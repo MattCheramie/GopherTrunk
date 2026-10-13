@@ -486,6 +486,7 @@ export function ScannerSection() {
             TalkgroupID: 0,
             Gain: "",
             AudioGainDB: 0,
+            Device: "",
             Tone: { Mode: "", CTCSSHz: 0, DCSCode: "", DCSPolarity: "" },
             Decoders: null,
             NAC: "",
@@ -537,6 +538,13 @@ export function ScannerSection() {
                   step={0.5}
                   value={ch.AudioGainDB ?? 0}
                   onChange={(x) => setCh({ ...ch, AudioGainDB: x })}
+                />
+                <TextField
+                  label="Device (SDR serial)"
+                  value={ch.Device ?? ""}
+                  onChange={(x) => setCh({ ...ch, Device: x })}
+                  placeholder="shared scanner SDR"
+                  help="Run this channel on its own role: voice SDR, scanned in parallel with the others; that SDR leaves the trunking voice pool. Empty = the shared scanner SDR."
                 />
                 {ch.Mode === "p25" ? (
                   <>

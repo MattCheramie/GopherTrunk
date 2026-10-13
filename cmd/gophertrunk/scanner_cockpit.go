@@ -16,8 +16,13 @@ import (
 // nil — methods degrade gracefully so a partial configuration still
 // returns useful status.
 type scannerCockpit struct {
-	cchunt     *cchunt.Supervisor
-	conv       *conventional.Scanner
+	cchunt *cchunt.Supervisor
+	// convs is one conventional scanner per SDR (issue #1260); the last is
+	// the shared scanner that takes manual-tune channels. The cockpit
+	// presents them as ONE channel list: a channel's index is its position
+	// in the concatenation, in this order. Manual-tune channels append to
+	// the last scanner, so they never shift another scanner's indexes.
+	convs      []*conventional.Scanner
 	engine     *trunking.Engine
 	talkgroups *trunking.TalkgroupDB
 }
@@ -57,23 +62,35 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 			})
 		}
 	}
-	if c.conv != nil {
-		snap := c.conv.Snapshot()
+	if len(c.convs) > 0 {
 		st.Conventional.Enabled = true
-		st.Conventional.State = string(snap.State)
-		st.Conventional.DeviceSerial = snap.DeviceSerial
-		st.Conventional.CursorIndex = snap.CursorIndex
-		for _, ch := range snap.Channels {
-			st.Conventional.Channels = append(st.Conventional.Channels, api.ConvChannelStatusDTO{
-				Index:       ch.Index,
-				Label:       ch.Label,
-				FrequencyHz: ch.FrequencyHz,
-				Mode:        ch.Mode,
-				Active:      ch.Active,
-				LockedOut:   ch.LockedOut,
-				LastBreakAt: ch.LastBreakAt,
-			})
+		states := map[conventional.State]bool{}
+		offset := 0
+		for i, cv := range c.convs {
+			snap := cv.Snapshot()
+			states[snap.State] = true
+			st.Conventional.DeviceSerials = append(st.Conventional.DeviceSerials, snap.DeviceSerial)
+			if i == len(c.convs)-1 {
+				// The shared scanner: the single-SDR fields keep
+				// describing it, as they did before #1260.
+				st.Conventional.DeviceSerial = snap.DeviceSerial
+				st.Conventional.CursorIndex = offset + snap.CursorIndex
+			}
+			for _, ch := range snap.Channels {
+				st.Conventional.Channels = append(st.Conventional.Channels, api.ConvChannelStatusDTO{
+					Index:        offset + ch.Index,
+					Label:        ch.Label,
+					FrequencyHz:  ch.FrequencyHz,
+					Mode:         ch.Mode,
+					Active:       ch.Active,
+					LockedOut:    ch.LockedOut,
+					LastBreakAt:  ch.LastBreakAt,
+					DeviceSerial: snap.DeviceSerial,
+				})
+			}
+			offset += len(snap.Channels)
 		}
+		st.Conventional.State = string(convAggregateState(states))
 	}
 	if c.talkgroups != nil {
 		total := 0
@@ -126,39 +143,85 @@ func (c scannerCockpit) ForceRetuneHunt(system string) bool {
 	return c.cchunt.ForceRetune(system)
 }
 
-// HoldConventional / ResumeConventional / DwellConventional delegate
-// to the conventional scanner.
+// convAggregateState folds the per-SDR states into one: dwelling if any
+// scanner is on a call, held only when every scanner is held.
+func convAggregateState(states map[conventional.State]bool) conventional.State {
+	switch {
+	case states[conventional.StateDwell]:
+		return conventional.StateDwell
+	case states[conventional.StateScanning]:
+		return conventional.StateScanning
+	default:
+		return conventional.StateHeld
+	}
+}
+
+// convAt maps a cockpit channel index onto the scanner that owns it and
+// that scanner's own index. ok=false for an index past the end.
+func (c scannerCockpit) convAt(index int) (*conventional.Scanner, int, bool) {
+	if index < 0 {
+		return nil, 0, false
+	}
+	for _, cv := range c.convs {
+		n := len(cv.Snapshot().Channels)
+		if index < n {
+			return cv, index, true
+		}
+		index -= n
+	}
+	return nil, 0, false
+}
+
+// convOffset is the cockpit index of the shared (last) scanner's channel 0.
+func (c scannerCockpit) convOffset() int {
+	off := 0
+	for _, cv := range c.convs[:len(c.convs)-1] {
+		off += len(cv.Snapshot().Channels)
+	}
+	return off
+}
+
+// HoldConventional / ResumeConventional apply to every scanner;
+// DwellConventional / LockoutConventional / UnlockoutConventional to the
+// one that owns the channel.
 func (c scannerCockpit) HoldConventional() bool {
-	if c.conv == nil {
+	if len(c.convs) == 0 {
 		return false
 	}
-	c.conv.Hold()
+	for _, cv := range c.convs {
+		cv.Hold()
+	}
 	return true
 }
 func (c scannerCockpit) ResumeConventional() bool {
-	if c.conv == nil {
+	if len(c.convs) == 0 {
 		return false
 	}
-	c.conv.Resume()
+	for _, cv := range c.convs {
+		cv.Resume()
+	}
 	return true
 }
 func (c scannerCockpit) DwellConventional(index int) bool {
-	if c.conv == nil {
+	cv, i, ok := c.convAt(index)
+	if !ok {
 		return false
 	}
-	return c.conv.DwellOn(index)
+	return cv.DwellOn(i)
 }
 func (c scannerCockpit) LockoutConventional(index int) bool {
-	if c.conv == nil {
+	cv, i, ok := c.convAt(index)
+	if !ok {
 		return false
 	}
-	return c.conv.LockoutChannel(index)
+	return cv.LockoutChannel(i)
 }
 func (c scannerCockpit) UnlockoutConventional(index int) bool {
-	if c.conv == nil {
+	cv, i, ok := c.convAt(index)
+	if !ok {
 		return false
 	}
-	return c.conv.UnlockoutChannel(index)
+	return cv.UnlockoutChannel(i)
 }
 
 // ManualTune adds a VFO-style temporary channel and forces dwell on
@@ -166,7 +229,7 @@ func (c scannerCockpit) UnlockoutConventional(index int) bool {
 // 1500ms, Mode=fm) so the API caller only has to supply
 // FrequencyHz to "listen now".
 func (c scannerCockpit) ManualTune(req api.ManualTuneRequest) (int, bool) {
-	if c.conv == nil {
+	if len(c.convs) == 0 {
 		return 0, false
 	}
 	ch := conventional.Channel{
@@ -182,14 +245,19 @@ func (c scannerCockpit) ManualTune(req api.ManualTuneRequest) (int, bool) {
 	if ch.Label == "" {
 		ch.Label = "manual"
 	}
-	idx := c.conv.AddTemporaryChannel(ch)
-	return idx, true
+	shared := c.convs[len(c.convs)-1]
+	idx := shared.AddTemporaryChannel(ch)
+	return c.convOffset() + idx, true
 }
 
 // ClearManualTune removes a previously-added temp channel.
 func (c scannerCockpit) ClearManualTune(index int) bool {
-	if c.conv == nil {
+	if len(c.convs) == 0 {
 		return false
 	}
-	return c.conv.RemoveTemporaryChannel(index)
+	off := c.convOffset()
+	if index < off {
+		return false // manual-tune channels live on the shared scanner
+	}
+	return c.convs[len(c.convs)-1].RemoveTemporaryChannel(index - off)
 }

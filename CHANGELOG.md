@@ -8,6 +8,19 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **The conventional scanner can run on several SDRs at once (#1260).** A
+  `scanner.conventional` entry takes `device: "<serial>"`, naming the
+  `role: voice` SDR it runs on. Channels naming the same SDR are that
+  SDR's scan list, and every SDR scans in parallel with its own hangtime,
+  priority rotation and gain, so air-band AM, VHF FM and UHF can each have
+  their own dongle and antenna. A named SDR is taken out of the trunking
+  voice pool. Channels without `device` run on the shared scanner SDR, as
+  before. The Scanner panel and the API show every SDR's channels as one
+  list, each row naming its SDR.
+
+## [v1.2.8] — 2026-10-13
+
+### Added
 - **NAC filter and CQPSK demod for P25 conventional scan-list channels
   (#1262).** A `mode: p25` entry in `scanner.conventional` takes
   `nac: "293"` (three hex digits): the scanner decodes the P25 NID on the

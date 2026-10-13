@@ -358,7 +358,7 @@ function Conventional({
   onMutate,
   onConfirm,
 }: {
-  conv: { enabled: boolean; state?: string; device_serial?: string; cursor_index?: number; channels: ConvChannelStatusDTO[] };
+  conv: { enabled: boolean; state?: string; device_serial?: string; device_serials?: string[]; cursor_index?: number; channels: ConvChannelStatusDTO[] };
   canMutate: boolean;
   onMutate: (label: string, fn: () => Promise<unknown>) => Promise<void>;
   onConfirm: (c: ConfirmRequest) => void;
@@ -372,14 +372,19 @@ function Conventional({
     );
   }
 
+  // One scanner per SDR (#1260): with more than one, each row names its SDR.
+  const multiSDR = (conv.device_serials ?? []).length > 1;
+
   return (
     <Card
       title="Conventional FM scanner"
       actions={
         <div className="flex items-center gap-2 text-xs">
           <span className="font-mono">{conv.state ?? "—"}</span>
-          {conv.device_serial && (
-            <span className="text-muted">on {conv.device_serial}</span>
+          {multiSDR ? (
+            <span className="text-muted">on {(conv.device_serials ?? []).join(", ")}</span>
+          ) : (
+            conv.device_serial && <span className="text-muted">on {conv.device_serial}</span>
           )}
           {canMutate && (
             <>
@@ -415,6 +420,7 @@ function Conventional({
                 <th className="text-left px-2 py-1">Label</th>
                 <th className="text-left px-2 py-1">Freq</th>
                 <th className="text-left px-2 py-1">Mode</th>
+                {multiSDR && <th className="text-left px-2 py-1">SDR</th>}
                 <th className="text-left px-2 py-1">State</th>
                 {canMutate && <th className="text-left px-2 py-1">Actions</th>}
               </tr>
@@ -431,6 +437,7 @@ function Conventional({
                     {formatHz(ch.frequency_hz)}
                   </td>
                   <td className="px-2 py-1 font-mono text-xs">{ch.mode}</td>
+                  {multiSDR && <td className="px-2 py-1 font-mono text-xs">{ch.device_serial ?? "—"}</td>}
                   <td className="px-2 py-1">
                     {ch.locked_out ? (
                       <span className="pill-err">locked</span>

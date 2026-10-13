@@ -481,6 +481,8 @@ export interface ConvScannerStatusDTO {
   enabled: boolean;
   state?: string;
   device_serial?: string;
+  // Every SDR the scanner runs on, one scanner per SDR (#1260).
+  device_serials?: string[];
   cursor_index?: number;
   channels: ConvChannelStatusDTO[];
 }
@@ -493,6 +495,8 @@ export interface ConvChannelStatusDTO {
   active: boolean;
   locked_out?: boolean;
   last_break_at?: string;
+  // The SDR this channel scans on (#1260).
+  device_serial?: string;
 }
 
 export interface CallRow {
