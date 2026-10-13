@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.2.8] — 2026-10-13
+
 ### Added
 - **NAC filter and CQPSK demod for P25 conventional scan-list channels
   (#1262).** A `mode: p25` entry in `scanner.conventional` takes
