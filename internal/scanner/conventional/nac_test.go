@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -154,9 +153,19 @@ func p25ScanStream(t *testing.T, nac uint16) [][]complex64 {
 	// Modulate at 48 kHz and interpolate to the SDR rate: a band-limited
 	// transmitter, as on air. (ModulateP25C4FM run directly at 2.4 MS/s,
 	// 500 samples per symbol, does not produce a decodable eye.)
+	// Linear interpolation, not a polyphase filter: the scanner's own
+	// decimating front end removes the images, and the filter took ~40 s
+	// under -race.
 	const up = amTestRate / 48_000
 	tx48 := demod.ModulateP25C4FM(append(randomDibits(960, 11), p25TransmissionDibits(t, nac, 8, 12)...), 48_000, 1800)
-	tx := dsp.NewResampler(up, 1, up*8+1, 8.6).Process(nil, tx48)
+	tx := make([]complex64, 0, len(tx48)*up)
+	for i := 0; i+1 < len(tx48); i++ {
+		a, b := tx48[i], tx48[i+1]
+		for k := 0; k < up; k++ {
+			f := float32(k) / up
+			tx = append(tx, a+complex(f, 0)*(b-a))
+		}
+	}
 	for i := range tx {
 		tx[i] *= 0.1
 	}
@@ -175,7 +184,12 @@ func p25ScanStream(t *testing.T, nac uint16) [][]complex64 {
 // the carrier's power alone opened the channel.
 func TestP25ChannelNACFilter(t *testing.T) {
 	const freq = 155_752_500
-	run := func(nac uint16, wait time.Duration) *fakeEngine {
+	// The waits key on the data, not the clock: under -race on a CI runner
+	// the scanner processes 2.4 MS/s IQ slower than real time, so a
+	// wall-clock wait (or the default scan window) could expire before the
+	// gate had seen a frame. MinDwellPerChannel is set long for the same
+	// reason; on hardware the scanner keeps up with real time.
+	run := func(nac uint16, wantStart bool) *fakeEngine {
 		tuner := &fakeTuner{}
 		eng := &fakeEngine{}
 		iq := &fakeIQ{chunks: map[uint32][][]complex64{freq: p25ScanStream(t, nac)}, tuner: tuner}
@@ -187,30 +201,42 @@ func TestP25ChannelNACFilter(t *testing.T) {
 				SquelchDbFS: -50, Hangtime: 200 * time.Millisecond,
 				NAC: 0x293, NACSet: true, P25Phase1DemodMode: "c4fm",
 			}},
-			SampleRateHz: amTestRate,
+			SampleRateHz:       amTestRate,
+			MinDwellPerChannel: 30 * time.Second,
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), wait)
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go func() { _ = s.Run(ctx) }()
-		deadline := time.Now().Add(wait)
-		for time.Now().Before(deadline) && eng.normalEndCount() == 0 {
+		drained := func() bool {
+			iq.mu.Lock()
+			defer iq.mu.Unlock()
+			return len(iq.chunks[freq]) == 0
+		}
+		deadline := time.Now().Add(2 * time.Minute)
+		for time.Now().Before(deadline) {
+			if wantStart && eng.startCount() > 0 {
+				break
+			}
+			if !wantStart && drained() {
+				// The scanner has the last chunks in flight; give it a
+				// moment to process them before judging.
+				time.Sleep(500 * time.Millisecond)
+				break
+			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		cancel()
 		return eng
 	}
 
-	// The stream (1.9 s of transmission and noise) has been read well
-	// before 2.5 s; a foreign NAC must not have opened the channel by then.
-	foreign := run(0x4A5, 2500*time.Millisecond)
+	foreign := run(0x4A5, false)
 	if n := foreign.startCount(); n != 0 {
 		t.Fatalf("a P25 carrier with NAC 4A5 opened the nac-293 channel (%d call starts)", n)
 	}
 
-	own := run(0x293, 4*time.Second)
+	own := run(0x293, true)
 	if own.startCount() == 0 {
 		t.Fatal("the channel's own NAC 293 did not open it")
 	}
