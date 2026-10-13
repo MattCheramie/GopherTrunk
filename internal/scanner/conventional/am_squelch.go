@@ -194,10 +194,20 @@ const ModeAM = "am"
 // the composer's P25 Phase 1 (IMBE) voice chain.
 const ModeP25 = "p25"
 
+// ModeDMR, ModeNXDN and ModeDStar are the other digital conventional modes
+// (issue #1261). Like p25 they squelch on in-channel power — a conventional
+// digital transmitter is only on the air while keyed — and hand the call to
+// the composer's existing voice chain for the protocol.
+const (
+	ModeDMR   = "dmr"
+	ModeNXDN  = "nxdn"
+	ModeDStar = "dstar"
+)
+
 // ValidMode reports whether mode is a Channel.Mode the scanner knows.
 func ValidMode(mode string) bool {
 	switch mode {
-	case "fm", "nfm", ModeAM, ModeP25:
+	case "fm", "nfm", ModeAM, ModeP25, ModeDMR, ModeNXDN, ModeDStar:
 		return true
 	}
 	return false
@@ -206,7 +216,11 @@ func ValidMode(mode string) bool {
 // IsDigitalMode reports whether mode carries digital voice, which has no
 // sub-audible tone and no analog data bursts to decode.
 func IsDigitalMode(mode string) bool {
-	return mode == ModeP25
+	switch mode {
+	case ModeP25, ModeDMR, ModeNXDN, ModeDStar:
+		return true
+	}
+	return false
 }
 
 // conventionalProtocol is the synthetic grant protocol for ch: the
@@ -217,6 +231,15 @@ func conventionalProtocol(ch Channel) string {
 		return "am-conv"
 	case ModeP25:
 		return "p25"
+	case ModeDMR:
+		// A conventional DMR repeater or a direct-mode handheld: the
+		// composer's DMR chain and the recorder's AMBE+2 mapping treat
+		// every DMR tier alike.
+		return "dmr-tier2"
+	case ModeNXDN:
+		return "nxdn"
+	case ModeDStar:
+		return "dstar"
 	}
 	return "fm-conv"
 }

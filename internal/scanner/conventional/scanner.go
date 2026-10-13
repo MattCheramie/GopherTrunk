@@ -34,7 +34,9 @@ type Channel struct {
 	// carrier-to-noise squelch (SquelchCNDb) instead of SquelchDbFS —
 	// or "p25" (issue #1239): P25 Phase 1 conventional, the FM
 	// channel's in-channel power squelch with the call decoded by the
-	// composer's P25 Phase 1 voice chain (protocol "p25").
+	// composer's P25 Phase 1 voice chain (protocol "p25") — or "dmr",
+	// "nxdn", "dstar" (issue #1261), likewise decoded by that protocol's
+	// voice chain.
 	Mode string
 	// SquelchDbFS is the threshold above which the scanner declares
 	// "carrier present", compared against the CHANNEL's power
@@ -445,7 +447,7 @@ func New(opts Options) (*Scanner, error) {
 			ch.Mode = "fm"
 		}
 		if !ValidMode(ch.Mode) {
-			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25", ch.Label, ch.Mode)
+			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25|dmr|nxdn|dstar", ch.Label, ch.Mode)
 		}
 		if IsDigitalMode(ch.Mode) {
 			if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {
@@ -868,6 +870,11 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 		// GroupID is the channel's synthetic ID, not an on-air
 		// talkgroup: digital voice chains must not gate on it (#1239).
 		Conventional: true,
+		// No DMR carrier sends a call's bursts back to back (a repeater
+		// interleaves two slots, a direct-mode radio sends one burst per
+		// frame), so DMR voice needs the cadence-detecting decoder, as
+		// trunking.DMRVoiceCadenceDetected gives every DMR system.
+		DMRInterleavedVoice: ch.Mode == ModeDMR,
 		// A p25 channel's demod reaches the voice chain the way a trunked
 		// system's does (issue #1262); empty on analog channels.
 		P25Phase1DemodMode: ch.P25Phase1DemodMode,
