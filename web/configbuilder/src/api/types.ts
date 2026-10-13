@@ -247,7 +247,7 @@ export interface ConvToneConfig {
 export interface ConvChannelConfig {
   Label: string;
   FrequencyHz: number;
-  Mode: string; // "" | fm | nfm | am
+  Mode: string; // "" | fm | nfm | am | p25
   SquelchDbFS: number;
   // AM channels: carrier-to-noise open threshold in dB (#1219).
   SquelchCNDb: number;
@@ -265,6 +265,10 @@ export interface ConvChannelConfig {
   // Data decoders run on the channel's dwell: "mdc1200" | "fleetsync" (#1220),
   // "acars" on an AM channel (#1231).
   Decoders: string[] | null;
+  // mode p25 only: NAC filter, three hex digits ("293"); "" = none (#1262).
+  NAC?: string;
+  // mode p25 only: "" | c4fm | cqpsk (#1262).
+  P25Phase1DemodMode?: string;
 }
 
 export interface ScannerConfig {

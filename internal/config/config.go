@@ -658,6 +658,18 @@ type ConvChannelConfig struct {
 	// mid-burst holds the channel so the burst is not cut off. Empty (the
 	// default) runs none. Issue #1220.
 	Decoders []string `yaml:"decoders"`
+	// NAC is a mode p25 channel's NAC filter, three hex digits ("293",
+	// "0x293"): the scanner opens and holds the channel only while it
+	// decodes a NID carrying this NAC, so another system's P25 traffic on
+	// the same frequency is skipped, the P25 analogue of a CTCSS gate.
+	// "F7E" / "F7F" accept any NAC but still only P25. Empty (default):
+	// any carrier above the squelch opens the channel. Issue #1262.
+	NAC string `yaml:"nac"`
+	// P25Phase1DemodMode is a mode p25 channel's demod: "" / "c4fm"
+	// (default) or "cqpsk" (aliases "lsm", "linear") for a transmitter
+	// using linear simulcast modulation, as on a trunked system's
+	// p25_phase1_demod_mode. Issue #1262.
+	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
 }
 
 // ConvToneConfig configures CTCSS / DCS gating for one conventional

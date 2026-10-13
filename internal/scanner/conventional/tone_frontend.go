@@ -68,9 +68,10 @@ func newToneFrontEnd(sampleHz float64) *toneFrontEnd {
 	}
 }
 
-// process returns the discriminator output for iq, one value per
-// post-decimation sample. The returned slice is reused by the next call.
-func (f *toneFrontEnd) process(iq []complex64) []float64 {
+// channel returns iq decimated to f.rate and channel-filtered: the complex
+// stage before the discriminator, which the P25 NAC gate feeds to a symbol
+// receiver (#1262). The returned slice is reused by the next call.
+func (f *toneFrontEnd) channel(iq []complex64) []complex64 {
 	if f.pre != nil {
 		f.scratch = f.pre.Process(f.scratch, iq)
 		iq = f.scratch
@@ -79,6 +80,13 @@ func (f *toneFrontEnd) process(iq []complex64) []float64 {
 		f.chanBuf = f.chanFilter.Process(f.chanBuf[:0], iq)
 		iq = f.chanBuf
 	}
+	return iq
+}
+
+// process returns the discriminator output for iq, one value per
+// post-decimation sample. The returned slice is reused by the next call.
+func (f *toneFrontEnd) process(iq []complex64) []float64 {
+	iq = f.channel(iq)
 	f.demod = f.demod[:0]
 	for _, s := range iq {
 		// arg(z[n] · conj(z[n-1])), normalised to toneRefRateHz.

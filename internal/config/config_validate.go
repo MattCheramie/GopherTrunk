@@ -750,6 +750,19 @@ func validateConvChannel(i int, ch ConvChannelConfig) error {
 		if len(ch.Decoders) > 0 {
 			return fmt.Errorf("scanner.conventional[%d].decoders: data decoders run on analog channels, not mode: p25", i)
 		}
+		if nac := strings.TrimSpace(ch.NAC); nac != "" {
+			t := strings.TrimPrefix(strings.TrimPrefix(nac, "0x"), "0X")
+			if v, err := strconv.ParseUint(t, 16, 16); t == "" || err != nil || v > 0xFFF {
+				return fmt.Errorf("scanner.conventional[%d]: nac %q must be three hex digits, 000..FFF (e.g. \"293\")", i, ch.NAC)
+			}
+		}
+		switch strings.ToLower(strings.TrimSpace(ch.P25Phase1DemodMode)) {
+		case "", "c4fm", "fm", "cqpsk", "lsm", "linear":
+		default:
+			return fmt.Errorf("scanner.conventional[%d]: p25_phase1_demod_mode %q must be c4fm|cqpsk", i, ch.P25Phase1DemodMode)
+		}
+	} else if strings.TrimSpace(ch.NAC) != "" || strings.TrimSpace(ch.P25Phase1DemodMode) != "" {
+		return fmt.Errorf("scanner.conventional[%d]: nac and p25_phase1_demod_mode apply to mode: p25 only", i)
 	}
 	if ch.SquelchCNDb < 0 {
 		return fmt.Errorf("scanner.conventional[%d]: squelch_cn_db must be ≥ 0", i)

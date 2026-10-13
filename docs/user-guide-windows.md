@@ -1140,10 +1140,23 @@ scanner:
   (for example `audio_gain_db: 6` on a P25 channel that sounds quieter
   than your AM and NFM ones). `recordings.normalize` evens out the
   recorded files instead, but it leaves the live stream alone.
+- **NAC filter.** `nac: "293"` (three hex digits) makes the channel
+  open, and stay open, only while it hears P25 frames carrying that NAC.
+  It is the P25 counterpart of a CTCSS tone: another system's P25
+  traffic on the same frequency is skipped, and when a radio with a
+  different NAC keys up mid-call the channel lets go at once instead of
+  recording it. `nac: "F7E"` accepts any NAC but still only P25, so
+  analog interference is skipped too. Without `nac`, any carrier above
+  the squelch opens the channel. A filtered channel needs about half a
+  second per visit to hear a NAC, so the scan slows slightly.
+- **Linear (CQPSK/LSM) transmitters.** `p25_phase1_demod_mode: cqpsk`
+  selects the linear demod for a channel whose transmitter uses linear
+  simulcast modulation, as on a trunked system. Leave it at the
+  default (`c4fm`) unless a strong, clean signal will not decode.
 - **Not available on a P25 channel:** `tone` (CTCSS/DCS) and
   `decoders` (MDC1200/FleetSync/ACARS) are analog features and are
-  rejected. There is no NAC filter yet, and the linear (CQPSK/LSM)
-  P25 modulation used by simulcast sites is not selectable here.
+  rejected. (`nac` and `p25_phase1_demod_mode` are rejected on analog
+  channels.)
 - **Encryption.** An encrypted call records as encrypted IMBE unless a
   matching `encryption_keys` entry is configured, as on a trunked
   system.
