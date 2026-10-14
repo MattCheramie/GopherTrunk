@@ -1644,7 +1644,9 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 			"nac", nac, "id", u.ChannelID,
 			"base_hz", u.BaseHz, "spacing_hz", u.SpacingHz,
 			"tx_offset_hz", u.TxOffsetHz,
-			"bandwidth_hz", u.BandwidthHz)
+			"bandwidth_hz", u.BandwidthHz,
+			"channel_type", t.Payload[0]&0x0F,
+			"tdma", u.AccessTDMA, "slots_per_carrier", u.SlotsPerCarrier)
 		c.drainPendingGrants(u.ChannelID, nac)
 		c.publishSiteUpdate()
 	case OpGroupVoiceChannelGrant:
@@ -2101,6 +2103,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 			FrequencyHz:        freq,
 			ChannelID:          g.channelID,
 			ChannelNum:         g.channelNumber,
+			Timeslot:           c.bandPlan.Timeslot(g.channelID, g.channelNumber),
 			RFSSID:             net.RFSS,
 			SiteID:             net.Site,
 			NAC:                nac,
@@ -2118,6 +2121,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 		"system", c.systemName, "nac", nac, "protocol", protocol,
 		"tg", g.groupID, "src", g.sourceID,
 		"id", g.channelID, "num", g.channelNumber, "freq_hz", freq,
+		"ts", c.bandPlan.Timeslot(g.channelID, g.channelNumber),
 		"enc", so.Encrypted(), "emer", so.Emergency(), "data", g.dataCall)
 	// ALGID/KID are unavailable at grant time on Phase 1 (the LDU2
 	// Encryption Sync carries them); the engine backfills via

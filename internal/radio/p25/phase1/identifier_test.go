@@ -70,18 +70,19 @@ func TestIdentifierUpdateVUHFRoundTripPositiveOffset(t *testing.T) {
 }
 
 // TestIdentifierUpdateTDMARoundTripMtAnakieID10 mirrors the VUHF
-// round-trip with the Mt Anakie id=10 fixture from issue #345
-// (TDMA-2 slot, 6.25 kHz channels, base 467.5125 MHz, -10 MHz tx
-// offset). The site's id=10 IDEN_UP arrives as opcode 0x33 — once
-// decoded, grants on (id=10, num=176) resolve to 468.6125 MHz.
+// round-trip with the Mt Anakie id=10 fixture from issue #345 (base
+// 467.5125 MHz, 6.25 kHz step, -10 MHz tx offset). The on-air log that
+// fixture came from did not record the channel-type code, so the
+// fixture states it explicitly as a 2-slot Phase 2 carrier.
 func TestIdentifierUpdateTDMARoundTripMtAnakieID10(t *testing.T) {
 	in := IdentifierUpdate{
-		ChannelID:   10,
-		BandwidthHz: 6_250, // channel type 0x1 → 6.25 kHz
-		SpacingHz:   6_250,
-		TxOffsetHz:  -10_000_000,
-		BaseHz:      467_512_500,
-		AccessTDMA:  true,
+		ChannelID:       10,
+		BandwidthHz:     12_500, // channel type 3 → TDMA 12.5 kHz, 2 slots
+		SpacingHz:       6_250,
+		TxOffsetHz:      -10_000_000,
+		BaseHz:          467_512_500,
+		AccessTDMA:      true,
+		SlotsPerCarrier: 2,
 	}
 	out := ParseIdentifierUpdateTDMA(AssembleIdentifierUpdateTDMA(in))
 	if out != in {
@@ -90,15 +91,16 @@ func TestIdentifierUpdateTDMARoundTripMtAnakieID10(t *testing.T) {
 }
 
 func TestIdentifierUpdateTDMARoundTripPositiveOffset(t *testing.T) {
-	// 12.5 kHz TDMA fixture with a positive offset to exercise the
-	// sign bit and the second known channel-type code.
+	// 25 kHz TDMA-4 fixture with a positive offset to exercise the
+	// sign bit and the 4-slot channel-type code.
 	in := IdentifierUpdate{
-		ChannelID:   5,
-		BandwidthHz: 12_500, // channel type 0x2 → 12.5 kHz
-		SpacingHz:   12_500,
-		TxOffsetHz:  5_000_000,
-		BaseHz:      420_000_000,
-		AccessTDMA:  true,
+		ChannelID:       5,
+		BandwidthHz:     25_000, // channel type 4 → TDMA 25 kHz, 4 slots
+		SpacingHz:       12_500,
+		TxOffsetHz:      5_000_000,
+		BaseHz:          420_000_000,
+		AccessTDMA:      true,
+		SlotsPerCarrier: 4,
 	}
 	out := ParseIdentifierUpdateTDMA(AssembleIdentifierUpdateTDMA(in))
 	if out != in {
@@ -106,25 +108,88 @@ func TestIdentifierUpdateTDMARoundTripPositiveOffset(t *testing.T) {
 	}
 }
 
-// TestTDMAChannelTypeBandwidthCodes table-checks the channel-type →
-// bandwidth lookup. Codes outside the small documented set fall to 0
-// — the parser still resolves frequency correctly because
-// BandPlan.Frequency does not consult BandwidthHz.
-func TestTDMAChannelTypeBandwidthCodes(t *testing.T) {
+// TestTDMAChannelTypeTable pins the 0x33 channel-type table to the two
+// independent decoders that agree on it: SDRTrunk ChannelType TYPE_0..5
+// (access, bandwidth, slots) and OP25 tk_p25.py slots_per_carrier
+// [1,1,1,2,4,2,...]. Issue #1273.
+func TestTDMAChannelTypeTable(t *testing.T) {
 	for _, tc := range []struct {
-		code uint8
-		want uint32
+		code  uint8
+		tdma  bool
+		bwHz  uint32
+		slots uint8
 	}{
-		{0x0, 0}, // reserved
-		{0x1, 6_250},
-		{0x2, 12_500},
-		{0x3, 6_250},
-		{0x4, 0},
-		{0xF, 0},
+		{0x0, false, 12_500, 1},
+		{0x1, false, 12_500, 1},
+		{0x2, false, 6_250, 1},
+		{0x3, true, 12_500, 2},
+		{0x4, true, 25_000, 4},
+		{0x5, true, 12_500, 2},
+		{0xF, true, 0, 2}, // reserved: OP25 treats it as 2 slots
 	} {
-		if got := tdmaChannelTypeBandwidthHz(tc.code); got != tc.want {
-			t.Errorf("tdmaChannelTypeBandwidthHz(0x%X) = %d, want %d", tc.code, got, tc.want)
+		got := tdmaChannelType(tc.code)
+		if got.tdma != tc.tdma || got.bandwidthHz != tc.bwHz || got.slots != tc.slots {
+			t.Errorf("tdmaChannelType(0x%X) = %+v, want tdma=%v bw=%d slots=%d",
+				tc.code, got, tc.tdma, tc.bwHz, tc.slots)
 		}
+	}
+}
+
+// tdmaIdenPayload builds a literal opcode-0x33 payload from OP25's bit
+// positions (tk_p25.py iden_up_tdma: iden >>76, channel_type >>72,
+// toff >>58, spac >>48, f1 >>16 of the 96-bit TSBK; the 64-bit payload
+// is TSBK bits 16..79). Independent of AssembleIdentifierUpdateTDMA so a
+// shared packing mistake cannot hide.
+func tdmaIdenPayload(iden, chanType uint8, toff14, spac10 uint16, f1 uint32) [8]byte {
+	v := uint64(iden&0xF)<<60 | uint64(chanType&0xF)<<56 |
+		uint64(toff14&0x3FFF)<<42 | uint64(spac10&0x3FF)<<32 | uint64(f1)
+	var p [8]byte
+	for i := 0; i < 8; i++ {
+		p[i] = byte(v >> (56 - 8*uint(i)))
+	}
+	return p
+}
+
+// TestBandPlanTDMAGrantResolvesToCarrierNotLogicalChannel is the #1273
+// regression. A TDMA grant's channel number counts logical channels
+// (carrier × slots + slot): SDRTrunk FrequencyBandUpdateTDMA resolves
+// base + spacing × floor(n / slots), OP25 channel_id_to_frequency
+// base + step × int(n / tdma), and both take the slot from the
+// remainder. The old resolver used base + n × spacing, putting every
+// grant on a 2-slot carrier twice as far from the base as its carrier.
+func TestBandPlanTDMAGrantResolvesToCarrierNotLogicalChannel(t *testing.T) {
+	const base = 161_000_000
+	// spacing 12.5 kHz = 100 × 125 Hz; toff sign bit set, magnitude 0.
+	for _, tc := range []struct {
+		name     string
+		chanType uint8
+		num      uint16
+		wantHz   uint32
+		wantTS   uint8
+	}{
+		{"2-slot slot 1 of carrier 5", 0x3, 10, base + 5*12_500, 1},
+		{"2-slot slot 2 of carrier 5", 0x3, 11, base + 5*12_500, 2},
+		{"4-slot slot 4 of carrier 2", 0x4, 11, base + 2*12_500, 4},
+		{"FDMA type under 0x33 is not divided", 0x1, 11, base + 11*12_500, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := ParseIdentifierUpdateTDMA(tdmaIdenPayload(7, tc.chanType, 1<<13, 100, base/5))
+			var bp BandPlan
+			bp.Apply(u)
+			hz, err := bp.Frequency(7, tc.num)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if hz != tc.wantHz {
+				t.Errorf("Frequency(7, %d) = %d, want %d", tc.num, hz, tc.wantHz)
+			}
+			if ts := bp.Timeslot(7, tc.num); ts != tc.wantTS {
+				t.Errorf("Timeslot(7, %d) = %d, want %d", tc.num, ts, tc.wantTS)
+			}
+			if bp.IsTDMA(7) != (tc.wantTS != 0) {
+				t.Errorf("IsTDMA(7) = %v, want %v", bp.IsTDMA(7), tc.wantTS != 0)
+			}
+		})
 	}
 }
 
@@ -204,18 +269,20 @@ func TestBandPlanRejectsOverflow(t *testing.T) {
 }
 
 // TestParseIdentifierUpdateTDMASetsAccessFlag confirms the TDMA
-// variant flips AccessTDMA so the Phase 1 control channel can route
-// grants on the channel ID into the Phase 2 voice chain (issue #376).
+// variant with a TDMA channel type flips AccessTDMA so the Phase 1
+// control channel can route grants on the channel ID into the Phase 2
+// voice chain (issue #376).
 // FDMA variants (the 0x3D and 0x34 forms) must leave it false.
 func TestParseIdentifierUpdateTDMASetsAccessFlag(t *testing.T) {
-	tdma := AssembleIdentifierUpdateTDMA(IdentifierUpdate{
-		ChannelID:   3,
-		BandwidthHz: 12500,
-		SpacingHz:   12_500,
-		BaseHz:      851_000_000,
-	})
+	tdma := tdmaIdenPayload(3, 0x3, 1<<13, 100, 851_000_000/5) // channel type 3
 	if u := ParseIdentifierUpdateTDMA(tdma); !u.AccessTDMA {
 		t.Errorf("TDMA: AccessTDMA = false, want true")
+	}
+	// An FDMA channel type carried in the 0x33 form is still FDMA
+	// (SDRTrunk ChannelType TYPE_0..2; #1273).
+	fdmaType := tdmaIdenPayload(3, 0x1, 1<<13, 100, 851_000_000/5)
+	if u := ParseIdentifierUpdateTDMA(fdmaType); u.AccessTDMA {
+		t.Errorf("0x33 with FDMA channel type 1: AccessTDMA = true, want false")
 	}
 
 	fdma := AssembleIdentifierUpdate(IdentifierUpdate{

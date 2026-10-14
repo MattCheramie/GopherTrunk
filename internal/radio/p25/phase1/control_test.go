@@ -410,6 +410,7 @@ func TestControlChannelRoutesTDMAChannelGrantAsPhase2(t *testing.T) {
 		BandwidthHz: 12_500,
 		SpacingHz:   12_500,
 		BaseHz:      851_000_000,
+		AccessTDMA:  true, // channel type 3: 2 slots per carrier
 	})
 
 	grantPayload := [8]byte{
@@ -457,8 +458,12 @@ func TestControlChannelRoutesTDMAChannelGrantAsPhase2(t *testing.T) {
 	if got.P25Phase2Decode.Scrambler != 1 {
 		t.Errorf("P25Phase2Decode.Scrambler = %d, want 1 (ScramblerOn)", got.P25Phase2Decode.Scrambler)
 	}
-	if got.FrequencyHz != 851_200_000 {
-		t.Errorf("FrequencyHz = %d, want 851_200_000", got.FrequencyHz)
+	// Channel number 16 on a 2-slot carrier = carrier 8, slot 1 (#1273).
+	if got.FrequencyHz != 851_100_000 {
+		t.Errorf("FrequencyHz = %d, want 851_100_000", got.FrequencyHz)
+	}
+	if got.Timeslot != 1 {
+		t.Errorf("Timeslot = %d, want 1", got.Timeslot)
 	}
 }
 
@@ -1511,8 +1516,7 @@ func TestControlChannelDeferredGrantsBoundedByRingCap(t *testing.T) {
 // IDEN_UP for channel id=10 as opcode 0x33 (TDMA-2), not 0x34 VUHF.
 // With 0x33 now wired into dispatchTSBK, a subsequent grant on
 // (id=10, num=176) must resolve through the freshly applied band-plan
-// slot to 468.6125 MHz — the exact downlink the operator should see
-// pop into /api/v1/calls/active.
+// slot. On a 2-slot carrier that is 468.0625 MHz (carrier 88, #1273).
 func TestControlChannelAppliesTDMAIdentifierUpdateAndPublishesGrant(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()
@@ -1522,10 +1526,11 @@ func TestControlChannelAppliesTDMAIdentifierUpdateAndPublishesGrant(t *testing.T
 	identTSBK := TSBK{LB: false, Opcode: OpIdentifierUpdateTDMA}
 	identTSBK.Payload = AssembleIdentifierUpdateTDMA(IdentifierUpdate{
 		ChannelID:   10,
-		BandwidthHz: 6_250,
+		BandwidthHz: 12_500,
 		SpacingHz:   6_250,
 		TxOffsetHz:  -10_000_000,
 		BaseHz:      467_512_500,
+		AccessTDMA:  true, // channel type 3: 2 slots per carrier
 	})
 
 	// num=176 = 0x0B0 — exact Mt Anakie grant the operator reported.
@@ -1568,9 +1573,10 @@ func TestControlChannelAppliesTDMAIdentifierUpdateAndPublishesGrant(t *testing.T
 	if got.ChannelID != 10 || got.ChannelNum != 0x0B0 {
 		t.Errorf("grant channel = %d.%d, want 10.176", got.ChannelID, got.ChannelNum)
 	}
-	// base 467_512_500 + 176 * 6250 = 468_612_500
-	if got.FrequencyHz != 468_612_500 {
-		t.Errorf("freq = %d, want 468_612_500", got.FrequencyHz)
+	// 2-slot carrier: base 467_512_500 + (176 / 2) * 6250 = 468_062_500
+	// (#1273; the earlier 468_612_500 ignored the slot count).
+	if got.FrequencyHz != 468_062_500 {
+		t.Errorf("freq = %d, want 468_062_500", got.FrequencyHz)
 	}
 }
 
@@ -1593,10 +1599,11 @@ func TestControlChannelDeferredGrantReplayedAfterTDMAIdentifierUpdate(t *testing
 	identTSBK := TSBK{LB: false, Opcode: OpIdentifierUpdateTDMA}
 	identTSBK.Payload = AssembleIdentifierUpdateTDMA(IdentifierUpdate{
 		ChannelID:   10,
-		BandwidthHz: 6_250,
+		BandwidthHz: 12_500,
 		SpacingHz:   6_250,
 		TxOffsetHz:  -10_000_000,
 		BaseHz:      467_512_500,
+		AccessTDMA:  true, // channel type 3: 2 slots per carrier
 	})
 
 	stream1 := buildLockedStreamWithTSBK(10, 0x164, DUIDTrunkingSignaling, grantTSBK)
@@ -1623,8 +1630,8 @@ func TestControlChannelDeferredGrantReplayedAfterTDMAIdentifierUpdate(t *testing
 			t.Fatal("no grant event published after TDMA IDEN_UP drained the queue")
 		}
 	}
-	if got.FrequencyHz != 468_612_500 {
-		t.Errorf("freq = %d, want 468_612_500", got.FrequencyHz)
+	if got.FrequencyHz != 468_062_500 {
+		t.Errorf("freq = %d, want 468_062_500", got.FrequencyHz)
 	}
 }
 
