@@ -202,12 +202,14 @@ const (
 	ModeDMR   = "dmr"
 	ModeNXDN  = "nxdn"
 	ModeDStar = "dstar"
+	// ModeYSF is System Fusion; its voice chain decodes V/D mode 2 ("DN").
+	ModeYSF = "ysf"
 )
 
 // ValidMode reports whether mode is a Channel.Mode the scanner knows.
 func ValidMode(mode string) bool {
 	switch mode {
-	case "fm", "nfm", ModeAM, ModeP25, ModeDMR, ModeNXDN, ModeDStar:
+	case "fm", "nfm", ModeAM, ModeP25, ModeDMR, ModeNXDN, ModeDStar, ModeYSF:
 		return true
 	}
 	return false
@@ -217,7 +219,7 @@ func ValidMode(mode string) bool {
 // sub-audible tone and no analog data bursts to decode.
 func IsDigitalMode(mode string) bool {
 	switch mode {
-	case ModeP25, ModeDMR, ModeNXDN, ModeDStar:
+	case ModeP25, ModeDMR, ModeNXDN, ModeDStar, ModeYSF:
 		return true
 	}
 	return false
@@ -240,6 +242,8 @@ func conventionalProtocol(ch Channel) string {
 		return "nxdn"
 	case ModeDStar:
 		return "dstar"
+	case ModeYSF:
+		return "ysf"
 	}
 	return "fm-conv"
 }

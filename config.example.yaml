@@ -1464,13 +1464,14 @@ scanner:
   #                                 # system on the frequency is skipped; "F7E"
   #                                 # = any NAC, P25 only; empty = no filter
   #     p25_phase1_demod_mode: c4fm # optional: c4fm (default) | cqpsk (LSM)
-  #   # DMR, NXDN and D-STAR conventional channels (#1261): the same power
-  #   # squelch, decoded by that protocol's voice chain. A DMR repeater's
-  #   # two timeslots: the slot that carries voice first is recorded. NXDN
+  #   # DMR, NXDN, D-STAR and System Fusion conventional channels (#1261):
+  #   # the same power squelch, decoded by that protocol's voice chain. A
+  #   # DMR repeater's two timeslots: the slot that carries voice first is
+  #   # recorded. ysf decodes V/D mode 2 (DN) only. NXDN, D-STAR and YSF
   #   # voice decode is experimental (unverified on air).
   #   - label: "DMR Rptr"
   #     frequency_hz: 442387500
-  #     mode: dmr                   # dmr | nxdn | dstar
+  #     mode: dmr                   # dmr | nxdn | dstar | ysf
   #     squelch_dbfs: -50
 
 # audio routes decoded PCM to the host's speakers. Disabled by default;

@@ -1066,7 +1066,7 @@ scanner:
 | --- | --- |
 | `label` | Display name |
 | `frequency_hz` | Tuner centre frequency |
-| `mode` | `fm` (default), `nfm`, `am` (the VHF air band — see below), `p25` (P25 Phase 1 digital — see below), or `dmr`, `nxdn`, `dstar` (other digital conventional channels — see below) |
+| `mode` | `fm` (default), `nfm`, `am` (the VHF air band — see below), `p25` (P25 Phase 1 digital — see below), or `dmr`, `nxdn`, `dstar`, `ysf` (other digital conventional channels — see below) |
 | `gain` | Optional tuner gain for this channel on the scanner SDR: `"auto"` or tenths of a dB (`"280"` = 28 dB). Empty uses the device's gain |
 | `audio_gain_db` | Optional gain in dB on this channel's recovered audio (recording, live stream, uploads), to balance a mixed list of AM, NFM and P25 channels. `0` (default) leaves it unchanged; range ±30 dB; clamps at full scale |
 | `device` | Optional SDR for this channel: the serial of a `role: voice` SDR. Channels naming the same device form that SDR's scan list, and each SDR scans in parallel with the others. A named SDR is taken out of the trunking voice pool. Empty (default) uses the shared scanner SDR. See "Scanning on several SDRs" below |
@@ -1164,22 +1164,24 @@ scanner:
 - **Manual tune.** The VFO form in the web Scanner tab has an AM
   option too.
 
-#### DMR, NXDN and D-STAR conventional channels
+#### DMR, NXDN, D-STAR and System Fusion conventional channels
 
-`mode: dmr`, `mode: nxdn` and `mode: dstar` scan a conventional channel
-of that protocol alongside the analog and P25 ones:
+`mode: dmr`, `mode: nxdn`, `mode: dstar` and `mode: ysf` scan a
+conventional channel of that protocol alongside the analog and P25 ones:
 
 ```yaml
 scanner:
   conventional:
     - { label: "DMR Rptr", frequency_hz: 442387500, mode: dmr,   squelch_dbfs: -50 }
     - { label: "D-STAR",   frequency_hz: 145670000, mode: dstar, squelch_dbfs: -50 }
+    - { label: "C4FM",     frequency_hz: 145500000, mode: ysf,   squelch_dbfs: -50 }
 ```
 
 - **Squelch.** The in-channel power squelch, as for `p25`: a
   conventional digital transmitter is only on the air while keyed.
 - **Audio.** Each call is decoded by the same voice chain as a trunked
-  call of that protocol (DMR and NXDN: AMBE+2; D-STAR: AMBE) and filed
+  call of that protocol (DMR, NXDN and System Fusion: AMBE+2; D-STAR:
+  AMBE) and filed
   under the channel's label and `talkgroup_id`, whatever talkgroup the
   radio keyed up on.
 - **DMR repeaters carry two timeslots.** The channel records the slot
@@ -1192,11 +1194,15 @@ scanner:
   for it, since no voice is decoded, though it can still show as a short
   entry in the call history. Raise `squelch_dbfs` or use a
   shorter `hangtime_ms` on such a channel if this slows your scan.
-- **NXDN is experimental.** The NXDN voice decode has not yet been
-  confirmed on air, on scan-list channels or trunked systems.
+- **System Fusion: DN mode only.** A `ysf` channel decodes V/D mode 2,
+  the "DN" mode Yaesu radios use by default. Calls in V/D mode 1 or
+  Voice Full Rate ("VW") are recognised and logged but not decoded.
+  Wires-X / network traffic relayed by a repeater is ordinary DN audio
+  on air and decodes the same way.
+- **NXDN, D-STAR and System Fusion are experimental.** Their voice
+  decode has not yet been confirmed on air.
 - **Not available:** `tone`, `decoders`, `nac` and
-  `p25_phase1_demod_mode` are rejected on these channels. System Fusion
-  (YSF) has no voice decode yet, so there is no `mode: ysf`.
+  `p25_phase1_demod_mode` are rejected on these channels.
 
 ### Scanning on several SDRs
 

@@ -1059,6 +1059,20 @@ confirmation before any close-as-completed.
   almost certainly the probe estimator latching a different momentarily-strong carrier in the
   3 MHz span (the probe is the FIRST 32768 samples ≈ 11 ms, and `capture` never checks
   `ActualSampleRate` — though sample-count math shows their file really is 3 MS/s).
+- **The YSF FICH in `internal/radio/ysf/fich.go` + `fich_trellis.go` is FABRICATED — the voice path
+  uses `airframe.go` instead (#1261).** The old model convolves 48 info bits into "100 on-air bits"; on
+  air the FICH is 100 DIBITS (200 bits): a 20×5 interleave, a rate-1/2 K=5 code (g1 = d⊕d3⊕d4,
+  g2 = d⊕d1⊕d2⊕d4), four Golay(24,12) words (MMDVMHost's CGolay24128 — NOT `framing.GolayEncode24_12`,
+  which is a different generator; 4094/4096 codewords differ), 32 info bits + CRC-16/GSM. Its encoder and
+  decoder shared the invented layout (the self-consistent trap again), so the YSF control-channel path
+  that still uses it cannot decode real air — that is unfixed, and a follow-up. `DecodeAirFICH` is pinned
+  by five on-air vectors from MMDVMHost's own encoder, and V/D mode 2 voice (`DecodeVD2Voice`: 5 VCHs ×
+  104 bits, 26×4 interleave, 13-byte whitening, 27 triplicated + 22 plain bits = the DMR 49-bit AMBE+2
+  payload) by YSF2DMR's silence pair: YSF_SILENCE through this package and DMR_SILENCE through the DMR
+  AMBE decoder give the SAME 49 bits. Test-fixture trap that cost a round: YSF is RRC-shaped (α 0.20)
+  like DMR, so fixtures use `demod.ModulateC4FM`; `ModulateP25C4FM` gives ~45 % dibit agreement through
+  the YSF receiver and looks like a receiver bug. Only V/D mode 2 is decoded; V/D mode 1 and Voice FR are
+  logged. Unverified on air.
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the

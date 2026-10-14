@@ -511,7 +511,8 @@ export function ScannerSection() {
                     { value: "p25", label: "p25 (Phase 1 digital)" },
                     { value: "dmr", label: "dmr (digital)" },
                     { value: "nxdn", label: "nxdn (digital, experimental)" },
-                    { value: "dstar", label: "dstar (digital)" },
+                    { value: "dstar", label: "dstar (digital, experimental)" },
+                    { value: "ysf", label: "ysf (System Fusion DN, experimental)" },
                   ]}
                 />
                 {ch.Mode === "am" ? (
