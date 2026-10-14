@@ -36,11 +36,11 @@ func TestValidateConvChannelP25(t *testing.T) {
 	}
 }
 
-// scanner.conventional[].mode accepts dmr, nxdn and dstar (issue #1261),
+// scanner.conventional[].mode accepts dmr, nxdn, dstar and ysf (issue #1261),
 // with the same analog-only rules as p25, and the P25-only knobs stay
 // rejected on them.
 func TestValidateConvChannelDigitalModes(t *testing.T) {
-	for _, mode := range []string{"dmr", "nxdn", "dstar"} {
+	for _, mode := range []string{"dmr", "nxdn", "dstar", "ysf"} {
 		ok := ConvChannelConfig{FrequencyHz: 442_387_500, Mode: mode, SquelchDbFS: -50}
 		if err := validateConvChannel(0, ok); err != nil {
 			t.Errorf("mode %s rejected: %v", mode, err)
@@ -55,7 +55,7 @@ func TestValidateConvChannelDigitalModes(t *testing.T) {
 			}
 		}
 	}
-	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 1, Mode: "ysf"}); err == nil {
-		t.Error("mode ysf accepted, but it has no conventional voice chain")
+	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 1, Mode: "dpmr"}); err == nil {
+		t.Error("mode dpmr accepted, but the scan list does not offer it")
 	}
 }

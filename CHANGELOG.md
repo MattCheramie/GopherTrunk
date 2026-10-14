@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **System Fusion (YSF) channels in the conventional scan list (#1261).**
+  `mode: ysf` scans a C4FM repeater or simplex channel and records its
+  V/D mode 2 ("DN") voice through the AMBE+2 vocoder. YSF had no voice
+  decode at all before: this adds a frame decoder that reads the FICH and
+  V/D mode 2 voice channels as MMDVMHost does. V/D mode 1 and Voice Full
+  Rate ("VW") calls are recognised but not decoded. Experimental until
+  confirmed on air.
 - **DMR, NXDN and D-STAR channels in the conventional scan list (#1261).**
   A `scanner.conventional` entry takes `mode: dmr`, `mode: nxdn` or
   `mode: dstar`, so one scanner SDR can hop between analog, P25 and these
@@ -27,6 +34,10 @@ for tagged releases.
   voice pool. Channels without `device` run on the shared scanner SDR, as
   before. The Scanner panel and the API show every SDR's channels as one
   list, each row naming its SDR.
+
+### Fixed
+- **The user guide no longer calls D-STAR scan-list decode verified.**
+  Like NXDN, D-STAR voice decode is still unconfirmed on air.
 
 ## [v1.2.8] — 2026-10-13
 

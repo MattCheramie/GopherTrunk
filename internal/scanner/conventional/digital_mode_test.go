@@ -22,6 +22,7 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 		{ModeDMR, "dmr-tier2", true},
 		{ModeNXDN, "nxdn", false},
 		{ModeDStar, "dstar", false},
+		{ModeYSF, "ysf", false},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			const freq = 442_387_500
@@ -88,7 +89,7 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 
 // The analog-only options are refused on the new digital modes, as on p25.
 func TestDigitalModeChannelsRejectAnalogOptions(t *testing.T) {
-	for _, mode := range []string{ModeDMR, ModeNXDN, ModeDStar} {
+	for _, mode := range []string{ModeDMR, ModeNXDN, ModeDStar, ModeYSF} {
 		for _, ch := range []Channel{
 			{Label: "t", FrequencyHz: 1, Mode: mode, Tone: ToneConfig{Mode: "ctcss", CTCSSHz: 100}},
 			{Label: "d", FrequencyHz: 1, Mode: mode, Decoders: []string{DecoderMDC1200}},

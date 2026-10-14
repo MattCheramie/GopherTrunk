@@ -451,7 +451,10 @@ func DefaultVocoderForProtocol() map[string]string {
 		// D-STAR voice is the original AMBE 3600x2400 — exactly the
 		// base "ambe2" decoder (internal/voice/ambe2/params.go is a
 		// port of mbelib's ambe3600x2400.c, the D-STAR variant).
-		"dstar":     "ambe2",       // D-STAR DV — AMBE 3600x2400
+		"dstar": "ambe2", // D-STAR DV — AMBE 3600x2400
+		// System Fusion V/D mode 2 carries the same 49-bit AMBE+2
+		// 3600x2450 payload as DMR (#1261).
+		"ysf":       "ambe2-dmr",
 		"tetra":     "tetra-acelp", // TETRA full-rate voice — clean-room ACELP (EN 300 395-2)
 		"tetra-dmo": "tetra-acelp", // TETRA DMO (Direct Mode) — same TCH/S ACELP speech frames
 	}

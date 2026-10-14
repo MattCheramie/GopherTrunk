@@ -35,7 +35,7 @@ type Channel struct {
 	// or "p25" (issue #1239): P25 Phase 1 conventional, the FM
 	// channel's in-channel power squelch with the call decoded by the
 	// composer's P25 Phase 1 voice chain (protocol "p25") — or "dmr",
-	// "nxdn", "dstar" (issue #1261), likewise decoded by that protocol's
+	// "nxdn", "dstar", "ysf" (issue #1261), likewise decoded by that protocol's
 	// voice chain.
 	Mode string
 	// SquelchDbFS is the threshold above which the scanner declares
@@ -447,7 +447,7 @@ func New(opts Options) (*Scanner, error) {
 			ch.Mode = "fm"
 		}
 		if !ValidMode(ch.Mode) {
-			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25|dmr|nxdn|dstar", ch.Label, ch.Mode)
+			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25|dmr|nxdn|dstar|ysf", ch.Label, ch.Mode)
 		}
 		if IsDigitalMode(ch.Mode) {
 			if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {

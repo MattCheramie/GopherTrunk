@@ -756,12 +756,12 @@ func validateConvChannel(i int, ch ConvChannelConfig) error {
 		return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
 	}
 	switch ch.Mode {
-	case "", "fm", "nfm", "am", "p25", "dmr", "nxdn", "dstar":
+	case "", "fm", "nfm", "am", "p25", "dmr", "nxdn", "dstar", "ysf":
 	default:
-		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm|am|p25|dmr|nxdn|dstar", i)
+		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm|am|p25|dmr|nxdn|dstar|ysf", i)
 	}
 	switch ch.Mode {
-	case "p25", "dmr", "nxdn", "dstar":
+	case "p25", "dmr", "nxdn", "dstar", "ysf":
 		// A digital channel carries digital voice: a sub-audible tone gate
 		// and the analog FFSK/MSK data decoders have nothing to listen to.
 		if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {

@@ -582,6 +582,7 @@ const (
 	voiceKindNXDN     // nxdn
 	voiceKindDPMR     // dpmr (Mode 3) — experimental, unverified on air
 	voiceKindDSTAR    // dstar — experimental, unverified on air
+	voiceKindYSF      // ysf — V/D mode 2 only, experimental, unverified on air (#1261)
 )
 
 // classifyVoiceKind maps a grant to its voiceKind. Digital protocols are matched
@@ -605,6 +606,8 @@ func classifyVoiceKind(cs trunking.CallStart) voiceKind {
 		return voiceKindDPMR
 	case "dstar":
 		return voiceKindDSTAR
+	case "ysf":
+		return voiceKindYSF
 	case "am-conv":
 		return voiceKindAM
 	}
@@ -751,6 +754,8 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		go c.runDPMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	case voiceKindDSTAR:
 		go c.runDStarVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
+	case voiceKindYSF:
+		go c.runYSFVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	case voiceKindAM:
 		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, uint32(math.Round(rateHzF)), true, cs.Grant.AudioGainDB, ch.done)
 	default:
