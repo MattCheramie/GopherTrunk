@@ -133,3 +133,28 @@ func TestEncodeNIDBitsMtAnakieVector(t *testing.T) {
 		}
 	}
 }
+
+func TestParseNIDRejectsReservedDUID(t *testing.T) {
+	for _, duid := range []DUID{0x1, 0x2, 0x4, 0x6, 0x8, 0x9, 0xB, 0xD, 0xE} {
+		bits := EncodeNIDBits(0x293, duid)
+		if _, _, err := ParseNID(bits); err != ErrNIDReservedDUID {
+			t.Errorf("DUID %X: err = %v, want ErrNIDReservedDUID", uint8(duid), err)
+		}
+		dibits := make([]uint8, 32)
+		for i := range dibits {
+			dibits[i] = bits[2*i]<<1 | bits[2*i+1]
+		}
+		if _, _, _, err := NIDFromDibitsWithErrors(dibits); err != ErrNIDReservedDUID {
+			t.Errorf("DUID %X via dibits: err = %v, want ErrNIDReservedDUID", uint8(duid), err)
+		}
+	}
+	for _, duid := range []DUID{DUIDHeader, DUIDTerminator, DUIDLogicalLink1, DUIDTrunkingSignaling,
+		DUIDLogicalLink2, DUIDPacketDataUnit, DUIDTerminatorWithLC} {
+		if !duid.Valid() {
+			t.Errorf("DUID %v reported invalid", duid)
+		}
+		if _, _, err := ParseNID(EncodeNIDBits(0x293, duid)); err != nil {
+			t.Errorf("DUID %v: unexpected error %v", duid, err)
+		}
+	}
+}
