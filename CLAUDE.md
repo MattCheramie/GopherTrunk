@@ -103,6 +103,19 @@ confirmation before any close-as-completed.
   band plan's BASE frequency (450.000 MHz) with a garbage TG/src — calls then timed out on an
   empty carrier. Signature to recognise: `frequency_hz` == an IDEN_UP `base_hz` exactly. It had
   no test at all; pinned by `opcodes_explicit_test.go` (literal bit positions via `tsbkBits`).
+- **A P25 TDMA grant's channel number counts LOGICAL channels (#1273):** the IDEN_UP_TDMA
+  (0x33) channel-type code carries slots per carrier (SDRTrunk `ChannelType` TYPE_0..5 =
+  OP25 `slots_per_carrier [1,1,1,2,4,2]`; types 0-2 are FDMA), and the downlink is
+  base + spacing × (n / slots), slot = n mod slots. GT ignored it — invented channel-type
+  table, self-consistent with its own assembler — so every grant on a 2-slot Phase 2 carrier
+  resolved to carrier n instead of n/2 (a hybrid P1 CC + P2 voice site never followed a call;
+  the Mt Anakie "468.6125 MHz" pin was GT's own arithmetic). Fixed in `phase1/identifier.go`
+  (`SlotsPerCarrier`, `BandPlan.Timeslot` → 1-based `Grant.Timeslot`), pinned by payloads built
+  from OP25's bit positions. NOT fixed, same arithmetic: the Phase 2 MAC `phase2/identifier.go`
+  (no channel type at all), `hunt.bandPlanFreq`, the network report's uplink math, and
+  `p25_band_plan` entries can't express TDMA. A grant naming a never-announced channel ID now
+  WARNs (rate-limited) instead of dropping at DEBUG. "Motorola opcode 0x05/0x09 named, not
+  field-decoded" lines are broadcasts with constant payloads, not grants. On-air-gated.
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
   read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
   hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's

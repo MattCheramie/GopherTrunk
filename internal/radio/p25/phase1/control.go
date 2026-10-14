@@ -117,6 +117,13 @@ type ControlChannel struct {
 	// new slot. See pending_grants.go.
 	pendingGrants pendingGrants
 
+	// unresolved tracks, per channel ID, grants that could not be resolved
+	// to a frequency because no IDEN_UP has named the ID. A grant before
+	// the first IDEN_UP is normal just after lock (pendingGrants covers it);
+	// one still unresolved past pendingGrantTTL is a call lost, and the
+	// only trace used to be a DEBUG line. See noteUnresolvedGrant.
+	unresolved [16]unresolvedChannelID
+
 	// rotations is the dibit-alphabet rotation set the NID-alignment
 	// search probes. Nil/empty means RotationsAll (the legacy
 	// four-rotation behaviour). The ccdecoder pipeline restricts it
@@ -2058,6 +2065,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 		c.log.Debug("p25: grant before identifier update",
 			"nac", nac, "id", g.channelID, "num", g.channelNumber, "err", err)
 		c.pendingGrants.add(g.channelID, g, nac, c.now())
+		c.noteUnresolvedGrant(g, nac)
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
 			Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNoBandPlan},
@@ -2266,6 +2274,9 @@ func (c *ControlChannel) logSiteIdentity(net NetworkConfig) {
 // applied band-plan entry. Entries older than pendingGrantTTL are
 // dropped silently — the call they describe has already passed.
 func (c *ControlChannel) drainPendingGrants(channelID uint8, nac uint16) {
+	if int(channelID) < len(c.unresolved) {
+		c.unresolved[channelID] = unresolvedChannelID{}
+	}
 	queued := c.pendingGrants.drain(channelID, c.now())
 	if len(queued) == 0 {
 		return

@@ -70,3 +70,53 @@ func (p *pendingGrants) drain(channelID uint8, now time.Time) []pendingGrant {
 	}
 	return out
 }
+
+// unresolvedGrantWarnEvery rate-limits the unresolved-channel-ID WARN per
+// channel ID: a site that never announces an ID grants on it every call,
+// and one line per ten minutes is enough to see it without flooding.
+const unresolvedGrantWarnEvery = 10 * time.Minute
+
+// unresolvedChannelID is the per-channel-ID state behind
+// noteUnresolvedGrant. Reset when an IdentifierUpdate for the ID applies.
+type unresolvedChannelID struct {
+	first    time.Time // first unresolved grant since the last reset
+	lastWarn time.Time
+	grants   int
+}
+
+// noteUnresolvedGrant counts a grant whose channel ID has no band-plan
+// entry and WARNs once the ID has stayed unresolved for longer than
+// pendingGrantTTL, i.e. once grants are being lost rather than briefly
+// deferred. A grant that only ever names unannounced IDs used to leave no
+// trace above DEBUG, so a site that never follows a call looked identical
+// to a site with no traffic (issue #1273). The line names the ID, the
+// channel number and the IDs the site HAS announced, which is what an
+// operator needs to write a p25_band_plan entry.
+func (c *ControlChannel) noteUnresolvedGrant(g voiceGrant, nac uint16) {
+	id := g.channelID
+	if int(id) >= len(c.unresolved) {
+		return
+	}
+	u := &c.unresolved[id]
+	now := c.now()
+	if u.first.IsZero() {
+		u.first = now
+	}
+	u.grants++
+	if now.Sub(u.first) <= pendingGrantTTL {
+		return
+	}
+	if !u.lastWarn.IsZero() && now.Sub(u.lastWarn) < unresolvedGrantWarnEvery {
+		return
+	}
+	u.lastWarn = now
+	known := make([]int, 0, 16)
+	for _, e := range c.bandPlan.Snapshot() {
+		known = append(known, int(e.ChannelID))
+	}
+	c.log.Warn("p25: voice grants name a channel ID the site has not announced (no IDEN_UP); their calls are not followed. If it never resolves, add the ID under the system's p25_band_plan",
+		"system", c.systemName, "nac", nac, "id", id, "num", g.channelNumber,
+		"tg", g.groupID, "grants", u.grants,
+		"unresolved_for", now.Sub(u.first).Round(time.Second),
+		"announced_ids", known)
+}
