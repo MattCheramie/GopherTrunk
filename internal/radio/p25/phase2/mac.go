@@ -49,8 +49,14 @@ const (
 	OpUnitRegistrationResponse          Opcode = 0x4D
 	OpEncryptionSync                    Opcode = 0x70
 	OpIdentifierUpdate                  Opcode = 0x7D
-	OpNetworkStatusBroadcastUpdate      Opcode = 0xFB
-	OpRFSSStatusBroadcastUpdate         Opcode = 0xFA
+	// TDMA-form identifier updates (SDRTrunk MacOpcode PHASE1_73 /
+	// PHASE1_F3): the abbreviated form carries the IDEN_UP_TDMA field group
+	// straight after the opcode; the extended form (OP25 op 0xf3) has one
+	// octet before it and WACN + System ID after it. Issue #1273.
+	OpIdentifierUpdateTDMAAbbreviated Opcode = 0x73
+	OpIdentifierUpdateTDMAExtended    Opcode = 0xF3
+	OpNetworkStatusBroadcastUpdate    Opcode = 0xFB
+	OpRFSSStatusBroadcastUpdate       Opcode = 0xFA
 )
 
 func (o Opcode) String() string {
@@ -95,6 +101,10 @@ func (o Opcode) String() string {
 		return "EncryptionSync"
 	case OpIdentifierUpdate:
 		return "IdentifierUpdate"
+	case OpIdentifierUpdateTDMAAbbreviated:
+		return "IdentifierUpdateTDMAAbbreviated"
+	case OpIdentifierUpdateTDMAExtended:
+		return "IdentifierUpdateTDMAExtended"
 	case OpNetworkStatusBroadcastUpdate:
 		return "NetworkStatusBroadcastUpdate"
 	case OpRFSSStatusBroadcastUpdate:
@@ -240,14 +250,23 @@ func (p MACPDU) AsNetworkStatusBroadcast() (NetworkStatusBroadcast, bool) {
 }
 
 // AsIdentifierUpdate returns the structured band-plan definition if the
-// PDU opcode is OpIdentifierUpdate, otherwise (zero, false). The
-// ControlChannel feeds the result to its BandPlan so later voice grants
-// resolve a downlink frequency.
+// PDU is an identifier update — the FDMA form (OpIdentifierUpdate) or
+// either TDMA form — otherwise (zero, false). The ControlChannel feeds the
+// result to its BandPlan so later voice grants resolve a downlink
+// frequency.
 func (p MACPDU) AsIdentifierUpdate() (IdentifierUpdate, bool) {
-	if p.Opcode != OpIdentifierUpdate {
-		return IdentifierUpdate{}, false
+	switch p.Opcode {
+	case OpIdentifierUpdate:
+		return ParseIdentifierUpdate(p.Payload)
+	case OpIdentifierUpdateTDMAAbbreviated:
+		return ParseIdentifierUpdateTDMA(p.Payload)
+	case OpIdentifierUpdateTDMAExtended:
+		if len(p.Payload) < 9 {
+			return IdentifierUpdate{}, false
+		}
+		return ParseIdentifierUpdateTDMA(p.Payload[1:])
 	}
-	return ParseIdentifierUpdate(p.Payload)
+	return IdentifierUpdate{}, false
 }
 
 // IsIdle reports whether the PDU is one of the channel-idle / hang-
@@ -272,7 +291,8 @@ func (o Opcode) IsKnown() bool {
 		OpUnitToUnitGrantUpdateAbbreviated, OpUnitToUnitVoiceChannelGrant,
 		OpUnitToUnitVoiceChannelGrantUpdate, OpGroupAffiliationResponse,
 		OpUnitRegistrationResponse,
-		OpIdentifierUpdate, OpVendorGroupRegroup, OpVendorTalkerAlias,
+		OpIdentifierUpdate, OpIdentifierUpdateTDMAAbbreviated,
+		OpIdentifierUpdateTDMAExtended, OpVendorGroupRegroup, OpVendorTalkerAlias,
 		OpMotorolaAliasHeader, OpMotorolaAliasData,
 		OpMotorolaPatchDelete, OpEncryptionSync,
 		OpNetworkStatusBroadcastUpdate, OpRFSSStatusBroadcastUpdate:

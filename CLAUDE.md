@@ -111,8 +111,12 @@ confirmation before any close-as-completed.
   resolved to carrier n instead of n/2 (a hybrid P1 CC + P2 voice site never followed a call;
   the Mt Anakie "468.6125 MHz" pin was GT's own arithmetic). Fixed in `phase1/identifier.go`
   (`SlotsPerCarrier`, `BandPlan.Timeslot` → 1-based `Grant.Timeslot`), pinned by payloads built
-  from OP25's bit positions. NOT fixed, same arithmetic: the Phase 2 MAC `phase2/identifier.go`
-  (no channel type at all), `hunt.bandPlanFreq`, the network report's uplink math, and
+  from OP25's bit positions. The Phase 2 CC had the same hole and worse: it parsed only the FDMA
+  MAC form (0x7D), never the TDMA forms 0x73 / 0xF3 a Phase 2 site uses for its voice channels,
+  so those grants resolved to 0 Hz — now parsed and divided (`phase2.ParseIdentifierUpdateTDMA`,
+  also on `IsKnown` or strict/RSCorrect drops them). One channel-type table for both decoders:
+  `p25.ParseTDMAChannelType` (phase2 cannot import phase1 — phase1's tests import phase2). NOT
+  fixed, same arithmetic: `hunt.bandPlanFreq`, the network report's uplink math, and
   `p25_band_plan` entries can't express TDMA. A grant naming a never-announced channel ID now
   WARNs (rate-limited) instead of dropping at DEBUG. "Motorola opcode 0x05/0x09 named, not
   field-decoded" lines are broadcasts with constant payloads, not grants. On-air-gated.

@@ -691,6 +691,10 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 		c.mu.Lock()
 		c.bandPlan.Apply(u)
 		c.mu.Unlock()
+		c.log.Debug("p25/phase2 identifier update",
+			"opcode", p.Opcode, "id", u.ChannelID,
+			"base_hz", u.BaseHz, "spacing_hz", u.SpacingHz,
+			"tdma", u.AccessTDMA, "slots_per_carrier", u.SlotsPerCarrier)
 	}
 	if es, ok := p.AsEncryptionSync(); ok && p25.AlgorithmKnown(es.AlgorithmID) {
 		// Validity gate (#924): a bit-errored MAC Encryption Sync decodes to an
@@ -905,6 +909,9 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 	// before band-plan support landed) so the event surface is
 	// unchanged; the engine drops a zero-frequency grant on its own.
 	freq := c.resolveFreq(g.ChannelID, g.ChannelNumber)
+	c.mu.Lock()
+	ts := c.bandPlan.Timeslot(g.ChannelID, g.ChannelNumber)
+	c.mu.Unlock()
 	// Decode the SVC_OPTIONS byte for the emergency + protected
 	// (encryption) indicators. When the call is protected and an
 	// Encryption Sync has been seen, attach its Algorithm ID / Key ID
@@ -948,6 +955,7 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 			FrequencyHz:     freq,
 			ChannelID:       g.ChannelID,
 			ChannelNum:      g.ChannelNumber,
+			Timeslot:        ts,
 			RFSSID:          rfss,
 			SiteID:          site,
 			NAC:             nac,
@@ -965,7 +973,7 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 		"opcode", op, "tg", groupID,
 		"src", g.SourceID,
 		"channel_id", g.ChannelID, "channel_num", g.ChannelNumber,
-		"freq_hz", freq, "enc", so.Encrypted(), "emer", so.Emergency(),
+		"freq_hz", freq, "ts", ts, "enc", so.Encrypted(), "emer", so.Emergency(),
 	}
 	if so.Encrypted() && (algID != 0 || keyID != 0) {
 		args = append(args, "alg", p25.FormatAlgorithm(algID), "key", keyID)
