@@ -651,8 +651,9 @@ func TestComposerSkipsDigitalProtocol(t *testing.T) {
 	bus.Publish(events.Event{
 		Kind: events.KindCallStart,
 		Payload: trunking.CallStart{
-			// YSF still has no composer voice chain — it must be bypassed.
-			Grant:        trunking.Grant{Protocol: "ysf", GroupID: 1, FrequencyHz: 851_000_000},
+			// M17 has no composer voice chain — it must be bypassed. (This
+			// used ysf until #1261 gave System Fusion one.)
+			Grant:        trunking.Grant{Protocol: "m17", GroupID: 1, FrequencyHz: 851_000_000},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
 		},
