@@ -28,11 +28,12 @@ import (
 //	BaseHz        — downlink base frequency for channel 0 in Hz
 //
 // The TDMA variant additionally carries a slot count + access mode in
-// its channel-type code (TDMA-1 / TDMA-2 / TDMA-4). The frequency
-// resolver doesn't care; downstream Phase 2 voice decoding would, but
-// that wiring lives outside this package. See
-// internal/radio/p25/phase2/identifier.go for the Phase 2 variant
-// shipped today (which is also a 0x3D-style packing).
+// its channel-type code. On a TDMA carrier a grant's channel number
+// counts LOGICAL channels (carrier × slots-per-carrier + slot), so the
+// resolver divides it by SlotsPerCarrier before applying the spacing
+// (issue #1273) — see BandPlan.Frequency. See
+// internal/radio/p25/phase2/identifier.go for the Phase 2 MAC variant
+// (a 0x3D-style packing with no channel type).
 type IdentifierUpdate struct {
 	ChannelID   uint8  // 4-bit slot identifier (0..15)
 	BandwidthHz uint32 // channel bandwidth
@@ -48,6 +49,12 @@ type IdentifierUpdate struct {
 	// (Phase 1 CC + Phase 2 TC) silently lose their Phase 2 MAC PDU
 	// dispatch (talker alias, in-call src/enc backfill).
 	AccessTDMA bool
+	// SlotsPerCarrier is the number of TDMA logical channels one carrier
+	// carries, from the 0x33 channel-type code (2 for a Phase 2 carrier,
+	// 4 for the 25 kHz TDMA-4 type). Zero or one means every channel
+	// number is its own carrier (every FDMA form, and config-seeded
+	// p25_band_plan entries). Issue #1273.
+	SlotsPerCarrier uint8
 }
 
 // ParseIdentifierUpdate decodes the 8-byte payload of opcode 0x3D
@@ -172,13 +179,12 @@ func AssembleIdentifierUpdateVUHF(u IdentifierUpdate) [8]byte {
 // The packing is identical to VUHF (opcode 0x34) for every field
 // EXCEPT byte 0's lower nibble: where VUHF carries a 4-bit bandwidth
 // code, TDMA carries a 4-bit Channel Type code that simultaneously
-// encodes the slot count (TDMA-1 / TDMA-2 / TDMA-4) and the access
-// mode (FDMA / TDMA) plus a nominal bandwidth. The bandwidth half of
-// that code is mapped into BandwidthHz here for log readability; the
-// slot count is intentionally NOT carried on IdentifierUpdate because
-// BandPlan.Frequency uses only Base + Spacing + ChannelNumber, and
-// downstream Phase 2 voice decoding consumes slot count from the
-// grant payload, not from the band plan.
+// encodes the access mode (FDMA / TDMA), the bandwidth and the number
+// of slots per carrier (tdmaChannelType). The slot count is load-bearing:
+// a TDMA grant's channel number counts logical channels, so
+// BandPlan.Frequency divides it by SlotsPerCarrier (issue #1273). Before
+// that, every grant on a 2-slot carrier resolved to base + 2k×spacing
+// instead of base + k×spacing — the wrong carrier.
 //
 // TxOffset semantics match VUHF: 1-bit sign + 13-bit magnitude, the
 // magnitude scaled by SpacingHz (not 250 kHz like the 0x3D form).
@@ -204,13 +210,15 @@ func ParseIdentifierUpdateTDMA(p [8]byte) IdentifierUpdate {
 		txOffsetHz = -offsetMagHz
 	}
 
+	ct := tdmaChannelType(chanType)
 	return IdentifierUpdate{
-		ChannelID:   chanID,
-		BandwidthHz: tdmaChannelTypeBandwidthHz(chanType),
-		SpacingHz:   spacingHz,
-		TxOffsetHz:  txOffsetHz,
-		BaseHz:      uint64(freq5Hz) * 5,
-		AccessTDMA:  true,
+		ChannelID:       chanID,
+		BandwidthHz:     ct.bandwidthHz,
+		SpacingHz:       spacingHz,
+		TxOffsetHz:      txOffsetHz,
+		BaseHz:          uint64(freq5Hz) * 5,
+		AccessTDMA:      ct.tdma,
+		SlotsPerCarrier: ct.slots,
 	}
 }
 
@@ -219,12 +227,10 @@ func ParseIdentifierUpdateTDMA(p [8]byte) IdentifierUpdate {
 // Out-of-range fields are silently truncated to their on-air widths.
 // TxOffsetHz that isn't an integer multiple of SpacingHz is truncated
 // toward zero; a zero SpacingHz produces a zero on-air offset
-// regardless of TxOffsetHz. ChannelType is reverse-mapped from
-// BandwidthHz via tdmaChannelTypeBandwidthCode; the slot-count half
-// of the channel-type encoding isn't carried on IdentifierUpdate so
-// only the bandwidth-derived form round-trips.
+// regardless of TxOffsetHz. ChannelType is reverse-mapped by
+// tdmaChannelTypeCode from AccessTDMA / SlotsPerCarrier / BandwidthHz.
 func AssembleIdentifierUpdateTDMA(u IdentifierUpdate) [8]byte {
-	chanType := tdmaChannelTypeBandwidthCode(u.BandwidthHz) & 0x0F
+	chanType := tdmaChannelTypeCode(u) & 0x0F
 	step := uint16(u.SpacingHz/125) & 0x3FF
 
 	var toffSign uint8
@@ -256,39 +262,58 @@ func AssembleIdentifierUpdateTDMA(u IdentifierUpdate) [8]byte {
 	return p
 }
 
-// tdmaChannelTypeBandwidthHz maps the 4-bit Channel Type code in
-// opcode 0x33 to the nominal channel bandwidth in Hz. The Channel
-// Type field also encodes slot count (TDMA-1 / TDMA-2 / TDMA-4) and
-// access mode; that information isn't carried on IdentifierUpdate.
-// Unknown codes return 0; BandPlan.Frequency does not consult this
-// field, so an unknown code does not prevent grant resolution.
+// tdmaChannelTypeInfo is what one 4-bit IDEN_UP_TDMA Channel Type code
+// means: access mode, nominal channel bandwidth and slots per carrier.
+type tdmaChannelTypeInfo struct {
+	tdma        bool
+	bandwidthHz uint32
+	slots       uint8
+}
+
+// tdmaChannelType maps the Channel Type code of opcode 0x33 per
+// TIA-102.AABC, cross-checked against two independent decoders that
+// agree: SDRTrunk `ChannelType` (TYPE_0..TYPE_5) and OP25 `tk_p25.py`
+// (`slots_per_carrier = [1,1,1,2,4,2,...]`).
 //
-// The mapping covers the codes a Phase-2 site typically broadcasts;
-// per TIA-102.AABF most TDMA codes target 12.5 kHz outbound on a
-// 6.25 kHz inbound, and the BandwidthHz reported is the inbound /
-// per-slot value most operators expect to see in logs.
-func tdmaChannelTypeBandwidthHz(code uint8) uint32 {
+//	0 FDMA 12.5 kHz 1 slot (half-rate vocoder)
+//	1 FDMA 12.5 kHz 1 slot (full-rate vocoder)
+//	2 FDMA 6.25 kHz 1 slot
+//	3 TDMA 12.5 kHz 2 slots  (the Phase 2 carrier)
+//	4 TDMA 25 kHz   4 slots
+//	5 TDMA 12.5 kHz 2 slots  (H-D8PSK simulcast)
+//
+// Codes 6..15 are reserved. OP25 treats them as 2-slot TDMA; we follow
+// it, since every 0x33 slot was routed as TDMA before the table existed
+// and a reserved code is no evidence of FDMA. Their bandwidth reads 0.
+func tdmaChannelType(code uint8) tdmaChannelTypeInfo {
 	switch code & 0x0F {
-	case 0x1, 0x3:
-		return 6250
+	case 0x0, 0x1:
+		return tdmaChannelTypeInfo{tdma: false, bandwidthHz: 12_500, slots: 1}
 	case 0x2:
-		return 12500
+		return tdmaChannelTypeInfo{tdma: false, bandwidthHz: 6_250, slots: 1}
+	case 0x3, 0x5:
+		return tdmaChannelTypeInfo{tdma: true, bandwidthHz: 12_500, slots: 2}
+	case 0x4:
+		return tdmaChannelTypeInfo{tdma: true, bandwidthHz: 25_000, slots: 4}
 	default:
-		return 0
+		return tdmaChannelTypeInfo{tdma: true, bandwidthHz: 0, slots: 2}
 	}
 }
 
-// tdmaChannelTypeBandwidthCode is the inverse of
-// tdmaChannelTypeBandwidthHz used by AssembleIdentifierUpdateTDMA.
-// Unrecognised bandwidths emit code 0.
-func tdmaChannelTypeBandwidthCode(hz uint32) uint8 {
-	switch hz {
-	case 6250:
-		return 0x1
-	case 12500:
+// tdmaChannelTypeCode is the inverse of tdmaChannelType used by
+// AssembleIdentifierUpdateTDMA: a 4-slot entry is type 4, any other TDMA
+// entry type 3, an FDMA 6.25 kHz entry type 2 and any other FDMA entry
+// type 0.
+func tdmaChannelTypeCode(u IdentifierUpdate) uint8 {
+	switch {
+	case u.SlotsPerCarrier >= 4:
+		return 0x4
+	case u.AccessTDMA || u.SlotsPerCarrier == 2:
+		return 0x3
+	case u.BandwidthHz == 6_250:
 		return 0x2
 	default:
-		return 0
+		return 0x0
 	}
 }
 
@@ -374,13 +399,37 @@ func (b *BandPlan) Frequency(channelID uint8, channelNumber uint16) (uint32, err
 		return 0, fmt.Errorf("%w: id=%d", ErrUnknownChannelID, channelID)
 	}
 	u := b.slots[channelID]
-	hz := u.BaseHz + uint64(channelNumber)*uint64(u.SpacingHz)
+	// On a TDMA carrier the channel number counts logical channels
+	// (carrier × slots + slot): divide it down to the carrier before
+	// applying the spacing, as SDRTrunk FrequencyBandUpdateTDMA and OP25
+	// channel_id_to_frequency both do (issue #1273).
+	carrier := uint64(channelNumber)
+	if u.SlotsPerCarrier > 1 {
+		carrier /= uint64(u.SlotsPerCarrier)
+	}
+	hz := u.BaseHz + carrier*uint64(u.SpacingHz)
 	// P25 sits well below 4.29 GHz; guard anyway so a malformed
 	// IdentifierUpdate can't silently wrap.
 	if hz > 0xFFFFFFFF {
 		return 0, fmt.Errorf("p25/phase1: resolved frequency %d Hz overflows uint32", hz)
 	}
 	return uint32(hz), nil
+}
+
+// Timeslot returns the 1-based TDMA timeslot a channel number selects on
+// a multi-slot carrier (channel number mod slots-per-carrier, + 1), or 0
+// when the channel ID is unknown or one-slot. The 1-based form matches
+// trunking.Grant.Timeslot, where 0 means "no slot". OP25's get_tdma_slot
+// returns the same slot (channel & 1) for its two-slot carriers.
+func (b *BandPlan) Timeslot(channelID uint8, channelNumber uint16) uint8 {
+	if int(channelID) >= len(b.slots) || !b.known[channelID] {
+		return 0
+	}
+	slots := b.slots[channelID].SlotsPerCarrier
+	if slots < 2 {
+		return 0
+	}
+	return uint8(channelNumber%uint16(slots)) + 1
 }
 
 // Known reports whether an IdentifierUpdate slot has been recorded.

@@ -1066,6 +1066,21 @@ trunking:
       # to let the affiliation tracker surface RIDs live without any
       # operator-configured aliases.
       # rid_alias_file: "../config/rids-p25.csv"
+      # Optional static band plan, for a site that grants voice on a
+      # channel ID it never announces with an IDEN_UP TSBK. Those grants
+      # cannot be turned into a frequency, so their calls are not
+      # followed; the daemon WARNs ("voice grants name a channel ID the
+      # site has not announced") with the ID, a channel number and the
+      # IDs the site did announce. An entry here seeds that ID at
+      # startup (downlink = base_hz + channel_number × spacing_hz);
+      # an over-the-air IDEN_UP for the same ID replaces it. Entries are
+      # FDMA (one call per channel number).
+      # p25_band_plan:
+      #   - channel_id: 2
+      #     base_hz: 851_006_250
+      #     spacing_hz: 12_500
+      #     tx_offset_hz: -45_000_000
+      #     bandwidth_hz: 12_500
       # Optional human-readable names for the P25 sites of this system,
       # keyed by their RFSS and Site IDs (issue #698). GT discovers a
       # site's RFSS/Site from the control channel; these names are pure
