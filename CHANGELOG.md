@@ -36,6 +36,15 @@ for tagged releases.
   list, each row naming its SDR.
 
 ### Fixed
+
+- **RTL-SDR on Android (direct USB): dropped IQ chunks at low CPU load
+  (#1256).** The reporter's drop counts put each dropped chunk near 1.7k
+  samples, not 8k: the phone's USB host completes RTL-SDR reads short, and
+  each took a whole entry of the driver's 32-entry delivery queue, so the
+  queue held ~30 ms of IQ instead of ~160 ms. The pure-Go driver now packs
+  short reads into full chunks whenever the consumer falls behind (no added
+  latency while it keeps up), and sizes the queue to 400 ms at the stream
+  rate. `capture` reports the mean USB packet size alongside a drop warning.
 - **The user guide no longer calls D-STAR scan-list decode verified.**
   Like NXDN, D-STAR voice decode is still unconfirmed on air.
 

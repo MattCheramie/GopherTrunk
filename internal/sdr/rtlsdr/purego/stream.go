@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
@@ -28,10 +30,28 @@ const (
 	// allocation removal (the ring in [Device.ring]) that landed with it.
 	streamChanDepth = 32
 
+	// streamBufferLatency is how much IQ the consumer channel is sized
+	// to hold at the stream's sample rate (issue #1256), with
+	// streamChanDepth as the floor: 400 ms is ~118 full chunks at
+	// 2.4 MS/s. A phone's scheduler can pause the consumer for longer
+	// than the old fixed 32 chunks (~110 ms at 2.4 MS/s) covered. Same
+	// value as soapyremote's streamBufferLatency and iqtap's
+	// SubBufferLatency (#1242: size buffers by time, not by chunk count).
+	streamBufferLatency = 400 * time.Millisecond
+
 	// bulkInEndpoint is the RTL-SDR bulk-IN endpoint address. Hardware
 	// invariant — every RTL2832U exposes the IQ stream here.
 	bulkInEndpoint = 0x81
 )
+
+// streamDepthFor sizes the consumer channel to hold streamBufferLatency
+// of IQ at rateHz in full asyncBufLen chunks, never fewer than
+// streamChanDepth (also the answer when the rate is unknown).
+func streamDepthFor(rateHz uint32) int {
+	perChunk := float64(asyncBufLen / 2)
+	depth := int(math.Ceil(streamBufferLatency.Seconds() * float64(rateHz) / perChunk))
+	return max(depth, streamChanDepth)
+}
 
 // StreamIQ resets the USB FIFO, kicks off a bulk-IN ring on the
 // transport, and returns a buffered channel of complex64 samples.
@@ -41,7 +61,7 @@ const (
 // the new driver is a drop-in replacement:
 //
 //   - Returns an error if a stream is already active on this Device.
-//   - 8-deep buffered channel; senders use non-blocking select with
+//   - Buffered channel (see streamDepthFor); senders use non-blocking select with
 //     a default branch so slow consumers result in dropped buffers
 //     rather than back-pressure on the kernel.
 //   - The reaper goroutine inside [usb.Transport.StartBulkIn]
@@ -60,7 +80,8 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	if err := d.demod.ResetBuffer(); err != nil {
 		return nil, fmt.Errorf("rtlsdr: reset buffer: %w", err)
 	}
-	out := make(chan []complex64, streamChanDepth)
+	depth := streamDepthFor(d.demod.GetSampleRate())
+	out := make(chan []complex64, depth)
 	d.out = out
 	d.stopOnce = sync.Once{}
 	// Drop any cause from a previous stream so it can't be misattributed to
@@ -68,18 +89,20 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.streamDeadErr.Store(nil)
 
 	// Provision the reuse ring for this stream (issue #489). Sized
-	// streamChanDepth+2: at most streamChanDepth buffers can sit queued
-	// on out plus one in the consumer, so cycling through depth+2 slots
-	// guarantees the producer never overwrites a buffer still in flight.
+	// depth+2: at most depth buffers can sit queued on out plus one in
+	// the consumer, so cycling through depth+2 slots guarantees the
+	// producer never overwrites a buffer still in flight (the slot being
+	// packed is the one not yet queued).
 	// Tied to the stream lifetime — a fresh ring per stream means a slow
 	// consumer draining the *previous* (closed) channel can never alias a
 	// buffer the new stream is writing.
-	ring := make([][]complex64, streamChanDepth+2)
+	ring := make([][]complex64, depth+2)
 	for i := range ring {
 		ring[i] = make([]complex64, asyncBufLen/2)
 	}
 	d.ring = ring
 	d.ringIdx = 0
+	d.ringFill = 0
 
 	if err := d.transport.StartBulkIn(bulkInEndpoint, asyncBufCount, asyncBufLen, d.deliver, d.onStreamDead); err != nil {
 		d.out = nil
@@ -117,68 +140,87 @@ func (d *Device) onStreamDead(cause error) {
 // onto the consumer channel. Drop-on-overrun if the consumer is
 // behind. Bit-identical conversion math to rtlsdr_cgo.go:225-240
 // so downstream DSP sees the same bit pattern from either backend.
+//
+// Short packets are packed (issue #1256). The queue's headroom is
+// depth × chunk length, and the chunk length is whatever the kernel
+// completes a URB with: asyncBufLen on a desktop, but a few KiB on the
+// reporter's Android phone, where the same depth held ~30 ms of IQ
+// instead of ~160 ms and any consumer pause dropped data. So while the
+// consumer is caught up (queue empty) a packet goes out at once, as
+// before; once anything is queued, packets are appended to the current
+// ring slot and the slot is queued only when full, so every queued
+// chunk holds a full slot of IQ whatever size the kernel hands back.
 func (d *Device) deliver(buf []byte) {
+	d.packets.Add(1)
+	d.packetBytes.Add(uint64(len(buf)))
 	// The whole critical section runs under streamMu. On Linux/Windows a
 	// single reaper goroutine drives deliver, so the lock is uncontended;
 	// on Darwin the per-slot reapers (usb_darwin.go) call deliver
 	// concurrently, and the lock is what makes the shared reuse ring safe.
 	// The conversion is cheap (a u8→complex64 LUT) — the expensive resample
-	// lives in the consumer — so serializing it costs effectively nothing
-	// against the USB ring's ~110 ms of buffering headroom.
+	// lives in the consumer — so serializing it costs effectively nothing.
 	d.streamMu.Lock()
 	out := d.out
 	if out == nil {
 		d.streamMu.Unlock()
 		return
 	}
-	samples := d.fillBufferLocked(buf)
-	select {
-	case out <- samples:
-		// Advance the ring only on a successful enqueue: a dropped chunk
-		// reuses the same buffer next time, so a buffer's slot is never
-		// recycled until that chunk has actually been handed to the
-		// consumer.
-		if len(d.ring) > 0 {
-			d.ringIdx = (d.ringIdx + 1) % len(d.ring)
+	if len(d.ring) == 0 {
+		// No ring (direct deliver in tests): one fresh chunk per packet.
+		dropped := !trySend(out, convertU8IQ(buf))
+		d.streamMu.Unlock()
+		if dropped {
+			d.noteDrop()
 		}
-		d.streamMu.Unlock()
-	default:
-		d.streamMu.Unlock()
-		// Consumer can't keep up. Drop the whole chunk and record it:
-		// this was silent before issue #402, which is why live IQ loss
-		// could not be distinguished from RF problems. A non-zero
-		// iq_underruns_total / drop count during decode points at a
-		// live-path overrun rather than the air. The dropObserver hook
-		// drives the operator-facing Prometheus counter + a
-		// rate-limited warning — see internal/metrics and
-		// sdr.SetIQDropObserver. NotifyIQDrop runs outside the lock so the
-		// observer callback can't stall the reaper.
-		d.dropped.Add(1)
-		sdr.NotifyIQDrop(d.info)
+		return
+	}
+	drops := 0
+	for n := len(buf) / 2; n > 0; {
+		slot := d.ring[d.ringIdx]
+		k := min(n, len(slot)-d.ringFill)
+		convertU8IQInto(slot[d.ringFill:d.ringFill+k], buf[:2*k])
+		buf = buf[2*k:]
+		n -= k
+		d.ringFill += k
+		if d.ringFill < len(slot) && len(out) > 0 {
+			continue // consumer behind: keep packing this slot
+		}
+		if trySend(out, slot[:d.ringFill]) {
+			// Advance the ring only on a successful enqueue, so a
+			// slot is never recycled until its chunk has been handed
+			// to the consumer.
+			d.ringIdx = (d.ringIdx + 1) % len(d.ring)
+		} else {
+			drops++ // queue full: drop this slot's IQ and refill it
+		}
+		d.ringFill = 0
+	}
+	d.streamMu.Unlock()
+	for ; drops > 0; drops-- {
+		d.noteDrop()
 	}
 }
 
-// fillBufferLocked converts one bulk-IN buffer into complex64 samples,
-// reusing the current ring slot to avoid a ~64 KiB allocation per chunk
-// (issue #489: that churn drove GC pauses that pushed the CC consumer
-// over its real-time budget and shed live IQ). Falls back to a fresh
-// allocation when no ring is provisioned (direct deliver in tests) or for
-// the rare oversized packet that would not fit a ring slot. Caller must
-// hold streamMu.
-func (d *Device) fillBufferLocked(buf []byte) []complex64 {
-	n := len(buf) / 2
-	if len(d.ring) == 0 {
-		return convertU8IQ(buf)
+// trySend enqueues chunk without blocking and reports whether it went.
+func trySend(out chan []complex64, chunk []complex64) bool {
+	select {
+	case out <- chunk:
+		return true
+	default:
+		return false
 	}
-	dst := d.ring[d.ringIdx]
-	if cap(dst) < n {
-		// Packet larger than a ring slot — don't disturb the ring,
-		// just allocate this one. Should not happen for asyncBufLen URBs.
-		return convertU8IQ(buf)
-	}
-	dst = dst[:n]
-	convertU8IQInto(dst, buf)
-	return dst
+}
+
+// noteDrop records one dropped chunk. This was silent before issue #402,
+// which is why live IQ loss could not be distinguished from RF problems:
+// a non-zero iq_underruns_total / drop count during decode points at a
+// live-path overrun rather than the air. The dropObserver hook drives the
+// operator-facing Prometheus counter + a rate-limited warning — see
+// internal/metrics and sdr.SetIQDropObserver. Called outside streamMu so
+// the observer callback can't stall the reaper.
+func (d *Device) noteDrop() {
+	d.dropped.Add(1)
+	sdr.NotifyIQDrop(d.info)
 }
 
 // u8ToF32 maps each possible u8 IQ byte to its normalized float32 value,
@@ -212,7 +254,7 @@ func convertU8IQInto(dst []complex64, buf []byte) {
 
 // convertU8IQ is the allocating convenience wrapper around
 // convertU8IQInto, used where a fresh slice is wanted (tests, the
-// no-ring fallback in [Device.fillBufferLocked]).
+// no-ring fallback in [Device.deliver]).
 //
 // Pinned by [TestConvertU8IQ_BitIdenticalWithCGO] so any drift from
 // the CGO driver shows up immediately.
