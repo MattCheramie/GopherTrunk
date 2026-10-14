@@ -3,6 +3,8 @@ package phase1
 import (
 	"errors"
 	"fmt"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25"
 )
 
 // IdentifierUpdate carries a P25 IDENT_UP TSBK announcement that
@@ -213,12 +215,12 @@ func ParseIdentifierUpdateTDMA(p [8]byte) IdentifierUpdate {
 	ct := tdmaChannelType(chanType)
 	return IdentifierUpdate{
 		ChannelID:       chanID,
-		BandwidthHz:     ct.bandwidthHz,
+		BandwidthHz:     ct.BandwidthHz,
 		SpacingHz:       spacingHz,
 		TxOffsetHz:      txOffsetHz,
 		BaseHz:          uint64(freq5Hz) * 5,
-		AccessTDMA:      ct.tdma,
-		SlotsPerCarrier: ct.slots,
+		AccessTDMA:      ct.TDMA,
+		SlotsPerCarrier: ct.SlotsPerCarrier,
 	}
 }
 
@@ -262,42 +264,11 @@ func AssembleIdentifierUpdateTDMA(u IdentifierUpdate) [8]byte {
 	return p
 }
 
-// tdmaChannelTypeInfo is what one 4-bit IDEN_UP_TDMA Channel Type code
-// means: access mode, nominal channel bandwidth and slots per carrier.
-type tdmaChannelTypeInfo struct {
-	tdma        bool
-	bandwidthHz uint32
-	slots       uint8
-}
-
-// tdmaChannelType maps the Channel Type code of opcode 0x33 per
-// TIA-102.AABC, cross-checked against two independent decoders that
-// agree: SDRTrunk `ChannelType` (TYPE_0..TYPE_5) and OP25 `tk_p25.py`
-// (`slots_per_carrier = [1,1,1,2,4,2,...]`).
-//
-//	0 FDMA 12.5 kHz 1 slot (half-rate vocoder)
-//	1 FDMA 12.5 kHz 1 slot (full-rate vocoder)
-//	2 FDMA 6.25 kHz 1 slot
-//	3 TDMA 12.5 kHz 2 slots  (the Phase 2 carrier)
-//	4 TDMA 25 kHz   4 slots
-//	5 TDMA 12.5 kHz 2 slots  (H-D8PSK simulcast)
-//
-// Codes 6..15 are reserved. OP25 treats them as 2-slot TDMA; we follow
-// it, since every 0x33 slot was routed as TDMA before the table existed
-// and a reserved code is no evidence of FDMA. Their bandwidth reads 0.
-func tdmaChannelType(code uint8) tdmaChannelTypeInfo {
-	switch code & 0x0F {
-	case 0x0, 0x1:
-		return tdmaChannelTypeInfo{tdma: false, bandwidthHz: 12_500, slots: 1}
-	case 0x2:
-		return tdmaChannelTypeInfo{tdma: false, bandwidthHz: 6_250, slots: 1}
-	case 0x3, 0x5:
-		return tdmaChannelTypeInfo{tdma: true, bandwidthHz: 12_500, slots: 2}
-	case 0x4:
-		return tdmaChannelTypeInfo{tdma: true, bandwidthHz: 25_000, slots: 4}
-	default:
-		return tdmaChannelTypeInfo{tdma: true, bandwidthHz: 0, slots: 2}
-	}
+// tdmaChannelType maps the Channel Type code of opcode 0x33; the
+// reference-pinned table lives in the shared p25 package because the
+// Phase 2 MAC identifier updates (0x73 / 0xF3) carry the same code.
+func tdmaChannelType(code uint8) p25.TDMAChannelType {
+	return p25.ParseTDMAChannelType(code)
 }
 
 // tdmaChannelTypeCode is the inverse of tdmaChannelType used by
