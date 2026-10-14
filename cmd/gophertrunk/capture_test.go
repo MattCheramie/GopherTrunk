@@ -515,3 +515,18 @@ func TestCaptureSlicePathAndCenters(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatUSBPacketNote: the #1256 short-packet note names the mean packet
+// size only when it is well below a full 16 KiB URB.
+func TestFormatUSBPacketNote(t *testing.T) {
+	if got := formatUSBPacketNote(0, 0); got != "" {
+		t.Errorf("no packets: %q, want empty", got)
+	}
+	if got := formatUSBPacketNote(100, 100*16384); got != "" {
+		t.Errorf("full packets: %q, want empty", got)
+	}
+	got := formatUSBPacketNote(1000, 1000*3200)
+	if !strings.Contains(got, "mean 3200 bytes") || !strings.Contains(got, "1000 packets") {
+		t.Errorf("short packets: %q, want the mean and the count", got)
+	}
+}

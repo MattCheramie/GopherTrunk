@@ -320,6 +320,9 @@ FLAGS:`)
 				"Each is a time gap that corrupts downstream decode (symbol-clock slip / carrier jumps). "+
 				"Remedy: lower -sample-rate, drop or widen -bandwidth (the DDC decimation is CPU-heavy), "+
 				"or write to faster storage; then re-capture.\n", d)
+		if note := captureUSBPacketNote(dev); note != "" {
+			fmt.Fprintln(os.Stderr, note)
+		}
 	}
 
 	var meta *siglab.Metadata
@@ -781,6 +784,39 @@ func captureDeliveredNote(samples int64, elapsed time.Duration, rate float64) st
 		"the source cannot sustain this rate, and the gaps are samples it dropped. Try a lower -sample-rate "+
 		"(1024000 is safe on most phones and dongles) until this note goes away.",
 		got, rate, samples, elapsed.Seconds())
+}
+
+// usbPacketStatser is the optional driver extension (the pure-Go RTL-SDR
+// driver) that reports how many bulk-IN packets it received and their bytes.
+type usbPacketStatser interface {
+	USBPacketStats() (packets, bytes uint64)
+}
+
+// captureUSBPacketNote explains dropped chunks that come with short USB
+// packets (#1256): when the kernel completes RTL-SDR URBs well below their
+// 16 KiB size, the driver's delivery queue holds far less time than it was
+// sized for. Returns "" for a device without the stats or full-size packets.
+func captureUSBPacketNote(dev any) string {
+	s, ok := dev.(usbPacketStatser)
+	if !ok {
+		return ""
+	}
+	return formatUSBPacketNote(s.USBPacketStats())
+}
+
+// formatUSBPacketNote is captureUSBPacketNote's message, testable alone.
+func formatUSBPacketNote(packets, bytes uint64) string {
+	const fullPacket = 16 * 1024
+	if packets == 0 {
+		return ""
+	}
+	mean := bytes / packets
+	if mean >= fullPacket/2 {
+		return ""
+	}
+	return fmt.Sprintf("capture: note — the USB host delivered IQ in short packets (mean %d bytes, %d packets; "+
+		"a desktop delivers %d). This build packs them back into full chunks; if drops persist, "+
+		"please report this line with the drop count.", mean, packets, fullPacket)
 }
 
 // errCaptureStreamEnded is the capture loop's error when the IQ stream closes

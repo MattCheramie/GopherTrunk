@@ -51,6 +51,17 @@ type Device struct {
 	// stream — deliver then falls back to a fresh allocation.
 	ring    [][]complex64
 	ringIdx int
+	// ringFill is how many samples of ring[ringIdx] already hold IQ that
+	// deliver is packing short bulk-IN packets into while the consumer is
+	// behind (issue #1256). Read/written only under streamMu.
+	ringFill int
+
+	// packets / packetBytes count bulk-IN completions handed to deliver
+	// and their total length, so a capture that drops IQ can report the
+	// mean USB packet size (USBPacketStats). Short packets are what made
+	// the delivery queue shallow on #1256's phone.
+	packets     atomic.Uint64
+	packetBytes atomic.Uint64
 
 	// dropped counts IQ chunks discarded by deliver's overrun branch
 	// over this device's lifetime. Exposed via DroppedChunks for tests
@@ -73,6 +84,15 @@ type Device struct {
 // device-level signal behind the iq_underruns_total metric — deliver
 // also reports each drop via [sdr.NotifyIQDrop].
 func (d *Device) DroppedChunks() uint64 { return d.dropped.Load() }
+
+// USBPacketStats returns how many bulk-IN packets the transport has handed
+// deliver over this device's lifetime and their total size in bytes. The
+// mean is asyncBufLen on a desktop host; a much smaller mean means the
+// kernel completes URBs short (#1256), which deliver now packs back into
+// full chunks when the consumer falls behind.
+func (d *Device) USBPacketStats() (packets, bytes uint64) {
+	return d.packets.Load(), d.packetBytes.Load()
+}
 
 // StreamDeadCause reports the USB error that terminated the most recent bulk-IN
 // stream, or nil if it ended cleanly or has not died. The ccdecoder retry loop

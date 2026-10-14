@@ -30,7 +30,11 @@ two Termux tarballs. In Termux, run `uname -m`:
 | `armv7l` or `armv8l` | `gophertrunk-<version>-termux-armv7.tar.gz` |
 
 `armv8l` means a 64-bit CPU running a 32-bit Android, as on many phones from
-before about 2017. Those phones need the **armv7** build.
+before about 2017. Those phones need the **armv7** build. The CPU itself
+(a Cortex-A53, say) does not decide it; the Android build does. The arm64
+binary on such a phone fails with
+`cannot execute: required file not found`: there is no 64-bit loader
+(`/system/bin/linker64`) to start it.
 
 ```sh
 pkg install wget
@@ -52,6 +56,20 @@ Install an rtl_tcp driver app, for example the
 F-Droid. Plug in the dongle through a USB OTG adapter, start the driver's
 rtl_tcp server, and grant it USB access. By default it listens on
 `127.0.0.1:1234`. Check the app for the address and port it uses.
+
+### Rooted phones: no driver app needed
+
+As root, GopherTrunk can open the dongle itself over USB with its built-in
+driver, exactly as on a PC: leave out `-rtltcp`. Ordinary apps are refused
+the USB device (`open /sys/bus/usb/devices: permission denied` in the
+diagnostics box), root is not. Force-stop the rtl_tcp driver app first
+(Settings → Apps → the app → Force stop): only one program can hold the
+dongle.
+
+```sh
+./gophertrunk capture -freq 868950000 -sample-rate 1600000 -seconds 10 -format u8 -out meters.cu8
+./gophertrunk wmbus
+```
 
 ## 3. Run it
 
@@ -86,6 +104,13 @@ The daemon works the same way, with the dongle listed under `sdr.rtl_tcp`
   skip that. Recordings, the web console and the CLI tools are unaffected.
 - **CPU.** An older phone may struggle at 2.4 MS/s. If GopherTrunk warns
   that it is dropping IQ, lower `-rate` (or `sdr.sample_rate`).
+- **Dropped IQ on direct USB at low load** (issue #1256). Some Android USB
+  hosts hand back RTL-SDR reads in a few-KB pieces instead of 16 KiB. In
+  earlier builds each piece took a whole slot of the driver's delivery queue, so the
+  queue held ~30 ms of IQ and any short pause dropped chunks even with the
+  CPU idle. The driver now packs short reads into full chunks and sizes its
+  queue to 400 ms. `capture` names the mean USB packet size when it reports
+  drops.
 - **Why a separate build:** the regular Linux binary cannot start on
   Android, for two reasons.
   - It loads ALSA's `libasound` through glibc's `libdl` for live audio.
