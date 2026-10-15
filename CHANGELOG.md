@@ -36,6 +36,18 @@ for tagged releases.
   list, each row naming its SDR.
 
 ### Fixed
+- **A DMR direct-mode over on a scan-list channel is now one call (#1261).**
+  A simplex DMR radio is on the air for 27.5 ms of every 60 ms frame, and
+  the scanner treated each gap as the end of the transmission, so one over
+  was saved as a string of 1.5–2.5 s recordings. DMR channels now bridge
+  those gaps; the call ends after the radio stops for `hangtime_ms`.
+- **RTL-SDR: no more `stream already active` when the scanner changes
+  channel (#1261).** Reopening the stream right after closing the last
+  one could fail while the old stream was still shutting down; the driver
+  now waits for it.
+- **Docs: NXDN is the 12.5 kHz NXDN96 mode only (#1261).** The 6.25 kHz
+  NXDN48 mode is not decoded; the NXDN page wrongly said it was
+  auto-detected.
 
 - **RTL-SDR on Android (direct USB): dropped IQ chunks at low CPU load
   (#1256).** The reporter's drop counts put each dropped chunk near 1.7k
