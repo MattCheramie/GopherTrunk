@@ -361,6 +361,9 @@ func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
 			BandwidthHz: u.BandwidthHz,
 			TxOffsetHz:  u.TxOffsetHz,
 			AccessTDMA:  u.AccessTDMA,
+			// The TDMA slot count, so a consumer resolving a (id, number)
+			// pair from the snapshot divides like BandPlan.Frequency (#1273).
+			SlotsPerCarrier: u.SlotsPerCarrier,
 		})
 	}
 	if t.Empty() {

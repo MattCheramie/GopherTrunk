@@ -3,6 +3,7 @@ package trunking
 import (
 	"encoding/binary"
 	"hash/fnv"
+	"math"
 )
 
 // TopologySnapshot is the protocol-neutral system topology a control-channel
@@ -103,6 +104,30 @@ type TopoBandPlanSlot struct {
 	BandwidthHz uint32 `json:"bandwidth_hz,omitempty" yaml:"bandwidth_hz,omitempty"`
 	TxOffsetHz  int64  `json:"tx_offset_hz,omitempty" yaml:"tx_offset_hz,omitempty"`
 	AccessTDMA  bool   `json:"access_tdma,omitempty" yaml:"access_tdma,omitempty"`
+	// SlotsPerCarrier is the TDMA logical channels one carrier carries (from
+	// the IDEN_UP_TDMA channel type); 0 or 1 means FDMA. A channel number on
+	// a TDMA ID counts logical channels, so it is divided by this before the
+	// spacing is applied (issue #1273). See ChannelHz.
+	SlotsPerCarrier uint8 `json:"slots_per_carrier,omitempty" yaml:"slots_per_carrier,omitempty"`
+}
+
+// ChannelHz resolves channel number num on this slot to a carrier frequency:
+// BaseHz + (num / SlotsPerCarrier) * SpacingHz, the same arithmetic as the
+// decoders' BandPlan.Frequency. It applies no transmit offset. Returns 0 when
+// the slot has no base or spacing, or the result does not fit in 32 bits.
+func (s TopoBandPlanSlot) ChannelHz(num uint16) uint32 {
+	if s.BaseHz == 0 || s.SpacingHz == 0 {
+		return 0
+	}
+	carrier := uint64(num)
+	if s.SlotsPerCarrier > 1 {
+		carrier /= uint64(s.SlotsPerCarrier)
+	}
+	hz := s.BaseHz + carrier*uint64(s.SpacingHz)
+	if hz > math.MaxUint32 {
+		return 0
+	}
+	return uint32(hz)
 }
 
 // Fingerprint returns a stable 64-bit hash of the snapshot's MATERIAL content:
@@ -173,6 +198,7 @@ func (t *TopologySnapshot) Fingerprint() uint64 {
 		} else {
 			put(0)
 		}
+		put(uint64(s.SlotsPerCarrier))
 	}
 	return h.Sum64()
 }

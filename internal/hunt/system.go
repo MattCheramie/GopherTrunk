@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // DiscoveredSystem is the accumulated map of one trunked system. It is built
@@ -115,6 +117,9 @@ type BandPlanEntry struct {
 	SpacingHz   uint32 `json:"spacing_hz"`
 	BandwidthHz uint32 `json:"bandwidth_hz,omitempty"`
 	TxOffsetHz  int64  `json:"tx_offset_hz,omitempty"`
+	// SlotsPerCarrier is the TDMA slot count from IDEN_UP_TDMA (0/1 = FDMA);
+	// a channel number on a TDMA ID counts logical channels (issue #1273).
+	SlotsPerCarrier uint8 `json:"slots_per_carrier,omitempty"`
 }
 
 // DisplayName returns Name when set, otherwise a synthesized identifier from
@@ -261,7 +266,8 @@ func (s *DiscoveredSystem) sortAll() {
 
 // bandPlanFreq resolves a (channelID, channelNumber) pair to a downlink
 // frequency using the accumulated band plan, mirroring P25's IDEN_UP math
-// (BaseHz + channelNumber*SpacingHz). It deliberately does not apply TxOffsetHz
+// (BaseHz + channelNumber/SlotsPerCarrier*SpacingHz; a TDMA channel number
+// counts logical channels, issue #1273). It deliberately does not apply TxOffsetHz
 // — that is the uplink offset; a control-channel reference is the downlink.
 // Returns false when no band-plan entry covers channelID or the result is out
 // of range.
@@ -270,11 +276,13 @@ func (s *DiscoveredSystem) bandPlanFreq(channelID uint8, channelNumber uint16) (
 		if e.ChannelID != channelID {
 			continue
 		}
-		hz := e.BaseHz + uint64(channelNumber)*uint64(e.SpacingHz)
-		if hz == 0 || hz > 0xFFFFFFFF {
+		hz := trunking.TopoBandPlanSlot{
+			BaseHz: e.BaseHz, SpacingHz: e.SpacingHz, SlotsPerCarrier: e.SlotsPerCarrier,
+		}.ChannelHz(channelNumber)
+		if hz == 0 {
 			return 0, false
 		}
-		return uint32(hz), true
+		return hz, true
 	}
 	return 0, false
 }
