@@ -393,6 +393,11 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 			// ctx.Deadline() branch here was overwritten by this line on the
 			// very next statement, so it never took effect.)
 			_ = conn.SetReadDeadline(time.Now().Add(streamReadIdleTimeout))
+			// The watcher may have expired the deadline just before the line
+			// above pushed it back out 30 s; re-check so that cancel is not lost.
+			if ctx.Err() != nil {
+				return
+			}
 			n, err := io.ReadFull(conn, buf)
 			total += int64(n)
 			if err != nil {

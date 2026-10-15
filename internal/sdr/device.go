@@ -3,7 +3,10 @@
 // future HackRF/Airspy) live in subpackages and register themselves here.
 package sdr
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type Role int
 
@@ -144,10 +147,26 @@ type StreamEnder interface {
 	StreamErr() error
 }
 
-// StreamErr returns dev's StreamErr when it implements StreamEnder, else nil.
+// StreamDeadCauser is an optional Device extension a USB driver implements to
+// report the error that killed its most recent bulk-IN stream (nil when the
+// stream ended cleanly or is still running).
+type StreamDeadCauser interface {
+	StreamDeadCause() error
+}
+
+// StreamErr says why dev's most recent StreamIQ channel closed on its own:
+// its StreamErr when it implements StreamEnder (network sources), else the
+// USB stream-death cause when it implements StreamDeadCauser (local
+// dongles; issue #1256, where a phone's dying dongle printed only "IQ stream
+// ended"), else nil.
 func StreamErr(dev Device) error {
 	if se, ok := dev.(StreamEnder); ok {
 		return se.StreamErr()
+	}
+	if dc, ok := dev.(StreamDeadCauser); ok {
+		if err := dc.StreamDeadCause(); err != nil {
+			return fmt.Errorf("USB stream died: %w", err)
+		}
 	}
 	return nil
 }
