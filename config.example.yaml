@@ -1073,14 +1073,23 @@ trunking:
       # site has not announced") with the ID, a channel number and the
       # IDs the site did announce. An entry here seeds that ID at
       # startup (downlink = base_hz + channel_number × spacing_hz);
-      # an over-the-air IDEN_UP for the same ID replaces it. Entries are
-      # FDMA (one call per channel number).
+      # an over-the-air IDEN_UP for the same ID replaces it. An entry is
+      # FDMA (one call per channel number) unless slots_per_carrier is
+      # 2 or 4: a TDMA (Phase 2 voice) ID, whose channel numbers count
+      # timeslots, so downlink = base_hz + (channel_number ÷ slots) ×
+      # spacing_hz (issue #1273).
       # p25_band_plan:
       #   - channel_id: 2
       #     base_hz: 851_006_250
       #     spacing_hz: 12_500
       #     tx_offset_hz: -45_000_000
       #     bandwidth_hz: 12_500
+      #   - channel_id: 3          # a 2-slot Phase 2 voice band
+      #     base_hz: 762_006_250
+      #     spacing_hz: 12_500
+      #     tx_offset_hz: 30_000_000
+      #     bandwidth_hz: 12_500
+      #     slots_per_carrier: 2
       # Optional human-readable names for the P25 sites of this system,
       # keyed by their RFSS and Site IDs (issue #698). GT discovers a
       # site's RFSS/Site from the control channel; these names are pure

@@ -265,13 +265,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	if len(opts.System.P25BandPlan) > 0 {
 		bandPlan = &p25phase1.BandPlan{}
 		for _, e := range opts.System.P25BandPlan {
-			bandPlan.Apply(p25phase1.IdentifierUpdate{
-				ChannelID:   e.ChannelID,
-				BaseHz:      e.BaseHz,
-				SpacingHz:   e.SpacingHz,
-				TxOffsetHz:  e.TxOffsetHz,
-				BandwidthHz: e.BandwidthHz,
-			})
+			bandPlan.Apply(p25phase1.IdentifierUpdateFromSeed(e))
 			log.Info("ccdecoder: p25/phase1 band-plan seeded",
 				"system", opts.SystemName,
 				"id", e.ChannelID, "base_hz", e.BaseHz,

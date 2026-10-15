@@ -314,6 +314,7 @@ export interface P25BandPlanEntry {
   SpacingHz: number;
   TxOffsetHz: number;
   BandwidthHz: number;
+  SlotsPerCarrier: number;
 }
 
 export interface DMRLinearBandPlan {

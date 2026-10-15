@@ -972,11 +972,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			p25BandPlan = make([]trunking.P25BandPlanEntry, 0, len(sys.P25BandPlan))
 			for _, e := range sys.P25BandPlan {
 				p25BandPlan = append(p25BandPlan, trunking.P25BandPlanEntry{
-					ChannelID:   e.ChannelID,
-					BaseHz:      e.BaseHz,
-					SpacingHz:   e.SpacingHz,
-					TxOffsetHz:  e.TxOffsetHz,
-					BandwidthHz: e.BandwidthHz,
+					ChannelID:       e.ChannelID,
+					BaseHz:          e.BaseHz,
+					SpacingHz:       e.SpacingHz,
+					TxOffsetHz:      e.TxOffsetHz,
+					BandwidthHz:     e.BandwidthHz,
+					SlotsPerCarrier: e.SlotsPerCarrier,
 				})
 			}
 		}

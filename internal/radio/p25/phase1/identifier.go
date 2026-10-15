@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // IdentifierUpdate carries a P25 IDENT_UP TSBK announcement that
@@ -360,6 +361,22 @@ func (b *BandPlan) Apply(u IdentifierUpdate) {
 	}
 	b.slots[u.ChannelID] = u
 	b.known[u.ChannelID] = true
+}
+
+// IdentifierUpdateFromSeed converts an operator's p25_band_plan entry into the
+// update BandPlan.Apply takes. An entry with SlotsPerCarrier 2 or 4 is a TDMA
+// channel ID: AccessTDMA routes its grants to the Phase 2 voice chain and the
+// slot count makes Frequency divide the channel number (issue #1273).
+func IdentifierUpdateFromSeed(e trunking.P25BandPlanEntry) IdentifierUpdate {
+	return IdentifierUpdate{
+		ChannelID:       e.ChannelID,
+		BaseHz:          e.BaseHz,
+		SpacingHz:       e.SpacingHz,
+		TxOffsetHz:      e.TxOffsetHz,
+		BandwidthHz:     e.BandwidthHz,
+		AccessTDMA:      e.SlotsPerCarrier > 1,
+		SlotsPerCarrier: e.SlotsPerCarrier,
+	}
 }
 
 // Frequency returns the downlink frequency in Hz for the given
