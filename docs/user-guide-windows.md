@@ -1192,12 +1192,12 @@ scanner:
   the air for 27.5 ms of every 60 ms frame. The scanner treats those
   gaps as part of the transmission, so the call ends only after the
   radio stops for `hangtime_ms`, not at every gap.
-- **DMR idle beacons.** Some repeaters key up periodically with idle
-  bursts and no voice. The scanner can't tell those from a call yet, so
-  it stays on the channel while the beacon is up. No recording is saved
-  for it, since no voice is decoded, though it can still show as a short
-  entry in the call history. Raise `squelch_dbfs` or use a
-  shorter `hangtime_ms` on such a channel if this slows your scan.
+- **DMR idle beacons don't stop the scan.** Some repeaters key up
+  periodically with idle bursts and no voice. A DMR channel opens only
+  when a call is on the air (a Voice LC Header or a voice burst), so the
+  scanner moves on past a beacon. To check, it may stay on a DMR channel
+  whose carrier is up for up to half a second; a silent channel costs no
+  extra time.
 - **System Fusion: DN mode only.** A `ysf` channel decodes V/D mode 2,
   the "DN" mode Yaesu radios use by default. Calls in V/D mode 1 or
   Voice Full Rate ("VW") are recognised and logged but not decoded.
