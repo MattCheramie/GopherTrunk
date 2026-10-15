@@ -7,7 +7,19 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **`p25_band_plan` entries take `slots_per_carrier` (#1273).** Set it to
+  2 or 4 to seed a TDMA (Phase 2 voice) channel ID the site never
+  announces; its grants then resolve to the right carrier and timeslot and
+  route to the Phase 2 voice chain.
+
 ### Fixed
+- **P25 TDMA (Phase 2 voice) channel numbers resolve to the right carrier
+  everywhere (#1273).** A Phase 2 control channel now learns its TDMA
+  channel IDs (identifier update opcodes 0x73 / 0xF3) instead of
+  publishing every grant at 0 Hz, and the network report, the hunt's
+  discovered band plan and grant/neighbour frequencies divide a TDMA channel
+  number by the slots per carrier, like the decoders do.
 - **`wmbus`, `power` and `capture` now say why a local SDR's stream died
   (#1256).** When a USB dongle stopped mid-run they printed only
   `IQ stream ended`; they now add the USB error the driver recorded.

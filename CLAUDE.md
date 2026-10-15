@@ -115,9 +115,15 @@ confirmation before any close-as-completed.
   MAC form (0x7D), never the TDMA forms 0x73 / 0xF3 a Phase 2 site uses for its voice channels,
   so those grants resolved to 0 Hz — now parsed and divided (`phase2.ParseIdentifierUpdateTDMA`,
   also on `IsKnown` or strict/RSCorrect drops them). One channel-type table for both decoders:
-  `p25.ParseTDMAChannelType` (phase2 cannot import phase1 — phase1's tests import phase2). NOT
-  fixed, same arithmetic: `hunt.bandPlanFreq`, the network report's uplink math, and
-  `p25_band_plan` entries can't express TDMA. A grant naming a never-announced channel ID now
+  `p25.ParseTDMAChannelType` (phase2 cannot import phase1 — phase1's tests import phase2). The
+  consumers that resolve an (id, number) pair from the TOPOLOGY snapshot (network report downlink
+  fallback + explicit uplink, `hunt.bandPlanFreq`) used to compute carrier n because the snapshot
+  carried only `AccessTDMA`; `TopoBandPlanSlot.SlotsPerCarrier` + `ChannelHz` now divide like
+  `BandPlan.Frequency`, and `p25_band_plan` entries take `slots_per_carrier` (2/4 = TDMA, through
+  `phase1.IdentifierUpdateFromSeed`, which also sets `AccessTDMA` so the grant routes Phase 2).
+  Still open: the Phase 2 voice chain records BOTH timeslots (no filter on `Grant.Timeslot`), so two
+  calls on one carrier interleave — needs the slot→logical-channel mapping pinned against a
+  capture. A grant naming a never-announced channel ID now
   WARNs (rate-limited) instead of dropping at DEBUG. "Motorola opcode 0x05/0x09 named, not
   field-decoded" lines are broadcasts with constant payloads, not grants. On-air-gated.
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —

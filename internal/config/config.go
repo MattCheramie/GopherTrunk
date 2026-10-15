@@ -1859,13 +1859,17 @@ type SystemConfig struct {
 // internal/radio/p25/phase1/identifier.go for the bit layout. Most
 // operators only need to populate ChannelID + BaseHz + SpacingHz +
 // TxOffsetHz; BandwidthHz is informational and BandPlan.Frequency
-// does not consult it.
+// does not consult it. SlotsPerCarrier marks a TDMA (Phase 2 voice)
+// channel ID: 2 or 4 logical channels per carrier, so a grant's channel
+// number is divided by it (the IDEN_UP_TDMA channel type, issue #1273);
+// 0 or 1 is FDMA.
 type P25BandPlanEntryConfig struct {
-	ChannelID   uint8  `yaml:"channel_id"`
-	BaseHz      uint64 `yaml:"base_hz"`
-	SpacingHz   uint32 `yaml:"spacing_hz"`
-	TxOffsetHz  int64  `yaml:"tx_offset_hz"`
-	BandwidthHz uint32 `yaml:"bandwidth_hz"`
+	ChannelID       uint8  `yaml:"channel_id"`
+	BaseHz          uint64 `yaml:"base_hz"`
+	SpacingHz       uint32 `yaml:"spacing_hz"`
+	TxOffsetHz      int64  `yaml:"tx_offset_hz"`
+	BandwidthHz     uint32 `yaml:"bandwidth_hz"`
+	SlotsPerCarrier uint8  `yaml:"slots_per_carrier"`
 }
 
 // DMRBandPlanConfig is the operator-supplied DMR Tier III LCN→frequency

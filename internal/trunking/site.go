@@ -137,6 +137,9 @@ type P25BandPlanEntry struct {
 	SpacingHz   uint32 // channel-to-channel step, Hz
 	TxOffsetHz  int64  // signed uplink offset (uplink = downlink + offset), Hz
 	BandwidthHz uint32 // informational; not consulted by BandPlan.Frequency
+	// SlotsPerCarrier marks a TDMA channel ID (2 or 4 logical channels per
+	// carrier; 0/1 = FDMA). Issue #1273.
+	SlotsPerCarrier uint8
 }
 
 // DMRBandPlan maps the 12-bit Logical (Physical) Channel Number (LCN)

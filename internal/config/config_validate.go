@@ -492,6 +492,11 @@ func validateSystem(i int, s SystemConfig) error {
 		if e.BaseHz == 0 {
 			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: base_hz required (nonzero)", i, k)
 		}
+		switch e.SlotsPerCarrier {
+		case 0, 1, 2, 4: // FDMA, or a 2- / 4-slot TDMA carrier (the IDEN_UP_TDMA channel types)
+		default:
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: slots_per_carrier %d must be 0 or 1 (FDMA), 2 or 4 (TDMA)", i, k, e.SlotsPerCarrier)
+		}
 	}
 	if bp := s.DMRBandPlan; bp != nil {
 		hasLinear := bp.Linear != nil

@@ -795,13 +795,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 		if len(sys.P25BandPlan) > 0 {
 			bandPlan = &p25phase1.BandPlan{}
 			for _, e := range sys.P25BandPlan {
-				bandPlan.Apply(p25phase1.IdentifierUpdate{
-					ChannelID:   e.ChannelID,
-					BaseHz:      e.BaseHz,
-					SpacingHz:   e.SpacingHz,
-					TxOffsetHz:  e.TxOffsetHz,
-					BandwidthHz: e.BandwidthHz,
-				})
+				bandPlan.Apply(p25phase1.IdentifierUpdateFromSeed(e))
 			}
 		}
 		// A Phase 1 CC can issue Phase 2 TDMA voice grants (hybrid

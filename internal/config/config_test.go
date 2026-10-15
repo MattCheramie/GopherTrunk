@@ -126,6 +126,8 @@ func TestValidate(t *testing.T) {
 		{"band_plan channel_id too high", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 16, BaseHz: 1, SpacingHz: 1}}}}}}, true},
 		{"band_plan duplicate channel_id", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 1, SpacingHz: 1}, {ChannelID: 3, BaseHz: 2, SpacingHz: 2}}}}}}, true},
 		{"band_plan zero spacing", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 1, SpacingHz: 0}}}}}}, true},
+		{"band_plan tdma 2 slots ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 762_006_250, SpacingHz: 12_500, SlotsPerCarrier: 2}}}}}}, false},
+		{"band_plan tdma 3 slots", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 1, SpacingHz: 1, SlotsPerCarrier: 3}}}}}}, true},
 		{"band_plan zero base", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 0, SpacingHz: 1}}}}}}, true},
 		// dmr_band_plan: DMR Tier III LCN→frequency resolver. Exactly one
 		// of linear / table is required; without it T3 voice grants drop.

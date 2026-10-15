@@ -208,11 +208,12 @@ func foldTopology(dst *DiscoveredSystem, t *siglab.TopologySnapshot) {
 
 	for _, e := range t.BandPlan {
 		dst.addBandPlanEntry(BandPlanEntry{
-			ChannelID:   e.ChannelID,
-			BaseHz:      e.BaseHz,
-			SpacingHz:   e.SpacingHz,
-			BandwidthHz: e.BandwidthHz,
-			TxOffsetHz:  e.TxOffsetHz,
+			ChannelID:       e.ChannelID,
+			BaseHz:          e.BaseHz,
+			SpacingHz:       e.SpacingHz,
+			BandwidthHz:     e.BandwidthHz,
+			TxOffsetHz:      e.TxOffsetHz,
+			SlotsPerCarrier: e.SlotsPerCarrier,
 		})
 	}
 }

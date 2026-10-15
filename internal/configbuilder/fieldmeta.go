@@ -233,11 +233,12 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.MotorolaBandPlan":        {Label: "Motorola band plan", Help: "SmartNet channel-number → frequency table: 800_standard (default), 800_rebanded, 800_splinter, or 900. Motorola only."},
 	"SystemConfig.DStarFECMode":            {Label: "D-STAR FEC mode", Help: "JARL DV-header FEC chain. off (default) or on. D-STAR only."},
 
-	"P25BandPlanEntryConfig.ChannelID":   {Help: "4-bit IDEN_UP slot index (0–15)."},
-	"P25BandPlanEntryConfig.BaseHz":      {Label: "Base frequency", Hz: true, Help: "IDEN_UP base frequency for this slot."},
-	"P25BandPlanEntryConfig.SpacingHz":   {Label: "Spacing", Hz: true, Help: "Channel spacing for this slot."},
-	"P25BandPlanEntryConfig.TxOffsetHz":  {Label: "TX offset (Hz)", Help: "Transmit offset per the on-air IDEN_UP field (signed Hz)."},
-	"P25BandPlanEntryConfig.BandwidthHz": {Label: "Bandwidth", Hz: true, Help: "Channel bandwidth (informational; not used to resolve frequencies)."},
+	"P25BandPlanEntryConfig.ChannelID":       {Help: "4-bit IDEN_UP slot index (0–15)."},
+	"P25BandPlanEntryConfig.BaseHz":          {Label: "Base frequency", Hz: true, Help: "IDEN_UP base frequency for this slot."},
+	"P25BandPlanEntryConfig.SpacingHz":       {Label: "Spacing", Hz: true, Help: "Channel spacing for this slot."},
+	"P25BandPlanEntryConfig.TxOffsetHz":      {Label: "TX offset (Hz)", Help: "Transmit offset per the on-air IDEN_UP field (signed Hz)."},
+	"P25BandPlanEntryConfig.BandwidthHz":     {Label: "Bandwidth", Hz: true, Help: "Channel bandwidth (informational; not used to resolve frequencies)."},
+	"P25BandPlanEntryConfig.SlotsPerCarrier": {Label: "TDMA slots per carrier", Help: "0 or 1 for an FDMA (Phase 1 voice) channel ID; 2 or 4 for a TDMA (Phase 2 voice) channel ID, whose grant channel numbers count timeslots (carrier = number / slots). Use the slot count the site's IDEN_UP_TDMA would announce."},
 
 	"DMRBandPlanConfig.Linear":           {Help: "Regular base+spacing grid: freq = base + (lcn − offset) × spacing."},
 	"DMRBandPlanConfig.Table":            {Help: "Explicit LCN→frequency list for sites that don't fall on a regular grid."},

@@ -236,7 +236,7 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
           label="Channels"
           items={sys.P25BandPlan}
           onChange={(x) => onChange({ ...sys, P25BandPlan: x })}
-          makeNew={() => ({ ChannelID: 0, BaseHz: 0, SpacingHz: 0, TxOffsetHz: 0, BandwidthHz: 0 })}
+          makeNew={() => ({ ChannelID: 0, BaseHz: 0, SpacingHz: 0, TxOffsetHz: 0, BandwidthHz: 0, SlotsPerCarrier: 0 })}
           itemTitle={(e) => `Channel ID ${e.ChannelID}`}
           emptyHint="Only needed when a site never broadcasts IDEN_UP for a channel id."
           renderItem={(e, set) => (
@@ -246,6 +246,11 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
               <HzField label="Spacing" value={e.SpacingHz} onChange={(v) => set({ ...e, SpacingHz: v })} />
               <NumberField label="Tx offset (Hz, signed)" value={e.TxOffsetHz} onChange={(v) => set({ ...e, TxOffsetHz: v })} />
               <HzField label="Bandwidth" value={e.BandwidthHz} onChange={(v) => set({ ...e, BandwidthHz: v })} />
+              <NumberField
+                label="TDMA slots per carrier (0 = FDMA, 2 or 4)"
+                value={e.SlotsPerCarrier ?? 0}
+                onChange={(v) => set({ ...e, SlotsPerCarrier: v })}
+              />
             </div>
           )}
         />

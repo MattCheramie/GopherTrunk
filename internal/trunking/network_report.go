@@ -3,7 +3,6 @@ package trunking
 import (
 	"fmt"
 	"io"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -252,10 +251,8 @@ func ReportFromTopology(t *TopologySnapshot) NetworkReport {
 		// neighbour whose band arrived after it stays at 0 Hz forever, which is
 		// what left the web "Neighbor sites" downlink blank (SDRtrunk shows it).
 		if downHz == 0 && num != 0 {
-			if b, ok := bands[id]; ok && b.BaseHz != 0 && b.SpacingHz != 0 {
-				if hz := b.BaseHz + uint64(num)*uint64(b.SpacingHz); hz > 0 && hz <= math.MaxUint32 {
-					downHz = uint32(hz)
-				}
+			if b, ok := bands[id]; ok {
+				downHz = b.ChannelHz(num)
 			}
 		}
 		c := ReportChannel{ChannelID: id, ChannelNumber: num, DownlinkHz: downHz}
@@ -297,10 +294,8 @@ func ReportFromTopology(t *TopologySnapshot) NetworkReport {
 		// transmit offset as before.
 		upHz := n.UplinkHz
 		if upHz == 0 && n.UplinkChannelNumber != 0 {
-			if b, ok := bands[n.UplinkChannelID]; ok && b.BaseHz != 0 && b.SpacingHz != 0 {
-				if hz := b.BaseHz + uint64(n.UplinkChannelNumber)*uint64(b.SpacingHz); hz > 0 && hz <= math.MaxUint32 {
-					upHz = uint32(hz)
-				}
+			if b, ok := bands[n.UplinkChannelID]; ok {
+				upHz = b.ChannelHz(n.UplinkChannelNumber)
 			}
 		}
 		site.Neighbors = append(site.Neighbors, ReportNeighbor{
