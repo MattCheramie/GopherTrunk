@@ -128,7 +128,7 @@ func TestTDMAChannelTypeTable(t *testing.T) {
 		{0xF, true, 0, 2}, // reserved: OP25 treats it as 2 slots
 	} {
 		got := tdmaChannelType(tc.code)
-		if got.tdma != tc.tdma || got.bandwidthHz != tc.bwHz || got.slots != tc.slots {
+		if got.TDMA != tc.tdma || got.BandwidthHz != tc.bwHz || got.SlotsPerCarrier != tc.slots {
 			t.Errorf("tdmaChannelType(0x%X) = %+v, want tdma=%v bw=%d slots=%d",
 				tc.code, got, tc.tdma, tc.bwHz, tc.slots)
 		}
