@@ -1188,6 +1188,10 @@ scanner:
   that carries voice first and follows it until the call ends. A call
   on the other slot at the same time is not recorded. A direct-mode
   (simplex) handheld uses one slot, so this doesn't arise there.
+- **DMR direct mode is one call per over.** A simplex handheld is on
+  the air for 27.5 ms of every 60 ms frame. The scanner treats those
+  gaps as part of the transmission, so the call ends only after the
+  radio stops for `hangtime_ms`, not at every gap.
 - **DMR idle beacons.** Some repeaters key up periodically with idle
   bursts and no voice. The scanner can't tell those from a call yet, so
   it stays on the channel while the beacon is up. No recording is saved
@@ -1201,6 +1205,10 @@ scanner:
   on air and decodes the same way.
 - **NXDN, D-STAR and System Fusion are experimental.** Their voice
   decode has not yet been confirmed on air.
+- **NXDN: 12.5 kHz (NXDN96) only.** GopherTrunk decodes the 9600 bps
+  NXDN mode used on 12.5 kHz channels. The 6.25 kHz very-narrow mode
+  (NXDN48, 4800 bps), which many radios call "narrow", is not decoded:
+  the channel opens on its carrier but no audio is recovered.
 - **Not available:** `tone`, `decoders`, `nac` and
   `p25_phase1_demod_mode` are rejected on these channels.
 

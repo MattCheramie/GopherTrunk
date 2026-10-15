@@ -2051,6 +2051,18 @@ confirmation before any close-as-completed.
   difference. Gate (#764/#771): the reporter's own file through
   `GT_ACARS_AUDIO=<wav> go test ./cmd/gophertrunk -run TestACARSReplay -v`, then a live
   scanner run. Known limit: an ACARS burst also opens an ordinary AM "call".
+- **Scan-list DMR direct mode was cut into hangtime-sized calls (#1261, 14 Oct field run).** The
+  conventional scanner judged dwell activity chunk by chunk on in-channel power, and a simplex DMR
+  handheld is OFF for 32.5 ms of every 60 ms frame, so every gap started hangtime and no 27.5 ms burst
+  could outlast the 50 ms `ActivityDebounce` to stop it: one over became a string of 1.5-2.5 s WAVs
+  (the reporter's 10 s call on the same channel was src 9990, the Parrot through a repeater, i.e. a
+  continuous carrier). A DMR channel now bridges gaps shorter than `dmrBurstBridge` (100 ms) after its
+  last above-squelch chunk; analog keeps the #1090 debounce. Same run: `conv: StreamIQ failed …
+  rtlsdr: stream already active` was the purego RTL driver failing a reopen while the cancelled
+  stream's teardown goroutine was still in StopBulkIn (the airspy family's #686); StreamIQ now waits
+  out a stream whose ctx is already cancelled, and still refuses one whose ctx is live. Also: the NXDN
+  receiver is NXDN96 (4800 sym/s) only — 6.25 kHz NXDN48 is not decoded at all, which the docs used
+  to deny. On-air-gated (#764/#771).
 - **Scan-list loudness (#1239 follow-up): digital and analog are levelled differently — balance per
   channel with `audio_gain_db`, don't move a global default.** The IMBE/AMBE vocoder AGC targets a fixed
   peak (18000, ≈−5 dBFS; measured −19.5 dBFS RMS on `imbe/testdata/p25p1-tone-bracketed-voice.raw`), while

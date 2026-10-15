@@ -16,7 +16,7 @@ faq:
   - q: "Do I have to pay extra for NXDN on a Uniden scanner?"
     a: "Sometimes. Several Uniden models treat NXDN (and DMR) as a paid firmware upgrade unlocked per serial number. Whistler's TRX-1 and TRX-2 include NXDN in the box, and GopherTrunk decodes it free. Check the exact Uniden model's firmware status before buying if NXDN is your priority."
   - q: "What is the difference between NXDN 4800 and 6250?"
-    a: "NXDN comes in a 6.25 kHz very-narrow mode (2400/4800 bps class) and a 12.5 kHz mode (roughly 9600 bps). Some systems mix them. A capable NXDN scanner or GopherTrunk auto-detects the variant; verify wide/narrow support if your system uses the 6.25 kHz channels."
+    a: "NXDN comes in a 6.25 kHz very-narrow mode (2400/4800 bps class) and a 12.5 kHz mode (roughly 9600 bps). Some systems mix them. A capable NXDN scanner auto-detects the variant. GopherTrunk currently decodes the 12.5 kHz (NXDN96) mode only, not the 6.25 kHz NXDN48 mode, so verify wide/narrow support if your system uses the 6.25 kHz channels."
   - q: "Can I decode NXDN for free with GopherTrunk?"
     a: "Yes. A ~$30 RTL-SDR dongle plus free GopherTrunk on a PC decodes NXDN (IDAS/NEXEDGE), reads the RAN and talkgroups, follows the control channel, and records every call with timestamps — with no per-mode upgrade fee."
 ---
@@ -37,7 +37,7 @@ faq:
 - **Uniden [SDS100](/reference/uniden-sds100/) / [SDS200](/reference/uniden-sds200/):** best-in-class True I/Q front end, but Uniden has historically treated NXDN/DMR as a **paid firmware unlock** per serial number. Confirm before buying if NXDN is why you're buying.
 - **[GopherTrunk](/downloads.html) on a $30 [RTL-SDR](/reference/rtl-sdr/):** decodes NXDN free, forever, no per-mode charge.
 
-> **NXDN is narrowband — front end matters.** NXDN's 6.25 kHz channels are easy to miss with a sloppy receiver. The Uniden True I/Q design and GopherTrunk's software DSP both handle narrow NXDN cleanly; check wide/narrow support on any bargain radio.
+> **NXDN is narrowband — front end matters.** NXDN's 6.25 kHz channels are easy to miss with a sloppy receiver. The Uniden True I/Q design handles narrow NXDN cleanly; GopherTrunk decodes the 12.5 kHz NXDN96 mode only for now. Check wide/narrow support on any bargain radio.
 
 ## Quick picks
 
