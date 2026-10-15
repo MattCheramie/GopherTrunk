@@ -1,6 +1,7 @@
 package purego
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -41,6 +42,14 @@ type Device struct {
 	streamMu sync.Mutex
 	out      chan []complex64
 	stopOnce sync.Once
+	// streamCtx is the context the active stream was opened with, and
+	// streamDone closes once that stream's teardown (cancelStream) has
+	// finished. StreamIQ uses them to wait out a stream whose ctx was
+	// already cancelled instead of failing with "stream already active"
+	// (issue #1261: the conventional scanner cancels a dwell's stream
+	// and opens the next one straight away). Both under streamMu.
+	streamCtx  context.Context
+	streamDone chan struct{}
 
 	// ring is a small pool of preallocated complex64 buffers that
 	// [Device.deliver] cycles through so the hot IQ path allocates
@@ -286,6 +295,7 @@ func (d *Device) Close() error {
 // take. Idempotent via stopOnce — stops the bulk-IN ring and closes
 // the consumer channel.
 func (d *Device) cancelStream() {
+	var done chan struct{}
 	d.stopOnce.Do(func() {
 		_ = d.transport.StopBulkIn()
 		d.streamMu.Lock()
@@ -293,8 +303,17 @@ func (d *Device) cancelStream() {
 			close(d.out)
 			d.out = nil
 		}
+		done = d.streamDone
+		d.streamDone = nil
+		d.streamCtx = nil
 		d.streamMu.Unlock()
 	})
+	// Signalled only once Do has returned: a StreamIQ waiting on it
+	// resets stopOnce for the next stream, which must not race Do's own
+	// completion.
+	if done != nil {
+		close(done)
+	}
 }
 
 // StreamIQ is implemented in stream.go (kept separate so the IQ

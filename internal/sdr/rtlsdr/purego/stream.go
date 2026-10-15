@@ -71,11 +71,31 @@ func streamDepthFor(rateHz uint32) int {
 func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.streamMu.Lock()
 	defer d.streamMu.Unlock()
-	if d.closed.Load() {
-		return nil, ErrClosed
-	}
-	if d.out != nil {
-		return nil, errors.New("rtlsdr: stream already active")
+	for {
+		if d.closed.Load() {
+			return nil, ErrClosed
+		}
+		if d.out == nil {
+			break
+		}
+		// A stream is still registered. If its owner already cancelled
+		// it, the teardown goroutine is on its way (StopBulkIn can take
+		// a while to reap the URBs): wait for it rather than failing, so
+		// cancel-then-reopen (a scanner advancing to the next channel) is
+		// not a race (issue #1261, the airspy family's #686). A stream
+		// whose ctx is still live is a genuine second consumer — refuse.
+		if d.streamCtx == nil || d.streamCtx.Err() == nil || d.streamDone == nil {
+			return nil, errors.New("rtlsdr: stream already active")
+		}
+		done := d.streamDone
+		d.streamMu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			d.streamMu.Lock()
+			return nil, ctx.Err()
+		}
+		d.streamMu.Lock()
 	}
 	if err := d.demod.ResetBuffer(); err != nil {
 		return nil, fmt.Errorf("rtlsdr: reset buffer: %w", err)
@@ -83,6 +103,8 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	depth := streamDepthFor(d.demod.GetSampleRate())
 	out := make(chan []complex64, depth)
 	d.out = out
+	d.streamCtx = ctx
+	d.streamDone = make(chan struct{})
 	d.stopOnce = sync.Once{}
 	// Drop any cause from a previous stream so it can't be misattributed to
 	// this session's eventual (possibly clean) end.
@@ -106,6 +128,8 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 
 	if err := d.transport.StartBulkIn(bulkInEndpoint, asyncBufCount, asyncBufLen, d.deliver, d.onStreamDead); err != nil {
 		d.out = nil
+		d.streamCtx = nil
+		d.streamDone = nil
 		return nil, fmt.Errorf("rtlsdr: StartBulkIn: %w", err)
 	}
 
