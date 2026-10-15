@@ -22,6 +22,17 @@ const (
 	// defaultSquelchHysteresisDb is the close-side level margin applied
 	// when a channel leaves SquelchHysteresisDb unset.
 	defaultSquelchHysteresisDb = 3.0
+	// dmrBurstBridge is how long a DMR channel's dwell keeps counting as
+	// active after its last above-threshold chunk (issue #1261). A
+	// direct-mode / simplex DMR radio transmits one 27.5 ms burst per
+	// 60 ms TDMA frame and is OFF for the other 32.5 ms, so the in-channel
+	// power drops below squelch ~16 times a second during a single over.
+	// Judged chunk by chunk, every gap started the hangtime countdown and
+	// no burst (27.5 ms) could outlast the 50 ms activity debounce to stop
+	// it, so each over was cut into hangtime-sized calls — one WAV each.
+	// 100 ms covers the 32.5 ms gap with room for chunk granularity and a
+	// lost burst, and adds at most that much to the real release.
+	dmrBurstBridge = 100 * time.Millisecond
 )
 
 // Channel is one entry in the conventional scan list.
@@ -918,6 +929,13 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	// chunk clears it, so belowSince (and the elapsed silence) survives.
 	belowSince := time.Time{}
 	aboveSince := time.Time{}
+	// lastAbove is when the channel last cleared keepAlive; a DMR
+	// channel bridges its TDMA gaps from it (dmrBurstBridge).
+	lastAbove := now
+	var bridge time.Duration
+	if ch.Mode == ModeDMR {
+		bridge = dmrBurstBridge
+	}
 	// lastChunk is when the stream last delivered anything; the ticker
 	// compares it against StreamStallTimeout so a pump that stops
 	// producing (without closing) cannot hold the call open forever.
@@ -945,6 +963,11 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 			}
 			lastChunk = s.opts.Now()
 			active := level(iq) >= keepAlive
+			if active {
+				lastAbove = lastChunk
+			} else if bridge > 0 && lastChunk.Sub(lastAbove) < bridge {
+				active = true // a TDMA gap inside one over, not a release
+			}
 			if active && det != nil {
 				active = det.Process(iq)
 			}
