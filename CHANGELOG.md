@@ -14,6 +14,19 @@ for tagged releases.
   route to the Phase 2 voice chain.
 
 ### Fixed
+- **A DMR scan-list channel no longer stops the scan on a repeater's idle
+  beacon (#1261).** A keyed but idle DMR repeater held the scanner on its
+  channel and opened empty calls, because the squelch judged only carrier
+  power. DMR channels now open only on call evidence (a Voice LC Header,
+  a PI header or a voice-burst sync), decoded from the channel itself. The
+  idle bursts and CSBKs a beacon sends are not counted. The gate works with
+  either discriminator polarity.
+- **A YSF control channel now publishes grants (#1261).** The control
+  channel locked on the frame sync but never granted a call. Its FICH
+  decoder modelled a frame layout that no real radio sends, and nothing on
+  the live path fed it. It now decodes the real FICH: a header or
+  communications frame grants on its DG-ID, a terminator ends the call,
+  and individual and data calls are skipped. The made-up decoder is gone.
 - **P25 TDMA (Phase 2 voice) channel numbers resolve to the right carrier
   everywhere (#1273).** A Phase 2 control channel now learns its TDMA
   channel IDs (identifier update opcodes 0x73 / 0xF3) instead of

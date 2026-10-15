@@ -10,12 +10,12 @@ import "math/bits"
 // protocol facts only. The tests pin them with literal on-air vectors from
 // the reference encoder.
 //
-// The older fich.go / fich_trellis.go model a FICH of 48 convolutionally
-// coded bits in 100 bits. On air the FICH is 100 DIBITS: four Golay(24,12)
-// words (32 info bits + a CRC-16) behind a rate-1/2 K=5 convolutional code,
-// interleaved over 200 bits. Its encoder and decoder share the invented
-// layout, so its tests pass while no real frame decodes; the voice path
-// uses DecodeAirFICH instead (issue #1261).
+// On air the FICH is 100 DIBITS: four Golay(24,12) words (32 info bits +
+// a CRC-16) behind a rate-1/2 K=5 convolutional code, interleaved over 200
+// bits. (An earlier fich.go modelled 48 convolutionally coded bits in 100
+// bits; its encoder and decoder shared the invented layout, so its tests
+// passed while no real frame decoded. It was removed in issue #1261; the
+// voice chain and the control channel both decode through DecodeAirFICH.)
 
 // AirFICH is a decoded on-air FICH, with MMDVMHost's field names.
 type AirFICH struct {

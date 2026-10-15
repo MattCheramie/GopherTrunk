@@ -15,13 +15,12 @@ const (
 	FrameDurationMs = 100
 
 	// FICHDibits is the size of the encoded Frame Information Channel
-	// region. The 100-dibit field carries Trellis-encoded FICH bits;
-	// after Viterbi decode the recovered info is a much smaller field
-	// (handled by the future FICH decoder, not in this PR).
+	// region: Golay-coded, convolutionally coded and interleaved FICH
+	// bits, decoded by DecodeAirFICH.
 	FICHDibits = 100
 
 	// PayloadDibits covers the DCH (Data CHannel) region — voice or
-	// data depending on the FICH's Frame Type field.
+	// data depending on the FICH's frame indicator and data type.
 	PayloadDibits = FrameDibits - FSWDibits - FICHDibits // 360
 )
 
