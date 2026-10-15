@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.2.9] — 2026-10-15
+
 ### Added
 - **System Fusion (YSF) channels in the conventional scan list (#1261).**
   `mode: ysf` scans a C4FM repeater or simplex channel and records its
