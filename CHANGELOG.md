@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`wmbus`, `power` and `capture` now say why a local SDR's stream died
+  (#1256).** When a USB dongle stopped mid-run they printed only
+  `IQ stream ended`; they now add the USB error the driver recorded.
+- **rtl_tcp: stopping a stream no longer occasionally hangs for 30 s.**
+  A cancel that arrived just before the read timeout was renewed could be
+  lost.
 - **A DMR direct-mode over on a scan-list channel is now one call (#1261).**
   A simplex DMR radio is on the air for 27.5 ms of every 60 ms frame, and
   the scanner treated each gap as the end of the transmission, so one over
