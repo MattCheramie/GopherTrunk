@@ -1203,12 +1203,14 @@ scanner:
   Voice Full Rate ("VW") are recognised and logged but not decoded.
   Wires-X / network traffic relayed by a repeater is ordinary DN audio
   on air and decodes the same way.
-- **NXDN, D-STAR and System Fusion are experimental.** Their voice
-  decode has not yet been confirmed on air.
-- **NXDN: 12.5 kHz (NXDN96) only.** GopherTrunk decodes the 9600 bps
-  NXDN mode used on 12.5 kHz channels. The 6.25 kHz very-narrow mode
-  (NXDN48, 4800 bps), which many radios call "narrow", is not decoded:
-  the channel opens on its carrier but no audio is recovered.
+- **D-STAR and System Fusion are experimental.** Their voice decode has
+  not yet been confirmed on air.
+- **NXDN: pick the channel width.** `mode: nxdn` is the 12.5 kHz mode
+  (NXDN96, 9600 bps); `mode: nxdn48` is the 6.25 kHz very-narrow mode
+  (NXDN48, 4800 bps) that many radios call "narrow". A channel set to the
+  wrong one opens on the carrier but records no audio. Both decode to
+  speech on recordings from Kenwood radios; a live run is still to
+  confirm them.
 - **Not available:** `tone`, `decoders`, `nac` and
   `p25_phase1_demod_mode` are rejected on these channels.
 

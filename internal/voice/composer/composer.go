@@ -600,7 +600,7 @@ func classifyVoiceKind(cs trunking.CallStart) voiceKind {
 		return voiceKindTETRA
 	case "tetra-dmo":
 		return voiceKindTETRADMO
-	case "nxdn":
+	case "nxdn", "nxdn48":
 		return voiceKindNXDN
 	case "dpmr":
 		return voiceKindDPMR
@@ -749,7 +749,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		}
 		go c.runTETRADMOVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.TETRAColourExt, liveColour, ch.done)
 	case voiceKindNXDN:
-		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
+		go c.runNXDNVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, nxdnSymbolRate(cs.Grant.Protocol), cs.Grant.GroupID, ch.done)
 	case voiceKindDPMR:
 		go c.runDPMRVoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.GroupID, ch.done)
 	case voiceKindDSTAR:

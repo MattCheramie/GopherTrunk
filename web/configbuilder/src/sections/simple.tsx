@@ -510,7 +510,8 @@ export function ScannerSection() {
                     { value: "am", label: "am (air band)" },
                     { value: "p25", label: "p25 (Phase 1 digital)" },
                     { value: "dmr", label: "dmr (digital)" },
-                    { value: "nxdn", label: "nxdn (digital, experimental)" },
+                    { value: "nxdn", label: "nxdn (NXDN96, 12.5 kHz)" },
+                    { value: "nxdn48", label: "nxdn48 (NXDN48, 6.25 kHz)" },
                     { value: "dstar", label: "dstar (digital, experimental)" },
                     { value: "ysf", label: "ysf (System Fusion DN, experimental)" },
                   ]}

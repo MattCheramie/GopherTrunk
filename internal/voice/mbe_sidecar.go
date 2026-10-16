@@ -48,7 +48,7 @@ func mbeCookieForProtocol(protocol string) (string, bool) {
 	switch protocol {
 	case "p25":
 		return mbeCookieIMB, true
-	case "dmr-tier1", "dmr-tier2", "dmr-tier3", "nxdn", "p25-phase2":
+	case "dmr-tier1", "dmr-tier2", "dmr-tier3", "nxdn", "nxdn48", "p25-phase2":
 		return mbeCookieAMB, true
 	default:
 		return "", false

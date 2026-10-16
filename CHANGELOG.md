@@ -12,6 +12,9 @@ for tagged releases.
   2 or 4 to seed a TDMA (Phase 2 voice) channel ID the site never
   announces; its grants then resolve to the right carrier and timeslot and
   route to the Phase 2 voice chain.
+- **NXDN48 (6.25 kHz) scan-list channels (#1261).** `mode: nxdn48` on a
+  `scanner.conventional` entry decodes the very-narrow NXDN mode many
+  radios call "narrow"; `mode: nxdn` stays the 12.5 kHz NXDN96 mode.
 
 ### Fixed
 - **A DMR scan-list channel no longer stops the scan on a repeater's idle
@@ -27,6 +30,13 @@ for tagged releases.
   the live path fed it. It now decodes the real FICH: a header or
   communications frame grants on its DG-ID, a terminator ends the call,
   and individual and data calls are skipped. The made-up decoder is gone.
+- **NXDN voice decodes (#1261).** The NXDN voice path searched for a frame
+  sync word and frame layout that NXDN doesn't use, and decoded the AMBE+2
+  frames with a placeholder bit order, so a real NXDN call never produced
+  usable audio. It now follows the real air format (20-bit sync, symbol
+  scrambler, LICH, DMR's AMBE+2 layout) and corrects a few hundred Hz of
+  carrier offset. Checked against a reporter's NXDN96 and NXDN48
+  recordings, which now decode to speech.
 - **`wmbus -in` reads a headerless capture's sample rate from its
   `.metadata.json` (#1256).** A `.cu8`/`.raw`/`.bin` recorded by
   `gophertrunk capture` at anything but 1.6 MS/s used to decode at the

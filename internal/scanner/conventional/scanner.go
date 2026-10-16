@@ -458,7 +458,7 @@ func New(opts Options) (*Scanner, error) {
 			ch.Mode = "fm"
 		}
 		if !ValidMode(ch.Mode) {
-			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25|dmr|nxdn|dstar|ysf", ch.Label, ch.Mode)
+			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25|dmr|nxdn|nxdn48|dstar|ysf", ch.Label, ch.Mode)
 		}
 		if IsDigitalMode(ch.Mode) {
 			if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {
