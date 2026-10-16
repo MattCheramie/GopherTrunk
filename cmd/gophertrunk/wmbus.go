@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,7 +27,8 @@ func runWMBus(args []string) {
 	fs := flag.NewFlagSet("wmbus", flag.ExitOnError)
 	in := fs.String("in", "", "IQ capture to decode instead of a live SDR")
 	format := fs.String("format", "u8", "capture sample format for headerless files: u8 (rtl_sdr .cu8) | cs16 | f32; wav and flac are detected from the file")
-	rate := fs.Uint("rate", 1_600_000, "sample rate in S/s (a capture's rate; for a live SDR the rate to run at)")
+	rate := fs.Uint("rate", 1_600_000, "sample rate in S/s (a capture's rate, read from its .metadata.json when present; for a live SDR the rate to run at)")
+	sampleRate := fs.Uint("sample-rate", 0, "same as -rate (the name `gophertrunk capture` uses)")
 	offset := fs.Float64("offset", 0, "where 868.95 MHz sits relative to the capture/tuner centre, in Hz (e.g. 325000 for a capture centred on 868.625 MHz)")
 	freq := fs.Uint("freq", wmbus.ChannelHz, "live SDR centre frequency in Hz")
 	gain := fs.String("gain", "auto", `live tuner gain: "auto", or tenths of a dB ("400" = 40 dB)`)
@@ -61,7 +63,12 @@ EXAMPLES:
   #   gophertrunk capture -freq 868950000 -sample-rate 1024000 -seconds 60 -format flac -out m.flac
   gophertrunk wmbus -in m.flac
 
-  # Decode an rtl_sdr capture (rtl_sdr -f 868.95M -s 1600000 m.cu8)
+  # Decode a headerless capture; its rate, format and centre come from the
+  # .metadata.json that "gophertrunk capture" writes beside it
+  gophertrunk wmbus -in m.cu8
+
+  # Decode an rtl_sdr capture (rtl_sdr -f 868.95M -s 1600000 m.cu8), which
+  # has no sidecar, so give the rate
   gophertrunk wmbus -in m.cu8 -rate 1600000
 
   # Keep the IQ around each telegram (works over rtl_tcp too), then replay one
@@ -77,6 +84,15 @@ FLAGS:`)
 	if fs.NArg() > 0 {
 		fs.Usage()
 		rep.Fatalf(2, "unexpected arguments %q", fs.Args())
+	}
+	explicit := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	if explicit["sample-rate"] {
+		if explicit["rate"] && *rate != *sampleRate {
+			rep.Fatalf(2, "-rate %d and -sample-rate %d disagree; give one", *rate, *sampleRate)
+		}
+		*rate = *sampleRate
+		explicit["rate"] = true
 	}
 
 	out := bufio.NewWriter(os.Stdout)
@@ -127,6 +143,13 @@ FLAGS:`)
 	}
 
 	if *in != "" {
+		notes, err := applyWMBusSidecar(*in, explicit, rate, format, offset)
+		if err != nil {
+			rep.Fatal(1, err)
+		}
+		for _, n := range notes {
+			fmt.Fprintln(os.Stderr, n)
+		}
 		rateHz := float64(*rate)
 		stamp = func(s int64) string { return fmt.Sprintf("t=%8.3fs", float64(s)/rateHz) }
 		rx, err := decodeWMBusFile(*in, *format, &rateHz, func(r float64) *wmbus.Receiver {
@@ -212,6 +235,48 @@ FLAGS:`)
 			}
 		}
 	}
+}
+
+// applyWMBusSidecar fills the -in settings the user did not give from the
+// capture's .metadata.json (`gophertrunk capture` writes one beside every
+// file). A headerless .cu8 carries no rate of its own, and decoding a 2.8 MS/s
+// capture at the 1.6 MS/s default finds access codes but never a frame — the
+// #1256 field captures read as "52.5 s of IQ, 0 frames". Flags the user set
+// win; a -rate that disagrees with the sidecar is reported, not overridden.
+// Container files (wav/flac) still take their rate from the container.
+func applyWMBusSidecar(in string, explicit map[string]bool, rate *uint, format *string, offset *float64) ([]string, error) {
+	path := siglab.DiscoverMetadata(in)
+	if path == "" {
+		return nil, nil
+	}
+	m, err := siglab.ReadMetadata(path)
+	if err != nil {
+		return nil, err
+	}
+	var notes []string
+	if r := uint(m.SampleRateHz + 0.5); r > 0 {
+		switch {
+		case !explicit["rate"]:
+			*rate = r
+			notes = append(notes, fmt.Sprintf("wmbus: %d S/s from %s", r, path))
+		case *rate != r:
+			notes = append(notes, fmt.Sprintf("wmbus: note — -rate %d differs from the %d S/s in %s; decoding at -rate", *rate, r, path))
+		}
+	}
+	if f := strings.ToLower(m.Format); !explicit["format"] && (f == "u8" || f == "cs16" || f == "f32") {
+		*format = f
+	}
+	if !explicit["offset"] {
+		if s, ok := m.System["wmbus_offset_hz"]; ok {
+			if v, err := strconv.ParseFloat(s, 64); err == nil {
+				*offset = v
+			}
+		} else if m.CenterFreqHz != 0 && m.CenterFreqHz != wmbus.ChannelHz {
+			*offset = float64(wmbus.ChannelHz) - float64(m.CenterFreqHz)
+			notes = append(notes, fmt.Sprintf("wmbus: capture centred on %.4f MHz, so 868.95 MHz sits at %+.0f Hz (-offset)", float64(m.CenterFreqHz)/1e6, *offset))
+		}
+	}
+	return notes, nil
 }
 
 // decodeWMBusFile replays a capture through a receiver. wav/flac containers
