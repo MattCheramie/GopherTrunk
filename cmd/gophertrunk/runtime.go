@@ -32,6 +32,7 @@ var vocoderProtocolMap = map[string]string{
 	"p25-phase2": "ambe2",
 	"dmr":        "ambe2-dmr",
 	"nxdn":       "ambe2-dmr",
+	"nxdn48":     "ambe2-dmr",
 	"dpmr":       "ambe2-dmr",
 	"dstar":      "ambe2",
 	"tetra":      "tetra-acelp",

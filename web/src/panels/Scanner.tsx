@@ -510,7 +510,7 @@ function ManualTune({
   const cfg = useShared(selectClientConfig);
   const [freq, setFreq] = useState("");
   const [label, setLabel] = useState("");
-  const [mode, setMode] = useState<"fm" | "nfm" | "am" | "p25" | "dmr" | "nxdn" | "dstar" | "ysf">("fm");
+  const [mode, setMode] = useState<"fm" | "nfm" | "am" | "p25" | "dmr" | "nxdn" | "nxdn48" | "dstar" | "ysf">("fm");
   const [squelch, setSquelch] = useState("");
   const [hang, setHang] = useState("");
   const [busy, setBusy] = useState(false);
@@ -576,14 +576,15 @@ function ManualTune({
           <select
             className="input w-full"
             value={mode}
-            onChange={(e) => setMode(e.target.value as "fm" | "nfm" | "am" | "p25" | "dmr" | "nxdn" | "dstar" | "ysf")}
+            onChange={(e) => setMode(e.target.value as "fm" | "nfm" | "am" | "p25" | "dmr" | "nxdn" | "nxdn48" | "dstar" | "ysf")}
           >
             <option value="fm">FM</option>
             <option value="nfm">NFM</option>
             <option value="am">AM</option>
             <option value="p25">P25</option>
             <option value="dmr">DMR</option>
-            <option value="nxdn">NXDN</option>
+            <option value="nxdn">NXDN (12.5 kHz)</option>
+            <option value="nxdn48">NXDN48 (6.25 kHz)</option>
             <option value="dstar">D-STAR</option>
             <option value="ysf">YSF</option>
           </select>

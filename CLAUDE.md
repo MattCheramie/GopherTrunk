@@ -1096,6 +1096,23 @@ confirmation before any close-as-completed.
   like DMR, so fixtures use `demod.ModulateC4FM`; `ModulateP25C4FM` gives ~45 % dibit agreement through
   the YSF receiver and looks like a receiver bug. Only V/D mode 2 is decoded; V/D mode 1 and Voice FR are
   logged. Unverified on air.
+- **The NXDN frame layer in `internal/radio/nxdn` (frame.go / sync.go / lich.go / the CAC decoder) is
+  FABRICATED — only `airframe.go` is the real air format, and only the voice path uses it (#1261).**
+  The invented model has a 16-bit FSW 0xC55A, a 32-dibit SACCH and no scrambler; real NXDN (MMDVMHost
+  NXDNDefines/NXDNLICH/NXDNControl SCRAMBLER, DSD-FME nxdn_frame.c/nxdn_deperm.c) is FSW 10 dibits
+  (0xCDF59) | LICH 8 (bit in each dibit's MSB, parity = XOR of the top 4 bits) | SACCH 30 | Info 144,
+  every post-FSW dibit inverted by PN9 (x^9+x^5+1, seed 0xE4) — a symbol inversion is an MSB flip in
+  GT's dibit map. The 72-bit NXDN AMBE+2 frame is DMR's verbatim (DSD-FME nW..nZ == dmr rW..rZ), so
+  `DecodeAirVoice` calls `dmrvoice.DecodeAMBEFrame`; GT's old NXDN AMBE layout was an admitted
+  placeholder. Conventional voice rides RDCH (RFCT 2), not just RTCH — the old gate checked RTCH only.
+  NXDN48 is the same 4-FSK frame at 2400 sym/s (`receiver.Options.SymbolRateHz`), NOT a 2-level BFSK
+  mode as the receiver once claimed. The voice receiver runs `EnableAFC` (the scrambled frame has no
+  constant-symbol runs): both reporter captures sat ~400 Hz off, which decodes NOTHING at NXDN48's
+  ±350 Hz inner deviation without it. Pinned by `realair_test.go` on two 48 kHz slices of the
+  reporter's Kenwood captures (NXDN96: 36 voice frames, continuity 0.86; NXDN48: 56, 0.82; the old
+  code decodes 0) plus a literal MMDVMHost scrambler-table test. STILL OPEN: the trunked CC (CAC) path
+  is on the invented layout and cannot frame real air — rebuild it on airframe.go against a CC
+  capture; and the daemon path on air (#764/#771).
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the
