@@ -92,7 +92,7 @@ sidecars, Broadcastify / Rdio / OpenMHz / Icecast / webhooks, rigctld.
 | Scanning | no site roaming / neighbour following | DSDPlus roaming | ○ |
 | Trunking | P25 status / message / call-alert / deny / queue / ack / extended-function / radio-monitor TSBKs unparsed | SDRTrunk, TR (MQTT) | ✔ |
 | Trunking | no SMS / SDS / LRRP / P25 GPS / data-channel decode; TETRA SDS | SDRTrunk, DSD-FME, DSDPlus, SDR# TETRA plugin | ○ |
-| Trunking | DMR Connect Plus / Hytera XPT recognised, not decoded; NXDN48; ProVoice / YSF audio | DSDPlus | ○ |
+| Trunking | DMR Connect Plus / Hytera XPT recognised, not decoded; NXDN48 trunked control channel (scan-list NXDN48 voice decodes); ProVoice / YSF audio | DSDPlus | ○ |
 | Audio | no transcription | Scanner Radio, TR plugins | ✔ |
 | Audio | no stereo / per-slot output, no start/drop tones, no noise reduction | SDRangel, SDRTrunk, SDR++ | ○ |
 | Recording | History had no free-text search, date range, flag filter or CSV export | rdio-scanner, OpenMHz | ✔ |
@@ -151,7 +151,7 @@ Ordered by value to a scanner operator.
 | **Stereo / per-slot audio, start / drop tones, noise reduction** | Audio-path work; per-slot panning conflicts with the mono 8 kHz live stream contract and needs a web-player change too. |
 | **Instant replay / live delay queue; Opus / M4A recordings** | M4A needs an AAC encoder (none pure-Go); Opus is a dependency decision. |
 | **Talkgroup hold / avoid surviving a restart** | Deliberately session-only (a scanner power cycle clears them); conventional lockouts now persist by frequency in the `conv_lockouts` table. |
-| **DMR Connect Plus / Hytera XPT, NXDN48, ProVoice & YSF audio** | All capture- or licence-gated (`docs/status.md`). |
+| **DMR Connect Plus / Hytera XPT, NXDN48 control channel, ProVoice & YSF audio** | All capture- or licence-gated (`docs/status.md`). |
 
 ## 5. Method note
 

@@ -9,42 +9,50 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 )
 
-// TestNXDNVCHFrameRendersToPCM closes the WS2a Stage 2 loop end to end at
-// the frame-format boundary: a VCH voice frame's 49-bit payload, packed
+// TestNXDNVCHFrameRendersToPCM closes the loop at the frame-format
+// boundary: a voice frame decoded from an on-air NXDN frame, packed
 // MSB-first to 7 bytes exactly as runNXDNVoiceChain's sink does, must be
 // accepted by the "ambe2-dmr" (3600x2450) vocoder the recorder maps
-// "nxdn" to, and produce one 20 ms PCM frame. This is the contract that
-// lets the traffic decoder's output render to audio with no further
-// wiring. (The upstream carve/FEC/codebook remain unverified on air.)
+// "nxdn"/"nxdn48" to, and produce one 20 ms PCM frame.
 func TestNXDNVCHFrameRendersToPCM(t *testing.T) {
-	// A synthetic 49-bit payload round-tripped through the AMBE FEC, so it
-	// is a well-formed VCH frame (mirrors what ExtractVCHFrames yields).
-	info := make([]byte, 49)
+	var payloads [4][]byte
 	x := uint32(1)
-	for i := range info {
-		x = 1664525*x + 1013904223
-		info[i] = byte((x >> 24) & 1)
+	for v := range payloads {
+		payloads[v] = make([]byte, 49)
+		for i := range payloads[v] {
+			x = 1664525*x + 1013904223
+			payloads[v][i] = byte((x >> 24) & 1)
+		}
 	}
-	onair, err := nxdn.EncodeVCHFrame(info)
+	frame, err := nxdn.EncodeAirVoiceFrame(payloads)
 	if err != nil {
-		t.Fatalf("EncodeVCHFrame: %v", err)
+		t.Fatal(err)
 	}
-	payload, _, err := nxdn.DecodeVCHFrame(onair)
-	if err != nil {
-		t.Fatalf("DecodeVCHFrame: %v", err)
+	post := append([]uint8(nil), frame[nxdn.AirFSWDibits:]...)
+	nxdn.DescrambleAir(post)
+	_, frames := nxdn.DecodeAirVoice(post)
+	if len(frames) != 4 {
+		t.Fatalf("decoded %d voice frames, want 4", len(frames))
 	}
 
-	packed := framing.PackBitsMSB(payload)
+	packed := framing.PackBitsMSB(frames[0].Payload)
 	if len(packed) != ambe2.FrameBytes {
 		t.Fatalf("packed frame = %d bytes, want %d (vocoder FrameBytes)", len(packed), ambe2.FrameBytes)
 	}
-
-	dec := ambe2.NewDMR() // the "ambe2-dmr" 3600x2450 vocoder nxdn maps to
-	pcm, err := dec.Decode(packed)
+	pcm, err := ambe2.NewDMR().Decode(packed)
 	if err != nil {
 		t.Fatalf("ambe2-dmr Decode: %v", err)
 	}
 	if len(pcm) != mbe.SamplesPerFrame {
 		t.Fatalf("PCM = %d samples, want %d (20 ms @ 8 kHz)", len(pcm), mbe.SamplesPerFrame)
+	}
+}
+
+func TestNXDNSymbolRateFromProtocol(t *testing.T) {
+	if got := nxdnSymbolRate("nxdn48"); got != 2400 {
+		t.Errorf("nxdn48 → %v, want 2400", got)
+	}
+	if got := nxdnSymbolRate("nxdn"); got != 4800 {
+		t.Errorf("nxdn → %v, want 4800", got)
 	}
 }

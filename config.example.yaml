@@ -1491,11 +1491,12 @@ scanner:
   #   # DMR, NXDN, D-STAR and System Fusion conventional channels (#1261):
   #   # the same power squelch, decoded by that protocol's voice chain. A
   #   # DMR repeater's two timeslots: the slot that carries voice first is
-  #   # recorded. ysf decodes V/D mode 2 (DN) only. NXDN, D-STAR and YSF
-  #   # voice decode is experimental (unverified on air).
+  #   # recorded. ysf decodes V/D mode 2 (DN) only. nxdn is the 12.5 kHz
+  #   # NXDN96 mode, nxdn48 the 6.25 kHz NXDN48 mode. D-STAR and YSF voice
+  #   # decode is experimental (unverified on air).
   #   - label: "DMR Rptr"
   #     frequency_hz: 442387500
-  #     mode: dmr                   # dmr | nxdn | dstar | ysf
+  #     mode: dmr                   # dmr | nxdn | nxdn48 | dstar | ysf
   #     squelch_dbfs: -50
 
 # audio routes decoded PCM to the host's speakers. Disabled by default;

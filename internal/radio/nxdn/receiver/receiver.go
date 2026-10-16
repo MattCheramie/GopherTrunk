@@ -1,7 +1,7 @@
-// Package receiver wires the IQ → C4FM dibit chain that feeds the
-// NXDN control-channel state machine for the 9600-baud 4-FSK
-// variant (the most common deployment; the 4800-baud BFSK variant
-// uses a 2-level slicer and lives in a follow-up).
+// Package receiver wires the IQ → C4FM dibit chain for NXDN. Both channel
+// widths are 4-FSK with the same frame: NXDN96 (12.5 kHz) at 4800 sym/s,
+// the default, and NXDN48 (6.25 kHz) at 2400 sym/s via
+// Options.SymbolRateHz (issue #1261).
 //
 //	IQ samples
 //	  → FM discriminator (internal/dsp/demod.FM)
@@ -50,6 +50,10 @@ const (
 	// 9600 bps. The BFSK variant uses the same symbol rate but only
 	// 1 bit per symbol — a separate receiver path.
 	SymbolRate = 4800.0
+	// SymbolRateNXDN48 is the 6.25 kHz (NXDN48, 4800 bps) channel's
+	// symbol rate: the same 4-FSK and the same 192-dibit frame, at half
+	// the symbol rate (issue #1261).
+	SymbolRateNXDN48 = 2400.0
 	// RolloffAlpha matches the standard NXDN / P25 Phase 1 / YSF /
 	// DMR receiver pulse shape.
 	RolloffAlpha = 0.20
@@ -61,8 +65,11 @@ const (
 // Options configures a Receiver.
 type Options struct {
 	// SampleRateHz is the IQ sample rate after any upstream
-	// channelization. Required; must be ≥ 2 × SymbolRate.
+	// channelization. Required; must be ≥ 2 × the symbol rate.
 	SampleRateHz float64
+	// SymbolRateHz selects the channel rate: SymbolRate (4800, NXDN96,
+	// the default when <= 0) or SymbolRateNXDN48 (2400).
+	SymbolRateHz float64
 	// DibitSink receives the raw dibit stream the receiver decodes
 	// from IQ. Required.
 	DibitSink nxdn.DibitSink
@@ -173,9 +180,13 @@ func New(opts Options) *Receiver {
 	} else if opts.DibitSink == nil {
 		panic("receiver: DibitSink is required")
 	}
-	sps := opts.SampleRateHz / SymbolRate
+	symRate := opts.SymbolRateHz
+	if symRate <= 0 {
+		symRate = SymbolRate
+	}
+	sps := opts.SampleRateHz / symRate
 	if sps < 2 {
-		panic("receiver: SampleRateHz must be >= 2*SymbolRate (9600 Hz)")
+		panic("receiver: SampleRateHz must be >= 2x the symbol rate")
 	}
 	span := opts.PulseSpanSymbols
 	if span <= 0 {

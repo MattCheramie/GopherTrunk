@@ -37,21 +37,28 @@ func newNXDNVoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 	return newVoiceFrontEnd(iqHz, bw, nxdnVoiceIntermediateHz, nxdnChannelSelectHz)
 }
 
+// nxdnSymbolRate maps a grant protocol to the NXDN symbol rate: "nxdn48"
+// is the 6.25 kHz channel, anything else NXDN96.
+func nxdnSymbolRate(proto string) float64 {
+	if proto == "nxdn48" {
+		return nxdnrx.SymbolRateNXDN48
+	}
+	return nxdnrx.SymbolRate
+}
+
 // runNXDNVoiceChain consumes IQ for one NXDN voice call: it decimates
 // the wideband IQ to a 4-FSK-friendly rate, recovers the dibit stream
-// with the NXDN receiver (the same receiver the control channel uses,
-// with the symbol-AGC that lets it decode real captures), and routes the
-// dibits through an nxdn.TrafficChannel that carves the VCH voice frames
-// out of each traffic frame's Information field, FEC-decodes their
-// AMBE+2 payloads, and hands 7-byte frames to the recorder — which maps
-// "nxdn" → the "ambe2-dmr" vocoder and renders them to PCM.
+// with the NXDN receiver, and routes the dibits through an
+// nxdn.TrafficChannel that frames them in the real air format
+// (internal/radio/nxdn/airframe.go), decodes the AMBE+2 voice frames and
+// hands 7-byte frames to the recorder — which maps "nxdn"/"nxdn48" to the
+// "ambe2-dmr" vocoder and renders them to PCM.
 //
-// ⚠️ UNVERIFIED ON AIR. The VCH carve + AMBE FEC + codebook are
-// transcribed from spec/reference and validated only by synthetic
-// round-trip (internal/radio/nxdn/voice_ambe.go, voice.go, traffic.go);
-// a real NXDN VCH capture is needed to confirm them. Treat live NXDN
-// audio as experimental until then.
-func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, done chan<- struct{}) {
+// symbolRateHz is 4800 for NXDN96 (12.5 kHz) and 2400 for NXDN48
+// (6.25 kHz); the frame is the same. Checked against the issue #1261
+// reporter's captures of both (testdata in internal/radio/nxdn), not yet
+// confirmed on air through the daemon.
+func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz, symbolRateHz float64, groupID uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-nxdn:"+serial, nil)
 
@@ -61,8 +68,8 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 	bt := c.newBoundaryTracker(serial, 0, nil)
 	go bt.run(ctx)
 
-	c.log.Info("composer: nxdn voice chain started (VCH decode is unverified on air — experimental)",
-		"serial", serial, "system", system, "group", groupID)
+	c.log.Info("composer: nxdn voice chain started",
+		"serial", serial, "system", system, "group", groupID, "symbol_rate", symbolRateHz)
 
 	fe := newNXDNVoiceFrontEnd(iqHz, c.bw)
 	symbolHz := fe.OutRateHz()
@@ -97,7 +104,15 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 
 	rx := nxdnrx.New(nxdnrx.Options{
 		SampleRateHz: symbolHz,
+		SymbolRateHz: symbolRateHz,
 		DeviationHz:  nxdnVoiceDeviationHz,
+		// Carrier-offset correction ON for voice. The CC receiver keeps
+		// it off (see Options.EnableAFC), but the voice frame is
+		// scrambled, so there are no long constant-symbol runs for the
+		// tracker to walk onto. Both #1261 captures sat ~400 Hz off: at
+		// NXDN48's ±350 Hz inner deviation that decodes nothing without
+		// AFC, and at NXDN96 it roughly halves the AMBE Golay errors.
+		EnableAFC: true,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			tc.Process(dibits, baseIdx)
 		},
@@ -109,13 +124,15 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 	for {
 		select {
 		case <-ctx.Done():
-			c.log.Info("composer: nxdn voice chain ended", "serial", serial, "voice_frames", voiceFrames.Load())
+			c.log.Info("composer: nxdn voice chain ended", "serial", serial, "voice_frames", voiceFrames.Load(),
+				"frames", tc.Frames, "lich_ok", tc.LICHOK)
 			return
 		case <-touchTicker.C:
 			// Touch + hangtime end-of-call handled by the boundary tracker.
 		case iq, ok := <-iqCh:
 			if !ok {
-				c.log.Info("composer: nxdn voice chain ended (iq closed)", "serial", serial, "voice_frames", voiceFrames.Load())
+				c.log.Info("composer: nxdn voice chain ended (iq closed)", "serial", serial, "voice_frames", voiceFrames.Load(),
+					"frames", tc.Frames, "lich_ok", tc.LICHOK)
 				return
 			}
 			bt.observe(iq)
