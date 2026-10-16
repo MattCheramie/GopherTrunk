@@ -60,6 +60,24 @@ type Metadata struct {
 // LoadMetadata reads a Metadata document from path (JSON or YAML, chosen by
 // extension; .json → JSON, everything else → YAML).
 func LoadMetadata(path string) (*Metadata, error) {
+	m, err := ReadMetadata(path)
+	if err != nil {
+		return nil, err
+	}
+	if m.Protocol == "" {
+		return nil, fmt.Errorf("%s: metadata missing required \"protocol\"", path)
+	}
+	if m.SampleRateHz <= 0 {
+		return nil, fmt.Errorf("%s: metadata missing required \"sample_rate_hz\"", path)
+	}
+	return m, nil
+}
+
+// ReadMetadata parses a sidecar without LoadMetadata's harness checks, for
+// tools that only need the capture description (rate, centre, format). A
+// plain `gophertrunk capture` without -protocol writes "protocol": "", which
+// LoadMetadata rejects.
+func ReadMetadata(path string) (*Metadata, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -73,12 +91,6 @@ func LoadMetadata(path string) (*Metadata, error) {
 		if err := yaml.Unmarshal(raw, &m); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
-	}
-	if m.Protocol == "" {
-		return nil, fmt.Errorf("%s: metadata missing required \"protocol\"", path)
-	}
-	if m.SampleRateHz <= 0 {
-		return nil, fmt.Errorf("%s: metadata missing required \"sample_rate_hz\"", path)
 	}
 	return &m, nil
 }

@@ -78,17 +78,34 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 kHz at 868 MHz. The decoder tolerates about ±50 kHz, so `-ppm` is rarely
 needed. If nothing decodes near a meter, try `-ppm` and a fixed `-gain`.
 
+**Gain.** `-gain` (on `wmbus` and `capture`) takes tenths of a dB: `-gain 200`
+is 20 dB, `-gain 0` the tuner's minimum, and `auto` lets the tuner's AGC
+choose, which a strong nearby transmitter can drive into clipping. Start
+around `-gain 200` and step down while `capture` reports clipping; step up
+only if telegrams are weak (the `dBFS` level on each line). With an external
+preamplifier in front of the dongle, start low (`-gain 0` to `-gain 100`):
+the preamplifier already supplies the gain, and too much clips the ADC.
+
 ## Decoding a capture
 
 ```
-gophertrunk wmbus -in meters.cu8                     # rtl_sdr capture, 1.6 MS/s (the default)
-gophertrunk wmbus -in meters.cu8 -rate 2400000       # another rate
+gophertrunk wmbus -in meters.cu8                     # rate/centre from meters.metadata.json
 gophertrunk wmbus -in meters.flac                    # wav/flac containers carry their own rate
+gophertrunk wmbus -in rtl.cu8 -rate 2400000          # rtl_sdr capture: no sidecar, so give the rate
 gophertrunk wmbus -in wide.cu8 -rate 2400000 -offset 325000   # capture centred 325 kHz below 868.95 MHz
 ```
 
+A headerless file (`.cu8`, `.raw`, `.bin`) carries no sample rate. When
+`gophertrunk capture` wrote it, the `.metadata.json` beside it does, and
+`wmbus -in` reads the rate, format and centre frequency from there (it says
+so on the first lines). Without a sidecar, `-rate` (or `-sample-rate`)
+defaults to 1.6 MS/s. Decoding at the wrong rate finds access codes but no
+frames, and stretches the reported duration: a 30 s capture at 2.8 MS/s read
+at 1.6 MS/s reports 52.5 s. Flags you give override the sidecar.
+
 Headerless files default to rtl_sdr's unsigned 8-bit format (`-format u8`);
-`cs16` and `f32` work too. To record a capture with GopherTrunk:
+`cs16` and `f32` work too. A u8 file holds two bytes (I and Q) per sample, so
+30 s at 2.8 MS/s is 168 MB. To record a capture with GopherTrunk:
 
 ```
 gophertrunk capture -freq 868950000 -sample-rate 1600000 -seconds 60 -format u8 -out meters.cu8
@@ -114,8 +131,8 @@ For every telegram it prints, it writes two files to the directory:
 
 - `<time>_<mode>_<manufacturer>_<id>.wav`: the IQ from just before the
   telegram to just after it, typically 100–400 KB. The WAV carries its own
-  sample rate, so `gophertrunk wmbus -in <file>.wav` replays it (add the same
-  `-offset` if the original run used one).
+  sample rate, so `gophertrunk wmbus -in <file>.wav` replays it (the offset
+  comes from the snippet's `.metadata.json`).
 - `<time>_<mode>_<manufacturer>_<id>.metadata.json`: the sample rate, the
   centre frequency and offset, and the decoded telegram (manufacturer, ID,
   device type, CRC result, level, and the raw frame in hex).

@@ -27,6 +27,13 @@ for tagged releases.
   the live path fed it. It now decodes the real FICH: a header or
   communications frame grants on its DG-ID, a terminator ends the call,
   and individual and data calls are skipped. The made-up decoder is gone.
+- **`wmbus -in` reads a headerless capture's sample rate from its
+  `.metadata.json` (#1256).** A `.cu8`/`.raw`/`.bin` recorded by
+  `gophertrunk capture` at anything but 1.6 MS/s used to decode at the
+  1.6 MS/s default and find no frames (a 30 s capture at 2.8 MS/s reported
+  "52.5 s of IQ, 0 frames"). The rate, format and centre frequency now come
+  from the sidecar unless given on the command line, and `-sample-rate` is
+  accepted as another name for `-rate`.
 - **P25 TDMA (Phase 2 voice) channel numbers resolve to the right carrier
   everywhere (#1273).** A Phase 2 control channel now learns its TDMA
   channel IDs (identifier update opcodes 0x73 / 0xF3) instead of
