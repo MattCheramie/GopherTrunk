@@ -322,6 +322,12 @@ sdr:
                            # HackRF One 0–560 (~0–56 dB). HackRF has no true AGC,
                            # so "auto" maps to a fixed LNA 16 / VGA 20 dB split.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      # sample_rate: 768000 # this SDR's own IQ rate instead of sdr.sample_rate
+                           # (#1260), for a radio that cannot reach the shared
+                           # rate, e.g. an AirspyHF (768000) beside
+                           # 2.4 MS/s RTL-SDRs. Only on a role: voice SDR that
+                           # scanner.conventional channels name with device:;
+                           # the radio must run the exact rate or it is not used.
       # rf_amp: true       # engage the front-end RF amplifier on the "auto"
                            # gain preset (the HackRF's ~14 dB amp). Lowers the
                            # noise figure for weak signals but can overload a
@@ -1425,7 +1431,9 @@ scanner:
   #     # and every SDR scans in parallel — e.g. air-band AM on one dongle,
   #     # VHF FM on another, each with its own antenna and gain. A named
   #     # SDR is taken out of the trunking voice pool. Empty = the shared
-  #     # scanner SDR (the last role: voice SDR no channel names).
+  #     # scanner SDR (the last role: voice SDR no channel names). A
+  #     # named SDR may run at its own rate (sdr.devices[].sample_rate),
+  #     # e.g. an AirspyHF at 768000 beside 2.4 MS/s RTL-SDRs.
   #     # device: "00000002"
   #     hangtime_ms: 1500
   #     priority: 4

@@ -131,10 +131,11 @@ func (d *Daemon) buildDCAvoidVoiceTuners(cfg config.Config, log *slog.Logger) {
 		if !ok || !c.on {
 			continue
 		}
-		offset := controlLOOffsetHz(cfg.SDR.SampleRate, wbvoice.NarrowbandRateHz, true, c.offHz)
+		rate := e.SampleRateHz(cfg.SDR.SampleRate) // its own sample_rate (#1260) wins
+		offset := controlLOOffsetHz(rate, wbvoice.NarrowbandRateHz, true, c.offHz)
 		if offset <= 0 {
 			log.Warn("dc_avoid: no room to offset the voice LO at this sample rate; tuning on-channel",
-				"serial", e.Info.Serial, "sample_rate", cfg.SDR.SampleRate)
+				"serial", e.Info.Serial, "sample_rate", rate)
 			continue
 		}
 		if d.dcAvoidVoiceTuners == nil {
@@ -144,7 +145,7 @@ func (d *Daemon) buildDCAvoidVoiceTuners(cfg config.Config, log *slog.Logger) {
 			pool:     d.pool,
 			serial:   e.Info.Serial,
 			offsetHz: offset,
-			rateHz:   cfg.SDR.SampleRate,
+			rateHz:   rate,
 		}
 		log.Info("sdr: voice DC-spike avoidance enabled (LO offset tuning, mixed back to baseband)",
 			"serial", e.Info.Serial, "offset_hz", int(offset), "role", "voice")

@@ -144,6 +144,16 @@ sdr:
 | Airspy HF+ Dual Port | `0x800c` (`airspyhf`) | Same as Discovery | 768 kSPS | Same as Discovery | +4.5 V on the HF SMA only | Identified by the `DUAL` substring. The VHF SMA does not carry bias voltage. |
 | Legacy Airspy HF+ | `0x800c` (`airspyhf`) | Same as Discovery | 768 kSPS | Same as Discovery | Hardware-revision dependent | Pre-Discovery hardware; uncommon. |
 
+**Mixing an Airspy HF+ with RTL-SDRs (scanner only).** `sdr.sample_rate` is
+shared by every SDR, and an HF+ cannot run an RTL-SDR's 2.4 MS/s. Give the HF+
+its own rate with `sample_rate` on its `sdr.devices` entry (for example
+`sample_rate: 768000`) and point the scan-list channels it should scan at it
+with `device:`. This works only for a `role: voice` SDR that
+`scanner.conventional` channels name, because the scanner then owns that radio
+outright. The rate must be one the radio's firmware offers; otherwise the
+radio is not used, and the log names the rate it would have run at. (Issue
+#1260.)
+
 The R2 / Mini driver pins the device to `INT16_IQ` sample mode at
 open-time and reads the firmware's advertised sample-rate table —
 `SetSampleRate` then picks the closest available rate, so a

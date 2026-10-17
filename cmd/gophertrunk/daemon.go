@@ -1150,6 +1150,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				RFAmp:            dev.RFAmp,
 				ForceBlogV4:      dev.BlogV4,
 				ForceBlogV4Lite:  dev.BlogV4Lite,
+				SampleRateHz:     dev.SampleRate,
 			}
 			// Always resolve a gain hint so the pool applies it explicitly:
 			// an empty/omitted `gain:` parses to -1 (auto/AGC), matching the
@@ -5122,16 +5123,20 @@ func (d *Daemon) buildConvScanner(cfg config.Config, g convScanGroup, convRec co
 	// analog FM channel, audible as a whistle/tone at 4x the carrier
 	// offset. The FM voice chain reads the same offset through
 	// scannerLOOffsets (poolDevices → convScanVoiceSource).
-	loOffset, loReason := convScannerLOOffsetHz(cfg.SDR.SampleRate, cfg.Scanner.LOOffsetHz)
+	// The scanner runs at its SDR's own rate: sdr.sample_rate, or the
+	// device's sample_rate override when it is a dedicated scanner SDR that
+	// cannot reach the shared rate (issue #1260, e.g. an AirspyHF).
+	scanRate := convEntry.SampleRateHz(cfg.SDR.SampleRate)
+	loOffset, loReason := convScannerLOOffsetHz(scanRate, cfg.Scanner.LOOffsetHz)
 	d.scannerLOOffsets[convEntry.Info.Serial] = loOffset
 	log.Info("conv: scanner LO offset tuning",
 		"serial", convEntry.Info.Serial, "lo_offset_hz", int(loOffset), "mode", loReason,
-		"sample_rate_hz", cfg.SDR.SampleRate)
+		"sample_rate_hz", scanRate)
 	if g.dedicated {
 		log.Info("conv: scanner SDR reserved for its scan-list channels (not used for trunking voice)",
 			"serial", convEntry.Info.Serial, "channels", len(channels))
 	}
-	convFE := newConvScannerFrontEnd(convInner, loOffset, cfg.SDR.SampleRate, convEntry.Info.Serial, log)
+	convFE := newConvScannerFrontEnd(convInner, loOffset, scanRate, convEntry.Info.Serial, log)
 	cs, err := conventional.New(conventional.Options{
 		Log:                log,
 		Tuner:              convFE,
@@ -5141,7 +5146,7 @@ func (d *Daemon) buildConvScanner(cfg config.Config, g convScanGroup, convRec co
 		DeviceSerial:       convEntry.Info.Serial,
 		SystemName:         "scanner",
 		Channels:           channels,
-		SampleRateHz:       float64(cfg.SDR.SampleRate),
+		SampleRateHz:       float64(scanRate),
 		LockedOutHz:        lockedOutHz,
 		OnLockoutChange:    onLockout,
 		PriorityInterleave: cfg.Scanner.PriorityInterleave,
@@ -5610,7 +5615,7 @@ func (d *Daemon) wrapIQBrokers(cfg config.Config, log *slog.Logger) {
 		// path never ran. Seed it directly so spectrum frame stamps
 		// (and any other SampleRateHz reader) anchor at the right rate
 		// from the first frame instead of 0.
-		br.Seed(0, rate)
+		br.Seed(0, e.SampleRateHz(rate)) // a per-device sample_rate (#1260) wins
 		d.iqBrokers[e.Info.Serial] = br
 	}
 }
@@ -5899,7 +5904,7 @@ func (p *poolDevices) FindBySerial(serial string) composer.IQSource {
 	// so the composer must Subscribe to the fan-out — a second StreamIQ on the
 	// underlying device fails with "stream already active" (issue #1075).
 	if br := p.scannerBrokers[serial]; br != nil {
-		return &convScanVoiceSource{broker: br, serial: serial, rate: p.rateHz, offsetHz: p.scannerLOOffsets[serial]}
+		return &convScanVoiceSource{broker: br, serial: serial, rate: p.deviceRate(serial), offsetHz: p.scannerLOOffsets[serial]}
 	}
 	if p.pool == nil {
 		return nil
@@ -5908,7 +5913,18 @@ func (p *poolDevices) FindBySerial(serial string) composer.IQSource {
 	if e == nil {
 		return nil
 	}
-	return deviceWithRate{Device: e.Device, rate: p.rateHz}
+	return deviceWithRate{Device: e.Device, rate: e.SampleRateHz(p.rateHz)}
+}
+
+// deviceRate is the IQ rate of the pool SDR with this serial: its own
+// sample_rate override (issue #1260) or the shared rateHz. The composer sizes
+// a call's decimator from it, so a scanner SDR running at its own rate gets a
+// voice chain built for that rate.
+func (p *poolDevices) deviceRate(serial string) uint32 {
+	if p.pool == nil {
+		return p.rateHz
+	}
+	return p.pool.FindBySerial(serial).SampleRateHz(p.rateHz)
 }
 
 // convScanVoiceSource adapts a conventional-scanner SDR's iqtap broker into a
@@ -5942,9 +5958,9 @@ func (s *convScanVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64,
 }
 
 // deviceWithRate makes an sdr.Device satisfy composer.IQSource by
-// stamping the daemon-wide configured sample rate onto it. Physical
-// SDRs share one rate (cfg.SDR.SampleRate); the composer uses it
-// to size each call's decimator.
+// stamping its configured sample rate onto it: cfg.SDR.SampleRate, or the
+// device's own sample_rate override (issue #1260). The composer uses it to
+// size each call's decimator.
 type deviceWithRate struct {
 	sdr.Device
 	rate uint32

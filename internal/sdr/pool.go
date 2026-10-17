@@ -15,6 +15,43 @@ import (
 // Hint carries the per-device tuning the pool applied at Open time so a
 // later Snapshot can render gain/PPM/bias-tee state without having to
 // query the underlying chip.
+// deviceRateTolerance is how far a device's actual rate may sit from its
+// per-device sample_rate before the pool refuses it: 0.5 %, far above the
+// ppm-level rounding of a fractional resampler and far below the gap between
+// any two rates a table-driven radio (AirspyHF) offers.
+const deviceRateTolerance = 0.005
+
+// checkDeviceRate verifies a device honoured its per-device sample_rate
+// (issue #1260). The pool-wide rate is trusted as before, but a per-device
+// rate exists precisely for radios with a short rate table, and an AirspyHF
+// silently snaps a request to its nearest advertised rate: a scanner built for
+// 900 kS/s on a radio running 912 kS/s mis-sizes every filter. Refusing the
+// device with both rates named beats a radio that decodes nothing. Devices
+// that cannot report their actual rate are trusted.
+func checkDeviceRate(dev Device, want uint32) error {
+	ar, ok := dev.(interface{ ActualSampleRate() (uint32, error) })
+	if !ok {
+		return nil
+	}
+	got, err := ar.ActualSampleRate()
+	if err != nil || got == 0 {
+		return nil
+	}
+	if diff := float64(got) - float64(want); diff > deviceRateTolerance*float64(want) || -diff > deviceRateTolerance*float64(want) {
+		return fmt.Errorf("sample_rate %d S/s requested but the device runs at %d S/s; set sample_rate to one the device supports", want, got)
+	}
+	return nil
+}
+
+// SampleRateHz is the rate this entry's device was programmed at: its own
+// Hint.SampleRateHz when set (issue #1260), else poolRate.
+func (e *PoolEntry) SampleRateHz(poolRate uint32) uint32 {
+	if e != nil && e.Hint.SampleRateHz != 0 {
+		return e.Hint.SampleRateHz
+	}
+	return poolRate
+}
+
 type PoolEntry struct {
 	Driver Driver
 	Device Device
@@ -118,6 +155,11 @@ type Hint struct {
 	// (issue #264). ForceBlogV4Lite selects the two-band Lite variant.
 	ForceBlogV4     bool
 	ForceBlogV4Lite bool
+	// SampleRateHz, when non-zero, programs this device at its own rate
+	// instead of the pool-wide one (issue #1260: an AirspyHF tops out near
+	// 912 kS/s, so it cannot share the RTL-SDRs' 2.4 MS/s). Honoured by
+	// OpenWith and Reacquire alike.
+	SampleRateHz uint32
 	// gainSet distinguishes "Gain not configured" (apply auto) from
 	// the explicit "auto" choice. The daemon sets this when it parses
 	// the YAML; tests that don't care can leave Hint zero-valued and
@@ -306,11 +348,23 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		if p.wrapDevice != nil {
 			dev = p.wrapDevice(dev)
 		}
-		if err := dev.SetSampleRate(rate); err != nil {
+		devRate := rate
+		if hinted && hint.SampleRateHz != 0 {
+			devRate = hint.SampleRateHz
+		}
+		if err := dev.SetSampleRate(devRate); err != nil {
 			p.log.Error("set sample rate failed",
-				"driver", d.drv.Name(), "serial", d.info.Serial, "rate_hz", rate, "err", err)
+				"driver", d.drv.Name(), "serial", d.info.Serial, "rate_hz", devRate, "err", err)
 			_ = dev.Close()
 			continue
+		}
+		if hinted && hint.SampleRateHz != 0 {
+			if err := checkDeviceRate(dev, hint.SampleRateHz); err != nil {
+				p.log.Error("device cannot run at its configured sample_rate; not using it",
+					"driver", d.drv.Name(), "serial", d.info.Serial, "err", err)
+				_ = dev.Close()
+				continue
+			}
 		}
 		// Apply per-device tuning supplied via Hint. Failures are
 		// non-fatal — the device is still usable, just possibly
@@ -335,7 +389,7 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 			"driver", d.drv.Name(),
 			"serial", d.info.Serial,
 			"role", role.String(),
-			"rate_hz", rate,
+			"rate_hz", devRate,
 			"ppm", hint.PPM,
 			"bias_tee", hint.BiasTee)
 		p.logTunerDiag(dev, d.info)
@@ -743,9 +797,18 @@ func (p *Pool) Reacquire(serial string, sampleRateHz uint32) (*PoolEntry, error)
 		// pre-decimation) to the re-opened device, as OpenWith did originally.
 		dev = p.wrapDevice(dev)
 	}
+	if hint.SampleRateHz != 0 {
+		rate = hint.SampleRateHz // the device's own rate wins, as in OpenWith
+	}
 	if err := dev.SetSampleRate(rate); err != nil {
 		_ = dev.Close()
 		return nil, fmt.Errorf("sdr: Reacquire: set sample rate on serial %q: %w", serial, err)
+	}
+	if hint.SampleRateHz != 0 {
+		if err := checkDeviceRate(dev, hint.SampleRateHz); err != nil {
+			_ = dev.Close()
+			return nil, fmt.Errorf("sdr: Reacquire: serial %q: %w", serial, err)
+		}
 	}
 	// Re-apply per-device tuning (PPM, gain, bias-tee). applyHintSettings
 	// only logs failures — it is non-fatal in the original Open path and

@@ -146,6 +146,25 @@ func TestSetSampleRateSelectsClosest(t *testing.T) {
 	}
 }
 
+// ActualSampleRate reports the table rate SetSampleRate snapped to (issue
+// #1260): a request between advertised rates runs at the nearest one, and the
+// pool needs to know so it can refuse a per-device rate the HF+ cannot run.
+func TestActualSampleRateReportsSnappedRate(t *testing.T) {
+	dev := &Device{rates: []uint32{912_000, 768_000}}
+	if _, err := dev.ActualSampleRate(); err == nil {
+		t.Error("ActualSampleRate before SetSampleRate: want an error")
+	}
+	mt := usb.NewMockTransport()
+	dev.t = mt
+	mt.Script = []usb.CtrlExchange{{BRequest: reqSetSamplerate, WValue: 1}}
+	if err := dev.SetSampleRate(800_000); err != nil {
+		t.Fatalf("SetSampleRate: %v", err)
+	}
+	if got, err := dev.ActualSampleRate(); err != nil || got != 768_000 {
+		t.Errorf("ActualSampleRate = %d, %v; want 768000 (the table rate 800k snapped to)", got, err)
+	}
+}
+
 func TestSetGainAutoEnablesHFAGC(t *testing.T) {
 	dev, mt := withDevice(t)
 	mt.Script = []usb.CtrlExchange{

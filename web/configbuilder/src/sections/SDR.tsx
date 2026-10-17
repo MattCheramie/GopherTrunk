@@ -305,6 +305,13 @@ function DeviceEditor(props: {
         value={d.BiasTee}
         onChange={(x) => onChange({ ...d, BiasTee: x })}
       />
+      {d.Role === "voice" ? (
+        <NumberField
+          label="Own sample rate (Hz, scanner-only SDR; 0 = shared)"
+          value={d.SampleRate ?? 0}
+          onChange={(x) => onChange({ ...d, SampleRate: x })}
+        />
+      ) : null}
 
       {isWideband ? (
         <Fieldset legend="Wideband channels" defaultOpen>

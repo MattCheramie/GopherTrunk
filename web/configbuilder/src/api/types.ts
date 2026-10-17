@@ -85,6 +85,9 @@ export interface DeviceConfig {
   TunerStrategy?: string;
   VoiceTaps?: number;
   SignallingTaps?: number;
+  // Per-device IQ rate (issue #1260): only on a role: voice SDR that
+  // scanner.conventional channels name with `device:`. 0 = sdr.sample_rate.
+  SampleRate?: number;
   // Other device flags (BlogV4, IQCorrect, IQInvert, DCAvoid,
   // DCAvoidOffsetHz, …) round-trip via the index signature and are
   // reachable through AdvancedJSON.

@@ -23,6 +23,7 @@ package airspyhf
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -218,6 +219,7 @@ type Device struct {
 	// (#686). Non-nil whenever streaming is true.
 	streamDone chan struct{}
 	rates      []uint32 // supported sample rates, Hz
+	rateHz     uint32   // the table rate the last SetSampleRate selected
 }
 
 // Info implements sdr.Device.
@@ -251,7 +253,30 @@ func (d *Device) SetSampleRate(hz uint32) error {
 		return usb.ErrClosed
 	}
 	idx := d.closestRateIndex(hz)
-	return d.t.ControlOut(reqSetSamplerate, uint16(idx), 0, nil, controlTimeoutMs)
+	if err := d.t.ControlOut(reqSetSamplerate, uint16(idx), 0, nil, controlTimeoutMs); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	if idx < len(d.rates) {
+		d.rateHz = d.rates[idx]
+	}
+	d.mu.Unlock()
+	return nil
+}
+
+// ActualSampleRate reports the rate the device is really running at: the
+// firmware-table entry SetSampleRate snapped the request to. The HF+ only
+// runs its advertised rates (e.g. 912/768/456/384/256/192 kS/s), so a
+// request between them lands on the nearest one, and a caller that sized its
+// DSP for the request needs to know (issue #1260). Errors before a rate is
+// set or when the firmware table could not be read.
+func (d *Device) ActualSampleRate() (uint32, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.rateHz == 0 {
+		return 0, errors.New("airspyhf: sample rate unknown (not set, or no firmware rate table)")
+	}
+	return d.rateHz, nil
 }
 
 func (d *Device) closestRateIndex(hz uint32) int {

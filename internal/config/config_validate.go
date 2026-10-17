@@ -134,13 +134,20 @@ func (c Config) validateSDR() []error {
 				continue
 			}
 		}
+		if err := validateDeviceSampleRate(i, d, c); err != nil {
+			errs = append(errs, err)
+		}
+		devRate := c.SDR.SampleRate
+		if d.SampleRate != 0 {
+			devRate = d.SampleRate
+		}
 		if d.DCAvoidOffsetHz != 0 {
 			if d.DCAvoidOffsetHz < 0 {
 				errs = append(errs, fmt.Errorf("sdr.devices[%d]: dc_avoid_offset_hz must be >= 0 (0 = auto)", i))
-			} else if c.SDR.SampleRate != 0 && d.DCAvoidOffsetHz >= int(c.SDR.SampleRate)/2 {
+			} else if devRate != 0 && d.DCAvoidOffsetHz >= int(devRate)/2 {
 				errs = append(errs, fmt.Errorf(
 					"sdr.devices[%d]: dc_avoid_offset_hz (%d) must be < sample_rate/2 (%d)",
-					i, d.DCAvoidOffsetHz, int(c.SDR.SampleRate)/2))
+					i, d.DCAvoidOffsetHz, int(devRate)/2))
 			}
 		}
 		if d.Serial == "" {
@@ -1230,4 +1237,36 @@ func scale(v []int, k int) []int {
 		out[i] = x * k
 	}
 	return out
+}
+
+// validateDeviceSampleRate checks a per-device sample_rate override (issue
+// #1260). The conventional scanner is the one consumer that reads its SDR's
+// own rate end to end (scanner, LO offset, data decoders, the call's voice
+// chain), so the override is accepted only on a role: voice SDR that a
+// scanner.conventional channel names with `device:` — such an SDR is the
+// scanner's alone and never serves trunking grants. Anywhere else (control,
+// wideband, a shared voice SDR) dozens of readers still assume
+// sdr.sample_rate, and a silently mismatched rate decodes nothing, so it is
+// rejected rather than half-honoured.
+func validateDeviceSampleRate(i int, d DeviceConfig, c Config) error {
+	if d.SampleRate == 0 {
+		return nil
+	}
+	if d.SampleRate < 200_000 || d.SampleRate > 20_000_000 {
+		return fmt.Errorf("sdr.devices[%d]: sample_rate %d outside 200 kHz..20 MHz", i, d.SampleRate)
+	}
+	if c.SDR.InputSampleRate != 0 {
+		return fmt.Errorf("sdr.devices[%d]: sample_rate cannot be combined with sdr.input_sample_rate (the pre-decimation stage assumes one shared rate)", i)
+	}
+	if d.Role != "voice" {
+		return fmt.Errorf("sdr.devices[%d]: sample_rate is supported only on a role: voice SDR used by scanner.conventional channels (`device:`); other roles share sdr.sample_rate", i)
+	}
+	if d.Serial != "" {
+		for _, ch := range c.Scanner.Conventional {
+			if strings.TrimSpace(ch.Device) == d.Serial {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("sdr.devices[%d]: sample_rate needs a scanner.conventional channel that names this SDR with `device: %q` — a voice SDR shared with trunking must run at sdr.sample_rate", i, d.Serial)
 }

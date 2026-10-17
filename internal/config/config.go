@@ -1215,6 +1215,16 @@ type DeviceConfig struct {
 	// either way.
 	BiasTee bool `yaml:"bias_tee"`
 
+	// SampleRate, when non-zero, runs THIS device at its own IQ rate
+	// instead of sdr.sample_rate (issue #1260) — for a radio that cannot
+	// reach the shared rate, e.g. an AirspyHF (≤ 912 kS/s) beside 2.4 MS/s
+	// RTL-SDRs. Supported only on a role: voice SDR that a
+	// scanner.conventional channel names with `device:` (the scanner then
+	// owns it outright); every other consumer still assumes the shared
+	// rate, so config validation rejects it anywhere else, and alongside
+	// sdr.input_sample_rate.
+	SampleRate uint32 `yaml:"sample_rate"`
+
 	// NarrowbandFilter engages the HackRF Pro's switchable narrowband
 	// anti-alias filter. It tightens adjacent-channel rejection for
 	// narrowband voice channels (e.g. 12.5 kHz P25) at the cost of
