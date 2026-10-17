@@ -39,6 +39,7 @@ import (
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 )
@@ -60,7 +61,32 @@ const (
 	// PulseSpanSymbols is the half-span of the RRC pulse on each
 	// side of the symbol time.
 	PulseSpanSymbols = 8
+
+	// ChannelCutoffHz and ChannelCutoffHzNXDN48 are the one-sided cutoffs
+	// of the optional channel-select low-pass (Options.EnableChannelFilter):
+	// half the 12.5 kHz NXDN96 channel spacing, and a little over half the
+	// 6.25 kHz NXDN48 spacing. 3.5 kHz, not 3.125, because the NXDN48
+	// signal reaches ±~2 kHz and real radios sit a few hundred hertz off
+	// (both #1261 captures ~400 Hz): swept on the reporter's NXDN48
+	// capture, 3.5 kHz kept every clean-capture frame and all of them under
+	// a same-power neighbour 6.25 kHz away (the 6.25 kHz cutoff decoded 4).
+	// The voice chains feed the receiver a 48 kHz stream whose front end
+	// barely band-limits (an 81-tap anti-alias FIR at the SDR's 2.4 MS/s
+	// has a skirt over 100 kHz wide), so without this the FM discriminator
+	// sees ±24 kHz: several NXDN48 channels' worth of noise and neighbours
+	// for a signal only ±~2 kHz wide (issue #1261, the DMR #836 lesson).
+	ChannelCutoffHz       = 6250.0
+	ChannelCutoffHzNXDN48 = 3500.0
 )
+
+// channelFilterSpanSymbols sets the channel-select FIR length to
+// 2*span*sps+1 taps (Kaiser β=8.6): 181 taps for NXDN96 and 361 for NXDN48
+// at 48 kHz, so the skirt scales with the symbol rate — ~1.5 kHz and
+// ~0.75 kHz wide. Mirrors the DMR receiver's channel filter.
+const channelFilterSpanSymbols = 9
+
+// channelFilterBeta is the Kaiser shape of the channel-select FIR.
+const channelFilterBeta = 8.6
 
 // Options configures a Receiver.
 type Options struct {
@@ -120,6 +146,14 @@ type Options struct {
 	// DeviationHz > 0 (the calibrated-slicer path).
 	EnableAFC bool
 
+	// EnableChannelFilter inserts a channel-select low-pass ahead of the FM
+	// discriminator: ±ChannelCutoffHz for NXDN96, ±ChannelCutoffHzNXDN48
+	// for NXDN48, or ±ChannelCutoffOverrideHz when set. Off by default so
+	// existing fixtures stay byte-identical; the voice chain turns it on.
+	EnableChannelFilter bool
+	// ChannelCutoffOverrideHz overrides the default cutoff when > 0.
+	ChannelCutoffOverrideHz float64
+
 	// SoftDecision enables soft-decision output (nxdn_soft_decision,
 	// mirroring the P25 Phase 2 receiver's contract): alongside the hard
 	// dibits the receiver derives, per dibit, two per-bit log-likelihood
@@ -137,6 +171,8 @@ type Options struct {
 
 // Receiver is the composed IQ → dibit pipeline.
 type Receiver struct {
+	chanFilt  *filter.FIR
+	filtered  []complex64
 	fm        *demod.FM
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
@@ -233,11 +269,25 @@ func New(opts Options) *Receiver {
 		afc = demod.NewCoarseAFC(1)
 	}
 
+	var chanFilt *filter.FIR
+	if opts.EnableChannelFilter {
+		fc := opts.ChannelCutoffOverrideHz
+		if fc <= 0 {
+			fc = ChannelCutoffHz
+			if symRate == SymbolRateNXDN48 {
+				fc = ChannelCutoffHzNXDN48
+			}
+		}
+		taps := 2*channelFilterSpanSymbols*int(sps+0.5) + 1
+		chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc/opts.SampleRateHz, channelFilterBeta))
+	}
+
 	return &Receiver{
-		fm:    demod.NewFM(),
-		mf:    demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
-		clock: sync.NewMuellerMuller(sps, gain),
-		afc:   afc,
+		chanFilt: chanFilt,
+		fm:       demod.NewFM(),
+		mf:       demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
+		clock:    sync.NewMuellerMuller(sps, gain),
+		afc:      afc,
 		// Symbol-AGC bridges the level mismatch between the unit-energy
 		// RRC matched filter and the 4-level slicer's fixed thresholds.
 		// The RRC has a DC gain of ~3.1 (it is normalised to unit
@@ -274,6 +324,10 @@ func New(opts Options) *Receiver {
 func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
+	}
+	if r.chanFilt != nil {
+		r.filtered = r.chanFilt.Process(r.filtered, iq)
+		iq = r.filtered
 	}
 	r.disc = r.fm.Process(r.disc, iq)
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
@@ -370,6 +424,9 @@ func (r *Receiver) Reset() {
 	r.agc.Reset()
 	if r.afc != nil {
 		r.afc.Reset()
+	}
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
 	}
 }
 

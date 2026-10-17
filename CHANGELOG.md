@@ -23,6 +23,14 @@ for tagged releases.
   its flags.
 
 ### Fixed
+- **NXDN voice now rejects the neighbouring channel (#1261).** The NXDN
+  voice chain had no channel-select filter: at a 2.4 MS/s SDR rate its
+  front end barely band-limits, so the FM discriminator saw ±24 kHz around
+  a signal only ±2 kHz (NXDN48) or ±5 kHz (NXDN96) wide. On the reporter's
+  captures, a same-power neighbour one channel away cut decode to 0
+  (NXDN96) and 12 of 56 (NXDN48) voice frames. The receiver now filters at
+  ±6.25 kHz (NXDN96) / ±3.5 kHz (NXDN48), chosen automatically from the
+  channel's mode.
 - **`wmbus -save-frames` no longer stalls a live run (#1256).** Its IQ
   history copied the whole 0.5 s window on every chunk, which on a phone
   is slower than real time: the decoder fell behind, the SDR dropped IQ

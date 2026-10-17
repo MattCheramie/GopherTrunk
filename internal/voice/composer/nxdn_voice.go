@@ -46,6 +46,31 @@ func nxdnSymbolRate(proto string) float64 {
 	return nxdnrx.SymbolRate
 }
 
+// newNXDNVoiceReceiver is the voice chain's NXDN receiver.
+//
+// Carrier-offset correction is ON for voice. The CC receiver keeps it off
+// (see Options.EnableAFC), but the voice frame is scrambled, so there are no
+// long constant-symbol runs for the tracker to walk onto. Both #1261
+// captures sat ~400 Hz off: at NXDN48's ±350 Hz inner deviation that decodes
+// nothing without AFC, and at NXDN96 it roughly halves the AMBE Golay errors.
+//
+// The channel filter is ON too, sized per mode (±6.25 kHz NXDN96, ±3.5 kHz
+// NXDN48). The front end ahead of it barely band-limits at a 2.4 MS/s SDR
+// rate, so the discriminator used to see the whole ±24 kHz stream: on the
+// reporter's captures a same-power neighbour one channel away, or band-wide
+// noise at the signal's own level, decoded nothing or close to it (#1261:
+// "NXDN48 fails every other transmission").
+func newNXDNVoiceReceiver(sampleHz, symbolRateHz float64, sink nxdn.DibitSink) *nxdnrx.Receiver {
+	return nxdnrx.New(nxdnrx.Options{
+		SampleRateHz:        sampleHz,
+		SymbolRateHz:        symbolRateHz,
+		DeviationHz:         nxdnVoiceDeviationHz,
+		EnableAFC:           true,
+		EnableChannelFilter: true,
+		DibitSink:           sink,
+	})
+}
+
 // runNXDNVoiceChain consumes IQ for one NXDN voice call: it decimates
 // the wideband IQ to a 4-FSK-friendly rate, recovers the dibit stream
 // with the NXDN receiver, and routes the dibits through an
@@ -102,21 +127,7 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 		}
 	})
 
-	rx := nxdnrx.New(nxdnrx.Options{
-		SampleRateHz: symbolHz,
-		SymbolRateHz: symbolRateHz,
-		DeviationHz:  nxdnVoiceDeviationHz,
-		// Carrier-offset correction ON for voice. The CC receiver keeps
-		// it off (see Options.EnableAFC), but the voice frame is
-		// scrambled, so there are no long constant-symbol runs for the
-		// tracker to walk onto. Both #1261 captures sat ~400 Hz off: at
-		// NXDN48's ±350 Hz inner deviation that decodes nothing without
-		// AFC, and at NXDN96 it roughly halves the AMBE Golay errors.
-		EnableAFC: true,
-		DibitSink: func(dibits []uint8, baseIdx int) {
-			tc.Process(dibits, baseIdx)
-		},
-	})
+	rx := newNXDNVoiceReceiver(symbolHz, symbolRateHz, func(dibits []uint8, baseIdx int) { tc.Process(dibits, baseIdx) })
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()

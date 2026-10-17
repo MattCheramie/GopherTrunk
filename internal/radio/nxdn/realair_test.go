@@ -39,7 +39,10 @@ func TestTrafficChannelDecodesRealAirNXDN(t *testing.T) {
 				SymbolRateHz: tc.symbolRate,
 				DeviationHz:  1800,
 				EnableAFC:    true,
-				DibitSink:    func(d []uint8, base int) { trf.Process(d, base) },
+				// The channel filter must cost nothing on a clean capture
+				// (#1261): same frames, Golay errors within the bounds below.
+				EnableChannelFilter: true,
+				DibitSink:           func(d []uint8, base int) { trf.Process(d, base) },
 			})
 			for i := 0; i < len(iq); i += 4096 {
 				rx.Process(iq[i:min(i+4096, len(iq))])
