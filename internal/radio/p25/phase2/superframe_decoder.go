@@ -78,6 +78,7 @@ type SuperframeDecoder struct {
 	softBuf  []complex64  // parallel per-dibit soft samples (soft path; nil-len on hard)
 	bufStart int          // absolute dibit index of buf[0]
 	pending  []syncAnchor // sync anchors awaiting a full superframe
+	rotLocks [4]int       // superframes sliced under each rotation (diagnostic)
 }
 
 // NewSuperframeDecoder returns a SuperframeDecoder ready to consume
@@ -88,12 +89,43 @@ func NewSuperframeDecoder() *SuperframeDecoder {
 	return d
 }
 
-// initDetectors builds the four rotation-shifted sync detectors. Detector r
-// matches when the incoming stream is rotated by +r from the canonical sync;
-// a match therefore means every dibit is canonical+r, so the superframe is
-// de-rotated by -r (add 4-r) to recover canonical dibits.
+// rotationPerm[k] maps a canonical dibit to the dibit the receiver emits when
+// its residual carrier rotates every differential by k·π/2 (a residual of
+// k·SymbolRate/4 = k·1500 Hz). The canonical dibit convention is not in
+// angular order — the on-air differential phases are {0:+π/4, 1:+3π/4,
+// 2:−π/4, 3:−3π/4} — so a quarter-turn is NOT "add one mod 4": in angular
+// order the dibits run 2 → 0 → 1 → 3, and rotating by +π/2 advances along
+// that cycle. Derived by pushing each canonical phase plus k·π/2 through the
+// receiver's own slicer and remap; pinned by TestRotationPermutationsMatchDecoder.
 //
-// The canonical rotation (r=0) keeps the historical tolerance of 2 dibit
+// The previous detectors matched (d+k)&3, which no carrier rotation ever
+// produces, so under any real rotation they could not fire — across 597
+// superframes of real Phase 2 air every lock was at rotation 0 — and on noise
+// they could only false-lock.
+var rotationPerm = [4][4]uint8{
+	{0, 1, 2, 3},
+	{1, 3, 0, 2},
+	{3, 2, 1, 0},
+	{2, 0, 3, 1},
+}
+
+// rotationInv[k] undoes rotationPerm[k].
+var rotationInv = func() [4][4]uint8 {
+	var inv [4][4]uint8
+	for k := range rotationPerm {
+		for c, v := range rotationPerm[k] {
+			inv[k][v] = uint8(c)
+		}
+	}
+	return inv
+}()
+
+// initDetectors builds the four rotation-shifted sync detectors. Detector k
+// matches when the incoming stream is the canonical sync rotated by k·π/2 of
+// residual carrier; a match therefore means every dibit is rotationPerm[k] of
+// its canonical value, so the superframe is de-rotated with rotationInv[k].
+//
+// The canonical rotation (k=0) keeps the historical tolerance of 2 dibit
 // mismatches. The three added rotations use a stricter tolerance of 1 so that
 // searching four patterns instead of one does not multiply the false-lock rate
 // on noise (a spurious 18/20 match under any of the extra rotations would
@@ -102,16 +134,16 @@ func NewSuperframeDecoder() *SuperframeDecoder {
 // a clean sync (≥19/20), so tolerance 1 still catches it.
 func (d *SuperframeDecoder) initDetectors() {
 	base := OutboundSyncDibits()
-	for r := 0; r < 4; r++ {
+	for k := 0; k < 4; k++ {
 		pat := make([]uint8, len(base))
 		for i, p := range base {
-			pat[i] = (p + uint8(r)) & 3
+			pat[i] = rotationPerm[k][p&3]
 		}
 		tolerance := 2
-		if r != 0 {
+		if k != 0 {
 			tolerance = 1
 		}
-		d.dets[r] = NewSyncDetector(pat, tolerance)
+		d.dets[k] = NewSyncDetector(pat, tolerance)
 	}
 }
 
@@ -177,6 +209,7 @@ func (d *SuperframeDecoder) process(dibits []uint8, soft []complex64, baseIdx in
 		if start < d.bufStart {
 			continue // anchor fell off the front of the buffer
 		}
+		d.rotLocks[a.rot&3]++
 		out = append(out, d.sliceSuperframe(start, a.rot))
 	}
 	d.pending = keep
@@ -220,7 +253,7 @@ func (d *SuperframeDecoder) trim() {
 func (d *SuperframeDecoder) sliceSuperframe(start int, rot uint8) Superframe {
 	sf := Superframe{StartDibit: start}
 	off := start - d.bufStart
-	derot := (4 - rot) & 3
+	inv := rotationInv[rot&3]
 	haveSoft := len(d.softBuf) >= off+SubframesPerSuperframe*DibitsPerSubframe
 	for i := 0; i < SubframesPerSuperframe; i++ {
 		sub := make([]uint8, DibitsPerSubframe)
@@ -230,12 +263,12 @@ func (d *SuperframeDecoder) sliceSuperframe(start int, rot uint8) Superframe {
 			soft = make([]complex64, DibitsPerSubframe)
 			copy(soft, d.softBuf[off+i*DibitsPerSubframe:off+(i+1)*DibitsPerSubframe])
 		}
-		if derot != 0 {
+		if rot&3 != 0 {
 			for j := range sub {
-				sub[j] = (sub[j] + derot) & 3
+				sub[j] = inv[sub[j]&3]
 			}
 			for j := range soft {
-				soft[j] = derotSoft(soft[j], derot)
+				soft[j] = derotSoft(soft[j], rot)
 			}
 		}
 		slot := SlotTypeUnknown
@@ -253,27 +286,21 @@ func (d *SuperframeDecoder) sliceSuperframe(start int, rot uint8) Superframe {
 	return sf
 }
 
-// derotSoft applies to a diagonal-frame soft sample the geometric transform
-// that (dibit + k) & 3 applies to the hard dibit value it encodes (b0 = Re<0,
-// b1 = Im<0, canonical value = 2·b1 + b0). Adding k mod 4 to the value is a
-// carry-coupled bit permutation; the k=1,3 cases flip Im conditioned on the
-// sign of Re (a soft "controlled-NOT"), so the soft stays in the canonical
-// decision frame after de-rotation. Issue #915.
+// derotSoft undoes a k·π/2 residual-carrier rotation of a soft differential.
+// The soft value is the complex differential itself (rotated into the
+// diagonal frame), and a carrier rotation is a rotation of that vector, so
+// the inverse is a plain multiplication by e^{−jkπ/2} — no case analysis on
+// the hard-decision bits, which is what the previous version did to mirror
+// the wrong (d+k)&3 dibit model.
 func derotSoft(z complex64, k uint8) complex64 {
 	re, im := real(z), imag(z)
 	switch k & 3 {
-	case 1:
-		if re >= 0 {
-			return complex(-re, im)
-		}
+	case 1: // × (−j)
+		return complex(im, -re)
+	case 2: // × (−1)
 		return complex(-re, -im)
-	case 2:
-		return complex(re, -im)
-	case 3:
-		if re >= 0 {
-			return complex(-re, -im)
-		}
-		return complex(-re, im)
+	case 3: // × (+j)
+		return complex(-im, re)
 	}
 	return z
 }

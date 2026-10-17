@@ -55,7 +55,13 @@ func buildP25P2VoiceStreamSeed(n, seed0 int) (dibits []uint8, want [][]byte) {
 				payloads[j] = p
 				want = append(want, p)
 			}
-			subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
+			// Scrambled, as a real voice burst always is, at the slot the
+			// superframe's anchor implies — this is the fixture that has to
+			// exercise the actual descramble, so it cannot use the
+			// unscrambled filler EncodeVoiceSubframe emits.
+			slot := (i + p25p2.FixtureAnchorSlot) % p25p2.SubframesPerSuperframe
+			subs[i] = p25p2.EncodeVoiceBurst(p25p2.BurstVoice4, payloads, slot,
+				p25p2.ScrambleSequence(0))
 		}
 		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
 	}
@@ -200,7 +206,13 @@ func buildP25P2AliasStream(n int) (dibits []uint8, aliasSrc uint32, aliasText st
 				for j := range payloads {
 					payloads[j] = p25p2VoicePayload(s*p25p2.SubframesPerSuperframe*p25p2.Voice4VFrameCount + i*p25p2.Voice4VFrameCount + j)
 				}
-				subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
+				// Scrambled, as a real voice burst always is, at the slot the
+				// superframe's anchor implies — this is the fixture that has to
+				// exercise the actual descramble, so it cannot use the
+				// unscrambled filler EncodeVoiceSubframe emits.
+				slot := (i + p25p2.FixtureAnchorSlot) % p25p2.SubframesPerSuperframe
+				subs[i] = p25p2.EncodeVoiceBurst(p25p2.BurstVoice4, payloads, slot,
+					p25p2.ScrambleSequence(0))
 			}
 		}
 		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
@@ -321,11 +333,11 @@ func buildP25P2MetadataStream(n int) (dibits []uint8, wantSrc uint32, wantAlias 
 	// RS-valid outer parity, as a real over-the-air PDU carries: the
 	// completed-call source_rid backfill only trusts an RS-verified
 	// GROUP_VOICE_CHANNEL_USER (issue #915).
-	userPDU := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
+	userPDU := p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
 		ServiceOptions: 0x40, // bit 6 = encrypted
 		GroupAddress:   0x4EEA,
 		SourceID:       wantSrc,
-	}, false))
+	}, false)
 	encPDU := p25p2.EncodeEncryptionSync(p25p2.EncryptionSync{
 		AlgorithmID:      wantAlgID,
 		KeyID:            wantKeyID,
@@ -363,7 +375,13 @@ func buildP25P2MetadataStream(n int) (dibits []uint8, wantSrc uint32, wantAlias 
 				for j := range payloads {
 					payloads[j] = p25p2VoicePayload(s*p25p2.SubframesPerSuperframe*p25p2.Voice4VFrameCount + i*p25p2.Voice4VFrameCount + j)
 				}
-				subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
+				// Scrambled, as a real voice burst always is, at the slot the
+				// superframe's anchor implies — this is the fixture that has to
+				// exercise the actual descramble, so it cannot use the
+				// unscrambled filler EncodeVoiceSubframe emits.
+				slot := (i + p25p2.FixtureAnchorSlot) % p25p2.SubframesPerSuperframe
+				subs[i] = p25p2.EncodeVoiceBurst(p25p2.BurstVoice4, payloads, slot,
+					p25p2.ScrambleSequence(0))
 			}
 		}
 		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
@@ -666,8 +684,12 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 	if strings.Contains(out, "mac_pdus=0") {
 		t.Fatalf("census reported mac_pdus=0 despite MAC signalling in the stream, got:\n%s", out)
 	}
-	if !strings.Contains(out, "slot_"+p25p2.SlotTypeMACSignaling.String()+"=") {
-		t.Fatalf("census missing slot_%s bucket, got:\n%s", p25p2.SlotTypeMACSignaling, out)
+	// The census buckets by the burst type the DUID names, not by the ISCH
+	// slot type it used to report — that field comes from this project's ISCH
+	// model, which does not match the air, and read as Unknown for every
+	// sub-frame of a channel that was decoding MAC PDUs fine (issue #915).
+	if !strings.Contains(out, "burst_"+p25p2.BurstFACCHUnscrambled.String()+"=") {
+		t.Fatalf("census missing burst_%s bucket, got:\n%s", p25p2.BurstFACCHUnscrambled, out)
 	}
 }
 
