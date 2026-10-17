@@ -80,37 +80,33 @@ func (c *Composer) runYSFVoiceChain(ctx context.Context, serial, system string, 
 			c.log.Warn("composer: ysf raw-frame write failed", "serial", serial, "err", werr)
 		}
 	}
-	rx := ysfrx.New(ysfrx.Options{
-		SampleRateHz: fe.OutRateHz(),
-		DeviationHz:  ysfVoiceDeviationHz,
-		DibitSink: func(dibits []uint8, baseIdx int) {
-			for _, af := range framer.Process(dibits, baseIdx) {
-				isVoice := false
-				switch {
-				case af.FICHOK:
-					lastVD2 = af.FICH.FI == ysf.AirFIComms && af.FICH.DT == ysf.AirDTVDMode2
-					isVoice = lastVD2
-					if af.FICH.FI == ysf.AirFIComms && !lastVD2 {
-						otherFrames.Add(1)
-						if !warnedMode {
-							warnedMode = true
-							c.log.Warn("composer: ysf call is not V/D mode 2 (DN); only V/D mode 2 voice is decoded",
-								"serial", serial, "data_type", af.FICH.DT)
-						}
+	rx := newYSFVoiceReceiver(fe.OutRateHz(), func(dibits []uint8, baseIdx int) {
+		for _, af := range framer.Process(dibits, baseIdx) {
+			isVoice := false
+			switch {
+			case af.FICHOK:
+				lastVD2 = af.FICH.FI == ysf.AirFIComms && af.FICH.DT == ysf.AirDTVDMode2
+				isVoice = lastVD2
+				if af.FICH.FI == ysf.AirFIComms && !lastVD2 {
+					otherFrames.Add(1)
+					if !warnedMode {
+						warnedMode = true
+						c.log.Warn("composer: ysf call is not V/D mode 2 (DN); only V/D mode 2 voice is decoded",
+							"serial", serial, "data_type", af.FICH.DT)
 					}
-				default:
-					fichFailures.Add(1)
-					isVoice = lastVD2
 				}
-				if !isVoice {
-					continue
-				}
-				vd2Frames.Add(1)
-				for _, fr := range ysf.DecodeVD2Voice(af.Payload) {
-					write(fr)
-				}
+			default:
+				fichFailures.Add(1)
+				isVoice = lastVD2
 			}
-		},
+			if !isVoice {
+				continue
+			}
+			vd2Frames.Add(1)
+			for _, fr := range ysf.DecodeVD2Voice(af.Payload) {
+				write(fr)
+			}
+		}
 	})
 
 	touchTicker := time.NewTicker(c.touchEvery)
@@ -135,4 +131,20 @@ func (c *Composer) runYSFVoiceChain(ctx context.Context, serial, system string, 
 			rx.Process(fe.Process(nil, iq))
 		}
 	}
+}
+
+// newYSFVoiceReceiver is the voice chain's System Fusion receiver, with
+// carrier correction and a ±6.25 kHz channel filter on (issue #1261). Without
+// the correction the 4-level slicer fails from ~200 Hz of carrier offset, and a
+// real radio is routinely a few hundred hertz off; without the filter the
+// discriminator sees the front end's whole ±24 kHz stream, neighbours
+// included. Measured on synthetic streams; no YSF capture exists yet.
+func newYSFVoiceReceiver(sampleHz float64, sink ysf.DibitSink) *ysfrx.Receiver {
+	return ysfrx.New(ysfrx.Options{
+		SampleRateHz:        sampleHz,
+		DeviationHz:         ysfVoiceDeviationHz,
+		EnableAFC:           true,
+		EnableChannelFilter: true,
+		DibitSink:           sink,
+	})
 }

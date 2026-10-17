@@ -92,11 +92,8 @@ func (c *Composer) runDStarVoiceChain(ctx context.Context, serial, system string
 		}
 	})
 
-	rx := dstarrx.New(dstarrx.Options{
-		SampleRateHz: symbolHz,
-		BitSink: func(bits []byte, baseIdx int) {
-			vc.Process(bits, baseIdx)
-		},
+	rx := newDStarVoiceReceiver(symbolHz, func(bits []byte, baseIdx int) {
+		vc.Process(bits, baseIdx)
 	})
 
 	touchTicker := time.NewTicker(c.touchEvery)
@@ -118,4 +115,19 @@ func (c *Composer) runDStarVoiceChain(ctx context.Context, serial, system string
 			rx.Process(fe.Process(nil, iq))
 		}
 	}
+}
+
+// newDStarVoiceReceiver is the voice chain's D-STAR receiver, with carrier
+// correction and a channel filter on (issue #1261). Without the correction
+// the GMSK slicer decodes nothing once the carrier is ~150 Hz off, and a real
+// radio is routinely a few hundred hertz off; without the filter the
+// discriminator sees the front end's whole ±24 kHz stream, neighbours
+// included. Measured on synthetic streams; no D-STAR capture exists yet.
+func newDStarVoiceReceiver(sampleHz float64, sink dstar.BitSink) *dstarrx.Receiver {
+	return dstarrx.New(dstarrx.Options{
+		SampleRateHz:        sampleHz,
+		EnableAFC:           true,
+		EnableChannelFilter: true,
+		BitSink:             sink,
+	})
 }
