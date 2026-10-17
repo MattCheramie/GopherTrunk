@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Per-device `sample_rate` for scanner SDRs (#1260).** `sdr.devices[].sample_rate`
+  runs one SDR at its own IQ rate instead of `sdr.sample_rate`, so a radio
+  that cannot reach the shared rate (an AirspyHF at 768 kS/s) can scan
+  beside 2.4 MS/s RTL-SDRs. Supported on a `role: voice` SDR that
+  `scanner.conventional` channels name with `device:`; the scanner, its LO
+  offset, data decoders and each call's voice chain all use that rate.
+  Config validation rejects it elsewhere, and the pool refuses a radio that
+  cannot run the exact rate (the AirspyHF driver now reports the rate it
+  snapped to).
 - **`p25_band_plan` entries take `slots_per_carrier` (#1273).** Set it to
   2 or 4 to seed a TDMA (Phase 2 voice) channel ID the site never
   announces; its grants then resolve to the right carrier and timeslot and
