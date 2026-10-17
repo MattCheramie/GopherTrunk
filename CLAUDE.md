@@ -1113,7 +1113,11 @@ confirmation before any close-as-completed.
   constant-symbol runs): both reporter captures sat ~400 Hz off, which decodes NOTHING at NXDN48's
   ±350 Hz inner deviation without it. Pinned by `realair_test.go` on two 48 kHz slices of the
   reporter's Kenwood captures (NXDN96: 36 voice frames, continuity 0.86; NXDN48: 56, 0.82; the old
-  code decodes 0) plus a literal MMDVMHost scrambler-table test. STILL OPEN: the trunked CC (CAC) path
+  code decodes 0) plus a literal MMDVMHost scrambler-table test. The voice receiver also runs a per-mode channel filter
+  (`EnableChannelFilter`: ±6.25 kHz NXDN96, ±3.5 kHz NXDN48) — without it the 2.4 MS/s front end hands the
+  discriminator ±24 kHz and a same-power neighbour channel decoded 0/12 frames (`nxdn_voice_channelfilter_test.go`).
+  `narrowband_filter` is a HackRF-Pro-only switch: on an RTL-SDR it is a no-op + WARN, so an operator report
+  that it "fixed" a decode on an RTL is coincidence — look for the real cause. STILL OPEN: the trunked CC (CAC) path
   is on the invented layout and cannot frame real air — rebuild it on airframe.go against a CC
   capture; and the daemon path on air (#764/#771).
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
