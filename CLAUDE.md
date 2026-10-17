@@ -1082,13 +1082,16 @@ confirmation before any close-as-completed.
   almost certainly the probe estimator latching a different momentarily-strong carrier in the
   3 MHz span (the probe is the FIRST 32768 samples ≈ 11 ms, and `capture` never checks
   `ActualSampleRate` — though sample-count math shows their file really is 3 MS/s).
-- **The YSF FICH in `internal/radio/ysf/fich.go` + `fich_trellis.go` is FABRICATED — the voice path
-  uses `airframe.go` instead (#1261).** The old model convolves 48 info bits into "100 on-air bits"; on
+- **The YSF FICH that `internal/radio/ysf/fich.go` + `fich_trellis.go` modelled was FABRICATED — both
+  files are now DELETED and the voice chain AND the control channel decode via `airframe.go` (#1261).** The old model convolves 48 info bits into "100 on-air bits"; on
   air the FICH is 100 DIBITS (200 bits): a 20×5 interleave, a rate-1/2 K=5 code (g1 = d⊕d3⊕d4,
   g2 = d⊕d1⊕d2⊕d4), four Golay(24,12) words (MMDVMHost's CGolay24128 — NOT `framing.GolayEncode24_12`,
   which is a different generator; 4094/4096 codewords differ), 32 info bits + CRC-16/GSM. Its encoder and
-  decoder shared the invented layout (the self-consistent trap again), so the YSF control-channel path
-  that still uses it cannot decode real air — that is unfixed, and a follow-up. `DecodeAirFICH` is pinned
+  decoder shared the invented layout (the self-consistent trap again), and the control channel's live
+  `Process` never fed it anyway — a YSF CC locked on the FSW but never granted. `ControlChannel.Process`
+  now runs an `AirFramer`: header/comms FICH (CM≠3 individual, DT≠data FR) grants on the DG-ID (comms =
+  late entry), terminator clears; pinned failing-first by `TestControlChannelGrantsFromOnAirFrames`.
+  The lock still follows the bare FSW (siglab's FSW-only fixtures rely on it). `DecodeAirFICH` is pinned
   by five on-air vectors from MMDVMHost's own encoder, and V/D mode 2 voice (`DecodeVD2Voice`: 5 VCHs ×
   104 bits, 26×4 interleave, 13-byte whitening, 27 triplicated + 22 plain bits = the DMR 49-bit AMBE+2
   payload) by YSF2DMR's silence pair: YSF_SILENCE through this package and DMR_SILENCE through the DMR
@@ -2078,6 +2081,17 @@ confirmation before any close-as-completed.
   difference. Gate (#764/#771): the reporter's own file through
   `GT_ACARS_AUDIO=<wav> go test ./cmd/gophertrunk -run TestACARSReplay -v`, then a live
   scanner run. Known limit: an ACARS burst also opens an ordinary AM "call".
+- **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
+  keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
+  `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on
+  the channel front end and is present only within 1 s of a Voice LC Header / PI header / voice-burst
+  sync; the polarity is locked from clean slot types like the Tier II slicer (data and voice syncs are
+  each other's flip, so an inverted beacon reads as voice syncs until then — a corrected slot type before
+  the lock returns, and a pre-lock voice sync needs a second within the hold). Gotcha that cost a round:
+  at 2.4 MS/s the DMR receiver started at an arbitrary sub-symbol phase decoded 0/60 syncs at some phases
+  (the loop pulls in over seconds) — `Receiver.ArmTimingAcquisition()` (opt-in, the #836 feed-forward
+  acquisition armed without a prior absence) gives 59–60/60 at every phase. A power-open DMR channel's
+  scan window is extended once to 500 ms to wait for evidence. Synthetic-verified only (#764/#771).
 - **Scan-list DMR direct mode was cut into hangtime-sized calls (#1261, 14 Oct field run).** The
   conventional scanner judged dwell activity chunk by chunk on in-channel power, and a simplex DMR
   handheld is OFF for 32.5 ms of every 60 ms frame, so every gap started hangtime and no 27.5 ms burst

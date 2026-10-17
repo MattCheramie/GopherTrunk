@@ -36,6 +36,15 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 			for i := range sig {
 				sig[i] *= 0.1
 			}
+			if tc.mode == ModeDMR {
+				// A DMR channel opens only on a call (issue #1261), so it
+				// needs a real one: Voice LC Headers then voice superframes.
+				c1, c2 := dmrCallBursts(r, 4)
+				sig = dmrAt2400k(modulateDMR(r, dmrRepeaterDibits(r, c1, c2)))
+				for i := range sig {
+					sig[i] *= 0.2
+				}
+			}
 			idle := make([]complex64, amTestRate/2)
 			for i := range idle {
 				idle[i] = complex(float32(r.NormFloat64()*1e-4), float32(r.NormFloat64()*1e-4))
@@ -58,10 +67,13 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 			if s.powerMeterFor(0) == nil {
 				t.Fatal("a digital channel must squelch on in-channel power, like FM")
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			// Generous caps: the loop below exits as soon as the call ends, and
+			// the DMR case runs a whole receiver (the #1261 call gate), which
+			// under -race on a loaded runner is far slower than real time.
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			go func() { _ = s.Run(ctx) }()
-			deadline := time.Now().Add(2 * time.Second)
+			deadline := time.Now().Add(30 * time.Second)
 			for time.Now().Before(deadline) && eng.normalEndCount() == 0 {
 				time.Sleep(10 * time.Millisecond)
 			}

@@ -40,19 +40,19 @@ type Options struct {
 }
 
 // ControlChannel ingests a stream of YSF dibits, runs the FSW
-// detector + (planned) FICH Trellis decoder, and emits cc.locked /
-// cc.lost / grant / call.start-via-engine events on the bus.
+// detector and the on-air FICH decoder (DecodeAirFICH, via AirFramer), and
+// emits cc.locked / cc.lost / grant events on the bus.
 //
-// The FICH Trellis decode + interleave wiring lives behind
-// ProcessFICH today: the caller is expected to have decoded the
-// 100-dibit FICH region into a parsed FICH struct (via the bit-level
-// ParseFICH or the channel-bit DecodeFICHTrellis primitive) and to
-// hand it in. A future PR closes the IQ → dibit → FICH gap on the
-// hot path; the grant-publication contract here doesn't change.
+// The lock follows the frame sync alone; grants come only from FICHs that
+// decode (Golay + CRC-16) — a header or communications frame opens a call
+// on its DG-ID, a terminator ends it (issue #1261: the earlier FICH model
+// was fabricated, matched no real frame, and nothing on the live path fed
+// it, so a YSF control channel locked but never granted).
 type ControlChannel struct {
 	bus        *events.Bus
 	log        *slog.Logger
 	det        *SyncDetector
+	framer     *AirFramer
 	systemName string
 	freqHz     uint32
 	now        func() time.Time
@@ -80,6 +80,7 @@ func New(opts Options) *ControlChannel {
 		bus:        opts.Bus,
 		log:        log,
 		det:        NewSyncDetector(tol),
+		framer:     NewAirFramer(tol),
 		systemName: opts.SystemName,
 		freqHz:     opts.FrequencyHz,
 		now:        now,
@@ -93,7 +94,8 @@ func NewControlChannel(bus *events.Bus, log *slog.Logger, freqHz uint32) *Contro
 	return New(Options{Bus: bus, Log: log, FrequencyHz: freqHz})
 }
 
-// Process consumes a window of dibits and runs sync detection.
+// Process consumes a window of dibits: sync detection drives the lock,
+// and every frame whose FICH decodes is handed to ProcessAirFICH.
 // baseIdx is the absolute dibit index of dibits[0]. Returns the new
 // baseIndex (matches the NXDN / P25 detector contracts).
 func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
@@ -101,70 +103,69 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	for range hits {
 		c.maybeLock()
 	}
+	for _, fr := range c.framer.Process(dibits, baseIdx) {
+		if fr.FICHOK {
+			c.ProcessAirFICH(fr.FICH)
+		}
+	}
 	return next
 }
 
-// ProcessFICH forwards a parsed FICH (post-Trellis-decode and
-// post-CRC-validation) to the state machine. On Header FICH for a
-// Group call the channel publishes a trunking.Grant on the bus; on
-// Terminator FICH the dedup state clears so the next transmission
-// can fire a fresh CallStart.
+// ProcessAirFICH forwards one decoded on-air FICH to the state machine.
+// A header or communications frame of a group call publishes a
+// trunking.Grant on its DG-ID (a communications frame is late entry when
+// the header was lost; the dedup holds it to one grant per call); a
+// terminator clears the dedup so the next transmission grants afresh.
 //
-// FICH must be valid (CRC verified) before reaching here — callers
-// that accept partially-corrupted FICHs should drop them rather
-// than route them through this path, since a junk FrameType would
-// otherwise produce stale CallStart / CallEnd events.
-func (c *ControlChannel) ProcessFICH(f FICH) {
-	switch f.FrameType {
-	case FrameTypeHeader:
+// The FICH must have decoded (DecodeAirFICH ok): a junk frame indicator
+// would otherwise produce stale CallStart / CallEnd events.
+func (c *ControlChannel) ProcessAirFICH(f AirFICH) {
+	switch f.FI {
+	case AirFIHeader, AirFIComms:
 		c.publishGrantFor(f)
-	case FrameTypeTerminator:
+	case AirFITerminator:
 		c.clearGrant()
 	}
 }
 
-func (c *ControlChannel) publishGrantFor(f FICH) {
-	if f.CallType != CallTypeGroup {
+// airCMIndividual is the FICH call mode of a radio-to-radio call.
+const airCMIndividual = 3
+
+func (c *ControlChannel) publishGrantFor(f AirFICH) {
+	if f.CM == airCMIndividual {
 		// Private (radio-ID-addressed) calls aren't on the
 		// trunking-grant path — they're addressed to a specific
-		// subscriber, not a talkgroup. Future work could publish
-		// them on a separate event kind, but for now we skip them
-		// so the engine doesn't spawn a recorder for a private
-		// transmission the operator probably isn't subscribed to.
+		// subscriber, not a talkgroup.
 		return
 	}
-	// On YSF the FICH carries a Squelch Code (DG-ID, Digital Group
-	// ID) that operators use to gate calls to a specific group. In
-	// open-squelch mode (SquelchMode == false) every transmission is
-	// audible regardless of code, so we use 0 as the talkgroup ID
-	// in that case so the engine treats the repeater as a single
-	// "all calls" group. With code-squelch active we publish the
-	// SquelchCode itself as the group ID, matching what most
-	// operator UIs key talkgroup-CSV rows on.
-	groupID := uint32(0)
-	if f.SquelchMode {
-		groupID = uint32(f.SquelchCode)
+	if f.DT == AirDTDataFR {
+		// Data full-rate frames carry no voice for a recorder.
+		return
 	}
-	if c.hasGrant && c.lastDGID == uint8(groupID) {
+	// The FICH's DG-ID (Digital Group ID) is what operators gate calls
+	// on; 0 is the open "all calls" group. Publishing it as the group ID
+	// matches what operator UIs key talkgroup-CSV rows on.
+	groupID := uint32(f.DGID)
+	if c.hasGrant && c.lastDGID == f.DGID {
 		// Same talkgroup as the in-flight call; suppress.
 		return
 	}
 	c.hasGrant = true
-	c.lastDGID = uint8(groupID)
+	c.lastDGID = f.DGID
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
 			System:      c.systemName,
 			Protocol:    "ysf",
 			GroupID:     groupID,
-			SourceID:    0, // YSF radio ID lives in the DCH region, not the FICH
+			SourceID:    0, // YSF carries a callsign in the DCH, not a numeric ID
 			FrequencyHz: c.freqHz,
 			At:          c.now(),
 		},
 	})
 	c.log.Debug("ysf: grant",
 		"system", c.systemName, "freq_hz", c.freqHz,
-		"dgid", groupID, "voip", f.VoIP, "data_type", f.DataType.String())
+		"dgid", groupID, "fi", f.FI, "data_type", f.DT)
 }
 
 func (c *ControlChannel) clearGrant() {

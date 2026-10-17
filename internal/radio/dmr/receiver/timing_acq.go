@@ -63,6 +63,16 @@ const (
 	timingAcqSymbols = 96
 )
 
+// ArmTimingAcquisition schedules a feed-forward symbol-timing acquisition on
+// the next present samples, as at a transmission's onset. The receiver arms
+// one itself only after a carrier absence, so a stream that is present from
+// its first sample (a repeater carrier picked up on a retune) starts at
+// whatever phase the loop was built with, and from near a half symbol the
+// loop needs seconds to pull in. A caller that tunes onto a carrier that may
+// already be up (the conventional scanner's DMR call gate, issue #1261) arms
+// it once after New and after each Reset. A no-op without the carrier gate.
+func (r *Receiver) ArmTimingAcquisition() { r.armTimingAcq() }
+
 // armTimingAcq schedules an acquisition window on the next present samples.
 func (r *Receiver) armTimingAcq() {
 	if !r.acqTiming {

@@ -653,6 +653,15 @@ func buildChannelDetector(ch Channel, sampleHz float64, log *slog.Logger) toneDe
 	if ch.Mode == ModeP25 {
 		return buildNACDetector(ch, sampleHz, log)
 	}
+	if ch.Mode == ModeDMR {
+		// A DMR channel opens only on a call, not on a repeater's idle
+		// beacon (issue #1261). Without a sample rate there is no gate and
+		// the channel opens on power alone, as before.
+		if d := NewDMRCallDetector(sampleHz); d != nil {
+			return d
+		}
+		return nil
+	}
 	return buildDetector(ch.Tone, sampleHz, log)
 }
 
@@ -792,6 +801,13 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 	cd := s.dataFor(idx)
 	level, open := s.squelchMeasure(idx, ch)
 	var held time.Duration
+	// A DMR call gate runs its own receiver, so it sees every chunk (a
+	// simplex radio's TDMA gaps included); once the channel's power squelch
+	// has broken it may extend the window to dmrGateMinDwell to hear a voice
+	// sync or Voice LC Header. A silent DMR channel costs no extra time.
+	dmrGate, _ := det.(*DMRCallDetector)
+	started := s.opts.Now()
+	dmrExtended := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -802,12 +818,30 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				deadline.Reset(dataScanHoldStep)
 				continue
 			}
+			if dmrGate != nil && dmrExtended {
+				if rest := dmrGateMinDwell - s.opts.Now().Sub(started); rest > 0 {
+					deadline.Reset(rest)
+					dmrExtended = false // one extension
+					continue
+				}
+			}
 			return false
 		case iq, ok := <-stream:
 			if !ok {
 				return false
 			}
 			powerOK := level(iq) >= open
+			if dmrGate != nil {
+				present := dmrGate.Process(iq)
+				if powerOK {
+					dmrExtended = true
+				}
+				if powerOK && present {
+					s.log.Info("conv: DMR call gate opened", "freq_hz", ch.FrequencyHz, "label", ch.Label)
+					return true
+				}
+				continue
+			}
 			if !powerOK {
 				continue
 			}
@@ -968,7 +1002,10 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 			} else if bridge > 0 && lastChunk.Sub(lastAbove) < bridge {
 				active = true // a TDMA gap inside one over, not a release
 			}
-			if active && det != nil {
+			if dmrGate, ok := det.(*DMRCallDetector); ok {
+				// Fed every chunk: its receiver needs the gaps too.
+				active = dmrGate.Process(iq) && active
+			} else if active && det != nil {
 				active = det.Process(iq)
 			}
 			if cd != nil {
