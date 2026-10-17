@@ -130,6 +130,9 @@ func main() {
 	case "daemon", "run":
 		runDaemon(os.Args[2:])
 	case "help", "--help", "-h":
+		if len(os.Args) > 2 && runCommandHelp(os.Args[2]) {
+			return
+		}
 		printUsage()
 	default:
 		runDaemon(os.Args[1:])
@@ -168,7 +171,29 @@ USAGE:
   gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
   gophertrunk terms [show|status|accept]  read / check / acknowledge the Terms of Service
   gophertrunk version                 print build version
-  gophertrunk help                    show this message`)
+  gophertrunk help [command]          show this message, or a command's flags (e.g. help wmbus)`)
+}
+
+// commandHelp maps the flag-parsing subcommands to their runners, so
+// `gophertrunk help <command>` can show that command's flags and examples
+// (#1256: an operator on a phone asked for one place to look them up).
+var commandHelp = map[string]func([]string){
+	"decode": runDecode, "replay": runReplay, "analyze": runAnalyze,
+	"identify": runIdentify, "spectrum": runSpectrum, "hunt": runHunt,
+	"rfscope": runRFScope, "gen": runGen, "capture": runCapture,
+	"power": runPower, "wmbus": runWMBus, "test": runSiglabTest,
+	"import-pdf": runImport, "tui": runTUI,
+}
+
+// runCommandHelp prints cmd's usage by running it with -h (its FlagSet
+// prints the usage and exits). It reports false for an unknown command.
+func runCommandHelp(cmd string) bool {
+	run, ok := commandHelp[cmd]
+	if !ok {
+		return false
+	}
+	run([]string{"-h"})
+	return true
 }
 
 func runDaemon(args []string) {

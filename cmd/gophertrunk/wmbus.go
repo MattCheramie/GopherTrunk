@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/radio/wmbus"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
@@ -38,7 +39,9 @@ func runWMBus(args []string) {
 	seconds := fs.Float64("seconds", 0, "stop a live run after this many seconds (0 = until Ctrl-C)")
 	asJSON := fs.Bool("json", false, "print one JSON object per telegram")
 	all := fs.Bool("all", false, "also print frames whose CRC failed")
-	saveFrames := fs.String("save-frames", "", "write the IQ around each telegram to this directory (an IQ .wav plus a .metadata.json per telegram; a few hundred KB each, small enough to share), live or from -in")
+	saveFrames := fs.String("save-frames", "", "write the IQ around each telegram to this directory (an IQ .wav plus a .metadata.json per telegram; a few hundred KB each, small enough to share), live or from -in; CRC-valid telegrams only unless -all is set")
+	status := fs.Duration("status", 30*time.Second, "live: print a progress line (frames, CRC-valid / CRC-failed, access codes, dropped chunks) this often; 0 = only at the end")
+	logPath := fs.String("log", "", "also append every telegram and progress line to this file, written as it happens (survives Ctrl-C, a closed terminal or a killed `| tee`)")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk wmbus — Wireless M-Bus (EN 13757-4) meter telegram decoder, modes T1 and C1 at 868.95 MHz.
@@ -75,6 +78,17 @@ EXAMPLES:
   gophertrunk wmbus -rtltcp 127.0.0.1:1234 -save-frames meters/
   gophertrunk wmbus -in meters/<file>.wav
 
+  # A long unattended listen: a fixed low gain (tenths of a dB; 0 = minimum),
+  # failed-CRC telegrams printed and saved too, everything appended to a log
+  # that survives Ctrl-C, and a progress line every minute
+  gophertrunk wmbus -gain 0 -all -save-frames meters/ -log wm.log -status 1m
+
+A live run prints a progress line every -status (default 30s): frames heard,
+how many passed / failed their CRC, access codes (sync words; many with no
+frames means noise or overload), and IQ chunks the SDR dropped (any at all
+means the decoder is not keeping up). Meters send every 2 minutes to a few
+hours, so expect long quiet stretches.
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
@@ -95,7 +109,28 @@ FLAGS:`)
 		explicit["rate"] = true
 	}
 
-	out := bufio.NewWriter(os.Stdout)
+	var logFile *os.File
+	if *logPath != "" {
+		var err error
+		if logFile, err = os.OpenFile(*logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err != nil {
+			rep.Fatal(1, err)
+		}
+		defer logFile.Close()
+	}
+	// statusf prints a progress / summary line to stderr and the -log file.
+	statusf := func(line string) {
+		fmt.Fprintln(os.Stderr, line)
+		if logFile != nil {
+			fmt.Fprintln(logFile, line)
+		}
+	}
+	var stdout io.Writer = os.Stdout
+	if logFile != nil {
+		// The log first: io.MultiWriter stops at the first failed write,
+		// and stdout is the one that fails (a `| tee` killed by Ctrl-C).
+		stdout = io.MultiWriter(logFile, os.Stdout)
+	}
+	out := bufio.NewWriter(stdout)
 	defer out.Flush()
 	// stamp labels a frame: wall-clock time live, capture time for a file.
 	var stamp func(sample int64) string
@@ -109,6 +144,7 @@ FLAGS:`)
 		if saver, err = newWMBusSnippetSaver(*saveFrames, rateHz, centerHz, *offset); err != nil {
 			rep.Fatal(1, err)
 		}
+		saver.onSaved = func(path string) { statusf("wmbus: saved " + path) }
 	}
 	reportSaved := func() {
 		if saver == nil {
@@ -117,7 +153,7 @@ FLAGS:`)
 		if err := saver.flush(true); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
-		fmt.Fprintf(os.Stderr, "wmbus: saved %d telegram snippet(s) to %s\n", saver.saved, *saveFrames)
+		statusf(fmt.Sprintf("wmbus: saved %d telegram snippet(s) to %s", saver.saved, *saveFrames))
 	}
 	newRx := func(rateHz float64) *wmbus.Receiver {
 		rx, err := wmbus.NewReceiver(wmbus.ReceiverOptions{
@@ -161,8 +197,8 @@ FLAGS:`)
 		}
 		reportSaved()
 		st := rx.Stats()
-		fmt.Fprintf(os.Stderr, "wmbus: %.1f s of IQ at %.0f S/s, %d frames (%d CRC-valid), %d access codes\n",
-			float64(st.Samples)/rateHz, rateHz, st.Framer.Frames, st.Framer.CRCOK, st.Framer.Syncs)
+		statusf(fmt.Sprintf("wmbus: %.1f s of IQ at %.0f S/s, %d frames (%d CRC-valid), %d access codes",
+			float64(st.Samples)/rateHz, rateHz, st.Framer.Frames, st.Framer.CRCOK, st.Framer.Syncs))
 		return
 	}
 
@@ -208,21 +244,69 @@ FLAGS:`)
 	stamp = func(int64) string { return time.Now().Format("2006-01-02 15:04:05.000") }
 	newSaver(float64(*rate), uint32(*freq))
 	rx := newRx(float64(*rate))
+	drops := &captureDropCounter{serial: dev.Info().Serial}
+	sdr.SetIQDropObserver(drops.observe)
+	defer sdr.SetIQDropObserver(nil)
 	fmt.Fprintf(os.Stderr, "wmbus: listening on %s at %.3f MHz, %d S/s (Ctrl-C to stop)\n", name, float64(*freq)/1e6, *rate)
+	if saver != nil && !*all {
+		fmt.Fprintln(os.Stderr, "wmbus: -save-frames keeps CRC-valid telegrams only; add -all to keep the CRC-failed ones too")
+	}
+	ended := listenWMBus(ctx, stream, rx, saver, wmbusListenOptions{
+		RateHz: float64(*rate), Status: *status, Drops: drops.count,
+		Statusf: statusf,
+	})
+	reportSaved()
+	if ended {
+		// Only a cancel or -seconds ends a live listen normally; a stream
+		// that closes on its own is a lost source, which used to exit with
+		// no message at all (#1256).
+		rep.Fatal(1, iqStreamEnded(dev, errors.New("IQ stream ended")))
+	}
+}
+
+// wmbusListenOptions configures listenWMBus.
+type wmbusListenOptions struct {
+	RateHz float64
+	// Status is the stream time between progress lines; 0 prints only the
+	// final one.
+	Status time.Duration
+	// Drops reports the IQ chunks the SDR has dropped so far (nil: none).
+	Drops func() uint64
+	// Statusf receives each progress line and the final summary.
+	Statusf func(string)
+}
+
+// listenWMBus decodes a live IQ stream until ctx ends (false) or the
+// stream closes on its own (true). Every Status of stream time it reports
+// how much it has heard — frames, CRC-valid frames, access codes and SDR
+// drops — so an operator waiting minutes for a meter's next telegram can
+// see the decoder is alive and whether anything is arriving (#1256). Stream
+// time, not wall time, paces it: live they agree, and a test can drive it.
+func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Receiver, saver *wmbusSnippetSaver, o wmbusListenOptions) (streamEnded bool) {
+	every := int64(o.Status.Seconds() * o.RateHz)
+	next := every
+	var warnedDrops uint64
+	line := func(final bool) {
+		st := rx.Stats()
+		var d uint64
+		if o.Drops != nil {
+			d = o.Drops()
+		}
+		o.Statusf(wmbusStatusLine(float64(st.Samples)/o.RateHz, st, d, final))
+		if d > warnedDrops {
+			warnedDrops = d
+			o.Statusf(fmt.Sprintf("wmbus: WARNING — the SDR has dropped %d IQ chunk(s): the decoder is not keeping up, and a telegram that spans a gap cannot decode. Lower -rate, close other programs, or check the USB link.", d))
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
-			st := rx.Stats()
-			fmt.Fprintf(os.Stderr, "wmbus: %d frames (%d CRC-valid), %d access codes\n", st.Framer.Frames, st.Framer.CRCOK, st.Framer.Syncs)
-			reportSaved()
-			return
+			line(true)
+			return false
 		case iq, ok := <-stream:
 			if !ok {
-				// Only a cancel or -seconds ends a live listen normally; a
-				// stream that closes on its own is a lost source, which used
-				// to exit with no message at all (#1256).
-				reportSaved()
-				rep.Fatal(1, iqStreamEnded(dev, errors.New("IQ stream ended")))
+				line(true)
+				return true
 			}
 			if saver != nil {
 				saver.feed(iq)
@@ -230,11 +314,26 @@ FLAGS:`)
 			rx.Process(iq)
 			if saver != nil {
 				if err := saver.flush(false); err != nil {
-					fmt.Fprintln(os.Stderr, err)
+					o.Statusf(err.Error())
 				}
+			}
+			if every > 0 && rx.Stats().Samples >= next {
+				next += every
+				line(false)
 			}
 		}
 	}
+}
+
+// wmbusStatusLine is one live progress line (or, final, the summary).
+func wmbusStatusLine(seconds float64, st wmbus.ReceiverStats, drops uint64, final bool) string {
+	what := "listening"
+	if final {
+		what = "stopped after"
+	}
+	return fmt.Sprintf("wmbus: %s %s: %d frames (%d CRC-valid, %d CRC-failed), %d access codes, %d dropped chunks",
+		what, time.Duration(seconds*float64(time.Second)).Round(time.Second).String(), st.Framer.Frames, st.Framer.CRCOK,
+		st.Framer.Frames-st.Framer.CRCOK, st.Framer.Syncs, drops)
 }
 
 // applyWMBusSidecar fills the -in settings the user did not give from the

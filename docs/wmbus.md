@@ -73,6 +73,27 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 - `-seconds N` stops after N seconds.
 - `-save-frames DIR` keeps the radio signal (IQ) around each telegram; see
   [Saving telegrams to share](#saving-telegrams-to-share).
+- `-log FILE` appends every telegram line and progress line to FILE as it
+  happens. It survives Ctrl-C and a closed terminal; prefer it to `| tee`,
+  which Ctrl-C kills along with GopherTrunk (or use `| tee -i`).
+- `-status 30s` (the default) prints a progress line that often; `0` turns
+  it off. `gophertrunk help wmbus` lists every flag.
+
+**Progress line.** Meters send every couple of minutes to every few hours, so
+a live run can be quiet for a long time. The progress line shows it is alive:
+
+```
+wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0 dropped chunks
+```
+
+- *Access codes* are sync words. They also appear by chance in noise, so a
+  steady trickle with no frames is normal.
+- *CRC-failed* frames are telegrams that were heard but damaged: the
+  signal is there but weak, clipped or interfered with. Add `-all` to see them.
+- *Dropped chunks* must stay at 0. Any drop means the computer did not keep
+  up with the SDR and a telegram in the gap is lost. A warning is printed the
+  first time it happens. On a slow phone, lower `-rate`, or record with
+  `capture` and decode the file afterwards, which has no real-time limit.
 
 **Tuning.** An RTL-SDR's crystal can be tens of ppm off, which is tens of
 kHz at 868 MHz. The decoder tolerates about ±50 kHz, so `-ppm` is rarely
@@ -139,8 +160,12 @@ For every telegram it prints, it writes two files to the directory:
 
 This works live, including through rtl_tcp, and on a capture you already
 have. (`gophertrunk capture -rtltcp host:port` records a whole capture through
-rtl_tcp too, but most of it is empty air between telegrams.) With `-all`, telegrams whose CRC failed are saved too, which is the
-useful case when a meter does not decode.
+rtl_tcp too, but most of it is empty air between telegrams.)
+
+Only CRC-valid telegrams are saved unless `-all` is given; with `-all`,
+telegrams whose CRC failed are saved too, which is the useful case when a
+meter does not decode. A live run prints `wmbus: saved <file>` as each one is
+written, and says at start-up when it is keeping CRC-valid telegrams only.
 
 To report results, the printed lines (or `-json` lines) can be pasted as text
 on its own. Zip the `meters/` directory when the signal itself needs looking

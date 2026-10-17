@@ -46,18 +46,27 @@ type wmbusSnippet struct {
 
 // wmbusSnippetSaver keeps a sliding window of recent IQ and writes the span
 // around each telegram once the samples after it have arrived.
+//
+// The window is a fixed ring. It used to be a slice trimmed by copying the
+// whole 0.5 s window down on every chunk: ~6 MB of memmove per 8192-sample
+// RTL chunk at 1.6 MS/s, 37% of real time on a desktop core and far past
+// real time on the reporter's 32-bit phone, so a live `-save-frames` run fell
+// behind, the SDR dropped chunks and no telegram decoded — the empty meters/
+// folder of #1256. A ring costs one copy of the chunk itself.
 type wmbusSnippetSaver struct {
 	dir      string
 	rateHz   float64
 	centerHz uint32
 	offsetHz float64
 
-	hist    []complex64
-	histEnd int64 // absolute index one past the last sample in hist
-	maxHist int
+	ring    []complex64 // len == capacity; sample i lives at ring[i%len]
+	histEnd int64       // absolute index one past the newest sample held
 
 	pending []wmbusSnippet
 	saved   int
+	// onSaved, when set, is told each snippet's path as it is written, so a
+	// live run shows telegrams being kept instead of only a count at exit.
+	onSaved func(path string)
 	used    map[string]int
 }
 
@@ -67,19 +76,43 @@ func newWMBusSnippetSaver(dir string, rateHz float64, centerHz uint32, offsetHz 
 	}
 	return &wmbusSnippetSaver{
 		dir: dir, rateHz: rateHz, centerHz: centerHz, offsetHz: offsetHz,
-		maxHist: int(rateHz * wmbusSnippetHistorySec),
-		used:    map[string]int{},
+		ring: make([]complex64, max(1, int(rateHz*wmbusSnippetHistorySec))),
+		used: map[string]int{},
 	}, nil
 }
 
 // feed appends a chunk to the history. Call it before the receiver
 // processes the chunk, so a frame that ends inside it is already held.
 func (s *wmbusSnippetSaver) feed(iq []complex64) {
-	s.hist = append(s.hist, iq...)
-	s.histEnd += int64(len(iq))
-	if over := len(s.hist) - s.maxHist; over > 0 {
-		s.hist = append(s.hist[:0], s.hist[over:]...)
+	n := len(s.ring)
+	if len(iq) > n {
+		// Only the newest window's worth can be held.
+		s.histEnd += int64(len(iq) - n)
+		iq = iq[len(iq)-n:]
 	}
+	for len(iq) > 0 {
+		at := int(s.histEnd % int64(n))
+		k := copy(s.ring[at:], iq)
+		iq = iq[k:]
+		s.histEnd += int64(k)
+	}
+}
+
+// histStart is the absolute index of the oldest sample still held.
+func (s *wmbusSnippetSaver) histStart() int64 {
+	return max(0, s.histEnd-int64(len(s.ring)))
+}
+
+// span returns the held samples [start, end) in order, which may wrap the
+// ring; the caller has clamped both ends to what is held.
+func (s *wmbusSnippetSaver) span(start, end int64) []complex64 {
+	n := int64(len(s.ring))
+	a, b := int(start%n), int(end%n)
+	if a < b || end-start == 0 {
+		return s.ring[a : a+int(end-start)]
+	}
+	out := make([]complex64, 0, end-start)
+	return append(append(out, s.ring[a:]...), s.ring[:b]...)
 }
 
 // onFrame queues the snippet for a frame that ended at info.Sample. label
@@ -142,8 +175,7 @@ func (s *wmbusSnippetSaver) flush(final bool) error {
 }
 
 func (s *wmbusSnippetSaver) write(sn wmbusSnippet) error {
-	histStart := s.histEnd - int64(len(s.hist))
-	start, end := max(sn.start, histStart), min(sn.end, s.histEnd)
+	start, end := max(sn.start, s.histStart()), min(sn.end, s.histEnd)
 	if end <= start {
 		return fmt.Errorf("wmbus: snippet %s fell out of the IQ history", sn.base)
 	}
@@ -154,7 +186,7 @@ func (s *wmbusSnippetSaver) write(sn wmbusSnippet) error {
 	}
 	c, err := siglab.NewIQContainer(f, siglab.FormatWAV, int(s.rateHz+0.5))
 	if err == nil {
-		err = c.Write(s.hist[start-histStart : end-histStart])
+		err = c.Write(s.span(start, end))
 	}
 	if err == nil {
 		err = c.Finalize()
@@ -169,6 +201,9 @@ func (s *wmbusSnippetSaver) write(sn wmbusSnippet) error {
 		return fmt.Errorf("wmbus: write sidecar for %s: %w", path, err)
 	}
 	s.saved++
+	if s.onSaved != nil {
+		s.onSaved(path)
+	}
 	return nil
 }
 
