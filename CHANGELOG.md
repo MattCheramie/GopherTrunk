@@ -15,8 +15,18 @@ for tagged releases.
 - **NXDN48 (6.25 kHz) scan-list channels (#1261).** `mode: nxdn48` on a
   `scanner.conventional` entry decodes the very-narrow NXDN mode many
   radios call "narrow"; `mode: nxdn` stays the 12.5 kHz NXDN96 mode.
+- **`wmbus` live progress, `-log` and `help <command>` (#1256).** A live
+  run prints a progress line every `-status` (default 30 s) with frames,
+  CRC-valid / CRC-failed, access codes and IQ chunks the SDR dropped, and
+  warns when it drops any. `-log FILE` appends every telegram and progress
+  line as it happens. `gophertrunk help wmbus` (or any subcommand) lists
+  its flags.
 
 ### Fixed
+- **`wmbus -save-frames` no longer stalls a live run (#1256).** Its IQ
+  history copied the whole 0.5 s window on every chunk, which on a phone
+  is slower than real time: the decoder fell behind, the SDR dropped IQ
+  and nothing was saved. It is now a ring buffer.
 - **A DMR scan-list channel no longer stops the scan on a repeater's idle
   beacon (#1261).** A keyed but idle DMR repeater held the scanner on its
   channel and opened empty calls, because the squelch judged only carrier
