@@ -32,6 +32,15 @@ for tagged releases.
   its flags.
 
 ### Fixed
+- **D-STAR and System Fusion voice tolerate a real radio's frequency error
+  (#1261).** Neither voice receiver corrected the carrier offset: on a
+  synthetic stream D-STAR decoded nothing from ~150 Hz off frequency and YSF
+  failed from ~200 Hz, while a real radio is routinely a few hundred hertz
+  off. Neither had a channel filter either, so a neighbouring channel reached
+  the demodulator. Both now run carrier correction and a channel filter
+  (±4 kHz D-STAR, ±6.25 kHz YSF); a transmission 400 Hz off with a
+  same-power neighbour one channel away went from 0 decoded voice frames to
+  41 of 42 (D-STAR) and 35 of 40 (YSF). Not yet confirmed on air.
 - **NXDN voice now rejects the neighbouring channel (#1261).** The NXDN
   voice chain had no channel-select filter: at a 2.4 MS/s SDR rate its
   front end barely band-limits, so the FM discriminator saw ±24 kHz around

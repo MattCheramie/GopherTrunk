@@ -1098,7 +1098,11 @@ confirmation before any close-as-completed.
   AMBE decoder give the SAME 49 bits. Test-fixture trap that cost a round: YSF is RRC-shaped (α 0.20)
   like DMR, so fixtures use `demod.ModulateC4FM`; `ModulateP25C4FM` gives ~45 % dibit agreement through
   the YSF receiver and looks like a receiver bug. Only V/D mode 2 is decoded; V/D mode 1 and Voice FR are
-  logged. Unverified on air.
+  logged. Unverified on air. The YSF and D-STAR voice receivers had NO carrier correction and NO channel
+  filter (#1261): measured on synthetic streams, D-STAR decoded nothing from ~150 Hz of carrier offset and YSF failed
+  from ~200 Hz. Both now run `EnableAFC` (CoarseAFC on the discriminator, ahead of the timing loop) + `EnableChannelFilter`
+  (±4 kHz / ±6.25 kHz) via `newDStarVoiceReceiver` / `newYSFVoiceReceiver`; either fix alone still decodes 0 of a
+  400 Hz-off transmission with a same-power neighbour (`dstar_ysf_offset_test.go`). The CC paths are unchanged.
 - **The NXDN frame layer in `internal/radio/nxdn` (frame.go / sync.go / lich.go / the CAC decoder) is
   FABRICATED — only `airframe.go` is the real air format, and only the voice path uses it (#1261).**
   The invented model has a 16-bit FSW 0xC55A, a 32-dibit SACCH and no scrambler; real NXDN (MMDVMHost

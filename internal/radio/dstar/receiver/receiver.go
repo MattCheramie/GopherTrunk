@@ -27,6 +27,7 @@ package receiver
 
 import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
 )
@@ -61,15 +62,47 @@ type Options struct {
 	BTProduct float64
 	// ClockGain is the Mueller-Müller loop gain. <= 0 uses 0.05.
 	ClockGain float64
+
+	// EnableAFC subtracts the carrier offset's DC bias from the FM
+	// discriminator. GMSK at ±1.2 kHz deviation decodes nothing once the
+	// carrier is ~150 Hz off (measured on a synthetic stream), and a real
+	// radio is routinely a few hundred hertz off — the #1261 reporter's
+	// NXDN captures sat ~400 Hz off. Off by default so existing fixtures
+	// stay byte-identical; the voice chain turns it on.
+	EnableAFC bool
+	// EnableChannelFilter inserts a ±ChannelCutoffHz low-pass ahead of the
+	// discriminator. The voice chain's front end barely band-limits at an
+	// SDR rate of a few MS/s, so without it the discriminator sees the
+	// whole ±24 kHz intermediate stream (the NXDN / DMR lesson). Off by
+	// default; the voice chain turns it on.
+	EnableChannelFilter bool
+	// ChannelCutoffOverrideHz replaces ChannelCutoffHz when > 0.
+	ChannelCutoffOverrideHz float64
 }
+
+// ChannelCutoffHz is the one-sided cutoff of the optional channel filter
+// (Options.EnableChannelFilter). D-STAR's GMSK occupies ±~3 kHz. Swept on a
+// synthetic stream 400 Hz off frequency, every cutoff from 3 to 6 kHz cut the
+// bit error rate under a same-power neighbour 10–12.5 kHz away from 20–26 % to
+// ~1.5 %, and 4 kHz did best in band-wide noise while still decoding cleanly
+// 600 Hz off frequency.
+const ChannelCutoffHz = 4000.0
+
+// channelFilterSpanSymbols sizes the channel FIR at 2·span·sps+1 taps
+// (Kaiser β 8.6): 181 taps at 48 kHz, a ~1.5 kHz skirt — the DMR / NXDN
+// receivers' filter.
+const channelFilterSpanSymbols = 9
 
 // Receiver is the composed IQ → bit pipeline.
 type Receiver struct {
-	fm      *demod.FM
-	gfsk    *demod.GFSK
-	clock   *sync.MuellerMuller
-	bitSink dstar.BitSink
-	bitBase int
+	chanFilt *filter.FIR
+	filtered []complex64
+	afc      *demod.CoarseAFC
+	fm       *demod.FM
+	gfsk     *demod.GFSK
+	clock    *sync.MuellerMuller
+	bitSink  dstar.BitSink
+	bitBase  int
 
 	disc    []float32
 	matched []float32
@@ -103,11 +136,27 @@ func New(opts Options) *Receiver {
 		gain = 0.05
 	}
 
+	var chanFilt *filter.FIR
+	if opts.EnableChannelFilter {
+		fc := ChannelCutoffHz
+		if opts.ChannelCutoffOverrideHz > 0 {
+			fc = opts.ChannelCutoffOverrideHz
+		}
+		taps := 2*channelFilterSpanSymbols*int(sps+0.5) + 1
+		chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc/opts.SampleRateHz, 8.6))
+	}
+	var afc *demod.CoarseAFC
+	if opts.EnableAFC {
+		afc = demod.NewCoarseAFC(sps)
+	}
+
 	return &Receiver{
-		fm:      demod.NewFM(),
-		gfsk:    demod.NewGFSK(int(sps+0.5), span, bt),
-		clock:   sync.NewMuellerMuller(sps, gain),
-		bitSink: opts.BitSink,
+		chanFilt: chanFilt,
+		afc:      afc,
+		fm:       demod.NewFM(),
+		gfsk:     demod.NewGFSK(int(sps+0.5), span, bt),
+		clock:    sync.NewMuellerMuller(sps, gain),
+		bitSink:  opts.BitSink,
 	}
 }
 
@@ -117,7 +166,14 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
 	}
+	if r.chanFilt != nil {
+		r.filtered = r.chanFilt.Process(r.filtered, iq)
+		iq = r.filtered
+	}
 	r.disc = r.fm.Process(r.disc, iq)
+	if r.afc != nil {
+		r.afc.Process(r.disc)
+	}
 	r.matched = r.gfsk.MatchedFilter(r.matched, r.disc)
 	r.symbols = r.clock.Process(r.symbols, r.matched)
 	if len(r.symbols) == 0 {
@@ -142,4 +198,10 @@ func (r *Receiver) Process(iq []complex64) {
 func (r *Receiver) Reset() {
 	r.bitBase = 0
 	r.gfsk.Reset()
+	if r.afc != nil {
+		r.afc.Reset()
+	}
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
+	}
 }

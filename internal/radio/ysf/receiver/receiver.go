@@ -24,6 +24,7 @@ import (
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ysf"
 )
@@ -77,11 +78,37 @@ type Options struct {
 	// slicerScale = 1.0 — back-compat with fixtures that pre-scale
 	// their FM levels.
 	DeviationHz float64
+
+	// EnableAFC subtracts the carrier offset's DC bias from the FM
+	// discriminator. The 4-level eye's inner levels sit ±600 Hz from
+	// centre, so an uncorrected offset of ~200 Hz already slices
+	// wrongly (measured on a synthetic stream) — and a real radio is
+	// routinely a few hundred hertz off. Off by default so existing
+	// fixtures stay byte-identical; the voice chain turns it on.
+	EnableAFC bool
+	// EnableChannelFilter inserts a ±ChannelCutoffHz low-pass ahead of
+	// the discriminator. The voice chain's front end barely band-limits
+	// at an SDR rate of a few MS/s, so without it the discriminator sees
+	// the whole ±24 kHz intermediate stream (the NXDN / DMR lesson). Off
+	// by default; the voice chain turns it on.
+	EnableChannelFilter bool
 }
+
+// ChannelCutoffHz is the optional channel filter's one-sided cutoff: half
+// the 12.5 kHz channel spacing, as for DMR and NXDN96 (the same 4-FSK
+// occupancy).
+const ChannelCutoffHz = 6250.0
+
+// channelFilterSpanSymbols sizes the channel FIR at 2·span·sps+1 taps
+// (Kaiser β 8.6): 181 taps at 48 kHz, a ~1.5 kHz skirt.
+const channelFilterSpanSymbols = 9
 
 // Receiver is the composed IQ → dibit pipeline. Process is the only
 // hot path; instantiate once per call chain and reuse.
 type Receiver struct {
+	chanFilt  *filter.FIR
+	filtered  []complex64
+	afc       *demod.CoarseAFC
 	fm        *demod.FM
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
@@ -132,7 +159,23 @@ func New(opts Options) *Receiver {
 		slicerScale = 2.0 * math.Pi * opts.DeviationHz / opts.SampleRateHz
 	}
 
+	var chanFilt *filter.FIR
+	if opts.EnableChannelFilter {
+		taps := 2*channelFilterSpanSymbols*int(sps+0.5) + 1
+		chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, ChannelCutoffHz/opts.SampleRateHz, 8.6))
+	}
+	// The AFC runs on the discriminator, ahead of the matched filter and
+	// the timing loop: measured on a synthetic stream it decodes cleanly
+	// from 0 to 1.2 kHz of offset there, at least as well as on the
+	// recovered symbols (where NXDN and DMR run theirs).
+	var afc *demod.CoarseAFC
+	if opts.EnableAFC {
+		afc = demod.NewCoarseAFC(sps)
+	}
+
 	return &Receiver{
+		chanFilt:  chanFilt,
+		afc:       afc,
 		fm:        demod.NewFM(),
 		mf:        demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
 		clock:     sync.NewMuellerMuller(sps, gain),
@@ -148,7 +191,14 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
 	}
+	if r.chanFilt != nil {
+		r.filtered = r.chanFilt.Process(r.filtered, iq)
+		iq = r.filtered
+	}
 	r.disc = r.fm.Process(r.disc, iq)
+	if r.afc != nil {
+		r.afc.Process(r.disc)
+	}
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
 	r.symbols = r.clock.Process(r.symbols, r.matched)
 	if len(r.symbols) == 0 {
@@ -173,6 +223,12 @@ func (r *Receiver) Process(iq []complex64) {
 // absolute dibit positions.
 func (r *Receiver) Reset() {
 	r.dibitBase = 0
+	if r.afc != nil {
+		r.afc.Reset()
+	}
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
+	}
 	// FM discriminator's `last` is harmless to leave alone — the next
 	// sample it processes will produce one slightly-wrong derivative,
 	// which the matched filter smooths out.
