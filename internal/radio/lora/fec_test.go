@@ -53,11 +53,11 @@ func TestInterleaverRoundTrip(t *testing.T) {
 			for i := range codewords {
 				codewords[i] = uint16(rng.Intn(1 << uint(cw)))
 			}
-			syms := Interleave(codewords, ppm, cr)
+			syms := Interleave(codewords, ppm, cw)
 			if len(syms) != cw {
 				t.Fatalf("sf=%d cr=%d: got %d syms want %d", sf, cr, len(syms), cw)
 			}
-			back := Deinterleave(syms, ppm, cr)
+			back := Deinterleave(syms, ppm, cw)
 			for i := range codewords {
 				if back[i] != codewords[i] {
 					t.Fatalf("sf=%d cr=%d codeword %d: got %d want %d", sf, cr, i, back[i], codewords[i])

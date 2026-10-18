@@ -1,58 +1,70 @@
 package lora
 
-// Explicit-header codec. The header is the first interleaver block of a
-// LoRa frame and is always sent at the most robust coding rate (4/8) so a
-// receiver can decode it without yet knowing the payload's coding rate.
-// It carries the payload length, the payload coding rate, and whether a
-// payload CRC follows. Spreading factor is recovered from the preamble
-// (see demod.syncFrame), not the header.
+// Explicit-header codec and frame geometry, in the Semtech air format
+// (pinned in bitexact_test.go against gr-lora_sdr and jkadbear/LoRaPHY).
 //
-// This is a compact, self-consistent header layout — sufficient for SF and
-// CR auto-detection across this package's own modulator/demodulator. A
-// bit-exact Semtech header (with its reduced-rate SF-2 region) is a
-// follow-up calibrated against captured frames.
+// The header is five nibbles: payload length (high, low), (CR<<1)|CRC-on,
+// then a 5-bit checksum split as one bit in nibble 3 and four in nibble 4.
+// It opens the first interleaver block, which is always sent at coding
+// rate 4/8 in reduced-rate mode (SF-2 rows): that block carries SF-2
+// nibbles — the five header nibbles plus the first SF-7 payload nibbles —
+// in 8 symbols. Spreading factor is recovered from the preamble (see
+// demod.syncFrame), not the header.
 
-// HeaderCR is the fixed coding rate the header block is transmitted at.
+// HeaderCR is the fixed coding rate (4/8) of the first block.
 const HeaderCR = 4
 
-// headerNibbles is the number of 4-bit fields the explicit header occupies
-// at the start of the header block.
-const headerNibbles = 4
+// HeaderNibbles is the number of nibbles the explicit header occupies.
+const HeaderNibbles = 5
+
+// HeaderSymbols is the number of symbols the first block spans (4+HeaderCR).
+const HeaderSymbols = 4 + HeaderCR
 
 // Header holds the decoded explicit-header fields.
 type Header struct {
 	PayloadLen int  // payload byte count (excludes CRC)
 	CR         int  // payload coding rate, 1..4 (4/5..4/8)
 	HasCRC     bool // a 2-byte payload CRC follows
-	Valid      bool // header checksum passed
+	Valid      bool // header checksum passed and CR is in range
 }
 
-// encodeHeader returns the headerNibbles header fields for a frame.
+// headerChecksum computes the 5-bit header checksum (c4..c0) over the
+// first three header nibbles.
+func headerChecksum(h0, h1, h2 uint8) uint8 {
+	b := func(x uint8, k uint) uint8 { return (x >> k) & 1 }
+	c4 := b(h0, 3) ^ b(h0, 2) ^ b(h0, 1) ^ b(h0, 0)
+	c3 := b(h0, 3) ^ b(h1, 3) ^ b(h1, 2) ^ b(h1, 1) ^ b(h2, 0)
+	c2 := b(h0, 2) ^ b(h1, 3) ^ b(h1, 0) ^ b(h2, 3) ^ b(h2, 1)
+	c1 := b(h0, 1) ^ b(h1, 2) ^ b(h1, 0) ^ b(h2, 2) ^ b(h2, 1) ^ b(h2, 0)
+	c0 := b(h0, 0) ^ b(h1, 1) ^ b(h2, 3) ^ b(h2, 2) ^ b(h2, 1) ^ b(h2, 0)
+	return c4<<4 | c3<<3 | c2<<2 | c1<<1 | c0
+}
+
+// encodeHeader returns the HeaderNibbles header nibbles for a frame.
 func encodeHeader(payloadLen, cr int, hasCRC bool) []uint8 {
-	crcBit := uint8(0)
+	h0 := uint8(payloadLen>>4) & 0x0f
+	h1 := uint8(payloadLen) & 0x0f
+	h2 := uint8(cr&0x07) << 1
 	if hasCRC {
-		crcBit = 1
+		h2 |= 1
 	}
-	n0 := uint8(payloadLen>>4) & 0x0f
-	n1 := uint8(payloadLen) & 0x0f
-	n2 := (uint8(cr) & 0x07) | (crcBit << 3)
-	n3 := (n0 ^ n1 ^ n2) & 0x0f // checksum
-	return []uint8{n0, n1, n2, n3}
+	chk := headerChecksum(h0, h1, h2)
+	return []uint8{h0, h1, h2, chk >> 4, chk & 0x0f}
 }
 
-// ParseHeader decodes the leading header fields from a decoded block's
-// nibbles. nibbles must hold at least headerNibbles entries.
+// ParseHeader decodes the explicit header from the first HeaderNibbles
+// nibbles of the first block.
 func ParseHeader(nibbles []uint8) Header {
-	if len(nibbles) < headerNibbles {
+	if len(nibbles) < HeaderNibbles {
 		return Header{}
 	}
-	n0, n1, n2, n3 := nibbles[0]&0x0f, nibbles[1]&0x0f, nibbles[2]&0x0f, nibbles[3]&0x0f
-	want := (n0 ^ n1 ^ n2) & 0x0f
+	h0, h1, h2 := nibbles[0]&0x0f, nibbles[1]&0x0f, nibbles[2]&0x0f
+	got := (nibbles[3]&1)<<4 | nibbles[4]&0x0f
 	h := Header{
-		PayloadLen: int(n0)<<4 | int(n1),
-		CR:         int(n2 & 0x07),
-		HasCRC:     n2&0x08 != 0,
-		Valid:      want == n3,
+		PayloadLen: int(h0)<<4 | int(h1),
+		CR:         int(h2 >> 1),
+		HasCRC:     h2&1 != 0,
+		Valid:      got == headerChecksum(h0, h1, h2),
 	}
 	if h.CR < 1 || h.CR > 4 {
 		h.Valid = false
@@ -60,37 +72,41 @@ func ParseHeader(nibbles []uint8) Header {
 	return h
 }
 
-// blockNibbles is the number of data nibbles carried by one interleaver
-// block with ppm codewords (rows): one nibble per row. ppm is the spreading
-// factor for a full-rate block, or SF-2 for a reduced-rate (LDRO / header)
-// block.
-func blockNibbles(ppm int) int { return ppm }
-
-// blockSymbols is the number of symbols one interleaver block occupies at
-// coding rate cr: (4+cr) symbols. It depends only on cr (the column count),
-// not on ppm, so a reduced-rate block still spans (4+cr) symbols — it just
-// carries fewer nibbles.
-func blockSymbols(cr int) int { return 4 + cr }
-
-// payloadBlockCount returns how many payload interleaver blocks a frame of
-// payloadLen bytes (plus an optional 2-byte CRC) needs at spreading factor
-// sf. Each block carries blockNibbles(payloadPPM(sf, ldro)) nibbles — SF
-// normally, SF-2 when LDRO reduces the rate.
-func payloadBlockCount(sf, payloadLen int, hasCRC, ldro bool) int {
-	nib := payloadLen * 2
+// frameNibbles is the total nibble count of a frame: header, payload and
+// optional CRC.
+func frameNibbles(payloadLen int, hasCRC bool) int {
+	n := HeaderNibbles + 2*payloadLen
 	if hasCRC {
-		nib += 4 // 2 CRC bytes
+		n += 4
 	}
-	per := blockNibbles(payloadPPM(sf, ldro))
-	if per <= 0 {
-		return 0
-	}
-	return (nib + per - 1) / per
+	return n
 }
 
-// PayloadSymbolCount returns the number of symbols the payload (after the
-// header block) occupies for the given parameters. LDRO increases the count
+// firstBlockNibbles is the number of nibbles the first (reduced-rate,
+// 4/8) block carries: one per interleaver row, SF-2 rows.
+func firstBlockNibbles(sf int) int { return sf - 2 }
+
+// payloadBlockCount returns how many interleaver blocks follow the first
+// block. Each carries payloadPPM(sf, ldro) nibbles — SF normally, SF-2
+// when LDRO reduces the rate.
+func payloadBlockCount(sf, payloadLen int, hasCRC, ldro bool) int {
+	rem := frameNibbles(payloadLen, hasCRC) - firstBlockNibbles(sf)
+	if rem <= 0 {
+		return 0
+	}
+	per := payloadPPM(sf, ldro)
+	return (rem + per - 1) / per
+}
+
+// PayloadSymbolCount returns the number of symbols that follow the first
+// (header) block for the given parameters. LDRO increases the count
 // because each reduced-rate block carries fewer nibbles.
 func PayloadSymbolCount(sf, cr, payloadLen int, hasCRC, ldro bool) int {
-	return payloadBlockCount(sf, payloadLen, hasCRC, ldro) * blockSymbols(cr)
+	return payloadBlockCount(sf, payloadLen, hasCRC, ldro) * (4 + cr)
+}
+
+// FrameSymbolCount is the total number of data symbols after the SFD:
+// the HeaderSymbols-long first block plus PayloadSymbolCount.
+func FrameSymbolCount(sf, cr, payloadLen int, hasCRC, ldro bool) int {
+	return HeaderSymbols + PayloadSymbolCount(sf, cr, payloadLen, hasCRC, ldro)
 }

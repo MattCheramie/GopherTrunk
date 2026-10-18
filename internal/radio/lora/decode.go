@@ -104,23 +104,18 @@ func (m *Demodulator) DecodeBuffer(buf []complex64) []Frame {
 // reads the full symbol set and decodes the frame. cfoBins is removed by
 // mixing so the FFT peaks land on the true symbol bins.
 func (m *Demodulator) decodeFrameAt(buf []complex64, dataStart int, cfoBins float64) (Frame, bool) {
-	hc := headerSymbolCount()
-
-	// Header first, to recover payload length + coding rate.
-	hdrRegion := m.mix(buf, dataStart, hc*m.d.sps, cfoBins)
-	hsyms := m.d.demodSymbols(hdrRegion, 0, hc, 0)
-	hdrNibs, ok := decodeBlock(hsyms, m.d.sf, HeaderCR)
+	// Header block first, to recover payload length + coding rate.
+	hdrRegion := m.mix(buf, dataStart, HeaderSymbols*m.d.sps, cfoBins)
+	hsyms := m.d.demodSymbols(hdrRegion, 0, HeaderSymbols, 0)
+	hdr, _, ok := decodeHeaderBlock(hsyms, m.d.sf)
 	if !ok {
 		return Frame{}, false
 	}
-	hdr := ParseHeader(hdrNibs)
 	if !hdr.Valid {
 		return Frame{SF: m.d.sf, HeaderOK: false, LDRO: m.ldro}, false
 	}
 
-	nBlocks := payloadBlockCount(m.d.sf, hdr.PayloadLen, hdr.HasCRC, m.ldro)
-	total := hc + nBlocks*blockSymbols(hdr.CR)
-
+	total := FrameSymbolCount(m.d.sf, hdr.CR, hdr.PayloadLen, hdr.HasCRC, m.ldro)
 	region := m.mix(buf, dataStart, total*m.d.sps, cfoBins)
 	syms := m.d.demodSymbols(region, 0, total, 0)
 	f, ok := decodeFrameFromSymbols(syms, m.d.sf, m.ldro)
@@ -129,12 +124,10 @@ func (m *Demodulator) decodeFrameAt(buf []complex64, dataStart int, cfoBins floa
 	}
 	f.BW = m.bw
 	f.CFOHz = cfoBins * float64(int(m.bw)) / float64(m.d.n)
-	if hsyms != nil {
-		// peak SNR of the first header symbol, in dB, as a quality proxy.
-		p := m.d.dataPeak(hdrRegion[:m.d.sps])
-		if p.snr > 0 && !math.IsInf(p.snr, 1) {
-			f.SNRdB = 10 * math.Log10(p.snr)
-		}
+	// peak SNR of the first header symbol, in dB, as a quality proxy.
+	p := m.d.dataPeak(hdrRegion[:m.d.sps])
+	if p.snr > 0 && !math.IsInf(p.snr, 1) {
+		f.SNRdB = 10 * math.Log10(p.snr)
 	}
 	return f, true
 }

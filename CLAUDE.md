@@ -1103,6 +1103,19 @@ confirmation before any close-as-completed.
   from ~200 Hz. Both now run `EnableAFC` (CoarseAFC on the discriminator, ahead of the timing loop) + `EnableChannelFilter`
   (±4 kHz / ±6.25 kHz) via `newDStarVoiceReceiver` / `newYSFVoiceReceiver`; either fix alone still decodes 0 of a
   400 Hz-off transmission with a same-power neighbour (`dstar_ysf_offset_test.go`). The CC paths are unchanged.
+- **The LoRa bit layer was FABRICATED (#586) and is now the Semtech air format.** Whitening,
+  CRC, header, Hamming layout, interleaver and the chip mapping were all invented, and the
+  modulator shared them, so every round trip passed while a real frame's header checksum failed
+  100 % (verified: old code decodes 0/6 reference frames). Real format (`whitening.go`,
+  `header.go`, `fec.go`, `frame.go`): whitening LFSR advances ONE bit per byte (0xFF,0xFE,0xFC…);
+  CRC = CRC-16/0x1021/init 0 over all but the last two bytes, XOR those two (BE), appended
+  unwhitened low nibble first; 5-nibble header (len hi/lo, CR<<1|crc, 5-bit checksum) opening a
+  REDUCED-RATE 4/8 first block of SF-2 rows that also carries SF-7 payload nibbles; Hamming with
+  the nibble bit-reversed in the top bits; interleave `sym[i] bit j = cw[(i-j-1) mod rows] bit i`
+  (MSB-first); chip = GrayDecode(sym)(×4 if reduced) + 1. RX rounds the reduced-rate /4 (gr floors).
+  Pinned by `bitexact_test.go` against gr-lora_sdr AND jkadbear/LoRaPHY, transcribed separately and
+  identical on 2916 random cases (they differ only in padding-codeword content). Chirp/sync/SFD
+  already matched. On-air-gated (#764/#771): no real LoRa IQ capture has been decoded yet.
 - **The NXDN frame layer in `internal/radio/nxdn` (frame.go / sync.go / lich.go / the CAC decoder) is
   FABRICATED — only `airframe.go` is the real air format, and only the voice path uses it (#1261).**
   The invented model has a 16-bit FSW 0xC55A, a 32-dibit SACCH and no scrambler; real NXDN (MMDVMHost
