@@ -478,6 +478,13 @@ type wmbusJSON struct {
 	Records      []wmbusRecord `json:"records,omitempty"`
 	Error        string        `json:"error,omitempty"`
 	Frame        string        `json:"frame"`
+	// CRC block detail, for a frame that failed: how many CRC blocks it
+	// has, which failed (1-based; block 1 is the link header), and the
+	// frame as received with its CRC bytes, so it can be checked offline.
+	CRCBlocks       int    `json:"crc_blocks"`
+	CRCFailedBlocks []int  `json:"crc_failed_blocks,omitempty"`
+	HeaderCRCOK     bool   `json:"header_crc_ok"`
+	Raw             string `json:"raw,omitempty"`
 }
 
 type wmbusRecord struct {
@@ -491,6 +498,29 @@ type wmbusRecord struct {
 	Raw      string   `json:"raw"`
 }
 
+// wmbusCRCDetail says where a frame's CRC failed. A failed block 1 is the
+// link header, so the manufacturer, ID and device type printed before it are
+// whatever the corrupt bytes decoded to (issue #1256: a "0x097D …
+// electricity" frame whose manufacturer code was not a valid letter triple).
+func wmbusCRCDetail(f wmbus.Frame) string {
+	if f.Blocks == 0 {
+		return ""
+	}
+	nums := make([]string, len(f.FailedBlocks))
+	for i, n := range f.FailedBlocks {
+		nums[i] = strconv.Itoa(n)
+	}
+	word := "block"
+	if len(nums) > 1 {
+		word = "blocks"
+	}
+	s := fmt.Sprintf("(%s %s of %d", word, strings.Join(nums, ","), f.Blocks)
+	if !f.HeaderCRCOK() {
+		return s + "; block 1 is the header, so the sender shown is unreliable)"
+	}
+	return s + "; header OK)"
+}
+
 // writeWMBusTelegram prints one telegram: a summary line plus one indented
 // line per data record, or a JSON object.
 func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f wmbus.Frame, info wmbus.FrameInfo, asJSON bool) {
@@ -500,6 +530,10 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 			LevelDBFS: info.LevelDBFS, Manufacturer: tg.Manufacturer, ID: tg.ID,
 			Version: int(tg.Version), DeviceType: int(tg.DeviceType), Device: tg.DeviceTypeName(),
 			CI: int(tg.AppCI), Encrypted: tg.Encrypted, Frame: hex.EncodeToString(f.Data),
+			CRCBlocks: f.Blocks, CRCFailedBlocks: f.FailedBlocks, HeaderCRCOK: f.HeaderCRCOK(),
+		}
+		if !f.CRCOK {
+			j.Raw = hex.EncodeToString(f.Raw)
 		}
 		if tg.HasTPL {
 			acc, st, sm := int(tg.Access), int(tg.Status), tg.SecurityMode
@@ -536,7 +570,7 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 	case perr != nil:
 		fmt.Fprintf(&b, "  error: %v", perr)
 	case !tg.CRCOK:
-		b.WriteString("  CRC FAILED")
+		b.WriteString("  CRC FAILED " + wmbusCRCDetail(f))
 	case tg.Encrypted && tg.HasTPL:
 		fmt.Fprintf(&b, "  encrypted: %s, access %d", wmbus.SecurityModeName(tg.SecurityMode), tg.Access)
 	case tg.Encrypted:

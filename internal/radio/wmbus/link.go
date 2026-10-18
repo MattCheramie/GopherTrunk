@@ -98,14 +98,24 @@ var errShort = errors.New("wmbus: frame shorter than its L-field")
 // both formats alike. ok is false when any block CRC fails; data is still
 // returned so a marginal frame can be inspected.
 func stripCRC(raw []byte, f Format) (data []byte, ok bool, err error) {
+	data, _, failed, err := checkBlocks(raw, f)
+	return data, err == nil && len(failed) == 0, err
+}
+
+// checkBlocks is stripCRC that also reports how many CRC blocks the frame
+// has and which of them (1-based, in air order) failed. Block 1 always
+// carries the link header (L, C, M, A), so a failed block 1 means the
+// sender fields cannot be trusted (issue #1256: a CRC-failed "electricity
+// meter" whose manufacturer code was not a valid letter triple).
+func checkBlocks(raw []byte, f Format) (data []byte, blocks int, failed []int, err error) {
 	if len(raw) == 0 || len(raw) < frameLength(raw[0], f) || frameLength(raw[0], f) == 0 {
-		return nil, false, errShort
+		return nil, 0, nil, errShort
 	}
 	raw = raw[:frameLength(raw[0], f)]
-	ok = true
 	check := func(block []byte, crc []byte) {
+		blocks++
 		if CRC16(block) != uint16(crc[0])<<8|uint16(crc[1]) {
-			ok = false
+			failed = append(failed, blocks)
 		}
 	}
 	switch f {
@@ -130,5 +140,5 @@ func stripCRC(raw []byte, f Format) (data []byte, ok bool, err error) {
 		}
 		data[0] = byte(len(data) - 1)
 	}
-	return data, ok, nil
+	return data, blocks, failed, nil
 }

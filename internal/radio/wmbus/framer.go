@@ -41,6 +41,18 @@ type Frame struct {
 	Data []byte
 	// CRCOK reports whether every block CRC matched.
 	CRCOK bool
+	// Blocks is the number of CRC-protected blocks in the frame, and
+	// FailedBlocks the 1-based numbers of those whose CRC failed (empty
+	// when CRCOK). Block 1 holds the link header.
+	Blocks       int
+	FailedBlocks []int
+}
+
+// HeaderCRCOK reports whether the block holding the link header (L, C, M,
+// A: who sent the frame) passed its CRC. When it did not, the manufacturer,
+// ID and device type parsed from the frame are not trustworthy.
+func (f Frame) HeaderCRCOK() bool {
+	return len(f.FailedBlocks) == 0 || f.FailedBlocks[0] != 1
 }
 
 type framerState uint8
@@ -183,7 +195,8 @@ func (f *Framer) appendByte(m Mode, b byte) {
 	raw := append([]byte(nil), f.buf...)
 	format := f.format
 	f.Reset()
-	data, ok, err := stripCRC(raw, format)
+	data, blocks, failed, err := checkBlocks(raw, format)
+	ok := len(failed) == 0
 	if err != nil {
 		f.stats.BadLength++
 		return
@@ -193,7 +206,7 @@ func (f *Framer) appendByte(m Mode, b byte) {
 		f.stats.CRCOK++
 	}
 	if f.onFrame != nil {
-		f.onFrame(Frame{Mode: m, Format: format, Raw: raw, Data: data, CRCOK: ok})
+		f.onFrame(Frame{Mode: m, Format: format, Raw: raw, Data: data, CRCOK: ok, Blocks: blocks, FailedBlocks: failed})
 	}
 }
 
