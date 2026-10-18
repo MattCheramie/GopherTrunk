@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.0] — 2026-10-18
+
 ### Added
 - **Per-device `sample_rate` for scanner SDRs (#1260).** `sdr.devices[].sample_rate`
   runs one SDR at its own IQ rate instead of `sdr.sample_rate`, so a radio
