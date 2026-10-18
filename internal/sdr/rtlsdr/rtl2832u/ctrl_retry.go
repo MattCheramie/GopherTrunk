@@ -25,8 +25,10 @@ const controlStallSettle = 5 * time.Millisecond
 // Once armed, an intermittent RUNTIME stall — most visibly the SetI2CRepeater
 // toggle inside a SetCenterFreq retune on the RTL-SDR Blog V4's R828D
 // (issue #753) — is settled and retried once in place instead of aborting the
-// whole tune. A full device reset is deliberately NOT used at runtime: it
-// would tear down the live IQ stream mid-tune.
+// whole tune. A full device reset is not used here: it would tear down a
+// live IQ stream mid-tune. A stall that survives this retry while NO stream
+// is running is escalated to a reset plus re-bring-up one layer up
+// (purego/recover.go) — the software replug the #753 Pi 5 reporter needed.
 func (d *Demod) EnableControlStallRetry() {
 	d.mu.Lock()
 	d.stallRetry = true

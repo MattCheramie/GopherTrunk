@@ -283,3 +283,45 @@ func TestReceiverSynthetic(t *testing.T) {
 		}
 	}
 }
+
+// A CRC failure names the block it happened in, and a failed block 1 marks
+// the sender fields unreliable (issue #1256: a CRC-failed "electricity
+// meter" whose manufacturer was not a valid code was a corrupt header).
+func TestCheckBlocksNamesFailedBlock(t *testing.T) {
+	raw := mustHex(t, realAirFrames[0].raw)
+	_, blocks, failed, err := checkBlocks(raw, FormatA)
+	if err != nil || len(failed) != 0 {
+		t.Fatalf("clean frame: failed=%v err=%v", failed, err)
+	}
+	if want := 1 + (int(raw[0])-minLField+15)/16; blocks != want {
+		t.Errorf("blocks = %d, want %d", blocks, want)
+	}
+	for _, tc := range []struct {
+		name   string
+		offset int // byte to corrupt in raw
+		want   int // failed block
+	}{
+		{"header", 4, 1},       // inside the 10-byte first block
+		{"block 2", 12 + 3, 2}, // after block 1's 10 bytes + 2 CRC bytes
+		{"last", len(raw) - 3, blocks},
+	} {
+		bad := append([]byte(nil), raw...)
+		bad[tc.offset] ^= 0x01
+		var got []Frame
+		chips := append(make([]uint8, 37), encodeFrameChips(ModeC1, FormatA, bad, 48)...)
+		fr := NewFramer(func(f Frame) { got = append(got, f) })
+		for _, c := range chips {
+			fr.Push(c)
+		}
+		if len(got) != 1 {
+			t.Fatalf("%s: %d frames", tc.name, len(got))
+		}
+		f := got[0]
+		if f.CRCOK || f.Blocks != blocks || len(f.FailedBlocks) != 1 || f.FailedBlocks[0] != tc.want {
+			t.Errorf("%s: crc=%v blocks=%d failed=%v, want block %d of %d", tc.name, f.CRCOK, f.Blocks, f.FailedBlocks, tc.want, blocks)
+		}
+		if got, want := f.HeaderCRCOK(), tc.want != 1; got != want {
+			t.Errorf("%s: HeaderCRCOK = %v, want %v", tc.name, got, want)
+		}
+	}
+}

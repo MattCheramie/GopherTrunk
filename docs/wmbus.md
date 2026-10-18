@@ -69,7 +69,21 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 
 - `-json` prints one JSON object per telegram instead. Its `frame` field is
   the telegram's raw bytes in hex.
-- `-all` also prints frames whose CRC failed.
+- `-all` also prints frames whose CRC failed, with the CRC block that
+  failed:
+
+  ```
+  C1-A   -7.9 dBFS  0x097D 98A18249  electricity (v01)  CRC FAILED (block 1 of 4; block 1 is the header, so the sender shown is unreliable)
+  C1-A  -12.0 dBFS  DWZ 11130881  heat cost allocator (v80)  CRC FAILED (blocks 3,4 of 4; header OK)
+  ```
+
+  Block 1 carries the sender (manufacturer, ID, device type). When it fails,
+  those fields are whatever the damaged bytes decode to; a manufacturer
+  shown as a hex number such as `0x097D` is not a real code. When only later
+  blocks fail, the sender is right and the damage is in the payload. With
+  `-json`, a failed frame carries `crc_blocks`, `crc_failed_blocks`,
+  `header_crc_ok` and `raw` (the frame as received, CRC bytes included), so
+  it can be checked offline.
 - `-seconds N` stops after N seconds.
 - `-save-frames DIR` keeps the radio signal (IQ) around each telegram; see
   [Saving telegrams to share](#saving-telegrams-to-share).

@@ -97,6 +97,11 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		}
 		d.streamMu.Lock()
 	}
+	// hwMu from here to StartBulkIn: a runtime USB-reset recovery
+	// (recover.go) must never run between the buffer reset and the bulk
+	// ring starting.
+	d.hwMu.Lock()
+	defer d.hwMu.Unlock()
 	if err := d.demod.ResetBuffer(); err != nil {
 		return nil, fmt.Errorf("rtlsdr: reset buffer: %w", err)
 	}
@@ -126,7 +131,9 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.ringIdx = 0
 	d.ringFill = 0
 
+	d.streaming.Store(true)
 	if err := d.transport.StartBulkIn(bulkInEndpoint, asyncBufCount, asyncBufLen, d.deliver, d.onStreamDead); err != nil {
+		d.streaming.Store(false)
 		d.out = nil
 		d.streamCtx = nil
 		d.streamDone = nil

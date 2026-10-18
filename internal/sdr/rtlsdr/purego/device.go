@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/rtl2832u"
@@ -86,6 +87,22 @@ type Device struct {
 	streamDeadErr atomic.Pointer[error]
 
 	closed atomic.Bool
+
+	// hwMu serialises the control path (tune, rate, gain, ppm, bias tee,
+	// stream start) against the runtime recovery that swaps demod and
+	// tuner for freshly brought-up ones (recover.go, issue #753). Lock
+	// order: streamMu before hwMu.
+	hwMu sync.Mutex
+	// rebringup re-runs the open-time bring-up after a USB reset; nil (a
+	// Device built by hand in a test) disables recovery.
+	rebringup func() (*rtl2832u.Demod, tuners.Tuner, error)
+	// applied is the state to restore after a recovery. Under hwMu.
+	applied      appliedState
+	lastRecovery time.Time // under hwMu
+	recoveries   atomic.Uint64
+	// streaming is true from a stream's start until its teardown has
+	// stopped the bulk-IN ring; recovery never resets while it is set.
+	streaming atomic.Bool
 }
 
 // DroppedChunks returns the cumulative number of IQ chunks deliver has
@@ -122,21 +139,25 @@ func (d *Device) Info() sdr.Info { return d.info }
 // FreqRange reports the dongle's inclusive tuning range in Hz by
 // delegating to the detected tuner chip. Satisfies sdr.FreqRanger so a
 // whole-device hunt can derive its sweep band from the open device.
-func (d *Device) FreqRange() (minHz, maxHz uint32) { return d.tuner.FreqRange() }
+func (d *Device) FreqRange() (minHz, maxHz uint32) {
+	d.hwMu.Lock()
+	defer d.hwMu.Unlock()
+	return d.tuner.FreqRange()
+}
 
 // SetCenterFreq tunes the LO. Delegates to the tuner; settles
 // briefly afterwards so the PLL has time to lock.
 func (d *Device) SetCenterFreq(hz uint32) error {
-	if d.closed.Load() {
-		return ErrClosed
-	}
-	if err := d.tuner.SetFreq(hz); err != nil {
-		return fmt.Errorf("rtlsdr: SetCenterFreq(%d): %w", hz, err)
-	}
-	if r, ok := d.tuner.(interface{ SettleAfterRetune() }); ok {
-		r.SettleAfterRetune()
-	}
-	return nil
+	return d.control(func() error {
+		if err := d.tuner.SetFreq(hz); err != nil {
+			return fmt.Errorf("rtlsdr: SetCenterFreq(%d): %w", hz, err)
+		}
+		d.applied.freqHz = hz
+		if r, ok := d.tuner.(interface{ SettleAfterRetune() }); ok {
+			r.SettleAfterRetune()
+		}
+		return nil
+	})
 }
 
 // SetSampleRate programs the demod resampler and the tuner's IF
@@ -145,9 +166,10 @@ func (d *Device) SetCenterFreq(hz uint32) error {
 // that need the exact value can read it back via [Demod.GetSampleRate]
 // — but the [sdr.Device] contract returns just the error.
 func (d *Device) SetSampleRate(hz uint32) error {
-	if d.closed.Load() {
-		return ErrClosed
-	}
+	return d.control(func() error { return d.setSampleRateLocked(hz) })
+}
+
+func (d *Device) setSampleRateLocked(hz uint32) error {
 	actual, err := d.demod.SetSampleRate(hz)
 	if err != nil {
 		return fmt.Errorf("rtlsdr: SetSampleRate(%d): %w", hz, err)
@@ -155,6 +177,7 @@ func (d *Device) SetSampleRate(hz uint32) error {
 	if err := d.tuner.SetBandwidth(actual); err != nil {
 		return fmt.Errorf("rtlsdr: tuner bandwidth: %w", err)
 	}
+	d.applied.rateHz = hz
 	return nil
 }
 
@@ -171,6 +194,8 @@ func (d *Device) ActualSampleRate() (uint32, error) {
 	if d.closed.Load() {
 		return 0, ErrClosed
 	}
+	d.hwMu.Lock()
+	defer d.hwMu.Unlock()
 	return d.demod.GetSampleRate(), nil
 }
 
@@ -179,13 +204,15 @@ func (d *Device) ActualSampleRate() (uint32, error) {
 // quantized gain on the chip's ladder. Mirrors librtlsdr's
 // rtlsdr_set_tuner_gain_mode + rtlsdr_set_tuner_gain pair.
 func (d *Device) SetGain(tenthDB int) error {
-	if d.closed.Load() {
-		return ErrClosed
-	}
+	return d.control(func() error { return d.setGainLocked(tenthDB) })
+}
+
+func (d *Device) setGainLocked(tenthDB int) error {
 	if tenthDB < 0 {
 		if err := d.tuner.SetGainMode(false); err != nil {
 			return fmt.Errorf("rtlsdr: SetGain auto: %w", err)
 		}
+		d.applied.gain, d.applied.gainSet = tenthDB, true
 		return nil
 	}
 	if err := d.tuner.SetGainMode(true); err != nil {
@@ -194,6 +221,7 @@ func (d *Device) SetGain(tenthDB int) error {
 	if err := d.tuner.SetGain(tenthDB); err != nil {
 		return fmt.Errorf("rtlsdr: SetGain(%d tenthDB): %w", tenthDB, err)
 	}
+	d.applied.gain, d.applied.gainSet = tenthDB, true
 	return nil
 }
 
@@ -206,9 +234,10 @@ func (d *Device) SetGain(tenthDB int) error {
 // dongles whose crystal sits far enough off nominal (the R828D V4).
 // Negative slows the chip; positive speeds it up.
 func (d *Device) SetPPM(ppm int) error {
-	if d.closed.Load() {
-		return ErrClosed
-	}
+	return d.control(func() error { return d.setPPMLocked(ppm) })
+}
+
+func (d *Device) setPPMLocked(ppm int) error {
 	if err := d.demod.SetSampleFreqCorrection(ppm); err != nil {
 		return fmt.Errorf("rtlsdr: SetPPM(%d): %w", ppm, err)
 	}
@@ -220,6 +249,7 @@ func (d *Device) SetPPM(ppm int) error {
 			return fmt.Errorf("rtlsdr: SetPPM(%d): tuner LO: %w", ppm, err)
 		}
 	}
+	d.applied.ppm, d.applied.ppmSet = ppm, true
 	return nil
 }
 
@@ -228,13 +258,13 @@ func (d *Device) SetPPM(ppm int) error {
 // that aren't in the table inherit GPIO 0 (the standard for
 // RTL-SDR.com v3+ and NESDR Smart v5).
 func (d *Device) SetBiasTee(enable bool) error {
-	if d.closed.Load() {
-		return ErrClosed
-	}
-	if err := d.demod.SetBiasTee(d.biasTeeGPIO, enable); err != nil {
-		return fmt.Errorf("rtlsdr: SetBiasTee(%v): %w", enable, err)
-	}
-	return nil
+	return d.control(func() error {
+		if err := d.demod.SetBiasTee(d.biasTeeGPIO, enable); err != nil {
+			return fmt.Errorf("rtlsdr: SetBiasTee(%v): %w", enable, err)
+		}
+		d.applied.biasTee, d.applied.biasSet = enable, true
+		return nil
+	})
 }
 
 // SetBlogV4 forces the R82xx tuner into RTL-SDR Blog V4 mode (28.8 MHz
@@ -249,8 +279,11 @@ func (d *Device) SetBlogV4(lite bool) error {
 	if d.closed.Load() {
 		return ErrClosed
 	}
+	d.hwMu.Lock()
+	defer d.hwMu.Unlock()
 	if r82, ok := d.tuner.(*tuners.R82xx); ok {
 		r82.SetBlogV4(lite)
+		d.applied.blogV4, d.applied.blogLite = true, lite
 	}
 	return nil
 }
@@ -260,6 +293,8 @@ func (d *Device) SetBlogV4(lite bool) error {
 // effective reference crystal and whether the Blog V4 path armed; other
 // tuners report just the chip name. Implements sdr.TunerDiagnoser.
 func (d *Device) TunerDiag() (tunerName string, blogV4, blogV4Lite bool, xtalHz uint32) {
+	d.hwMu.Lock()
+	defer d.hwMu.Unlock()
 	if r82, ok := d.tuner.(*tuners.R82xx); ok {
 		v4, lite := r82.IsBlogV4()
 		return r82.Type().String(), v4, lite, r82.XtalHz()
@@ -274,6 +309,8 @@ func (d *Device) Close() error {
 		return nil
 	}
 	d.cancelStream()
+	d.hwMu.Lock()
+	defer d.hwMu.Unlock()
 	var firstErr error
 	if d.tuner != nil {
 		if err := d.tuner.Standby(); err != nil && firstErr == nil {
@@ -298,6 +335,7 @@ func (d *Device) cancelStream() {
 	var done chan struct{}
 	d.stopOnce.Do(func() {
 		_ = d.transport.StopBulkIn()
+		d.streaming.Store(false)
 		d.streamMu.Lock()
 		if d.out != nil {
 			close(d.out)

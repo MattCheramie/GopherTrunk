@@ -318,11 +318,7 @@ func openDeviceAttempts(transport usb.Transport, desc usb.Descriptor, idx, maxAt
 	// strings (the V4 sources these from EEPROM) and arm the V4 path on
 	// the tuner before any tune. Gated entirely on this match, so
 	// non-V4 R828D / R820T2 dongles are untouched.
-	if r82, ok := tuner.(*tuners.R82xx); ok {
-		if lite, isV4 := blogV4Variant(desc.Manufacturer, desc.Product); isV4 {
-			r82.SetBlogV4(lite)
-		}
-	}
+	armBlogV4FromDescriptor(tuner, desc.Manufacturer, desc.Product)
 
 	kd := lookupKnown(desc.VID, desc.PID)
 	product := desc.Product
@@ -350,6 +346,7 @@ func openDeviceAttempts(transport usb.Transport, desc usb.Descriptor, idx, maxAt
 		tuner:       tuner,
 		info:        info,
 		biasTeeGPIO: biasTeeGPIO,
+		rebringup:   newRebringup(transport, desc.Manufacturer, desc.Product),
 	}, nil
 }
 

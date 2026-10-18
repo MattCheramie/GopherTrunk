@@ -102,3 +102,36 @@ func TestWMBusJSONLine(t *testing.T) {
 		t.Errorf("json %s", out.String())
 	}
 }
+
+// A CRC-failed frame says which block failed, and flags the sender as
+// unreliable when that block is the header (issue #1256).
+func TestWMBusCRCFailedLineNamesBlock(t *testing.T) {
+	data, _ := hex.DecodeString(wmbusQcaloric)
+	for _, tc := range []struct {
+		failed []int
+		want   string
+	}{
+		{[]int{1}, "CRC FAILED (block 1 of 4; block 1 is the header, so the sender shown is unreliable)"},
+		{[]int{3, 4}, "CRC FAILED (blocks 3,4 of 4; header OK)"},
+	} {
+		fr := wmbus.Frame{Mode: wmbus.ModeC1, Format: wmbus.FormatA, Data: data, Raw: []byte{0x2e}, Blocks: 4, FailedBlocks: tc.failed}
+		tg, err := wmbus.ParseTelegram(fr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		writeWMBusTelegram(&out, "", tg, nil, fr, wmbus.FrameInfo{}, false)
+		if !strings.Contains(out.String(), tc.want) {
+			t.Errorf("failed %v: got %q, want it to contain %q", tc.failed, out.String(), tc.want)
+		}
+		out.Reset()
+		writeWMBusTelegram(&out, "", tg, nil, fr, wmbus.FrameInfo{}, true)
+		var j wmbusJSON
+		if err := json.Unmarshal(out.Bytes(), &j); err != nil {
+			t.Fatal(err)
+		}
+		if j.CRCBlocks != 4 || len(j.CRCFailedBlocks) != len(tc.failed) || j.HeaderCRCOK != (tc.failed[0] != 1) || j.Raw != "2e" {
+			t.Errorf("failed %v: json %s", tc.failed, out.String())
+		}
+	}
+}
