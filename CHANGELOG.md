@@ -13,6 +13,20 @@ for tagged releases.
   so the sender shown is unreliable)`, and `-json` adds `crc_blocks`,
   `crc_failed_blocks`, `header_crc_ok` and `raw`, so a damaged payload can be
   told from a damaged header (whose manufacturer / ID / type are garbage).
+
+### Fixed
+- **RTL-SDR: a stuck control pipe no longer kills the conventional scanner
+  until a replug (#753).** Retunes now wait for a cancelled IQ stream to
+  finish tearing down instead of racing it, and a control transfer that
+  still fails with broken pipe or a timeout while no stream is running
+  triggers one USB reset plus the normal bring-up, restores rate / ppm /
+  gain / bias tee / frequency, and retries (at most every 30 s, never while
+  a stream is live). Logged as `rtlsdr: control transfer failed with no IQ
+  stream running; resetting the dongle …`.
+
+## [v1.3.0] — 2026-10-17
+
+### Added
 - **Per-device `sample_rate` for scanner SDRs (#1260).** `sdr.devices[].sample_rate`
   runs one SDR at its own IQ rate instead of `sdr.sample_rate`, so a radio
   that cannot reach the shared rate (an AirspyHF at 768 kS/s) can scan
@@ -37,14 +51,6 @@ for tagged releases.
   its flags.
 
 ### Fixed
-- **RTL-SDR: a stuck control pipe no longer kills the conventional scanner
-  until a replug (#753).** Retunes now wait for a cancelled IQ stream to
-  finish tearing down instead of racing it, and a control transfer that
-  still fails with broken pipe or a timeout while no stream is running
-  triggers one USB reset plus the normal bring-up, restores rate / ppm /
-  gain / bias tee / frequency, and retries (at most every 30 s, never while
-  a stream is live). Logged as `rtlsdr: control transfer failed with no IQ
-  stream running; resetting the dongle …`.
 - **LoRa now uses the real Semtech bit format (#586).** The LoRa decoder's
   whitening, payload CRC, explicit header, Hamming code, interleaver and
   symbol mapping were invented, and the built-in modulator used the same
