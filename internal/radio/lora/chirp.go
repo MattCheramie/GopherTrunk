@@ -11,11 +11,12 @@
 // symbol value. See demod.go for the receive state machine and
 // modulator.go for the transmit path.
 //
-// The modulator and demodulator in this package are exact inverses, so the
-// FEC / whitening / header transforms are verifiable by round-trip tests
-// independent of any SDR. Bit-exact interoperability with Semtech silicon
-// (whitening table, CRC seed, interleaver rotation direction) is validated
-// separately against captured golden vectors — see the package tests.
+// The bit layer (whitening, CRC, explicit header, Hamming, interleaver,
+// Gray / chip mapping, the reduced-rate first block and LDRO) follows the
+// Semtech air format and is pinned by literal vectors from two independent
+// hardware-validated implementations — see bitexact_test.go (#586). The
+// modulator exists to synthesise test IQ; round trips through it are not
+// evidence of interoperability on their own.
 package lora
 
 import "math"

@@ -7,9 +7,9 @@ import "strings"
 // smear the dechirp peak across the two least-significant chip bins over
 // one symbol, corrupting the low bits. LDRO removes those two bits from
 // use: the payload is carried in a reduced-rate mode with ppm = SF-2
-// meaningful bits per symbol (the transmitted bin is always a multiple of
-// four), so a +/-1 bin drift no longer changes the decoded value. This
-// mirrors Semtech's SX127x `LowDataRateOptimize` bit.
+// meaningful bits per symbol (the transmitted bin is always 4k+1, see
+// fec.go symbolToChip), so a +/-1 bin drift no longer changes the decoded
+// value. This mirrors Semtech's SX127x `LowDataRateOptimize` bit.
 //
 // LDRO is not signalled in the explicit header — it is a property of the
 // (SF, BW) pair the whole network agrees on. The Semtech-recommended rule
@@ -20,11 +20,9 @@ import "strings"
 // an operator can still force it on or off per sub-channel for a network
 // that deviates from the recommendation.
 //
-// Scope note: LDRO here is the reduced-rate *payload*. The explicit header
-// is always transmitted reduced-rate in Semtech's PHY too, but GopherTrunk
-// still uses its compact self-consistent header layout, so the header's
-// reduced-rate SF-2 encoding lands with the bit-exact header calibration
-// (gated on captured golden vectors) rather than here. See header.go.
+// The first block (explicit header plus the first SF-7 payload nibbles)
+// is ALWAYS reduced-rate at 4/8, whatever LDRO says; LDRO only decides the
+// payload blocks after it (see header.go).
 
 // LDROMode selects how Low Data Rate Optimization is decided for a
 // sub-channel.
@@ -85,7 +83,7 @@ func ParseLDROMode(s string) (LDROMode, bool) {
 
 // payloadPPM returns the number of interleaver rows (meaningful bits per
 // symbol) for a payload block: SF normally, SF-2 when LDRO reduces the
-// rate. The header always uses the full SF rows (see header.go).
+// rate. The first block is always SF-2 rows (see header.go).
 func payloadPPM(sf int, ldro bool) int {
 	if ldro {
 		return sf - 2

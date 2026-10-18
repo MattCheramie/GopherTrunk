@@ -1,18 +1,124 @@
 package lora
 
-// This file implements the LoRa symbol<->bit forward-error-correction
-// transforms as exact-inverse pairs: Gray mapping, the diagonal
-// interleaver, and Hamming(4+cr, 4) coding. The encode (TX) and decode
-// (RX) directions are inverses, so the chain is verifiable by round-trip
-// tests; CR 4/7 and 4/8 additionally correct a single bit error per
-// codeword. Exact bit-level interoperability with Semtech silicon
-// (interleaver rotation sign, codeword bit order) is a calibration step
-// gated behind captured golden vectors — see the package tests.
+import "math/bits"
 
-// grayEncode maps a binary value to its Gray code (TX direction).
+// This file implements the LoRa symbol<->bit forward-error-correction
+// transforms in the Semtech air format: Hamming(4+cr, 4) coding, the
+// diagonal interleaver, Gray mapping and the chip-value mapping (including
+// the +1 chip offset and the reduced-rate x4 scaling). Every transform is
+// pinned by literal vectors from two independent open implementations
+// (gr-lora_sdr and jkadbear/LoRaPHY) in bitexact_test.go; a round trip
+// alone cannot catch a layout that the encoder and decoder share.
+
+// --- Hamming(4+cr, 4) ----------------------------------------------------
+//
+// With the nibble bits n0 (LSB) .. n3, the codeword read MSB first is
+//
+//	4/8: n0 n1 n2 n3 p0 p1 p2 p3     p0 = n0^n1^n2, p1 = n1^n2^n3,
+//	4/7: n0 n1 n2 n3 p0 p1 p2        p2 = n0^n1^n3, p3 = n0^n2^n3
+//	4/6: n0 n1 n2 n3 p0 p1
+//	4/5: n0 n1 n2 n3 p               p  = n0^n1^n2^n3
+//
+// i.e. the data nibble sits bit-reversed in the top four bits.
+
+// HammingEncode4 encodes a 4-bit nibble into its (4+cr)-bit codeword.
+func HammingEncode4(nibble uint8, cr int) uint16 {
+	n0 := uint16(nibble) & 1
+	n1 := uint16(nibble>>1) & 1
+	n2 := uint16(nibble>>2) & 1
+	n3 := uint16(nibble>>3) & 1
+	if cr == 1 {
+		return n0<<4 | n1<<3 | n2<<2 | n3<<1 | (n0 ^ n1 ^ n2 ^ n3)
+	}
+	p0 := n0 ^ n1 ^ n2
+	p1 := n1 ^ n2 ^ n3
+	p2 := n0 ^ n1 ^ n3
+	p3 := n0 ^ n2 ^ n3
+	cw := n0<<7 | n1<<6 | n2<<5 | n3<<4 | p0<<3 | p1<<2 | p2<<1 | p3
+	return cw >> uint(4-cr)
+}
+
+// hammingData extracts the (unchecked) data nibble from a codeword.
+func hammingData(cw uint16, cr int) uint8 {
+	w := uint(4 + cr)
+	b := func(i uint) uint8 { return uint8(cw>>(w-1-i)) & 1 }
+	return b(0) | b(1)<<1 | b(2)<<2 | b(3)<<3
+}
+
+// HammingDecode4 decodes one (4+cr)-bit codeword to its 4-bit nibble by
+// minimum distance over the 16 codewords. corrected reports the outcome:
+// 0 = clean, 1 = a single bit error was corrected (4/7, 4/8 only), -1 = an
+// error was detected but not corrected (nibble is then the raw data bits).
+// 4/5 and 4/6 only detect.
+func HammingDecode4(cw uint16, cr int) (nibble uint8, corrected int) {
+	if cr < 1 || cr > 4 {
+		return hammingData(cw, 4), -1
+	}
+	mask := uint16(1)<<uint(4+cr) - 1
+	cw &= mask
+	best, bestDist, ties := uint8(0), 99, 0
+	for n := uint8(0); n < 16; n++ {
+		d := bits.OnesCount16(cw ^ HammingEncode4(n, cr))
+		switch {
+		case d < bestDist:
+			best, bestDist, ties = n, d, 1
+		case d == bestDist:
+			ties++
+		}
+	}
+	switch {
+	case bestDist == 0:
+		return best, 0
+	case bestDist == 1 && cr >= 3 && ties == 1:
+		return best, 1
+	default:
+		return hammingData(cw, cr), -1
+	}
+}
+
+// --- diagonal interleaver -----------------------------------------------
+
+// Interleave maps rows (sf_app) codewords of cwLen bits into cwLen
+// symbols of rows bits. With bit positions counted MSB first (codeword
+// bit 0 = its MSB, symbol bit 0 = its MSB):
+//
+//	symbol[i] bit j = codeword[(i-j-1) mod rows] bit i
+//
+// Missing codewords (a short final block) are zero.
+func Interleave(codewords []uint16, rows, cwLen int) []uint16 {
+	syms := make([]uint16, cwLen)
+	for i := 0; i < cwLen; i++ {
+		for j := 0; j < rows; j++ {
+			r := modN(i-j-1, rows)
+			if r < len(codewords) && codewords[r]>>uint(cwLen-1-i)&1 != 0 {
+				syms[i] |= 1 << uint(rows-1-j)
+			}
+		}
+	}
+	return syms
+}
+
+// Deinterleave inverts Interleave: cwLen symbols of rows bits -> rows
+// codewords of cwLen bits.
+func Deinterleave(syms []uint16, rows, cwLen int) []uint16 {
+	codewords := make([]uint16, rows)
+	for i := 0; i < cwLen && i < len(syms); i++ {
+		for j := 0; j < rows; j++ {
+			if syms[i]>>uint(rows-1-j)&1 != 0 {
+				codewords[modN(i-j-1, rows)] |= 1 << uint(cwLen-1-i)
+			}
+		}
+	}
+	return codewords
+}
+
+// --- Gray mapping and chip values ---------------------------------------
+
+// grayEncode maps a binary value to its Gray code (the RX direction: a
+// demodulated value is Gray-encoded to recover the interleaver symbol).
 func grayEncode(v uint16) uint16 { return v ^ (v >> 1) }
 
-// grayDecode inverts grayEncode (RX direction): cumulative XOR.
+// grayDecode inverts grayEncode (the TX direction): cumulative XOR.
 func grayDecode(g uint16) uint16 {
 	g ^= g >> 8
 	g ^= g >> 4
@@ -21,166 +127,32 @@ func grayDecode(g uint16) uint16 {
 	return g
 }
 
-// --- diagonal interleaver -----------------------------------------------
-
-// Interleave maps ppm data codewords, each (4+cr) bits, into (4+cr)
-// symbols, each ppm bits, using a diagonal rotation. cr is 1..4. The
-// inverse is Deinterleave.
-//
-//	symbol[k] bit ((r+k) mod ppm) = codeword[r] bit k
-//
-// codewords[r] holds bits 0..(4+cr-1) (LSB = bit 0). The returned symbols
-// hold bits 0..(ppm-1).
-func Interleave(codewords []uint16, ppm, cr int) []uint16 {
-	cw := 4 + cr
-	syms := make([]uint16, cw)
-	for r := 0; r < ppm && r < len(codewords); r++ {
-		for k := 0; k < cw; k++ {
-			if codewords[r]&(1<<uint(k)) != 0 {
-				dst := (r + k) % ppm
-				syms[k] |= 1 << uint(dst)
-			}
-		}
+// symbolToChip maps an interleaver symbol to the transmitted chip value:
+// Gray-decode, scale by 4 in a reduced-rate block (the two low chip bits
+// carry no data, which is what makes the block tolerate a ±1-bin drift),
+// then add one. In gr-lora_sdr the reduced-rate symbol carries a parity
+// bit and a zero in its two low bits before an SF-bit Gray decode; that
+// parity is chosen so those two bits Gray-decode to zero, which makes it
+// identical to LoRaPHY's num*4+1 used here (bitexact_test.go pins both).
+func symbolToChip(sym uint16, sf int, reduced bool) uint16 {
+	v := grayDecode(sym)
+	if reduced {
+		v <<= 2
 	}
-	return syms
+	return uint16(modN(int(v)+1, 1<<uint(sf)))
 }
 
-// Deinterleave inverts Interleave: (4+cr) symbols of ppm bits -> ppm
-// codewords of (4+cr) bits.
-func Deinterleave(syms []uint16, ppm, cr int) []uint16 {
-	cw := 4 + cr
-	codewords := make([]uint16, ppm)
-	for k := 0; k < cw && k < len(syms); k++ {
-		for r := 0; r < ppm; r++ {
-			dst := (r + k) % ppm
-			if syms[k]&(1<<uint(dst)) != 0 {
-				codewords[r] |= 1 << uint(k)
-			}
-		}
+// chipToSymbol inverts symbolToChip on a demodulated bin: subtract one,
+// divide a reduced-rate block's value by 4, Gray-encode. The division
+// ROUNDS to the nearest multiple of four (gr-lora_sdr floors): a
+// reduced-rate chip is always 4k+1, so a bin one off either way still
+// reads k — the drift tolerance LDRO exists for. Flooring would read a
+// one-bin-low peak as k-1. Identical on every exact chip.
+func chipToSymbol(chip uint16, sf int, reduced bool) uint16 {
+	n := 1 << uint(sf)
+	v := modN(int(chip)-1, n)
+	if reduced {
+		v = ((v + 2) >> 2) % (n >> 2)
 	}
-	return codewords
-}
-
-// --- Hamming(4+cr, 4) ----------------------------------------------------
-//
-// Codeword bit layout (LSB-first within a uint16):
-//
-//	bit0..3 = data nibble d0..d3
-//	bit4..  = parity, per coding rate (see below)
-//
-// 4/5 (cr=1): bit4 = even parity of d0..d3            (detect only)
-// 4/6 (cr=2): bit4 = d0^d1^d3, bit5 = d0^d2^d3        (detect)
-// 4/7 (cr=3): Hamming(7,4) parities p1,p2,p3          (single-error correct)
-// 4/8 (cr=4): Hamming(7,4) + bit7 overall parity      (SEC-DED)
-
-// HammingEncode4 encodes a 4-bit nibble into its (4+cr)-bit codeword.
-func HammingEncode4(nibble uint8, cr int) uint16 {
-	d0 := uint16(nibble>>0) & 1
-	d1 := uint16(nibble>>1) & 1
-	d2 := uint16(nibble>>2) & 1
-	d3 := uint16(nibble>>3) & 1
-	cw := d0 | d1<<1 | d2<<2 | d3<<3
-	switch cr {
-	case 1:
-		cw |= (d0 ^ d1 ^ d2 ^ d3) << 4
-	case 2:
-		cw |= (d0 ^ d1 ^ d3) << 4
-		cw |= (d0 ^ d2 ^ d3) << 5
-	case 3, 4:
-		p1 := d0 ^ d1 ^ d3
-		p2 := d0 ^ d2 ^ d3
-		p3 := d1 ^ d2 ^ d3
-		cw |= p1<<4 | p2<<5 | p3<<6
-		if cr == 4 {
-			// overall (extended) parity over the 7 bits.
-			ov := d0 ^ d1 ^ d2 ^ d3 ^ p1 ^ p2 ^ p3
-			cw |= ov << 7
-		}
-	}
-	return cw
-}
-
-// HammingDecode4 decodes one (4+cr)-bit codeword to its 4-bit nibble.
-// corrected reports the outcome: 0 = clean, 1 = a single bit error was
-// corrected, -1 = an uncorrectable error was detected (nibble is the
-// best-effort raw data bits).
-func HammingDecode4(cw uint16, cr int) (nibble uint8, corrected int) {
-	rawNibble := func(c uint16) uint8 { return uint8(c & 0x0f) }
-	bit := func(c uint16, i int) uint16 { return (c >> uint(i)) & 1 }
-
-	switch cr {
-	case 1:
-		par := bit(cw, 0) ^ bit(cw, 1) ^ bit(cw, 2) ^ bit(cw, 3)
-		if par != bit(cw, 4) {
-			return rawNibble(cw), -1
-		}
-		return rawNibble(cw), 0
-	case 2:
-		s0 := bit(cw, 0) ^ bit(cw, 1) ^ bit(cw, 3) ^ bit(cw, 4)
-		s1 := bit(cw, 0) ^ bit(cw, 2) ^ bit(cw, 3) ^ bit(cw, 5)
-		if s0 != 0 || s1 != 0 {
-			return rawNibble(cw), -1
-		}
-		return rawNibble(cw), 0
-	case 3, 4:
-		d0, d1, d2, d3 := bit(cw, 0), bit(cw, 1), bit(cw, 2), bit(cw, 3)
-		p1, p2, p3 := bit(cw, 4), bit(cw, 5), bit(cw, 6)
-		s1 := d0 ^ d1 ^ d3 ^ p1
-		s2 := d0 ^ d2 ^ d3 ^ p2
-		s3 := d1 ^ d2 ^ d3 ^ p3
-		syn := s1 | s2<<1 | s3<<2
-		if syn != 0 {
-			// Map the syndrome to the flipped bit position and correct.
-			// Order chosen to match the parity equations above.
-			pos := syndromeToPos(syn)
-			if pos >= 0 {
-				cw ^= 1 << uint(pos)
-			}
-			if cr == 4 {
-				// Extended parity: distinguish corrected single error
-				// (now consistent) from a double error.
-				ov := bit(cw, 0) ^ bit(cw, 1) ^ bit(cw, 2) ^ bit(cw, 3) ^
-					bit(cw, 4) ^ bit(cw, 5) ^ bit(cw, 6)
-				if ov != bit(cw, 7) {
-					return rawNibble(cw), -1 // double error
-				}
-			}
-			return rawNibble(cw), 1
-		}
-		if cr == 4 {
-			ov := d0 ^ d1 ^ d2 ^ d3 ^ p1 ^ p2 ^ p3
-			if ov != bit(cw, 7) {
-				// Clean (7,4) syndrome but the overall-parity bit flipped:
-				// the single error is in bit7 itself. Correctable.
-				return rawNibble(cw), 1
-			}
-		}
-		return rawNibble(cw), 0
-	}
-	return rawNibble(cw), -1
-}
-
-// syndromeToPos returns the bit index (in the LSB-first codeword) to flip
-// for a given non-zero Hamming(7,4) syndrome, or -1 if none.
-func syndromeToPos(syn uint16) int {
-	// syn = s1 | s2<<1 | s3<<2 with:
-	//   d0 in {s1,s2}; d1 in {s1,s3}; d2 in {s2,s3}; d3 in {s1,s2,s3};
-	//   p1=s1 only; p2=s2 only; p3=s3 only.
-	switch syn {
-	case 0b011: // s1,s2 -> d0
-		return 0
-	case 0b101: // s1,s3 -> d1
-		return 1
-	case 0b110: // s2,s3 -> d2
-		return 2
-	case 0b111: // s1,s2,s3 -> d3
-		return 3
-	case 0b001: // s1 -> p1 (bit4)
-		return 4
-	case 0b010: // s2 -> p2 (bit5)
-		return 5
-	case 0b100: // s3 -> p3 (bit6)
-		return 6
-	}
-	return -1
+	return grayEncode(uint16(v))
 }

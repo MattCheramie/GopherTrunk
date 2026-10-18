@@ -32,6 +32,16 @@ for tagged releases.
   its flags.
 
 ### Fixed
+- **LoRa now uses the real Semtech bit format (#586).** The LoRa decoder's
+  whitening, payload CRC, explicit header, Hamming code, interleaver and
+  symbol mapping were invented, and the built-in modulator used the same
+  invented format, so self-tests passed while no real LoRa radio's frame
+  could decode: the header checksum failed on every one. The bit layer now
+  follows the air format, including the reduced-rate 4/8 first block that
+  carries the header. It is pinned by chip vectors from gr-lora_sdr and
+  jkadbear/LoRaPHY (two independent implementations, each validated against
+  Semtech radios, which agree on 2,916 random cases). Not yet tested on a
+  live off-air frame.
 - **D-STAR and System Fusion voice tolerate a real radio's frequency error
   (#1261).** Neither voice receiver corrected the carrier offset: on a
   synthetic stream D-STAR decoded nothing from ~150 Hz off frequency and YSF
