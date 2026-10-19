@@ -737,7 +737,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 			Equalizer:    cs.Grant.P25Phase2Decode.Equalizer,
 			DCBlock:      cs.Grant.P25Phase2Decode.DCBlock,
 		}
-		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
+		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, cs.Grant.Timeslot, iqCh, rateHzF, ch.done)
 	case voiceKindP25P1:
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, voiceGateTalkgroup(cs.Grant), cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	case voiceKindTETRA:

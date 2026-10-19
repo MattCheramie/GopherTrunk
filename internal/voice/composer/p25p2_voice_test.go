@@ -11,6 +11,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -29,38 +30,70 @@ func p25p2VoicePayload(seed int) []byte {
 	return out
 }
 
-// buildP25P2VoiceStream assembles a dibit stream of n all-voice (4V)
-// superframes preceded by a clock-settling lead-in. want holds every
-// AMBE+2 payload it carries, in transmission order.
+// p25p2TestSeed is the PN44 seed the synthetic air-format streams are
+// scrambled with; the test grants carry it, as a live grant carries the
+// seed the control channel derives from WACN / System ID / NAC.
+var p25p2TestSeed = framing.PN44SeedFromIdentity(0xBEE00, 0x164, 0x161)
+
+// buildP25P2VoiceStream assembles n superframes in the real TDMA air format
+// with voice on logical channel 0 only, preceded by a clock-settling
+// lead-in. want holds every AMBE+2 payload it carries, in order.
 func buildP25P2VoiceStream(n int) (dibits []uint8, want [][]byte) {
 	return buildP25P2VoiceStreamSeed(n, 0)
 }
 
-// buildP25P2VoiceStreamSeed is buildP25P2VoiceStream with a seed offset so a
-// test can build two streams with DISTINCT AMBE+2 payloads (a wanted call and
-// an adjacent-channel neighbour) and tell which one the chain decoded.
+// buildP25P2VoiceStreamSeed is buildP25P2VoiceStream with a payload seed
+// offset, so a test can build two streams with DISTINCT AMBE+2 payloads (a
+// wanted call and an adjacent-channel neighbour) and tell them apart.
 func buildP25P2VoiceStreamSeed(n, seed0 int) (dibits []uint8, want [][]byte) {
+	dibits, both := buildP25P2AirVoiceStream(n, [2]int{seed0, -1})
+	return dibits, both[0]
+}
+
+// buildP25P2AirVoiceStream assembles n superframes in the real TDMA air
+// format (p25p2.EncodeAirPacket, scrambled with p25p2TestSeed). Logical
+// channel l carries a call when seeds[l] >= 0 — VOICE-4 bursts with
+// payloads numbered from seeds[l], a VOICE-2 every sixth — and idle
+// SACCH otherwise. want[l] holds channel l's payloads in order. Two calls
+// on one carrier is the case #1273's slot filter separates.
+func buildP25P2AirVoiceStream(n int, seeds [2]int) (dibits []uint8, want [2][][]byte) {
+	masks := p25p2.NewAirMasks(p25p2TestSeed)
 	dibits = make([]uint8, 600)
 	for i := range dibits {
 		dibits[i] = uint8(i % 4) // never matches the outbound sync
 	}
-	frame := seed0
+	next := seeds
+	var burst [2]int
 	for s := 0; s < n; s++ {
-		var subs [p25p2.SubframesPerSuperframe][]uint8
-		for i := range subs {
-			payloads := make([][]byte, p25p2.Voice4VFrameCount)
-			for j := range payloads {
-				p := p25p2VoicePayload(frame)
-				frame++
-				payloads[j] = p
-				want = append(want, p)
+		for slot := 0; slot < p25p2.AirSlotsPerSuperframe; slot++ {
+			l := p25p2.AirSlotLogicalChannel(slot)
+			duid, voice := p25p2.DUIDSACCHScrambled, [][]byte(nil)
+			if seeds[l] >= 0 {
+				duid = p25p2.DUIDVoice4
+				if burst[l]%6 == 5 {
+					duid = p25p2.DUIDVoice2
+				}
+				burst[l]++
+				for j := 0; j < duid.VoiceFrames(); j++ {
+					p := p25p2VoicePayload(next[l])
+					next[l]++
+					voice = append(voice, p)
+					want[l] = append(want[l], p)
+				}
 			}
-			subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
+			pkt, err := p25p2.EncodeAirPacket(slot, duid, voice, masks, uint8(s&3))
+			if err != nil {
+				panic(err)
+			}
+			dibits = append(dibits, pkt...)
 		}
-		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
 	}
 	return dibits, want
 }
+
+// p25p2FramesPerSuperframe is one logical channel's voice frames per
+// superframe: six bursts, five VOICE-4 and one VOICE-2 on average.
+const p25p2FramesPerSuperframe = 5*4 + 2
 
 // bestAlignmentMatches returns the largest number of bit-exact frame
 // matches between got and want over any stream alignment — the metric
@@ -98,7 +131,7 @@ func TestComposerP25Phase2VoiceChainExtractsRawFrames(t *testing.T) {
 		alpha       = 0.20
 		superframes = 8
 	)
-	framesPerSuperframe := p25p2.SubframesPerSuperframe * p25p2.Voice4VFrameCount
+	framesPerSuperframe := p25p2FramesPerSuperframe
 
 	dibits, want := buildP25P2VoiceStream(superframes)
 	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
@@ -130,7 +163,8 @@ func TestComposerP25Phase2VoiceChainExtractsRawFrames(t *testing.T) {
 		Payload: trunking.CallStart{
 			Grant: trunking.Grant{
 				System: "P25P2Site", Protocol: "p25-phase2",
-				GroupID: 42, FrequencyHz: 851_062_500,
+				GroupID: 42, FrequencyHz: 851_062_500, Timeslot: 1,
+				P25Phase2Decode: trunking.P25Phase2Decode{Seed: p25p2TestSeed},
 			},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
@@ -562,7 +596,7 @@ func TestComposerP25Phase2VoiceChainWarnsTrellisOff(t *testing.T) {
 			Interleave: p25p2.InterleaveOn,
 			Scrambler:  p25p2.ScramblerProbe,
 			Seed:       12345,
-		}, iqCh, 48_000, done)
+		}, 0, iqCh, 48_000, done)
 	<-done
 
 	if out := buf.String(); !strings.Contains(out, "trellis is off") {
@@ -605,7 +639,7 @@ func TestComposerP25Phase2CallCensusAlwaysFires(t *testing.T) {
 			Interleave: p25p2.InterleaveOn,
 			Scrambler:  p25p2.ScramblerOn,
 			Seed:       12345,
-		}, iqCh, 48_000, done)
+		}, 0, iqCh, 48_000, done)
 	<-done
 
 	out := buf.String()
@@ -656,7 +690,7 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "MMR",
-		p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}, iqCh, sampleRate, done)
+		p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}, 0, iqCh, sampleRate, done)
 	<-done
 
 	out := buf.String()
@@ -730,7 +764,7 @@ func TestComposerP25Phase2VoiceChainSurvivesAdjacentChannel(t *testing.T) {
 		superframes = 8
 		adjOffset   = 12_500.0
 	)
-	framesPerSuperframe := p25p2.SubframesPerSuperframe * p25p2.Voice4VFrameCount
+	framesPerSuperframe := p25p2FramesPerSuperframe
 
 	dibitsW, wantW := buildP25P2VoiceStreamSeed(superframes, 0)
 	iq := demod.ModulateHDQPSKSpec(dibitsW, sps, span, alpha)
@@ -773,7 +807,8 @@ func TestComposerP25Phase2VoiceChainSurvivesAdjacentChannel(t *testing.T) {
 		Payload: trunking.CallStart{
 			Grant: trunking.Grant{
 				System: "P25P2Site", Protocol: "p25-phase2",
-				GroupID: 42, FrequencyHz: 851_062_500,
+				GroupID: 42, FrequencyHz: 851_062_500, Timeslot: 1,
+				P25Phase2Decode: trunking.P25Phase2Decode{Seed: p25p2TestSeed},
 			},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
@@ -793,5 +828,95 @@ func TestComposerP25Phase2VoiceChainSurvivesAdjacentChannel(t *testing.T) {
 		t.Errorf("wanted call recovered only %d frames with a strong +%.0f Hz neighbour present; "+
 			"want >= %d (adjacent channel leaked into the tap and degraded the demod)",
 			matchW, adjOffset, framesPerSuperframe)
+	}
+}
+
+// runP25P2Grant drives one Phase 2 grant on a modulated stream through the
+// composer and returns the recorded raw frames once at least min arrive
+// (or the wait expires).
+func runP25P2Grant(t *testing.T, dibits []uint8, timeslot uint8, min int) [][]byte {
+	t.Helper()
+	const sampleRate = 48_000.0
+	iq := demod.ModulateHDQPSKSpec(dibits, 8, 8, 0.20)
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        &fakeEngine{},
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "P25P2Site", Protocol: "p25-phase2",
+				GroupID: 42, FrequencyHz: 851_062_500, Timeslot: timeslot,
+				P25Phase2Decode: trunking.P25Phase2Decode{Seed: p25p2TestSeed},
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	src.SendIQ(iq)
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) && len(sink.rawFrames("VOICE-1")) < min {
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Let the tail of the stream drain so a wrongly recorded second
+	// channel would show up too.
+	time.Sleep(300 * time.Millisecond)
+	return sink.rawFrames("VOICE-1")
+}
+
+// TestComposerP25Phase2RecordsOnlyGrantedTimeslot is the #1273 regression:
+// a Phase 2 carrier holds two calls, one per TDMA logical channel, and the
+// voice chain recorded every voice burst on the carrier into the one call
+// that had been granted. Each grant must record its own channel only.
+func TestComposerP25Phase2RecordsOnlyGrantedTimeslot(t *testing.T) {
+	const superframes = 8
+	dibits, want := buildP25P2AirVoiceStream(superframes, [2]int{0, 900_000})
+	min := 2 * p25p2FramesPerSuperframe
+	for _, tc := range []struct {
+		timeslot   uint8
+		own, other int
+	}{
+		{timeslot: 1, own: 0, other: 1},
+		{timeslot: 2, own: 1, other: 0},
+	} {
+		got := runP25P2Grant(t, dibits, tc.timeslot, min)
+		if n := bestAlignmentMatches(got, want[tc.own]); n < min {
+			t.Errorf("timeslot %d: recovered %d of its own call's frames, want >= %d", tc.timeslot, n, min)
+		}
+		if n := bestAlignmentMatches(got, want[tc.other]); n != 0 {
+			t.Errorf("timeslot %d: recorded %d frames of the other logical channel's call", tc.timeslot, n)
+		}
+	}
+}
+
+// A grant that names no timeslot binds to the first logical channel that
+// carries voice instead of recording both.
+func TestComposerP25Phase2UnknownTimeslotBindsOneChannel(t *testing.T) {
+	dibits, want := buildP25P2AirVoiceStream(8, [2]int{0, 900_000})
+	got := runP25P2Grant(t, dibits, 0, 2*p25p2FramesPerSuperframe)
+	a, b := bestAlignmentMatches(got, want[0]), bestAlignmentMatches(got, want[1])
+	if a == 0 && b == 0 {
+		t.Fatal("no voice recorded")
+	}
+	if a != 0 && b != 0 {
+		t.Errorf("recorded both logical channels (%d and %d frames)", a, b)
 	}
 }

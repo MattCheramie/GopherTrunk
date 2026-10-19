@@ -76,7 +76,16 @@ const slotHistLen = 0xA
 // vocoder (voice.DefaultVocoderForProtocol), so WriteRawFrame here
 // decodes each 7-byte frame to PCM and into the call's WAV — unlike the
 // DMR chain, whose pre-FEC frames the vocoder cannot consume.
-func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, system string, macCfg p25p2.MACDecodeConfig, iqCh <-chan []complex64, iqHz float64, done chan<- struct{}) {
+//
+// Voice is framed in the real TDMA air format (p25p2.AirFramer: S-/I-ISCH
+// timeslot grid, DUID, PN44 descramble, OP25/SDRTrunk frame positions)
+// and only the granted logical channel is recorded: timeslot is the
+// grant's 1-based Timeslot (channel number n mod 2, +1), 0 when unknown,
+// in which case the chain binds to the first channel that carries voice.
+// Two calls share a Phase 2 carrier, one per logical channel, and the
+// chain used to record both into one WAV (#1273). The MAC dispatch still
+// runs on the older SuperframeDecoder model.
+func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, system string, macCfg p25p2.MACDecodeConfig, timeslot uint8, iqCh <-chan []complex64, iqHz float64, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-p25p2:"+serial, nil)
 
@@ -137,6 +146,17 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 
 	rs, _ := c.sink.(rawFrameSink)
 	sfDec := p25p2.NewSuperframeDecoder()
+	airFramer := p25p2.NewAirFramer()
+	var airMasks *p25p2.AirMasks
+	if macCfg.Seed != 0 {
+		airMasks = p25p2.NewAirMasks(macCfg.Seed)
+	}
+	// wantLCH is the logical channel this call's voice rides; -1 binds to
+	// the first one that carries voice.
+	wantLCH := -1
+	if timeslot > 0 {
+		wantLCH = int(timeslot-1) & 1
+	}
 	// dispatcher decodes the MAC PDUs interleaved with voice on the
 	// traffic channel (talker alias, in-call source, encryption sync).
 	// It is the same shared dispatch the signalling follower runs off the
@@ -164,10 +184,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// Decode-quality telemetry — see runP25Phase1VoiceChain for the
 	// rationale. A high uncorrectable rate is the measurable signature of
 	// weak signal / wrong gain behind garbled audio (issue #356 follow-up).
-	var (
-		uncorrectableSubframes atomic.Uint64
-		corrErrBits            atomic.Uint64
-	)
+	var corrErrBits atomic.Uint64
 	// MAC-pipeline census (issue #813). A field test on real Phase 2
 	// traffic saw the per-PDU "composer: p25p2 mac pdu" line — which fires
 	// only on a *successful* MAC decode — never appear at all, which is
@@ -182,7 +199,45 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		macPDUsDecoded   atomic.Uint64
 		macRSValid       atomic.Uint64
 		slotHist         [slotHistLen]atomic.Uint64
+		// Air-format census: bursts framed, voice bursts recorded, and
+		// voice bursts dropped because they belong to the carrier's other
+		// logical channel (another call).
+		airBursts      atomic.Uint64
+		otherSlotVoice atomic.Uint64
 	)
+	// drainAirBursts records the granted logical channel's voice frames.
+	drainAirBursts := func(bursts []p25p2.AirBurst) {
+		for _, b := range bursts {
+			airBursts.Add(1)
+			if !b.DUID.IsVoice() {
+				continue
+			}
+			if wantLCH < 0 {
+				wantLCH = b.LogicalChannel
+				c.log.Info("composer: p25p2 grant names no timeslot; following the first logical channel with voice",
+					"serial", serial, "system", system, "logical_channel", wantLCH)
+			}
+			if b.LogicalChannel != wantLCH {
+				otherSlotVoice.Add(1)
+				continue
+			}
+			voiceSubframes.Add(1)
+			bt.onVoice(0)
+			if rs == nil || airMasks == nil {
+				continue
+			}
+			frames, errBits := p25p2.ExtractAirVoiceFrames(b, airMasks)
+			if errBits > 0 {
+				corrErrBits.Add(uint64(errBits))
+			}
+			for _, f := range frames {
+				if werr := rs.WriteRawFrame(serial, f); werr != nil {
+					c.log.Warn("composer: p25p2 raw-frame write failed",
+						"serial", serial, "err", werr)
+				}
+			}
+		}
+	}
 	// drainSuperframes runs the shared per-superframe voice + MAC census
 	// body. It is driven by the hard DibitSink or, when the grant requests
 	// soft-decision demod (issue #915), the soft SoftSink whose superframes
@@ -202,32 +257,6 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				}
 				if sub.SlotType.IsMAC() {
 					macSubframesSeen.Add(1)
-				}
-				if !sub.SlotType.IsVoice() {
-					continue
-				}
-				voiceSubframes.Add(1)
-				bt.onVoice(0)
-				if rs == nil {
-					continue
-				}
-				frames, errBits, err := p25p2.ExtractVoiceFrames(sub)
-				if errBits > 0 {
-					corrErrBits.Add(uint64(errBits))
-				}
-				if err != nil {
-					uncorrectableSubframes.Add(1)
-					c.log.Debug("composer: p25p2 voice extract uncorrectable subframe",
-						"serial", serial, "err", err)
-				}
-				for _, f := range frames {
-					if f == nil {
-						continue
-					}
-					if werr := rs.WriteRawFrame(serial, f); werr != nil {
-						c.log.Warn("composer: p25p2 raw-frame write failed",
-							"serial", serial, "err", werr)
-					}
 				}
 			}
 			// The talker alias, in-call source, and encryption-sync
@@ -257,10 +286,12 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true
 		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
+			drainAirBursts(airFramer.Process(dibits, baseIdx))
 			drainSuperframes(sfDec.ProcessSoft(dibits, soft, baseIdx))
 		}
 	} else {
 		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
+			drainAirBursts(airFramer.Process(dibits, baseIdx))
 			drainSuperframes(sfDec.Process(dibits, baseIdx))
 		}
 	}
@@ -281,8 +312,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		lastQualityLogSubframes = n
 		c.log.Info("composer: p25p2 decode quality",
 			"serial", serial, "system", system,
-			"voice_subframes", n, "uncorrectable_subframes", uncorrectableSubframes.Load(),
-			"corrected_bit_errs", corrErrBits.Load())
+			"voice_bursts", n, "corrected_bit_errs", corrErrBits.Load())
 	}
 	// logCallCensus emits exactly one line at chain end, unconditionally —
 	// even when zero superframes ever locked. It is the field diagnostic
@@ -305,7 +335,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		attrs := []any{
 			"serial", serial, "system", system,
 			"superframes", superframesSeen.Load(),
-			"voice_subframes", voiceSubframes.Load(),
+			"air_bursts", airBursts.Load(),
+			"voice_bursts", voiceSubframes.Load(),
+			"other_slot_voice_bursts", otherSlotVoice.Load(),
+			"logical_channel", wantLCH,
+			"descramble_seed_known", airMasks != nil,
 			"mac_subframes", macSubframesSeen.Load(),
 			"mac_pdus", macPDUsDecoded.Load(),
 			"mac_rs_valid", macRSValid.Load(),
