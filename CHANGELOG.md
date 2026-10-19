@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.1] — 2026-10-19
+
 ### Added
 - **`wmbus -all` names the CRC block that failed (#1256).** A failed
   telegram now prints e.g. `CRC FAILED (block 1 of 4; block 1 is the header,
