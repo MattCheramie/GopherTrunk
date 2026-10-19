@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **DMR "bound by phase fallback" log no longer says the embedded LC failed
+  when it decoded (#753).** On a networked amateur repeater the first
+  superframes can carry talker-alias (or GPS) embedded LCs before the call's
+  own LC. Those decode fine, but the line read "embedded LC did not decode;
+  embedded signalling is capture-pending (see #644)". It now says which
+  happened, and carries `metadata_lcs`. Recording behaviour is unchanged.
 - **`wmbus` no longer loses the rest of a telegram to one noise glitch
   (#1256).** The receiver counted bits from the time between level changes,
   so a glitch inside a run of equal bits added bits and failed every CRC
