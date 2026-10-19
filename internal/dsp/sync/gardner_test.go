@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/cmplx"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 )
 
 // TestGardnerRecoversAlignedQPSK: synthesize a clean QPSK signal at
@@ -267,4 +269,51 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// TestGardnerConvergesOnEyeCentre runs random RRC-shaped QPSK (the matched
+// filter's output, as every Gardner caller feeds it) from several starting
+// phases and requires the loop to settle on the eye centre. The loop used to
+// apply its error with the wrong sign: the centre was an unstable point and
+// it walked to the transition zero crossing from every start, half a symbol
+// off, closing the eye after a few thousand symbols. That is what wrecked
+// every P25 Phase 2 call a few seconds in (8 sps at 48 kHz). The old tests
+// stayed green because their triangle pulse and quadrant check survive a
+// half-symbol error.
+func TestGardnerConvergesOnEyeCentre(t *testing.T) {
+	const sps = 8
+	const n = 40000
+	x := uint32(7)
+	up := make([]complex64, n*sps)
+	for i := 0; i < n; i++ {
+		x = x*1664525 + 1013904223
+		ph := float64(x>>30)*math.Pi/2 + math.Pi/4
+		up[i*sps] = complex(float32(math.Cos(ph)), float32(math.Sin(ph)))
+	}
+	taps := filter.RootRaisedCosine(sps, 8, 0.2)
+	rx := filter.NewFIR(taps).Process(nil, filter.NewFIR(taps).Process(nil, up))
+	for start := 0; start < sps; start += 2 {
+		g := NewGardner(sps, 0.005)
+		var out []complex64
+		src := rx[start:]
+		for off := 0; off < len(src); off += 4096 {
+			out = append(out, g.Process(nil, src[off:min(off+4096, len(src))])...)
+		}
+		// At the eye centre every symbol sits on a QPSK point: |re| and
+		// |im| cluster tightly about their mean. At the zero crossing
+		// they spread across the whole range.
+		tail := out[len(out)-5000:]
+		var m, v float64
+		for _, s := range tail {
+			m += math.Abs(float64(real(s))) + math.Abs(float64(imag(s)))
+		}
+		m /= 2 * float64(len(tail))
+		for _, s := range tail {
+			a, b := math.Abs(float64(real(s)))-m, math.Abs(float64(imag(s)))-m
+			v += a*a + b*b
+		}
+		if spread := math.Sqrt(v/float64(2*len(tail))) / m; spread > 0.1 {
+			t.Errorf("start %d: relative spread %.3f after %d symbols, want < 0.1 (loop off the eye centre, mu %.2f)", start, spread, len(out), g.Mu())
+		}
+	}
 }

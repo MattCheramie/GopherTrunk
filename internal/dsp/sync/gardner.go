@@ -134,10 +134,16 @@ func (g *Gardner) Process(dst, src []complex64) []complex64 {
 
 		if g.have && midOK {
 			// Gardner error: Re{ conj(sym - prevSym) * midSym }
-			// is the canonical form for complex signals.
+			// is the canonical form for complex signals. It is
+			// positive when the samples are LATE (the midpoint has
+			// passed the transition's zero crossing), so it shortens
+			// the next interval. Adding it instead made the eye
+			// centre unstable: the loop walked to the zero crossing
+			// from any start and stayed there (pinned by
+			// TestGardnerConvergesOnEyeCentre).
 			diff := complex64(sym - g.prevSym)
 			err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
-			g.mu += g.sps + g.gain*err
+			g.mu += g.sps - g.gain*err
 		} else {
 			g.mu += g.sps
 			g.have = true
@@ -204,7 +210,7 @@ func (g *Gardner) Process2x(dst, src []complex64) []complex64 {
 		if g.have && midOK {
 			diff := complex64(sym - g.prevSym)
 			err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
-			g.mu += g.sps + g.gain*err
+			g.mu += g.sps - g.gain*err
 		} else {
 			g.mu += g.sps
 			g.have = true
