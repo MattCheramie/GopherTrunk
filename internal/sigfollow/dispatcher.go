@@ -31,7 +31,9 @@ import (
 // events they carry. Construct one per call / follow: the alias
 // assemblers buffer fragments per source unit for the life of the
 // channel. Not safe for concurrent use — drive it from a single
-// goroutine (the receiver's DibitSink).
+// goroutine (the receiver's DibitSink). It decodes the real TDMA air
+// format (p25p2.AirFramer bursts, DecodeAirMAC); the older superframe
+// working model is no longer used here (#1273).
 //
 // The talker-alias path is identical for the voice composer and the
 // signalling follower, so it lives here and publishes directly. The
@@ -48,14 +50,8 @@ type MACDispatcher struct {
 	system    string
 	serial    string
 
-	aliasAsm         *p25p2.TalkerAliasAssembler
 	motorolaAliasAsm *p25p2.MotorolaAliasAssembler
 	macSeen          map[uint32]struct{}
-
-	// scramblerPin lets ScramblerProbe self-align to this channel's PN44
-	// phase once and reuse it, instead of sweeping on every MAC burst (issue
-	// #915). One per dispatcher, driven single-threaded from Dispatch.
-	scramblerPin *p25p2.ScramblerPin
 
 	onCallSource     func(p25p2.GroupVoiceChannelUser)
 	onCallEncryption func(p25p2.EncryptionSync)
@@ -64,7 +60,7 @@ type MACDispatcher struct {
 // MACDispatcherOptions configures a MACDispatcher.
 type MACDispatcherOptions struct {
 	// Bus is where decoded talker-alias events are published. Required
-	// for any event to surface; a nil bus makes Dispatch a decode-only
+	// for any event to surface; a nil bus makes DispatchAir a decode-only
 	// no-op (useful in unit tests).
 	Bus *events.Bus
 	// Log labels diagnostics. Optional; defaults to slog.Default().
@@ -101,109 +97,103 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 		logPrefix:        prefix,
 		system:           opts.System,
 		serial:           opts.Serial,
-		aliasAsm:         p25p2.NewTalkerAliasAssembler(nil),
 		motorolaAliasAsm: p25p2.NewMotorolaAliasAssembler(nil),
 		macSeen:          make(map[uint32]struct{}),
-		scramblerPin:     &p25p2.ScramblerPin{},
 		onCallSource:     opts.OnCallSource,
 		onCallEncryption: opts.OnCallEncryption,
 	}
 }
 
-// Dispatch decodes every MAC PDU in sf under macCfg, publishing any
-// completed talker alias and invoking the source / encryption hooks. It
-// returns the number of MAC PDUs decoded (0 means the superframe carried
-// only voice / idle) and, of those, how many carried a valid outer
-// RS(24, 16, 9) parity — the framing-health signal a caller feeds the
-// per-call census (issue #915): on a correctly framed + descrambled
-// channel nearly every PDU is RS-valid, whereas a mis-framed traffic
-// channel decodes a stream of random bytes that (almost) never verify.
-func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConfig) (decodedCount, rsValidCount int) {
-	decoded := p25p2.DecodeSuperframeMACPDUsWithSlotPinned(sf, macCfg, d.scramblerPin)
-	for _, dec := range decoded {
-		pdu := dec.PDU
-		if dec.RSValid {
-			rsValidCount++
+// DispatchAir decodes the MAC PDUs in a run of air-format timeslot bursts
+// (p25p2.AirFramer output) and handles their messages: SACCH, FACCH and
+// LCCH bursts go through p25p2.DecodeAirMAC (RS(63,35) + CRC, descrambled
+// with masks for the scrambled DUIDs; nil masks decode the clear ones only),
+// voice and other bursts are skipped. A MAC_PTT's fixed fields are the
+// call's encryption sync; every other PDU's messages are dispatched. It
+// returns how many signalling bursts it saw and how many of those decoded
+// CRC-valid — the framing-health pair the per-call census reports (#915).
+func (d *MACDispatcher) DispatchAir(bursts []p25p2.AirBurst, masks *p25p2.AirMasks) (signalling, decoded int) {
+	for _, b := range bursts {
+		if !b.DUID.IsSignalling() {
+			continue
 		}
-		// Log the first PDU seen per (slot, opcode, MFID) on this channel,
-		// with the payload bytes and its RS-integrity flag. If a real
-		// on-air system rides the encryption sync on a slot/opcode we don't
-		// dispatch, the hex tells the next field tester exactly what we saw
-		// — the bytes needed to confirm or correct the MAC_PTT layout; and
-		// rs_valid=false across the board is the fingerprint of a mis-framed
-		// superframe rather than an unhandled-but-real opcode (issues #376,
-		// #813, #915).
-		key := uint32(dec.SlotType)<<16 | uint32(pdu.Opcode)<<8 | uint32(pdu.MFID)
-		if _, seen := d.macSeen[key]; !seen {
-			d.macSeen[key] = struct{}{}
-			d.log.Info(d.logPrefix+": p25p2 mac pdu",
-				"system", d.system, "serial", d.serial,
-				"slot", dec.SlotType, "opcode", pdu.Opcode, "mfid", pdu.MFID,
-				"rs_valid", dec.RSValid,
-				"payload_len", len(pdu.Payload),
-				"payload_hex", hex.EncodeToString(pdu.Payload))
+		signalling++
+		m, ok := p25p2.DecodeAirMAC(b, masks)
+		if !ok {
+			continue
 		}
-		// MAC_PTT slot: the key-up message that carries the encryption sync
-		// (ALGID/KID/MI) on real Phase 2 systems. Routed by slot type, not
-		// opcode, because the PTT message has no normal MAC opcode (#813).
-		if dec.SlotType == p25p2.SlotTypeMACPTT {
-			if es, ok := pdu.AsPushToTalk(); ok {
-				if d.onCallEncryption != nil {
-					d.onCallEncryption(es)
-				}
-				continue
+		decoded++
+		if p, ok := m.PTT(); ok {
+			d.noteFirst(m, p25p2.MACPDU{}, hex.EncodeToString(m.Bytes))
+			if d.onCallEncryption != nil {
+				d.onCallEncryption(p.Encryption)
 			}
-		}
-		if u, ok := pdu.AsGroupVoiceChannelUser(); ok {
-			// Source-RID integrity gate (issue #915). The completed-call
-			// webhook's source_rid is backfilled from this in-call PDU, so a
-			// mis-decoded MAC window whose opcode byte happens to land on
-			// 0x01/0x21 would inject a plausible-but-wrong RID that is
-			// indistinguishable downstream from a real one — the source-side
-			// analogue of the #924 algid smear. The outer RS parity is the
-			// only signal that separates a genuine GROUP_VOICE_CHANNEL_USER
-			// from garbage (the opcode alone can't), so only an RS-verified
-			// PDU is trusted to set the call's source. A wrong RID is worse
-			// than an absent one; the real recovery of the ~64% missing on
-			// MMR is a Phase 2 superframe-framing fix, tracked in #915.
-			if dec.RSValid && d.onCallSource != nil {
+			// MAC_PTT names the keying radio too (OP25 handle_mac_ptt;
+			// ALGID 0x80 is clear):
+			// the in-call source on a compressed grant (#915).
+			if p.Source != 0 && d.onCallSource != nil {
+				u := p25p2.GroupVoiceChannelUser{GroupAddress: p.Group, SourceID: p.Source}
+				if alg := p.Encryption.AlgorithmID; alg != 0 && alg != 0x80 {
+					u.ServiceOptions = 0x40 // encrypted
+				}
 				d.onCallSource(u)
 			}
 			continue
 		}
-		if es, ok := pdu.AsEncryptionSync(); ok {
-			if d.onCallEncryption != nil {
-				d.onCallEncryption(es)
-			}
-			continue
-		}
-		if f, ok := pdu.AsTalkerAliasFragment(); ok {
-			// Generic working-model fragment path (plain ASCII, not the
-			// validated Motorola cipher) — treat as reliable; the
-			// corruption check applies to the Motorola FACCH-S decode
-			// below (#711).
-			if alias, src, complete := d.aliasAsm.Add(f); complete {
-				d.publishTalkerAlias(src, alias, true)
-			}
-			continue
-		}
-		// Real Motorola FACCH-S alias: header (0x91) seeds the per-channel
-		// reassembler, data blocks (0x95) complete it, and the source RID
-		// falls out of the decoded message prefix (#376).
-		if h, ok := pdu.AsMotorolaAliasHeader(); ok {
-			if res := d.motorolaAliasAsm.AddHeader(h); res.Complete {
-				d.completeMotorolaAlias(res)
-			}
-			continue
-		}
-		if dat, ok := pdu.AsMotorolaAliasData(); ok {
-			if res := d.motorolaAliasAsm.AddData(dat); res.Complete {
-				d.completeMotorolaAlias(res)
-			}
-			continue
+		for _, pdu := range m.Messages() {
+			d.noteFirst(m, pdu, hex.EncodeToString(pdu.Payload))
+			d.dispatchMessage(pdu)
 		}
 	}
-	return len(decoded), rsValidCount
+	return signalling, decoded
+}
+
+// noteFirst logs the first message seen per (channel, PDU type, opcode,
+// MFID) on this traffic channel with its bytes: the instrument that tells
+// the next field tester exactly what was on the air (issues #376, #813,
+// #915).
+func (d *MACDispatcher) noteFirst(m p25p2.AirMAC, pdu p25p2.MACPDU, payloadHex string) {
+	key := uint32(m.Channel)<<24 | uint32(m.Type)<<16 | uint32(pdu.Opcode)<<8 | uint32(pdu.MFID)
+	if _, seen := d.macSeen[key]; seen {
+		return
+	}
+	d.macSeen[key] = struct{}{}
+	d.log.Info(d.logPrefix+": p25p2 mac pdu",
+		"system", d.system, "serial", d.serial,
+		"channel", m.Channel, "pdu_type", m.Type, "opcode", pdu.Opcode, "mfid", pdu.MFID,
+		"rs_corrected", m.Corrected, "payload_hex", payloadHex)
+}
+
+// dispatchMessage handles one CRC-verified MAC message.
+func (d *MACDispatcher) dispatchMessage(pdu p25p2.MACPDU) {
+	if u, ok := pdu.AsGroupVoiceChannelUser(); ok {
+		// The completed-call webhook's source_rid is backfilled from this
+		// in-call message (#915). It arrives CRC-verified, so it is trusted.
+		if d.onCallSource != nil {
+			d.onCallSource(u)
+		}
+		return
+	}
+	if es, ok := pdu.AsEncryptionSync(); ok {
+		if d.onCallEncryption != nil {
+			d.onCallEncryption(es)
+		}
+		return
+	}
+	// Real Motorola FACCH-S alias: header (0x91) seeds the per-channel
+	// reassembler, data blocks (0x95) complete it, and the source RID falls
+	// out of the decoded message prefix (#376).
+	if h, ok := pdu.AsMotorolaAliasHeader(); ok {
+		if res := d.motorolaAliasAsm.AddHeader(h); res.Complete {
+			d.completeMotorolaAlias(res)
+		}
+		return
+	}
+	if dat, ok := pdu.AsMotorolaAliasData(); ok {
+		if res := d.motorolaAliasAsm.AddData(dat); res.Complete {
+			d.completeMotorolaAlias(res)
+		}
+	}
 }
 
 // completeMotorolaAlias handles a fully reassembled Motorola FACCH-S

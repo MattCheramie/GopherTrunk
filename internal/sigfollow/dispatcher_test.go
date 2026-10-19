@@ -4,291 +4,129 @@ import (
 	"io"
 	"log/slog"
 	"testing"
-	"time"
 
-	"github.com/MattCheramie/GopherTrunk/internal/events"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
-	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 func quietLog() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// aliasSuperframes builds n superframes that interleave Voice4V
-// sub-frames with MAC sub-frames carrying the two talker-alias fragments
-// for "UNIT-7" (source 0xABC123), decodes the dibit stream back into
-// Superframes, and returns them — the input to MACDispatcher.Dispatch.
-func aliasSuperframes(t *testing.T, n int) (sfs []p25p2.Superframe, src uint32, alias string) {
-	t.Helper()
-	src, alias = 0xABC123, "UNIT-7"
-	frag0 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: src, BlockIndex: 0, BlockCount: 2, Data: []byte("UNIT"),
-	})
-	frag1 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: src, BlockIndex: 1, BlockCount: 2, Data: []byte("-7"),
-	})
-	dibits := make([]uint8, 50) // sync settling lead-in
-	for s := 0; s < n; s++ {
-		var subs [p25p2.SubframesPerSuperframe][]uint8
-		for i := range subs {
-			switch i {
-			case 0:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					frag0, p25p2.TrellisOn, p25p2.InterleaveOff)
-			case 6:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					frag1, p25p2.TrellisOn, p25p2.InterleaveOff)
-			default:
-				payloads := make([][]byte, p25p2.Voice4VFrameCount)
-				for j := range payloads {
-					payloads[j] = make([]byte, p25p2.VoiceFrameBytes)
-				}
-				subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
-			}
-		}
-		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
-	}
-	sfs = p25p2.NewSuperframeDecoder().Process(dibits, 0)
-	if len(sfs) == 0 {
-		t.Fatal("no superframes decoded from synthesized alias stream")
-	}
-	return sfs, src, alias
+// gvcuMsg is a GROUP_VOICE_CHANNEL_USER (abbreviated) message: opcode 0x01
+// and the 7-byte length OP25's mac_msg_len gives it.
+func gvcuMsg(src uint32, group uint16) []byte {
+	return []byte{0x01, 0x40, byte(group >> 8), byte(group), byte(src >> 16), byte(src >> 8), byte(src)}
 }
 
-// TestDispatcherPublishesTalkerAlias feeds alias-bearing superframes
-// through the shared dispatcher and asserts a KindTalkerAlias event with
-// the reassembled name surfaces on the bus — the core decode the
-// signalling follower harvests off the traffic channel (#376).
-func TestDispatcherPublishesTalkerAlias(t *testing.T) {
-	bus := events.NewBus(64)
-	sub := bus.Subscribe()
-	defer sub.Close()
-
-	d := NewMACDispatcher(MACDispatcherOptions{
-		Bus: bus, Log: quietLog(), LogPrefix: "sigfollow",
-		System: "TestSys", Serial: "tap-0",
-	})
-	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
-
-	sfs, wantSrc, wantAlias := aliasSuperframes(t, 2)
-	for _, sf := range sfs {
-		d.Dispatch(sf, macCfg)
+// TestDispatcherMACPTTDrivesEncryptionAndSource builds a FACCH-S MAC_PTT —
+// the PDU a radio keys up with, carrying the call's MI / ALGID / KID and its
+// own source address — and asserts both hooks fire with its fields. On real
+// air the encryption sync rides MAC_PTT, not a separate message (#813).
+func TestDispatcherMACPTTDrivesEncryptionAndSource(t *testing.T) {
+	masks := p25p2.NewAirMasks(testSeed)
+	ptt := p25p2.MACPTT{
+		Encryption: p25p2.EncryptionSync{AlgorithmID: 0x84, KeyID: 0x1234,
+			MessageIndicator: [9]byte{1, 2, 3, 4, 5, 6, 7, 8, 9}},
+		Source: 315203, Group: 0x4EEA,
 	}
+	sf := voiceSlots()
+	sf[2] = p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled, MAC: p25p2.AirMACPTTBytes(ptt)}
 
-	deadline := time.After(2 * time.Second)
-	for {
-		select {
-		case ev := <-sub.C:
-			if ev.Kind != events.KindTalkerAlias {
-				continue
-			}
-			ta, ok := ev.Payload.(trunking.TalkerAlias)
-			if !ok {
-				t.Fatalf("KindTalkerAlias payload type = %T", ev.Payload)
-			}
-			if ta.SourceID != wantSrc {
-				t.Errorf("SourceID = %#x, want %#x", ta.SourceID, wantSrc)
-			}
-			if ta.Alias != wantAlias {
-				t.Errorf("Alias = %q, want %q", ta.Alias, wantAlias)
-			}
-			if ta.System != "TestSys" {
-				t.Errorf("System = %q, want TestSys", ta.System)
-			}
-			if ta.Protocol != "p25-phase2" {
-				t.Errorf("Protocol = %q, want p25-phase2", ta.Protocol)
-			}
-			return
-		case <-deadline:
-			t.Fatal("no KindTalkerAlias published")
-		}
-	}
-}
-
-// TestDispatcherPTTSlotDrivesEncryptionHook builds a superframe whose
-// MAC_PTT sub-frame carries an Encryption Sync and asserts the dispatcher
-// routes its ALGID/KID to the OnCallEncryption hook (the voice composer
-// wires this to its engine-backfill publisher). Routing is by slot type,
-// not opcode, since the PTT message has no normal MAC opcode (#813).
-func TestDispatcherPTTSlotDrivesEncryptionHook(t *testing.T) {
-	es := p25p2.EncryptionSync{
-		AlgorithmID:      0x84,
-		KeyID:            0x1234,
-		MessageIndicator: [9]byte{1, 2, 3, 4, 5, 6, 7, 8, 9},
-	}
-	ptt := p25p2.EncodePushToTalk(es)
-
-	dibits := make([]uint8, 50)
-	var subs [p25p2.SubframesPerSuperframe][]uint8
-	for i := range subs {
-		if i == 0 {
-			subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACPTT, uint8(i),
-				ptt, p25p2.TrellisOn, p25p2.InterleaveOff)
-			continue
-		}
-		payloads := make([][]byte, p25p2.Voice4VFrameCount)
-		for j := range payloads {
-			payloads[j] = make([]byte, p25p2.VoiceFrameBytes)
-		}
-		subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
-	}
-	dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
-	sfs := p25p2.NewSuperframeDecoder().Process(dibits, 0)
-	if len(sfs) == 0 {
-		t.Fatal("no superframes decoded")
-	}
-
-	var got p25p2.EncryptionSync
-	var called int
+	var gotES p25p2.EncryptionSync
+	var gotUser p25p2.GroupVoiceChannelUser
+	var encCalls, srcCalls int
 	d := NewMACDispatcher(MACDispatcherOptions{
 		Log: quietLog(), System: "TestSys", Serial: "tap-0",
-		OnCallEncryption: func(e p25p2.EncryptionSync) { got = e; called++ },
+		OnCallEncryption: func(e p25p2.EncryptionSync) { gotES = e; encCalls++ },
+		OnCallSource:     func(u p25p2.GroupVoiceChannelUser) { gotUser = u; srcCalls++ },
 	})
-	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
-	for _, sf := range sfs {
-		d.Dispatch(sf, macCfg)
+	if sig, dec := d.DispatchAir(airBursts(t, masks, sf), masks); sig != 1 || dec != 1 {
+		t.Fatalf("DispatchAir = %d signalling / %d decoded, want 1/1", sig, dec)
 	}
-	if called == 0 {
-		t.Fatal("OnCallEncryption never invoked for PTT-slot encryption sync")
+	if encCalls != 1 || gotES != ptt.Encryption {
+		t.Errorf("OnCallEncryption = %d call(s), %+v; want 1, %+v", encCalls, gotES, ptt.Encryption)
 	}
-	if got.AlgorithmID != 0x84 || got.KeyID != 0x1234 {
-		t.Errorf("OnCallEncryption alg/key = %#x/%#x, want 0x84/0x1234",
-			got.AlgorithmID, got.KeyID)
+	if srcCalls != 1 || gotUser.SourceID != ptt.Source || gotUser.GroupAddress != ptt.Group {
+		t.Errorf("OnCallSource = %d call(s), %+v; want 1, src %d group %#x", srcCalls, gotUser, ptt.Source, ptt.Group)
+	}
+	if gotUser.ServiceOptions&0x40 == 0 {
+		t.Error("an AES MAC_PTT must mark the source update encrypted")
 	}
 }
 
-// sourceSuperframes builds one superframe whose sub-frame 0 carries the
-// supplied GROUP_VOICE_CHANNEL_USER PDU (the rest voice), decodes the
-// dibit stream back into Superframes, and returns them — the input to
-// MACDispatcher.Dispatch. The PDU is passed in so a caller can supply an
-// RS-valid (EncodeMACPDURS) or a raw/RS-invalid form.
-func sourceSuperframes(t *testing.T, user p25p2.MACPDU) []p25p2.Superframe {
-	t.Helper()
-	dibits := make([]uint8, 50)
-	var subs [p25p2.SubframesPerSuperframe][]uint8
-	for i := range subs {
-		if i == 0 {
-			subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-				user, p25p2.TrellisOn, p25p2.InterleaveOff)
-			continue
-		}
-		payloads := make([][]byte, p25p2.Voice4VFrameCount)
-		for j := range payloads {
-			payloads[j] = make([]byte, p25p2.VoiceFrameBytes)
-		}
-		subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
-	}
-	dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
-	sfs := p25p2.NewSuperframeDecoder().Process(dibits, 0)
-	if len(sfs) == 0 {
-		t.Fatal("no superframes decoded")
-	}
-	return sfs
-}
-
-// TestDispatcherSourceCallback verifies the in-call GROUP_VOICE_CHANNEL_USER
-// PDU routes to the OnCallSource hook (the voice composer wires this to its
-// engine-backfill publisher; the follower leaves it nil). The PDU carries a
-// valid outer RS(24,16,9) parity, as a real over-the-air one does — the
-// dispatcher only trusts a source RID that survives the FEC check (#915).
+// TestDispatcherSourceCallback carries an in-call GROUP_VOICE_CHANNEL_USER
+// in a SACCH-S MAC_ACTIVE PDU behind a Null-padded second message slot and
+// asserts it reaches OnCallSource: the message walk splits the PDU by
+// OP25's message lengths, and the RS(63,35) + CRC-12 decode is what makes
+// the RID trustworthy for the completed-call webhook (#915).
 func TestDispatcherSourceCallback(t *testing.T) {
 	const wantSrc = 315203
-	user := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
-		ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc,
-	}, false))
+	masks := p25p2.NewAirMasks(testSeed)
+	sf := voiceSlots()
+	sf[4] = p25p2.AirSlotContent{DUID: p25p2.DUIDSACCHScrambled,
+		MAC: macPDU(t, p25p2.AirMACActive, p25p2.DUIDSACCHScrambled, gvcuMsg(wantSrc, 0x4EEA))}
 
-	var gotSrc uint32
-	var called int
+	var got []uint32
 	d := NewMACDispatcher(MACDispatcherOptions{
 		Log: quietLog(), System: "TestSys", Serial: "tap-0",
-		OnCallSource: func(u p25p2.GroupVoiceChannelUser) { gotSrc = u.SourceID; called++ },
+		OnCallSource: func(u p25p2.GroupVoiceChannelUser) { got = append(got, u.SourceID) },
 	})
-	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
-	for _, sf := range sourceSuperframes(t, user) {
-		d.Dispatch(sf, macCfg)
-	}
-	if called == 0 {
-		t.Fatal("OnCallSource never invoked")
-	}
-	if gotSrc != wantSrc {
-		t.Errorf("OnCallSource SourceID = %d, want %d", gotSrc, wantSrc)
+	d.DispatchAir(airBursts(t, masks, sf), masks)
+	if len(got) != 1 || got[0] != wantSrc {
+		t.Fatalf("OnCallSource got %v, want [%d]", got, wantSrc)
 	}
 }
 
-// TestDispatcherSourceRequiresRSIntegrity is the #915 regression guard:
-// the completed-call webhook's source_rid is backfilled from the in-call
-// GROUP_VOICE_CHANNEL_USER PDU, and the MAC path runs with the outer RS
-// check off by default, so a mis-framed traffic channel decoding random
-// bytes will occasionally land on opcode 0x01/0x21 and — before the fix —
-// inject a plausible-but-wrong RID indistinguishable from a real one. The
-// dispatcher now trusts a source RID only when its PDU carries a valid
-// RS(24,16,9) parity.
-//
-//   - An RS-INVALID (raw Encode*, no parity) source PDU must NOT fire
-//     OnCallSource — it fails without the gate and passes with it.
-//   - An RS-VALID (EncodeMACPDURS) source PDU with the SAME opcode/RID
-//     still fires, so the gate blocks only the garbage, not real traffic.
-func TestDispatcherSourceRequiresRSIntegrity(t *testing.T) {
-	const wantSrc = 315203
-	base := p25p2.GroupVoiceChannelUser{ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: wantSrc}
-	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
+// TestDispatcherDropsSignallingWithoutTheRightSeed is the #915 integrity
+// guard on the air path: a scrambled SACCH descrambled with the wrong site
+// identity (or none) must decode nothing — the CRC rejects it — so a bogus
+// RID can never reach the webhook. The clear SACCH beside it still decodes
+// without any seed.
+func TestDispatcherDropsSignallingWithoutTheRightSeed(t *testing.T) {
+	masks := p25p2.NewAirMasks(testSeed)
+	sf := voiceSlots()
+	sf[4] = p25p2.AirSlotContent{DUID: p25p2.DUIDSACCHScrambled,
+		MAC: macPDU(t, p25p2.AirMACActive, p25p2.DUIDSACCHScrambled, gvcuMsg(111, 1))}
+	sf[5] = p25p2.AirSlotContent{DUID: p25p2.DUIDSACCHClear,
+		MAC: macPDU(t, p25p2.AirMACActive, p25p2.DUIDSACCHClear, gvcuMsg(222, 2))}
+	bursts := airBursts(t, masks, sf)
 
-	// RS-invalid: a raw GROUP_VOICE_CHANNEL_USER with no outer parity —
-	// stands in for a mis-decoded MAC window whose opcode byte happens to
-	// be 0x01. It must be dropped.
-	garbage := p25p2.EncodeGroupVoiceChannelUser(base, false)
-	var garbageCalls int
-	dGarbage := NewMACDispatcher(MACDispatcherOptions{
-		Log: quietLog(), System: "TestSys", Serial: "tap-0",
-		OnCallSource: func(p25p2.GroupVoiceChannelUser) { garbageCalls++ },
-	})
-	for _, sf := range sourceSuperframes(t, garbage) {
-		dGarbage.Dispatch(sf, macCfg)
-	}
-	if garbageCalls != 0 {
-		t.Errorf("OnCallSource fired %d time(s) for an RS-invalid source PDU; want 0 (bogus source_rid must not reach the webhook)", garbageCalls)
-	}
-
-	// RS-valid: identical opcode + RID, but with the outer parity a real
-	// over-the-air PDU carries. It must still fire with the correct RID.
-	valid := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(base, false))
-	var gotSrc uint32
-	var validCalls int
-	dValid := NewMACDispatcher(MACDispatcherOptions{
-		Log: quietLog(), System: "TestSys", Serial: "tap-0",
-		OnCallSource: func(u p25p2.GroupVoiceChannelUser) { gotSrc = u.SourceID; validCalls++ },
-	})
-	for _, sf := range sourceSuperframes(t, valid) {
-		dValid.Dispatch(sf, macCfg)
-	}
-	if validCalls == 0 {
-		t.Fatal("OnCallSource never fired for an RS-valid source PDU")
-	}
-	if gotSrc != wantSrc {
-		t.Errorf("OnCallSource SourceID = %d, want %d", gotSrc, wantSrc)
+	for _, tc := range []struct {
+		name  string
+		masks *p25p2.AirMasks
+		want  []uint32
+	}{
+		{"right seed", masks, []uint32{111, 222}},
+		{"wrong seed", p25p2.NewAirMasks(testSeed ^ 1), []uint32{222}},
+		{"no seed", nil, []uint32{222}},
+	} {
+		var got []uint32
+		d := NewMACDispatcher(MACDispatcherOptions{
+			Log: quietLog(), System: "TestSys", Serial: "tap-0",
+			OnCallSource: func(u p25p2.GroupVoiceChannelUser) { got = append(got, u.SourceID) },
+		})
+		sig, dec := d.DispatchAir(bursts, tc.masks)
+		if sig != 2 || dec != len(tc.want) {
+			t.Errorf("%s: DispatchAir = %d/%d, want 2/%d", tc.name, sig, dec, len(tc.want))
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: sources %v, want %v", tc.name, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: sources %v, want %v", tc.name, got, tc.want)
+			}
+		}
 	}
 }
 
-// TestDispatchReturnsRSValidCount verifies Dispatch reports how many
-// decoded MAC PDUs carried a clean outer RS parity — the framing-health
-// signal the per-call census surfaces as mac_rs_valid (#915).
-func TestDispatchReturnsRSValidCount(t *testing.T) {
-	user := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
-		ServiceOptions: 0x40, GroupAddress: 0x4EEA, SourceID: 315203,
-	}, false))
+// TestDispatchAirSkipsVoice confirms voice bursts never count as
+// signalling: the census's mac_bursts must measure MAC framing alone.
+func TestDispatchAirSkipsVoice(t *testing.T) {
 	d := NewMACDispatcher(MACDispatcherOptions{Log: quietLog(), System: "TestSys", Serial: "tap-0"})
-	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
-	var totDec, totRS int
-	for _, sf := range sourceSuperframes(t, user) {
-		dec, rs := d.Dispatch(sf, macCfg)
-		totDec += dec
-		totRS += rs
-	}
-	if totDec == 0 {
-		t.Fatal("Dispatch decoded no MAC PDUs")
-	}
-	if totRS == 0 {
-		t.Errorf("Dispatch reported rsValid=0 for an RS-valid source PDU; want >=1")
+	masks := p25p2.NewAirMasks(testSeed)
+	if sig, dec := d.DispatchAir(airBursts(t, masks, voiceSlots()), masks); sig != 0 || dec != 0 {
+		t.Fatalf("DispatchAir on voice = %d/%d, want 0/0", sig, dec)
 	}
 }

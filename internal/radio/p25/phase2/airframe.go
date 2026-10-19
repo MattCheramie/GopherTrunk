@@ -87,6 +87,7 @@ const (
 	DUIDUnknown        DUID = -1
 	DUIDVoice4         DUID = 0
 	DUIDSACCHScrambled DUID = 3
+	DUIDLCCHScrambled  DUID = 4
 	DUIDVoice2         DUID = 6
 	DUIDFACCHScrambled DUID = 9
 	DUIDDATCHScrambled DUID = 10
@@ -117,6 +118,8 @@ func (d DUID) String() string {
 		return "voice2"
 	case DUIDSACCHScrambled:
 		return "sacch-s"
+	case DUIDLCCHScrambled:
+		return "lcch-s"
 	case DUIDFACCHScrambled:
 		return "facch-s"
 	case DUIDDATCHScrambled:

@@ -87,21 +87,25 @@ An alias surfaces exactly as often as the traffic channel's MAC PDUs pass
 their outer Reed-Solomon check. On a weak or multipath Phase 2 channel that
 check can fail on most sub-frames (the same limit that keeps the in-call
 source RID from landing — issue
-[#915](https://github.com/MattCheramie/GopherTrunk/issues/915)). Three
-per-system knobs trade CPU for sensitivity; turn them on for a marginal site:
+[#915](https://github.com/MattCheramie/GopherTrunk/issues/915)). Phase 2
+signalling now decodes on the real TDMA air format: every FACCH / SACCH
+burst runs a full RS(63,35) errors-and-erasures decode and must pass its
+CRC, so a wrong descramble or a noisy burst is dropped rather than turned
+into a bogus name. The one per-system knob that still trades CPU for
+sensitivity on a marginal site is the equalizer:
 
 ```yaml
     - name: "metro-p25"
       protocol: p25
       control_channels: [851_037_500]
-      p25_phase2_soft_decision: "on"   # soft-decision MAC trellis, ~1.5–2 dB
-      p25_phase2_rs_mode: "correct"    # repair up to 4 RS symbol errors
       p25_phase2_equalizer: "on"       # blind CMA equalizer for multipath / ISI
 ```
 
-They are byte-for-byte neutral on a strong signal and strictly add decodes on
-a weak one; a repaired PDU is still gated on a recognised opcode so a wrong
-descramble cannot be "corrected" into a bogus name.
+`p25_phase2_rs_mode` is still accepted but no longer read (the air format's
+RS code is always decoded), and `p25_phase2_soft_decision` now affects only
+the demodulator. Descrambling needs the site identity: set `wacn` /
+`system_id` / `site`, or let a Phase 2 control channel's Network Status
+Broadcast supply them.
 
 ## Telling a decode problem from a signal problem
 

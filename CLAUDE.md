@@ -141,10 +141,24 @@ confirmation before any close-as-completed.
   ISCH with an invented SlotType, contiguous unscrambled voice — self-consistent with its own encoder, and
   the #915 capture failed its ISCH on 46–62 % of sub-frames. `framing.PN44Scrambler` tapped bits 40/35/29/
   24/10/0 (the polynomial exponents) instead of 43/33/19/14/8/3 and diverged from both references at bit
-  49 (pinned now by a literal 4320-bit OP25 sequence). STILL on the old model: the Phase 2 MAC path (voice-
-  channel MAC dispatch, sigfollow, the Phase 2 CC) — it needs the same rebuild (SACCH/FACCH bursts are
-  DUID 3/9/12/15 bodies); the ground-truth harness (`groundtruth_replay_test.go`) still measures the old
-  grid. Synthetic + reference-pinned only; a Phase 2 voice capture is the on-air gate (#764/#771).
+  49 (pinned now by a literal 4320-bit OP25 sequence). The MAC path is
+  rebuilt too (`macframe.go`): SACCH / FACCH / LCCH (DUID 3·12 / 9·15 / 4·13) bodies are hexbits of a
+  shortened, punctured RS(63,35) over GF(64) (`framing.DecodeRS63_35`, errors + erasures, = ezpwd
+  `RS<63,35>` pinned by its literal output), then CRC-12 (FACCH 144 / SACCH 168 bits) or CRC-16 (LCCH,
+  OP25 accepts `crc16 == 0`); a PDU's messages split by OP25's `mac_msg_len` table, and MAC_PTT /
+  END_PTT are fixed layouts (encryption sync + source ride MAC_PTT). Five literal packets were checked
+  `crc_ok=1` by OP25's own decode compiled verbatim. Production consumers: composer (own logical channel
+  only, clear LCCH always), `sigfollow.DispatchAir` (all slots), `ControlChannel.ProcessAir` (seed
+  bootstraps from a clear-LCCH NSB — whose parser read the Color Code from the channel bytes and
+  installed a wrong seed until this pass; 0xFB/0x7B now follow SDRTrunk). The old working-model MAC code
+  (SuperframeDecoder MAC, trellis/RS(24,16)/`ScramblerPin`, flat `Process`) survives only for its own
+  tests and `groundtruth_replay_test.go`; delete it in a separate PR. `p25_phase2_{trellis,rs,
+  interleave,scrambler}_mode` are accepted but unread. **The shared `sync.Gardner` applied its error
+  with the wrong sign** — the eye centre was unstable and it settled half a symbol off from any start
+  (`TestGardnerConvergesOnEyeCentre`); Phase 2 runs Gardner by default, so every call's dibits decayed
+  to ~50 % after ~16k symbols (~3 s at 8 sps). Its old tests used a triangle pulse + quadrant check that
+  survive a half-symbol error — test a timing loop's convergence POINT on RRC data, not its symbol
+  count. Synthetic + reference-pinned only; a Phase 2 capture is the on-air gate (#764/#771).
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
   read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
   hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's

@@ -45,6 +45,7 @@ type ControlChannel struct {
 	// adapter uses (see process.go). Lazily constructed on the
 	// first Process call.
 	proc *processState
+	air  *airState
 
 	// aliasAsm reassembles multi-fragment talker-alias MAC PDUs into
 	// a radio's display name. Self-synchronised (its own mutex).

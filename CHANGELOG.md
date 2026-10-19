@@ -15,6 +15,30 @@ for tagged releases.
   told from a damaged header (whose manufacturer / ID / type are garbage).
 
 ### Fixed
+- **P25 Phase 2 signalling decodes the real TDMA air format (#1273, #915).**
+  The MAC messages on a Phase 2 voice channel (talker alias, in-call source,
+  encryption sync), the signalling follower and the Phase 2 control channel all
+  ran on a working model of the framing and channel coding that matched no
+  reference, so on air they decoded nothing. They now use the same timeslot
+  framer as voice and the reference coding (OP25 / SDRTrunk): a shortened,
+  punctured RS(63,35) decoded with errors and erasures, then a CRC-12 (FACCH /
+  SACCH) or CRC-16 (LCCH), with MAC messages split by OP25's length table. The
+  key-up MAC_PTT now supplies the call's encryption sync and its source radio. A
+  voice chain takes only its own logical channel's signalling. The control
+  channel bootstraps its descramble seed from a clear-LCCH Network Status
+  Broadcast. The `p25_phase2_trellis_mode`, `_rs_mode`, `_interleave_mode` and
+  `_scrambler_mode` settings are still accepted but no longer read, and the
+  end-of-call census reports `mac_bursts`, `mac_pdus` and a per-DUID histogram in
+  place of the superframe / slot-type counters. Not yet verified on air.
+- **The Gardner symbol-timing loop settled on the zero crossing, not the eye
+  centre.** Its error was applied with the wrong sign, so from any starting
+  phase it walked half a symbol off and closed the eye. On P25 Phase 2 (the
+  receiver that runs it by default) every call fell apart a few seconds in. The
+  opt-in Gardner paths on TETRA and P25 Phase 1 CQPSK share the fix.
+- **P25 Phase 2 Network Status Broadcast parsed the wrong bytes.** It read the
+  Color Code from the channel field, so a site's own NSB replaced the PN44
+  descramble seed with a wrong one. The explicit (0xFB) and implicit (0x7B)
+  forms now follow SDRTrunk / OP25.
 - **P25 Phase 2 voice records only the granted timeslot, and decodes the real
   TDMA air format (#1273).** A Phase 2 carrier holds two calls, one per logical
   channel, and the voice chain recorded every voice burst on the carrier into the

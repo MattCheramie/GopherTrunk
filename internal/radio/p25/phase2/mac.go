@@ -55,8 +55,11 @@ const (
 	// octet before it and WACN + System ID after it. Issue #1273.
 	OpIdentifierUpdateTDMAAbbreviated Opcode = 0x73
 	OpIdentifierUpdateTDMAExtended    Opcode = 0xF3
-	OpNetworkStatusBroadcastUpdate    Opcode = 0xFB
-	OpRFSSStatusBroadcastUpdate       Opcode = 0xFA
+	OpNetworkStatusBroadcastUpdate    Opcode = 0xFB // explicit form
+	// OpNetworkStatusBroadcastImplicit is the NSB's implicit form (one
+	// channel field instead of a transmit / receive pair).
+	OpNetworkStatusBroadcastImplicit Opcode = 0x7B
+	OpRFSSStatusBroadcastUpdate      Opcode = 0xFA
 )
 
 func (o Opcode) String() string {
@@ -107,6 +110,8 @@ func (o Opcode) String() string {
 		return "IdentifierUpdateTDMAExtended"
 	case OpNetworkStatusBroadcastUpdate:
 		return "NetworkStatusBroadcastUpdate"
+	case OpNetworkStatusBroadcastImplicit:
+		return "NetworkStatusBroadcastImplicit"
 	case OpRFSSStatusBroadcastUpdate:
 		return "RFSSStatusBroadcastUpdate"
 	default:
@@ -189,63 +194,61 @@ func (p MACPDU) AsGroupVoiceChannelGrant() (GroupVoiceChannelGrant, bool) {
 	}, true
 }
 
-// NetworkStatusBroadcast is the structured shape of a Phase 2
-// Network Status Broadcast - Update MAC PDU (opcode 0xFB).
-// Carries the system-identity fields the PN44 descrambler per
-// TIA-102.BBAC-1 §7.2.5 needs to compute its seed:
+// NetworkStatusBroadcast is the structured shape of a Phase 2 Network
+// Status Broadcast MAC message (0xFB explicit, 0x7B implicit). It carries
+// the system identity the PN44 descrambler's seed is computed from
+// (TIA-102.BBAC-1 §7.2.5): WACN, System ID and the Color Code, which
+// equals the Phase 1 NAC.
 //
-//   - WACN: 20-bit Wide-Area Communication Network ID
-//   - SystemID: 12-bit P25 System ID
-//   - ColorCode: 12-bit Color Code, equal to the Phase 1 NAC per
-//     the spec's seed derivation rule
+// Message layout, byte 0 the opcode (SDRTrunk NetworkStatusBroadcast
+// Explicit / Implicit; OP25 tk_p25.py op 0xfb reads the same WACN,
+// System ID and channel bytes):
 //
-// Payload layout (after the 1-byte opcode the MAC PDU parses off):
+//	1       LRA
+//	2..4    WACN (20 bits, top of 2..4)
+//	4..5    System ID (low nibble of 4, then 5)
+//	6..7    channel (explicit: the transmit channel)
+//	8..9    explicit: receive channel     | implicit: 8 service class,
+//	10      explicit: service class       |   9..10 Color Code (low 12)
+//	11..12  explicit: Color Code (low 12)
 //
-//	byte 0       : LRA (Location Registration Area)
-//	bytes 1..3   : WACN (20 bits in the upper 20 of bytes 1..3,
-//	               i.e., bit 19 of WACN = bit 7 of byte 1, … bit 0
-//	               of WACN = bit 4 of byte 3)
-//	bytes 3..4   : SystemID (low nibble of byte 3 + byte 4)
-//	bytes 5..6   : Color Code (12 bits — high 12 bits of bytes 5..6)
-//	bytes 7..8   : channel info (ChannelID + ChannelNumber)
-//
-// The WACN + SystemID bit packing matches the Phase 1 NSB layout
-// (TIA-102.AABF), which Phase 2 reuses. The Color Code position
-// follows the most-cited public reference for Phase 2 NSB-Update;
-// vendors occasionally repurpose the byte 5..6 field, so callers
-// that hit a mismatch on a specific system can override the seed
-// explicitly via SetScramblerSeed.
+// GopherTrunk used to read the Color Code from bytes 6..7 — the channel —
+// so a site's own NSB overwrote the descramble seed with a wrong one.
 type NetworkStatusBroadcast struct {
 	LRA           uint8  // 8-bit Location Registration Area
 	WACN          uint32 // 20-bit Wide-Area Communication Network ID
 	SystemID      uint16 // 12-bit System ID
 	ColorCode     uint16 // 12-bit Color Code = Phase 1 NAC per spec
-	ChannelID     uint8
+	ChannelID     uint8  // the (transmit) channel's identifier
 	ChannelNumber uint16
+	ServiceClass  uint8
 }
 
-// AsNetworkStatusBroadcast returns the structured NSB if the PDU
-// opcode is OpNetworkStatusBroadcastUpdate (0xFB), otherwise
-// (zero, false). Requires a payload of at least 9 bytes to cover
-// LRA + WACN + SystemID + ColorCode + channel fields.
+// AsNetworkStatusBroadcast returns the structured NSB if the PDU is either
+// NSB form with a payload long enough for its Color Code (11 bytes
+// explicit, 9 implicit), otherwise (zero, false).
 func (p MACPDU) AsNetworkStatusBroadcast() (NetworkStatusBroadcast, bool) {
-	if p.Opcode != OpNetworkStatusBroadcastUpdate {
+	var svc, cc int // payload offsets of the service class and Color Code
+	switch p.Opcode {
+	case OpNetworkStatusBroadcastUpdate:
+		svc, cc = 9, 10
+	case OpNetworkStatusBroadcastImplicit:
+		svc, cc = 7, 8
+	default:
 		return NetworkStatusBroadcast{}, false
 	}
-	if len(p.Payload) < 9 {
+	if len(p.Payload) < cc+2 {
 		return NetworkStatusBroadcast{}, false
 	}
-	wacn := uint32(p.Payload[1])<<12 | uint32(p.Payload[2])<<4 | uint32(p.Payload[3]>>4)
-	sysid := uint16(p.Payload[3]&0x0F)<<8 | uint16(p.Payload[4])
-	cc := uint16(p.Payload[5])<<4 | uint16(p.Payload[6]>>4)
-	chanField := binary.BigEndian.Uint16(p.Payload[7:9])
+	chanField := binary.BigEndian.Uint16(p.Payload[5:7])
 	return NetworkStatusBroadcast{
 		LRA:           p.Payload[0],
-		WACN:          wacn,
-		SystemID:      sysid,
-		ColorCode:     cc,
+		WACN:          uint32(p.Payload[1])<<12 | uint32(p.Payload[2])<<4 | uint32(p.Payload[3]>>4),
+		SystemID:      uint16(p.Payload[3]&0x0F)<<8 | uint16(p.Payload[4]),
+		ColorCode:     uint16(p.Payload[cc]&0x0F)<<8 | uint16(p.Payload[cc+1]),
 		ChannelID:     uint8(chanField >> 12),
 		ChannelNumber: chanField & 0x0FFF,
+		ServiceClass:  p.Payload[svc],
 	}, true
 }
 
@@ -295,7 +298,8 @@ func (o Opcode) IsKnown() bool {
 		OpIdentifierUpdateTDMAExtended, OpVendorGroupRegroup, OpVendorTalkerAlias,
 		OpMotorolaAliasHeader, OpMotorolaAliasData,
 		OpMotorolaPatchDelete, OpEncryptionSync,
-		OpNetworkStatusBroadcastUpdate, OpRFSSStatusBroadcastUpdate:
+		OpNetworkStatusBroadcastUpdate, OpNetworkStatusBroadcastImplicit,
+		OpRFSSStatusBroadcastUpdate:
 		return true
 	}
 	return false

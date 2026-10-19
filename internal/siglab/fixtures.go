@@ -67,11 +67,10 @@ var fixtures = map[trunking.Protocol]fixture{
 		},
 	},
 	trunking.ProtocolP25Phase2: {
-		build:       func() []uint8 { return buildP25Phase2MACPTTStream(8) },
-		modulate:    func(d []uint8, _ float64) []complex64 { return demod.ModulateHDQPSKSpec(d, 8, 8, 0.20) },
-		sampleRate:  48_000,
-		systemKnobs: map[string]string{"p25_phase2_trellis_mode": "on"},
-		expected:    Acceptance{Lock: boolPtr(true)},
+		build:      func() []uint8 { return buildP25Phase2MACPTTStream(8) },
+		modulate:   func(d []uint8, _ float64) []complex64 { return demod.ModulateHDQPSKSpec(d, 8, 8, 0.20) },
+		sampleRate: 48_000,
+		expected:   Acceptance{Lock: boolPtr(true)},
 	},
 	trunking.ProtocolDMRTier2: {
 		build: func() []uint8 {
@@ -245,24 +244,31 @@ func buildP25LockedDibits(nac uint16, repeats int) []uint8 {
 	return out
 }
 
-// buildP25Phase2MACPTTStream builds a P25 Phase 2 superframe stream of
-// MAC-signaling subframes. Lifted from integration_cc_p25p2_test.go.
+// buildP25Phase2MACPTTStream builds a P25 Phase 2 control-channel stream in
+// the real TDMA air format: every timeslot a clear LCCH whose MAC_SIGNAL PDU
+// carries a Group Voice Channel User message (the canonical non-idle "lock
+// me" message; a clear LCCH needs no site identity). Mirrors
+// integration_cc_p25p2_test.go.
 func buildP25Phase2MACPTTStream(repeats int) []uint8 {
-	pdu := p25phase2.MACPDU{Opcode: p25phase2.OpGroupVoiceChannelUserAbbreviated, Payload: make([]byte, 17)}
-	var subs [p25phase2.SubframesPerSuperframe][]uint8
-	for i := range subs {
-		subs[i] = p25phase2.EncodeMACSubframe(
-			p25phase2.SlotTypeMACSignaling, uint8(i), pdu,
-			p25phase2.TrellisOn, p25phase2.InterleaveOff)
+	gvcu := []byte{byte(p25phase2.OpGroupVoiceChannelUserAbbreviated), 0, 0x4E, 0xEA, 0x04, 0xCF, 0x43}
+	pdu, err := p25phase2.AirMACPDUBytes(p25phase2.AirMACSignal, 0, 21, gvcu)
+	if err != nil {
+		panic(err)
 	}
-	superframe := p25phase2.EncodeSuperframe(subs)
-
-	out := make([]uint8, 0, 400+repeats*len(superframe)+100)
+	var slots [p25phase2.AirSlotsPerSuperframe]p25phase2.AirSlotContent
+	for i := range slots {
+		slots[i] = p25phase2.AirSlotContent{DUID: p25phase2.DUIDLCCHClear, MAC: pdu}
+	}
+	out := make([]uint8, 0, 400+(repeats+1)*p25phase2.AirSlotsPerSuperframe*p25phase2.AirPacketDibits+100)
 	for i := 0; i < 400; i++ {
 		out = append(out, uint8(i&3))
 	}
-	for r := 0; r < repeats; r++ {
-		out = append(out, superframe...)
+	for r := 0; r <= repeats; r++ { // one extra superframe flushes the framer
+		sf, err := p25phase2.EncodeAirSuperframe(slots, nil, uint8(r&3))
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, sf...)
 	}
 	for i := 0; i < 100; i++ {
 		out = append(out, uint8(i&3))

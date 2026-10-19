@@ -218,7 +218,11 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 		Equalizer:    g.P25Phase2Decode.Equalizer,
 	}
 
-	sfDec := p25p2.NewSuperframeDecoder()
+	airFramer := p25p2.NewAirFramer()
+	var masks *p25p2.AirMasks
+	if macCfg.Seed != 0 {
+		masks = p25p2.NewAirMasks(macCfg.Seed)
+	}
 	dispatcher := NewMACDispatcher(MACDispatcherOptions{
 		Bus:       m.bus,
 		Log:       m.log,
@@ -233,14 +237,15 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 	var lastActivity atomic.Int64
 	lastActivity.Store(time.Now().UnixNano())
 
-	// drainSuperframes is shared by the hard DibitSink and, when the grant
-	// requests soft-decision demod (issue #915), the soft SoftSink whose
-	// superframes carry per-symbol soft differentials in Subframe.Soft.
-	drainSuperframes := func(sfs []p25p2.Superframe) {
-		for _, sf := range sfs {
+	// drainBursts frames the dibit stream in the real TDMA air format and
+	// dispatches its signalling bursts; any framed burst counts as channel
+	// activity.
+	drainBursts := func(dibits []uint8, baseIdx int) {
+		bursts := airFramer.Process(dibits, baseIdx)
+		if len(bursts) > 0 {
 			lastActivity.Store(time.Now().UnixNano())
-			dispatcher.Dispatch(sf, macCfg)
 		}
+		dispatcher.DispatchAir(bursts, masks)
 	}
 	rxOpts := p25p2rx.Options{
 		SampleRateHz: rateHz,
@@ -250,20 +255,18 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 	}
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true
-		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
-			drainSuperframes(sfDec.ProcessSoft(dibits, soft, baseIdx))
+		rxOpts.SoftSink = func(dibits []uint8, _ []complex64, baseIdx int) {
+			drainBursts(dibits, baseIdx)
 		}
 	} else {
-		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
-			drainSuperframes(sfDec.Process(dibits, baseIdx))
-		}
+		rxOpts.DibitSink = drainBursts
 	}
 	rx := p25p2rx.New(rxOpts)
 
 	m.log.Info("sigfollow: p25p2 signalling follow started",
 		"system", g.System, "serial", vt.Serial(),
 		"freq", g.FrequencyHz, "group", g.GroupID,
-		"scrambler", macCfg.Scrambler, "seed", macCfg.Seed)
+		"seed", macCfg.Seed, "descramble_seed_known", masks != nil)
 
 	idle := time.NewTicker(m.idleTimeout / 2)
 	defer idle.Stop()

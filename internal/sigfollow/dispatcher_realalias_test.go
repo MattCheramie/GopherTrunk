@@ -23,52 +23,28 @@ var (
 		0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 )
 
-// realAliasSuperframes lays the three real alias PDUs onto MAC sub-frames
-// of two superframes (voice everywhere else), runs the dibit stream back
-// through the superframe decoder, and returns the Superframes exactly as
-// the live voice composer / signalling follower hand them to Dispatch.
-func realAliasSuperframes(t *testing.T) []p25p2.Superframe {
+// realAliasBursts carries the three real alias messages the way a live
+// Motorola site sends them: one per FACCH-S burst in MAC_HANGTIME PDUs,
+// scrambled, framed back by the air framer. Each message is 17 bytes (its
+// own length byte, 0x11), so it fills the 18-byte FACCH PDU after the
+// header — the live 144-bit PDU shape the fixed-length fragment parsers
+// were fixed for (the 15-byte SDRTrunk dumps could not show it).
+func realAliasBursts(t *testing.T) ([]p25p2.AirBurst, *p25p2.AirMasks) {
 	t.Helper()
-	parse := func(raw []byte) p25p2.MACPDU {
-		p, err := p25p2.ParseMACPDU(raw)
-		if err != nil {
-			t.Fatalf("ParseMACPDU: %v", err)
-		}
-		return p
+	masks := p25p2.NewAirMasks(testSeed)
+	sf1, sf2 := voiceSlots(), voiceSlots()
+	facch := func(msg []byte) p25p2.AirSlotContent {
+		return p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled,
+			MAC: macPDU(t, p25p2.AirMACHangtime, p25p2.DUIDFACCHScrambled, msg)}
 	}
-	header, data1, data2 := parse(realAliasHeaderMSG), parse(realAliasData1MSG), parse(realAliasData2MSG)
-	// Two superframes: (slot 0 header, slot 6 data1), (slot 0 data2).
-	placement := [][p25p2.SubframesPerSuperframe]*p25p2.MACPDU{
-		{0: &header, 6: &data1},
-		{0: &data2},
-	}
-	dibits := make([]uint8, 50) // sync settling lead-in
-	for _, sf := range placement {
-		var subs [p25p2.SubframesPerSuperframe][]uint8
-		for i := range subs {
-			if pdu := sf[i]; pdu != nil {
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					*pdu, p25p2.TrellisOn, p25p2.InterleaveOff)
-				continue
-			}
-			payloads := make([][]byte, p25p2.Voice4VFrameCount)
-			for j := range payloads {
-				payloads[j] = make([]byte, p25p2.VoiceFrameBytes)
-			}
-			subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
-		}
-		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
-	}
-	sfs := p25p2.NewSuperframeDecoder().Process(dibits, 0)
-	if len(sfs) == 0 {
-		t.Fatal("no superframes decoded from the real-alias stream")
-	}
-	return sfs
+	sf1[0], sf1[6] = facch(realAliasHeaderMSG), facch(realAliasData1MSG)
+	sf2[0] = facch(realAliasData2MSG)
+	return airBursts(t, masks, sf1, sf2), masks
 }
 
 // TestDispatcherPublishesRealMotorolaAliasAsReliable is the end-to-end pin
 // for #773 on the shared live path: the real #376 FACCH-S PDUs, carried on
-// MAC sub-frames through the superframe decoder and the MACDispatcher both
+// FACCH-S bursts through the air framer and the MACDispatcher both
 // the voice composer and the signalling follower run, surface on the bus as
 // the radio's actual display name — "CRIO 0062" for RID 200062 — flagged
 // reliable (not "⚠ decode unreliable"). It fails if the cipher is ever
@@ -82,9 +58,9 @@ func TestDispatcherPublishesRealMotorolaAliasAsReliable(t *testing.T) {
 		Bus: bus, Log: quietLog(), LogPrefix: "sigfollow",
 		System: "MMR", Serial: "tap-0",
 	})
-	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
-	for _, sf := range realAliasSuperframes(t) {
-		d.Dispatch(sf, macCfg)
+	bursts, masks := realAliasBursts(t)
+	if sig, dec := d.DispatchAir(bursts, masks); sig != 3 || dec != 3 {
+		t.Fatalf("DispatchAir = %d signalling / %d decoded, want 3/3", sig, dec)
 	}
 
 	deadline := time.After(2 * time.Second)

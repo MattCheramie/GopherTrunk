@@ -19,24 +19,11 @@ import (
 
 // TestDaemonCCDecodesP25Phase2 is the per-protocol sibling of
 // integration-cc-tetra (PR #154). Boots the daemon with a mock SDR
-// replaying synthesized P25 Phase 2 H-DQPSK IQ (20-dibit outbound
-// sync + 146-dibit trellis-coded MAC PDU) and asserts the
-// production newP25Phase2Pipeline + p25_phase2_trellis_mode + Gardner
-// clock recovery + supervisor + API + metrics chain recovers the
-// lock.
-//
-// H-DQPSK is π/8-shifted differential QPSK at 6000 sym/s with
-// α = 0.20 RRC. The π/4-DQPSK modulator from PR #154 handles it
-// directly via the rotation argument (π/8 instead of π/4 for
-// TETRA's true π/4-DQPSK). Per-protocol differences are:
-//
-//   - rotation = π/8 vs π/4
-//   - symbol rate (6000 vs 18000)
-//   - α (0.20 vs 0.35)
-//   - framing (20-dibit outbound sync + 146 trellis-coded dibits
-//     vs TETRA's 38-dibit normal training sequence + 108 channel
-//     dibits)
-//   - FEC chain (4-state ½-rate trellis vs TETRA's K=5 R=1/4 RCPC)
+// replaying synthesized P25 Phase 2 H-DQPSK IQ in the real TDMA air
+// format (S-/I-ISCH timeslot grid, clear LCCH signalling bursts with
+// RS(63,35) + CRC-16) and asserts the production newP25Phase2Pipeline
+// (Gardner clock recovery → air framer → MAC message decode) +
+// supervisor + API + metrics chain recovers the lock.
 func TestDaemonCCDecodesP25Phase2(t *testing.T) {
 	const (
 		controlFreqHz = 851_062_500
@@ -45,13 +32,12 @@ func TestDaemonCCDecodesP25Phase2(t *testing.T) {
 		sps        = 8
 		span       = 8
 		alpha      = 0.20
-		// Each repeat is a full 12-sub-frame superframe; a handful is
-		// ample for the Gardner clock to settle and the superframe
-		// decoder to lock.
+		// Each repeat is a full 12-timeslot superframe; a handful is
+		// ample for the Gardner clock to settle and the framer to lock.
 		superframeRepeats = 8
 	)
 
-	dibits := buildP25Phase2MACPTTStream(superframeRepeats)
+	dibits := buildP25Phase2LCCHStream(t, superframeRepeats)
 	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	dir := t.TempDir()
@@ -68,10 +54,9 @@ func TestDaemonCCDecodesP25Phase2(t *testing.T) {
 	}
 	cfg.Trunking.Systems = []config.SystemConfig{
 		{
-			Name:                 "P25P2Site",
-			Protocol:             "p25-phase2",
-			ControlChannels:      []uint32{controlFreqHz},
-			P25Phase2TrellisMode: "on",
+			Name:            "P25P2Site",
+			Protocol:        "p25-phase2",
+			ControlChannels: []uint32{controlFreqHz},
 		},
 	}
 	cfg.API.HTTPAddr = freeAddr(t)
@@ -140,37 +125,33 @@ WaitLoop:
 	waitForMetric(t, base, `gophertrunk_events_total{kind="cc.locked"} 1`, 2*time.Second)
 }
 
-// buildP25Phase2MACPTTStream assembles a P25 Phase 2 dibit stream
-// for the H-DQPSK modulator + receiver chain:
-//
-//   - 400-dibit warmup cycling 0..3 so the matched filter +
-//     differential decoder converge on the constellation centre
-//   - `repeats` × a full 12-sub-frame TDMA superframe, every
-//     sub-frame a MAC sub-frame carrying an OpGroupVoiceChannelUserAbbreviated MAC PDU
-//   - 100-dibit trailer for clean flush
-//
-// Each superframe is built with EncodeMACSubframe (ISCH + trellis-coded
-// MAC PDU) + EncodeSuperframe (which injects the 20-dibit outbound
-// sync), so the daemon's SuperframeDecoder-backed pipeline locks the
-// superframe, decodes the ISCH SlotTypes, and routes the MAC PDUs into
-// the control-channel state machine. OpGroupVoiceChannelUserAbbreviated is the canonical
-// non-idle "lock me" MAC PDU.
-func buildP25Phase2MACPTTStream(repeats int) []uint8 {
-	pdu := p25phase2.MACPDU{Opcode: p25phase2.OpGroupVoiceChannelUserAbbreviated, Payload: make([]byte, 17)}
-	var subs [p25phase2.SubframesPerSuperframe][]uint8
-	for i := range subs {
-		subs[i] = p25phase2.EncodeMACSubframe(
-			p25phase2.SlotTypeMACSignaling, uint8(i), pdu,
-			p25phase2.TrellisOn, p25phase2.InterleaveOff)
+// buildP25Phase2LCCHStream assembles a P25 Phase 2 control-channel dibit
+// stream in the real TDMA air format: a 400-dibit lead-in, then `repeats`
+// superframes whose every timeslot is a clear LCCH carrying a MAC_SIGNAL
+// PDU with a Group Voice Channel User message (the canonical non-idle
+// "lock me" message; a clear LCCH decodes with no site identity), then a
+// trailer.
+func buildP25Phase2LCCHStream(t *testing.T, repeats int) []uint8 {
+	t.Helper()
+	gvcu := []byte{byte(p25phase2.OpGroupVoiceChannelUserAbbreviated), 0, 0x4E, 0xEA, 0x04, 0xCF, 0x43}
+	pdu, err := p25phase2.AirMACPDUBytes(p25phase2.AirMACSignal, 0, 21, gvcu)
+	if err != nil {
+		t.Fatal(err)
 	}
-	superframe := p25phase2.EncodeSuperframe(subs)
-
-	out := make([]uint8, 0, 400+repeats*len(superframe)+100)
+	var slots [p25phase2.AirSlotsPerSuperframe]p25phase2.AirSlotContent
+	for i := range slots {
+		slots[i] = p25phase2.AirSlotContent{DUID: p25phase2.DUIDLCCHClear, MAC: pdu}
+	}
+	out := make([]uint8, 0, 400+(repeats+1)*p25phase2.AirSlotsPerSuperframe*p25phase2.AirPacketDibits+100)
 	for i := 0; i < 400; i++ {
 		out = append(out, uint8(i&3))
 	}
-	for r := 0; r < repeats; r++ {
-		out = append(out, superframe...)
+	for r := 0; r <= repeats; r++ {
+		sf, err := p25phase2.EncodeAirSuperframe(slots, nil, uint8(r&3))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, sf...)
 	}
 	for i := 0; i < 100; i++ {
 		out = append(out, uint8(i&3))
