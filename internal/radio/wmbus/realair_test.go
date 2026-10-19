@@ -29,11 +29,13 @@ func loadCU8(t *testing.T, path string) []complex64 {
 //
 // Verified against rtl-wmbus's four sample captures
 // (github.com/xaelsouth/rtl-wmbus, samples/): every telegram rtl-wmbus
-// decodes with a valid CRC is decoded byte for byte (6 distinct), plus 4
+// decodes with a valid CRC is decoded byte for byte (6 distinct), plus 5
 // more CRC-valid telegrams rtl-wmbus misses, including the 2.4 MS/s
 // issue48 capture centred on 868.625 MHz (GT_WMBUS_OFFSET=325000), whose
-// one frame rtl-wmbus fails the CRC on. The captures are not committed;
-// TestStripCRCRealAirFrames pins literal frames from them.
+// one frame rtl-wmbus fails the CRC on. The mid-chip clock (#1256) keeps
+// every frame the run-length clock it replaced decoded on these captures
+// and adds one (samples2: 2 CRC-valid, was 1). The captures are not
+// committed; TestStripCRCRealAirFrames pins literal frames from them.
 func TestWMBusRealAirCaptures(t *testing.T) {
 	path := os.Getenv("GT_WMBUS_IQ")
 	if path == "" {

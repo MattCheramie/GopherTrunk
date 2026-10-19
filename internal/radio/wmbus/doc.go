@@ -7,7 +7,7 @@
 //
 //	IQ (any rate)
 //	  → Receiver: resample to 800 kS/s, channel filter, FM discriminator,
-//	    adaptive slicer, run-length clock recovery (receiver.go)
+//	    adaptive slicer, mid-chip clock recovery (receiver.go)
 //	  → Framer: access code 0x543D, then mode T1 (3-of-6 coded) or C1
 //	    (NRZ, frame format A or B), CRC check and strip (framer.go, link.go)
 //	  → ParseTelegram: data link header (manufacturer, ID, version, device
