@@ -7,13 +7,6 @@ for tagged releases.
 
 ## [Unreleased]
 
-### Added
-- **`wmbus -all` names the CRC block that failed (#1256).** A failed
-  telegram now prints e.g. `CRC FAILED (block 1 of 4; block 1 is the header,
-  so the sender shown is unreliable)`, and `-json` adds `crc_blocks`,
-  `crc_failed_blocks`, `header_crc_ok` and `raw`, so a damaged payload can be
-  told from a damaged header (whose manufacturer / ID / type are garbage).
-
 ### Fixed
 - **`wmbus` no longer loses the rest of a telegram to one noise glitch
   (#1256).** The receiver counted bits from the time between level changes,
@@ -22,6 +15,17 @@ for tagged releases.
   the middle of its slot: on simulated 192-byte C mode telegrams at 13 dB SNR,
   40 of 40 pass their CRC (6 before), and the rtl-wmbus sample captures gain a
   telegram.
+
+## [v1.3.1] — 2026-10-19
+
+### Added
+- **`wmbus -all` names the CRC block that failed (#1256).** A failed
+  telegram now prints e.g. `CRC FAILED (block 1 of 4; block 1 is the header,
+  so the sender shown is unreliable)`, and `-json` adds `crc_blocks`,
+  `crc_failed_blocks`, `header_crc_ok` and `raw`, so a damaged payload can be
+  told from a damaged header (whose manufacturer / ID / type are garbage).
+
+### Fixed
 - **P25 Phase 2 signalling decodes the real TDMA air format (#1273, #915).**
   The MAC messages on a Phase 2 voice channel (talker alias, in-call source,
   encryption sync), the signalling follower and the Phase 2 control channel all
