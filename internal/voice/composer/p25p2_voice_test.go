@@ -120,7 +120,7 @@ func bestAlignmentMatches(got, want [][]byte) int {
 
 // TestComposerP25Phase2VoiceChainExtractsRawFrames drives the full
 // composer Phase 2 voice path — modulated H-DQPSK IQ → Phase 2 receiver
-// → superframe decoder → ISCH/SlotType routing → AMBE+2 FEC → recorder
+// → air framer → DUID / logical-channel routing → AMBE+2 FEC → recorder
 // .raw sidecar — and confirms the recovered frames round-trip to the
 // modulated payloads.
 func TestComposerP25Phase2VoiceChainExtractsRawFrames(t *testing.T) {
@@ -199,55 +199,91 @@ func TestComposerP25Phase2VoiceChainExtractsRawFrames(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return eng.touched.Load() > 0 })
 }
 
-// buildP25P2AliasStream assembles n superframes that interleave Voice4V
-// sub-frames with MAC sub-frames carrying the two talker-alias
-// fragments needed to spell "UNIT-7" for source ID 0xABC123. The
-// fragments occupy sub-frames 0 and 6 (one per timeslot) of every
-// superframe, so even a partial chain decode catches them.
-func buildP25P2AliasStream(n int) (dibits []uint8, aliasSrc uint32, aliasText string) {
-	aliasSrc = 0xABC123
-	aliasText = "UNIT-7"
+// The real Motorola talker alias from issue #376 (Victorian MMR, RID
+// 200062): HEADER 0x91 + two DATA 0x95 messages. SDRTrunk decodes this
+// radio's alias as "CRIO 0062".
+var (
+	p25p2AliasHeaderMsg = []byte{0x91, 0x90, 0x11, 0x4E, 0xF0, 0x02, 0x01, 0x00, 0x06,
+		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, 0x24}
+	p25p2AliasData1Msg = []byte{0x95, 0x90, 0x11, 0x01, 0x04,
+		0x4F, 0x6F, 0xF2, 0xFA, 0x9A, 0xC3, 0xEC, 0x34, 0x43, 0x2F, 0xA6, 0x3C}
+	p25p2AliasData2Msg = []byte{0x95, 0x90, 0x11, 0x02, 0x0C,
+		0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+)
 
-	frag0 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: aliasSrc, BlockIndex: 0, BlockCount: 2, Data: []byte("UNIT"),
-	})
-	frag1 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: aliasSrc, BlockIndex: 1, BlockCount: 2, Data: []byte("-7"),
-	})
-
-	dibits = make([]uint8, 600)
+// p25p2MACStream assembles n superframes in the air format with voice on
+// logical channel 0 and, in each superframe, the MAC PDUs mac() places on
+// timeslots of that channel (scrambled with p25p2TestSeed). Idle slots of
+// the other channel carry a scrambled SACCH filler.
+func p25p2MACStream(t *testing.T, n int, mac func(slot int) *p25p2.AirSlotContent) []uint8 {
+	t.Helper()
+	masks := p25p2.NewAirMasks(p25p2TestSeed)
+	dibits := make([]uint8, 600)
 	for i := range dibits {
 		dibits[i] = uint8(i % 4)
 	}
-	for s := 0; s < n; s++ {
-		var subs [p25p2.SubframesPerSuperframe][]uint8
-		for i := range subs {
-			switch i {
-			case 0:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					frag0, p25p2.TrellisOn, p25p2.InterleaveOff)
-			case 6:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					frag1, p25p2.TrellisOn, p25p2.InterleaveOff)
-			default:
-				payloads := make([][]byte, p25p2.Voice4VFrameCount)
-				for j := range payloads {
-					payloads[j] = p25p2VoicePayload(s*p25p2.SubframesPerSuperframe*p25p2.Voice4VFrameCount + i*p25p2.Voice4VFrameCount + j)
-				}
-				subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
+	k := 0
+	for s := 0; s <= n; s++ { // one trailing superframe flushes the last bursts
+		var sf [p25p2.AirSlotsPerSuperframe]p25p2.AirSlotContent
+		for slot := range sf {
+			if p25p2.AirSlotLogicalChannel(slot) != 0 {
+				sf[slot] = p25p2.AirSlotContent{DUID: p25p2.DUIDSACCHScrambled}
+				continue
 			}
+			if s < n {
+				if m := mac(slot); m != nil {
+					sf[slot] = *m
+					continue
+				}
+			}
+			var frames [][]byte
+			for j := 0; j < 4; j++ {
+				frames = append(frames, p25p2VoicePayload(k))
+				k++
+			}
+			sf[slot] = p25p2.AirSlotContent{DUID: p25p2.DUIDVoice4, Voice: frames}
 		}
-		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
+		d, err := p25p2.EncodeAirSuperframe(sf, masks, uint8(s&3))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dibits = append(dibits, d...)
 	}
-	return dibits, aliasSrc, aliasText
+	return dibits
+}
+
+// p25p2FACCH carries one MAC message in a scrambled FACCH MAC_HANGTIME PDU.
+func p25p2FACCH(t *testing.T, msg []byte) *p25p2.AirSlotContent {
+	t.Helper()
+	pdu, err := p25p2.AirMACPDUBytes(p25p2.AirMACHangtime, 0, 18, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled, MAC: pdu}
+}
+
+// buildP25P2AliasStream carries the real #376 alias on FACCH-S among voice
+// on logical channel 0: header, then both data blocks, in every superframe.
+func buildP25P2AliasStream(t *testing.T, n int) (dibits []uint8, aliasSrc uint32, aliasText string) {
+	dibits = p25p2MACStream(t, n, func(slot int) *p25p2.AirSlotContent {
+		switch slot {
+		case 0:
+			return p25p2FACCH(t, p25p2AliasHeaderMsg)
+		case 4:
+			return p25p2FACCH(t, p25p2AliasData1Msg)
+		case 8:
+			return p25p2FACCH(t, p25p2AliasData2Msg)
+		}
+		return nil
+	})
+	return dibits, 200062, "CRIO 0062"
 }
 
 // TestComposerP25Phase2TalkerAliasFires drives the full composer Phase 2
 // voice path with a synthesized superframe that interleaves Voice4V
-// sub-frames with MAC sub-frames carrying talker-alias fragments —
-// the on-air shape #376's MMR field report sees — and confirms the
-// chain publishes a trunking.TalkerAlias event with the reassembled
-// "UNIT-7" alias. This is the regression guard for the issue's core
+// voice with FACCH-S bursts carrying the real Motorola alias — the on-air
+// shape #376's MMR field report sees — and confirms the chain publishes a
+// trunking.TalkerAlias event with the decoded "CRIO 0062". This is the regression guard for the issue's core
 // claim: aliases ride the voice-channel MAC dispatch, not the CC.
 func TestComposerP25Phase2TalkerAliasFires(t *testing.T) {
 	const (
@@ -258,7 +294,7 @@ func TestComposerP25Phase2TalkerAliasFires(t *testing.T) {
 		superframes = 6
 	)
 
-	dibits, wantSrc, wantAlias := buildP25P2AliasStream(superframes)
+	dibits, wantSrc, wantAlias := buildP25P2AliasStream(t, superframes)
 	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	src := newFakeSource()
@@ -295,13 +331,7 @@ func TestComposerP25Phase2TalkerAliasFires(t *testing.T) {
 			Grant: trunking.Grant{
 				System: "P25P2Site", Protocol: "p25-phase2",
 				GroupID: 42, FrequencyHz: 851_062_500,
-				// The encoder above leaves the MAC PDUs unscrambled
-				// + RS-uncovered (matching every existing Phase 2
-				// fixture), so the composer's MAC decode needs the
-				// same TrellisOn / ScramblerOff config.
-				P25Phase2Decode: trunking.P25Phase2Decode{
-					Trellis: uint8(p25p2.TrellisOn),
-				},
+				P25Phase2Decode: trunking.P25Phase2Decode{Seed: p25p2TestSeed},
 			},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
@@ -341,73 +371,48 @@ func TestComposerP25Phase2TalkerAliasFires(t *testing.T) {
 	}
 }
 
-// buildP25P2MetadataStream assembles n superframes carrying three
-// in-call MAC PDUs the MMR field test surfaced as missing from the
-// composer dispatch: GROUP_VOICE_CHANNEL_USER (source RID + svc opts),
-// ENCRYPTION_SYNC (ALGID + KID), and a talker-alias fragment pair —
-// interleaved with Voice4V sub-frames.
-func buildP25P2MetadataStream(n int) (dibits []uint8, wantSrc uint32, wantAlias string, wantAlgID uint8, wantKeyID uint16) {
-	wantSrc = 315203 // the reporter's MMR sample radio
-	wantAlias = "UNIT-7"
+// buildP25P2MetadataStream carries the in-call MAC PDUs the MMR field test
+// surfaced as missing from the composer dispatch, all on air-format
+// signalling bursts of the call's logical channel: the key-up MAC_PTT
+// (MI / ALGID / KID and the source), a SACCH GROUP_VOICE_CHANNEL_USER, and
+// the real Motorola alias on FACCH-S.
+func buildP25P2MetadataStream(t *testing.T, n int) (dibits []uint8, wantSrc uint32, wantAlias string, wantAlgID uint8, wantKeyID uint16) {
+	t.Helper()
+	wantSrc = 200062 // the alias's own RID, so every event names one radio
+	wantAlias = "CRIO 0062"
 	wantAlgID = 0x84 // AES-256
 	wantKeyID = 0x1234
-
-	// RS-valid outer parity, as a real over-the-air PDU carries: the
-	// completed-call source_rid backfill only trusts an RS-verified
-	// GROUP_VOICE_CHANNEL_USER (issue #915).
-	userPDU := p25p2.EncodeMACPDURS(p25p2.EncodeGroupVoiceChannelUser(p25p2.GroupVoiceChannelUser{
-		ServiceOptions: 0x40, // bit 6 = encrypted
-		GroupAddress:   0x4EEA,
-		SourceID:       wantSrc,
-	}, false))
-	encPDU := p25p2.EncodeEncryptionSync(p25p2.EncryptionSync{
-		AlgorithmID:      wantAlgID,
-		KeyID:            wantKeyID,
-		MessageIndicator: [9]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09},
+	ptt := p25p2.AirMACPTTBytes(p25p2.MACPTT{
+		Encryption: p25p2.EncryptionSync{AlgorithmID: wantAlgID, KeyID: wantKeyID,
+			MessageIndicator: [9]byte{1, 2, 3, 4, 5, 6, 7, 8, 9}},
+		Source: wantSrc, Group: 0x4EEA,
 	})
-	frag0 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: wantSrc, BlockIndex: 0, BlockCount: 2, Data: []byte("UNIT"),
-	})
-	frag1 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: wantSrc, BlockIndex: 1, BlockCount: 2, Data: []byte("-7"),
-	})
-
-	dibits = make([]uint8, 600)
-	for i := range dibits {
-		dibits[i] = uint8(i % 4)
+	gvcu := []byte{0x01, 0x40, 0x4E, 0xEA, byte(wantSrc >> 16), byte(wantSrc >> 8), byte(wantSrc)}
+	sacch, err := p25p2.AirMACPDUBytes(p25p2.AirMACActive, 0, 21, gvcu)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for s := 0; s < n; s++ {
-		var subs [p25p2.SubframesPerSuperframe][]uint8
-		for i := range subs {
-			switch i {
-			case 0:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					userPDU, p25p2.TrellisOn, p25p2.InterleaveOff)
-			case 3:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					encPDU, p25p2.TrellisOn, p25p2.InterleaveOff)
-			case 6:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					frag0, p25p2.TrellisOn, p25p2.InterleaveOff)
-			case 9:
-				subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, uint8(i),
-					frag1, p25p2.TrellisOn, p25p2.InterleaveOff)
-			default:
-				payloads := make([][]byte, p25p2.Voice4VFrameCount)
-				for j := range payloads {
-					payloads[j] = p25p2VoicePayload(s*p25p2.SubframesPerSuperframe*p25p2.Voice4VFrameCount + i*p25p2.Voice4VFrameCount + j)
-				}
-				subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
-			}
+	dibits = p25p2MACStream(t, n, func(slot int) *p25p2.AirSlotContent {
+		switch slot {
+		case 0:
+			return &p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled, MAC: ptt}
+		case 2:
+			return &p25p2.AirSlotContent{DUID: p25p2.DUIDSACCHScrambled, MAC: sacch}
+		case 4:
+			return p25p2FACCH(t, p25p2AliasHeaderMsg)
+		case 6:
+			return p25p2FACCH(t, p25p2AliasData1Msg)
+		case 8:
+			return p25p2FACCH(t, p25p2AliasData2Msg)
 		}
-		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
-	}
+		return nil
+	})
 	return dibits, wantSrc, wantAlias, wantAlgID, wantKeyID
 }
 
-// TestComposerP25Phase2InCallMetadataFires drives all three in-call
-// MAC PDU transports the composer now dispatches (User Abbreviated,
-// Encryption Sync, Talker Alias) through the full Phase 2 voice chain
+// TestComposerP25Phase2InCallMetadataFires drives the in-call MAC PDUs
+// the composer dispatches (MAC_PTT, Group Voice Channel User, Motorola
+// talker alias) through the full Phase 2 voice chain
 // and asserts the corresponding bus events fire. This is the
 // regression guard for #376's MMR follow-up: source RID +
 // encryption state + alias must all surface from traffic-channel MAC
@@ -421,7 +426,7 @@ func TestComposerP25Phase2InCallMetadataFires(t *testing.T) {
 		superframes = 6
 	)
 
-	dibits, wantSrc, wantAlias, wantAlgID, wantKeyID := buildP25P2MetadataStream(superframes)
+	dibits, wantSrc, wantAlias, wantAlgID, wantKeyID := buildP25P2MetadataStream(t, superframes)
 	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	src := newFakeSource()
@@ -455,9 +460,7 @@ func TestComposerP25Phase2InCallMetadataFires(t *testing.T) {
 			Grant: trunking.Grant{
 				System: "MMR", Protocol: "p25-phase2",
 				GroupID: 20202, FrequencyHz: 421_387_500,
-				P25Phase2Decode: trunking.P25Phase2Decode{
-					Trellis: uint8(p25p2.TrellisOn),
-				},
+				P25Phase2Decode: trunking.P25Phase2Decode{Seed: p25p2TestSeed},
 			},
 			DeviceSerial: "VOICE-1",
 			StartedAt:    time.Now().UTC(),
@@ -562,11 +565,11 @@ func TestComposerP25Phase2DropsOutOfSetEncryptionSync(t *testing.T) {
 	}
 }
 
-// TestComposerP25Phase2VoiceChainWarnsTrellisOff confirms the chain-entry
-// diagnostic fires a warning when the grant carries TrellisOff — the
-// inconsistent FEC profile (trellis off while RS/interleave/scrambler are
-// on) that surfaced in a field report and silently fails live decode.
-func TestComposerP25Phase2VoiceChainWarnsTrellisOff(t *testing.T) {
+// TestComposerP25Phase2VoiceChainWarnsWithoutSeed confirms the chain-entry
+// diagnostic warns when the grant carries no scrambler seed: without the
+// site identity neither the voice frames nor the scrambled SACCH/FACCH can
+// be descrambled, and live decode silently yields nothing (#451).
+func TestComposerP25Phase2VoiceChainWarnsWithoutSeed(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
@@ -590,25 +593,19 @@ func TestComposerP25Phase2VoiceChainWarnsTrellisOff(t *testing.T) {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "TestSys",
-		p25p2.MACDecodeConfig{
-			Trellis:    p25p2.TrellisOff,
-			RS:         p25p2.RSOn,
-			Interleave: p25p2.InterleaveOn,
-			Scrambler:  p25p2.ScramblerProbe,
-			Seed:       12345,
-		}, 0, iqCh, 48_000, done)
+		p25p2.MACDecodeConfig{}, 0, iqCh, 48_000, done)
 	<-done
 
-	if out := buf.String(); !strings.Contains(out, "trellis is off") {
-		t.Fatalf("expected trellis-off warning, got:\n%s", out)
+	if out := buf.String(); !strings.Contains(out, "has no scrambler seed") {
+		t.Fatalf("expected missing-seed warning, got:\n%s", out)
 	}
 }
 
 // TestComposerP25Phase2CallCensusAlwaysFires is the #813 regression guard:
 // the end-of-call MAC census must log exactly once even when the chain
-// locks zero superframes (the silent-failure case the field test hit,
+// frames zero bursts (the silent-failure case the field test hit,
 // where the success-only "composer: p25p2 mac pdu" line never appears).
-// A closed IQ channel drives that zero-superframe path.
+// A closed IQ channel drives that zero-burst path.
 func TestComposerP25Phase2CallCensusAlwaysFires(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -633,28 +630,22 @@ func TestComposerP25Phase2CallCensusAlwaysFires(t *testing.T) {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "TestSys",
-		p25p2.MACDecodeConfig{
-			Trellis:    p25p2.TrellisOn,
-			RS:         p25p2.RSOn,
-			Interleave: p25p2.InterleaveOn,
-			Scrambler:  p25p2.ScramblerOn,
-			Seed:       12345,
-		}, 0, iqCh, 48_000, done)
+		p25p2.MACDecodeConfig{Seed: 12345}, 0, iqCh, 48_000, done)
 	<-done
 
 	out := buf.String()
 	if !strings.Contains(out, "composer: p25p2 call census") {
 		t.Fatalf("expected unconditional call-census line, got:\n%s", out)
 	}
-	if !strings.Contains(out, "superframes=0") {
-		t.Fatalf("census must report superframes=0 for a zero-IQ call, got:\n%s", out)
+	if !strings.Contains(out, "air_bursts=0") {
+		t.Fatalf("census must report air_bursts=0 for a zero-IQ call, got:\n%s", out)
 	}
 }
 
 // TestComposerP25Phase2CallCensusCountsMAC confirms the census counters
-// and slot histogram are wired correctly: when real MAC signalling rides
-// the superframes, the census reports a non-zero mac_pdus count and a
-// per-slot bucket for the MAC slot type carried (#813).
+// and DUID histogram are wired correctly: when real MAC signalling rides
+// the call's channel, the census reports a non-zero mac_pdus count and a
+// bucket for the signalling DUID carried (#813).
 func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 	const (
 		sampleRate = 48_000.0
@@ -662,7 +653,7 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 		span       = 8
 		alpha      = 0.20
 	)
-	dibits, _, _, _, _ := buildP25P2MetadataStream(6)
+	dibits, _, _, _, _ := buildP25P2MetadataStream(t, 6)
 	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	var buf bytes.Buffer
@@ -681,16 +672,14 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The fixture encodes MAC PDUs unscrambled + RS-uncovered (matching
-	// every Phase 2 fixture), so decode needs the same TrellisOn /
-	// ScramblerOff config. Buffer + close so the synchronous chain drains
-	// the IQ then exits via the closed-channel census path.
+	// Buffer + close so the synchronous chain drains the IQ then exits via
+	// the closed-channel census path.
 	iqCh := make(chan []complex64, 1)
 	iqCh <- iq
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "MMR",
-		p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}, 0, iqCh, sampleRate, done)
+		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 0, iqCh, sampleRate, done)
 	<-done
 
 	out := buf.String()
@@ -700,8 +689,8 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 	if strings.Contains(out, "mac_pdus=0") {
 		t.Fatalf("census reported mac_pdus=0 despite MAC signalling in the stream, got:\n%s", out)
 	}
-	if !strings.Contains(out, "slot_"+p25p2.SlotTypeMACSignaling.String()+"=") {
-		t.Fatalf("census missing slot_%s bucket, got:\n%s", p25p2.SlotTypeMACSignaling, out)
+	if !strings.Contains(out, "duid_"+p25p2.DUIDFACCHScrambled.String()+"=") {
+		t.Fatalf("census missing duid_%s bucket, got:\n%s", p25p2.DUIDFACCHScrambled, out)
 	}
 }
 

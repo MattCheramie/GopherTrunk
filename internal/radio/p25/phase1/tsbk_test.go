@@ -14,13 +14,15 @@ import (
 // (the Phase 1 side previously omitted the leading LRA byte).
 func TestStatusBroadcastLayoutMatchesPhase2(t *testing.T) {
 	// Network Status Broadcast: LRA 0x07, WACN 0xABCDE, SystemID 0x123,
-	// channel 4.010. Phase 2 carries a 12-bit Color Code where Phase 1
-	// carries the service class, so compare only the shared identity fields.
+	// channel 4.010. The Phase 2 explicit NSB continues with a receive
+	// channel, service class and Color Code (SDRTrunk
+	// NetworkStatusBroadcastExplicit), so compare only the shared identity
+	// fields.
 	nsb := [8]byte{0x07, 0xAB, 0xCD, 0xE1, 0x23, 0x40, 0x10, 0x42}
 	p1n := ParseNetworkStatusBroadcast(nsb)
 	p2n, ok := p25phase2.MACPDU{
 		Opcode:  p25phase2.OpNetworkStatusBroadcastUpdate,
-		Payload: append(nsb[:], 0x00), // Phase 2 NSB-Update is one byte longer
+		Payload: append(nsb[:], 0x00, 0x00, 0x00, 0x00), // explicit NSB: 12-byte payload
 	}.AsNetworkStatusBroadcast()
 	if !ok {
 		t.Fatal("phase2 AsNetworkStatusBroadcast returned !ok")

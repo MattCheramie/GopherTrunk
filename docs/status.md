@@ -135,18 +135,16 @@ The inner FEC layers still pending real-air validation:
   `docs/talker-alias.md`. The alias rides FACCH-S MAC PDUs on the Phase 2
   *traffic* channel, so it surfaces exactly as often as a MAC PDU RS-validates
   there — and on the #915 reporter's weak Victorian MMR capture that is still
-  rare: the PN44 descramble now runs in the coded-channel-bit domain (#915
-  Finding B), the superframe locks under any dibit rotation (#943), but the
-  ground-truth replay (`phase2.TestGroundTruthReplay`) recovers 0/17 source RIDs
-  at `mac_rs_valid=0` because the channel is AWGN-limited at the differential
-  detector. The sensitivity levers built for it — `p25_phase2_soft_decision: on`,
-  `p25_phase2_rs_mode: correct`, `p25_phase2_equalizer: on` — are opt-in and
-  move the synthetic RID metric off zero (36 → 133); their on-air effect still
-  needs a higher-SNR Phase 2 capture with a simultaneous SDRTrunk-decoded RID.
-  `mac_rs_valid` in the composer's per-call census and the `p25p2 alias
-  ciphertext` log line are the two instruments: ciphertext lines with no alias
-  would mean a cipher regression (none seen); no ciphertext lines on a
-  followed Phase 2 call means the MAC PDUs are not decoding (#915).
+  rare. The Phase 2 signalling path was rebuilt on the real TDMA air format
+  (OP25 / SDRTrunk: S-/I-ISCH timeslot grid, DUID, RS(63,35) errors-and-
+  erasures + CRC-12/16, PN44 per timeslot), replacing a working model that
+  matched no reference — which is why `mac_rs_valid` sat at 0 on the #915
+  capture. The same pass fixed the shared Gardner timing loop (it settled on
+  the zero crossing, closing the eye a few seconds into every Phase 2 call)
+  and the Network Status Broadcast parser (it installed a wrong descramble
+  seed). Synthetic- and reference-verified only; `mac_bursts` / `mac_pdus` in
+  the composer's per-call census and the `p25p2 alias ciphertext` log line are
+  the instruments for the next on-air run (#915).
 - **DMR 2-slot interleaved voice — now the Tier II conventional &
   Tier III default (issue #644).** A DMR carrier is 2-slot TDMA, so a real
   outbound stream interleaves both timeslots' bursts. The single-slot

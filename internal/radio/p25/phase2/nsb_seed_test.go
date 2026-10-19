@@ -7,29 +7,59 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
-// assembleNSBPayload builds an 18-byte MAC PDU info window for a
-// Network Status Broadcast - Update with the supplied identity
-// fields. Mirrors the on-wire byte layout
-// AsNetworkStatusBroadcast parses.
+// assembleNSBPayload builds an 18-byte MAC PDU info window for an explicit
+// Network Status Broadcast with the supplied identity fields, in the
+// SDRTrunk NetworkStatusBroadcastExplicit layout (receive channel = the
+// transmit channel + 1, service class 0x70).
 func assembleNSBPayload(lra uint8, wacn uint32, sysID, cc uint16, chanID uint8, chanNum uint16) []byte {
 	pdu := make([]byte, 18)
 	pdu[0] = byte(OpNetworkStatusBroadcastUpdate)
-	// Payload bytes start at pdu[1]. Layout (relative to payload[0]):
-	//   0       LRA
-	//   1..3    WACN (20 bits in upper 20 of bytes 1..3)
-	//   3..4    SystemID (low nibble of byte 3 + byte 4)
-	//   5..6    Color Code (12 bits, upper 12 of bytes 5..6)
-	//   7..8    Channel ID + Number
 	pdu[1] = lra
 	pdu[2] = byte(wacn >> 12)
 	pdu[3] = byte(wacn >> 4)
 	pdu[4] = byte((wacn&0x0F)<<4) | byte(sysID>>8)&0x0F
 	pdu[5] = byte(sysID & 0xFF)
-	pdu[6] = byte(cc >> 4)
-	pdu[7] = byte((cc & 0x0F) << 4)
-	pdu[8] = (chanID << 4) | byte(chanNum>>8)&0x0F
-	pdu[9] = byte(chanNum)
+	pdu[6] = (chanID << 4) | byte(chanNum>>8)&0x0F
+	pdu[7] = byte(chanNum)
+	pdu[8] = (chanID << 4) | byte((chanNum+1)>>8)&0x0F
+	pdu[9] = byte(chanNum + 1)
+	pdu[10] = 0x70
+	pdu[11] = byte(cc>>8) & 0x0F
+	pdu[12] = byte(cc)
 	return pdu
+}
+
+// TestAsNetworkStatusBroadcastMatchesReferenceLayout pins both NSB forms
+// against literal messages laid out from the reference offsets (SDRTrunk
+// NetworkStatusBroadcastExplicit / Implicit; OP25 tk_p25.py op 0xfb reads
+// wacn = msg[2:5]>>4, syid = msg[4:6]&0xfff, ch_t = msg[6:8]). The Color
+// Code is the last 12 bits, NOT bytes 6..7 — which GopherTrunk used to
+// read, so a site's NSB installed a wrong descramble seed.
+func TestAsNetworkStatusBroadcastMatchesReferenceLayout(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  []byte
+	}{
+		{"explicit", []byte{0xFB, 0x07, 0xAB, 0xCD, 0xE1, 0x23, 0x10, 0x05, 0x10, 0x06, 0x70, 0x02, 0x93}},
+		{"implicit", []byte{0x7B, 0x07, 0xAB, 0xCD, 0xE1, 0x23, 0x10, 0x05, 0x70, 0x02, 0x93}},
+	} {
+		pdu, err := ParseMACPDU(tc.msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nsb, ok := pdu.AsNetworkStatusBroadcast()
+		if !ok {
+			t.Fatalf("%s: not parsed", tc.name)
+		}
+		want := NetworkStatusBroadcast{LRA: 0x07, WACN: 0xABCDE, SystemID: 0x123, ColorCode: 0x293,
+			ChannelID: 1, ChannelNumber: 5, ServiceClass: 0x70}
+		if nsb != want {
+			t.Errorf("%s: got %+v, want %+v", tc.name, nsb, want)
+		}
+		if l := int(airMACMsgLen[tc.msg[0]]); l != len(tc.msg) {
+			t.Errorf("%s: OP25 mac_msg_len = %d, literal is %d bytes", tc.name, l, len(tc.msg))
+		}
+	}
 }
 
 // TestAsNetworkStatusBroadcastExtractsIdentity verifies the parser
@@ -89,10 +119,10 @@ func TestAsNetworkStatusBroadcastRejectsWrongOpcode(t *testing.T) {
 func TestAsNetworkStatusBroadcastRejectsShortPayload(t *testing.T) {
 	pdu := MACPDU{
 		Opcode:  OpNetworkStatusBroadcastUpdate,
-		Payload: make([]byte, 8), // need 9
+		Payload: make([]byte, 11), // need 12
 	}
 	if _, ok := pdu.AsNetworkStatusBroadcast(); ok {
-		t.Errorf("AsNetworkStatusBroadcast accepted 8-byte payload")
+		t.Errorf("AsNetworkStatusBroadcast accepted 11-byte payload")
 	}
 }
 

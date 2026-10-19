@@ -293,41 +293,43 @@ func tetraFEC(stream []uint8, land *SyncLandscape, sys trunking.System) []FECSta
 	return []FECStat{st}
 }
 
-// p25p2FEC tallies the P25 Phase 2 ISCH Golay(24,12,8) decode and the MAC-PDU
-// ½-rate trellis decode. After each outbound-sync hit (only sub-frame 0 of a
-// superframe carries the sync) the ISCH is 12 dibits at offset SyncDibits and
-// the trellis-coded MAC payload is 146 dibits after that.
-func p25p2FEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
-	isch := FECStat{Stage: "ISCH Golay(24,12,8)"}
-	mac := FECStat{Stage: "MAC trellis(1/2)"}
-	const macDibits = 146
-	ischDibits := p25phase2.ISCHDibits
-	syncLen := land.SyncLen
-	for _, pos := range land.positions {
-		ischStart := pos + syncLen
-		if ischStart+ischDibits > len(stream) {
+// p25p2FEC tallies the P25 Phase 2 air format (OP25 / SDRTrunk): the
+// (40,9,16) I-ISCH that names timeslots 0,1,4,5,8,9, and the RS(63,35) + CRC
+// decode of every signalling burst (SACCH / FACCH / LCCH). The air framer
+// finds the timeslot grid itself (any dibit rotation), so land is unused.
+// Scrambled bursts decode only with the site's PN44 seed; with no identity
+// configured only the clear ones can, and the scrambled ones are counted
+// uncorrectable.
+func p25p2FEC(stream []uint8, _ *SyncLandscape, sys trunking.System) []FECStat {
+	isch := FECStat{Stage: "I-ISCH (40,9,16)"}
+	mac := FECStat{Stage: "MAC RS(63,35)+CRC"}
+	var masks *p25phase2.AirMasks
+	if sys.WACN != 0 || sys.SystemID != 0 {
+		masks = p25phase2.NewAirMasks(framing.PN44SeedFromIdentity(sys.WACN, sys.SystemID, uint16(sys.Site)))
+	}
+	for _, b := range p25phase2.NewAirFramer().Process(stream, 0) {
+		if b.Slot%4 < 2 {
+			var w uint64
+			for _, d := range b.Packet[:p25phase2.AirISCHDibits] {
+				w = w<<2 | uint64(d&3)
+			}
+			errs := -1
+			if _, e, ok := p25phase2.DecodeIISCH(w); ok {
+				errs = e
+			}
+			tallyErrs(&isch, errs)
+		}
+		if !b.DUID.IsSignalling() {
 			continue
 		}
-		best := -1
-		for rot := uint8(0); rot < 4; rot++ {
-			if _, errs, err := p25phase2.DecodeISCH(rotateDibits(stream[ischStart:ischStart+ischDibits], rot)); err == nil {
-				if best < 0 || errs < best {
-					best = errs
-				}
-			}
+		errs := -1
+		if m, ok := p25phase2.DecodeAirMAC(b, masks); ok {
+			errs = m.Corrected
+			mac.CRCPass++
+		} else {
+			mac.CRCFail++
 		}
-		tallyErrs(&isch, best)
-
-		macStart := ischStart + ischDibits
-		if macStart+macDibits <= len(stream) {
-			bestM := -1
-			for rot := uint8(0); rot < 4; rot++ {
-				if _, metric := framing.DecodeP25Trellis(rotateDibits(stream[macStart:macStart+macDibits], rot)); bestM < 0 || metric < bestM {
-					bestM = metric
-				}
-			}
-			tallyErrs(&mac, bestM)
-		}
+		tallyErrs(&mac, errs)
 	}
 	return []FECStat{isch, mac}
 }

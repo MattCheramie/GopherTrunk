@@ -51,23 +51,16 @@ func newP25P2VoiceFrontEnd(iqHz float64, bw uint32) *decimatingFIR {
 // because H-DQPSK slips differently than C4FM).
 const p25p2VoiceGardnerGain = 0.005
 
-// slotHistLen sizes the per-call SlotType histogram in the chain census.
-// It spans SlotTypeUnknown (0x0) .. SlotTypeMACEndCont (0x9); an
-// out-of-range slot value (a future enum addition) is dropped by the
-// bounds guard at the increment site rather than panicking.
-const slotHistLen = 0xA
-
 // runP25Phase2VoiceChain consumes IQ for one P25 Phase 2 voice call. It
 // decimates the wideband IQ to an H-DQPSK-friendly rate, recovers the
 // dibit stream with the Phase 2 receiver, assembles 360 ms superframes,
 // and for every voice-bearing sub-frame FEC-decodes its AMBE+2 frames
 // and appends them to the recorder's .raw sidecar.
 //
-// In parallel it dispatches the MAC-typed sub-frames that ride the same
-// superframe (Phase 2 voice traffic channels interleave MAC PDUs —
-// talker alias, encryption sync, in-call signalling — with voice).
-// macCfg pins the FEC pipeline DecodeSuperframeMACPDUs runs on those
-// sub-frames; on a completed talker-alias the chain publishes a
+// In parallel it dispatches the SACCH/FACCH bursts that ride the same
+// carrier (Phase 2 voice traffic channels interleave MAC PDUs — talker
+// alias, encryption sync, in-call signalling — with voice); macCfg.Seed
+// descrambles them. On a completed talker-alias the chain publishes a
 // trunking.TalkerAlias event itself, mirroring the CC's
 // publishTalkerAlias path. This is the only way display names surface
 // on Phase 2 systems whose CCs never emit alias fragments (e.g. MMR).
@@ -83,8 +76,8 @@ const slotHistLen = 0xA
 // grant's 1-based Timeslot (channel number n mod 2, +1), 0 when unknown,
 // in which case the chain binds to the first channel that carries voice.
 // Two calls share a Phase 2 carrier, one per logical channel, and the
-// chain used to record both into one WAV (#1273). The MAC dispatch still
-// runs on the older SuperframeDecoder model.
+// chain used to record both into one WAV (#1273). The MAC signalling
+// (SACCH/FACCH) rides the same bursts and decodes on the air format too.
 func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, system string, macCfg p25p2.MACDecodeConfig, timeslot uint8, iqCh <-chan []complex64, iqHz float64, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-p25p2:"+serial, nil)
@@ -103,31 +96,14 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// ran and surfaces the exact FEC config the grant carried.
 	c.log.Info("composer: p25p2 voice chain started",
 		"serial", serial, "system", system,
-		"trellis", macCfg.Trellis, "rs", macCfg.RS,
-		"interleave", macCfg.Interleave, "scrambler", macCfg.Scrambler,
-		"seed", macCfg.Seed)
-	// Surface the specific reason live MAC PDU decode would fail so the
-	// operator knows which knob to turn, rather than one opaque catch-all
-	// (issue #451). With the live-decode defaults (ScramblerOn + an
-	// identity-derived seed) none of these fire.
-	switch {
-	case macCfg.Trellis == p25p2.TrellisOff:
-		c.log.Warn("composer: p25p2 trellis is off; live P25 Phase 2 MAC PDUs are trellis-encoded (TIA-102.AABF), so voice/MAC decode will fail — TrellisOff is only for pre-stripped fixtures (set p25_phase2_trellis_mode=on)",
-			"serial", serial, "system", system,
-			"trellis", macCfg.Trellis, "rs", macCfg.RS,
-			"interleave", macCfg.Interleave, "scrambler", macCfg.Scrambler)
-	case macCfg.Seed == 0:
-		c.log.Warn("composer: p25p2 macCfg has no scrambler seed; live MAC PDU decode will fail until the system identity is known (set WACN/SystemID/site, or wait for a Network Status Broadcast on Phase 2 control channels)",
-			"serial", serial, "system", system,
-			"scrambler", macCfg.Scrambler, "seed", macCfg.Seed)
-	case macCfg.Scrambler == p25p2.ScramblerOff:
-		c.log.Warn("composer: p25p2 scrambler is off; live P25 Phase 2 MAC PDUs are always PN44-scrambled, so MAC decode will fail (set p25_phase2_scrambler_mode=on)",
-			"serial", serial, "system", system,
-			"scrambler", macCfg.Scrambler, "seed", macCfg.Seed)
-	case macCfg.Scrambler == p25p2.ScramblerProbe && macCfg.RS != p25p2.RSOn:
-		c.log.Warn("composer: p25p2 scrambler=probe requires p25_phase2_rs_mode=on to verify the slot offset; it will degrade to offset 0 and likely fail",
-			"serial", serial, "system", system,
-			"scrambler", macCfg.Scrambler, "rs", macCfg.RS, "seed", macCfg.Seed)
+		"timeslot", timeslot, "seed", macCfg.Seed)
+	// The air format fixes the channel coding, so the trellis / rs /
+	// interleave / scrambler modes no longer change anything; the seed is
+	// the one input that matters (issue #451): without it neither the voice
+	// frames nor the scrambled SACCH/FACCH can be descrambled.
+	if macCfg.Seed == 0 {
+		c.log.Warn("composer: p25p2 has no scrambler seed; voice and scrambled MAC decode will fail until the system identity is known (set WACN/SystemID/site, or wait for a Network Status Broadcast on Phase 2 control channels)",
+			"serial", serial, "system", system, "seed", macCfg.Seed)
 	}
 
 	// Front-end decimator: an 81-tap anti-alias FIR that convolves ONLY at
@@ -145,7 +121,6 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	symbolHz := fe.OutRateHz()
 
 	rs, _ := c.sink.(rawFrameSink)
-	sfDec := p25p2.NewSuperframeDecoder()
 	airFramer := p25p2.NewAirFramer()
 	var airMasks *p25p2.AirMasks
 	if macCfg.Seed != 0 {
@@ -185,30 +160,51 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// rationale. A high uncorrectable rate is the measurable signature of
 	// weak signal / wrong gain behind garbled audio (issue #356 follow-up).
 	var corrErrBits atomic.Uint64
-	// MAC-pipeline census (issue #813). A field test on real Phase 2
+	// Call census (issues #813, #915). A field test on real Phase 2
 	// traffic saw the per-PDU "composer: p25p2 mac pdu" line — which fires
 	// only on a *successful* MAC decode — never appear at all, which is
-	// ambiguous: it can't tell superframe-sync failure from ISCH
-	// mis-classification from MAC-FEC failure. These counters feed the
-	// unconditional end-of-call census (logCallCensus) that disambiguates
-	// the three. They are read from the for-select goroutine below, so they
-	// are atomic like the decode-quality counters above.
+	// ambiguous: it can't tell framing failure from a missing seed from
+	// FEC failure. These counters feed the unconditional end-of-call census
+	// (logCallCensus) that disambiguates them. They are read from the
+	// for-select goroutine below, so they are atomic like the decode-quality
+	// counters above.
 	var (
-		superframesSeen  atomic.Uint64
-		macSubframesSeen atomic.Uint64
-		macPDUsDecoded   atomic.Uint64
-		macRSValid       atomic.Uint64
-		slotHist         [slotHistLen]atomic.Uint64
-		// Air-format census: bursts framed, voice bursts recorded, and
-		// voice bursts dropped because they belong to the carrier's other
-		// logical channel (another call).
+		// Air-format census: bursts framed, voice bursts dropped because
+		// they belong to the carrier's other logical channel (another
+		// call), and this call's signalling bursts / CRC-valid MAC PDUs.
 		airBursts      atomic.Uint64
 		otherSlotVoice atomic.Uint64
+		macBursts      atomic.Uint64
+		macPDUsDecoded atomic.Uint64
+		duidHist       [16]atomic.Uint64
 	)
-	// drainAirBursts records the granted logical channel's voice frames.
+	// macRun collects this call's signalling bursts for the dispatcher.
+	var macRun []p25p2.AirBurst
+	// drainAirBursts records the granted logical channel's voice frames and
+	// dispatches its MAC signalling.
 	drainAirBursts := func(bursts []p25p2.AirBurst) {
+		macRun = macRun[:0]
+		defer func() {
+			if len(macRun) > 0 {
+				nSig, nDec := dispatcher.DispatchAir(macRun, airMasks)
+				macBursts.Add(uint64(nSig))
+				macPDUsDecoded.Add(uint64(nDec))
+			}
+		}()
 		for _, b := range bursts {
 			airBursts.Add(1)
+			if b.DUID >= 0 && int(b.DUID) < len(duidHist) {
+				duidHist[b.DUID].Add(1)
+			}
+			if b.DUID.IsSignalling() {
+				// Like OP25, signalling on the other logical channel
+				// belongs to the other call; a clear LCCH is the
+				// carrier's own and is always taken.
+				if b.DUID == p25p2.DUIDLCCHClear || wantLCH < 0 || b.LogicalChannel == wantLCH {
+					macRun = append(macRun, b)
+				}
+				continue
+			}
 			if !b.DUID.IsVoice() {
 				continue
 			}
@@ -238,44 +234,10 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			}
 		}
 	}
-	// drainSuperframes runs the shared per-superframe voice + MAC census
-	// body. It is driven by the hard DibitSink or, when the grant requests
-	// soft-decision demod (issue #915), the soft SoftSink whose superframes
-	// carry per-symbol soft differentials in Subframe.Soft that the MAC
-	// decode path picks up automatically. The census body is identical
-	// either way, so both paths stay in lock-step.
-	drainSuperframes := func(sfs []p25p2.Superframe) {
-		for _, sf := range sfs {
-			superframesSeen.Add(1)
-			for _, sub := range sf.Subframes {
-				// Census every sub-frame's slot type — including
-				// SlotTypeUnknown and MAC types — before the voice gate,
-				// so the end-of-call census can show whether ISCH ever
-				// classified a MAC slot (#813).
-				if int(sub.SlotType) < slotHistLen {
-					slotHist[sub.SlotType].Add(1)
-				}
-				if sub.SlotType.IsMAC() {
-					macSubframesSeen.Add(1)
-				}
-			}
-			// The talker alias, in-call source, and encryption-sync
-			// MAC PDUs that interleave with voice are decoded by the
-			// shared dispatcher (same path the signalling follower
-			// runs off the traffic channel, #376). rsValid counts how
-			// many carried a clean outer RS(24,16,9) parity — the
-			// framing-health signal the end-of-call census reports
-			// (issue #915).
-			nDec, nRS := dispatcher.Dispatch(sf, macCfg)
-			macPDUsDecoded.Add(uint64(nDec))
-			macRSValid.Add(uint64(nRS))
-		}
-	}
-
 	// Build the receiver on the hard slicer by default; when the grant
-	// carries the soft-decision flag (issue #915) wire the soft sink so the
-	// receiver emits per-symbol soft differentials and the SuperframeDecoder
-	// carries them into Subframe.Soft via ProcessSoft.
+	// carries the soft-decision flag (issue #915) wire the soft sink. The
+	// air framer slices hard dibits either way; the soft path keeps the
+	// receiver's soft-decision demod.
 	rxOpts := p25p2rx.Options{
 		SampleRateHz:  symbolHz,
 		ClockMode:     p25p2rx.ClockGardner,
@@ -287,12 +249,10 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		rxOpts.SoftDecision = true
 		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
 			drainAirBursts(airFramer.Process(dibits, baseIdx))
-			drainSuperframes(sfDec.ProcessSoft(dibits, soft, baseIdx))
 		}
 	} else {
 		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
 			drainAirBursts(airFramer.Process(dibits, baseIdx))
-			drainSuperframes(sfDec.Process(dibits, baseIdx))
 		}
 	}
 	rx := p25p2rx.New(rxOpts)
@@ -315,38 +275,31 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			"voice_bursts", n, "corrected_bit_errs", corrErrBits.Load())
 	}
 	// logCallCensus emits exactly one line at chain end, unconditionally —
-	// even when zero superframes ever locked. It is the field diagnostic
-	// that disambiguates the three #813 failure modes when no "composer:
-	// p25p2 mac pdu" line ever appears:
-	//   - superframes=0                  → superframe sync never locked
-	//   - superframes>0, mac_subframes=0 → ISCH never classified a MAC slot
-	//                                       (inspect the slot_* histogram)
-	//   - mac_subframes>0, mac_pdus=0    → MAC FEC chain failed every slot
-	//   - mac_pdus>0, mac_rs_valid=0     → the MAC window parses but never
-	//                                       satisfies the outer RS(24,16,9)
-	//                                       parity: a mis-framed / mis-
-	//                                       descrambled superframe decoding
-	//                                       random bytes, not real signalling
-	//                                       (issue #915 — this is why the
-	//                                       clear-MAC source RID never lands)
-	// The slot_<type> buckets reuse SlotType.String() so the line is
+	// even when nothing ever framed. It is the field diagnostic that
+	// disambiguates the failure modes when no "composer: p25p2 mac pdu"
+	// line ever appears:
+	//   - air_bursts=0                     → the TDMA framer never locked
+	//   - descramble_seed_known=false      → voice and scrambled MAC cannot
+	//                                         be descrambled (no identity)
+	//   - mac_bursts>0, mac_pdus=0         → every signalling burst failed
+	//                                         RS(63,35) or its CRC: weak
+	//                                         signal or a wrong seed
+	// The duid_<type> buckets reuse DUID.String() so the line is
 	// self-describing.
 	logCallCensus := func() {
 		attrs := []any{
 			"serial", serial, "system", system,
-			"superframes", superframesSeen.Load(),
 			"air_bursts", airBursts.Load(),
 			"voice_bursts", voiceSubframes.Load(),
 			"other_slot_voice_bursts", otherSlotVoice.Load(),
 			"logical_channel", wantLCH,
 			"descramble_seed_known", airMasks != nil,
-			"mac_subframes", macSubframesSeen.Load(),
+			"mac_bursts", macBursts.Load(),
 			"mac_pdus", macPDUsDecoded.Load(),
-			"mac_rs_valid", macRSValid.Load(),
 		}
-		for st := 0; st < slotHistLen; st++ {
-			if cnt := slotHist[st].Load(); cnt > 0 {
-				attrs = append(attrs, "slot_"+p25p2.SlotType(st).String(), cnt)
+		for d := range duidHist {
+			if cnt := duidHist[d].Load(); cnt > 0 {
+				attrs = append(attrs, "duid_"+p25p2.DUID(d).String(), cnt)
 			}
 		}
 		c.log.Info("composer: p25p2 call census", attrs...)

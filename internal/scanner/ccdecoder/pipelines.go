@@ -481,16 +481,12 @@ func (p *p25Phase1Pipeline) TopologySnapshot() *trunking.TopologySnapshot {
 
 // newP25Phase2Pipeline wires internal/radio/p25/phase2/receiver into
 // p25phase2.ControlChannel.Process. The receiver's DibitSink forwards
-// H-DQPSK dibits into the state machine (20-dibit outbound sync
-// detect → 146-channel-dibit trellis decode → MAC PDU parse →
-// Ingest), which publishes cc.locked on the first non-idle MAC PDU
-// and grants on GroupVoiceChannelGrant variants.
-//
-// Trellis FEC is on by default: the factory always runs
-// p25phase2.ParseTrellisMode over the per-system config string,
-// which maps an empty string to TrellisOn. Operators feeding
-// pre-stripped MAC-PDU fixtures opt out per-system with
-// `p25_phase2_trellis_mode: off`.
+// H-DQPSK dibits into cc.ProcessAir (TDMA air framing → signalling
+// burst RS(63,35) + CRC decode → MAC messages → Ingest), which
+// publishes cc.locked on the first non-idle MAC message and grants on
+// GroupVoiceChannelGrant variants. The trellis / RS / interleave /
+// scrambler mode knobs are still stamped onto the CC (and the grants
+// it publishes) but the air path does not consult them.
 //
 // The connector wires the receiver with `ClockMode: ClockGardner`
 // — Gardner timing recovery on complex IQ replaces the receiver's
@@ -527,10 +523,6 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	if !scrOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
-	}
-	if scramblerMode == p25phase2.ScramblerProbe && !rsMode.Enabled() {
-		opts.Log.Warn("ccdecoder: p25_phase2_scrambler_mode=probe requires p25_phase2_rs_mode=on or =correct; descrambler will degrade to offset 0",
-			"system", opts.SystemName)
 	}
 	cc.SetScramblerMode(scramblerMode)
 	// Derive the PN44 seed from (WACN, SystemID, low-12 bits of Site
@@ -570,20 +562,15 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ClockMode)
 	}
-	// The receiver's dibit stream drives a SuperframeDecoder: it locks
-	// the 360 ms TDMA superframe, slices the 12 sub-frames, decodes
-	// each ISCH SlotType, and IngestSuperframe routes the MAC-bearing
-	// sub-frames into the control-channel state machine. cc.Process
-	// (the flat sync-window adapter) stays available for callers that
-	// feed pre-stripped fixtures, but the live pipeline is structured.
-	sfDec := p25phase2.NewSuperframeDecoder()
+	// The receiver's dibit stream is framed in the real TDMA air format
+	// (cc.ProcessAir: S-/I-ISCH timeslot grid, DUID, RS(63,35) + CRC
+	// signalling decode). A receiver reset restarts the dibit count, which
+	// the framer reads as a discontinuity and re-hunts.
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
-			for _, sf := range sfDec.Process(dibits, baseIdx) {
-				cc.IngestSuperframe(sf)
-			}
+			cc.ProcessAir(dibits, baseIdx)
 		},
 		ClockMode: clockMode,
 		// Tuned smaller than the 0.03 default — H-DQPSK at
@@ -595,7 +582,7 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		GardnerGain: 0.005,
 	})
 	return &p25Phase2Pipeline{
-		rx: rx, cc: cc, sfDec: sfDec, log: opts.Log, system: opts.SystemName,
+		rx: rx, cc: cc, log: opts.Log, system: opts.SystemName,
 		guard: resyncGuard{rateHz: opts.SampleRateHz, window: p25Phase2ResyncWindow},
 	}, nil
 }
@@ -603,7 +590,6 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 type p25Phase2Pipeline struct {
 	rx     *p25phase2rx.Receiver
 	cc     *p25phase2.ControlChannel
-	sfDec  *p25phase2.SuperframeDecoder
 	log    *slog.Logger
 	system string
 	guard  resyncGuard
@@ -613,11 +599,10 @@ func (p *p25Phase2Pipeline) Process(iq []complex64) {
 	p.rx.Process(iq)
 	// Signal-time decode-drought watchdog (see resyncGuard): a full window
 	// of processed signal with no MAC PDU reaching Ingest forces a fast
-	// reacquire — receiver loops to centre plus the superframe decoder's
-	// sync state, the same pair Reset clears.
+	// reacquire — receiver loops to centre (the air framer re-hunts on the
+	// restarted dibit count), the same reset Reset does.
 	if p.guard.check(len(iq), p.cc.LastActivityNano()) {
 		p.rx.Reset()
-		p.sfDec.Reset()
 		if p.log != nil {
 			p.log.Debug("p25/phase2: dsp resync (signal-time decode drought; reacquiring from centre)",
 				"system", p.system)
@@ -627,7 +612,6 @@ func (p *p25Phase2Pipeline) Process(iq []complex64) {
 
 func (p *p25Phase2Pipeline) Reset() {
 	p.rx.Reset()
-	p.sfDec.Reset()
 	p.guard.reset()
 }
 func (p *p25Phase2Pipeline) Close() error { return nil }

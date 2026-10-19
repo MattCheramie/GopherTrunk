@@ -42,48 +42,27 @@ func (f *fakeDevice) StreamIQ(context.Context) (<-chan []complex64, error) {
 }
 
 // aliasDibits builds a dibit stream of `warmup` voice-only superframes
-// followed by `n` superframes interleaving Voice4V with the two
-// talker-alias fragments for "UNIT-7" (source 0xABC123). The warmup lets
-// the receiver's Gardner symbol-clock lock before the alias frames decode
-// — without it the generic alias assembler completes on the very first
-// (still-settling) superframe and a transient symbol slip corrupts the
-// reassembled source / alias.
-func aliasDibits(warmup, n int) (dibits []uint8, src uint32, alias string) {
-	src, alias = 0xABC123, "UNIT-7"
-	frag0 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: src, BlockIndex: 0, BlockCount: 2, Data: []byte("UNIT"),
-	})
-	frag1 := p25p2.EncodeTalkerAliasFragment(p25p2.TalkerAliasFragment{
-		SourceID: src, BlockIndex: 1, BlockCount: 2, Data: []byte("-7"),
-	})
-	voiceOnly := func() [p25p2.SubframesPerSuperframe][]uint8 {
-		var subs [p25p2.SubframesPerSuperframe][]uint8
-		for i := range subs {
-			payloads := make([][]byte, p25p2.Voice4VFrameCount)
-			for j := range payloads {
-				payloads[j] = make([]byte, p25p2.VoiceFrameBytes)
-			}
-			subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
-		}
-		return subs
+// followed by `n` superframes carrying the real #376 Motorola alias (header
+// and two data blocks on FACCH-S, scrambled with testSeed) among voice. The
+// warmup lets the receiver's Gardner symbol-clock lock before the alias
+// bursts arrive.
+func aliasDibits(t *testing.T, warmup, n int) (dibits []uint8, src uint32, alias string) {
+	t.Helper()
+	masks := p25p2.NewAirMasks(testSeed)
+	facch := func(msg []byte) p25p2.AirSlotContent {
+		return p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled,
+			MAC: macPDU(t, p25p2.AirMACHangtime, p25p2.DUIDFACCHScrambled, msg)}
 	}
-	dibits = make([]uint8, 600)
-	for i := range dibits {
-		dibits[i] = uint8(i % 4)
-	}
+	var sfs [][p25p2.AirSlotsPerSuperframe]p25p2.AirSlotContent
 	for s := 0; s < warmup; s++ {
-		subs := voiceOnly()
-		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
+		sfs = append(sfs, voiceSlots())
 	}
 	for s := 0; s < n; s++ {
-		subs := voiceOnly()
-		subs[0] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, 0,
-			frag0, p25p2.TrellisOn, p25p2.InterleaveOff)
-		subs[6] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACSignaling, 6,
-			frag1, p25p2.TrellisOn, p25p2.InterleaveOff)
-		dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
+		sf := voiceSlots()
+		sf[0], sf[3], sf[6] = facch(realAliasHeaderMSG), facch(realAliasData1MSG), facch(realAliasData2MSG)
+		sfs = append(sfs, sf)
 	}
-	return dibits, src, alias
+	return airStreamDibits(t, masks, sfs...), 200062, "CRIO 0062"
 }
 
 // TestManagerHarvestsAliasWithoutVoiceTuner is the regression guard for
@@ -102,7 +81,7 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 		widebandHz = targetHz // offset 0: the tap sits on the traffic channel
 	)
 
-	dibits, wantSrc, wantAlias := aliasDibits(8, 8)
+	dibits, wantSrc, wantAlias := aliasDibits(t, 8, 8)
 	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -154,7 +133,7 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 				Payload: trunking.Grant{
 					System: "P25P2Site", Protocol: "p25-phase2",
 					GroupID: 42, FrequencyHz: targetHz,
-					P25Phase2Decode: trunking.P25Phase2Decode{Trellis: uint8(p25p2.TrellisOn)},
+					P25Phase2Decode: trunking.P25Phase2Decode{Seed: testSeed},
 				},
 			})
 			select {
@@ -166,11 +145,10 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 	}()
 
 	// Feed the modulated IQ in chunks, looping so there is always signal
-	// on the channel whenever the follow subscribes. The encoder leaves
-	// the MAC PDUs unscrambled / RS-uncovered, matching TrellisOn /
-	// ScramblerOff.
+	// on the channel whenever the follow subscribes.
 	go func() {
 		const chunk = 4096
+		chunkPace := time.Second * chunk / sdrRate / 2
 		for {
 			for off := 0; off < len(iq); off += chunk {
 				end := off + chunk
@@ -184,6 +162,10 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 				case <-ctx.Done():
 					return
 				}
+				// Pace at ~2x real time: an unpaced feeder overruns the
+				// broker, and the dropped chunks tear holes in the dibit
+				// stream the TDMA framer needs whole.
+				time.Sleep(chunkPace)
 			}
 		}
 	}()

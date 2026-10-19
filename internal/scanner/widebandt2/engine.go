@@ -353,10 +353,10 @@ func (e *Engine) foldInputClip(chunk []complex64) {
 // ConventionalChannel, DMR Tier III's ControlChannel, P25 Phase 1's
 // ControlChannel and P25 Phase 2's ControlChannel all expose
 // Process(dibits []uint8, baseIdx int) int with the same semantics, so
-// the engine treats them uniformly. (Phase 2's ControlChannel also
-// exposes IngestSuperframe; the build function wires the receiver's
-// DibitSink through a SuperframeDecoder before calling Process so the
-// engine still only sees a dibit-shaped processor.)
+// the engine treats them uniformly. (Phase 2's live adapter is
+// ProcessAir, the TDMA air-format framer; the build function wires the
+// receiver's DibitSink to it, and the engine still only sees a
+// dibit-shaped processor.)
 type channelProcessor interface {
 	Process(dibits []uint8, baseIdx int) int
 }
@@ -874,22 +874,17 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			log.Warn("widebandt2: unrecognised p25_phase2_clock_mode; falling back to gardner",
 				"system", sys.Name, "value", sys.P25Phase2ClockMode)
 		}
-		sfDec := p25phase2.NewSuperframeDecoder()
 		rx := p25phase2rx.New(p25phase2rx.Options{
 			SampleRateHz: outRateHz,
-			DibitSink: p25phase2.DibitSink(func(d []uint8, b int) {
-				for _, sf := range sfDec.Process(d, b) {
-					cc.IngestSuperframe(sf)
-				}
-			}),
-			ClockMode:   clockMode,
-			GardnerGain: p25Phase2GardnerGain,
+			DibitSink:    p25phase2.DibitSink(func(d []uint8, b int) { cc.ProcessAir(d, b) }),
+			ClockMode:    clockMode,
+			GardnerGain:  p25Phase2GardnerGain,
 		})
 		// Decode-drought watchdog, mirroring the ccdecoder p25Phase2Pipeline:
-		// the superframe decoder's sync state resets alongside the receiver.
+		// the air framer re-hunts on the receiver's restarted dibit count.
 		rcv := &droughtGuardReceiver{
 			rx: rx, activity: cc.LastActivityNano,
-			reacquire: func() { rx.Reset(); sfDec.Reset() },
+			reacquire: func() { rx.Reset() },
 			log:       log, system: sys.Name, label: "p25-phase2",
 			rateHz: outRateHz, window: p25Phase2ResyncWindow,
 		}
