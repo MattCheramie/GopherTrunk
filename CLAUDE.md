@@ -121,11 +121,30 @@ confirmation before any close-as-completed.
   carried only `AccessTDMA`; `TopoBandPlanSlot.SlotsPerCarrier` + `ChannelHz` now divide like
   `BandPlan.Frequency`, and `p25_band_plan` entries take `slots_per_carrier` (2/4 = TDMA, through
   `phase1.IdentifierUpdateFromSeed`, which also sets `AccessTDMA` so the grant routes Phase 2).
-  Still open: the Phase 2 voice chain records BOTH timeslots (no filter on `Grant.Timeslot`), so two
-  calls on one carrier interleave — needs the slot→logical-channel mapping pinned against a
-  capture. A grant naming a never-announced channel ID now
+  The Phase 2 voice chain now records only the granted logical channel (see the air-format note
+  below). A grant naming a never-announced channel ID now
   WARNs (rate-limited) instead of dropping at DEBUG. "Motorola opcode 0x05/0x09 named, not
   field-decoded" lines are broadcasts with constant payloads, not grants. On-air-gated.
+- **The P25 Phase 2 TDMA framing in `superframe.go` / `isch.go` / `voice.go` was a WORKING MODEL that
+  matched no reference — the voice path now runs on the real air format (`phase2/airframe.go`, #1273),
+  and the PN44 scrambler had its taps mirrored.** Real outbound air (OP25 `p25p2_tdma.cc`/`p25p2_sync.cc`/
+  `p25p2_isch.cc`/`p25p2_duid.cc`/`apps/tdma/lfsr.py`, SDRTrunk `SuperFrameFragment`/`ISCHDecoder`/
+  `DataUnitID`/`Voice4Timeslot`/`ScramblingSequence` — the two agree on every constant): 12 × 180-dibit
+  timeslots per superframe, each = 20-dibit ISCH + 160-dibit body; the ISCH is the S-ISCH sync
+  `0x575D57F7FF` before timeslots 2,3,6,7,10,11 and a (40,9,16) I-ISCH (SDRTrunk generator ⊕ 0x184229d461 ==
+  OP25's 128-entry table) naming timeslot loc·4+chn before 0,1,4,5,8,9; the 8-bit DUID sits at body dibits
+  0/37/122/159; voice frames at body dibits 1/38/86/123 (VOICE-2: first two), XOR'd with PN44 bits
+  [20+360t, 340+360t); the 72-bit AMBE+2 codeword is DMR's layout exactly (OP25 `extract_vcw` ==
+  `dmrvoice` rW..rZ). **Logical channels are NOT slot parity: timeslots 10 and 11 swap**
+  (`{0,1,0,1,0,1,0,1,0,1,1,0}`, OP25 `which_slot[]` / SDRTrunk's final-fragment C/D swap); the grant's
+  1-based `Timeslot` (n mod 2, +1) names the channel. The old model had one sync per superframe, a Golay
+  ISCH with an invented SlotType, contiguous unscrambled voice — self-consistent with its own encoder, and
+  the #915 capture failed its ISCH on 46–62 % of sub-frames. `framing.PN44Scrambler` tapped bits 40/35/29/
+  24/10/0 (the polynomial exponents) instead of 43/33/19/14/8/3 and diverged from both references at bit
+  49 (pinned now by a literal 4320-bit OP25 sequence). STILL on the old model: the Phase 2 MAC path (voice-
+  channel MAC dispatch, sigfollow, the Phase 2 CC) — it needs the same rebuild (SACCH/FACCH bursts are
+  DUID 3/9/12/15 bodies); the ground-truth harness (`groundtruth_replay_test.go`) still measures the old
+  grid. Synthetic + reference-pinned only; a Phase 2 voice capture is the on-air gate (#764/#771).
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
   read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
   hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's

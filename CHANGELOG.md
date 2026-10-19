@@ -15,6 +15,18 @@ for tagged releases.
   told from a damaged header (whose manufacturer / ID / type are garbage).
 
 ### Fixed
+- **P25 Phase 2 voice records only the granted timeslot, and decodes the real
+  TDMA air format (#1273).** A Phase 2 carrier holds two calls, one per logical
+  channel, and the voice chain recorded every voice burst on the carrier into the
+  one call. Doing the filter properly needed the real framing: the voice path now
+  frames timeslots from the S-ISCH / I-ISCH, reads the DUID, descrambles with the
+  PN44 sequence and takes the AMBE+2 frames from their on-air positions, all pinned
+  against OP25 and SDRTrunk. The PN44 scrambler itself tapped a mirrored polynomial
+  and produced the wrong sequence after its first 49 bits. A grant without a
+  timeslot follows the first logical channel that carries voice. The end-of-call
+  census gains `air_bursts`, `voice_bursts`, `other_slot_voice_bursts`,
+  `logical_channel` and `descramble_seed_known`. Not yet verified on air.
+
 - **RTL-SDR: a stuck control pipe no longer kills the conventional scanner
   until a replug (#753).** Retunes now wait for a cancelled IQ stream to
   finish tearing down instead of racing it, and a control transfer that

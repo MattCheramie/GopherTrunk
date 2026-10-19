@@ -60,16 +60,24 @@ func NewPN44Scrambler(seed uint64) *PN44Scrambler {
 // 44-bit register) before the register shifts and the new feedback
 // bit clocks into position 0.
 //
-// The feedback bit is the XOR of the state bits at the polynomial's
-// non-leading tap positions (0, 10, 24, 29, 35, 40).
+// The feedback bit is the XOR of state bits 43, 33, 19, 14, 8 and 3:
+// in this left-shifting (Fibonacci) form the polynomial's x^k term taps
+// bit 43-k, so x^40 is bit 3, x^35 bit 8, x^29 bit 14, x^24 bit 19,
+// x^10 bit 33 and the constant term bit 43. This register used to tap
+// bits 40, 35, 29, 24, 10 and 0 (the exponents themselves), which
+// produces the mirrored sequence: it agreed with the real one only for
+// the first 49 bits, so every Phase 2 burst was descrambled with the
+// wrong mask (#1273). Pinned against OP25 (apps/tdma/lfsr.py) and
+// SDRTrunk (LinearFeedbackShiftRegister), which agree bit for bit over
+// the whole 4320-bit superframe.
 func (s *PN44Scrambler) Next() byte {
 	out := byte((s.state >> 43) & 1)
-	fb := byte((s.state>>40 ^
-		s.state>>35 ^
-		s.state>>29 ^
-		s.state>>24 ^
-		s.state>>10 ^
-		s.state) & 1)
+	fb := byte((s.state>>43 ^
+		s.state>>33 ^
+		s.state>>19 ^
+		s.state>>14 ^
+		s.state>>8 ^
+		s.state>>3) & 1)
 	s.state = ((s.state << 1) | uint64(fb)) & pn44Mask
 	return out
 }

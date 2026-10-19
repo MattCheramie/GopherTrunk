@@ -65,6 +65,9 @@ func VoiceFrameCount(s SlotType) int {
 // ExtractVoiceFrames pulls the AMBE+2 voice frames out of a voice-
 // bearing sub-frame and FEC-decodes each to a 7-byte vocoder frame.
 //
+// This is the working-model layout, not the air format: live voice is
+// framed by AirFramer and decoded by ExtractAirVoiceFrames (airframe.go).
+//
 // frames[i] is the i-th AMBE+2 frame, a VoiceFrameBytes-long slice
 // consumable by ambe2.Decoder.Decode. totalErrs is the sum of Golay
 // errors corrected across all frames. A non-nil err surfaces an
