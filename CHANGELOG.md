@@ -15,6 +15,13 @@ for tagged releases.
   told from a damaged header (whose manufacturer / ID / type are garbage).
 
 ### Fixed
+- **`wmbus` no longer loses the rest of a telegram to one noise glitch
+  (#1256).** The receiver counted bits from the time between level changes,
+  so a glitch inside a run of equal bits added bits and failed every CRC
+  block after it, which hit long telegrams hardest. Each bit is now decided at
+  the middle of its slot: on simulated 192-byte C mode telegrams at 13 dB SNR,
+  40 of 40 pass their CRC (6 before), and the rtl-wmbus sample captures gain a
+  telegram.
 - **P25 Phase 2 signalling decodes the real TDMA air format (#1273, #915).**
   The MAC messages on a Phase 2 voice channel (talker alias, in-call source,
   encryption sync), the signalling follower and the Phase 2 control channel all
