@@ -92,6 +92,30 @@ depends on the path:
   single `role: control`/`auto` tuner the hunter is a time multiplexer that
   camps on the first system that locks, and the daemon now warns at startup
   when several systems share one control SDR.
+- **Many analog FM channels on one wideband SDR, all at once.** List them under
+  the device's `conventional:` key (the same fields as a `scanner.conventional`
+  channel; `mode: fm` or `nfm`). Each channel gets its own tap, squelch, tone gate
+  and hangtime, so overlapping transmissions on different channels record as
+  separate, simultaneous calls; nothing scans, so a long call on one channel
+  never hides another. They can sit on the same dongle as trunked `channels:`
+  entries, and they need no trunking system:
+
+  ```yaml
+  sdr:
+    devices:
+      - serial: "00000008"
+        role: wideband
+        center_freq_hz: 460_500_000
+        conventional:
+          - { label: "Fire Dispatch", frequency_hz: 460_100_000, mode: nfm, squelch_dbfs: -50 }
+          - { label: "EMS", frequency_hz: 460_200_000, mode: nfm, tone: { mode: ctcss, ctcss_hz: 123.0 } }
+  ```
+
+  Not yet: AM and the digital conventional modes (keep those on the scan list),
+  pre-roll before the squelch opens, and listing these channels in the Scanner
+  panel (their calls appear in the call list and history like any other). Per-
+  channel `gain` and `device` do not apply: every tap shares the dongle's gain.
+  Issue #1288.
 
 Either way, when the same call is heard on several networked or simulcast sites,
 **cross-site call deduplication** saves it once instead of once per site: enable

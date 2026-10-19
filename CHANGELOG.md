@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Continuous conventional FM on a wideband SDR (#1288, phase 1).** A
+  `role: wideband` device takes a `conventional:` list of analog FM / NFM
+  channels (scan-list channel fields, mode fm or nfm). Each gets its own tap,
+  squelch, CTCSS/DCS gate, hangtime and call under its own serial, so
+  overlapping transmissions on several channels record as separate
+  simultaneous calls instead of one scanner dwelling on one channel. They mix
+  with trunked `channels:` on the same dongle and need no trunking system.
+  Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
+
 ### Fixed
 - **DMR "bound by phase fallback" log no longer says the embedded LC failed
   when it decoded (#753).** On a networked amateur repeater the first

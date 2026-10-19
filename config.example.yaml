@@ -587,6 +587,33 @@ sdr:
     #     - frequency_hz: 851_037_500
     #       system: "regional-dmr-t3"
     #
+    # CONTINUOUS CONVENTIONAL FM (issue #1288): `conventional:` lists
+    # analog FM / NFM channels this wideband dongle monitors ALL THE
+    # TIME, each on its own tap with its own squelch, tone gate,
+    # hangtime and call. Overlapping transmissions on different
+    # channels record as separate, simultaneous calls; nothing scans
+    # or dwells, so a call on one channel never hides another. Entries
+    # take the scanner.conventional channel fields (label, mode,
+    # squelch_dbfs, hangtime_ms, tone, talkgroup_id, audio_gain_db,
+    # decoders, ...); mode must be fm or nfm, and gain / device / nac do
+    # not apply (every tap shares this dongle's gain and centre). Each
+    # frequency must fit the IQ band like channels:, and the two lists
+    # can be mixed on one dongle (e.g. a P25 control channel plus FM
+    # dispatch channels). No trunking system is needed for these.
+    # - serial: "00000008"
+    #   role: wideband
+    #   center_freq_hz: 460_500_000
+    #   conventional:
+    #     - label: "Fire Dispatch"
+    #       frequency_hz: 460_100_000
+    #       mode: nfm
+    #       squelch_dbfs: -50
+    #       hangtime_ms: 1500
+    #     - label: "EMS"
+    #       frequency_hz: 460_200_000
+    #       mode: nfm
+    #       tone: { mode: ctcss, ctcss_hz: 123.0 }
+    #
     # P25 Phase 2 control channel on a wideband dongle. The
     # referenced system carries `protocol: p25-phase2`; the
     # `p25_phase2_*` mode knobs (trellis / RS / interleave /

@@ -28,6 +28,11 @@
 //     (radio/p25/phase2) consumes superframes assembled by the
 //     receiver and emits grants from the MAC PDU chain.
 //
+//   - Conventional analog FM (ChannelConfig.Conventional, issue #1288).
+//     No receiver or state machine: the tap only fans its 48 kHz IQ out
+//     to subscribers, where a per-channel conventional.Scanner gates and
+//     records calls (see SubscribeChannelIQ / ChannelVoiceSource).
+//
 // Published grants flow through the trunking engine's existing
 // voice-pool allocator, which binds each to either a physical
 // role: voice dongle or a virtual voice tap (a per-grant DDC on this
@@ -172,7 +177,16 @@ type ChannelConfig struct {
 	// key accepts (c4fm/fm/cqpsk/lsm/linear) is valid here. Ignored for
 	// non-P25-Phase-1 channels.
 	P25Phase1DemodMode string
+
+	// Conventional marks an analog FM channel (issue #1288): the engine
+	// gives it a 48 kHz tap and an IQ fan-out but no receiver, state
+	// machine or trunking system (SystemName is ignored). The squelch and
+	// the call live in whatever subscribes to the channel's IQ.
+	Conventional bool
 }
+
+// conventionalProtoTag is the protocol tag of a Conventional channel.
+const conventionalProtoTag = "fm-conv"
 
 // IQPowerObserver is the minimal metrics surface the engine uses to
 // publish its per-channel window-averaged dBFS gauge plus the whole-capture
@@ -383,6 +397,9 @@ type engineChannel struct {
 	// fan distributes this channel's post-DDC IQ to same-carrier voice
 	// subscribers (ChannelVoiceSource). No-op with zero subscribers.
 	fan *channelFanout
+	// conventional marks a tap-only analog FM channel (issue #1288): no
+	// receiver, and silence between transmissions is its normal state.
+	conventional bool
 	// dmrTier3 is the typed Tier III control channel for "dmr-tier3"
 	// channels (nil otherwise). Exposed via DMRTier3ControlChannel so the
 	// DMR LCN autoconfig learner can hot-swap a learned band-plan resolver.
@@ -514,7 +531,7 @@ func New(opts Options) (*Engine, error) {
 	if len(opts.Channels) == 0 {
 		return nil, errors.New("widebandt2: at least one channel is required")
 	}
-	if len(opts.Systems) == 0 {
+	if len(opts.Systems) == 0 && !allConventional(opts.Channels) {
 		return nil, errors.New("widebandt2: Systems table is required (used to resolve T2 vs T3 per channel)")
 	}
 	systemsByName := make(map[string]trunking.System, len(opts.Systems))
@@ -621,23 +638,32 @@ func New(opts Options) (*Engine, error) {
 	}
 
 	for i, ch := range opts.Channels {
-		sys, ok := systemsByName[ch.SystemName]
-		if !ok {
-			return nil, fmt.Errorf("widebandt2: channel freq=%d references unknown system %q",
-				ch.FrequencyHz, ch.SystemName)
+		var sys trunking.System
+		if !ch.Conventional {
+			var ok bool
+			if sys, ok = systemsByName[ch.SystemName]; !ok {
+				return nil, fmt.Errorf("widebandt2: channel freq=%d references unknown system %q",
+					ch.FrequencyHz, ch.SystemName)
+			}
 		}
 		offset := offsets[i]
 		// Per-tap output rate: the DDC bank gives each channel its protocol's rate
 		// (144 kHz TETRA vs 48 kHz DMR/P25) so mixed protocols share one SDR. The
 		// channelizer path (no TETRA present here) has a single bank-global rate.
+		// A conventional channel's zero-value Protocol takes the 48 kHz rate.
 		outRateHz := bank.OutputRateHz()
 		ddc, isDDC := bank.(*tuner.DDCBank)
 		if isDDC {
 			outRateHz = ddc.ActualRateFor(channelOutRateHz(sys.Protocol))
 		}
-		ec, err := buildChannel(sys, ch, outRateHz, opts.Bus, log, opts.Now)
-		if err != nil {
-			return nil, err
+		var ec *engineChannel
+		if ch.Conventional {
+			ec = &engineChannel{freqHz: ch.FrequencyHz, sysName: "conventional", protoTag: conventionalProtoTag, conventional: true}
+		} else {
+			var err error
+			if ec, err = buildChannel(sys, ch, outRateHz, opts.Bus, log, opts.Now); err != nil {
+				return nil, err
+			}
 		}
 		ec.rateHz = outRateHz
 		ec.fan = newChannelFanout(log, opts.Serial, ch.FrequencyHz, outRateHz)
@@ -651,7 +677,9 @@ func New(opts Options) (*Engine, error) {
 				// receiver consumes it (mirrors ccdecoder's voiceFan ordering);
 				// a no-op while nothing is subscribed.
 				ec.fan.broadcast(out)
-				ec.receiver.Process(out)
+				if ec.receiver != nil {
+					ec.receiver.Process(out)
+				}
 			}
 		}(ec)
 		if isDDC {
@@ -1404,7 +1432,10 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 			// or wrong carrier still surfaces, but only once). Control-channel
 			// protocols keep the repeating WARN — persistent low power there is
 			// an ongoing fault worth repeating.
-			suppressLowPower := false
+			// An analog conventional channel is silent between transmissions
+			// by design and decodes nothing, so a low-power window says
+			// nothing about the tap (issue #1288).
+			suppressLowPower := ec.conventional
 			if ec.tier2Cnt != nil {
 				cc := ec.tier2Cnt.Counters()
 				everDecoded := cc.FECPass > 0 || cc.Beacons > 0
@@ -1529,6 +1560,17 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 			}
 		}
 	}
+}
+
+// allConventional reports whether every channel is a Conventional one, which
+// needs no trunking system table.
+func allConventional(channels []ChannelConfig) bool {
+	for _, ch := range channels {
+		if !ch.Conventional {
+			return false
+		}
+	}
+	return true
 }
 
 // powerLabel is the metrics label for this channel's dBFS gauge:

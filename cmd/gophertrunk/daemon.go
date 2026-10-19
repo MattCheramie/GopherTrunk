@@ -573,6 +573,13 @@ type Daemon struct {
 	// voice properly (10 Sep report). Resolved lazily — the wideband engines
 	// are built after the voice pool. See widebandt2.ChannelVoiceSource.
 	wbVoiceSources []*widebandt2.ChannelVoiceSource
+	// wbConvChannels are the sdr.devices[].conventional channels on
+	// wideband dongles (issue #1288): one tap source per channel under its
+	// own virtual serial, outside the voice pool. wbConvScans are their
+	// single-channel scanners, which run beside (not in) convScans so the
+	// Scanner cockpit's "last scanner takes manual tune" rule is unchanged.
+	wbConvChannels []wbConvChannel
+	wbConvScans    []*conventional.Scanner
 	// p25p2Follower harvests P25 Phase 2 talker aliases off the traffic
 	// channel's FACCH-S signalling using standalone signalling DDC taps,
 	// independent of the voice pool — so aliases surface even when no
@@ -1165,7 +1172,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			} else {
 				warnGainUnits(log, dev.Serial, dev.Gain, gain)
 				warnLowGain(log, dev.Serial, h.Role, dev.Gain, gain)
-				warnFixedGainOnSharedWideband(log, dev.Serial, h.Role, dev.Gain, gain, len(dev.Channels))
+				warnFixedGainOnSharedWideband(log, dev.Serial, h.Role, dev.Gain, gain, len(dev.Channels)+len(dev.Conventional))
 				h = h.WithGain(gain)
 			}
 			hints = append(hints, h)
@@ -1409,6 +1416,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		return nil, err
 	}
 	d.buildWidebandSameCarrierVoiceTaps(cfg, log)
+	d.buildWidebandConvSources(cfg, log)
 	if err := d.buildP25P2SignallingFollower(cfg, log); err != nil {
 		return nil, err
 	}
@@ -1579,12 +1587,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if dev.Role == "wideband" {
 			continue
 		}
-		if len(dev.Channels) > 0 || dev.VoiceTaps > 0 || dev.TunerStrategy != "" {
+		if len(dev.Channels) > 0 || len(dev.Conventional) > 0 || dev.VoiceTaps > 0 || dev.TunerStrategy != "" {
 			// channels: / voice_taps / tuner_strategy only mean something on a
 			// role: wideband device; on any other role they are silently dead
 			// config, which is how the 10 Sep two-system TETRA rig ended up with
 			// a `channels:` plan that nothing read.
-			msg := fmt.Sprintf("daemon: sdr.devices[%s] has role %q but sets channels:/voice_taps/tuner_strategy — those keys only apply to role: wideband and are being IGNORED; set role: wideband (with a `system:` on each channel) to decode the listed carriers in parallel",
+			msg := fmt.Sprintf("daemon: sdr.devices[%s] has role %q but sets channels:/conventional:/voice_taps/tuner_strategy — those keys only apply to role: wideband and are being IGNORED; set role: wideband (with a `system:` on each channel) to decode the listed carriers in parallel",
 				dev.Serial, dev.Role)
 			log.Warn(msg)
 			d.addWarning(msg)
@@ -1774,6 +1782,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		log.Info("daemon: scanner: auto-enabling manual tune (spare Voice SDR detected)",
 			"voice_sdrs", len(voiceEntries))
 	}
+	var convRec conventional.Recorder
+	if d.recorder != nil {
+		convRec = d.recorder
+		if d.player != nil {
+			convRec = convFanoutRecorder{d.recorder, playerSink{p: d.player, engine: d.engine}}
+		}
+	}
 	if d.pool != nil && d.recorder != nil && d.engine != nil && convWanted {
 		if len(voiceEntries) == 0 {
 			log.Warn("daemon: scanner.conventional / manual_tune_enabled configured but no Voice SDRs in the pool; skipping")
@@ -1783,10 +1798,6 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			// rest share the scanner SDR the daemon has always used — the
 			// last voice SDR, so the trunking engine keeps the first N-1.
 			groups := planConvScanGroups(cfg.Scanner.Conventional, voiceEntries, d.pool.FindBySerial, !hasConventional, log)
-			var convRec conventional.Recorder = d.recorder
-			if d.player != nil {
-				convRec = convFanoutRecorder{d.recorder, playerSink{p: d.player, engine: d.engine}}
-			}
 			// Runtime lockouts persist by frequency when storage is
 			// configured (a scanner's lockout memory); without storage
 			// they stay runtime-only as before. Every scanner reads the
@@ -1802,15 +1813,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if len(groups) > 1 {
 				log.Info("conv: scanning on several SDRs in parallel", "scanners", len(groups))
 			}
-			// Gate the composer's FM chain on the scanners' live squelch
-			// decision so the hangtime tail records as silence instead of
-			// AGC-boosted receiver noise (issue #1090). Set here (not in
-			// buildComposer's Options) because the composer is built
-			// before the scanners exist.
-			if d.composer != nil && len(d.convScans) > 0 {
-				d.composer.SetSquelchState(convSquelchMux(d.convScans))
-			}
 		}
+	}
+	// Continuous conventional FM channels on wideband dongles (issue #1288).
+	if len(d.wbConvChannels) > 0 {
+		if d.recorder == nil || d.engine == nil {
+			log.Warn("daemon: wideband conventional channels configured but no recorder / trunking engine; they will not record")
+		} else if err := d.buildWidebandConvScanners(convRec, log); err != nil {
+			return nil, err
+		}
+	}
+	// Gate the composer's FM chain on the scanners' live squelch decision so
+	// the hangtime tail records as silence instead of AGC-boosted receiver
+	// noise (issue #1090). Set here (not in buildComposer's Options) because
+	// the composer is built before the scanners exist.
+	if all := append(append([]*conventional.Scanner(nil), d.convScans...), d.wbConvScans...); d.composer != nil && len(all) > 0 {
+		d.composer.SetSquelchState(convSquelchMux(all))
 	}
 
 	// Wide-band DMR Tier II engines — one per dongle the operator
@@ -1830,13 +1848,18 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					"serial", devCfg.Serial)
 				continue
 			}
-			channels := make([]widebandt2.ChannelConfig, 0, len(devCfg.Channels))
+			channels := make([]widebandt2.ChannelConfig, 0, len(devCfg.Channels)+len(devCfg.Conventional))
 			for _, ch := range devCfg.Channels {
 				channels = append(channels, widebandt2.ChannelConfig{
 					FrequencyHz:        ch.FrequencyHz,
 					SystemName:         ch.System,
 					P25Phase1DemodMode: ch.P25Phase1DemodMode,
 				})
+			}
+			// Tap-only analog FM channels; their scanners read the taps
+			// through the sources buildWidebandConvSources registered.
+			for _, ch := range devCfg.Conventional {
+				channels = append(channels, widebandt2.ChannelConfig{FrequencyHz: ch.FrequencyHz, Conventional: true})
 			}
 			// Route IQ + tuning through the iqtap broker so the live
 			// spectrum view (and any other secondary observer) can
@@ -3579,6 +3602,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return cs.Run(ctx)
 		})
 	}
+	for i, cs := range d.wbConvScans {
+		cs := cs
+		d.spawn(runCtx, fmt.Sprintf("wb-conv-%d", i), false, func(ctx context.Context) error {
+			return cs.Run(ctx)
+		})
+	}
 	for i, eng := range d.widebandT2 {
 		eng := eng
 		name := fmt.Sprintf("widebandt2-%d", i)
@@ -5066,33 +5095,11 @@ func (d *Daemon) buildConvScanner(cfg config.Config, g convScanGroup, convRec co
 		if tgid == 0 {
 			tgid = 0x80000000 | uint32(i)
 		}
-		channels = append(channels, conventional.Channel{
-			NAC:                nac,
-			NACSet:             nacSet,
-			P25Phase1DemodMode: ch.P25Phase1DemodMode,
-			GainTenthDB:        gainTenthDB,
-			GainSet:            gainSet,
-			AudioGainDB:        ch.AudioGainDB,
-			Label:              ch.Label,
-			FrequencyHz:        ch.FrequencyHz,
-			Mode:               ch.Mode,
-			SquelchDbFS:        ch.SquelchDbFS,
-			SquelchCNDb:        ch.SquelchCNDb,
-			Hangtime:           msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
-			// 0 => let the scanner apply its own defaults
-			// (50 ms debounce / 3 dB hysteresis) in one place.
-			ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
-			SquelchHysteresisDb: ch.SquelchHysteresisDb,
-			Priority:            ch.Priority,
-			TalkgroupID:         tgid,
-			Tone: conventional.ToneConfig{
-				Mode:        ch.Tone.Mode,
-				CTCSSHz:     ch.Tone.CTCSSHz,
-				DCSCode:     ch.Tone.DCSCode,
-				DCSPolarity: ch.Tone.DCSPolarity,
-			},
-			Decoders: ch.Decoders,
-		})
+		c := convChannelFromConfig(ch, tgid)
+		c.NAC, c.NACSet = nac, nacSet
+		c.P25Phase1DemodMode = ch.P25Phase1DemodMode
+		c.GainTenthDB, c.GainSet = gainTenthDB, gainSet
+		channels = append(channels, c)
 	}
 	// Manual-tune temporary channels are appended to the shared scanner's
 	// list; offset their positional IDs past the whole scan list so one can
@@ -5172,12 +5179,17 @@ func (d *Daemon) buildConvScanner(cfg config.Config, g convScanGroup, convRec co
 // poolDevices uses to resolve a virtual tuner. Returns nil when no
 // virtual tuners are configured so the lookup is a no-op.
 func (d *Daemon) virtualVoiceMap() map[string]composer.IQSource {
-	if len(d.virtualVoiceTuners) == 0 && len(d.ccVoiceSources) == 0 && len(d.dcAvoidVoiceTuners) == 0 && len(d.wbVoiceSources) == 0 {
+	if len(d.virtualVoiceTuners) == 0 && len(d.ccVoiceSources) == 0 && len(d.dcAvoidVoiceTuners) == 0 && len(d.wbVoiceSources) == 0 && len(d.wbConvChannels) == 0 {
 		return nil
 	}
-	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+len(d.ccVoiceSources)+len(d.dcAvoidVoiceTuners)+len(d.wbVoiceSources))
+	out := make(map[string]composer.IQSource, len(d.virtualVoiceTuners)+len(d.ccVoiceSources)+len(d.dcAvoidVoiceTuners)+len(d.wbVoiceSources)+len(d.wbConvChannels))
 	for _, vt := range d.virtualVoiceTuners {
 		out[vt.Serial()] = vt
+	}
+	// Wideband conventional channels (issue #1288): each call's FM chain
+	// reads the same tap its scanner's squelch measured.
+	for _, c := range d.wbConvChannels {
+		out[c.source.Serial()] = c.source
 	}
 	for _, wb := range d.wbVoiceSources {
 		out[wb.Serial()] = wb

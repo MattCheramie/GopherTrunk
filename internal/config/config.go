@@ -1286,6 +1286,18 @@ type DeviceConfig struct {
 	// for non-wideband roles.
 	Channels []DeviceChannelConfig `yaml:"channels"`
 
+	// Conventional lists analog FM / NFM channels a wideband dongle
+	// monitors CONTINUOUSLY, each on its own channelizer tap: every
+	// channel has its own squelch, tone gate, hangtime and call, so
+	// overlapping transmissions on several channels record as separate
+	// simultaneous calls instead of one scanner dwelling on one channel
+	// at a time (issue #1288). Entries take the scanner.conventional
+	// channel fields; mode must be fm or nfm, and gain, device, nac and
+	// p25_phase1_demod_mode do not apply (the dongle is never retuned).
+	// Every frequency must sit inside the dongle's IQ band like
+	// channels. Ignored for non-wideband roles.
+	Conventional []ConvChannelConfig `yaml:"conventional"`
+
 	// VoiceTaps is the number of per-grant DDC tuners the daemon
 	// allocates from this wideband dongle's IQ stream so trunked
 	// voice grants can be followed without retuning a separate
