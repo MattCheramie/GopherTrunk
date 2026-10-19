@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"math"
 	"math/bits"
+	"math/rand"
 	"strings"
 	"testing"
 )
@@ -260,6 +261,8 @@ func TestReceiverSynthetic(t *testing.T) {
 		{ModeT1, FormatA, 2_400_000, 104_000, 50_000, 35_000},
 		{ModeT1, FormatA, 2_048_000, 96_000, 60_000, -30_000},
 		{ModeT1, FormatA, 1_024_000, 100_000, 50_000, 10_000},
+		{ModeT1, FormatA, 1_600_000, 88_000, 50_000, 15_000},
+		{ModeT1, FormatA, 2_400_000, 112_000, 50_000, -15_000},
 		{ModeC1, FormatA, 1_600_000, 100_000, 45_000, 20_000},
 		{ModeC1, FormatB, 2_400_000, 100_000, 45_000, -40_000},
 	} {
@@ -281,6 +284,68 @@ func TestReceiverSynthetic(t *testing.T) {
 		if len(got) != 1 || !got[0].CRCOK || !bytes.Equal(got[0].Data, data) || got[0].Mode != tc.mode || got[0].Format != tc.format {
 			t.Errorf("%s-%s rate %.0f chip %.0f off %.0f: %d frames (stats %+v)", tc.mode, tc.format, tc.rate, tc.chip, tc.off, len(got), rx.Stats())
 		}
+	}
+}
+
+// Long C mode frames in noise: a glitch must cost at most a chip, never
+// slip the rest of the frame (issue #1256). The run-length clock this
+// replaced counted chips from the time between transitions, so a noise
+// glitch inside a long run added chips and failed every CRC block after
+// it: it decoded 8 of these 20 telegrams, every failure a slip. The
+// mid-chip clock decodes 19.
+func TestReceiverLongCModeFramesInNoise(t *testing.T) {
+	const rate = 1_600_000
+	ok := 0
+	for k := range 20 {
+		r := rand.New(rand.NewSource(int64(k)))
+		data := make([]byte, 170) // L = 169: 192 bytes on the air
+		r.Read(data)
+		data[0], data[1] = 169, 0x44
+		iq := Synthesize(data, SynthOptions{
+			Mode: ModeC1, SampleRateHz: rate, OffsetHz: 20_000,
+			DeviationHz: 45_000, NoiseRMS: 0.26, Seed: int64(k),
+		})
+		got := false
+		rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OnFrame: func(f Frame, _ FrameInfo) {
+			got = got || (f.CRCOK && bytes.Equal(f.Data, data))
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rx.Process(iq)
+		rx.Flush()
+		if got {
+			ok++
+		}
+	}
+	if ok < 17 {
+		t.Errorf("%d of 20 long C mode frames CRC-valid, want at least 17", ok)
+	}
+}
+
+// A frame that ends the input is complete after Flush: its last chips are
+// still in the threshold window when the input stops.
+func TestReceiverFlushCompletesFinalFrame(t *testing.T) {
+	const rate = 1_600_000
+	data := mustHex(t, realAirFrames[0].data)
+	iq := Synthesize(data, SynthOptions{Mode: ModeC1, SampleRateHz: rate, DeviationHz: 45_000})
+	// Keep 0.1 ms of the millisecond of silence Synthesize adds after the
+	// frame: less than the threshold window's delay, so without draining
+	// it the frame never completes.
+	iq = iq[:len(iq)-rate/1000+rate/10000]
+	n := 0
+	rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OnFrame: func(f Frame, _ FrameInfo) {
+		if f.CRCOK {
+			n++
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rx.Process(iq)
+	rx.Flush()
+	if n != 1 {
+		t.Errorf("%d CRC-valid frames after Flush, want 1", n)
 	}
 }
 

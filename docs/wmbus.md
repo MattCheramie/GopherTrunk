@@ -150,6 +150,13 @@ gophertrunk capture -freq 868950000 -sample-rate 1024000 -seconds 60 -format fla
 1.6 MS/s decodes slightly more weak telegrams. FLAC is smaller, but it cannot
 store rates above 1,048,575 S/s, hence 1.024 MS/s for it.
 
+To look at a capture rather than decode it, `gophertrunk spectrum -in
+meters.cu8 -format u8 -sample-rate 1600000 -freq 868950000` prints its
+averaged spectrum and the carriers in it. GopherTrunk has no waterfall for a
+whole capture file; [inspectrum](https://github.com/miek/inspectrum) opens
+`.cu8` files directly (give it the sample rate) and shows each telegram as a
+burst on a waterfall.
+
 ## Saving telegrams to share
 
 A meter sends a telegram every few seconds to few minutes, and each one lasts
@@ -191,7 +198,7 @@ The decoder was checked against two independent decoders:
 
 - **rtl-wmbus.** Its four real-air sample captures decode with every
   telegram rtl-wmbus finds with a valid CRC, byte for byte. GopherTrunk
-  also decodes four more CRC-valid telegrams that rtl-wmbus misses.
+  also decodes five more CRC-valid telegrams that rtl-wmbus misses.
 - **wmbusmeters.** Unencrypted telegrams from its test set decode to the
   same meter IDs and readings its drivers report.
 

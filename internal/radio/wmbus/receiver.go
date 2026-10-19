@@ -28,7 +28,28 @@ const (
 	thresholdWindow = 256
 	// smoothLen is the post-discriminator boxcar: half a chip.
 	smoothLen = 4
+	// sampleLoopGain and sampleLoopRateGain are the mid-chip clock's
+	// phase and period gains, per transition.
+	sampleLoopGain     = 0.15
+	sampleLoopRateGain = 0.004
+	// decideSpan is how many samples either side of a chip's centre (in
+	// total, plus the centre) its decision averages: with the half-chip
+	// boxcar that makes about a chip-long matched filter.
+	decideSpan = 4
 )
+
+// interpAt linearly interpolates h at fractional index x, clamped to h.
+func interpAt(h []float64, x float64) float64 {
+	if x <= 0 {
+		return h[0]
+	}
+	if x >= float64(len(h)-1) {
+		return h[len(h)-1]
+	}
+	i := int(x)
+	a := x - float64(i)
+	return h[i] + a*(h[i+1]-h[i])
+}
 
 // ReceiverOptions configures a Receiver.
 type ReceiverOptions struct {
@@ -82,14 +103,14 @@ type Receiver struct {
 
 	power float64
 
-	// Run-length clock recovery on the sliced stream.
+	// Chip clock recovery on the sliced stream.
 	n         int64   // processed-sample counter
 	level     bool    // current sliced level
-	lastCross float64 // time of the last confirmed transition
-	pending   bool
-	pendT     float64
+	lastCross float64 // time of the last transition
 	vPrev     float64
-	spc       float64 // tracked samples per chip
+	spc       float64                 // tracked samples per chip
+	tSample   float64                 // the next chip centre
+	hist      [decideSpan + 2]float64 // recent sliced values, newest last
 
 	framers [2]*Framer // normal, inverted
 	stats   ReceiverStats
@@ -168,10 +189,18 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 }
 
-// Flush delivers the chips of the final run, so a frame that ends the
-// input is not left waiting for a transition that never comes.
+// Flush slices the samples still waiting in the threshold window and
+// decides the chips after them, so a frame that ends the input is
+// delivered. Call it once, at the end of the input.
 func (r *Receiver) Flush() {
-	r.emitRun(float64(r.n))
+	if r.ringN < thresholdWindow {
+		return
+	}
+	for i := 1; i < thresholdWindow/2; i++ {
+		r.n++
+		r.clock(r.ring[(r.rIdx+thresholdWindow/2+i)%thresholdWindow] - r.thr)
+	}
+	r.decide(float64(r.n) + decideSpan/2)
 }
 
 func (r *Receiver) sample(x complex64) {
@@ -208,54 +237,74 @@ func (r *Receiver) sample(x complex64) {
 	r.clock(v)
 }
 
-// clock is the run-length clock recovery: it times each transition of the
-// sliced stream (interpolated between samples, and only once the new
-// level has held for two samples, which rejects one-sample glitches) and
-// turns the run since the previous one into whole chips at the tracked
-// chip period.
+// clock is the chip clock: a timing loop that decides each chip from the
+// sliced stream around the chip's centre. Every transition pulls the next
+// centre toward half a chip after it, and the chip period toward the
+// measured spacing.
+//
+// It replaced counting whole chips from the run between transitions, where
+// a noise glitch inside a long run added two transitions and so extra
+// chips: one glitch slipped the bit stream and failed every CRC block
+// after it (issue #1256, strong real-air frames failing their CRC; on
+// simulated 192-byte C mode frames at 13 dB SNR every failure was such a
+// slip). Decided at the centre, a glitch costs at most one chip.
 func (r *Receiver) clock(v float64) {
 	t := float64(r.n)
-	hi := v > 0
-	switch {
-	case !r.pending && hi != r.level:
+	if hi := v > 0; hi != r.level {
 		frac := 0.0
 		if r.vPrev != v {
 			frac = r.vPrev / (r.vPrev - v)
 		}
-		r.pending, r.pendT = true, t-1+frac
-	case r.pending && hi != r.level:
-		r.emitRun(r.pendT)
+		tc := t - 1 + frac
+		if tc-r.lastCross > 200*nominalSPC {
+			// Silence before this burst: restart the loop on it.
+			r.spc = nominalSPC
+			r.tSample = tc + r.spc/2
+		} else {
+			// The transition should fall half a chip before a centre;
+			// e is how late it came, wrapped to ±half a chip.
+			e := tc - (r.tSample - r.spc/2)
+			e -= r.spc * math.Round(e/r.spc)
+			r.tSample += sampleLoopGain * e
+			r.spc += sampleLoopRateGain * e
+			// Between frames the period also follows short runs
+			// directly: the loop alone cannot pull in a T mode meter
+			// several percent off nominal within a preamble. Inside a
+			// frame that estimate's noise would cost more than it
+			// tracks, so only the loop runs there.
+			run := tc - r.lastCross
+			if n := math.Round(run / r.spc); n >= 1 && n <= 4 && !r.frozen {
+				r.spc += 0.1 * (run/n - r.spc)
+			}
+			r.spc = min(max(r.spc, nominalSPC*0.85), nominalSPC*1.15)
+		}
 		r.level = hi
-		r.lastCross = r.pendT
-		r.pending = false
-	case r.pending:
-		r.pending = false // glitch
+		r.lastCross = tc
 	}
+	copy(r.hist[:], r.hist[1:])
+	r.hist[len(r.hist)-1] = v
 	r.vPrev = v
+	r.decide(t)
 }
 
-func (r *Receiver) emitRun(at float64) {
-	run := at - r.lastCross
-	if run <= 0 {
-		return
-	}
-	n := int(run/r.spc + 0.5)
-	if n < 1 {
-		n = 1
-	}
-	if n <= 4 {
-		r.spc += 0.1 * (run/float64(n) - r.spc)
-		r.spc = min(max(r.spc, nominalSPC*0.85), nominalSPC*1.15)
-	} else if run > 200*nominalSPC {
-		r.spc = nominalSPC // silence: start the next preamble from nominal
-	}
-	n = min(n, 4096)
-	chip := uint8(0)
-	if r.level {
-		chip = 1
-	}
-	for range n {
+// decide pushes every chip whose centre lies at least decideSpan/2 samples
+// before limit. A chip's value is the sliced stream averaged over
+// decideSpan samples around its centre, which with the half-chip boxcar
+// ahead of it spans about one chip.
+func (r *Receiver) decide(limit float64) {
+	t := float64(r.n)
+	for r.tSample+decideSpan/2 <= limit {
+		x := 0.0
+		c := r.tSample - (t - float64(len(r.hist)-1)) // the centre, as an index into hist
+		for k := -decideSpan / 2; k <= decideSpan/2; k++ {
+			x += interpAt(r.hist[:], c+float64(k))
+		}
+		chip := uint8(0)
+		if x > 0 {
+			chip = 1
+		}
 		r.framers[0].Push(chip)
 		r.framers[1].Push(chip ^ 1)
+		r.tSample += r.spc
 	}
 }

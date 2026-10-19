@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **`wmbus` no longer loses the rest of a telegram to one noise glitch
+  (#1256).** The receiver counted bits from the time between level changes,
+  so a glitch inside a run of equal bits added bits and failed every CRC
+  block after it, which hit long telegrams hardest. Each bit is now decided at
+  the middle of its slot: on simulated 192-byte C mode telegrams at 13 dB SNR,
+  40 of 40 pass their CRC (6 before), and the rtl-wmbus sample captures gain a
+  telegram.
+
+## [v1.3.1] — 2026-10-19
+
 ### Added
 - **`wmbus -all` names the CRC block that failed (#1256).** A failed
   telegram now prints e.g. `CRC FAILED (block 1 of 4; block 1 is the header,
