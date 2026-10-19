@@ -1,6 +1,7 @@
 package composer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
@@ -12,6 +13,17 @@ func sfWithLC(phase uint8, group uint32) dmrvoice.VoiceSuperframe {
 		Phase: phase,
 		HasLC: true,
 		LC:    dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: group, SrcAddr: 7},
+	}
+}
+
+// sfWithAliasLC is a superframe whose embedded LC decoded (CRC-valid) but
+// is a talker-alias header: call metadata, naming no destination.
+func sfWithAliasLC(phase uint8) dmrvoice.VoiceSuperframe {
+	return dmrvoice.VoiceSuperframe{
+		Phase:          phase,
+		HasLC:          true,
+		LC:             dmr.FLC{FLCO: dmr.FLCOTalkerAlias},
+		HasTalkerAlias: true,
 	}
 }
 
@@ -92,8 +104,8 @@ func TestSlotRouterBothPhasesForeignNeverBinds(t *testing.T) {
 	}
 }
 
-// TestSlotRouterPhaseFallbackRecords: when no embedded LC ever decodes (the
-// real-air capture-pending case), the router must stop dropping the whole call
+// TestSlotRouterPhaseFallbackRecords: when no embedded LC decodes (a weak
+// signal or a late entry), the router must stop dropping the whole call
 // and fall back to the active slot's phase after the grace window so audio
 // records (issue #644).
 func TestSlotRouterPhaseFallbackRecords(t *testing.T) {
@@ -187,5 +199,45 @@ func TestSlotRouterFollowModeLCOverridesFallback(t *testing.T) {
 	}
 	if r.accept(sfNoLC(0)) {
 		t.Error("still accepting the fallback slot after an LC re-bound to the other")
+	}
+}
+
+// TestSlotRouterFallbackAfterAliasLCSaysItDecoded: a networked amateur
+// repeater's first superframes can carry talker-alias embedded LCs before
+// the group voice LC (issue #753). Those decode, so the fallback still binds
+// the active slot, but its log must not claim the embedded LC failed to
+// decode; that sent the reporter to #644 while their aliases decoded fine.
+func TestSlotRouterFallbackAfterAliasLCSaysItDecoded(t *testing.T) {
+	r := newSlotRouter(100)
+	if r.accept(sfWithAliasLC(0)) {
+		t.Fatal("accepted before the grace window elapsed")
+	}
+	if !r.accept(sfWithAliasLC(0)) {
+		t.Fatal("did not fall back to the active phase after alias-only superframes")
+	}
+	if !r.byFallback || r.metadataLCs != 2 {
+		t.Fatalf("byFallback=%v metadataLCs=%d, want true / 2", r.byFallback, r.metadataLCs)
+	}
+	if msg := r.fallbackLog(); strings.Contains(msg, "no embedded LC decoded") || !strings.Contains(msg, "talker alias") {
+		t.Errorf("fallback log %q: want the decoded-but-metadata-only reason", msg)
+	}
+	// The group LC that follows re-binds by talkgroup.
+	if !r.accept(sfWithLC(0, 100)) || r.byFallback {
+		t.Error("the call's own LC did not re-bind after the fallback")
+	}
+
+	// LC-less superframes keep the decode-failure reason.
+	q := newSlotRouter(100)
+	q.accept(sfNoLC(1))
+	q.accept(sfNoLC(1))
+	if msg := q.fallbackLog(); !strings.Contains(msg, "no embedded LC decoded") {
+		t.Errorf("fallback log %q after LC-less superframes: want the no-LC reason", msg)
+	}
+
+	// Follow mode (a conventional scan-list channel) counts them too.
+	f := newSlotRouter(0)
+	f.accept(sfWithAliasLC(1))
+	if !f.accept(sfWithAliasLC(1)) || f.metadataLCs != 2 {
+		t.Errorf("follow mode: metadataLCs=%d, want 2 and a fallback bind", f.metadataLCs)
 	}
 }

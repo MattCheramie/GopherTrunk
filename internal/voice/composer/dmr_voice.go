@@ -135,13 +135,13 @@ type callAwareRawSink interface {
 // superframes are routed by Phase even when their LC is absent or fails
 // CRC. Superframes whose LC names a different talkgroup are dropped.
 //
-// Real outbound DMR embedded signalling is still capture-pending (the
-// EMB FEC / 5-bit CRC constants are unvalidated against live air, see
-// docs/status.md / issue #644), so on a carrier whose embedded LC never
-// decodes the router would otherwise bind nothing and drop the whole
-// call — recording empty files. To degrade gracefully it falls back to
-// the active slot's Phase after a short grace window with no LC bind, so
-// audio still records; a later valid LC re-binds and corrects the routing.
+// When no call LC arrives in the first superframes (a weak signal, a late
+// entry, or a superframe whose embedded LC carried a talker alias or GPS
+// block rather than the call's addresses) the router would otherwise bind
+// nothing and drop the whole call, recording empty files (issue #644). To
+// degrade gracefully it falls back to the active slot's Phase after a short
+// grace window with no LC bind, so audio still records; a later valid LC
+// re-binds and corrects the routing.
 //
 // groupID 0 is FOLLOW mode, for a conventional scan-list channel (issue
 // #1261): its grant's GroupID is a synthetic channel ID no on-air LC ever
@@ -155,6 +155,10 @@ type slotRouter struct {
 	unboundSeen      int   // LC-less superframes seen while still unbound
 	foreignPhaseMask uint8 // bit p set when phase p was positively another talkgroup
 	byFallback       bool  // bound was set by the phase fallback, not an embedded LC
+	// metadataLCs counts superframes seen while unbound whose embedded LC
+	// decoded but named no call destination (talker alias, GPS), so the
+	// fallback log can say the embedded signalling was decoding (#753).
+	metadataLCs int
 }
 
 // unboundPhaseFallbackGrace is how many consecutive LC-less voice superframes
@@ -203,6 +207,9 @@ func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 			r.foreignPhaseMask |= 1 << (sf.Phase & 1)
 			return false
 		}
+		if r.bound < 0 {
+			r.metadataLCs++
+		}
 	}
 	if r.bound >= 0 {
 		// Phase already known (by LC or fallback): route by it.
@@ -240,6 +247,9 @@ func (r *slotRouter) acceptFollow(sf dmrvoice.VoiceSuperframe) bool {
 			}
 			return int(sf.Phase) == r.bound
 		}
+		if r.bound < 0 {
+			r.metadataLCs++
+		}
 	}
 	if r.bound >= 0 {
 		return int(sf.Phase) == r.bound
@@ -251,6 +261,17 @@ func (r *slotRouter) acceptFollow(sf dmrvoice.VoiceSuperframe) bool {
 		return true
 	}
 	return false
+}
+
+// fallbackLog is the one-shot log line for a phase-fallback bind. It names
+// why no call LC bound the slot: a superframe whose embedded LC decoded but
+// carried a talker alias or GPS block is not a decode failure, and saying
+// it was sent a reporter whose aliases decoded fine after #644 (issue #753).
+func (r *slotRouter) fallbackLog() string {
+	if r.metadataLCs > 0 {
+		return "composer: DMR slot router bound by phase fallback — the embedded LC decoded but carried only talker alias / GPS before the grace window ended; a later call LC re-binds the slot"
+	}
+	return "composer: DMR slot router bound by phase fallback — no embedded LC decoded in the first superframes (weak signal or late entry); a later call LC re-binds the slot (see #644)"
 }
 
 func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved, grantEncrypted, conventional bool, done chan<- struct{}) {
@@ -479,8 +500,8 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial, system string, 
 				// fallback recordings are diagnosable from the logs (#644).
 				if router != nil && router.byFallback && !loggedFallback {
 					loggedFallback = true
-					c.log.Info("composer: DMR slot router bound by phase fallback — embedded LC did not decode; embedded signalling is capture-pending (see #644)",
-						"serial", serial, "phase", router.bound)
+					c.log.Info(router.fallbackLog(),
+						"serial", serial, "phase", router.bound, "metadata_lcs", router.metadataLCs)
 				}
 				superframes.Add(1)
 				bt.onVoice(0)
