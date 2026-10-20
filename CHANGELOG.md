@@ -18,6 +18,16 @@ for tagged releases.
   Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
 
 ### Fixed
+- **NXDN voice keeps decoding as the dongle drifts (#1261).** The NXDN voice
+  receiver corrected the carrier offset only after its symbol-timing loop,
+  which still saw the raw offset. On real-air captures NXDN48 decoded only
+  within about ±700 Hz (failing again around ±750-1250 Hz) and NXDN96 within
+  about ±1.5 kHz. An RTL-SDR warming up drifts a ppm or two (450 Hz per ppm at
+  450 MHz), so decoding stopped a few minutes into a session until `ppm` was
+  changed. A carrier tracker now recentres the signal ahead of the channel
+  filter and timing loop, and holds on noise. Both NXDN48 and NXDN96 decode
+  across ±3 kHz. `composer: nxdn voice chain ended` logs the
+  `carrier_offset_hz` it tracked.
 - **P25 Phase 1 voice: a gap in the IQ no longer costs two LDUs, and the
   log now says when IQ went missing (#1242).** An LDU is always 864 symbols,
   so samples lost between the radio and the decoder make the next frame sync

@@ -146,6 +146,21 @@ type Options struct {
 	// DeviationHz > 0 (the calibrated-slicer path).
 	EnableAFC bool
 
+	// EnableCarrierTracking de-rotates the IQ by a tracked carrier offset
+	// AHEAD of the channel filter, discriminator and timing loop (#1261).
+	// EnableAFC alone removes the offset only after the Mueller-Müller
+	// loop, which still sees the raw DC bias and fails once the offset is a
+	// couple of inner-symbol deviations: on the reporter's NXDN48 capture
+	// decoding collapsed for |offset| ≈ 750-1250 Hz (0-12 of 56 frames),
+	// i.e. a dongle drifting ~1-2 ppm at 447 MHz. The tracker is a slow
+	// first-order loop on the discriminator mean (carrierTrackSymbols), so
+	// it also follows thermal drift through a call, and it holds while the
+	// discriminator looks like noise. It assumes a balanced symbol stream,
+	// which the PN9-scrambled real air frame is. The voice chain turns it
+	// on; the control-channel paths, still on the invented CAC layout, do
+	// not yet.
+	EnableCarrierTracking bool
+
 	// EnableChannelFilter inserts a channel-select low-pass ahead of the FM
 	// discriminator: ±ChannelCutoffHz for NXDN96, ±ChannelCutoffHzNXDN48
 	// for NXDN48, or ±ChannelCutoffOverrideHz when set. Off by default so
@@ -177,6 +192,7 @@ type Receiver struct {
 	mf        *demod.C4FM
 	clock     *sync.MuellerMuller
 	afc       *demod.CoarseAFC
+	track     *carrierTracker
 	agc       demod.C4FMSymbolAGC
 	dibitSink nxdn.DibitSink
 	dibitBase int
@@ -270,6 +286,7 @@ func New(opts Options) *Receiver {
 	}
 
 	var chanFilt *filter.FIR
+	var chanTaps []float32
 	if opts.EnableChannelFilter {
 		fc := opts.ChannelCutoffOverrideHz
 		if fc <= 0 {
@@ -279,10 +296,18 @@ func New(opts Options) *Receiver {
 			}
 		}
 		taps := 2*channelFilterSpanSymbols*int(sps+0.5) + 1
-		chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc/opts.SampleRateHz, channelFilterBeta))
+		chanTaps = filter.LowpassKaiser(taps, fc/opts.SampleRateHz, channelFilterBeta)
+		chanFilt = filter.NewFIR(chanTaps)
+	}
+
+	var track *carrierTracker
+	if opts.EnableCarrierTracking {
+		track = newCarrierTracker(opts.SampleRateHz, carrierTrackSymbols*sps,
+			carrierTrackNoiseFraction*noiseDiscVariance(chanTaps))
 	}
 
 	return &Receiver{
+		track:    track,
 		chanFilt: chanFilt,
 		fm:       demod.NewFM(),
 		mf:       demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
@@ -325,11 +350,33 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
 	}
+	// The carrier tracker corrects the NEXT block from this one's
+	// discriminator mean, so it runs on its own short blocks: fed whole, an
+	// 85 ms chunk would decode entirely at the uncorrected offset before the
+	// loop could act, and the result would depend on the caller's chunking.
+	if r.track != nil && len(iq) > r.track.block {
+		for len(iq) > 0 {
+			n := min(r.track.block, len(iq))
+			r.process(iq[:n])
+			iq = iq[n:]
+		}
+		return
+	}
+	r.process(iq)
+}
+
+func (r *Receiver) process(iq []complex64) {
+	if r.track != nil {
+		iq = r.track.mix(iq)
+	}
 	if r.chanFilt != nil {
 		r.filtered = r.chanFilt.Process(r.filtered, iq)
 		iq = r.filtered
 	}
 	r.disc = r.fm.Process(r.disc, iq)
+	if r.track != nil {
+		r.track.update(r.disc)
+	}
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
 	r.symbols = r.clock.Process(r.symbols, r.matched)
 	if len(r.symbols) == 0 {
@@ -425,9 +472,21 @@ func (r *Receiver) Reset() {
 	if r.afc != nil {
 		r.afc.Reset()
 	}
+	if r.track != nil {
+		r.track.reset()
+	}
 	if r.chanFilt != nil {
 		r.chanFilt.Reset()
 	}
+}
+
+// CarrierOffsetHz reports the carrier offset the pre-discriminator tracker
+// is removing (Options.EnableCarrierTracking), or 0 when it is off.
+func (r *Receiver) CarrierOffsetHz() float64 {
+	if r.track == nil {
+		return 0
+	}
+	return r.track.offHz
 }
 
 // AGCLevel and AGCTarget expose the shared symbol-AGC's running mean|x|

@@ -39,6 +39,9 @@ func TestTrafficChannelDecodesRealAirNXDN(t *testing.T) {
 				SymbolRateHz: tc.symbolRate,
 				DeviationHz:  1800,
 				EnableAFC:    true,
+				// The composer runs the pre-discriminator carrier tracker too
+				// (#1261 drift); it must cost nothing on a near-centred capture.
+				EnableCarrierTracking: true,
 				// The channel filter must cost nothing on a clean capture
 				// (#1261): same frames, Golay errors within the bounds below.
 				EnableChannelFilter: true,
@@ -70,6 +73,65 @@ func TestTrafficChannelDecodesRealAirNXDN(t *testing.T) {
 				t.Errorf("%.2f Golay corrections per frame, want ≤ 1", e)
 			}
 		})
+	}
+}
+
+// TestAirFramerFramesRealNXDNControlChannel pins the real air format on an
+// NXDN control channel. The fixture is one second of the #1261 reporter's
+// 19 Oct capture of a trunked system's control channel (453.775 MHz,
+// channel 1 of 10; a voice_iq_debug recording at 2.4 MS/s, cut after the
+// composer's channel front end to 48 kS/s). Every frame must frame at the
+// real FSW, 192 dibits apart, with a LICH that passes parity and names a
+// control channel (RFCT 0). The control-channel (CAC) decoder still runs on
+// the package's invented layout; this is the ground its rebuild stands on.
+//
+// The capture was drifting while it recorded: its carrier walks from -645
+// to -679 Hz over 8.7 s. The receiver's carrier tracker must find it.
+func TestAirFramerFramesRealNXDNControlChannel(t *testing.T) {
+	iq := readCS16(t, "testdata/nxdn96_rcch_cc_453775_19oct_48k.cs16")
+	var dib []uint8
+	rx := nxdnrx.New(nxdnrx.Options{
+		SampleRateHz:          48000,
+		SymbolRateHz:          nxdnrx.SymbolRate,
+		DeviationHz:           1800,
+		EnableAFC:             true,
+		EnableCarrierTracking: true,
+		EnableChannelFilter:   true,
+		DibitSink:             func(d []uint8, _ int) { dib = append(dib, d...) },
+	})
+	for i := 0; i < len(iq); i += 4096 {
+		rx.Process(iq[i:min(i+4096, len(iq))])
+	}
+	var starts []int
+	for k := 0; k+nxdn.AirFrameDibits <= len(dib); k++ {
+		errs := 0
+		for j := range nxdn.AirFSW {
+			if dib[k+j] != nxdn.AirFSW[j] {
+				errs++
+			}
+		}
+		if errs > 1 {
+			continue
+		}
+		post := append([]uint8(nil), dib[k+nxdn.AirFSWDibits:k+nxdn.AirFrameDibits]...)
+		nxdn.DescrambleAir(post)
+		l := nxdn.ParseAirLICH(post)
+		if !l.ParityOK || l.RFCT != nxdn.AirRFCtRCCH {
+			t.Errorf("frame at dibit %d: LICH %08b (parity ok %v, RFCT %d), want a control-channel LICH", k, l.Raw, l.ParityOK, l.RFCT)
+		}
+		if len(starts) > 0 && k-starts[len(starts)-1] != nxdn.AirFrameDibits {
+			t.Errorf("frame at dibit %d is %d dibits after the previous one, want %d", k, k-starts[len(starts)-1], nxdn.AirFrameDibits)
+		}
+		starts = append(starts, k)
+	}
+	// 4800 sym/s / 192 = 25 frames/s; allow the receiver's pull-in and the
+	// slice's last, partial frame (20 decode).
+	t.Logf("frames=%d carrier=%.0f Hz", len(starts), rx.CarrierOffsetHz())
+	if len(starts) < 18 {
+		t.Fatalf("%d control-channel frames in 1 s, want ≥ 18", len(starts))
+	}
+	if off := rx.CarrierOffsetHz(); off > -550 || off < -750 {
+		t.Errorf("carrier tracker at %.0f Hz, want the capture's ≈ -650 Hz", off)
 	}
 }
 
