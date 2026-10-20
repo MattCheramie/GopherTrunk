@@ -18,6 +18,16 @@ for tagged releases.
   Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
 
 ### Fixed
+- **P25 Phase 1 voice: a gap in the IQ no longer costs two LDUs, and the
+  log now says when IQ went missing (#1242).** An LDU is always 864 symbols,
+  so samples lost between the radio and the decoder make the next frame sync
+  arrive early. The LDU assembler took a fixed 864-symbol window after each
+  sync, so it swallowed that early sync and dropped the frame after the hole
+  too. It now re-anchors on the early sync. `composer: p25p1 decode quality`
+  carries `short_ldus` and `missing_symbols`, and a call that had holes ends
+  with a `voice IQ has holes` WARN. A garbled call (noise, tones, whistle)
+  whose log shows that WARN lost IQ upstream; one without it points at the
+  signal.
 - **DMR "bound by phase fallback" log no longer says the embedded LC failed
   when it decoded (#753).** On a networked amateur repeater the first
   superframes can carry talker-alias (or GPS) embedded LCs before the call's

@@ -554,13 +554,27 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 			return
 		}
 		lastQualityLogLDUs = n
+		shortLDUs, missing := rx.FrameSlips()
 		c.log.Info("composer: p25p1 decode quality",
 			"serial", serial, "demod_mode", mode,
 			"ldus", n, "uncorrectable_ldus", uncorrectableLDUs.Load(),
 			"gated_ldus", gatedLDUs.Load(),
 			"corrected_bit_errs", corrErrBits.Load(),
 			"lc_rs_uncorrectable", lcRSUncorrectable.Load(),
-			"ess_rs_uncorrectable", essRSUncorrectable.Load())
+			"ess_rs_uncorrectable", essRSUncorrectable.Load(),
+			"short_ldus", shortLDUs, "missing_symbols", missing)
+		if final && shortLDUs > 0 {
+			// An LDU is always 864 symbols; one whose successor's frame
+			// sync arrived early lost IQ before this chain saw it. That
+			// garbles its audio at any signal level (#1242: the "noise and
+			// tones" calls were 2-3.5 % of the IQ missing in 8-14 ms gaps).
+			// Say so here, where the call is, so a log alone tells a
+			// dropped stream from a weak signal.
+			c.log.Warn("composer: p25p1 voice IQ has holes — frame syncs arrived early, so samples were lost upstream of the decoder and the audio of those LDUs is damaged; check this log for wbvoice dropped-IQ and soapyremote overrun/host_drops lines, and CPU load",
+				"serial", serial, "short_ldus", shortLDUs, "ldus", n,
+				"missing_symbols", missing,
+				"missing_ms", missing*1000/int(p25p1rx.SymbolRate))
+		}
 	}
 
 	for {
