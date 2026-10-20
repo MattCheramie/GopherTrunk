@@ -10,7 +10,9 @@ import {
 import { ListEditor } from "../components/ListEditor";
 import { AdvancedJSON } from "../components/AdvancedJSON";
 import { useStore } from "../store/shared";
+import { formatCommaList, parseCommaList } from "../lib/csvList";
 import type {
+  ConvChannelConfig,
   DeviceChannelConfig,
   DeviceConfig,
   RTLTCPConfig,
@@ -345,6 +347,88 @@ function DeviceEditor(props: {
                     { value: "cqpsk", label: "CQPSK / LSM (linear)" },
                   ]}
                   help="Override the system's demod path for this site only. Use when one P25 system genuinely mixes CQPSK/linear (LSM) sites and C4FM sites — decided empirically (a strong signal won't lock in C4FM), NOT just because a site is simulcast (most simulcast is C4FM). Issue #935. P25 Phase 1 only."
+                />
+              </div>
+            )}
+          />
+        </Fieldset>
+      ) : null}
+
+      {isWideband ? (
+        <Fieldset legend="Conventional FM channels (continuous)">
+          <ListEditor<ConvChannelConfig>
+            label="Conventional"
+            items={d.Conventional}
+            onChange={(x) => onChange({ ...d, Conventional: x })}
+            makeNew={() => ({
+              Label: "",
+              FrequencyHz: 0,
+              Mode: "nfm",
+              SquelchDbFS: 0,
+              SquelchCNDb: 0,
+              HangtimeMs: 0,
+              ActivityDebounceMs: 0,
+              SquelchHysteresisDb: 0,
+              Priority: 0,
+              TalkgroupID: 0,
+              Gain: "",
+              AudioGainDB: 0,
+              Device: "",
+              Tone: { Mode: "", CTCSSHz: 0, DCSCode: "", DCSPolarity: "" },
+              Decoders: null,
+              NAC: "",
+              P25Phase1DemodMode: "",
+            })}
+            itemTitle={(c) => c.Label || "channel"}
+            emptyHint="Analog FM channels inside this dongle's IQ band, each monitored all the time on its own tap: overlapping transmissions record as separate calls (no scanning)."
+            renderItem={(c, set) => (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField label="Label" value={c.Label} onChange={(v) => set({ ...c, Label: v })} />
+                <HzField label="Frequency" value={c.FrequencyHz} onChange={(v) => set({ ...c, FrequencyHz: v })} />
+                <SelectField
+                  label="Mode"
+                  value={c.Mode}
+                  onChange={(v) => set({ ...c, Mode: v })}
+                  options={[
+                    { value: "nfm", label: "nfm" },
+                    { value: "fm", label: "fm" },
+                  ]}
+                />
+                <NumberField label="Squelch (dBFS)" step={0.1} value={c.SquelchDbFS} onChange={(v) => set({ ...c, SquelchDbFS: v })} />
+                <NumberField label="Hangtime (ms)" value={c.HangtimeMs} onChange={(v) => set({ ...c, HangtimeMs: v })} />
+                <NumberField label="Talkgroup ID (0 = positional)" value={c.TalkgroupID} onChange={(v) => set({ ...c, TalkgroupID: v })} />
+                <NumberField label="Audio gain (dB)" step={0.5} value={c.AudioGainDB ?? 0} onChange={(v) => set({ ...c, AudioGainDB: v })} />
+                <SelectField
+                  label="Tone mode"
+                  value={c.Tone?.Mode ?? ""}
+                  onChange={(v) => set({ ...c, Tone: { ...c.Tone, Mode: v } })}
+                  options={[
+                    { value: "", label: "none" },
+                    { value: "ctcss", label: "CTCSS" },
+                    { value: "dcs", label: "DCS" },
+                  ]}
+                />
+                {c.Tone?.Mode === "ctcss" ? (
+                  <NumberField
+                    label="CTCSS (Hz, 50–300)"
+                    step={0.1}
+                    value={c.Tone?.CTCSSHz ?? 0}
+                    onChange={(v) => set({ ...c, Tone: { ...c.Tone, CTCSSHz: v } })}
+                  />
+                ) : null}
+                {c.Tone?.Mode === "dcs" ? (
+                  <TextField
+                    label="DCS code (3 octal digits)"
+                    value={c.Tone?.DCSCode ?? ""}
+                    onChange={(v) => set({ ...c, Tone: { ...c.Tone, DCSCode: v } })}
+                    placeholder="023"
+                  />
+                ) : null}
+                <TextField
+                  label="Data decoders"
+                  value={formatCommaList(c.Decoders)}
+                  onChange={(v) => set({ ...c, Decoders: parseCommaList(v) })}
+                  placeholder="mdc1200, fleetsync"
                 />
               </div>
             )}

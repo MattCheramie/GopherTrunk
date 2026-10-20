@@ -149,7 +149,15 @@ func preflight(cfg config.Config) ([]string, error) {
 		if len(cfg.DSC.Channels) > 0 {
 			needs = append(needs, "dsc")
 		}
-		convMDC, convFS, convACARS := convChannelDecoders(cfg.Scanner.Conventional)
+		// Scan-list channels and wideband conventional channels (#1288)
+		// run the same decoders.
+		convChans := append([]config.ConvChannelConfig(nil), cfg.Scanner.Conventional...)
+		for _, d := range cfg.SDR.Devices {
+			if d.Role == "wideband" {
+				convChans = append(convChans, d.Conventional...)
+			}
+		}
+		convMDC, convFS, convACARS := convChannelDecoders(convChans)
 		if len(cfg.MDC1200.Channels) > 0 || convMDC {
 			needs = append(needs, "mdc1200")
 		}

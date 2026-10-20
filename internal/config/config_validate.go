@@ -743,6 +743,7 @@ func (c Config) validateScanner() []error {
 	// this also catches an override colliding with another channel's default.
 	// Issue #1105.
 	seen := map[uint32]int{}
+	seenWB := map[uint32]string{}
 	for i, ch := range c.Scanner.Conventional {
 		gid := ch.TalkgroupID
 		if gid == 0 {
@@ -756,6 +757,34 @@ func (c Config) validateScanner() []error {
 		}
 		seen[gid] = i
 	}
+	// Wideband conventional channels share the engine's (system, GroupID)
+	// keying with the scan list (issue #1288).
+	k := 0
+	for di, d := range c.SDR.Devices {
+		if d.Role != "wideband" {
+			continue
+		}
+		for j, ch := range d.Conventional {
+			gid := ch.TalkgroupID
+			if gid == 0 {
+				gid = WidebandConvPositionalBase | uint32(k)
+			}
+			k++
+			if prev, dup := seen[gid]; dup {
+				errs = append(errs, fmt.Errorf(
+					"sdr.devices[%d].conventional[%d]: effective talkgroup id %d collides with scanner.conventional[%d] — set distinct talkgroup_id values",
+					di, j, gid, prev))
+				continue
+			}
+			if prev, dup := seenWB[gid]; dup {
+				errs = append(errs, fmt.Errorf(
+					"sdr.devices[%d].conventional[%d]: effective talkgroup id %d collides with %s — set distinct talkgroup_id values",
+					di, j, gid, prev))
+				continue
+			}
+			seenWB[gid] = fmt.Sprintf("sdr.devices[%d].conventional[%d]", di, j)
+		}
+	}
 	return errs
 }
 
@@ -764,82 +793,89 @@ func (c Config) validateScanner() []error {
 const maxConvAudioGainDB = 30.0
 
 func validateConvChannel(i int, ch ConvChannelConfig) error {
+	return validateConvChannelAt(fmt.Sprintf("scanner.conventional[%d]", i), ch)
+}
+
+// validateConvChannelAt checks one conventional channel, naming it by path
+// (scanner.conventional[i], or sdr.devices[i].conventional[j] on a wideband
+// dongle, issue #1288) in its errors.
+func validateConvChannelAt(path string, ch ConvChannelConfig) error {
 	if ch.FrequencyHz == 0 {
-		return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
+		return fmt.Errorf("%s: frequency_hz required", path)
 	}
 	switch ch.Mode {
 	case "", "fm", "nfm", "am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf":
 	default:
-		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm|am|p25|dmr|nxdn|nxdn48|dstar|ysf", i)
+		return fmt.Errorf("%s: mode must be fm|nfm|am|p25|dmr|nxdn|nxdn48|dstar|ysf", path)
 	}
 	switch ch.Mode {
 	case "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf":
 		// A digital channel carries digital voice: a sub-audible tone gate
 		// and the analog FFSK/MSK data decoders have nothing to listen to.
 		if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {
-			return fmt.Errorf("scanner.conventional[%d].tone: CTCSS/DCS gating applies to analog channels, not mode: %s", i, ch.Mode)
+			return fmt.Errorf("%s.tone: CTCSS/DCS gating applies to analog channels, not mode: %s", path, ch.Mode)
 		}
 		if len(ch.Decoders) > 0 {
-			return fmt.Errorf("scanner.conventional[%d].decoders: data decoders run on analog channels, not mode: %s", i, ch.Mode)
+			return fmt.Errorf("%s.decoders: data decoders run on analog channels, not mode: %s", path, ch.Mode)
 		}
 	}
 	if ch.Mode == "p25" {
 		if nac := strings.TrimSpace(ch.NAC); nac != "" {
 			t := strings.TrimPrefix(strings.TrimPrefix(nac, "0x"), "0X")
 			if v, err := strconv.ParseUint(t, 16, 16); t == "" || err != nil || v > 0xFFF {
-				return fmt.Errorf("scanner.conventional[%d]: nac %q must be three hex digits, 000..FFF (e.g. \"293\")", i, ch.NAC)
+				return fmt.Errorf("%s: nac %q must be three hex digits, 000..FFF (e.g. \"293\")", path, ch.NAC)
 			}
 		}
 		switch strings.ToLower(strings.TrimSpace(ch.P25Phase1DemodMode)) {
 		case "", "c4fm", "fm", "cqpsk", "lsm", "linear":
 		default:
-			return fmt.Errorf("scanner.conventional[%d]: p25_phase1_demod_mode %q must be c4fm|cqpsk", i, ch.P25Phase1DemodMode)
+			return fmt.Errorf("%s: p25_phase1_demod_mode %q must be c4fm|cqpsk", path, ch.P25Phase1DemodMode)
 		}
 	} else if strings.TrimSpace(ch.NAC) != "" || strings.TrimSpace(ch.P25Phase1DemodMode) != "" {
-		return fmt.Errorf("scanner.conventional[%d]: nac and p25_phase1_demod_mode apply to mode: p25 only", i)
+		return fmt.Errorf("%s: nac and p25_phase1_demod_mode apply to mode: p25 only", path)
 	}
 	if ch.SquelchCNDb < 0 {
-		return fmt.Errorf("scanner.conventional[%d]: squelch_cn_db must be ≥ 0", i)
+		return fmt.Errorf("%s: squelch_cn_db must be ≥ 0", path)
 	}
 	if ch.ActivityDebounceMs < 0 {
-		return fmt.Errorf("scanner.conventional[%d]: activity_debounce_ms must be ≥ 0", i)
+		return fmt.Errorf("%s: activity_debounce_ms must be ≥ 0", path)
 	}
 	if ch.SquelchHysteresisDb < 0 {
-		return fmt.Errorf("scanner.conventional[%d]: squelch_hysteresis_db must be ≥ 0", i)
+		return fmt.Errorf("%s: squelch_hysteresis_db must be ≥ 0", path)
 	}
 	if g := strings.TrimSpace(ch.Gain); g != "" && !strings.EqualFold(g, "auto") {
 		if _, err := strconv.ParseFloat(strings.ReplaceAll(g, ",", "."), 64); err != nil {
-			return fmt.Errorf("scanner.conventional[%d]: gain %q must be \"auto\" or tenths of a dB (e.g. \"280\")", i, ch.Gain)
+			return fmt.Errorf("%s: gain %q must be \"auto\" or tenths of a dB (e.g. \"280\")", path, ch.Gain)
 		}
 	}
 	if ch.AudioGainDB < -maxConvAudioGainDB || ch.AudioGainDB > maxConvAudioGainDB {
-		return fmt.Errorf("scanner.conventional[%d]: audio_gain_db %.1f must be within ±%.0f dB", i, ch.AudioGainDB, maxConvAudioGainDB)
+		return fmt.Errorf("%s: audio_gain_db %.1f must be within ±%.0f dB", path, ch.AudioGainDB, maxConvAudioGainDB)
 	}
 	switch ch.Tone.Mode {
 	case "", "none":
 	case "ctcss":
 		if ch.Tone.CTCSSHz < 50 || ch.Tone.CTCSSHz > 300 {
-			return fmt.Errorf("scanner.conventional[%d].tone.ctcss_hz %v outside 50..300 Hz",
-				i, ch.Tone.CTCSSHz)
+			return fmt.Errorf("%s.tone.ctcss_hz %v outside 50..300 Hz",
+				path, ch.Tone.CTCSSHz)
 		}
 	case "dcs":
 		if len(ch.Tone.DCSCode) != 3 {
-			return fmt.Errorf("scanner.conventional[%d].tone.dcs_code must be 3 octal digits", i)
+			return fmt.Errorf("%s.tone.dcs_code must be 3 octal digits", path)
 		}
 		for _, r := range ch.Tone.DCSCode {
 			if r < '0' || r > '7' {
-				return fmt.Errorf("scanner.conventional[%d].tone.dcs_code %q must be octal 0..7",
-					i, ch.Tone.DCSCode)
+				return fmt.Errorf("%s.tone.dcs_code %q must be octal 0..7",
+					path, ch.Tone.DCSCode)
 			}
 		}
 		switch strings.ToLower(strings.TrimSpace(ch.Tone.DCSPolarity)) {
 		case "", "normal", "n", "inverted", "i", "both":
 		default:
-			return fmt.Errorf("scanner.conventional[%d].tone.dcs_polarity %q must be normal|inverted|both",
-				i, ch.Tone.DCSPolarity)
+			return fmt.Errorf("%s.tone.dcs_polarity %q must be normal|inverted|both",
+				path, ch.Tone.DCSPolarity)
 		}
 	default:
-		return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
+		return fmt.Errorf("%s.tone.mode must be ctcss|dcs|none", path)
 	}
 	seen := map[string]bool{}
 	for _, d := range ch.Decoders {
@@ -850,13 +886,13 @@ func validateConvChannel(i int, ch ConvChannelConfig) error {
 			// the channel itself, and an FM channel's dBFS squelch and FM
 			// voice chain are the wrong tools for an air-band data channel.
 			if ch.Mode != "am" {
-				return fmt.Errorf("scanner.conventional[%d].decoders: acars needs mode: am (ACARS is AM; got mode %q)", i, ch.Mode)
+				return fmt.Errorf("%s.decoders: acars needs mode: am (ACARS is AM; got mode %q)", path, ch.Mode)
 			}
 		default:
-			return fmt.Errorf("scanner.conventional[%d].decoders: %q must be mdc1200|fleetsync|acars", i, d)
+			return fmt.Errorf("%s.decoders: %q must be mdc1200|fleetsync|acars", path, d)
 		}
 		if seen[d] {
-			return fmt.Errorf("scanner.conventional[%d].decoders: %q listed twice", i, d)
+			return fmt.Errorf("%s.decoders: %q listed twice", path, d)
 		}
 		seen[d] = true
 	}
@@ -1023,8 +1059,8 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 	default:
 		return fmt.Errorf("sdr.devices[%d]: tuner_strategy must be auto|ddc|polyphase, got %q", idx, d.TunerStrategy)
 	}
-	if len(d.Channels) == 0 {
-		return fmt.Errorf("sdr.devices[%d]: role: wideband requires at least one channel", idx)
+	if len(d.Channels) == 0 && len(d.Conventional) == 0 {
+		return fmt.Errorf("sdr.devices[%d]: role: wideband requires at least one channel (channels: or conventional:)", idx)
 	}
 	rate := sampleRateHz
 	if rate == 0 {
@@ -1096,8 +1132,51 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 		}
 		seenFreq[ch.FrequencyHz] = j
 	}
+	seenConv := make(map[uint32]int, len(d.Conventional))
+	for j, ch := range d.Conventional {
+		path := fmt.Sprintf("sdr.devices[%d].conventional[%d]", idx, j)
+		if err := validateConvChannelAt(path, ch); err != nil {
+			return err
+		}
+		// Phase 1 of issue #1288 is analog FM: the digital modes and AM
+		// still need the scanner's own per-mode gates on a wideband tap.
+		switch ch.Mode {
+		case "", "fm", "nfm":
+		default:
+			return fmt.Errorf("%s: mode %q is not supported on a wideband dongle yet; use fm or nfm", path, ch.Mode)
+		}
+		// The dongle is never retuned and its gain is shared by every tap.
+		if strings.TrimSpace(ch.Gain) != "" {
+			return fmt.Errorf("%s: gain does not apply on a wideband dongle (every channel shares sdr.devices[%d].gain)", path, idx)
+		}
+		if strings.TrimSpace(ch.Device) != "" {
+			return fmt.Errorf("%s: device does not apply; the channel runs on this wideband dongle", path)
+		}
+		offset := float64(ch.FrequencyHz) - float64(d.CenterFreqHz)
+		if offset > usableHalfBand || offset < -usableHalfBand {
+			return fmt.Errorf(
+				"%s: frequency_hz %d is %.1f kHz from center; usable band is ±%.1f kHz "+
+					"(sample_rate %d Hz minus %.0f%% guard)",
+				path, ch.FrequencyHz, offset/1000, usableHalfBand/1000, rate, widebandGuardFrac*100)
+		}
+		if prev, dup := seenFreq[ch.FrequencyHz]; dup {
+			return fmt.Errorf("%s: frequency_hz %d is also sdr.devices[%d].channels[%d]", path, ch.FrequencyHz, idx, prev)
+		}
+		if prev, dup := seenConv[ch.FrequencyHz]; dup {
+			return fmt.Errorf("%s: duplicate frequency_hz %d (also at conventional[%d])", path, ch.FrequencyHz, prev)
+		}
+		seenConv[ch.FrequencyHz] = j
+	}
 	return nil
 }
+
+// WidebandConvPositionalBase is the positional talkgroup ID base of
+// sdr.devices[].conventional channels without a talkgroup_id: the k-th such
+// channel (counted across every wideband device, in config order) surfaces
+// under WidebandConvPositionalBase | k. It sits above the scan list's
+// 0x80000000 | index range, which manual-tune temporary channels extend past
+// the configured list, so the two can never meet. Issue #1288.
+const WidebandConvPositionalBase = 0x80100000
 
 // validate checks that every enabled broadcast feed carries the fields
 // its backend requires. Disabled feeds are left unchecked so operators

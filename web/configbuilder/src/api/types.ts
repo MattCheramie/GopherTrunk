@@ -82,6 +82,9 @@ export interface DeviceConfig {
   BiasTee: boolean;
   CenterFreqHz: number;
   Channels?: DeviceChannelConfig[] | null;
+  // Continuous analog FM channels on a wideband dongle (issue #1288): each
+  // has its own tap, squelch and calls. Mode fm / nfm; no gain or device.
+  Conventional?: ConvChannelConfig[] | null;
   TunerStrategy?: string;
   VoiceTaps?: number;
   SignallingTaps?: number;
