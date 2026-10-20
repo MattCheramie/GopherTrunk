@@ -1176,7 +1176,20 @@ confirmation before any close-as-completed.
   `narrowband_filter` is a HackRF-Pro-only switch: on an RTL-SDR it is a no-op + WARN, so an operator report
   that it "fixed" a decode on an RTL is coincidence — look for the real cause. STILL OPEN: the trunked CC (CAC) path
   is on the invented layout and cannot frame real air — rebuild it on airframe.go against a CC
-  capture; and the daemon path on air (#764/#771).
+  capture; and the daemon path on air (#764/#771). **That CC capture now exists** (20 Oct, 453.775 MHz,
+  NXDN96 RCCH): 213 frames in 8.7 s frame at the real FSW, 192 dibits apart, every LICH RFCT 0 with good
+  parity; a 1 s slice pins it (`TestAirFramerFramesRealNXDNControlChannel`). So the "CAC has long
+  constant-dibit runs" claim in the receiver's EnableAFC comment is from the invented layout: real
+  post-FSW dibits are all PN9-scrambled. **"Works 5-10 min, then fails until ppm ±1" (20 Oct) was the
+  timing loop seeing the carrier offset:** the NXDN receiver's AFC is post-clock, so NXDN48 decoded
+  only within ~±700 Hz (0-12/56 frames at ±750-1250 Hz, then back further out — non-monotonic,
+  filter-independent) and NXDN96 ~±1.5 kHz. The same CC capture showed the dongle drifting
+  −645 → −679 Hz in 8.7 s right after a ppm calibration. `EnableCarrierTracking` (voice only) is a
+  pre-discriminator FLL on the discriminator mean, gated on discriminator variance < 0.25× filtered
+  noise (without the gate it random-walked to 1.1 kHz on noise: no restoring force in its own mixed
+  frame), run on tc/4 sub-blocks so the result is chunk-size-independent; ±3 kHz now decodes. The
+  DMR receiver was swept the same way on its real-air keyup and holds sync over ±2 kHz (its coarse
+  acquirer is pre-discriminator already), so DMR drift is not this.
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the

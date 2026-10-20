@@ -53,6 +53,11 @@ func nxdnSymbolRate(proto string) float64 {
 // long constant-symbol runs for the tracker to walk onto. Both #1261
 // captures sat ~400 Hz off: at NXDN48's ±350 Hz inner deviation that decodes
 // nothing without AFC, and at NXDN96 it roughly halves the AMBE Golay errors.
+// That AFC acts after the timing loop, though, so on its own it decoded
+// NXDN48 only within ~±700 Hz (NXDN96 ~±1.5 kHz), and a dongle drifting a
+// ppm or two walked out of that a few minutes into a session (#1261). The
+// carrier tracker (Options.EnableCarrierTracking) recentres the IQ ahead of
+// the filter and timing loop: both captures decode across ±3 kHz.
 //
 // The channel filter is ON too, sized per mode (±6.25 kHz NXDN96, ±3.5 kHz
 // NXDN48). The front end ahead of it barely band-limits at a 2.4 MS/s SDR
@@ -62,12 +67,13 @@ func nxdnSymbolRate(proto string) float64 {
 // "NXDN48 fails every other transmission").
 func newNXDNVoiceReceiver(sampleHz, symbolRateHz float64, sink nxdn.DibitSink) *nxdnrx.Receiver {
 	return nxdnrx.New(nxdnrx.Options{
-		SampleRateHz:        sampleHz,
-		SymbolRateHz:        symbolRateHz,
-		DeviationHz:         nxdnVoiceDeviationHz,
-		EnableAFC:           true,
-		EnableChannelFilter: true,
-		DibitSink:           sink,
+		SampleRateHz:          sampleHz,
+		SymbolRateHz:          symbolRateHz,
+		DeviationHz:           nxdnVoiceDeviationHz,
+		EnableAFC:             true,
+		EnableCarrierTracking: true,
+		EnableChannelFilter:   true,
+		DibitSink:             sink,
 	})
 }
 
@@ -135,15 +141,17 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 	for {
 		select {
 		case <-ctx.Done():
+			// carrier_offset_hz is the tuner error the receiver tracked out:
+			// across calls it shows the dongle drifting (#1261).
 			c.log.Info("composer: nxdn voice chain ended", "serial", serial, "voice_frames", voiceFrames.Load(),
-				"frames", tc.Frames, "lich_ok", tc.LICHOK)
+				"frames", tc.Frames, "lich_ok", tc.LICHOK, "carrier_offset_hz", int(rx.CarrierOffsetHz()))
 			return
 		case <-touchTicker.C:
 			// Touch + hangtime end-of-call handled by the boundary tracker.
 		case iq, ok := <-iqCh:
 			if !ok {
 				c.log.Info("composer: nxdn voice chain ended (iq closed)", "serial", serial, "voice_frames", voiceFrames.Load(),
-					"frames", tc.Frames, "lich_ok", tc.LICHOK)
+					"frames", tc.Frames, "lich_ok", tc.LICHOK, "carrier_offset_hz", int(rx.CarrierOffsetHz()))
 				return
 			}
 			bt.observe(iq)
