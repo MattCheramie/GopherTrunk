@@ -177,7 +177,14 @@ confirmation before any close-as-completed.
   datagrams — the depth-8 driver bug (`streamBufferLatency`) one layer down. Subscribers are now
   time-sized (`SubBufferLatency` 400 ms at the stream rate; pinned by `broker_latency_test.go`)
   and `wbvoice` WARNs its drop count per call (they were silent). An explicit chunk depth in
-  `iqtap.New` keeps the old fixed behaviour. On-air confirmation pending (#764/#771).
+  `iqtap.New` keeps the old fixed behaviour. Confirmed on the reporter's Pi (v1.2.8, intelligible
+  speech). Their Windows run (v1.3.1) still gave a whistle, and the voice path did not change
+  between those builds. So the voice chain now measures sync spacing itself: the `LDUAssembler`
+  re-anchors on a frame sync that arrives early (it used to swallow it, so a hole cost two
+  LDUs) and counts it (`FrameSlips`). The per-call `composer: p25p1 decode quality` line
+  carries `short_ldus` / `missing_symbols`, and a `voice IQ has holes` WARN fires at call
+  end. Read that WARN first on any garbled P25 Phase 1 call: present ⇒ IQ lost upstream;
+  absent ⇒ signal/demod.
 - **P25 discovery: a PDU (DUID 0xC) on the control channel is Multi-Block
   Trunking, not noise — GT now decodes AMBT (`mbt.go`).** The operator's "only 1
   neighbor site, no WACN" report was this: their system broadcasts Network

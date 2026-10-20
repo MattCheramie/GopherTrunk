@@ -73,8 +73,10 @@ func TestLDUAssemblerEmitsOnClean864(t *testing.T) {
 			t.Fatalf("bit %d of LDU = %d, want %d (frame sync mismatch)", i, got[0][i], b)
 		}
 	}
-	if a.Buffered() != 0 {
-		t.Errorf("Buffered() = %d after emission, want 0 (compaction failed)", a.Buffered())
+	// Only the LDU's last 23 dibits stay, for the frame-sync hunt (a sync
+	// after a short IQ hole starts inside them — consumeKeepTail).
+	if a.Buffered() != 23 {
+		t.Errorf("Buffered() = %d after emission, want 23 (compaction failed)", a.Buffered())
 	}
 }
 
@@ -115,8 +117,8 @@ func TestLDUAssemblerHandlesMultipleLDUs(t *testing.T) {
 		t.Errorf("LDU lengths = %d / %d, want %d each",
 			len(got[0]), len(got[1]), LDUTotalBits)
 	}
-	if a.Buffered() != 0 {
-		t.Errorf("Buffered() = %d after two emissions, want 0", a.Buffered())
+	if a.Buffered() != 23 {
+		t.Errorf("Buffered() = %d after two emissions, want 23 (the hunt tail)", a.Buffered())
 	}
 }
 

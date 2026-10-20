@@ -62,6 +62,13 @@ type LDUAssembler struct {
 	// frameLen is the on-air dibit length of the data unit at pending, read
 	// from its NID once nidPrefixDibits have arrived; 0 = not read yet.
 	frameLen int
+	// shortFrames / missingDibits count LDUs whose successor's frame sync
+	// arrived early, and by how many dibits in total. See FrameSlips.
+	shortFrames   int
+	missingDibits int
+	// tail is how many dibits at the start of buf are the end of the LDU
+	// just consumed, kept so a sync straddling that LDU's end is still found.
+	tail int
 }
 
 // On-air dibit lengths of the non-LDU data units a voice channel carries
@@ -151,6 +158,13 @@ func (a *LDUAssembler) Process(dibits []uint8) {
 			if a.fswMismatch(a.buf[len(a.buf)-24:]) <= a.tolerance {
 				a.pending = len(a.buf) - 24
 				a.frameLen = 0
+				if a.pending < a.tail {
+					// The sync began inside the LDU just emitted: it was
+					// short by a hole of under 24 dibits (see earlySync).
+					a.shortFrames++
+					a.missingDibits += a.tail - a.pending
+				}
+				a.tail = 0
 			}
 		}
 		if a.pending < 0 {
@@ -184,7 +198,21 @@ func (a *LDUAssembler) Process(dibits []uint8) {
 				n = LDUDibitCount
 			}
 			if n == LDUDibitCount {
-				a.consume(lduStart + LDUDibitCount)
+				if d := a.earlySync(lduStart); d > 0 {
+					// The next frame sync is already inside this window:
+					// dibits are missing from this LDU (IQ lost upstream).
+					// Hunt again from that sync so the next frame is kept
+					// instead of being swallowed with this one's tail.
+					a.shortFrames++
+					a.missingDibits += LDUDibitCount - d
+					rest := append([]uint8(nil), a.buf[lduStart+d:]...)
+					a.buf = a.buf[:0]
+					a.pending = -1
+					a.frameLen = 0
+					a.Process(rest)
+					continue
+				}
+				a.consumeKeepTail(lduStart + LDUDibitCount)
 				continue
 			}
 			rest := append([]uint8(nil), a.buf[lduStart+n:]...)
@@ -196,6 +224,45 @@ func (a *LDUAssembler) Process(dibits []uint8) {
 	}
 }
 
+// earlySync looks for the NEXT data unit's frame sync inside the LDU window
+// starting at start and returns its offset, or 0 when there is none. An LDU is
+// always exactly LDUDibitCount dibits on the air, so a sync at offset d < 864
+// means 864-d dibits of this LDU never reached the assembler: IQ was dropped
+// between the radio and the decoder (#1242 — syncs 790-850 symbols apart).
+// Before this check, the 864-dibit window swallowed that sync and the frame
+// after a hole was lost too, so every hole cost two LDUs and left no trace.
+// Only the second half of the window is searched, and only for a full sync; a
+// hole of under 24 dibits leaves a sync straddling the window's end, which
+// consumeKeepTail catches.
+func (a *LDUAssembler) earlySync(start int) int {
+	for d := LDUDibitCount / 2; d+24 <= LDUDibitCount; d++ {
+		if a.fswMismatch(a.buf[start+d:start+d+24]) <= a.tolerance {
+			return d
+		}
+	}
+	return 0
+}
+
+// FrameSlips reports how many LDUs arrived short (the next frame sync came
+// early) and the total number of dibits they were missing. One dibit is one
+// symbol, 1/4800 s. A non-zero count means the IQ stream has holes upstream of
+// the decoder; the audio of those LDUs is damaged whatever the signal level.
+// Reset does not clear the counts.
+func (a *LDUAssembler) FrameSlips() (shortFrames, missingDibits int) {
+	return a.shortFrames, a.missingDibits
+}
+
+// consumeKeepTail consumes an LDU of n dibits like consume, but keeps its last
+// 23 dibits for the frame-sync hunt only: after a hole of under 24 dibits the
+// next sync starts inside them, and dropping them would lose that frame too.
+// A sync found there is counted as a slip. A gap-free stream cannot match
+// there, so its framing is unchanged.
+func (a *LDUAssembler) consumeKeepTail(n int) {
+	const keep = 23
+	a.consume(n - keep)
+	a.tail = keep
+}
+
 // consume drops the first n buffered dibits and returns to hunting for a
 // frame sync in the dibits that arrive next.
 func (a *LDUAssembler) consume(n int) {
@@ -203,6 +270,7 @@ func (a *LDUAssembler) consume(n int) {
 	a.buf = a.buf[:len(a.buf)-n]
 	a.pending = -1
 	a.frameLen = 0
+	a.tail = 0
 }
 
 // Reset clears the assembler's internal state. Callers invoke
@@ -213,6 +281,7 @@ func (a *LDUAssembler) Reset() {
 	a.buf = a.buf[:0]
 	a.pending = -1
 	a.frameLen = 0
+	a.tail = 0
 }
 
 // Buffered returns the number of dibits currently held in the

@@ -801,6 +801,16 @@ func (r *Receiver) AFCOffsetHz() float64 {
 	return r.AFCBiasRadPerSample() * SymbolRate / (2.0 * math.Pi)
 }
 
+// FrameSlips reports the LDU assembler's count of LDUs that arrived short and
+// the dibits (symbols) they were missing — holes in the IQ stream upstream of
+// the receiver (see phase1.LDUAssembler.FrameSlips). Zero without a Sink.
+func (r *Receiver) FrameSlips() (shortFrames, missingSymbols int) {
+	if r.assembler == nil {
+		return 0, 0
+	}
+	return r.assembler.FrameSlips()
+}
+
 // AGCLevel returns the C4FM symbol-AGC's current EMA estimate of
 // mean|x| on the matched-filter output. Compare to AGCTarget(): the
 // effective slicer gain at any instant is target/level. A level that
