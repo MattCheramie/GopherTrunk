@@ -6,9 +6,9 @@ import "sync"
 // from RCCH Site Information. NXDN doesn't broadcast adjacent sites in a form
 // this decoder accumulates, so only identity is surfaced.
 type TopologyConfig struct {
-	SystemID   uint16
+	SystemID   uint32
 	SiteID     uint16
-	LocationID uint16
+	LocationID uint32
 }
 
 // topologyModel is the mutex-guarded accumulator behind TopologyConfig.
@@ -18,7 +18,7 @@ type topologyModel struct {
 }
 
 // applySiteInfo records the site identity (first non-zero of each field wins).
-func (m *topologyModel) applySiteInfo(systemID, siteID, locationID uint16) {
+func (m *topologyModel) applySiteInfo(systemID uint32, siteID uint16, locationID uint32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cfg.SystemID == 0 && systemID != 0 {

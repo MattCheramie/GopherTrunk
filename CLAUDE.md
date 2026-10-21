@@ -1189,7 +1189,21 @@ confirmation before any close-as-completed.
   noise (without the gate it random-walked to 1.1 kHz on noise: no restoring force in its own mixed
   frame), run on tc/4 sub-blocks so the result is chunk-size-independent; ±3 kHz now decodes. The
   DMR receiver was swept the same way on its real-air keyup and holds sync over ±2 kHz (its coarse
-  acquirer is pre-discriminator already), so DMR drift is not this.
+  acquirer is pre-discriminator already), so DMR drift is not this. **The CAC is now decoded on real
+  air (`air_cac.go`, 21 Oct): 214/214 frames of that capture pass the CRC.** Layout (DSD-FME facts,
+  MMDVMHost code): 150 CAC dibits after the LICH → 12×25 deinterleave (`(i%25)*12+i/25`) → 12-of-14
+  depuncture (positions 3, 11 dropped) → `framing.ViterbiK5` (175 stages) → 171 bits = SR (structure 2 +
+  RAN 6) | 147-bit L3 message | CRC-16, checked by a shift register seeded 0xC3EE over all 171 bits
+  (remainder ^0xFFFF == 0). Message type = L3 octet 0 & 0x3F (0x18 SITE_INFO, 0x19 SRV_INFO, 0x04/0x05
+  VCALL_ASSGN). Cross-check that settled the field positions: SITE_INFO location 0x400AA1 = Local,
+  system 85, site 1, and every SR carries RAN 1 = site mod 64; SITE_INFO also names control channel 1
+  and 2 adjacent sites, as the reporter describes the system. `ControlChannel.Process` runs the real
+  framer (`airFramer`, shared with `TrafficChannel`) beside the legacy invented paths; the siglab NXDN
+  synth/FEC tally and the daemon integration fixture moved to the real format
+  (`EncodeAirControlFrame`, pinned to an independent MMDVMHost-derived encoder). The CC pipelines run
+  `EnableCarrierTracking` (0 CAC frames without it at the capture's −650 Hz) but NOT the channel
+  filter: on the siglab wideband survey it turned DMR leakage into a false NXDN 0.43 carrier.
+  VCALL_ASSGN is reference-pinned only (the capture is idle); a capture with a call on it is the gate.
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the

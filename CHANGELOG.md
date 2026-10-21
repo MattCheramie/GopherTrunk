@@ -18,6 +18,17 @@ for tagged releases.
   Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
 
 ### Fixed
+- **Trunked NXDN control channels lock on real air (#1261).** The control
+  channel searched for a frame sync word and CAC coding that no NXDN
+  transmitter sends, so a real control channel never locked or granted. It now
+  decodes the real air format: every CAC on the reporter's NXDN96 control
+  channel (453.775 MHz) passes its CRC, and the channel locks on the site its
+  SITE_INFO / SRV_INFO announce, logged as `nxdn: site info` (system code,
+  site code, control channels). VCALL_ASSGN voice grants are decoded from the
+  same messages; that part is not yet confirmed on air. The control-channel
+  receiver also runs the carrier tracker now: this capture sat about 650 Hz
+  off and decoded nothing without it. `LockState.SystemID` and the topology
+  IDs are now 32-bit, because a Local-category system code is 17 bits.
 - **NXDN voice keeps decoding as the dongle drifts (#1261).** The NXDN voice
   receiver corrected the carrier offset only after its symbol-timing loop,
   which still saw the raw offset. On real-air captures NXDN48 decoded only

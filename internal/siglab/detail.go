@@ -82,8 +82,9 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 		cardinality: 4, tolerance: 1,
 		syncFn: func() []SyncVariant {
 			return []SyncVariant{
-				{Name: "outbound", Pattern: append([]uint8(nil), nxdn.FSWDibitsOutbound...)},
-				{Name: "inbound", Pattern: append([]uint8(nil), nxdn.FSWDibitsInbound...)},
+				// The real air FSW (0xCDF59); both directions share it, the
+				// LICH says which.
+				{Name: "fsw", Pattern: append([]uint8(nil), nxdn.AirFSW[:]...)},
 			}
 		},
 		fec: nxdnFEC,

@@ -951,6 +951,10 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			SampleRateHz: outRateHz,
 			DeviationHz:  deviationHz,
 			EnableAFC:    enableAFC,
+			// As the ccdecoder pipeline: the real control channel is
+			// scrambled, so the pre-discriminator carrier tracker applies
+			// (#1261).
+			EnableCarrierTracking: true,
 		}
 		if softDecision {
 			nxdnRxOpts.SoftDecision = true

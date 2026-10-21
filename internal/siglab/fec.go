@@ -207,40 +207,33 @@ func dstarCRCFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECSt
 	return []FECStat{st}
 }
 
-// nxdnFEC tallies the NXDN LICH Hamming-doubling decode and the CAC Viterbi +
-// CRC-16 decode. The frame after each clean FSW hit is LICH (8 wire dibits) +
-// CAC (CACChannelBits/2 = 150 dibits); the fixture omits the SACCH so the CAC
-// follows the LICH directly.
+// nxdnFEC tallies the real-air NXDN frame after each clean FSW hit: the LICH
+// parity (on the descrambled frame) and, on control-channel frames, the CAC's
+// Viterbi + CRC-16 decode (nxdn.DecodeAirCAC). Both NXDN rates share the frame.
 func nxdnFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
-	lich := FECStat{Stage: "LICH Hamming-doubling"}
+	lich := FECStat{Stage: "LICH parity"}
 	cac := FECStat{Stage: "CAC Viterbi(K=5)+CRC-16"}
-	const lichDibits = 8
-	cacDibits := nxdn.CACChannelBits / 2
 	syncLen := land.SyncLen
+	post := make([]uint8, nxdn.AirFrameDibits-nxdn.AirFSWDibits)
 	for _, pos := range land.positions {
-		lichStart := pos + syncLen
-		cacStart := lichStart + lichDibits
-		if cacStart+cacDibits > len(stream) {
+		start := pos + syncLen
+		if start+len(post) > len(stream) {
 			continue
 		}
-		bestDis := -1
-		for rot := uint8(0); rot < 4; rot++ {
-			_, dis := nxdn.DecodeLICHWire(dibitsToBitsRot(stream[lichStart:lichStart+lichDibits], rot))
-			if bestDis < 0 || dis < bestDis {
-				bestDis = dis
-			}
+		copy(post, stream[start:start+len(post)])
+		nxdn.DescrambleAir(post)
+		l := nxdn.ParseAirLICH(post)
+		lich.Frames++
+		if !l.ParityOK {
+			lich.Uncorrectable++
+			continue
 		}
-		tallyErrs(&lich, bestDis)
-
-		pass := false
-		for rot := uint8(0); rot < 4; rot++ {
-			if _, ok := nxdn.DecodeCACChannel(dibitsToBitsRot(stream[cacStart:cacStart+cacDibits], rot)); ok {
-				pass = true
-				break
-			}
+		lich.Clean++
+		if l.RFCT != nxdn.AirRFCtRCCH {
+			continue
 		}
 		cac.Frames++
-		if pass {
+		if _, ok := nxdn.DecodeAirCAC(post); ok {
 			cac.CRCPass++
 		} else {
 			cac.CRCFail++

@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/binary"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
@@ -44,11 +42,13 @@ func TestDaemonCCDecodesNXDN(t *testing.T) {
 		alpha         = 0.20
 		deviationHz   = 1800.0
 		frameRepeats  = 20
-		siteID        = 0xBEEF
-		systemID      = 0x0042
+		// A Global location: system 0x042 (10 bits), site 0xEEF (12 bits).
+		location = nxdn.LocationID(0x042EEF)
+		siteID   = 0xEEF
+		systemID = 0x042
 	)
 
-	dibits := buildNXDNSpecEncodedDibits(frameRepeats, siteID, systemID)
+	dibits := buildNXDNAirControlDibits(frameRepeats, location)
 	iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRateHz, deviationHz)
 
 	dir := t.TempDir()
@@ -143,63 +143,33 @@ WaitLoop:
 	waitForMetric(t, base, `gophertrunk_events_total{kind="cc.locked"} 1`, 2*time.Second)
 }
 
-// buildNXDNSpecEncodedDibits assembles a long NXDN dibit stream
-// for the C4FM modulator + receiver chain:
-//
-//   - 300-dibit warmup cycling 0..3 so the Mueller-Müller clock
-//     recovery sees every symbol level
-//   - `repeats` × (FSWDibitsOutbound + LICH wire dibits + 150
-//     spec-encoded CAC dibits + 50 idle dibits)
-//   - 100-dibit trailer for clean flush
-//
-// Each frame layout matches the production process.go
-// ViterbiSpec post-sync window (8 LICH + 150 CAC = 158 dibits)
-// per §4.6 RCCH outbound. The CAC carries a SITE_INFO RCCH
-// message via the §4.5.1.1 spec FEC chain (EncodeCACChannel):
-// 155 info bits (8 SR + 144 L3 + 3 Null) → CRC-16 → 4 tail →
-// K=5 R=1/2 → puncture(50/350) → 25×12 interleave → 300 channel
-// bits = 150 dibits.
-func buildNXDNSpecEncodedDibits(repeats int, siteID, systemID uint16) []uint8 {
-	// LICH for RCCH outbound control channel.
-	lichInfo := nxdn.AssembleLICH(nxdn.LICH{RFCh: nxdn.RFChControl})
-	lichWire := nxdn.EncodeLICHWire(lichInfo)
-	lichDibits := framing.BitsToDibits(lichWire)
+// buildNXDNAirControlDibits assembles a long NXDN control-channel dibit
+// stream on the real air format (#1261) for the C4FM modulator + receiver
+// chain: 300 pseudo-random dibits of lead-in, `repeats` back-to-back RCCH
+// frames (nxdn.EncodeAirControlFrame: FSW, outbound RCCH LICH and a CAC
+// carrying SITE_INFO for loc, every post-FSW dibit scrambled), then 100 more
+// pseudo-random dibits. The earlier fixture used an invented FSW, LICH coding
+// and CAC chain that no transmitter sends; the production control channel
+// now locks through the real one.
+func buildNXDNAirControlDibits(repeats int, loc nxdn.LocationID) []uint8 {
+	msg := make([]byte, 19)
+	msg[0] = nxdn.AirMsgSiteInfo
+	msg[1], msg[2], msg[3] = byte(loc>>16), byte(loc>>8), byte(loc)
+	_, _, site := loc.Split()
+	frame := nxdn.EncodeAirControlFrame(uint8(site%64), msg)
 
-	// SITE_INFO L3 prefix: 1 byte RCCH type + 8 bytes payload.
-	var payload [8]byte
-	binary.BigEndian.PutUint16(payload[0:2], 0xAAAA)
-	binary.BigEndian.PutUint16(payload[2:4], siteID)
-	binary.BigEndian.PutUint16(payload[4:6], systemID)
-	l3 := make([]byte, 9)
-	l3[0] = byte(nxdn.RCCHSITEINFO)
-	copy(l3[1:9], payload[:])
-
-	// Build the 155-bit spec info block: SR zero + L3 prefix +
-	// trailing zeros + 3 Null bits.
-	info := make([]byte, nxdn.CACInfoBits)
-	l3Bits := framing.UnpackBitsMSB(l3, 72)
-	copy(info[8:8+72], l3Bits)
-
-	channel := nxdn.EncodeCACChannel(info)
-	cacDibits := framing.BitsToDibits(channel)
-
-	frame := make([]uint8, 0, 8+len(lichDibits)+len(cacDibits))
-	frame = append(frame, nxdn.FSWDibitsOutbound...)
-	frame = append(frame, lichDibits...)
-	frame = append(frame, cacDibits...)
-
-	out := make([]uint8, 0, 300+repeats*(len(frame)+50)+100)
-	for i := 0; i < 300; i++ {
-		out = append(out, uint8(i&3))
+	rng := uint32(7)
+	noise := func(n int) []uint8 {
+		out := make([]uint8, n)
+		for i := range out {
+			rng = rng*1664525 + 1013904223
+			out[i] = uint8(rng >> 30)
+		}
+		return out
 	}
+	out := noise(300)
 	for r := 0; r < repeats; r++ {
 		out = append(out, frame...)
-		for i := 0; i < 50; i++ {
-			out = append(out, uint8(i&3))
-		}
 	}
-	for i := 0; i < 100; i++ {
-		out = append(out, uint8(i&3))
-	}
-	return out
+	return append(out, noise(100)...)
 }
