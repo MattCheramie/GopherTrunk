@@ -246,6 +246,12 @@ func itemTitle(v reflect.Value, i int) string {
 		if f := v.FieldByName("ChannelID"); f.IsValid() {
 			return fmt.Sprintf("Channel %v", f.Interface())
 		}
+		// Band-plan table rows: NXDN numbers channels, DMR Tier III LCNs.
+		for _, name := range []string{"Channel", "LCN"} {
+			if f := v.FieldByName(name); f.IsValid() && f.CanUint() {
+				return fmt.Sprintf("%s %d", name, f.Uint())
+			}
+		}
 	}
 	return fmt.Sprintf("item %d", i+1)
 }

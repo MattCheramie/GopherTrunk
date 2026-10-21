@@ -8,6 +8,19 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **The NXDN band plan can be entered in both config editors (#1261).** The
+  TUI crashed on opening `nxdn_band_plan`'s linear or table mode (its drill
+  path stepped onto the band-plan pointer and panicked; the DMR band plan,
+  same shape, crashed the same way), and the web builder had no NXDN band
+  plan editor at all. Both now edit it: the TUI walks through the pointer
+  and titles table rows by channel (DMR rows by LCN), and the web builder's
+  system editor has an NXDN band plan section (none / linear / table) like
+  the DMR one.
+- **The NXDN voice chain's end-of-call line says more (#1261).** It adds
+  `carrier_offset_at_voice_hz` (the tracked offset at the last voice frame,
+  so a tracker that drifted after the speech ended shows as two different
+  numbers) and `iq_samples` (so a chain that got no IQ can be told from one
+  that heard no NXDN).
 - **wM-Bus follows the tuner's frequency error (#1256).** The reporter's
   S5 + RTL-SDR heard every meter about 50 kHz (58 ppm) low, so the receiver's
   wide channel filter, needed to keep the far FSK tone, let in noise from the

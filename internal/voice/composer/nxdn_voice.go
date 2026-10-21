@@ -109,6 +109,18 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 	ers, _ := c.sink.(errAwareRawSink)
 
 	var voiceFrames atomic.Uint64
+	// rx is built after tc (tc's sink is its dibit sink) but read from tc's
+	// frame callback, which only runs inside rx.Process.
+	var rx *nxdnrx.Receiver
+	// voiceOffHz is the carrier offset as of the last decoded voice frame,
+	// and iqSamples how much IQ the chain received: with the end-of-call
+	// offset they tell a tracker that drifted after the speech ended (the
+	// two offsets differ, the call decoded) from one that was off during
+	// it, and a dead tap (no IQ) from a silent channel (#1261: one call
+	// ended at the ±3 kHz bound after decoding cleanly, another decoded
+	// nothing at all).
+	var voiceOffHz float64
+	var iqSamples int
 	// TrafficChannel carves the VCH voice frames out of each RFChTraffic
 	// frame and FEC-decodes their 49-bit AMBE+2 payloads. The sink packs
 	// each payload MSB-first to 7 bytes and writes it to the recorder,
@@ -119,6 +131,7 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 		for _, vf := range frames {
 			packed := framing.PackBitsMSB(vf.Payload)
 			voiceFrames.Add(1)
+			voiceOffHz = rx.CarrierOffsetHz()
 			bt.onVoice(0)
 			var werr error
 			switch {
@@ -133,27 +146,32 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 		}
 	})
 
-	rx := newNXDNVoiceReceiver(symbolHz, symbolRateHz, func(dibits []uint8, baseIdx int) { tc.Process(dibits, baseIdx) })
+	rx = newNXDNVoiceReceiver(symbolHz, symbolRateHz, func(dibits []uint8, baseIdx int) { tc.Process(dibits, baseIdx) })
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 
+	// ended logs the chain's summary. carrier_offset_hz is the tuner error
+	// the receiver tracked out: across calls it shows the dongle drifting.
+	ended := func(msg string) {
+		c.log.Info(msg, "serial", serial, "voice_frames", voiceFrames.Load(),
+			"frames", tc.Frames, "lich_ok", tc.LICHOK, "carrier_offset_hz", int(rx.CarrierOffsetHz()),
+			"carrier_offset_at_voice_hz", int(voiceOffHz), "iq_samples", iqSamples)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
-			// carrier_offset_hz is the tuner error the receiver tracked out:
-			// across calls it shows the dongle drifting (#1261).
-			c.log.Info("composer: nxdn voice chain ended", "serial", serial, "voice_frames", voiceFrames.Load(),
-				"frames", tc.Frames, "lich_ok", tc.LICHOK, "carrier_offset_hz", int(rx.CarrierOffsetHz()))
+			ended("composer: nxdn voice chain ended")
 			return
 		case <-touchTicker.C:
 			// Touch + hangtime end-of-call handled by the boundary tracker.
 		case iq, ok := <-iqCh:
 			if !ok {
-				c.log.Info("composer: nxdn voice chain ended (iq closed)", "serial", serial, "voice_frames", voiceFrames.Load(),
-					"frames", tc.Frames, "lich_ok", tc.LICHOK, "carrier_offset_hz", int(rx.CarrierOffsetHz()))
+				ended("composer: nxdn voice chain ended (iq closed)")
 				return
 			}
+			iqSamples += len(iq)
 			bt.observe(iq)
 			rx.Process(fe.Process(nil, iq))
 		}
