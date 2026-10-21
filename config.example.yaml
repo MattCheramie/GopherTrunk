@@ -1260,6 +1260,17 @@ trunking:
   #     # nxdn_deviation_hz: 2400       # override 1800 Hz spec default
   #                                     # for non-spec transmitters (see
   #                                     # samples/nxdn/README.md sweep recipe)
+  #     # nxdn_band_plan:               # REQUIRED to follow NXDN voice: a
+  #     #                               # grant names a channel NUMBER, and
+  #     #                               # without a plan every grant drops.
+  #     #                               # Give exactly one of linear/table.
+  #     #   linear:                     # freq = base + (ch - offset) × spacing
+  #     #     base_hz: 453_150_000
+  #     #     spacing_hz: 12_500
+  #     #     offset: 1                 # channels numbered from 1
+  #     #   table:                      # or one entry per channel (#1261)
+  #     #     - { channel: 1, freq_hz: 453_775_000 }
+  #     #     - { channel: 2, freq_hz: 453_675_000 }
   #
   #   - name: "Linear-CQPSK-P25"
   #     protocol: p25

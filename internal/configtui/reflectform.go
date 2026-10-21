@@ -46,9 +46,18 @@ type pathStep struct {
 // resolve walks from an addressable root following path, returning the
 // addressable value at the end. Slices/structs encountered through addressable
 // parents stay addressable, so callers can Set scalars in place.
+//
+// A pointer met on the way is followed: a step after a pointer-to-struct field
+// (the band plans' Linear and Table, behind SystemConfig.NXDNBandPlan /
+// DMRBandPlan) used to call FieldByName on the pointer and panic, crashing the
+// TUI as soon as either mode was opened (#1261). The final value is returned
+// as is; cur() dereferences it.
 func resolve(root reflect.Value, path []pathStep) reflect.Value {
 	v := root
 	for _, s := range path {
+		for v.Kind() == reflect.Ptr && !v.IsNil() {
+			v = v.Elem()
+		}
 		if s.Field != "" {
 			v = v.FieldByName(s.Field)
 		} else {

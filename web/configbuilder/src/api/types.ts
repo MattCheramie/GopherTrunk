@@ -339,6 +339,25 @@ export interface DMRBandPlan {
   Table: DMRBandPlanTableEntry[] | null;
 }
 
+// NXDN grants name a traffic channel by number; the band plan maps it to a
+// downlink frequency (internal/config NXDNBandPlanConfig). Exactly one of
+// Linear / Table is set.
+export interface NXDNLinearBandPlan {
+  BaseHz: number;
+  SpacingHz: number;
+  Offset: number;
+}
+
+export interface NXDNBandPlanTableEntry {
+  Channel: number;
+  FreqHz: number;
+}
+
+export interface NXDNBandPlan {
+  Linear: NXDNLinearBandPlan | null;
+  Table: NXDNBandPlanTableEntry[] | null;
+}
+
 export interface EncryptionKey {
   KeyID: number;
   Algorithm: string;
@@ -365,6 +384,7 @@ export interface SystemConfig {
   Sites?: SiteConfig[] | null;
   P25BandPlan?: P25BandPlanEntry[] | null;
   DMRBandPlan?: DMRBandPlan | null;
+  NXDNBandPlan?: NXDNBandPlan | null;
   EncryptionKeys?: EncryptionKey[] | null;
   EncryptedCalls?: EncryptedCallsConfig;
   // Long-tail protocol decoder knobs (TETRA*, LTR*, P25Phase1/2*, NXDN*,

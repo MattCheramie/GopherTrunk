@@ -1204,6 +1204,16 @@ confirmation before any close-as-completed.
   `EnableCarrierTracking` (0 CAC frames without it at the capture's −650 Hz) but NOT the channel
   filter: on the siglab wideband survey it turned DMR leakage into a false NXDN 0.43 carrier.
   VCALL_ASSGN is reference-pinned only (the capture is idle); a capture with a call on it is the gate.
+- **NXDN trunked voice IS ON-AIR VERIFIED (#1261, 21 Oct): lock, grant follow, Rdio upload with TG/RID,
+  on the reporter's 10-channel 453 MHz system; NXDN48/96 conventional survives drift.** Their next blocker
+  was CONFIG, not DSP: the TUI panicked opening `nxdn_band_plan`'s linear/table mode — `configtui.resolve`
+  called FieldByName on the band-plan POINTER mid-path (`cur()` only dereffed the last step; DMR's band plan
+  crashed too) — and the web builder had no editor because `webschema_test.go` allow-listed all four NXDN
+  band-plan fields as "editable in the TUI". `TestEveryLeafEditable` classifies kinds but never DRIVES a
+  drill path, so a TUI shape test needs keystrokes (`bandplan_drill_test.go`). The key was also missing
+  from config.example.yaml. One call ended at the tracker's ±3 kHz bound after decoding cleanly (406 frames):
+  an unmodulated carrier passes the variance gate and pulls it there (shown synthetically, unconfirmed
+  on air); `carrier_offset_at_voice_hz` / `iq_samples` in the chain-ended line are the instrument.
 - **wM-Bus (#1256): the field's CRC failures were a TUNER OFFSET + a too-wide filter, after the
   clock-slip fix.** The reporter's 156 `-save-frames` snippets (S5 + RTL-SDR, `-gain 0`, Qundis HCAs +
   Diehl water meters) are the yield check: `GT_WMBUS_SNIPPETS=<dir> go test ./internal/radio/wmbus -run

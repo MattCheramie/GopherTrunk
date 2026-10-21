@@ -12,12 +12,14 @@ import { ListEditor } from "../components/ListEditor";
 import { AdvancedJSON } from "../components/AdvancedJSON";
 import { RRCredentials } from "../components/RRCredentials";
 import { dmrBandPlanForMode, dmrBandPlanMode } from "../lib/dmrBandPlan";
+import { nxdnBandPlanForMode, nxdnBandPlanMode } from "../lib/nxdnBandPlan";
 import { useStore } from "../store/shared";
 import { api, HTTPError } from "../api/client";
 import type {
   DMRBandPlanTableEntry,
   EncryptedCallsConfig,
   EncryptionKey,
+  NXDNBandPlanTableEntry,
   P25BandPlanEntry,
   ParsedSystemDTO,
   RRGeoRef,
@@ -176,6 +178,7 @@ function EncryptedCallsField(props: {
 function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig) => void }) {
   const { sys, onChange } = props;
   const dmrMode = dmrBandPlanMode(sys.DMRBandPlan);
+  const nxdnMode = nxdnBandPlanMode(sys.NXDNBandPlan);
 
   return (
     <div className="space-y-3">
@@ -304,6 +307,62 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
             renderItem={(e, set) => (
               <div className="grid gap-3 sm:grid-cols-2">
                 <NumberField label="LCN" value={e.LCN} onChange={(v) => set({ ...e, LCN: v })} />
+                <HzField label="Frequency" value={e.FreqHz} onChange={(v) => set({ ...e, FreqHz: v })} />
+              </div>
+            )}
+          />
+        ) : null}
+      </Fieldset>
+
+      <Fieldset legend="NXDN band plan (required for NXDN trunked voice)">
+        <SelectField
+          label="Mode"
+          value={nxdnMode}
+          onChange={(m) =>
+            onChange({ ...sys, NXDNBandPlan: nxdnBandPlanForMode(m as "none" | "linear" | "table", sys.NXDNBandPlan) })
+          }
+          options={[
+            { value: "none", label: "none" },
+            { value: "linear", label: "linear (regular grid)" },
+            { value: "table", label: "table (explicit channel→freq)" },
+          ]}
+          help="Voice grants name a channel number; this maps it to a frequency. Without it every NXDN voice grant is dropped."
+        />
+        {nxdnMode === "linear" && sys.NXDNBandPlan?.Linear ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <HzField
+              label="Base freq"
+              value={sys.NXDNBandPlan.Linear.BaseHz}
+              onChange={(v) =>
+                onChange({ ...sys, NXDNBandPlan: { Linear: { ...sys.NXDNBandPlan!.Linear!, BaseHz: v }, Table: null } })
+              }
+            />
+            <HzField
+              label="Spacing"
+              value={sys.NXDNBandPlan.Linear.SpacingHz}
+              onChange={(v) =>
+                onChange({ ...sys, NXDNBandPlan: { Linear: { ...sys.NXDNBandPlan!.Linear!, SpacingHz: v }, Table: null } })
+              }
+            />
+            <NumberField
+              label="Offset (first channel number)"
+              value={sys.NXDNBandPlan.Linear.Offset}
+              onChange={(v) =>
+                onChange({ ...sys, NXDNBandPlan: { Linear: { ...sys.NXDNBandPlan!.Linear!, Offset: v }, Table: null } })
+              }
+            />
+          </div>
+        ) : null}
+        {nxdnMode === "table" ? (
+          <ListEditor<NXDNBandPlanTableEntry>
+            label="Channel → frequency"
+            items={sys.NXDNBandPlan?.Table}
+            onChange={(x) => onChange({ ...sys, NXDNBandPlan: { Linear: null, Table: x } })}
+            makeNew={() => ({ Channel: 0, FreqHz: 0 })}
+            itemTitle={(e) => `Channel ${e.Channel}`}
+            renderItem={(e, set) => (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <NumberField label="Channel" value={e.Channel} onChange={(v) => set({ ...e, Channel: v })} />
                 <HzField label="Frequency" value={e.FreqHz} onChange={(v) => set({ ...e, FreqHz: v })} />
               </div>
             )}
