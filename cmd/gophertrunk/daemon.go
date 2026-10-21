@@ -2129,10 +2129,9 @@ func (d *Daemon) buildLogsTrackersAndSinks(cfg config.Config, log *slog.Logger, 
 	// Live audio player — optional. Independent of the composer; if
 	// enabled, we feed it as one fan-out arm alongside the recorder.
 	// Defaults to disabled so headless servers stay quiet.
-	playerSampleRate := cfg.Audio.SampleRate
-	if playerSampleRate == 0 {
-		playerSampleRate = cfg.Recordings.SampleRate
-	}
+	// The live rate: the web stream's WAV header reads it back from the
+	// player, and wireLiveSinks converts every live feed into it.
+	playerSampleRate := liveRatesFor(cfg).liveHz
 	pl, err := player.New(player.Config{
 		Enabled:    cfg.Audio.Enabled,
 		Device:     cfg.Audio.Device,
@@ -2439,15 +2438,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 	// digital voice and taps PCM to the live stream.
 	if d.pool != nil && d.voiceDecoder != nil {
 		// Fan PCM to the decoder + tone-out (if configured) + live player + gRPC publisher.
-		sinks := []composer.PCMSink{d.voiceDecoder}
-		if d.toneout != nil {
-			sinks = append(sinks, d.toneout)
-		}
-		if d.player != nil {
-			sinks = append(sinks, playerSink{p: d.player, engine: d.engine})
-		}
-		sinks = append(sinks, d.audioPub)
-
+		//
 		// Digital protocols (P25, DMR, NXDN, …) reach the composer as
 		// raw vocoder frames and fan out only to the recorder — the
 		// lone decoder. Tap the PCM the recorder decodes and forward it
@@ -2463,23 +2454,35 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 		// the composer's main `sinks` fanout below; digital
 		// host-speaker playback is out of scope. The recorder itself is
 		// also excluded (it already wrote the WAV from its own decode).
-		var liveSinks []composer.PCMSink
+		//
+		// The two feeds arrive at different rates (analog at
+		// recordings.sample_rate, decoded digital always at 8 kHz), so
+		// wireLiveSinks converts each to the rate its consumer runs at
+		// (#1242).
+		lr := liveRatesFor(cfg)
+		d.audioPub.SetSampleRate(lr.liveHz)
+		var tone, pl composer.PCMSink
 		if d.toneout != nil {
-			liveSinks = append(liveSinks, d.toneout)
+			tone = d.toneout
+		}
+		if d.player != nil {
+			pl = playerSink{p: d.player, engine: d.engine}
 		}
 		// Optionally level the decoded digital PCM before it reaches the
 		// network stream so live loudness tracks the loudness-normalized
-		// recordings (audio.live_loudness, default off). Decoded vocoder
-		// audio is always 8 kHz. The tone-out detector is left on the raw
-		// PCM — its Goertzel matched filters key off absolute tone levels.
-		var liveStreamSink composer.PCMSink = d.audioPub
+		// recordings (audio.live_loudness, default off). The tone-out
+		// detector is left on the raw PCM — its Goertzel matched filters
+		// key off absolute tone levels.
+		var level func(composer.PCMSink) composer.PCMSink
 		if cfg.Audio.LiveLoudness {
-			lls := newLiveLoudnessSink(d.audioPub, 8000, d.bus, log)
-			d.liveLoudness = lls
-			liveStreamSink = lls
-			log.Info("audio: live-loudness AGC enabled for digital stream")
+			level = func(next composer.PCMSink) composer.PCMSink {
+				lls := newLiveLoudnessSink(next, decodedPCMHz, d.bus, log)
+				d.liveLoudness = lls
+				log.Info("audio: live-loudness AGC enabled for digital stream")
+				return lls
+			}
 		}
-		liveSinks = append(liveSinks, liveStreamSink)
+		sinks, liveSinks := wireLiveSinks(lr, d.voiceDecoder, tone, pl, d.audioPub, level)
 		d.voiceDecoder.SetDecodedPCMSink(fanoutSink(liveSinks))
 		// Raw vocoder frames fan straight to the publisher (the only raw
 		// consumer): include_raw subscribers get the un-decoded IMBE / AMBE

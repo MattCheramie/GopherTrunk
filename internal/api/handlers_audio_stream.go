@@ -57,10 +57,11 @@ func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sample rate is fixed at 8000 Hz today (matches the composer's
-	// recorder rate; see audio_publisher.go buildPCMFrame). When
-	// the composer grows variable rates, the AudioController's
-	// SampleRate is the source of truth.
+	// The stream's rate is the live rate (audio.sample_rate, else
+	// recordings.sample_rate, else 8000), read back from the player. The
+	// daemon resamples every feed into it — decoded digital voice is 8 kHz
+	// and analog FM runs at recordings.sample_rate — so the header always
+	// matches the samples (#1242).
 	rate := uint32(8000)
 	if s.audio != nil && s.audio.SampleRate() > 0 {
 		rate = s.audio.SampleRate()

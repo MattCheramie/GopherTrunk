@@ -511,9 +511,10 @@ type AudioConfig struct {
 	// (or "default") routes to the system default sink. "null"
 	// forces the no-op backend even when Enabled=true.
 	Device string `yaml:"device"`
-	// SampleRate is the host playback rate in Hz. Default 8000;
-	// must match recordings.sample_rate so the composer's PCM
-	// frames don't need a resample stage.
+	// SampleRate is the host playback and live-stream rate in Hz.
+	// Default: recordings.sample_rate, else 8000. Live PCM is resampled
+	// into it (decoded digital voice is 8 kHz, analog FM runs at
+	// recordings.sample_rate), so any value plays at the right speed.
 	SampleRate uint32 `yaml:"sample_rate"`
 	// BufferMs is the depth of the playback queue. Default 80.
 	BufferMs int `yaml:"buffer_ms"`

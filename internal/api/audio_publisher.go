@@ -41,6 +41,10 @@ type AudioPublisher struct {
 
 	dropped atomic.Uint64
 
+	// sampleRate labels every PCM frame (0 = 8000). The daemon sets it to
+	// the live stream's rate and converts every feed into it (#1242).
+	sampleRate atomic.Uint32
+
 	runDone   chan struct{}
 	closeOnce sync.Once
 }
@@ -107,6 +111,19 @@ func NewAudioPublisher(bus *events.Bus, log *slog.Logger) (*AudioPublisher, erro
 		grants:  make(map[string]trunking.Grant),
 		runDone: make(chan struct{}),
 	}, nil
+}
+
+// SetSampleRate sets the rate PCM frames are labelled with. Every writer
+// must already deliver PCM at this rate; the daemon resamples the analog and
+// decoded-digital feeds into it.
+func (p *AudioPublisher) SetSampleRate(hz uint32) { p.sampleRate.Store(hz) }
+
+// SampleRate is the rate PCM frames are labelled with (default 8000).
+func (p *AudioPublisher) SampleRate() uint32 {
+	if hz := p.sampleRate.Load(); hz > 0 {
+		return hz
+	}
+	return 8000
 }
 
 // Run drains bus events until ctx cancels, maintaining the per-
@@ -237,7 +254,7 @@ func (p *AudioPublisher) writePCM(deviceSerial string, callID uint64, samples []
 			continue
 		}
 		if frame == nil {
-			frame = buildPCMFrame(grant, deviceSerial, samples)
+			frame = buildPCMFrame(grant, deviceSerial, samples, p.SampleRate())
 		}
 		select {
 		case sub.ch <- frame:
@@ -414,7 +431,7 @@ func (f AudioSubFilter) matches(serial string, groupID uint32) bool {
 // buildPCMFrame builds the wire-side AudioFrame for a chunk of
 // samples. We copy the int16 buffer into a fresh byte slice so the
 // caller can reuse theirs without mutating in-flight frames.
-func buildPCMFrame(grant trunking.Grant, serial string, samples []int16) *apiv1.AudioFrame {
+func buildPCMFrame(grant trunking.Grant, serial string, samples []int16, rate uint32) *apiv1.AudioFrame {
 	body := make([]byte, len(samples)*2)
 	for i, s := range samples {
 		u := uint16(s)
@@ -426,7 +443,7 @@ func buildPCMFrame(grant trunking.Grant, serial string, samples []int16) *apiv1.
 		DeviceSerial: serial,
 		Body: &apiv1.AudioFrame_Pcm{
 			Pcm: &apiv1.PCMSamples{
-				SampleRate: 8000, // recorder writes at 8 kHz today; future: pull from composer
+				SampleRate: rate,
 				Samples:    body,
 			},
 		},

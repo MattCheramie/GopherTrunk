@@ -864,7 +864,8 @@ hunter can lock faster on next boot.
 ```yaml
 recordings:
   dir: "C:\\ProgramData\\GopherTrunk\\recordings"
-  sample_rate: 8000
+  sample_rate: 8000     # analog (FM/AM) recordings only; digital voice (P25,
+                        # DMR, NXDN, …) is always recorded at the vocoder's 8 kHz
   write_raw: true       # also append a .raw sidecar with vocoder frames
   equalizer:
     enabled: false      # CMA blind equalizer (simulcast mitigation)
@@ -1271,7 +1272,8 @@ stay silent; WAV recording is unaffected.
 audio:
   enabled: false       # set true to play decoded calls live
   device: ""           # empty = system default; "null" forces no-op
-  sample_rate: 8000    # must match recordings.sample_rate
+  sample_rate: 8000    # host speaker + live stream rate; 0 = recordings.sample_rate.
+                       # Live PCM is resampled into it, so any 4000..48000 works.
   buffer_ms: 80        # playback queue depth; higher = more jitter-tolerant
   volume: 0.8          # 0..1 software gain
   muted: false

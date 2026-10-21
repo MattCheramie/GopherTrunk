@@ -8,6 +8,20 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Live audio plays at the right speed whatever the sample-rate settings
+  (#1242).** Decoded digital voice is always 8 kHz and analog FM runs at
+  `recordings.sample_rate`, but every live consumer assumed one rate. With
+  `audio.sample_rate` or `recordings.sample_rate` set to anything but 8000,
+  digital calls played on the web live stream at the wrong speed (six times
+  fast at 48000: a whistle), analog PCM was labelled 8000 on gRPC, analog on
+  the host speaker played wrong when `audio.sample_rate` differed from
+  `recordings.sample_rate`, and the tone-out detector mis-tuned on digital
+  calls. Each live feed is now resampled to the rate its consumer runs at,
+  and gRPC labels the stream's real rate. The default (8000 everywhere) is
+  unchanged. Recordings were never affected: a digital call is always
+  recorded at 8 kHz, so `recordings.sample_rate` only applies to analog
+  recordings, which the example config, the Windows guide and the config
+  editors now say.
 - **The NXDN band plan can be entered in both config editors (#1261).** The
   TUI crashed on opening `nxdn_band_plan`'s linear or table mode (its drill
   path stepped onto the band-plan pointer and panicked; the DMR band plan,

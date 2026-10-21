@@ -341,7 +341,7 @@ var fieldMetas = map[string]FieldMeta{
 	// ---- Recordings --------------------------------------------------------
 	"RecordingsConfig.Dir":                  {Label: "Directory", Help: "Output directory for per-call voice recordings."},
 	"RecordingsConfig.Format":               {Label: "Format", Help: "Recording container: wav (16-bit mono PCM) or flac (lossless, ~half the size for speech; browsers play it natively, and normalization/MP3 uploads read it the same).", Options: opts("", "wav (default)", "flac", "flac")},
-	"RecordingsConfig.SampleRate":           {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
+	"RecordingsConfig.SampleRate":           {Label: "Sample rate", Help: "Rate of analog (FM/AM) recordings, 4000–48000 Hz; 0 = 8000. Digital voice (P25, DMR, NXDN, …) is always recorded at the vocoder's 8 kHz whatever this says."},
 	"RecordingsConfig.WriteRaw":             {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
 	"RecordingsConfig.MBEFiles":             {Label: "dsd-fme MBE files", Help: "Also write a dsd-fme-playable MBE sidecar per call — .imb for P25 Phase 1 IMBE, .amb for DMR/NXDN/P25 Phase 2 AMBE+2 — so recordings decode offline with `dsd-fme -r <file>`. Protocols dsd-fme can't play (TETRA, ProVoice, analog) produce no file."},
 	"RecordingsConfig.SkipEncrypted":        {Label: "Skip encrypted", Help: "Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."},
@@ -453,7 +453,7 @@ var fieldMetas = map[string]FieldMeta{
 	// ---- Audio -------------------------------------------------------------
 	"AudioConfig.Enabled":      {Help: "Enable live speaker playback of decoded voice. Off by default (headless-safe). Recordings are unaffected."},
 	"AudioConfig.Device":       {Help: "Backend output device. Empty/default = system sink; 'null' forces the no-op backend."},
-	"AudioConfig.SampleRate":   {Label: "Sample rate", Help: "Playback rate (4000–48000 Hz). Default 8000; match recordings.sample_rate."},
+	"AudioConfig.SampleRate":   {Label: "Sample rate", Help: "Host speaker and live-stream rate, 4000–48000 Hz; 0 = recordings.sample_rate. Live audio is resampled into it, so it need not match."},
 	"AudioConfig.BufferMs":     {Help: "Playback queue depth in ms. Default 80."},
 	"AudioConfig.Volume":       {Help: "Initial software gain, 0–1. Default 0.8."},
 	"AudioConfig.Muted":        {Help: "Start muted."},

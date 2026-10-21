@@ -452,3 +452,33 @@ func waitFor(t *testing.T, d time.Duration, fn func() bool) {
 // to keep imports stable across the package).
 var _ = atomic.Int32{}
 var _ = (*apiv1.AudioFrame)(nil)
+
+// PCM frames carry the rate the daemon set on the publisher (the live stream
+// rate every feed is resampled into, #1242), not a hard-coded 8000: with
+// recordings.sample_rate 48000, analog PCM went out labelled 8000.
+func TestAudioPublisher_LabelsConfiguredSampleRate(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pub, _ := NewAudioPublisher(bus, nil)
+	sub := pub.Subscribe(AudioSubFilter{})
+	label := func() uint32 {
+		t.Helper()
+		if err := pub.WritePCM("V", make([]int16, 160)); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case frame := <-sub.ch:
+			return frame.GetPcm().GetSampleRate()
+		case <-time.After(time.Second):
+			t.Fatal("no frame")
+		}
+		return 0
+	}
+	if got := label(); got != 8000 {
+		t.Errorf("default label %d, want 8000", got)
+	}
+	pub.SetSampleRate(48000)
+	if got := label(); got != 48000 {
+		t.Errorf("label %d after SetSampleRate(48000)", got)
+	}
+}

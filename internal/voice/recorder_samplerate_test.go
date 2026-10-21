@@ -158,3 +158,76 @@ func TestRecorderAnalogKeepsConfiguredRate(t *testing.T) {
 		t.Errorf("analog WAV header rate = %d, want 16000", got)
 	}
 }
+
+// TestRecorderForcesVocoderNativeRateFLAC is the FLAC twin of
+// TestRecorderForcesVocoderNativeRate, at every recordings.sample_rate an
+// operator might set: a decoded call's FLAC must be 8 kHz in STREAMINFO AND in
+// every frame header (rate code 4), which is what a player reads when it
+// trusts frames over STREAMINFO. #1242: a reporter changed
+// recordings.sample_rate 8000 -> 0 and credited it for curing a "sped-up"
+// whistle; the setting cannot change a digital recording, and this pins that.
+func TestRecorderForcesVocoderNativeRateFLAC(t *testing.T) {
+	DefaultRegistry.Register("fake-voc", func() (Vocoder, error) { return fakeVocoder{}, nil })
+	for _, cfgRate := range []uint32{0, 8000, 16000, 48000} {
+		bus := events.NewBus(8)
+		dir := t.TempDir()
+		r, err := NewRecorder(RecorderOptions{
+			Bus:                bus,
+			OutDir:             dir,
+			Format:             "flac",
+			SampleRate:         cfgRate,
+			VocoderForProtocol: map[string]string{"p25-fake": "fake-voc"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go r.Run(ctx)
+		cs := trunking.CallStart{
+			Grant:        trunking.Grant{System: "S", Protocol: "p25-fake", GroupID: 7, SourceID: 42},
+			Talkgroup:    &trunking.TalkGroup{ID: 7, AlphaTag: "FIRE", Record: true},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Date(2026, 5, 29, 17, 25, 2, 0, time.UTC),
+		}
+		bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+		waitForSession(t, r, "VOICE-1", true)
+		for range 300 { // several FLAC blocks
+			if err := r.WriteRawFrame("VOICE-1", make([]byte, 11)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+			Grant: cs.Grant, Talkgroup: cs.Talkgroup, DeviceSerial: "VOICE-1",
+			StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(6 * time.Second), Reason: trunking.EndReasonNormal,
+		}})
+		waitForSession(t, r, "VOICE-1", false)
+
+		path := filepath.Join(dir, "S", "FIRE", "20260529_172502_7.flac")
+		if _, rate, err := ReadFLACSamples(path); err != nil || rate != pcmHzDefault {
+			t.Errorf("recordings.sample_rate %d: STREAMINFO rate %d (err %v), want %d", cfgRate, rate, err, pcmHzDefault)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Every frame header after the metadata blocks: sync 0xFFF8, then
+		// block-size/rate byte whose low nibble 4 is 8 kHz.
+		i := 4
+		for {
+			last := b[i]&0x80 != 0
+			i += 4 + (int(b[i+1])<<16 | int(b[i+2])<<8 | int(b[i+3]))
+			if last {
+				break
+			}
+		}
+		if b[i] != 0xFF || b[i+1]&0xFE != 0xF8 {
+			t.Fatalf("recordings.sample_rate %d: no frame sync after the metadata", cfgRate)
+		}
+		if code := b[i+2] & 0x0F; code != 4 {
+			t.Errorf("recordings.sample_rate %d: first frame rate code %d, want 4 (8 kHz)", cfgRate, code)
+		}
+		cancel()
+		r.Close()
+		bus.Close()
+	}
+}
