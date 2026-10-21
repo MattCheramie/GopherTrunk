@@ -21,8 +21,22 @@ const procRateHz = 800_000
 const (
 	nominalSPC = float64(procRateHz) / ChipRateHz // samples per chip
 	// channelCutoffHz keeps the ±50 kHz (T1) / ±45 kHz (C1) FSK plus a
-	// ±50 ppm tuner error, and rejects neighbours further out.
+	// tuner error of about ±120 kHz (±140 ppm), and rejects neighbours
+	// further out. It is the filter until the carrier has been found.
 	channelCutoffHz = 170_000
+	// lockedCutoffHz is the filter once the carrier is found (see afc):
+	// the FSK plus room for one meter's carrier sitting off another's.
+	lockedCutoffHz = 100_000
+	// afcGain smooths the carrier estimate across frames: each CRC-valid
+	// frame pulls it this far toward the carrier that frame was heard on.
+	afcGain = 0.25
+	// afcMaxHz bounds the correction: the wide filter cannot hear a
+	// carrier further out than this anyway.
+	afcMaxHz = 150_000
+	// afcHoldSeconds is how long the narrow filter is kept without a
+	// CRC-valid frame before the receiver widens it again, in case the
+	// tuner has drifted away from the estimate.
+	afcHoldSeconds = 120
 	// thresholdWindow is the slicing-threshold average: 32 chips. Both
 	// preambles, the access code and T mode data are DC-balanced over it.
 	thresholdWindow = 256
@@ -71,12 +85,23 @@ type FrameInfo struct {
 	// Inverted reports that the frame was framed on the inverted chip
 	// stream (a spectrum-inverted front end).
 	Inverted bool
+	// CarrierOffsetHz is where the frame's carrier sat relative to the
+	// channel (ChannelHz, or the configured OffsetHz from the input's
+	// centre), measured on its preamble. Every meter heard through one
+	// tuner shares that tuner's frequency error, so on a run it mostly
+	// measures the tuner.
+	CarrierOffsetHz float64
 }
 
 // ReceiverStats counts receiver activity.
 type ReceiverStats struct {
 	Samples int64
 	Framer  FramerStats // both polarities summed
+	// CarrierOffsetHz is the receiver's carrier estimate relative to the
+	// channel, learned from CRC-valid frames; CarrierLocked reports that
+	// it has one (and is running the narrow channel filter).
+	CarrierOffsetHz float64
+	CarrierLocked   bool
 }
 
 // Receiver turns IQ into wM-Bus frames.
@@ -115,6 +140,14 @@ type Receiver struct {
 	framers [2]*Framer // normal, inverted
 	stats   ReceiverStats
 	samples int64
+
+	// Carrier tracking (afc): the learned offset from opts.OffsetHz, and
+	// the processed-sample index of the last frame that set it.
+	afcHz     float64
+	appliedHz float64 // afcHz as it was when the block being sliced was mixed
+	afcLocked bool
+	narrow    bool
+	afcAt     int64
 }
 
 // NewReceiver builds a Receiver.
@@ -134,20 +167,80 @@ func NewReceiver(o ReceiverOptions) (*Receiver, error) {
 		r.rs = dsp.NewResampler(l, m, max(taps, 8), 6)
 	}
 	r.ratio = o.SampleRateHz / procRateHz
-	r.chf = filter.NewFIR(filter.LowpassKaiser(63, float64(channelCutoffHz)/procRateHz, 6))
+	r.chf = channelFilter(channelCutoffHz)
 	for i := range r.framers {
 		inv := i == 1
 		r.framers[i] = NewFramer(func(f Frame) {
+			off := r.carrierHz(inv)
+			if f.CRCOK && !inv {
+				r.afc(off)
+			}
 			if o.OnFrame != nil {
 				o.OnFrame(f, FrameInfo{
-					LevelDBFS: 10 * math.Log10(r.power+1e-20),
-					Sample:    int64(float64(r.n) * r.ratio),
-					Inverted:  inv,
+					LevelDBFS:       10 * math.Log10(r.power+1e-20),
+					Sample:          int64(float64(r.n) * r.ratio),
+					Inverted:        inv,
+					CarrierOffsetHz: off,
 				})
 			}
 		})
 	}
 	return r, nil
+}
+
+// channelFilter is the channel filter at the processing rate.
+func channelFilter(cutoffHz float64) *filter.FIR {
+	return filter.NewFIR(filter.LowpassKaiser(63, cutoffHz/procRateHz, 6))
+}
+
+// carrierHz is where the frame being delivered sat relative to the
+// channel: the receiver's current correction plus what is left of the
+// offset after it, which the slicing threshold measured on the preamble
+// (the 0101… preamble is DC-balanced, and the threshold is held from the
+// access code to the end of the frame). The inverted framer sees the
+// discriminator negated.
+func (r *Receiver) carrierHz(inverted bool) float64 {
+	residual := r.thr * procRateHz / (2 * math.Pi)
+	if inverted {
+		residual = -residual
+	}
+	return r.appliedHz + residual
+}
+
+// afc re-centres the receiver on the carrier a CRC-valid frame was heard
+// on, and narrows the channel filter around it.
+//
+// A real tuner can sit far off: the S5 + RTL-SDR in issue #1256 heard its
+// meters about 50 kHz (58 ppm) low, so the lower FSK tone sat near -95 kHz
+// and the wide filter needed for that let in noise from +170 kHz too. On
+// that reporter's 156 saved telegrams, fed through one receiver in order,
+// this took the CRC-valid count from 97 to 128.
+// The offset is the tuner's, shared by every meter it hears, so it is
+// learned across frames: the first CRC-valid frame sets it, later ones
+// refine it. Only CRC-valid frames count, so noise cannot steer it, and
+// the filter widens again after afcHoldSeconds without one, should the
+// tuner drift outside it.
+func (r *Receiver) afc(carrierHz float64) {
+	carrierHz = min(max(carrierHz, -afcMaxHz), afcMaxHz)
+	if r.afcLocked {
+		r.afcHz += afcGain * (carrierHz - r.afcHz)
+	} else {
+		r.afcHz = carrierHz
+	}
+	r.afcLocked = true
+	r.afcAt = r.n
+	off := r.opts.OffsetHz + r.afcHz
+	if r.nco == nil {
+		r.nco = dsp.NewNCO(off, r.opts.SampleRateHz)
+	} else {
+		r.nco.SetOffset(off, r.opts.SampleRateHz)
+	}
+	// The slicing threshold follows the new offset within its window
+	// (32 chips), well before the next frame's access code.
+	if !r.narrow {
+		r.chf = channelFilter(lockedCutoffHz)
+		r.narrow = true
+	}
 }
 
 func gcd(a, b int) int {
@@ -161,6 +254,7 @@ func gcd(a, b int) int {
 func (r *Receiver) Stats() ReceiverStats {
 	s := r.stats
 	s.Samples = r.samples
+	s.CarrierOffsetHz, s.CarrierLocked = r.afcHz, r.afcLocked
 	for _, f := range r.framers {
 		fs := f.Stats()
 		s.Framer.Syncs += fs.Syncs
@@ -172,9 +266,26 @@ func (r *Receiver) Stats() ReceiverStats {
 	return s
 }
 
+// processBlock bounds how many input samples are mixed with one carrier
+// correction, so a correction learned from a frame applies within a few
+// milliseconds whatever chunk size the caller feeds.
+const processBlock = 8192
+
 // Process feeds IQ samples at the configured rate.
 func (r *Receiver) Process(iq []complex64) {
+	for len(iq) > 0 {
+		n := min(len(iq), processBlock)
+		r.processBlock(iq[:n])
+		iq = iq[n:]
+	}
+}
+
+func (r *Receiver) processBlock(iq []complex64) {
 	r.samples += int64(len(iq))
+	// The correction this block is mixed with: a frame decoded from it
+	// measures its residual offset against this, even if a frame earlier
+	// in the block has already moved the NCO for the next one.
+	r.appliedHz = r.afcHz
 	if r.nco != nil {
 		r.mixBuf = r.nco.Mix(r.mixBuf, iq)
 		iq = r.mixBuf
@@ -182,6 +293,12 @@ func (r *Receiver) Process(iq []complex64) {
 	if r.rs != nil {
 		r.rsBuf = r.rs.Process(r.rsBuf[:0], iq)
 		iq = r.rsBuf
+	}
+	if r.narrow && r.n-r.afcAt > afcHoldSeconds*procRateHz {
+		// No CRC-valid frame for a while: widen the filter again around
+		// the estimate, in case the tuner drifted outside the narrow one.
+		r.chf = channelFilter(channelCutoffHz)
+		r.narrow = false
 	}
 	r.chBuf = r.chf.Process(r.chBuf, iq)
 	for _, x := range r.chBuf {

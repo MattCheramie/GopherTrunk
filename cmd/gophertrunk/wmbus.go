@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -117,10 +118,12 @@ FLAGS:`)
 		defer logFile.Close()
 	}
 	// statusf prints a progress / summary line to stderr and the -log file.
+	// With -json the log gets it as a {"status": …} object, so every line
+	// of the log parses as JSON for a script reading it.
 	statusf := func(line string) {
 		fmt.Fprintln(os.Stderr, line)
 		if logFile != nil {
-			fmt.Fprintln(logFile, line)
+			fmt.Fprintln(logFile, wmbusLogStatusLine(line, *asJSON))
 		}
 	}
 	var stdout io.Writer = os.Stdout
@@ -197,7 +200,7 @@ FLAGS:`)
 		reportSaved()
 		st := rx.Stats()
 		statusf(fmt.Sprintf("wmbus: %.1f s of IQ at %.0f S/s, %d frames (%d CRC-valid), %d access codes",
-			float64(st.Samples)/rateHz, rateHz, st.Framer.Frames, st.Framer.CRCOK, st.Framer.Syncs))
+			float64(st.Samples)/rateHz, rateHz, st.Framer.Frames, st.Framer.CRCOK, st.Framer.Syncs) + wmbusCarrierNote(st))
 		return
 	}
 
@@ -330,9 +333,49 @@ func wmbusStatusLine(seconds float64, st wmbus.ReceiverStats, drops uint64, fina
 	if final {
 		what = "stopped after"
 	}
-	return fmt.Sprintf("wmbus: %s %s: %d frames (%d CRC-valid, %d CRC-failed), %d access codes, %d dropped chunks",
+	s := fmt.Sprintf("wmbus: %s %s: %d frames (%d CRC-valid, %d CRC-failed), %d access codes, %d dropped chunks",
 		what, time.Duration(seconds*float64(time.Second)).Round(time.Second).String(), st.Framer.Frames, st.Framer.CRCOK,
 		st.Framer.Frames-st.Framer.CRCOK, st.Framer.Syncs, drops)
+	return s + wmbusCarrierNote(st)
+}
+
+// wmbusCarrierOffsetNoteHz is the carrier offset from which the progress
+// line suggests a -ppm: 20 ppm at 868.95 MHz.
+const wmbusCarrierOffsetNoteHz = 17_400
+
+// wmbusCarrierNote reports where the receiver found the meters' carrier,
+// once a CRC-valid frame has located it. Every meter heard through one
+// tuner sits at that tuner's frequency error, which the receiver now
+// follows; past about 20 ppm it also says how to centre the tuner, as the
+// S5 + RTL-SDR in issue #1256 heard its meters 50 kHz (58 ppm) low. The
+// sign convention of -ppm is driver-specific (see
+// formatCarrierOffsetWarning), so it quotes the magnitude.
+func wmbusCarrierNote(st wmbus.ReceiverStats) string {
+	if !st.CarrierLocked {
+		return ""
+	}
+	off := st.CarrierOffsetHz
+	ppm := offsetPPM(off, wmbus.ChannelHz)
+	s := fmt.Sprintf(", carrier %+.1f kHz (%+.0f ppm)", off/1000, ppm)
+	if math.Abs(off) >= wmbusCarrierOffsetNoteHz {
+		s += fmt.Sprintf(" — corrected for, but -ppm ±%.0f would centre the tuner (keep the sign that shrinks it)", math.Abs(ppm))
+	}
+	return s
+}
+
+// wmbusLogStatusLine is how a progress line goes into the -log file: as
+// is, or with -json as a {"status": …} object, so a script reading the log
+// can parse every line and tell telegrams (which have "frame") from
+// progress.
+func wmbusLogStatusLine(line string, asJSON bool) string {
+	if !asJSON {
+		return line
+	}
+	b, _ := json.Marshal(struct {
+		Time   string `json:"time"`
+		Status string `json:"status"`
+	}{time.Now().Format("2006-01-02 15:04:05.000"), line})
+	return string(b)
 }
 
 // applyWMBusSidecar fills the -in settings the user did not give from the
@@ -459,24 +502,27 @@ func wmbusFeeder(rx *wmbus.Receiver, saverFor func() *wmbusSnippetSaver) func([]
 
 // wmbusJSON is the -json line for one telegram.
 type wmbusJSON struct {
-	Time         string        `json:"time,omitempty"`
-	Mode         string        `json:"mode"`
-	Format       string        `json:"frame_format"`
-	CRCOK        bool          `json:"crc_ok"`
-	LevelDBFS    float64       `json:"level_dbfs"`
-	Manufacturer string        `json:"manufacturer"`
-	ID           string        `json:"id"`
-	Version      int           `json:"version"`
-	DeviceType   int           `json:"device_type"`
-	Device       string        `json:"device"`
-	CI           int           `json:"ci"`
-	AccessNumber *int          `json:"access_number,omitempty"`
-	Status       *int          `json:"status,omitempty"`
-	SecurityMode *int          `json:"security_mode,omitempty"`
-	Encrypted    bool          `json:"encrypted"`
-	Records      []wmbusRecord `json:"records,omitempty"`
-	Error        string        `json:"error,omitempty"`
-	Frame        string        `json:"frame"`
+	Time      string  `json:"time,omitempty"`
+	Mode      string  `json:"mode"`
+	Format    string  `json:"frame_format"`
+	CRCOK     bool    `json:"crc_ok"`
+	LevelDBFS float64 `json:"level_dbfs"`
+	// CarrierOffsetHz is where the frame's carrier sat relative to
+	// 868.95 MHz (mostly the tuner's own frequency error).
+	CarrierOffsetHz float64       `json:"carrier_offset_hz"`
+	Manufacturer    string        `json:"manufacturer"`
+	ID              string        `json:"id"`
+	Version         int           `json:"version"`
+	DeviceType      int           `json:"device_type"`
+	Device          string        `json:"device"`
+	CI              int           `json:"ci"`
+	AccessNumber    *int          `json:"access_number,omitempty"`
+	Status          *int          `json:"status,omitempty"`
+	SecurityMode    *int          `json:"security_mode,omitempty"`
+	Encrypted       bool          `json:"encrypted"`
+	Records         []wmbusRecord `json:"records,omitempty"`
+	Error           string        `json:"error,omitempty"`
+	Frame           string        `json:"frame"`
 	// CRC block detail, for a frame that failed: how many CRC blocks it
 	// has, which failed (1-based; block 1 is the link header), and the
 	// frame as received with its CRC bytes, so it can be checked offline.
@@ -526,7 +572,7 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 	if asJSON {
 		j := wmbusJSON{
 			Time: ts, Mode: tg.Mode.String(), Format: tg.Format.String(), CRCOK: tg.CRCOK,
-			LevelDBFS: info.LevelDBFS, Manufacturer: tg.Manufacturer, ID: tg.ID,
+			LevelDBFS: info.LevelDBFS, CarrierOffsetHz: math.Round(info.CarrierOffsetHz), Manufacturer: tg.Manufacturer, ID: tg.ID,
 			Version: int(tg.Version), DeviceType: int(tg.DeviceType), Device: tg.DeviceTypeName(),
 			CI: int(tg.AppCI), Encrypted: tg.Encrypted, Frame: hex.EncodeToString(f.Data),
 			CRCBlocks: f.Blocks, CRCFailedBlocks: f.FailedBlocks, HeaderCRCOK: f.HeaderCRCOK(),

@@ -91,15 +91,52 @@ func TestWMBusJSONLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	writeWMBusTelegram(&out, "2026-10-10 12:00:00.000", tg, nil, fr, wmbus.FrameInfo{LevelDBFS: -30}, true)
+	writeWMBusTelegram(&out, "2026-10-10 12:00:00.000", tg, nil, fr, wmbus.FrameInfo{LevelDBFS: -30, CarrierOffsetHz: -50144.6}, true)
 	var j wmbusJSON
 	if err := json.Unmarshal(out.Bytes(), &j); err != nil {
 		t.Fatalf("not one JSON object: %v\n%s", err, out.String())
 	}
 	if j.Manufacturer != "QDS" || j.ID != "78563412" || j.Device != "heat cost allocator" || j.Encrypted ||
 		j.SecurityMode == nil || *j.SecurityMode != 0 || len(j.Records) != 7 ||
-		j.Records[0].Value == nil || *j.Records[0].Value != 127 {
+		j.Records[0].Value == nil || *j.Records[0].Value != 127 || j.CarrierOffsetHz != -50145 {
 		t.Errorf("json %s", out.String())
+	}
+}
+
+// Once a CRC-valid frame has located the meters' carrier, the progress
+// line says where it is, and past 20 ppm how to centre the tuner (the
+// issue #1256 S5 heard its meters 50 kHz low). Before that it says
+// nothing about the carrier.
+func TestWMBusStatusLineReportsCarrier(t *testing.T) {
+	st := wmbus.ReceiverStats{}
+	if s := wmbusStatusLine(30, st, 0, false); strings.Contains(s, "carrier") {
+		t.Errorf("unlocked line mentions the carrier: %s", s)
+	}
+	st.CarrierLocked, st.CarrierOffsetHz = true, -50_145
+	s := wmbusStatusLine(30, st, 0, false)
+	if !strings.Contains(s, "carrier -50.1 kHz (-58 ppm)") || !strings.Contains(s, "-ppm ±58") {
+		t.Errorf("line %s", s)
+	}
+	st.CarrierOffsetHz = 4_000
+	if s := wmbusStatusLine(30, st, 0, false); !strings.Contains(s, "carrier +4.0 kHz (+5 ppm)") || strings.Contains(s, "-ppm") {
+		t.Errorf("small offset: %s", s)
+	}
+}
+
+// With -json every line of the -log file is a JSON object: progress lines
+// go in as {"status": …}, so a script reading the log can parse each line
+// and tell telegrams from progress (issue #1256: a Perl reader).
+func TestWMBusLogStatusLineJSON(t *testing.T) {
+	const line = "wmbus: listening 30s: 2 frames (1 CRC-valid, 1 CRC-failed)"
+	if got := wmbusLogStatusLine(line, false); got != line {
+		t.Errorf("plain: %q", got)
+	}
+	var j struct {
+		Time   string `json:"time"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(wmbusLogStatusLine(line, true)), &j); err != nil || j.Status != line || j.Time == "" {
+		t.Errorf("json: %+v err %v", j, err)
 	}
 }
 

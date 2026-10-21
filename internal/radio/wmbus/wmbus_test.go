@@ -390,3 +390,91 @@ func TestCheckBlocksNamesFailedBlock(t *testing.T) {
 		}
 	}
 }
+
+// A tuner far off frequency: every meter it hears sits at the same offset
+// (issue #1256: an S5 + RTL-SDR heard its meters about 50 kHz low). Once a
+// CRC-valid frame has located the carrier the receiver re-centres on it
+// and narrows its channel filter, so the noisy telegrams after it decode
+// too. Without that the wide filter needed to keep the far FSK tone lets
+// in noise from the other side; this run decoded 16 of 30 noisy telegrams
+// before the carrier tracking, and decodes 28 with it.
+func TestReceiverTracksTunerOffset(t *testing.T) {
+	const (
+		rate = 1_600_000
+		off  = -52_000
+	)
+	r := rand.New(rand.NewSource(1))
+	var iq []complex64
+	var want [][]byte
+	for k := range 31 {
+		data := make([]byte, 50) // L = 49: a 5-block telegram, like the Qundis allocators
+		r.Read(data)
+		data[0], data[1] = 49, 0x44
+		noise := 0.33
+		if k == 0 {
+			noise = 0.05 // one strong telegram to find the carrier on
+		}
+		iq = append(iq, Synthesize(data, SynthOptions{
+			Mode: ModeC1, SampleRateHz: rate, OffsetHz: off,
+			DeviationHz: 45_000, NoiseRMS: noise, Seed: int64(k),
+		})...)
+		want = append(want, data)
+	}
+	got := map[string]bool{}
+	rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OnFrame: func(f Frame, _ FrameInfo) {
+		if f.CRCOK {
+			got[string(f.Data)] = true
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < len(iq); i += 16384 {
+		rx.Process(iq[i:min(i+16384, len(iq))])
+	}
+	rx.Flush()
+	ok := 0
+	for _, d := range want[1:] {
+		if got[string(d)] {
+			ok++
+		}
+	}
+	st := rx.Stats()
+	if !st.CarrierLocked || math.Abs(st.CarrierOffsetHz-off) > 3_000 {
+		t.Errorf("carrier estimate %.0f Hz (locked %v), want %d ± 3000", st.CarrierOffsetHz, st.CarrierLocked, off)
+	}
+	if ok < 24 {
+		t.Errorf("%d of 30 noisy telegrams CRC-valid, want at least 24", ok)
+	}
+	t.Logf("%d of 30 noisy telegrams CRC-valid; carrier %.0f Hz", ok, st.CarrierOffsetHz)
+}
+
+// The frame metadata reports where each frame's carrier sat, whether or
+// not the receiver has corrected for it yet.
+func TestReceiverReportsCarrierOffset(t *testing.T) {
+	const rate = 1_600_000
+	data := mustHex(t, realAirFrames[1].data)
+	for _, off := range []float64{-60_000, 25_000} {
+		iq := Synthesize(data, SynthOptions{Mode: ModeC1, SampleRateHz: rate, OffsetHz: off, DeviationHz: 45_000, NoiseRMS: 0.02})
+		iq = append(iq, iq...) // the second copy is heard after the first has re-centred the receiver
+		var offs []float64
+		rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OnFrame: func(f Frame, info FrameInfo) {
+			if f.CRCOK {
+				offs = append(offs, info.CarrierOffsetHz)
+			}
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rx.Process(iq)
+		rx.Flush()
+		if len(offs) != 2 {
+			t.Fatalf("offset %.0f: %d CRC-valid frames, want 2", off, len(offs))
+		}
+		for i, o := range offs {
+			if math.Abs(o-off) > 3_000 {
+				t.Errorf("offset %.0f: frame %d reported %.0f Hz", off, i+1, o)
+			}
+		}
+	}
+}

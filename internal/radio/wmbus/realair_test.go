@@ -52,8 +52,8 @@ func TestWMBusRealAirCaptures(t *testing.T) {
 	iq := loadCU8(t, path)
 	rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OffsetHz: off, OnFrame: func(f Frame, info FrameInfo) {
 		tg, err := ParseTelegram(f)
-		t.Logf("%s-%s crc=%v t=%.3fs level=%.1fdBFS inv=%v id=%s %s err=%v data=%s raw=%s",
-			f.Mode, f.Format, f.CRCOK, float64(info.Sample)/rate, info.LevelDBFS, info.Inverted, tg.ID, tg.Manufacturer, err, hex.EncodeToString(f.Data), hex.EncodeToString(f.Raw))
+		t.Logf("%s-%s crc=%v carrier=%.0fHz t=%.3fs level=%.1fdBFS inv=%v id=%s %s err=%v data=%s raw=%s",
+			f.Mode, f.Format, f.CRCOK, info.CarrierOffsetHz, float64(info.Sample)/rate, info.LevelDBFS, info.Inverted, tg.ID, tg.Manufacturer, err, hex.EncodeToString(f.Data), hex.EncodeToString(f.Raw))
 	}})
 	if err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -143,14 +144,15 @@ func (s *wmbusSnippetSaver) onFrame(label string, f wmbus.Frame, tg wmbus.Telegr
 		CenterFreqHz: s.centerHz,
 		Format:       siglab.FormatWAV.String(),
 		System: map[string]string{
-			"wmbus_offset_hz": strconv.FormatFloat(s.offsetHz, 'f', -1, 64),
-			"mode":            fmt.Sprintf("%s-%s", tg.Mode, tg.Format),
-			"manufacturer":    tg.Manufacturer,
-			"id":              tg.ID,
-			"device":          tg.DeviceTypeName(),
-			"crc_ok":          strconv.FormatBool(f.CRCOK),
-			"level_dbfs":      strconv.FormatFloat(info.LevelDBFS, 'f', 1, 64),
-			"frame_hex":       hex.EncodeToString(f.Data),
+			"wmbus_offset_hz":   strconv.FormatFloat(s.offsetHz, 'f', -1, 64),
+			"mode":              fmt.Sprintf("%s-%s", tg.Mode, tg.Format),
+			"manufacturer":      tg.Manufacturer,
+			"id":                tg.ID,
+			"device":            tg.DeviceTypeName(),
+			"crc_ok":            strconv.FormatBool(f.CRCOK),
+			"level_dbfs":        strconv.FormatFloat(info.LevelDBFS, 'f', 1, 64),
+			"carrier_offset_hz": strconv.FormatFloat(math.Round(info.CarrierOffsetHz), 'f', 0, 64),
+			"frame_hex":         hex.EncodeToString(f.Data),
 		},
 	}
 	s.pending = append(s.pending, wmbusSnippet{start: start, end: end, base: base, meta: meta})
