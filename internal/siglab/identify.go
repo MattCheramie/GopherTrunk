@@ -338,6 +338,12 @@ func detailEvidence(r *Result) (hits, syncLen, modal int, variant string, fecPas
 	case *ProtocolDetail:
 		if d.Sync != nil {
 			hits, syncLen, modal, variant = d.Sync.WinnerHits, d.Sync.SyncLen, d.Sync.ModalSpacing, d.Sync.WinnerVariant
+			if p := d.Sync.FramePeriod; p > 0 && modal > 0 && modal%p != 0 {
+				// The hits recur, but not at the protocol's frame period:
+				// chance matches of a short sync. Report a spacing below the
+				// sync length so the cadence gate treats them as such.
+				modal = 1
+			}
 		}
 		// Count only cleanly-decoded or CRC-validated frames as FEC evidence
 		// — NOT "corrected". A short FEC like the DMR slot-type Hamming(20,8)
