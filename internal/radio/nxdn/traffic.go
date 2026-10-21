@@ -10,6 +10,20 @@ package nxdn
 // The dibit stream + baseIdx contract matches ControlChannel.Process
 // (continuous stream, monotonic baseIdx).
 type TrafficChannel struct {
+	framer airFramer
+	sink   func(frames []VCHFrame)
+
+	// Frames counts FSW-framed frames, LICHOK those whose LICH parity held.
+	Frames, LICHOK uint64
+}
+
+// airFramer finds the real-air FSW in a dibit stream and hands each frame's
+// 182 post-FSW dibits to onFrame, which descrambles and decodes them and
+// reports whether the frame was good (its LICH parity held). It runs the
+// flywheel every NXDN decoder runs once it has frame lock: a frame whose FSW
+// ends exactly one frame after the last good one is accepted with more symbol
+// errors than a cold search. Shared by the traffic and control channels.
+type airFramer struct {
 	hist      [AirFSWDibits]uint8
 	histN     int
 	histPos   int
@@ -17,14 +31,62 @@ type TrafficChannel struct {
 	frame     []uint8
 	// sinceFrame counts dibits since the last accepted FSW ended, so the
 	// next frame's FSW (ending exactly AirFrameDibits later) can be accepted with more
-	// symbol errors than a cold search: the flywheel every NXDN decoder
-	// runs once it has frame lock.
+	// symbol errors than a cold search.
 	sinceFrame int
 	locked     bool
-	sink       func(frames []VCHFrame)
+	onFrame    func(post []uint8) bool
+}
 
-	// Frames counts FSW-framed frames, LICHOK those whose LICH parity held.
-	Frames, LICHOK uint64
+func (f *airFramer) process(dibits []uint8) {
+	for _, d := range dibits {
+		f.hist[f.histPos] = d
+		f.histPos = (f.histPos + 1) % AirFSWDibits
+		if f.histN < AirFSWDibits {
+			f.histN++
+		}
+		f.sinceFrame++
+		if f.remaining > 0 {
+			f.frame = append(f.frame, d)
+			f.remaining--
+			if f.remaining == 0 {
+				f.locked = f.onFrame(f.frame)
+				f.frame = f.frame[:0]
+			}
+			continue
+		}
+		if f.histN < AirFSWDibits {
+			continue
+		}
+		tol := airFSWColdTolerance
+		if f.locked && f.sinceFrame == AirFrameDibits {
+			tol = airFSWLockTolerance
+		}
+		if f.fswErrors() <= tol {
+			f.remaining = airPostFSWDibits
+			f.frame = f.frame[:0]
+			f.sinceFrame = 0
+		} else if f.sinceFrame > AirFrameDibits {
+			f.locked = false
+		}
+	}
+}
+
+func (f *airFramer) fswErrors() int {
+	errs := 0
+	idx := f.histPos
+	for k := 0; k < AirFSWDibits; k++ {
+		if f.hist[idx] != AirFSW[k] {
+			errs++
+		}
+		idx = (idx + 1) % AirFSWDibits
+	}
+	return errs
+}
+
+func (f *airFramer) reset() {
+	f.histN, f.histPos, f.remaining, f.sinceFrame = 0, 0, 0, 0
+	f.locked = false
+	f.frame = f.frame[:0]
 }
 
 const (
@@ -36,77 +98,30 @@ const (
 // decoded voice frames of each voice frame (never called with an empty
 // slice).
 func NewTrafficChannel(sink func(frames []VCHFrame)) *TrafficChannel {
-	return &TrafficChannel{
-		frame: make([]uint8, 0, airPostFSWDibits),
-		sink:  sink,
-	}
+	t := &TrafficChannel{sink: sink}
+	t.framer = airFramer{frame: make([]uint8, 0, airPostFSWDibits), onFrame: t.handleFrame}
+	return t
 }
 
 // Process consumes a window of raw dibits and returns baseIdx+len(dibits).
 func (t *TrafficChannel) Process(dibits []uint8, baseIdx int) int {
-	for _, d := range dibits {
-		t.hist[t.histPos] = d
-		t.histPos = (t.histPos + 1) % AirFSWDibits
-		if t.histN < AirFSWDibits {
-			t.histN++
-		}
-		t.sinceFrame++
-		if t.remaining > 0 {
-			t.frame = append(t.frame, d)
-			t.remaining--
-			if t.remaining == 0 {
-				t.handleFrame(t.frame)
-				t.frame = t.frame[:0]
-			}
-			continue
-		}
-		if t.histN < AirFSWDibits {
-			continue
-		}
-		tol := airFSWColdTolerance
-		if t.locked && t.sinceFrame == AirFrameDibits {
-			tol = airFSWLockTolerance
-		}
-		if t.fswErrors() <= tol {
-			t.remaining = airPostFSWDibits
-			t.frame = t.frame[:0]
-			t.sinceFrame = 0
-		} else if t.sinceFrame > AirFrameDibits {
-			t.locked = false
-		}
-	}
+	t.framer.process(dibits)
 	return baseIdx + len(dibits)
 }
 
-func (t *TrafficChannel) fswErrors() int {
-	errs := 0
-	idx := t.histPos
-	for k := 0; k < AirFSWDibits; k++ {
-		if t.hist[idx] != AirFSW[k] {
-			errs++
-		}
-		idx = (idx + 1) % AirFSWDibits
-	}
-	return errs
-}
-
-func (t *TrafficChannel) handleFrame(post []uint8) {
+func (t *TrafficChannel) handleFrame(post []uint8) bool {
 	t.Frames++
 	DescrambleAir(post)
 	lich, frames := DecodeAirVoice(post)
-	t.locked = lich.ParityOK
 	if !lich.ParityOK {
-		return
+		return false
 	}
 	t.LICHOK++
 	if len(frames) > 0 && t.sink != nil {
 		t.sink(frames)
 	}
+	return true
 }
 
 // Reset clears the sync and partial-frame state; call on retune.
-func (t *TrafficChannel) Reset() {
-	t.histN, t.histPos, t.remaining, t.sinceFrame = 0, 0, 0, 0
-	t.locked = false
-	t.frame = t.frame[:0]
-}
+func (t *TrafficChannel) Reset() { t.framer.reset() }

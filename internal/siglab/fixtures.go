@@ -1,7 +1,6 @@
 package siglab
 
 import (
-	"encoding/binary"
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
@@ -99,13 +98,14 @@ var fixtures = map[trunking.Protocol]fixture{
 		},
 	},
 	trunking.ProtocolNXDN: {
-		build:       func() []uint8 { return buildNXDNSpecEncodedDibits(20, 0xBEEF, 0x0042) },
+		// Global location: system 0x042, site 0xEEF.
+		build:       func() []uint8 { return buildNXDNAirControlDibits(20, 0x042EEF) },
 		modulate:    func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 10, 8, 0.20, sr, 1800.0) },
 		sampleRate:  48_000,
 		systemKnobs: map[string]string{"nxdn_viterbi_mode": "spec"},
 		expected: Acceptance{
 			Lock:       boolPtr(true),
-			LockFields: map[string]any{"site_id": "0xBEEF", "system_id": "0x0042"},
+			LockFields: map[string]any{"site_id": "0xEEF", "system_id": "0x042"},
 		},
 	},
 	trunking.ProtocolDPMR: {
@@ -329,48 +329,34 @@ func buildDMRConventionalVoiceLCHeaderDibits(repeats int, colorCode uint8, group
 	return out
 }
 
-// buildNXDNSpecEncodedDibits builds an NXDN RCCH outbound control-channel
-// stream (FSW + LICH + spec-encoded CAC SITE_INFO). Lifted from
-// integration_cc_nxdn_test.go.
-func buildNXDNSpecEncodedDibits(repeats int, siteID, systemID uint16) []uint8 {
-	lichInfo := nxdn.AssembleLICH(nxdn.LICH{RFCh: nxdn.RFChControl})
-	lichWire := nxdn.EncodeLICHWire(lichInfo)
-	lichDibits := framing.BitsToDibits(lichWire)
+// buildNXDNAirControlDibits builds an NXDN RCCH outbound control channel on
+// the real air format (nxdn.EncodeAirControlFrame): a run of random dibits,
+// then repeats back-to-back frames whose CAC carries SITE_INFO for loc. The
+// package's older fixture used an invented FSW and CAC coding and an
+// unscrambled CAC no transmitter sends (#1261); the lead-in and trailing
+// filler are pseudo-random, as noise is, so the receiver's carrier tracker
+// sees no fixed symbol mean outside the frames either.
+func buildNXDNAirControlDibits(repeats int, loc nxdn.LocationID) []uint8 {
+	msg := make([]byte, 19)
+	msg[0] = nxdn.AirMsgSiteInfo
+	msg[1], msg[2], msg[3] = byte(loc>>16), byte(loc>>8), byte(loc)
+	_, _, site := loc.Split()
+	frame := nxdn.EncodeAirControlFrame(uint8(site%64), msg)
 
-	var payload [8]byte
-	binary.BigEndian.PutUint16(payload[0:2], 0xAAAA)
-	binary.BigEndian.PutUint16(payload[2:4], siteID)
-	binary.BigEndian.PutUint16(payload[4:6], systemID)
-	l3 := make([]byte, 9)
-	l3[0] = byte(nxdn.RCCHSITEINFO)
-	copy(l3[1:9], payload[:])
-
-	info := make([]byte, nxdn.CACInfoBits)
-	l3Bits := framing.UnpackBitsMSB(l3, 72)
-	copy(info[8:8+72], l3Bits)
-
-	channel := nxdn.EncodeCACChannel(info)
-	cacDibits := framing.BitsToDibits(channel)
-
-	frame := make([]uint8, 0, 8+len(lichDibits)+len(cacDibits))
-	frame = append(frame, nxdn.FSWDibitsOutbound...)
-	frame = append(frame, lichDibits...)
-	frame = append(frame, cacDibits...)
-
-	out := make([]uint8, 0, 300+repeats*(len(frame)+50)+100)
-	for i := 0; i < 300; i++ {
-		out = append(out, uint8(i&3))
+	rng := uint32(1)
+	noise := func(n int) []uint8 {
+		out := make([]uint8, n)
+		for i := range out {
+			rng = rng*1664525 + 1013904223
+			out[i] = uint8(rng >> 30)
+		}
+		return out
 	}
+	out := noise(300)
 	for r := 0; r < repeats; r++ {
 		out = append(out, frame...)
-		for i := 0; i < 50; i++ {
-			out = append(out, uint8(i&3))
-		}
 	}
-	for i := 0; i < 100; i++ {
-		out = append(out, uint8(i&3))
-	}
-	return out
+	return append(out, noise(100)...)
 }
 
 // buildDPMRSiteBroadcastDibits builds a dPMR control-channel stream (FS3 +

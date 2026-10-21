@@ -1368,12 +1368,12 @@ func (p *dmrTier1Pipeline) Close() error           { return nil }
 
 // newNXDNPipeline wires internal/radio/nxdn/receiver into
 // nxdn.ControlChannel.Process. The receiver's DibitSink forwards
-// dibits into the state machine, which detects the outbound 8-dibit
-// FSW, parses the LICH from the next 16 wire bits, and pulls the
-// first 44 dibits of the Info field as raw CAC bits. The CAC FEC
-// layer (K=5 ½-rate Viterbi + interleaver + puncture) is a
-// follow-up; until it ships the adapter will sync on FSW + LICH
-// but typically fail the CAC CRC on real on-air signals.
+// dibits into the state machine, which frames them in the real air
+// format (nxdn/air_cac.go: FSW, scrambled LICH + CAC, Viterbi and
+// CRC) and locks / grants from the CAC's SITE_INFO, SRV_INFO and
+// VCALL_ASSGN messages (#1261). The legacy invented-layout paths the
+// nxdn_viterbi_mode knob selects still run beside it for their own
+// synthetic fixtures; real air never matches them.
 func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := nxdn.NewControlChannel(opts.Bus, opts.Log, opts.FrequencyHz, nxdn.Rate9600)
 	viterbiMode, ok := nxdn.ParseViterbiMode(opts.System.NXDNViterbiMode)
@@ -1415,6 +1415,13 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  deviationHz,
 		EnableAFC:    enableAFC,
+		// The real control channel is PN9-scrambled like a voice frame, so
+		// the pre-discriminator carrier tracker applies here too. On the
+		// #1261 control channel (≈ -650 Hz off and drifting) this pipeline
+		// decoded 0 CAC frames without it. (The voice chain's channel
+		// filter is not needed for that, and on the siglab wideband survey
+		// it turned DMR leakage into a false NXDN guess, so it stays off.)
+		EnableCarrierTracking: true,
 	}
 	if softDecision {
 		// Soft path (nxdn_soft_decision): the receiver derives per-bit LLRs
@@ -1476,11 +1483,17 @@ func (p *nxdnPipeline) Close() error { return nil }
 // the control channel accumulated. No adjacent sites for NXDN.
 func (p *nxdnPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 	t := p.cc.Topology()
-	return &trunking.TopologySnapshot{
-		SystemID:     uint32(t.SystemID),
-		Site:         uint8(t.SiteID),
-		LocationArea: t.LocationID,
+	snap := &trunking.TopologySnapshot{
+		SystemID: t.SystemID,
+		Site:     uint8(t.SiteID),
 	}
+	// A real-air location ID is 24 bits (category + system + site, which
+	// SystemID / Site already carry); only a value that fits is surfaced
+	// as the area rather than a truncated one.
+	if t.LocationID <= 0xFFFF {
+		snap.LocationArea = uint16(t.LocationID)
+	}
+	return snap
 }
 
 // newEDACSPipeline wires internal/radio/edacs/receiver into

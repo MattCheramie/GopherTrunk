@@ -49,6 +49,10 @@ type FECStat struct {
 type detailSpec struct {
 	cardinality int
 	tolerance   int
+	// framePeriod, when set, is the protocol's sync-to-sync distance in
+	// symbols. Identify then credits a sync cadence only when the hits'
+	// modal spacing is a multiple of it (see SyncLandscape.FramePeriod).
+	framePeriod int
 	syncFn      func() []SyncVariant
 	fec         func(stream []uint8, land *SyncLandscape, sys trunking.System) []FECStat
 	notes       string
@@ -82,8 +86,9 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 		cardinality: 4, tolerance: 1,
 		syncFn: func() []SyncVariant {
 			return []SyncVariant{
-				{Name: "outbound", Pattern: append([]uint8(nil), nxdn.FSWDibitsOutbound...)},
-				{Name: "inbound", Pattern: append([]uint8(nil), nxdn.FSWDibitsInbound...)},
+				// The real air FSW (0xCDF59); both directions share it, the
+				// LICH says which.
+				{Name: "fsw", Pattern: append([]uint8(nil), nxdn.AirFSW[:]...)},
 			}
 		},
 		fec: nxdnFEC,
@@ -129,7 +134,10 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 		// only sane correlation (real decode additionally requires the
 		// next frame's sync 76 bits later; the landscape view can't
 		// express that bracket, so expect false hits in the histogram).
-		cardinality: 2, tolerance: 0,
+		// Random 2-FSK matches the 8-bit sync about once per 256 bits,
+		// so the frame period is what tells real frames from chance
+		// (#1261: chance hits 10 bits apart scored 0.29 on random data).
+		cardinality: 2, tolerance: 0, framePeriod: 84,
 		syncFn: func() []SyncVariant { return oneVariant("outbound", motorola.OutboundSyncBits()) },
 		fec:    motorolaOSWFEC,
 	},
@@ -181,6 +189,9 @@ func buildProtocolDetail(p trunking.Protocol, symbols []uint8, isBits bool, sys 
 
 	if spec.syncFn != nil {
 		d.Sync = computeSyncLandscape(symbols, spec.syncFn(), card, spec.tolerance)
+		if d.Sync != nil {
+			d.Sync.FramePeriod = spec.framePeriod
+		}
 		if d.Sync != nil && spec.fec != nil {
 			d.FEC = spec.fec(symbols, d.Sync, sys)
 		}

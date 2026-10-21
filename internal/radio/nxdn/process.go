@@ -25,6 +25,20 @@ type processState struct {
 	// matchScratch is reused across calls so SyncDetector.Process
 	// doesn't allocate fresh slices.
 	matchScratch []Match
+	// air frames the same dibits in the real air format (air_cac.go) and
+	// hands each RCCH frame to ingestAirFrame. The legacy paths above
+	// search for an invented FSW that real air never carries; this is the
+	// path a real control channel locks and grants through.
+	air airFramer
+}
+
+// newProcessState builds the Process adapter state for c.
+func (c *ControlChannel) newProcessState() *processState {
+	return &processState{
+		det:   NewSyncDetector([][]uint8{FSWDibitsOutbound}, 1),
+		frame: make([]uint8, 0, postSyncDibitsViterbi),
+		air:   airFramer{frame: make([]uint8, 0, airPostFSWDibits), onFrame: c.ingestAirFrame},
+	}
 }
 
 // postSyncDibits is the count of dibits the adapter collects after
@@ -81,12 +95,10 @@ const cacViterbiInfoBits = 92
 // dPMR ControlChannel.Process contracts.
 func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	if c.proc == nil {
-		c.proc = &processState{
-			det:   NewSyncDetector([][]uint8{FSWDibitsOutbound}, 1),
-			frame: make([]uint8, 0, postSyncDibitsViterbi),
-		}
+		c.proc = c.newProcessState()
 	}
 	p := c.proc
+	p.air.process(dibits)
 	frameLen := postSyncDibits
 	switch c.viterbiMode {
 	case ViterbiOn:
@@ -143,12 +155,10 @@ func (c *ControlChannel) ProcessSoft(dibits []uint8, soft []float32, baseIdx int
 		return c.Process(dibits, baseIdx)
 	}
 	if c.proc == nil {
-		c.proc = &processState{
-			det:   NewSyncDetector([][]uint8{FSWDibitsOutbound}, 1),
-			frame: make([]uint8, 0, postSyncDibitsViterbi),
-		}
+		c.proc = c.newProcessState()
 	}
 	p := c.proc
+	p.air.process(dibits)
 	frameLen := postSyncDibits
 	switch c.viterbiMode {
 	case ViterbiOn:

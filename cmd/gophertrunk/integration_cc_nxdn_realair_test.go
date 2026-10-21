@@ -215,7 +215,7 @@ func TestDaemonCCDecodesNXDNRealAir(t *testing.T) {
 				t.Errorf("CCLocked payload type = %T, want nxdn.LockState", ev.Payload)
 				continue
 			}
-			if ls.SystemID != wantSystemID {
+			if ls.SystemID != uint32(wantSystemID) {
 				t.Errorf("LockState.SystemID = %#x, want %#x (from metadata expected.system_id)",
 					ls.SystemID, wantSystemID)
 			}

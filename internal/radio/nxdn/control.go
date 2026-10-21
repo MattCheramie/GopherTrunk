@@ -16,7 +16,9 @@ type LockState struct {
 	FrequencyHz uint32
 	BaudRate    BaudRate
 	SiteID      uint16
-	SystemID    uint16
+	// SystemID is the system code; a Local-category location carries 17
+	// bits of it (LocationID.Split).
+	SystemID uint32
 }
 
 // LockedFrequencyHz / LockedNAC make LockState satisfy
@@ -86,6 +88,11 @@ type ControlChannel struct {
 	// polls to gate per-channel power logging (the p25phase2/tier3
 	// DecodedFrames pattern). Atomic so other goroutines sample lock-free.
 	framesDecoded atomic.Uint64
+
+	// ran and siteInfo are the last real-air RAN and SITE_INFO seen, so
+	// the log reports changes instead of every broadcast.
+	ran      uint8
+	siteInfo AirSiteInfo
 }
 
 // DecodedFrames reports the cumulative count of CRC-clean CAC frames the
@@ -224,8 +231,8 @@ func (c *ControlChannel) IngestFrame(lich LICH, cac *CACMessage) {
 	switch cac.Type {
 	case RCCHSITEINFO:
 		s := ParseSiteInfo(cac.Payload)
-		c.topo.applySiteInfo(s.SystemID, s.SiteID, s.LocationID)
-		c.maybeLock(LockState{FrequencyHz: c.freqHz, BaudRate: c.rate, SiteID: s.SiteID, SystemID: s.SystemID})
+		c.topo.applySiteInfo(uint32(s.SystemID), s.SiteID, uint32(s.LocationID))
+		c.maybeLock(LockState{FrequencyHz: c.freqHz, BaudRate: c.rate, SiteID: s.SiteID, SystemID: uint32(s.SystemID)})
 	case RCCHCCH:
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, BaudRate: c.rate})
 	case RCCHVCALLASGN:

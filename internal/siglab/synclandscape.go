@@ -39,6 +39,11 @@ type SyncLandscape struct {
 	// frame interval, so a single dominant spacing means genuine frames while
 	// scattered spacings mean false positives.
 	ModalSpacing int `json:"modal_spacing" yaml:"modal_spacing"`
+	// FramePeriod is the protocol's sync-to-sync distance in symbols when
+	// its detail spec declares one (0 = not declared). A short sync word
+	// collects chance hits in any data; only a modal spacing that is a
+	// multiple of the frame period is evidence of real frames.
+	FramePeriod int `json:"frame_period,omitempty" yaml:"frame_period,omitempty"`
 	// positions holds the clean-hit positions under the winning (variant,
 	// rotation) for downstream FEC re-runs. Not serialized.
 	positions []int
