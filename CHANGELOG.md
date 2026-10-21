@@ -7,16 +7,6 @@ for tagged releases.
 
 ## [Unreleased]
 
-### Added
-- **Continuous conventional FM on a wideband SDR (#1288, phase 1).** A
-  `role: wideband` device takes a `conventional:` list of analog FM / NFM
-  channels (scan-list channel fields, mode fm or nfm). Each gets its own tap,
-  squelch, CTCSS/DCS gate, hangtime and call under its own serial, so
-  overlapping transmissions on several channels record as separate
-  simultaneous calls instead of one scanner dwelling on one channel. They mix
-  with trunked `channels:` on the same dongle and need no trunking system.
-  Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
-
 ### Fixed
 - **wM-Bus follows the tuner's frequency error (#1256).** The reporter's
   S5 + RTL-SDR heard every meter about 50 kHz (58 ppm) low, so the receiver's
@@ -31,6 +21,20 @@ for tagged releases.
   `-json` the progress lines in a `-log` file are JSON objects too
   (`{"status": …}`), so a script can parse every line. `docs/wmbus.md` has a
   Perl example for reading telegrams.
+
+## [v1.3.2] — 2026-10-20
+
+### Added
+- **Continuous conventional FM on a wideband SDR (#1288, phase 1).** A
+  `role: wideband` device takes a `conventional:` list of analog FM / NFM
+  channels (scan-list channel fields, mode fm or nfm). Each gets its own tap,
+  squelch, CTCSS/DCS gate, hangtime and call under its own serial, so
+  overlapping transmissions on several channels record as separate
+  simultaneous calls instead of one scanner dwelling on one channel. They mix
+  with trunked `channels:` on the same dongle and need no trunking system.
+  Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
+
+### Fixed
 - **Go toolchain moved to 1.26.10** for GO-2026-6809: `crypto/x509` now
   refuses known compromised intermediate certificates where the system trust
   store hasn't been updated. An older `go` downloads 1.26.10 automatically.
