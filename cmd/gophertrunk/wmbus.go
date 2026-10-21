@@ -11,7 +11,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -211,7 +210,7 @@ FLAGS:`)
 	if err != nil {
 		rep.Fatal(1, err)
 	}
-	defer dev.Close()
+	defer closeSDRBounded(dev, sdrCloseTimeout, os.Stderr, "wmbus")
 	if err := dev.SetSampleRate(uint32(*rate)); err != nil {
 		rep.Fatal(1, fmt.Errorf("set sample rate: %w", err))
 	}
@@ -230,7 +229,7 @@ FLAGS:`)
 	if err := dev.SetCenterFreq(uint32(*freq)); err != nil {
 		rep.Fatal(1, fmt.Errorf("tune %d Hz: %w", *freq, err))
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := sdrStopContext()
 	defer stop()
 	if *seconds > 0 {
 		var cancel context.CancelFunc

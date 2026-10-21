@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/carriers"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
@@ -26,9 +28,9 @@ func runSpectrum(args []string) {
 	fs := flag.NewFlagSet("spectrum", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	in := fs.String("in", "", "raw IQ input file (required)")
-	format := fs.String("format", "f32", "sample format: u8 | f32")
-	sampleRate := fs.Float64("sample-rate", 2_000_000, "IQ sample rate in Hz")
-	freq := fs.Uint64("freq", 0, "capture centre frequency in Hz (0 ⇒ report carrier offsets from DC only)")
+	format := fs.String("format", "f32", "sample format: u8 | f32 | cs16 (default: the capture's .metadata.json, else f32; wav/flac are detected)")
+	sampleRate := fs.Float64("sample-rate", 2_000_000, "IQ sample rate in Hz (default: the capture's .metadata.json, else 2000000)")
+	freq := fs.Uint64("freq", 0, "capture centre frequency in Hz (default: the capture's .metadata.json; 0 ⇒ report carrier offsets from DC only)")
 	fftSize := fs.Int("fft", 4096, "FFT size for the averaged spectrum (power of two)")
 	thresholdDb := fs.Float64("peak-threshold-db", 10, "minimum dB above the noise floor for a carrier to count")
 	minSpacing := fs.Uint("min-spacing", 12500, "minimum Hz between detected carriers")
@@ -50,10 +52,15 @@ EXAMPLES:
   gophertrunk spectrum -in wide.cfile -format f32 -sample-rate 2000000 \
                       -freq 450500000 -out-format json -out spec.json
 
+Format, rate and centre come from the .metadata.json that 'gophertrunk capture'
+writes beside a capture; flags you give win. wav/flac files carry their own rate.
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)
+	explicit := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
 	resolveVerbose(*verboseFlag, false)
 	rep := newReporter("spectrum")
 
@@ -67,22 +74,13 @@ FLAGS:`)
 	if *fftSize < 8 || *fftSize&(*fftSize-1) != 0 {
 		rep.Fatalf(2, "-fft must be a power of two >= 8")
 	}
-	sampleFormat, err := siglab.ParseSampleFormat(*format)
+	iq, notes, err := loadSpectrumInput(*in, explicit, format, sampleRate, freq)
+	for _, n := range notes {
+		fmt.Fprintln(os.Stderr, n)
+	}
 	if err != nil {
-		rep.Fatal(2, err)
+		rep.Fatal(1, err)
 	}
-
-	raw, err := os.ReadFile(*in)
-	if err != nil {
-		rep.Fatal(1, fmt.Errorf("read %s: %w", *in, err))
-	}
-	dec, bytesPerSample := sampleFormat.Decoder()
-	pairs := len(raw) / bytesPerSample
-	if pairs == 0 {
-		rep.Fatalf(1, "%s: no samples", *in)
-	}
-	iq := make([]complex64, pairs)
-	dec(raw[:pairs*bytesPerSample], iq)
 
 	report := buildSpectrumReport(iq, *sampleRate, uint32(*freq), *fftSize, float32(*thresholdDb), uint32(*minSpacing))
 
@@ -111,6 +109,85 @@ FLAGS:`)
 	default:
 		rep.Fatalf(2, "-out-format must be text|json|csv")
 	}
+}
+
+// loadSpectrumInput reads a capture for `spectrum`. Settings the user did not
+// give come from the capture's .metadata.json: a headerless file carries no
+// format or rate, and the f32 default read the #1256 reporter's u8 capture as
+// floats — every bin NaN, 153 NaN "carriers", rate 2 MS/s instead of 1.6.
+// wav/flac containers are detected from their content and carry their rate.
+// A file whose samples are not all finite numbers is refused: that is never
+// real IQ, only the wrong -format.
+func loadSpectrumInput(in string, explicit map[string]bool, format *string, rate *float64, freq *uint64) ([]complex64, []string, error) {
+	var notes []string
+	if path := siglab.DiscoverMetadata(in); path != "" {
+		m, err := siglab.ReadMetadata(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		var used []string
+		if f := strings.ToLower(m.Format); !explicit["format"] && (f == "u8" || f == "cs16" || f == "f32") {
+			*format = f
+			used = append(used, f)
+		}
+		if !explicit["sample-rate"] && m.SampleRateHz > 0 {
+			*rate = m.SampleRateHz
+			used = append(used, fmt.Sprintf("%.0f S/s", m.SampleRateHz))
+		}
+		if !explicit["freq"] && m.CenterFreqHz != 0 {
+			*freq = uint64(m.CenterFreqHz)
+			used = append(used, fmt.Sprintf("centre %.4f MHz", float64(m.CenterFreqHz)/1e6))
+		}
+		if len(used) > 0 {
+			notes = append(notes, fmt.Sprintf("spectrum: %s from %s", strings.Join(used, ", "), path))
+		}
+	}
+
+	f, err := os.Open(in)
+	if err != nil {
+		return nil, notes, err
+	}
+	head := make([]byte, 64)
+	n, _ := io.ReadFull(f, head)
+	f.Close()
+	var iq []complex64
+	if _, isContainer := siglab.SniffContainer(head[:n]); isContainer {
+		var r uint32
+		if iq, r, err = siglab.DecodeContainerFile(in); err != nil {
+			return nil, notes, err
+		}
+		if r > 0 {
+			*rate = float64(r)
+		}
+	} else {
+		sf, err := siglab.ParseSampleFormat(*format)
+		if err != nil {
+			return nil, notes, err
+		}
+		raw, err := os.ReadFile(in)
+		if err != nil {
+			return nil, notes, fmt.Errorf("read %s: %w", in, err)
+		}
+		dec, bytesPerSample := sf.Decoder()
+		pairs := len(raw) / bytesPerSample
+		iq = make([]complex64, pairs)
+		dec(raw[:pairs*bytesPerSample], iq)
+	}
+	if len(iq) == 0 {
+		return nil, notes, fmt.Errorf("%s: no samples", in)
+	}
+	bad := 0
+	for _, v := range iq {
+		re, im := float64(real(v)), float64(imag(v))
+		if math.IsNaN(re) || math.IsNaN(im) || math.IsInf(re, 0) || math.IsInf(im, 0) {
+			bad++
+		}
+	}
+	if bad > 0 {
+		return nil, notes, fmt.Errorf("%s: %d of %d samples are not finite numbers when read as %s, so that is not this file's format; "+
+			"give the right one (-format u8 for an RTL-SDR .cu8/.raw from `gophertrunk capture -format u8`)", in, bad, len(iq), *format)
+	}
+	return iq, notes, nil
 }
 
 // spectrumCarrier is one detected carrier in the report.

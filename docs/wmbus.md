@@ -90,6 +90,12 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 - `-log FILE` appends every telegram line and progress line to FILE as it
   happens. It survives Ctrl-C and a closed terminal; prefer it to `| tee`,
   which Ctrl-C kills along with GopherTrunk (or use `| tee -i`).
+- Ctrl-C, `kill` / `pkill gophertrunk` (SIGTERM) and a closed terminal all
+  stop a live run the same way, with its summary. If the SDR does not close
+  within 5 s (a USB transfer stuck on a phone) it says so and exits anyway.
+  On Termux under `su`, the terminal's Ctrl-C can end `su` without reaching
+  GopherTrunk; stop it from a root shell with `pkill gophertrunk`, or give
+  `-seconds`.
 - `-status 30s` (the default) prints a progress line that often; `0` turns
   it off. `gophertrunk help wmbus` lists every flag.
 
@@ -151,11 +157,21 @@ gophertrunk capture -freq 868950000 -sample-rate 1024000 -seconds 60 -format fla
 store rates above 1,048,575 S/s, hence 1.024 MS/s for it.
 
 To look at a capture rather than decode it, `gophertrunk spectrum -in
-meters.cu8 -format u8 -sample-rate 1600000 -freq 868950000` prints its
-averaged spectrum and the carriers in it. GopherTrunk has no waterfall for a
-whole capture file; [inspectrum](https://github.com/miek/inspectrum) opens
-`.cu8` files directly (give it the sample rate) and shows each telegram as a
-burst on a waterfall.
+meters.cu8` prints its averaged spectrum and the carriers in it. It reads the
+format, sample rate and centre from the capture's `.metadata.json` (flags you
+give win); without one, give `-format u8 -sample-rate 1600000 -freq
+868950000`. A file read in the wrong format is refused rather than printed as
+NaN. Each carrier line is its offset from the centre (and its frequency, when
+the centre is known), its peak level in dBFS and how far it stands above the
+noise floor (SNR). A wM-Bus capture is mostly noise between telegrams, so
+expect few carriers in the average; meters show up only if they sent often.
+
+GopherTrunk has no waterfall for a whole capture file;
+[inspectrum](https://github.com/miek/inspectrum) shows each telegram as a
+burst. inspectrum picks the sample format from the file **extension**, and
+reads `.raw` / `.bin` as 32-bit float: a u8 capture with those names shows as
+one solid red block. Name (or link) it `.cu8`, then set the sample rate in its
+side panel.
 
 ## Saving telegrams to share
 
