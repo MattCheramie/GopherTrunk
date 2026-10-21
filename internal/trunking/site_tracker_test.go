@@ -138,7 +138,13 @@ func TestSiteTrackerDedupesAndUpdates(t *testing.T) {
 	bus.Publish(events.Event{Kind: events.KindSiteUpdate, Payload: SiteUpdate{System: "MMR", RFSSID: 2, SiteID: 9, ControlChannelHz: 423012500}})
 	bus.Publish(events.Event{Kind: events.KindSiteUpdate, Payload: SiteUpdate{System: "MMR", RFSSID: 1, SiteID: 1, ControlChannelHz: 420112500}})
 
-	waitFor(t, func() bool { return tr.Len() == 2 })
+	// Wait for the refresh itself, not just two entries: Len() reaches 2 as
+	// soon as the second update is observed, which can be before the third
+	// (the refresh) is, and the snapshot then shows the stale frequency.
+	waitFor(t, func() bool {
+		snap := tr.Snapshot()
+		return len(snap) == 2 && snap[0].ControlChannelHz == 420112500
+	})
 	snap := tr.Snapshot()
 	if len(snap) != 2 {
 		t.Fatalf("want 2 sites, got %d: %+v", len(snap), snap)

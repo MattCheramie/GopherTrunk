@@ -45,9 +45,9 @@ func (r Record) String() string {
 	q := r.Quantity
 	if q == "" {
 		q = fmt.Sprintf("VIF 0x%02X", r.VIF)
-		if len(r.VIFE) > 0 {
-			q += fmt.Sprintf(" VIFE %X", r.VIFE)
-		}
+	}
+	if (r.Quantity == "" || r.VIF&0x7F == 0x7F) && len(r.VIFE) > 0 {
+		q += fmt.Sprintf(" VIFE %X", r.VIFE)
 	}
 	b.WriteString(q)
 	if r.Function != "instantaneous" {
@@ -235,6 +235,8 @@ func decodeValue(r *Record, plainUnit string) {
 		r.Quantity = "enhanced identification"
 	case v == 0x7C:
 		r.Quantity, r.Unit = "value", plainUnit
+	case v == 0x7F: // its meaning is the manufacturer's; the VIFE says which
+		r.Quantity = "manufacturer-specific"
 	}
 	if timeUnit != "" {
 		r.Unit = timeUnit
@@ -318,6 +320,14 @@ func decodeVariable(r *Record) {
 	l, d := r.Raw[0], r.Raw[1:]
 	switch {
 	case l < 0xC0: // ASCII, transmitted last character first
+		// Manufacturer-specific records (VIF 0xFF from Qundis heat cost
+		// allocators, #1256) use this LVAR range for binary data; printed as
+		// text it was control characters and broken UTF-8. Anything that is
+		// not printable ASCII is shown as hex, in transmitted order.
+		if !printableASCII(d) {
+			r.Text = fmt.Sprintf("%X", d)
+			return
+		}
 		s := make([]byte, len(d))
 		for i := range d {
 			s[i] = d[len(d)-1-i]
@@ -335,6 +345,15 @@ func decodeVariable(r *Record) {
 			r.Value, r.HasValue = v, true
 		}
 	}
+}
+
+func printableASCII(b []byte) bool {
+	for _, c := range b {
+		if c < 0x20 || c > 0x7E {
+			return false
+		}
+	}
+	return true
 }
 
 func padTo8(d []byte) []byte {

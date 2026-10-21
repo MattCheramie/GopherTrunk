@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -147,7 +146,7 @@ FLAGS:`)
 	if err != nil {
 		rep.Fatal(1, err)
 	}
-	defer dev.Close()
+	defer closeSDRBounded(dev, sdrCloseTimeout, os.Stderr, "capture")
 
 	if err := dev.SetSampleRate(uint32(*sampleRate)); err != nil {
 		rep.Fatal(1, fmt.Errorf("set sample rate: %w", err))
@@ -173,7 +172,7 @@ FLAGS:`)
 	}
 
 	// Ctrl-C ends the capture early but keeps whatever was written.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := sdrStopContext()
 	defer stop()
 
 	// Count IQ chunks the driver drops while this capture runs. A dropped

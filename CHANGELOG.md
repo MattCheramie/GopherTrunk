@@ -18,6 +18,25 @@ for tagged releases.
   Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
 
 ### Fixed
+- **Go toolchain moved to 1.26.10** for GO-2026-6809: `crypto/x509` now
+  refuses known compromised intermediate certificates where the system trust
+  store hasn't been updated. An older `go` downloads 1.26.10 automatically.
+- **`gophertrunk spectrum` reads the capture's `.metadata.json` (#1256).** It
+  defaulted to f32 at 2 MS/s and ignored the sidecar, so a u8 1.6 MS/s capture
+  printed `rms=NaN` and 153 NaN "carriers". Format, rate and centre now come
+  from the sidecar unless given as flags, wav/flac files are read from their
+  container, and a file whose samples are not finite numbers in the chosen
+  format is refused with a pointer to `-format u8`.
+- **wM-Bus manufacturer-specific records print as hex (#1256).** Qundis heat
+  cost allocators send binary data in a VIF 0xFF record that is marked as
+  text; it printed as control characters and broken UTF-8. Non-printable
+  variable-length data now prints as hex, and the record reads
+  `manufacturer-specific VIFE 5F …`.
+- **`capture`, `power` and `wmbus` stop on SIGTERM and SIGHUP, and don't hang
+  closing the SDR (#1256).** `pkill gophertrunk` and a closed terminal now stop
+  a run like Ctrl-C does, with its summary, and a close stuck in a USB transfer
+  gives up after 5 s instead of leaving the process alive holding the dongle.
+  Not yet confirmed on the reporter's phone.
 - **Trunked NXDN control channels lock on real air (#1261).** The control
   channel searched for a frame sync word and CAC coding that no NXDN
   transmitter sends, so a real control channel never locked or granted. It now

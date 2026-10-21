@@ -6,12 +6,13 @@ go 1.26.0
 // clean: Go 1.25 is out of support and the October 2026 stdlib advisories
 // (GO-2026-6603..6617: net/http HTTP/1 + HTTP/2 desync, HPACK race and flow
 // control, Range/MIME header limits, crypto/tls ECH) are fixed only in
-// 1.26.9 / 1.27.2. golang.org/x/net v0.60.0 (the same advisories' x/net
-// half) requires go 1.26, hence the go directive above. The toolchain
-// directive auto-downloads 1.26.9 on a build host running an older Go;
+// 1.26.9 / 1.27.2, and GO-2026-6809 (crypto/x509 intermediate-certificate
+// denylist) only in 1.26.10 / 1.27.3. golang.org/x/net v0.60.0 (the October
+// advisories' x/net half) requires go 1.26, hence the go directive above. The
+// toolchain directive auto-downloads 1.26.10 on a build host running an older Go;
 // CI's setup-go is pinned to the same version so the toolchain download
 // doesn't run at every CI step.
-toolchain go1.26.9
+toolchain go1.26.10
 
 require gopkg.in/yaml.v3 v3.0.1
 
