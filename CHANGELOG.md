@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.2] — 2026-10-21
+
 ### Added
 - **Continuous conventional FM on a wideband SDR (#1288, phase 1).** A
   `role: wideband` device takes a `conventional:` list of analog FM / NFM
