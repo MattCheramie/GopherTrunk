@@ -18,6 +18,19 @@ for tagged releases.
   Not yet: AM / digital modes on this path, pre-roll, Scanner panel listing.
 
 ### Fixed
+- **wM-Bus follows the tuner's frequency error (#1256).** The reporter's
+  S5 + RTL-SDR heard every meter about 50 kHz (58 ppm) low, so the receiver's
+  wide channel filter, needed to keep the far FSK tone, let in noise from the
+  other side of the band. A CRC-valid telegram now re-centres the receiver on
+  its carrier and narrows the filter around it; later CRC-valid telegrams
+  refine the estimate, and two minutes without one widens the filter again.
+  On the reporter's 156 saved walk-test telegrams: 128 CRC-valid, up from 97
+  (74 on v1.3.1, before the mid-chip clock). `-json` lines carry
+  `carrier_offset_hz`, the progress line shows the carrier once it is found
+  (with a `-ppm` hint past 20 ppm), saved snippets record it, and with
+  `-json` the progress lines in a `-log` file are JSON objects too
+  (`{"status": …}`), so a script can parse every line. `docs/wmbus.md` has a
+  Perl example for reading telegrams.
 - **Go toolchain moved to 1.26.10** for GO-2026-6809: `crypto/x509` now
   refuses known compromised intermediate certificates where the system trust
   store hasn't been updated. An older `go` downloads 1.26.10 automatically.

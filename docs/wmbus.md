@@ -68,7 +68,8 @@ values. Here, storage 1 is the reading at the last set day. A capture file
 prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 
 - `-json` prints one JSON object per telegram instead. Its `frame` field is
-  the telegram's raw bytes in hex.
+  the telegram's raw bytes in hex. See
+  [Reading telegrams from a script](#reading-telegrams-from-a-script).
 - `-all` also prints frames whose CRC failed, with the CRC block that
   failed:
 
@@ -103,7 +104,7 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 a live run can be quiet for a long time. The progress line shows it is alive:
 
 ```
-wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0 dropped chunks
+wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0 dropped chunks, carrier -50.1 kHz (-58 ppm)
 ```
 
 - *Access codes* are sync words. They also appear by chance in noise, so a
@@ -115,9 +116,22 @@ wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0
   first time it happens. On a slow phone, lower `-rate`, or record with
   `capture` and decode the file afterwards, which has no real-time limit.
 
+- *Carrier* appears once a telegram has decoded: it is where the meters'
+  signal sits relative to 868.95 MHz. Every meter heard through one dongle
+  shows the same offset, so this is mostly the dongle's own frequency error.
+
 **Tuning.** An RTL-SDR's crystal can be tens of ppm off, which is tens of
-kHz at 868 MHz. The decoder tolerates about ±50 kHz, so `-ppm` is rarely
-needed. If nothing decodes near a meter, try `-ppm` and a fixed `-gain`.
+kHz at 868 MHz (issue #1256: an S5's dongle heard every meter about 50 kHz,
+58 ppm, low). The decoder hears a carrier up to about ±120 kHz off. Once a
+telegram decodes with a valid CRC it re-centres on that telegram's carrier
+and narrows its channel filter to it, which keeps out noise from the rest of
+the band: on that S5's saved telegrams it decoded 128 of 156 instead of 97.
+It refines the estimate with every CRC-valid telegram after that, and
+widens the filter again after two minutes without one in case the dongle
+has drifted. So `-ppm` is rarely needed. When the offset is over 20 ppm, the
+progress line suggests a `-ppm` value that would centre the tuner; the sign
+convention is the driver's, so try both signs and keep the one that shrinks
+the offset. If nothing decodes near a meter, try `-ppm` and a fixed `-gain`.
 
 **Gain.** `-gain` (on `wmbus` and `capture`) takes tenths of a dB: `-gain 200`
 is 20 dB, `-gain 0` the tuner's minimum, and `auto` lets the tuner's AGC
@@ -126,6 +140,52 @@ around `-gain 200` and step down while `capture` reports clipping; step up
 only if telegrams are weak (the `dBFS` level on each line). With an external
 preamplifier in front of the dongle, start low (`-gain 0` to `-gain 100`):
 the preamplifier already supplies the gain, and too much clips the ADC.
+
+## Reading telegrams from a script
+
+`-json` writes one JSON object per line to standard output, one per
+telegram, and nothing else: progress lines go to standard error. Pipe it
+into the script:
+
+```
+gophertrunk wmbus -json | perl meters.pl
+```
+
+Each object carries `time`, `mode`, `crc_ok`, `level_dbfs`,
+`carrier_offset_hz`, `manufacturer`, `id`, `device`, `encrypted`, `frame`
+(the telegram in hex) and `records`, one per reading, with `quantity`,
+`storage`, `value` (a number) or `text` (a date, or hex for data GopherTrunk
+does not decode) and `unit` where they apply. A minimal Perl reader, using
+only the core `JSON::PP` module:
+
+```perl
+#!/usr/bin/perl
+use strict;
+use warnings;
+use JSON::PP;
+
+$| = 1;
+while (my $line = <STDIN>) {
+    my $t = eval { decode_json($line) } or next;
+    next if exists $t->{status};   # a progress line (from a -json -log file)
+    next unless $t->{crc_ok};      # with -all, CRC-failed frames come through too
+    for my $r (@{ $t->{records} || [] }) {
+        my $v = $r->{value} // $r->{text};   # a number, or text such as a date
+        next unless defined $v;
+        printf "%s %s %s %s storage=%d %s %s\n",
+            $t->{time}, $t->{manufacturer}, $t->{id}, $r->{quantity},
+            $r->{storage} // 0, $v, $r->{unit} // '';
+        # ...or insert into your database here (DBI).
+    }
+}
+```
+
+To keep a file and read it as well, use `-json -log meters.json`. With
+`-json`, the progress lines in the log are JSON too
+(`{"time": …, "status": "wmbus: listening …"}`), so every line of the file
+parses; skip the ones with a `status` key, as the example does. A script
+can follow the file with `tail -F meters.json | perl meters.pl` while
+GopherTrunk runs, or read it afterwards.
 
 ## Decoding a capture
 
@@ -218,6 +278,9 @@ The decoder was checked against two independent decoders:
 - **wmbusmeters.** Unencrypted telegrams from its test set decode to the
   same meter IDs and readings its drivers report.
 
-It has not yet been run on air by a GopherTrunk user (issue #1256). If you
-try it near meters, a capture with the decoder's output is welcome on that
-issue.
+On air (issue #1256, 20 Oct 2026), a Samsung S5 with an RTL-SDR walking
+past a block of flats decoded Qundis heat cost allocators and Diehl water
+meters. Its 156 saved telegrams are the yield check for receiver changes
+(`TestWMBusRealAirSnippets`): 74 decoded with a valid CRC on v1.3.1, 97
+with the mid-chip clock, and 128 with the carrier tracking. If you try it
+near meters, a capture with the decoder's output is welcome on that issue.

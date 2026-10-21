@@ -1204,6 +1204,18 @@ confirmation before any close-as-completed.
   `EnableCarrierTracking` (0 CAC frames without it at the capture's −650 Hz) but NOT the channel
   filter: on the siglab wideband survey it turned DMR leakage into a false NXDN 0.43 carrier.
   VCALL_ASSGN is reference-pinned only (the capture is idle); a capture with a call on it is the gate.
+- **wM-Bus (#1256): the field's CRC failures were a TUNER OFFSET + a too-wide filter, after the
+  clock-slip fix.** The reporter's 156 `-save-frames` snippets (S5 + RTL-SDR, `-gain 0`, Qundis HCAs +
+  Diehl water meters) are the yield check: `GT_WMBUS_SNIPPETS=<dir> go test ./internal/radio/wmbus -run
+  RealAirSnippets -v` ("live" = one receiver over all snippets in time order, as the run heard them).
+  74 CRC-valid on v1.3.1 → 97 with the mid-chip clock (f5448d9, missed v1.3.1) → 128 with carrier
+  tracking. Every meter sat ~−50 kHz (58 ppm, the dongle's error), so the 170 kHz filter that keeps the
+  far tone admitted noise from +170 kHz; the receiver now learns the offset from CRC-valid frames (the
+  frozen slicing threshold IS the preamble's carrier) and narrows to 100 kHz around it. The per-frame
+  residual must be measured against the correction the BLOCK WAS MIXED WITH (`appliedHz`) — a retune
+  mid-chunk otherwise doubles the next frame's estimate (`TestReceiverReportsCarrierOffset`). Don't
+  trust a spectral centroid for an FSK carrier (read −62 kHz here; the decode optimum is flat at
+  −50..−60). Their gain0 capture uses ~3 bits of the u8 ADC; the gain20 one clips (0.1 % at the rails).
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the
