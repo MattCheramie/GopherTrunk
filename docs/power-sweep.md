@@ -48,8 +48,10 @@ date, time, Hz low, Hz high, Hz step, samples, dB, dB, ...
 - **Hz high:** `Hz low + (number of values) × Hz step`.
 - **Hz step:** the bin width. It is the requested bin size rounded down to
   `sample rate / FFT size`, where the FFT size is a power of two.
-- **samples:** IQ samples averaged for this hop. On a CPU too slow to FFT
-  every sample (see below) it is less than `interval ÷ hops × rate`.
+- **samples:** IQ samples averaged for this hop. A CPU that keeps up
+  averages about `(interval ÷ hops − settle) × rate`: the samples real time
+  delivers after the retune settle (50 ms on a local dongle, 250 ms over
+  rtl_tcp). On a CPU too slow to FFT every sample (see below) it is lower.
 - **dB:** averaged power per bin in **uncalibrated dBFS**. A carrier's
   power reads 1.8–3.2 dB low here (Hann window), so compare levels with
   each other, not against an absolute reference.
@@ -84,7 +86,7 @@ your dongle runs that rate without dropping samples.
 | Flag | Default | Meaning |
 |---|---|---|
 | `-f lower:upper:bin` | (required) | Range and bin size, with `k` / `M` / `G` suffixes. |
-| `-i` | `10s` | Integration interval. One sweep starts every interval, and each hop integrates `interval ÷ hops` of samples. A bare number is seconds. |
+| `-i` | `10s` | Integration interval. One sweep starts every interval, and each hop integrates `interval ÷ hops` of it, less the retune settle. A bare number is seconds. |
 | `-e` | (none) | Stop after this long. It is checked between sweeps, so a sweep is never cut short: `-i 30 -e 5m` gives exactly 10 complete sweeps. Without it, sweeps run until Ctrl-C. |
 | `-1` | off | Run one sweep, then exit. |
 | `-out` | stdout | CSV path. A trailing positional file name also works, as with rtl_power. |
@@ -121,8 +123,9 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
   gets its share of the interval. If the FFT can't keep up with the sample
   rate, as on older phones, the hop stops at that time limit with whatever
   it averaged, so sweeps still start every `-i`. `power` says so once on
-  stderr, and the `samples` column shows how many each hop used. A lower
-  `-rate` (for example `1024000`) needs less CPU but takes more hops. Since
+  stderr when a sweep averages under 90 % of what real time delivered, and
+  the `samples` column shows how many each hop used. A lower `-rate` (for
+  example `1024000`) needs less CPU but takes more hops. Since
   the FFT was rewritten for speed (about 3–4× faster, measured on 32-bit
   and 64-bit x86), a 2.4 MS/s dongle should keep up on most phones; the
   note on stderr tells you if yours does not.
