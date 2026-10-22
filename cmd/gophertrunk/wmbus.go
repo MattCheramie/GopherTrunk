@@ -333,9 +333,13 @@ func wmbusStatusLine(seconds float64, st wmbus.ReceiverStats, drops uint64, fina
 	if final {
 		what = "stopped after"
 	}
-	s := fmt.Sprintf("wmbus: %s %s: %d frames (%d CRC-valid, %d CRC-failed), %d access codes, %d dropped chunks",
+	repaired := ""
+	if st.Framer.Repaired > 0 {
+		repaired = fmt.Sprintf(" of which %d repaired", st.Framer.Repaired)
+	}
+	s := fmt.Sprintf("wmbus: %s %s: %d frames (%d CRC-valid%s, %d CRC-failed), %d access codes, %d dropped chunks",
 		what, time.Duration(seconds*float64(time.Second)).Round(time.Second).String(), st.Framer.Frames, st.Framer.CRCOK,
-		st.Framer.Frames-st.Framer.CRCOK, st.Framer.Syncs, drops)
+		repaired, st.Framer.Frames-st.Framer.CRCOK, st.Framer.Syncs, drops)
 	return s + wmbusCarrierNote(st)
 }
 
@@ -530,6 +534,9 @@ type wmbusJSON struct {
 	CRCFailedBlocks []int  `json:"crc_failed_blocks,omitempty"`
 	HeaderCRCOK     bool   `json:"header_crc_ok"`
 	Raw             string `json:"raw,omitempty"`
+	// CorrectedBits is how many bits a soft-decision repair flipped to make
+	// the frame's CRC blocks pass (omitted when none).
+	CorrectedBits int `json:"corrected_bits,omitempty"`
 }
 
 type wmbusRecord struct {
@@ -576,6 +583,7 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 			Version: int(tg.Version), DeviceType: int(tg.DeviceType), Device: tg.DeviceTypeName(),
 			CI: int(tg.AppCI), Encrypted: tg.Encrypted, Frame: hex.EncodeToString(f.Data),
 			CRCBlocks: f.Blocks, CRCFailedBlocks: f.FailedBlocks, HeaderCRCOK: f.HeaderCRCOK(),
+			CorrectedBits: f.CorrectedBits,
 		}
 		if !f.CRCOK {
 			j.Raw = hex.EncodeToString(f.Raw)
@@ -627,6 +635,11 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 	}
 	if tg.HasTPL && !tg.Encrypted && tg.Status != 0 {
 		fmt.Fprintf(&b, "  status %02X", tg.Status)
+	}
+	if f.CRCOK && f.CorrectedBits == 1 {
+		b.WriteString("  (CRC repaired: 1 bit)")
+	} else if f.CRCOK && f.CorrectedBits > 1 {
+		fmt.Fprintf(&b, "  (CRC repaired: %d bits)", f.CorrectedBits)
 	}
 	fmt.Fprintln(w, b.String())
 	for _, r := range tg.Records {

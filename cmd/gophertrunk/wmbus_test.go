@@ -103,6 +103,38 @@ func TestWMBusJSONLine(t *testing.T) {
 	}
 }
 
+// A telegram that passed only after a CRC repair says so on its line, in
+// its JSON and in the progress counts, so a script can skip it if a reading
+// must never be wrong (issue #1256). A clean one says nothing.
+func TestWMBusRepairedTelegramIsMarked(t *testing.T) {
+	data, _ := hex.DecodeString(wmbusQcaloric)
+	for _, bits := range []int{0, 1, 2} {
+		fr := wmbus.Frame{Mode: wmbus.ModeC1, Format: wmbus.FormatA, Data: data, CRCOK: true, CorrectedBits: bits}
+		tg, err := wmbus.ParseTelegram(fr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var text, js bytes.Buffer
+		writeWMBusTelegram(&text, "", tg, nil, fr, wmbus.FrameInfo{}, false)
+		writeWMBusTelegram(&js, "", tg, nil, fr, wmbus.FrameInfo{}, true)
+		var j wmbusJSON
+		if err := json.Unmarshal(js.Bytes(), &j); err != nil {
+			t.Fatal(err)
+		}
+		marked := strings.Contains(text.String(), "CRC repaired")
+		if marked != (bits > 0) || j.CorrectedBits != bits || strings.Contains(js.String(), "corrected_bits") != (bits > 0) {
+			t.Errorf("%d bits: text %q json %s", bits, text.String(), js.String())
+		}
+		if bits == 2 && !strings.Contains(text.String(), "(CRC repaired: 2 bits)") {
+			t.Errorf("text %q", text.String())
+		}
+	}
+	st := wmbus.ReceiverStats{Framer: wmbus.FramerStats{Frames: 14, CRCOK: 12, Repaired: 2}}
+	if s := wmbusStatusLine(30, st, 0, false); !strings.Contains(s, "14 frames (12 CRC-valid of which 2 repaired, 2 CRC-failed)") {
+		t.Errorf("status %s", s)
+	}
+}
+
 // Once a CRC-valid frame has located the meters' carrier, the progress
 // line says where it is, and past 20 ppm how to centre the tuner (the
 // issue #1256 S5 heard its meters 50 kHz low). Before that it says
