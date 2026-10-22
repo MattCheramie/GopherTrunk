@@ -46,6 +46,11 @@ type Frame struct {
 	// when CRCOK). Block 1 holds the link header.
 	Blocks       int
 	FailedBlocks []int
+	// CorrectedBits is how many bits a soft-decision repair flipped to make
+	// blocks pass their CRC (see repairBlocks), already applied to Raw and
+	// Data. A frame can still fail on another block it could not repair
+	// (CRCOK false). Only C mode frames fed with PushSoft are repaired.
+	CorrectedBits int
 }
 
 // HeaderCRCOK reports whether the block holding the link header (L, C, M,
@@ -72,6 +77,7 @@ type FramerStats struct {
 	CRCOK       uint64 // of which every block CRC passed
 	CodingError uint64 // T mode frames abandoned on an invalid 3-of-6 word
 	BadLength   uint64 // frames abandoned on an impossible L-field
+	Repaired    uint64 // CRCOK frames that needed a soft-decision repair
 }
 
 // Framer turns a chip stream into frames. It is not safe for concurrent
@@ -86,6 +92,13 @@ type Framer struct {
 	need   int
 	buf    []byte
 	stats  FramerStats
+
+	// C mode soft decisions: rel holds one reliability per data bit of buf
+	// (MSB first, as on air), byteRel the current byte's. soft reports
+	// that every bit of the frame came with one (PushSoft, not Push).
+	rel     []float32
+	byteRel [8]float32
+	soft    bool
 }
 
 // NewFramer returns a Framer that calls onFrame for every complete frame,
@@ -105,8 +118,22 @@ func (f *Framer) Reset() {
 	f.state, f.shift, f.chips, f.buf = stHunt, 0, 0, f.buf[:0]
 }
 
-// Push feeds one chip (0 or 1).
-func (f *Framer) Push(chip uint8) {
+// Push feeds one chip (0 or 1) without soft information, so a C mode frame
+// that fails its CRC is delivered as received.
+func (f *Framer) Push(chip uint8) { f.PushSoft(chip, -1) }
+
+// PushSoft feeds one chip with its reliability: how far the decision sat
+// from the slicing threshold (any non-negative scale; only the order
+// matters). A C mode block that fails its CRC is then repaired when
+// flipping one or two of its least reliable bits makes it pass (see
+// repairBlocks). A negative reliability means none is known.
+func (f *Framer) PushSoft(chip uint8, reliability float32) {
+	if f.state == stCData {
+		f.byteRel[f.chips] = reliability
+		if reliability < 0 {
+			f.soft = false
+		}
+	}
 	f.shift = f.shift<<1 | uint32(chip&1)
 	f.chips++
 	switch f.state {
@@ -140,12 +167,14 @@ func (f *Framer) Push(chip uint8) {
 			return
 		}
 		f.state, f.chips, f.need, f.buf = stCData, 0, 0, f.buf[:0]
+		f.rel, f.soft = f.rel[:0], true
 	case stCData:
 		if f.chips < 8 {
 			return
 		}
 		b := byte(f.shift)
 		f.chips = 0
+		f.rel = append(f.rel, f.byteRel[:]...)
 		if f.need == 0 {
 			f.beginData(ModeC1, f.format, b)
 			return
@@ -194,8 +223,18 @@ func (f *Framer) appendByte(m Mode, b byte) {
 	}
 	raw := append([]byte(nil), f.buf...)
 	format := f.format
+	soft := m == ModeC1 && f.soft && len(f.rel) == 8*len(raw)
 	f.Reset()
 	data, blocks, failed, err := checkBlocks(raw, format)
+	corrected := 0
+	if err == nil && len(failed) > 0 && soft {
+		if corrected = repairBlocks(raw, f.rel, format, failed); corrected > 0 {
+			data, blocks, failed, err = checkBlocks(raw, format)
+			if len(failed) == 0 {
+				f.stats.Repaired++
+			}
+		}
+	}
 	ok := len(failed) == 0
 	if err != nil {
 		f.stats.BadLength++
@@ -206,7 +245,7 @@ func (f *Framer) appendByte(m Mode, b byte) {
 		f.stats.CRCOK++
 	}
 	if f.onFrame != nil {
-		f.onFrame(Frame{Mode: m, Format: format, Raw: raw, Data: data, CRCOK: ok, Blocks: blocks, FailedBlocks: failed})
+		f.onFrame(Frame{Mode: m, Format: format, Raw: raw, Data: data, CRCOK: ok, Blocks: blocks, FailedBlocks: failed, CorrectedBits: corrected})
 	}
 }
 

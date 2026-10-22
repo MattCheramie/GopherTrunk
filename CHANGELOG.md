@@ -17,6 +17,18 @@ for tagged releases.
   of that. On a CPU that keeps up, the CSV `samples` column now reads about
   `(interval ÷ hops − settle) × rate`.
 
+### Improved
+- **wM-Bus decodes more weak telegrams (#1256).** At low signal levels the
+  FM discriminator throws "click" spikes that flip a chip with a large
+  margin; the receiver now limits each sample to 64 kHz either side of the
+  carrier. A C mode CRC block that then fails on one or two bits is
+  repaired by flipping its least reliable bits, and the telegram is accepted
+  only if the CRC passes (the CRC detects every error of up to five bits in a
+  block, so the repair is unique). Repaired telegrams print
+  `(CRC repaired: N bits)`, carry `corrected_bits` in `-json`, and are
+  counted in the progress line. On the reporter's 156 saved telegrams:
+  128 → 133 CRC-valid (97 → 110 decoded one at a time).
+
 ## [v1.3.3] — 2026-10-22
 
 ### Fixed

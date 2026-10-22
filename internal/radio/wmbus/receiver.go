@@ -50,6 +50,16 @@ const (
 	// total, plus the centre) its decision averages: with the half-chip
 	// boxcar that makes about a chip-long matched filter.
 	decideSpan = 4
+	// clickClipRad bounds each discriminator sample to this far either
+	// side of the carrier: 64 kHz at the processing rate, above the C mode
+	// (±45 kHz) and nominal T mode (±50 kHz) deviation. On the issue #1256
+	// walk (156 saved telegrams) it is what makes the soft CRC repair work:
+	// without it the bit errors were mostly the decisions with the LARGEST
+	// margin (clicks), so ranking bits by margin found nothing; with it
+	// the CRC-valid count went from 129 to 133, and to 110 from 99 for
+	// telegrams decoded without a carrier estimate from earlier ones. The
+	// gain plateaus from 0.4 to 0.6 rad.
+	clickClipRad = 2 * math.Pi * 64_000 / procRateHz
 )
 
 // interpAt linearly interpolates h at fractional index x, clamped to h.
@@ -262,6 +272,7 @@ func (r *Receiver) Stats() ReceiverStats {
 		s.Framer.CRCOK += fs.CRCOK
 		s.Framer.CodingError += fs.CodingError
 		s.Framer.BadLength += fs.BadLength
+		s.Framer.Repaired += fs.Repaired
 	}
 	return s
 }
@@ -329,6 +340,13 @@ func (r *Receiver) sample(x complex64) {
 	d := x * complex(real(r.prev), -imag(r.prev))
 	r.prev = x
 	f := math.Atan2(float64(imag(d)), float64(real(d)))
+	// Clip FM clicks: at low SNR the phase can wrap within a sample and
+	// the discriminator throws a spike of up to ±π, several times the
+	// signal's own swing, which outweighs the rest of a chip's average and
+	// flips it with a large margin. Clipped around the carrier (the
+	// slicing threshold), a clean sample keeps its sign, and a spike counts
+	// no more than a strong chip.
+	f = min(max(f, r.thr-clickClipRad), r.thr+clickClipRad)
 	r.smSum += f - r.smooth[r.smIdx]
 	r.smooth[r.smIdx] = f
 	r.smIdx = (r.smIdx + 1) % smoothLen
@@ -420,8 +438,11 @@ func (r *Receiver) decide(limit float64) {
 		if x > 0 {
 			chip = 1
 		}
-		r.framers[0].Push(chip)
-		r.framers[1].Push(chip ^ 1)
+		// |x| is how far the decision sat from the threshold: the
+		// reliability a C mode CRC repair ranks bits by.
+		rel := float32(math.Abs(x))
+		r.framers[0].PushSoft(chip, rel)
+		r.framers[1].PushSoft(chip^1, rel)
 		r.tSample += r.spc
 	}
 }

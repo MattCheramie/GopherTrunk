@@ -116,6 +116,8 @@ wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0
   first time it happens. On a slow phone, lower `-rate`, or record with
   `capture` and decode the file afterwards, which has no real-time limit.
 
+- *Repaired* (`12 CRC-valid of which 2 repaired`) counts telegrams that
+  passed only after a CRC repair; see **Weak telegrams** below.
 - *Carrier* appears once a telegram has decoded: it is where the meters'
   signal sits relative to 868.95 MHz. Every meter heard through one dongle
   shows the same offset, so this is mostly the dongle's own frequency error.
@@ -133,6 +135,19 @@ progress line suggests a `-ppm` value that would centre the tuner; the sign
 convention is the driver's, so try both signs and keep the one that shrinks
 the offset. If nothing decodes near a meter, try `-ppm` and a fixed `-gain`.
 
+**Weak telegrams.** At the edge of reception a telegram can fail its CRC
+on one or two bits. For C mode telegrams the decoder then tries flipping the
+bits it was least sure of, at most two per CRC block, and accepts the
+telegram only if the block's CRC then passes. The CRC catches every error of
+up to five bits in a block, so a real one- or two-bit error has exactly one
+repair. A telegram repaired this way prints `(CRC repaired: N bits)`, and
+its JSON carries `corrected_bits`. A badly damaged block passes this way
+about once in 500 tries, so skip telegrams with `corrected_bits` if a reading
+must never be wrong. The decoder also limits the clicks that FM reception
+produces at low signal levels, which are what made the strongest-looking
+bits of a weak telegram the wrong ones. On the S5's saved telegrams the two
+together took the CRC-valid count from 128 to 133.
+
 **Gain.** `-gain` (on `wmbus` and `capture`) takes tenths of a dB: `-gain 200`
 is 20 dB, `-gain 0` the tuner's minimum, and `auto` lets the tuner's AGC
 choose, which a strong nearby transmitter can drive into clipping. Start
@@ -140,6 +155,8 @@ around `-gain 200` and step down while `capture` reports clipping; step up
 only if telegrams are weak (the `dBFS` level on each line). With an external
 preamplifier in front of the dongle, start low (`-gain 0` to `-gain 100`):
 the preamplifier already supplies the gain, and too much clips the ADC.
+Without one, `-gain 0` is usually too little: on the S5's walk at `-gain 0`
+the strongest telegrams reached only about 7 of the converter's 127 steps.
 
 ## Reading telegrams from a script
 
@@ -153,7 +170,8 @@ gophertrunk wmbus -json | perl meters.pl
 
 Each object carries `time`, `mode`, `crc_ok`, `level_dbfs`,
 `carrier_offset_hz`, `manufacturer`, `id`, `device`, `encrypted`, `frame`
-(the telegram in hex) and `records`, one per reading, with `quantity`,
+(the telegram in hex), `corrected_bits` (only when the CRC repair flipped
+bits; see **Weak telegrams**) and `records`, one per reading, with `quantity`,
 `storage`, `value` (a number) or `text` (a date, or hex for data GopherTrunk
 does not decode) and `unit` where they apply. A minimal Perl reader, using
 only the core `JSON::PP` module:
@@ -282,5 +300,7 @@ On air (issue #1256, 20 Oct 2026), a Samsung S5 with an RTL-SDR walking
 past a block of flats decoded Qundis heat cost allocators and Diehl water
 meters. Its 156 saved telegrams are the yield check for receiver changes
 (`TestWMBusRealAirSnippets`): 74 decoded with a valid CRC on v1.3.1, 97
-with the mid-chip clock, and 128 with the carrier tracking. If you try it
+with the mid-chip clock, 128 with the carrier tracking, and 133 with the
+FM click limit and the CRC repair (decoded one at a time, without a carrier
+estimate carried over from earlier telegrams: 97, then 110). If you try it
 near meters, a capture with the decoder's output is welcome on that issue.

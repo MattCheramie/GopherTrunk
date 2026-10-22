@@ -155,6 +155,9 @@ func (s *wmbusSnippetSaver) onFrame(label string, f wmbus.Frame, tg wmbus.Telegr
 			"frame_hex":         hex.EncodeToString(f.Data),
 		},
 	}
+	if f.CorrectedBits > 0 {
+		meta.System["corrected_bits"] = strconv.Itoa(f.CorrectedBits)
+	}
 	s.pending = append(s.pending, wmbusSnippet{start: start, end: end, base: base, meta: meta})
 }
 
