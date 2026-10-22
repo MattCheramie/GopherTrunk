@@ -123,8 +123,9 @@ confirmation before any close-as-completed.
   `phase1.IdentifierUpdateFromSeed`, which also sets `AccessTDMA` so the grant routes Phase 2).
   The Phase 2 voice chain now records only the granted logical channel (see the air-format note
   below). A grant naming a never-announced channel ID now
-  WARNs (rate-limited) instead of dropping at DEBUG. "Motorola opcode 0x05/0x09 named, not
-  field-decoded" lines are broadcasts with constant payloads, not grants. On-air-gated.
+  WARNs (rate-limited) instead of dropping at DEBUG. "p25: motorola opcode (site broadcast,
+  not a call grant …)" lines (0x05/0x09; once "named, not field-decoded", which #1273's reporter
+  read as undecoded grants) are broadcasts with constant payloads, logged once per distinct payload. On-air-gated.
 - **The P25 Phase 2 TDMA framing in `superframe.go` / `isch.go` / `voice.go` was a WORKING MODEL that
   matched no reference — the voice path now runs on the real air format (`phase2/airframe.go`, #1273),
   and the PN44 scrambler had its taps mirrored.** Real outbound air (OP25 `p25p2_tdma.cc`/`p25p2_sync.cc`/

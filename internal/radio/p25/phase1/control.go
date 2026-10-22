@@ -195,6 +195,10 @@ type ControlChannel struct {
 	// goroutine (the sole writer of decode state), so no lock is needed
 	// — unlike stats, this is never read off-goroutine. Issue #376 (CBD).
 	diagSeen map[uint32]int
+	// probeSeen holds the distinct (MFID, opcode, payload) triples
+	// logVendorProbe has already logged; same single-writer rule as
+	// diagSeen. Bounded by maxVendorProbeSamples per opcode.
+	probeSeen map[[10]byte]struct{}
 }
 
 // CCStats is the snapshot Stats() returns. All counters are
@@ -1964,29 +1968,49 @@ func (c *ControlChannel) logStatusBroadcast(t TSBK, nac uint16) {
 	c.log.Info("p25: status broadcast payload", attrs...)
 }
 
-// maxVendorProbeSamples bounds how many raw payloads logVendorProbe dumps per
-// distinct (MFID,opcode). Larger than maxUnhandledSamples because these are
+// maxVendorProbeSamples bounds how many distinct raw payloads logVendorProbe
+// dumps per (MFID,opcode). Larger than maxUnhandledSamples because these are
 // deliberate reverse-engineering targets — a correlation set of a few dozen
 // frames (paired with the site's known neighbours / secondary CCs from a
 // reference decoder) is what reverses the field layout.
 const maxVendorProbeSamples = 64
 
 // logVendorProbe records a candidate-but-undecoded vendor TSBK for offline
-// analysis: it dumps the full raw payload at Info (up to maxVendorProbeSamples
-// per opcode) and does nothing else — no parse, no event, no map mutation — so
-// an unconfirmed layout cannot leak phantom data into the system map. See
-// docs/specs/p25-motorola-opcodes.md for the reverse-engineering status.
+// analysis: it logs each distinct raw payload once at Info (up to
+// maxVendorProbeSamples per opcode) and does nothing else — no parse, no
+// event, no map mutation — so an unconfirmed layout cannot leak phantom data
+// into the system map. See docs/specs/p25-motorola-opcodes.md for the
+// reverse-engineering status.
+//
+// The message says what these are because the old wording ("named, not
+// field-decoded") read as "here are your grants, undecoded" to an operator
+// whose calls were not being followed (issue #1273): a Motorola site sends
+// 0x05/0x09 continuously with a handful of constant payloads, while its call
+// grants are the standard TSBKs, logged as "p25: grant" at Debug. A repeat of
+// an already-logged payload adds nothing to a correlation set, so only new
+// payloads are logged.
 func (c *ControlChannel) logVendorProbe(t TSBK, nac uint16) {
+	var pk [10]byte
+	pk[0], pk[1] = t.MFID, uint8(t.Opcode)
+	copy(pk[2:], t.Payload[:])
+	if _, dup := c.probeSeen[pk]; dup {
+		return
+	}
 	key := diagVendorProbe | uint32(t.MFID)<<8 | uint32(t.Opcode)
 	n := c.diagSeen[key]
-	c.diagSeen[key] = n + 1
-	if n < maxVendorProbeSamples {
-		c.log.Info("p25: motorola opcode (named, not field-decoded — collecting for analysis)",
-			"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
-			"name", motorolaProbeLabel(t.Opcode),
-			"lb", t.LB, "payload", fmt.Sprintf("%x", t.Payload[:]),
-			"nac", nac, "sample", n+1, "max", maxVendorProbeSamples)
+	if n >= maxVendorProbeSamples {
+		return
 	}
+	c.diagSeen[key] = n + 1
+	if c.probeSeen == nil {
+		c.probeSeen = map[[10]byte]struct{}{}
+	}
+	c.probeSeen[pk] = struct{}{}
+	c.log.Info("p25: motorola opcode (site broadcast, not a call grant — new payload logged for analysis)",
+		"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
+		"name", motorolaProbeLabel(t.Opcode),
+		"lb", t.LB, "payload", fmt.Sprintf("%x", t.Payload[:]),
+		"nac", nac, "distinct", n+1, "max", maxVendorProbeSamples)
 }
 
 // motorolaProbeLabel maps the probed Motorola opcodes to SDRtrunk's names so

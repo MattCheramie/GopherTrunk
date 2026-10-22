@@ -55,8 +55,12 @@ Findings:
 
 So this repo mirrors the reference decoders: **name** the two opcodes
 (`MOTOROLA_OSP_TRAFFIC_CHANNEL_ID` / `MOTOROLA_OSP_SYSTEM_LOADING`) and **capture**
-their raw payload (`logVendorProbe`, up to 64 samples/opcode at INFO — grep
-`motorola opcode`), but field-decode nothing.
+their raw payload (`logVendorProbe`: each distinct payload once at INFO, up to
+64 per opcode — grep `motorola opcode`), but field-decode nothing. The line
+says "site broadcast, not a call grant": the old "named, not field-decoded"
+wording led an operator to take them for undecoded grants (issue #1273). A
+site sends them continuously with a handful of constant payloads; its call
+grants are the standard TSBKs, logged as `p25: grant` at Debug.
 
 ## If they're ever worth field-decoding
 

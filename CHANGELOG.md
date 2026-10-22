@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **The Motorola 0x05 / 0x09 log line no longer looks like undecoded call
+  grants (#1273).** A Motorola-built P25 site sends these opcodes
+  continuously with a few constant payloads, and GopherTrunk logged
+  `MOTOROLA_OSP_TRAFFIC_CHANNEL_ID … named, not field-decoded` at INFO up to
+  64 times per opcode, which read as "here are your grants, undecoded". The
+  call grants are standard TSBKs (logged as `p25: grant` at Debug). The line
+  now says `site broadcast, not a call grant` and appears once per distinct
+  payload.
 - **`power` no longer says the CPU can't keep up when it can (#1230).** Each
   hop asked for its whole `interval ÷ hops` share of samples but had only
   that share less the 50 ms retune settle (250 ms over rtl_tcp) to collect
