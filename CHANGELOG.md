@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.3] — 2026-10-22
+
 ### Fixed
 - **Live audio plays at the right speed whatever the sample-rate settings
   (#1242).** Decoded digital voice is always 8 kHz and analog FM runs at
