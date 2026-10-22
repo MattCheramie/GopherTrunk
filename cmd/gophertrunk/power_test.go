@@ -293,6 +293,64 @@ func TestRunPowerSweepsKeepsIntervalWhenFFTIsSlow(t *testing.T) {
 	}
 }
 
+// settlingSource keeps up with real time (each Capture advances the fake clock
+// by n/rate) and, like streamIQSource, spends settle of wall time discarding
+// IQ on every retune.
+type settlingSource struct {
+	rate   float64
+	settle time.Duration
+	clock  *time.Time
+}
+
+func (s *settlingSource) Tune(uint32) error { *s.clock = s.clock.Add(s.settle); return nil }
+func (s *settlingSource) Capture(_ context.Context, n int) ([]complex64, error) {
+	*s.clock = s.clock.Add(time.Duration(float64(n) / s.rate * float64(time.Second)))
+	return make([]complex64, n), nil
+}
+
+// TestRunPowerSweepsNoSlowCPUNoteWhenRealTime is the 22 Oct #1230 PC run:
+// `power -f 88M:108M:10k -i 30` on a desktop printed "the FFT can't keep up
+// … averaged 98% of its samples". Each hop asked for its whole 2.5 s share of
+// samples but had only 2.5 s less the 50 ms retune settle to collect them, so
+// no hop could fill the request on any CPU. Fail-first: the old request size
+// prints the note here; a CPU that keeps up must not, and each hop must
+// integrate what real time delivered after the settle.
+func TestRunPowerSweepsNoSlowCPUNoteWhenRealTime(t *testing.T) {
+	for _, settle := range []time.Duration{powerSettleLocal, powerSettleRTLTCP} {
+		const rate = 2_400_000
+		r, _ := powersweep.ParseRange("88M:108M:10k")
+		plan, err := powersweep.NewPlan(r, rate, 0.25)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clock := time.Date(2026, 10, 22, 16, 25, 8, 0, time.UTC)
+		now := func() time.Time { return clock }
+		src := &settlingSource{rate: rate, settle: settle, clock: &clock}
+		every := 30 * time.Second
+		integ := powerIntegration(every, rate, len(plan.Hops), settle)
+		var out, notes bytes.Buffer
+		w := bufio.NewWriter(&out)
+		err = runPowerSweeps(context.Background(), src, plan, integ,
+			powerSchedule{every: every, single: true}, w, &notes, now, sleepCtx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if notes.Len() != 0 {
+			t.Fatalf("settle %v: real-time CPU got the slow-CPU note:\n%s", settle, notes.String())
+		}
+		realTime := (every/time.Duration(len(plan.Hops)) - settle).Seconds() * rate
+		for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			n, err := strconv.Atoi(strings.Split(line, ", ")[5])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if float64(n) < 0.99*realTime || float64(n) > realTime+float64(plan.FFTSize) {
+				t.Fatalf("settle %v: hop integrated %d samples, want about %.0f (real time after the settle)", settle, n, realTime)
+			}
+		}
+	}
+}
+
 // TestPowerIQSourceDropsQuietly: `power` expects to fall behind real time on a
 // slow CPU and reports it once itself, so its IQ stream must not log the
 // per-second "hunt: decode falling behind" WARN the reporter saw flood their

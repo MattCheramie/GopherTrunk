@@ -234,23 +234,39 @@ func newPowerIQSource(ctx context.Context, dev sdr.Device, rate uint32, settle t
 	return src, nil
 }
 
-// powerIntegration splits one sweep interval across its hops: each hop asks
-// for its share of the interval's samples, and may spend its share of the
-// interval (less the retune settle) doing so. On a CPU that cannot FFT every
-// sample in real time the budget ends the hop first, so sweeps keep to the
-// interval instead of stretching (#1230).
+// powerIntegration splits one sweep interval across its hops: each hop may
+// spend its share of the interval, less the retune settle, integrating, and
+// asks for the samples real time delivers in that time. On a CPU that cannot
+// FFT every sample in real time the budget ends the hop first, so sweeps keep
+// to the interval instead of stretching (#1230).
+//
+// The request must leave the settle out too. It used to ask for the whole
+// share (every/hops × rate) while the settle had already spent 50 ms of it, so
+// no hop could ever fill it: an idle PC integrated 98 % (rtl_tcp's 250 ms
+// settle: 90 %) and runPowerSweeps blamed the CPU.
 func powerIntegration(every time.Duration, rate uint32, hops int, settle time.Duration) powersweep.Integration {
-	in := powersweep.Integration{Samples: int(every.Seconds() * float64(rate) / float64(hops))}
-	if b := every/time.Duration(hops) - settle; b > 0 {
+	window := every / time.Duration(hops)
+	in := powersweep.Integration{Samples: int(window.Seconds() * float64(rate))}
+	if b := window - settle; b > 0 {
 		in.Budget = b
+		in.Samples = int(b.Seconds() * float64(rate))
 	}
 	return in
 }
 
+// powerSlowCPUFraction is how much of its request a sweep must integrate
+// before runPowerSweeps calls the CPU too slow. A hop that keeps up with real
+// time still ends a little short of it: the budget is checked once per capture
+// block (~27 ms at 2.4 MS/s) and the clock starts after a retune that costs a
+// few ms of USB or network I/O. A CPU that genuinely falls behind (the #1230
+// phones FFT at about half real time) lands far below.
+const powerSlowCPUFraction = 0.9
+
 // runPowerSweeps runs sweeps on sched, writing (and flushing) each one's rows
 // as it completes so a long log can be tailed and a Ctrl-C loses at most the
-// sweep in progress. The first sweep that integrates fewer samples than asked
-// (the FFT could not keep up, see powerIntegration) prints one note to notes.
+// sweep in progress. The first sweep that integrates clearly fewer samples than
+// asked (under powerSlowCPUFraction: the FFT could not keep up, see
+// powerIntegration) prints one note to notes.
 func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.Plan, in powersweep.Integration,
 	sched powerSchedule, w *bufio.Writer, notes io.Writer, now func() time.Time, sleep func(context.Context, time.Duration) error) error {
 	if in.Now == nil {
@@ -265,10 +281,10 @@ func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.
 			return err
 		}
 		if !noted && notes != nil {
-			if got, want := sweepSamples(rows), len(rows)*in.Samples; got < want {
+			if got, want := sweepSamples(rows), len(rows)*in.Samples; float64(got) < powerSlowCPUFraction*float64(want) {
 				noted = true
 				fmt.Fprintf(notes, "power: note — the FFT can't keep up with %.0f S/s on this CPU, so each hop averaged "+
-					"%.0f%% of its samples to keep sweeps on the -i schedule. The CSV's samples column has each hop's "+
+					"%.0f%% of the samples real time delivers, to keep sweeps on the -i schedule. The CSV's samples column has each hop's "+
 					"count. A lower -rate (e.g. 1024000) needs less CPU.\n",
 					plan.SampleRateHz, 100*float64(got)/float64(want))
 			}
