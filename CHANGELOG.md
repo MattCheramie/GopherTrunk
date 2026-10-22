@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`power` no longer says the CPU can't keep up when it can (#1230).** Each
+  hop asked for its whole `interval ÷ hops` share of samples but had only
+  that share less the 50 ms retune settle (250 ms over rtl_tcp) to collect
+  them, so every hop stopped at ~98 % (rtl_tcp: ~90 %) and the note blamed
+  the CPU, even on an idle PC. Each hop now asks for what real time delivers
+  after the settle, and the note appears only when a sweep gets under 90 %
+  of that. On a CPU that keeps up, the CSV `samples` column now reads about
+  `(interval ÷ hops − settle) × rate`.
+
+## [v1.3.3] — 2026-10-22
+
+### Fixed
 - **Live audio plays at the right speed whatever the sample-rate settings
   (#1242).** Decoded digital voice is always 8 kHz and analog FM runs at
   `recordings.sample_rate`, but every live consumer assumed one rate. With
