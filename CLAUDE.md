@@ -1204,6 +1204,17 @@ confirmation before any close-as-completed.
   `EnableCarrierTracking` (0 CAC frames without it at the capture's −650 Hz) but NOT the channel
   filter: on the siglab wideband survey it turned DMR leakage into a false NXDN 0.43 carrier.
   VCALL_ASSGN is reference-pinned only (the capture is idle); a capture with a call on it is the gate.
+- **Two PCM rates reach the live paths, and nothing used to convert between them (#1242, 21 Oct).**
+  Decoded digital voice is ALWAYS 8 kHz (vocoder contract; the recorder already forces digital files to
+  8 kHz, #356), analog FM is at `recordings.sample_rate`. The web stream's WAV header reads the player rate
+  (`audio.sample_rate`, else recordings), gRPC labelled a hard 8000, tone-out was built at recordings rate
+  and fed the 8 kHz tap. `cmd/gophertrunk/live_rate.go` (`liveRatesFor` + `wireLiveSinks` + per-serial
+  `rateSink`) converts each feed to its consumer's rate; default 8000 everywhere is pass-through (no
+  resampler object). Old wiring at 48000: a 1 kHz digital tone came out at 5997 Hz on the stream
+  (`TestLiveSinksDeliverEachConsumerItsRate`). The reporter's "recordings.sample_rate 8000 → 0 fixed the
+  sped-up FLAC" CANNOT be the setting (digital FLAC is 8 kHz in STREAMINFO and every frame at any setting,
+  `TestRecorderForcesVocoderNativeRateFLAC`); their own log put a `host_drops=3873` overrun right before the
+  bad audio — read IQ loss before believing a config "fix" (the `narrowband_filter` lesson again).
 - **NXDN trunked voice IS ON-AIR VERIFIED (#1261, 21 Oct): lock, grant follow, Rdio upload with TG/RID,
   on the reporter's 10-channel 453 MHz system; NXDN48/96 conventional survives drift.** Their next blocker
   was CONFIG, not DSP: the TUI panicked opening `nxdn_band_plan`'s linear/table mode — `configtui.resolve`

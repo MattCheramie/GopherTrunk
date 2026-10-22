@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -181,6 +182,21 @@ func TestManager_StartRunsAndMapsSystem(t *testing.T) {
 	bus := events.NewBus(256)
 	sub := bus.Subscribe()
 	defer sub.Close()
+	// Read the bus while the run is live: finish() flips the state BEFORE it
+	// publishes hunt.done, so a non-blocking drain after Running clears can
+	// beat the publish (CI: "no hunt.done event observed"), and an unread
+	// subscription could also drop events once its buffer fills.
+	var sawProgress, sawDone atomic.Bool
+	go func() {
+		for ev := range sub.C {
+			switch ev.Kind {
+			case events.KindHuntLiveProgress:
+				sawProgress.Store(true)
+			case events.KindHuntLiveDone:
+				sawDone.Store(true)
+			}
+		}
+	}()
 
 	src, dwell := p25Source(t)
 	mgr, err := NewManager(ManagerOptions{
@@ -224,25 +240,15 @@ func TestManager_StartRunsAndMapsSystem(t *testing.T) {
 	}
 
 	// Bus carried progress + done events.
-	var sawProgress, sawDone bool
-	for {
-		select {
-		case ev := <-sub.C:
-			switch ev.Kind {
-			case events.KindHuntLiveProgress:
-				sawProgress = true
-			case events.KindHuntLiveDone:
-				sawDone = true
-			}
-		default:
-			if !sawProgress {
-				t.Error("no hunt.progress event observed")
-			}
-			if !sawDone {
-				t.Error("no hunt.done event observed")
-			}
-			return
-		}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && !(sawProgress.Load() && sawDone.Load()) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !sawProgress.Load() {
+		t.Error("no hunt.progress event observed")
+	}
+	if !sawDone.Load() {
+		t.Error("no hunt.done event observed")
 	}
 }
 

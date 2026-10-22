@@ -179,7 +179,8 @@ storage:
 
 recordings:
   dir: "../recordings"
-  sample_rate: 8000
+  sample_rate: 8000          # analog (FM/AM) recordings only: digital voice (P25, DMR,
+                             # NXDN, …) is always recorded at the vocoder's 8 kHz
   # format: flac             # wav (default, 16-bit mono PCM) | flac (lossless,
   #                          #   ~half the size for speech; web playback, loudness
   #                          #   normalization and MP3 uploads all read it the same)
@@ -1555,7 +1556,8 @@ audio:
                        # libasound2 entirely (direct kernel ioctl on
                        # /dev/snd/pcmC*D*p — useful for distroless /
                        # Alpine containers without libasound2.so.2)
-  sample_rate: 8000    # must match recordings.sample_rate
+  sample_rate: 8000    # host speaker + live stream rate; 0 = recordings.sample_rate.
+                       # Live PCM is resampled into it, so any 4000..48000 works.
   buffer_ms: 80        # playback queue depth; higher = more jitter-tolerant
   volume: 0.8          # 0..1 software gain
   muted: false

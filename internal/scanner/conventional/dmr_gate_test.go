@@ -203,7 +203,14 @@ func runDMRChannel(t *testing.T, iq []complex64) *fakeEngine {
 	const freq = 442_387_500
 	tuner := &fakeTuner{}
 	eng := &fakeEngine{}
-	src := &fakeIQ{chunks: map[uint32][][]complex64{freq: chunked(iq, 16384)}, tuner: tuner}
+	// Trailing silence, more chunks than fakeIQ's 8-deep channel holds: once
+	// the queue is empty every signal chunk has been through the scanner,
+	// not merely handed to its channel.
+	chunks := chunked(iq, 16384)
+	for range 16 {
+		chunks = append(chunks, make([]complex64, 16384))
+	}
+	src := &fakeIQ{chunks: map[uint32][][]complex64{freq: chunks}, tuner: tuner}
 	s, err := New(Options{
 		Tuner: tuner, IQ: src, Engine: eng, Recorder: fakeRecorder{},
 		DeviceSerial: "CONV-DMR-GATE",
@@ -212,6 +219,14 @@ func runDMRChannel(t *testing.T, iq []complex64) *fakeEngine {
 			SquelchDbFS: -50, Hangtime: 300 * time.Millisecond,
 		}},
 		SampleRateHz: amTestRate,
+		// The scan window is wall-clock, and every window that expires
+		// re-tunes and resets the call gate. Under -race on a loaded runner
+		// the gate runs far slower than real time, so a production-length
+		// window covered only a few chunks of stream and the gate never
+		// acquired the call (CI: "opened 0 call(s), want 1"). One channel
+		// and a window longer than the stream make the outcome depend on
+		// the IQ alone.
+		MinDwellPerChannel: 10 * time.Minute,
 	})
 	if err != nil {
 		t.Fatal(err)
