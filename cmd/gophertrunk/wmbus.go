@@ -232,7 +232,7 @@ FLAGS:`)
 	if err := dev.SetCenterFreq(uint32(*freq)); err != nil {
 		rep.Fatal(1, fmt.Errorf("tune %d Hz: %w", *freq, err))
 	}
-	ctx, stop := sdrStopContext()
+	ctx, stop := sdrStopContext("wmbus", os.Stderr)
 	defer stop()
 	if *seconds > 0 {
 		var cancel context.CancelFunc
@@ -297,7 +297,7 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 		o.Statusf(wmbusStatusLine(float64(st.Samples)/o.RateHz, st, d, final))
 		if d > warnedDrops {
 			warnedDrops = d
-			o.Statusf(fmt.Sprintf("wmbus: WARNING — the SDR has dropped %d IQ chunk(s): the decoder is not keeping up, and a telegram that spans a gap cannot decode. Lower -rate, close other programs, or check the USB link.", d))
+			o.Statusf(fmt.Sprintf("wmbus: WARNING — the SDR has dropped %d IQ chunk(s): the decoder is not keeping up, and a telegram that spans a gap cannot decode. Try -rate 1200000 (the cheapest rate to decode; 1024000 costs twice as much), close other programs, or check the USB link.", d))
 		}
 	}
 	for {

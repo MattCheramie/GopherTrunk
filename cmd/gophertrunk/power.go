@@ -153,7 +153,7 @@ FLAGS:`)
 		rep.Fatal(1, fmt.Errorf("tune %d Hz: %w", plan.Hops[0].CenterHz, err))
 	}
 
-	ctx, stop := sdrStopContext()
+	ctx, stop := sdrStopContext("power", os.Stderr)
 	defer stop()
 	settleFor := *settle
 	if settleFor <= 0 {

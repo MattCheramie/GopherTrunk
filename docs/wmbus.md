@@ -95,8 +95,10 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
   stop a live run the same way, with its summary. If the SDR does not close
   within 5 s (a USB transfer stuck on a phone) it says so and exits anyway.
   On Termux under `su`, the terminal's Ctrl-C can end `su` without reaching
-  GopherTrunk; stop it from a root shell with `pkill gophertrunk`, or give
-  `-seconds`.
+  GopherTrunk: the process has no terminal of its own (`ps` shows its TTY as
+  `?`). GopherTrunk notices and says so at start; then type `q` and Enter to
+  stop it, or stop it from a root shell with `pkill gophertrunk`, or give
+  `-seconds`. The same holds for `capture` and `power`.
 - `-status 30s` (the default) prints a progress line that often; `0` turns
   it off. `gophertrunk help wmbus` lists every flag.
 
@@ -113,8 +115,11 @@ wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0
   signal is there but weak, clipped or interfered with. Add `-all` to see them.
 - *Dropped chunks* must stay at 0. Any drop means the computer did not keep
   up with the SDR and a telegram in the gap is lost. A warning is printed the
-  first time it happens. On a slow phone, lower `-rate`, or record with
-  `capture` and decode the file afterwards, which has no real-time limit.
+  first time it happens. On a slow phone, use `-rate 1200000`: it is the
+  cheapest rate to decode and decodes the same telegrams as the 1.6 MS/s
+  default. Not `-rate 1024000`, which needs about twice the CPU (its
+  resampling ratio is awkward). Or record with `capture` and decode the file
+  afterwards, which has no real-time limit.
 
 - *Repaired* (`12 CRC-valid of which 2 repaired`) counts telegrams that
   passed only after a CRC repair; see **Weak telegrams** below.

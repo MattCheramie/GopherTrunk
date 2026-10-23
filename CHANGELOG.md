@@ -24,8 +24,21 @@ for tagged releases.
   after the settle, and the note appears only when a sweep gets under 90 %
   of that. On a CPU that keeps up, the CSV `samples` column now reads about
   `(interval ÷ hops − settle) × rate`.
+- **`wmbus`, `capture` and `power` can be stopped when Ctrl-C never reaches
+  them (#1256).** Started as root through `su` on Termux, the process has no
+  terminal of its own (`ps` shows its TTY as `?`), so the terminal's Ctrl-C
+  goes to `su` and the run carried on until it was `kill`ed. It now detects
+  that, says so at start, and stops on `q` + Enter.
 
 ### Improved
+- **`wmbus` needs half the CPU (#1256).** The S5 phone in #1256 could not
+  keep up at 1.6 MS/s and dropped IQ, and a telegram across a gap is lost.
+  The receiver now demodulates at 4 samples per chip instead of 8, with a
+  shorter resampler and the carrier correction after it: 0.06 of an x86
+  core instead of 0.13 at 1.6 MS/s, with the same or more CRC-valid
+  telegrams on all of that reporter's captures and saved telegrams. The
+  drop warning now suggests `-rate 1200000`, the cheapest rate to decode;
+  `-rate 1024000` costs about twice as much.
 - **wM-Bus decodes more weak telegrams (#1256).** At low signal levels the
   FM discriminator throws "click" spikes that flip a chip with a large
   margin; the receiver now limits each sample to 64 kHz either side of the
