@@ -109,7 +109,7 @@ func scanOpens(t *testing.T, s *Scanner, chunks [][]complex64) bool {
 		stream <- c
 	}
 	close(stream)
-	return s.scanWindow(context.Background(), 0, s.channels[0], stream)
+	return s.scanWindow(context.Background(), 0, s.channels[0], stream, nil)
 }
 
 // TestAMSquelchIgnoresAbsoluteLevel is the #1219 squelch pin: an AM

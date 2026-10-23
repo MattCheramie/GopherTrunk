@@ -48,6 +48,16 @@ for tagged releases.
 ## [v1.3.4] — 2026-10-23
 
 ### Fixed
+- **Wideband conventional recordings start at the start of the
+  transmission (#1288).** A `sdr.devices[].conventional` channel with a
+  CTCSS / DCS gate declares its call only once the tone is confirmed, up to
+  about half a second after keyup, and its voice chain subscribed to the tap
+  only then, so every recording lost its first words (240 ms on a synthetic
+  CTCSS transmission). Each conventional tap now keeps a 1 s ring of its IQ,
+  the channel's scanner marks where the carrier came up, and the call's voice
+  chain starts there. An untoned channel opens on its first chunk above
+  squelch, so its recordings gain no lead-in of noise. Scan-list channels are
+  unchanged (a retuning SDR has no earlier IQ for the channel).
 - **The Motorola 0x05 / 0x09 log line no longer looks like undecoded call
   grants (#1273).** A Motorola-built P25 site sends these opcodes
   continuously with a few constant payloads, and GopherTrunk logged

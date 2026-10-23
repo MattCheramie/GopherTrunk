@@ -667,6 +667,9 @@ func New(opts Options) (*Engine, error) {
 		}
 		ec.rateHz = outRateHz
 		ec.fan = newChannelFanout(log, opts.Serial, ch.FrequencyHz, outRateHz)
+		if ch.Conventional {
+			ec.fan.enablePreroll(int(math.Ceil(convPrerollSeconds * outRateHz)))
+		}
 		sink := func(ec *engineChannel) tuner.SinkFunc {
 			return func(out []complex64) {
 				if len(out) == 0 {
