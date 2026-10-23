@@ -289,9 +289,10 @@ func TestWidebandConventionalOverlappingCallsRecordIndependently(t *testing.T) {
 }
 
 // TestWidebandConvDaemonWiring builds a daemon whose only radio is a
-// role: wideband dongle with two conventional channels and no trunking
+// role: wideband dongle with three conventional channels and no trunking
 // system, and checks the pieces the overlapping-calls test does not: config
-// validation accepts it, the engine taps both channels as fm-conv, each
+// validation accepts it, the engine tags FM channels fm-conv and AM ones
+// am-conv, each
 // channel gets its own scanner and composer source under its own serial, the
 // sources stay out of the trunking voice pool, and positional talkgroup IDs
 // sit in the range config validation checks (issue #1288).
@@ -305,6 +306,7 @@ func TestWidebandConvDaemonWiring(t *testing.T) {
 			{Label: "Fire", FrequencyHz: 460_100_000, Mode: "nfm"},
 			{Label: "EMS", FrequencyHz: 460_900_000, Mode: "nfm", TalkgroupID: 4242,
 				Tone: config.ConvToneConfig{Mode: "ctcss", CTCSSHz: 123.0}},
+			{Label: "Air", FrequencyHz: 460_300_000, Mode: "am"},
 		},
 	}}
 	cfg.Trunking.Systems = nil
@@ -323,17 +325,18 @@ func TestWidebandConvDaemonWiring(t *testing.T) {
 		t.Fatalf("%d wideband engines, want 1", len(d.widebandT2))
 	}
 	tags := d.widebandT2[0].ChannelProtocolTags()
-	if tags[460_100_000] != "fm-conv" || tags[460_900_000] != "fm-conv" {
-		t.Errorf("engine channel tags %v, want both fm-conv", tags)
+	if tags[460_100_000] != "fm-conv" || tags[460_900_000] != "fm-conv" || tags[460_300_000] != "am-conv" {
+		t.Errorf("engine channel tags %v, want fm-conv, fm-conv, am-conv", tags)
 	}
-	if len(d.wbConvChannels) != 2 || len(d.wbConvScans) != 2 {
-		t.Fatalf("%d sources / %d scanners, want 2 / 2", len(d.wbConvChannels), len(d.wbConvScans))
+	if len(d.wbConvChannels) != 3 || len(d.wbConvScans) != 3 {
+		t.Fatalf("%d sources / %d scanners, want 3 / 3", len(d.wbConvChannels), len(d.wbConvScans))
 	}
 	if len(d.convScans) != 0 {
 		t.Errorf("%d scan-list scanners, want 0 (the wideband channels must not join the cockpit's list)", len(d.convScans))
 	}
 	vm := d.virtualVoiceMap()
-	wantID := map[uint32]uint32{460_100_000: config.WidebandConvPositionalBase, 460_900_000: 4242}
+	wantID := map[uint32]uint32{460_100_000: config.WidebandConvPositionalBase, 460_900_000: 4242,
+		460_300_000: config.WidebandConvPositionalBase | 2}
 	for _, c := range d.wbConvChannels {
 		hz := c.channel.FrequencyHz
 		if c.source.Serial() != wbConvSerial("mock-00", hz) {

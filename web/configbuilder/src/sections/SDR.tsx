@@ -355,7 +355,7 @@ function DeviceEditor(props: {
       ) : null}
 
       {isWideband ? (
-        <Fieldset legend="Conventional FM channels (continuous)">
+        <Fieldset legend="Conventional FM / AM channels (continuous)">
           <ListEditor<ConvChannelConfig>
             label="Conventional"
             items={d.Conventional}
@@ -380,7 +380,7 @@ function DeviceEditor(props: {
               P25Phase1DemodMode: "",
             })}
             itemTitle={(c) => c.Label || "channel"}
-            emptyHint="Analog FM channels inside this dongle's IQ band, each monitored all the time on its own tap: overlapping transmissions record as separate calls (no scanning)."
+            emptyHint="Analog FM / AM channels inside this dongle's IQ band, each monitored all the time on its own tap: overlapping transmissions record as separate calls (no scanning)."
             renderItem={(c, set) => (
               <div className="grid gap-3 sm:grid-cols-2">
                 <TextField label="Label" value={c.Label} onChange={(v) => set({ ...c, Label: v })} />
@@ -392,9 +392,19 @@ function DeviceEditor(props: {
                   options={[
                     { value: "nfm", label: "nfm" },
                     { value: "fm", label: "fm" },
+                    { value: "am", label: "am" },
                   ]}
                 />
-                <NumberField label="Squelch (dBFS)" step={0.1} value={c.SquelchDbFS} onChange={(v) => set({ ...c, SquelchDbFS: v })} />
+                {c.Mode === "am" ? (
+                  <NumberField
+                    label="Squelch C/N (dB, 0 = 12)"
+                    step={0.5}
+                    value={c.SquelchCNDb ?? 0}
+                    onChange={(v) => set({ ...c, SquelchCNDb: v })}
+                  />
+                ) : (
+                  <NumberField label="Squelch (dBFS)" step={0.1} value={c.SquelchDbFS} onChange={(v) => set({ ...c, SquelchDbFS: v })} />
+                )}
                 <NumberField label="Hangtime (ms)" value={c.HangtimeMs} onChange={(v) => set({ ...c, HangtimeMs: v })} />
                 <NumberField label="Talkgroup ID (0 = positional)" value={c.TalkgroupID} onChange={(v) => set({ ...c, TalkgroupID: v })} />
                 <NumberField label="Audio gain (dB)" step={0.5} value={c.AudioGainDB ?? 0} onChange={(v) => set({ ...c, AudioGainDB: v })} />

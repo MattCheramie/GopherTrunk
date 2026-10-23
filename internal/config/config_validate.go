@@ -1143,12 +1143,12 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 		if err := validateConvChannelAt(path, ch); err != nil {
 			return err
 		}
-		// Phase 1 of issue #1288 is analog FM: the digital modes and AM
-		// still need the scanner's own per-mode gates on a wideband tap.
+		// Issue #1288: analog FM and AM. The digital modes still need the
+		// scanner's own per-mode gates on a wideband tap.
 		switch ch.Mode {
-		case "", "fm", "nfm":
+		case "", "fm", "nfm", "am":
 		default:
-			return fmt.Errorf("%s: mode %q is not supported on a wideband dongle yet; use fm or nfm", path, ch.Mode)
+			return fmt.Errorf("%s: mode %q is not supported on a wideband dongle yet; use fm, nfm or am", path, ch.Mode)
 		}
 		// The dongle is never retuned and its gain is shared by every tap.
 		if strings.TrimSpace(ch.Gain) != "" {

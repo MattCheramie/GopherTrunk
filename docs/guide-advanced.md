@@ -92,9 +92,9 @@ depends on the path:
   single `role: control`/`auto` tuner the hunter is a time multiplexer that
   camps on the first system that locks, and the daemon now warns at startup
   when several systems share one control SDR.
-- **Many analog FM channels on one wideband SDR, all at once.** List them under
-  the device's `conventional:` key (the same fields as a `scanner.conventional`
-  channel; `mode: fm` or `nfm`). Each channel gets its own tap, squelch, tone gate
+- **Many analog FM or AM channels on one wideband SDR, all at once.** List them
+  under the device's `conventional:` key (the same fields as a
+  `scanner.conventional` channel; `mode: fm`, `nfm` or `am`). Each channel gets its own tap, squelch, tone gate
   and hangtime, so overlapping transmissions on different channels record as
   separate, simultaneous calls; nothing scans, so a long call on one channel
   never hides another. They can sit on the same dongle as trunked `channels:`
@@ -111,6 +111,20 @@ depends on the path:
           - { label: "EMS", frequency_hz: 460_200_000, mode: nfm, tone: { mode: ctcss, ctcss_hz: 123.0 } }
   ```
 
+  An AM channel (air band) squelches on its carrier-to-noise ratio
+  (`squelch_cn_db`, default 12 dB) measured from its own tap, exactly as on the
+  scan list, so `squelch_dbfs` does not apply to it and the threshold does not
+  move with the dongle's gain. `decoders: [acars]` works on an AM channel here
+  too. An airport's tower, ground and ATIS on one dongle at 2.4 MS/s:
+
+  ```yaml
+        center_freq_hz: 119_000_000
+        conventional:
+          - { label: "Tower", frequency_hz: 118_300_000, mode: am }
+          - { label: "Ground", frequency_hz: 119_900_000, mode: am }
+          - { label: "ATIS", frequency_hz: 119_450_000, mode: am, squelch_cn_db: 15 }
+  ```
+
   Each recording starts where the carrier came up, not where the call was
   declared: a CTCSS / DCS channel opens only once its tone is confirmed (up to
   about half a second into the transmission), so each channel keeps the last
@@ -118,7 +132,7 @@ depends on the path:
   transmission. An untoned channel opens on its first chunk above squelch, so
   its recordings gain no lead-in of noise.
 
-  Not yet: AM and the digital conventional modes (keep those on the scan list),
+  Not yet: the digital conventional modes (keep those on the scan list),
   and listing these channels in the Scanner panel (their calls appear in the
   call list and history like any other). Per-channel `gain` and `device` do not
   apply: every tap shares the dongle's gain. Issue #1288.

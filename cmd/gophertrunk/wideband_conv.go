@@ -10,7 +10,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/widebandt2"
 )
 
-// Continuous conventional FM on a wideband dongle (issue #1288).
+// Continuous conventional FM and AM on a wideband dongle (issue #1288).
 //
 // A scan-list scanner owns a whole SDR and dwells on one channel at a time,
 // so a call on one channel hides every other channel until it ends. A
@@ -109,7 +109,7 @@ func (d *Daemon) buildWidebandConvSources(cfg config.Config, log *slog.Logger) {
 			})
 		}
 		if n := len(devCfg.Conventional); n > 0 {
-			log.Info("daemon: wideband: continuous conventional FM channels registered — each records its own calls in parallel",
+			log.Info("daemon: wideband: continuous conventional FM/AM channels registered — each records its own calls in parallel",
 				"wideband_serial", serial, "channels", n)
 		}
 	}
