@@ -19,6 +19,7 @@ import type {
   DMRBandPlanTableEntry,
   EncryptedCallsConfig,
   EncryptionKey,
+  EncryptionKeyFile,
   NXDNBandPlanTableEntry,
   P25BandPlanEntry,
   ParsedSystemDTO,
@@ -393,6 +394,32 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
                 ]}
               />
               <TextField label="Key (hex)" value={e.Key} onChange={(v) => set({ ...e, Key: v })} />
+            </div>
+          )}
+        />
+        <ListEditor<EncryptionKeyFile>
+          label="Key containers (KFDtool .ekc)"
+          items={sys.EncryptionKeyFiles}
+          onChange={(x) => onChange({ ...sys, EncryptionKeyFiles: x })}
+          makeNew={() => ({ Path: "", Password: "", PasswordEnv: "", Keyset: 0 })}
+          itemTitle={(e) => e.Path || "Key container"}
+          emptyHint="Optional. KFDtool .ekc files whose traffic keys are decrypted at startup, so the keys stay encrypted at rest. Leave both password fields empty to be asked on the terminal."
+          renderItem={(e, set) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextField label="Path" value={e.Path} onChange={(v) => set({ ...e, Path: v })} placeholder="keys.ekc" />
+              <NumberField label="Keyset (0 = all)" value={e.Keyset} onChange={(v) => set({ ...e, Keyset: v })} />
+              <TextField
+                label="Password environment variable"
+                value={e.PasswordEnv}
+                onChange={(v) => set({ ...e, PasswordEnv: v })}
+                placeholder="GT_EKC_PASSWORD"
+              />
+              <TextField
+                label="Password (stored in the config in clear)"
+                type="password"
+                value={e.Password}
+                onChange={(v) => set({ ...e, Password: v })}
+              />
             </div>
           )}
         />

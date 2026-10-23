@@ -575,6 +575,11 @@ func validateSystem(i int, s SystemConfig) error {
 		}
 		seenKeyIDs[ek.KeyID] = struct{}{}
 	}
+	for k, kf := range s.EncryptionKeyFiles {
+		if err := kf.Validate(); err != nil {
+			return fmt.Errorf("trunking.systems[%d].encryption_key_files[%d]: %w", i, k, err)
+		}
+	}
 	type rfssSite struct{ rfss, site uint8 }
 	seenSites := make(map[rfssSite]int, len(s.Sites))
 	for k, st := range s.Sites {

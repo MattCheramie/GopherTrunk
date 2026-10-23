@@ -347,6 +347,66 @@ the algorithm); pitch continuity off the chance floor is the confirmation.
 Not decrypted on P25: DES-XL (0x9F, a different construction) and Phase 2
 TDMA (the composer's Phase 2 chain only publishes the Encryption Sync).
 
+## Keys from a KFDtool key container (`.ekc`)
+
+[KFDtool](https://github.com/omahacommsys/KFDtool) is an open keyloader. Its
+`.ekc` files hold an operator's P25 keys encrypted under a password
+(PBKDF2-SHA512 and AES-256). GopherTrunk can load its keys from one instead
+of listing them in plain text under `encryption_keys` (#1305):
+
+```yaml
+trunking:
+  systems:
+    - name: county
+      protocol: p25
+      control_channels: [851_012_500]
+      encryption_key_files:
+        - path: keys.ekc
+          password_env: GT_EKC_PASSWORD
+```
+
+- **The password** comes from `password_env` (an environment variable),
+  `password` (stored in the config in clear), or, with neither set, a prompt
+  on the terminal at startup. Without a terminal the daemon refuses to start
+  rather than run without its keys. A wrong password stops startup too: a
+  typed one is asked for again, up to three times.
+- **Which keys load:** traffic keys (TEKs) whose algorithm GopherTrunk
+  decrypts: DES-OFB (0x81), TDES (0x83 / 0x86), AES (0x84 / 0x85 / 0x89) and
+  ADP (0xAA). Key-encryption keys (KEKs) and other algorithms (DES-XL 0x9F)
+  are skipped. When two keysets carry the same key ID, the active keyset's
+  key wins; `keyset: N` loads only keyset N.
+- **Explicit keys win.** An `encryption_keys` entry with the same `key_id`
+  as a container key is used instead of it.
+- **Nothing is written back.** The decrypted keys stay in the daemon's
+  memory. The config, the API and the config builders never see them. The
+  daemon logs how many keys it loaded and why any were skipped, never the
+  keys themselves:
+
+  ```
+  daemon: decryption keys loaded from key container system=county file=keys.ekc keys=3 skipped="1 KEK, 1 0x9F (DES-XL), which GopherTrunk does not decrypt"
+  ```
+
+To check a container and its password without starting the daemon (here, the
+test container in `internal/ekc/testdata`):
+
+```
+$ gophertrunk ekc -in keys.ekc
+Password for key container keys.ekc:
+NAME             KEYSET      SLN  KEY ID         ALGORITHM       TYPE  BYTES  LOADED AS
+County AES       1 (active)  1    1 (0x1)        0x84 (AES-256)  TEK   32     aes
+Fire DES         1 (active)  2    42 (0x2A)      0x81 (DES-OFB)  TEK   8      des
+Ops ADP          1 (active)  3    3 (0x3)        0xAA (ADP/RC4)  TEK   5      rc4
+Master KEK       1 (active)  4    4 (0x4)        0x84 (AES-256)  KEK   32     -
+County AES next  2           1    1 (0x1)        0x85 (AES-128)  TEK   16     -
+Legacy DES-XL    1 (active)  6    6 (0x6)        0x9F (DES-XL)   TEK   8      -
+Ops TDES         1 (active)  7    4660 (0x1234)  0x83 (TDES-2)   TEK   24     tdes
+
+4 key(s) would load; skipped: 1 KEK, 1 superseded by the active keyset, 1 0x9F (DES-XL), which GopherTrunk does not decrypt
+```
+
+The reader is pinned against a container written by KFDtool's own code. It
+reads containers only; GopherTrunk does not write `.ekc` files or edit them.
+
 ## Calls you cannot decrypt: `recordings.mute_encrypted`
 
 Without a key the vocoder renders the ciphertext as random-parameter

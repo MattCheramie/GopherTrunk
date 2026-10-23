@@ -1395,6 +1395,19 @@ trunking:
   #       - key_id: 3
   #         algorithm: des              # P25 DES-OFB (ALGID 0x81)
   #         key: "0123456789abcdef"
+  #     # Keys can also come from KFDtool encrypted key containers (.ekc),
+  #     # so they stay encrypted at rest instead of sitting in this file.
+  #     # The daemon decrypts each at startup and adds its traffic keys
+  #     # (TEKs; KEKs are skipped) to encryption_keys; an encryption_keys
+  #     # entry with the same key_id wins. Decrypted keys stay in memory
+  #     # and are never written back. Check a container with
+  #     # `gophertrunk ekc -in keys.ekc`. (#1305)
+  #     encryption_key_files:
+  #       - path: "../config/keys.ekc"
+  #         password_env: GT_EKC_PASSWORD   # or password: "..." (stored in clear);
+  #                                         # set neither to be asked at startup
+  #         keyset: 0                       # 0 = every keyset (the active one wins
+  #                                         # on a shared key ID), or one keyset ID
 
 # Police-scanner subsystems:
 #   - scan_mode controls the engine's per-grant gate. "all" follows every

@@ -438,8 +438,13 @@ type Daemon struct {
 	cfgMu   sync.RWMutex
 	cfg     config.Config
 	cfgPath string
-	log     *slog.Logger
-	writer  *config.Writer // optional; nil when daemon ran without -config
+	// keySystems is cfg.Trunking.Systems with each system's
+	// encryption_key_files decrypted into its EncryptionKeys (issue #1305).
+	// Only the key consumers read it; cfg itself never holds the decrypted
+	// keys, so the API cannot serve or write them back.
+	keySystems []config.SystemConfig
+	log        *slog.Logger
+	writer     *config.Writer // optional; nil when daemon ran without -config
 
 	// displayLoc is the timezone human-facing timestamps render in (the logs,
 	// the TUI, and — per the operator's opt-in — the API/webhook/rdioscanner
@@ -959,6 +964,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// Surface Unix-style paths that lose their drive letter on Windows
 	// (the shipped defaults are "/var/lib/gophertrunk/...").
 	warnWindowsDriveRootPaths(log, cfg)
+
+	keySystems, err := withKeyFileKeys(cfg.Trunking.Systems, log)
+	if err != nil {
+		return nil, fmt.Errorf("daemon: %w", err)
+	}
+	d.keySystems = keySystems
 
 	// Talkgroup DB — populated below from per-system CSVs.
 	d.talkgroups = trunking.NewTalkgroupDB()
@@ -2225,7 +2236,7 @@ func (d *Daemon) buildEngine(cfg config.Config, log *slog.Logger) error {
 		CallTimeout:      engineCallTimeout(cfg.Trunking, log),
 		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
 		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
-		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
+		ConfiguredKeys:   configuredKeysBySystem(d.keySystems),
 		// Same per-transmission grouping the voice composer uses (below): lets the
 		// engine roll a TETRA recording on a talker change so each over is
 		// attributed to its own source.
@@ -2352,7 +2363,7 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			WriteMBE:      cfg.Recordings.MBEFiles,
 			SkipEncrypted: cfg.Recordings.SkipEncrypted,
 			MuteEncrypted: cfg.Recordings.MuteEncrypted,
-			KeyConfigured: buildKeyConfigured(cfg.Trunking.Systems),
+			KeyConfigured: buildKeyConfigured(d.keySystems),
 			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
 			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,
 			VocoderForProtocol: vocoderMap,
@@ -2522,7 +2533,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 		// Operator-held decryption keys (trunking.systems[].encryption_keys):
 		// the DMR voice chain descrambles Enhanced Privacy (RC4) calls whose
 		// PI header names a configured key id. Nil when none are configured.
-		keyResolver := buildKeyResolver(cfg.Trunking.Systems, log)
+		keyResolver := buildKeyResolver(d.keySystems, log)
 		if keyResolver != nil {
 			log.Info("daemon: in-process decryption keys configured (DMR enhanced privacy / P25 ADP)")
 		}

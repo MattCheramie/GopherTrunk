@@ -262,6 +262,12 @@ var fieldMetas = map[string]FieldMeta{
 	"EncryptionKeyConfig.Algorithm": {Help: "Decryption algorithm: rc4 covers DMR Enhanced Privacy and P25 ADP (40-bit key); des = P25 DES-OFB (64-bit); tdes = P25 Triple-DES (128/192-bit); aes = P25 AES-128/256 (the key length picks the variant).", Options: opts("rc4", "rc4 (DMR Enhanced Privacy / P25 ADP)", "des", "des (P25 DES-OFB)", "tdes", "tdes (P25 Triple-DES)", "aes", "aes (P25 AES-128 / AES-256)")},
 	"EncryptionKeyConfig.Key":       {Help: "Raw key, hex-encoded. Spaces and a 0x prefix are tolerated."},
 
+	"SystemConfig.EncryptionKeyFiles":     {Help: "KFDtool encrypted key containers (.ekc). The daemon decrypts each at startup and adds its traffic keys (TEKs) to this system's keys, so they stay encrypted at rest; an encryption_keys entry with the same key ID wins. Decrypted keys are held in memory only."},
+	"EncryptionKeyFileConfig.Path":        {Help: "Path to the .ekc file exported by KFDtool."},
+	"EncryptionKeyFileConfig.Password":    {Help: "Container password, stored here in clear. Prefer password_env, or leave both empty to be asked on the terminal at startup."},
+	"EncryptionKeyFileConfig.PasswordEnv": {Label: "Password env var", Help: "Name of an environment variable that holds the container password."},
+	"EncryptionKeyFileConfig.Keyset":      {Help: "Load only this KFD keyset ID; 0 loads every keyset, and where two keysets share a key ID the active one wins."},
+
 	"AlertsConfig.Channels": {Label: "Channels", Help: "Notification destinations alert rules deliver to (Discord, Slack, ntfy, Pushover, Telegram, Gotify, generic webhook, local command, MQTT)."},
 	"AlertsConfig.Rules":    {Label: "Rules", Help: "Alert rules: which events, under what conditions, to which channels."},
 
