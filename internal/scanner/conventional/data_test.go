@@ -112,7 +112,7 @@ func TestDataDecoderSeesSquelchBreakingChunk(t *testing.T) {
 	s := newDataTestScanner(t, Channel{Label: "A", FrequencyHz: 462_562_500, SquelchDbFS: -10, Decoders: []string{DecoderFleetSync}}, dec, nil)
 	stream := make(chan []complex64, 1)
 	stream <- loudChunk(4096)
-	if !s.scanWindow(context.Background(), 0, s.channels[0], stream) {
+	if !s.scanWindow(context.Background(), 0, s.channels[0], stream, nil) {
 		t.Fatal("squelch did not break on a loud chunk")
 	}
 	if n, _ := dec.counts(); n != 1 {
@@ -128,7 +128,7 @@ func TestDataDecoderBusyExtendsScanWindow(t *testing.T) {
 		s := newDataTestScanner(t, Channel{Label: "A", FrequencyHz: 462_562_500, SquelchDbFS: -10, Decoders: []string{DecoderFleetSync}}, dec, nil)
 		stream := make(chan []complex64) // never delivers: the window can only time out
 		start := time.Now()
-		if s.scanWindow(context.Background(), 0, s.channels[0], stream) {
+		if s.scanWindow(context.Background(), 0, s.channels[0], stream, nil) {
 			t.Fatal("squelch broke with no IQ")
 		}
 		return time.Since(start)

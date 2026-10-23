@@ -111,11 +111,17 @@ depends on the path:
           - { label: "EMS", frequency_hz: 460_200_000, mode: nfm, tone: { mode: ctcss, ctcss_hz: 123.0 } }
   ```
 
+  Each recording starts where the carrier came up, not where the call was
+  declared: a CTCSS / DCS channel opens only once its tone is confirmed (up to
+  about half a second into the transmission), so each channel keeps the last
+  second of its IQ and the recording picks up from the start of the
+  transmission. An untoned channel opens on its first chunk above squelch, so
+  its recordings gain no lead-in of noise.
+
   Not yet: AM and the digital conventional modes (keep those on the scan list),
-  pre-roll before the squelch opens, and listing these channels in the Scanner
-  panel (their calls appear in the call list and history like any other). Per-
-  channel `gain` and `device` do not apply: every tap shares the dongle's gain.
-  Issue #1288.
+  and listing these channels in the Scanner panel (their calls appear in the
+  call list and history like any other). Per-channel `gain` and `device` do not
+  apply: every tap shares the dongle's gain. Issue #1288.
 
 Either way, when the same call is heard on several networked or simulcast sites,
 **cross-site call deduplication** saves it once instead of once per site: enable

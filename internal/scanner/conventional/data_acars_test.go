@@ -21,7 +21,7 @@ func TestACARSDecoderHoldsScanWindowForALongBlock(t *testing.T) {
 	}, dec, nil)
 	stream := make(chan []complex64) // never delivers: the window can only time out
 	start := time.Now()
-	if s.scanWindow(context.Background(), 0, s.channels[0], stream) {
+	if s.scanWindow(context.Background(), 0, s.channels[0], stream, nil) {
 		t.Fatal("squelch broke with no IQ")
 	}
 	held := time.Since(start)

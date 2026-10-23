@@ -164,6 +164,53 @@ type IQSource interface {
 	StreamIQ(ctx context.Context) (<-chan []complex64, error)
 }
 
+// OnsetIQSource is an IQSource whose call voice chain can start at the
+// transmission's first samples instead of at the call start (issue #1288).
+// A call starts only once squelch breaks, and on a tone-gated channel only
+// once the CTCSS / DCS gate confirms, up to about half a second after the
+// carrier came up; a voice chain that subscribes then misses the first
+// words. Such a source numbers the samples it streams: StreamIQCounted
+// returns the stream position of the scanner's first sample, and
+// MarkCallOnset, called just before the call is declared, names the
+// position where the transmission's above-squelch run began. The source then
+// hands the voice chain the IQ from there. The wideband conventional tap
+// (widebandt2.ChannelVoiceSource) implements it; a retuning scan-list SDR
+// does not, since its stream before the dwell belongs to other channels.
+type OnsetIQSource interface {
+	StreamIQCounted(ctx context.Context) (<-chan []complex64, uint64, error)
+	MarkCallOnset(onset uint64)
+}
+
+// onsetGap is how long a channel must sit below squelch before the next
+// above-squelch chunk starts a new transmission for MarkCallOnset: longer
+// than a DMR simplex radio's 32.5 ms TDMA gap (dmrBurstBridge), so one
+// over's bursts count as one run, and short next to the gap between overs.
+const onsetGap = dmrBurstBridge
+
+// streamPos follows an OnsetIQSource stream through scanWindow: next is the
+// position of the next sample, onset the start of the current above-squelch
+// run (valid while inRun), lastAbove the position just after the run's most
+// recent above-squelch chunk. A chunk the subscription dropped is not
+// counted, which can only place the onset earlier (a little more pre-roll).
+type streamPos struct {
+	next, onset, lastAbove uint64
+	inRun                  bool
+	gap                    uint64 // onsetGap in samples
+}
+
+// advance accounts for chunk iq, above squelch or not.
+func (p *streamPos) advance(n int, above bool) {
+	start := p.next
+	p.next += uint64(n)
+	if !above {
+		return
+	}
+	if !p.inRun || start-p.lastAbove > p.gap {
+		p.onset, p.inRun = start, true
+	}
+	p.lastAbove = p.next
+}
+
 // Engine is the subset of trunking.Engine the scanner needs. Only
 // the synthetic-call entry points; this keeps tests trivial without
 // constructing a full Engine.
@@ -745,7 +792,17 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 		// Open the IQ stream for this dwell. We close it on advance.
 		streamCtx, cancel := context.WithCancel(ctx)
-		stream, err := s.opts.IQ.StreamIQ(streamCtx)
+		var stream <-chan []complex64
+		var err error
+		var pos *streamPos
+		onsetSrc, counted := s.opts.IQ.(OnsetIQSource)
+		if counted {
+			var start uint64
+			stream, start, err = onsetSrc.StreamIQCounted(streamCtx)
+			pos = &streamPos{next: start, gap: uint64(onsetGap.Seconds() * float64(s.opts.SampleRateHz))}
+		} else {
+			stream, err = s.opts.IQ.StreamIQ(streamCtx)
+		}
 		if err != nil {
 			cancel()
 			s.log.Warn("conv: StreamIQ failed", "err", err)
@@ -772,10 +829,15 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 		// Wait for either squelch to break, the min-dwell timer to
 		// expire (advance), or ctx cancel.
-		broken := s.scanWindow(ctx, idx, ch, stream)
+		broken := s.scanWindow(ctx, idx, ch, stream, pos)
 		if !broken {
 			cancel()
 			continue
+		}
+		if pos != nil && pos.inRun {
+			// Before beginDwell declares the call, so the voice chain the
+			// call starts finds the mark (OnsetIQSource).
+			onsetSrc.MarkCallOnset(pos.onset)
 		}
 
 		// Squelch is open — hand off to the engine and stay on this
@@ -794,7 +856,10 @@ func (s *Scanner) Run(ctx context.Context) error {
 // expires extends it (in dataScanHoldStep steps, at most the channel's
 // holdMax: dataScanHoldMax, or acarsScanHoldMax with the ACARS decoder)
 // so the scanner does not hop away mid-frame (issue #1220).
-func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-chan []complex64) bool {
+//
+// pos, when the stream comes from an OnsetIQSource, follows the stream
+// position so the caller can mark where the transmission began.
+func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-chan []complex64, pos *streamPos) bool {
 	deadline := time.NewTimer(s.opts.MinDwellPerChannel)
 	defer deadline.Stop()
 	det := s.detectorFor(idx)
@@ -831,6 +896,9 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				return false
 			}
 			powerOK := level(iq) >= open
+			if pos != nil {
+				pos.advance(len(iq), powerOK)
+			}
 			if dmrGate != nil {
 				present := dmrGate.Process(iq)
 				if powerOK {

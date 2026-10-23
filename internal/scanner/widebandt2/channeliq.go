@@ -39,6 +39,24 @@ type channelFanout struct {
 	serial string
 	freqHz uint32
 	rateHz float64
+
+	// total counts every sample broadcast on this channel, subscribed or
+	// not: the stream position a counted subscriber and an onset mark are
+	// measured in.
+	total uint64
+	// preroll is a ring of the most recent samples (nil unless
+	// enablePreroll; conventional channels only, issue #1288). prerollW is
+	// the next write index, prerollN the number of valid samples.
+	preroll  []complex64
+	prerollW int
+	prerollN int
+	// armed is a transmission onset (a stream position) waiting for the
+	// next preroll subscriber, set by arm when a conventional scanner
+	// declares a call; armedAt is total when it was set, so a mark nobody
+	// collects goes stale instead of replaying old IQ into a later call.
+	armed   bool
+	onset   uint64
+	armedAt uint64
 }
 
 type channelSub struct {
@@ -77,18 +95,111 @@ func newChannelFanout(log *slog.Logger, serial string, freqHz uint32, rateHz flo
 	return &channelFanout{subs: map[int]*channelSub{}, log: log, serial: serial, freqHz: freqHz, rateHz: rateHz}
 }
 
+// convPrerollSeconds is the ring a conventional channel keeps for the voice
+// chain of the call its scanner declares (issue #1288). A tone-gated
+// channel's call starts only once the CTCSS / DCS gate confirms, up to about
+// half a second after the carrier came up (a 250 ms Goertzel block that the
+// onset can land in the middle of, then a full one; DCS needs ~0.4 s), and
+// the chain used to subscribe only then, so the first words of every
+// transmission were lost. The ring holds that span, with margin; the scanner
+// says where the transmission began (arm), so an untoned channel's call gets
+// only the few milliseconds before its squelch broke, not a second of hiss.
+// 1 s at the 48 kHz tap rate is 384 KiB per channel.
+const convPrerollSeconds = 1.0
+
+// enablePreroll sizes the pre-roll ring to samples (≤ 0 disables it).
+func (f *channelFanout) enablePreroll(samples int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if samples <= 0 {
+		f.preroll = nil
+	} else {
+		f.preroll = make([]complex64, samples)
+	}
+	f.prerollW, f.prerollN = 0, 0
+}
+
+// prerollWrite appends chunk to the ring. Caller holds f.mu.
+func (f *channelFanout) prerollWrite(chunk []complex64) {
+	n := len(f.preroll)
+	if n == 0 {
+		return
+	}
+	if len(chunk) >= n {
+		copy(f.preroll, chunk[len(chunk)-n:])
+		f.prerollW, f.prerollN = 0, n
+		return
+	}
+	k := copy(f.preroll[f.prerollW:], chunk)
+	if k < len(chunk) {
+		copy(f.preroll, chunk[k:])
+	}
+	f.prerollW = (f.prerollW + len(chunk)) % n
+	if f.prerollN += len(chunk); f.prerollN > n {
+		f.prerollN = n
+	}
+}
+
+// prerollSince returns, as a fresh slice in time order, the ring's samples
+// from stream position from to the latest broadcast (as much of that span
+// as the ring still holds), or nil. Caller holds f.mu.
+func (f *channelFanout) prerollSince(from uint64) []complex64 {
+	if f.prerollN == 0 || from >= f.total {
+		return nil
+	}
+	want := f.total - from
+	if want > uint64(f.prerollN) {
+		want = uint64(f.prerollN)
+	}
+	out := make([]complex64, want)
+	n := len(f.preroll)
+	start := (f.prerollW - int(want) + n) % n // index of the oldest wanted sample
+	k := copy(out, f.preroll[start:min(start+int(want), n)])
+	copy(out[k:], f.preroll[:int(want)-k])
+	return out
+}
+
+// arm marks stream position onset as the start of the transmission whose
+// call was just declared; the next preroll subscriber receives the IQ from
+// there on (see convPrerollSeconds).
+func (f *channelFanout) arm(onset uint64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.armed, f.onset, f.armedAt = true, onset, f.total
+}
+
 // subscribe registers a subscriber and returns its IQ channel plus an
 // unsubscribe func that closes the channel and reports the lifetime
 // dropped-chunk count (0 when the consumer kept up).
 func (f *channelFanout) subscribe() (<-chan []complex64, func() uint64) {
+	ch, _, unsub := f.register(false)
+	return ch, unsub
+}
+
+// register adds a subscriber. It returns the stream position of the first
+// live sample the subscriber will receive. With preroll, an onset mark that
+// is still fresh is consumed: the subscriber's first chunk is the IQ from
+// the onset up to that position, delivered atomically with the registration
+// so no sample is both in it and in a later broadcast, and none is lost
+// between them.
+func (f *channelFanout) register(preroll bool) (<-chan []complex64, uint64, func() uint64) {
 	sub := &channelSub{ch: make(chan []complex64, channelTapBudget(f.rateHz))}
 	f.mu.Lock()
+	start := f.total
+	if preroll && f.armed {
+		f.armed = false
+		if f.total-f.armedAt <= uint64(len(f.preroll)) {
+			if pre := f.prerollSince(f.onset); pre != nil {
+				sub.ch <- pre // fresh channel, depth ≥ 1: cannot block
+			}
+		}
+	}
 	id := f.next
 	f.next++
 	f.subs[id] = sub
 	f.mu.Unlock()
 	var once sync.Once
-	return sub.ch, func() uint64 {
+	return sub.ch, start, func() uint64 {
 		once.Do(func() {
 			f.mu.Lock()
 			if s, ok := f.subs[id]; ok {
@@ -112,6 +223,8 @@ func (f *channelFanout) subscribe() (<-chan []complex64, func() uint64) {
 func (f *channelFanout) broadcast(chunk []complex64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.total += uint64(len(chunk))
+	f.prerollWrite(chunk)
 	if len(f.subs) == 0 {
 		return
 	}
@@ -148,6 +261,42 @@ func (e *Engine) SubscribeChannelIQ(freqHz uint32) (ch <-chan []complex64, unsub
 	}
 	ch, unsub = c.fan.subscribe()
 	return ch, unsub, true
+}
+
+// SubscribeChannelIQCounted is SubscribeChannelIQ that also returns the
+// stream position of the first sample the subscriber receives, so it can
+// name a sample it has seen to MarkChannelOnset (issue #1288).
+func (e *Engine) SubscribeChannelIQCounted(freqHz uint32) (ch <-chan []complex64, start uint64, unsub func() uint64, ok bool) {
+	c := e.channel(freqHz)
+	if c == nil || c.fan == nil {
+		return nil, 0, nil, false
+	}
+	ch, start, unsub = c.fan.register(false)
+	return ch, start, unsub, true
+}
+
+// SubscribeChannelIQWithPreroll is SubscribeChannelIQ for the voice chain of
+// a conventional channel's call: when the channel's scanner has marked the
+// call's onset (MarkChannelOnset), the first chunk is the IQ from that onset
+// on, so the chain hears the start of the transmission it was not yet
+// subscribed for. Without a mark it is plain SubscribeChannelIQ.
+func (e *Engine) SubscribeChannelIQWithPreroll(freqHz uint32) (ch <-chan []complex64, unsub func() uint64, ok bool) {
+	c := e.channel(freqHz)
+	if c == nil || c.fan == nil {
+		return nil, nil, false
+	}
+	ch, _, unsub = c.fan.register(true)
+	return ch, unsub, true
+}
+
+// MarkChannelOnset records stream position onset (as counted from a
+// SubscribeChannelIQCounted start) as the beginning of the transmission whose
+// call was just declared on the channel tuned to freqHz; the next
+// SubscribeChannelIQWithPreroll collects it.
+func (e *Engine) MarkChannelOnset(freqHz uint32, onset uint64) {
+	if c := e.channel(freqHz); c != nil && c.fan != nil {
+		c.fan.arm(onset)
+	}
 }
 
 // ChannelRateHz reports the ACTUAL per-tap output rate of the channel tuned
@@ -236,13 +385,16 @@ func (s *ChannelVoiceSource) SampleRateExactHz() float64 {
 // hosting the channel exists.
 var ErrNoWidebandEngine = fmt.Errorf("widebandt2: no wideband engine hosts this channel")
 
-// StreamIQ subscribes to the channel's channelised IQ until ctx ends.
+// StreamIQ subscribes to the channel's channelised IQ until ctx ends. It is
+// what the composer calls for a call's voice chain, so on a conventional
+// channel it collects the call's onset mark (MarkCallOnset): the chain starts
+// at the transmission's first samples, not at the call start.
 func (s *ChannelVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	eng := s.get()
 	if eng == nil {
 		return nil, ErrNoWidebandEngine
 	}
-	ch, unsub, ok := eng.SubscribeChannelIQ(s.freqHz)
+	ch, unsub, ok := eng.SubscribeChannelIQWithPreroll(s.freqHz)
 	if !ok {
 		return nil, fmt.Errorf("widebandt2: no channel tuned to %d Hz", s.freqHz)
 	}
@@ -251,4 +403,33 @@ func (s *ChannelVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, 
 		unsub() // closes ch, ending the composer's read loop
 	}()
 	return ch, nil
+}
+
+// StreamIQCounted is StreamIQ for the conventional scanner watching the
+// channel: it never collects an onset mark, and it returns the stream
+// position of its first sample, so the scanner can mark where a
+// transmission began (conventional.OnsetIQSource, issue #1288).
+func (s *ChannelVoiceSource) StreamIQCounted(ctx context.Context) (<-chan []complex64, uint64, error) {
+	eng := s.get()
+	if eng == nil {
+		return nil, 0, ErrNoWidebandEngine
+	}
+	ch, start, unsub, ok := eng.SubscribeChannelIQCounted(s.freqHz)
+	if !ok {
+		return nil, 0, fmt.Errorf("widebandt2: no channel tuned to %d Hz", s.freqHz)
+	}
+	go func() {
+		<-ctx.Done()
+		unsub()
+	}()
+	return ch, start, nil
+}
+
+// MarkCallOnset records stream position onset as the start of the
+// transmission whose call the scanner is about to declare; the call's voice
+// chain (StreamIQ) starts there.
+func (s *ChannelVoiceSource) MarkCallOnset(onset uint64) {
+	if eng := s.get(); eng != nil {
+		eng.MarkChannelOnset(s.freqHz, onset)
+	}
 }
