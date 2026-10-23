@@ -139,9 +139,12 @@ describe("Spectrum panel", () => {
     // frequency equals the center, and the matching bin (index 4) is -40.
     canvas.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 100, height: 320 }) as DOMRect;
-    fireEvent.mouseMove(canvas, { clientX: 50, clientY: 10 });
-
+    // Hover inside the retry: the frame is delivered by an effect after the
+    // device list resolves, and on a slow CI runner a single early hover
+    // lands before the panel has a frame to read, so the readout never
+    // appears (PR #1308's web-test failure).
     await waitFor(() => {
+      fireEvent.mouseMove(canvas, { clientX: 50, clientY: 10 });
       expect(screen.getByText(/153\.0000 MHz · -40\.0 dBFS/)).toBeInTheDocument();
     });
 
@@ -179,9 +182,9 @@ describe("Spectrum panel", () => {
     const analyzer = await screen.findByLabelText(/spectrum analyzer/i);
     analyzer.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 100, height: 160 }) as DOMRect;
-    fireEvent.mouseMove(analyzer, { clientX: 50, clientY: 10 });
-
+    // Hover inside the retry, as above: the frame may arrive after the canvas.
     await waitFor(() => {
+      fireEvent.mouseMove(analyzer, { clientX: 50, clientY: 10 });
       expect(screen.getByText(/153\.0000 MHz · -40\.0 dBFS/)).toBeInTheDocument();
     });
   });
