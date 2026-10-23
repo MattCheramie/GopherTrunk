@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.4] — 2026-10-23
+
 ### Fixed
 - **The Motorola 0x05 / 0x09 log line no longer looks like undecoded call
   grants (#1273).** A Motorola-built P25 site sends these opcodes
