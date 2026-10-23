@@ -8,6 +8,25 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`wmbus`, `capture` and `power` can be stopped when Ctrl-C never reaches
+  them (#1256).** Started as root through `su` on Termux, the process has no
+  terminal of its own (`ps` shows its TTY as `?`), so the terminal's Ctrl-C
+  goes to `su` and the run carried on until it was `kill`ed. It now detects
+  that, says so at start, and stops on `q` + Enter.
+
+### Improved
+- **`wmbus` needs half the CPU (#1256).** The S5 phone in #1256 could not
+  keep up at 1.6 MS/s and dropped IQ, and a telegram across a gap is lost.
+  The receiver now demodulates at 4 samples per chip instead of 8, with a
+  shorter resampler and the carrier correction after it: 0.06 of an x86
+  core instead of 0.13 at 1.6 MS/s, with the same or more CRC-valid
+  telegrams on all of that reporter's captures and saved telegrams. The
+  drop warning now suggests `-rate 1200000`, the cheapest rate to decode;
+  `-rate 1024000` costs about twice as much.
+
+## [v1.3.4] — 2026-10-23
+
+### Fixed
 - **The Motorola 0x05 / 0x09 log line no longer looks like undecoded call
   grants (#1273).** A Motorola-built P25 site sends these opcodes
   continuously with a few constant payloads, and GopherTrunk logged

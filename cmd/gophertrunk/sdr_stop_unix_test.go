@@ -3,6 +3,7 @@
 package main
 
 import (
+	"io"
 	"syscall"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 // summary, instead of killing it outright (#1256).
 func TestSDRStopContextEndsOnTermAndHup(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGHUP} {
-		ctx, stop := sdrStopContext()
+		ctx, stop := sdrStopContext("test", io.Discard)
 		if err := syscall.Kill(syscall.Getpid(), sig); err != nil {
 			t.Fatal(err)
 		}

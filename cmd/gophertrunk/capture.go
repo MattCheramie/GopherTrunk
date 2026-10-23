@@ -172,7 +172,7 @@ FLAGS:`)
 	}
 
 	// Ctrl-C ends the capture early but keeps whatever was written.
-	ctx, stop := sdrStopContext()
+	ctx, stop := sdrStopContext("capture", os.Stderr)
 	defer stop()
 
 	// Count IQ chunks the driver drops while this capture runs. A dropped

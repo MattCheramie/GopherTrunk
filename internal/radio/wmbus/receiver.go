@@ -15,8 +15,16 @@ const ChannelHz = 868_950_000
 // several percent off it; the clock recovery tracks ±15 %.
 const ChipRateHz = 100_000
 
-// procRateHz is the rate the receiver demodulates at: 8 samples per chip.
-const procRateHz = 800_000
+// procRateHz is the rate the receiver demodulates at: 4 samples per chip.
+// It was 8 until the S5 phone in issue #1256 could not keep up at 1.6 MS/s
+// (8721 IQ chunks dropped in 78 s at home, about 4 % of the IQ on a
+// 33-minute walk). At 4, with the shorter resampler below and the carrier
+// correction moved after it, a live run takes 0.06 of an x86 core instead of
+// 0.13 (BenchmarkReceiver), and the reporter's data decodes as well or
+// better: their three 60 s captures 11 / 6 / 4 CRC-valid (was 10 / 6 / 4);
+// the 23 Oct walk's 168 saved telegrams 61 one by one (53) and 78 in
+// sequence (79); the 20 Oct walk's 156 telegrams 113 (110) and 133 (133).
+const procRateHz = 400_000
 
 const (
 	nominalSPC = float64(procRateHz) / ChipRateHz // samples per chip
@@ -39,9 +47,9 @@ const (
 	afcHoldSeconds = 120
 	// thresholdWindow is the slicing-threshold average: 32 chips. Both
 	// preambles, the access code and T mode data are DC-balanced over it.
-	thresholdWindow = 256
+	thresholdWindow = 128
 	// smoothLen is the post-discriminator boxcar: half a chip.
-	smoothLen = 4
+	smoothLen = 2
 	// sampleLoopGain and sampleLoopRateGain are the mid-chip clock's
 	// phase and period gains, per transition.
 	sampleLoopGain     = 0.15
@@ -49,16 +57,16 @@ const (
 	// decideSpan is how many samples either side of a chip's centre (in
 	// total, plus the centre) its decision averages: with the half-chip
 	// boxcar that makes about a chip-long matched filter.
-	decideSpan = 4
+	decideSpan = 2
 	// clickClipRad bounds each discriminator sample to this far either
-	// side of the carrier: 64 kHz at the processing rate, above the C mode
+	// side of the carrier: 64 kHz, above the C mode
 	// (±45 kHz) and nominal T mode (±50 kHz) deviation. On the issue #1256
 	// walk (156 saved telegrams) it is what makes the soft CRC repair work:
 	// without it the bit errors were mostly the decisions with the LARGEST
 	// margin (clicks), so ranking bits by margin found nothing; with it
 	// the CRC-valid count went from 129 to 133, and to 110 from 99 for
 	// telegrams decoded without a carrier estimate from earlier ones. The
-	// gain plateaus from 0.4 to 0.6 rad.
+	// gain plateaued from 51 to 77 kHz (measured at 8 samples per chip).
 	clickClipRad = 2 * math.Pi * 64_000 / procRateHz
 )
 
@@ -116,13 +124,18 @@ type ReceiverStats struct {
 
 // Receiver turns IQ into wM-Bus frames.
 type Receiver struct {
-	opts  ReceiverOptions
-	nco   *dsp.NCO
-	rs    *dsp.Resampler
-	chf   *filter.FIR
-	ratio float64 // input samples per processed sample
+	opts ReceiverOptions
+	// nco moves the configured OffsetHz to DC at the input rate, ahead of
+	// the resampler; afcNCO applies the learned carrier correction after
+	// it, at the processing rate, where it costs a quarter as much at
+	// 1.6 MS/s (it runs on every sample once a frame has set it).
+	nco    *dsp.NCO
+	afcNCO *dsp.NCO
+	rs     *dsp.Resampler
+	chf    *filter.FIR
+	ratio  float64 // input samples per processed sample
 
-	mixBuf, rsBuf, chBuf []complex64
+	mixBuf, rsBuf, afcBuf, chBuf []complex64
 
 	prev   complex64
 	smooth [smoothLen]float64
@@ -162,7 +175,7 @@ type Receiver struct {
 
 // NewReceiver builds a Receiver.
 func NewReceiver(o ReceiverOptions) (*Receiver, error) {
-	if o.SampleRateHz < procRateHz/2 {
+	if o.SampleRateHz < 400_000 {
 		return nil, errors.New("wmbus: sample rate must be at least 400 kS/s")
 	}
 	r := &Receiver{opts: o, spc: nominalSPC}
@@ -173,7 +186,11 @@ func NewReceiver(o ReceiverOptions) (*Receiver, error) {
 	if in != procRateHz {
 		g := gcd(procRateHz, in)
 		l, m := procRateHz/g, in/g
-		taps := (12*max(l, m) + l - 1) / l
+		// 6 taps per input-to-output ratio: the channel filter after
+		// it does the selection, so this filter only has to keep what
+		// folds into the channel down. 12 (the old value, 48 taps at
+		// 1.6 MS/s) decoded the same frames from the #1256 captures.
+		taps := (6*max(l, m) + l - 1) / l
 		r.rs = dsp.NewResampler(l, m, max(taps, 8), 6)
 	}
 	r.ratio = o.SampleRateHz / procRateHz
@@ -200,7 +217,8 @@ func NewReceiver(o ReceiverOptions) (*Receiver, error) {
 
 // channelFilter is the channel filter at the processing rate.
 func channelFilter(cutoffHz float64) *filter.FIR {
-	return filter.NewFIR(filter.LowpassKaiser(63, cutoffHz/procRateHz, 6))
+	// 31 taps at 4 samples per chip span the same 78 µs the 63 did at 8.
+	return filter.NewFIR(filter.LowpassKaiser(31, cutoffHz/procRateHz, 6))
 }
 
 // carrierHz is where the frame being delivered sat relative to the
@@ -239,11 +257,10 @@ func (r *Receiver) afc(carrierHz float64) {
 	}
 	r.afcLocked = true
 	r.afcAt = r.n
-	off := r.opts.OffsetHz + r.afcHz
-	if r.nco == nil {
-		r.nco = dsp.NewNCO(off, r.opts.SampleRateHz)
+	if r.afcNCO == nil {
+		r.afcNCO = dsp.NewNCO(r.afcHz, procRateHz)
 	} else {
-		r.nco.SetOffset(off, r.opts.SampleRateHz)
+		r.afcNCO.SetOffset(r.afcHz, procRateHz)
 	}
 	// The slicing threshold follows the new offset within its window
 	// (32 chips), well before the next frame's access code.
@@ -304,6 +321,10 @@ func (r *Receiver) processBlock(iq []complex64) {
 	if r.rs != nil {
 		r.rsBuf = r.rs.Process(r.rsBuf[:0], iq)
 		iq = r.rsBuf
+	}
+	if r.afcNCO != nil {
+		r.afcBuf = r.afcNCO.Mix(r.afcBuf, iq)
+		iq = r.afcBuf
 	}
 	if r.narrow && r.n-r.afcAt > afcHoldSeconds*procRateHz {
 		// No CRC-valid frame for a while: widen the filter again around
