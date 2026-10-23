@@ -164,7 +164,7 @@ func TestPowerSweepOverRTLTCP(t *testing.T) {
 	var out bytes.Buffer
 	w := bufio.NewWriter(&out)
 	err = runPowerSweeps(ctx, src, plan, powersweep.Integration{Samples: 20 * plan.FFTSize}, powerSchedule{every: time.Second, single: true},
-		w, nil, time.Now, sleepCtx)
+		w, nil, time.Now, sleepCtx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestRunPowerSweepsHonoursExitTimer(t *testing.T) {
 	var out bytes.Buffer
 	w := bufio.NewWriter(&out)
 	err = runPowerSweeps(context.Background(), src, plan, powersweep.Integration{Samples: plan.FFTSize},
-		powerSchedule{every: 10 * time.Second, stopAfter: 35 * time.Second}, w, nil, now, sleep)
+		powerSchedule{every: 10 * time.Second, stopAfter: 35 * time.Second}, w, nil, now, sleep, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestRunPowerSweepsKeepsIntervalWhenFFTIsSlow(t *testing.T) {
 	var out, notes bytes.Buffer
 	w := bufio.NewWriter(&out)
 	err = runPowerSweeps(context.Background(), src, plan, integ,
-		powerSchedule{every: every, stopAfter: 35 * time.Second}, w, &notes, now, sleep)
+		powerSchedule{every: every, stopAfter: 35 * time.Second}, w, &notes, now, sleep, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestRunPowerSweepsNoSlowCPUNoteWhenRealTime(t *testing.T) {
 		var out, notes bytes.Buffer
 		w := bufio.NewWriter(&out)
 		err = runPowerSweeps(context.Background(), src, plan, integ,
-			powerSchedule{every: every, single: true}, w, &notes, now, sleepCtx)
+			powerSchedule{every: every, single: true}, w, &notes, now, sleepCtx, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -417,5 +417,94 @@ func TestPowerPlanSummaryExplainsBinChoice(t *testing.T) {
 	}
 	if got := powerPlanSummary("x", exact, plan, 30*time.Second); strings.Count(got, "\n") != 1 {
 		t.Errorf("exact bin request should print the layout line only, got:\n%s", got)
+	}
+}
+
+// shortHopsSource keeps up with real time, except that the hops listed in
+// speed (by index across the whole run) deliver at that fraction of real
+// time: each Capture advances the fake clock by n/rate/speed.
+type shortHopsSource struct {
+	rate  float64
+	speed map[int]float64
+	clock *time.Time
+	hop   int
+}
+
+func (s *shortHopsSource) Tune(uint32) error { s.hop++; return nil }
+func (s *shortHopsSource) Capture(_ context.Context, n int) ([]complex64, error) {
+	sp := 1.0
+	if v, ok := s.speed[s.hop-1]; ok {
+		sp = v
+	}
+	*s.clock = s.clock.Add(time.Duration(float64(n) / s.rate / sp * float64(time.Second)))
+	return make([]complex64, n), nil
+}
+
+// TestRunPowerSweepsShortWithoutDropsIsNotTheCPU is the 23 Oct #1230 S5 run:
+// hops 1-3 of the first sweep integrated 46 %, 41 % and 69 % of real time and
+// every later hop filled, with no IQ dropped on the way to the FFT. The CPU
+// kept up (it took every sample the dongle delivered), so the note must not
+// blame it. Fail-first: the old note said "the FFT can't keep up" here.
+func TestRunPowerSweepsShortWithoutDropsIsNotTheCPU(t *testing.T) {
+	const rate = 2_400_000
+	r, _ := powersweep.ParseRange("88M:108M:10k")
+	plan, err := powersweep.NewPlan(r, rate, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, 10, 23, 8, 29, 34, 0, time.UTC)
+	now := func() time.Time { return clock }
+	sleep := func(_ context.Context, d time.Duration) error {
+		if d > 0 {
+			clock = clock.Add(d)
+		}
+		return nil
+	}
+	src := &shortHopsSource{rate: rate, speed: map[int]float64{0: 0.46, 1: 0.41, 2: 0.69}, clock: &clock}
+	every := 30 * time.Second
+	integ := powerIntegration(every, rate, len(plan.Hops), 0)
+	var out, notes bytes.Buffer
+	err = runPowerSweeps(context.Background(), src, plan, integ,
+		powerSchedule{every: every, stopAfter: 90 * time.Second}, bufio.NewWriter(&out), &notes, now, sleep,
+		func() uint64 { return 0 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(notes.String(), "can't keep up") {
+		t.Fatalf("blamed the CPU for a short sweep with no IQ dropped:\n%s", notes.String())
+	}
+	if n := strings.Count(notes.String(), "the SDR delivered fewer samples"); n != 1 {
+		t.Fatalf("delivery note printed %d times, want once:\n%s", n, notes.String())
+	}
+	if !strings.Contains(notes.String(), "sweep 1 ") {
+		t.Fatalf("note does not name the short sweep:\n%s", notes.String())
+	}
+}
+
+// TestRunPowerSweepsShortWithDropsIsTheCPU: a short sweep that dropped IQ on
+// the way to the FFT is the CPU (the 23 Oct S5 Neo run, ~38 % on every hop),
+// and the note says how many chunks went.
+func TestRunPowerSweepsShortWithDropsIsTheCPU(t *testing.T) {
+	const rate = 2_400_000
+	r, _ := powersweep.ParseRange("88M:108M:10k")
+	plan, err := powersweep.NewPlan(r, rate, 0.25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, 10, 23, 14, 57, 43, 0, time.UTC)
+	now := func() time.Time { return clock }
+	src := &slowFFTSource{rate: rate, speed: 0.38, clock: &clock}
+	every := 30 * time.Second
+	integ := powerIntegration(every, rate, len(plan.Hops), 0)
+	var drops uint64
+	countingDrops := func() uint64 { drops += 500; return drops }
+	var out, notes bytes.Buffer
+	err = runPowerSweeps(context.Background(), src, plan, integ,
+		powerSchedule{every: every, single: true}, bufio.NewWriter(&out), &notes, now, sleepCtx, countingDrops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(notes.String(), "can't keep up") || !strings.Contains(notes.String(), "(500 IQ chunks dropped)") {
+		t.Fatalf("want the slow-CPU note with the drop count:\n%s", notes.String())
 	}
 }

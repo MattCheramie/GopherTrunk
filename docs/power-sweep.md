@@ -122,13 +122,22 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
 - **A slow CPU averages fewer samples; it doesn't slow the sweeps.** Each hop
   gets its share of the interval. If the FFT can't keep up with the sample
   rate, as on older phones, the hop stops at that time limit with whatever
-  it averaged, so sweeps still start every `-i`. `power` says so once on
+  it averaged, so sweeps still start every `-i`. `power` prints a note on
   stderr when a sweep averages under 90 % of what real time delivered, and
-  the `samples` column shows how many each hop used. A lower `-rate` (for
-  example `1024000`) needs less CPU but takes more hops. Since
-  the FFT was rewritten for speed (about 3–4× faster, measured on 32-bit
-  and 64-bit x86), a 2.4 MS/s dongle should keep up on most phones; the
-  note on stderr tells you if yours does not.
+  the `samples` column shows how many each hop used. The note names the
+  cause:
+  - *"the FFT can't keep up … (N IQ chunks dropped)"*: samples arrived
+    faster than the CPU could take them. A lower `-rate` (for example
+    `1024000`) needs less CPU but takes more hops.
+  - *"no IQ was dropped on the way to the FFT, so the CPU kept up: the SDR
+    delivered fewer samples than its rate"*: the CPU took every sample the
+    dongle sent, and the dongle sent too few: a slow USB link or driver,
+    not the CPU, so a lower `-rate` won't help.
+
+  The FFT was rewritten for speed (about 3–4× faster, measured on 32-bit
+  and 64-bit x86). Measured on phones in #1230: a Galaxy S5 kept up at
+  2.4 MS/s from its fourth hop on, while a Galaxy S5 Neo managed about 38 %
+  and needs a lower `-rate`.
 - **Differences from rtl_power:** the default crop is 0.25 (rtl_power's is
   0), gain is in tenths of a dB, and there is no `-w` window choice (Hann is
   used) or `-F` downsampling filter.

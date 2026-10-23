@@ -75,7 +75,7 @@ func TestPowerExplainsRTLTCPHangUp(t *testing.T) {
 	}
 	var out bytes.Buffer
 	err = runPowerSweeps(ctx, src, plan, powersweep.Integration{Samples: 20 * plan.FFTSize}, powerSchedule{every: time.Second, single: true},
-		bufio.NewWriter(&out), nil, time.Now, sleepCtx)
+		bufio.NewWriter(&out), nil, time.Now, sleepCtx, nil)
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("sweep against a hung-up server = %v, want io.ErrUnexpectedEOF from the short stream", err)
 	}

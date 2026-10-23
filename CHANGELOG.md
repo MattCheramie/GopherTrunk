@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`power` no longer blames the CPU when the dongle is what fell short
+  (#1230).** A short sweep was always put down to a slow FFT, so the
+  reporter's Galaxy S5 was told it could not keep up when only the first
+  three hops of its first sweep came up short and every later hop filled.
+  `power` now counts the IQ dropped between the dongle and the FFT: a short
+  sweep with drops is the CPU (the note gives the count), one without is
+  the SDR delivering fewer samples than its rate. Each kind of note prints
+  once and names the sweep it happened in.
 - **`wmbus`, `capture` and `power` can be stopped when Ctrl-C never reaches
   them (#1256).** Started as root through `su` on Termux, the process has no
   terminal of its own (`ps` shows its TTY as `?`), so the terminal's Ctrl-C
