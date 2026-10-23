@@ -88,6 +88,8 @@ func main() {
 		runPower(os.Args[2:])
 	case "wmbus":
 		runWMBus(os.Args[2:])
+	case "ekc":
+		runEKC(os.Args[2:])
 	case "test":
 		runSiglabTest(os.Args[2:])
 	case "siglab":
@@ -161,6 +163,7 @@ USAGE:
   gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
   gophertrunk power [flags]           rtl_power-style sweep logger (CSV) for a local or rtl_tcp SDR
   gophertrunk wmbus [flags]           Wireless M-Bus (868 MHz utility meter) telegram decoder, live or from a capture
+  gophertrunk ekc -in keys.ekc        list the keys in a KFDtool key container (no key material printed)
   gophertrunk bundle <cmd> [flags]    build/inspect a GopherTrunk Bundle (.gtb.tar.gz): pack|info|verify|extract|add|commit
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
   gophertrunk cryptolab <tool> ...    cryptographic-research toolkit (optional; build with -tags cryptolab)
@@ -181,7 +184,7 @@ var commandHelp = map[string]func([]string){
 	"decode": runDecode, "replay": runReplay, "analyze": runAnalyze,
 	"identify": runIdentify, "spectrum": runSpectrum, "hunt": runHunt,
 	"rfscope": runRFScope, "gen": runGen, "capture": runCapture,
-	"power": runPower, "wmbus": runWMBus, "test": runSiglabTest,
+	"power": runPower, "wmbus": runWMBus, "ekc": runEKC, "test": runSiglabTest,
 	"import-pdf": runImport, "tui": runTUI,
 }
 

@@ -364,6 +364,16 @@ export interface EncryptionKey {
   Key: string;
 }
 
+// EncryptionKeyFile is a KFDtool encrypted key container (.ekc) the daemon
+// decrypts at startup (issue #1305). Leave Password and PasswordEnv empty to
+// be asked for the password on the terminal.
+export interface EncryptionKeyFile {
+  Path: string;
+  Password: string;
+  PasswordEnv: string;
+  Keyset: number;
+}
+
 // SiteConfig names one trunked site by its RFSS/Site IDs and, optionally,
 // carries its geographic position (decimal degrees) so the console can plot it
 // on a map. Coordinates are filled in automatically by RadioReference import.
@@ -386,6 +396,7 @@ export interface SystemConfig {
   DMRBandPlan?: DMRBandPlan | null;
   NXDNBandPlan?: NXDNBandPlan | null;
   EncryptionKeys?: EncryptionKey[] | null;
+  EncryptionKeyFiles?: EncryptionKeyFile[] | null;
   EncryptedCalls?: EncryptedCallsConfig;
   // Long-tail protocol decoder knobs (TETRA*, LTR*, P25Phase1/2*, NXDN*,
   // EDACS*, MPT1327*, Motorola*, DStarFEC, DMRInterleavedVoice) round-trip

@@ -7,6 +7,19 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Decryption keys from KFDtool key containers (`.ekc`) (#1305).** A
+  system's `encryption_key_files` lists `.ekc` files exported by the open
+  KFDtool keyloader, so operator keys stay encrypted at rest instead of
+  sitting in the YAML. The daemon decrypts each at startup with
+  `password_env`, `password`, or a terminal prompt, and adds its traffic
+  keys (DES-OFB, TDES, AES, ADP; KEKs skipped; the active keyset wins on a
+  shared key ID) to the system's keys. An `encryption_keys` entry with the
+  same key ID wins. Decrypted keys stay in memory and are never written
+  back. `gophertrunk ekc -in keys.ekc` lists what a container holds and what
+  would load, without printing key material. The reader is pinned against a
+  container written by KFDtool's own code.
+
 ### Fixed
 - **`power` no longer blames the CPU when the dongle is what fell short
   (#1230).** A short sweep was always put down to a slow FFT, so the

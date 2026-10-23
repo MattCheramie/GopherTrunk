@@ -1866,6 +1866,14 @@ type SystemConfig struct {
 	// protocols without an encryption decoder. See issue #276.
 	EncryptionKeys []EncryptionKeyConfig `yaml:"encryption_keys"`
 
+	// EncryptionKeyFiles loads more decryption keys from KFDtool encrypted
+	// key containers (.ekc), so the keys stay encrypted at rest instead of
+	// sitting in this file (issue #1305). The daemon decrypts each at
+	// startup and adds its traffic keys (TEKs) to EncryptionKeys; an
+	// encryption_keys entry with the same key_id wins. The decrypted keys
+	// are held in memory only, never written back to the config.
+	EncryptionKeyFiles []EncryptionKeyFileConfig `yaml:"encryption_key_files"`
+
 	// EncryptedCalls controls how the engine allocates scarce voice SDRs
 	// to encrypted calls on this system, so a few long encrypted calls
 	// can't monopolize a limited voice pool and starve clear traffic.
@@ -1955,6 +1963,34 @@ type EncryptionKeyConfig struct {
 	KeyID     uint16 `yaml:"key_id"`
 	Algorithm string `yaml:"algorithm"`
 	Key       string `yaml:"key"`
+}
+
+// EncryptionKeyFileConfig is one KFDtool key container to load keys from.
+type EncryptionKeyFileConfig struct {
+	// Path is the .ekc file.
+	Path string `yaml:"path"`
+	// Password unlocks the container. Leave it (and PasswordEnv) empty to
+	// be asked for it on the terminal at startup.
+	Password string `yaml:"password"`
+	// PasswordEnv names an environment variable holding the password.
+	PasswordEnv string `yaml:"password_env"`
+	// Keyset loads only the keys of this KFD keyset ID; 0 loads every
+	// keyset, and where two keysets share a key ID the active one wins.
+	Keyset int `yaml:"keyset"`
+}
+
+// Validate checks one key file entry on its own.
+func (f EncryptionKeyFileConfig) Validate() error {
+	if strings.TrimSpace(f.Path) == "" {
+		return fmt.Errorf("path is required")
+	}
+	if f.Password != "" && f.PasswordEnv != "" {
+		return fmt.Errorf("password and password_env are mutually exclusive")
+	}
+	if f.Keyset < 0 {
+		return fmt.Errorf("keyset %d must be 0 (all keysets) or a keyset ID", f.Keyset)
+	}
+	return nil
 }
 
 // KeyBytes decodes Key: hex, with surrounding whitespace, internal spaces
