@@ -182,7 +182,15 @@ FLAGS:`)
 	integ := powerIntegration(every, uint32(*rate), len(plan.Hops), settleFor)
 	fmt.Fprint(os.Stderr, powerPlanSummary(name, r, plan, every))
 
-	err = runPowerSweeps(ctx, src, plan, integ, powerSchedule{every: every, stopAfter: stopAfter, single: *single}, bw, os.Stderr, time.Now, sleepCtx)
+	// IQ dropped anywhere between the dongle and the FFT: by the driver (its
+	// queue full) or by the source's slack queue (the FFT behind). It tells
+	// a slow CPU from a dongle that delivered too few samples.
+	driverDrops := &captureDropCounter{serial: dev.Info().Serial}
+	sdr.SetIQDropObserver(driverDrops.observe)
+	defer sdr.SetIQDropObserver(nil)
+	drops := func() uint64 { return driverDrops.count() + src.dropped.Load() }
+
+	err = runPowerSweeps(ctx, src, plan, integ, powerSchedule{every: every, stopAfter: stopAfter, single: *single}, bw, os.Stderr, time.Now, sleepCtx, drops)
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		err = iqStreamEnded(dev, err)
 	}
@@ -255,7 +263,7 @@ func powerIntegration(every time.Duration, rate uint32, hops int, settle time.Du
 }
 
 // powerSlowCPUFraction is how much of its request a sweep must integrate
-// before runPowerSweeps calls the CPU too slow. A hop that keeps up with real
+// before runPowerSweeps says it fell short. A hop that keeps up with real
 // time still ends a little short of it: the budget is checked once per capture
 // block (~27 ms at 2.4 MS/s) and the clock starts after a retune that costs a
 // few ms of USB or network I/O. A CPU that genuinely falls behind (the #1230
@@ -264,29 +272,62 @@ const powerSlowCPUFraction = 0.9
 
 // runPowerSweeps runs sweeps on sched, writing (and flushing) each one's rows
 // as it completes so a long log can be tailed and a Ctrl-C loses at most the
-// sweep in progress. The first sweep that integrates clearly fewer samples than
-// asked (under powerSlowCPUFraction: the FFT could not keep up, see
-// powerIntegration) prints one note to notes.
+// sweep in progress. A sweep that integrates clearly fewer samples than asked
+// (under powerSlowCPUFraction) prints a note to notes, once per cause.
+//
+// drops, when non-nil, counts the IQ chunks dropped between the dongle and the
+// FFT so far, and settles the cause. A hop's source queue is emptied on every
+// retune and holds about 0.2 s of IQ, so an FFT under 90 % of real time falls
+// further behind than that within a hop and drops chunks: a short sweep with
+// drops is the CPU. One with none got every sample the dongle delivered, so
+// the dongle (its USB link or driver) delivered fewer than its rate. Without
+// that split, the S5 in #1230 was told its CPU could not keep up when only
+// the first three hops of its first sweep came up short and every later hop
+// filled. Without drops (nil) a short sweep is put down to the CPU, as before.
 func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.Plan, in powersweep.Integration,
-	sched powerSchedule, w *bufio.Writer, notes io.Writer, now func() time.Time, sleep func(context.Context, time.Duration) error) error {
+	sched powerSchedule, w *bufio.Writer, notes io.Writer, now func() time.Time, sleep func(context.Context, time.Duration) error,
+	drops func() uint64) error {
 	if in.Now == nil {
 		in.Now = now
 	}
 	start := now()
-	noted := false
-	for {
+	var notedCPU, notedSource bool
+	var lastDrops uint64
+	if drops != nil {
+		lastDrops = drops()
+	}
+	for sweep := 1; ; sweep++ {
 		t0 := now()
 		rows, err := powersweep.Sweep(ctx, src, plan, in, t0)
 		if err != nil {
 			return err
 		}
-		if !noted && notes != nil {
-			if got, want := sweepSamples(rows), len(rows)*in.Samples; float64(got) < powerSlowCPUFraction*float64(want) {
-				noted = true
-				fmt.Fprintf(notes, "power: note — the FFT can't keep up with %.0f S/s on this CPU, so each hop averaged "+
-					"%.0f%% of the samples real time delivers, to keep sweeps on the -i schedule. The CSV's samples column has each hop's "+
-					"count. A lower -rate (e.g. 1024000) needs less CPU.\n",
-					plan.SampleRateHz, 100*float64(got)/float64(want))
+		var dropped uint64
+		if drops != nil {
+			d := drops()
+			dropped, lastDrops = d-lastDrops, d
+		}
+		if notes != nil {
+			got, want := sweepSamples(rows), len(rows)*in.Samples
+			if pct := 100 * float64(got) / float64(want); float64(got) < powerSlowCPUFraction*float64(want) {
+				switch {
+				case drops == nil || dropped > 0:
+					if !notedCPU {
+						notedCPU = true
+						fmt.Fprintf(notes, "power: note — the FFT can't keep up with %.0f S/s on this CPU, so each hop of sweep %d averaged "+
+							"%.0f%% of the samples real time delivers, to keep sweeps on the -i schedule%s. The CSV's samples column has each hop's "+
+							"count. A lower -rate (e.g. 1024000) needs less CPU.\n",
+							plan.SampleRateHz, sweep, pct, droppedClause(dropped))
+					}
+				default:
+					if !notedSource {
+						notedSource = true
+						fmt.Fprintf(notes, "power: note — sweep %d integrated %.0f%% of the samples real time delivers at %.0f S/s, "+
+							"but no IQ was dropped on the way to the FFT, so the CPU kept up: the SDR delivered fewer samples than its rate "+
+							"(a USB link or driver that was slow to deliver). The CSV's samples column has each hop's count.\n",
+							sweep, pct, plan.SampleRateHz)
+					}
+				}
 			}
 		}
 		if err := powersweep.WriteCSV(w, rows); err != nil {
@@ -306,6 +347,15 @@ func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.
 			return err
 		}
 	}
+}
+
+// droppedClause names the IQ chunks a short sweep dropped, for the slow-CPU
+// note; it is empty when the count is unknown.
+func droppedClause(n uint64) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (%d IQ chunks dropped)", n)
 }
 
 // sweepSamples is the number of IQ samples a sweep's rows integrated.
