@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional/tonecode"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -1137,7 +1138,10 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 		}
 		seenFreq[ch.FrequencyHz] = j
 	}
-	seenConv := make(map[uint32]int, len(d.Conventional))
+	// seenConv groups the conventional entries by frequency: several may
+	// share one when their tone gates tell them apart (see
+	// validateSharedConvFrequency).
+	seenConv := make(map[uint32][]int, len(d.Conventional))
 	for j, ch := range d.Conventional {
 		path := fmt.Sprintf("sdr.devices[%d].conventional[%d]", idx, j)
 		if err := validateConvChannelAt(path, ch); err != nil {
@@ -1167,12 +1171,78 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 		if prev, dup := seenFreq[ch.FrequencyHz]; dup {
 			return fmt.Errorf("%s: frequency_hz %d is also sdr.devices[%d].channels[%d]", path, ch.FrequencyHz, idx, prev)
 		}
-		if prev, dup := seenConv[ch.FrequencyHz]; dup {
-			return fmt.Errorf("%s: duplicate frequency_hz %d (also at conventional[%d])", path, ch.FrequencyHz, prev)
+		seenConv[ch.FrequencyHz] = append(seenConv[ch.FrequencyHz], j)
+	}
+	for _, ch := range d.Conventional { // config order, so the first bad group is reported
+		if err := validateSharedConvFrequency(idx, d.Conventional, seenConv[ch.FrequencyHz]); err != nil {
+			return err
 		}
-		seenConv[ch.FrequencyHz] = j
 	}
 	return nil
+}
+
+// validateSharedConvFrequency checks the sdr.devices[idx].conventional
+// entries at indexes js, which share one frequency. Several logical channels
+// may share a carrier when their CTCSS / DCS gates tell each transmission
+// apart (issue #1288 §5): the engine extracts the carrier once and each
+// channel's own tone gate decides which one records it. So every entry must
+// have a tone gate, no two gates may open on the same transmission
+// (tonecode.Overlap: the same tone, CTCSS tones the detector cannot separate,
+// a DCS alias), they must agree on the mode, and at most one may run data
+// decoders (they ignore the tone gate, so two would decode every burst twice).
+func validateSharedConvFrequency(idx int, chans []ConvChannelConfig, js []int) error {
+	if len(js) < 2 {
+		return nil
+	}
+	path := func(j int) string { return fmt.Sprintf("sdr.devices[%d].conventional[%d]", idx, j) }
+	mode := func(ch ConvChannelConfig) string {
+		if m := strings.ToLower(strings.TrimSpace(ch.Mode)); m != "" {
+			return m
+		}
+		return "fm"
+	}
+	decoders := -1
+	for a, ja := range js {
+		ca := chans[ja]
+		ga := convToneGate(ca.Tone)
+		if !ga.Toned() {
+			return fmt.Errorf("%s: frequency_hz %d is also conventional[%d]; channels sharing a frequency each need a "+
+				"tone (ctcss or dcs) to tell their transmissions apart, and this one has none", path(ja), ca.FrequencyHz, js[(a+1)%len(js)])
+		}
+		if len(ca.Decoders) > 0 {
+			if decoders >= 0 {
+				return fmt.Errorf("%s: decoders are also set on conventional[%d], which shares frequency_hz %d; "+
+					"data decoders ignore the tone gate, so set them on one of the two", path(ja), decoders, ca.FrequencyHz)
+			}
+			decoders = ja
+		}
+		for _, jb := range js[a+1:] {
+			cb := chans[jb]
+			if mode(ca) != mode(cb) {
+				return fmt.Errorf("%s: mode %q differs from conventional[%d] (%q) on the same frequency_hz %d",
+					path(jb), mode(cb), ja, mode(ca), cb.FrequencyHz)
+			}
+			gb := convToneGate(cb.Tone)
+			if !gb.Toned() {
+				continue // reported when the loop reaches it
+			}
+			overlap, err := tonecode.Overlap(ga, gb)
+			if err != nil {
+				return fmt.Errorf("%s.tone: %w", path(jb), err)
+			}
+			if overlap {
+				return fmt.Errorf("%s: tone %s cannot be told apart from conventional[%d]'s %s on the same frequency_hz %d "+
+					"(the same tone, CTCSS tones under %.1f Hz apart, or a DCS alias such as 023N = 047I)",
+					path(jb), gb, ja, ga, cb.FrequencyHz, tonecode.MinSeparableCTCSSHz)
+			}
+		}
+	}
+	return nil
+}
+
+// convToneGate is a channel's tone squelch in tonecode's terms.
+func convToneGate(t ConvToneConfig) tonecode.Gate {
+	return tonecode.Gate{Mode: t.Mode, CTCSSHz: t.CTCSSHz, DCSCode: t.DCSCode, DCSPolarity: t.DCSPolarity}
 }
 
 // WidebandConvPositionalBase is the positional talkgroup ID base of

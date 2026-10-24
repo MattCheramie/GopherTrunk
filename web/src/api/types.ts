@@ -503,6 +503,9 @@ export interface WidebandConvChannelDTO {
   // The virtual serial the channel's calls run under in active calls/history.
   call_serial: string;
   talkgroup_id?: number;
+  // The channel's CTCSS/DCS gate ("CTCSS 123.0 Hz", "DCS 023N"); logical
+  // channels sharing one frequency are told apart by it.
+  tone?: string;
   decoders?: string[];
 }
 

@@ -31,7 +31,7 @@ func TestValidateWidebandConventional(t *testing.T) {
 		"per-channel gain":    {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Gain: "200"}), "gain does not apply"},
 		"device":              {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Device: "X"}), "device does not apply"},
 		"out of band":         {dev(ConvChannelConfig{FrequencyHz: 462_000_000}), "usable band"},
-		"duplicate":           {dev(ConvChannelConfig{FrequencyHz: 460_100_000}, ConvChannelConfig{FrequencyHz: 460_100_000}), "duplicate frequency_hz"},
+		"duplicate untoned":   {dev(ConvChannelConfig{FrequencyHz: 460_100_000}, ConvChannelConfig{FrequencyHz: 460_100_000}), "each need a tone"},
 		"shared field checks": {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 20}}), "sdr.devices[0].conventional[0].tone.ctcss_hz"},
 	} {
 		err := validateWidebandDevice(0, tc.d, 2_400_000, nil)
@@ -75,5 +75,58 @@ func TestValidateWidebandConventionalTalkgroupIDs(t *testing.T) {
 	c.SDR.Devices[1].Conventional[0].TalkgroupID = WidebandConvPositionalBase // WB1's positional ID
 	if errs := c.validateScanner(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "collides with sdr.devices[0].conventional[0]") {
 		t.Errorf("collision between wideband channels: %v", errs)
+	}
+}
+
+// TestValidateWidebandConventionalSharedFrequency pins issue #1288 §5:
+// several logical channels may share one frequency when their tone gates
+// tell every transmission apart, and anything that would let one
+// transmission open two of them (or decode its data twice) is refused.
+func TestValidateWidebandConventionalSharedFrequency(t *testing.T) {
+	const hz = 460_100_000
+	ctcss := func(label string, tone float64) ConvChannelConfig {
+		return ConvChannelConfig{Label: label, FrequencyHz: hz, Mode: "nfm", Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: tone}}
+	}
+	dcs := func(label, code, pol string) ConvChannelConfig {
+		return ConvChannelConfig{Label: label, FrequencyHz: hz, Mode: "nfm",
+			Tone: ConvToneConfig{Mode: "dcs", DCSCode: code, DCSPolarity: pol}}
+	}
+	dev := func(chs ...ConvChannelConfig) DeviceConfig {
+		return DeviceConfig{Serial: "WB", Role: "wideband", CenterFreqHz: 460_500_000, Conventional: chs}
+	}
+	withDecoders := func(c ConvChannelConfig, d ...string) ConvChannelConfig { c.Decoders = d; return c }
+
+	for name, d := range map[string]DeviceConfig{
+		"two CTCSS":               dev(ctcss("A", 100), ctcss("B", 141.3)),
+		"adjacent EIA tones":      dev(ctcss("A", 159.8), ctcss("B", 162.2)),
+		"CTCSS and DCS":           dev(ctcss("A", 100), dcs("B", "023", "")),
+		"023N and 023I":           dev(dcs("A", "023", "normal"), dcs("B", "023", "inverted")),
+		"three channels":          dev(ctcss("A", 100), ctcss("B", 141.3), dcs("C", "754", "")),
+		"decoders on one":         dev(withDecoders(ctcss("A", 100), "mdc1200"), ctcss("B", 141.3)),
+		"default mode matches fm": dev(ConvChannelConfig{FrequencyHz: hz, Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 100}}, ConvChannelConfig{FrequencyHz: hz, Mode: "fm", Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 141.3}}),
+	} {
+		if err := validateWidebandDevice(0, d, 2_400_000, nil); err != nil {
+			t.Errorf("%s: rejected: %v", name, err)
+		}
+	}
+
+	for name, tc := range map[string]struct {
+		d    DeviceConfig
+		want string
+	}{
+		"one untoned":  {dev(ctcss("A", 100), ConvChannelConfig{FrequencyHz: hz, Mode: "nfm"}), "conventional[1]: frequency_hz 460100000 is also conventional[0]; channels sharing a frequency each need a tone"},
+		"same CTCSS":   {dev(ctcss("A", 123), ctcss("B", 123)), "conventional[1]: tone CTCSS 123.0 Hz cannot be told apart from conventional[0]'s CTCSS 123.0 Hz"},
+		"150.0/151.4":  {dev(ctcss("A", 150.0), ctcss("B", 151.4)), "cannot be told apart"},
+		"DCS alias":    {dev(dcs("A", "023", ""), dcs("B", "047", "inverted")), "tone DCS 047I cannot be told apart from conventional[0]'s DCS 023N"},
+		"DCS both":     {dev(dcs("A", "023", "both"), dcs("B", "023", "inverted")), "cannot be told apart"},
+		"mode differs": {dev(ctcss("A", 100), ConvChannelConfig{FrequencyHz: hz, Mode: "am", Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 141.3}}), "mode \"am\" differs from conventional[0]"},
+		"decoders twice": {dev(withDecoders(ctcss("A", 100), "mdc1200"), withDecoders(ctcss("B", 141.3), "fleetsync")),
+			"conventional[1]: decoders are also set on conventional[0]"},
+		"third overlaps first": {dev(ctcss("A", 100), ctcss("B", 141.3), ctcss("C", 100)), "conventional[2]: tone CTCSS 100.0 Hz cannot be told apart from conventional[0]"},
+	} {
+		err := validateWidebandDevice(0, tc.d, 2_400_000, nil)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want it to mention %q", name, err, tc.want)
+		}
 	}
 }

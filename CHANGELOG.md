@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Several wideband conventional channels on one frequency, told apart by
+  tone (#1288).** `sdr.devices[].conventional` entries may now share a
+  frequency when each has a CTCSS or DCS gate that tells its transmissions
+  apart (two agencies on one carrier). The carrier is extracted once, and
+  each entry records only the transmissions carrying its own tone, under
+  its own serial (`wb:<serial>:conv:<hz>:<tone>`) and talkgroup. Validation
+  refuses what it could not tell apart: an untoned entry on a shared
+  frequency, the same tone twice, CTCSS tones under 2 Hz apart, a DCS alias
+  (023N = 047I), mixed modes, and decoders on more than one entry. The
+  Scanner panels show each channel's tone.
 - **Wideband conventional channels in the Scanner panel (#1288).** The
   continuous `sdr.devices[].conventional` channels now have their own
   read-only section in the web and TUI Scanner panels: label, frequency,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional/tonecode"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/widebandt2"
 )
 
@@ -41,6 +42,9 @@ type wbConvChannel struct {
 	channel conventional.Channel
 	// widebandSerial is the role: wideband dongle the channel's tap is on.
 	widebandSerial string
+	// tone is the channel's CTCSS / DCS gate, which is what tells logical
+	// channels sharing one frequency apart.
+	tone tonecode.Gate
 }
 
 // wbConvSerial is the virtual device serial a wideband conventional channel's
@@ -48,6 +52,17 @@ type wbConvChannel struct {
 // serial) and the composer's voice chains never collide on the shared dongle.
 func wbConvSerial(widebandSerial string, freqHz uint32) string {
 	return fmt.Sprintf("wb:%s:conv:%d", widebandSerial, freqHz)
+}
+
+// wbConvSharedSerial is the serial of one of several logical channels on a
+// shared frequency (issue #1288 §5): the frequency's serial plus the tone
+// that tells this channel apart (validation guarantees each has a distinct
+// one), e.g. "wb:WB1:conv:460100000:ctcss100.0". It depends only on the
+// channel's own config, so it is stable across restarts and does not change
+// when another channel joins or leaves the frequency's list. A channel alone
+// on its frequency keeps wbConvSerial.
+func wbConvSharedSerial(widebandSerial string, freqHz uint32, tone tonecode.Gate) string {
+	return wbConvSerial(widebandSerial, freqHz) + ":" + tone.ID()
 }
 
 // convChannelFromConfig is the conventional.Channel for a configured channel
@@ -99,16 +114,30 @@ func (d *Daemon) buildWidebandConvSources(cfg config.Config, log *slog.Logger) {
 		}
 		serial := entry.Info.Serial
 		get := func() *widebandt2.Engine { return d.widebandEngineForSerial(serial) }
+		perFreq := make(map[uint32]int, len(devCfg.Conventional))
+		for _, ch := range devCfg.Conventional {
+			perFreq[ch.FrequencyHz]++
+		}
 		for _, ch := range devCfg.Conventional {
 			tgid := ch.TalkgroupID
 			if tgid == 0 {
 				tgid = config.WidebandConvPositionalBase | uint32(k)
 			}
 			k++
+			tone := convToneGate(ch.Tone)
+			vserial := wbConvSerial(serial, ch.FrequencyHz)
+			if perFreq[ch.FrequencyHz] > 1 {
+				// One engine tap carries the frequency (see
+				// widebandConvTapChannels); each logical channel gets
+				// its own source on it, and its own tone gate decides
+				// which transmissions it records.
+				vserial = wbConvSharedSerial(serial, ch.FrequencyHz, tone)
+			}
 			d.wbConvChannels = append(d.wbConvChannels, wbConvChannel{
-				source:         widebandt2.NewChannelVoiceSource(get, ch.FrequencyHz, wbConvSerial(serial, ch.FrequencyHz)),
+				source:         widebandt2.NewChannelVoiceSource(get, ch.FrequencyHz, vserial),
 				channel:        convChannelFromConfig(ch, tgid),
 				widebandSerial: serial,
+				tone:           tone,
 			})
 		}
 		if n := len(devCfg.Conventional); n > 0 {
@@ -166,6 +195,31 @@ func (d *Daemon) wbConvStatusSources() []wbConvStatusSource {
 			scanner:        cs,
 			widebandSerial: d.wbConvChannels[i].widebandSerial,
 			talkgroupID:    d.wbConvChannels[i].channel.TalkgroupID,
+			tone:           d.wbConvChannels[i].tone.String(),
+		})
+	}
+	return out
+}
+
+// convToneGate is a configured tone squelch in tonecode's terms.
+func convToneGate(t config.ConvToneConfig) tonecode.Gate {
+	return tonecode.Gate{Mode: t.Mode, CTCSSHz: t.CTCSSHz, DCSCode: t.DCSCode, DCSPolarity: t.DCSPolarity}
+}
+
+// widebandConvTapChannels is the engine channel list for a device's
+// conventional entries: one tap per frequency, however many logical channels
+// share it (issue #1288 §5), so the carrier is extracted once. Logical
+// channels on one frequency share a mode (validation guarantees it).
+func widebandConvTapChannels(chans []config.ConvChannelConfig) []widebandt2.ChannelConfig {
+	out := make([]widebandt2.ChannelConfig, 0, len(chans))
+	seen := make(map[uint32]bool, len(chans))
+	for _, ch := range chans {
+		if seen[ch.FrequencyHz] {
+			continue
+		}
+		seen[ch.FrequencyHz] = true
+		out = append(out, widebandt2.ChannelConfig{
+			FrequencyHz: ch.FrequencyHz, Conventional: true, ConventionalAM: ch.Mode == "am",
 		})
 	}
 	return out

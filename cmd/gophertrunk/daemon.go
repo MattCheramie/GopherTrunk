@@ -1869,11 +1869,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			}
 			// Tap-only analog FM / AM channels; their scanners read the
 			// taps through the sources buildWidebandConvSources registered.
-			for _, ch := range devCfg.Conventional {
-				channels = append(channels, widebandt2.ChannelConfig{
-					FrequencyHz: ch.FrequencyHz, Conventional: true, ConventionalAM: ch.Mode == "am",
-				})
-			}
+			channels = append(channels, widebandConvTapChannels(devCfg.Conventional)...)
 			// Route IQ + tuning through the iqtap broker so the live
 			// spectrum view (and any other secondary observer) can
 			// Subscribe to chunk copies. Without the broker indirection

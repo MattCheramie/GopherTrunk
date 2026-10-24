@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional/tonecode"
 )
 
 // DCS — Digital-Coded Squelch, also called DPL (Digital Private Line).
@@ -224,7 +225,7 @@ func NewDCSDetector(cfg DCSConfig) *DCSDetector {
 		blkLen:            int(spb * 23 / 2),
 		samplesPerBit:     spb,
 		targets:           dcsRotations(target),
-		distanceThreshold: 2,
+		distanceThreshold: tonecode.DCSMatchDistance,
 		wordLen:           int(spb * 23),
 		code:              cfg.Code,
 		polarity:          cfg.Polarity,
@@ -405,65 +406,18 @@ func (d *DCSDetector) Inverted() bool { return d != nil && d.inverted }
 
 // --- internal helpers ---
 
-const dcsCodewordMask uint32 = 0x7F_FF_FF // 23 bits
+const dcsCodewordMask uint32 = tonecode.DCSCodewordMask // 23 bits
 
 // dcsCodewordFromOctal converts a 3-digit octal DCS code (e.g. "023")
-// into the 23-bit word a transmitter cycles on air, with bit i the i-th
-// bit sent: bits 0..8 the code (least significant bit first), bits
-// 9..11 the fixed 0 0 1, bits 12..22 the Golay parity. The parity is
-// the remainder of the systematic Golay(23,12) encoding with generator
-// x^11+x^9+x^7+x^6+x^5+x+1 (0xAE3), taken over the on-air bit order;
-// dcs_reference_test.go pins it against the published parity equations
-// for all 512 codes (023 → 0x763813).
+// into the 23-bit word a transmitter cycles on air; see
+// tonecode.DCSCodeword, which config validation shares.
 func dcsCodewordFromOctal(code string) (uint32, error) {
-	if len(code) != 3 {
-		return 0, fmt.Errorf("dcs: code %q must be 3 octal digits", code)
-	}
-	for _, r := range code {
-		if r < '0' || r > '7' {
-			return 0, fmt.Errorf("dcs: code %q must be octal 0..7", code)
-		}
-	}
-	c, err := strconv.ParseUint(code, 8, 32)
-	if err != nil {
-		return 0, fmt.Errorf("dcs: parse %q: %w", code, err)
-	}
-	data := uint32(c) | 1<<11 // code + the fixed 0 0 1
-	// Systematic cyclic encoding over the transmit order: with bit i the
-	// coefficient of x^(22-i), the data occupies x^22..x^11 and the
-	// parity x^10..x^0 is (data · x^11) mod g(x).
-	var reg uint32
-	for i := 0; i < 12; i++ {
-		fb := (data>>uint(i))&1 ^ (reg>>10)&1
-		reg = (reg << 1) & 0x7FF
-		if fb != 0 {
-			reg ^= dcsGolayPoly & 0x7FF
-		}
-	}
-	w := data
-	for i := 0; i < 11; i++ {
-		w |= ((reg >> uint(10-i)) & 1) << uint(12+i)
-	}
-	return w, nil
+	return tonecode.DCSCodeword(code)
 }
 
-// dcsGolayPoly is the Golay(23,12) generator x^11+x^9+x^7+x^6+x^5+x+1.
-const dcsGolayPoly = 0xAE3
-
-// dcsRotations precomputes every cyclic rotation of cw (23 of them)
-// plus the bit-inverse of each rotation (so the detector tolerates
-// inverted-polarity transmitters without doubling the runtime check
-// cost). Returns a 46-element slice — small enough that linear
-// scanning beats any hashing scheme.
+// dcsRotations precomputes every cyclic rotation of cw plus the bit-inverse
+// of each (46 entries; odd entries are the inverted sense); see
+// tonecode.DCSRotations.
 func dcsRotations(cw uint32) []uint32 {
-	out := make([]uint32, 0, 46)
-	r := cw & dcsCodewordMask
-	for i := 0; i < 23; i++ {
-		out = append(out, r)
-		out = append(out, (^r)&dcsCodewordMask)
-		// Cyclic left-shift by one bit inside a 23-bit field.
-		msb := (r >> 22) & 1
-		r = ((r << 1) | msb) & dcsCodewordMask
-	}
-	return out
+	return tonecode.DCSRotations(cw)
 }
