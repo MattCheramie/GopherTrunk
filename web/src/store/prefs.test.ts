@@ -53,3 +53,29 @@ describe("prefs theme", () => {
     expect(meta.content).toBe("#0f172a");
   });
 });
+
+// #1261: the live player's volume goes above 100 % (up to MAX_VOLUME), so the
+// stored preference must keep a boosted value across reloads instead of
+// discarding it as out of range and falling back to the 0.8 default.
+describe("prefs audio volume", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("keeps a volume above 100 %", () => {
+    prefs.setAudioVolume(2.5);
+    expect(prefs.audioVolume()).toBe(2.5);
+  });
+
+  it("clamps to the player's range", () => {
+    prefs.setAudioVolume(9);
+    expect(prefs.audioVolume()).toBe(4);
+    prefs.setAudioVolume(-1);
+    expect(prefs.audioVolume()).toBe(0);
+  });
+
+  it("falls back to the default on a corrupt value", () => {
+    window.localStorage.setItem("gt.audio.volume", "loud");
+    expect(prefs.audioVolume()).toBe(0.8);
+  });
+});

@@ -6,6 +6,8 @@
 // toggle that promotes the token to `localStorage` for convenience on
 // trusted personal devices.
 
+import { MAX_VOLUME, clampVolume } from "../audio/volume";
+
 const LS_KEYS = {
   serverURL: "gt.server.url",
   rememberToken: "gt.token.persist",
@@ -211,10 +213,10 @@ export const prefs = {
     const raw = readLS(LS_KEYS.audioVolume);
     if (raw === null) return 0.8;
     const n = Number(raw);
-    return Number.isFinite(n) && n >= 0 && n <= 1 ? n : 0.8;
+    return Number.isFinite(n) && n >= 0 && n <= MAX_VOLUME ? n : 0.8;
   },
   setAudioVolume(v: number) {
-    writeLS(LS_KEYS.audioVolume, String(Math.max(0, Math.min(1, v))));
+    writeLS(LS_KEYS.audioVolume, String(clampVolume(v)));
   },
 
   lastTab(): string | null {

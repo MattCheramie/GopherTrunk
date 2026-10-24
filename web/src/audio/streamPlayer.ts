@@ -18,6 +18,7 @@
 // must match that layout.
 
 import { SincResampler } from "./sincResampler";
+import { clampVolume } from "./volume";
 
 // ---------------------------------------------------------------------------
 // Pure, testable framing helpers (no DOM / AudioContext).
@@ -332,7 +333,7 @@ export function createStreamPlayer(
     }
     if (gain === null) {
       gain = ctx.createGain();
-      gain.connect(ctx.destination);
+      gain.connect(limiterFor(ctx));
     }
     applyGain();
     return true;
@@ -509,7 +510,7 @@ export function createStreamPlayer(
       opts.onStateChange("stopped");
     },
     setVolume(v: number) {
-      volume = Math.max(0, Math.min(1, v));
+      volume = clampVolume(v);
       applyGain();
     },
     setMuted(m: boolean) {
@@ -517,6 +518,28 @@ export function createStreamPlayer(
       applyGain();
     },
   };
+}
+
+// limiterFor returns the node the gain stage feeds: a fast, hard-knee
+// DynamicsCompressor acting as a peak limiter just under full scale, wired to
+// the destination, so a volume above 100 % compresses the loudest peaks
+// instead of clipping them. It acts only above -1 dBFS, so at volume <= 1 it
+// can touch only the loudest 1 dB of a full-scale peak (decoded digital voice
+// is levelled to about -5 dBFS peak), and playback is otherwise unchanged.
+// A context without createDynamicsCompressor (a test stub, a very old
+// browser) gets the destination directly.
+function limiterFor(ctx: AudioContext): AudioNode {
+  if (typeof ctx.createDynamicsCompressor !== "function") {
+    return ctx.destination;
+  }
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -1;
+  lim.knee.value = 0;
+  lim.ratio.value = 20;
+  lim.attack.value = 0.001;
+  lim.release.value = 0.1;
+  lim.connect(ctx.destination);
+  return lim;
 }
 
 function isAbort(err: unknown): boolean {

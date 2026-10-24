@@ -9,6 +9,7 @@ import {
   WorkletSink,
   createStreamPlayer,
 } from "./streamPlayer";
+import { MAX_VOLUME } from "./volume";
 
 // Build a canonical 44-byte RIFF/WAVE header byte-for-byte the way the
 // daemon does in internal/api/handlers_audio_stream.go
@@ -323,5 +324,90 @@ describe("createStreamPlayer AudioContext lifecycle", () => {
     // suspended-and-leaked).
     player.start();
     expect(contexts.length).toBe(2);
+  });
+});
+
+// #1261: "the dashboard audio is quiet; raise the slider max". The volume
+// used to clamp at 1 (the daemon's own level), so the slider could only turn
+// audio down. It now reaches MAX_VOLUME, and a boost above 1 runs through a
+// peak limiter so loud calls compress instead of clipping.
+describe("createStreamPlayer volume boost", () => {
+  const origFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = origFetch;
+  });
+
+  function makeGraphContext() {
+    const destination = { name: "destination" };
+    const gainTargets: number[] = [];
+    const links: Array<[string, unknown]> = [];
+    const limiter = {
+      name: "limiter",
+      threshold: { value: 0 },
+      knee: { value: 30 },
+      ratio: { value: 12 },
+      attack: { value: 0.003 },
+      release: { value: 0.25 },
+      connect: (n: unknown) => links.push(["limiter", n]),
+    };
+    const ctx = {
+      sampleRate: 48000,
+      currentTime: 0,
+      destination,
+      audioWorklet: undefined,
+      createGain: () => ({
+        gain: { setTargetAtTime: (v: number) => gainTargets.push(v) },
+        connect: (n: unknown) => links.push(["gain", n]),
+      }),
+      createDynamicsCompressor: () => limiter,
+      resume: vi.fn(() => Promise.resolve()),
+      suspend: vi.fn(() => Promise.resolve()),
+      close: vi.fn(() => Promise.resolve()),
+    } as unknown as AudioContext;
+    return { ctx, destination, limiter, gainTargets, links };
+  }
+
+  function startWith(ctx: AudioContext) {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, body: null } as Response),
+    );
+    const player = createStreamPlayer({
+      url: "https://d/api/v1/audio/stream",
+      token: null,
+      onError: () => {},
+      onStateChange: () => {},
+      contextFactory: () => ctx,
+    });
+    player.start();
+    return player;
+  }
+
+  it("applies a gain above 1 instead of clamping to 1", () => {
+    const g = makeGraphContext();
+    const player = startWith(g.ctx);
+    player.setVolume(2.5);
+    expect(g.gainTargets.at(-1)).toBe(2.5);
+    player.setVolume(10);
+    expect(g.gainTargets.at(-1)).toBe(MAX_VOLUME);
+    player.setVolume(-1);
+    expect(g.gainTargets.at(-1)).toBe(0);
+  });
+
+  it("routes the gain through a peak limiter just under full scale", () => {
+    const g = makeGraphContext();
+    startWith(g.ctx);
+    expect(g.links).toContainEqual(["gain", g.limiter]);
+    expect(g.links).toContainEqual(["limiter", g.destination]);
+    expect(g.links).not.toContainEqual(["gain", g.destination]);
+    expect(g.limiter.threshold.value).toBeLessThan(0);
+    expect(g.limiter.threshold.value).toBeGreaterThanOrEqual(-3);
+    expect(g.limiter.ratio.value).toBeGreaterThanOrEqual(20);
+  });
+
+  it("connects straight to the destination without a compressor", () => {
+    const g = makeGraphContext();
+    delete (g.ctx as unknown as Record<string, unknown>).createDynamicsCompressor;
+    startWith(g.ctx);
+    expect(g.links).toContainEqual(["gain", g.destination]);
   });
 });
