@@ -25,6 +25,10 @@ Every post reads three ways: a **TL;DR + cheat-sheet** for skimmers, **bold
 headers and tables** for the medium read, and the full investigation narrative for
 the deep read.
 
+The series continues in
+[Season 2]({{ '/blog/series/from-the-issue-tracker-s2/' | relative_url }}),
+fourteen more postmortems from the September and October 2026 reports.
+
 Reference companions to this series live in the Field Guide's
 [Field Notes domain]({{ '/reference/#domain-field-notes' | relative_url }}) — the same
 knowledge, condensed into look-up form:
