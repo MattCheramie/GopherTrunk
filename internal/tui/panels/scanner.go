@@ -352,9 +352,11 @@ func (p *ScannerPanel) View(width, height int, focused bool, s *state.SharedStat
 	parts := []string{
 		p.renderSystems(width, s),
 		p.renderConventional(width, s),
-		p.renderTGSummary(width, s),
-		p.renderAudio(width, s),
 	}
+	if wb := p.renderWidebandConventional(width, s); wb != "" {
+		parts = append(parts, wb)
+	}
+	parts = append(parts, p.renderTGSummary(width, s), p.renderAudio(width, s))
 	if mt := p.renderManualTune(width); mt != "" {
 		parts = append(parts, mt)
 	}
@@ -505,6 +507,34 @@ func (p *ScannerPanel) renderConventional(width int, s *state.SharedState) strin
 			marker, ch.Index, style.Render(active), padTo(ch.Label, 20),
 			client.FormatFreqMHz(ch.FrequencyHz), strings.ToUpper(ch.Mode), break_)
 		lines = append(lines, row)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderWidebandConventional lists the continuous wideband conventional
+// channels (issue #1288). Read-only: they are not in the scan list, so the
+// cursor and the dwell / lockout keys do not reach them. Empty when none
+// are configured, so a config without them renders as before.
+func (p *ScannerPanel) renderWidebandConventional(width int, s *state.SharedState) string {
+	chans := s.Scanner.Conventional.WidebandChannels
+	if len(chans) == 0 {
+		return ""
+	}
+	lines := []string{"", dashHeader.Render("Wideband conventional channels (always on)")}
+	for _, ch := range chans {
+		active := " "
+		style := lipgloss.NewStyle()
+		if ch.Active {
+			active = "●"
+			style = dashOK
+		}
+		break_ := "—"
+		if !ch.LastBreakAt.IsZero() {
+			break_ = formatAge(time.Since(ch.LastBreakAt))
+		}
+		lines = append(lines, fmt.Sprintf("    %s  %s  %-12s  %-4s  on %s  last: %s",
+			style.Render(active), padTo(ch.Label, 20), client.FormatFreqMHz(ch.FrequencyHz),
+			strings.ToUpper(ch.Mode), ch.WidebandSerial, break_))
 	}
 	return strings.Join(lines, "\n")
 }

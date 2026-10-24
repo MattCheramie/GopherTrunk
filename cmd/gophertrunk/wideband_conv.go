@@ -39,6 +39,8 @@ const wbConvScanWindow = 24 * time.Hour
 type wbConvChannel struct {
 	source  *widebandt2.ChannelVoiceSource
 	channel conventional.Channel
+	// widebandSerial is the role: wideband dongle the channel's tap is on.
+	widebandSerial string
 }
 
 // wbConvSerial is the virtual device serial a wideband conventional channel's
@@ -104,8 +106,9 @@ func (d *Daemon) buildWidebandConvSources(cfg config.Config, log *slog.Logger) {
 			}
 			k++
 			d.wbConvChannels = append(d.wbConvChannels, wbConvChannel{
-				source:  widebandt2.NewChannelVoiceSource(get, ch.FrequencyHz, wbConvSerial(serial, ch.FrequencyHz)),
-				channel: convChannelFromConfig(ch, tgid),
+				source:         widebandt2.NewChannelVoiceSource(get, ch.FrequencyHz, wbConvSerial(serial, ch.FrequencyHz)),
+				channel:        convChannelFromConfig(ch, tgid),
+				widebandSerial: serial,
 			})
 		}
 		if n := len(devCfg.Conventional); n > 0 {
@@ -148,4 +151,22 @@ func (d *Daemon) buildWidebandConvScanners(rec conventional.Recorder, log *slog.
 		d.wbConvScans = append(d.wbConvScans, cs)
 	}
 	return nil
+}
+
+// wbConvStatusSources pairs each wideband conventional scanner with its
+// channel's dongle and talkgroup for the scanner cockpit. buildWidebandConvScanners
+// builds wbConvScans from wbConvChannels in order, so index i is channel i.
+func (d *Daemon) wbConvStatusSources() []wbConvStatusSource {
+	out := make([]wbConvStatusSource, 0, len(d.wbConvScans))
+	for i, cs := range d.wbConvScans {
+		if i >= len(d.wbConvChannels) {
+			break
+		}
+		out = append(out, wbConvStatusSource{
+			scanner:        cs,
+			widebandSerial: d.wbConvChannels[i].widebandSerial,
+			talkgroupID:    d.wbConvChannels[i].channel.TalkgroupID,
+		})
+	}
+	return out
 }

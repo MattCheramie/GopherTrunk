@@ -132,10 +132,18 @@ depends on the path:
   transmission. An untoned channel opens on its first chunk above squelch, so
   its recordings gain no lead-in of noise.
 
-  Not yet: the digital conventional modes (keep those on the scan list),
-  and listing these channels in the Scanner panel (their calls appear in the
-  call list and history like any other). Per-channel `gain` and `device` do not
-  apply: every tap shares the dongle's gain. Issue #1288.
+  The web and TUI Scanner panels list these channels in a section of their
+  own, **Wideband conventional channels**, with each channel's mode, dongle,
+  active/idle state and last call. That section is read-only: dwell and
+  lockout are scan-list controls, and these channels never scan. The API
+  carries them as `conventional.wideband_channels` in `GET /api/v1/scanner`,
+  next to (not inside) the scan list's `channels`, so the scan list's indexes
+  are unchanged. Their calls appear in the call list and history like any
+  other, under the serial `wb:<dongle serial>:conv:<frequency>`.
+
+  Not yet: the digital conventional modes (keep those on the scan list).
+  Per-channel `gain` and `device` do not apply: every tap shares the dongle's
+  gain. Issue #1288.
 
 Either way, when the same call is heard on several networked or simulcast sites,
 **cross-site call deduplication** saves it once instead of once per site: enable

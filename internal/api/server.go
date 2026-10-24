@@ -297,6 +297,30 @@ type ConvScannerStatusDTO struct {
 	DeviceSerials []string               `json:"device_serials,omitempty"`
 	CursorIndex   int                    `json:"cursor_index,omitempty"`
 	Channels      []ConvChannelStatusDTO `json:"channels"`
+	// WidebandChannels lists the sdr.devices[].conventional channels: each
+	// on its own channelizer tap of a role: wideband dongle, always on,
+	// never scanned (issue #1288). They are a separate list because they
+	// are not in the scan list: Channels' indexes (which the dwell /
+	// lockout / tune endpoints take) are unchanged, and Enabled still
+	// describes the scan list alone.
+	WidebandChannels []WidebandConvChannelDTO `json:"wideband_channels"`
+}
+
+// WidebandConvChannelDTO is one continuous wideband conventional channel.
+type WidebandConvChannelDTO struct {
+	Label       string    `json:"label"`
+	FrequencyHz uint32    `json:"frequency_hz"`
+	Mode        string    `json:"mode"`
+	Active      bool      `json:"active"`
+	LastBreakAt time.Time `json:"last_break_at,omitempty"`
+	// WidebandSerial is the role: wideband dongle the channel's tap is on;
+	// CallSerial the virtual serial its calls run under, as active calls
+	// and history show it.
+	WidebandSerial string `json:"wideband_serial"`
+	CallSerial     string `json:"call_serial"`
+	TalkgroupID    uint32 `json:"talkgroup_id,omitempty"`
+	// Decoders lists the channel's data decoders (mdc1200, fleetsync, acars).
+	Decoders []string `json:"decoders,omitempty"`
 }
 
 // ConvChannelStatusDTO mirrors conventional.ChannelStatus.

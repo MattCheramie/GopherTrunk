@@ -7,11 +7,13 @@ import (
 	"math"
 	"math/cmplx"
 	"math/rand"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/widebandt2"
@@ -356,5 +358,54 @@ func TestWidebandConvDaemonWiring(t *testing.T) {
 	}
 	if st := d.wbConvScans[1].Snapshot(); len(st.Channels) != 1 || st.Channels[0].FrequencyHz != 460_900_000 {
 		t.Errorf("second scanner channels %+v, want only 460.9 MHz", st.Channels)
+	}
+}
+
+// TestWidebandConvChannelsInScannerStatus pins the Scanner panel's view of
+// the continuous wideband conventional channels (issue #1288): the daemon's
+// cockpit reports each one, with the dongle it is on, the serial its calls
+// run under and its talkgroup, in a list of its own, so the scan list (and
+// the indexes its dwell / lockout / tune controls take) is unchanged.
+func TestWidebandConvChannelsInScannerStatus(t *testing.T) {
+	registerMockDongle(t)
+	cfg := config.Default()
+	cfg.SDR.SampleRate = 2_400_000
+	cfg.SDR.Devices = []config.DeviceConfig{{
+		Serial: "mock-00", Role: "wideband", CenterFreqHz: 460_500_000,
+		Conventional: []config.ConvChannelConfig{
+			{Label: "Fire", FrequencyHz: 460_100_000, Mode: "nfm", Decoders: []string{"mdc1200"}},
+			{Label: "EMS", FrequencyHz: 460_900_000, Mode: "nfm", TalkgroupID: 4242},
+			{Label: "Air", FrequencyHz: 460_300_000, Mode: "am"},
+		},
+	}}
+	cfg.Trunking.Systems = nil
+	cfg.API.HTTPAddr = ""
+	cfg.Storage.Path = ""
+	cfg.Storage.CCCacheFile = ""
+	cfg.Recordings.Dir = t.TempDir()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	d, err := NewDaemon(cfg, "test-wideband-conv-status", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewDaemon: %v", err)
+	}
+	t.Cleanup(d.Close)
+
+	st := d.newScannerCockpit().Status().Conventional
+	if st.Enabled || len(st.Channels) != 0 {
+		t.Errorf("scan list enabled=%v channels=%d, want disabled and empty (no scanner.conventional)", st.Enabled, len(st.Channels))
+	}
+	want := []api.WidebandConvChannelDTO{
+		{Label: "Fire", FrequencyHz: 460_100_000, Mode: "nfm", WidebandSerial: "mock-00",
+			CallSerial: wbConvSerial("mock-00", 460_100_000), TalkgroupID: config.WidebandConvPositionalBase,
+			Decoders: []string{"mdc1200"}},
+		{Label: "EMS", FrequencyHz: 460_900_000, Mode: "nfm", WidebandSerial: "mock-00",
+			CallSerial: wbConvSerial("mock-00", 460_900_000), TalkgroupID: 4242},
+		{Label: "Air", FrequencyHz: 460_300_000, Mode: "am", WidebandSerial: "mock-00",
+			CallSerial: wbConvSerial("mock-00", 460_300_000), TalkgroupID: config.WidebandConvPositionalBase | 2},
+	}
+	if !reflect.DeepEqual(st.WidebandChannels, want) {
+		t.Errorf("wideband channels\n got %+v\nwant %+v", st.WidebandChannels, want)
 	}
 }

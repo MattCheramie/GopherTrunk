@@ -134,4 +134,70 @@ describe("Scanner panel", () => {
     await waitFor(() => expect(screen.getByText("Tetra1")).toBeInTheDocument());
     expect(screen.queryByText(/decode:/i)).not.toBeInTheDocument();
   });
+
+  // #1288: the continuous wideband conventional channels get their own
+  // read-only card (no dwell/lockout buttons, which are scan-list controls),
+  // and an unset last-call time (Go's year-1 zero value) reads as "—".
+  it("lists wideband conventional channels in their own card", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [],
+      conventional: {
+        enabled: false,
+        channels: [],
+        wideband_channels: [
+          {
+            label: "Tower",
+            frequency_hz: 118_300_000,
+            mode: "am",
+            active: true,
+            last_break_at: "0001-01-01T00:00:00Z",
+            wideband_serial: "WB-1",
+            call_serial: "wb:WB-1:conv:118300000",
+            decoders: ["acars"],
+          },
+          {
+            label: "Ground",
+            frequency_hz: 119_900_000,
+            mode: "am",
+            active: false,
+            wideband_serial: "WB-1",
+            call_serial: "wb:WB-1:conv:119900000",
+          },
+        ],
+      },
+      tg_scan_count: 0,
+      tg_total: 0,
+    } as ScannerStatusDTO);
+
+    render(<Scanner />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Wideband conventional channels")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Tower")).toBeInTheDocument();
+    expect(screen.getByText("Ground")).toBeInTheDocument();
+    expect(screen.getByText("118.3000 MHz")).toBeInTheDocument();
+    expect(screen.getByText("acars")).toBeInTheDocument();
+    expect(screen.getByText(/always on · WB-1/)).toBeInTheDocument();
+    expect(screen.queryByText(/0001/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dwell" })).not.toBeInTheDocument();
+  });
+
+  it("omits the wideband card when none are configured", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [],
+      conventional: { enabled: false, channels: [] },
+      tg_scan_count: 0,
+      tg_total: 0,
+    });
+
+    render(<Scanner />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/0 of 0 talkgroups eligible/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Wideband conventional channels")).not.toBeInTheDocument();
+  });
 });
