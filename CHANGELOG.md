@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **AM channels on a wideband SDR (#1288).** A `sdr.devices[].conventional`
+  channel can now be `mode: am`, so one dongle can monitor a whole air-band
+  span (tower, ground, ATIS, ACARS with `decoders: [acars]`) at once, each
+  channel recording its own calls. An AM channel squelches on its
+  carrier-to-noise ratio (`squelch_cn_db`, default 12 dB) measured on its own
+  tap, as on the scan list. The digital conventional modes still belong on
+  the scan list.
 - **Decryption keys from KFDtool key containers (`.ekc`) (#1305).** A
   system's `encryption_key_files` lists `.ekc` files exported by the open
   KFDtool keyloader, so operator keys stay encrypted at rest instead of

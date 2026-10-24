@@ -183,10 +183,18 @@ type ChannelConfig struct {
 	// machine or trunking system (SystemName is ignored). The squelch and
 	// the call live in whatever subscribes to the channel's IQ.
 	Conventional bool
+	// ConventionalAM tags a Conventional channel as AM (am-conv) rather
+	// than FM. The tap is the same; only the protocol tag in the startup
+	// log and the channel-power events differs.
+	ConventionalAM bool
 }
 
-// conventionalProtoTag is the protocol tag of a Conventional channel.
-const conventionalProtoTag = "fm-conv"
+// conventionalProtoTag is the protocol tag of a Conventional channel, and
+// conventionalAMProtoTag that of a ConventionalAM one.
+const (
+	conventionalProtoTag   = "fm-conv"
+	conventionalAMProtoTag = "am-conv"
+)
 
 // IQPowerObserver is the minimal metrics surface the engine uses to
 // publish its per-channel window-averaged dBFS gauge plus the whole-capture
@@ -658,7 +666,11 @@ func New(opts Options) (*Engine, error) {
 		}
 		var ec *engineChannel
 		if ch.Conventional {
-			ec = &engineChannel{freqHz: ch.FrequencyHz, sysName: "conventional", protoTag: conventionalProtoTag, conventional: true}
+			tag := conventionalProtoTag
+			if ch.ConventionalAM {
+				tag = conventionalAMProtoTag
+			}
+			ec = &engineChannel{freqHz: ch.FrequencyHz, sysName: "conventional", protoTag: tag, conventional: true}
 		} else {
 			var err error
 			if ec, err = buildChannel(sys, ch, outRateHz, opts.Bus, log, opts.Now); err != nil {

@@ -6,7 +6,7 @@ import (
 )
 
 // TestValidateWidebandConventional pins the sdr.devices[].conventional rules
-// (issue #1288): analog FM channels in the dongle's band, with no system,
+// (issue #1288): analog FM and AM channels in the dongle's band, with no system,
 // accepted on their own; anything the never-retuned shared front end cannot
 // honour rejected with the channel's own path in the error.
 func TestValidateWidebandConventional(t *testing.T) {
@@ -17,6 +17,7 @@ func TestValidateWidebandConventional(t *testing.T) {
 		{Label: "Fire", FrequencyHz: 460_100_000, Mode: "nfm"},
 		{Label: "EMS", FrequencyHz: 460_900_000, Mode: "fm", Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 123}},
 		{Label: "Ops", FrequencyHz: 460_300_000, Decoders: []string{"mdc1200"}},
+		{Label: "Air", FrequencyHz: 460_700_000, Mode: "am", SquelchCNDb: 15, Decoders: []string{"acars"}},
 	}
 	if err := validateWidebandDevice(0, dev(ok...), 2_400_000, nil); err != nil {
 		t.Fatalf("valid conventional-only wideband device rejected: %v", err)
@@ -26,8 +27,7 @@ func TestValidateWidebandConventional(t *testing.T) {
 		want string
 	}{
 		"no channels at all":  {DeviceConfig{Serial: "WB", Role: "wideband", CenterFreqHz: 460_500_000}, "at least one channel"},
-		"am not yet":          {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Mode: "am"}), "conventional[0]: mode \"am\" is not supported"},
-		"digital not yet":     {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Mode: "dmr"}), "not supported on a wideband dongle"},
+		"digital not yet":     {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Mode: "dmr"}), "conventional[0]: mode \"dmr\" is not supported on a wideband dongle"},
 		"per-channel gain":    {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Gain: "200"}), "gain does not apply"},
 		"device":              {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Device: "X"}), "device does not apply"},
 		"out of band":         {dev(ConvChannelConfig{FrequencyHz: 462_000_000}), "usable band"},

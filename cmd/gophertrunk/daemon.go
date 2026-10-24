@@ -1867,10 +1867,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					P25Phase1DemodMode: ch.P25Phase1DemodMode,
 				})
 			}
-			// Tap-only analog FM channels; their scanners read the taps
-			// through the sources buildWidebandConvSources registered.
+			// Tap-only analog FM / AM channels; their scanners read the
+			// taps through the sources buildWidebandConvSources registered.
 			for _, ch := range devCfg.Conventional {
-				channels = append(channels, widebandt2.ChannelConfig{FrequencyHz: ch.FrequencyHz, Conventional: true})
+				channels = append(channels, widebandt2.ChannelConfig{
+					FrequencyHz: ch.FrequencyHz, Conventional: true, ConventionalAM: ch.Mode == "am",
+				})
 			}
 			// Route IQ + tuning through the iqtap broker so the live
 			// spectrum view (and any other secondary observer) can

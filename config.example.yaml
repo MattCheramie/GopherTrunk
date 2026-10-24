@@ -588,15 +588,16 @@ sdr:
     #     - frequency_hz: 851_037_500
     #       system: "regional-dmr-t3"
     #
-    # CONTINUOUS CONVENTIONAL FM (issue #1288): `conventional:` lists
-    # analog FM / NFM channels this wideband dongle monitors ALL THE
+    # CONTINUOUS CONVENTIONAL FM / AM (issue #1288): `conventional:` lists
+    # analog FM / NFM / AM channels this wideband dongle monitors ALL THE
     # TIME, each on its own tap with its own squelch, tone gate,
     # hangtime and call. Overlapping transmissions on different
     # channels record as separate, simultaneous calls; nothing scans
     # or dwells, so a call on one channel never hides another. Entries
     # take the scanner.conventional channel fields (label, mode,
     # squelch_dbfs, hangtime_ms, tone, talkgroup_id, audio_gain_db,
-    # decoders, ...); mode must be fm or nfm, and gain / device / nac do
+    # decoders, ...); mode must be fm, nfm or am (an am channel squelches
+    # on squelch_cn_db, default 12, not squelch_dbfs), and gain / device / nac do
     # not apply (every tap shares this dongle's gain and centre). Each
     # frequency must fit the IQ band like channels:, and the two lists
     # can be mixed on one dongle (e.g. a P25 control channel plus FM
@@ -614,6 +615,10 @@ sdr:
     #       frequency_hz: 460_200_000
     #       mode: nfm
     #       tone: { mode: ctcss, ctcss_hz: 123.0 }
+    #     - label: "Ops (AM)"     # air-band AM works the same on a dongle centred there
+    #       frequency_hz: 460_300_000
+    #       mode: am
+    #       squelch_cn_db: 12
     #
     # P25 Phase 2 control channel on a wideband dongle. The
     # referenced system carries `protocol: p25-phase2`; the
