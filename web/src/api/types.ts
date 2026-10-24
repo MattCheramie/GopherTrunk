@@ -485,6 +485,25 @@ export interface ConvScannerStatusDTO {
   device_serials?: string[];
   cursor_index?: number;
   channels: ConvChannelStatusDTO[];
+  // The continuous sdr.devices[].conventional channels (#1288): each on its
+  // own tap of a wideband dongle, never scanned. A separate list, so the scan
+  // list's indexes (which dwell/lockout take) are unchanged. Absent from an
+  // older daemon.
+  wideband_channels?: WidebandConvChannelDTO[];
+}
+
+export interface WidebandConvChannelDTO {
+  label: string;
+  frequency_hz: number;
+  mode: string;
+  active: boolean;
+  last_break_at?: string;
+  // The wideband dongle the channel's tap is on.
+  wideband_serial: string;
+  // The virtual serial the channel's calls run under in active calls/history.
+  call_serial: string;
+  talkgroup_id?: number;
+  decoders?: string[];
 }
 
 export interface ConvChannelStatusDTO {

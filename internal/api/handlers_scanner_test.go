@@ -202,6 +202,9 @@ func TestScannerStatus_EmptySlicesMarshalAsArrays(t *testing.T) {
 	if got := string(conv["channels"]); got != "[]" {
 		t.Errorf("conventional.channels = %s, want []", got)
 	}
+	if got := string(conv["wideband_channels"]); got != "[]" {
+		t.Errorf("conventional.wideband_channels = %s, want []", got)
+	}
 }
 
 func TestScannerStatus_NoCockpitReturnsEmpty(t *testing.T) {

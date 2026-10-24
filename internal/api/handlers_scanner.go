@@ -37,6 +37,9 @@ func normalizeScannerStatus(st ScannerStatus) ScannerStatus {
 	if st.Conventional.Channels == nil {
 		st.Conventional.Channels = []ConvChannelStatusDTO{}
 	}
+	if st.Conventional.WidebandChannels == nil {
+		st.Conventional.WidebandChannels = []WidebandConvChannelDTO{}
+	}
 	if st.Avoids == nil {
 		st.Avoids = []trunking.Avoid{}
 	}

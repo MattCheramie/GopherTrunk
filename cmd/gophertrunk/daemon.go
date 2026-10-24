@@ -3107,12 +3107,7 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 		if d.pool != nil {
 			opts.Devices = d.pool
 		}
-		opts.Scanner = scannerCockpit{
-			cchunt:     d.cchuntSup,
-			convs:      d.convScans,
-			engine:     d.engine,
-			talkgroups: d.talkgroups,
-		}
+		opts.Scanner = d.newScannerCockpit()
 		// Live system-discovery ("hunt") manager: operator-triggered blind
 		// spectrum sweep that shares the radio via spare-SDR-else-borrow
 		// acquisition. Constructed whenever an IQ broker exists so a live hunt

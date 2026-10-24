@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Wideband conventional channels in the Scanner panel (#1288).** The
+  continuous `sdr.devices[].conventional` channels now have their own
+  read-only section in the web and TUI Scanner panels: label, frequency,
+  mode, dongle, active/idle and last call. `GET /api/v1/scanner` carries
+  them as `conventional.wideband_channels`, a separate list, so the scan
+  list's channel indexes (which dwell / lockout / tune take) are unchanged.
 - **Web live-audio volume up to 400 % (#1261).** The web player's volume
   slider used to stop at 100 %, the level the daemon sends, so it could only
   turn audio down. It now goes to 400 % (+12 dB), shows its percentage, and

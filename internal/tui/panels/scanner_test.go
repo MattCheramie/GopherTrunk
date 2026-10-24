@@ -136,3 +136,23 @@ func TestScannerPanel_EmptyShowsHints(t *testing.T) {
 		t.Errorf("missing 'conventional scanner not configured' hint")
 	}
 }
+
+// Issue #1288: the continuous wideband conventional channels get their own
+// read-only section, and a config without them renders no such section.
+func TestScannerPanelRendersWidebandConventional(t *testing.T) {
+	p := NewScanner()
+	s := mkScannerState()
+	if view := p.View(120, 40, true, s); strings.Contains(view, "Wideband conventional") {
+		t.Errorf("section rendered with no wideband channels\n%s", view)
+	}
+	s.Scanner.Conventional.WidebandChannels = []client.WidebandConvChannelDTO{
+		{Label: "Tower", FrequencyHz: 118_300_000, Mode: "am", WidebandSerial: "WB-1", Active: true},
+		{Label: "Ground", FrequencyHz: 119_900_000, Mode: "am", WidebandSerial: "WB-1"},
+	}
+	view := p.View(120, 40, true, s)
+	for _, want := range []string{"Wideband conventional channels (always on)", "Tower", "Ground", "118.3000", "on WB-1"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view missing %q\n%s", want, view)
+		}
+	}
+}

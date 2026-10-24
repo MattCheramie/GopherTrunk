@@ -22,9 +22,34 @@ type scannerCockpit struct {
 	// presents them as ONE channel list: a channel's index is its position
 	// in the concatenation, in this order. Manual-tune channels append to
 	// the last scanner, so they never shift another scanner's indexes.
-	convs      []*conventional.Scanner
+	convs []*conventional.Scanner
+	// wbConvs are the continuous wideband conventional channels (issue
+	// #1288), one single-channel scanner each. They are reported in their
+	// own list and take no part in the index-based scan-list controls.
+	wbConvs    []wbConvStatusSource
 	engine     *trunking.Engine
 	talkgroups *trunking.TalkgroupDB
+}
+
+// wbConvStatusSource is what the cockpit reports for one wideband
+// conventional channel: its scanner plus the two facts the scanner's
+// snapshot does not carry.
+type wbConvStatusSource struct {
+	scanner        *conventional.Scanner
+	widebandSerial string
+	talkgroupID    uint32
+}
+
+// newScannerCockpit is the cockpit the API server reads: every scanner
+// subsystem the daemon built.
+func (d *Daemon) newScannerCockpit() scannerCockpit {
+	return scannerCockpit{
+		cchunt:     d.cchuntSup,
+		convs:      d.convScans,
+		wbConvs:    d.wbConvStatusSources(),
+		engine:     d.engine,
+		talkgroups: d.talkgroups,
+	}
 }
 
 // Status assembles the unified read snapshot the TUI panel renders.
@@ -91,6 +116,22 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 			offset += len(snap.Channels)
 		}
 		st.Conventional.State = string(convAggregateState(states))
+	}
+	for _, w := range c.wbConvs {
+		snap := w.scanner.Snapshot()
+		for _, ch := range snap.Channels {
+			st.Conventional.WidebandChannels = append(st.Conventional.WidebandChannels, api.WidebandConvChannelDTO{
+				Label:          ch.Label,
+				FrequencyHz:    ch.FrequencyHz,
+				Mode:           ch.Mode,
+				Active:         ch.Active,
+				LastBreakAt:    ch.LastBreakAt,
+				WidebandSerial: w.widebandSerial,
+				CallSerial:     snap.DeviceSerial,
+				TalkgroupID:    w.talkgroupID,
+				Decoders:       ch.Decoders,
+			})
+		}
 	}
 	if c.talkgroups != nil {
 		total := 0

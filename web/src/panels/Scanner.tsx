@@ -18,6 +18,7 @@ import { symbolTargetForSystem, type SymbolTarget } from "../api/symbols";
 import type {
   ConvChannelStatusDTO,
   SystemHuntStatusDTO,
+  WidebandConvChannelDTO,
 } from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
 import { formatLocalDateTime } from "../lib/formatTime";
@@ -190,6 +191,10 @@ export function Scanner() {
         canMutate={canMutate}
         onMutate={wrap}
         onConfirm={(c) => setConfirm(c)}
+      />
+
+      <WidebandConventional
+        channels={scanner.conventional?.wideband_channels ?? []}
       />
 
       {canMutate && <ManualTune onMutate={wrap} />}
@@ -502,6 +507,79 @@ function Conventional({
   );
 }
 
+// WidebandConventional lists the continuous sdr.devices[].conventional
+// channels (#1288). Each has its own channelizer tap on a wideband dongle and
+// records its own calls in parallel, so nothing scans: the card is read-only
+// (no dwell / lockout, which are scan-list controls). Hidden when none are
+// configured, so a config without them renders as before.
+function WidebandConventional({ channels }: { channels: WidebandConvChannelDTO[] }) {
+  if (channels.length === 0) return null;
+  const serials = [...new Set(channels.map((c) => c.wideband_serial))];
+  return (
+    <Card
+      title="Wideband conventional channels"
+      actions={
+        <span className="text-xs text-muted">
+          always on · {serials.join(", ")}
+        </span>
+      }
+    >
+      <p className="text-muted text-xs mb-2">
+        Each channel has its own tap on the wideband SDR and records its own
+        calls in parallel; they are not part of the scan list.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-xs uppercase tracking-wider text-muted">
+            <tr>
+              <th className="text-left px-2 py-1">Label</th>
+              <th className="text-left px-2 py-1">Freq</th>
+              <th className="text-left px-2 py-1">Mode</th>
+              {serials.length > 1 && <th className="text-left px-2 py-1">SDR</th>}
+              <th className="text-left px-2 py-1">State</th>
+              <th className="text-left px-2 py-1">Last call</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-panel">
+            {channels.map((ch) => (
+              <tr
+                key={ch.call_serial}
+                className={ch.active ? "bg-accent/10" : undefined}
+              >
+                <td className="px-2 py-1">
+                  {ch.label}
+                  {(ch.decoders ?? []).length > 0 && (
+                    <span className="ml-2 text-xs text-muted">
+                      {(ch.decoders ?? []).join(", ")}
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1 font-mono text-xs">
+                  {formatHz(ch.frequency_hz)}
+                </td>
+                <td className="px-2 py-1 font-mono text-xs">{ch.mode}</td>
+                {serials.length > 1 && (
+                  <td className="px-2 py-1 font-mono text-xs">{ch.wideband_serial}</td>
+                )}
+                <td className="px-2 py-1">
+                  {ch.active ? (
+                    <span className="pill-ok">active</span>
+                  ) : (
+                    <span className="text-muted text-xs">idle</span>
+                  )}
+                </td>
+                <td className="px-2 py-1 text-xs text-muted">
+                  {hasTime(ch.last_break_at) ? timeOnly(ch.last_break_at!) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 function ManualTune({
   onMutate,
 }: {
@@ -637,6 +715,12 @@ function StatePill({ state }: { state: string }) {
           ? "err"
           : "neutral";
   return <Badge tone={tone}>{state}</Badge>;
+}
+
+// hasTime reports whether a daemon timestamp is set: Go marshals an unset
+// time.Time as year 1, not as an absent field.
+function hasTime(ts: string | undefined): boolean {
+  return !!ts && !ts.startsWith("0001-");
 }
 
 function timeOnly(ts: string): string {

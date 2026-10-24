@@ -251,6 +251,22 @@ type ConvScannerStatusDTO struct {
 	DeviceSerial string                 `json:"device_serial,omitempty"`
 	CursorIndex  int                    `json:"cursor_index,omitempty"`
 	Channels     []ConvChannelStatusDTO `json:"channels"`
+	// WidebandChannels are the continuous sdr.devices[].conventional
+	// channels (issue #1288), outside the scan list.
+	WidebandChannels []WidebandConvChannelDTO `json:"wideband_channels"`
+}
+
+// WidebandConvChannelDTO mirrors api.WidebandConvChannelDTO.
+type WidebandConvChannelDTO struct {
+	Label          string    `json:"label"`
+	FrequencyHz    uint32    `json:"frequency_hz"`
+	Mode           string    `json:"mode"`
+	Active         bool      `json:"active"`
+	LastBreakAt    time.Time `json:"last_break_at,omitempty"`
+	WidebandSerial string    `json:"wideband_serial"`
+	CallSerial     string    `json:"call_serial"`
+	TalkgroupID    uint32    `json:"talkgroup_id,omitempty"`
+	Decoders       []string  `json:"decoders,omitempty"`
 }
 
 // ConvChannelStatusDTO mirrors api.ConvChannelStatusDTO.
