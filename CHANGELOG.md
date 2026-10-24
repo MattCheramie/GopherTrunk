@@ -8,6 +8,11 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Web live-audio volume up to 400 % (#1261).** The web player's volume
+  slider used to stop at 100 %, the level the daemon sends, so it could only
+  turn audio down. It now goes to 400 % (+12 dB), shows its percentage, and
+  remembers a boosted setting. Above 100 % a peak limiter keeps loud calls
+  from clipping. Recordings and the daemon's `audio.volume` are unchanged.
 - **AM channels on a wideband SDR (#1288).** A `sdr.devices[].conventional`
   channel can now be `mode: am`, so one dongle can monitor a whole air-band
   span (tower, ground, ATIS, ACARS with `decoders: [acars]`) at once, each

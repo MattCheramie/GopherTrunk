@@ -273,7 +273,12 @@ always prompt for confirmation before firing.
 
 The audio cockpit lives at the top of the Dashboard:
 
-- **Volume slider** → `PATCH /api/v1/audio { volume }`
+- **Volume slider** → this browser's playback level, 0–400 %,
+  remembered on this device. 100 % is the level the daemon sends;
+  above that a peak limiter keeps loud calls from clipping. It does
+  not change the daemon's `audio.volume`. To raise one quiet
+  scan-list channel at the source (recordings included), set that
+  channel's `audio_gain_db`.
 - **Mute toggle** → `PATCH /api/v1/audio { muted }`
 - **Record toggle** → `PATCH /api/v1/audio { recording_enabled }`
 - **Tap to enable** → required once per session on iOS / Android

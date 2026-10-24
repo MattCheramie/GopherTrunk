@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { audioStreamURL } from "../api/client";
 import { createStreamPlayer, type StreamPlayer } from "../audio/streamPlayer";
+import { MAX_VOLUME } from "../audio/volume";
 import { writes } from "../api/write";
 import { selectClientConfig, useShared } from "../store/shared";
 import { useActiveCallsPoll } from "../hooks/useActiveCallsPoll";
@@ -228,16 +229,23 @@ export function AudioPlayer() {
           >
             {muted ? "🔇" : "🔈"}
           </button>
+          {/* Up to MAX_VOLUME (400 %): above 100 % the player's limiter
+              keeps loud calls from clipping (#1261). */}
           <input
             type="range"
             min={0}
-            max={1}
+            max={MAX_VOLUME}
             step={0.05}
             value={volume}
             onChange={(e) => onVolume(Number(e.target.value))}
             aria-label="Volume"
+            aria-valuetext={`${Math.round(volume * 100)}%`}
+            title={`Volume ${Math.round(volume * 100)}%`}
             className="w-24 accent-accent"
           />
+          <span className="w-10 text-right text-xs tabular-nums text-muted">
+            {Math.round(volume * 100)}%
+          </span>
           <button
             type="button"
             onClick={toggleRecording}
