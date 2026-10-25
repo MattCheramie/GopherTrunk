@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`gophertrunk ekc` writes and edits key containers (#1305).** `create`,
+  `add`, `remove`, `passwd` and `import` manage KFDtool `.ekc` containers, so
+  GopherTrunk is a native keystore for every key type it decrypts (DMR
+  Enhanced Privacy RC4 included, stored as ADP 0xAA) and the containers stay
+  readable by KFDtool. `import` moves a system's plain-text `encryption_keys`
+  into a container and prints the `encryption_key_files` entry to use
+  instead. Keys are typed at a no-echo prompt or read from an environment
+  variable, never passed as arguments; files are rewritten atomically, mode
+  0600, keeping KFDtool's item numbers and key groups. The listing gains an
+  `ITEM` column.
 - **Finalized-recording feed: `GET /api/v1/recordings` (#1288).** Lists every
   recording the recorder finished, in completion order, each with its call's
   metadata and an `audio_url` serving the original WAV / FLAC / MP3

@@ -392,20 +392,65 @@ test container in `internal/ekc/testdata`):
 ```
 $ gophertrunk ekc -in keys.ekc
 Password for key container keys.ekc:
-NAME             KEYSET      SLN  KEY ID         ALGORITHM       TYPE  BYTES  LOADED AS
-County AES       1 (active)  1    1 (0x1)        0x84 (AES-256)  TEK   32     aes
-Fire DES         1 (active)  2    42 (0x2A)      0x81 (DES-OFB)  TEK   8      des
-Ops ADP          1 (active)  3    3 (0x3)        0xAA (ADP/RC4)  TEK   5      rc4
-Master KEK       1 (active)  4    4 (0x4)        0x84 (AES-256)  KEK   32     -
-County AES next  2           1    1 (0x1)        0x85 (AES-128)  TEK   16     -
-Legacy DES-XL    1 (active)  6    6 (0x6)        0x9F (DES-XL)   TEK   8      -
-Ops TDES         1 (active)  7    4660 (0x1234)  0x83 (TDES-2)   TEK   24     tdes
+ITEM  NAME             KEYSET      SLN  KEY ID         ALGORITHM       TYPE  BYTES  LOADED AS
+1     County AES       1 (active)  1    1 (0x1)        0x84 (AES-256)  TEK   32     aes
+2     Fire DES         1 (active)  2    42 (0x2A)      0x81 (DES-OFB)  TEK   8      des
+3     Ops ADP          1 (active)  3    3 (0x3)        0xAA (ADP/RC4)  TEK   5      rc4
+4     Master KEK       1 (active)  4    4 (0x4)        0x84 (AES-256)  KEK   32     -
+5     County AES next  2           1    1 (0x1)        0x85 (AES-128)  TEK   16     -
+6     Legacy DES-XL    1 (active)  6    6 (0x6)        0x9F (DES-XL)   TEK   8      -
+7     Ops TDES         1 (active)  7    4660 (0x1234)  0x83 (TDES-2)   TEK   24     tdes
 
 4 key(s) would load; skipped: 1 KEK, 1 superseded by the active keyset, 1 0x9F (DES-XL), which GopherTrunk does not decrypt
 ```
 
-The reader is pinned against a container written by KFDtool's own code. It
-reads containers only; GopherTrunk does not write `.ekc` files or edit them.
+The reader is pinned against a container written by KFDtool's own code.
+
+### Managing a container from GopherTrunk
+
+`.ekc` is also GopherTrunk's native keystore: every key type GopherTrunk
+decrypts has an ALGID a container holds, including DMR Enhanced Privacy
+(RC4, stored as ADP 0xAA, the same cipher keyed the same way). So you can
+create and edit containers with `gophertrunk ekc` and they stay KFDtool
+containers, which open and edit in KFDtool too:
+
+```
+gophertrunk ekc create -out keys.ekc                       # asks for a new password, twice
+gophertrunk ekc add -in keys.ekc -key-id 11 -algorithm rc4 -name "Ops DMR EP"
+gophertrunk ekc add -in keys.ekc -key-id 1 -algorithm aes -name "County AES"
+gophertrunk ekc list -in keys.ekc
+gophertrunk ekc remove -in keys.ekc -item 2                # ITEM from the listing
+gophertrunk ekc passwd -in keys.ekc
+```
+
+- **The key is never a command-line argument** (that would leave it in shell
+  history and the process list). `add` asks for it at a prompt that does not
+  show it, or reads it from an environment variable named by `-key-env`.
+  Passwords come from a prompt or `-password-env` / `-new-password-env`.
+  Nothing prints key material.
+- `-algorithm` is `rc4` (or `adp`), `des`, `tdes` or `aes`, as in
+  `encryption_keys`. The key length picks the variant: TDES 16 bytes → 0x83,
+  24 → 0x86; AES 16 → 0x85, 32 → 0x84. `-keyset N` (default 1) and `-kek`
+  match KFDtool's fields.
+- A container is rewritten atomically with mode 0600. Everything KFDtool
+  stores is kept: item numbers, key groups and its counters.
+- A new password must be at least 8 characters.
+
+To **move existing plain-text keys** out of the config:
+
+```
+gophertrunk ekc import -config gophertrunk.yaml -system county -out county.ekc
+```
+
+This writes the system's `encryption_keys` into the container (creating it,
+or adding to an existing one) and prints the `encryption_key_files` entry to
+put in their place. It does not edit the config file: delete the plain-text
+keys yourself, and remember backups and version control may still hold them.
+
+Containers GopherTrunk writes are checked byte for byte against KFDtool's
+own: the encrypted inner key list is identical to what KFDtool's code writes
+for the same keys, and the outer wrapper differs only in its random salt and
+ciphertext.
 
 ## Calls you cannot decrypt: `recordings.mute_encrypted`
 
