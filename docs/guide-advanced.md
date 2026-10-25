@@ -175,6 +175,14 @@ depends on the path:
   end in the NAC (`…:conv:460100000:nac293`). The other digital modes have
   nothing to tell transmissions apart, so they cannot share a frequency.
 
+  If the dongle's stream stops (USB loss, a wedged driver), every open call
+  on its conventional channels ends within about 3 s with end reason `error`
+  rather than staying open with no audio, and the wideband engine reopens the
+  dongle as it does for its trunked channels. `/metrics` carries
+  `gophertrunk_conventional_channels_configured` / `_active` by kind, and an
+  external consumer can catch up on finished recordings after downtime from
+  `GET /api/v1/recordings` (see the API events reference).
+
   Per-channel `gain` and `device` do not apply: every tap shares the dongle's
   gain. Issue #1288.
 
