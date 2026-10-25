@@ -506,6 +506,9 @@ export interface WidebandConvChannelDTO {
   // The channel's CTCSS/DCS gate ("CTCSS 123.0 Hz", "DCS 023N"); logical
   // channels sharing one frequency are told apart by it.
   tone?: string;
+  // A p25 channel's NAC filter ("293"; "F7E" receives any); p25 channels
+  // sharing one frequency are told apart by it.
+  nac?: string;
   decoders?: string[];
 }
 

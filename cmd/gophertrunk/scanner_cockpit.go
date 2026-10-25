@@ -39,6 +39,7 @@ type wbConvStatusSource struct {
 	widebandSerial string
 	talkgroupID    uint32
 	tone           string
+	nac            string
 }
 
 // newScannerCockpit is the cockpit the API server reads: every scanner
@@ -131,6 +132,7 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 				CallSerial:     snap.DeviceSerial,
 				TalkgroupID:    w.talkgroupID,
 				Tone:           w.tone,
+				NAC:            w.nac,
 				Decoders:       ch.Decoders,
 			})
 		}

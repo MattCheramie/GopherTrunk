@@ -323,6 +323,9 @@ type WidebandConvChannelDTO struct {
 	// "DCS 023N"); empty when untoned. Logical channels sharing one
 	// frequency are told apart by it.
 	Tone string `json:"tone,omitempty"`
+	// NAC is a p25 channel's NAC filter ("293"; "F7E" receives any),
+	// which tells p25 channels sharing one frequency apart.
+	NAC string `json:"nac,omitempty"`
 	// Decoders lists the channel's data decoders (mdc1200, fleetsync, acars).
 	Decoders []string `json:"decoders,omitempty"`
 }

@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Digital conventional channels on a wideband SDR (#1288).** An
+  `sdr.devices[].conventional` channel can now be any scan-list mode:
+  `p25`, `dmr`, `nxdn`, `nxdn48`, `dstar` and `ysf` as well as FM and AM,
+  monitored continuously on its own tap with the scan list's per-mode gates
+  (a P25 channel opens only on its `nac`, a DMR channel only on a call) and
+  voice chains. P25 channels may share one frequency when each sets its own
+  `nac`, recording an operator's own units and another agency's as two
+  channels. The Scanner panels show a P25 channel's NAC.
 - **Several wideband conventional channels on one frequency, told apart by
   tone (#1288).** `sdr.devices[].conventional` entries may now share a
   frequency when each has a CTCSS or DCS gate that tells its transmissions
