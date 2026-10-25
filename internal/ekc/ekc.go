@@ -1,10 +1,13 @@
-// Package ekc reads KFDtool encrypted key containers (.ekc, issue #1305).
+// Package ekc reads and writes KFDtool encrypted key containers (.ekc,
+// issue #1305).
 //
 // KFDtool (github.com/omahacommsys/KFDtool, MIT) is an open keyloader whose
 // containers hold an operator's P25 keys encrypted at rest under a password.
-// This package only reads them: GopherTrunk decrypts with keys the operator
-// already holds, and a container is a way to keep those keys out of the
-// plain-text YAML.
+// GopherTrunk decrypts with keys the operator already holds, and a container
+// is a way to keep those keys out of the plain-text YAML. Encode writes the
+// same format back (see write.go), keeping every field KFDtool stores (item
+// ids, key groups, the next-number counters), so a container can be managed
+// from `gophertrunk ekc` and still be opened and edited in KFDtool.
 //
 // The format, from KFDtool's ContainerUtilities.cs and Shared/Utility.cs:
 //
@@ -48,6 +51,9 @@ var ErrWrongPassword = errors.New("ekc: wrong password (the container did not de
 
 // Key is one KeyItem of a container.
 type Key struct {
+	// ID is KFDtool's item number (unique within the container; groups
+	// refer to keys by it). Not the key ID a radio carries: that is KeyID.
+	ID int
 	// Name is the operator's label in KFDtool.
 	Name string
 	// KeysetID and ActiveKeyset are the KFD keyset the key belongs to.
@@ -60,8 +66,9 @@ type Key struct {
 	// AlgorithmID is the TIA-102 ALGID (0x81 DES-OFB, 0x84 AES-256, …).
 	AlgorithmID int
 	// TEK / KEK say whether this is a traffic key (decrypts voice) or a
-	// key-encryption key (wraps other keys; no use to a receiver).
-	TEK, KEK bool
+	// key-encryption key (wraps other keys; no use to a receiver). Auto is
+	// KFDtool's "key type auto" flag, kept as found.
+	TEK, KEK, Auto bool
 	// Material is the key itself.
 	Material []byte
 }
@@ -69,6 +76,18 @@ type Key struct {
 // Container is a decrypted .ekc.
 type Container struct {
 	Keys []Key
+	// Groups are KFDtool's named key groups (lists of Key.ID).
+	Groups []Group
+	// NextKeyNumber / NextGroupNumber are KFDtool's counters for the next
+	// item / group ID.
+	NextKeyNumber, NextGroupNumber int
+}
+
+// Group is one GroupItem: a named list of key item IDs.
+type Group struct {
+	ID   int
+	Name string
+	Keys []int
 }
 
 // maxIterations bounds the PBKDF2 work a container may ask for, so a damaged
@@ -100,17 +119,43 @@ type outerXML struct {
 type innerXML struct {
 	XMLName xml.Name `xml:"InnerContainer"`
 	Version string   `xml:"version,attr"`
-	Keys    []struct {
-		Name         string `xml:"Name"`
-		ActiveKeyset bool   `xml:"ActiveKeyset"`
-		KeysetID     int    `xml:"KeysetId"`
-		SLN          int    `xml:"Sln"`
-		KeyTypeTek   bool   `xml:"KeyTypeTek"`
-		KeyTypeKek   bool   `xml:"KeyTypeKek"`
-		KeyID        int    `xml:"KeyId"`
-		AlgorithmID  int    `xml:"AlgorithmId"`
-		Key          string `xml:"Key"`
-	} `xml:"Keys>KeyItem"`
+	// Field order is KFDtool's serialisation order (write.go marshals this
+	// struct), pinned byte for byte by TestEncodeInnerMatchesKFDtool.
+	// Keys / Groups are wrappers, not "Keys>KeyItem" paths, so an empty
+	// list still writes its element (<Keys></Keys>), as .NET does
+	// (<Keys />); a path tag would drop it and KFDtool would read null.
+	Keys            innerKeys   `xml:"Keys"`
+	NextKeyNumber   int         `xml:"NextKeyNumber"`
+	Groups          innerGroups `xml:"Groups"`
+	NextGroupNumber int         `xml:"NextGroupNumber"`
+}
+
+type innerKeys struct {
+	Items []innerKey `xml:"KeyItem"`
+}
+
+type innerGroups struct {
+	Items []innerGroup `xml:"GroupItem"`
+}
+
+type innerKey struct {
+	ID           int    `xml:"Id"`
+	Name         string `xml:"Name"`
+	ActiveKeyset bool   `xml:"ActiveKeyset"`
+	KeysetID     int    `xml:"KeysetId"`
+	SLN          int    `xml:"Sln"`
+	KeyTypeAuto  bool   `xml:"KeyTypeAuto"`
+	KeyTypeTek   bool   `xml:"KeyTypeTek"`
+	KeyTypeKek   bool   `xml:"KeyTypeKek"`
+	KeyID        int    `xml:"KeyId"`
+	AlgorithmID  int    `xml:"AlgorithmId"`
+	Key          string `xml:"Key"`
+}
+
+type innerGroup struct {
+	ID   int    `xml:"Id"`
+	Name string `xml:"Name"`
+	Keys []int  `xml:"Keys>int"`
 }
 
 const aes256CBC = "http://www.w3.org/2001/04/xmlenc#aes256-cbc"
@@ -168,15 +213,19 @@ func Open(file []byte, password string) (*Container, error) {
 	if major(inner.Version) != 1 {
 		return nil, fmt.Errorf("ekc: inner container version %q, this reader knows 1.x", inner.Version)
 	}
-	c := &Container{}
-	for _, k := range inner.Keys {
+	c := &Container{NextKeyNumber: inner.NextKeyNumber, NextGroupNumber: inner.NextGroupNumber}
+	for _, g := range inner.Groups.Items {
+		c.Groups = append(c.Groups, Group{ID: g.ID, Name: g.Name, Keys: append([]int(nil), g.Keys...)})
+	}
+	for _, k := range inner.Keys.Items {
 		m, err := hex.DecodeString(strings.TrimSpace(k.Key))
 		if err != nil {
 			return nil, fmt.Errorf("ekc: key %q (key ID %d): bad hex: %w", k.Name, k.KeyID, err)
 		}
 		c.Keys = append(c.Keys, Key{
-			Name: k.Name, KeysetID: k.KeysetID, ActiveKeyset: k.ActiveKeyset, SLN: k.SLN,
-			KeyID: k.KeyID, AlgorithmID: k.AlgorithmID, TEK: k.KeyTypeTek, KEK: k.KeyTypeKek, Material: m,
+			ID: k.ID, Name: k.Name, KeysetID: k.KeysetID, ActiveKeyset: k.ActiveKeyset, SLN: k.SLN,
+			KeyID: k.KeyID, AlgorithmID: k.AlgorithmID, TEK: k.KeyTypeTek, KEK: k.KeyTypeKek, Auto: k.KeyTypeAuto,
+			Material: m,
 		})
 	}
 	return c, nil

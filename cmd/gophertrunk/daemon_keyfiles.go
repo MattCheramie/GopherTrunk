@@ -174,19 +174,28 @@ const ekcPromptTries = 3
 // from the terminal; without a terminal it is an error, so a service cannot
 // start silently without its keys.
 func openKeyFile(system string, kf config.EncryptionKeyFileConfig) (*ekc.Container, error) {
+	c, _, err := openKeyFileWithPassword(system, kf)
+	return c, err
+}
+
+// openKeyFileWithPassword is openKeyFile that also returns the password that
+// opened the container, for `gophertrunk ekc` commands that save it again.
+func openKeyFileWithPassword(system string, kf config.EncryptionKeyFileConfig) (*ekc.Container, string, error) {
 	data, err := os.ReadFile(kf.Path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	switch {
 	case kf.Password != "":
-		return ekc.Open(data, kf.Password)
+		c, err := ekc.Open(data, kf.Password)
+		return c, kf.Password, err
 	case kf.PasswordEnv != "":
 		pw, ok := os.LookupEnv(kf.PasswordEnv)
 		if !ok {
-			return nil, fmt.Errorf("password_env %s is not set", kf.PasswordEnv)
+			return nil, "", fmt.Errorf("password_env %s is not set", kf.PasswordEnv)
 		}
-		return ekc.Open(data, pw)
+		c, err := ekc.Open(data, pw)
+		return c, pw, err
 	}
 	prompt := fmt.Sprintf("Password for key container %s: ", kf.Path)
 	if system != "" {
@@ -195,14 +204,14 @@ func openKeyFile(system string, kf config.EncryptionKeyFileConfig) (*ekc.Contain
 	for try := 1; ; try++ {
 		pw, ok, err := ekcPasswordPrompt(prompt)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if !ok {
-			return nil, errors.New("no password given: set password or password_env, or start from a terminal to be asked for it")
+			return nil, "", errors.New("no password given: set password or password_env, or start from a terminal to be asked for it")
 		}
 		c, err := ekc.Open(data, pw)
 		if !errors.Is(err, ekc.ErrWrongPassword) || try == ekcPromptTries {
-			return c, err
+			return c, pw, err
 		}
 		fmt.Fprintln(os.Stderr, "Wrong password, try again.")
 	}

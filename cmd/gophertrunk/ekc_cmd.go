@@ -9,45 +9,22 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/ekc"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25"
 )
 
-// runEKC is `gophertrunk ekc`: open a KFDtool key container and list what it
-// holds and what the daemon would load from it, without starting the daemon
-// (issue #1305). It never prints key material.
+// runEKC is `gophertrunk ekc`: list, create and edit KFDtool key containers
+// without starting the daemon (issue #1305; see ekc_edit.go). It never prints
+// key material.
 func runEKC(args []string) {
-	fs := flag.NewFlagSet("ekc", flag.ExitOnError)
-	in := fs.String("in", "", "the KFDtool .ekc file")
-	passwordEnv := fs.String("password-env", "", "read the password from this environment variable instead of asking")
-	keyset := fs.Int("keyset", 0, "show what encryption_key_files would load with this keyset (0 = all keysets)")
-	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), `gophertrunk ekc — list the keys in a KFDtool encrypted key container (.ekc).
-
-USAGE:
-  gophertrunk ekc -in keys.ekc [-password-env VAR] [-keyset N]
-
-Asks for the container's password (or reads it from -password-env), then
-lists every key: keyset, SLN, key ID, algorithm, and whether a system with
-this file under encryption_key_files would load it. Key material is never
-printed.
-
-FLAGS:`)
-		fs.PrintDefaults()
-	}
-	_ = fs.Parse(args)
 	rep := newReporter("ekc")
-	if *in == "" || fs.NArg() > 0 {
-		fs.Usage()
-		rep.Fatalf(2, "-in is required")
-	}
-	c, err := openKeyFile("", config.EncryptionKeyFileConfig{Path: *in, PasswordEnv: *passwordEnv})
-	if err != nil {
+	if err := ekcMain(args, os.Stdout); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		// The reporter already prefixes "ekc:"; don't say it twice.
 		rep.Fatal(1, errors.New(strings.TrimPrefix(err.Error(), "ekc: ")))
 	}
-	writeEKCListing(os.Stdout, c, *keyset)
 }
 
 // writeEKCListing prints one line per container key and the summary the
@@ -59,7 +36,7 @@ func writeEKCListing(w io.Writer, c *ekc.Container, keyset int) {
 		loaded[k.KeyID] = k.Algorithm
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tKEYSET\tSLN\tKEY ID\tALGORITHM\tTYPE\tBYTES\tLOADED AS")
+	fmt.Fprintln(tw, "ITEM\tNAME\tKEYSET\tSLN\tKEY ID\tALGORITHM\tTYPE\tBYTES\tLOADED AS")
 	used := map[uint16]bool{}
 	for _, k := range c.Keys {
 		typ := "TEK"
@@ -76,7 +53,7 @@ func writeEKCListing(w io.Writer, c *ekc.Container, keyset int) {
 			as = alg
 			used[uint16(k.KeyID)] = true
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%d (0x%X)\t%s\t%s\t%d\t%s\n", k.Name, set, k.SLN, k.KeyID, k.KeyID,
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%d (0x%X)\t%s\t%s\t%d\t%s\n", k.ID, k.Name, set, k.SLN, k.KeyID, k.KeyID,
 			p25.FormatAlgorithm(uint8(k.AlgorithmID)), typ, len(k.Material), as)
 	}
 	_ = tw.Flush()

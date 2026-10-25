@@ -163,7 +163,7 @@ USAGE:
   gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
   gophertrunk power [flags]           rtl_power-style sweep logger (CSV) for a local or rtl_tcp SDR
   gophertrunk wmbus [flags]           Wireless M-Bus (868 MHz utility meter) telegram decoder, live or from a capture
-  gophertrunk ekc -in keys.ekc        list the keys in a KFDtool key container (no key material printed)
+  gophertrunk ekc <cmd> [flags]       KFDtool key containers (.ekc): list|create|add|remove|passwd|import (no key material printed)
   gophertrunk bundle <cmd> [flags]    build/inspect a GopherTrunk Bundle (.gtb.tar.gz): pack|info|verify|extract|add|commit
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
   gophertrunk cryptolab <tool> ...    cryptographic-research toolkit (optional; build with -tags cryptolab)

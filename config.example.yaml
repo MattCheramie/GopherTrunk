@@ -1425,7 +1425,9 @@ trunking:
   #     # (TEKs; KEKs are skipped) to encryption_keys; an encryption_keys
   #     # entry with the same key_id wins. Decrypted keys stay in memory
   #     # and are never written back. Check a container with
-  #     # `gophertrunk ekc -in keys.ekc`. (#1305)
+  #     # `gophertrunk ekc -in keys.ekc`; create and edit one with
+  #     # `gophertrunk ekc create|add|remove|passwd`, or move this system's
+  #     # encryption_keys into one with `gophertrunk ekc import`. (#1305)
   #     encryption_key_files:
   #       - path: "../config/keys.ekc"
   #         password_env: GT_EKC_PASSWORD   # or password: "..." (stored in clear);
