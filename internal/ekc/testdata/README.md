@@ -56,3 +56,34 @@ class Program
     }
 }
 ```
+
+## Checking a GopherTrunk-written container with KFDtool
+
+`gophertrunk ekc` writes containers too (`create`, `add`, `import`, …). The
+tests pin its output byte for byte against the reference above, but the
+direct check is KFDtool's own reader opening a container GopherTrunk wrote.
+With the same project as above, replace `Program.cs` with:
+
+```csharp
+using System;
+using System.IO;
+using KFDtool.Container;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        // args: <container.ekc> <password>
+        var c = ContainerUtilities.DecryptOuterContainer(File.ReadAllBytes(args[0]), args[1]);
+        foreach (var k in c.ContainerInner.Keys)
+            Console.WriteLine($"{k.Id} {k.Name} keyset={k.KeysetId} active={k.ActiveKeyset} sln={k.Sln} " +
+                $"keyid={k.KeyId} alg=0x{k.AlgorithmId:X2} tek={k.KeyTypeTek} kek={k.KeyTypeKek} bytes={k.Key.Length / 2}");
+        foreach (var g in c.ContainerInner.Groups)
+            Console.WriteLine($"group {g.Id} {g.Name}: {string.Join(",", g.Keys)}");
+    }
+}
+```
+
+then `gophertrunk ekc create -out gt.ekc`, add a few keys, and
+`dotnet run -- gt.ekc <password>`: it should list the keys with the IDs,
+algorithms and lengths `gophertrunk ekc list` shows.
