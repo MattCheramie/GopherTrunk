@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Conventional-channel and delivery metrics (#1288).** `/metrics` now
+  carries `gophertrunk_conventional_channels_configured` / `_active` by kind
+  (`scan`, `wideband`), and the outbound feeds' counters:
+  `gophertrunk_delivery_sent_total` / `_failures_total` by backend (grant
+  webhooks as `grant_webhook:<name>`), `_dropped_total` and `_queue_depth`.
+  Conventional calls were already counted by `calls_*` under their protocol.
 - **Digital conventional channels on a wideband SDR (#1288).** An
   `sdr.devices[].conventional` channel can now be any scan-list mode:
   `p25`, `dmr`, `nxdn`, `nxdn48`, `dstar` and `ysf` as well as FM and AM,
@@ -57,6 +63,11 @@ for tagged releases.
   container written by KFDtool's own code.
 
 ### Fixed
+- **Closing a daemon that never ran no longer hangs with metrics on.**
+  `Metrics.Close` waited for its event loop unconditionally, so a daemon
+  built with `metrics.enabled` and closed before `Run` (a startup error
+  after the metrics were built, or a test) blocked forever. It now waits
+  only for a loop that started.
 - **`power` no longer blames the CPU when the dongle is what fell short
   (#1230).** A short sweep was always put down to a slow FFT, so the
   reporter's Galaxy S5 was told it could not keep up when only the first

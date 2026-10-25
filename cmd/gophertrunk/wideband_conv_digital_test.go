@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -259,6 +260,61 @@ func TestWidebandConvDigitalModesDaemonWiring(t *testing.T) {
 		}
 		if c.nac != "293" {
 			t.Errorf("p25 channel status nac %q, want 293", c.nac)
+		}
+	}
+}
+
+// TestConventionalChannelMetrics pins issue #1288 §13 through NewDaemon: with
+// metrics on, /metrics carries gophertrunk_conventional_channels_configured
+// and _active by kind, read from the scan list and the wideband channels.
+func TestConventionalChannelMetrics(t *testing.T) {
+	registerMockDongle(t)
+	cfg := config.Default()
+	cfg.SDR.SampleRate = 2_400_000
+	cfg.SDR.Devices = []config.DeviceConfig{{
+		Serial: "mock-00", Role: "wideband", CenterFreqHz: 460_500_000,
+		Conventional: []config.ConvChannelConfig{
+			{Label: "Fire", FrequencyHz: 460_100_000, Mode: "nfm"},
+			{Label: "P25", FrequencyHz: 460_200_000, Mode: "p25", NAC: "293"},
+			{Label: "Air", FrequencyHz: 460_300_000, Mode: "am"},
+		},
+	}}
+	cfg.Trunking.Systems = nil
+	cfg.Metrics.Enabled = true
+	cfg.API.HTTPAddr = "127.0.0.1:0"
+	cfg.Storage.Path = ""
+	cfg.Storage.CCCacheFile = ""
+	cfg.Recordings.Dir = t.TempDir()
+	d, err := NewDaemon(cfg, "test-conv-metrics", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewDaemon: %v", err)
+	}
+	t.Cleanup(d.Close)
+	if d.metrics == nil {
+		t.Fatal("metrics not built")
+	}
+	mfs, err := d.metrics.Registry().Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]float64{}
+	for _, mf := range mfs {
+		if !strings.HasPrefix(mf.GetName(), "gophertrunk_conventional_channels_") {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			got[mf.GetName()+"/"+m.GetLabel()[0].GetValue()] = m.GetGauge().GetValue()
+		}
+	}
+	want := map[string]float64{
+		"gophertrunk_conventional_channels_configured/wideband": 3,
+		"gophertrunk_conventional_channels_active/wideband":     0,
+		"gophertrunk_conventional_channels_configured/scan":     0,
+		"gophertrunk_conventional_channels_active/scan":         0,
+	}
+	for k, v := range want {
+		if g, ok := got[k]; !ok || g != v {
+			t.Errorf("%s = %v (present %v), want %v", k, g, ok, v)
 		}
 	}
 }

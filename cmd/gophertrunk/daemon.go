@@ -3093,6 +3093,7 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
+			d.registerPullMetrics(log)
 		}
 		if d.retention != nil {
 			opts.Retention = d.retention
