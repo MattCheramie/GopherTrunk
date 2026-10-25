@@ -210,6 +210,57 @@ Fires when the control channel decodes a voice/data channel grant.
 > `CallStartedAt`, and a 0-based `Segment` index. `GET /api/v1/calls/{id}/audio`
 > plays every segment of the call back to back.
 
+#### Catching up on finished recordings: `GET /api/v1/recordings`
+
+The event stream only reaches a consumer that is connected. To pick up what
+finished while it was down (an archiver, a transcription pipeline, a
+restarted webhook receiver), read the **finalized-recording feed**, which needs
+`storage.path`:
+
+```
+GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
+```
+
+```json
+{
+  "recordings": [
+    {
+      "id": 4182,
+      "call_id": 90311,
+      "segment": 0,
+      "started_at": "2026-10-25T14:02:11.204Z",
+      "ended_at": "2026-10-25T14:02:15.880Z",
+      "format": "wav",
+      "audio_url": "/api/v1/recordings/4182/audio",
+      "call": { "id": 90311, "system": "scanner", "protocol": "fm-conv", "frequency_hz": 460100000,
+                "device_serial": "wb:00000008:conv:460100000", "talkgroup_alpha": "Fire Dispatch",
+                "end_reason": "normal", "duration_ms": 4676, "...": "the /calls/history row" }
+    }
+  ],
+  "next_after": 4182
+}
+```
+
+- An entry appears only once the recorder has **finished** its file, so a
+  partial recording is never listed. `id` is assigned at that moment, so the
+  feed is in completion order: a long call that started first but finished
+  last is listed after the shorter calls, not skipped. (A cursor on the call
+  row's `id` would skip it, because that id is assigned at call start.)
+- Keep the last `id` you processed and pass it as `after`; `next_after` is the
+  value for the next request. Re-reading from an older `id` returns the same
+  entries with the same ids, so duplicates are recognisable: key on `id`.
+- A call recorded in per-transmission grouping has one entry per file
+  (`segment` 0, 1, …), all with the same `call_id`.
+- `audio_url` serves the **original file** as recorded (WAV, FLAC or MP3,
+  with range support); `/api/v1/calls/{id}/audio` instead joins a call's
+  segments into one WAV for playback.
+- Retention deletes old recordings; an entry whose call row was removed
+  comes back without `call`, and its audio returns 404.
+
+Outbound feeds (webhooks, broadcast backends) run on bounded queues off the
+SDR path; their delivery counters are on `/metrics` as
+`gophertrunk_delivery_*` (see the Hardening guide).
+
 ### `call.encryption`
 
 Emitted when a call is observed to be encrypted.

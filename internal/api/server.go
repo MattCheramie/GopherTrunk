@@ -323,6 +323,9 @@ type WidebandConvChannelDTO struct {
 	// "DCS 023N"); empty when untoned. Logical channels sharing one
 	// frequency are told apart by it.
 	Tone string `json:"tone,omitempty"`
+	// NAC is a p25 channel's NAC filter ("293"; "F7E" receives any),
+	// which tells p25 channels sharing one frequency apart.
+	NAC string `json:"nac,omitempty"`
 	// Decoders lists the channel's data decoders (mdc1200, fleetsync, acars).
 	Decoders []string `json:"decoders,omitempty"`
 }
@@ -749,6 +752,34 @@ type HistoryFilter struct {
 	Protocol  string
 	Encrypted *bool
 	Emergency *bool
+	// IDs, when non-empty, keeps only these call rows.
+	IDs []int64
+}
+
+// FinalizedRecording is one entry of GET /api/v1/recordings, the
+// finalized-recording feed (issue #1288 §10): a recording file the recorder
+// finished and attached to its call. ID is the feed's cursor; it follows
+// completion order (see storage.DB.RecordingFeed). The file path is never
+// exposed: AudioURL serves the original file.
+type FinalizedRecording struct {
+	ID        int64     `json:"id"`
+	CallID    int64     `json:"call_id"`
+	Segment   int       `json:"segment"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at,omitempty"`
+	// Format is the file's container from its extension: wav, flac or mp3.
+	Format   string `json:"format"`
+	AudioURL string `json:"audio_url"`
+	// Call is the recording's call row (nil if retention removed it).
+	Call *CallRow `json:"call,omitempty"`
+	path string
+}
+
+// RecordingFeedProvider is the optional HistoryQuery capability behind
+// GET /api/v1/recordings and GET /api/v1/recordings/{id}/audio.
+type RecordingFeedProvider interface {
+	RecordingFeed(ctx context.Context, afterID int64, limit int) ([]FinalizedRecording, error)
+	RecordingFileByID(ctx context.Context, id int64) (string, error)
 }
 
 // CallRow mirrors storage.CallRow as a JSON-friendly row. Lives in the
@@ -1365,6 +1396,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
 	mux.HandleFunc("GET /api/v1/calls/{id}/audio", s.handleCallAudio)
+	mux.HandleFunc("GET /api/v1/recordings", s.handleRecordingFeed)
+	mux.HandleFunc("GET /api/v1/recordings/{id}/audio", s.handleRecordingAudio)
 	mux.HandleFunc("GET /api/v1/locations", s.handleLocations)
 	mux.HandleFunc("GET /api/v1/affiliations", s.handleAffiliations)
 	mux.HandleFunc("GET /api/v1/patches", s.handlePatches)

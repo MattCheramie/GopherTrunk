@@ -166,6 +166,12 @@ Series exposed:
 | `gophertrunk_sdr_usb_reconnects_total{driver,serial}`           | counter | Times the USB driver had to re-open a device                                                               |
 | `gophertrunk_decode_errors_total{protocol,stage}`               | counter | Decode failures by protocol + stage (e.g. `p25`/`tsbk-crc`)                                                |
 | `gophertrunk_tetra_viterbi_corrections{system,channel}`         | histogram | **Opt-in** (`metrics.detailed_fec: true`). Channel bits the TETRA §8.3.1 FEC chain corrected per recovered burst (`channel` ∈ `bsch`,`schhd`); healthy margin p95 ≤ 8, p99 ≤ 12 |
+| `gophertrunk_conventional_channels_configured{kind}`            | gauge   | Conventional channels configured; `kind` ∈ `scan` (the sequential scan list), `wideband` (continuous channels on a wideband dongle). Their calls count in `calls_*` under protocol `fm-conv`, `am-conv`, `p25`, … |
+| `gophertrunk_conventional_channels_active{kind}`                | gauge   | Conventional channels whose squelch (and tone / NAC / call gate) is open now                               |
+| `gophertrunk_delivery_sent_total{backend}`                      | counter | Items delivered to an outbound feed: completed calls to the `broadcast:` backends, grants to each grant webhook (`grant_webhook:<name>`) |
+| `gophertrunk_delivery_failures_total{backend}`                  | counter | Items a feed gave up on after its retries                                                                  |
+| `gophertrunk_delivery_dropped_total`                            | counter | Items dropped before delivery because a bounded delivery queue was full                                    |
+| `gophertrunk_delivery_queue_depth`                              | gauge   | Items waiting in the delivery queues                                                                       |
 | `gophertrunk_build_info{version}`                               | gauge   | Always `1`; carries the build version as a label                                                           |
 
 The bus-driven counters and gauges (`events_total`, `calls_started_total`,

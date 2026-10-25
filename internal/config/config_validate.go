@@ -1147,13 +1147,10 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 		if err := validateConvChannelAt(path, ch); err != nil {
 			return err
 		}
-		// Issue #1288: analog FM and AM. The digital modes still need the
-		// scanner's own per-mode gates on a wideband tap.
-		switch ch.Mode {
-		case "", "fm", "nfm", "am":
-		default:
-			return fmt.Errorf("%s: mode %q is not supported on a wideband dongle yet; use fm, nfm or am", path, ch.Mode)
-		}
+		// Every scan-list mode runs on a wideband tap (issue #1288): the
+		// scanner's per-mode gates (P25 NAC, DMR call detector) and the
+		// composer's voice chains take the tap's 48 kHz IQ as they take a
+		// scanner SDR's.
 		// The dongle is never retuned and its gain is shared by every tap.
 		if strings.TrimSpace(ch.Gain) != "" {
 			return fmt.Errorf("%s: gain does not apply on a wideband dongle (every channel shares sdr.devices[%d].gain)", path, idx)
@@ -1201,6 +1198,18 @@ func validateSharedConvFrequency(idx int, chans []ConvChannelConfig, js []int) e
 		}
 		return "fm"
 	}
+	for _, j := range js[1:] {
+		if mode(chans[j]) != mode(chans[js[0]]) {
+			return fmt.Errorf("%s: mode %q differs from conventional[%d] (%q) on the same frequency_hz %d",
+				path(j), mode(chans[j]), js[0], mode(chans[js[0]]), chans[j].FrequencyHz)
+		}
+	}
+	if m := mode(chans[js[0]]); m == "p25" {
+		return validateSharedP25Frequency(path, chans, js)
+	} else if isDigitalConvMode(m) {
+		return fmt.Errorf("%s: frequency_hz %d is also conventional[%d]; a mode: %s channel has no tone or NAC to tell "+
+			"transmissions apart, so it cannot share a frequency", path(js[1]), chans[js[1]].FrequencyHz, js[0], m)
+	}
 	decoders := -1
 	for a, ja := range js {
 		ca := chans[ja]
@@ -1238,6 +1247,53 @@ func validateSharedConvFrequency(idx int, chans []ConvChannelConfig, js []int) e
 		}
 	}
 	return nil
+}
+
+// validateSharedP25Frequency checks mode: p25 entries sharing a frequency:
+// the NAC gate tells their transmissions apart as a tone gate does an analog
+// channel's (issue #1262's case: an operator's own units and another
+// agency's on one frequency), so each needs a specific nac (not the F7E /
+// F7F receive-any values) that no other entry uses. The caller has checked
+// that every entry is mode: p25.
+func validateSharedP25Frequency(path func(int) string, chans []ConvChannelConfig, js []int) error {
+	seen := map[uint64]int{}
+	for _, j := range js {
+		ch := chans[j]
+		nac, ok := convSpecificNAC(ch.NAC)
+		if !ok {
+			return fmt.Errorf("%s: p25 channels sharing frequency_hz %d each need their own nac (not F7E/F7F) to tell "+
+				"their transmissions apart", path(j), ch.FrequencyHz)
+		}
+		if prev, dup := seen[nac]; dup {
+			return fmt.Errorf("%s: nac %03X is also conventional[%d] on the same frequency_hz %d", path(j), nac, prev, ch.FrequencyHz)
+		}
+		seen[nac] = j
+	}
+	return nil
+}
+
+// convSpecificNAC parses a channel's nac and reports whether it names one
+// system: set, valid, and not one of the receive-any values F7E / F7F.
+func convSpecificNAC(s string) (uint64, bool) {
+	t := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(s), "0x"), "0X")
+	if t == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(t, 16, 16)
+	if err != nil || n > 0xFFF || n == 0xF7E || n == 0xF7F {
+		return 0, false
+	}
+	return n, true
+}
+
+// isDigitalConvMode reports whether a conventional mode carries digital
+// voice.
+func isDigitalConvMode(m string) bool {
+	switch m {
+	case "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf":
+		return true
+	}
+	return false
 }
 
 // convToneGate is a channel's tone squelch in tonecode's terms.

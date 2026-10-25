@@ -221,9 +221,39 @@ describe("Scanner panel", () => {
     render(<Scanner />);
 
     await waitFor(() => expect(screen.getByText("Fire North")).toBeInTheDocument());
-    expect(screen.getByRole("columnheader", { name: "Tone" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Tone / NAC" })).toBeInTheDocument();
     expect(screen.getByText("CTCSS 100.0 Hz")).toBeInTheDocument();
     expect(screen.getByText("DCS 023N")).toBeInTheDocument();
+  });
+
+  // #1288: a p25 wideband channel's NAC shows in the same column.
+  it("shows a p25 wideband channel's NAC", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [],
+      conventional: {
+        enabled: false,
+        channels: [],
+        wideband_channels: [
+          {
+            label: "County P25",
+            frequency_hz: 460_100_000,
+            mode: "p25",
+            active: false,
+            wideband_serial: "WB-1",
+            call_serial: "wb:WB-1:conv:460100000:nac293",
+            nac: "293",
+          },
+        ],
+      },
+      tg_scan_count: 0,
+      tg_total: 0,
+    } as ScannerStatusDTO);
+
+    render(<Scanner />);
+
+    await waitFor(() => expect(screen.getByText("County P25")).toBeInTheDocument());
+    expect(screen.getByText("NAC 293")).toBeInTheDocument();
   });
 
   it("omits the wideband card when none are configured", async () => {

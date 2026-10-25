@@ -536,6 +536,9 @@ func (p *ScannerPanel) renderWidebandConventional(width int, s *state.SharedStat
 		if ch.Tone != "" {
 			tone = "  " + ch.Tone
 		}
+		if ch.NAC != "" {
+			tone += "  NAC " + ch.NAC
+		}
 		lines = append(lines, fmt.Sprintf("    %s  %s  %-12s  %-4s  on %s  last: %s%s",
 			style.Render(active), padTo(ch.Label, 20), client.FormatFreqMHz(ch.FrequencyHz),
 			strings.ToUpper(ch.Mode), ch.WidebandSerial, break_, tone))

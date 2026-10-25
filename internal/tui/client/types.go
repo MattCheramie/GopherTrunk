@@ -267,6 +267,7 @@ type WidebandConvChannelDTO struct {
 	CallSerial     string    `json:"call_serial"`
 	TalkgroupID    uint32    `json:"talkgroup_id,omitempty"`
 	Tone           string    `json:"tone,omitempty"`
+	NAC            string    `json:"nac,omitempty"`
 	Decoders       []string  `json:"decoders,omitempty"`
 }
 

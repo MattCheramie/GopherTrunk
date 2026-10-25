@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
@@ -45,6 +46,10 @@ type wbConvChannel struct {
 	// tone is the channel's CTCSS / DCS gate, which is what tells logical
 	// channels sharing one frequency apart.
 	tone tonecode.Gate
+	// nac names a p25 channel's NAC filter ("293", or "F7E" for receive
+	// any), "" when unset; on a shared frequency it is what tells the
+	// channels apart.
+	nac string
 }
 
 // wbConvSerial is the virtual device serial a wideband conventional channel's
@@ -65,18 +70,30 @@ func wbConvSharedSerial(widebandSerial string, freqHz uint32, tone tonecode.Gate
 	return wbConvSerial(widebandSerial, freqHz) + ":" + tone.ID()
 }
 
+// wbConvSharedP25Serial is wbConvSharedSerial for a p25 channel on a shared
+// frequency, told apart by its NAC: "wb:WB1:conv:460100000:nac293".
+func wbConvSharedP25Serial(widebandSerial string, freqHz uint32, nac uint16) string {
+	return fmt.Sprintf("%s:nac%03x", wbConvSerial(widebandSerial, freqHz), nac)
+}
+
 // convChannelFromConfig is the conventional.Channel for a configured channel
-// under talkgroup ID tgid, without the per-SDR settings (gain, NAC, demod)
-// only the scan-list scanner applies.
+// under talkgroup ID tgid, without the per-SDR gain only the scan-list
+// scanner applies. A p25 channel's nac and demod come through for both the
+// scan list and a wideband tap (issue #1288); config validation already
+// rejected a malformed nac.
 func convChannelFromConfig(ch config.ConvChannelConfig, tgid uint32) conventional.Channel {
+	nac, nacErr := conventional.ParseNAC(ch.NAC)
 	return conventional.Channel{
-		AudioGainDB: ch.AudioGainDB,
-		Label:       ch.Label,
-		FrequencyHz: ch.FrequencyHz,
-		Mode:        ch.Mode,
-		SquelchDbFS: ch.SquelchDbFS,
-		SquelchCNDb: ch.SquelchCNDb,
-		Hangtime:    msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
+		NAC:                nac,
+		NACSet:             strings.TrimSpace(ch.NAC) != "" && nacErr == nil,
+		P25Phase1DemodMode: ch.P25Phase1DemodMode,
+		AudioGainDB:        ch.AudioGainDB,
+		Label:              ch.Label,
+		FrequencyHz:        ch.FrequencyHz,
+		Mode:               ch.Mode,
+		SquelchDbFS:        ch.SquelchDbFS,
+		SquelchCNDb:        ch.SquelchCNDb,
+		Hangtime:           msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
 		// 0 => let the scanner apply its own defaults
 		// (50 ms debounce / 3 dB hysteresis) in one place.
 		ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
@@ -125,23 +142,34 @@ func (d *Daemon) buildWidebandConvSources(cfg config.Config, log *slog.Logger) {
 			}
 			k++
 			tone := convToneGate(ch.Tone)
+			conv := convChannelFromConfig(ch, tgid)
 			vserial := wbConvSerial(serial, ch.FrequencyHz)
 			if perFreq[ch.FrequencyHz] > 1 {
 				// One engine tap carries the frequency (see
 				// widebandConvTapChannels); each logical channel gets
-				// its own source on it, and its own tone gate decides
-				// which transmissions it records.
-				vserial = wbConvSharedSerial(serial, ch.FrequencyHz, tone)
+				// its own source on it, and its own tone gate (a p25
+				// channel's NAC gate) decides which transmissions it
+				// records.
+				if conv.Mode == conventional.ModeP25 {
+					vserial = wbConvSharedP25Serial(serial, ch.FrequencyHz, conv.NAC)
+				} else {
+					vserial = wbConvSharedSerial(serial, ch.FrequencyHz, tone)
+				}
+			}
+			nacName := ""
+			if conv.NACSet {
+				nacName = fmt.Sprintf("%03X", conv.NAC)
 			}
 			d.wbConvChannels = append(d.wbConvChannels, wbConvChannel{
 				source:         widebandt2.NewChannelVoiceSource(get, ch.FrequencyHz, vserial),
-				channel:        convChannelFromConfig(ch, tgid),
+				channel:        conv,
 				widebandSerial: serial,
 				tone:           tone,
+				nac:            nacName,
 			})
 		}
 		if n := len(devCfg.Conventional); n > 0 {
-			log.Info("daemon: wideband: continuous conventional FM/AM channels registered — each records its own calls in parallel",
+			log.Info("daemon: wideband: continuous conventional channels registered — each records its own calls in parallel",
 				"wideband_serial", serial, "channels", n)
 		}
 	}
@@ -196,6 +224,7 @@ func (d *Daemon) wbConvStatusSources() []wbConvStatusSource {
 			widebandSerial: d.wbConvChannels[i].widebandSerial,
 			talkgroupID:    d.wbConvChannels[i].channel.TalkgroupID,
 			tone:           d.wbConvChannels[i].tone.String(),
+			nac:            d.wbConvChannels[i].nac,
 		})
 	}
 	return out
@@ -204,6 +233,17 @@ func (d *Daemon) wbConvStatusSources() []wbConvStatusSource {
 // convToneGate is a configured tone squelch in tonecode's terms.
 func convToneGate(t config.ConvToneConfig) tonecode.Gate {
 	return tonecode.Gate{Mode: t.Mode, CTCSSHz: t.CTCSSHz, DCSCode: t.DCSCode, DCSPolarity: t.DCSPolarity}
+}
+
+// widebandConvTag is the engine's protocol tag for a conventional tap of mode
+// m: "" for the analog modes (the engine names them fm-conv / am-conv), else
+// "<mode>-conv" ("p25-conv", "dmr-conv", …), which the startup log and the
+// channel-power events carry.
+func widebandConvTag(m string) string {
+	if conventional.IsDigitalMode(m) {
+		return m + "-conv"
+	}
+	return ""
 }
 
 // widebandConvTapChannels is the engine channel list for a device's
@@ -220,6 +260,7 @@ func widebandConvTapChannels(chans []config.ConvChannelConfig) []widebandt2.Chan
 		seen[ch.FrequencyHz] = true
 		out = append(out, widebandt2.ChannelConfig{
 			FrequencyHz: ch.FrequencyHz, Conventional: true, ConventionalAM: ch.Mode == "am",
+			ConventionalTag: widebandConvTag(ch.Mode),
 		})
 	}
 	return out

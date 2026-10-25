@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -78,6 +79,9 @@ type Metrics struct {
 	sub       *events.Subscription
 	runDone   chan struct{}
 	closeOnce sync.Once
+	// running is set when Run starts, so Close waits for a Run that
+	// exists and never for one that was never started.
+	running atomic.Bool
 }
 
 // New constructs the metrics registry and (optionally) subscribes to the
@@ -355,6 +359,7 @@ func (m *Metrics) Run(ctx context.Context) error {
 	if m.sub == nil {
 		return nil
 	}
+	m.running.Store(true)
 	defer close(m.runDone)
 	for {
 		select {
@@ -376,9 +381,13 @@ func (m *Metrics) Close() error {
 	}
 	m.closeOnce.Do(func() {
 		m.sub.Close()
-		// Best-effort wait for Run to finish; bounded so a never-started
-		// Run doesn't block forever.
-		<-m.runDone
+		// Wait for Run to finish only if it started: a daemon built and
+		// closed without running (a test, a startup error) never starts
+		// it, and waiting then blocked Close forever. A Run starting
+		// after this point reads the closed subscription and returns.
+		if m.running.Load() {
+			<-m.runDone
+		}
 	})
 	return nil
 }

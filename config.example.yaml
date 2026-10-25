@@ -596,9 +596,12 @@ sdr:
     # or dwells, so a call on one channel never hides another. Entries
     # take the scanner.conventional channel fields (label, mode,
     # squelch_dbfs, hangtime_ms, tone, talkgroup_id, audio_gain_db,
-    # decoders, ...); mode must be fm, nfm or am (an am channel squelches
-    # on squelch_cn_db, default 12, not squelch_dbfs), and gain / device / nac do
-    # not apply (every tap shares this dongle's gain and centre). Each
+    # decoders, nac, ...) and every scan-list mode: fm, nfm, am (an am
+    # channel squelches on squelch_cn_db, default 12, not squelch_dbfs),
+    # p25 (nac, p25_phase1_demod_mode), dmr, nxdn, nxdn48, dstar, ysf.
+    # gain and device do not apply (every tap shares this dongle's gain
+    # and centre). P25 channels may share a frequency when each has its
+    # own nac (not F7E/F7F); the other digital modes cannot. Each
     # frequency must fit the IQ band like channels:, and the two lists
     # can be mixed on one dongle (e.g. a P25 control channel plus FM
     # dispatch channels). No trunking system is needed for these.

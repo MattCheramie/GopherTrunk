@@ -278,6 +278,8 @@ type HistoryFilter struct {
 	Emergency *bool
 	// Protocol narrows to one protocol name (e.g. "p25", "dmr-tier2").
 	Protocol string
+	// IDs, when non-empty, keeps only these call rows.
+	IDs []int64
 }
 
 // CallRow is one row from the call_log table.
@@ -364,6 +366,12 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	if f.Protocol != "" {
 		q += " AND protocol = ?"
 		args = append(args, f.Protocol)
+	}
+	if len(f.IDs) > 0 {
+		q += " AND id IN (?" + strings.Repeat(",?", len(f.IDs)-1) + ")"
+		for _, id := range f.IDs {
+			args = append(args, id)
+		}
 	}
 	if f.Encrypted != nil {
 		q += " AND encrypted = ?"
@@ -674,4 +682,63 @@ UPDATE call_log
 		return fmt.Errorf("storage: set transcript: %w", err)
 	}
 	return nil
+}
+
+// FinalizedRecording is one row of the finalized-recording feed: a recording
+// file attached to its call once the recorder finished it.
+type FinalizedRecording struct {
+	ID        int64 // call_recordings.id: assigned at attach time, the feed's cursor
+	CallID    int64
+	Seq       int
+	Path      string
+	StartedAt time.Time
+	EndedAt   time.Time
+}
+
+// RecordingFeed returns up to limit finalized recordings with an id above
+// afterID, oldest first (issue #1288 §10). A recording row is written only
+// when the recorder announces the finished file (CallComplete), and its id
+// is assigned then, so the ids follow completion order: a consumer that
+// keeps the last id it processed and asks for the ones after it sees every
+// recording exactly once, including a long call's that finished after
+// shorter calls which started later. (A call_log id would not do: it is
+// assigned at call START.) Re-reading from an older id replays the same rows
+// with the same ids, so a consumer can dedupe on them.
+func (d *DB) RecordingFeed(ctx context.Context, afterID int64, limit int) ([]FinalizedRecording, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT id, call_id, seq, path, started_at, ended_at FROM call_recordings
+		  WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("storage: recording feed: %w", err)
+	}
+	defer rows.Close()
+	var out []FinalizedRecording
+	for rows.Next() {
+		var r FinalizedRecording
+		var startNs int64
+		var endNs sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.CallID, &r.Seq, &r.Path, &startNs, &endNs); err != nil {
+			return nil, err
+		}
+		r.StartedAt = time.Unix(0, startNs).UTC()
+		if endNs.Valid {
+			r.EndedAt = time.Unix(0, endNs.Int64).UTC()
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// RecordingPathByRecordingID returns the file of one finalized recording
+// (a RecordingFeed id), or "" when the id is unknown.
+func (d *DB) RecordingPathByRecordingID(ctx context.Context, id int64) (string, error) {
+	var p string
+	err := d.sql.QueryRowContext(ctx, `SELECT path FROM call_recordings WHERE id = ?`, id).Scan(&p)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return p, err
 }

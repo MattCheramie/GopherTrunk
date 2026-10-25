@@ -187,6 +187,10 @@ type ChannelConfig struct {
 	// than FM. The tap is the same; only the protocol tag in the startup
 	// log and the channel-power events differs.
 	ConventionalAM bool
+	// ConventionalTag overrides the protocol tag of a Conventional channel
+	// (a digital conventional channel, issue #1288: "p25-conv", "dmr-conv",
+	// …). Empty uses fm-conv / am-conv by ConventionalAM.
+	ConventionalTag string
 }
 
 // conventionalProtoTag is the protocol tag of a Conventional channel, and
@@ -669,6 +673,9 @@ func New(opts Options) (*Engine, error) {
 			tag := conventionalProtoTag
 			if ch.ConventionalAM {
 				tag = conventionalAMProtoTag
+			}
+			if ch.ConventionalTag != "" {
+				tag = ch.ConventionalTag
 			}
 			ec = &engineChannel{freqHz: ch.FrequencyHz, sysName: "conventional", protoTag: tag, conventional: true}
 		} else {

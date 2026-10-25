@@ -3093,6 +3093,7 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
+			d.registerPullMetrics(log)
 		}
 		if d.retention != nil {
 			opts.Retention = d.retention
@@ -5091,9 +5092,6 @@ func (d *Daemon) buildConvScanner(cfg config.Config, g convScanGroup, convRec co
 	for _, i := range g.channels {
 		ch := cfg.Scanner.Conventional[i]
 		gainTenthDB, gainSet := convChannelGain(ch, log)
-		// Config validation already rejected a malformed nac.
-		nac, nacErr := conventional.ParseNAC(ch.NAC)
-		nacSet := strings.TrimSpace(ch.NAC) != "" && nacErr == nil
 		// The positional talkgroup ID follows the channel's place in the
 		// whole scan list, not in this SDR's share of it, so splitting the
 		// list across SDRs keeps every channel's ID (and config
@@ -5102,9 +5100,7 @@ func (d *Daemon) buildConvScanner(cfg config.Config, g convScanGroup, convRec co
 		if tgid == 0 {
 			tgid = 0x80000000 | uint32(i)
 		}
-		c := convChannelFromConfig(ch, tgid)
-		c.NAC, c.NACSet = nac, nacSet
-		c.P25Phase1DemodMode = ch.P25Phase1DemodMode
+		c := convChannelFromConfig(ch, tgid) // nac and demod included
 		c.GainTenthDB, c.GainSet = gainTenthDB, gainSet
 		channels = append(channels, c)
 	}

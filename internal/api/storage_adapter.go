@@ -92,6 +92,7 @@ func (s *storageHistory) RIDSummaries(ctx context.Context, f RIDSummaryFilter) (
 
 func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	rows, err := s.db.History(ctx, storage.HistoryFilter{
+		IDs:       f.IDs,
 		System:    f.System,
 		GroupID:   f.GroupID,
 		SourceID:  f.SourceID,
@@ -160,4 +161,46 @@ func (s *storageHistory) RecordingSegmentsByID(ctx context.Context, id int64) ([
 		out[i] = RecordingSegment{Seq: seg.Seq, Path: seg.Path, StartedAt: seg.StartedAt, EndedAt: seg.EndedAt}
 	}
 	return out, nil
+}
+
+// RecordingFeed delegates to storage.DB.RecordingFeed and attaches each
+// recording's call row (RecordingFeedProvider).
+func (s *storageHistory) RecordingFeed(ctx context.Context, afterID int64, limit int) ([]FinalizedRecording, error) {
+	recs, err := s.db.RecordingFeed(ctx, afterID, limit)
+	if err != nil || len(recs) == 0 {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(recs))
+	seen := map[int64]bool{}
+	for _, r := range recs {
+		if !seen[r.CallID] {
+			seen[r.CallID] = true
+			ids = append(ids, r.CallID)
+		}
+	}
+	calls, err := s.History(ctx, HistoryFilter{IDs: ids, Limit: len(ids)})
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]CallRow, len(calls))
+	for _, c := range calls {
+		byID[c.ID] = c
+	}
+	out := make([]FinalizedRecording, len(recs))
+	for i, r := range recs {
+		out[i] = FinalizedRecording{
+			ID: r.ID, CallID: r.CallID, Segment: r.Seq,
+			StartedAt: r.StartedAt, EndedAt: r.EndedAt, path: r.Path,
+		}
+		if c, ok := byID[r.CallID]; ok {
+			c := c
+			out[i].Call = &c
+		}
+	}
+	return out, nil
+}
+
+// RecordingFileByID delegates to storage.DB.RecordingPathByRecordingID.
+func (s *storageHistory) RecordingFileByID(ctx context.Context, id int64) (string, error) {
+	return s.db.RecordingPathByRecordingID(ctx, id)
 }

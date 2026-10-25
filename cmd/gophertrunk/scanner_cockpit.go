@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
+	"github.com/MattCheramie/GopherTrunk/internal/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -39,6 +41,7 @@ type wbConvStatusSource struct {
 	widebandSerial string
 	talkgroupID    uint32
 	tone           string
+	nac            string
 }
 
 // newScannerCockpit is the cockpit the API server reads: every scanner
@@ -131,6 +134,7 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 				CallSerial:     snap.DeviceSerial,
 				TalkgroupID:    w.talkgroupID,
 				Tone:           w.tone,
+				NAC:            w.nac,
 				Decoders:       ch.Decoders,
 			})
 		}
@@ -303,4 +307,74 @@ func (c scannerCockpit) ClearManualTune(index int) bool {
 		return false // manual-tune channels live on the shared scanner
 	}
 	return c.convs[len(c.convs)-1].RemoveTemporaryChannel(index - off)
+}
+
+// registerPullMetrics exposes the conventional-channel and outbound-delivery
+// gauges / counters (issue #1288 §13), read from the scanners and the
+// broadcast feeds at every scrape. Called once, after every scanner and feed
+// exists.
+func (d *Daemon) registerPullMetrics(log *slog.Logger) {
+	ck := d.newScannerCockpit()
+	if err := d.metrics.RegisterConventionalChannels(func() []metrics.ConventionalChannelCounts {
+		return conventionalChannelCounts(ck.Status())
+	}); err != nil {
+		log.Warn("metrics: conventional channel gauges not registered", "err", err)
+	}
+	if d.broadcast == nil && len(d.grantHooks) == 0 {
+		return
+	}
+	if err := d.metrics.RegisterDelivery(func() metrics.DeliveryCounts {
+		return d.deliveryCounts()
+	}); err != nil {
+		log.Warn("metrics: delivery counters not registered", "err", err)
+	}
+}
+
+// conventionalChannelCounts counts the scan list's and the wideband
+// conventional channels, configured and currently open.
+func conventionalChannelCounts(st api.ScannerStatus) []metrics.ConventionalChannelCounts {
+	scan := metrics.ConventionalChannelCounts{Kind: "scan", Configured: len(st.Conventional.Channels)}
+	for _, ch := range st.Conventional.Channels {
+		if ch.Active {
+			scan.Active++
+		}
+	}
+	wb := metrics.ConventionalChannelCounts{Kind: "wideband", Configured: len(st.Conventional.WidebandChannels)}
+	for _, ch := range st.Conventional.WidebandChannels {
+		if ch.Active {
+			wb.Active++
+		}
+	}
+	return []metrics.ConventionalChannelCounts{scan, wb}
+}
+
+// deliveryCounts merges the broadcast manager's per-backend counters with
+// each grant webhook's (as backend "grant_webhook:<name>").
+func (d *Daemon) deliveryCounts() metrics.DeliveryCounts {
+	out := metrics.DeliveryCounts{Sent: map[string]int{}, Failed: map[string]int{}}
+	if d.broadcast != nil {
+		st := d.broadcast.Stats()
+		for k, v := range st.Sent {
+			out.Sent[k] = v
+		}
+		for k, v := range st.Failed {
+			out.Failed[k] = v
+		}
+		for _, b := range st.Backends {
+			if _, ok := out.Sent[b]; !ok {
+				out.Sent[b] = 0
+			}
+		}
+		out.Dropped += st.Dropped
+		out.Queued += st.Queued
+	}
+	for _, h := range d.grantHooks {
+		st := h.Stats()
+		name := "grant_webhook:" + st.Name
+		out.Sent[name] = st.Sent
+		out.Failed[name] = st.Failed
+		out.Dropped += st.Dropped
+		out.Queued += st.Queued
+	}
+	return out
 }

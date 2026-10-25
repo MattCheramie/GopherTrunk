@@ -531,7 +531,12 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("api: concatenating segment recordings failed; serving the first segment",
 			"call", id, "segments", len(segs), "err", err)
 	}
-	path := segs[0].Path
+	s.serveRecordingFile(w, r, segs[0].Path)
+}
+
+// serveRecordingFile serves one recording file as it is on disk, with range
+// support. path must already have passed validRecordingPath.
+func (s *Server) serveRecordingFile(w http.ResponseWriter, r *http.Request, path string) {
 	f, err := os.Open(path)
 	if err != nil {
 		// Retention may have deleted it, or the volume moved.
@@ -553,6 +558,95 @@ func (s *Server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "audio/wav")
 	}
 	http.ServeContent(w, r, filepath.Base(path), fi.ModTime(), f)
+}
+
+// handleRecordingFeed is the finalized-recording feed (issue #1288 §10): every
+// recording the recorder finished, in completion order, each with its call's
+// metadata and a URL for the original file. A consumer keeps the last id it
+// processed and asks for the ones after it, so it can catch up on whatever
+// finished while it was down; re-reading from an older id returns the same
+// entries with the same ids, so a duplicate is recognisable. An entry appears
+// only once its file is finalized, so a partial recording is never listed.
+//
+//	GET /api/v1/recordings?after=<id>&limit=<n>   (limit default 100, max 1000)
+//
+// The response's next_after is the cursor for the following request (the
+// last id returned, or after itself when there were none).
+func (s *Server) handleRecordingFeed(w http.ResponseWriter, r *http.Request) {
+	prov, ok := s.history.(RecordingFeedProvider)
+	if s.history == nil || !ok {
+		s.writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")
+		return
+	}
+	q := r.URL.Query()
+	var after int64
+	if v := q.Get("after"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			s.writeError(w, http.StatusBadRequest, "invalid after (want a recording id)")
+			return
+		}
+		after = n
+	}
+	limit := 100
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			s.writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = min(n, 1000)
+	}
+	recs, err := prov.RecordingFeed(r.Context(), after, limit)
+	if err != nil {
+		s.log.Warn("api: recording feed query failed", "err", err)
+		s.writeError(w, http.StatusInternalServerError, "recording feed query failed")
+		return
+	}
+	next := after
+	for i := range recs {
+		recs[i].Format = strings.TrimPrefix(strings.ToLower(filepath.Ext(recs[i].path)), ".")
+		recs[i].AudioURL = "/api/v1/recordings/" + strconv.FormatInt(recs[i].ID, 10) + "/audio"
+		next = recs[i].ID
+	}
+	if recs == nil {
+		recs = []FinalizedRecording{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"recordings": recs, "next_after": next})
+}
+
+// handleRecordingAudio serves one finalized recording's original file (WAV,
+// FLAC or MP3 as recorded) by its feed id, unlike /calls/{id}/audio, which
+// joins a multi-over call's segments into one WAV for playback.
+//
+//	GET /api/v1/recordings/{id}/audio
+func (s *Server) handleRecordingAudio(w http.ResponseWriter, r *http.Request) {
+	prov, ok := s.history.(RecordingFeedProvider)
+	if s.history == nil || !ok {
+		s.writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		s.writeError(w, http.StatusBadRequest, "invalid recording id")
+		return
+	}
+	path, err := prov.RecordingFileByID(r.Context(), id)
+	if err != nil {
+		s.log.Warn("api: recording file lookup failed", "err", err, "recording", id)
+		s.writeError(w, http.StatusInternalServerError, "recording lookup failed")
+		return
+	}
+	if path == "" {
+		s.writeError(w, http.StatusNotFound, "no such recording")
+		return
+	}
+	p, ok := validRecordingPath(path)
+	if !ok {
+		s.writeError(w, http.StatusNotFound, "recording unavailable")
+		return
+	}
+	s.serveRecordingFile(w, r, p)
 }
 
 // recordingSegments resolves a call id to its recording file(s): every segment

@@ -515,7 +515,7 @@ function Conventional({
 function WidebandConventional({ channels }: { channels: WidebandConvChannelDTO[] }) {
   if (channels.length === 0) return null;
   const serials = [...new Set(channels.map((c) => c.wideband_serial))];
-  const toned = channels.some((c) => !!c.tone);
+  const toned = channels.some((c) => !!c.tone || !!c.nac);
   return (
     <Card
       title="Wideband conventional channels"
@@ -536,7 +536,7 @@ function WidebandConventional({ channels }: { channels: WidebandConvChannelDTO[]
               <th className="text-left px-2 py-1">Label</th>
               <th className="text-left px-2 py-1">Freq</th>
               <th className="text-left px-2 py-1">Mode</th>
-              {toned && <th className="text-left px-2 py-1">Tone</th>}
+              {toned && <th className="text-left px-2 py-1">Tone / NAC</th>}
               {serials.length > 1 && <th className="text-left px-2 py-1">SDR</th>}
               <th className="text-left px-2 py-1">State</th>
               <th className="text-left px-2 py-1">Last call</th>
@@ -561,7 +561,9 @@ function WidebandConventional({ channels }: { channels: WidebandConvChannelDTO[]
                 </td>
                 <td className="px-2 py-1 font-mono text-xs">{ch.mode}</td>
                 {toned && (
-                  <td className="px-2 py-1 font-mono text-xs">{ch.tone || "—"}</td>
+                  <td className="px-2 py-1 font-mono text-xs">
+                    {ch.tone || (ch.nac ? `NAC ${ch.nac}` : "—")}
+                  </td>
                 )}
                 {serials.length > 1 && (
                   <td className="px-2 py-1 font-mono text-xs">{ch.wideband_serial}</td>

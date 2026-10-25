@@ -18,6 +18,13 @@ func TestValidateWidebandConventional(t *testing.T) {
 		{Label: "EMS", FrequencyHz: 460_900_000, Mode: "fm", Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 123}},
 		{Label: "Ops", FrequencyHz: 460_300_000, Decoders: []string{"mdc1200"}},
 		{Label: "Air", FrequencyHz: 460_700_000, Mode: "am", SquelchCNDb: 15, Decoders: []string{"acars"}},
+		// Every scan-list mode runs on a wideband tap (issue #1288).
+		{Label: "P25", FrequencyHz: 460_150_000, Mode: "p25", NAC: "293", P25Phase1DemodMode: "cqpsk"},
+		{Label: "DMR", FrequencyHz: 460_250_000, Mode: "dmr"},
+		{Label: "NXDN", FrequencyHz: 460_350_000, Mode: "nxdn"},
+		{Label: "NXDN48", FrequencyHz: 460_450_000, Mode: "nxdn48"},
+		{Label: "D-STAR", FrequencyHz: 460_550_000, Mode: "dstar"},
+		{Label: "YSF", FrequencyHz: 460_650_000, Mode: "ysf"},
 	}
 	if err := validateWidebandDevice(0, dev(ok...), 2_400_000, nil); err != nil {
 		t.Fatalf("valid conventional-only wideband device rejected: %v", err)
@@ -27,7 +34,8 @@ func TestValidateWidebandConventional(t *testing.T) {
 		want string
 	}{
 		"no channels at all":  {DeviceConfig{Serial: "WB", Role: "wideband", CenterFreqHz: 460_500_000}, "at least one channel"},
-		"digital not yet":     {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Mode: "dmr"}), "conventional[0]: mode \"dmr\" is not supported on a wideband dongle"},
+		"digital tone":        {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Mode: "dmr", Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 100}}), "conventional[0].tone: CTCSS/DCS gating applies to analog channels"},
+		"nac off p25":         {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Mode: "nfm", NAC: "293"}), "nac and p25_phase1_demod_mode apply to mode: p25 only"},
 		"per-channel gain":    {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Gain: "200"}), "gain does not apply"},
 		"device":              {dev(ConvChannelConfig{FrequencyHz: 460_100_000, Device: "X"}), "device does not apply"},
 		"out of band":         {dev(ConvChannelConfig{FrequencyHz: 462_000_000}), "usable band"},
@@ -123,6 +131,35 @@ func TestValidateWidebandConventionalSharedFrequency(t *testing.T) {
 		"decoders twice": {dev(withDecoders(ctcss("A", 100), "mdc1200"), withDecoders(ctcss("B", 141.3), "fleetsync")),
 			"conventional[1]: decoders are also set on conventional[0]"},
 		"third overlaps first": {dev(ctcss("A", 100), ctcss("B", 141.3), ctcss("C", 100)), "conventional[2]: tone CTCSS 100.0 Hz cannot be told apart from conventional[0]"},
+	} {
+		err := validateWidebandDevice(0, tc.d, 2_400_000, nil)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want it to mention %q", name, err, tc.want)
+		}
+	}
+}
+
+// TestValidateWidebandConventionalSharedDigital: P25 channels may share a
+// frequency when distinct, specific NACs tell them apart (the NAC gate is the
+// P25 analogue of a tone gate); the other digital modes have no such gate.
+func TestValidateWidebandConventionalSharedDigital(t *testing.T) {
+	const hz = 460_100_000
+	p25 := func(nac string) ConvChannelConfig { return ConvChannelConfig{FrequencyHz: hz, Mode: "p25", NAC: nac} }
+	dev := func(chs ...ConvChannelConfig) DeviceConfig {
+		return DeviceConfig{Serial: "WB", Role: "wideband", CenterFreqHz: 460_500_000, Conventional: chs}
+	}
+	if err := validateWidebandDevice(0, dev(p25("293"), p25("0x4A5")), 2_400_000, nil); err != nil {
+		t.Errorf("two NACs on one frequency rejected: %v", err)
+	}
+	for name, tc := range map[string]struct {
+		d    DeviceConfig
+		want string
+	}{
+		"same NAC":     {dev(p25("293"), p25("0x293")), "conventional[1]: nac 293 is also conventional[0]"},
+		"no NAC":       {dev(p25("293"), p25("")), "conventional[1]: p25 channels sharing frequency_hz 460100000 each need their own nac"},
+		"receive-any":  {dev(p25("293"), p25("F7E")), "each need their own nac (not F7E/F7F)"},
+		"DMR can't":    {dev(ConvChannelConfig{FrequencyHz: hz, Mode: "dmr"}, ConvChannelConfig{FrequencyHz: hz, Mode: "dmr"}), "a mode: dmr channel has no tone or NAC"},
+		"analog + p25": {dev(ConvChannelConfig{FrequencyHz: hz, Mode: "nfm", Tone: ConvToneConfig{Mode: "ctcss", CTCSSHz: 100}}, p25("293")), "conventional[1]: mode \"p25\" differs from conventional[0] (\"nfm\")"},
 	} {
 		err := validateWidebandDevice(0, tc.d, 2_400_000, nil)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

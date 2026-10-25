@@ -92,9 +92,10 @@ depends on the path:
   single `role: control`/`auto` tuner the hunter is a time multiplexer that
   camps on the first system that locks, and the daemon now warns at startup
   when several systems share one control SDR.
-- **Many analog FM or AM channels on one wideband SDR, all at once.** List them
+- **Many conventional channels on one wideband SDR, all at once.** List them
   under the device's `conventional:` key (the same fields as a
-  `scanner.conventional` channel; `mode: fm`, `nfm` or `am`). Each channel gets its own tap, squelch, tone gate
+  `scanner.conventional` channel, and every scan-list mode: `fm`, `nfm`, `am`,
+  `p25`, `dmr`, `nxdn`, `nxdn48`, `dstar`, `ysf`). Each channel gets its own tap, squelch, tone gate
   and hangtime, so overlapping transmissions on different channels record as
   separate, simultaneous calls; nothing scans, so a long call on one channel
   never hides another. They can sit on the same dongle as trunked `channels:`
@@ -164,7 +165,24 @@ depends on the path:
   are unchanged. Their calls appear in the call list and history like any
   other, under the serial `wb:<dongle serial>:conv:<frequency>`.
 
-  Not yet: the digital conventional modes (keep those on the scan list).
+  The digital modes work as they do on the scan list, only continuously: a
+  `p25` channel takes `nac` and `p25_phase1_demod_mode` and opens only on its
+  own NAC (#1262), a `dmr` channel opens only on a call, not on a repeater's
+  idle beacons (#1261), and each call runs the same voice chain as a scan-list
+  call. P25 channels may share one frequency when each sets its own `nac`
+  (not F7E / F7F), the P25 counterpart of a tone gate: an operator's own units
+  and another agency's on one frequency record as two channels. Their serials
+  end in the NAC (`…:conv:460100000:nac293`). The other digital modes have
+  nothing to tell transmissions apart, so they cannot share a frequency.
+
+  If the dongle's stream stops (USB loss, a wedged driver), every open call
+  on its conventional channels ends within about 3 s with end reason `error`
+  rather than staying open with no audio, and the wideband engine reopens the
+  dongle as it does for its trunked channels. `/metrics` carries
+  `gophertrunk_conventional_channels_configured` / `_active` by kind, and an
+  external consumer can catch up on finished recordings after downtime from
+  `GET /api/v1/recordings` (see the API events reference).
+
   Per-channel `gain` and `device` do not apply: every tap shares the dongle's
   gain. Issue #1288.
 

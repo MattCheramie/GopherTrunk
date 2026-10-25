@@ -8,6 +8,26 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Finalized-recording feed: `GET /api/v1/recordings` (#1288).** Lists every
+  recording the recorder finished, in completion order, each with its call's
+  metadata and an `audio_url` serving the original WAV / FLAC / MP3
+  (`GET /api/v1/recordings/{id}/audio`). An external consumer keeps the last
+  `id` and passes `?after=` to catch up on whatever finished while it was
+  down; a replay returns the same ids, so duplicates are recognisable.
+- **Conventional-channel and delivery metrics (#1288).** `/metrics` now
+  carries `gophertrunk_conventional_channels_configured` / `_active` by kind
+  (`scan`, `wideband`), and the outbound feeds' counters:
+  `gophertrunk_delivery_sent_total` / `_failures_total` by backend (grant
+  webhooks as `grant_webhook:<name>`), `_dropped_total` and `_queue_depth`.
+  Conventional calls were already counted by `calls_*` under their protocol.
+- **Digital conventional channels on a wideband SDR (#1288).** An
+  `sdr.devices[].conventional` channel can now be any scan-list mode:
+  `p25`, `dmr`, `nxdn`, `nxdn48`, `dstar` and `ysf` as well as FM and AM,
+  monitored continuously on its own tap with the scan list's per-mode gates
+  (a P25 channel opens only on its `nac`, a DMR channel only on a call) and
+  voice chains. P25 channels may share one frequency when each sets its own
+  `nac`, recording an operator's own units and another agency's as two
+  channels. The Scanner panels show a P25 channel's NAC.
 - **Several wideband conventional channels on one frequency, told apart by
   tone (#1288).** `sdr.devices[].conventional` entries may now share a
   frequency when each has a CTCSS or DCS gate that tells its transmissions
@@ -49,6 +69,11 @@ for tagged releases.
   container written by KFDtool's own code.
 
 ### Fixed
+- **Closing a daemon that never ran no longer hangs with metrics on.**
+  `Metrics.Close` waited for its event loop unconditionally, so a daemon
+  built with `metrics.enabled` and closed before `Run` (a startup error
+  after the metrics were built, or a test) blocked forever. It now waits
+  only for a loop that started.
 - **`power` no longer blames the CPU when the dongle is what fell short
   (#1230).** A short sweep was always put down to a slow FFT, so the
   reporter's Galaxy S5 was told it could not keep up when only the first
