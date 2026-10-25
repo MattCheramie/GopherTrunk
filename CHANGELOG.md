@@ -79,6 +79,14 @@ for tagged releases.
   container written by KFDtool's own code.
 
 ### Fixed
+- **The config builder API no longer sends decryption keys (#1305).**
+  `GET /api/v1/config/file` is an open read, and it returned every
+  plain-text `encryption_keys` key and key-container `password` in the
+  config to any client that could reach the API. They now go out as
+  `<redacted>`. Saving restores the stored values (by system name and
+  `key_id`, or container `path`) and refuses a placeholder it cannot
+  restore, so editing a config in the builder neither leaks nor loses its
+  keys. The web builder masks the key field.
 - **Closing a daemon that never ran no longer hangs with metrics on.**
   `Metrics.Close` waited for its event loop unconditionally, so a daemon
   built with `metrics.enabled` and closed before `Run` (a startup error

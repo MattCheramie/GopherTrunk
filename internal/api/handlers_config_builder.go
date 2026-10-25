@@ -69,9 +69,12 @@ func (s *Server) handleConfigLoad(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "config: parse: "+err.Error())
 		return
 	}
+	// Reads are open, so decryption keys and key-container passwords go out
+	// as config.RedactedSecret (issue #1305); handleConfigSave puts the
+	// stored values back. Validation runs on the real file.
 	writeJSON(w, http.StatusOK, ConfigLoadResponse{
 		Path:       path,
-		Config:     cfg,
+		Config:     cfg.RedactSecrets(),
 		Validation: validationErrorsFrom(cfg.ValidateAll()),
 		Mtime:      info.ModTime().UnixNano(),
 	})
@@ -92,11 +95,15 @@ func (s *Server) handleConfigValidate(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
 		return
 	}
+	// A draft loaded through handleConfigLoad carries redacted keys; check
+	// the rest of it with stand-ins (the stored keys were validated when
+	// they were saved).
+	cfg := req.Config.WithRedactedPlaceholders()
 	var errs []error
 	if req.Section == "" {
-		errs = req.Config.ValidateAll()
+		errs = cfg.ValidateAll()
 	} else {
-		errs = req.Config.ValidateSection(req.Section)
+		errs = cfg.ValidateSection(req.Section)
 	}
 	writeJSON(w, http.StatusOK, validationErrorsFrom(errs))
 }
@@ -113,6 +120,22 @@ func (s *Server) handleConfigSave(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
 		return
+	}
+	// Keys and container passwords the load redacted come back as
+	// config.RedactedSecret: restore them from the file being saved over, or
+	// refuse, so a save never writes the placeholder in place of a key.
+	if req.Config.HasRedactedSecrets() {
+		var onDisk config.Config
+		if data, rerr := os.ReadFile(path); rerr == nil {
+			if uerr := config.Unmarshal(data, &onDisk); uerr != nil {
+				s.writeError(w, http.StatusBadRequest, "config: hidden keys cannot be restored: the saved file does not parse: "+uerr.Error())
+				return
+			}
+		}
+		if rerr := req.Config.RestoreSecrets(onDisk); rerr != nil {
+			s.writeError(w, http.StatusBadRequest, "config: "+rerr.Error())
+			return
+		}
 	}
 
 	// Write talkgroup CSV sidecars first (relative to the config file's

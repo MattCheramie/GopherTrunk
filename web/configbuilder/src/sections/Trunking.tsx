@@ -378,7 +378,7 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
           onChange={(x) => onChange({ ...sys, EncryptionKeys: x })}
           makeNew={() => ({ KeyID: 0, Algorithm: "rc4", Key: "" })}
           itemTitle={(e) => `Key ID ${e.KeyID}`}
-          emptyHint="Operator-supplied decryption keys (DMR RC4 / Enhanced Privacy, P25 ADP, DES-OFB, TDES, AES)."
+          emptyHint="Operator-supplied decryption keys (DMR RC4 / Enhanced Privacy, P25 ADP, DES-OFB, TDES, AES). Saved keys are never sent to the browser: they show as <redacted> and are kept when you save. To keep keys out of the config file entirely, use a key container below (gophertrunk ekc import)."
           renderItem={(e, set) => (
             <div className="grid gap-3 sm:grid-cols-3">
               <NumberField label="Key ID" value={e.KeyID} onChange={(v) => set({ ...e, KeyID: v })} />
@@ -393,7 +393,15 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
                   { value: "aes", label: "aes (P25 AES-128 / AES-256)" },
                 ]}
               />
-              <TextField label="Key (hex)" value={e.Key} onChange={(v) => set({ ...e, Key: v })} />
+              {/* A key loaded from a saved file arrives as "<redacted>" (the
+                  daemon never sends key material, #1305); leave it to keep
+                  the stored key, or type a new one to replace it. */}
+              <TextField
+                label="Key (hex)"
+                type="password"
+                value={e.Key}
+                onChange={(v) => set({ ...e, Key: v })}
+              />
             </div>
           )}
         />

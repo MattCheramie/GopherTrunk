@@ -450,7 +450,21 @@ keys yourself, and remember backups and version control may still hold them.
 Containers GopherTrunk writes are checked byte for byte against KFDtool's
 own: the encrypted inner key list is identical to what KFDtool's code writes
 for the same keys, and the outer wrapper differs only in its random salt and
-ciphertext.
+ciphertext. `internal/ekc/testdata/README.md` has a small .NET harness that
+opens a GopherTrunk-written container with KFDtool's own reader.
+
+### Plain-text keys and the config builder API
+
+Keys that do stay in `encryption_keys`, and a container `password` kept in
+the config, are never sent through the API. The config builder's
+`GET /api/v1/config/file` (an open read, like the rest of the builder's
+reads) returns them as `<redacted>`, and the web builder shows the key field
+masked. Saving a draft puts the stored values back: a key by its system name
+and `key_id`, a password by its system name and container `path`. A
+`<redacted>` value with nothing to restore (a changed `key_id` or `path`, a
+renamed system, a new file) is refused with a message saying to enter the
+key again, so a save never writes the placeholder in place of a key. The
+terminal config editor works on the file directly and shows keys as stored.
 
 ## Calls you cannot decrypt: `recordings.mute_encrypted`
 
