@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Finalized-recording feed: `GET /api/v1/recordings` (#1288).** Lists every
+  recording the recorder finished, in completion order, each with its call's
+  metadata and an `audio_url` serving the original WAV / FLAC / MP3
+  (`GET /api/v1/recordings/{id}/audio`). An external consumer keeps the last
+  `id` and passes `?after=` to catch up on whatever finished while it was
+  down; a replay returns the same ids, so duplicates are recognisable.
 - **Conventional-channel and delivery metrics (#1288).** `/metrics` now
   carries `gophertrunk_conventional_channels_configured` / `_active` by kind
   (`scan`, `wideband`), and the outbound feeds' counters:
