@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.5] — 2026-10-25
+
 ### Added
 - **`gophertrunk ekc` writes and edits key containers (#1305).** `create`,
   `add`, `remove`, `passwd` and `import` manage KFDtool `.ekc` containers, so
