@@ -132,9 +132,32 @@ depends on the path:
   transmission. An untoned channel opens on its first chunk above squelch, so
   its recordings gain no lead-in of noise.
 
+  Several entries may share **one frequency** when each has a tone gate that
+  tells its transmissions apart, for example two agencies on one repeater
+  output, one on CTCSS 100.0 Hz and one on DCS 023. The carrier is extracted
+  once, and each entry records only the transmissions carrying its own tone:
+
+  ```yaml
+        conventional:
+          - { label: "Fire North", frequency_hz: 460_400_000, mode: nfm, tone: { mode: ctcss, ctcss_hz: 100.0 } }
+          - { label: "Fire South", frequency_hz: 460_400_000, mode: nfm, tone: { mode: dcs, dcs_code: "023" } }
+  ```
+
+  Config validation refuses a shared frequency it could not tell apart: an
+  entry with no tone (it would open on every transmission), the same tone
+  twice, CTCSS tones under 2 Hz apart (150.0 / 151.4 Hz leak into each other),
+  a DCS alias (023N is the same bits on air as 047I), different modes, and
+  `decoders` on more than one of the entries (data decoders ignore the tone
+  gate, so two would decode every burst twice). Each entry's calls run under
+  the frequency's serial plus its tone, e.g.
+  `wb:<dongle serial>:conv:460400000:ctcss100.0`; a channel alone on its
+  frequency keeps the plain serial. Two transmitters keying up on the same
+  frequency at the same moment still collide on air: tones decide which
+  channel a transmission belongs to, they cannot separate two at once.
+
   The web and TUI Scanner panels list these channels in a section of their
-  own, **Wideband conventional channels**, with each channel's mode, dongle,
-  active/idle state and last call. That section is read-only: dwell and
+  own, **Wideband conventional channels**, with each channel's mode, tone,
+  dongle, active/idle state and last call. That section is read-only: dwell and
   lockout are scan-list controls, and these channels never scan. The API
   carries them as `conventional.wideband_channels` in `GET /api/v1/scanner`,
   next to (not inside) the scan list's `channels`, so the scan list's indexes

@@ -319,6 +319,10 @@ type WidebandConvChannelDTO struct {
 	WidebandSerial string `json:"wideband_serial"`
 	CallSerial     string `json:"call_serial"`
 	TalkgroupID    uint32 `json:"talkgroup_id,omitempty"`
+	// Tone names the channel's CTCSS / DCS gate ("CTCSS 123.0 Hz",
+	// "DCS 023N"); empty when untoned. Logical channels sharing one
+	// frequency are told apart by it.
+	Tone string `json:"tone,omitempty"`
 	// Decoders lists the channel's data decoders (mdc1200, fleetsync, acars).
 	Decoders []string `json:"decoders,omitempty"`
 }

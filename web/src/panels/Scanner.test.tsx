@@ -184,6 +184,48 @@ describe("Scanner panel", () => {
     expect(screen.queryByRole("button", { name: "Dwell" })).not.toBeInTheDocument();
   });
 
+  // #1288 §5: logical channels sharing one frequency are told apart by
+  // their tone, so the card shows a Tone column whenever a channel has one.
+  it("shows each wideband channel's tone when channels share a frequency", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [],
+      conventional: {
+        enabled: false,
+        channels: [],
+        wideband_channels: [
+          {
+            label: "Fire North",
+            frequency_hz: 460_100_000,
+            mode: "nfm",
+            active: false,
+            wideband_serial: "WB-1",
+            call_serial: "wb:WB-1:conv:460100000:ctcss100.0",
+            tone: "CTCSS 100.0 Hz",
+          },
+          {
+            label: "Fire South",
+            frequency_hz: 460_100_000,
+            mode: "nfm",
+            active: true,
+            wideband_serial: "WB-1",
+            call_serial: "wb:WB-1:conv:460100000:dcs023n",
+            tone: "DCS 023N",
+          },
+        ],
+      },
+      tg_scan_count: 0,
+      tg_total: 0,
+    } as ScannerStatusDTO);
+
+    render(<Scanner />);
+
+    await waitFor(() => expect(screen.getByText("Fire North")).toBeInTheDocument());
+    expect(screen.getByRole("columnheader", { name: "Tone" })).toBeInTheDocument();
+    expect(screen.getByText("CTCSS 100.0 Hz")).toBeInTheDocument();
+    expect(screen.getByText("DCS 023N")).toBeInTheDocument();
+  });
+
   it("omits the wideband card when none are configured", async () => {
     vi.mocked(api.scanner).mockResolvedValue({
       scan_mode: "all",

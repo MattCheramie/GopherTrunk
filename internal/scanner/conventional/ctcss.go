@@ -3,6 +3,7 @@ package conventional
 import (
 	"math"
 
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional/tonecode"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 )
 
@@ -125,8 +126,10 @@ const ctcssReverseOffsetHz = 5.0
 // ctcssMinNeighbourSpacingHz: EIA neighbours closer than this are not
 // used as reverse bins. Only 150.0/151.4 Hz (1.4 Hz apart) fall inside
 // it; a 250 ms block cannot separate them (each leaks ~66% into the
-// other), so a gate on either opens on both, as on most radios.
-const ctcssMinNeighbourSpacingHz = 2.0
+// other), so a gate on either opens on both, as on most radios. Config
+// validation uses the same bound to refuse two logical channels on one
+// frequency it could not tell apart.
+const ctcssMinNeighbourSpacingHz = tonecode.MinSeparableCTCSSHz
 
 // NewCTCSSDetector constructs a detector. TargetHz must be > 0 and
 // inside the practical CTCSS range (50..300 Hz); SampleHz must be
