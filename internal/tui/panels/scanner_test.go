@@ -156,3 +156,21 @@ func TestScannerPanelRendersWidebandConventional(t *testing.T) {
 		}
 	}
 }
+
+// Issue #1288 §12: a tap whose IQ has stopped is flagged; an idle healthy one
+// is not (a quiet channel is not a fault).
+func TestScannerPanelFlagsStalledWidebandTap(t *testing.T) {
+	p := NewScanner()
+	s := mkScannerState()
+	s.Scanner.Conventional.WidebandChannels = []client.WidebandConvChannelDTO{
+		{Label: "Quiet", FrequencyHz: 118_300_000, Mode: "am", WidebandSerial: "WB-1", Health: "ok"},
+		{Label: "Dead", FrequencyHz: 119_900_000, Mode: "am", WidebandSerial: "WB-1", Health: "stalled", IQDrops: 7},
+	}
+	view := p.View(140, 40, true, s)
+	if n := strings.Count(view, "IQ STALLED"); n != 1 {
+		t.Errorf("IQ STALLED shown %d times, want once (the stalled tap only)\n%s", n, view)
+	}
+	if !strings.Contains(view, "7 dropped") {
+		t.Errorf("view missing the drop count\n%s", view)
+	}
+}

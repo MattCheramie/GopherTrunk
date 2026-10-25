@@ -7,6 +7,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Per-channel IQ fan-out + same-carrier voice source for wideband-hosted
@@ -44,6 +45,12 @@ type channelFanout struct {
 	// not: the stream position a counted subscriber and an onset mark are
 	// measured in.
 	total uint64
+	// lastNano is when the channel last broadcast a chunk (unix ns, 0 =
+	// never) and dropped the cumulative chunks any subscriber missed on a
+	// full buffer — the channel's IQ-flow health (issue #1288 §12), read
+	// lock-free by the status / metrics paths.
+	lastNano atomic.Int64
+	dropped  atomic.Uint64
 	// preroll is a ring of the most recent samples (nil unless
 	// enablePreroll; conventional channels only, issue #1288). prerollW is
 	// the next write index, prerollN the number of valid samples.
@@ -224,6 +231,7 @@ func (f *channelFanout) broadcast(chunk []complex64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.total += uint64(len(chunk))
+	f.lastNano.Store(time.Now().UnixNano())
 	f.prerollWrite(chunk)
 	if len(f.subs) == 0 {
 		return
@@ -235,6 +243,7 @@ func (f *channelFanout) broadcast(chunk []complex64) {
 		case s.ch <- cp:
 		default:
 			s.drops.Add(1)
+			f.dropped.Add(1)
 		}
 	}
 }
@@ -308,6 +317,33 @@ func (e *Engine) ChannelRateHz(freqHz uint32) float64 {
 		return c.rateHz
 	}
 	return 0
+}
+
+// ChannelIQHealth is the IQ-flow health of one engine channel (issue #1288
+// §12): when it last emitted a chunk (zero = never), how many chunks its
+// subscribers have missed on full buffers, and whether the pump is parked
+// (the SDR lent to a hunt), which is why a channel may legitimately be
+// silent. A quiet channel still advances — the bank emits noise IQ whether
+// or not anyone transmits — so a stale LastIQ means the stream, not the RF.
+type ChannelIQHealth struct {
+	LastIQ    time.Time
+	Drops     uint64
+	Suspended bool
+}
+
+// ChannelIQHealth reports the channel tuned to freqHz; ok is false when no
+// channel is tuned there.
+func (e *Engine) ChannelIQHealth(freqHz uint32) (h ChannelIQHealth, ok bool) {
+	c := e.channel(freqHz)
+	if c == nil || c.fan == nil {
+		return h, false
+	}
+	if n := c.fan.lastNano.Load(); n != 0 {
+		h.LastIQ = time.Unix(0, n)
+	}
+	h.Drops = c.fan.dropped.Load()
+	h.Suspended = e.Suspended()
+	return h, true
 }
 
 // Suspended reports whether the pump is parked (the SDR borrowed by a hunt),
@@ -423,6 +459,16 @@ func (s *ChannelVoiceSource) StreamIQCounted(ctx context.Context) (<-chan []comp
 		unsub()
 	}()
 	return ch, start, nil
+}
+
+// IQHealth is the source channel's ChannelIQHealth; ok is false before the
+// engine exists or when it has no channel at this frequency.
+func (s *ChannelVoiceSource) IQHealth() (ChannelIQHealth, bool) {
+	eng := s.get()
+	if eng == nil {
+		return ChannelIQHealth{}, false
+	}
+	return eng.ChannelIQHealth(s.freqHz)
 }
 
 // MarkCallOnset records stream position onset as the start of the

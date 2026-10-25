@@ -226,6 +226,49 @@ describe("Scanner panel", () => {
     expect(screen.getByText("DCS 023N")).toBeInTheDocument();
   });
 
+  // #1288 §12: a tap whose IQ stopped is flagged; a quiet healthy one only
+  // reads "idle" (silence on the air is not a fault).
+  it("flags a wideband channel whose IQ has stalled", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [],
+      conventional: {
+        enabled: false,
+        channels: [],
+        wideband_channels: [
+          {
+            label: "Quiet",
+            frequency_hz: 460_100_000,
+            mode: "nfm",
+            active: false,
+            wideband_serial: "WB-1",
+            call_serial: "wb:WB-1:conv:460100000",
+            health: "ok",
+          },
+          {
+            label: "Dead",
+            frequency_hz: 460_200_000,
+            mode: "nfm",
+            active: false,
+            wideband_serial: "WB-1",
+            call_serial: "wb:WB-1:conv:460200000",
+            health: "stalled",
+            iq_drops: 12,
+          },
+        ],
+      },
+      tg_scan_count: 0,
+      tg_total: 0,
+    } as ScannerStatusDTO);
+
+    render(<Scanner />);
+
+    await waitFor(() => expect(screen.getByText("Quiet")).toBeInTheDocument());
+    expect(screen.getAllByText("IQ stalled")).toHaveLength(1);
+    expect(screen.getByText("12 dropped")).toBeInTheDocument();
+    expect(screen.getAllByText("idle")).toHaveLength(2);
+  });
+
   // #1288: a p25 wideband channel's NAC shows in the same column.
   it("shows a p25 wideband channel's NAC", async () => {
     vi.mocked(api.scanner).mockResolvedValue({

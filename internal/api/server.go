@@ -328,7 +328,31 @@ type WidebandConvChannelDTO struct {
 	NAC string `json:"nac,omitempty"`
 	// Decoders lists the channel's data decoders (mdc1200, fleetsync, acars).
 	Decoders []string `json:"decoders,omitempty"`
+	// Health is the tap's IQ flow (issue #1288 §12), independent of RF
+	// activity — a quiet channel's tap still carries noise IQ, so silence on
+	// the air never reads as a fault: "ok" (IQ advancing), "suspended" (the
+	// wideband SDR is lent to a control-channel hunt), "stalled" (no IQ for
+	// WidebandConvStallAfter while the pump should be running) or "no_iq"
+	// (none yet, e.g. just after start-up).
+	Health string `json:"health,omitempty"`
+	// LastIQAt is when the tap last delivered IQ; IQDrops counts chunks its
+	// consumers missed because they fell behind (lifetime, all consumers).
+	LastIQAt time.Time `json:"last_iq_at,omitempty"`
+	IQDrops  uint64    `json:"iq_drops,omitempty"`
 }
+
+// WidebandConvStallAfter is how long a wideband conventional tap may go
+// without IQ before its health reads "stalled". The bank emits a chunk every
+// few milliseconds, so seconds of silence is a stopped stream, not a lull.
+const WidebandConvStallAfter = 3 * time.Second
+
+// Wideband conventional channel health values (WidebandConvChannelDTO.Health).
+const (
+	ConvHealthOK        = "ok"
+	ConvHealthSuspended = "suspended"
+	ConvHealthStalled   = "stalled"
+	ConvHealthNoIQ      = "no_iq"
+)
 
 // ConvChannelStatusDTO mirrors conventional.ChannelStatus.
 type ConvChannelStatusDTO struct {

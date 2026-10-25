@@ -168,11 +168,38 @@ Series exposed:
 | `gophertrunk_tetra_viterbi_corrections{system,channel}`         | histogram | **Opt-in** (`metrics.detailed_fec: true`). Channel bits the TETRA §8.3.1 FEC chain corrected per recovered burst (`channel` ∈ `bsch`,`schhd`); healthy margin p95 ≤ 8, p99 ≤ 12 |
 | `gophertrunk_conventional_channels_configured{kind}`            | gauge   | Conventional channels configured; `kind` ∈ `scan` (the sequential scan list), `wideband` (continuous channels on a wideband dongle). Their calls count in `calls_*` under protocol `fm-conv`, `am-conv`, `p25`, … |
 | `gophertrunk_conventional_channels_active{kind}`                | gauge   | Conventional channels whose squelch (and tone / NAC / call gate) is open now                               |
+| `gophertrunk_conventional_channels_stalled{kind="wideband"}`    | gauge   | Wideband conventional channels whose tap has delivered no IQ for 3 s while the pump should be running: a stopped stream, never a quiet channel |
+| `gophertrunk_recordings_completed_total`                        | counter | Recording files finished and announced (`call.complete`)                                                   |
+| `gophertrunk_recordings_discarded_total{reason}`                | counter | Recordings dropped instead of announced: `empty` (no audio), `no_speech` (idle frames only), `too_short` (under `recordings.min_duration_ms`), `encrypted` (`recordings.skip_encrypted`) |
+| `gophertrunk_recording_errors_total{stage}`                     | counter | Recording file operations that failed: `open`, `write`, `close`, `normalize`, `sidecar`                     |
+| `gophertrunk_recordings_truncated_total`                        | counter | Calls finalized on the drain timeout because the voice chain never signalled it had flushed (the file may lack its last frames) |
+| `gophertrunk_recording_finalize_seconds`                        | histogram | Time to finalize a recording (close, loudness normalize, sidecar) before it is announced — a slow disk shows here |
 | `gophertrunk_delivery_sent_total{backend}`                      | counter | Items delivered to an outbound feed: completed calls to the `broadcast:` backends, grants to each grant webhook (`grant_webhook:<name>`) |
 | `gophertrunk_delivery_failures_total{backend}`                  | counter | Items a feed gave up on after its retries                                                                  |
 | `gophertrunk_delivery_dropped_total`                            | counter | Items dropped before delivery because a bounded delivery queue was full                                    |
 | `gophertrunk_delivery_queue_depth`                              | gauge   | Items waiting in the delivery queues                                                                       |
 | `gophertrunk_build_info{version}`                               | gauge   | Always `1`; carries the build version as a label                                                           |
+
+### Receiver health, layer by layer (issue #1288 §12)
+
+Each layer of a receiver has its own signal, so a fault can be placed without
+mistaking a quiet channel for a broken one:
+
+| Layer | Signal | Healthy reading |
+|---|---|---|
+| 1. Hardware | `gophertrunk_sdr_attached`, `gophertrunk_sdr_usb_reconnects_total`; `/api/v1/devices` | attached = 1, reconnects flat |
+| 2. IQ capture | `gophertrunk_sdr_iq_underruns_total`; a wideband conventional channel's `health` / `last_iq_at` / `iq_drops` in `GET /api/v1/scanner` and `gophertrunk_conventional_channels_stalled` | underruns flat, `health: ok`, stalled = 0 |
+| 3. Channel processing | `gophertrunk_decode_errors_total`, `control_channel_locked`; per-call `decode quality` log lines | locked, errors growing slowly if at all |
+| 4. RF activity | `gophertrunk_conventional_channels_active`, `calls_active` | anything — zero is a quiet air, not a fault |
+| 5. Recording | `gophertrunk_recording_errors_total`, `recordings_truncated_total`, `recording_finalize_seconds`, `recordings_discarded_total` | errors and truncations flat; finalize p99 well under a second |
+| 6. External delivery | `gophertrunk_delivery_failures_total`, `_dropped_total`, `_queue_depth`; consumers catch up from `GET /api/v1/recordings` | failures and drops flat, queue near 0 |
+
+A wideband conventional channel's `health` never looks at the air: the
+channelizer emits noise IQ on a channel nobody is using, so only a stream that
+stopped reads `stalled`. `suspended` means the dongle is lent to a
+control-channel hunt and resumes on its own; `no_iq` is the moment after
+start-up before the first chunk. The web Scanner page and the TUI flag a
+non-`ok` tap next to the channel.
 
 The bus-driven counters and gauges (`events_total`, `calls_started_total`,
 `calls_total`, `calls_active`, `control_channel_locked`,

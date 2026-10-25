@@ -18,6 +18,25 @@ for tagged releases.
   variable, never passed as arguments; files are rewritten atomically, mode
   0600, keeping KFDtool's item numbers and key groups. The listing gains an
   `ITEM` column.
+- **Recording outcome metrics and a minimum recording length (#1288).**
+  `/metrics` now counts every recording's fate:
+  `gophertrunk_recordings_completed_total`,
+  `gophertrunk_recordings_discarded_total{reason}` (`empty`, `no_speech`,
+  `too_short`, `encrypted`), `gophertrunk_recording_errors_total{stage}`
+  (`open`, `write`, `close`, `normalize`, `sidecar` — a full or failing disk
+  used to show only in the log), `gophertrunk_recordings_truncated_total`
+  (finalized on the drain timeout) and the
+  `gophertrunk_recording_finalize_seconds` histogram. New
+  `recordings.min_duration_ms` (default 0, off) discards a recording whose
+  decoded audio is shorter, so key-ups and one-frame false grants stop
+  reaching History, the feeds and the transcriber.
+- **Wideband conventional channel health (#1288).** Each continuous channel
+  reports its tap's IQ flow — `health` (`ok` / `stalled` / `suspended` /
+  `no_iq`), `last_iq_at` and `iq_drops` in `GET /api/v1/scanner` — and the
+  Scanner page and TUI flag a stalled tap. Health never reads the air, so a
+  quiet channel is not a fault. `gophertrunk_conventional_channels_stalled`
+  counts them. `docs/hardening.md` maps the issue's six health layers to the
+  signals that cover each.
 - **Finalized-recording feed: `GET /api/v1/recordings` (#1288).** Lists every
   recording the recorder finished, in completion order, each with its call's
   metadata and an `audio_url` serving the original WAV / FLAC / MP3

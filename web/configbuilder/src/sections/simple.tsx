@@ -314,6 +314,13 @@ export function RecordingsSection() {
         onChange={(x) => set({ ...cfg, MuteEncrypted: x })}
         help="Record and stream silence for an encrypted call no configured key decrypts, instead of vocoder noise. Sidecars keep the ciphertext; the call is still logged and uploaded."
       />
+      <NumberField
+        label="Minimum length (ms)"
+        value={cfg.MinDurationMs ?? 0}
+        onChange={(x) => set({ ...cfg, MinDurationMs: x })}
+        placeholder="0"
+        help="Discard a recording whose decoded audio is shorter than this (files deleted, no history row or upload). Measured on the audio, not the call span. 0 keeps every recording."
+      />
       <SelectField
         label="Voice profile"
         value={cfg.VoiceProfile ?? ""}

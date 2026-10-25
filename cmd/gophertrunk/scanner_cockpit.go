@@ -9,6 +9,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/widebandt2"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -38,6 +39,7 @@ type scannerCockpit struct {
 // snapshot does not carry.
 type wbConvStatusSource struct {
 	scanner        *conventional.Scanner
+	source         *widebandt2.ChannelVoiceSource
 	widebandSerial string
 	talkgroupID    uint32
 	tone           string
@@ -121,8 +123,15 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 		}
 		st.Conventional.State = string(convAggregateState(states))
 	}
+	now := time.Now()
 	for _, w := range c.wbConvs {
 		snap := w.scanner.Snapshot()
+		var iq widebandt2.ChannelIQHealth
+		ok := false
+		if w.source != nil {
+			iq, ok = w.source.IQHealth()
+		}
+		health := wbConvHealth(iq, ok, now)
 		for _, ch := range snap.Channels {
 			st.Conventional.WidebandChannels = append(st.Conventional.WidebandChannels, api.WidebandConvChannelDTO{
 				Label:          ch.Label,
@@ -136,6 +145,9 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 				Tone:           w.tone,
 				NAC:            w.nac,
 				Decoders:       ch.Decoders,
+				Health:         health,
+				LastIQAt:       iq.LastIQ,
+				IQDrops:        iq.Drops,
 			})
 		}
 	}
@@ -344,6 +356,9 @@ func conventionalChannelCounts(st api.ScannerStatus) []metrics.ConventionalChann
 		if ch.Active {
 			wb.Active++
 		}
+		if ch.Health == api.ConvHealthStalled {
+			wb.Stalled++
+		}
 	}
 	return []metrics.ConventionalChannelCounts{scan, wb}
 }
@@ -377,4 +392,21 @@ func (d *Daemon) deliveryCounts() metrics.DeliveryCounts {
 		out.Queued += st.Queued
 	}
 	return out
+}
+
+// wbConvHealth classifies a wideband conventional tap's IQ flow (issue #1288
+// §12). It never looks at RF activity: the bank emits noise IQ on a quiet
+// channel, so only a stopped stream is unhealthy. ok=false (no engine /
+// channel yet) reads as no_iq.
+func wbConvHealth(h widebandt2.ChannelIQHealth, ok bool, now time.Time) string {
+	switch {
+	case ok && h.Suspended:
+		return api.ConvHealthSuspended
+	case !ok || h.LastIQ.IsZero():
+		return api.ConvHealthNoIQ
+	case now.Sub(h.LastIQ) >= api.WidebandConvStallAfter:
+		return api.ConvHealthStalled
+	default:
+		return api.ConvHealthOK
+	}
 }

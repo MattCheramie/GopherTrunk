@@ -269,6 +269,9 @@ type WidebandConvChannelDTO struct {
 	Tone           string    `json:"tone,omitempty"`
 	NAC            string    `json:"nac,omitempty"`
 	Decoders       []string  `json:"decoders,omitempty"`
+	Health         string    `json:"health,omitempty"`
+	LastIQAt       time.Time `json:"last_iq_at,omitempty"`
+	IQDrops        uint64    `json:"iq_drops,omitempty"`
 }
 
 // ConvChannelStatusDTO mirrors api.ConvChannelStatusDTO.

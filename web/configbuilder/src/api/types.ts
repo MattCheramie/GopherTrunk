@@ -214,6 +214,7 @@ export interface RecordingsConfig {
   MBEFiles?: boolean;
   SkipEncrypted: boolean;
   MuteEncrypted: boolean;
+  MinDurationMs?: number;
   Equalizer: EqualizerConfig;
   Normalize: NormalizeConfig;
   WarmDMRAudio?: boolean;

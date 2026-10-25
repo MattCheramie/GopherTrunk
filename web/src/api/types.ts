@@ -510,6 +510,12 @@ export interface WidebandConvChannelDTO {
   // sharing one frequency are told apart by it.
   nac?: string;
   decoders?: string[];
+  // The tap's IQ flow, independent of RF activity: "ok", "suspended" (SDR
+  // lent to a control-channel hunt), "stalled" (no IQ for 3 s) or "no_iq".
+  health?: string;
+  last_iq_at?: string;
+  // Chunks the channel's consumers missed because they fell behind.
+  iq_drops?: number;
 }
 
 export interface ConvChannelStatusDTO {

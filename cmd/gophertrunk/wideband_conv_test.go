@@ -365,7 +365,8 @@ func TestWidebandConvDaemonWiring(t *testing.T) {
 // the continuous wideband conventional channels (issue #1288): the daemon's
 // cockpit reports each one, with the dongle it is on, the serial its calls
 // run under and its talkgroup, in a list of its own, so the scan list (and
-// the indexes its dwell / lockout / tune controls take) is unchanged.
+// the indexes its dwell / lockout / tune controls take) is unchanged. The
+// daemon is not running, so no tap has delivered IQ yet: health no_iq.
 func TestWidebandConvChannelsInScannerStatus(t *testing.T) {
 	registerMockDongle(t)
 	cfg := config.Default()
@@ -399,11 +400,11 @@ func TestWidebandConvChannelsInScannerStatus(t *testing.T) {
 	want := []api.WidebandConvChannelDTO{
 		{Label: "Fire", FrequencyHz: 460_100_000, Mode: "nfm", WidebandSerial: "mock-00",
 			CallSerial: wbConvSerial("mock-00", 460_100_000), TalkgroupID: config.WidebandConvPositionalBase,
-			Decoders: []string{"mdc1200"}},
+			Decoders: []string{"mdc1200"}, Health: api.ConvHealthNoIQ},
 		{Label: "EMS", FrequencyHz: 460_900_000, Mode: "nfm", WidebandSerial: "mock-00",
-			CallSerial: wbConvSerial("mock-00", 460_900_000), TalkgroupID: 4242},
+			CallSerial: wbConvSerial("mock-00", 460_900_000), TalkgroupID: 4242, Health: api.ConvHealthNoIQ},
 		{Label: "Air", FrequencyHz: 460_300_000, Mode: "am", WidebandSerial: "mock-00",
-			CallSerial: wbConvSerial("mock-00", 460_300_000), TalkgroupID: config.WidebandConvPositionalBase | 2},
+			CallSerial: wbConvSerial("mock-00", 460_300_000), TalkgroupID: config.WidebandConvPositionalBase | 2, Health: api.ConvHealthNoIQ},
 	}
 	if !reflect.DeepEqual(st.WidebandChannels, want) {
 		t.Errorf("wideband channels\n got %+v\nwant %+v", st.WidebandChannels, want)
