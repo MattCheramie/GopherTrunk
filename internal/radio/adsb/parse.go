@@ -251,6 +251,10 @@ func atan2Deg(ew, ns float64) float64 {
 // is computed over the message bytes (excluding the trailing
 // 3-byte CRC field for verification; or over the full frame and
 // expected to be 0 for clean reception).
+// CRC24 is the Mode-S CRC-24 (polynomial 0xFFF409) over data, exported for
+// tests and tools that build frames; Decode applies it itself.
+func CRC24(data []byte) uint32 { return crc24(data) }
+
 func crc24(data []byte) uint32 {
 	const poly = 0xFFF409
 	crc := uint32(0)

@@ -7,6 +7,43 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **APRS, AIS, DSC, POCSAG, FLEX, M17, MDC1200 and FleetSync now channel-filter
+  before demodulating (#1316).** Every single-channel decoder ran its FM
+  discriminator on the SDR's full-rate IQ — 2.4 MHz of noise around a 12.5 kHz
+  channel — so an ordinary APRS signal decoded as garbage with `fcs_ok: false`.
+  They now share one channel front end: the dongle is tuned a clip-safe offset
+  below the channel (518 kHz at 2.4 MS/s) so the RTL-SDR's DC spur misses it,
+  and the channel is mixed back, decimated to 48 kHz and filtered to ±8 kHz.
+  The startup log names the LO and offset. A failed tune or stream open at
+  start-up is retried for the daemon's lifetime for every single-channel
+  decoder (ADS-B and LoRa included), instead of leaving the receiver dead.
+- **ADS-B: address/parity frames no longer flood the aircraft log (#1316).**
+  DF 0/4/5/16/20/21 were accepted as `crc_valid` by construction, so an
+  unfiltered dongle produced ~440 "aircraft" a second with random ICAOs. They
+  are now reported only when the ICAO was proven by a CRC-checked DF 11/17/18
+  within the last 60 s (the dump1090 / readsb rule). DF 11 replies carrying an
+  interrogator ID are now accepted.
+- **Dongles pinned to a single-channel decoder are reserved (#1316).** A
+  serial named by `aprs`/`ais`/`dsc`/`adsb`/`paging`/`m17`/`mdc1200`/
+  `fleetsync`/`lora` opens as the new `role: dedicated`, whatever
+  `sdr.devices` says, so the trunking voice pool, the manual-tune scanner's
+  spare-SDR heuristic, a live hunt and rigctld can no longer retune it.
+  `role: dedicated` can also be written explicitly.
+- **RadioReference "Project 25 Phase II" systems import as `protocol: p25`
+  (#1316).** Their control channel is Phase 1 FDMA; `p25-phase2` is the TDMA
+  control-channel pipeline and never locked on them.
+- **The Hunt page distinguishes the browser's Write-mode toggle from a
+  read-only daemon (#1316)** and links to Settings instead of asking for a
+  daemon restart.
+
+### Added
+- **A dongle pinned to a single-channel decoder may run its own
+  `sample_rate` (#1316)**, e.g. 240 kS/s for an APRS-only stick; validation
+  used to allow that only on a scan-list voice SDR.
+
+## [v1.3.5] — 2026-10-25
+
 ### Added
 - **`gophertrunk ekc` writes and edits key containers (#1305).** `create`,
   `add`, `remove`, `passwd` and `import` manage KFDtool `.ekc` containers, so

@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/aprs/hdlc"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
@@ -195,7 +194,10 @@ func TestReceiverNilInputErrors(t *testing.T) {
 // tests in aprs/receiver cover everything else; the protocol
 // layer is covered by the ax25 + aprs + hdlc package tests.
 func TestReceiverDecodesSyntheticAPRSPacket(t *testing.T) {
-	t.Skip("synthetic IQ end-to-end deferred to real-fixture follow-up (see docs/aprs.md `What's pending`)")
+	// Un-skipped (#1316): the chain decodes its own packet once the
+	// fixture carries trailing flags — the closing flag used to end at the
+	// very last sample and never cleared the resampler / timing-loop group
+	// delay, so the framer never saw it.
 	const inputRateHz uint32 = AudioRateHz * 10 // 96 ksps
 
 	bus, sub := newTestBus(t)
@@ -204,11 +206,7 @@ func TestReceiverDecodesSyntheticAPRSPacket(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	info := []byte("!4903.50N/07201.75W-Test")
-	body := buildAX25Body("APRS", 0, "W1AW", 9, info)
-	bits := wrapHDLCBits(body, 16) // 16 preamble flags for AGC/mean to settle
-	wireBits := nrziEncode(bits)
-	iq := demod.ModulateFFSK(wireBits, float64(inputRateHz), BaudHz, MarkHz, SpaceHz)
+	iq := aprsTestIQ(float64(inputRateHz))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

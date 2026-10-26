@@ -124,9 +124,13 @@ func (c Config) validateSDR() []error {
 	seenSerials := make(map[string]int, len(c.SDR.Devices))
 	for i, d := range c.SDR.Devices {
 		switch d.Role {
-		case "", "control", "voice", "auto", "wideband":
+		case "", "control", "voice", "auto", "wideband", "dedicated":
 		default:
-			errs = append(errs, fmt.Errorf("sdr.devices[%d]: role must be control|voice|auto|wideband", i))
+			errs = append(errs, fmt.Errorf("sdr.devices[%d]: role must be control|voice|auto|wideband|dedicated", i))
+			continue
+		}
+		if err := validateDedicatedRole(fmt.Sprintf("sdr.devices[%d]", i), d.Serial, d.Role, c); err != nil {
+			errs = append(errs, err)
 			continue
 		}
 		if d.Role == "wideband" {
@@ -264,9 +268,9 @@ func validateSidecarFields(i int, sc SidecarConfig) error {
 			i, sc.Format)
 	}
 	switch sc.Role {
-	case "", "auto", "control", "voice":
+	case "", "auto", "control", "voice", "dedicated":
 	default:
-		return fmt.Errorf("sdr.sidecar[%d]: role %q must be control, voice or auto",
+		return fmt.Errorf("sdr.sidecar[%d]: role %q must be control, voice, auto or dedicated",
 			i, sc.Role)
 	}
 	// A sidecar's stream carries no metadata, so a wrong or missing rate
@@ -293,9 +297,9 @@ func validateKa9qFields(i int, k Ka9qRadioConfig) error {
 		return fmt.Errorf("sdr.ka9q_radio[%d]: ssrc is required (non-zero)", i)
 	}
 	switch k.Role {
-	case "", "control", "voice", "auto":
+	case "", "control", "voice", "auto", "dedicated":
 	default:
-		return fmt.Errorf("sdr.ka9q_radio[%d]: role must be control|voice|auto", i)
+		return fmt.Errorf("sdr.ka9q_radio[%d]: role must be control|voice|auto|dedicated", i)
 	}
 	switch k.Encoding {
 	case "", "s16be", "s16le", "f32le", "f32be":
@@ -313,9 +317,9 @@ func validateRTLTCPFields(i int, r RTLTCPConfig) error {
 		return fmt.Errorf("sdr.rtl_tcp[%d]: addr is required (host:port)", i)
 	}
 	switch r.Role {
-	case "", "control", "voice", "auto":
+	case "", "control", "voice", "auto", "dedicated":
 	default:
-		return fmt.Errorf("sdr.rtl_tcp[%d]: role must be control|voice|auto", i)
+		return fmt.Errorf("sdr.rtl_tcp[%d]: role must be control|voice|auto|dedicated", i)
 	}
 	return nil
 }
@@ -325,9 +329,9 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 		return fmt.Errorf("sdr.soapy_remote[%d]: addr is required (host:port)", i)
 	}
 	switch s.Role {
-	case "", "control", "voice", "auto":
+	case "", "control", "voice", "auto", "dedicated":
 	default:
-		return fmt.Errorf("sdr.soapy_remote[%d]: role must be control|voice|auto", i)
+		return fmt.Errorf("sdr.soapy_remote[%d]: role must be control|voice|auto|dedicated", i)
 	}
 	switch s.Format {
 	case "", "CS16", "cs16", "CF32", "cf32":
@@ -942,7 +946,7 @@ func (c Config) validateBaseband() []error {
 			continue
 		}
 		switch r.Role {
-		case "", "control", "voice", "auto":
+		case "", "control", "voice", "auto", "dedicated":
 		default:
 			errs = append(errs, fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i))
 		}
@@ -1471,8 +1475,19 @@ func validateDeviceSampleRate(i int, d DeviceConfig, c Config) error {
 	if c.SDR.InputSampleRate != 0 {
 		return fmt.Errorf("sdr.devices[%d]: sample_rate cannot be combined with sdr.input_sample_rate (the pre-decimation stage assumes one shared rate)", i)
 	}
+	// A dongle pinned to a single-channel decoder (aprs / ais / dsc / adsb /
+	// paging / m17 / mdc1200 / fleetsync / lora) is that decoder's for the
+	// daemon's lifetime and nothing else reads its rate (#1316): the decoder
+	// is built for the rate the pool reports for the device, so it may run
+	// at its own sample_rate whatever its role. A 240 kS/s dongle dedicated
+	// to APRS admits a tenth of the noise bandwidth of one at 2.4 MS/s and
+	// costs a tenth of the CPU. ADS-B needs at least 2 MS/s (the PPM slicer
+	// resamples anything faster), which its receiver enforces at start-up.
+	if d.Serial != "" && c.SingleChannelDecoderSerials()[d.Serial] {
+		return nil
+	}
 	if d.Role != "voice" {
-		return fmt.Errorf("sdr.devices[%d]: sample_rate is supported only on a role: voice SDR used by scanner.conventional channels (`device:`); other roles share sdr.sample_rate", i)
+		return fmt.Errorf("sdr.devices[%d]: sample_rate is supported only on a role: voice SDR used by scanner.conventional channels (`device:`) or on an SDR pinned to a single-channel decoder (aprs/ais/dsc/adsb/paging/m17/mdc1200/fleetsync/lora channels naming serial %q); other roles share sdr.sample_rate", i, d.Serial)
 	}
 	if d.Serial != "" {
 		for _, ch := range c.Scanner.Conventional {
@@ -1481,5 +1496,23 @@ func validateDeviceSampleRate(i int, d DeviceConfig, c Config) error {
 			}
 		}
 	}
-	return fmt.Errorf("sdr.devices[%d]: sample_rate needs a scanner.conventional channel that names this SDR with `device: %q` — a voice SDR shared with trunking must run at sdr.sample_rate", i, d.Serial)
+	return fmt.Errorf("sdr.devices[%d]: sample_rate needs a scanner.conventional channel that names this SDR with `device: %q` (or a single-channel decoder section pinned to it) — a voice SDR shared with trunking must run at sdr.sample_rate", i, d.Serial)
+}
+
+// validateDedicatedRole rejects an explicit `role: dedicated` on an SDR no
+// single-channel decoder section pins (#1316): the role exists so the pool
+// never hands a decoder's dongle to another consumer, and a dedicated dongle
+// nobody decodes on would sit idle for the daemon's lifetime, which is
+// almost certainly a typo in the decoder section's serial.
+func validateDedicatedRole(path, serial, role string, c Config) error {
+	if role != "dedicated" {
+		return nil
+	}
+	if serial == "" {
+		return fmt.Errorf("%s: role: dedicated needs a serial so a decoder section can name it", path)
+	}
+	if !c.SingleChannelDecoderSerials()[strings.TrimSpace(serial)] {
+		return fmt.Errorf("%s: role: dedicated but no aprs/ais/dsc/adsb/paging/m17/mdc1200/fleetsync/lora channel names serial %q — the dongle would never be used; pin a decoder to it or pick another role", path, serial)
+	}
+	return nil
 }

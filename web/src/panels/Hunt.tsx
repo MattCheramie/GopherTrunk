@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import type {
@@ -110,6 +111,10 @@ function signalDetail(sig: DetectedSignal): string {
 export function Hunt() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
+  // Why mutations are off decides the banner (#1316): the daemon allowing
+  // them while this browser's Write mode is off is fixed in Settings, not
+  // by restarting the daemon.
+  const daemonAllowsMutations = useShared((s) => s.mutations?.allow_mutations ?? false);
   const setError = useShared((s) => s.setError);
   const notify = useShared((s) => s.notify);
 
@@ -277,7 +282,16 @@ export function Hunt() {
         }
       />
 
-      {!canMutate && (
+      {!canMutate && daemonAllowsMutations && (
+        <div className="rounded-md border border-warn/40 bg-warn/15 px-4 py-2 text-sm text-warn">
+          Write mode is off in this browser —{" "}
+          <Link to="/settings" className="underline">
+            enable Write mode in Settings
+          </Link>{" "}
+          to run a hunt. The daemon already allows mutations.
+        </div>
+      )}
+      {!canMutate && !daemonAllowsMutations && (
         <div className="rounded-md border border-warn/40 bg-warn/15 px-4 py-2 text-sm text-warn">
           Mutations are read-only on this connection (no auth token) — start a
           daemon with write access to run a hunt.

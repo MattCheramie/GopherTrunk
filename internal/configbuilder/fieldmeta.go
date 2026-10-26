@@ -40,7 +40,7 @@ func opts(pairs ...string) []SelectOption {
 // roleOpts is the control/voice/auto role selector shared by the remote SDR
 // sources and baseband replay (no "wideband" — only physical devices fan out).
 func roleOpts() []SelectOption {
-	return opts("", "(auto)", "control", "control", "voice", "voice", "auto", "auto")
+	return opts("", "(auto)", "control", "control", "voice", "voice", "auto", "auto", "dedicated", "dedicated")
 }
 
 // protocolOpts is the trunking protocol selector (mirrors the web SystemForm).
@@ -102,11 +102,11 @@ var fieldMetas = map[string]FieldMeta{
 	"SDRConfig.CarrierOffsetWarnHz": {Label: "Carrier-offset warning (Hz)", Help: "Warn when the locked control carrier sits this far (Hz) from the configured frequency — a sign GT may be decoding a stronger adjacent site bleeding through, not the site you tuned. 0 = built-in default (4000 Hz); raise it for a high-drift dongle. Advisory only — never changes tuning or decode."},
 
 	"DeviceConfig.Serial":           {Help: "USB serial that selects this dongle. Run `gophertrunk sdr list` to see attached serials."},
-	"DeviceConfig.Role":             {Help: "Pool role hint. control/voice pin a P25-trunking dongle; wideband fans several channels off one stick; auto lets the pool decide.", Options: opts("", "(auto)", "control", "control", "voice", "voice", "auto", "auto", "wideband", "wideband")},
+	"DeviceConfig.Role":             {Help: "Pool role hint. control/voice pin a P25-trunking dongle; wideband fans several channels off one stick; auto lets the pool decide; dedicated reserves the stick for the single-channel decoder (APRS, ADS-B, AIS, paging, ...) that names its serial — set automatically for such serials.", Options: opts("", "(auto)", "control", "control", "voice", "voice", "auto", "auto", "wideband", "wideband", "dedicated", "dedicated")},
 	"DeviceConfig.PPM":              {Label: "PPM", Help: "Frequency-correction in parts-per-million. 0 suits any TCXO dongle."},
 	"DeviceConfig.Gain":             {Help: "Tuner gain. 'auto' (or empty) is AGC; otherwise tenths of a dB (e.g. 496 → 49.6 dB). `gophertrunk sdr list` shows supported steps."},
 	"DeviceConfig.BiasTee":          {Label: "Bias-tee", Help: "Enable the dongle's 5 V bias-tee to power an external LNA through the antenna SMA."},
-	"DeviceConfig.SampleRate":       {Label: "Own sample rate", Help: "Run this SDR at its own IQ rate (Hz) instead of sdr.sample_rate, for a radio that cannot reach the shared rate, e.g. an AirspyHF (768000, the rate its firmware advertises) beside 2.4 MS/s RTL-SDRs. Only on a role: voice SDR that scanner.conventional channels name with device: (the scanner owns it); rejected on other roles and with sdr.input_sample_rate. The radio must support the exact rate, or it is not used. 0 = sdr.sample_rate."},
+	"DeviceConfig.SampleRate":       {Label: "Own sample rate", Help: "Run this SDR at its own IQ rate (Hz) instead of sdr.sample_rate, for a radio that cannot reach the shared rate, e.g. an AirspyHF (768000, the rate its firmware advertises) beside 2.4 MS/s RTL-SDRs. Only on a role: voice SDR that scanner.conventional channels name with device: (the scanner owns it), or on an SDR a single-channel decoder section (aprs, ais, dsc, adsb, paging, m17, mdc1200, fleetsync, lora) pins by serial; rejected elsewhere and with sdr.input_sample_rate. The radio must support the exact rate, or it is not used. 0 = sdr.sample_rate."},
 	"DeviceConfig.RFAmp":            {Label: "RF amp", Help: "Engage the front-end RF amplifier on the 'auto' gain preset (the HackRF's ~14 dB amp). Lowers the noise figure for weak signals but can overload a front end near a strong transmitter, so it is off by default. Manual gain values are unaffected; ignored on devices without a switchable amp."},
 	"DeviceConfig.NarrowbandFilter": {Label: "Narrowband filter", Help: "HackRF Pro only: engage the Pro's switchable narrowband anti-alias filter for tighter adjacent-channel rejection on narrowband voice (e.g. 12.5 kHz P25), trading usable bandwidth. Ignored, with a warning, on other boards."},
 	"DeviceConfig.FPGADCBlock":      {Label: "FPGA DC block", Help: "HackRF Pro only: strip the zero-IF DC-offset spike in the FPGA before samples leave the device — a hardware alternative to the P25 voice path's software DC-block that also cleans the control channel. Ignored, with a warning, on other boards."},

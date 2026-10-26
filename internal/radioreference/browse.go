@@ -376,12 +376,19 @@ func normalizeMode(mode string) string {
 // the protocol id trunking.ParseProtocol accepts, so an imported system
 // passes config validation. Unrecognised types fall back to "p25" (the
 // most common case) and should be reviewed by the operator.
+//
+// A "Project 25 Phase II" system maps to "p25", NOT "p25-phase2" (#1316):
+// RadioReference's Phase II flavor describes the VOICE channels. Such a
+// system's control channel is still Phase 1 C4FM/FDMA, and `protocol: p25`
+// already follows its TDMA voice grants (IDEN_UP_TDMA → the Phase 2 voice
+// chain). `p25-phase2` selects the H-DQPSK TDMA CONTROL-CHANNEL pipeline,
+// which never locks on an FDMA control channel, so every imported Phase II
+// system used to come out with a decoder that could not lock.
 func protocolFromType(sType, flavor string) string {
 	t := strings.ToLower(sType + " " + flavor)
 	switch {
-	case strings.Contains(t, "phase ii"), strings.Contains(t, "phase 2"):
-		return "p25-phase2"
-	case strings.Contains(t, "project 25"), strings.Contains(t, "p25"):
+	case strings.Contains(t, "project 25"), strings.Contains(t, "p25"),
+		strings.Contains(t, "phase ii"), strings.Contains(t, "phase 2"):
 		return "p25"
 	case strings.Contains(t, "tier iii"), strings.Contains(t, "tier 3"),
 		strings.Contains(t, "capacity plus"), strings.Contains(t, "connect plus"):

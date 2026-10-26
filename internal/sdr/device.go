@@ -21,6 +21,15 @@ const (
 	// a cluster of co-band conventional repeaters (e.g. several DMR
 	// Tier II carriers around 453 MHz) with a single SDR.
 	RoleWideband
+	// RoleDedicated marks a dongle a single-channel decoder section
+	// (aprs / ais / dsc / adsb / paging / m17 / mdc1200 / fleetsync /
+	// lora) pins to one frequency for the daemon's lifetime. The pool
+	// never hands it out by role: FirstByRole / AllByRole for control or
+	// voice skip it, so the trunking voice pool, the conventional
+	// scanner's spare-SDR heuristics, a live hunt and rigctld cannot
+	// retune it (#1316). Assigned automatically from Hint.Dedicated;
+	// `role: dedicated` may also be written explicitly.
+	RoleDedicated
 )
 
 func (r Role) String() string {
@@ -31,6 +40,8 @@ func (r Role) String() string {
 		return "voice"
 	case RoleWideband:
 		return "wideband"
+	case RoleDedicated:
+		return "dedicated"
 	default:
 		return "auto"
 	}
@@ -44,6 +55,8 @@ func ParseRole(s string) Role {
 		return RoleVoice
 	case "wideband":
 		return RoleWideband
+	case "dedicated":
+		return RoleDedicated
 	default:
 		return RoleAuto
 	}

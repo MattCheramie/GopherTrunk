@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("../api/client", () => ({
@@ -28,6 +29,43 @@ function resetStore() {
   });
 }
 
+describe("Hunt banner when mutations are off", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStore();
+    vi.mocked(api.hunt).mockResolvedValue({
+      run_id: 0,
+      state: "idle",
+      running: false,
+      sites: 0,
+      talkgroups: 0,
+    });
+  });
+
+  // #1316: with the daemon allowing mutations and only the browser's Write
+  // mode off, the old banner told the operator to "start a daemon with
+  // write access", which they had already done.
+  it("points at the Settings Write-mode toggle when the daemon allows mutations", async () => {
+    useShared.setState({ writeMode: false, mutations: { allow_mutations: true } });
+    render(<MemoryRouter><Hunt /></MemoryRouter>);
+    await waitFor(() => expect(api.hunt).toHaveBeenCalled());
+    expect(screen.getByText(/Write mode is off in this browser/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /enable Write mode in Settings/i })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+    expect(screen.queryByText(/start a daemon with write access/)).toBeNull();
+  });
+
+  it("keeps the daemon banner when the daemon itself rejects mutations", async () => {
+    useShared.setState({ writeMode: true, mutations: { allow_mutations: false } });
+    render(<MemoryRouter><Hunt /></MemoryRouter>);
+    await waitFor(() => expect(api.hunt).toHaveBeenCalled());
+    expect(screen.getByText(/start a daemon with write access/)).toBeInTheDocument();
+    expect(screen.queryByText(/Write mode is off in this browser/)).toBeNull();
+  });
+});
+
 describe("Hunt panel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,7 +81,7 @@ describe("Hunt panel", () => {
   });
 
   it("forwards the serial and protocol inputs on start", async () => {
-    render(<Hunt />);
+    render(<MemoryRouter><Hunt /></MemoryRouter>);
     // Wait for the initial status poll to settle.
     await waitFor(() => expect(api.hunt).toHaveBeenCalled());
 
@@ -61,7 +99,7 @@ describe("Hunt panel", () => {
   });
 
   it("parses a control channel with the chosen protocol and dwell", async () => {
-    render(<Hunt />);
+    render(<MemoryRouter><Hunt /></MemoryRouter>);
     await waitFor(() => expect(api.hunt).toHaveBeenCalled());
 
     // The only <select> in the panel is the Parse-CC protocol picker.
@@ -111,7 +149,7 @@ describe("Hunt panel", () => {
       ],
     });
 
-    render(<Hunt />);
+    render(<MemoryRouter><Hunt /></MemoryRouter>);
     await waitFor(() => expect(api.hunt).toHaveBeenCalled());
 
     // Captures table.
