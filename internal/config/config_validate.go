@@ -628,6 +628,9 @@ func (c Config) validateRecordings() []error {
 	if c.Recordings.FMChannelBandwidthHz != 0 && (c.Recordings.FMChannelBandwidthHz < 2500 || c.Recordings.FMChannelBandwidthHz > 50_000) {
 		return []error{fmt.Errorf("recordings.fm_channel_bandwidth_hz %d outside 2500..50000 (0 = default 25 kHz channel)", c.Recordings.FMChannelBandwidthHz)}
 	}
+	if c.Recordings.MinDurationMs < 0 || c.Recordings.MinDurationMs > 600_000 {
+		return []error{fmt.Errorf("recordings.min_duration_ms %d outside 0..600000 (0 = keep every recording)", c.Recordings.MinDurationMs)}
+	}
 	if c.Recordings.VoiceTapBufferChunks != 0 && (c.Recordings.VoiceTapBufferChunks < 1 || c.Recordings.VoiceTapBufferChunks > 1024) {
 		return []error{fmt.Errorf("recordings.voice_tap_buffer_chunks %d outside 1..1024", c.Recordings.VoiceTapBufferChunks)}
 	}

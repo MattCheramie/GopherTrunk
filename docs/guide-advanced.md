@@ -179,7 +179,11 @@ depends on the path:
   on its conventional channels ends within about 3 s with end reason `error`
   rather than staying open with no audio, and the wideband engine reopens the
   dongle as it does for its trunked channels. `/metrics` carries
-  `gophertrunk_conventional_channels_configured` / `_active` by kind, and an
+  `gophertrunk_conventional_channels_configured` / `_active` by kind and
+  `_stalled` for these channels; each channel's IQ-flow `health` (`ok`,
+  `stalled`, `suspended`, `no_iq` — never derived from the air, so a quiet
+  channel stays `ok`) shows on the Scanner page and in `GET /api/v1/scanner`;
+  and an
   external consumer can catch up on finished recordings after downtime from
   `GET /api/v1/recordings` (see the API events reference).
 

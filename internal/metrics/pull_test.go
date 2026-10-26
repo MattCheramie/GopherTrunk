@@ -121,3 +121,25 @@ func TestCloseWaitsForRun(t *testing.T) {
 		t.Fatal("Close returned before Run finished")
 	}
 }
+
+// Stalled taps are exposed for wideband channels only: the scan list's
+// scanner re-opens a stalled stream itself, so a 0 there would be a claim.
+func TestRegisterConventionalChannelsStalled(t *testing.T) {
+	m, err := New(nil, nil, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterConventionalChannels(func() []ConventionalChannelCounts {
+		return []ConventionalChannelCounts{{Kind: "scan", Configured: 4}, {Kind: "wideband", Configured: 8, Stalled: 2}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := `
+# HELP gophertrunk_conventional_channels_stalled Wideband conventional channels whose tap has delivered no IQ for 3 s while the pump should be running (a stopped stream, not a quiet channel).
+# TYPE gophertrunk_conventional_channels_stalled gauge
+gophertrunk_conventional_channels_stalled{kind="wideband"} 2
+`
+	if err := testutil.GatherAndCompare(m.Registry(), strings.NewReader(want), "gophertrunk_conventional_channels_stalled"); err != nil {
+		t.Error(err)
+	}
+}

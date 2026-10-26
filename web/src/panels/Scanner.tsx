@@ -574,6 +574,7 @@ function WidebandConventional({ channels }: { channels: WidebandConvChannelDTO[]
                   ) : (
                     <span className="text-muted text-xs">idle</span>
                   )}
+                  <WbConvHealth ch={ch} />
                 </td>
                 <td className="px-2 py-1 text-xs text-muted">
                   {hasTime(ch.last_break_at) ? timeOnly(ch.last_break_at!) : "—"}
@@ -585,6 +586,59 @@ function WidebandConventional({ channels }: { channels: WidebandConvChannelDTO[]
       </div>
     </Card>
   );
+}
+
+// WbConvHealth flags a tap whose IQ is not flowing (issue #1288 §12). A
+// healthy tap shows nothing: "idle" already says the air is quiet, and a
+// quiet channel is not a fault.
+export function WbConvHealth({ ch }: { ch: WidebandConvChannelDTO }) {
+  const drops = ch.iq_drops ?? 0;
+  const dropNote =
+    drops > 0 ? (
+      <span
+        className="ml-2 text-xs text-muted"
+        title="IQ chunks this channel's consumers missed because they fell behind"
+      >
+        {drops} dropped
+      </span>
+    ) : null;
+  switch (ch.health) {
+    case "stalled":
+      return (
+        <>
+          <span
+            className="pill-err ml-2"
+            title="The channel's tap has delivered no IQ for 3 s: the wideband stream has stopped (USB, driver or pump), not the air"
+          >
+            IQ stalled
+          </span>
+          {dropNote}
+        </>
+      );
+    case "suspended":
+      return (
+        <>
+          <span
+            className="pill-warn ml-2"
+            title="The wideband SDR is lent to a control-channel hunt; the channel resumes when it returns"
+          >
+            SDR lent to hunt
+          </span>
+          {dropNote}
+        </>
+      );
+    case "no_iq":
+      return (
+        <>
+          <span className="pill-warn ml-2" title="No IQ from the wideband SDR yet">
+            no IQ yet
+          </span>
+          {dropNote}
+        </>
+      );
+    default:
+      return dropNote;
+  }
 }
 
 function ManualTune({

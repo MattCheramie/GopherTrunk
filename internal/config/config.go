@@ -2207,6 +2207,14 @@ type RecordingsConfig struct {
 	// id) is never muted. Default false (legacy: ciphertext through the
 	// vocoder).
 	MuteEncrypted bool `yaml:"mute_encrypted"`
+	// MinDurationMs discards a finished recording whose decoded AUDIO is
+	// shorter than this many milliseconds (issue #1288 §5): the files are
+	// deleted and no CallComplete is published, so a sub-second key-up or a
+	// one-frame false grant never reaches History, the uploaders or the
+	// transcriber. Measured on the written audio, not the call's wall-clock
+	// span (which includes hangtime). Applied per transmission segment.
+	// 0 (default) keeps every non-empty recording, as before.
+	MinDurationMs int `yaml:"min_duration_ms"`
 	// CryptoCapturePath, when set, opts into the cryptolab crypto-frame
 	// bridge: for each encrypted P25 Phase 1 superframe — and each
 	// encrypted DMR voice superframe (issue #1187) — the voice composer

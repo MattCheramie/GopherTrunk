@@ -221,6 +221,7 @@ func (d *Daemon) wbConvStatusSources() []wbConvStatusSource {
 		}
 		out = append(out, wbConvStatusSource{
 			scanner:        cs,
+			source:         d.wbConvChannels[i].source,
 			widebandSerial: d.wbConvChannels[i].widebandSerial,
 			talkgroupID:    d.wbConvChannels[i].channel.TalkgroupID,
 			tone:           d.wbConvChannels[i].tone.String(),

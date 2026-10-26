@@ -539,11 +539,29 @@ func (p *ScannerPanel) renderWidebandConventional(width int, s *state.SharedStat
 		if ch.NAC != "" {
 			tone += "  NAC " + ch.NAC
 		}
-		lines = append(lines, fmt.Sprintf("    %s  %s  %-12s  %-4s  on %s  last: %s%s",
+		lines = append(lines, fmt.Sprintf("    %s  %s  %-12s  %-4s  on %s  last: %s%s%s",
 			style.Render(active), padTo(ch.Label, 20), client.FormatFreqMHz(ch.FrequencyHz),
-			strings.ToUpper(ch.Mode), ch.WidebandSerial, break_, tone))
+			strings.ToUpper(ch.Mode), ch.WidebandSerial, break_, tone, wbConvHealthNote(ch.Health, ch.IQDrops)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// wbConvHealthNote flags a wideband conventional tap whose IQ is not flowing
+// (issue #1288 §12); empty for a healthy tap, idle or not.
+func wbConvHealthNote(health string, drops uint64) string {
+	note := ""
+	switch health {
+	case "stalled":
+		note = "  " + dashErr.Render("IQ STALLED")
+	case "suspended":
+		note = "  " + dashDim.Render("(SDR lent to hunt)")
+	case "no_iq":
+		note = "  " + dashDim.Render("(no IQ yet)")
+	}
+	if drops > 0 {
+		note += "  " + dashDim.Render(fmt.Sprintf("%d dropped", drops))
+	}
+	return note
 }
 
 func (p *ScannerPanel) renderTGSummary(width int, s *state.SharedState) string {

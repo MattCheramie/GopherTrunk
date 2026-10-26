@@ -237,6 +237,9 @@ recordings:
                          # .raw/.imb/.amb sidecars keep the ciphertext and the
                          # call is logged / uploaded as before. A call decrypted
                          # in-process (key configured) is never muted.
+  min_duration_ms: 0   # discard a recording whose decoded AUDIO is shorter than
+                       # this (files deleted, no history row / upload); 0 keeps
+                       # every non-empty recording. e.g. 500 drops key-ups.
   unvoiced_gain: 0     # vocoder unvoiced (fricative) band level vs a voiced harmonic of the same
                        # amplitude. 0 = default 5.49 (mbelib / DSD level; the old GopherTrunk
                        # scaling sat 6-15 dB below it = muffled, consonant-less speech);

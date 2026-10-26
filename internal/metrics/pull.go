@@ -23,6 +23,10 @@ type ConventionalChannelCounts struct {
 	// Active counts channels whose squelch (and tone / NAC / call gate) is
 	// open right now.
 	Active int
+	// Stalled counts channels whose IQ stream has stopped (issue #1288 §12)
+	// — a fault, unlike an idle channel. Exposed only for kind "wideband":
+	// the scan list's scanner ends and re-opens a stalled stream itself.
+	Stalled int
 }
 
 // DeliveryCounts is a snapshot of the outbound call-delivery counters:
@@ -61,12 +65,18 @@ func (m *Metrics) RegisterConventionalChannels(fn func() []ConventionalChannelCo
 	active := prometheus.NewDesc(prometheus.BuildFQName(namespace, "conventional", "channels_active"),
 		"Conventional channels whose squelch (and tone / NAC / call gate) is open now, by kind.",
 		[]string{"kind"}, nil)
+	stalled := prometheus.NewDesc(prometheus.BuildFQName(namespace, "conventional", "channels_stalled"),
+		"Wideband conventional channels whose tap has delivered no IQ for 3 s while the pump should be running (a stopped stream, not a quiet channel).",
+		[]string{"kind"}, nil)
 	return m.reg.Register(funcCollector{
-		descs: []*prometheus.Desc{configured, active},
+		descs: []*prometheus.Desc{configured, active, stalled},
 		collect: func(ch chan<- prometheus.Metric) {
 			for _, c := range fn() {
 				ch <- prometheus.MustNewConstMetric(configured, prometheus.GaugeValue, float64(c.Configured), c.Kind)
 				ch <- prometheus.MustNewConstMetric(active, prometheus.GaugeValue, float64(c.Active), c.Kind)
+				if c.Kind == "wideband" {
+					ch <- prometheus.MustNewConstMetric(stalled, prometheus.GaugeValue, float64(c.Stalled), c.Kind)
+				}
 			}
 		},
 	})

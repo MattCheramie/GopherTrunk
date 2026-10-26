@@ -2361,6 +2361,8 @@ func (d *Daemon) buildRecorderAndVoiceDecoder(cfg config.Config, log *slog.Logge
 			WriteMBE:      cfg.Recordings.MBEFiles,
 			SkipEncrypted: cfg.Recordings.SkipEncrypted,
 			MuteEncrypted: cfg.Recordings.MuteEncrypted,
+			MinDuration:   time.Duration(cfg.Recordings.MinDurationMs) * time.Millisecond,
+			Observer:      recorderObserver(d.metrics),
 			KeyConfigured: buildKeyConfigured(d.keySystems),
 			// Trunk-recorder .json sidecar per recording; tri-state, defaults ON.
 			WriteCallJSON:      cfg.Recordings.WriteCallJSON == nil || *cfg.Recordings.WriteCallJSON,

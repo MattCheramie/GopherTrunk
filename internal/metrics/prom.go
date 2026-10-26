@@ -79,6 +79,8 @@ type Metrics struct {
 	sub       *events.Subscription
 	runDone   chan struct{}
 	closeOnce sync.Once
+	// rec holds the recording outcome metrics (recording.go).
+	rec *recordingMetrics
 	// running is set when Run starts, so Close waits for a Run that
 	// exists and never for one that was never started.
 	running atomic.Bool
@@ -322,6 +324,9 @@ func New(bus *events.Bus, pool Snapshotter, version string, detailedFEC bool) (*
 	if m.tetraViterbiCorrections != nil {
 		collectors = append(collectors, m.tetraViterbiCorrections)
 	}
+	var recCollectors []prometheus.Collector
+	m.rec, recCollectors = newRecordingMetrics()
+	collectors = append(collectors, recCollectors...)
 	if pool != nil {
 		m.sdrSnap = newSDRSnapshotCollector(pool)
 		collectors = append(collectors, m.sdrSnap)

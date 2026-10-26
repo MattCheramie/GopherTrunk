@@ -103,6 +103,11 @@ type UnvoicedGainConfigurable interface {
 // + trade-secret encumbered so we cannot ship a built-in decoder;
 // the sidecar lets researchers feed frames into an external decoder.
 type Recorder struct {
+	// minDuration discards a finished file holding less audio than this
+	// (recordings.min_duration_ms); obs receives the outcome counts. Both
+	// optional (issue #1288 §5, §13).
+	minDuration        time.Duration
+	obs                RecorderObserver
 	bus                *events.Bus
 	log                *slog.Logger
 	outDir             string
@@ -306,6 +311,14 @@ func (r *Recorder) SetRawFrameSink(s RawFrameSink) {
 
 // RecorderOptions configure a new Recorder.
 type RecorderOptions struct {
+	// MinDuration discards a finished recording file holding less audio
+	// than this: its WAV/FLAC and sidecars are removed and no CallComplete
+	// is published (recordings.min_duration_ms). Each file is judged on its
+	// own, so in per-transmission grouping a short over is dropped. 0 keeps
+	// every file.
+	MinDuration time.Duration
+	// Observer, when set, is told every recording outcome (issue #1288 §13).
+	Observer   RecorderObserver
 	Bus        *events.Bus
 	Log        *slog.Logger
 	OutDir     string
@@ -525,6 +538,8 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		muteEncrypted:      opts.MuteEncrypted,
 		keyConfigured:      opts.KeyConfigured,
 		writeCallJSON:      opts.WriteCallJSON,
+		minDuration:        opts.MinDuration,
+		obs:                opts.Observer,
 		normalize:          opts.Normalize,
 		enhance:            opts.Enhance,
 		specAmplitude:      opts.SpecAmplitudeEnhance,
@@ -777,6 +792,7 @@ func (r *Recorder) sessionForWrite(serial string, callID uint64) *recordingSessi
 		if err := r.openSessionFiles(s); err != nil {
 			// The WAV couldn't be created — drop the session so we don't
 			// retry on every frame. Nothing partial lands on disk.
+			r.observeError("open")
 			delete(r.sessions, serial)
 			return nil
 		}
@@ -844,6 +860,7 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 	if s.raw != nil {
 		if _, err := s.raw.Write(frame); err != nil {
 			s.mu.Unlock()
+			r.observeError("write")
 			return err
 		}
 	}
@@ -853,6 +870,7 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 		if rec := mbeRecord(s.mbeCookie, frame); rec != nil {
 			if _, err := s.mbe.Write(rec); err != nil {
 				s.mu.Unlock()
+				r.observeError("write")
 				return err
 			}
 		}
@@ -930,6 +948,7 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 	if s.wav != nil {
 		if err := s.wav.WriteSamples(samples); err != nil {
 			s.mu.Unlock()
+			r.observeError("write")
 			return err
 		}
 	}
@@ -1151,6 +1170,7 @@ func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
 				"path", p, "err", err)
 		}
 	}
+	r.observeDiscard("encrypted")
 	r.log.Info("recorder: aborted mid-call encrypted recording",
 		"device", deviceSerial, "wav", s.wavPath)
 }
@@ -1325,6 +1345,7 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 		r.mu.Unlock()
 		return // no active file to roll (already dormant or unknown)
 	}
+	finalizeStart := time.Now()
 	cc, meta := r.finalizeLocked(s, seg.DeviceSerial, seg.At, trunking.EndReasonNormal)
 	// Park a dormant session: keeps the call's identity so the next write
 	// opens the next segment file, without creating an empty trailing
@@ -1334,6 +1355,7 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 	if cc != nil {
 		r.normalizeIfEnabled(cc.AudioPath)
 		r.writeCallMetaFor(cc.AudioPath, meta)
+		r.observeCompleted(time.Since(finalizeStart))
 		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
 	}
 }
@@ -1347,6 +1369,7 @@ func (r *Recorder) writeCallMetaFor(wavPath string, meta *callMeta) {
 		return
 	}
 	if err := writeCallMeta(wavPath, meta); err != nil {
+		r.observeError("sidecar")
 		r.log.Warn("recorder: writing call .json sidecar failed", "wav", wavPath, "err", err)
 	}
 }
@@ -1361,6 +1384,7 @@ func (r *Recorder) normalizeIfEnabled(wavPath string) {
 		return
 	}
 	if err := normalizeWAVFile(wavPath, r.normalize); err != nil {
+		r.observeError("normalize")
 		r.log.Warn("recorder: loudness normalize failed", "wav", wavPath, "err", err)
 	}
 }
@@ -1433,6 +1457,7 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		}
 		if tail := fadeTail(s.lastSample, n); tail != nil {
 			if err := s.wav.WriteSamples(tail); err != nil {
+				r.observeError("write")
 				r.log.Warn("recorder: writing call-tail fade failed",
 					"device", serial, "err", err)
 			}
@@ -1446,6 +1471,7 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		}
 	}
 	if err := s.closeLocked(); err != nil {
+		r.observeError("close")
 		r.log.Error("recorder: close session", "err", err)
 	}
 	// A vocoder-decoded call that produced no real speech (every frame was
@@ -1457,6 +1483,7 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	// classified here and keep the dataBytes behaviour below.
 	if haveStats && vs.Voiced+vs.Unvoiced == 0 {
 		r.removeSessionFiles(s)
+		r.observeDiscard("no_speech")
 		return nil, nil
 	}
 	// No PCM decoded into the WAV — nothing to stream. The files are left
@@ -1465,7 +1492,22 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	// Per-transmission segment rolls never reach here empty because the
 	// next file is opened lazily on the first write.
 	if dataBytes == 0 {
+		r.observeDiscard("empty")
 		return nil, nil
+	}
+	// recordings.min_duration_ms: a file with less audio than that (a
+	// squelch flick, a key-up with no speech) is removed with its sidecars
+	// and never announced. Audio length, not wall-clock: the WAV/FLAC
+	// content after the tail fade (DataBytes counts uncompressed PCM).
+	if r.minDuration > 0 && s.sampleRate > 0 {
+		audio := time.Duration(float64(s.wav.DataBytes()) / (float64(s.sampleRate) * 2) * float64(time.Second))
+		if audio < r.minDuration {
+			r.removeSessionFiles(s)
+			r.observeDiscard("too_short")
+			r.log.Debug("recorder: recording shorter than recordings.min_duration_ms discarded",
+				"device", serial, "wav", s.wavPath, "audio", audio.Round(time.Millisecond), "min", r.minDuration)
+			return nil, nil
+		}
 	}
 	cc := &trunking.CallComplete{
 		Grant:        s.cs.Grant,
@@ -1705,6 +1747,11 @@ func (r *Recorder) finalizeOnDrainTimeout(deviceSerial string) {
 	r.mu.Unlock()
 	r.log.Warn("recorder: drain signal missing; finalizing call on timeout",
 		"device", deviceSerial, "timeout", drainFinalizeTimeout)
+	// The voice chain never said it had flushed, so the file may lack its
+	// last frames.
+	if r.obs != nil {
+		r.obs.RecordingTruncated()
+	}
 	r.finalizeCall(ce)
 }
 
@@ -1813,6 +1860,7 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 	wavPath := s.wavPath
 	// Announce the finished WAV so the outbound-streaming subsystem can
 	// upload it. Skip (and delete) calls that captured no PCM.
+	finalizeStart := time.Now()
 	cc, meta := r.finalizeLocked(s, ce.DeviceSerial, ce.EndedAt, ce.Reason)
 	// The call is over — drop its talker history now that finalizeLocked has read
 	// it for the closing sidecar (still under r.mu, before the unlock below).
@@ -1836,6 +1884,7 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 	if cc != nil {
 		r.normalizeIfEnabled(cc.AudioPath)
 		r.writeCallMetaFor(cc.AudioPath, meta)
+		r.observeCompleted(time.Since(finalizeStart))
 		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
 	}
 }
@@ -2164,4 +2213,42 @@ func (s *recordingSession) closeLocked() error {
 		}
 	}
 	return firstErr
+}
+
+// RecorderObserver receives the recorder's outcomes, for metrics (issue
+// #1288 §13). Methods are called from recorder goroutines and must not block.
+type RecorderObserver interface {
+	// RecordingCompleted: a finished file was announced (CallComplete);
+	// finalize is the time from the start of finalizing to the
+	// announcement (close, normalize, sidecar).
+	RecordingCompleted(finalize time.Duration)
+	// RecordingDiscarded: a file was dropped instead of announced. reason
+	// is "empty" (no audio), "no_speech" (only idle frames), "too_short"
+	// (under recordings.min_duration_ms) or "encrypted" (aborted by
+	// recordings.skip_encrypted).
+	RecordingDiscarded(reason string)
+	// RecordingError: a file operation failed. stage is "open", "write",
+	// "close", "normalize" or "sidecar".
+	RecordingError(stage string)
+	// RecordingTruncated: a call was finalized on the drain timeout, so its
+	// file may lack the last frames.
+	RecordingTruncated()
+}
+
+func (r *Recorder) observeCompleted(d time.Duration) {
+	if r.obs != nil {
+		r.obs.RecordingCompleted(d)
+	}
+}
+
+func (r *Recorder) observeDiscard(reason string) {
+	if r.obs != nil {
+		r.obs.RecordingDiscarded(reason)
+	}
+}
+
+func (r *Recorder) observeError(stage string) {
+	if r.obs != nil {
+		r.obs.RecordingError(stage)
+	}
 }
