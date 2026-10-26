@@ -78,6 +78,34 @@ func NewFFSKModulator(sampleRate, symbolRate, markHz, spaceHz float64) *FFSKModu
 	}
 }
 
+// SetDeviationHz sets the FM peak deviation in hertz, replacing the
+// default fixed 0.5 rad/sample audio amplitude. The default scales with
+// the sample rate (0.5 rad/sample is ±7.6 kHz at 96 kHz but ±191 kHz at
+// 2.4 MS/s), which is harmless for a receiver that demodulates the full
+// stream but makes the fixture unrealistically wide for anything with a
+// channel filter in front of it (#1316). Call this with the real radio's
+// deviation (±3 kHz for narrowband FM data) when the IQ is generated at
+// an SDR rate. Panics on a non-positive deviation or one at or beyond
+// half a cycle per sample.
+func (m *FFSKModulator) SetDeviationHz(devHz float64) {
+	if devHz <= 0 {
+		panic("demod: SetDeviationHz requires a positive deviation")
+	}
+	amp := 2 * math.Pi * devHz / m.sampleRate
+	if amp >= math.Pi {
+		panic("demod: SetDeviationHz: deviation exceeds the sample rate's unambiguous range")
+	}
+	m.audioAmp = amp
+}
+
+// ModulateFFSKDeviation is ModulateFFSK at a stated FM peak deviation
+// (see SetDeviationHz).
+func ModulateFFSKDeviation(bits []byte, sampleRate, symbolRate, markHz, spaceHz, deviationHz float64) []complex64 {
+	m := NewFFSKModulator(sampleRate, symbolRate, markHz, spaceHz)
+	m.SetDeviationHz(deviationHz)
+	return m.Modulate(bits)
+}
+
 // Reset clears the audio + RF phase accumulators so the next
 // Modulate call starts a fresh, phase-zero stream.
 func (m *FFSKModulator) Reset() {

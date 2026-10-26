@@ -158,13 +158,48 @@ aprs:
 A misconfigured entry surfaces as a startup warning and is
 skipped — same non-essential treatment as `paging.pocsag`.
 
+## Channel front end and dongle reservation (#1316)
+
+The receiver no longer demodulates the SDR's full-rate IQ. The daemon
+runs every single-channel FM decoder (APRS, AIS, DSC, POCSAG, FLEX,
+M17, MDC1200, FleetSync) behind a shared channel front end
+(`internal/dsp/narrowband`): the dongle is tuned a few hundred kHz
+**below** the channel so the RTL-SDR's DC spur lands outside it, the
+channel is mixed back to 0 Hz, decimated to ~48 kHz and filtered to
+±8 kHz, and only then reaches the FM discriminator. Before this an FM
+discriminator saw 2.4 MHz of noise around a 12.5 kHz signal (about
+23 dB of unnecessary noise bandwidth), which pushed an ordinary APRS
+signal below the FM threshold — every frame decoded as garbage with
+`fcs_ok: false`. The regression test modulates a packet at 2.4 MS/s
+with band-wide noise that leaves the channel at +15 dB: the raw
+receiver decodes nothing, the front-ended one decodes the packet.
+
+Three things follow for operators:
+
+- The startup log line `aprs: tuning the SDR off-channel so its DC spur
+  misses the channel` reports the LO, the offset and the channel rate.
+  The Spectrum panel shows the dongle centred off the APRS frequency;
+  that is expected.
+- A dongle named by `aprs.channels` (or any other single-channel decoder
+  section) opens with **`role: dedicated`** whatever `sdr.devices` says
+  for it: the trunking voice pool, the conventional scanner's
+  manual-tune auto-enable, a live hunt's auto-selection and rigctld
+  never pick it, so nothing retunes it under the decoder.
+- Such a dongle may run at its **own `sample_rate`** (e.g. `240000`),
+  which cuts both the noise bandwidth the front end has to reject and the
+  CPU the decimator costs. ADS-B needs ≥ 2 MS/s.
+- A tune or stream-open failure at start-up is retried with backoff
+  for the daemon's lifetime instead of leaving the receiver dead.
+
 ## What's pending
 
-- **Real-fixture validation.** The synthetic IQ end-to-end test
-  is currently `t.Skip`-ped (same as POCSAG's synth test). A
-  captured `.wav` / `.cfile` from a real APRS channel under
+- **Real-fixture validation.** The chain decodes its own synthetic
+  packet (the end-to-end test is no longer skipped: the fixture needed
+  trailing flags so the closing flag cleared the filters' group
+  delay). A captured `.wav` / `.cfile` from a real APRS channel under
   `samples/aprs/` would let the test suite replay through
-  `internal/sdr/baseband` and assert the full chain.
+  `internal/sdr/baseband` and assert the full chain on air; the
+  reporter of #1316 has offered 144.39 MHz IQ.
 - **Mic-E rich fields on the panel.** Speed, course, altitude,
   and the human-readable message code (`M3 Returning`, etc.)
   decode into the `MicE` struct but the storage row only carries

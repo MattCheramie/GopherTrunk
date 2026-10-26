@@ -132,11 +132,16 @@ func (p *Pool) SetBus(bus *events.Bus) {
 // is in parts-per-million; 0 is fine for the TCXO-equipped NESDR
 // Smart v5 and similar dongles.
 type Hint struct {
-	Serial  string
-	Role    Role
-	PPM     int
-	Gain    int // tenths of dB; negative = auto
-	BiasTee bool
+	Serial string
+	Role   Role
+	// Dedicated marks a serial a single-channel decoder section pins to
+	// its own frequency (#1316). The device opens with RoleDedicated
+	// whatever Role says, so no by-role consumer can take it; a
+	// configured control / voice / wideband role is logged as ignored.
+	Dedicated bool
+	PPM       int
+	Gain      int // tenths of dB; negative = auto
+	BiasTee   bool
 	// NarrowbandFilter engages the HackRF Pro's switchable narrowband
 	// anti-alias filter after open. Ignored (with a warning) on devices
 	// that don't implement NarrowbandFilterer.
@@ -288,7 +293,7 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 			}
 			continue
 		}
-		if h.Role == RoleControl {
+		if h.Role == RoleControl && !h.Dedicated {
 			controlClaimed = true
 		}
 	}
@@ -328,7 +333,19 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		if hinted {
 			role = hint.Role
 		}
-		if role == RoleAuto {
+		switch {
+		case hinted && hint.Dedicated:
+			// Pinned to a single-channel decoder (#1316): never a control
+			// or voice candidate, whatever the operator wrote. Before this
+			// an `auto` APRS dongle could become THE control SDR (rigctld
+			// and the CC hunter then retuned it) or a spare voice SDR
+			// (the manual-tune scanner and a live hunt took it).
+			if role != RoleAuto && role != RoleDedicated {
+				p.log.Warn("sdr: device is pinned to a single-channel decoder; its configured role is ignored and it is reserved for that decoder",
+					"driver", d.drv.Name(), "serial", d.info.Serial, "configured_role", role.String())
+			}
+			role = RoleDedicated
+		case role == RoleAuto:
 			if !controlClaimed {
 				role = RoleControl
 				controlClaimed = true

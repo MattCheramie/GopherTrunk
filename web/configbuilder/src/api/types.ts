@@ -89,7 +89,8 @@ export interface DeviceConfig {
   VoiceTaps?: number;
   SignallingTaps?: number;
   // Per-device IQ rate (issue #1260): only on a role: voice SDR that
-  // scanner.conventional channels name with `device:`. 0 = sdr.sample_rate.
+  // scanner.conventional channels name with `device:`, or on an SDR a
+  // single-channel decoder section pins by serial (#1316). 0 = sdr.sample_rate.
   SampleRate?: number;
   // Other device flags (BlogV4, IQCorrect, IQInvert, DCAvoid,
   // DCAvoidOffsetHz, …) round-trip via the index signature and are

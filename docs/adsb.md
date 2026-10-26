@@ -213,11 +213,48 @@ aircraft's last-seen time, rows are newest-last-seen first. Optional
 a "currently visible aircraft" panel distinct from the raw message
 log.
 
+## Address/parity frames are gated on a known ICAO (#1316)
+
+DF 0 / 4 / 5 / 16 / 20 / 21 carry their ICAO address XORed into the
+CRC field, so the address is recovered by *assuming* the frame is
+error-free — there is no check in the frame itself, and any 56 or 112
+bits of noise that pass the preamble detector "decode" to some address.
+The receiver used to accept every such frame as `crc_valid: true`; on
+an unfiltered dongle that was ~440 reports/s, nearly all `kind:
+unknown` with ICAOs in unallocated blocks, and `aircraft_log` grew by
+hundreds of thousands of rows in minutes.
+
+`adsb.ProcessFrame` now applies dump1090 / readsb's rule: an
+address/parity frame is reported only when its ICAO was proven by a
+CRC-checked DF 11 / 17 / 18 within the last 60 s
+(`Tracker.KnownICAO`). The preamble detector itself was measured and
+left alone — it is a shape test that noise satisfies ~2 600 times a
+second, and a 6 dB level margin over the running noise floor removed
+under 1 % of those detections while costing weak real frames; the gate
+removes 100 % of the resulting reports. The BEAST path runs the same
+gate (dump1090 has already applied it upstream, so its DF 4/5 arrive
+after the squitter that proves them). A DF 11 reply to a selective
+interrogation (non-zero IID in the low 7 parity bits) is now accepted
+and proves its address too; `Stats.KnownICAOs` counts the currently
+trusted addresses.
+
+A dongle named by `adsb.channels` opens as `role: dedicated` so no
+other consumer (rigctld, hunt, the trunking voice pool) retunes it,
+and may run at its own `sample_rate: 2000000` to skip the 2.4 → 2 Msps
+resample.
+
 ## What's pending
 
 - **Locally-referenced CPR.** Single-message position decode against
   a configured receiver location, useful for the first seconds before
   an even+odd CPR pair completes.
+- **Bit error correction** on DF 17 / 18 (dump1090 fixes 1-bit, and
+  optionally 2-bit, errors), which would lift sensitivity on an
+  unamplified front end. Not built.
+- **A preamble that lands one or two samples before a real one eats
+  the real frame.** `scan` skips past whatever frame it slices after a
+  detection; dump1090 scores candidates and keeps the best. Seen on
+  synthetic frames in noise at 23 dB SNR (one of five lost); not built.
 
 ## Live map
 

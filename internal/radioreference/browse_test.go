@@ -43,7 +43,11 @@ func TestProtocolFromType(t *testing.T) {
 	cases := []struct {
 		sType, flavor, want string
 	}{
-		{"Project 25", "Phase II", "p25-phase2"},
+		// #1316: a Phase II system has a Phase 1 (FDMA) control channel;
+		// p25 follows its TDMA voice grants. p25-phase2 is the TDMA CC
+		// pipeline and never locks on these systems.
+		{"Project 25", "Phase II", "p25"},
+		{"Project 25 Phase II", "", "p25"},
 		{"Project 25", "Standard", "p25"},
 		{"DMR", "Tier III", "dmr"},
 		{"DMR", "Tier II", "dmr-tier2"},

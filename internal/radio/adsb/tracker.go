@@ -21,7 +21,21 @@ type Tracker struct {
 	mu       sync.Mutex
 	state    map[uint32]*icaoState
 	maxAgeNs int64 // CPR pair max age — spec is 10 s
+
+	// seen holds the time each ICAO was last proven by a CRC-checked
+	// frame (DF 11 / 17 / 18). ProcessFrame consults it before
+	// accepting an address/parity frame (DF 0 / 4 / 5 / 16 / 20 / 21),
+	// whose recovered ICAO is otherwise unverifiable (#1316).
+	seen       map[uint32]int64
+	seenRecent int64 // how long a proven ICAO stays trusted
 }
+
+// ICAORecentWindow is how long an ICAO proven by a CRC-checked frame
+// stays trusted for address/parity frames: 60 s, dump1090's figure. A
+// transponder answering interrogations also squitters DF 11 at least
+// once a second and DF 17 every 0.5 s, so a live aircraft is re-proven
+// far more often than this.
+const ICAORecentWindow = 60 * time.Second
 
 // icaoState holds the most-recent even and odd CPR halves for one
 // aircraft.
@@ -40,9 +54,48 @@ type icaoState struct {
 // pair max age.
 func NewTracker() *Tracker {
 	return &Tracker{
-		state:    make(map[uint32]*icaoState),
-		maxAgeNs: int64(10 * time.Second),
+		state:      make(map[uint32]*icaoState),
+		maxAgeNs:   int64(10 * time.Second),
+		seen:       make(map[uint32]int64),
+		seenRecent: int64(ICAORecentWindow),
 	}
+}
+
+// NoteICAO records that icao was proven by a CRC-checked frame at now
+// (unix nanoseconds; 0 = time.Now()).
+func (t *Tracker) NoteICAO(icao uint32, now int64) {
+	if icao == 0 {
+		return
+	}
+	if now == 0 {
+		now = time.Now().UnixNano()
+	}
+	t.mu.Lock()
+	t.seen[icao] = now
+	t.mu.Unlock()
+}
+
+// KnownICAO reports whether icao was proven by a CRC-checked frame
+// within ICAORecentWindow of now.
+func (t *Tracker) KnownICAO(icao uint32, now int64) bool {
+	if icao == 0 {
+		return false
+	}
+	if now == 0 {
+		now = time.Now().UnixNano()
+	}
+	t.mu.Lock()
+	at, ok := t.seen[icao]
+	t.mu.Unlock()
+	return ok && now-at <= t.seenRecent
+}
+
+// KnownICAOs is the number of ICAOs currently trusted (proven within the
+// window, not yet pruned).
+func (t *Tracker) KnownICAOs() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.seen)
 }
 
 // Update ingests one parsed Mode-S message. If the message
@@ -137,6 +190,7 @@ func (t *Tracker) Reset() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.state = make(map[uint32]*icaoState)
+	t.seen = make(map[uint32]int64)
 }
 
 // Size returns the number of distinct ICAOs the tracker is
@@ -168,6 +222,11 @@ func (t *Tracker) Prune(now int64) int {
 		if now-mostRecent > t.maxAgeNs {
 			delete(t.state, icao)
 			dropped++
+		}
+	}
+	for icao, at := range t.seen {
+		if now-at > t.seenRecent {
+			delete(t.seen, icao)
 		}
 	}
 	return dropped

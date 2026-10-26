@@ -77,6 +77,17 @@ With serials set, you assign **roles**: which dongle tracks a
 wideband capture. GopherTrunk coordinates the pool so grants read on the control dongle
 are followed on a voice dongle without missing calls.
 
+A dongle you pin to a single-channel decoder — `aprs.channels`, `adsb.channels`,
+`ais.channels`, `dsc.channels`, `paging.*`, `m17.channels`, `mdc1200.channels`,
+`fleetsync.channels`, `lora.channels` — gets the **`dedicated`** role automatically,
+whatever `sdr.devices` says for it. The pool never hands a dedicated dongle out by
+role, so the trunking voice pool, the conventional scanner's "spare voice SDR"
+manual-tune auto-enable, a live hunt's auto-selection and rigctld cannot retune it
+under its decoder. Before this, four `auto` dongles with APRS and ADS-B pinned to two
+of them left the pool treating those two as one control and one voice SDR, and any
+of those consumers could pull them off frequency with no warning. A dedicated dongle
+may also run at its own `sample_rate`.
+
 ## Remote SDRs over the network
 
 Dongles do not have to hang off the same machine. Run **[rtl_tcp](/reference/rtl-tcp/)**

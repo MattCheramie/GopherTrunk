@@ -23,7 +23,26 @@ import (
 // get global CPR positions; pass nil to skip pairing.
 func ProcessFrame(frame []byte, tracker *Tracker, now time.Time) (storage.AircraftReport, bool) {
 	m := Decode(frame)
-	if !m.CRCValid && m.Kind != KindAllCall {
+	switch {
+	case m.CRCValid:
+		// A CRC-checked frame (DF 11 / 17 / 18) proves its address:
+		// remember it so address/parity frames from this aircraft can
+		// be trusted.
+		if tracker != nil && m.ICAO != 0 {
+			tracker.NoteICAO(m.ICAO, now.UnixNano())
+		}
+	case m.ICAOInferred:
+		// DF 0 / 4 / 5 / 16 / 20 / 21 carry no check of their own
+		// (#1316): the "ICAO" is whatever the parity XOR yields, and
+		// every burst of noise that passes the preamble detector yields
+		// one. Accept the frame only when that address was announced by
+		// a CRC-checked frame recently — dump1090 / readsb's rule. With
+		// no tracker there is nothing to check against, so drop.
+		if tracker == nil || !tracker.KnownICAO(m.ICAO, now.UnixNano()) {
+			return storage.AircraftReport{}, false
+		}
+		m.CRCValid = true // address confirmed against the recently-seen set
+	default:
 		return storage.AircraftReport{}, false
 	}
 	if tracker != nil {

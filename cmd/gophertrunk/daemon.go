@@ -24,6 +24,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/narrowband"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
@@ -1391,6 +1392,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				log.Info("sidecar endpoints mounted", "count", len(sdspecs))
 			}
 		}
+		// Serials the single-channel decoder sections pin open as
+		// RoleDedicated so no by-role consumer can take them (#1316).
+		hints = markDedicatedHints(hints, cfg.SingleChannelDecoderSerials(), log)
 		if err := d.pool.OpenWith(sdr.PoolOpenOptions{
 			SampleRateHz: cfg.SDR.SampleRate,
 			WrapDevice:   sdrInputDecimator(cfg, log),
@@ -2609,8 +2613,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.pocsagSpecs = append(d.pocsagSpecs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, pc.Serial))
 		rcv, err := pocsagrx.New(pocsagrx.Options{
-			InputRateHz: cfg.SDR.SampleRate,
+			InputRateHz: spec.fe.OutRate(),
 			BaudHz:      pc.BaudHz,
 			SourceName:  pc.Serial,
 			Bus:         d.bus,
@@ -2639,8 +2644,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.flexSpecs = append(d.flexSpecs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, fc.Serial))
 		rcv, err := flexrx.New(flexrx.Options{
-			InputRateHz: cfg.SDR.SampleRate,
+			InputRateHz: spec.fe.OutRate(),
 			SourceName:  fc.Serial,
 			Bus:         d.bus,
 			Log:         log,
@@ -2686,8 +2692,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.m17Specs = append(d.m17Specs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, mc.Serial))
 		rcv, err := m17rx.New(m17rx.Options{
-			InputRateHz: cfg.SDR.SampleRate,
+			InputRateHz: spec.fe.OutRate(),
 			SourceName:  mc.Serial,
 			Bus:         d.bus,
 			Log:         log,
@@ -2717,8 +2724,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.aprsSpecs = append(d.aprsSpecs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, ac.Serial))
 		rcv, err := aprsafsk.New(aprsafsk.Options{
-			InputRateHz: cfg.SDR.SampleRate,
+			InputRateHz: spec.fe.OutRate(),
 			SourceName:  ac.Serial,
 			Bus:         d.bus,
 			DropBadFCS:  ac.DropBadFCS,
@@ -2750,8 +2758,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.aisSpecs = append(d.aisSpecs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, ac.Serial))
 		rcv, err := aisgmsk.New(aisgmsk.Options{
-			InputRateHz:     cfg.SDR.SampleRate,
+			InputRateHz:     spec.fe.OutRate(),
 			SourceName:      ac.Serial,
 			Bus:             d.bus,
 			DropBadFCS:      ac.DropBadFCS,
@@ -2801,8 +2810,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.dscSpecs = append(d.dscSpecs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, dc.Serial))
 		rcv, err := dscffsk.New(dscffsk.Options{
-			InputRateHz: cfg.SDR.SampleRate,
+			InputRateHz: spec.fe.OutRate(),
 			SourceName:  dc.Serial,
 			Bus:         d.bus,
 			DropBadFCS:  dc.DropBadFCS,
@@ -2833,8 +2843,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.mdc1200Specs = append(d.mdc1200Specs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, mc.Serial))
 		rcv, err := mdc1200afsk.New(mdc1200afsk.Options{
-			InputRateHz: cfg.SDR.SampleRate,
+			InputRateHz: spec.fe.OutRate(),
 			SourceName:  mc.Serial,
 			Bus:         d.bus,
 			DropBadCRC:  mc.DropBadCRC,
@@ -2865,8 +2876,9 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 			d.fleetsyncSpecs = append(d.fleetsyncSpecs, spec)
 			continue
 		}
+		spec.fe = newSingleChannelFrontEnd(d.decoderSDRRate(cfg, fc.Serial))
 		rcv, err := fleetsyncafsk.New(fleetsyncafsk.Options{
-			InputRateHz: cfg.SDR.SampleRate,
+			InputRateHz: spec.fe.OutRate(),
 			BaudHz:      fc.BaudHz,
 			SourceName:  fc.Serial,
 			Serial:      fc.Serial,
@@ -3651,25 +3663,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.pocsagSpecs[i]
 		name := fmt.Sprintf("pocsag-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("pocsag: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("pocsag: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("pocsag: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "pocsag", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// FLEX paging receivers — same shape as POCSAG above. Each
@@ -3684,25 +3678,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.flexSpecs[i]
 		name := fmt.Sprintf("flex-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("flex: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("flex: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("flex: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "flex", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// Wideband paging groups — one DDC bank per configured
@@ -3819,25 +3795,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.m17Specs[i]
 		name := fmt.Sprintf("m17-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("m17: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("m17: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("m17: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "m17", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// APRS receivers — same shape as POCSAG above. Each subscribes
@@ -3856,25 +3814,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.aprsSpecs[i]
 		name := fmt.Sprintf("aprs-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("aprs: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("aprs: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("aprs: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "aprs", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// AIS receivers — same shape as APRS / POCSAG above. Each
@@ -3894,25 +3834,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.aisSpecs[i]
 		name := fmt.Sprintf("ais-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("ais: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("ais: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("ais: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "ais", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// LoRa receivers — same shape as AIS above, but the receiver owns its
@@ -3926,25 +3848,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.loraSpecs[i]
 		name := fmt.Sprintf("lora-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("lora: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("lora: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("lora: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "lora", spec.serial, spec.freq, nil, rcv.Process)
 		})
 	}
 	// DSC receivers — same shape as AIS above. Each subscribes to its
@@ -3963,25 +3867,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.dscSpecs[i]
 		name := fmt.Sprintf("dsc-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("dsc: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("dsc: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("dsc: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "dsc", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// MDC1200 receivers — same shape as APRS / AIS above. Each
@@ -4000,7 +3886,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.mdc1200Specs[i]
 		name := fmt.Sprintf("mdc1200-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			return d.runSingleChannelDecoder(ctx, "mdc1200", spec.serial, spec.freq, rcv.Process)
+			return d.runSingleChannelDecoder(ctx, "mdc1200", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// FleetSync receivers — same shape as MDC1200 above. Each subscribes
@@ -4020,7 +3906,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.fleetsyncSpecs[i]
 		name := fmt.Sprintf("fleetsync-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			return d.runSingleChannelDecoder(ctx, "fleetsync", spec.serial, spec.freq, rcv.Process)
+			return d.runSingleChannelDecoder(ctx, "fleetsync", spec.serial, spec.freq, spec.fe, rcv.Process)
 		})
 	}
 	// ADS-B BEAST upstream clients — each consumes Mode-S
@@ -4049,25 +3935,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		spec := d.adsbPPMSpecs[i]
 		name := fmt.Sprintf("adsb-ppm-%s-%d", spec.serial, spec.freq)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
-			br := d.iqBrokers[spec.serial]
-			if br == nil {
-				d.log.Warn("adsb/ppm: SDR not found, skipping receiver",
-					"serial", spec.serial, "freq_hz", spec.freq)
-				return nil
-			}
-			if err := br.SetCenterFreq(spec.freq); err != nil {
-				d.log.Warn("adsb/ppm: SetCenterFreq failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
-			if err != nil {
-				d.log.Warn("adsb/ppm: open IQ failed",
-					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
-				return nil
-			}
-			defer cleanup()
-			return rcv.Process(ctx, iqCh)
+			return d.runSingleChannelDecoder(ctx, "adsb/ppm", spec.serial, spec.freq, nil, rcv.Process)
 		})
 	}
 	if d.pool != nil {
@@ -5688,21 +5556,39 @@ func tuneWithRetry(ctx context.Context, log *slog.Logger, name string, t centerT
 	}
 }
 
-// runSingleChannelDecoder drives one single-channel decoder (MDC1200,
-// FleetSync) pinned to serial for the daemon's lifetime: tune the dongle
-// to freq, open its IQ stream, run decode until the stream ends — and
-// then do it again. Every failure is retried with singleChannelRetryBackoff
-// rather than abandoning the receiver: a tune that stalls at start-up, a
-// stream that cannot open, or a decode that returns because the pump died
-// (a USB reacquire replaces the broker's device underneath it) all come
-// back on the next pass. Only a serial with no broker at all is a
-// permanent skip, logged once. Returns nil when ctx ends.
+// runSingleChannelDecoder drives one single-channel decoder (POCSAG, FLEX,
+// M17, APRS, AIS, LoRa, DSC, MDC1200, FleetSync, ADS-B/PPM) pinned to
+// serial for the daemon's lifetime: tune the dongle, open its IQ stream,
+// run decode until the stream ends — and then do it again. Every failure
+// is retried with singleChannelRetryBackoff rather than abandoning the
+// receiver: a tune that stalls at start-up, a stream that cannot open, or
+// a decode that returns because the pump died (a USB reacquire replaces
+// the broker's device underneath it) all come back on the next pass. Only
+// a serial with no broker at all is a permanent skip, logged once. Returns
+// nil when ctx ends.
+//
+// fe, when non-nil, is the channel front end (#1316): the dongle is tuned
+// fe.OffsetHz() BELOW the channel so the tuner's DC spur lands outside it,
+// and the stream is mixed back, decimated and channel-filtered before the
+// decoder sees it — the decoder must have been built for fe.OutRate().
+// nil keeps the decoder on the raw stream at the channel frequency (ADS-B,
+// LoRa: wideband signals that channelize themselves).
 func (d *Daemon) runSingleChannelDecoder(ctx context.Context, name, serial string, freq uint32,
-	decode func(context.Context, <-chan []complex64) error) error {
+	fe *narrowband.FrontEnd, decode func(context.Context, <-chan []complex64) error) error {
 	br := d.iqBrokers[serial]
 	if br == nil {
 		d.log.Warn(name+": SDR not found, skipping receiver", "serial", serial, "freq_hz", freq)
 		return nil
+	}
+	loHz := freq
+	if fe != nil && fe.OffsetHz() != 0 {
+		loHz = singleChannelLOHz(freq, fe)
+		d.log.Info(name+": tuning the SDR off-channel so its DC spur misses the channel",
+			"serial", serial, "channel_hz", freq, "lo_hz", loHz, "offset_hz", int64(fe.OffsetHz()),
+			"channel_rate_hz", fe.OutRate(), "decimation", fe.Decimation())
+	} else if fe != nil {
+		d.log.Info(name+": channel front end", "serial", serial, "channel_hz", freq,
+			"channel_rate_hz", fe.OutRate(), "decimation", fe.Decimation())
 	}
 	wait := func(attempt int) bool {
 		select {
@@ -5713,7 +5599,7 @@ func (d *Daemon) runSingleChannelDecoder(ctx context.Context, name, serial strin
 		}
 	}
 	for attempt := 0; ctx.Err() == nil; attempt++ {
-		if err := tuneWithRetry(ctx, d.log, name, br, freq); err != nil {
+		if err := tuneWithRetry(ctx, d.log, name, br, loHz); err != nil {
 			return nil // ctx ended
 		}
 		iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, serial)
@@ -5726,7 +5612,11 @@ func (d *Daemon) runSingleChannelDecoder(ctx context.Context, name, serial strin
 			continue
 		}
 		started := time.Now()
-		err = decode(ctx, iqCh)
+		in := iqCh
+		if fe != nil {
+			in = fe.Pump(ctx, iqCh)
+		}
+		err = decode(ctx, in)
 		cleanup()
 		if ctx.Err() != nil {
 			return nil
@@ -6204,6 +6094,9 @@ func (p pagerProvider) RecentPagerMessages(limit int) ([]storage.PagerMessage, e
 type pocsagSpec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // flexSpec captures the broker-side wiring info for one configured
@@ -6212,6 +6105,9 @@ type pocsagSpec struct {
 type flexSpec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // m17Spec captures the broker-side wiring info for one configured M17
@@ -6220,6 +6116,9 @@ type flexSpec struct {
 type m17Spec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // widebandPagingGroup captures the broker-side wiring for one configured
@@ -6431,6 +6330,9 @@ func (a acarsProvider) RecentACARSMessages(limit int) ([]storage.ACARSMessage, e
 type aprsSpec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // aisSpec captures the broker-side wiring info for one configured
@@ -6440,6 +6342,9 @@ type aprsSpec struct {
 type aisSpec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // loraSpec captures the broker-side wiring info for one configured LoRa
@@ -6536,6 +6441,9 @@ func parseLoRaWANKey(k config.LoRaWANKeyConfig) (devAddr uint32, nwk, app [16]by
 type dscSpec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // adsbPPMSpec captures the broker-side wiring info for one configured
@@ -6553,6 +6461,9 @@ type adsbPPMSpec struct {
 type mdc1200Spec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // fleetsyncSpec captures the broker-side wiring info for one configured
@@ -6562,6 +6473,9 @@ type mdc1200Spec struct {
 type fleetsyncSpec struct {
 	serial string
 	freq   uint32
+	// fe conditions the SDR stream into the channel (#1316); the
+	// receiver is built for fe.OutRate(), not the SDR's rate.
+	fe *narrowband.FrontEnd
 }
 
 // loadRIDFile dispatches a per-system rid_alias_file load to the JSON

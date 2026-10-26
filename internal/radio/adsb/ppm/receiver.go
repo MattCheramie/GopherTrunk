@@ -260,7 +260,15 @@ func longFrame(df int) bool {
 }
 
 // detectPreamble applies the dump1090 magnitude-domain preamble test
-// to a window starting at the candidate preamble. m must hold at least
+// to a window starting at the candidate preamble. It is a SHAPE test
+// only: on an unfiltered front end's noise it fires about 2 600 times a
+// second (measured on white noise at 2 Msps), and every detection used
+// to become an address/parity "aircraft" with a random ICAO (#1316). The
+// fix is downstream — adsb.ProcessFrame accepts such a frame only for an
+// ICAO a CRC-checked frame proved recently — because a level test here
+// does not help: the ordering test already selects local maxima, so a
+// 6 dB margin over the running noise floor removed under 1 % of the noise
+// detections while costing weak real frames. m must hold at least
 // preambleSamples samples. The pattern is high pulses at sample
 // offsets 0, 2, 7, 9 (µs 0, 1, 3.5, 4.5 at 2 Msps) with quiet gaps and
 // a quiet zone before the data.
@@ -302,6 +310,7 @@ type Stats struct {
 	FramesDecoded uint64
 	FramesEmitted uint64
 	TrackerSize   int
+	KnownICAOs    int // ICAOs proven by a CRC-checked frame in the last minute
 }
 
 func (r *Receiver) Stats() Stats {
@@ -311,6 +320,7 @@ func (r *Receiver) Stats() Stats {
 		FramesDecoded: r.framesDecoded.Load(),
 		FramesEmitted: r.framesEmitted.Load(),
 		TrackerSize:   r.tracker.Size(),
+		KnownICAOs:    r.tracker.KnownICAOs(),
 	}
 }
 

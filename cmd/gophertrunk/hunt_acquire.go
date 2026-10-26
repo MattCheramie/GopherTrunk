@@ -80,6 +80,9 @@ func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
 				voiceSerials = append(voiceSerials, e.Info.Serial)
 			}
 			for _, e := range d.pool.Entries() {
+				if e.Role == sdr.RoleDedicated {
+					continue // pinned to a single-channel decoder (#1316); never a hunt SDR
+				}
 				poolSerials = append(poolSerials, e.Info.Serial)
 			}
 		}

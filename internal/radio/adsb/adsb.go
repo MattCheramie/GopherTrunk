@@ -235,7 +235,19 @@ type Message struct {
 	ICAO     uint32      // 24-bit aircraft address (DF 11 / 17 / 18 always carry it; computable for DF 4 / 5 / 20 / 21 via CRC overlay)
 	TypeCode TypeCode    // extended-squitter type code (DF 17 / 18 only); 0 otherwise
 	Kind     PayloadKind // semantic label
-	CRCValid bool        // CRC matched (DF 17 / 18 only — other DFs use ICAO overlay so CRC always "matches" by construction)
+	CRCValid bool        // CRC matched (DF 11 / 17 / 18), or — for an address/parity frame — the recovered ICAO was recently seen in one that did (ProcessFrame)
+	// ICAOInferred is set on DF 0 / 4 / 5 / 16 / 20 / 21, whose trailing
+	// 24 bits are CRC XOR ICAO: the address is recovered by assuming the
+	// frame is error-free, so there is no check at all in the frame
+	// itself — any 56/112 bits of noise "decode" to some address. Such a
+	// frame is only trustworthy when its ICAO was recently announced by a
+	// CRC-checked DF 11 / 17 / 18 (the dump1090 / readsb rule), which is
+	// the gate ProcessFrame applies (#1316).
+	ICAOInferred bool
+	// IID is the interrogator identifier a DF 11 all-call reply was
+	// addressed to (the low 7 bits of its parity field); 0 for the
+	// spontaneous acquisition squitter.
+	IID uint8
 
 	// Per-kind decoded payload — populated based on Kind.
 	Identification *Identification
@@ -272,29 +284,34 @@ func Decode(frame []byte) Message {
 		computed := crc24(frame[:11])
 		stored := uint32(frame[11])<<16 | uint32(frame[12])<<8 | uint32(frame[13])
 		switch m.DF {
-		case DFExtendedSquitter, DFExtendedSquitterAlt, DFAllCallReply:
+		case DFExtendedSquitter, DFExtendedSquitterAlt:
 			m.CRCValid = computed == stored
 			if m.CRCValid {
 				m.ICAO = uint32(frame[1])<<16 | uint32(frame[2])<<8 | uint32(frame[3])
 			}
-		case DFAltitudeReply, DFIdentityReply,
-			DFCommBAltitudeReply, DFCommBIdentityReply:
+		case DFLongAirAir, DFCommBAltitudeReply, DFCommBIdentityReply:
 			m.ICAO = computed ^ stored
-			m.CRCValid = true // ICAO overlay scheme: CRC always "matches" by construction
+			m.ICAOInferred = true
 		}
 	} else { // 56-bit (DF 0, 4, 5, 11)
 		computed := crc24(frame[:4])
 		stored := uint32(frame[4])<<16 | uint32(frame[5])<<8 | uint32(frame[6])
 		switch m.DF {
 		case DFAllCallReply:
-			m.CRCValid = computed == stored
-			if m.CRCValid {
+			// A DF 11 reply to a selective interrogation carries the
+			// interrogator's 7-bit IID XORed into the low bits of its
+			// parity (Annex 10 Vol IV §3.1.2.5.2.1.3); the spontaneous
+			// squitter has IID 0. A straight compare dropped every
+			// addressed reply (#1316).
+			if diff := computed ^ stored; diff&^0x7F == 0 {
+				m.CRCValid = true
+				m.IID = uint8(diff)
 				m.ICAO = uint32(frame[1])<<16 | uint32(frame[2])<<8 | uint32(frame[3])
 				m.Kind = KindAllCall
 			}
 		case DFShortAirAir, DFAltitudeReply, DFIdentityReply:
 			m.ICAO = computed ^ stored
-			m.CRCValid = true
+			m.ICAOInferred = true
 		}
 	}
 

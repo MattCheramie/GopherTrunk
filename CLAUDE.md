@@ -1226,6 +1226,39 @@ confirmation before any close-as-completed.
   from config.example.yaml. One call ended at the tracker's ±3 kHz bound after decoding cleanly (406 frames):
   an unmodulated carrier passes the variance gate and pulls it there (shown synthetically, unconfirmed
   on air); `carrier_offset_at_voice_hz` / `iq_samples` in the chain-ended line are the instrument.
+- **The single-channel decoders (APRS/AIS/DSC/POCSAG/FLEX/M17/MDC1200/FleetSync) ran their FM
+  discriminator on the SDR's FULL-RATE IQ with no channel filter (#1316) — every APRS frame on
+  the reporter's 144.39 MHz dongle was garbage with `fcs_ok=false`.** An FM discriminator's
+  output SNR follows the carrier-to-noise over its whole input bandwidth, so 2.4 MHz of noise
+  around a 12.5 kHz channel is ~23 dB of needless noise. All eight now run behind one shared
+  `narrowband.FrontEnd` (`internal/dsp/narrowband`: LO offset mix → anti-aliased integer
+  decimation to ~48 kHz → ±8 kHz Kaiser channel filter), the daemon tunes the dongle the
+  conventional scanner's clip-safe LO offset BELOW the channel (518 kHz at 2.4 MS/s) so the
+  RTL DC spur misses it, and every receiver is built for `fe.OutRate()`, not `sdr.sample_rate`
+  (`runSingleChannelDecoder` now also retries tune/open/decode for ALL of them, ADS-B/LoRa
+  included — they used to die on one failed `SetCenterFreq`). Failing-first:
+  `TestReceiverDecodesAtSDRRateThroughFrontEnd` (2.4 MS/s packet, band-wide noise leaving the
+  channel at +15 dB: raw receiver 0 packets, front end 1). Two fixture traps found on the way:
+  (1) `demod.FFSKModulator`'s default audio amplitude is 0.5 rad/SAMPLE, i.e. the FM deviation
+  SCALES WITH THE SAMPLE RATE (±7.6 kHz at 96 kHz, ±191 kHz at 2.4 MS/s) — harmless for a
+  receiver that demodulates the full stream, invisible to every self-consistent round trip, and
+  nothing a channel filter can pass; `SetDeviationHz` / `ModulateFFSKDeviation` state the real
+  deviation (siglab's MPT1327 fixture still uses the default at the SDR rate — check before
+  putting a filter in front of it). (2) The skipped APRS synthetic test failed only because its
+  closing flag ended on the very last sample and never cleared the resampler/timing-loop group
+  delay — add trailing flags, as a real transmitter sends. Related in the same pass: a dongle a
+  single-channel section pins by serial now opens as `sdr.RoleDedicated` (`Hint.Dedicated`,
+  `markDedicatedHints`) so the trunking voice pool, the manual-tune/conv-scanner spare heuristic,
+  hunt auto-selection and rigctld can never retune it — four `auto` sticks with APRS+ADS-B pinned
+  used to make the ADS-B stick THE control SDR; and such a stick may run its own `sample_rate`.
+  ADS-B: DF 0/4/5/16/20/21 were `CRCValid=true` BY CONSTRUCTION (ICAO = CRC XOR parity, no check
+  at all), so an unfiltered dongle produced ~440 "aircraft"/s with unallocated ICAOs;
+  `ProcessFrame` now accepts them only for an ICAO a CRC-checked DF 11/17/18 proved within 60 s
+  (`Tracker.KnownICAO`, dump1090's rule), and DF 11 with a non-zero IID is accepted. A preamble
+  NOISE-FLOOR test was measured and REJECTED: the shape test already selects local maxima, so a
+  6 dB margin removed <1 % of the ~2 600 noise preambles/s while costing weak real frames. RR
+  import mapped "Phase II" to `p25-phase2` (the TDMA CONTROL-channel pipeline) — a Phase II
+  system's CC is Phase 1 FDMA; it is `p25` now. All on-air-gated (#764/#771).
 - **wM-Bus (#1256): the field's CRC failures were a TUNER OFFSET + a too-wide filter, after the
   clock-slip fix.** The reporter's 156 `-save-frames` snippets (S5 + RTL-SDR, `-gain 0`, Qundis HCAs +
   Diehl water meters) are the yield check: `GT_WMBUS_SNIPPETS=<dir> go test ./internal/radio/wmbus -run

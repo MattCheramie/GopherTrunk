@@ -379,6 +379,15 @@ pure-Phase-2 systems may want to hand-add
 `p25_phase2_clock_mode: gardner` to the imported entry — defaults are
 correct for Phase 1 captures.
 
+The RadioReference browse/import path (system type + flavor) also maps a
+"Project 25 Phase II" system to `protocol: p25`. A Phase II system's
+**control channel is still Phase 1 C4FM/FDMA** — only its voice channels
+are TDMA — and `p25` follows those TDMA grants into the Phase 2 voice
+chain. `protocol: p25-phase2` selects the H-DQPSK TDMA *control-channel*
+decoder, which never locks on such a system; it is only for a site whose
+control channel itself is Phase 2 TDMA. (Until #1316, Phase II systems
+imported as `p25-phase2` and their control channel never locked.)
+
 ## Known PDF format hazards
 
 - **Custom font encoding.** RadioReference's PDF export uses a font
